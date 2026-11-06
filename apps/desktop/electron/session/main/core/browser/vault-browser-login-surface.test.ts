@@ -65,10 +65,11 @@ async function fixture(initialReady = true) {
   const binding: CredentialUseBinding = { ...actual, requestId: 'request', useId: 'use', accountId: 'owner', installationId: 'install',
     agentId: 'agent', sessionId: 'session', browserId: 'tab', credentialId: 'credential', credentialVersion: '1', lockEpoch: 'epoch', operation: 'login-submit' };
   const controller = new AbortController();
-  const lease: AuditedCredentialUseLease = { signal: controller.signal, assertCurrent, claimSubmission: vi.fn(assertCurrent), prepareSubmission: vi.fn(async () => {}) };
+  let prepareHook: () => void = () => {};
+  const lease: AuditedCredentialUseLease = { signal: controller.signal, assertCurrent, claimSubmission: vi.fn(assertCurrent), prepareSubmission: vi.fn(async () => { prepareHook(); }) };
   const password = Buffer.from(randomUUID());
   return { surface, contents, binding, lease, password, host, release, ready: (value: boolean) => { ready = value; },
-    retireSource: () => { sourceAlive = false; }, revoke: () => { current = false; controller.abort(); },
+    prepare: (hook: () => void) => { prepareHook = hook; }, retireSource: () => { sourceAlive = false; }, revoke: () => { current = false; controller.abort(); },
     fill: () => surface.fill(binding, lease, Buffer.from(randomUUID()), password) };
 }
 
@@ -109,7 +110,7 @@ describe('host-private login surface', () => {
   });
   it('rechecks after pre-submit audit and never claims when that wait invalidates approval', async () => {
     const f = await fixture(); await f.fill();
-    vi.mocked(f.lease.prepareSubmission).mockImplementationOnce(async () => f.revoke());
+    f.prepare(() => f.revoke());
     await expect(f.surface.submit(f.binding, f.lease)).rejects.toThrow('credential_login_unavailable');
     expect(f.lease.claimSubmission).not.toHaveBeenCalled(); await f.surface.destroy(f.binding);
   });
@@ -117,6 +118,13 @@ describe('host-private login surface', () => {
     const f = await fixture(); await f.fill(); await f.surface.submit(f.binding, f.lease);
     await expect(f.surface.submit(f.binding, f.lease)).rejects.toThrow();
     expect(f.lease.claimSubmission).toHaveBeenCalledTimes(1); await f.surface.destroy(f.binding);
+  });
+  it('rejects a cloned lease and captures audit/current/signal methods before the sink runs', async () => {
+    const f = await fixture(); f.prepare(() => { throw new Error('audit unavailable'); }); await f.fill();
+    await expect(f.surface.submit(f.binding, { ...f.lease })).rejects.toThrow();
+    Object.assign(f.lease, { prepareSubmission: async () => {}, assertCurrent: () => {}, signal: new AbortController().signal });
+    await expect(f.surface.submit(f.binding, f.lease)).rejects.toThrow();
+    expect(f.lease.claimSubmission).not.toHaveBeenCalled(); await f.surface.destroy(f.binding);
   });
   it('rejects an unexpected document after cleanup preparation and permits only intentional retirement', async () => {
     const f = await fixture(); await f.fill(); const completion = await f.surface.readCompletion(f.binding);

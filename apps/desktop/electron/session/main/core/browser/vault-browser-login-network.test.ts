@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Session } from 'electron';
 import { markVaultLoginNetworkInstalled, protectVaultLoginNetwork, vaultLoginRequestBlocked, vaultLoginResponseBlocked, vaultLoginResponseHeaders } from './vault-browser-login-network';
-import { installRemoteLoopbackRequests } from './remote-loopback-requests';
+import { bindRemoteBrowser, installRemoteLoopbackRequests, setRemoteLoopbackForwarding, unbindRemoteBrowser } from './remote-loopback-requests';
 
 const request = { id: 10, url: 'https://example.test/session', method: 'POST', resourceType: 'mainFrame', webContentsId: 7,
   frame: { processId: 3, routingId: 4, parent: null }, uploadData: [{}] };
@@ -70,5 +70,21 @@ describe('private login network transport protection', () => {
       responseHeaders: { 'cache-control': ['public,max-age=3600'], 'Set-Cookie': ['session=synthetic'] } });
     expect(headers).toEqual({ 'Cache-Control': ['no-store'], Pragma: ['no-cache'], Expires: ['0'], 'Set-Cookie': ['session=synthetic'] });
     expect(vaultLoginResponseHeaders(f.session, { webContentsId: 8 })).toBeNull();
+  });
+  it('keeps the actual remote forwarding callback reachable beside a private login guard', async () => {
+    let listener: (details: typeof request, callback: (answer: unknown) => void) => void = () => {};
+    const session = { webRequest: { onBeforeRequest: (handler: typeof listener) => { listener = handler; } } } as unknown as Session;
+    const open = vi.fn(async () => 9090);
+    bindRemoteBrowser('remote', { deviceId: 'device', sessionId: 'session' });
+    setRemoteLoopbackForwarding({ open, remoteForLocal: () => null, status: () => null });
+    try {
+      installRemoteLoopbackRequests(session, id => id === 4 ? 'remote' : null, vi.fn());
+      markVaultLoginNetworkInstalled(session, 'responses');
+      protectVaultLoginNetwork(session, 7, 'https://example.test').beginSensitive();
+      const answer = await new Promise(resolve => listener({ ...request, id: 20, webContentsId: 4,
+        method: 'GET', uploadData: [], url: 'http://localhost:8080/path' }, resolve));
+      expect(answer).toEqual({ redirectURL: 'http://127.0.0.1:9090/path' });
+      expect(open).toHaveBeenCalledTimes(1);
+    } finally { unbindRemoteBrowser('remote'); setRemoteLoopbackForwarding(null); }
   });
 });

@@ -46,6 +46,8 @@ export class VaultBrowserLoginSurface {
   private retiring = false;
   private retired = false;
   private releasePrivate: (() => void) | undefined;
+  private leaseSource?: AuditedCredentialUseLease;
+  private lease?: AuditedCredentialUseLease;
 
   constructor(private readonly host: VaultLoginSurfaceHost, private readonly origin: string) {
     this.host = Object.freeze({ browserId: host.browserId, partition: host.partition, agentContents: host.agentContents,
@@ -119,6 +121,10 @@ export class VaultBrowserLoginSurface {
     this.fillAttempted = true;
     this.binding = Object.freeze({ ...binding });
     try {
+      this.leaseSource = lease;
+      this.lease = Object.freeze({ signal: lease.signal, assertCurrent: lease.assertCurrent.bind(lease),
+        claimSubmission: lease.claimSubmission.bind(lease), prepareSubmission: lease.prepareSubmission.bind(lease) });
+      lease = this.lease;
       this.assertUse(binding, true); lease.assertCurrent(); lease.signal.throwIfAborted();
       this.network.beginSensitive();
       await this.operation({ phase: 'fill', nonce: randomUUID(), binding, lease, account, password });
@@ -126,8 +132,9 @@ export class VaultBrowserLoginSurface {
   }
 
   async submit(binding: CredentialUseBinding, lease: AuditedCredentialUseLease): Promise<void> {
-    if (!this.fillAttempted || this.submissionAttempted) throw new VaultBrowserLoginError();
+    if (!this.fillAttempted || this.submissionAttempted || lease !== this.leaseSource || !this.lease) throw new VaultBrowserLoginError();
     this.submissionAttempted = true;
+    lease = this.lease;
     try {
       this.assertUse(binding, true); lease.assertCurrent(); lease.signal.throwIfAborted();
       await lease.prepareSubmission();
