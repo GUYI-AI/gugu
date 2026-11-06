@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { anySignal } from '@gugu/core/shared/anySignal'
 import type { AuditInput, AuditReceipt, CredentialUseResult, VaultBrowserSink, VaultUseBinding, VaultUseCapability, VaultUseControl, VaultSinkControl } from './contracts'
 import { VaultError } from './contracts'
+import type { OutcomeAuditIssuer } from './outcome-audit'
+import type { PostUseAuditResult, UseOutcomeContext } from '../session/main/core/browser/credential-settlement-contract'
 
 interface SecretLease {
   account: Buffer; password: Buffer
@@ -9,11 +11,18 @@ interface SecretLease {
   assertCurrent(): void
   release(): void
 }
+/** Capture trusted method identities once; later mutation of the caller's dependency object cannot replace the sink. */
+export function captureBrowserSink(sink?: VaultBrowserSink): VaultBrowserSink | undefined {
+  if (!sink || [sink.claimCredentialSink, sink.fillAndSubmit, sink.cleanup, sink.settle].some(method => typeof method !== 'function')) return undefined
+  return Object.freeze({ claimCredentialSink: sink.claimCredentialSink.bind(sink), fillAndSubmit: sink.fillAndSubmit.bind(sink),
+    cleanup: sink.cleanup.bind(sink), settle: sink.settle.bind(sink) })
+}
 /** Internal, fixed browser sink. Neither this function nor its lease is registered as a tool/API. */
 export async function performCredentialUse(
   sink: VaultBrowserSink, capability: VaultUseCapability, binding: VaultUseBinding,
   prepare: (control: VaultUseControl) => Promise<SecretLease>,
   audit: (input: AuditInput, effectPossible: boolean) => Promise<AuditReceipt>,
+  outcomes: OutcomeAuditIssuer,
 ): Promise<CredentialUseResult> {
   let lease: SecretLease | undefined, possibleEffect = false, auditFailed = false
   let status: CredentialUseResult['status'] = 'unavailable', retainIsolatedLogin = true
@@ -22,8 +31,10 @@ export async function performCredentialUse(
     origin: binding.origin, credential: { id: binding.credentialId, version: Number(binding.credentialVersion) } })
   let claimed = false
   try {
+    if (typeof sink.settle !== 'function') throw new VaultError('UNAVAILABLE')
     const claim = sink.claimCredentialSink(capability, binding)
     claimed = true
+    outcomes.register(capability, binding)
     claim.assertCurrent()
     lease = await prepare(claim)
     const before = await audit(event('pending'), false)
@@ -57,10 +68,11 @@ export async function performCredentialUse(
   // Cleanup never hands back the isolated surface. The coordinator requires this proof and the post-audit receipt.
   try { retainIsolatedLogin = (await sink.cleanup(binding.useId)).status !== 'cleaned' }
   catch { retainIsolatedLogin = true }
-  if (auditFailed) return { status: possibleEffect ? 'uncertain' : 'unavailable', retry: false, retainIsolatedLogin: true }
-  try {
-    const after = await audit(event(status === 'unavailable' ? 'failed' : status), possibleEffect)
-    if (after.status !== 'recorded') return { status: possibleEffect ? 'uncertain' : 'unavailable', retry: false, retainIsolatedLogin: true }
-  } catch { return { status: possibleEffect ? 'uncertain' : 'unavailable', retry: false, retainIsolatedLogin: true } }
+  const context = (): UseOutcomeContext => ({ capability, binding, outcome: status, effectPossible: possibleEffect })
+  let postUseAudit: PostUseAuditResult = { status: 'not_attempted' }
+  if (!auditFailed) postUseAudit = await outcomes.port.appendOutcome(context())
+  if (postUseAudit.status !== 'recorded') { status = possibleEffect ? 'uncertain' : 'unavailable'; retainIsolatedLogin = true }
+  try { await sink.settle({ ...context(), postUseAudit }) }
+  catch { status = possibleEffect ? 'uncertain' : 'unavailable'; retainIsolatedLogin = true }
   return { status, retry: false, retainIsolatedLogin: retainIsolatedLogin || status === 'uncertain' }
 }

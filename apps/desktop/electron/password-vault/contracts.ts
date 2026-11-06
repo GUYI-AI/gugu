@@ -49,10 +49,11 @@ export interface VaultDependencies {
 
 export type { VaultUseCapability, CredentialUseLease as VaultUseControl } from '../session/main/core/browser/credential-use-contract'
 import type { VaultUseCapability, CredentialUseBinding, CredentialUseLease, AuditedCredentialUseLease, CredentialUseCleanup, CredentialLoginOutcome } from '../session/main/core/browser/credential-use-contract'
+import type { FixedVaultUseSettlementSink } from '../session/main/core/browser/credential-settlement-contract'
 export type VaultUseBinding = CredentialUseBinding
 export type BrowserOutcome = CredentialLoginOutcome
 export type VaultSinkControl = AuditedCredentialUseLease
-export interface VaultBrowserSink {
+export interface VaultBrowserSink extends FixedVaultUseSettlementSink {
   claimCredentialSink(capability: VaultUseCapability, binding: VaultUseBinding): CredentialUseLease
   /** Fixed at trusted host construction, never supplied by an Agent or per-call callback. */
   fillAndSubmit(binding: VaultUseBinding, secrets: { account: Buffer; password: Buffer }, control: VaultSinkControl): Promise<BrowserOutcome>

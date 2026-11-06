@@ -5,7 +5,8 @@ import { EncryptedVaultAudit } from './audit'
 import { sealedJson } from './crypto'
 import { auditInput, binding, credentialInputSchema, uuid, identity, httpsOrigin, maskedAccount, type VaultDocument, type VaultPayload } from './schema'
 import { VaultFile } from './vault-file'
-import { performCredentialUse } from './browser-use'
+import { captureBrowserSink, performCredentialUse } from './browser-use'
+import { OutcomeAuditIssuer } from './outcome-audit'
 import { saveCredential, deleteCredential, type ManagementRuntime } from './management'
 
 const activeRoots = new Map<string, object>()
@@ -16,6 +17,8 @@ type PendingSetup = { id: string; vaultId: string; key: Buffer; recovery: Buffer
 export class LocalPasswordVault {
   readonly #file: VaultFile
   readonly #audit: EncryptedVaultAudit
+  readonly #outcomes: OutcomeAuditIssuer
+  readonly #browser: VaultDependencies['browser']
   readonly #now: () => number
   #epoch = randomUUID()
   #key?: Buffer
@@ -31,12 +34,24 @@ export class LocalPasswordVault {
   constructor(dependencies: VaultDependencies) {
     if (!identity.safeParse(dependencies.accountId).success || !dependencies.installationBinding?.trim()) throw new VaultError('INVALID_INPUT')
     this.#dependencies = dependencies
+    this.#browser = captureBrowserSink(dependencies.browser)
     if (activeRoots.has(dependencies.root)) throw new VaultError('UNAVAILABLE')
     this.#file = new VaultFile(dependencies)
     this.#now = dependencies.now ?? Date.now
     this.#audit = new EncryptedVaultAudit(this.#file.disk, this.#file.owner, this.#now)
+    this.#outcomes = new OutcomeAuditIssuer((event, effectPossible) => this.appendAudit(event, { effectPossible }), bound => {
+      const { key, document } = this.unlocked(); this.current(bound.lockEpoch)
+      const payload = this.#file.payload(document, key)
+      try {
+        if (bound.accountId !== this.#dependencies.accountId || bound.installationId !== document.installationId || bound.credentialVersion !== String(Number(bound.credentialVersion))) throw new VaultError('STALE_REFERENCE')
+        const value = this.check({ id: bound.credentialId, version: Number(bound.credentialVersion), epoch: bound.lockEpoch }, payload)
+        if (value.origin !== bound.origin) throw new VaultError('STALE_REFERENCE')
+      } finally { for (const item of payload.credentials) { item.account = ''; item.password = '' } }
+    })
     activeRoots.set(dependencies.root, this)
   }
+  /** One fixed host-only port, never exposed through a tool, UI payload or diagnostics. */
+  get outcomeAudit() { return this.#outcomes.port }
   state(): VaultState { return { status: this.#failure ? 'unavailable' : this.#key ? 'unlocked' : 'locked', epoch: this.#epoch, ...(this.#failure ? { reason: this.#failure } : {}) } }
   private run<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.#queue.then(async () => { if (this.#disposed) throw new VaultError('UNAVAILABLE'); try { return await operation() } catch (error) { throw safe(error) } })
@@ -59,6 +74,7 @@ export class LocalPasswordVault {
     catch { throw new VaultError('UNAVAILABLE') }
   }
   private wipe(): void {
+    this.#outcomes.clear()
     for (const secret of this.#activeSecrets) secret.clear()
     this.#activeSecrets.clear()
     for (const key of this.#transientKeys) key.fill(0)
@@ -234,10 +250,10 @@ export class LocalPasswordVault {
     })
   }
   useCredential(capability: VaultUseCapability, useBinding: VaultUseBinding): Promise<CredentialUseResult> {
-    const sink = this.#dependencies.browser
+    const sink = this.#browser
     if (!sink) return Promise.resolve({ status: 'unavailable', retry: false, retainIsolatedLogin: true })
     // Copy the binding; mutating a caller-owned object while waiting must not change the authorization.
-    const bound = { ...useBinding }
+    const bound = Object.freeze({ ...useBinding })
     return performCredentialUse(sink, capability, bound, control => this.run(async () => {
       await this.gates(true)
       const { key, document, epoch } = this.unlocked(), payload = this.#file.payload(document, key), value = this.check({ id: bound.credentialId, version: Number(bound.credentialVersion), epoch: bound.lockEpoch }, payload)
@@ -250,7 +266,7 @@ export class LocalPasswordVault {
       return { account, password, signal: abort.signal,
         assertCurrent: () => { this.current(epoch); if (!this.#key || this.#failure || this.#revocations.has(credentialId)) throw new VaultError('LOCKED') },
         release: () => { secret.clear(); this.#activeSecrets.delete(secret) } }
-    }), (entry, effectPossible) => this.appendAudit(entry, { effectPossible }))
+    }), (entry, effectPossible) => this.appendAudit(entry, { effectPossible }), this.#outcomes)
   }
   readAudit(context: object): Promise<AuditRecord[]> {
     this.person(context)
@@ -268,11 +284,11 @@ export class LocalPasswordVault {
           await this.#dependencies.keys.verifyPerson(); this.current(epoch)
           temporary = await this.#dependencies.keys.unwrap(document.localKey, binding(document, 'local')); this.#transientKeys.add(temporary); this.current(epoch)
           this.#file.payload(document, temporary)
-          await this.#audit.clear(); this.current(epoch)
+          await this.#audit.clear(); this.#outcomes.clear(); this.current(epoch)
           await this.#audit.persist(this.#audit.prepare(document, temporary, this.#dependencies.accountId, { id: randomUUID(), action: 'clear', source: 'local-person', outcome: 'completed' }))
           this.current(epoch); this.#failure = undefined
         } else {
-          this.unlocked(); await this.#audit.clear(); this.current(epoch)
+          this.unlocked(); await this.#audit.clear(); this.#outcomes.clear(); this.current(epoch)
           await this.record({ id: randomUUID(), action: 'clear', source: 'local-person', outcome: 'completed' })
         }
       } catch { await this.fail(); throw new VaultError('AUDIT_FAILED') }
