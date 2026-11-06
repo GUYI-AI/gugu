@@ -10,7 +10,7 @@ export type VaultLoginCompletion = Readonly<{
   topDocumentChanged: boolean; filledPasswordFieldsAbsent: boolean; requiresPersonInteraction: boolean;
 }>;
 export type VaultLoginGateRequest = Readonly<{
-  nonce: string; phase: 'fill' | 'submit'; documentId: string; formFingerprint: string; destination: string;
+  nonce: string; phase: 'fill' | 'submit' | 'person-submit'; documentId: string; formFingerprint: string; destination: string;
 }>;
 export type VaultLoginGateAnswer = { ok: false } | { ok: true; account?: string; password?: string };
 

@@ -43,11 +43,13 @@ export class VaultBrowserLoginSurface {
   private fillAttempted = false;
   private submissionAttempted = false;
   private documentRevision = 0;
+  private navigationUrl = '';
   private retiring = false;
   private retired = false;
   private releasePrivate: (() => void) | undefined;
   private leaseSource?: AuditedCredentialUseLease;
   private lease?: AuditedCredentialUseLease;
+  private readonly personDocuments = new Set<string>();
 
   constructor(private readonly host: VaultLoginSurfaceHost, private readonly origin: string) {
     this.host = Object.freeze({ browserId: host.browserId, partition: host.partition, agentContents: host.agentContents,
@@ -83,7 +85,7 @@ export class VaultBrowserLoginSurface {
     this.contents.on('will-redirect', event => {
       try { assertCredentialWebsite(event.url, origin); } catch { event.preventDefault(); }
     });
-    this.contents.on('did-start-navigation', event => { if (event.isMainFrame) this.documentRevision++; });
+    this.contents.on('did-start-navigation', event => { if (event.isMainFrame) { this.documentRevision++; this.navigationUrl = event.url; } });
     this.contents.on('preload-error', () => { this.fault = true; });
     this.contents.on('render-process-gone', (_event, details) => {
       if (!this.retiring || details.reason !== 'clean-exit') this.fault = true;
@@ -249,14 +251,18 @@ export class VaultBrowserLoginSurface {
     }
   }
   private gate(event: IpcMainEvent, input: unknown): void {
-    event.returnValue = { ok: false };
+    // Electron replies as soon as returnValue is assigned. Never send a provisional denial.
+    event.returnValue = this.gateAnswer(event, input);
+  }
+  private gateAnswer(event: IpcMainEvent, input: unknown) {
+    if (input && typeof input === 'object' && (input as VaultLoginGateRequest).phase === 'person-submit') return this.personGate(event, input as VaultLoginGateRequest);
     const pending = this.pending;
-    if (!pending || !input || typeof input !== 'object') return;
+    if (!pending || !input || typeof input !== 'object') return { ok: false };
     const request = input as VaultLoginGateRequest;
     if (event.sender !== this.contents || event.senderFrame !== this.contents.mainFrame || !event.senderFrame
       || request.nonce !== pending.nonce || request.phase !== pending.phase
       || request.documentId !== pending.binding.documentId || request.formFingerprint !== pending.binding.formFingerprint
-      || request.destination !== this.reviewValue?.destination) return;
+      || request.destination !== this.reviewValue?.destination) return { ok: false };
     this.pending = undefined; // One use even when a subsequent check/side effect fails.
     try {
       this.assertUse(pending.binding, true); pending.lease.signal.throwIfAborted(); pending.lease.assertCurrent();
@@ -267,11 +273,32 @@ export class VaultBrowserLoginSurface {
           this.assertUse(pending.binding, true); pending.lease.signal.throwIfAborted(); pending.lease.assertCurrent();
           pending.lease.signal.throwIfAborted();
         });
-        event.returnValue = { ok: true };
+        return { ok: true };
       } else {
         if (!Buffer.isBuffer(pending.account) || !Buffer.isBuffer(pending.password)) throw new VaultBrowserLoginError();
-        event.returnValue = { ok: true, account: pending.account.toString('utf8'), password: pending.password.toString('utf8') };
+        return { ok: true, account: pending.account.toString('utf8'), password: pending.password.toString('utf8') };
       }
-    } catch { event.returnValue = { ok: false }; }
+    } catch { return { ok: false }; }
+  }
+  private personGate(event: IpcMainEvent, request: VaultLoginGateRequest) {
+    const binding = this.binding;
+    if (!binding || this.pending || !this.submissionAttempted || event.sender !== this.contents
+      || event.senderFrame !== this.contents.mainFrame || !event.senderFrame
+      || !/^[a-f0-9]{48}$/.test(request.documentId) || !/^[a-f0-9]{48}$/.test(request.nonce)
+      || request.formFingerprint !== request.nonce || request.documentId === binding.documentId
+      || this.personDocuments.has(request.documentId) || this.personDocuments.size >= 32) return { ok: false };
+    this.personDocuments.add(request.documentId);
+    try {
+      this.assertUse(binding, false);
+      assertCredentialWebsite(request.destination, this.origin);
+      const revision = this.documentRevision, frameId = this.frameId();
+      this.network.armPerson(request.destination, frameId, () => {
+        this.assertUse(binding, false);
+        // Native submit starts its own navigation before Chromium asks the request hook.
+        if (frameId !== this.frameId() || this.documentRevision !== revision
+          && !(this.documentRevision === revision + 1 && this.navigationUrl === request.destination)) throw new VaultBrowserLoginError();
+      });
+      return { ok: true };
+    } catch { return { ok: false }; }
   }
 }

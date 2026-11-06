@@ -18,8 +18,9 @@ vi.mock('./browser-webcontents-registry', () => ({ browserWebContentsRegistry: {
 vi.mock('./remote-loopback-requests', () => ({ remoteBrowserBinding: () => mocks.remote ? { deviceId: 'remote' } : null }));
 import { VaultBrowserLoginSurface } from './vault-browser-login-surface';
 
+let nextContentsId = 7;
 class Contents extends EventEmitter {
-  id = 7; destroyed = false; url = ''; ipc = new EventEmitter();
+  id = nextContentsId++; destroyed = false; url = ''; ipc = new EventEmitter();
   mainFrame = { processId: 3, routingId: 4, parent: null };
   debugger = { isAttached: () => false };
   replies: boolean[] = [];
@@ -32,7 +33,10 @@ class Contents extends EventEmitter {
   gate(phase: string, nonce: string) {
     this.beforeGate?.();
     const event = { sender: this, senderFrame: this.mainFrame, returnValue: { ok: false } };
+    let answer = event.returnValue, replies = 0;
+    Object.defineProperty(event, 'returnValue', { get: () => answer, set: value => { if (!replies++) answer = value; } });
     this.ipc.emit(VAULT_LOGIN_CHANNEL, event, { nonce, phase, documentId: 'document', formFingerprint: 'form', destination: 'https://example.test/post' });
+    expect(replies).toBe(1); // Electron immediately replies on assignment, rather than after the listener returns.
     this.replies.push(event.returnValue.ok);
     return event.returnValue.ok;
   }
@@ -66,7 +70,7 @@ async function fixture(initialReady = true) {
     agentId: 'agent', sessionId: 'session', browserId: 'tab', credentialId: 'credential', credentialVersion: '1', lockEpoch: 'epoch', operation: 'login-submit' };
   const controller = new AbortController();
   let prepareHook: () => void = () => {};
-  const lease: AuditedCredentialUseLease = { signal: controller.signal, assertCurrent, claimSubmission: vi.fn(assertCurrent), prepareSubmission: vi.fn(async () => { prepareHook(); }) };
+  const lease: AuditedCredentialUseLease = { signal: controller.signal, assertCurrent, claimSubmission: vi.fn(() => assertCurrent()), prepareSubmission: vi.fn(async () => { prepareHook(); }) };
   const password = Buffer.from(randomUUID());
   return { surface, contents, binding, lease, password, host, release, ready: (value: boolean) => { ready = value; },
     prepare: (hook: () => void) => { prepareHook = hook; }, retireSource: () => { sourceAlive = false; }, revoke: () => { current = false; controller.abort(); },

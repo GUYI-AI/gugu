@@ -1,5 +1,6 @@
 import { assertCredentialWebsite } from './credential-website';
 import type { VaultLoginGateAnswer, VaultLoginGateRequest, VaultLoginReview, VaultLoginSelection } from './vault-browser-login-protocol';
+import { createVaultPersonSubmission } from './vault-browser-login-person';
 
 /** Runs ONLY in the private preload world. No page-world API or secret-bearing result. */
 export function createVaultLoginPage(gate: (request: VaultLoginGateRequest) => VaultLoginGateAnswer) {
@@ -68,8 +69,11 @@ export function createVaultLoginPage(gate: (request: VaultLoginGateRequest) => V
       || actual.elements.some((element, index) => element !== reviewed!.elements[index])) return fail();
     return actual;
   }
-  // Ordinary clicks/Enter never spend the host's submission capability. Native submit below bypasses this event.
-  document.addEventListener('submit', event => event.preventDefault(), true);
+  // Password form clicks/Enter never spend the host capability. A new document may admit a native OTP gesture.
+  const person = createVaultPersonSubmission(gate, documentId, () => !reviewed && !filled && !submitted);
+  document.addEventListener('click', person.onGesture, true);
+  document.addEventListener('keydown', person.onGesture, true);
+  document.addEventListener('submit', person.onSubmit, true);
   return Object.freeze({
     review(selection: VaultLoginSelection, origin: string): VaultLoginReview {
       if (filled || submitted) return fail();

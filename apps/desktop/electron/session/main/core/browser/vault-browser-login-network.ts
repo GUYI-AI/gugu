@@ -5,7 +5,7 @@ import { VaultBrowserLoginError } from './vault-browser-login-protocol';
 type Request = { id: number; url: string; method: string; webContentsId?: number; resourceType: string;
   frame?: { processId: number; routingId: number; parent: unknown } | null; uploadData?: unknown[] };
 type Surface = { id: number; origin: string; active: boolean; sensitive: boolean;
-  armed?: { destination: string; frameId: string; assertCurrent(): void }; requestId?: number };
+  armed?: { destination: string; frameId: string; assertCurrent(): void; person?: boolean }; requestId?: number; passwordSubmitted?: boolean };
 type Policy = { requestHook: boolean; responseHook: boolean; surfaces: Map<number, Surface>; requests: Map<number, Surface> };
 const policies = new WeakMap<Session, Policy>();
 function policy(session: Session): Policy {
@@ -32,6 +32,11 @@ export function protectVaultLoginNetwork(session: Session, id: number, origin: s
       assertCredentialWebsite(destination, origin);
       if (!value.active || !value.sensitive || value.armed || value.requestId !== undefined) throw new VaultBrowserLoginError();
       value.armed = { destination, frameId, assertCurrent };
+    },
+    armPerson(destination: string, frameId: string, assertCurrent: () => void): void {
+      assertCredentialWebsite(destination, origin);
+      if (!value.active || !value.passwordSubmitted || value.armed) throw new VaultBrowserLoginError();
+      value.armed = { destination, frameId, assertCurrent, person: true };
     },
     close(): void {
       // Retain an ID-only tombstone: a late redirect must never escape after contents destruction.
@@ -63,6 +68,7 @@ export function vaultLoginRequestBlocked(session: Session, details: Request): bo
   owner.armed = undefined; owner.requestId = details.id;
   p.requests.set(details.id, owner);
   try { armed.assertCurrent(); } catch { return true; }
+  if (!armed.person) owner.passwordSubmitted = true;
   return false;
 }
 

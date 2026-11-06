@@ -37,6 +37,26 @@ describe('private login network transport protection', () => {
     expect(vaultLoginRequestBlocked(f.session, request)).toBe(true);
     expect(() => f.arm()).toThrow();
   });
+  it('allows a separately guarded person continuation only after the password transport actually passed', () => {
+    const f = fixture();
+    expect(() => f.guard.armPerson('https://example.test/otp', '3:4', f.current)).toThrow();
+    f.arm(); expect(vaultLoginRequestBlocked(f.session, request)).toBe(false);
+    f.guard.armPerson('https://example.test/otp', '3:4', f.current);
+    const otp = { ...request, id: 20, url: 'https://example.test/otp' };
+    expect(vaultLoginRequestBlocked(f.session, otp)).toBe(false);
+    expect(vaultLoginRequestBlocked(f.session, { ...otp, id: 21 })).toBe(true);
+    expect(vaultLoginResponseBlocked(f.session, { id: 20, statusCode: 307 })).toBe(true);
+    expect(() => f.arm()).toThrow(); // The original password reservation is never restored.
+  });
+  it('rechecks lifecycle revocation on the person request and cannot continue a rejected password request', () => {
+    const f = fixture(); f.arm(); expect(vaultLoginRequestBlocked(f.session, request)).toBe(false);
+    f.guard.armPerson('https://example.test/otp', '3:4', f.current);
+    f.current.mockImplementation(() => { throw new Error('revoked'); });
+    expect(vaultLoginRequestBlocked(f.session, { ...request, id: 20, url: 'https://example.test/otp' })).toBe(true);
+    const next = fixture(); next.arm(); next.current.mockImplementation(() => { throw new Error('revoked'); });
+    expect(vaultLoginRequestBlocked(next.session, request)).toBe(true);
+    expect(() => next.guard.armPerson('https://example.test/otp', '3:4', () => {})).toThrow();
+  });
   it('blocks 307/308 body replays on the same origin and cross-origin redirect GETs', () => {
     const f = fixture(); f.arm(); expect(vaultLoginRequestBlocked(f.session, request)).toBe(false);
     expect(vaultLoginResponseBlocked(f.session, { id: 10, statusCode: 307 })).toBe(true);
