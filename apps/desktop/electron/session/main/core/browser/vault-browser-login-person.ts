@@ -14,7 +14,8 @@ export function createVaultPersonSubmission(gate: (request: VaultLoginGateReques
     || node instanceof ElementClass && containsPassword(node);
   const recordPasswords = (records: MutationRecord[]) => {
     passwordSeen ||= records.some(record => record.type === 'attributes' && record.oldValue?.toLowerCase() === 'password'
-      || Array.from(record.addedNodes).some(passwordNode) || passwordNode(record.target));
+      || Array.from(record.addedNodes).some(passwordNode) || Array.from(record.removedNodes).some(passwordNode)
+      || passwordNode(record.target));
   };
   const observer = new MutationObserver(recordPasswords);
   observer.observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['type'], attributeOldValue: true });
@@ -33,8 +34,14 @@ export function createVaultPersonSubmission(gate: (request: VaultLoginGateReques
       || elements.some(element => element !== input && (!(element instanceof HTMLButtonElement)
         || element.type !== 'submit' || !!element.name || element.hasAttribute('formaction') || element.hasAttribute('formmethod')
         || element.hasAttribute('formtarget') || element.hasAttribute('formenctype')))) return fail();
-    const style = getComputedStyle(input);
-    if (!input.getClientRects().length || style.display === 'none' || style.visibility !== 'visible') return fail();
+    if (!input.getClientRects().length) return fail();
+    // Require an opaque input through its rendered ancestor chain, including slots and shadow hosts.
+    for (let element: Element | null = input; element;) {
+      const style = getComputedStyle(element);
+      if (style.display === 'none' || style.visibility !== 'visible' || Number(style.opacity || '1') !== 1) return fail();
+      const root = element.getRootNode();
+      element = element.assignedSlot ?? element.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
+    }
     const destination = new URL(form.action); destination.hash = '';
     assertCredentialWebsite(location.href, location.origin); assertCredentialWebsite(destination.href, location.origin);
     if (form.method !== 'post' || form.target && form.target !== '_self'

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // @vitest-environment-options {"url":"https://example.test/otp"}
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { createVaultPersonSubmission } from './vault-browser-login-person';
 import type { VaultLoginGateAnswer, VaultLoginGateRequest } from './vault-browser-login-protocol';
 
@@ -9,7 +10,7 @@ afterEach(() => vi.restoreAllMocks());
 function fixture(eligible = true) {
   document.body.innerHTML = '<form method="post" action="/challenge"><input name="otp" autocomplete="one-time-code"><button>Verify</button></form>';
   const form = document.querySelector('form')!, input = document.querySelector('input')!, button = document.querySelector('button')!;
-  input.value = '123456';
+  input.value = randomUUID();
   const native = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {});
   const gate = vi.fn((_request: VaultLoginGateRequest): VaultLoginGateAnswer => ({ ok: true }));
   const handler = createVaultPersonSubmission(gate, 'new-document', () => eligible);
@@ -51,5 +52,23 @@ describe('private native OTP continuation', () => {
   it('rejects a password field inserted and removed before mutation callbacks run', () => {
     const f = fixture(); f.gesture(); f.form.insertAdjacentHTML('beforeend', '<input type="password">');
     f.form.querySelector('input[type=password]')!.remove(); f.submit(); expect(f.gate).not.toHaveBeenCalled();
+  });
+  it('latches a password removed from a transient wrapper in the same turn', () => {
+    const f = fixture();
+    const wrapper = document.createElement('div'); wrapper.innerHTML = '<input type="password">';
+    document.body.appendChild(wrapper); wrapper.firstElementChild!.remove(); wrapper.remove();
+    f.gesture(); f.submit();
+    expect(f.gate).not.toHaveBeenCalled(); expect(f.native).not.toHaveBeenCalled();
+  });
+  it('rejects transparent OTP inputs and transparent rendered ancestors', () => {
+    for (const target of ['input', 'form', 'slot']) {
+      const f = fixture();
+      if (target === 'slot') {
+        const host = document.createElement('span'); f.form.prepend(host); host.appendChild(f.input);
+        host.attachShadow({ mode: 'open' }).innerHTML = '<slot style="opacity:0"></slot>';
+      } else (target === 'input' ? f.input : f.form).style.opacity = '0';
+      f.gesture(); f.submit();
+      expect(f.gate).not.toHaveBeenCalled(); expect(f.native).not.toHaveBeenCalled();
+    }
   });
 });
