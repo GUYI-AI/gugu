@@ -27,6 +27,7 @@ Mutating calls persist custody before backend invocation. A duplicate in flight 
 Owner and installation are UUIDs. Device ID uses the existing exact `phone-${installationId}-${ownerId}` convention from `phoneDeviceSettings.ts`; it is not an independent UUID. The shared native binding validator rejects mismatched owner/install device IDs.
 
 - `ownerSnapshot() throws -> GuguIOSOwnerSnapshot` returns `binding: GuguIOSHostBinding` (ownerId/deviceId/installationId), `calendarConnected: Bool`, and `calendarRevision: String?` from the native durable category store. The OS status still comes from C's real EventKit reader. Missing selection defaults to disconnected; corrupt or mismatched state throws.
+- If a connected snapshot observes that real full access has been revoked, it first invalidates old contexts and durably disconnects the category. A later OS Settings re-grant cannot reconnect that old choice or revive a consumed attempt; a fresh owner connection is required. Snapshot never requests OS permission.
 - `calendarEnabled() throws -> Bool` is C executor's current native category closure. It does not replace EventKit permission checks.
 - `requireLocalOwnerUI() throws` is C permission entry's identity/foreground guard. Tools never receive this entry point.
 - `beginCalendarConnection(expectedBinding:) throws -> GuguIOSCalendarConnection` invalidates old calendar contexts before writing a disconnected selection and unique attempt. The attempt contains `binding` and `attemptId` and stays entirely native.

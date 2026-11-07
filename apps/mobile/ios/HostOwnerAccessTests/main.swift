@@ -28,6 +28,15 @@ import Foundation
         try reject("stale_context") { _ = try access.finishCalendarConnection(attempt: first) }
         cases.append("full_access_connect_and_one_use_attempt")
 
+        let beforeRevocation = revoked
+        fullAccess = false
+        try require(try !access.ownerSnapshot().calendarConnected, "Observed OS revocation retained selection")
+        try require(revoked == beforeRevocation + 1, "Observed OS revocation did not invalidate old contexts")
+        fullAccess = true
+        try require(try !access.calendarEnabled(), "Settings re-grant revived old selection")
+        try reject("stale_context") { _ = try access.finishCalendarConnection(attempt: first) }
+        cases.append("observed_os_revocation_stays_disconnected_after_settings_regrant")
+
         let older = try access.beginCalendarConnection(expectedBinding: original)
         let newest = try access.beginCalendarConnection(expectedBinding: original)
         try reject("stale_context") { _ = try access.finishCalendarConnection(attempt: older) }

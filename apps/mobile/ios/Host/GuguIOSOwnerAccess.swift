@@ -30,7 +30,14 @@ final class GuguIOSOwnerAccess {
     func ownerSnapshot() throws -> GuguIOSOwnerSnapshot {
         let binding = try currentBinding()
         return try transaction(binding) { path in
-            let saved = try load(path, binding)
+            var saved = try load(path, binding)
+            // Observing OS revocation must permanently retire old contexts even
+            // when no tool is executing. A later Settings re-grant is not consent.
+            if saved["connected"] as? Bool == true, !calendarHasFullAccess() {
+                try revokeCalendarAccess()
+                try save(path, binding, connected: false, revision: UUID().uuidString.lowercased())
+                saved = try load(path, binding)
+            }
             return GuguIOSOwnerSnapshot(binding: binding, calendarConnected: saved["connected"] as? Bool == true,
                                         calendarRevision: saved["revision"] as? String)
         }
