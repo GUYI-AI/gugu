@@ -10,6 +10,7 @@ describe('recognizable account summaries', () => {
     ['用户@example.com', '用***@example.com'],
     ['用户@例子.公司', '用***@例子.公司'],
     ['developer', 'd***'], ['ab', 'a***'], ['a', '***'],
+    ['a***', '***'], ['a***@example.com', '***@example.com'],
     ['用户', '用***'], ['用', '***'], ['🙂x', '🙂***'], ['🙂', '***'],
     ['e\u0301x', 'e\u0301***'], ['e\u0301', '***'], ['👩‍💻', '***'],
     ['a@@example.com', 'a***'], ['ab@example.com/private', 'a***'],

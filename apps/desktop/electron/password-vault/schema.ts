@@ -66,5 +66,7 @@ export function maskedAccount(value: string): string {
   const local = email ? input.slice(0, at) : input
   const characters = [...accountCharacters.segment(local)]
   // A one-character account/local part has no private remainder to hide: redact it entirely.
-  return (characters.length > 1 ? characters[0].segment : '') + '***' + (email ? '@' + domain : '')
+  const suffix = email ? '@' + domain : ''
+  const masked = (characters.length > 1 ? characters[0].segment : '') + '***' + suffix
+  return masked === input ? '***' + suffix : masked
 }
