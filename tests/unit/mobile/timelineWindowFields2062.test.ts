@@ -46,8 +46,8 @@ describe('bounded timeline window metadata', () => {
     const state = merge({}, { bodyRefs: [ref('first'), other] }, 'snapshot')
     expect(state.bodyRefs).toHaveLength(2)
   })
-  it('keeps unresolved fragments loading until both owner proof and the actual canonical item exist', () => {
-    const source = merge({}, { sourceFragments: [fragment] }, 'snapshot')
+  it('keeps a fragment without readable text loading until the canonical item arrives', () => {
+    const source = merge({}, { sourceFragments: [{ ...fragment, text: undefined }] }, 'snapshot')
     expect(hasPendingWindow({ ...source, turns: [] })).toBe(true)
     const mapped = merge(source, { resolvedFragmentOwners: [{ fragmentKey: fragment.key, turnId: 'turn', itemId: 'item' }] }, 'batch')
     expect(hasPendingWindow({ ...mapped, turns: [] })).toBe(true)
@@ -60,7 +60,7 @@ describe('bounded timeline window metadata', () => {
     const source = merge({}, { sourceFragments: [fragment] }, 'older')
     const next = merge(source, { sourceFragments: [] }, 'batch')
     expect(next.sourceFragments?.[0]).toMatchObject({ key: fragment.key, ownership: 'unresolved' })
-    expect(next.sourceFragments?.[0]).not.toHaveProperty('text')
-    expect(hasPendingWindow({ ...next, turns: [] })).toBe(true)
+    expect(next.sourceFragments?.[0]?.text).toBe(fragment.text)
+    expect(hasPendingWindow({ ...next, turns: [] })).toBe(false)
   })
 })

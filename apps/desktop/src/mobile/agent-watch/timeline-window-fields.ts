@@ -1,7 +1,8 @@
 import type { TimelineWindowFields } from '@gugu/session-core/session-record/contract'
 
 type Bucket = Pick<TimelineWindowFields, 'pendingLongRecords' | 'sourceFragments'>
-const fragmentMetadata = (values: TimelineWindowFields['sourceFragments']) => values?.map(({ text: _text, ...value }) => value)
+// Keep only the host's bounded first-screen text; ownership is resolved independently.
+const fragmentMetadata = (values: TimelineWindowFields['sourceFragments']) => values
 export type TimelineWindowState = TimelineWindowFields & { windowTail?: Bucket; windowPages?: Bucket }
 const bucket = (value: TimelineWindowFields): Bucket => ({
   pendingLongRecords: value.pendingLongRecords ?? [], sourceFragments: fragmentMetadata(value.sourceFragments) ?? [],
@@ -47,9 +48,10 @@ export function mergeTimelineWindowFields(
 type DisplayItem = { id: string; children?: readonly DisplayItem[] }
 const contains = (items: readonly DisplayItem[], id: string): boolean => items.some(item => item.id === id || contains(item.children ?? [], id))
 
-/** Source fragments stay loading until their genuine canonical item has arrived. */
+/** Located fragments with bounded text are readable before canonical ownership resolves. */
 export function hasPendingWindow(state: TimelineWindowState & { turns: readonly { id: string; items: readonly DisplayItem[] }[] }): boolean {
   return !!state.pendingLongRecords?.length || !!state.sourceFragments?.some(fragment => {
+    if (fragment.text) return false
     const owner = state.resolvedFragmentOwners?.find(value => value.fragmentKey === fragment.key)
     return !owner || !state.turns.some(turn => turn.id === owner.turnId && contains(turn.items, owner.itemId))
   })
