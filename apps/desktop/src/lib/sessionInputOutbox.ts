@@ -122,7 +122,6 @@ export class SessionInputOutbox {
         const input = (await this.list()).find(row => row.id === id)
         if (!input) return // Another completed handoff or discard already settled this sender row.
         const { failure: _failure, admission: _admission, ...body } = input
-        this.generations.delete(id)
         await this.storage.put(body)
         await this.publish()
       })
