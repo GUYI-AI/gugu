@@ -63,7 +63,7 @@ async function renderConversation(target: number, width: number, portal = false)
     const listRef = useRef<FlowListHandle | null>(null), isAtBottomRef = useRef(true)
     const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [flashMessageId, setFlashMessageId] = useState<string | null>(null)
-    const memory = useConversationScrollMemory({ chatId: 'long-chat', viewportKey: `unread-${target}-${width}-${portal}`, activationKey: 'long-chat',
+    const memory = useConversationScrollMemory({ listRef, chatId: 'long-chat', viewportKey: `unread-${target}-${width}-${portal}`, activationKey: 'long-chat',
       enabled: true, messageIds: messages.map((row) => row.id), isAtBottomRef, setFollowingTail: history.setFollowingTail, loadMessageAnchor })
     const resetKey = `long-chat#${window.viewVersion}`
     const input = { activeChatId: 'long-chat', navigationTarget: true, rows, scrollerRef: memory.scrollerRef, listRef,
@@ -99,7 +99,7 @@ async function renderConversation(target: number, width: number, portal = false)
     await slotHarness.render(<Slot />)
   }
   await renderWithAppProviders(harness, createElement(portal ? PortalHost : Conversation))
-  await until('the long conversation has completed its initial tail layout', () => scroller()?.querySelectorAll('[data-msg-id]').length === 40)
+  await until('the long conversation has completed its initial tail layout', () => Number(scroller()?.querySelector('[aria-setsize]')?.getAttribute('aria-setsize')) === 40)
   const sample = () => {
     if (!clicked) { frame = requestAnimationFrame(sample); return }
     const surface = scroller(), bounds = surface.getBoundingClientRect()
@@ -154,7 +154,7 @@ describe('first unread navigation paints its final landing', () => {
   it('keeps the saved reading position when a desktop slot is removed and reopened by another React root', async () => {
     const view = await renderConversation(120, 1100, true)
     await page.getByRole('button', { name: 'Return to latest' }).click()
-    await until('the latest page has replaced the unread window and filled its rows', () => !view.history.getSnapshot().hasNewer && view.scroller().querySelectorAll('[data-msg-id]').length === 40)
+    await until('the latest page has replaced the unread window and filled its rows', () => !view.history.getSnapshot().hasNewer && Number(view.scroller().querySelector('[aria-setsize]')?.getAttribute('aria-setsize')) === 40)
     const visible = () => {
       const surface = view.scroller(), bounds = surface.getBoundingClientRect()
       const row = Array.from(surface.querySelectorAll<HTMLElement>('[data-msg-id]')).find((row) => {

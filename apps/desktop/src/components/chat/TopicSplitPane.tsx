@@ -277,7 +277,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
     landing.current = { chatId: topic.chatId, messageId: visibleChats.find((chat) => chat.id === topic.chatId)?.unread_locator?.first_addressed_message_id ?? null }
   }
   const landingMessageId = landing.current.messageId
-  const { scrollerEl, scrollerRef, setScrollerRef, isPreservingPosition, prepareForSavedPosition, forgetSavedPosition, openLocation, revealMessage } = useConversationScrollMemory({
+  const { scrollerEl, scrollerRef, setScrollerRef, isPreservingPosition, prepareForSavedPosition, forgetSavedPosition, openLocation, revealMessage } = useConversationScrollMemory({ listRef,
     chatId: topic.chatId, viewportKey, activationKey: topic.chatId, enabled: visible !== false, discardSaved: !!history.unreadEntry, landOn: landingMessageId,
     messageIds: rows.map((row) => row.message.id), isAtBottomRef, setFollowingTail, loadMessageAnchor,
   })

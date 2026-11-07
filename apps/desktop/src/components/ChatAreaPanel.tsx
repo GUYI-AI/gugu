@@ -380,7 +380,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
   const { rows: chatListRows, listedMessages, notice: taskChatNotice, threeParty } = useTaskChatRows(messages, user?.id, activeChat?.peer_user_id, surfaceVisible); const deliveryWaits = useDeliveryWaits(messages, memberReadSeqs)
   const chatResetKey = `${activeChatId ?? ''}#${openNonce ?? 0}#${messageWindow?.viewVersion ?? 0}`
-  const { scrollerEl, scrollerRef, setScrollerRef, prepareForSavedPosition, isPreservingPosition, forgetSavedPosition, openLocation, revealMessage } = useConversationScrollMemory({
+  const { scrollerEl, scrollerRef, setScrollerRef, prepareForSavedPosition, isPreservingPosition, forgetSavedPosition, openLocation, revealMessage } = useConversationScrollMemory({ listRef,
     chatId: activeChatId, viewportKey, activationKey: activeChatId ?? '', enabled: true, discardSaved: !!unreadEntry,
     messageIds: chatListRows.map((row) => row.message.id), isAtBottomRef, setFollowingTail, loadMessageAnchor,
   })
