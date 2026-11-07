@@ -37,6 +37,7 @@ import {
 } from './shared';
 import { TailReader, type TailResume } from './tail-reader';
 import { withSubagentSources } from './subagent-sources';
+import { createRecordLocatorCapture } from '../window-cache/source-locator';
 
 
 /** 续读点里那份 claude 自己的数据。形状或读法变了就升版本号,老存档一律作废重读。 */
@@ -125,6 +126,8 @@ class ClaudeJsonlSource implements SessionRecordSource {
       path,
       pollInterval(this.options),
       {
+        onBytes: this.options?.windowCache
+          ? createRecordLocatorCapture(this.options.windowCache, 'claude', this.locator.providerSessionId) : undefined,
         onLines: (lines, offsets) => this.emitLines(lines, offsets),
         onRestart: (reason) => {
           // 先清去重表再转发：TailReader 在 onRestart 之后紧接着把整份文件当"新行"送进来，
