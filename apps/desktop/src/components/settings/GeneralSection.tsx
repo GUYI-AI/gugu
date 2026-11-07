@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SUPPORTED_LOCALES, useLocale, type LocalePreference } from '@/i18n'
 import { useTheme } from '../../store/theme'
+import { ChevronRight } from '@/lib/icons'
+import { useThemePackNames } from '@renderer/lib/theme/use-theme-packs'
 import { Button } from '../ui/Button'
 import { sendTestNotification } from '../../lib/notificationDiagnostics'
 import { useSystemPermissionStates } from '../../lib/systemPermissions'
@@ -68,9 +70,10 @@ const NOTIFICATION_PERMISSION: readonly SystemPermission[] = ['notifications']
  * @@@sidebar-tint 侧栏渐进底色**不在这一页** —— 2026-09-18 owner 把它归到会话页的设置里
  * (设置合一后是会话页画的「界面」那一格,features/settings/components/SidebarTintRow.tsx),真值仍是 lib/sidebarTint.ts。
  */
-export function GeneralSection({ onOpenPermissions }: { onOpenPermissions: () => void }) {
+export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPermissions: () => void; onOpenThemes?: () => void }) {
   const { t } = useTranslation('main')
   const { preference: themePreference, setTheme } = useTheme()
+  const themePacks = useThemePackNames()
   const { preference, setPreference } = useLocale()
   const notificationSettings = useNotificationSettings()
   // product spec:手机上「通用 → 通知」同时如实显示系统权限;读不到真值的宿主上恒为空、不渲染。
@@ -125,6 +128,24 @@ export function GeneralSection({ onOpenPermissions }: { onOpenPermissions: () =>
             </div>
           )}
         />
+        {/* @@@theme-packs 主题在资源库里选(owner 11-07);这里只说当下用的是哪族,点过去。只在有资源库的宿主上画。 */}
+        {onOpenThemes && (
+          <SettingsRow
+            title={t('settings.general.themePack')}
+            control={(
+              <>
+                <span className="gg-settings-row-value">
+                  {t('settings.general.themePackValue', {
+                    dark: themePacks.dark ?? t('settings.general.themePackDefault'),
+                    light: themePacks.light ?? t('settings.general.themePackDefault'),
+                  })}
+                </span>
+                <ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" />
+              </>
+            )}
+            onClick={onOpenThemes}
+          />
+        )}
       </SettingsGroup>
 
       {/* @@@5301 通知。这一节**只管咕咕主界面这条链**(聊天新消息 + IM 侧 agent 会话的运行事件);

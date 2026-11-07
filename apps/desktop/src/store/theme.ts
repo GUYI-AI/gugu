@@ -11,6 +11,7 @@ import {
   type HostTheme,
   type ThemePreference,
 } from '@renderer/lib/theme/host-theme'
+import { applyThemePackSlots } from '@renderer/lib/theme/theme-pack-store'
 
 /** 真值:当下到底是浅还是深。❌ 不含「跟随系统」——那是偏好,不是真值。 */
 export type Theme = HostTheme
@@ -52,6 +53,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // index.html 的引导脚本已经按同一套规则落过一次属性;这里补一次,兜住属性被别处清掉的情况。
   useEffect(() => {
     hydrateHostTheme()
+    // 引导脚本插的是上次存下的样式表;这里按当下的内置数据重算一遍(升级后内置配色或兜底规则变了,跟着变)。
+    applyThemePackSlots()
   }, [])
 
   // 「跟随系统」的执行处。挂在这里 = 整个 app 生命周期内有效。

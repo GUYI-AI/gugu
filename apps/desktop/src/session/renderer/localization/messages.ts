@@ -9,6 +9,7 @@ import { enUSLegacyDmMessages, zhCNLegacyDmMessages } from './messages-legacy-dm
 import { enUSSessionScheduleMessages, zhCNSessionScheduleMessages } from './messages-session-schedules';
 import { enUSAgentStatusMessages, zhCNAgentStatusMessages } from './messages-agent-status';
 import { enUSAppSettingsMessages, zhCNAppSettingsMessages } from './messages-app-settings';
+import { enUSThemeMessages, zhCNThemeMessages } from './messages-themes';
 
 const enUSCoreMessages = {
   'taskError.connectionLost': 'The connection to the machine was lost. Try again when it reconnects.',
@@ -2184,6 +2185,7 @@ export const enUSMessages = {
   ...enUSAgentStatusMessages,
   ...enUSAppSettingsMessages,
   ...enUSSessionScheduleMessages,
+  ...enUSThemeMessages,
 } as const;
 
 export type SessionMessageKey = keyof typeof enUSMessages;
@@ -2207,4 +2209,5 @@ export const zhCNMessages: Record<SessionMessageKey, string> = {
   ...zhCNAgentStatusMessages,
   ...zhCNAppSettingsMessages,
   ...zhCNSessionScheduleMessages,
+  ...zhCNThemeMessages,
 };
