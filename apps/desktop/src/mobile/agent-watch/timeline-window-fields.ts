@@ -29,7 +29,7 @@ export function mergeTimelineWindowFields(
   tail.pendingLongRecords = tail.pendingLongRecords?.filter(value => !resolved.has(value.ticket))
   pages.pendingLongRecords = pages.pendingLongRecords?.filter(value => !resolved.has(value.ticket))
   const allOwners = union(base.resolvedFragmentOwners ?? [], incoming.resolvedFragmentOwners ?? [], value => value.fragmentKey)
-  const arrived = (owner: typeof allOwners[number]) => turns.some(turn => turn.id === owner.turnId && contains(turn.items, owner.itemId))
+  const arrived = (owner: { turnId: string; itemId: string }) => turns.some(turn => turn.id === owner.turnId && contains(turn.items, owner.itemId))
   const windowResolved = (base.sourceFragments ?? []).filter(fragment => {
     const owner = allOwners.find(value => value.fragmentKey === fragment.key)
     return owner && !arrived(owner)
