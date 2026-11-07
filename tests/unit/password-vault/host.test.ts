@@ -9,10 +9,14 @@ import type { LocalPasswordVault } from '../../../apps/desktop/electron/password
 import { seal, unseal } from '../../../apps/desktop/electron/password-vault/crypto'
 import { PasswordFeatureReadiness, PASSWORD_PROTECTIONS } from '../../../apps/desktop/electron/permissions/password-readiness'
 
+const build = vi.hoisted(() => ({ beta: true }))
+vi.mock('@gugu/core/shared/passwordBeta', () => ({ get PASSWORD_BETA_ENABLED() { return build.beta } }))
+
 const roots: string[] = [], vaults: LocalPasswordVault[] = []
 afterEach(async () => {
   for (const vault of vaults.splice(0)) await vault.dispose().catch(() => undefined)
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
+  build.beta = true
 })
 async function fixture() {
   const root = await mkdtemp(join(await realpath(tmpdir()), 'gugu-vault-host-canary-')); roots.push(root)
@@ -32,6 +36,13 @@ async function fixture() {
 }
 
 describe('fixed host construction of vault storage', () => {
+  it('refuses the non-Beta build even with a supplied ready callback and creates nothing', async () => {
+    const f = await fixture(); build.beta = false
+    expect(() => f.construct()).toThrow(VaultError)
+    expect((await readdir(f.root)).length).toBe(0); expect(f.acquire).not.toHaveBeenCalled()
+    build.beta = true
+    expect(f.construct().vault.state().status).toBe('locked')
+  })
   it('prepares one pending installation without writes and persists exactly that UUID through a live save guard', async () => {
     const f = await fixture(), deviceId = randomUUID()
     const fact = <T>(value: T) => ({ value, generation: randomUUID(), signal: new AbortController().signal, assertCurrent() {} })

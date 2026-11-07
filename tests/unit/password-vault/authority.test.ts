@@ -11,6 +11,8 @@ import { CredentialApprovalState } from '../../../apps/desktop/electron/session/
 import { CredentialUseAuthorityBridge } from '../../../apps/desktop/electron/session/main/core/browser/credential-use-authority'
 import type { CredentialUseSettlement } from '../../../apps/desktop/electron/session/main/core/browser/credential-settlement-contract'
 
+vi.mock('@gugu/core/shared/passwordBeta', () => ({ PASSWORD_BETA_ENABLED: true }))
+
 const vaults: LocalPasswordVault[] = [], roots: string[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
