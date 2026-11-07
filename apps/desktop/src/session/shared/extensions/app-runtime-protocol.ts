@@ -638,6 +638,8 @@ export interface AppShowMessageDetail {
  * file card per file, sent by reference (attachments/share) — a stored file at the version the page named, a text
  * document as its text is now. Where the files are is the chat the page leaves out of the list, as a message's forward does.
  */
+/** What a forward holds in memory at once, with a File and a copy for the send on top of it. Past it: said, before it is read. */
+export const FORWARD_MAX_BYTES = 512 * 1024 * 1024;
 export const APP_FORWARD_FILES_EVENT = 'gugu:app-forward-files';
 export type AppForwardFilesDetail =
   | { chatId: string; files: Array<{ itemId: string; version: number; name: string; document: boolean }> }

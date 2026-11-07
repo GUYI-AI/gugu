@@ -101,6 +101,21 @@ export function bindOutboxActions(
   }
 }
 
+/** Every forward comes through here: a file kept on a machine has no cloud object to refer to, so what it holds goes instead. */
+export function forwardingDeviceFiles<Actions extends Pick<ChatContextValue, 'forwardMessage'>>(
+  actions: Actions, sendAttachments: (chatId: string, files: File[]) => Promise<unknown>,
+): Actions {
+  return {
+    ...actions,
+    forwardMessage: async (source, targetChatId) => {
+      const { deviceFileCopy } = await import('../lib/forwardDeviceFile')
+      const copy = await deviceFileCopy(source)
+      if (copy) await sendAttachments(targetChatId, [copy])
+      else await actions.forwardMessage(source, targetChatId)
+    },
+  }
+}
+
 // 乐观行从 outbox 记录重建(恢复路径)/首建(发送路径)共用一个构造,字段口径一处定。
 export function outboxRecordToMessage(
   record: OutboxRecord,
