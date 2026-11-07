@@ -1130,6 +1130,9 @@ button, [role="button"] {
   --gg-look-orb-shine: rgb(255 255 255 / 0.95);
 }
 
+/* ChatBottomDock 的两个高度只落在 [data-chat-dock-reads] 上(@@@dock-height-rule):不继承,改一次只重算读它的那几个元素。 */
+@property --chat-dock-h { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --chat-dock-avatar-h { syntax: '<length>'; inherits: false; initial-value: 0px; }
 /* 形象工坊舞台跟着选中的身体颜色走,注册成 <color> 才能平滑过渡;initial-value 只能写字面值,所以注册放在这里。 */
 @property --gg-look-color {
   syntax: '<color>';
@@ -1475,16 +1478,16 @@ body.barcode-scanner-active #root {
 [data-phone-shell],
 [data-phone-shell][data-ta-scope],
 [data-phone-shell] :is(.ta-app, .ta-phone, .ta-dialog, [data-ta-menu], [data-ta-scope]),
-:root:has([data-phone-shell]) :is(.ta-dialog, [data-ta-menu]),
+:root[data-phone-root] :is(.ta-dialog, [data-ta-menu]),
 [data-theme='light'] [data-phone-shell],
-[data-theme='light']:has([data-phone-shell]) :is(.ta-dialog, [data-ta-menu]),
+[data-theme='light'][data-phone-root] :is(.ta-dialog, [data-ta-menu]),
 [data-theme='light'] [data-phone-shell] :is(.ta-app, .ta-phone, .ta-dialog, [data-ta-menu], [data-ta-scope]) {
   --ta-app-bg: var(--bg);
   --ta-panel-bg: var(--bg);
   --ta-tint-wash: color-mix(in oklab, var(--fg) 4%, transparent);
 }
 [data-theme='light'] [data-phone-shell],
-[data-theme='light']:has([data-phone-shell]) :is(.ta-dialog, [data-ta-menu]),
+[data-theme='light'][data-phone-root] :is(.ta-dialog, [data-ta-menu]),
 [data-theme='light'] [data-phone-shell] :is(.ta-app, .ta-phone, .ta-dialog, [data-ta-menu], [data-ta-scope]) {
   --ta-bubble-other: var(--muted);
 }

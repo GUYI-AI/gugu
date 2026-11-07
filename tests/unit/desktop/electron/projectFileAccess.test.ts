@@ -346,9 +346,39 @@ describe('the owner’s already-held SSH link', () => {
     const file = await ownSshFileProvider(links, tempRoot)(revision, { ref, actor })
     expect(file).not.toBeNull()
     expect(await file!.read(0, 4)).toEqual(new Uint8Array([83, 83, 83, 83]))
-    expect(links.send).toHaveBeenCalledTimes(3) // One metadata anchor, two bounded source reads.
+    // One metadata anchor, then the source in parts growing from the smallest while each is quick (64K, 128K, 256K, the rest).
+    expect(links.send).toHaveBeenCalledTimes(6)
     expect(open).not.toHaveBeenCalled(); expect(close).not.toHaveBeenCalled(); expect(untap).toHaveBeenCalledTimes(1)
     await file!.dispose()
+  })
+  it('reads a few-MB HTML over a slow link in parts that stay short, saying how far it has come', async () => {
+    // The design page that would not open: 14 inline screenshots, about 4 MB.
+    const html = Buffer.from(`<!doctype html><html><body>${`<img src="data:image/png;base64,${'A'.repeat(290_000)}">`.repeat(14)}</body></html>`)
+    await writeFile(join(root, 'design.html'), html)
+    const page: FileRevision = { ...revision, item_id: 'design', file_name: 'design.html', content_type: 'text/html', size_bytes: html.length, sha256: digest(html), relative_path: 'design.html' }
+    await rememberProjectFile(page, 'owner', env)
+    // Every call on this line takes two seconds, whatever it carries: a part must shrink to the smallest, not hold the line.
+    let now = 0
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const asked: number[] = []
+    let tap: { onMessage(message: unknown): void; onClosed(reason: string): void } | undefined
+    const links = { ownedOpen: vi.fn(async () => true), tap: vi.fn((_device: string, handlers: typeof tap) => { tap = handlers; return vi.fn() }), send: vi.fn((_device: string, message: unknown) => {
+      const envelope = (message as { payload: { request_id: string; user_id: string; payload: Parameters<ReturnType<typeof createProjectFileReader>>[0] } }).payload
+      asked.push(envelope.payload.length); now += 2_000
+      void reader()(envelope.payload, envelope.user_id).then(result => tap!.onMessage({ payload: { type: 'file.read:reply', request_id: envelope.request_id, result } }))
+      return true
+    }) }
+    const seen: [number, number][] = []
+    try {
+      const file = await ownSshFileProvider(links, tempRoot)(page, { ref: { item_id: 'design', version: 1 }, actor, progress: (done, total) => seen.push([done, total]) })
+      const parts: Uint8Array[] = []
+      for (let at = 0; at < html.length; at += 524_288) parts.push(await file!.read(at, Math.min(524_288, html.length - at)))
+      expect(digest(Buffer.concat(parts))).toBe(page.sha256)
+      await file!.dispose()
+    } finally { clock.mockRestore() }
+    expect(Math.max(...asked)).toBe(64 * 1024)
+    expect(seen.at(-1)).toEqual([html.length, html.length])
+    expect(seen.every(([done], index) => index === 0 || done > seen[index - 1]![0])).toBe(true)
   })
   it.each(['absent', 'other-account', 'agent'])('does not attach when %s', async kind => {
     const links = { ownedOpen: vi.fn(async () => kind !== 'absent'), tap: vi.fn(), send: vi.fn() }

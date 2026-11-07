@@ -33,6 +33,17 @@ const chunks: FileChunkCache = {
 const metadata = createFileMetadataLoader(async (context, refs) => attachmentRequest(await endpoint(context), 'file-resolve', { refs, as: context.actor.actorId }, context.signal))
 const native = (op: string, context: FileContext, args = {}): Promise<unknown> => window.electronAPI
   ? window.electronAPI.invoke('files:read', { op, actor: context.actor, ref: context.ref, ...args }) : Promise.resolve(null)
+/** A read whose bytes the main process carries (this computer's copy, or one over the SSH link): how far it has come, while it runs. */
+async function nativeWithProgress(op: 'open' | 'ssh', context: FileContext, args: Record<string, unknown>): Promise<unknown> {
+  const electron = window.electronAPI
+  if (!context.progress || !electron) return native(op, context, args)
+  const id = crypto.randomUUID(), progress = context.progress
+  const off = electron.eventOn('files:read-progress', (row) => {
+    const { id: of, done, total } = row as { id: string; done: number; total: number }
+    if (of === id) progress(done, total)
+  })
+  try { return await native(op, context, { ...args, progress: id }) } finally { off() }
+}
 const nativeBytes = (context: FileContext, file: { id: string; size: number }): FileBytes => ({
   size: file.size,
   async read(offset, length) { context.signal?.throwIfAborted(); return new Uint8Array(await native('read', context, { id: file.id, offset, length }) as Uint8Array) },
@@ -54,10 +65,10 @@ const cloud = cloudFileProviders({ endpoint, metadata, cache: chunks, sink: asyn
 export const resolveFile = createFileResolver({ ...cloud,
   async local(context) {
     const revision = await native('local', context) as FileRevision | null
-    return revision ? { revision, async open() { return nativeBytes(context, await native('open', context, { revision }) as { id: string; size: number }) } } : null
+    return revision ? { revision, async open() { return nativeBytes(context, await nativeWithProgress('open', context, { revision }) as { id: string; size: number }) } } : null
   },
   async ssh(revision, context) {
-    const file = await native('ssh', context, { revision }) as { id: string; size: number } | null
+    const file = await nativeWithProgress('ssh', context, { revision }) as { id: string; size: number } | null
     return file ? nativeBytes(context, file) : null
   },
 })

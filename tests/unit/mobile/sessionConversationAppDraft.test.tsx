@@ -7,6 +7,8 @@ import { stubVisibleIntersection } from '../../support/visibleIntersection'
 const lifeRead = vi.hoisted(() => vi.fn())
 const transcriptCommands = vi.hoisted(() => vi.fn())
 const transcriptView = vi.hoisted(() => ({ setScrollMode: vi.fn(), openItem: vi.fn(() => false) }))
+const openImageViewer = vi.hoisted(() => vi.fn())
+vi.mock('../../../apps/desktop/src/lib/imageViewer', () => ({ openImageViewer }))
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class extends Error {}, fetchSessionOptions: vi.fn(() => new Promise(() => {})),
   setSessionOption: vi.fn(), onMachineEvent: vi.fn(() => () => {}), onLinkChange: vi.fn(() => () => {}),
@@ -115,6 +117,18 @@ it('does not republish transcript commands while typing or clearing a phone draf
   const updated = transcriptCommands.mock.lastCall![0] as { onStop: () => void }
   updated.onStop()
   expect(replacementStop).toHaveBeenCalledTimes(1)
+})
+
+it('opens an inline user image in the image viewer outside a native-record task', async () => {
+  await renderWithAppProviders(harness, createNode(SessionConversation, {
+    timeline: emptyAgentWatchTimeline(), deviceId: 'desktop', sessionId: 'inline-image', agentName: 'Test agent', sessionRuntime: 'acp',
+    respondingItemId: null, onRespond: vi.fn(), onSend: vi.fn(), pendingSends: [], sending: false, agentWorking: false,
+    onStop: vi.fn(), stopping: false, onLoadOlder: async () => undefined,
+  }))
+  await waitForCondition(() => !!transcriptCommands.mock.lastCall, 'transcript commands published')
+  const commands = transcriptCommands.mock.lastCall![0] as import('@gugu/session-chat-ui').ChatCommands
+  commands.onViewAttachment!({ attachment: { id: 'inline', name: 'shot.png', kind: 'image', dataUrl: 'data:image/png;base64,AA==' }, itemId: 'u1', source: 'user-message' })
+  await vi.waitFor(() => expect(openImageViewer).toHaveBeenCalledExactlyOnceWith([{ url: 'data:image/png;base64,AA==', alt: 'shot.png', file: { name: 'shot.png' }, thumb: undefined }], 0))
 })
 
 it('shows an online host refusal through the existing input queue failure status and retry action', async () => {

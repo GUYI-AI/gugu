@@ -298,14 +298,26 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
   }
 
   for (const layout of ['desktop', 'phone', 'tab'] as const) {
-    it(`${layout}: topic header only identifies the topic and its source`, async () => {
+    it(`${layout}: topic header only identifies the topic and its source, and the phone tab has none`, async () => {
       await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, sourceMessagePreview: '下载到 60% 就断', mobile: layout === 'phone', embedded: layout === 'tab' }))
-      expect(harness.container.querySelector(layout === 'phone' ? '[data-testid="topic-tab-source"]' : '[data-testid="topic-breadcrumb"]')).not.toBeNull()
+      expect(harness.container.querySelector('[data-testid="topic-breadcrumb"]') !== null).toBe(layout !== 'phone')
       for (const id of ['topic-split-more', 'topic-split-members-toggle', 'topic-split-files-toggle']) {
         expect(harness.container.querySelector(`[data-testid="${id}"]`)).toBeNull()
       }
     })
   }
+
+  // owner: on the phone topic page a line "hung" above the conversation (the source preview).
+  // With real messages, nothing may sit above the first message; restoring the old source line must turn this red.
+  it('phone: nothing renders above the first topic message, not even the source line', async () => {
+    const source = 'SOURCE-LINE-下载到 60% 就断'
+    const messages = [message({ id: 'first', seq: 1, content: 'FIRST-MESSAGE' }), message({ id: 'second', seq: 2, content: 'SECOND-MESSAGE' })]
+    await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, messages, sourceMessagePreview: source, mobile: true }))
+    const pane = harness.container.querySelector<HTMLElement>('[data-testid="topic-split-pane"]')!
+    expect(pane.textContent).toContain('FIRST-MESSAGE')
+    expect(pane.textContent).not.toContain('SOURCE-LINE')
+    expect(pane.firstElementChild?.getAttribute('data-testid')).toBe('topic-split-messages')
+  })
 
   it('Mod+F in the topic opens the global search scoped to the topic, with no in-page search', async () => {
     const openPanel = vi.fn()

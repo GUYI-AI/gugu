@@ -57,7 +57,7 @@ afterEach(() => {
 })
 
 const rowIds = () => [...document.body.querySelectorAll('[data-pick-row]')].map((row) => row.getAttribute('data-pick-row'))
-const ticked = () => [...document.body.querySelectorAll('[data-pick-row][data-selected]')].map((row) => row.getAttribute('data-pick-row'))
+const ticked = () => [...document.body.querySelectorAll('[data-pick-row][aria-selected="true"]')].map((row) => row.getAttribute('data-pick-row'))
 const click = (element: Element | null | undefined) => act(async () => { element!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
 const button = (text: string) => [...document.body.querySelectorAll('button')].find((b) => b.textContent === text)
 const type = async (field: HTMLInputElement | HTMLTextAreaElement, value: string) => act(async () => {
@@ -131,7 +131,7 @@ describe('DispatchSheet', () => {
     expect(button('放入输入框')?.disabled).toBe(true)
     // One at a time: the foot counts nothing (the forward sheet's 「已选 N 个」 is for several).
     expect(document.body.textContent).not.toContain('已选')
-    await click(button('取消'))
+    await click(document.body.querySelector('button[aria-label="关闭"]'))
     await expect(picked).resolves.toBeNull()
   })
 

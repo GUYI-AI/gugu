@@ -1,7 +1,8 @@
 import { observer } from 'mobx-react-lite';
 import { createContext, useCallback, useContext, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Folder, MessageSquare, Paperclip, Users } from '@/lib/icons';
+import { Folder, MessageSquare, Users } from '@/lib/icons';
+import { FileIcon } from '@renderer/lib/editor/file-icon';
 import { chatTabSlotKey, readShellSlots } from '@/lib/shellSlots';
 import { readChatSummary, subscribeChatSummaries } from '@/lib/chatSummariesBridge';
 import { chatFolderNameKeyOf } from '@/components/chat/chatFolderName';
@@ -37,7 +38,7 @@ export const CHAT_INFO_TAB_KIND = 'chat-info';
 
 export type ChatTabState = { chatId: string };
 export type ChatTopicState = { topicChatId: string; name: string };
-export type ChatInfoState = { group: boolean; page?: 'main' | 'members' | 'announcement'; at?: number };
+export type ChatInfoState = { group: boolean; page?: 'main' | 'members' | 'announcement'; at?: number; topic?: ChatTopicState };
 
 /** A list of rows: as wide as the drawers it replaces (spec session-page「并排」: a page declares its width beside the chat). */
 
@@ -119,7 +120,7 @@ const PanelIcon = observer(function PanelIcon({ item }: { item: PanelItem }) {
   if (isFolderItem(item)) return <Folder size={14} />;
   const extensionId = item.kind ? parseExtensionTabKind(item.kind)?.extensionId : undefined;
   const app = extensionId ? installedExtensionsStore.openableApps.find((candidate) => candidate.extensionId === extensionId) : undefined;
-  return app ? <RailAppIcon app={app} className="size-4" /> : <Paperclip size={14} />;
+  return app ? <RailAppIcon app={app} className="size-4" /> : <FileIcon filename={item.fileName ?? item.title} size={14} className="shrink-0 text-foreground-muted" />;
 });
 
 const PanelTabItem = observer(function PanelTabItem({ tab, host, ctx }: TabBarItemProps<TabResource>) {
@@ -232,7 +233,7 @@ export const chatTopicTabProvider = createTabProvider<typeof CHAT_TOPIC_TAB_KIND
   TabContent: TopicTabContent,
 });
 
-const useInfoLabel = (tab: ResolvedTab) => useTranslation('messaging').t(stateOf<ChatInfoState>(tab).group ? 'header.groupInfo' : 'header.chatInfo');
+const useInfoLabel = (tab: ResolvedTab) => useTranslation('messaging').t(stateOf<ChatInfoState>(tab).topic ? 'group.memberList.titleTopic' : stateOf<ChatInfoState>(tab).group ? 'header.groupInfo' : 'header.chatInfo');
 
 const InfoTabItem = observer(function InfoTabItem({ tab, host, ctx }: TabBarItemProps<TabResource>) {
   return (
@@ -252,8 +253,9 @@ function InfoTabContent(props: TabContentProps) {
 
 export const chatInfoTabProvider = createTabProvider<typeof CHAT_INFO_TAB_KIND, ChatInfoState, TabResource>({
   kind: CHAT_INFO_TAB_KIND,
+  isPersistent: (state) => !state.topic,
 
-  resourceKey: (state) => `${state.page}:${state.at ?? ''}`,
+  resourceKey: (state) => `${state.topic?.topicChatId ?? ''}:${state.page}:${state.at ?? ''}`,
   initialize: stateResource,
   dispose: () => {},
   TabBarItem: InfoTabItem,

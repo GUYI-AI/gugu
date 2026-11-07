@@ -54,8 +54,7 @@ export default {
         "retry": "Retry",
         "retrying": "Retrying…",
         "title": "Task failed to start"
-      },
-      "statusReadFailed": "Could not read the task status: {{reason}}"
+      }
     },
     "turnFailure": {
       "card": {
@@ -81,7 +80,6 @@ export default {
       "stateAction": "{{name}}: {{state}}. Click to change model",
       "authentication": "The model service refused authorization for this reply.",
       "network": "The connection to the model service was interrupted; this reply could not be completed.",
-      "statusReadFailed": "Reply status could not be read. Please retry.",
       "weeklyQuota": "Weekly usage limit reached. This account cannot reply right now.",
       "monthlyQuota": "Monthly usage limit reached. This account cannot reply right now.",
       "rateLimited": "Too many requests. Please try again shortly.",
@@ -851,6 +849,7 @@ export default {
     "title": "Send to"
   },
   "topic": {
+    "leave": "Leave topic",
     "calledYou": "Someone @ you",
     "pins": {
       "pin": "Pin {{name}} to group",
