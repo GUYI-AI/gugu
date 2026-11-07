@@ -126,6 +126,8 @@ export type WindowResult = WindowPage
   | { kind: 'cache_miss'; reason: 'format' | 'checksum' | 'key' | 'not_found'; cursor: WindowCursor | null; io: WindowIoCounters };
 export type WindowBodyResult = { bodyId: string; revision: string } & ({
   kind: 'body'; text: string; offset: number; nextOffset: number;
+  /** A verified UTF-8 boundary from point-addressed descriptors; null only at body start. */
+  previousOffset: number | null;
   moreAfter: 'yes' | 'no' | 'unknown'; io: WindowIoCounters;
 } | { kind: 'needs_location'; offset: number; io: WindowIoCounters }
   | { kind: 'reset'; reason: 'source_changed' | 'invalid_cursor'; io: WindowIoCounters });
