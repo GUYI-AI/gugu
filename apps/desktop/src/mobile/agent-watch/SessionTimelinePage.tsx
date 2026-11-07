@@ -1,6 +1,7 @@
 import { observer } from 'mobx-react-lite'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
+import { boundedWindowReady } from './desktop-window-history'
 import { useSessionHistorySource } from './use-session-history-source'
 import { useSessionRestart } from './useSessionRestart'
 import { useTimelineFailureNotice } from './useTimelineFailureNotice'
@@ -104,19 +105,22 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   // Its back key goes back to the timeline, as its header's back does — not past it to the list (the App is a layer here).
   useBackLayer(() => setAppKind(null), appKind !== null)
   const apps = useSessionApps()
-  const boundedHistory = !mobile && !phoneHost
+  const native = !phoneHost && session.runtime === 'acp' && (session.nativeInputVersion === 1 || session.nativeInputVersion === 2)
+  const { boundedHistory, nativeHistory, nativeRecord } = useSessionHistorySource({
+    deviceId: device.device_id, sessionId: session.conversationId, mobile, phoneHost,
+    sourceFormat: session.harness, native, online, local,
+  })
   const {
     timeline, phase, error, actionError, dismissActionError, waitingForRecord,
     reload, loadOlder, loadToolImage, pendingSends, respond, sending, respondingItemId, cancel, cancelling, link, errorCode,
   } =
     useAgentWatchSession(device.device_id, session.conversationId, online, firstPrompt, phoneHost, local, boundedHistory)
 
-  const native = !phoneHost && session.runtime === 'acp' && (session.nativeInputVersion === 1 || session.nativeInputVersion === 2)
-  // Desktop first paint must not race the bounded route with the old archive reader.
-  // Keep `native` for input/queue transport; it is not a history-source flag.
-  const { nativeHistory, nativeRecord, conversation, windowReady } = useSessionHistorySource({
-    deviceId: device.device_id, sessionId: session.conversationId, boundedHistory, native, online, local, timeline,
-  })
+  const windowReady = boundedWindowReady(timeline)
+  const conversation = nativeHistory ? { ...timeline,
+    turns: [...(nativeRecord.record?.turns ?? []), ...(nativeRecord.record?.activeTurn ? [nativeRecord.record.activeTurn] : [])],
+    hasOlder: nativeRecord.record ? nativeRecord.record.nextCursor !== null : false,
+  } : timeline
   const recovery = useSessionRestart({ deviceId: device.device_id, projectId: session.projectId, sessionId: session.conversationId,
     missing: nativeHistory ? nativeRecord.errorCode === 'record_not_found' : errorCode === 'record_not_found', online, local,
     onReady: () => { reload(); return nativeHistory ? nativeRecord.reload() : undefined } })

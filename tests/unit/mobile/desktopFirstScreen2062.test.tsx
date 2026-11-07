@@ -32,19 +32,19 @@ let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => { vi.clearAllMocks(); f.cached.mockReturnValue(null); harness = createReactHarness() })
 afterEach(() => { harness.cleanup(); vi.useRealTimers() })
 
-it('does not touch the old native cache, hydrate or RPC for desktop bounded first paint', async () => {
+it.each(['claude', 'codex'])('does not touch the old native cache, hydrate or RPC for %s desktop first paint', async sourceFormat => {
   const timeline = { turns: [], hasOlder: true, sourceLineage: 'real-source', snapshotRevision: 'pin-1',
     sourceFragments: [{ key: 'real-key', text: 'Actual bounded body' }],
   } as unknown as AgentWatchTimeline
   let shown!: ReturnType<typeof useSessionHistorySource>
   function Probe() {
-    shown = useSessionHistorySource({ deviceId: 'local', sessionId: 'reopen', boundedHistory: true,
-      native: true, online: true, local: true, timeline })
+    shown = useSessionHistorySource({ deviceId: 'local', sessionId: 'reopen', mobile: false, phoneHost: false, sourceFormat,
+      native: true, online: true, local: true })
     return null
   }
   await harness.render(<Probe />)
-  expect(shown.windowReady).toBe(true)
-  expect(shown.conversation).toBe(timeline)
+  expect(boundedWindowReady(timeline)).toBe(true)
+  expect(shown.boundedHistory).toBe(true)
   expect(shown.nativeHistory).toBe(false)
   expect(f.cached).not.toHaveBeenCalled()
   expect(f.hydrate).not.toHaveBeenCalled()
@@ -64,8 +64,8 @@ it('retains the existing native history reader for the mobile path', async () =>
   f.rpc.mockResolvedValue({ ok: true, value: { turns: [], originTurnIds: [], activeTurn: null,
     nextCursor: null, latestStoredSeq: 0, hasNewer: false } })
   function Probe() {
-    useSessionHistorySource({ deviceId: 'remote', sessionId: 'phone', boundedHistory: false,
-      native: true, online: true, local: false, timeline: { turns: [], hasOlder: false } as unknown as AgentWatchTimeline })
+    useSessionHistorySource({ deviceId: 'remote', sessionId: 'phone', mobile: true, phoneHost: false, sourceFormat: 'claude',
+      native: true, online: true, local: false })
     return null
   }
   await harness.render(<Probe />)
@@ -106,3 +106,21 @@ it('keeps an explicitly locating bounded source loading and retries without a si
   expect(shown.error).toBeNull()
   expect(shown.waitingForRecord).toBe(false)
 })
+
+it.each(['opencode', 'hermes', 'copilot', 'qwen', 'pi', 'codebuddy'])(
+  'keeps the original desktop reader for out-of-scope source format %s', async sourceFormat => {
+    f.hydrate.mockResolvedValue(null)
+    f.rpc.mockResolvedValue({ ok: true, value: { turns: [], originTurnIds: [], activeTurn: null,
+      nextCursor: null, latestStoredSeq: 0, hasNewer: false } })
+    let shown!: ReturnType<typeof useSessionHistorySource>
+    function Probe() {
+      shown = useSessionHistorySource({ deviceId: 'remote', sessionId: 'legacy', mobile: false,
+        phoneHost: false, sourceFormat, native: true, online: true, local: false })
+      return null
+    }
+    await harness.render(<Probe />)
+    expect(shown.boundedHistory).toBe(false)
+    expect(shown.nativeHistory).toBe(true)
+    expect(f.rpc).toHaveBeenCalledExactlyOnceWith({ conversationId: 'legacy', tail: true })
+  },
+)
