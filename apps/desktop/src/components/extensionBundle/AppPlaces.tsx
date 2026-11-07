@@ -10,6 +10,7 @@ import { ChatPickSheet, type ChatPickRow } from '../chat/ChatPickSheet'
 import { highlightText } from '../chat/highlightText'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
+import { SectionLabel } from '../ui/SectionLabel'
 import { Switch } from '../ui/Switch'
 
 /** This computer's two places, each drawn by its icon. */
@@ -162,7 +163,7 @@ function AppPlacesPicker({ places, chosen, onDone, onClose }: {
         name: highlightText(name, query.trim()),
         avatar: placeAvatar(place),
         badge: <PlaceMarks place={place} />,
-        trailing: place.kind === 'group' ? <span className="gg-list-row-meta">{t('chatArea.appEnable.members', { count: place.memberCount ?? 0 })}</span> : undefined,
+        trailing: place.kind === 'group' ? t('chatArea.appEnable.members', { count: place.memberCount ?? 0 }) : undefined,
         hint: topic === undefined ? undefined : <span className={QUIET}>{hintBefore}{highlightText(topic, query.trim())}{hintAfter}</span>,
       },
     ]
@@ -185,11 +186,10 @@ function AppPlacesPicker({ places, chosen, onDone, onClose }: {
       onQuery={setQuery}
       placeholder={t('chatArea.appEnable.search')}
       empty={t(places.length === 0 ? 'chatArea.appEnable.noPlaces' : 'chatArea.appEnable.noMatch')}
-      top={<div className={`${QUIET} px-4 pb-1 pt-3`}>{t('chatArea.appEnable.agents')} · {t('chatArea.appEnable.recent')}</div>}
+      top={<SectionLabel>{t('chatArea.appEnable.agents')} · {t('chatArea.appEnable.recent')}</SectionLabel>}
       picked={t('chatArea.appEnable.picked', { count: picked.size })}
       actionLabel={t('chatArea.appEnable.done')}
       onAction={() => onDone(picked)}
-      fullScreenMobile
     />
   )
 }

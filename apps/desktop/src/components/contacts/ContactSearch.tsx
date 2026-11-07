@@ -30,7 +30,7 @@ export function SelectionCheckbox({ checked }: { checked: boolean }) {
     <span
       aria-hidden="true"
       className={cn(
-        'grid h-[var(--avatar-xs)] w-[var(--avatar-xs)] shrink-0 place-items-center rounded-full border !mr-2 text-[var(--primary-fg)]',
+        'grid h-[var(--avatar-xs)] w-[var(--avatar-xs)] shrink-0 self-center place-items-center rounded-full border !mr-2 text-[var(--primary-fg)]',
         checked ? 'border-[var(--primary)] bg-[var(--primary)]' : 'border-[var(--border-strong)] bg-transparent',
       )}
     >
