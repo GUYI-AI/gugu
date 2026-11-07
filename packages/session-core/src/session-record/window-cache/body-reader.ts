@@ -1,4 +1,5 @@
 import { BODY_CHUNK_BYTES, BODY_TEXT_BYTES } from './types';
+import { createHash } from 'node:crypto';
 import type { BodyChunkDescriptor, SegmentRef, SourceSnapshot, WindowBodyRef, WindowBodyResult, WindowBudget, WindowByteSource } from './types';
 
 /** A persisted tokenizer checkpoint points inside a JSON string, after its opening quote. */
@@ -114,7 +115,7 @@ export async function readJsonStringBodyPage(source: WindowByteSource, options: 
 /** Descriptor lookup is a point read by body/revision/ordinal, never a previous-chunk walk. */
 export interface BodyPageIo {
   descriptor(body: WindowBodyRef, ordinal: number, budget: WindowBudget): Promise<BodyChunkDescriptor | null>;
-  content(ref: SegmentRef, budget: WindowBudget): Promise<Uint8Array>;
+  content(ref: SegmentRef, budget: WindowBudget, body: WindowBodyRef): Promise<Uint8Array>;
 }
 
 export async function readIndexedBodyPage(io: BodyPageIo, input: {
@@ -139,7 +140,7 @@ export async function readIndexedBodyPage(io: BodyPageIo, input: {
     if (descriptor.bodyId !== body.id || descriptor.revision !== body.revision || descriptor.ordinal !== ordinal ||
       descriptor.decodedStart !== ordinal * BODY_CHUNK_BYTES || descriptor.decodedBytes < 1 || descriptor.decodedBytes > BODY_CHUNK_BYTES)
       throw new Error('Body chunk descriptor binding mismatch');
-    const bytes = await io.content(descriptor.content, budget);
+    const bytes = await io.content(descriptor.content, budget, body);
     if (bytes.length !== descriptor.decodedBytes) throw new Error('Body chunk length mismatch');
     loaded.set(ordinal, bytes); return bytes;
   }
@@ -184,4 +185,67 @@ export async function readIndexedBodyPage(io: BodyPageIo, input: {
   const nextOffset = offset + length;
   return { ...binding, kind: 'body', text, offset, nextOffset, previousOffset,
     moreAfter: body.byteLength === null ? 'unknown' : nextOffset < body.byteLength ? 'yes' : 'no', io: budget.counters };
+}
+
+function bodyKey(body: WindowBodyRef, kind: 'body' | 'locator', cursor: string) {
+  if (!body.id || body.id.length > 256 || !body.revision || body.revision.length > 256) throw new Error('Invalid body identity');
+  return { scope: body.scope, sourceLineage: body.sourceLineage, decoderVersion: 1, kind, cursor };
+}
+const digest = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+const descriptorId = (body: WindowBodyRef, ordinal: number) => digest(Buffer.from(JSON.stringify([body.id, body.revision, ordinal])));
+
+/** The host supplies a source-revision/range check; frame checksums alone are not freshness. */
+export function createDiskBodyPageIo(directory: string, validateSource: (body: WindowBodyRef, budget: WindowBudget) => Promise<boolean>): BodyPageIo {
+  const fresh = async (body: WindowBodyRef, budget: WindowBudget) => {
+    if (!await validateSource(body, budget)) throw new Error('Body source revision changed');
+  };
+  return {
+    async descriptor(body, ordinal, budget) {
+      await fresh(body, budget);
+      const { readWindowFrame } = await import('./disk-frame');
+      const frame = await readWindowFrame(directory, bodyKey(body, 'locator', descriptorId(body, ordinal)), budget);
+      if (frame.kind === 'miss') {
+        if (frame.reason === 'not_found') return null;
+        throw new Error(`Body descriptor failure: ${frame.reason}`);
+      }
+      if (frame.bytes.length > 4096) throw new Error('Invalid body descriptor size');
+      budget.charge('decodedBytes', frame.bytes.length);
+      return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(frame.bytes)) as BodyChunkDescriptor;
+    },
+    async content(ref, budget, body) {
+      const { readWindowFrame } = await import('./disk-frame');
+      const frame = await readWindowFrame(directory, bodyKey(body, 'body', ref.id), budget);
+      if (frame.kind !== 'hit') throw new Error(`Body content failure: ${frame.reason}`);
+      if (![ref.offset, ref.length].every(Number.isSafeInteger) || ref.offset < 0 || ref.length < 0 || ref.offset + ref.length > frame.bytes.length)
+        throw new Error('Invalid body content reference');
+      const bytes = frame.bytes.subarray(ref.offset, ref.offset + ref.length);
+      if (digest(bytes) !== ref.digest) throw new Error('Body content digest mismatch');
+      await fresh(body, budget);
+      return bytes;
+    },
+  };
+}
+
+/** Publish exactly one fixed decoded-byte chunk. The producer pins and validates its source range. */
+export async function writeDecodedBodyChunk(directory: string, body: WindowBodyRef, ordinal: number,
+  bytes: Uint8Array, sourceRange: BodyChunkDescriptor['sourceRange'], budget: WindowBudget): Promise<void> {
+  if (!Number.isSafeInteger(ordinal) || ordinal < 0 || !Number.isSafeInteger(ordinal * BODY_CHUNK_BYTES + bytes.length) ||
+    bytes.length < 1 || bytes.length > BODY_CHUNK_BYTES || ![sourceRange.start, sourceRange.end].every(Number.isSafeInteger) ||
+    sourceRange.start < 0 || sourceRange.end < sourceRange.start) throw new Error('Invalid decoded body chunk');
+  const { readWindowFrame, writeWindowFrame } = await import('./disk-frame');
+  const contentId = digest(Buffer.from(`${descriptorId(body, ordinal)}:${digest(bytes)}`));
+  async function immutable(kind: 'body' | 'locator', cursor: string, payload: Uint8Array) {
+    const key = bodyKey(body, kind, cursor);
+    try { await writeWindowFrame(directory, key, payload); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      const previous = await readWindowFrame(directory, key, budget);
+      if (previous.kind !== 'hit' || !Buffer.from(previous.bytes).equals(payload)) throw new Error('Conflicting immutable body chunk');
+    }
+  }
+  await immutable('body', contentId, bytes);
+  const descriptor: BodyChunkDescriptor = { bodyId: body.id, revision: body.revision, ordinal,
+    decodedStart: ordinal * BODY_CHUNK_BYTES, decodedBytes: bytes.length,
+    content: { id: contentId, offset: 0, length: bytes.length, digest: digest(bytes) }, checkpointRef: null, sourceRange };
+  await immutable('locator', descriptorId(body, ordinal), Buffer.from(JSON.stringify(descriptor)));
 }
