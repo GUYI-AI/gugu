@@ -819,6 +819,7 @@ export default {
     "whisperOnlyYou": "悄悄话 · 仅你可见",
     "whisperTo": "悄悄话给 {{name}} · 仅你与对方可见",
     "widget": "[Widget]",
+    "reference": { "loading": "正在读取…", "unreadable": "一条你看不到的消息", "widgetUnreadable": "一个你看不到的 widget", "widgetRetracted": "这个 widget 已撤回", "widgetElsewhere": "这个 widget 在别的会话中", "locate": "定位原消息", "locateActive": "定位活的 widget", "previewQuote": "[引用]", "previewMessage": "[引用消息]" },
     "widgetUnavailable": { "missing": "尚未安装 App。", "disabled": "App 已关闭。", "view": "此 App 视图不可用。", "platform": "此设备无法运行此 App。" }
   },
   "searchTrail": {"position": "「{{query}}」第 {{index}}/{{total}} 条", "positionNoWords": "第 {{index}}/{{total}} 条", "previous": "上一条", "next": "下一条 (⌘G)", "results": "结果", "close": "退出搜索"},

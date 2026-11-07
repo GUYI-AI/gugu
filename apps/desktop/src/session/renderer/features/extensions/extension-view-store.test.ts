@@ -14,6 +14,18 @@ const pages = (kind: string) => [...store.residentPages.values()].filter((page) 
 afterEach(() => { for (const kind of used) store.forgetOpened(kind); used.clear(); });
 
 describe('each App navigation context owns its resident pages', () => {
+  it('one widget is one page across its slots: painted survives a handoff, and clears when its guest is replaced', () => {
+    const widget = { id: 'stable-widget', originMessageId: 'origin', messageId: 'first', senderId: 'author', data: {} };
+    const first = bind(take('counter.widget', { chatId: 'widget-chat', tabId: 'widget:stable-widget', widget }));
+    const page = key('counter.widget', { chatId: 'widget-chat', widget });
+    store.widgetPainted(page);
+    store.release('counter.widget', first);
+    take('counter.widget', { chatId: 'widget-chat', tabId: 'widget:stable-widget', widget: { ...widget, messageId: 'second' } });
+    expect(pages('counter.widget').map((p) => p.key)).toEqual([page]);
+    expect(store.paintedPages.has(page)).toBe(true);
+    store.widgetPainted(page, false);
+    expect(store.paintedPages.has(page)).toBe(false);
+  });
   it('does no work until claimed; an unbound release drops its page and ignores a late bind', () => {
     expect(pages('lazy.main')).toEqual([]);
     const token = take('lazy.main', { sessionId: 's', tabId: 'a' });

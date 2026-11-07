@@ -124,6 +124,8 @@ type CommonEnvelopeFacts = {
   chat?: string | null
   /** Canonical source reference; unlike public chat numbers it is directly navigable. */
   sourceLink?: string | null
+  /** Identity of the valid v2 widget carried by this message, independent of its display slot. */
+  widgetId?: string | null
   /** DM 还是群 —— 从公开群号锚推不出来，所以单独一格。 */
   chatKind?: ChatKind | null
   /** The owner's own DM with this agent: that DM shows this session, so the reply is printed here. */
@@ -216,6 +218,7 @@ export function renderDeliveryEnvelope(facts: DeliveryEnvelopeFacts): string {
     attr('whisper_to', facts.whisperTo),
     attr('thread', facts.thread),
     attr('msg', facts.messageId),
+    attr('widget_id', facts.widgetId),
     attr('source_link', facts.sourceLink),
     attr('at', facts.at),
     attr('listen_mode', facts.listenMode),
@@ -282,6 +285,7 @@ export function mergeDeliveryEnvelopes(envelopes: readonly string[]): string {
 export type DeliveryReadFacts = {
   fromType?: string | null
   sourceLink?: string
+  widgetId?: string
   route: string
   from: string | null
   fromId: string | null
@@ -444,6 +448,7 @@ function readSegment(envelope: XmlElement): DeliverySegment | null {
       thread: attr('thread'),
       messageId: attr('msg'),
       ...(attr('source_link') ? { sourceLink: attr('source_link')! } : {}),
+      ...(attr('widget_id') ? { widgetId: attr('widget_id')! } : {}),
       at: attr('at'),
       listenMode: attr('listen_mode'),
       mode: attr('mode'),
@@ -606,6 +611,8 @@ export interface AgentDeliveryEnvelopeInput {
   senderUserId: string | null
   /** Only a system message may have no user sender. */
   contentType?: string | null
+  /** From the actor-scoped registry projection, never inferred from the message body. */
+  widgetId?: string | null
   content: string
   replyTo: { messageId: string; senderUserId: string; content: string } | null
   threadRootId: string | null
@@ -723,6 +730,8 @@ export function buildAgentDeliveryEnvelope(
     ...(!systemSender && guguIds.get(input.senderUserId!)?.isAgent !== undefined
       ? { fromType: guguIds.get(input.senderUserId!)!.isAgent ? 'agent' as const : 'human' as const } : {}),
     messageId: encodeTypedId('msg', input.messageId),
+    ...(!isSessionDirect && input.contentType === 'widget' && input.widgetId
+      ? { widgetId: input.widgetId } : {}),
     at: timestamp,
     chat: isSessionDirect ? null : chatAnchor,
     sourceLink: chatId ? storedMessageLink(chatId, input.messageId) : null,

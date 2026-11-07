@@ -1181,6 +1181,15 @@ describe('P-E4 离线追赶:未读行逐条受理,由队列 drain 合批', () =>
     expect(parsed.namedIdentities?.get(AGENT)).toEqual({ guguNumber: 7, displayName: 'Claude 1', isAgent: true })
   })
 
+  it('takes the widget identity from the actor-scoped registry projection, not from the historical body', () => {
+    const row = { chat_id: 'c', id: 'original', seq: 1, content_type: 'widget',
+      content: JSON.stringify({ v: 2, text: 'Counter', app: 'counter', view: 'main', wid: 'another-origin' }),
+      file_item_id: null, file_version: null, file_blob_id: null, group_rules: null, named_identities: {} }
+    expect(unreadRowFromRpc({ ...row, widget_id: 'original' }).widgetId).toBe('original')
+    expect(unreadRowFromRpc({ ...row, widget_id: null }).widgetId).toBeNull()
+    expect(unreadRowFromRpc(row).widgetId).toBeNull()
+  })
+
   it.each([false, true])('next-tool-call rows merge only for a direct transport (queue-backed=%s)', async queueBacked => {
     const cloud = new FakeCloud()
     cloud.addChat('00000000-0000-4000-8000-00000000000f', 'group')

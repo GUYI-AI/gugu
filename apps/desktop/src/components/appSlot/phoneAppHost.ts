@@ -1,4 +1,5 @@
 import { composeChatDraft } from '@/lib/composeDraft'
+import { widgetContext } from '../../session/shared/extensions/widget-context'
 import { showRendererContentMenu } from '../../lib/contentContextMenu'
 import { appContextMenuOf } from '../../session/shared/extensions/app-context-menu'
 import { fileBlob } from '@gugu/core/shared/fileResolver'
@@ -380,6 +381,8 @@ export function hostAppFrame(
     peek?(target: PeekTarget): void
     /** `setTabTitle` / `setTabBadge`: drawn on the header of the slot the App is in (摩擦单 F13). */
     chrome(detail: { title?: string | null; badge?: string | number | null; error?: string | null }): void
+    /** The document has painted its first content. */
+    painted?(): void
   },
 ): { pageId: number; update(binding: PhoneAppBinding): void; filesChanged(changes: readonly { chatId: string; itemIds: readonly string[] }[]): Promise<void>; membersChanged(changes: readonly MemberChange[]): void; command(commandId: string): void; back(): void; programNotified(notification: { server: string; method: string; params?: unknown }): void; dispose(): void } {
   const pageId = nextPageId++
@@ -487,7 +490,7 @@ export function hostAppFrame(
     ...(hosted.binding.viewState ? { viewState: hosted.binding.viewState } : {}),
     tabId: hosted.binding.tabId,
     ...(hosted.binding.modal ? { modal: { data: hosted.binding.modal.data } } : {}),
-    ...(hosted.binding.widget ? { widget: { messageId: hosted.binding.widget.messageId, data: hosted.binding.widget.data, sender: hosted.binding.widget.senderId } } : {}),
+    ...(hosted.binding.widget ? { widget: widgetContext(hosted.binding.widget, installedExtensionsStore.manifestFor(hosted.binding.extensionId)?.apiVersion ?? 25) } : {}),
     ...(chat ? { chat: { ...chat, ...(contextHasMembers() ? { members: members ?? [] } : {}) } } : {}),
     ...(hosted.binding.itemId && hosted.binding.chatId ? { file: { chat: hosted.binding.chatId, id: hosted.binding.itemId } } : {}),
     ...(hosted.binding.session
@@ -874,6 +877,10 @@ export function hostAppFrame(
       portWanted = false
       hooks.chrome({ title: null, badge: null, error: null })
       hooks.claimBack?.(false)
+      return
+    }
+    if (message.t === 'painted') {
+      hooks.painted?.()
       return
     }
     if (message.t === 'sync-port') {

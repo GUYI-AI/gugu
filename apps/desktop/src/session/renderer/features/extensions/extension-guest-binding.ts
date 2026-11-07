@@ -44,7 +44,7 @@ export class ExtensionGuestBinding {
     const work = guest.tail.then(async () => {
       if (this.guest !== guest) return null;
       const previous = guest.target;
-      if (previous && previous.tabId === target.tabId && previous.workspace === target.workspace && previous.conversation === target.conversation && previous.itemId === target.itemId && previous.filePath === target.filePath && previous.viewState === target.viewState && previous.navigation?.canBack === target.navigation?.canBack && previous.navigation?.canForward === target.navigation?.canForward && previous.navigation?.backToConversation === target.navigation?.backToConversation) {
+      if (previous && previous.tabId === target.tabId && previous.workspace === target.workspace && previous.conversation === target.conversation && previous.itemId === target.itemId && previous.filePath === target.filePath && previous.viewState === target.viewState && previous.navigation?.canBack === target.navigation?.canBack && previous.navigation?.canForward === target.navigation?.canForward && previous.navigation?.backToConversation === target.navigation?.backToConversation && JSON.stringify(previous.widget) === JSON.stringify(target.widget)) {
         return { success: true, webContentsId: guest.webContentsId };
       }
       const reply = await (previous ? this.dispatch.retarget : this.dispatch.bind)(guest.webContentsId, target);

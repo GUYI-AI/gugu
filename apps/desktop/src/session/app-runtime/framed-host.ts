@@ -18,6 +18,14 @@ export function framedHost(): GuguHost & Record<string, unknown> {
   const inSession = window.name === APP_SESSION_FRAME_NAME;
   // This document's start, ahead of its first call: the outer page lets go of what the frame's previous document held.
   parent.postMessage({ m: APP_FRAME_MARKER, t: 'hello' } satisfies FrameToHost, '*');
+  if (PerformanceObserver.supportedEntryTypes.includes('paint')) {
+    const firstPaint = new PerformanceObserver((list) => {
+      if (!list.getEntries().some((entry) => entry.name === 'first-contentful-paint')) return;
+      parent.postMessage({ m: APP_FRAME_MARKER, t: 'painted' } satisfies FrameToHost, '*');
+      firstPaint.disconnect();
+    });
+    firstPaint.observe({ type: 'paint', buffered: true });
+  } else window.addEventListener('load', () => parent.postMessage({ m: APP_FRAME_MARKER, t: 'painted' } satisfies FrameToHost, '*'));
   return messageHost(
     {
       post: (message) => parent.postMessage(message, '*'),

@@ -72,18 +72,27 @@ describe('widget_send', () => {
     expect((await call(args)).text).toContain('not a side chat')
     expect(send).not.toHaveBeenCalled()
   })
-  it('uses the message writer with a fixed identity, thread and no recipients', async () => {
+  it('uses the idempotent widget RPC and preserves the fixed sender, thread and height', async () => {
     const rows: Record<string, unknown>[] = []
     const context = { agentId: 'agent', threadRootId: 'thread', guguHome: '/tmp/widget-test' }
     const deps = {
       restGet: async () => [],
-      restRpc: async (name: string) => name === 'chat_facts' ? [{ id: 'chat', kind: 'group', group_prompt: null }] : name === 'list_member_ids' ? [{ user_id: 'agent' }] : [],
-      restInsert: async (_table: string, row: Record<string, unknown>) => { rows.push(row) },
+      restRpc: async (name: string, body: Record<string, unknown>) => {
+        if (name === 'chat_facts') return [{ id: 'chat', kind: 'group', group_prompt: null }]
+        if (name === 'list_member_ids') return [{ user_id: 'agent' }]
+        expect(name).toBe('send_widget')
+        rows.push(body)
+        return [{ message_id: body.p_message_id, widget_id: 'stable-widget', seq: 1 }]
+      },
+      restInsert: vi.fn(),
     }
-    await sendWidgetOf(context, args, 'content', deps)
+    const content = JSON.stringify({ v: 2, text: args.text, app: args.app, view: args.view, data: args.data, height: 360 })
+    expect(await sendWidgetOf(context, args, content, deps)).toContain('widget_id=stable-widget')
     expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({ sender_user_id: 'agent', chat_id: 'chat', content: 'content', content_type: 'widget', thread_root_id: 'thread', to_user_ids: null })
-    expect(rows[0]!.client_message_id).toBe(rows[0]!.id)
-    await expect(sendWidgetOf({ ...context, forkOf: 'origin' }, args, 'content', deps)).rejects.toThrow('side chat')
+    expect(rows[0]).toMatchObject({ p_sender_user_id: 'agent', p_chat_id: 'chat', p_text: args.text, p_app: args.app, p_view: args.view, p_data: args.data, p_thread_root_id: 'thread', p_height: 360 })
+    expect(rows[0]!.p_message_id).toEqual(expect.any(String))
+    expect(rows[0]).not.toHaveProperty('p_widget_id')
+    expect(deps.restInsert).not.toHaveBeenCalled()
+    await expect(sendWidgetOf({ ...context, forkOf: 'origin' }, args, content, deps)).rejects.toThrow('side chat')
   })
 })

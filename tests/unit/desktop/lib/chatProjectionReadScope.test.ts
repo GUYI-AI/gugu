@@ -1,14 +1,19 @@
 // @vitest-environment node
 // 投影一批只脏了一条会话:未读只问那一条(从前每一批都把所有会话的所有流重算一遍整包拿回);投递回执不改会话行,不重读它。
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { widgetLink } from '@gugu/core/shared/ui/guguLink'
+import { chatPreviewText } from '../../../../apps/desktop/src/lib/agentTurnFailure'
+import { createChatNotificationPayload } from '@gugu/core/shared/ui/notificationModels'
 
 type Response = { data: unknown; error: { message: string } | null }
 const calls: Array<{ key: string; args?: unknown }> = []
 const refuse = new Set<string>()
 const rowsByKey = new Map<string, unknown[]>()
+const selects: Array<{ key: string; columns: string }> = []
 function builder(key: string, args?: unknown): unknown {
   const chain: unknown = new Proxy(function noop() {} as unknown as object, {
     get(_target, prop) {
+      if (prop === 'select') return (columns: string) => { selects.push({ key, columns }); return chain }
       if (prop === 'then') {
         return (onFulfilled: (value: Response) => unknown, onRejected?: (reason: unknown) => unknown) => {
           calls.push({ key, args })
@@ -30,7 +35,10 @@ vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
   identityDb: { from: (table: string) => builder(table), rpc: (fn: string, args: unknown) => builder(`rpc:${fn}`, args) },
 }))
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({
-  readDisplayIdentities: async (ids: readonly string[]) => ids.map((id) => ({ id, display_name: `name-${id}`, type: 'human' })),
+  readDisplayIdentities: async (ids: readonly string[]) => {
+    calls.push({ key: 'identity' })
+    return ids.map((id) => ({ id, display_name: `name-${id}`, type: 'human' }))
+  },
 }))
 const accessWrites = vi.hoisted(() => [] as unknown[])
 vi.mock('../../../../apps/desktop/src/lib/messageIngest', () => ({
@@ -54,7 +62,7 @@ function seed(): void {
 }
 const unreadArgs = () => calls.filter((call) => call.key === 'rpc:list_unread_locators_for_chats').map((call) => (call.args as { p_chat_ids: string[] }).p_chat_ids)
 
-beforeEach(() => { calls.length = 0; accessWrites.length = 0; refuse.clear(); seed() })
+beforeEach(() => { calls.length = 0; accessWrites.length = 0; selects.length = 0; refuse.clear(); seed() })
 
 describe('chat projection read scope', () => {
   it('a message in one chat records access facts for that chat only, not for every known chat', async () => {
@@ -77,6 +85,19 @@ describe('chat projection read scope', () => {
     expect(projection.memberReadSeqs('c-unknown')).toBeUndefined()
   })
 
+  it('reads conditional source from the preview RPC and counts actual reference reads shared by the list and notification', async () => {
+    rowsByKey.set('active_members', rowsByKey.get('chat_members')!)
+    rowsByKey.set('widgets', [{ id: 'board', chat_id: 'c-1', message_id: 'origin', text: 'Build results' }])
+    rowsByKey.set('rpc:list_chat_previews', [{ id: 'reference', chat_id: 'c-1', preview: widgetLink('board'), preview_source: widgetLink('board'), created_at: '2026-11-03T00:00:00Z', seq: 2, content_type: 'text' }])
+    const projection = createChatProjection(VIEWER)
+    const rows = await projection.hydrate('0', new AbortController().signal)
+    const row = rows.find(row => row.id === 'c-1')!
+    expect(chatPreviewText(row)).toBe('[引用] Build results')
+    expect(createChatNotificationPayload({ ...row, last_message_preview: chatPreviewText(row) }).body).toBe('[引用] Build results')
+    expect(projection.ledger().at(-1)?.requestsByFamily.reference).toBe(1)
+    expect(calls.filter(call => call.key === 'widgets')).toHaveLength(1)
+    expect(projection.ledger().at(-1)?.requests).toBe(calls.length)
+  })
   it('a message in one chat asks the unread projection for that chat only', async () => {
     const projection = createChatProjection(VIEWER)
     const signal = new AbortController().signal

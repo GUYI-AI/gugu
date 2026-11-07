@@ -51,7 +51,10 @@ async function call(method: string, args?: unknown): Promise<unknown> {
     args,
     gesture,
   } satisfies ExtensionBridgeRequest)) as ExtensionBridgeResponse;
-  if (response.ok) return response.value;
+  if (response.ok) {
+    if (messageView && ['setTabTitle', 'setTabBadge'].includes(method)) ipcRenderer.sendToHost('gugu-widget-changed');
+    return response.value;
+  }
   // Carrying the code out means an extension can tell "the user said no" apart
   // from "that failed" and stop asking, instead of retrying against a wall.
   //
@@ -68,6 +71,20 @@ async function call(method: string, args?: unknown): Promise<unknown> {
  */
 const events = hostEventHub();
 let messageView = false;
+if (PerformanceObserver.supportedEntryTypes.includes('paint')) {
+  const firstPaint = new PerformanceObserver(list => {
+    if (list.getEntries().some(entry => entry.name === 'first-contentful-paint')) {
+      ipcRenderer.sendToHost('gugu-widget-painted');
+      firstPaint.disconnect();
+    }
+  });
+  firstPaint.observe({ type: 'paint', buffered: true });
+}
+const widgetInput = (event: Event) => {
+  if (messageView && event.isTrusted) ipcRenderer.sendToHost('gugu-widget-changed');
+};
+window.addEventListener('input', widgetInput, true);
+window.addEventListener('pointerup', widgetInput, true);
 const relayWidgetWheel = (event: WheelEvent) => {
   if (!event.isTrusted || event.ctrlKey) return;
   event.preventDefault();

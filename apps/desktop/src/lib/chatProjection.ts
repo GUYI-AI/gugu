@@ -7,7 +7,8 @@
 // 快照与增量走**同一条**取数路径,区别只在这一轮的键从哪来(spec「输入」):
 // - **快照**(`hydrate`)= 一次「哪些会话属于我」的读拿到键集合(那不是某个实体的值,是键集合本身),
 //   然后走同一套族读与 assemble ⇒ 2 波。
-// - **增量**(`advance`)= journal 命名哪个实体就只读那个实体 ⇒ ≤2 波(I5)。
+// - **增量**(`advance`)= journal 命名哪个实体就只读那个实体 ⇒ ≤2 波实体读(I5)。
+//   预览里有块引用时,另读一次引用说明(有上界,走看的人自己的 RLS),发数与波数照记进同一本账。
 // 会话列表的云端取数只有这一条路(I7):从前冷启另走 `chatListLoader` 的 8 波串行链,
 // 那就是第二个属主在原地 —— #3271 的病只治了增量那一半。
 
@@ -61,6 +62,7 @@ import { chatDb, identityDb } from './supabase'
 import { composerCardLine } from './composerCardCopy'
 import { ingestMessages } from './messageIngest'
 import { messageAccessWrites } from './messageRevisionWrites'
+import { messagePreviewLines } from './messagePreviews'
 
 const log = rendererLogger('chat/projection')
 
@@ -69,7 +71,7 @@ const log = rendererLogger('chat/projection')
  * 所以这里 ❌ 不再自己分批 —— 请求形状的上界只有一个属主,读函数只管把一批发出去。
  * 批间与族间都并行 ⇒ 波数仍是串行深度,发数是 `Σ ⌈键/K⌉`。
  */
-type FamilyReader = (ids: readonly string[], signal: AbortSignal) => Promise<Map<string, unknown>>
+type FamilyReader = (ids: readonly string[], signal: AbortSignal, onReferenceRead: () => void) => Promise<Map<string, unknown>>
 
 export type ChatProjectionLedgerEntry = {
   trigger: string[]
@@ -293,24 +295,32 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       // presence 缺行 = 不在线,不是「读不到」⇒ 显式投影成 offline,❌ 留 undefined 让 UI 猜。
       return new Map([...ids].map((id) => [id, byId.get(id) ?? { id, online: false }]))
     },
-    preview: async (ids, signal) => {
+    preview: async (ids, signal, onReferenceRead) => {
       // @@@chat-list-visibility — list_chat_previews 是 security invoker 的函数 ⇒ 走 `messages` 那套 RLS
       // (成员门 + `hide_history_before` 门 + whisper 门),列表 preview 与 transcript 消费同一成员可见性。
       // 每条会话各取最后一条可见、非私语、非待接走的消息,不算回复投影 —— 从前 messages_view 按 ids×4 行
-      // 一起截,忙会话会把安静会话的那一行挤掉。
+      // 一起截,忙会话会把安静会话的那一行挤掉。带引用的那几条另带原文(preview_source),供摘要换掉引用块。
       const { data, error } = await chatDb.rpc('list_chat_previews', { p_chat_ids: [...ids] }).abortSignal(signal)
       if (error) throw new Error(error.message)
       const found = (data ?? []) as Array<Record<string, unknown> & { chat_id: string } & Parameters<typeof turnFailureReason>[0]>
       const byChat = new Map<string, unknown>()
+      const latest = new Map<string, typeof found[number]>()
       for (const row of found) {
         // 还在等 agent 接走的那种行不画(气泡上说),也不当预览;与 sync_snapshot 的 chat.is_pending_delivery 同一判据。
-        if (byChat.has(row.chat_id) || isPendingDelivery(row)) continue
+        if (latest.has(row.chat_id) || isPendingDelivery(row)) continue
+        latest.set(row.chat_id, row)
+      }
+      const selected = [...latest.values()]
+      const previews = await messagePreviewLines(selected.map(row => ({
+        preview: typeof row.preview === 'string' ? row.preview : null,
+        source: typeof row.preview_source === 'string' ? row.preview_source : null,
+      })), signal, onReferenceRead)
+      for (const [index, row] of selected.entries()) {
         byChat.set(row.chat_id, {
           chat_id: row.chat_id,
           created_at: String(row.created_at),
-          // 预览在库里算好(messages_view 的计算列 preview:附件给文件名、其它截 100 字),这里原样用;
-          // 任务卡截出来是半截 JSON,读回成一行原话(gugu-dev#181,serializeComposerCard 让原话排在前面)。
-          preview: typeof row.preview === 'string' ? composerCardLine(row.preview) : null,
+          // 只有带引用的行才有原文:先按同一份 AST 把引用块换成摘要再截;其它行照用库里截好的 preview。
+          preview: previews[index] == null ? null : composerCardLine(previews[index]),
           // 最后一条是 agent 的失败行:列表按看的人的语言说它的原因(systemNotice.ts),❌ 显示那句给 agent 读的英文。
           failure: turnFailureReason(row),
         })
@@ -341,10 +351,11 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
   }
 
   /**
-   * 波循环:一波 = 这一轮的**全部批**并行取数(族间并行、同族的批之间也并行)。
+   * 实体波循环:一波 = 这一轮的**全部批**并行取数(族间并行、同族的批之间也并行)。
    * 闭包深度 ≤ 1 ⇒ 最多两波实体读;超出预算即响亮失败,❌ 不循环补拉(那正是 #5394 的病)。
    * 返回这次花掉的发数 —— 数的是**真发出去的请求**(批数),不是族数:
    * N=200 时 `chat` 一族是 2 发,账本写 1 就是把自己的代价瞒掉了(判据要能看见它)。
+   * 引用说明那一发也记进 requests/reference 和 waves;没有引用的会话不多发、不多一波。
    *
    * 失败:把这一波在途的键退回脏位(`releaseWave`)、写一行失败账本、原样抛出。
    * ❌ 不吞、❌ 不重试 —— 重读由下一次 wake 的 `planWave` 自己做到(spec I1/I4 的失败支)。
@@ -390,13 +401,18 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       }
       const issued = [...planned.groups.entries()].flatMap(([family, batches]) =>
         batches.map((batch) => [family, batch] as const))
+      let referenceReadWave = false
       planner = planned.next
       let results: ReadonlyArray<readonly [EntityFamily, Map<string, unknown>]>
       try {
         results = await Promise.all(issued.map(async ([family, batch]) => {
           requests += 1
           requestsByFamily[family] = (requestsByFamily[family] ?? 0) + 1
-          return [family, await readers[family](batch, signal)] as const
+          return [family, await readers[family](batch, signal, () => {
+            requests += 1
+            requestsByFamily.reference = (requestsByFamily.reference ?? 0) + 1
+            if (!referenceReadWave) { referenceReadWave = true; waves += 1 }
+          })] as const
         }))
         signal.throwIfAborted()
       } catch (err) {

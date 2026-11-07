@@ -33,6 +33,7 @@ import { createChatOutbox, type ChatOutbox } from './chatOutbox'
 import { i18n } from '@/i18n'
 import { rendererLogger } from '@/lib/log'
 import { chatSendTimings, finishChatSendTiming } from '../lib/chatSendTiming'
+import { messagePreviewLines } from '../lib/messagePreviews'
 
 export interface OutboxWiringIo {
   observeMessage?: (senderId: string, chatId: string) => ObserveAttachmentMessage
@@ -234,8 +235,13 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
       // #1884 自己刚发的消息自己已读——立即推水位,不等 realtime 回显的 markRead 竞态。
       advanceReadWatermark(io.chats(), chatId, persisted.seq, io.patchChat)
     }
+    const [preview] = await messagePreviewLines([{
+      preview: record.payload.content.slice(0, 100),
+      source: record.payload.contentType === 'text' ? record.payload.content : null,
+    }])
+    if (!active || io.user()?.id !== user.id) return
     io.patchChat(chatId, {
-      last_message_preview: record.payload.content.slice(0, 100),
+      last_message_preview: preview ?? '',
       last_message_failure: null,
       last_message_at: new Date().toISOString(),
     })

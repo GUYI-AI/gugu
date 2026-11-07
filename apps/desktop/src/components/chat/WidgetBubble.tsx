@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { parseWidgetMessage, type WidgetMessage } from '@gugu/core/shared/ui/widgetModels'
@@ -11,7 +11,11 @@ import { APP_OPEN_WITH_EVENT } from '../../session/shared/extensions/app-runtime
 import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
 import { isInstallRefused } from '../../session/shared/extensions/attachment-install'
 import { refusedLine } from '../extensionBundle/installedHere'
-import { ExtensionPage } from '../../session/renderer/features/extensions/extension-view-layer'
+import { extensionViewStore, residentPageKey, residentPlace } from '../../session/renderer/features/extensions/extension-view-store'
+import { WidgetLoading, WidgetSnapshot } from './WidgetSnapshot'
+import { useWidgetOriginal } from './useMessageReference'
+import { useWidgetPresence } from './useWidgetPresence'
+import type { ResolvedWidget } from '../../lib/widgetRegistry'
 import { useConversationVisibility } from './useConversationVisibility'
 import { useAuth } from '../../store/auth'
 import { messageForUser } from '../../lib/userFacingError'
@@ -23,9 +27,9 @@ const log = rendererLogger('chat/widget')
 
 type Message = Pick<MessageItem, 'id' | 'chat_id' | 'sender_user_id' | 'content'>
 
-export const WidgetBubble = observer(function WidgetBubble({ message }: { message: Message }) {
+export const WidgetBubble = observer(function WidgetBubble({ message, slotMessageId = message.id, referenceWidget }: { message: Message; slotMessageId?: string; referenceWidget?: ResolvedWidget }) {
   const { t } = useTranslation('messaging')
-  const widget = useMemo(() => parseWidgetMessage(message.content), [message.content])
+  const widget = useMemo(() => referenceWidget?.widget ?? parseWidgetMessage(message.content), [message.content, referenceWidget])
   if (!widget) return <span>{t('message.widget')}</span>
   if (!installedExtensionsStore.isLoaded) return <p>{widget.text}</p>
   const manifest = installedExtensionsStore.manifestFor(widget.app)
@@ -33,25 +37,63 @@ export const WidgetBubble = observer(function WidgetBubble({ message }: { messag
   const reason = !appsHere || (manifest?.platforms && !manifest.platforms.includes(platform.kind === 'electron' ? 'desktop' : 'phone')) ? 'platform'
     : !manifest ? 'missing' : !installedExtensionsStore.isEnabled(widget.app) ? 'disabled' : !tab?.widget ? 'view' : null
   if (reason || !tab?.widget) return <WidgetUnavailable widget={widget} reason={reason ?? 'view'} chatId={message.chat_id} />
-  return <WidgetView key={`${message.id}:${manifest?.version}`} message={message} widget={widget} height={widget.height ?? tab.widget.height} />
+  return referenceWidget ? <WidgetView key={`${referenceWidget.id}:${manifest?.version}`} message={message} slotMessageId={slotMessageId} resolved={referenceWidget} height={widget.height ?? tab.widget.height} />
+    : <OriginalWidgetView message={message} slotMessageId={slotMessageId} height={widget.height ?? tab.widget.height} text={widget.text} />
 })
 
-function WidgetView({ message, widget, height }: { message: Message; widget: WidgetMessage; height: number }) {
+function OriginalWidgetView({ message, slotMessageId, height, text }: { message: Message; slotMessageId: string; height: number; text: string }) {
+  const resolved = useWidgetOriginal(message)
+  // An original the registry does not know (never registered, or not readable here) is its text only.
+  if (resolved instanceof Error || !resolved) return <div className="w-[420px] max-w-full min-w-0" data-widget-bubble={slotMessageId}>
+    <WidgetFrame height={height}>
+      {resolved instanceof Error ? <div role="alert">{messageForUser(resolved)}</div> : <WidgetLoading text={text} loading={resolved === undefined} />}
+    </WidgetFrame>
+  </div>
+  return <WidgetView message={message} slotMessageId={slotMessageId} resolved={resolved} height={height} />
+}
+
+function WidgetFrame({ height, children, element }: { height: number; children: ReactNode; element?: RefObject<HTMLDivElement | null> }) {
+  return <div ref={element} className="relative flex w-full min-w-0 overflow-hidden rounded-md" style={{ height }}>{children}</div>
+}
+
+const WidgetView = observer(function WidgetView({ message, slotMessageId, resolved, height }: { message: Message; slotMessageId: string; resolved: ResolvedWidget; height: number }) {
+  const { t } = useTranslation('messaging')
+  const { user } = useAuth()
+  const { widget, id: widgetId, senderId } = resolved
+  const phone = platform.kind !== 'electron'
   const { ref, shown } = useConversationVisibility(true)
-  const target = useMemo(() => ({ workspace: null, conversation: message.chat_id, tabId: `widget:${message.id}`,
-    widget: { messageId: message.id, data: widget.data ?? {}, senderId: message.sender_user_id } }), [message.id, message.chat_id, message.sender_user_id, widget.data])
+  const presence = useWidgetPresence(message.chat_id, widgetId, ref, shown, phone)
+  const { active } = presence
+  const mounted = active || presence.preload
+  const target = useMemo(() => ({ workspace: null, conversation: message.chat_id, tabId: `widget:${widgetId}`,
+    widget: { id: widgetId, originMessageId: message.id, messageId: slotMessageId, data: widget.data ?? {}, senderId } }), [widgetId, message.id, message.chat_id, slotMessageId, senderId, widget.data])
   const kind = `${widget.app}.${widget.view}`
-  return <div className="w-[420px] max-w-full min-w-0" data-widget-bubble={message.id}>
-    <div ref={ref} className="flex w-full min-w-0 overflow-hidden rounded-md" style={{ height }}>
-      {shown ? platform.kind === 'electron' ? <ExtensionPage extensionId={widget.app} kind={kind} inline={target} /> : <PhoneAppFrame
+  useEffect(() => {
+    if (!active || phone || !ref.current) return
+    const token = extensionViewStore.claim(kind, { chatId: message.chat_id, accountId: user?.id, tabId: target.tabId, widget: target.widget, element: ref.current })
+    return () => extensionViewStore.release(kind, token)
+  }, [active, phone, kind, message.chat_id, user?.id, target, ref])
+  const painted = extensionViewStore.paintedPages.has(residentPageKey(kind, residentPlace({ chatId: message.chat_id, widget: target.widget })))
+  return <div className="w-[420px] max-w-full min-w-0" data-widget-bubble={slotMessageId} data-widget-id={widgetId}>
+    <WidgetFrame height={height} element={ref}>
+      {phone ? null : <WidgetSnapshot widgetId={widgetId} element={ref} text={widget.text} visible={!active || !painted} inactive={!active} />}
+      {mounted ? phone ? <PhoneAppFrame
         kind={kind} tabId={target.tabId} chatId={message.chat_id} widget={target.widget}
+        placeholder={<WidgetLoading text={widget.text} />}
         onOpenWith={detail => window.dispatchEvent(new CustomEvent(APP_OPEN_WITH_EVENT, { detail }))}
         testId="widget-frame" missingTestId="widget-frame-missing"
-      /> : null}
-    </div>
-    <p className="whitespace-pre-wrap break-words text-[length:var(--font-caption)] text-[var(--text-secondary)]" data-widget-text>{widget.text}</p>
+      /> : null : <>
+        {phone ? <WidgetLoading text={widget.text} loading={false} /> : null}
+        <Button variant="ghost" className="absolute inset-0 h-full min-h-0 cursor-pointer rounded-none p-0" aria-label={t('message.reference.locateActive')} onClick={presence.locate} data-widget-locate>{null}</Button>
+      </>}
+    </WidgetFrame>
+    {/* The link follows the text: an outgoing bubble keeps its time at the right of this line. */}
+    <p className="whitespace-pre-wrap break-words text-[length:var(--font-caption)] text-[var(--text-secondary)]">
+      <span data-widget-text>{widget.text}</span>
+      {!mounted ? <>{' · '}<Button variant="ghost" className="inline h-auto min-h-0 cursor-pointer border-0 p-0 align-baseline text-[length:inherit] font-normal leading-[inherit] underline underline-offset-2 [&:hover:not([data-disabled])]:bg-transparent hover:text-[var(--text-primary)] max-[719px]:min-h-0" onClick={presence.locate}>{t('message.reference.locateActive')}</Button></> : null}
+    </p>
   </div>
-}
+})
 
 const WidgetUnavailable = observer(function WidgetUnavailable({ widget, reason, chatId }: { widget: WidgetMessage; reason: string; chatId: string }) {
   const { t } = useTranslation('messaging')

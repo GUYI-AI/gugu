@@ -87,8 +87,8 @@ async function withMessageAttachment(action: unknown, context: GuguMcpContext): 
     const target = args.message_id ?? args.widget_id
     if (target !== undefined) {
       if (context.kind !== 'social' || context.forkOf !== undefined) throw new Error('app_check: widget messages need a session with a Gugu identity')
-      // message_id was decoded by the shared MCP registrar; widget_id is the legacy alias.
-      const scope = await widgetCheckScopeOf(context, readTypedIdLenient('msg', target) ?? target)
+      const id = readTypedIdLenient('msg', target) ?? target
+      const scope = await widgetCheckScopeOf(context, args.message_id !== undefined ? { messageId: id } : { widgetId: id })
       if (args.tab_kind !== undefined && args.tab_kind !== scope.tabKind) throw new Error(`app_check: this widget uses ${scope.tabKind}, not ${args.tab_kind}`)
       const { message_id: _message, widget_id: _widget, ...rest } = action as Record<string, unknown>
       return { ...rest, tab_kind: scope.tabKind, chat_id: scope.chatId, widget: scope.widget }

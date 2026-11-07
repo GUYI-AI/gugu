@@ -1,4 +1,4 @@
-import { FILE_LINK_IN_TEXT, guguLinkScheme, parseGroupFileLink } from '@gugu/core/shared/ui/guguLink';
+import { FILE_LINK_IN_TEXT, guguLinkScheme, parseGuguLink, parseGroupFileLink } from '@gugu/core/shared/ui/guguLink';
 /**
  * The one markdown dialect of Gugu.
  *
@@ -145,6 +145,59 @@ export function parseMarkdown(text: string): Root {
   return parser.parse(text);
 }
 
+export type MessageReferenceTarget =
+  | { kind: 'message'; chatId: string; messageId: string }
+  | { kind: 'widget'; widgetId: string };
+
+export interface MessageReferenceBlock {
+  start: number;
+  end: number;
+  href: string;
+  target: MessageReferenceTarget;
+}
+
+/** The same four top-level reference paragraphs for message rendering and pre-send access checks. */
+export function messageReferenceBlocks(source: string): { content: string; blocks: readonly MessageReferenceBlock[] } {
+  const content = normalizeMarkdownSource(source);
+  const blocks: MessageReferenceBlock[] = [];
+  for (const node of parseMarkdown(content).children) {
+    if (node.type !== 'paragraph' || node.children.length !== 1) continue;
+    const start = node.position?.start.offset;
+    const end = node.position?.end.offset;
+    if (start == null || end == null) continue;
+    const raw = content.slice(start, end).trim();
+    const only = node.children[0];
+    const href = only?.type === 'text' && only.value === raw ? raw
+      : only?.type === 'link' && raw === `<${only.url}>` ? only.url : null;
+    if (!href || (!href.toLowerCase().startsWith('gugu-chat://') && !href.toLowerCase().startsWith('gugu-widget://'))) continue;
+    const parsed = parseGuguLink(href);
+    const target: MessageReferenceTarget | null = parsed?.kind === 'widget' ? parsed
+      : parsed?.kind === 'chat' && parsed.messageId ? { kind: 'message', chatId: parsed.chatId, messageId: parsed.messageId } : null;
+    if (!target) continue;
+    blocks.push({ start, end, href, target });
+    if (blocks.length === 4) break;
+  }
+  return { content, blocks };
+}
+
+/** Preview only the same parsed blocks. Labels never include a quoted message's body; `words` are the reader's language. */
+export function messageReferencePreview(
+  parsed: ReturnType<typeof messageReferenceBlocks>,
+  widgetText: (target: MessageReferenceTarget) => string | undefined,
+  words: { quote: string; message: string },
+): string {
+  const pieces: string[] = [];
+  let start = 0;
+  for (const block of parsed.blocks) {
+    pieces.push(parsed.content.slice(start, block.start));
+    const text = widgetText(block.target);
+    pieces.push(text ? `${words.quote} ${text}` : block.target.kind === 'widget' ? words.quote : words.message);
+    start = block.end;
+  }
+  pieces.push(parsed.content.slice(start));
+  return pieces.join('');
+}
+
 /** Explicit @[label](target) references, using the same AST as message rendering. */
 export function markdownMentionReferences(text: string): Array<{ start: number; end: number; label: string; target: string }> {
   if (!text.includes('@[')) return [];
@@ -258,7 +311,7 @@ export const MARKDOWN_SANITIZE_SCHEMA = {
   ...defaultSchema,
   protocols: {
     ...defaultSchema.protocols,
-    href: [...(defaultSchema.protocols?.href ?? []), 'tel', 'gugu-file', 'gugu-chat', guguLinkScheme({ tier: 'production', devLaunch: false }), guguLinkScheme({ tier: 'beta', devLaunch: false }), guguLinkScheme({ tier: undefined, devLaunch: true }), ...DRIVE_LETTERS],
+    href: [...(defaultSchema.protocols?.href ?? []), 'tel', 'gugu-file', 'gugu-chat', 'gugu-widget', guguLinkScheme({ tier: 'production', devLaunch: false }), guguLinkScheme({ tier: 'beta', devLaunch: false }), guguLinkScheme({ tier: undefined, devLaunch: true }), ...DRIVE_LETTERS],
     src: [...(defaultSchema.protocols?.src ?? []), 'gugu-file'],
   },
 };

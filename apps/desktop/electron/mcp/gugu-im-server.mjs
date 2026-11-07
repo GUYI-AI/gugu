@@ -21,6 +21,7 @@ import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../..
 import { workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
 import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
+import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
 import { attachmentFolderLine } from '../../../../packages/core/src/shared/attachmentFolderLine'
 import { AttachmentsError, commitAttachment, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
@@ -880,24 +881,72 @@ export async function extensionAttachmentOf(context, messageId, injected = {}) {
   return { message_id: String(message.id) }
 }
 
-/** A widget is one readable message in a chat this agent belongs to, just like an App attachment. */
-export async function widgetCheckScopeOf(context, messageId, injected = {}) {
+/** Registry identity is authoritative; the owner JWT still passes the original agent visibility check. */
+async function readableWidgetOf(deps, widgetId) {
+  const [origin] = await deps.restRpc('widget_origin', { p_widget_id: widgetId })
+  if (!origin || origin.is_retracted) return null
+  const [message] = await deps.restGet(`messages?id=eq.${enc(origin.origin_message_id)}&select=id,chat_id,content,content_type,sender_user_id,retracted_at,deleted_for_user_ids`)
+  if (!message || message.content_type !== 'widget'
+    || message.retracted_at || message.deleted_for_user_ids?.includes(deps.context.agentId)
+    || !(await agentCanSee(deps, message))) return null
+  const spec = parseWidgetMessage(message.content)
+  if (!spec) return null
+  const widget = { id: origin.widget_id, message_id: message.id, chat_id: message.chat_id,
+    app: spec.app, view: spec.view, text: spec.text, data: spec.data ?? {}, created_by: message.sender_user_id }
+  return { widget, message }
+}
+
+/** A checked widget resolves its original message through the same registry as references. */
+export async function widgetCheckScopeOf(context, target, injected = {}) {
   const deps = createDeps(context, injected)
-  const unreadable = () => new Error(`app_check: there is no widget message ${messageId} you can read`)
-  if (typeof messageId !== 'string' || !UUID_RE.test(messageId)) throw unreadable()
-  const [message] = await deps.restGet(`messages?id=eq.${enc(messageId)}&select=id,chat_id,content,content_type,sender_user_id`)
-  if (!message || !(await agentCanSee(deps, message))) throw unreadable()
-  const members = await memberRowsOfMyChat(message.chat_id, deps)
+  const messageId = typeof target === 'object' && target !== null ? target.messageId : undefined
+  const id = typeof target === 'object' && target !== null ? messageId ?? target.widgetId : target
+  const unreadable = () => new Error(`app_check: there is no widget message ${id} you can read`)
+  if (typeof id !== 'string' || !id.length || id.includes('\0')) throw unreadable()
+  // Both public entries resolve through the registry, then share the original agent checks below. A message's widget is
+  // registered under its body's wid (new sends) or its own id (history); widget_origin must name this very message, so a
+  // forged historical wid cannot point the check at another widget.
+  let widgetId = messageId === undefined ? id : undefined
+  if (messageId !== undefined) {
+    const [row] = await deps.restGet(`messages?id=eq.${enc(id)}&select=content`)
+    for (const candidate of new Set([parseWidgetMessage(row?.content)?.wid, id].filter(Boolean))) {
+      const [origin] = await deps.restRpc('widget_origin', { p_widget_id: candidate })
+      if (origin?.origin_message_id === id) { widgetId = candidate; break }
+    }
+  }
+  const found = widgetId ? await readableWidgetOf(deps, widgetId) : null
+  if (found && messageId !== undefined && found.message.id !== id) throw unreadable()
+  if (!found) {
+    // Explain a reference-message id only after checking that agent's access;
+    // never recover a widget identity from untrusted historical body.wid.
+    const [message] = await deps.restGet(`messages?id=eq.${enc(id)}&select=id,chat_id,content`)
+    if (message && await agentCanSee(deps, message)) {
+      const members = await memberRowsOfMyChat(message.chat_id, deps)
+      if (members.some(row => String(row.user_id) === context.agentId)
+        && messageReferenceBlocks(message.content ?? '').blocks.some(block => block.target.kind === 'widget')) {
+        throw new Error('app_check: this message is a widget reference; pass its widget_id')
+      }
+    }
+    throw unreadable()
+  }
+  const { widget, message } = found
+  const members = await memberRowsOfMyChat(widget.chat_id, deps)
   if (!members.some((row) => String(row.user_id) === context.agentId)) throw unreadable()
-  const references = (message.content ?? '').split(/\r?\n/).map(line => line.trim()).filter(Boolean)
-  if (references.length > 0 && references.length <= 4 && references.every(line => /^gugu-widget:\/\/\S+$/.test(line))) throw new Error('app_check: this message is a widget reference; pass its widget_id')
-  const widget = message.content_type === 'widget' ? parseWidgetMessage(message.content) : null
-  if (!widget) throw unreadable()
-  const { wid } = JSON.parse(message.content)
-  if (wid !== undefined && (typeof wid !== 'string' || !wid.length)) throw unreadable()
+  const height = parseWidgetMessage(message.content)?.height
   return {
-    tabKind: `${widget.app}.${widget.view}`, chatId: String(message.chat_id),
-    widget: { id: wid ?? String(message.id), messageId: String(message.id), senderId: String(message.sender_user_id), text: widget.text, data: widget.data ?? {}, ...(widget.height === undefined ? {} : { height: widget.height }) },
+    tabKind: `${widget.app}.${widget.view}`, chatId: String(widget.chat_id),
+    widget: { id: String(widget.id), originMessageId: String(widget.message_id), messageId: String(widget.message_id), senderId: widget.created_by ?? null, text: widget.text, data: widget.data ?? {}, ...(height === undefined ? {} : { height }) },
+  }
+}
+
+async function assertReadableMessageReferences(deps, content) {
+  for (const { target } of messageReferenceBlocks(content).blocks) {
+    const id = target.kind === 'widget' ? target.widgetId : target.messageId
+    const message = target.kind === 'widget' ? (await readableWidgetOf(deps, id))?.message
+      : (await deps.restGet(`messages?id=eq.${enc(id)}&chat_id=eq.${enc(target.chatId)}&select=id`))[0]
+    if (!message || (target.kind === 'message' && !(await agentCanSee(deps, message)))) {
+      throw new Error(`message_send: cannot reference ${id}: not readable by you`)
+    }
   }
 }
 async function assertRecipientsAreMembers(chatId, toUserIds, deps) {
@@ -1526,6 +1575,7 @@ async function handleMessage(args, deps) {
         sendText = rec.content
       }
       row.content = String(sendText ?? '')
+      await assertReadableMessageReferences(deps, row.content)
       await postCommandMessageRow(deps, row)
       sentKind = kind
     }
@@ -2937,9 +2987,17 @@ export async function sendWidgetOf(context, args, content, injected = {}, state 
   }
   const members = await memberRowsOfMyChat(chatId, deps)
   if (!members.some(member => String(member.user_id) === context.agentId)) throw new Error('widget_send: the agent must be a member of this chat')
-  const row = buildMessageRow(context, { id: randomUUID(), chatId, content, contentType: 'widget', replyToMessageId, threadRootId: context.threadRootId ?? null })
-  await postCommandMessageRow(deps, row)
-  return `sent (id=${row.id})`
+  const widget = parseWidgetMessage(content)
+  if (!widget) throw new Error('widget_send: a valid v2 widget is required')
+  const result = await deps.restRpc('send_widget', {
+    p_message_id: randomUUID(), p_chat_id: chatId, p_sender_user_id: context.agentId,
+    p_text: widget.text, p_app: widget.app, p_view: widget.view, p_data: widget.data ?? null,
+    p_reply_to_message_id: replyToMessageId, p_thread_root_id: context.threadRootId ?? null,
+    ...(widget.height === undefined ? {} : { p_height: widget.height }),
+  })
+  const row = Array.isArray(result) ? result[0] : result
+  if (!row?.message_id || !row?.widget_id) throw new Error('widget_send: the server did not confirm the widget identity')
+  return `sent (id=${row.message_id}, widget_id=${row.widget_id})`
 }
 
 // ── MCP server（官方 SDK） ─────────────────────────────────────────

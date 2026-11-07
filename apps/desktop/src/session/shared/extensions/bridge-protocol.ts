@@ -87,6 +87,9 @@ export const EXTENSION_TOOL_CONFINEMENT_API_VERSION = 29;
 // 30: source-aware page history; navigation.go(-1|1) and context navigation availability.
 // 31: `gugu.cloud` (app-cloud-core.ts), an App's own part of the cloud, and `gugu.pickAgent`, the person's pick of one of their agents.
 // 32: a person's `getContext().operator` carries their own `guguNumber`.
+// 33: a widget's own id (`context.widget.id`) and the message it was first sent in (`originMessageId`); `messageId` is the
+// slot's message. Pages declaring 32 or earlier read the original message as `messageId`, as before.
+export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // 34: `contributes.prompts` (the App's prompts in the composer's `/` menu) and `gugu.prompts`, the person's own prompts (`prompts`).
 export const EXTENSION_API_VERSION = 34;
 
@@ -215,7 +218,7 @@ export interface ExtensionHostContext {
    */
   file?: AppFileRef & { id: string };
   /** API26: untrusted, immutable initial data from the sender of a message. */
-  widget?: { messageId: string; data: Record<string, unknown>; sender: string | null };
+  widget?: { id?: string; originMessageId?: string; messageId: string; data: Record<string, unknown>; sender: string | null };
   /** Who is working this page (`user:<uuid>` for an agent). Absent on a page nobody draws — the background page, a program. */
   operator?: ExtensionContextOperator;
   /** BCP-47 tag of the interface language the user is reading. */

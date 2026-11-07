@@ -6,6 +6,7 @@ export interface WidgetMessage {
   view: string
   height?: number
   data?: Record<string, unknown>
+  wid?: string
 }
 
 export const WIDGET_HEIGHT_MIN = 64
@@ -61,9 +62,14 @@ export function parseWidgetMessage(content: string | null | undefined): WidgetMe
     if (object(raw) && !validHeight(raw.height)) delete raw.height
     if (widgetMessageError(raw)) return null
     if (dataSourceBytes(content) > WIDGET_DATA_MAX_BYTES) return null
-    const { text, app, view, height, data } = raw as WidgetMessage
-    return { v: 2, text, app, view, ...(height === undefined ? {} : { height }), ...(data === undefined ? {} : { data }) }
+    const { text, app, view, height, data, wid } = raw as WidgetMessage
+    return { v: 2, text, app, view, ...(height === undefined ? {} : { height }), ...(data === undefined ? {} : { data }), ...(typeof wid === 'string' && wid.length > 0 ? { wid } : {}) }
   } catch { return null }
+}
+
+/** New messages name their widget; historical v2 messages keep their original message id. */
+export function widgetIdOf(message: { id: string; content: string | null | undefined }): string {
+  return parseWidgetMessage(message.content)?.wid ?? message.id
 }
 
 export function serializeWidgetMessage(widget: WidgetMessage): string {

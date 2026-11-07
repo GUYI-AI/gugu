@@ -32,6 +32,15 @@ export function openLink(raw: string | OpenTarget, groupParticipantRequestId?: s
 }
 
 export async function openTarget(target: OpenTarget, groupParticipantRequestId?: string): Promise<boolean> {
+  if (target.kind === 'widget') {
+    const [{ readMessageReference }, { getCurrentAuthUserId }] = await Promise.all([import('./widgetRegistry'), import('./supabase')])
+    const account = await getCurrentAuthUserId()
+    const origin = await readMessageReference(target, account)
+    if (account !== await getCurrentAuthUserId()) return true
+    if (origin.status !== 'readable') throw new Error('Widget reference is unavailable')
+    await openLinkTarget({ kind: 'chat', chatId: origin.message.chat_id, messageId: origin.message.id })
+    return true
+  }
   try {
     const outcome = platform.kind === 'electron'
       ? await (await import('../session/renderer/lib/ipc')).rpc.extensions.openLink({ target, ...(groupParticipantRequestId ? { groupParticipantRequestId } : {}) })

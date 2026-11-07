@@ -189,6 +189,8 @@ export type WorkspacePlace = { workspace: string };
  * App's own page). Facts for `getContext()`, never a target a call falls back on.
  */
 export interface AppWidget {
+  id?: string;
+  originMessageId?: string;
   messageId: string;
   data: Record<string, unknown>;
   senderId: string | null;
@@ -197,7 +199,7 @@ export interface AppWidget {
 export interface AppWhere {
   conversation: string | null;
   workspace: string | null;
-  /** The immutable message this page draws. A message view never moves to another message. */
+  /** Immutable widget input; messageId is the current visible slot. */
   widget?: AppWidget;
 }
 
@@ -528,6 +530,8 @@ export type FrameToHost =
   | { m: typeof APP_FRAME_MARKER; t: 'hello' }
   /** The runtime listens for its sync port now: the outer page hands it over (摩擦单 F28). */
   | { m: typeof APP_FRAME_MARKER; t: 'sync-port' }
+  /** The document's first contentful paint: a widget's placeholder gives way to it, as the desktop preload's `gugu-widget-painted`. */
+  | { m: typeof APP_FRAME_MARKER; t: 'painted' }
   /**
    * `call`: a program's request made inside one tool call — that call's id, as main minted it (program-call.ts).
    * `gesture`: on the phone, written by the App's gate as it passes the call on, over whatever the App put there

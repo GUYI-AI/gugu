@@ -1,6 +1,6 @@
 import { followLink, openLinkTarget } from '../../lib/guguLinks'
 import { reaction } from 'mobx'
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { readMemberRosterRevision, readWorkspaceChanges } from '../../lib/accountRevisionCoordinator'
 import { extensionSurfaceStore } from '../../session/renderer/features/extensions/extension-surface-store'
@@ -57,6 +57,7 @@ export function PhoneAppFrame({
   commandRef,
   testId,
   missingTestId,
+  placeholder,
 }: {
   kind: string
   /** The slot it is drawn in: what the page says about itself is kept by it. */
@@ -77,6 +78,8 @@ export function PhoneAppFrame({
   commandRef?: { current: ((commandId: string) => void) | null }
   testId: string
   missingTestId: string
+  /** A widget reserves the same slot until its preloaded document has painted. */
+  placeholder?: ReactNode
 }) {
   const extensionId = kind.split('.')[0] ?? kind
   const tabName = kind.slice(extensionId.length + 1)
@@ -92,6 +95,7 @@ export function PhoneAppFrame({
   const devicesRef = useRef(devices)
   devicesRef.current = devices
   const [app, setApp] = useState<FramedPage | null>(null)
+  const [loaded, setLoaded] = useState<string | null>(null)
   const [missing, setMissing] = useState(false)
   // The App holds a Back step of its own (a folder it is in, `navigation.onBack`): the back key goes there first, as to a sheet
   // over the page; let go (at its top), the page's own back takes it again. A page kept hidden under a later one holds
@@ -172,6 +176,8 @@ export function PhoneAppFrame({
       peek: (target) => peekStore.open(null, bindingRef.current.tabId, target),
       // The phone's host is this page: what the App says about itself goes where main's relay puts it on the desktop.
       chrome: (next) => extensionSurfaceStore.say(null, bindingRef.current.tabId, next),
+      // Its first paint, not the frame's `load`: a preloaded page loads off screen and may not have drawn yet when it comes in.
+      painted: () => setLoaded(`${app.version}:${app.src}`),
     })
     hostRef.current = host
     // In a session, what the program on that computer sends comes through its window; only this App's. Imported only
@@ -240,7 +246,8 @@ export function PhoneAppFrame({
       </div>
     )
   }
-  if (!app) return <div hidden={hidden} className="min-h-0 flex-1" />
+  if (!app) return <div hidden={hidden} className="min-h-0 flex-1">{placeholder}</div>
+  const documentKey = `${app.version}:${app.src}`
   return (
     <>
       {workingCopy ? <Suspense fallback={null}><OpenedFilePreview
@@ -249,7 +256,7 @@ export function PhoneAppFrame({
       /></Suspense> : null}
       <iframe
         // Another version or another account is another document: a new frame, and a new host for it.
-        key={`${app.version}:${app.src}`}
+        key={documentKey}
         ref={frameRef}
         hidden={hidden}
         title={extensionId}
@@ -265,6 +272,7 @@ export function PhoneAppFrame({
         data-app-item={itemId}
         data-app-version={app.version}
       />
+      {!hidden && loaded !== documentKey ? placeholder : null}
     </>
   )
 }

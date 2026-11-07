@@ -186,6 +186,26 @@ export function parseConversationLink(href: string): ConversationLink | null {
   return match ? { chatId: match[1]!.toLowerCase(), ...(match[2] ? { messageId: match[2].toLowerCase() } : {}) } : null
 }
 
+export type WidgetLink = { widgetId: string }
+const WIDGET_LINK = /^gugu-widget:\/\/([^/?#\s<>]+)\/?$/i
+
+/** Widget ids are database text ids, including historical message ids that are not UUIDs. */
+export function parseWidgetLink(href: string): WidgetLink | null {
+  const match = WIDGET_LINK.exec(href.trim())
+  if (!match) return null
+  try {
+    const widgetId = decodeURIComponent(match[1]!)
+    return widgetId && !widgetId.includes('\0') ? { widgetId } : null
+  } catch { return null }
+}
+
+export function widgetLink(widgetId: string): string {
+  if (!widgetId || widgetId.includes('\0')) throw new Error('A widget link requires a nonempty text id')
+  // URI-safe punctuation can still be Markdown syntax in a bare reference paragraph.
+  const component = encodeURIComponent(widgetId).replace(/[!'()*_~]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
+  return `gugu-widget://${component}`
+}
+
 /** Beyond this a link stops being a link and starts being a payload. */
 const MAX_EXTENSION_LINK_LENGTH = 2048;
 
@@ -236,6 +256,7 @@ function validAppDetail(target: AppDetailLink): boolean {
 }
 export type GuguLinkTarget =
   | ({ kind: 'chat' } & ConversationLink)
+  | ({ kind: 'widget' } & WidgetLink)
   | ({ kind: 'file' } & GroupFileLink)
   | ({ kind: 'app' } & ParsedExtensionLink)
   | AppDetailLink
@@ -256,6 +277,8 @@ export type OpenTarget = GuguLinkTarget | AgentSessionTarget
 export function parseGuguLink(raw: string, options: { supabaseUrl?: string } = {}): GuguLinkTarget | null {
   const chat = parseConversationLink(raw)
   if (chat) return { kind: 'chat', ...chat }
+  const widget = parseWidgetLink(raw)
+  if (widget) return { kind: 'widget', ...widget }
   const file = parseGroupFileLink(raw)
   if (file) return { kind: 'file', ...file }
   let url: URL
@@ -310,6 +333,7 @@ export function parseGuguLink(raw: string, options: { supabaseUrl?: string } = {
 /** A stored reference by default; `scheme` asks for a link that invokes that installed build from outside. */
 export function guguLink(target: Exclude<GuguLinkTarget, { kind: 'server-login' }>, scheme?: string): string {
   switch (target.kind) {
+    case 'widget': return widgetLink(target.widgetId)
     case 'chat': {
       const stored = conversationLink(target.chatId, target.messageId)
       return scheme ? `${scheme}://chat/${target.chatId}${target.messageId ? `/message/${target.messageId}` : ''}` : stored

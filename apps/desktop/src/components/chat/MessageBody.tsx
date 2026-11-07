@@ -11,6 +11,7 @@ import { Markdown } from '../markdown/Markdown'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
 import { ComposerCardView } from './ComposerCardView'
 import { MediaAttachmentBubble } from './MediaAttachmentBubble'
+import { MessageReferenceContent } from './MessageReferenceContent'
 import { parseQuotedContent, partialQuotedContent } from './messageQuoteContent'
 import { QuestionCardView } from './QuestionCardView'
 import type { MentionRender } from './useMentionRender'
@@ -87,7 +88,7 @@ export function MessageBody({
     // #1515 段内 Shift+Enter 软换行渲成 <br> 仅对人类手打消息;agent/LLM 内容保持 CommonMark(软换行=空格)。
     // @@@2017 群内定向消息:渲染注入 nonce marker 后的正文(mention.content),并把本次 marker 传下 →
     // 只有被 to_user_ids 背书的 @Name 才渲成 mention;非群/whisper → content=undefined 用原始 raw、marker 空。
-    return <Markdown trust="chat" content={partial ? raw : mention?.content ?? raw} onAccent={msg.is_mine} hardBreaks={!authorIsAgent} mentionMarker={mention?.mentionMarker} onOpenLink={(href) => { const link = classifyFileLink(href); if (link.kind !== 'workspace-file' || !msg.sender_user_id) return false; openSenderFile(msg.sender_user_id, isGroup ? msg.chat_id : undefined, link); return true }} />
+    return <MessageReferenceContent content={partial ? raw : mention?.content ?? raw} chatId={msg.chat_id} slotMessageId={msg.id} renderText={content => <Markdown trust="chat" content={content} onAccent={msg.is_mine} hardBreaks={!authorIsAgent} mentionMarker={mention?.mentionMarker} onOpenLink={(href) => { const link = classifyFileLink(href); if (link.kind !== 'workspace-file' || !msg.sender_user_id) return false; openSenderFile(msg.sender_user_id, isGroup ? msg.chat_id : undefined, link); return true }} />} />
   })()}</div>
 }
 

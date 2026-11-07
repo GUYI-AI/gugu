@@ -10,6 +10,7 @@ import {
 import {
   chatMembersChanged,
   bindExtensionSurface,
+  captureWidgetSurface,
   retargetExtensionSurface,
   notifyGroupWorkspaceChanged,
   notifyWatchedChatsChanged,
@@ -493,6 +494,11 @@ export const extensionsController = createRPCController({
       height: args.height,
     });
     return { success: true };
+  },
+
+  captureWidget: async (args: { webContentsId: number; widgetId: string }) => {
+    try { return { success: true as const, data: await captureWidgetSurface(args.webContentsId, args.widgetId) }; }
+    catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
 
   /**

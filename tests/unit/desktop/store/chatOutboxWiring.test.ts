@@ -17,6 +17,7 @@ import {
 import type { OutboxRecord } from '../../../../apps/desktop/src/lib/imRepository'
 const logError = vi.hoisted(() => vi.fn())
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: logError }) }))
+vi.mock('../../../../apps/desktop/src/lib/widgetLabels', () => ({ widgetReferenceTexts: async () => new Map() }))
 
 function persistedMessage(id: string): MessageItem {
   return {
@@ -223,6 +224,18 @@ describe('committed outbound reconciliation', () => {
     await vi.waitFor(() => {
       expect(harness.messages().find((m) => m.id === row.id)).toMatchObject({ seq: 42 })
     })
+  })
+
+  it('summarizes reference blocks in the send acknowledgement without including inaccessible widget text', async () => {
+    const row = persistedMessage('reference-preview')
+    row.content = 'gugu-widget://private\n\ngugu-chat://11111111-1111-4111-8111-111111111111/22222222-2222-4222-8222-222222222222'
+    vi.spyOn(chatService, 'sendMessage').mockResolvedValue(row)
+    const harness = wiringHarness(row.id)
+    await harness.wiring.enqueue({ ...enqueueInput(row.id), content: row.content })
+    await vi.waitFor(() => expect(harness.patchChat).toHaveBeenCalledWith('chat-1', expect.objectContaining({
+      last_message_preview: '[引用]\n\n[引用消息]',
+    })))
+    expect(harness.messages()[0]?.content).toBe(row.content)
   })
 })
 

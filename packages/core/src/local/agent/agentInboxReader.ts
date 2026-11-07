@@ -72,6 +72,8 @@ export interface AgentInboxUnreadRow {
   senderGuguNumber: number | null
   content: string
   contentType: string | null
+  /** Authoritative registry id returned beside this actor-visible message. */
+  widgetId?: string | null
   toUserIds: string[] | null
   isWhisper: boolean
   /** App 以人的名义送来的那一行(`gugu.dispatch`,#6835):App 的 extension id。 */
@@ -315,6 +317,7 @@ export function unreadRowFromRpc(raw: Record<string, unknown>): AgentInboxUnread
     senderGuguNumber: num(raw.sender_gugu_number),
     content: String(raw.content ?? ''),
     contentType: text(raw.content_type),
+    widgetId: text(raw.widget_id),
     toUserIds: Array.isArray(raw.to_user_ids)
       ? raw.to_user_ids.filter((value): value is string => typeof value === 'string')
       : null,
@@ -974,6 +977,7 @@ async function prepareMessage(
       messageId: row.id,
       senderUserId: row.senderUserId,
       contentType: row.contentType,
+      widgetId: row.widgetId,
       content,
       replyTo: row.replyToMessageId && row.replyToSenderUserId
         ? { messageId: row.replyToMessageId, senderUserId: row.replyToSenderUserId, content: row.replyToContent ?? '' }
@@ -1017,6 +1021,7 @@ function rebuildEnvelopeWithThreadContext(
       messageId: row.id,
       senderUserId: row.senderUserId,
       contentType: row.contentType,
+      widgetId: row.widgetId,
       content,
       replyTo: row.replyToMessageId && row.replyToSenderUserId
         ? { messageId: row.replyToMessageId, senderUserId: row.replyToSenderUserId, content: row.replyToContent ?? '' }
