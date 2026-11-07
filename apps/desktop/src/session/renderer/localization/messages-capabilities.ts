@@ -211,6 +211,8 @@ export const enUSCapabilityMessages = {
   // ── settings · integrations chrome ─────────────────────────────────────────
   'integrations.sectionAdded': 'Added',
   'integrations.sectionAvailable': 'Available',
+  'integrations.sectionUiOnly': 'Gugu UI only',
+  'integrations.sectionUiOnlyHint': 'Used inside Gugu (linking issues, GitHub projects and pull requests). Agents can’t call these directly.',
   'integrations.disconnectTitle': 'Disconnect {name}',
   'integrations.disconnectWithCredential':
     'This will delete the saved {name} {credential} and disconnect {name}.',
@@ -243,6 +245,8 @@ export const enUSCapabilityMessages = {
   'integrations.errorKeyRejected': '{name} rejected this key; enter it again.',
   'integrations.errorProviderUnavailable': "{name} isn't available right now. Try again later.",
   'integrations.errorServiceUnavailable': "Gugu's {name} connection service is unavailable. Try again later.",
+  'integrations.errorSecretRequired': 'You changed the server or address. Enter the password or authorization code again.',
+  'integrations.errorSecureStorageUnavailable': "This computer has no system keyring, so Gugu can't store the {name} credentials safely. Install and unlock one (GNOME Keyring or KWallet on Linux), restart Gugu, then connect again.",
   'integrations.errorUnsupportedHost': "{name} doesn't support this address.",
   'integrations.errorInvalidInput': "{name} didn't accept what was entered. Check the format.",
   'integrations.statusConnecting': 'Connecting…',
@@ -1089,6 +1093,8 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   // ── 设置 · 集成外壳 ─────────────────────────────────────────────────────────
   'integrations.sectionAdded': '已添加',
   'integrations.sectionAvailable': '可用',
+  'integrations.sectionUiOnly': '仅界面',
+  'integrations.sectionUiOnlyHint': '只在咕咕界面里用（关联 issue、GitHub 的项目与 PR），agent 不能直接调用。',
   'integrations.disconnectTitle': '断开{name}',
   'integrations.disconnectWithCredential': '这会删除已保存的{name} {credential} 并断开{name}。',
   'integrations.disconnectDescription': '这会断开{name}。',
@@ -1119,6 +1125,8 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'integrations.errorKeyRejected': '{name}拒绝了这个 Key，重新填一下。',
   'integrations.errorProviderUnavailable': '{name}这会儿用不了，稍后再试。',
   'integrations.errorServiceUnavailable': '咕咕的{name}连接服务出了问题，请稍后重试。',
+  'integrations.errorSecretRequired': '改了服务器或地址，要重新填一次密码或授权码。',
+  'integrations.errorSecureStorageUnavailable': '这台电脑没有可用的系统钥匙串，咕咕没法安全保存{name}的凭据。请装好并解锁钥匙串（Linux 上是 GNOME Keyring 或 KWallet），重启咕咕后再连。',
   'integrations.errorUnsupportedHost': '{name}不支持这个地址。',
   'integrations.errorInvalidInput': '填的内容{name}不认，检查一下格式。',
   'integrations.statusConnecting': '正在连接…',

@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   nativePending: null as unknown,
   recoveryError: null as Error | null,
   previewMove: vi.fn(),
+  navigate: vi.fn(),
   runAssistantMove: vi.fn(),
   list: vi.fn(async () => [{ id: 'notion', name: 'Notion' }]),
 }))
@@ -30,6 +31,9 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assist
 }))
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => ({
   rpcOn: () => ({ integrations: { list: mocks.list } }),
+}))
+vi.mock('../../../../apps/desktop/src/session/renderer/lib/stores/app-state', () => ({
+  appState: { navigation: { navigate: (...args: unknown[]) => mocks.navigate(...args) } },
 }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-home-sessions', () => ({
   homeTarget: () => null,
@@ -148,21 +152,26 @@ describe('搬家入口', () => {
 })
 
 describe('点了先列清带走什么,确认才搬', () => {
-  it('确认框列账号名与要重新连的,不含密钥;点开始才调用搬', async () => {
+  it('#2104 确认框与结果都列要在新家重新连的集成(名字与不保密的配置),不含密钥;结果页能直接去资源库', async () => {
     mocks.previewMove.mockResolvedValue({
       bytes: 2048,
       files: 3,
       skippedFiles: [],
       accounts: {
-        moving: [{ integrationId: 'notion', accountId: 'default', displayName: '阿满的 Notion' }],
-        reconnect: [{ integrationId: 'dingtalk', reason: 'cli' }],
+        reconnect: [
+          { integrationId: 'notion', accountId: 'default', displayName: '阿满的 Notion', reason: 'account' },
+          { integrationId: 'dingtalk', reason: 'cli' },
+        ],
         unsupported: false,
       },
     })
     mocks.runAssistantMove.mockResolvedValue({
       files: 3,
       skippedFiles: [],
-      accounts: { moved: [{ integrationId: 'notion', accountId: 'default' }], skipped: [], kept: [], unsupported: false },
+      accounts: {
+        reconnect: [{ integrationId: 'notion', accountId: 'a@x.cn', config: { imapHost: 'imap.x.cn' }, reason: 'account' }],
+        unsupported: false,
+      },
       schedules: { restored: 2, skipped: [], unsupported: [], unreadable: false },
       warnings: [],
     })
@@ -186,7 +195,16 @@ describe('点了先列清带走什么,确认才搬', () => {
     })
     await act(async () => {})
     expect(mocks.runAssistantMove).toHaveBeenCalledWith(expect.objectContaining({ assistantId: 'agent-1' }), 'to-cloud', expect.any(Function))
-    expect(document.body.querySelector('[data-testid="assistant-move-report"]')?.textContent).toContain('1 个账号已搬过去')
+    expect(document.body.querySelector('[data-testid="assistant-move-report"]')?.textContent).not.toContain('账号')
+    const done = document.body.querySelector('[data-testid="assistant-move-done-reconnect"]')?.textContent ?? ''
+    expect(done).toContain('Notion · a@x.cn')
+    expect(done).toContain('imap.x.cn')
+    expect(done).toContain('机器选「云上」')
+    await act(async () => {
+      (document.body.querySelector('[data-testid="assistant-move-reconnect-open"]') as HTMLButtonElement).click()
+    })
+    expect(mocks.navigate).toHaveBeenCalledWith('library', { tab: 'integrations' })
+    expect(document.body.querySelector('[data-testid="assistant-move-dialog"]')).toBeNull()
   })
 
   it('读不到旧家时说读不到、什么都没变,不进确认', async () => {
@@ -201,7 +219,7 @@ describe('点了先列清带走什么,确认才搬', () => {
   })
 
   it('搬着时「它住哪」翻面、搬家那一组换了位置重挂:弹窗与进度不丢(状态在模块里,不在组件里)', async () => {
-    mocks.previewMove.mockResolvedValue({ bytes: 0, files: 0, skippedFiles: [], accounts: { moving: [], reconnect: [], unsupported: false } })
+    mocks.previewMove.mockResolvedValue({ bytes: 0, files: 0, skippedFiles: [], accounts: { reconnect: [], unsupported: false } })
     let finish: (value: unknown) => void = () => undefined
     mocks.runAssistantMove.mockImplementation(
       (_env: unknown, _direction: unknown, onProgress: (p: unknown) => void) =>
@@ -235,7 +253,7 @@ describe('点了先列清带走什么,确认才搬', () => {
       finish({
         files: 1,
         skippedFiles: [],
-        accounts: { moved: [], skipped: [], kept: [], unsupported: false },
+        accounts: { reconnect: [], unsupported: false },
         schedules: { restored: 0, skipped: [], unsupported: [], unreadable: false },
         warnings: [],
       })
@@ -244,20 +262,4 @@ describe('点了先列清带走什么,确认才搬', () => {
     expect(document.body.querySelector('[data-phase="done"]')).not.toBeNull()
   })
 
-  it('确认框里的账号说明按旧家说:搬上云说「这台电脑上别的会话…」,搬回本机说「云上别的会话…」(❌ 云上上)', async () => {
-    mocks.previewMove.mockResolvedValue({
-      bytes: 1,
-      files: 1,
-      skippedFiles: [],
-      accounts: { moving: [{ integrationId: 'notion', accountId: 'default' }], reconnect: [], unsupported: false },
-    })
-    await render(cloud)
-    await act(async () => {
-      (q('assistant-move-to-computer') as HTMLButtonElement).click()
-    })
-    await act(async () => {})
-    const text = document.body.textContent ?? ''
-    expect(text).toContain('云上别的会话要用它们')
-    expect(text).not.toContain('云上上')
-  })
 })
