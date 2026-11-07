@@ -1,6 +1,7 @@
 import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
 import { isRoomChat } from '@gugu/core/shared/ui/chatModels'
 import type { ChatPickRow } from './ChatPickSheet'
+import { groupTopicsBySource, isTopLevelChatRow, isTopicRow } from '../chatListTopicNesting'
 import { parseWidgetMessage } from '@gugu/core/shared/ui/widgetModels'
 
 /** Compact, non-text-content preview label for the forwarded message. */
@@ -35,7 +36,7 @@ export function chatPickRow(chat: ChatItem, name: string, identitiesById: Identi
     name,
     // @@@2470 群没有 peer_user_id：不标 variant='group' 会被判成「缺身份 key 的人」，
     // 每次渲染刷一条诊断（agent e2e 的 console 守卫会当场失败）。口径同 ChatListPanel。
-    avatar: {
+    avatar: chat.kind === 'topic' ? undefined : {
       name,
       avatarUrl: isRoomChat(chat.kind) ? chat.avatar : identity?.avatar,
       seed: chat.peer_user_id ?? undefined,
@@ -47,4 +48,28 @@ export function chatPickRow(chat: ChatItem, name: string, identitiesById: Identi
       }),
     },
   }
+}
+
+/**
+ * The chats a pick offers, each topic under the chat it grew from, as the chat list nests them (groupTopicsBySource): a search
+ * that finds a topic brings its group along; a topic whose group is not offered (the source of a forward) stands alone, its
+ * group named under it. `idOf` is the row id a caller keys its pick by.
+ */
+export function chatPickRows(
+  chats: ChatItem[],
+  sourceChatId: string,
+  query: string,
+  displayName: (chat: ChatItem) => string,
+  identitiesById: Identities,
+  idOf = (id: string) => id,
+): ChatPickRow[] {
+  const found = new Set(forwardableChats(chats, sourceChatId, query, displayName).map((chat) => chat.id))
+  const byId = new Map(chats.map((chat) => [chat.id, chat]))
+  const listed = (chat: ChatItem) => chat.id !== sourceChatId
+  const nesting = groupTopicsBySource(chats, (chat) => found.has(chat.id), () => 0, (id) => byId.has(id) && id !== sourceChatId)
+  const row = (chat: ChatItem): ChatPickRow => ({ ...chatPickRow(chat, displayName(chat), identitiesById), id: idOf(chat.id) })
+  return chats.filter((chat) => isTopLevelChatRow(chat, nesting, listed, (one) => found.has(one.id))).map((chat) => {
+    const group = isTopicRow(chat) ? byId.get(chat.source_chat_id ?? '') : undefined
+    return { ...row(chat), hint: group && displayName(group), topics: nesting.bySource.get(chat.id)?.map(row) }
+  })
 }

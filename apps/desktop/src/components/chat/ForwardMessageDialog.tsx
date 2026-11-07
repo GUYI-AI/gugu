@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
-import { chatPickRow, forwardPreview, forwardableChats } from './forwardMessageUtils'
+import { chatPickRows, forwardPreview } from './forwardMessageUtils'
 import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
 import { ChatPickSheet } from './ChatPickSheet'
 import { useChatStore } from '../../store/chatContext'
@@ -47,9 +47,9 @@ export function ForwardMessageDialog({ messages = [], preview: subject, topRow, 
     (chat: ChatItem) => chatDisplayName(chat, identitiesById[chat.peer_user_id ?? '']?.display_name),
     [identitiesById],
   )
-  const visibleChats = useMemo(
-    () => forwardableChats(chats, sourceChatId, query, forwardTargetName),
-    [chats, sourceChatId, query, forwardTargetName],
+  const rows = useMemo(
+    () => chatPickRows(chats, sourceChatId, query, forwardTargetName, identitiesById),
+    [chats, sourceChatId, query, forwardTargetName, identitiesById],
   )
 
   const handleForward = useCallback(async () => {
@@ -87,7 +87,7 @@ export function ForwardMessageDialog({ messages = [], preview: subject, topRow, 
       title={t('forward.title')}
       onClose={onClose}
       testId="forward-message-dialog"
-      rows={visibleChats.map((chat) => chatPickRow(chat, forwardTargetName(chat), identitiesById))}
+      rows={rows}
       selected={selected}
       onToggle={toggle}
       query={query}
