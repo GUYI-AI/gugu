@@ -51,11 +51,18 @@ session.retire(expectedOwnerId: owner) { retirement = $0 }; stops.removeFirst()(
 check(succeeds(retirement), "explicit successful retry clears retirement barrier")
 result = nil; session.publish(ownerId: owner, accessToken: "fixture-c") { result = $0 }; verifies.removeFirst()(.success(owner))
 check(succeeds(result), "same owner may publish after successful stop")
-var transition: Result<Void, Error>?
+var transition: Result<GuguIOSMainWritePermit, Error>?
 session.prepareMainWrite(nextOwnerId: other) { transition = $0 }
 check(transition == nil && rejects { _ = try session.credentials(expectedBinding: binding) }, "owner storage transition stops before allowing write")
 stops.removeFirst()(.success(())); check(succeeds(transition), "completed stop permits storage transition")
-record = GuguIOSStoredSession(ownerId: other, accessToken: "fixture-other", expiresAt: Date(timeIntervalSince1970: 2000))
+result = nil; session.publish(ownerId: owner, accessToken: "fixture-c") { result = $0 }
+check(!succeeds(result), "stop completion alone does not release pending storage retirement")
+let permit = try transition!.get()
+check(rejects { try session.commitMainWrite(permit) { throw GuguHostFailure(code: "fixture_io", message: "injected") } }, "storage failure propagates after native stop")
+result = nil; session.publish(ownerId: owner, accessToken: "fixture-c") { result = $0 }
+check(!succeeds(result), "storage failure keeps old saved login closed to publication")
+try session.commitMainWrite(permit) { record = GuguIOSStoredSession(ownerId: other, accessToken: "fixture-other", expiresAt: Date(timeIntervalSince1970: 2000)) }
+check(rejects { try session.commitMainWrite(permit) {} }, "storage permit cannot be replayed")
 result = nil; session.publish(ownerId: other, accessToken: "fixture-other") { result = $0 }
 record = nil; verifies.removeFirst()(.success(other))
 check(!succeeds(result), "retired Keychain record rejects late successful verification")

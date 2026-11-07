@@ -15,6 +15,12 @@ struct GuguIOSOwnerCredentials: CustomDebugStringConvertible {
     var debugDescription: String { "GuguIOSOwnerCredentials(<redacted>)" }
 }
 
+struct GuguIOSMainWritePermit {
+    fileprivate let generation: UInt64
+    fileprivate let nextOwnerId: String?
+    fileprivate let holdsRetirement: Bool
+}
+
 /// The renderer's sessionCoordinator remains the sole refresh authority. Publishing
 /// here verifies one already-committed access token; it cannot create or refresh it.
 final class GuguIOSOwnerSession {
@@ -99,18 +105,50 @@ final class GuguIOSOwnerSession {
 
     /// AuthStorage must call this barrier before committing retirement or another
     /// owner. A failed stop rejects the write and does not restore native access.
-    func prepareMainWrite(nextOwnerId: String?, completion: @escaping (Result<Void, Error>) -> Void) {
+    func prepareMainWrite(nextOwnerId: String?, completion: @escaping (Result<GuguIOSMainWritePermit, Error>) -> Void) {
         lock.lock()
         let previous: String?
         do { previous = try readStored()?.ownerId }
-        catch { lock.unlock(); completion(.failure(error)); return }
+        catch {
+            // Failure to read the old envelope must not leave its native access
+            // alive while a retirement/write intent is already in flight.
+            generation &+= 1; active = nil; retiring = true
+            lock.unlock()
+            stopNative { _ in completion(.failure(error)) }
+            return
+        }
         if !retiring && previous == nextOwnerId && active?.binding.ownerId == nextOwnerId {
-            lock.unlock(); completion(.success(())); return
+            let permit = GuguIOSMainWritePermit(generation: generation, nextOwnerId: nextOwnerId, holdsRetirement: false)
+            lock.unlock(); completion(.success(permit)); return
         }
         generation &+= 1; active = nil; retiring = true
         let issued = generation
         lock.unlock()
-        finishStop(issued: issued, completion: completion)
+        stopNative { result in
+            self.lock.lock()
+            let outcome: Result<GuguIOSMainWritePermit, Error>
+            do {
+                guard self.generation == issued else { throw Self.stale() }
+                try result.get()
+                outcome = .success(GuguIOSMainWritePermit(generation: issued, nextOwnerId: nextOwnerId, holdsRetirement: true))
+            } catch { outcome = .failure(error) }
+            self.lock.unlock(); completion(outcome)
+        }
+    }
+
+    /// AuthStorage invokes its synchronous Keychain write under this generation
+    /// check. Stop success alone must not reopen a failed logout storage commit.
+    func commitMainWrite(_ permit: GuguIOSMainWritePermit, persist: () throws -> Void) throws {
+        lock.lock(); defer { lock.unlock() }
+        guard generation == permit.generation,
+              !retiring || permit.holdsRetirement else { throw Self.stale() }
+        try persist()
+        guard try readStored()?.ownerId == permit.nextOwnerId else {
+            retiring = true; active = nil
+            throw Self.failure("auth_storage_invalid", "Native login write did not preserve the prepared owner")
+        }
+        generation &+= 1
+        if permit.holdsRetirement { retiring = false }
     }
 
     func retire(expectedOwnerId: String, completion: @escaping (Result<Void, Error>) -> Void) {
