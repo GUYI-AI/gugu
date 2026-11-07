@@ -4,6 +4,7 @@ import { Agent } from '@earendil-works/pi-agent-core'
 import { AssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream'
 import { collapseSystemMessages, getCurrentTools } from '@earendil-works/pi-ai/utils/transcript'
 import { getSystemMessageText } from '@earendil-works/pi-ai'
+import { readNativeTimeline } from './timeline.mjs'
 
 // JSC has ECMAScript primitives, but no browser/Node host API. The native boundary
 // below is deliberately narrower than fetch/filesystem and never receives a token.
@@ -149,6 +150,12 @@ async function run(command) {
 
 globalThis.GuguIOSRuntime = Object.freeze({
   diagnostics: () => JSON.stringify({ protocolVersion: 1, piVersion: '1.4.0', engine: 'JavaScriptCore', node: typeof process !== 'undefined' }),
+  timeline(id, json) {
+    void Promise.resolve().then(() => readNativeTimeline(JSON.parse(json))).then(
+      data => __guguNativeProjection(id, JSON.stringify({ ok: true, data })),
+      error => __guguNativeProjection(id, JSON.stringify({ ok: false, code: error.code ?? 'record_unreadable', message: error.message })),
+    )
+  },
   start(json) {
     const command = JSON.parse(json)
     void run(command).catch(async (error) => {

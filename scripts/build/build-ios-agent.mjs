@@ -14,7 +14,8 @@ await mkdir(out, { recursive: true })
 const bootstrap = await readFile(join(root, 'apps/mobile/runtime/ios/bootstrap.js'), 'utf8')
 const built = await build({ banner: { js: bootstrap }, entryPoints: [join(root, 'apps/mobile/runtime/ios/agent.mjs')],
   outfile: join(out, 'agent.js'), bundle: true, platform: 'browser', target: 'safari15', format: 'iife', minify: true,
-  alias: { '@capacitor/core': join(root, 'apps/mobile/runtime/ios/calendar-bridge.mjs') },
+  alias: { '@capacitor/core': join(root, 'apps/mobile/runtime/ios/calendar-bridge.mjs'),
+    '@gugu/session-shared/logger': join(root, 'packages/session-shared/src/logger/redact.ts') },
   nodePaths: [join(root, 'apps/mobile/node_modules'), join(tooling, 'node_modules')], metafile: true })
 const bytes = await readFile(join(out, 'agent.js'))
 const inputs = Object.keys(built.metafile.inputs)

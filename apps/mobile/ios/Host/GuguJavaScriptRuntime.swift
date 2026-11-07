@@ -18,6 +18,7 @@ final class GuguJavaScriptRuntime {
     private let cancelHandler: (String) -> Void
     private let eventHandler: ([String: Any]) -> Void
     private var scriptError: String?
+    private var projections: [String: Reply] = [:]
     let assetSHA256: String
 
     init(asset: Data, expectedSHA256: String,
@@ -58,12 +59,18 @@ final class GuguJavaScriptRuntime {
                 do { self.eventHandler(try Self.object(json)) }
                 catch { self.eventHandler(["type": "host_error", "message": "Invalid runtime event JSON"]) }
             }
+            let nativeProjection: @convention(block) (String, String) -> Void = { [weak self] id, json in
+                guard let self, let completion = self.projections.removeValue(forKey: id) else { return }
+                do { completion(try Self.object(json)) }
+                catch { completion(["ok": false, "code": "record_unreadable", "message": "Invalid native timeline result"]) }
+            }
             context.setObject(uuid, forKeyedSubscript: "__guguUUID" as NSString)
             context.setObject(encode, forKeyedSubscript: "__guguUTF8Encode" as NSString)
             context.setObject(clock, forKeyedSubscript: "__guguMonotonic" as NSString)
             context.setObject(nativeRequest, forKeyedSubscript: "__guguNativeRequest" as NSString)
             context.setObject(nativeCancel, forKeyedSubscript: "__guguNativeCancel" as NSString)
             context.setObject(nativeEvent, forKeyedSubscript: "__guguNativeEvent" as NSString)
+            context.setObject(nativeProjection, forKeyedSubscript: "__guguNativeProjection" as NSString)
             context.evaluateScript(script, withSourceURL: URL(string: "gugu-bundle://HostRuntime/agent.js"))
         }
         if let scriptError { throw GuguHostFailure(code: "runtime_load_failed", message: scriptError) }
@@ -88,6 +95,25 @@ final class GuguJavaScriptRuntime {
             guard let self else { return }
             self.context.objectForKeyedSubscript("GuguIOSRuntime")?.invokeMethod("start", withArguments: [json])
             self.reportException()
+        }
+    }
+
+    /// Native backend only: input must come from authorized journal reads. The
+    /// caller rechecks identity/category again before delivering this async view.
+    func readTimeline(_ input: [String: Any], completion: @escaping Reply) throws {
+        let json = try Self.json(input)
+        let id = UUID().uuidString.lowercased()
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.projections[id] = completion
+            self.context.objectForKeyedSubscript("GuguIOSRuntime")?.invokeMethod("timeline", withArguments: [id, json])
+            if let message = self.scriptError {
+                self.scriptError = nil
+                self.projections.removeValue(forKey: id)?(["ok": false, "code": "record_unreadable", "message": message])
+            }
+        }
+        queue.asyncAfter(deadline: .now() + 15) { [weak self] in
+            self?.projections.removeValue(forKey: id)?(["ok": false, "code": "record_unreadable", "message": "Native timeline projection timed out"])
         }
     }
 
