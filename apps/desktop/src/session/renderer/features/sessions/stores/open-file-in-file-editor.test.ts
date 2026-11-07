@@ -502,10 +502,11 @@ describe('task file preview routing', () => {
     await vi.waitFor(() =>
       expect(onResult).toHaveBeenCalledWith({ success: true, openedWith: null })
     );
-    // 开在对话右边并排,❌ 盖住对话(spec gugu-plugin「在工作区打开文件」)。
+    // 开在对话右边并排,❌ 盖住对话(spec gugu-plugin「在工作区打开文件」)。Opened for an agent, not the person: `byHost`,
+    // so the page drawing it gets no grant to read outside the working copy.
     expect(mocks.paneLayoutOpen).toHaveBeenCalledWith(
       'workspace.file',
-      { filePath: '/tmp/Application Support/note.md' },
+      { filePath: '/tmp/Application Support/note.md', byHost: true },
       { from: null, intent: 'beside', activate: false }
     );
     dispose();

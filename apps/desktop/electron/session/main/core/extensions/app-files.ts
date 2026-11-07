@@ -63,6 +63,7 @@ import { appFileHeardElsewhereChannel, appFileWatchElsewhereChannel, workingCopy
 import type { ExtensionFileChangeBatch, PlaceVerb } from '@shared/extensions/bridge-protocol';
 import { nextPartBytes, SMALLEST_PART_BYTES, uploadInParts } from '@shared/extensions/working-copy-upload';
 import { log } from '@main/lib/logger';
+import type { HandedFile } from '@main/core/extensions/working-copy-files';
 import { isValidOpenInAppId } from '@shared/openInApps';
 
 /**
@@ -121,6 +122,11 @@ export interface DesktopFilePage {
   pageId: number;
   extensionId: string;
   handed: (AppFileRef & { id: string }) | null;
+  /**
+   * The grant the host made when a person opened the handed file outside its working copy (`@@@outside-grant`): the host's,
+   * from the page's binding, never told the page. None for a file an agent or an App opened, or a page with no binding.
+   */
+  grant?: string;
   asAgent?: string | null;
   /** A page's own chat, as it was bound: already its resource container (`surfaceResourceChat`). */
   boundChat?: string | null;
@@ -286,7 +292,14 @@ const withId = (ref: AppFileRef, what: string): AppFileRef & { id: string } => {
 const isHanded = (page: DesktopFilePage, ref: WorkspaceFileRef): boolean =>
   !!page.handed && isWorkspace(page.handed) && page.handed.workspace === ref.workspace && 'id' in ref && page.handed.id === ref.id;
 
-/** An absolute path reaches one file only: the one the host handed this page. No capability opens any other. */
+/** The file outside its working copy a person opened in this page, as a file call carries it to its machine (`fileRootOf`). */
+const handedOf = (page: DesktopFilePage): HandedFile =>
+  page.handed && isWorkspace(page.handed) && page.grant ? { workspace: page.handed.workspace, id: page.handed.id, grant: page.grant } : null;
+
+/**
+ * An absolute path reaches one file only: the one the host handed this page. Every read and write of a file's bytes says so
+ * where the file is (`fileRootOf`); this is for what never gets there — opening it, handing the path to a program.
+ */
 function checkAbsolute(page: DesktopFilePage, ref: WorkspaceFileRef): void {
   const named = 'id' in ref ? ref.id : ref.name;
   if (path.isAbsolute(named) && !isHanded(page, ref)) {
@@ -350,7 +363,6 @@ export async function readAppFile(page: DesktopFilePage, args: { ref?: unknown; 
   const offset = Number(args.offset ?? 0);
   const length = Number(args.length ?? 0);
   if (isChat(ref)) return files.read(chatSurface(page), { ref: { ...ref, version: (args.ref as { version?: number })?.version }, offset, length });
-  checkAbsolute(page, ref);
   return workspaceAppFileChunk(await workingCopyPiece(page, ref, offset, length));
 }
 
@@ -359,7 +371,7 @@ async function workingCopyPiece(page: DesktopFilePage, ref: WorkspaceFileRef, of
   const there = await onItsMachine(page, ref, 'filesRead', { ref, offset, length });
   if (there.there) return there.value as { size: number; etag: string; offset: number; data: string };
   const { readWorkingCopy } = await import('./working-copy-files');
-  return readWorkingCopy(ref, 'id' in ref ? ref.id : ref.name, offset, length);
+  return readWorkingCopy(ref, 'id' in ref ? ref.id : ref.name, offset, length, handedOf(page));
 }
 
 /** What a page may do to a working copy's file, and that it names no absolute path it was not handed. */
@@ -494,7 +506,7 @@ export async function watchAppFile(page: DesktopFilePage, value: unknown, hear: 
   const ref = wholeFileRef(page, value, 'files:read', 'onChanged');
   if (!(await elsewhereGated(page, ref))) {
     const { watchWorkingCopyFile } = await import('./working-copy-files');
-    return watchWorkingCopyFile(ref, ref.id, hear);
+    return watchWorkingCopyFile(ref, ref.id, hear, handedOf(page));
   }
   return hearElsewhere(workspaceSession(ref)!, { file: ref.id }, hear);
 }
@@ -586,7 +598,7 @@ async function onItsMachine(page: DesktopFilePage, place: WorkspacePlace, method
   if (!(await elsewhereGated(page, place))) return { there: false } as const;
   const { callOnSessionMachine } = await import('./app-programs-elsewhere');
   const manifest = extensionsService().get(page.extensionId).manifest;
-  return callOnSessionMachine({ extensionId: page.extensionId, manifest }, session, method, args, page.asAgent != null);
+  return callOnSessionMachine({ extensionId: page.extensionId, manifest }, session, method, args, page.asAgent != null, handedOf(page) ?? undefined);
 }
 
 /** Across every chat whoever the page works as is in (`files:read`, checked at the door): by a piece of the path; opened last. */
@@ -683,11 +695,10 @@ export async function removeAppFile(page: DesktopFilePage, args: { ref?: unknown
 export async function writeAppFileChunk(page: DesktopFilePage, args: Record<string, unknown>): Promise<unknown> {
   const place = placeOf(args.place);
   if ('chat' in place) throw new AppFileError('invalid', "A chat's file is uploaded whole: files.upload");
-  checkAbsolute(page, { ...place, id: String(args.path) });
   const there = await onItsMachine(page, place, 'filesWriteChunk', args);
   if (there.there) return there.value;
   const { writeWorkingCopyChunk } = await import('./working-copy-files');
-  return writeWorkingCopyChunk(place, args as never);
+  return writeWorkingCopyChunk(place, args as never, handedOf(page));
 }
 
 /** A working copy's file or folder in this computer's file manager (another machine's has none here). */

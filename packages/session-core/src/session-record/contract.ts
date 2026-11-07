@@ -579,6 +579,11 @@ export type AppCallAction = {
   version: string;
   method: string;
   args: Record<string, unknown>;
+  /**
+   * The file outside its working copy a person opened in the page, and the grant the host made for that opening: stamped by
+   * the host from the page's binding, never from the page's args. The machine the file is on checks it (`fileRootOf`).
+   */
+  handed?: { workspace: string; id: string; grant: string };
 };
 
 /**

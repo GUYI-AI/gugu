@@ -353,13 +353,14 @@ export function openHostRequestedFileInSessionWhenReady({
           const tab = fileTabTarget(path, true);
           session.viewModel.paneLayout.open(
             tab.kind,
-            tab.args,
+            // Opened for an agent or an App: an App page drawing it gets no grant to read outside the working copy.
+            { ...tab.args, byHost: true },
             { from: sessionConversationTabId(session.viewModel.paneLayout, sessionId), intent: 'beside', activate: false },
           );
           onResult({ success: true, openedWith: null });
         } else if (tabKind) {
           // 摩擦单 F122 «Open with X», named by the caller (main checked X claims it): what「用哪个打开」does once picked.
-          session.viewModel.paneLayout.open(tabKind, { filePath: path }, { from: sessionConversationTabId(session.viewModel.paneLayout, sessionId), intent: 'beside', activate: false });
+          session.viewModel.paneLayout.open(tabKind, { filePath: path, byHost: true }, { from: sessionConversationTabId(session.viewModel.paneLayout, sessionId), intent: 'beside', activate: false });
           onResult({ success: true, openedWith: tabKind });
         } else {
           // Reported, not predicted: the host says what actually opened because the

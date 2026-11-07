@@ -13,6 +13,7 @@ import { extensionPartition, extensionResourceUrl } from '@shared/extensions/par
 import { onExtensionProgramNotification } from '@main/core/extensions/extension-programs';
 import { extensionProjections } from './extension-projection-bridge';
 import { log } from '@main/lib/logger';
+import { randomUUID } from 'node:crypto';
 import { events } from '@main/lib/events';
 import { extensionProgramNotifiedChannel } from '@shared/extensions/marketEvents';
 import { knownSessionMachine, type SessionMachine } from './app-programs-elsewhere';
@@ -103,6 +104,11 @@ interface SurfaceBinding {
    * cannot change it. With `itemId`, the one file it may open without a capability (`ctx.file`).
    */
   filePath: string | null;
+  /**
+   * A person opened `filePath`, a file outside its working copy (or one on another machine): the grant made for that
+   * opening (`@@@outside-grant`), only main's. A new one each time the page is bound to it; gone with the binding.
+   */
+  grant?: string;
   /** The chat file the host handed this surface (`ctx.file`). */
   itemId: string | null;
   /**
@@ -203,6 +209,7 @@ function pageCaller(binding: SurfaceBinding, webContentsId: number, gesture: boo
     pageId: webContentsId,
     extensionId: binding.extensionId,
     handed: handedFileOf(binding),
+    ...(binding.grant ? { grant: binding.grant } : {}),
     boundChat: binding.conversation,
     ...(binding.operator.kind === 'agent' ? { asAgent: binding.operator.id.replace(/^user:/, '') } : {}),
   });
@@ -535,6 +542,24 @@ async function workspaceRelativeFile(place: WorkspacePlace | null, filePath?: st
 }
 
 /**
+ * @@@outside-grant - a page bound to a file outside its working copy, opened by a person (not for an agent or an App, not a
+ * page an agent works): a grant for this opening. The file's machine binds it to the file it is when first read
+ * (`openGranted`, right away), so a link turned elsewhere later reads nothing; the page never sees the grant.
+ */
+function grantFor(workspace: string | null, filePath: string | null, byHost: boolean | undefined, operator: ExtensionOperator | undefined): { grant?: string } {
+  return workspace && filePath && path.isAbsolute(filePath) && !byHost && operator?.kind !== 'agent' ? { grant: randomUUID() } : {};
+}
+
+/** The grant's first read, as the page is bound: the file is taken to be the one it is now, on its machine. */
+function openGranted(binding: SurfaceBinding, webContentsId: number): void {
+  if (!binding.grant || !binding.workspace || !binding.filePath) return;
+  const page = { pageId: webContentsId, extensionId: binding.extensionId, handed: { workspace: binding.workspace, id: binding.filePath }, grant: binding.grant };
+  void import('@main/core/extensions/app-files')
+    .then(({ readAppFile }) => readAppFile(page, { ref: { workspace: binding.workspace, id: binding.filePath }, offset: 0, length: 0 }))
+    .catch((error: unknown) => log.info('[extensions] the opened file could not be read yet', { error: String(error) }));
+}
+
+/**
  * 谁在等自己的绑定落地。
  *
  * 为什么需要这东西:绑定发生在 `dom-ready`,而那是 guest **把脚本跑完之后**才到的时刻
@@ -586,6 +611,8 @@ export async function bindExtensionSurface(input: {
   tabKind: string;
   /** Set only when the tab was opened for a file of its workspace this extension claimed. */
   filePath?: string;
+  /** The host opened `filePath` for an agent or an App (`open_in_tab`, `files.openWith`), not a person: no grant. */
+  byHost?: boolean;
   itemId?: string;
   /** Who works it: the person unless main binds it for an agent (`app_check`); never the renderer's to say. */
   operator?: ExtensionOperator;
@@ -642,6 +669,7 @@ export async function bindExtensionSurface(input: {
     navigation: input.navigation,
     tabName,
     filePath,
+    ...grantFor(workspace, filePath, input.byHost, input.operator),
     itemId: input.itemId ?? null,
     embedderId: contents.hostWebContents?.id ?? null,
     operator: input.operator ?? { kind: 'person' },
@@ -652,6 +680,7 @@ export async function bindExtensionSurface(input: {
     themeMode: null,
   });
   preloadFolder(bindings.get(input.webContentsId)!, input.webContentsId);
+  openGranted(bindings.get(input.webContentsId)!, input.webContentsId);
   if (input.operator?.kind === 'agent') agentPages.set(input.webContentsId, { counts: null, shown: [] });
   // Which machine its session is on, found once now: whose program's notifications it hears is read from that
   // (`knownSessionMachine`), never asked of every machine per notification.
@@ -825,6 +854,7 @@ export async function retargetExtensionSurface(input: {
   viewState?: Record<string, unknown>;
   navigation?: { canBack: boolean; canForward: boolean; backToConversation?: boolean };
   filePath?: string;
+  byHost?: boolean;
   itemId?: string;
 } & Partial<AppWhere>): Promise<void> {
   const binding = bindings.get(input.webContentsId);
@@ -857,7 +887,12 @@ export async function retargetExtensionSurface(input: {
   binding.tabId = input.tabId;
   binding.viewState = input.viewState;
   binding.navigation = input.navigation;
+  const regranted = workspace !== previousWorkspace || filePath !== binding.filePath || !input.byHost !== !!binding.grant;
   binding.filePath = filePath;
+  if (regranted) {
+    delete binding.grant;
+    Object.assign(binding, grantFor(workspace, filePath, input.byHost, binding.operator));
+  }
   binding.itemId = input.itemId ?? null;
   binding.opening = input.opening;
   if (folderChanged) {
@@ -867,6 +902,7 @@ export async function retargetExtensionSurface(input: {
   bindingChanges.delete(input.webContentsId);
   pushContext(input.webContentsId);
   // Moved to a file a pill or a link is waiting to open: its place is this page's now.
+  if (regranted) openGranted(binding, input.webContentsId);
   if (fileOf(binding) !== null && fileOf(binding) !== was) flushQueuedSurfaceEvents(input.webContentsId, binding, true);
 }
 

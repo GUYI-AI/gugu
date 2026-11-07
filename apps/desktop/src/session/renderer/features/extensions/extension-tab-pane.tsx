@@ -42,6 +42,7 @@ export function ExtensionTabPane({
   viewState,
   navigation,
   filePath,
+  byHost,
   projectId,
   chatId,
   resourceChat,
@@ -62,6 +63,8 @@ export function ExtensionTabPane({
    * never the surface.
    */
   filePath?: string;
+  /** `filePath` was opened by the host for an agent or an App (`open_in_tab`, `files.openWith`), not by the person. */
+  byHost?: boolean;
   /** G1 With `filePath` and no session: the project whose folder the file is in (a page opened beside another). */
   projectId?: string;
   /** Drawn for a chat (a chat's tab in a window of its own), and the chat file it was opened for. */
@@ -188,7 +191,7 @@ export function ExtensionTabPane({
     retarget: (webContentsId, target) => rpc.extensions.retargetSurface({ webContentsId, ...target }),
   }), [extensionId, tabKind]);
   const targetRef = useRef<ExtensionGuestTarget>({ tabId, workspace, conversation: conversationRef.current });
-  targetRef.current = { workspace, conversation: conversationRef.current, resourceChat: resourceChatRef.current, tabId, itemId, filePath, viewState, navigation };
+  targetRef.current = { workspace, conversation: conversationRef.current, resourceChat: resourceChatRef.current, tabId, itemId, filePath, ...(byHost ? { byHost } : {}), viewState, navigation };
   // @@@one-guest-many-tabs - Tabs of one kind share this pane and its webview, so another tab is a retarget of the live
   // guest. Nothing the webview's ref depends on may change with the tab: a new ref forgets the guest, and dom-ready, the
   // only thing that hands it back, does not fire again on a page already loaded.

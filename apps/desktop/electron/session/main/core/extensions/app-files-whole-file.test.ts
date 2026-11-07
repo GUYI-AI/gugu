@@ -25,7 +25,8 @@ const { releaseWorkingCopies } = await import('./working-copy-files');
 
 const workspace = 'session:11111111-1111-4111-8111-111111111111';
 let outside = '';
-const page = (handed: unknown = null) => ({ pageId: 3, extensionId: 'reader', handed }) as never;
+// A page opened on a file by a person: the host's grant for that opening (`@@@outside-grant`), one per page.
+const page = (handed: unknown = null) => ({ pageId: 3, extensionId: 'reader', handed, ...(handed ? { grant: crypto.randomUUID() } : {}) }) as never;
 
 beforeEach(async () => {
   releaseWorkingCopies(3);
@@ -134,7 +135,7 @@ it('another machine is asked, for its pieces', async () => {
   f.machine.mockResolvedValue({ deviceId: 'there', projectId: null });
   f.remote.mockResolvedValue({ there: true, value: { size: 2, etag: 'e', offset: 0, data: 'aGk=' } });
   expect((await readAppFileText(page(), { ref: { workspace, id: 'a.md' } })).content).toBe('hi');
-  expect(f.remote).toHaveBeenCalledWith(expect.anything(), expect.any(String), 'filesRead', expect.objectContaining({ ref: { workspace, id: 'a.md' } }), false);
+  expect(f.remote).toHaveBeenCalledWith(expect.anything(), expect.any(String), 'filesRead', expect.objectContaining({ ref: { workspace, id: 'a.md' } }), false, undefined);
 });
 
 const onDisk = (name: string) => fsp.readFile(path.join(f.root, name), 'utf8');
@@ -217,7 +218,7 @@ it('hears a file on another machine through the window, which has that machine\'
 it('on the machine a file is on: a relative path stays in the working copy, reading and writing', async () => {
   const { machineVerbs } = await import('./machine-verbs');
   const climb = `../${path.basename(outside)}/notes.md`;
-  await expect(machineVerbs.filesRead('reader', { ref: { workspace, id: climb }, offset: 0, length: 10 })).rejects.toBeDefined();
-  await expect(machineVerbs.filesWriteChunk('reader', { place: { workspace }, path: climb, uploadId: 'c', offset: 0, data: 'bm8=', total: 2, final: true, expectedEtag: 'force' })).rejects.toBeDefined();
+  await expect(machineVerbs.filesRead('reader', { ref: { workspace, id: climb }, offset: 0, length: 10 }, {}, null)).rejects.toBeDefined();
+  await expect(machineVerbs.filesWriteChunk('reader', { place: { workspace }, path: climb, uploadId: 'c', offset: 0, data: 'bm8=', total: 2, final: true, expectedEtag: 'force' }, {}, null)).rejects.toBeDefined();
   expect(await fsp.readFile(path.join(outside, 'notes.md'), 'utf8')).toBe('# outside');
 });

@@ -136,9 +136,9 @@ describe('a file going into a working copy, part by part', () => {
   const b64 = (text: string) => Buffer.from(text).toString('base64');
 
   it('makes its folders, holds the bytes beside it until the last part, then answers with the entry', async () => {
-    expect(await writeWorkingCopyChunk(place, part({}))).toEqual({ received: 3 });
+    expect(await writeWorkingCopyChunk(place, part({}), null)).toEqual({ received: 3 });
     expect(fs.existsSync(path.join(root, 'in/deep/new.bin'))).toBe(false);
-    const done = await writeWorkingCopyChunk(place, part({ offset: 3, data: b64('def'), final: true }));
+    const done = await writeWorkingCopyChunk(place, part({ offset: 3, data: b64('def'), final: true }), null);
     expect(done.entry?.id).toBe('in/deep/new.bin');
     expect(fs.readFileSync(path.join(root, 'in/deep/new.bin'), 'utf8')).toBe('abcdef');
     expect(fs.readdirSync(path.join(root, 'in/deep'))).toEqual(['new.bin']);
@@ -146,21 +146,21 @@ describe('a file going into a working copy, part by part', () => {
 
   it('a file of more than the old 100 MiB is taken: only the announced total is over it, nothing is held', async () => {
     const total = 101 * 1024 * 1024;
-    expect(await writeWorkingCopyChunk(place, part({ path: 'large.bin', uploadId: 'u2', total }))).toEqual({ received: 3 });
+    expect(await writeWorkingCopyChunk(place, part({ path: 'large.bin', uploadId: 'u2', total }), null)).toEqual({ received: 3 });
   });
 
   it('a name already there is said at the first part, and written only when replacing was asked', async () => {
     fs.writeFileSync(path.join(root, 'taken.txt'), 'old');
-    await expect(writeWorkingCopyChunk(place, part({ path: 'taken.txt', uploadId: 'u3', total: 3, final: true })))
+    await expect(writeWorkingCopyChunk(place, part({ path: 'taken.txt', uploadId: 'u3', total: 3, final: true }), null))
       .rejects.toMatchObject({ code: 'name-taken' });
     expect(fs.readFileSync(path.join(root, 'taken.txt'), 'utf8')).toBe('old');
-    await writeWorkingCopyChunk(place, part({ path: 'taken.txt', uploadId: 'u4', total: 3, final: true, expectedEtag: '*' }));
+    await writeWorkingCopyChunk(place, part({ path: 'taken.txt', uploadId: 'u4', total: 3, final: true, expectedEtag: '*' }), null);
     expect(fs.readFileSync(path.join(root, 'taken.txt'), 'utf8')).toBe('abc');
   });
 
   it('a path out of the working copy makes no folder', async () => {
     const sibling = `up-${path.basename(root)}`;
-    await expect(writeWorkingCopyChunk(place, part({ path: `../${sibling}/x`, uploadId: 'u5' }))).rejects.toMatchObject({ code: 'invalid' });
+    await expect(writeWorkingCopyChunk(place, part({ path: `../${sibling}/x`, uploadId: 'u5' }), null)).rejects.toMatchObject({ code: 'invalid' });
     expect(fs.existsSync(path.join(root, '..', sibling))).toBe(false);
   });
 });
