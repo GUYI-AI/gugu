@@ -19,7 +19,7 @@ export type IdentityQueries = {
 };
 export type IdentityPlan =
   | { kind: 'unlocated' }
-  | { kind: 'dependency'; nativeKey: string; reason: 'ancestry_unknown' | 'inherited_revision_missing' }
+  | { kind: 'dependency'; nativeKey: string; reason: 'ancestry_unknown' | 'inherited_revision_missing' | 'ownership_unknown' }
   | { kind: 'apply' | 'update' | 'duplicate'; value: Value; nativeKey: string; receiptKey: string;
       receipts: readonly Write[]; aliases: readonly Write[]; previous?: Value };
 
@@ -99,8 +99,8 @@ export async function planSourceIdentity(input: SourceIdentityEnvelope, context:
     }
   }
   if (previous) compatible(previous);
-  const value: Value = { canonicalId: previous?.canonicalId ?? supplied
-    ?? `record:v2:${hash([context.conversationScope, context.branchLineage, keys.nativeKey])}`,
+  if (!previous && !supplied) return { kind: 'dependency', nativeKey: keys.nativeKey, reason: 'ownership_unknown' };
+  const value: Value = { canonicalId: (previous?.canonicalId ?? supplied)!,
     revision: input.revision, projectionRef: input.projectionRef };
   const same = previous?.revision === input.revision;
   return { kind: same ? 'duplicate' : previous ? 'update' : 'apply', ...keys, value,

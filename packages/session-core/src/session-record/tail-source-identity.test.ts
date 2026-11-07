@@ -4,7 +4,7 @@ import { planSourceIdentity, resolveCanonicalOwner, sourceDependencies, sourceEv
   type IdentityContext, type IdentityQueries, type SourceIdentityEnvelope } from './tail-source-identity';
 
 const context = (): IdentityContext => ({ sourceScope: 'source', sourceLineage: 'lineage', conversationScope: 'conversation',
-  branchLineage: 'root', atCommit: 3, ancestryComplete: true });
+  branchLineage: 'root', atCommit: 3, ancestryComplete: true, canonicalId: 'stored:turn:s9' });
 const envelope = (provider: 'claude' | 'codex' = 'claude'): SourceIdentityEnvelope => ({ provider, recordStart: 2 ** 33,
   sourceRange: { start: 2 ** 33, end: 2 ** 33 + 100 }, fragment: 0, eventKind: 'message', revision: 'v1', projectionRef: 'projection:1', recordMetadata: { uuid: 'record-uuid', messageId: 'message-id' } });
 const absent = { kind: 'absent' as const };
@@ -49,7 +49,7 @@ describe('tail source identities', () => {
     const plan = await planSourceIdentity(envelope(), ctx, q);
     expect(plan).toMatchObject({ kind: 'duplicate', value: { canonicalId: value.canonicalId }, aliases: [{ lineage: 'fork' }] });
     expect(q.identity).toHaveBeenCalledWith('root', ctx.inherited[0].nativeKey, 2);
-    const diverged = await planSourceIdentity(envelope(), { ...context(), branchLineage: 'other-fork' }, queries());
+    const diverged = await planSourceIdentity(envelope(), { ...context(), canonicalId: undefined, branchLineage: 'other-fork' }, queries());
     expect(diverged).not.toMatchObject({ value: { canonicalId: value.canonicalId } });
   });
   it('keeps incomplete ancestry and missing inherited revisions explicit', async () => {
@@ -80,6 +80,7 @@ describe('tail source identities', () => {
     expect(await resolveCanonicalOwner(envelope(), context(), lookup)).toEqual({ kind: 'found', owner });
     expect(lookup).toHaveBeenCalledWith('root', sourceOwnershipKey('claude', 'record', 'record-uuid'), 3);
     expect(await resolveCanonicalOwner(envelope(), context(), async () => null)).toMatchObject({ kind: 'dependency' });
+    expect(await planSourceIdentity(envelope(), { ...context(), canonicalId: undefined }, queries())).toMatchObject({ kind: 'dependency', reason: 'ownership_unknown' });
     expect(await resolveCanonicalOwner({ ...envelope(), recordStart: null }, context(), lookup)).toEqual({ kind: 'unlocated' });
     const key = sourceFragmentKey(envelope(), context());
     expect(sourceFragmentKey({ ...envelope(), revision: 'new-revision' }, context())).toBe(key);
