@@ -114,7 +114,9 @@
 .gg-md li:not(:first-child) { margin-top: var(--md-li-gap); }
 .gg-md li > :is(ul, ol) { margin-top: var(--md-li-gap); }
 .gg-md li > p { display: block; margin: 0; }
-.gg-md li > p:not(:first-child) { margin-top: var(--md-gap); }
+/* `p + p` without keying a sibling rule on a bare tag (see defaultBorderColor.test.ts). Any other block before a
+   paragraph carries its own bottom margin, which collapses with this one; only `p, h*, p` inside one item differs. */
+.gg-md li > p:not(:first-of-type) { margin-top: var(--md-gap); }
 .gg-md li::marker { color: var(--md-faint); }
 /* task list: the checkbox sits in the indent, wrapped lines hang at the same column as the text */
 .gg-md li:has(> input[type='checkbox'], > p:first-child > input[type='checkbox']) { list-style: none; }

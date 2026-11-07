@@ -55,6 +55,7 @@ import {
 } from '../lib/accountRevisionCoordinator'
 import { createSupabaseAccountRevisionSource } from '../lib/supabaseAccountRevisionSource'
 import { initializeAccountSync } from '../lib/accountSyncSnapshot'
+import { useAccountStartBeat, type RevisionRegistration } from './accountStartBeat'
 import { subscribeAgentPresenceRevisions } from '../lib/agentPresenceStore'
 import { sendAttachmentBatch } from '../components/chat/sendAttachmentBatch'
 import { i18n } from '../i18n'
@@ -92,6 +93,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   const imRepositoryPromiseRef = useRef<{ accountId: string; promise: Promise<AccountImRepository> } | null>(null)
   const revisionCoordinatorRef = useRef<AccountRevisionCoordinator | null>(null)
   const revisionCoordinatorPromiseRef = useRef<Promise<AccountRevisionCoordinator> | null>(null)
+  const revisionRegistrationsRef = useRef(new Set<RevisionRegistration>()) // @@@revision-registrations, see accountStartBeat
   const imRepositoryScope = useMemo(() => ({ accountId: userId, disposed: false }), [userId])
   const outboxRef = useRef<OutboxWiring | null>(null)
   // Live mirrors for the debug bridge; async window reads are fenced by their observer and snapshot epoch.
@@ -173,6 +175,9 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
         catchupPriority?.scheduling,
       )
       revisionCoordinatorRef.current = coordinator
+      for (const registration of revisionRegistrationsRef.current) {
+        registration.unsubscribe ??= coordinator.subscribe(registration.events, registration.listener)
+      }
       coordinator.start()
       return coordinator
     })
@@ -188,15 +193,13 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     events: AccountRevisionEvent | readonly AccountRevisionEvent[],
     listener: AccountRevisionListener,
   ): (() => void) => {
-    let active = true
-    let unsubscribe: (() => void) | null = null
-    void getRevisionCoordinator().then((coordinator) => {
-      if (!active) return
-      unsubscribe = coordinator.subscribe(events, listener)
-    }).catch((error) => revisionLog.error({ error }, 'coordinator failed'))
+    const registration = { events, listener, unsubscribe: revisionCoordinatorRef.current?.subscribe(events, listener) ?? null }
+    revisionRegistrationsRef.current.add(registration)
+    // A failed start is advanced again by the account's reconcile beat (the startup effect); this only kicks it.
+    if (!registration.unsubscribe) void getRevisionCoordinator().catch((error) => revisionLog.error({ error }, 'coordinator failed'))
     return () => {
-      active = false
-      unsubscribe?.()
+      revisionRegistrationsRef.current.delete(registration)
+      registration.unsubscribe?.()
     }
   }, [getRevisionCoordinator])
   useEffect(() => {
@@ -477,24 +480,10 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     })
   }, [appActive, cache, chatsRef, patchChat, userId]) // Activity changes remeasure the current visible rows; never replay cached history.
 
-  useEffect(() => {
-    if (!userId) {
-      setChats([]); setChatsLoad('unread') // 换号 / 登出:上一个号的读失败 ❌ 带到下一个号的「群」那一格
-      return
-    }
-    let cancelled = false
-    void getImRepository()
-      .then(async (repository) => {
-        if (cancelled) return
-        paintLocal(repository) // initialization may have rebuilt the store from the account snapshot
-        await loadChats()
-      })
-      .catch((err) => {
-        console.error('[ChatStore] open IM repository failed', err)
-        if (!cancelled) setChatsLoad('failed') // an empty list here is a failure, not "no conversations"
-      })
-    return () => { cancelled = true }
-  }, [getImRepository, loadChats, paintLocal, setChats, userId])
+  useAccountStartBeat(userId, {
+    getImRepository, getRevisionCoordinator, coordinatorRef: revisionCoordinatorRef, registrationsRef: revisionRegistrationsRef,
+    paintLocal, loadChats, setChats, setChatsLoad,
+  })
 
   useEffect(() => {
     if (!userId || !imRepositoryRef.current) return

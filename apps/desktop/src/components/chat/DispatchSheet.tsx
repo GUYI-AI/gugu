@@ -9,7 +9,7 @@ import { Button } from '../ui/Button'
 import { appendToDraft } from '@/store/chatDraftWrites'
 import { useChatStore } from '../../store/chatContext'
 import { useOwnedAgents } from '../settings/channels/channelAgents'
-import { chatPickRow, forwardableChats } from './forwardMessageUtils'
+import { chatPickRows } from './forwardMessageUtils'
 import { ChatPickSheet, type ChatPickRow, type ChatPickSection } from './ChatPickSheet'
 import { DispatchMachine } from './DispatchMachine'
 import { takeDispatchAsks, type DispatchAsked } from './dispatchAsk'
@@ -83,7 +83,7 @@ export const DispatchSheet = observer(function DispatchSheet() {
       avatar: { name: agent.display_name, avatarUrl: agent.avatar, seed: agent.id, isAgent: true },
     }))
   const nameOf = (chat: (typeof chats)[number]) => chatDisplayName(chat, identitiesById[chat.peer_user_id ?? '']?.display_name)
-  const chatRows = !offers.has('chat') ? [] : forwardableChats(chats, '', query, nameOf).map((chat) => ({ ...chatPickRow(chat, nameOf(chat), identitiesById), id: `chat:${chat.id}` }))
+  const chatRows = !offers.has('chat') ? [] : chatPickRows(chats, '', query, nameOf, identitiesById, (id) => `chat:${id}`)
   const newRows: ChatPickRow[] = offers.has('new-agent') && found(t('dispatchPick.newAgent'))
     ? [{ id: NEW_AGENT, name: t('dispatchPick.newAgent'), avatar: { name: '+', seed: NEW_AGENT, isAgent: true } }]
     : []
@@ -160,7 +160,6 @@ export const DispatchSheet = observer(function DispatchSheet() {
         const to = pickedTarget()
         if (to) finish({ to, visible: toMember && visible, text: said })
       }}
-      fullScreenMobile
     />
   )
 })
