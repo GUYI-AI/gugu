@@ -56,7 +56,7 @@ export function binding(document: Pick<VaultDocument, 'owner' | 'installationId'
 const accountCharacters = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 const emailDomain = z.hostname()
 export function maskedAccount(value: string): string {
-  if (/[\p{Cc}\p{Cs}]/u.test(value)) return '***'
+  if (/[\p{Cc}\p{Cs}\p{Bidi_Control}]/u.test(value)) return '***'
   const input = value.trim()
   if (!input) return ''
   const at = input.indexOf('@'), domain = input.slice(at + 1)

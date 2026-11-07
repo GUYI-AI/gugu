@@ -12,7 +12,7 @@ describe('recognizable account summaries', () => {
     ['developer', 'd***'], ['ab', 'a***'], ['a', '***'],
     ['a***', '***'], ['a***@example.com', '***@example.com'],
     ['用户', '用***'], ['用', '***'], ['🙂x', '🙂***'], ['🙂', '***'],
-    ['e\u0301x', 'e\u0301***'], ['e\u0301', '***'], ['👩‍💻', '***'],
+    ['e\u0301x', 'e\u0301***'], ['e\u0301', '***'], ['👩‍💻', '***'], ['👩‍💻dev', '👩‍💻***'],
     ['a@@example.com', 'a***'], ['ab@example.com/private', 'a***'],
     ['ab@example.com?private', 'a***'], ['ab@example.com#private', 'a***'],
     ['ab@example.com\\private', 'a***'], ['ab@example.com:443', 'a***'],
@@ -22,4 +22,10 @@ describe('recognizable account summaries', () => {
     expect(maskedAccount(input)).toBe(expected)
     if (input.trim()) expect(maskedAccount(input) === input).toBe(false)
   })
+  it.each([0x061c, 0x200e, 0x200f, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069])(
+    'hides bidi control code point %i at the prefix and inside a synthetic account', point => {
+      const control = String.fromCodePoint(point)
+      expect(maskedAccount(control + 'demo@example.com')).toBe('***')
+      expect(maskedAccount('demo' + control + '@example.com')).toBe('***')
+    })
 })
