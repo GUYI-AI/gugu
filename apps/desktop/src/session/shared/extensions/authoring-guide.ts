@@ -554,7 +554,7 @@ The place is \`{ workspace: ctx.workspace.id }\`. An entry's \`id\` is its path 
 
 - \`gugu.files.list({ workspace, folder })\` lists one folder (\`''\` the top), never a whole tree. Non-documents: \`f.read(offset, length)\`, \`f.blob()\`.
 - \`gugu.files.onChanged({ workspace, folder }, fn)\`: \`{ kind: 'changes', changes }\` or \`resync\`, below \`folder\` only.
-- \`gugu.files.openWith({ workspace, folder })\` (a click or key): that folder in the Folder app's list, in this tab.
+- \`gugu.files.openWith({ workspace, folder })\` (a click or key): that folder in the Files App's list, in this tab.
 - Another machine's working copy needs \`files:read:all-machines\` as well; every call below is done on that machine.
 - With \`files:write\`: \`gugu.files.create\`, \`gugu.files.rename\` (a path moves it), \`gugu.files.mkdir({ workspace, path })\`, \`gugu.files.move(entry, { folder, name })\`, \`gugu.files.remove\` (a folder with all in it; a link, not what it points at). A name already there: \`name-taken\`, nothing changed.
 - \`gugu.files.upload({ workspace, folder }, file, { replace, onProgress, signal })\`: a File or a list of them, in parts, of any size, folders made as needed. A name already there is \`name-taken\` until \`replace: true\`. \`onProgress\` is told the bytes sent and the total; an aborted \`signal\` leaves nothing.
@@ -966,6 +966,7 @@ export const EXTENSION_GUIDE_SETTINGS = `# Tools-only Apps and host settings
 
 Declare human UI hosts in \`platforms\` (API 12): desktop, phone, or both. A phone UI may declare agent
 capabilities; those features run only on computers. Phone plus \`notifications\` is refused at publication and install.
+On a phone, a page with steps of its own (folders) holds Back with \`gugu.navigation.onBack(fn)\` → a release; let go at the top.
 
 ## The agents' line
 

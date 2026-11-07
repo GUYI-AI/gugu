@@ -366,13 +366,15 @@ export function hostAppFrame(
     /** 「用 X 打开」 resolved: the slot opens that App on the file, or asks when several claim it. */
     openWith(detail: AppOpenWithDetail): void
     navigate?(delta: -1 | 1): Promise<boolean>
+    /** `navigation.onBack`: the page holds a Back step of its own (a folder), or lets go of it. A host without it has no Back to give. */
+    claimBack?(claimed: boolean): void
     openWorkingCopy?(path: string, read: ReadWorkingCopyChunk): void
     /** G1 Beside the page, over its frame: the frame stays as it was, for the way back. A host without it refuses a peek. */
     peek?(target: PeekTarget): void
     /** `setTabTitle` / `setTabBadge`: drawn on the header of the slot the App is in (摩擦单 F13). */
     chrome(detail: { title?: string | null; badge?: string | number | null; error?: string | null }): void
   },
-): { pageId: number; update(binding: PhoneAppBinding): void; filesChanged(changes: readonly { chatId: string; itemIds: readonly string[] }[]): Promise<void>; membersChanged(changes: readonly MemberChange[]): void; command(commandId: string): void; programNotified(notification: { server: string; method: string; params?: unknown }): void; dispose(): void } {
+): { pageId: number; update(binding: PhoneAppBinding): void; filesChanged(changes: readonly { chatId: string; itemIds: readonly string[] }[]): Promise<void>; membersChanged(changes: readonly MemberChange[]): void; command(commandId: string): void; back(): void; programNotified(notification: { server: string; method: string; params?: unknown }): void; dispose(): void } {
   const pageId = nextPageId++
   const modalHosts = new Map<ReturnType<typeof hostAppFrame>, PhoneAppBinding>()
   // Only ever the App's own document, both ways (appOrigin.ts).
@@ -554,6 +556,8 @@ export function hostAppFrame(
               const childBinding = { ...modal.binding, modal: { id: modal.id, data: modal.options.data } }
               const childHost = hostAppFrame(childFrame, childBinding, {
                 ...hooks,
+                // Its opener's Back is not the modal's to hold or let go (its hello would release the opener's claim).
+                claimBack: undefined,
                 // The content page's initial hello must not clear its opener's title, badge or error.
                 chrome(detail) { if (detail.error) hooks.chrome({ error: detail.error }) },
               })
@@ -583,6 +587,12 @@ export function hostAppFrame(
         if (args.delta !== -1 && args.delta !== 1) return refused('invalid', 'Navigation delta must be -1 or 1')
         if (!hosted.binding.navigation?.[args.delta === -1 ? 'canBack' : 'canForward']) return false
         return hooks.navigate?.(args.delta) ?? false
+      case 'navigationClaimBack':
+        // Only the page that is the slot's page holds Back: a modal's Back closes the modal (its sheet), a card in a
+        // message has no Back of its own.
+        if (!hooks.claimBack || hosted.binding.modal || hosted.binding.widget) return false
+        hooks.claimBack(args.claimed === true)
+        return true
       case 'getContext':
         // A pill's place waiting for this page goes first, whatever the answer: the frame holds it until `onLink`.
         for (const link of takeOpeningLinks(hosted.binding)) event(link)
@@ -853,6 +863,7 @@ export function hostAppFrame(
       heldPort = null
       portWanted = false
       hooks.chrome({ title: null, badge: null, error: null })
+      hooks.claimBack?.(false)
       return
     }
     if (message.t === 'sync-port') {
@@ -931,6 +942,10 @@ export function hostAppFrame(
     command(commandId) {
       commandGestureUntil = performance.now() + ACTIVATION_LIFETIME_MS
       event({ type: 'command', commandId })
+    },
+    /** The host's Back, to the page holding a Back step of its own (`claimBack`). */
+    back() {
+      event({ type: 'back' })
     },
     /** owner 10-16 The App's program on the session's computer sent a notification (`onProgramNotification`). */
     programNotified(notification) {
