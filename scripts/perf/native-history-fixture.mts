@@ -34,6 +34,17 @@ export async function createHistoryFixture(path: string, bytes: number, kind: Fi
       position += bytesWritten
     }
   }
+  async function writeGiant(end: number) {
+    const head = provider === 'claude'
+      ? `{"type":"user","uuid":"giant-${records}","message":{"role":"user","content":"`
+      : `{"type":"response_item","payload":{"type":"function_call_output","call_id":"giant-${records}","output":"`
+    await write(Buffer.from(head))
+    const close = Buffer.from('"}}\n')
+    const block = Buffer.alloc(256 * 1024, 120)
+    while (position < end - close.length) await write(block.subarray(0, Math.min(block.length, end - close.length - position)))
+    await write(close)
+    records++
+  }
   const tail = Buffer.from(record(provider, 1_000_000_000, VISIBLE_MARKER, 100 * 3600_000))
   try {
     if (kind === 'sparse-io') {
@@ -44,17 +55,11 @@ export async function createHistoryFixture(path: string, bytes: number, kind: Fi
     } else if (kind === 'legacy-giant') {
       // The adapter receives only the path. Do not publish this unknown record start as a locator.
       await write(Buffer.from(record(provider, records++, 'older readable record ' + 'x'.repeat(randomInt(256, 2048)))))
-      const head = provider === 'claude'
-        ? '{"type":"user","uuid":"giant","message":{"role":"user","content":"'
-        : '{"type":"response_item","payload":{"type":"function_call_output","call_id":"giant-call","output":"'
-      await write(Buffer.from(head))
-      const close = Buffer.from('"}}\n')
-      const block = Buffer.alloc(256 * 1024, 120)
-      while (position < bytes - close.length) await write(block.subarray(0, Math.min(block.length, bytes - close.length - position)))
-      await write(close)
-      records++
+      await writeGiant(bytes)
     } else {
       const end = bytes - tail.length
+      const giantBytes = Math.min(600 * 1024 ** 2, Math.floor(bytes / 8))
+      for (let giant = 0; giant < 2; giant++) await writeGiant(position + giantBytes)
       while (position < end) {
         const lines: string[] = []
         let batchBytes = 0
@@ -74,7 +79,7 @@ export async function createHistoryFixture(path: string, bytes: number, kind: Fi
     await file.sync()
     const stats = await file.stat()
     return { bytes: stats.size, allocatedBytes: stats.blocks * 512, records, kind, provider,
-      validJsonl: kind !== 'sparse-io', simulatedHours: kind === 'valid-jsonl' ? 100 : null,
+      validJsonl: kind !== 'sparse-io', giantRecords: kind === 'sparse-io' ? 0 : kind === 'legacy-giant' ? 1 : 2, simulatedHours: kind === 'valid-jsonl' ? 100 : null,
       marker: kind === 'legacy-giant' ? null : VISIBLE_MARKER, host: hostname() }
   } catch (error) {
     await unlink(path)

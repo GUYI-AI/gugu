@@ -27,6 +27,7 @@ describe('history acceptance admission and fixture construction', () => {
         const bytes = await readFile(path)
         expect(bytes.length).toBe(32 * 1024)
         expect(metadata.validJsonl).toBe(kind !== 'sparse-io')
+        expect(metadata.giantRecords).toBe(kind === 'sparse-io' ? 0 : kind === 'legacy-giant' ? 1 : 2)
         if (kind !== 'sparse-io') {
           const records = bytes.toString('utf8').split('\n').filter(line => line.trim()).map(line => JSON.parse(line))
           expect(records.length).toBeGreaterThan(1)
