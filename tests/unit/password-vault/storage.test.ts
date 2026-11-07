@@ -29,7 +29,7 @@ async function fixture(overrides: Partial<VaultDependencies> = {}) {
   }
   const dependencies: VaultDependencies = { root: join(root, 'private', 'password-vault', 'v1'), accountId: owner, installationBinding: randomUUID(),
     assertLocalPerson: context => { if (context !== person) throw new Error('forged principal') },
-    assertPrivateStorageReady: vi.fn(async () => undefined), assertFeatureReady: vi.fn(async () => undefined),
+    assertPrivateStorageReady: vi.fn(async () => undefined), acquireFeatureGuard: vi.fn(async () => ({ status: 'ready' as const, signal: new AbortController().signal, assertCurrent() {} })),
     invalidate: vi.fn(async () => undefined), keys, ...overrides }
   const vault = new LocalPasswordVault(dependencies); vaults.push(vault)
   return { root, dependencies, vault, keys }
@@ -165,7 +165,7 @@ describe('local encrypted vault: storage and lifecycle', () => {
     await expect(vault.beginSetup(person)).rejects.toMatchObject({ code: 'UNAVAILABLE' })
     expect((await readdir(root)).length).toBe(0)
     vi.mocked(dependencies.assertPrivateStorageReady).mockResolvedValue()
-    vi.mocked(dependencies.assertFeatureReady).mockRejectedValue(new Error('observe only'))
+    vi.mocked(dependencies.acquireFeatureGuard!).mockRejectedValue(new Error('observe only'))
     await expect(vault.beginSetup(person)).rejects.toMatchObject({ code: 'UNAVAILABLE' })
     expect((await readdir(root)).length).toBe(0)
   })

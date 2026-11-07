@@ -20,7 +20,7 @@ async function scenario(withSettlement = true) {
   const settle = vi.fn(async (_event: CredentialUseSettlement) => undefined)
   const dependencies: VaultDependencies = { root: join(root, 'private', 'password-vault', 'v1'), accountId: owner, installationBinding: randomUUID(),
     assertLocalPerson: context => { if (context !== person) throw new Error() }, assertOwnedLocalAgent: context => { if (context !== actor) throw new Error() },
-    assertPrivateStorageReady: vi.fn(async () => undefined), assertFeatureReady: vi.fn(async () => undefined),
+    assertPrivateStorageReady: vi.fn(async () => undefined), acquireFeatureGuard: vi.fn(async () => ({ status: 'ready' as const, signal: new AbortController().signal, assertCurrent() {} })),
     keys: { verifyPerson: async () => undefined, wrap: async (value, binding) => JSON.stringify(seal(key, value, binding)), unwrap: async (value, binding) => unseal(key, JSON.parse(value), binding) },
     invalidate: vi.fn(async () => { for (const controller of controllers) controller.abort() }),
     browser: { fillAndSubmit: fill, cleanup, settle: withSettlement ? settle : undefined as never,

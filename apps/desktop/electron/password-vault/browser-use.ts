@@ -59,6 +59,7 @@ export async function performCredentialUse(
     // Page input handlers may themselves cause an effect: filling already makes an outcome uncertain on failure.
     possibleEffect = true
     const result = await sink.fillAndSubmit(binding, lease, control)
+    assertCurrent()
     if (!['submitted_unconfirmed', 'login_confirmed', 'person_interaction_required', 'failed', 'uncertain'].includes(result)) throw new VaultError('UNAVAILABLE')
     if (['submitted_unconfirmed', 'login_confirmed'].includes(result) && !submissionClaimed) throw new VaultError('UNAVAILABLE')
     status = result
@@ -68,11 +69,19 @@ export async function performCredentialUse(
   // Cleanup never hands back the isolated surface. The coordinator requires this proof and the post-audit receipt.
   try { retainIsolatedLogin = (await sink.cleanup(binding.useId)).status !== 'cleaned' }
   catch { retainIsolatedLogin = true }
+  // Cleanup is still required after withdrawal. A late terminal success never restores qualification.
+  const recheck = () => {
+    try { lease?.assertCurrent() }
+    catch { status = possibleEffect ? 'uncertain' : 'unavailable'; retainIsolatedLogin = true }
+  }
+  recheck()
   const context = (): UseOutcomeContext => ({ capability, binding, outcome: status, effectPossible: possibleEffect })
   let postUseAudit: PostUseAuditResult = { status: 'not_attempted' }
   if (!auditFailed) postUseAudit = await outcomes.port.appendOutcome(context())
+  recheck()
   if (postUseAudit.status !== 'recorded') { status = possibleEffect ? 'uncertain' : 'unavailable'; retainIsolatedLogin = true }
   try { await sink.settle({ ...context(), postUseAudit }) }
   catch { status = possibleEffect ? 'uncertain' : 'unavailable'; retainIsolatedLogin = true }
+  recheck()
   return { status, retry: false, retainIsolatedLogin: retainIsolatedLogin || status === 'uncertain' }
 }
