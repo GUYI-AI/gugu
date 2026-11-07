@@ -3,7 +3,7 @@ import type { BytePageCursor, SourceRange, SourceSnapshot, WindowBudget, WindowB
 
 export type JsonlRecordSlice = { range: SourceRange; bytes: Uint8Array };
 export type JsonlWindow = {
-  kind: 'records'; snapshot: SourceSnapshot;
+  kind: 'records' | 'pending_record'; snapshot: SourceSnapshot;
   /** Newest first. Byte ranges exclude the physical CR/LF terminator. */
   records: JsonlRecordSlice[];
   /** The start is unknown; only the locator may turn this into a record identity. */
@@ -49,7 +49,9 @@ export async function readJsonlWindow(source: WindowByteSource, options: {
   }
   if (end === 0 && !headFragment) before = page.start;
   options.signal?.throwIfAborted();
-  return { kind: 'records', snapshot, records, headFragment,
-    older: before > 0 ? { sourceId: snapshot.sourceId, sourceInstance: snapshot.sourceInstance,
+  // An unknown start is not a consumable byte-page cursor. E's reverse locator owns
+  // continuation from scanBefore; returning before=recordEnd would repeat this page.
+  return { kind: headFragment ? 'pending_record' : 'records', snapshot, records, headFragment,
+    older: !headFragment && before > 0 ? { sourceId: snapshot.sourceId, sourceInstance: snapshot.sourceInstance,
       snapshotRevision: snapshot.snapshotRevision, before } : null };
 }

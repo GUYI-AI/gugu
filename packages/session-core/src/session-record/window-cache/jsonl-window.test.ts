@@ -61,10 +61,10 @@ describe('JSONL suffix windows', () => {
     const { source, reads } = fixture('x'.repeat(65536), 5 * 1024 ** 3);
     const budget = createWindowBudget();
     const result = await readJsonlWindow(source, { budget });
-    if (result.kind !== 'records') throw new Error('Expected records');
+    if (result.kind !== 'pending_record') throw new Error('Expected explicit pending record');
     expect(result.records).toEqual([]);
     expect(result.headFragment).toEqual({ recordEnd: 5 * 1024 ** 3 + 65536, scanBefore: 5 * 1024 ** 3 });
-    expect(result.older).not.toBeNull();
+    expect(result.older).toBeNull();
     expect(reads).toHaveLength(1);
     expect(budget.counters.decodedBytes).toBe(0);
   });
@@ -82,10 +82,20 @@ describe('JSONL suffix windows', () => {
   it('retains already located records beside a cross-page head fragment', async () => {
     const { source } = fixture('x'.repeat(65536) + '\n{"id":2}\n', 2 ** 32);
     const result = await readJsonlWindow(source, { budget: createWindowBudget() });
-    if (result.kind !== 'records') throw new Error('Expected records');
+    if (result.kind !== 'pending_record') throw new Error('Expected explicit pending record');
     expect(result.records).toHaveLength(1);
     expect(result.headFragment).not.toBeNull();
-    expect(result.older?.before).toBe(result.headFragment?.recordEnd);
+    expect(result.older).toBeNull();
+  });
+
+  it('a returned continuation advances or explicitly blocks on an unknown start', async () => {
+    const { source } = fixture('x'.repeat(65536), 20 * 1024 ** 3);
+    const budget = createWindowBudget();
+    const first = await readJsonlWindow(source, { budget });
+    if (first.kind === 'reset') throw new Error('Unexpected reset');
+    expect(first.kind).toBe('pending_record');
+    expect(first.older).toBeNull();
+    expect(first.headFragment!.scanBefore).toBeLessThan(first.headFragment!.recordEnd);
   });
 
   it.each(['', '\n', '\r\n', '\n\n'])('proves BOF for empty records %j', async text => {
