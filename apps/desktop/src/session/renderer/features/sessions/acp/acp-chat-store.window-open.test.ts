@@ -99,6 +99,16 @@ it('chooses the source before stored/backfill I/O and displays bounded body with
   expect(f.calls).not.toContain('sessions.syncStoredHistoryFromRecord');
 });
 
+it('selects bounded history before a missing-provider bootstrap and retains its missing-provider notice', async () => {
+  const store = makeStore();
+  f.records.get(store.sessionId)!.providerSessionState = 'missing';
+  store.bootstrap(); await readable(store);
+  await vi.waitFor(() => expect(store.loadError).toMatchObject({ kind: 'provider_session_missing' }));
+  expect(f.calls).toContain('sessionTimeline.sessionWindowPrepare');
+  expect(f.calls).not.toContain('sessions.getStoredHistory');
+  expect(f.calls).not.toContain('sessions.syncStoredHistoryFromRecord');
+});
+
 it.each(['claude', 'codex'] as const)('leaves ready/busy-at-open %s on the explicitly selected legacy path', async provider => {
   f.source = 'legacy'; f.phase = 'running';
   const store = makeStore(provider); store.bootstrap();

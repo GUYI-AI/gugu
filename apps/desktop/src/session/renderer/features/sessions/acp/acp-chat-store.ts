@@ -2017,6 +2017,10 @@ export class AcpChatStore {
       await choice;
       if (this._openingHistoryChoice === choice) this._openingHistoryChoice = null;
       if (this._disposed || generation !== this._historyGeneration) return;
+      if (this._sessionRecord()?.providerSessionState === 'missing') {
+        if (this._historySource === 'legacy') { await this._runBootstrap(); return; }
+        runInAction(() => { this.loadError = { kind: 'provider_session_missing', message: '' }; });
+      }
       // 两件事并行:库里那份读到就地上屏(`_loadStoredFirstPage`),不等「在不在跑」。
       // Observe a rejected read immediately, even while the runtime-list watch is still opening.
       // An idle session has no replay to replace a failed stored page.
@@ -2080,14 +2084,13 @@ export class AcpChatStore {
    *  · 侧边聊天:它就是为这一问开出来的运行时分叉;
    *  · 新建会话带着第一句、还没认领首启:那句话是人已经发出去的,当场起;
    *  · 持久分叉还没分出去:分叉这一步就发生在首启;
-   *  · provider 那侧的会话已失效:那条路不起,只画库里那份并说原因。
+   * provider 失效的既有历史也先选来源,再保留不能继续运行的提示。
    */
   private _opensThroughStartup(): boolean {
     if (this.isTransient) return true;
     const record = this._sessionRecord();
     if (!record) return false;
-    return record.providerSessionState === 'missing'
-      || pendingInitialQueue(record) !== undefined
+    return pendingInitialQueue(record) !== undefined
       || pendingPersistentFork(record) !== undefined;
   }
 
