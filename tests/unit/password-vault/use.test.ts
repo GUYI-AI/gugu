@@ -28,7 +28,7 @@ async function scenario(withSettlement = true) {
         const use = issued.get(capability)
         if (!use || use.claimed || JSON.stringify(use.binding) !== JSON.stringify(binding)) throw new VaultError('UNAVAILABLE')
         use.claimed = true
-        return { signal: use.abort.signal, assertCurrent: () => { if (use.abort.signal.aborted) throw new VaultError('CANCELLED') },
+        return { signal: use.abort.signal, revokedSignal: use.abort.signal, assertCurrent: () => { if (use.abort.signal.aborted) throw new VaultError('CANCELLED') },
           claimSubmission: () => { if (use.submitted || use.abort.signal.aborted) throw new VaultError('CANCELLED'); use.submitted = true } }
       } },
   }

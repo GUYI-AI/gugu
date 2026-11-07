@@ -29,7 +29,7 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
 function deferred() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done }); return { promise, resolve } }
-async function fixture(provider = true) {
+async function fixture(provider = true, revokedSignal?: () => unknown) {
   const root = await mkdtemp(join(await realpath(tmpdir()), 'gugu-vault-live-canary-')); roots.push(root)
   const person = {}, actor = {}, key = randomBytes(32), abort = new AbortController(), useAbort = new AbortController()
   const state = { live: true, deliveries: 0, submissions: 0 }, issued = new WeakMap<object, VaultUseBinding>()
@@ -49,7 +49,8 @@ async function fixture(provider = true) {
       claimCredentialSink: (capability: VaultUseCapability, binding: VaultUseBinding) => {
         if (JSON.stringify(issued.get(capability)) !== JSON.stringify(binding)) throw new Error('synthetic capability rejected')
         issued.delete(capability)
-        return { signal: useAbort.signal, assertCurrent: () => { if (useAbort.signal.aborted) throw new Error('synthetic revoked') }, claimSubmission: () => { state.submissions++ } }
+        return { signal: useAbort.signal, revokedSignal: revokedSignal ? revokedSignal() as AbortSignal : useAbort.signal,
+          assertCurrent: () => { if (useAbort.signal.aborted) throw new Error('synthetic revoked') }, claimSubmission: () => { state.submissions++ } }
       },
       fillAndSubmit: vi.fn(async (_binding, _secret, control) => { state.deliveries++; await control.prepareSubmission(); control.claimSubmission(); return 'submitted_unconfirmed' as const }),
       cleanup: vi.fn(async () => ({ status: 'cleaned' as const })), settle: async () => undefined,
@@ -133,6 +134,14 @@ describe('live password feature guard held by storage', () => {
     const pending = f.vault.useCredential(request.capability, request.binding)
     await entered.promise; f.invalidate(kind); release.resolve(); await pending
     expect(f.state.deliveries).toBe(0); expect(f.state.submissions).toBe(0)
+  })
+  it.each(['missing', 'wrong-type', 'aborted'] as const)('refuses %s approval revocation signal before preparing or delivering buffers', async kind => {
+    const abort = new AbortController(); abort.abort()
+    const candidate = kind === 'missing' ? undefined : kind === 'wrong-type' ? { aborted: false } : abort.signal
+    const f = await fixture(true, () => candidate); await f.setup(); const request = await f.use()
+    const result = await f.vault.useCredential(request.capability, request.binding)
+    expect(result.status).toBe('unavailable'); expect(f.state.deliveries).toBe(0); expect(f.state.submissions).toBe(0)
+    expect(f.acquireFeatureGuard.mock.calls.map(call => call[0])).toEqual(['save', 'save'])
   })
   it('clears already delivered buffers synchronously on live revocation and refuses later submission', async () => {
     const f = await fixture(); await f.setup(); const request = await f.use(), entered = deferred(), release = deferred()

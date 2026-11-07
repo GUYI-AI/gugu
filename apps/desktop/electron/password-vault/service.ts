@@ -291,7 +291,10 @@ export class LocalPasswordVault {
     const bound = Object.freeze({ ...useBinding })
     let feature: VaultFeatureOperation | undefined
     return performCredentialUse(sink, capability, bound, control => this.run(async () => {
-      const held = feature = await this.feature('use', control.signal)
+      // Proof-only cleanup stops filling; it must not revoke the continuing readiness/audit qualification.
+      const revoked = control.revokedSignal
+      if (!(revoked instanceof AbortSignal) || revoked.aborted) throw new VaultError('UNAVAILABLE')
+      const held = feature = await this.feature('use', revoked)
       return this.#file.disk.withFeature(held, async () => {
         await held.wait(() => this.gates())
         const { key, document, epoch } = this.unlocked(), payload = this.#file.payload(document, key)

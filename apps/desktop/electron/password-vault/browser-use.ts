@@ -41,7 +41,7 @@ export async function performCredentialUse(
     if (before.status !== 'recorded') { auditFailed = true; throw new VaultError('AUDIT_FAILED') }
     let submissionClaimed = false, preparingSubmission = false, submissionRecorded = false
     const assertCurrent = () => { lease!.assertCurrent(); claim.assertCurrent(); if (claim.signal.aborted || lease!.signal.aborted) throw new VaultError('CANCELLED') }
-    const control: VaultSinkControl = { signal: anySignal([claim.signal, lease.signal]), assertCurrent,
+    const control: VaultSinkControl = { signal: anySignal([claim.signal, lease.signal]), revokedSignal: claim.revokedSignal, assertCurrent,
       async prepareSubmission() {
         assertCurrent()
         if (preparingSubmission || submissionRecorded || submissionClaimed) throw new VaultError('CANCELLED')
