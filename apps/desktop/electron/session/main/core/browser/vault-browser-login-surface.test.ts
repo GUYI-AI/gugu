@@ -61,8 +61,12 @@ async function fixture(initialReady = true) {
   const assertCurrent = vi.fn(() => { if (!current) throw new Error('private host failure'); });
   const source = { id: 1, session: mocks.session, isDestroyed: () => !sourceAlive };
   const release = vi.fn();
+  const policy = new AbortController();
+  const permission = { signal: policy.signal,
+    revalidate: vi.fn(async (_check: unknown) => { policy.signal.throwIfAborted(); }),
+    assertCurrent: vi.fn((_binding: CredentialUseBinding) => { policy.signal.throwIfAborted(); }) };
   const host = { browserId: 'tab', partition: 'partition', agentContents: source as never,
-    isolationReady: () => ready, assertCurrent, registerPrivateSurface: vi.fn(() => release) };
+    isolationReady: () => ready, assertCurrent, registerPrivateSurface: vi.fn(() => release), permission };
   const surface = new VaultBrowserLoginSurface(host, 'https://example.test');
   await surface.load('https://example.test/login');
   const actual = await surface.review({ form: '#form', account: '#account', password: '#password' });
@@ -72,7 +76,7 @@ async function fixture(initialReady = true) {
   let prepareHook: () => void = () => {};
   const lease: AuditedCredentialUseLease = { signal: controller.signal, assertCurrent, claimSubmission: vi.fn(() => assertCurrent()), prepareSubmission: vi.fn(async () => { prepareHook(); }) };
   const password = Buffer.from(randomUUID());
-  return { surface, contents, binding, lease, password, host, release, ready: (value: boolean) => { ready = value; },
+  return { surface, contents, binding, lease, password, host, release, permission, policy, ready: (value: boolean) => { ready = value; },
     prepare: (hook: () => void) => { prepareHook = hook; }, retireSource: () => { sourceAlive = false; }, revoke: () => { current = false; controller.abort(); },
     fill: () => surface.fill(binding, lease, Buffer.from(randomUUID()), password) };
 }
@@ -80,7 +84,8 @@ async function fixture(initialReady = true) {
 describe('host-private login surface', () => {
   it('requires registration, local ownership and the private preload before creation', () => {
     const source = { id: 1, session: mocks.session, isDestroyed: () => false };
-    const host = { browserId: 'tab', partition: 'partition', agentContents: source as never, isolationReady: () => false, assertCurrent() {}, registerPrivateSurface: () => () => {} };
+    const host = { browserId: 'tab', partition: 'partition', agentContents: source as never, isolationReady: () => false, assertCurrent() {}, registerPrivateSurface: () => () => {},
+      permission: { signal: new AbortController().signal, revalidate: async () => {}, assertCurrent() {} } };
     mocks.registered = false;
     expect(() => new VaultBrowserLoginSurface(host, 'https://example.test')).toThrow('credential_login_unavailable');
     for (const reason of ['remote', 'registered', 'preload']) {
@@ -108,8 +113,8 @@ describe('host-private login surface', () => {
     await f.surface.destroy(f.binding);
   });
   it('rechecks after the queued command, before releasing the buffer to the preload', async () => {
-    const f = await fixture(); const pending = f.fill(); f.revoke();
-    await expect(pending).rejects.toThrow('credential_login_unavailable');
+    const f = await fixture(); f.contents.beforeGate = () => f.revoke();
+    await expect(f.fill()).rejects.toThrow('credential_login_unavailable');
     expect(f.contents.replies).toEqual([false]); await f.surface.destroy(f.binding);
   });
   it('rechecks after pre-submit audit and never claims when that wait invalidates approval', async () => {
@@ -122,6 +127,30 @@ describe('host-private login surface', () => {
     const f = await fixture(); await f.fill(); await f.surface.submit(f.binding, f.lease);
     await expect(f.surface.submit(f.binding, f.lease)).rejects.toThrow();
     expect(f.lease.claimSubmission).toHaveBeenCalledTimes(1); await f.surface.destroy(f.binding);
+  });
+  it('awaits fill permission before any field operation and refuses a late revoked result', async () => {
+    const f = await fixture();
+    let done!: () => void;
+    f.permission.revalidate.mockImplementationOnce(() => new Promise<void>(resolve => { done = resolve; }));
+    const filling = f.fill();
+    expect(f.contents.replies).toEqual([]);
+    f.policy.abort(); done();
+    await expect(filling).rejects.toThrow('credential_login_unavailable');
+    expect(f.contents.replies).toEqual([]);
+    expect(f.lease.claimSubmission).not.toHaveBeenCalled();
+    await f.surface.destroy(f.binding);
+  });
+  it('reads fresh submit permission after the pre-submit audit and keeps the single claim unused on denial', async () => {
+    const f = await fixture(); await f.fill();
+    f.permission.revalidate.mockImplementationOnce(async () => {
+      expect(f.lease.prepareSubmission).toHaveBeenCalledOnce();
+      throw new Error('permission denied');
+    });
+    await expect(f.surface.submit(f.binding, f.lease)).rejects.toThrow('credential_login_unavailable');
+    expect(f.permission.revalidate.mock.calls.at(-1)?.[0]).toEqual({ stage: 'before_submit', target: f.binding });
+    expect(f.contents.replies).toEqual([true]);
+    expect(f.lease.claimSubmission).not.toHaveBeenCalled();
+    await f.surface.destroy(f.binding);
   });
   it('rejects a cloned lease and captures audit/current/signal methods before the sink runs', async () => {
     const f = await fixture(); f.prepare(() => { throw new Error('audit unavailable'); }); await f.fill();

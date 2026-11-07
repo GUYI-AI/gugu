@@ -1,12 +1,14 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { anySignal } from '@gugu/core/shared/anySignal';
 import { session, WebContentsView, type IpcMainEvent, type WebContents } from 'electron';
 import type { AuditedCredentialUseLease, CredentialUseBinding } from './credential-use-contract';
 import { assertCredentialWebsite } from './credential-website';
 import { browserWebContentsRegistry } from './browser-webcontents-registry';
 import { remoteBrowserBinding } from './remote-loopback-requests';
 import { protectVaultLoginNetwork } from './vault-browser-login-network';
+import type { CredentialPermissionChecks } from './credential-permission';
 import { VAULT_LOGIN_BRIDGE, VAULT_LOGIN_CHANNEL, VAULT_LOGIN_WORLD, VaultBrowserLoginError,
   type VaultLoginCompletion, type VaultLoginGateRequest, type VaultLoginReview, type VaultLoginSelection } from './vault-browser-login-protocol';
 
@@ -18,6 +20,7 @@ export type VaultLoginSurfaceHost = {
   isolationReady(): boolean;
   assertCurrent(binding: CredentialUseBinding): void;
   registerPrivateSurface(identity: VaultLoginSurfaceIdentity): () => void;
+  permission: CredentialPermissionChecks;
 };
 type Pending = { nonce: string; phase: 'fill' | 'submit'; binding: CredentialUseBinding;
   lease: AuditedCredentialUseLease; account?: Buffer; password?: Buffer };
@@ -52,9 +55,12 @@ export class VaultBrowserLoginSurface {
   private readonly personDocuments = new Set<string>();
 
   constructor(private readonly host: VaultLoginSurfaceHost, private readonly origin: string) {
+    if (!host.permission || typeof host.permission.revalidate !== 'function'
+      || typeof host.permission.assertCurrent !== 'function' || !(host.permission.signal instanceof AbortSignal)) throw new VaultBrowserLoginError();
     this.host = Object.freeze({ browserId: host.browserId, partition: host.partition, agentContents: host.agentContents,
       isolationReady: host.isolationReady.bind(host), assertCurrent: host.assertCurrent.bind(host),
-      registerPrivateSurface: host.registerPrivateSurface.bind(host) });
+      registerPrivateSurface: host.registerPrivateSurface.bind(host), permission: Object.freeze({ signal: host.permission.signal,
+        revalidate: host.permission.revalidate.bind(host.permission), assertCurrent: host.permission.assertCurrent.bind(host.permission) }) });
     assertCredentialWebsite(origin, origin);
     this.assertTarget(true);
     const preload = join(__dirname, 'vault-browser-login-preload.js');
@@ -124,12 +130,14 @@ export class VaultBrowserLoginSurface {
     this.binding = Object.freeze({ ...binding });
     try {
       this.leaseSource = lease;
-      this.lease = Object.freeze({ signal: lease.signal, assertCurrent: lease.assertCurrent.bind(lease),
+      this.lease = Object.freeze({ signal: anySignal([lease.signal, this.host.permission.signal]), assertCurrent: lease.assertCurrent.bind(lease),
         claimSubmission: lease.claimSubmission.bind(lease), prepareSubmission: lease.prepareSubmission.bind(lease) });
       lease = this.lease;
+      await this.host.permission.revalidate({ stage: 'before_fill', target: this.binding });
       this.assertUse(binding, true); lease.assertCurrent(); lease.signal.throwIfAborted();
       this.network.beginSensitive();
       await this.operation({ phase: 'fill', nonce: randomUUID(), binding, lease, account, password });
+      this.assertUse(binding, true); lease.assertCurrent(); lease.signal.throwIfAborted();
     } catch { throw new VaultBrowserLoginError(); }
   }
 
@@ -141,12 +149,16 @@ export class VaultBrowserLoginSurface {
       this.assertUse(binding, true); lease.assertCurrent(); lease.signal.throwIfAborted();
       await lease.prepareSubmission();
       this.assertUse(binding, true); lease.assertCurrent(); lease.signal.throwIfAborted();
+      await this.host.permission.revalidate({ stage: 'before_submit', target: this.binding! });
+      this.assertUse(binding, true); lease.assertCurrent(); lease.signal.throwIfAborted();
       await this.operation({ phase: 'submit', nonce: randomUUID(), binding, lease });
+      this.assertCurrent(binding); lease.signal.throwIfAborted();
     } catch { throw new VaultBrowserLoginError(); }
   }
 
   /** Lifecycle guard excludes the pre-submit document and intentional retirement. */
   assertCurrent(binding: CredentialUseBinding): void {
+    this.host.permission.assertCurrent(binding);
     this.assertSurface(binding); this.assertTarget(); this.host.assertCurrent(binding);
     if (this.fault || this.contents.isDestroyed() && !this.retired) throw new VaultBrowserLoginError();
     if (!this.contents.isDestroyed() && this.contents.debugger.isAttached()) throw new VaultBrowserLoginError();
@@ -218,6 +230,7 @@ export class VaultBrowserLoginSurface {
       || binding.loginSurfaceId !== this.loginSurfaceId || binding.loginSurfaceEpoch !== this.loginSurfaceEpoch) throw new VaultBrowserLoginError();
   }
   private assertUse(binding: CredentialUseBinding, originalDocument: boolean): void {
+    this.host.permission.assertCurrent(binding);
     this.assertSurface(binding); this.assertLive(); this.host.assertCurrent(binding);
     if (!this.host.isolationReady()) throw new VaultBrowserLoginError();
     if (binding.browserId !== this.host.browserId || binding.origin !== this.origin || binding.operation !== 'login-submit') throw new VaultBrowserLoginError();

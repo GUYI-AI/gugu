@@ -5,6 +5,8 @@ import type {
 import { CredentialCleanup, type CredentialArtifactCleanup, type CredentialCleanupSurface } from './credential-cleanup';
 import type { CredentialCleanupReport, FixedOutcomeAuditPort, PostUseAuditResult, UseOutcomeContext } from './credential-settlement-contract';
 import { assertCredentialWebsite } from './credential-website';
+import { anySignal } from '@gugu/core/shared/anySignal';
+import type { CredentialPermissionChecks } from './credential-permission';
 
 const BINDING_KEYS = ['requestId', 'useId', 'accountId', 'installationId', 'agentId', 'sessionId', 'browserId',
   'loginSurfaceId', 'loginSurfaceEpoch', 'documentId', 'frameId', 'formFingerprint', 'credentialId',
@@ -40,6 +42,7 @@ export interface PreparedCredentialHandoff {
 }
 
 export interface CredentialHandoffHost {
+  permission: CredentialPermissionChecks;
   /** Actor/ref/lock/surface and destination ownership, including after normal post-submit navigation.
    * Do not reuse the pre-fill document guard or treat an intentional retired surface as an invalid actor.
    */
@@ -73,18 +76,22 @@ export class CredentialHandoff {
   private readonly revoked = () => this.invalidate();
   private readonly host: CredentialHandoffHost;
   private readonly audit: FixedOutcomeAuditPort;
+  private readonly revokedSignal: AbortSignal;
 
   constructor(binding: CredentialUseBinding, private readonly capability: VaultUseCapability,
     host: CredentialHandoffHost, surface: CredentialCleanupSurface, artifacts: CredentialArtifactCleanup,
-    audit: FixedOutcomeAuditPort, private readonly revokedSignal: AbortSignal) {
+    audit: FixedOutcomeAuditPort, revokedSignal: AbortSignal) {
     assertCredentialWebsite(binding.origin, binding.origin);
     this.host = Object.freeze({ assertCurrent: host.assertCurrent.bind(host), readCompletion: host.readCompletion.bind(host),
-      verifyLocalContinue: host.verifyLocalContinue.bind(host), prepareHandoff: host.prepareHandoff.bind(host) });
+      verifyLocalContinue: host.verifyLocalContinue.bind(host), prepareHandoff: host.prepareHandoff.bind(host),
+      permission: Object.freeze({ signal: host.permission.signal, revalidate: host.permission.revalidate.bind(host.permission),
+        assertCurrent: host.permission.assertCurrent.bind(host.permission) }) });
+    this.revokedSignal = anySignal([revokedSignal, this.host.permission.signal]);
     this.audit = Object.freeze({ appendOutcome: audit.appendOutcome.bind(audit), matches: audit.matches.bind(audit) });
     this.binding = Object.freeze(Object.fromEntries(BINDING_KEYS.map(key => [key, binding[key]]))) as CredentialUseBinding;
     this.cleanupState = new CredentialCleanup(this.binding, surface, artifacts);
-    if (revokedSignal.aborted) this.invalidate();
-    else revokedSignal.addEventListener('abort', this.revoked, { once: true });
+    if (this.revokedSignal.aborted) this.invalidate();
+    else this.revokedSignal.addEventListener('abort', this.revoked, { once: true });
   }
 
   view(): CredentialLoginPersonView {
@@ -182,6 +189,10 @@ export class CredentialHandoff {
       if (!this.current() || !this.outcomeAudit || !this.auditMatches(this.outcomeAudit, this.outcome) || this.fault) return this.view();
       try { await prepared.commit(); }
       catch { this.latch('handoff_unconfirmed'); return this.view(); }
+      if (!this.current() || this.fault) return this.view();
+      // Native adoption remains pending/closed throughout this last asynchronous policy read.
+      try { await this.host.permission.revalidate({ stage: 'before_handoff', target: this.binding }); }
+      catch { this.latch('target_invalidated'); return this.view(); }
       // A late successful load, or a synchronous callback during dispatch, cannot revive an invalidated use.
       if (this.current() && !this.fault && this.auditMatches(this.outcomeAudit, this.outcome)) {
         try {
@@ -235,7 +246,7 @@ export class CredentialHandoff {
   private current(): boolean {
     if (this.fault) return false;
     if (this.revokedSignal.aborted) { this.latch('target_invalidated'); return false; }
-    try { this.host.assertCurrent(this.binding); return !this.fault; }
+    try { this.host.permission.assertCurrent(this.binding); this.host.assertCurrent(this.binding); return !this.fault; }
     catch { this.latch('target_invalidated'); return false; }
   }
   private latch(reason: CredentialHandoffReason): void {

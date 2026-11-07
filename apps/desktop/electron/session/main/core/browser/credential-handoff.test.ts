@@ -25,7 +25,10 @@ function fixture() {
     topDocumentChanged: true, filledPasswordFieldsAbsent: true, requiresPersonInteraction: false };
   const commit = vi.fn(async () => {});
   const discard = vi.fn(async () => {}), retract = vi.fn(() => {}), confirm = vi.fn(() => {});
-  const host = { assertCurrent: vi.fn((_binding: CredentialUseBinding) => {}),
+  const policy = new AbortController();
+  const permission = { signal: policy.signal, revalidate: vi.fn(async (_check: unknown) => { policy.signal.throwIfAborted(); }),
+    assertCurrent: vi.fn((_binding: CredentialUseBinding) => { policy.signal.throwIfAborted(); }) };
+  const host = { permission, assertCurrent: vi.fn((_binding: CredentialUseBinding) => {}),
     readCompletion: vi.fn(async (_binding: CredentialUseBinding): Promise<CredentialCompletion> => ({ ...completion })),
     verifyLocalContinue: vi.fn((_binding: CredentialUseBinding, evidence: unknown) => evidence === person),
     prepareHandoff: vi.fn(async (_binding: CredentialUseBinding): Promise<PreparedCredentialHandoff> => ({ commit, discard, retract, confirm })) };
@@ -50,11 +53,32 @@ function fixture() {
   const handoff = new CredentialHandoff(binding, capability, host, surface, artifacts, audit, revocation.signal);
   const settlement: Mutable<CredentialUseSettlement> = { outcome: 'submitted_unconfirmed', effectPossible: true,
     audit: issue() };
-  return { binding, capability, person, completion, commit, discard, retract, confirm, host, surface, artifacts, handoff, settlement, audit, issue, revocation,
+  return { binding, capability, person, completion, commit, discard, retract, confirm, host, surface, artifacts, handoff, settlement, audit, issue, revocation, permission, policy,
     settle: (value = settlement) => handoff.settle(capability, binding, value) };
 }
 
 describe('private credential session handoff', () => {
+  it('keeps pending admission closed during the final policy wait and retracts a late revoked result', async () => {
+    const f = fixture(), wait = deferred<void>();
+    f.permission.revalidate.mockImplementationOnce(async () => {
+      expect(f.commit).toHaveBeenCalledOnce();
+      await wait.promise;
+    });
+    const settling = f.settle();
+    await vi.waitFor(() => expect(f.permission.revalidate).toHaveBeenCalledOnce());
+    expect(f.confirm).not.toHaveBeenCalled();
+    f.policy.abort();
+    expect(f.retract).toHaveBeenCalled();
+    wait.resolve();
+    expect((await settling).handoff).toBe('isolated_login_retained');
+    expect(f.confirm).not.toHaveBeenCalled(); expect(f.discard).toHaveBeenCalledOnce();
+  });
+  it('rejects failed fresh handback permission even after cleanup, proof and pending adoption succeed', async () => {
+    const f = fixture(); f.permission.revalidate.mockRejectedValueOnce(new Error('policy unavailable'));
+    expect((await f.settle()).handoff).toBe('isolated_login_retained');
+    expect(f.surface.destroy).toHaveBeenCalledOnce(); expect(f.commit).toHaveBeenCalledOnce();
+    expect(f.confirm).not.toHaveBeenCalled(); expect(f.discard).toHaveBeenCalledOnce();
+  });
   it('automatically hands back only after durable outcome, retirement and drained artifacts', async () => {
     const f = fixture();
     expect((await f.settle()).handoff).toBe('handed_back');

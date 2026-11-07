@@ -30,6 +30,7 @@ it('rechecks a slow completed native navigation and automatically hands back wit
   let complete = false;
   const confirm = vi.fn(() => {});
   const lifecycle = new CredentialHandoff(f.binding, capability, { assertCurrent() {}, verifyLocalContinue: () => false,
+    permission: { signal: new AbortController().signal, revalidate: async () => {}, assertCurrent() {} },
     readCompletion: async () => ({ loginSurfaceId: f.binding.loginSurfaceId, loginSurfaceEpoch: f.binding.loginSurfaceEpoch,
       surfaceEpoch: f.binding.loginSurfaceEpoch, documentId: complete ? randomUUID() : f.binding.documentId, documentEpoch: '1',
       topDocumentChanged: complete, filledPasswordFieldsAbsent: complete, requiresPersonInteraction: !complete }),
