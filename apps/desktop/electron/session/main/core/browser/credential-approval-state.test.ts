@@ -25,7 +25,7 @@ function fixture() {
 describe('memory-only credential approval state', () => {
   it('captures the local decision verifier and target guard at construction', () => {
     let current = true;
-    const host = { current: () => current, verifyLocalDecision: (_binding: CredentialUseBinding, evidence: unknown) => evidence === 'local' };
+    const host = { current: () => current, verifyLocalDecision: (_binding: CredentialUseBinding, evidence: unknown): boolean => evidence === 'local' };
     const state = new CredentialApprovalState(host), request = state.request(target, 'operation');
     host.verifyLocalDecision = () => true;
     expect(() => state.decide(request.requestId, 'allow_once', 'claimed-confirmation')).toThrow('owner_verification_required');
