@@ -438,6 +438,7 @@ export function useTimelineSession(
           : await client.fetchOlder(deviceId, sessionId, target.beforeTurnId)
         if (generation !== olderGeneration.current || identity !== olderIdentityRef.current) return
         setTimeline(current => {
+          if (generation !== olderGeneration.current || identity !== olderIdentityRef.current) return current
           // An After/reset that overtook this request owns the newer window facts.
           if (current.cursor?.epoch !== pinned.cursor?.epoch || current.cursor?.seq !== pinned.cursor?.seq
             || current.sourceLineage !== pinned.sourceLineage || current.snapshotRevision !== pinned.snapshotRevision) return current
