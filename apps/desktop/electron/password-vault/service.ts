@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
-import type { AuditInput, AuditReceipt, AuditRecord, CredentialReference, CredentialSummary, CredentialUseResult, VaultUseBinding, VaultUseCapability, LockReason, VaultDependencies, VaultState } from './contracts'
+import type { AuditInput, AuditReceipt, AuditRecord, CredentialReference, CredentialSummary, CredentialUseResult, VaultUseBinding, VaultUseCapability, LockReason, VaultDependencies, VaultState, VaultInstallationIdentity } from './contracts'
 import { VaultError } from './contracts'
 import { EncryptedVaultAudit } from './audit'
 import { sealedJson } from './crypto'
@@ -57,6 +57,20 @@ export class LocalPasswordVault {
   }
   /** One fixed host-only port, never exposed through a tool, UI payload or diagnostics. */
   get outcomeAudit() { return this.#outcomes.port }
+  /** Fixed host reader, never a tool/person export. Safe to call from readiness readers: no writer queue re-entry. */
+  async prepareInstallationIdentity(): Promise<VaultInstallationIdentity> {
+    if (this.#disposed || this.#failure) throw new VaultError('UNAVAILABLE')
+    const epoch = this.#epoch, signal = this.#epochAbort.signal
+    await this.gates()
+    const value = Object.freeze(await this.#file.prepareInstallationIdentity())
+    const assertCurrent = () => {
+      // No feature.assertCurrent here: this fact is itself checked by that guard.
+      if (this.#disposed || this.#failure || this.#epoch !== epoch || signal.aborted) throw new VaultError('UNAVAILABLE')
+      this.#file.assertInstallationIdentity(value.installationId)
+    }
+    assertCurrent()
+    return Object.freeze({ value, generation: epoch, signal, assertCurrent })
+  }
   state(): VaultState { return { status: this.#failure ? 'unavailable' : this.#key ? 'unlocked' : 'locked', epoch: this.#epoch, ...(this.#failure ? { reason: this.#failure } : {}) } }
   private run<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.#queue.then(async () => { if (this.#disposed) throw new VaultError('UNAVAILABLE'); try { return await operation() } catch (error) { throw safe(error) } })

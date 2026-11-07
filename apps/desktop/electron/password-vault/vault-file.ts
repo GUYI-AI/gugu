@@ -12,22 +12,42 @@ export function readJson(bytes: Buffer): unknown {
 export class VaultFile {
   readonly owner: string
   readonly disk: VaultDisk
+  #installationId?: string
+  #installationPersisted = false
+  #identityFailed = false
   constructor(private readonly dependencies: VaultDependencies) {
     this.owner = hash(dependencies.accountId)
     this.disk = new VaultDisk(dependencies.root, dependencies.assertPrivateStorageReady)
   }
   private get path(): string { return `${this.owner}/vault.json` }
+  assertInstallationIdentity(id: string): void {
+    if (this.#identityFailed || this.#installationId !== id) throw new VaultError('WRONG_INSTALLATION')
+  }
+  /** Read/reserve only. No metadata, key, recovery material or directory is written here. */
+  async prepareInstallationIdentity(): Promise<{ installationId: string; status: 'pending_setup' | 'persisted' }> {
+    try { return { installationId: (await this.installation()).id, status: 'persisted' } }
+    catch (error) { if (!(error instanceof VaultError) || error.code !== 'NOT_INITIALIZED') throw error }
+    if ((await this.disk.list('.')).length !== 0) throw new VaultError('DATA_DAMAGED')
+    this.#installationId ??= randomUUID()
+    return { installationId: this.#installationId, status: 'pending_setup' }
+  }
   async installation(create = false): Promise<Installation> {
+    if (this.#identityFailed) throw new VaultError('WRONG_INSTALLATION')
     const bytes = await this.disk.read('installation.json')
     if (bytes) {
       const value = parse(installationSchema, readJson(bytes))
-      if (value.binding !== hash(this.dependencies.installationBinding)) throw new VaultError('WRONG_INSTALLATION')
+      if (value.binding !== hash(this.dependencies.installationBinding)) { this.#identityFailed = true; throw new VaultError('WRONG_INSTALLATION') }
+      if (this.#installationId && this.#installationId !== value.id) { this.#identityFailed = true; throw new VaultError('WRONG_INSTALLATION') }
+      this.#installationId = value.id; this.#installationPersisted = true
       return value
     }
+    if (this.#installationPersisted) { this.#identityFailed = true; throw new VaultError('DATA_MISSING') }
     if (!create) throw new VaultError('NOT_INITIALIZED')
     if ((await this.disk.list('.')).length !== 0) throw new VaultError('DATA_DAMAGED')
-    const value: Installation = { schema: 1, id: randomUUID(), binding: hash(this.dependencies.installationBinding), owners: [] }
+    this.#installationId ??= randomUUID()
+    const value: Installation = { schema: 1, id: this.#installationId, binding: hash(this.dependencies.installationBinding), owners: [] }
     await this.disk.write('installation.json', serialize(value))
+    this.#installationPersisted = true
     return value
   }
   async assertEmpty(): Promise<Installation> {

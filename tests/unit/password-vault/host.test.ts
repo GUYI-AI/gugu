@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, realpath, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, realpath, readdir, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
@@ -7,6 +7,7 @@ import { createVaultStorage, type VaultFeatureGuardProvider, type VaultStorageDe
 import { VaultError, type VaultBrowserSink } from '../../../apps/desktop/electron/password-vault/contracts'
 import type { LocalPasswordVault } from '../../../apps/desktop/electron/password-vault/service'
 import { seal, unseal } from '../../../apps/desktop/electron/password-vault/crypto'
+import { PasswordFeatureReadiness, PASSWORD_PROTECTIONS } from '../../../apps/desktop/electron/permissions/password-readiness'
 
 const roots: string[] = [], vaults: LocalPasswordVault[] = []
 afterEach(async () => {
@@ -24,13 +25,58 @@ async function fixture() {
   const browser: VaultBrowserSink = { claimCredentialSink() { throw new VaultError('UNAVAILABLE') }, fillAndSubmit: async () => 'uncertain',
     cleanup: async () => ({ status: 'isolated_login_retained' }), settle: async () => undefined }
   const acquire = vi.fn<VaultFeatureGuardProvider>(async () => ({ status: 'ready', signal: new AbortController().signal, assertCurrent() {} }))
-  const construct = (h = host, b = browser, guard = acquire) => {
+  const construct = (h = host, b = browser, guard: VaultFeatureGuardProvider = acquire) => {
     const ports = createVaultStorage(h, b, guard); vaults.push(ports.vault); return ports
   }
   return { root, host, browser, acquire, person, verify, ready, construct }
 }
 
 describe('fixed host construction of vault storage', () => {
+  it('prepares one pending installation without writes and persists exactly that UUID through a live save guard', async () => {
+    const f = await fixture(), deviceId = randomUUID()
+    const fact = <T>(value: T) => ({ value, generation: randomUUID(), signal: new AbortController().signal, assertCurrent() {} })
+    const readiness = new PasswordFeatureReadiness({ readInstallation: async () => {
+      const identity = await vault.prepareInstallationIdentity()
+      return { ...identity, value: { accountId: f.host.accountId, installationId: identity.value.installationId, deviceId } }
+    }, readMode: async () => fact('enforce' as const),
+    readProtections: async () => Object.fromEntries(PASSWORD_PROTECTIONS.map(kind => [kind, fact('ready' as const)])) })
+    const vault: LocalPasswordVault = f.construct(f.host, f.browser, async (operation, signal) => {
+      const identity = await vault.prepareInstallationIdentity()
+      if (operation === 'use' && identity.value.status !== 'persisted') throw new VaultError('UNAVAILABLE')
+      const guard = await readiness.check(operation, signal)
+      if (guard.status !== 'ready') throw new VaultError('UNAVAILABLE')
+      return guard
+    }).vault
+    const [first, concurrent] = await Promise.all([vault.prepareInstallationIdentity(), vault.prepareInstallationIdentity()])
+    expect(first.value.status).toBe('pending_setup'); expect(first.value.installationId === concurrent.value.installationId).toBe(true)
+    expect((await readdir(f.root)).length).toBe(0); expect(f.verify).not.toHaveBeenCalled()
+    const material = await vault.beginSetup(f.person)
+    await vault.confirmRecovery(f.person, material.setupId, material.recoveryMaterial)
+    const persisted = await vault.prepareInstallationIdentity()
+    expect(persisted.value.status).toBe('persisted'); expect(persisted.value.installationId === first.value.installationId).toBe(true)
+    // A pending save fact stays conservative across its own commit, never upgrades itself into use evidence.
+    expect(() => first.assertCurrent()).not.toThrow(); expect(first.value.status).toBe('pending_setup')
+    const manifest = JSON.parse(await readFile(join(f.host.root, 'installation.json'), 'utf8'))
+    expect(manifest.id === first.value.installationId).toBe(true)
+    expect(manifest.id === f.host.installationBinding).toBe(false)
+  })
+  it('revokes old installation facts on lock and returns the persisted identity with the new lifecycle generation', async () => {
+    const f = await fixture(), { vault } = f.construct(), before = await vault.prepareInstallationIdentity()
+    const material = await vault.beginSetup(f.person); await vault.confirmRecovery(f.person, material.setupId, material.recoveryMaterial)
+    await vault.lock()
+    expect(before.signal.aborted).toBe(true); expect(() => before.assertCurrent()).toThrow(VaultError)
+    const next = await vault.prepareInstallationIdentity()
+    expect(next.value.status).toBe('persisted'); expect(next.value.installationId === before.value.installationId).toBe(true)
+    expect(next.generation === before.generation).toBe(false); expect(() => next.assertCurrent()).not.toThrow()
+  })
+  it('latches a replaced manifest UUID instead of silently substituting a new installation', async () => {
+    const f = await fixture(), { vault } = f.construct()
+    const material = await vault.beginSetup(f.person); await vault.confirmRecovery(f.person, material.setupId, material.recoveryMaterial)
+    const identity = await vault.prepareInstallationIdentity(), path = join(f.host.root, 'installation.json')
+    const value = JSON.parse(await readFile(path, 'utf8')); value.id = randomUUID(); await writeFile(path, JSON.stringify(value))
+    await expect(vault.prepareInstallationIdentity()).rejects.toMatchObject({ code: 'WRONG_INSTALLATION' })
+    expect(() => identity.assertCurrent()).toThrow(VaultError)
+  })
   it('captures trusted dependency methods and returns the existing vault audit port', async () => {
     const f = await fixture(), ports = f.construct()
     f.host.assertLocalPerson = () => undefined

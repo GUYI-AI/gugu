@@ -47,7 +47,10 @@ export interface VaultDependencies {
   now?: () => number
 }
 import type { PasswordAvailability } from '../permissions/password-readiness'
+import type { LivePasswordFact } from '../permissions/password-facts'
 export type VaultFeatureGuard = Extract<PasswordAvailability, { status: 'ready' }>
+/** Host-only identity source. Pending setup may qualify save, never use. It contains no key/material. */
+export type VaultInstallationIdentity = LivePasswordFact<Readonly<{ installationId: string; status: 'pending_setup' | 'persisted' }>>
 
 export type { VaultUseCapability, CredentialUseLease as VaultUseControl } from '../session/main/core/browser/credential-use-contract'
 import type { VaultUseCapability, CredentialUseBinding, CredentialUseLease, AuditedCredentialUseLease, CredentialUseCleanup, CredentialLoginOutcome } from '../session/main/core/browser/credential-use-contract'
