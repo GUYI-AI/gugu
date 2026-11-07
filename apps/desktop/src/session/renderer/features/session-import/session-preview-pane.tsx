@@ -53,14 +53,16 @@ export function SessionPreviewPane({
       return;
     }
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     setIsLoading(true);
     setError(null);
-    source
+    const load = () => source
       .preview({ filePath: session.filePath, engine: session.engine })
       .then((next) => {
         if (cancelled) return;
         setPreview(next);
         setIsLoading(false);
+        if (next.pendingLongRecords?.length) timer = setTimeout(load, 1000);
       })
       .catch((e: unknown) => {
         if (cancelled) return;
@@ -69,8 +71,10 @@ export function SessionPreviewPane({
         setPreview(null);
         setIsLoading(false);
       });
+    void load();
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [session, source]);
 
@@ -93,7 +97,7 @@ export function SessionPreviewPane({
         </span>
         <span className="text-xs text-foreground-tertiary-muted">
           {LOCAL_SESSION_ENGINE_LABEL[session.engine]}
-          {preview
+          {preview && preview.turnCount !== null
             ? ` · ${translate('sessionImport.previewTurnCount', { count: preview.turnCount })}`
             : ''}
         </span>
@@ -118,7 +122,7 @@ export function SessionPreviewPane({
           {preview.head.map((turn, index) => (
             <TurnBubble key={`head-${index}`} role={turn.role} content={turn.content} />
           ))}
-          {preview.turnCount > preview.head.length + preview.tail.length ? (
+          {preview.turnCount !== null && preview.turnCount > preview.head.length + preview.tail.length ? (
             <span className="text-tiny text-foreground-tertiary-muted">
               {translate('sessionImport.previewOmitted', {
                 count: preview.turnCount - preview.head.length - preview.tail.length,
@@ -128,6 +132,9 @@ export function SessionPreviewPane({
           {preview.tail.map((turn, index) => (
             <TurnBubble key={`tail-${index}`} role={turn.role} content={turn.content} />
           ))}
+          {preview.pendingLongRecords?.length ? (
+            <span role="status" className="text-xs text-foreground-muted">{translate('sessionImport.previewLoading')}</span>
+          ) : null}
         </div>
       ) : null}
     </div>

@@ -6,6 +6,10 @@ import { nativeHomeRoots } from '@gugu/session-core/agents/plugins/helpers'
 import { requireNativeHome } from '@gugu/session-plugins/agents'
 import type { AppSessionRead, AppSessionReadOptions } from '../../src/session/shared/extensions/app-sessions'
 import { sessionPageNumber } from '../../src/session/shared/extensions/app-sessions'
+import { readBoundedLocalSessionPreview } from './local-session-preview'
+import { createReverseIndexScheduler } from '@gugu/session-core/session-record/window-cache/reverse-index-runner'
+import type { PendingLongRecord } from '@gugu/session-core/session-record/window-cache/types'
+import { log } from '../lib/logger'
 
 // @@@sessionpage 导入本机会话 (spec session-page-import)：宿主侧的实现，注入给会话页。
 //
@@ -54,27 +58,12 @@ export type HostLocalSessionSource = {
     providerSessionId: string
     title: string
     cwd: string | null
-    turnCount: number
+    turnCount: number | null
+    pendingLongRecords?: PendingLongRecord[]
     head: Array<{ role: 'user' | 'assistant'; content: string; createdAt: string | null }>
     tail: Array<{ role: 'user' | 'assistant'; content: string; createdAt: string | null }>
   }>
   dispose(): Promise<void>
-}
-
-/** 预览里首尾各给几轮 —— 够判断「是这条会话、聊到哪了」，又不至于把整段历史搬进弹窗。 */
-const PREVIEW_TURNS = 3
-/** 单轮预览文本的截断长度：确认用途，不是阅读器。 */
-const PREVIEW_TURN_CHARS = 400
-
-function clipTurn(turn: { role: 'user' | 'assistant'; content: string; createdAt: string | null }) {
-  return {
-    role: turn.role,
-    content:
-      turn.content.length > PREVIEW_TURN_CHARS
-        ? `${turn.content.slice(0, PREVIEW_TURN_CHARS)}…`
-        : turn.content,
-    createdAt: turn.createdAt,
-  }
 }
 
 /** 插件 `nativeHome` 的候选,递给看不见插件的 core 扫描层;清单与读取围栏用同一组根。 */
@@ -97,6 +86,11 @@ export function createHostLocalSessionSource(userDataPath: string, scanOptions: 
   let disposePromise: Promise<void> | null = null
   const controller = new AbortController()
   const active = new Set<Promise<unknown>>()
+  let locatingFailure: unknown = null
+  const locating = createReverseIndexScheduler({ onFailure(error) {
+    locatingFailure = error
+    log.warn('Local session record locating failed', { error: String(error) })
+  } })
 
   const getIndex = (): LocalSessionIndex => {
     if (disposed) throw new Error('Local session source is shutting down')
@@ -172,24 +166,10 @@ export function createHostLocalSessionSource(userDataPath: string, scanOptions: 
 
     preview(params) {
       return run(async () => {
-        // readLocalTranscript 自带扫描根围栏：渲染层递上来的路径必须落在该引擎 spec 声明的
-        // 扫描根内（各家原生配置根下的记录目录，见 `transcriptScanOptions`），否则抛错
-        // ——导入面板不能变成任意文件读取器。
-        const transcript = await readLocalTranscript(params.filePath, params.engine, {
-          ...scanOptions,
-          signal: controller.signal,
-        })
-        return {
-          providerSessionId: transcript.providerSessionId,
-          title: transcript.title,
-          cwd: transcript.cwd,
-          turnCount: transcript.turns.length,
-          head: transcript.turns.slice(0, PREVIEW_TURNS).map(clipTurn),
-          // 短会话里首尾会重叠（4 轮时中间两轮要被显示两次）→ 尾段从首段之后开始取。
-          tail: transcript.turns
-            .slice(Math.max(PREVIEW_TURNS, transcript.turns.length - PREVIEW_TURNS))
-            .map(clipTurn)
-        }
+        await locating.pause()
+        if (locatingFailure) { const failure = locatingFailure; locatingFailure = null; throw failure }
+        return readBoundedLocalSessionPreview(userDataPath, params, { ...scanOptions, signal: controller.signal },
+          (path, checkpoint, directory, scope) => locating.schedule(path, checkpoint, directory, scope))
       })
     },
 
@@ -197,6 +177,7 @@ export function createHostLocalSessionSource(userDataPath: string, scanOptions: 
       return (disposePromise ??= (async () => {
         disposed = true
         controller.abort()
+        await locating.dispose()
         await Promise.allSettled(Array.from(active))
         await index?.flush()
       })())
