@@ -6,11 +6,12 @@ final class Fixture {
     var active = true
     var fullAccess = false
     var revocations = 0
+    var osReads = 0
     var requests: [(Result<Void, Error>) -> Void] = []
     lazy var ownerAccess = GuguIOSOwnerAccess(root: root,
         verifiedIdentity: { self.binding },
         requireOwnerUI: { if !self.active { throw GuguHostFailure(code: "not_granted", message: "Fixture UI inactive") } },
-        calendarHasFullAccess: { self.fullAccess }, revokeCalendarAccess: { self.revocations += 1 })
+        calendarHasFullAccess: { self.osReads += 1; return self.fullAccess }, revokeCalendarAccess: { self.revocations += 1 })
     lazy var connection = GuguCalendarConnection(ownerAccess: ownerAccess, hasFullAccess: { self.fullAccess },
         requestAccess: { check, done in
             do { try check(); self.requests.append(done) } catch { done(.failure(error)) }
@@ -35,8 +36,12 @@ var results: [[String: Any]] = []
 func run(_ name: String, _ body: (Fixture) throws -> Void) throws {
     let fixture = try Fixture()
     defer { try? fixture.cleanup() }
-    try body(fixture)
-    results.append(["name": name, "passed": true])
+    do {
+        try body(fixture)
+        results.append(["name": name, "passed": true])
+    } catch {
+        results.append(["name": name, "passed": false, "error": String(describing: error)])
+    }
 }
 try run("initial state disconnected") { f in
     try expect(try f.snapshot().calendarConnected == false, "Initial native choice")
@@ -106,5 +111,29 @@ try run("observed OS revocation retires selected connection") { f in
     try expect(try f.snapshot().calendarConnected == false, "OS revocation left connected")
     try expect(f.revocations == 2, "Revocation did not retire context")
 }
+for method in ["status", "connect"] {
+    try run("stale \(method) cannot observe or revoke the connected current owner") { f in
+        var connected: Result<GuguIOSOwnerSnapshot, Error>?
+        f.connection.connect(expectedBinding: f.binding) { connected = $0 }
+        f.fullAccess = true; f.requests[0](.success(())); _ = try connected!.get()
+        let category = f.root.appendingPathComponent(f.binding.ownerId).appendingPathComponent("calendar-connection.json")
+        let before = try Data(contentsOf: category)
+        let calls = (f.revocations, f.requests.count, f.osReads)
+        f.fullAccess = false
+        let staleOwner = UUID().uuidString.lowercased()
+        if method == "status" {
+            try rejects("stale_context") { try f.connection.snapshot(ownerId: staleOwner) }
+        } else {
+            let stale = GuguIOSHostBinding(ownerId: staleOwner, deviceId: "phone-\(f.binding.installationId)-\(staleOwner)", installationId: f.binding.installationId)
+            var result: Result<GuguIOSOwnerSnapshot, Error>?
+            f.connection.connect(expectedBinding: stale) { result = $0 }
+            try rejects("stale_context") { try result!.get() }
+        }
+        try expect(f.revocations == calls.0 && f.requests.count == calls.1 && f.osReads == calls.2, "Stale caller observed OS or changed current owner")
+        try expect(try Data(contentsOf: category) == before, "Stale caller changed persisted selection")
+    }
+}
+let allPassed = results.allSatisfy { $0["passed"] as? Bool == true }
 print(String(decoding: try JSONSerialization.data(withJSONObject: ["checks": results, "count": results.count,
-    "realModelCalls": 0, "realEventKitCalls": 0, "iOSAppVerified": false], options: [.sortedKeys]), as: UTF8.self))
+    "allPassed": allPassed, "realModelCalls": 0, "realEventKitCalls": 0, "iOSAppVerified": false], options: [.sortedKeys]), as: UTF8.self))
+exit(allPassed ? 0 : 1)

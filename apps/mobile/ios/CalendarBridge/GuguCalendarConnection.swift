@@ -17,12 +17,9 @@ final class GuguCalendarConnection {
 
     func snapshot(ownerId: String) throws -> GuguIOSOwnerSnapshot {
         try ownerAccess.requireLocalOwnerUI()
-        var snapshot = try ownerAccess.ownerSnapshot()
-        guard snapshot.binding.ownerId == ownerId else { throw stale() }
-        if snapshot.calendarConnected && !hasFullAccess() {
-            snapshot = try ownerAccess.disconnectCalendar(expectedBinding: snapshot.binding)
-        }
-        return snapshot
+        let binding = try ownerAccess.ownerBinding()
+        guard binding.ownerId == ownerId else { throw stale() }
+        return try ownerAccess.ownerSnapshot(expectedBinding: binding)
     }
 
     func connect(expectedBinding: GuguIOSHostBinding, completion: @escaping (Result<GuguIOSOwnerSnapshot, Error>) -> Void) {
@@ -46,7 +43,7 @@ final class GuguCalendarConnection {
 
     private func check(_ binding: GuguIOSHostBinding) throws {
         try ownerAccess.requireLocalOwnerUI()
-        guard try ownerAccess.ownerSnapshot().binding == binding else { throw stale() }
+        guard try ownerAccess.ownerBinding() == binding else { throw stale() }
     }
 
     private func stale() -> GuguHostFailure {
