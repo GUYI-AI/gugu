@@ -11,6 +11,7 @@ import type {
 } from './core/tab-provider-registry';
 import type { TabPersistenceAdapter } from './persistence';
 import { accountTabPlacementMemory, type TabPlacementMemory } from './tab-placement-memory';
+import { declaredShare } from './side-width';
 import {
   equalizeSplit,
   evenSizes,
@@ -364,6 +365,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   pairWith(pinned: string, side: string, opts: { edge?: PairEdge; focus?: boolean; by?: 'push' | 'user' | 'restore' } = {}): void {
     if (pinned === side || !this._groupOf(pinned) || !this._groupOf(side)) return;
     const before = this.pair;
+    const extent = this._pairExtent();
     const main = this.mainGroup;
     let sideGroup = this.sideGroup;
     if (this._groupOf(pinned) !== main) this._move(pinned, main);
@@ -381,6 +383,13 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     }
     main.pane.activeTabId = pinned;
     sideGroup.pane.activeTabId = side;
+    // A new pair, or a new page on the side, starts at the declared width (`side-width.ts`). Between two peers the
+    // dragged shares stay; a side that declared its width hands back half and half.
+    if (!before || before.side !== side) {
+      const declared = this._declaredSizes(pinned, side, extent);
+      if (this.layout.type === 'split' && declared) this.layout = { ...this.layout, sizes: declared };
+      else if (this.layout.type === 'split' && before && this._sideWidthOf(before.side) !== undefined) this.layout = equalizeSplit(this.layout, this.layout.id);
+    }
     if (opts.focus ?? true) this.activePaneId = sideGroup.paneId;
     for (const id of [pinned, side]) {
       const entry = this._groupOf(id)?.pane.entries.get(id);
@@ -540,9 +549,36 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     this.layout = setSplitSizes(this.layout, splitId, sizes);
   }
 
-  /** A divider double-clicked: that cut back to even shares. */
+  /** A divider double-clicked: that cut back to the declared width (`side-width.ts`), or even shares. */
   equalizeSplit(splitId: string): void {
-    this.layout = equalizeSplit(this.layout, splitId);
+    const pair = this.pair;
+    const declared = pair && this.layout.type === 'split' && this.layout.id === splitId ? this._declaredSizes(pair.pinned, pair.side, this._pairExtent()) : null;
+    this.layout = declared && this.layout.type === 'split' ? { ...this.layout, sizes: declared } : equalizeSplit(this.layout, splitId);
+  }
+
+  /** How wide the pair's panes are together, as measured (null until each one has been). */
+  private _pairExtent(): number | null {
+    const widths = this.groups.map(({ paneId, pane }) => (this.paneSizer?.(paneId) ?? pane.dimensions)?.width ?? 0);
+    return widths.every((width) => width > 0) ? widths.reduce((sum, width) => sum + width, 0) : null;
+  }
+
+  private _sideWidthOf(tabId: string): number | undefined {
+    const entry = this._groupOf(tabId)?.pane.entries.get(tabId);
+    return entry && this._registry.has(entry.kind) ? this._registry.get(entry.kind).sideWidth?.(entry.state as never) : undefined;
+  }
+
+  /**
+   * The pair's cut (the outermost, two panes across) with the page that declares its width (the side first) at that width,
+   * in exact shares (`setSplitSizes` rounds to whole percent: 14px off at 1920); null: peers.
+   */
+  private _declaredSizes(pinned: string, side: string, extent: number | null): number[] | null {
+    const layout = this.layout;
+    if (!extent || layout.type !== 'split' || layout.orientation !== 'horizontal' || layout.children.length !== 2) return null;
+    const declared = [side, pinned].map((tabId) => ({ tabId, px: this._sideWidthOf(tabId) })).find(({ px }) => px !== undefined);
+    if (!declared) return null;
+    const share = declaredShare(declared.px!, extent);
+    const paneId = this._groupOf(declared.tabId)?.paneId;
+    return layout.children.map((child) => (child.type === 'pane' && child.paneId === paneId ? share : 100 - share));
   }
 
   /** All opens name their source. No cardinality lookup, anchor inference or tab moving happens here. */

@@ -11,15 +11,13 @@ import {
 import { localizedManifestText, localizedTabText } from '@shared/extensions/catalog';
 import type { MarketUpdatesSummary } from '@shared/extensions/market';
 import type { ExtensionOrigin } from '@shared/extensions/upgrade';
+import { SIDE_PAGE_WIDTH_PX } from '@renderer/features/tabs/side-width';
 
 /**
  * What is installed, as the renderer sees it. The main process owns the truth
  * (it scans the extensions directory); this mirrors it so the tab chrome can
  * render entries without an await on every menu open. Refs #2374.
  */
-
-/** The host's settings page for an App (`hostPage: 'settings'`) is a form of rows: as narrow as a chat's info. */
-const HOST_SETTINGS_SIDE_WIDTH = 360;
 
 export interface ExtensionTabContributionEntry {
   /** Tab kind under which this contribution registers: `<extensionId>.<tabName>`. */
@@ -138,7 +136,7 @@ export class InstalledExtensionsStore {
         extensionName: name,
         title: tab.hostPage ? name : localizedTabText(manifest, tab, this.locale).title,
         hostSettings: tab.hostPage === 'settings',
-        sideWidth: tab.hostPage === 'settings' ? HOST_SETTINGS_SIDE_WIDTH : tab.sideWidth,
+        sideWidth: tab.hostPage === 'settings' ? SIDE_PAGE_WIDTH_PX : tab.sideWidth,
         iconDataUrl: this.icons[extensionTabKind(manifest.id, tab.name)] ?? null,
         enabled: this.isEnabled(manifest.id),
         preinstalled: this.isPreinstalled(manifest.id),

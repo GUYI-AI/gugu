@@ -23,6 +23,7 @@ import { groupPageSlot, isFolderItem, panelItemKey, type PanelItem } from './cha
 import { takeRestore } from './chat-tab-restores';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { RetainedTabContent, useRetainedTabs } from '@renderer/features/tabs/retained-tab-content';
+import { SIDE_PAGE_WIDTH_PX } from '@renderer/features/tabs/side-width';
 
 /** The chat itself: its messages and composer, first in its strip, never closed. */
 export const CHAT_TAB_KIND = 'chat';
@@ -39,8 +40,6 @@ export const CHAT_INFO_TAB_KIND = 'chat-info';
 export type ChatTabState = { chatId: string };
 export type ChatTopicState = { topicChatId: string; name: string };
 export type ChatInfoState = { group: boolean; page?: 'main' | 'members' | 'announcement'; at?: number };
-
-/** A list of rows: as wide as the drawers it replaces (spec session-page「并排」: a page declares its width beside the chat). */
 
 /** The chat a strip belongs to (its place, `chat-layouts`). */
 export const chatIdOfView = (ctx: TabViewContext): string => (ctx.place?.kind === 'chat' ? ctx.place.chatId : '');
@@ -188,6 +187,8 @@ export const chatPanelTabProvider = createTabProvider<typeof CHAT_PANEL_TAB_KIND
   kind: CHAT_PANEL_TAB_KIND,
 
   resourceKey: panelItemKey,
+  // An App's own page beside the chat is as wide as its manifest says (`sideWidth`); a file is the chat's peer: half each.
+  sideWidth: (item) => (item.kind && !item.itemId ? installedExtensionsStore.sideWidth(item.kind) : undefined),
   // The host's preview holds a message and a file version of this moment: gone with the window, as before.
   isPersistent: (item) => item.kind !== null,
   initialize: stateResource,
@@ -255,6 +256,7 @@ export const chatInfoTabProvider = createTabProvider<typeof CHAT_INFO_TAB_KIND, 
   kind: CHAT_INFO_TAB_KIND,
 
   resourceKey: (state) => `${state.page}:${state.at ?? ''}`,
+  sideWidth: () => SIDE_PAGE_WIDTH_PX,
   initialize: stateResource,
   dispose: () => {},
   TabBarItem: InfoTabItem,
