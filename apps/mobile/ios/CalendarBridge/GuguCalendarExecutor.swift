@@ -31,7 +31,11 @@ final class GuguCalendarExecutor: GuguNativeToolExecutor {
 
     /// Host calls this before releasing any saved calendar receipt, including a successful delete.
     func validateAccess(_ control: GuguNativeToolControl) throws {
-        try service.validateAccess(access(control))
+        do {
+            try service.validateAccess(access(control))
+        } catch let failure as PhoneCalendarFailure {
+            throw GuguHostFailure(code: failure.code, message: failure.message)
+        }
     }
 
     func execute(_ request: GuguNativeToolRequest, control: GuguNativeToolControl,
