@@ -12,10 +12,13 @@ export function quantiles(values) {
 }
 
 /** Adapter must invoke the real writer and report milestones AFTER its actual durable barriers. */
-export async function measureWrites({ adapter, directory, mode, count = 100, warmup = 10, payloadBytes = 4096 }) {
+export async function measureWrites({ adapter, directory, mode, count = 100, warmup = 10, payloadBytes = 4096,
+  expectedCanonicalRows = count + warmup, expectedDurableProjections = expectedCanonicalRows }) {
   assert(['before', 'after'].includes(mode));
   for (const n of [count, payloadBytes]) assert(Number.isSafeInteger(n) && n > 0);
   assert(Number.isSafeInteger(warmup) && warmup >= 0);
+  assert(Number.isSafeInteger(expectedCanonicalRows) && expectedCanonicalRows > 0);
+  assert(Number.isSafeInteger(expectedDurableProjections) && expectedDurableProjections > 0);
   assert(count + warmup <= 10000 && (count + warmup) * payloadBytes <= 1024 ** 3, 'Measurement case exceeds its explicit sample/input budget');
   await mkdir(directory); // Never reuse a database or silently remove existing evidence.
   const raw = await open(resolve(directory, 'writes.jsonl'), 'wx');
@@ -59,9 +62,10 @@ export async function measureWrites({ adapter, directory, mode, count = 100, war
     }
     // Reopen/point-read actual rows and receipts; no generated assertion substitutes for readback.
     const verified = await context.verify();
-    assert.equal(verified.canonicalRows, count + warmup);
-    if (mode === 'after') assert.equal(verified.durableProjections, count + warmup);
-    const summary = { mode, meta, payloadBytes, count, warmup, latency: quantiles(samples.map(x => x.elapsedMs)), verified };
+    assert.equal(verified.canonicalRows, expectedCanonicalRows);
+    if (mode === 'after') assert.equal(verified.durableProjections, expectedDurableProjections);
+    const summary = { mode, meta, payloadBytes, count, warmup, expectedCanonicalRows, expectedDurableProjections,
+      latency: quantiles(samples.map(x => x.elapsedMs)), verified };
     await writeFile(resolve(directory, 'summary.json'), JSON.stringify(summary, null, 2));
     return { summary, samples };
   } catch (error) {
@@ -74,7 +78,7 @@ export async function measureWrites({ adapter, directory, mode, count = 100, war
 
 export function compareWrites(before, after) {
   assert.equal(before.summary.mode, 'before'); assert.equal(after.summary.mode, 'after');
-  for (const key of ['payloadBytes', 'count', 'warmup']) assert.equal(before.summary[key], after.summary[key]);
+  for (const key of ['payloadBytes', 'count', 'warmup', 'expectedCanonicalRows']) assert.equal(before.summary[key], after.summary[key]);
   assert.deepEqual(before.summary.meta.sqlite, after.summary.meta.sqlite, 'SQLite fsync configuration differs');
   assert.equal(before.samples.length, before.summary.count);
   assert.equal(after.samples.length, after.summary.count);
@@ -109,7 +113,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   }, []));
   const adapter = await import(pathToFileURL(resolve(args.adapter)).href);
   const result = await measureWrites({ adapter, directory: resolve(args.output), mode: args.mode,
-    count: Number(args.count ?? 100), warmup: Number(args.warmup ?? 10), payloadBytes: Number(args.bytes ?? 4096) });
+    count: Number(args.count ?? 100), warmup: Number(args.warmup ?? 10), payloadBytes: Number(args.bytes ?? 4096),
+    ...(args.rows ? { expectedCanonicalRows: Number(args.rows) } : {}),
+    ...(args.projections ? { expectedDurableProjections: Number(args.projections) } : {}) });
   process.stdout.write(`${JSON.stringify(result.summary)}\n`);
   }
 }

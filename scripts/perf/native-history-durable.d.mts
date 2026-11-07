@@ -13,11 +13,13 @@ export type WriteContext = {
 export type WriteSample = { mode: string; index: number; warmup: boolean; payloadBytes: number; elapsedMs: number;
   phases: { name: string; ms: number }[]; rowId: string };
 export type WriteSummary = { mode: string; meta: WriteMetadata; payloadBytes: number; count: number; warmup: number;
+  expectedCanonicalRows: number; expectedDurableProjections: number;
   latency: Quantiles; verified: { canonicalRows: number; durableProjections?: number } };
 export function quantiles(values: readonly number[]): Quantiles;
 export function measureWrites(options: { adapter: { open(options: { directory: string; mode: string }): Promise<WriteContext> };
-  directory: string; mode: string; count?: number; warmup?: number; payloadBytes?: number }): Promise<{ summary: WriteSummary; samples: WriteSample[] }>;
-type Comparison = { summary: Pick<WriteSummary, 'mode' | 'payloadBytes' | 'count' | 'warmup' | 'latency'> & { meta: { sqlite: SqlitePolicy } };
+  directory: string; mode: string; count?: number; warmup?: number; payloadBytes?: number;
+  expectedCanonicalRows?: number; expectedDurableProjections?: number }): Promise<{ summary: WriteSummary; samples: WriteSample[] }>;
+type Comparison = { summary: Pick<WriteSummary, 'mode' | 'payloadBytes' | 'count' | 'warmup' | 'latency' | 'expectedCanonicalRows'> & { meta: { sqlite: SqlitePolicy } };
   samples: Pick<WriteSample, 'index' | 'elapsedMs'>[] };
 export function compareWrites(before: Comparison, after: Comparison): { before: Quantiles; after: Quantiles;
   p50DifferenceMs: number; p95DifferenceMs: number; pairedDeltaP50Ms: number; pairedDeltaP95Ms: number };

@@ -4,10 +4,20 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const oldSha = 'cb2ba40311b40904aea33786008cf82e42467eeb';
+function fingerprints(rows) {
+  const map = new Map();
+  for (const row of rows) {
+    assert(typeof row.id === 'string' && row.id.length > 0 && !map.has(row.id), 'Missing/duplicate stable identity');
+    assert.match(row.sha256, /^[a-f0-9]{64}$/);
+    map.set(row.id, row.sha256);
+  }
+  return map;
+}
 function preserves(previous, next) {
-  assert.equal(next.integrity, 'ok'); assert.deepEqual(next.foreignKeyErrors, []);
-  const rows = new Map(next.rows.map(row => [row.id, row.sha256]));
-  for (const row of previous.rows) assert.equal(rows.get(row.id), row.sha256, `Lost/changed canonical row ${row.id}`);
+  for (const [label, field] of [['canonical row', 'rows'], ['receipt', 'newReceipts']]) {
+    const rows = fingerprints(next[field]);
+    for (const row of previous[field]) assert.equal(rows.get(row.id), row.sha256, `Lost/changed ${label} ${row.id}`);
+  }
 }
 
 /** Every adapter operation opens the SAME disk database with its pinned real schema/initializer and closes it. */
@@ -32,8 +42,11 @@ export async function checkCompatibility(adapter, directory) {
       stages.push({ name, snapshot });
       await writeFile(resolve(directory, 'compat-raw.json'), JSON.stringify({ meta, stages }, null, 2));
       assert(snapshot.rows.length, 'Empty compatibility proof');
+      assert.equal(snapshot.integrity, 'ok'); assert.deepEqual(snapshot.foreignKeyErrors, []);
+      assert(Number.isSafeInteger(snapshot.newReceiptRows) && snapshot.newReceiptRows >= 0);
+      assert.equal(snapshot.newReceipts.length, snapshot.newReceiptRows, 'Receipt fingerprints must cover every receipt');
+      fingerprints(snapshot.rows); fingerprints(snapshot.newReceipts);
       if (previous) preserves(previous, snapshot);
-      else { assert.equal(snapshot.integrity, 'ok'); assert.deepEqual(snapshot.foreignKeyErrors, []); }
     }
     assert(stages[1].snapshot.newReceiptRows > 0, 'New receipt migration/writer is not connected');
     assert(stages[2].snapshot.rows.length > stages[1].snapshot.rows.length, 'Old writer was not exercised');
