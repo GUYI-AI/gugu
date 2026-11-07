@@ -88,9 +88,8 @@ async function account(): Promise<Account> {
   finally { creating = undefined }
 }
 async function snapshot(value: Account): Promise<PasswordSnapshot> {
-  const identity = await value.vault.prepareInstallationIdentity()
   const state = value.vault.state()
-  return { status: state.status, initialized: identity.value.status === 'persisted', denied: value.denied(),
+  return { status: state.status, initialized: await value.vault.isInitialized(person), denied: value.denied(),
     items: state.status === 'unlocked' ? await value.vault.list(person) : [], approvals: value.login.pending() }
 }
 /** A dedicated native renderer IPC. Never uses generic action logging, transcript or device RPC. */

@@ -1,6 +1,5 @@
-import type { VersionedSettingsTableClient } from '@gugu/core/cloud/userSettings'
 import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
-import { ServicePermissionPolicyStore } from './permissions/policy-store'
+import { createPasswordBetaPolicyReader } from './password-vault/beta-policy-reader'
 import './browser-user-agent-bootstrap'
 import './page-navigation-bootstrap'
 import { attachTabHistorySwipe } from './tab-history-swipe'
@@ -5059,10 +5058,9 @@ app.whenReady().then(async () => {
         ? { accessToken: auth.accessToken, refreshToken: auth.refreshToken ?? '', userId: auth.userId }
         : null
     }
-    const passwordPolicy = new ServicePermissionPolicyStore(supabase as unknown as VersionedSettingsTableClient)
     emdash.installPasswordBetaHost({ window: () => mainWindow, account: async () => (await getSessionpageAuth())?.userId ?? null, device: localDeviceId,
       deliver: (sessionId, requestId, status) => emdash.deliverPasswordBetaDecision(sessionId, requestId, status),
-      readPolicy: (ownerId, signal) => passwordPolicy.read(ownerId, signal) })
+      readPolicy: createPasswordBetaPolicyReader(getSessionpageAuth) })
     bindPasswordBetaAgent(emdash.passwordBetaAgent)
     app.once('will-quit', startSessionpageAgentArchivalSync({ getAuth: getSessionpageAuth, resolveDeviceId: localDeviceId,
       inventory: () => emdash.emdashSessionpageInventory(), subscribe: (listener) => emdash.onEmdashSessionpageReapTrigger(listener) }))
