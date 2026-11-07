@@ -48,6 +48,7 @@ export function createCredentialExecution(host: CredentialExecutionHost, port: P
   const sinkAuthority = Object.freeze({ claimCredentialSink: authority.claimCredentialSink.bind(authority),
     cleanup: authority.cleanup.bind(authority), invalidate: authority.invalidate.bind(authority) });
   return Object.freeze({ permission, authority: sinkAuthority,
+    status: () => { if (!binding) throw fail(); return approval.status(binding.requestId); },
     request: async (target: PasswordPermissionTarget, operationId: string) => {
       if (!operationId || operation !== undefined && operation !== operationId) throw fail();
       operation = operationId;

@@ -1,3 +1,5 @@
+import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
+import { ServicePermissionPolicyStore } from './permissions/policy-store'
 import './browser-user-agent-bootstrap'
 import './page-navigation-bootstrap'
 import { attachTabHistorySwipe } from './tab-history-swipe'
@@ -5056,6 +5058,11 @@ app.whenReady().then(async () => {
         ? { accessToken: auth.accessToken, refreshToken: auth.refreshToken ?? '', userId: auth.userId }
         : null
     }
+    const passwordPolicy = new ServicePermissionPolicyStore(supabase)
+    emdash.installPasswordBetaHost({ window: () => mainWindow, account: async () => (await getSessionpageAuth())?.userId ?? null, device: localDeviceId,
+      deliver: (sessionId, requestId, status) => emdash.deliverPasswordBetaDecision(sessionId, requestId, status),
+      readPolicy: (ownerId, signal) => passwordPolicy.read(ownerId, signal) })
+    bindPasswordBetaAgent(emdash.passwordBetaAgent)
     app.once('will-quit', startSessionpageAgentArchivalSync({ getAuth: getSessionpageAuth, resolveDeviceId: localDeviceId,
       inventory: () => emdash.emdashSessionpageInventory(), subscribe: (listener) => emdash.onEmdashSessionpageReapTrigger(listener) }))
     // @@@task-shell-port (#5012) 「给会话开账号」的口与网页版无头宿主共用(sessionpage-identity-host.ts);
@@ -5458,6 +5465,7 @@ app.whenReady().then(async () => {
               publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
               // grant key 用**分叉自己**的会话 id:它必须是独立一格,否则会顶掉来源会话的 grant。
               grantKey: sessionpageSurfaceKey(info.sessionId),
+              nativeSessionId: info.sessionId,
               runHostAction: runAction,
               runSessionAction: runAction,
               forkOf: forkSource.forkOf,
@@ -5515,6 +5523,7 @@ app.whenReady().then(async () => {
           {
             host: primaryGuguMcpHost,
             grantKey: sessionpageSurfaceKey(info.sessionId),
+            nativeSessionId: info.sessionId,
             runSessionAction: runAction,
             // @@@2374 不带 auth:写文件与装扩展都不代表用户去调任何云端接口。桥没
             // 加载成功时这条腿就不接,gugu_session 的 app_* 动作于是在调用时报错 ——
@@ -5742,6 +5751,7 @@ app.whenReady().then(async () => {
             resolveFile: desktopFiles.resolve,
             publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
             grantKey: sessionpageSurfaceKey(info.sessionId),
+            nativeSessionId: info.sessionId,
             ...(assistantRole ? { personalAssistant: true as const, assistantWork: {
               ...assistantWorkBinding(persistedSessionId, info.cwd, SERVER_MODE ? 'cloud' : 'computer', provisioned.guguAgentUserId),
               currentInput: () => emdashBridge?.readCurrentActivityInput(persistedSessionId) ?? Promise.resolve(undefined),
@@ -5902,6 +5912,7 @@ app.whenReady().then(async () => {
         return {
           host,
           grantKey: sessionpageSurfaceKey(info.sessionId),
+          nativeSessionId: info.sessionId,
           runHostAction: runAction,
           runSessionAction: runAction,
           // @@@2374 不带 auth:写文件与装扩展都不代表用户去调任何云端接口。桥没
