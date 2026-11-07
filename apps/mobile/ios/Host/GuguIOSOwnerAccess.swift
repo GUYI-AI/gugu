@@ -28,7 +28,24 @@ final class GuguIOSOwnerAccess {
     }
 
     func ownerSnapshot() throws -> GuguIOSOwnerSnapshot {
+        try observedSnapshot(binding: currentBinding())
+    }
+
+    /// Pure identity publication: no category IO, OS observation or revocation.
+    func ownerBinding() throws -> GuguIOSHostBinding { try currentBinding() }
+
+    func ownerSnapshot(expectedOwnerId: String) throws -> GuguIOSOwnerSnapshot {
         let binding = try currentBinding()
+        guard binding.ownerId == expectedOwnerId else { throw Self.failure("stale_context", "Native owner changed") }
+        return try observedSnapshot(binding: binding)
+    }
+
+    func ownerSnapshot(expectedBinding: GuguIOSHostBinding) throws -> GuguIOSOwnerSnapshot {
+        guard try currentBinding() == expectedBinding else { throw Self.failure("stale_context", "Native owner or installation changed") }
+        return try observedSnapshot(binding: expectedBinding)
+    }
+
+    private func observedSnapshot(binding: GuguIOSHostBinding) throws -> GuguIOSOwnerSnapshot {
         return try transaction(binding) { path in
             var saved = try load(path, binding)
             // Observing OS revocation must permanently retire old contexts even
@@ -44,6 +61,10 @@ final class GuguIOSOwnerAccess {
     }
 
     func calendarEnabled() throws -> Bool { try ownerSnapshot().calendarConnected }
+
+    func calendarEnabled(expectedBinding: GuguIOSHostBinding) throws -> Bool {
+        try ownerSnapshot(expectedBinding: expectedBinding).calendarConnected
+    }
 
     func requireLocalOwnerUI() throws {
         let binding = try currentBinding()
@@ -74,12 +95,12 @@ final class GuguIOSOwnerAccess {
             guard calendarHasFullAccess() else { throw Self.failure("os_permission", "Full calendar access is required") }
             try save(path, attempt.binding, connected: true, revision: attempt.attemptId)
         }
-        return try ownerSnapshot()
+        return try ownerSnapshot(expectedBinding: attempt.binding)
     }
 
     @discardableResult func disconnectCalendar(expectedBinding binding: GuguIOSHostBinding) throws -> GuguIOSOwnerSnapshot {
         _ = try beginCalendarConnection(expectedBinding: binding)
-        return try ownerSnapshot()
+        return try ownerSnapshot(expectedBinding: binding)
     }
 
     private func currentBinding() throws -> GuguIOSHostBinding {
