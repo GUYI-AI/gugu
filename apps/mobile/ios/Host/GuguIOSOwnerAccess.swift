@@ -77,9 +77,7 @@ final class GuguIOSOwnerAccess {
 
     private func currentBinding() throws -> GuguIOSHostBinding {
         let binding = try verifiedIdentity()
-        guard [binding.ownerId, binding.deviceId, binding.installationId].allSatisfy({ UUID(uuidString: $0) != nil }) else {
-            throw Self.failure("stale_context", "Verified native owner/device/installation is unavailable")
-        }
+        try binding.validate()
         return binding
     }
 

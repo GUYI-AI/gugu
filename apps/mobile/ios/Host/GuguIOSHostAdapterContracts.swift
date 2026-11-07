@@ -4,6 +4,13 @@ struct GuguIOSHostBinding: Codable, Equatable {
     let ownerId: String
     let deviceId: String
     let installationId: String
+
+    func validate() throws {
+        guard UUID(uuidString: ownerId) != nil, UUID(uuidString: installationId) != nil,
+              deviceId == "phone-\(installationId)-\(ownerId)" else {
+            throw GuguHostFailure(code: "stale_context", message: "Native phone binding does not match owner and installation")
+        }
+    }
 }
 
 /// The Capacitor glue constructs this field-by-field. There is intentionally no

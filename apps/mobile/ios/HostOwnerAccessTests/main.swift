@@ -3,7 +3,7 @@ import Foundation
 @main struct HostOwnerAccessTests {
     static func main() throws {
         let root = URL(fileURLWithPath: CommandLine.arguments[1])
-        let original = GuguIOSHostBinding(ownerId: UUID().uuidString, deviceId: UUID().uuidString, installationId: UUID().uuidString)
+        let original = binding()
         var current = original, foregroundOwner = true, fullAccess = false, revoked = 0
         let access = GuguIOSOwnerAccess(root: root, verifiedIdentity: { current }, requireOwnerUI: {
             if !foregroundOwner { throw GuguHostFailure(code: "not_granted", message: "Fixture is not owner UI") }
@@ -35,7 +35,7 @@ import Foundation
         cases.append("reconnect_invalidates_old_attempt")
 
         let pending = try access.beginCalendarConnection(expectedBinding: original)
-        current = GuguIOSHostBinding(ownerId: UUID().uuidString, deviceId: UUID().uuidString, installationId: UUID().uuidString)
+        current = binding()
         try reject("stale_context") { _ = try access.finishCalendarConnection(attempt: pending) }
         try require(try !access.calendarEnabled(), "New owner inherited category choice")
         current = original
@@ -59,6 +59,10 @@ import Foundation
     }
     static func require(_ condition: Bool, _ message: String) throws {
         if !condition { throw GuguHostFailure(code: "owner_access_regression", message: message) }
+    }
+    static func binding() -> GuguIOSHostBinding {
+        let owner = UUID().uuidString.lowercased(), install = UUID().uuidString.lowercased()
+        return GuguIOSHostBinding(ownerId: owner, deviceId: "phone-\(install)-\(owner)", installationId: install)
     }
     static func reject(_ code: String, _ action: () throws -> Void) throws {
         do { try action(); throw GuguHostFailure(code: "owner_access_regression", message: "Expected \(code)") }

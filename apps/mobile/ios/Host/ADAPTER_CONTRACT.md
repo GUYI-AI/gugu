@@ -18,6 +18,8 @@ A provides the shared-login side and native registration. B owns Host implementa
 
 `GuguIOSOwnerAccess` requires five native inputs: private no-backup root, a throwing verified-identity publisher, the foreground local-owner UI guard, C's real full-access status reader, and `GuguInProcessHost.revokeCalendarAccess`. There are no permissive defaults. A supplies identity from the authenticated shared session and native installation/device binding; neither configure input nor an unverified decoded JWT establishes this authority.
 
+Owner and installation are UUIDs. Device ID uses the existing exact `phone-${installationId}-${ownerId}` convention from `phoneDeviceSettings.ts`; it is not an independent UUID. The shared native binding validator rejects mismatched owner/install device IDs.
+
 - `ownerSnapshot() throws -> GuguIOSOwnerSnapshot` returns `binding: GuguIOSHostBinding` (ownerId/deviceId/installationId), `calendarConnected: Bool`, and `calendarRevision: String?` from the native durable category store. The OS status still comes from C's real EventKit reader. Missing selection defaults to disconnected; corrupt or mismatched state throws.
 - `calendarEnabled() throws -> Bool` is C executor's current native category closure. It does not replace EventKit permission checks.
 - `requireLocalOwnerUI() throws` is C permission entry's identity/foreground guard. Tools never receive this entry point.
