@@ -1,7 +1,6 @@
 // #7199 助理搬家的真接线:把 assistant-move.ts 的编排接到真机器上 —— 两头的文件读写走 workspace.files.*(与助理 App
 // 读写它的家同一组动词)、账号与已安排走 integrations.* / automations.*、接过走管家 /provision 或客户端 saga。
 // 界面在 components/assistant/AssistantMoveGroup;这里没有任何 React。
-import type { MovableIntegrationAccount } from '@shared/core/integrations/integration-move';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
 import { CloudComputerError } from '@gugu/core/cloud/cloudComputer';
 import { readDisplayIdentities } from '@/lib/identityReadAdapter';
@@ -29,6 +28,7 @@ import { durableMoveJournal } from './assistant-move-journal';
 import {
   MoveError,
   isUnknownMethod,
+  reconnectList,
   planMove,
   runMove,
   resumeMoveCompletion,
@@ -183,14 +183,7 @@ function sideOf(machine: AssistantMachine, label: string, assistantId: string, b
       resourcesDir: machine.paths.resourcesDir,
     },
     integrations: {
-      exportForMove: () => rpcOn(target).integrations.exportForMove(),
-      importFromMove: (accounts: MovableIntegrationAccount[]) => rpcOn(target).integrations.importFromMove(accounts),
-      accountIds: async (integrationId) => (await rpcOn(target).integrations.accounts(integrationId)).map((account) => account.accountId),
-      disconnect: async (integrationId, accountId) => {
-        // 断开失败是 `{ success:false }`(不抛):不查就会把「没撤掉」报成「撤掉了」,旧家那份还在、界面却说只剩一份。
-        const result = await rpcOn(target).integrations.disconnect(integrationId, accountId);
-        if (!result?.success) throw new Error(result?.error ?? 'disconnect failed');
-      },
+      moveSummary: () => rpcOn(target).integrations.moveSummary(),
     },
     schedules: {
       async list() {
@@ -452,7 +445,7 @@ async function restoreOnlineAssistant(assistantId: string): Promise<void> {
   if (identity?.desired_status !== 'online') throw new Error('The assistant online intent has not been confirmed');
 }
 
-/** 确认框要的:会拷多少、会带走哪些账号(只有名字)、哪些要在新家重新连。只读,不动任何东西。 */
+/** 确认框要的:会拷多少、哪些集成搬完要在新家重新连(#2104 凭据不搬)。只读,不动任何东西。 */
 export async function previewMove(env: MoveEnv, direction: MoveDirection) {
   const source = await openSource(env, direction);
   const plan = await planMove(source);
@@ -460,10 +453,10 @@ export async function previewMove(env: MoveEnv, direction: MoveDirection) {
   // 旧家那头的咕咕比这个功能老:文件照搬,账号留在原处(确认框里如实说),❌ 因此整个搬不了。
   const accounts = await rpcOn(homeTarget(env.home))
     .integrations.moveSummary()
-    .then((summary) => ({ ...summary, unsupported: false }))
+    .then((summary) => ({ reconnect: reconnectList(summary), unsupported: false }))
     .catch((error: unknown) => {
       if (!isUnknownMethod(error)) throw error;
-      return { moving: [], reconnect: [], unsupported: true };
+      return { reconnect: [], unsupported: true };
     });
   return {
     bytes: plan.totalBytes,
@@ -485,11 +478,6 @@ export async function runAssistantMove(env: MoveEnv, direction: MoveDirection, o
       && (direction !== 'to-computer' || savedJournal.targetDeviceId === env.localDeviceId)
       && await homeDeviceOf(env.assistantId) === savedJournal.targetDeviceId,
     activate: () => restoreOnlineAssistant(env.assistantId),
-    disconnect: async account => {
-      const sourceDevice = savedJournal!.source!.deviceId;
-      const result = await rpcOn(sourceDevice === env.localDeviceId ? null : sourceDevice).integrations.disconnect(account.integrationId, account.accountId);
-      if (!result?.success) throw new Error(result?.error ?? 'disconnect failed');
-    },
   });
   if (completed) return completed;
   const sourceHome = savedJournal?.assistantId === env.assistantId && savedJournal.direction === direction && savedJournal.source
