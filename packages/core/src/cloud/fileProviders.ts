@@ -18,7 +18,7 @@ const sameLegacyObject = (revision: FileRevision, row: { bucket_id?: string; obj
 const uncached: FileChunkCache = { get: async () => null, put: async () => {}, clear: async () => {} }
 
 /** Retain verified chunks; reconnect only the incomplete chunk, with the signer's authorized origin fallback. */
-function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (renew?: boolean, origin?: boolean) => Promise<Download>, fetcher: typeof fetch, signal?: AbortSignal) {
+function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (renew?: boolean, origin?: boolean) => Promise<Download>, fetcher: typeof fetch, signal?: AbortSignal, progress?: FileContext['progress']) {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined, buffered: Uint8Array = new Uint8Array(), next = -1, interrupted = false
   let last: { index: number; bytes: Uint8Array } | undefined, lease: Download | undefined, origin = false, renewed = false
   const target = () => ({ stage: origin || lease?.bucket_id === 'temporary' ? 'oss' as const : 'cdn' as const, url: lease!.url })
@@ -59,6 +59,7 @@ function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (r
         }
         if (offset + length === size && (buffered.length || !(await reader.read()).done)) throw new Error('File response has extra bytes')
         await cache.put(key, index, bytes); next++; last = { index, bytes }; interrupted = false
+        progress?.(offset + length, size)
         return bytes
       } catch (error) { interrupted = isTransientFileReadError(error); throw error }
     }, signal, async () => {
@@ -121,7 +122,7 @@ export function cloudFileProviders(deps: {
     // A key still requires the current download ACL, even if every ciphertext chunk is cached.
     if (encrypted) await sign()
     const digest = encrypted ? lease!.ciphertext_sha256! : revision.sha256, key = cacheKey(context, digest ?? crypto.randomUUID())
-    const source = remoteSource(encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes, key, destination || revision.legacy_object ? uncached : deps.cache, async (renew, origin) => renew || origin ? sign(renew, origin) : lease ?? await sign(), (url, init) => objectFetch(context, url, init), context.signal)
+    const source = remoteSource(encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes, key, destination || revision.legacy_object ? uncached : deps.cache, async (renew, origin) => renew || origin ? sign(renew, origin) : lease ?? await sign(), (url, init) => objectFetch(context, url, init), context.signal, context.progress)
     let dataKey: Uint8Array | undefined
     let sink: FileSink | undefined
     try {

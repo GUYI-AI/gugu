@@ -37,6 +37,20 @@ describe('file preview missing-object actions', () => {
     expect(download()?.disabled ?? true).toBe(true)
     expect(external()?.disabled ?? true).toBe(true)
   }
+  it('draws how far the bytes have come while they are read', async () => {
+    let finish!: () => void, report!: (done: number, total: number) => void
+    io.bytes.mockImplementation((_source: unknown, _variant: unknown, _link: unknown, _metadata: unknown, progress: typeof report) => {
+      report = progress
+      return new Promise(resolve => { finish = () => resolve({ status: 'ready', blob: new Blob(['notes']) }) })
+    })
+    await render()
+    expect(harness.container.querySelector('progress')).toBeNull()
+    await act(async () => { report(1_048_576, 4_194_304) })
+    expect(harness.container.querySelector('progress')?.value).toBe(0.25)
+    await act(async () => { finish() })
+    await vi.waitFor(async () => { await act(async () => {}); expect(harness.container.querySelector('pre')?.textContent).toBe('notes') })
+    expect(harness.container.querySelector('progress')).toBeNull()
+  })
   it.each([[false, 'file'], [true, 'file'], [false, 'image'], [true, 'image']] as const)('blocks reading a missing %s/%s preview without another request', async (mobile, kind) => {
     io.bytes.mockResolvedValue({ status: 'missing' })
     await render(kind === 'image' ? { ...file, kind: 'image', fileName: 'photo.png', mimeType: 'image/png' } : file, mobile)

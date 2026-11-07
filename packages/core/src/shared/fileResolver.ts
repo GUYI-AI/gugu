@@ -76,7 +76,8 @@ export type ResolvedPreview = Exclude<FileMetadata, { status: 'ready' }> | {
   status: 'ready'; purpose: 'preview'; revision: FileRevision
   content(): Promise<FilePreviewContent>; dispose(): Promise<void>
 }
-export type FileContext = { ref: FileRef; actor: FileActor; signal?: AbortSignal; download?: true }
+/** `progress`: the bytes arrived of the file being read, from the provider that carries them (a slow machine's line shows it). */
+export type FileContext = { ref: FileRef; actor: FileActor; signal?: AbortSignal; download?: true; progress?: (done: number, total: number) => void }
 export interface FileProviders {
   saveTo?(revision: FileRevision, context: FileContext, directory: string, name: string): Promise<SavedFile>
   download?(revision: FileRevision, context: FileContext, sink: import('./fileCipher').FileSink): Promise<FileBytes>
@@ -152,12 +153,12 @@ export async function openFileBytes(providers: FileProviders, revision: FileRevi
 export function createFileResolver(providers: FileProviders) {
   function resolveFile(ref: FileRef, actor: FileActor, options: { localOnly: true; purpose?: 'file'; signal?: AbortSignal }): Promise<ResolvedFile | null>
   function resolveFile(ref: FileRef, actor: FileActor, options: { purpose: 'preview'; metadata?: FileMetadata; signal?: AbortSignal }): Promise<ResolvedPreview>
-  function resolveFile(ref: FileRef, actor: FileActor, options?: { purpose?: 'file'; signal?: AbortSignal }): Promise<ResolvedFile>
-  async function resolveFile(ref: FileRef, actor: FileActor, options: { purpose?: 'file' | 'preview'; metadata?: FileMetadata; localOnly?: boolean; signal?: AbortSignal } = {}): Promise<ResolvedFile | ResolvedPreview | null> {
+  function resolveFile(ref: FileRef, actor: FileActor, options?: { purpose?: 'file'; signal?: AbortSignal; progress?: FileContext['progress'] }): Promise<ResolvedFile>
+  async function resolveFile(ref: FileRef, actor: FileActor, options: { purpose?: 'file' | 'preview'; metadata?: FileMetadata; localOnly?: boolean; signal?: AbortSignal; progress?: FileContext['progress'] } = {}): Promise<ResolvedFile | ResolvedPreview | null> {
     if (!actor.accountId || !actor.actorId) throw new Error('File reader is not signed in')
     fileRefKey(ref)
     const cancellation = new AbortController()
-    const context = { ref: Object.freeze({ ...ref }), actor: Object.freeze({ ...actor }), signal: options.signal }
+    const context: FileContext = { ref: Object.freeze({ ...ref }), actor: Object.freeze({ ...actor }), signal: options.signal, ...(options.progress ? { progress: options.progress } : {}) }
     context.signal?.throwIfAborted()
     const local = await providers.local(context)
     if (options.localOnly && !local) return null
