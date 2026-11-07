@@ -59,9 +59,11 @@ export class VaultFile {
   async persist(document: VaultDocument): Promise<void> { await this.disk.write(this.path, serialize(document)) }
   async make(key: Buffer, recovery: Buffer, vaultId: string, payload: VaultPayload): Promise<VaultDocument> {
     const installation = await this.installation(true)
+    this.disk.feature?.assertCurrent()
     const document: VaultDocument = { schema: 1, owner: this.owner, installationId: installation.id, vaultId,
       localKey: '', recoveryKey: { nonce: '', tag: '', ciphertext: '' }, payload: { nonce: '', tag: '', ciphertext: '' } }
     document.localKey = await this.dependencies.keys.wrap(key, binding(document, 'local'))
+    this.disk.feature?.assertCurrent()
     document.recoveryKey = sealedJson(recovery, { key: key.toString('base64') }, binding(document, 'recovery'))
     document.payload = sealedJson(key, payload, binding(document, 'data'))
     return document

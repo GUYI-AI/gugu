@@ -38,21 +38,24 @@ export interface VaultDependencies {
   assertOwnedLocalAgent?(context: object): void
   /** Check the actual native-file exclusion before every access, including before mkdir. */
   assertPrivateStorageReady(): Promise<void>
-  /** The integrated host supplies actual enforcement/approval/observation readiness. No default allow. */
-  assertFeatureReady(): Promise<void>
+  /** Fixed live readiness adapter. Missing/void/async synchronous guards fail closed; this grants no approval. */
+  acquireFeatureGuard?(operation: 'save' | 'use', signal: AbortSignal): Promise<VaultFeatureGuard>
   keys: VaultKeyProtector
   browser?: VaultBrowserSink
   /** Synchronous revocation first, then wait for browser cleanup before edit/delete success. */
   invalidate(event: Invalidation): Promise<void>
   now?: () => number
 }
+import type { PasswordAvailability } from '../permissions/password-readiness'
+export type VaultFeatureGuard = Extract<PasswordAvailability, { status: 'ready' }>
 
 export type { VaultUseCapability, CredentialUseLease as VaultUseControl } from '../session/main/core/browser/credential-use-contract'
 import type { VaultUseCapability, CredentialUseBinding, CredentialUseLease, AuditedCredentialUseLease, CredentialUseCleanup, CredentialLoginOutcome } from '../session/main/core/browser/credential-use-contract'
+import type { FixedVaultUseSettlementSink } from '../session/main/core/browser/credential-settlement-contract'
 export type VaultUseBinding = CredentialUseBinding
 export type BrowserOutcome = CredentialLoginOutcome
 export type VaultSinkControl = AuditedCredentialUseLease
-export interface VaultBrowserSink {
+export interface VaultBrowserSink extends FixedVaultUseSettlementSink {
   claimCredentialSink(capability: VaultUseCapability, binding: VaultUseBinding): CredentialUseLease
   /** Fixed at trusted host construction, never supplied by an Agent or per-call callback. */
   fillAndSubmit(binding: VaultUseBinding, secrets: { account: Buffer; password: Buffer }, control: VaultSinkControl): Promise<BrowserOutcome>

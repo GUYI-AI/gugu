@@ -29,6 +29,7 @@ import {
   webHostEntries,
   desktopPreloadEntry,
   extensionPreloadEntry,
+  vaultLoginPreloadEntry,
 } from './scripts/build/product-build-entries.mts'
 import {
   EMDASH_EXTERNAL,
@@ -340,6 +341,12 @@ export const sessionHostBuildEntries: ElectronOptions[] = [
 ]
 
 export const electronBuildEntries: ElectronOptions[] = [
+  {
+    // Private login gets no application/App bridge and exposes nothing to the page world.
+    entry: vaultLoginPreloadEntry,
+    vite: { plugins: [deterministicModuleSideEffects()] },
+    onstart(options) { if (viteOwnsElectronProcess) options.reload() },
+  },
   {
     // @@@4865 — 主进程 + 会话页主进程图 + 三个 fork worker 是**同一次** lib 构建的四个入口:
     //  · main             ← electron/main.ts(咕咕宿主)
