@@ -83,9 +83,10 @@ describe('tail source identities', () => {
     expect(await resolveCanonicalOwner({ ...envelope(), recordStart: null }, context(), lookup)).toEqual({ kind: 'unlocated' });
     const key = sourceFragmentKey(envelope(), context());
     expect(sourceFragmentKey({ ...envelope(), revision: 'new-revision' }, context())).toBe(key);
+    expect(sourceFragmentKey({ ...envelope(), recordStart: 9 }, { ...context(), sourceLineage: 'continuation-file' })).toBe(key);
     const proof = { nativeId: 'parent-record', branchLineage: 'parent', atCommit: 1 };
     const child = { ...envelope(), recordMetadata: { ...envelope().recordMetadata, parentUuid: proof.nativeId } };
-    expect(await resolveCanonicalOwner(child, { ...context(), ownerParentProof: proof }, async branch => branch === 'parent' ? owner : null)).toEqual({ kind: 'found', owner });
+    expect(await resolveCanonicalOwner(child, { ...context(), ownerParentProof: proof }, async branch => branch === 'parent' ? owner : null)).toEqual({ kind: 'found', owner: { turnId: owner.turnId, itemId: null } });
     await expect(resolveCanonicalOwner(envelope(), { ...context(), ownerParentProof: proof }, async () => null)).rejects.toMatchObject({ code: 'invalid_anchor' });
   });
 });

@@ -120,7 +120,11 @@ export function sourceDependencies(input: SourceIdentityEnvelope): readonly { ki
 export type CanonicalOwner = { turnId: string; itemId: string | null };
 /** Unresolved display rows keep this key when ownership is later attached; it is never a canonical turn ID. */
 export function sourceFragmentKey(input: SourceIdentityEnvelope, context: IdentityContext): string | null {
-  if (!sourceEventKeys(input, context)) return null;
+  const keys = sourceEventKeys(input, context);
+  if (!keys) return null;
+  if (input.provider === 'claude' && scalar(input.recordMetadata.uuid, true)) {
+    return `fragment:v1:${hash([context.conversationScope, context.branchLineage, keys.nativeKey])}`;
+  }
   return `fragment:v1:${hash([context.sourceLineage, input.recordStart!, input.fragment, input.eventKind])}`;
 }
 export function sourceOwnershipKey(provider: 'claude' | 'codex', kind: 'record' | 'task' | 'call', nativeId: string): string {
@@ -147,7 +151,7 @@ export async function resolveCanonicalOwner(input: SourceIdentityEnvelope, conte
     }
     const key = sourceOwnershipKey('claude', 'record', proof.nativeId);
     const owner = await lookup(proof.branchLineage, key, proof.atCommit);
-    if (owner) { scalar(owner.turnId); scalar(owner.itemId, true); return { kind: 'found', owner }; }
+    if (owner) { scalar(owner.turnId); return { kind: 'found', owner: { turnId: owner.turnId, itemId: null } }; }
     keys.push(key);
   }
   return { kind: 'dependency', keys };
