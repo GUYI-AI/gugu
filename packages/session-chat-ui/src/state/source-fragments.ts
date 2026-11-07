@@ -34,8 +34,10 @@ export function projectSourceFragments(
     }
     if (rows.length) {
       rows.forEach(row => claimed.add(row));
+      const retained = previous.filter(row => row.sourceOwner?.itemId === owner!.itemId)
+        .flatMap(row => row.anchorIds ?? []);
       replacements.set(fragment.key, rows.map((row, i) => ({ ...row,
-        ...(i === 0 ? { id: anchor, anchorIds: [anchor], sourceFragment: fragment, sourceOwner: owner } : {}),
+        ...(i === 0 ? { id: anchor, anchorIds: [...new Set([anchor, ...retained])], sourceFragment: fragment, sourceOwner: owner } : {}),
       })));
     } else if (fragment.text) {
       replacements.set(fragment.key, [{ id: anchor, itemId: anchor, groupId: anchor,

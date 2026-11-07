@@ -52,4 +52,16 @@ describe('bounded source row ownership', () => {
   it('does not fabricate a row for a ticket without readable text', () => {
     expect(projectSourceFragments([], { sourceFragments: [{ ...source[0], text: undefined }] }, [])).toEqual([]);
   });
+
+  it('retains both reading aliases after later updates clear resolved source metadata', () => {
+    const first = projectSourceFragments([canonical('real')], { sourceFragments: source.slice(0, 2),
+      resolvedFragmentOwners: source.slice(0, 2).map(value => ({ fragmentKey: value.key, turnId: 't', itemId: 'real' })),
+    }, initial());
+    const second = projectSourceFragments([canonical('real')], { sourceFragments: [], resolvedFragmentOwners: [] }, first);
+    const third = projectSourceFragments([canonical('real')], {}, second);
+    for (const rows of [second, third]) {
+      expect(rows).toHaveLength(1);
+      expect([...unitItemIds(rows[0])]).toEqual(['real', fragmentAnchor('a'), fragmentAnchor('b')]);
+    }
+  });
 });
