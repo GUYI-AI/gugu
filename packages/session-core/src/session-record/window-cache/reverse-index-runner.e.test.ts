@@ -19,14 +19,16 @@ it('runs locating in durable one-block steps and yields to foreground before rea
     pinnedEnd: snapshot.size, recordEnd: snapshot.size, scanBefore: snapshot.size,
     sourceFence: { start: snapshot.size, end: snapshot.size, digest: 'c'.repeat(64) } };
   let foreground = false;
-  const reached = Promise.withResolvers<void>();
-  const scheduler = createReverseIndexScheduler({ onFailure: reached.reject,
+  let resolveReached: () => void = () => {};
+  let rejectReached: (error: unknown) => void = () => {};
+  const reached = new Promise<void>((resolve, reject) => { resolveReached = resolve; rejectReached = reject; });
+  const scheduler = createReverseIndexScheduler({ onFailure: rejectReached,
     onStep(_cp, io) { expect(foreground).toBe(true); reads.push(io.sourceBytes); },
-    onLocated(ticket, range) { expect(ticket).toBe('background'); expect(range).toEqual({ start: 3, end: snapshot.size }); reached.resolve(); } });
+    onLocated(ticket, range) { expect(ticket).toBe('background'); expect(range).toEqual({ start: 3, end: snapshot.size }); resolveReached(); } });
   try {
     scheduler.schedule(path, checkpoint, directory, scope);
     foreground = true;
-    await reached.promise;
+    await reached;
     await scheduler.pause();
     expect(reads).toHaveLength(3); expect(Math.max(...reads)).toBeLessThanOrEqual(64 * 1024);
     expect(await loadReverseIndexTask(directory, { scope, sourceLineage: lineage, decoderVersion: 1, jobId: 'background' }, createWindowBudget()))
