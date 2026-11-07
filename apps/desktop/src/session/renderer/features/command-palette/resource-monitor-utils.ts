@@ -66,7 +66,9 @@ export function formatReport(snapshot: ResourceSnapshot, groups: Group[]): strin
   const totals = resourceTotals(snapshot);
   const percent = (cpu: number | undefined) => (cpu === undefined ? '–' : `${cpu.toFixed(1)}%`);
   const lines: string[] = [];
-  lines.push(`CPU (100% = one core) ${percent(totals.cpuPercent)} Memory (RSS) ${totals.memoryBytes === undefined ? '–' : formatBytes(totals.memoryBytes)}`);
+  lines.push(`CPU (100% = one core) ${percent(totals.cpuPercent)} Memory (${snapshot.memoryMetric === 'footprint' ? 'footprint' : 'RSS'}) ${totals.memoryBytes === undefined ? '–' : formatBytes(totals.memoryBytes)}`);
+  const page = snapshot.recent;
+  if (page) lines.push(`Last minute: long frames ${page.longFrames}, slow interactions ${page.slowInteractions}, style+layout ${page.styleLayoutMs === undefined ? '–' : `${Math.round(page.styleLayoutMs)} ms`}`);
   for (const group of snapshot.processGroups ?? []) {
     lines.push(`${group.label} ${percent(group.cpu)} ${formatBytes(group.memory)}${group.sessionId ? ` (session=${group.sessionId})` : ''}`);
     for (const process of group.processes) lines.push(`  ${process.name} ${percent(process.cpu)} ${formatBytes(process.memory)} (pid=${process.pid} ppid=${process.ppid})`);

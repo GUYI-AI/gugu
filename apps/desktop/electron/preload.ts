@@ -1,3 +1,5 @@
+import type { PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
+import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { contextBridge, ipcRenderer } from 'electron'
 import * as ElectronNS from 'electron'
 import { installProcessMetricsResponder } from './process-metrics-responder'
@@ -251,5 +253,15 @@ contextBridge.exposeInMainWorld('desktopWindow', {
     const handler = (_event: Electron.IpcRendererEvent, material: WindowMaterial): void => callback(material)
     ipcRenderer.on(WINDOW_MATERIAL_CHANGED_CHANNEL, handler)
     return () => ipcRenderer.removeListener(WINDOW_MATERIAL_CHANGED_CHANNEL, handler)
+  },
+})
+
+// Dedicated trusted settings channel: no generic action logger or Agent RPC.
+if (PASSWORD_BETA_ENABLED) contextBridge.exposeInMainWorld('passwordVaultBeta', {
+  invoke: (command: PasswordUiCommand) => ipcRenderer.invoke('gugu:password-beta-ui', command),
+  subscribe: (listener: () => void) => {
+    const changed = () => listener()
+    ipcRenderer.on('gugu:password-beta-changed', changed)
+    return () => ipcRenderer.removeListener('gugu:password-beta-changed', changed)
   },
 })

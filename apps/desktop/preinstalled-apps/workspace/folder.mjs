@@ -265,7 +265,7 @@ export const list = {
 
 export const read = {
   description:
-    'Read a file of a chat\'s folder. A text or JSON file comes a page at a time: a one-line JSON header, a blank line, then its lines verbatim — copy old for edit from them; next_offset reads on. Stored UTF-8 text also comes as read-only pages; to edit it, use save: true, then edit with the saved path and version. Other stored files (an image, a PDF, a .pptx…), or save: true, are saved whole on this computer in a folder of their own for that version; the version edit\'s expected_version names when you store your change. A link\'s #lines=12-14 is the lines a person picked: read from offset 12 and change those, not the same words elsewhere.',
+    'Read a file of a chat\'s folder. A text or JSON file comes a page at a time: a one-line JSON header, a blank line, then its lines verbatim — copy old for edit from them; next_offset reads on. Stored UTF-8 text also comes as read-only pages; to edit it, use save: true, then edit with the saved path and version. Other stored files (an image, a PDF, a .pptx…), or save: true, are saved whole on this computer in a folder of their own for that version; the version edit\'s expected_version names when you store your change. A link\'s #lines=12-14 is the lines a person picked: read from offset 12 and change those, not the same words elsewhere. To point someone at a place, add #lines=12-14 or #find=<words> (URL-encoded) to the file\'s link: it opens there, marked.',
   inputSchema: {
     type: 'object',
     required: ['item_id'],

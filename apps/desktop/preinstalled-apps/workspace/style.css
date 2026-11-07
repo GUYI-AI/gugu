@@ -270,6 +270,7 @@ body:not([data-state='doc']) .held-bar { display: none; }
 .cm-found { background: color-mix(in srgb, var(--em-accent-11) 16%, transparent); box-shadow: inset 2px 0 var(--em-accent-11); }
 .preview .md-held { background: color-mix(in srgb, var(--em-accent-11) 10%, transparent); }
 .preview .md-found { outline: 2px solid var(--em-accent-11); outline-offset: 3px; border-radius: var(--em-radius-document); }
+.cm-found-text, ::highlight(found) { background-color: color-mix(in srgb, var(--em-accent-11) 36%, transparent); }
 .banner { flex: none; margin: 0; border-radius: 0; }
 .banner[data-tone='error'] { color: var(--em-foreground-destructive); }
 .banner[data-tone='info'] { color: var(--em-foreground-muted); }

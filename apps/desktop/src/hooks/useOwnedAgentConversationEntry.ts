@@ -11,12 +11,26 @@ import { APP_SHOW_SESSION_EVENT } from '@/session/shared/extensions/app-runtime-
 import { desktopIpc } from '@/platform/desktopIpc'
 import { installOwnedAgentEntry, isOwnedAgent, ownedAgentConversation, type OwnedAgentOpenReceipt } from '@/lib/ownedAgentConversation'
 import { parseSessionpageAgentContext } from '@/lib/sessionpageAgentProjection'
-import { openTarget } from '@/lib/guguLinks'
+import { openTarget, type SenderFile } from '@/lib/guguLinks'
 import { notify } from '@/lib/notices'
 import { messageForUser } from '@/lib/userFacingError'
 import { readSessionpageViewRequestBridge } from '@/lib/sessionpageViewRequestBridge'
 import { requestComposerEntryFocus } from '@/lib/composerEntryFocus'
 import type { GroupParticipantRequest } from '@/session/renderer/features/chats/group-participant-requests'
+
+/**
+ * The task is up: the file beside its conversation, as a link in that conversation opens. Beside a group the task has half
+ * the window: the file in front of its conversation, so what was asked for has the room.
+ */
+async function openFileInTask(target: Awaited<ReturnType<typeof ownedAgentConversation>>, file: SenderFile, besideGroup: boolean): Promise<void> {
+  const [{ machineCodec }, { prepareSessionPane }, { makeFileLinkHandlers }] = await Promise.all([
+    import('@renderer/lib/machine-routing'), import('@renderer/features/sessions/session-pane-ready'), import('@renderer/features/sessions/stores/open-file-in-file-editor'),
+  ])
+  const projectId = target.kind === 'local' ? target.projectId : machineCodec(target.deviceId).inbound(target.session.projectId)
+  const sessionId = target.kind === 'local' ? target.sessionId : target.session.conversationId
+  await prepareSessionPane(projectId, sessionId)
+  await makeFileLinkHandlers(projectId, sessionId, besideGroup ? { from: null } : { beside: true }).onOpenFile(file.path, file.at)
+}
 
 /** Ownership is checked before looking up a private timeline. An async open cannot cross an account switch. */
 export function useOwnedAgentConversationEntry(input: {
@@ -32,7 +46,7 @@ export function useOwnedAgentConversationEntry(input: {
   const generation = useRef(0)
   const cancelGroupRequest = useRef<GroupParticipantRequest | undefined>(undefined)
   useEffect(() => () => { ++generation.current; cancelGroupRequest.current?.() }, [input.ownerId])
-  const open = useCallback((chatId: string | undefined, peerId?: string, draft?: string | NativeComposerDraft, sourceChatId?: string, purpose?: 'resource', receipt?: OwnedAgentOpenReceipt) => {
+  const open = useCallback((chatId: string | undefined, peerId?: string, draft?: string | NativeComposerDraft, sourceChatId?: string, purpose?: 'resource', receipt?: OwnedAgentOpenReceipt, file?: SenderFile) => {
     const state = current.current
     const asked = ++generation.current
     cancelGroupRequest.current?.()
@@ -86,6 +100,7 @@ export function useOwnedAgentConversationEntry(input: {
         await openTarget(target.kind === 'local'
           ? { kind: 'session', sessionId: target.sessionId, projectId: target.projectId }
           : { kind: 'session', sessionId: target.session.conversationId, projectId: target.session.projectId, deviceId: target.deviceId }, ...requestArgs)
+        if (file) await openFileInTask(target, file, !!sourceChatId)
       }
       if (!state.mobile && asked === generation.current && current.current.ownerId === state.ownerId) {
         requestComposerEntryFocus(purpose ? null : 'session:' + (target.kind === 'local' ? target.sessionId : target.session.conversationId))

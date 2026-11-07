@@ -12,6 +12,7 @@ import { UI_EVENTS } from '../lib/uiEvents'
 import { chatService } from '../lib/chat'
 import { askReveal } from './useSourceMessageReveal'
 import { readIdentityDirectoryBridge } from '../lib/identityDirectoryBridge'
+import { openOwnedAgentFile } from '../lib/ownedAgentConversation'
 
 /** The navigation belongs to the chat shell, not a Markdown renderer or an agent. */
 export function useLinkNavigation(input: {
@@ -41,14 +42,19 @@ export function useLinkNavigation(input: {
       if (target.kind === 'sender') {
         const sender = state.contacts.find(contact => contact.id === target.userId)
           ?? readIdentityDirectoryBridge()?.getSnapshot()?.[target.userId]
-        if (!sender || !state.openSender) throw new Error(messages.current.t('links.unavailable'))
+        if (!target.file && (!sender || !state.openSender)) throw new Error(messages.current.t('links.unavailable'))
+        let sourceChatId: string | undefined
         if (target.sourceChatId && !readMobileShell()) {
           const source = state.chats.find(chat => chat.id === target.sourceChatId)
           if (!source || (source.kind !== 'group' && source.kind !== 'topic')) throw new Error(messages.current.t('links.unavailable'))
-          const sourceChatId = source.kind === 'topic' ? source.source_chat_id : source.id
+          sourceChatId = (source.kind === 'topic' ? source.source_chat_id : source.id) ?? undefined
           if (!sourceChatId) throw new Error(messages.current.t('links.unavailable'))
-          await state.openSender(sender, sourceChatId)
-        } else await state.openSender(sender)
+        }
+        // Only an agent of this person's has a task here to read its path in.
+        if (target.file) {
+          if (!openOwnedAgentFile(target.userId, sourceChatId, target.file)) throw new Error(messages.current.t('links.fileOnSenderMachine'))
+        } else if (sourceChatId) await state.openSender!(sender!, sourceChatId)
+        else await state.openSender!(sender!)
         return 'own' as const
       }
       if (target.kind === 'file') {
@@ -167,5 +173,5 @@ export function useLinkNavigation(input: {
 }
 
 function targetError(target: LinkNavigation['target'], error: unknown, fallback: string) {
-  return new Error(target.kind === 'app-detail' && error instanceof Error ? error.message : fallback, { cause: error })
+  return new Error((target.kind === 'app-detail' || (target.kind === 'sender' && target.file)) && error instanceof Error ? error.message : fallback, { cause: error })
 }

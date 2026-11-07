@@ -31,5 +31,12 @@ describe('message sender-name navigation', () => {
     await act(async () => { await openLinkTarget({ kind: 'sender', userId: sender.id, sourceChatId: 'group-963' }); });
     expect(openSender).toHaveBeenCalledExactlyOnceWith(sender, 'group-963');
   });
-
+  it('a path in a message from anyone but an agent of this person says so: it has no task to open in', async () => {
+    const openSender = vi.fn();
+    function Navigation() { useLinkNavigation({ ownerId: 'owner', chats: [], contacts: [], openSender,
+      openChat: vi.fn(), openFile: vi.fn(), openApp: vi.fn(), openProject: vi.fn(), openOwnApp: vi.fn(), openAssistant: vi.fn() }); return null; }
+    await harness.render(<Navigation />);
+    await expect(openLinkTarget({ kind: 'sender', userId: 'someone', file: { path: 'src/add.ts' } })).rejects.toThrow('links.fileOnSenderMachine');
+    expect(openSender).not.toHaveBeenCalled();
+  });
 });

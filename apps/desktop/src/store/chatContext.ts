@@ -95,6 +95,9 @@ export interface ChatContextValue {
   draftAttachments: Record<string, DraftAttachment[]>
   draftQuotes: Record<string, DraftQuote>
   setDraftQuote: (chatId: string, quote: SetStateAction<DraftQuote | null | undefined>) => void
+  // The peer a draft stays private to without a quote (an annotated whisper image); cleared on send or Exit whisper.
+  draftWhispers: Record<string, string>
+  setDraftWhisper: (chatId: string, userId: string | null) => void
   // @@@threads (#957) — 当前会话的话题摘要（rootId → 回复数/最后回复），驱动主线 tanchor + subtab 列表。
   // 当前打开的话题 root 消息 id（null = 看主时间线 Chat 视图）。
   activeThreadRootId: string | null
@@ -179,6 +182,8 @@ const EMPTY_CHAT_STORE: ChatContextValue = {
   draftAttachments: {},
   draftQuotes: {},
   setDraftQuote: () => {},
+  draftWhispers: {},
+  setDraftWhisper: () => {},
   activeThreadRootId: null,
   threadMessages: [],
   loadingThread: false,
@@ -285,6 +290,15 @@ export function useDraftQuotesStore() {
     })
   }, [])
   return { draftQuotes, setDraftQuote }
+}
+
+export function useDraftWhispersStore() {
+  const [draftWhispers, setWhispers] = useState<Record<string, string>>({})
+  const setDraftWhisper = useCallback((chatId: string, userId: string | null) => {
+    if (userId) setWhispers(previous => previous[chatId] === userId ? previous : { ...previous, [chatId]: userId })
+    else dropChatKey(setWhispers, chatId)
+  }, [])
+  return { draftWhispers, setDraftWhisper }
 }
 
 export function useTextDraftStore(): {

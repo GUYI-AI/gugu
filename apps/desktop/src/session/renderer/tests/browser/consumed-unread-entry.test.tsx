@@ -104,7 +104,7 @@ async function renderConversation(width: number, naturallySeen = false, surface:
       isGroupChat: true, onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible: noop, selectMode: false,
       selectedIds: new Set(), onToggleSelect: noop, onEnterSelectMode: noop, flashMessageId, threeParty: undefined,
       onShowReadReceipt: undefined, onOpenMemberProfile: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
-      agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined, onOpenLocalFileLink: undefined, onMentionMember: undefined }
+      agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined, onMentionMember: undefined }
     return <><button onClick={pinToBottom}>Return to latest</button>
       <button onClick={() => setEmptySearch(!emptySearch)}>Toggle empty search</button>
       <button onClick={() => setHidden(!hidden)}>Toggle workspace</button>

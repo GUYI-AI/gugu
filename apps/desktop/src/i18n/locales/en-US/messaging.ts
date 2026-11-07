@@ -363,6 +363,8 @@ export default {
     "usageUnavailable": "File storage usage is unavailable right now.",
 
     "fileUnavailable": "File unavailable right now",
+    "fileNoAccess": "You no longer have access to this file",
+    "fileUpdated": "This file was updated; open it again",
     "holderOffline": "{{machine}} is offline. This file opens when it is back online.",
     "holderMachine": "The computer that keeps it",
     "besideOffline": "On {machine}, not connected",

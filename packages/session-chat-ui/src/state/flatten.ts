@@ -439,17 +439,24 @@ export function flattenTier(
       const live = ctx.active && turnIndex === turns.length - 1;
       const blocks = planConversationSegments(turn, live, true);
       let inputActivity: AgentActivityEvent | undefined;
+      let sentActivity: AgentActivityEvent | undefined;
       for (const block of blocks) {
         if (block.kind === 'input') {
           inputActivity = block.item.kind === 'message' ? incomingActivity(block.item as ChatMessage, ctx) ?? undefined : undefined;
+          sentActivity = undefined;
           activityEvent = inputActivity;
           resultOwner = undefined; processItem(block.item); activityEvent = undefined; continue;
         }
         const output = conversationOutput(block.items, block.live);
+        const ops = planRows(outsideProcess(output.rest));
         activityEvent = output.reply
           ? outgoingActivity(output.reply.id.replace(/:sent:[^:]+$/, ''), output.reply.sentAddresses, ctx,
             output.reply.sentAttachments?.length ? new Set(output.reply.sentAttachments.map(file => file.messageId)).size : 1) ?? undefined
           : pendingActivity(block.items as TranscriptItem[], turn, ctx) ?? inputActivity;
+        // A successful send closes its segment before the trailing silence.
+        // Keep that empty tail with its proven A2A owner, not a new process.
+        if (!activityEvent && !block.live && output.silent && !output.stopReason && ops.length === 0) activityEvent = sentActivity;
+        sentActivity = output.reply && activityEvent?.direction === 'sent' ? activityEvent : undefined;
         if (activityEvent && live && block === blocks.at(-1)) activityEvent.live = true;
         const replyActivity = activityEvent;
         // Failure and permission rows must remain discoverable without opening a historical A2A fold.
@@ -457,7 +464,6 @@ export function flattenTier(
           || 'toolCallId' in item && ctx.pendingToolCallIds().has(item.toolCallId))) activityEvent = undefined;
         const silentCopyText = output.silent && block === blocks.at(-1) && completionResult !== null ? completionResult : undefined;
         if (silentCopyText !== undefined) inlineCompletion = true;
-        const ops = planRows(outsideProcess(output.rest));
         const artifacts = activityEvent && !ctx.active ? activityArtifacts(block.items, turnOutputs, turn.id, block.id) : [];
         const emitArtifacts = () => {
           if (activityEvent && !ctx.active) for (const item of block.items) artifactItems.add(item.id);

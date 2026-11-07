@@ -805,7 +805,7 @@ export function ChatComposer({
               styles.noticeAnimWrapper,
               notice ? styles.noticeAnimVisible : styles.noticeAnimHidden
             )}
-            aria-hidden={!notice}
+            aria-hidden={!notice} data-composer-top-band={notice ? "notice" : undefined}
           >
             <div className={styles.noticeOverflowClip}>
               {retainedNotice && <NoticeBand notice={retainedNotice} />}

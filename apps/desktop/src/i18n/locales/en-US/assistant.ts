@@ -26,6 +26,7 @@ export default {
   },
   "links": {
     "task": "View work: {{title}}", "unavailable": "This reference was removed or is not accessible",
+    "fileOnSenderMachine": "This path is on the sender's computer, so it can't be opened here.",
     "fileHostOffline": "The computer storing this file is offline. Try again when it is online.",
     "fileMissing": "This file was deleted or is not accessible.",
     "fileOpenFailed": "This file could not be opened. Please try again later."

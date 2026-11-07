@@ -6,6 +6,7 @@ import { createFileSink } from './fileSnapshot'
 import { nextPartBytes, SMALLEST_PART_BYTES } from '@shared/extensions/working-copy-upload'
 
 export const PROJECT_FILE_READ = 'file.read'
+const LINE_BUDGET_MS = 2_500
 type ReadRequest = { ref: FileRef; offset: number; length: number; etag?: string }
 export type ProjectFileChunk = { revision: FileRevision; offset: number; etag: string; data: string }
 export type ProjectFileReader = (request: ReadRequest) => Promise<ProjectFileChunk>
@@ -52,17 +53,41 @@ export async function openProjectFileSource(revision: FileRevision, read: Projec
     return new Uint8Array(bytes)
   }
   check(first, 0, 0)
-  let part = SMALLEST_PART_BYTES
-  return { size: revision.size_bytes, dispose: async () => {}, async read(offset, length) {
-    requireFileRange(revision.size_bytes, offset, length)
-    const bytes = new Uint8Array(length)
-    for (let filled = 0; filled < length;) {
-      const at = offset + filled, take = Math.min(part, length - filled), started = Date.now()
-      bytes.set(check(await read({ ref, offset: at, length: take, etag: first.etag }), at, take), filled)
-      filled += take
-      if (take === part) part = nextPartBytes(part, Date.now() - started)
-      progress?.(at + take, revision.size_bytes)
+  const size = revision.size_bytes
+  // @@@read-ahead - the parts run ahead of the caller, who reads the file front to back: the next part is asked for while
+  // one is on the line, so no part (and no next read) waits a round trip behind the last. The time from the later of a
+  // part's asking and the last arrival is its own time on the line, which sizes the next part and gives the line's rate.
+  // A second part goes out only while both stay within LINE_BUDGET_MS of that rate: whatever else the link carries waits
+  // behind them, and a session's frames are given four seconds. Every part is checked against the anchored etag, so parts
+  // asked ahead are of the same version as the rest, and the whole file's SHA is verified where it is consumed.
+  let part = SMALLEST_PART_BYTES, perMs = 0, last = 0, asked = 0, heldAt = 0, held = new Uint8Array(0)
+  let flight: { at: number; take: number; full: boolean; asked: number; reply: Promise<ProjectFileChunk> }[] = []
+  const ask = () => {
+    const take = Math.min(part, size - asked), reply = read({ ref, offset: asked, length: take, etag: first.etag })
+    reply.catch(() => {}) // a part's failure is thrown where it is awaited, or never if the caller has moved elsewhere
+    flight.push({ at: asked, take, full: take === part, asked: Date.now(), reply }); asked += take
+  }
+  const askAhead = () => {
+    while (asked < size && (flight.length === 0 || flight.length === 1 && flight[0]!.take + Math.min(part, size - asked) <= perMs * LINE_BUDGET_MS)) ask()
+  }
+  return { size, dispose: async () => {}, async read(offset, length) {
+    requireFileRange(size, offset, length)
+    if (offset !== heldAt) { flight = []; held = new Uint8Array(0); heldAt = asked = offset }
+    while (held.length < length) {
+      askAhead()
+      const next = flight.shift()!
+      let data: Uint8Array<ArrayBuffer>
+      try { data = check(await next.reply, next.at, next.take) } catch (error) { heldAt = -1; throw error } // read again from scratch
+      const now = Date.now(), took = Math.max(1, now - Math.max(last, next.asked))
+      if (next.full) part = nextPartBytes(next.take, took)
+      perMs = next.take / took
+      last = now
+      held = held.length ? Buffer.concat([held, data]) : data
+      progress?.(next.at + next.take, size)
     }
+    const bytes = new Uint8Array(held.subarray(0, length))
+    held = held.subarray(length); heldAt += length
+    askAhead()
     return bytes
   } }
 }

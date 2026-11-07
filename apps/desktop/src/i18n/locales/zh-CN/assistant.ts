@@ -26,6 +26,7 @@ export default {
   },
   "links": {
     "task": "查看工作：{{title}}", "unavailable": "这条关联消息已删除或当前无法访问",
+    "fileOnSenderMachine": "这个路径在发送者那边的电脑上，这里打不开。",
     "fileHostOffline": "存放这个文件的电脑当前离线，请等电脑上线后再试",
     "fileMissing": "这个文件已删除或无法访问",
     "fileOpenFailed": "暂时打不开这个文件，请稍后重试"

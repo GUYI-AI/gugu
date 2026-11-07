@@ -57,14 +57,16 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
     messages = EMPTY_MESSAGES, participantIds, surface = 'main', hidden = false } = props
   const [publicQuote, setPublicQuote] = useState<typeof quoteContent>(null)
   const replySource = quoteContent?.source
+  const { draftWhispers, setDraftWhisper } = useChatStore('draftWhispers', 'setDraftWhisper')
+  const whisperTo = props.whisperTarget?.userId ?? (chatId ? draftWhispers[chatId] : undefined)
   const delivery = resolveReplyDelivery({ senderUserId: currentUserId, source: replySource,
-    toUserIds: props.whisperTarget ? [props.whisperTarget.userId] : [],
-    whisper: props.whisperTarget ? true : quoteContent && publicQuote === quoteContent ? false : undefined })
+    toUserIds: whisperTo ? [whisperTo] : [],
+    whisper: whisperTo ? true : quoteContent && publicQuote === quoteContent ? false : undefined })
   const privatePeer = delivery?.isWhisper ? delivery.toUserIds[0] : undefined
   const whisperTarget = useMemo(() => privatePeer ? { userId: privatePeer, displayName: groupMembers.find((member) => member.id === privatePeer)?.name
     ?? (props.whisperTarget?.userId === privatePeer ? props.whisperTarget.displayName : quoteContent?.senderName ?? privatePeer) } : null,
   [privatePeer, groupMembers, props.whisperTarget, quoteContent?.senderName])
-  const onExitWhisper = useCallback(() => { setPublicQuote(quoteContent); exitWhisper?.() }, [quoteContent, exitWhisper])
+  const onExitWhisper = useCallback(() => { setPublicQuote(quoteContent); if (chatId) setDraftWhisper(chatId, null); exitWhisper?.() }, [quoteContent, chatId, setDraftWhisper, exitWhisper])
   const deliveryProps = { ...props, whisperTarget, onExitWhisper }
   const { t } = useTranslation('messaging')
   const replyUnavailable = !delivery || (!!quoteContent?.messageId && !replySource)

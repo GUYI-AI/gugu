@@ -1,4 +1,5 @@
 import { metricsRequestId, PERF_COUNTERS_REPLY, RENDERER_METRICS_REQUEST } from '../session/shared/renderer-metrics'
+import { installFrameCounters, readFrameCounters } from './frameCounters'
 import { readPerfCounters } from './perfCounters'
 
 interface CounterBridge {
@@ -9,8 +10,9 @@ interface CounterBridge {
 /** The existing desktop bridge supplies main's requests; web/mobile do nothing. */
 export function installPerfCounterResponder(bridge: CounterBridge | undefined): () => void {
   if (!bridge) return () => {}
+  installFrameCounters()
   return bridge.eventOn(RENDERER_METRICS_REQUEST, (request) => {
     const requestId = metricsRequestId(request)
-    if (requestId) bridge.eventSend(PERF_COUNTERS_REPLY, { requestId, counters: readPerfCounters() })
+    if (requestId) bridge.eventSend(PERF_COUNTERS_REPLY, { requestId, counters: readPerfCounters(), frames: readFrameCounters() })
   })
 }

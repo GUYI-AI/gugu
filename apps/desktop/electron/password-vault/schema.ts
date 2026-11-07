@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { createHash } from 'node:crypto'
+import { domainToASCII } from 'node:url'
 import type { AuditInput } from './contracts'
 import { VaultError } from './contracts'
 
@@ -52,7 +53,20 @@ export function auditInput(value: AuditInput): AuditInput {
 export function binding(document: Pick<VaultDocument, 'owner' | 'installationId' | 'vaultId'>, purpose: 'data' | 'recovery' | 'local'): string {
   return JSON.stringify(['gugu-password-vault', 1, document.owner, document.installationId, document.vaultId, purpose])
 }
+const accountCharacters = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+const emailDomain = z.hostname()
 export function maskedAccount(value: string): string {
-  // Never project user-entered text into Agent-visible metadata, even a short account.
-  return value.length > 0 ? '••••' : ''
+  if (/[\p{Cc}\p{Cs}\p{Bidi_Control}]/u.test(value)) return '***'
+  const input = value.trim()
+  if (!input) return ''
+  const at = input.indexOf('@'), domain = input.slice(at + 1)
+  const email = at > 0 && at === input.lastIndexOf('@') && !/[\s"<>]/u.test(input.slice(0, at))
+    && domain.includes('.') && /^[\p{L}\p{M}\p{N}.-]+$/u.test(domain)
+    && emailDomain.safeParse(domainToASCII(domain)).success
+  const local = email ? input.slice(0, at) : input
+  const characters = [...accountCharacters.segment(local)]
+  // A one-character account/local part has no private remainder to hide: redact it entirely.
+  const suffix = email ? '@' + domain : ''
+  const masked = (characters.length > 1 ? characters[0].segment : '') + '***' + suffix
+  return masked === input ? '***' + suffix : masked
 }

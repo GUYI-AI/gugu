@@ -4,7 +4,7 @@
 // remoteHostsStore). That machine fetches and checks the card's package itself (installAttachment there). D-31 (owner 10-06
 // 「怎么符合用户思维和操作路径怎么来」): the person is asked here, where they clicked — that machine hands back what it would
 // ask, and installs only the bytes they agreed to, given where they ticked. Control (dev 9c3b90bab5): the card has no choice.
-import { act, createElement } from 'react'
+import { act, createElement, type ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const manifest = {
@@ -27,6 +27,8 @@ const host = (id: string, label: string, patch: Record<string, unknown> = {}) =>
   hosts.set(id, { device: { id, label, isOnline: true, platform: 'darwin', lastSeenAt: null, sessionDigest: null, directTerminal: false, hostKind: 'desktop', ...patch } })
 const sheets: unknown[][] = []
 let sheetAnswer: { outcome: string; alsoOn?: string[] } = { outcome: 'confirmed' }
+/** What the install would be allowed, one line each (describePermissions); one line unless a test says more. */
+let permissionLines: string[] | null = null
 
 vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
   appsHere: { runs: () => true, grantable: (value: unknown) => value, installAttachment: localInstall },
@@ -56,7 +58,18 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/remote-hosts/rem
     device: (id: string) => hosts.get(id)?.device ?? null,
     connectionState: () => 'open',
     start: () => undefined,
+    wakeCloudComputer: async () => undefined,
   },
+}))
+// The card picks with the product's MachinePicker. Its menu does not pop up in jsdom, so it is drawn in place (as in
+// machine-picker.test.ts): what the menu lists, what is greyed and why, and what a click picks.
+vi.mock('../../../../apps/desktop/src/session/renderer/lib/ui/dropdown-menu', () => ({
+  DropdownMenu: ({ children }: { children: ReactNode }) => children,
+  DropdownMenuSeparator: () => null,
+  DropdownMenuContent: ({ children }: { children: ReactNode }) => createElement('div', { 'data-testid': 'menu' }, children),
+  DropdownMenuItem: ({ children, disabled, onClick, ...props }: { children: ReactNode; disabled?: boolean; onClick?: () => void }) =>
+    createElement('button', { type: 'button', role: 'menuitem', ...props, disabled, onClick: disabled ? undefined : onClick }, children),
+  DropdownMenuTrigger: ({ render }: { render?: ReactNode }) => render ?? null,
 }))
 vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', () => ({
   summaryOf: async () => ({ ok: true, manifest }),
@@ -72,7 +85,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/insta
 }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/extension-consent', () => ({
   // Says which computer it was asked about (`machine`), so the card's preview can be read for it.
-  describePermissions: (_manifest: unknown, _t: unknown, machine?: string) => (machine ? `No permissions, on ${machine}` : 'No permissions'),
+  describePermissions: (_manifest: unknown, _t: unknown, machine?: string) => permissionLines?.join('\n') ?? (machine ? `No permissions, on ${machine}` : 'No permissions'),
 }))
 vi.mock('../../../../apps/desktop/src/session/renderer/localization/locale-store', () => ({
   translateSessionMessage: (key: string, params?: Record<string, string>) => (params ? `${key}:${Object.values(params).join('|')}` : key),
@@ -92,6 +105,7 @@ afterEach(() => {
   hosts.clear()
   thereAnswers = () => ({ installed: true, outcome: 'confirmed' })
   sheetAnswer = { outcome: 'confirmed' }
+  permissionLines = null
 })
 
 const OLD_CARD = { source: { kind: 'url' as const, url: URL_ }, messageId: 'm-old' }
@@ -103,11 +117,7 @@ async function card(pkg: { source: unknown; messageId: string } = OLD_CARD) {
   await act(async () => undefined)
   const q = (selector: string) => harness.container.querySelector<HTMLElement>(selector)
   const pick = async (id: string) => {
-    const picker = q('[data-testid="extension-bundle-card-machine"]') as HTMLSelectElement
-    await act(async () => {
-      picker.value = id
-      picker.dispatchEvent(new Event('change', { bubbles: true }))
-    })
+    await act(async () => q(`[data-testid="menu"] [data-device-id="${id}"]`)!.click())
   }
   return { q, pick, install: () => q('[data-testid="extension-bundle-card-install"]')! }
 }
@@ -122,19 +132,41 @@ describe('an App card installs on the machine the person picks', () => {
     expect(q('[data-testid="extension-bundle-card-permissions"]')?.textContent).toBe('No permissions, on mac1 B')
   })
 
-  it('the shared list: this computer first, then the machines this window is linked to — offline ones and a Gugu server (no window, no Apps) not choosable', async () => {
+  // owner 11-07「点了之后还只能选择本机，其它都是灰掉的」: a Gugu server installs Apps (since 10-15) and an awake cloud computer
+  // is one — both choosable, as in the install sheet; only a machine that cannot take it is greyed, and it says why.
+  it("the product's machine picker: this computer first, servers and cloud computers choosable, an offline one greyed with why", async () => {
     host('dev-b', 'mac1 B')
     host('off', 'old laptop', { isOnline: false })
-    host('srv', 'gpu server', { hostKind: 'server' })
+    host('srv', 'gpu server', { hostKind: 'server', platform: 'linux' })
+    host('cloud', 'cloud box', { hostKind: 'server', cloudComputer: 'awake' })
     const { q } = await card()
-    const picker = q('[data-testid="extension-bundle-card-machine"]') as HTMLSelectElement
-    expect([...picker.options].map((option) => [option.value, option.textContent, option.disabled])).toEqual([
-      ['local', 'task.deviceLocal', false],
-      ['dev-b', 'mac1 B', false],
-      ['off', 'old laptop', true],
-      ['srv', 'gpu server', true],
+    expect(q('[data-testid="extension-bundle-card-machine"]')?.dataset.selectedId).toBe('local')
+    const rows = [...document.querySelectorAll<HTMLButtonElement>('[data-testid="menu"] [data-device-id]')]
+    expect(rows.map((row) => [row.dataset.deviceId, row.disabled])).toEqual([
+      ['local', false],
+      ['cloud', false],
+      ['srv', false],
+      ['dev-b', false],
+      ['off', true],
     ])
-    expect(picker.value).toBe('local')
+    expect(rows.at(-1)?.textContent).toContain('machinePicker.offline')
+  })
+
+  it('a Gugu server picked: Install goes to it, named', async () => {
+    host('srv', 'gpu server', { hostKind: 'server', platform: 'linux' })
+    const { q, pick, install } = await card()
+    await pick('srv')
+    expect(install().hasAttribute('disabled')).toBe(false)
+    await act(async () => install().click())
+    expect(remoteInstalls.map(({ machine }) => machine)).toEqual(['srv'])
+    expect(q('[data-testid="extension-bundle-card-there"]')?.textContent).toBe('extensions.bundleCardInstalledOn:gpu server')
+  })
+
+  it('a cloud computer still asleep, picked: woken, and Install waits until it is awake (the sheet reads the same answer)', async () => {
+    host('cloud', 'cloud box', { hostKind: 'server', cloudComputer: 'asleep' })
+    const { pick, install } = await card()
+    await pick('cloud')
+    expect(install().hasAttribute('disabled')).toBe(true)
   })
 
   it("another machine asking nothing: it installs the card's package, and the card says it is there", async () => {
@@ -232,6 +264,23 @@ describe('an App card installs on the machine the person picks', () => {
 
 // 复核 #7300 要改 4: two other computers ticked in the one sheet — the first fetched another package (not installed there),
 // the second installed it. Each says what it came to, by name: one that did not install is never hidden behind the other.
+// owner 11-07「卡片很怪(瘦长)」: several permissions fold into one row — the count and the first — and open to all of them.
+describe("an App card's permissions", () => {
+  it('fold to the count and the first line, and open to the whole list', async () => {
+    permissionLines = ['Read the files', 'Change the files', 'See the agents']
+    const { q } = await card()
+    const fold = q('[data-testid="extension-bundle-card-permissions"]') as HTMLDetailsElement
+    const summary = () => q('[data-testid="extension-bundle-card-permissions-toggle"]')!.textContent
+    expect(fold.open).toBe(false)
+    expect(summary()).toBe('extensions.bundleCardPermissions:3 · Read the filesextensions.expand')
+    await act(async () => q('[data-testid="extension-bundle-card-permissions-toggle"]')!.click())
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+    expect(fold.open).toBe(true)
+    expect(summary()).toBe('extensions.bundleCardPermissions:3extensions.collapse')
+    expect([...fold.querySelectorAll('li')].map((item) => item.textContent)).toEqual(permissionLines)
+  })
+})
+
 describe('two other computers ticked on a card', () => {
   it('each says what it came to — the one that did not install, too', async () => {
     host('dev-b', 'mac1 B')

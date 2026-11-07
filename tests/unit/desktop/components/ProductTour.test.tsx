@@ -3,7 +3,7 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, waitForCondition } from '../../../support/testHarness'
 
-const io = vi.hoisted(() => ({ save: vi.fn(async (): Promise<void> => undefined) }))
+const io = vi.hoisted(() => ({ save: vi.fn(async (_userId: string, _state: unknown): Promise<void> => undefined) }))
 vi.mock('../../../../apps/desktop/src/lib/productTour', async (original) => ({
   ...await original<Record<string, unknown>>(), saveProductTourState: io.save, useRememberProductTourState: () => () => undefined,
 }))
@@ -45,11 +45,19 @@ beforeEach(async () => {
 afterEach(() => { rail.remove(); document.querySelector('[data-tour="sample-project"]')?.remove(); vi.clearAllMocks(); vi.unstubAllGlobals() })
 
 const STEPS = ['assistant', 'tasks', 'chats', 'contacts', 'library', 'apps', 'settings'] as const
+async function settleTargets() {
+  // A missing entry can advance once per measured frame; keep those DOM observer
+  // updates inside React's interaction boundary, including an entirely absent tour.
+  for (let at = 0; at < STEPS.length; at++) await act(async () => { await new Promise<void>((resolve) => requestAnimationFrame(() => resolve())) })
+}
 async function mount(start: (typeof STEPS)[number] = 'assistant', steps: readonly string[] = STEPS) {
   const harness = createReactHarness()
   const done = vi.fn()
-  await harness.render(createNode(ProductTour, { userId: 'owner-1', steps, start, onDone: done }))
-  await waitForCondition(() => !!document.querySelector('[data-testid^="product-tour-step-"]'), 'card shown')
+  try {
+    await harness.render(createNode(ProductTour, { userId: 'owner-1', steps, start, onDone: done }))
+    await settleTargets()
+    await waitForCondition(() => !!document.querySelector('[data-testid^="product-tour-step-"]'), 'card shown')
+  } catch (error) { harness.cleanup(); throw error }
   const button = (id: string) => document.querySelector<HTMLButtonElement>(`[data-testid="product-tour-${id}"]`)
   const card = () => document.querySelector<HTMLElement>('[data-testid^="product-tour-step-"]')!
   return { ...harness, done, button, card }
@@ -142,7 +150,7 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
       expect(h.card().textContent).toContain('7 / 7')
     } finally { h.cleanup(); settings.remove() }
   })
-  it('makes the projects step a do-it step when the sample project is there: no Next, opening it moves on', async () => {
+  it.each(['next', 'Enter', 'ArrowRight', 'sample'])('lets the sample step continue using %s', async (action) => {
     const sample = document.createElement('div')
     sample.dataset.tour = 'sample-project'
     sample.getBoundingClientRect = box(60, 200, 220, 36)
@@ -150,15 +158,81 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
     document.body.append(sample)
     const h = await mount('tasks')
     try {
-      expect(h.card().textContent).toContain('点开示例项目，看看一件事是怎么推进的。')
-      expect(h.button('next')).toBeNull()
+      expect(h.button('next')).not.toBeNull()
+      expect(h.card().textContent).toContain('或点「下一步」继续')
       expect(h.button('skip')).not.toBeNull()
       expect(h.button('previous')).not.toBeNull()
-      await key('Enter')
-      expect(h.card().textContent).toContain('2 / 7')
-      await clickElement(sample)
-      await waitForCondition(() => h.card().textContent!.includes('3 / 7'), 'advanced by opening the sample')
+      if (action === 'next') await clickElement(h.button('next')!)
+      else if (action === 'sample') await clickElement(sample)
+      else await key(action)
+      await waitForCondition(() => h.card().textContent!.includes('3 / 7'), 'advanced from the sample step')
+      expect(io.save.mock.calls.filter(([, state]) => (state as { step: string }).step === 'chats')).toHaveLength(1)
     } finally { h.cleanup() }
+  })
+  it('keeps Next available when the sample was already removed', async () => {
+    const h = await mount('tasks')
+    try {
+      expect(h.card().textContent).toContain('一件事的会话和文件都放在这里。')
+      await clickElement(h.button('next')!)
+      expect(h.card().dataset.testid).toBe('product-tour-step-chats')
+    } finally { h.cleanup() }
+  })
+  it('uses the real project heading when a merged list has no sample or page tab', async () => {
+    rail.querySelector('[data-testid="sidebar-list-page-projects"]')!.remove()
+    const heading = document.createElement('div')
+    heading.dataset.firstRunHint = 'collaboration'
+    heading.dataset.firstRunDevice = 'desktop'
+    heading.getBoundingClientRect = box(60, 120, 220, 32)
+    heading.scrollIntoView = vi.fn()
+    rail.append(heading)
+    const h = await mount('tasks')
+    try {
+      expect(h.card().dataset.testid).toBe('product-tour-step-tasks')
+      await clickElement(h.button('next')!)
+      expect(h.card().dataset.testid).toBe('product-tour-step-chats')
+    } finally { h.cleanup() }
+  })
+  it.each([false, true])('skips an unavailable project anchor without trapping or revisiting the step (lost during tour=%s)', async (during) => {
+    const projects = rail.querySelector('[data-testid="sidebar-list-page-projects"]')!
+    if (!during) projects.remove()
+    const h = await mount('tasks')
+    try {
+      if (during) await act(async () => { projects.remove() })
+      await settleTargets()
+      await waitForCondition(() => document.querySelector('[data-testid="product-tour-step-chats"]') !== null, 'continued without a project anchor')
+      expect(h.card().textContent).toContain('2 / 6')
+      await clickElement(h.button('previous')!)
+      expect(h.card().dataset.testid).toBe('product-tour-step-assistant')
+      await clickElement(h.button('next')!)
+      expect(h.card().dataset.testid).toBe('product-tour-step-chats')
+    } finally { h.cleanup() }
+  })
+  it('continues when the highlighted sample disappears during step 2', async () => {
+    const sample = document.createElement('div')
+    sample.dataset.tour = 'sample-project'
+    sample.getBoundingClientRect = box(60, 200, 220, 36)
+    sample.scrollIntoView = vi.fn()
+    rail.append(sample)
+    const h = await mount('tasks')
+    try {
+      await act(async () => { sample.remove() })
+      await settleTargets()
+      await waitForCondition(() => h.card()?.textContent?.includes('一件事的会话和文件都放在这里。') === true, 'project fallback shown')
+      await clickElement(h.button('next')!)
+      expect(h.card().dataset.testid).toBe('product-tour-step-chats')
+    } finally { h.cleanup() }
+  })
+  it('finishes once when no supplied step has a real anchor', async () => {
+    rail.remove()
+    const harness = createReactHarness()
+    const done = vi.fn()
+    try {
+      await harness.render(createNode(ProductTour, { userId: 'owner-1', steps: STEPS, start: 'assistant', onDone: done }))
+      await settleTargets()
+      await waitForCondition(() => done.mock.calls.length === 1, 'unavailable tour finished')
+      expect(document.querySelector('[data-testid^="product-tour-step-"]')).toBeNull()
+      expect(io.save).toHaveBeenLastCalledWith('owner-1', { step: 'settings', status: 'done' })
+    } finally { harness.cleanup() }
   })
   it('counts only the steps it was given', async () => {
     const h = await mount('assistant', ['assistant', 'tasks', 'chats', 'contacts', 'settings'])

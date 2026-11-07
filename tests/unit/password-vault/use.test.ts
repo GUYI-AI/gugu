@@ -7,26 +7,28 @@ import { LocalPasswordVault } from '../../../apps/desktop/electron/password-vaul
 import { VaultDisk } from '../../../apps/desktop/electron/password-vault/disk'
 import { seal, unseal } from '../../../apps/desktop/electron/password-vault/crypto'
 import { VaultError, type VaultDependencies, type VaultUseBinding, type VaultUseCapability, type VaultUseControl, type VaultSinkControl } from '../../../apps/desktop/electron/password-vault/contracts'
+import type { CredentialUseSettlement } from '../../../apps/desktop/electron/session/main/core/browser/credential-settlement-contract'
 
 const disposals: LocalPasswordVault[] = [], roots: string[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const vault of disposals.splice(0)) await vault.dispose().catch(() => undefined); for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
-async function scenario() {
+async function scenario(withSettlement = true) {
   const root = await mkdtemp(join(await realpath(tmpdir()), 'gugu-vault-sink-canary-')); roots.push(root)
   const owner = randomUUID(), person = {}, actor = {}, key = randomBytes(32), issued = new WeakMap<object, { binding: VaultUseBinding; claimed: boolean; submitted: boolean; abort: AbortController }>()
   const controllers: AbortController[] = []
   const fill = vi.fn(async (_binding: VaultUseBinding, _secrets: { account: Buffer; password: Buffer }, control: VaultSinkControl) => { control.assertCurrent(); await control.prepareSubmission(); control.claimSubmission(); return 'submitted_unconfirmed' as const })
   const cleanup = vi.fn(async () => ({ status: 'cleaned' as const }))
+  const settle = vi.fn(async (_event: CredentialUseSettlement) => undefined)
   const dependencies: VaultDependencies = { root: join(root, 'private', 'password-vault', 'v1'), accountId: owner, installationBinding: randomUUID(),
     assertLocalPerson: context => { if (context !== person) throw new Error() }, assertOwnedLocalAgent: context => { if (context !== actor) throw new Error() },
-    assertPrivateStorageReady: vi.fn(async () => undefined), assertFeatureReady: vi.fn(async () => undefined),
+    assertPrivateStorageReady: vi.fn(async () => undefined), acquireFeatureGuard: vi.fn(async () => ({ status: 'ready' as const, signal: new AbortController().signal, assertCurrent() {} })),
     keys: { verifyPerson: async () => undefined, wrap: async (value, binding) => JSON.stringify(seal(key, value, binding)), unwrap: async (value, binding) => unseal(key, JSON.parse(value), binding) },
     invalidate: vi.fn(async () => { for (const controller of controllers) controller.abort() }),
-    browser: { fillAndSubmit: fill, cleanup,
+    browser: { fillAndSubmit: fill, cleanup, settle: withSettlement ? settle : undefined as never,
       claimCredentialSink(capability, binding) {
         const use = issued.get(capability)
         if (!use || use.claimed || JSON.stringify(use.binding) !== JSON.stringify(binding)) throw new VaultError('UNAVAILABLE')
         use.claimed = true
-        return { signal: use.abort.signal, assertCurrent: () => { if (use.abort.signal.aborted) throw new VaultError('CANCELLED') },
+        return { signal: use.abort.signal, revokedSignal: use.abort.signal, assertCurrent: () => { if (use.abort.signal.aborted) throw new VaultError('CANCELLED') },
           claimSubmission: () => { if (use.submitted || use.abort.signal.aborted) throw new VaultError('CANCELLED'); use.submitted = true } }
       } },
   }
@@ -42,7 +44,7 @@ async function scenario() {
     const capability = {} as VaultUseCapability, abort = new AbortController(); controllers.push(abort)
     issued.set(capability, { binding: value, claimed: false, submitted: false, abort }); return capability
   }
-  return { vault, owner, person, actor, input, saved, binding, issue, fill, cleanup, dependencies }
+  return { vault, owner, person, actor, input, saved, binding, issue, fill, cleanup, settle, dependencies }
 }
 
 describe('trusted internal browser sink with synthetic authority', () => {
@@ -64,12 +66,14 @@ describe('trusted internal browser sink with synthetic authority', () => {
     expect((await vault.useCredential(capability, binding)).status).toBe('unavailable'); expect(fill).toHaveBeenCalledOnce()
   })
   it('rejects serialized/forged capabilities and mismatched owner/site/version before releasing secrets', async () => {
-    const { vault, binding, issue, fill } = await scenario()
+    const { vault, binding, issue, fill, cleanup, settle } = await scenario()
     expect((await vault.useCredential({} as VaultUseCapability, binding)).status).toBe('unavailable')
+    expect(cleanup).not.toHaveBeenCalled(); expect(settle).not.toHaveBeenCalled()
     for (const changed of [{ ...binding, accountId: randomUUID() }, { ...binding, origin: 'https://sibling.example.test' }, { ...binding, credentialVersion: '01' }]) {
       expect((await vault.useCredential(issue(changed), changed)).status).toBe('unavailable')
     }
     expect(fill).not.toHaveBeenCalled()
+    expect(cleanup).toHaveBeenCalledTimes(3); expect(settle).toHaveBeenCalledTimes(3)
   })
   it('requires a fresh actual-actor reference check and reports lock/old-version invalidation', async () => {
     const { vault, saved, actor, person } = await scenario()
@@ -144,5 +148,90 @@ describe('trusted internal browser sink with synthetic authority', () => {
     cleanup.mockResolvedValueOnce({ status: 'isolated_login_retained' } as never)
     const result = await vault.useCredential(issue(), binding)
     expect(result.retainIsolatedLogin).toBe(true)
+  })
+  it('settles only after buffers are cleared and issues a proof bound to the complete receipt/context', async () => {
+    const { vault, binding, issue, fill, settle, person } = await scenario(), capability = issue()
+    let password!: Buffer, zeroAtSettlement = false
+    fill.mockImplementationOnce(async (_bound, secrets, control) => { password = secrets.password; await control.prepareSubmission(); control.claimSubmission(); return 'submitted_unconfirmed' })
+    settle.mockImplementationOnce(async () => { zeroAtSettlement = password.every(byte => byte === 0) })
+    expect((await vault.useCredential(capability, binding)).status).toBe('submitted_unconfirmed')
+    expect(zeroAtSettlement).toBe(true); expect(settle).toHaveBeenCalledOnce()
+    const { postUseAudit, ...context } = settle.mock.calls[0][0]
+    expect(context.capability === capability).toBe(true); expect(context.binding).toEqual(binding)
+    expect(postUseAudit.status).toBe('recorded')
+    if (postUseAudit.status !== 'recorded') throw new Error('synthetic receipt missing')
+    expect(vault.outcomeAudit.matches(postUseAudit, context)).toBe(true)
+    expect((await vault.readAudit(person)).some(record => record.id === postUseAudit.eventId && record.useId === binding.useId && record.outcome === context.outcome)).toBe(true)
+    expect(vault.outcomeAudit.matches({ ...postUseAudit, eventId: randomUUID() }, context)).toBe(false)
+    expect(vault.outcomeAudit.matches({ ...postUseAudit, recordId: randomUUID() }, context)).toBe(false)
+    expect(vault.outcomeAudit.matches({ ...postUseAudit, proof: { ...postUseAudit.proof } }, context)).toBe(false)
+    expect(vault.outcomeAudit.matches(postUseAudit, { ...context, capability: {} as VaultUseCapability })).toBe(false)
+    expect(vault.outcomeAudit.matches(postUseAudit, { ...context, outcome: 'login_confirmed' })).toBe(false)
+    expect(vault.outcomeAudit.matches(postUseAudit, { ...context, effectPossible: false })).toBe(false)
+    for (const key of Object.keys(binding)) expect(vault.outcomeAudit.matches(postUseAudit, { ...context, binding: { ...binding, [key]: randomUUID() } })).toBe(false)
+  })
+  it('requires a newly persisted proof when person interaction changes the actual outcome', async () => {
+    const { vault, binding, issue, fill, settle } = await scenario()
+    fill.mockResolvedValueOnce('person_interaction_required' as never)
+    expect((await vault.useCredential(issue(), binding)).status).toBe('person_interaction_required')
+    const { postUseAudit, ...oldContext } = settle.mock.calls[0][0], next = { ...oldContext, outcome: 'submitted_unconfirmed' as const }
+    if (postUseAudit.status !== 'recorded') throw new Error('synthetic receipt missing')
+    expect(vault.outcomeAudit.matches(postUseAudit, next)).toBe(false)
+    const fresh = await vault.outcomeAudit.appendOutcome(next)
+    expect(fresh.status).toBe('recorded')
+    if (fresh.status !== 'recorded') throw new Error('synthetic receipt missing')
+    expect(fresh.proof === postUseAudit.proof).toBe(false); expect(fresh.eventId === postUseAudit.eventId).toBe(false)
+    expect(vault.outcomeAudit.matches(fresh, next)).toBe(true)
+  })
+  it('never gives a forged unclaimed context an outcome proof or writes its guessed metadata', async () => {
+    const { vault, binding, person } = await scenario(), before = (await vault.readAudit(person)).length
+    expect(await vault.outcomeAudit.appendOutcome({ capability: {} as VaultUseCapability, binding, outcome: 'login_confirmed', effectPossible: true })).toEqual({ status: 'uncertain' })
+    expect((await vault.readAudit(person)).length).toBe(before)
+  })
+  it('notifies the claimed use on audit failure with no proof, and retains on a failed settle callback', async () => {
+    const failed = await scenario(), original = VaultDisk.prototype.write
+    let writes = 0
+    vi.spyOn(VaultDisk.prototype, 'write').mockImplementation(async function (this: VaultDisk, path, bytes) { if (path.includes('/audit/') && ++writes === 3) throw new Error('synthetic audit failure'); return original.call(this, path, bytes) })
+    expect(await failed.vault.useCredential(failed.issue(), failed.binding)).toEqual({ status: 'uncertain', retry: false, retainIsolatedLogin: true })
+    expect(failed.settle).toHaveBeenCalledOnce(); expect(failed.settle.mock.calls[0][0].postUseAudit.status).toBe('uncertain')
+    vi.restoreAllMocks()
+    const broken = await scenario(); broken.settle.mockRejectedValueOnce(new Error('synthetic settle failure'))
+    expect(await broken.vault.useCredential(broken.issue(), broken.binding)).toEqual({ status: 'uncertain', retry: false, retainIsolatedLogin: true })
+    expect(broken.settle).toHaveBeenCalledOnce()
+  })
+  it.each(['lock', 'clear-audit', 'edit'] as const)('invalidates outcome proofs after %s using the same vault lifecycle', async operation => {
+    const { vault, binding, issue, settle, person, saved } = await scenario()
+    await vault.useCredential(issue(), binding)
+    const { postUseAudit, ...context } = settle.mock.calls[0][0]
+    if (postUseAudit.status !== 'recorded') throw new Error('synthetic receipt missing')
+    if (operation === 'lock') { await vault.lock(); await vault.unlock(person) }
+    else if (operation === 'edit') await vault.save(person, randomUUID(), { origin: binding.origin, account: randomUUID(), password: randomUUID() }, saved.reference)
+    else await vault.clearAudit(person)
+    expect(vault.outcomeAudit.matches(postUseAudit, context)).toBe(false)
+    expect((await vault.outcomeAudit.appendOutcome(context)).status).toBe('uncertain')
+  })
+  it('does not call or claim an old sink without the fixed settlement adapter', async () => {
+    const { vault, binding, issue, fill, cleanup } = await scenario(false), capability = issue()
+    expect(await vault.useCredential(capability, binding)).toEqual({ status: 'unavailable', retry: false, retainIsolatedLogin: true })
+    expect(fill).not.toHaveBeenCalled(); expect(cleanup).not.toHaveBeenCalled()
+  })
+  it('keeps the construction-time sink when the host dependency object is later replaced', async () => {
+    const { vault, binding, issue, dependencies, fill, settle } = await scenario(), replacement = vi.fn()
+    dependencies.browser = { ...dependencies.browser!, fillAndSubmit: replacement, settle: replacement }
+    expect((await vault.useCredential(issue(), binding)).status).toBe('submitted_unconfirmed')
+    expect(fill).toHaveBeenCalledOnce(); expect(settle).toHaveBeenCalledOnce(); expect(replacement).not.toHaveBeenCalled()
+  })
+  it('does not issue a late post-use proof when its durable write completes after lock', async () => {
+    const { vault, binding, issue, settle } = await scenario(), original = VaultDisk.prototype.write
+    let writes = 0, releaseWrite!: () => void
+    vi.spyOn(VaultDisk.prototype, 'write').mockImplementation(async function (this: VaultDisk, path, bytes) {
+      if (path.includes('/audit/') && ++writes === 3) await new Promise<void>(resolve => { releaseWrite = resolve })
+      return original.call(this, path, bytes)
+    })
+    const using = vault.useCredential(issue(), binding)
+    await vi.waitFor(() => expect(typeof releaseWrite).toBe('function'))
+    const locking = vault.lock('os-lock'); releaseWrite()
+    expect(await using).toEqual({ status: 'uncertain', retry: false, retainIsolatedLogin: true }); await locking
+    expect(settle).toHaveBeenCalledOnce(); expect(settle.mock.calls[0][0].postUseAudit.status).not.toBe('recorded')
   })
 })
