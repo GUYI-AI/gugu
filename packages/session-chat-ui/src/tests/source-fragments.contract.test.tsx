@@ -11,10 +11,10 @@ import { until, untilStable } from '../../../../tests/support/awaitCondition';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()); });
-async function mountSource(options: { beforeLive?: true; compact?: true; onViewportProtection?: ChatCommands['onViewportProtection'] } = {}) {
+async function mountSource(options: { beforeLive?: true; compact?: true; count?: number; onViewportProtection?: ChatCommands['onViewportProtection'] } = {}) {
   const context = createChatContext({ locale: () => 'en-US' });
   const state = createChatState(context);
-  const fragments = Array.from({ length: options.compact ? 2 : 7 }, (_, i) => ({ key: `record-${i}`,
+  const fragments = Array.from({ length: options.count ?? (options.compact ? 2 : 7) }, (_, i) => ({ key: `record-${i}`,
     sourceRange: { start: i * 1000, end: i * 1000 + 999 }, ownership: 'unresolved' as const,
     text: options.compact ? `Persisted history ${i}` : `Record ${i}\n\n${'Bounded source body.\n\n'.repeat(18)}` }));
   const sourceWindow = { sourceLineage: 'source', sourceFragments: fragments, beforeLive: options.beforeLive };
@@ -40,8 +40,9 @@ async function mountSource(options: { beforeLive?: true; compact?: true; onViewp
 it('reports mounted source rows and protects the reading anchor while offscreen rows leave residency', async () => {
   const reports: ViewportProtection[] = [];
   const onViewportProtection = (report: ViewportProtection) => { reports.push(report); };
-  const { host, view, settle, sourceWindow } = await mountSource({ onViewportProtection });
-  const itemId = fragmentAnchor('record-2');
+  // Exceed the engine's row-count overscan on both sides of the reading anchor.
+  const { host, view, settle, sourceWindow } = await mountSource({ count: 48, onViewportProtection });
+  const itemId = fragmentAnchor('record-24');
   view.setScrollMode({ kind: 'anchor', itemId, edge: 'top', offset: 24 });
   await settle();
   await until('the actual engine reports its reading protection', () => reports.at(-1)?.anchor.kind === 'anchor'
@@ -52,6 +53,7 @@ it('reports mounted source rows and protects the reading anchor while offscreen 
   expect(mounted.every(row => protectedIds.has(fragmentAnchor(row.getAttribute('data-source-fragment')!)))).toBe(true);
   const resident = sourceWindow.sourceFragments.filter(row => protectedIds.has(fragmentAnchor(row.key)));
   expect(resident.length).toBeLessThan(sourceWindow.sourceFragments.length);
+  expect(resident.some(row => row.key === 'record-0')).toBe(false);
   const before = host.querySelector(`[data-item-id="${itemId}"]`)!.getBoundingClientRect().top;
   view.setCommands({ onViewportProtection, sourceWindow: { ...sourceWindow, sourceFragments: resident } });
   await settle();
