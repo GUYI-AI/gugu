@@ -3,11 +3,12 @@ import Foundation
 let owner = "11111111-1111-4111-8111-111111111111"
 let other = "22222222-2222-4222-8222-222222222222"
 let installation = "33333333-3333-4333-8333-333333333333"
+var currentInstallation = installation
 var clock = Date(timeIntervalSince1970: 1000)
 var record: GuguIOSStoredSession? = GuguIOSStoredSession(ownerId: owner, accessToken: "fixture-a", expiresAt: Date(timeIntervalSince1970: 2000))
 var verifies: [(Result<String, Error>) -> Void] = []
 var stops: [(Result<Void, Error>) -> Void] = []
-let session = GuguIOSOwnerSession(readStored: { record }, installationId: { installation }, verifyUser: { _, done in verifies.append(done) }, stopNative: { stops.append($0) }, now: { clock })
+let session = GuguIOSOwnerSession(readStored: { record }, installationId: { currentInstallation }, verifyUser: { _, done in verifies.append(done) }, stopNative: { stops.append($0) }, now: { clock })
 var passed = 0
 func check(_ ok: @autoclosure () throws -> Bool, _ label: String) {
     do { guard try ok() else { print("FAIL \(label)"); exit(1) }; passed += 1; print("PASS \(label)") }
@@ -28,6 +29,7 @@ check(binding.deviceId == "phone-\(installation)-\(owner)", "uses shared phone r
 check(try session.credentials(expectedBinding: binding).accessToken == "fixture-a", "current committed token available only natively")
 check(rejects { _ = try session.snapshot(expectedOwnerId: other) }, "old page cannot read another current owner")
 record = GuguIOSStoredSession(ownerId: owner, accessToken: "fixture-b", expiresAt: Date(timeIntervalSince1970: 2000))
+check(try session.snapshot(expectedOwnerId: owner) == nil, "rotated unpublished token cannot preserve verified owner publication")
 check(rejects { _ = try session.credentials(expectedBinding: binding) }, "token rotation prevents issuing old native access")
 var first: Result<GuguIOSHostBinding, Error>?, second: Result<GuguIOSHostBinding, Error>?
 session.publish(ownerId: owner, accessToken: "fixture-b") { first = $0 }
@@ -63,6 +65,11 @@ check(!succeeds(result), "server owner mismatch cannot create identity")
 session.publish(ownerId: owner, accessToken: "fixture-c") { result = $0 }; verifies.removeFirst()(.success(owner))
 clock = Date(timeIntervalSince1970: 2001)
 check(try session.snapshot(expectedOwnerId: owner) == nil && rejects { _ = try session.credentials(expectedBinding: binding) }, "expired credentials cannot supply native access")
+clock = Date(timeIntervalSince1970: 1000)
+currentInstallation = "44444444-4444-4444-8444-444444444444"
+check(rejects { _ = try session.binding(expectedOwnerId: owner) }, "changed native install cannot read old binding")
+check(rejects { _ = try session.credentials(expectedBinding: binding) }, "changed native install cannot receive old credentials")
+currentInstallation = installation
 let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["GUGU_OWNER_TEST_ROOT"]!).appendingPathComponent(UUID().uuidString.lowercased())
 let install = GuguIOSInstallation(directory: root)
 let id = try install.identifier()

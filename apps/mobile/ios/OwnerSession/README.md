@@ -10,6 +10,6 @@ The bridge protocol is `GuguIOSOwner`:
 
 `binding` contains `ownerId`, `deviceId`, and `installationId`. The device ID is exactly `phone-${installationId}-${ownerId}`. Installation identity is stored in the private, backup-excluded application container rather than Keychain. It must be reused across renderer origin changes, and malformed identity storage fails closed.
 
-`GuguIOSOwnerSession.credentials(expectedBinding:)` is the native-only access supplier for the concrete host backend. It rechecks the current stored owner/token and expiry on each request. A token rotation does not change the owner's device identity, but its new access token needs verification before native credentials are available. No generic cloud RPC or model endpoint is exposed to JavaScript by this bridge.
+`GuguIOSOwnerSession.credentials(expectedBinding:)` is the native-only access supplier for the concrete host backend. Both owner binding reads and credential reads recheck the current stored owner/token, expiry and native installation. A token rotation does not change the owner's device identity, but its new access token needs verification before the binding or credentials are available. No generic cloud RPC or model endpoint is exposed to JavaScript by this bridge.
 
 Current integration boundary: the policy implementation is being wired to Keychain and the real backend verifier. Plugin registration, the AuthStorage pre-write retirement barrier, renderer root registration, and App execution are still unverified. Do not advertise a ready local host from these files alone.

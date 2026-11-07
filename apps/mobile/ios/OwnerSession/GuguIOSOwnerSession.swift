@@ -82,6 +82,8 @@ final class GuguIOSOwnerSession {
         guard stored.ownerId == expectedOwnerId else { throw Self.stale() }
         guard !retiring, let active else { return nil }
         guard active.binding.ownerId == expectedOwnerId else { throw Self.stale() }
+        guard active.accessToken == stored.accessToken else { return nil }
+        try checkInstallation(active.binding)
         guard stored.expiresAt > now(), active.expiresAt > now() else { return nil }
         return active.binding
     }
@@ -90,6 +92,7 @@ final class GuguIOSOwnerSession {
         lock.lock(); defer { lock.unlock() }
         guard !retiring, let active, active.binding == expectedBinding else { throw Self.stale() }
         _ = try matchingStored(ownerId: expectedBinding.ownerId, accessToken: active.accessToken)
+        try checkInstallation(active.binding)
         guard active.expiresAt > now() else { throw Self.failure("auth_expired", "Published access token has expired") }
         return active
     }
@@ -142,6 +145,11 @@ final class GuguIOSOwnerSession {
               stored.accessToken == accessToken, !accessToken.isEmpty else { throw Self.stale() }
         guard stored.expiresAt > now() else { throw Self.failure("auth_expired", "Committed access token has expired") }
         return stored
+    }
+
+    private func checkInstallation(_ binding: GuguIOSHostBinding) throws {
+        guard try installationId() == binding.installationId else { throw Self.stale() }
+        try binding.validate()
     }
 
     private static func stale() -> GuguHostFailure { failure("stale_context", "Native authentication publication is not current") }
