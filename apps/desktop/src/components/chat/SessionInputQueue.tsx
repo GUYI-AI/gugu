@@ -34,7 +34,7 @@ export function SessionInputQueue({ sessionId, waitingForConnection, life = null
   const bubbles = sessionInputBubbles(sender, life?.pending.items ?? [], life?.hold ?? null)
     .filter(bubble => !drawnIds.has(mobile ? nativeMessageKey(bubble.id) : bubble.id) && !pending.some(input => input.id === bubble.id && input.queued === false))
   if (!bubbles.length) return null
-  return <div className="flex flex-col gap-2 px-3 py-2" data-native-input-queue="">
+  return <div className="flex flex-col gap-2 px-3 py-2" data-native-input-queue="" data-composer-top-band="pending">
     {bubbles.map(bubble => <div key={bubble.id} className="flex flex-col items-end gap-1" data-native-input-id={bubble.id}>
       <div className="flex items-end justify-end gap-1">
         <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-[var(--radius-thread)] bg-[var(--chat-bubble-user)] px-4 py-2 text-[length:var(--font-body)] text-[var(--chat-bubble-user-fg)]">
