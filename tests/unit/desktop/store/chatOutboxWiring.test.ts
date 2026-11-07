@@ -17,6 +17,21 @@ import {
 import type { OutboxRecord } from '../../../../apps/desktop/src/lib/imRepository'
 const logError = vi.hoisted(() => vi.fn())
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: logError }) }))
+vi.mock('../../../../apps/desktop/src/lib/loading/LoadingIndicator', () => ({ LoadingIndicator: () => null }))
+const notices = vi.hoisted(() => {
+  const visible = new Map<string | number, string>()
+  let sequence = 0
+  const show = vi.fn((title: string, options?: { id?: string }) => {
+    const id = options?.id ?? ++sequence
+    visible.set(id, title)
+    return id
+  })
+  return { visible, show, dismiss: vi.fn((id: string | number) => { visible.delete(id) }) }
+})
+vi.mock('sonner', () => ({ toast: Object.assign(notices.show, {
+  success: notices.show, error: notices.show, warning: notices.show, info: notices.show, dismiss: notices.dismiss,
+}) }))
+import { notify } from '../../../../apps/desktop/src/lib/notices'
 
 function persistedMessage(id: string): MessageItem {
   return {
@@ -49,10 +64,10 @@ function optimisticMessage(id: string): MessageItem {
   }
 }
 
-function wiringHarness(messageId: string) {
+function wiringHarness(messageId: string, offscreen = false) {
   let messages = [optimisticMessage(messageId)]
   let threadMessages: MessageItem[] = []
-  const toast = vi.fn<OutboxWiringIo['toast']>()
+  const toast = vi.fn<OutboxWiringIo['toast']>((title, tier) => { notify({ title, tier }) })
   const patchChat = vi.fn<OutboxWiringIo['patchChat']>()
   // @@@4439 — store 摄入 chokepoint 的替身:按 id 归并进主线(跳号重验证语义属 store 侧,
   // 由 chatMessageWindow 的 seqJumpRepairCursor 纯函数测试钉住)。
@@ -68,7 +83,7 @@ function wiringHarness(messageId: string) {
     user: () => ({ id: 'owner-1', nickname: 'Owner', avatarUrl: null }),
     identity: () => undefined,
     chats: () => [],
-    activeChatId: () => 'chat-1',
+    activeChatId: () => offscreen ? 'other-chat' : 'chat-1',
     activeThreadRootId: () => null,
     setMessagesAndCache: (updater) => { messages = updater(messages) },
     setThreadMessages: (updater) => {
@@ -113,10 +128,48 @@ async function flushMicrotasks(rounds = 10): Promise<void> {
 }
 
 afterEach(() => {
+  notices.visible.clear()
   logError.mockClear()
   vi.clearAllTimers()
   vi.useRealTimers()
   vi.restoreAllMocks()
+})
+
+describe('message-owned send failure notices', () => {
+  it.each(['direct-peer', 'group-agent'])('retires the exact offscreen failure after retry succeeds (%s)', async recipient => {
+    vi.useFakeTimers()
+    const row = persistedMessage(`retry-${recipient}`)
+    const send = vi.spyOn(chatService, 'sendMessage').mockRejectedValue(new Error('offline'))
+    const h = wiringHarness(row.id, true)
+    await h.wiring.enqueue({ ...enqueueInput(row.id), toUserIds: [recipient] })
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(h.messages()[0]).toMatchObject({ id: row.id, local_send_state: 'failed' })
+    expect(notices.visible.size).toBe(1)
+    send.mockResolvedValue(row)
+    h.wiring.retrySend(row.id)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(h.messages()[0]).toMatchObject({ id: row.id, seq: 42, local_send_state: null })
+    expect(notices.visible.size, 'the acknowledged message still has its old failure notice').toBe(0)
+    h.wiring.dispose()
+  })
+
+  it('updates a failed retry without duplicating the notice or clearing another message failure', async () => {
+    vi.useFakeTimers()
+    const send = vi.spyOn(chatService, 'sendMessage').mockRejectedValue(new Error('offline'))
+    const h = wiringHarness('first', true)
+    await h.wiring.enqueue(enqueueInput('first'))
+    await h.wiring.enqueue(enqueueInput('second'))
+    await vi.advanceTimersByTimeAsync(40_000)
+    expect(notices.visible.size).toBe(2)
+    h.wiring.retrySend('first')
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(notices.visible.size, 'the failed retry stacked another unowned notice').toBe(2)
+    send.mockResolvedValue(persistedMessage('first'))
+    h.wiring.retrySend('first')
+    await vi.advanceTimersByTimeAsync(100)
+    expect(notices.visible.size, 'success must retire only the matching message').toBe(1)
+    h.wiring.dispose()
+  })
 })
 
 it('queues the source and explicit recipients through the existing topic service', async () => {

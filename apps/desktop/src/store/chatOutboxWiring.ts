@@ -33,6 +33,7 @@ import { createChatOutbox, type ChatOutbox } from './chatOutbox'
 import { i18n } from '@/i18n'
 import { rendererLogger } from '@/lib/log'
 import { chatSendTimings, finishChatSendTiming } from '../lib/chatSendTiming'
+import { messageFailureNotice } from '../lib/messageFailureNotice'
 
 export interface OutboxWiringIo {
   observeMessage?: (senderId: string, chatId: string) => ObserveAttachmentMessage
@@ -161,6 +162,19 @@ export async function resolveOutboxRecipients(
 
 export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
   let active = true
+  const failures = new Map<string, ReturnType<typeof messageFailureNotice>>()
+  function failureFor(record: OutboxRecord) {
+    let notice = failures.get(record.clientMessageId)
+    if (!notice) {
+      notice = messageFailureNotice(['im', record.senderUserId, record.chatId, record.clientMessageId])
+      failures.set(record.clientMessageId, notice)
+    }
+    return notice
+  }
+  function settleFailure(record: OutboxRecord) {
+    failures.get(record.clientMessageId)?.discard()
+    failures.delete(record.clientMessageId)
+  }
   // Bytes never enter persistence. An interrupted native publication requires a fresh selection.
   const attachmentTimings = new Map<string, AttachmentSendTiming>()
   const nativeCommits = new Map<string, () => Promise<MessageItem | undefined>>()
@@ -187,11 +201,12 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
       const onScreen = record.payload.threadRootId
         ? io.activeChatId() === record.chatId && io.activeThreadRootId() === record.payload.threadRootId
         : io.activeChatId() === record.chatId
-      if (!onScreen) io.toast(i18n.t('outbox.offscreenFailure', { ns: 'messaging' }), 'error')
+      if (!onScreen) failureFor(record).begin().failed({ title: i18n.t('outbox.offscreenFailure', { ns: 'messaging' }), tier: 'error' })
     }
   }
 
   function removeRow(record: OutboxRecord): void {
+    settleFailure(record)
     beforeDeliverHooks.delete(record.clientMessageId)
     nativeCommits.delete(record.clientMessageId)
     attachmentTimings.delete(record.clientMessageId)
@@ -208,6 +223,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
   // ❌ 这里不点亮 agent 运行态:「我发出去了」不是「它在跑」的证据(那是猜,而且猜早了 400ms);
   // 运行态只由跑这个 agent 的宿主宣布,见 spec agent-status。
   async function handleSent(record: OutboxRecord, persisted: MessageItem): Promise<void> {
+    settleFailure(record)
     beforeDeliverHooks.delete(record.clientMessageId)
     nativeCommits.delete(record.clientMessageId)
     if (record.operation?.kind !== 'nativeAttachment') attachmentTimings.get(record.clientMessageId)?.finish('success', 'outbox')
@@ -426,6 +442,8 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
     },
     dispose() {
       active = false
+      for (const failure of failures.values()) failure.discard()
+      failures.clear()
       beforeDeliverHooks.clear()
       nativeCommits.clear()
       attachmentTimings.clear()

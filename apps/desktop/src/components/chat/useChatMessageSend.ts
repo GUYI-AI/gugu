@@ -12,6 +12,7 @@ import { revokeAttachmentPreviewUrls, withPreviewUrl, type ChatDraft, type Menti
 import { contentWithQuote } from './messageQuoteContent'
 import type { ChatMessageComposerProps } from './chatComposerModels'
 import { useChatStore } from '../../store/chatContext'
+import { messageFailureNotice } from '@/lib/messageFailureNotice'
 
 /** Chat delivery owns recipients and rollback; the shared editor only submits its document. */
 export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatDraft, members: MentionCandidate[], activeMentionTargets: MentionTarget[], inputRef: RefObject<HTMLElement | null>, mobile = false) {
@@ -22,6 +23,7 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
   const { toast } = useToast()
   const [sending, setSending] = useState(false)
   const sendingRef = useRef(false)
+  const submissions = useRef(new Map<string, { id: string; failure: ReturnType<typeof messageFailureNotice> }>())
   const activeChatIdRef = useRef(chatId ?? null)
   activeChatIdRef.current = chatId ?? null
   const rosterNameIndex = useMemo(() => buildRosterNameIndex(props.groupMembers ?? []), [props.groupMembers])
@@ -37,6 +39,14 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       return
     }
     if (!typed && pendingFiles.length === 0) return
+    const scope = JSON.stringify([currentUserId, chatId])
+    let submission = submissions.current.get(scope)
+    if (!submission) {
+      const id = crypto.randomUUID()
+      submission = { id, failure: messageFailureNotice(['im', currentUserId ?? 'signed-out', chatId ?? 'composer', id]) }
+      submissions.current.set(scope, submission)
+    }
+    const attempt = submission.failure.begin()
     const content = contentWithQuote(typed, quoteContent)
     // @@@whisper (#820) — 悄悄话模式下覆盖 toUserIds + 附加 isWhisper flag；禁用 @提及。
     const replyToMessageId = quoteContent?.messageId ?? null
@@ -87,8 +97,9 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
         await onSendAttachments(pendingFiles, { toUserIds: sendOptions.toUserIds, replyToMessageId: !typed && replyToMessageId ? replyToMessageId : undefined, isWhisper: !!whisperTarget, caption: captionOnImage ? content || undefined : undefined, onSent: (_file, index) => { committed.add(index) } })
       }
       if (typed && (!captionOnImage || !onSendAttachments)) {
-        await onSend(content, { ...sendOptions, beforeDeliver: beforeSend, submittedAt })
+        await onSend(content, { ...sendOptions, clientMessageId: submission.id, beforeDeliver: beforeSend, submittedAt })
       }
+      if (attempt.succeeded() && submissions.current.get(scope) === submission) submissions.current.delete(scope)
       // Successful send → object URLs are no longer needed
       revokeAttachmentPreviewUrls(snapshotAttachments)
       if (!mobile && isGroupChat && currentUserId && chatId && !whisperTarget) {
@@ -122,7 +133,7 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       }
       // Drop the now-stale snapshot URLs (replaced by fresh ones above, or unused when persisting to store).
       revokeAttachmentPreviewUrls(snapshotAttachments)
-      toast(t('composer.sendFailed', { reason: safeFailureLine(reason) }), 'error')
+      attempt.failed({ title: t('composer.sendFailed', { reason: safeFailureLine(reason) }), tier: 'error' })
     } finally {
       sendingRef.current = false
       setSending(false)

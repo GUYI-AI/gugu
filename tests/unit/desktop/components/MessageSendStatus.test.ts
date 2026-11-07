@@ -16,6 +16,12 @@ afterEach(() => {
   setAttachmentUploadProgress('progress-message')
 })
 describe('MessageSendStatus', () => {
+  it('replaces the failed disclosure on a retry and removes it after the same message is sent', async () => {
+    for (const state of ['failed', 'sending', 'sent'] as const) {
+      await renderWithAppProviders(harness, createNode(MessageSendStatus, { state, messageId: 'retried-message' }))
+      expect(document.body.querySelector('[data-testid="message-send-failed"]') !== null).toBe(state === 'failed')
+    }
+  })
   it('keeps zero-byte upload events indeterminate, including a retry reset', async () => {
     await renderWithAppProviders(harness, createNode(MessageSendStatus, { state: 'sending', messageId: 'progress-message' }),
       { chat: { retrySend: vi.fn(), discardSend: vi.fn() } })
