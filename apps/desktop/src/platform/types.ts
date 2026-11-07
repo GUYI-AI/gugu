@@ -35,6 +35,8 @@ interface PlatformCapabilities {
   mobileApps: boolean
   /** This shell implements the native phone tools and installation identity. */
   phoneDevice: boolean
+  /** This shell registers an owner-verified native calendar settings surface. */
+  calendarSettings?: boolean
 }
 
 /** 交给系统分享面板的一份内容。附件只给地址,由宿主自己取字节,交出去的是文件本身。 */

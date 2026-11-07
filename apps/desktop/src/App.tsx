@@ -28,6 +28,8 @@ import { sessionCoordinator } from './lib/sessionCoordinator'
 import { publishSelfIdentity } from './lib/selfIdentityBridge'
 import { installAssistantPanelHost } from './components/assistant/assistant-panel-host'
 import { usePhoneImeDismiss } from './mobile/usePhoneImeDismiss'
+import { iosOwnerAvailable } from './mobile/ios-runtime/iosOwnerClient'
+import { startIOSOwnerPublication } from './mobile/ios-runtime/startIOSOwnerPublication'
 
 import { platform } from './platform'
 import { type RendererRpcHandlers, useRendererRpcHandlers } from './rpc-renderer/rendererRpc'
@@ -131,6 +133,9 @@ export default function App() {
 
   useEffect(() => {
     return sessionCoordinator.start()
+  }, [])
+  useEffect(() => {
+    if (iosOwnerAvailable()) return startIOSOwnerPublication()
   }, [])
   useEffect(startAuthCallbackRouting, [])
   useEffect(() => { authCallbacks.setAuthenticated(Boolean(session.session)) }, [session.session])

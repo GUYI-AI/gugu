@@ -37,7 +37,7 @@
     "cap:add:ios": "pnpm build:renderer && node scripts/build/phone-web-dir.mts && cap add ios",
     "ci:kept-tree": "node scripts/ci-kept-tree.mjs",
     "cap:sync": "pnpm build:renderer && node scripts/build/phone-web-dir.mts && cap sync android",
-    "cap:sync:ios": "pnpm build:renderer && node scripts/build/phone-web-dir.mts && cap sync ios",
+    "cap:sync:ios": "node scripts/build/prepare-ios-backend.mts && pnpm build:renderer && node scripts/build/phone-web-dir.mts && node scripts/build/build-ios-agent.mjs && cap sync ios",
     "ios:build:simulator": "pnpm cap:sync:ios && node scripts/build/ios-simulator-build.mjs",
     "dev": "node scripts/build/verify-dev-native.mjs && pnpm build:mise && pnpm build:frpc && vite",
     "dev:alice": "node scripts/build/verify-dev-native.mjs && pnpm build:mise && pnpm build:frpc && GUGU_USER_DATA_DIR=$HOME/.gugu-alice vite --port=5173",

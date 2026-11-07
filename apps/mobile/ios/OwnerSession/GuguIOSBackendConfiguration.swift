@@ -14,7 +14,7 @@ struct GuguIOSBackendConfiguration: Decodable {
     }
 
     static func load(bundle: Bundle = .main) throws -> GuguIOSBackendConfiguration {
-        guard let path = bundle.url(forResource: "GuguBackend", withExtension: "json") else { throw invalid() }
+        guard let path = bundle.url(forResource: "GuguBackend", withExtension: "json", subdirectory: "HostRuntime") else { throw invalid() }
         let bytes = try Data(contentsOf: path)
         guard bytes.count <= 32768 else { throw invalid() }
         let configuration = try JSONDecoder().decode(Self.self, from: bytes)

@@ -45,6 +45,8 @@
 		E98E00000000000000000164 /* GuguIOSBackendConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000064 /* GuguIOSBackendConfiguration.swift */; };
 		E98E00000000000000000165 /* GuguIOSOwnerVerifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000065 /* GuguIOSOwnerVerifier.swift */; };
 		E98E00000000000000000166 /* GuguIOSOwnerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000066 /* GuguIOSOwnerPlugin.swift */; };
+		E98E0000000000000000011A /* GuguIOSHostLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E0000000000000000001A /* GuguIOSHostLifecycle.swift */; };
+		E98E00000000000000000167 /* GuguIOSAppRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000067 /* GuguIOSAppRuntime.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -99,6 +101,8 @@
 		E98E00000000000000000064 /* GuguIOSBackendConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSBackendConfiguration.swift; sourceTree = "<group>"; };
 		E98E00000000000000000065 /* GuguIOSOwnerVerifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSOwnerVerifier.swift; sourceTree = "<group>"; };
 		E98E00000000000000000066 /* GuguIOSOwnerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSOwnerPlugin.swift; sourceTree = "<group>"; };
+		E98E0000000000000000001A /* GuguIOSHostLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSHostLifecycle.swift; sourceTree = "<group>"; };
+		E98E00000000000000000067 /* GuguIOSAppRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSAppRuntime.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -164,6 +168,7 @@
 		E98E00000000000000000020 /* Host */ = {
 			isa = PBXGroup;
 			children = (
+				E98E0000000000000000001A /* GuguIOSHostLifecycle.swift */,
 				E98E00000000000000000019 /* GuguHostCallStore.swift */,
 				E98E00000000000000000018 /* GuguIOSHostAdapter.swift */,
 				E98E00000000000000000017 /* GuguIOSOwnerAccess.swift */,
@@ -212,6 +217,7 @@
 		E98E00000000000000000080 /* OwnerSession */ = {
 			isa = PBXGroup;
 			children = (
+				E98E00000000000000000067 /* GuguIOSAppRuntime.swift */,
 				E98E00000000000000000061 /* GuguIOSOwnerSession.swift */,
 				E98E00000000000000000062 /* GuguIOSInstallation.swift */,
 				E98E00000000000000000063 /* GuguIOSOwnerKeychain.swift */,
@@ -339,6 +345,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E98E00000000000000000167 /* GuguIOSAppRuntime.swift in Sources */,
+				E98E0000000000000000011A /* GuguIOSHostLifecycle.swift in Sources */,
 				E98E00000000000000000161 /* GuguIOSOwnerSession.swift in Sources */,
 				E98E00000000000000000162 /* GuguIOSInstallation.swift in Sources */,
 				E98E00000000000000000163 /* GuguIOSOwnerKeychain.swift in Sources */,

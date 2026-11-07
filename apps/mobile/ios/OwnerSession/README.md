@@ -14,4 +14,8 @@ The bridge protocol is `GuguIOSOwner`:
 
 The AuthStorage writer serializes queued writes across `prepareMainWrite`. Native retirement remains closed after stop succeeds, until `commitMainWrite` performs the actual Keychain write and reads back the prepared owner. A failed storage commit cannot reopen a degraded renderer's old session. Each successful commit consumes its generation-bound permit.
 
-Keychain decoding, the packaged-backend HTTP verifier and the three-method plugin are implemented and registered as compilation sources. Current integration boundary: App composition must inject this session into both AuthStorage and GuguIOSOwner, provide the real host lifecycle, package matching public backend configuration, and mount the renderer publisher. Those App/SDK/HTTP paths remain unverified. Do not advertise a ready local host from these files alone.
+`GuguIOSAppRuntime` assembles one App-lifetime owner session, shared host lifecycle and calendar service. The bridge registers AuthStorage, GuguIOSOwner and CalendarPermissions from that instance. Its foreground owner guard and committed identity must succeed before calendar connection. A missing or invalid packaged configuration leaves only the foreground login shell registered. The GuguAgent task facade remains unavailable until its concrete backend is connected.
+
+`cap:sync:ios` prepares `HostRuntime/GuguBackend.json` using the existing renderer environment resolver, bundles the static runtime and synchronizes the WebView. Only the public URL and anon/publishable key ship; a privileged or human token is rejected. Invalid preparation removes the previous generated configuration. The renderer mounts a publication subscriber without creating another auth coordinator or refresher.
+
+The real App/SDK/Keychain/HTTP paths remain unverified. Native policy and injected transport tests do not establish an iOS local host or end-to-end calendar result.

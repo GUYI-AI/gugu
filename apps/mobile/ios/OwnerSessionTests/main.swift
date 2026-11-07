@@ -77,6 +77,21 @@ currentInstallation = "44444444-4444-4444-8444-444444444444"
 check(rejects { _ = try session.binding(expectedOwnerId: owner) }, "changed native install cannot read old binding")
 check(rejects { _ = try session.credentials(expectedBinding: binding) }, "changed native install cannot receive old credentials")
 currentInstallation = installation
+var failStorageRead = false
+var readFailureStop: ((Result<Void, Error>) -> Void)?
+let readFailureSession = GuguIOSOwnerSession(readStored: {
+    if failStorageRead { throw GuguHostFailure(code: "fixture_read_io", message: "injected") }
+    return record
+}, installationId: { installation }, verifyUser: { _, done in done(.success(owner)) }, stopNative: { readFailureStop = $0 }, now: { clock })
+readFailureSession.publish(ownerId: owner, accessToken: "fixture-c") { result = $0 }
+check(succeeds(result), "read-failure setup verifies the committed owner")
+failStorageRead = true; transition = nil
+readFailureSession.prepareMainWrite(nextOwnerId: other) { transition = $0 }
+check(transition == nil && readFailureStop != nil, "failed storage read still starts native retirement before rejecting the write")
+readFailureStop?(.success(())); failStorageRead = false
+check(try !succeeds(transition) && readFailureSession.snapshot(expectedOwnerId: owner) == nil, "storage read failure preserves retirement after the old bytes become readable")
+result = nil; readFailureSession.publish(ownerId: owner, accessToken: "fixture-c") { result = $0 }
+check(!succeeds(result), "successful stop after read failure cannot republish the old saved session")
 let root = URL(fileURLWithPath: ProcessInfo.processInfo.environment["GUGU_OWNER_TEST_ROOT"]!).appendingPathComponent(UUID().uuidString.lowercased())
 let install = GuguIOSInstallation(directory: root)
 let id = try install.identifier()

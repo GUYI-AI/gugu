@@ -47,7 +47,7 @@ import { useTranslation } from 'react-i18next'
 const sectionsFor = (mobile: boolean): ActiveSection[] =>
   SETTINGS_SECTIONS.filter(
     (section) =>
-      (section !== 'permissions' || platform.kind === 'electron' || platform.systemPermissions.length > 0) &&
+      (section !== 'permissions' || platform.kind === 'electron' || platform.systemPermissions.length > 0 || platform.capabilities.calendarSettings) &&
       (section !== 'apps' || platform.capabilities.mobileApps) &&
       (section !== 'phone' || platform.capabilities.phoneDevice) &&
       (!SESSION_HOST_SETTINGS_SECTIONS.includes(section) || (mobile && section === 'connectors') || (!mobile && platform.capabilities.sessionHost)),

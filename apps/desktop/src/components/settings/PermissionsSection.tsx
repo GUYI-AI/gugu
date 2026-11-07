@@ -13,6 +13,7 @@ import { platform } from '@/platform'
 import { useAuth } from '@/store/auth'
 import { PhonePermissionsList } from '@/mobile/phone-device/PhonePermissionsList'
 import { ThisDeviceActions } from './DeviceActionsPage'
+import { IOSCalendarPermissionsPage } from '@/mobile/ios-calendar/IOSCalendarPermissionsPage'
 
 /**
  * 「我的 → 权限」(product spec)。
@@ -37,8 +38,14 @@ function labelKeyOf(permission: SystemPermission): string {
 }
 
 export function PermissionsSection() {
+  if (platform.capabilities.calendarSettings) return <IOSCalendarPermissionsSection />
   if (platform.systemPermissions.length === 0) return null
   return platform.kind === 'capacitor' ? <PhonePermissionsSection /> : <SystemPermissionsSection />
+}
+
+function IOSCalendarPermissionsSection() {
+  const { user } = useAuth()
+  return <IOSCalendarPermissionsPage ownerId={user?.id ?? null} />
 }
 
 function PhonePermissionsSection() {
