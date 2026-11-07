@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { readJsonStringBodyPage } from './body-reader';
+import { readIndexedBodyPage, readJsonStringBodyPage, type BodyPageIo } from './body-reader';
 import { createWindowBudget } from './read-budget';
-import type { WindowByteSource } from './types';
+import { BODY_CHUNK_BYTES } from './types';
+import type { WindowBodyRef, WindowByteSource } from './types';
 
 function bodyFixture(encoded: string, prefix = 0) {
   const bytes = new TextEncoder().encode(encoded);
@@ -77,5 +78,60 @@ describe('seekable JSON string body pages', () => {
       position: { rawOffset: 0, decodedOffset: 0 }, maxBytes: 16384, budget, signal: abort.signal })).rejects.toThrow();
     expect(budget.counters.sourceBytes).toBe(1);
     expect(budget.counters.outputBytes).toBe(0);
+  });
+});
+
+describe('indexed decoded body pages', () => {
+  const body: WindowBodyRef = { version: 1, scope: 'scope', sourceLineage: 'lineage', id: 'body', revision: 'v1',
+    turnId: 'turn', itemId: 'item', firstChunk: null, decoderCheckpoint: null, sourceRange: { start: 0, end: 1 }, byteLength: null };
+  function indexed(chunks: Map<number, Uint8Array>) {
+    const queried: number[] = [];
+    const io: BodyPageIo = {
+      async descriptor(ref, ordinal, budget) {
+        queried.push(ordinal);
+        await budget.read('indexBytes', 128, async () => 128);
+        const chunk = chunks.get(ordinal);
+        return chunk ? { bodyId: ref.id, revision: ref.revision, ordinal, decodedStart: ordinal * BODY_CHUNK_BYTES,
+          decodedBytes: chunk.length, content: { id: String(ordinal), offset: 0, length: chunk.length, digest: '' },
+          checkpointRef: null, sourceRange: { start: 0, end: 1 } } : null;
+      },
+      async content(ref, budget) {
+        const chunk = chunks.get(Number(ref.id))!;
+        await budget.read('indexBytes', chunk.length, async () => chunk.length);
+        return chunk;
+      },
+    };
+    return { io, queried };
+  }
+  it('directly reads page N above 32-bit offsets without earlier descriptors', async () => {
+    const ordinal = 1_000_000;
+    const { io, queried } = indexed(new Map([[ordinal, new Uint8Array(BODY_CHUNK_BYTES).fill(120)]]));
+    const result = await readIndexedBodyPage(io, { bodyRef: body, offset: ordinal * BODY_CHUNK_BYTES, maxBytes: 4096, budget: createWindowBudget() });
+    expect(queried).toEqual([ordinal]);
+    expect(result.kind).toBe('body');
+    expect(result.io.indexBytes).toBe(BODY_CHUNK_BYTES + 128);
+  });
+  it('returns needs_location at an unknown page without reading from the body head', async () => {
+    const { io, queried } = indexed(new Map());
+    const result = await readIndexedBodyPage(io, { bodyRef: body, offset: 123456, maxBytes: 4096, budget: createWindowBudget() });
+    expect(result.kind).toBe('needs_location');
+    expect(queried).toEqual([Math.floor(123456 / BODY_CHUNK_BYTES)]);
+  });
+  it('bounds the worst three-chunk read and preserves UTF-8 at the response boundary', async () => {
+    const all = new Uint8Array(4 * BODY_CHUNK_BYTES).fill(120);
+    all.set(new TextEncoder().encode('😀'), 3 * BODY_CHUNK_BYTES - 3);
+    const chunks = new Map(Array.from({ length: 4 }, (_, n) => [n, all.subarray(n * BODY_CHUNK_BYTES, (n + 1) * BODY_CHUNK_BYTES)]));
+    const { io, queried } = indexed(chunks);
+    const budget = createWindowBudget();
+    const first = await readIndexedBodyPage(io, { bodyRef: body, offset: BODY_CHUNK_BYTES - 1, maxBytes: 32768, budget });
+    if (first.kind !== 'body') throw new Error('Expected body');
+    expect(queried).toEqual([0, 1, 2]);
+    expect(first.nextOffset).toBe(3 * BODY_CHUNK_BYTES - 3);
+    expect(first.text).not.toContain('�');
+    expect(budget.counters.indexBytes).toBeLessThan(65536);
+    const next = await readIndexedBodyPage(io, { bodyRef: body, offset: first.nextOffset, maxBytes: 4, budget: createWindowBudget() });
+    if (next.kind !== 'body') throw new Error('Expected body');
+    expect(next.text).toBe('😀');
+    expect(next.nextOffset - first.nextOffset).toBe(4);
   });
 });
