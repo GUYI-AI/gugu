@@ -5,6 +5,7 @@ import type { GuguMcpContext } from '../acp-engine-utils'
 import { passwordNativeMcpIdentity } from '../mcp/password-native-identity'
 import type { createBetaPasswordAccess } from '../permissions/password-beta-access'
 import { browserWebContentsRegistry as browsers } from '../session/main/core/browser/browser-webcontents-registry'
+import { credentialBindingMatches } from '../session/main/core/browser/credential-binding'
 import { createCredentialExecution } from '../session/main/core/browser/credential-execution'
 import { registerPrivateCredentialSurface } from '../session/main/core/browser/credential-isolation-registry'
 import { prepareCredentialBrowserPartition } from '../session/main/core/browser/credential-browser-destination'
@@ -206,7 +207,7 @@ export class BetaPasswordLogin {
   }
   private require(binding: CredentialUseBinding): Attempt {
     const use = this.attempts.get(binding.requestId)
-    if (!use || use.binding !== binding && JSON.stringify(use.binding) !== JSON.stringify(binding)) throw unavailable()
+    if (!use || !credentialBindingMatches(use.binding, binding)) throw unavailable()
     return use
   }
   private current(use: Attempt): void { this.host.signal.throwIfAborted(); this.host.assertCurrent(); use.execution.permission.assertCurrent(use.binding) }
