@@ -17,6 +17,27 @@ async function fixture(text: string) {
 }
 
 describe('incremental native source locators', () => {
+  it('restores the unfinished record start across a real capture close and reopen', async () => {
+    const prefix = '{"meta":true}\n', input = await fixture(prefix + '{"text":"' + 'x'.repeat(140_000) + '"}\n');
+    const first = await createBoundedRecordCapture(input.context, 'codex', 'restart', input.path);
+    const part = await first.readNext(0, createWindowBudget()); await first.close();
+    if (part.kind !== 'chunk') throw new Error('Unexpected reset');
+    const second = await createBoundedRecordCapture(input.context, 'codex', 'restart', input.path);
+    try {
+      const next = await second.readNext(part.end, createWindowBudget());
+      if (next.kind !== 'chunk') throw new Error('Unexpected reset');
+      expect(await readCapturedRecordStart(input.context.cacheDirectory, 'codex', 'restart', next.source, createWindowBudget()))
+        .toMatchObject({ kind: 'hit', range: { start: Buffer.byteLength(prefix), end: next.end } });
+    } finally { await second.close(); }
+  });
+
+  it('does not invent a record start at an arbitrary nonzero resume position', async () => {
+    const input = await fixture('x'.repeat(100_000));
+    const capture = await createBoundedRecordCapture(input.context, 'codex', 'unknown', input.path);
+    try { await expect(capture.readNext(65536, createWindowBudget())).rejects.toMatchObject({ code: 'record_start_unknown' }); }
+    finally { await capture.close(); }
+  });
+
   it('registers source and giant-record start while the raw capture blocks are consumed', async () => {
     const prefix = '{"meta":true}\n', record = '{"output":"' + 'x'.repeat(140_000) + '"}\r\n';
     const input = await fixture(prefix + record);
@@ -43,7 +64,7 @@ describe('incremental native source locators', () => {
     const file = await open(input.path, 'r');
     const read = vi.spyOn(file, 'read').mockRejectedValue(new Error('No extra source reads'));
     try {
-      await createRecordLocatorCapture(input.context, 'claude', 'session')(input.path, file, Buffer.from('{"text":"中文"}\n'), 0);
+      await createRecordLocatorCapture(input.context, 'claude', 'session')(input.path, file, Buffer.from('{"text":"中文"}\n'), 0, createWindowBudget());
       expect(read).not.toHaveBeenCalled();
       expect(await readSourceLocator(input.context.cacheDirectory, 'claude', 'session', createWindowBudget())).toMatchObject({ kind: 'hit' });
     } finally { await file.close(); }
@@ -60,7 +81,7 @@ describe('incremental native source locators', () => {
   it('keeps source metadata outside disposable projections and isolates native session ids', async () => {
     expect(sourceLocatorScope('claude', 'one')).not.toBe(sourceLocatorScope('codex', 'one'));
     const input = await fixture('{}\n'), file = await open(input.path, 'r');
-    try { await createRecordLocatorCapture(input.context, 'codex', 'one')(input.path, file, Buffer.from('{}\n'), 0); }
+    try { await createRecordLocatorCapture(input.context, 'codex', 'one')(input.path, file, Buffer.from('{}\n'), 0, createWindowBudget()); }
     finally { await file.close(); }
     expect(await readSourceLocator(input.context.cacheDirectory, 'codex', 'two', createWindowBudget())).toMatchObject({ kind: 'miss', reason: 'not_found' });
     expect(await readSourceLocator(input.context.cacheDirectory, 'codex', 'one', createWindowBudget())).toMatchObject({ kind: 'hit' });
