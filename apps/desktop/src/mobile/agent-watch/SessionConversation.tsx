@@ -1,3 +1,4 @@
+import { hasPendingWindow } from './timeline-window-fields'
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection'
 import { useRejectedSessionInputCommands } from '@/hooks/useRejectedSessionInputCommands'
 import { registerNativeComposer } from '@/lib/nativeComposerHandoff'
@@ -88,7 +89,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   /** A live foreground snapshot, not a cached/offline history window. */
   queueReady?: boolean
 }) {
-  const { resolvedLocale } = useLocale()
+  const { resolvedLocale, t } = useLocale()
   const { theme } = useTheme()
   const visibility = useConversationVisibility(true)
   const localClient = local ? assistantTimelineClient(true) : null
@@ -332,7 +333,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   return <ThemeProvider theme={theme} target="documentElement"><MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
     <div ref={visibility.ref} className="relative flex min-h-0 flex-1 flex-col"><SessionTranscriptView uri={sessionId} turns={turns} pendingPrompt={pendingPrompt ?? startupPrompt ?? pendingSends[0] ?? null} pendingMessages={pendingMessages} mobile commands={commands} backgroundTasks={background}
       onReachStart={() => { void quotes.loadOlder() }} composerContent={composer} shown={visibility.shown} onAtBottomChange={atBottom => { reading.onAtBottomChange(atBottom); if (atBottom) onAtBottom?.() }} onVisibleItems={reading.onVisibleItems} onReady={ready => { view.current = ready; reading.onReady(ready) }} className="relative min-h-0 flex-1" />
-    {turns.length === 0 ? emptyNote : null}</div>{outputs.panel}{options.confirmation}
+    {hasPendingWindow(timeline) ? <div className="gg-aw-placeholder" role="status">{t('agentWatch.timeline.loadingWindow')}</div> : turns.length === 0 ? emptyNote : null}</div>{outputs.panel}{options.confirmation}
   </MessageProvider></ThemeProvider>
 }
 
