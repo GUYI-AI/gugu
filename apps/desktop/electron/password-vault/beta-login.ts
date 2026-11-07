@@ -40,7 +40,7 @@ export class BetaPasswordLogin {
   private vault?: LocalPasswordVault
   constructor(private readonly host: BetaLoginHost) {}
   bindVault(vault: LocalPasswordVault): void { if (this.vault) throw unavailable(); this.vault = vault }
-  readonly sink: VaultBrowserSink = Object.freeze({
+  readonly sink: VaultBrowserSink = Object.freeze<VaultBrowserSink>({
     claimCredentialSink: (cap, binding) => this.require(binding).execution.authority.claimCredentialSink(cap, binding),
     fillAndSubmit: async (binding, secrets, control) => {
       const use = this.require(binding)
@@ -96,9 +96,11 @@ export class BetaPasswordLogin {
       const installation = await this.vault.prepareInstallationIdentity()
       assertCurrent(); installation.assertCurrent()
       if (installation.value.status !== 'persisted') throw unavailable()
+      // eslint-disable-next-line prefer-const -- callbacks read these before the two preparation phases finish.
       let binding: CredentialUseBinding | undefined, attempt: Attempt | undefined
       const native = { context, sessionId: identity.sessionId, installationId: installation.value.installationId,
         deviceId: this.host.deviceId, signal, assertCurrent }
+      // eslint-disable-next-line prefer-const -- the permission getter exists before the surface review produces its target.
       let target: Omit<CredentialUseBinding, 'requestId' | 'useId'> | undefined
       const port = await this.host.access.createPermission(native, () => binding ?? target!)
       assertCurrent()

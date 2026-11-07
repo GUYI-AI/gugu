@@ -1,5 +1,5 @@
-import { PasswordRequestCard, passwordRequest, PASSWORD_CARD_HEIGHT } from './PasswordRequestCard';
 /** @jsxImportSource solid-js */
+import { PasswordRequestCard, passwordRequest, PASSWORD_CARD_HEIGHT } from './PasswordRequestCard';
 import { GroupReply } from '../agent-activity/GroupReply';
 import { conversationSpeaker, messageReplyReference } from '@session-chat/state/conversation-density';
 import { For, Show, createMemo } from 'solid-js';

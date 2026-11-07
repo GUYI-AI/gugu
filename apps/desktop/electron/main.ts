@@ -1,3 +1,4 @@
+import type { VersionedSettingsTableClient } from '@gugu/core/cloud/userSettings'
 import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
 import { ServicePermissionPolicyStore } from './permissions/policy-store'
 import './browser-user-agent-bootstrap'
@@ -5058,7 +5059,7 @@ app.whenReady().then(async () => {
         ? { accessToken: auth.accessToken, refreshToken: auth.refreshToken ?? '', userId: auth.userId }
         : null
     }
-    const passwordPolicy = new ServicePermissionPolicyStore(supabase)
+    const passwordPolicy = new ServicePermissionPolicyStore(supabase as unknown as VersionedSettingsTableClient)
     emdash.installPasswordBetaHost({ window: () => mainWindow, account: async () => (await getSessionpageAuth())?.userId ?? null, device: localDeviceId,
       deliver: (sessionId, requestId, status) => emdash.deliverPasswordBetaDecision(sessionId, requestId, status),
       readPolicy: (ownerId, signal) => passwordPolicy.read(ownerId, signal) })

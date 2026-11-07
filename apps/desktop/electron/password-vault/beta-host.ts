@@ -17,7 +17,7 @@ import { BetaPasswordLogin } from './beta-login'
 
 export const PASSWORD_UI_CHANNEL = 'gugu:password-beta-ui'
 export const PASSWORD_CHANGED_CHANNEL = 'gugu:password-beta-changed'
-interface NativeHost { window(): BrowserWindow | null; account(): Promise<string | null>; device(): string | Promise<string>;
+interface NativeHost { window(): BrowserWindow | null; account(): Promise<string | null>; device(): string | null | Promise<string | null>;
   deliver(sessionId: string, requestId: string, status: string): Promise<void>;
   readPolicy(ownerId: string, signal: AbortSignal): Promise<PermissionPolicy> }
 type Account = Awaited<ReturnType<typeof createAccount>>
@@ -32,18 +32,21 @@ const changed = () => {
 }
 async function createAccount(ownerId: string, host: NativeHost) {
   const controller = new AbortController(), root = join(privatePasswordVaultDirectory(), ownerId)
+  const preferences = join(privatePasswordVaultDirectory(), 'beta-preferences', `${ownerId}.json`)
   let denied = false
   const assertCurrent = () => { controller.signal.throwIfAborted(); if (current && current.ownerId !== ownerId) throw unavailable() }
   const protection = async () => { if ((await protectedPrivateStorageStatus(PASSWORD_VAULT_STORAGE)).status !== 'ready') throw unavailable() }
   await protection()
-  try { denied = JSON.parse(await readFile(join(root, 'beta-mode.json'), 'utf8')).denied === true } catch { /* Default is per-use confirmation. */ }
+  try { denied = JSON.parse(await readFile(preferences, 'utf8')).denied === true } catch { /* Default is per-use confirmation. */ }
   const access = createBetaPasswordAccess({ signal: controller.signal, toolScope: guguMcpToolScope,
     readPolicy: async (owner, signal) => {
       if (await host.account() !== ownerId || owner !== ownerId || denied) throw unavailable()
       assertCurrent()
       return host.readPolicy(owner, signal)
     } })
-  const login = new BetaPasswordLogin({ ownerId, deviceId: await host.device(), signal: controller.signal,
+  const deviceId = await host.device()
+  if (!deviceId) throw unavailable()
+  const login = new BetaPasswordLogin({ ownerId, deviceId, signal: controller.signal,
     access, assertCurrent, changed, denied: () => denied, deliver: host.deliver })
   const { vault } = createVaultStorage({ root, accountId: ownerId, installationBinding: app.getPath('userData'),
     assertLocalPerson: value => { assertCurrent(); if (value !== person) throw unavailable() },
@@ -61,8 +64,8 @@ async function createAccount(ownerId: string, host: NativeHost) {
     denied: () => denied,
     setDenied: async (value: boolean) => {
       await protection(); assertCurrent()
-      await mkdir(root, { recursive: true, mode: 0o700 })
-      await writeFile(join(root, 'beta-mode.json'), JSON.stringify({ denied: value }), { mode: 0o600 })
+      await mkdir(join(privatePasswordVaultDirectory(), 'beta-preferences'), { recursive: true, mode: 0o700 })
+      await writeFile(preferences, JSON.stringify({ denied: value }), { mode: 0o600 })
       denied = value
       if (value) login.invalidate()
     },
@@ -77,7 +80,11 @@ async function account(): Promise<Account> {
   }
   if (current) return current
   creating ??= createAccount(ownerId, native)
-  try { current = await creating; if (await native.account() !== ownerId) { current.controller.abort(); throw unavailable() }; return current }
+  try {
+    current = await creating
+    if (await native.account() !== ownerId) { current.controller.abort(); throw unavailable() }
+    return current
+  }
   finally { creating = undefined }
 }
 async function snapshot(value: Account): Promise<PasswordSnapshot> {
