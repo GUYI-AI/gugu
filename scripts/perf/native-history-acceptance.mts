@@ -28,7 +28,13 @@ export function validateSample(sample: Sample, kind: FixtureKind, cacheState: st
     if (kind === 'valid-jsonl' && !sample.durableImportLocator) throw new Error('Use the actual capture/import locator path')
   } else {
     if (sample.durableImportLocator) throw new Error('Unknown-start legacy evidence must not receive an invented locator')
-    if (!sample.background || sample.background.bytes <= 0 || sample.background.elapsedMs < 0 || sample.background.resumedFrom <= 0) throw new Error('Measure background discovery and an actual checkpoint resume separately')
+    for (const field of ['bytes', 'elapsedMs', 'resumedFrom', 'maximumTaskMs'] as const) {
+      const amount = sample.background?.[field]
+      if (typeof amount !== 'number' || !Number.isFinite(amount) || (field === 'maximumTaskMs' ? amount < 0 : amount <= 0)) {
+        throw new Error(`Missing actual background discovery/resume measurement: ${field}`)
+      }
+      if ((field === 'bytes' || field === 'resumedFrom') && !Number.isSafeInteger(amount)) throw new Error('Invalid background byte offset')
+    }
   }
 }
 /** Only inspect this process and descendants; never inspect unrelated process command lines. */

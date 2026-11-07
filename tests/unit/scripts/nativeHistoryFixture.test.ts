@@ -54,3 +54,22 @@ describe('history measurement result gate', () => {
     expect(() => validateSample({ ...sample, durableImportLocator: false }, 'legacy-giant', 'absent', true)).toThrow()
   })
 })
+
+
+describe('giant background measurement runtime validation', () => {
+  const valid = { evidence: 'desktop' as const, firstFrameMs: 1, firstReadablePaintMs: null,
+    readableText: '', placeholder: true, durableImportLocator: false, cacheState: 'absent',
+    sourceBytes: 65536, indexBytes: 4096, decodedBytes: 0, outputBytes: 1024,
+    background: { bytes: 629145600, elapsedMs: 2000, resumedFrom: 65536, maximumTaskMs: 4 } }
+  it('accepts measured background work without mistaking the placeholder for readable paint', () => {
+    expect(() => validateSample(valid, 'legacy-giant', 'absent', true)).not.toThrow()
+  })
+  it.each([undefined, {}, { bytes: NaN }, { elapsedMs: NaN }, { resumedFrom: NaN },
+    { bytes: Infinity }, { elapsedMs: Infinity }, { maximumTaskMs: Infinity },
+    { bytes: 0 }, { elapsedMs: 0 }, { resumedFrom: 0 }, { resumedFrom: 1.5 }])('rejects incomplete or invalid background data: %j', mutation => {
+    const background = mutation === undefined ? undefined : { ...valid.background, ...mutation }
+    // Deliberate malformed adapter output: an empty object must fail even without static types.
+    const malformed = mutation && Object.keys(mutation).length === 0 ? {} : background
+    expect(() => validateSample({ ...valid, background: malformed } as unknown as Parameters<typeof validateSample>[0], 'legacy-giant', 'absent', true)).toThrow()
+  })
+})
