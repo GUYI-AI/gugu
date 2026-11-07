@@ -37,9 +37,14 @@ export function mergeTimelineWindowFields(
   const fragments = union(windowResolved, union(pages.sourceFragments ?? [], tail.sourceFragments ?? [], value => value.key), value => value.key)
   const owners = allOwners.filter(value => arrived(value) || fragments.some(fragment => fragment.key === value.fragmentKey))
   const bodyKey = (ref: NonNullable<TimelineWindowFields['bodyRefs']>[number]) => JSON.stringify(ref.owner.kind === 'canonical' ? ['canonical', ref.owner.turnId, ref.owner.itemId, ref.id] : ['fragment', ref.owner.fragmentKey, ref.id])
-  const bodyRefs = mode === 'older'
+  const bodyRefs = (mode === 'older'
     ? union(incoming.bodyRefs ?? [], base.bodyRefs ?? [], bodyKey)
-    : union(base.bodyRefs ?? [], incoming.bodyRefs ?? [], bodyKey)
+    : union(base.bodyRefs ?? [], incoming.bodyRefs ?? [], bodyKey)).filter(ref => {
+    const owner = ref.owner
+    if (owner.kind === 'canonical') return arrived(owner)
+    const fragment = fragments.find(value => value.key === owner.fragmentKey)
+    return !!fragment && (!fragment.bodyRef || (fragment.bodyRef.id === ref.id && fragment.bodyRef.revision === ref.revision))
+  })
   return {
     windowTail: tail, windowPages: pages, bodyRefs, sourceFragments: fragments, resolvedFragmentOwners: owners,
     pendingLongRecords: union(pages.pendingLongRecords ?? [], tail.pendingLongRecords ?? [], value => value.ticket),

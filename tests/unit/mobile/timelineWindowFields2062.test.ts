@@ -36,14 +36,16 @@ describe('bounded timeline window metadata', () => {
   })
 
   it('keeps a newer canonical revision when an older page arrives', () => {
-    const current = merge({}, { bodyRefs: [ref('new')] }, 'snapshot')
-    expect(merge(current, { bodyRefs: [ref('old')] }, 'older').bodyRefs).toEqual([ref('new')])
-    expect(merge(current, { bodyRefs: [ref('next')] }, 'batch').bodyRefs).toEqual([ref('next')])
+    const turns = [{ id: 'turn', items: [{ id: 'item' }] }]
+    const current = merge({}, { bodyRefs: [ref('new')] }, 'snapshot', turns)
+    expect(merge(current, { bodyRefs: [ref('old')] }, 'older', turns).bodyRefs).toEqual([ref('new')])
+    expect(merge(current, { bodyRefs: [ref('next')] }, 'batch', turns).bodyRefs).toEqual([ref('next')])
   })
 
   it('does not merge references belonging to different canonical items by body ID alone', () => {
     const other = { ...ref('other'), owner: { kind: 'canonical' as const, turnId: 't2', itemId: 'i2' }, turnId: 't2', itemId: 'i2' }
-    const state = merge({}, { bodyRefs: [ref('first'), other] }, 'snapshot')
+    const state = merge({}, { bodyRefs: [ref('first'), other] }, 'snapshot',
+      [{ id: 'turn', items: [{ id: 'item' }] }, { id: 't2', items: [{ id: 'i2' }] }])
     expect(state.bodyRefs).toHaveLength(2)
   })
   it('keeps a fragment without readable text loading until the canonical item arrives', () => {
@@ -83,4 +85,27 @@ it('retains out-of-order owner fragments until real content arrives, then releas
   expect(arrived.sourceFragments).toEqual([])
   expect(arrived.resolvedFragmentOwners).toEqual([owner])
   expect(merge(arrived, {}, 'batch').resolvedFragmentOwners).toEqual([])
+})
+
+it.each([false, true])('releases old refs across 200 tail replacements (resident page=%s)', withPage => {
+  const body = (key: string): NonNullable<TimelineWindowFields['bodyRefs']>[number] => {
+    const { turnId: _turn, itemId: _item, ...value } = ref('r')
+    return { ...value, id: key, owner: { kind: 'fragment', fragmentKey: key } }
+  }
+  const page = { ...fragment, key: 'page', bodyRef: body('page') }
+  let state = merge({}, withPage ? { sourceFragments: [page], bodyRefs: [page.bodyRef] } : {}, 'older')
+  for (let index = 0; index < 200; index++) {
+    const value = { ...fragment, key: `tail-${index}`, bodyRef: body(`tail-${index}`) }
+    state = merge(state, { sourceFragments: [value], bodyRefs: [value.bodyRef] }, 'batch')
+    expect(state.bodyRefs).toHaveLength(withPage ? 2 : 1)
+  }
+  const expected = withPage ? ['page', 'tail-199'] : ['tail-199']
+  expect(state.sourceFragments?.map(value => value.key)).toEqual(expected)
+  expect(state.bodyRefs?.map(value => value.id)).toEqual(expected)
+})
+
+it('releases canonical refs when their actual resident owner leaves the window', () => {
+  const state = merge({}, { bodyRefs: [ref('r')] }, 'snapshot', [{ id: 'turn', items: [{ id: 'item' }] }])
+  expect(state.bodyRefs).toHaveLength(1)
+  expect(merge(state, {}, 'batch', []).bodyRefs).toEqual([])
 })
