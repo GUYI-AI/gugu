@@ -8,7 +8,7 @@ type Job = { path: string; checkpoint: ReverseCheckpoint; directory: string; sco
 
 /** One selected job plus one replaceable pending job; no history-sized in-memory queue. */
 export function createReverseIndexScheduler(callbacks: {
-  onFailure(error: unknown): void;
+  onFailure(error: unknown, jobId: string): void;
   onStep?(checkpoint: ReverseCheckpoint, io: Readonly<WindowIoCounters>): void;
   /** Actual read accounting for every admitted batch, including cancellation or failure. */
   onRead?(jobId: string, io: Readonly<WindowIoCounters>): void;
@@ -61,10 +61,11 @@ export function createReverseIndexScheduler(callbacks: {
   }
   async function drain(): Promise<void> {
     while (queued && !disposed) {
-      current = queued; queued = null;
+      const job = queued;
+      current = job; queued = null;
       controller = new AbortController();
-      try { await locate(current, controller.signal); }
-      catch (error) { if (!controller.signal.aborted) callbacks.onFailure(error); }
+      try { await locate(job, controller.signal); }
+      catch (error) { if (!controller.signal.aborted) callbacks.onFailure(error, job.checkpoint.jobId); }
       finally { controller = null; current = null; }
     }
   }
