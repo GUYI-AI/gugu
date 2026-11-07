@@ -46,7 +46,7 @@ function isRootSend(item: ToolCallItem): item is McpToolCall {
   return tool === 'message_send' || tool === 'widget_send';
 }
 
-function sendArgs(item: McpToolCall): Record<string, unknown> {
+export function sendArgs(item: McpToolCall): Record<string, unknown> {
   return (catalogCall(item.tool, item.rawInput)?.args ?? JSON.parse(item.rawInput ?? '')) as Record<string, unknown>;
 }
 
@@ -105,7 +105,7 @@ export function messageSendTargetOf(item: TranscriptItem, turn?: TranscriptTurn)
   if (item.kind !== 'mcp-tool-call' || item.status === 'error' || item.parentToolCallId || !isGuguServer(item.server)
     || !/(?:^|__)message_send(?:_file)?$/.test(item.tool)) return null;
   try {
-    const args = JSON.parse(item.rawInput ?? '') as Record<string, unknown>;
+    const args = sendArgs(item);
     return args && typeof args.chat_id === 'string' && args.chat_id.trim() ? chatSendTarget(args, item, turn) : null;
   } catch { return null; }
 }

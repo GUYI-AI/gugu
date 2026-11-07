@@ -169,7 +169,7 @@ function harness(members: string[] = [], groupPrompt: string | null = null) {
       const row = {
         id: args.message_id, chat_id: args.chat_id, sender_user_id: args.sender_user_id, to_user_ids: args.to_user_ids, thread_root_id: args.thread_root_id ?? null,
         content: `[附件] ${String(args.file_name)} (${type})\n[Size] ${bytes.length}\n[Kind] ${type.startsWith('image/') ? 'image' : 'file'}`,
-        content_type: 'attachment', file_item_id: `item:${String(args.staging_key)}`, file_version: 1, file_blob_id: null,
+        content_type: 'attachment', file_item_id: W_NEW, file_version: 1, file_blob_id: null,
       }
       // 服务端按消息 id 幂等:同一条重放,回同一行,不再多一条。
       if (!calls.inserts.some(([, existing]) => (existing as Record<string, unknown>).id === row.id)) calls.inserts.push(['messages', row])
@@ -254,7 +254,7 @@ function harness(members: string[] = [], groupPrompt: string | null = null) {
     attachmentsEndpoint: async () => ({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 'token', fetch: attachmentsFetch }),
     resolveFile: async (ref: { message_id: string }) => {
       const message = calls.inserts.map(([, row]) => row as Record<string, unknown>).find(row => row.id === ref.message_id)
-      const bytes = stagedBytes.get(String(message?.file_item_id).slice('item:'.length))
+      const bytes = stagedBytes.get(String(commitBodies.find(body => body.message_id === message?.id)?.staging_key))
       return bytes ? verifiedFileHandle(bytes) : { status: 'gone', sha256: null }
     },
   }
@@ -1948,7 +1948,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(JSON.parse(text(r))).toMatchObject({ status: 'sent', file_name: 'a b.png', source_link: expect.stringMatching(/^gugu-chat:\/\/00000000-0000-4000-8000-000000000001\//) })
     expect(h.calls.uploads[0][0]).toBe('oss')
     const row = h.calls.inserts[0][1] as Record<string, unknown>
-    expect(row).toMatchObject({ content_type: 'attachment', chat_id: '00000000-0000-4000-8000-000000000001', sender_user_id: 'agent-1', file_item_id: `item:${String(h.calls.uploads[0][1])}` })
+    expect(row).toMatchObject({ content_type: 'attachment', chat_id: '00000000-0000-4000-8000-000000000001', sender_user_id: 'agent-1', file_item_id: W_NEW })
     expect(String(row.content)).toContain('[附件] a b.png')
     await client.close()
   })
@@ -2040,7 +2040,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     // 新式信封:[附件] / [Size] / [Kind] 三行(没有 [URL],字节由消息指着的条目给)。
     expect(String(row.content).split('\n')).toHaveLength(3)
     expect(String(row.content)).toContain(`[Size] ${size}`)
-    expect(row.file_item_id).toBe(`item:${String(h.calls.uploads[0][1])}`)
+    expect(row.file_item_id).toBe(W_NEW)
     await client.close()
   })
   test('message_send_file → commit 被拒:报错原话,没有消息(没提交的上传在服务端过期回收,这里不清)', async () => {

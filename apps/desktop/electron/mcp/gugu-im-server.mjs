@@ -1357,6 +1357,13 @@ async function floodNotice(deps, chatId, kind) {
   }
 }
 
+/** An empty page is only an empty chat when this reader can see the chat; otherwise say so instead of returning []. */
+async function assertReadableWhenEmpty(deps, rows, chatId, readAs) {
+  if (rows?.length) return
+  const facts = await deps.restRpc('chat_facts', { p_chat_id: chatId, p_as_user_id: readAs })
+  if (!facts?.length) throw new Error('Conversation is unavailable for this reader')
+}
+
 async function handleMessage(args, deps) {
   const requestedAction = args.action
   const writerToolName = requestedAction === 'contact-friend'
@@ -1572,6 +1579,7 @@ async function handleMessage(args, deps) {
       threadRootId: args.thread_root_id ? String(args.thread_root_id) : null,
       beforeSeq: Number.isFinite(args.before_seq) ? Math.floor(args.before_seq) : null,
       limit: clampLimit(args.limit, 20, 1, 100) })
+    await assertReadableWhenEmpty(deps, rows, chatId, readAs)
     return JSON.stringify((rows ?? []).map(withFolderFile))
   }
   if (args.action === 'search') {
@@ -1582,6 +1590,7 @@ async function handleMessage(args, deps) {
       p_before_seq: Number.isFinite(args.before_seq) ? Math.floor(args.before_seq) : null,
       p_limit: clampLimit(args.limit, 20, 1, 100),
     })
+    await assertReadableWhenEmpty(deps, rows, chatId, readAs)
     return JSON.stringify((rows ?? []).map(withFolderFile))
   }
   throw new Error(`gugu_message: unknown action ${args.action}`)
