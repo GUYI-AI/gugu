@@ -9,6 +9,8 @@ import { i18n } from '@/i18n'
 import '@/i18n/registerAgentsCatalog'
 import '@/styles/tokens.css'
 import '@renderer/index.css'
+import '@gugu/session-shared/animation-visibility.css'
+import { ANIMATION_WINDOW_SEEN_EVENT, isAnimationWindowVisible } from '@gugu/session-shared/animation-visibility'
 
 // Real token, flex row, dock, ResizeObserver and Base UI popover; avatar drawing and message fetching
 // do not own this geometry contract.
@@ -135,6 +137,20 @@ describe('running strip: one row, +N opens a grouped, capped, scrolling panel', 
       expect(composer().getBoundingClientRect().top).toBe(original.top)
     })
   }
+
+  it('a folded token keeps its layout but not its shimmer clock; unfolding resumes it', async () => {
+    isAnimationWindowVisible(document)
+    window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: true }))
+    await mount(320, tokens(20, () => true))
+    const states = (folded: boolean) => [...column!.querySelectorAll<HTMLElement>('.rtb-bar > .rtb-tok')]
+      .filter(token => (getComputedStyle(token).visibility === 'hidden') === folded)
+      .flatMap(token => token.querySelector('.rtb-state')!.getAnimations({ subtree: true }).map(animation => animation.playState))
+    expect(states(true).length).toBeGreaterThan(0)
+    await until('shown tokens run once their viewport observer reports', () => states(false).length > 0 && states(false).every(state => state === 'running'))
+    expect(new Set(states(true))).toEqual(new Set(['paused']))
+    column!.style.width = '1100px'
+    await until('more tokens unfold and run', () => states(false).length > 2 && states(false).every(state => state === 'running'))
+  })
 
   it('draws no group names when every overflow agent has the same owner', async () => {
     await mount(320, tokens(20, () => false))

@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
 import { TextShimmer } from '@gugu/session-ui/react/text-shimmer'
-import type { MouseEvent } from 'react'
+import type { CSSProperties, MouseEvent } from 'react'
 import { Avatar } from './Avatar'
 import { useLongPress } from '../hooks/useLongPress'
 import { useMobileShell } from '../hooks/useMobileShell'
@@ -127,7 +127,10 @@ function RunningTokenItem({
       closeDelay={150}
       payload={token}
       className={overflow ? 'rtb-otok' : 'rtb-tok'}
-      style={folded ? { position: 'absolute', left: 0, top: 0, visibility: 'hidden' } : undefined}
+      // @@@folded-shimmer-paused — a folded token stays mounted only to be measured. Chrome will not composite an animation
+      // nobody can see, so its shimmer ran on the main thread every frame (20+ folded tokens in a busy group). Pause it as
+      // a retained surface (animation-visibility.css); unfolding resumes the same clock.
+      style={folded ? { position: 'absolute', left: 0, top: 0, visibility: 'hidden', '--gugu-animation-surface-paused': 'paused' } as CSSProperties : undefined}
       data-clickable={onTokenClick ? 'true' : 'false'}
       data-message-preview-trigger={token.id}
       aria-label={t('runtime.viewDetails', { name: displayName, status: stateWord })}
