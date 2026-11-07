@@ -342,12 +342,6 @@ export const sessionHostBuildEntries: ElectronOptions[] = [
 
 export const electronBuildEntries: ElectronOptions[] = [
   {
-    // Private login gets no application/App bridge and exposes nothing to the page world.
-    entry: vaultLoginPreloadEntry,
-    vite: { plugins: [deterministicModuleSideEffects()] },
-    onstart(options) { if (viteOwnsElectronProcess) options.reload() },
-  },
-  {
     // @@@4865 — 主进程 + 会话页主进程图 + 三个 fork worker 是**同一次** lib 构建的四个入口:
     //  · main             ← electron/main.ts(咕咕宿主)
     //  · emdash-main-bridge ← 会话页主进程图的唯一 re-export 入口;main.ts 在 whenReady 里
@@ -408,6 +402,13 @@ export const electronBuildEntries: ElectronOptions[] = [
       if (!viteOwnsElectronProcess) return
       options.reload()
     },
+  },
+  {
+    // Keep the existing main/preload positions stable; the private login bridge is an additional entry.
+    // It gets no application/App bridge and exposes nothing to the page world.
+    entry: vaultLoginPreloadEntry,
+    vite: { plugins: [deterministicModuleSideEffects()] },
+    onstart(options) { if (viteOwnsElectronProcess) options.reload() },
   },
 ]
 
