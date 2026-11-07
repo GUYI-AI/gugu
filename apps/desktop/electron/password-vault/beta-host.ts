@@ -120,7 +120,8 @@ export function installPasswordBetaHost(host: NativeHost): void {
         case 'decide': value.login.decide(command.requestId, command.decision); break
         default: throw unavailable()
       }
-      changed()
+      // Snapshot subscribers read here; broadcasting a read would recursively request another snapshot.
+      if (command.type !== 'snapshot') changed()
       return { ok: true, snapshot: await snapshot(value) }
     } catch (error) {
       // No exception, message, cause, command or field is forwarded to any logger.
