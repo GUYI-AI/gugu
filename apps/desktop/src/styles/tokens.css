@@ -1924,6 +1924,11 @@ body.barcode-scanner-active #root {
   }
 }
 /* 文件预览上方一行:页面里有文件此刻取不到(存它的电脑离线),说清是哪台。 */
+/* A full-screen tab (tab-fullscreen) sets prose in a centered column, as ChatGPT's full-screen page does (FOLDER-66).
+   data-reading-column is set by MessageFilePreviewPanel: code, tables, PDF and HTML never carry it. */
+[data-tab-fullscreen] [data-reading-column="text"] > * { max-width: 760px; margin-inline: auto; }
+[data-tab-fullscreen] [data-reading-column="docx"] .document-preview-docx-body section.docx { max-width: 816px; margin-inline: auto !important; }
+
 .gg-file-preview-notice {
   margin: 0 18px 10px;
   padding: 8px 12px;

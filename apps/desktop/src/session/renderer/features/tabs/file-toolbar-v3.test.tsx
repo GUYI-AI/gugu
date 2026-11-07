@@ -6,6 +6,7 @@ import { PaneContext } from '@renderer/features/tabs/pane-context';
 import { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { createTabProvider, createTabRegistry } from '@renderer/features/tabs/core/tab-provider-registry';
 import { MessageFilePreviewPanel } from '@/components/chat/MessageFilePreviewPanel';
+import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
 
 vi.mock('react-i18next', async (original) => ({ ...await original<typeof import('react-i18next')>(), useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
@@ -15,7 +16,7 @@ const host = document.createElement('div');
 document.body.appendChild(host);
 const root = createRoot(host);
 let layout: PaneLayoutStore;
-afterEach(() => { act(() => root.render(null)); layout?.dispose(); });
+afterEach(() => { act(() => root.render(null)); tabFullscreen.exit(); layout?.dispose(); });
 function mount(fromConversation: boolean, narrow = true) {
   const provider = (kind: string, conversation = false) => createTabProvider({ kind, conversation, resourceKey: (s: { id: string }) => s.id, initialize: () => ({ dispose() {} }), dispose() {}, TabBarItem: () => null, TabBarItemDragPreview: () => null, TabContent: () => null });
   layout = new PaneLayoutStore(createTabRegistry([provider('conversation', true), provider('file')]), { viewId: 'file-toolbar' });
@@ -54,4 +55,21 @@ it('uses the shared file toolbar for an unclaimed group file with read-only edit
   expect(toolbar!.querySelector<HTMLButtonElement>('[aria-label="tabs.edit"]')!.disabled).toBe(true);
   await act(async () => toolbar!.querySelector<HTMLButtonElement>('[aria-label="tabs.back"]')!.click());
   expect(pane.navigationOf(pane.resolvedActiveTabId!)?.index).toBe(0);
+});
+it('offers a worded way out of full screen only while the file tab is full screen (FOLDER-66)', async () => {
+  const { file, pane } = mount(false);
+  expect(host.querySelector('[data-testid="file-toolbar-exit-fullscreen"]')).toBeNull();
+  act(() => tabFullscreen.toggle(pane, file));
+  const exit = host.querySelector<HTMLButtonElement>('[data-file-toolbar] [data-testid="file-toolbar-exit-fullscreen"]');
+  expect(exit?.textContent).toBe('tabs.restorePane');
+  await act(async () => exit!.click());
+  expect(tabFullscreen.isOn(pane)).toBe(false);
+  expect(host.querySelector('[data-testid="file-toolbar-exit-fullscreen"]')).toBeNull();
+});
+it('marks prose for the full-screen reading column and leaves code alone', () => {
+  mount(false);
+  expect(host.querySelector('[data-file-selection]')!.getAttribute('data-reading-column')).toBe('text');
+  const pane = layout.focusedPane;
+  act(() => root.render(<PaneContext.Provider value={{ pane, paneId: layout.activePaneId, isFocusedPane: true }}><MessageFilePreviewPanel tabbed fill file={{ fileName: 'add.ts', sizeBytes: 12, mimeType: 'text/plain' }} kind="text" content="export {}" loading={false} onClose={() => {}} /></PaneContext.Provider>));
+  expect(host.querySelector('[data-file-selection]')!.hasAttribute('data-reading-column')).toBe(false);
 });
