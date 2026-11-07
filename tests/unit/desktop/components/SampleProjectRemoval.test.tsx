@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act } from 'react'
 import { clickElement, createNode, createReactHarness, fireContextMenu, waitForCondition } from '../../../support/testHarness'
 
 const io = vi.hoisted(() => ({ rows: new Map<string, Record<string, unknown>>(), failWrite: false, toast: vi.fn() }))
@@ -32,6 +33,25 @@ async function removeFromRow(harness: ReturnType<typeof createReactHarness>) {
 }
 
 describe('removing the sample from its actual sidebar row', () => {
+  it('anchors the menu to the source row instead of the pointer over its name', async () => {
+    const harness = createReactHarness()
+    try {
+      await harness.render(createNode(SampleProjectSidebar))
+      await waitForCondition(() => !!harness.container.querySelector('[role="treeitem"]'), 'sample row shown')
+      const row = harness.container.querySelector<HTMLElement>('[role="treeitem"]')!
+      const bounds = new DOMRect(100, 120, 240, 36)
+      vi.spyOn(row.parentElement!, 'getBoundingClientRect').mockReturnValue(bounds)
+      await act(async () => { row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 160, clientY: 130 })) })
+      const positioner = () => document.querySelector<HTMLElement>('.gg-menu-positioner')
+      await waitForCondition(() => !!positioner(), 'removal menu positioned')
+      await waitForCondition(() => {
+        const popup = positioner()!
+        return popup.style.getPropertyValue('--anchor-width') === `${bounds.width}px`
+          && popup.style.getPropertyValue('--anchor-height') === `${bounds.height}px`
+      }, 'removal menu uses the row bounds')
+    } finally { harness.cleanup() }
+  })
+
   it('exposes the usual row menu and removes the row after its account save succeeds', async () => {
     const harness = createReactHarness()
     try {

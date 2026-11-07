@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Menu, MenuItem } from '@/components/ui/Menu';
 import { useRowContextMenu } from '@/hooks/useRowContextMenu';
 import { Trash } from '@/lib/icons';
@@ -11,6 +11,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 export function SampleProjectRowMenu({ userId, children }: { userId: string; children: ReactNode }) {
   const { translate } = useSessionMessages();
   const menu = useRowContextMenu();
+  const row = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
   const remove = async () => {
     menu.closeMenu();
@@ -24,9 +25,9 @@ export function SampleProjectRowMenu({ userId, children }: { userId: string; chi
       setBusy(false);
     }
   };
-  return <div onContextMenu={menu.onContextMenu} aria-busy={busy || undefined}>
+  return <div ref={row} onContextMenu={menu.onContextMenu} aria-busy={busy || undefined}>
     {children}
-    {menu.menuPos && <Menu {...menu.menuPos} onClose={menu.closeMenu}>
+    {menu.menuPos && <Menu anchor={row} onClose={menu.closeMenu}>
       <MenuItem icon={<Trash size={15} aria-hidden />} danger disabled={busy} onClick={() => void remove()}>
         {translate('projects.sample.remove')}
       </MenuItem>
