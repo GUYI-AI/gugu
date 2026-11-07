@@ -71,7 +71,7 @@ final class GuguInProcessHost {
             catch { if isPermissionFailure(error) { try revokeCalendarAccess() }; throw error }
         }
         var view = job
-        view["nativeCalls"] = journal.calls(jobId: jobId)
+        view["nativeCalls"] = try journal.calls(jobId: jobId)
         return view
     }
 

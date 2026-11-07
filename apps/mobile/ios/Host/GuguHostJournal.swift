@@ -1,10 +1,62 @@
 import Foundation
 import CryptoKit
+import Darwin
+
+/// All handles for one journal share a recursive transaction lock. The stable
+/// sidecar file also excludes writers in another process across atomic renames.
+final class GuguJournalFileLock {
+    private final class Entry {
+        let mutex = NSRecursiveLock()
+        var depth = 0
+        var descriptor: Int32 = -1
+    }
+    private static let registryLock = NSLock()
+    private static var registry: [String: Entry] = [:]
+    private let entry: Entry
+    private let path: String
+
+    init(url: URL) {
+        path = url.resolvingSymlinksInPath().standardizedFileURL.path + ".lock"
+        Self.registryLock.lock()
+        defer { Self.registryLock.unlock() }
+        if let existing = Self.registry[path] { entry = existing }
+        else { let created = Entry(); Self.registry[path] = created; entry = created }
+    }
+
+    func lock() throws {
+        entry.mutex.lock()
+        if entry.depth == 0 {
+            let descriptor = open(path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0o600)
+            guard descriptor >= 0 else { entry.mutex.unlock(); throw Self.ioError() }
+            while flock(descriptor, LOCK_EX) != 0 {
+                let code = errno
+                if code == EINTR { continue }
+                close(descriptor)
+                entry.mutex.unlock()
+                throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+            }
+            entry.descriptor = descriptor
+        }
+        entry.depth += 1
+    }
+
+    func unlock() {
+        entry.depth -= 1
+        if entry.depth == 0 {
+            flock(entry.descriptor, LOCK_UN)
+            close(entry.descriptor)
+            entry.descriptor = -1
+        }
+        entry.mutex.unlock()
+    }
+
+    private static func ioError() -> POSIXError { POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+}
 
 /// The native owner-scoped journal is authoritative for task and write admission.
 /// Each transaction is persisted before it replaces the in-memory state.
 final class GuguHostJournal {
-    private let lock = NSRecursiveLock()
+    private let lock: GuguJournalFileLock
     private let url: URL
     private let ownerId: String
     private let installationId: String
@@ -23,17 +75,14 @@ final class GuguHostJournal {
         var protectedDirectory = directory
         try protectedDirectory.setResourceValues(values)
         url = directory.appendingPathComponent("host.json")
+        lock = GuguJournalFileLock(url: url)
+        state = ["version": 1, "ownerId": ownerId, "installationId": installationId,
+                 "jobs": [String: Any](), "calls": [String: Any]()]
+        try lock.lock(); defer { lock.unlock() }
         if FileManager.default.fileExists(atPath: url.path) {
-            let data = try Data(contentsOf: url)
-            guard let saved = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  saved["version"] as? Int == 1, saved["ownerId"] as? String == ownerId,
-                  saved["installationId"] as? String == installationId else {
-                throw GuguHostFailure(code: "stale_context", message: "Journal owner, installation or version mismatch")
-            }
-            state = saved
+            state = try readLatest()
         } else {
-            state = ["version": 1, "ownerId": ownerId, "installationId": installationId,
-                     "jobs": [String: Any](), "calls": [String: Any]()]
+            try persist(state)
         }
         try update { next in
             var jobs = next["jobs"] as? [String: [String: Any]] ?? [:]
@@ -59,7 +108,7 @@ final class GuguHostJournal {
     }
 
     func admit(_ context: GuguHostContext, prompt: String, modelId: String, systemPrompt: String = "", tools: [[String: Any]] = [], messages: [[String: Any]] = []) throws -> Bool {
-        lock.lock(); defer { lock.unlock() }
+        try lock.lock(); defer { lock.unlock() }
         try validate(context)
         return try update { next in
             var jobs = next["jobs"] as? [String: [String: Any]] ?? [:]
@@ -87,7 +136,8 @@ final class GuguHostJournal {
 
     func checkActive(_ context: GuguHostContext) throws {
         try validate(context)
-        lock.lock(); defer { lock.unlock() }
+        try lock.lock(); defer { lock.unlock() }
+        state = try readLatest()
         guard let job = (state["jobs"] as? [String: [String: Any]])?[context.jobId],
               let binding = job["context"] as? [String: Any], try Self.context(binding) == context else {
             throw Self.failure("stale_context", "Task binding is no longer current")
@@ -98,7 +148,7 @@ final class GuguHostJournal {
     }
 
     func record(_ context: GuguHostContext, event: [String: Any], messages: [[String: Any]]?) throws {
-        lock.lock(); defer { lock.unlock() }
+        try lock.lock(); defer { lock.unlock() }
         try checkActive(context)
         try updateJob(context.jobId) { job in
             var events = job["events"] as? [[String: Any]] ?? []
@@ -124,7 +174,7 @@ final class GuguHostJournal {
     }
 
     func cancel(_ context: GuguHostContext) throws {
-        lock.lock(); defer { lock.unlock() }
+        try lock.lock(); defer { lock.unlock() }
         try checkActive(context)
         try update { next in
             var jobs = next["jobs"] as? [String: [String: Any]] ?? [:]
@@ -147,7 +197,7 @@ final class GuguHostJournal {
 
     func admitTool(_ context: GuguHostContext, toolCallId: String, action: String,
                    arguments: [String: Any], deadlineAtMs: Int64) throws -> (GuguNativeToolRequest, [String: Any]?) {
-        lock.lock(); defer { lock.unlock() }
+        try lock.lock(); defer { lock.unlock() }
         try checkActive(context)
         guard ["calendar.events.list", "calendar.events.create", "calendar.events.update", "calendar.events.delete"].contains(action), !toolCallId.isEmpty else {
             throw Self.failure("invalid_args", "Unsupported native tool or missing tool-call ID")
@@ -177,7 +227,7 @@ final class GuguHostJournal {
     }
 
     func approve(_ request: GuguNativeToolRequest) throws {
-        lock.lock(); defer { lock.unlock() }
+        try lock.lock(); defer { lock.unlock() }
         try checkActive(request.context)
         try checkDeadline(request)
         try updateCall(request.requestId) { call in
@@ -193,7 +243,7 @@ final class GuguHostJournal {
     }
 
     func beginMutation(_ request: GuguNativeToolRequest) throws {
-        lock.lock(); defer { lock.unlock() }
+        try lock.lock(); defer { lock.unlock() }
         try checkActive(request.context)
         try checkDeadline(request)
         try updateCall(request.requestId) { call in
@@ -238,7 +288,8 @@ final class GuguHostJournal {
     }
 
     func job(_ id: String) throws -> [String: Any] {
-        lock.lock(); defer { lock.unlock() }
+        try lock.lock(); defer { lock.unlock() }
+        state = try readLatest()
         guard let job = (state["jobs"] as? [String: [String: Any]])?[id] else { throw Self.failure("invalid_args", "Unknown task") }
         return job
     }
@@ -271,7 +322,7 @@ final class GuguHostJournal {
     /// receipt is explicitly unknown/interrupted, never a claim that a write failed.
     /// These are native recovery records, not fabricated Pi stream events.
     func continuationTranscript(jobId: String) throws -> [[String: Any]] {
-        lock.lock(); defer { lock.unlock() }
+        try lock.lock(); defer { lock.unlock() }
         let job = try self.job(jobId)
         let messages = job["messages"] as? [[String: Any]] ?? []
         let calls = (state["calls"] as? [String: [String: Any]] ?? [:]).values.filter { $0["jobId"] as? String == jobId }
@@ -297,13 +348,15 @@ final class GuguHostJournal {
         return result
     }
 
-    func calls(jobId: String) -> [[String: Any]] {
-        lock.lock(); defer { lock.unlock() }
+    func calls(jobId: String) throws -> [[String: Any]] {
+        try lock.lock(); defer { lock.unlock() }
+        state = try readLatest()
         return (state["calls"] as? [String: [String: Any]] ?? [:]).values.filter { $0["jobId"] as? String == jobId }
     }
 
     func activeContexts(runtimeInstanceId: String) throws -> [GuguHostContext] {
-        lock.lock(); defer { lock.unlock() }
+        try lock.lock(); defer { lock.unlock() }
+        state = try readLatest()
         let jobs = state["jobs"] as? [String: [String: Any]] ?? [:]
         return try jobs.values.compactMap { job in
             guard ["running", "needs_user"].contains(job["status"] as? String ?? ""), let raw = job["context"] as? [String: Any] else { return nil }
@@ -346,9 +399,28 @@ final class GuguHostJournal {
     }
 
     private func update<T>(_ body: (inout [String: Any]) throws -> T) throws -> T {
-        lock.lock(); defer { lock.unlock() }
+        try lock.lock(); defer { lock.unlock() }
+        state = try readLatest()
         var next = state
         let result = try body(&next)
+        try persist(next)
+        state = next
+        return result
+    }
+
+    /// Called only with the shared transaction lock held. Missing/corrupt files
+    /// fail closed; an existing handle must never recreate an empty journal.
+    private func readLatest() throws -> [String: Any] {
+        let data = try Data(contentsOf: url)
+        guard let saved = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              saved["version"] as? Int == 1, saved["ownerId"] as? String == ownerId,
+              saved["installationId"] as? String == installationId else {
+            throw Self.failure("stale_context", "Journal owner, installation or version mismatch")
+        }
+        return saved
+    }
+
+    private func persist(_ next: [String: Any]) throws {
         let bytes = try JSONSerialization.data(withJSONObject: next, options: [.sortedKeys])
         #if os(iOS)
         try bytes.write(to: url, options: [.atomic, .completeFileProtection])
@@ -359,8 +431,6 @@ final class GuguHostJournal {
         let file = try FileHandle(forWritingTo: url)
         try file.synchronize()
         try file.close()
-        state = next
-        return result
     }
 
     static func object(_ context: GuguHostContext) throws -> [String: Any] {
