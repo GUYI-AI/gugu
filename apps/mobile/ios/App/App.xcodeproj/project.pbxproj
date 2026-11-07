@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E98E00000000000000000201 /* DHostedRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000211 /* DHostedRuntimeTests.swift */; };
+		E98E00000000000000000202 /* DCalendarSnapshotOracle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000212 /* DCalendarSnapshotOracle.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
@@ -34,7 +36,20 @@
 		E98E00000000000000000115 /* GuguModelTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000015 /* GuguModelTransport.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		E98E00000000000000000220 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 504EC3031FED79650016851F;
+			remoteInfo = App;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		E98E00000000000000000211 /* DHostedRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DHostedRuntimeTests.swift; sourceTree = "<group>"; };
+		E98E00000000000000000212 /* DCalendarSnapshotOracle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DCalendarSnapshotOracle.swift; sourceTree = "<group>"; };
+		E98E00000000000000000213 /* HostValidation.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HostValidation.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -65,6 +80,12 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		E98E00000000000000000231 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		504EC3011FED79650016851F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -84,6 +105,7 @@
 				E98E00000000000000000043 /* PhoneCalendar */,
 				E98E00000000000000000040 /* CalendarBridge */,
 				E98E00000000000000000020 /* Host */,
+				E98E00000000000000000214 /* HostValidation */,
 				504EC3051FED79650016851F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -92,6 +114,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				E98E00000000000000000213 /* HostValidation.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -149,9 +172,33 @@
 			path = ../PhoneCalendar/Sources/GuguPhoneCalendar;
 			sourceTree = "<group>";
 		};
+		E98E00000000000000000214 /* HostValidation */ = {
+			isa = PBXGroup;
+			children = (
+				E98E00000000000000000211 /* DHostedRuntimeTests.swift */,
+				E98E00000000000000000212 /* DCalendarSnapshotOracle.swift */,
+			);
+			path = ../HostValidation;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		E98E00000000000000000230 /* HostValidation */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E98E00000000000000000240;
+			buildPhases = (
+				E98E00000000000000000232 /* Sources */,
+				E98E00000000000000000231 /* Frameworks */,
+				E98E00000000000000000233 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = (E98E00000000000000000221 /* PBXTargetDependency */,);
+			name = HostValidation;
+			productName = HostValidation;
+			productReference = E98E00000000000000000213 /* HostValidation.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		504EC3031FED79650016851F /* App */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 504EC3161FED79650016851F /* Build configuration list for PBXNativeTarget "App" */;
@@ -181,6 +228,10 @@
 				LastSwiftUpdateCheck = 0920;
 				LastUpgradeCheck = 0920;
 				TargetAttributes = {
+					E98E00000000000000000230 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = 504EC3031FED79650016851F;
+					};
 					504EC3031FED79650016851F = {
 						CreatedOnToolsVersion = 9.2;
 						LastSwiftMigration = 1100;
@@ -205,11 +256,18 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				E98E00000000000000000230 /* HostValidation */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		E98E00000000000000000233 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		504EC3021FED79650016851F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -227,6 +285,15 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		E98E00000000000000000232 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E98E00000000000000000201 /* DHostedRuntimeTests.swift in Sources */,
+				E98E00000000000000000202 /* DCalendarSnapshotOracle.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		504EC3001FED79650016851F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -253,6 +320,14 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		E98E00000000000000000221 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 504EC3031FED79650016851F /* App */;
+			targetProxy = E98E00000000000000000220 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin PBXVariantGroup section */
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
 			isa = PBXVariantGroup;
@@ -273,6 +348,26 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		E98E00000000000000000241 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Manual;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks",);
+				PRODUCT_BUNDLE_IDENTIFIER = app.gugu.chat.HostValidation;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphonesimulator;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = iphonesimulator;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/App";
+			};
+			name = Debug;
+		};
 		504EC3141FED79650016851F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
@@ -433,6 +528,12 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		E98E00000000000000000240 /* Build configuration list for PBXNativeTarget "HostValidation" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (E98E00000000000000000241 /* Debug */,);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		504EC2FF1FED79650016851F /* Build configuration list for PBXProject "App" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
