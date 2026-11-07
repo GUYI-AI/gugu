@@ -17,6 +17,18 @@ async function fixture(text: string) {
 }
 
 describe('incremental native source locators', () => {
+  it('rejects a same-inode same-size rewrite instead of transplanting the old record anchor', async () => {
+    const prefix = '{"meta":true}\n';
+    const original = '{"text":"' + 'x'.repeat(140_000) + '"}\n';
+    const input = await fixture(original), capture = await createBoundedRecordCapture(input.context, 'codex', 'rewrite', input.path);
+    try {
+      const first = await capture.readNext(0, createWindowBudget());
+      if (first.kind !== 'chunk') throw new Error('Unexpected reset');
+      await writeFile(input.path, prefix + '{"text":"' + 'y'.repeat(140_000 - prefix.length) + '"}\n');
+      await expect(capture.readNext(first.end, createWindowBudget())).rejects.toMatchObject({ code: 'record_start_unknown' });
+    } finally { await capture.close(); }
+  });
+
   it('restores the unfinished record start across a real capture close and reopen', async () => {
     const prefix = '{"meta":true}\n', input = await fixture(prefix + '{"text":"' + 'x'.repeat(140_000) + '"}\n');
     const first = await createBoundedRecordCapture(input.context, 'codex', 'restart', input.path);

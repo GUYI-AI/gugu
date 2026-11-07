@@ -81,12 +81,14 @@ async function snapshotFor(path: string, file: FileHandle): Promise<SourceSnapsh
 
 /** One capture owns one current record, with no line string or history-sized collection. */
 export function createRecordLocatorCapture(context: WindowCacheContext, harness: 'claude' | 'codex', providerSessionId: string) {
-  let instance = '', next = -1, recordStart = 0, previousByte = -1;
-  return async (path: string, file: FileHandle, bytes: Uint8Array, position: number, budget: WindowBudget): Promise<void> => {
+  let instance = '', revision = '', next = -1, recordStart = 0, previousByte = -1;
+  return async (path: string, file: FileHandle, bytes: Uint8Array, position: number, budget: WindowBudget, expected?: SourceSnapshot): Promise<void> => {
     if (bytes.length > 64 * 1024) throw new Error('Capture source block must be sliced before delivery');
     const source = await snapshotFor(path, file);
+    if (expected && (source.sourceInstance !== expected.sourceInstance || source.snapshotRevision !== expected.snapshotRevision))
+      throw Object.assign(new Error('Capture source changed after reading'), { code: 'record_start_unknown' });
     let currentStart = recordStart;
-    const contiguous = source.sourceInstance === instance && position === next;
+    const contiguous = source.sourceInstance === instance && source.snapshotRevision === revision && position === next;
     let priorByte = contiguous ? previousByte : -1;
     if (!contiguous) {
       if (position === 0) currentStart = 0;
@@ -120,7 +122,7 @@ export function createRecordLocatorCapture(context: WindowCacheContext, harness:
       lastByte: bytes.at(-1),
     })));
     await writeSourceLocator(context.cacheDirectory, locator);
-    next = end; instance = source.sourceInstance; recordStart = currentStart; previousByte = bytes.at(-1) ?? previousByte;
+    next = end; instance = source.sourceInstance; revision = source.snapshotRevision; recordStart = currentStart; previousByte = bytes.at(-1) ?? previousByte;
   };
 }
 
@@ -150,7 +152,7 @@ export async function createBoundedRecordCapture(context: WindowCacheContext, ha
       signal?.throwIfAborted();
       if (consumed !== length || (await snapshotFor(path, file)).snapshotRevision !== source.snapshotRevision)
         return { kind: 'reset' as const, reason: 'source_changed' as const };
-      if (length) await capture(path, file, bytes, position, budget);
+      if (length) await capture(path, file, bytes, position, budget, source);
       signal?.throwIfAborted();
       return { kind: 'chunk' as const, source, start: position, end: position + length, bytes };
     },
