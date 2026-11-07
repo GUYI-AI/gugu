@@ -14,6 +14,8 @@ struct GuguIOSCalendarConnection {
 /// Identity comes from A's verified shared-login publication, never configure or
 /// tool arguments. This store owns only the local calendar category selection.
 final class GuguIOSOwnerAccess {
+    private static let revocationLock = NSLock()
+    private static var pendingRevocations: Set<String> = []
     private let root: URL
     private let verifiedIdentity: () throws -> GuguIOSHostBinding
     private let requireOwnerUI: () throws -> Void
@@ -46,17 +48,21 @@ final class GuguIOSOwnerAccess {
     }
 
     private func observedSnapshot(binding: GuguIOSHostBinding) throws -> GuguIOSOwnerSnapshot {
-        return try transaction(binding) { path in
-            var saved = try load(path, binding)
-            // Observing OS revocation must permanently retire old contexts even
-            // when no tool is executing. A later Settings re-grant is not consent.
-            if saved["connected"] as? Bool == true, !calendarHasFullAccess() {
-                try revokeCalendarAccess()
-                try save(path, binding, connected: false, revision: UUID().uuidString.lowercased())
-                saved = try load(path, binding)
+        do {
+            return try transaction(binding) { path in
+                var saved = try load(path, binding)
+                if isRevocationPending(path) || saved["revocationPending"] as? Bool == true ||
+                    (saved["connected"] as? Bool == true && !calendarHasFullAccess()) {
+                    saved = try completeRevocation(path, binding, revision: UUID().uuidString.lowercased())
+                }
+                return GuguIOSOwnerSnapshot(binding: binding, calendarConnected: saved["connected"] as? Bool == true,
+                                            calendarRevision: saved["revision"] as? String)
             }
-            return GuguIOSOwnerSnapshot(binding: binding, calendarConnected: saved["connected"] as? Bool == true,
-                                        calendarRevision: saved["revision"] as? String)
+        } catch {
+            // Even failure before reading/writing the category cannot forget an
+            // observed denial. All same-path handles share this refusal latch.
+            if (try? currentBinding()) == binding, !calendarHasFullAccess() { markRevocation(categoryPath(binding)) }
+            throw error
         }
     }
 
@@ -76,11 +82,12 @@ final class GuguIOSOwnerAccess {
     /// A denied request remains disconnected and cannot revive old task epochs.
     func beginCalendarConnection(expectedBinding binding: GuguIOSHostBinding) throws -> GuguIOSCalendarConnection {
         try requireLocalOwnerUI()
+        guard try currentBinding() == binding else { throw Self.failure("stale_context", "Native owner or installation changed") }
+        markRevocation(categoryPath(binding))
         return try transaction(binding) { path in
             _ = try load(path, binding)
-            try revokeCalendarAccess()
             let attempt = GuguIOSCalendarConnection(binding: binding, attemptId: UUID().uuidString.lowercased())
-            try save(path, binding, connected: false, revision: attempt.attemptId)
+            _ = try completeRevocation(path, binding, revision: attempt.attemptId)
             return attempt
         }
     }
@@ -88,7 +95,10 @@ final class GuguIOSOwnerAccess {
     func finishCalendarConnection(attempt: GuguIOSCalendarConnection) throws -> GuguIOSOwnerSnapshot {
         try requireLocalOwnerUI()
         try transaction(attempt.binding) { path in
-            let saved = try load(path, attempt.binding)
+            var saved = try load(path, attempt.binding)
+            if isRevocationPending(path) || saved["revocationPending"] as? Bool == true {
+                saved = try completeRevocation(path, attempt.binding, revision: UUID().uuidString.lowercased())
+            }
             guard saved["revision"] as? String == attempt.attemptId, saved["connected"] as? Bool == false else {
                 throw Self.failure("stale_context", "Calendar connection attempt was replaced or already consumed")
             }
@@ -107,6 +117,33 @@ final class GuguIOSOwnerAccess {
         let binding = try verifiedIdentity()
         try binding.validate()
         return binding
+    }
+
+    private func categoryPath(_ binding: GuguIOSHostBinding) -> URL {
+        root.appendingPathComponent(binding.ownerId, isDirectory: true).appendingPathComponent("calendar-connection.json")
+    }
+
+    private func markRevocation(_ path: URL) {
+        Self.revocationLock.lock(); defer { Self.revocationLock.unlock() }
+        Self.pendingRevocations.insert(path.resolvingSymlinksInPath().standardizedFileURL.path)
+    }
+
+    private func isRevocationPending(_ path: URL) -> Bool {
+        Self.revocationLock.lock(); defer { Self.revocationLock.unlock() }
+        return Self.pendingRevocations.contains(path.resolvingSymlinksInPath().standardizedFileURL.path)
+    }
+
+    /// The refusal latch precedes every fallible write. The durable marker lets
+    /// another handle/reopened process finish revocation after journal repair.
+    private func completeRevocation(_ path: URL, _ binding: GuguIOSHostBinding, revision: String) throws -> [String: Any] {
+        markRevocation(path)
+        try save(path, binding, connected: false, revision: revision, revocationPending: true)
+        try revokeCalendarAccess()
+        try save(path, binding, connected: false, revision: revision, revocationPending: false)
+        Self.revocationLock.lock()
+        Self.pendingRevocations.remove(path.resolvingSymlinksInPath().standardizedFileURL.path)
+        Self.revocationLock.unlock()
+        return try load(path, binding)
     }
 
     private func transaction<T>(_ binding: GuguIOSHostBinding, _ body: (URL) throws -> T) throws -> T {
@@ -133,10 +170,10 @@ final class GuguIOSOwnerAccess {
         return saved
     }
 
-    private func save(_ path: URL, _ binding: GuguIOSHostBinding, connected: Bool, revision: String) throws {
+    private func save(_ path: URL, _ binding: GuguIOSHostBinding, connected: Bool, revision: String, revocationPending: Bool = false) throws {
         guard try currentBinding() == binding else { throw Self.failure("stale_context", "Native owner or installation changed") }
         let saved: [String: Any] = ["version": 1, "ownerId": binding.ownerId, "deviceId": binding.deviceId,
-            "installationId": binding.installationId, "connected": connected, "revision": revision]
+            "installationId": binding.installationId, "connected": connected, "revision": revision, "revocationPending": revocationPending]
         let data = try JSONSerialization.data(withJSONObject: saved, options: [.sortedKeys])
         #if os(iOS)
         try data.write(to: path, options: [.atomic, .completeFileProtection])
