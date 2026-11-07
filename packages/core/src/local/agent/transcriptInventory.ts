@@ -304,7 +304,7 @@ export async function readLocalTranscript(
  * 根不存在（用户没装这一家）时跳过该根而不是抛错 —— 那不是越界，是没有这个目录。
  * 目标不存在时 realpath 抛，这正确：读一个不存在的文件本来就该失败。
  */
-async function assertPathInScanRoots(
+export async function assertPathInScanRoots(
   filePath: string,
   spec: TranscriptSourceSpec,
   options: TranscriptScanOptions

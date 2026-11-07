@@ -80,7 +80,8 @@ export type LocalSessionPreview = {
   title: string;
   cwd: string | null;
   /** 真实对话轮次数（工具调用/思考不计）。 */
-  turnCount: number;
+  turnCount: number | null;
+  pendingLongRecords?: import('@gugu/session-core/session-record/window-cache/types').PendingLongRecord[];
   /** 开头几轮，用来确认「是这条会话」。 */
   head: LocalSessionTurn[];
   /** 最后几轮，用来确认「聊到哪了」。 */
