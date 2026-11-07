@@ -35,6 +35,29 @@ function fixture(portAvailable = true) {
 }
 
 describe('fixed password execution permission integration', () => {
+  it.each(['pending', 'rejected'] as const)('refuses %s registration before invoking or claiming the fixed sink', async mode => {
+    const f = fixture(); await f.execution.request(f.target, 'operation'); f.execution.decide('allow_once', f.person);
+    let completed = 0, finish!: () => void;
+    const pending = new Promise<void>(resolve => { finish = resolve; });
+    f.host.registerUse.mockImplementationOnce(() => mode === 'pending'
+      ? pending.then(() => { completed++; }) : Promise.reject(new Error('synthetic_registration_rejected')));
+    await expect(f.execution.use()).rejects.toThrow('capability_unavailable');
+    expect(completed).toBe(0); expect(f.lease()).toBeUndefined();
+    expect(f.host.useCredential).not.toHaveBeenCalled();
+    if (mode === 'pending') { finish(); await pending; await Promise.resolve(); }
+    await expect(f.execution.use()).rejects.toThrow();
+    expect(f.lease()).toBeUndefined(); expect(f.host.useCredential).not.toHaveBeenCalled();
+  });
+
+  it('allows the fixed sink only after the synchronous registration positive control completes', async () => {
+    const f = fixture(); await f.execution.request(f.target, 'operation'); f.execution.decide('allow_once', f.person);
+    let completed = 0;
+    f.host.registerUse.mockImplementationOnce(() => { completed++; });
+    await f.execution.use();
+    expect(completed).toBe(1); expect(f.host.useCredential).toHaveBeenCalledOnce();
+    expect(f.lease()).toBeDefined();
+  });
+
   it('keeps missing permission unavailable before requesting approval or releasing a buffer', async () => {
     const f = fixture(false);
     await expect(f.execution.request(f.target, 'operation')).rejects.toThrow('credential_permission_unavailable');

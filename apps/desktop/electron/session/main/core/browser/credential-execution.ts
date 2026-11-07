@@ -35,7 +35,8 @@ export function createCredentialExecution(host: CredentialExecutionHost, port: P
     isolationCurrent: binding => { permission.assertCurrent(binding); return fixed.isolationCurrent(binding); },
     registerUse: (capability, binding, revoked) => {
       permission.bindRevocation(revoked);
-      fixed.registerUse(capability, binding, anySignal([revoked, permission.signal]));
+      // Forward the runtime value so Authority.issue can reject and observe any thenable.
+      return fixed.registerUse(capability, binding, anySignal([revoked, permission.signal]));
     },
     cleanup: fixed.cleanup });
   let binding: CredentialUseBinding | undefined;
