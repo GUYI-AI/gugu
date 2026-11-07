@@ -46,16 +46,20 @@ export function projectSourceFragments(
     }
   }
   const result = canonical.filter(row => !claimed.has(row));
-  for (const [key, rows] of replacements) {
-    // Keep the old source slot relative to its next surviving row, even when
-    // canonical history arrives in a different order or prepends older turns.
-    const oldIndex = previous.findIndex(row => row.sourceFragment?.key === key);
-    let at = result.length;
-    if (oldIndex >= 0) {
-      const next = previous.slice(oldIndex + 1).find(row => result.some(value => value.id === row.id));
-      if (next) at = result.findIndex(row => row.id === next.id);
+  if (window.beforeLive) {
+    result.unshift(...[...replacements.values()].flat());
+  } else {
+    for (const [key, rows] of replacements) {
+      // Keep the old source slot relative to its next surviving row, even when
+      // canonical history arrives in a different order or prepends older turns.
+      const oldIndex = previous.findIndex(row => row.sourceFragment?.key === key);
+      let at = result.length;
+      if (oldIndex >= 0) {
+        const next = previous.slice(oldIndex + 1).find(row => result.some(value => value.id === row.id));
+        if (next) at = result.findIndex(row => row.id === next.id);
+      }
+      result.splice(at, 0, ...rows);
     }
-    result.splice(at, 0, ...rows);
   }
   return result.map(row => {
     const extra = aliases.get(canonical.find(value => value.itemId === row.itemId)?.id ?? '');

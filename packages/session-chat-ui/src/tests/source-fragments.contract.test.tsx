@@ -9,13 +9,13 @@ import { until, untilStable } from '../../../../tests/support/awaitCondition';
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()); });
-async function mountSource() {
+async function mountSource(options: { beforeLive?: true; compact?: true } = {}) {
   const context = createChatContext({ locale: () => 'en-US' });
   const state = createChatState(context);
-  const fragments = Array.from({ length: 7 }, (_, i) => ({ key: `record-${i}`,
+  const fragments = Array.from({ length: options.compact ? 2 : 7 }, (_, i) => ({ key: `record-${i}`,
     sourceRange: { start: i * 1000, end: i * 1000 + 999 }, ownership: 'unresolved' as const,
-    text: `Record ${i}\n\n${'Bounded source body.\n\n'.repeat(18)}` }));
-  const sourceWindow = { sourceLineage: 'source', sourceFragments: fragments };
+    text: options.compact ? `Persisted history ${i}` : `Record ${i}\n\n${'Bounded source body.\n\n'.repeat(18)}` }));
+  const sourceWindow = { sourceLineage: 'source', sourceFragments: fragments, beforeLive: options.beforeLive };
   const host = document.createElement('div');
   host.style.cssText = 'position:fixed;inset:0;width:800px;height:400px';
   document.body.append(host);
@@ -32,8 +32,26 @@ async function mountSource() {
       resolvedFragmentOwners: [{ fragmentKey: fragments[2].key, turnId: 'real-turn', itemId: 'real-item' }],
     } });
   };
-  return { host, view, scroller, settle, resolve };
+  return { host, view, scroller, settle, resolve, state };
 }
+
+it('keeps fixed opening history above a live reply through its commit, without duplicating the reply', async () => {
+  const { host, state, settle } = await mountSource({ beforeLive: true, compact: true });
+  const turn = { id: 'new-live-turn', seq: 0, initiator: 'agent', items: [
+    { kind: 'message', id: 'new-live-item', seq: 0, role: 'assistant', text: 'A new live-only reply' },
+  ] } satisfies TranscriptTurn;
+  state.transcript.activeTurn.set(turn);
+  await until('live reply is painted after persisted history', () => host.querySelector('[data-item-id="new-live-item"]') !== null);
+  await settle();
+  state.transcript.history.seed([turn]);
+  await settle();
+  const history = host.querySelector('[data-source-fragment="record-1"]')!;
+  const live = host.querySelector('[data-item-id="new-live-item"]')!;
+  expect(history.textContent).toContain('Persisted history 1');
+  expect(live.textContent).toContain('A new live-only reply');
+  expect(history.getBoundingClientRect().bottom).toBeLessThanOrEqual(live.getBoundingClientRect().top);
+  expect(host.querySelectorAll('[data-item-id="new-live-item"]')).toHaveLength(1);
+});
 
 it('replaces a real source body with one canonical row, without duplicating either', async () => {
   const { host, view, settle, resolve } = await mountSource();
