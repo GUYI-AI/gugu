@@ -146,7 +146,17 @@ vi.mock('@renderer/lib/acp/acp-live-session', async (importOriginal) => ({
 }));
 
 const toasts = vi.hoisted(() => [] as unknown[]);
-vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: (arg: unknown) => toasts.push(arg) }));
+const sendNotices = vi.hoisted(() => new Map<string | number, string>());
+vi.mock('sonner', () => {
+  let sequence = 0;
+  const show = (title: string, options?: { id?: string }) => {
+    const id = options?.id ?? ++sequence;
+    toasts.push({ title, ...options }); sendNotices.set(id, title); return id;
+  };
+  return { toast: Object.assign(show, { error: show, info: show, success: show, warning: show, dismiss: (id: string | number) => sendNotices.delete(id) }) };
+});
+vi.mock('@/lib/loading/LoadingIndicator', () => ({ LoadingIndicator: () => null }));
+vi.mock('@renderer/lib/hooks/use-toast', async () => ({ toast: (await import('@/lib/notices')).notify }));
 
 type StoredPage = { turns: TranscriptTurn[]; originTurnIds: string[]; nextCursor: number | null };
 const host = {

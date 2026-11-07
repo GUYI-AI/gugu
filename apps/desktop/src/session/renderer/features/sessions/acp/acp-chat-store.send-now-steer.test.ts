@@ -3,19 +3,30 @@
  * #6574 排队提示的「立即发送」按这家能不能插话分两路:能插 ⇒ 交给运行时插进在飞的那一轮
  * (一次原子调用,❌ 取消、❌ 渲染层自己拼「删 + 发」);插不了 ⇒ 挪到队首,在跑就取消。
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
+import { SessionInputOutbox, openSessionInputStorage } from '@/lib/sessionInputOutbox';
+import { SessionInputAdmissionError } from '@gugu/core/shared/sessionInputAdmission';
+import { state as inputState, changed as inputsChanged, EMPTY } from '@/lib/sessionInputOutboxBridge';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { installAcpChatStoreHost } from './acp-chat-store.test-host';
 
 vi.mock('@renderer/lib/acp/runtime-client', () => ({
   getAcpRuntimeClient: async () => ({}),
 }));
-const toasts: Array<{ title: string }> = [];
-vi.mock('@renderer/lib/hooks/use-toast', () => ({
-  toast: (arg: { title: string }) => {
-    toasts.push(arg);
-  },
-}));
+const toasts = vi.hoisted(() => [] as Array<{ title?: string }>);
+const visible = vi.hoisted(() => new Map<string | number, string>());
+vi.mock('sonner', () => {
+  let sequence = 0;
+  const show = (title: string, options?: { id?: string }) => { const id = options?.id ?? ++sequence; visible.set(id, title); return id; };
+  return { toast: Object.assign(show, { error: show, info: show, warning: show, success: show, dismiss: (id: string | number) => visible.delete(id) }) };
+});
+vi.mock('@/lib/loading/LoadingIndicator', () => ({ LoadingIndicator: () => null }));
+vi.mock('@/lib/notices', async original => {
+  const notices = await original<typeof import('@/lib/notices')>();
+  return { ...notices, notify: (notice: import('@/lib/notices').Notice) => { toasts.push(notice); return notices.notify(notice); } };
+});
+vi.mock('@renderer/lib/hooks/use-toast', async () => ({ toast: (await import('@/lib/notices')).notify }));
 
 installAcpChatStoreHost();
 const { AcpChatStore } = await import('./acp-chat-store');
@@ -52,7 +63,7 @@ function makeStore(
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 beforeEach(() => {
-  toasts.length = 0;
+  toasts.length = 0; visible.clear();
 });
 
 describe('#6574 立即发送按插话能力分两路', () => {
@@ -98,4 +109,55 @@ describe('#6574 立即发送按插话能力分两路', () => {
     await settle();
     expect(session.steerQueuedPrompt).not.toHaveBeenCalled();
   });
+});
+
+afterEach(() => { vi.unstubAllGlobals(); Object.assign(inputState(), { accountId: null, queue: null, rows: EMPTY, valid: () => false }); inputsChanged(); });
+
+it('keeps one notice per native queued message across failed retries and retires only its successful retry', async () => {
+  const { store, session } = makeStore();
+  session.steerQueuedPrompt.mockRejectedValue(new Error('refused'));
+  store.sendQueuedPromptNow('q-1', { steers: true });
+  store.sendQueuedPromptNow('q-2', { steers: true });
+  await settle();
+  expect(visible.size).toBe(2);
+  store.sendQueuedPromptNow('q-1', { steers: true });
+  await settle();
+  expect(visible.size).toBe(2);
+  session.steerQueuedPrompt.mockResolvedValue(ok);
+  store.sendQueuedPromptNow('q-1', { steers: true });
+  await settle();
+  expect(visible.size).toBe(1);
+});
+
+it('a successful send-now settles a previous runtime result failure through the same message owner', async () => {
+  const { store, session } = makeStore({ success: false, error: new Error('adapter refused') });
+  store.sendQueuedPromptNow('q-2', { steers: true }); await settle();
+  expect(visible.size).toBe(1);
+  session.steerQueuedPrompt.mockResolvedValue(ok);
+  store.sendQueuedPromptNow('q-2', { steers: true }); await settle();
+  expect(visible.size).toBe(0);
+});
+
+it('retries a rejected input through real sender storage, preserving another message failure', async () => {
+  vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+  const { store } = makeStore();
+  const storage = await openSessionInputStorage(new IDBFactory());
+  let refuse = true;
+  const queue = new SessionInputOutbox('owner', storage, async () => {
+    if (refuse) throw new SessionInputAdmissionError('refused', 'rejected');
+  }, () => true, rows => { if (rows) inputState().rows = rows; inputsChanged(); });
+  Object.assign(inputState(), { accountId: 'owner', queue: Promise.resolve(queue), valid: () => true });
+  const a = await queue.enqueue({ deviceId: null, sessionId: store.runtimeSessionId, text: 'same words' });
+  const b = await queue.enqueue({ deviceId: null, sessionId: store.runtimeSessionId, text: 'same words' });
+  await queue.flush(); await queue.flush();
+  inputState().rows = await queue.list(); inputsChanged();
+  const put = vi.spyOn(storage, 'put').mockRejectedValue(new Error('storage unavailable'));
+  store.retryPendingInput(a.id); store.retryPendingInput(b.id);
+  await vi.waitFor(() => expect(visible.size).toBe(2));
+  store.retryPendingInput(a.id); await settle();
+  expect(visible.size).toBe(2);
+  put.mockRestore(); refuse = false;
+  store.retryPendingInput(a.id);
+  await vi.waitFor(() => expect(visible.size).toBe(1));
+  expect((await queue.list()).map(input => input.id)).toEqual([b.id]);
 });

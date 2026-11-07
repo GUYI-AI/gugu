@@ -25,11 +25,13 @@ vi.mock('@/lib/sessionInputOutboxBridge', async (importOriginal) => ({
 }));
 
 const toasts: Array<{ title: string; description?: string; variant?: string }> = [];
-vi.mock('@renderer/lib/hooks/use-toast', () => ({
-  toast: (arg: { title: string; description?: string; variant?: string }) => {
-    toasts.push(arg);
-  },
-}));
+vi.mock('@/lib/loading/LoadingIndicator', () => ({ LoadingIndicator: () => null }));
+vi.mock('@/lib/notices', async original => {
+  const notices = await original<typeof import('@/lib/notices')>();
+  return { ...notices, notify: (notice: import('@/lib/notices').Notice) => { toasts.push(notice as typeof toasts[number]); return notices.notify(notice); } };
+});
+vi.mock('@renderer/lib/hooks/use-toast', async () => ({ toast: (await import('@/lib/notices')).notify }));
+
 
 type StoreModule = typeof import('./acp-chat-store');
 type StoreCtor = StoreModule['AcpChatStore'];
@@ -91,28 +93,29 @@ describe('#3507 会话不在时的其余副作用', () => {
     title: string,
     invoke: (store: InstanceType<StoreCtor>) => void | Promise<void>,
   ]> = [
-    ['change mode', translateSessionMessage('acpFailure.changeSetting'), (store) => store.setMode('mode-1')],
-    ['change effort', translateSessionMessage('acpFailure.changeSetting'), (store) => store.setEffort('high')],
+    ['change mode', 'acpFailure.changeSetting', (store) => store.setMode('mode-1')],
+    ['change effort', 'acpFailure.changeSetting', (store) => store.setEffort('high')],
     [
       'resolve permission',
-      translateSessionMessage('acpFailure.resolvePermission'),
+      'acpFailure.resolvePermission',
       (store) => store.resolvePermission('request-3507', 'allow-once'),
     ],
-    ['edit queued prompt', translateSessionMessage('acpFailure.editQueued'), (store) => store.editQueuedPrompt('q-1', 'edit')],
-    ['delete queued prompt', translateSessionMessage('acpFailure.editQueued'), (store) => store.deleteQueuedPrompt('q-1')],
+    ['edit queued prompt', 'acpFailure.editQueued', (store) => store.editQueuedPrompt('q-1', 'edit')],
+    ['delete queued prompt', 'acpFailure.editQueued', (store) => store.deleteQueuedPrompt('q-1')],
     [
       'reorder queued prompts',
-      translateSessionMessage('acpFailure.editQueued'),
+      'acpFailure.editQueued',
       (store) => store.reorderQueuedPrompts(['q-1']),
     ],
-    ['send queued prompt now', translateSessionMessage('acpFailure.sendMessage'), (store) => store.sendQueuedPromptNow('q-1', { steers: false })],
-    ['steer queued prompt now', translateSessionMessage('acpFailure.sendMessage'), (store) => store.sendQueuedPromptNow('q-1', { steers: true })],
+    ['send queued prompt now', 'acpFailure.sendMessage', (store) => store.sendQueuedPromptNow('q-1', { steers: false })],
+    ['steer queued prompt now', 'acpFailure.sendMessage', (store) => store.sendQueuedPromptNow('q-1', { steers: true })],
   ];
 
   it.each(absentSessionActions)('%s fails loudly', async (_label, title, invoke) => {
     const store = makeStore();
     await invoke(store);
-    expect(toasts.some((entry) => entry.title === title), `${title} was silently skipped`).toBe(true);
+    const expectedTitle = translateSessionMessage(title);
+    expect(toasts.some((entry) => entry.title === expectedTitle), `${expectedTitle} was silently skipped`).toBe(true);
     expect(toasts.at(-1)?.description).toBe('ACP session is not connected');
     expect(toasts.at(-1)?.variant).toBe('destructive');
   });
