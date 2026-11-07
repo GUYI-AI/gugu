@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const require = createRequire(import.meta.url)
-const { ROOTS, analyze, violations } = require('../../../scripts/checks/native-history-reads.cjs')
+const { ROOTS, analyze, violations, validateDebt } = require('../../../scripts/checks/native-history-reads.cjs')
 const repo = join(import.meta.dirname, '../../..')
 const roots: string[] = []
 function fixture(text: string, path = `${ROOTS[0]}/example.ts`): string {
@@ -22,8 +22,7 @@ describe('bounded history read guard (#2062)', () => {
     expect(violations(repo)).toEqual([])
     const pkg = JSON.parse(readFileSync(join(repo, 'package.json'), 'utf8'))
     expect(pkg.scripts['lint:source']).toContain('node scripts/checks/native-history-reads.cjs')
-    // Removing debt is fine; expanding/replacing the debt ledger needs an explicit review.
-    expect(require('../../../scripts/checks/native-history-reads-debt.json').length).toBeLessThanOrEqual(12)
+    expect(() => validateDebt(require('../../../scripts/checks/native-history-reads-debt.json'))).not.toThrow()
   })
   it.each([
     "import {readFile as load} from 'node:fs/promises'; await load(path)",
@@ -47,6 +46,21 @@ describe('bounded history read guard (#2062)', () => {
   })
   it('accepts bounded positional short reads', () => {
     expect(violations(fixture('while (read < bytes.length) { read += await source.read(bytes,read,bytes.length-read,start+read) }'))).toEqual([])
+  })
+  it('resolves aliases in the call site lexical scope', () => {
+    const source = "import {readFile as load} from 'node:fs/promises'; function helper(){const load=bounded; load(small)}; await load(path)"
+    expect(analyze('reader.ts', source).map((row: { rule: string }) => row.rule)).toEqual(['readFile'])
+    expect(analyze('reader.ts', "function helper(){const readFile=bounded}; fs.readFile(path)")).toHaveLength(1)
+    expect(analyze('reader.ts', 'function a(){const load=fs.readFile;load(path)}; function b(){const load=bounded;load(path)}')).toHaveLength(1)
+  })
+  it('rejects increased counts, changed fingerprints, unknown keys and duplicate debt entries', () => {
+    const debt: [string, number][] = require('../../../scripts/checks/native-history-reads-debt.json')
+    const [key, count] = debt[0]
+    expect(() => validateDebt([[key, count + 1]])).toThrow('only shrink')
+    expect(() => validateDebt([[key + 'changed', count]])).toThrow('only shrink')
+    expect(() => validateDebt([[key, count], [key, count]])).toThrow('only shrink')
+    expect(() => validateDebt([[key, count - 1]])).not.toThrow()
+    expect(() => validateDebt(debt.slice(1))).not.toThrow()
   })
   it('does not let copied legacy functions multiply the exemption', () => {
     const path = `${ROOTS[0]}/sources/claude-jsonl.ts`

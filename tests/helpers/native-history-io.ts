@@ -34,7 +34,7 @@ export function meteredSource<Snapshot>(source: ByteSource<Snapshot>, limits: Io
   return { source: measured, counts }
 }
 /** Sparse bytes are synthesized on demand; only the readable suffix occupies memory. */
-export function virtualSparseSource(size: number, suffix: Uint8Array, shortRead = Infinity) {
+export function virtualSparseSource(size: number, suffix: Uint8Array, shortRead = Infinity): ByteSource<{ sourceId: string; generation: string; size: number }> {
   if (!Number.isSafeInteger(size) || size < suffix.length || shortRead <= 0) throw new Error('Invalid sparse fixture')
   return {
     async snapshot() { return { sourceId: 'synthetic-rollout', generation: 'snapshot-1', size } },
