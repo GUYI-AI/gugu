@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, rename, rm } from 'node:fs/promises'
+import { link, mkdir, open, readFile, rename, rm } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { AssistantFileError } from '@gugu/core/shared/assistantFileError'
 
@@ -28,8 +28,19 @@ export async function writeAssistantFile(path: string, content: string): Promise
   }
 }
 
-export async function preserveDamagedAssistantSettings(path: string): Promise<void> {
+/** Move damaged settings aside, but only the exact bytes the caller judged damaged.
+ * Returns false when another writer replaced the file first; that writer's file is left in place. */
+export async function preserveDamagedAssistantSettings(path: string, expected: string): Promise<boolean> {
+  if (await readAssistantFile(path) !== expected) return false
   const backup = `${path}.damaged-${new Date().toISOString().replaceAll(':', '-')}-${randomUUID()}`
   try { await rename(path, backup) }
-  catch (cause) { throw new AssistantFileError(path, 'backup', cause) }
+  catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw new AssistantFileError(path, 'backup', cause)
+  }
+  if (await readAssistantFile(backup) === expected) return true
+  // The file was replaced between the check and the move. Put the newer content back unless a newer file exists
+  // already; link never overwrites, and the moved content stays in the backup if it cannot be restored.
+  try { await link(backup, path); await rm(backup) } catch { /* retained as backup */ }
+  return false
 }

@@ -46,9 +46,10 @@ async function writeAssistantContext(cwd: string, kind: AssistantHomeKind, home:
  * Exclude that coding context while retaining this assistant's own instructions. */
 async function localAssistantSettings(path: string, cwd: string): Promise<string> {
   let raw = await readAssistantFile(path)
-  if (raw !== null && /^[\0\s]*$/u.test(raw)) {
-    await preserveDamagedAssistantSettings(path)
-    raw = null
+  // Damaged settings are replaced only if they are still the bytes we read; otherwise judge the newer content.
+  for (let attempt = 0; attempt < 3 && raw !== null && /^[\0\s]*$/u.test(raw); attempt++) {
+    if (await preserveDamagedAssistantSettings(path, raw)) { raw = null; break }
+    raw = await readAssistantFile(path)
   }
   let settings: Record<string, unknown>
   let existing: string[]
