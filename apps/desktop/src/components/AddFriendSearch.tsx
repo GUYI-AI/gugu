@@ -286,10 +286,10 @@ export function AddFriendSearch({
         )}
         {hasQuery && !isSearching && searchResults.length === 0 && (
           <div style={{ padding: '32px 16px', textAlign: 'center', fontSize: 'var(--font-body)', color: 'var(--text-secondary)' }}>
-            {t('friendSearch.noResults')}
+            <div>{t('friendSearch.noResults')}</div>
+            {completedQuery === query.trim() && <InviteFriendsPreview />}
           </div>
         )}
-        {hasQuery && completedQuery === query.trim() && !isSearching && searchResults.length === 0 && <InviteFriendsPreview />}
         {hasQuery && !isSearching && searchResults.length > 0 && searchResults.map((u) => (
           <SearchResultItem
             key={u.id}
