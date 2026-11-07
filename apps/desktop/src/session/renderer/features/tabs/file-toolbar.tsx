@@ -1,8 +1,9 @@
 import { useContext, type ReactNode } from 'react';
 import { observer } from 'mobx-react-lite';
-import { ArrowLeft, Eye, Pencil } from '@/lib/icons';
+import { ArrowLeft, Eye, Minimize2, Pencil } from '@/lib/icons';
 import { PaneContext } from '@renderer/features/tabs/pane-context';
 import type { TabHost } from '@renderer/features/tabs/core/tab-host';
+import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
 import { Button } from '@renderer/lib/ui/button';
 import { panelHeaderBarClass } from '@renderer/lib/ui/panel-header-bar';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -12,6 +13,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
  * when there is room; none when there is nowhere to go, as with the conversation beside it), the file's name, the mode, ⋯ — the order the folder App's own head keeps too (viewer-unify).
  * The mode is one outlined toggle that shows where a press goes: ✎ while reading, 👁 while editing (owner 11-06).
  * Narrowing, it gives way in that order: back's words; the name last.
+ * In full screen it ends with a worded way out, as ChatGPT's full-screen page does (FOLDER-66); the tab's ⤡ is only an icon.
  */
 export const FileToolbar = observer(function FileToolbar({ host, tabId, path, mode, canEdit = false, onModeChange, menu }: {
   host: TabHost; tabId: string; path: ReactNode;
@@ -33,6 +35,7 @@ export const FileToolbar = observer(function FileToolbar({ host, tabId, path, mo
         ? <Button size="icon-sm" variant="outline" aria-label={translate('tabs.edit')} title={translate('tabs.edit')} disabled={!canEdit} onClick={() => onModeChange?.('source')}><Pencil className="size-3.5" /></Button>
         : <Button size="icon-sm" variant="outline" aria-label={translate('tabs.read')} title={translate('tabs.read')} onClick={() => onModeChange?.('preview')}><Eye className="size-3.5" /></Button>)}
       {menu}
+      {pane && tabFullscreen.isOn(pane, tabId) ? <Button size="sm" variant="outline" className="gap-1 rounded-full text-xs" data-testid="file-toolbar-exit-fullscreen" onClick={() => tabFullscreen.exit()}><Minimize2 className="size-3.5" />{translate('tabs.restorePane')}</Button> : null}
     </div>
   </div>;
 });
