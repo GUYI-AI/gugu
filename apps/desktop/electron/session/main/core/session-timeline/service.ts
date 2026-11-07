@@ -939,14 +939,16 @@ function optionsFailure(error: unknown): SessionTimelineResult<never> {
 /** 往前翻更早的轮（懒加载）。 */
 export function older(input: {
   conversationId: string;
-  beforeTurnId: string;
+  beforeTurnId?: string;
   limit?: number;
 }): Promise<SessionTimelineResult<TimelineOlderResult>> {
+  const beforeTurnId = input.beforeTurnId;
+  if (!beforeTurnId) return Promise.resolve(fail('invalid_cursor', '历史分页游标无效'));
   return withTimeline(input.conversationId, (timeline) =>
     timeline.getOlder(
       input.limit === undefined
-        ? { beforeTurnId: input.beforeTurnId }
-        : { beforeTurnId: input.beforeTurnId, limit: input.limit }
+        ? { beforeTurnId }
+        : { beforeTurnId, limit: input.limit }
     )
   );
 }

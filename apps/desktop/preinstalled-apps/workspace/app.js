@@ -24,6 +24,7 @@ const STRINGS = {
     folder: '文件夹',
     title: '{folder}',
     filter: '按文件名筛选',
+    clearFilter: '清空',
     new: '新建',
     newDoc: '新建文档',
     newName: '新文档.md',
@@ -250,6 +251,7 @@ const STRINGS = {
     folder: 'Folder',
     title: '{folder}',
     filter: 'Filter by name',
+    clearFilter: 'Clear',
     new: 'New',
     newDoc: 'New document',
     newName: 'Untitled.md',
@@ -630,6 +632,8 @@ async function applyContext(ctx) {
     state.selecting = restored.selecting === true
     state.pickFrom = typeof restored.pickFrom === 'string' ? restored.pickFrom : null
     $('filter').value = state.filter
+    $('filter-clear').hidden = !state.filter
+    showSearch(!!state.filter, false)
   }
   state.t = stringsFor(ctx.locale, ctx.chat)
   document.documentElement.lang = isZh(ctx.locale) ? 'zh-CN' : 'en'
@@ -697,6 +701,9 @@ function renderChrome() {
   $('filter').placeholder = t.filter
   $('search-toggle').title = t.filter
   $('search-toggle').setAttribute('aria-label', t.filter)
+  $('filter-clear').title = t.clearFilter
+  $('filter-clear').setAttribute('aria-label', t.clearFilter)
+  $('search-cancel').textContent = t.cancel
   const back = state.ctx?.navigation?.backToConversation ? t.backToConversation : t.back
   $('page-back-label').textContent = back
   $('page-back').title = back
@@ -1247,6 +1254,26 @@ function renderCrumbs() {
   nav.hidden = false
 }
 
+// 按名称筛选 opens in the bar (see style.css); Esc, 取消 or 🔍 again empties it and puts the bar back as it was.
+function showSearch(open, focus = open) {
+  $('search').hidden = !open
+  $('search-toggle').setAttribute('aria-expanded', String(open))
+  if (focus) $('filter').focus()
+}
+
+function closeSearch() {
+  if (state.filter) setFilterText('')
+  showSearch(false)
+  $('search-toggle').focus()
+}
+
+function setFilterText(text) {
+  clearPicks()
+  state.filter = $('filter').value = text
+  $('filter-clear').hidden = !text
+  renderList()
+}
+
 function enterFolder(folderId) {
   hideBanner()
   clearPicks()
@@ -1254,7 +1281,9 @@ function enterFolder(folderId) {
   if (state.filter) {
     state.filter = ''
     $('filter').value = ''
+    $('filter-clear').hidden = true
   }
+  showSearch(false)
   renderList()
   $('file-list').scrollTop = 0
   // A working copy's folder is read when it is entered, once.
@@ -4040,11 +4069,14 @@ function start() {
     void folderContextMenu(rect.left + 8, rect.top + 8)
   })
   lasso()
-  $('filter').oninput = (event) => {
-    clearPicks()
-    state.filter = event.target.value
-    renderList()
-  }
+  $('filter').oninput = (event) => setFilterText(event.target.value)
+  $('filter').onkeydown = (event) => { if (event.key === 'Escape') closeSearch() }
+  $('filter-clear').onclick = () => { setFilterText(''); $('filter').focus() }
+  $('search-cancel').onclick = () => closeSearch()
+  // Left empty, the field goes (a press on 🔍 is that button's own, below).
+  $('search').addEventListener('focusout', (event) => {
+    if (!state.filter && !$('search').contains(event.relatedTarget) && event.relatedTarget !== $('search-toggle')) showSearch(false)
+  })
   $('select-files').onclick = () => {
     if (state.selecting || state.picked.size) clearPicks()
     else { state.selecting = true; renderPicks() }
@@ -4056,7 +4088,7 @@ function start() {
       renderList()
     }
   }
-  $('search-toggle').onclick = () => { const input = $('filter'); input.hidden = !input.hidden; $('search-toggle').setAttribute('aria-expanded', String(!input.hidden)); if (!input.hidden) input.focus() }
+  $('search-toggle').onclick = () => ($('search').hidden ? showSearch(true) : closeSearch())
   $('page-back').onclick = () => navigate(-1)
   $('new-doc').onclick = () => toggleMenu($('new-doc'), inWorkspace()
     ? [[state.t.newFile, () => startCreate('file')], [state.t.newFolder, () => startCreate('folder')]]

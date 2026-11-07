@@ -4,11 +4,15 @@ import { isLifecycleCancellation } from '../lib/authBoundedFetch'
 /**
  * @@@snapshot-epoch - invalidates async snapshots around destructive message mutations.
  * 每条线一个号:读发出时记下 `epochOf`,落地时号变了(期间有删改)就丢掉这份快照;`bump` 让在途的读全部作废。
+ * `onBump` runs on every bump, for state captured against the old epoch that memoized readers must see invalidated.
  */
-export function useMessageSnapshotEpochs() {
+export function useMessageSnapshotEpochs(onBump?: (chatId: string) => void) {
   const epochsRef = useRef(new Map<string, number>())
+  const onBumpRef = useRef(onBump)
+  onBumpRef.current = onBump
   const epochOf = useCallback((chatId: string): number => epochsRef.current.get(chatId) ?? 0, [])
   const bump = useCallback((chatId: string): number => {
+    onBumpRef.current?.(chatId)
     const next = epochOf(chatId) + 1
     epochsRef.current.set(chatId, next)
     return next

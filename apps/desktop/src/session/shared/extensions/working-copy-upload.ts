@@ -22,6 +22,50 @@ export function nextPartBytes(bytes: number, tookMs: number): number {
 }
 
 /**
+ * One version of a working copy's file, piece after piece, here or on another machine: the one reading of a whole file.
+ * `begin` hears each try before its first piece (`false`: not read at all); changed while read, it is read once more from
+ * the start and `changing` thrown if it moves again — pieces of two versions are neither. Aborted: `stopped`, no piece more.
+ */
+export async function readOneVersion(
+  readPiece: (offset: number, length: number) => Promise<{ size: number; etag: string | null; data: Uint8Array<ArrayBuffer> }>,
+  reader: {
+    begin(size: number): boolean | void | Promise<boolean | void>;
+    piece(bytes: Uint8Array<ArrayBuffer>, at: number, size: number): void | Promise<void>;
+    signal?: AbortSignal;
+    firstPart?: number;
+    stopped(): Error;
+    changing(): Error;
+  },
+): Promise<{ size: number; etag: string | null } | null> {
+  // @@@every-await-stops - every await here goes through `settled`: a stop that came while a piece was on its way, or while
+  // `begin` / `piece` ran (a download's truncate and write), wins over what that await brought — nothing more is handed on,
+  // and the file is never answered as read, the last piece included.
+  const settled = async <T>(pending: T | Promise<T>): Promise<T> => {
+    const value = await pending;
+    if (reader.signal?.aborted) throw reader.stopped();
+    return value;
+  };
+  for (let attempt = 0; ; attempt++) {
+    let at = 0;
+    let part = reader.firstPart ?? SMALLEST_PART_BYTES;
+    let started = Date.now();
+    if (reader.signal?.aborted) throw reader.stopped();
+    let next = await settled(readPiece(0, part));
+    const { size, etag } = next;
+    if (await settled(reader.begin(size)) === false) return null;
+    for (;;) {
+      if (next.data.byteLength > 0) await settled(reader.piece(next.data, at += next.data.byteLength, size));
+      if (at >= size || next.data.byteLength === 0) return { size, etag };
+      part = nextPartBytes(part, Date.now() - started);
+      started = Date.now();
+      next = await settled(readPiece(at, part));
+      if (next.etag !== etag) break;
+    }
+    if (attempt > 0) throw reader.changing();
+  }
+}
+
+/**
  * Every file going into a working copy, from a page's bytes or the person's picker, on this computer or another: part by
  * part, each written down on its machine as it comes — a file of any size, with what one call carries across machines
  * (`APP_CALL_MAX_BYTES`). One already there is `name-taken` until `replace` says so, or `expectedEtag` names the version being saved over; progress is the bytes sent of them all.

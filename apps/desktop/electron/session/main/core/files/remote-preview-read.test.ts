@@ -89,6 +89,31 @@ describe('readRemotePreviewBytes', () => {
     await expect(result).resolves.toMatchObject({ ok: false, code: 'aborted' });
     expect(read).toHaveBeenCalledTimes(2); // Neither the next offset nor an etag retry may start.
   });
+
+  it.each([1, 2])('a stop while the last chunk is on its way wins over it (%i chunks)', async (chunks) => {
+    const operation = new AbortController();
+    const content = Buffer.alloc(REMOTE_WORKSPACE_CHUNK_BYTES * (chunks - 1) + 10, 7);
+    const whole = remoteFile(content);
+    let finish!: () => void;
+    const read = vi.fn(async (request: { path: string; offset: number; length: number }) => {
+      if (request.offset + request.length >= content.length) await new Promise<void>(resolve => { finish = resolve; });
+      return whole(request);
+    });
+    const result = readRemotePreviewBytes(read, '/p/a.css', content.length, operation.signal);
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(chunks));
+    operation.abort();
+    finish();
+    await expect(result).resolves.toMatchObject({ ok: false, code: 'aborted' });
+    expect(read).toHaveBeenCalledTimes(chunks);
+  });
+
+  it('the last, short chunk is returned whole when nothing stops it', async () => {
+    const content = Buffer.from(Array.from({ length: REMOTE_WORKSPACE_CHUNK_BYTES + 10 }, (_, at) => at % 251));
+    const read = remoteFile(content);
+    const result = await readRemotePreviewBytes(read, '/p/a.css', content.length, new AbortController().signal);
+    expect(result.ok && Buffer.from(result.bytes).equals(content)).toBe(true);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('withUtf8Charset', () => {
