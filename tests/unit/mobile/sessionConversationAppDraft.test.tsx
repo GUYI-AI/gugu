@@ -35,12 +35,15 @@ import { emptyAgentWatchTimeline } from '../../../apps/desktop/src/mobile/agent-
 import { state, changed, EMPTY } from '../../../apps/desktop/src/lib/sessionInputOutboxBridge'
 import type { SessionInputOutbox } from '../../../apps/desktop/src/lib/sessionInputOutbox'
 import { SessionInputQueue } from '../../../apps/desktop/src/components/chat/SessionInputQueue'
+import * as attachmentEndpoint from '../../../apps/desktop/src/lib/attachmentsEndpoint'
+import * as sessionPublication from '../../../apps/desktop/src/lib/sessionPublication'
+import { chatService } from '../../../apps/desktop/src/lib/chat'
 import { translateSessionMessage } from '../../../apps/desktop/src/session/renderer/localization/locale-store'
 let harness: ReturnType<typeof createReactHarness>
 const oldScroll = Element.prototype.scrollTo
 const oldWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')!
 beforeEach(() => { sendNotices.clear(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 }); harness = createReactHarness(); stubVisibleIntersection(); Element.prototype.scrollTo = () => undefined })
-afterEach(() => { Object.defineProperty(window, 'innerWidth', oldWidth); harness.cleanup(); Element.prototype.scrollTo = oldScroll; vi.unstubAllGlobals();
+afterEach(() => { Object.defineProperty(window, 'innerWidth', oldWidth); harness.cleanup(); vi.restoreAllMocks(); Element.prototype.scrollTo = oldScroll; vi.unstubAllGlobals();
   Object.assign(state(), { accountId: null, queue: null, rows: EMPTY, valid: () => false }); changed(); lifeRead.mockReset(); transcriptView.setScrollMode.mockClear()
 })
 it('puts each App draft in the real task composer once, preserving human edits and sending nothing', async () => {
@@ -203,4 +206,30 @@ it('the phone pre-send guard and the successful submission share one retained su
   before.mockImplementation(() => {})
   await send()
   expect(onSend).toHaveBeenCalledTimes(1); expect(sendNotices.size).toBe(0)
+})
+
+it('adding a file creates a new submission without settling the earlier text-only failure', async () => {
+  Object.assign(state(), { accountId: 'owner', valid: () => true })
+  vi.spyOn(sessionPublication, 'getRendererSession').mockReturnValue({ user: { id: 'owner' } } as NonNullable<ReturnType<typeof sessionPublication.getRendererSession>>)
+  vi.spyOn(chatService, 'getOrCreateDM').mockResolvedValue('agent-dm')
+  vi.spyOn(attachmentEndpoint, 'prepareTaskAttachment').mockResolvedValue(null)
+  vi.spyOn(attachmentEndpoint, 'placeTaskAttachment').mockImplementation(async file => ({ itemId: 'uploaded', version: 1, name: file.name, mimeType: file.type, sizeBytes: file.size }))
+  const onSend = vi.fn<(text: string, files?: import('@gugu/session-core/session-record/contract').TurnFileRef[]) => Promise<void>>()
+    .mockRejectedValueOnce(new Error('first refused')).mockResolvedValue(undefined)
+  await renderWithAppProviders(harness, createNode(SessionConversation, {
+    timeline: emptyAgentWatchTimeline(), deviceId: 'desktop', sessionId: 'attachment-intent', agentUserId: 'agent', agentName: 'Test agent', sessionRuntime: 'acp',
+    respondingItemId: null, onRespond: vi.fn(), onSend, pendingSends: [], sending: false, agentWorking: false,
+    onStop: vi.fn(), stopping: false, onLoadOlder: async () => undefined,
+  }))
+  const field = () => harness.container.querySelector<HTMLElement>('[data-testid="prompt-editor"]')!
+  const send = () => act(async () => harness.container.querySelector<HTMLButtonElement>('button[aria-label="发送消息"]')!.click())
+  await waitForCondition(() => !!field(), 'phone composer ready')
+  await act(async () => writeComposer(field(), 'unchanged words'))
+  await send(); expect(sendNotices.size).toBe(1)
+  const picker = harness.container.querySelector<HTMLInputElement>('input[type="file"]')!
+  Object.defineProperty(picker, 'files', { configurable: true, value: [new File(['new attachment'], 'new.txt', { type: 'text/plain' })] })
+  await act(async () => picker.dispatchEvent(new Event('change', { bubbles: true })))
+  await send()
+  expect(onSend.mock.calls[1][1]).toEqual([expect.objectContaining({ name: 'new.txt' })])
+  expect(sendNotices.size).toBe(1)
 })

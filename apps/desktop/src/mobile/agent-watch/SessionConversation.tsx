@@ -106,7 +106,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   const [dismissals, setDismissals] = useState(0)
   const [backgroundError, setBackgroundError] = useState<string | null>(null)
   const editor = useRef<PromptEditorRef | null>(null)
-  const submissionFailures = useRef(new Map<string, { revision: object; notice: ReturnType<typeof messageFailureNotice> }>())
+  const submissionFailures = useRef(new Map<string, { revision: object; attachmentIds: string; notice: ReturnType<typeof messageFailureNotice> }>())
   const inFlight = useRef<{ attachments: ReadonlySet<string>; waiting: boolean; cancelWait(): void } | null>(null)
   const input = useRef<HTMLInputElement>(null)
   const sendTarget = useRef({ deviceId, sessionId, onSend, onBeforeSend })
@@ -207,9 +207,10 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     const ownerId = getRendererSession()?.user.id
     const scope = JSON.stringify([ownerId, deviceId, sessionId])
     const revision = composerDraft.revisionOf()
+    const attachmentIds = JSON.stringify(attachments.map(file => file.id))
     let failure = submissionFailures.current.get(scope)
-    if (!failure || failure.revision !== revision) {
-      failure = { revision, notice: messageFailureNotice(['acp', JSON.stringify([ownerId, deviceId]), sessionId, crypto.randomUUID()]) }
+    if (!failure || failure.revision !== revision || failure.attachmentIds !== attachmentIds) {
+      failure = { revision, attachmentIds, notice: messageFailureNotice(['acp', JSON.stringify([ownerId, deviceId]), sessionId, crypto.randomUUID()]) }
       submissionFailures.current.set(scope, failure)
     }
     const attempt = failure.notice.begin()
