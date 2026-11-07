@@ -166,7 +166,7 @@ export function ServerUninstallDialog({
                     </li>
                   ))}
                 </ul>
-                {othersSignedIn && <div className={`${body} text-[var(--warn)]`}>{t('devices.uninstall.othersWarning')}</div>}
+                {othersSignedIn && <div className={`${body} text-[var(--warn-fg)]`}>{t('devices.uninstall.othersWarning')}</div>}
               </div>
             )}
           </>

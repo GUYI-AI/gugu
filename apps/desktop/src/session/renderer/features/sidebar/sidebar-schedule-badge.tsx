@@ -19,7 +19,7 @@ export function SidebarScheduleMark({ digest, emphasized }: { digest: Sessionpag
     <span
       className={cn(
         'flex size-5 items-center justify-center',
-        digest.attention ? 'text-[var(--warn)]' : emphasized ? 'text-foreground-muted' : 'text-foreground-passive'
+        digest.attention ? 'text-[var(--warn-fg)]' : emphasized ? 'text-foreground-muted' : 'text-foreground-passive'
       )}
       data-session-schedule={digest.attention ? 'attention' : 'pending'}
       aria-label={lines.join(' · ')}
@@ -44,7 +44,7 @@ export function SidebarScheduleHoverMark({ digest }: { digest: SessionpageSchedu
             data-session-schedule-hover={digest.attention ? 'attention' : 'pending'}
             className={cn(
               'flex size-6 items-center justify-center rounded-sm',
-              digest.attention ? 'text-[var(--warn)]' : 'text-foreground-tertiary-passive'
+              digest.attention ? 'text-[var(--warn-fg)]' : 'text-foreground-tertiary-passive'
             )}
           >
             {digest.attention ? <AlertTriangle className="size-3.5" /> : <Clock className="size-3.5" />}

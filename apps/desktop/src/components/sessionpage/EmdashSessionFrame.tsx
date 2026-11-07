@@ -206,6 +206,11 @@ const GUGU_SKIN_BRIDGE_CSS = `
   --em-foreground-tertiary: var(--text-primary);
   --em-foreground-tertiary-muted: var(--muted-fg);
   --em-foreground-tertiary-passive: var(--faint-fg);
+  /* 状态字:会话页写字用的红/黄/绿/蓝接咕咕可读的那一档(≥4.5)。没桥之前取 session-ui 自己生成的色阶,浅色下 2.9–4.5。 */
+  --em-foreground-destructive: var(--danger-fg);
+  --em-foreground-warning: var(--warn-fg);
+  --em-foreground-success: var(--ok-fg);
+  --em-foreground-info: var(--live-fg);
 
   /* em surface families ——每个面的 rest / hover / press / selected 四挡。
      @@@state-ladder-mix (#2322):hover/press/selected 一律用咕咕那条阶梯的实色配方

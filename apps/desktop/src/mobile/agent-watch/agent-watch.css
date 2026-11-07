@@ -411,8 +411,8 @@
 /* 这个任务给自己排了定时(schedule-meta.tsx):时钟 + 下一个几点回来;没送到的换 ⚠ 与警示色。 */
 .gg-aw .gg-aw-item-meta > .gg-aw-item-schedule { display: inline-flex; align-items: center; gap: 0.25em; color: var(--fg); }
 .gg-aw .gg-aw-item-schedule svg { width: 0.9em; height: 0.9em; flex: none; color: var(--muted-fg); }
-.gg-aw .gg-aw-item-schedule[data-attention] { color: var(--warn); }
-.gg-aw .gg-aw-item-schedule[data-attention] svg { color: var(--warn); }
+.gg-aw .gg-aw-item-schedule[data-attention] { color: var(--warn-fg); }
+.gg-aw .gg-aw-item-schedule[data-attention] svg { color: var(--warn-fg); }
 
 
 /* Device identity uses the same leading lane as an Agent avatar, without an icon backplate. */

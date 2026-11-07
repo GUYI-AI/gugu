@@ -46,7 +46,7 @@ export const APP_PALETTE_COLORS = [
   ['--em-background-success', 'var(--ok-tint)'],
   ['--em-foreground-warning', 'var(--warn)'],
   ['--em-background-warning', 'var(--warn-tint)'],
-  ['--em-foreground-info', 'var(--live)'],
+  ['--em-foreground-info', 'var(--live-fg)'],
   ['--em-background-info', 'var(--live-soft)'],
   // File-family colours follow the same host tokens in both themes.
   ['--em-file-generic', 'var(--file-generic)'],

@@ -70,7 +70,9 @@ const COLOR_PATTERNS = [
   /(?<![\w&$-])#(?=[0-9a-fA-F]*[a-fA-F])(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?![\w-])/g,
   // 纯数字 hex 只在颜色语境里算:`color: #000` 是颜色,注释外的 `#7333` 一般是 issue 号。
   /(?<=[:=(,\s'"`])#(?:\d{8}|\d{6}|\d{3})(?![\w-])/g,
-  /\b(?:rgba?|hsla?|oklch|oklab)\(\s*[0-9.]/g,
+  /\b(?:rgba?|hsla?|hwb|lab|lch|oklch|oklab)\(\s*[0-9.]/g,
+  // color(display-p3 …) / color(srgb …):会话页那套色板就是用它写死的,漏了它门就看不见那几百处。
+  /\bcolor\(\s*(?:display-p3|srgb(?:-linear)?|a98-rgb|prophoto-rgb|rec2020|xyz(?:-d50|-d65)?)\s/g,
   /\b(?:color|background(?:-color)?|fill|stroke|border(?:-color)?|outline-color|caret-color)['"]?\s*[:=]\s*['"]?(?:white|black)\b/gi,
   /(?<![\w-])(?:bg|text|border|ring|divide|outline|fill|stroke|shadow|from|via|to|decoration|placeholder|caret|accent)-(?:white|black|(?:gray|zinc|neutral|slate|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3})(?:\/\d+)?(?![\w-])/g,
 ]

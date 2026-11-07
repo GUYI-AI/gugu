@@ -276,7 +276,7 @@
   --color-text-primary: var(--fg);
   --color-text-secondary: var(--muted-fg);
   --color-text-placeholder: var(--muted-fg);  /* placeholder 说明「该填什么」,是信息:可读次级字(≥4.5),❌ faint */
-  --color-text-link: var(--live);   /* @@@live-accent —— 链接与「信息」走同一个蓝 */
+  --color-text-link: var(--live-fg);   /* @@@live-accent —— 链接与「信息」走同一个蓝,写字用可读的那一档 */
   --color-text-danger: var(--danger-fg);
   --color-divider: var(--border);
   --color-bubble-received: var(--bubble-agent);
@@ -565,7 +565,7 @@
   --bubble-quote-bar-other: color-mix(in oklab, var(--fg) 25%, transparent);
 
   /* @@@live-accent —— 链接 = 信息 = live,全 app 同一个蓝。 */
-  --text-link: var(--live);
+  --text-link: var(--live-fg);
   --text-quote-author: #7b8ba7;
   /* @@@one-red (Refs #6104) — 「出事了」这件事只有一个红。原来同一族有四个名字各拍一个值:
      --danger(#ef4444)/ --color-danger(#FF3B30,iOS 系统红)/ --badge-red(#FA5151)/
@@ -659,6 +659,8 @@
   --live-light: oklch(0.623 0.188 260); /* blue-500 #3b82f6 —— 浅底上用满饱和这一档 */
   --live: var(--live-dark);
   --live-soft: color-mix(in oklab, var(--live) 14%, transparent);
+  /* 写成字(链接、「在跑」的状态字)用 --live-fg,同 --danger-fg / --warn-fg / --ok-fg:暗色下 live 本身对所有面 ≥5.6,直接用。 */
+  --live-fg: var(--live);
   /* 选中文字的底:半透明蓝,只叠底、不改字色 —— 页面、反色的用户气泡、代码高亮上原来的字色都还读得出。 */
   --text-selection: color-mix(in oklab, var(--live) 32%, transparent);
 
@@ -673,8 +675,8 @@
   --muted:    #2a2a2a; /* 填充面(分段底、输入底):比 --card 高一档,卡片里也分得出 */
   /* 次级文字 = 前景 62% 混进 --bg:对 --card 5.24、对 --muted 4.67(过 AA 4.5)。 */
   --muted-fg: #939393;
-  /* 装饰色(图标、禁用、状态点),❌ 承载信息:对 --bg 3.69。 */
-  --faint-fg: #727272;
+  /* 装饰色(图标、禁用、状态点),❌ 承载信息。图标也要分得出(WCAG 1.4.11):对 --muted 3.07,其余面更高。 */
+  --faint-fg: #747474;
   /* @@@primary-ink (Refs #6104) — design.md:chrome 是墨色,主按钮是前景/背景反相。
      暗色下「墨」就是近白的前景端 —— 值不变,只是不再写成 #fff 这个族外字面量。 */
   --primary:    var(--fg); /* 墨 = 前景(发送钮:前景底、表面色字) */
@@ -742,6 +744,7 @@
 .emdark {
   --live: var(--live-dark);
   --live-soft: color-mix(in oklab, var(--live) 14%, transparent);
+  --live-fg: var(--live);
   --shadow-lift: var(--shadow-lift-dark);
   /* 16 个基础色(ANSI 0–15)= VS Code Dark+ 的默认终端色(microsoft/vscode
      terminalColorRegistry.ts)。黑 #000000 在深底上本身读不出来,由 pty.ts 的
@@ -766,6 +769,7 @@
 .emlight {
   --live: var(--live-light);
   --live-soft: color-mix(in oklab, var(--live) 14%, transparent);
+  --live-fg: color-mix(in oklab, var(--live) 80%, black);
   --shadow-lift: var(--shadow-lift-light);
   /* 16 个基础色(ANSI 0–15)= VS Code Light+ 的默认终端色(microsoft/vscode
      terminalColorRegistry.ts),是跟浅底成套挑过的一组。❌ 不给就回落到 xterm 为黑底
@@ -882,6 +886,8 @@
 
   /* @@@canonical-tokens 浅色覆盖 —— #7333 亮色:#fff 内容 / #f9f9f9 底层 / #1a1c1f 前景。 */
   --live: var(--live-light);
+  /* 浅色 live(blue-500)对白底只有 3.67、对 --muted 3.14,写字不够 4.5。掺 20% 黑:#295fb7,对所有面 ≥5.2;式子跟着 live 走,主题包也照样适用。掺黑而不掺 --fg,是因为 .emlight 作用域没有自己的 --fg。 */
+  --live-fg: color-mix(in oklab, var(--live) 80%, black);
   --bg:       #ffffff; /* 内容表面 */
   --page:     #f9f9f9; /* 窗口底层:rail、会话列表(gray-fixed-50) */
   --card:     #ffffff;
@@ -891,8 +897,8 @@
   --muted:    #ededed; /* 填充面(gray-fixed-100) */
   /* 次级文字 = 前景 66% 混白:对 --bg 5.5、对 --page 5.22、对 --muted 4.69(都过 AA 4.5)。 */
   --muted-fg: #68696b;
-  /* 装饰色:对 --bg 3.12。 */
-  --faint-fg: #919293;
+  /* 装饰色:对 --muted 3.03(≥3,WCAG 1.4.11),其余面更高。 */
+  --faint-fg: #878889;
   --primary:    var(--fg);
   --primary-fg: var(--bg);
   /* hairline 与状态叠色的式子与暗色侧**逐字相同**:叠的是 --fg,而 --fg 自己分主题。 */
@@ -2168,8 +2174,8 @@ body.barcode-scanner-active #root {
 .gg-chip[data-tone='accent'] { background: var(--primary); color: var(--primary-fg); font-weight: var(--font-weight-semibold); }
 /* danger chip 是实底红上的字:走 --danger-solid 那一对(白字 6.47),不是中性族的一员(同上)。 */
 .gg-chip[data-tone='danger'] { background: var(--danger-solid); color: var(--danger-solid-fg); font-weight: var(--font-weight-semibold); }
-.gg-chip[data-tone='ok'] { background: var(--ok-tint); color: var(--ok); }
-.gg-chip[data-tone='warn'] { background: var(--warn-tint); color: var(--warn); }
+.gg-chip[data-tone='ok'] { background: var(--ok-tint); color: var(--ok-fg); }
+.gg-chip[data-tone='warn'] { background: var(--warn-tint); color: var(--warn-fg); }
 .gg-chip[data-appearance='plain'] { background: transparent; }
 /* 计数徽标:同一 chip 的圆形变体(未读数) */
 .gg-chip[data-shape='count'] { min-width: 18px; padding: 0 5px; justify-content: center; font-variant-numeric: tabular-nums; }

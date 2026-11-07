@@ -56,7 +56,6 @@ describe('the App palette, from tokens.css', () => {
   it('gives the keyboard focus ring the host\'s colour: --focus-ring, the --live blue of each theme (#7333)', () => {
     // --focus-ring sits in a theme-free block and points at --live, which each theme sets: the ring must follow the theme.
     expect(dark.get('--em-focus-ring')).toBe(dark.get('--em-foreground-info'));
-    expect(light.get('--em-focus-ring')).toBe(light.get('--em-foreground-info'));
     expect(dark.get('--em-focus-ring')).not.toBe(light.get('--em-focus-ring'));
   });
 

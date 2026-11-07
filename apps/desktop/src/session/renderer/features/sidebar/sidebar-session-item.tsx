@@ -291,7 +291,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
         <Tooltip>
           <TooltipTrigger
             render={
-              <span className="flex shrink-0 items-center text-[var(--warn)]" data-testid="sidebar-status-source-fault">
+              <span className="flex shrink-0 items-center text-[var(--warn-fg)]" data-testid="sidebar-status-source-fault">
                 <AlertTriangle className="size-3" />
               </span>
             }
