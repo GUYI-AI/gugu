@@ -2,11 +2,30 @@ import { useCallback, useLayoutEffect, useRef, type SetStateAction } from 'react
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { composerCardLine } from '../lib/composerCardCopy'
 import { parseWidgetMessage } from '@gugu/core/shared/ui/widgetModels'
+import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
+import { parseVoiceAttachmentContent } from '@gugu/core/shared/ui/voiceAttachmentModels'
 import type { ChatMessageComposerProps } from '../components/chat/chatComposerModels'
 import type { QuoteSelection } from '../components/chat/messageQuoteContent'
 import { useChatStore } from '../store/chatContext'
 
 type Quote = NonNullable<ChatMessageComposerProps['quoteContent']>
+
+/** One quote for every entry (reply menu, annotated-image draft): an attachment quotes its file, never a bare label. */
+function quoteOfMessage(msg: MessageItem, senderName: string, attachmentLabel: string, selection?: QuoteSelection,
+  previewTextOf?: (message: MessageItem) => string): Quote {
+  const textSelection = msg.content_type === 'text' ? selection : undefined
+  const attachment = msg.content_type === 'attachment' && !parseVoiceAttachmentContent(msg.content) ? parseAttachmentContent(msg.content, msg) ?? undefined : undefined
+  return {
+    messageId: msg.id, source: msg, senderName, attachment,
+    // Only an explicit text selection is an excerpt. Attachment/card labels are presentation, not excerpts.
+    originalContent: textSelection?.originalContent,
+    content: msg.content_type === 'widget' ? parseWidgetMessage(msg.content)?.text ?? '[Widget]'
+      : attachment ? attachment.fileName
+      : !textSelection && previewTextOf ? previewTextOf(msg)
+      : msg.content_type === 'attachment' ? attachmentLabel
+      : msg.content_type === 'card' ? composerCardLine(msg.content ?? '') : msg.content ?? '',
+  }
+}
 
 /** Every conversation surface preserves the same selection intent, source and cancellation token. */
 export function useMessageQuote(chatId: string | null, senderNameOf: (id: string | null) => string, attachmentLabel: string,
@@ -25,18 +44,8 @@ export function useMessageQuote(chatId: string | null, senderNameOf: (id: string
     if (chatId) setDraftQuote(chatId, next)
   }, [chatId, setDraftQuote])
   const onQuote = useCallback((msg: MessageItem, selection?: QuoteSelection) => {
-    setQuote(() => {
-      const textSelection = msg.content_type === 'text' ? selection : undefined
-      return {
-        messageId: msg.id, source: msg, senderName: latest.current.senderNameOf(msg.sender_user_id),
-        // Only an explicit text selection is an excerpt. Attachment/card labels are presentation, not excerpts.
-        originalContent: textSelection?.originalContent,
-        content: msg.content_type === 'widget' ? parseWidgetMessage(msg.content)?.text ?? '[Widget]'
-          : !textSelection && latest.current.previewTextOf ? latest.current.previewTextOf(msg)
-          : msg.content_type === 'attachment' ? latest.current.attachmentLabel
-          : msg.content_type === 'card' ? composerCardLine(msg.content ?? '') : msg.content ?? '',
-      }
-    })
+    const { senderNameOf, attachmentLabel, previewTextOf } = latest.current
+    setQuote(() => quoteOfMessage(msg, senderNameOf(msg.sender_user_id), attachmentLabel, selection, previewTextOf))
   }, [setQuote])
   return { quote, setQuote, onQuote }
 }
