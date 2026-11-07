@@ -1,4 +1,5 @@
 /** @jsxImportSource solid-js */
+import { projectSourceFragments } from './state/source-fragments';
 import { appendActivityUnits, preserveActivityIds, trailingActivity } from './state/agent-activity';
 import { activityLanes, joinedActivityLanes } from './state/activity-lanes';
 import { latestViewerInput, resetActivityOnInput } from './state/activity-boundary';
@@ -548,6 +549,7 @@ export function ChatRoot(props: ChatRootProps) {
   // An incremental append only reads the new tail's fold keys. Keep the full
   // fold snapshot reactive so older headers still rebuild their hidden rows.
   const committedFolds = createMemo(() => viewState().snapshot());
+  let lastSourceWindow: ChatCommands['sourceWindow'];
   let lastCommittedFolds: Record<string, boolean> | undefined;
 
   // ── Committed-tier build + model-swap reset (single effect) ────────────────
@@ -581,11 +583,14 @@ export function ChatRoot(props: ChatRootProps) {
       lastState = s;
     }
 
+    const previousSourceUnits = committedUnitsArr;
     const prev = lastCommitted;
     const ctx = segmentCtx(false);
     const folds = committedFolds();
+    const sourceWindow = commands().sourceWindow;
 
     if (
+      !sourceWindow && !lastSourceWindow &&
       folds === lastCommittedFolds &&
       next.length > prev.length &&
       (prev.length === 0 || next[prev.length - 1] === prev[prev.length - 1]) &&
@@ -622,6 +627,8 @@ export function ChatRoot(props: ChatRootProps) {
         pendingSizeDeltas = [];
       }
       committedUnitsArr = preserveActivityIds(committedUnitsArr, flattenTier(next, ctx, SEGMENTERS, UNIT_REGISTRY));
+      committedUnitsArr = projectSourceFragments(committedUnitsArr, sourceWindow,
+        lastSourceWindow?.sourceLineage === sourceWindow?.sourceLineage ? previousSourceUnits : []);
       committedDayKey = trailingDayKey(next, undefined, ctx.latestTurnId);
       committedIndexById.clear();
       for (let i = 0; i < committedUnitsArr.length; i++) {
@@ -632,6 +639,7 @@ export function ChatRoot(props: ChatRootProps) {
       }
     }
 
+    lastSourceWindow = sourceWindow;
     lastCommitted = next;
     lastCommittedFolds = folds;
     setCommittedUnitsVersion((v) => v + 1);

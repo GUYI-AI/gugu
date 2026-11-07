@@ -15,6 +15,7 @@
  *   3. Register the UnitDef in UNIT_REGISTRY.
  */
 
+import { sourceFragmentUnitDef } from '../rows/message/source-fragment.def';
 import { compactionUnitDef } from '@session-chat/components/rows/boundary/compaction.def';
 import { activityUnitDef } from '@session-chat/components/rows/agent-activity/activity.def';
 import { contextResetUnitDef } from '@session-chat/components/rows/boundary/context-reset.def';
@@ -297,6 +298,7 @@ export const UNIT_REGISTRY: Record<string, RegistryUnitDef> = {
   message: messageUnitDef as unknown as RegistryUnitDef,
   // Composite item units (single-unit per ChatItem kind)
   diff: diffUnitDef as unknown as RegistryUnitDef,
+  'source-fragment': sourceFragmentUnitDef as unknown as RegistryUnitDef,
   plan: planUnitDef as unknown as RegistryUnitDef,
   thinking: thinkingUnitDef as unknown as RegistryUnitDef,
   compaction: compactionUnitDef as unknown as RegistryUnitDef,

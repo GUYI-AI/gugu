@@ -6,6 +6,7 @@
  * dependency through the package entry point.
  */
 
+import type { TimelineWindowFields } from '@gugu/session-core/session-record/contract';
 import type { ChatAttachment, ChatMessage, OpenedOutput } from './model';
 
 export type ChatViewCommandId = 'chat.scrollToTop' | 'chat.scrollToBottom';
@@ -35,6 +36,8 @@ export const CHAT_VIEW_COMMANDS = [
  * via `view.setCommands(commands)`.
  */
 export type ChatCommands = {
+  /** Bounded read-only source rows; never canonical input, unread, or permission state. */
+  sourceWindow?: Pick<TimelineWindowFields, 'sourceLineage' | 'sourceFragments' | 'resolvedFragmentOwners'>;
   /** Open the host's credit page after an authoritative credit exhaustion failure. */
   onRechargeCredits?: () => void;
   /** Retry the same durable input identity, in place. */
