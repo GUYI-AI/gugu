@@ -100,18 +100,41 @@ export class TailIdentityStore {
     return decode(bytes, hash);
   }
 
-  private async find(file: FileHandle, hash: string, atCommit: number, budget: IdentityBudget): Promise<{ row: Row | null; count: number }> {
+  private async fence(hash: string, budget: IdentityBudget): Promise<number | null> {
+    let file: FileHandle;
+    try { file = await open(`${this.path(hash)}.fence`, 'r'); }
+    catch (error) { if (missing(error)) return null; throw error; }
+    try {
+      const bytes = await this.read(file, 0, 48, budget), length = bytes.readDoubleBE(4);
+      if ((await file.stat()).size !== 48 || bytes.toString('ascii', 0, 4) !== 'GFD1'
+        || !Number.isSafeInteger(length) || length < 0 || length % SLOT
+        || !digest(`${hash}:${length}`).equals(bytes.subarray(12, 44))) throw new IdentityIndexError('corrupt', 'durable fence');
+      return length;
+    } finally { await file.close(); }
+  }
+  private async publishFence(hash: string, length: number): Promise<void> {
+    const bytes = Buffer.alloc(48); bytes.write('GFD1'); bytes.writeDoubleBE(length, 4);
+    digest(`${hash}:${length}`).copy(bytes, 12);
+    const path = `${this.path(hash)}.fence`, pending = await open(`${path}.pending`, 'w');
+    try { await pending.writeFile(bytes); await pending.sync(); } finally { await pending.close(); }
+    await rename(`${path}.pending`, path);
+  }
+  private async find(file: FileHandle, hash: string, atCommit: number, budget: IdentityBudget): Promise<{ row: Row | null; count: number; tail: Row | null }> {
     const size = (await file.stat()).size;
     if (!Number.isSafeInteger(size)) throw new IdentityIndexError('corrupt', 'file size');
-    if (size % SLOT) throw new IdentityIndexError('corrupt', 'torn tail requires exact segment retry');
-    const count = size / SLOT;
-    if (!count) return { row: null, count: 0 };
+    const durable = await this.fence(hash, budget);
+    if (durable === null && size >= SLOT && (await this.slot(file, hash, 0, budget)).commitSeq <= atCommit) {
+      throw new IdentityIndexError('corrupt', 'missing committed fence');
+    }
+    if (durable !== null && size < durable) throw new IdentityIndexError('corrupt', 'committed range truncated');
+    const count = (durable ?? 0) / SLOT;
+    if (!count) return { row: null, count: 0, tail: null };
     const tail = await this.slot(file, hash, count - 1, budget);
-    if (tail.commitSeq <= atCommit) return { row: tail, count };
+    if (tail.commitSeq <= atCommit) return { row: tail, count, tail };
     // Exact interrupted-next-commit retries need two probes, regardless of revision count.
     if (count > 1) {
       const previous = await this.slot(file, hash, count - 2, budget);
-      if (previous.commitSeq <= atCommit) return { row: previous, count: count - 1 };
+      if (previous.commitSeq <= atCommit) return { row: previous, count: count - 1, tail };
     }
     let low = 0, high = count - 1;
     let row: Row | null = null;
@@ -122,7 +145,7 @@ export class TailIdentityStore {
       else high = mid;
     }
     if (low < high) throw new IdentityIndexError('corrupt', 'probe ceiling');
-    return { row, count: low };
+    return { row, count: low, tail };
   }
 
   private async lookup(space: Space, scope: string, lineage: string, key: string, atCommit: number, budget: IdentityBudget): Promise<IdentityLookup> {
@@ -130,7 +153,11 @@ export class TailIdentityStore {
     const hash = binding(space, scope, lineage, key);
     let file: FileHandle;
     try { file = await open(this.path(hash), 'r'); }
-    catch (error) { if (missing(error)) return { kind: 'absent' }; throw error; }
+    catch (error) {
+      if (!missing(error)) throw error;
+      if (await this.fence(hash, budget) !== null) throw new IdentityIndexError('corrupt', 'committed data missing');
+      return { kind: 'absent' };
+    }
     try {
       const { row } = await this.find(file, hash, atCommit, budget);
       return row ? { kind: 'found', value: { canonicalId: row.canonicalId, revision: row.revision, projectionRef: row.projectionRef } } : { kind: 'absent' };
@@ -202,8 +229,10 @@ export class TailIdentityStore {
             || (entry.space === 'receipt' && (prior.row.revision !== next.revision || prior.row.projectionRef !== next.projectionRef)))) {
             throw new IdentityIndexError('conflict', 'canonical identity or receipt differs');
           }
-          await file.truncate(prior.count * SLOT);
-          if (!prior.row || entry.space === 'identity') {
+          const alreadyDurable = prior.tail?.commitSeq === commitSeq;
+          if (alreadyDurable && !encode(prior.tail!).equals(entry.bytes)) throw new IdentityIndexError('conflict', 'durable retry differs');
+          if (!alreadyDurable) await file.truncate(prior.count * SLOT);
+          if (!alreadyDurable && (!prior.row || entry.space === 'identity')) {
             let written = 0;
             while (written < SLOT) {
               const result = await file.write(entry.bytes, written, SLOT - written, prior.count * SLOT + written);
@@ -212,6 +241,7 @@ export class TailIdentityStore {
             }
           }
           await file.sync();
+          await this.publishFence(entry.hash, (await file.stat()).size);
         } finally { await file.close(); }
         const dir = await open(directory, 'r');
         try { await dir.sync(); } finally { await dir.close(); }

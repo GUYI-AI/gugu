@@ -27,7 +27,7 @@ describe('bounded disk identity index', () => {
   const lookup = (store: TailIdentityStore, commit: number, meter = budget()) => store.lookupIdentity('conversation', 'branch', 'native-uuid', commit, meter);
   async function dataFile() {
     const shard = (await readdir(root)).find(name => name.length === 2)!;
-    return join(root, shard, (await readdir(join(root, shard)))[0]);
+    return join(root, shard, (await readdir(join(root, shard))).find(name => name.endsWith('.gidx'))!);
   }
   it('separates receipts, identities, scopes and lineages without reading absent keys', async () => {
     await store.commitSegment(1, 0, [write()], [write()], budget());
@@ -56,14 +56,20 @@ describe('bounded disk identity index', () => {
     await expect(lookup(store, 1)).rejects.toMatchObject({ code: 'corrupt' });
     await expect(new TailIdentityStore(path).lookupIdentity('conversation', 'branch', 'native-uuid', 1, budget())).rejects.toMatchObject({ code: 'ENOTDIR' });
   });
-  it('reports a torn tail and repairs only an exact retry of its durable intent', async () => {
+  it('keeps a committed prefix readable across unpublished short tails and exact retries', async () => {
     await store.commitSegment(1, 0, [], [write()], budget());
+    const path = await dataFile(), fence = await readFile(`${path}.fence`);
     await store.commitSegment(2, 1, [], [write('v2')], budget());
-    const path = await dataFile(); await truncate(path, 1024 + 400);
-    await expect(lookup(store, 1)).rejects.toMatchObject({ code: 'corrupt' });
+    const complete = await readFile(path);
+    for (const partial of [4, 400]) {
+      await writeFile(`${path}.fence`, fence); await writeFile(path, complete.subarray(0, 1024 + partial));
+      expect(await lookup(store, 1)).toEqual({ kind: 'found', value: value() });
+    }
     await store.commitSegment(2, 1, [], [write('v2')], budget());
     expect(await lookup(store, 1)).toEqual({ kind: 'found', value: value() });
     expect(await lookup(store, 2)).toEqual({ kind: 'found', value: value('v2') });
+    await truncate(path, 1024 + 400);
+    await expect(lookup(store, 1)).rejects.toMatchObject({ code: 'corrupt' });
   });
   it('meters actual short reads, completes short writes and syncs before return', async () => {
     const sample = await open(join(directory, 'probe'), 'w+');
@@ -81,7 +87,24 @@ describe('bounded disk identity index', () => {
     try {
       await store.commitSegment(1, 0, [], [write()], budget());
       const meter = budget(); expect(await lookup(store, 1, meter)).toEqual({ kind: 'found', value: value() });
-      expect(meter.bytes).toBe(1024); expect(readSpy.mock.calls.length).toBeGreaterThan(32); expect(sync).toHaveBeenCalled();
+      expect(meter.bytes).toBe(1024 + 48); expect(readSpy.mock.calls.length).toBeGreaterThan(32); expect(sync).toHaveBeenCalled();
+    } finally { await sample.close(); }
+  });
+  it('survives an interrupted real commit after the first four new slot bytes', async () => {
+    await store.commitSegment(1, 0, [], [write()], budget());
+    const sample = await open(await dataFile(), 'r+'), prototype = Object.getPrototypeOf(sample) as FileHandle;
+    const original = prototype.write; let interrupt = true;
+    const spy = vi.spyOn(prototype, 'write').mockImplementation(async function (this: FileHandle, ...args: unknown[]) {
+      if (interrupt && Buffer.isBuffer(args[0]) && args[0].length === 1024) {
+        interrupt = false; args[2] = 4; await Reflect.apply(original, this, args); throw new Error('power_loss');
+      }
+      return Reflect.apply(original, this, args);
+    });
+    try {
+      await expect(store.commitSegment(2, 1, [], [write('v2')], budget())).rejects.toThrow('power_loss');
+      expect(await lookup(store, 1)).toEqual({ kind: 'found', value: value() });
+      spy.mockRestore(); await store.commitSegment(2, 1, [], [write('v2')], budget());
+      expect(await lookup(store, 2)).toEqual({ kind: 'found', value: value('v2') });
     } finally { await sample.close(); }
   });
   it('preserves canonical IDs and bounds batches before encoding', async () => {
@@ -93,7 +116,7 @@ describe('bounded disk identity index', () => {
   it('latest lookup reads one slot after many unrelated keys and revisions', async () => {
     for (let commit = 1; commit <= 20; commit++) await store.commitSegment(commit, commit - 1, [], [write(`v${commit}`), write('other', `key${commit}`)], budget());
     const meter = budget(); expect(await lookup(store, 20, meter)).toEqual({ kind: 'found', value: value('v20') });
-    expect(meter.bytes).toBe(1024);
+    expect(meter.bytes).toBe(1024 + 48);
     expect(await lookup(store, 7)).toEqual({ kind: 'found', value: value('v7') });
   });
   it('can retry a maximum segment after a mid-write budget failure within one shared budget', async () => {
