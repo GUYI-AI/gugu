@@ -479,7 +479,6 @@
                               （@@@window-layer），行一直点得到，从它开出来的菜单就得开在任何页面层之上（#6699） */
 
   /* ── Semantic theme tokens ───────────────────────────────────────────────── */
-  --bg-secondary: color-mix(in oklab, var(--page) 70%, transparent);
   /* 三档文字色。⚠️ 第三档**不是正文色**，是装饰色（图标、状态点、禁用态）。
      实测（tests/unit/desktop/styles/textContrast.test.ts 会持续核）：
        档次        暗色对 --card   亮色对 --page
@@ -492,8 +491,6 @@
   --border-color: var(--border);
   --border-subtle: var(--border-strong);
   /* @@@primary-ink —— 品牌色 = 墨,与 --primary 同一个值,❌ 不是第二个 accent。 */
-  --bubble-mine: var(--bubble-own);
-  --bubble-other: var(--bubble-agent);
   --chat-row-hover: var(--hover);     /* @@@2322 收敛别名 → --hover */
   --input-bg: color-mix(in oklab, var(--fg) 6%, transparent);
   --nav-rail: var(--page); /* #7333 rail 与会话列表同在窗口底层(窗口/侧栏材质一层) */
@@ -511,10 +508,8 @@
   --switch-track-off: var(--muted);
   --switch-thumb: var(--muted-fg);
 
-  --bg-accent-soft: rgba(255,255,255,0.10);
 
   /* Text on tinted/translucent surfaces */
-  --text-on-bubble-strong: color-mix(in oklab, var(--fg) 92%, transparent);
   --text-on-bubble-muted: color-mix(in oklab, var(--fg) 75%, transparent);
 
   /* Quote bar (reply preview) */
@@ -541,7 +536,6 @@
 
   /* Brand / accent variants */
   --accent-hover: oklch(0.860 0 0); /* was #d4d4d4 */
-  --accent-glow-soft: color-mix(in oklab, var(--fg) 12%, transparent);
 
   /* Transparent fill (gradient endpoints, ghost button backgrounds) */
   --bg-transparent: transparent;
@@ -620,8 +614,6 @@
   --state-press-amount: 6%;
   --state-selected-amount: 7.5%;
   /* #7333 气泡也回到纯灰:别人的一档、自己的高一档(左右位置 + 明度区分,不靠色相)。 */
-  --bubble-agent: #242424;
-  --bubble-own:   #2e2e2e;
   /* --r / --r-lg / --r-xl / --r-bubble / --r-pill 这批短名**已经删了**(见上方 shape 表的说明)。
      ❌ 别在这里(或任何地方)把它们再定义一遍,那正是「六套刻度」的来路。 */
   /* Listen Mode segmented pill — design .lmseg. */
@@ -707,17 +699,11 @@
 
 /* ── Light theme overrides ─────────────────────────────────────────────────── */
 [data-theme="light"] {
-  --bg-secondary: rgba(249,249,249,0.85);
   /* @@@elevated-opaque - elevated surfaces float above message content; a translucent value
      bleeds the text underneath through pop-out menus/cards (no backdrop blur backs it). Keep
      it opaque like the dark theme so floating surfaces stay readable. */
   --nav-rail: var(--page); /* #7333 rail 与会话列表同在窗口底层 */
   --input-bg: rgba(255,255,255,0.6);
-  /* @@@bubble-fill - received 暖灰、own 极淡冷蓝，无边框。
-     橙色仍只作真 accent（按钮/未读/选中微染），不进气泡。 */
-  --bubble-other: #f4f4f4;
-  /* @@@bubble-mine-neutral (#815 → #7333) 自己的消息深一档的纯灰,区分但不喧哗。 */
-  --bubble-mine: #ebebeb;
   --border-color: var(--border);
   --border-subtle: var(--border-strong);
   /* @@@shadow-lift —— 浅色侧**只**重定义这一档,上面那一排别名跟着它走,
@@ -731,9 +717,7 @@
   --bg-overlay-strong: rgba(0,0,0,0.28);
   --modal-border: var(--border-subtle);
   --modal-shadow: var(--shadow-modal);
-  --bg-accent-soft: rgba(0,0,0,0.06);
   /* @@@primary-ink — 浅色品牌色 = 墨(--primary) */
-  --text-on-bubble-strong: rgba(0,0,0,0.85);
   --text-on-bubble-muted: rgba(0,0,0,0.55);
   --bubble-quote-bar-mine: rgba(0,0,0,0.18);
   --bubble-quote-bar-other: rgba(0,0,0,0.14);
@@ -741,7 +725,6 @@
   /* ── Extended semantic tokens (D1 cleanup) — light overrides ───────────── */
 
   --accent-hover: oklch(0.320 0 0); /* was #333333 */
-  --accent-glow-soft: rgba(0,0,0,0.08);
   /* @@@faint-selection - 选中行近乎无感;值随 :root 别名走 --selected(#3b82f612)。 */
 
   --bg-transparent: transparent;
@@ -789,14 +772,25 @@
   --state-hover-amount: 4%;
   --state-press-amount: 6%;
   --state-selected-amount: 7.5%;
-  --bubble-agent: #f4f4f4;
-  --bubble-own:   #ebebeb;
   --listen-mode-active-bg: var(--bg);
   --listen-mode-active-fg: var(--fg);
   --listen-mode-active-shadow: none; /* @@@shadow-lift —— 分段控件不是浮层,浅色侧也不给 */
   --chart-1: #2a78d6; --chart-2: #eb6834; --chart-3: #1baf7a; --chart-4: #eda100; --chart-5: #e87ba4; --chart-6: #008300;
 }
 
+/* 从种子色算出来的面和字。挂在每个 [data-theme] 上而不是只挂 :root:
+   局部改主题的子树(浏览器面板的固定浅色)重声明了种子,这些得跟着在那一层重算。 */
+:root,
+[data-theme] {
+  --bg-secondary: color-mix(in oklab, var(--page) 75%, transparent);
+  --bg-accent-soft: color-mix(in oklab, var(--fg) 9.5%, transparent);
+  --text-on-bubble-strong: color-mix(in oklab, var(--fg) 94%, transparent);
+  --accent-glow-soft: color-mix(in oklab, var(--fg) 11%, transparent);
+  --bubble-agent: color-mix(in oklab, var(--fg) 3%, var(--card));
+  --bubble-own: color-mix(in oklab, var(--fg) 8%, var(--card));
+  --bubble-other: var(--bubble-agent);
+  --bubble-mine: var(--bubble-own);
+}
 /* File-family marks share one App/host palette. Dark keeps the light hue and lightness at 85% chroma. */
 :root {
   --file-generic: oklch(0.63634 0.01132 286.02);
