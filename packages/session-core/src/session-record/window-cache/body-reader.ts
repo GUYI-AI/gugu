@@ -1,4 +1,5 @@
-import type { SourceSnapshot, WindowBudget, WindowByteSource } from './types';
+import { BODY_CHUNK_BYTES, BODY_TEXT_BYTES } from './types';
+import type { BodyChunkDescriptor, SegmentRef, SourceSnapshot, WindowBodyRef, WindowBodyResult, WindowBudget, WindowByteSource } from './types';
 
 /** A persisted tokenizer checkpoint points inside a JSON string, after its opening quote. */
 export type JsonBodyPosition = { rawOffset: number; decodedOffset: number };
@@ -98,4 +99,56 @@ export async function readJsonStringBodyPage(source: WindowByteSource, options: 
   signal?.throwIfAborted();
   return { kind: 'body', text: parts.join(''), complete,
     next: { rawOffset: position.rawOffset + cursor, decodedOffset: position.decodedOffset + decoded } };
+}
+
+/** Descriptor lookup is a point read by body/revision/ordinal, never a previous-chunk walk. */
+export interface BodyPageIo {
+  descriptor(body: WindowBodyRef, ordinal: number, budget: WindowBudget): Promise<BodyChunkDescriptor | null>;
+  content(ref: SegmentRef, budget: WindowBudget): Promise<Uint8Array>;
+}
+
+export async function readIndexedBodyPage(io: BodyPageIo, input: {
+  bodyRef: WindowBodyRef; offset: number; maxBytes: number; budget: WindowBudget; signal?: AbortSignal;
+}): Promise<WindowBodyResult> {
+  const { bodyRef: body, offset, maxBytes, budget, signal } = input;
+  if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(maxBytes) || maxBytes < 4 || maxBytes > BODY_TEXT_BYTES)
+    return { kind: 'reset', reason: 'invalid_cursor', io: budget.counters };
+  signal?.throwIfAborted();
+  if (body.byteLength !== null && offset > body.byteLength) return { kind: 'reset', reason: 'invalid_cursor', io: budget.counters };
+  if (offset === body.byteLength) return { kind: 'body', text: '', offset, nextOffset: offset, moreAfter: 'no', io: budget.counters };
+  const first = Math.floor(offset / BODY_CHUNK_BYTES);
+  const count = Math.min(maxBytes, body.byteLength === null ? maxBytes : body.byteLength - offset);
+  const last = Math.floor((offset + count - 1) / BODY_CHUNK_BYTES);
+  const chunks: Uint8Array[] = [];
+  for (let ordinal = first; ordinal <= last; ordinal += 1) {
+    signal?.throwIfAborted();
+    const descriptor = await io.descriptor(body, ordinal, budget);
+    if (!descriptor?.content) return { kind: 'needs_location', bodyId: body.id, offset, io: budget.counters };
+    if (descriptor.bodyId !== body.id || descriptor.revision !== body.revision || descriptor.ordinal !== ordinal ||
+      descriptor.decodedStart !== ordinal * BODY_CHUNK_BYTES || descriptor.decodedBytes < 1 || descriptor.decodedBytes > BODY_CHUNK_BYTES)
+      throw new Error('Body chunk descriptor binding mismatch');
+    const bytes = await io.content(descriptor.content, budget);
+    if (bytes.length !== descriptor.decodedBytes) throw new Error('Body chunk length mismatch');
+    chunks.push(bytes);
+  }
+  const available = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const combined = new Uint8Array(available);
+  let written = 0;
+  for (const chunk of chunks) { combined.set(chunk, written); written += chunk.length; }
+  const start = offset % BODY_CHUNK_BYTES;
+  if (start >= available || (combined[start] & 0xc0) === 0x80) return { kind: 'reset', reason: 'invalid_cursor', io: budget.counters };
+  let end = Math.min(available, start + count);
+  // At most three trailing bytes belong to a scalar completed by the next chunk.
+  let text: string | undefined;
+  for (let removed = 0; removed <= 3 && end > start; removed += 1, end -= 1) {
+    try { text = decoder.decode(combined.subarray(start, end)); break; }
+    catch (error) { if (removed === 3) throw error; }
+  }
+  if (text === undefined) throw new Error('Invalid UTF-8 body chunk');
+  const length = end - start;
+  budget.charge('decodedBytes', length); budget.charge('outputBytes', length);
+  signal?.throwIfAborted();
+  const nextOffset = offset + length;
+  return { kind: 'body', text, offset, nextOffset,
+    moreAfter: body.byteLength === null ? 'unknown' : nextOffset < body.byteLength ? 'yes' : 'no', io: budget.counters };
 }
