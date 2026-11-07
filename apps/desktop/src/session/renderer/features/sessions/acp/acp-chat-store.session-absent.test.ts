@@ -9,6 +9,7 @@
  * 没收下时还字、报错的是 `sendThroughCustody` 自己。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { setLocalePreference } from '@/i18n';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { reaction, runInAction } from 'mobx';
 import { WireError } from '@gugu/session-wire';
@@ -88,34 +89,34 @@ describe('#3500 发送只走 custody', () => {
 });
 
 describe('#3507 会话不在时的其余副作用', () => {
+  setLocalePreference('zh-CN');
   const absentSessionActions: Array<[
     label: string,
     title: string,
     invoke: (store: InstanceType<StoreCtor>) => void | Promise<void>,
   ]> = [
-    ['change mode', 'acpFailure.changeSetting', (store) => store.setMode('mode-1')],
-    ['change effort', 'acpFailure.changeSetting', (store) => store.setEffort('high')],
+    ['change mode', translateSessionMessage('acpFailure.changeSetting'), (store) => store.setMode('mode-1')],
+    ['change effort', translateSessionMessage('acpFailure.changeSetting'), (store) => store.setEffort('high')],
     [
       'resolve permission',
-      'acpFailure.resolvePermission',
+      translateSessionMessage('acpFailure.resolvePermission'),
       (store) => store.resolvePermission('request-3507', 'allow-once'),
     ],
-    ['edit queued prompt', 'acpFailure.editQueued', (store) => store.editQueuedPrompt('q-1', 'edit')],
-    ['delete queued prompt', 'acpFailure.editQueued', (store) => store.deleteQueuedPrompt('q-1')],
+    ['edit queued prompt', translateSessionMessage('acpFailure.editQueued'), (store) => store.editQueuedPrompt('q-1', 'edit')],
+    ['delete queued prompt', translateSessionMessage('acpFailure.editQueued'), (store) => store.deleteQueuedPrompt('q-1')],
     [
       'reorder queued prompts',
-      'acpFailure.editQueued',
+      translateSessionMessage('acpFailure.editQueued'),
       (store) => store.reorderQueuedPrompts(['q-1']),
     ],
-    ['send queued prompt now', 'acpFailure.sendMessage', (store) => store.sendQueuedPromptNow('q-1', { steers: false })],
-    ['steer queued prompt now', 'acpFailure.sendMessage', (store) => store.sendQueuedPromptNow('q-1', { steers: true })],
+    ['send queued prompt now', translateSessionMessage('acpFailure.sendMessage'), (store) => store.sendQueuedPromptNow('q-1', { steers: false })],
+    ['steer queued prompt now', translateSessionMessage('acpFailure.sendMessage'), (store) => store.sendQueuedPromptNow('q-1', { steers: true })],
   ];
 
   it.each(absentSessionActions)('%s fails loudly', async (_label, title, invoke) => {
     const store = makeStore();
     await invoke(store);
-    const expectedTitle = translateSessionMessage(title);
-    expect(toasts.some((entry) => entry.title === expectedTitle), `${expectedTitle} was silently skipped`).toBe(true);
+    expect(toasts.some((entry) => entry.title === title), `${title} was silently skipped`).toBe(true);
     expect(toasts.at(-1)?.description).toBe('ACP session is not connected');
     expect(toasts.at(-1)?.variant).toBe('destructive');
   });

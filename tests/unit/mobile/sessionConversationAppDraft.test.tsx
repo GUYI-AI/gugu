@@ -134,8 +134,8 @@ it('opens an inline user image in the image viewer outside a native-record task'
 it('shows an online host refusal through the existing input queue failure status and retry action', async () => {
   const failure = { code: 'send-failed' as const, message: 'Provider login expired' }
   const input = { id: 'failed-local', accountId: 'owner', deviceId: 'desktop', sessionId: 'failure-1451', text: 'queued intent', createdAt: 1, queued: true, failure }
-  const flush = vi.fn(async () => {})
-  Object.assign(state(), { accountId: 'owner', queue: Promise.resolve({ flush } as unknown as SessionInputOutbox), rows: [input], valid: () => true })
+  const retryInput = vi.fn(async () => {})
+  Object.assign(state(), { accountId: 'owner', queue: Promise.resolve({ retry: retryInput } as unknown as SessionInputOutbox), rows: [input], valid: () => true })
   lifeRead.mockResolvedValue({ sessionId: 'failure-1451', version: 1, kind: 'ready', pending: { count: 0, items: [] } })
   await renderWithAppProviders(harness, createNode(SessionConversation, {
     timeline: emptyAgentWatchTimeline(), deviceId: 'desktop', sessionId: 'failure-1451', agentName: 'Test agent', sessionRuntime: 'acp',
@@ -150,5 +150,5 @@ it('shows an online host refusal through the existing input queue failure status
   expect(state().rows).toEqual([input])
   const retry = [...status!.querySelectorAll('button')].find(button => button.textContent === translateSessionMessage('transcript.retrySend'))!
   await act(async () => retry.click())
-  expect(flush).toHaveBeenCalledWith(true)
+  expect(retryInput).toHaveBeenCalledExactlyOnceWith(input.id)
 })
