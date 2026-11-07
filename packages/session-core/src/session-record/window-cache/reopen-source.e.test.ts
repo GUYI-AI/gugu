@@ -49,6 +49,15 @@ async function setup(harness: 'claude' | 'codex') {
 }
 
 describe('bounded native source discovery for desktop reopen', () => {
+  it.each(['claude', 'codex'] as const)('restarts discovery after a terminal %s miss when the native file later appears', async harness => {
+    const input = await setup(harness), request = { ...input.request, cwd: '/project' };
+    expect(await input.resolver.resolveSourceForReopen(request, createWindowBudget())).toEqual({ kind: 'cache_miss', reason: 'not_found' });
+    const directory = harness === 'claude' ? join(input.native, '-project') : input.native;
+    await mkdir(directory, { recursive: true });
+    const path = join(directory, harness === 'claude' ? 'session.jsonl' : 'rollout-native-session.jsonl'); await writeFile(path, '{}\n');
+    expect(await input.resolver.resolveSourceForReopen(request, createWindowBudget())).toMatchObject({ kind: 'located', path });
+  });
+
   it('locates Claude directly from cwd and publishes a durable source binding without reading its body', async () => {
     const input = await setup('claude'), cwd = '/project/my repo';
     const directory = join(input.native, '-project-my-repo'); await mkdir(directory);

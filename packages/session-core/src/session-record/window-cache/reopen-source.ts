@@ -22,6 +22,10 @@ export function createSourceReopenResolver() {
     const closing = frames; frames = [];
     for (const frame of closing.reverse()) await frame.directory.close();
   }
+  async function exhausted() {
+    await closeDirectories(); selected = ''; rootIndex = 0;
+    return { kind: 'cache_miss' as const, reason: 'not_found' as const };
+  }
   async function point(request: Request, path: string, signal?: AbortSignal) {
     const harness = request.locator.harness;
     if (harness !== 'claude' && harness !== 'codex') throw new Error('Unsupported source discovery format');
@@ -75,15 +79,15 @@ export function createSourceReopenResolver() {
           signal?.throwIfAborted();
           if (disposed) throw new Error('Source discovery is disposed');
           if (locator.harness === 'claude') {
-            if (!request.cwd || rootIndex >= locator.roots.length) return { kind: 'cache_miss' as const, reason: 'not_found' as const };
+            if (!request.cwd || rootIndex >= locator.roots.length) return await exhausted();
             const at = join(locator.roots[rootIndex], request.cwd.replace(/[^a-zA-Z0-9]/g, '-'), `${locator.providerSessionId}.jsonl`);
             const result = await point(request, at, signal); examined += 1; rootIndex += 1;
             if (result.kind === 'located') { selected = ''; return result; }
             continue;
           }
-          if (locator.harness !== 'codex') return { kind: 'cache_miss' as const, reason: 'not_found' as const };
+          if (locator.harness !== 'codex') return await exhausted();
           if (!frames.length) {
-            if (rootIndex >= locator.roots.length) return { kind: 'cache_miss' as const, reason: 'not_found' as const };
+            if (rootIndex >= locator.roots.length) return await exhausted();
             const path = locator.roots[rootIndex];
             try { frames.push({ directory: await opendir(path, { bufferSize: 1 }), path, depth: 0, pending: null }); }
             catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
