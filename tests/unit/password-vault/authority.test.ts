@@ -4,6 +4,7 @@ import { mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LocalPasswordVault } from '../../../apps/desktop/electron/password-vault/service'
+import { createVaultStorage } from '../../../apps/desktop/electron/password-vault/host'
 import { seal, unseal } from '../../../apps/desktop/electron/password-vault/crypto'
 import type { VaultDependencies, VaultSinkControl, VaultUseBinding } from '../../../apps/desktop/electron/password-vault/contracts'
 import { CredentialApprovalState } from '../../../apps/desktop/electron/session/main/core/browser/credential-approval-state'
@@ -46,7 +47,8 @@ async function scenario() {
       const lease = authority.claimCredentialSink(capability, binding); fillSignal = lease.signal; return lease
     }, fillAndSubmit: fill, cleanup: useId => authority.cleanup(useId), settle },
   }
-  const vault = new LocalPasswordVault(dependencies); vaults.push(vault)
+  const { browser, acquireFeatureGuard, ...host } = dependencies
+  const ports = createVaultStorage(host, browser!, acquireFeatureGuard!), vault = ports.vault; vaults.push(vault)
   const material = await vault.beginSetup(person); await vault.confirmRecovery(person, material.setupId, material.recoveryMaterial)
   const saved = await vault.save(person, randomUUID(), { origin: 'https://login.example.test', account: randomUUID(), password: randomBytes(32).toString('base64url') })
   const checked = await vault.checkReference(actor, saved.reference)
@@ -57,13 +59,14 @@ async function scenario() {
   const request = approval.request(target, randomUUID()), binding = { ...target, requestId: request.requestId, useId: request.useId }
   approval.decide(request.requestId, 'allow_once', person)
   const capability = authority.issue(request.requestId, binding)
-  return { vault, approval, authority, state, readiness, cleanup, fill, settle, binding, capability,
+  return { vault, ports, approval, authority, state, readiness, cleanup, fill, settle, binding, capability,
     fillSignal: () => fillSignal, fillRevoked: () => fillRevoked, revokedSignal: register.mock.calls[0]![2] }
 }
 
 describe('vault with the real credential approval and use authority', () => {
   it('completes normal cleanup after stopping the fill lease without revoking approval', async () => {
     const f = await scenario(), result = await f.vault.useCredential(f.capability, f.binding)
+    expect(f.ports.outcomeAudit).toBe(f.vault.outcomeAudit)
     expect(f.fillSignal()?.aborted).toBe(true); expect(f.revokedSignal.aborted).toBe(false)
     expect(f.fillRevoked()).toBe(f.revokedSignal)
     expect(f.approval.status(f.binding.requestId).status).toBe('submission_claimed')
