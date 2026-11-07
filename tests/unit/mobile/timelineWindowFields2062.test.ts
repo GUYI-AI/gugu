@@ -41,6 +41,11 @@ describe('bounded timeline window metadata', () => {
     expect(merge(current, { bodyRefs: [ref('next')] }, 'batch').bodyRefs).toEqual([ref('next')])
   })
 
+  it('does not merge references belonging to different canonical items by body ID alone', () => {
+    const other = { ...ref('other'), owner: { kind: 'canonical' as const, turnId: 't2', itemId: 'i2' }, turnId: 't2', itemId: 'i2' }
+    const state = merge({}, { bodyRefs: [ref('first'), other] }, 'snapshot')
+    expect(state.bodyRefs).toHaveLength(2)
+  })
   it('keeps unresolved fragments loading until both owner proof and the actual canonical item exist', () => {
     const source = merge({}, { sourceFragments: [fragment] }, 'snapshot')
     expect(hasPendingWindow({ ...source, turns: [] })).toBe(true)
@@ -54,7 +59,8 @@ describe('bounded timeline window metadata', () => {
   it('does not clear page-local fragments when the tail window becomes empty', () => {
     const source = merge({}, { sourceFragments: [fragment] }, 'older')
     const next = merge(source, { sourceFragments: [] }, 'batch')
-    expect(next.sourceFragments).toEqual([fragment])
+    expect(next.sourceFragments?.[0]).toMatchObject({ key: fragment.key, ownership: 'unresolved' })
+    expect(next.sourceFragments?.[0]).not.toHaveProperty('text')
     expect(hasPendingWindow({ ...next, turns: [] })).toBe(true)
   })
 })

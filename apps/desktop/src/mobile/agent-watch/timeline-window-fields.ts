@@ -1,9 +1,10 @@
 import type { TimelineWindowFields } from '@gugu/session-core/session-record/contract'
 
 type Bucket = Pick<TimelineWindowFields, 'pendingLongRecords' | 'sourceFragments'>
+const fragmentMetadata = (values: TimelineWindowFields['sourceFragments']) => values?.map(({ text: _text, ...value }) => value)
 export type TimelineWindowState = TimelineWindowFields & { windowTail?: Bucket; windowPages?: Bucket }
 const bucket = (value: TimelineWindowFields): Bucket => ({
-  pendingLongRecords: value.pendingLongRecords ?? [], sourceFragments: value.sourceFragments ?? [],
+  pendingLongRecords: value.pendingLongRecords ?? [], sourceFragments: fragmentMetadata(value.sourceFragments) ?? [],
 })
 function union<T>(older: readonly T[], newer: readonly T[], key: (value: T) => string): T[] {
   return [...new Map([...older, ...newer].map(value => [key(value), value])).values()]
@@ -16,11 +17,11 @@ export function mergeTimelineWindowFields(
   const base = mode === 'snapshot' ? {} : current
   const tail = mode === 'snapshot' ? bucket(incoming) : mode === 'batch' ? {
     pendingLongRecords: incoming.pendingLongRecords ?? base.windowTail?.pendingLongRecords ?? [],
-    sourceFragments: incoming.sourceFragments ?? base.windowTail?.sourceFragments ?? [],
+    sourceFragments: fragmentMetadata(incoming.sourceFragments) ?? base.windowTail?.sourceFragments ?? [],
   } : bucket(base.windowTail ?? {})
   const pages = mode === 'snapshot' ? bucket({}) : mode === 'older' ? {
     pendingLongRecords: union(incoming.pendingLongRecords ?? [], base.windowPages?.pendingLongRecords ?? [], value => value.ticket),
-    sourceFragments: union(incoming.sourceFragments ?? [], base.windowPages?.sourceFragments ?? [], value => value.key),
+    sourceFragments: union(fragmentMetadata(incoming.sourceFragments) ?? [], base.windowPages?.sourceFragments ?? [], value => value.key),
   } : bucket(base.windowPages ?? {})
   const resolved = new Set(incoming.resolvedPendingTickets ?? [])
   tail.pendingLongRecords = tail.pendingLongRecords?.filter(value => !resolved.has(value.ticket))
@@ -28,7 +29,7 @@ export function mergeTimelineWindowFields(
   const fragments = union(pages.sourceFragments ?? [], tail.sourceFragments ?? [], value => value.key)
   const owners = union(base.resolvedFragmentOwners ?? [], incoming.resolvedFragmentOwners ?? [], value => value.fragmentKey)
     .filter(value => fragments.some(fragment => fragment.key === value.fragmentKey))
-  const bodyKey = (ref: NonNullable<TimelineWindowFields['bodyRefs']>[number]) => ref.id
+  const bodyKey = (ref: NonNullable<TimelineWindowFields['bodyRefs']>[number]) => JSON.stringify(ref.owner.kind === 'canonical' ? ['canonical', ref.owner.turnId, ref.owner.itemId, ref.id] : ['fragment', ref.owner.fragmentKey, ref.id])
   const bodyRefs = mode === 'older'
     ? union(incoming.bodyRefs ?? [], base.bodyRefs ?? [], bodyKey)
     : union(base.bodyRefs ?? [], incoming.bodyRefs ?? [], bodyKey)
