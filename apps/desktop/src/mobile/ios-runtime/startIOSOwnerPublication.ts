@@ -9,7 +9,12 @@ const publication = new IOSOwnerPublication(sessionCoordinator, iosOwnerClient,
 
 export const getIOSOwnerPublicationSnapshot = publication.getSnapshot
 export const subscribeIOSOwnerPublication = publication.subscribe
-export const retryIOSOwnerPublication = publication.refresh
+export const retryIOSOwnerPublication = (): Promise<void> => {
+  // A failed stop can leave the projection inactive. Explicit retry reopens only
+  // its subscriptions; the coordinator and native retirement fence keep ownership.
+  publication.start()
+  return publication.refresh()
+}
 export const stopIOSOwnerPublication = () => publication.stop()
 
 /** A mounts this once at the App root; auth coordinator ownership stays unchanged. */
