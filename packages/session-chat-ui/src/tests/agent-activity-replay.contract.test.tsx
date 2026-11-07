@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 import { afterEach, expect, it } from 'vitest';
-import { page } from 'vitest/browser';
+import { cdp, page } from 'vitest/browser';
 import { createChatContext } from '../chat-context';
 import { createChatState } from '../state/chat-state';
 import { createChatView } from '../chat-view';
@@ -34,6 +34,7 @@ it.each([
   { width: 1024, appearance: 'light' }, { width: 1024, appearance: 'dark' },
 ])('replays advisory sends and silent turns in the shared renderer ($width px/$appearance)', async ({ width, appearance }) => {
   await page.viewport(width, 850);
+  await cdp().send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
   const context = createChatContext({ locale: () => 'zh-CN',
     translator: (key, values) => {
       const text = zhCNMessages[key as keyof typeof zhCNMessages];

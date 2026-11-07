@@ -50,6 +50,24 @@ describe('settled silence between confirmed Agent sends', () => {
     expect(flattenTier([live], { ...ctx, active: true }, segmenters).some(row => row.kind === 'turn-process')).toBe(true);
   });
 
+  it('keeps the latest independent silent acknowledgement visible', () => {
+    const rows = flattenTier([quiet('latest')], ctx, segmenters);
+    expect(rows.some(row => row.kind === 'turn-process' && !row.activityFold)).toBe(true);
+  });
+
+  it('does not give a new silent turn the preceding turn\'s Agent send identity', () => {
+    const rows = flattenTier([sent('older'), quiet('latest')], ctx, segmenters);
+    expect(rows.some(row => row.itemId === 'latest:process' && !row.activityFold)).toBe(true);
+  });
+
+  it('keeps the latest silent completion after a confirmed send to a human', () => {
+    const rows = flattenTier([sent('human')], { ...ctx,
+      actor: (id: string) => ({ id, name: 'Person', type: 'human' }),
+    }, segmenters);
+    expect(rows.some(row => row.kind === 'turn-process' && !row.activityFold)).toBe(true);
+    expect(rows.filter(row => row.kind === 'agent-activity')).toHaveLength(0);
+  });
+
   it('preserves a real scheduled input followed by silence as a visible boundary', () => {
     const scheduled: TranscriptTurn = { ...quiet('scheduled'), trigger: { kind: 'schedule' }, items: [
       { kind: 'message', id: 'scheduled-input', seq: 0, role: 'user', text:
