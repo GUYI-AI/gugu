@@ -7,7 +7,7 @@ import { readBoundedLocalSessionPreview } from './local-session-preview';
 
 const io = vi.hoisted(() => ({ reads: [] as Array<{ position: number; length: number }> }));
 vi.mock('@gugu/session-core/session-record/window-cache/file-source', async (original) => {
-  const actual = await original<typeof import('../../../../../../packages/session-core/src/session-record/window-cache/file-source')>();
+  const actual = await original<typeof import('../../../../packages/session-core/src/session-record/window-cache/file-source')>();
   return { ...actual, async openWindowByteSource(path: string) {
     const source = await actual.openWindowByteSource(path);
     return { ...source, async read(target: Uint8Array, offset: number, length: number, position: number) {
