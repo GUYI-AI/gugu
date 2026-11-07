@@ -124,6 +124,8 @@ export type WindowBodyResult = { bodyId: string; revision: string } & ({
 export type TimelineWindowFields = {
   /** Snapshot replaces; After supplies the current full ticket set ([] clears). Older is page-local. */
   bodyRefs?: WindowBodyRef[]; pendingLongRecords?: PendingLongRecord[];
+  /** Bounded global resolutions in After; clients retain tombstones only for resident/in-flight pages. */
+  resolvedPendingTickets?: string[];
   olderCursor?: WindowCursor | null; moreBefore?: 'yes' | 'no' | 'unknown'; coveredRanges?: SourceRange[];
   snapshotRevision?: string; sourceLineage?: string;
 };
