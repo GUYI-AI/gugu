@@ -50,8 +50,25 @@ final class GuguIOSOwnerAccess {
     private func observedSnapshot(binding: GuguIOSHostBinding) throws -> GuguIOSOwnerSnapshot {
         do {
             return try transaction(binding) { path in
-                var saved = try load(path, binding)
-                if isRevocationPending(path) || saved["revocationPending"] as? Bool == true ||
+                let durableRefusal: Bool
+                do { durableRefusal = try hasDurableRefusal(path, binding) }
+                catch {
+                    if isRevocationPending(path) || !calendarHasFullAccess() {
+                        _ = try? completeRevocation(path, binding, revision: UUID().uuidString.lowercased())
+                    }
+                    throw error
+                }
+                var saved: [String: Any]
+                do { saved = try load(path, binding) }
+                catch {
+                    // The category itself may be the failed path. Still record
+                    // refusal independently and attempt the journal revocation.
+                    if durableRefusal || isRevocationPending(path) || !calendarHasFullAccess() {
+                        _ = try? completeRevocation(path, binding, revision: UUID().uuidString.lowercased())
+                    }
+                    throw error
+                }
+                if durableRefusal || isRevocationPending(path) || saved["revocationPending"] as? Bool == true ||
                     (saved["connected"] as? Bool == true && !calendarHasFullAccess()) {
                     saved = try completeRevocation(path, binding, revision: UUID().uuidString.lowercased())
                 }
@@ -85,7 +102,6 @@ final class GuguIOSOwnerAccess {
         guard try currentBinding() == binding else { throw Self.failure("stale_context", "Native owner or installation changed") }
         markRevocation(categoryPath(binding))
         return try transaction(binding) { path in
-            _ = try load(path, binding)
             let attempt = GuguIOSCalendarConnection(binding: binding, attemptId: UUID().uuidString.lowercased())
             _ = try completeRevocation(path, binding, revision: attempt.attemptId)
             return attempt
@@ -96,7 +112,7 @@ final class GuguIOSOwnerAccess {
         try requireLocalOwnerUI()
         try transaction(attempt.binding) { path in
             var saved = try load(path, attempt.binding)
-            if isRevocationPending(path) || saved["revocationPending"] as? Bool == true {
+            if try hasDurableRefusal(path, attempt.binding) || isRevocationPending(path) || saved["revocationPending"] as? Bool == true {
                 saved = try completeRevocation(path, attempt.binding, revision: UUID().uuidString.lowercased())
             }
             guard saved["revision"] as? String == attempt.attemptId, saved["connected"] as? Bool == false else {
@@ -133,13 +149,45 @@ final class GuguIOSOwnerAccess {
         return Self.pendingRevocations.contains(path.resolvingSymlinksInPath().standardizedFileURL.path)
     }
 
+    private func refusalPath(_ path: URL) -> URL {
+        path.deletingLastPathComponent().appendingPathComponent("calendar-revocation.pending.json")
+    }
+
+    private func hasDurableRefusal(_ path: URL, _ binding: GuguIOSHostBinding) throws -> Bool {
+        let refusal = refusalPath(path)
+        if !FileManager.default.fileExists(atPath: refusal.path) { return false }
+        guard let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: refusal)) as? [String: Any],
+              saved["version"] as? Int == 1, saved["ownerId"] as? String == binding.ownerId,
+              saved["deviceId"] as? String == binding.deviceId, saved["installationId"] as? String == binding.installationId,
+              saved["revocationPending"] as? Bool == true else {
+            throw Self.failure("stale_context", "Calendar refusal identity or version mismatch")
+        }
+        return true
+    }
+
+    private func persistRefusal(_ path: URL, _ binding: GuguIOSHostBinding, revision: String) throws {
+        guard try currentBinding() == binding else { throw Self.failure("stale_context", "Native owner or installation changed") }
+        let saved: [String: Any] = ["version": 1, "ownerId": binding.ownerId, "deviceId": binding.deviceId,
+            "installationId": binding.installationId, "revocationPending": true, "revision": revision]
+        try writeProtected(JSONSerialization.data(withJSONObject: saved, options: [.sortedKeys]), to: refusalPath(path))
+    }
+
     /// The refusal latch precedes every fallible write. The durable marker lets
     /// another handle/reopened process finish revocation after journal repair.
     private func completeRevocation(_ path: URL, _ binding: GuguIOSHostBinding, revision: String) throws -> [String: Any] {
         markRevocation(path)
-        try save(path, binding, connected: false, revision: revision, revocationPending: true)
-        try revokeCalendarAccess()
+        var firstError: Error?
+        do { try persistRefusal(path, binding, revision: revision) } catch { firstError = error }
+        do {
+            _ = try load(path, binding)
+            try save(path, binding, connected: false, revision: revision, revocationPending: true)
+        } catch { if firstError == nil { firstError = error } }
+        // Independent persistence targets are all attempted. A broken category
+        // file must not prevent the writable journal from retiring old epochs.
+        do { try revokeCalendarAccess() } catch { if firstError == nil { firstError = error } }
+        if let firstError { throw firstError }
         try save(path, binding, connected: false, revision: revision, revocationPending: false)
+        try FileManager.default.removeItem(at: refusalPath(path))
         Self.revocationLock.lock()
         Self.pendingRevocations.remove(path.resolvingSymlinksInPath().standardizedFileURL.path)
         Self.revocationLock.unlock()
@@ -175,6 +223,10 @@ final class GuguIOSOwnerAccess {
         let saved: [String: Any] = ["version": 1, "ownerId": binding.ownerId, "deviceId": binding.deviceId,
             "installationId": binding.installationId, "connected": connected, "revision": revision, "revocationPending": revocationPending]
         let data = try JSONSerialization.data(withJSONObject: saved, options: [.sortedKeys])
+        try writeProtected(data, to: path)
+    }
+
+    private func writeProtected(_ data: Data, to path: URL) throws {
         #if os(iOS)
         try data.write(to: path, options: [.atomic, .completeFileProtection])
         #else
