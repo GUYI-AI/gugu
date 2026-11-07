@@ -1,13 +1,13 @@
 /** Test-only I/O observation at the production WindowByteSource boundary. No large files are created. */
-export type ByteSource = {
-  snapshot(): Promise<{ sourceId: string; generation: string; size: number }>
+export type ByteSource<Snapshot = unknown> = {
+  snapshot(): Promise<Snapshot>
   read(target: Uint8Array, offset: number, length: number, position: number): Promise<number>
 }
 export type IoLimits = { bytes: number; buffer: number; earliest: number; calls: number }
-export function meteredSource(source: ByteSource, limits: IoLimits) {
+export function meteredSource<Snapshot>(source: ByteSource<Snapshot>, limits: IoLimits) {
   let reserved = 0
   const counts = { bytes: 0, requested: 0, peakBuffer: 0, calls: 0, earliest: Infinity }
-  const measured: ByteSource = {
+  const measured: ByteSource<Snapshot> = {
     snapshot: () => source.snapshot(),
     async read(target, offset, length, position) {
       for (const value of [offset, length, position]) {
@@ -34,7 +34,7 @@ export function meteredSource(source: ByteSource, limits: IoLimits) {
   return { source: measured, counts }
 }
 /** Sparse bytes are synthesized on demand; only the readable suffix occupies memory. */
-export function virtualSparseSource(size: number, suffix: Uint8Array, shortRead = Infinity): ByteSource {
+export function virtualSparseSource(size: number, suffix: Uint8Array, shortRead = Infinity) {
   if (!Number.isSafeInteger(size) || size < suffix.length || shortRead <= 0) throw new Error('Invalid sparse fixture')
   return {
     async snapshot() { return { sourceId: 'synthetic-rollout', generation: 'snapshot-1', size } },
