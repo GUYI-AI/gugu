@@ -383,13 +383,29 @@ describe('approved A2A activity', () => {
     for (const mask of masks()) expect(getComputedStyle(mask).opacity).toBe('0');
   });
   it.each([
-    { width: 360, background: '#ffffff' }, { width: 1280, background: '#ffffff' },
-    { width: 360, background: '#212121' }, { width: 1280, background: '#212121' },
-  ])('keeps the pinned semantic line quiet and its page-colored strip inside the row ($width/$background)', async ({ width, background }) => {
+    ...[
+      { width: 360, background: '#ffffff' }, { width: 1280, background: '#ffffff' },
+      { width: 360, background: '#212121' }, { width: 1280, background: '#212121' },
+    ].map(value => ({ ...value, classic: false, frameWidth: value.width })),
+    ...['#ffffff', '#212121'].map(background => ({ width: 1280, background, classic: true, frameWidth: 1280 })),
+    ...[false, true].map(classic => ({ width: 1280, background: '#ffffff', classic, frameWidth: 960 })),
+  ])('keeps the pinned semantic line quiet and its page-colored strip inside the row ($width/$background/classic=$classic/frame=$frameWidth)', async ({ width, background, classic, frameWidth }) => {
+    if (classic) {
+      // A custom Chromium scrollbar reserves real layout space, including on overlay-scrollbar Macs.
+      const scrollbar = document.head.appendChild(document.createElement('style'));
+      scrollbar.textContent = '[data-chat-scroll]::-webkit-scrollbar { width: 15px; height: 15px; }';
+      cleanup.push(() => scrollbar.remove());
+    }
     const question = 'A longer owner question above the agent exchange. '.repeat(3);
     const t = await mount(width, [turn('own', [ordinary(question, 'user'),
       ...Array.from({ length: 20 }, (_, i) => delivery(`quiet${i}`, `Long underlying message ${i}. `.repeat(45)))]),
       turn('conclusion', [ordinary('Following conclusion. '.repeat(60))])]);
+    if (frameWidth !== width) {
+      t.host.style.width = `${frameWidth}px`;
+      t.host.style.left = '120px';
+      await untilStable('split conversation geometry settles', () => t.host.querySelector('[data-chat-width-probe]')?.getBoundingClientRect().width);
+    }
+    if (classic) expect(t.scroll().offsetWidth - t.scroll().clientWidth, 'a real classic scrollbar reserves 15px').toBe(15);
     if (background === '#212121') t.host.classList.add('emdark');
     t.host.style.setProperty('--chat-bg', background);
     const label = () => t.head()!.lastElementChild as HTMLElement;
@@ -409,6 +425,9 @@ describe('approved A2A activity', () => {
     const lane = t.head()!.closest<HTMLElement>('[data-index]')!;
     const backdrop = lane.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!;
     const paint = backdrop.getBoundingClientRect(), viewport = t.scroll().getBoundingClientRect();
+    console.info('ACTIVITY_PIN_FRAME', JSON.stringify({ width, background, classic, frameWidth,
+      offsetWidth: t.scroll().offsetWidth, clientWidth: t.scroll().clientWidth,
+      viewport: { left: viewport.left, right: viewport.right }, paint: { left: paint.left, right: paint.right } }));
     const style = getComputedStyle(backdrop);
     expect(style.opacity).toBe('1');
     expect(style.backgroundColor).toBe(background === '#ffffff' ? 'rgb(255, 255, 255)' : 'rgb(33, 33, 33)');
@@ -426,6 +445,17 @@ describe('approved A2A activity', () => {
     expect(style.borderBottomWidth).toBe('1px');
     const fadeSelector = pinFade.split(/\s+/).map(name => `.${name}`).join('');
     expect(t.host.querySelectorAll(fadeSelector), 'neither pin may paint a fade across the preceding message').toHaveLength(0);
+    if (frameWidth !== width) {
+      expect(paint.left).toBeGreaterThanOrEqual(viewport.left - 1);
+      expect(paint.right).toBeLessThanOrEqual(viewport.right + 1);
+      const column = t.host.querySelector('[data-chat-width-probe]')!.getBoundingClientRect().width;
+      t.host.style.width = '1040px';
+      await untilStable('split frame resizes while its content column remains capped', () => [t.scroll().offsetWidth, backdrop.getBoundingClientRect().width]);
+      expect(t.host.querySelector('[data-chat-width-probe]')!.getBoundingClientRect().width).toBe(column);
+      const resized = t.scroll().getBoundingClientRect(), resizedPaint = backdrop.getBoundingClientRect();
+      expect(Math.abs(resizedPaint.left - resized.left)).toBeLessThan(1);
+      expect(Math.abs(resizedPaint.right - resized.right)).toBeLessThan(1);
+    }
   });
   it.each(['#ffffff', '#212121'])('covers the reserved viewport gap above a standalone opened activity (%s)', async background => {
     const t = await mount(390, [turn('incoming', Array.from({ length: 16 }, (_, i) => delivery(`standalone${i}`, `Underlying old message ${i}. `.repeat(45)))),
