@@ -22,6 +22,10 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>用于读取和管理你选择的日历日程，完成你批准的任务。</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>用于读取和管理你选择的日历日程，完成你批准的任务。</string>
 	<key>NSCameraUsageDescription</key>
 	<string>用于拍照并发送聊天图片。</string>
 	<key>NSMicrophoneUsageDescription</key>
