@@ -44,6 +44,9 @@ final class GuguNativeToolControl {
 }
 
 protocol GuguNativeToolExecutor: AnyObject {
+    /// Required before returning any saved receipt or protected task transcript.
+    func validateAccess(_ control: GuguNativeToolControl) throws
+
     /// Complete once with the device-action envelope: ok/data or ok:false/code/message.
     /// Invocation does not request OS permission. Connection is an explicit native owner UI action.
     func execute(_ request: GuguNativeToolRequest, control: GuguNativeToolControl,

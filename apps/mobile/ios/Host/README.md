@@ -25,3 +25,11 @@ Cancellation targets the exact context, including job and runtime instance. Late
 Android's `ProcessBuilder` launches `libgugu_node.so`; the runtime uses Node filesystem/path/crypto/async-hooks/http and the coding-agent's resource/session loaders. JSC does not provide those APIs. Loading the Android bundle unchanged is not supported. The portable Pi agent loop accepts a stream function; it can be bundled separately while native code owns persistence, transport and authorization. This path still needs actual bundling and execution evidence.
 
 The foreground host cannot promise continuous execution after iOS suspends or terminates the process. Recovery must expose interruption and uncertain writes. APNs is a wake/notification path rather than proof of continuous execution. Missing model receipts or simulator resources are unverified dependencies, not proof that the architecture is impossible.
+
+## Build the portable asset
+
+`node scripts/build/build-ios-agent.mjs` creates the generated `App/App/HostRuntime` folder, including `agent.js`, its SHA-256 manifest and full dependency license bodies. With an isolated tooling install, set `GUGU_IOS_TOOLING_ROOT` to the directory whose `node_modules` contains the pinned packages. Normal builds resolve repository/mobile dependencies. The folder must be registered as an App resource by the iOS integrator; generating it does not prove it is inside an App.
+
+The Swift sources for the first bridge slice are `GuguHostContracts.swift` and `GuguJavaScriptRuntime.swift`. The native entry point is `GuguJavaScriptRuntime(asset:expectedSHA256:request:cancel:event:)`. There is no Capacitor plugin or production capability registration in this slice. JavaScript receives no model credential, URL or general filesystem callback.
+
+`HostTests/main.swift` runs the actual packaged Pi asset through the same Swift/JSC implementation on macOS with deterministic transport responses. Compile it with the two Swift sources and pass the generated `agent.js` path. Its printed receipt distinguishes fixture counts from real model/EventKit calls. The initial scope is text and non-streamed OpenAI-compatible responses; unsupported content/protocols fail explicitly. Streaming, complete coding-agent session resources and automatic compaction are not implemented by this proof.
