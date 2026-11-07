@@ -37,7 +37,14 @@ async function createAccount(ownerId: string, host: NativeHost) {
   const assertCurrent = () => { controller.signal.throwIfAborted(); if (current && current.ownerId !== ownerId) throw unavailable() }
   const protection = async () => { if ((await protectedPrivateStorageStatus(PASSWORD_VAULT_STORAGE)).status !== 'ready') throw unavailable() }
   await protection()
-  try { denied = JSON.parse(await readFile(preferences, 'utf8')).denied === true } catch { /* Default is per-use confirmation. */ }
+  try {
+    const value: unknown = JSON.parse(await readFile(preferences, 'utf8'))
+    if (!value || typeof value !== 'object' || !('denied' in value) || typeof value.denied !== 'boolean') throw unavailable()
+    denied = value.denied
+  } catch (error) {
+    // An absent preference defaults to asking. Unreadable/corrupt saved denials never become permission.
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw unavailable()
+  }
   const access = createBetaPasswordAccess({ signal: controller.signal, toolScope: guguMcpToolScope,
     readPolicy: async (owner, signal) => {
       if (await host.account() !== ownerId || owner !== ownerId || denied) throw unavailable()

@@ -84,6 +84,7 @@ export class BetaPasswordLogin {
       || [...this.attempts.values()].some(use => ['pending', 'running'].includes(use.result))) throw unavailable()
     this.preparing = true
     let surface: VaultBrowserLoginSurface | undefined
+    let registered: Attempt | undefined
     try {
       const identity = passwordNativeMcpIdentity(context)
       if (!identity || identity.ownerId !== this.host.ownerId) throw unavailable()
@@ -134,6 +135,7 @@ export class BetaPasswordLogin {
         requestId: view.requestId, origin: item.origin, agent: identity.subjectId, sessionId: identity.sessionId,
         deviceId: this.host.deviceId, maskedAccount: item.maskedAccount, expiresAt: view.requestExpiresAt } }
       this.attempts.set(view.requestId, attempt)
+      registered = attempt
       await postPasswordRequest(context, attempt.view)
       assertCurrent()
       const expired = setTimeout(() => {
@@ -147,7 +149,17 @@ export class BetaPasswordLogin {
       signal.addEventListener('abort', () => { execution.cancel(); void this.retire(attempt!).catch(() => {}) }, { once: true })
       this.host.changed()
       return { requestId: view.requestId, status: 'pending' }
-    } catch { await surface?.disposeUnused(); throw unavailable() }
+    } catch {
+      // A notification may have committed before its response was lost. Its old card must never approve.
+      if (registered) {
+        try { registered.execution.cancel() } catch { /* Original authority may already be invalidated. */ }
+        registered.result = 'cancelled'
+        this.attempts.delete(registered.binding.requestId)
+        this.host.changed()
+      }
+      await surface?.disposeUnused()
+      throw unavailable()
+    }
     finally { this.preparing = false }
   }
   decide(requestId: string, decision: 'allow_once' | 'reject'): void {

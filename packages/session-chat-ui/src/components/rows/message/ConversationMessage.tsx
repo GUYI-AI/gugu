@@ -91,6 +91,7 @@ function singleHeight(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars): nu
     return head.height + backgroundHeight(item, ctx) + (head.referenceInFooter ? measureUserMessage(item, conversationContext(ctx, item), conversationVars(item, vars)) : 0);
   }
   const header = item.conversationPart === 'body' ? 0 : headerLayout(item, ctx).height;
+  if (passwordRequest(item)) return header + PASSWORD_CARD_HEIGHT;
   const bodyVars = conversationVars(item, vars);
   // 时间、复制、编辑那一行照原气泡画在气泡下面(owner 定稿 0 号图);没有正文就没有气泡,也不留这一行。
   const bodyCtx = conversationContext(ctx, item);
