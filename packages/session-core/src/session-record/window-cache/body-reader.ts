@@ -228,7 +228,7 @@ export function createDiskBodyPageIo(directory: string, validateSource: (body: W
 
 /** Publish exactly one fixed decoded-byte chunk. The producer pins and validates its source range. */
 export async function writeDecodedBodyChunk(directory: string, body: WindowBodyRef, ordinal: number,
-  bytes: Uint8Array, sourceRange: BodyChunkDescriptor['sourceRange'], budget: WindowBudget): Promise<void> {
+  bytes: Uint8Array, sourceRange: BodyChunkDescriptor['sourceRange'], budget: WindowBudget): Promise<BodyChunkDescriptor> {
   if (!Number.isSafeInteger(ordinal) || ordinal < 0 || !Number.isSafeInteger(ordinal * BODY_CHUNK_BYTES + bytes.length) ||
     bytes.length < 1 || bytes.length > BODY_CHUNK_BYTES || ![sourceRange.start, sourceRange.end].every(Number.isSafeInteger) ||
     sourceRange.start < 0 || sourceRange.end < sourceRange.start) throw new Error('Invalid decoded body chunk');
@@ -248,4 +248,5 @@ export async function writeDecodedBodyChunk(directory: string, body: WindowBodyR
     decodedStart: ordinal * BODY_CHUNK_BYTES, decodedBytes: bytes.length,
     content: { id: contentId, offset: 0, length: bytes.length, digest: digest(bytes) }, checkpointRef: null, sourceRange };
   await immutable('locator', descriptorId(body, ordinal), Buffer.from(JSON.stringify(descriptor)));
+  return descriptor;
 }

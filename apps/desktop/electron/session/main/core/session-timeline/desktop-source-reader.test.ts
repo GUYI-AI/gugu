@@ -118,4 +118,23 @@ describe('desktop default source reopening', () => {
     await expect(reader.subscribe({ conversationId: 'conversation', subscriptionId: 'sub', cursor: null }, emit, failed, abort.signal)).rejects.toThrow();
     expect(reads.source).toBe(0); expect(emit).not.toHaveBeenCalled();
   });
+  it('replaces an unknown giant tail ticket with real first-body text after locating its start', async () => {
+    const { reader, path, row, measured } = await fixture();
+    const text = '中文😀 real body '.repeat(8000);
+    await writeFile(path, row(text));
+    let resolve!: (value: { text?: string }) => void, reject!: (error: unknown) => void;
+    const shown = new Promise<{ text?: string }>((yes, no) => { resolve = yes; reject = no; });
+    let loading = false;
+    const stop = await reader.subscribe({ conversationId: 'conversation', subscriptionId: 'giant', cursor: null }, event => {
+      const value = event.result.ok ? event.result.batch : event.result.snapshot;
+      if (value.pendingLongRecords?.length) loading = true;
+      const fragment = value.sourceFragments?.find(value => value.text);
+      if (fragment) resolve(fragment);
+    }, reject);
+    cleanup.push(async () => stop());
+    const fragment = await shown;
+    expect(loading).toBe(true); expect(text.startsWith(fragment.text!)).toBe(true);
+    expect(Buffer.byteLength(fragment.text!)).toBeLessThanOrEqual(16384);
+    expect(measured.every(io => io.sourceBytes <= 512 * 1024 && io.indexBytes <= 65536)).toBe(true);
+  });
 });

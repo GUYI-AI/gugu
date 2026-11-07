@@ -4,13 +4,14 @@ import { readSourceLocator } from './source-locator';
 import { readJsonlWindow, type JsonlRecordSlice } from './jsonl-window';
 import { readIndexedBodyPage, type BodyPageIo } from './body-reader';
 import { sourceFragmentKey, windowRecordMetadata } from '../tail-source-identity';
-import type { PendingLongRecord, SourceFragment, SourceSnapshot, WindowByteSource, WindowCursor, WindowReadRequest, WindowResult } from './types';
+import { readRecordFirstBody } from './record-first-body';
+import type { PendingLongRecord, SourceFragment, SourceRange, SourceSnapshot, WindowByteSource, WindowCursor, WindowReadRequest, WindowResult } from './types';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 type OpenSource = { source: WindowByteSource; sourceLineage: string; close(): Promise<void> };
 export interface RecentReaderIo {
   openSource?(request: WindowReadRequest): Promise<OpenSource | null>;
-  schedulePending(request: WindowReadRequest, snapshot: SourceSnapshot, ticket: PendingLongRecord): Promise<void>;
+  schedulePending(request: WindowReadRequest, snapshot: SourceSnapshot, ticket: PendingLongRecord): Promise<SourceRange | void>;
   body: BodyPageIo;
 }
 async function openSource(request: WindowReadRequest): Promise<OpenSource | null> {
@@ -72,21 +73,26 @@ export function createRecentReader(io: RecentReaderIo) {
       if (result.kind === 'reset') return { ...result, io: budget.counters };
       const sourceFragments = result.records.map(record => fragment(request, opened.sourceLineage, record)).filter((value): value is SourceFragment => value !== null).reverse();
       const pendingLongRecords: PendingLongRecord[] = [];
+      let locatedStart: number | undefined;
       if (result.headFragment) {
         const { recordEnd, scanBefore } = result.headFragment;
         const ticket: PendingLongRecord = { kind: 'pending_long_record', ticket: hash(`${request.scope}:${snapshot.sourceInstance}:${recordEnd}`),
           sourceInstance: snapshot.sourceInstance, pinnedEnd: snapshot.size, nextScanOffset: scanBefore,
           sourceFence: { start: recordEnd, end: recordEnd, digest: hash('') } };
-        await io.schedulePending(request, snapshot, ticket);
-        pendingLongRecords.push(ticket);
+        const located = await io.schedulePending(request, snapshot, ticket);
+        const firstBody = located ? await readRecordFirstBody(opened.source, snapshot, located, opened.sourceLineage, request) : null;
+        if (firstBody) { sourceFragments.unshift(firstBody); locatedStart = located!.start; }
+        else pendingLongRecords.push(ticket);
       }
       signal?.throwIfAborted();
-      const olderCursor = result.older ? { version: 1 as const, scope: request.scope, sourceLineage: opened.sourceLineage,
-        snapshotRevision: snapshot.snapshotRevision, before: result.older.before, segment: null } : null;
-      const value = { kind: result.headFragment ? 'continuation' as const : 'page' as const, scope: request.scope,
-        sourceLineage: opened.sourceLineage, snapshotRevision: snapshot.snapshotRevision, commitSeq: 0, turns: [], bodyRefs: [], sourceFragments,
+      const before = locatedStart ?? result.older?.before;
+      const olderCursor = before ? { version: 1 as const, scope: request.scope, sourceLineage: opened.sourceLineage,
+        snapshotRevision: snapshot.snapshotRevision, before, segment: null } : null;
+      const value = { kind: pendingLongRecords.length ? 'continuation' as const : 'page' as const, scope: request.scope,
+        sourceLineage: opened.sourceLineage, snapshotRevision: snapshot.snapshotRevision, commitSeq: 0, turns: [],
+        bodyRefs: sourceFragments.flatMap(value => value.bodyRef ? [value.bodyRef] : []), sourceFragments,
         coveredRanges: result.records.map(record => record.range), olderCursor,
-        moreBefore: result.headFragment ? 'unknown' as const : olderCursor ? 'yes' as const : 'no' as const, pendingLongRecords };
+        moreBefore: pendingLongRecords.length ? 'unknown' as const : olderCursor ? 'yes' as const : 'no' as const, pendingLongRecords };
       // Encoding only this already bounded page also accounts for escaping and metadata.
       budget.charge('outputBytes', Buffer.byteLength(JSON.stringify(value)));
       return { ...value, io: budget.counters };

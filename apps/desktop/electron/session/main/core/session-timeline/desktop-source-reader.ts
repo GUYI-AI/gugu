@@ -4,7 +4,7 @@ import { setImmediate } from 'node:timers/promises';
 import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 import { createRecentReader } from '@gugu/session-core/session-record/window-cache/recent-reader';
 import { createDiskBodyPageIo } from '@gugu/session-core/session-record/window-cache/body-reader';
-import { readSourceLocator } from '@gugu/session-core/session-record/window-cache/source-locator';
+import { readSourceLocator, readCapturedRecordStart } from '@gugu/session-core/session-record/window-cache/source-locator';
 import { openWindowByteSource } from '@gugu/session-core/session-record/window-cache/file-source';
 import { loadReverseIndexTask } from '@gugu/session-core/session-record/window-cache/record-locators';
 import { createReverseIndexScheduler } from '@gugu/session-core/session-record/window-cache/reverse-index-runner';
@@ -81,9 +81,12 @@ export function createDesktopSourceWindowReader(options: {
       }),
       schedulePending: async (current, snapshot, ticket) => {
         const located = await locate(current);
+        const captured = await readCapturedRecordStart(current.cacheDirectory, located.harness,
+          current.locator.providerSessionId, snapshot, current.budget);
+        if (captured.kind === 'hit' && captured.range.end === ticket.sourceFence.end) return captured.range;
         const job = { scope: current.scope, sourceLineage: located.sourceLineage, decoderVersion: 1, jobId: ticket.ticket };
         const saved = await loadReverseIndexTask(current.cacheDirectory, job, current.budget);
-        if (saved.kind === 'hit' && saved.position.kind === 'located') return;
+        if (saved.kind === 'hit' && saved.position.kind === 'located') return saved.position.range;
         const checkpoint = saved.kind === 'hit' ? saved.position.checkpoint : { version: 1 as const, jobId: ticket.ticket,
           sourceId: snapshot.sourceId, sourceInstance: snapshot.sourceInstance, sourceLineage: located.sourceLineage,
           snapshotRevision: snapshot.snapshotRevision, pinnedEnd: snapshot.size, recordEnd: ticket.sourceFence.end,
