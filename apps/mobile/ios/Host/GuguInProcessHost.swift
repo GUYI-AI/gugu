@@ -75,6 +75,32 @@ final class GuguInProcessHost {
         return view
     }
 
+    /// Internal backend read, not a capability declaration. The registry must
+    /// supply its verified session context; renderer input cannot create one.
+    func readTimeline(context: GuguHostContext, method: String, cursor: [String: Any]? = nil,
+                      limit: Int? = nil, beforeTurnId: String? = nil, trim: Bool = true,
+                      completion: @escaping ([String: Any]) -> Void) throws {
+        try checkHistoricalIdentity(context)
+        guard ["snapshot", "after", "older"].contains(method) else { throw failure("unknown_method", "Unsupported native timeline read") }
+        let jobs = try journal.jobs(in: context)
+        let ids = try jobs.map { job -> String in
+            guard let raw = job["context"] as? [String: Any] else { throw failure("invalid_journal", "Task binding is missing") }
+            return try GuguHostJournal.context(raw).jobId
+        }
+        let authorized = try ids.map { try readTask(jobId: $0) }
+        let key = [context.ownerId, context.installationId, context.agentUserId, context.sessionId, context.contextEpoch, runtimeInstanceId].joined(separator: ":")
+        var input: [String: Any] = ["key": key, "sessionId": context.sessionId, "jobs": authorized, "method": method, "trim": trim]
+        if let cursor { input["cursor"] = cursor }; if let limit { input["limit"] = limit }; if let beforeTurnId { input["beforeTurnId"] = beforeTurnId }
+        try runtime.readTimeline(input) { [weak self] reply in
+            guard let self else { completion(["ok": false, "code": "cancelled", "message": "Native host stopped before projection"]); return }
+            do {
+                try self.checkHistoricalIdentity(context)
+                for id in ids { _ = try self.readTask(jobId: id) }
+                completion(reply)
+            } catch { completion(self.envelope(error)) }
+        }
+    }
+
     /// Explicit owner continuation uses a new job ID. Initialization never resumes
     /// a task or replays a write automatically. Revoked history is not copied.
     func continueTask(previousJobId: String, context: GuguHostContext, prompt: String,

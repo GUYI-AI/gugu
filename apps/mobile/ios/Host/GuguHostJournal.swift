@@ -127,7 +127,10 @@ final class GuguHostJournal {
                 guard job["contextInvalidated"] as? Bool == true, let prior = job["context"] as? [String: Any] else { return false }
                 return prior["sessionId"] as? String == context.sessionId && prior["contextEpoch"] as? String == context.contextEpoch
             }) { throw Self.failure("not_granted", "Revoked task context must not be reused") }
+            let sequence = (next["nextJobSequence"] as? Int ?? 0) + 1
+            next["nextJobSequence"] = sequence
             jobs[context.jobId] = ["context": binding, "prompt": prompt, "modelId": modelId,
+                                   "admissionSequence": sequence, "admittedAtMs": Int64(Date().timeIntervalSince1970 * 1000),
                                    "inputSHA256": digest, "status": "running", "events": [[String: Any]](), "messages": [[String: Any]]()]
             next["jobs"] = jobs
             return true
@@ -292,6 +295,27 @@ final class GuguHostJournal {
         state = try readLatest()
         guard let job = (state["jobs"] as? [String: [String: Any]])?[id] else { throw Self.failure("invalid_args", "Unknown task") }
         return job
+    }
+
+    /// A timeline may not infer admission order from dictionary iteration, UUIDs
+    /// or summaries. Pre-ordering prototype journals fail explicitly if ambiguous.
+    func jobs(in context: GuguHostContext) throws -> [[String: Any]] {
+        try validate(context)
+        try lock.lock(); defer { lock.unlock() }
+        state = try readLatest()
+        let jobs = state["jobs"] as? [String: [String: Any]] ?? [:]
+        let matching = try jobs.values.filter { job in
+            guard let raw = job["context"] as? [String: Any] else { throw Self.failure("invalid_journal", "Task binding is missing") }
+            let saved = try Self.context(raw)
+            return saved.ownerId == context.ownerId && saved.installationId == context.installationId &&
+                saved.agentUserId == context.agentUserId && saved.sessionId == context.sessionId && saved.contextEpoch == context.contextEpoch
+        }
+        if matching.count <= 1 { return Array(matching) }
+        let sequence = matching.compactMap { $0["admissionSequence"] as? Int }
+        guard sequence.count == matching.count, Set(sequence).count == sequence.count else {
+            throw Self.failure("record_unreadable", "Task admission order is missing or ambiguous")
+        }
+        return matching.sorted { ($0["admissionSequence"] as! Int) < ($1["admissionSequence"] as! Int) }
     }
 
     func invalidateCalendarContexts() throws -> [GuguHostContext] {

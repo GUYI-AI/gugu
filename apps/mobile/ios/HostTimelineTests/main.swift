@@ -27,10 +27,11 @@ final class TimelineToolFixture: GuguNativeToolExecutor {
         let digest = SHA256.hash(data: asset).map { String(format: "%02x", $0) }.joined()
         let root = URL(fileURLWithPath: CommandLine.arguments[2])
         let owner = UUID().uuidString, install = UUID().uuidString, session = UUID().uuidString, agent = UUID().uuidString, epoch = UUID().uuidString
+        var currentOwner = owner
         let journal = try GuguHostJournal(root: root, ownerId: owner, installationId: install)
         let done = DispatchSemaphore(value: 0), model = TimelineModelFixture(), tool = TimelineToolFixture()
         let host = try GuguInProcessHost(asset: asset, expectedSHA256: digest, journal: journal, executor: tool, model: model,
-            currentIdentity: { (owner, install) }, event: { if $0["type"] as? String == "task_status" { done.signal() } })
+            currentIdentity: { (currentOwner, install) }, event: { if $0["type"] as? String == "task_status" { done.signal() } })
         func context() -> GuguHostContext {
             GuguHostContext(ownerId: owner, installationId: install, agentUserId: agent, sessionId: session,
                 jobId: UUID().uuidString, contextEpoch: epoch, runtimeInstanceId: host.runtimeInstanceId)
@@ -71,6 +72,13 @@ final class TimelineToolFixture: GuguNativeToolExecutor {
         try require((twoTurns["turns"] as? [Any])?.count == 2, "Appended turn was lost or duplicated")
         cases.append("actual_second_turn_appends_without_source_reset")
 
+        let scoped = try projectHost(host, context: second)
+        let scopedTurns = scoped["turns"] as? [[String: Any]] ?? []
+        try require(scopedTurns.count == 2, "Native authorized read lost persisted admission order")
+        let scopedFirst = scopedTurns.first?["items"] as? [[String: Any]]
+        try require(scopedFirst?.first?["text"] as? String == "Timeline real Pi fixture", "Native read reordered actual tasks")
+        cases.append("native_authorized_read_uses_persisted_task_order")
+
         input["method"] = "after"; input["key"] = UUID().uuidString
         let cold = try project(projection, input)
         try require(cold["ok"] as? Bool == false && cold["snapshot"] != nil, "Cold projection accepted a cursor from its previous life")
@@ -81,12 +89,38 @@ final class TimelineToolFixture: GuguNativeToolExecutor {
         do { _ = try project(projection, input); throw failure("Completed task without Pi records returned a fabricated transcript") }
         catch let error as GuguHostFailure { if error.code != "record_unreadable" { throw error } }
         cases.append("missing_completed_record_fails_without_summary_fallback")
-        let raw: [String: Any] = ["firstJob": firstJob, "secondJob": secondJob, "snapshot": snapshot, "after": after, "twoTurns": twoTurns, "cold": cold]
+
+        try host.revokeCalendarAccess()
+        do { _ = try projectHost(host, context: first); throw failure("Revoked native timeline returned data") }
+        catch let error as GuguHostFailure { if error.code != "not_granted" { throw error } }
+        cases.append("native_revoked_context_cannot_read_saved_tool_or_text")
+        currentOwner = UUID().uuidString
+        do { _ = try projectHost(host, context: first); throw failure("Next owner received old native timeline") }
+        catch let error as GuguHostFailure { if error.code != "stale_context" { throw error } }
+        cases.append("native_account_switch_rejects_old_context_before_projection")
+
+        let file = root.appendingPathComponent(owner).appendingPathComponent("host.json")
+        var saved = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+        var jobs = saved["jobs"] as! [String: [String: Any]]
+        jobs[first.jobId]?.removeValue(forKey: "admissionSequence"); saved["jobs"] = jobs
+        try JSONSerialization.data(withJSONObject: saved, options: [.sortedKeys]).write(to: file, options: .atomic)
+        do { _ = try journal.jobs(in: first); throw failure("Ambiguous prototype task order was guessed") }
+        catch let error as GuguHostFailure { if error.code != "record_unreadable" { throw error } }
+        cases.append("ambiguous_legacy_order_fails_instead_of_guessing")
+        let raw: [String: Any] = ["firstJob": firstJob, "secondJob": secondJob, "snapshot": snapshot, "after": after, "twoTurns": twoTurns, "cold": cold, "nativeScoped": scoped]
         try JSONSerialization.data(withJSONObject: raw, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: CommandLine.arguments[3]))
         let result: [String: Any] = ["kind": "macos_real_pi_events_shared_timeline_with_fixtures_only", "result": "pass", "cases": cases,
             "diagnostics": try projection.diagnostics(), "piDiagnostics": try host.diagnostics(), "fixtureModelCalls": model.calls, "fixtureToolCalls": tool.calls,
             "realModelCalls": 0, "realEventKitCalls": 0, "iosAppRuns": 0]
         print(String(data: try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]), encoding: .utf8)!)
+    }
+    static func projectHost(_ host: GuguInProcessHost, context: GuguHostContext) throws -> [String: Any] {
+        let done = DispatchSemaphore(value: 0); var reply: [String: Any] = [:]
+        try host.readTimeline(context: context, method: "snapshot") { reply = $0; done.signal() }; try wait(done)
+        guard reply["ok"] as? Bool == true, let data = reply["data"] as? [String: Any] else {
+            throw GuguHostFailure(code: reply["code"] as? String ?? "projection_failed", message: reply["message"] as? String ?? "Timeline failed")
+        }
+        return data
     }
     static func project(_ runtime: GuguJavaScriptRuntime, _ input: [String: Any]) throws -> [String: Any] {
         let done = DispatchSemaphore(value: 0); var reply: [String: Any] = [:]
