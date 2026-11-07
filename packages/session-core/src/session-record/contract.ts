@@ -1208,6 +1208,16 @@ export type SessionpageSessionEvent = {
   result: TimelineAfterResult;
 };
 
+/** Terminal desktop-window read failure; emitted separately from timeline/reset pushes. */
+export type SessionpageSessionWindowStatusEvent = {
+  conversationId: string;
+  /** Fresh per subscription generation; clients also reject stale local generation callbacks. */
+  subscriptionId: string;
+  state: 'failed';
+  /** Same error fields as the window setup RPC; this status does not request recovery. */
+  error: { code: string; message: string };
+};
+
 /**
  * 整台机器的会话列表推送(事件 `session-list:push`,topic = subscriptionId)。
  *
