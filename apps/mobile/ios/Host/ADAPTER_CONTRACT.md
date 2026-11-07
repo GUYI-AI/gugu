@@ -112,3 +112,48 @@ model request and later history read therefore recheck access even when the next
 turn does not call a calendar tool. This marker comes only from the native source
 job, never from renderer/model arguments. A new OS grant cannot revive a context
 that was invalidated after the transcript was copied.
+
+## Native cloud broker and durable provision entry
+
+`GuguIOSCloudBroker(configuration:credentials:)` takes the packaged
+`GuguIOSBackendConfiguration` and a closure forwarding exactly
+`ownerSession.credentials(expectedBinding:)`. URLSession uses an ephemeral
+configuration without cookies/cache or redirects. Every request validates the
+native binding and credentials again before returning data. It does not refresh
+human credentials, log response bodies, retry HTTP mutations, or accept a bridge
+URL, schema or RPC name.
+
+`GuguIOSCloudOperation` maps only the existing Android operations listed above,
+including the same provision RPCs, command CAS predicates, inbox cursor fields,
+and `send_message_idempotent`. Model-access has typed catalog/issue/renew/settle
+helpers. An issued lease ID is handed to the required `recordLease` callback
+before parsing its token/endpoint; a malformed known grant is revoked. Callers
+must persist an issuing/uncertain phase before issue and must not issue again
+after a lost response. Only native memory receives `GuguIOSModelGrant`; durable
+cleanup records hold the original lease ID without its token. Checkpoint failure
+still attempts revoke and propagates the original error.
+
+`GuguIOSBackendStore(root:binding:)` keeps requests, native Agent/session registry,
+inputs, lease cleanup IDs and outbox records under the native binding. All
+handles reload disk under the stable journal lock. An uncertain record remains
+uncertain on reopen; initialization never runs work. Credential field names are
+rejected before persistence. `GuguIOSStableID.strings` implements Android's
+existing string-part stable-ID namespace for project/input/initial-task IDs.
+
+`GuguIOSProvisioner` drives durable start/read/claim/prepare/create-command/
+settle/complete phases. It retains operationId/provisionId/member_key, resolves
+models against the real catalog, validates birth-group access, and admits the
+initial task using the original Android stable ID before acknowledging creation.
+Its required `executeCreate` and `admit` closures are native backend dependencies,
+not success defaults. The command executor must claim/recheck/settle the actual
+cloud command and persist a real local session; admission must persist the actual
+input before returning. No new cloud identity or schema is introduced.
+
+These four sources plus `OwnerSession/GuguIOSOwnerSession.swift` and
+`OwnerSession/GuguIOSBackendConfiguration.swift` compile with the existing Host
+sources on macOS. `HostBrokerTests` exercises synthetic HTTP plus real APFS;
+`HostProvisionTests` uses a synthetic command executor, not a real cloud-created
+Agent or Pi job. Concrete GuguAgent registration, command/event subscription,
+local task scheduling, attachment/inbox/outbox delivery and model renewal
+lifecycle still require their backend integration. This entry alone never sets
+`ready`, `taskTimeline`, or a runtime capability.

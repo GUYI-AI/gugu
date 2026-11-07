@@ -51,3 +51,9 @@ The later `GuguIOSHostAdapter` facade and owner/category custody are documented 
 The projection bundles the repository's real session-core reducer, its existing secret-redaction function and pinned Zod. There is no Node filesystem/JSONL watcher, cloud-chat replacement or downloaded code path. The generated HostRuntime folder changes and must be recopied with its manifest/license bodies for the same source head. MacOS tests use actual Pi events from two real local loops with explicit model/tool fixtures; they are not real model, calendar or iOS App acceptance.
 
 `GuguInProcessHost.readTimeline` is the internal protected reader for a registry-verified session context. It selects only that owner/install/agent/session/context epoch, uses persisted admission sequence, checks each task's current data access before projection and rechecks after the async result. New admissions record native time and sequence. Multiple prototype tasks without provable order fail `record_unreadable`; dictionary/UUID order is never presented as history. This does not yet implement a concrete cloud registry, session creation, input/attachment queue, approval settlement projection or outbox backend.
+
+The native cloud entry now consists of `GuguIOSCloudBroker`, typed model broker,
+`GuguIOSBackendStore` and `GuguIOSProvisioner` (see `ADAPTER_CONTRACT.md`). They use
+existing public Android operations and durable original IDs. They do not yet
+implement or register a concrete `GuguAgent` backend. Synthetic HTTP/APFS tests
+are not evidence of live cloud, real model billing, EventKit, or an iOS App run.
