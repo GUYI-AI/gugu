@@ -4,6 +4,14 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../support/testHarness'
 import { readComposer, writeComposer } from '../../support/composerEditor'
 import { stubVisibleIntersection } from '../../support/visibleIntersection'
+const sendNotices = vi.hoisted(() => new Map<string | number, string>())
+vi.mock('sonner', () => {
+  let sequence = 0
+  const show = (title: string, options?: { id?: string }) => { const id = options?.id ?? ++sequence; sendNotices.set(id, title); return id }
+  return { toast: Object.assign(show, { error: show, info: show, success: show, warning: show, dismiss: (id: string | number) => sendNotices.delete(id) }) }
+})
+vi.mock('../../../apps/desktop/src/lib/loading/LoadingIndicator', () => ({ LoadingIndicator: () => null }))
+vi.mock('../../../apps/desktop/src/components/markdown/Markdown', () => ({ Markdown: ({ content }: { content: string }) => <span>{content}</span> }))
 const lifeRead = vi.hoisted(() => vi.fn())
 const transcriptCommands = vi.hoisted(() => vi.fn())
 const transcriptView = vi.hoisted(() => ({ setScrollMode: vi.fn(), openItem: vi.fn(() => false) }))
@@ -31,7 +39,7 @@ import { translateSessionMessage } from '../../../apps/desktop/src/session/rende
 let harness: ReturnType<typeof createReactHarness>
 const oldScroll = Element.prototype.scrollTo
 const oldWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')!
-beforeEach(() => { Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 }); harness = createReactHarness(); stubVisibleIntersection(); Element.prototype.scrollTo = () => undefined })
+beforeEach(() => { sendNotices.clear(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 }); harness = createReactHarness(); stubVisibleIntersection(); Element.prototype.scrollTo = () => undefined })
 afterEach(() => { Object.defineProperty(window, 'innerWidth', oldWidth); harness.cleanup(); Element.prototype.scrollTo = oldScroll; vi.unstubAllGlobals();
   Object.assign(state(), { accountId: null, queue: null, rows: EMPTY, valid: () => false }); changed(); lifeRead.mockReset(); transcriptView.setScrollMode.mockClear()
 })
@@ -151,4 +159,48 @@ it('shows an online host refusal through the existing input queue failure status
   const retry = [...status!.querySelectorAll('button')].find(button => button.textContent === translateSessionMessage('transcript.retrySend'))!
   await act(async () => retry.click())
   expect(flush).toHaveBeenCalledWith(true)
+})
+
+it('phone task submission retries replace one failure and success leaves another task failure intact', async () => {
+  Object.assign(state(), { accountId: 'owner', valid: () => true })
+  const sendA = vi.fn().mockRejectedValue(new Error('storage refused')), sendB = vi.fn().mockRejectedValue(new Error('storage refused'))
+  const props = { timeline: emptyAgentWatchTimeline(), deviceId: 'desktop', agentName: 'Test agent', sessionRuntime: 'acp' as const,
+    respondingItemId: null, onRespond: vi.fn(), pendingSends: [], sending: false, agentWorking: false,
+    onStop: vi.fn(), stopping: false, onLoadOlder: async () => undefined }
+  await renderWithAppProviders(harness, <><SessionConversation {...props} sessionId="notice-task-a" onSend={sendA} />
+    <SessionConversation {...props} sessionId="notice-task-b" onSend={sendB} /></>)
+  const fields = () => harness.container.querySelectorAll<HTMLElement>('[data-testid="prompt-editor"]')
+  const send = (index: number) => act(async () => harness.container.querySelectorAll<HTMLButtonElement>('button[aria-label="发送消息"]')[index].click())
+  await waitForCondition(() => fields().length === 2, 'both real phone composers ready')
+  await act(async () => { writeComposer(fields()[0], 'same words'); writeComposer(fields()[1], 'same words') })
+  await send(0); await send(1)
+  expect(sendNotices.size).toBe(2)
+  await send(0); expect(sendNotices.size).toBe(2)
+  sendA.mockResolvedValue(undefined)
+  await send(0)
+  expect(sendNotices.size).toBe(1)
+  expect(readComposer(fields()[0])).toBe('')
+  expect(readComposer(fields()[1])).toBe('same words')
+  await act(async () => writeComposer(fields()[1], 'a new message'))
+  sendB.mockResolvedValue(undefined); await send(1)
+  expect(sendNotices.size).toBe(1)
+})
+
+it('the phone pre-send guard and the successful submission share one retained submission notice', async () => {
+  Object.assign(state(), { accountId: 'owner', valid: () => true })
+  const onSend = vi.fn(async () => {}), before = vi.fn<() => void>(() => { throw new Error('not ready') })
+  await renderWithAppProviders(harness, createNode(SessionConversation, {
+    timeline: emptyAgentWatchTimeline(), deviceId: 'desktop', sessionId: 'notice-guard', agentName: 'Test agent', sessionRuntime: 'acp',
+    respondingItemId: null, onRespond: vi.fn(), onSend, onBeforeSend: before, pendingSends: [], sending: false, agentWorking: false,
+    onStop: vi.fn(), stopping: false, onLoadOlder: async () => undefined,
+  }))
+  const field = () => harness.container.querySelector<HTMLElement>('[data-testid="prompt-editor"]')!
+  await waitForCondition(() => !!field(), 'real phone composer ready')
+  await act(async () => writeComposer(field(), 'retained words'))
+  const send = () => act(async () => harness.container.querySelector<HTMLButtonElement>('button[aria-label="发送消息"]')!.click())
+  await send(); await send()
+  expect(sendNotices.size).toBe(1); expect(onSend).not.toHaveBeenCalled()
+  before.mockImplementation(() => {})
+  await send()
+  expect(onSend).toHaveBeenCalledTimes(1); expect(sendNotices.size).toBe(0)
 })

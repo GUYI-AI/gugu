@@ -41,7 +41,8 @@ import { openMessageSender } from '@/lib/openMessageSender'
 import { classifyFileLink } from '@gugu/core/shared/ui/guguLink'
 import { ComposerAttachButton } from '@/components/chat/ComposerAttachButton'
 import { messageForUser } from '@/lib/userFacingError'
-import { toast } from '@renderer/lib/hooks/use-toast'
+import { messageFailureNotice, type MessageFailureAttempt } from '@/lib/messageFailureNotice'
+import { runNativeInputAction } from '@/lib/nativeInputFailureNotice'
 import { nativeUserAttachmentCommands } from './native-user-attachments'
 import { usePhoneSessionQuotes } from './use-phone-session-quotes'
 import { EngineIcon } from '@/components/AgentHarnessIdentity'
@@ -105,6 +106,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   const [dismissals, setDismissals] = useState(0)
   const [backgroundError, setBackgroundError] = useState<string | null>(null)
   const editor = useRef<PromptEditorRef | null>(null)
+  const submissionFailures = useRef(new Map<string, { revision: object; notice: ReturnType<typeof messageFailureNotice> }>())
   const inFlight = useRef<{ attachments: ReadonlySet<string>; waiting: boolean; cancelWait(): void } | null>(null)
   const input = useRef<HTMLInputElement>(null)
   const sendTarget = useRef({ deviceId, sessionId, onSend, onBeforeSend })
@@ -192,16 +194,26 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   // An upload keeps the conversation where this submission began.
   const currentSendTarget = () => sendTarget.current.deviceId === deviceId && sendTarget.current.sessionId === sessionId
     ? sendTarget.current : { onSend, onBeforeSend }
-  const checkBeforeSend = () => {
+  const reportSendFailure = (error: unknown, attempt: MessageFailureAttempt) => attempt.failed({ title: translateSessionMessage('acpFailure.sendMessage'), description: messageForUser(error), variant: 'destructive' })
+  const checkBeforeSend = (attempt: MessageFailureAttempt) => {
     try { currentSendTarget().onBeforeSend?.(); return true }
     catch (error) {
-      toast({ title: translateSessionMessage('acpFailure.sendMessage'), description: messageForUser(error), variant: 'destructive' })
+      reportSendFailure(error, attempt)
       return false
     }
   }
   const submit = async (value: string) => {
-    if (sending || stopping || inFlight.current || !checkBeforeSend()) return
+    if (sending || stopping || inFlight.current) return
     const ownerId = getRendererSession()?.user.id
+    const scope = JSON.stringify([ownerId, deviceId, sessionId])
+    const revision = composerDraft.revisionOf()
+    let failure = submissionFailures.current.get(scope)
+    if (!failure || failure.revision !== revision) {
+      failure = { revision, notice: messageFailureNotice(['acp', JSON.stringify([ownerId, deviceId]), sessionId, crypto.randomUUID()]) }
+      submissionFailures.current.set(scope, failure)
+    }
+    const attempt = failure.notice.begin()
+    if (!checkBeforeSend(attempt)) return
     let cancelWait!: () => void
     const cancelled = new Promise<false>(resolve => { cancelWait = () => resolve(false) })
     const submission = { attachments: new Set(attachments.map(file => file.id)), waiting: uploads.unsettled(), cancelWait }
@@ -214,18 +226,19 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       const sentAttachments = attachments
       const files = uploads.files(sentAttachments.map(file => file.id))
       const text = value.trim()
-      if ((!text && !files.length) || !checkBeforeSend()) return
+      if ((!text && !files.length) || !checkBeforeSend(attempt)) return
       try {
         // A later reader gesture supersedes this local send, including while its commit waits.
         view.current?.setScrollMode({ kind: 'tail' })
         await currentSendTarget().onSend(text, files)
         if (getRendererSession()?.user.id !== ownerId) return
+        if (attempt.succeeded() && submissionFailures.current.get(scope) === failure) submissionFailures.current.delete(scope)
         composerDraft.committed(value)
         setAttachments(current => current.filter(file => !sentAttachments.some(sent => sent.id === file.id)))
         for (const file of sentAttachments) uploads.forget(file.id)
       } catch (error) {
         if (getRendererSession()?.user.id !== ownerId) return
-        toast({ title: translateSessionMessage('acpFailure.sendMessage'), description: messageForUser(error), variant: 'destructive' })
+        reportSendFailure(error, attempt)
       }
     } finally {
       if (inFlight.current === submission) { setAttachmentWaiting(false); inFlight.current = null }
@@ -297,7 +310,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     onRetrySend: id => {
       const input = received.current.inputs.find(input => input.id === id && input.delivery?.state === 'unknown')
       if (!input) return rejectedInputCommands.onRetrySend?.(id)
-      if (input.delivery?.retryable) void machineRpc(deviceId, local).sessions.lifeRetryUnknown(sessionId, id).catch(error => setBackgroundError(messageForUser(error)))
+      if (input.delivery?.retryable) void runNativeInputAction(sessionId, id, local ? null : deviceId, () => machineRpc(deviceId, local).sessions.lifeRetryUnknown(sessionId, id))
     },
     ...(nativeRecord && !phoneHost ? userAttachments : { onViewAttachment: userAttachments.onViewAttachment }),
     classifyLink: classifyFileLink, onOpenLink: followConversationLink, onOpenSender: openMessageSender,
