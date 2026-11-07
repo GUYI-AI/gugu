@@ -125,7 +125,7 @@ function OpenAddMenuCommand({ onOpen }: { onOpen: () => void }) {
 
 /** 块里一个对话的那几项(gugu-dev#181 第 ⑥ 步):这个对话的文件夹(群文件夹 / 文件夹),和能在这里打开的 App。 */
 const ChatAddItems = observer(function ChatAddItems({ chatId }: { chatId: string }) {
-  const folderName = useChatFolderName(chatId);
+  const folderName = useChatFolderName();
   return (
     <>
       <FolderMenuItem label={folderName} onOpen={() => openPanelItem(chatId, folderItem())} />

@@ -43,9 +43,11 @@ type Preview = {
  * 读到了图进看图器、文档在这页里画(App 现成的那张预览,与聊天里的附件同一份)。
  * 读不到就在这页里说为什么(那台机器给的原因),❌ 点了没反应。
  */
-export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileChunk }: {
+export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileChunk, readWorkingCopy }: {
   deviceId: string; sessionId: string; onQuote: (text: string) => void
   readFileChunk?: (input: import('@gugu/session-core/session-record/contract').SessionpageOpenedFileReadRequest) => Promise<import('@gugu/session-core/session-record/contract').SessionpageOpenedFileChunk>
+  /** A file the timeline names (a link, an edited file): its working copy's, not the opened-output ledger's. */
+  readWorkingCopy?: (input: import('@gugu/session-core/session-record/contract').SessionpageOpenedFileReadRequest) => Promise<import('@gugu/session-core/session-record/contract').SessionpageOpenedFileChunk>
 }): {
   handlers: OpenedOutputHandlers
   openFile: (path: string, source?: FileOpenSource) => void
@@ -113,7 +115,9 @@ export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileCh
         const file: AttachmentMeta = { kind: 'file', fileName: plan.name, mimeType: plan.mimeType, url: '', sizeBytes: 0 }
         setPreview({ path: plan.path, file, kind, blob: null, content: null, loading: true })
         void readWholeOpenedFile({
-          read: (chunk) => readFileChunk ? readFileChunk(chunk) : readOpenedFileChunk(deviceId, chunk),
+          read: (chunk) => readFileChunk ? readFileChunk(chunk)
+            : readWorkingCopy && (opts.source === 'diff' || opts.source === 'resource-link' || opts.source === 'prose-link') ? readWorkingCopy(chunk)
+              : readOpenedFileChunk(deviceId, chunk),
           conversationId: sessionId,
           path: plan.path,
           signal: request.signal,
@@ -165,7 +169,7 @@ export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileCh
             setPreview({ path: plan.path, file, kind, blob: null, content: null, loading: false, error: describeFailure(error, opts.source) })
           })
       },
-    [deviceId, sessionId, readFileChunk, releaseBlobUrl, describeFailure, t, toast],
+    [deviceId, sessionId, readFileChunk, readWorkingCopy, releaseBlobUrl, describeFailure, t, toast],
   )
 
   const copy = useCallback(
