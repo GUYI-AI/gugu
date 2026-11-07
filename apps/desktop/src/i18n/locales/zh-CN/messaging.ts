@@ -54,8 +54,7 @@ export default {
         "retry": "重试",
         "retrying": "重试中…",
         "title": "任务启动失败"
-      },
-      "statusReadFailed": "无法读取任务状态：{{reason}}"
+      }
     },
     "turnFailure": {
       "card": {
@@ -848,6 +847,7 @@ export default {
     "title": "发送到"
   },
   "topic": {
+    "leave": "退出话题",
     "calledYou": "有人 @ 你",
     "pins": {
       "pin": "将“{{name}}”置顶到主群",

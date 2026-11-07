@@ -1103,7 +1103,8 @@ export type SessionpageSessionsListResult = {
  */
 export type SessionpageSessionSnapshotRequest = { conversationId: string; limit?: number; trim?: boolean };
 export type SessionpageSessionAfterRequest = { conversationId: string; cursor: RecordCursor; trim?: boolean };
-export type SessionpageSessionOlderRequest = { conversationId: string; beforeTurnId: string; cursor?: WindowCursor; limit?: number; trim?: boolean };
+export type SessionpageSessionOlderRequest = { conversationId: string; limit?: number; trim?: boolean } &
+  ({ beforeTurnId: string; cursor?: WindowCursor } | { beforeTurnId?: never; cursor: WindowCursor });
 /** Offsets and lengths are decoded UTF-8 bytes, never raw JSON or JavaScript character offsets. */
 export type SessionpageSessionBodyReadRequest = { conversationId: string; bodyRef: WindowBodyRef; offset: number; maxBytes: number };
 export type SessionpageSessionBodyReadResult = WindowBodyResult;

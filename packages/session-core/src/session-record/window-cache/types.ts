@@ -116,12 +116,14 @@ export type WindowPage = {
 export type WindowResult = WindowPage
   | { kind: 'reset'; reason: 'source_changed' | 'invalid_cursor'; io: WindowIoCounters }
   | { kind: 'cache_miss'; reason: 'format' | 'checksum' | 'key' | 'not_found'; cursor: WindowCursor | null; io: WindowIoCounters };
-export type WindowBodyResult = {
+export type WindowBodyResult = { bodyId: string; revision: string } & ({
   kind: 'body'; text: string; offset: number; nextOffset: number;
   moreAfter: 'yes' | 'no' | 'unknown'; io: WindowIoCounters;
-} | { kind: 'needs_location'; bodyId: string; offset: number; io: WindowIoCounters }
-  | { kind: 'reset'; reason: 'source_changed' | 'invalid_cursor'; io: WindowIoCounters };
+} | { kind: 'needs_location'; offset: number; io: WindowIoCounters }
+  | { kind: 'reset'; reason: 'source_changed' | 'invalid_cursor'; io: WindowIoCounters });
 export type TimelineWindowFields = {
+  /** Snapshot replaces; After supplies the current full ticket set ([] clears). Older is page-local. */
   bodyRefs?: WindowBodyRef[]; pendingLongRecords?: PendingLongRecord[];
   olderCursor?: WindowCursor | null; moreBefore?: 'yes' | 'no' | 'unknown'; coveredRanges?: SourceRange[];
+  snapshotRevision?: string; sourceLineage?: string;
 };
