@@ -11,8 +11,13 @@
     <header class="files-toolbar files-tools">
       <nav id="crumbs" class="crumbs" hidden></nav>
       <div id="kinds" class="kinds" role="group"></div>
+      <!-- 按名称筛选 (owner 11-07): the field takes the kinds' (or the crumbs') place, so 🔍 and what follows it stay put; on a
+           phone it covers the whole bar with 取消, as the host's own list search does there. -->
+      <div id="search" class="search" hidden>
+        <label class="search-field"><gugu-icon name="search"></gugu-icon><input id="filter" type="search" autocomplete="off" /><button id="filter-clear" type="button" hidden><gugu-icon name="x"></gugu-icon></button></label>
+        <button id="search-cancel" class="search-cancel" type="button"></button>
+      </div>
       <button id="search-toggle" class="icon" type="button" aria-expanded="false"><gugu-icon name="search"></gugu-icon></button>
-      <input id="filter" class="filter" type="search" autocomplete="off" hidden />
       <button id="sort" class="sort" type="button" aria-haspopup="menu" aria-expanded="false"><span id="sort-label"></span><gugu-icon name="chevron-down"></gugu-icon></button>
       <div id="views" class="views" role="group">
         <button type="button" data-view="list"><gugu-icon name="align-justify"></gugu-icon></button>

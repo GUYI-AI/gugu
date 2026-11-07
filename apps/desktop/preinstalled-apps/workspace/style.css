@@ -10,7 +10,6 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 .files-head { flex-wrap: nowrap; padding: var(--em-spacing-lg); flex: none; }
 .select-files { display: none; }
 .files.has-picks .files-head { display: none; }
-.filter { flex: 1; width: 0; min-width: 0; }
 .file-list { margin: 0; padding: 0 var(--em-spacing-md) var(--em-spacing-md); gap: var(--em-spacing-xs); overflow: auto; flex: 1; min-height: 0; }
 .file-open {
   flex: 1; min-width: 0; min-height: var(--em-control-h-md); display: grid;
@@ -338,11 +337,29 @@ body[data-state='doc'] .doc-message, body.gone .modes { display: none; }
 .files-toolbar > .sort { margin-inline-start: 0; }
 .files-toolbar:has(.crumbs:not([hidden])) > .kinds { display: none; }
 .files-toolbar > button { flex: none; min-height: 28px; padding: 2px 5px; }
-.files-toolbar .filter { min-width: 60px; max-width: 180px; flex: 1; }
 @container (min-width: 720px) {
   .files-toolbar:has(~ .file-list:not(.as-grid)) > .sort { display: none; }
 }
-.files-toolbar:has(.filter:not([hidden])) > .kinds { display: none; }
+/* 按名称筛选 (owner 11-07: no jumping): the field takes the kinds' (or the crumbs') room and fills it, so 🔍 and everything
+   after it keep their place (the box itself stops at 360 on the left); on a phone it covers the whole bar, with 取消, as
+   the host's list search does there. */
+.files-toolbar > .search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; }
+.files-toolbar > .search[hidden] { display: none; }
+@media not all and (hover: none) and (pointer: coarse) {
+  .files-toolbar:has(> .search:not([hidden])) > :is(.kinds, .crumbs) { display: none; }
+  .search-cancel { display: none; }
+}
+.search-field { flex: 1; min-width: 0; max-width: 360px; display: flex; flex-direction: row; align-items: center; font-weight: 400; gap: 6px; height: 28px; box-sizing: border-box; padding: 0 2px 0 8px; border: 1px solid var(--em-border-1); border-radius: var(--em-radius-control); background: var(--em-surface-input); color: var(--em-foreground-muted); }
+.search-field:focus-within { border-color: var(--em-accent-9); }
+.search-field > input { flex: 1; min-width: 0; min-height: 0; height: 100%; padding: 0; border: 0; background: none; outline: none; }
+.search-field > button { flex: none; width: 22px; height: 22px; min-height: 0; padding: 0; border: 0; background: none; display: inline-flex; align-items: center; justify-content: center; color: inherit; }
+.search-field > button[hidden] { display: none; }
+@media (hover: none) and (pointer: coarse) {
+  .files-toolbar { position: relative; }
+  .files-toolbar > .search { position: absolute; inset: 0; z-index: 1; padding: 2px 8px; background: var(--em-background); }
+  .search-field { height: 32px; max-width: none; }
+  .search-cancel { flex: none; border: 0; background: none; padding: 2px 6px; }
+}
 .files.has-picks .files-toolbar { display: none; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* One row by priority: the way back, the name, Read/Edit and ⋯ keep their room (the name shrinks to an ellipsis, the

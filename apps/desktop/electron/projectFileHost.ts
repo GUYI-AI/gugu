@@ -3,6 +3,7 @@ import { fileRefKey, requireFileRange, requireFileRevision, type FileBytes, type
 import { readWorkspaceChunk } from './session/main/core/files/workspace-transfer'
 import { readProjectFile, type ProjectFileVersionLookup } from './sessionpage/sessionpage-project-groups'
 import { createFileSink } from './fileSnapshot'
+import { nextPartBytes, SMALLEST_PART_BYTES } from '@shared/extensions/working-copy-upload'
 
 export const PROJECT_FILE_READ = 'file.read'
 type ReadRequest = { ref: FileRef; offset: number; length: number; etag?: string }
@@ -34,7 +35,11 @@ export function createProjectFileReader(deps: {
 }
 
 /** Local and SSH both feed the same full SHA verification before any bytes are exposed. */
-export async function openProjectFileSource(revision: FileRevision, read: ProjectFileReader): Promise<FileBytes> {
+/**
+ * A held file's bytes through its host's reader, in the parts a working copy is read in (`nextPartBytes`): over another
+ * machine's link one call holds the line, so a part stays about a second long and says how far the file has come.
+ */
+export async function openProjectFileSource(revision: FileRevision, read: ProjectFileReader, progress?: FileContext['progress']): Promise<FileBytes> {
   requireFileRevision(revision)
   const ref = { item_id: revision.item_id!, version: revision.version! }
   const first = await read({ ref, offset: 0, length: 0 })
@@ -47,14 +52,23 @@ export async function openProjectFileSource(revision: FileRevision, read: Projec
     return new Uint8Array(bytes)
   }
   check(first, 0, 0)
+  let part = SMALLEST_PART_BYTES
   return { size: revision.size_bytes, dispose: async () => {}, async read(offset, length) {
     requireFileRange(revision.size_bytes, offset, length)
-    return check(await read({ ref, offset, length, etag: first.etag }), offset, length)
+    const bytes = new Uint8Array(length)
+    for (let filled = 0; filled < length;) {
+      const at = offset + filled, take = Math.min(part, length - filled), started = Date.now()
+      bytes.set(check(await read({ ref, offset: at, length: take, etag: first.etag }), at, take), filled)
+      filled += take
+      if (take === part) part = nextPartBytes(part, Date.now() - started)
+      progress?.(at + take, revision.size_bytes)
+    }
+    return bytes
   } }
 }
 
-export async function snapshotProjectFile(revision: FileRevision, read: ProjectFileReader, tempRoot: string, signal?: AbortSignal): Promise<FileBytes> {
-  return copyVerifiedFile(revision, await openProjectFileSource(revision, read), await createFileSink(tempRoot, revision.size_bytes), signal)
+export async function snapshotProjectFile(revision: FileRevision, read: ProjectFileReader, tempRoot: string, signal?: AbortSignal, progress?: FileContext['progress']): Promise<FileBytes> {
+  return copyVerifiedFile(revision, await openProjectFileSource(revision, read, progress), await createFileSink(tempRoot, revision.size_bytes), signal)
 }
 
 /** The person's own copy, before any metadata lookup; and, once an actor's metadata lookup has authorized it, where its bytes are read (fileResolver `open`). */
@@ -66,6 +80,6 @@ export function localProjectFileProvider(deps: {
     const identity = await deps.identity()
     if (context.actor.actorId !== identity.accountId || context.actor.accountId !== identity.accountId) return null
     const revision = await readProjectFile(context.ref, identity.accountId, identity.deviceId, deps.env, deps.later)
-    return revision ? { revision, open: () => context.download ? openProjectFileSource(revision, request => deps.read(request, context.actor.actorId)) : snapshotProjectFile(revision, request => deps.read(request, context.actor.actorId), deps.tempRoot, context.signal) } : null
+    return revision ? { revision, open: () => context.download ? openProjectFileSource(revision, request => deps.read(request, context.actor.actorId)) : snapshotProjectFile(revision, request => deps.read(request, context.actor.actorId), deps.tempRoot, context.signal, context.progress) } : null
   }
 }

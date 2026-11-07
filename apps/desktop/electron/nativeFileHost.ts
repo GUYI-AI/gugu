@@ -49,10 +49,14 @@ export function createNativeFileHost(deps: {
       await check(scope, owner, epoch); return deps.taskCopy(request.name, new Uint8Array(request.data), request.mimeType)
     },
     async ownerChanged(owner: string | null) { if (owner !== lastOwner) { lastOwner = owner; await drop() } },
-    async read(scope: number, context: FileContext, request: { op: string; id?: string; revision?: FileRevision; offset?: number; length?: number }) {
+    /** `progress`: the reader's name for this read; `report` hands it how far the bytes have come (`files:read-progress`). */
+    async read(scope: number, context: FileContext, request: { op: string; id?: string; revision?: FileRevision; offset?: number; length?: number; progress?: string },
+      report?: (progress: { id: string; done: number; total: number }) => void) {
       const epoch = epochOf(scope), owner = await deps.owner(); if (!owner || context.actor.accountId !== owner) throw new Error('File reader is not signed in')
       const key = JSON.stringify([context.actor.accountId, context.actor.actorId, fileRefKey(context.ref)])
       if (request.op === 'local' || request.op === 'open' || request.op === 'ssh') {
+        const named = request.progress
+        if (typeof named === 'string' && report) context = { ...context, progress: (done, total) => report({ id: named, done, total }) }
         const local = request.op === 'ssh' ? null : await deps.local(context)
         await check(scope, owner, epoch)
         if (request.op === 'local') return local?.revision ?? null
@@ -135,7 +139,8 @@ export function registerNativeFileIpc(ipc: IpcMain, host: ReturnType<typeof crea
   ipc.handle('files:publish', async (event, row: Parameters<typeof host.publish>[1]) => {
     try { return await host.publish(scope(event), row) } catch (error) { warn(error); throw error }
   })
-  ipc.handle('files:read', (event, row: FileContext & Parameters<typeof host.read>[2]) => host.read(scope(event), { actor: row.actor, ref: row.ref }, row))
+  ipc.handle('files:read', (event, row: FileContext & Parameters<typeof host.read>[2]) => host.read(scope(event), { actor: row.actor, ref: row.ref }, row,
+    (progress) => { if (!event.sender.isDestroyed()) event.sender.send('files:read-progress', progress) }))
   ipc.handle('files:stage', (event, row: FileStageCommand) => host.stage(scope(event), row))
   ipc.handle('files:stage-open', (event, row: { id: string }) => host.open(scope(event), row.id))
 }

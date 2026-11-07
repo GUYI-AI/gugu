@@ -61,10 +61,18 @@ export type BytePageResult =
   | { kind: 'page'; snapshot: SourceSnapshot; start: number; end: number; bytes: Uint8Array; older: BytePageCursor | null };
 
 /** A body points to independently decoded UTF-8 chunks or a bounded tokenizer checkpoint. */
+export type WindowBodyOwner = { kind: 'canonical'; turnId: string; itemId: string }
+  | { kind: 'fragment'; fragmentKey: string };
 export type WindowBodyRef = {
-  version: 1; scope: string; sourceLineage: string; id: string; revision: string; turnId: string; itemId: string;
+  version: 1; scope: string; sourceLineage: string; id: string; revision: string;
   firstChunk: SegmentRef | null; decoderCheckpoint: SegmentRef | null;
   sourceRange: SourceRange; byteLength: number | null;
+} & ({ owner: Extract<WindowBodyOwner, { kind: 'canonical' }>; turnId: string; itemId: string }
+  | { owner: Extract<WindowBodyOwner, { kind: 'fragment' }>; turnId?: never; itemId?: never });
+/** Readable source evidence with a real anchor, without invented canonical ownership or side effects. */
+export type SourceFragment = {
+  key: string; sourceRange: SourceRange; nativeKey?: string; knownRole?: 'user' | 'assistant' | 'tool';
+  text?: string; bodyRef?: WindowBodyRef; ownership: 'unresolved';
 };
 export const BODY_CHUNK_BYTES = 16 * 1024;
 export const BODY_TEXT_BYTES = 32 * 1024;
@@ -109,7 +117,7 @@ export type WindowReadRequest = {
 export type WindowPage = {
   kind: 'page' | 'continuation'; scope: string; sourceLineage: string;
   snapshotRevision: string; commitSeq: number; turns: TranscriptTurn[];
-  bodyRefs: WindowBodyRef[]; coveredRanges: SourceRange[];
+  bodyRefs: WindowBodyRef[]; coveredRanges: SourceRange[]; sourceFragments?: SourceFragment[];
   olderCursor: WindowCursor | null; moreBefore: 'yes' | 'no' | 'unknown';
   pendingLongRecords: PendingLongRecord[]; io: WindowIoCounters;
 };
@@ -124,6 +132,10 @@ export type WindowBodyResult = { bodyId: string; revision: string } & ({
 export type TimelineWindowFields = {
   /** Snapshot replaces; After supplies the current full ticket set ([] clears). Older is page-local. */
   bodyRefs?: WindowBodyRef[]; pendingLongRecords?: PendingLongRecord[];
+  /** Bounded global resolutions in After; clients retain tombstones only for resident/in-flight pages. */
+  resolvedPendingTickets?: string[];
+  sourceFragments?: SourceFragment[];
+  resolvedFragmentOwners?: Array<{ fragmentKey: string; turnId: string; itemId: string }>;
   olderCursor?: WindowCursor | null; moreBefore?: 'yes' | 'no' | 'unknown'; coveredRanges?: SourceRange[];
   snapshotRevision?: string; sourceLineage?: string;
 };
