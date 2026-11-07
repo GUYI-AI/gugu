@@ -13,11 +13,11 @@ function setup() {
   let changed = () => {};
   const stopped = vi.fn();
   const io: DesktopWindowIo = {
-    request: vi.fn(async (conversationId, limit, signal) => ({ conversationId, limit, signal,
+    request: vi.fn<DesktopWindowIo['request']>(async (conversationId, limit, signal) => ({ conversationId, limit, signal,
       locator: { harness: 'codex', providerSessionId: 'native', roots: [] }, cacheDirectory: '/unused',
       scope: 'scope', conversationScope: 'conversation', branchLineage: 'branch', budget: createWindowBudget() })),
     openRecent: vi.fn(async () => value), readOlder: vi.fn(async () => value),
-    readBody: vi.fn(async request => ({ kind: 'needs_location', bodyId: request.bodyRef.id, revision: request.bodyRef.revision, offset: request.offset, io: request.budget.counters })),
+    readBody: vi.fn<DesktopWindowIo['readBody']>(async request => ({ kind: 'needs_location', bodyId: request.bodyRef.id, revision: request.bodyRef.revision, offset: request.offset, io: request.budget.counters })),
     watch: vi.fn(async (_id, notify) => { changed = notify; return stopped; }),
   };
   return { reader: createDesktopWindowReader(io), io, value, changed: () => changed(), stopped };

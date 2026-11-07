@@ -68,12 +68,14 @@ export function createDesktopWindowReader(io: DesktopWindowIo) {
     return value;
   }
   async function subscribe(input: SessionpageSessionSubscribeRequest, emit: (event: SessionpageSessionEvent) => void,
-    failed: (error: unknown) => void): Promise<() => void> {
+    failed: (error: unknown) => void, signal?: AbortSignal): Promise<() => void> {
     const abort = new AbortController();
     let cursor = input.cursor, running = false, dirty = false, stopped = false;
     let stopWatch: (() => void) | undefined;
     let initialRequest: WindowReadRequest | undefined;
-    const stop = () => { if (!stopped) { stopped = true; abort.abort(); stopWatch?.(); } };
+    const stop = () => { if (!stopped) { stopped = true; abort.abort(); stopWatch?.(); signal?.removeEventListener('abort', stop); } };
+    signal?.addEventListener('abort', stop, { once: true });
+    if (signal?.aborted) stop();
     const pump = async () => {
       dirty = true;
       if (running || stopped) return;
@@ -93,6 +95,7 @@ export function createDesktopWindowReader(io: DesktopWindowIo) {
       finally { running = false; }
     };
     try {
+      abort.signal.throwIfAborted();
       const request = await io.request(input.conversationId, undefined, abort.signal);
       initialRequest = request;
       stopWatch = await io.watch(input.conversationId, () => { void pump(); }, request);
@@ -103,4 +106,3 @@ export function createDesktopWindowReader(io: DesktopWindowIo) {
   }
   return { snapshot, after, older, body, subscribe };
 }
-

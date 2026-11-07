@@ -826,7 +826,7 @@ function sourceWindowReader(): Promise<SourceWindowReader> {
       },
       reportError: error => log.warn('sessionWindow: bounded source subscription failed', { error: String(error) }),
       observed: process.env.GUGU_WINDOW_IO_TRACE === '1'
-        ? (conversationId, io) => log.info('sessionWindow: read', { conversationId, ...io }) : undefined,
+        ? (conversationId, io, phase) => log.info('sessionWindow: read', { conversationId, phase, ...io }) : undefined,
     });
   })();
 }
@@ -847,14 +847,15 @@ export async function windowSubscribe(input: SessionpageSessionSubscribeRequest,
   if (!subscriptionId) return fail('invalid_subscription', 'subscriptionId is required');
   unsubscribe(subscriptionId);
   let stopped = false, teardown: (() => void) | undefined;
-  const mine = { conversationId: input.conversationId, stop: () => { stopped = true; teardown?.(); } };
+  const abort = new AbortController();
+  const mine = { conversationId: input.conversationId, stop: () => { stopped = true; abort.abort(); teardown?.(); } };
   subscriptions.set(subscriptionId, mine);
   const forget = () => { if (subscriptions.get(subscriptionId) === mine) subscriptions.delete(subscriptionId); };
   const result = await withSourceWindow(async reader => {
     teardown = await reader.subscribe(input, event => { if (!stopped) emit(event); }, error => {
       mine.stop(); forget();
       log.warn('sessionWindow: subscription stopped', { subscriptionId, error: String(error) });
-    });
+    }, abort.signal);
     if (stopped) { teardown(); throw Object.assign(new Error('Subscription was released before opening'), { code: 'unsubscribed' }); }
     return { subscriptionId };
   });

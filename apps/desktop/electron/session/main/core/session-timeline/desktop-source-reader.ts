@@ -1,5 +1,7 @@
 import { join } from 'node:path';
 import { watchFile, unwatchFile } from 'node:fs';
+import { setImmediate } from 'node:timers/promises';
+import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 import { createRecentReader } from '@gugu/session-core/session-record/window-cache/recent-reader';
 import { createDiskBodyPageIo } from '@gugu/session-core/session-record/window-cache/body-reader';
 import { readSourceLocator } from '@gugu/session-core/session-record/window-cache/source-locator';
@@ -16,9 +18,10 @@ export type DesktopSourceRequest = WindowReadRequest & { cwd?: string; nativeSou
 export function createDesktopSourceWindowReader(options: {
   request(id: string, limit?: number, signal?: AbortSignal): Promise<DesktopSourceRequest>;
   reportError(error: unknown): void;
-  observed?(conversationId: string, io: Readonly<WindowIoCounters>): void;
+  observed?(conversationId: string, io: Readonly<WindowIoCounters>, phase: 'window' | 'discovery'): void;
 }) {
   const resolver = createSourceReopenResolver();
+  let discoveryIdle: Promise<void> = Promise.resolve();
   const listeners = new Set<() => void>();
   const locatedRequests = new WeakMap<WindowReadRequest, WindowSourceLocator>();
   const scheduler = createReverseIndexScheduler({ onFailure: options.reportError,
@@ -40,10 +43,29 @@ export function createDesktopSourceWindowReader(options: {
     locatedRequests.set(input, value);
     return value;
   }
+  /** Resumable discovery is a background job, with an independently metered budget
+   * per metadata batch. Serialize whole jobs because the resolver owns one cursor. */
+  async function locateForRead(input: DesktopSourceRequest): Promise<WindowSourceLocator> {
+    const previous = discoveryIdle;
+    let release!: () => void;
+    discoveryIdle = new Promise<void>(resolve => { release = resolve; });
+    await previous;
+    try {
+      let batch = input;
+      for (;;) {
+        input.signal?.throwIfAborted();
+        try { const value = await locate(batch); locatedRequests.set(input, value); return value; }
+        catch (error) { if ((error as { code?: string }).code !== 'source_locating') throw error; }
+        finally { if (batch !== input) options.observed?.(input.conversationId, batch.budget.counters, 'discovery'); }
+        await setImmediate(undefined, { signal: input.signal });
+        batch = { ...input, budget: createWindowBudget() };
+      }
+    } finally { release(); }
+  }
   function reader(input: WindowReadRequest) {
     return createRecentReader({
       openSource: async current => {
-        const located = await locate(current);
+        const located = await locateForRead(current);
         const source = await openWindowByteSource(located.path);
         try {
           if ((await source.snapshot()).sourceInstance !== located.source.sourceInstance)
@@ -75,14 +97,14 @@ export function createDesktopSourceWindowReader(options: {
   async function measured<T>(input: WindowReadRequest, read: () => Promise<T>) {
     await scheduler.pause();
     try { return await read(); }
-    finally { options.observed?.(input.conversationId, input.budget.counters); }
+    finally { options.observed?.(input.conversationId, input.budget.counters, 'window'); }
   }
   const bridge = createDesktopWindowReader({ request: options.request,
     openRecent: input => measured(input, () => reader(input).openRecent(input)),
     readOlder: input => measured(input, () => reader(input).readOlder(input)),
     readBody: input => measured(input, () => reader(input).readBody(input)),
     watch: async (_id, changed, input) => {
-      const located = await locate(input);
+      const located = await locateForRead(input);
       listeners.add(changed);
       watchFile(located.path, { persistent: false, interval: 250 }, changed);
       return () => { listeners.delete(changed); unwatchFile(located.path, changed); };
