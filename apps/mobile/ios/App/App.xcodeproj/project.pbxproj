@@ -47,6 +47,11 @@
 		E98E00000000000000000166 /* GuguIOSOwnerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000066 /* GuguIOSOwnerPlugin.swift */; };
 		E98E0000000000000000011A /* GuguIOSHostLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E0000000000000000001A /* GuguIOSHostLifecycle.swift */; };
 		E98E00000000000000000167 /* GuguIOSAppRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000067 /* GuguIOSAppRuntime.swift */; };
+		E98E00000000000000000401 /* GuguPushTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000301 /* GuguPushTypes.swift */; };
+		E98E00000000000000000402 /* GuguPushClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000302 /* GuguPushClient.swift */; };
+		E98E00000000000000000403 /* GuguPushRPCProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000303 /* GuguPushRPCProvider.swift */; };
+		E98E00000000000000000404 /* GuguUNPushPlatform.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000304 /* GuguUNPushPlatform.swift */; };
+		E98E00000000000000000405 /* GuguPushNotificationsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000305 /* GuguPushNotificationsPlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -103,6 +108,11 @@
 		E98E00000000000000000066 /* GuguIOSOwnerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSOwnerPlugin.swift; sourceTree = "<group>"; };
 		E98E0000000000000000001A /* GuguIOSHostLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSHostLifecycle.swift; sourceTree = "<group>"; };
 		E98E00000000000000000067 /* GuguIOSAppRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSAppRuntime.swift; sourceTree = "<group>"; };
+		E98E00000000000000000301 /* GuguPushTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/GuguPushNotifications/GuguPushTypes.swift; sourceTree = "<group>"; };
+		E98E00000000000000000302 /* GuguPushClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/GuguPushNotifications/GuguPushClient.swift; sourceTree = "<group>"; };
+		E98E00000000000000000303 /* GuguPushRPCProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/GuguPushNotifications/GuguPushRPCProvider.swift; sourceTree = "<group>"; };
+		E98E00000000000000000304 /* GuguUNPushPlatform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/GuguPushNotifications/GuguUNPushPlatform.swift; sourceTree = "<group>"; };
+		E98E00000000000000000305 /* GuguPushNotificationsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguPushNotificationsPlugin.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -131,6 +141,7 @@
 				E98E00000000000000000043 /* PhoneCalendar */,
 				E98E00000000000000000040 /* CalendarBridge */,
 				E98E00000000000000000080 /* OwnerSession */,
+				E98E00000000000000000300 /* PushNotifications */,
 				E98E00000000000000000020 /* Host */,
 				E98E00000000000000000214 /* HostValidation */,
 				504EC3051FED79650016851F /* Products */,
@@ -226,6 +237,18 @@
 				E98E00000000000000000066 /* GuguIOSOwnerPlugin.swift */,
 			);
 			path = ../OwnerSession;
+			sourceTree = "<group>";
+		};
+		E98E00000000000000000300 /* PushNotifications */ = {
+			isa = PBXGroup;
+			children = (
+				E98E00000000000000000301 /* GuguPushTypes.swift */,
+				E98E00000000000000000302 /* GuguPushClient.swift */,
+				E98E00000000000000000303 /* GuguPushRPCProvider.swift */,
+				E98E00000000000000000304 /* GuguUNPushPlatform.swift */,
+				E98E00000000000000000305 /* GuguPushNotificationsPlugin.swift */,
+			);
+			path = ../PushNotifications;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -345,6 +368,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E98E00000000000000000401 /* GuguPushTypes.swift in Sources */,
+				E98E00000000000000000402 /* GuguPushClient.swift in Sources */,
+				E98E00000000000000000403 /* GuguPushRPCProvider.swift in Sources */,
+				E98E00000000000000000404 /* GuguUNPushPlatform.swift in Sources */,
+				E98E00000000000000000405 /* GuguPushNotificationsPlugin.swift in Sources */,
 				E98E00000000000000000167 /* GuguIOSAppRuntime.swift in Sources */,
 				E98E0000000000000000011A /* GuguIOSHostLifecycle.swift in Sources */,
 				E98E00000000000000000161 /* GuguIOSOwnerSession.swift in Sources */,
