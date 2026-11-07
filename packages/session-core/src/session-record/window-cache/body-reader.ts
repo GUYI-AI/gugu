@@ -111,11 +111,12 @@ export async function readIndexedBodyPage(io: BodyPageIo, input: {
   bodyRef: WindowBodyRef; offset: number; maxBytes: number; budget: WindowBudget; signal?: AbortSignal;
 }): Promise<WindowBodyResult> {
   const { bodyRef: body, offset, maxBytes, budget, signal } = input;
+  const binding = { bodyId: body.id, revision: body.revision };
   if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(maxBytes) || maxBytes < 4 || maxBytes > BODY_TEXT_BYTES)
-    return { kind: 'reset', reason: 'invalid_cursor', io: budget.counters };
+    return { ...binding, kind: 'reset', reason: 'invalid_cursor', io: budget.counters };
   signal?.throwIfAborted();
-  if (body.byteLength !== null && offset > body.byteLength) return { kind: 'reset', reason: 'invalid_cursor', io: budget.counters };
-  if (offset === body.byteLength) return { kind: 'body', text: '', offset, nextOffset: offset, moreAfter: 'no', io: budget.counters };
+  if (body.byteLength !== null && offset > body.byteLength) return { ...binding, kind: 'reset', reason: 'invalid_cursor', io: budget.counters };
+  if (offset === body.byteLength) return { ...binding, kind: 'body', text: '', offset, nextOffset: offset, moreAfter: 'no', io: budget.counters };
   const first = Math.floor(offset / BODY_CHUNK_BYTES);
   const count = Math.min(maxBytes, body.byteLength === null ? maxBytes : body.byteLength - offset);
   const last = Math.floor((offset + count - 1) / BODY_CHUNK_BYTES);
@@ -123,7 +124,7 @@ export async function readIndexedBodyPage(io: BodyPageIo, input: {
   for (let ordinal = first; ordinal <= last; ordinal += 1) {
     signal?.throwIfAborted();
     const descriptor = await io.descriptor(body, ordinal, budget);
-    if (!descriptor?.content) return { kind: 'needs_location', bodyId: body.id, offset, io: budget.counters };
+    if (!descriptor?.content) return { ...binding, kind: 'needs_location', offset, io: budget.counters };
     if (descriptor.bodyId !== body.id || descriptor.revision !== body.revision || descriptor.ordinal !== ordinal ||
       descriptor.decodedStart !== ordinal * BODY_CHUNK_BYTES || descriptor.decodedBytes < 1 || descriptor.decodedBytes > BODY_CHUNK_BYTES)
       throw new Error('Body chunk descriptor binding mismatch');
@@ -136,7 +137,7 @@ export async function readIndexedBodyPage(io: BodyPageIo, input: {
   let written = 0;
   for (const chunk of chunks) { combined.set(chunk, written); written += chunk.length; }
   const start = offset % BODY_CHUNK_BYTES;
-  if (start >= available || (combined[start] & 0xc0) === 0x80) return { kind: 'reset', reason: 'invalid_cursor', io: budget.counters };
+  if (start >= available || (combined[start] & 0xc0) === 0x80) return { ...binding, kind: 'reset', reason: 'invalid_cursor', io: budget.counters };
   let end = Math.min(available, start + count);
   // At most three trailing bytes belong to a scalar completed by the next chunk.
   let text: string | undefined;
@@ -149,6 +150,6 @@ export async function readIndexedBodyPage(io: BodyPageIo, input: {
   budget.charge('decodedBytes', length); budget.charge('outputBytes', length);
   signal?.throwIfAborted();
   const nextOffset = offset + length;
-  return { kind: 'body', text, offset, nextOffset,
+  return { ...binding, kind: 'body', text, offset, nextOffset,
     moreAfter: body.byteLength === null ? 'unknown' : nextOffset < body.byteLength ? 'yes' : 'no', io: budget.counters };
 }
