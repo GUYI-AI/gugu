@@ -156,7 +156,11 @@ describe('consumed first-unread entry', () => {
     await until('the retained slot has remounted its message list', () => !!view.scroller())
     expect(surfaceRootPill(view.scroller())).toBeNull()
   })
-  it.each([1100, 390])('restores reading after consuming unread navigation and reopening its slot while the account observer survives at width %i', async (width) => {
+  it.each([
+    { width: 1100, staleTailLevel: false, scenario: 'ordinary scroll' },
+    { width: 390, staleTailLevel: false, scenario: 'ordinary scroll' },
+    { width: 1100, staleTailLevel: true, scenario: 'controlled already-false tail level' },
+  ])('restores reading after consuming unread navigation and reopening its slot while the account observer survives at width $width ($scenario)', async ({ width, staleTailLevel }) => {
     const view = await renderConversation(width)
     await page.getByRole('button', { name: 'Return to latest' }).click()
     await until('the latest window has filled its rows and reached its actual bottom', () => {
@@ -171,6 +175,13 @@ describe('consumed first-unread entry', () => {
       })!
       return { id: row.dataset.msgId, top: row.getBoundingClientRect().top - bounds.top }
     }
+    if (staleTailLevel) {
+      // Controlled precondition: the old level must not stand in for this scroll's painted position.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve)))
+      await act(async () => { view.history.setFollowingTail(false) })
+    }
+    const followingBeforeScroll = view.history.isFollowingTail()
+    if (staleTailLevel) expect(followingBeforeScroll).toBe(false)
     const surface = view.scroller()
     const scrolled = new Promise<void>((resolve) => surface.addEventListener('scroll', () => resolve(), { once: true }))
     surface.scrollTop = surface.scrollHeight - surface.clientHeight - 500
@@ -190,7 +201,7 @@ describe('consumed first-unread entry', () => {
     await view.reopenSlot()
     await until('twelve restored viewport frames are recorded', () => restored.length >= 12)
     cancelAnimationFrame(frame)
-    expect(restored.every((row) => row.id === before.id && Math.abs(row.top - before.top) <= 1), JSON.stringify({ before, restored })).toBe(true)
+    expect(restored.every((row) => row.id === before.id && Math.abs(row.top - before.top) <= 1), JSON.stringify({ staleTailLevel, followingBeforeScroll, before, restored })).toBe(true)
   })
 })
 
