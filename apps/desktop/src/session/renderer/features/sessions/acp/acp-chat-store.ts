@@ -2,6 +2,7 @@ import { withTranscriptTurnIdentity } from '@shared/core/sessions/transcript-tur
 import { projectRejectedSessionInputs } from '@/lib/pendingSessionInput';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import type {
+  ChatCommands,
   ChatContext,
   ChatState,
   ChatView,
@@ -55,6 +56,9 @@ import { AcpLiveSession, AcpStartError, asValueSource } from '@renderer/lib/acp/
 import { attachAcpSessionWhenReady } from '@renderer/lib/acp/acp-session-attachment';
 import { getAcpRuntimeClient } from '@renderer/lib/acp/runtime-client';
 import { watchRunningSession, type RunningSessionWatch } from '@renderer/lib/acp/running-sessions';
+import { supportsSourceWindow } from '@gugu/session-core/session-record/window-cache/formats';
+import { AcpWindowHistory } from './acp-window-history';
+import { acpWindowHistoryClient, prepareAcpWindowHistory } from './acp-window-client';
 import { machineLinkHandingOff, machineLinkState, onMachineReconnected } from '@renderer/lib/machine-clients';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
@@ -206,6 +210,12 @@ export class AcpChatStore {
   private _runtimeLiveSubagentIds: readonly string[] = [];
 
   private _view: ChatView | null = null;
+  sourceWindow: ChatCommands['sourceWindow'];
+  private _windowHistory: AcpWindowHistory | null = null;
+  private _windowSubscriptionId: string | null = null;
+  private _openingHistoryChoice: Promise<void> | null = null;
+  private _historySource: 'legacy' | 'choosing' | 'window' = 'legacy';
+  private _windowFailure: AcpLoadError | null = null;
   private _bootstrapped = false;
   private _incomingHistoryResolved = new Set<string>();
   private _incomingHistoryReading = false;
@@ -340,7 +350,9 @@ export class AcpChatStore {
       this.commands.map((command) => command.name)
     );
 
-    makeObservable<this, '_bootstrapped' | '_bootstrapsInFlight' | '_runtimeBackgroundTaskIds' | '_runtimeLiveSubagentIds' | '_storedQueue' | '_loadError' | '_lifeRetriedVersion' | '_senderInputs'>(this, {
+    makeObservable<this, '_bootstrapped' | '_bootstrapsInFlight' | '_runtimeBackgroundTaskIds' | '_runtimeLiveSubagentIds' | '_storedQueue' | '_loadError' | '_lifeRetriedVersion' | '_senderInputs' | '_windowFailure'>(this, {
+      sourceWindow: observable.ref,
+      _windowFailure: observable.ref,
       _senderInputs: observable.ref,
       _bootstrapped: observable,
       _storedQueue: observable.ref,
@@ -676,7 +688,7 @@ export class AcpChatStore {
   }
 
   get canRevertHistory(): boolean {
-    return !!this.session && !this.reverting && !this.affordances.isBusy
+    return !this.sourceWindow && !!this.session && !this.reverting && !this.affordances.isBusy
       && this.session.sessionState.current().lifecycle === 'ready'
       && !this.affordances.hasPendingPermission && !(this.runningBackgroundTaskIds?.length)
       && !this.session.sessionState.current().queuedPrompts.length;
@@ -763,6 +775,7 @@ export class AcpChatStore {
 
   /** A confirmed revert invalidates both the loaded window and every cursor that used its old sequences. */
   private async _readRevertedHistory(generation: number, session: AcpLiveSession | null, current: () => boolean = () => true): Promise<boolean> {
+    if (this._historySource !== 'legacy') return false;
     const stored = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, limit: 100 });
     const history = session ? await session.getHistory(undefined, stored.turns.length ? 1 : 100) : null;
     if (history && !history.success) throw history.error;
@@ -841,12 +854,12 @@ export class AcpChatStore {
    * 占位页是给真正空白会话的兜底，走到它本身就说明前面判错了。
    */
   get isEmpty(): boolean {
-    return !this.historyLoading && this.messageCount === 0 && !this.hasPriorContext;
+    return !this.sourceWindow?.sourceFragments?.some(row => row.text) && !this.historyLoading && this.messageCount === 0 && !this.hasPriorContext;
   }
 
   /** A persisted conversation can have prior context while its first visible page is still loading. */
   get showHistoryLoading(): boolean {
-    return this.historyLoading && this.messageCount === 0 && this.loadError === null;
+    return !this.sourceWindow?.sourceFragments?.some(row => row.text) && this.historyLoading && this.messageCount === 0 && this.loadError === null;
   }
 
   /**
@@ -854,6 +867,7 @@ export class AcpChatStore {
    * a failed view newer than the last retry says why; opening it never starts it again, only `retry` does.
    */
   get loadError(): AcpLoadError | null {
+    if (this._windowFailure) return this._windowFailure;
     const failure = this._lifeFailure();
     return failure ? toLoadError(lifeFailureError(failure), machineRegistry.machineOf(this.runtimeSessionId)) : this._loadError;
   }
@@ -990,6 +1004,7 @@ export class AcpChatStore {
 
   /** Only unresolved legacy receipts read older pages. The ordinary first-page path never waits for this work. */
   private async _resolveIncomingHistory(inputs: readonly PendingPrompt[]): Promise<void> {
+    if (this._historySource !== 'legacy') return;
     this._incomingHistoryReading = true;
     const request = ++this._incomingHistoryRequest;
     const alive = () => !this._disposed && request === this._incomingHistoryRequest;
@@ -1171,6 +1186,7 @@ export class AcpChatStore {
       return;
     }
     this._transcriptReleased = true;
+    this._closeWindowHistory();
     this.chatState.session.setPendingMessages([]);
     this._resetHistoryState();
     const activeTurn = this.chatState.transcript.state.activeTurnSnapshot;
@@ -1185,6 +1201,7 @@ export class AcpChatStore {
   private _reloadReleasedTranscript(): void {
     this._transcriptReleased = false;
     if (this._disposed) return;
+    if (this._historySource === 'window') { void this._open(); return; }
     // 活会话还挂着:与宿主重开后重挂同一条路(只附着、不再建立),库与引擎两份一起重读。
     if (this.session) {
       this.reattachAfterHostReload();
@@ -1766,6 +1783,7 @@ export class AcpChatStore {
   }
 
   dispose(): void {
+    this._closeWindowHistory();
     if (this._queueEditTimer !== null) clearTimeout(this._queueEditTimer);
     this._queueEditTimer = null;
     if (this._disposed) return;
@@ -1926,6 +1944,59 @@ export class AcpChatStore {
    *  · 没在跑 / 正被宿主拉起来 ⇒ 停着(`_park`)。
    * 照旧走原来那条开场的几种见 `_opensThroughStartup`。
    */
+  private _closeWindowHistory(): void {
+    this._windowHistory?.close();
+    this._windowHistory = null;
+    const id = this._windowSubscriptionId;
+    this._windowSubscriptionId = null;
+    if (id) void acpWindowHistoryClient.unsubscribe(id).catch(() => undefined);
+    runInAction(() => { this.sourceWindow = undefined; this._windowFailure = null; });
+  }
+
+  /** Lock the source before stored/history/backfill I/O; a failed choice never selects the legacy reader. */
+  private async _chooseOpeningHistory(generation: number): Promise<void> {
+    this._closeWindowHistory();
+    this._historySource = 'legacy';
+    if (this.isTransient || machineRegistry.machineOf(this.runtimeSessionId)
+      || !supportsSourceWindow(this._sessionRecord()?.providerId)) return;
+    this._historySource = 'choosing';
+    const id = this._windowSubscriptionId = crypto.randomUUID();
+    const current = () => !this._disposed && generation === this._historyGeneration && this._windowSubscriptionId === id;
+    try {
+      const source = await prepareAcpWindowHistory(this.sessionId, id);
+      if (!current()) { void acpWindowHistoryClient.unsubscribe(id).catch(() => undefined); return; }
+      if (source === 'legacy') {
+        this._windowSubscriptionId = null;
+        this._historySource = 'legacy';
+        void acpWindowHistoryClient.unsubscribe(id).catch(() => undefined);
+        return;
+      }
+      this._historySource = 'window';
+      const history = new AcpWindowHistory(this.sessionId, acpWindowHistoryClient, view => {
+        if (this._disposed || this._windowHistory !== history) return;
+        runInAction(() => {
+          const { sourceLineage, sourceFragments, resolvedFragmentOwners } = view.timeline;
+          this.sourceWindow = { sourceLineage, sourceFragments, resolvedFragmentOwners, beforeLive: true };
+          this.historyLoading = view.phase === 'loading'
+            || (view.phase === 'ready' && !sourceFragments?.some(row => row.text) && !!view.timeline.pendingLongRecords?.length);
+          this._windowFailure = view.phase === 'failed' ? { kind: 'history_unavailable', message: resultError(view.error).message } : null;
+          if (view.phase === 'failed') this._reopenOnRetry = true;
+        });
+      }, () => id);
+      this._windowHistory = history;
+      await history.open();
+    } catch (error) {
+      if (!current()) return;
+      this._historySource = 'window';
+      runInAction(() => {
+        this.historyLoading = false;
+        this._windowFailure = { kind: 'history_unavailable', message: resultError(error).message };
+        this._reopenOnRetry = true;
+      });
+      void acpWindowHistoryClient.unsubscribe(id).catch(() => undefined);
+    }
+  }
+
   private async _open(): Promise<void> {
     if (this._opensThroughStartup()) {
       await this._runBootstrap();
@@ -1941,6 +2012,11 @@ export class AcpChatStore {
     let watch: RunningSessionWatch | null = null;
     let historyFailed = false;
     try {
+      const choice = this._chooseOpeningHistory(generation);
+      this._openingHistoryChoice = choice;
+      await choice;
+      if (this._openingHistoryChoice === choice) this._openingHistoryChoice = null;
+      if (this._disposed || generation !== this._historyGeneration) return;
       // 两件事并行:库里那份读到就地上屏(`_loadStoredFirstPage`),不等「在不在跑」。
       // Observe a rejected read immediately, even while the runtime-list watch is still opening.
       // An idle session has no replay to replace a failed stored page.
@@ -2025,7 +2101,7 @@ export class AcpChatStore {
     runInAction(() => {
       this._setParkWatch(watch);
       this._closedByHost = true;
-      this.historyLoading = false;
+      if (this._historySource === 'legacy') this.historyLoading = false;
       this._syncMessageCount();
     });
     this._loadStoredQueue((error) => log.warn('stored queue of a parked session unavailable', { sessionId: this.sessionId, error }));
@@ -2080,7 +2156,7 @@ export class AcpChatStore {
    * 补不了(主进程不认这个口、记录读不懂、读失败)⇒ 屏上照旧 —— ❌ 当错误报,spec「会话能用 > 历史完整」。
    */
   private async _syncStoredHistoryFromRecord(generation: number): Promise<void> {
-    if (this.isTransient || this._disposed) return;
+    if (this._historySource !== 'legacy' || this.isTransient || this._disposed) return;
     let inserted = 0;
     try {
       inserted = (await rpc.sessions.syncStoredHistoryFromRecord(this.sessionId))?.inserted ?? 0;
@@ -2129,6 +2205,9 @@ export class AcpChatStore {
   }
 
   private async _runBootstrapInner(options?: { attachOnly?: boolean; keepStoredPage?: boolean; retry?: boolean }): Promise<void> {
+    const openingGeneration = this._historyGeneration;
+    if (this._openingHistoryChoice) await this._openingHistoryChoice;
+    if (this._disposed || openingGeneration !== this._historyGeneration) return;
     let providerId: string | undefined;
     let bootstrapSession: AcpLiveSession | undefined;
     this._closedByHost = false;
@@ -2137,9 +2216,10 @@ export class AcpChatStore {
     this._storedQueueGeneration += 1;
     this._watchMachineLink();
     const openingAtStart = this._linkOpenings;
-    const resuming = options?.attachOnly && this._runtimeCursor != null;
+    const windowHistory = this._historySource === 'window';
+    const resuming = !windowHistory && options?.attachOnly && this._runtimeCursor != null;
     const keepStoredPage = !resuming && options?.keepStoredPage === true;
-    if (resuming) this._historyGeneration += 1;
+    if (windowHistory || resuming) this._historyGeneration += 1;
     else if (keepStoredPage) {
       this._historyGeneration += 1;
       this._resetRuntimeHistoryState();
@@ -2157,7 +2237,7 @@ export class AcpChatStore {
       //
       // 读到就地上屏(在 then 里,不等下面任何一步),所以哪怕起引擎这一路整条失败,
       // 用户仍然看得到自己说过的话。
-      const storedHistoryReady = this.isTransient || resuming || keepStoredPage
+      const storedHistoryReady = windowHistory || this.isTransient || resuming || keepStoredPage
         ? Promise.resolve()
         : this._loadStoredFirstPage(generation);
 
@@ -2217,7 +2297,7 @@ export class AcpChatStore {
           return this._runBootstrapInner(options);
         }
         if (delta) throw resultError(delta.error);
-      } else {
+      } else if (!windowHistory) {
         // 库里非空时引擎那一页只用来定分界(最后一轮的 seq)和改动游标:要一轮就够,❌ 要 100 轮再整页丢掉。
         const history = await clientSession.getHistory(undefined, this._storedBaseSeq === null ? 100 : 1);
         if (!history.success) throw resultError(history.error);
@@ -2555,7 +2635,8 @@ export class AcpChatStore {
             { projectId: this.projectId, sessionId: this.sessionId },
             this.chatState.transcript.state.activeTurnSnapshot
           );
-          void this._refreshHistory();
+          if (this._historySource === 'window') this._commitWindowLiveTurn(this.chatState.transcript.state.activeTurnSnapshot);
+          else void this._refreshHistory();
         },
       }
     );
@@ -2690,6 +2771,7 @@ export class AcpChatStore {
 
   /** Read the newest stored page. Only a live bootstrap can replace a failed read with replay; idle opens must report it. */
   private _loadStoredFirstPage(generation: number, failOnError = false): Promise<void> {
+    if (this._historySource !== 'legacy') return Promise.resolve();
     return rpc.sessions
       .getStoredHistory({ sessionId: this.sessionId, limit: 100 })
       .then(async (stored) => {
@@ -2773,6 +2855,7 @@ export class AcpChatStore {
 
   /** The host reports a committed record sequence. This never starts or prompts the provider. */
   syncOwnerNotifications(head: number, epoch = 0): Promise<void> {
+    if (this._historySource !== 'legacy') return Promise.resolve();
     const rewound = epoch !== (this._ownerNotificationReadEpoch ?? this._storedHistoryEpoch);
     if (epoch !== this._ownerNotificationReadEpoch) {
       this._resetOwnerNotificationRead();
@@ -2809,7 +2892,7 @@ export class AcpChatStore {
 
   /** 还能不能往上翻。到头(游标为 null)或还没定下来来源时都是 false。 */
   get canLoadOlderHistory(): boolean {
-    return typeof this._olderCursor === 'number';
+    return this._historySource === 'legacy' && typeof this._olderCursor === 'number';
   }
 
   /**
@@ -2821,6 +2904,7 @@ export class AcpChatStore {
    * spec `session-history-replay`:「会话能用 > 历史完整」,翻不到旧消息不该升级成一个坏掉的会话。
    */
   async loadOlderHistory(): Promise<TranscriptTurn[]> {
+    if (this._historySource !== 'legacy') return [];
     if (this._loadingOlder || this._disposed) return [];
     const generation = this._historyGeneration;
     const before = this._olderCursor;
@@ -2900,6 +2984,7 @@ export class AcpChatStore {
    * @returns 读失败时的那个结果(调用方弹错),成功为 null。
    */
   private async _mergeRuntimeChanges(session: AcpLiveSession, generation: number): Promise<{ error: unknown } | { reset: true } | null> {
+    if (this._historySource !== 'legacy') return null;
     const changes = await session.getHistory(undefined, 100, this._runtimeCursor ?? undefined);
     if (!changes.success) return { error: changes.error };
     if (generation !== this._historyGeneration) return null;
@@ -3077,7 +3162,21 @@ export class AcpChatStore {
    * 拿到结果（成功或失败）都要把那一帧交还，否则它会一直压在最新内容上面。
    * 只取改动游标之后的那几轮(`_mergeRuntimeChanges`)。
    */
+  private _commitWindowLiveTurn(turn: TranscriptTurn | null): void {
+    if (!turn || this._transcriptReleased) return;
+    runInAction(() => batch(() => {
+      const live = this.session?.activeTurn.current();
+      const turns = new Map(this._runtimeTurns.map(row => [row.id, row]));
+      turns.set(turn.id, turn);
+      this._runtimeTurns = [...turns.values()];
+      this.chatState.transcript.history.seed(this._composedHistory());
+      if (live && live.id !== turn.id) this.chatState.transcript.activeTurn.set(live);
+      this._syncMessageCount();
+    }));
+  }
+
   private async _refreshHistory(options?: { preserveLiveTurn?: boolean }): Promise<void> {
+    if (this._historySource !== 'legacy') return;
     if (this.reverting) return;
     const refreshGeneration = this._historyGeneration;
     // 转录放掉了(`releaseTranscript`):不对账 —— 上屏时整份重读,这里读回来只会把它又攒起来。

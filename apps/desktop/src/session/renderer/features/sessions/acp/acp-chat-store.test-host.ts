@@ -15,6 +15,7 @@ type EventOn = (channel: string, callback: (data: unknown) => void) => () => voi
 export function installAcpChatStoreHost(
   invoke: Invoke = () => Promise.resolve([]),
   eventOn: EventOn = () => () => {},
+  options: { openingHistory?: 'legacy' | 'host' } = {},
 ): void {
   Object.defineProperty(document, 'fonts', {
     configurable: true,
@@ -23,7 +24,11 @@ export function installAcpChatStoreHost(
   Object.defineProperty(window, 'electronAPI', {
     configurable: true,
     value: {
-      invoke,
+      // Existing replay fixtures describe a legacy-selected opening. The source-window
+      // entry contract opts into its own host Prepare/Subscribe responses explicitly.
+      invoke: (channel: string, ...args: never[]) => channel === 'sessionTimeline.sessionWindowPrepare'
+        && options.openingHistory !== 'host'
+        ? Promise.resolve({ ok: true, value: { source: 'legacy' } }) : invoke(channel, ...args),
       eventSend: () => {},
       eventOn,
       getPathForFile: () => '',
