@@ -150,14 +150,14 @@ async function openSessionFile(
   target: FileOpenTarget,
   at?: FilePlace,
   ask = false,
-  options?: { intent?: TabOpenIntent; from?: string }
+  options?: { intent?: TabOpenIntent; from?: string | null }
 ): Promise<string | null | undefined> {
   const provisioned = asProvisioned(getSessionPageStore(projectId, sessionId));
   if (!provisioned) throw new Error('This session has no prepared workspace');
   const workspace = workspaceRegistry.get(projectId, provisioned.workspaceId);
   if (!workspace) throw new Error('This session has no workspace');
   const viewModel = provisioned.viewModel;
-  const from = options?.from ?? (target === 'beside' && viewModel ? sessionConversationTabId(viewModel.paneLayout, sessionId) : viewModel?.activePane.resolvedActiveTabId ?? null);
+  const from = options?.from !== undefined ? options.from : target === 'beside' && viewModel ? sessionConversationTabId(viewModel.paneLayout, sessionId) : viewModel?.activePane.resolvedActiveTabId ?? null;
   const intent = options?.intent ?? 'navigate';
   const filePath = await expandHomeTildePath(rawFilePath);
   const resolvedPath = resolveEditorFilePath(workspace.path, filePath);
@@ -196,7 +196,7 @@ export async function openFileInSessionEditor(
   projectId: string,
   sessionId: string,
   filePath: string,
-  opts?: { beside?: boolean; at?: FilePlace; ask?: boolean; intent?: TabOpenIntent; from?: string }
+  opts?: { beside?: boolean; at?: FilePlace; ask?: boolean; intent?: TabOpenIntent; from?: string | null }
 ): Promise<string | null | undefined> {
   return openSessionFile(projectId, sessionId, filePath, opts?.beside ? 'beside' : 'active', opts?.at, opts?.ask === true, opts);
 }
@@ -281,7 +281,7 @@ export function reopenSessionOutput(projectId: string, sessionId: string, output
 export function makeFileLinkHandlers(
   projectId: string,
   sessionId: string,
-  opts?: { beside?: boolean }
+  opts?: { beside?: boolean; from?: null }
 ): { onOpenFile: (filePath: string, at?: FilePlace) => Promise<void>; onOpenExternal: (filePath: string) => void } {
   return {
     onOpenFile: async (filePath, at) => {

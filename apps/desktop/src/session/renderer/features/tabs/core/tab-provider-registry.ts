@@ -48,6 +48,8 @@ export type TabOpenArgs<R extends TabRegistry> = {
  * Stripped before the args reach onBeforeOpen.
  */
 export interface TabOpenOptions {
+  /** Where the page shows once open (`TabPageSnapshot.viewState`). */
+  viewState?: Record<string, unknown>;
   /** Trusted source context; null only for an explicit root open. */
   from: string | null;
   intent?: TabOpenIntent;

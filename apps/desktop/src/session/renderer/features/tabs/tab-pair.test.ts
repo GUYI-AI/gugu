@@ -121,6 +121,27 @@ describe('every side-by-side entry ends in one strip with one pair', () => {
     expectOneStrip(layout);
   });
 
+  it('a click inside a page navigates that tab, though the page it asks for was last closed beside', () => {
+    const memory = new Map<string, 'separate' | 'beside'>();
+    const { layout, open } = setup({ read: (id) => memory.get(id), write: (id, placement) => void memory.set(id, placement) });
+    const folder = open('src', undefined, 'navigate', 'folder');
+    close(layout, folder);
+    expect([...memory.values()]).toEqual(['beside']);
+    const file = open('a.ts');
+    expect(open('src', file, 'navigate', 'folder')).toBe(file);
+    expect(paths(layout)).toEqual(['conversation', 'src']);
+    expectOneStrip(layout);
+  });
+
+  it('a page opened at a place keeps it, on the page it opened and not the one left', () => {
+    const { layout, open } = setup();
+    const file = open('a.ts');
+    const place = { folder: 'src' };
+    expect(layout.open('folder', { path: 'src' }, { from: file, intent: 'navigate', viewState: place })).toBe(file);
+    const pane = layout.groups.find(({ pane }) => pane.entries.has(file))!.pane;
+    expect(pane.navigationOf(file)!.pages.map((page) => page.viewState)).toEqual([undefined, place]);
+  });
+
   it('narrow: the pair stays (only what is shown changes), widening shows it again', () => {
     const { layout, open } = setup();
     open('A.md');

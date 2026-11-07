@@ -491,7 +491,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     onOpenTopicAnchor: openTopicFromAnchor,
     agentFloodNoticeMessageId: agentFlood.noticeMessageId,
     onAgentFloodUndone: agentFlood.reload,
-    onOpenFile: openFilePreview, onOpenLocalFileLink: undefined, onMentionMember: setMentionToInsert,
+    onOpenFile: openFilePreview, onMentionMember: setMentionToInsert,
     selectMode,
     selectedIds,
     onToggleSelect: toggleSelect,

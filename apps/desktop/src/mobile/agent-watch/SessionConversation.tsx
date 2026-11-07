@@ -63,7 +63,7 @@ import { markNeedsYouTaskSeen } from '@/components/needsYou/useNeedsYouTasks'
 import { rendererLogger } from '@/lib/log'
 
 /** The phone supplies session data and RPC actions to the same project conversation UI. */
-export function SessionConversation({ timeline, deviceId, sessionId, agentName, agentUserId, harness, draft, onDraftApplied, startupPrompt, phoneHost = false, local = false, nativeRecord = false, hostReachable = true,
+export function SessionConversation({ timeline, deviceId, sessionId, agentName, agentUserId, harness, draft, file, onDraftApplied, startupPrompt, phoneHost = false, local = false, nativeRecord = false, hostReachable = true,
   machineLabel, sessionRuntime, respondingItemId, onRespond, onSend, pendingSends, sending, agentWorking,
   onStop, stopping, footerNotice, onLoadOlder, onAtBottom, emptyNote, onBeforeSend,
   historyReady = true, historyCursor, queueReady = false, unseen = false,
@@ -71,7 +71,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   timeline: AgentWatchTimeline; deviceId: string; sessionId: string; agentName: string; agentUserId?: string | null
   /** 这条会话的 harness(claude-code / codex …):输入框里模型左边那颗锁着的标,同桌面会话页。 */
   harness?: string
-  draft?: { text: string }; onDraftApplied?: () => void; phoneHost?: boolean
+  draft?: { text: string }; file?: { path: string }; onDraftApplied?: () => void; phoneHost?: boolean
   /** The host's read bit for this task; showing the task clears it, as on the desktop task page. */
   unseen?: boolean
   /** The session is on this computer: read it over IPC (see `machineRpc`). */
@@ -238,6 +238,12 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   const readOutput = useCallback((input: Parameters<typeof readConversationFile>[2]) => readConversationFile(true, deviceId, input), [deviceId])
   const outputs = useOpenedOutputOpener({ deviceId, sessionId, onQuote: quoteOutput, readFileChunk: local ? readOutput : undefined })
   const { openFile, handlers: outputHandlers } = outputs
+  const openedOnArrival = useRef<typeof file>(undefined)
+  useEffect(() => {
+    if (!file || openedOnArrival.current === file) return
+    openedOnArrival.current = file
+    openFile(file.path)
+  }, [file, openFile])
   const background = usePhoneBackgroundTasks(deviceId, sessionId, timeline.turns, dismissals, !phoneHost, localClient?.fetchBackgroundTasks)
   const nativeTurns = timeline.turns
   const pendingInput = useRef<{ sessionId: string; prompts: readonly PendingPrompt[] }>({ sessionId, prompts: [] })

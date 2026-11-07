@@ -206,7 +206,7 @@ function Probe() {
     onReaction: noop, onShowReadReceipt: undefined, onQuote: noop, onForward: noop, onDelete: noop,
     onOpenMemberProfile: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
     agentFloodNoticeMessageId: null, onAgentFloodUndone: undefined, onOpenFile: undefined,
-    onOpenLocalFileLink: undefined, onMentionMember: undefined, selectMode: false,
+ onMentionMember: undefined, selectMode: false,
     selectedIds: new Set(), onToggleSelect: noop, onEnterSelectMode: undefined }
   return useRealList ? createNode(MessageList, { rows, rowProps }) : null
 }

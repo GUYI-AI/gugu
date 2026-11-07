@@ -585,7 +585,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     const intent = config.intent ?? 'navigate';
     const activate = config.activate ?? true;
     const conversation = from && this._registry.has(from.kind) && this._registry.get(from.kind).conversation === true;
-    // How this page was last shown (owner 11-03: separate stays separate, beside stays beside).
+    // How this page was last shown (owner 11-03: separate stays separate, beside stays beside): beside the conversation, so a click inside another page does not put it there.
     const remembered = intent !== 'newTab' ? this._placementMemory.read(this._resourceId(kind, state)) : undefined;
     // Already open = that tab is shown (spec 「同一页已经开着」, owner 10-24: one resource, one tab); an explicit new tab
     // is a context of its own.
@@ -595,8 +595,8 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
 
     // A page this tab already went through is the tab's own (a file's 阅读 and 编辑): where it was last shown does not move it.
     const own = from && source!.pane.navigationOf(from.tabId)!.pages.some((page) => page.kind === kind && this._registry.get(kind).resourceKey(page.state as never) === key);
-    if (intent === 'navigate' && from && !conversation && (own || !remembered) && (!open || open === from)) {
-      source!.pane.navigate(from.tabId, kind, state);
+    if (intent === 'navigate' && from && !conversation && (own || remembered !== 'separate') && (!open || open === from)) {
+      source!.pane.navigate(from.tabId, kind, state, config.viewState);
       if (activate) {
         if (this.groups.includes(source as Pane<R>)) this.activePaneId = source!.paneId;
         source!.pane.activeTabId = from.tabId;
@@ -612,7 +612,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     // Pairing currently selects the pinned page. Until pair identity is independent of the active page, a background
     // request must leave another page the person is viewing alone (spec session-page「不切走正在看的」).
     const showPair = activate || from?.tabId === this.focusedPane.resolvedActiveTabId;
-    const beside = inLayout && showPair && !separate && (intent === 'beside' || (intent === 'navigate' && (conversation || remembered === 'beside')));
+    const beside = inLayout && showPair && !separate && (intent === 'beside' || (intent === 'navigate' && (conversation || (!from && remembered === 'beside'))));
     // Shown again from another page: that page is now its 上一页 (owner 10-24: how it was opened only gives it a Back).
     if (open && from && !conversation && open !== from) open.openerTabId = from.tabId;
     // The same page asked again: the latest ask wins (#7257) — e.g. a newer message carrying the same file.
@@ -629,6 +629,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     } else if (activate) {
       this._groupOf(tabId)?.pane.setActiveTab(tabId);
     }
+    if (config.viewState) this._groupOf(tabId)?.pane.setPageViewState(tabId, config.viewState);
     if (activate) this._groupOf(tabId)?.pane.focusActiveContent();
     return tabId;
   }

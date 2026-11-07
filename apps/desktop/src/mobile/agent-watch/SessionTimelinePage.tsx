@@ -66,6 +66,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   session,
   firstPrompt,
   draft,
+  file,
   initialAppKind,
   local = false,
   onBack,
@@ -75,6 +76,8 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   /** 刚从新建页建成:建它时带的那句(新建页上已经画着),这一页接着画,❌ 换页时让它消失。 */
   firstPrompt?: string
   draft?: { text: string }
+  /** Arrived here to read this file: it opens as a link in the timeline does. */
+  file?: { path: string }
   initialAppKind?: string
   /** The session is on this computer (desktop assistant task pane): read it over IPC, also without a network. */
   local?: boolean
@@ -250,6 +253,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           deviceId={device.device_id}
           sessionId={session.conversationId}
           draft={draft === appliedDraft ? undefined : draft}
+          file={file}
           onDraftApplied={() => setAppliedDraft(draft)}
           phoneHost={phoneHost} local={local} nativeRecord={native} hostReachable={answering}
           unseen={session.unseen === true}

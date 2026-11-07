@@ -646,7 +646,7 @@ export type AppForwardFilesDetail =
 
 /** `gugu.showSession` on the phone: the task tab opens the session's row — the machine it is on, and the row as listed. */
 export const APP_SHOW_SESSION_EVENT = 'gugu:app-show-session';
-export type AppShowSessionDetail = { deviceId: string; session: SessionpageSessionSummary; tabKind?: string; draft?: { text: string } } | { projectId: string };
+export type AppShowSessionDetail = { deviceId: string; session: SessionpageSessionSummary; tabKind?: string; draft?: { text: string }; file?: { path: string } } | { projectId: string };
 
 /** An App's bounded range reply, carried by the existing structured-clone bridge. */
 export type AppFileChunk = { size: number; offset: number; data: Uint8Array<ArrayBuffer> };

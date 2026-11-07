@@ -19,7 +19,7 @@ import type { MemberProfileCardModel } from '../MemberProfileCard'
 import type { MemberProfileSide } from '../memberProfileModels'
 import { COLOR_MUTED, readReceiptLabel } from './chatPresentation'
 import { MessageSendStatus } from './MessageSendStatus'; import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'; import { keepAction } from './messageKeep'
-import { Markdown } from '../markdown/Markdown'; import { classifyFileLink } from '@gugu/core/shared/ui/guguLink'
+import { Markdown } from '../markdown/Markdown'; import { classifyFileLink } from '@gugu/core/shared/ui/guguLink'; import { openSenderFile } from '@/lib/openMessageSender'
 import { buildBubbleStyle } from './messageBubbleStyle'
 import { ComposerCardView } from './ComposerCardView'
 import { QuestionCardView } from './QuestionCardView'
@@ -140,7 +140,7 @@ interface BubbleProps {
   // @@@5856 提供则「开话题」菜单项可用 → 从本消息开一条话题(product spec:必须有来源)。
   // 话题里的消息不传(单层不嵌套守卫)。
   onOpenTopic?: (messageId: string) => void; onOpenTopicAnchor?: (topicChatId: string) => void
-  onOpenFile?: (meta: import('@gugu/core/shared/ui/attachmentModels').ParsedAttachment, message?: MessageItem) => void; onOpenLocalFileLink?: (path: string) => void
+  onOpenFile?: (meta: import('@gugu/core/shared/ui/attachmentModels').ParsedAttachment, message?: MessageItem) => void
   // @@@whisper (#820) — memberProfiles map 用于 whisper 标签显示收件人名字。
   memberProfiles?: Record<string, MemberProfileCardModel>
   // @@@multi-select (#988) — 提供则 More 菜单「多选」项可用 → 进入多选模式并预选本消息。
@@ -172,7 +172,7 @@ export const MessageBubble = memo(function MessageBubble({
   compactMobile = false,
   isGroup = false,
   onOpenTopic, onOpenTopicAnchor,
-  onOpenFile, onOpenLocalFileLink,
+  onOpenFile,
   memberProfiles,
   onEnterSelectMode,
   groupedWithPrev = false, groupedWithNext = false, showReplyQuote = true,
@@ -481,7 +481,7 @@ export const MessageBubble = memo(function MessageBubble({
                   // #1515 段内 Shift+Enter 软换行渲成 <br> 仅对人类手打消息;agent/LLM 内容保持 CommonMark(软换行=空格)。
                   // @@@2017 群内定向消息:渲染注入 nonce marker 后的正文(mentionRender.content),并把本次 marker 传下 →
                   // 只有被 to_user_ids 背书的 @Name 才渲成 mention;非群/whisper → content=undefined 用原始 raw、marker 空。
-                  return <Markdown trust="chat" content={partial ? raw : mentionRender.content ?? raw} onAccent={msg.is_mine} hardBreaks={!avatarIsAgent} mentionMarker={mentionRender.mentionMarker} onOpenLink={(href) => { const link = classifyFileLink(href); if (!isAgent || !onOpenLocalFileLink || link.kind !== 'workspace-file') return false; onOpenLocalFileLink(link.path); return true }} />
+                  return <Markdown trust="chat" content={partial ? raw : mentionRender.content ?? raw} onAccent={msg.is_mine} hardBreaks={!avatarIsAgent} mentionMarker={mentionRender.mentionMarker} onOpenLink={(href) => { const link = classifyFileLink(href); if (link.kind !== 'workspace-file' || !msg.sender_user_id) return false; openSenderFile(msg.sender_user_id, isGroup ? msg.chat_id : undefined, link); return true }} />
                 })()}</div>}
               </div>
             )}
