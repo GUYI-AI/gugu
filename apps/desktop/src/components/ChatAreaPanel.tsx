@@ -386,7 +386,9 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const landingMessageId = useAddressedLanding({ chatId: activeChatId, rowIds: chatListRows.map((row) => row.message.id), setFlashMessageId, flashTimerRef,
     firstAddressedMessageId: isRoomChatSurface ? activeChat?.unread_locator?.first_addressed_message_id : null })
   const { scrollerEl, scrollerRef, setScrollerRef, prepareForSavedPosition, isPreservingPosition, forgetSavedPosition, openLocation, revealMessage } = useConversationScrollMemory({
-    chatId: activeChatId, viewportKey, activationKey: activeChatId ?? '', enabled: true, discardSaved: !!unreadEntry, landOn: landingMessageId,
+    // @@@6530 A chat opened because it has new messages starts at the latest, not where you last left it. Its own unread count
+    // decides: the unread entry of this opening is captured after the chat activates, too late to drop the old position.
+    chatId: activeChatId, viewportKey, activationKey: activeChatId ?? '', enabled: true, discardSaved: !!unreadEntry || (activeChat?.unread_count ?? 0) > 0, landOn: landingMessageId,
     messageIds: chatListRows.map((row) => row.message.id), isAtBottomRef, setFollowingTail, loadMessageAnchor,
   })
   const onHistoryError = useCallback((error: unknown) => toast(error instanceof Error ? error.message : String(error), 'error'), [toast])
