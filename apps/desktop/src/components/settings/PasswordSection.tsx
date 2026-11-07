@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import type { PasswordBetaUi, PasswordSnapshot, PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow, Toggle } from './SettingsPrimitives'
@@ -7,7 +8,7 @@ import { Dialog } from '../ui/Dialog'
 import { Field } from '../ui/Field'
 
 declare global { interface Window { passwordVaultBeta?: PasswordBetaUi } }
-export function PasswordSection() {
+export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLElement | null } = {}) {
   const [snapshot, setSnapshot] = useState<PasswordSnapshot>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -32,11 +33,13 @@ export function PasswordSection() {
   }
   const closeAdd = () => { setAdding(false); setPassword(''); setAccount(''); setOrigin('') }
   if (!PASSWORD_BETA_ENABLED) return null
-  return <SettingsPage data-testid="password-settings">
-    {snapshot?.status === 'unlocked' && <div className="flex justify-end gap-2">
+  const actions = snapshot?.status === 'unlocked' ? <div className="flex justify-end gap-2">
       <Button disabled={busy} onClick={() => setAdding(true)}>添加密码</Button>
       <Button variant="ghost" disabled={busy} onClick={() => { void run({ type: 'lock' }) }}>立即锁定</Button>
-    </div>}
+    </div> : null
+  const host = actionsHost?.()
+  return <SettingsPage data-testid="password-settings">
+    {host ? createPortal(actions, host) : actions}
     <SettingsGroup title="Agent 使用">
       <SettingsRow title="对所有 Agent 禁止" control={<Toggle ariaLabel="对所有 Agent 禁止" checked={snapshot?.denied ?? false}
         onChange={value => { void run({ type: 'deny', value }) }} />} />
