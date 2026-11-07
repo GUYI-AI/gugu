@@ -92,7 +92,10 @@ export function useChatUnreadStreamNavigation(deps: Deps) {
     if (!locator.message_id || locator.message_seq == null) {
       throw new Error(`Unread stream ${locator.stream_id} has no openable message locator`)
     }
-    const target = { chatId, epoch: deps.getMessageSnapshotEpoch(chatId), locator: { ...locator, message_id: locator.message_id, message_seq: locator.message_seq } }
+    // A main line that called you opens on that call, also when it is opened again (a phone going back to it from the list).
+    const addressed = !saved && locator.stream_kind === 'main' && locator.first_addressed_message_id && locator.first_addressed_seq != null
+      ? { message_id: locator.first_addressed_message_id, message_seq: locator.first_addressed_seq } : null
+    const target = { chatId, epoch: deps.getMessageSnapshotEpoch(chatId), locator: { ...locator, message_id: locator.message_id, message_seq: locator.message_seq, ...addressed } }
     const viewportTarget = viewport ?? 'primary'
     locatorNavigationRef.current.set(viewportTarget, target)
     let threadActivated = false
@@ -153,7 +156,7 @@ export function useChatUnreadStreamNavigation(deps: Deps) {
         },
         // An opening that landed on a message addressed to you reads as it is seen: going back up to its first
         // unread must not read past what is still below.
-        markRead: async (currentTarget, commit) => { assertCurrent(); if (!saved?.first_addressed_message_id) await writeRead(cloudReadTarget(currentTarget.chatId, currentTarget.locator.thread_root_id, commit.readSeq)) },
+        markRead: async (currentTarget, commit) => { assertCurrent(); if (!saved?.first_addressed_message_id && !addressed) await writeRead(cloudReadTarget(currentTarget.chatId, currentTarget.locator.thread_root_id, commit.readSeq)) },
         refreshChats: () => { assertCurrent(); return deps.loadChats({ acceptEmpty: true }) },
       })
     } catch (error) {

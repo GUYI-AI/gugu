@@ -41,6 +41,7 @@ import type { ChatConversation } from '@/store/useChatConversation'
 import { useFollowingTail, useTailPinning } from './useFollowingTail'
 import { useChatHistoryPagination } from './useChatHistoryPagination'
 import { useConversationScrollMemory } from './useConversationScrollMemory'
+import { useAddressedLanding } from './useAddressedLanding'
 import { unreadAboveCount } from '../../lib/chatUnreadLocatorWindow'
 import { ChatTailNotice } from './ChatTailNotice'
 import { MessageLoadFailure } from './MessageLoadFailure'
@@ -271,23 +272,12 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { toast } = useToast()
   const chatResetKey = `${topic.chatId}#${messageWindow.viewVersion}`
-  // Read once per opened topic: what you read from here on must not move where this opening landed.
-  const landing = useRef<{ chatId: string; messageId: string | null } | null>(null)
-  if (landing.current?.chatId !== topic.chatId) {
-    landing.current = { chatId: topic.chatId, messageId: visibleChats.find((chat) => chat.id === topic.chatId)?.unread_locator?.first_addressed_message_id ?? null }
-  }
-  const landingMessageId = landing.current.messageId
+  const landingMessageId = useAddressedLanding({ chatId: topic.chatId, rowIds: rows.map((row) => row.message.id), setFlashMessageId, flashTimerRef,
+    firstAddressedMessageId: visibleChats.find((chat) => chat.id === topic.chatId)?.unread_locator?.first_addressed_message_id })
   const { scrollerEl, scrollerRef, setScrollerRef, isPreservingPosition, prepareForSavedPosition, forgetSavedPosition, openLocation, revealMessage } = useConversationScrollMemory({
     chatId: topic.chatId, viewportKey, activationKey: topic.chatId, enabled: visible !== false, discardSaved: !!history.unreadEntry, landOn: landingMessageId,
     messageIds: rows.map((row) => row.message.id), isAtBottomRef, setFollowingTail, loadMessageAnchor,
   })
-  useEffect(() => {
-    if (!landingMessageId || !rows.some((row) => row.message.id === landingMessageId)) return
-    landing.current = { chatId: topic.chatId, messageId: null }
-    setFlashMessageId(landingMessageId)
-    if (flashTimerRef.current) clearTimeout(flashTimerRef.current)
-    flashTimerRef.current = setTimeout(() => setFlashMessageId(null), 1400)
-  }, [landingMessageId, rows, topic.chatId])
   const onHistoryError = useCallback((error: unknown) => toast(error instanceof Error ? error.message : String(error), 'error'), [toast])
   const unreadNavigationPending = useUnreadLocatorNavigation({ revealMessage, activeChatId: topic.chatId, enabled: visible !== false, scrollerRef, setFlashMessageId, flashTimerRef })
   const { viewportAtBottom, onAtBottomChange } = useFollowingTail({ resetKey: chatResetKey, unreadNavigationPending: !!unreadNavigationPending,

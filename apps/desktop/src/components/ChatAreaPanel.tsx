@@ -14,6 +14,8 @@ import type { AgentConversationActivity, GroupCollabSnapshot, MessageItem } from
 import { useUnreadLocatorNavigation } from '../hooks/useUnreadLocatorNavigation'; import { useDeliveryWaits } from '../hooks/useDeliveryWaits'
 import { useSourceMessageReveal } from '../hooks/useSourceMessageReveal'
 import { useChatHistoryPagination } from './chat/useChatHistoryPagination'
+import { useAddressedLanding } from './chat/useAddressedLanding'
+import { unreadAboveCount } from '../lib/chatUnreadLocatorWindow'
 import { useGroupCollabLoader, EMPTY_GROUP_COLLAB } from '../hooks/useGroupCollabLoader'
 import { useRoomAuthorityRevision } from '../hooks/useRoomAuthorityRevision'
 import { useTopicScopedMemberProfile } from '../hooks/useTopicScopedMemberProfile'
@@ -380,8 +382,11 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
   const { rows: chatListRows, listedMessages, notice: taskChatNotice, threeParty } = useTaskChatRows(messages, user?.id, activeChat?.peer_user_id, surfaceVisible); const deliveryWaits = useDeliveryWaits(messages, memberReadSeqs)
   const chatResetKey = `${activeChatId ?? ''}#${openNonce ?? 0}#${messageWindow?.viewVersion ?? 0}`
+  // A group's main line, like a topic, opens on the first message addressed to you; with none it stays WeChat-style at the latest (#6530).
+  const landingMessageId = useAddressedLanding({ chatId: activeChatId, rowIds: chatListRows.map((row) => row.message.id), setFlashMessageId, flashTimerRef,
+    firstAddressedMessageId: isRoomChatSurface ? activeChat?.unread_locator?.first_addressed_message_id : null })
   const { scrollerEl, scrollerRef, setScrollerRef, prepareForSavedPosition, isPreservingPosition, forgetSavedPosition, openLocation, revealMessage } = useConversationScrollMemory({
-    chatId: activeChatId, viewportKey, activationKey: activeChatId ?? '', enabled: true, discardSaved: !!unreadEntry,
+    chatId: activeChatId, viewportKey, activationKey: activeChatId ?? '', enabled: true, discardSaved: !!unreadEntry, landOn: landingMessageId,
     messageIds: chatListRows.map((row) => row.message.id), isAtBottomRef, setFollowingTail, loadMessageAnchor,
   })
   const onHistoryError = useCallback((error: unknown) => toast(error instanceof Error ? error.message : String(error), 'error'), [toast])
@@ -779,7 +784,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
           rows={chatListRows}
           rowProps={rowProps} footer={chrome?.typing}
           initialTopMostItemIndex={openLocation()} topInset={0}
-          followTail={!unreadNavigationPending && !messageWindow?.hasNewer && messageWindow?.change !== 'newer'} unreadAbove={unreadEntry ? { messageId: unreadEntry.locator.message_id, messageSeq: unreadEntry.locator.message_seq, label: t('chatArea.unreadAbove', { count: unreadEntry.locator.unread_count }), onSeen: unreadEntry.onSeen, onJump: () => void jumpToUnreadEntry(scrollerRef.current).catch(onHistoryError) } : null}
+          followTail={!unreadNavigationPending && !messageWindow?.hasNewer && messageWindow?.change !== 'newer'} unreadAbove={unreadEntry ? { messageId: unreadEntry.locator.message_id, messageSeq: unreadEntry.locator.message_seq, label: t('chatArea.unreadAbove', { count: unreadAboveCount(unreadEntry.locator, messages) }), onSeen: unreadEntry.onSeen, onJump: () => void jumpToUnreadEntry(scrollerRef.current).catch(onHistoryError) } : null}
           onAtBottomChange={onAtBottomChange}
           onTotalListHeightChanged={onTotalListHeightChanged}
         />
