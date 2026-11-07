@@ -75,7 +75,7 @@ function shape(timeline: SessionTimeline): string {
 }
 
 describe('时间线存档', () => {
-  it.each([32 * 1024 * 1024 + 1, 600 * 1024 * 1024])('rejects %i consumed source bytes before copying resume state or encoding', async (sourceBytes) => {
+  it.each([24 * 1024 * 1024 + 1, 600 * 1024 * 1024])('rejects %i consumed source bytes before copying resume state or encoding', async (sourceBytes) => {
     const staged = await stage(await fixtureLines());
     const source = createClaudeJsonlSource(
       { harness: 'claude', providerSessionId: PROVIDER_SESSION_ID, roots: [staged.root] },
