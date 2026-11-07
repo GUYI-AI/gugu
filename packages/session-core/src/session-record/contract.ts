@@ -1,6 +1,6 @@
 import type { TurnFileRef } from '../acp/models/turn-files';
 import type { TimelineWindowFields, WindowBodyRef, WindowBodyResult, WindowCursor } from './window-cache/types';
-export type { TimelineWindowFields, WindowBodyRef, WindowBodyResult, WindowCursor, PendingLongRecord, BodyChunkDescriptor } from './window-cache/types';
+export type { TimelineWindowFields, WindowBodyRef, WindowBodyOwner, WindowBodyResult, WindowCursor, PendingLongRecord, BodyChunkDescriptor, SourceFragment } from './window-cache/types';
 export { BODY_CHUNK_BYTES, BODY_TEXT_BYTES } from './window-cache/types';
 import type { TerminalState } from '../acp/models/terminals';
 import type { PermissionSubject } from '../acp/models/permissions';
