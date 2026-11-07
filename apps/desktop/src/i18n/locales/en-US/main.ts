@@ -482,7 +482,10 @@ export default {
       "trayBadgeAria": "Show the unread count on the tray icon",
       "trayBadgeEnabled": "Show the unread count on the tray icon",
       "system": "System",
-      "theme": "Theme",
+      "theme": "Appearance",
+      "themePack": "Theme",
+      "themePackDefault": "Gugu default",
+      "themePackValue": "Dark: {{dark}} · Light: {{light}}",
       "title": "General"
     },
     "guguNumber": "Gugu ID",
