@@ -33,6 +33,7 @@ export function windowFrameName(key: WindowFrameKey): string {
 export function encodeWindowFrame(key: WindowFrameKey, bytes: Uint8Array): Buffer {
   if (bytes.byteLength > FRAME_PAYLOAD_BYTES) throw new Error('Window payload must be split before encoding');
   const meta = Buffer.from(canonicalKey(key), 'utf8');
+  if (key.kind === 'head' && HEADER_BYTES + meta.length + bytes.byteLength > 4096) throw new Error('Encoded window head exceeds 4 KiB');
   const packet = Buffer.alloc(HEADER_BYTES + meta.length + bytes.byteLength);
   MAGIC.copy(packet);
   packet.writeUInt32BE(meta.length, 8);
@@ -45,6 +46,7 @@ export function encodeWindowFrame(key: WindowFrameKey, bytes: Uint8Array): Buffe
 /** Integrity and binding only: publishing a hit also requires a source-fence check. */
 export function decodeWindowFrame(expected: WindowFrameKey, packet: Uint8Array): WindowFrameRead {
   const wanted = canonicalKey(expected);
+  if (expected.kind === 'head' && packet.byteLength > 4096) return { kind: 'miss', reason: 'format' };
   if (packet.byteLength < HEADER_BYTES || packet.byteLength > MAX_WINDOW_FILE_BYTES) return { kind: 'miss', reason: 'format' };
   const buffer = Buffer.from(packet.buffer, packet.byteOffset, packet.byteLength);
   if (!buffer.subarray(0, 8).equals(MAGIC)) return { kind: 'miss', reason: 'format' };

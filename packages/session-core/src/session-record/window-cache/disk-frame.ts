@@ -4,10 +4,12 @@ import { join } from 'node:path';
 import { decodeWindowFrame, encodeWindowFrame, MAX_WINDOW_FILE_BYTES, windowFrameName, type WindowFrameKey, type WindowFrameRead } from './frame.ts';
 import { WindowBudgetExceeded } from './read-budget.ts';
 import type { WindowBudget } from './types';
+export type FrameWriteFs = Pick<typeof import('node:fs/promises'), 'open' | 'link' | 'rename' | 'rm'>;
+const nativeWriteFs: FrameWriteFs = { open, link, rename, rm };
 
 /** Errors from durability calls are observable; rename alone is never called durable. */
-export async function syncWindowDirectory(directory: string): Promise<void> {
-  const file = await open(directory, 'r');
+export async function syncWindowDirectory(directory: string, fs: FrameWriteFs = nativeWriteFs): Promise<void> {
+  const file = await fs.open(directory, 'r');
   try { await file.sync(); } finally { await file.close(); }
 }
 
@@ -17,7 +19,7 @@ export async function readWindowFrame(directory: string, key: WindowFrameKey, bu
     const file = await open(path, 'r');
     try {
       const before = await file.stat({ bigint: true });
-      if (!before.isFile() || before.size < 48n || before.size > BigInt(MAX_WINDOW_FILE_BYTES)) return { kind: 'miss', reason: 'format' };
+      if (!before.isFile() || before.size < 48n || before.size > BigInt(key.kind === 'head' ? 4096 : MAX_WINDOW_FILE_BYTES)) return { kind: 'miss', reason: 'format' };
       let packet: Uint8Array = new Uint8Array(0), used = 0, failed = false, failure: unknown;
       await budget.read('indexBytes', Number(before.size), async () => {
         packet = new Uint8Array(Number(before.size));
@@ -43,15 +45,15 @@ export async function readWindowFrame(directory: string, key: WindowFrameKey, bu
 }
 
 /** Host supplies an existing durable namespace. Content is immutable; only a head permits replacement. */
-export async function writeWindowFrame(directory: string, key: WindowFrameKey, bytes: Uint8Array): Promise<void> {
+export async function writeWindowFrame(directory: string, key: WindowFrameKey, bytes: Uint8Array, fs: FrameWriteFs = nativeWriteFs): Promise<void> {
   const packet = encodeWindowFrame(key, bytes);
   const path = join(directory, windowFrameName(key));
   const temporary = `${path}.${randomUUID()}.tmp`;
   try {
-    const file = await open(temporary, 'wx', 0o600);
+    const file = await fs.open(temporary, 'wx', 0o600);
     try { await file.writeFile(packet); await file.sync(); } finally { await file.close(); }
-    if (key.kind === 'head') await rename(temporary, path);
-    else await link(temporary, path);
-    await syncWindowDirectory(directory);
-  } finally { await rm(temporary, { force: true }); }
+    if (key.kind === 'head') await fs.rename(temporary, path);
+    else await fs.link(temporary, path);
+    await syncWindowDirectory(directory, fs);
+  } finally { await fs.rm(temporary, { force: true }); }
 }
