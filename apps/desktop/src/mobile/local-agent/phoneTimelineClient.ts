@@ -50,7 +50,7 @@ export function createPhoneTimelineClient(invoke = invokePhoneHost): Sessionpage
   const client: SessionpageTimelineClient = {
     fetchSnapshot: (deviceId, sessionId, limit) => invoke<TimelineSnapshot>(deviceId, 'sessionTimeline.sessionSnapshot', [{ conversationId: sessionId, ...(limit === undefined ? {} : { limit }), trim: true }]),
     fetchAfter: (deviceId, sessionId, cursor) => invoke<TimelineAfterResult>(deviceId, 'sessionTimeline.sessionAfter', [{ conversationId: sessionId, cursor, trim: true }]),
-    fetchOlder: (deviceId, sessionId, beforeTurnId, limit) => invoke<TimelineOlderResult>(deviceId, 'sessionTimeline.sessionOlder', [{ conversationId: sessionId, beforeTurnId, ...(limit === undefined ? {} : { limit }), trim: true }]),
+    fetchOlder: (deviceId, sessionId, beforeTurnId, limit, cursor) => invoke<TimelineOlderResult>(deviceId, 'sessionTimeline.sessionOlder', [{ conversationId: sessionId, ...(cursor ? { cursor } : { beforeTurnId }), ...(limit === undefined ? {} : { limit }), trim: true }]),
     fetchToolImage: (deviceId, sessionId, itemId, index) => invoke<ToolImage>(deviceId, 'sessionTimeline.sessionToolImage', [{ conversationId: sessionId, itemId, index }]),
     subscribeSession: async (deviceId, sessionId, subscriptionId, cursor) => {
       stop(subscriptionId)
