@@ -1,4 +1,5 @@
 import type { NormalizedEvent, NormalizedToolStatus } from '../../acp/reducer/normalized-event';
+import type { WindowCacheContext } from '../window-cache/types';
 import type { EntityContent } from '../../acp/models/entity-content';
 import type { ToolImage } from '../../acp/models/turns/tool-calls';
 import { hasRecordedAnswers, serializePayload, toolOutputText } from '../../acp/models/tool-payload';
@@ -22,6 +23,8 @@ import { RECORD_KEY_BOUNDARY_SUFFIX, type RecordBoundary, type RecordEntry, type
 export type RecordSourceWarn = (message: string, detail?: Record<string, unknown>) => void;
 
 export type SessionRecordSourceOptions = {
+  /** Host-owned namespace for bounded capture/locator writes; no historical export is passed. */
+  windowCache?: WindowCacheContext;
   /** A bounded historical read; compressed archives are never followed as live files. */
   readMode?: 'snapshot';
   /** The parent's primary-file UUID chain. A fork snapshot emits only after its proven common prefix. */

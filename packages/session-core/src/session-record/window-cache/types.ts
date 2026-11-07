@@ -62,9 +62,22 @@ export type BytePageResult =
 
 /** A body points to independently decoded UTF-8 chunks or a bounded tokenizer checkpoint. */
 export type WindowBodyRef = {
-  version: 1; scope: string; sourceLineage: string; id: string; itemId: string;
+  version: 1; scope: string; sourceLineage: string; id: string; revision: string; turnId: string; itemId: string;
   firstChunk: SegmentRef | null; decoderCheckpoint: SegmentRef | null;
   sourceRange: SourceRange; byteLength: number | null;
+};
+export const BODY_CHUNK_BYTES = 16 * 1024;
+export const BODY_TEXT_BYTES = 32 * 1024;
+export type BodyChunkDescriptor = {
+  bodyId: string; revision: string; ordinal: number; decodedStart: number; decodedBytes: number;
+  content: SegmentRef | null; checkpointRef: SegmentRef | null; sourceRange: SourceRange;
+};
+export type WindowSourceLocator = {
+  version: 1; harness: 'claude' | 'codex'; providerSessionId: string; path: string;
+  source: SourceSnapshot; sourceLineage: string;
+};
+export type WindowCacheContext = {
+  cacheDirectory: string; scope: string; conversationScope: string; branchLineage: string; decoderVersion: number;
 };
 export type WindowCursor = {
   version: 1; scope: string; sourceLineage: string; snapshotRevision: string;
@@ -106,4 +119,9 @@ export type WindowResult = WindowPage
 export type WindowBodyResult = {
   kind: 'body'; text: string; offset: number; nextOffset: number;
   moreAfter: 'yes' | 'no' | 'unknown'; io: WindowIoCounters;
+} | { kind: 'needs_location'; bodyId: string; offset: number; io: WindowIoCounters }
+  | { kind: 'reset'; reason: 'source_changed' | 'invalid_cursor'; io: WindowIoCounters };
+export type TimelineWindowFields = {
+  bodyRefs?: WindowBodyRef[]; pendingLongRecords?: PendingLongRecord[];
+  olderCursor?: WindowCursor | null; moreBefore?: 'yes' | 'no' | 'unknown'; coveredRanges?: SourceRange[];
 };
