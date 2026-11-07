@@ -45,6 +45,28 @@ describe('settled silence between confirmed Agent sends', () => {
     expect(rows.filter(row => row.kind === 'agent-activity')).toHaveLength(2);
   });
 
+  it.each(['failed', 'permission', 'live'] as const)('keeps %s work visible beside confirmed sends', state => {
+    const record = sent(state);
+    const call = record.items[0];
+    if (call.kind !== 'mcp-tool-call') throw new Error('fixture');
+    call.status = state === 'failed' ? 'error' : 'running';
+    call.outputText = state === 'failed' ? 'Delivery failed.' : '';
+    if (state === 'live') {
+      delete record.outcome;
+      call.tool = 'message_history';
+      call.rawInput = JSON.stringify({ chat_id: 'group' });
+    }
+    const rows = flattenTier([sent('first'), record], { ...ctx,
+      active: state === 'live', revealAllFolds: true,
+      pendingToolCallIds: () => new Set(state === 'permission' ? [call.toolCallId] : []),
+    }, { ...segmenters,
+      'mcp-tool-call': { kind: 'mcp-tool-call', segment: item => [unit('mcp-tool-call', item, item, { key: 'self' })] },
+    });
+    expect(rows.some(row => row.kind === 'turn-process' && !row.activityFold)).toBe(true);
+    expect(rows.find(row => row.itemId === call.id)?.activityFold).toBeUndefined();
+    expect(rows.some(row => row.itemId === call.id)).toBe(true);
+  });
+
   it('keeps the actual live process visible before the turn has settled', () => {
     const live = { ...quiet('live'), outcome: undefined };
     expect(flattenTier([live], { ...ctx, active: true }, segmenters).some(row => row.kind === 'turn-process')).toBe(true);
