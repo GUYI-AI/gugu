@@ -23,7 +23,7 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
   const { toast } = useToast()
   const [sending, setSending] = useState(false)
   const sendingRef = useRef(false)
-  const submissions = useRef(new Map<string, { id: string; revision: object; failure: ReturnType<typeof messageFailureNotice> }>())
+  const submissions = useRef(new Map<string, { id: string; revision: object; destination: string; failure: ReturnType<typeof messageFailureNotice> }>())
   const activeChatIdRef = useRef(chatId ?? null)
   activeChatIdRef.current = chatId ?? null
   const rosterNameIndex = useMemo(() => buildRosterNameIndex(props.groupMembers ?? []), [props.groupMembers])
@@ -39,16 +39,6 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       return
     }
     if (!typed && pendingFiles.length === 0) return
-    const scope = JSON.stringify([currentUserId, chatId])
-    const revision = draft.revisionOf(chatId ?? null)
-    let submission = submissions.current.get(scope)
-    if (!submission || submission.revision !== revision) {
-      const id = crypto.randomUUID()
-      submission = { id, revision, failure: messageFailureNotice(['im', currentUserId ?? 'signed-out', chatId ?? 'composer', id]) }
-      submissions.current.set(scope, submission)
-    }
-    const attempt = submission.failure.begin()
-    let clearedRevision = revision
     const content = contentWithQuote(typed, quoteContent)
     // @@@whisper (#820) — 悄悄话模式下覆盖 toUserIds + 附加 isWhisper flag；禁用 @提及。
     const replyToMessageId = quoteContent?.messageId ?? null
@@ -77,6 +67,18 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
           toUserIds: [...new Set(explicitRecipientIds.length ? explicitRecipientIds : rosterRecipientIds)],
           replyToMessageId,
         }
+
+    const scope = JSON.stringify([currentUserId, chatId])
+    const revision = draft.revisionOf(chatId ?? null)
+    const destination = JSON.stringify([!!sendOptions.isWhisper, sendOptions.replyToMessageId, [...sendOptions.toUserIds].sort()])
+    let submission = submissions.current.get(scope)
+    if (!submission || submission.revision !== revision || submission.destination !== destination) {
+      const id = crypto.randomUUID()
+      submission = { id, revision, destination, failure: messageFailureNotice(['im', currentUserId ?? 'signed-out', chatId ?? 'composer', id]) }
+      submissions.current.set(scope, submission)
+    }
+    const attempt = submission.failure.begin()
+    let clearedRevision = revision
 
     // Snapshot current attachments so we can roll back on failure
     const snapshotAttachments = attachments

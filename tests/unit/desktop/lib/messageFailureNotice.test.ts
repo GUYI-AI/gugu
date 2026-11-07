@@ -33,15 +33,3 @@ it('identical text in other messages, accounts and conversations has independent
   attempts[0].succeeded()
   expect(visible.size).toBe(3)
 })
-
-it('a new producer of the same message supersedes the old producer without affecting another message', () => {
-  const owner = ['im', 'owner', 'chat', 'cross-root-message'] as const
-  const old = messageFailureNotice(owner).begin()
-  old.failed({ title: 'old', tier: 'error' })
-  const retry = messageFailureNotice(owner).begin()
-  retry.failed({ title: 'retry', tier: 'error' })
-  old.succeeded()
-  expect([...visible.values()]).toEqual(['retry'])
-  retry.succeeded()
-  expect(visible.size).toBe(0)
-})

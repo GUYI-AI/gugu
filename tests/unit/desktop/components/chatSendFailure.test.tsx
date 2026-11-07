@@ -19,9 +19,13 @@ const send = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}))
 function Composer({ id, group }: { id: string; group: boolean }) {
   const draft = useChatDraft(id)
   const ref = useRef<HTMLTextAreaElement>(null)
-  const { handleSend } = useChatMessageSend({ chatId: id, currentUserId: 'owner', isGroupChat: group, onSend: send }, draft, [], [], ref)
+  const [peer, setPeer] = useState(0), [quote, setQuote] = useState(0)
+  const { handleSend } = useChatMessageSend({ chatId: id, currentUserId: 'owner', isGroupChat: group, onSend: send,
+    whisperTarget: peer ? { userId: `peer-${peer}`, displayName: 'Peer' } : null,
+    quoteContent: quote ? { messageId: `quote-${quote}`, senderName: 'Peer', content: 'quoted' } : null }, draft, [], [], ref)
   return <section data-chat={id}><textarea ref={ref} value={draft.text} onChange={event => draft.setText(event.target.value)} />
-    <button onClick={() => draft.setText('same words')}>type</button><button onClick={() => void handleSend()}>send</button></section>
+    <button onClick={() => draft.setText('same words')}>type</button><button onClick={() => void handleSend()}>send</button>
+    <button onClick={() => setPeer(value => value + 1)}>whisper</button><button onClick={() => setQuote(value => value + 1)}>quote</button></section>
 }
 function Host() {
   const drafts = useTextDraftStore(), [base] = useState(chatStore)
@@ -57,11 +61,14 @@ it('a repeated failure updates one notice while another composer retains its fai
   expect(notices.size).toBe(1)
 })
 
-it('an explicit new draft edit has a new message identity even when its words are identical', async () => {
+it.each(['draft', 'whisper', 'reply'])('a new %s intent has a new identity without settling the previous failure', async mode => {
+  const edit = mode === 'draft' ? 0 : mode === 'whisper' ? 2 : 3
+  await click('group', 0)
+  if (edit) await click('group', edit)
   send.mockRejectedValueOnce(new Error('first refused'))
-  await click('dm', 0); await click('dm', 1)
+  await click('group', 1)
   const first = (send.mock.calls[0][1] as { clientMessageId: string }).clientMessageId
-  await click('dm', 0); await click('dm', 1)
+  await click('group', edit); await click('group', 1)
   expect((send.mock.calls[1][1] as { clientMessageId: string }).clientMessageId).not.toBe(first)
   expect(notices.size).toBe(1)
 })
