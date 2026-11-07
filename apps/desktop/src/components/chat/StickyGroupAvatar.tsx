@@ -42,7 +42,7 @@ function StickyGroupAvatar({ width, continuesGroup, children }: { width: string;
   return (
     <div ref={slotRef} className={`${width} relative shrink-0 self-stretch`}>
       <div ref={layerRef} className="pointer-events-none absolute inset-x-0 flex flex-col justify-end">
-        <div className="pointer-events-auto sticky bottom-[calc(var(--chat-dock-avatar-h,0px)+var(--spacing)*1.5)]">{children}</div>
+        <div data-chat-dock-reads="" className="pointer-events-auto sticky bottom-[calc(var(--chat-dock-avatar-h,0px)+var(--spacing)*1.5)]">{children}</div>
       </div>
     </div>
   )
