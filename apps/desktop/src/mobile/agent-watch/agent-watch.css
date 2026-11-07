@@ -384,7 +384,7 @@
   white-space: nowrap;
   padding-bottom: var(--spacing-xs);
 }
-.gg-aw .gg-aw-actions-error { color: var(--danger, var(--danger)); font-size: var(--font-size-sm); }
+.gg-aw .gg-aw-actions-error { color: var(--danger-fg); font-size: var(--font-size-sm); }
 .gg-aw .gg-aw-actions-item { width: 100%; justify-content: center; }
 .gg-aw .gg-aw-actions-field { width: 100%; }
 /* 放不下就换行,❌ 每段一起缩成「Ma… · Do…」:状态词、机器名、agent 名一个都不能截掉。只有单独一段比整行还长时才截它。 */
