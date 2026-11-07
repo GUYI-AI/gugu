@@ -18,6 +18,20 @@
 		E98E00000000000000000101 /* GuguViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000001 /* GuguViewController.swift */; };
 		E98E00000000000000000102 /* GuguAuthStoragePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000002 /* GuguAuthStoragePlugin.swift */; };
 		E98E00000000000000000103 /* GuguSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000003 /* GuguSceneDelegate.swift */; };
+		E98E00000000000000000110 /* GuguHostContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000010 /* GuguHostContracts.swift */; };
+		E98E00000000000000000111 /* GuguJavaScriptRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000011 /* GuguJavaScriptRuntime.swift */; };
+		E98E00000000000000000112 /* GuguPackagedRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000012 /* GuguPackagedRuntime.swift */; };
+		E98E00000000000000000130 /* HostRuntime in Resources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000030 /* HostRuntime */; };
+		E98E00000000000000000141 /* GuguCalendarExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000041 /* GuguCalendarExecutor.swift */; };
+		E98E00000000000000000142 /* GuguCalendarPermissionsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000042 /* GuguCalendarPermissionsPlugin.swift */; };
+		E98E00000000000000000144 /* EventKitPhoneCalendarStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000044 /* EventKitPhoneCalendarStore.swift */; };
+		E98E00000000000000000145 /* PhoneCalendarDates.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000045 /* PhoneCalendarDates.swift */; };
+		E98E00000000000000000146 /* PhoneCalendarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000046 /* PhoneCalendarService.swift */; };
+		E98E00000000000000000147 /* PhoneCalendarSimulatorFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000047 /* PhoneCalendarSimulatorFixture.swift */; };
+		E98E00000000000000000148 /* PhoneCalendarTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000048 /* PhoneCalendarTypes.swift */; };
+		E98E00000000000000000113 /* GuguHostJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000013 /* GuguHostJournal.swift */; };
+		E98E00000000000000000114 /* GuguInProcessHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000014 /* GuguInProcessHost.swift */; };
+		E98E00000000000000000115 /* GuguModelTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000015 /* GuguModelTransport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,6 +48,20 @@
 		E98E00000000000000000001 /* GuguViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguViewController.swift; sourceTree = "<group>"; };
 		E98E00000000000000000002 /* GuguAuthStoragePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguAuthStoragePlugin.swift; sourceTree = "<group>"; };
 		E98E00000000000000000003 /* GuguSceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguSceneDelegate.swift; sourceTree = "<group>"; };
+		E98E00000000000000000010 /* GuguHostContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguHostContracts.swift; sourceTree = "<group>"; };
+		E98E00000000000000000011 /* GuguJavaScriptRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguJavaScriptRuntime.swift; sourceTree = "<group>"; };
+		E98E00000000000000000012 /* GuguPackagedRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguPackagedRuntime.swift; sourceTree = "<group>"; };
+		E98E00000000000000000030 /* HostRuntime */ = {isa = PBXFileReference; lastKnownFileType = folder; path = HostRuntime; sourceTree = "<group>"; };
+		E98E00000000000000000041 /* GuguCalendarExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguCalendarExecutor.swift; sourceTree = "<group>"; };
+		E98E00000000000000000042 /* GuguCalendarPermissionsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguCalendarPermissionsPlugin.swift; sourceTree = "<group>"; };
+		E98E00000000000000000044 /* EventKitPhoneCalendarStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventKitPhoneCalendarStore.swift; sourceTree = "<group>"; };
+		E98E00000000000000000045 /* PhoneCalendarDates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneCalendarDates.swift; sourceTree = "<group>"; };
+		E98E00000000000000000046 /* PhoneCalendarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneCalendarService.swift; sourceTree = "<group>"; };
+		E98E00000000000000000047 /* PhoneCalendarSimulatorFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneCalendarSimulatorFixture.swift; sourceTree = "<group>"; };
+		E98E00000000000000000048 /* PhoneCalendarTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneCalendarTypes.swift; sourceTree = "<group>"; };
+		E98E00000000000000000013 /* GuguHostJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguHostJournal.swift; sourceTree = "<group>"; };
+		E98E00000000000000000014 /* GuguInProcessHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguInProcessHost.swift; sourceTree = "<group>"; };
+		E98E00000000000000000015 /* GuguModelTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguModelTransport.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,6 +81,9 @@
 			children = (
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
+				E98E00000000000000000043 /* PhoneCalendar */,
+				E98E00000000000000000040 /* CalendarBridge */,
+				E98E00000000000000000020 /* Host */,
 				504EC3051FED79650016851F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -78,9 +109,44 @@
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
 				504EC3131FED79650016851F /* Info.plist */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
+				E98E00000000000000000030 /* HostRuntime */,
 				50B271D01FEDC1A000F3C39B /* public */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		E98E00000000000000000020 /* Host */ = {
+			isa = PBXGroup;
+			children = (
+				E98E00000000000000000010 /* GuguHostContracts.swift */,
+				E98E00000000000000000015 /* GuguModelTransport.swift */,
+				E98E00000000000000000014 /* GuguInProcessHost.swift */,
+				E98E00000000000000000013 /* GuguHostJournal.swift */,
+				E98E00000000000000000011 /* GuguJavaScriptRuntime.swift */,
+				E98E00000000000000000012 /* GuguPackagedRuntime.swift */,
+			);
+			path = ../Host;
+			sourceTree = "<group>";
+		};
+		E98E00000000000000000040 /* CalendarBridge */ = {
+			isa = PBXGroup;
+			children = (
+				E98E00000000000000000041 /* GuguCalendarExecutor.swift */,
+				E98E00000000000000000042 /* GuguCalendarPermissionsPlugin.swift */,
+			);
+			path = ../CalendarBridge;
+			sourceTree = "<group>";
+		};
+		E98E00000000000000000043 /* PhoneCalendar */ = {
+			isa = PBXGroup;
+			children = (
+				E98E00000000000000000044 /* EventKitPhoneCalendarStore.swift */,
+				E98E00000000000000000045 /* PhoneCalendarDates.swift */,
+				E98E00000000000000000046 /* PhoneCalendarService.swift */,
+				E98E00000000000000000047 /* PhoneCalendarSimulatorFixture.swift */,
+				E98E00000000000000000048 /* PhoneCalendarTypes.swift */,
+			);
+			path = ../PhoneCalendar/Sources/GuguPhoneCalendar;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -149,6 +215,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */,
+				E98E00000000000000000130 /* HostRuntime in Resources */,
 				50B271D11FEDC1A000F3C39B /* public in Resources */,
 				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
@@ -165,6 +232,19 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				E98E00000000000000000115 /* GuguModelTransport.swift in Sources */,
+				E98E00000000000000000114 /* GuguInProcessHost.swift in Sources */,
+				E98E00000000000000000113 /* GuguHostJournal.swift in Sources */,
+				E98E00000000000000000148 /* PhoneCalendarTypes.swift in Sources */,
+				E98E00000000000000000147 /* PhoneCalendarSimulatorFixture.swift in Sources */,
+				E98E00000000000000000146 /* PhoneCalendarService.swift in Sources */,
+				E98E00000000000000000145 /* PhoneCalendarDates.swift in Sources */,
+				E98E00000000000000000144 /* EventKitPhoneCalendarStore.swift in Sources */,
+				E98E00000000000000000142 /* GuguCalendarPermissionsPlugin.swift in Sources */,
+				E98E00000000000000000141 /* GuguCalendarExecutor.swift in Sources */,
+				E98E00000000000000000112 /* GuguPackagedRuntime.swift in Sources */,
+				E98E00000000000000000111 /* GuguJavaScriptRuntime.swift in Sources */,
+				E98E00000000000000000110 /* GuguHostContracts.swift in Sources */,
 				E98E00000000000000000103 /* GuguSceneDelegate.swift in Sources */,
 				E98E00000000000000000102 /* GuguAuthStoragePlugin.swift in Sources */,
 				E98E00000000000000000101 /* GuguViewController.swift in Sources */,
