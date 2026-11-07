@@ -58,7 +58,7 @@ const actionButton: React.CSSProperties = {
   borderRadius: 'var(--radius-control)',
   border: '1px solid var(--border-color)',
   background: 'var(--input-bg)',
-  color: 'var(--text-primary)',
+  color: 'var(--fg)',
   cursor: 'pointer',
 }
 
@@ -100,7 +100,7 @@ const rowLabel: React.CSSProperties = {
   width: 72,
   fontSize: 'var(--font-body)',
   lineHeight: '20px',
-  color: 'var(--text-secondary)',
+  color: 'var(--muted-fg)',
 }
 const rowValue: React.CSSProperties = {
   minWidth: 0,
@@ -110,7 +110,7 @@ const rowValue: React.CSSProperties = {
   whiteSpace: 'nowrap',
   fontSize: 'var(--font-body)',
   lineHeight: '20px',
-  color: 'var(--text-primary)',
+  color: 'var(--fg)',
 }
 const rowIcon: React.CSSProperties = {
   display: 'flex',
@@ -119,7 +119,7 @@ const rowIcon: React.CSSProperties = {
   width: 16,
   height: 16,
   flexShrink: 0,
-  color: 'var(--text-secondary)',
+  color: 'var(--muted-fg)',
   transition: 'opacity var(--transition-fast)',
 }
 
@@ -152,7 +152,7 @@ function ShareRowItem({ row, unassigned, copiedLabel, copyLabel }: {
   const valueStyle: React.CSSProperties = {
     ...rowValue,
     ...(row.mono ? { fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', fontVariantLigatures: 'none' } : null),
-    ...(row.value === null || state !== null ? { color: 'var(--text-secondary)' } : null),
+    ...(row.value === null || state !== null ? { color: 'var(--muted-fg)' } : null),
     ...(state !== null && state !== copiedLabel ? { whiteSpace: 'normal', overflowWrap: 'anywhere' } : null),
   }
 
@@ -274,7 +274,7 @@ export function AgentSharePopover({
               // @@@share-popover-opaque 浮层底必须**不透明**(owner 实机:「现在透明有点影响观感」)。
               // --bg-elevated 才是这仓锚定信息浮层的底(暗 #1a1c24 / 亮 #fff,即设计稿的 --popover),
               // 与 ReadReceiptPopover、AgentRecentActionPopover 同一个 —— ❌ 别在这里另拍一个颜色。
-              background: 'var(--bg-elevated)',
+              background: 'var(--card)',
               // 举起来的物件:hairline + lift 影都在 --shadow-popover 里,按主题分值;圆角 12(design.md --radius-xl:floating card)。
               boxShadow: 'var(--shadow-popover)',
               borderRadius: 'var(--radius-xl)',
@@ -284,7 +284,7 @@ export function AgentSharePopover({
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 8px 8px 12px' }}>
               <div
                 data-testid="agent-share-name"
-                style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 'var(--font-body)', fontWeight: 600, color: 'var(--text-primary)' }}
+                style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 'var(--font-body)', fontWeight: 600, color: 'var(--fg)' }}
               >
                 {t('agentShare.dialog', { name })}
               </div>
@@ -294,7 +294,7 @@ export function AgentSharePopover({
                 title={t('agentShare.close')}
                 onClick={onClose}
                 className="gg-pressable"
-                style={{ width: 24, height: 24, border: 'none', background: 'transparent', color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: 'var(--radius-document)' }}
+                style={{ width: 24, height: 24, border: 'none', background: 'transparent', color: 'var(--muted-fg)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', borderRadius: 'var(--radius-document)' }}
               >
                 <X size={14} />
               </button>
@@ -314,7 +314,7 @@ export function AgentSharePopover({
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderTop: '1px solid var(--border-color)', padding: '8px 12px' }}>
               {/* 脚上只有一个动作:有号 → 生成海报;没号 → 开启公开(铸号)。说明文字只在没号态出现一句。 */}
-              <span style={{ minWidth: 0, fontSize: 'var(--font-body)', lineHeight: 1.4, color: makePublicError ? 'var(--danger)' : 'var(--text-secondary)' }}>
+              <span style={{ minWidth: 0, fontSize: 'var(--font-body)', lineHeight: 1.4, color: makePublicError ? 'var(--danger)' : 'var(--muted-fg)' }}>
                 {hasNumber ? null : (makePublicError ?? t('agentShare.makePublicHint'))}
               </span>
               <button

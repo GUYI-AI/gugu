@@ -34,7 +34,7 @@ const ROW_STYLE: CSSProperties = {
   padding: '10px 14px',
   cursor: 'pointer',
   fontSize: 'var(--font-body)',
-  color: 'var(--text-primary)',
+  color: 'var(--fg)',
 }
 const STATIC_ROW_STYLE: CSSProperties = { ...ROW_STYLE, cursor: 'default' }
 const DANGER_ROW_STYLE: CSSProperties = { ...ROW_STYLE, color: 'var(--danger-fg)' }
@@ -51,9 +51,9 @@ const CONFIRM_BUTTON_STYLE: CSSProperties = { flex: 1 }
 const SETTINGS_ROW_STYLE: CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
   margin: '0 -8px', padding: '13px 8px', borderRadius: 'var(--radius-control)', cursor: 'pointer',
-  fontSize: 'var(--font-body)', fontWeight: 500, color: 'var(--text-primary)',
+  fontSize: 'var(--font-body)', fontWeight: 500, color: 'var(--fg)',
 }
-const SETTINGS_CHEVRON_STYLE: CSSProperties = { color: 'var(--text-tertiary)', flexShrink: 0 }
+const SETTINGS_CHEVRON_STYLE: CSSProperties = { color: 'var(--faint-fg)', flexShrink: 0 }
 // 通知档位那一行:三段控件不收缩,标签 + 控件放不进一行(英文、窄抽屉)时控件整块换到下一行、仍贴右 ——
 // ❌ 撑宽这一行,那会让外层滚动容器出横向滚动条。标签的 auto 右边距在一行时把控件推到行尾。
 const WRAP_ROW: CSSProperties = { flexWrap: 'wrap', justifyContent: 'flex-end', columnGap: 16, rowGap: 8 }

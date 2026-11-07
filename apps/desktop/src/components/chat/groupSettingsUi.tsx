@@ -24,7 +24,7 @@ import { isProjectGroupChat } from '../../lib/groupMemberPermissions'
 
 const headStyle: CSSProperties = {
   height: 'var(--pane-header-h)', padding: '0 24px', fontSize: 'var(--font-heading)', fontWeight: 600, borderBottom: '1px solid var(--border)',
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, flexShrink: 0, color: 'var(--text-primary)',
+  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, flexShrink: 0, color: 'var(--fg)',
 }
 const subpageHeadStyle: CSSProperties = { ...headStyle, padding: '0 24px 0 14px' }
 // Mobile keeps its natural height and 44px back target; desktop uses the shared pane-header height.
@@ -35,7 +35,7 @@ const headTitleTextStyle: CSSProperties = { overflow: 'hidden', textOverflow: 'e
 const headActionsStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }
 const closeStyle: CSSProperties = {
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-  color: 'var(--text-secondary)', width: 24, height: 24, borderRadius: 'var(--radius-document)',
+  color: 'var(--muted-fg)', width: 24, height: 24, borderRadius: 'var(--radius-document)',
 }
 const navRowStyle: CSSProperties = {
   ...settingsCenteredRowStyle, cursor: 'pointer', margin: '0 -8px', padding: '13px 8px', borderRadius: 'var(--radius-control)',
@@ -47,7 +47,7 @@ const navValueStyle: CSSProperties = {
   fontSize: 'var(--font-body)', color: 'var(--muted-fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 }
 const navValueTextStyle: CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-const chevronStyle: CSSProperties = { color: 'var(--text-tertiary)', flexShrink: 0 }
+const chevronStyle: CSSProperties = { color: 'var(--faint-fg)', flexShrink: 0 }
 const switchStyle: CSSProperties = { marginTop: 2 }
 const pageStyle: CSSProperties = { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }
 // 二级页从 x:16 滑入,这段位移要裁在栈里:外层抽屉是滚动容器(overflowY:auto ⇒ x 也是 auto),不裁则每进一次

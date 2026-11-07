@@ -11,7 +11,7 @@
   align-items: center;
   /* 与最左侧栏同色:同在窗口底层。 */
   background: var(--nav-rail);
-  color: var(--text-secondary);
+  color: var(--muted-fg);
   font-family: var(--font-family-system);
   font-size: var(--font-body);
   user-select: none;
@@ -60,7 +60,7 @@
   border: none;
   border-radius: var(--radius-control);
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--muted-fg);
   font: inherit;
   cursor: default;
   transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
@@ -71,7 +71,7 @@
 :root .gg-titlebar-menu-trigger:focus-visible,
 :root .gg-titlebar-menu-trigger[data-popup-open] {
   background: var(--press);
-  color: var(--text-primary);
+  color: var(--fg);
 }
 
 /* 下拉菜单的弹层(ui/Menu 的同一张浮层),只多给一个最小宽度,让快捷键列对齐。 */

@@ -48,7 +48,7 @@ function VoiceAttachmentBubble({
   isMine: boolean
 }) {
   const { t } = useTranslation('messaging')
-  const accentColor = isMine ? 'var(--text-on-bubble-strong)' : 'var(--text-link)'
+  const accentColor = isMine ? 'var(--text-on-bubble-strong)' : 'var(--live-fg)'
   const barColor = isMine ? 'var(--text-on-bubble-muted)' : 'var(--text-quote-author)'
 
   return (
@@ -442,7 +442,7 @@ export const MessageBubble = memo(function MessageBubble({
                   ) : mediaAttachment ? (
                     <MediaAttachmentBubble meta={mediaAttachment} messageId={msg.id} isMine={msg.is_mine} onOpenFile={onOpenFile ? (file) => onOpenFile(file, msg) : undefined} senderName={avatarName} chatId={msg.chat_id} />
                   ) : (
-                    <span style={{ color: 'var(--text-link)' }}>{t('message.attachment')}</span>
+                    <span style={{ color: 'var(--live-fg)' }}>{t('message.attachment')}</span>
                   )
                 ) : <div style={compactMobile ? { alignSelf: 'stretch', minWidth: 0, maxWidth: '100%' } : { display: 'contents' }}>{(() => {
                   const partial = partialQuotedContent(msg)

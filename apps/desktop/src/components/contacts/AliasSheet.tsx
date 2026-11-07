@@ -44,13 +44,13 @@ export function AliasSheet({ name, alias, avatarUrl, seed, group = false, onSave
         <div className="flex items-center gap-3">
           <Avatar name={name} avatarUrl={avatarUrl} seed={seed} variant={group ? 'group' : undefined} size="md" />
           <div className="min-w-0">
-            <div className="truncate text-[length:var(--font-title)] leading-[var(--lh-title)] font-semibold text-[var(--text-primary)]">{name}</div>
-            <div className="text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--text-tertiary)]">{t('contextMenu.setAlias')}</div>
+            <div className="truncate text-[length:var(--font-title)] leading-[var(--lh-title)] font-semibold text-[var(--fg)]">{name}</div>
+            <div className="text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--faint-fg)]">{t('contextMenu.setAlias')}</div>
           </div>
         </div>
         <input
           data-testid={AUTOMATION_TEST_IDS.contactAliasSheetInput}
-          className="box-border h-[var(--control-h-xl)] w-full rounded-[var(--radius-control)] border border-[var(--border)] bg-transparent px-3 py-0 text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--text-primary)] outline-none [font-family:inherit] placeholder:text-[var(--muted-fg)] focus:border-[var(--border-strong)] max-[719px]:h-[var(--control-h-touch)]"
+          className="box-border h-[var(--control-h-xl)] w-full rounded-[var(--radius-control)] border border-[var(--border)] bg-transparent px-3 py-0 text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--fg)] outline-none [font-family:inherit] placeholder:text-[var(--muted-fg)] focus:border-[var(--border-strong)] max-[719px]:h-[var(--control-h-touch)]"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') void save() }}

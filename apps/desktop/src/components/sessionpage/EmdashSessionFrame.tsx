@@ -129,7 +129,7 @@ const GUGU_SKIN_BRIDGE_CSS = `
   /* UNPREFIXED neutral ramp: 1 = app bg … 12 = primary text */
   --neutral-1: var(--bg);
   --neutral-2: var(--card);
-  --neutral-3: var(--bg-elevated);
+  --neutral-3: var(--card);
   --neutral-4: var(--muted);
   --neutral-5: color-mix(in srgb, var(--bg) 82%, var(--fg));
   --neutral-6: var(--border-color);
@@ -138,33 +138,33 @@ const GUGU_SKIN_BRIDGE_CSS = `
   --neutral-9: var(--faint-fg);
   --neutral-10: var(--faint-fg);
   --neutral-11: var(--muted-fg);
-  --neutral-12: var(--text-primary);
-  --neutral-contrast: var(--text-on-accent);
+  --neutral-12: var(--fg);
+  --neutral-contrast: var(--primary-fg);
 
   /* explicit background/foreground/border steps (in case some are raw, not var(--neutral-n)) */
   --background: var(--bg);
   --background-1: var(--card);
-  --background-2: var(--bg-elevated);
+  --background-2: var(--card);
   --background-3: var(--muted);
-  --foreground: var(--text-primary);
+  --foreground: var(--fg);
   --foreground-muted: var(--muted-fg);
   --foreground-passive: var(--faint-fg);
   --border-1: var(--border-strong);
   --border-primary: var(--faint-fg);
 
   /* accent / primary button = gugu mono accent (white on dark / black on light) */
-  --primary-button-background: var(--accent);
+  --primary-button-background: var(--primary);
   --primary-button-background-hover: var(--accent-hover);
-  --primary-button-foreground: var(--text-on-accent);
-  --primary-button-border: var(--accent);
-  --ring: var(--accent);
+  --primary-button-foreground: var(--primary-fg);
+  --primary-button-border: var(--primary);
+  --ring: var(--primary);
   --selection: var(--text-selection);
-  --selection-foreground: var(--text-primary);
+  --selection-foreground: var(--fg);
 
   /* em neutral ramp (mirror of unprefixed) */
   --em-neutral-1: var(--bg);
   --em-neutral-2: var(--card);
-  --em-neutral-3: var(--bg-elevated);
+  --em-neutral-3: var(--card);
   --em-neutral-4: var(--muted);
   --em-neutral-5: color-mix(in srgb, var(--bg) 82%, var(--fg));
   --em-neutral-6: var(--border-color);
@@ -173,37 +173,37 @@ const GUGU_SKIN_BRIDGE_CSS = `
   --em-neutral-9: var(--faint-fg);
   --em-neutral-10: var(--faint-fg);
   --em-neutral-11: var(--muted-fg);
-  --em-neutral-12: var(--text-primary);
-  --em-neutral-contrast: var(--text-on-accent);
+  --em-neutral-12: var(--fg);
+  --em-neutral-contrast: var(--primary-fg);
 
   /* em accent ramp = gugu mono accent */
-  --em-accent-9: var(--accent);
+  --em-accent-9: var(--primary);
   --em-accent-10: var(--accent-hover);
-  --em-accent-11: var(--text-primary);
-  --em-accent-12: var(--text-primary);
-  --em-accent-contrast: var(--text-on-accent);
+  --em-accent-11: var(--fg);
+  --em-accent-12: var(--fg);
+  --em-accent-contrast: var(--primary-fg);
 
   /* em backgrounds */
   --em-background: var(--bg);
   --em-background-1: var(--card);
-  --em-background-2: var(--bg-elevated);
+  --em-background-2: var(--card);
   --em-background-3: var(--muted);
   --em-background-secondary: var(--sidebar);
-  --em-background-tertiary: var(--bg-elevated);
+  --em-background-tertiary: var(--card);
   --em-background-quaternary: var(--bg);
-  --em-background-neutral: var(--text-primary);
+  --em-background-neutral: var(--fg);
   --em-foreground-neutral: var(--bg);
 
   /* em foreground */
-  --em-foreground: var(--text-primary);
-  --em-foreground-inverse: var(--text-on-accent);
-  --em-foreground-body: var(--text-primary);
+  --em-foreground: var(--fg);
+  --em-foreground-inverse: var(--primary-fg);
+  --em-foreground-body: var(--fg);
   --em-foreground-muted: var(--muted-fg);
   --em-foreground-passive: var(--faint-fg);
-  --em-foreground-secondary: var(--text-primary);
+  --em-foreground-secondary: var(--fg);
   --em-foreground-secondary-muted: var(--muted-fg);
   --em-foreground-secondary-passive: var(--faint-fg);
-  --em-foreground-tertiary: var(--text-primary);
+  --em-foreground-tertiary: var(--fg);
   --em-foreground-tertiary-muted: var(--muted-fg);
   --em-foreground-tertiary-passive: var(--faint-fg);
   /* 状态字:会话页写字用的红/黄/绿/蓝接咕咕可读的那一档(≥4.5)。没桥之前取 session-ui 自己生成的色阶,浅色下 2.9–4.5。 */
@@ -234,10 +234,10 @@ const GUGU_SKIN_BRIDGE_CSS = `
   --em-surface-elevated-hover: color-mix(in srgb, var(--state-tint) var(--state-hover-amount), var(--card));
   --em-surface-elevated-press: color-mix(in srgb, var(--state-tint) var(--state-press-amount), var(--card));
   --em-surface-elevated-selected: color-mix(in srgb, var(--state-tint-selected) var(--state-selected-amount), var(--card));
-  --em-surface-elevated-emphasis: var(--bg-elevated);
-  --em-surface-elevated-emphasis-hover: color-mix(in srgb, var(--state-tint) var(--state-hover-amount), var(--bg-elevated));
-  --em-surface-elevated-emphasis-press: color-mix(in srgb, var(--state-tint) var(--state-press-amount), var(--bg-elevated));
-  --em-surface-elevated-emphasis-selected: color-mix(in srgb, var(--state-tint-selected) var(--state-selected-amount), var(--bg-elevated));
+  --em-surface-elevated-emphasis: var(--card);
+  --em-surface-elevated-emphasis-hover: color-mix(in srgb, var(--state-tint) var(--state-hover-amount), var(--card));
+  --em-surface-elevated-emphasis-press: color-mix(in srgb, var(--state-tint) var(--state-press-amount), var(--card));
+  --em-surface-elevated-emphasis-selected: color-mix(in srgb, var(--state-tint-selected) var(--state-selected-amount), var(--card));
   --em-surface: var(--bg);
   --em-surface-hover: color-mix(in srgb, var(--state-tint) var(--state-hover-amount), var(--bg));
   --em-surface-press: color-mix(in srgb, var(--state-tint) var(--state-press-amount), var(--bg));
@@ -252,7 +252,7 @@ const GUGU_SKIN_BRIDGE_CSS = `
   --em-surface-paper-press: color-mix(in srgb, var(--state-tint) var(--state-press-amount), var(--em-surface-paper));
   --em-surface-paper-selected: color-mix(in srgb, var(--state-tint-selected) var(--state-selected-amount), var(--em-surface-paper));
   --em-surface-input: var(--input-bg);
-  --em-surface-foreground: var(--text-primary);
+  --em-surface-foreground: var(--fg);
   --em-surface-border: var(--border-color);
 
   /* em borders / selection */
@@ -261,13 +261,13 @@ const GUGU_SKIN_BRIDGE_CSS = `
   --em-border-2: var(--border-strong);
   --em-border-primary: var(--faint-fg);
   --em-selection: var(--bg-accent-soft);
-  --em-selection-foreground: var(--text-primary);
+  --em-selection-foreground: var(--fg);
 
   /* em primary button = gugu accent */
-  --em-primary-button-background: var(--accent);
+  --em-primary-button-background: var(--primary);
   --em-primary-button-background-hover: var(--accent-hover);
-  --em-primary-button-foreground: var(--text-on-accent);
-  --em-primary-button-border: var(--accent);
+  --em-primary-button-foreground: var(--primary-fg);
+  --em-primary-button-border: var(--primary);
 
   /* ── Typography → gugu 正文字体(#7333 起系统字体;下文说的 Sora 即这条正文栈) (#2220 后续:「缺乏精致感,没在一套设计语言上」) ─────────
      会话页的 --em-type-<role>-font-family 由 vanilla-extract codegen 生成为

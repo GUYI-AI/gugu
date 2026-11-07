@@ -35,7 +35,7 @@ const LIT_VAR = '--gg-tab-lit'
  * ❌ 这里不挂 transition:值本来就跟着手指走,再加过渡就拖在手指后面。点按切换的过渡由 tab 栏只在点按那一下挂上
  * (PhoneTabBar 的 data-tab-switching)。
  */
-export function tabItemStyle(index: number, activeIndex: number, selectedColor = 'var(--text-primary)', idleColor = 'var(--text-tertiary)'): CSSProperties {
+export function tabItemStyle(index: number, activeIndex: number, selectedColor = 'var(--fg)', idleColor = 'var(--faint-fg)'): CSSProperties {
   const position = `var(${TAB_POSITION_VAR}, ${activeIndex})`
   return {
     [LIT_VAR]: `max(0, 1 - max(${position} - ${index}, ${index} - ${position}))`,
@@ -49,6 +49,6 @@ export function tabItemStyle(index: number, activeIndex: number, selectedColor =
  * 整个颜色就退成 currentColor(实测;color / outline-color 里同一写法正常),没选中的头像也会圈一道灰环。
  */
 export const TAB_AVATAR_STYLE: CSSProperties = {
-  boxShadow: `0 0 0 calc(1.5px * var(${LIT_VAR})) var(--text-primary)`,
+  boxShadow: `0 0 0 calc(1.5px * var(${LIT_VAR})) var(--fg)`,
   opacity: `calc(0.72 + 0.28 * var(${LIT_VAR}))`,
 }

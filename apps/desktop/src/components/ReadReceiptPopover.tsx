@@ -22,7 +22,7 @@ function MemberRow({ member }: { member: ReadReceiptMember }) {
       <span
         style={{
           fontSize: 'var(--font-body)',
-          color: 'var(--text-primary)',
+          color: 'var(--fg)',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -42,11 +42,11 @@ function MemberColumn({ title, count, members, emptyText }: {
 }) {
   return (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ fontSize: 'var(--font-caption)', fontWeight: 600, color: 'var(--text-secondary)', padding: '0 4px 6px' }}>
+      <div style={{ fontSize: 'var(--font-caption)', fontWeight: 600, color: 'var(--muted-fg)', padding: '0 4px 6px' }}>
         {title} {count}
       </div>
       {members.length === 0 ? (
-        <div style={{ fontSize: 'var(--font-body)', color: 'var(--text-tertiary)', padding: '5px 4px' }}>{emptyText}</div>
+        <div style={{ fontSize: 'var(--font-body)', color: 'var(--faint-fg)', padding: '5px 4px' }}>{emptyText}</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 240, overflowY: 'auto' }}>
           {members.map((m) => (
@@ -101,11 +101,11 @@ export function ReadReceiptPopover({
             data-testid={testId}
             style={{
               width,
-              background: 'var(--bg-elevated)',
+              background: 'var(--card)',
               border: '1px solid var(--border-subtle)',
               borderRadius: 'var(--radius-xl)',
               boxShadow: 'var(--shadow-popover-strong)',
-              color: 'var(--text-primary)',
+              color: 'var(--fg)',
               padding: 12,
             }}
           >

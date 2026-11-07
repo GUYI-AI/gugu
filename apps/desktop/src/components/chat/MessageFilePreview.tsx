@@ -155,7 +155,7 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
       unavailable: t('attachmentView.besideUnavailable'),
       outside: t('attachmentView.besideOutside'),
       offline: t('attachmentView.besideOffline'),
-      palette: { surface: style.getPropertyValue('--bg-secondary').trim(), border: style.getPropertyValue('--border-strong').trim(), text: style.getPropertyValue('--text-secondary').trim() },
+      palette: { surface: style.getPropertyValue('--bg-secondary').trim(), border: style.getPropertyValue('--border-strong').trim(), text: style.getPropertyValue('--muted-fg').trim() },
     }, (holder) => { setBesideOffline(holder); setWaitingFor(holder.deviceId) })
   }, [hostedHtml, itemId, t])
   useEffect(() => {

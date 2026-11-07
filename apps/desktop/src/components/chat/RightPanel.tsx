@@ -16,7 +16,7 @@ const RIGHT_PANEL_DEFAULT_WIDTH = 360
 // 开关与同槽位互斥归 ChatAreaPanel 的 closeRightSurfaces,两栏按各自的 flex 收缩。
 const shellStyle: CSSProperties = {
   flexShrink: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', overflow: 'auto',
-  background: 'var(--bg-primary)', borderLeft: '1px solid var(--border)',
+  background: 'var(--bg)', borderLeft: '1px solid var(--border)',
 }
 const mobileScrollPageStyle: CSSProperties = { ...rightPanelMobilePageStyle, overflow: undefined, overflowY: 'auto' }
 

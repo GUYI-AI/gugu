@@ -15,9 +15,9 @@ import { useChatStore } from '../../store/chatContext'
 // @@@group-announcements (#986) — 群公告 drawer. Design: #announce-drawer.
 // 只画内容;外壳与页头归宿主:群设置栈里是它的一页,⋯ 菜单开时是一个右栏。Admin-only post/delete; like/edit are visual stubs.
 
-const styleStateCenter: React.CSSProperties = { padding: '24px 0', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--font-body)' }
+const styleStateCenter: React.CSSProperties = { padding: '24px 0', textAlign: 'center', color: 'var(--faint-fg)', fontSize: 'var(--font-body)' }
 const panelStyle: CSSProperties = { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }
-const countStyle: CSSProperties = { fontWeight: 400, fontSize: 'var(--font-body)', color: 'var(--text-tertiary)', marginLeft: 2 }
+const countStyle: CSSProperties = { fontWeight: 400, fontSize: 'var(--font-body)', color: 'var(--faint-fg)', marginLeft: 2 }
 const styleInlineError: React.CSSProperties = { fontSize: 'var(--font-caption)', color: 'var(--danger-fg)' }
 
 export function AnnouncementDrawer({
@@ -177,7 +177,7 @@ export function AnnouncementDrawer({
               borderRadius: 'var(--radius-surface)',
               padding: 13,
               marginBottom: 16,
-              background: 'var(--bg-elevated)',
+              background: 'var(--card)',
             }}
           >
             <textarea
@@ -194,7 +194,7 @@ export function AnnouncementDrawer({
                 outline: 'none',
                 background: 'transparent',
                 fontSize: 'var(--font-body)',
-                color: 'var(--text-primary)',
+                color: 'var(--fg)',
                 lineHeight: 1.65,
                 fontFamily: 'inherit',
               }}
@@ -211,8 +211,8 @@ export function AnnouncementDrawer({
                   padding: '0 12px',
                   border: '1px solid var(--border-subtle)',
                   borderRadius: 'var(--radius-document)',
-                  background: 'var(--bg-primary)',
-                  color: 'var(--text-secondary)',
+                  background: 'var(--bg)',
+                  color: 'var(--muted-fg)',
                   fontSize: 'var(--font-body)',
                   cursor: 'pointer',
                 }}
@@ -228,8 +228,8 @@ export function AnnouncementDrawer({
                   padding: '0 14px',
                   border: 'none',
                   borderRadius: 'var(--radius-document)',
-                  background: posting || !draft.trim() ? 'var(--bg-elevated)' : 'var(--primary)',
-                  color: posting || !draft.trim() ? 'var(--text-tertiary)' : 'var(--primary-fg)',
+                  background: posting || !draft.trim() ? 'var(--card)' : 'var(--primary)',
+                  color: posting || !draft.trim() ? 'var(--faint-fg)' : 'var(--primary-fg)',
                   fontSize: 'var(--font-body)',
                   fontWeight: 600,
                   cursor: posting || !draft.trim() ? 'default' : 'pointer',
@@ -349,7 +349,7 @@ function AnnouncementCard({
           style={{
             fontSize: 'var(--font-body)',
             fontWeight: 600,
-            color: 'var(--text-primary)',
+            color: 'var(--fg)',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
@@ -382,8 +382,8 @@ function AnnouncementCard({
               fontSize: 'var(--font-body)',
               lineHeight: 1.65,
               fontFamily: 'inherit',
-              color: 'var(--text-primary)',
-              background: 'var(--bg-elevated)',
+              color: 'var(--fg)',
+              background: 'var(--card)',
               border: '1px solid var(--border-subtle)',
               borderRadius: 'var(--radius-document)',
               padding: '7px 9px',
@@ -398,7 +398,7 @@ function AnnouncementCard({
               type="button"
               onClick={() => { setEditing(false) }}
               disabled={savingEdit}
-              style={{ height: 26, padding: '0 12px', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-document)', background: 'transparent', color: 'var(--text-secondary)', fontSize: 'var(--font-body)', cursor: 'pointer' }}
+              style={{ height: 26, padding: '0 12px', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-document)', background: 'transparent', color: 'var(--muted-fg)', fontSize: 'var(--font-body)', cursor: 'pointer' }}
             >
               {t('common.cancel')}
             </button>
@@ -407,7 +407,7 @@ function AnnouncementCard({
               data-testid="announcement-edit-save"
               onClick={() => void saveEdit()}
               disabled={savingEdit || !editDraft.trim()}
-              style={{ height: 26, padding: '0 12px', border: 'none', borderRadius: 'var(--radius-document)', background: savingEdit || !editDraft.trim() ? 'var(--bg-elevated)' : 'var(--primary)', color: savingEdit || !editDraft.trim() ? 'var(--text-tertiary)' : 'var(--primary-fg)', fontSize: 'var(--font-body)', fontWeight: 600, cursor: savingEdit || !editDraft.trim() ? 'default' : 'pointer' }}
+              style={{ height: 26, padding: '0 12px', border: 'none', borderRadius: 'var(--radius-document)', background: savingEdit || !editDraft.trim() ? 'var(--card)' : 'var(--primary)', color: savingEdit || !editDraft.trim() ? 'var(--faint-fg)' : 'var(--primary-fg)', fontSize: 'var(--font-body)', fontWeight: 600, cursor: savingEdit || !editDraft.trim() ? 'default' : 'pointer' }}
             >
               {savingEdit ? t('common.saving') : t('common.save')}
             </button>
@@ -418,7 +418,7 @@ function AnnouncementCard({
           style={{
             fontSize: 'var(--font-body)',
             lineHeight: 1.65,
-            color: 'var(--text-primary)',
+            color: 'var(--fg)',
             wordBreak: 'break-word',
           }}
         >
@@ -436,7 +436,7 @@ function AnnouncementCard({
         }}
       >
         {/* Date (.ac-date) */}
-        <span style={{ fontSize: 'var(--font-caption)', color: 'var(--text-tertiary)' }}>
+        <span style={{ fontSize: 'var(--font-caption)', color: 'var(--faint-fg)' }}>
           {formatCalendarDay(announcement.createdAt)}
         </span>
 
@@ -467,7 +467,7 @@ function AnnouncementCard({
               border: 'none',
               borderRadius: 'var(--radius-document)',
               background: 'transparent',
-              color: announcement.likedByMe ? 'var(--primary)' : 'var(--text-secondary)',
+              color: announcement.likedByMe ? 'var(--primary)' : 'var(--muted-fg)',
               cursor: 'pointer',
               padding: '0 5px',
             }}
@@ -490,7 +490,7 @@ function AnnouncementCard({
               title={announcement.pinned ? t('announcement.unpin') : t('announcement.pin')}
               data-testid="announcement-pin"
               onClick={onTogglePin}
-              style={{ color: announcement.pinned ? 'var(--primary)' : 'var(--text-secondary)' }}
+              style={{ color: announcement.pinned ? 'var(--primary)' : 'var(--muted-fg)' }}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24">
                 <path fill={announcement.pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4a1 1 0 0 1 1 1z" />
@@ -552,7 +552,7 @@ function ActionIcon({
         border: 'none',
         borderRadius: 'var(--radius-document)',
         background: 'transparent',
-        color: 'var(--text-secondary)',
+        color: 'var(--muted-fg)',
         cursor: 'pointer',
         padding: 0,
         ...style,

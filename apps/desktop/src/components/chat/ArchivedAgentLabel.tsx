@@ -5,5 +5,5 @@ import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
 export function ArchivedAgentLabel({ status }: { status?: AgentDisplayStatus }) {
   const label = useAgentContactStatusLabel(status)
   if (status !== 'archived') return null
-  return <span data-agent-archive-label className="text-[length:var(--font-caption)] text-[var(--text-tertiary)]">{label}</span>
+  return <span data-agent-archive-label className="text-[length:var(--font-caption)] text-[var(--faint-fg)]">{label}</span>
 }

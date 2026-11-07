@@ -49,7 +49,7 @@ function WidgetView({ message, widget, height }: { message: Message; widget: Wid
         testId="widget-frame" missingTestId="widget-frame-missing"
       /> : null}
     </div>
-    <p className="whitespace-pre-wrap break-words text-[length:var(--font-caption)] text-[var(--text-secondary)]" data-widget-text>{widget.text}</p>
+    <p className="whitespace-pre-wrap break-words text-[length:var(--font-caption)] text-[var(--muted-fg)]" data-widget-text>{widget.text}</p>
   </div>
 }
 
@@ -98,7 +98,7 @@ const WidgetUnavailable = observer(function WidgetUnavailable({ widget, reason, 
   }
   return <div ref={ref} className="max-w-full min-w-0">
     <p className="whitespace-pre-wrap break-words">{widget.text}</p>
-    <p className="text-[length:var(--font-caption)] text-[var(--text-secondary)]">{t(`message.widgetUnavailable.${reason}`)}{' '}
+    <p className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">{t(`message.widgetUnavailable.${reason}`)}{' '}
       {offer ? <Button size="sm" variant="ghost" disabled={installing} onClick={() => void install()} data-widget-install>{t('chatArea.openWith.install')}</Button> : null}
     </p>
     {error ? <p role="alert">{error}</p> : null}

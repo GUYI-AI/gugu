@@ -65,7 +65,7 @@ describe('notice appearance and reduced motion (#7333, #137)', () => {
     await click([...harness.container.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'error')!)
     await until('the error toast appears', () => toast('error') !== null)
     const probe = document.body.appendChild(document.createElement('div'))
-    probe.style.background = 'var(--surface-white)'
+    probe.style.background = 'var(--card)'
     const surface = getComputedStyle(probe).backgroundColor
     probe.remove()
     const toaster = document.querySelector<HTMLElement>('[data-sonner-toaster]')!

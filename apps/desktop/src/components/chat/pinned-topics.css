@@ -17,4 +17,4 @@
 .gg-topic-menu-row:is(:hover, :focus-within, :has([data-highlighted])) .gg-topic-menu-open > .gg-menu-item-label::after { display: block; }
 .gg-topic-empty { display: flex; flex-direction: column; gap: 4px; }
 .gg-topic-empty small { color: var(--faint-fg); font-size: var(--font-caption); }
-.gg-topic-pins-error { padding: 6px 10px; color: var(--text-error); font-size: var(--font-caption); }
+.gg-topic-pins-error { padding: 6px 10px; color: var(--danger-fg); font-size: var(--font-caption); }

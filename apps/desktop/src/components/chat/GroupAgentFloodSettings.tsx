@@ -40,15 +40,15 @@ function TopicThresholds({ chatId }: { chatId: string }) {
     if (ids.includes(chatId) || (selected && ids.includes(selected.chat_id))) setRevision((value) => value + 1)
   }), [chatId, selected, subscribeChatChanged])
   return <>
-    {loading ? <p className="text-sm text-[var(--text-tertiary)]">{t('common.loading')}</p> : null}
+    {loading ? <p className="text-sm text-[var(--faint-fg)]">{t('common.loading')}</p> : null}
     {error ? <div role="alert">
       {messageForUser(error)}
       <Button variant="ghost" size="sm" onClick={reload}>{t('common.retry')}</Button>
     </div> : null}
     {selected ? <>
-      <label htmlFor={selectId} className="block pt-3 pb-1 text-sm font-medium text-[var(--text-primary)]">{t('group.settings.agentFloodTopics')}</label>
+      <label htmlFor={selectId} className="block pt-3 pb-1 text-sm font-medium text-[var(--fg)]">{t('group.settings.agentFloodTopics')}</label>
       <select id={selectId} value={selected.chat_id} onChange={(event) => setSelectedId(event.target.value)}
-        className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2 py-1 text-sm text-[var(--text-primary)]">
+        className="w-full rounded-md border border-[var(--border-subtle)] bg-[var(--card)] px-2 py-1 text-sm text-[var(--fg)]">
         {topics.map((topic) => <option key={topic.chat_id} value={topic.chat_id}>{topic.name}</option>)}
       </select>
       <AgentFloodThresholdSetting key={selected.chat_id} chatId={selected.chat_id} inherits revision={revision} />

@@ -4,8 +4,8 @@
  * 与本文件谁先谁后取决于加载顺序,同权重就是靠运气 —— 明暗主题那两条(`[data-sonner-theme]`)更是天然比 `.class` 高。
  */
 .gugu-notices[data-sonner-toaster][data-sonner-theme] {
-  --normal-bg: var(--surface-white);
-  --normal-text: var(--text-on-white);
+  --normal-bg: var(--card);
+  --normal-text: var(--fg);
   --normal-border: transparent;
   --border-radius: var(--radius-surface);
   font-family: inherit;

@@ -29,15 +29,15 @@ const ROW_STYLE: CSSProperties = {
   // 2026-09-22 design.md:行靠 padding 分隔、线只留在分区标题上 —— 这一行原来自带底线,在群管理里会和下一个分区标题叠成双线(#6418)。
   padding: '15px 0',
 }
-const TITLE_STYLE: CSSProperties = { fontSize: 'var(--font-body)', fontWeight: 500, color: 'var(--text-primary)' }
+const TITLE_STYLE: CSSProperties = { fontSize: 'var(--font-body)', fontWeight: 500, color: 'var(--fg)' }
 const HINT_STYLE: CSSProperties = {
-  fontSize: 'var(--font-body)', color: 'var(--text-tertiary)', marginTop: 3, lineHeight: 1.5,
+  fontSize: 'var(--font-body)', color: 'var(--faint-fg)', marginTop: 3, lineHeight: 1.5,
 }
-const VALUE_STYLE: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--text-tertiary)', flexShrink: 0 }
+const VALUE_STYLE: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--faint-fg)', flexShrink: 0 }
 const INPUT_STYLE: CSSProperties = {
   width: 64, textAlign: 'right', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-control)',
-  padding: '4px 8px', fontSize: 'var(--font-body)', color: 'var(--text-primary)',
-  background: 'var(--bg-elevated)', outline: 'none', fontFamily: 'inherit', flexShrink: 0,
+  padding: '4px 8px', fontSize: 'var(--font-body)', color: 'var(--fg)',
+  background: 'var(--card)', outline: 'none', fontFamily: 'inherit', flexShrink: 0,
 }
 
 export function AgentFloodThresholdSetting({

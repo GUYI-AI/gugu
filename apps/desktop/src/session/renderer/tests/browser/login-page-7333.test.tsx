@@ -212,7 +212,7 @@ describe('the login page keeps its real flow (母版补页 05: eight states)', (
     expect(submit().textContent).toBe(t('auth.login'));
     // The two text buttons are the host's ghost buttons: secondary text, 32 high on the desktop.
     const change = buttonNamed(t('auth.changeEmail'))!;
-    expect({ color: css(change, 'color'), height: box(change).height }).toEqual({ color: token('--text-secondary'), height: 32 });
+    expect({ color: css(change, 'color'), height: box(change).height }).toEqual({ color: token('--muted-fg'), height: 32 });
   });
 
   it('验证中 → 验证失败 → 成功: the coordinator\'s attempt carries the session; a failure keeps the code and offers a retry', async () => {

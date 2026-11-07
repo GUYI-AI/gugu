@@ -45,8 +45,8 @@
 
 .gg-phone-menu-reactions,
 .gg-phone-menu-list {
-  background: var(--menu-bg);
-  color: var(--menu-fg);
+  background: var(--popover);
+  color: var(--fg);
   box-shadow: var(--shadow-lift);
   transform-origin: var(--origin);
   animation: gg-phone-menu-pop 340ms var(--gg-phone-menu-ease) both;

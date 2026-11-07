@@ -23,8 +23,8 @@ export function FileAttachmentCard({ file, isMine = false, details, versionLabel
   const { t } = useTranslation('messaging')
   const type = attachmentTypeKey(file)
   const metadata = [versionLabel, formatAttachmentSize(file.sizeBytes), type ? t(`attachmentView.types.${type}`) : null].filter(Boolean).join(' · ')
-  const accent = isMine ? 'var(--text-on-bubble-strong)' : 'var(--text-link)'
-  const muted = isMine ? 'var(--text-on-bubble-muted)' : 'var(--text-tertiary)'
+  const accent = isMine ? 'var(--text-on-bubble-strong)' : 'var(--live-fg)'
+  const muted = isMine ? 'var(--text-on-bubble-muted)' : 'var(--faint-fg)'
   const card = (
     <div className="gg-hcard gg-hfile flex max-w-[260px] items-center gap-[11px] rounded-xl border border-[var(--border)] !p-[11px] !mb-2">
       <Button

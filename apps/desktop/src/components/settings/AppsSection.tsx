@@ -232,10 +232,10 @@ export function AppsSection() {
       {asking ? (
         <Sheet onClose={() => setAsking(null)} testId="settings-apps-uninstall-sheet" titleId={titleId}>
           <div className="flex min-h-0 flex-1 flex-col gap-3 !p-5">
-            <div id={titleId} className="text-[length:var(--font-title)] font-semibold text-[var(--text-primary)]">
+            <div id={titleId} className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">
               {translateSessionMessage('extensions.uninstallConfirmTitle')}
             </div>
-            <div className="text-[length:var(--font-body)] text-[var(--text-secondary)]">
+            <div className="text-[length:var(--font-body)] text-[var(--muted-fg)]">
               {translateSessionMessage('extensions.uninstallConfirmDescription', { name: asking.name })}
             </div>
             <div className="flex justify-end gap-2">
@@ -278,7 +278,7 @@ function VersionsSheet({
   const autoUpdate = installed?.autoUpdate ?? null
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto !p-5" data-app-id={app.id}>
-      <div className="text-[length:var(--font-title)] font-semibold text-[var(--text-primary)]">
+      <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">
         {app.name} · {translateSessionMessage('extensions.detailVersionHistory')}
       </div>
       {autoUpdate !== null ? (
@@ -323,7 +323,7 @@ function VersionsSheet({
                 description={<span className="line-clamp-2">{[date, reason ?? firstLine].filter(Boolean).join(' · ')}</span>}
                 control={
                   entry.version === version ? (
-                    <span className="text-[length:var(--font-caption)] text-[var(--text-secondary)]">{translateSessionMessage('extensions.stripThisInstalled')}</span>
+                    <span className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">{translateSessionMessage('extensions.stripThisInstalled')}</span>
                   ) : reason ? null : (
                     <Button
                       size="sm"

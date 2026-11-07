@@ -186,11 +186,11 @@ export function TagMemberEditorDetail({
                 onClick={() => setFilter(option.value)}
                 style={{
                   height: 28,
-                  border: `1px solid ${filter === option.value ? 'var(--accent)' : 'var(--border-color)'}`,
+                  border: `1px solid ${filter === option.value ? 'var(--primary)' : 'var(--border-color)'}`,
                   borderRadius: 'var(--radius-xl)',
                   background:
-                    filter === option.value ? 'var(--accent-tint-row)' : 'var(--input-bg)',
-                  color: filter === option.value ? 'var(--accent)' : 'var(--text-secondary)',
+                    filter === option.value ? 'var(--selected)' : 'var(--input-bg)',
+                  color: filter === option.value ? 'var(--primary)' : 'var(--muted-fg)',
                   padding: '0 10px',
                   fontSize: 'var(--font-caption)',
                   cursor: 'pointer'
@@ -235,7 +235,7 @@ export function TagMemberEditorDetail({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: 'var(--text-secondary)',
+                  color: 'var(--muted-fg)',
                   fontSize: 'var(--font-body)'
                 }}
               >
@@ -248,7 +248,7 @@ export function TagMemberEditorDetail({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: 'var(--text-secondary)',
+                  color: 'var(--muted-fg)',
                   fontSize: 'var(--font-body)'
                 }}
               >
@@ -275,7 +275,7 @@ export function TagMemberEditorDetail({
                       // ❌ 选中态别写 inline background:inline 赢过 .gg-row:hover/:active —— 线删了、
                       //    hover 也被盖掉,这一列就既无分隔也无响应。走 data-selected 交给 .gg-row。
                       border: 0,
-                      color: 'var(--text-primary)',
+                      color: 'var(--fg)',
                       display: 'flex',
                       alignItems: 'center',
                       gap: 10,
@@ -291,9 +291,9 @@ export function TagMemberEditorDetail({
                         width: 18,
                         height: 18,
                         borderRadius: 'var(--radius-surface)',
-                        border: `1px solid ${checked ? 'var(--accent)' : 'var(--border-color)'}`,
-                        background: checked ? 'var(--accent)' : 'transparent',
-                        color: 'var(--text-on-accent)',
+                        border: `1px solid ${checked ? 'var(--primary)' : 'var(--border-color)'}`,
+                        background: checked ? 'var(--primary)' : 'transparent',
+                        color: 'var(--primary-fg)',
                         display: 'inline-flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -312,7 +312,7 @@ export function TagMemberEditorDetail({
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div
                         style={{
-                          color: 'var(--text-primary)',
+                          color: 'var(--fg)',
                           fontSize: 'var(--font-body)',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
@@ -323,7 +323,7 @@ export function TagMemberEditorDetail({
                       </div>
                       <div
                         style={{
-                          color: 'var(--text-secondary)',
+                          color: 'var(--muted-fg)',
                           fontSize: 'var(--font-caption)',
                           marginTop: 2,
                           overflow: 'hidden',

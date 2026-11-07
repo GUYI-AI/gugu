@@ -164,7 +164,7 @@ describe('MemberListPanel archived members', () => {
     expect(row.querySelector('[data-member-name]')?.textContent).toBe('智能体-archived')
     const label = row.querySelector('[data-agent-archive-label]')!
     expect(label?.textContent).toBe('已归档')
-    expect(label.getAttribute('class')).toContain('text-[var(--text-tertiary)]')
+    expect(label.getAttribute('class')).toContain('text-[var(--faint-fg)]')
   })
   it('does not label an ordinary active member as archived', async () => {
     await renderPanel(collab([agentItem('active')], [humanItem('owner-1')]))

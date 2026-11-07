@@ -130,7 +130,7 @@ export function MeetingReminder({ enabled }: { enabled: boolean }) {
       role="alertdialog"
       aria-label={t('meeting.heading')}
       data-testid="meeting-reminder"
-      className="fixed right-4 top-12 z-[var(--z-banner)] flex w-[380px] max-w-[calc(100vw-32px)] items-center gap-3 rounded-[var(--radius-surface)] bg-[var(--menu-bg)] py-3 pl-3 pr-2 text-[var(--menu-fg)] shadow-[var(--shadow-lift)]"
+      className="fixed right-4 top-12 z-[var(--z-banner)] flex w-[380px] max-w-[calc(100vw-32px)] items-center gap-3 rounded-[var(--radius-surface)] bg-[var(--popover)] py-3 pl-3 pr-2 text-[var(--fg)] shadow-[var(--shadow-lift)]"
     >
       <span aria-hidden className="h-10 w-1 shrink-0 rounded-full bg-[var(--danger)]" />
       <div className="flex min-w-0 flex-1 flex-col gap-1">

@@ -223,7 +223,7 @@ export function UpdateBanner({ placement = 'floating' }: { placement?: 'floating
         ...(mobile
           ? { top: 'calc(env(safe-area-inset-top) + 12px)', left: 16, right: 16 }
           : { right: 18, bottom: 18, width: 320 }),
-        background: 'var(--bg-elevated)',
+        background: 'var(--card)',
         border: '1px solid var(--border-strong)',
         borderRadius: 'var(--radius-xl)',
         boxShadow: 'var(--shadow-lift)',
@@ -239,17 +239,17 @@ export function UpdateBanner({ placement = 'floating' }: { placement?: 'floating
             display: 'grid', placeItems: 'center',
             background: failed
               ? 'var(--danger-tint)'
-              : 'var(--accent-tint-row)',
-            color: failed ? 'var(--danger)' : 'var(--text-primary)',
+              : 'var(--selected)',
+            color: failed ? 'var(--danger)' : 'var(--fg)',
           }}
         >
           {failed ? <AlertTriangle size={18} /> : ready || manualInstall ? <CheckCircle2 size={18} /> : <Download size={18} />}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 'var(--font-body)', fontWeight: 600, color: 'var(--text-primary)' }}>
+          <div style={{ fontSize: 'var(--font-body)', fontWeight: 600, color: 'var(--fg)' }}>
             {title}
           </div>
-          <div style={{ fontSize: 'var(--font-caption)', color: 'var(--text-secondary)' }}>
+          <div style={{ fontSize: 'var(--font-caption)', color: 'var(--muted-fg)' }}>
             {sub}
           </div>
         </div>
@@ -260,7 +260,7 @@ export function UpdateBanner({ placement = 'floating' }: { placement?: 'floating
           style={{
             width: 24, height: 24, flexShrink: 0, display: 'grid', placeItems: 'center',
             borderRadius: 'var(--radius-document)', border: 'none', background: 'transparent', cursor: 'pointer',
-            color: 'var(--text-secondary)',
+            color: 'var(--muted-fg)',
           }}
         >
           <X size={15} />
@@ -276,13 +276,13 @@ export function UpdateBanner({ placement = 'floating' }: { placement?: 'floating
               style={{
                 height: '100%',
                 width: `${percent === null ? 0 : Math.round(percent)}%`,
-                background: 'var(--accent)',
+                background: 'var(--primary)',
                 // @@@4323 这里的 width 就是数据本身(下载进度),不是布局收放。保留动 width,只把时长收编回 token。
                 transition: 'width var(--transition-normal)',
               }}
             />
           </div>
-          <div style={{ fontSize: 'var(--font-caption)', textAlign: 'right', color: 'var(--text-secondary)' }}>
+          <div style={{ fontSize: 'var(--font-caption)', textAlign: 'right', color: 'var(--muted-fg)' }}>
             {percent === null ? t('shell.update.preparing') : `${Math.round(percent)}%`}
           </div>
         </div>
@@ -351,7 +351,7 @@ function primaryBtnStyle(busy: boolean): React.CSSProperties {
   return {
     flex: 1, height: 32, borderRadius: 'var(--radius-control)', border: 'none',
     cursor: busy ? 'default' : 'pointer',
-    background: 'var(--accent)', color: 'var(--text-on-accent)',
+    background: 'var(--primary)', color: 'var(--primary-fg)',
     fontSize: 'var(--font-body)', fontWeight: 600, opacity: busy ? 0.6 : 1,
   }
 }
@@ -359,5 +359,5 @@ function primaryBtnStyle(busy: boolean): React.CSSProperties {
 const laterBtnStyle: React.CSSProperties = {
   height: 32, padding: '0 12px', borderRadius: 'var(--radius-control)',
   border: '1px solid var(--border-strong)', background: 'transparent',
-  cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 'var(--font-body)',
+  cursor: 'pointer', color: 'var(--muted-fg)', fontSize: 'var(--font-body)',
 }

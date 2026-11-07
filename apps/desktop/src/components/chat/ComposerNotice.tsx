@@ -6,7 +6,7 @@ import type { CSSProperties, ReactNode } from 'react'
 const NOTICE_STYLE: CSSProperties = {
   margin: '0 0 6px', padding: '7px 10px', border: '1px solid var(--border-subtle)',
   borderRadius: 'var(--radius-document)', background: 'var(--bg-secondary)',
-  color: 'var(--text-secondary)', fontSize: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: 10,
+  color: 'var(--muted-fg)', fontSize: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: 10,
 }
 
 export function ComposerNotice({ children, ...rest }: { children: ReactNode } & Record<`data-${string}`, string> & { style?: CSSProperties }) {

@@ -101,7 +101,7 @@ const MEMBER_LIST_EMPTY_STYLE: React.CSSProperties = { padding: '24px 14px', tex
 const MEMBER_ROW_BODY_STYLE: React.CSSProperties = { minWidth: 0, flex: 1, alignSelf: 'center' }
 const MEMBER_ROW_NAME_LINE_STYLE: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }
 const MEMBER_ROW_NAME_STYLE: React.CSSProperties = {
-  fontSize: 'var(--font-body)', color: 'var(--text-primary)', fontWeight: 500,
+  fontSize: 'var(--font-body)', color: 'var(--fg)', fontWeight: 500,
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 }
 const MEMBER_ROW_ROLE_STYLE: React.CSSProperties = {
@@ -111,7 +111,7 @@ const MEMBER_ROW_ROLE_STYLE: React.CSSProperties = {
 const MEMBER_ROW_META_CELLS_STYLE: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: '2px 10px', marginTop: 3 }
 const MEMBER_ROW_TRAILING_STYLE: React.CSSProperties = { marginTop: 6 }
 const MEMBER_LIST_PANEL_STYLE: React.CSSProperties = { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }
-const MEMBER_LIST_TITLE_STYLE: React.CSSProperties = { fontSize: 'var(--font-title)', fontWeight: 600, color: 'var(--text-primary)' }
+const MEMBER_LIST_TITLE_STYLE: React.CSSProperties = { fontSize: 'var(--font-title)', fontWeight: 600, color: 'var(--fg)' }
 // 话题改名那一格:占满标题与右侧动作之间的余量。与本文件其余样式同形走常量 ——
 // ❌ 不就地写内联样式块(check-ui-visual-spec 的那条棘轮是纯文本计数,连注释里的字面量都算)。
 const TOPIC_NAME_EDIT_STYLE: React.CSSProperties = { flex: 1, minWidth: 0 }

@@ -149,7 +149,7 @@ export function ComposerCardFrame({ cardType, mark, title, time, text, onOpen, t
       data-tour={tour}
       title={onOpen ? t('message.taskCard.open') : undefined}
       onClick={onOpen}
-      className="box-border flex w-[300px] max-w-full flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-primary)] p-3 text-left data-[openable]:cursor-pointer data-[openable]:hover:border-[var(--border-strong)]"
+      className="box-border flex w-[300px] max-w-full flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3 text-left data-[openable]:cursor-pointer data-[openable]:hover:border-[var(--border-strong)]"
     >
       <span className="flex h-6 items-center gap-2">
         <span aria-hidden className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-document)] border border-[var(--border)]">
@@ -178,7 +178,7 @@ export function TaskCardHandedTo({ agentName, agentAvatar, agentUserId, note, ma
       <span className="shrink-0">{t('message.taskCard.handedTo')}</span>
       <span className="flex min-w-0 items-center gap-1">
         <Avatar name={agentName} avatarUrl={agentAvatar} seed={agentUserId} isAgent harnessBadge={false} size={16} still />
-        <b className="truncate font-medium text-[var(--text-secondary)]">{agentName}</b>
+        <b className="truncate font-medium text-[var(--muted-fg)]">{agentName}</b>
       </span>
       <span className="min-w-0 truncate">{note}</span>
       <span className="ml-auto flex shrink-0 items-center">{mark}</span>

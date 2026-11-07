@@ -24,7 +24,7 @@ const fieldControl = cn(
   // @@@ui-ruler 控件高 = --control-h-lg(36),与 SearchField 同高;py 由 min-h 撑,不再 34 与 36 错 2px。
   'box-border w-full min-h-[var(--control-h-lg)] px-2.5 py-[7px] max-[719px]:min-h-[var(--control-h-touch)]',
   'rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-transparent',
-  'font-[inherit] text-[length:var(--font-body)] text-[var(--text-primary)]',
+  'font-[inherit] text-[length:var(--font-body)] text-[var(--fg)]',
   'outline-none transition-[border-color,box-shadow] duration-[var(--dur-fast)] ease-out motion-reduce:transition-none',
   'hover:border-[color-mix(in_srgb,var(--primary)_45%,var(--border-strong))]',
   // @@@5111 只读态。原来调用点(设置→账户的邮箱)自己手写 background/color 去压灰,压不掉上面那条
@@ -45,7 +45,7 @@ const fieldControl = cn(
 // 光标就是焦点指示(见 variants.ts @@@no-focus-ring);❌ 调用处自己拼一个裸 <input>。
 const fieldControlBare = cn(
   'box-border w-full min-w-0 border-0 bg-transparent p-0 outline-none',
-  'font-[inherit] text-[length:var(--font-body)] leading-[1.5] text-[var(--text-primary)] placeholder:text-[var(--muted-fg)]',
+  'font-[inherit] text-[length:var(--font-body)] leading-[1.5] text-[var(--fg)] placeholder:text-[var(--muted-fg)]',
   'disabled:cursor-not-allowed disabled:opacity-[0.58]',
 )
 

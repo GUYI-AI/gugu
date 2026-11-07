@@ -333,7 +333,7 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
       )}
     >
       {/* 地址栏:主目录捷径 · 面包屑(点任意一级回去)· 点空白进入输入 · 刷新 */}
-      <div className="relative flex min-h-10 items-center gap-1 border-b border-[var(--border-subtle)] px-2 py-1 text-[length:var(--font-body)] text-[var(--text-secondary)]">
+      <div className="relative flex min-h-10 items-center gap-1 border-b border-[var(--border-subtle)] px-2 py-1 text-[length:var(--font-body)] text-[var(--muted-fg)]">
         <IconButton
           size="sm"
           aria-label={t('create.remoteFolders.home')}
@@ -381,8 +381,8 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
             placeholder={t('create.remoteFolders.pathPlaceholder')}
             data-testid="remote-folder-path-input"
             className={cn(
-              'min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--accent)] bg-[var(--bg-primary)] px-2 py-1',
-              'font-mono text-[length:var(--font-body)] text-[var(--text-primary)] outline-none',
+              'min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--primary)] bg-[var(--bg)] px-2 py-1',
+              'font-mono text-[length:var(--font-body)] text-[var(--fg)] outline-none',
             )}
           />
         ) : (
@@ -392,13 +392,13 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
                 const last = index === segments.length - 1
                 return (
                   <span key={`${segment.path}-${index}`} className="inline-flex items-center">
-                    {index > 0 && <ChevronRight size={11} color="var(--text-tertiary)" />}
+                    {index > 0 && <ChevronRight size={11} color="var(--faint-fg)" />}
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => goTo(segment.path)}
                       disabled={loading}
-                      className={cn('min-h-6 px-1', last ? 'font-semibold text-[var(--text-primary)]' : 'text-[var(--accent)]')}
+                      className={cn('min-h-6 px-1', last ? 'font-semibold text-[var(--fg)]' : 'text-[var(--primary)]')}
                     >
                       {segment.label}
                     </Button>
@@ -448,11 +448,11 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
                 // mousedown 而不是 click:click 之前输入框先失焦,草稿就被收掉了。
                 onMouseDown={(event) => { event.preventDefault(); acceptSuggestion(entry) }}
                 className={cn(
-                  'flex cursor-pointer items-center gap-2 rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--font-body)] text-[var(--text-primary)]',
+                  'flex cursor-pointer items-center gap-2 rounded-[var(--radius-control)] px-2 py-1 text-[length:var(--font-body)] text-[var(--fg)]',
                   index === highlight ? 'bg-[var(--selected)]' : 'hover:bg-[var(--hover)]',
                 )}
               >
-                <span className="inline-flex text-[var(--accent)]">{entryIcon(entry.kind)}</span>
+                <span className="inline-flex text-[var(--primary)]">{entryIcon(entry.kind)}</span>
                 <span className="truncate font-mono">{entry.name}</span>
               </li>
             ))}
@@ -487,7 +487,7 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
       ) : null}
 
       {truncatedCount !== null && (
-        <div role="status" className="mx-2 mb-1 border-l-2 border-[var(--warn)] bg-foreground/[0.025] px-2 py-1 text-[length:var(--font-caption)] text-[var(--text-secondary)] dark:bg-foreground/[0.04]">
+        <div role="status" className="mx-2 mb-1 border-l-2 border-[var(--warn)] bg-foreground/[0.025] px-2 py-1 text-[length:var(--font-caption)] text-[var(--muted-fg)] dark:bg-foreground/[0.04]">
           {t('create.remoteFolders.truncated', { count: truncatedCount })}
         </div>
       )}
@@ -504,7 +504,7 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
 
       <div className={cn('relative flex-1 overflow-auto', loading && listing && 'opacity-60')}>
         {initialLoading ? (
-          <div className="absolute inset-0 flex items-center justify-center px-3 py-3 text-[var(--text-secondary)]">
+          <div className="absolute inset-0 flex items-center justify-center px-3 py-3 text-[var(--muted-fg)]">
             {/* 在连那台机器:全产品唯一的加载态(product spec),计秒写在它下面那行字里。 */}
             <LoadingIndicator
               ariaLabel={t('create.remoteFolders.connecting', { seconds: loadElapsed })}
@@ -528,7 +528,7 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
                 aria-label={t('create.remoteFolders.newFolder')}
                 placeholder={t('create.remoteFolders.newFolderPlaceholder')}
                 data-testid="remote-folder-new-name"
-                className="min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--accent)] bg-[var(--bg-primary)] px-2 py-1 text-[length:var(--font-body)] text-[var(--text-primary)] outline-none"
+                className="min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--primary)] bg-[var(--bg)] px-2 py-1 text-[length:var(--font-body)] text-[var(--fg)] outline-none"
               />
               <Button variant="primary" size="sm" disabled={newFolder.busy} onClick={() => void submitNewFolder()}>
                 {newFolder.busy ? <LoadingIndicator size="inline" /> : null}
@@ -544,10 +544,10 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
           </div>
         ) : null}
         {listing && !initialLoading && listing.entries.length === 0 ? (
-          <div className="px-3 py-3 text-[length:var(--font-body)] text-[var(--text-tertiary)]">{t('create.remoteFolders.empty')}</div>
+          <div className="px-3 py-3 text-[length:var(--font-body)] text-[var(--faint-fg)]">{t('create.remoteFolders.empty')}</div>
         ) : null}
         {listing && listing.entries.length > 0 && visibleEntries.length === 0 ? (
-          <div className="px-3 py-3 text-[length:var(--font-body)] text-[var(--text-tertiary)]">
+          <div className="px-3 py-3 text-[length:var(--font-body)] text-[var(--faint-fg)]">
             {t('create.remoteFolders.filterNoMatch', { query: filter.trim() })}
           </div>
         ) : null}
@@ -564,10 +564,10 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
                     disabled={!enterable || loading}
                     className={cn(
                       'w-full justify-start gap-2 px-2 font-normal',
-                      enterable ? 'text-[var(--text-primary)]' : 'text-[var(--text-tertiary)]',
+                      enterable ? 'text-[var(--fg)]' : 'text-[var(--faint-fg)]',
                     )}
                   >
-                    <span className={cn('inline-flex items-center', enterable ? 'text-[var(--accent)]' : 'text-[var(--text-tertiary)]')}>
+                    <span className={cn('inline-flex items-center', enterable ? 'text-[var(--primary)]' : 'text-[var(--faint-fg)]')}>
                       {entryIcon(entry.kind)}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-left">{entry.name}</span>
@@ -581,7 +581,7 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
 
       {/* 选根目录 / 主目录本身当项目:先问一句(Zed 同样提醒「别开太大的目录」)。 */}
       {confirmBroad ? (
-        <div role="alert" data-testid="remote-folder-broad-confirm" className="mx-2 mb-2 flex flex-wrap items-center gap-2 border-l-2 border-[var(--warn)] bg-foreground/[0.025] px-3 py-2 text-[length:var(--font-body)] text-[var(--text-primary)] dark:bg-foreground/[0.04]">
+        <div role="alert" data-testid="remote-folder-broad-confirm" className="mx-2 mb-2 flex flex-wrap items-center gap-2 border-l-2 border-[var(--warn)] bg-foreground/[0.025] px-3 py-2 text-[length:var(--font-body)] text-[var(--fg)] dark:bg-foreground/[0.04]">
           <span className="min-w-0 flex-1">
             {t(confirmBroad === 'root' ? 'create.remoteFolders.broadRoot' : 'create.remoteFolders.broadHome')}
           </span>
@@ -594,7 +594,7 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border-subtle)] px-2 py-2 text-[length:var(--font-caption)] text-[var(--text-tertiary)]">
+      <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border-subtle)] px-2 py-2 text-[length:var(--font-caption)] text-[var(--faint-fg)]">
         <label className="inline-flex cursor-pointer items-center gap-1">
           <input
             type="checkbox"
@@ -610,7 +610,7 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
         <span className="whitespace-nowrap">
           {loading ? t('create.remoteFolders.loading') : listing ? t('create.remoteFolders.itemCount', { count: listing.entries.length }) : ''}
         </span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[var(--text-secondary)]" title={selectedPath}>
+        <span className="min-w-0 flex-1 truncate font-mono text-[var(--muted-fg)]" title={selectedPath}>
           {selectedPath}
         </span>
         {onCancel && (

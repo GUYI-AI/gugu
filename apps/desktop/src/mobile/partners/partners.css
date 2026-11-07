@@ -179,6 +179,6 @@
 
 .gg-partners-menu-note {
   margin-inline-start: var(--spacing-sm);
-  color: var(--menu-icon);
+  color: var(--faint-fg);
   font-size: var(--font-caption);
 }

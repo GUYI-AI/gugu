@@ -244,7 +244,7 @@ const blocks = [
     block: {
       kind: 'svg',
       id: 'inner-block#4',
-      source: '<svg viewBox="0 0 120 90"><circle cx="60" cy="45" r="40" fill="var(--accent)"/></svg>'
+      source: '<svg viewBox="0 0 120 90"><circle cx="60" cy="45" r="40" fill="var(--primary)"/></svg>'
     }
   },
   {

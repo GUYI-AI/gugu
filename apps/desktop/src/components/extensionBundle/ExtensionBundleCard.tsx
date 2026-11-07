@@ -248,8 +248,8 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
       setInstall('failed')
     }
   }
-  const strong = isMine ? 'text-[var(--text-on-bubble-strong)]' : 'text-[var(--text-primary)]'
-  const muted = isMine ? 'text-[var(--text-on-bubble-muted)]' : 'text-[var(--text-tertiary)]'
+  const strong = isMine ? 'text-[var(--text-on-bubble-strong)]' : 'text-[var(--fg)]'
+  const muted = isMine ? 'text-[var(--text-on-bubble-muted)]' : 'text-[var(--faint-fg)]'
   const t = translateSessionMessage
   const manifest = summary?.ok ? summary.manifest : null
   const { resolvedLocale: locale } = useLocale()
@@ -300,7 +300,7 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
       </div>
       {!summary && <span className={`text-[var(--font-caption)] ${muted}`}>{t('extensions.bundleCardReading')}</span>}
       {summary && !summary.ok && (
-        <span data-testid="extension-bundle-card-problem" className="text-[var(--font-body)] text-[var(--text-error)]">
+        <span data-testid="extension-bundle-card-problem" className="text-[var(--font-body)] text-[var(--danger-fg)]">
           {summary.compat ? marketCompatText(summary.compat, t) : t('extensions.bundleCardUnreadable')}
         </span>
       )}
@@ -366,17 +366,17 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
                 {updatedTo && <span className={`text-[var(--font-caption)] ${muted}`}>{t('extensions.bundleCardUpdated', { version: updatedTo })}</span>}
                 {there.map((one) => (
                   <span key={one.id} data-testid="extension-bundle-card-there" data-installed={one.installed ? 'true' : 'false'}
-                    className={`text-[var(--font-caption)] ${one.installed ? muted : 'text-[var(--text-error)]'}`}>
+                    className={`text-[var(--font-caption)] ${one.installed ? muted : 'text-[var(--danger-fg)]'}`}>
                     {one.refused ?? t(one.installed ? 'extensions.bundleCardInstalledOn' : 'extensions.bundleCardNotInstalledOn', { machine: one.machine })}
                   </span>
                 ))}
                 {refused && (
-                  <span data-testid="extension-bundle-card-refused" className="text-[var(--font-caption)] text-[var(--text-error)]">
+                  <span data-testid="extension-bundle-card-refused" className="text-[var(--font-caption)] text-[var(--danger-fg)]">
                     {refused}
                   </span>
                 )}
                 {install === 'failed' && (
-                  <span className="text-[var(--font-caption)] text-[var(--text-error)]">{t('extensions.bundleCardInstallFailed')}</span>
+                  <span className="text-[var(--font-caption)] text-[var(--danger-fg)]">{t('extensions.bundleCardInstallFailed')}</span>
                 )}
             </>
           )}

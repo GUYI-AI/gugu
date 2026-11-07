@@ -254,7 +254,7 @@ function draw() {
   }
   const paint = (arr, b, col) => { if (!arr.length) return; const r = (b + .5) / 5 * P * .5 * .96; ctx.beginPath(); for (const c of arr) { const x = (c % OW + .5) * P, y = (((c / OW) | 0) + .5) * P; ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 6.2832); } ctx.fillStyle = col; ctx.fill(); };
   for (let b = 0; b < NB; b++) { paint(buckets[b], b, `rgba(${MOTION_RGB},${.16 + .045 * b})`); paint(hot[b], b, `rgba(${MOTION_RGB},${.3 + .06 * b})`); }
-  for (const c of chars) { const d = Math.hypot(c.x - mx, c.y - my), f = d < 150 ? 1 - d / 150 : 0, w = f > .35 ? 600 : f > .12 ? 500 : 400; if (c.w !== w) { c.w = w; c.el.style.fontWeight = w; c.el.style.color = w === 600 ? 'var(--green)' : ''; } }
+  for (const c of chars) { const d = Math.hypot(c.x - mx, c.y - my), f = d < 150 ? 1 - d / 150 : 0, w = f > .35 ? 600 : f > .12 ? 500 : 400; if (c.w !== w) { c.w = w; c.el.style.fontWeight = w; c.el.style.color = w === 600 ? 'var(--ok)' : ''; } }
 }
 // 只留一条动画循环：页面藏起来时浏览器把排着的那一帧扣住不跑，回来照样会跑；回来时再开一条，就成了两条，
 // 每切走一次多一条，鸟越飞越快（10-14 owner「过一会儿之后会进入奇怪的加速模式」）。raf = 排着的那一帧，0 = 没有

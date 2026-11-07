@@ -54,7 +54,7 @@ export function AppPeek({ target, slotKey, beside, onClose }: { target: PeekTarg
           </>
         }
       />
-      <div className="flex min-h-0 flex-1 flex-col bg-[var(--bg-primary)]">
+      <div className="flex min-h-0 flex-1 flex-col bg-[var(--bg)]">
         <Suspense fallback={null}>
           {target.kind === 'chat' ? (
             <ChatFileOpener detail={target.detail} slotId={`${slotKey}#peek`} />

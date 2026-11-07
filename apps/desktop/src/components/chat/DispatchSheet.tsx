@@ -109,14 +109,14 @@ export const DispatchSheet = observer(function DispatchSheet() {
   const pick = asked.pick
   // What will go, as it will read: the text (theirs to change) and each pill under it.
   const preview = pick ? (
-    <div className="text-[length:var(--font-body)] text-[var(--text-primary)]" data-testid="dispatch-pick">
+    <div className="text-[length:var(--font-body)] text-[var(--fg)]" data-testid="dispatch-pick">
       {pick.subject}
-      <p className="m-0 mt-1 text-[var(--text-secondary)]">{pick.body}</p>
+      <p className="m-0 mt-1 text-[var(--muted-fg)]">{pick.body}</p>
     </div>
   ) : (
     <div className="flex flex-col gap-[var(--spacing-xs)]" data-testid="dispatch-preview">
       <textarea
-        className="min-h-[64px] w-full resize-y rounded-[var(--radius-control)] border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-1 text-[length:var(--font-body)] text-[var(--text-primary)]"
+        className="min-h-[64px] w-full resize-y rounded-[var(--radius-control)] border border-[var(--border-color)] bg-[var(--bg)] px-2 py-1 text-[length:var(--font-body)] text-[var(--fg)]"
         value={text}
         onChange={(event) => setText(event.target.value)}
         placeholder={t('dispatchPick.textPlaceholder')}
@@ -129,11 +129,11 @@ export const DispatchSheet = observer(function DispatchSheet() {
         ))}
       </div>}
       {asked.pills.map((pill, index) => (
-        <span key={index} className="truncate text-[length:var(--font-caption)] text-[var(--text-secondary)]" data-testid="dispatch-pill">@{pill}</span>
+        <span key={index} className="truncate text-[length:var(--font-caption)] text-[var(--muted-fg)]" data-testid="dispatch-pill">@{pill}</span>
       ))}
       {picked === NEW_AGENT && asked.spawnOn !== undefined && <DispatchMachine deviceId={spawnDevice} onPick={setSpawnDevice} />}
       {!asked.draft && toMember && (
-        <label className="flex items-center gap-[var(--spacing-xs)] text-[length:var(--font-caption)] text-[var(--text-secondary)]">
+        <label className="flex items-center gap-[var(--spacing-xs)] text-[length:var(--font-caption)] text-[var(--muted-fg)]">
           <input type="checkbox" checked={visible} onChange={(event) => setVisible(event.target.checked)} data-testid="dispatch-visible" />
           {t('dispatchPick.visible')}
         </label>

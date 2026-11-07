@@ -248,7 +248,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   }, [activeChatId, inBlock])
   const handleOpenFolder = useCallback(() => { if (activeChatId) { closeRightSurfaces(); openPanelItem(activeChatId, folderItem()) } }, [activeChatId, closeRightSurfaces])
   // A block draws its shown tabs in the engine's slots; without a strip, one focused page covers the chat (topics too).
-  const coverChat = (page: ReactNode) => mobile ? <RightPanel>{page}</RightPanel> : <div className="absolute inset-0 z-20 flex flex-col bg-[var(--bg-primary)]">{page}</div>
+  const coverChat = (page: ReactNode) => mobile ? <RightPanel>{page}</RightPanel> : <div className="absolute inset-0 z-20 flex flex-col bg-[var(--bg)]">{page}</div>
   const inTabs = (topicPane: ReactNode, infoPage: () => ReactNode) => !activeChatId ? null : blockHost ? <ChatTabPortals chatId={activeChatId} panel={panelContent} topic={() => topicPane} info={infoPage} /> : <ChatTabPage chatId={activeChatId} panel={(tab) => coverChat(panelContent(tab))} topic={() => topicPane} info={() => coverChat(infoPage())} />
   const panelContent = (tab: ChatPanelTab) => activeChatId ? <GroupTabContent chatId={activeChatId} tabId={tab.tabId} item={tab.item} tabbed={Boolean(blockHost)} inWindow={tab.inWindow} mobile={mobile} visible={surfaceVisible} onForward={handleForward} onOpenWith={opener.openWith} /> : null
 
@@ -534,7 +534,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         style={{
           flex: 1,
           height: '100%',
-          background: 'var(--bg-primary)',
+          background: 'var(--bg)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
@@ -546,7 +546,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
             alignItems: 'center',
             justifyContent: 'center',
           }}>
-          <PaneEmptyState icon={<MessageCircle size={26} color="var(--text-tertiary)" />} caption={emptyCaption} />
+          <PaneEmptyState icon={<MessageCircle size={26} color="var(--faint-fg)" />} caption={emptyCaption} />
         </div>
       </div>
     )
@@ -647,7 +647,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         // flexShrink:0 的固定宽度)在异常并存时把整个 MainLayout 行撑开、反向挤压左侧会话列表。
         minWidth: 0,
         height: '100%',
-        background: mobile ? 'var(--ta-panel-bg)' : 'var(--bg-primary)',
+        background: mobile ? 'var(--ta-panel-bg)' : 'var(--bg)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -662,7 +662,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         divider={!(mobile && topicSurface.topics.length > 0)} data-chat-area-header=""
         mobile={mobile}
         style={{
-          background: mobile ? 'transparent' : 'var(--bg-primary)',
+          background: mobile ? 'transparent' : 'var(--bg)',
           paddingRight: 'calc(var(--pane-pad-x) + var(--titlebar-controls-width))',
           // agent 单聊:小鸟比头栏高几像素,允许它探出头栏(见 tokens.css .gg-agent-header)。
           overflow: 'hidden',
@@ -735,11 +735,11 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
           {activeChat.pinned_message_id && (
             <div
           style={{
-            background: 'var(--bg-elevated)',
+            background: 'var(--card)',
             borderBottom: '1px solid var(--border-color)',
             padding: '6px 14px',
             fontSize: 'var(--font-body)',
-            color: 'var(--text-secondary)',
+            color: 'var(--muted-fg)',
             flexShrink: 0,
             cursor: 'pointer',
           }}
@@ -765,7 +765,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         activeAgentActivity ? (
           <div data-testid={AUTOMATION_TEST_IDS.chatMessageList} style={{ flex: 1 }} />
         ) : (
-          <div style={{ flex: 1, textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--font-body)', padding: '40px 0' }}>
+          <div style={{ flex: 1, textAlign: 'center', color: 'var(--faint-fg)', fontSize: 'var(--font-body)', padding: '40px 0' }}>
             {mobile && isGroupChat ? <PhoneProjectEmpty chatId={activeChat.id} /> : t('chatArea.noMessages')}
           </div>
         )
@@ -816,24 +816,24 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
             data-testid="message-select-bar"
             style={{ display: 'flex', flexWrap: mobile ? 'wrap' : undefined, alignItems: 'center', gap: 10, padding: '8px', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-surface)', background: 'var(--bg-secondary)' }}
           >
-            <span style={{ flex: mobile ? '1 0 100%' : 1, fontSize: 'var(--font-body)', color: 'var(--text-secondary)', paddingLeft: 4 }}>{t('chatArea.selectedMessages', { count: selectedIds.size })}</span>
+            <span style={{ flex: mobile ? '1 0 100%' : 1, fontSize: 'var(--font-body)', color: 'var(--muted-fg)', paddingLeft: 4 }}>{t('chatArea.selectedMessages', { count: selectedIds.size })}</span>
             <button
               onClick={exitSelectMode}
-              style={{ height: mobile ? undefined : 30, minHeight: mobile ? 44 : undefined, flex: mobile ? '1 1 0' : undefined, minWidth: mobile ? 0 : undefined, padding: '0 14px', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-control)', background: 'var(--bg-elevated)', color: 'var(--text-secondary)', fontSize: 'var(--font-body)', cursor: 'pointer' }}
+              style={{ height: mobile ? undefined : 30, minHeight: mobile ? 44 : undefined, flex: mobile ? '1 1 0' : undefined, minWidth: mobile ? 0 : undefined, padding: '0 14px', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-control)', background: 'var(--card)', color: 'var(--muted-fg)', fontSize: 'var(--font-body)', cursor: 'pointer' }}
             >
               {t('common.cancel')}
             </button>
             <button
               onClick={handleBatchForward}
               disabled={selectedIds.size === 0}
-              style={{ height: mobile ? undefined : 30, minHeight: mobile ? 44 : undefined, flex: mobile ? '1 1 0' : undefined, minWidth: mobile ? 0 : undefined, padding: '0 14px', border: 'none', borderRadius: 'var(--radius-control)', background: selectedIds.size > 0 ? 'var(--accent)' : 'var(--border-subtle)', color: 'var(--surface-white)', fontSize: 'var(--font-body)', cursor: selectedIds.size > 0 ? 'pointer' : 'default' }}
+              style={{ height: mobile ? undefined : 30, minHeight: mobile ? 44 : undefined, flex: mobile ? '1 1 0' : undefined, minWidth: mobile ? 0 : undefined, padding: '0 14px', border: 'none', borderRadius: 'var(--radius-control)', background: selectedIds.size > 0 ? 'var(--primary)' : 'var(--border-subtle)', color: 'var(--card)', fontSize: 'var(--font-body)', cursor: selectedIds.size > 0 ? 'pointer' : 'default' }}
             >
               {t('forward.title')}
             </button>
             <button
               onClick={handleBatchDelete}
               disabled={selectedIds.size === 0}
-              style={{ height: mobile ? undefined : 30, minHeight: mobile ? 44 : undefined, flex: mobile ? '1 1 0' : undefined, minWidth: mobile ? 0 : undefined, padding: '0 14px', border: '1px solid var(--danger)', borderRadius: 'var(--radius-control)', background: 'var(--bg-elevated)', color: 'var(--danger-fg)', fontSize: 'var(--font-body)', cursor: selectedIds.size > 0 ? 'pointer' : 'default', opacity: selectedIds.size > 0 ? 1 : 0.5 }}
+              style={{ height: mobile ? undefined : 30, minHeight: mobile ? 44 : undefined, flex: mobile ? '1 1 0' : undefined, minWidth: mobile ? 0 : undefined, padding: '0 14px', border: '1px solid var(--danger)', borderRadius: 'var(--radius-control)', background: 'var(--card)', color: 'var(--danger-fg)', fontSize: 'var(--font-body)', cursor: selectedIds.size > 0 ? 'pointer' : 'default', opacity: selectedIds.size > 0 ? 1 : 0.5 }}
             >
               {t('message.actions.delete')}
             </button>

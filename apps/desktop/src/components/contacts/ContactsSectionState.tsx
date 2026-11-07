@@ -16,10 +16,10 @@ const ctaStyle: React.CSSProperties = { minWidth: 104 }
    ❌ 别写成 padding:0：那样命中区只有文字本身那 18px，手指点不中。 */
 const linkCtaStyle: React.CSSProperties = {
   minHeight: 44, padding: '13px 8px', margin: '-13px -8px',
-  color: 'var(--text-primary)', textDecoration: 'underline', textUnderlineOffset: 3,
+  color: 'var(--fg)', textDecoration: 'underline', textUnderlineOffset: 3,
 }
 
-const captionStyle: React.CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--text-secondary)', lineHeight: 'var(--lh-body)' }
+const captionStyle: React.CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--muted-fg)', lineHeight: 'var(--lh-body)' }
 
 function StateWrap({ align, children, row }: { align: 'start' | 'center'; children: React.ReactNode; row?: boolean }) {
   const centered = align === 'center'

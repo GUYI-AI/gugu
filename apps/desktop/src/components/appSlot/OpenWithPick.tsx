@@ -35,7 +35,7 @@ export function OpenWithPick({ detail, onPick, onCancel, testId = 'group-app-ope
   return (
     <div className="flex flex-col gap-3" data-testid={testId}>
       {/* The name as the file list says it (摩擦单 F73 / F39), not the raw one with the suffix it is claimed by. */}
-      <div className="text-[length:var(--font-body)] font-semibold text-[var(--text-primary)]">
+      <div className="text-[length:var(--font-body)] font-semibold text-[var(--fg)]">
         {t('chatArea.openWith.title', { name: displayNameOf(detail.name, detail.choice.suffix) })}
       </div>
       {detail.choice.candidates.map((candidate) => (
@@ -45,11 +45,11 @@ export function OpenWithPick({ detail, onPick, onCancel, testId = 'group-app-ope
               {appNameOf(candidate)}
               {kept === candidate.tabKind ? <Chip data-testid="group-app-open-with-default">{t('chatArea.openWith.default')}</Chip> : null}
             </span>
-            {candidate.onlyTab ? null : <span className="text-[length:var(--font-caption)] text-[var(--text-secondary)]">{candidate.tabTitle}</span>}
+            {candidate.onlyTab ? null : <span className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">{candidate.tabTitle}</span>}
           </span>
         </Button>
       ))}
-      <label className="flex items-center gap-2 text-[length:var(--font-body)] text-[var(--text-secondary)]">
+      <label className="flex items-center gap-2 text-[length:var(--font-body)] text-[var(--muted-fg)]">
         <input type="checkbox" checked={always} onChange={(event) => setAlways(event.target.checked)} data-testid="group-app-open-with-always" />
         {t('chatArea.openWith.always')}
       </label>

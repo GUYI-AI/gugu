@@ -28,6 +28,6 @@ export function GroupNameRow({ chat, name, canEdit, onCommit }: {
         : <GroupNameInlineEdit name={name} canEdit={canEdit} onCommit={onCommit} wrap />}
       <Button variant="ghost" size="sm" data-testid="group-set-alias" onClick={() => setOpen(true)}>{t('contextMenu.setAlias')}</Button>
     </div>
-    {chat.alias?.trim() ? <div className="text-sm text-[var(--text-secondary)]">{t('profile.alias')} · {groupDisplayName(chat)}</div> : null}
+    {chat.alias?.trim() ? <div className="text-sm text-[var(--muted-fg)]">{t('profile.alias')} · {groupDisplayName(chat)}</div> : null}
   </>
 }

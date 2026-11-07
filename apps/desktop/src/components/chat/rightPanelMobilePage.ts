@@ -4,5 +4,5 @@ import type { CSSProperties } from 'react'
 // (同 MainLayout)。成员、公告、工作区、历史同一个外壳(RightPanel);里面的面板不定宽,撑满这一页。
 export const rightPanelMobilePageStyle: CSSProperties = {
   position: 'fixed', right: 0, top: 'env(safe-area-inset-top)', bottom: 0, width: '100%',
-  background: 'var(--bg-primary)', zIndex: 'var(--z-modal)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  background: 'var(--bg)', zIndex: 'var(--z-modal)', display: 'flex', flexDirection: 'column', overflow: 'hidden',
 }

@@ -35,7 +35,7 @@ export function SearchField({
       className={cn(
         'group/search-field window-no-drag-region box-border flex h-9 w-full min-w-0 items-center gap-2',
         'rounded-[var(--radius-control)] border border-[var(--border-color)] bg-[var(--input-bg)] px-2.5',
-        'text-[var(--text-tertiary)]',
+        'text-[var(--faint-fg)]',
         controlTransition,
         'hover:border-[var(--border-strong)] focus-within:border-[var(--border-strong)]',
         'data-[disabled]:cursor-not-allowed data-[disabled]:opacity-[0.58] data-[disabled]:hover:border-[var(--border-color)]',
@@ -55,7 +55,7 @@ export function SearchField({
         data-slot="search-field-input"
         className={cn(
           'h-full min-w-0 flex-1 border-0 bg-transparent p-0 font-[inherit]',
-          'text-[length:var(--font-body)] text-[var(--text-primary)] outline-none',
+          'text-[length:var(--font-body)] text-[var(--fg)] outline-none',
           'placeholder:text-[var(--muted-fg)]',
           'disabled:cursor-not-allowed [&::-webkit-search-cancel-button]:hidden',
         )}

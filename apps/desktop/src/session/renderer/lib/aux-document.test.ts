@@ -17,10 +17,10 @@ describe('子窗口的文档跟主窗长得一样(#7052 单独成窗)', () => {
       expect(isAnimationWindowVisible(main)).toBe(false);
       expect(isAnimationWindowVisible(child)).toBe(true);
       main.documentElement.dataset.theme = 'dark';
-      main.documentElement.style.setProperty('--accent', 'red');
+      main.documentElement.style.setProperty('--primary', 'red');
       await flush();
       expect(child.documentElement.dataset.theme).toBe('dark');
-      expect(child.documentElement.style.getPropertyValue('--accent')).toBe('red');
+      expect(child.documentElement.style.getPropertyValue('--primary')).toBe('red');
       expect(isAnimationWindowVisible(child)).toBe(true);
       childWindow.dispatchEvent(new childWindow.CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: false }));
       mainWindow.dispatchEvent(new mainWindow.CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: true }));

@@ -158,7 +158,7 @@ const TOPIC_SPLIT_PANE_STYLE: React.CSSProperties = {
   flexDirection: 'column',
   height: '100%',
   position: 'relative',
-  background: 'var(--bg-primary)',
+  background: 'var(--bg)',
   borderLeft: '1px solid var(--border-subtle)',
 }
 // 手机上放不下两栏 ⇒ 整页盖住来源线(同 ChatSettingsPanel 的手机页)。来源线在下面不被挤窄,返回后停在原处。
@@ -191,7 +191,7 @@ const TOPIC_SPLIT_COMPOSER_STYLE: React.CSSProperties = {
 const TOPIC_SPLIT_COMPOSER_MOBILE_STYLE: React.CSSProperties = {
   background: 'transparent', padding: '8px 8px max(8px, env(safe-area-inset-bottom))', flexShrink: 0,
 }
-const TOPIC_SPLIT_EMPTY_STYLE: React.CSSProperties = { textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--font-body)', padding: '24px 0' }
+const TOPIC_SPLIT_EMPTY_STYLE: React.CSSProperties = { textAlign: 'center', color: 'var(--faint-fg)', fontSize: 'var(--font-body)', padding: '24px 0' }
 
 export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false,
   topic,

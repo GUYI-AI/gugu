@@ -12,8 +12,8 @@ export function PaneEmptyState({ icon, caption, hint }: { icon?: React.ReactNode
           {icon}
         </div>
       )}
-      <div style={{ fontSize: 'var(--font-body)', color: 'var(--text-secondary)', textAlign: 'center' }}>{caption}</div>
-      {hint && <div style={{ fontSize: 'var(--font-caption)', color: 'var(--text-secondary)', textAlign: 'center' }}>{hint}</div>}
+      <div style={{ fontSize: 'var(--font-body)', color: 'var(--muted-fg)', textAlign: 'center' }}>{caption}</div>
+      {hint && <div style={{ fontSize: 'var(--font-caption)', color: 'var(--muted-fg)', textAlign: 'center' }}>{hint}</div>}
     </div>
   )
 }

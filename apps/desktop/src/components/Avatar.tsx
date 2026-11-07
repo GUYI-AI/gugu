@@ -170,7 +170,7 @@ function CompositeTile({
           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
         />
       ) : (
-        <span data-avatar-empty aria-label={`${member.name} avatar unavailable`} style={{ width: '100%', height: '100%', display: 'block', background: 'var(--bg-elevated)' }} />
+        <span data-avatar-empty aria-label={`${member.name} avatar unavailable`} style={{ width: '100%', height: '100%', display: 'block', background: 'var(--card)' }} />
       )}
     </span>
   )
@@ -313,7 +313,7 @@ export function Avatar({
     width: px,
     height: px,
     borderRadius: radius,
-    background: 'var(--bg-elevated)',
+    background: 'var(--card)',
     border: '1px solid var(--border-subtle)',
     display: 'flex',
     alignItems: 'center',

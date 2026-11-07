@@ -55,7 +55,7 @@ export const GroupAppsPicker = observer(function GroupAppsPicker({ chatId, mobil
             </Button>
           </div>
       ))}
-      {apps.length === 0 && <p className="px-2 py-3 text-[length:var(--font-caption)] text-[var(--text-secondary)]">{t(installedExtensionsStore.isLoaded ? 'header.noGroupApps' : 'common.loading')}</p>}
+      {apps.length === 0 && <p className="px-2 py-3 text-[length:var(--font-caption)] text-[var(--muted-fg)]">{t(installedExtensionsStore.isLoaded ? 'header.noGroupApps' : 'common.loading')}</p>}
     </div>
   )
   return mobile ? <Sheet onClose={onClose} finalFocus={anchor} mobileFitContent ariaLabel={t('header.groupApps')}>{body}</Sheet> : (

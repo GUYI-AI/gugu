@@ -9,7 +9,7 @@ export function InlineAction({ onClick, testId, children }: { onClick: () => voi
       variant="ghost"
       className={cn(
         'inline h-auto min-h-0 max-[719px]:min-h-0 border-0 p-0 align-baseline',
-        'text-[length:inherit] leading-[inherit] font-[inherit] text-[var(--accent)]',
+        'text-[length:inherit] leading-[inherit] font-[inherit] text-[var(--primary)]',
         'hover:underline [&:hover:not([data-disabled])]:bg-transparent',
       )}
       onClick={onClick}

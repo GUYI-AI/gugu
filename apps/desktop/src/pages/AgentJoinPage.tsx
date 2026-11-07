@@ -70,7 +70,7 @@ function Skeleton() {
   const pulse: React.CSSProperties = {
     // @@@6105 原来是 rgba(255,255,255,0.06):页面底是 --bg-primary(亮色=白),
     // 于是整个骨架屏在亮色主题下看不见。改走语义面色。
-    background: 'var(--bg-elevated)',
+    background: 'var(--card)',
     borderRadius: 'var(--radius-control)',
     animation: 'agentjoin-pulse 1.4s ease-in-out infinite',
   }
@@ -97,8 +97,8 @@ function CategoryBadge({ label }: { label: string }) {
         // 不表达任何状态 ⇒ 纯装饰的第二个 accent。改成墨色 8px 矩形,层级靠字重与留白。
         padding: '2px 10px',
         borderRadius: 'var(--radius-control)',
-        background: 'var(--bg-elevated)',
-        color: 'var(--text-secondary)',
+        background: 'var(--card)',
+        color: 'var(--muted-fg)',
         fontSize: 'var(--font-size-xs)',
         fontWeight: 'var(--font-weight-medium)',
         lineHeight: 1.6,
@@ -118,8 +118,8 @@ function CapabilityTag({ label }: { label: string }) {
         alignItems: 'center',
         padding: '3px 10px',
         borderRadius: 'var(--radius-control)',
-        background: 'var(--bg-elevated)',
-        color: 'var(--text-secondary)',
+        background: 'var(--card)',
+        color: 'var(--muted-fg)',
         fontSize: 'var(--font-size-xs)',
         lineHeight: 1.6,
         border: '1px solid var(--border-color)',
@@ -154,7 +154,7 @@ export function AgentJoinPage({
       data-page="agent-join"
       style={{
         minHeight: '100vh',
-        background: 'var(--bg-primary)',
+        background: 'var(--bg)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -162,7 +162,7 @@ export function AgentJoinPage({
         padding: '48px 16px 64px',
         boxSizing: 'border-box',
         fontFamily: 'var(--font-family-system)',
-        color: 'var(--text-primary)',
+        color: 'var(--fg)',
       }}
     >
       {/* Keyframe: defined inline once, no external CSS dependency */}
@@ -186,9 +186,9 @@ export function AgentJoinPage({
             marginTop: 80,
             padding: '24px 32px',
             borderRadius: 'var(--radius-xl)',
-            background: 'var(--bg-elevated)',
+            background: 'var(--card)',
             border: '1px solid var(--border-color)',
-            color: 'var(--text-secondary)',
+            color: 'var(--muted-fg)',
             fontSize: 'var(--font-size-sm)',
             textAlign: 'center',
             maxWidth: 360,
@@ -223,7 +223,7 @@ export function AgentJoinPage({
                 fontWeight: 'var(--font-weight-semibold)',
                 lineHeight: 1.2,
                 textAlign: 'center',
-                color: 'var(--text-primary)',
+                color: 'var(--fg)',
               }}
             >
               {agent.displayName}
@@ -249,9 +249,9 @@ export function AgentJoinPage({
               {ownerCustomAvatar ? (
                 <Avatar name={agent.ownerDisplayName} avatarUrl={ownerCustomAvatar} size="sm" />
               ) : null}
-              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--text-secondary)' }}>
+              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--muted-fg)' }}>
                 {t('public.ownerCreatedPrefix')}&nbsp;
-                <span style={{ color: 'var(--text-primary)', fontWeight: 'var(--font-weight-medium)' }}>
+                <span style={{ color: 'var(--fg)', fontWeight: 'var(--font-weight-medium)' }}>
                   {agent.ownerDisplayName}
                 </span>
                 &nbsp;{t('public.ownerCreatedSuffix')}
@@ -266,12 +266,12 @@ export function AgentJoinPage({
                 marginTop: 24,
                 marginBottom: 0,
                 padding: '16px 20px',
-                background: 'var(--bg-elevated)',
+                background: 'var(--card)',
                 borderRadius: 'var(--radius-xl)',
                 border: '1px solid var(--border-color)',
                 fontSize: 'var(--font-size-sm)',
                 lineHeight: 'var(--line-height-base)',
-                color: 'var(--text-secondary)',
+                color: 'var(--muted-fg)',
                 width: '100%',
                 boxSizing: 'border-box',
                 whiteSpace: 'pre-wrap',
@@ -289,7 +289,7 @@ export function AgentJoinPage({
                 style={{
                   margin: '0 0 8px',
                   fontSize: 'var(--font-size-xs)',
-                  color: 'var(--text-tertiary)',
+                  color: 'var(--faint-fg)',
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
                   fontWeight: 'var(--font-weight-medium)',
@@ -316,8 +316,8 @@ export function AgentJoinPage({
                   width: '100%',
                   padding: '14px 0',
                   borderRadius: 'var(--radius-xl)',
-                  background: 'var(--accent)',
-                  color: 'var(--text-on-accent)',
+                  background: 'var(--primary)',
+                  color: 'var(--primary-fg)',
                   fontSize: 'var(--font-size-md)',
                   fontWeight: 'var(--font-weight-semibold)',
                   fontFamily: 'var(--font-family-system)',
@@ -343,7 +343,7 @@ export function AgentJoinPage({
                   //(已登录走 --accent 墨、未登录走硬编码橙)⇒「One accent at a time」。
                   // 次级 CTA 改成空心 + 一条发丝边,不另起一个色系。
                   background: 'transparent',
-                  color: 'var(--text-primary)',
+                  color: 'var(--fg)',
                   fontSize: 'var(--font-size-md)',
                   fontWeight: 'var(--font-weight-semibold)',
                   fontFamily: 'var(--font-family-system)',
@@ -364,7 +364,7 @@ export function AgentJoinPage({
             style={{
               marginTop: 16,
               fontSize: 'var(--font-size-xs)',
-              color: 'var(--text-tertiary)',
+              color: 'var(--faint-fg)',
               textAlign: 'center',
               lineHeight: 1.5,
             }}

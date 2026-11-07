@@ -53,18 +53,18 @@
   place-items: center;
   border-radius: var(--radius-xl);
   background: var(--muted);
-  color: var(--text-secondary);
+  color: var(--muted-fg);
 }
 
 .gg-session-frame-error-title {
-  color: var(--text-primary);
+  color: var(--fg);
   font-size: var(--font-title);
   font-weight: var(--font-weight-semibold);
 }
 
 .gg-session-frame-error-copy {
   max-width: 34ch;
-  color: var(--text-tertiary);
+  color: var(--faint-fg);
   font-size: var(--font-body);
   line-height: 1.6;
 }
@@ -93,6 +93,6 @@
   margin-top: var(--space-2, 8px);
   font-family: var(--font-mono);
   font-size: var(--text-xs, 11px);
-  color: var(--text-secondary);
+  color: var(--muted-fg);
   word-break: break-all;
 }

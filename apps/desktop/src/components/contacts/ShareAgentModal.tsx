@@ -158,7 +158,7 @@ export function ShareAgentModal({
             <div
               style={{
                 padding: 16,
-                color: 'var(--text-secondary)',
+                color: 'var(--muted-fg)',
                 fontSize: 'var(--font-body)',
                 lineHeight: 'var(--lh-body)',
                 textAlign: 'center'
@@ -170,7 +170,7 @@ export function ShareAgentModal({
             <div
               style={{
                 padding: 16,
-                color: 'var(--text-secondary)',
+                color: 'var(--muted-fg)',
                 fontSize: 'var(--font-body)',
                 lineHeight: 'var(--lh-body)',
                 textAlign: 'center'
@@ -194,7 +194,7 @@ export function ShareAgentModal({
                     width: '100%',
                     minHeight: 52,
                     border: 0,
-                    color: 'var(--text-primary)',
+                    color: 'var(--fg)',
                     display: 'flex',
                     alignItems: 'center',
                     gap: 12,
@@ -240,7 +240,7 @@ export function ShareAgentModal({
                           marginTop: 2,
                           fontSize: 'var(--font-caption)',
                           lineHeight: 'var(--lh-caption)',
-                          color: 'var(--text-secondary)',
+                          color: 'var(--muted-fg)',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap'
@@ -270,7 +270,7 @@ export function ShareAgentModal({
             style={{
               flex: 1,
               minWidth: 0,
-              color: error ? 'var(--danger)' : 'var(--text-secondary)',
+              color: error ? 'var(--danger)' : 'var(--muted-fg)',
               fontSize: error ? 'var(--font-body)' : 'var(--font-caption)',
               lineHeight: error ? 'var(--lh-body)' : 'var(--lh-caption)',
               // 报错要整句读得到(谁拒绝过、谁没成),换行;计数那一行照旧单行省略。

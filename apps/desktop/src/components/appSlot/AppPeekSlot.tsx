@@ -43,7 +43,7 @@ export const AppPeekSlot = observer(function AppPeekSlot({ sessionId, tabId, nar
       </div>
       {target ? (
         <div
-          className={beside ? 'flex min-h-0 w-[max(420px,45%)] shrink-0 flex-col border-l border-[var(--border)]' : 'absolute inset-0 flex flex-col bg-[var(--bg-primary)]'}
+          className={beside ? 'flex min-h-0 w-[max(420px,45%)] shrink-0 flex-col border-l border-[var(--border)]' : 'absolute inset-0 flex flex-col bg-[var(--bg)]'}
           data-testid="app-peek"
           data-peek-kind={target.kind}
         >

@@ -31,7 +31,7 @@ const menuPopup = cn(
   // design.md:「Do not stack a border, a ring, and a shadow on one edge.」
   // 原配方是 `border border-[var(--menu-border)]` + `shadow-[var(--shadow-lift)]`,两者共边。
   'rounded-[var(--radius-surface)]',
-  'bg-[var(--menu-bg)] text-[var(--menu-fg)] shadow-[var(--shadow-lift)]',
+  'bg-[var(--popover)] text-[var(--fg)] shadow-[var(--shadow-lift)]',
   popupMotion,
 )
 
@@ -47,18 +47,18 @@ const menuItem = cn(
   // 手机(<720,与 ui/Button 同一条断点)行高到触控档,和手机上别的菜单一样高。
   'gg-menu-item box-border flex w-full min-h-9 max-[719px]:min-h-[var(--control-h-touch)] items-center gap-2 text-left outline-none',
   'rounded-[var(--radius-control)] text-[length:var(--font-body)] leading-[var(--line-height-base)]',
-  'cursor-pointer select-none text-[var(--menu-fg)]',
+  'cursor-pointer select-none text-[var(--fg)]',
   'transition-colors duration-[var(--dur-fast)] ease-out motion-reduce:transition-none',
   'data-[highlighted]:bg-[var(--menu-item-hover)]',
   '[&[data-pressed]:not([data-disabled])]:scale-[0.99]',
-  'data-[variant=danger]:text-[var(--menu-danger)]',
-  'data-[disabled]:cursor-default data-[disabled]:text-[var(--menu-icon)]',
+  'data-[variant=danger]:text-[var(--danger-fg)]',
+  'data-[disabled]:cursor-default data-[disabled]:text-[var(--faint-fg)]',
 )
 
 const menuItemIcon = cn(
   'gg-menu-item-icon flex h-5 w-5 flex-[0_0_20px] items-center justify-center',
-  'text-[var(--menu-icon)] [&>svg]:h-5 [&>svg]:w-5',
-  'group-data-[variant=danger]/menu-item:text-[var(--menu-danger)]',
+  'text-[var(--faint-fg)] [&>svg]:h-5 [&>svg]:w-5',
+  'group-data-[variant=danger]/menu-item:text-[var(--danger-fg)]',
 )
 
 const menuItemLabel = 'gg-menu-item-label min-w-0 flex-1'
@@ -216,7 +216,7 @@ export function MenuItem({ icon, danger, disabled, title, className, style, 'dat
       <span className={menuItemLabel}>{children}</span>
       {shortcut != null && (
         <span
-          className="gg-menu-item-shortcut ms-6 shrink-0 text-[length:var(--font-caption)] text-[var(--menu-icon)]"
+          className="gg-menu-item-shortcut ms-6 shrink-0 text-[length:var(--font-caption)] text-[var(--faint-fg)]"
           aria-hidden="true"
         >
           {shortcut}
@@ -263,7 +263,7 @@ export function MenuSubmenu({ icon, label, 'data-testid': testId, popupStyle, po
       <MenuPrimitive.SubmenuTrigger className={cn('group/menu-item', menuItem)} style={submenuRowStyle} data-testid={testId}>
         {icon != null && <span className={menuItemIcon}>{icon}</span>}
         <span className={menuItemLabel}>{label}</span>
-        <ChevronRight size={14} aria-hidden className="shrink-0 text-[var(--menu-icon)]" />
+        <ChevronRight size={14} aria-hidden className="shrink-0 text-[var(--faint-fg)]" />
       </MenuPrimitive.SubmenuTrigger>
       <MenuPrimitive.Portal container={portalContainer}>
         <MenuPrimitive.Positioner className="gg-menu-positioner window-no-drag-region" positionMethod="fixed" collisionPadding={8} style={submenuPositionerStyle}>

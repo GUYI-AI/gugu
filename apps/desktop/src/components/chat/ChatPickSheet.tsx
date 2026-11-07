@@ -61,7 +61,7 @@ interface ChatPickSheetProps {
 
 // The topic sub-row of the chat list (TopicSubRow): indented onto the `.gg-topic-subrows` rail, the topic mark for an avatar.
 const TOPIC_ROW_STYLE: CSSProperties = { paddingLeft: 40 }
-const TOPIC_MARK = <MessageSquare size={13} className="shrink-0 self-center" style={{ color: 'var(--text-tertiary)' }} />
+const TOPIC_MARK = <MessageSquare size={13} className="shrink-0 self-center" style={{ color: 'var(--faint-fg)' }} />
 
 /**
  * Pick chats, several at once, in the invite picker's (MemberPicker) clothes: a title, a search field, the picked as chips,
@@ -121,7 +121,7 @@ export function ChatPickSheet(props: ChatPickSheetProps) {
       <div className="flex min-h-0 flex-1 flex-col">
         <div className={cn('flex items-center gap-2', mobile ? '!px-3 !pt-3 !pb-2' : '!px-5 !pt-4 !pb-3')}>
           {mobile ? close : null}
-          <h3 className={cn('m-0 min-w-0 flex-1 truncate text-[length:var(--font-heading)] font-semibold text-[var(--text-primary)]', mobile && 'text-center')}>{props.title}</h3>
+          <h3 className={cn('m-0 min-w-0 flex-1 truncate text-[length:var(--font-heading)] font-semibold text-[var(--fg)]', mobile && 'text-center')}>{props.title}</h3>
           {mobile ? action : close}
         </div>
         <div className={cn('flex flex-col gap-2 !pb-2', mobile ? '!px-3' : '!px-5')}>

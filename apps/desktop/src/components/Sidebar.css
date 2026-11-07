@@ -95,7 +95,7 @@
   pointer-events: none;
 }
 .gg-sidebar-assistant-mark[data-tone='warn'] {
-  background-color: var(--warn, var(--badge-red));
+  background-color: var(--warn, var(--danger));
 }
 /* 更新入口(有更新时)在设置齿轮上方。 */
 .gg-sidebar-bottom {
@@ -115,7 +115,7 @@
   height: 40px;
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
-  background: var(--bg-elevated);
+  background: var(--card);
   box-sizing: border-box;
 }
 
@@ -194,7 +194,7 @@
   height: 7px;
   border: 1.5px solid transparent;
   border-radius: var(--radius-capsule);
-  background: var(--badge-red);
+  background: var(--danger);
   background-clip: padding-box;
   position: absolute;
   inset-block-start: 7px;
@@ -385,7 +385,7 @@
   height: 5px;
   margin-inline-start: auto;
   border-radius: var(--radius-capsule);
-  background: var(--menu-icon);
+  background: var(--faint-fg);
 }
 
 /* #5111 账号菜单。弹层宽度写死 —— 名称/邮箱都可能任意长,不钉死的话弹层会被撑到
@@ -433,13 +433,13 @@
 }
 
 .gg-sidebar-profile-name {
-  color: var(--menu-fg);
+  color: var(--fg);
   font-size: var(--font-body);
   font-weight: var(--font-weight-semibold);
 }
 
 .gg-sidebar-profile-email {
-  color: var(--menu-icon);
+  color: var(--faint-fg);
   font-size: var(--font-caption);
 }
 

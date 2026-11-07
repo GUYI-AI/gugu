@@ -31,14 +31,14 @@ const tabVariants = cva(
         pill: cn(
           'rounded-[var(--radius-control)] px-3 py-[5px]',
           '[&:hover:not([data-selected])]:bg-[var(--hover)]',
-          '[&:hover:not([data-selected])]:text-[var(--text-primary)]',
-          'data-[selected]:bg-[var(--muted)] data-[selected]:text-[var(--text-primary)]',
+          '[&:hover:not([data-selected])]:text-[var(--fg)]',
+          'data-[selected]:bg-[var(--muted)] data-[selected]:text-[var(--fg)]',
         ),
         underline: cn(
           // border-solid:底座那个 border-none 是 border-style,不覆盖它下划线就永远是 0 宽(选中的那枚只剩字变深)。
           '-mb-px px-0.5 py-2 border-solid border-b-2 border-b-transparent',
-          '[&:hover:not([data-selected])]:text-[var(--text-primary)]',
-          'data-[selected]:border-b-[var(--primary)] data-[selected]:text-[var(--text-primary)]',
+          '[&:hover:not([data-selected])]:text-[var(--fg)]',
+          'data-[selected]:border-b-[var(--primary)] data-[selected]:text-[var(--fg)]',
         ),
       },
     },
@@ -49,7 +49,7 @@ const tabVariants = cva(
 // 计数角标:跟着标签走,不自成一档字号。
 const tabBadge = cn(
   'gg-segtab-badge inline-flex min-w-4 items-center justify-center rounded-[var(--radius-capsule)] px-1',
-  'bg-[var(--accent)] text-[var(--text-on-accent)]',
+  'bg-[var(--primary)] text-[var(--primary-fg)]',
   'text-[length:var(--font-caption)] font-[var(--font-weight-semibold)] leading-4',
 )
 

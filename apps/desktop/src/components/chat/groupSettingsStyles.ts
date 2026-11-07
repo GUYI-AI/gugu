@@ -13,29 +13,29 @@ export const settingsRowStyle: CSSProperties = {
 }
 export const settingsCenteredRowStyle: CSSProperties = { ...settingsRowStyle, alignItems: 'center' }
 export const settingsRowTitleStyle: CSSProperties = {
-  fontSize: 'var(--font-body)', fontWeight: 500, color: 'var(--text-primary)',
+  fontSize: 'var(--font-body)', fontWeight: 500, color: 'var(--fg)',
 }
 export const settingsRowSubtitleStyle: CSSProperties = {
   fontSize: 'var(--font-body)', color: 'var(--muted-fg)', marginTop: 3, lineHeight: 1.5,
 }
 export const settingsReadOnlyBoxStyle: CSSProperties = {
   border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-xl)', padding: 13,
-  fontSize: 'var(--font-body)', color: 'var(--text-secondary)', lineHeight: 1.6,
-  background: 'var(--bg-elevated)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+  fontSize: 'var(--font-body)', color: 'var(--muted-fg)', lineHeight: 1.6,
+  background: 'var(--card)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
 }
 export const settingsTextareaStyle: CSSProperties = {
   width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: 180,
   border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-xl)', padding: 13,
-  fontSize: 'var(--font-body)', color: 'var(--text-secondary)', lineHeight: 1.6,
-  background: 'var(--bg-elevated)', outline: 'none', fontFamily: 'inherit',
+  fontSize: 'var(--font-body)', color: 'var(--muted-fg)', lineHeight: 1.6,
+  background: 'var(--card)', outline: 'none', fontFamily: 'inherit',
 }
 export const settingsInputStyle: CSSProperties = {
   width: 64, textAlign: 'right', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-control)', padding: '4px 8px',
-  fontSize: 'var(--font-body)', color: 'var(--text-primary)', background: 'var(--bg-elevated)', outline: 'none', fontFamily: 'inherit',
+  fontSize: 'var(--font-body)', color: 'var(--fg)', background: 'var(--card)', outline: 'none', fontFamily: 'inherit',
 }
 export const settingsSelectStyle: CSSProperties = {
   border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-control)', padding: '6px 10px',
-  fontSize: 'var(--font-body)', color: 'var(--text-primary)', background: 'var(--bg-elevated)',
+  fontSize: 'var(--font-body)', color: 'var(--fg)', background: 'var(--card)',
   outline: 'none', fontFamily: 'inherit', cursor: 'pointer', flexShrink: 0,
 }
 export const settingsMutedTextStyle: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--muted-fg)', flexShrink: 0 }

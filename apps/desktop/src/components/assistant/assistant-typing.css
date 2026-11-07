@@ -1,7 +1,7 @@
 /* #7199 助理在处理时消息流末尾的打字气泡(AssistantTyping):三个 8px 圆点,
    静止时由深到浅,动起来 1.2 秒一轮依次亮起;减少动态时只留静止那一档。 */
 .ast-typing { padding: 5px 14px; }
-.ast-typing-dots { display: flex; height: 1.6em; align-items: center; gap: 5px; padding: 0 2px; color: var(--text-primary); }
+.ast-typing-dots { display: flex; height: 1.6em; align-items: center; gap: 5px; padding: 0 2px; color: var(--fg); }
 .ast-typing-dots > span { width: 8px; height: 8px; flex-shrink: 0; border-radius: 9999px; background: currentColor; animation: ast-typing-dot 1200ms linear infinite; }
 .ast-typing-dots > span:nth-child(1) { opacity: 0.48; }
 .ast-typing-dots > span:nth-child(2) { opacity: 0.3; animation-delay: 200ms; }
@@ -19,9 +19,9 @@
 }
 
 .ast-typing-body { display: flex; align-items: center; gap: 8px; }
-.ast-typing-label, .ast-typing-elapsed { font-size: var(--font-size-sm); color: var(--text-muted); white-space: nowrap; }
+.ast-typing-label, .ast-typing-elapsed { font-size: var(--font-size-sm); color: var(--faint-fg); white-space: nowrap; }
 .ast-typing-elapsed { font-variant-numeric: tabular-nums; }
 .ast-typing-toggle { flex-shrink: 0; }
-.ast-typing-thought { max-height: 180px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 8px; color: var(--text-muted); font-size: var(--font-size-sm); }
+.ast-typing-thought { max-height: 180px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 8px; color: var(--faint-fg); font-size: var(--font-size-sm); }
 
-.assistant-reply-process { font-size: var(--font-caption); color: var(--text-tertiary); padding: 0 2px; line-height: var(--lh-caption); }
+.assistant-reply-process { font-size: var(--font-caption); color: var(--faint-fg); padding: 0 2px; line-height: var(--lh-caption); }

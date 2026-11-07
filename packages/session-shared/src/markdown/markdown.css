@@ -19,7 +19,7 @@
   --md-rule-soft: color-mix(in oklab, currentColor 9%, transparent);
   --md-fill: color-mix(in oklab, currentColor 5%, transparent);
   --md-fill-strong: color-mix(in oklab, currentColor 9%, transparent);
-  --md-link: var(--text-link);
+  --md-link: var(--live-fg);
   min-width: 0;
   max-width: 100%;
   color: inherit;
@@ -262,7 +262,7 @@
 /* ── transcript (session-chat-ui html blocks; the font comes inline from the chat theme) ── */
 .gg-md--transcript { display: flow-root; }
 /* 转录里的链接跟会话主题的链接色走:用户气泡把它设成气泡字色,反色气泡上不再是蓝字压黑底。 */
-.gg-md--transcript { --md-link: var(--chat-link, var(--text-link)); }
+.gg-md--transcript { --md-link: var(--chat-link, var(--live-fg)); }
 /* 序号画在列表盒子外面(outside),而转录的每一行在内容列的左缘裁切(行的 paint containment):
    1.35em 只放得下「9. 」,两位数「12. 」约宽一个数字,左边那位被裁掉。补一个数字宽,序号回到列表自己的缩进里;
    不动 contain(它是行的裁切,渲染与命中对照都靠它)。三位数的列表仍会被裁。 */
@@ -276,7 +276,7 @@
 .gg-md .gg-md-plain { white-space: pre-wrap; }
 /* A ```svg figure (session-chat-ui `svgFigure`): its viewBox is its natural size, never wider than the column. */
 .gg-md .gg-md-svg { display: block; max-width: 100%; height: auto; margin: var(--md-gap) 0; }
-.gg-md .gg-md-svg-failed { margin-top: var(--md-gap); font-size: 0.86em; color: var(--text-secondary); }
+.gg-md .gg-md-svg-failed { margin-top: var(--md-gap); font-size: 0.86em; color: var(--muted-fg); }
 .gg-md .gg-md-mention {
   display: inline-flex;
   align-items: center;

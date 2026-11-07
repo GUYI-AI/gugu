@@ -23,13 +23,13 @@ export function AgentMentionOptionLabel({
       <span>
         {member.name}
         {member.type === 'agent' && member.ownerDisplayName ? (
-          <span className="text-[length:var(--font-caption)] text-[var(--text-secondary)]">
+          <span className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">
             {t('message.agentOwnerSuffix', { owner: member.ownerDisplayName })}
           </span>
         ) : null}
       </span>
       {offline || archived ? (
-        <span data-agent-status-warning={archived ? 'archived' : 'offline'} style={{ fontSize: 'var(--font-caption)', color: 'var(--text-secondary)' }}>
+        <span data-agent-status-warning={archived ? 'archived' : 'offline'} style={{ fontSize: 'var(--font-caption)', color: 'var(--muted-fg)' }}>
           {t(archived ? 'agent.archivedWarning' : 'agent.offlineWarning', { name: member.name })}
         </span>
       ) : null}

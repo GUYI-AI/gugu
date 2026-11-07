@@ -5,7 +5,7 @@
   gap: 8px;
   min-height: 120px;
   padding: 20px;
-  color: var(--text-secondary);
+  color: var(--muted-fg);
   font-size: var(--font-body);
   line-height: 1.6;
   text-align: center;
@@ -56,11 +56,11 @@
   gap: 2px;
   padding: 4px 8px;
   border-bottom: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--bg-primary) 94%, transparent);
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
 }
 
 .document-preview-toolbar button { width: 32px; height: 32px; }
-.document-preview-page-count { width: 56px; color: var(--text-secondary); font-size: var(--font-caption); text-align: center; }
+.document-preview-page-count { width: 56px; color: var(--muted-fg); font-size: var(--font-caption); text-align: center; }
 
 .document-preview-pdf-viewport {
   display: flex;
@@ -134,4 +134,4 @@
 .document-preview-xlsx-shell { position: relative; display: flex; height: 100%; min-height: 360px; flex-direction: column; background: var(--bg-secondary); }
 .document-preview-xlsx-shell > .document-preview-status { position: absolute; inset: 0; z-index: 2; }
 .document-preview-xlsx { position: relative; flex: 1; min-height: 0; }
-.document-preview-notice { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-primary); color: var(--text-secondary); font-size: var(--font-caption); }
+.document-preview-notice { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); background: var(--bg); color: var(--muted-fg); font-size: var(--font-caption); }

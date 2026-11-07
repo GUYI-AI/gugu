@@ -81,7 +81,7 @@ beforeEach(async () => {
   harness.container.setAttribute('data-phone-shell', '')
   harness.container.setAttribute('data-ta-scope', '')
   document.body.style.margin = '0'
-  harness.container.style.cssText = 'position:relative;width:390px;height:760px;background:var(--bg);color:var(--text-primary);display:flex;flex-direction:column'
+  harness.container.style.cssText = 'position:relative;width:390px;height:760px;background:var(--bg);color:var(--fg);display:flex;flex-direction:column'
 })
 afterEach(() => {
   harness.cleanup()

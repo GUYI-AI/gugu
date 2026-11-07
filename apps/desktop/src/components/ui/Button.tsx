@@ -41,12 +41,12 @@ const buttonVariants = cva(
           pressedSolidState,
         ),
         secondary: cn(
-          'border-[var(--border-strong)] bg-transparent text-[var(--text-primary)]',
+          'border-[var(--border-strong)] bg-transparent text-[var(--fg)]',
           '[&:hover:not([data-disabled])]:bg-[var(--hover)]',
           pressedSurfaceState,
         ),
         ghost: cn(
-          'bg-transparent text-[var(--text-secondary)]',
+          'bg-transparent text-[var(--muted-fg)]',
           '[&:hover:not([data-disabled])]:bg-[var(--hover)]',
           pressedSurfaceState,
         ),

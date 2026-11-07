@@ -42,7 +42,7 @@ const tooltipPopup = cn(
   // #7333 提示条是一行字的小浮层:小控件档圆角(8)。菜单 / popover 那档(12)放在一行高的条上会接近胶囊。
   // @@@float-one-edge (Refs #6104) — 不另画描边:半像素轮廓已经在 --shadow-lift 里。
   'box-border rounded-[var(--radius-control)]',
-  'bg-[var(--popover)] text-[var(--text-primary)] shadow-[var(--shadow-lift)]',
+  'bg-[var(--popover)] text-[var(--fg)] shadow-[var(--shadow-lift)]',
   'text-[length:var(--font-caption)] leading-[var(--lh-caption)]',
   'outline-none',
   tooltipMotion,

@@ -171,7 +171,7 @@ export function Sheet({
             data-testid={testId}
             data-sheet-mobile={mobile ? 'true' : 'false'}
             data-sheet-fullscreen={fullScreenMobile ? 'true' : 'false'}
-            style={{ ...(mobile ? mobileStyle : desktopStyle), background: mobile && fullScreenMobile ? 'var(--bg)' : 'var(--modal-bg)' }}
+            style={{ ...(mobile ? mobileStyle : desktopStyle), background: mobile && fullScreenMobile ? 'var(--bg)' : 'var(--card)' }}
           >
             {!titleId && (
               <Dialog.Title className={visuallyHidden}>{ariaLabel ?? t('dialog.label')}</Dialog.Title>

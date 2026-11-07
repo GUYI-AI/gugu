@@ -89,7 +89,7 @@ export function ReadReceiptRing({ read, total }: { read: number; total: number }
       {/* @@@1483 空环(sent/未读)轨道色：原 --border-strong(0.12 alpha 发丝分隔线 token)做独立图标 → 白底上
           几乎不可见(QA round1)。改用 muted-foreground token --text-tertiary(#9a9aa2 light/#6f6f78 dark)：
           两端主题都清晰可见,又低于已读态 accent 的层级(sent<partial<read)。 */}
-      <circle cx="7.5" cy="7.5" r={r} fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" />
+      <circle cx="7.5" cy="7.5" r={r} fill="none" stroke="var(--faint-fg)" strokeWidth="1.5" />
       {frac > 0 && !full && (
         <circle
           cx="7.5"
@@ -108,7 +108,7 @@ export function ReadReceiptRing({ read, total }: { read: number; total: number }
         <>
           <circle cx="7.5" cy="7.5" r={r + 0.4} fill="var(--live)" />
           {/* 勾用 --text-on-accent(=--primary-fg)：两侧主题各自落在背景那一端,画在 --live 上都够对比。❌ 别用恒 #fff 的 surface-white,深色侧白勾压亮蓝会糊 */}
-          <path d="M5 7.6l1.8 1.8 3.3-3.6" stroke="var(--text-on-accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M5 7.6l1.8 1.8 3.3-3.6" stroke="var(--primary-fg)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </>
       )}
     </svg>

@@ -64,7 +64,7 @@ export function HtmlPreviewSurface({ fileName, url, onLink, scrollPosition }: { 
           src={source}
           // Keep the existing opaque sandbox; scroll/link messages never grant same-origin access.
           sandbox="allow-scripts"
-          className={`absolute inset-0 h-full w-full border-0 bg-[var(--bg-primary)] ${source === visible ? 'visible' : 'invisible'}`}
+          className={`absolute inset-0 h-full w-full border-0 bg-[var(--bg)] ${source === visible ? 'visible' : 'invisible'}`}
           onLoad={(event) => {
             if (source !== url) return;
             scripted.current.delete(event.currentTarget);

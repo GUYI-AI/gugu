@@ -31,20 +31,20 @@ const requestTabsClass = 'nfp-reqtabs mx-3.5 mb-3'
 const requestHeadClass = 'nfp-head window-drag-region flex shrink-0 items-center gap-[9px] px-4 pb-3 pt-4 text-[length:var(--font-title)] font-semibold [-webkit-app-region:no-drag]'
 // @@@1944 该按钮只在移动端渲染（onBack-gated）且是页面唯一出口 → 按 #1787 触控规范:
 // ≥44px 触控目标（size-11）+ .gg-pressable 按压反馈（hover 在触屏无效）；负 margin 保持头部视觉密度。
-const requestBackButtonClass = 'nfp-back-btn gg-pressable -my-2.5 -ml-2.5 inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-control)] border-none bg-transparent p-0 text-[var(--text-primary)]'
+const requestBackButtonClass = 'nfp-back-btn gg-pressable -my-2.5 -ml-2.5 inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-control)] border-none bg-transparent p-0 text-[var(--fg)]'
 const requestBodyClass = 'nfp-reqbody flex-1 overflow-y-auto px-3 py-0.5'
 const requestRowClass = 'nfp-reqrow gg-row flex cursor-pointer items-center gap-2.5 rounded-[var(--radius-control)] px-1.5 py-[9px]'
 const requestMetaClass = 'nfp-meta min-w-0 flex-1'
-const requestNameClass = 'nfp-name overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-[var(--text-primary)]'
-const requestSubClass = 'nfp-sub mt-px overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-secondary)]'
+const requestNameClass = 'nfp-name overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-[var(--fg)]'
+const requestSubClass = 'nfp-sub mt-px overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--muted-fg)]'
 const requestActionsClass = 'nfp-reqacts flex shrink-0 gap-1.5'
-const requestStatusClass = 'nfp-status shrink-0 text-[length:var(--font-body)] text-[var(--text-tertiary)]'
+const requestStatusClass = 'nfp-status shrink-0 text-[length:var(--font-body)] text-[var(--faint-fg)]'
 const requestButtonBaseClass = 'rounded-[var(--radius-control)] border-none px-[11px] py-[5px] font-[inherit] text-xs font-medium !transition-opacity !duration-[var(--dur-fast)] !ease-[var(--ease)]'
 const requestButtonEnabledClass = 'cursor-pointer'
 const requestButtonDisabledClass = 'cursor-default opacity-60'
-const requestOkClass = 'nfp-btn-ok bg-[var(--text-primary)] text-[var(--bg-primary)] enabled:hover:opacity-[0.88]'
-const requestNoClass = "nfp-btn-no bg-[var(--bg-elevated)] text-[var(--text-secondary)] enabled:hover:bg-[var(--hover)] [[data-theme='light']_&]:bg-[var(--muted)]"
-const requestEmptyClass = 'nfp-req-empty !py-[54px] text-center text-[length:var(--font-body)] text-[var(--text-secondary)]'
+const requestOkClass = 'nfp-btn-ok bg-[var(--fg)] text-[var(--bg)] enabled:hover:opacity-[0.88]'
+const requestNoClass = "nfp-btn-no bg-[var(--card)] text-[var(--muted-fg)] enabled:hover:bg-[var(--hover)] [[data-theme='light']_&]:bg-[var(--muted)]"
+const requestEmptyClass = 'nfp-req-empty !py-[54px] text-center text-[length:var(--font-body)] text-[var(--muted-fg)]'
 // @@@1944 tab 内待处理计数小圆标（bucket 级；入口行角标只有总数）
 
 function requestActionButtonClass(kind: 'ok' | 'no', disabled: boolean): string {
@@ -58,9 +58,9 @@ function requestActionButtonClass(kind: 'ok' | 'no', disabled: boolean): string 
 // ── Shared inline styles ──────────────────────────────────────────────────────
 
 // 与请求行(px 6)同一条左边线。
-const styleSectionLabel: CSSProperties = { padding: '12px 6px 4px', fontSize: 'var(--font-caption)', fontWeight: 600, color: 'var(--text-tertiary)' }
+const styleSectionLabel: CSSProperties = { padding: '12px 6px 4px', fontSize: 'var(--font-caption)', fontWeight: 600, color: 'var(--faint-fg)' }
 const styleRowError: CSSProperties = { padding: '0 6px 8px', fontSize: 'var(--font-caption)', color: 'var(--danger-fg)' }
-const stylePlaceholderAvatar: CSSProperties = { width: 34, height: 34, borderRadius: 'var(--radius-circle)', background: 'var(--bg-elevated)', flexShrink: 0 }
+const stylePlaceholderAvatar: CSSProperties = { width: 34, height: 34, borderRadius: 'var(--radius-circle)', background: 'var(--card)', flexShrink: 0 }
 const openOnKey = (open: () => void) => (event: KeyboardEvent<HTMLDivElement>) => {
   if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); open() }
 }
@@ -386,7 +386,7 @@ export function NewFriendsPanel({ onOpenGroupChat, onBack }: { onOpenGroupChat?:
       style={{
         flex: 1,
         height: '100%',
-        background: 'var(--bg-primary)',
+        background: 'var(--bg)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',

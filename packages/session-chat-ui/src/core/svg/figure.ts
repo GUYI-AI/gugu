@@ -14,12 +14,12 @@ export type SvgFigure =
 
 /** Agent-facing token → the host variable it reads (series `c1`…`c6` → `--chart-1`…`--chart-6`). */
 const HOST_TOKENS: Record<string, string> = {
-  fg: '--text-primary',
-  muted: '--text-secondary',
+  fg: '--fg',
+  muted: '--muted-fg',
   border: '--border',
   surface: '--bg-secondary',
-  accent: '--accent',
-  success: '--green',
+  accent: '--primary',
+  success: '--ok',
   warning: '--warn',
   error: '--danger',
   ...Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [`c${n}`, `--chart-${n}`])),

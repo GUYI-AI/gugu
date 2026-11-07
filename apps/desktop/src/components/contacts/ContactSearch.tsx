@@ -186,7 +186,7 @@ export function ContactSearch({ query, onQuery, mobile = false, head, people, ag
               {section.rows.map((row) => renderRow(row, index++))}
             </Fragment>
           ))}
-          {sections.length === 0 ? <p className="!m-0 !px-2 !py-3 text-[length:var(--font-body)] text-[var(--text-secondary)]">{t('common.noMatches')}</p> : null}
+          {sections.length === 0 ? <p className="!m-0 !px-2 !py-3 text-[length:var(--font-body)] text-[var(--muted-fg)]">{t('common.noMatches')}</p> : null}
           {lookup.map((row) => renderRow(row, index++))}
         </div>
       ) : null}

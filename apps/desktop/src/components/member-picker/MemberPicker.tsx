@@ -204,7 +204,7 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
   const list = visibleRows.map((row, index) => {
     const id = row.entry.contact.id
     const letter = letters ? getPinyinInitial(displayName(row.entry.contact)) : null
-    const header = letter && letter !== lastLetter ? <SectionLabel key={`letter-${letter}`} data-letter-section={letter} className="sticky top-0 z-[var(--z-raised)] bg-[var(--modal-bg)]">{letter}</SectionLabel> : null
+    const header = letter && letter !== lastLetter ? <SectionLabel key={`letter-${letter}`} data-letter-section={letter} className="sticky top-0 z-[var(--z-raised)] bg-[var(--card)]">{letter}</SectionLabel> : null
     lastLetter = letter ?? lastLetter
     const option = (
       <PickerOption key={id} row={row} index={index} mobile={mobile} active={index === activeIndex} checked={isLocked(id) || selected.includes(id)} locked={isLocked(id)}
@@ -220,7 +220,7 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
     <div className="flex min-h-0 flex-1 flex-col" data-testid="member-picker">
       <div className={cn('flex items-center gap-2', mobile ? '!px-3 !pt-3 !pb-2' : '!px-5 !pt-4 !pb-3')}>
         {mobile ? <IconButton aria-label={t('common.close')} onClick={onClose}><X size={18} /></IconButton> : null}
-        <h3 className={cn('m-0 min-w-0 flex-1 truncate text-[length:var(--font-heading)] font-semibold text-[var(--text-primary)]', mobile && 'text-center')}>{title}</h3>
+        <h3 className={cn('m-0 min-w-0 flex-1 truncate text-[length:var(--font-heading)] font-semibold text-[var(--fg)]', mobile && 'text-center')}>{title}</h3>
         {mobile ? confirmButton : <IconButton aria-label={t('common.close')} onClick={onClose}><X size={18} /></IconButton>}
       </div>
       <div className={mobile ? '!px-3 !pb-2' : '!px-5 !pb-2'}>

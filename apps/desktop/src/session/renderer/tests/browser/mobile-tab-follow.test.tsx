@@ -35,8 +35,8 @@ async function mountBar(position: number | null, activeIndex: number) {
   root.render(
     <nav data-bar ref={(nav) => { if (nav && position !== null) nav.style.setProperty(TAB_POSITION_VAR, String(position)); }}>
       {/* 两端的参照色也过一道 srgb 的 color-mix:token 是 oklch,直接读计算值拿到的是 oklch()。 */}
-      <span data-ref="primary" style={{ color: 'color-mix(in srgb, var(--text-primary) 100%, var(--text-tertiary))' }} />
-      <span data-ref="tertiary" style={{ color: 'color-mix(in srgb, var(--text-primary) 0%, var(--text-tertiary))' }} />
+      <span data-ref="primary" style={{ color: 'color-mix(in srgb, var(--fg) 100%, var(--faint-fg))' }} />
+      <span data-ref="tertiary" style={{ color: 'color-mix(in srgb, var(--fg) 0%, var(--faint-fg))' }} />
       {SIDEBAR_TABS.map((tab, index) => (
         <button key={tab} type="button" data-tab={index} style={tabItemStyle(index, activeIndex)}>
           <span data-avatar={index} style={index === SIDEBAR_TABS.length - 1 ? TAB_AVATAR_STYLE : undefined}>{tab}</span>

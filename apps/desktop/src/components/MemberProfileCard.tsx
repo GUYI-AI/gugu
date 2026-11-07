@@ -24,22 +24,22 @@ import { useAgentSessionRow } from '@/mobile/agent-watch/useAgentSessionRow'
 import type { AgentSession } from '@/session/renderer/features/projects/stores/project-group-chats-bridge'
 
 // @@@float-one-edge (Refs #6104) — 名片是浮层:圆角 xl(12) + 一层 lift,❌ 不再叠描边。
-const profileCardClass = 'gg-pop w-[284px] overflow-hidden rounded-xl bg-[var(--bg-elevated)] text-[var(--text-primary)] shadow-[var(--shadow-lift)]'
+const profileCardClass = 'gg-pop w-[284px] overflow-hidden rounded-xl bg-[var(--card)] text-[var(--fg)] shadow-[var(--shadow-lift)]'
 // 放进底部面板(手机,#6836)时铺满宽度,圆角、底色归面板,卡片不再叠第二层外框。
-const profileFillClass = 'gg-pop w-full text-[var(--text-primary)]'
+const profileFillClass = 'gg-pop w-full text-[var(--fg)]'
 const profileSingleClass = 'gg-pop--single'
 const profileHeaderClass = 'gg-pop-ph flex items-center gap-3.5 border-b border-[var(--border-color)] px-[22px] pb-4 pt-[22px]'
 const profileHeaderTextClass = 'gg-pop-ph-text flex min-w-0 flex-col'
-const profileNameClass = 'gg-pop-pn min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-base font-semibold text-[var(--text-primary)]'
+const profileNameClass = 'gg-pop-pn min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-base font-semibold text-[var(--fg)]'
 const profileActionsClass = 'gg-pop-pacts flex flex-wrap gap-2 px-[18px] pb-3 pt-3.5'
 const profileButtonClass = 'gg-pop-pbtn flex-[1_1_auto] text-[length:var(--font-body)] [&_svg]:shrink-0'
 const profileFieldsClass = 'gg-pop-fields gap-x-2 gap-y-1.5 px-[18px] pb-3.5'
 const profileFieldRowClass = 'gg-pop-field-row col-span-2 grid grid-cols-subgrid items-start text-[length:var(--font-caption)] leading-[var(--lh-caption)]'
-const profileFieldLabelClass = 'gg-pop-field-label whitespace-nowrap text-[var(--text-tertiary)]'
-const profileFieldValueClass = 'gg-pop-field-value min-w-0 [overflow-wrap:anywhere] text-[var(--text-secondary)]'
-const profileAgentMetaClass = 'mt-[3px] flex flex-wrap gap-x-2.5 gap-y-0.5 text-[length:var(--font-caption)] leading-[var(--lh-caption)] text-[var(--text-tertiary)] [&>*]:max-w-full [&>*]:truncate'
+const profileFieldLabelClass = 'gg-pop-field-label whitespace-nowrap text-[var(--faint-fg)]'
+const profileFieldValueClass = 'gg-pop-field-value min-w-0 [overflow-wrap:anywhere] text-[var(--muted-fg)]'
+const profileAgentMetaClass = 'mt-[3px] flex flex-wrap gap-x-2.5 gap-y-0.5 text-[length:var(--font-caption)] leading-[var(--lh-caption)] text-[var(--faint-fg)] [&>*]:max-w-full [&>*]:truncate'
 const profileListenClass = 'gg-pop-lm px-[18px] pb-[18px] pt-1'
-const profileListenLabelClass = 'gg-pop-lml mb-[7px] text-[length:var(--font-body)] text-[var(--text-secondary)]'
+const profileListenLabelClass = 'gg-pop-lml mb-[7px] text-[length:var(--font-body)] text-[var(--muted-fg)]'
 // @@@1344(b) — 倾听模式分段壳:椭圆/胶囊(rounded-full)→圆角矩形(rounded-lg=8px,对齐 SSOT 基础圆角 `--r`)。
 const profileListenSegmentClass = 'gg-pop-lmseg flex gap-1.5 rounded-lg bg-[var(--listen-mode-bg)] p-[3px]'
 const profileListenButtonBaseClass = 'gg-pop-lmseg-btn flex-1 rounded-md border-none px-0 py-1.5 font-[inherit] text-xs font-medium !transition-[background,color] !duration-[var(--dur-fast)] !ease-[var(--ease)]'
@@ -53,8 +53,8 @@ const profileListenButtonInactiveClass = 'bg-transparent text-[var(--listen-mode
 const profileManageClass = 'gg-pop-manage flex flex-col gap-2.5 border-t border-[var(--border-subtle)] px-[18px] pb-[18px] pt-3'
 const profileManageRowClass = 'gg-pop-manage-row flex items-center justify-between gap-3'
 // 双行（标签+描述）行用 flex-start 顶对齐开关，对齐 .aset-row 与群设置抽屉 通知/邀请链接 行的既有写法。
-const profileManageLabelClass = 'gg-pop-manage-label text-[length:var(--font-body)] font-medium text-[var(--text-primary)]'
-const profileManageSelectClass = 'gg-pop-manage-sel max-w-[52%] shrink-0 cursor-pointer rounded-lg border border-[var(--border-strong)] bg-[var(--bg-primary)] px-2 py-1.5 text-[length:var(--font-body)] text-[var(--text-primary)] outline-none [font-family:inherit] focus:border-[var(--accent)] disabled:cursor-default disabled:opacity-60'
+const profileManageLabelClass = 'gg-pop-manage-label text-[length:var(--font-body)] font-medium text-[var(--fg)]'
+const profileManageSelectClass = 'gg-pop-manage-sel max-w-[52%] shrink-0 cursor-pointer rounded-lg border border-[var(--border-strong)] bg-[var(--bg)] px-2 py-1.5 text-[length:var(--font-body)] text-[var(--fg)] outline-none [font-family:inherit] focus:border-[var(--primary)] disabled:cursor-default disabled:opacity-60'
 // @@@2322 危险项 hover 归 --danger-tint(spec:状态反馈唯一允许的色相);rest 底 #ef44440d 是静止装饰 tint,
 // 无对应 token(--danger-tint 是 hover 档)、观感逐值保持 → 保留字面值。
 const profileManageDangerClass = 'gg-pop-manage-danger !mt-0.5 w-full cursor-pointer rounded-lg border-0 bg-[var(--danger-tint)] !py-2.5 text-[length:var(--font-body)] font-medium text-[var(--danger-fg)] [font-family:inherit] transition-[background] duration-[var(--dur-fast)] ease-[var(--ease)] hover:bg-[var(--danger-tint)] disabled:cursor-default disabled:opacity-50'
@@ -188,7 +188,7 @@ function AliasField({ controls }: { controls: MemberProfileAliasControls }) {
         }}
         placeholder={t('profile.notSet')}
         maxLength={80}
-        style={{ minWidth: 0, height: 24, border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-document)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: 'var(--font-caption)', padding: '0 6px', outline: 'none', fontFamily: 'inherit' }}
+        style={{ minWidth: 0, height: 24, border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-document)', background: 'var(--bg)', color: 'var(--fg)', fontSize: 'var(--font-caption)', padding: '0 6px', outline: 'none', fontFamily: 'inherit' }}
       />
     </div>
   )

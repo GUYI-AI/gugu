@@ -10,7 +10,7 @@ export function AppErrorMark({ error, onToggle, testId }: { error: string; onTog
   return (
     // Shrinks to its dot in a narrow slot: what sits beside it (close, full) never goes off the edge.
     <Button size="sm" variant="ghost" className="min-w-0" data-testid={testId} onClick={onToggle} title={error}>
-      <span className="inline-block size-2 shrink-0 rounded-full bg-[var(--text-error)]" />
+      <span className="inline-block size-2 shrink-0 rounded-full bg-[var(--danger-fg)]" />
       <span className="truncate">
         {translateSessionMessage('extensions.appError')} · {translateSessionMessage('extensions.appErrorDetails')}
       </span>
@@ -22,7 +22,7 @@ export function AppErrorDetails({ error, testId }: { error: string; testId: stri
   return (
     <div
       data-testid={testId}
-      className="whitespace-pre-wrap break-words border-b border-[var(--border)] !px-3 !py-2 text-[length:var(--font-caption)] text-[var(--text-error)]"
+      className="whitespace-pre-wrap break-words border-b border-[var(--border)] !px-3 !py-2 text-[length:var(--font-caption)] text-[var(--danger-fg)]"
     >
       {error}
     </div>

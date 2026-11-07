@@ -47,7 +47,7 @@ export function QuestionCardView({ card, chatId, messageId, agentUserId, time }:
       data-card-type="question"
       title={openable ? t('message.taskCard.open', { ns: 'messaging' }) : undefined}
       onClick={openable ? () => openTaskCardSession(card) : undefined}
-      className="box-border flex w-[300px] max-w-full flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-primary)] p-3 text-left data-[openable]:cursor-pointer data-[openable]:hover:border-[var(--border-strong)]"
+      className="box-border flex w-[300px] max-w-full flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg)] p-3 text-left data-[openable]:cursor-pointer data-[openable]:hover:border-[var(--border-strong)]"
     >
       <span className="flex h-6 items-center gap-2">
         <span aria-hidden className="grid size-6 shrink-0 place-items-center rounded-[var(--radius-document)] border border-[var(--border)]">

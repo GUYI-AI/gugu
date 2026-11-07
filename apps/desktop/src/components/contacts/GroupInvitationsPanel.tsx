@@ -47,16 +47,16 @@ function GroupInvitationRow({ invitation }: { invitation: GroupInvitation }) {
       <div className="flex items-start gap-3">
         <Avatar name={invitation.inviter_name} seed={invitation.inviter_user_id} isAgent={invitation.inviter_type === 'agent'} size="md" />
         <div className="min-w-0 flex-1 text-sm">
-          <div className="font-medium text-[var(--text-primary)]">{t(invitation.inviter_type === 'agent' ? 'groupInvitations.invitedBy' : 'groupInvitations.invitedByHuman', { inviter: invitation.inviter_name, owner: invitation.inviter_owner_name, group: groupName })}</div>
-          {invitation.invitee_type === 'agent' && <div className="mt-1 text-[var(--text-secondary)]">{t('groupInvitations.agent', { name: invitation.invitee_name })}</div>}
-          <p className="my-2 whitespace-pre-wrap break-words text-[var(--text-secondary)]">{invitation.message}</p>
+          <div className="font-medium text-[var(--fg)]">{t(invitation.inviter_type === 'agent' ? 'groupInvitations.invitedBy' : 'groupInvitations.invitedByHuman', { inviter: invitation.inviter_name, owner: invitation.inviter_owner_name, group: groupName })}</div>
+          {invitation.invitee_type === 'agent' && <div className="mt-1 text-[var(--muted-fg)]">{t('groupInvitations.agent', { name: invitation.invitee_name })}</div>}
+          <p className="my-2 whitespace-pre-wrap break-words text-[var(--muted-fg)]">{invitation.message}</p>
           {invitation.status === 'pending' ? <>
-            <div className="text-[var(--text-secondary)]">{t(invitation.invitee_type === 'human' ? 'groupInvitations.humanJoins' : invitation.owner_will_join ? 'groupInvitations.ownerJoins' : 'groupInvitations.agentJoins')}</div>
+            <div className="text-[var(--muted-fg)]">{t(invitation.invitee_type === 'human' ? 'groupInvitations.humanJoins' : invitation.owner_will_join ? 'groupInvitations.ownerJoins' : 'groupInvitations.agentJoins')}</div>
             <div className="mt-3 flex gap-2">
               <Button size="sm" variant="primary" disabled={busy} onClick={() => void decide(true)} data-testid="group-invitation-accept">{t('groupInvitations.accept')}</Button>
               <Button size="sm" disabled={busy} onClick={() => void decide(false)} data-testid="group-invitation-reject">{t('groupInvitations.reject')}</Button>
             </div>
-          </> : <div className="text-[var(--text-tertiary)]">{t(invitation.status === 'accepted' ? 'groupJoinRequests.statusAccepted' : 'groupJoinRequests.statusRejected')}</div>}
+          </> : <div className="text-[var(--faint-fg)]">{t(invitation.status === 'accepted' ? 'groupJoinRequests.statusAccepted' : 'groupJoinRequests.statusRejected')}</div>}
           {error && <div role="alert" className="mt-2 text-[var(--danger-fg)]">{error}</div>}
         </div>
       </div>
@@ -69,7 +69,7 @@ export function GroupInvitationsPanel() {
   const { groupInvitations, requestsStatus } = useContactsStore()
   if (requestsStatus === 'idle' || requestsStatus === 'loading') return <p role="status" className="p-4 text-sm">{t('common.loading')}</p>
   if (!groupInvitations.length) {
-    return requestsStatus === 'ready' ? <p className="px-4 py-12 text-center text-sm text-[var(--text-secondary)]">{t('groupInvitations.empty')}</p> : null
+    return requestsStatus === 'ready' ? <p className="px-4 py-12 text-center text-sm text-[var(--muted-fg)]">{t('groupInvitations.empty')}</p> : null
   }
   return <>{groupInvitations.map((invitation) => <GroupInvitationRow key={invitation.id} invitation={invitation} />)}</>
 }

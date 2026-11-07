@@ -8,10 +8,10 @@ import {
   type AgentLocation,
 } from '@gugu/core/shared/ui/agentHeaderStatusModels'
 
-export const COLOR_ACCENT = 'var(--accent)'
-export const COLOR_ON_ACCENT = 'var(--text-on-accent)'
-export const COLOR_MUTED = 'var(--text-secondary)'
-export const COLOR_PLACEHOLDER = 'var(--text-tertiary)'
+export const COLOR_ACCENT = 'var(--primary)'
+export const COLOR_ON_ACCENT = 'var(--primary-fg)'
+export const COLOR_MUTED = 'var(--muted-fg)'
+export const COLOR_PLACEHOLDER = 'var(--faint-fg)'
 
 /**
  * 单聊头「{状态} · {位置} · {引擎}」。状态是这个 agent 的完整 presentation 那一句(等你批准 / 后台运行中 …);

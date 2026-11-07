@@ -63,18 +63,18 @@ export function ServerLoginApproveSheet({ code, onDone }: { code: string | null;
   return (
     <Sheet open={code !== null} onClose={() => { if (!busy) onDone() }} mobileFitContent desktopWidth="380px" testId="server-login-approve" ariaLabel={t('devices.approveServer.title')}>
       <div className="flex flex-col gap-3 px-5 pb-5 pt-6" data-approve-state={view.kind === 'final' ? view.state : view.kind}>
-        {view.kind === 'loading' && <p className="text-[length:var(--font-body)] text-[var(--text-secondary)]">{t('devices.approveServer.loading')}</p>}
+        {view.kind === 'loading' && <p className="text-[length:var(--font-body)] text-[var(--muted-fg)]">{t('devices.approveServer.loading')}</p>}
         {view.kind === 'failed' && (
           <>
-            <p className="text-[length:var(--font-body)] text-[var(--text-primary)]" role="alert">{view.message}</p>
+            <p className="text-[length:var(--font-body)] text-[var(--fg)]" role="alert">{view.message}</p>
             <Button variant="secondary" size="lg" onClick={onDone}>{t('devices.approveServer.close')}</Button>
           </>
         )}
         {view.kind === 'request' && <RequestBody view={view} onDecide={(approve) => decide(view.request, approve)} />}
         {view.kind === 'final' && (
           <>
-            <h2 className="text-[length:var(--font-title)] font-semibold text-[var(--text-primary)]">{t(`devices.approveServer.final.${view.state}.title`)}</h2>
-            <div className="text-[length:var(--font-body)] leading-relaxed text-[var(--text-secondary)]">
+            <h2 className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">{t(`devices.approveServer.final.${view.state}.title`)}</h2>
+            <div className="text-[length:var(--font-body)] leading-relaxed text-[var(--muted-fg)]">
               {view.state === 'refused'
                 ? <MachineLimitNotice refusal={view.refusal} />
                 : t(`devices.approveServer.final.${view.state}.body`, { host: view.hostname ?? t('devices.approveServer.thisMachine') })}
@@ -105,18 +105,18 @@ function RequestBody({
   ]
   return (
     <>
-      <h2 className="text-[length:var(--font-title)] font-semibold text-[var(--text-primary)] [overflow-wrap:anywhere]">
+      <h2 className="text-[length:var(--font-title)] font-semibold text-[var(--fg)] [overflow-wrap:anywhere]">
         {t('devices.approveServer.ask', { host })}
       </h2>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-[var(--radius-control)] border border-[var(--border-color)] bg-[var(--bg-elevated)] px-4 py-3 text-[length:var(--font-body)]">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-[var(--radius-control)] border border-[var(--border-color)] bg-[var(--card)] px-4 py-3 text-[length:var(--font-body)]">
         {rows.filter(([, value]) => value).map(([label, value]) => (
           <div key={label} className="contents">
-            <dt className="text-[var(--text-secondary)]">{label}</dt>
-            <dd className="text-[var(--text-primary)] [overflow-wrap:anywhere]">{value}</dd>
+            <dt className="text-[var(--muted-fg)]">{label}</dt>
+            <dd className="text-[var(--fg)] [overflow-wrap:anywhere]">{value}</dd>
           </div>
         ))}
       </dl>
-      <p className="text-[length:var(--font-body)] leading-relaxed text-[var(--text-secondary)]">{t('devices.approveServer.warning')}</p>
+      <p className="text-[length:var(--font-body)] leading-relaxed text-[var(--muted-fg)]">{t('devices.approveServer.warning')}</p>
       {view.error && <p className="text-[length:var(--font-body)] text-[var(--danger-fg)]" role="alert">{view.error}</p>}
       <Button variant="primary" size="lg" disabled={view.busy} onClick={() => onDecide(true)} data-testid="server-login-approve-allow">
         {t('devices.approveServer.allow', { host })}

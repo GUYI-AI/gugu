@@ -154,10 +154,10 @@ export function AboutSection() {
           }}
         />
         {/* #7333 品牌名走页内标题档(20/28);标语、版本、署名是要读的字 ⇒ 次级色(第三档是装饰色,过不了 AA)。 */}
-        <div style={{ fontSize: 'var(--font-heading)', lineHeight: 'var(--lh-heading)', fontWeight: 600, color: 'var(--text-primary)' }}>{t('about.brand')}</div>
-        <div style={{ fontSize: 'var(--font-body)', color: 'var(--text-secondary)', marginTop: 'var(--spacing-xs)' }}>{t('about.tagline')}</div>
-        {version && <div style={{ fontSize: 'var(--font-body)', color: 'var(--text-secondary)', marginTop: 2 }}>v{version}</div>}
-        <div style={{ marginTop: 'var(--spacing-md)', fontSize: 'var(--font-caption)', color: 'var(--text-secondary)' }}>
+        <div style={{ fontSize: 'var(--font-heading)', lineHeight: 'var(--lh-heading)', fontWeight: 600, color: 'var(--fg)' }}>{t('about.brand')}</div>
+        <div style={{ fontSize: 'var(--font-body)', color: 'var(--muted-fg)', marginTop: 'var(--spacing-xs)' }}>{t('about.tagline')}</div>
+        {version && <div style={{ fontSize: 'var(--font-body)', color: 'var(--muted-fg)', marginTop: 2 }}>v{version}</div>}
+        <div style={{ marginTop: 'var(--spacing-md)', fontSize: 'var(--font-caption)', color: 'var(--muted-fg)' }}>
           <Trans
             i18nKey="about.iconAttribution"
             ns="settings"

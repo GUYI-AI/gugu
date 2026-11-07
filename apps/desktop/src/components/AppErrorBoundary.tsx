@@ -75,8 +75,8 @@ export class AppErrorBoundary extends React.Component<React.PropsWithChildren, A
           minHeight: '100vh',
           padding: 32,
           boxSizing: 'border-box',
-          background: 'var(--bg-primary)',
-          color: 'var(--text-primary)',
+          background: 'var(--bg)',
+          color: 'var(--fg)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -105,7 +105,7 @@ export class AppErrorBoundary extends React.Component<React.PropsWithChildren, A
             width: 'min(720px, 100%)',
             border: '1px solid var(--border-color)',
             borderRadius: 'var(--radius-xl)',
-            background: 'var(--bg-elevated)',
+            background: 'var(--card)',
             padding: 24,
             boxShadow: 'var(--shadow-popover)',
           }}
@@ -121,7 +121,7 @@ export class AppErrorBoundary extends React.Component<React.PropsWithChildren, A
             <span style={{ fontSize: 'var(--font-heading)', lineHeight: 'var(--lh-heading)', fontWeight: 600 }}>{copy.brandName}</span>
           </div>
           <div style={{ fontSize: 'var(--font-title)', lineHeight: 'var(--lh-title)', fontWeight: 600, marginBottom: 8 }}>{copy.title}</div>
-          <div style={{ fontSize: 'var(--font-body)', color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 'var(--lh-body)' }}>
+          <div style={{ fontSize: 'var(--font-body)', color: 'var(--muted-fg)', marginBottom: 16, lineHeight: 'var(--lh-body)' }}>
             {copy.description}
           </div>
           <button
@@ -147,7 +147,7 @@ export class AppErrorBoundary extends React.Component<React.PropsWithChildren, A
           {isDev && (
             <details style={{ marginTop: 16 }}>
               <summary
-                style={{ fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}
+                style={{ fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', color: 'var(--muted-fg)', cursor: 'pointer', userSelect: 'none' }}
               >
                 {copy.diagnostics}
               </summary>
@@ -156,7 +156,7 @@ export class AppErrorBoundary extends React.Component<React.PropsWithChildren, A
                   margin: '10px 0 0',
                   padding: 12,
                   borderRadius: 'var(--radius-control)',
-                  background: 'var(--bg-primary)',
+                  background: 'var(--bg)',
                   border: '1px solid var(--border-subtle)',
                   color: 'var(--danger-fg)',
                   whiteSpace: 'pre-wrap',

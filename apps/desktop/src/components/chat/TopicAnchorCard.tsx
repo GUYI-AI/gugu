@@ -41,18 +41,18 @@ const TOPIC_ANCHOR_WRAP_STYLE: Record<'mine' | 'theirs', React.CSSProperties> = 
 }
 // 封顶 —— 横铺一整行就是「另一条消息」的形状了。
 const TOPIC_ANCHOR_MAX_WIDTH = 320
-const TOPIC_ANCHOR_ICON_STYLE: React.CSSProperties = { flexShrink: 0, color: 'var(--text-tertiary)' }
+const TOPIC_ANCHOR_ICON_STYLE: React.CSSProperties = { flexShrink: 0, color: 'var(--faint-fg)' }
 const TOPIC_ANCHOR_LEAD_STYLE: React.CSSProperties = {
   fontSize: 'var(--font-caption)',
   fontWeight: 'var(--font-weight-medium)',
-  color: 'var(--text-secondary)',
+  color: 'var(--muted-fg)',
   whiteSpace: 'nowrap',
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   minWidth: 0,
 }
 const TOPIC_ANCHOR_META_STYLE: React.CSSProperties = {
-  fontSize: 'var(--font-caption)', color: 'var(--text-tertiary)', whiteSpace: 'nowrap', flexShrink: 0,
+  fontSize: 'var(--font-caption)', color: 'var(--faint-fg)', whiteSpace: 'nowrap', flexShrink: 0,
 }
 const TOPIC_ANCHOR_DETAIL_STYLE: React.CSSProperties = {
   ...TOPIC_ANCHOR_META_STYLE, flexBasis: 0, flexGrow: 1, flexShrink: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis',

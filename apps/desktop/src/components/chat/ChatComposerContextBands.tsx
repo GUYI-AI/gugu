@@ -11,7 +11,7 @@ export function ChatComposerContextBands({ chatId, isGroupChat, hidden, quoteCon
   const { t } = useTranslation('messaging')
   return <>
     {chatId && isGroupChat && !hidden && <FileStorageNotice chatId={chatId} />}
-    {whisperTarget && <div className="flex items-center gap-2 rounded-[var(--radius-control)] bg-[var(--bg-primary)] px-2 py-1">
+    {whisperTarget && <div className="flex items-center gap-2 rounded-[var(--radius-control)] bg-[var(--bg)] px-2 py-1">
       <span className="flex-1 text-[length:var(--font-caption)] text-[var(--faint-fg)]">{t('composer.whisperBanner', { name: whisperTarget.displayName })}</span>
       <IconButton size="sm" aria-label={t('composer.exitWhisper')} onClick={onExitWhisper}><X /></IconButton>
     </div>}
@@ -24,12 +24,12 @@ export function ChatComposerContextBands({ chatId, isGroupChat, hidden, quoteCon
 /** The task composer and IM use the same quote preview. Source ids are never presentation. */
 export function MessageQuotePreview({ quote, onClear }: { quote: { senderName: string; content: string; attachment?: ParsedAttachment }; onClear?: () => void }) {
   const { t } = useTranslation('messaging')
-  return <div className="mb-1.5 flex w-fit max-w-full shrink-0 items-center gap-2 rounded-[var(--radius-document)] bg-[var(--bg-elevated)] px-2 py-1 shadow-[var(--shadow-lift)]">
-      <div className="h-6 w-1 shrink-0 rounded-[var(--radius-control)] bg-[var(--accent)]" />
+  return <div className="mb-1.5 flex w-fit max-w-full shrink-0 items-center gap-2 rounded-[var(--radius-document)] bg-[var(--card)] px-2 py-1 shadow-[var(--shadow-lift)]">
+      <div className="h-6 w-1 shrink-0 rounded-[var(--radius-control)] bg-[var(--primary)]" />
       {quote.attachment?.kind === 'image' && <QuoteThumb attachment={quote.attachment} />}
       <div className="max-w-60 overflow-hidden py-1">
-        {quote.senderName && <div className="truncate text-[length:var(--font-body)] font-medium leading-[var(--lh-body)] text-[var(--accent)]">{quote.senderName}</div>}
-        <div className="truncate text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--text-secondary)]">{displayAgentReferences(quote.content, (_id, label) => `@${label}`)}</div>
+        {quote.senderName && <div className="truncate text-[length:var(--font-body)] font-medium leading-[var(--lh-body)] text-[var(--primary)]">{quote.senderName}</div>}
+        <div className="truncate text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--muted-fg)]">{displayAgentReferences(quote.content, (_id, label) => `@${label}`)}</div>
       </div>
       {onClear && <IconButton size="sm" aria-label={t('composer.cancelQuote')} onClick={onClear}><X /></IconButton>}
     </div>
@@ -38,7 +38,7 @@ export function MessageQuotePreview({ quote, onClear }: { quote: { senderName: s
 /** The quoted image itself, so a reply to a picture reads as that picture rather than a label. */
 function QuoteThumb({ attachment }: { attachment: ParsedAttachment }) {
   const view = useAttachmentObjectUrl(attachment.source, 'thumb', true, attachment.fileMetadata)
-  return <div data-testid="quote-thumb" className="size-8 shrink-0 overflow-hidden rounded-[var(--radius-control)] bg-[var(--bg-primary)]">
+  return <div data-testid="quote-thumb" className="size-8 shrink-0 overflow-hidden rounded-[var(--radius-control)] bg-[var(--bg)]">
     {view.status === 'ready' && <img src={view.objectUrl} alt="" className="size-full object-cover" />}
   </div>
 }

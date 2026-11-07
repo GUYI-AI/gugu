@@ -105,7 +105,7 @@ export function CopyValue({
           border: '1px solid var(--border-color)',
           borderRadius: 'var(--radius-document)',
           background: 'var(--input-bg)',
-          color: 'var(--text-secondary)',
+          color: 'var(--muted-fg)',
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',

@@ -56,7 +56,7 @@ export function SearchTrailBar({ chatId, surface, enabled }: { chatId: string | 
   if (!shown) return null
   return (
     <div data-testid="search-trail-bar" className="window-no-drag-region flex shrink-0 items-center gap-1 border-b border-[var(--border)] px-3 py-1 text-[length:var(--font-body)]">
-      <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)]">
+      <span className="min-w-0 flex-1 truncate text-[var(--muted-fg)]">
         {query ? t('searchTrail.position', { query, index: trail.index + 1, total: trail.hits.length }) : t('searchTrail.positionNoWords', { index: trail.index + 1, total: trail.hits.length })}
       </span>
       <IconButton size="sm" aria-label={t('searchTrail.previous')} title={t('searchTrail.previous')} onClick={() => step(-1)}><ChevronUp /></IconButton>

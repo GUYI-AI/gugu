@@ -14,20 +14,20 @@ import type { RunningToken } from './RunningTokenBar'
 
 // Base UI supplies the anchor/visual-viewport budget for both phone presses and desktop hover.
 const STYLE = `
-.mp-card{max-height:min(60dvh,calc(var(--available-height) - env(safe-area-inset-top) - env(safe-area-inset-bottom)));width:340px;max-width:calc(100vw - 32px);display:flex;flex-direction:column;overflow:hidden;white-space:normal;background:var(--popover);border-radius:var(--radius-surface);box-shadow:var(--shadow-lift);color:var(--text-primary)}
-.mp-mono{font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace);font-size:var(--font-caption);letter-spacing:-0.01em;color:var(--text-secondary)}
+.mp-card{max-height:min(60dvh,calc(var(--available-height) - env(safe-area-inset-top) - env(safe-area-inset-bottom)));width:340px;max-width:calc(100vw - 32px);display:flex;flex-direction:column;overflow:hidden;white-space:normal;background:var(--popover);border-radius:var(--radius-surface);box-shadow:var(--shadow-lift);color:var(--fg)}
+.mp-mono{font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace);font-size:var(--font-caption);letter-spacing:-0.01em;color:var(--muted-fg)}
 .mp-hd{flex-shrink:0;display:flex;align-items:center;gap:10px;padding:14px 16px 12px}
 .mp-hd-col{display:flex;flex-direction:column;min-width:0;flex:1}
 .mp-name{font-size:var(--font-body);font-weight:500}
 .mp-name,.mp-meta{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mp-turns{min-height:0;overflow-y:auto;overscroll-behavior:contain;border-top:1px solid var(--border-color);display:flex;flex-direction:column;gap:10px;padding:14px 16px}
-.mp-text{font-size:var(--font-body);line-height:1.625;color:var(--text-secondary);overflow-wrap:anywhere}
-.mp-note{font-size:var(--font-caption);color:var(--text-secondary)}
+.mp-text{font-size:var(--font-body);line-height:1.625;color:var(--muted-fg);overflow-wrap:anywhere}
+.mp-note{font-size:var(--font-caption);color:var(--muted-fg)}
 .mp-now{display:flex;align-items:center;gap:6px;font-size:var(--font-caption)}
-.mp-prompt{margin-left:auto;max-width:85%;border-radius:16px;padding:8px 12px;background:color-mix(in srgb,var(--text-primary) 6%,transparent)}
-.mp-prompt-who{display:block;font-size:var(--font-caption);color:var(--text-secondary)}
-.mp-prompt-body{font-size:var(--font-body);line-height:1.625;color:var(--text-primary);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;white-space:pre-wrap}
-.mp-prompt[data-preview-prompt=elsewhere] .mp-prompt-body{color:var(--text-secondary)}
+.mp-prompt{margin-left:auto;max-width:85%;border-radius:16px;padding:8px 12px;background:color-mix(in srgb,var(--fg) 6%,transparent)}
+.mp-prompt-who{display:block;font-size:var(--font-caption);color:var(--muted-fg)}
+.mp-prompt-body{font-size:var(--font-body);line-height:1.625;color:var(--fg);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;white-space:pre-wrap}
+.mp-prompt[data-preview-prompt=elsewhere] .mp-prompt-body{color:var(--muted-fg)}
 `
 
 type PromptMessage = Pick<MessageItem, 'id' | 'sender_user_id' | 'content' | 'retracted_at'>

@@ -15,7 +15,7 @@
   box-sizing: border-box;
   border-radius: 50%;
   background: transparent;
-  color: var(--text-primary);
+  color: var(--fg);
 }
 
 .agent-harness-icon {
@@ -49,11 +49,11 @@
    pending = 灰(转瞬态、不是故障)、removed = --color-danger(终局)、unavailable = --danger。
    ❌ 别把 removed 并到 --danger:那两档在通讯录里就是刻意分开的两个 token。 */
 .agent-harness-icon[data-agent-harness="pending"] {
-  color: var(--text-tertiary);
+  color: var(--faint-fg);
 }
 
 .agent-harness-icon[data-agent-harness="removed"] {
-  color: var(--color-danger);
+  color: var(--danger);
 }
 
 /* 「确认中」是**转瞬态**:慢转一圈让它与静止的墓碑/云端在余光里也分得开。

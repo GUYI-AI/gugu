@@ -17,9 +17,7 @@ const SURFACES = ['--page', '--bg', '--card', '--popover', '--muted', '--sidebar
 const FLOORS: Array<[string, number]> = [
   ['--fg', 4.5],
   ['--muted-fg', 4.5],
-  ['--color-text-placeholder', 4.5],
   ['--live-fg', 4.5],
-  ['--text-link', 4.5],
   ['--danger-fg', 4.5],
   ['--warn-fg', 4.5],
   ['--ok-fg', 4.5],

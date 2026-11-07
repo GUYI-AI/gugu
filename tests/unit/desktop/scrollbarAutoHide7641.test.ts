@@ -98,7 +98,7 @@ describe('@@@scrollbar-autohide (#7641) 滚动中标记', () => {
     expect(backgrounds).toEqual({
       '::-webkit-scrollbar-thumb': 'transparent',
       '[data-scrolling]::-webkit-scrollbar-thumb': 'var(--border-color)',
-      '::-webkit-scrollbar-thumb:hover': 'var(--text-tertiary)',
+      '::-webkit-scrollbar-thumb:hover': 'var(--faint-fg)',
     })
   })
 

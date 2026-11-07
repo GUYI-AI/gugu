@@ -25,7 +25,7 @@ export function MobileCreatePage({
         minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
-        background: 'var(--bg-primary)',
+        background: 'var(--bg)',
         overflow: 'hidden',
       }}
     >
@@ -49,7 +49,7 @@ export function MobileCreatePage({
             border: 'none',
             borderRadius: 'var(--radius-xl)',
             background: 'transparent',
-            color: 'var(--text-secondary)',
+            color: 'var(--muted-fg)',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -63,7 +63,7 @@ export function MobileCreatePage({
           style={{
             flex: 1,
             minWidth: 0,
-            color: 'var(--text-primary)',
+            color: 'var(--fg)',
             fontSize: 'var(--font-heading)',
             fontWeight: 600,
             overflow: 'hidden',

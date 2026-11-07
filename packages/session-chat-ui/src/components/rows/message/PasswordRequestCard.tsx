@@ -49,8 +49,8 @@ export function PasswordRequestCard(props: { request: PasswordApproval }) {
     <div>用途：网页登录</div><div>许可：这次使用 · 不保存长期许可</div>
     <Show when={current()} fallback={<span role="status">{state()}</span>}>
       <div style={{ display: 'flex', gap: '8px' }}>
-        <button type="button" style={{ padding: "6px 12px", border: "1px solid var(--border)", "border-radius": "var(--radius-control)", background: "var(--bg-primary)", color: "inherit", font: "inherit", cursor: "pointer" }} disabled={busy()} onClick={() => { void decide('allow_once') }}>允许这次</button>
-        <button type="button" style={{ padding: "6px 12px", border: "1px solid var(--border)", "border-radius": "var(--radius-control)", background: "var(--bg-primary)", color: "inherit", font: "inherit", cursor: "pointer" }} disabled={busy()} onClick={() => { void decide('reject') }}>拒绝</button>
+        <button type="button" style={{ padding: "6px 12px", border: "1px solid var(--border)", "border-radius": "var(--radius-control)", background: "var(--bg)", color: "inherit", font: "inherit", cursor: "pointer" }} disabled={busy()} onClick={() => { void decide('allow_once') }}>允许这次</button>
+        <button type="button" style={{ padding: "6px 12px", border: "1px solid var(--border)", "border-radius": "var(--radius-control)", background: "var(--bg)", color: "inherit", font: "inherit", cursor: "pointer" }} disabled={busy()} onClick={() => { void decide('reject') }}>拒绝</button>
       </div>
     </Show>
   </section>

@@ -224,7 +224,7 @@ export function PhoneAppFrame({
   if (missing) {
     return (
       <div hidden={hidden} className="min-h-0 flex-1" data-testid={missingTestId}>
-        <p className="!p-4 text-[length:var(--font-body)] text-[var(--text-secondary)]">{t('chatArea.openWith.unavailable')}</p>
+        <p className="!p-4 text-[length:var(--font-body)] text-[var(--muted-fg)]">{t('chatArea.openWith.unavailable')}</p>
       </div>
     )
   }

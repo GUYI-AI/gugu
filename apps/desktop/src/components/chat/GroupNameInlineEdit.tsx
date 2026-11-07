@@ -45,7 +45,7 @@ export function GroupNameInlineEdit({
         style={{
           fontSize: 'var(--font-heading)',
           fontWeight: 600,
-          color: 'var(--text-secondary)',
+          color: 'var(--muted-fg)',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
@@ -73,7 +73,7 @@ export function GroupNameInlineEdit({
         style={{
           fontSize: 'var(--font-heading)',
           fontWeight: 600,
-          color: 'var(--text-primary)',
+          color: 'var(--fg)',
           ...(wrap ? { overflowWrap: 'anywhere' } : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }),
           minWidth: 0,
           cursor: canEdit ? 'text' : 'default',

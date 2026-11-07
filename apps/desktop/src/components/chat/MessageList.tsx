@@ -138,8 +138,8 @@ const SelectionCheckbox = ({ checked }: { checked: boolean }) => (
       height: 18,
       borderRadius: 'var(--radius-circle)',
       flexShrink: 0,
-      border: checked ? '2px solid var(--accent)' : '2px solid var(--border-subtle)',
-      background: checked ? 'var(--accent)' : 'var(--bg-transparent)',
+      border: checked ? '2px solid var(--primary)' : '2px solid var(--border-subtle)',
+      background: checked ? 'var(--primary)' : 'var(--bg-transparent)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -148,7 +148,7 @@ const SelectionCheckbox = ({ checked }: { checked: boolean }) => (
   >
     {checked && (
       <svg width="10" height="8" viewBox="0 0 10 8" fill="none" aria-hidden="true">
-        <path d="M1 4l3 3 5-6" stroke="var(--surface-white)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M1 4l3 3 5-6" stroke="var(--card)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     )}
   </div>
@@ -292,7 +292,7 @@ const MessageListRow = memo(function MessageListRow({
         <div
           data-message-select-row={selectMode ? msg.id : undefined}
           onClick={selectMode ? () => onToggleSelect(msg.id) : undefined}
-          style={selectMode ? { ...SELECT_ROW_STYLE, background: isSelected ? 'var(--accent-tint-row)' : undefined } : undefined}
+          style={selectMode ? { ...SELECT_ROW_STYLE, background: isSelected ? 'var(--selected)' : undefined } : undefined}
         >
           {selectMode && <SelectionCheckbox checked={isSelected} />}
           <div style={selectMode ? SELECT_BUBBLE_STYLE : undefined}>{bubble}</div>

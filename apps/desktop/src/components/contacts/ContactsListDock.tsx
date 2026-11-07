@@ -25,7 +25,7 @@ export function ContactsListDock({ mobile = false, selectionMode, selectedCount,
   const size = mobile ? 'lg' : 'md'
   return (
     <div
-      className={`flex shrink-0 gap-2 border-t border-[var(--border-color)] text-[var(--text-secondary)] ${selectionMode ? 'flex-col items-stretch' : 'flex-row items-center'}`}
+      className={`flex shrink-0 gap-2 border-t border-[var(--border-color)] text-[var(--muted-fg)] ${selectionMode ? 'flex-col items-stretch' : 'flex-row items-center'}`}
       style={{ padding: mobile ? 'var(--spacing-sm) var(--spacing-md)' : 'var(--spacing-sm) var(--spacing-md) var(--spacing-md)' }}
     >
       {selectionMode ? (

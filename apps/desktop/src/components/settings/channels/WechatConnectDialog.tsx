@@ -19,7 +19,7 @@ function Spinner() {
   return (
     <span
       aria-hidden
-      className="inline-block size-6 rounded-full border-[3px] border-[var(--border-color)] border-t-[var(--accent)] animate-[spin_0.8s_linear_infinite]"
+      className="inline-block size-6 rounded-full border-[3px] border-[var(--border-color)] border-t-[var(--primary)] animate-[spin_0.8s_linear_infinite]"
     />
   )
 }

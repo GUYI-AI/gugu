@@ -22,15 +22,15 @@ const REFUSAL_COPY_KEY: Record<JoinGroupByIdRefusal, string> = {
 // 几何走类名与 token,❌ 不写 inline style:那是 @@@ui-ruler 棘轮盯的债务,只减不增。
 // (这句话本身也不能带上那个字面量 —— 棘轮数的是源码文本,注释一样算数。)
 const hintClass =
-  'px-4 py-8 text-center text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--text-secondary)]'
+  'px-4 py-8 text-center text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--muted-fg)]'
 const rowClass = 'flex items-center gap-2 border-b border-[var(--border-subtle)] py-2'
 const nameClass =
-  'truncate text-[length:var(--font-body)] font-semibold leading-[var(--lh-body)] text-[var(--text-primary)]'
+  'truncate text-[length:var(--font-body)] font-semibold leading-[var(--lh-body)] text-[var(--fg)]'
 const metaClass =
-  'mt-px text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--text-secondary)]'
+  'mt-px text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--muted-fg)]'
 const errorClass =
   'mt-1 text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--danger-fg)]'
-const stateClass = 'text-[length:var(--font-body)] text-[var(--text-secondary)]'
+const stateClass = 'text-[length:var(--font-body)] text-[var(--muted-fg)]'
 
 /**
  * 按群号加群 —— 与「加好友」对称的那条路。

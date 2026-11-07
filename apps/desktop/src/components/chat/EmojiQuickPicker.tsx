@@ -50,13 +50,13 @@ export function EmojiQuickPicker({ anchor, onPick, onClose, onExpand, children, 
   const body = disabled ? children : expanded ? (
     <>
       <section aria-label={t('emoji.workStatus')} className="pb-2">
-        <div className="pb-1 text-[length:var(--font-caption)] text-[var(--text-tertiary)]">{t('emoji.workStatus')}</div>
+        <div className="pb-1 text-[length:var(--font-caption)] text-[var(--faint-fg)]">{t('emoji.workStatus')}</div>
         <div className="grid grid-cols-3">
           {REACTIONS.filter(({ kind }) => kind === 'status').map(({ emoji }) => <Button key={emoji} variant="ghost" className="px-1" onClick={() => pick(emoji)}><span className="text-[length:var(--font-size-xl)]">{emoji}</span>{reactionLabel(emoji, i18n.language)}</Button>)}
         </div>
       </section>
       <section aria-label={t('emoji.reactions')}>
-        <div className="pb-1 text-[length:var(--font-caption)] text-[var(--text-tertiary)]">{t('emoji.reactions')}</div>
+        <div className="pb-1 text-[length:var(--font-caption)] text-[var(--faint-fg)]">{t('emoji.reactions')}</div>
         <div className="grid grid-cols-6 justify-items-center">
           {REACTIONS.filter(({ kind }) => kind === 'mood').map(({ emoji }) => <QuickReactionButton key={emoji} menu={menu} title={reactionLabel(emoji, i18n.language) ?? emoji} label={t('emoji.reactWith', { emoji: `${emoji} ${reactionLabel(emoji, i18n.language) ?? ''}`.trim() })} onClick={() => pick(emoji)}>{emoji}</QuickReactionButton>)}
         </div>
@@ -75,7 +75,7 @@ export function EmojiQuickPicker({ anchor, onPick, onClose, onExpand, children, 
     <Popover.Root open modal={false} onOpenChange={(open) => { if (!open) onClose() }}>
       <Popover.Portal>
         <Popover.Positioner anchor={anchor} positionMethod="fixed" side="bottom" align="start" sideOffset={6} collisionPadding={8} collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}>
-          <Popover.Popup className="box-border w-[min(366px,calc(100vw-16px))] overflow-hidden rounded-[var(--radius-surface)] bg-[var(--menu-bg)] p-2 text-[var(--menu-fg)] shadow-[var(--shadow-menu)]">{body}</Popover.Popup>
+          <Popover.Popup className="box-border w-[min(366px,calc(100vw-16px))] overflow-hidden rounded-[var(--radius-surface)] bg-[var(--popover)] p-2 text-[var(--fg)] shadow-[var(--shadow-menu)]">{body}</Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>
     </Popover.Root>

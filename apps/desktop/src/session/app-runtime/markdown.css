@@ -9,7 +9,7 @@
 @layer gugu {
   /* .gg-md 读宿主的两个名字；在 App 页面上，它们就是 ui.css 的 --em-*（深浅两套跟着 data-gugu-theme 走）。 */
   :root {
-    --text-link: var(--em-foreground-info);
+    --live-fg: var(--em-foreground-info);
     --font-family-mono: var(--em-font-mono);
   }
 

@@ -26,8 +26,8 @@ export function FullScreenLoader({ showLogo = true }: { showLogo?: boolean }) {
         display: 'grid',
         placeItems: 'center',
         overflow: 'hidden',
-        background: 'var(--bg-primary)',
-        color: 'var(--text-primary)',
+        background: 'var(--bg)',
+        color: 'var(--fg)',
       }}
     >
       {!continuingStartup && <LoadingIndicator size="page" ariaLabel={t('shell.loading')} />}

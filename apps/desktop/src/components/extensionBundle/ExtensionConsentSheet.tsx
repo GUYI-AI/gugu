@@ -102,11 +102,11 @@ function InstallConsentSheet() {
       <div className="flex min-h-0 flex-1 flex-col gap-3 !p-5">
         <div className="flex items-center gap-2">
           {ask.requester ? <RequesterFace requester={ask.requester} /> : null}
-          <div id={titleId} className="min-w-0 text-[length:var(--font-title)] font-semibold text-[var(--text-primary)]">
+          <div id={titleId} className="min-w-0 text-[length:var(--font-title)] font-semibold text-[var(--fg)]">
             {ask.title}
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto text-[length:var(--font-body)] text-[var(--text-secondary)]">
+        <div className="min-h-0 flex-1 overflow-auto text-[length:var(--font-body)] text-[var(--muted-fg)]">
           <ConsentBody description={ask.description} details={ask.details} />
           {ask.alsoOn?.length ? (
             // owner 10-27「不关心给哪些 agent，关心给哪些设备」: one list of computers, each row the machine picker's own
@@ -114,7 +114,7 @@ function InstallConsentSheet() {
             // installed on too (owner 10-16). Offline ones are listed, greyed, as everywhere a machine is picked. With no other
             // computer there is nothing to choose: no list (the title and the band say which computer).
             <fieldset className="!mt-3 flex flex-col" data-testid="extension-consent-devices">
-              <legend className="pb-1 text-[length:var(--font-body)] font-semibold text-[var(--text-primary)]">{t('chatArea.appEnable.devices')}</legend>
+              <legend className="pb-1 text-[length:var(--font-body)] font-semibold text-[var(--fg)]">{t('chatArea.appEnable.devices')}</legend>
               {[{ id: '', choice: targetChoice(ask.machine, t('chatArea.appEnable.machine')), disabledReason: undefined as string | undefined },
                 ...ask.alsoOn.map((machine) => ({ id: machine.id, choice: hostChoice(machine.id, machine.label), disabledReason: machine.disabledReason }))].map(({ id, choice, disabledReason }) => {
                 const blocked = !id || disabledReason !== undefined || !machineTakesInstall(choice)
@@ -144,7 +144,7 @@ function InstallConsentSheet() {
               })}
             </fieldset>
           ) : null}
-          {ask.given ? <div data-testid="extension-consent-grant" className={`!mt-2 ${ask.alsoOn?.length ? 'px-2' : ''} text-[length:var(--font-caption)] leading-normal text-[var(--text-tertiary)]`}>{ask.given.first ? t('chatArea.appEnable.devicesHint') : t('chatArea.appEnable.addsChat', { name: ask.given.chat.name })}</div> : null}
+          {ask.given ? <div data-testid="extension-consent-grant" className={`!mt-2 ${ask.alsoOn?.length ? 'px-2' : ''} text-[length:var(--font-caption)] leading-normal text-[var(--faint-fg)]`}>{ask.given.first ? t('chatArea.appEnable.devicesHint') : t('chatArea.appEnable.addsChat', { name: ask.given.chat.name })}</div> : null}
         </div>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" data-testid="extension-consent-cancel" onClick={() => answer('declined')}>

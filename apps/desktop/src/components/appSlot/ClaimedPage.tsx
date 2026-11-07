@@ -68,7 +68,7 @@ export const ClaimedPage = observer(function ClaimedPage({ slotId, chatId, resou
   return (
     <div ref={boxRef} className="min-h-0 flex-1">
       {noPage ? (
-        <p className="!p-4 text-[length:var(--font-body)] text-[var(--text-secondary)]" data-testid="group-app-slot-no-page">
+        <p className="!p-4 text-[length:var(--font-body)] text-[var(--muted-fg)]" data-testid="group-app-slot-no-page">
           {t('chatArea.openWith.unavailable')}
         </p>
       ) : null}

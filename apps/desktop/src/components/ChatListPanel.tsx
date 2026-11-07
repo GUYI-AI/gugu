@@ -145,7 +145,7 @@ const PLUS_MENU_ITEM_STYLE_DESKTOP: React.CSSProperties = { minHeight: 'var(--co
 const PLUS_MENU_ITEM_STYLE_TOUCH: React.CSSProperties = { minHeight: 'var(--control-h-touch)', fontSize: 'var(--font-title)' }
 const ADD_FRIEND_BODY_STYLE: React.CSSProperties = { position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1, overflow: 'hidden' }
 const ADD_FRIEND_HEADER_STYLE: React.CSSProperties = { display: 'flex', alignItems: 'center', padding: '14px 16px 10px', borderBottom: '1px solid var(--border-color)' }
-const ADD_FRIEND_TITLE_STYLE: React.CSSProperties = { flex: 1, fontSize: 'var(--font-title)', lineHeight: 'var(--lh-title)', fontWeight: 600, color: 'var(--text-primary)' } // #7333 弹层标题 16/24
+const ADD_FRIEND_TITLE_STYLE: React.CSSProperties = { flex: 1, fontSize: 'var(--font-title)', lineHeight: 'var(--lh-title)', fontWeight: 600, color: 'var(--fg)' } // #7333 弹层标题 16/24
 
 // @@@5856 「更早」分段头:一行低调的可点条,不做成折叠箭头家具。
 const SUNK_SECTION_STYLE: React.CSSProperties = {
@@ -201,8 +201,8 @@ interface ChatRowProps {
 //     一条支线不该和它的来源在同一屏上比谁的信息多。
 //   · 左边一条竖轨(.gg-topic-subrows)把同一条线下的话题圈成一组。
 const TOPIC_SUBROW_STYLE: React.CSSProperties = { paddingLeft: 40, paddingTop: 4, paddingBottom: 4 }
-const TOPIC_SUBROW_ICON_STYLE: React.CSSProperties = { color: 'var(--text-tertiary)' }
-const TOPIC_SUBROW_NAME_STYLE: React.CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--text-secondary)' }
+const TOPIC_SUBROW_ICON_STYLE: React.CSSProperties = { color: 'var(--faint-fg)' }
+const TOPIC_SUBROW_NAME_STYLE: React.CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--muted-fg)' }
 
 function startChatDrag(event: React.DragEvent<HTMLElement>, chat: ChatItem, title: string) {
   if (!event.currentTarget.draggable) return
@@ -373,7 +373,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, agentStatus, isActive
           <>
             {/* owner 10-28:agent 行不再标它在哪台机器上(「本机」/ 设备名);机器只在悬停卡与对话标题栏里说。 */}
             {chat.is_muted && (
-              <span aria-label={t('chatList.muted')} title={t('chatList.muted')} style={{ color: 'var(--text-tertiary)' }}>
+              <span aria-label={t('chatList.muted')} title={t('chatList.muted')} style={{ color: 'var(--faint-fg)' }}>
                 <BellOff size={13} strokeWidth={1.8} aria-hidden="true" />
               </span>
             )}
@@ -970,7 +970,7 @@ export function ChatListPanel({
           style={EMPTY_STATE_WRAP_STYLE}
         >
           <PaneEmptyState
-            icon={<MessageCircle size={26} color="var(--text-tertiary)" />}
+            icon={<MessageCircle size={26} color="var(--faint-fg)" />}
             caption={t('chatList.empty')}
             hint={t(mobile ? 'chatList.emptyHintMobile' : 'chatList.emptyHint')}
           />
@@ -1008,7 +1008,7 @@ export function ChatListPanel({
       {!inSidebar && !loadingChats && normalRows}
 
       {mobile && hasSearchQuery && (
-        <ListRow mobile role="button" tabIndex={0} data-testid="chat-list-search-messages" leading={<Search size={20} color="var(--text-tertiary)" />}
+        <ListRow mobile role="button" tabIndex={0} data-testid="chat-list-search-messages" leading={<Search size={20} color="var(--faint-fg)" />}
           title={t('chatList.searchMessages', { query: listQuery.trim() })}
           onClick={() => openGlobalSearch({ text: listQuery.trim() })} />
       )}

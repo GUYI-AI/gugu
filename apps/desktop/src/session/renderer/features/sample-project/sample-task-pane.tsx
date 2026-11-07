@@ -21,10 +21,10 @@ export function SampleTaskPane({ content, onOpenFile, onClose }: { content: Samp
   return (
     <aside
       data-sample-task-pane=""
-      style={{ width: 'clamp(380px, 38vw, 520px)', height: '100%', flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderLeft: '1px solid var(--border-subtle)', background: 'var(--bg-primary)' }}
+      style={{ width: 'clamp(380px, 38vw, 520px)', height: '100%', flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderLeft: '1px solid var(--border-subtle)', background: 'var(--bg)' }}
     >
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '16px 18px 12px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
-        <strong style={{ color: 'var(--text-primary)', fontSize: 'var(--font-title)' }}>{translate('projects.sample.taskDetail')}</strong>
+        <strong style={{ color: 'var(--fg)', fontSize: 'var(--font-title)' }}>{translate('projects.sample.taskDetail')}</strong>
         <IconButton size="md" aria-label={close} title={close} onClick={onClose}><X size={18} /></IconButton>
       </header>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-[18px] py-4">
@@ -38,10 +38,10 @@ export function SampleTaskPane({ content, onOpenFile, onClose }: { content: Samp
         />
         {content.task.steps.length > 0 ? (
           <section className="flex flex-col gap-2">
-            <h3 className="m-0 text-xs font-medium text-[var(--text-tertiary)]">{translate('projects.sample.taskSteps')}</h3>
+            <h3 className="m-0 text-xs font-medium text-[var(--faint-fg)]">{translate('projects.sample.taskSteps')}</h3>
             <ol className="m-0 flex list-none flex-col gap-2 p-0">
               {content.task.steps.map((step, index) => (
-                <li key={index} className="text-[var(--font-body)] leading-[var(--lh-body)] text-[var(--text-secondary)]">
+                <li key={index} className="text-[var(--font-body)] leading-[var(--lh-body)] text-[var(--muted-fg)]">
                   <SampleStepLine step={step} list={list} />
                 </li>
               ))}
@@ -50,7 +50,7 @@ export function SampleTaskPane({ content, onOpenFile, onClose }: { content: Samp
         ) : null}
         {files.length > 0 ? (
           <section className="flex flex-col gap-2">
-            <h3 className="m-0 text-xs font-medium text-[var(--text-tertiary)]">{translate('projects.sample.taskFiles')}</h3>
+            <h3 className="m-0 text-xs font-medium text-[var(--faint-fg)]">{translate('projects.sample.taskFiles')}</h3>
             {files.map((file) => (
               <FileAttachmentCard key={file.id} file={{ fileName: file.name, sizeBytes: sampleFileBytes(file), mimeType: file.mimeType }} onOpen={() => onOpenFile(file.id)} />
             ))}
@@ -70,7 +70,7 @@ function SampleStepLine({ step, list }: { step: SampleStep; list: Intl.ListForma
       return (
         <>
           {translate('projects.sample.searched')}
-          <ul className="m-0 mt-1 flex list-none flex-col gap-1 p-0 text-[var(--text-tertiary)]">
+          <ul className="m-0 mt-1 flex list-none flex-col gap-1 p-0 text-[var(--faint-fg)]">
             {step.queries.map((query) => <li key={query} className="truncate" title={query}>{query}</li>)}
           </ul>
         </>

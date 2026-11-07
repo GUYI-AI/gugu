@@ -104,7 +104,7 @@ export function ForwardMessageDialog({ messages = [], preview: subject, topRow, 
             padding: '8px 10px',
             background: 'var(--bg-secondary)',
             fontSize: 'var(--font-body)',
-            color: 'var(--text-secondary)',
+            color: 'var(--muted-fg)',
             maxHeight: 64,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -115,10 +115,10 @@ export function ForwardMessageDialog({ messages = [], preview: subject, topRow, 
           }}
         >
           {subject ?? (isBatch ? (
-            <span style={{ color: 'var(--text-secondary)' }}>{t('forward.batchPreview', { count: messages.length })}</span>
+            <span style={{ color: 'var(--muted-fg)' }}>{t('forward.batchPreview', { count: messages.length })}</span>
           ) : (
             <>
-              <span style={{ color: 'var(--text-tertiary)' }}>{identitiesById[first?.sender_user_id ?? '']?.display_name ?? ''}：</span>
+              <span style={{ color: 'var(--faint-fg)' }}>{identitiesById[first?.sender_user_id ?? '']?.display_name ?? ''}：</span>
               {preview}
             </>
           ))}

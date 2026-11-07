@@ -80,7 +80,7 @@ it.each(['dark', 'light'] as const)('%s: the phone composer row has a solid back
   host = document.body.appendChild(document.createElement('div'))
   host.setAttribute('data-phone-shell', '')
   host.setAttribute('data-ta-scope', '')
-  host.style.cssText = 'position:relative;width:390px;height:600px;overflow:hidden;background:var(--ta-app-bg);color:var(--text-primary)'
+  host.style.cssText = 'position:relative;width:390px;height:600px;overflow:hidden;background:var(--ta-app-bg);color:var(--fg)'
   root = createRoot(host)
   root.render(
     <LocalizationProvider>

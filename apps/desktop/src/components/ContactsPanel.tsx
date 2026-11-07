@@ -1450,7 +1450,7 @@ export const ContactsPanel = memo(function ContactsPanel({
         <Pane paneRole="detail">
           <PaneHeader divider />
           <div className="gg-c-cpane-empty flex flex-1 items-center justify-center">
-            <PaneEmptyState icon={<Users size={26} color="var(--text-tertiary)" />} caption={ct('panel.selectContact')} />
+            <PaneEmptyState icon={<Users size={26} color="var(--faint-fg)" />} caption={ct('panel.selectContact')} />
           </div>
         </Pane>
       )

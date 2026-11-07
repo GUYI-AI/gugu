@@ -38,7 +38,7 @@ function AppModalSheet({ presentation: modal, onClose }: { presentation: AppModa
     <Sheet onClose={onClose} desktopWidth={widths[modal.size]} desktopHeight="min(560px, calc(100dvh - 32px))" desktopMaxHeight="calc(100dvh - 32px)" fullScreenMobile finalFocus={() => modal.opener.isConnected ? modal.opener : false} titleId={titleId} testId="app-modal">
       <div className="flex min-h-0 flex-1 flex-col" data-app-modal-id={modal.id}>
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border)] !px-5 !py-3">
-          <div className="min-w-0"><p className="text-[length:var(--font-caption)] text-[var(--text-secondary)]">{modal.appName}</p><Dialog.Title id={titleId} className="text-[length:var(--font-title)] font-medium">{modal.title}</Dialog.Title></div>
+          <div className="min-w-0"><p className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">{modal.appName}</p><Dialog.Title id={titleId} className="text-[length:var(--font-title)] font-medium">{modal.title}</Dialog.Title></div>
           <Button type="button" variant="ghost" size="icon" data-app-modal-close aria-label={t('dialog.close')} onClick={onClose} className="shrink-0"><XIcon className="size-4" /></Button>
         </header>
         <span tabIndex={0} className="h-0 overflow-hidden" onFocus={() => focus('first')} />

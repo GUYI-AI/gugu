@@ -10,7 +10,7 @@ const HoverElementsContext = createContext<HoverElements | null>(null)
 
 const barStyle: CSSProperties = {
   display: 'flex', gap: 2, padding: 3,
-  background: 'var(--menu-bg)', border: '1px solid var(--border)',
+  background: 'var(--popover)', border: '1px solid var(--border)',
   borderRadius: 'var(--radius-capsule)', boxShadow: 'var(--shadow-lift)',
   pointerEvents: 'auto',
 }

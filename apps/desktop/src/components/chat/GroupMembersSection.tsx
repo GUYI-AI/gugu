@@ -54,7 +54,7 @@ const leaveStyle: CSSProperties = {
   cursor: 'pointer', padding: 11, borderRadius: 'var(--radius-xl)', background: 'var(--danger-tint)',
 }
 const confirmStyle: CSSProperties = { marginTop: 20 }
-const confirmTextStyle: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--text-secondary)', margin: '0 0 8px' }
+const confirmTextStyle: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--muted-fg)', margin: '0 0 8px' }
 const confirmActionsStyle: CSSProperties = { display: 'flex', gap: 8 }
 const confirmButtonStyle: CSSProperties = { flex: 1 }
 const MEMBER_PREVIEW_COUNT = 5

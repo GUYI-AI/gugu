@@ -30,20 +30,20 @@ interface ShellErrorBoundaryState {
 function ShellErrorFallback({ error, onRetry, onReload }: { error: Error; onRetry: () => void; onReload: () => void }) {
   const { t } = useTranslation('main')
   return (
-    <div role="alert" data-testid="shell-error-fallback" className="flex min-h-0 flex-1 items-center justify-center bg-[var(--bg-primary)] p-8 text-[var(--text-primary)]">
+    <div role="alert" data-testid="shell-error-fallback" className="flex min-h-0 flex-1 items-center justify-center bg-[var(--bg)] p-8 text-[var(--fg)]">
       {/* 主界面连同无边框标题栏一起没了;留一条可拖拽区,窗口坏着也还能挪。 */}
       <div className="window-drag-region fixed inset-x-0 top-0 z-0 h-10" />
-      <div className="relative z-10 w-[min(560px,100%)] rounded-[var(--radius-xl)] border border-[var(--border-color)] bg-[var(--bg-elevated)] p-6 shadow-[var(--shadow-popover)]">
+      <div className="relative z-10 w-[min(560px,100%)] rounded-[var(--radius-xl)] border border-[var(--border-color)] bg-[var(--card)] p-6 shadow-[var(--shadow-popover)]">
         <div className="mb-2 text-[length:var(--font-title)] leading-[var(--lh-title)] font-semibold">{t('errorBoundary.shell.title')}</div>
-        <div className="mb-4 text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--text-secondary)]">{t('errorBoundary.shell.description')}</div>
+        <div className="mb-4 text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--muted-fg)]">{t('errorBoundary.shell.description')}</div>
         <div className="flex gap-2">
           <Button variant="primary" onClick={onRetry}>{t('errorBoundary.shell.retry')}</Button>
           <Button onClick={onReload}>{t('errorBoundary.shell.reload')}</Button>
         </div>
         {import.meta.env.DEV && (
           <details className="mt-4">
-            <summary className="cursor-pointer select-none text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--text-secondary)]">{t('errorBoundary.diagnostics')}</summary>
-            <pre className="mt-3 whitespace-pre-wrap break-words rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--bg-primary)] p-3 font-[family-name:var(--font-family-mono)] text-[length:var(--text-code)] leading-[var(--lh-body)] text-[var(--danger-fg)]">{error.stack || error.message}</pre>
+            <summary className="cursor-pointer select-none text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--muted-fg)]">{t('errorBoundary.diagnostics')}</summary>
+            <pre className="mt-3 whitespace-pre-wrap break-words rounded-[var(--radius-control)] border border-[var(--border-subtle)] bg-[var(--bg)] p-3 font-[family-name:var(--font-family-mono)] text-[length:var(--text-code)] leading-[var(--lh-body)] text-[var(--danger-fg)]">{error.stack || error.message}</pre>
           </details>
         )}
       </div>

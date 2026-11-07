@@ -35,17 +35,17 @@ export function SessionExpiredNotice() {
         position: 'fixed', top: 'var(--window-titlebar-height)', left: 0, right: 0, zIndex: 'var(--z-banner)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
         padding: '9px 16px',
-        background: 'var(--bg-elevated)',
+        background: 'var(--card)',
         borderBottom: '1px solid var(--border-strong)',
         boxShadow: 'var(--shadow-lift)',
-        color: 'var(--text-primary)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)',
+        color: 'var(--fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)',
         WebkitAppRegion: 'no-drag',
       } as React.CSSProperties}
     >
-      <AlertTriangle size={16} aria-hidden="true" style={{ color: 'var(--text-error)', flexShrink: 0 }} />
+      <AlertTriangle size={16} aria-hidden="true" style={{ color: 'var(--danger-fg)', flexShrink: 0 }} />
       <span style={{ minWidth: 0 }}>
         <strong style={{ fontWeight: 600 }}>{t('shell.sessionExpired.title')}</strong>
-        <span style={{ color: 'var(--text-secondary)', marginLeft: 8 }}>{t('shell.sessionExpired.description')}</span>
+        <span style={{ color: 'var(--muted-fg)', marginLeft: 8 }}>{t('shell.sessionExpired.description')}</span>
       </span>
     </div>
   )

@@ -216,7 +216,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
   const content = chatId && (prompt?.choice.kind === 'choose' || unopened || (appFiles && appFiles.chatId === chatId)) ? (
     <div className="flex flex-col gap-3 !p-4" data-testid="group-app-open-with-sheet">
       {unopened ? (
-        <div className="flex items-center gap-2 text-[length:var(--font-caption)] text-[var(--text-error)]" data-testid="group-app-slot-unopened">
+        <div className="flex items-center gap-2 text-[length:var(--font-caption)] text-[var(--danger-fg)]" data-testid="group-app-slot-unopened">
           {/* Why is in main's log; the person reads what can be the case here. */}
           <span className="min-w-0 flex-1">{t('chatArea.openWith.fileUnavailable')}</span>
           <Button size="sm" variant="ghost" onClick={() => setUnopened(null)}>{t('common.close')}</Button>
@@ -224,7 +224,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
       ) : null}
       {appFiles && appFiles.chatId === chatId ? (
         <div className="flex flex-col items-stretch gap-1" data-testid="group-app-slot-app-files">
-          <div className="text-[length:var(--font-caption)] text-[var(--text-secondary)]">{t('chatArea.openWith.appFiles', { name: appFiles.appName })}</div>
+          <div className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">{t('chatArea.openWith.appFiles', { name: appFiles.appName })}</div>
           {appFiles.files.map((file) => (
             <Button key={file.itemId} size="sm" variant="ghost" className="justify-start" data-app-file={file.itemId} onClick={() => void openGroupFile(file.itemId)}>
               {file.displayName}
@@ -249,7 +249,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
   const overlay = !content ? null : mobile ? (
     <Sheet mobileFitContent onClose={() => { setPrompt(null); setAppFiles(null); setUnopened(null) }}>{content}</Sheet>
   ) : (
-    <div className="absolute inset-x-0 top-0 z-30 border-b border-[var(--border)] bg-[var(--bg-primary)] shadow-lift">{content}</div>
+    <div className="absolute inset-x-0 top-0 z-30 border-b border-[var(--border)] bg-[var(--bg)] shadow-lift">{content}</div>
   )
 
   return { overlay, openWith }

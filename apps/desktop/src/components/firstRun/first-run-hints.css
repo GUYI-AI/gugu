@@ -3,7 +3,7 @@
   padding: 12px;
   border-radius: var(--radius-surface);
   background: var(--popover);
-  color: var(--text-primary);
+  color: var(--fg);
   box-shadow: var(--shadow-lift);
   font-size: var(--font-body);
   line-height: var(--lh-body);

@@ -337,17 +337,17 @@
      解析成 rgba(0,0,0,0) 的原因(既有缺陷,本次不动,已单独上报)。
      ❌ 也别在这里发明颜色值:每个会话页段都指向上面已存在的 token。 */
   --color-card: var(--background-1, var(--card));
-  --color-card-foreground: var(--foreground, var(--text-primary));
+  --color-card-foreground: var(--foreground, var(--fg));
   /* popover/dropdown 的实际底色就是 background-quaternary,见 lib/ui/popover.tsx:42
      与 dropdown-menu.tsx:46 —— 桥接跟着既有组件走,不另立一层 */
   --color-popover: var(--background-quaternary, var(--popover));
-  --color-popover-foreground: var(--foreground, var(--text-primary));
+  --color-popover-foreground: var(--foreground, var(--fg));
   --color-primary: var(--primary-button-background, var(--primary));
   --color-primary-foreground: var(--primary-button-foreground, var(--primary-fg));
   /* secondary 与 muted 在 shadcn 默认主题里本就同值;这里跟 button.tsx 的 secondary 变体
      (bg-background-2 + text-foreground-muted)对齐 */
   --color-secondary: var(--background-2, var(--muted));
-  --color-secondary-foreground: var(--foreground-muted, var(--text-primary));
+  --color-secondary-foreground: var(--foreground-muted, var(--fg));
   --color-muted: var(--background-2, var(--muted));
   --color-muted-foreground: var(--foreground-muted, var(--muted-fg));
   /* accent = 高亮项底色(不是品牌色 —— 品牌色走 --color-primary)。
@@ -357,7 +357,7 @@
      项用的就是不透明的 background-quaternary-1(dropdown-menu.tsx:95/120),桥接跟着它走。
      兜底段仍是咕咕的 --hover,所以咕咕作用域一个像素不变。 */
   --color-accent: var(--background-quaternary-1, var(--hover));
-  --color-accent-foreground: var(--foreground, var(--text-primary));
+  --color-accent-foreground: var(--foreground, var(--fg));
   /* 会话页语义层没有「实心 destructive 表面」这一格:--background-destructive 是 red-2/red-3
      的淡底,配 destructive-foreground 的白字会白底白字。Radix 里承担实心填充的是 step 9,
      所以这里落到 --red-9(与咕咕把它落到 --danger 同一个角色) */

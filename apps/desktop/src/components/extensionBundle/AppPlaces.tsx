@@ -21,10 +21,10 @@ const placeAvatar = (place: EnablePlace): AvatarProps =>
     ? { name: place.name ?? '', avatarUrl: place.avatar ?? null, seed: place.agentId ?? place.id, isAgent: true }
     : { name: place.name ?? '', avatarUrl: place.avatar ?? null, seed: place.id, variant: 'group', memberAvatars: place.members ?? [] }
 
-const CAPTION = 'flex items-center gap-1 px-1 pt-2 text-[length:var(--font-caption)] text-[var(--text-tertiary)]'
-const BOX = 'flex flex-col gap-px rounded-[var(--radius-document)] border border-[var(--border-color)] bg-[var(--modal-bg)] p-1'
-const QUIET = 'text-[length:var(--font-caption)] leading-normal text-[var(--text-tertiary)]'
-const TILE = 'flex shrink-0 items-center justify-center rounded-[var(--radius-control)] text-[var(--text-secondary)]'
+const CAPTION = 'flex items-center gap-1 px-1 pt-2 text-[length:var(--font-caption)] text-[var(--faint-fg)]'
+const BOX = 'flex flex-col gap-px rounded-[var(--radius-document)] border border-[var(--border-color)] bg-[var(--card)] p-1'
+const QUIET = 'text-[length:var(--font-caption)] leading-normal text-[var(--faint-fg)]'
+const TILE = 'flex shrink-0 items-center justify-center rounded-[var(--radius-control)] text-[var(--muted-fg)]'
 
 function Chip({ children, mark }: { children: ReactNode; mark: string }) {
   return (
@@ -115,7 +115,7 @@ export function AppPlacesEditor({ places, machineName, enabled, onChange, disabl
           <span className={`${TILE} ${tileSize} border-[1.5px] border-dashed border-[var(--border-strong)]`}>
             <Plus size={Math.round(size * 0.45)} />
           </span>
-          <span className="gg-list-row-title font-[var(--font-weight-medium)] text-[var(--text-secondary)]">{t('chatArea.appEnable.add')}</span>
+          <span className="gg-list-row-title font-[var(--font-weight-medium)] text-[var(--muted-fg)]">{t('chatArea.appEnable.add')}</span>
         </Button>
       </div>
       <div className={`${QUIET} px-1 pt-1`}>{t('chatArea.appEnable.hint')}</div>

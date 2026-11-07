@@ -149,7 +149,7 @@ function GroupInviteQr({ group }: { group: ContactGroupChat }) {
 
   return (
     <section style={{ padding: '16px 0 0' }}>
-      <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', marginBottom: 8 }}>{t('groupInvite.qrTitle')}</div>
+      <div style={{ color: 'var(--muted-fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', marginBottom: 8 }}>{t('groupInvite.qrTitle')}</div>
       <div
         style={{
           border: '1px solid var(--border-color)',
@@ -183,13 +183,13 @@ function GroupInviteQr({ group }: { group: ContactGroupChat }) {
               style={{ width: 132, height: 132, display: 'block' }}
             />
           ) : (
-            <QrCode size={42} color="var(--text-tertiary)" aria-hidden="true" />
+            <QrCode size={42} color="var(--faint-fg)" aria-hidden="true" />
           )}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
-              color: 'var(--text-primary)',
+              color: 'var(--fg)',
               fontSize: 'var(--font-body)',
               fontWeight: 600,
               lineHeight: 'var(--lh-body)',
@@ -202,7 +202,7 @@ function GroupInviteQr({ group }: { group: ContactGroupChat }) {
           </div>
           <div
             style={{
-              color: qrError ? 'var(--danger)' : 'var(--text-secondary)',
+              color: qrError ? 'var(--danger)' : 'var(--muted-fg)',
               fontSize: qrError ? 'var(--font-body)' : 'var(--font-caption)',
               lineHeight: qrError ? 'var(--lh-body)' : 'var(--lh-caption)',
               marginTop: 4
@@ -238,7 +238,7 @@ function GroupInviteQr({ group }: { group: ContactGroupChat }) {
                   minWidth: 0,
                   fontSize: 'var(--font-body)',
                   lineHeight: 'var(--lh-body)',
-                  color: 'var(--text-secondary)',
+                  color: 'var(--muted-fg)',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap'
@@ -296,32 +296,32 @@ export function GroupJoinConfirmDialog({
         style={{ position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1, overflow: 'hidden' }}
       >
         <div style={{ padding: 20 }}>
-          <div style={{ fontSize: 'var(--font-title)', lineHeight: 'var(--lh-title)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
+          <div style={{ fontSize: 'var(--font-title)', lineHeight: 'var(--lh-title)', fontWeight: 600, color: 'var(--fg)', marginBottom: 8 }}>
             {isApproval ? t('groupInvite.requestTitle') : t('groupInvite.joinTitle')}
           </div>
           <div
             style={{
               border: '1px solid var(--border-color)',
               borderRadius: 'var(--radius-surface)',
-              background: 'var(--bg-elevated)',
+              background: 'var(--card)',
               padding: '12px 16px',
               display: 'flex',
               flexDirection: 'column',
               gap: 4
             }}
           >
-            <div style={{ fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', fontWeight: 600, color: 'var(--fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {groupName}
             </div>
-            <div style={{ fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', color: 'var(--text-secondary)' }}>
+            <div style={{ fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', color: 'var(--muted-fg)' }}>
               {t('groupInvite.groupNumberHash', { number: group.public_id })}
             </div>
-            <div style={{ fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', color: 'var(--text-secondary)' }}>
+            <div style={{ fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', color: 'var(--muted-fg)' }}>
               {t('groupInvite.memberCount', { count: group.member_count })}
             </div>
           </div>
           {isApproval ? (
-            <div style={{ fontSize: 'var(--font-body)', color: 'var(--text-secondary)', marginTop: 8, lineHeight: 'var(--lh-body)' }}>
+            <div style={{ fontSize: 'var(--font-body)', color: 'var(--muted-fg)', marginTop: 8, lineHeight: 'var(--lh-body)' }}>
               {t('groupInvite.approvalHint')}
             </div>
           ) : null}
@@ -403,7 +403,7 @@ function PublicGroupInviteSearchResult({
     return <div style={{ padding: 16, color: 'var(--danger-fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)' }}>{t('groupInvite.lookupFailed')}</div>
   }
   if (lookup.status === 'not_found' || !lookup.group) {
-    return <div style={{ padding: 16, color: 'var(--text-secondary)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)' }}>{t('groupInvite.notFound')}</div>
+    return <div style={{ padding: 16, color: 'var(--muted-fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)' }}>{t('groupInvite.notFound')}</div>
   }
   return <PublicGroupInviteRow group={lookup.group} canJoin={canJoin} joining={joining} joinError={joinError} onJoin={onJoin} />
 }
@@ -463,11 +463,11 @@ export function GroupInviteJoinModal({
         style={{ position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1, overflow: 'hidden' }}
       >
         <div style={{ padding: 16, borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 'var(--font-title)', lineHeight: 'var(--lh-title)', fontWeight: 600, color: 'var(--text-primary)' }}>{t('groupInvite.joinTitle')}</span>
+          <span style={{ fontSize: 'var(--font-title)', lineHeight: 'var(--lh-title)', fontWeight: 600, color: 'var(--fg)' }}>{t('groupInvite.joinTitle')}</span>
           <IconButton aria-label={t('common.close')} onClick={onClose}><X size={16} /></IconButton>
         </div>
         {loading ? (
-          <div style={{ padding: 16, color: 'var(--text-secondary)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)' }}>{t('groupInvite.lookingUp')}</div>
+          <div style={{ padding: 16, color: 'var(--muted-fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)' }}>{t('groupInvite.lookingUp')}</div>
         ) : (
           <PublicGroupInviteSearchResult lookup={lookup} canJoin={joinToken != null} joining={joining} joinError={joinError} onJoin={onJoin} />
         )}

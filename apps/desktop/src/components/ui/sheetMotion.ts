@@ -26,7 +26,7 @@ export const sheetBackdropMotion = cn(
 
 export const sheetContentMotion = cn(
   'flex flex-col overflow-hidden outline-none pointer-events-auto',
-  'bg-[var(--modal-bg)] shadow-[var(--modal-shadow)]',
+  'bg-[var(--card)] shadow-[var(--modal-shadow)]',
   // 桌面:居中卡片,弹入。#7333 半像素轮廓画在 --shadow-dialog 里,❌ 再叠一条 border(边 + 环 + 影三层同一条边)。
   'data-[sheet-mobile=false]:animate-[gg-sheet-pop-in_var(--dur-med)_var(--ease-spring)]',
   'data-[sheet-mobile=false]:data-[ending-style]:scale-[0.98]',

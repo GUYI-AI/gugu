@@ -18,7 +18,7 @@ it.each(['light', 'dark'] as const)('paints the real notice lower outline and sa
   writeThemePreference(theme)
   harness = createReactHarness()
   await harness.render(<><NoticeHost />
-    <div style={{ position: 'fixed', inset: 0, background: 'var(--bg-primary)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--bg)' }}>
       <div data-slot="composer" style={{ position: 'absolute', left: 200, right: 24, bottom: 8, height: 110 }}>
         <textarea aria-label="Message" style={{ width: '100%', height: '100%' }} />
       </div>

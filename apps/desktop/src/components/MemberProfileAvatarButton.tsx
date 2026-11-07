@@ -48,9 +48,9 @@ export function MemberProfileAvatarButton({
       style={{
         width: buttonSize,
         height: buttonSize,
-        border: active ? '1px solid var(--accent)' : '1px solid transparent',
+        border: active ? '1px solid var(--primary)' : '1px solid transparent',
         borderRadius: avatarSize === 'md' ? 7 : 8,
-        background: active ? 'var(--accent-tint-row)' : 'transparent',
+        background: active ? 'var(--selected)' : 'transparent',
         color: 'inherit',
         display: 'inline-flex',
         alignItems: 'center',

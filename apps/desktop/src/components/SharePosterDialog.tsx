@@ -146,7 +146,7 @@ export function SharePosterDialog({ title, subtitle, qrValue, memberAvatarUrls, 
             flexShrink: 0,
           }}
         >
-          <span style={{ fontSize: 'var(--font-title)', fontWeight: 600, color: 'var(--text-primary)' }}>
+          <span style={{ fontSize: 'var(--font-title)', fontWeight: 600, color: 'var(--fg)' }}>
             {t('sharing.posterTitle')}
           </span>
           <button
@@ -183,7 +183,7 @@ export function SharePosterDialog({ title, subtitle, qrValue, memberAvatarUrls, 
               width: '100%',
               maxWidth: 360,
               aspectRatio: '3 / 4',
-              background: 'var(--bg-elevated)',
+              background: 'var(--card)',
               borderRadius: 'var(--radius-xl)',
               border: '1px solid var(--border-subtle)',
               display: 'flex',
@@ -198,7 +198,7 @@ export function SharePosterDialog({ title, subtitle, qrValue, memberAvatarUrls, 
                 {genError}
               </span>
             ) : generating || !posterDataUrl ? (
-              <span style={{ fontSize: 'var(--font-body)', color: 'var(--text-tertiary)' }}>
+              <span style={{ fontSize: 'var(--font-body)', color: 'var(--faint-fg)' }}>
                 {generating ? t('sharing.generatingPoster') : t('sharing.generatingQr')}
               </span>
             ) : (
@@ -230,8 +230,8 @@ export function SharePosterDialog({ title, subtitle, qrValue, memberAvatarUrls, 
               height: 36,
               border: '1px solid var(--border-subtle)',
               borderRadius: 'var(--radius-control)',
-              background: copyState === 'copied' ? 'var(--bg-accent-soft)' : 'var(--bg-elevated)',
-              color: copyState === 'copied' ? 'var(--accent)' : 'var(--text-primary)',
+              background: copyState === 'copied' ? 'var(--bg-accent-soft)' : 'var(--card)',
+              color: copyState === 'copied' ? 'var(--primary)' : 'var(--fg)',
               fontSize: 'var(--font-body)',
               fontWeight: 500,
               cursor: posterDataUrl && copyState !== 'copying' ? 'pointer' : 'default',
@@ -251,8 +251,8 @@ export function SharePosterDialog({ title, subtitle, qrValue, memberAvatarUrls, 
               // 2026-09-22 按 design.md 统一:「已下载」不是一个 live 态,而这抹硬编码橙
               // 与公开落地页那套是同一个第二 accent(A-06)。完成态改由 --ok 这个语义色承担,
               // 底色不再另起一个色系。
-              background: downloadDone ? 'var(--ok)' : 'var(--accent)',
-              color: downloadDone ? 'var(--color-white)' : 'var(--text-on-accent)',
+              background: downloadDone ? 'var(--ok)' : 'var(--primary)',
+              color: downloadDone ? 'var(--color-white)' : 'var(--primary-fg)',
               fontSize: 'var(--font-body)',
               fontWeight: 500,
               cursor: posterDataUrl ? 'pointer' : 'default',

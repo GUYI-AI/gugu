@@ -95,7 +95,7 @@ function ForwardedBadge({ forwardedFromMessageId }: { forwardedFromMessageId: st
   return (
     <span
       data-testid={AUTOMATION_TEST_IDS.messageForwardedBadge}
-      style={{ fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', color: 'var(--text-tertiary)', padding: '0 2px', letterSpacing: '0.01em' }}
+      style={{ fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', color: 'var(--faint-fg)', padding: '0 2px', letterSpacing: '0.01em' }}
     >
       {sourceName ? t('message.forwardedFrom', { line: sourceName }) : t('message.forwarded')}
     </span>

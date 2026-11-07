@@ -39,7 +39,7 @@ function Highlighted({ text, query }: { text: string; query: string }): ReactNod
   let at = 0
   for (const { start, end } of matchRanges(text, query)) {
     if (start > at) parts.push(text.slice(at, start))
-    parts.push(<mark key={start} className="rounded-[2px] bg-[var(--accent-tint-row)] px-px text-inherit">{text.slice(start, end)}</mark>)
+    parts.push(<mark key={start} className="rounded-[2px] bg-[var(--selected)] px-px text-inherit">{text.slice(start, end)}</mark>)
     at = end
   }
   parts.push(text.slice(at))
@@ -179,7 +179,7 @@ export function GlobalSearch({ tasks, onClose, onOpen }: { tasks: boolean; onClo
               </button>
             )
           })}
-          {view.loading && <span aria-hidden className="absolute inset-x-0 -bottom-px h-px overflow-hidden"><span className="block h-full w-1/3 animate-[gs-scan_1s_ease-in-out_infinite] bg-[var(--accent)]" /></span>}
+          {view.loading && <span aria-hidden className="absolute inset-x-0 -bottom-px h-px overflow-hidden"><span className="block h-full w-1/3 animate-[gs-scan_1s_ease-in-out_infinite] bg-[var(--primary)]" /></span>}
         </div>
       )}
 

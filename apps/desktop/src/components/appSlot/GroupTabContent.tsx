@@ -395,7 +395,7 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
       {appError && errorShown ? <AppErrorDetails error={appError} testId="group-app-slot-error-details" /> : null}
       {update && held === updateKey ? (
         <div
-          className="flex items-center gap-2 border-b border-[var(--border)] !px-3 !py-1 text-[length:var(--font-caption)] text-[var(--text-secondary)]"
+          className="flex items-center gap-2 border-b border-[var(--border)] !px-3 !py-1 text-[length:var(--font-caption)] text-[var(--muted-fg)]"
           data-testid="group-app-slot-update"
           data-version={update.manifest.version}
         >
@@ -406,19 +406,19 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
         </div>
       ) : null}
       {update && held === updateKey && updateFailed ? (
-        <div className="border-b border-[var(--border)] !px-3 !py-1 text-[length:var(--font-caption)] text-[var(--text-error)]" data-testid="group-app-slot-update-failed">
+        <div className="border-b border-[var(--border)] !px-3 !py-1 text-[length:var(--font-caption)] text-[var(--danger-fg)]" data-testid="group-app-slot-update-failed">
           {t('chatArea.openWith.installFailed')}<br />{updateFailed}
         </div>
       ) : null}
       {offer ? (
         <div className="flex flex-col items-start gap-2 border-b border-[var(--border)] !p-4" data-testid="group-app-slot-offer" data-offer-from={offer.from.kind}>
-          <div className="text-[length:var(--font-body)] font-semibold text-[var(--text-primary)]">{t('chatArea.openWith.offer', { name: offer.appName })}</div>
-          <div className="text-[length:var(--font-caption)] text-[var(--text-secondary)]">
+          <div className="text-[length:var(--font-body)] font-semibold text-[var(--fg)]">{t('chatArea.openWith.offer', { name: offer.appName })}</div>
+          <div className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">
             {t('chatArea.openWith.offerWhy', { name: offer.appName })}
             {offer.from.kind === 'market' ? ' ' + t('chatArea.openWith.offerFromMarket') : null}
           </div>
           {offerFailed ? (
-            <div className="text-[length:var(--font-caption)] text-[var(--text-error)]" data-testid="group-app-slot-offer-failed">
+            <div className="text-[length:var(--font-caption)] text-[var(--danger-fg)]" data-testid="group-app-slot-offer-failed">
               {t('chatArea.openWith.installFailed')}<br />{offerFailed}
             </div>
           ) : null}

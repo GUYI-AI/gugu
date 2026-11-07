@@ -19,18 +19,18 @@ import { useBackLayer } from './ui/sheetStack'
 
 // ── header frame (panel mode) — 与 NewFriendsPanel 头部同款 ────────────────────
 const headClass = 'afs-head window-drag-region flex shrink-0 items-center gap-[9px] px-4 pb-3 pt-4 text-[length:var(--font-title)] font-semibold [-webkit-app-region:no-drag]'
-const backButtonClass = 'afs-back-btn gg-pressable -my-2.5 -ml-2.5 inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-control)] border-none bg-transparent p-0 text-[var(--text-primary)]'
+const backButtonClass = 'afs-back-btn gg-pressable -my-2.5 -ml-2.5 inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-control)] border-none bg-transparent p-0 text-[var(--fg)]'
 
 // ── shared inline styles ──────────────────────────────────────────────────────
 const styleFlexOverflow: CSSProperties = { flex: 1, overflow: 'hidden' }
 const styleNameText: CSSProperties = {
   fontSize: 'var(--font-body)',
-  color: 'var(--text-primary)',
+  color: 'var(--fg)',
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
 }
-const styleStatusLabel: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--text-secondary)' }
+const styleStatusLabel: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--muted-fg)' }
 
 function BackChevron() {
   return (
@@ -101,10 +101,10 @@ function SearchResultItem({
         <div style={styleNameText}>
           {user.display_name}
           {user.type === 'agent' ? (
-            <span style={{ marginLeft: 6, fontSize: 'var(--font-caption)', color: 'var(--accent)' }}>{t('common.agent')}</span>
+            <span style={{ marginLeft: 6, fontSize: 'var(--font-caption)', color: 'var(--primary)' }}>{t('common.agent')}</span>
           ) : null}
         </div>
-        <div style={{ fontSize: 'var(--font-body)', color: 'var(--text-secondary)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ fontSize: 'var(--font-body)', color: 'var(--muted-fg)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {user.gugu_number == null ? t('friendSearch.guguNumberUnassigned') : t('friendSearch.guguNumberValue', { number: user.gugu_number })}
         </div>
       </div>
@@ -114,8 +114,8 @@ function SearchResultItem({
         <button
           onClick={onSend}
           style={{
-            background: 'var(--accent)',
-            color: 'var(--text-on-accent)',
+            background: 'var(--primary)',
+            color: 'var(--primary-fg)',
             border: 'none',
             borderRadius: 'var(--radius-document)',
             fontSize: 'var(--font-body)',
@@ -239,7 +239,7 @@ export function AddFriendSearch({
       style={{
         flex: 1,
         height: '100%',
-        background: 'var(--bg-primary)',
+        background: 'var(--bg)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -272,7 +272,7 @@ export function AddFriendSearch({
                 width: 18,
                 height: 18,
                 borderRadius: 'var(--radius-circle)',
-                border: '2px solid var(--accent)',
+                border: '2px solid var(--primary)',
                 borderTopColor: 'var(--bg-transparent)',
                 animation: 'spin 0.8s linear infinite',
               }}
@@ -280,7 +280,7 @@ export function AddFriendSearch({
           </div>
         )}
         {hasQuery && !isSearching && searchResults.length === 0 && (
-          <div style={{ padding: '32px 16px', textAlign: 'center', fontSize: 'var(--font-body)', color: 'var(--text-secondary)' }}>
+          <div style={{ padding: '32px 16px', textAlign: 'center', fontSize: 'var(--font-body)', color: 'var(--muted-fg)' }}>
             {t('friendSearch.noResults')}
           </div>
         )}
@@ -315,8 +315,8 @@ export function AddFriendSearch({
                 isAgent={pendingTarget.type === 'agent'}
               />
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 'var(--font-title)', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pendingTarget.display_name}</div>
-                <div style={{ fontSize: 'var(--font-body)', color: 'var(--text-tertiary)' }}>{t('friendSearch.requestTitle')}</div>
+                <div style={{ fontSize: 'var(--font-title)', fontWeight: 600, color: 'var(--fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pendingTarget.display_name}</div>
+                <div style={{ fontSize: 'var(--font-body)', color: 'var(--faint-fg)' }}>{t('friendSearch.requestTitle')}</div>
               </div>
             </div>
             <textarea
@@ -326,14 +326,14 @@ export function AddFriendSearch({
               maxLength={200}
               rows={3}
               autoFocus
-              style={{ width: '100%', resize: 'none', borderRadius: 'var(--radius-surface)', border: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)', color: 'var(--text-primary)', fontSize: 'var(--font-body)', lineHeight: 1.5, padding: '10px 12px', boxSizing: 'border-box' }}
+              style={{ width: '100%', resize: 'none', borderRadius: 'var(--radius-surface)', border: '1px solid var(--border-subtle)', background: 'var(--card)', color: 'var(--fg)', fontSize: 'var(--font-body)', lineHeight: 1.5, padding: '10px 12px', boxSizing: 'border-box' }}
             />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
               <button
                 type="button"
                 onClick={closeNoteDialog}
                 disabled={sending}
-                style={{ borderRadius: 'var(--radius-capsule)', border: '1px solid var(--border-subtle)', background: 'transparent', color: 'var(--text-secondary)', fontSize: 'var(--font-body)', fontWeight: 500, padding: '8px 18px', cursor: sending ? 'default' : 'pointer' }}
+                style={{ borderRadius: 'var(--radius-capsule)', border: '1px solid var(--border-subtle)', background: 'transparent', color: 'var(--muted-fg)', fontSize: 'var(--font-body)', fontWeight: 500, padding: '8px 18px', cursor: sending ? 'default' : 'pointer' }}
               >
                 {t('common.cancel')}
               </button>

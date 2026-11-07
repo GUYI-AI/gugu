@@ -84,24 +84,24 @@ export function GroupInviteCard({
       data-testid={testId}
       data-state={state}
       data-density={density}
-      style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', minWidth: 0, padding: inline ? 12 : '12px 0', border: inline ? '1px solid var(--border-subtle)' : 'none', borderBottom: inline ? 'none' : '1px solid var(--border-subtle)', borderRadius: inline ? 'var(--radius-surface)' : 0, background: inline ? 'var(--bg-elevated)' : 'transparent' }}
+      style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', minWidth: 0, padding: inline ? 12 : '12px 0', border: inline ? '1px solid var(--border-subtle)' : 'none', borderBottom: inline ? 'none' : '1px solid var(--border-subtle)', borderRadius: inline ? 'var(--radius-surface)' : 0, background: inline ? 'var(--card)' : 'transparent' }}
     >
       <Avatar avatarUrl={group.avatar_url ?? null} seed={group.id ?? String(group.public_id)} name={name} variant="group" size={inline ? 40 : 36} memberAvatars={group.member_avatars} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ color: 'var(--text-primary)', fontSize: 'var(--font-body)', fontWeight: 600, lineHeight: 'var(--lh-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ color: 'var(--fg)', fontSize: 'var(--font-body)', fontWeight: 600, lineHeight: 'var(--lh-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {name}
         </div>
-        <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', marginTop: 2 }}>
+        <div style={{ color: 'var(--muted-fg)', fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', marginTop: 2 }}>
           {t('groupInvite.groupSummary', { number: group.public_id, count: group.member_count })}
         </div>
         {group.creator_name ? (
-          <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('groupInvite.creator', { name: group.creator_name })}</div>
+          <div style={{ color: 'var(--faint-fg)', fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('groupInvite.creator', { name: group.creator_name })}</div>
         ) : null}
         {group.description ? (
-          <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.description}</div>
+          <div style={{ color: 'var(--muted-fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.description}</div>
         ) : null}
         {state === 'invite_link_closed' ? (
-          <div className="gg-group-hint" style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', marginTop: 3 }}>{t('groupInvite.inviteLinkClosedHint')}</div>
+          <div className="gg-group-hint" style={{ color: 'var(--faint-fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', marginTop: 3 }}>{t('groupInvite.inviteLinkClosedHint')}</div>
         ) : null}
         {state === 'failed' && joinError ? (
           <div className="gg-group-join-error" role="alert" data-testid="group-join-error" style={{ color: 'var(--danger-fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', marginTop: 4 }}>{joinError}</div>
@@ -125,7 +125,7 @@ export function GroupInviteCard({
           {stateLabel[state]}
         </Button>
       ) : (
-        <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', flexShrink: 0 }}>{stateLabel[state]}</span>
+        <span style={{ color: 'var(--muted-fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', flexShrink: 0 }}>{stateLabel[state]}</span>
       )}
     </div>
   )

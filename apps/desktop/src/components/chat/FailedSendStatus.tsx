@@ -26,7 +26,7 @@ export function FailedSendStatus({ reason, label, onRetry, onDiscard }: {
     </DropdownMenu.Trigger>
     {open && <DropdownMenu.Content data-testid="message-send-failed-menu" aria-label={t('message.sendStatus.failedActions')}
       side="top" align="end" sideOffset={4} style={{ minWidth: 96 }}>
-      {failureReason && <div className="max-w-72 break-words px-3 py-2 text-[length:var(--font-body)] text-[var(--text-secondary)]">{failureReason}</div>}
+      {failureReason && <div className="max-w-72 break-words px-3 py-2 text-[length:var(--font-body)] text-[var(--muted-fg)]">{failureReason}</div>}
       {onRetry && <MenuItem render={<button type="button" />} nativeButton data-testid="message-send-retry"
         onClick={() => run(onRetry)} style={{ minHeight: 32, fontSize: 'var(--font-body)' }}>{t('common.retry')}</MenuItem>}
       <MenuItem render={<button type="button" />} nativeButton data-testid="message-send-discard" danger

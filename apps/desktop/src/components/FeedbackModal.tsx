@@ -212,8 +212,8 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const fieldLabel: React.CSSProperties = { fontSize: 'var(--font-body)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }
-  const required = <span style={{ color: 'var(--badge-red)' }}> *</span>
+  const fieldLabel: React.CSSProperties = { fontSize: 'var(--font-body)', fontWeight: 600, color: 'var(--fg)', marginBottom: 6 }
+  const required = <span style={{ color: 'var(--danger)' }}> *</span>
 
   return (
     <Sheet onClose={handleClose} desktopWidth="min(440px, 100%)" desktopMaxHeight="min(88vh, calc(100dvh - 32px))" testId="feedback-modal" ariaLabel={t('feedback.title')}>
@@ -244,11 +244,11 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
               draggable={false}
               style={{ width: THANKS_ART_WIDTH, height: THANKS_ART_HEIGHT, objectFit: 'contain', display: 'block' }}
             />
-            <div style={{ fontSize: 'var(--font-heading)', fontWeight: 600, color: 'var(--text-primary)', marginTop: 16 }}>{t('feedback.thanks.title')}</div>
+            <div style={{ fontSize: 'var(--font-heading)', fontWeight: 600, color: 'var(--fg)', marginTop: 16 }}>{t('feedback.thanks.title')}</div>
           </div>
         ) : (
         <>
-        <h3 style={{ fontSize: 'var(--font-heading)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 16 }}>{t('feedback.title')}</h3>
+        <h3 style={{ fontSize: 'var(--font-heading)', fontWeight: 600, color: 'var(--fg)', marginBottom: 16 }}>{t('feedback.title')}</h3>
 
         <div style={{ overflowY: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           {/* 问题描述(必填,限长计数) */}
@@ -260,7 +260,7 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
               maxLength={FEEDBACK_CONTENT_MAX}
               rows={4}
               placeholder={t('feedback.descriptionPlaceholder')}
-              style={{ width: '100%', resize: 'vertical', minHeight: 88, padding: '9px 11px 22px', borderRadius: 'var(--radius-control)', border: '1px solid var(--border-strong)', background: 'var(--muted)', fontSize: 'var(--font-body)', color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+              style={{ width: '100%', resize: 'vertical', minHeight: 88, padding: '9px 11px 22px', borderRadius: 'var(--radius-control)', border: '1px solid var(--border-strong)', background: 'var(--muted)', fontSize: 'var(--font-body)', color: 'var(--fg)', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
             />
             <span style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 'var(--font-caption)', color: 'var(--faint-fg)' }}>
               {content.length}/{FEEDBACK_CONTENT_MAX}
@@ -272,7 +272,7 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
           <select
             value={module}
             onChange={(e) => setModule(e.target.value as FeedbackModule)}
-            style={{ width: '100%', padding: '8px 11px', borderRadius: 'var(--radius-control)', border: '1px solid var(--border-strong)', background: 'var(--muted)', fontSize: 'var(--font-body)', color: 'var(--text-primary)', outline: 'none', marginBottom: 14, boxSizing: 'border-box' }}
+            style={{ width: '100%', padding: '8px 11px', borderRadius: 'var(--radius-control)', border: '1px solid var(--border-strong)', background: 'var(--muted)', fontSize: 'var(--font-body)', color: 'var(--fg)', outline: 'none', marginBottom: 14, boxSizing: 'border-box' }}
           >
             {FEEDBACK_MODULES.map((m) => (
               <option key={m.value} value={m.value}>{t(`feedback.modules.${m.value}`)}</option>
@@ -297,7 +297,7 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
                   onClick={() => removeShot(s.id)}
                   title={t('feedback.removeScreenshot')}
                   aria-label={t('feedback.removeScreenshotLabel', { name: s.name })}
-                  style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: 'var(--radius-capsule)', border: 'none', background: 'var(--text-primary)', color: 'var(--bg)', fontSize: 'var(--font-caption)', lineHeight: 1, cursor: 'pointer', display: 'grid', placeItems: 'center' }}
+                  style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: 'var(--radius-capsule)', border: 'none', background: 'var(--fg)', color: 'var(--bg)', fontSize: 'var(--font-caption)', lineHeight: 1, cursor: 'pointer', display: 'grid', placeItems: 'center' }}
                 >
                   ×
                 </button>
@@ -337,7 +337,7 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
                 {t('feedback.attachLog.label')}
                 {/* 不强制预览(owner 2026-09-03 定),但**附带了多少**要如实摆出来 */}
                 {attachedLog && (
-                  <span data-testid="feedback-attach-log-size" className="block text-[var(--text-primary)]">
+                  <span data-testid="feedback-attach-log-size" className="block text-[var(--fg)]">
                     {t('feedback.attachLog.attached', { count: attachedLog.lines })}
                   </span>
                 )}

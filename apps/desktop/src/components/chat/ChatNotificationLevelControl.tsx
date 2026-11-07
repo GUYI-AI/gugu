@@ -30,7 +30,7 @@ export function ChatNotificationLevelControl({
         gap: '4px',
         padding: '4px',
         borderRadius: 'var(--radius-surface)',
-        background: 'var(--bg-elevated)',
+        background: 'var(--card)',
         flexShrink: 0,
       }}
     >
@@ -54,7 +54,7 @@ export function ChatNotificationLevelControl({
               cursor: busy ? 'default' : 'pointer',
               // @@@live-accent (Refs #6105) 「currently selected」是 live 态,归唯一 accent(--live);--accent 是品牌色不表达状态。
               background: active ? 'var(--chat-level-selected-bg, var(--live-soft))' : 'transparent',
-              color: active ? 'var(--chat-level-selected-fg, var(--live))' : 'var(--text-secondary)',
+              color: active ? 'var(--chat-level-selected-fg, var(--live))' : 'var(--muted-fg)',
               opacity: busy ? 0.65 : 1,
               whiteSpace: 'nowrap',
             }}

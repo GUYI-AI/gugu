@@ -27,7 +27,7 @@ function AccountCreditNotice({ userId }: { userId: string }) {
   const credits = power?.spendable
   if (credits === undefined || !isLowBalance(credits)) return null
   return <div data-testid="conversation-credit-notice" data-composer-top-band="credit" role="status"
-    style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', padding: '4px 0', overflowWrap: 'anywhere' }}>
+    style={{ color: 'var(--muted-fg)', fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', padding: '4px 0', overflowWrap: 'anywhere' }}>
     {t('lowBalance.remaining', { credits: formatCredits(credits), count: creditCount(credits) })}
     {' · '}
     <Button variant="ghost" size="sm" onClick={openCreditSettings} style={{ display: 'inline', minHeight: 0, border: 'none', background: 'transparent', padding: 0, color: 'inherit', font: 'inherit', textDecoration: 'underline' }}>

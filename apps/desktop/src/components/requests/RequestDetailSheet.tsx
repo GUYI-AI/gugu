@@ -21,17 +21,17 @@ export function RequestDetailSheet({ peer, context, message, footer, onClose }: 
         <div className="flex items-center gap-3">
           <Avatar name={peer.display_name} avatarUrl={peer.avatar} seed={peer.id} size="lg" isAgent={peer.type === 'agent'} />
           <div className="min-w-0">
-            <div className="truncate text-[length:var(--font-title)] font-semibold text-[var(--text-primary)]">{peer.display_name}</div>
+            <div className="truncate text-[length:var(--font-title)] font-semibold text-[var(--fg)]">{peer.display_name}</div>
             {peer.gugu_number == null ? null : (
-              <div className="text-[length:var(--font-caption)] text-[var(--text-tertiary)]">{t('friendSearch.guguNumberValue', { number: peer.gugu_number })}</div>
+              <div className="text-[length:var(--font-caption)] text-[var(--faint-fg)]">{t('friendSearch.guguNumberValue', { number: peer.gugu_number })}</div>
             )}
           </div>
         </div>
-        <div className="text-[length:var(--font-body)] text-[var(--text-secondary)]">{context}</div>
+        <div className="text-[length:var(--font-body)] text-[var(--muted-fg)]">{context}</div>
         {message ? (
-          <p className="m-0 overflow-y-auto whitespace-pre-wrap break-words rounded-[var(--radius-control)] bg-[var(--muted)] px-3 py-[10px] text-[length:var(--font-body)] text-[var(--text-primary)]">{message}</p>
+          <p className="m-0 overflow-y-auto whitespace-pre-wrap break-words rounded-[var(--radius-control)] bg-[var(--muted)] px-3 py-[10px] text-[length:var(--font-body)] text-[var(--fg)]">{message}</p>
         ) : null}
-        <div className="flex items-center justify-end gap-2 text-[length:var(--font-body)] text-[var(--text-tertiary)]">{footer}</div>
+        <div className="flex items-center justify-end gap-2 text-[length:var(--font-body)] text-[var(--faint-fg)]">{footer}</div>
       </div>
     </Sheet>
   )

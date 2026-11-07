@@ -15,7 +15,7 @@
   --bubble-agent: var(--ta-bubble-other);
   /* 底栏没选中那格:--text-tertiary 在玻璃上只有 ~2.8:1,看不清(owner 10-28)。往前景色掺三成,两套主题都 ≥ 4.5:1;
      选中那格靠前景色 + 胶囊底区分。 */
-  --phone-nav-idle: color-mix(in srgb, var(--primary) 30%, var(--text-secondary));
+  --phone-nav-idle: color-mix(in srgb, var(--primary) 30%, var(--muted-fg));
   --phone-nav-selected-bg: var(--ta-glass-strong);
   --phone-nav-selected-fx: none;
 }
@@ -117,8 +117,8 @@
   height: var(--spacing-lg);
   border-radius: var(--radius-capsule);
   padding-inline: var(--spacing-xs);
-  background: var(--badge-red);
-  color: var(--surface-white);
+  background: var(--danger);
+  color: var(--card);
   font-size: var(--font-caption);
   line-height: var(--spacing-lg);
 }
@@ -156,7 +156,7 @@
 }
 /* 输入的字跟着咕咕的前景色走:编辑器自己的字色取会话页那套 --em-foreground,手机聊天页不在会话页皮肤里,
    取到哪一套要看外面挂了什么 —— 实底换上以后,深色里一旦取到浅色那套,深字压深底就看不见了。 */
-[data-phone-shell] [data-slot='composer'][data-mobile] [data-slot='composer-input'] [contenteditable] { color: var(--text-primary); }
+[data-phone-shell] [data-slot='composer'][data-mobile] [data-slot='composer-input'] [contenteditable] { color: var(--fg); }
 
 /* 手机输入那一行要有实底(owner 10-28「输入框完全透明，后面滚过的消息和字叠在一起」):
    输入框本身用实色卡面;它所在那一行(底部那一摞的最后一格,不含上面的运行条)垫一条九成不透明的磨砂底,

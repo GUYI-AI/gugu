@@ -18,12 +18,12 @@ export function MessageSendStatus(props: Props) {
   const { identitiesById } = useChatStore('identitiesById')
   return <>
     {props.blocks?.map((block) => <span key={block.agent_user_id} data-agent-delivery-block="agent_archived" data-agent-id={block.agent_user_id}
-      className="text-[length:var(--font-caption)] text-[var(--text-secondary)]">
+      className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">
       {identitiesById[block.agent_user_id]?.display_name ? `${identitiesById[block.agent_user_id].display_name} · ` : ''}{t('message.sendStatus.archived')}
     </span>)}
     {/* 没有运行中的实例持有它叫醒的 agent:等不来,字直接写在气泡旁(手机没有悬停);写名字,因为群里的人是收到了的。 */}
     {props.undeliveredTo?.map((agentId) => <span key={agentId} data-send-state="undelivered" data-agent-id={agentId} title={t('agent.turnFailure.undelivered')}
-      className="text-[length:var(--font-caption)] text-[var(--text-secondary)]">
+      className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">
       {identitiesById[agentId]?.display_name ? `${identitiesById[agentId].display_name} · ` : ''}{t('message.sendStatus.undelivered')}
     </span>)}
     <MessageTransportStatus {...props} />
@@ -36,14 +36,14 @@ function MessageTransportStatus({ state, messageId, reason, retryable = true }: 
   const progress = useAttachmentUploadProgress(messageId)
 
   if (state === 'unknown') return <span data-send-state="unknown" title={t('message.sendStatus.unknownHint')}
-    className="text-[length:var(--font-caption)] text-[var(--text-secondary)]">{t('message.sendStatus.unknown')}</span>
+    className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">{t('message.sendStatus.unknown')}</span>
 
   if (state === 'sending') {
     const label = t('message.sendStatus.sending')
     if (progress?.total && progress.loaded > 0) {
       const percent = Math.max(0, Math.min(100, Math.floor(progress.loaded / progress.total * 100)))
       return <span role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}
-        data-send-state="sending" className="text-[length:var(--font-caption)] text-[var(--text-secondary)] tabular-nums">{percent}%</span>
+        data-send-state="sending" className="text-[length:var(--font-caption)] text-[var(--muted-fg)] tabular-nums">{percent}%</span>
     }
     return <MessageSendingIndicator label={label} title={label} />
   }

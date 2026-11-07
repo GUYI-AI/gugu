@@ -59,17 +59,17 @@
   --color-background: var(--bg);
   --color-foreground: var(--fg);
   --color-card: var(--card);
-  --color-card-foreground: var(--text-primary);
+  --color-card-foreground: var(--fg);
   --color-popover: var(--popover);
-  --color-popover-foreground: var(--text-primary);
+  --color-popover-foreground: var(--fg);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-fg);
   --color-secondary: var(--muted);
-  --color-secondary-foreground: var(--text-primary);
+  --color-secondary-foreground: var(--fg);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-fg);
   --color-accent: var(--hover);
-  --color-accent-foreground: var(--text-primary);
+  --color-accent-foreground: var(--fg);
   --color-destructive: var(--danger);
   --color-destructive-foreground: var(--color-white);
   --color-border: var(--border);
@@ -269,23 +269,7 @@
      「画在产品表面之外/饱和色上的文字」与 @@@one-knob 管的中性族是两件事
      (同一条豁免还覆盖 danger chip 的字与扫码浮层的字,各自就地注明)。 */
   --color-white: #fff;
-  --color-bg-sidebar: var(--page);
-  --color-bg-chat-list: var(--sidebar);
-  --color-bg-chat-area: var(--bg);
   --color-bg-window: var(--page);
-  --color-text-primary: var(--fg);
-  --color-text-secondary: var(--muted-fg);
-  --color-text-placeholder: var(--muted-fg);  /* placeholder 说明「该填什么」,是信息:可读次级字(≥4.5),❌ faint */
-  --color-text-link: var(--live-fg);   /* @@@live-accent —— 链接与「信息」走同一个蓝,写字用可读的那一档 */
-  --color-text-danger: var(--danger-fg);
-  --color-divider: var(--border);
-  --color-bubble-received: var(--bubble-agent);
-  --color-bubble-sent: var(--bubble-own);
-  --color-active-item: var(--selected);
-  --color-hover-item: var(--hover); /* @@@2322 收敛别名,新代码 ❌ 用旧名 → --hover */
-  --color-unread-badge: #fa5151;
-  --color-switch-on: var(--primary);
-  --color-switch-off: color-mix(in oklab, var(--fg) 20%, transparent);
   /* Typography */
   /* @@@system-font (#7333) — 用户 2026-10-17 批准的视觉规范:正文是**系统字体**
      (mac `-apple-system` = SF,Windows `Segoe UI`),中文落各平台自己的原生中文字体。
@@ -411,10 +395,6 @@
      border, a ring, and a shadow on one edge」)⇒ 它的最后一个消费者(ui/Menu)去掉了 border,
      全仓零引用。一个没人读的边框色留着,只会让下一个人以为菜单还该有边。 */
   --shadow-menu: var(--shadow-lift);               /* @@@shadow-lift —— 菜单是浮层,走唯一那一档 */
-  --menu-danger: var(--danger-fg);                 /* @@@2322 收敛别名;菜单里的红是字 → --danger-fg */
-  --menu-bg: var(--popover);
-  --menu-fg: var(--fg);
-  --menu-icon: var(--faint-fg);
   --menu-item-hover: var(--hover);                 /* @@@2322 收敛别名 → --hover */
 
   /* ══════════════════════════════════════════════════════════════════════════
@@ -447,17 +427,10 @@
   --shadow-dialog: 0 0 0 0.5px rgb(255 255 255 / 0.14), 0 16px 48px rgb(0 0 0 / 0.5);
   --shadow-composer: inset 0 0 0 1px rgb(255 255 255 / 0.08);
 
-  --shadow-dropdown: var(--shadow-lift);
   --shadow-modal: var(--shadow-dialog);
   --shadow-popover: var(--shadow-lift);
   --shadow-popover-strong: var(--shadow-lift);
-  --shadow-overlay-panel: var(--shadow-lift);
-  --shadow-floating: var(--shadow-lift);
-  --shadow-toast: var(--shadow-lift);
   --shadow-toast-card: var(--shadow-lift);
-  --shadow-call-panel: var(--shadow-lift);
-  --shadow-drawer: var(--shadow-dialog);
-  --shadow-drawer-strong: var(--shadow-dialog);
 
   /* Layout */
   --width-sidebar: 64px;
@@ -506,10 +479,7 @@
                               （@@@window-layer），行一直点得到，从它开出来的菜单就得开在任何页面层之上（#6699） */
 
   /* ── Semantic theme tokens ───────────────────────────────────────────────── */
-  --bg-primary: var(--bg);
   --bg-secondary: color-mix(in oklab, var(--page) 70%, transparent);
-  --bg-settings: var(--card);
-  --bg-elevated: var(--card);
   /* 三档文字色。⚠️ 第三档**不是正文色**，是装饰色（图标、状态点、禁用态）。
      实测（tests/unit/desktop/styles/textContrast.test.ts 会持续核）：
        档次        暗色对 --card   亮色对 --page
@@ -519,29 +489,19 @@
      而且这个色板结构上装不下三档可读文字：亮色下把 tertiary 提到刚好过 4.5 要取到
      #767676，与 secondary 的 #737373 只差 3 个色阶，肉眼无差 —— 提亮等于把三档压成两档。
      所以约定是「换用途」不是「换值」：承载信息的文字一律 primary / secondary。 */
-  --text-primary: var(--fg);
-  --text-secondary: var(--muted-fg);
-  --text-tertiary: var(--faint-fg);
   --border-color: var(--border);
   --border-subtle: var(--border-strong);
   /* @@@primary-ink —— 品牌色 = 墨,与 --primary 同一个值,❌ 不是第二个 accent。 */
-  --accent: var(--primary);
-  --text-on-accent: var(--primary-fg);
   --bubble-mine: var(--bubble-own);
   --bubble-other: var(--bubble-agent);
-  --chat-row-active: var(--selected); /* @@@2322 收敛别名 → --selected */
   --chat-row-hover: var(--hover);     /* @@@2322 收敛别名 → --hover */
   --input-bg: color-mix(in oklab, var(--fg) 6%, transparent);
-  --input-card-bg: color-mix(in oklab, var(--fg) 6%, transparent);
-  --sidebar-bg: color-mix(in oklab, var(--page) 85%, transparent);
   --nav-rail: var(--page); /* #7333 rail 与会话列表同在窗口底层(窗口/侧栏材质一层) */
-  --topbar-bg: color-mix(in oklab, var(--page) 80%, transparent);
 
   /* Overlays / scrims */
   --bg-overlay-soft: rgba(0,0,0,0.28);
   --bg-overlay-modal: rgba(0,0,0,0.56);
   --bg-overlay-strong: rgba(0,0,0,0.35);
-  --modal-bg: var(--card);
   --modal-border: var(--border-subtle);
   --modal-shadow: var(--shadow-modal);
 
@@ -551,12 +511,9 @@
   --switch-track-off: var(--muted);
   --switch-thumb: var(--muted-fg);
 
-  /* Call status panel */
-  --bg-call-panel: rgba(17,17,20,0.94);
   --bg-accent-soft: rgba(255,255,255,0.10);
 
   /* Text on tinted/translucent surfaces */
-  --text-on-overlay: color-mix(in oklab, var(--fg) 72%, transparent);
   --text-on-bubble-strong: color-mix(in oklab, var(--fg) 92%, transparent);
   --text-on-bubble-muted: color-mix(in oklab, var(--fg) 75%, transparent);
 
@@ -565,7 +522,6 @@
   --bubble-quote-bar-other: color-mix(in oklab, var(--fg) 25%, transparent);
 
   /* @@@live-accent —— 链接 = 信息 = live,全 app 同一个蓝。 */
-  --text-link: var(--live-fg);
   --text-quote-author: #7b8ba7;
   /* @@@one-red (Refs #6104) — 「出事了」这件事只有一个红。原来同一族有四个名字各拍一个值:
      --danger(#ef4444)/ --color-danger(#FF3B30,iOS 系统红)/ --badge-red(#FA5151)/
@@ -574,24 +530,18 @@
      agent 状态经 `--agent-tone-removed` 引它)。
      ⚠️ 别把 needs_user 与 removed 这两个**状态**并掉 —— 它们靠形状/字号分,不只靠色相分
      (agentContactRowDotClass:needs_user 是 8px 黄色字形、removed 是 5px 色点)。 */
-  --color-danger: var(--danger);
   --color-draft: #FA8C16;
   /* 搜索命中的底色:mark 的字跟着正文(color: inherit),深色上用琥珀的淡染,❌ 一块亮黄压着浅色字(深色巡检 10-27)。 */
   --color-warning-highlight: color-mix(in oklab, var(--warn) 38%, transparent);
 
   /* @@@one-knob — 这一族原来 chroma 精确为 0,是盖在面族之上的**第二族**中性。 */
   /* 弱化文字就是第三级文字(--faint-fg),两套主题同一个值;❌ 深色上写死 #ccc(比次要文字 --muted-fg 还亮,层级颠倒)。 */
-  --text-muted: var(--faint-fg);
-  --text-icon-default: oklch(0.450 0 0); /* was #555555 */
-  --text-icon-soft:    oklch(0.510 0 0); /* was #666666 */
-  --text-icon-stroke:  oklch(0.640 0 0); /* was #8C8C8C */
 
   /* ── Extended semantic tokens (D1 cleanup) ──────────────────────────────── */
 
   /* Brand / accent variants */
   --accent-hover: oklch(0.860 0 0); /* was #d4d4d4 */
   --accent-glow-soft: color-mix(in oklab, var(--fg) 12%, transparent);
-  --accent-tint-row: var(--selected); /* @@@2322 收敛别名 → --selected */
 
   /* Transparent fill (gradient endpoints, ghost button backgrounds) */
   --bg-transparent: transparent;
@@ -600,47 +550,10 @@
   --bg-auth-page: var(--page); /* was #0e0d12 —— H=294,离面族 26° */
 
   /* Status / feedback text */
-  --text-error: var(--danger-fg);        /* @@@one-red 别名;报错是字 → --danger-fg */
 
   /* 浮起来的那层面(toast / modal 卡片 / switch 旋钮)。名字是历史的,值早就该跟主题走。 */
-  --surface-white: var(--card);
-  --text-on-white: var(--fg);
-
-  /* Toast type accents */
-  --toast-success: #16a34a;
-  --toast-error: #FA5151;
-  --toast-info: var(--live);
-  /* warning 复用 @@@3079-semantic 的 --warn —— 语义已有名字,❌ 不为 toast 另拍一个色相 */
-  --toast-warning: var(--warn);
 
   /* Notification/unread badge (sidebar/contacts), red highlight */
-  --badge-red: var(--danger);            /* @@@one-red 别名 → --danger */
-
-  /* @@@chrome-is-ink (Refs #6104) — 设置页分类图标原来是四个高彩度色相
-     (262.5 / 82.5 / 182.5 / 244.7),正是 design.md Reject 列表里的
-     「Rainbow type badges, colored category chips, and icons dropped into tinted tiles」。
-     六档现在同一个墨色:要区分靠图标字形与标签,不靠色相。
-     名字保留,因为消费点在别的区(第二阶段)。 */
-  --category-account:       var(--fg);
-  --category-notifications: var(--fg);
-  --category-appearance:    var(--fg);
-  --category-keys:          var(--fg);
-  --category-storage:       var(--fg);
-  --category-about:         var(--fg);
-
-  /* Group chat / light modal surfaces (locked light, even in dark theme)。
-     「锁死浅色」是这组的语义;#7333 起与其余中性一样是纯灰,明度不随主题翻。 */
-  --modal-light-bg:            oklch(0.995 0 0); /* was #fff */
-  --modal-light-text:          oklch(0.213 0 0); /* was #191919 */
-  --modal-light-text-muted:    oklch(0.735 0 0); /* was #AAAAAA */
-  --modal-light-divider:       oklch(0.930 0 0); /* was #EBEBEB */
-  --modal-light-input-border:  oklch(0.900 0 0); /* was #E0E0E0 */
-  --modal-light-disabled-bg:   oklch(0.845 0 0); /* was #CCCCCC */
-  --modal-light-secondary-text: oklch(0.450 0 0); /* was #555 */
-  --modal-light-row-selected: var(--selected);
-  --modal-light-row-hover:     oklch(0.968 0 0); /* was #F5F5F5 */
-  --modal-light-shadow: var(--shadow-lift);
-  --bg-overlay-modal-light: var(--bg-overlay-modal);
 
   --border-spinner-on-dark: color-mix(in oklab, var(--fg) 50%, transparent);
 
@@ -706,13 +619,6 @@
   --state-hover-amount: 4%;
   --state-press-amount: 6%;
   --state-selected-amount: 7.5%;
-  /* @@@no-glass (Refs #6104) — design.md 的 Reject 列表逐字点名「glass」与 ornamental shadows:
-     「The paper here is a structural register, never a texture」。
-     三个名字**保留**(消费点 MainLayout.tsx 由第二阶段改),但取值已经不是玻璃了:
-     实色面 + 同一条 hairline + 唯一那档 lift。❌ 别把 rgba + backdrop-filter 加回来。 */
-  --glass-bg: var(--card);
-  --glass-border: var(--border);
-  --shadow-glass: var(--shadow-lift);
   /* #7333 气泡也回到纯灰:别人的一档、自己的高一档(左右位置 + 明度区分,不靠色相)。 */
   --bubble-agent: #242424;
   --bubble-own:   #2e2e2e;
@@ -724,15 +630,9 @@
   --listen-mode-active-bg: oklch(0.306 0 0); /* was #2c2f38 */
   --listen-mode-active-fg: var(--fg);
   --listen-mode-active-shadow: none; /* @@@shadow-lift —— 分段控件不是浮层 */
-  --green: #16a34a;
+  --ok: #16a34a;
   /* 图表的分类色(agent 的 ```svg 图用 var(--c1)…var(--c6)):固定顺序,按这一侧的底色取档,色觉异常可分。 */
   --chart-1: #3987e5; --chart-2: #d95926; --chart-3: #199e70; --chart-4: #c98500; --chart-5: #d55181; --chart-6: #008300;
-  /* @@@chrome-is-ink (Refs #6104) — design.md 的 Reject 列表逐字点名「icons dropped into tinted tiles」。
-     团队分组原来是三个色相(H=55.5 / 281.1 / 154.3)的彩底 + 彩图标;现在三组都是同一层前景密度底,
-     要区分靠**名字与字重**,不靠色相。名字留着是因为消费点在别的区,取值已经不带色相了。 */
-  --team-peach: color-mix(in oklab, var(--fg) 4%, transparent);   --team-peach-ico: color-mix(in oklab, var(--fg) 8%, transparent);
-  --team-lav:   color-mix(in oklab, var(--fg) 4%, transparent);   --team-lav-ico:   color-mix(in oklab, var(--fg) 8%, transparent);
-  --team-mint:  color-mix(in oklab, var(--fg) 4%, transparent);   --team-mint-ico:  color-mix(in oklab, var(--fg) 8%, transparent);
 }
 
 /* ── theme batch C1:终端的 16 个 ANSI 基础色 ───────────────────────────────────────────────
@@ -795,38 +695,21 @@
 
 /* @@@type-mobile-body —— 移动端正文 ≥14px(#1787)。#7333 起 --font-body 全局就是 14,这里不再需要单独的媒体查询。 */
 
-
 /* ── Light theme overrides ─────────────────────────────────────────────────── */
 [data-theme="light"] {
-  --bg-primary: var(--bg);
   --bg-secondary: rgba(249,249,249,0.85);
-  --bg-settings: var(--muted);
   /* @@@elevated-opaque - elevated surfaces float above message content; a translucent value
      bleeds the text underneath through pop-out menus/cards (no backdrop blur backs it). Keep
      it opaque like the dark theme so floating surfaces stay readable. */
-  --bg-elevated: var(--card);
-  --sidebar-bg: rgba(237,237,237,0.85);
   --nav-rail: var(--page); /* #7333 rail 与会话列表同在窗口底层 */
-  --topbar-bg: rgba(249,249,249,0.85);
   --input-bg: rgba(255,255,255,0.6);
-  --input-card-bg: rgba(255,255,255,0.78);
   /* @@@bubble-fill - received 暖灰、own 极淡冷蓝，无边框。
      橙色仍只作真 accent（按钮/未读/选中微染），不进气泡。 */
   --bubble-other: #f4f4f4;
   /* @@@bubble-mine-neutral (#815 → #7333) 自己的消息深一档的纯灰,区分但不喧哗。 */
   --bubble-mine: #ebebeb;
-  --text-primary: var(--fg);
-  --text-secondary: var(--muted-fg);
-  --text-tertiary: var(--faint-fg);
   --border-color: var(--border);
   --border-subtle: var(--border-strong);
-  --color-text-primary: var(--fg);
-  --color-text-secondary: var(--muted-fg);
-  --color-text-placeholder: var(--muted-fg);  /* placeholder 说明「该填什么」,是信息:可读次级字(≥4.5),❌ faint */
-  --color-divider: var(--border);
-  --color-active-item: var(--selected);
-  --color-bubble-received: rgba(255,255,255,0.85);
-  --color-switch-off: rgba(0,0,0,0.15);
   /* @@@shadow-lift —— 浅色侧**只**重定义这一档,上面那一排别名跟着它走,
      ❌ 不在这里再抄一份深浅。 */
   --shadow-lift: var(--shadow-lift-light);
@@ -836,23 +719,14 @@
   --bg-overlay-soft: rgba(0,0,0,0.18);
   --bg-overlay-modal: rgba(0,0,0,0.44);
   --bg-overlay-strong: rgba(0,0,0,0.28);
-  --modal-bg: var(--card);
   --modal-border: var(--border-subtle);
   --modal-shadow: var(--shadow-modal);
-  --bg-call-panel: rgba(249,249,249,0.96);
   --bg-accent-soft: rgba(0,0,0,0.06);
   /* @@@primary-ink — 浅色品牌色 = 墨(--primary) */
-  --accent: var(--primary);       /* @@@primary-ink —— 浅色侧的品牌色 = 墨 */
-  --color-switch-on: var(--primary);
-  --text-on-accent: var(--primary-fg);
-  --text-on-overlay: rgba(0,0,0,0.6);
   --text-on-bubble-strong: rgba(0,0,0,0.85);
   --text-on-bubble-muted: rgba(0,0,0,0.55);
   --bubble-quote-bar-mine: rgba(0,0,0,0.18);
   --bubble-quote-bar-other: rgba(0,0,0,0.14);
-  --text-icon-default: color-mix(in oklab, var(--fg) 55%, var(--bg));
-  --text-icon-soft: color-mix(in oklab, var(--fg) 45%, var(--bg));
-  --text-icon-stroke: color-mix(in oklab, var(--fg) 40%, var(--bg));
 
   /* ── Extended semantic tokens (D1 cleanup) — light overrides ───────────── */
 
@@ -864,19 +738,8 @@
 
   --bg-auth-page: var(--page);
 
-  --text-error: var(--danger-fg);        /* @@@one-red 别名;报错是字 → --danger-fg */
 
-  --surface-white: var(--card);
-  --text-on-white: var(--fg);
 
-  --toast-success: #16a34a;
-  --toast-error: #E64340;
-  /* @@@live-accent (Refs #6104) — 「信息」= live,全 app 同一个蓝。暗色侧上一轮已经改了,
-     浅色侧漏了 ⇒ 同一个 toast 在明暗两侧是两个不同的蓝。 */
-  --toast-info: var(--live);
-  --toast-warning: var(--warn);
-
-  --badge-red: var(--danger);            /* @@@one-red 别名 → --danger */
 
   /* Avatar palette stays brand-fixed across themes for identity continuity */
 
@@ -916,21 +779,12 @@
   --state-hover-amount: 4%;
   --state-press-amount: 6%;
   --state-selected-amount: 7.5%;
-  /* @@@no-glass — 见 :root 那段。实色面 + hairline + 唯一那档 lift。 */
-  --glass-bg: var(--card);
-  --glass-border: var(--border);
-  --shadow-glass: var(--shadow-lift);
   --bubble-agent: #f4f4f4;
   --bubble-own:   #ebebeb;
   --listen-mode-active-bg: var(--bg);
   --listen-mode-active-fg: var(--fg);
   --listen-mode-active-shadow: none; /* @@@shadow-lift —— 分段控件不是浮层,浅色侧也不给 */
-  --green: #16a34a;
   --chart-1: #2a78d6; --chart-2: #eb6834; --chart-3: #1baf7a; --chart-4: #eda100; --chart-5: #e87ba4; --chart-6: #008300;
-  /* @@@chrome-is-ink — 与暗色侧同一条式子,见 :root 那段。 */
-  --team-peach: color-mix(in oklab, var(--fg) 4%, transparent);   --team-peach-ico: color-mix(in oklab, var(--fg) 8%, transparent);
-  --team-lav:   color-mix(in oklab, var(--fg) 4%, transparent);   --team-lav-ico:   color-mix(in oklab, var(--fg) 8%, transparent);
-  --team-mint:  color-mix(in oklab, var(--fg) 4%, transparent);   --team-mint-ico:  color-mix(in oklab, var(--fg) 8%, transparent);
 }
 
 /* File-family marks share one App/host palette. Dark keeps the light hue and lightness at 85% chroma. */
@@ -1099,7 +953,7 @@ body {
   font-family: var(--font-family-system);
   /* #7333 继承的默认字号 = 紧凑界面 14(没写字号的界面文字落在这一档;长段正文自己用 --font-prose)。 */
   font-size: var(--font-body);
-  color: var(--text-primary);
+  color: var(--fg);
   line-height: var(--line-height-base);
   -webkit-font-smoothing: antialiased;
 }
@@ -1148,7 +1002,7 @@ button, [role="button"] {
 
 textarea::placeholder,
 input::placeholder {
-  color: var(--color-text-placeholder);
+  color: var(--muted-fg);
 }
 
 /* Themed scrollbar —— 只给鼠标指针的宿主。
@@ -1183,7 +1037,7 @@ input::placeholder {
     background: var(--border-color);
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--text-tertiary);
+    background: var(--faint-fg);
   }
 }
 
@@ -1224,7 +1078,7 @@ input::placeholder {
 .gg-message-skeleton-bubble { position: relative; overflow: hidden; contain: paint; }
 .gg-message-skeleton-bubble::before {
   content: ''; position: absolute; inset: 0 auto 0 -400%; width: 600%;
-  background: linear-gradient(90deg, var(--bg-elevated) 0%, var(--bg-secondary) 50%, var(--bg-elevated) 100%);
+  background: linear-gradient(90deg, var(--card) 0%, var(--bg-secondary) 50%, var(--card) 100%);
   background-size: calc(100% / 3) 100%;
   animation: skeleton-shimmer 1.4s ease-in-out infinite;
 }
@@ -1399,12 +1253,11 @@ body.barcode-scanner-active #root {
   }
 }
 
-
 /* @@@1708 「来源消息」跳转：主列表定位到被点消息后闪一下高亮，帮用户在长列表里对齐视线。
    1.4s 由 product spec 拍板(旧值 1.8s),与 hooks/useSourceMessageReveal.ts 里清 flashMessageId 的定时器一致；用主题化 tint+ring token，明暗自适应。 */
 @keyframes msg-src-flash {
   0%, 18% {
-    background: var(--accent-tint-row);
+    background: var(--selected);
     box-shadow: 0 0 0 2px var(--accent-glow-soft);
   }
   100% {
@@ -1548,8 +1401,7 @@ body.barcode-scanner-active #root {
   /* @@@3079-semantic 语义三色补齐。danger 早就有 token,而「在线」与「启动中/未响应」一直是
      组件里各写各的十六进制(#16a34a / #f59e0b 散在 ContactProfileCard、ContactsPanel…)。
      颜色表达的是**含义**,含义必须有名字 —— 硬编码色值既破暗色主题,也让「琥珀到底是警告还是激活中」
-     只能靠读注释。ok 复用既有 --green,warn 是本次唯一新增。 */
-  --ok: var(--green);
+     只能靠读注释。ok 就是原来的 --green(定义在明暗两块里),warn 是本次唯一新增。 */
   --warn: #f59e0b;
   --ok-tint: color-mix(in srgb, var(--ok) 12%, transparent);
   --warn-tint: color-mix(in srgb, var(--warn) 14%, transparent);
@@ -1560,9 +1412,9 @@ body.barcode-scanner-active #root {
   --agent-tone-running: #ff5f1f;
   --agent-tone-needs-user: var(--warn);
   --agent-tone-error: var(--danger);
-  --agent-tone-online: var(--green);
-  --agent-tone-removed: var(--color-danger);
-  --agent-tone-muted: var(--text-tertiary);
+  --agent-tone-online: var(--ok);
+  --agent-tone-removed: var(--danger);
+  --agent-tone-muted: var(--faint-fg);
 }
 [data-theme='light'] {
   --danger-fg: #b91c1c;
@@ -1695,11 +1547,11 @@ body.barcode-scanner-active #root {
 .gg-winctl {
   background: transparent;
   border: none;
-  color: var(--text-secondary);
+  color: var(--muted-fg);
   cursor: default;
   transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-.gg-winctl:hover { background-color: var(--hover); color: var(--text-primary); }
+.gg-winctl:hover { background-color: var(--hover); color: var(--fg); }
 .gg-winctl--close:hover { background-color: #E81123; color: #fff; }
 
 /* 悬浮显现:消息 hover 工具条/卡片快捷操作。❌ display:none 切换(闪跳);focus-within 保键盘可达。 */
@@ -1738,11 +1590,8 @@ body.barcode-scanner-active #root {
     --border-color: color-mix(in oklab, var(--fg) 55%, transparent);
     --border-subtle: color-mix(in oklab, var(--fg) 45%, transparent);
     --border-strong: color-mix(in oklab, var(--fg) 72%, transparent);
-    --color-divider: color-mix(in oklab, var(--fg) 55%, transparent);
-    --text-secondary: var(--text-primary);
-    --muted-fg: var(--text-primary);
+    --muted-fg: var(--fg);
     /* 三档是装饰色（见上方文字色注释），提到二档取值即可 —— 仍比正文轻，但不再是那个过不了 AA 的值 */
-    --text-tertiary: var(--muted-fg);
     --faint-fg: var(--muted-fg);
   }
 }
@@ -1753,8 +1602,6 @@ body.barcode-scanner-active #root {
   :root {
     --bg-secondary: var(--card);
     --input-bg: var(--card);
-    --input-card-bg: var(--card);
-    --glass-bg: var(--card);
     /* 同一条阶梯的**实色**版:把叠色就地 mix 进它所在的面,而不是另拍两个 hex。 */
     --hover: color-mix(in oklab, var(--fg) 4%, var(--bg));
     --selected: color-mix(in oklab, var(--fg) 7.5%, var(--bg));
@@ -1764,8 +1611,6 @@ body.barcode-scanner-active #root {
   [data-theme='light'] {
     --bg-secondary: var(--card);
     --input-bg: var(--card);
-    --input-card-bg: var(--card);
-    --glass-bg: var(--card);
     --hover: color-mix(in oklab, var(--fg) 4%, var(--bg));
     --selected: color-mix(in oklab, var(--fg) 7.5%, var(--bg));
     --rail-selected: color-mix(in oklab, var(--fg) 5%, var(--bg)); /* 最左栏选中:比列表里的选中行轻一档(gugu-dev#181 原型) */
@@ -1935,7 +1780,7 @@ body.barcode-scanner-active #root {
   padding: 8px 12px;
   border-radius: var(--radius-document);
   background: color-mix(in oklab, var(--warn) 14%, transparent);
-  color: var(--text-primary);
+  color: var(--fg);
   font-size: var(--font-caption);
   line-height: 1.5;
   flex-shrink: 0;
@@ -1953,8 +1798,8 @@ body.barcode-scanner-active #root {
   background: var(--border-strong);
 }
 .gg-progress::-webkit-progress-bar { background: var(--border-strong); border-radius: var(--radius-capsule); }
-.gg-progress::-webkit-progress-value { background: var(--accent); border-radius: var(--radius-capsule); transition: width var(--transition-normal); }
-.gg-progress::-moz-progress-bar { background: var(--accent); border-radius: var(--radius-capsule); }
+.gg-progress::-webkit-progress-value { background: var(--primary); border-radius: var(--radius-capsule); transition: width var(--transition-normal); }
+.gg-progress::-moz-progress-bar { background: var(--primary); border-radius: var(--radius-capsule); }
 /* 标题下面一行小字(手机文件预览的「HTML · 791 B」):标题仍是 h2,两行一起占标题那一格。 */
 .gg-pane-title-stack { display: flex; flex-direction: column; gap: 1px; flex: 1 1 auto; min-width: 0; }
 .gg-pane-title-stack > .gg-pane-title { flex: none; }
@@ -2037,7 +1882,7 @@ body.barcode-scanner-active #root {
 
 /* ── theme batch B:用量页(components/usage)的图表色,原值搬来,❌ 改色 ────────────────────────────
    --usage-heat-*:热力图四档暖色(owner 2026-09-23 看过设计稿拍的),随主题;第 0 档是 --fg 的淡色,留在 usage.css。
-   --usage-accent-*:用量页的强调色:徽章、余额渐变、存储色块;随主题。--usage-accent-mint 两主题同值。
+   --usage-accent-*:用量页的强调色:徽章、余额渐变、存储色块;随主题。
    --usage-series-*:图表的分类色,两主题同值;10 个以内的图取奇数位(1,3,…,19),超过 10 个用全部 20 个。
    canvas 读不到 CSS 变量,图表经 tokenColor() 取值。
    --usage-tag-*:模型标签旁的小圆点(名字哈希到 12 色之一),两主题同值。原值搬来;标签点是非文本标识,两套底色上
@@ -2052,10 +1897,7 @@ body.barcode-scanner-active #root {
   --usage-heat-4: oklch(0.80 0.15 55);
   --usage-accent-1: oklch(0.76 0.14 250);
   --usage-accent-2: oklch(0.76 0.13 200);
-  --usage-accent-3: oklch(0.76 0.13 285);
   --usage-accent-4: oklch(0.75 0.16 325);
-  --usage-accent-5: oklch(0.76 0.14 155);
-  --usage-accent-mint: oklch(0.82 0.04 155);
   --ok-fg: #4ade80;
   --warn-fg: #fbbf24;
   --usage-series-1: #1664FF;
@@ -2098,9 +1940,7 @@ body.barcode-scanner-active #root {
   --usage-heat-4: oklch(0.56 0.15 40);
   --usage-accent-1: oklch(0.72 0.18 250);
   --usage-accent-2: oklch(0.65 0.15 200);
-  --usage-accent-3: oklch(0.7 0.12 280);
   --usage-accent-4: oklch(0.68 0.19 325);
-  --usage-accent-5: oklch(0.68 0.16 155);
   --ok-fg: #166534;
   --warn-fg: #854d0e;
 }
@@ -2203,7 +2043,7 @@ body.barcode-scanner-active #root {
   width: 16px;
   height: 16px;
   border: 2px solid var(--border-spinner-on-dark);
-  border-top-color: var(--surface-white);
+  border-top-color: var(--card);
   border-radius: var(--radius-circle);
   animation: spin 0.6s linear infinite;
 }
@@ -2233,7 +2073,7 @@ body.barcode-scanner-active #root {
    外形压成文字,悬停/键盘聚焦用下划线示意(全局无焦点环,见 @@@2322)。 */
 .gg-member-join-name,
 .gg-member-join-name-static {
-  color: var(--text-secondary);
+  color: var(--muted-fg);
   font-weight: var(--font-weight-medium);
 }
 .gg-member-join-name { font-size: inherit; line-height: inherit; cursor: pointer; }
@@ -2259,7 +2099,6 @@ body.barcode-scanner-active #root {
 /* @@@5856 会话列表里的话题子行:挂在来源那条线底下,❌ 不是一条平级的会话(owner:「怎么还有把一个
    topic 当做群的形式表达」)。缩进 + 一条竖轨是「从属」唯一读得出来的两样;❌ 不给它头像 ——
    头像是身份的东西,话题不是一个身份,给了它就立刻长得像个群。 */
-
 
 .gg-topic-subrows { position: relative; }
 .gg-topic-subrows::before {

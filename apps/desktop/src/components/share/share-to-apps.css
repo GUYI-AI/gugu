@@ -18,5 +18,5 @@
   align-items: center;
   justify-content: center;
   background: var(--muted);
-  color: var(--text-primary);
+  color: var(--fg);
 }

@@ -56,7 +56,7 @@ export function InlineNameInput({ name, onCommit, onClose, placeholder, allowEmp
     style={{
       border: 'none', fontSize: 'var(--font-heading)', fontWeight: 600,
       background: 'transparent', outline: 'none', width: '100%',
-      color: failed ? 'var(--danger)' : 'var(--text-primary)', padding: 0,
+      color: failed ? 'var(--danger)' : 'var(--fg)', padding: 0,
     }}
   />
 }
