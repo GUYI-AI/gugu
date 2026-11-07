@@ -100,8 +100,13 @@ export function createBetaPasswordAccess(host: Partial<BetaPasswordHost> = {}) {
             if (snapshot.accountId !== caller.ownerId || snapshot.agentId !== caller.subjectId
               || snapshot.sessionId !== caller.sessionId || snapshot.installationId !== caller.installationId) throw passwordUnavailable()
             window.bind(() => {
+              // The authority allocates IDs after the request gate. That legitimate transition
+              // preserves the request target; all later guards still pin the complete binding.
+              const currentTarget = synchronous(getTarget())
+              const liveTarget = request ? Object.fromEntries(Object.entries(currentTarget)
+                .filter(([key]) => key !== 'requestId' && key !== 'useId')) : currentTarget
               if (input.stage !== stage || input.target !== original || canonicalJson(input.target) !== encodedTarget
-                || canonicalJson(synchronous(getTarget())) !== encodedTarget) throw passwordUnavailable()
+                || canonicalJson(liveTarget) !== encodedTarget) throw passwordUnavailable()
             })
             const parsed = parsePermissionPolicy(await window.read(s => policy(caller.ownerId, s)))
             const decision = decidePasswordUsePermission({ caller, policy: parsed, resource: {

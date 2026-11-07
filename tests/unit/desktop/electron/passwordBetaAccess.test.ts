@@ -60,6 +60,19 @@ describe('build-channel password Beta access', () => {
     expect(f.reads()).toBe(2)
   })
 
+  it('preserves the request target when the authority adds IDs but pins complete bindings at later stages', async () => {
+    const f = fixture(), request = f.input('request'), port = await f.adapter.createPermission(f.native, f.target)
+    const requestGuard = await port.revalidate(request, new AbortController().signal)
+    f.replaceTarget({ ...binding })
+    expect(requestGuard.assertCurrent()).toBeUndefined()
+    const fillGuard = await port.revalidate(f.input('before_fill'), new AbortController().signal)
+    fillGuard.assertCurrent()
+    f.replaceTarget({ ...binding, useId: 'another-use' })
+    expect(() => fillGuard.assertCurrent()).toThrow('password_permission_unavailable')
+    f.replaceTarget({ ...binding, documentId: 'another-document' })
+    expect(() => requestGuard.assertCurrent()).toThrow('password_permission_unavailable')
+  })
+
   it.each(['abortAccount', 'switchAccount', 'invalidate'] as const)('rejects %s while the policy read is pending', async change => {
     const f = fixture(), check = f.input('before_fill')
     let resolve!: (value: typeof f.policy) => void, start!: () => void
