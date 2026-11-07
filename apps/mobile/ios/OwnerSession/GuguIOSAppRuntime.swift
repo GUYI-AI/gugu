@@ -66,9 +66,9 @@ final class GuguIOSAppRuntime {
             guard let self else { throw Self.unavailable() }; return try self.currentBinding()
         }, requireOwnerUI: { try Self.requireForegroundOwnerUI() },
         calendarHasFullAccess: { [weak self] in self?.calendarStore.authorization == .fullAccess },
-        revokeCalendarAccess: { [weak self] in
+        revokeCalendarAccess: { [weak self] binding in
             guard let self else { throw Self.unavailable() }
-            try self.lifecycle.revokeCalendarAccess(binding: self.currentBinding())
+            try self.lifecycle.revokeCalendarAccess(binding: binding)
         })
 
     func plugins() -> [CAPPlugin] {
