@@ -41,9 +41,9 @@ function afterPage(snapshot: TimelineSnapshot, cursor: RecordCursor | null): Tim
 export function createDesktopWindowReader(io: DesktopWindowIo) {
   async function snapshot(input: { conversationId: string; limit?: number }, signal?: AbortSignal): Promise<TimelineSnapshot> {
     const request = await io.request(input.conversationId, input.limit, signal);
-    return readSnapshot(request);
+    return readWindowSnapshot(request);
   }
-  async function readSnapshot(request: WindowReadRequest): Promise<TimelineSnapshot> {
+  async function readWindowSnapshot(request: WindowReadRequest): Promise<TimelineSnapshot> {
     const signal = request.signal;
     const value = project(page(await io.openRecent(request)));
     signal?.throwIfAborted();
@@ -86,7 +86,7 @@ export function createDesktopWindowReader(io: DesktopWindowIo) {
           dirty = false;
           const request = initialRequest ?? await io.request(input.conversationId, undefined, abort.signal);
           initialRequest = undefined;
-          const value = await readSnapshot(request);
+          const value = await readWindowSnapshot(request);
           if (stopped) return;
           const result = afterPage(value, cursor);
           cursor = value.cursor;

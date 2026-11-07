@@ -13,6 +13,7 @@ export interface RecentReaderIo {
   openSource?(request: WindowReadRequest): Promise<OpenSource | null>;
   schedulePending(request: WindowReadRequest, snapshot: SourceSnapshot, ticket: PendingLongRecord): Promise<SourceRange | void>;
   body: BodyPageIo;
+  headerProgress?(request: WindowReadRequest): void;
 }
 async function openSource(request: WindowReadRequest): Promise<OpenSource | null> {
   const harness = request.locator.harness;
@@ -81,10 +82,15 @@ export function createRecentReader(io: RecentReaderIo) {
           sourceFence: { start: recordEnd, end: recordEnd, digest: hash('') } };
         const located = await io.schedulePending(request, snapshot, ticket);
         const firstBody = located ? await readRecordFirstBody(opened.source, snapshot, located, opened.sourceLineage, request) : null;
-        if (firstBody) { sourceFragments.unshift(firstBody); locatedStart = located!.start; }
-        else pendingLongRecords.push(ticket);
+        if (firstBody) {
+          if ('key' in firstBody) sourceFragments.unshift(firstBody);
+          locatedStart = located!.start;
+        } else { pendingLongRecords.push(ticket); if (located) io.headerProgress?.(request); }
       }
       signal?.throwIfAborted();
+      const current = await opened.source.snapshot();
+      if (current.sourceInstance !== snapshot.sourceInstance || current.snapshotRevision !== snapshot.snapshotRevision || current.size !== snapshot.size)
+        return { kind: 'reset', reason: 'source_changed', io: budget.counters };
       const before = locatedStart ?? result.older?.before;
       const olderCursor = before ? { version: 1 as const, scope: request.scope, sourceLineage: opened.sourceLineage,
         snapshotRevision: snapshot.snapshotRevision, before, segment: null } : null;
