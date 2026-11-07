@@ -56,14 +56,16 @@ export async function readCapturedRecordStart(cacheDirectory: string, harness: '
   if (frame.kind === 'miss') return frame;
   if (frame.bytes.length > 4096) throw new Error('Oversized captured record locator');
   budget.charge('decodedBytes', frame.bytes.length);
-  const saved = JSON.parse(Buffer.from(frame.bytes).toString('utf8')) as { source: SourceSnapshot; recordStart: number; recordEnd: number };
+  const saved = JSON.parse(Buffer.from(frame.bytes).toString('utf8')) as { source: SourceSnapshot; recordStart: number; recordEnd: number; consumedEnd: number; terminated: boolean; lastByte: number };
   if (saved.source.sourceId !== source.sourceId || saved.source.sourceInstance !== source.sourceInstance ||
     saved.source.snapshotRevision !== source.snapshotRevision || saved.source.size !== source.size)
     return { kind: 'reset' as const, reason: 'source_changed' as const };
   if (!Number.isSafeInteger(saved.recordStart) || !Number.isSafeInteger(saved.recordEnd) ||
-    saved.recordStart < 0 || saved.recordStart > saved.recordEnd || saved.recordEnd > source.size)
+    saved.recordStart < 0 || saved.recordStart > saved.recordEnd || saved.recordEnd > source.size ||
+    !Number.isSafeInteger(saved.consumedEnd) || saved.consumedEnd < saved.recordEnd || saved.consumedEnd > source.size || typeof saved.terminated !== 'boolean' ||
+    !Number.isInteger(saved.lastByte) || saved.lastByte < 0 || saved.lastByte > 255)
     throw new Error('Invalid captured record locator');
-  return { kind: 'hit' as const, range: { start: saved.recordStart, end: saved.recordEnd } };
+  return { kind: 'hit' as const, range: { start: saved.recordStart, end: saved.recordEnd }, consumedEnd: saved.consumedEnd, terminated: saved.terminated, lastByte: saved.lastByte };
 }
 
 /** Same physical binding as openWindowByteSource, using the descriptor that supplied these bytes. */
@@ -80,15 +82,27 @@ async function snapshotFor(path: string, file: FileHandle): Promise<SourceSnapsh
 /** One capture owns one current record, with no line string or history-sized collection. */
 export function createRecordLocatorCapture(context: WindowCacheContext, harness: 'claude' | 'codex', providerSessionId: string) {
   let instance = '', next = -1, recordStart = 0, previousByte = -1;
-  return async (path: string, file: FileHandle, bytes: Uint8Array, position: number): Promise<void> => {
+  return async (path: string, file: FileHandle, bytes: Uint8Array, position: number, budget: WindowBudget): Promise<void> => {
     if (bytes.length > 64 * 1024) throw new Error('Capture source block must be sliced before delivery');
     const source = await snapshotFor(path, file);
-    let currentStart = source.sourceInstance !== instance || position !== next ? position : recordStart;
+    let currentStart = recordStart;
+    const contiguous = source.sourceInstance === instance && position === next;
+    let priorByte = contiguous ? previousByte : -1;
+    if (!contiguous) {
+      if (position === 0) currentStart = 0;
+      else {
+        const saved = await readCapturedRecordStart(context.cacheDirectory, harness, providerSessionId, source, budget);
+        if (saved.kind !== 'hit' || saved.consumedEnd !== position)
+          throw Object.assign(new Error('Capture record start is not located'), { code: 'record_start_unknown' });
+        currentStart = saved.terminated ? position : saved.range.start;
+        priorByte = saved.lastByte;
+      }
+    }
     const firstRecordStart = currentStart;
     let lastCompleteStart: number | null = null, lastCompleteEnd = position;
     for (let offset = bytes.indexOf(10); offset >= 0; offset = bytes.indexOf(10, offset + 1)) {
       lastCompleteStart = currentStart;
-      lastCompleteEnd = position + offset - ((offset === 0 ? previousByte : bytes[offset - 1]) === 13 ? 1 : 0);
+      lastCompleteEnd = position + offset - ((offset === 0 ? priorByte : bytes[offset - 1]) === 13 ? 1 : 0);
       currentStart = position + offset + 1;
     }
     const end = position + bytes.length;
@@ -102,6 +116,8 @@ export function createRecordLocatorCapture(context: WindowCacheContext, harness:
     await writeWindowFrame(directory, sourceKey(harness, providerSessionId, 'record-current'), Buffer.from(JSON.stringify({
       version: 1, source, recordStart: currentStart === end ? lastCompleteStart : currentStart,
       recordEnd: currentStart === end ? lastCompleteEnd : end,
+      consumedEnd: end, terminated: currentStart === end,
+      lastByte: bytes.at(-1),
     })));
     await writeSourceLocator(context.cacheDirectory, locator);
     next = end; instance = source.sourceInstance; recordStart = currentStart; previousByte = bytes.at(-1) ?? previousByte;
@@ -134,7 +150,7 @@ export async function createBoundedRecordCapture(context: WindowCacheContext, ha
       signal?.throwIfAborted();
       if (consumed !== length || (await snapshotFor(path, file)).snapshotRevision !== source.snapshotRevision)
         return { kind: 'reset' as const, reason: 'source_changed' as const };
-      if (length) await capture(path, file, bytes, position);
+      if (length) await capture(path, file, bytes, position, budget);
       signal?.throwIfAborted();
       return { kind: 'chunk' as const, source, start: position, end: position + length, bytes };
     },
