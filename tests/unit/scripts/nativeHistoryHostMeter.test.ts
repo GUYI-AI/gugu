@@ -22,6 +22,8 @@ it('meters source/readv and a cache created after preload behind a symlink; refu
         assert.throws(() => fs.readFileSync(source), /Unmetered history operation/);
         await assert.rejects(async () => f.readFile(cache), /Unmetered history operation/);
         assert.throws(() => s.readFile(), /Unmetered history operation/);
+        assert.throws(() => fs.readFileSync(s.fd), /Unmetered history operation/);
+        await assert.rejects(async () => f.readFile(s), /Unmetered history operation/);
         await s.close(); await c.close();
         console.log(JSON.stringify(globalThis.__guguHistoryIoTrace.snapshot()));
       })().catch(error => { console.error(error); process.exitCode = 1 });
@@ -34,7 +36,7 @@ it('meters source/readv and a cache created after preload behind a symlink; refu
     expect(counters).toMatchObject({ sourceBytes: 4, indexBytes: 5, sourceCalls: 1, indexCalls: 1,
       peakSourceBuffer: 16, peakIndexBuffer: 5 })
     expect(counters.blocked.map((value: { operation: string }) => value.operation))
-      .toEqual(['readFileSync', 'readFile', 'FileHandle.readFile'])
+      .toEqual(['readFileSync', 'readFile', 'FileHandle.readFile', 'readFileSync', 'readFile'])
     expect(JSON.parse(await readFile(join(traces, `history-io-${counters.pid}.json`), 'utf8')))
       .toMatchObject(counters)
   } finally { await rm(root, { recursive: true, force: true }) }
@@ -55,5 +57,11 @@ it('refuses a source modified after its pinned manifest was created', async () =
     expect(execFileSync(process.execPath, args, options)).toBe('')
     await writeFile(file, text + 'export const changed = true\n')
     expect(() => execFileSync(process.execPath, args, options)).toThrow(/Unpinned source/)
+    const outside = join(root, '..', `outside-${root.split('/').at(-1)}.mjs`)
+    try {
+      await writeFile(outside, text + 'export const escaped = true\n')
+      await rm(file); await symlink(outside, file)
+      expect(() => execFileSync(process.execPath, args, options)).toThrow(/escapes pinned root/)
+    } finally { await rm(outside, { force: true }) }
   } finally { await rm(root, { recursive: true, force: true }) }
 })

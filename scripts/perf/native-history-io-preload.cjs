@@ -21,8 +21,15 @@ if (process.env.GUGU_HISTORY_IO_TRACE) {
       }
     }
   }
+  const descriptors = new Map(), handles = new WeakMap()
   const sources = new Set(config.sources.map(canonical)), caches = config.caches.map(canonical)
   const classify = value => {
+    if (typeof value === 'number') {
+      const entry = descriptors.get(value)
+      if (entry?.handle.fd === value) return entry.kind
+      descriptors.delete(value); return null
+    }
+    if (value && typeof value === 'object' && handles.has(value)) return handles.get(value)
     if (typeof value !== 'string' && !(value instanceof URL) && !Buffer.isBuffer(value)) return null
     const name = canonical(value instanceof URL ? require('node:url').fileURLToPath(value) : String(value))
     if (sources.has(name)) return 'source'
@@ -54,6 +61,11 @@ if (process.env.GUGU_HISTORY_IO_TRACE) {
   promises.open = async (...args) => {
     const file = await open(...args), kind = classify(args[0])
     if (!kind) return file
+    const fd = file.fd, close = file.close.bind(file)
+    descriptors.set(fd, { kind, handle: file }); handles.set(file, kind)
+    file.close = async () => { try { return await close() } finally {
+      if (descriptors.get(fd)?.handle === file) descriptors.delete(fd)
+    } }
     for (const method of ['read', 'readv']) {
       const original = file[method].bind(file)
       file[method] = async (...values) => {
@@ -65,7 +77,9 @@ if (process.env.GUGU_HISTORY_IO_TRACE) {
         return result
       }
     }
-    file.readFile = () => { rejectWhole('FileHandle.readFile', args[0]) }
+    for (const method of ['readFile', 'createReadStream', 'readLines', 'readableWebStream']) {
+      if (typeof file[method] === 'function') file[method] = () => rejectWhole(`FileHandle.${method}`, file)
+    }
     return file
   }
   const directoryOpen = promises.opendir.bind(promises)
@@ -77,10 +91,10 @@ if (process.env.GUGU_HISTORY_IO_TRACE) {
   for (const target of [fs, promises]) for (const method of ['readFile', 'readFileSync', 'createReadStream', 'readdir', 'readdirSync']) {
     if (typeof target[method] !== 'function') continue
     const original = target[method].bind(target)
-    target[method] = (...args) => { rejectWhole(method, args[0]); return original(...args) }
+    target[method] = (...args) => { rejectWhole(method, args[0]); if (method === 'createReadStream') rejectWhole(method, args[1]?.fd); return original(...args) }
   }
   // Current production history readers use FileHandle. Refuse other descriptor routes before source I/O.
-  for (const method of ['open', 'openSync']) {
+  for (const method of ['open', 'openSync', 'read', 'readSync', 'readv', 'readvSync']) {
     const original = fs[method].bind(fs)
     fs[method] = (...args) => { rejectWhole(`fs.${method}`, args[0]); return original(...args) }
   }
