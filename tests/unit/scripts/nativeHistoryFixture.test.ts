@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createHistoryFixture, VISIBLE_MARKER } from '../../../scripts/perf/native-history-fixture.mts'
+import { validateSample } from '../../../scripts/perf/native-history-acceptance.mts'
 import { assertAcceptanceScope, assertLegacySize, checkScopeLimits } from '../../../scripts/perf/native-history-safety.mts'
 
 describe('history acceptance admission and fixture construction', () => {
@@ -33,5 +34,23 @@ describe('history acceptance admission and fixture construction', () => {
         } else expect(bytes.includes(Buffer.from('POISON_PREFIX'))).toBe(true)
       }
     } finally { await rm(dir, { recursive: true, force: true }) }
+  })
+})
+
+// Synthetic controller controls only; these do not stand in for product measurements.
+describe('history measurement result gate', () => {
+  const sample = { evidence: 'desktop' as const, firstFrameMs: 1, firstReadablePaintMs: 2,
+    readableText: VISIBLE_MARKER, placeholder: false, durableImportLocator: true, cacheState: 'absent',
+    sourceBytes: 65536, indexBytes: 4096, decodedBytes: 65536, outputBytes: 1024 }
+  it('requires readable painted content and real import locators', () => {
+    expect(() => validateSample(sample, 'valid-jsonl', 'absent', true)).not.toThrow()
+    for (const mutation of [{ evidence: 'reader' as const }, { placeholder: true }, { durableImportLocator: false },
+      { sourceBytes: 524289 }, { firstReadablePaintMs: null }, { readableText: '' }, { cacheState: 'valid' }]) {
+      expect(() => validateSample({ ...sample, ...mutation }, 'valid-jsonl', 'absent', true)).toThrow()
+    }
+  })
+  it('does not treat a known giant locator or missing background/resume metrics as discovery', () => {
+    expect(() => validateSample(sample, 'legacy-giant', 'absent', true)).toThrow()
+    expect(() => validateSample({ ...sample, durableImportLocator: false }, 'legacy-giant', 'absent', true)).toThrow()
   })
 })
