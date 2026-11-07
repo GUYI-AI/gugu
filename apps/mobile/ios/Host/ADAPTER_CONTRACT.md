@@ -14,6 +14,12 @@ The integrator registers `GuguAgent` only when the actual App path is ready. Reg
 
 A provides the shared-login side and native registration. B owns Host implementation. The broker must use the coordinator's published access-token-only data clients or an equivalent native short-access-token transport with no refresh authority. Private cloud operations require the real assigned identity. Model inference additionally requires the real model-budget authorization; neither runs in the offline adapter tests.
 
+`GuguIOSHostAdapter` implements the native facade and `GuguHostCallStore` retains the original mutating request UUID on disk. It requires a concrete `GuguIOSHostBackend`, native current identity, private storage root and native owner-UI guard; no default backend exists. The backend must stop/retire its own pending configuration before acknowledging stop and must never let a late configure callback revive a retired host. Concrete cloud/provisioning/timeline wiring is still absent; this facade alone must not register the plugin or set taskTimeline/ready.
+
+The `authSession` Swift completion is `Result<[String:Any],Error>`: successful get/refresh delegation returns available=false; sign-out first awaits actual backend stop. A must reject the Capacitor promise on `.failure`, including repeated stop failure. A JSON error object resolved as successful auth would accidentally trigger the shared logout fallback. For configure/hostState/stopHost, an adapter `error` envelope also rejects the plugin promise; hostCall alone returns the existing result-or-error host envelope.
+
+Mutating calls persist custody before backend invocation. A duplicate in flight returns admission_uncertain, a restarted uncertain call goes to backend.reconcile, and a completed receipt rechecks authorizeReplay. The backend must reconcile actual per-phase cloud/native IDs rather than execute again. Terminal host receipts cannot be overwritten; late receipts remain stored under their original owner after retirement but cannot be delivered to the next owner. Startup reads are never permanently cached as not-ready. These properties have only injected-backend macOS tests until a real backend and App path exist.
+
 ## Owner and calendar category boundary
 
 `GuguIOSOwnerAccess` requires five native inputs: private no-backup root, a throwing verified-identity publisher, the foreground local-owner UI guard, C's real full-access status reader, and `GuguInProcessHost.revokeCalendarAccess`. There are no permissive defaults. A supplies identity from the authenticated shared session and native installation/device binding; neither configure input nor an unverified decoded JWT establishes this authority.
@@ -27,7 +33,7 @@ Owner and installation are UUIDs. Device ID uses the existing exact `phone-${ins
 - Run C's actual EventKit connect, then `finishCalendarConnection(attempt:) throws -> GuguIOSOwnerSnapshot`. Only the same current binding, latest unconsumed attempt and actual full access can persist a connected choice. Failed/denied/late requests remain disconnected.
 - `disconnectCalendar(expectedBinding:) throws -> GuguIOSOwnerSnapshot` invalidates contexts, persists disconnected and reads back the native state.
 
-A composes begin/connect/finish inside the `GuguCalendarPermissions` native plugin; WebView receives the final snapshot, never an attempt token or partial write API. `configure(grants)` cannot set calendar truth. This commit's owner tests inject identity/UI/OS status and do not verify real login, EventKit or the iOS App. The cloud backend protocol is an interface inventory; the concrete backend and GuguAgent adapter are still separate work.
+A composes begin/connect/finish inside the `GuguCalendarPermissions` native plugin; WebView receives the final snapshot, never an attempt token or partial write API. `configure(grants)` cannot set calendar truth. Owner tests inject identity/UI/OS status and do not verify real login, EventKit or the iOS App. The cloud backend protocol is an interface inventory; concrete backend wiring remains separate work.
 
 ## sessionTimeline channels and custody
 
