@@ -14,6 +14,7 @@ function union<T>(older: readonly T[], newer: readonly T[], key: (value: T) => s
 /** Tail replacement is independent from resident pages; resolutions remove tickets across both. */
 export function mergeTimelineWindowFields(
   current: TimelineWindowState, incoming: TimelineWindowFields, mode: 'snapshot' | 'batch' | 'older',
+  turns: readonly { id: string; items: readonly DisplayItem[] }[] = [],
 ): TimelineWindowState {
   const base = mode === 'snapshot' ? {} : current
   const tail = mode === 'snapshot' ? bucket(incoming) : mode === 'batch' ? {
@@ -27,9 +28,14 @@ export function mergeTimelineWindowFields(
   const resolved = new Set(incoming.resolvedPendingTickets ?? [])
   tail.pendingLongRecords = tail.pendingLongRecords?.filter(value => !resolved.has(value.ticket))
   pages.pendingLongRecords = pages.pendingLongRecords?.filter(value => !resolved.has(value.ticket))
-  const fragments = union(pages.sourceFragments ?? [], tail.sourceFragments ?? [], value => value.key)
-  const owners = union(base.resolvedFragmentOwners ?? [], incoming.resolvedFragmentOwners ?? [], value => value.fragmentKey)
-    .filter(value => fragments.some(fragment => fragment.key === value.fragmentKey))
+  const allOwners = union(base.resolvedFragmentOwners ?? [], incoming.resolvedFragmentOwners ?? [], value => value.fragmentKey)
+  const arrived = (owner: typeof allOwners[number]) => turns.some(turn => turn.id === owner.turnId && contains(turn.items, owner.itemId))
+  const windowResolved = (base.sourceFragments ?? []).filter(fragment => {
+    const owner = allOwners.find(value => value.fragmentKey === fragment.key)
+    return owner && !arrived(owner)
+  })
+  const fragments = union(windowResolved, union(pages.sourceFragments ?? [], tail.sourceFragments ?? [], value => value.key), value => value.key)
+  const owners = allOwners.filter(value => arrived(value) || fragments.some(fragment => fragment.key === value.fragmentKey))
   const bodyKey = (ref: NonNullable<TimelineWindowFields['bodyRefs']>[number]) => JSON.stringify(ref.owner.kind === 'canonical' ? ['canonical', ref.owner.turnId, ref.owner.itemId, ref.id] : ['fragment', ref.owner.fragmentKey, ref.id])
   const bodyRefs = mode === 'older'
     ? union(incoming.bodyRefs ?? [], base.bodyRefs ?? [], bodyKey)

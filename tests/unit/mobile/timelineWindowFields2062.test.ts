@@ -64,3 +64,23 @@ describe('bounded timeline window metadata', () => {
     expect(hasPendingWindow({ ...next, turns: [] })).toBe(false)
   })
 })
+
+it('preserves the owner event when the same batch clears fragments and supplies the real item', () => {
+  const before = merge({}, { sourceFragments: [fragment] }, 'snapshot')
+  const owner = { fragmentKey: fragment.key, turnId: 'turn', itemId: 'item' }
+  const after = merge(before, { sourceFragments: [], resolvedFragmentOwners: [owner] }, 'batch',
+    [{ id: 'turn', items: [{ id: 'item' }] }])
+  expect(after.sourceFragments).toEqual([])
+  expect(after.resolvedFragmentOwners).toEqual([owner])
+})
+
+it('retains out-of-order owner fragments until real content arrives, then releases their text', () => {
+  const before = merge({}, { sourceFragments: [fragment] }, 'snapshot')
+  const owner = { fragmentKey: fragment.key, turnId: 'turn', itemId: 'item' }
+  const waiting = merge(before, { sourceFragments: [], resolvedFragmentOwners: [owner] }, 'batch')
+  expect(waiting.sourceFragments?.[0]?.text).toBe(fragment.text)
+  const arrived = merge(waiting, {}, 'batch', [{ id: 'turn', items: [{ id: 'item' }] }])
+  expect(arrived.sourceFragments).toEqual([])
+  expect(arrived.resolvedFragmentOwners).toEqual([owner])
+  expect(merge(arrived, {}, 'batch').resolvedFragmentOwners).toEqual([])
+})

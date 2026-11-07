@@ -160,7 +160,7 @@ export function applySnapshot(
     turns: sortTurns(turns),
     settlements: indexSettlements(snapshot.settlements),
     hasOlder: snapshot.hasOlder,
-    ...mergeTimelineWindowFields({}, snapshot, 'snapshot'),
+    ...mergeTimelineWindowFields({}, snapshot, 'snapshot', turns),
     recentActions: snapshot.recentActions ?? [],
     lastActionAt: snapshot.lastActionAt ?? null,
     queuedPrompts: snapshot.queuedPrompts ?? [],
@@ -187,11 +187,12 @@ export function prependOlder(
   const byId = new Map<string, TranscriptTurn>()
   for (const turn of older.turns) byId.set(turn.id, turn)
   for (const turn of state.turns) byId.set(turn.id, turn)
+  const turns = sortTurns([...byId.values()])
   return {
     ...state,
-    turns: sortTurns([...byId.values()]),
+    turns,
     hasOlder: older.hasOlder,
-    ...mergeTimelineWindowFields(state, older, 'older'),
+    ...mergeTimelineWindowFields(state, older, 'older', turns),
   }
 }
 
@@ -254,13 +255,14 @@ export function applyBatch(state: AgentWatchTimeline, batch: TimelineBatch): Age
   const cursor = state.cursor && state.cursor.seq > batch.cursor.seq ? state.cursor : batch.cursor
   // 队列每批都带全集:只认不比手里旧的那一批,❌ 让重放的旧批把已经被接走的那句又排回去。
   const current = !state.cursor || batch.cursor.seq >= state.cursor.seq
+  const turns = sortTurns([...byId.values()])
 
   return {
     cursor,
-    turns: sortTurns([...byId.values()]),
+    turns,
     settlements: mergeSettlements(state.settlements, batch.settlements, !state.cursor || batch.cursor.seq > state.cursor.seq),
     hasOlder: state.hasOlder,
-    ...mergeTimelineWindowFields(state, current ? batch : {}, 'batch'),
+    ...mergeTimelineWindowFields(state, current ? batch : {}, 'batch', turns),
     // After describes the tail; it must not rewind an older-page cursor.
     olderCursor: state.olderCursor,
     moreBefore: state.moreBefore,
