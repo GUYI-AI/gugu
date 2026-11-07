@@ -1,4 +1,4 @@
-import { retrySessionInputs, useQueuedSessionInputs } from '@/lib/sessionInputOutboxBridge'
+import { retrySessionInput, useQueuedSessionInputs } from '@/lib/sessionInputOutboxBridge'
 import { sessionInputBubbles } from '@/lib/sessionInputOutbox'
 import type { LifeView } from '@/session/shared/core/sessions/session-life'
 import { useTranslation } from 'react-i18next'
@@ -30,7 +30,7 @@ export function SessionInputQueue({ sessionId, waitingForConnection, life = null
     && !life?.pending.items.some(row => row.messageId === input.id)).map(input => [input.id, input.failure!]) : [])
   const sender = pending.filter(input => !input.sendQueue && (waitingForConnection || queuedFailures.has(input.id))
     && (!mobile || input.queued !== true || input.failure))
-  const retry = (id: string) => { void runNativeInputAction(sessionId, id, pending.find(input => input.id === id)?.deviceId ?? null, retrySessionInputs) }
+  const retry = (id: string) => { void runNativeInputAction(sessionId, id, pending.find(input => input.id === id)?.deviceId ?? null, () => retrySessionInput(id)) }
   const bubbles = sessionInputBubbles(sender, life?.pending.items ?? [], life?.hold ?? null)
     .filter(bubble => !drawnIds.has(mobile ? nativeMessageKey(bubble.id) : bubble.id) && !pending.some(input => input.id === bubble.id && input.queued === false))
   if (!bubbles.length) return null

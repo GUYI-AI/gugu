@@ -65,3 +65,16 @@ it('an explicit discard retires its earlier failure without deleting another inp
   await click(0, 1); await waitVisible(0)
   expect((await queue.list()).map(input => input.id)).toEqual([ids[1]])
 })
+
+it('retrying a later input never attributes an earlier input storage failure to it', async () => {
+  for (const input of await queue.list()) await storage.put({ ...input, admission: 'uncertain', failure: { code: 'send-failed', message: 'offline' } })
+  state().rows = await queue.list(); await act(async () => changed())
+  const originalPut = storage.put.bind(storage)
+  const put = vi.spyOn(storage, 'put').mockImplementation(input => input.id === ids[0] ? Promise.reject(new Error('earlier input write failed')) : originalPut(input))
+  accept = true
+  await click(1)
+  await act(async () => vi.waitFor(async () => expect((await queue.list()).map(input => input.id)).toEqual([ids[0]])))
+  expect(visible.size).toBe(0)
+  expect(put).not.toHaveBeenCalledWith(expect.objectContaining({ id: ids[0] }))
+  await expect(queue.retry(ids[1])).resolves.toBeUndefined()
+})

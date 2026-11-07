@@ -47,7 +47,7 @@ import { ACP_START_FAILED, lifeHoldIsFailure, lifeIsStarting, type LifeView } fr
 import { sendThroughCustody } from './queue-native-input';
 import { sendHeldInputNow } from './send-held-input-now';
 import { sessionInputBubbles } from '@/lib/sessionInputOutbox';
-import { changeRejectedSessionInput, deleteQueuedSessionInput, editQueuedSessionInput, queuedSessionInputs, reorderQueuedSessionInputs, retrySessionInputs, subscribeSessionInputs } from '@/lib/sessionInputOutboxBridge';
+import { changeRejectedSessionInput, deleteQueuedSessionInput, editQueuedSessionInput, queuedSessionInputs, reorderQueuedSessionInputs, retrySessionInput, subscribeSessionInputs } from '@/lib/sessionInputOutboxBridge';
 import type { SessionInput } from '@/lib/sessionInputOutbox';
 import { sessionSendQueueOrder } from '@/lib/sessionSendQueueOrder';
 import { projectSessionPendingInput } from '@/lib/pendingSessionInput';
@@ -1145,7 +1145,7 @@ export class AcpChatStore {
       return;
     }
     void this._messageAction(itemId, async () => {
-      await retrySessionInputs();
+      await retrySessionInput(itemId);
       if (sessionLifeView(this.runtimeSessionId)?.kind === 'failed') await startSessionLife(this.runtimeSessionId);
     });
   }

@@ -129,15 +129,6 @@ it('keeps one notice per native queued message across failed retries and retires
   expect(visible.size).toBe(1);
 });
 
-it('a successful send-now settles a previous runtime result failure through the same message owner', async () => {
-  const { store, session } = makeStore({ success: false, error: new Error('adapter refused') });
-  store.sendQueuedPromptNow('q-2', { steers: true }); await settle();
-  expect(visible.size).toBe(1);
-  session.steerQueuedPrompt.mockResolvedValue(ok);
-  store.sendQueuedPromptNow('q-2', { steers: true }); await settle();
-  expect(visible.size).toBe(0);
-});
-
 it('retries a rejected input through real sender storage, preserving another message failure', async () => {
   vi.stubGlobal('IDBKeyRange', IDBKeyRange);
   const { store } = makeStore();

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ChatCommands } from '@gugu/session-chat-ui'
-import { changeRejectedSessionInput, retrySessionInputs, useQueuedSessionInputs } from '@/lib/sessionInputOutboxBridge'
+import { changeRejectedSessionInput, retrySessionInput, useQueuedSessionInputs } from '@/lib/sessionInputOutboxBridge'
 import { runNativeInputAction } from '@/lib/nativeInputFailureNotice'
 
 /** Bind sender-owned refusals to the transcript's existing editor and failed-message actions. */
@@ -16,7 +16,7 @@ export function useRejectedSessionInputCommands(sessionId: string): ChatCommands
       canDiscardSend: id => !!rejected(id),
       onEditMessage: ({ itemId }) => { const input = rejected(itemId); if (input) setEdit({ itemId, text: input.text, pending: false }) },
       onDiscardSend: id => { void run(id, () => changeRejectedSessionInput(id, { kind: 'discard' })) },
-      onRetrySend: id => { void run(id, () => rejected(id) ? changeRejectedSessionInput(id, { kind: 'retry' }) : retrySessionInputs()) },
+      onRetrySend: id => { void run(id, () => retrySessionInput(id)) },
       editingMessage: edit && rejected(edit.itemId) ? {
         ...edit, canSubmit: !edit.pending && !!edit.text.trim(),
         onChange: text => setEdit({ ...edit, text }), onCancel: () => setEdit(null),

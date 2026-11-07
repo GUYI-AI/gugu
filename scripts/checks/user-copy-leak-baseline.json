@@ -151,11 +151,6 @@
   },
   {
     "rule": "copy-leaks-raw-error-slot",
-    "file": "apps/desktop/src/session/renderer/features/sessions/acp/acp-chat-store.ts",
-    "count": 1
-  },
-  {
-    "rule": "copy-leaks-raw-error-slot",
     "file": "apps/desktop/src/session/renderer/features/sessions/diff-view/changes-panel/components/commit-card.tsx",
     "count": 1
   },
