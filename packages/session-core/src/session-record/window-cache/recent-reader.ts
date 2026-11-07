@@ -8,7 +8,7 @@ import { readRecordFirstBody } from './record-first-body';
 import type { PendingLongRecord, SourceFragment, SourceRange, SourceSnapshot, WindowByteSource, WindowCursor, WindowReadRequest, WindowResult } from './types';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
-type OpenSource = { source: WindowByteSource; sourceLineage: string; close(): Promise<void> };
+type OpenSource = { source: WindowByteSource; sourceLineage: string; readEnd?: number; close(): Promise<void> };
 export interface RecentReaderIo {
   openSource?(request: WindowReadRequest): Promise<OpenSource | null>;
   schedulePending(request: WindowReadRequest, snapshot: SourceSnapshot, ticket: PendingLongRecord): Promise<SourceRange | void>;
@@ -66,11 +66,15 @@ export function createRecentReader(io: RecentReaderIo) {
     if (!opened) return { kind: 'cache_miss', reason: 'not_found', cursor: cursor ?? null, io: budget.counters };
     try {
       const snapshot = await opened.source.snapshot();
+      const readEnd = opened.readEnd ?? snapshot.size;
+      if (!Number.isSafeInteger(readEnd) || readEnd < 0 || readEnd > snapshot.size)
+        return { kind: 'reset', reason: 'source_changed', io: budget.counters };
       if (cursor && (cursor.scope !== request.scope || cursor.sourceLineage !== opened.sourceLineage || cursor.snapshotRevision !== snapshot.snapshotRevision))
         return { kind: 'reset', reason: 'invalid_cursor', io: budget.counters };
+      if (cursor && cursor.before > readEnd) return { kind: 'reset', reason: 'invalid_cursor', io: budget.counters };
       const result = await readJsonlWindow(opened.source, { budget, signal, limit: Math.min(request.limit ?? 20, 20),
-        ...(cursor ? { cursor: { sourceId: snapshot.sourceId, sourceInstance: snapshot.sourceInstance,
-          snapshotRevision: snapshot.snapshotRevision, before: cursor.before } } : {}) });
+        ...(cursor || opened.readEnd !== undefined ? { cursor: { sourceId: snapshot.sourceId, sourceInstance: snapshot.sourceInstance,
+          snapshotRevision: snapshot.snapshotRevision, before: cursor?.before ?? readEnd } } : {}) });
       if (result.kind === 'reset') return { ...result, io: budget.counters };
       const sourceFragments = result.records.map(record => fragment(request, opened.sourceLineage, record)).filter((value): value is SourceFragment => value !== null).reverse();
       const pendingLongRecords: PendingLongRecord[] = [];
@@ -78,7 +82,7 @@ export function createRecentReader(io: RecentReaderIo) {
       if (result.headFragment) {
         const { recordEnd, scanBefore } = result.headFragment;
         const ticket: PendingLongRecord = { kind: 'pending_long_record', ticket: hash(`${request.scope}:${snapshot.sourceInstance}:${recordEnd}`),
-          sourceInstance: snapshot.sourceInstance, pinnedEnd: snapshot.size, nextScanOffset: scanBefore,
+          sourceInstance: snapshot.sourceInstance, pinnedEnd: readEnd, nextScanOffset: scanBefore,
           sourceFence: { start: recordEnd, end: recordEnd, digest: hash('') } };
         const located = await io.schedulePending(request, snapshot, ticket);
         const firstBody = located ? await readRecordFirstBody(opened.source, snapshot, located, opened.sourceLineage, request) : null;

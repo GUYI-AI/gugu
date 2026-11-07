@@ -1,6 +1,7 @@
 import { promptAttachmentSchema, turnFileRefSchema } from '@gugu/session-core/acp/client';
 import { SessionInputAdmissionError, sessionInputAdmission, type SessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission';
 import { createNativeRecordReader } from './native-record';
+import { createWindowOpenings, type WindowOpeningInput } from './window-opening';
 import { priorInputAdmission, sameInput, type InputAdmissionPayload } from './input-admission';
 import { ask, withdrawAll } from '../asks';
 import { hostAsks, resetAsks, respond as respondAsk, respondQuestion as respondAskQuestion } from '../asks/ask';
@@ -28,6 +29,7 @@ import {
   type Settlement,
   type SessionpageProjectSummary,
   type SessionpageSessionEvent,
+  type SessionpageSessionWindowStatusEvent,
   type SessionpageSessionRespondRequest,
   type SessionpageSessionRespondResult,
   type SessionpageSessionCancelResult,
@@ -844,22 +846,54 @@ export const windowAfter = (input: { conversationId: string; cursor: RecordCurso
 export const windowOlder = (input: SessionpageSessionOlderRequest) => withSourceWindow(reader => reader.older(input));
 export const body = (input: SessionpageSessionBodyReadRequest): Promise<SessionTimelineResult<WindowBodyResult>> => withSourceWindow(reader => reader.body(input));
 
+const windowOpenings = createWindowOpenings({
+  capture: async conversationId => {
+    const row = readSessionRow(conversationId);
+    if (!row) throw Object.assign(new Error('The session is no longer available'), { code: 'session_not_found' });
+    const { supportsSourceWindow } = await import('@gugu/session-core/session-record/window-cache/formats');
+    if (row.runtime !== 'acp' || !supportsSourceWindow(row.provider)) return null;
+    const { sessionLife } = await import('../sessions/session-life');
+    return sessionLife().stoppedReadFence(conversationId);
+  },
+  register: (id, owner) => {
+    unsubscribe(id); subscriptions.set(id, owner);
+    return () => { if (subscriptions.get(id) === owner) subscriptions.delete(id); };
+  },
+});
+export async function windowPrepare(input: WindowOpeningInput): Promise<SessionTimelineResult<{ source: 'window' | 'legacy' }>> {
+  try { return { ok: true, value: await windowOpenings.prepare(input) }; }
+  catch (error) { return fail((error as { code?: string }).code ?? 'scope_changed', (error as Error).message); }
+}
+
 export async function windowSubscribe(input: SessionpageSessionSubscribeRequest,
-  emit: (event: SessionpageSessionEvent) => void): Promise<SessionTimelineResult<{ subscriptionId: string }>> {
+  emit: (event: SessionpageSessionEvent) => void,
+  failed: (event: SessionpageSessionWindowStatusEvent) => void): Promise<SessionTimelineResult<{ subscriptionId: string }>> {
   const subscriptionId = input.subscriptionId?.trim();
   if (!subscriptionId) return fail('invalid_subscription', 'subscriptionId is required');
+  let opening: () => void;
+  try { opening = windowOpenings.take(input); opening(); }
+  catch (error) {
+    if (subscriptions.get(subscriptionId)?.conversationId === input.conversationId) unsubscribe(subscriptionId);
+    return fail((error as { code?: string }).code ?? 'scope_changed', (error as Error).message);
+  }
   unsubscribe(subscriptionId);
-  let stopped = false, teardown: (() => void) | undefined;
+  let stopped = false, readFailed = false, teardown: (() => void) | undefined;
   const abort = new AbortController();
   const mine = { conversationId: input.conversationId, stop: () => { stopped = true; abort.abort(); teardown?.(); } };
   subscriptions.set(subscriptionId, mine);
   const forget = () => { if (subscriptions.get(subscriptionId) === mine) subscriptions.delete(subscriptionId); };
   const result = await withSourceWindow(async reader => {
-    teardown = await reader.subscribe(input, event => { if (!stopped) emit(event); }, error => {
+    teardown = await reader.subscribe(input, event => { if (!stopped) emit(event); }, status => {
+      if (stopped) return;
+      readFailed = true;
       mine.stop(); forget();
-      log.warn('sessionWindow: subscription stopped', { subscriptionId, error: String(error) });
-    }, abort.signal);
-    if (stopped) { teardown(); throw Object.assign(new Error('Subscription was released before opening'), { code: 'unsubscribed' }); }
+      failed(status);
+      log.warn('sessionWindow: subscription stopped', { subscriptionId, error: status.error });
+    }, abort.signal, opening);
+    if (stopped) {
+      teardown();
+      if (!readFailed) throw Object.assign(new Error('Subscription was released before opening'), { code: 'unsubscribed' });
+    }
     return { subscriptionId };
   });
   if (!result.ok) { mine.stop(); forget(); }
