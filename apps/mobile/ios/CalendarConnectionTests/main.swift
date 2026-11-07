@@ -11,7 +11,7 @@ final class Fixture {
     lazy var ownerAccess = GuguIOSOwnerAccess(root: root,
         verifiedIdentity: { self.binding },
         requireOwnerUI: { if !self.active { throw GuguHostFailure(code: "not_granted", message: "Fixture UI inactive") } },
-        calendarHasFullAccess: { self.osReads += 1; return self.fullAccess }, revokeCalendarAccess: { self.revocations += 1 })
+        calendarHasFullAccess: { self.osReads += 1; return self.fullAccess }, revokeCalendarAccess: { _ in self.revocations += 1 })
     lazy var connection = GuguCalendarConnection(ownerAccess: ownerAccess, hasFullAccess: { self.fullAccess },
         requestAccess: { check, done in
             do { try check(); self.requests.append(done) } catch { done(.failure(error)) }

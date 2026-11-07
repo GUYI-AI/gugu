@@ -77,6 +77,7 @@ final class GuguIOSHostLifecycle {
 
     /// Opens the real disk journal even when no model/JSC host has ever existed.
     /// Persist revocation once, then notify every already-created runtime.
+    /// binding is the caller's expected transaction identity, never a new lookup.
     func revokeCalendarAccess(binding: GuguIOSHostBinding) throws {
         try check(binding)
         custody.lock.lock()

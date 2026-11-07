@@ -6,7 +6,7 @@ import Foundation
         let owner = UUID().uuidString.lowercased(), installation = UUID().uuidString.lowercased()
         let binding = GuguIOSHostBinding(ownerId: owner, deviceId: "phone-\(installation)-\(owner)", installationId: installation)
         var fullAccess = true, revocations = 0
-        let access = GuguIOSOwnerAccess(root: root, verifiedIdentity: { binding }, requireOwnerUI: {}, calendarHasFullAccess: { fullAccess }, revokeCalendarAccess: { revocations += 1 })
+        let access = GuguIOSOwnerAccess(root: root, verifiedIdentity: { binding }, requireOwnerUI: {}, calendarHasFullAccess: { fullAccess }, revokeCalendarAccess: { _ in revocations += 1 })
         let attempt = try access.beginCalendarConnection(expectedBinding: binding)
         _ = try access.finishCalendarConnection(attempt: attempt)
         let file = root.appendingPathComponent(owner).appendingPathComponent("calendar-connection.json")

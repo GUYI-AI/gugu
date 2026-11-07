@@ -15,7 +15,7 @@ import Foundation
         var results: [[String: Any]] = []
         for (name, binding, expected) in cases {
             let root = URL(fileURLWithPath: CommandLine.arguments[1]).appendingPathComponent(name)
-            let access = GuguIOSOwnerAccess(root: root, verifiedIdentity: { binding }, requireOwnerUI: {}, calendarHasFullAccess: { false }, revokeCalendarAccess: {})
+            let access = GuguIOSOwnerAccess(root: root, verifiedIdentity: { binding }, requireOwnerUI: {}, calendarHasFullAccess: { false }, revokeCalendarAccess: { _ in})
             var accepted = false
             do { _ = try access.ownerSnapshot(); accepted = true } catch {}
             results.append(["name": name, "accepted": accepted, "expected": expected, "result": accepted == expected ? "pass" : "fail"])

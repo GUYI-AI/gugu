@@ -20,11 +20,11 @@ final class GuguIOSOwnerAccess {
     private let verifiedIdentity: () throws -> GuguIOSHostBinding
     private let requireOwnerUI: () throws -> Void
     private let calendarHasFullAccess: () -> Bool
-    private let revokeCalendarAccess: () throws -> Void
+    private let revokeCalendarAccess: (GuguIOSHostBinding) throws -> Void
 
     init(root: URL, verifiedIdentity: @escaping () throws -> GuguIOSHostBinding,
          requireOwnerUI: @escaping () throws -> Void, calendarHasFullAccess: @escaping () -> Bool,
-         revokeCalendarAccess: @escaping () throws -> Void) {
+         revokeCalendarAccess: @escaping (GuguIOSHostBinding) throws -> Void) {
         self.root = root; self.verifiedIdentity = verifiedIdentity; self.requireOwnerUI = requireOwnerUI
         self.calendarHasFullAccess = calendarHasFullAccess; self.revokeCalendarAccess = revokeCalendarAccess
     }
@@ -184,7 +184,9 @@ final class GuguIOSOwnerAccess {
         } catch { if firstError == nil { firstError = error } }
         // Independent persistence targets are all attempted. A broken category
         // file must not prevent the writable journal from retiring old epochs.
-        do { try revokeCalendarAccess() } catch { if firstError == nil { firstError = error } }
+        // Keep this transaction's binding across the callback: selecting the
+        // current owner here could revoke a newly published account instead.
+        do { try revokeCalendarAccess(binding) } catch { if firstError == nil { firstError = error } }
         if let firstError { throw firstError }
         try save(path, binding, connected: false, revision: revision, revocationPending: false)
         try FileManager.default.removeItem(at: refusalPath(path))

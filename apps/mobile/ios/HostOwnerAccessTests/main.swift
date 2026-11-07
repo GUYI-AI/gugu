@@ -7,7 +7,7 @@ import Foundation
         var current = original, foregroundOwner = true, fullAccess = false, revoked = 0
         let access = GuguIOSOwnerAccess(root: root, verifiedIdentity: { current }, requireOwnerUI: {
             if !foregroundOwner { throw GuguHostFailure(code: "not_granted", message: "Fixture is not owner UI") }
-        }, calendarHasFullAccess: { fullAccess }, revokeCalendarAccess: { revoked += 1 })
+        }, calendarHasFullAccess: { fullAccess }, revokeCalendarAccess: { _ in revoked += 1 })
         var cases: [String] = []
         try require(try !access.calendarEnabled(), "Missing choice must be disconnected")
         foregroundOwner = false
@@ -53,7 +53,7 @@ import Foundation
 
         _ = try access.finishCalendarConnection(attempt: pending)
         _ = try access.disconnectCalendar(expectedBinding: original)
-        let reopened = GuguIOSOwnerAccess(root: root, verifiedIdentity: { current }, requireOwnerUI: {}, calendarHasFullAccess: { true }, revokeCalendarAccess: {})
+        let reopened = GuguIOSOwnerAccess(root: root, verifiedIdentity: { current }, requireOwnerUI: {}, calendarHasFullAccess: { true }, revokeCalendarAccess: { _ in})
         try require(try !reopened.calendarEnabled(), "Disconnected choice did not survive reopening")
         cases.append("disconnect_persists_across_handles")
         let file = root.appendingPathComponent(original.ownerId).appendingPathComponent("calendar-connection.json")

@@ -22,7 +22,7 @@ import Foundation
         var full = true
         func access() -> GuguIOSOwnerAccess {
             GuguIOSOwnerAccess(root: root, verifiedIdentity: { binding }, requireOwnerUI: {}, calendarHasFullAccess: { full },
-                revokeCalendarAccess: { _ = try journal.invalidateCalendarContexts() })
+                revokeCalendarAccess: { _ in _ = try journal.invalidateCalendarContexts() })
         }
         let first = access()
         let attempt = try first.beginCalendarConnection(expectedBinding: binding)
@@ -87,7 +87,7 @@ import Foundation
         let binding = GuguIOSHostBinding(ownerId: saved["ownerId"] as! String, deviceId: saved["deviceId"] as! String, installationId: saved["installationId"] as! String)
         let journal = try GuguHostJournal(root: root, ownerId: binding.ownerId, installationId: binding.installationId)
         let access = GuguIOSOwnerAccess(root: root, verifiedIdentity: { binding }, requireOwnerUI: {}, calendarHasFullAccess: { true },
-            revokeCalendarAccess: { _ = try journal.invalidateCalendarContexts() })
+            revokeCalendarAccess: { _ in _ = try journal.invalidateCalendarContexts() })
         let snapshot = try access.ownerSnapshot(expectedBinding: binding)
         let job = try journal.job(saved["jobId"] as! String)
         print(String(data: try JSONSerialization.data(withJSONObject: ["connected": snapshot.calendarConnected,

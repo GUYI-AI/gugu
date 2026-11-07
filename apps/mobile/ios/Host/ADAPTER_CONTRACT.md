@@ -22,7 +22,7 @@ Mutating calls persist custody before backend invocation. A duplicate in flight 
 
 ## Owner and calendar category boundary
 
-`GuguIOSOwnerAccess` requires five native inputs: private no-backup root, a throwing verified-identity publisher, the foreground local-owner UI guard, C's real full-access status reader, and the shared `GuguIOSHostLifecycle.revokeCalendarAccess(binding:)` closure. There are no permissive defaults. A supplies identity from the authenticated shared session and native installation/device binding; neither configure input nor an unverified decoded JWT establishes this authority.
+`GuguIOSOwnerAccess` requires five native inputs: private no-backup root, a throwing verified-identity publisher, the foreground local-owner UI guard, C's real full-access status reader, and the shared `GuguIOSHostLifecycle.revokeCalendarAccess(binding:)` closure. Its type is `(GuguIOSHostBinding) throws -> Void`: forward the supplied transaction binding unchanged; never reread the current identity inside the closure. There are no permissive defaults. A supplies identity from the authenticated shared session and native installation/device binding; neither configure input nor an unverified decoded JWT establishes this authority.
 
 Owner and installation are UUIDs. Device ID uses the existing exact `phone-${installationId}-${ownerId}` convention from `phoneDeviceSettings.ts`; it is not an independent UUID. The shared native binding validator rejects mismatched owner/install device IDs.
 
@@ -86,7 +86,7 @@ for cold recovery/tests, not status polling or a second App service.
   registry UUID. Its factory receives that journal and must construct, rather
   than start, the real host. It has no cloud/model success fallback.
 - `revokeCalendarAccess(binding:) throws` is the OwnerAccess closure: capture the
-  expected native binding, durably invalidate disk epochs even with no runtime,
+  expected native binding supplied by OwnerAccess (not a fresh current-owner lookup), durably invalidate disk epochs even with no runtime,
   then notify all registered runtimes with the same affected-context list. Never
   implement it with `host?.revokeCalendarAccess()`.
 - `stop(ownerId:) throws` retires every registered runtime and disk admission for
