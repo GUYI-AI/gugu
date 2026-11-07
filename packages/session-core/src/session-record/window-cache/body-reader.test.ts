@@ -52,7 +52,7 @@ describe('seekable JSON string body pages', () => {
   it('leaves an escape split at a physical page boundary for the next seek', async () => {
     const fixture = bodyFixture('\\n'.repeat(32767) + '\\u4e2d"');
     const page = await readJsonStringBodyPage(fixture.source, { ...fixture,
-      position: { rawOffset: 0, decodedOffset: 0 }, maxBytes: 60 * 1024, budget: createWindowBudget() });
+      position: { rawOffset: 0, decodedOffset: 0 }, maxBytes: 32768, budget: createWindowBudget() });
     if (page.kind !== 'body') throw new Error('Expected body');
     const atBoundary = await readJsonStringBodyPage(fixture.source, { ...fixture,
       position: { rawOffset: 65534, decodedOffset: 65534 }, maxBytes: 4, budget: createWindowBudget() });
@@ -63,7 +63,7 @@ describe('seekable JSON string body pages', () => {
     expect(page.next.rawOffset).toBe(65534);
   });
 
-  it.each(['bad\\q"', 'bad\\uZZZZ"', 'bad\n"', 'unterminated'])('rejects malformed string %j', async text => {
+  it.each(['bad\\q"', 'bad\\uZZZZ"', 'bad\n"', 'unterminated', 'abc\\', 'abc\\u123'])('rejects malformed string %j', async text => {
     const fixture = bodyFixture(text);
     await expect(readJsonStringBodyPage(fixture.source, { ...fixture,
       position: { rawOffset: 0, decodedOffset: 0 }, maxBytes: 16384, budget: createWindowBudget() })).rejects.toThrow(SyntaxError);
@@ -83,6 +83,7 @@ describe('seekable JSON string body pages', () => {
 
 describe('indexed decoded body pages', () => {
   const body: WindowBodyRef = { version: 1, scope: 'scope', sourceLineage: 'lineage', id: 'body', revision: 'v1',
+    owner: { kind: 'canonical', turnId: 'turn', itemId: 'item' },
     turnId: 'turn', itemId: 'item', firstChunk: null, decoderCheckpoint: null, sourceRange: { start: 0, end: 1 }, byteLength: null };
   function indexed(chunks: Map<number, Uint8Array>) {
     const queried: number[] = [];
