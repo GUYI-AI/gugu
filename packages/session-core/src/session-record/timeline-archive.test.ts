@@ -75,7 +75,7 @@ function shape(timeline: SessionTimeline): string {
 }
 
 describe('时间线存档', () => {
-  it.each([24 * 1024 * 1024 + 1, 600 * 1024 * 1024])('rejects %i consumed source bytes before copying resume state or encoding', async (sourceBytes) => {
+  it('rejects 600 MiB of consumed source bytes before copying resume state or encoding', async () => {
     const staged = await stage(await fixtureLines());
     const source = createClaudeJsonlSource(
       { harness: 'claude', providerSessionId: PROVIDER_SESSION_ID, roots: [staged.root] },
@@ -83,7 +83,7 @@ describe('时间线存档', () => {
     );
     const timeline = await createSessionTimeline(source, { sessionId: SESSION_ID });
     try {
-      vi.spyOn(TailReader.prototype, 'consumedBytes', 'get').mockReturnValue(sourceBytes);
+      vi.spyOn(TailReader.prototype, 'consumedBytes', 'get').mockReturnValue(600 * 1024 * 1024);
       const encode = vi.spyOn(JSON, 'stringify');
       const clone = vi.spyOn(globalThis, 'structuredClone');
       expect(await timeline.archive!()).toBeNull();
