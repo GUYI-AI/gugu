@@ -389,6 +389,27 @@ final class GuguHostJournal {
         }
     }
 
+    /// Owner retirement also covers admitted disk tasks without a live runtime.
+    /// Claimed mutations remain unknown until their real late receipt is recorded.
+    func cancelAllTasks() throws {
+        try update { next in
+            var jobs = next["jobs"] as? [String: [String: Any]] ?? [:]
+            for (id, var job) in jobs where ["running", "needs_user", "queued"].contains(job["status"] as? String ?? "") {
+                job["status"] = "cancelled"; jobs[id] = job
+            }
+            var calls = next["calls"] as? [String: [String: Any]] ?? [:]
+            for (id, var call) in calls {
+                if call["status"] as? String == "executing", call["mutationClaimed"] as? Bool == true {
+                    call["status"] = "execution_unknown"
+                } else if ["admitted", "approved", "needs_confirmation", "executing"].contains(call["status"] as? String ?? "") {
+                    call["status"] = "cancelled"
+                }
+                calls[id] = call
+            }
+            next["jobs"] = jobs; next["calls"] = calls
+        }
+    }
+
     func checkDeadline(_ request: GuguNativeToolRequest) throws {
         if Int64(Date().timeIntervalSince1970 * 1000) >= request.deadlineAtMs { throw Self.failure("expired", "Native operation has expired") }
     }

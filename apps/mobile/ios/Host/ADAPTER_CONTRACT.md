@@ -22,7 +22,7 @@ Mutating calls persist custody before backend invocation. A duplicate in flight 
 
 ## Owner and calendar category boundary
 
-`GuguIOSOwnerAccess` requires five native inputs: private no-backup root, a throwing verified-identity publisher, the foreground local-owner UI guard, C's real full-access status reader, and `GuguInProcessHost.revokeCalendarAccess`. There are no permissive defaults. A supplies identity from the authenticated shared session and native installation/device binding; neither configure input nor an unverified decoded JWT establishes this authority.
+`GuguIOSOwnerAccess` requires five native inputs: private no-backup root, a throwing verified-identity publisher, the foreground local-owner UI guard, C's real full-access status reader, and the shared `GuguIOSHostLifecycle.revokeCalendarAccess(binding:)` closure. There are no permissive defaults. A supplies identity from the authenticated shared session and native installation/device binding; neither configure input nor an unverified decoded JWT establishes this authority.
 
 Owner and installation are UUIDs. Device ID uses the existing exact `phone-${installationId}-${ownerId}` convention from `phoneDeviceSettings.ts`; it is not an independent UUID. The shared native binding validator rejects mismatched owner/install device IDs.
 
@@ -70,3 +70,38 @@ The cloud broker exposes named operations, not arbitrary RPC/table/URL access fr
 - Attachments/outbox: existing private session-attachment helpers and messaging delivery contracts remain authoritative. These require their own named broker operations before exposure; the adapter cannot replace them with generic HTTP or a successful placeholder.
 
 Relevant source: lib/supabase.ts, lib/sessionCoordinator.ts, lib/phoneHostAuth.ts; mobile/local-agent/nativeAgent.ts and phoneHostRpc.ts; runtime/phone-agent-task-api.mjs, phone-agent-provision.mjs, phone-agent-cloud.mjs and phone-agent-host.mjs. This list is a wiring inventory, not evidence that these channels or cloud flows have executed on iOS.
+## Shared journal and runtime custody
+
+`GuguIOSHostLifecycle(root:verifiedIdentity:)` is owned by App assembly and passed
+by reference to both the native calendar connection and task backend. Separate
+facades with the same canonical root share the same process-lifetime custody;
+they do not reinitialize a live journal. Direct `GuguHostJournal` construction is
+for cold recovery/tests, not status polling or a second App service.
+
+- `journal(binding:) throws -> GuguHostJournal` verifies the current native
+  publication and returns the one journal for this owner/install. Creating it
+  reconciles interrupted disk work once per process, without creating JSC/model
+  transport. It must also be the journal used by the backend's task admission.
+- `host(binding:nativeKey:create:) throws -> GuguInProcessHost` caches by native
+  registry UUID. Its factory receives that journal and must construct, rather
+  than start, the real host. It has no cloud/model success fallback.
+- `revokeCalendarAccess(binding:) throws` is the OwnerAccess closure: capture the
+  expected native binding, durably invalidate disk epochs even with no runtime,
+  then notify all registered runtimes with the same affected-context list. Never
+  implement it with `host?.revokeCalendarAccess()`.
+- `stop(ownerId:) throws` retires every registered runtime and disk admission for
+  that owner, including claimed writes (which remain unknown until a real known
+  receipt arrives). It attempts all hosts despite individual I/O failures and
+  returns the original error. Runtime cancellation also occurs on disk failure.
+- `stopAll() throws` is suitable for OwnerSession's no-argument `stopNative`
+  barrier. Publication has already been sealed; this hook does not reread a
+  retired binding or require credentials. App must reject on any thrown error.
+- `activate(binding:) throws` is an explicit backend configure step after a
+  successful retirement. Failed retirement remains blocked until a real stop
+  retry succeeds. It reuses the journal and creates no automatic task resumption;
+  old host instances remain stopped and cannot be reused for new turns.
+
+All these methods are native-only. They do not register GuguAgent, provision an
+Agent identity, issue a model lease, or make the concrete cloud/task backend ready.
+App adds `Host/GuguIOSHostLifecycle.swift` to its production compilation (ten Host
+Swift files total). There is no additional JS or resource change in this slice.

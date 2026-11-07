@@ -13,6 +13,7 @@ struct GuguBridgeRequest {
 final class GuguJavaScriptRuntime {
     typealias Reply = ([String: Any]) -> Void
     private let queue = DispatchQueue(label: "app.gugu.ios.agent.javascript")
+    private let queueKey = DispatchSpecificKey<Bool>()
     private var context: JSContext!
     private let requestHandler: (GuguBridgeRequest, @escaping Reply) -> Void
     private let cancelHandler: (String) -> Void
@@ -32,6 +33,7 @@ final class GuguJavaScriptRuntime {
         requestHandler = request
         cancelHandler = cancel
         eventHandler = event
+        queue.setSpecific(key: queueKey, value: true)
         queue.sync {
             context = JSContext()
             context.exceptionHandler = { [weak self] _, value in
@@ -120,9 +122,11 @@ final class GuguJavaScriptRuntime {
     @discardableResult func cancel(_ binding: GuguHostContext) throws -> Bool {
         let data = try JSONEncoder().encode(binding)
         let json = String(decoding: data, as: UTF8.self)
-        return queue.sync {
-            context.objectForKeyedSubscript("GuguIOSRuntime")?.invokeMethod("cancel", withArguments: [json])?.toBool() == true
+        let cancel = {
+            self.context.objectForKeyedSubscript("GuguIOSRuntime")?.invokeMethod("cancel", withArguments: [json])?.toBool() == true
         }
+        if DispatchQueue.getSpecific(key: queueKey) == true { return cancel() }
+        return queue.sync(execute: cancel)
     }
 
     func cancelAsynchronously(_ binding: GuguHostContext) throws {

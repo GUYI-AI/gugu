@@ -12,8 +12,9 @@ final class GuguInProcessHost {
     private let model: GuguModelCompleting?
     private let currentIdentity: () -> (ownerId: String, installationId: String)
     private let emit: ([String: Any]) -> Void
-    private let pendingLock = NSLock()
+    private let pendingLock = NSRecursiveLock()
     private var pending: [String: Pending] = [:]
+    private var runningContexts: [String: GuguHostContext] = [:]
     private var runtime: GuguJavaScriptRuntime!
     private var stopped = false
     let runtimeInstanceId = UUID().uuidString.lowercased()
@@ -41,10 +42,12 @@ final class GuguInProcessHost {
 
     private func start(context: GuguHostContext, prompt: String, modelId: String, systemPrompt: String,
                        tools: [[String: Any]], messages: [[String: Any]]) throws -> [String: Any] {
+        pendingLock.lock(); defer { pendingLock.unlock() }
         try checkCurrent(context)
         guard try journal.admit(context, prompt: prompt, modelId: modelId, systemPrompt: systemPrompt, tools: tools, messages: messages) else {
             return ["accepted": false, "jobId": context.jobId, "status": try journal.job(context.jobId)["status"] ?? "unknown"]
         }
+        runningContexts[context.jobId] = context
         do {
             try runtime.start(["context": GuguHostJournal.object(context), "prompt": prompt,
                 "modelId": modelId, "systemPrompt": systemPrompt, "tools": tools, "messages": messages])
@@ -126,18 +129,33 @@ final class GuguInProcessHost {
     /// Category-off and every reconnect must notify this hook before re-enabling.
     /// An observed OS revocation also enters it. Re-grant does not revive old context.
     func revokeCalendarAccess() throws {
-        for context in try journal.invalidateCalendarContexts() {
+        try calendarContextsRevoked(journal.invalidateCalendarContexts())
+    }
+
+    /// Lifecycle has already committed the shared journal transaction. Do not
+    /// invalidate again: its affected-running list is consumed only once.
+    func calendarContextsRevoked(_ contexts: [GuguHostContext]) throws {
+        for context in contexts where context.runtimeInstanceId == runtimeInstanceId {
             try runtime.cancelAsynchronously(context)
         }
         emit(["type": "calendar_context_revoked"])
     }
 
     func stop() throws {
-        pendingLock.lock(); stopped = true; pendingLock.unlock()
+        pendingLock.lock(); stopped = true
+        var contexts = runningContexts
+        pendingLock.unlock()
         var failure: Error?
-        for context in try journal.activeContexts(runtimeInstanceId: runtimeInstanceId) {
-            do { try journal.cancel(context); try runtime.cancel(context) }
-            catch { failure = error }
+        do {
+            for context in try journal.activeContexts(runtimeInstanceId: runtimeInstanceId) { contexts[context.jobId] = context }
+        } catch { failure = error }
+        for context in contexts.values {
+            do { try journal.cancel(context) }
+            catch let error as GuguHostFailure where error.code == "cancelled" { }
+            catch { if failure == nil { failure = error } }
+            // A failed disk operation must not prevent cancelling live transport.
+            do { try runtime.cancel(context) }
+            catch { if failure == nil { failure = error } }
         }
         if let failure { throw failure }
     }
@@ -169,6 +187,7 @@ final class GuguInProcessHost {
                 reply(["ok": true, "data": [:]])
             case "turn.finished":
                 try journal.finish(context, result: bridge.payload)
+                pendingLock.lock(); runningContexts.removeValue(forKey: context.jobId); pendingLock.unlock()
                 reply(["ok": true, "data": [:]])
                 emit(["type": "task_status", "jobId": context.jobId, "status": try journal.job(context.jobId)["status"] ?? "failed"])
             case "model.complete":
