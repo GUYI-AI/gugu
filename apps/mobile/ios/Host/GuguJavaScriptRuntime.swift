@@ -99,6 +99,13 @@ final class GuguJavaScriptRuntime {
         }
     }
 
+    func cancelAsynchronously(_ binding: GuguHostContext) throws {
+        let json = String(decoding: try JSONEncoder().encode(binding), as: UTF8.self)
+        queue.async { [weak self] in
+            self?.context.objectForKeyedSubscript("GuguIOSRuntime")?.invokeMethod("cancel", withArguments: [json])
+        }
+    }
+
     private func settle(_ id: String, _ reply: [String: Any]) {
         let json: String
         do { json = try Self.json(reply) }

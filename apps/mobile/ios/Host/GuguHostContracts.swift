@@ -39,8 +39,8 @@ final class GuguNativeToolControl {
 
     func checkActive() throws { try active() }
     func beginMutation() throws { try active(); try mutation() }
-    /// Save the known OS outcome before post-write permission/cancellation checks.
-    func finishMutation(_ result: [String: Any]) throws { try finish(result) }
+    /// Save the successful OS receipt data (without an ok/data envelope) before post-write checks.
+    func finishMutation(_ data: [String: Any]) throws { try finish(data) }
 }
 
 protocol GuguNativeToolExecutor: AnyObject {

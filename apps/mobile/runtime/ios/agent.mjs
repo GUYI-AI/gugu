@@ -149,7 +149,13 @@ async function run(command) {
 
 globalThis.GuguIOSRuntime = Object.freeze({
   diagnostics: () => JSON.stringify({ protocolVersion: 1, piVersion: '1.4.0', engine: 'JavaScriptCore', node: typeof process !== 'undefined' }),
-  start(json) { void run(JSON.parse(json)).catch((error) => __guguNativeEvent(JSON.stringify({ type: 'host_error', message: error.message }))) },
+  start(json) {
+    const command = JSON.parse(json)
+    void run(command).catch(async (error) => {
+      try { await native('turn.finished', { context: command.context, status: 'failed', text: '', error: error.message }) }
+      finally { __guguNativeEvent(JSON.stringify({ type: 'host_error', context: command.context, message: error.message })) }
+    })
+  },
   cancel(json) {
     const context = JSON.parse(json)
     const turn = active.get(context.sessionId)
