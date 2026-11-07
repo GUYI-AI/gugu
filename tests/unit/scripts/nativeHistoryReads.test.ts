@@ -47,6 +47,10 @@ describe('bounded history read guard (#2062)', () => {
   it('accepts bounded positional short reads', () => {
     expect(violations(fixture('while (read < bytes.length) { read += await source.read(bytes,read,bytes.length-read,start+read) }'))).toEqual([])
   })
+  it('guards the desktop preview bridge as a native-history entry point', () => {
+    const path = 'apps/desktop/electron/sessionpage/local-session-preview.ts'
+    expect(violations(fixture('await fs.readFile(nativePath)', path))).toHaveLength(1)
+  })
   it('resolves aliases in the call site lexical scope', () => {
     const source = "import {readFile as load} from 'node:fs/promises'; function helper(){const load=bounded; load(small)}; await load(path)"
     expect(analyze('reader.ts', source).map((row: { rule: string }) => row.rule)).toEqual(['readFile'])
