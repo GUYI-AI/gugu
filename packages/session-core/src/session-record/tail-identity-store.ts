@@ -120,9 +120,9 @@ export class TailIdentityStore {
     await rename(`${path}.pending`, path);
   }
   private async find(file: FileHandle, hash: string, atCommit: number, budget: IdentityBudget): Promise<{ row: Row | null; count: number; tail: Row | null }> {
+    const durable = await this.fence(hash, budget);
     const size = (await file.stat()).size;
     if (!Number.isSafeInteger(size)) throw new IdentityIndexError('corrupt', 'file size');
-    const durable = await this.fence(hash, budget);
     if (durable === null && size >= SLOT && (await this.slot(file, hash, 0, budget)).commitSeq <= atCommit) {
       throw new IdentityIndexError('corrupt', 'missing committed fence');
     }

@@ -113,6 +113,19 @@ describe('bounded disk identity index', () => {
     await expect(store.commitSegment(2, 1, Array.from({ length: 25 }, () => write()), [], budget())).rejects.toMatchObject({ code: 'invalid' });
     await expect(store.commitSegment(2, 1, [], [write('x'.repeat(257))], budget())).rejects.toMatchObject({ code: 'invalid' });
   });
+  it('pins the durable fence before a concurrent append changes data size', async () => {
+    await store.commitSegment(1, 0, [], [write()], budget());
+    const sample = await open(await dataFile(), 'r'), prototype = Object.getPrototypeOf(sample) as FileHandle;
+    const original = prototype.stat; let append = true;
+    const spy = vi.spyOn(prototype, 'stat').mockImplementation(async function (this: FileHandle) {
+      const stats = await Reflect.apply(original, this, []);
+      if (append && stats.size === 1024) { append = false; await store.commitSegment(2, 1, [], [write('v2')], budget()); }
+      return stats;
+    });
+    try { expect(await lookup(store, 1)).toEqual({ kind: 'found', value: value() }); }
+    finally { spy.mockRestore(); await sample.close(); }
+    expect(await lookup(store, 2)).toEqual({ kind: 'found', value: value('v2') });
+  });
   it('latest lookup reads one slot after many unrelated keys and revisions', async () => {
     for (let commit = 1; commit <= 20; commit++) await store.commitSegment(commit, commit - 1, [], [write(`v${commit}`), write('other', `key${commit}`)], budget());
     const meter = budget(); expect(await lookup(store, 20, meter)).toEqual({ kind: 'found', value: value('v20') });
