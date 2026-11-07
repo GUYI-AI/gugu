@@ -1,4 +1,5 @@
-import { mountComposerBandFrame, ScheduledBand } from './frame'
+import { ScheduledBand } from './frame'
+import { mountComposerBandFrame } from './mount'
 
 const host = document.querySelector<HTMLElement>('#fixture')!
 const band = document.querySelector<HTMLSelectElement>('#band')!

@@ -1,5 +1,4 @@
 import { useState, type ComponentProps, type CSSProperties, type ReactNode } from 'react'
-import { createRoot } from 'react-dom/client'
 import { createPortal } from 'react-dom'
 import { ChatComposer, MessageProvider } from '@gugu/session-ui/react/components'
 import { ThemeProvider } from '@gugu/session-ui/react/primitives'
@@ -7,7 +6,6 @@ import { composerSlotClass, composerSlotInnerClass } from '@gugu/session-chat-ui
 import { ThreadScrollToBottom } from '@renderer/lib/ui/assistant-ui/thread-scroll-to-bottom'
 import { nativeChatAppearance } from '@renderer/lib/chat/native-chat-appearance.css'
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
-import { registerSessionLocaleResources } from '@renderer/localization/locale-store'
 import { i18n } from '@/i18n'
 import { sessionComposerFrameLiftClassName, sessionComposerTrayClassName, sessionComposerTrayStyle, sessionComposerTrayTriggerClassName } from '@renderer/features/sessions/session-composer-styles'
 import '@gugu/session-ui/styles/global'
@@ -34,7 +32,7 @@ export type FrameOptions = {
 }
 
 /** Two independent portals into the real composer column, in the task page's paint order. No task identity or service. */
-function Frame({ theme = 'light', band, scheduled, phone, atBottom = false, composerProps, onScrollToBottom = () => {} }: FrameOptions) {
+export function Frame({ theme = 'light', band, scheduled, phone, atBottom = false, composerProps, onScrollToBottom = () => {} }: FrameOptions) {
   const [slot, setSlot] = useState<HTMLDivElement | null>(null)
   const translate = i18n.getFixedT('en-US', 'session')
   return <ThemeProvider theme={theme}><SessionLocalizationProvider>
@@ -51,11 +49,4 @@ function Frame({ theme = 'light', band, scheduled, phone, atBottom = false, comp
       </div>
     </MessageProvider>
   </SessionLocalizationProvider></ThemeProvider>
-}
-
-export function mountComposerBandFrame(host: HTMLElement, options: FrameOptions = {}) {
-  registerSessionLocaleResources()
-  const root = createRoot(host)
-  root.render(<Frame {...options} />)
-  return { render: (next: FrameOptions) => root.render(<Frame {...next} />), dispose: () => root.unmount() }
 }

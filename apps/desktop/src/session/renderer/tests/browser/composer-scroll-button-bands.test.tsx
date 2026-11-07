@@ -1,7 +1,8 @@
+import { mountComposerBandFrame } from '../../../../../../../tests/fixtures/composer-band-scroll/mount'
 import { afterEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { until, untilStable } from '../../../../../../../tests/support/awaitCondition'
-import { mountComposerBandFrame, ScheduledBand, type FrameOptions } from '../../../../../../../tests/fixtures/composer-band-scroll/frame'
+import { ScheduledBand, type FrameOptions } from '../../../../../../../tests/fixtures/composer-band-scroll/frame'
 
 let fixture: ReturnType<typeof mountComposerBandFrame> | undefined
 let host: HTMLDivElement | undefined
