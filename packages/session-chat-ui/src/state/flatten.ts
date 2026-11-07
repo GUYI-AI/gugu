@@ -463,7 +463,12 @@ export function flattenTier(
           if (activityEvent && !ctx.active) for (const item of block.items) artifactItems.add(item.id);
           for (const artifact of artifacts) processItem(artifact, undefined, output.reply ? `${block.id}:head` : block.id);
         };
-        if (!output.reply && activityEvent && ops.length === 0) { emitArtifacts(); activityEvent = undefined; inlineCompletion = true; continue; }
+        // A settled silence marker without work has no process to disclose.
+        // In particular, a send can close its own segment before [NO_REPLY];
+        // emitting an empty placeholder here would split adjacent A2A groups.
+        if (!output.reply && ops.length === 0 && (activityEvent || !block.live && output.silent && !output.stopReason)) {
+          emitArtifacts(); activityEvent = undefined; inlineCompletion = true; continue;
+        }
         const process = { id: block.id, ...(block.live ? { live: true } : {}),
           startedAt: block.startedAt, endedAt: block.endedAt, ...(block.idleMs && !block.live ? { idleMs: block.idleMs } : {}), ...(block.live && ctx.pendingStarting?.() ? { starting: ctx.pendingStarting?.() } : {}), steps: output.steps.length,
           ...(ops.length ? {} : { empty: true }) };
