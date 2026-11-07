@@ -3,7 +3,7 @@ import { createRecentReader } from './recent-reader';
 import { createWindowBudget } from './read-budget';
 import type { WindowByteSource, WindowReadRequest } from './types';
 
-function setup(prefix = 20 * 1024 ** 3, giant = false) {
+function setup(prefix = 20 * 1024 ** 3, giant = false, pinned = false) {
   const row = (text: string) => JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] } }) + '\n';
   const suffix = '\n' + row('older') + row('latest');
   let bytes = new TextEncoder().encode(giant ? 'x'.repeat(65536) : 'x'.repeat(2 * 65536 - suffix.length) + suffix);
@@ -17,7 +17,8 @@ function setup(prefix = 20 * 1024 ** 3, giant = false) {
     },
   };
   const schedulePending = vi.fn(async () => {}), close = vi.fn(async () => {});
-  const reader = createRecentReader({ openSource: async () => ({ source, sourceLineage: 'lineage', close }), schedulePending,
+  const readEnd = pinned ? prefix + bytes.length : undefined;
+  const reader = createRecentReader({ openSource: async () => ({ source, sourceLineage: 'lineage', readEnd, close }), schedulePending,
     body: { descriptor: async () => null, content: async () => { throw new Error('Unexpected body read'); } } });
   const request = (): WindowReadRequest => ({ locator: { harness: 'codex', providerSessionId: 'session', roots: [] },
     conversationId: 'session', cacheDirectory: '/unused', scope: 'scope', conversationScope: 'conversation', branchLineage: 'branch', limit: 1, budget: createWindowBudget() });
@@ -49,6 +50,18 @@ describe('recent source windows', () => {
     const next = await reader.openRecent({ ...request(), limit: 2 });
     if (next.kind !== 'page') throw new Error('Expected page');
     expect(next.sourceFragments?.find(fragment => fragment.text === 'latest')?.key).toBe(first.sourceFragments?.[0].key);
+  });
+  it('keeps a real opening byte boundary while the physical source grows and changes revision', async () => {
+    const { reader, request, append, reads } = setup(undefined, false, true);
+    const first = await reader.openRecent(request());
+    if (first.kind !== 'page') throw new Error('Expected page');
+    const openingEnd = reads[0].position + reads[0].length;
+    append();
+    const next = await reader.openRecent({ ...request(), limit: 2 });
+    if (next.kind !== 'page') throw new Error('Expected bounded historical page');
+    expect(next.sourceFragments?.map(fragment => fragment.text)).toEqual(['older', 'latest']);
+    expect(next.snapshotRevision).toBe('r2');
+    expect(reads.every(read => read.position + read.length <= openingEnd)).toBe(true);
   });
   it('publishes a separate locating ticket without inventing a record or canonical turn', async () => {
     const { reader, request, schedulePending } = setup(undefined, true);

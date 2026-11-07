@@ -2,6 +2,7 @@ import type {
   RecordCursor, SessionpageSessionBodyReadRequest, SessionpageSessionEvent,
   SessionpageSessionOlderRequest, SessionpageSessionSubscribeRequest,
   TimelineAfterResult, TimelineOlderResult, TimelineSnapshot,
+  SessionpageSessionWindowStatusEvent,
 } from '@gugu/session-core/session-record/contract';
 import type {
   WindowBodyResult, WindowPage, WindowReadRequest, WindowResult,
@@ -14,7 +15,7 @@ export interface DesktopWindowIo {
   readOlder(request: WindowReadRequest & { cursor: NonNullable<WindowPage['olderCursor']> }): Promise<WindowResult>;
   readBody(request: WindowReadRequest & SessionpageSessionBodyReadRequest): Promise<WindowBodyResult>;
   /** Observe a source revision; this must not acquire a legacy timeline. */
-  watch(conversationId: string, changed: () => void, request: WindowReadRequest): Promise<() => void>;
+  watch(conversationId: string, changed: () => void, request: WindowReadRequest, failed: (error: unknown) => void): Promise<() => void>;
 }
 
 function page(result: WindowResult): WindowPage {
@@ -69,12 +70,20 @@ export function createDesktopWindowReader(io: DesktopWindowIo) {
     return value;
   }
   async function subscribe(input: SessionpageSessionSubscribeRequest, emit: (event: SessionpageSessionEvent) => void,
-    failed: (error: unknown) => void, signal?: AbortSignal): Promise<() => void> {
+    failed: (status: SessionpageSessionWindowStatusEvent) => void, signal?: AbortSignal,
+    opening?: () => void): Promise<() => void> {
     const abort = new AbortController();
     let cursor = input.cursor, running = false, dirty = false, stopped = false;
     let stopWatch: (() => void) | undefined;
     let initialRequest: WindowReadRequest | undefined;
     const stop = () => { if (!stopped) { stopped = true; abort.abort(); stopWatch?.(); signal?.removeEventListener('abort', stop); } };
+    const fail = (error: unknown) => {
+      if (stopped) return;
+      stop();
+      const failure = error as { code?: string; message?: string } | null;
+      failed({ conversationId: input.conversationId, subscriptionId: input.subscriptionId, state: 'failed',
+        error: { code: failure?.code ?? 'record_unreadable', message: failure?.message ?? String(error) } });
+    };
     signal?.addEventListener('abort', stop, { once: true });
     if (signal?.aborted) stop();
     const pump = async () => {
@@ -88,18 +97,22 @@ export function createDesktopWindowReader(io: DesktopWindowIo) {
           initialRequest = undefined;
           const value = await readWindowSnapshot(request);
           if (stopped) return;
+          opening?.();
+          if (!value.pendingLongRecords?.length) opening = undefined;
           const result = afterPage(value, cursor);
           cursor = value.cursor;
           emit({ subscriptionId: input.subscriptionId, result });
         }
-      } catch (error) { if (!stopped) { stop(); failed(error); } }
+      } catch (error) { fail(error); }
       finally { running = false; }
     };
     try {
       abort.signal.throwIfAborted();
+      opening?.();
       const request = await io.request(input.conversationId, undefined, abort.signal);
       initialRequest = request;
-      stopWatch = await io.watch(input.conversationId, () => { void pump(); }, request);
+      stopWatch = await io.watch(input.conversationId, () => { void pump(); }, request, fail);
+      opening?.();
       if (stopped) { stopWatch(); io.finish?.(request); }
       else void pump();
       return stop;

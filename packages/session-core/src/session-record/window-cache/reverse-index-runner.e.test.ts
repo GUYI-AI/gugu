@@ -45,14 +45,14 @@ it.each(['cancel', 'read_error'] as const)('reports actual partial source IO in 
     sourceInstance: snapshot.sourceInstance, sourceLineage: 'b'.repeat(64), snapshotRevision: snapshot.snapshotRevision,
     pinnedEnd: snapshot.size, recordEnd: snapshot.size, scanBefore: snapshot.size,
     sourceFence: { start: snapshot.size, end: snapshot.size, digest: 'c'.repeat(64) } };
-  const scope = 'a'.repeat(64), onStep = vi.fn(), onLocated = vi.fn(), reads: Readonly<WindowIoCounters>[] = [];
+  const scope = 'a'.repeat(64), onStep = vi.fn(), onLocated = vi.fn(), reads: Readonly<WindowIoCounters>[] = [], failures: string[] = [];
   let resolve!: () => void, reject!: (error: unknown) => void;
   const reported = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
   let resolveFailure!: () => void;
   const failed = new Promise<void>(yes => { resolveFailure = yes; });
   const scheduler = createReverseIndexScheduler({ onStep, onLocated,
     onRead(jobId, io) { expect(jobId).toBe('meter'); reads.push(io); resolve(); },
-    onFailure(error) { if (mode === 'read_error') resolveFailure(); else reject(error); } });
+    onFailure(error, jobId) { failures.push(jobId); if (mode === 'read_error') resolveFailure(); else reject(error); } });
   const realOpen = byteSources.openWindowByteSource;
   const open = vi.spyOn(byteSources, 'openWindowByteSource').mockImplementation(async path => {
     const input = await realOpen(path); let completedReads = 0;
@@ -69,9 +69,48 @@ it.each(['cancel', 'read_error'] as const)('reports actual partial source IO in 
     if (mode === 'read_error') await failed;
     await scheduler.pause();
     expect(reads).toHaveLength(1); expect(reads[0].sourceBytes).toBe(mode === 'cancel' ? 65536 : 32768);
+    expect(failures).toEqual(mode === 'cancel' ? [] : ['meter']);
     expect(onStep).not.toHaveBeenCalled(); expect(onLocated).not.toHaveBeenCalled();
     expect(await loadReverseIndexTask(directory, { scope, sourceLineage: checkpoint.sourceLineage, decoderVersion: 1, jobId: 'meter' }, createWindowBudget()))
       .toMatchObject({ kind: 'miss' });
+  } finally { open.mockRestore(); await scheduler.dispose(); await rm(directory, { recursive: true, force: true }); }
+});
+
+it('attributes one background read failure to its job while the next selected job still locates', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'gugu-reverse-owner-')), bad = join(directory, 'bad.jsonl'), good = join(directory, 'good.jsonl');
+  await Promise.all([bad, good].map(path => writeFile(path, '{}\n' + 'x'.repeat(70_000))));
+  async function checkpointFor(path: string, jobId: string): Promise<ReverseCheckpoint> {
+    const source = await openWindowByteSource(path), snapshot = await source.snapshot(); await source.close();
+    return { version: 1, jobId, sourceId: snapshot.sourceId, sourceInstance: snapshot.sourceInstance,
+      sourceLineage: 'b'.repeat(64), snapshotRevision: snapshot.snapshotRevision, pinnedEnd: snapshot.size,
+      recordEnd: snapshot.size, scanBefore: snapshot.size, sourceFence: { start: snapshot.size, end: snapshot.size, digest: 'c'.repeat(64) } };
+  }
+  const badCheckpoint = await checkpointFor(bad, 'failed-job'), goodCheckpoint = await checkpointFor(good, 'healthy-job'), scope = 'a'.repeat(64);
+  const failures: string[] = [], located: string[] = [], metered: { jobId: string; bytes: number }[] = [];
+  let resolve!: () => void, reject!: (error: unknown) => void;
+  const completed = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+  const scheduler = createReverseIndexScheduler({
+    onFailure(error, jobId) {
+      failures.push(jobId); if (jobId !== 'failed-job') { reject(error); return; }
+      scheduler.schedule(good, goodCheckpoint, directory, scope);
+    },
+    onLocated(jobId) { located.push(jobId); resolve(); },
+    onRead(jobId, io) { metered.push({ jobId, bytes: io.sourceBytes }); },
+  });
+  const realOpen = byteSources.openWindowByteSource;
+  const open = vi.spyOn(byteSources, 'openWindowByteSource').mockImplementation(async path => {
+    const source = await realOpen(path); let read = false;
+    return { ...source, async read(target, offset, length, position) {
+      if (path !== bad) return source.read(target, offset, length, position);
+      if (read) throw new Error('Background source read failed');
+      read = true; return source.read(target, offset, Math.min(length, 32768), position);
+    } };
+  });
+  try {
+    scheduler.schedule(bad, badCheckpoint, directory, scope); await completed; await scheduler.pause();
+    expect(failures).toEqual(['failed-job']); expect(located).toEqual(['healthy-job']);
+    expect(metered.filter(read => read.jobId === 'failed-job')).toEqual([{ jobId: 'failed-job', bytes: 32768 }]);
+    expect(metered.filter(read => read.jobId === 'healthy-job').reduce((sum, read) => sum + read.bytes, 0)).toBe(70_003);
   } finally { open.mockRestore(); await scheduler.dispose(); await rm(directory, { recursive: true, force: true }); }
 });
 

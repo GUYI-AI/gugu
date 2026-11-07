@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { watchFile, unwatchFile } from 'node:fs';
+import { watchFile, unwatchFile, type Stats } from 'node:fs';
 import { setImmediate } from 'node:timers/promises';
 import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 import { createRecentReader } from '@gugu/session-core/session-record/window-cache/recent-reader';
@@ -9,7 +9,7 @@ import { openWindowByteSource } from '@gugu/session-core/session-record/window-c
 import { loadReverseIndexTask } from '@gugu/session-core/session-record/window-cache/record-locators';
 import { createReverseIndexScheduler } from '@gugu/session-core/session-record/window-cache/reverse-index-runner';
 import { createSourceReopenResolver } from '@gugu/session-core/session-record/window-cache/reopen-source';
-import type { WindowReadRequest, WindowIoCounters, WindowSourceLocator } from '@gugu/session-core/session-record/window-cache/types';
+import type { WindowReadRequest, WindowIoCounters, WindowSourceLocator, ReverseCheckpoint, SourceSnapshot } from '@gugu/session-core/session-record/window-cache/types';
 import { createDesktopWindowReader } from './desktop-window-reader';
 
 export type DesktopSourceRequest = WindowReadRequest & { cwd?: string; nativeSourcePath?: string };
@@ -26,10 +26,26 @@ export function createDesktopSourceWindowReader(options: {
   let available!: () => void;
   let capacity = new Promise<void>(resolve => { available = resolve; });
   const reported = new WeakSet<WindowReadRequest>();
-  const listeners = new Map<() => void, string>();
+  type Pending = { path: string; checkpoint: ReverseCheckpoint; directory: string; scope: string };
+  const listeners = new Map<() => void, { id: string; signal?: AbortSignal; published?: boolean; pending?: Pending; failed(error: unknown): void }>();
+  const boundaries = new WeakMap<AbortSignal, SourceSnapshot>();
   const locatedRequests = new WeakMap<WindowReadRequest, WindowSourceLocator>();
-  const scheduler = createReverseIndexScheduler({ onFailure: options.reportError, onRead: options.backgroundRead,
-    onLocated: () => { for (const changed of listeners.keys()) changed(); } });
+  const scheduler = createReverseIndexScheduler({ onRead: options.backgroundRead,
+    onFailure: (error, jobId) => {
+      const owners = [...listeners.values()].filter(owner => owner.pending?.checkpoint.jobId === jobId);
+      for (const owner of owners) { owner.pending = undefined; owner.failed(error); }
+      if (!owners.length) options.reportError(error);
+      resumePending();
+    },
+    onLocated: jobId => {
+      for (const [changed, owner] of listeners) if (owner.pending?.checkpoint.jobId === jobId) { owner.pending = undefined; changed(); }
+      resumePending();
+    } });
+  function resumePending() {
+    for (const owner of listeners.values()) if (owner.pending && !owner.signal?.aborted) {
+      const job = owner.pending; scheduler.schedule(job.path, job.checkpoint, job.directory, job.scope); return;
+    }
+  }
   async function locate(input: DesktopSourceRequest): Promise<WindowSourceLocator | null> {
     const cached = locatedRequests.get(input);
     if (cached) return cached;
@@ -97,9 +113,11 @@ export function createDesktopSourceWindowReader(options: {
         const located = await locateForRead(current);
         const source = await openWindowByteSource(located.path);
         try {
-          if ((await source.snapshot()).sourceInstance !== located.source.sourceInstance)
-            throw new Error('Native source locator refers to a replaced file');
-          return { source, sourceLineage: located.sourceLineage, close: () => source.close() };
+          const snapshot = await source.snapshot(), boundary = current.signal && boundaries.get(current.signal);
+          if (snapshot.sourceInstance !== located.source.sourceInstance || boundary &&
+            (snapshot.sourceId !== boundary.sourceId || snapshot.sourceInstance !== boundary.sourceInstance || snapshot.size < boundary.size))
+            throw Object.assign(new Error('Native source no longer contains the opening range'), { code: 'source_changed' });
+          return { source, sourceLineage: located.sourceLineage, readEnd: boundary?.size, close: () => source.close() };
         } catch (error) { await source.close(); throw error; }
       },
       body: createDiskBodyPageIo(join(input.cacheDirectory, 'bodies'), async (_body, budget) => {
@@ -110,7 +128,7 @@ export function createDesktopSourceWindowReader(options: {
         finally { await source.close(); }
       }),
       headerProgress: current => {
-        void setImmediate().then(() => { for (const [changed, id] of listeners) if (id === current.conversationId) changed(); }).catch(options.reportError);
+        void setImmediate().then(() => { for (const [changed, owner] of listeners) if (owner.id === current.conversationId) changed(); }).catch(options.reportError);
       },
       schedulePending: async (current, snapshot, ticket) => {
         const located = await locate(current);
@@ -122,29 +140,55 @@ export function createDesktopSourceWindowReader(options: {
         const saved = await loadReverseIndexTask(current.cacheDirectory, job, current.budget);
         const checkpoint = saved.kind === 'hit' ? saved.position.checkpoint : { version: 1 as const, jobId: ticket.ticket,
           sourceId: snapshot.sourceId, sourceInstance: snapshot.sourceInstance, sourceLineage: located.sourceLineage,
-          snapshotRevision: snapshot.snapshotRevision, pinnedEnd: snapshot.size, recordEnd: ticket.sourceFence.end,
+          snapshotRevision: snapshot.snapshotRevision, pinnedEnd: ticket.pinnedEnd, recordEnd: ticket.sourceFence.end,
           scanBefore: ticket.nextScanOffset, sourceFence: ticket.sourceFence };
         if (checkpoint.sourceInstance !== snapshot.sourceInstance || checkpoint.snapshotRevision !== snapshot.snapshotRevision)
           throw new Error('Reverse checkpoint no longer matches the source revision');
         if (saved.kind === 'hit' && saved.position.kind === 'located') return saved.position.range;
-        scheduler.schedule(located.path, checkpoint, current.cacheDirectory, current.scope);
+        const pending = { path: located.path, checkpoint, directory: current.cacheDirectory, scope: current.scope };
+        current.signal?.throwIfAborted();
+        for (const owner of listeners.values()) if (owner.id === current.conversationId && owner.signal === current.signal) owner.pending = pending;
+        scheduler.schedule(pending.path, checkpoint, pending.directory, pending.scope);
       },
     });
   }
   async function measured<T>(input: WindowReadRequest, read: () => Promise<T>) {
     await scheduler.pause();
+    for (const owner of listeners.values()) if (owner.signal === input.signal) owner.pending = undefined;
     try { return await read(); }
-    finally { finish(input); }
+    finally { finish(input); resumePending(); }
   }
   const bridge = createDesktopWindowReader({ request: options.request, finish,
-    openRecent: input => measured(input, () => reader(input).openRecent(input)),
+    openRecent: input => measured(input, async () => {
+      const result = await reader(input).openRecent(input);
+      if ((result.kind === 'page' || result.kind === 'continuation') && !result.pendingLongRecords.length)
+        for (const owner of listeners.values()) if (owner.signal === input.signal) owner.published = true;
+      return result;
+    }),
     readOlder: input => measured(input, () => reader(input).readOlder(input)),
     readBody: input => measured(input, () => reader(input).readBody(input)),
-    watch: async (_id, changed, input) => {
+    watch: async (_id, changed, input, failed) => {
       const located = await locateForRead(input);
-      listeners.set(changed, input.conversationId);
-      watchFile(located.path, { persistent: false, interval: 250 }, changed);
-      return () => { listeners.delete(changed); unwatchFile(located.path, changed); };
+      const source = await openWindowByteSource(located.path);
+      let boundary: SourceSnapshot;
+      try { boundary = await source.snapshot(); input.signal?.throwIfAborted(); }
+      finally { await source.close(); }
+      if (input.signal) boundaries.set(input.signal, boundary);
+      const owner = { id: input.conversationId, signal: input.signal, failed, published: false, pending: undefined as Pending | undefined };
+      listeners.set(changed, owner);
+      const notify = (current: Stats, previous: Stats) => {
+        // A verified first screen stays resident. New turns belong to the live
+        // transport; growth must not silently move this history view's EOF.
+        if (owner.published && current.dev === previous.dev && current.ino === previous.ino && current.size > previous.size) return;
+        changed();
+      };
+      watchFile(located.path, { persistent: false, interval: 250 }, notify);
+      return () => {
+        const pending = listeners.get(changed)?.pending;
+        listeners.delete(changed); unwatchFile(located.path, notify);
+        if (input.signal) boundaries.delete(input.signal);
+        if (pending) void scheduler.pause().then(resumePending).catch(options.reportError);
+      };
     },
   });
   return { ...bridge, async dispose() { for (const job of discoveries.values()) job.abort.abort(); await scheduler.dispose(); await Promise.allSettled([...discoveries.values()].map(job => job.promise)); } };
