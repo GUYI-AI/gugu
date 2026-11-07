@@ -144,7 +144,7 @@ function InstallConsentSheet() {
               })}
             </fieldset>
           ) : null}
-          {ask.given ? <div data-testid="extension-consent-grant" className={`!mt-2 ${ask.alsoOn?.length ? 'px-2' : ''} text-[length:var(--font-caption)] leading-normal text-[var(--faint-fg)]`}>{ask.given.first ? t('chatArea.appEnable.devicesHint') : t('chatArea.appEnable.addsChat', { name: ask.given.chat.name })}</div> : null}
+          {ask.given ? <div data-testid="extension-consent-grant" className={`!mt-2 ${ask.alsoOn?.length ? 'px-2' : ''} text-[length:var(--font-caption)] leading-normal text-[var(--muted-fg)]`}>{ask.given.first ? t('chatArea.appEnable.devicesHint') : t('chatArea.appEnable.addsChat', { name: ask.given.chat.name })}</div> : null}
         </div>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" data-testid="extension-consent-cancel" onClick={() => answer('declined')}>

@@ -157,7 +157,7 @@ function AppsSection({ apps }: { apps: { key: string; title: string; iconDataUrl
   return (
     <DropdownMenuGroup>
       {/* 一次性 11px → 收进闭合字阶(design.md:type roles are a closed set —— 2026-09-22)。 */}
-      <DropdownMenuLabel className="text-foreground-passive text-xs font-normal">
+      <DropdownMenuLabel className="text-foreground-muted text-xs font-normal">
         {translate('extensions.appsSection')}
       </DropdownMenuLabel>
       {apps.map((app) => (

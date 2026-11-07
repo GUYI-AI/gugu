@@ -41,7 +41,7 @@
   background-color: color-mix(in oklab, var(--foreground) 6%, transparent);
 }
 .mk-seg-count {
-  color: var(--foreground-passive);
+  color: var(--foreground-muted);
   font-variant-numeric: tabular-nums;
 }
 .mk-seg-dot {
@@ -620,7 +620,7 @@
 .mk-tx > b em {
   font-style: normal;
   font-weight: 400;
-  color: var(--foreground-passive);
+  color: var(--foreground-muted);
   font-variant-numeric: tabular-nums;
 }
 .mk-tx > span {
@@ -679,7 +679,7 @@ button.mk-name:focus-visible {
 .mk-word {
   flex: none;
   padding: 0 4px;
-  color: var(--foreground-passive);
+  color: var(--foreground-muted);
   white-space: nowrap;
 }
 .mk-ring {
@@ -696,7 +696,7 @@ button.mk-name:focus-visible {
 .mk-foot {
   margin-top: 24px;
   font-size: var(--font-caption);
-  color: var(--foreground-passive);
+  color: var(--foreground-muted);
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
@@ -961,7 +961,7 @@ button.mk-name:focus-visible {
   display: block;
   margin-top: 6px;
   font-size: var(--font-caption);
-  color: var(--foreground-passive);
+  color: var(--foreground-muted);
 }
 /* 停在人挑的那一版、不自动更新(owner 10-19):一句话 + 「恢复自动更新」,在更新说明上面。 */
 .mk-pinned {
@@ -1038,7 +1038,7 @@ button.mk-name:focus-visible {
   display: block;
   margin: 16px 0 4px;
   font-size: var(--font-caption);
-  color: var(--foreground-passive);
+  color: var(--foreground-muted);
 }
 .mk-card > div:first-child > .mk-perm-k {
   margin-top: 0;
@@ -1060,7 +1060,7 @@ button.mk-name:focus-visible {
   min-width: 0;
 }
 .mk-pl.is-revoked > span {
-  color: var(--foreground-passive);
+  color: var(--foreground-muted);
   text-decoration: line-through;
 }
 .mk-pl pre {
@@ -1069,7 +1069,7 @@ button.mk-name:focus-visible {
   word-break: break-all;
   font-family: ui-monospace, Menlo, monospace;
   font-size: var(--font-caption);
-  color: var(--foreground-passive);
+  color: var(--foreground-muted);
 }
 
 /* ── 产品页:右栏 ─────────────────────────────────────────────────────── */

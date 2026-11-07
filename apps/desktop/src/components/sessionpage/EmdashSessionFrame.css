@@ -64,7 +64,7 @@
 
 .gg-session-frame-error-copy {
   max-width: 34ch;
-  color: var(--faint-fg);
+  color: var(--muted-fg);
   font-size: var(--font-body);
   line-height: 1.6;
 }

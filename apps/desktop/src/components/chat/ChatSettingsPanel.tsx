@@ -112,7 +112,7 @@ function ChatRightPanelBody({ activeChat, initialPage, onClose, onClearMessages,
         />
       ) : (
         <>
-          <div style={{ fontSize: 'var(--font-caption)', color: 'var(--faint-fg)', padding: '12px 14px 6px', userSelect: 'none' }}>{t('chatArea.settings.members')}</div>
+          <div style={{ fontSize: 'var(--font-caption)', color: 'var(--muted-fg)', padding: '12px 14px 6px', userSelect: 'none' }}>{t('chatArea.settings.members')}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '0 14px 10px' }}>
             {shownMembers.map((m, index) => (
               <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>

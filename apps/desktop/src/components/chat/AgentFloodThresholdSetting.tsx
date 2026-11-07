@@ -31,9 +31,9 @@ const ROW_STYLE: CSSProperties = {
 }
 const TITLE_STYLE: CSSProperties = { fontSize: 'var(--font-body)', fontWeight: 500, color: 'var(--fg)' }
 const HINT_STYLE: CSSProperties = {
-  fontSize: 'var(--font-body)', color: 'var(--faint-fg)', marginTop: 3, lineHeight: 1.5,
+  fontSize: 'var(--font-body)', color: 'var(--muted-fg)', marginTop: 3, lineHeight: 1.5,
 }
-const VALUE_STYLE: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--faint-fg)', flexShrink: 0 }
+const VALUE_STYLE: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--muted-fg)', flexShrink: 0 }
 const INPUT_STYLE: CSSProperties = {
   width: 64, textAlign: 'right', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-control)',
   padding: '4px 8px', fontSize: 'var(--font-body)', color: 'var(--fg)',

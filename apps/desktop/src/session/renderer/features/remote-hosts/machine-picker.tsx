@@ -208,7 +208,7 @@ export function MachinePicker({
               {!selected.isLocal ? <MachineDot machine={selected} /> : null}
               <span className="min-w-0 max-w-[160px] truncate">{selected.label}</span>
               {selectedOffline ? (
-                <span data-slot="machine-offline" className="shrink-0 text-foreground-passive">
+                <span data-slot="machine-offline" className="shrink-0 text-foreground-muted">
                   {translate('machinePicker.offline')}
                 </span>
               ) : null}
@@ -259,7 +259,7 @@ export function MachinePicker({
               {label}
             </span>
             {selectedOffline ? (
-              <span data-slot="machine-offline" className="shrink-0 text-foreground-passive">
+              <span data-slot="machine-offline" className="shrink-0 text-foreground-muted">
                 {translate('machinePicker.offline')}
               </span>
             ) : null}

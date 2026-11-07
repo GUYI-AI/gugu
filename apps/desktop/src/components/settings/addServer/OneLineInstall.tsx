@@ -22,7 +22,7 @@ import { desktopIpc } from '../../../platform/desktopIpc'
 
 const text = 'text-[length:var(--font-body)] leading-[1.5]'
 const caption = 'text-[length:var(--font-caption)] leading-[1.5]'
-const faint = 'text-[var(--faint-fg)]'
+const faint = 'text-[var(--muted-fg)]'
 
 /** 就地等时多久问一次「刚才是不是因为机器上限没登上」。 */
 export const MACHINE_LIMIT_CHECK_INTERVAL_MS = 5_000

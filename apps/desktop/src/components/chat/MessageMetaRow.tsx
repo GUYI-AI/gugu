@@ -54,7 +54,7 @@ export function MessageMetaRow({ targetingLabels, forwardedFromMessageId, viaApp
         <span
           data-testid={AUTOMATION_TEST_IDS.messageTargetingBadge}
           data-message-targeting="true"
-          style={{ fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', color: 'var(--faint-fg)', padding: '0 2px', letterSpacing: '0.01em' }}
+          style={{ fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', color: 'var(--muted-fg)', padding: '0 2px', letterSpacing: '0.01em' }}
         >
           {`→ ${targetText}`}
         </span>
@@ -72,7 +72,7 @@ const ViaAppBadge = observer(function ViaAppBadge({ appId, sender }: { appId: st
     <span
       data-testid={AUTOMATION_TEST_IDS.messageViaAppBadge}
       data-via-app={appId}
-      className="px-[2px] text-[length:var(--font-caption)] leading-[var(--lh-caption)] tracking-[0.01em] text-[var(--faint-fg)]"
+      className="px-[2px] text-[length:var(--font-caption)] leading-[var(--lh-caption)] tracking-[0.01em] text-[var(--muted-fg)]"
     >
       {sender === null ? t('message.viaApp', { app }) : t('message.viaAppFor', { app, name: sender })}
     </span>
@@ -95,7 +95,7 @@ function ForwardedBadge({ forwardedFromMessageId }: { forwardedFromMessageId: st
   return (
     <span
       data-testid={AUTOMATION_TEST_IDS.messageForwardedBadge}
-      style={{ fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', color: 'var(--faint-fg)', padding: '0 2px', letterSpacing: '0.01em' }}
+      style={{ fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', color: 'var(--muted-fg)', padding: '0 2px', letterSpacing: '0.01em' }}
     >
       {sourceName ? t('message.forwardedFrom', { line: sourceName }) : t('message.forwarded')}
     </span>

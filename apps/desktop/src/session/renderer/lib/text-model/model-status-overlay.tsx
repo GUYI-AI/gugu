@@ -14,7 +14,7 @@ export function ModelStatusOverlay({ status }: { status: ReturnType<typeof useMo
         : translate('task.loading');
 
   return (
-    <div className="absolute inset-0 flex items-center justify-center bg-background-secondary-1 text-xs text-foreground-passive">
+    <div className="absolute inset-0 flex items-center justify-center bg-background-secondary-1 text-xs text-foreground-muted">
       <div className="flex items-center gap-2">
         {status === 'loading' ? <Spinner size="sm" /> : null}
         <span>{message}</span>

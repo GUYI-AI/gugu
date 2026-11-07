@@ -289,7 +289,7 @@
 }
 
 .gg-look-readonly {
-  color: var(--faint-fg);
+  color: var(--muted-fg);
   font-size: var(--font-caption);
 }
 
@@ -318,7 +318,7 @@
 }
 
 .gg-look-tab-count {
-  color: var(--faint-fg);
+  color: var(--muted-fg);
   font-size: var(--font-caption);
   font-variant-numeric: tabular-nums;
 }
@@ -415,7 +415,7 @@
 
 .gg-look-hint {
   margin-top: var(--spacing-md);
-  color: var(--faint-fg);
+  color: var(--muted-fg);
   font-size: var(--font-caption);
   line-height: 1.5;
 }
@@ -438,7 +438,7 @@
 }
 
 .gg-look-group-hint {
-  color: var(--faint-fg);
+  color: var(--muted-fg);
   font-size: var(--font-caption);
 }
 

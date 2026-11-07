@@ -52,7 +52,7 @@ const fieldCellClass = 'flex min-h-[var(--control-h-lg)] items-center border-b b
 export function FieldRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <>
-      <div data-field-cell className={`${fieldCellClass} whitespace-nowrap pr-2.5 text-[var(--faint-fg)]`}>{label}</div>
+      <div data-field-cell className={`${fieldCellClass} whitespace-nowrap pr-2.5 text-[var(--muted-fg)]`}>{label}</div>
       <div data-field-cell className={`${fieldCellClass} min-w-0 text-[var(--fg)] [overflow-wrap:anywhere]`}>{value}</div>
     </>
   )

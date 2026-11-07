@@ -19,9 +19,9 @@
 }
 
 .ast-typing-body { display: flex; align-items: center; gap: 8px; }
-.ast-typing-label, .ast-typing-elapsed { font-size: var(--font-size-sm); color: var(--faint-fg); white-space: nowrap; }
+.ast-typing-label, .ast-typing-elapsed { font-size: var(--font-size-sm); color: var(--muted-fg); white-space: nowrap; }
 .ast-typing-elapsed { font-variant-numeric: tabular-nums; }
 .ast-typing-toggle { flex-shrink: 0; }
-.ast-typing-thought { max-height: 180px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 8px; color: var(--faint-fg); font-size: var(--font-size-sm); }
+.ast-typing-thought { max-height: 180px; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 8px; color: var(--muted-fg); font-size: var(--font-size-sm); }
 
-.assistant-reply-process { font-size: var(--font-caption); color: var(--faint-fg); padding: 0 2px; line-height: var(--lh-caption); }
+.assistant-reply-process { font-size: var(--font-caption); color: var(--muted-fg); padding: 0 2px; line-height: var(--lh-caption); }

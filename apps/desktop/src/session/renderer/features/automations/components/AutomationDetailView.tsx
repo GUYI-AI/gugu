@@ -249,7 +249,7 @@ const AgentScheduleDetailView = observer(function AgentScheduleDetailView({
               ? translate('automations.agentScheduleNoteGone')
               : translate('automations.agentScheduleNote', { name: agent?.name ?? '' })}
           </span>
-          <span className="text-xs text-foreground-passive">
+          <span className="text-xs text-foreground-muted">
             {translate('automations.agentScheduleText')}
           </span>
           <p className="whitespace-pre-wrap break-words text-foreground">

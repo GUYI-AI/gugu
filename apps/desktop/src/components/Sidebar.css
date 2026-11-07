@@ -439,7 +439,7 @@
 }
 
 .gg-sidebar-profile-email {
-  color: var(--faint-fg);
+  color: var(--muted-fg);
   font-size: var(--font-caption);
 }
 

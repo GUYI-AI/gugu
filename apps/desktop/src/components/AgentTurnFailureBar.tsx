@@ -124,7 +124,7 @@ export function AgentQuotaStatus({ agentId, displayName: name, avatar, state, on
       {/* 与 InlineAction 同一做法：ghost Button 去掉控件高与底色，读起来就是运行条里的一个 token。 */}
       <Button
         variant="ghost"
-        className="aqs-tok h-auto min-h-0 max-[719px]:min-h-0 border-0 p-0 gap-[7px] font-[inherit] text-[length:inherit] leading-[inherit] text-[var(--faint-fg)] [&:hover:not([data-disabled])]:bg-transparent"
+        className="aqs-tok h-auto min-h-0 max-[719px]:min-h-0 border-0 p-0 gap-[7px] font-[inherit] text-[length:inherit] leading-[inherit] text-[var(--muted-fg)] [&:hover:not([data-disabled])]:bg-transparent"
         disabled={!onOpenModel}
         onClick={onOpenModel}
         aria-label={t('agent.turnFailure.stateAction', { name: displayName, state })}
@@ -140,10 +140,10 @@ export function AgentQuotaStatus({ agentId, displayName: name, avatar, state, on
 
 // 几何与运行条 `.rtb-bar/.rtb-tok` 一致（同一排、同一刻度）；状态词用 --warn，不流光。
 const QUOTA_STYLE = `
-.aqs-bar{display:flex;align-items:center;gap:16px;padding:4px 14px 2px 24px;font-size:var(--font-caption);color:var(--faint-fg);white-space:nowrap;flex-shrink:0}
+.aqs-bar{display:flex;align-items:center;gap:16px;padding:4px 14px 2px 24px;font-size:var(--font-caption);color:var(--muted-fg);white-space:nowrap;flex-shrink:0}
 .aqs-tok:not([data-disabled]):hover .aqs-state{text-decoration:underline;text-underline-offset:2px}
 .aqs-tok[data-disabled]{opacity:1;cursor:default}
-.aqs-nm{color:var(--faint-fg)}
+.aqs-nm{color:var(--muted-fg)}
 .aqs-state{color:var(--warn-fg);font-weight:500}
 `
 

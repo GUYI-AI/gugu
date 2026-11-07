@@ -191,7 +191,7 @@ const TOPIC_SPLIT_COMPOSER_STYLE: React.CSSProperties = {
 const TOPIC_SPLIT_COMPOSER_MOBILE_STYLE: React.CSSProperties = {
   background: 'transparent', padding: '8px 8px max(8px, env(safe-area-inset-bottom))', flexShrink: 0,
 }
-const TOPIC_SPLIT_EMPTY_STYLE: React.CSSProperties = { textAlign: 'center', color: 'var(--faint-fg)', fontSize: 'var(--font-body)', padding: '24px 0' }
+const TOPIC_SPLIT_EMPTY_STYLE: React.CSSProperties = { textAlign: 'center', color: 'var(--muted-fg)', fontSize: 'var(--font-body)', padding: '24px 0' }
 
 export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false,
   topic,

@@ -202,7 +202,7 @@ function TimePicker({
 }
 /** Thin text label between selectors. */
 function Label({ children }: { children: React.ReactNode }) {
-  return <span className="text-sm text-foreground-passive">{children}</span>;
+  return <span className="text-sm text-foreground-muted">{children}</span>;
 }
 
 export function CronPicker({ value, onChange, className }: CronPickerProps) {

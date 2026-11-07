@@ -23,7 +23,7 @@ const AGENT_FLOOD_NOTICE_STYLE: React.CSSProperties = { display: 'flex', justify
 const AGENT_FLOOD_BODY_STYLE: React.CSSProperties = {
   maxWidth: '70%',
   padding: '2px 13px',
-  color: 'var(--faint-fg)',
+  color: 'var(--muted-fg)',
   fontSize: 'var(--font-caption)',
   lineHeight: 1.35,
   textAlign: 'center',
@@ -32,7 +32,7 @@ const AGENT_FLOOD_BODY_STYLE: React.CSSProperties = {
 // 你这样搞得很突兀」。所以「全部撤回」不是底下另起一行的一颗按钮,而是这句话末尾的一段强调色文字 ——
 // 仍然是真的按钮(键盘可达、有 disabled 态),只是把外形压成行内文字,见 tokens.css 的 .gg-agent-flood-undo。
 const AGENT_FLOOD_UNDO_CLASS = 'gg-agent-flood-undo inline h-auto min-h-0 w-auto border-0 bg-transparent p-0 align-baseline'
-const AGENT_FLOOD_UNDONE_STYLE: React.CSSProperties = { marginLeft: 4, color: 'var(--faint-fg)' }
+const AGENT_FLOOD_UNDONE_STYLE: React.CSSProperties = { marginLeft: 4, color: 'var(--muted-fg)' }
 // 两条失败行(撤回失败 / 台账读不出)版式本来就一模一样 ⇒ 同一个常量。
 const AGENT_FLOOD_ERROR_LINE_STYLE: React.CSSProperties = { marginTop: 4, color: 'var(--danger-fg)' }
 

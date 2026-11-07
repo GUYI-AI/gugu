@@ -204,7 +204,7 @@ export function AgentTasksPane({ agent }: AgentSettingsPaneProps) {
                 <div style={{ fontSize: 'var(--font-body)', color: 'var(--fg)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                   {task.title || task.prompt}
                 </div>
-                <div style={{ fontSize: 'var(--font-caption)', color: 'var(--faint-fg)', marginTop: 4 }}>
+                <div style={{ fontSize: 'var(--font-caption)', color: 'var(--muted-fg)', marginTop: 4 }}>
                   {intervalLabel(task.intervalSeconds, t)} · {nextRunLabel(task.nextRunAt, task.enabled, t)}
                 </div>
               </div>

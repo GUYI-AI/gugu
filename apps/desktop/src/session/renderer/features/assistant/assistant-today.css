@@ -380,7 +380,7 @@ button.ta-row:hover, a.ta-row:hover { background: var(--ta-glass-hover); }
 .ta-row-sub { font-size: var(--ta-fs-sub); line-height: var(--ta-lh-sub); color: var(--ta-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 要多露几行的说明(「关于你」):按 data-lines 折行截断,❌ 一行省略号。 */
 .ta-row .ta-row-sub[data-lines] { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--ta-row-lines); white-space: normal; overflow-wrap: anywhere; }
-.ta-row-meta { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; font-size: var(--ta-fs-sub); line-height: var(--ta-lh-sub); color: var(--ta-faint); }
+.ta-row-meta { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; font-size: var(--ta-fs-sub); line-height: var(--ta-lh-sub); color: var(--ta-muted); }
 .ta-row-chevron { flex-shrink: 0; color: var(--ta-faint); }
 .ta-row-chevron svg { width: 16px; height: 16px; }
 
@@ -770,7 +770,7 @@ textarea.ta-input { min-height: 80px; resize: vertical; line-height: 1.5; }
 .ta-day-row[data-status='past'] .ta-day-title { color: var(--ta-muted); }
 .ta-day-detail { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px 20px; }
 .ta-day-desc { margin: 0; font-size: var(--ta-fs-sub); line-height: var(--ta-lh-sub); white-space: pre-wrap; color: var(--ta-fg); }
-.ta-day-source { font-size: var(--font-caption); color: var(--ta-faint); }
+.ta-day-source { font-size: var(--font-caption); color: var(--ta-muted); }
 .ta-day-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .ta-day-btn {
   display: inline-flex;
@@ -788,7 +788,7 @@ textarea.ta-input { min-height: 80px; resize: vertical; line-height: 1.5; }
 }
 .ta-day-btn svg { width: 13px; height: 13px; }
 .ta-day-btn[data-tone='primary'] { border-color: transparent; background: var(--ta-fg); color: var(--bg); font-weight: 500; }
-.ta-day-divider { display: flex; align-items: center; gap: 8px; padding: 6px 8px 2px; font-size: var(--font-caption); color: var(--ta-faint); }
+.ta-day-divider { display: flex; align-items: center; gap: 8px; padding: 6px 8px 2px; font-size: var(--font-caption); color: var(--ta-muted); }
 .ta-day-divider::after { content: ''; flex: 1; border-top: 1px solid var(--ta-divider); }
 .ta-day-more { display: inline-flex; align-self: center; align-items: center; gap: 4px; border: 0; background: transparent; padding: 6px 10px; font-size: var(--font-caption); color: var(--ta-muted); cursor: pointer; }
 .ta-day-more svg { width: 14px; height: 14px; }
@@ -796,7 +796,7 @@ textarea.ta-input { min-height: 80px; resize: vertical; line-height: 1.5; }
 .ta-day-kinds { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .ta-day-kinds li { display: flex; flex-direction: column; gap: 2px; border-radius: var(--ta-radius-control); background: var(--ta-glass); padding: var(--spacing-md) var(--ta-pad-card); }
 .ta-day-kinds .ta-tile-title { font-size: var(--ta-fs-title); }
-.ta-day-kind-from { font-size: var(--font-caption); color: var(--ta-faint); }
+.ta-day-kind-from { font-size: var(--font-caption); color: var(--ta-muted); }
 
 /* ── 小组件:右上「…」(立即更新 / 修改 / 删除);正在写 / 没写成那一张淡一点。 ── */
 .ta-widget-more { display: inline-flex; height: 24px; width: 24px; flex-shrink: 0; align-items: center; justify-content: center; border: 0; border-radius: var(--ta-radius-control); background: transparent; color: var(--ta-muted); cursor: pointer; }

@@ -29,7 +29,7 @@ const fieldControl = cn(
   'hover:border-[color-mix(in_srgb,var(--primary)_45%,var(--border-strong))]',
   // @@@5111 只读态。原来调用点(设置→账户的邮箱)自己手写 background/color 去压灰,压不掉上面那条
   // hover 边框 —— 指针悬上去边框照样变主色,一个改不了的框自报「可编辑」。只读的外观归变体表出。
-  'read-only:cursor-default read-only:border-[var(--border)] read-only:bg-[var(--muted)] read-only:text-[var(--faint-fg)]',
+  'read-only:cursor-default read-only:border-[var(--border)] read-only:bg-[var(--muted)] read-only:text-[var(--muted-fg)]',
   'read-only:hover:border-[var(--border)]',
   // 焦点/非法态由 Field.Root 下发,所以选择器挂在祖先上而不是控件自己。
   'group-data-[focused]/field:border-[var(--primary)]',
@@ -49,7 +49,7 @@ const fieldControlBare = cn(
   'disabled:cursor-not-allowed disabled:opacity-[0.58]',
 )
 
-const fieldDescription = 'text-[length:var(--font-caption)] text-[var(--faint-fg)]'
+const fieldDescription = 'text-[length:var(--font-caption)] text-[var(--muted-fg)]'
 const fieldError = 'text-[length:var(--font-body)] text-[var(--danger-fg)]'
 
 function Root({ className, ...props }: Omit<FieldPrimitive.Root.Props, 'className'> & ClassNameProp) {

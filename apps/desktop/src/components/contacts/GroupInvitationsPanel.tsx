@@ -56,7 +56,7 @@ function GroupInvitationRow({ invitation }: { invitation: GroupInvitation }) {
               <Button size="sm" variant="primary" disabled={busy} onClick={() => void decide(true)} data-testid="group-invitation-accept">{t('groupInvitations.accept')}</Button>
               <Button size="sm" disabled={busy} onClick={() => void decide(false)} data-testid="group-invitation-reject">{t('groupInvitations.reject')}</Button>
             </div>
-          </> : <div className="text-[var(--faint-fg)]">{t(invitation.status === 'accepted' ? 'groupJoinRequests.statusAccepted' : 'groupJoinRequests.statusRejected')}</div>}
+          </> : <div className="text-[var(--muted-fg)]">{t(invitation.status === 'accepted' ? 'groupJoinRequests.statusAccepted' : 'groupJoinRequests.statusRejected')}</div>}
           {error && <div role="alert" className="mt-2 text-[var(--danger-fg)]">{error}</div>}
         </div>
       </div>

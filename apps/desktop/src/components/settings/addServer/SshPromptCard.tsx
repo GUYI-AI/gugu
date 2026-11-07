@@ -109,17 +109,17 @@ function SshPromptBody({
       <dl className={cn(caption, 'm-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1')}>
         {key.host && (
           <>
-            <dt className="text-[var(--faint-fg)]">{t('devices.addServer.prompt.host')}</dt>
+            <dt className="text-[var(--muted-fg)]">{t('devices.addServer.prompt.host')}</dt>
             <dd className="m-0 break-all font-mono text-[var(--fg)]">{key.host}</dd>
           </>
         )}
         {key.keyType && (
           <>
-            <dt className="text-[var(--faint-fg)]">{t('devices.addServer.prompt.keyType')}</dt>
+            <dt className="text-[var(--muted-fg)]">{t('devices.addServer.prompt.keyType')}</dt>
             <dd className="m-0 font-mono text-[var(--fg)]">{key.keyType}</dd>
           </>
         )}
-        <dt className="text-[var(--faint-fg)]">{t('devices.addServer.prompt.fingerprint')}</dt>
+        <dt className="text-[var(--muted-fg)]">{t('devices.addServer.prompt.fingerprint')}</dt>
         <dd className="m-0 select-all break-all font-mono text-[var(--fg)]" data-testid="add-server-fingerprint">{key.fingerprint}</dd>
       </dl>
     ) : (
@@ -175,7 +175,7 @@ function SshPromptBody({
       <div className={calloutClassName('ask')} data-testid="add-server-prompt-notice">
         {title}
         {label}
-        <div className={cn(caption, 'text-[var(--faint-fg)]')}>{waiting}</div>
+        <div className={cn(caption, 'text-[var(--muted-fg)]')}>{waiting}</div>
       </div>
     )
   }
@@ -317,7 +317,7 @@ function SshPromptBody({
       </Field.Root>
       {keyOption}
       {/* 添加机器:不要了就点底下那颗「取消」(整次安装一起停);那里 ❌ 再摆一颗意思不同的「取消」。 */}
-      <div className={cn(caption, 'flex items-center justify-end gap-2 text-[var(--faint-fg)]')}>
+      <div className={cn(caption, 'flex items-center justify-end gap-2 text-[var(--muted-fg)]')}>
         {connecting || (
           <>
             {cancelButton}
@@ -375,7 +375,7 @@ export function SshPromptFrame({
       <div className="flex flex-col gap-2 px-4 py-3">{children}</div>
       {(status || actions) && (
         <div className="flex min-h-[calc(var(--control-h-sm)+16px)] items-center justify-between gap-3 border-t border-[var(--border)] px-4 py-2">
-          <div className={cn(caption, 'min-w-0 flex-1 text-[var(--faint-fg)]')}>{status}</div>
+          <div className={cn(caption, 'min-w-0 flex-1 text-[var(--muted-fg)]')}>{status}</div>
           {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
         </div>
       )}

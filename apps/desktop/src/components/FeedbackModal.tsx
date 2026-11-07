@@ -262,7 +262,7 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
               placeholder={t('feedback.descriptionPlaceholder')}
               style={{ width: '100%', resize: 'vertical', minHeight: 88, padding: '9px 11px 22px', borderRadius: 'var(--radius-control)', border: '1px solid var(--border-strong)', background: 'var(--muted)', fontSize: 'var(--font-body)', color: 'var(--fg)', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
             />
-            <span style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 'var(--font-caption)', color: 'var(--faint-fg)' }}>
+            <span style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 'var(--font-caption)', color: 'var(--muted-fg)' }}>
               {content.length}/{FEEDBACK_CONTENT_MAX}
             </span>
           </div>
@@ -282,7 +282,7 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
           {/* 截图(可选,多张;粘贴或选文件;提交才上传) */}
           <div style={fieldLabel}>
             {t('feedback.screenshots')}
-            <span style={{ fontWeight: 400, color: 'var(--faint-fg)' }}>
+            <span style={{ fontWeight: 400, color: 'var(--muted-fg)' }}>
               {shots.length > 0
                 ? t('feedback.screenshotsAdded', { count: shots.length })
                 : t('feedback.screenshotsOptional')}
@@ -333,7 +333,7 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
                 onCheckedChange={(next) => void handleAttachLogChange(next)}
                 aria-label={t('feedback.attachLog.label')}
               />
-              <span className="text-xs leading-relaxed text-[var(--faint-fg)]">
+              <span className="text-xs leading-relaxed text-[var(--muted-fg)]">
                 {t('feedback.attachLog.label')}
                 {/* 不强制预览(owner 2026-09-03 定),但**附带了多少**要如实摆出来 */}
                 {attachedLog && (
@@ -346,7 +346,7 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
           )}
 
           {/* 自动附带信息提示 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', borderRadius: 'var(--radius-control)', background: 'var(--muted)', fontSize: 'var(--font-body)', color: 'var(--faint-fg)', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', borderRadius: 'var(--radius-control)', background: 'var(--muted)', fontSize: 'var(--font-body)', color: 'var(--muted-fg)', marginBottom: 16 }}>
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><g fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10" /><path strokeLinecap="round" d="M12 17v-6" /><circle cx="12" cy="7.5" r="0.5" fill="currentColor" /></g></svg>
             {t('feedback.diagnostics', { version })}
           </div>

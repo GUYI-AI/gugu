@@ -13,7 +13,7 @@ import { useToast } from '../toastContext'
 /** Source metadata is private on the server. Received messages render only the public marker. */
 export function AgentSentBadge({ source }: { source: MessageItem['agent_sender'] }) {
   const { t } = useTranslation('messaging')
-  if (!source) return <span className="px-[2px] text-[length:var(--font-caption)] leading-[var(--lh-caption)] text-[var(--faint-fg)]" data-ai-sent="true">{t('message.aiSent')}</span>
+  if (!source) return <span className="px-[2px] text-[length:var(--font-caption)] leading-[var(--lh-caption)] text-[var(--muted-fg)]" data-ai-sent="true">{t('message.aiSent')}</span>
   return <SendingAgentLink key={source.id ?? source.name} source={source} />
 }
 
@@ -24,7 +24,7 @@ function SendingAgentLink({ source }: { source: NonNullable<MessageItem['agent_s
   const { toast } = useToast()
   const [opening, setOpening] = useState(false)
   const label = t('message.agentSentForYou', { agent: source.name })
-  if (!source.id) return <span data-ai-sent="true" title={t('message.sendingAgentRemoved')} className="px-[2px] text-[length:var(--font-caption)] leading-[var(--lh-caption)] text-[var(--faint-fg)]">{label} · {t('message.sendingAgentRemoved')}</span>
+  if (!source.id) return <span data-ai-sent="true" title={t('message.sendingAgentRemoved')} className="px-[2px] text-[length:var(--font-caption)] leading-[var(--lh-caption)] text-[var(--muted-fg)]">{label} · {t('message.sendingAgentRemoved')}</span>
 
   async function open() {
     if (!user || !source.id || opening) return
@@ -43,7 +43,7 @@ function SendingAgentLink({ source }: { source: NonNullable<MessageItem['agent_s
   return (
     <Button variant="ghost" size="sm" data-ai-sent="true" disabled={opening}
       title={t('message.openSendingAgent', { agent: source.name })} onClick={() => { void open() }}
-      className="max-w-full whitespace-normal text-right px-[2px] text-[length:var(--font-caption)] leading-[var(--lh-caption)] text-[var(--faint-fg)]"
+      className="max-w-full whitespace-normal text-right px-[2px] text-[length:var(--font-caption)] leading-[var(--lh-caption)] text-[var(--muted-fg)]"
     >{label}</Button>
   )
 }

@@ -198,7 +198,7 @@ export function SharePosterDialog({ title, subtitle, qrValue, memberAvatarUrls, 
                 {genError}
               </span>
             ) : generating || !posterDataUrl ? (
-              <span style={{ fontSize: 'var(--font-body)', color: 'var(--faint-fg)' }}>
+              <span style={{ fontSize: 'var(--font-body)', color: 'var(--muted-fg)' }}>
                 {generating ? t('sharing.generatingPoster') : t('sharing.generatingQr')}
               </span>
             ) : (

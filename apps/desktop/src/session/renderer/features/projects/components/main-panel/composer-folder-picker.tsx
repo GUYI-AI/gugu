@@ -60,7 +60,7 @@ export const ComposerFolderPicker = observer(function ComposerFolderPicker({
               <Folder className="size-3.5" />
               {/* 名字优先露全,路径是辅助:挤不下先截路径(❌「项目根...」配一整条路径)。 */}
               <span className="max-w-[60%] shrink-0 truncate">{label(folder)}</span>
-              <small className="ml-auto min-w-0 flex-1 truncate pl-3 text-right text-foreground-passive">{where(folder)}</small>
+              <small className="ml-auto min-w-0 flex-1 truncate pl-3 text-right text-foreground-muted">{where(folder)}</small>
               {folder.workspaceId === chosen.workspaceId ? <Check className="size-3.5 shrink-0" /> : null}
             </DropdownMenuItem>
           ))}

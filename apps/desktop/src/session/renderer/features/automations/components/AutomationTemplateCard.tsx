@@ -39,7 +39,7 @@ export function AutomationTemplateCard({
           {template.description}
         </span>
       </span>
-      <span className="mt-3 line-clamp-1 text-tiny text-foreground-passive">
+      <span className="mt-3 line-clamp-1 text-tiny text-foreground-muted">
         {template.category}
       </span>
     </button>

@@ -316,7 +316,7 @@ export function SessionRowShell({
                   value={lastInteractedAt}
                   className={cn(
                     'font-sans text-xs tabular-nums',
-                    doneUnread ? 'text-foreground-muted' : 'text-foreground-passive',
+                    doneUnread ? 'text-foreground-muted' : 'text-foreground-muted',
                   )}
                   compact
                 />

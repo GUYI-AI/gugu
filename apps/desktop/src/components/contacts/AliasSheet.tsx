@@ -45,7 +45,7 @@ export function AliasSheet({ name, alias, avatarUrl, seed, group = false, onSave
           <Avatar name={name} avatarUrl={avatarUrl} seed={seed} variant={group ? 'group' : undefined} size="md" />
           <div className="min-w-0">
             <div className="truncate text-[length:var(--font-title)] leading-[var(--lh-title)] font-semibold text-[var(--fg)]">{name}</div>
-            <div className="text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--faint-fg)]">{t('contextMenu.setAlias')}</div>
+            <div className="text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--muted-fg)]">{t('contextMenu.setAlias')}</div>
           </div>
         </div>
         <input

@@ -15,9 +15,9 @@ import { useChatStore } from '../../store/chatContext'
 // @@@group-announcements (#986) — 群公告 drawer. Design: #announce-drawer.
 // 只画内容;外壳与页头归宿主:群设置栈里是它的一页,⋯ 菜单开时是一个右栏。Admin-only post/delete; like/edit are visual stubs.
 
-const styleStateCenter: React.CSSProperties = { padding: '24px 0', textAlign: 'center', color: 'var(--faint-fg)', fontSize: 'var(--font-body)' }
+const styleStateCenter: React.CSSProperties = { padding: '24px 0', textAlign: 'center', color: 'var(--muted-fg)', fontSize: 'var(--font-body)' }
 const panelStyle: CSSProperties = { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }
-const countStyle: CSSProperties = { fontWeight: 400, fontSize: 'var(--font-body)', color: 'var(--faint-fg)', marginLeft: 2 }
+const countStyle: CSSProperties = { fontWeight: 400, fontSize: 'var(--font-body)', color: 'var(--muted-fg)', marginLeft: 2 }
 const styleInlineError: React.CSSProperties = { fontSize: 'var(--font-caption)', color: 'var(--danger-fg)' }
 
 export function AnnouncementDrawer({
@@ -436,7 +436,7 @@ function AnnouncementCard({
         }}
       >
         {/* Date (.ac-date) */}
-        <span style={{ fontSize: 'var(--font-caption)', color: 'var(--faint-fg)' }}>
+        <span style={{ fontSize: 'var(--font-caption)', color: 'var(--muted-fg)' }}>
           {formatCalendarDay(announcement.createdAt)}
         </span>
 

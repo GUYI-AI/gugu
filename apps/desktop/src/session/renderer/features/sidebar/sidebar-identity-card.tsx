@@ -329,7 +329,7 @@ function IdentityRow({ row }: { row: RowSpec }) {
   // 标签与值同一个字号(owner 2026-09-21:「文字大小不统一」)。标签栏同宽,两行的值左缘对齐;
   // 宽度放得下最长的「Agent 名」即可 —— 原先按「Session ID」留的 5rem,那一行已经没了。
   const labelClass = 'w-16 shrink-0 whitespace-nowrap text-left text-sm leading-5 text-foreground-muted';
-  const valueClass = cn('min-w-0 truncate text-left text-sm leading-5', row.value === null && 'text-foreground-passive');
+  const valueClass = cn('min-w-0 truncate text-left text-sm leading-5', row.value === null && 'text-foreground-muted');
 
   if (row.value === null) {
     return (

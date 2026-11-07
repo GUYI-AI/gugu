@@ -57,7 +57,7 @@ export function AgentHostStaleBadge({
     >
       <AlertTriangle size={size} color="var(--warn)" strokeWidth={2.5} />
       {/* @@@1370 行内短文案：让含义一眼可读（不靠 hover），且明确指「主机」非账号 → 打消「改号」误解。 */}
-      <span style={{ fontSize: Math.max(10, size - 2), lineHeight: 1, color: 'var(--faint-fg)' }}>{label}</span>
+      <span style={{ fontSize: Math.max(10, size - 2), lineHeight: 1, color: 'var(--muted-fg)' }}>{label}</span>
     </span>
   )
 }

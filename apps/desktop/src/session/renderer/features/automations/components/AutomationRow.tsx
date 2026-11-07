@@ -169,7 +169,7 @@ export const AutomationRow = observer(function AutomationRow({
               );
             })()
           ) : (
-            <span className="text-sm text-foreground-passive">
+            <span className="text-sm text-foreground-muted">
               {translate('automations.noRuns')}
             </span>
           )}
@@ -183,7 +183,7 @@ export const AutomationRow = observer(function AutomationRow({
                 </span>
               ) : null
             ) : (
-              <span className="text-foreground-passive">
+              <span className="text-foreground-muted">
                 {/* #7221 跑过的一次性不是被谁关掉了,是那一次已经过去了(成败看左边那一行的图标)。 */}
                 {translate(isSpentOneTimeAutomation(automation) ? 'automations.oneTimeEnded' : 'automations.disabled')}
               </span>

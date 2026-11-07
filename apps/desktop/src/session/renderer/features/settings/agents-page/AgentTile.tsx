@@ -85,7 +85,7 @@ export function AgentTile({
       <span
         className={cn(
           'line-clamp-2 text-[length:var(--font-body)] leading-tight',
-          state === 'not-installed' ? 'text-foreground-passive' : 'text-foreground',
+          state === 'not-installed' ? 'text-foreground-muted' : 'text-foreground',
         )}
       >
         {agent.name}

@@ -255,7 +255,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
               </ProjectRowTitle>
             </SidebarMenuAction>
             {deviceIds.length > 1 ? (
-              <span className="shrink-0 text-xs font-normal text-foreground-passive" title={deviceLabels.join(' · ')} data-testid="project-device-count">
+              <span className="shrink-0 text-xs font-normal text-foreground-muted" title={deviceLabels.join(' · ')} data-testid="project-device-count">
                 {translate('projects.folders.deviceCount', { count: deviceIds.length })}
               </span>
             ) : null}

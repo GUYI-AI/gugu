@@ -188,7 +188,7 @@ function CommitItem({
               {'·'}
               <RelativeTime compact value={commit.date} className="text-foreground-muted" />
               {'·'}
-              <span className="font-mono text-foreground-passive">{shortHash}</span>
+              <span className="font-mono text-foreground-muted">{shortHash}</span>
               {isExpanded ? (
                 <ChevronDown className="size-3.5 shrink-0 text-foreground-muted" />
               ) : (
@@ -277,16 +277,16 @@ const CommitFilesList = observer(function CommitFilesList({ commit }: { commit: 
   };
 
   if (filesQuery.isLoading) {
-    return <div className="px-6 py-2 text-xs text-foreground-passive">{translate('pr.loadingFiles')}</div>;
+    return <div className="px-6 py-2 text-xs text-foreground-muted">{translate('pr.loadingFiles')}</div>;
   }
 
   if (filesQuery.isError) {
-    return <div className="px-6 py-2 text-xs text-foreground-passive">{translate('pr.filesFailed')}</div>;
+    return <div className="px-6 py-2 text-xs text-foreground-muted">{translate('pr.filesFailed')}</div>;
   }
 
   const files = filesQuery.data ?? [];
   if (files.length === 0) {
-    return <div className="px-6 py-2 text-xs text-foreground-passive">{translate('pr.noFileChanges')}</div>;
+    return <div className="px-6 py-2 text-xs text-foreground-muted">{translate('pr.noFileChanges')}</div>;
   }
 
   return (

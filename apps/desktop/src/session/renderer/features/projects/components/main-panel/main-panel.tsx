@@ -78,7 +78,7 @@ function ProjectBootstrapErrorPanel({
         <p className="font-sans text-sm font-medium text-foreground-destructive">
           {translate('projects.error.setupFailed')}
         </p>
-        <p className="font-sans text-xs text-foreground-passive">{message}</p>
+        <p className="font-sans text-xs text-foreground-muted">{message}</p>
         <RetryMountButton projectId={projectId} />
       </div>
     </div>
@@ -126,8 +126,8 @@ function ProjectPathAccessBlockedPanel({
         <p className="font-sans text-sm font-medium text-foreground">
           {translate('projects.accessBlocked.title')}
         </p>
-        {path && <p className="font-mono text-xs break-all text-foreground-passive">{path}</p>}
-        <p className="text-xs text-foreground-passive">
+        {path && <p className="font-mono text-xs break-all text-foreground-muted">{path}</p>}
+        <p className="text-xs text-foreground-muted">
           {translate('projects.accessBlocked.detail')}
         </p>
         <div className="mt-1 flex items-center gap-4">
@@ -168,8 +168,8 @@ function ProjectPathNotFoundPanel({
         <p className="font-sans text-sm font-medium text-foreground-destructive">
           {translate('projects.notFound.title')}
         </p>
-        {path && <p className="font-mono text-xs break-all text-foreground-passive">{path}</p>}
-        <p className="text-xs text-foreground-passive">{translate('projects.notFound.detail')}</p>
+        {path && <p className="font-mono text-xs break-all text-foreground-muted">{path}</p>}
+        <p className="text-xs text-foreground-muted">{translate('projects.notFound.detail')}</p>
         <button
           type="button"
           className="mt-2 text-xs text-foreground-destructive underline underline-offset-2 transition-colors hover:text-foreground-destructive/80"

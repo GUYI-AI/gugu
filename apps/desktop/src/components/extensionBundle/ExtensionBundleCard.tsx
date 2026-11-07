@@ -249,7 +249,7 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
     }
   }
   const strong = isMine ? 'text-[var(--text-on-bubble-strong)]' : 'text-[var(--fg)]'
-  const muted = isMine ? 'text-[var(--text-on-bubble-muted)]' : 'text-[var(--faint-fg)]'
+  const muted = isMine ? 'text-[var(--text-on-bubble-muted)]' : 'text-[var(--muted-fg)]'
   const t = translateSessionMessage
   const manifest = summary?.ok ? summary.manifest : null
   const { resolvedLocale: locale } = useLocale()

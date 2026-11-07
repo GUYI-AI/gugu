@@ -46,7 +46,7 @@ function MemberColumn({ title, count, members, emptyText }: {
         {title} {count}
       </div>
       {members.length === 0 ? (
-        <div style={{ fontSize: 'var(--font-body)', color: 'var(--faint-fg)', padding: '5px 4px' }}>{emptyText}</div>
+        <div style={{ fontSize: 'var(--font-body)', color: 'var(--muted-fg)', padding: '5px 4px' }}>{emptyText}</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 240, overflowY: 'auto' }}>
           {members.map((m) => (

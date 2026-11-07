@@ -43,7 +43,7 @@ export function MessageLoadFailure({ error, onRetry, inline }: { error: Error; o
   )
   const detail = details ? (
     <div className="flex max-w-[360px] items-start gap-2 text-left" data-testid="chat-load-details">
-      <code className="min-w-0 flex-1 select-text break-words text-[length:var(--font-caption)] leading-[1.5] text-[var(--faint-fg)]">{error.message}</code>
+      <code className="min-w-0 flex-1 select-text break-words text-[length:var(--font-caption)] leading-[1.5] text-[var(--muted-fg)]">{error.message}</code>
       <Button size="sm" variant="ghost" onClick={copy} data-testid="chat-load-details-copy" aria-label={copied ? t('message.copied') : undefined}>{mobile && copied ? <Check size={16} /> : t('chatArea.loadFailedCopy')}</Button>
     </div>
   ) : null
@@ -62,7 +62,7 @@ export function MessageLoadFailure({ error, onRetry, inline }: { error: Error; o
     <div role="alert" data-testid="chat-load-failed"
       className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
       <div className="text-[length:var(--font-body)] font-semibold text-[var(--fg)]">{t('chatArea.loadFailedTitle')}</div>
-      <div className="max-w-[320px] text-[length:var(--font-caption)] leading-[1.5] text-[var(--faint-fg)]">{t('chatArea.loadFailedBody')}</div>
+      <div className="max-w-[320px] text-[length:var(--font-caption)] leading-[1.5] text-[var(--muted-fg)]">{t('chatArea.loadFailedBody')}</div>
       <div className="flex items-center gap-2">{actions}</div>
       {detail}
     </div>

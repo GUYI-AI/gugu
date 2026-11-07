@@ -10,13 +10,13 @@
 .tfc-name { color: var(--muted-fg); flex: 0 1000000 auto; min-width: 3em; overflow: hidden; text-overflow: ellipsis; }
 .tfc-title { color: var(--fg); font-weight: 500; flex: none; }
 .tfc-count { flex-shrink: 0; color: var(--muted-fg); font-size: var(--font-caption); }
-.tfc-time { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--faint-fg); font-size: var(--font-caption); }
+.tfc-time { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted-fg); font-size: var(--font-caption); }
 .tfc-reason { grid-column: 2; display: block; min-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font: inherit; color: inherit; cursor: pointer; border-radius: var(--radius-control); }
 .tfc-reason:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .tfc-actions { grid-column: 3; grid-row: 1 / span 2; display: flex; align-self: center; }
 .tfc-actions > button { color: var(--muted-fg); }
 .tfc-dismiss { grid-column: 4; grid-row: 1 / span 2; align-self: center; color: var(--faint-fg); }
-.tfc-recovered { align-self: center; color: var(--faint-fg); font-size: var(--font-caption); }
+.tfc-recovered { align-self: center; color: var(--muted-fg); font-size: var(--font-caption); }
 .tfc-detail { padding: var(--spacing-lg); color: var(--fg); overflow-wrap: anywhere; }
 .tfc-detail p { margin-top: var(--spacing-md); color: var(--muted-fg); }
 @media (max-width: 719px) {

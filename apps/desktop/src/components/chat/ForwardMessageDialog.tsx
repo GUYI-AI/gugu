@@ -118,7 +118,7 @@ export function ForwardMessageDialog({ messages = [], preview: subject, topRow, 
             <span style={{ color: 'var(--muted-fg)' }}>{t('forward.batchPreview', { count: messages.length })}</span>
           ) : (
             <>
-              <span style={{ color: 'var(--faint-fg)' }}>{identitiesById[first?.sender_user_id ?? '']?.display_name ?? ''}：</span>
+              <span style={{ color: 'var(--muted-fg)' }}>{identitiesById[first?.sender_user_id ?? '']?.display_name ?? ''}：</span>
               {preview}
             </>
           ))}

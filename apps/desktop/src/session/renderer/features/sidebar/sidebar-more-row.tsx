@@ -24,7 +24,7 @@ export function SidebarMoreRow({
       onMouseDown={(e) => e.preventDefault()}
       onClick={() => sidebarStore.toggleIdleExpanded(foldKey)}
     >
-      <SidebarMenuAction aria-label={label} className="text-foreground-passive">
+      <SidebarMenuAction aria-label={label} className="text-foreground-muted">
         {label}
       </SidebarMenuAction>
     </SidebarMenuRow>

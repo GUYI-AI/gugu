@@ -89,7 +89,7 @@ export const triggerInput = [
     paddingRight: '0.375rem',
     fontSize: tokenVars.textSm,
     selectors: {
-      '&[data-placeholder]': { color: vars.foregroundPassive },
+      '&[data-placeholder]': { color: vars.foregroundMuted },
     },
   }),
 ] as const;

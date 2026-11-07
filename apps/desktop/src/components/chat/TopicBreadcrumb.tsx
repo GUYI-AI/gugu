@@ -43,7 +43,7 @@ const TOPIC_BREADCRUMB_SOURCE_PREVIEW_STYLE: React.CSSProperties = {
   minWidth: 0,
   flex: '1 1 0',
   fontSize: 'var(--font-caption)',
-  color: 'var(--faint-fg)',
+  color: 'var(--muted-fg)',
   whiteSpace: 'nowrap',
   overflow: 'hidden',
   textOverflow: 'ellipsis',

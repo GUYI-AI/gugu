@@ -200,7 +200,7 @@ export function ExtPanel({ agent }: { agent: ContactUser }) {
       <div className={asClass.shareExtCard}>
         {qrElement}
         <div style={{ fontSize: 'var(--font-body)', fontWeight: 600 }}>{t('settings.share.open')}</div>
-        <div style={{ fontSize: 'var(--font-body)', color: 'var(--faint-fg)', marginTop: 3 }}>
+        <div style={{ fontSize: 'var(--font-body)', color: 'var(--muted-fg)', marginTop: 3 }}>
           {t('settings.share.openHint')}
         </div>
       </div>

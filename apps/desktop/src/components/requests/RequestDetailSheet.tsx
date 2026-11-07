@@ -23,7 +23,7 @@ export function RequestDetailSheet({ peer, context, message, footer, onClose }: 
           <div className="min-w-0">
             <div className="truncate text-[length:var(--font-title)] font-semibold text-[var(--fg)]">{peer.display_name}</div>
             {peer.gugu_number == null ? null : (
-              <div className="text-[length:var(--font-caption)] text-[var(--faint-fg)]">{t('friendSearch.guguNumberValue', { number: peer.gugu_number })}</div>
+              <div className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">{t('friendSearch.guguNumberValue', { number: peer.gugu_number })}</div>
             )}
           </div>
         </div>
@@ -31,7 +31,7 @@ export function RequestDetailSheet({ peer, context, message, footer, onClose }: 
         {message ? (
           <p className="m-0 overflow-y-auto whitespace-pre-wrap break-words rounded-[var(--radius-control)] bg-[var(--muted)] px-3 py-[10px] text-[length:var(--font-body)] text-[var(--fg)]">{message}</p>
         ) : null}
-        <div className="flex items-center justify-end gap-2 text-[length:var(--font-body)] text-[var(--faint-fg)]">{footer}</div>
+        <div className="flex items-center justify-end gap-2 text-[length:var(--font-body)] text-[var(--muted-fg)]">{footer}</div>
       </div>
     </Sheet>
   )

@@ -38,7 +38,7 @@ const requestMetaClass = 'nfp-meta min-w-0 flex-1'
 const requestNameClass = 'nfp-name overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-[var(--fg)]'
 const requestSubClass = 'nfp-sub mt-px overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--muted-fg)]'
 const requestActionsClass = 'nfp-reqacts flex shrink-0 gap-1.5'
-const requestStatusClass = 'nfp-status shrink-0 text-[length:var(--font-body)] text-[var(--faint-fg)]'
+const requestStatusClass = 'nfp-status shrink-0 text-[length:var(--font-body)] text-[var(--muted-fg)]'
 const requestButtonBaseClass = 'rounded-[var(--radius-control)] border-none px-[11px] py-[5px] font-[inherit] text-xs font-medium !transition-opacity !duration-[var(--dur-fast)] !ease-[var(--ease)]'
 const requestButtonEnabledClass = 'cursor-pointer'
 const requestButtonDisabledClass = 'cursor-default opacity-60'
@@ -58,7 +58,7 @@ function requestActionButtonClass(kind: 'ok' | 'no', disabled: boolean): string 
 // ── Shared inline styles ──────────────────────────────────────────────────────
 
 // 与请求行(px 6)同一条左边线。
-const styleSectionLabel: CSSProperties = { padding: '12px 6px 4px', fontSize: 'var(--font-caption)', fontWeight: 600, color: 'var(--faint-fg)' }
+const styleSectionLabel: CSSProperties = { padding: '12px 6px 4px', fontSize: 'var(--font-caption)', fontWeight: 600, color: 'var(--muted-fg)' }
 const styleRowError: CSSProperties = { padding: '0 6px 8px', fontSize: 'var(--font-caption)', color: 'var(--danger-fg)' }
 const stylePlaceholderAvatar: CSSProperties = { width: 34, height: 34, borderRadius: 'var(--radius-circle)', background: 'var(--card)', flexShrink: 0 }
 const openOnKey = (open: () => void) => (event: KeyboardEvent<HTMLDivElement>) => {

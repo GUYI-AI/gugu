@@ -22,7 +22,7 @@
 .product-tour-feature { pointer-events: auto; display: flex; flex-direction: column; width: min(1220px, 100%); max-width: none; max-height: calc(100dvh - 68px); overflow: hidden auto; border: 1px solid var(--modal-border); border-radius: 20px; background: var(--card); color: var(--fg); box-shadow: var(--shadow-dialog); }
 .product-tour-feature-header { display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; padding: 8px 20px; border-bottom: 1px solid var(--border); color: var(--muted-fg); font-size: 12px; }
 .product-tour-feature-heading { flex-shrink: 0; padding: 10px 22px 6px; }
-.product-tour-feature-heading .product-tour-kicker { font-size: var(--font-caption); color: var(--faint-fg); margin-bottom: 3px; }
+.product-tour-feature-heading .product-tour-kicker { font-size: var(--font-caption); color: var(--muted-fg); margin-bottom: 3px; }
 .product-tour-feature-heading h2 { margin: 3px 0; color: var(--fg); font-size: 19px; line-height: 1.4; }
 .product-tour-feature-heading p { margin: 3px 0; color: var(--muted-fg); font-size: var(--font-body); line-height: 1.5; }
 .product-tour-film { display: block; flex: 1 1 auto; width: calc(100% - 36px); height: min(66vh, calc(100dvh - 330px)); min-height: 160px; margin: 6px 18px 0; aspect-ratio: 1280 / 788; object-fit: contain; background: var(--muted); border: 1px solid var(--border); border-radius: 0; }
@@ -52,7 +52,7 @@
 
 .product-tour-feature-header button { font-size: 24px; line-height: 1; background: transparent; border: 0; color: inherit; cursor: pointer; }
 .product-tour-film-controls button { min-height: 0; padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px; color: var(--muted-fg); font-size: var(--font-caption); }
-.product-tour-film-track { display: flex; align-items: center; gap: 12px; height: auto; width: auto; margin: 0; padding: 0 20px 8px; color: var(--faint-fg); font-size: 10px; }
+.product-tour-film-track { display: flex; align-items: center; gap: 12px; height: auto; width: auto; margin: 0; padding: 0 20px 8px; color: var(--muted-fg); font-size: 10px; }
 .product-tour-film-track input { flex: 1; min-width: 0; height: 3px; accent-color: var(--primary); cursor: pointer; }
 .product-tour-film-track span { min-width: 72px; text-align: right; font-variant-numeric: tabular-nums; }
 .product-tour-feature-footer { position: relative; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border); padding: 10px 20px; }

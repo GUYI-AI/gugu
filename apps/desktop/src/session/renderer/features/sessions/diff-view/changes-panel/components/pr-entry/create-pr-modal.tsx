@@ -176,7 +176,7 @@ export const CreatePrModal = observer(function CreatePrModal({
                 className="hover:bg-row-hover flex min-h-[58px] w-full items-center justify-between gap-2 rounded-sm p-2 text-left outline-none data-[size=default]:h-auto"
               >
                 <div className="flex flex-col gap-0.5 text-left text-sm">
-                  <span className="text-xs text-foreground-passive">{translate('pr.target')}</span>
+                  <span className="text-xs text-foreground-muted">{translate('pr.target')}</span>
                   <span className="flex items-center gap-1">
                     <GitPullRequest
                       absoluteStrokeWidth
@@ -201,7 +201,7 @@ export const CreatePrModal = observer(function CreatePrModal({
             trigger={
               <ComboboxTrigger className="hover:bg-row-hover flex w-full items-center justify-between gap-2 rounded-sm p-2 text-left outline-none">
                 <div className="flex flex-col gap-0.5 text-left text-sm">
-                  <span className="text-xs text-foreground-passive">{translate('pr.baseBranch')}</span>
+                  <span className="text-xs text-foreground-muted">{translate('pr.baseBranch')}</span>
                   <span className="flex items-center gap-1">
                     <GitBranch
                       absoluteStrokeWidth

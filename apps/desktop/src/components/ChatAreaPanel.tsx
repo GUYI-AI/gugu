@@ -765,7 +765,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         activeAgentActivity ? (
           <div data-testid={AUTOMATION_TEST_IDS.chatMessageList} style={{ flex: 1 }} />
         ) : (
-          <div style={{ flex: 1, textAlign: 'center', color: 'var(--faint-fg)', fontSize: 'var(--font-body)', padding: '40px 0' }}>
+          <div style={{ flex: 1, textAlign: 'center', color: 'var(--muted-fg)', fontSize: 'var(--font-body)', padding: '40px 0' }}>
             {mobile && isGroupChat ? <PhoneProjectEmpty chatId={activeChat.id} /> : t('chatArea.noMessages')}
           </div>
         )

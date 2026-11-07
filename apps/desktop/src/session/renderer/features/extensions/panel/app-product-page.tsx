@@ -944,7 +944,7 @@ function VersionHistorySection({
   onOpenExternal: (url: string) => void;
 }) {
   if (state.status === 'idle' || state.status === 'loading') {
-    return <p className="text-foreground-passive">{translate('extensions.loading')}</p>;
+    return <p className="text-foreground-muted">{translate('extensions.loading')}</p>;
   }
   if (state.status === 'error') {
     return <p className="text-foreground-muted">{translate('extensions.historyUnavailable')}</p>;

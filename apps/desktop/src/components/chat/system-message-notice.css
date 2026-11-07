@@ -1,2 +1,2 @@
 .system-message-notice { display: flex; justify-content: center; padding: 6px 12px; }
-.system-message-notice > span { max-width: 70%; padding: 2px 13px; color: var(--faint-fg); font-size: var(--font-caption); line-height: var(--lh-caption); text-align: center; }
+.system-message-notice > span { max-width: 70%; padding: 2px 13px; color: var(--muted-fg); font-size: var(--font-caption); line-height: var(--lh-caption); text-align: center; }

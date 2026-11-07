@@ -35,7 +35,7 @@ const LIT_VAR = '--gg-tab-lit'
  * ❌ 这里不挂 transition:值本来就跟着手指走,再加过渡就拖在手指后面。点按切换的过渡由 tab 栏只在点按那一下挂上
  * (PhoneTabBar 的 data-tab-switching)。
  */
-export function tabItemStyle(index: number, activeIndex: number, selectedColor = 'var(--fg)', idleColor = 'var(--faint-fg)'): CSSProperties {
+export function tabItemStyle(index: number, activeIndex: number, selectedColor = 'var(--fg)', idleColor = 'var(--muted-fg)'): CSSProperties {
   const position = `var(${TAB_POSITION_VAR}, ${activeIndex})`
   return {
     [LIT_VAR]: `max(0, 1 - max(${position} - ${index}, ${index} - ${position}))`,

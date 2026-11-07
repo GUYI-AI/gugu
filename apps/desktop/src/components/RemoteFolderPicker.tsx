@@ -544,10 +544,10 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
           </div>
         ) : null}
         {listing && !initialLoading && listing.entries.length === 0 ? (
-          <div className="px-3 py-3 text-[length:var(--font-body)] text-[var(--faint-fg)]">{t('create.remoteFolders.empty')}</div>
+          <div className="px-3 py-3 text-[length:var(--font-body)] text-[var(--muted-fg)]">{t('create.remoteFolders.empty')}</div>
         ) : null}
         {listing && listing.entries.length > 0 && visibleEntries.length === 0 ? (
-          <div className="px-3 py-3 text-[length:var(--font-body)] text-[var(--faint-fg)]">
+          <div className="px-3 py-3 text-[length:var(--font-body)] text-[var(--muted-fg)]">
             {t('create.remoteFolders.filterNoMatch', { query: filter.trim() })}
           </div>
         ) : null}
@@ -594,7 +594,7 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border-subtle)] px-2 py-2 text-[length:var(--font-caption)] text-[var(--faint-fg)]">
+      <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border-subtle)] px-2 py-2 text-[length:var(--font-caption)] text-[var(--muted-fg)]">
         <label className="inline-flex cursor-pointer items-center gap-1">
           <input
             type="checkbox"

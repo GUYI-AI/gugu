@@ -223,7 +223,7 @@ function UsageBlock({
 }) {
   const { translate } = useSessionMessages();
   if (pending)
-    return <div className="mt-1 text-xs text-foreground-passive">{translate('subscriptions.checking')}</div>;
+    return <div className="mt-1 text-xs text-foreground-muted">{translate('subscriptions.checking')}</div>;
   if (error) {
     return (
       <div className="mt-1 text-xs text-foreground-warning">
@@ -252,7 +252,7 @@ function UsageBlock({
   if (!text && !reading.consoleUrl) return null;
   return (
     <div
-      className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-foreground-passive"
+      className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-foreground-muted"
       data-testid={`subscription-unavailable-${agentId}`}
     >
       {text && <span>{text}</span>}

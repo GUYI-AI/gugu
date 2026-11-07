@@ -225,7 +225,7 @@
   padding: 6px 8px 0 12px;
   border: 0;
   background: transparent;
-  color: var(--md-faint);
+  color: var(--md-muted);
   /* 代码头(语言标签):代码头专用档 12/16(#7333),❌ 当通用标注 12/18 用。 */
   font-size: 12px;
   line-height: 16px;
@@ -373,7 +373,7 @@
   justify-content: space-between;
   min-height: 28px;
   padding: 4px 6px 0 14px;
-  color: var(--md-faint);
+  color: var(--md-muted);
   /* 代码头专用档 12/16(#7333),与转录的代码头同一档 */
   font-size: 12px;
   line-height: 16px;

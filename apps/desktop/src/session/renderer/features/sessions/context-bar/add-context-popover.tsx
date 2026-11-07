@@ -48,7 +48,7 @@ function CreatePromptRowView({ draft }: { draft: PromptDraft }) {
       </div>
       <div className="min-w-0 truncate text-sm text-foreground">{draft.title}</div>
       {draft.prompt === draft.title ? null : (
-        <div className="min-w-0 truncate text-xs text-foreground-passive">{draft.prompt}</div>
+        <div className="min-w-0 truncate text-xs text-foreground-muted">{draft.prompt}</div>
       )}
     </div>
   );
@@ -70,7 +70,7 @@ export function ActionItemBaseRow({
         {icon}
         <div className="shrink-0 truncate text-sm font-normal text-foreground-muted">{label}</div>
       </div>
-      <div className="truncate text-xs text-foreground-passive">{text}</div>
+      <div className="truncate text-xs text-foreground-muted">{text}</div>
     </div>
   );
 }
@@ -402,13 +402,13 @@ export function AddContextPopover({
           <span className="text-sm text-foreground-muted">
             {emptyMessage ?? translate('contextBar.empty')}
           </span>
-          <span className="text-xs text-foreground-passive">
+          <span className="text-xs text-foreground-muted">
             {translate('contextBar.createHint')}
           </span>
         </ComboboxEmpty>
         <div className="flex items-center justify-end border-t px-2 py-1.5">
           <span className="flex items-center gap-1">
-            <p className="text-xs text-foreground-passive">
+            <p className="text-xs text-foreground-muted">
               {translate(isCreateRow(selected) ? 'contextBar.createAndAdd' : 'contextBar.addToInput')}
             </p>
             <Shortcut hotkey="Enter" variant="keycaps" />

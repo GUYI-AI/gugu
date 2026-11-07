@@ -207,7 +207,7 @@ export function AgentProfilePane({ agent, onClose, onOpenTab }: AgentSettingsPan
         />
         {/* exact 718 shipped this as 0px: tokens.css's unlayered reset wins over mt-1. I18n must preserve that measured shape. */}
         <div
-          className="mt-1 text-[length:var(--font-caption)] text-[var(--faint-fg)]"
+          className="mt-1 text-[length:var(--font-caption)] text-[var(--muted-fg)]"
         >
           {t('settings.profile.uploadHint')}
         </div>

@@ -38,7 +38,7 @@ export function SampleTaskPane({ content, onOpenFile, onClose }: { content: Samp
         />
         {content.task.steps.length > 0 ? (
           <section className="flex flex-col gap-2">
-            <h3 className="m-0 text-xs font-medium text-[var(--faint-fg)]">{translate('projects.sample.taskSteps')}</h3>
+            <h3 className="m-0 text-xs font-medium text-[var(--muted-fg)]">{translate('projects.sample.taskSteps')}</h3>
             <ol className="m-0 flex list-none flex-col gap-2 p-0">
               {content.task.steps.map((step, index) => (
                 <li key={index} className="text-[var(--font-body)] leading-[var(--lh-body)] text-[var(--muted-fg)]">
@@ -50,7 +50,7 @@ export function SampleTaskPane({ content, onOpenFile, onClose }: { content: Samp
         ) : null}
         {files.length > 0 ? (
           <section className="flex flex-col gap-2">
-            <h3 className="m-0 text-xs font-medium text-[var(--faint-fg)]">{translate('projects.sample.taskFiles')}</h3>
+            <h3 className="m-0 text-xs font-medium text-[var(--muted-fg)]">{translate('projects.sample.taskFiles')}</h3>
             {files.map((file) => (
               <FileAttachmentCard key={file.id} file={{ fileName: file.name, sizeBytes: sampleFileBytes(file), mimeType: file.mimeType }} onOpen={() => onOpenFile(file.id)} />
             ))}
@@ -70,7 +70,7 @@ function SampleStepLine({ step, list }: { step: SampleStep; list: Intl.ListForma
       return (
         <>
           {translate('projects.sample.searched')}
-          <ul className="m-0 mt-1 flex list-none flex-col gap-1 p-0 text-[var(--faint-fg)]">
+          <ul className="m-0 mt-1 flex list-none flex-col gap-1 p-0 text-[var(--muted-fg)]">
             {step.queries.map((query) => <li key={query} className="truncate" title={query}>{query}</li>)}
           </ul>
         </>

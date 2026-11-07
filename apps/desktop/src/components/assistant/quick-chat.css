@@ -29,7 +29,7 @@
 .qc-msg[data-sending='sending'] { opacity: 0.6; }
 .qc-plain { white-space: pre-wrap; }
 .qc-other { color: var(--muted-fg); }
-.qc-system { align-self: center; font-size: var(--font-caption); color: var(--faint-fg); }
+.qc-system { align-self: center; font-size: var(--font-caption); color: var(--muted-fg); }
 .qc-error { display: block; font-size: var(--font-caption); color: var(--danger-fg); }
 .qc-note { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; text-align: center; color: var(--muted-fg); }
 .qc-note-title { font-size: var(--font-title); font-weight: 600; color: var(--fg); }

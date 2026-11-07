@@ -328,7 +328,7 @@ export const attachmentMeta = recipe({
     fontSize: tokenVars.textTiny,
     lineHeight: 1.5,
     whiteSpace: 'nowrap',
-    color: vars.foregroundPassive,
+    color: vars.foregroundMuted,
     selectors: {
       [`${composerRoot}[data-mobile] &, [data-phone-shell] &`]: { whiteSpace: 'nowrap', maxWidth: 'none' },
     },

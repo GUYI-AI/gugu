@@ -187,7 +187,7 @@ function ScheduleItem({ schedule, machine }: { schedule: SessionSchedule; machin
               : null}
           </div>
         ) : null}
-        {schedule.prompt ? <div className="truncate text-xs text-foreground-passive">{schedule.prompt}</div> : null}
+        {schedule.prompt ? <div className="truncate text-xs text-foreground-muted">{schedule.prompt}</div> : null}
         {editing ? (
           <SessionScheduleTimeEditor
             schedule={schedule}

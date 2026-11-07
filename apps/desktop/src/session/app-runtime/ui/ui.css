@@ -181,7 +181,7 @@
 :where(input, select, textarea):where([aria-invalid='true']) { border-color: var(--em-foreground-destructive); }
 /* 只读：底色压灰，悬停不再「自报可编辑」 */
 :where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='button'], [type='submit'], [type='reset']), textarea):where(:read-only) {
-  border-color: var(--em-border); background-color: var(--em-background-3); color: var(--em-foreground-passive); cursor: default;
+  border-color: var(--em-border); background-color: var(--em-background-3); color: var(--em-foreground-muted); cursor: default;
 }
 :where(input, select, textarea):disabled { opacity: 0.58; cursor: not-allowed; }
 /* 搜索框 = 咕咕 SearchField 的输入底 + 常态 hairline */
@@ -377,7 +377,7 @@
 :where(.list) > * > :where(div, p) > :where(*) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 :where(.list) > * > :where(div, p) > :where(strong, b):first-child { font-weight: 500; }
 :where(.list) > * > :where(div, p) > :where(span, small, .muted) { color: var(--em-foreground-muted); font-size: var(--em-font-body); line-height: var(--em-lh-body); }
-:where(.list) > * > :where(small, time, gugu-time) { flex: none; margin-inline-start: auto; font-size: var(--em-font-caption); line-height: var(--em-lh-caption); color: var(--em-foreground-passive); font-variant-numeric: tabular-nums; }
+:where(.list) > * > :where(small, time, gugu-time) { flex: none; margin-inline-start: auto; font-size: var(--em-font-caption); line-height: var(--em-lh-caption); color: var(--em-foreground-muted); font-variant-numeric: tabular-nums; }
 :where(.list) > * > :where(button):last-child { flex: none; margin-inline-start: auto; }
 :where(.list) > * > :where(button[aria-label]:has(> gugu-icon:only-child)) { width: var(--em-control-h-sm); height: var(--em-control-h-sm); line-height: calc(var(--em-control-h-sm) - 2px); }
 /* 行的状态照宿主 .gg-row：悬停 --hover、按下 --press；选中是 --selected，选中后再悬停 / 按下是在选中底上叠一层（不换掉选中色）。

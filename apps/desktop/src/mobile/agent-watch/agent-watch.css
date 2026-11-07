@@ -122,7 +122,7 @@
 }
 /* 分组标签可点折叠:触控高度 ≥44,折起时右侧给条数。 */
 .gg-aw .gg-aw-list > [data-slot='section-label'][data-interactive] { min-height: 44px; cursor: pointer; }
-.gg-aw .gg-aw-group-path { font-weight: var(--font-weight-regular); letter-spacing: 0; color: var(--faint-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.gg-aw .gg-aw-group-path { font-weight: var(--font-weight-regular); letter-spacing: 0; color: var(--muted-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .gg-aw .gg-aw-group-count { color: var(--muted-fg); font-variant-numeric: tabular-nums; }
 /* 项目分区页头里的机器名:项目名的次要属性,比项目名轻一档(常规字重、更淡),不抢它的位置。 */
 
@@ -374,7 +374,7 @@
 .gg-aw .gg-aw-item-wrap > .gg-aw-item { flex: 1; min-width: 0; }
 .gg-aw .gg-aw-item-menu { flex: none; color: var(--faint-fg); }
 /* 「展开显示」:分区里收起的闲置家族(与桌面侧栏同一条折法)。 */
-.gg-aw .gg-aw-more { width: 100%; padding-inline: var(--spacing-md); color: var(--faint-fg); }
+.gg-aw .gg-aw-more { width: 100%; padding-inline: var(--spacing-md); color: var(--muted-fg); }
 .gg-aw .gg-aw-actions { display: flex; flex-direction: column; gap: var(--spacing-sm); padding: var(--spacing-md); }
 .gg-aw .gg-aw-actions-title {
   font-size: var(--font-body);
@@ -521,7 +521,7 @@
 .gg-aw .gg-aw-offline-caret[data-open] { transform: rotate(180deg); }
 .gg-aw .gg-aw-offline-body {
   padding: 0 var(--spacing-md) var(--spacing-sm);
-  color: var(--faint-fg);
+  color: var(--muted-fg);
   font-size: var(--font-size-sm);
   line-height: 1.6;
 }
@@ -676,7 +676,7 @@
   padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-xs);
   font-size: var(--font-caption);
   font-weight: 600;
-  color: var(--faint-fg);
+  color: var(--muted-fg);
 }
 .gg-aw .gg-aw-choice-note { padding: var(--spacing-xs) var(--spacing-sm) var(--spacing-sm); }
 /* 模型清单底下那一段(#7056):管理模型 / 升级解锁更多模型,两端各一枚;免费档下面再一行写开会员能用哪几个。 */

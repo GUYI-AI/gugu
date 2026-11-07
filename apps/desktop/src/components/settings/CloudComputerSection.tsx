@@ -198,11 +198,11 @@ export function CloudComputerProvisionPanel({
                 {stuck ? <X aria-hidden className="size-4 text-[var(--danger-fg)]" /> : <StepIcon status={step.status} />}
               </span>
               <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <div className={cn(text, step.status === 'pending' ? 'text-[var(--faint-fg)]' : 'text-[var(--fg)]', stuck && 'font-semibold')}>
+                <div className={cn(text, step.status === 'pending' ? 'text-[var(--muted-fg)]' : 'text-[var(--fg)]', stuck && 'font-semibold')}>
                   {t(`devices.cloud.steps.${step.id}`)}
                 </div>
                 {step.id === 'machine' && step.status === 'running' && !failed && (
-                  <div className={cn(caption, 'text-[var(--faint-fg)]')}>
+                  <div className={cn(caption, 'text-[var(--muted-fg)]')}>
                     {elapsed ? t('devices.cloud.stepDetail.minutesElapsed', { elapsed }) : t('devices.cloud.stepDetail.minutes')}
                   </div>
                 )}

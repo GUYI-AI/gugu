@@ -256,7 +256,7 @@ export const WorkspacePanelActionList = observer(function WorkspacePanelActionLi
         <div
           data-testid="workspace-panel-section-extensions"
           // 一次性 11px → 收进闭合字阶(design.md:type roles are a closed set —— 2026-09-22)。
-          className="text-foreground-passive mt-2 flex items-center justify-between pl-2 pr-1 pt-1 text-xs"
+          className="text-foreground-muted mt-2 flex items-center justify-between pl-2 pr-1 pt-1 text-xs"
         >
           <span>{translate('extensions.appsSection')}</span>
           {/* One door, not two: with nothing enabled the sentence below is the way
@@ -279,7 +279,7 @@ export const WorkspacePanelActionList = observer(function WorkspacePanelActionLi
             type="button"
             data-testid="workspace-panel-extensions-empty"
             onClick={openExtensionsSettings}
-            className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-foreground-passive transition-colors hover:bg-row-hover active:bg-row-press hover:text-foreground"
+            className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-foreground-muted transition-colors hover:bg-row-hover active:bg-row-press hover:text-foreground"
           >
             <span className="min-w-0 flex-1">{translate('extensions.panelEmpty')}</span>
             <ArrowRight className="size-3.5 shrink-0" />

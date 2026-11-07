@@ -55,7 +55,7 @@
 
 .acp-agent-create-device-status {
   margin-left: auto;
-  color: var(--faint-fg);
+  color: var(--muted-fg);
 }
 
 .acp-agent-create-error {
@@ -73,10 +73,10 @@
 .acp-agent-create-model-group {
   padding: 6px 8px 2px;
   font-size: var(--font-caption);
-  color: var(--faint-fg);
+  color: var(--muted-fg);
 }
 .acp-agent-create-model-note {
   padding: 2px 8px 6px;
   font-size: var(--font-caption);
-  color: var(--faint-fg);
+  color: var(--muted-fg);
 }

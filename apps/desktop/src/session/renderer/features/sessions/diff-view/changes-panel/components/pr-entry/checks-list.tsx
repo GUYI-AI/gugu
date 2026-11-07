@@ -66,13 +66,13 @@ export function CheckRunItem({ check }: { check: CheckRun }) {
           ) : null}
         </div>
         {subtitle && (
-          <div className="flex w-full justify-start truncate text-xs text-foreground-passive">
+          <div className="flex w-full justify-start truncate text-xs text-foreground-muted">
             {subtitle}
           </div>
         )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        {duration && <span className="text-xs text-foreground-passive">{duration}</span>}
+        {duration && <span className="text-xs text-foreground-muted">{duration}</span>}
         {detailsUrl && (
           <button
             type="button"
@@ -100,7 +100,7 @@ export function ChecksList({ checks }: { checks: CheckRun[] }) {
 
   if (sorted.length === 0) {
     return (
-      <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.noChecks')}</div>
+      <div className="px-3 py-2 text-xs text-foreground-muted">{translate('pr.noChecks')}</div>
     );
   }
 

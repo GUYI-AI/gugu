@@ -21,9 +21,9 @@ const placeAvatar = (place: EnablePlace): AvatarProps =>
     ? { name: place.name ?? '', avatarUrl: place.avatar ?? null, seed: place.agentId ?? place.id, isAgent: true }
     : { name: place.name ?? '', avatarUrl: place.avatar ?? null, seed: place.id, variant: 'group', memberAvatars: place.members ?? [] }
 
-const CAPTION = 'flex items-center gap-1 px-1 pt-2 text-[length:var(--font-caption)] text-[var(--faint-fg)]'
+const CAPTION = 'flex items-center gap-1 px-1 pt-2 text-[length:var(--font-caption)] text-[var(--muted-fg)]'
 const BOX = 'flex flex-col gap-px rounded-[var(--radius-document)] border border-[var(--border-color)] bg-[var(--card)] p-1'
-const QUIET = 'text-[length:var(--font-caption)] leading-normal text-[var(--faint-fg)]'
+const QUIET = 'text-[length:var(--font-caption)] leading-normal text-[var(--muted-fg)]'
 const TILE = 'flex shrink-0 items-center justify-center rounded-[var(--radius-control)] text-[var(--muted-fg)]'
 
 function Chip({ children, mark }: { children: ReactNode; mark: string }) {

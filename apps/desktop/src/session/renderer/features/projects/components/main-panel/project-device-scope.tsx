@@ -106,13 +106,13 @@ export function ProjectDeviceScopePicker({ machines, selected, onSelect }: {
               onCheckedChange={(next) => onSelect(next ? [...selected, key] : selected.filter((id) => id !== key))}>
               {machine.kind === 'server' ? <Server className="size-3.5" /> : <Monitor className="size-3.5" />}
               <span>{machine.label}</span>
-              {!machine.online && <small className="ml-auto text-foreground-passive">{translate('projects.folders.offline')}</small>}
+              {!machine.online && <small className="ml-auto text-foreground-muted">{translate('projects.folders.offline')}</small>}
             </DropdownMenuCheckboxItem>;
           })}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => onSelect(null)}>{translate('projects.folders.allDevices')}</DropdownMenuItem>
-        <p className="max-w-72 px-2 py-2 text-tiny text-foreground-passive">{translate('projects.folders.scopeExecutionHint')}</p>
+        <p className="max-w-72 px-2 py-2 text-tiny text-foreground-muted">{translate('projects.folders.scopeExecutionHint')}</p>
       </DropdownMenuContent>
     </DropdownMenu>
   );

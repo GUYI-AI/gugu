@@ -17,10 +17,10 @@
 .gugu-auth-form { display: flex; flex-direction: column; }
 .gugu-auth-label { margin-bottom: 8px; font-size: var(--font-body); line-height: var(--lh-body); font-weight: 500; }
 .gugu-auth-input { width: 100%; height: var(--control-h-xl); box-sizing: border-box; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-control); background: var(--input-bg); color: var(--fg); font: inherit; font-size: var(--font-body); }
-.gugu-auth-input::placeholder { color: var(--faint-fg); }
+.gugu-auth-input::placeholder { color: var(--muted-fg); }
 .gugu-auth-page .gugu-auth-google { position: relative; width: 100%; border-color: transparent; background: var(--muted); }
 .gugu-auth-google svg { position: absolute; left: 12px; }
-.gugu-auth-divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: var(--faint-fg); font-size: var(--font-caption); line-height: var(--lh-caption); }
+.gugu-auth-divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: var(--muted-fg); font-size: var(--font-caption); line-height: var(--lh-caption); }
 .gugu-auth-divider::before, .gugu-auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 .gugu-auth-submit { width: 100%; margin-top: 16px; }
 .gugu-auth-status, .gugu-auth-error, .gugu-auth-instructions { margin: 12px 0 0; font-size: var(--font-body); line-height: var(--lh-body); overflow-wrap: anywhere; }

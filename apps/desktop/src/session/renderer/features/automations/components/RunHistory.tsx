@@ -69,7 +69,7 @@ export function RunHistory({ automation }: RunHistoryProps) {
                 <span
                   className={cn(
                     'tabular-nums',
-                    filter === value ? 'text-foreground-muted' : 'text-foreground-passive'
+                    filter === value ? 'text-foreground-muted' : 'text-foreground-muted'
                   )}
                 >
                   {count}

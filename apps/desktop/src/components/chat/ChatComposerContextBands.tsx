@@ -12,7 +12,7 @@ export function ChatComposerContextBands({ chatId, isGroupChat, hidden, quoteCon
   return <>
     {chatId && isGroupChat && !hidden && <FileStorageNotice chatId={chatId} />}
     {whisperTarget && <div className="flex items-center gap-2 rounded-[var(--radius-control)] bg-[var(--bg)] px-2 py-1">
-      <span className="flex-1 text-[length:var(--font-caption)] text-[var(--faint-fg)]">{t('composer.whisperBanner', { name: whisperTarget.displayName })}</span>
+      <span className="flex-1 text-[length:var(--font-caption)] text-[var(--muted-fg)]">{t('composer.whisperBanner', { name: whisperTarget.displayName })}</span>
       <IconButton size="sm" aria-label={t('composer.exitWhisper')} onClick={onExitWhisper}><X /></IconButton>
     </div>}
     {/* 回复条浮在消息流上,底只给它自己这张卡(owner 10-25)。 */}

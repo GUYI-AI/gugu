@@ -185,19 +185,19 @@ function ImageSideContent({ state, side }: { state: SideState; side: Side }) {
   const { translate } = useSessionMessages();
   switch (state.status) {
     case 'loading':
-      return <div className="text-xs text-foreground-passive">{translate('task.loading')}</div>;
+      return <div className="text-xs text-foreground-muted">{translate('task.loading')}</div>;
     case 'missing':
       return (
-        <div className="text-xs text-foreground-passive">
+        <div className="text-xs text-foreground-muted">
           {side === 'original' ? 'File added' : 'File deleted'}
         </div>
       );
     case 'unavailable':
       return (
-        <div className="text-xs text-foreground-passive">{unavailableMessage(state.reason)}</div>
+        <div className="text-xs text-foreground-muted">{unavailableMessage(state.reason)}</div>
       );
     case 'error':
-      return <div className="text-xs text-foreground-passive">{state.message}</div>;
+      return <div className="text-xs text-foreground-muted">{state.message}</div>;
     case 'ready':
       return <PreviewImage state={state} alt={side} />;
   }
@@ -214,7 +214,7 @@ function PreviewImage({
   const [decodeFailed, setDecodeFailed] = useState(false);
 
   if (decodeFailed) {
-    return <div className="text-xs text-foreground-passive">{translate('diff.imageDecodeFailed')}</div>;
+    return <div className="text-xs text-foreground-muted">{translate('diff.imageDecodeFailed')}</div>;
   }
 
   return (

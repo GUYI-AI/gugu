@@ -134,7 +134,7 @@ export const UnavailableTabPlaceholder = observer(function UnavailableTabPlaceho
             ? translate('tabs.notEnabledTitle', { name: localizedManifestText(manifest, locale).name })
             : translate('tabs.unavailableTitle')}
         </p>
-        <p className="text-xs text-foreground-passive">
+        <p className="text-xs text-foreground-muted">
           {notEnabled
             ? translate('tabs.notEnabledDescription')
             : isSessionKind

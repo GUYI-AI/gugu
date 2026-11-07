@@ -48,7 +48,7 @@ export function CsvTable({ content }: { content: string }) {
             </tbody>
           </table>
           {parsed.truncatedRows > 0 || parsed.truncatedColumns > 0 ? (
-            <div className="sticky bottom-0 border-t border-border bg-background-secondary-1 px-3 py-2 text-xs text-foreground-passive">
+            <div className="sticky bottom-0 border-t border-border bg-background-secondary-1 px-3 py-2 text-xs text-foreground-muted">
               Preview capped at{' '}
               {parsed.truncatedRows > 0 ? `${MAX_PREVIEW_ROWS.toLocaleString()} rows` : null}
               {parsed.truncatedRows > 0 && parsed.truncatedColumns > 0 ? ' and ' : null}
@@ -60,7 +60,7 @@ export function CsvTable({ content }: { content: string }) {
           ) : null}
         </div>
       ) : (
-        <div className="flex h-full items-center justify-center text-xs text-foreground-passive">
+        <div className="flex h-full items-center justify-center text-xs text-foreground-muted">
           Empty file
         </div>
       )}

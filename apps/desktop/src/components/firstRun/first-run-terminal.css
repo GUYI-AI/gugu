@@ -8,4 +8,4 @@ img.first-run-terminal-film { margin: 24px 0 20px; }
 .first-run-terminal-film-toggle { position: absolute; right: 10px; bottom: 10px; background: var(--card); }
 .first-run-terminal-choice { display: flex; flex-direction: column; align-items: center; gap: var(--spacing-xs); width: 100%; margin-bottom: 24px; }
 .first-run-terminal-switch { display: flex; align-items: center; gap: var(--spacing-md); font-size: var(--font-body); line-height: var(--lh-body); color: var(--fg); cursor: pointer; }
-.first-run-terminal-later { font-size: var(--font-caption); line-height: var(--lh-caption); color: var(--faint-fg); }
+.first-run-terminal-later { font-size: var(--font-caption); line-height: var(--lh-caption); color: var(--muted-fg); }

@@ -130,7 +130,7 @@ function Guide({ platform: key }: { platform: Platform }) {
       <ol className="flex flex-col gap-2 leading-[1.6]">
         {steps.map((step, i) => (
           <li key={i} className="flex gap-2">
-            <span className="shrink-0 tabular-nums text-[var(--faint-fg)]">{i + 1}.</span>
+            <span className="shrink-0 tabular-nums text-[var(--muted-fg)]">{i + 1}.</span>
             <span className="min-w-0">{step}</span>
           </li>
         ))}

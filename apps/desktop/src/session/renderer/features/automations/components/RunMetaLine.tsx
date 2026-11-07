@@ -28,7 +28,7 @@ export function RunMetaLine({ displayTime, triggerKind, runStatus, error, delive
             <AbsoluteTime className="text-tiny text-foreground-muted" value={displayTime} />
             <span className="text-foreground-passive">•</span>
             {triggerLabel && (
-              <span className="shrink-0 text-tiny text-foreground-passive">{triggerLabel}</span>
+              <span className="shrink-0 text-tiny text-foreground-muted">{triggerLabel}</span>
             )}
           </div>
         ) : (

@@ -159,7 +159,7 @@ export const ComposerProjectPicker = observer(function ComposerProjectPicker({
                     <span className="truncate">{projectDisplayName(p) ?? p.id}</span>
                     {/* 同名的(两台机器上各有一个「repo」)带上路径区分,与侧栏同一个判据;不同名不带。 */}
                     {twins.has(p.id) ? (
-                      <small className="ml-auto min-w-0 max-w-[55%] shrink truncate pl-3 text-foreground-passive">{p.data?.path}</small>
+                      <small className="ml-auto min-w-0 max-w-[55%] shrink truncate pl-3 text-foreground-muted">{p.data?.path}</small>
                     ) : null}
                   </DropdownMenuItem>
                 ))
@@ -247,7 +247,7 @@ export function ComposerRemoteProjectPicker({
     <DropdownMenuItem key={entry.path} onClick={() => onSelect(entry.path)} title={entry.path}>
       {entry.recent ? <Clock className="size-3.5" /> : <Folder className="size-3.5" />}
       <span className="min-w-0 truncate">{entry.name}</span>
-      <small className="ml-auto min-w-0 max-w-[55%] shrink truncate pl-3 text-foreground-passive">
+      <small className="ml-auto min-w-0 max-w-[55%] shrink truncate pl-3 text-foreground-muted">
         {entry.path}
       </small>
     </DropdownMenuItem>

@@ -216,7 +216,7 @@ export function MenuItem({ icon, danger, disabled, title, className, style, 'dat
       <span className={menuItemLabel}>{children}</span>
       {shortcut != null && (
         <span
-          className="gg-menu-item-shortcut ms-6 shrink-0 text-[length:var(--font-caption)] text-[var(--faint-fg)]"
+          className="gg-menu-item-shortcut ms-6 shrink-0 text-[length:var(--font-caption)] text-[var(--muted-fg)]"
           aria-hidden="true"
         >
           {shortcut}

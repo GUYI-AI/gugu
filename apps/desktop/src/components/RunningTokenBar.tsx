@@ -43,22 +43,22 @@ export interface RunningTokenBarProps {
 
 // 自包含样式（:hover 卡 + 流光 + 展开卡入场需 CSS，注入一次；同时只有一个运行条实例=DM 或群聊，不重复）。
 const STYLE = `
-.rtb-bar{position:relative;display:flex;align-items:center;gap:8px;padding:var(--spacing-sm) 0;font-size:var(--font-caption);color:var(--faint-fg);white-space:nowrap;flex-shrink:0}
+.rtb-bar{position:relative;display:flex;align-items:center;gap:8px;padding:var(--spacing-sm) 0;font-size:var(--font-caption);color:var(--muted-fg);white-space:nowrap;flex-shrink:0}
 .rtb-tok{display:inline-flex;align-items:center;gap:7px;flex-shrink:0;min-width:0;border:0;padding:0;background:transparent;color:inherit;font:inherit;white-space:nowrap;cursor:default}
 .rtb-tok[data-clickable=true]{cursor:pointer}
 .rtb-pill{height:auto;gap:7px;padding:4px 8px;max-width:168px;min-width:0;background:var(--card);box-shadow:var(--shadow-lift);color:inherit;font-weight:inherit}
 .rtb-tok:focus-visible,.rtb-more:focus-visible,.rtb-otok:focus-visible{outline:none}
-.rtb-nm{color:var(--faint-fg);min-width:0;overflow:hidden;text-overflow:ellipsis}
+.rtb-nm{color:var(--muted-fg);min-width:0;overflow:hidden;text-overflow:ellipsis}
 /* Three static 220%-wide repeats cover the original 160% → -60% sweep.
    Masks move 264% of the label width; glyphs move back by the same distance. */
 .rtb-state{flex-shrink:0;font-weight:500;--text-shimmer-base:var(--faint-fg);--text-shimmer-light:var(--fg);--text-shimmer-light-mask:linear-gradient(100deg,transparent 36%,white 50%,transparent 64%);--text-shimmer-left:-412%;--text-shimmer-width:660%;--text-shimmer-mask-size:calc(100% / 3) 100%;--text-shimmer-ink-width:calc(100% / 6.6);--text-shimmer-ink-left:calc(412% / 6.6);--text-shimmer-sweep-end:40%;--text-shimmer-ink-end:-264%;--text-shimmer-idle-sweep:calc(192% / 6.6);--text-shimmer-idle-ink:-192%}
 @media(prefers-reduced-motion:reduce){.rtb-state{background:linear-gradient(100deg,var(--faint-fg) 36%,var(--fg) 50%,var(--faint-fg) 64%);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}}
 /* @@@float-one-edge (Refs #6104) — 浮条去掉 1px 描边:浮层只留 lift 那一层。 */
 .rtb-mp{outline:none}
-.rtb-more{color:var(--faint-fg);flex-shrink:0;border:0;padding:0;background:transparent;font:inherit;cursor:pointer}
-.rtb-ov{pointer-events:auto;display:flex;flex-direction:column;gap:8px;width:var(--anchor-width);max-width:var(--available-width);max-height:min(40dvh,var(--available-height));overflow-y:auto;overscroll-behavior:contain;background:var(--popover);border-radius:var(--radius-surface);box-shadow:var(--shadow-lift);padding:8px;font-size:var(--font-caption);color:var(--faint-fg)}
+.rtb-more{color:var(--muted-fg);flex-shrink:0;border:0;padding:0;background:transparent;font:inherit;cursor:pointer}
+.rtb-ov{pointer-events:auto;display:flex;flex-direction:column;gap:8px;width:var(--anchor-width);max-width:var(--available-width);max-height:min(40dvh,var(--available-height));overflow-y:auto;overscroll-behavior:contain;background:var(--popover);border-radius:var(--radius-surface);box-shadow:var(--shadow-lift);padding:8px;font-size:var(--font-caption);color:var(--muted-fg)}
 .rtb-og{display:flex;flex-wrap:wrap;gap:8px}
-.rtb-oh{width:100%;padding:0 4px;color:var(--faint-fg)}
+.rtb-oh{width:100%;padding:0 4px;color:var(--muted-fg)}
 .rtb-otok{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;min-width:0;max-width:100%;border:0;padding:0;background:transparent;color:inherit;font:inherit;white-space:nowrap;cursor:default}
 .rtb-otok[data-clickable=true]{cursor:pointer}
 .rtb-otok .rtb-v{color:var(--muted-fg)}

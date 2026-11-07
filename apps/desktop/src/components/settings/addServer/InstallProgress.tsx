@@ -27,7 +27,7 @@ import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 const text = 'text-[length:var(--font-body)] leading-[1.5]'
 const caption = 'text-[length:var(--font-caption)] leading-[1.5]'
 const muted = 'text-[var(--muted-fg)]'
-const faint = 'text-[var(--faint-fg)]'
+const faint = 'text-[var(--muted-fg)]'
 
 // 色只说状态(design.md):正在跑的那一步是 live 蓝,做完的是墨色勾,失败是 destructive 红;
 // ❌ 做完再上一层绿 —— chrome is ink,一列绿勾是装饰色。

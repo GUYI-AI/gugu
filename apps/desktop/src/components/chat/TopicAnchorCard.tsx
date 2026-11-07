@@ -52,7 +52,7 @@ const TOPIC_ANCHOR_LEAD_STYLE: React.CSSProperties = {
   minWidth: 0,
 }
 const TOPIC_ANCHOR_META_STYLE: React.CSSProperties = {
-  fontSize: 'var(--font-caption)', color: 'var(--faint-fg)', whiteSpace: 'nowrap', flexShrink: 0,
+  fontSize: 'var(--font-caption)', color: 'var(--muted-fg)', whiteSpace: 'nowrap', flexShrink: 0,
 }
 const TOPIC_ANCHOR_DETAIL_STYLE: React.CSSProperties = {
   ...TOPIC_ANCHOR_META_STYLE, flexBasis: 0, flexGrow: 1, flexShrink: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis',

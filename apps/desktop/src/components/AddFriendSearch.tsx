@@ -316,7 +316,7 @@ export function AddFriendSearch({
               />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 'var(--font-title)', fontWeight: 600, color: 'var(--fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pendingTarget.display_name}</div>
-                <div style={{ fontSize: 'var(--font-body)', color: 'var(--faint-fg)' }}>{t('friendSearch.requestTitle')}</div>
+                <div style={{ fontSize: 'var(--font-body)', color: 'var(--muted-fg)' }}>{t('friendSearch.requestTitle')}</div>
               </div>
             </div>
             <textarea

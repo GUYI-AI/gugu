@@ -95,13 +95,13 @@ export function GroupInviteCard({
           {t('groupInvite.groupSummary', { number: group.public_id, count: group.member_count })}
         </div>
         {group.creator_name ? (
-          <div style={{ color: 'var(--faint-fg)', fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('groupInvite.creator', { name: group.creator_name })}</div>
+          <div style={{ color: 'var(--muted-fg)', fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('groupInvite.creator', { name: group.creator_name })}</div>
         ) : null}
         {group.description ? (
           <div style={{ color: 'var(--muted-fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.description}</div>
         ) : null}
         {state === 'invite_link_closed' ? (
-          <div className="gg-group-hint" style={{ color: 'var(--faint-fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', marginTop: 3 }}>{t('groupInvite.inviteLinkClosedHint')}</div>
+          <div className="gg-group-hint" style={{ color: 'var(--muted-fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', marginTop: 3 }}>{t('groupInvite.inviteLinkClosedHint')}</div>
         ) : null}
         {state === 'failed' && joinError ? (
           <div className="gg-group-join-error" role="alert" data-testid="group-join-error" style={{ color: 'var(--danger-fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', marginTop: 4 }}>{joinError}</div>

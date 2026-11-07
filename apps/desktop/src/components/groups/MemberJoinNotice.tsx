@@ -20,7 +20,7 @@ const NOTICE_ROW_STYLE: CSSProperties = { display: 'flex', justifyContent: 'cent
 const NOTICE_BODY_STYLE: CSSProperties = {
   maxWidth: '70%',
   padding: '2px 13px',
-  color: 'var(--faint-fg)',
+  color: 'var(--muted-fg)',
   fontSize: 'var(--font-caption)',
   lineHeight: 1.35,
   textAlign: 'center',

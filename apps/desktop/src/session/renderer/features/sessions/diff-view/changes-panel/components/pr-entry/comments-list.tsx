@@ -55,19 +55,19 @@ function CommentItem({ comment }: { comment: PullRequestSessionItem }) {
           {comment.isResolved && (
             <>
               <span className="shrink-0 text-foreground-passive">/</span>
-              <span className="shrink-0 text-foreground-passive">{translate('pr.resolved')}</span>
+              <span className="shrink-0 text-foreground-muted">{translate('pr.resolved')}</span>
             </>
           )}
         </div>
         {location && (
-          <div className="mt-0.5 truncate font-mono text-[length:var(--font-caption)] text-foreground-passive">
+          <div className="mt-0.5 truncate font-mono text-[length:var(--font-caption)] text-foreground-muted">
             {location}
           </div>
         )}
         <div
           className={cn(
             'mt-1 break-words text-xs leading-relaxed text-foreground-muted [&_*:last-child]:mb-0 [&_p]:mb-1.5',
-            comment.isOutdated && 'text-foreground-passive'
+            comment.isOutdated && 'text-foreground-muted'
           )}
         >
           <MarkdownRenderer content={comment.body} />
@@ -96,15 +96,15 @@ export function CommentsList({
   const sorted = useMemo(() => [...comments].sort(sortPullRequestSessionItems), [comments]);
 
   if (isLoading && sorted.length === 0) {
-    return <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.loadingComments')}</div>;
+    return <div className="px-3 py-2 text-xs text-foreground-muted">{translate('pr.loadingComments')}</div>;
   }
 
   if (error && sorted.length === 0) {
-    return <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.commentsFailed')}</div>;
+    return <div className="px-3 py-2 text-xs text-foreground-muted">{translate('pr.commentsFailed')}</div>;
   }
 
   if (sorted.length === 0) {
-    return <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.noComments')}</div>;
+    return <div className="px-3 py-2 text-xs text-foreground-muted">{translate('pr.noComments')}</div>;
   }
 
   return (
@@ -113,10 +113,10 @@ export function CommentsList({
         <CommentItem key={comment.id} comment={comment} />
       ))}
       {isLoading && (
-        <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.loadingComments')}</div>
+        <div className="px-3 py-2 text-xs text-foreground-muted">{translate('pr.loadingComments')}</div>
       )}
       {error && (
-        <div className="px-3 py-2 text-xs text-foreground-passive">{translate('pr.commentsFailed')}</div>
+        <div className="px-3 py-2 text-xs text-foreground-muted">{translate('pr.commentsFailed')}</div>
       )}
     </div>
   );

@@ -129,7 +129,7 @@ export const ProjectTaskComposer = observer(function ProjectTaskComposer({
             />
           </ComposerTray>
           {isBootstrapping && (
-            <p className="mt-2 px-1 text-tiny text-foreground-passive">
+            <p className="mt-2 px-1 text-tiny text-foreground-muted">
               {translate('projects.home.connecting')}
             </p>
           )}

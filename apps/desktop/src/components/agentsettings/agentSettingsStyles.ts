@@ -29,9 +29,9 @@ const profileInputTextarea =
 export const asClass = {
   tasksHead: 'gg-as-tasks-head !mb-[14px] flex items-center justify-between',
   tasksSave: 'gg-as-profile-save float-right cursor-pointer rounded-[var(--radius-xl)] border-0 bg-[var(--primary)] text-[length:var(--font-body)] font-semibold text-[var(--primary-fg)] !px-[26px] !py-2.5 hover:opacity-[.88] disabled:cursor-default disabled:opacity-50',
-  tasksHeading: 'gg-as-tasks-h2 !m-0 text-[length:var(--font-caption)] font-semibold tracking-[.02em] text-[var(--faint-fg)]',
+  tasksHeading: 'gg-as-tasks-h2 !m-0 text-[length:var(--font-caption)] font-semibold tracking-[.02em] text-[var(--muted-fg)]',
   tasksAddButton: 'gg-as-tasks-btn inline-flex cursor-pointer items-center gap-[5px] rounded-[var(--radius-xl)] border-0 bg-[var(--primary)] text-[length:var(--font-body)] font-[500] text-[var(--primary-fg)] !px-[13px] !py-[7px] hover:opacity-[.88]',
-  tasksLoading: 'gg-as-tasks-empty !mt-2 rounded-[var(--radius-xl)] border border-dashed border-[var(--border-strong)] text-center text-[length:var(--font-body)] text-[var(--faint-fg)] !px-0 !py-7',
+  tasksLoading: 'gg-as-tasks-empty !mt-2 rounded-[var(--radius-xl)] border border-dashed border-[var(--border-strong)] text-center text-[length:var(--font-body)] text-[var(--muted-fg)] !px-0 !py-7',
   scrim: 'gg-as-scrim fixed inset-0 z-[500] flex items-center justify-center bg-[var(--bg-overlay-modal)]',
   modal:
     'gg-as-modal flex h-[580px] max-h-[88vh] w-[880px] max-w-[93vw] flex-col overflow-hidden rounded-[var(--radius-dialog)] bg-[var(--bg)] shadow-[var(--shadow-dialog)] animate-[gg-as-pop_var(--dur-med)_var(--ease)]',
@@ -53,7 +53,7 @@ export const asClass = {
 
   profileField: 'gg-as-profile-field !mb-[17px]',
   profileLabel:
-    'gg-as-profile-label !mb-[7px] text-[length:var(--font-body)] font-[500] text-[var(--faint-fg)]',
+    'gg-as-profile-label !mb-[7px] text-[length:var(--font-body)] font-[500] text-[var(--muted-fg)]',
   profileRow: 'gg-as-profile-row flex items-center gap-[14px] !mb-5',
   profileAvatar:
     'gg-as-profile-av h-[52px] w-[52px] shrink-0 overflow-hidden rounded-[var(--radius-capsule)] bg-[var(--muted)] [&_img]:block [&_img]:h-full [&_img]:w-full [&_img]:object-cover',
@@ -64,9 +64,9 @@ export const asClass = {
     'gg-as-profile-name-chev pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--faint-fg)]',
   profileError: 'gg-as-profile-error !mt-1.5 text-[length:var(--font-body)] text-[var(--danger-fg)]',
   tasksH2:
-    'gg-as-tasks-h2 !mb-1 !mt-[22px] text-[length:var(--font-caption)] font-semibold tracking-[.02em] text-[var(--faint-fg)]',
+    'gg-as-tasks-h2 !mb-1 !mt-[22px] text-[length:var(--font-caption)] font-semibold tracking-[.02em] text-[var(--muted-fg)]',
   tasksEmpty:
-    'gg-as-tasks-empty flex flex-col items-center gap-[7px] text-[length:var(--font-body)] text-[var(--faint-fg)] !px-0 !py-16',
+    'gg-as-tasks-empty flex flex-col items-center gap-[7px] text-[length:var(--font-body)] text-[var(--muted-fg)] !px-0 !py-16',
   tasksIconBox:
     'gg-as-tasks-ee !mb-1 grid h-[50px] w-[50px] place-items-center rounded-[var(--radius-xl)] bg-[var(--muted)]',
   tasksSub: 'gg-as-tasks-es text-[length:var(--font-body)]',
@@ -82,7 +82,7 @@ export const asClass = {
   shareAvatar:
     'gg-as-share-act-av h-8 w-8 shrink-0 overflow-hidden rounded-[var(--radius-capsule)] bg-[var(--muted)]',
   shareRowName: 'gg-as-share-act-row-name text-[length:var(--font-body)] font-[500]',
-  shareEmpty: 'gg-as-share-act-empty text-[length:var(--font-body)] text-[var(--faint-fg)] !px-0 !py-3',
+  shareEmpty: 'gg-as-share-act-empty text-[length:var(--font-body)] text-[var(--muted-fg)] !px-0 !py-3',
   shareError: 'gg-as-share-act-error !mt-2 text-[length:var(--font-body)] text-[var(--danger-fg)]',
   shareBusy: 'gg-as-share-act-busy !mt-2 text-[length:var(--font-body)] text-[var(--muted-fg)]',
   shareExt: 'gg-as-share-act-ext !px-0.5 !py-1.5',
@@ -94,10 +94,10 @@ export const asClass = {
   shareLink:
     'gg-as-share-act-se-link flex items-center gap-2 rounded-[var(--radius-xl)] border border-[var(--border-strong)] text-[length:var(--font-body)] text-[var(--muted-fg)] !px-[11px] !py-[9px] [&_span]:min-w-0 [&_span]:flex-1 [&_span]:overflow-hidden [&_span]:text-ellipsis [&_span]:whitespace-nowrap',
   aiModelLabel:
-    'gg-as-aimodel-label !mb-[7px] text-[length:var(--font-body)] font-[500] text-[var(--faint-fg)]',
+    'gg-as-aimodel-label !mb-[7px] text-[length:var(--font-body)] font-[500] text-[var(--muted-fg)]',
   aiModelSelect:
     'gg-as-aimodel-sel box-border w-full cursor-pointer rounded-[var(--radius-xl)] border border-[var(--border-strong)] text-[length:var(--font-body)] text-[var(--fg)] outline-none !py-2 !pl-3 !pr-[30px] [font-family:inherit] [appearance:none] focus:border-[var(--primary)] disabled:cursor-default disabled:opacity-60',
-  aiModelArd: 'gg-as-aimodel-ard !mt-[9px] text-[length:var(--font-body)] leading-[1.5] text-[var(--faint-fg)]',
+  aiModelArd: 'gg-as-aimodel-ard !mt-[9px] text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]',
   aiModelSave:
     'gg-as-aimodel-save float-right !mt-4 cursor-pointer rounded-[var(--radius-xl)] border-0 bg-[var(--primary)] text-[length:var(--font-body)] font-semibold text-[var(--primary-fg)] !px-[26px] !py-2.5 hover:opacity-[.88] disabled:cursor-default disabled:opacity-50',
 

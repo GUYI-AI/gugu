@@ -40,7 +40,7 @@ function TopicThresholds({ chatId }: { chatId: string }) {
     if (ids.includes(chatId) || (selected && ids.includes(selected.chat_id))) setRevision((value) => value + 1)
   }), [chatId, selected, subscribeChatChanged])
   return <>
-    {loading ? <p className="text-sm text-[var(--faint-fg)]">{t('common.loading')}</p> : null}
+    {loading ? <p className="text-sm text-[var(--muted-fg)]">{t('common.loading')}</p> : null}
     {error ? <div role="alert">
       {messageForUser(error)}
       <Button variant="ghost" size="sm" onClick={reload}>{t('common.retry')}</Button>

@@ -32,7 +32,7 @@
 .vn-line header { display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 18px; }
 .vn-line p { margin: 4px 0 0 18px; font-size: 15px; line-height: 1.65; color: var(--ta-fg); overflow-wrap: anywhere; }
 .vn-speaker { font-weight: 600; color: var(--ta-fg); }
-.vn-stamp { color: var(--ta-faint); font-variant-numeric: tabular-nums; }
+.vn-stamp { color: var(--ta-muted); font-variant-numeric: tabular-nums; }
 .vn-speaker-dot { display: inline-block; height: 10px; width: 10px; border-radius: 999px; background: var(--vn-speaker-0); }
 .vn-speaker-dot[data-tone='1'] { background: var(--vn-speaker-1); }
 .vn-speaker-dot[data-tone='2'] { background: var(--vn-speaker-2); }
@@ -96,7 +96,7 @@
 .vn-bar-btn[data-tone='stop'] svg { fill: currentColor; width: 12px; height: 12px; }
 .vn-bar-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ta-muted); }
 .vn-bar-label[data-tone='failed'] { color: var(--danger-fg); }
-.vn-bar-hint { font-size: var(--font-caption); color: var(--ta-faint); }
+.vn-bar-hint { font-size: var(--font-caption); color: var(--ta-muted); }
 .vn-bar-text-btn,
 .vn-bar-link {
   display: inline-flex;

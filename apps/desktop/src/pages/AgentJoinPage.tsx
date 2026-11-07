@@ -289,7 +289,7 @@ export function AgentJoinPage({
                 style={{
                   margin: '0 0 8px',
                   fontSize: 'var(--font-size-xs)',
-                  color: 'var(--faint-fg)',
+                  color: 'var(--muted-fg)',
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
                   fontWeight: 'var(--font-weight-medium)',
@@ -364,7 +364,7 @@ export function AgentJoinPage({
             style={{
               marginTop: 16,
               fontSize: 'var(--font-size-xs)',
-              color: 'var(--faint-fg)',
+              color: 'var(--muted-fg)',
               textAlign: 'center',
               lineHeight: 1.5,
             }}

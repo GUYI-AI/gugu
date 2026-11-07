@@ -86,7 +86,7 @@ function CheckStatus({ check, checking, harnessName }: { check?: LibraryMcpCheck
             ))}
           </div>
         )}
-        <p className="text-xs text-foreground-passive">
+        <p className="text-xs text-foreground-muted">
           {harnessName ? translate('mcpLibrary.harnessNote', { agent: harnessName }) : translate('mcpLibrary.manualNote')}
         </p>
       </PopoverContent>
