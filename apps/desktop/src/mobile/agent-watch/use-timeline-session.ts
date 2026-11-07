@@ -189,7 +189,8 @@ export function useTimelineSession(
   useEffect(() => () => { olderGeneration.current++ }, [client, deviceId, sessionId, enabled])
 
   const applyResult = useCallback((result: TimelineAfterResult) => {
-    if (!result.ok) olderGeneration.current++
+    // Invalidate before applying resolutions: no older promise can resurrect a ticket.
+    if (!result.ok || result.batch.resolvedPendingTickets?.length || result.batch.resolvedFragmentOwners?.length) olderGeneration.current++
     setTimeline((current) => {
       const next = applyTimelineResult(current, result)
       cursorRef.current = next.cursor
@@ -438,6 +439,7 @@ export function useTimelineSession(
           : await client.fetchOlder(deviceId, sessionId, target.beforeTurnId)
         if (generation !== olderGeneration.current || identity !== olderIdentityRef.current) return
         setTimeline(current => {
+          if (generation !== olderGeneration.current || identity !== olderIdentityRef.current) return current
           // An After/reset that overtook this request owns the newer window facts.
           if (current.cursor?.epoch !== pinned.cursor?.epoch || current.cursor?.seq !== pinned.cursor?.seq
             || current.sourceLineage !== pinned.sourceLineage || current.snapshotRevision !== pinned.snapshotRevision) return current
