@@ -1,7 +1,7 @@
 /** Trusted desktop UI protocol. Never register these methods as Agent tools. */
 export interface PasswordReference { id: string; version: number; epoch: string }
 export interface PasswordItem { reference: PasswordReference; origin: string; maskedAccount: string }
-export interface PasswordApproval { requestId: string; origin: string; agent: string; sessionId: string; deviceId: string; maskedAccount: string; expiresAt: number }
+export interface PasswordApproval { requestId: string; origin: string; agent: string; agentName: string; sessionTitle: string; sessionId: string; deviceId: string; maskedAccount: string; expiresAt: number }
 export const PASSWORD_REQUEST_PREFIX = 'gugu-password-request-v1\n'
 export interface PasswordSnapshot { status: 'locked' | 'unlocked' | 'unavailable'; initialized: boolean; denied: boolean; items: PasswordItem[]; approvals: PasswordApproval[] }
 export type PasswordUiCommand =

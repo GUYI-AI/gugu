@@ -4,7 +4,7 @@ import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { PASSWORD_REQUEST_PREFIX, type PasswordApproval, type PasswordBetaUi } from '@gugu/core/shared/passwordBetaProtocol'
 import type { ChatMessage } from '@session-chat/model'
 
-export const PASSWORD_CARD_HEIGHT = 260
+export const PASSWORD_CARD_HEIGHT = 292
 export function passwordRequest(item: ChatMessage): PasswordApproval | null {
   if (!PASSWORD_BETA_ENABLED || !item.ownerNotification || !item.text.startsWith(PASSWORD_REQUEST_PREFIX)) return null
   try {
@@ -43,8 +43,9 @@ export function PasswordRequestCard(props: { request: PasswordApproval }) {
     display: 'flex', 'flex-direction': 'column', gap: '8px', 'font-size': 'var(--font-body)' }}>
     <strong>使用密码登录网站</strong>
     <div style={{ overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>网站：{current()?.origin ?? props.request.origin}</div>
-    <div style={{ overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>Agent：{props.request.agent}</div>
-    <div style={{ overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>会话：{props.request.sessionId}</div>
+    <div style={{ overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>账号：{current()?.maskedAccount ?? props.request.maskedAccount}</div>
+    <div style={{ overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>Agent：{current()?.agentName ?? props.request.agentName ?? '此 Agent'}</div>
+    <div style={{ overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap' }}>会话：{current()?.sessionTitle ?? props.request.sessionTitle ?? '当前会话'}</div>
     <div>用途：网页登录</div><div>许可：这次使用 · 不保存长期许可</div>
     <Show when={current()} fallback={<span role="status">{state()}</span>}>
       <div style={{ display: 'flex', gap: '8px' }}>

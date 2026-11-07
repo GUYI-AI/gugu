@@ -33,6 +33,10 @@ export function PasswordSection() {
   const closeAdd = () => { setAdding(false); setPassword(''); setAccount(''); setOrigin('') }
   if (!PASSWORD_BETA_ENABLED) return null
   return <SettingsPage data-testid="password-settings">
+    {snapshot?.status === 'unlocked' && <div className="flex justify-end gap-2">
+      <Button disabled={busy} onClick={() => setAdding(true)}>添加密码</Button>
+      <Button variant="ghost" disabled={busy} onClick={() => { void run({ type: 'lock' }) }}>立即锁定</Button>
+    </div>}
     <SettingsGroup title="Agent 使用">
       <SettingsRow title="对所有 Agent 禁止" control={<Toggle ariaLabel="对所有 Agent 禁止" checked={snapshot?.denied ?? false}
         onChange={value => { void run({ type: 'deny', value }) }} />} />
@@ -44,9 +48,7 @@ export function PasswordSection() {
           : <>
             {snapshot.items.map(item => <SettingsRow key={item.reference.id} title={item.origin} description={item.maskedAccount}
               control={<Button variant="ghost" disabled={busy} onClick={() => { void run({ type: 'delete', reference: item.reference }) }}>删除</Button>} />)}
-            <SettingsRow title={snapshot.items.length ? '保存另一个网站的密码' : '还没有保存密码'}
-              control={<Button onClick={() => setAdding(true)}>存密码</Button>} />
-            <SettingsRow title="保护已保存的密码" control={<Button variant="ghost" disabled={busy} onClick={() => { void run({ type: 'lock' }) }}>锁定</Button>} />
+            {!snapshot.items.length && <SettingsNote>还没有保存密码</SettingsNote>}
           </>}
     </SettingsGroup>
     {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}

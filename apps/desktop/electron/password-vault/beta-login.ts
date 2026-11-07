@@ -28,6 +28,7 @@ export interface BetaLoginHost {
   access: ReturnType<typeof createBetaPasswordAccess>
   assertCurrent(): void
   changed(): void
+  describe(agentId: string, sessionId: string): { agentName: string; sessionTitle: string }
   denied(): boolean
   deliver(sessionId: string, requestId: string, status: string): Promise<void>
 }
@@ -130,10 +131,12 @@ export class BetaPasswordLogin {
         agentId: identity.subjectId, sessionId: identity.sessionId, browserId: input.browserId,
         credentialId: item.reference.id, credentialVersion: String(item.reference.version), lockEpoch: item.reference.epoch,
         operation: 'login-submit' }
+      const presentation = this.host.describe(identity.subjectId, identity.sessionId)
+      assertCurrent()
       const view = await execution.request(target, randomUUID())
       binding = Object.freeze({ ...target, requestId: view.requestId, useId: view.useId })
       attempt = { binding, execution, surface, completed: false, result: 'pending', view: {
-        requestId: view.requestId, origin: item.origin, agent: identity.subjectId, sessionId: identity.sessionId,
+        requestId: view.requestId, origin: item.origin, agent: identity.subjectId, ...presentation, sessionId: identity.sessionId,
         deviceId: this.host.deviceId, maskedAccount: item.maskedAccount, expiresAt: view.requestExpiresAt } }
       this.attempts.set(view.requestId, attempt)
       registered = attempt

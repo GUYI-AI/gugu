@@ -13,6 +13,7 @@ import type { GuguMcpContext } from '../acp-engine-utils'
 import { createVaultStorage } from './host'
 import { macVaultKeyProtector } from './mac'
 import { VaultError } from './contracts'
+import { passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
 import { BetaPasswordLogin } from './beta-login'
 
 export const PASSWORD_UI_CHANNEL = 'gugu:password-beta-ui'
@@ -54,7 +55,7 @@ async function createAccount(ownerId: string, host: NativeHost) {
   const deviceId = await host.device()
   if (!deviceId) throw unavailable()
   const login = new BetaPasswordLogin({ ownerId, deviceId, signal: controller.signal,
-    access, assertCurrent, changed, denied: () => denied, deliver: host.deliver })
+    access, assertCurrent, changed, describe: (agentId, sessionId) => passwordRequestPresentation(ownerId, agentId, sessionId), denied: () => denied, deliver: host.deliver })
   const { vault } = createVaultStorage({ root, accountId: ownerId, installationBinding: app.getPath('userData'),
     assertLocalPerson: value => { assertCurrent(); if (value !== person) throw unavailable() },
     assertOwnedLocalAgent: value => { assertCurrent(); if (value !== person) throw unavailable() },
