@@ -17,6 +17,7 @@ import { MessageProvider } from '@gugu/session-ui/react/components'
 import { ThemeProvider } from '@gugu/session-ui/react/primitives'
 import { appendToDraft } from '@/store/chatContext'
 import { useLocale } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { useTheme } from '@/store/theme'
 import { useSessionConversationDraft } from './use-session-conversation-draft'
 import { useMobileShell } from '@/hooks/useMobileShell'
@@ -89,7 +90,8 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   /** A live foreground snapshot, not a cached/offline history window. */
   queueReady?: boolean
 }) {
-  const { resolvedLocale, t } = useLocale()
+  const { resolvedLocale } = useLocale()
+  const { t } = useTranslation('main')
   const { theme } = useTheme()
   const visibility = useConversationVisibility(true)
   const localClient = local ? assistantTimelineClient(true) : null

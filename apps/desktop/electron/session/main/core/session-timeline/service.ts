@@ -828,6 +828,8 @@ function sourceWindowReader(): Promise<SourceWindowReader> {
       reportError: error => log.warn('sessionWindow: bounded source subscription failed', { error: String(error) }),
       observed: process.env.GUGU_WINDOW_IO_TRACE === '1'
         ? (conversationId, io, phase) => log.info('sessionWindow: read', { conversationId, phase, ...io }) : undefined,
+      backgroundRead: process.env.GUGU_WINDOW_IO_TRACE === '1'
+        ? (jobId, io) => log.info('sessionWindow: read', { jobId, phase: 'reverse', ...io }) : undefined,
     });
   })();
 }

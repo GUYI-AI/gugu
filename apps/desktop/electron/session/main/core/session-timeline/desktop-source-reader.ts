@@ -19,16 +19,17 @@ export function createDesktopSourceWindowReader(options: {
   request(id: string, limit?: number, signal?: AbortSignal): Promise<DesktopSourceRequest>;
   reportError(error: unknown): void;
   observed?(conversationId: string, io: Readonly<WindowIoCounters>, phase: 'window' | 'discovery'): void;
+  backgroundRead?(jobId: string, io: Readonly<WindowIoCounters>): void;
 }) {
   type Discovery = { abort: AbortController; promise: Promise<WindowSourceLocator>; waiters: number };
   const discoveries = new Map<string, Discovery>();
   let available!: () => void;
   let capacity = new Promise<void>(resolve => { available = resolve; });
   const reported = new WeakSet<WindowReadRequest>();
-  const listeners = new Set<() => void>();
+  const listeners = new Map<() => void, string>();
   const locatedRequests = new WeakMap<WindowReadRequest, WindowSourceLocator>();
-  const scheduler = createReverseIndexScheduler({ onFailure: options.reportError,
-    onLocated: () => { for (const changed of listeners) changed(); } });
+  const scheduler = createReverseIndexScheduler({ onFailure: options.reportError, onRead: options.backgroundRead,
+    onLocated: () => { for (const changed of listeners.keys()) changed(); } });
   async function locate(input: DesktopSourceRequest): Promise<WindowSourceLocator | null> {
     const cached = locatedRequests.get(input);
     if (cached) return cached;
@@ -60,7 +61,7 @@ export function createDesktopSourceWindowReader(options: {
     input.signal?.throwIfAborted();
     if (saved) return saved;
     const key = JSON.stringify([input.cacheDirectory, input.locator, input.cwd, input.nativeSourcePath]);
-    while (!discoveries.has(key) && discoveries.size >= 2) await cancellable(capacity, input.signal);
+    while ((!discoveries.has(key) && discoveries.size >= 2) || discoveries.get(key)?.abort.signal.aborted) await cancellable(capacity, input.signal);
     let selected = discoveries.get(key);
     if (!selected) {
       const abort = new AbortController(), resolver = createSourceReopenResolver();
@@ -108,6 +109,9 @@ export function createDesktopSourceWindowReader(options: {
         try { const current = await source.snapshot(); return current.sourceInstance === _body.sourceLineage && current.snapshotRevision === _body.revision; }
         finally { await source.close(); }
       }),
+      headerProgress: current => {
+        void setImmediate().then(() => { for (const [changed, id] of listeners) if (id === current.conversationId) changed(); }).catch(options.reportError);
+      },
       schedulePending: async (current, snapshot, ticket) => {
         const located = await locate(current);
         if (!located) throw new Error('Native source locator disappeared');
@@ -138,7 +142,7 @@ export function createDesktopSourceWindowReader(options: {
     readBody: input => measured(input, () => reader(input).readBody(input)),
     watch: async (_id, changed, input) => {
       const located = await locateForRead(input);
-      listeners.add(changed);
+      listeners.set(changed, input.conversationId);
       watchFile(located.path, { persistent: false, interval: 250 }, changed);
       return () => { listeners.delete(changed); unwatchFile(located.path, changed); };
     },

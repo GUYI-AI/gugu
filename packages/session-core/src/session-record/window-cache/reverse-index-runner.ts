@@ -10,6 +10,8 @@ type Job = { path: string; checkpoint: ReverseCheckpoint; directory: string; sco
 export function createReverseIndexScheduler(callbacks: {
   onFailure(error: unknown): void;
   onStep?(checkpoint: ReverseCheckpoint, io: Readonly<WindowIoCounters>): void;
+  /** Actual read accounting for every admitted batch, including cancellation or failure. */
+  onRead?(jobId: string, io: Readonly<WindowIoCounters>): void;
   onLocated?(ticket: string, range: SourceRange): void;
 }) {
   let queued: Job | null = null, current: Job | null = null, controller: AbortController | null = null;
@@ -22,36 +24,38 @@ export function createReverseIndexScheduler(callbacks: {
       for (;;) {
         await setImmediate(undefined, { signal }); // Give foreground requests a scheduling point before every read.
         const budget = createWindowBudget();
-        if (restoring) {
-          const saved = await loadReverseIndexTask(job.directory,
-            { scope: job.scope, sourceLineage: checkpoint.sourceLineage, decoderVersion: 1, jobId: checkpoint.jobId }, budget);
-          signal.throwIfAborted();
-          if (saved.kind === 'hit') {
-            const persisted = saved.position.checkpoint, actual = await source.snapshot();
-            if (['sourceId', 'sourceInstance', 'sourceLineage', 'snapshotRevision', 'pinnedEnd', 'recordEnd'].some(key =>
-              persisted[key as keyof ReverseCheckpoint] !== checkpoint[key as keyof ReverseCheckpoint]) ||
-              persisted.sourceFence.start !== checkpoint.sourceFence.start || persisted.sourceFence.end !== checkpoint.sourceFence.end ||
-              persisted.sourceFence.digest !== checkpoint.sourceFence.digest ||
-              actual.sourceId !== persisted.sourceId || actual.sourceInstance !== persisted.sourceInstance ||
-              actual.snapshotRevision !== persisted.snapshotRevision || actual.size !== persisted.pinnedEnd)
-              throw new Error('Reverse locating checkpoint source changed');
-            checkpoint = persisted;
+        try {
+          if (restoring) {
+            const saved = await loadReverseIndexTask(job.directory,
+              { scope: job.scope, sourceLineage: checkpoint.sourceLineage, decoderVersion: 1, jobId: checkpoint.jobId }, budget);
             signal.throwIfAborted();
-            if (saved.position.kind === 'located') {
-              callbacks.onStep?.(checkpoint, budget.counters); signal.throwIfAborted();
-              callbacks.onLocated?.(checkpoint.jobId, saved.position.range); return;
+            if (saved.kind === 'hit') {
+              const persisted = saved.position.checkpoint, actual = await source.snapshot();
+              if (['sourceId', 'sourceInstance', 'sourceLineage', 'snapshotRevision', 'pinnedEnd', 'recordEnd'].some(key =>
+                persisted[key as keyof ReverseCheckpoint] !== checkpoint[key as keyof ReverseCheckpoint]) ||
+                persisted.sourceFence.start !== checkpoint.sourceFence.start || persisted.sourceFence.end !== checkpoint.sourceFence.end ||
+                persisted.sourceFence.digest !== checkpoint.sourceFence.digest ||
+                actual.sourceId !== persisted.sourceId || actual.sourceInstance !== persisted.sourceInstance ||
+                actual.snapshotRevision !== persisted.snapshotRevision || actual.size !== persisted.pinnedEnd)
+                throw new Error('Reverse locating checkpoint source changed');
+              checkpoint = persisted;
+              signal.throwIfAborted();
+              if (saved.position.kind === 'located') {
+                callbacks.onStep?.(checkpoint, budget.counters); signal.throwIfAborted();
+                callbacks.onLocated?.(checkpoint.jobId, saved.position.range); return;
+              }
             }
+            restoring = false;
           }
-          restoring = false;
-        }
-        const result = await advanceReverseIndexTask(job.directory,
-          { scope: job.scope, sourceLineage: checkpoint.sourceLineage, decoderVersion: 1, jobId: checkpoint.jobId },
-          source, checkpoint, budget, signal);
-        if (result.kind === 'reset') throw new Error('Reverse locating source changed');
-        checkpoint = result.checkpoint;
-        callbacks.onStep?.(checkpoint, budget.counters);
-        signal.throwIfAborted();
-        if (result.kind === 'located') { callbacks.onLocated?.(checkpoint.jobId, result.range); return; }
+          const result = await advanceReverseIndexTask(job.directory,
+            { scope: job.scope, sourceLineage: checkpoint.sourceLineage, decoderVersion: 1, jobId: checkpoint.jobId },
+            source, checkpoint, budget, signal);
+          if (result.kind === 'reset') throw new Error('Reverse locating source changed');
+          checkpoint = result.checkpoint;
+          callbacks.onStep?.(checkpoint, budget.counters);
+          signal.throwIfAborted();
+          if (result.kind === 'located') { callbacks.onLocated?.(checkpoint.jobId, result.range); return; }
+        } finally { callbacks.onRead?.(job.checkpoint.jobId, budget.counters); }
       }
     } finally { await source.close(); }
   }
