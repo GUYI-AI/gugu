@@ -151,7 +151,6 @@ export function InviteFriendsPreview() {
         >
           <Mail size={15} aria-hidden />
           {t('referralPreview.inviteToGugu')}
-          <ReferralProposalLabel />
         </Button>
       </div>
       {open && <ReferralSharePreview onClose={() => setOpen(false)} />}
@@ -170,7 +169,6 @@ export function ReferralAccountPreview() {
           title={
             <span className="flex items-center gap-2">
               {t('referralPreview.code')}
-              <ReferralProposalLabel />
             </span>
           }
           description={t('referralPreview.disconnected')}
