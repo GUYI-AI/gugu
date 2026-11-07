@@ -142,7 +142,7 @@ export function InviteFriendsPreview() {
   if (!enabled) return null
   return (
     <>
-      <div className="px-4 pb-3">
+      <div className="mt-1 flex justify-center">
         <Button
           variant="ghost"
           size="sm"
