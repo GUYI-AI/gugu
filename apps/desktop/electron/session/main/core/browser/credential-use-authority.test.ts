@@ -89,12 +89,27 @@ describe('host-only bridge to the unique credential approval authority', () => {
     const capability = f.issue(), lease = f.bridge.claimCredentialSink(capability, f.binding);
     const [registered, binding, revoked] = f.register.mock.calls[0]!;
     expect(registered).toBe(capability); expect(binding).toEqual(f.binding);
+    expect(lease.revokedSignal).toBe(revoked);
+    expect(lease.revokedSignal).not.toBe(lease.signal);
     await f.bridge.cleanup(f.binding.useId);
     expect(lease.signal.aborted).toBe(true);
     expect(revoked.aborted).toBe(false);
     f.approval.cancel(f.request.requestId, f.binding);
     expect(revoked.aborted).toBe(true);
   });
+
+  it.each(['lock', 'edit', 'delete', 'revoke', 'account_changed', 'shutdown'] as const)(
+    'still revokes continuing eligibility on %s after intentional cleanup', async reason => {
+      const f = fixture(); f.approve(); const lease = f.bridge.claimCredentialSink(f.issue(), f.binding);
+      const cleaning = f.bridge.cleanup(f.binding.useId);
+      expect(lease.signal.aborted).toBe(true);
+      expect(lease.revokedSignal.aborted).toBe(false);
+      expect(await cleaning).toEqual({ status: 'cleaned' });
+      f.bridge.invalidate(f.binding.accountId, reason, f.binding.credentialId);
+      expect(lease.revokedSignal.aborted).toBe(true);
+      expect(() => lease.claimSubmission()).toThrow('capability_unavailable');
+      expect(f.approval.status(f.request.requestId).effectPossible).toBe(false);
+    });
 
   it.each(['throw', 'async', 'revoke'])('never issues or revives a capability after a %s registration', kind => {
     const f = fixture(); f.approve(); let captured!: VaultUseCapability;

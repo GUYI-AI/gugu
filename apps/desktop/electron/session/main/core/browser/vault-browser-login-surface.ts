@@ -130,7 +130,8 @@ export class VaultBrowserLoginSurface {
     this.binding = Object.freeze({ ...binding });
     try {
       this.leaseSource = lease;
-      this.lease = Object.freeze({ signal: anySignal([lease.signal, this.host.permission.signal]), assertCurrent: lease.assertCurrent.bind(lease),
+      this.lease = Object.freeze({ signal: anySignal([lease.signal, this.host.permission.signal]), revokedSignal: lease.revokedSignal,
+        assertCurrent: lease.assertCurrent.bind(lease),
         claimSubmission: lease.claimSubmission.bind(lease), prepareSubmission: lease.prepareSubmission.bind(lease) });
       lease = this.lease;
       await this.host.permission.revalidate({ stage: 'before_fill', target: this.binding });

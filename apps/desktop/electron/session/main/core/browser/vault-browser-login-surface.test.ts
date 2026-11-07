@@ -72,12 +72,14 @@ async function fixture(initialReady = true) {
   const actual = await surface.review({ form: '#form', account: '#account', password: '#password' });
   const binding: CredentialUseBinding = { ...actual, requestId: 'request', useId: 'use', accountId: 'owner', installationId: 'install',
     agentId: 'agent', sessionId: 'session', browserId: 'tab', credentialId: 'credential', credentialVersion: '1', lockEpoch: 'epoch', operation: 'login-submit' };
-  const controller = new AbortController();
+  const controller = new AbortController(), revoked = new AbortController();
   let prepareHook: () => void = () => {};
-  const lease: AuditedCredentialUseLease = { signal: controller.signal, assertCurrent, claimSubmission: vi.fn(() => assertCurrent()), prepareSubmission: vi.fn(async () => { prepareHook(); }) };
+  const lease: AuditedCredentialUseLease = { signal: controller.signal, revokedSignal: revoked.signal,
+    assertCurrent, claimSubmission: vi.fn(() => assertCurrent()), prepareSubmission: vi.fn(async () => { prepareHook(); }) };
   const password = Buffer.from(randomUUID());
   return { surface, contents, binding, lease, password, host, release, permission, policy, ready: (value: boolean) => { ready = value; },
-    prepare: (hook: () => void) => { prepareHook = hook; }, retireSource: () => { sourceAlive = false; }, revoke: () => { current = false; controller.abort(); },
+    prepare: (hook: () => void) => { prepareHook = hook; }, retireSource: () => { sourceAlive = false; },
+    revoke: () => { current = false; revoked.abort(); controller.abort(); },
     fill: () => surface.fill(binding, lease, Buffer.from(randomUUID()), password) };
 }
 

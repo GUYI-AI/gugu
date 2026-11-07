@@ -9,7 +9,7 @@ const BINDING_KEYS = ['requestId', 'useId', 'accountId', 'installationId', 'agen
   'loginSurfaceId', 'loginSurfaceEpoch', 'documentId', 'frameId', 'formFingerprint', 'credentialId',
   'credentialVersion', 'lockEpoch', 'origin', 'operation'] as const;
 type Use = {
-  binding: CredentialUseBinding; claim: CredentialApprovalClaim; signal: AbortSignal;
+  binding: CredentialUseBinding; claim: CredentialApprovalClaim; signal: AbortSignal; revokedSignal: AbortSignal;
   controller: AbortController; claimed: boolean; cleanup?: Promise<CredentialUseCleanup>;
 };
 type AuthorityHost = {
@@ -56,7 +56,7 @@ export class CredentialUseAuthorityBridge implements CredentialUseAuthority {
     const started = this.host.approval.claimStart(requestId, binding);
     const controller = new AbortController();
     const use: Use = { binding: started.binding, claim: started.claim,
-      signal: anySignal([started.signal, controller.signal]), controller, claimed: false };
+      signal: anySignal([started.signal, controller.signal]), revokedSignal: started.signal, controller, claimed: false };
     // A re-entrant isolation guard can revoke this very request; recheck AFTER the start claim.
     this.assertCurrent(use);
     if (this.uses.has(binding.useId)) {
@@ -94,6 +94,7 @@ export class CredentialUseAuthorityBridge implements CredentialUseAuthority {
     this.assertCurrent(use);
     return Object.freeze({
       signal: use.signal,
+      revokedSignal: use.revokedSignal,
       assertCurrent: () => this.assertCurrent(use),
       claimSubmission: () => {
         this.assertCurrent(use);

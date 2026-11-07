@@ -107,16 +107,21 @@ describe('fixed password execution permission integration', () => {
     const f = fixture(); await f.execution.request(f.target, 'operation'); f.execution.decide('allow_once', f.person);
     await f.execution.use(); const lease = f.lease()!;
     f.revoked.abort();
-    expect(lease.signal.aborted).toBe(true); expect(() => lease.assertCurrent()).toThrow();
+    expect(lease.signal.aborted).toBe(true); expect(lease.revokedSignal.aborted).toBe(true);
+    expect(() => lease.assertCurrent()).toThrow();
   });
 
   it('does not confuse intentional secret cleanup with permission revocation for handback', async () => {
     const f = fixture(); await f.execution.request(f.target, 'operation'); f.execution.decide('allow_once', f.person);
     await f.execution.use(); await f.execution.authority.cleanup(f.binding()!.useId);
     expect(f.lease()!.signal.aborted).toBe(true);
+    expect(f.lease()!.revokedSignal.aborted).toBe(false);
     expect(f.execution.permission.signal.aborted).toBe(false);
     expect(() => f.execution.permission.assertCurrent(f.binding()!)).not.toThrow();
     await expect(f.execution.permission.revalidate({ stage: 'before_handoff', target: f.binding()! })).resolves.toBeUndefined();
+    f.revoked.abort();
+    expect(f.lease()!.revokedSignal.aborted).toBe(true);
+    expect(() => f.execution.permission.assertCurrent(f.binding()!)).toThrow();
   });
 
   it('treats an unknown sink error as uncertain, revokes and cleans without replay or raw error output', async () => {
