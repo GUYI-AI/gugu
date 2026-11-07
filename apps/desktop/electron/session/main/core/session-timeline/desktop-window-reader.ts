@@ -8,6 +8,7 @@ import type {
 } from '../../../../../../../packages/session-core/src/session-record/window-cache/types';
 
 export interface DesktopWindowIo {
+  finish?(request: WindowReadRequest): void;
   request(conversationId: string, limit?: number, signal?: AbortSignal): Promise<WindowReadRequest>;
   openRecent(request: WindowReadRequest): Promise<WindowResult>;
   readOlder(request: WindowReadRequest & { cursor: NonNullable<WindowPage['olderCursor']> }): Promise<WindowResult>;
@@ -99,10 +100,10 @@ export function createDesktopWindowReader(io: DesktopWindowIo) {
       const request = await io.request(input.conversationId, undefined, abort.signal);
       initialRequest = request;
       stopWatch = await io.watch(input.conversationId, () => { void pump(); }, request);
-      if (stopped) stopWatch();
+      if (stopped) { stopWatch(); io.finish?.(request); }
       else void pump();
       return stop;
-    } catch (error) { stop(); throw error; }
+    } catch (error) { stop(); if (initialRequest) io.finish?.(initialRequest); throw error; }
   }
   return { snapshot, after, older, body, subscribe };
 }

@@ -803,9 +803,10 @@ let sourceWindowOpening: Promise<SourceWindowReader> | null = null;
 /** Desktop reopening has its own bounded source path, including its subscription. */
 function sourceWindowReader(): Promise<SourceWindowReader> {
   return sourceWindowOpening ??= (async () => {
-    const [{ app }, { join }, { createHash }, { createWindowBudget }, { createDesktopSourceWindowReader }] = await Promise.all([
+    const [{ app }, { join }, { createHash }, { createWindowBudget }, { createDesktopSourceWindowReader }, { supportsSourceWindow }] = await Promise.all([
       import('electron'), import('node:path'), import('node:crypto'),
       import('@gugu/session-core/session-record/window-cache/read-budget'), import('./desktop-source-reader'),
+      import('@gugu/session-core/session-record/window-cache/formats'),
     ]);
     const cacheDirectory = join(app.getPath('userData'), 'session-window-cache');
     const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -814,7 +815,7 @@ function sourceWindowReader(): Promise<SourceWindowReader> {
         const row = readSessionRow(conversationId);
         if (!row) throw Object.assign(new Error('The session is no longer available'), { code: 'session_not_found' });
         const located = locateRow(row);
-        if (!located.supported || !['claude', 'codex'].includes(located.locator.harness))
+        if (!located.supported || !supportsSourceWindow(located.locator.harness))
           throw Object.assign(new Error(located.supported ? 'This native format has no window reader' : located.reason), { code: 'unsupported_format' });
         const conversationScope = hash([cacheDirectory, conversationId]);
         return { conversationId, locator: located.locator, cacheDirectory, conversationScope,

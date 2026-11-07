@@ -6,8 +6,9 @@ import { createWindowBudget } from '@gugu/session-core/session-record/window-cac
 import { createDesktopSourceWindowReader } from './desktop-source-reader';
 import type { DesktopSourceRequest } from './desktop-source-reader';
 import type { WindowIoCounters } from '@gugu/session-core/session-record/window-cache/types';
+import { supportsSourceWindow } from '@gugu/session-core/session-record/window-cache/formats';
 
-const reads = vi.hoisted(() => ({ source: 0, index: 0, maximum: 0, onDirectoryRead: null as (() => void) | null }));
+const reads = vi.hoisted(() => ({ source: 0, index: 0, maximum: 0, onDirectoryRead: null as (() => void | Promise<void>) | null }));
 vi.mock('node:fs/promises', async original => {
   const fs = await original<typeof import('node:fs/promises')>();
   return { ...fs, readFile: () => { throw new Error('Whole-file reads are forbidden'); },
@@ -15,7 +16,7 @@ vi.mock('node:fs/promises', async original => {
     opendir: async (...args: Parameters<typeof fs.opendir>) => {
       const directory = await fs.opendir(...args), read = directory.read.bind(directory);
       vi.spyOn(directory, 'read').mockImplementation((async () => {
-        const result = await read(); reads.onDirectoryRead?.(); return result;
+        const result = await read(); await reads.onDirectoryRead?.(); return result;
       }) as typeof directory.read);
       return directory;
     },
@@ -42,27 +43,32 @@ async function fixture(multipleBatches = false) {
   const row = (text: string) => JSON.stringify({ type: 'response_item', payload: {
     type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] } }) + '\n';
   await writeFile(path, row('old'.repeat(24000)) + row('latest real body'));
+  await writeFile(join(directory, 'rollout-2026-11-07T00-00-00-other-id.jsonl'), row('other real body'));
   const roots = [sourceRoot];
   if (multipleBatches) {
     const unrelated = join(root, 'unrelated'); await mkdir(unrelated);
     for (let index = 0; index < 130; index += 1) await writeFile(join(unrelated, `ignored-${index}`), '');
     roots.unshift(unrelated);
   }
-  const measured: WindowIoCounters[] = [], requests: DesktopSourceRequest[] = [];
+  const measured: WindowIoCounters[] = [], observed: { id: string; phase: string; io: WindowIoCounters }[] = [], requests: DesktopSourceRequest[] = [];
   const reader = createDesktopSourceWindowReader({
     request: async (conversationId, limit, signal) => {
-      const request: DesktopSourceRequest = { conversationId, locator: { harness: 'codex', providerSessionId: 'native-id', roots },
+      const request: DesktopSourceRequest = { conversationId, locator: { harness: 'codex', providerSessionId: conversationId === 'missing' ? 'missing' : conversationId === 'other' ? 'other-id' : 'native-id', roots },
         cacheDirectory: join(root, 'cache'), scope: 'a'.repeat(64), conversationScope: 'conversation', branchLineage: 'branch',
         budget: createWindowBudget(), limit, signal };
       requests.push(request); return request;
-    }, reportError: error => { throw error; }, observed: (_id, io) => measured.push({ ...io }),
+    }, reportError: error => { throw error; }, observed: (id, io, phase) => { observed.push({ id, phase, io: { ...io } }); if (phase === 'window') measured.push({ ...io }); },
   });
   cleanup.push(() => reader.dispose());
   reads.source = 0; reads.index = 0; reads.maximum = 0; reads.onDirectoryRead = null;
-  return { reader, measured, requests, path, row };
+  return { reader, measured, observed, requests, path, row };
 }
 
 describe('desktop default source reopening', () => {
+  it('selects supported source formats before invoking any native reader', () => {
+    expect(['claude', 'codex'].map(supportsSourceWindow)).toEqual([true, true]);
+    expect(['opencode', 'hermes', 'copilot', 'qwen', 'pi', 'codebuddy', null].map(supportsSourceWindow)).toEqual(Array(7).fill(false));
+  });
   it('discovers an unregistered source and reads real suffix text with one aggregate budget', async () => {
     const { reader, measured } = await fixture();
     const snapshot = await reader.snapshot({ conversationId: 'conversation', limit: 1 });
@@ -99,7 +105,7 @@ describe('desktop default source reopening', () => {
     expect(after.snapshot.sourceFragments?.map(value => value.text)).toEqual(['replacement body']);
   });
   it('continues metadata discovery until a single subscription produces real text', async () => {
-    const { reader, measured, requests } = await fixture(true);
+    const { reader, measured, observed, requests } = await fixture(true);
     let resolve!: (value: unknown) => void, reject!: (error: unknown) => void;
     const event = new Promise((yes, no) => { resolve = yes; reject = no; });
     const stop = await reader.subscribe({ conversationId: 'conversation', subscriptionId: 'sub', cursor: null }, resolve, reject);
@@ -107,9 +113,9 @@ describe('desktop default source reopening', () => {
     const received = await event as { result: { snapshot: { sourceFragments: { text: string }[] } } };
     expect(received.result.snapshot.sourceFragments.some(value => value.text === 'latest real body')).toBe(true);
     expect(requests).toHaveLength(1);
-    expect(measured.length).toBeGreaterThan(1);
-    expect(measured.reduce((sum, io) => sum + io.sourceBytes, 0)).toBe(reads.source);
-    expect(measured.reduce((sum, io) => sum + io.indexBytes, 0)).toBe(reads.index);
+    expect(observed.length).toBeGreaterThan(1);
+    expect(observed.reduce((sum, value) => sum + value.io.sourceBytes, 0)).toBe(reads.source);
+    expect(observed.reduce((sum, value) => sum + value.io.indexBytes, 0)).toBe(reads.index);
   });
   it('cancels discovery before installing a watch or reading source text', async () => {
     const { reader } = await fixture(true), abort = new AbortController();
@@ -118,6 +124,52 @@ describe('desktop default source reopening', () => {
     await expect(reader.subscribe({ conversationId: 'conversation', subscriptionId: 'sub', cursor: null }, emit, failed, abort.signal)).rejects.toThrow();
     expect(reads.source).toBe(0); expect(emit).not.toHaveBeenCalled();
   });
+  it('lets a known source bypass discovery and cancels another waiter before that discovery finishes', async () => {
+    const { reader, observed } = await fixture(true);
+    await reader.snapshot({ conversationId: 'known', limit: 1 });
+    let release!: () => void, entered!: () => void;
+    const gate = new Promise<void>(yes => { release = yes; });
+    const started = new Promise<void>(yes => { entered = yes; });
+    reads.onDirectoryRead = async () => { entered(); await gate; };
+    const long = reader.snapshot({ conversationId: 'missing' }).catch(error => error);
+    await started;
+    try {
+      let shown = false;
+      const known = reader.snapshot({ conversationId: 'known', limit: 1 }).then(value => { shown = true; return value; });
+      await vi.waitFor(() => expect(shown).toBe(true));
+      expect((await known).sourceFragments?.[0].text).toBe('latest real body');
+      const abort = new AbortController();
+      let cancelled = false;
+      const waiter = reader.subscribe({ conversationId: 'missing', subscriptionId: 'cancel', cursor: null }, vi.fn(), vi.fn(), abort.signal)
+        .catch(() => { cancelled = true; });
+      abort.abort();
+      await vi.waitFor(() => expect(cancelled).toBe(true)); await waiter;
+      expect(observed.filter(value => value.id === 'missing' && value.phase === 'window')).toHaveLength(1);
+    } finally { release(); await long; }
+  });
+  it('reports setup failure exactly once including the initial locator lookup', async () => {
+    const { reader, observed, requests } = await fixture();
+    await expect(reader.subscribe({ conversationId: 'missing', subscriptionId: 'not-found', cursor: null }, vi.fn(), vi.fn())).rejects.toThrow('not found');
+    const terminal = observed.filter(value => value.id === 'missing' && value.phase === 'window');
+    expect(terminal).toHaveLength(1); expect(terminal[0].io).toEqual(requests[0].budget.counters);
+    expect(observed.reduce((sum, value) => sum + value.io.indexBytes, 0)).toBe(reads.index);
+  });  it('admits two valid unregistered subscriptions without cross-session cancellation', async () => {
+    const { reader } = await fixture(true);
+    const failed = vi.fn();
+    const open = async (conversationId: string) => {
+      let resolve!: (text: string) => void;
+      const text = new Promise<string>(yes => { resolve = yes; });
+      const stop = await reader.subscribe({ conversationId, subscriptionId: conversationId, cursor: null }, event => {
+        const value = event.result.ok ? event.result.batch : event.result.snapshot;
+        const body = value.sourceFragments?.find(value => value.text)?.text;
+        if (body) resolve(body);
+      }, failed);
+      cleanup.push(async () => stop()); return text;
+    };
+    expect(await Promise.all([open('conversation'), open('other')])).toEqual(['latest real body', 'other real body']);
+    expect(failed).not.toHaveBeenCalled();
+  });
+
   it('replaces an unknown giant tail ticket with real first-body text after locating its start', async () => {
     const { reader, path, row, measured } = await fixture();
     const text = '中文😀 real body '.repeat(8000);
