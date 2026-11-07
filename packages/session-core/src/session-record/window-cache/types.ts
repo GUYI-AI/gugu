@@ -1,3 +1,6 @@
+import type { TranscriptTurn } from '../../acp/models/turns/turn';
+import type { SessionRecordLocator } from '../contract';
+
 /** Physical identity, append-stable logical lineage and read revision are separate. */
 export type SourceSnapshot = {
   sourceId: string;
@@ -56,3 +59,51 @@ export type BytePageCursor = { sourceId: string; sourceInstance: string; snapsho
 export type BytePageResult =
   | { kind: 'reset'; reason: 'source_changed' }
   | { kind: 'page'; snapshot: SourceSnapshot; start: number; end: number; bytes: Uint8Array; older: BytePageCursor | null };
+
+/** A body points to independently decoded UTF-8 chunks or a bounded tokenizer checkpoint. */
+export type WindowBodyRef = {
+  version: 1; scope: string; sourceLineage: string; id: string; itemId: string;
+  firstChunk: SegmentRef | null; decoderCheckpoint: SegmentRef | null;
+  sourceRange: SourceRange; byteLength: number | null;
+};
+export type WindowCursor = {
+  version: 1; scope: string; sourceLineage: string; snapshotRevision: string;
+  before: number; segment: SegmentRef | null;
+};
+/** Unknown record identity/role is deliberately absent from a locating ticket. */
+export type PendingLongRecord = {
+  kind: 'pending_long_record'; ticket: string; sourceInstance: string;
+  pinnedEnd: number; nextScanOffset: number;
+  sourceFence: SourceRange & { digest: string };
+  checkpointRef?: SegmentRef;
+};
+export type ReverseCheckpoint = {
+  version: 1; jobId: string; sourceId: string; sourceInstance: string; sourceLineage: string;
+  snapshotRevision: string; pinnedEnd: number; recordEnd: number; scanBefore: number;
+  sourceFence: SourceRange & { digest: string };
+};
+/** Metadata/content here is only a metered bounded envelope; giant bodies stay in bodyRef. */
+export type WindowRecordEnvelope = {
+  provider: 'claude' | 'codex'; recordStart: number | null; sourceRange: SourceRange;
+  fragment: number; eventKind: string; revision: string; projectionRef: string;
+  recordMetadata: Record<string, unknown>; bodyRef?: WindowBodyRef;
+};
+export type WindowReadRequest = {
+  locator: SessionRecordLocator; conversationId: string; cacheDirectory: string;
+  scope: string; conversationScope: string; branchLineage: string;
+  limit?: number; signal?: AbortSignal; budget: WindowBudget;
+};
+export type WindowPage = {
+  kind: 'page' | 'continuation'; scope: string; sourceLineage: string;
+  snapshotRevision: string; commitSeq: number; turns: TranscriptTurn[];
+  bodyRefs: WindowBodyRef[]; coveredRanges: SourceRange[];
+  olderCursor: WindowCursor | null; moreBefore: 'yes' | 'no' | 'unknown';
+  pendingLongRecords: PendingLongRecord[]; io: WindowIoCounters;
+};
+export type WindowResult = WindowPage
+  | { kind: 'reset'; reason: 'source_changed' | 'invalid_cursor'; io: WindowIoCounters }
+  | { kind: 'cache_miss'; reason: 'format' | 'checksum' | 'key' | 'not_found'; cursor: WindowCursor | null; io: WindowIoCounters };
+export type WindowBodyResult = {
+  kind: 'body'; text: string; offset: number; nextOffset: number;
+  moreAfter: 'yes' | 'no' | 'unknown'; io: WindowIoCounters;
+};
