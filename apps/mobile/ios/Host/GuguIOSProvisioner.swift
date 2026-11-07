@@ -33,7 +33,8 @@ final class GuguIOSProvisioner {
                 let key = client.map { "client:\($0)" } ?? requestId
                 let validated = try self.validate(input)
                 let fingerprint = try GuguHostJournal.digest(validated)
-                if let saved = try self.store.record("requests", id: key) {
+                let previous = try self.store.record("requests", id: key)
+                if let saved = previous {
                     guard saved["fingerprint"] as? String == fingerprint else { throw Self.failure("duplicate_conflict", "Original creation request cannot change input") }
                     if let result = saved["result"] as? [String: Any] { completion(.success(result)); return }
                 }
@@ -42,7 +43,7 @@ final class GuguIOSProvisioner {
                 let done: (Result<[String: Any], Error>) -> Void = { result in self.queue.async {
                     self.inFlight.remove(key); completion(result)
                 } }
-                if let saved = try self.store.record("requests", id: key) { self.start(key, saved, done); return }
+                if let saved = previous { self.start(key, saved, done); return }
                 self.resolveModel(validated["model"] as? String) { result in
                     do {
                         let model = try result.get(); try self.check()

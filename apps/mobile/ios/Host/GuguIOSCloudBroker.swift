@@ -18,6 +18,7 @@ enum GuguIOSCloudOperation {
     case claimCommand(id: String, claimToken: String, instanceId: String, at: String)
     case recheckCommand(id: String, claimToken: String)
     case completeCommand(id: String, claimToken: String, result: [String: Any], at: String)
+    case failCommand(id: String, claimToken: String, message: String, at: String)
     case inbox(agentId: String, chatId: String?, afterSeq: Int?, scanAfter: [String: Any]?, scanFence: Int?)
     case markRead(agentId: String, chatId: String, messageId: String)
     case runtimeState([String: Any])
@@ -166,6 +167,9 @@ final class GuguIOSCloudBroker {
         case .recheckCommand(let command, let token): return rpc("recheck_device_command_execution", ["p_id": try id(command), "p_claim_token": try id(token)])
         case .completeCommand(let command, let token, let result, let at):
             return Spec(path: "rest/v1/gugu_device_commands", method: "PATCH", body: ["status": "done", "result": result, "completed_at": at, "error": NSNull(), "claim_token": NSNull()],
+                query: [.init(name: "id", value: "eq.\(try id(command))"), .init(name: "device_id", value: "eq.\(b.deviceId)"), .init(name: "claim_token", value: "eq.\(try id(token))"), .init(name: "status", value: "eq.running"), .init(name: "select", value: "id")], prefer: "return=representation")
+        case .failCommand(let command, let token, let message, let at):
+            return Spec(path: "rest/v1/gugu_device_commands", method: "PATCH", body: ["status": "error", "error": message, "completed_at": at, "claim_token": NSNull()],
                 query: [.init(name: "id", value: "eq.\(try id(command))"), .init(name: "device_id", value: "eq.\(b.deviceId)"), .init(name: "claim_token", value: "eq.\(try id(token))"), .init(name: "status", value: "eq.running"), .init(name: "select", value: "id")], prefer: "return=representation")
         case .inbox(let agent, let chat, let seq, let scan, let fence):
             return rpc("pull_agent_inbox_v2", ["p_agent_user_id": try id(agent), "p_chat_id": try chat.map(id) as Any? ?? NSNull(), "p_after_seq": seq as Any? ?? NSNull(), "p_limit": 80, "p_scan_after": scan as Any? ?? NSNull(), "p_scan_max_ingest_seq": fence as Any? ?? NSNull()])

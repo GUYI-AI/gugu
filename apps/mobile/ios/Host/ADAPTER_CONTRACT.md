@@ -157,3 +157,34 @@ Agent or Pi job. Concrete GuguAgent registration, command/event subscription,
 local task scheduling, attachment/inbox/outbox delivery and model renewal
 lifecycle still require their backend integration. This entry alone never sets
 `ready`, `taskTimeline`, or a runtime capability.
+
+## Create-command and native lease lifecycle entry
+
+`GuguIOSCreateCommand` supplies the provisioner's command executor. It durably
+keeps the original claim token before CAS, validates the cloud Agent's owner and
+device, checks the real model catalog, creates the native session ID only once,
+and calls the required native `start` factory. That factory must construct/reuse
+the real session through the shared lifecycle, never start a task as a side
+effect. The executor reports actual native startup, rechecks the command claim,
+and settles the existing command. A lost settlement response reconciles cloud
+`done` against the original local session; another live runtime claim is left
+alone. Known validation failures use the existing error CAS. Routed startup
+text/first-task envelopes remain explicitly unsupported until the shared inbox
+adapter is connected; text is not silently accepted as a different source.
+
+`GuguIOSLeaseModel` is a `GuguModelCompleting` implementation with native-only
+short-grant custody. Before issue it persists the exact task's issuing phase; a
+lost reply is retained as uncertain and never reissued. It maps the catalog ID
+to the issuer's wire model natively, renews the same lease, and settles it before
+a new turn uses another lease. Cancellation stops the exact request. Repeated
+model request IDs are rejected. `finishTurn` and `stop` return cleanup failures;
+unknown issue/cleanup is never reported as clean retirement. Known lease IDs
+remain on disk without either human or model credentials.
+
+Call credential-backed checkpoint/revoke before sealing native owner publication.
+After sealing, `credentials(expectedBinding:)` correctly rejects; do not select a
+new current owner to settle an old lease. An unresolved record must remain
+visible and block an unqualified clean-stop claim until same-owner reconciliation.
+`HostCreateCommandTests` uses a synthetic runtime factory, and `HostLeaseTests`
+uses a synthetic model transport. These compile the production native paths but
+do not prove real Pi/cloud startup, timed renewal, billing, iOS or EventKit.
