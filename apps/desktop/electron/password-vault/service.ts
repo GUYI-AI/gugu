@@ -71,6 +71,22 @@ export class LocalPasswordVault {
     assertCurrent()
     return Object.freeze({ value, generation: epoch, signal, assertCurrent })
   }
+  /** Trusted local settings only. An installation manifest alone does not initialize this account's vault. */
+  isInitialized(context: object): Promise<boolean> {
+    this.person(context)
+    return this.run(async () => {
+      const epoch = this.#epoch
+      const current = () => { this.person(context); this.current(epoch); if (this.#failure) throw new VaultError(this.#failure) }
+      current(); await this.gates()
+      // Validate an absent installation's empty root too; unrelated/corrupt data is never a fresh vault.
+      await this.#file.prepareInstallationIdentity(); current()
+      let initialized = true
+      try { await this.#file.load() }
+      catch (error) { if (!(error instanceof VaultError) || error.code !== 'NOT_INITIALIZED') throw error; initialized = false }
+      current()
+      return initialized
+    })
+  }
   state(): VaultState { return { status: this.#failure ? 'unavailable' : this.#key ? 'unlocked' : 'locked', epoch: this.#epoch, ...(this.#failure ? { reason: this.#failure } : {}) } }
   private run<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.#queue.then(async () => { if (this.#disposed) throw new VaultError('UNAVAILABLE'); try { return await operation() } catch (error) { throw safe(error) } })

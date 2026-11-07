@@ -36,6 +36,35 @@ async function fixture() {
 }
 
 describe('fixed host construction of vault storage', () => {
+  it.each(['person-cancelled', 'recovery-unconfirmed'] as const)('keeps account setup available after %s despite a persisted installation manifest', async mode => {
+    const f = await fixture(), vault = f.construct().vault
+    expect(await vault.isInitialized(f.person)).toBe(false)
+    expect((await readdir(f.root)).length).toBe(0); expect(f.verify).not.toHaveBeenCalled()
+    if (mode === 'person-cancelled') {
+      f.verify.mockRejectedValueOnce(new VaultError('CANNOT_UNLOCK'))
+      await expect(vault.beginSetup(f.person)).rejects.toMatchObject({ code: 'CANNOT_UNLOCK' })
+    } else await vault.beginSetup(f.person)
+    expect((await vault.prepareInstallationIdentity()).value.status).toBe('persisted')
+    expect(await vault.isInitialized(f.person)).toBe(false)
+    await vault.dispose()
+    const next = f.construct().vault
+    expect(await next.isInitialized(f.person)).toBe(false)
+    const setup = await next.beginSetup(f.person)
+    await next.confirmRecovery(f.person, setup.setupId, setup.recoveryMaterial)
+    expect(await next.isInitialized(f.person)).toBe(true)
+    await next.lock()
+    expect(await next.isInitialized(f.person)).toBe(true)
+  })
+  it.each(['missing', 'damaged'] as const)('does not report a %s account document as an uninitialized empty vault', async mode => {
+    const f = await fixture(), vault = f.construct().vault
+    const setup = await vault.beginSetup(f.person)
+    await vault.confirmRecovery(f.person, setup.setupId, setup.recoveryMaterial)
+    const manifest = JSON.parse(await readFile(join(f.host.root, 'installation.json'), 'utf8'))
+    const path = join(f.host.root, manifest.owners[0], 'vault.json')
+    if (mode === 'missing') await rm(path)
+    else await writeFile(path, '{}')
+    await expect(vault.isInitialized(f.person)).rejects.toMatchObject({ code: mode === 'missing' ? 'DATA_MISSING' : 'DATA_DAMAGED' })
+  })
   it('refuses the non-Beta build even with a supplied ready callback and creates nothing', async () => {
     const f = await fixture(); build.beta = false
     expect(() => f.construct()).toThrow(VaultError)
