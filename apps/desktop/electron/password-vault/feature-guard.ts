@@ -15,7 +15,7 @@ export class VaultFeatureOperation {
     signal.addEventListener('abort', stop, { once: true }); this.#detach.push(() => signal.removeEventListener('abort', stop))
     if (signal.aborted) stop()
   }
-  static async acquire(provider: VaultDependencies['acquireFeatureGuard'], operation: 'save' | 'use', parent: AbortSignal): Promise<VaultFeatureOperation> {
+  static async acquire(provider: VaultDependencies['acquireFeatureGuard'], operation: 'save' | 'use', parent: AbortSignal, requestCurrent?: () => unknown): Promise<VaultFeatureOperation> {
     const value = new VaultFeatureOperation()
     try {
       if (!provider) throw new VaultError('UNAVAILABLE')
@@ -30,7 +30,13 @@ export class VaultFeatureOperation {
         }).then(resolve, reject).finally(() => value.signal.removeEventListener('abort', stop))
       })
       if (guard?.status !== 'ready' || typeof guard.assertCurrent !== 'function') throw new VaultError('UNAVAILABLE')
-      value.#check = guard.assertCurrent.bind(guard); value.link(guard.signal); value.assertCurrent()
+      const check = guard.assertCurrent.bind(guard)
+      value.#check = () => {
+        const result = requestCurrent?.()
+        if (result !== undefined) return result
+        return check()
+      }
+      value.link(guard.signal); value.assertCurrent()
       return value
     } catch { value.release(); throw new VaultError('UNAVAILABLE') }
   }

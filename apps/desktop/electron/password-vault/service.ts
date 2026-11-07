@@ -10,6 +10,9 @@ import { OutcomeAuditIssuer } from './outcome-audit'
 import { saveCredential, deleteCredential, type ManagementRuntime } from './management'
 import { VaultFeatureOperation } from './feature-guard'
 import { anySignal } from '@gugu/core/shared/anySignal'
+import { clearCredential } from './field-model'
+import { createManagementPort, type ManagementHost } from './management-port'
+import type { VaultManagementPort } from './management-contract'
 
 const activeRoots = new Map<string, object>()
 const safe = (error: unknown): VaultError => error instanceof VaultError ? error : new VaultError('STORAGE_FAILED')
@@ -22,6 +25,7 @@ export class LocalPasswordVault {
   readonly #outcomes: OutcomeAuditIssuer
   readonly #browser: VaultDependencies['browser']
   readonly #acquireFeatureGuard: VaultDependencies['acquireFeatureGuard']
+  readonly #managementPort: VaultManagementPort
   #epochAbort = new AbortController()
   readonly #now: () => number
   #epoch = randomUUID()
@@ -51,12 +55,27 @@ export class LocalPasswordVault {
         if (bound.accountId !== this.#dependencies.accountId || bound.installationId !== document.installationId || bound.credentialVersion !== String(Number(bound.credentialVersion))) throw new VaultError('STALE_REFERENCE')
         const value = this.check({ id: bound.credentialId, version: Number(bound.credentialVersion), epoch: bound.lockEpoch }, payload)
         if (value.origin !== bound.origin) throw new VaultError('STALE_REFERENCE')
-      } finally { for (const item of payload.credentials) { item.account = ''; item.password = '' } }
+      } finally { payload.credentials.forEach(clearCredential) }
     })
+    this.#managementPort = createManagementPort(Object.freeze<ManagementHost>({
+      person: actor => this.person(actor), queryActor: actor => {
+        try { this.person(actor) } catch {
+          try {
+            if (!this.#dependencies.assertOwnedLocalAgent) throw new Error()
+            this.synchronous(this.#dependencies.assertOwnedLocalAgent(actor))
+          } catch { throw new VaultError('UNAVAILABLE') }
+        }
+      },
+      run: action => this.run(action), withFeature: (feature, action) => this.#file.disk.withFeature(feature, action), gates: () => this.gates(),
+      feature: (signal, current) => this.feature('save', signal, current),
+      open: (cleanup, feature, entryWrite) => this.management(cleanup, feature, entryWrite),
+      revoke: (reference, reason) => this.revoke(reference, reason), protect: clear => this.protect(clear), fail: reason => this.fail(reason),
+    }))
     activeRoots.set(dependencies.root, this)
   }
   /** One fixed host-only port, never exposed through a tool, UI payload or diagnostics. */
   get outcomeAudit() { return this.#outcomes.port }
+  get managementPort(): VaultManagementPort { return this.#managementPort }
   /** Fixed host reader, never a tool/person export. Safe to call from readiness readers: no writer queue re-entry. */
   async prepareInstallationIdentity(): Promise<VaultInstallationIdentity> {
     if (this.#disposed || this.#failure) throw new VaultError('UNAVAILABLE')
@@ -96,7 +115,10 @@ export class LocalPasswordVault {
   toJSON() { return { type: 'LocalPasswordVault', status: this.state().status } }
   private person(context: object): void {
     if (this.#disposed) throw new VaultError('UNAVAILABLE')
-    try { this.#dependencies.assertLocalPerson(context) } catch { throw new VaultError('UNAVAILABLE') }
+    try { this.synchronous(this.#dependencies.assertLocalPerson(context)) } catch { throw new VaultError('UNAVAILABLE') }
+  }
+  private synchronous(value: unknown): void {
+    if (value !== undefined) { void Promise.resolve(value).catch(() => undefined); throw new VaultError('UNAVAILABLE') }
   }
   private current(epoch: string): void {
     if (this.#epoch !== epoch || this.#disposed) throw new VaultError('CANCELLED')
@@ -111,8 +133,8 @@ export class LocalPasswordVault {
     try { await this.#dependencies.assertPrivateStorageReady(); this.#file.disk.feature?.assertCurrent() }
     catch { throw new VaultError('UNAVAILABLE') }
   }
-  private feature(operation: 'save' | 'use', signal?: AbortSignal): Promise<VaultFeatureOperation> {
-    return VaultFeatureOperation.acquire(this.#acquireFeatureGuard, operation, signal ? anySignal([signal, this.#epochAbort.signal]) : this.#epochAbort.signal)
+  private feature(operation: 'save' | 'use', signal?: AbortSignal, requestCurrent?: () => unknown): Promise<VaultFeatureOperation> {
+    return VaultFeatureOperation.acquire(this.#acquireFeatureGuard, operation, signal ? anySignal([signal, this.#epochAbort.signal]) : this.#epochAbort.signal, requestCurrent)
   }
   private wipe(): void {
     const pending = this.#pending; this.#pending = undefined
@@ -193,7 +215,7 @@ export class LocalPasswordVault {
         await this.gates(); const document = await this.#file.load()
         await this.#dependencies.keys.verifyPerson(); this.current(epoch)
         key = await this.#dependencies.keys.unwrap(document.localKey, binding(document, 'local')); this.#transientKeys.add(key); this.current(epoch)
-        this.#file.payload(document, key)
+        this.#file.payload(document, key).credentials.forEach(clearCredential)
         this.#key = key; this.#document = document; this.#failure = undefined
         await this.record({ id: randomUUID(), action: 'unlock', source: 'local-person', outcome: 'completed' })
       } catch (error) { key?.fill(0); this.wipe(); throw safe(error) }
@@ -210,7 +232,7 @@ export class LocalPasswordVault {
         await this.gates(); const document = await this.#file.load()
         await this.#dependencies.keys.verifyPerson(); this.current(epoch)
         key = this.#file.recover(document, material); this.#transientKeys.add(key)
-        this.#file.payload(document, key)
+        this.#file.payload(document, key).credentials.forEach(clearCredential)
         const localKey = await this.#dependencies.keys.wrap(key, binding(document, 'local')); this.current(epoch)
         await this.#file.persist({ ...document, localKey }); this.current(epoch)
         this.#key = key; this.#document = { ...document, localKey }; this.#failure = undefined
@@ -238,7 +260,9 @@ export class LocalPasswordVault {
     this.person(context)
     return this.run(async () => {
       await this.gates(); const { key, document, epoch } = this.unlocked()
-      return this.#file.payload(document, key).credentials.map(value => ({ reference: { id: value.id, version: value.version, epoch }, origin: value.origin, maskedAccount: maskedAccount(value.account) }))
+      const payload = this.#file.payload(document, key)
+      try { return payload.credentials.map(value => ({ reference: { id: value.id, version: value.version, epoch }, origin: value.origin, maskedAccount: maskedAccount(value.account) })) }
+      finally { payload.credentials.forEach(clearCredential) }
     })
   }
   private check(reference: CredentialReference, payload: VaultPayload, managing = false) {
@@ -250,7 +274,11 @@ export class LocalPasswordVault {
     try { if (!this.#dependencies.assertOwnedLocalAgent) throw new Error(); this.#dependencies.assertOwnedLocalAgent(actor) }
     catch { return Promise.resolve({ status: 'unavailable' }) }
     return this.run(async () => {
-      try { await this.gates(); const { key, document } = this.unlocked(); this.check(reference, this.#file.payload(document, key)); return { status: 'valid', installationId: document.installationId } }
+      try {
+        await this.gates(); const { key, document } = this.unlocked(), payload = this.#file.payload(document, key)
+        try { this.check(reference, payload); return { status: 'valid', installationId: document.installationId } }
+        finally { payload.credentials.forEach(clearCredential) }
+      }
       catch (error) { return { status: safe(error).code === 'LOCKED' ? 'locked' : safe(error).code === 'STALE_REFERENCE' ? 'invalidated' : 'unavailable' } }
     })
   }
@@ -264,13 +292,25 @@ export class LocalPasswordVault {
     catch { cleanup = Promise.resolve(false) }
     return { cleanup, release: () => { const count = this.#revocations.get(id)! - 1; if (count) this.#revocations.set(id, count); else this.#revocations.delete(id) } }
   }
-  private management(cleanup: Promise<boolean>, feature?: VaultFeatureOperation): ManagementRuntime & { release(): void } {
+  private protect(clear: () => void): () => void {
+    const sensitive = { credentialId: '', clear }; this.#activeSecrets.add(sensitive)
+    return () => { clear(); this.#activeSecrets.delete(sensitive) }
+  }
+  private management(cleanup: Promise<boolean>, feature?: VaultFeatureOperation, entryWrite?: () => void): ManagementRuntime & { release(): void } {
     const { key, document, epoch } = this.unlocked(), payload = this.#file.payload(document, key)
-    const sensitive = { credentialId: '', clear() { for (const item of payload.credentials) { item.account = ''; item.password = '' } } }
+    const sensitive = { credentialId: '', clear() { payload.credentials.forEach(clearCredential) } }
     this.#activeSecrets.add(sensitive)
     const detach = feature?.onInvalidate(() => sensitive.clear()), current = () => { this.current(epoch); feature?.assertCurrent() }
     return { key, epoch, payload, cleanup, release: () => { detach?.(); sensitive.clear(); this.#activeSecrets.delete(sensitive) }, check: reference => this.check(reference, payload, true), current, record: event => this.record(event),
-      persist: async value => { current(); const next = { ...document, payload: sealedJson(key, value, binding(document, 'data')) }; await this.#file.persist(next); current(); this.#document = next } }
+      protect: value => {
+        const clear = () => clearCredential(value), release = this.protect(clear), detach = feature?.onInvalidate(clear)
+        return () => { detach?.(); release() }
+      },
+      persist: async (value, entryCommit) => {
+        current(); const next = { ...document, payload: sealedJson(key, value, binding(document, 'data')) }; current()
+        if (entryCommit) entryWrite?.()
+        await this.#file.persist(next); current(); this.#document = next
+      } }
   }
   save(context: object, operationId: string, input: { origin: string; account: string; password: string }, previous?: CredentialReference): Promise<CredentialSummary> {
     this.person(context)
@@ -339,7 +379,7 @@ export class LocalPasswordVault {
           return { account, password, signal: abort.signal,
             assertCurrent: () => { held.assertCurrent(); this.current(epoch); if (!this.#key || this.#failure || this.#revocations.has(credentialId)) throw new VaultError('LOCKED') },
             release: () => { detach(); secret.clear(); this.#activeSecrets.delete(secret) } }
-        } finally { for (const item of payload.credentials) { item.account = ''; item.password = '' } }
+        } finally { payload.credentials.forEach(clearCredential) }
       })
     }), (entry, effectPossible) => feature ? this.#file.disk.withFeature(feature, () => this.appendAudit(entry, { effectPossible })) : Promise.resolve({ status: 'unavailable', code: 'AUDIT_FAILED', retry: false, retainIsolatedLogin: true }), this.#outcomes).finally(() => feature?.release())
   }
@@ -358,7 +398,7 @@ export class LocalPasswordVault {
           const document = await this.#file.load()
           await this.#dependencies.keys.verifyPerson(); this.current(epoch)
           temporary = await this.#dependencies.keys.unwrap(document.localKey, binding(document, 'local')); this.#transientKeys.add(temporary); this.current(epoch)
-          this.#file.payload(document, temporary)
+          this.#file.payload(document, temporary).credentials.forEach(clearCredential)
           await this.#audit.clear(); this.#outcomes.clear(); this.current(epoch)
           await this.#audit.persist(this.#audit.prepare(document, temporary, this.#dependencies.accountId, { id: randomUUID(), action: 'clear', source: 'local-person', outcome: 'completed' }))
           this.current(epoch); this.#failure = undefined

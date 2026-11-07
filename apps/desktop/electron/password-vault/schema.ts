@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { domainToASCII } from 'node:url'
 import type { AuditInput } from './contracts'
 import { VaultError } from './contracts'
+import { descriptionSchema, storedFieldsSchema } from './field-model'
 
 export const RETENTION_MS = 90 * 24 * 60 * 60 * 1000
 export const uuid = z.uuid()
@@ -27,8 +28,10 @@ export const auditSchema = z.strictObject({
 export const recordSchema = auditSchema.extend({ id: uuid, at: z.iso.datetime(), accountId: identity })
 export const credentialInputSchema = z.strictObject({ origin: z.string(), account: z.string().min(1).max(4096), password: z.string().min(1).max(65536) })
 export const payloadSchema = z.strictObject({
-  operations: z.array(z.strictObject({ id: uuid, kind: z.enum(['save', 'delete']), status: z.enum(['pending', 'committed']), digest: z.string().regex(/^[a-f0-9]{64}$/), credentialId: uuid, version: z.number().int().positive(), origin, auditId: uuid })),
-  credentials: z.array(z.strictObject({ id: uuid, version: z.number().int().positive(), origin, account: z.string().min(1).max(4096), password: z.string().min(1).max(65536) })),
+  operations: z.array(z.strictObject({ id: uuid, kind: z.enum(['save', 'edit', 'delete']), status: z.enum(['pending', 'committed']), digest: z.string().regex(/^[a-f0-9]{64}$/), credentialId: uuid, version: z.number().int().positive(), origin, auditId: uuid,
+    fieldNames: z.array(z.string()).optional() })),
+  credentials: z.array(z.strictObject({ id: uuid, version: z.number().int().positive(), origin, account: z.string().min(1).max(4096), password: z.string().min(1).max(65536),
+    description: descriptionSchema.default(''), fields: storedFieldsSchema.default([]) })),
 })
 const sealedSchema = z.strictObject({ nonce: z.string(), tag: z.string(), ciphertext: z.string() })
 export const documentSchema = z.strictObject({
