@@ -12,6 +12,29 @@ const source = [fragment('a', 100), fragment('b', 200), fragment('c', 300)];
 const initial = () => projectSourceFragments([], { sourceFragments: source }, []);
 
 describe('bounded source row ownership', () => {
+  it('keeps opening history before a new live turn when it becomes committed, exactly once', () => {
+    const window = { sourceFragments: source, beforeLive: true as const };
+    const before = projectSourceFragments([], window, []);
+    const after = projectSourceFragments([canonical('new-live')], window, before);
+    const next = projectSourceFragments([canonical('new-live')], window, after);
+    for (const rows of [after, next]) {
+      expect(rows.map(row => row.itemId)).toEqual([...source.map(value => fragmentAnchor(value.key)), 'new-live']);
+      expect(rows.filter(row => row.itemId === 'new-live')).toHaveLength(1);
+    }
+  });
+
+  it('retains resolved history anchors in the prefix while a later live row remains after it', () => {
+    const window = { sourceFragments: source.slice(0, 2), beforeLive: true as const,
+      resolvedFragmentOwners: source.slice(0, 2).map(value => ({ fragmentKey: value.key, turnId: 't', itemId: 'history' })) };
+    const first = projectSourceFragments([canonical('history'), canonical('live')], window, initial());
+    const next = projectSourceFragments([canonical('history'), canonical('live')],
+      { beforeLive: true, sourceFragments: [], resolvedFragmentOwners: [] }, first);
+    for (const rows of [first, next]) {
+      expect(rows.map(row => row.itemId)).toEqual(['history', 'live']);
+      expect([...unitItemIds(rows[0])]).toEqual(['history', fragmentAnchor('a'), fragmentAnchor('b')]);
+    }
+  });
+
   it('replaces the source slot exactly once without changing canonical item identity', () => {
     const before = initial();
     const after = projectSourceFragments([canonical('real')], {

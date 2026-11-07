@@ -37,7 +37,10 @@ export const CHAT_VIEW_COMMANDS = [
  */
 export type ChatCommands = {
   /** Bounded read-only source rows; never canonical input, unread, or permission state. */
-  sourceWindow?: Pick<TimelineWindowFields, 'sourceLineage' | 'sourceFragments' | 'resolvedFragmentOwners'>;
+  sourceWindow?: Pick<TimelineWindowFields, 'sourceLineage' | 'sourceFragments' | 'resolvedFragmentOwners'> & {
+    /** An idle-fenced opening history precedes every subsequently admitted live turn. */
+    beforeLive?: true;
+  };
   /** Open the host's credit page after an authoritative credit exhaustion failure. */
   onRechargeCredits?: () => void;
   /** Retry the same durable input identity, in place. */
