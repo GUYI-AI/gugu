@@ -643,6 +643,11 @@
    live / shadow-lift 同理:引用上面按主题命名的那一份。 */
 .emdark {
   --live: var(--live-dark);
+  /* 代码编辑器(lib/codemirror/theme.ts)的四种语法色:关键字 / 字符串 / 数字与注释 / 类型。从 session/renderer/index.css 原样搬来(Radix 11 档)。 */
+  --syntax-keyword: color(display-p3 0.49 0.72 1);
+  --syntax-string: color(display-p3 1 0.57 0.55);
+  --syntax-number: color(display-p3 0.535 0.807 0.542);
+  --syntax-type: color(display-p3 0.446 0.79 0.887);
   --live-soft: color-mix(in oklab, var(--live) 14%, transparent);
   --live-fg: var(--live);
   --shadow-lift: var(--shadow-lift-dark);
@@ -668,6 +673,11 @@
 }
 .emlight {
   --live: var(--live-light);
+  /* 代码编辑器的四种语法色,见 .emdark。 */
+  --syntax-keyword: color(display-p3 0.15 0.44 0.84);
+  --syntax-string: color(display-p3 0.744 0.234 0.222);
+  --syntax-number: color(display-p3 0.263 0.488 0.261);
+  --syntax-type: color(display-p3 0.08 0.48 0.63);
   --live-soft: color-mix(in oklab, var(--live) 14%, transparent);
   --live-fg: color-mix(in oklab, var(--live) 80%, black);
   --shadow-lift: var(--shadow-lift-light);
@@ -1415,6 +1425,9 @@ body.barcode-scanner-active #root {
   --agent-tone-online: var(--ok);
   --agent-tone-removed: var(--danger);
   --agent-tone-muted: var(--faint-fg);
+  /* 版本控制里的「冲突」「已合并」:会话页 diff 视图的两种状态字,两套主题同值(从 session/renderer/index.css 搬来)。 */
+  --vcs-conflict: color(display-p3 0.9 0.45 0.2);
+  --vcs-merged: color(display-p3 0.523 0.318 0.751);
 }
 [data-theme='light'] {
   --danger-fg: #b91c1c;

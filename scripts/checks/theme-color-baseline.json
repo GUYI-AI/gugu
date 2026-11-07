@@ -6,11 +6,6 @@
   },
   {
     "rule": "hard-coded-color",
-    "file": "apps/desktop/src/session/renderer/index.css",
-    "count": 281
-  },
-  {
-    "rule": "hard-coded-color",
     "file": "packages/session-ui/src/react/components/chat-composer/composer-contract.css.ts",
     "count": 66
   },

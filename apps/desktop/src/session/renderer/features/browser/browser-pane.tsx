@@ -403,7 +403,8 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
           focusUrlRef.current = focus;
         }}
       />
-      <div className="emlight relative min-h-0 flex-1 bg-background">
+      {/* 网页区固定浅色:emlight 给会话页那套名字,data-theme="light" 让它们接到的咕咕 token 也是浅色那一套(宿主是深色时也一样)。 */}
+      <div data-theme="light" className="emlight relative min-h-0 flex-1 bg-background">
         {pageMount && isRegistered ? (
           // #7274 网页一直挂着(加载失败页、起始页都盖在它上面,❌ 代替它):换了位置、出错重试都接着用同一张,
           // 会话的 agent 也一直有页面可操作(#7191)。被这些盖住时网页自己让开(见 browser-page-occlusion.ts)。
