@@ -1,4 +1,4 @@
-import { open, stat, type FileHandle } from 'node:fs/promises';
+import { open, stat } from 'node:fs/promises';
 import { createReadStream, watch, type FSWatcher, type ReadStream } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 import { pipeline } from 'node:stream/promises';
@@ -16,8 +16,6 @@ export type TailRestartReason = 'source_replaced' | 'source_unreadable';
 export type LineSink = (lines: string[], offsets: number[]) => void;
 
 export type TailReaderEvents = {
-  /** Awaited before decoding or reusing the bounded source buffer. */
-  onBytes?(path: string, file: FileHandle, bytes: Uint8Array, position: number): Promise<void>;
   /** 新读到的**完整**行（不含结尾换行；末尾半行留在缓冲里等下一轮）。 */
   onLines(lines: string[], offsets: number[]): void;
   /** 文件被截断 / 换了 inode / 读不到了 —— 已读到的东西全部作废。 */
@@ -321,13 +319,12 @@ export class TailReader {
 
     const handle = await open(this.path, 'r');
     try {
-      const chunkSize = 64 * 1024;
+      const chunkSize = 256 * 1024;
       const buffer = Buffer.alloc(chunkSize);
       while (this.offset < info.size) {
         const want = Math.min(chunkSize, info.size - this.offset);
         const { bytesRead } = await handle.read(buffer, 0, want, this.offset);
         if (bytesRead === 0) break;
-        await this.events.onBytes?.(this.path, handle, buffer.subarray(0, bytesRead), this.offset);
         this.offset += bytesRead;
         // `text` 的第一个字符正对着文件里的 `lineOffset` 那个字节 —— 这条对齐关系是
         // lineOffset 能当续读点的全部依据，所以推进它要按**消掉的那一段的字节数**算，

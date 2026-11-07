@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, realpath, stat, type FileHandle } from 'node:fs/promises';
+import { mkdir, open, realpath, stat, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 import { readWindowFrame, syncWindowDirectory, writeWindowFrame } from './disk-frame.ts';
 import type { WindowCacheContext, WindowBudget, WindowSourceLocator, SourceSnapshot } from './types';
@@ -105,5 +105,38 @@ export function createRecordLocatorCapture(context: WindowCacheContext, harness:
     })));
     await writeSourceLocator(context.cacheDirectory, locator);
     next = end; instance = source.sourceInstance; recordStart = currentStart; previousByte = bytes.at(-1) ?? previousByte;
+  };
+}
+
+/** New capture producer: one admitted block per request, never the legacy line reader. */
+export async function createBoundedRecordCapture(context: WindowCacheContext, harness: 'claude' | 'codex', providerSessionId: string, path: string) {
+  const file = await open(path, 'r'), capture = createRecordLocatorCapture(context, harness, providerSessionId);
+  return {
+    close: () => file.close(),
+    async readNext(position: number, budget: WindowBudget, signal?: AbortSignal) {
+      signal?.throwIfAborted();
+      const source = await snapshotFor(path, file);
+      if (!Number.isSafeInteger(position) || position < 0 || position > source.size) throw new RangeError('Invalid capture cursor');
+      const length = Math.min(64 * 1024, source.size - position);
+      let bytes: Uint8Array = new Uint8Array(0), consumed = 0, failed = false, failure: unknown;
+      await budget.read('sourceBytes', length, async () => {
+        bytes = new Uint8Array(length);
+        try {
+          while (consumed < length && !signal?.aborted) {
+            const { bytesRead } = await file.read(bytes, consumed, length - consumed, position + consumed);
+            if (!bytesRead) break;
+            consumed += bytesRead;
+          }
+        } catch (error) { failed = true; failure = error; }
+        return consumed;
+      });
+      if (failed) throw failure;
+      signal?.throwIfAborted();
+      if (consumed !== length || (await snapshotFor(path, file)).snapshotRevision !== source.snapshotRevision)
+        return { kind: 'reset' as const, reason: 'source_changed' as const };
+      if (length) await capture(path, file, bytes, position);
+      signal?.throwIfAborted();
+      return { kind: 'chunk' as const, source, start: position, end: position + length, bytes };
+    },
   };
 }

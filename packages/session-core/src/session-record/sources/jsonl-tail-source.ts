@@ -8,7 +8,6 @@ import type {
 import { locateImages, readRecordImage } from './record-images';
 import { emitJsonLines, pollInterval, warnOf, type SessionRecordSourceOptions } from './shared';
 import { TailReader, type TailResume } from './tail-reader';
-import { createRecordLocatorCapture } from '../window-cache/source-locator';
 
 /**
  * 一份只追加的 JSONL 文件的尾读源(codex、copilot):找到文件 → 整份读或接着续读点读 → 尾读。
@@ -41,8 +40,6 @@ export function createJsonlTailSource<S>(
   let state = format.initial();
   let sink: SessionRecordSourceEvents | null = null;
   let stopped = false;
-  const capture = options?.windowCache && (locator.harness === 'claude' || locator.harness === 'codex')
-    ? createRecordLocatorCapture(options.windowCache, locator.harness, locator.providerSessionId) : undefined;
 
   const emit = (lines: string[], offsets: number[]) => {
     if (stopped || !sink) return;
@@ -64,7 +61,6 @@ export function createJsonlTailSource<S>(
         found,
         pollInterval(options),
         {
-          onBytes: capture,
           onLines: emit,
           onRestart: (reason) => {
             state = format.initial();

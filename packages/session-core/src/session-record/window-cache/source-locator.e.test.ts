@@ -4,8 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createWindowBudget } from './read-budget.ts';
 import { openWindowByteSource } from './file-source';
-import { createRecordLocatorCapture, readCapturedRecordStart, readSourceLocator, sourceLocatorScope } from './source-locator';
-import { TailReader } from '../sources/tail-reader';
+import { createBoundedRecordCapture, createRecordLocatorCapture, readCapturedRecordStart, readSourceLocator, sourceLocatorScope } from './source-locator';
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))); });
@@ -21,14 +20,13 @@ describe('incremental native source locators', () => {
   it('registers source and giant-record start while the raw capture blocks are consumed', async () => {
     const prefix = '{"meta":true}\n', record = '{"output":"' + 'x'.repeat(140_000) + '"}\r\n';
     const input = await fixture(prefix + record);
-    const capture = createRecordLocatorCapture(input.context, 'codex', 'thread');
-    const sizes: number[] = [], observed: unknown[] = [];
-    const reader = new TailReader(input.path, 500, {
-      async onBytes(path, file, bytes, position) { sizes.push(bytes.length); await capture(path, file, bytes, position); },
-      onLines() {}, onRestart() {},
-    }, () => {});
-    await reader.readFromStart(() => observed.push(readSourceLocator(input.context.cacheDirectory, 'codex', 'thread', createWindowBudget())));
-    await Promise.all(observed);
+    const capture = await createBoundedRecordCapture(input.context, 'codex', 'thread', input.path);
+    const sizes: number[] = [];
+    for (let position = 0; position < Buffer.byteLength(prefix + record);) {
+      const chunk = await capture.readNext(position, createWindowBudget());
+      if (chunk.kind !== 'chunk') throw new Error('Unexpected source reset');
+      sizes.push(chunk.bytes.length); position = chunk.end;
+    }
     expect(sizes).toHaveLength(3); expect(Math.max(...sizes)).toBeLessThanOrEqual(64 * 1024);
     const saved = await readSourceLocator(input.context.cacheDirectory, 'codex', 'thread', createWindowBudget());
     if (saved.kind !== 'hit') throw new Error('Expected source locator');
@@ -37,7 +35,7 @@ describe('incremental native source locators', () => {
       expect(saved.locator.source).toEqual(await source.snapshot());
       expect(await readCapturedRecordStart(input.context.cacheDirectory, 'codex', 'thread', await source.snapshot(), createWindowBudget()))
         .toMatchObject({ kind: 'hit', range: { start: Buffer.byteLength(prefix), end: Buffer.byteLength(prefix + record) - 2 } });
-    } finally { await source.close(); reader.stop(); }
+    } finally { await source.close(); await capture.close(); }
   });
 
   it('does not read source bytes while registering an already supplied raw block', async () => {
@@ -53,12 +51,10 @@ describe('incremental native source locators', () => {
 
   it('persists an unfinished record start before any complete-line callback', async () => {
     const input = await fixture('{"text":"unfinished');
-    const line = vi.fn();
-    const reader = new TailReader(input.path, 500, { onBytes: createRecordLocatorCapture(input.context, 'claude', 'active'), onLines: line, onRestart() {} }, () => {});
-    await reader.readFromStart(line);
-    expect(line).not.toHaveBeenCalled();
+    const capture = await createBoundedRecordCapture(input.context, 'claude', 'active', input.path);
+    await capture.readNext(0, createWindowBudget());
     expect(await readSourceLocator(input.context.cacheDirectory, 'claude', 'active', createWindowBudget())).toMatchObject({ kind: 'hit' });
-    reader.stop();
+    await capture.close();
   });
 
   it('keeps source metadata outside disposable projections and isolates native session ids', async () => {
