@@ -105,3 +105,10 @@ All these methods are native-only. They do not register GuguAgent, provision an
 Agent identity, issue a model lease, or make the concrete cloud/task backend ready.
 App adds `Host/GuguIOSHostLifecycle.swift` to its production compilation (ten Host
 Swift files total). There is no additional JS or resource change in this slice.
+
+An explicit continuation inherits the source task's calendar protection in the
+same durable admission transaction as its copied transcript. Its first Pi event,
+model request and later history read therefore recheck access even when the next
+turn does not call a calendar tool. This marker comes only from the native source
+job, never from renderer/model arguments. A new OS grant cannot revive a context
+that was invalidated after the transcript was copied.

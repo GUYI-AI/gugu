@@ -41,10 +41,10 @@ final class GuguInProcessHost {
     }
 
     private func start(context: GuguHostContext, prompt: String, modelId: String, systemPrompt: String,
-                       tools: [[String: Any]], messages: [[String: Any]]) throws -> [String: Any] {
+                       tools: [[String: Any]], messages: [[String: Any]], calendarProtected: Bool = false) throws -> [String: Any] {
         pendingLock.lock(); defer { pendingLock.unlock() }
         try checkCurrent(context)
-        guard try journal.admit(context, prompt: prompt, modelId: modelId, systemPrompt: systemPrompt, tools: tools, messages: messages) else {
+        guard try journal.admit(context, prompt: prompt, modelId: modelId, systemPrompt: systemPrompt, tools: tools, messages: messages, calendarProtected: calendarProtected) else {
             return ["accepted": false, "jobId": context.jobId, "status": try journal.job(context.jobId)["status"] ?? "unknown"]
         }
         runningContexts[context.jobId] = context
@@ -116,7 +116,8 @@ final class GuguInProcessHost {
             throw failure("stale_context", "Continuation must bind the same session context and a new task turn")
         }
         let messages = try journal.continuationTranscript(jobId: previousJobId)
-        return try start(context: context, prompt: prompt, modelId: modelId, systemPrompt: systemPrompt, tools: tools, messages: messages)
+        return try start(context: context, prompt: prompt, modelId: modelId, systemPrompt: systemPrompt,
+                         tools: tools, messages: messages, calendarProtected: previous["usedCalendar"] as? Bool == true)
     }
 
     func cancel(context: GuguHostContext) throws {

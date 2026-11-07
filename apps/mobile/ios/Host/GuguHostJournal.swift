@@ -107,13 +107,15 @@ final class GuguHostJournal {
         }
     }
 
-    func admit(_ context: GuguHostContext, prompt: String, modelId: String, systemPrompt: String = "", tools: [[String: Any]] = [], messages: [[String: Any]] = []) throws -> Bool {
+    func admit(_ context: GuguHostContext, prompt: String, modelId: String, systemPrompt: String = "", tools: [[String: Any]] = [], messages: [[String: Any]] = [], calendarProtected: Bool = false) throws -> Bool {
         try lock.lock(); defer { lock.unlock() }
         try validate(context)
         return try update { next in
             var jobs = next["jobs"] as? [String: [String: Any]] ?? [:]
             let binding = try Self.object(context)
-            let digest = try Self.digest(["context": binding, "prompt": prompt, "modelId": modelId, "systemPrompt": systemPrompt, "tools": tools, "messages": messages])
+            var fingerprint: [String: Any] = ["context": binding, "prompt": prompt, "modelId": modelId, "systemPrompt": systemPrompt, "tools": tools, "messages": messages]
+            if calendarProtected { fingerprint["calendarProtected"] = true }
+            let digest = try Self.digest(fingerprint)
             if let saved = jobs[context.jobId] {
                 guard saved["inputSHA256"] as? String == digest else { throw Self.failure("duplicate_conflict", "Job ID has different input or binding") }
                 return false
@@ -132,6 +134,9 @@ final class GuguHostJournal {
             jobs[context.jobId] = ["context": binding, "prompt": prompt, "modelId": modelId,
                                    "admissionSequence": sequence, "admittedAtMs": Int64(Date().timeIntervalSince1970 * 1000),
                                    "inputSHA256": digest, "status": "running", "events": [[String: Any]](), "messages": [[String: Any]]()]
+            // A native continuation carries the source data category before its
+            // first journal event or model request, even without another tool call.
+            if calendarProtected { jobs[context.jobId]?["usedCalendar"] = true }
             next["jobs"] = jobs
             return true
         }
