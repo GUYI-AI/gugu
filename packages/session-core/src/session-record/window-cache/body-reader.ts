@@ -20,7 +20,7 @@ export async function readJsonStringBodyPage(source: WindowByteSource, options: 
   const { snapshot, position, end, maxBytes, budget, signal } = options;
   if (![position.rawOffset, position.decodedOffset, end, maxBytes].every(Number.isSafeInteger) ||
     position.rawOffset < 0 || position.decodedOffset < 0 || end <= position.rawOffset || end > snapshot.size ||
-    maxBytes < 4 || maxBytes > 60 * 1024) throw new RangeError('Invalid body page position');
+    maxBytes < 4 || maxBytes > BODY_TEXT_BYTES) throw new RangeError('Invalid body page position');
   signal?.throwIfAborted();
   if (!same(snapshot, await source.snapshot())) return { kind: 'reset', reason: 'source_changed' };
   const length = Math.min(64 * 1024, end - position.rawOffset);
@@ -54,10 +54,16 @@ export async function readJsonStringBodyPage(source: WindowByteSource, options: 
     if (byte < 32) throw new SyntaxError('Unescaped JSON string control character');
     let width = 1, text: string, output: number;
     if (byte === 92) {
-      if (cursor + 2 > length) break;
+      if (cursor + 2 > length) {
+        if (position.rawOffset + length === end) throw new SyntaxError('Incomplete JSON string escape');
+        break;
+      }
       const escaped = bytes[cursor + 1];
       if (escaped === 117) {
-        if (cursor + 6 > length) break;
+        if (cursor + 6 > length) {
+          if (position.rawOffset + length === end) throw new SyntaxError('Incomplete JSON Unicode escape');
+          break;
+        }
         const high = unicode(cursor + 2);
         width = 6;
         if (high >= 0xd800 && high <= 0xdbff) {
@@ -83,7 +89,11 @@ export async function readJsonStringBodyPage(source: WindowByteSource, options: 
         const lead = bytes[span];
         const unit = lead < 128 ? 1 : lead >= 0xc2 && lead <= 0xdf ? 2 : lead >= 0xe0 && lead <= 0xef ? 3 : lead >= 0xf0 && lead <= 0xf4 ? 4 : 0;
         if (!unit) throw new SyntaxError('Invalid JSON string UTF-8');
-        if (span + unit > length || decoded + span - start + unit > maxBytes) break;
+        if (span + unit > length) {
+          if (position.rawOffset + length === end) throw new SyntaxError('Incomplete JSON string UTF-8');
+          break;
+        }
+        if (decoded + span - start + unit > maxBytes) break;
         span += unit;
       }
       if (span === start) break;
