@@ -12,6 +12,9 @@ import { readComposer, writeComposer, selectComposer } from '../../../support/co
 import type { GroupRosterCandidate } from '../../../../apps/desktop/src/lib/mention'
 // Opt-in contract for the follow-up rollout; production defaults are covered separately.
 vi.mock('../../../../apps/desktop/src/lib/messageQuoteRollout', () => ({ SELECTED_MESSAGE_QUOTES_ENABLED: true }))
+vi.mock('../../../../apps/desktop/src/components/markdown/Markdown', () => ({ Markdown: ({ content }: { content: string }) => createElement('span', null, content) }))
+const { noticeMock } = vi.hoisted(() => ({ noticeMock: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/lib/notices', () => ({ notify: noticeMock, dismissNotice: vi.fn() }))
 const { toastMock } = vi.hoisted(() => ({
   toastMock: vi.fn(),
 }))
@@ -34,7 +37,7 @@ beforeEach(() => {
   publishProjectGroupChats([], new Map(), new Map())
   mobileShellState.enabled = false
   setLocalePreference('zh-CN')
-  toastMock.mockClear()
+  toastMock.mockClear(); noticeMock.mockClear()
   harness = createReactHarness()
   container = harness.container
   vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:gugu-preview')
@@ -206,7 +209,7 @@ describe('ChatMessageComposer', () => {
     expect(container.querySelectorAll('[data-slot="composer-attachment"]')).toHaveLength(1)
     expect(URL.createObjectURL).toHaveBeenCalledTimes(2)
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:gugu-preview')
-    expect(toastMock).toHaveBeenCalledWith('发送失败：upload denied [path] [redacted token]', 'error')
+    expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: '发送失败：upload denied [path] [redacted token]', tier: 'error', key: expect.any(String) }))
     expect(sendErrorLog).toHaveBeenCalledWith(expect.objectContaining({ error: 'upload denied /Users/test/private sk-synthetic-secret\nstack detail' }), 'message send failed')
   })
   it('#2188 restores only the text when every attachment committed before the text failed', async () => {
@@ -227,7 +230,7 @@ describe('ChatMessageComposer', () => {
     expect(onSend).toHaveBeenCalledTimes(1)
     expect(readComposer(container.querySelector('[contenteditable]'))).toBe('send this text after the file')
     expect(container.querySelectorAll('[data-slot="composer-attachment"]'), 'the committed attachment must not return to the draft').toHaveLength(0)
-    expect(toastMock).toHaveBeenCalledWith('发送失败：text denied', 'error')
+    expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: '发送失败：text denied', tier: 'error', key: expect.any(String) }))
     await clickSend()
     expect(onSendAttachments, 'retry must not resend the committed attachment').toHaveBeenCalledTimes(1)
     expect(onSend).toHaveBeenCalledTimes(2)
@@ -395,7 +398,7 @@ describe('ChatMessageComposer', () => {
     await act(async () => { rejectSend(new Error('upload denied')); await Promise.resolve() })
     await flush()
     expect(chips(), 'failed send must not leak into the now-active chat-b').toHaveLength(0)
-    expect(toastMock).toHaveBeenCalledWith('发送失败：upload denied', 'error')
+    expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: '发送失败：upload denied', tier: 'error', key: expect.any(String) }))
     await harness.render(createElement(StatefulHost, { chatId: 'chat-a', onSend: vi.fn(async () => {}), onSendAttachments }))
     await flush()
     expect(chips(), 'failed send is recoverable in its original chat-a').toHaveLength(1)

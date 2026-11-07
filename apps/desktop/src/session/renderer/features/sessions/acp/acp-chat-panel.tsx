@@ -338,9 +338,10 @@ const ComposerForStore = observer(function ComposerForStore({
   // 发送等待的是上传 promise;账本必须在它 resolve 前更新,不能等 React 的下一次渲染。
   const setAttachments = useCallback((update: ComposerAttachment[] | ((prev: ComposerAttachment[]) => ComposerAttachment[])) => {
     const next = typeof update === 'function' ? update(attachmentsRef.current) : update;
+    if (next.length !== attachmentsRef.current.length || next.some((item, i) => item.id !== attachmentsRef.current[i]?.id)) store.renewDraftSubmission();
     attachmentsRef.current = next;
     setAttachmentState(next);
-  }, []);
+  }, [store]);
   // 图片与文件同一条:贴上来就放进这个 agent 私聊的文件夹,进度在 chip 上,这一轮带着引用发出去(P3)。
   const fileUploads = useComposerFileUploads({
     resumable: true,
@@ -406,12 +407,12 @@ const ComposerForStore = observer(function ComposerForStore({
         sendingRef.current = false;
       }
     },
-    [fileUploads, store, onScrollToBottom]
+    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments]
   );
 
   const handleSubmit = useCallback(
     // The store's one send entry (custody; it toasts a failure); a send that cannot be kept goes back in the draft below.
-    (value: string) => sendWhenReady(value, (text, files) => store.submitPrompt(text, [], files)),
+    (value: string) => { const id = store.draftSubmissionId; return sendWhenReady(value, (text, files) => store.submitPrompt(text, [], files, id)); },
     [store, sendWhenReady]
   );
 

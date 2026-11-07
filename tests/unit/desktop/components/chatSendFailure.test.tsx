@@ -56,3 +56,12 @@ it('a repeated failure updates one notice while another composer retains its fai
   await click('dm', 1)
   expect(notices.size).toBe(1)
 })
+
+it('an explicit new draft edit has a new message identity even when its words are identical', async () => {
+  send.mockRejectedValueOnce(new Error('first refused'))
+  await click('dm', 0); await click('dm', 1)
+  const first = (send.mock.calls[0][1] as { clientMessageId: string }).clientMessageId
+  await click('dm', 0); await click('dm', 1)
+  expect((send.mock.calls[1][1] as { clientMessageId: string }).clientMessageId).not.toBe(first)
+  expect(notices.size).toBe(1)
+})

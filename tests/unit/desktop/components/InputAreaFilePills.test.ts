@@ -9,6 +9,9 @@ import { chatStore, createReactHarness } from '../../../support/testHarness'
 import { APP_COMPOSE_EVENT, type AppComposeDetail } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 import { filePillText } from '../../../../apps/desktop/src/components/markdown/filePills'
 
+vi.mock('../../../../apps/desktop/src/components/markdown/Markdown', () => ({ Markdown: ({ content }: { content: string }) => createElement('span', null, content) }))
+const { noticeMock } = vi.hoisted(() => ({ noticeMock: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/lib/notices', () => ({ notify: noticeMock, dismissNotice: vi.fn() }))
 const { toastMock } = vi.hoisted(() => ({ toastMock: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/components/toastContext', () => ({ useToast: () => ({ toast: toastMock }) }))
 
@@ -85,7 +88,7 @@ async function draft(text: string) {
 
 beforeEach(() => {
   setLocalePreference('zh-CN')
-  toastMock.mockClear()
+  toastMock.mockClear(); noticeMock.mockClear()
   harness = createReactHarness()
   container = harness.container
 })
@@ -172,7 +175,7 @@ describe('file citations share the composer document with the words', () => {
     await send()
     expect(readComposer(textarea())).toBe(text)
     expect(pills()).toHaveLength(2)
-    expect(toastMock).toHaveBeenCalledWith('发送失败：offline', 'error')
+    expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: '发送失败：offline', tier: 'error', key: expect.any(String) }))
   })
 
   it('restores a failed send to its original chat without leaking into another draft', async () => {
