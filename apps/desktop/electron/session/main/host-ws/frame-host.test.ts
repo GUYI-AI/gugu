@@ -3,12 +3,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createSessionHostClient,
+  SESSION_HOST_CLIENT_HEARTBEAT_MS,
   type SessionHostClient,
   type SessionHostPipeOpener,
 } from '@shared/lib/ipc/session-host-client';
+import { createRemotePaneRoute } from '@main/core/session-timeline/remote-pane';
+import { installDevicePaneRelay } from './device-pane-relay';
 import { broadcastDeviceSessionHostEvent, installDeviceSessionHost, remoteInvokePolicyForCaller } from './device-session-host';
 import { FrameSessionHost, type FrameSocket, type FrameInvokePolicy } from './frame-host';
-import { HOST_WS_PROTOCOL_VERSION } from '@shared/lib/ipc/host-ws-protocol';
+import { HOST_WS_HEARTBEAT_MS, HOST_WS_PROTOCOL_VERSION } from '@shared/lib/ipc/host-ws-protocol';
+import { SESSION_HOST_PANE } from '@shared/lib/ipc/session-host-device-frames';
 import { sessionpageAgentProvisionedEvent } from '@shared/lib/ipc/sessionpage-identity-contract';
 
 function memoryLink(host: FrameSessionHost, policy?: FrameInvokePolicy) {
@@ -235,6 +239,40 @@ describe('FrameSessionHost over a device-shaped link', () => {
     await expect(client.api.invoke('app.assistantAppCall', 'callProgram', { name: 'assistant_work_clear' }, 'other')).rejects.toThrow(/No handler/);
     await expect(client.api.invoke('app.assistantAppCall', 'callProgram', { name: 'library_write' }, 'owner')).rejects.toThrow(/No handler/);
     expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  // 闲置回收靠「有没有人看着」决定停不停这条会话:看着的人闲着也不能被算没了,悄悄没了的人也不能一直算着。
+  it('an idle viewer keeps its link and keeps watching; one gone without a goodbye stops counting within two host beats', async () => {
+    vi.useFakeTimers();
+    try {
+      const host = new FrameSessionHost();
+      const route = createRemotePaneRoute();
+      installDevicePaneRelay(host, route);
+      const link = memoryLink(host, remoteInvokePolicyForCaller('owner'));
+      let opens = 0;
+      let gone = false;
+      const open: SessionHostPipeOpener = async (handlers) => {
+        opens += 1;
+        const pipe = await link.open(handlers);
+        // the viewer's process is killed: nothing it sends arrives any more, and it never closes the link
+        return { ...pipe, send: (frame, kind) => (gone ? undefined : pipe.send(frame, kind)) };
+      };
+      client = createSessionHostClient(open, { heartbeatMs: SESSION_HOST_CLIENT_HEARTBEAT_MS });
+      await client.connect();
+      await client.api.invoke(SESSION_HOST_PANE.subscribe, { subscriptionId: 'sub', sessionId: 's' });
+      expect(route.watching('s')).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(opens).toBe(1);
+      expect(client.state()).toBe('open');
+      expect(route.watching('s')).toBe(true);
+
+      gone = true;
+      await vi.advanceTimersByTimeAsync(2 * HOST_WS_HEARTBEAT_MS);
+      expect(route.watching('s')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('opens a wire transport that carries messages both ways and reports the drop', async () => {
