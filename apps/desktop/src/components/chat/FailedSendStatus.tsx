@@ -4,15 +4,15 @@ import { DropdownMenu, MenuItem } from '../ui/Menu'
 import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
 
 /** Shared failed-message disclosure, including the existing touch menu. */
-export function FailedSendStatus({ reason, label, unknown = false, onRetry, onDiscard }: {
-  reason?: string | null; label?: string; unknown?: boolean; onRetry?: () => void; onDiscard: () => void
+export function FailedSendStatus({ reason, label, onRetry, onDiscard }: {
+  reason?: string | null; label?: string; onRetry?: () => void; onDiscard: () => void
 }) {
   const { t } = useTranslation('messaging')
   const [open, setOpen] = useState(false)
   const failureReason = safeFailureLine(reason ?? '')
   const run = (action: () => void) => { setOpen(false); action() }
   return <DropdownMenu.Root open={open} onOpenChange={setOpen} modal={false}>
-    <DropdownMenu.Trigger type="button" data-testid="message-send-failed" aria-label={t(unknown ? 'message.sendStatus.unconfirmedHint' : 'message.sendStatus.failedHint')}
+    <DropdownMenu.Trigger type="button" data-testid="message-send-failed" aria-label={t('message.sendStatus.failedHint')}
       title={failureReason || undefined} className="gg-pressable"
       style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', cursor: 'pointer',
         background: 'transparent', padding: '1px 4px', borderRadius: 'var(--radius-control)', flexShrink: 0,
@@ -24,11 +24,11 @@ export function FailedSendStatus({ reason, label, unknown = false, onRetry, onDi
       </svg>
       <span className="overflow-hidden text-ellipsis">{label ?? t('message.sendStatus.failed')}</span>
     </DropdownMenu.Trigger>
-    {open && <DropdownMenu.Content data-testid="message-send-failed-menu" aria-label={t(unknown ? 'message.sendStatus.unconfirmedActions' : 'message.sendStatus.failedActions')}
+    {open && <DropdownMenu.Content data-testid="message-send-failed-menu" aria-label={t('message.sendStatus.failedActions')}
       side="top" align="end" sideOffset={4} style={{ minWidth: 96 }}>
       {failureReason && <div className="max-w-72 break-words px-3 py-2 text-[length:var(--font-body)] text-[var(--text-secondary)]">{failureReason}</div>}
       {onRetry && <MenuItem render={<button type="button" />} nativeButton data-testid="message-send-retry"
-        onClick={() => run(onRetry)} style={{ minHeight: 32, fontSize: 'var(--font-body)' }}>{t('common.retry')}</MenuItem>}
+        onClick={() => run(onRetry)} style={{ minHeight: 32, fontSize: 'var(--font-body)' }}>{t('message.sendStatus.resend')}</MenuItem>}
       <MenuItem render={<button type="button" />} nativeButton data-testid="message-send-discard" danger
         onClick={() => run(onDiscard)} style={{ minHeight: 32, fontSize: 'var(--font-body)' }}>{t('common.discard')}</MenuItem>
     </DropdownMenu.Content>}

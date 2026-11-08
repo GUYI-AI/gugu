@@ -207,21 +207,21 @@ it('offers resend and discard on a failed host row and discard on an unknown one
   await renderWithAppProviders(harness, <SessionConversation timeline={emptyAgentWatchTimeline()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
     sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={vi.fn()} pendingSends={[]} sending={false} agentWorking={false}
     onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} />, { contacts: {} });
-  // The two rows are told apart by their label: failed vs delivery unconfirmed.
-  const trigger = (label: RegExp) => [...harness.container.querySelectorAll<HTMLElement>('[data-testid="message-send-failed"]')].find(node => label.test(node.textContent ?? ''));
+  // The host rows retain durable order; both states now use the same failed-send copy.
+  const trigger = (index: number) => harness.container.querySelectorAll<HTMLButtonElement>('[data-testid="message-send-failed"]')[index]!;
   await until('both settled rows mount the shared failed-send control', () => harness.container.querySelectorAll('[data-testid="message-send-failed"]').length === 2);
-  await userEvent.click(trigger(/Send failed|发送失败/)!);
+  await userEvent.click(trigger(0));
   await until('the failed row offers both actions', () => !!document.querySelector('[data-testid="message-send-failed-menu"]'));
   expect(document.querySelector('[data-testid="message-send-discard"]')).not.toBeNull();
   await userEvent.click(document.querySelector<HTMLElement>('[data-testid="message-send-retry"]')!);
   expect(resend).toHaveBeenCalledExactlyOnceWith('phone-task', 'host-refused');
   await until('the menu closes', () => !document.querySelector('[data-testid="message-send-failed-menu"]'));
-  const unknown = trigger(/Delivery unconfirmed|未确认送达/)!;
-  expect(unknown.getAttribute('aria-label')).toBe(i18n.t('message.sendStatus.unconfirmedHint', { ns: 'messaging' }));
+  const unknown = trigger(1);
+  expect(unknown.getAttribute('aria-label')).toBe(i18n.t('message.sendStatus.failedHint', { ns: 'messaging' }));
   await userEvent.click(unknown);
   await until('the unknown row offers discard only', () => !!document.querySelector('[data-testid="message-send-failed-menu"]'));
   expect(document.querySelector('[data-testid="message-send-failed-menu"]')?.getAttribute('aria-label'))
-    .toBe(i18n.t('message.sendStatus.unconfirmedActions', { ns: 'messaging' }));
+    .toBe(i18n.t('message.sendStatus.failedActions', { ns: 'messaging' }));
   expect(document.querySelector('[data-testid="message-send-retry"]')).toBeNull();
   await userEvent.click(document.querySelector<HTMLElement>('[data-testid="message-send-discard"]')!);
   expect(discard).toHaveBeenCalledExactlyOnceWith('phone-task', 'host-unknown');
