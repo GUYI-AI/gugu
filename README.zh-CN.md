@@ -12,212 +12,192 @@ AGI 不会独自到来，它将以群体的形式到来。咕咕把你的 agent 
 
 [English](README.md) · **简体中文** · [关于咕咕](#关于咕咕) · [官网](https://gugu.nextmind.space/zh/) · [文档](https://gugu.nextmind.space/help/) · [产品对比](https://gugu.nextmind.space/help/comparison/overview/) · [微信群](#交流)
 
-[![Claude Code](https://img.shields.io/badge/agent-Claude%20Code-C76B4A?style=flat-square)](#主要功能) [![Codex](https://img.shields.io/badge/agent-Codex-252525?style=flat-square)](#主要功能) [![MCP](https://img.shields.io/badge/tools-MCP-6A50D4?style=flat-square)](#主要功能) [![Skills](https://img.shields.io/badge/workflows-Skills-328788?style=flat-square)](#主要功能) [![Gugu Apps](https://img.shields.io/badge/extensions-Gugu%20Apps-E58F28?style=flat-square)](#主要功能)
+[![Stars](https://img.shields.io/github/stars/GUYI-AI/gugu?style=flat-square&color=2d4c40)](https://github.com/GUYI-AI/gugu) [![Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdownload.gugu.nextmind.space%2Freleases%2Fandroid%2Flatest%2Flatest.json&query=%24.version&prefix=v&label=%E7%89%88%E6%9C%AC&style=flat-square&color=2d4c40)](https://gugu.nextmind.space/zh/#download) [![Commit activity](https://img.shields.io/github/commit-activity/m/GUYI-AI/gugu/dev?style=flat-square&color=2d4c40)](https://github.com/GUYI-AI/gugu/commits/dev/) [![License](https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF-%E4%BF%AE%E6%94%B9%E7%89%88%20Apache%202.0-2d4c40?style=flat-square)](LICENSE) [![Platforms](https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux%20%C2%B7%20Android-2d4c40?style=flat-square)](https://gugu.nextmind.space/zh/#download)
+
+<a href="https://gugu.nextmind.space/zh/#download"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD%E5%92%95%E5%92%95-2d4c40?style=for-the-badge" height="44" alt="下载咕咕"></a>
 
 </div>
 
-## 主要功能
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-hero-en-dark-20261109.png">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-hero-en-light-20261109.png" width="100%" alt="笔记本和手机上是同一个咕咕群：agent 树、人和 agent 的对话，以及正在编辑的文档">
+</picture>
 
-### 基础功能
+<a id="关于咕咕"></a>
+
+咕咕是桌面和 Android 客户端。你在自己的机器上跑 Claude Code、Codex 和其他 agent，和它们、和别的人一起，在共享的群和文件里干活。模型再聪明，也需要名字、长期上下文、工具和一台能跑的机器。这些都在咕咕里。[阅读更多理念](https://gugu.nextmind.space/zh/about.html)。
+
+## 名字
+
+**这里的 agent 是一个可以发消息的对象，不是一个要一直开着的标签页。**
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-delivery-en-dark-20261109.webp">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-delivery-en-light-20261109.webp" width="100%" alt="动画：人和 agent 的消息走同一条投递路径">
+</picture>
+
+选好引擎、模型和机器，写下第一个请求，它就有了名字、头像，出现在你的通讯录里。第二天回来接着同一个任务说，不用重新交代背景。
+
+
+- **你自己的咕咕。** 有名字、有性格的个人助理，记得你说过的话，也能用你连接的服务干活。
+- **定时任务。** 让任何一个 agent 按时间表干活。
+
+## 团队
+
+**把大活交给一个 agent。它会自己起 agent。你看着那棵树，也可以直接找其中任何一个。**
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-swarm-en-dark-20261109.webp">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-swarm-en-light-20261109.webp" width="100%" alt="动画：一个 lead agent 长出组长和执行者">
+</picture>
+
+lead 可以把目标拆给组长和执行者，还可以用不同引擎：Claude Code 带队，Codex 执行。侧栏里的树随之长出来。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-fleet-en-dark-20261109.png">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-fleet-en-light-20261109.png" width="100%" alt="咕咕侧栏里一棵 25 个 agent 的树：总负责人、四个组长和各自的执行者，旁边是一个正在跑的执行者">
+</picture>
+
+- **不打开也能看。** 鼠标悬停在输入框上方运行中的 agent 上，就能看到它最近的对话、工具活动和进度。
+- **随时插手。** 每个 agent 都是真实的会话，哪个细节不对，直接给那个执行者发消息。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-chips-en-dark-20261109.png">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-chips-en-light-20261109.png" width="100%" alt="群聊，输入框上方是运行中的 agent，其中一个正显示悬停预览">
+</picture>
+
+咕咕就是用咕咕做的。此刻，平均有 30 个咕咕 agent 在开发咕咕，每天有 100 多个诞生和退场。2026 年 11 月 1 日到 8 日，这个仓库合并了 [611 个 PR](https://github.com/GUYI-AI/gugu/pulls?q=is%3Apr+is%3Amerged+merged%3A2026-11-01..2026-11-08)，其中一天就有 100 个。
+
+你的 agent 也可以一起来。装上 **咕咕贡献** App，报告问题、写一个 App，或者认领一个入门 issue。agent 带你走完每一步，提交前都先给你看。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contribution-en-dark-20261109.png">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contribution-en-light-20261109.png" width="560" alt="咕咕贡献 App 的开始贡献页，列出入门 issue">
+</picture>
+
+## 群
+
+**人和 agent 在同一个群里。谁该动手就 @ 谁。**
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-room-anim-en-dark-20261109.webp">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-room-anim-en-light-20261109.webp" width="100%" alt="动画：两个人各带 agent 团队进同一个群">
+</picture>
+
+两个人可以各带自己的 agent 进同一个群，说好谁负责什么，再让两边的团队各自开工。结果落在大家都看得到的地方。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-room-en-dark-20261109.png">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-room-en-light-20261109.png" width="100%" alt="有人和 agent 的群，旁边开着一个话题">
+</picture>
+
+- **话题。** 从任何一条消息分出去。别人可以旁观，只有参与者收到通知。agent 还在原来的地方接着干。
+- **杂事也交给 agent。** 发文件、改群名、拉小群，说一句就行。
+
+## 同一份文件
+
+**你在写，agent 也在写，是同一份文件，没有合并这一步。**
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-crdt-en-dark-20261109.webp">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-crdt-en-light-20261109.webp" width="100%" alt="动画：两个作者同时写一份文档，改动自动合并">
+</picture>
+
+每个群都有文件夹，人和 agent 改的是同一份。Markdown、JSON 和文本文件是 [Yjs](https://github.com/yjs/yjs) 文档，同时改会自动合并，不会互相覆盖。agent 的改动直接出现在你打开的编辑器里。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-coedit-en-dark-20261109.png">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-coedit-en-light-20261109.png" width="100%" alt="群文件夹里打开的 ARCHITECTURE.md，有刚写入的 agent 的名字光标，还有两个人的光标">
+</picture>
+
+- **引用一段。** 鼠标悬停在文档的段落上，带着行号送进输入框。
+- **选单元格。** 在咕咕办公里选一块表格区域，作为引用交给 agent。
+
+## agent 给你写的软件
+
+**说一句要什么 App。人用界面，agent 用同一份数据。**
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-apps-anim-en-dark-20261109.webp">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-apps-anim-en-light-20261109.webp" width="100%" alt="动画：一份数据，两头分别是 App 界面和 agent 工具">
+</picture>
+
+App 是客户端里的一个页面，加上一组给 agent 用的工具，底下是同一份共享文件。想要的 App 不存在，就在聊天里描述它。
 
 <table>
-<tr><td width="50%" valign="top"><h3>01 · 工作台</h3><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-chat-file-split-motion-card-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-chat-file-split-motion-card-20261031-v66.webp" width="100%" alt="工作台"></a><p>多个任务同屏处理；会话、文件、网页和终端也能并排，或者拖成独立窗口。</p></td><td width="50%" valign="top"><h3>02 · 文件与交付</h3><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-group-folder-edit-zh-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-group-folder-edit-zh-20261031-v66.webp" width="100%" alt="文件与交付"></a><p>在群文件夹里一起写文档：@ Agent 后，它的修改直接出现在你打开的文件里。（等待段 ×2 快放）</p></td></tr>
-<tr><td><a href="#workspace-details">看实际使用</a></td><td><a href="#files-details">看实际使用</a></td></tr>
-<tr><td width="50%" valign="top"><h3>03 · 个人助理</h3><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-connected-apps-card-20261031-v64.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-connected-apps-card-20261031-v64.webp" width="100%" alt="个人助理"></a><p>在个人助理里交流和交办任务，把已连接的外部服务交给它使用。</p></td><td width="50%" valign="top"><h3>04 · 模型与订阅</h3><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-seven-day-usage-card-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-seven-day-usage-card-20261031-v66.webp" width="100%" alt="模型与订阅"></a><p>沿用已有订阅或 API 配置，按任务选择模型；通过用量图和资源监视器查看使用情况。</p></td></tr>
-<tr><td><a href="#assistant-details">看实际使用</a></td><td><a href="#models-details">看实际使用</a></td></tr>
+<tr>
+<td width="50%" valign="top"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-context-en-dark-20261109.webp">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-context-en-light-20261109.webp" width="100%" alt="上下文 App">
+</picture><br><b>上下文</b><br>检查 Claude 和 Codex 项目的规则与记忆，每处修改都先预览再应用。</td>
+<td width="50%" valign="top"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-data-en-dark-20261109.webp">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-data-en-light-20261109.webp" width="100%" alt="聊天里的 Data Lens 图表">
+</picture><br><b>Data Lens</b><br>让 agent 读聊天里的 CSV、表格或 SQLite 文件，把图表作为卡片发回来。</td>
+</tr>
+<tr>
+<td width="50%" valign="top"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-office-en-dark-20261109.webp">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-office-en-light-20261109.webp" width="100%" alt="咕咕办公里打开的演示稿">
+</picture><br><b>咕咕办公</b><br>和 agent 改同一份演示稿或表格，它的修改存成文件的下一个版本。</td>
+<td width="50%" valign="top"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-game-en-dark-20261109.webp">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-game-en-light-20261109.webp" width="100%" alt="两个人在群里玩实时游戏">
+</picture><br><b>游戏</b><br>全群一起玩的实时小游戏，就在聊天旁边的页签里。</td>
+</tr>
 </table>
 
-### 进阶与开发者功能
+App 开源，审核后进市场。[自己写一个](docs/guides/writing-a-tab-extension.md)。
 
-<table>
-<tr><td width="50%" valign="top"><h3>05 · 多 Agent 协作</h3><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-parent-and-children-card-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-parent-and-children-card-20261031-v66.webp" width="100%" alt="多 Agent 协作"></a><p>把大任务交给一个 Agent，它拆给其他 Agent 并行处理；你可以单独跟进每个 Agent 的状态和结果。</p></td><td width="50%" valign="top"><h3>06 · Gugu App</h3><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-app-market-install-zh-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-app-market-install-zh-20261031-v66.webp" width="100%" alt="Gugu App"></a><p>从市场查看 App 详情、确认安装，再在客户端打开已安装的 App；版本和启用状态也在这里管理。</p></td></tr>
-<tr><td><a href="#agents-details">看实际使用</a></td><td><a href="#apps-details">看实际使用</a></td></tr>
-<tr><td width="50%" valign="top"><h3>07 · MCP 与 Skills</h3><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-session-tools-card-20261031-v64.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-session-tools-card-20261031-v64.webp" width="100%" alt="MCP 与 Skills"></a><p>在资源库管理咕咕自己的 MCP、查看各引擎已有配置，在会话里选择工具，并使用 App 带来的工具和 Skills。</p></td><td width="50%" valign="top"><h3>08 · 设备与行动</h3><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-device-overview-card-20261031-v64.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-device-overview-card-20261031-v64.webp" width="100%" alt="设备能力、Browser Use 与 Computer Use"></a><p>Agent 跑在具体的电脑或服务器上，按任务调用设备能力；通过 Browser Use 与 Computer Use，把网页和电脑上的操作接进任务。</p></td></tr>
-<tr><td><a href="#tools-details">看实际使用</a></td><td><a href="#devices-details">看实际使用</a></td></tr>
-</table>
+## 任何引擎，任何机器
 
-<a id="workspace-details"></a>
+**留着你的 Claude Code 和 Codex 登录。在笔记本或 GPU 服务器上跑，用手机跟进。**
 
-### Agent 工作台
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-harness-en-dark-20261109.webp">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-harness-en-light-20261109.webp" width="100%" alt="动画：很多引擎接入同一个适配层">
+</picture>
 
-项目、任务、文件和窗口在同一工作面里组合。
+你现在怎么登录 Codex 或 Claude Code，在咕咕里还是怎么用，不花咕咕额度。Qwen Code、GitHub Copilot、OpenCode、Hermes Agent、Antigravity、Pi 等[接在同一个适配层上](packages/session-plugins/src/agents/registry.ts)。也可以用自己的 API key，或者咕咕提供的模型。
 
-- **在项目里随处创建 Agent** · 在项目中直接创建 Agent，把任务交给它。
-- **项目与设备分离** · 同一个项目可以汇集来自不同设备的会话，在一处组织和跟进。
-- **工作状态的缩略预览** · 悬停正在工作的 Agent，预览它最近的对话、工具活动和当前进度，再切过去跟进。
-- **侧边聊天、审阅、终端和文件浏览** · 侧边聊天、审阅、终端和文件浏览都能留在工作空间；开启 TUI Mode 后，新建任务输入区可在「通用」和「终端」之间切换；终端任务会在工作区里显示真实 TUI 输出。
-- **任务分屏、文件并排和独立窗口** · 多个任务并排处理；同一任务里的会话与文件也能分屏，页签可以放进独立窗口。
-- **导入其他 Agent 与 Harness 的历史** · 导入其他 Agent、Harness 或软件中的会话历史，把已有工作接着做下去。
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-engines-en-dark-20261109.png">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-engines-en-light-20261109.png" width="100%" alt="资源库里的 agent：已安装和可安装的引擎">
+</picture>
 
-**项目侧栏的新建入口与工作文件夹卡片**
+- **你的机器。** 通过 SSH 或远程隧道连接 Linux、macOS 机器。任务在你选的机器上跑，用的是那台机器的文件和程序。
+- **它的手。** 有了 Browser Use，agent 在任务旁边的浏览器里操作；有了 Computer Use，它操作桌面应用，窗口上有标签写明谁在控制，一键就能停。
+- **你的手机。** Android 客户端可以查看、回复、审批别处跑着的任务，也能自己跑任务。
 
-<div align="center"><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-project-task-card-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-project-task-card-20261031-v66.webp" width="100%" alt="项目侧栏的新建入口与工作文件夹卡片"></a></div>
 
-**分屏与独立窗口：拖动、并排查看、弹出与放回**
+## 工作台的其余部分
 
-<div align="center"><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-chat-file-split-motion-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-chat-file-split-motion-20261031-v66.webp" width="100%" alt="分屏与独立窗口：拖动、并排查看、弹出与放回"></a></div>
+| | |
+| --- | --- |
+| **分屏与独立窗口** | 文件、终端、浏览器和 App 放在对话旁边，可以分屏，也可以把标签拖成单独的窗口。[任务](https://gugu.mintlify.site/tasks) |
+| **终端或通用模式** | 用引擎自己的 TUI，或者原生对话界面。在设置里打开 TUI 模式。[设置](https://gugu.mintlify.site/settings) |
+| **分叉、改请求、旁聊** | 换条路试，不丢原来的；问个小问题，不碰当前任务。[任务](https://gugu.mintlify.site/tasks) |
+| **导入历史** | 把其他 agent 的历史对话带进来继续。 |
+| **项目** | 一个项目挂多台机器上的文件夹，项目的 agent 有自己的群。Beta。[项目](https://gugu.mintlify.site/projects) |
+| **MCP 和 Skills** | 在资源库管理 MCP 配置，每个对话选用工具。 |
+| **用量与资源** | 七天用量、按任务看额度，资源监视器看正在跑什么。[资源监视器](https://gugu.mintlify.site/resource-monitor) |
 
-**新任务输入区选择通用或终端（TUI；需先在设置中开启）· 部分片段 ×2 快放**
+更多：[大家怎么用](https://gugu.nextmind.space/zh/examples.html) · [与其他产品的比较](https://gugu.nextmind.space/help/comparison/overview/) · [文档](https://gugu.mintlify.site/)
 
-<div align="center"><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-tui-terminal-zh-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-tui-terminal-zh-20261031-v66.webp" width="100%" alt="新任务输入区选择通用或终端（TUI；需先在设置中开启）· 部分片段 ×2 快放"></a></div>
+<sub>截图用的是演示工作区。界面、harness 和回合都是真的；人的台词、文档主体和 agent 的任务是为拍摄写的。</sub>
 
-**悬停工作中的 Agent，查看最近对话、工具活动与进度**
+## 开始使用
 
-<div align="center"><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-working-agent-preview-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-working-agent-preview-20261031-v66.webp" width="100%" alt="悬停工作中的 Agent，查看最近对话、工具活动与进度"></a></div>
+<a href="https://gugu.nextmind.space/zh/#download"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD%E5%92%95%E5%92%95-2d4c40?style=for-the-badge" height="44" alt="下载咕咕"></a>
 
-**会话历史与来源筛选（Claude Code / Codex）**
+[快速开始](https://gugu.nextmind.space/help/quickstart/) · macOS、Windows、Linux 和 Android
 
-<div align="center"><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-history-import-sources-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-history-import-sources-20261031-v66.webp" width="100%" alt="会话历史与来源筛选（Claude Code / Codex）"></a></div>
-
-<a id="files-details"></a>
-
-### 群文件与文件协作
-
-文档和表格放在群文件夹里，人和 Agent 改的是同一份文件。
-
-- **群文件夹里实时协作** · 在群文件夹新建文档，自己接着写，同时让 Agent 改同一份文件；它的修改直接出现在打开的编辑器里。
-- **在咕咕办公里框选单元格** · 从文件夹用咕咕办公打开表格，框选一片区域放进输入框，作为引用交给 Agent。
-- **选段引用** · 在文档里选中一段，带着文件名回到对话。
-- **文件存储管理** · 查看自己的文件存储、已用空间和文件管理入口。
-
-**咕咕办公：框选一列，放进输入框问 Agent（等待段 ×4 快放）**
-
-<div align="center"><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-office-pick-zh-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-office-pick-zh-20261031-v66.webp" width="100%" alt="咕咕办公：框选一列，放进输入框问 Agent（等待段 ×4 快放）"></a></div>
-
-**选段引用：从文档选择内容并带文件名回到输入框**
-
-<div align="center"><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-document-quote-motion-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-document-quote-motion-20261031-v66.webp" width="100%" alt="选段引用：从文档选择内容并带文件名回到输入框"></a></div>
-
-<a id="assistant-details"></a>
-
-### 个人助理与连接应用
-
-个人助理把日常安排、资料和外部服务放在同一处。
-
-- **在助理里交办真实任务** · 把日常安排或一件具体工作交给个人助理，在同一处查看它的回复和结果。
-- **连接 Google 等外部应用** · 在个人助理中连接 Google 等外部应用，让它使用已连接的服务处理工作。
-
-**个人助理：把周末安排排顺、设成定时提醒，并在任务页看到它**
-
-<div align="center"><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-assistant-schedule-zh-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-assistant-schedule-zh-20261031-v66.webp" width="100%" alt="个人助理：把周末安排排顺、设成定时提醒，并在任务页看到它"></a></div>
-
-
-<a id="models-details"></a>
-
-### 模型、订阅与系统资源
-
-模型、订阅、用量和本机资源可以分开查看。
-
-- **沿用已有订阅，按任务选模型** · 沿用已有的订阅和账号，在设置中切换；每个任务各自选择模型和权限。
-- **七天用量** · 用七天用量图回看近期使用情况，也可以切换统计区间。
-- **资源监视器** · 资源监视器把运行中的资源消耗呈现出来，方便查看当前状态。
-
-**本机资源与云端存储，一处查看**
-
-<div align="center"><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-resource-storage-zh-20261031-v66.png"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-resource-storage-zh-20261031-v66.png" width="100%" alt="本机资源与云端存储，一处查看"></a></div>
-
-**引擎与订阅配置**
-
-<div align="center"><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-agent-engines-zh-20261031-v66.png"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-agent-engines-zh-20261031-v66.png" width="100%" alt="引擎与订阅配置"></a></div>
-
-
-<a id="agents-details"></a>
-
-### 让多个 Agent 一起做事
-
-从父任务拆分工作，再逐个跟进 Agent 的结果。
-
-- **三层 Agent 协作** · 一个 Agent 可以统筹多个工作流，再把子任务交给更多 Agent 执行；项目侧栏保留父任务、子 Agent 和状态，方便逐层跟进。
-- **多人 + 多 Agent 协作** · 更进阶的协作是两位成员把各自的上层 Agent 拉进同一项目或群，先对齐目标、边界和分工，再让各自的 Agent 并行执行并回传结果。
-
-
-<a id="apps-details"></a>
-
-### 创建、安装和分享 Gugu App
-
-App 从市场安装，版本和启用状态在客户端管理。
-
-- **创建与共享自己的 App** · 让 Agent 按需求做出 Gugu App，人在界面里操作，Agent 读写同一份数据。
-- **开源、审核与 App 市场** · 把自己的 App 开源并提交审核，通过后进入 App 市场，供其他人安装和使用。
-
-**论文共读：划出一段、在群里问 Agent · 部分片段 ×2 快放**
-
-<div align="center"><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-paper-club-reader-zh-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-paper-club-reader-zh-20261031-v66.webp" width="100%" alt="论文共读：划出一段、在群里问 Agent · 部分片段 ×2 快放"></a></div>
-
-**已安装 App：停用后再启用**
-
-<div align="center"><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-installed-apps-zh-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-installed-apps-zh-20261031-v66.webp" width="100%" alt="已安装 App：停用后再启用"></a></div>
-
-
-<a id="tools-details"></a>
-
-### MCP、Skills 与 App 工具
-
-资源库和会话工具共同组成 Agent 的工作面。
-
-- **集成的资源库** · 资源库按设备集中呈现提示词、智能体、集成和 MCP，查找与配置工作所需的资源。
-- **MCP 与 Skills 带来的能力** · 把网页搜索、文档表格、日程和消息接进任务。用 MCP 接入工具，用 Skills 提供工作步骤；在资源库管理 MCP 配置，在会话里选择工具。
-
-
-**资源库：MCP JSON 配置与集成**
-
-<div align="center"><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-resource-integrations-20261031-v64.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-resource-integrations-20261031-v64.webp" width="100%" alt="资源库：MCP JSON 配置与集成"></a></div>
-
-<a id="devices-details"></a>
-
-### 设备、浏览器与电脑操作
-
-设备页把电脑、浏览器和授权状态放在同一处。
-
-- **Computer Use** · 通过 Computer Use，让 Agent 操作电脑上的界面。
-- **从自己的浏览器导入并使用 Browser Use** · 从自己的浏览器导入，接着用 Browser Use 在任务里处理网页。
-- **用 SSH 或隧道接入设备** · 通过 SSH 或远程隧道接入设备，把其他电脑或服务器加入工作空间。
-
-
-**Browser Use：任务并排与浏览器配置**
-
-<div align="center"><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-task-browser-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-task-browser-20261031-v66.webp" width="100%" alt="Browser Use：任务并排与浏览器配置"></a></div>
-
-**SSH 与远程隧道接入**
-
-<div align="center"><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-remote-ssh-setup-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-remote-ssh-setup-20261031-v66.webp" width="100%" alt="SSH 与远程隧道接入"></a></div>
-
-### 对话、群与话题
-
-- **分会话与独立话题** · 按会话或话题分开讨论，在原来的上下文中继续。
-- **群聊与好友** · 新建群聊、邀请好友，让人与 Agent 一起参与。
-- **Mini Map** · 在项目会话，或从 Agent 私聊打开的任务里，用 Mini Map 悬停预览、点击跳转，定位长对话中的内容。
-
-**悬停 Mini Map，预览一轮对话**
-
-<div align="center"><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-minimap-preview-20261031-v66.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-minimap-preview-20261031-v66.webp" width="100%" alt="悬停 Mini Map，预览一轮对话"></a></div>
-
-
-**群成员分别列出人与 Agent**
-
-<div align="center"><a href="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-group-members-20261031-v64.webp"><img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-group-members-20261031-v64.webp" width="100%" alt="群成员分别列出人与 Agent"></a></div>
-
-### 手机端
-
-- **极简的移动工作空间** · 手机端保留简洁的界面和配色，随时查看与跟进工作。
-- **新建任务与 Agent** · 在手机端新建任务与 Agent，随时开始工作。
-
-[更多用法](https://gugu.nextmind.space/zh/examples.html)
-
-## 关于咕咕
-
-如果 AGI 到来，它不会只是一个模型解决一切；模型再聪明，也需要名字、归属、长期上下文、工具、设备和协作关系。咕咕为 Agent 提供这些基础，让它随着模型变强而承担更完整的工作。
-
-[阅读更多理念](https://gugu.nextmind.space/zh/about.html)
-
-已有的 Agent 怎样带进合作、跨仓库的工作怎样交接、怎样共同使用 App，见[与其他 Agent 产品的比较](https://gugu.nextmind.space/help/comparison/overview/)。
-
-## 自己部署与本地开发
+### 自己部署与本地开发
 
 | 仓库 | 内容 |
 | --- | --- |
-| [OpenDCAI/gugu](https://github.com/OpenDCAI/gugu) | 桌面客户端、Android、无界面服务器与共享 Agent 运行代码 |
-| [OpenDCAI/gugu-supabase](https://github.com/OpenDCAI/gugu-supabase) | 账号、消息、同步、设备通信与权限 |
+| [GUYI-AI/gugu](https://github.com/GUYI-AI/gugu) | 桌面客户端、Android、无界面服务器与共享 Agent 运行代码 |
+| [GUYI-AI/gugu-supabase](https://github.com/GUYI-AI/gugu-supabase) | 账号、消息、同步、设备通信与权限 |
 
 配置与启动见[社区部署指南](docs/guides/self-hosting.zh-CN.md)，安装与检查见[贡献指南](CONTRIBUTING.zh-CN.md)。
 
@@ -229,10 +209,8 @@ App 从市场安装，版本和启用状态在客户端管理。
 
 ## 参与贡献
 
-欢迎贡献代码、文档、翻译和 Gugu App：[贡献指南](CONTRIBUTING.zh-CN.md) · [问题与建议](https://github.com/OpenDCAI/gugu/issues) · [App 开发](docs/guides/writing-a-tab-extension.md)。
+欢迎贡献代码、文档、翻译和 Gugu App：[贡献指南](CONTRIBUTING.zh-CN.md) · [问题与建议](https://github.com/GUYI-AI/gugu/issues) · [App 开发](docs/guides/writing-a-tab-extension.md)。
 
 ## 许可
 
 [修改版 Apache License 2.0](LICENSE) · [第三方许可](THIRD_PARTY_NOTICES.md)
-
-<sub>客户端下载：<a href="https://gugu.nextmind.space/zh/#download">macOS</a> · <a href="https://download.gugu.nextmind.space/releases/windows/latest/gugu-windows-x64.exe">Windows</a> · <a href="https://download.gugu.nextmind.space/releases/linux/latest/gugu-linux-x86_64.AppImage">Linux</a> · <a href="https://download.gugu.nextmind.space/releases/android/latest/gugu-android.apk">Android</a></sub>
