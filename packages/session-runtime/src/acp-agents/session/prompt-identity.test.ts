@@ -5,7 +5,7 @@ import { noopLogger } from '@gugu/session-shared/logger';
 import { SessionCell } from './cell';
 
 const users = (history: ReturnType<SessionCell['history']>) => [...history.committed, ...(history.active ? [history.active] : [])]
-  .flatMap(turn => turn.items.filter(item => item.kind === 'message' && item.role === 'user'));
+  .flatMap(turn => turn.items.filter((item): item is Extract<typeof item, { kind: 'message' }> => item.kind === 'message' && item.role === 'user'));
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 
 function fixture() {
