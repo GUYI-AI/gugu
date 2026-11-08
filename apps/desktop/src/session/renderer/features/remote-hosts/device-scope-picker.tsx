@@ -55,6 +55,9 @@ export const DeviceScopePicker = observer(function DeviceScopePicker({
       onSelect={(deviceId) => store.select(deviceId)}
       onAddMachine={remoteHostsStore.canAddMachine ? () => remoteHostsStore.openAddMachine() : undefined}
       offlineSelectable
+      // Every place this picker is used shows DeviceScopeStatus in the same heading (module title, library sub-page
+      // title, settings group title).
+      stateInHeading
       variant={variant}
     />
   );

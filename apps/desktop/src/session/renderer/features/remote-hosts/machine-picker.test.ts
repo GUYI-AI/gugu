@@ -180,6 +180,19 @@ describe('机器选择器:一个组件、一个位置(#6264)', () => {
     expect(trigger.querySelector('[data-slot="machine-offline"]')?.textContent).toBe('离线');
   });
 
+  it('标题里已经说了连接状态(stateInHeading):触发器不再画点和「离线」,菜单里照旧', async () => {
+    await render(
+      React.createElement(MachinePicker, { machines, selectedId: 'linux1', onSelect: () => {}, offlineSelectable: true, stateInHeading: true })
+    );
+    const trigger = container.querySelector('[data-testid="machine-picker"]') as HTMLButtonElement;
+    expect(trigger.querySelector('[data-slot="machine-dot"]')).toBeNull();
+    expect(trigger.querySelector('[data-slot="machine-offline"]')).toBeNull();
+    expect(trigger.textContent).toContain('Linux 1');
+    const row = container.querySelector('[data-device-id="linux1"]') as HTMLButtonElement;
+    expect(row.querySelector('[data-slot="machine-dot"]')?.getAttribute('data-state')).toBe('offline');
+    expect(row.textContent).toMatch(/离线 · /);
+  });
+
   it('菜单:每行图标、(别的机器)点、名字,右边「系统 · 连法」;选中的那行标出来;离线的淡着(能选与否看页面)', async () => {
     const onSelect = vi.fn();
     await render(React.createElement(MachinePicker, { machines, selectedId: 'd22', onSelect, offlineSelectable: true }));
