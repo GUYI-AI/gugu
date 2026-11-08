@@ -49,7 +49,7 @@ import { changeRejectedSessionInput, deleteQueuedSessionInput, editQueuedSession
 import type { SessionInput } from '@/lib/sessionInputOutbox';
 import { sessionSendQueueOrder } from '@/lib/sessionSendQueueOrder';
 import { projectSessionPendingInput } from '@/lib/pendingSessionInput';
-import { isTranscriptDelivery, loadPendingDeliveryHistory, projectSessionPendingDeliveries } from '@/lib/pendingSessionDeliveries';
+import { isTranscriptDelivery, loadPendingDeliveryHistory, projectSessionPendingDeliveries, settledHostRow } from '@/lib/pendingSessionDeliveries';
 import { batch } from 'solid-js';
 import { AcpLiveSession, AcpStartError, asValueSource } from '@renderer/lib/acp/acp-live-session';
 import { attachAcpSessionWhenReady } from '@renderer/lib/acp/acp-session-attachment';
@@ -692,8 +692,14 @@ export class AcpChatStore {
     return queuedSessionInputs(this.runtimeSessionId).some(input => input.id === itemId && input.admission === 'rejected');
   }
 
+  /** A failed send, the sender's refusal or the host's settled row, can be let go. */
+  canDiscardSend(itemId: string): boolean {
+    return this.isRejectedInput(itemId) || settledHostRow(sessionLifeView(this.runtimeSessionId), itemId);
+  }
+
   discardRejectedInput(itemId: string): void {
-    void changeRejectedSessionInput(itemId, { kind: 'discard' }).catch(error => this._toastError('acpFailure.sendMessage', error));
+    const discard = this.isRejectedInput(itemId) ? changeRejectedSessionInput(itemId, { kind: 'discard' }) : discardSessionLifeRow(this.runtimeSessionId, itemId);
+    void discard.catch(error => this._toastError('acpFailure.sendMessage', error));
   }
 
   beginMessageEdit(itemId: string): void {
@@ -1129,10 +1135,11 @@ export class AcpChatStore {
   }
 
   retryPendingInput(itemId?: string): void {
-    if (itemId && this.chatState.session.state.pendingMessages.some(input => input.id === itemId && input.delivery?.state === 'unknown')) {
-      if (sessionLifeView(this.runtimeSessionId)?.pending.items.some(row => row.messageId === itemId && row.resendable)) void retryUnknownSessionInput(this.runtimeSessionId, itemId).catch(error => this._toastError('acpFailure.sendMessage', error));
+    if (itemId && sessionLifeView(this.runtimeSessionId)?.pending.items.some(row => row.messageId === itemId && row.resendable)) {
+      void retryUnknownSessionInput(this.runtimeSessionId, itemId).catch(error => this._toastError('acpFailure.sendMessage', error));
       return;
     }
+    if (itemId && this.chatState.session.state.pendingMessages.some(input => input.id === itemId && input.delivery?.state === 'unknown')) return;
     if (itemId && this.isRejectedInput(itemId)) {
       void changeRejectedSessionInput(itemId, { kind: 'retry' }).catch(error => this._toastError('acpFailure.sendMessage', error));
       return;

@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const io = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), error: vi.fn() }))
-vi.mock('@gugu/core/cloud/userSettings', () => ({ readUserSettingsConfig: io.read, writeUserSettingsConfig: io.write }))
+const io = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), update: vi.fn(), error: vi.fn() }))
+vi.mock('@gugu/core/cloud/userSettings', () => ({ readUserSettingsConfig: io.read, updateUserSettingsConfig: io.update }))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ identityDb: {} }))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ error: io.error }) }))
 const { parseSampleProject, readSampleProjectShown, enrollSampleProject, subscribeSampleProject } = await import('../../../../apps/desktop/src/lib/sampleProject')
 
-beforeEach(() => vi.resetAllMocks())
+beforeEach(() => {
+  vi.resetAllMocks()
+  io.update.mockImplementation(async (client, userId, scope, edit) => {
+    await io.write(client, userId, scope, edit(await io.read()))
+  })
+})
 
 describe('account-scoped sample project key', () => {
   it('does not show the sample to accounts that never left the new intro', async () => {
@@ -71,7 +76,7 @@ describe('account-scoped sample project key', () => {
     await expect(enrollSampleProject('owner-1')).resolves.toBeUndefined()
     io.read.mockResolvedValueOnce({ sampleProject: { version: 9 } })
     await expect(enrollSampleProject('owner-1')).resolves.toBeUndefined()
-    io.read.mockResolvedValueOnce({})
+    io.read.mockResolvedValue({})
     io.write.mockRejectedValueOnce(new Error('permission denied'))
     await expect(enrollSampleProject('owner-1')).resolves.toBeUndefined()
     stop()

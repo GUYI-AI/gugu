@@ -502,15 +502,19 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     entry.history = { pages, index: history.index };
   }
 
-  navigate(tabId: string, kind: string, state: unknown): void {
+  /** `viewState`: where the new page shows, set with it: leaving this page can take a while (`onBeforeClose`). */
+  navigate(tabId: string, kind: string, state: unknown, viewState?: Record<string, unknown>): void {
     const entry = this.entries.get(tabId);
     const history = this.navigationOf(tabId);
     if (!entry || !history || !this.registry.has(kind)) return;
-    if (entry.kind === kind && this.registry.get(kind).resourceKey(entry.state as never) === this.registry.get(kind).resourceKey(state as never)) return;
+    if (entry.kind === kind && this.registry.get(kind).resourceKey(entry.state as never) === this.registry.get(kind).resourceKey(state as never)) {
+      if (viewState) this.setPageViewState(tabId, viewState);
+      return;
+    }
     this._beforeNavigate(entry, () => {
       const pages = history.pages.slice(0, history.index + 1);
       pages[history.index] = { ...pages[history.index], kind: entry.kind, state: toJS(entry.state) };
-      pages.push({ kind, state });
+      pages.push({ kind, state, ...(viewState ? { viewState } : {}) });
       this._showPage(entry, { pages, index: pages.length - 1 });
     });
   }

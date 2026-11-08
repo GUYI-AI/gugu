@@ -85,6 +85,34 @@ describe('application-owned mise lifecycle', () => {
     expect(mocks.run.mock.calls.some((call) => JSON.stringify(call[1]) === JSON.stringify(['uninstall', '--all', tool]))).toBe(true);
     await expect(readFile(launcher())).rejects.toMatchObject({ code: 'ENOENT' });
   });
+  // An install the desktop stopped half-way (the mise process group is killed with it, nothing after it runs): the
+  // launcher is what makes an agent installed, and it is only published after mise finished and the program verified.
+  it('a fresh install has no launcher while mise is still installing', async () => {
+    await rm(launcher());
+    let launcherDuringInstall: string | null = 'unread';
+    const install = mocks.run.getMockImplementation()!;
+    mocks.run.mockImplementation(async (command, args, options) => {
+      if (args[0] === 'install') launcherDuringInstall = await readFile(launcher(), 'utf8').catch(() => null);
+      return install(command, args, options);
+    });
+    expect((await runMiseOperation({ mise: { target, operation: 'install' } })).success).toBe(true);
+    expect(launcherDuringInstall).toBeNull();
+    expect(await readFile(launcher(), 'utf8')).toContain('http-gugu-agent');
+  });
+
+  // What a killed `mise install` leaves (measured on the bundled mise 2026.9.12, killed while downloading and while
+  // installing): the half-written version directory is on disk, and `mise ls` reports it as not installed. The next
+  // install runs mise again and publishes, ❌ treating the leftover as an existing installation.
+  it('installs again over what a killed install left behind', async () => {
+    await rm(launcher());
+    const leftover = path.join(home, 'agents/mise/data/installs/http-gugu-agent', version);
+    await mkdir(leftover, { recursive: true });
+    entries = [{ version, install_path: leftover, installed: false }];
+    expect((await runMiseOperation({ mise: { target, operation: 'install' } })).success).toBe(true);
+    expect(mocks.run.mock.calls.filter((call) => call[1][0] === 'install')).toHaveLength(1);
+    expect(await readFile(launcher(), 'utf8')).toContain('http-gugu-agent');
+  });
+
   /**
    * 换源重试要分得出「取包那一段挂了」与「装完之后才挂」(#6157)。这一层不判断换不换,
    * 只负责如实说这次挂在哪一段 —— 判据在 `isDownloadStageFailure`。

@@ -75,7 +75,7 @@ vi.mock('./app-programs-elsewhere', () => ({
 
 const { bindExtensionSurface, registerExtensionBridge, deliverProgramNotificationFrom, setExtensionBridgeHost } = await import('./extension-bridge');
 setExtensionBridgeHost({
-  presentation: () => ({ locale: 'en', themeMode: 'light', fullscreen: false, windowFocused: true }),
+  selfGuguNumber: () => undefined, presentation: () => ({ locale: 'en', themeMode: 'light', fullscreen: false, windowFocused: true }),
 } as unknown as Parameters<typeof setExtensionBridgeHost>[0]);
 const { EXTENSION_BRIDGE_CHANNEL } = await import('@shared/extensions/bridge-protocol');
 registerExtensionBridge();

@@ -11,14 +11,14 @@ import '@renderer/index.css';
 import type { LifeView } from '@shared/core/sessions/session-life';
 import { renderDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 
-const { retry, resend } = vi.hoisted(() => ({ retry: vi.fn(async () => {}), resend: vi.fn(async () => {}) }));
+const { retry, resend, discard } = vi.hoisted(() => ({ retry: vi.fn(async () => {}), resend: vi.fn(async () => {}), discard: vi.fn(async () => {}) }));
 const hostLife = vi.hoisted(() => ({ view: null as LifeView | null }));
 const hostHistory = vi.hoisted(() => ({ read: vi.fn() }));
 vi.mock('@/mobile/agent-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: hostLife.view, error: null, current: () => hostLife.view }) }));
 vi.mock('@/lib/sessionInputOutboxBridge', async original => ({ ...(await original<object>()), retrySessionInputs: retry }));
 vi.mock('@gugu/core/cloud/config', async original => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: { chatView: 'double' } }) }));
-vi.mock('@/mobile/agent-watch/sessionpage-rpc', async original => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: { getStoredHistory: hostHistory.read, lifeRetryUnknown: resend } }) }));
+vi.mock('@/mobile/agent-watch/sessionpage-rpc', async original => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: { getStoredHistory: hostHistory.read, lifeRetryUnknown: resend, lifeDiscard: discard } }) }));
 
 let harness: ReturnType<typeof createReactHarness>;
 afterEach(() => {
@@ -26,6 +26,7 @@ afterEach(() => {
   Object.assign(state(), { accountId: null, rows: EMPTY, valid: () => false });
   retry.mockClear();
   resend.mockClear();
+  discard.mockClear();
   hostLife.view = null;
   hostHistory.read.mockReset();
 });
@@ -190,5 +191,34 @@ it('uses the shared failed-message disclosure on touch and the existing inline e
   await act(async () => { (harness.container.querySelector('[data-slot="message-edit"]') as HTMLButtonElement).click(); });
   await until('the existing message editor opens for the refused row', () => !!harness.container.querySelector('[data-user-message-editor="phone-refused"]'));
   expect((harness.container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(input.text);
+  expect(retry).not.toHaveBeenCalled();
+});
+
+it('offers resend and discard on a failed host row and discard on an unknown one, through the host commands', async () => {
+  await page.viewport(390, 844);
+  hostLife.view = { sessionId: 'phone-task', version: 1, kind: 'ready', stage: null, hold: null, failure: null, lastExit: null, nativeSession: null,
+    pending: { count: 2, items: [
+      { seq: 1, messageId: 'host-refused', kind: 'session-direct', text: 'typed and refused', preview: 'typed and refused', state: 'failed', failure: 'The ACP runtime declined the prompt', resendable: true, discardable: true },
+      { seq: 2, messageId: 'host-unknown', kind: 'session-direct', text: 'typed, outcome unknown', preview: 'typed, outcome unknown', state: 'unknown', failure: null, discardable: true },
+    ] } };
+  harness = createReactHarness();
+  harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
+  await renderWithAppProviders(harness, <SessionConversation timeline={emptyAgentWatchTimeline()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
+    sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={vi.fn()} pendingSends={[]} sending={false} agentWorking={false}
+    onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} />, { contacts: {} });
+  // The two rows are told apart by their label: failed vs delivery unknown.
+  const trigger = (label: RegExp) => [...harness.container.querySelectorAll<HTMLElement>('[data-testid="message-send-failed"]')].find(node => label.test(node.textContent ?? ''));
+  await until('both settled rows mount the shared failed-send control', () => harness.container.querySelectorAll('[data-testid="message-send-failed"]').length === 2);
+  await userEvent.click(trigger(/Send failed|发送失败/)!);
+  await until('the failed row offers both actions', () => !!document.querySelector('[data-testid="message-send-failed-menu"]'));
+  expect(document.querySelector('[data-testid="message-send-discard"]')).not.toBeNull();
+  await userEvent.click(document.querySelector<HTMLElement>('[data-testid="message-send-retry"]')!);
+  expect(resend).toHaveBeenCalledExactlyOnceWith('phone-task', 'host-refused');
+  await until('the menu closes', () => !document.querySelector('[data-testid="message-send-failed-menu"]'));
+  await userEvent.click(trigger(/Delivery unknown|结果未知/)!);
+  await until('the unknown row offers discard only', () => !!document.querySelector('[data-testid="message-send-failed-menu"]'));
+  expect(document.querySelector('[data-testid="message-send-retry"]')).toBeNull();
+  await userEvent.click(document.querySelector<HTMLElement>('[data-testid="message-send-discard"]')!);
+  expect(discard).toHaveBeenCalledExactlyOnceWith('phone-task', 'host-unknown');
   expect(retry).not.toHaveBeenCalled();
 });

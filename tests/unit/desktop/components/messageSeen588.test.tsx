@@ -60,7 +60,7 @@ function listProps(onVisible: (msg: MessageItem) => void) {
     rows, messages, mobile: true, memberReadSeqs: {}, deliveryWaits: new Map(), isGroupChat: false, memberProfiles: {},
     onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible, onOpenMemberProfile: undefined, onMentionMember: undefined,
     flashMessageId: undefined, threeParty: undefined, onShowReadReceipt: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
-    agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined, onOpenLocalFileLink: undefined,
+    agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined,
     selectMode: false, selectedIds: new Set(), onToggleSelect: noop, onEnterSelectMode: noop,
   }
   return { rows, rowProps, resetKey: 'dm-1#0#1' }

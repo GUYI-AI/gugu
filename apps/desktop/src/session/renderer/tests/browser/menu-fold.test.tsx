@@ -49,7 +49,11 @@ test('the keyboard reaches folded rows', async () => {
   await vi.waitFor(() => expect(document.activeElement?.getAttribute('data-testid')).toBe('a'))
   await userEvent.keyboard('{ArrowLeft}')
   await vi.waitFor(() => expect(document.querySelector('[data-testid="a"]')).toBeNull())
-  await userEvent.keyboard('{ArrowRight}{Enter}')
+  // Enter only after the reopened submenu has moved focus onto its first row: typed in one go, Enter can land while
+  // focus is still on the fold trigger, and nothing runs.
+  await userEvent.keyboard('{ArrowRight}')
+  await vi.waitFor(() => expect(document.activeElement?.getAttribute('data-testid')).toBe('a'))
+  await userEvent.keyboard('{Enter}')
   await vi.waitFor(() => expect(onRow).toHaveBeenCalledWith('a'))
 })
 

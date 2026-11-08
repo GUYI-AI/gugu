@@ -50,7 +50,8 @@ export async function createHistoryFixture(path: string, bytes: number, kind: Fi
     if (kind === 'sparse-io') {
       await file.truncate(bytes)
       await write(Buffer.from('POISON_PREFIX_MUST_NOT_BE_READ\n'))
-      position = bytes - tail.length
+      position = bytes - tail.length - 1
+      await write(Buffer.from('\n'))
       await write(tail)
     } else if (kind === 'legacy-giant') {
       // The adapter receives only the path. Do not publish this unknown record start as a locator.

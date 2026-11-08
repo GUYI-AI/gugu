@@ -222,6 +222,69 @@ describe('a file edited as a whole', () => {
   })
 })
 
+describe('the save its machine could not take, once it is back', () => {
+  const offline = () => {
+    const r = rig('a\nb\n')
+    r.io.write.mockRejectedValueOnce(Object.assign(new Error('offline'), { code: 'unavailable' }))
+    r.type('a\nmine\n')
+    return r
+  }
+
+  test('the file as it was: taken', async () => {
+    const r = offline()
+    expect(await r.file.save()).toBe(false)
+    expect(await r.file.retrySave()).toBe(true)
+    expect(r.onDisk.value).toBe('a\nmine\n')
+    expect(r.file.dirty).toBe(false)
+  })
+
+  test('changed meanwhile: nothing written, said, both kept here', async () => {
+    const r = offline()
+    await r.file.save()
+    r.onDisk.value = 'a\ntheirs\n'
+    r.onError.mockClear()
+    r.io.write.mockClear()
+    expect(await r.file.retrySave()).toBe(false)
+    expect(r.io.write).not.toHaveBeenCalled()
+    expect(r.onDisk.value).toBe('a\ntheirs\n')
+    expect(r.onError).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ code: 'content-changed' }))
+    expect(r.doc()).toContain('mine')
+    expect(r.doc()).toContain('theirs')
+    expect(r.file.dirty).toBe(true)
+  })
+
+  test('changed between the read and the write: the version check refuses, nothing written', async () => {
+    const r = offline()
+    await r.file.save()
+    r.onError.mockClear()
+    r.io.write.mockRejectedValueOnce(Object.assign(new Error('moved'), { code: 'content-changed' }))
+    expect(await r.file.retrySave()).toBe(false)
+    expect(r.onDisk.value).toBe('a\nb\n')
+    expect(r.onError).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ code: 'content-changed' }))
+  })
+
+  test('deleted meanwhile: not made again', async () => {
+    const r = offline()
+    await r.file.save()
+    r.io.write.mockClear()
+    r.io.read.mockRejectedValueOnce(Object.assign(new Error('gone'), { code: 'not-found' }))
+    expect(await r.file.retrySave()).toBe(false)
+    expect(r.io.write).not.toHaveBeenCalled()
+    expect(r.file.deleted).toBe(true)
+  })
+
+  test('still away: nothing written, and it stays owed', async () => {
+    const r = offline()
+    await r.file.save()
+    r.onError.mockClear()
+    r.io.read.mockRejectedValueOnce(Object.assign(new Error('offline'), { code: 'unavailable' }))
+    r.io.write.mockRejectedValueOnce(Object.assign(new Error('offline'), { code: 'unavailable' }))
+    expect(await r.file.retrySave()).toBe(false)
+    expect(r.onDisk.value).toBe('a\nb\n')
+    expect(r.onError).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ code: 'unavailable' }))
+  })
+})
+
 describe('places in the buffer', () => {
   test('stay on their words as the text changes', () => {
     const anchors = bufferAnchors()

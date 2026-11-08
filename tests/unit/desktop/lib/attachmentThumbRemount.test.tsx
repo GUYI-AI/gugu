@@ -11,6 +11,7 @@ vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({
   fileReader: () => ({ accountId: 'account-1', actorId: 'account-1' }),
   fileReadSignal: () => undefined,
   attachmentCache: async () => ({ match: async () => undefined, put: async () => undefined }),
+  putAttachment: async () => undefined,
   attachmentCacheOrigin: 'https://attachments.gugu.invalid',
 }))
 
@@ -33,6 +34,7 @@ describe('inline image thumbnails across remounts', () => {
     }))
     URL.createObjectURL = vi.fn(() => `blob:thumb-${Math.random()}`)
     URL.revokeObjectURL = vi.fn()
+    HTMLImageElement.prototype.decode = vi.fn(async () => undefined) // jsdom does not decode; a source change swaps decoded pixels
     harness = createReactHarness()
   })
   afterEach(() => harness.cleanup())

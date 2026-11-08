@@ -121,6 +121,32 @@ describe('every side-by-side entry ends in one strip with one pair', () => {
     expectOneStrip(layout);
   });
 
+  it("a folder in a file's path stays in that tab, though it was last closed beside; any other page stays beside", () => {
+    const memory = new Map<string, 'separate' | 'beside'>();
+    const { layout, open } = setup({ read: (id) => memory.get(id), write: (id, placement) => void memory.set(id, placement) });
+    const folder = open('src', undefined, 'navigate', 'folder');
+    close(layout, folder);
+    expect([...memory.values()]).toEqual(['beside']);
+    const file = open('a.ts');
+    expect(layout.open('folder', { path: 'src' }, { from: file, intent: 'navigate', inPlace: true })).toBe(file);
+    expect(paths(layout)).toEqual(['conversation', 'src']);
+    expectOneStrip(layout);
+    // Control (owner 11-03): beside stays beside for a page asked for without `inPlace`.
+    memory.set([...memory.keys()][0]!.replace('src', 'other'), 'beside');
+    const other = open('other', file, 'navigate', 'folder');
+    expect(other).not.toBe(file);
+    expect(layout.pair?.side).toBe(other);
+  });
+
+  it('a page opened at a place keeps it, on the page it opened and not the one left', () => {
+    const { layout, open } = setup();
+    const file = open('a.ts');
+    const place = { folder: 'src' };
+    expect(layout.open('folder', { path: 'src' }, { from: file, intent: 'navigate', viewState: place })).toBe(file);
+    const pane = layout.groups.find(({ pane }) => pane.entries.has(file))!.pane;
+    expect(pane.navigationOf(file)!.pages.map((page) => page.viewState)).toEqual([undefined, place]);
+  });
+
   it('narrow: the pair stays (only what is shown changes), widening shows it again', () => {
     const { layout, open } = setup();
     open('A.md');

@@ -85,6 +85,13 @@ function terminal(life: Life): boolean { return life.kind === 'dormant' || life.
 function discardable(row: PendingRow): boolean {
   return row.kind === 'ordinary' && row.turn.kind === 'prompt';
 }
+/**
+ * A failed or unknown row is settled: nothing sends it again and its source already heard the outcome. A person may resend
+ * it or let it go. Inbox batches stay out (their sources were told it failed); a first turn stays out (the run needs it).
+ */
+function settledByHand(row: PendingRow): boolean {
+  return (row.state === 'failed' || row.state === 'unknown') && row.kind !== 'inbox-batch' && row.turn.kind === 'prompt';
+}
 
 /**
  * The sole session lifecycle owner. Decisions and receipt/hold commits are synchronous;
@@ -270,16 +277,23 @@ export class SessionLife {
     return this.drain(entry); // the entry, not the id: a delete removes it from the map before its IO ends
   }
 
-  /** A person discards their own message they stopped before it went: it is gone, and nothing sends it later. */
+  /** A person discards their own message they stopped before it went, or a settled one: it is gone, and nothing sends it later. */
   discardRow(sessionId: string, messageId: string): void {
     const row = this.ports.store(sessionId).unaccepted(sessionId).find(item => item.message.id === messageId);
     if (!row) throw new Error(`Session ${sessionId} holds no pending row for ${messageId}`);
+    // Settled rows are outside the reducer's queue, so the owner removes them directly (as recoverUnknownRow settles them).
+    if (settledByHand(row)) {
+      this.ports.store(sessionId).commit(sessionId, [{ e: 'delete-row', seq: row.seq }]);
+      this.publish(sessionId, this.entry(sessionId));
+      return;
+    }
     if (!discardable(row)) throw new Error(`Pending ${row.seq} of session ${sessionId} cannot be discarded`);
     this.send(sessionId, { k: 'discard-row', seq: row.seq });
   }
 
   /** A person's explicit resend preserves the original row and frozen source membership.
    * History lookup failure leaves custody unchanged; a positive echo settles it without dispatch.
+   * A failed row never reached the provider, so it is resent without a history lookup.
    */
   retryUnknownRow(sessionId: string, messageId: string,
     findEcho: (input: { id: string; text: string }) => Promise<string | null>): Promise<void> {
@@ -312,14 +326,14 @@ export class SessionLife {
     }
     const store = this.ports.store(sessionId);
     const row = store.unaccepted(sessionId).find(item => item.message.id === messageId);
-    if (!row || row.state !== 'unknown') return;
-    const echo = await findEcho(row.message);
+    if (!row || !(row.state === 'unknown' || (resend && row.state === 'failed' && settledByHand(row)))) return;
+    const echo = row.state === 'unknown' ? await findEcho(row.message) : null;
     if (!await this.ports.ownedBy(sessionId, account) || !allowed()) {
       if (resend) throw new Error('The session changed while checking delivery');
       return;
     }
     // Another click or a receipt may have consumed this exact row while history was read.
-    if (store.row(sessionId, row.seq).state !== 'unknown') return;
+    if (store.row(sessionId, row.seq).state !== row.state) return;
     if (!echo && !resend) return;
     const receipt: Receipt = echo ? { state: 'accepted', nativeReceiptId: echo } : { state: 'queued' };
     store.commit(sessionId, [{ e: 'write-receipt', seq: row.seq, receipt }]);
@@ -534,8 +548,8 @@ export class SessionLife {
     return { sessionId, version: entry.version, kind: life.kind,
       stage: stageOf(entry),
       pending: { count: rows.filter(row => row.state === 'queued' || row.state === 'dispatching').length,
-        items: rows.map(row => ({ seq: row.seq, messageId: row.message.id, preview: row.message.text.slice(0, 160), text: row.message.text, kind: row.kind, sentAt: row.sentAt, discardable: discardable(row),
-          resendable: row.state === 'unknown' && life.kind !== 'archived' && life.kind !== 'stopping', state: row.state, failure: row.state === 'failed' ? row.failure?.message ?? null : null })) },
+        items: rows.map(row => ({ seq: row.seq, messageId: row.message.id, preview: row.message.text.slice(0, 160), text: row.message.text, kind: row.kind, sentAt: row.sentAt, discardable: discardable(row) || settledByHand(row),
+          resendable: (row.state === 'unknown' || (row.state === 'failed' && settledByHand(row))) && life.kind !== 'archived' && life.kind !== 'stopping', state: row.state, failure: row.state === 'failed' ? row.failure?.message ?? null : null })) },
       hold: hold?.reason ?? null,
       failure: life.kind === 'failed' ? { at: life.hold.reason === 'start-failed' ? life.hold.stage : null, message: life.hold.cause.message, cause: life.hold.cause } : null,
       lastExit: life.kind === 'dormant' ? life.lastExit?.cause.message ?? null : null,

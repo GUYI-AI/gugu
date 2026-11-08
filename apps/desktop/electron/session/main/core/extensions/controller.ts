@@ -15,7 +15,7 @@ import {
   notifyWatchedChatsChanged,
   notifyInstalledAppsChanged,
   invokeExtensionCommand,
-  deliverToOpeningPage,
+  deliverToChatFilePage,
   deliverToSessionFilePage,
   setExtensionAppView,
   unbindExtensionSurfaces,
@@ -264,6 +264,8 @@ export const extensionsController = createRPCController({
     tabKind: string;
     /** The file of its workspace this tab was opened for (an extension claimed its type). */
     filePath?: string;
+    /** The host opened that file for an agent or an App, not a person: a file outside is not read through it (`@@@outside-file`). */
+    byHost?: boolean;
     /** The chat file it was opened for (L3). */
     itemId?: string;
   } & Partial<import('@shared/extensions/app-runtime-protocol').AppWhere>) => {
@@ -320,7 +322,7 @@ export const extensionsController = createRPCController({
       const target = await files.groupFile(chatId, String(args?.itemId ?? ''));
       const choice = files.openerChoice(target.typedName);
       const place = placeFor(choice, args?.at);
-      if (place) deliverToOpeningPage(place.candidate.extensionId, placeLink(place.candidate, place.at, target.itemId), { chat: chatId }, target.itemId);
+      if (place) deliverToChatFilePage(place.candidate.extensionId, placeLink(place.candidate, place.at, target.itemId), chatId, target.itemId);
       return { success: true as const, data: { ...target, choice } };
     } catch (error) {
       log.warn('Failed to resolve who opens a group file:', error);
@@ -422,6 +424,7 @@ export const extensionsController = createRPCController({
     webContentsId: number;
     tabId: string;
     filePath?: string;
+    byHost?: boolean;
     itemId?: string;
   } & Partial<import('@shared/extensions/app-runtime-protocol').AppWhere>) => {
     try {

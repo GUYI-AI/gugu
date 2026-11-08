@@ -1873,6 +1873,30 @@ describe('AcpRuntime session manager', () => {
       .toContain('你的 ~/.claude/settings.json availableModels 排除了该模型');
   });
 
+  // 会话内换平台模型、活会话没报那一条 ⇒ 渲染层走 reload(model-switch-plan)。启动注入若真漏了那条模型,
+  // 重开时这里的断言照样响亮:行上带 provider 原话,会话确认 provider 当前在跑的那条后继续,下一句照常发出、不挂。
+  it('keeps a reload onto a model the injection lacks loud: notice row, then the next input runs', async () => {
+    const h = makeAcpHarness();
+    const rt = new AcpRuntime(h.deps);
+    h.agent.loadSession.mockResolvedValueOnce({ configOptions: modelConfigOptions('gpt-6-luna') });
+    h.agent.setSessionConfigOption.mockRejectedValueOnce(
+      new Error('Invalid value for config option model: claude-haiku-5-5')
+    );
+
+    const result = await rt.resumeSession({
+      ...makeStartInput({ sessionId: 'conv-reload-uninjected', providerId: 'claude', model: 'claude-haiku-5-5' }),
+      providerSessionId: 'session-reload-uninjected',
+    });
+
+    expect(isOk(result)).toBe(true);
+    const history = JSON.stringify(rt.getChatHistory('conv-reload-uninjected'));
+    expect(history).toContain('model-unavailable');
+    expect(history).toContain('Invalid value for config option model: claude-haiku-5-5');
+    const sent = await rt.sendPrompt('conv-reload-uninjected', { text: 'after the reload', origin: 'typed' });
+    expect(sent).toMatchObject({ success: true });
+    expect(h.agent.prompt).toHaveBeenCalledOnce();
+  });
+
   // 「维度缺席」在 provider 已经有的那条会话上**不是**失败读数:它带着自己创建时的模型,咕咕只是
   // 没法再断言一次。为它拒绝重开 = 拿一个从没与我们分歧过的读数弄坏一条好会话(真机对照:claude
   // 在 load 时照报模型维度、原样重开;咕咕的 codex 桥一次都不报,#5050)。

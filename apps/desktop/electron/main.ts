@@ -1,7 +1,10 @@
+import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
+import { createPasswordBetaPolicyReader } from './password-vault/beta-policy-reader'
 import './browser-user-agent-bootstrap'
 import './page-navigation-bootstrap'
 import { attachTabHistorySwipe } from './tab-history-swipe'
 import { startServerUsageSync } from './server/usage-sync'
+import { createSelfGuguNumber } from './self-gugu-number'
 import { readStateFile, writeStateFile } from './app-state'
 import { noteExitReason } from './lib/exit-reason'
 import {assistantWorkHistoryPosition} from './assistant-work-history-position'
@@ -18,6 +21,7 @@ import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
 import { writeTaskCopy } from './projectFilePublication'
 import { resourceMonitorWindow } from './resource-monitor-window'
 import { linkProjectDevice } from './session/main/core/projects/project-device-link'
+import { killAllMiseProcessesSync } from './session/main/core/dependencies/mise-process'
 import {
   app,
   // @@@5747 Electron 自带的那个 autoUpdater(Squirrel 的直接封装),与 electron-updater 的同名导出
@@ -46,6 +50,9 @@ import {
 import { listAgents, listDevices, listReapedAgents, provisionSessionpageAgentOneTrip, resolveMachineHardwareId, type DeviceTableClient, type RuntimeAuthProvider } from '@gugu/core'
 import { claimDeviceFreeCredits, readDeviceClaimStatus } from './device-free-credits'
 import { createDeviceActionsRuntime, nativeComponentsDir, type DeviceActionsRuntime } from './device-actions/runtime'
+import { captureReading, currentReading, historyReading } from './session/main/core/resource-monitor/reading'
+import { setMacFootprintReader } from './session/main/core/resource-monitor/footprint'
+import { clearTraceLeftovers } from './session/main/core/resource-monitor/capture'
 import { sampleCuaImage } from './device-actions/native/cua-image-sample'
 import { createComputerControlWindow } from './device-actions/computer-control-window'
 import { computerControlWindowReaders } from './device-actions/computer-control-foreground'
@@ -1368,6 +1375,19 @@ const hostPresentationListeners = new Set<() => void>()
 function tellHostPresentationChanged(): void {
   for (const listener of hostPresentationListeners) listener()
 }
+// App 页的 `operator.guguNumber`:登录账号自己的咕咕号,按信封同一张身份表查,一个账号查一次。
+const selfGuguNumber = createSelfGuguNumber({
+  userId: () => SERVER_MODE ? serverAuth?.signedInUserId() ?? null : humanAuthUserId(),
+  lookup: async (userId) => {
+    const auth = await (authProvider ?? desktopAuthProvider()).getAuth()
+    if (auth?.userId !== userId) throw new Error('the account changed while its 咕咕号 was looked up')
+    const identity = (await resolveGuguIdsForInbox([userId], auth.accessToken)).get(userId)
+    if (!identity) throw new Error(`no identity row for ${userId}`)
+    return identity.guguNumber
+  },
+  changed: tellHostPresentationChanged,
+  failed: (error) => createLogger('extensions/self').error({ error: String(error) }, 'Looking up the account\'s own 咕咕号 failed'),
+})
 
 // @@@close-to-tray-hint - close hides the window to the tray instead of quitting; without a signal users
 // think the app vanished. Notify the FIRST time only, persisting the flag in app-state.json under userData.
@@ -2010,6 +2030,19 @@ function selfAppForComputerControl(): { pids: ReadonlySet<number>; names: Readon
  */
 let computerUseOn: () => boolean = () => false
 
+// The resource monitor reads macOS phys_footprint through the same native helper (System.swift `process.footprint`);
+// without the helper (an uncompiled dev checkout) it keeps RSS and says so.
+if (process.platform === 'darwin') setMacFootprintReader(() => {
+  const helper = deviceActionsRuntimeInstance?.macHelper()
+  if (!helper) return null
+  return async (pids) => {
+    const { footprints } = await helper.call<{ footprints: Record<string, number> }>('process.footprint', { pids }, { timeoutMs: 5_000 })
+    return new Map(Object.entries(footprints).map(([pid, bytes]) => [Number(pid), bytes]))
+  }
+})
+// A raw resource trace left by a crash mid-recording (it can hold full URLs) does not outlive the next start.
+void app.whenReady().then(clearTraceLeftovers).catch((error: unknown) => createLogger('resource-monitor').warn({ error }, 'could not clear trace leftovers'))
+
 function deviceActionsRuntime(): DeviceActionsRuntime {
   if (deviceActionsRuntimeInstance) return deviceActionsRuntimeInstance
   const log = createLogger('device-actions')
@@ -2037,6 +2070,11 @@ function deviceActionsRuntime(): DeviceActionsRuntime {
       },
       openExternal: (url) => shell.openExternal(url),
       trashItem: (target) => shell.trashItem(target),
+      perf: {
+        snapshot: () => currentReading(),
+        history: (since, until) => historyReading(since, until),
+        capture: (seconds) => captureReading(seconds),
+      },
       sampleImage: data => sampleCuaImage(nativeImage.createFromBuffer, data),
       shrinkImage: async (image, { maxEdge, quality }) => {
         const source = nativeImage.createFromBuffer(Buffer.from(image.data, 'base64'))
@@ -3326,6 +3364,7 @@ const killEnginesOnCrash = createNativeLegReap({
     ['opencode-serve-attach', () => opencodeServeAttachSessionDelivery.disposeSync()],
     ['droid-daemon', () => droidDaemonSessionDelivery.disposeSync()],
     ['extension-programs', () => emdashBridge?.emdashExtensionPrograms().killAllSync()],
+    ['mise', killAllMiseProcessesSync],
     ['remote-tunnel', () => {
       closeTunnelMachines?.()
       tunnelEndpoint?.stop()
@@ -4333,6 +4372,7 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
       onHostWindowFocusChange,
       hostLocale: currentHostLocale,
       hostTone: readWindowTone,
+      selfGuguNumber,
       onHostPresentationChange: (listener) => {
         hostPresentationListeners.add(listener)
         return () => hostPresentationListeners.delete(listener)
@@ -4397,6 +4437,8 @@ async function stopDesktopOwnedResources(): Promise<void> {
       () => droidDaemonSessionDelivery.dispose(),
       reportShutdownPhase,
     ),
+    // 首启 / 设置里装 agent 的 `mise install`(自成一组、没有时限):不收就在实例停掉后接着跑,还占着继承来的调试端口。
+    runShutdownPhase('mise', killAllMiseProcessesSync, reportShutdownPhase),
     // #7199 / #7317 电脑控制的 cua-driver 守护进程与代理、Mac 小助手:同一条规矩,漏了它们每重启一次就留一个孤儿
     // (真机实测:旧实例退出后 `cua-driver serve` ppid 变成 1)。守护进程自己也认 stdin EOF(见 cua-client),这里是正路。
     runShutdownPhase(
@@ -5056,6 +5098,10 @@ app.whenReady().then(async () => {
         ? { accessToken: auth.accessToken, refreshToken: auth.refreshToken ?? '', userId: auth.userId }
         : null
     }
+    emdash.installPasswordBetaHost({ window: () => mainWindow, account: async () => (await getSessionpageAuth())?.userId ?? null, device: localDeviceId,
+      deliver: (sessionId, requestId, status) => emdash.deliverPasswordBetaDecision(sessionId, requestId, status),
+      readPolicy: createPasswordBetaPolicyReader(getSessionpageAuth) })
+    bindPasswordBetaAgent(emdash.passwordBetaAgent)
     app.once('will-quit', startSessionpageAgentArchivalSync({ getAuth: getSessionpageAuth, resolveDeviceId: localDeviceId,
       inventory: () => emdash.emdashSessionpageInventory(), subscribe: (listener) => emdash.onEmdashSessionpageReapTrigger(listener) }))
     // @@@task-shell-port (#5012) 「给会话开账号」的口与网页版无头宿主共用(sessionpage-identity-host.ts);
@@ -5458,6 +5504,7 @@ app.whenReady().then(async () => {
               publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
               // grant key 用**分叉自己**的会话 id:它必须是独立一格,否则会顶掉来源会话的 grant。
               grantKey: sessionpageSurfaceKey(info.sessionId),
+              nativeSessionId: info.sessionId,
               runHostAction: runAction,
               runSessionAction: runAction,
               forkOf: forkSource.forkOf,
@@ -5515,6 +5562,7 @@ app.whenReady().then(async () => {
           {
             host: primaryGuguMcpHost,
             grantKey: sessionpageSurfaceKey(info.sessionId),
+            nativeSessionId: info.sessionId,
             runSessionAction: runAction,
             // @@@2374 不带 auth:写文件与装扩展都不代表用户去调任何云端接口。桥没
             // 加载成功时这条腿就不接,gugu_session 的 app_* 动作于是在调用时报错 ——
@@ -5742,6 +5790,7 @@ app.whenReady().then(async () => {
             resolveFile: desktopFiles.resolve,
             publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
             grantKey: sessionpageSurfaceKey(info.sessionId),
+            nativeSessionId: info.sessionId,
             ...(assistantRole ? { personalAssistant: true as const, assistantWork: {
               ...assistantWorkBinding(persistedSessionId, info.cwd, SERVER_MODE ? 'cloud' : 'computer', provisioned.guguAgentUserId),
               currentInput: () => emdashBridge?.readCurrentActivityInput(persistedSessionId) ?? Promise.resolve(undefined),
@@ -5902,6 +5951,7 @@ app.whenReady().then(async () => {
         return {
           host,
           grantKey: sessionpageSurfaceKey(info.sessionId),
+          nativeSessionId: info.sessionId,
           runHostAction: runAction,
           runSessionAction: runAction,
           // @@@2374 不带 auth:写文件与装扩展都不代表用户去调任何云端接口。桥没

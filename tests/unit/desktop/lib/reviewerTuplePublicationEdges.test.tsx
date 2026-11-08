@@ -46,7 +46,7 @@ beforeEach(async () => {
     useLayoutEffect(() => { chatsRef.current = rows }, [rows])
     const ledger = useRef(createChatListProjectionLedger())
     const repositoryRef = useRef(repository), activeChatIdRef = useRef<string | null>('reviewer-tuple'), requestSeqRef = useRef(0)
-    binding = useChatProjectionBinding({ ledger: ledger.current, repositoryRef, chatsRef, activeChatIdRef, requestSeqRef,
+    binding = useChatProjectionBinding({ ledger: ledger.current, conversations: { readSeqsOf: () => undefined }, repositoryRef, chatsRef, activeChatIdRef, requestSeqRef,
       getRepository: async () => repository, setChats: setRows, onActiveRevoked: () => undefined,
       canAcknowledge: () => true, visibleSeqOf: () => 5, notifications: { chatMessages: false, sound: false } })
     return null

@@ -384,12 +384,12 @@ describe('approved A2A activity', () => {
   });
   it.each([
     ...[
-      { width: 360, background: '#ffffff' }, { width: 1280, background: '#ffffff' },
-      { width: 360, background: '#212121' }, { width: 1280, background: '#212121' },
+      { width: 360, background: '#ffffff', endInset: 0 }, { width: 1280, background: '#ffffff', endInset: 15 },
+      { width: 360, background: '#212121', endInset: 0 }, { width: 1280, background: '#212121', endInset: 15 },
     ].map(value => ({ ...value, classic: false, frameWidth: value.width })),
-    ...['#ffffff', '#212121'].map(background => ({ width: 1280, background, classic: true, frameWidth: 1280 })),
-    ...[false, true].map(classic => ({ width: 1280, background: '#ffffff', classic, frameWidth: 960 })),
-  ])('keeps the pinned semantic line quiet and its page-colored strip inside the row ($width/$background/classic=$classic/frame=$frameWidth)', async ({ width, background, classic, frameWidth }) => {
+    ...['#ffffff', '#212121'].map(background => ({ width: 1280, background, endInset: 0, classic: true, frameWidth: 1280 })),
+    ...[false, true].map(classic => ({ width: 1280, background: '#ffffff', endInset: 0, classic, frameWidth: 960 })),
+  ])('keeps the pinned semantic line quiet and its page-colored strip inside the row ($width/$background/$endInset/classic=$classic/frame=$frameWidth)', async ({ width, background, endInset, classic, frameWidth }) => {
     if (classic) {
       // A custom Chromium scrollbar reserves real layout space, including on overlay-scrollbar Macs.
       const scrollbar = document.head.appendChild(document.createElement('style'));
@@ -406,6 +406,10 @@ describe('approved A2A activity', () => {
       await untilStable('split conversation geometry settles', () => t.host.querySelector('[data-chat-width-probe]')?.getBoundingClientRect().width);
     }
     if (classic) expect(t.scroll().offsetWidth - t.scroll().clientWidth, 'a real classic scrollbar reserves 15px').toBe(15);
+    // A non-overlay scrollbar consumes an asymmetric trailing gutter. Exercise
+    // the same column offset on overlay-scrollbar platforms as well.
+    t.scroll().style.paddingRight = `${16 + endInset}px`;
+    await untilStable('asymmetric content gutter settles', () => t.host.querySelector('[data-chat-width-probe]')?.getBoundingClientRect().width);
     if (background === '#212121') t.host.classList.add('emdark');
     t.host.style.setProperty('--chat-bg', background);
     const label = () => t.head()!.lastElementChild as HTMLElement;
@@ -425,7 +429,7 @@ describe('approved A2A activity', () => {
     const lane = t.head()!.closest<HTMLElement>('[data-index]')!;
     const backdrop = lane.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!;
     const paint = backdrop.getBoundingClientRect(), viewport = t.scroll().getBoundingClientRect();
-    console.info('ACTIVITY_PIN_FRAME', JSON.stringify({ width, background, classic, frameWidth,
+    console.info('ACTIVITY_PIN_FRAME', JSON.stringify({ width, background, endInset, classic, frameWidth,
       offsetWidth: t.scroll().offsetWidth, clientWidth: t.scroll().clientWidth,
       viewport: { left: viewport.left, right: viewport.right }, paint: { left: paint.left, right: paint.right } }));
     const style = getComputedStyle(backdrop);
@@ -437,7 +441,10 @@ describe('approved A2A activity', () => {
     expect(Math.abs(paint.top - own.bottom), 'the two page-colored pins meet without exposing half a body line in their seam').toBeLessThan(1);
     expect(Math.abs(paint.bottom - row.bottom), 'no opaque band below the semantic row').toBeLessThan(1);
     expect(paint.left).toBeLessThanOrEqual(viewport.left);
-    expect(paint.right).toBeGreaterThanOrEqual(viewport.right - 1);
+    // The strip must reach the right edge of what the scroller paints: its client box. A classic scrollbar (Linux,
+    // Windows) takes the last pixels of the border box and paints over anything beneath; overlay scrollbars take none.
+    const scroller = t.scroll();
+    expect(paint.right).toBeGreaterThanOrEqual(viewport.left + scroller.clientLeft + scroller.clientWidth - 1);
     expect(getComputedStyle(lane).contain.split(' ')).not.toContain('paint');
     expect(style.borderTopWidth).toBe('0px');
     expect(style.borderLeftWidth).toBe('0px');

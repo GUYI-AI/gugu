@@ -51,7 +51,7 @@ import {
   SESSION_PLAN_ID,
 } from '@gugu/session-core/acp';
 import type { Result } from '@gugu/session-shared';
-import { ok, toSerializedError } from '@gugu/session-shared';
+import { errorDetail, ok, toSerializedError } from '@gugu/session-shared';
 import { invokesCommand } from '@gugu/session-core/acp/commands';
 import { classifyTurnFailure, refusedTurnOutcome } from './turn-failure';
 import {
@@ -1157,7 +1157,8 @@ export class SessionCell {
       }
       const result = await this.applyLiveSetting(dimension, value, configId, capability, startupOnly, fail);
       if (!result.success) {
-        const causeMessage = 'cause' in result.error ? result.error.cause?.message : undefined;
+        // The provider's own sentence (`data.details`), not the JSON-RPC envelope's "Internal error".
+        const causeMessage = 'cause' in result.error ? errorDetail(result.error.cause)?.split('\n')[0] : undefined;
         this.settingsBlockedReasons.set(dimension, causeMessage ?? result.error.message ?? `Unable to apply ${dimension}`);
         return result;
       }
@@ -1917,13 +1918,14 @@ export class SessionCell {
     // Preserve input order; explicit queue steering (and the owner overtaking someone else's turn) may bypass waiting inputs.
     const steerIfBusy = opts?.steerIfBusy === true
       && (opts.fromQueue === true || opts.overtakeQueue === true || this.machine.queuedPrompts.length === 0);
-    // Settings and receipt admission release the same next-input barrier.
-    if (
-      !opts?.skipAdmission
-      && !steerIfBusy
-      && this.machine.phase.kind === 'ready'
-      && (this.settingsInFlight > 0 || this.settingsBlockedReason !== null)
-    ) {
+    // Settings and receipt admission release the same next-input barrier. A setting still in flight
+    // may yet apply, so the input waits for it; a setting that already failed releases nothing, so
+    // the input is refused with that reason (a queued input would wait for a release that never comes).
+    const settingBarrier = !opts?.skipAdmission && !steerIfBusy && this.machine.phase.kind === 'ready';
+    if (settingBarrier && this.settingsInFlight === 0 && this.settingsBlockedReason !== null) {
+      return acpErr.invalidState(this.settingsBlockedReason);
+    }
+    if (settingBarrier && this.settingsInFlight > 0) {
       const held = this.dispatchFor<AcpSendPromptError>(
         { type: 'QueuePrompt', prompt },
         ['invalid_state'],

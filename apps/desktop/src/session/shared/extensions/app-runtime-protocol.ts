@@ -1,6 +1,5 @@
 import type { TabOpenIntent } from '@shared/view-state';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
-import type { MessageItem } from '@gugu/core/shared/types/chat';
 import type { FileOpenerCandidate } from './file-openers';
 import { extensionFromMimeType, mimeTypeFromName, normalizeMimeType } from '@gugu/core/shared/imageMime.mjs';
 /**
@@ -232,6 +231,12 @@ const WORKSPACE_ID = /^(session|project):(.+)$/;
 
 /** A session's working copy's workspace id; a project's root folder's. */
 export const sessionWorkspace = (sessionId: string): string => `session:${sessionId}`;
+
+/**
+ * The preinstalled workspace App (apps/desktop/preinstalled-apps/workspace; 文件 / Files to people). It stays an App in code, but it is
+ * the chat's own folder, not something one installs or removes, so the App lists leave it out (owner 10-10).
+ */
+export const WORKSPACE_APP_ID = 'workspace';
 export const projectWorkspace = (projectId: string): string => `project:${projectId}`;
 
 /** What a workspace id names. What is not one throws `invalid`. */
@@ -593,8 +598,8 @@ export const APP_COMPOSE_EVENT = 'gugu:app-compose';
 export interface AppComposeDetail {
   chatId: string;
   text: string;
-  /** The original reply context, placed with this chat's draft rather than broadcast to the visible panel. */
-  quote?: MessageItem;
+  /** The one peer this draft stays private to (a whisper's annotated image), without quoting anything. */
+  whisperTo?: string;
   /** G3 Images beside the text, as attachments of the draft: the person sends them, or not. */
   images?: AppComposeImage[];
   /** File references inserted as inline mention tokens in the draft text. */

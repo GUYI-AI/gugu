@@ -6,7 +6,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { conversationLink } from '@gugu/core/shared/ui/guguLink'
 import { messageQuoteLink } from '@gugu/core/shared/ui/messageQuote'
-import { publishChatSummaries } from '@/lib/chatSummariesBridge'
+import { publishChatSummaries, publishContactSummaries } from '@/lib/chatSummariesBridge'
+import { UI_EVENTS } from '@/lib/uiEvents'
 import { takeTaskReveal } from '@/hooks/useSourceMessageReveal'
 import type { TaskTurnHit } from '@shared/core/search'
 import { GlobalSearch } from './global-search'
@@ -111,10 +112,10 @@ afterEach(async () => {
 
 // The typed text settles after the panel's debounce; the two queries answer on the next turns.
 const settle = async () => { for (let round = 0; round < 3; round++) await act(async () => { await vi.advanceTimersByTimeAsync(120) }) }
-async function render(text: string, tasks = true) {
+async function render(text: string, tasks = true, names = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   queryClient = client
-  await act(async () => root.render(<QueryClientProvider client={client}><GlobalSearch tasks={tasks} onClose={() => {}} onOpen={() => { closed++ }} /><SessionProbe /></QueryClientProvider>))
+  await act(async () => root.render(<QueryClientProvider client={client}><GlobalSearch tasks={tasks} names={names} onClose={() => {}} onOpen={() => { closed++ }} /><SessionProbe /></QueryClientProvider>))
   await act(async () => updateSearchSession({ text }))
   await settle()
 }
@@ -503,6 +504,45 @@ describe('global search panel', () => {
     await render('回滚', false)
     expect(remote.turns).not.toHaveBeenCalled()
     expect([...host.querySelectorAll('[role=tab]')].map((button) => button.textContent!.replace(/\d+$/, ''))).toEqual(['globalSearch.facet.all', 'globalSearch.facet.message', 'globalSearch.facet.file'])
+  })
+})
+
+describe('names on the phone (no quick switcher beside the panel)', () => {
+  afterEach(() => publishContactSummaries([]))
+  const nameRows = () => [...host.querySelectorAll<HTMLElement>('[data-testid=global-search-name]')]
+
+  it('lists the groups and people the words name above the messages; a group opens its conversation', async () => {
+    publishContactSummaries([{ id: 'person-1', name: '设计师小林' }])
+    await render('设计', false, true)
+    expect(nameRows().map((row) => row.textContent)).toEqual(['设计组', '设计师小林'])
+    await act(async () => nameRows()[0]!.click())
+    expect(remote.opened).toEqual([conversationLink(OTHER)])
+    expect(closed).toBe(1)
+  })
+
+  it('a person opens their contact details without creating a conversation', async () => {
+    publishContactSummaries([{ id: 'person-1', name: '设计师小林' }])
+    const openContact = vi.fn()
+    window.addEventListener(UI_EVENTS.openContact, openContact)
+    try {
+      await render('小林', false, true)
+      await act(async () => nameRows()[0]!.click())
+      expect((openContact.mock.calls[0]![0] as CustomEvent).detail).toBe('person-1')
+      expect(remote.opened).toEqual([])
+    } finally { window.removeEventListener(UI_EVENTS.openContact, openContact) }
+  })
+
+  it('a name alone is not "nothing found"; scoped searches and the desktop panel list no names', async () => {
+    remote.messages.mockResolvedValue({ data: [], error: null })
+    await render('设计组', false, true)
+    expect(nameRows()).toHaveLength(1)
+    expect(host.textContent).not.toContain('globalSearch.emptyFor')
+    await act(async () => updateSearchSession({ chips: [{ kind: 'in', chatId: GROUP }] }))
+    await settle()
+    expect(nameRows()).toHaveLength(0)
+    resetSearchSession()
+    await render('设计组', false, false)
+    expect(nameRows()).toHaveLength(0)
   })
 })
 

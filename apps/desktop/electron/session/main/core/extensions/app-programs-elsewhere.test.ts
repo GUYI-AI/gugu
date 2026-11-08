@@ -82,7 +82,7 @@ describe('the machine that has the session does the call', () => {
       action({ call_id: 'workspace-with-read', method: 'filesRead' },
         { ref: { workspace: 'session:s-here', id: 'data.bin' }, offset: 0, length: 3 })))
       .toEqual({ size: 3, offset: 0, data: 'AP+A' });
-    expect(readWorkingCopy).toHaveBeenCalledWith({ workspace: 'session:s-here', id: 'data.bin' }, 'data.bin', 0, 3);
+    expect(readWorkingCopy).toHaveBeenCalledWith({ workspace: 'session:s-here', id: 'data.bin' }, 'data.bin', 0, 3, null);
   });
 
   it('a file call asks nothing of the App: another version, not installed, switched off, no capability here', async () => {

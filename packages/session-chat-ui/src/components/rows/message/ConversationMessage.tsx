@@ -1,4 +1,5 @@
 /** @jsxImportSource solid-js */
+import { PasswordRequestCard, passwordRequest, PASSWORD_CARD_HEIGHT } from './PasswordRequestCard';
 import { GroupReply } from '../agent-activity/GroupReply';
 import { conversationSpeaker, messageReplyReference } from '@session-chat/state/conversation-density';
 import { For, Show, createMemo } from 'solid-js';
@@ -90,10 +91,11 @@ function singleHeight(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars): nu
     return head.height + backgroundHeight(item, ctx) + (head.referenceInFooter ? measureUserMessage(item, conversationContext(ctx, item), conversationVars(item, vars)) : 0);
   }
   const header = item.conversationPart === 'body' ? 0 : headerLayout(item, ctx).height;
+  if (passwordRequest(item)) return header + PASSWORD_CARD_HEIGHT;
   const bodyVars = conversationVars(item, vars);
   // 时间、复制、编辑那一行照原气泡画在气泡下面(owner 定稿 0 号图);没有正文就没有气泡,也不留这一行。
   const bodyCtx = conversationContext(ctx, item);
-  const body = measureUserMessage(item, bodyCtx, bodyVars);
+  const body = passwordRequest(item) ? PASSWORD_CARD_HEIGHT : measureUserMessage(item, bodyCtx, bodyVars);
   // 折着 ⇔ 展开量出来比现在高;那时气泡下面多一行「展开全文」。
   const folded = bodyCtx.expandedId !== item.id && !isMessageEditing(item.id, ctx) && measureUserMessage(item, { ...bodyCtx, expandedId: item.id }, bodyVars) > body;
   const canCollapse = ctx.expanded(conversationBubbleKey(item)) && ctx.latestConversationMessageId !== item.id
@@ -161,8 +163,8 @@ function SingleConversationMessage(props: { data: ChatMessage; ctx: RenderCtx; v
       <ProcessBackgroundList ownerId={props.data.id} ctx={props.ctx} />
     </Show>
     <Show when={props.data.conversationPart !== 'head' || head().referenceInFooter}>
-      <UserMessageCard data={props.data} ctx={bodyCtx} vars={conversationVars(props.data, props.vars)} conversation sender={name}
-        footerReference={head().referenceInFooter ? reference : undefined} />
+      <Show when={passwordRequest(props.data)} fallback={<UserMessageCard data={props.data} ctx={bodyCtx} vars={conversationVars(props.data, props.vars)} conversation sender={name}
+        footerReference={head().referenceInFooter ? reference : undefined} />}>{request => <PasswordRequestCard request={request()} />}</Show>
     </Show>
   </div>;
 }

@@ -18,6 +18,7 @@ import { rowKeyActivate } from '../contacts/contactsPanelStyles'
 import { NOTIFICATION_LIST_SLOT_PREFIX, NOTIFICATION_TOGGLE_SLOT_PREFIX } from './NotificationSlot'
 import { NeedsYouTaskRow } from './NeedsYouTaskRow'
 import { markNeedsYouTaskSeen, useNeedsYouTasks, type NeedsYouTask } from './useNeedsYouTasks'
+import { usePasswordNotifications, openPasswordRequest } from '@/lib/passwordBetaNotifications'
 
 installShellSlots()
 const EMPTY_SLOTS: ReadonlyMap<string, HTMLElement> = new Map()
@@ -28,6 +29,8 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
   const { t } = useTranslation()
   const mobile = useMobileShell()
   const { tasks, count, attention, error } = useNeedsYouTasks()
+  const passwords = usePasswordNotifications()
+  const notificationCount = count + passwords.length
   const open = useSidebarNotificationsOpen()
   useEffect(() => { onAttentionChange?.(attention) }, [onAttentionChange, attention])
   const slots = readShellSlots()
@@ -51,7 +54,7 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
         <IconButton size={mobile ? 'md' : 'sm'} aria-label={title} title={title} aria-pressed={open} on={open} data-testid="notification-toggle" onClick={() => setSidebarNotificationsOpen(!open)}>
           <Bell />
         </IconButton>
-        {count > 0 && <Chip tone="danger" shape="count" className="pointer-events-none absolute -right-1 -top-1" data-testid="notification-count">{count > 99 ? '99+' : count}</Chip>}
+        {notificationCount > 0 && <Chip tone="danger" shape="count" className="pointer-events-none absolute -right-1 -top-1" data-testid="notification-count">{notificationCount > 99 ? '99+' : notificationCount}</Chip>}
       </span>, element, key)
     if (!key.startsWith(NOTIFICATION_LIST_SLOT_PREFIX) || !open || slots?.getSlotLabel?.(key) !== 'active') return null
     return createPortal(<>
@@ -62,6 +65,8 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
       <div data-testid="notification-list" data-notification-scroll="" role="listbox" aria-label={title} className="min-h-0 flex-1 overflow-auto px-2 pb-4">
         {error && <p role="alert">{error}</p>}
         {readError && <p role="alert">{readError}</p>}
+        {passwords.map(request => <Button key={request.requestId} variant="ghost" className="w-full justify-start" data-password-notification={request.requestId}
+          onClick={() => { openPasswordRequest(request); setSidebarNotificationsOpen(false) }}>请求使用密码 · {request.origin}</Button>)}
         {tasks.map(task => {
           const openTask = () => followLink({ kind: 'session', sessionId: task.session.conversationId, deviceId: task.deviceId })
           return <NeedsYouTaskRow key={`${task.deviceId}/${task.session.conversationId}`} task={task} mobile={mobile} emphasis={unread(task)} onClick={openTask} onKeyDown={rowKeyActivate(openTask)} />

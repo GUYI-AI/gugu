@@ -2,6 +2,7 @@ import { marketCompatText } from '@shared/extensions/market'
 import { comparer, reaction } from 'mobx'
 import { observer } from 'mobx-react-lite'
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { ChevronDown, Shield } from '@/lib/icons'
 import { formatAttachmentSize, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { extensionMonogram, localizedManifestText } from '@shared/extensions/catalog'
 import { cardOffer } from '@shared/extensions/app-card-state'
@@ -14,6 +15,8 @@ import { translateSessionMessage } from '@/session/renderer/localization/locale-
 import { askInShell, installConsentPrompt } from '@/session/renderer/features/extensions/install-consent'
 import { rpcOn } from '@/session/renderer/lib/ipc'
 import { deviceScopeTrayDevices, LOCAL_DEVICE_SCOPE } from '@/session/renderer/features/remote-hosts/device-scope-store'
+import { machineChoiceFromHost, machineTakesInstall } from '@/session/renderer/features/remote-hosts/machine-choice'
+import { MachinePicker } from '@/session/renderer/features/remote-hosts/machine-picker'
 import { remoteHostsStore } from '@/session/renderer/features/remote-hosts/remote-hosts-store'
 import { alsoOnMachines, INSTALL_CONSENT_HUMAN_WINDOW_MS, type InstallAlsoOnMachine } from '@shared/extensions/host-actions'
 import { answered, installAgreedOn, InstallRefusedError } from '@/session/shared/extensions/install-agreed-on'
@@ -53,11 +56,10 @@ function useInstalled(id: string | undefined): { version: string; origin: Extens
 }
 
 /**
- * 「装到哪台」(主人 10-02):这台电脑连着的别的机器 —— 新建任务、资源库同一份清单(本机在前,离线的不可选)。没有别的机器
- * (手机,或只有这一台)就不画。画成原生的选择:会话页的 MachinePicker 把菜单弹进会话页的挂载层(getPortalContainer),
- * 聊天里那一层是隐藏的,开了也看不见(L4 装置 10-02 实测)。
+ * 「装到哪台」(主人 10-02):这台电脑连着的别的机器 —— 产品里选机器的那一个 MachinePicker(新建任务、资源库同一份清单与说法:
+ * 离线的列着、写「离线 · X 前」、不给选)。没有别的机器(手机,或只有这一台)就不画。
  */
-const InstallTarget = observer(function InstallTarget({ selectedId, onSelect, className }: { selectedId: string; onSelect: (id: string) => void; className: string }) {
+const InstallTarget = observer(function InstallTarget({ selectedId, onSelect }: { selectedId: string; onSelect: (id: string) => void }) {
   useEffect(() => remoteHostsStore.start(), [])
   const hosts = [...remoteHostsStore.hosts.values()]
   if (hosts.length === 0) return null
@@ -65,27 +67,46 @@ const InstallTarget = observer(function InstallTarget({ selectedId, onSelect, cl
     translateSessionMessage('task.deviceLocal'),
     hosts.map(({ device }) => ({ device, connection: remoteHostsStore.connectionState(device.id) })),
   )
-  return (
-    <select
-      data-testid="extension-bundle-card-machine"
-      aria-label={translateSessionMessage('extensions.bundleCardInstallOn')}
-      value={selectedId}
-      onChange={(event) => onSelect(event.target.value)}
-      className={className}
-    >
-      {machines.map((machine) => (
-        // A Gugu server has no window: an App does not install there (its own answer would only be a refusal).
-        // #7199 A cloud computer is a Gugu server too.
-        <option key={machine.id} value={machine.id} disabled={(!machine.isLocal && !machine.isOnline) || machine.kind === 'server' || machine.kind === 'cloudComputer'}>
-          {machine.label}
-        </option>
-      ))}
-    </select>
-  )
+  return <MachinePicker machines={machines} selectedId={selectedId} onSelect={onSelect} size="compact" side="bottom" testId="extension-bundle-card-machine" />
 })
 
+/**
+ * What the install would be allowed, folded (owner 11-07「卡片很怪(瘦长)」): the count and the first line; the whole list one
+ * click away — and asked in full again in the install sheet. A single line is just said.
+ */
+function PermissionsFold({ text, strong, muted }: { text: string; strong: string; muted: string }) {
+  const [open, setOpen] = useState(false)
+  const t = translateSessionMessage
+  const lines = text.split('\n').filter((line) => line.trim() !== '')
+  if (lines.length < 2) {
+    return <div data-testid="extension-bundle-card-permissions" className={`text-[var(--font-body)] ${strong}`}><ConsentLines text={text} /></div>
+  }
+  // A native fold, as the install sheet's 「详情」 (ConsentBody): the open state is the element's own.
+  return (
+    <details
+      data-testid="extension-bundle-card-permissions"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className={`flex flex-col text-[var(--font-body)] ${strong}`}
+    >
+      <summary
+        data-testid="extension-bundle-card-permissions-toggle"
+        className="flex min-w-0 cursor-pointer list-none items-center gap-2 rounded-md bg-[var(--hover)] px-2 py-1 select-none [&::-webkit-details-marker]:hidden"
+      >
+        <Shield size={14} aria-hidden className={`shrink-0 ${muted}`} />
+        <span className="min-w-0 flex-1 truncate">
+          <span className="font-semibold">{t('extensions.bundleCardPermissions', { count: lines.length })}</span>
+          {open ? null : ` · ${lines[0]}`}
+        </span>
+        <span className={`shrink-0 text-[var(--font-caption)] ${muted}`}>{t(open ? 'extensions.collapse' : 'extensions.expand')}</span>
+        <ChevronDown size={14} aria-hidden className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''} ${muted}`} />
+      </summary>
+      <ConsentLines text={text} className="!mt-2 px-2" />
+    </details>
+  )
+}
+
 /** An extension package (`.guguext`) in a chat, drawn from its own manifest (#6646). */
-export function ExtensionBundleCard({ meta, card, isMine, senderName, chatId }: {
+export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta, card, isMine, senderName, chatId }: {
   meta: Pick<ParsedAttachment, 'fileName' | 'sizeBytes'>
   card: PackageCard
   isMine: boolean
@@ -115,6 +136,9 @@ export function ExtensionBundleCard({ meta, card, isMine, senderName, chatId }: 
   // 「装到哪台」(主人 10-02): this computer by default, or another this window is linked to (InstallTarget).
   const [machineId, setMachineId] = useState(LOCAL_DEVICE_SCOPE)
   const machine = machineId === LOCAL_DEVICE_SCOPE ? null : { id: machineId, label: remoteHostsStore.device(machineId)?.label ?? machineId }
+  // The same reading the install sheet ticks by (`machineTakesInstall`): a cloud computer picked is woken, and installs once awake.
+  const pickedHost = machine ? remoteHostsStore.device(machine.id) : null
+  const machineReady = !machine || (pickedHost !== null && machineTakesInstall(machineChoiceFromHost(pickedHost, remoteHostsStore.connectionState(machine.id))))
   /** What an install on each other machine came to, one line each (that machine's own list is not shown here). */
   const [there, setThere] = useState<{ id: string; machine: string; installed: boolean; refused?: string }[]>([])
   const sayThere = (id: string, machine: string, installed: boolean, refused?: string) =>
@@ -259,7 +283,7 @@ export function ExtensionBundleCard({ meta, card, isMine, senderName, chatId }: 
       data-extension-id={manifest?.id}
       data-installed={installed ? 'true' : undefined}
       data-problem={summary && !summary.ok ? summary.problem : undefined}
-      className="mb-2 box-border flex min-w-0 max-w-72 flex-col gap-2 rounded-xl border border-[var(--border)] p-3"
+      className="mb-2 box-border flex w-[min(100%,440px)] min-w-0 flex-col gap-2 rounded-xl border border-[var(--border)] p-3"
     >
       <div className="flex min-w-0 items-center gap-3">
         <span aria-hidden className={`grid size-8 shrink-0 place-items-center rounded-[var(--radius-document)] border border-[var(--border)] font-mono text-[var(--font-body)] ${strong}`}>
@@ -270,7 +294,7 @@ export function ExtensionBundleCard({ meta, card, isMine, senderName, chatId }: 
             {manifest ? `${name} ${manifest.version}` : meta.fileName}
           </span>
           <span className={`truncate text-[var(--font-caption)] ${muted}`}>
-            {manifest ? `${manifest.id} · ${formatAttachmentSize(sizeBytes)}` : formatAttachmentSize(sizeBytes)}
+            {[manifest?.id, formatAttachmentSize(sizeBytes), manifest && senderName ? t('extensions.bundleCardFrom', { name: senderName }) : null].filter(Boolean).join(' · ')}
           </span>
         </div>
       </div>
@@ -284,80 +308,80 @@ export function ExtensionBundleCard({ meta, card, isMine, senderName, chatId }: 
         <>
           {/* What the consent would ask where it installs: this device's (`grantable`: a phone does not list what only a
               computer gives), or the machine picked — all of it, named as that machine's. */}
-          <div data-testid="extension-bundle-card-permissions" className={`text-[var(--font-body)] ${strong}`}>
-            <ConsentLines text={machine ? describePermissions(manifest, t, machine.label) : describePermissions(appsHere ? appsHere.grantable(manifest) : manifest, t)} />
-          </div>
-          {senderName && <span className={`text-[var(--font-caption)] ${muted}`}>{t('extensions.bundleCardFrom', { name: senderName })}</span>}
+          <PermissionsFold
+            text={machine ? describePermissions(manifest, t, machine.label) : describePermissions(appsHere ? appsHere.grantable(manifest) : manifest, t)}
+            strong={strong}
+            muted={muted}
+          />
           {appsHere && !runsHere && (
             <span data-testid="extension-bundle-card-elsewhere" className={`text-[var(--font-caption)] ${muted}`}>
               {t('extensions.bundleCardElsewhere')}
             </span>
           )}
           {runsHere && (
-            <div className="flex flex-wrap items-center gap-2">
-              <InstallTarget
-                selectedId={machineId}
-                onSelect={setMachineId}
-                className={`max-w-32 truncate rounded-md border border-[var(--border)] bg-transparent px-2 py-1 text-[var(--font-caption)] ${strong}`}
-              />
-              {offer?.action === 'elsewhere' && !machine ? (
-                // E-05: what is here did not come from a chat, so this card cannot update it — said, with the way to the
-                // App page where it is managed; whether there is a newer one there is for its own source to say.
-                <>
-                  <span data-testid="extension-bundle-card-installed-elsewhere" data-from={offer.from ?? 'unknown'} className={`text-[var(--font-caption)] ${muted}`}>
-                    {installedHereLine(offer.from, offer.installedVersion)}
+            <>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <InstallTarget selectedId={machineId} onSelect={setMachineId} />
+                <span className="flex-1" />
+                {offer?.action === 'elsewhere' && !machine ? (
+                  // E-05: what is here did not come from a chat, so this card cannot update it — said, with the way to the
+                  // App page where it is managed; whether there is a newer one there is for its own source to say.
+                  <>
+                    <span data-testid="extension-bundle-card-installed-elsewhere" data-from={offer.from ?? 'unknown'} className={`text-[var(--font-caption)] ${muted}`}>
+                      {installedHereLine(offer.from, offer.installedVersion)}
+                    </span>
+                    <Button size="sm" variant="ghost" data-testid="extension-bundle-card-apps-page" onClick={() => appsHere?.openAppsPage()}>
+                      {t('extensions.openAppsPage')}
+                    </Button>
+                  </>
+                ) : installed && !waiting && !opens && !machine ? (
+                  <span data-testid="extension-bundle-card-opens-in-sessions" className={`text-[var(--font-caption)] ${muted}`}>
+                    {t('extensions.bundleCardOpensInSessions')}
                   </span>
-                  <Button size="sm" variant="ghost" data-testid="extension-bundle-card-apps-page" onClick={() => appsHere?.openAppsPage()}>
-                    {t('extensions.openAppsPage')}
+                ) : (
+                  <Button
+                    size="sm"
+                    data-testid="extension-bundle-card-install"
+                    data-action={machine ? 'install-on' : offer?.action === 'install' && offer.newer ? 'install-newer' : offer?.action}
+                    disabled={install === 'installing' || (waiting && !machine) || !machineReady}
+                    onClick={() => (installed && !machine ? openApp(manifest.id, chatId) : void installFromCard(newer?.card ?? card))}
+                  >
+                    {install === 'installing' || (waiting && !machine)
+                      ? t('extensions.bundleCardInstalling')
+                      : machine
+                        ? t('extensions.installAction')
+                        : offer?.action === 'open'
+                        ? // A newer version than this card's is installed: said, and the card opens it — never a downgrade (L6).
+                          offer.installedNewer !== null
+                          ? t('extensions.bundleCardNewerInstalled', { version: offer.installedNewer })
+                          : t('extensions.bundleCardOpen')
+                        : offer?.action === 'update'
+                          ? t('extensions.bundleCardUpdate', { version: offer.version })
+                          : offer?.action === 'install' && offer.newer
+                            ? t('extensions.bundleCardNewer', { version: offer.version })
+                            : t('extensions.installAction')}
                   </Button>
-                </>
-              ) : installed && !waiting && !opens && !machine ? (
-                <span data-testid="extension-bundle-card-opens-in-sessions" className={`text-[var(--font-caption)] ${muted}`}>
-                  {t('extensions.bundleCardOpensInSessions')}
-                </span>
-              ) : (
-                <Button
-                  size="sm"
-                  data-testid="extension-bundle-card-install"
-                  data-action={machine ? 'install-on' : offer?.action === 'install' && offer.newer ? 'install-newer' : offer?.action}
-                  disabled={install === 'installing' || (waiting && !machine)}
-                  onClick={() => (installed && !machine ? openApp(manifest.id, chatId) : void installFromCard(newer?.card ?? card))}
-                >
-                  {install === 'installing' || (waiting && !machine)
-                    ? t('extensions.bundleCardInstalling')
-                    : machine
-                      ? t('extensions.installAction')
-                      : offer?.action === 'open'
-                      ? // A newer version than this card's is installed: said, and the card opens it — never a downgrade (L6).
-                        offer.installedNewer !== null
-                        ? t('extensions.bundleCardNewerInstalled', { version: offer.installedNewer })
-                        : t('extensions.bundleCardOpen')
-                      : offer?.action === 'update'
-                        ? t('extensions.bundleCardUpdate', { version: offer.version })
-                        : offer?.action === 'install' && offer.newer
-                          ? t('extensions.bundleCardNewer', { version: offer.version })
-                          : t('extensions.installAction')}
-                </Button>
-              )}
-              {updatedTo && <span className={`text-[var(--font-caption)] ${muted}`}>{t('extensions.bundleCardUpdated', { version: updatedTo })}</span>}
-              {there.map((one) => (
-                <span key={one.id} data-testid="extension-bundle-card-there" data-installed={one.installed ? 'true' : 'false'}
-                  className={`text-[var(--font-caption)] ${one.installed ? muted : 'text-[var(--text-error)]'}`}>
-                  {one.refused ?? t(one.installed ? 'extensions.bundleCardInstalledOn' : 'extensions.bundleCardNotInstalledOn', { machine: one.machine })}
-                </span>
-              ))}
-              {refused && (
-                <span data-testid="extension-bundle-card-refused" className="text-[var(--font-caption)] text-[var(--text-error)]">
-                  {refused}
-                </span>
-              )}
-              {install === 'failed' && (
-                <span className="text-[var(--font-caption)] text-[var(--text-error)]">{t('extensions.bundleCardInstallFailed')}</span>
-              )}
-            </div>
+                )}
+              </div>
+                {updatedTo && <span className={`text-[var(--font-caption)] ${muted}`}>{t('extensions.bundleCardUpdated', { version: updatedTo })}</span>}
+                {there.map((one) => (
+                  <span key={one.id} data-testid="extension-bundle-card-there" data-installed={one.installed ? 'true' : 'false'}
+                    className={`text-[var(--font-caption)] ${one.installed ? muted : 'text-[var(--text-error)]'}`}>
+                    {one.refused ?? t(one.installed ? 'extensions.bundleCardInstalledOn' : 'extensions.bundleCardNotInstalledOn', { machine: one.machine })}
+                  </span>
+                ))}
+                {refused && (
+                  <span data-testid="extension-bundle-card-refused" className="text-[var(--font-caption)] text-[var(--text-error)]">
+                    {refused}
+                  </span>
+                )}
+                {install === 'failed' && (
+                  <span className="text-[var(--font-caption)] text-[var(--text-error)]">{t('extensions.bundleCardInstallFailed')}</span>
+                )}
+            </>
           )}
         </>
       )}
     </div>
   )
-}
+})

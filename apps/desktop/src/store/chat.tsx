@@ -33,7 +33,7 @@ import { platform } from '../platform'
 import { bindOutboxActions, createOutboxWiring, type OutboxWiring } from './chatOutboxWiring'
 import { markLatestThreadRead, markManualUnreadAndRefresh } from '../lib/chatUnreadLocator'
 import { useChatUnreadStreamNavigation } from '../lib/chatUnreadStreamNavigation'
-import { ChatStoreProvider, type SendMessageOptions, type SendAttachmentOptions, useDraftAttachmentsStore, useDraftMentionsStore, useTextDraftStore, useDraftQuotesStore } from './chatContext'
+import { ChatStoreProvider, type SendMessageOptions, type SendAttachmentOptions, useDraftAttachmentsStore, useDraftMentionsStore, useTextDraftStore, useDraftQuotesStore, useDraftWhispersStore } from './chatContext'
 import { advanceReadWatermark, advanceSeenReadWatermark, chatReadsWhole, wholeReadSeq, applyThreadSnapshot, fetchOpenThreadSnapshot, patchChatRows, reconcileMemberReadSeqs, type PatchChat } from './chatRealtimeMutations'; import { subscribeChatLineRevisions } from '../lib/accountRevisionListeners'; import { chatOnScreen, isChatOnScreen, isAppActive, useAppActive } from '../lib/onScreenChat'
 import { useMessageReadFailures, useMessageSnapshotEpochs } from './chatMessageReads'
 import { useChatConversation, type ChatConversationAccess } from './useChatConversation'
@@ -73,7 +73,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   const [chatsLoad, setChatsLoad] = useState<'unread' | 'idle' | 'loading' | 'failed'>('unread') // unread = 这个号的列表还没读成过;failed = 最近一次读失败了(#2118:空着不是「没有」)
   const { track: trackMessageRead, noteFreshRead: noteFreshMessageRead, failureOf: messageReadFailureOf } = useMessageReadFailures() // #7199 读失败按会话、按最新一次读记
   const { dropTextDraft, ...textDraftContext } = useTextDraftStore()
-  const draftMentionContext = useDraftMentionsStore(), draftQuoteContext = useDraftQuotesStore()
+  const draftMentionContext = useDraftMentionsStore(), draftQuoteContext = useDraftQuotesStore(), draftWhisperContext = useDraftWhispersStore()
   // @@@draft-attachment (#1872) - per-chat queued-attachment store (state/set/get/drop live in the hook).
   const { dropDraftAttachments, ...draftAttachmentContext } = useDraftAttachmentsStore()
   const cancelChatOpenRef = useRef<(chatId: string, error: Error) => void>(() => undefined)
@@ -287,7 +287,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
   // @@@chat-projection — 会话列表的每一发云端取数都经投影(spec I7 唯一属主):按键取数、按戳 join,
   // 一条通知的代价与账号里有多少会话无关。绑定的三件事在 chatProjectionBinding.ts。
   const chatProjection = useChatProjectionBinding({
-    ledger: projectionRef.current, repositoryRef: imRepositoryRef, getRepository: getImRepository,
+    ledger: projectionRef.current, repositoryRef: imRepositoryRef, getRepository: getImRepository, conversations: cache,
     chatsRef, activeChatIdRef, requestSeqRef: listRequestSeqRef, setChats, onActiveRevoked, canAcknowledge: canAcknowledgeOpenChat, visibleSeqOf: visibleSeqOfChat,
     notifications: { chatMessages: notificationSettings.chatMessages, sound: notificationSettings.sound },
   })
@@ -894,7 +894,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
         setChatNotificationLevel,
         patchChat,
         ...textDraftContext,
-        ...draftMentionContext, ...draftQuoteContext,
+        ...draftMentionContext, ...draftQuoteContext, ...draftWhisperContext,
         ...draftAttachmentContext,
       }}
     >

@@ -614,16 +614,23 @@ export function parseAgentSessionRequest(
     }
     if (name === 'app_call') {
       // Which verbs that machine does for a page elsewhere, and their arguments, are the bridge's to judge (`BRIDGE_VERBS`).
-      const { call_id: callId, session_id: sessionId, device_id: targetDevice, version, method, args } = action
+      const { call_id: callId, session_id: sessionId, device_id: targetDevice, version, method, args, handed } = action
       const target = typeof sessionId === 'string' && sessionId && targetDevice === undefined ? { session_id: sessionId }
         : typeof targetDevice === 'string' && targetDevice && sessionId === undefined ? { device_id: targetDevice } : null
       if (typeof callId !== 'string' || !callId || !target || typeof version !== 'string' || typeof method !== 'string'
         || !args || typeof args !== 'object' || Array.isArray(args)) {
         return { error: 'app_call names the call (call_id), exactly one session_id or device_id, the App\'s version, the verb (method) and its args (an object)' }
       }
+      const file = handed as { workspace?: unknown; id?: unknown } | undefined
+      if (handed !== undefined && (!file || typeof file !== 'object' || typeof file.workspace !== 'string' || !file.workspace || typeof file.id !== 'string' || !file.id)) {
+        return { error: 'app_call handed is the file a person opened in the page: { workspace, id }' }
+      }
       return {
         caller: { kind: 'app', deviceId, deviceLabel: text('deviceLabel'), extensionId, extensionName },
-        action: { action: 'app_call', call_id: callId, ...target, version, method, args: args as Record<string, unknown> },
+        action: {
+          action: 'app_call', call_id: callId, ...target, version, method, args: args as Record<string, unknown>,
+          ...(file ? { handed: { workspace: file.workspace as string, id: file.id as string } } : {}),
+        },
       }
     }
     const ids = action.session_ids

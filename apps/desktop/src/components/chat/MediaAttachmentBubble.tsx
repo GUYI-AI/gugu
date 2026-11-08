@@ -44,18 +44,16 @@ export function MediaAttachmentBubble({ meta, messageId, isMine, onOpenFile, sen
   if (metadata.data?.status === 'expired') return <div ref={box} className={FIT_BUBBLE}><ExpiredAttachmentCard meta={meta} messageId={messageId} isMine={isMine} />{caption}</div>
   if (metadata.data?.status === 'gone' || metadata.isError) return <div ref={box} className={FIT_BUBBLE}><FileAttachmentCard file={meta} isMine={isMine}
     details={t(metadata.isError ? 'attachmentView.fileUnavailable' : 'attachmentView.fileGone')} />{caption}</div>
+  const renderable = isRenderableImage(meta.fileName, meta.mimeType)
   // A sending row owns an ephemeral blob preview, not a committed download capability.
-  if (meta.source.kind === 'url' && meta.source.url.startsWith('blob:')) return <div ref={box} className={FIT_BUBBLE}>
-    {isRenderableImage(meta.fileName, meta.mimeType)
-      ? <img src={meta.source.url} alt={meta.fileName} className="chat-inline-image" style={inlineImageStyle(meta.imageDimensions)} />
-      : <FileAttachmentCard file={meta} isMine={isMine} onOpen={() => undefined} />}{caption}
-  </div>
+  if (meta.source.kind === 'url' && meta.source.url.startsWith('blob:') && !renderable) return <div ref={box} className={FIT_BUBBLE}><FileAttachmentCard file={meta} isMine={isMine} onOpen={() => undefined} />{caption}</div>
   // App 包:按这条消息装(发布者就是发送者,装的时候由宿主读这条消息)。
   if (isExtensionBundle(meta) && meta.source.kind !== 'gone' && meta.source.kind !== 'attachment') return <div ref={box} className={FIT_BUBBLE}><ExtensionBundleCard meta={meta} card={{ source: meta.source, messageId }} isMine={isMine} senderName={senderName} chatId={chatId} />{caption}</div>
   if (meta.source.kind === 'gone') {
     return <div className={FIT_BUBBLE}><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileGone')} onOpen={() => undefined} />{caption}</div>
   }
-  if (isRenderableImage(meta.fileName, meta.mimeType)) return <div ref={box} className={FIT_BUBBLE}><InlineImage meta={meta} messageId={messageId} chatId={chatId} isMine={isMine} />{caption}</div>
+  // One image stays one InlineImage from sending to committed (its folder name may still change); another attachment is another one.
+  if (renderable) return <div ref={box} className={FIT_BUBBLE}><InlineImage key={`${messageId}:${meta.sizeBytes}`} meta={meta} messageId={messageId} chatId={chatId} isMine={isMine} />{caption}</div>
   // Pin the group file version; the first version does not need a label.
   const versionLabel = meta.source.kind === 'item' && meta.source.version > 1 ? t('attachmentView.fileVersion', { n: meta.source.version }) : undefined
   return <div ref={box} className={FIT_BUBBLE}><FileAttachmentCard file={meta} isMine={isMine} versionLabel={versionLabel} onOpen={() => onOpenFile?.(meta)} onDownload={onDownload} downloadLabel={t('chatArea.filePreview.download')} />{caption}</div>
@@ -63,7 +61,8 @@ export function MediaAttachmentBubble({ meta, messageId, isMine, onOpenFile, sen
 
 function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachment; messageId: string; chatId?: string; isMine: boolean }) {
   const { t } = useTranslation('messaging')
-  const box = useRef<HTMLDivElement>(null)
+  // Observed in either state: a sending row is drawn from its local preview without ever being pending.
+  const box = useRef<HTMLElement>(null)
   const near = useNearViewport(box)
   const view = useAttachmentObjectUrl(meta.source, 'thumb', near, meta.fileMetadata)
   const img = useRef<HTMLImageElement>(null)
@@ -73,7 +72,7 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
   const sourceKey = sourceKeyOf(meta.source)
   // 查看器:先拿缩略图打开,翻到这一张再取原图(同一份缓存);卸载时收回 object URL。
   useEffect(() => {
-    if (!ready || !img.current) return
+    if (!ready || !img.current || meta.source.kind === 'url') return
     let full: Promise<string> | null = null
     const unregister = registerFullImage(img.current, () => (full ??= attachmentBytes(meta.source, 'full').then((bytes) => {
       if (bytes.status !== 'ready') throw new Error('attachment is gone')
@@ -100,7 +99,7 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
   }
   if (view.status === 'ready') {
     return (
-      <Button variant="ghost" size="icon" onClick={(e) => openImageFromThumb(e.currentTarget.querySelector('img') as HTMLImageElement)} style={{ display: 'block', width: 'auto', minHeight: 0, padding: 0, border: 'none', background: 'none', cursor: 'zoom-in', ...imageStyle, ...(imageStyle ? { position: 'relative' } : {}) }}>
+      <Button ref={box as RefObject<HTMLButtonElement>} variant="ghost" size="icon" onClick={(e) => openImageFromThumb(e.currentTarget.querySelector('img') as HTMLImageElement)} style={{ display: 'block', width: 'auto', minHeight: 0, padding: 0, border: 'none', background: 'none', cursor: 'zoom-in', ...imageStyle, ...(imageStyle ? { position: 'relative' } : {}) }}>
         <img
           ref={img}
           data-testid={AUTOMATION_TEST_IDS.messageAttachmentImage} data-image-viewer-src={view.objectUrl}
@@ -108,12 +107,13 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
           alt={meta.fileName}
           className="chat-inline-image"
           style={imageStyle ? { position: 'absolute', inset: 0, width: '100%', height: '100%' } : undefined}
-          decoding="async"
+          // The sending row's own preview paints with its bubble (as before); fetched thumbnails decode off the main thread.
+          decoding={view.link ? 'async' : 'sync'}
         />
       </Button>
     )
   }
-  return <div ref={box} aria-label={meta.fileName} className="chat-inline-image chat-inline-image--pending" style={imageStyle} />
+  return <div ref={box as RefObject<HTMLDivElement>} aria-label={meta.fileName} className="chat-inline-image chat-inline-image--pending" style={imageStyle} />
 }
 
 function fitInline(width: number, height: number): { width: number; height: number } {
