@@ -7,7 +7,7 @@ import Database from 'better-sqlite3';
 
 const state = vi.hoisted(() => ({ afterOpen: undefined as (() => void) | undefined }));
 vi.mock('better-sqlite3', async original => {
-  const actual = await original<typeof import('better-sqlite3')>();
+  const actual = await original<{ default: typeof Database }>();
   return { ...actual, default: new Proxy(actual.default, { construct(target, args) {
     const value = Reflect.construct(target, args), after = state.afterOpen; state.afterOpen = undefined; after?.(); return value;
   } }) };
