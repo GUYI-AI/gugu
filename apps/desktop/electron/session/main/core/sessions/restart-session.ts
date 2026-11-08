@@ -21,8 +21,9 @@ import { lifeStore } from './session-pending';
  * 新开时记边界)。❌ 不重放首轮:那句话的工具可能有副作用,点「接着聊」不等于同意再做一遍。
  * 已经排在队里的话是人或别的会话真说过的,照常投递。
  *
- * 只换「引擎那侧确实没了」(`providerSessionState === 'missing'`)的会话,否则什么都不做:另一个窗口、
- * 手机上还挂着的按钮晚到一步时,这条会话可能已经接着聊上了,❌ 再换一次会掐断正在跑的那一轮。
+ * 只换「引擎那侧确实没了」(`providerSessionState === 'missing'`)或启动失败停着(没有一轮在跑)的会话,
+ * 否则什么都不做:另一个窗口、手机上还挂着的按钮晚到一步时,这条会话可能已经接着聊上了,❌ 再换一次会掐断
+ * 正在跑的那一轮。只认库里那个标记不够:标记只在库里还是失败的那条引擎会话时才写得上,写不上时横幅照样在,按钮不能是死的。
  *
  * ❌ 不是「新建一条顶上」:会话 id、标题、在任务里的位置全都原样保留。
  */
@@ -43,7 +44,9 @@ export async function restartSession(
   if (!row) throw new Error('Session not found');
   if (!row.config) throw new Error(`Session has no config: ${sessionId}`);
 
-  if (row.config.providerSessionState !== 'missing') {
+  const replaceable = row.config.providerSessionState === 'missing'
+    || (row.runtime === 'acp' && sessionLife().read(sessionId).kind === 'failed');
+  if (!replaceable) {
     log.info('restartSession: the engine session is not missing; nothing to replace', { sessionId });
     return { replaced: false };
   }

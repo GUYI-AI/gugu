@@ -6,6 +6,7 @@ import type { AppDb } from '@main/db/client';
 const mocks = vi.hoisted(() => ({
   db: undefined as AppDb | undefined,
   calls: [] as string[],
+  lifeKind: 'dormant',
 }));
 vi.mock('@main/db/client', () => ({
   get db() {
@@ -21,6 +22,7 @@ vi.mock('./session-life', () => {
   return { sessionLife: () => ({
   interrupt: async (sessionId: string, event: { reason: string }) => { mocks.calls.push(`${event.reason}:${sessionId}`); },
   start: (sessionId: string, origin: string) => { mocks.calls.push(`start:${sessionId}:${origin}`); },
+  read: () => ({ kind: mocks.lifeKind }),
   }) };
 });
 
@@ -30,6 +32,7 @@ describe('restartSession on a session-life session', () => {
   let fixture: Awaited<ReturnType<typeof openFixture>>;
   beforeEach(async () => {
     mocks.calls = [];
+    mocks.lifeKind = 'dormant';
     fixture = await openFixture('empty');
     mocks.db = fixture.db;
     const config = JSON.stringify({ version: '1', type: 'acp', agentDisplayName: 'T', providerSessionState: 'missing', firstUtterance: '把测试跑一遍', initialMessageId: 'first', initialQueue: [{ text: '把测试跑一遍', origin: 'manual' }] });
@@ -66,6 +69,16 @@ describe('restartSession on a session-life session', () => {
     expect(await restartSession('p', 's')).toEqual({ replaced: false });
     expect(mocks.calls).toEqual([]);
     expect(stored().providerSessionId).toBe('new-engine');
+  });
+
+  it('a start that failed on the missing engine session is replaceable even when the mark could not be written', async () => {
+    const config = { ...stored().config };
+    delete config.providerSessionState;
+    fixture.sqlite.prepare("UPDATE sessions SET provider_session_id = NULL, config = ? WHERE id = 's'").run(JSON.stringify(config));
+    expect(await restartSession('p', 's')).toEqual({ replaced: false });
+    mocks.lifeKind = 'failed';
+    expect(await restartSession('p', 's')).toEqual({ replaced: true });
+    expect(mocks.calls).toEqual(['reconfigure:s']);
   });
 
   it('a first turn still queued (the engine died on its first dispatch) keeps its message id, so it can still be delivered', async () => {
