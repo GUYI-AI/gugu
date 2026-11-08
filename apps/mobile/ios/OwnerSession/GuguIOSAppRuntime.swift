@@ -74,7 +74,7 @@ final class GuguIOSAppRuntime {
             let binding = try self.currentBinding()
             return .init(ownerId: binding.ownerId, deviceId: binding.deviceId, installationId: binding.installationId)
         }, requireOwnerUI: { try Self.requireForegroundOwnerUI() },
-        preferences: { .init(chatEnabled: false, taskEnabled: false, soundEnabled: false) },
+        preferences: { .init(chatEnabled: false, taskEnabled: false, chatSoundEnabled: false, taskSoundEnabled: false) },
         foregroundPresentation: { _ in false }, onHint: { _ in })
     @MainActor private lazy var pushRetirement = GuguIOSPushRetirement(ownerSession: ownerSession,
         client: pushCleanupClient, close: { [weak self] scope, capability in

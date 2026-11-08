@@ -67,6 +67,25 @@ import Foundation
         check(await rejects("mobile_push_close_installation", wrongClose) && sends == beforeClose, "another Auth session cannot be closed with the old credential")
         access = "synthetic-invalid"
         check(await rejects("mobile_push_close_installation", close) && sends == beforeClose, "missing JWT session scope issues zero close requests")
+        access = "synthetic-access"
+        responseBody = "{\"registration_id\":\"55555555-5555-4555-8555-555555555555\",\"generation\":\"66666666-6666-4666-8666-666666666666\"}"
+        let provider = GuguPushRPCProvider(transport: transport, environment: .production)
+        let preferences = GuguPushPreferences(chatEnabled: true, taskEnabled: true, chatSoundEnabled: false, taskSoundEnabled: true)
+        let ack = try await provider.register(.init(ticket: .init(binding: binding, generation: UUID()), preferences: preferences,
+                                                    deviceToken: Data([0, 171])))
+        check(ack.preferences == preferences && ack.registrationId == "55555555-5555-4555-8555-555555555555", "actual C provider and A transport accept the same frozen nine-parameter registration")
+        let sent = try JSONSerialization.jsonObject(with: last!.httpBody!) as! [String: Any]
+        check(sent.count == 9 && sent["p_sound_enabled"] == nil && sent["p_chat_sound_enabled"] as? Bool == false && sent["p_task_sound_enabled"] as? Bool == true,
+              "chat silence and task sound remain independent on the actual request body")
+        let afterRegister = sends
+        var bad = sent; bad["p_sound_enabled"] = false
+        check(await rejects("mobile_push_register", bad) && sends == afterRegister, "obsolete shared sound parameter is rejected before I/O")
+        bad = sent; bad.removeValue(forKey: "p_chat_sound_enabled")
+        check(await rejects("mobile_push_register", bad) && sends == afterRegister, "missing chat sound cannot inherit a task or default value")
+        bad = sent; bad.removeValue(forKey: "p_task_sound_enabled")
+        check(await rejects("mobile_push_register", bad) && sends == afterRegister, "missing task sound cannot inherit a chat or default value")
+        bad = sent; bad["p_task_sound_enabled"] = NSNumber(value: 1)
+        check(await rejects("mobile_push_register", bad) && sends == afterRegister, "numeric task sound cannot masquerade as an actual preference boolean")
         print("SUMMARY \(count) injected transport checks; zero real HTTP/APNs/Keychain/App")
         _ = auths
     }

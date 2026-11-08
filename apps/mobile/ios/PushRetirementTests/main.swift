@@ -42,7 +42,7 @@ import Foundation
         let platform = RetirementPlatform()
         let client = GuguPushClient(platform: platform, provider: nil,
             currentBinding: { let actual = try session.binding(expectedOwnerId: owner); return .init(ownerId: actual.ownerId, deviceId: actual.deviceId, installationId: actual.installationId) },
-            requireOwnerUI: {}, preferences: { .init(chatEnabled: false, taskEnabled: false, soundEnabled: false) },
+            requireOwnerUI: {}, preferences: { .init(chatEnabled: false, taskEnabled: false, chatSoundEnabled: false, taskSoundEnabled: false) },
             foregroundPresentation: { _ in false }, onHint: { _ in })
         assembly = GuguIOSPushRetirement(ownerSession: session, client: client, close: { scope, capability in
             closeCalls += 1
