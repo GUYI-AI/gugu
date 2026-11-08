@@ -1,85 +1,104 @@
-name: Dev Mac build
+# Documentation diagnostic branch only. Never merge into dev/main.
+name: Xcode 26.6 xctestrun documentation
 on:
-  push:
-    branches: [dev]
   workflow_dispatch:
+    inputs:
+      expected_revision:
+        description: Exact reviewed diagnostic commit; must match this ref.
+        type: string
+        required: true
 permissions:
   contents: read
-  actions: read
 concurrency:
-  group: community-ci-dev-mac
-  cancel-in-progress: true
-env:
-  CI: true
-  GUGU_SUPABASE_URL: http://127.0.0.1:54321
-  VITE_SUPABASE_URL: http://127.0.0.1:54321
-  GUGU_SUPABASE_ANON_KEY: community-build-placeholder
-  VITE_SUPABASE_ANON_KEY: community-build-placeholder
-  PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.59.1-noble@sha256:b0ab6f3cb99aa7803adbc14d9027ec1785fc6e433b97e134e0f8fe61683b6b53
+  group: ios-xctestrun-docs-26-6-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  desktop-build-mac:
-    name: Dev desktop app build (macos-15)
-    runs-on: macos-15
-    timeout-minutes: 45
-    permissions:
-      contents: read
-      actions: read
-      issues: write
+  xctestrun-docs:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'GUYI-AI/gugu' && github.ref == 'refs/heads/diag/ios-xctestrun-docs-20261108'
+    name: Read selected Xcode documentation only
+    runs-on: macos-26
+    timeout-minutes: 8
     env:
-      GUGU_CLOUD_COMPUTER_ENABLED: 'false'
-      VITE_GUGU_CLOUD_COMPUTER_ENABLED: 'false'
-      GUGU_PLATFORM_MODELS_ENABLED: 'false'
-      VITE_GUGU_PLATFORM_MODELS_ENABLED: 'false'
-      NODE_OPTIONS: --max-old-space-size=6144
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      EXPECTED_BASE: 11000ab0173fe01552204988fa51f3e0ce50d5de
+      EXPECTED_REVISION: ${{ inputs.expected_revision }}
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - run: command -v tmux || brew install tmux
-      - uses: ./.github/actions/setup-community
-      - run: pnpm build:app:ci
-        env:
-          GUGU_BUILD_SERIAL: '1'
-      - run: pnpm rebuild:native
-      - name: Report a failed dev Mac build
-        if: failure()
-        uses: actions/github-script@v7
+      - name: Bind private documentation output
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = macOS
+          test "$(uname -m)" = arm64
+          docs_root="$RUNNER_TEMP/gugu-xctestrun-docs-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -p "$docs_root/evidence" "$docs_root/gugu-home" "$docs_root/user-data"
+          chmod 700 "$docs_root" "$docs_root/gugu-home" "$docs_root/user-data"
+          printf '%s\n' "DOCS_ROOT=$docs_root" "GUGU_HOME=$docs_root/gugu-home" "GUGU_USER_DATA_DIR=$docs_root/user-data" >> "$GITHUB_ENV"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          script: |
-            const { owner, repo } = context.repo;
-            const label = 'ci-mac-red';
-            const marker = `<!-- ci-dev-mac:${context.sha} -->`;
-            const title = `Dev Mac build failed at ${context.sha.slice(0, 7)}`;
-            const runUrl = `${process.env.GITHUB_SERVER_URL}/${owner}/${repo}/actions/runs/${context.runId}`;
-            const actor = context.payload.sender?.login || context.actor;
-            const body = [
-              marker,
-              `The macOS build failed after a push to dev.`,
-              `Commit: ${context.sha}`,
-              `Merged/pushed by: @${actor}`,
-              `Run: ${runUrl}`,
-              `Inspect the build and native-rebuild logs before the next release.`,
-            ].join('\n\n');
-            try {
-              await github.rest.issues.getLabel({ owner, repo, name: label });
-            } catch (error) {
-              if (error.status !== 404) throw error;
-              try {
-                await github.rest.issues.createLabel({
-                  owner, repo, name: label, color: 'b60205',
-                  description: 'The macOS build failed on dev',
-                });
-              } catch (labelError) {
-                if (labelError.status !== 422) throw labelError;
-                await github.rest.issues.getLabel({ owner, repo, name: label });
-              }
-            }
-            const issues = await github.paginate(github.rest.issues.listForRepo, {
-              owner, repo, labels: label, state: 'all', per_page: 100,
-            });
-            const existing = issues.find(issue => !issue.pull_request && issue.body?.includes(marker));
-            if (existing) {
-              await github.rest.issues.update({
-                owner, repo, issue_number: existing.number, title, body, state: 'open',
-              });
-            } else {
-              await github.rest.issues.create({ owner, repo, title, body, labels: [label] });
-            }
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify exact source and workflow-only difference
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$EXPECTED_BASE"
+          python3 <<'PYDOC'
+          from pathlib import Path
+          import hashlib,json,os,re,subprocess
+          def git(*args):return subprocess.check_output(['git',*args],text=True).strip()
+          head=git('rev-parse','HEAD');expected=os.environ['EXPECTED_REVISION'];base=os.environ['EXPECTED_BASE']
+          assert re.fullmatch('[a-f0-9]{40}',expected) and head==expected==os.environ['GITHUB_SHA']
+          changed=git('diff','--name-only',base,head).splitlines()
+          assert changed==['.github/workflows/ci-dev-mac.yml'] and not git('status','--porcelain')
+          record={'head':head,'base':base,'changed':changed,'workflowSHA256':hashlib.sha256(Path(changed[0]).read_bytes()).hexdigest(),
+              'imageOS':os.environ.get('ImageOS'),'imageVersion':os.environ.get('ImageVersion'),
+              'scope':'Selected Xcode version and full original xctestrun man page only',
+              'dependencyInstalls':0,'builds':0,'simulators':0,'tests':0,'modelCalls':0}
+          (Path(os.environ['DOCS_ROOT'])/'evidence/source.json').write_text(json.dumps(record,indent=2)+'\n')
+          PYDOC
+      - name: Read exact selected version and complete original man page
+        run: |
+          set -euo pipefail
+          python3 <<'PYDOC'
+          from pathlib import Path
+          import gzip,hashlib,json,os,subprocess
+          output=Path(os.environ['DOCS_ROOT'])/'evidence'
+          developer=Path(os.environ['DEVELOPER_DIR']);bundle=developer.parent.parent
+          record={'selectedDeveloperDirectory':str(developer),'expectedXcodeVersion':'26.6',
+              'dependencyInstalls':0,'builds':0,'simulators':0,'tests':0,'modelCalls':0}
+          def save():(output/'documentation.json').write_text(json.dumps(record,indent=2)+'\n')
+          try:
+              version=subprocess.run([str(developer/'usr/bin/xcodebuild'),'-version'],capture_output=True)
+              (output/'xcode-version.stdout.log').write_bytes(version.stdout);(output/'xcode-version.stderr.log').write_bytes(version.stderr)
+              record.update(xcodeVersionExit=version.returncode,xcodeVersion=version.stdout.decode(errors='replace'));save()
+              assert version.returncode==0 and version.stdout.decode().splitlines()[0]=='Xcode 26.6','Selected Xcode differs from26.6'
+              candidates=[developer/'usr/share/man/man5/xcodebuild.xctestrun.5',developer/'usr/share/man/man5/xcodebuild.xctestrun.5.gz']
+              existing=[p for p in candidates if p.is_file()]
+              record['manualCandidates']=[str(p) for p in candidates];save()
+              assert len(existing)==1,'Expected exactly one selected-version original manual page'
+              page=existing[0];assert page.resolve().is_relative_to(bundle.resolve()),'Manual resolves outside selected Xcode bundle'
+              raw=page.read_bytes();assert raw,'Empty manual page'
+              (output/page.name).write_bytes(raw)
+              text=gzip.decompress(raw) if page.suffix=='.gz' else raw
+              (output/'xcodebuild.xctestrun.uncompressed.5').write_bytes(text)
+              record.update(originalPath=str(page),resolvedOriginalPath=str(page.resolve()),originalName=page.name,
+                  originalBytes=len(raw),originalSHA256=hashlib.sha256(raw).hexdigest(),
+                  uncompressedBytes=len(text),uncompressedSHA256=hashlib.sha256(text).hexdigest());save()
+              # Rendering is another view of the same preserved original bytes.
+              rendered=subprocess.run(['/usr/bin/mandoc','-Tutf8',str(output/'xcodebuild.xctestrun.uncompressed.5')],capture_output=True)
+              (output/'xctestrun-man.rendered.txt').write_bytes(rendered.stdout);(output/'mandoc.stderr.log').write_bytes(rendered.stderr)
+              record.update(renderExit=rendered.returncode,renderedSHA256=hashlib.sha256(rendered.stdout).hexdigest());save()
+              assert rendered.returncode==0,'Manual rendering failed; original bytes retained'
+          except Exception as error:
+              record['error']=str(error);save();raise
+          PYDOC
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: xctestrun-docs-26-6-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gugu-xctestrun-docs-${{ github.run_id }}-${{ github.run_attempt }}/evidence/
+          retention-days: 5
+          if-no-files-found: error
