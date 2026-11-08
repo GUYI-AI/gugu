@@ -582,6 +582,11 @@ export type AppCallAction = {
   version: string;
   method: string;
   args: Record<string, unknown>;
+  /**
+   * The file outside its working copy a person opened in the page, to read only: stamped by
+   * the host from the page's binding, never from the page's args. The machine the file is on checks it (`fileRootOf`).
+   */
+  handed?: { workspace: string; id: string };
 };
 
 /**

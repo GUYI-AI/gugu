@@ -6,7 +6,7 @@ import { attachmentBytes } from '@/lib/attachmentBytes'
 const io = vi.hoisted(() => ({ resolve: vi.fn(), shown: vi.fn(), put: vi.fn(), remove: vi.fn() }))
 vi.mock('@/lib/fileAccess', () => ({
   resolveFile: io.resolve, fileReader: () => ({ accountId: 'account', actorId: 'account' }), fileReadSignal: () => undefined,
-  attachmentCache: async () => ({ put: io.put, delete: io.remove }), attachmentCacheOrigin: 'https://attachments.test',
+  attachmentCache: async () => ({ put: io.put, delete: io.remove }), putAttachment: io.put, attachmentCacheOrigin: 'https://attachments.test',
 }))
 vi.mock('@gugu/core/shared/fileResolver', async original => ({ ...await original<typeof import('@gugu/core/shared/fileResolver')>(), shownFileBlob: io.shown }))
 
@@ -27,7 +27,7 @@ it('shows the bytes before the acknowledgement and keeps the plaintext only once
   expect(await bytes.blob.text()).toBe('page')
   expect(io.put).not.toHaveBeenCalled()
   acknowledge(); await bytes.acknowledged
-  expect(io.put).toHaveBeenCalledWith(kept, expect.any(Response)); expect(io.remove).not.toHaveBeenCalled()
+  expect(io.put).toHaveBeenCalledWith(kept, expect.any(Blob)); expect(io.remove).not.toHaveBeenCalled()
 })
 
 it.each(['access', 'revision'] as const)('a revoked read (%s) keeps nothing and removes the plaintext an earlier open kept', async reason => {

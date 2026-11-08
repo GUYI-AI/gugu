@@ -84,6 +84,9 @@ const { EXTENSION_BRIDGE_CHANNEL } = await import('@shared/extensions/bridge-pro
 bridge.registerExtensionBridge();
 const call = (method: string, args: Record<string, unknown> = {}, gesture = false) => handlers.get(EXTENSION_BRIDGE_CHANNEL)!({ sender: contents }, { method, args, gesture });
 const place = () => ({ chat: fixture.chat });
+/** What the folder App asks first: the top and 「附件」 (one folder each), with its view preferences. */
+const opening = (chat = fixture.chat) => Promise.all([call('filesList', { place: { chat }, folder: '' }), call('filesList', { place: { chat }, folder: '附件' }),
+  call('filesViewPreferences', { place: { chat } })]);
 const bind = (agent = false) => bridge.bindExtensionSurface({ webContentsId: 21, extensionId: 'workspace', tabId: 'folder', tabKind: 'workspace.main',
   conversation: fixture.chat, ...{ resourceChat: fixture.chat }, ...(agent ? { operator: { kind: 'agent' as const, id: `user:${fixture.agent}` } } : {}) });
 const routeNames = () => fixture.routes.map(({ route }) => route);
@@ -109,7 +112,7 @@ beforeEach(async () => {
   fixture.apiVersion = 27; fixture.held = false; fixture.failList = false; fixture.routes.length = 0; fixture.waiting.length = 0; sent.length = 0;
   fixture.pickedMembers.length = 0;
   await bridge.chatMembersChanged(fixture.chat, [{ memberId: fixture.agent, left: true }]);
-  bridge.setExtensionBridgeHost({ deliver: async () => undefined, presentation: () => ({ locale: 'en', themeMode: 'light', fullscreen: false, windowFocused: true }) });
+  bridge.setExtensionBridgeHost({ deliver: async () => undefined, selfGuguNumber: () => undefined, presentation: () => ({ locale: 'en', themeMode: 'light', fullscreen: false, windowFocused: true }) });
 });
 afterEach(() => bridge.unbindExtensionSurface(21));
 
@@ -119,27 +122,39 @@ describe('opening the folder: API compatibility and one-use preloads', () => {
     const { result, waves } = await finish((async () => {
       await bind();
       const context = await call('getContext');
-      const files = await Promise.all([call('filesList', { place: place() }), call('filesViewPreferences', { place: place() })]);
+      const files = await opening();
       return { context, files };
     })());
     expect(result.context).toMatchObject({ ok: true, value: { chat: { id: fixture.chat } } });
     expect(result.files.every((answer) => (answer as { ok: boolean }).ok)).toBe(true);
     expect(waves.length, JSON.stringify(waves)).toBeLessThanOrEqual(2);
-    expect(routeNames().sort()).toEqual(['chats', 'rpc/workspace_list_as', 'user_settings', 'users'].sort());
+    // Two folders, each with who made what is in it.
+    expect(routeNames().sort(), JSON.stringify(routeNames())).toEqual(['chats', 'rpc/workspace_list_as', 'rpc/workspace_list_as', 'user_settings', 'users', 'users'].sort());
   });
 
   it('p2: a second list reads afresh', async () => {
     await bind(); await call('getContext');
-    await call('filesList', { place: place() });
+    await call('filesList', { place: place(), folder: '' });
+    fixture.routes.length = 0;
+    expect(await call('filesList', { place: place(), folder: '' })).toMatchObject({ ok: true });
+    expect(routeNames().filter((route) => route === 'rpc/workspace_list_as')).toEqual(['rpc/workspace_list_as']);
+  });
+
+  it('the preload reads the top and 「附件」 only — never the whole tree; a list it did not read ahead drops what it did', async () => {
+    await bind(); await call('getContext');
+    await setImmediate();
+    const ahead = fixture.routes.filter(({ route }) => route === 'rpc/workspace_list_as').map(({ args }) => args.p_folder);
+    expect(ahead).toEqual(['', '附件']);
     fixture.routes.length = 0;
     expect(await call('filesList', { place: place() })).toMatchObject({ ok: true });
-    expect(routeNames().filter((route) => route === 'rpc/workspace_list_as')).toEqual(['rpc/workspace_list_as']);
+    expect(await call('filesList', { place: place(), folder: '' })).toMatchObject({ ok: true });
+    expect(fixture.routes.filter(({ route }) => route === 'rpc/workspace_list_as').map(({ args }) => args.p_folder)).toEqual([undefined, '']);
   });
 
   it.each([25, 26, 27])('API %i reopens the same folder without requests', async (apiVersion) => {
     fixture.apiVersion = apiVersion;
     await bind(); await call('getContext');
-    await Promise.all([call('filesList', { place: place() }), call('filesViewPreferences', { place: place() })]);
+    await opening();
     fixture.routes.length = 0;
     await bridge.retargetExtensionSurface({ webContentsId: 21, tabId: 'folder-reopened', conversation: fixture.chat, resourceChat: fixture.chat });
     await call('getContext');
@@ -153,10 +168,11 @@ describe('opening the folder: API compatibility and one-use preloads', () => {
       await bind();
       await bridge.retargetExtensionSurface({ webContentsId: 21, tabId: 'folder', conversation: fixture.chat, resourceChat: fixture.chat });
       await call('getContext');
-      await Promise.all([call('filesList', { place: place() }), call('filesViewPreferences', { place: place() })]);
+      await opening();
     })());
     expect(waves.length, JSON.stringify(waves)).toBeLessThanOrEqual(2);
-    expect(routeNames().sort()).toEqual(['chats', 'rpc/workspace_list_as', 'user_settings', 'users'].sort());
+    // Two folders, each with who made what is in it.
+    expect(routeNames().sort(), JSON.stringify(routeNames())).toEqual(['chats', 'rpc/workspace_list_as', 'rpc/workspace_list_as', 'user_settings', 'users', 'users'].sort());
   });
 
   it('retargeting another chat preloads that chat once', async () => {
@@ -165,10 +181,9 @@ describe('opening the folder: API compatibility and one-use preloads', () => {
     fixture.routes.length = 0;
     await bridge.retargetExtensionSurface({ webContentsId: 21, tabId: 'folder', conversation: nextChat, resourceChat: nextChat });
     await call('getContext');
-    await Promise.all([call('filesList', { place: { chat: nextChat } }), call('filesViewPreferences', { place: { chat: nextChat } })]);
+    await opening(nextChat);
     const reads = fixture.routes.filter(({ route }) => route === 'rpc/workspace_list_as');
-    expect(reads).toHaveLength(1);
-    expect(reads[0]!.args.p_chat_id).toBe(nextChat);
+    expect(reads.map(({ args }) => [args.p_chat_id, args.p_folder])).toEqual([[nextChat, ''], [nextChat, '附件']]);
   });
 
   it('returning from a file to the folder starts a fresh preload', async () => {
@@ -177,8 +192,8 @@ describe('opening the folder: API compatibility and one-use preloads', () => {
       itemId: '0f000000-0000-4000-8000-000000000021' });
     fixture.routes.length = 0;
     await bridge.retargetExtensionSurface({ webContentsId: 21, tabId: 'folder', conversation: fixture.chat, resourceChat: fixture.chat });
-    await Promise.all([call('filesList', { place: place() }), call('filesViewPreferences', { place: place() })]);
-    expect(routeNames().filter((route) => route === 'rpc/workspace_list_as')).toHaveLength(1);
+    await opening();
+    expect(routeNames().filter((route) => route === 'rpc/workspace_list_as')).toHaveLength(2);
     expect(routeNames().filter((route) => route === 'user_settings')).toHaveLength(1);
   });
 
@@ -211,9 +226,9 @@ describe('opening the folder: API compatibility and one-use preloads', () => {
     fixture.failList = true;
     await bind(); await call('getContext');
     const before = routeNames().filter((route) => route === 'rpc/workspace_list_as');
-    expect(before).toHaveLength(1);
-    expect(await call('filesList', { place: place() })).toMatchObject({ ok: false, message: 'list-offline' });
-    expect(routeNames().filter((route) => route === 'rpc/workspace_list_as')).toHaveLength(1);
+    expect(before).toHaveLength(2);
+    expect(await call('filesList', { place: place(), folder: '' })).toMatchObject({ ok: false, message: 'list-offline' });
+    expect(routeNames().filter((route) => route === 'rpc/workspace_list_as')).toHaveLength(2);
   });
 
   it('p6: an agent page lists as that agent, never as the person', async () => {
@@ -229,15 +244,14 @@ describe('opening the folder: API compatibility and one-use preloads', () => {
     await call('filesList', { place: place(), folder: 'nested' });
     await call('filesList', { place: place() });
     const reads = fixture.routes.filter(({ route }) => route === 'rpc/workspace_list_as');
-    expect(reads).toHaveLength(3);
-    expect(reads.map(({ args }) => args.p_folder)).toEqual([undefined, 'nested', undefined]);
+    expect(reads.map(({ args }) => args.p_folder)).toEqual(['', '附件', 'nested', undefined]);
   });
 
   it('a file revision discards a preload before the first list', async () => {
     await bind(); await call('getContext');
     await bridge.notifyGroupWorkspaceChanged([{ chatId: fixture.chat, itemIds: [] }]);
-    await call('filesList', { place: place() });
-    expect(routeNames().filter((route) => route === 'rpc/workspace_list_as')).toHaveLength(2);
+    await call('filesList', { place: place(), folder: '' });
+    expect(routeNames().filter((route) => route === 'rpc/workspace_list_as')).toHaveLength(3);
   });
 
   it('API 27 does not receive roster-change context or trigger another members read', async () => {

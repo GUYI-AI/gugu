@@ -51,7 +51,7 @@ beforeEach(async () => {
   reads.now = [A, B];
   setExtensionBridgeHost({
     deliver: () => Promise.resolve(),
-    presentation: () => ({ locale: 'en', themeMode: 'dark' as const, fullscreen: false, windowFocused: true }),
+    selfGuguNumber: () => undefined, presentation: () => ({ locale: 'en', themeMode: 'dark' as const, fullscreen: false, windowFocused: true }),
   });
   await bind();
   sent.length = 0;

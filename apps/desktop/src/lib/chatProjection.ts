@@ -112,6 +112,8 @@ export type ChatProjection = {
    * 沉默是仪器还没读到,不是阴性读数。
    */
   isMembershipRevoked: (chatId: string) => boolean
+  /** Every other member's read position this projection already holds; undefined until it has read the conversation. */
+  memberReadSeqs: (chatId: string) => Record<string, number> | undefined
   /** Personal list deletion is authoritative without revoking the retained membership. */
   isConversationDeleted: (chatId: string) => boolean
   ledger: () => readonly ChatProjectionLedgerEntry[]
@@ -567,6 +569,11 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       // 从没读过这个键 ⇒ false。沉默是仪器还没读到,不是阴性读数(铁律 2)。
       return !!cell && cell.value === null
     },
+    memberReadSeqs(chatId) {
+      const members = membersByChat.get(chatId)
+      if (!members) return undefined
+      return Object.fromEntries([...members].filter(([userId]) => userId !== viewerId).map(([userId, member]) => [userId, member.last_read_seq]))
+    },
     isConversationDeleted(chatId) {
       if (confirmedDeletions.has(chatId)) return true
       const cell = cache.get(entityKey('membership', membershipId(chatId, viewerId)))
@@ -639,10 +646,12 @@ export function mergeUnreadRows(
       is_marked_unread: row.is_marked_unread === true,
     }
     const previous = byChat.get(row.chat_id)
-    if (!previous) { byChat.set(row.chat_id, locator); continue }
+    if (!previous) { byChat.set(row.chat_id, locator.stream_kind === 'main' ? locator : { ...locator, first_addressed_message_id: null, first_addressed_seq: null }); continue }
     const first = (locator.message_seq ?? Number.MAX_SAFE_INTEGER) < (previous.message_seq ?? Number.MAX_SAFE_INTEGER)
       ? locator : previous
-    const addressed = (locator.first_addressed_seq ?? Number.MAX_SAFE_INTEGER) < (previous.first_addressed_seq ?? Number.MAX_SAFE_INTEGER) ? locator : previous
+    // A topic lands on its first addressed message, and only the main stream has a view to land in: a mention
+    // inside a reply thread still counts, but it is never where an opening lands.
+    const addressed = locator.stream_kind === 'main' && (locator.first_addressed_seq ?? Number.MAX_SAFE_INTEGER) < (previous.first_addressed_seq ?? Number.MAX_SAFE_INTEGER) ? locator : previous
     byChat.set(row.chat_id, { ...first, unread_count: previous.unread_count + locator.unread_count, addressed_count: previous.addressed_count + locator.addressed_count,
       first_addressed_message_id: addressed.first_addressed_message_id, first_addressed_seq: addressed.first_addressed_seq })
   }

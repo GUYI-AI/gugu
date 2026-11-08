@@ -60,7 +60,7 @@ export default {
       "card": {
         "appUnavailable": "App unavailable",
         "deliveryRejected": "Message not delivered",
-        "outcomeUnknown": "Delivery result unknown",
+        "outcomeUnknown": "Failed to send",
         "generic": "Reply not completed",
         "authentication": "Model authorization refused",
         "network": "Cannot reach the model service",
@@ -90,7 +90,7 @@ export default {
       "generic": "This Agent could not complete the reply",
       "deliveryRejected": "This message did not reach the assistant and will not be resent automatically.",
       "notAdmitted": "Messages retained. Your assistant will reply when ready.",
-      "outcomeUnknown": "Delivery result unknown: the message may have reached your assistant, and it was not resent.",
+      "outcomeUnknown": "Failed to send this message.",
       "undelivered": "Not delivered yet: no running Gugu instance holds this Agent. It will read the message once that instance is open.",
       "appUnavailable": "Not delivered: this came from an App that cannot run where this Agent lives (not installed, turned off, needs an update, or not possible on a phone).",
       "retry": "Retry",
@@ -292,7 +292,6 @@ export default {
     "markUnreadFailed": "Could not mark this chat unread. Try again.",
     "muted": "Notifications muted",
     "noResults": "No chats found",
-    "searchMessages": "Search messages for “{{query}}”",
     "searchMessagesTitle": "Search messages",
     "listLabel": "Chats",
     "pin": "Pin",
@@ -349,6 +348,7 @@ export default {
     "send": "Send",
     "settings": "Settings"
   },
+  "linkPill": {"unavailable": "Unavailable: removed, or you cannot see it", "message": "{{sender}}: {{words}}"},
   "attachmentView": {
     "types": {"pdf": "PDF document", "word": "Word document", "excel": "Excel spreadsheet", "presentation": "Presentation", "text": "Text", "markdown": "Markdown document", "csv": "CSV spreadsheet", "html": "Web page", "json": "JSON document", "archive": "Archive", "image": "Image", "audio": "Audio", "video": "Video"},
     "fileGone": "File deleted",
@@ -513,7 +513,6 @@ export default {
     "memberList": {
       "agentLeave": "Take it out of this group",
       "clearSearch": "Clear search",
-      "createAgent": "New Agent in this group",
       "invite": "Invite members",
       "makeAdmin": "Make admin",
       "manage": "Manage {{name}}",
@@ -523,7 +522,7 @@ export default {
       "setActive": "Switch to active",
       "setPassive": "Switch to passive",
       "loadFailed": "Could not load the member list. Close and reopen 👥 to try again.",
-      "notParticipant": "You are not in this topic yet, so its member list is not visible. Say something in it to join.",
+      "notParticipant": "No members of this topic are visible right now",
       "sectionAgents": "Agents",
       "sectionPeople": "People",
       "myAgents": "My agents · {{count}}",
@@ -684,8 +683,7 @@ export default {
     "more": "More actions",
     "searchChat": "Search chat",
     "searchConversation": "Search this chat",
-    "groupFolder": "Group folder",
-    "folder": "Folder"
+    "folder": "Files"
   },
   "history": {
     "searchTopics": "Search topics",
@@ -770,16 +768,17 @@ export default {
     "retracted": "Message retracted",
     "deliveredFrom": "From {{name}}",
     "sendStatus": {
+      "resend": "Resend",
       "unknown": "Awaiting confirmation",
       "unknownHint": "Waiting for the publication result. This message will update automatically; no need to resend.",
       "archived": "Recipient is archived. Not delivered.",
-      "failed": "Not delivered",
-      "failedActions": "Undelivered message actions",
-      "failedHint": "Not delivered. Click to retry or discard.",
+      "failed": "Failed to send",
+      "failedActions": "Failed message actions",
+      "failedHint": "Failed to send. View message actions.",
       "undelivered": "instance not running, not delivered",
       "sending": "Sending",
       "stopped": "Stopped. Sends with your next message.",
-      "unknownNotResent": "Result unknown; not resent",
+      "unknownNotResent": "Failed to send",
       "failure": {
         "hostOffline": "The computer running this task is offline. It will be sent automatically once that computer is back.",
         "hostNotReady": "The computer running this task is not ready for messages yet. Retry in a moment.",
@@ -852,6 +851,8 @@ export default {
   },
   "topic": {
     "leave": "Leave topic",
+    "leaveHint": "You can still read it, but won't get notifications from this topic",
+    "removeHint": "They can still read it, but won't get notifications from this topic",
     "calledYou": "Someone @ you",
     "pins": {
       "pin": "Pin {{name}} to group",

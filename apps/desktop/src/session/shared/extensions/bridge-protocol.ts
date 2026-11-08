@@ -86,7 +86,9 @@ export const EXTENSION_THEME_CHANNEL = 'gugu-ext:theme';
 export const EXTENSION_TOOL_CONFINEMENT_API_VERSION = 29;
 // 30: source-aware page history; navigation.go(-1|1) and context navigation availability.
 // 31: `gugu.cloud` (app-cloud-core.ts), an App's own part of the cloud, and `gugu.pickAgent`, the person's pick of one of their agents.
-export const EXTENSION_API_VERSION = 31;
+// 32: a person's `getContext().operator` carries their own `guguNumber`.
+// 34: `contributes.prompts` (the App's prompts in the composer's `/` menu) and `gugu.prompts`, the person's own prompts (`prompts`).
+export const EXTENSION_API_VERSION = 34;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
@@ -167,6 +169,12 @@ export interface ExtensionWorkspace {
  * name is done in this one's.
  */
 export type ExtensionOperator = { kind: 'person' } | { kind: 'agent'; id: string };
+/**
+ * API 32: a person's page also says who that person is by 咕咕号 — the signed-in account's own, the number people add and
+ * @ them by. Absent until the host has looked it up (a context update follows); `null` when the account has none or it
+ * could not be read (say so).
+ */
+export type ExtensionContextOperator = { kind: 'person'; guguNumber?: number | null } | { kind: 'agent'; id: string };
 
 /**
  * Where this surface sits right now (真源原则 13): read-only facts, no permission needed. Where a page is open decides
@@ -209,7 +217,7 @@ export interface ExtensionHostContext {
   /** API26: untrusted, immutable initial data from the sender of a message. */
   widget?: { messageId: string; data: Record<string, unknown>; sender: string | null };
   /** Who is working this page (`user:<uuid>` for an agent). Absent on a page nobody draws — the background page, a program. */
-  operator?: ExtensionOperator;
+  operator?: ExtensionContextOperator;
   /** BCP-47 tag of the interface language the user is reading. */
   locale: string;
   /** Whether the host is currently painting light or dark. */
@@ -513,6 +521,8 @@ export type ExtensionHostEvent =
    * the same capability checks as anything else.
    */
   | { type: 'command'; commandId: string }
+  /** The host's Back, given to the page that claimed it (`navigationClaimBack`). */
+  | { type: 'back' }
   /**
    * 后台实例发给视图的一条消息。
    *
@@ -664,6 +674,11 @@ export interface VerbFacts {
    * from every machine.
    */
   machine?: true | 'place';
+  /**
+   * It only reads, on the machine it follows: done or not, nothing there changed. Such a call to another machine goes
+   * out while the cloud computer's state is still being read (a paused one refuses it after); any other call waits for it.
+   */
+  reads?: true;
 }
 
 /**
@@ -692,6 +707,8 @@ export const BRIDGE_VERBS = {
   /** Facts about where this surface sits. */
   getContext: { needs: null },
   navigationGo: { needs: null, only: 'page' },
+  /** The page holds a Back step of its own (a folder inside the App): the host's Back goes to it first (`onBack`). */
+  navigationClaimBack: { needs: null, only: 'page' },
   showContextMenu: { needs: null, only: 'page' },
   /**
    * What the app is showing right now.
@@ -755,6 +772,13 @@ export const BRIDGE_VERBS = {
    * do what. A read is anyone's. A write is the person's press on a page, and on a page an agent works it is not done; a
    * program writes for the agent whose call it runs, the agent named by what gugu stamped on that call.
    */
+  /**
+   * `gugu.prompts` (34): the person's own prompts, the 「我的」 group of the composer's `/` menu (prompt-library.ts). An App's
+   * prompts are listed, never written; a delete is shown to the person at once with its undo.
+   */
+  promptsList: { needs: 'prompts' },
+  promptsSave: { needs: 'prompts' },
+  promptsDelete: { needs: 'prompts' },
   cloudRead: { needs: null },
   cloudWrite: { needs: null, gesture: true, only: 'page', toAgent: { answer: null } },
   cloudProgramWrite: { needs: null, only: 'program' },
@@ -784,8 +808,8 @@ export const BRIDGE_VERBS = {
    */
   readAgentHistory: { needs: 'agents:history' },
   /** External CLI history is every session, never only the agents this App started. */
-  sessionsIndex: { needs: 'agents:history:all', machine: true },
-  sessionsRead: { needs: 'agents:history:all', machine: true },
+  sessionsIndex: { needs: 'agents:history:all', machine: true, reads: true },
+  sessionsRead: { needs: 'agents:history:all', machine: true, reads: true },
   /**
    * Stopping one of the agents this App reaches (starting one, telling one: `dispatch`).
    *
@@ -800,9 +824,9 @@ export const BRIDGE_VERBS = {
    * reachable by nothing else, and removed with it. Storage only: a program that wants
    * pages to notice what it wrote sends a notification.
    */
-  readData: { needs: null, machine: true },
+  readData: { needs: null, machine: true, reads: true },
   writeData: { needs: null, machine: true },
-  listData: { needs: null, machine: true },
+  listData: { needs: null, machine: true, reads: true },
   /**
    * A tool of this extension's own MCP program whose visibility includes `app` (MCP Apps).
    * No capability of its own, like `sendToBackground`: the extension is talking to itself.
@@ -827,9 +851,9 @@ export const BRIDGE_VERBS = {
   filesOpen: { needs: null },
   filesReopen: { needs: null },
   filesClose: { needs: null },
-  filesList: { needs: 'files:read', machine: 'place' },
+  filesList: { needs: 'files:read', machine: 'place', reads: true },
   /** Up to 512 KB of a working copy's file at an offset (`f.read`): how a file of any size is read, on its own machine. */
-  filesRead: { needs: ({ ref }) => ref !== null && typeof ref === 'object' && 'workspace' in ref ? 'files:read' : null, machine: 'place' },
+  filesRead: { needs: ({ ref }) => ref !== null && typeof ref === 'object' && 'workspace' in ref ? 'files:read' : null, machine: 'place', reads: true },
   /** A working copy's text whole, and whether it is there, in those pieces: gated as filesOpen, in `app-files.ts`. */
   filesReadText: { needs: null },
   filesExists: { needs: null },

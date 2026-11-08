@@ -107,7 +107,7 @@ export interface GroupTabContentProps {
 export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId, item, tabbed, inWindow = false, mobile, visible, onForward, onOpenWith }: GroupTabContentProps) {
   const { t } = useTranslation('messaging')
   const slot = groupPageSlot(chatId, tabId)
-  const folderName = useChatFolderName(chatId)
+  const folderName = useChatFolderName()
   const { chats } = useChatStore('chats')
   const chat = chats.find((row) => row.id === chatId)
   const resourceChat = chat?.kind === 'topic' ? chat.source_chat_id ?? undefined : chat?.id

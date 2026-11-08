@@ -25,7 +25,8 @@ const { releaseWorkingCopies } = await import('./working-copy-files');
 
 const workspace = 'session:11111111-1111-4111-8111-111111111111';
 let outside = '';
-const page = (handed: unknown = null) => ({ pageId: 3, extensionId: 'reader', handed }) as never;
+// A page opened on a file by a person (`@@@outside-file`).
+const page = (handed: unknown = null) => ({ pageId: 3, extensionId: 'reader', handed, ...(handed ? { personOpened: true } : {}) }) as never;
 
 beforeEach(async () => {
   releaseWorkingCopies(3);
@@ -134,7 +135,7 @@ it('another machine is asked, for its pieces', async () => {
   f.machine.mockResolvedValue({ deviceId: 'there', projectId: null });
   f.remote.mockResolvedValue({ there: true, value: { size: 2, etag: 'e', offset: 0, data: 'aGk=' } });
   expect((await readAppFileText(page(), { ref: { workspace, id: 'a.md' } })).content).toBe('hi');
-  expect(f.remote).toHaveBeenCalledWith(expect.anything(), expect.any(String), 'filesRead', expect.objectContaining({ ref: { workspace, id: 'a.md' } }), false);
+  expect(f.remote).toHaveBeenCalledWith(expect.anything(), expect.any(String), 'filesRead', expect.objectContaining({ ref: { workspace, id: 'a.md' } }), false, undefined);
 });
 
 const onDisk = (name: string) => fsp.readFile(path.join(f.root, name), 'utf8');
@@ -182,16 +183,15 @@ it('will not write over a file it never read', async () => {
   expect(await onDisk('new/made.txt')).toBe('new');
 });
 
-it('writes the handed file outside the working copy, and no other, whatever the capabilities', async () => {
+it('never writes a file outside the working copy, the one a person opened in the page or another, whatever the capabilities', async () => {
   const file = path.join(outside, 'notes.md');
   const ref = { workspace, id: file };
   await readAppFileText(page(ref), { ref });
-  await writeAppFileText(page(ref), { ref, text: 'saved' });
-  expect(await fsp.readFile(file, 'utf8')).toBe('saved');
   f.capabilities.add('files:write');
+  await expect(writeAppFileText(page(ref), { ref, text: 'saved' })).rejects.toThrow(/read-only/);
   await expect(writeAppFileText(page(), { ref, text: 'no' })).rejects.toMatchObject({ code: 'denied' });
   await expect(writeAppFileChunk(page(), { place: { workspace }, path: file, uploadId: 'u', offset: 0, data: 'bm8=', total: 2, final: true, expectedEtag: 'force' })).rejects.toMatchObject({ code: 'denied' });
-  expect(await fsp.readFile(file, 'utf8')).toBe('saved');
+  expect(await fsp.readFile(file, 'utf8')).toBe('# outside');
 });
 
 it('hears a file on another machine through the window, which has that machine\'s events', async () => {
@@ -217,7 +217,7 @@ it('hears a file on another machine through the window, which has that machine\'
 it('on the machine a file is on: a relative path stays in the working copy, reading and writing', async () => {
   const { machineVerbs } = await import('./machine-verbs');
   const climb = `../${path.basename(outside)}/notes.md`;
-  await expect(machineVerbs.filesRead('reader', { ref: { workspace, id: climb }, offset: 0, length: 10 })).rejects.toThrow('path is outside this workspace: ');
+  await expect(machineVerbs.filesRead('reader', { ref: { workspace, id: climb }, offset: 0, length: 10 }, {}, null)).rejects.toThrow('path is outside this workspace: ');
   await expect(machineVerbs.filesWriteChunk('reader', { place: { workspace }, path: climb, uploadId: 'c', offset: 0, data: 'bm8=', total: 2, final: true, expectedEtag: 'force' })).rejects.toThrow(`${climb} is outside this working copy`);
   expect(await fsp.readFile(path.join(outside, 'notes.md'), 'utf8')).toBe('# outside');
 });

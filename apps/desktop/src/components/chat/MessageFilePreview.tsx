@@ -4,7 +4,7 @@ import { messageActionItems } from './messageActionItems'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { bindFileViewerMenu } from '../preview/file-viewer-menu'
 import { quoteChatFile, selectedTextQuote } from '../preview/quote-preview-file'
-import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
+import { isMpegTsVideo, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { downloadBlob } from '../../lib/download'
@@ -22,6 +22,7 @@ import { savedFileName } from '../../session/shared/extensions/app-runtime-proto
 import { chatFolderPreview } from '../preview/chat-folder-preview-registration'
 import type { HtmlPreviewRegistration } from '../preview/HtmlPreviewFrame'
 import type { FileViewerSelection } from '@/session/shared/preview/file-viewer-menu'
+import { useFilePlace } from '../preview/file-place'
 
 const fileOpenLog = rendererLogger('chat/file-open')
 
@@ -75,7 +76,7 @@ async function previewBytes(file: PreviewFile | HostedPreviewFile, options: { sh
  * ranges); anything else, its bytes — as text for what is read as text. A file gone throws `gone`. The chat's preview and
  * a peek beside an App (AppPeek) read it this one way.
  */
-type PreviewRead = { content: string | ArrayBuffer | null; acknowledged?: Promise<void>; videoUrl?: string; expiresAt?: number; renew?: () => Promise<{ videoUrl: string; expiresAt: number }>; release?: () => Promise<void>; error?: string; errorStatus?: 'gone' | 'expired' | 'missing' | 'failed' }
+type PreviewRead = { content: string | ArrayBuffer | null; binary?: boolean; acknowledged?: Promise<void>; videoUrl?: string; expiresAt?: number; renew?: () => Promise<{ videoUrl: string; expiresAt: number }>; release?: () => Promise<void>; error?: string; errorStatus?: 'gone' | 'expired' | 'missing' | 'failed' }
 function previewFailure(error: unknown, t: TFunction<'messaging'>): PreviewRead {
   if (error instanceof FileReadRevokedError && (error.reason === 'access' || error.reason === 'revision')) return { content: null, errorStatus: 'failed', error: t(error.reason === 'access' ? 'attachmentView.fileNoAccess' : 'attachmentView.fileUpdated') }
   const errorStatus = error instanceof Error && (error.message === 'gone' || error.message === 'expired' || error.message === 'missing') ? error.message : 'failed'
@@ -104,6 +105,9 @@ async function readPreview(file: PreviewFile | HostedPreviewFile, kind: Document
     const content = URL.createObjectURL(blob)
     return { content, acknowledged, release: async () => URL.revokeObjectURL(content) }
   }
+  // A `.ts` / `.mts` is TypeScript or a recording whatever type it was stored with; only its bytes tell. A recording is shown
+  // like any video this preview cannot play.
+  if (kind === 'text' && await isMpegTsVideo(file.fileName, blob)) return { content: null, binary: true, acknowledged }
   return { content: kind === 'text' || kind === 'markdown' || kind === 'html' ? await blob.text() : await blob.arrayBuffer(), acknowledged }
 }
 
@@ -146,6 +150,7 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
     if (seenOff.current) { seenOff.current = false; setWaitingFor(null); setBesideOffline(null); setAttempt((n) => n + 1) }
   }, [devices, waitingFor])
   const itemId = file.source.kind === 'item' ? file.source.itemId : null
+  const at = useFilePlace(itemId)
   const hostedHtml = file.source.kind === 'hosted' ? file.source.registerHtml : undefined
   const registerHtml = useMemo(() => {
     if (hostedHtml) return hostedHtml
@@ -225,5 +230,6 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   if (file.source.kind === 'hosted' && !missing) for (const app of file.source.openIn ?? []) actions.push({ key: `open-in-${app.key}`, icon: SquareArrowRight, label: app.label, onSelect: app.open })
   const notice = besideOffline ? t('attachmentView.besideOfflineNotice', { machine: besideOffline.machine || t('attachmentView.holderMachine') }) : undefined
   // `key`: a read again (the machine back) gives the HTML preview a new registration, so its files are asked for again.
-  return <MessageFilePreviewPanel key={attempt} {...(file.source.kind === 'hosted' ? { folders: file.source.folders, unreadableAction: file.source.unreadableAction, ...(file.source.edit ? { onEdit: file.source.edit } : {}) } : {})} notice={notice} registerHtml={registerHtml} viewerRef={viewerRef} fill={fill} tabbed={tabbed} mobile={mobile} file={file} kind={kind} content={read?.content ?? null} videoUrl={read?.videoUrl} onVideoError={renewVideo} loading={kind !== 'unsupported' && read === null} {...(fraction === undefined ? {} : { loadingFraction: fraction })} error={read?.error} onBack={onBack} onClose={onClose} actions={actions} onOpenExternal={missing || file.document || (file.source.kind === 'hosted' ? !file.source.openExternal : kind === 'unsupported') ? undefined : openExternal} />
+  const shown = read?.binary ? 'unsupported' : kind
+  return <MessageFilePreviewPanel key={attempt} {...(file.source.kind === 'hosted' ? { folders: file.source.folders, unreadableAction: file.source.unreadableAction, ...(file.source.edit ? { onEdit: file.source.edit } : {}) } : {})} notice={notice} registerHtml={registerHtml} at={at} viewerRef={viewerRef} fill={fill} tabbed={tabbed} mobile={mobile} file={file} kind={shown} content={read?.content ?? null} videoUrl={read?.videoUrl} onVideoError={renewVideo} loading={kind !== 'unsupported' && read === null} {...(fraction === undefined ? {} : { loadingFraction: fraction })} error={read?.error} onBack={onBack} onClose={onClose} actions={actions} onOpenExternal={missing || file.document || (file.source.kind === 'hosted' ? !file.source.openExternal : shown === 'unsupported') ? undefined : openExternal} />
 }

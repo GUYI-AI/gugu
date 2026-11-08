@@ -9,6 +9,8 @@ vi.mock('../../../../apps/desktop/electron/mcp/register-gugu-tool.mjs', () => ({
 }))
 vi.mock('../../../../apps/desktop/electron/password-vault/beta-runtime-port', () => ({ passwordBetaAgentPort: () => ports }))
 const context = () => ({ kind: 'session-only', nativeSessionId: 'native', expectedOwnerUserId: 'owner', subjectId: 'agent' }) as GuguMcpContext
+const requestId = '11111111-1111-4111-8111-111111111111'
+const credentialId = '22222222-2222-4222-8222-222222222222'
 afterEach(() => { vi.resetAllMocks(); vi.resetModules(); vi.unstubAllGlobals(); handlers.clear() })
 
 describe('Beta password MCP boundary', () => {
@@ -27,7 +29,7 @@ describe('Beta password MCP boundary', () => {
     const lifetime = await register('beta')
     ports.request.mockResolvedValue({ status: 'pending', requestId: 'request' })
     const call = new AbortController()
-    const input = { action: 'request', credentialId: 'ref', browserId: 'browser', loginUrl: 'https://example.com/login', selection: { form: 'form', account: '#account', password: '#password' } }
+    const input = { action: 'request', credentialId, browserId: 'browser', loginUrl: 'https://example.com/login', selection: { form: 'form', account: '#account', password: '#password' } }
     const reply = await handlers.get('password_login')!(input, call.signal)
     call.abort()
     expect(ports.request).toHaveBeenCalledWith(context(), lifetime, input)
@@ -39,15 +41,15 @@ describe('Beta password MCP boundary', () => {
     await register('beta')
     const canary = 'password-test-error-canary'
     ports.start.mockRejectedValue(new Error(canary, { cause: new Error(canary) }))
-    const reply = await handlers.get('password_login')!({ action: 'start', requestId: 'request' }, new AbortController().signal)
+    const reply = await handlers.get('password_login')!({ action: 'start', requestId }, new AbortController().signal)
     expect(JSON.stringify(reply)).not.toContain(canary)
     expect(JSON.stringify(reply)).toContain('unavailable')
   })
   it('uses separate explicit start and status actions', async () => {
     await register('beta')
     ports.status.mockResolvedValue({ status: 'approved' })
-    await handlers.get('password_login')!({ action: 'status', requestId: 'request' }, new AbortController().signal)
-    expect(ports.status).toHaveBeenCalledWith(context(), 'request')
+    await handlers.get('password_login')!({ action: 'status', requestId }, new AbortController().signal)
+    expect(ports.status).toHaveBeenCalledWith(context(), requestId)
     expect(ports.start).not.toHaveBeenCalled()
   })
 })

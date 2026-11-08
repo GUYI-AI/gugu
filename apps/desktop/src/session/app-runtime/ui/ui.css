@@ -300,6 +300,11 @@
 }
 :where(progress)::-webkit-progress-bar { background: var(--em-border); border-radius: var(--em-radius-capsule); }
 :where(progress)::-webkit-progress-value { background: var(--em-accent-9); border-radius: var(--em-radius-capsule); transition: width var(--em-dur-med) var(--em-ease); }
+/* No value: on its way, how far unknown — a short bar runs along the track. `hidden` holds over the display above. */
+:where(progress:not([value])) { background: linear-gradient(var(--em-accent-9), var(--em-accent-9)) -67% 0 / 40% 100% no-repeat var(--em-border); animation: em-progress-run 1.2s var(--em-ease) infinite; }
+:where(progress:not([value]))::-webkit-progress-bar { background: transparent; }
+:where(progress, meter)[hidden] { display: none; }
+@keyframes em-progress-run { to { background-position: 167% 0; } }
 :where(meter)::-webkit-meter-bar { height: 6px; border: 0; background: var(--em-border); border-radius: var(--em-radius-capsule); }
 :where(meter)::-webkit-meter-optimum-value { background: var(--em-accent-9); }
 :where(meter)::-webkit-meter-suboptimum-value { background: var(--em-foreground-warning); }

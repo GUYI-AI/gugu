@@ -6,12 +6,11 @@ import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallbac
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useStableHandler } from '@/hooks/useStableHandler'
 import { useTranslation } from 'react-i18next'
-import { BellOff, ChevronDown, ChevronRight, FolderClosed, MessageCircle, MessageSquare, Plus, Search, SquarePen, UserRound, Users, X, Zap } from '@/lib/icons'
+import { BellOff, ChevronDown, ChevronRight, FolderClosed, MessageCircle, MessageSquare, Plus, SquarePen, UserRound, Users, X, Zap } from '@/lib/icons'
 import { Sheet } from './ui/Sheet'
 import { DropdownMenu, MenuItem } from './ui/Menu'
 import { PaneEmptyState } from './ui/PaneEmptyState'
 import { SearchField } from './ui/SearchField'
-import { HeaderSearch } from './ui/HeaderSearch'
 import { Pane, PaneHeader } from './ui/Pane'
 import { ListRow } from './ui/ListRow'
 import { clearDraggedScreenContent, setDraggedScreenContent } from '../session/renderer/lib/drag-screen-content'
@@ -46,7 +45,6 @@ import { useLongPress } from '../hooks/useLongPress'
 import { useRowContextMenu } from '../hooks/useRowContextMenu'
 import { useAgentDisplayStatuses } from '../hooks/useAgentDisplayStatus'
 import { useShellTabIs } from '../lib/shellTab'
-import { openGlobalSearch } from '../session/renderer/features/global-search/search-session'
 import { useShownAgentStatus, type ShownAgentStatus } from './chat/useAgentsOnCloudComputer'
 import { AgentHostStaleBadge } from './AgentHostStaleBadge'
 import { aggregateGroupAgentStatus } from '../lib/groupAgentStatus'
@@ -835,15 +833,16 @@ export function ChatListPanel({
       onChatSelected?.('sidebar')
       return
     }
-    if (chat.unread_locator) {
-      void openUnreadChat(chat.id).catch((error) => {
+    // A phone's list covers the chat it reopens, so a tap there is an opening (#6530), not a jump inside a chat on screen.
+    if (chat.unread_locator || mobile) {
+      void (mobile ? openUnreadChat(chat.id, false) : openUnreadChat(chat.id)).catch((error) => {
         chatListLog.error({ error: String(error) }, 'unread locator open failed')
       })
     } else {
       setActiveChatId(chat.id)
     }
     onChatSelected?.(focusTarget)
-  }, [drafts, inSidebar, onChatSelected, openUnreadChat, setActiveChatId, selectedChatId])
+  }, [drafts, inSidebar, mobile, onChatSelected, openUnreadChat, setActiveChatId, selectedChatId])
 
   const toggleTopics = (chatId: string) => {
     setExpandedTopicSources((previous) => {
@@ -1007,12 +1006,6 @@ export function ChatListPanel({
       {/* Normal chats */}
       {!inSidebar && !loadingChats && normalRows}
 
-      {mobile && hasSearchQuery && (
-        <ListRow mobile role="button" tabIndex={0} data-testid="chat-list-search-messages" leading={<Search size={20} color="var(--text-tertiary)" />}
-          title={t('chatList.searchMessages', { query: listQuery.trim() })}
-          onClick={() => openGlobalSearch({ text: listQuery.trim() })} />
-      )}
-
     </div>
   )
   const dialogs = (
@@ -1034,7 +1027,6 @@ export function ChatListPanel({
 
   return (
     <Pane paneRole="nav" mobile={mobile} data-phone-root-list={mobile ? 'chats' : undefined} style={NAV_PANE_STYLE}>
-      <HeaderSearch mobile={mobile} externalTrigger={mobile ? 'chats' : undefined} active={chatsShown && !hidden} value={searchQuery} onChange={setSearchQuery} placeholder={t('chatList.search')} testId={AUTOMATION_TEST_IDS.chatListSearchInput}>{(searchButton) => (
       <PaneHeader
         title={tMain(mobile ? 'shell.messagesMobile' : 'shell.chats')}
         leading={headerLeading}
@@ -1044,7 +1036,6 @@ export function ChatListPanel({
         actions={
           <>
             <NotificationSlot part="toggle" />
-            {!notificationsOpen && searchButton}
 
             <DropdownMenu.Root
               open={showPlusMenu}
@@ -1090,7 +1081,6 @@ export function ChatListPanel({
           </>
         }
       />
-      )}</HeaderSearch>
 
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div data-notification-original-list="" className="flex min-h-0 flex-1 flex-col" style={notificationsOpen ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>

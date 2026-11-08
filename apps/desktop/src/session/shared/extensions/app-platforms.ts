@@ -25,6 +25,8 @@ export const PHONE_CAPABILITY_SUPPORT = {
   'agents:control:all': 'agent',
   'agents:control:all-machines': 'available',
   'agents:tools': 'agent',
+  // The person's prompts are the account's; only an App's program (its agent's tools) reads and writes them.
+  prompts: 'agent',
   notifications: 'desktop-only',
 } as const satisfies Record<ExtensionCapability, 'available' | 'agent' | 'desktop-only'>;
 

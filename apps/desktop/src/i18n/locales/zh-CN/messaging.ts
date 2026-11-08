@@ -60,7 +60,7 @@ export default {
       "card": {
         "appUnavailable": "App 用不了",
         "deliveryRejected": "消息未送达",
-        "outcomeUnknown": "投递结果未知",
+        "outcomeUnknown": "发送失败",
         "generic": "回复没有完成",
         "authentication": "模型服务拒绝了授权",
         "network": "连不上模型服务",
@@ -89,7 +89,7 @@ export default {
       "generic": "Agent 本次回复出错，未能完成",
       "deliveryRejected": "这条消息没有送到助理，也不会自动重投。",
       "notAdmitted": "消息已保留，助理就绪后回复。",
-      "outcomeUnknown": "投递结果未知：消息可能已经送到助理，没有重投。",
+      "outcomeUnknown": "消息发送失败。",
       "undelivered": "消息暂未送达：没有运行中的咕咕实例持有这个 Agent，打开那个实例后会由它读取。",
       "appUnavailable": "未送达：这条来自一个 App，它在这个 Agent 所在的设备上用不了（没有安装、已关闭、需要更新，或手机上不能运行）。",
       "retry": "重试",
@@ -291,7 +291,6 @@ export default {
     "markUnreadFailed": "标记未读失败，请重试",
     "muted": "消息免打扰",
     "noResults": "未找到对话",
-    "searchMessages": "搜索消息「{{query}}」",
     "searchMessagesTitle": "搜索消息",
     "listLabel": "对话列表",
     "pin": "置顶",
@@ -348,6 +347,7 @@ export default {
     "send": "发送",
     "settings": "设置"
   },
+  "linkPill": {"unavailable": "不可用：已删除，或你无权查看", "message": "{{sender}}：{{words}}"},
   "attachmentView": {
     "types": {"pdf": "PDF 文档", "word": "Word 文档", "excel": "Excel 表格", "presentation": "演示文稿", "text": "文本", "markdown": "Markdown 文档", "csv": "CSV 表格", "html": "网页", "json": "JSON 文档", "archive": "压缩文件", "image": "图片", "audio": "音频", "video": "视频"},
     "fileGone": "文件已删除",
@@ -512,7 +512,6 @@ export default {
     "memberList": {
       "agentLeave": "让它退出群聊",
       "clearSearch": "清除搜索",
-      "createAgent": "新建 Agent 并加入本群",
       "invite": "邀请成员",
       "makeAdmin": "设为管理员",
       "manage": "管理 {{name}}",
@@ -522,7 +521,7 @@ export default {
       "setActive": "改为主动",
       "setPassive": "改为被动",
       "loadFailed": "成员名单没加载出来。关掉再打开一次 👥 试试。",
-      "notParticipant": "你还不是这条话题的参与者，所以看不到成员名单。在里面说一句就进来了。",
+      "notParticipant": "暂时看不到这条话题的成员",
       "sectionAgents": "Agent",
       "sectionPeople": "人",
       "myAgents": "我的 agent · {{count}}",
@@ -682,8 +681,7 @@ export default {
     "more": "更多操作",
     "searchChat": "搜索对话",
     "searchConversation": "在对话中搜索",
-    "groupFolder": "群文件夹",
-    "folder": "文件夹"
+    "folder": "文件"
   },
   "history": {
     "searchTopics": "搜索话题",
@@ -768,16 +766,17 @@ export default {
     "retracted": "消息已撤回",
     "deliveredFrom": "来自 {{name}}",
     "sendStatus": {
+      "resend": "重发",
       "unknown": "状态待确认",
       "unknownHint": "正在等待发布结果，消息到达后会自动更新，无需重发。",
       "archived": "对方已归档、未送达",
-      "failed": "未送达",
-      "failedActions": "未送达消息操作",
-      "failedHint": "未送达，点击重试或丢弃",
+      "failed": "发送失败",
+      "failedActions": "发送失败消息操作",
+      "failedHint": "发送失败，点击查看消息操作",
       "undelivered": "所在实例未运行、未送达",
       "sending": "发送中",
       "stopped": "已停止，下一句发出时一起发送",
-      "unknownNotResent": "结果未知，没有重发",
+      "unknownNotResent": "发送失败",
       "failure": {
         "hostOffline": "这个任务所在的电脑现在不在线，它上线后会自动发出",
         "hostNotReady": "这个任务所在的电脑还没准备好接收消息，稍后点重试",
@@ -850,6 +849,8 @@ export default {
   },
   "topic": {
     "leave": "退出话题",
+    "leaveHint": "你仍可阅读，只是不再收到这个话题的通知",
+    "removeHint": "对方仍可阅读，只是不再收到这个话题的通知",
     "calledYou": "有人 @ 你",
     "pins": {
       "pin": "将“{{name}}”置顶到主群",

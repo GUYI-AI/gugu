@@ -17,11 +17,13 @@ import { ThemeContext } from './theme-context';
 
 /**
  * 会话页自身的 CSS(session-ui 的 theme registry、chat-ui 的 theme.css.ts、代码高亮器)按
- * `.emlight` / `.emdark` 取色阶,所以根上仍要打这个类 —— 但它现在是咕咕主题的投影,不是
- * 另一份独立状态。真值与理由见 `lib/theme/host-theme.ts`。
+ * `.emlight` / `.emdark` 取色阶 —— 这个类是咕咕主题的投影,不是另一份独立状态。真值与理由见
+ * `lib/theme/host-theme.ts`。
+ * 嵌在咕咕里时,类在会话页自己的挂载元素上(EmdashSessionFrame 随咕咕主题同步),❌ 打到 `<html>`:
+ * 那样会话页的 `--border` 等同名变量会落到整个咕咕,谁赢只看样式表先后。只有独立打开时才挂在根上。
  */
 function applyTheme(effective: EffectiveTheme) {
-  if (typeof document === 'undefined') return;
+  if (typeof document === 'undefined' || window.__EMDASH_MOUNT__) return;
   const root = document.documentElement;
   root.classList.remove('emlight', 'emdark');
   root.classList.add(effective);

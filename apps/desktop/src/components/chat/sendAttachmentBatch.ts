@@ -1,6 +1,6 @@
 import type { OutboxWiring } from '../../store/chatOutboxWiring'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
-import { formatAttachmentMetadata, inferAttachmentKind, resolveFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
+import { formatAttachmentMetadata, inferAttachmentKind, resolveFileMimeType, sniffFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
 import { keepSentAttachment } from '../../lib/attachmentBytes'
 import { rendererLogger } from '../../lib/log'
 import { type AttachmentsEndpoint } from '@gugu/core/cloud/attachmentsApi'
@@ -105,6 +105,7 @@ export async function sendAttachmentBatch(args: {
 }): Promise<string | undefined> {
   if (!args.files.length) return undefined
   if (args.threadRootId != null || args.isThreadRoot === true) await requireThreadCapableChat(args.chatId, 'sendAttachmentBatch')
+  await Promise.all(args.files.map(sniffFileMimeType))
   const captionIndex = args.files.findLastIndex(file => inferAttachmentKind(file) === 'image')
   const placeholders: Awaited<ReturnType<typeof placeholderRow>>[] = []
   let index = 0

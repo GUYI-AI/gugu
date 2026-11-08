@@ -192,7 +192,7 @@ export type AcpRuntimeClient = ContractClient<AcpApiContract> & {
     sessionId: string;
     prompt: PromptInput;
     steerIfBusy?: boolean;
-  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true }>;
+  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true; reason?: string }>;
   waitPromptDetached(input: { requestId: string }): Promise<{ queued: boolean }>;
   /**
    * #6396 告诉一条会话一件事:转录里一行 / agent 下一轮的开头(见 SessionManager.announce)。
@@ -208,7 +208,7 @@ type AcpRuntimeProcessClient = ContractClient<AcpRuntimeApiContract> & {
     sessionId: string;
     prompt: PromptInput;
     steerIfBusy?: boolean;
-  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true }>;
+  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true; reason?: string }>;
   waitPromptDetached(input: { requestId: string }): Promise<{ queued: boolean }>;
   /**
    * #6396 告诉一条会话一件事:转录里一行 / agent 下一轮的开头(见 SessionManager.announce)。

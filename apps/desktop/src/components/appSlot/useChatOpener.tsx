@@ -1,5 +1,6 @@
 import type { TabOpenIntent } from '@shared/view-state'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
+import type { FilePlace } from '@gugu/core/shared/ui/guguLink'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMobileShell } from '../../hooks/useMobileShell'
@@ -16,12 +17,14 @@ import { openPanelItem, chatPaneOf, chatLayoutOf, takeChatAsk, type ChatFileOpen
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
 import { appsHere } from './appsHere'
+import { tellFilePlace } from '../preview/file-place'
 import { OpenWithPick } from './OpenWithPick'
 
 const log = rendererLogger('app-slot/group')
 
-/** How an open came: the tab whose page asked (its 上一页), and what closing it hands back (a link's message). */
-type OpenFrom = { message?: MessageItem; restore?: () => void; from?: string; intent?: TabOpenIntent; receipt?: ChatFileOpenReceipt }
+/** How an open came: the tab whose page asked (its 上一页), and what closing it hands back (a link's message). `at`: the
+ *  place a link named, for the host's preview (an App that opens the file is told by main, `groupFileOpener`). */
+type OpenFrom = { message?: MessageItem; restore?: () => void; from?: string; intent?: TabOpenIntent; receipt?: ChatFileOpenReceipt; at?: FilePlace }
 
 /**
  * A file the person opened beside a chat (every way in ends here: the folder's list, a link, a card, 「用 X 打开」), kept
@@ -84,6 +87,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
           noteOpened(detail.itemId)
           return
         }
+        if (from.at) tellFilePlace(detail.itemId, from.at)
         return show(detail.chatId, { kind: null, file: detail.file, itemId: detail.itemId, title: detail.name, typedName: detail.typedName }, from)
       }
       if (detail.choice.kind === 'one') {
@@ -128,7 +132,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
         if (!result.success || !result.data) throw new Error(result.error || 'no answer')
         setUnopened(null)
         setAppFiles(null)
-        await openResolved(result.data, from)
+        await openResolved(result.data, at ? { ...from, at } : from)
         if (asked !== asking.current) throw new Error('The file opening was superseded')
         from.receipt?.resolve()
       } catch (error) {

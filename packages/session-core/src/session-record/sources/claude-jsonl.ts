@@ -490,7 +490,7 @@ async function readFirstMessageUuid(path: string): Promise<string | null> {
  * 项目目录名是 cwd 的转义，locator 只给根 —— 与其在这里再造一套转义规则（它随 claude 版本变），
  * 不如把根下的目录列一遍去 stat：一次 readdir + 若干 stat，几十毫秒，而且转义规则怎么变都不会错。
  */
-async function resolveSessionFile(locator: SessionRecordLocator, nativeChild = false): Promise<string> {
+export async function resolveSessionFile(locator: SessionRecordLocator, nativeChild = false): Promise<string> {
   const name = `${nativeChild ? 'agent-' : ''}${locator.providerSessionId}.jsonl`;
   for (const root of locator.roots) {
     if (await isFile(join(root, name))) return join(root, name);

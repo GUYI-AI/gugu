@@ -125,7 +125,7 @@ function decode(record: CodexRecord, key: string): RecordEntry | null {
  * 日期目录并发下钻的做法照抄 `packages/core/src/local/agent/transcriptInventory.ts`：
  * 串行递归光 readdir 就要几秒，那是"打开会话"这件事最大的一块墙钟。
  */
-async function resolveRolloutFile(locator: SessionRecordLocator, snapshot: boolean): Promise<string> {
+export async function resolveRolloutFile(locator: SessionRecordLocator, snapshot: boolean): Promise<string> {
   const suffix = `-${locator.providerSessionId}.jsonl`;
   // Prefer the live file across all roots. Only a historical read may open an archive.
   for (const extension of snapshot ? [suffix, `${suffix}.zst`] : [suffix]) {

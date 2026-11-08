@@ -283,7 +283,8 @@ vi.mock('../../../../apps/desktop/src/store/contactsContext', async () => {
   return {
     ...actual,
     ContactsProvider: ({ children }: { children: unknown }) => children,
-    useContactsStore: () => ({ contacts: taskRoute.contacts, pendingRequests: [] })
+    useContactsStore: () => ({ contacts: taskRoute.contacts, pendingRequests: [] }),
+    useContactsReader: () => () => ({ contacts: taskRoute.contacts, pendingRequests: [] }),
   }
 })
 // gugu-dev#181 桌面上打开一条对话 = 请会话页摆出它那块(会话页装的那座桥,这里装一份假的、只记下请求)。
@@ -327,7 +328,9 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', async (importOriginal)
   appendToDraft: (await importOriginal<typeof import('../../../../apps/desktop/src/store/chatContext')>()).appendToDraft,
   useChatStore: () => ({
     ...chatStoreMock,
-  })
+  }),
+  useChatStoreReader: () => () => chatStoreMock,
+  useChatStoreSelect: <T,>(select: (store: typeof chatStoreMock) => T) => select(chatStoreMock),
 }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({
   chatService: chatServiceMock

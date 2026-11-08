@@ -1,6 +1,6 @@
 // 渲染层调 attachments 函数(core 的那一份客户端,packages/core/src/cloud/attachmentsApi.ts):这个构建的服务器,登录的人现在的令牌。
 import { commitAttachment, configuredEndpoint, placeAttachment, uploadAttachmentBytes, type AttachmentsEndpoint, type CommitArgs, type AttachmentUploadPlan, type AttachmentByteProgress } from '@gugu/core/cloud/attachmentsApi'
-import { resolveFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
+import { resolveFileMimeType, sniffFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract'
 import { isHeicLikeFile, mustCopyRatherThanReference } from '@renderer/lib/pty/terminal-image-paths'
 import { getRendererAccessToken } from './sessionPublication'
@@ -55,7 +55,7 @@ export async function commitPreparedChatAttachment(endpoint: AttachmentsEndpoint
 export async function prepareTaskAttachment(file: File): Promise<TurnFileRef | null> {
   const api = window.electronAPI
   if (!api) return null
-  const name = file.name || 'file', mimeType = resolveFileMimeType(file)
+  const name = file.name || 'file', mimeType = await sniffFileMimeType(file)
   const dropped = api.getPathForFile(file)
   const own = dropped && !mustCopyRatherThanReference(dropped) && !isHeicLikeFile(file)
   const copy = own ? null : await api.invoke('files:task-copy', { name, data: await file.arrayBuffer(), mimeType }) as { path: string; name: string; size: number; mimeType?: string }
@@ -72,6 +72,7 @@ export async function placeTaskAttachment(file: File, prepared: TurnFileRef | nu
   options: { signal?: AbortSignal; placement?: TaskAttachmentPlacement; resumable?: boolean; onPhase?: (phase: 'uploading' | 'resuming' | 'confirming') => void } = {}): Promise<TurnFileRef> {
   const { signal } = options
   const placement = options.placement ?? {}
+  await sniffFileMimeType(file)
   signal?.throwIfAborted()
   if (prepared?.path) {
     if (!placement.published) {

@@ -12,6 +12,7 @@ import { revokeAttachmentPreviewUrls, withPreviewUrl, type ChatDraft, type Menti
 import { contentWithQuote } from './messageQuoteContent'
 import type { ChatMessageComposerProps } from './chatComposerModels'
 import { useChatStore } from '../../store/chatContext'
+import { messageFailureNotice } from '@/lib/messageFailureNotice'
 
 /** Chat delivery owns recipients and rollback; the shared editor only submits its document. */
 export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatDraft, members: MentionCandidate[], activeMentionTargets: MentionTarget[], inputRef: RefObject<HTMLElement | null>, mobile = false) {
@@ -22,6 +23,7 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
   const { toast } = useToast()
   const [sending, setSending] = useState(false)
   const sendingRef = useRef(false)
+  const submissions = useRef(new Map<string, { id: string; revision: object; destination: string; failure: ReturnType<typeof messageFailureNotice> }>())
   const activeChatIdRef = useRef(chatId ?? null)
   activeChatIdRef.current = chatId ?? null
   const rosterNameIndex = useMemo(() => buildRosterNameIndex(props.groupMembers ?? []), [props.groupMembers])
@@ -66,6 +68,18 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
           replyToMessageId,
         }
 
+    const scope = JSON.stringify([currentUserId, chatId])
+    const revision = draft.revisionOf(chatId ?? null)
+    const destination = JSON.stringify([!!sendOptions.isWhisper, sendOptions.replyToMessageId, [...sendOptions.toUserIds].sort()])
+    let submission = submissions.current.get(scope)
+    if (!submission || submission.revision !== revision || submission.destination !== destination) {
+      const id = crypto.randomUUID()
+      submission = { id, revision, destination, failure: messageFailureNotice(['im', currentUserId ?? 'signed-out', chatId ?? 'composer', id]) }
+      submissions.current.set(scope, submission)
+    }
+    const attempt = submission.failure.begin()
+    let clearedRevision = revision
+
     // Snapshot current attachments so we can roll back on failure
     const snapshotAttachments = attachments
     // 按批内序号认领已提交件(同一个 File 对象可能被排进队两次,按对象认领会把两件都算成已发)。
@@ -79,6 +93,7 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       // 文字消息把它交给 outbox 在投递前 await,失败时气泡变「未送达」可重试,❌ 退回输入框。
       clear()
       flush()
+      clearedRevision = draft.revisionOf(chatId ?? null)
       onQuoteConsumed?.()
       scheduleComposerFocus('message-sent', { target: () => inputRef.current, mobileShell: mobile })
       if (pendingFiles.length > 0 && onSendAttachments) await beforeSend?.()
@@ -87,8 +102,9 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
         await onSendAttachments(pendingFiles, { toUserIds: sendOptions.toUserIds, replyToMessageId: !typed && replyToMessageId ? replyToMessageId : undefined, isWhisper: !!whisperTarget, caption: captionOnImage ? content || undefined : undefined, onSent: (_file, index) => { committed.add(index) } })
       }
       if (typed && (!captionOnImage || !onSendAttachments)) {
-        await onSend(content, { ...sendOptions, beforeDeliver: beforeSend, submittedAt })
+        await onSend(content, { ...sendOptions, clientMessageId: submission.id, beforeDeliver: beforeSend, submittedAt })
       }
+      if (attempt.succeeded() && submissions.current.get(scope) === submission) submissions.current.delete(scope)
       // Successful send → object URLs are no longer needed
       revokeAttachmentPreviewUrls(snapshotAttachments)
       if (!mobile && isGroupChat && currentUserId && chatId && !whisperTarget) {
@@ -98,6 +114,7 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       // @@@whisper (#820) — clear whisper mode after a successful send.
       if (whisperTarget) onExitWhisper?.()
     } catch (err) {
+      const unchanged = draft.revisionOf(chatId ?? null) === clearedRevision
       const reason = String((err as Error)?.message ?? err)
       rendererLogger('chat/send').error({ chatId, error: reason }, 'message send failed')
       // Rollback restores only UNSENT intent. @@@2188 - the send is phased (attachments commit one by
@@ -122,12 +139,13 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       }
       // Drop the now-stale snapshot URLs (replaced by fresh ones above, or unused when persisting to store).
       revokeAttachmentPreviewUrls(snapshotAttachments)
-      toast(t('composer.sendFailed', { reason: safeFailureLine(reason) }), 'error')
+      if (unchanged) submission.revision = draft.revisionOf(chatId ?? null)
+      attempt.failed({ title: t('composer.sendFailed', { reason: safeFailureLine(reason) }), tier: 'error' })
     } finally {
       sendingRef.current = false
       setSending(false)
     }
-  }, [beforeSend, chatId, currentUserId, text, attachments, activeMentionTargets, members, rosterNameIndex, isGroupChat, onSend, onSendAttachments, quoteContent, onQuoteConsumed, t, toast, disabled, disabledReason, whisperTarget, onExitWhisper, writeDraft, setMentionTargets, setAttachments, clear, persistTo, flush, inputRef, mobile])
+  }, [draft, beforeSend, chatId, currentUserId, text, attachments, activeMentionTargets, members, rosterNameIndex, isGroupChat, onSend, onSendAttachments, quoteContent, onQuoteConsumed, t, toast, disabled, disabledReason, whisperTarget, onExitWhisper, writeDraft, setMentionTargets, setAttachments, clear, persistTo, flush, inputRef, mobile])
 
   return { sending, handleSend }
 }

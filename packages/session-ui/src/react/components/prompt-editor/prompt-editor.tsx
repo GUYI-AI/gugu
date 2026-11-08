@@ -88,11 +88,11 @@ function firstInitial(value: string): string {
 }
 
 function commandToPopupItem(item: CommandItem): ComboboxPopupItem {
-  // Command entries show the token the agent will actually receive; raw prompt
-  // entries keep their title.
+  // Command entries show the token the agent will actually receive; prompts
+  // (raw text, or a folded block whose token is the text) keep their title.
   const token = item.token ?? fallbackToken(item.name);
   const label =
-    item.behavior === 'insert-text'
+    item.behavior === 'insert-text' || item.kind === 'prompt'
       ? (item.label ?? item.name)
       : item.inputHint
         ? `${token} ${item.inputHint}`

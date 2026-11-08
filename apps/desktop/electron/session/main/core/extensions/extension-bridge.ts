@@ -30,6 +30,7 @@ import {
   type ExtensionMember,
   type ExtensionHostContext,
   type ExtensionHostEvent,
+  type ExtensionContextOperator,
   type ExtensionOperator,
   type ExtensionPageFrom,
   type ExtensionWorkspace,
@@ -103,6 +104,11 @@ interface SurfaceBinding {
    * cannot change it. With `itemId`, the one file it may open without a capability (`ctx.file`).
    */
   filePath: string | null;
+  /**
+   * A person opened `filePath`, named absolute, from the host's UI (`@@@outside-file`): its machine lets the page read it,
+   * read-only, even outside its working copy. Not for the host opening it for an agent or an App, nor a page an agent works.
+   */
+  personOpened?: true;
   /** The chat file the host handed this surface (`ctx.file`). */
   itemId: string | null;
   /**
@@ -203,6 +209,7 @@ function pageCaller(binding: SurfaceBinding, webContentsId: number, gesture: boo
     pageId: webContentsId,
     extensionId: binding.extensionId,
     handed: handedFileOf(binding),
+    ...(binding.personOpened ? { personOpened: true as const } : {}),
     boundChat: binding.conversation,
     ...(binding.operator.kind === 'agent' ? { asAgent: binding.operator.id.replace(/^user:/, '') } : {}),
   });
@@ -534,6 +541,11 @@ async function workspaceRelativeFile(place: WorkspacePlace | null, filePath?: st
   return relative.split(path.sep).join('/');
 }
 
+/** @@@outside-file - a page bound to a file named absolute that a person opened, not the host for an agent or an App. */
+function personOpened(filePath: string | null, byHost: boolean | undefined, operator: ExtensionOperator | undefined): { personOpened?: true } {
+  return filePath && path.isAbsolute(filePath) && !byHost && operator?.kind !== 'agent' ? { personOpened: true } : {};
+}
+
 /**
  * 谁在等自己的绑定落地。
  *
@@ -586,6 +598,8 @@ export async function bindExtensionSurface(input: {
   tabKind: string;
   /** Set only when the tab was opened for a file of its workspace this extension claimed. */
   filePath?: string;
+  /** The host opened `filePath` for an agent or an App (`open_in_tab`, `files.openWith`, an App's link), not a person. */
+  byHost?: boolean;
   itemId?: string;
   /** Who works it: the person unless main binds it for an agent (`app_check`); never the renderer's to say. */
   operator?: ExtensionOperator;
@@ -642,6 +656,7 @@ export async function bindExtensionSurface(input: {
     navigation: input.navigation,
     tabName,
     filePath,
+    ...personOpened(filePath, input.byHost, input.operator),
     itemId: input.itemId ?? null,
     embedderId: contents.hostWebContents?.id ?? null,
     operator: input.operator ?? { kind: 'person' },
@@ -779,6 +794,21 @@ export function deliverToOpeningPage(extensionId: string, event: ExtensionHostEv
 }
 
 /**
+ * A pill's place in a chat file, for the App tab showing it: a page of that file in that chat already open is told now
+ * (a tab already open is brought forward, not opened again); else the page about to open it, as `deliverToOpeningPage`.
+ */
+export function deliverToChatFilePage(extensionId: string, event: ExtensionHostEvent, chatId: string, itemId: string): void {
+  let told = 0;
+  for (const [webContentsId, binding] of bindings) {
+    if (binding.extensionId !== extensionId || binding.conversation !== chatId || binding.itemId !== itemId) continue;
+    if (event.type === 'link' && event.tab !== binding.tabName) continue;
+    const contents = webContents.fromId(webContentsId);
+    if (contents && !contents.isDestroyed()) { sendEvent(contents, event); told += 1; }
+  }
+  if (told === 0) deliverToOpeningPage(extensionId, event, { chat: chatId }, itemId);
+}
+
+/**
  * The place a link in a session's chat names in one of its working copy's files (`path#k=v&…`), for the App tab that opens
  * it — as a chat file's pill tells its page (`deliverToOpeningPage`). A session shows a file in one tab: one already open
  * on it is told now; else the page about to open it, or be moved to it, when it binds there.
@@ -825,6 +855,7 @@ export async function retargetExtensionSurface(input: {
   viewState?: Record<string, unknown>;
   navigation?: { canBack: boolean; canForward: boolean; backToConversation?: boolean };
   filePath?: string;
+  byHost?: boolean;
   itemId?: string;
 } & Partial<AppWhere>): Promise<void> {
   const binding = bindings.get(input.webContentsId);
@@ -858,6 +889,8 @@ export async function retargetExtensionSurface(input: {
   binding.viewState = input.viewState;
   binding.navigation = input.navigation;
   binding.filePath = filePath;
+  delete binding.personOpened;
+  Object.assign(binding, personOpened(filePath, input.byHost, binding.operator));
   binding.itemId = input.itemId ?? null;
   binding.opening = input.opening;
   if (folderChanged) {
@@ -1071,6 +1104,11 @@ export interface ExtensionBridgeHost {
      */
     windowFocused: boolean;
   };
+  /**
+   * The signed-in account's own 咕咕号, for a person's page (`operator.guguNumber`): `undefined` while it is still being
+   * looked up, `null` when the account has none or the lookup failed. A change is announced as a presentation change.
+   */
+  selfGuguNumber(): number | null | undefined;
 }
 
 let host: ExtensionBridgeHost | null = null;
@@ -1130,19 +1168,23 @@ const chatIsRead = (binding: SurfaceBinding) => {
   return read !== undefined && (!contextHasMembers(binding) || read.members !== undefined);
 };
 
-/** The folder's first reads belong to this binding, consumed once even on failure. Machine presence may move before that first call. */
-const openingFolders = new WeakMap<SurfaceBinding, { list?: Promise<AppFileEntry[]>; preferences?: Promise<{ showAppData: boolean }> }>();
+/**
+ * The folder's first reads belong to this binding, consumed once even on failure. Machine presence may move before that first call.
+ * What the App reads first: the top and 「附件」 (whose files the top shows), one folder each — never the whole tree.
+ */
+const OPENING_FOLDERS = ['', '附件'] as const;
+const openingFolders = new WeakMap<SurfaceBinding, { lists: Map<string, Promise<AppFileEntry[]>>; preferences?: Promise<{ showAppData: boolean }> }>();
 function preloadFolder(binding: SurfaceBinding, pageId: number): void {
   if (binding.extensionId !== 'workspace' || binding.tabName !== 'main' || !binding.conversation || binding.workspace || binding.itemId || binding.modal
     || binding.operator.kind !== 'person' || contextHasMembers(binding) || !extensionsService().hasCapability(binding.extensionId, 'files:read')) return;
   const page = pageCaller(binding, pageId, false).filePage({});
   const args = { place: { chat: binding.conversation } };
   const files = import('@main/core/extensions/app-files');
-  const list = files.then((files) => files.listAppFiles(page, args));
+  const lists = new Map(OPENING_FOLDERS.map((folder) => [folder, files.then((files) => files.listAppFiles(page, { ...args, folder }))] as const));
   const preferences = files.then((files) => files.appFileViewPreferences(page, args));
-  openingFolders.set(binding, { list, preferences });
+  openingFolders.set(binding, { lists, preferences });
   // Observe rejection while the App is loading; the original promises still deliver those same errors to its calls.
-  void Promise.allSettled([list, preferences]);
+  void Promise.allSettled([...lists.values(), preferences]);
 }
 
 /** A page's own chat is bound as its resource container (`surfaceResourceChat`); any other is looked up, as whoever works the call. */
@@ -1276,6 +1318,11 @@ async function pageFrom(binding: SurfaceBinding): Promise<ExtensionPageFrom> {
   return { tabId: binding.tabId, ...(workspace ? { workspace } : {}), ...(chat ? { chat } : {}), ...(file ? { file } : {}), operator: binding.operator };
 }
 
+function personOperator(): ExtensionContextOperator {
+  const guguNumber = requireHost().selfGuguNumber();
+  return guguNumber === undefined ? { kind: 'person' } : { kind: 'person', guguNumber };
+}
+
 function contextFor(binding: SurfaceBinding, workspace: ExtensionWorkspace | undefined): ExtensionHostContext {
   const capabilities = extensionsService().grantedCapabilities(binding.extensionId);
   const { locale, themeMode, fullscreen } = requireHost().presentation();
@@ -1292,7 +1339,7 @@ function contextFor(binding: SurfaceBinding, workspace: ExtensionWorkspace | und
     // Absent stays absent: a tab opened from the entry rail has no file.
     ...(file ? { file } : {}),
     ...(binding.widget ? { widget: { messageId: binding.widget.messageId, data: binding.widget.data, sender: binding.widget.senderId } } : {}),
-    operator: binding.operator,
+    operator: binding.operator.kind === 'person' ? personOperator() : binding.operator,
     locale,
     themeMode: binding.themeMode ?? themeMode,
     capabilities,
@@ -1676,6 +1723,9 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       const result = await deliver(thePage(caller), { kind: 'navigateTab', delta: args.delta });
       return !!result && typeof result === 'object' && 'navigated' in result && result.navigated;
     }
+    // A desktop tab has no system Back to hand over: its back is the tab's page history (navigationGo). Not claimed.
+    case 'navigationClaimBack':
+      return false;
     case 'getContext':
       if (!binding) return contextOutside(extensionId);
       // Through API 26, the members come with the first answer. Newer Apps ask for them explicitly. An unread chat is said (the
@@ -1821,6 +1871,13 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       return { projects: (await getProjects()).filter((project) => !isImplicitSessionHomeProjectId(project.id)).map(({ id, name }) => ({ id, name, workspace: projectWorkspace(id) })) };
     }
 
+    case 'promptsList':
+    case 'promptsSave':
+    case 'promptsDelete': {
+      const { promptsForApp } = await import('@main/core/extensions/app-prompts');
+      return await promptsForApp(method, args, extensionId);
+    }
+
     case 'cloudRead':
     case 'cloudWrite':
     case 'cloudProgramWrite': {
@@ -1942,11 +1999,19 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       const page = method === 'filesClose' ? caller.filePage(args) : asCallingAgent(caller, await caller.resourcePage(args), args);
       if (binding && (method === 'filesList' || method === 'filesViewPreferences')) {
         const opening = openingFolders.get(binding);
-        const key = method === 'filesList' ? 'list' : 'preferences';
-        const read = opening?.[key];
-        if (opening) delete opening[key];
+        const folder = typeof args.folder === 'string' ? args.folder : undefined;
+        let read: Promise<unknown> | undefined;
+        if (method === 'filesList') {
+          // A list it did not read ahead (the whole tree, another folder): what it did is not the App's to be handed later.
+          read = folder === undefined ? undefined : opening?.lists.get(folder);
+          if (read) opening?.lists.delete(folder!);
+          else opening?.lists.clear();
+        } else if (method === 'filesViewPreferences') {
+          read = opening?.preferences;
+          if (opening) delete opening.preferences;
+        }
         const place = args.place as Record<string, unknown> | undefined;
-        if (read && place?.chat === binding.conversation && Object.keys(place).length === 1 && args.folder === undefined && args.showAppData === undefined) return await read;
+        if (read && place?.chat === binding.conversation && Object.keys(place).length === 1 && args.showAppData === undefined) return await read;
       }
       const listsWorkingCopy = method === 'filesList' && Boolean((args.place as { workspace?: unknown } | null)?.workspace);
       if (listsWorkingCopy || method === 'filesReadText' || method === 'filesWriteText') workingCopyPages.add(caller.pageId);
@@ -2075,7 +2140,7 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
         if (tab !== undefined) resumed = await present();
         const { chatId, itemId } = target.target;
         const place = placeFor(choice, (args as { at?: unknown }).at);
-        if (place) deliverToOpeningPage(place.candidate.extensionId, placeLink(place.candidate, place.at, itemId), { chat: chatId }, itemId);
+        if (place) deliverToChatFilePage(place.candidate.extensionId, placeLink(place.candidate, place.at, itemId), chatId, itemId);
         const detail = { ...target.target, choice, intent, ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: structuredClone(args.viewState as Record<string, unknown>) } : {}), ...(resumed ? { background: true } : {}) };
         if (peek) return void (await deliver(shown, { kind: 'peek', target: { kind: 'chat', detail } }));
         await deliver(shown, { kind: 'openWith', detail });

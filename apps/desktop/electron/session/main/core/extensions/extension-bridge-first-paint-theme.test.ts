@@ -33,7 +33,7 @@ const { EXTENSION_THEME_CHANNEL } = await import('@shared/extensions/bridge-prot
 registerExtensionBridge();
 setExtensionBridgeHost({
   deliver: async () => undefined,
-  presentation: () => ({ locale: 'zh-CN', themeMode: 'light', fullscreen: false, windowFocused: true }),
+  selfGuguNumber: () => undefined, presentation: () => ({ locale: 'zh-CN', themeMode: 'light', fullscreen: false, windowFocused: true }),
 });
 
 const themeAsked = (sender: number): unknown => {

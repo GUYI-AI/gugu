@@ -77,7 +77,7 @@ export function createAcpProcedures(runtime: AcpRuntime) {
       sessionId: string;
       prompt: PromptInput;
       steerIfBusy?: boolean;
-    }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true }> {
+    }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true; reason?: string }> {
       const started = runtime.promptDetached(input.sessionId, input.prompt, input.steerIfBusy ? { steerIfBusy: true } : undefined);
       if (!started.success) {
         if (started.error.type === 'session_busy' || started.error.type === 'conversation_not_found') {
@@ -106,6 +106,10 @@ export function createAcpProcedures(runtime: AcpRuntime) {
         // 会话此刻不收(原位回退进行中,#7308):调用方留着消息,等它收的那一刻再投。
         if (admission.error.type === 'session_busy') {
           return { requestId: '', queued: false, declined: true };
+        }
+        // The cell refused it before any provider byte (a live setting failed): a definite refusal, with its reason.
+        if (admission.error.type === 'invalid_state') {
+          return { requestId: '', queued: false, declined: true, reason: admission.error.message ?? admission.error.type };
         }
         throw promptError(admission.error);
       }
