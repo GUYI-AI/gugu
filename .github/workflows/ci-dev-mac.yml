@@ -1,85 +1,169 @@
-name: Dev Mac build
+# Diagnostic branch only. Never merge this replacement into dev/main.
+name: iOS SDK diagnostic (e1388d15)
 on:
-  push:
-    branches: [dev]
   workflow_dispatch:
+    inputs:
+      expected_revision:
+        description: Exact reviewed diagnostic commit; must match the selected ref.
+        required: true
+        type: string
 permissions:
   contents: read
-  actions: read
 concurrency:
-  group: community-ci-dev-mac
-  cancel-in-progress: true
-env:
-  CI: true
-  GUGU_SUPABASE_URL: http://127.0.0.1:54321
-  VITE_SUPABASE_URL: http://127.0.0.1:54321
-  GUGU_SUPABASE_ANON_KEY: community-build-placeholder
-  VITE_SUPABASE_ANON_KEY: community-build-placeholder
-  PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.59.1-noble@sha256:b0ab6f3cb99aa7803adbc14d9027ec1785fc6e433b97e134e0f8fe61683b6b53
+  group: ios-sdk-diag-e1388d15-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  desktop-build-mac:
-    name: Dev desktop app build (macos-15)
-    runs-on: macos-15
+  ios-build-for-testing:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'GUYI-AI/gugu' && github.ref == 'refs/heads/diag/ios-hosted-sdk-20261108'
+    name: iOS App TestHost build only (macos-26)
+    runs-on: macos-26
     timeout-minutes: 45
-    permissions:
-      contents: read
-      actions: read
-      issues: write
     env:
+      EXPECTED_BASE: e1388d15ce379cce69b1c78eaf11e4eee1f01a59
+      EXPECTED_REVISION: ${{ inputs.expected_revision }}
+      EXPECTED_RUNTIME_SHA256: 305f8b9c04d68d49e06dd580a84c536e1551a811cc21771386899ca0f1ccd2ca
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      CI: 'true'
+      GUGU_BUILD_SERIAL: '1'
+      NODE_OPTIONS: --max-old-space-size=6144
       GUGU_CLOUD_COMPUTER_ENABLED: 'false'
       VITE_GUGU_CLOUD_COMPUTER_ENABLED: 'false'
       GUGU_PLATFORM_MODELS_ENABLED: 'false'
       VITE_GUGU_PLATFORM_MODELS_ENABLED: 'false'
-      NODE_OPTIONS: --max-old-space-size=6144
+      # Public, synthetic compile-only values. No service exists at this reserved domain.
+      GUGU_SUPABASE_URL: https://ios-sdk-diag.invalid
+      VITE_SUPABASE_URL: https://ios-sdk-diag.invalid
+      GUGU_SUPABASE_ANON_KEY: sb_publishable_ios_sdk_diagnostic_not_a_credential
+      VITE_SUPABASE_ANON_KEY: sb_publishable_ios_sdk_diagnostic_not_a_credential
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - run: command -v tmux || brew install tmux
-      - uses: ./.github/actions/setup-community
-      - run: pnpm build:app:ci
-        env:
-          GUGU_BUILD_SERIAL: '1'
-      - run: pnpm rebuild:native
-      - name: Report a failed dev Mac build
-        if: failure()
-        uses: actions/github-script@v7
+      - name: Bind isolated build paths
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = macOS
+          test "$(uname -m)" = arm64
+          diagnostic_root="$RUNNER_TEMP/gugu-ios-sdk-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -p "$diagnostic_root/evidence" "$diagnostic_root/gugu-home" "$diagnostic_root/user-data"
+          chmod 700 "$diagnostic_root" "$diagnostic_root/gugu-home" "$diagnostic_root/user-data"
+          printf '%s\n' "DIAG_ROOT=$diagnostic_root" "GUGU_HOME=$diagnostic_root/gugu-home" "GUGU_USER_DATA_DIR=$diagnostic_root/user-data" >> "$GITHUB_ENV"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          script: |
-            const { owner, repo } = context.repo;
-            const label = 'ci-mac-red';
-            const marker = `<!-- ci-dev-mac:${context.sha} -->`;
-            const title = `Dev Mac build failed at ${context.sha.slice(0, 7)}`;
-            const runUrl = `${process.env.GITHUB_SERVER_URL}/${owner}/${repo}/actions/runs/${context.runId}`;
-            const actor = context.payload.sender?.login || context.actor;
-            const body = [
-              marker,
-              `The macOS build failed after a push to dev.`,
-              `Commit: ${context.sha}`,
-              `Merged/pushed by: @${actor}`,
-              `Run: ${runUrl}`,
-              `Inspect the build and native-rebuild logs before the next release.`,
-            ].join('\n\n');
-            try {
-              await github.rest.issues.getLabel({ owner, repo, name: label });
-            } catch (error) {
-              if (error.status !== 404) throw error;
-              try {
-                await github.rest.issues.createLabel({
-                  owner, repo, name: label, color: 'b60205',
-                  description: 'The macOS build failed on dev',
-                });
-              } catch (labelError) {
-                if (labelError.status !== 422) throw labelError;
-                await github.rest.issues.getLabel({ owner, repo, name: label });
-              }
-            }
-            const issues = await github.paginate(github.rest.issues.listForRepo, {
-              owner, repo, labels: label, state: 'all', per_page: 100,
-            });
-            const existing = issues.find(issue => !issue.pull_request && issue.body?.includes(marker));
-            if (existing) {
-              await github.rest.issues.update({
-                owner, repo, issue_number: existing.number, title, body, state: 'open',
-              });
-            } else {
-              await github.rest.issues.create({ owner, repo, title, body, labels: [label] });
-            }
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify the reviewed source and workflow-only difference
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$EXPECTED_BASE"
+          node <<'NODE' | tee "$DIAG_ROOT/evidence/source.json"
+          const fs = require('node:fs');
+          const { execFileSync } = require('node:child_process');
+          const crypto = require('node:crypto');
+          const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
+          const head = git('rev-parse', 'HEAD');
+          if (!/^[a-f0-9]{40}$/.test(process.env.EXPECTED_REVISION || '') || head !== process.env.EXPECTED_REVISION || head !== process.env.GITHUB_SHA) throw new Error('Diagnostic ref differs from reviewed commit');
+          const changed = git('diff', '--name-only', process.env.EXPECTED_BASE, head).split('\n');
+          if (changed.length !== 1 || changed[0] !== '.github/workflows/ci-dev-mac.yml' || git('status', '--porcelain')) throw new Error('Only the reviewed workflow may differ from e1388d15');
+          const sha = name => crypto.createHash('sha256').update(fs.readFileSync(name)).digest('hex');
+          const record = { head, base: process.env.EXPECTED_BASE, changed, workflowSHA256: sha(changed[0]), lockSHA256: sha('pnpm-lock.yaml'),
+            imageOS: process.env.ImageOS, imageVersion: process.env.ImageVersion,
+            guguHome: process.env.GUGU_HOME, userData: process.env.GUGU_USER_DATA_DIR, scope: 'build-for-testing only; no application or simulator execution' };
+          console.log(JSON.stringify(record, null, 2));
+          NODE
+          sw_vers > "$DIAG_ROOT/evidence/macos.txt"
+          xcodebuild -version > "$DIAG_ROOT/evidence/xcode.txt"
+          xcodebuild -showsdks > "$DIAG_ROOT/evidence/sdks.txt"
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+      - name: Install the normal locked workspace
+        run: |
+          set -euo pipefail
+          node --version | tee "$DIAG_ROOT/evidence/node.txt"
+          pnpm --version | tee "$DIAG_ROOT/evidence/pnpm.txt"
+          pnpm install --frozen-lockfile --store-dir "$DIAG_ROOT/pnpm-store" 2>&1 | tee "$DIAG_ROOT/evidence/install.log"
+      - name: Build the current renderer and packaged Pi runtime; sync iOS
+        run: |
+          set -euo pipefail
+          pnpm cap:sync:ios 2>&1 | tee "$DIAG_ROOT/evidence/renderer-runtime-sync.log"
+      - name: Verify packaged inputs before SDK compilation
+        run: |
+          set -euo pipefail
+          node <<'NODE' | tee "$DIAG_ROOT/evidence/packaged-inputs.json"
+          const fs = require('node:fs');
+          const crypto = require('node:crypto');
+          const root = 'apps/mobile/ios/App/App/HostRuntime/';
+          const manifest = JSON.parse(fs.readFileSync(root + 'manifest.json', 'utf8'));
+          const bytes = fs.readFileSync(root + 'agent.js');
+          const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+          if (manifest.piVersion !== '1.4.0' || manifest.protocolVersion !== 1 || manifest.sha256 !== sha256 || manifest.bytes !== bytes.length || sha256 !== process.env.EXPECTED_RUNTIME_SHA256) throw new Error('Packaged Pi differs from the frozen runtime');
+          if (manifest.inputs.some(x => x.startsWith('node:') || x.includes('pi-coding-agent/'))) throw new Error('Node-only dependency in packaged iOS runtime');
+          const backend = JSON.parse(fs.readFileSync(root + 'GuguBackend.json', 'utf8'));
+          if (backend.version !== 1 || backend.supabaseUrl !== process.env.VITE_SUPABASE_URL || backend.anonKey !== process.env.VITE_SUPABASE_ANON_KEY) throw new Error('Compile-only backend mismatch');
+          const notices = JSON.parse(fs.readFileSync(root + 'licenses/npm-packages.json', 'utf8'));
+          if (!notices.length || notices.some(x => !x.files.length || x.files.some(f => !fs.existsSync(root + 'licenses/' + f)))) throw new Error('Packaged license body missing');
+          if (!fs.existsSync('dist-phone/index.html') || !fs.existsSync('apps/mobile/ios/App/App/public/index.html')) throw new Error('Current renderer was not copied into iOS');
+          fs.appendFileSync(process.env.GITHUB_ENV, 'GUGU_D_EXPECTED_ASSET_SHA256=' + sha256 + '\n');
+          console.log(JSON.stringify({ piVersion: manifest.piVersion, sha256, bytes: bytes.length, licensePackages: notices.length, backend: 'public synthetic compile-only', renderer: 'built and copied' }, null, 2));
+          NODE
+          git diff --exit-code
+          test -z "$(git status --porcelain --untracked-files=no)"
+      - name: Resolve only pinned Swift packages
+        run: |
+          set -euo pipefail
+          xcodebuild -resolvePackageDependencies \
+            -project apps/mobile/ios/App/App.xcodeproj -scheme IOSHostValidation \
+            -clonedSourcePackagesDirPath "$DIAG_ROOT/spm" \
+            -packageCachePath "$DIAG_ROOT/package-cache" \
+            -onlyUsePackageVersionsFromResolvedFile \
+            2>&1 | tee "$DIAG_ROOT/evidence/spm.log"
+      - name: Build the actual App TestHost without running it
+        run: |
+          set -euo pipefail
+          xcodebuild -project apps/mobile/ios/App/App.xcodeproj -scheme IOSHostValidation \
+            -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -jobs 1 -derivedDataPath "$DIAG_ROOT/derived" \
+            -clonedSourcePackagesDirPath "$DIAG_ROOT/spm" \
+            -packageCachePath "$DIAG_ROOT/package-cache" \
+            -resultBundlePath "$DIAG_ROOT/evidence/build.xcresult" \
+            -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
+            "GUGU_D_EXPECTED_ASSET_SHA256=$GUGU_D_EXPECTED_ASSET_SHA256" \
+            build-for-testing 2>&1 | tee "$DIAG_ROOT/evidence/xcodebuild.log"
+      - name: Preserve built products and verify the final tracked source
+        run: |
+          set -euo pipefail
+          node <<'NODE' | tee "$DIAG_ROOT/evidence/products.json"
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const crypto = require('node:crypto');
+          const root = path.join(process.env.DIAG_ROOT, 'derived/Build/Products');
+          if (!fs.readdirSync(root).some(x => x.endsWith('.xctestrun'))) throw new Error('build-for-testing produced no xctestrun');
+          const record = {};
+          const walk = directory => { for (const x of fs.readdirSync(directory, { withFileTypes: true })) { const file = path.join(directory, x.name); if (x.isDirectory()) walk(file); else if (x.isFile()) record[path.relative(root, file)] = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); } };
+          walk(root); console.log(JSON.stringify(record, null, 2));
+          NODE
+          tar -czf "$DIAG_ROOT/evidence/build-products.tar.gz" -C "$DIAG_ROOT/derived/Build" Products
+          git diff --exit-code
+          test -z "$(git status --porcelain --untracked-files=no)"
+      - name: Preserve status even when a build step fails
+        if: always()
+        run: |
+          set -euo pipefail
+          git status --short > "$DIAG_ROOT/evidence/final-status.txt"
+          git diff > "$DIAG_ROOT/evidence/generated-tracked-diff.patch"
+          printf '%s\n' 'SDK compilation evidence only; Keychain/HTTP/EventKit/permissions/App launch/model/TestFlight unverified.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ios-sdk-e1388d15-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gugu-ios-sdk-${{ github.run_id }}-${{ github.run_attempt }}/evidence/
+          retention-days: 5
+          if-no-files-found: error
