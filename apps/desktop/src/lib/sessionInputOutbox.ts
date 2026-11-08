@@ -215,6 +215,27 @@ export class SessionInputOutbox {
     })
   }
 
+  /**
+   * The engine session was replaced: a queued input waiting for a predecessor that is no longer in the outbox (it went to
+   * the lost engine) would wait forever, because the new engine's history never has it. It waits for nothing now.
+   * Resolves to whether any input of the session is queued for the new engine.
+   */
+  detachFromReplacedEngine(sessionId: string): Promise<boolean> {
+    return this.write(async () => {
+      const rows = (await this.list()).filter(row => row.sessionId === sessionId)
+      const ids = new Set(rows.map(row => row.id))
+      const detached = rows.filter(row => row.sendQueue?.afterInputId && !ids.has(row.sendQueue.afterInputId)).map(row => {
+        const { afterInputId: _gone, ...sendQueue } = row.sendQueue!
+        return { ...row, sendQueue }
+      })
+      if (detached.length) {
+        await this.persist(detached)
+        await this.publish()
+      }
+      return rows.some(row => row.sendQueue)
+    })
+  }
+
   /** One foreground completion releases one input, never all of a session's queue. */
   releaseQueued(sessionId: string, baseline: Pick<SessionInput, 'baseline' | 'afterTurnId'>,
     completed: ReadonlySet<string>, nowId?: string, steers = false, canRelease: () => boolean = () => true): Promise<SessionInput | null> {

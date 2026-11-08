@@ -1282,6 +1282,20 @@ export class SessionManager implements InboundRouter {
         return acpErr.stopFailed(toSerializedError(new Error('Session is no longer idle; reclamation declined')));
       }
     }
+    // A lost record outlives an ordinary stop (a crash teardown stops it too): the next start reconnects through it.
+    // `forgetLost` is for an owner who replaced the engine session (it went missing): the next start must not load the
+    // lost one again. It only forgets: a starting or live record is not this call's to stop.
+    if (forgetLost) {
+      if (record?.phase === 'lost') {
+        record.live.dispose();
+        this.disposeLostRecord(record);
+        // Only the summary (the error dot): disposeLostRecord keeps the closed history for reads.
+        this.sessionsList.states.list.produce((draft) => {
+          delete draft[sessionId];
+        });
+      } else if (!record) this.deleteSessionSummary(sessionId);
+      return ok();
+    }
     if (!record) {
       // 一次起不来的启动只留下摘要(`lost` + start-failed),没有 record。停止 / 删除这条会话时它也得走,
       // 否则状态投影会一直说 error,会话编排一直当它 lost —— 连会话删了都还在。
@@ -1301,17 +1315,6 @@ export class SessionManager implements InboundRouter {
         await starting;
       }
       record = this.cells.get(sessionId);
-    }
-    // A lost record outlives an ordinary stop (a crash teardown stops it too): the next start reconnects through it, which
-    // is how a side chat gets its own provider session back. `forgetLost` is for an owner who replaced the engine session
-    // (it went missing): the next start must not load the lost one again.
-    if (forgetLost && record?.phase === 'lost') {
-      record.live.dispose();
-      this.disposeLostRecord(record);
-      this.sessionsList.states.list.produce((draft) => {
-        delete draft[sessionId];
-      });
-      return ok();
     }
     if (!record || record.phase !== 'ready') return ok();
     // Withdraw admission synchronously, before session/close can remove the provider-side id.

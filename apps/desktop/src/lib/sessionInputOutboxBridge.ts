@@ -67,6 +67,11 @@ export async function reorderQueuedSessionInputs(sessionId: string, ids: readonl
   return (await currentQueue()).reorderQueued(sessionId, ids)
 }
 
+/** After the engine session was replaced: true when composer-queued input waits for the new engine (see the queue). */
+export async function queueOntoReplacedEngine(sessionId: string): Promise<boolean> {
+  return sessionInputOutboxAvailable() ? (await currentQueue()).detachFromReplacedEngine(sessionId) : false
+}
+
 /** Call only with an authoritative foreground-idle snapshot, or the person's explicit send-now action. */
 export async function releaseQueuedSessionInput(sessionId: string, turns: readonly TranscriptTurn[], nowId?: string, steers = false, canRelease: () => boolean = () => true): Promise<SessionInput | null> {
   if (steers && !sessionInputSteeringAvailable(sessionId)) {

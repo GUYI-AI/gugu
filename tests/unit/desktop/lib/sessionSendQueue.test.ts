@@ -19,6 +19,30 @@ describe('composer-owned durable send queue', () => {
     expect(next.sendQueue).toBeUndefined()
   })
 
+  it('after the engine session was replaced, input queued behind a prompt that went to the lost engine is released on the new one', async () => {
+    const storage = await openSessionInputStorage(new IDBFactory())
+    const queue = new SessionInputOutbox('owner', storage, async () => {}, () => true)
+    // Typed while the lost engine's prompt had not landed: it waits for that prompt, which the new engine never has.
+    const held = await queue.enqueue({ ...target, sendQueue: { order: 0, afterInputId: 'prompt-on-the-lost-engine' } })
+    const later = await queue.enqueue({ ...target, sendQueue: { order: 1, afterInputId: 'prompt-on-the-lost-engine' } })
+    expect(await queue.releaseQueued('session', {}, new Set())).toBeNull()
+    expect(await queue.detachFromReplacedEngine('session')).toBe(true)
+    expect(await queue.releaseQueued('session', {}, new Set())).toMatchObject({ id: held.id })
+    await queue.flush()
+    // The rest of the queue keeps its order: it now waits for the released input, which the new engine will have.
+    expect(await queue.releaseQueued('session', {}, new Set([held.id]))).toMatchObject({ id: later.id })
+  })
+
+  it('a replacement leaves a predecessor that is still in the outbox alone', async () => {
+    const storage = await openSessionInputStorage(new IDBFactory())
+    const queue = new SessionInputOutbox('owner', storage, async () => { throw new SessionInputAdmissionError('refused', 'rejected') }, () => true)
+    const first = await queue.enqueue({ ...target, queued: false, sendQueue: undefined })
+    await queue.enqueue({ ...target, sendQueue: { order: 0, afterInputId: first.id } })
+    expect(await queue.detachFromReplacedEngine('session')).toBe(true)
+    expect((await queue.list()).find(row => row.sendQueue)?.sendQueue?.afterInputId).toBe(first.id)
+    expect(await queue.detachFromReplacedEngine('other-session')).toBe(false)
+  })
+
   it('discards a rejected predecessor without stranding its held follower after reopening', async () => {
     const storage = await openSessionInputStorage(new IDBFactory())
     const send = async () => { throw new SessionInputAdmissionError('refused', 'rejected') }

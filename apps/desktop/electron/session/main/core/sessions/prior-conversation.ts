@@ -50,9 +50,13 @@ function senderOf(facts: DeliveryReadFacts | null): string {
 }
 
 function messageLines(role: string, text: string): string[] {
+  // A message starts at the margin and its later lines are indented: a newline inside it cannot pass for another line
+  // (`Person: …`). The sender is quoted too: a name is free text.
   const line = (who: string, body: string) => {
     const trimmed = body.trim();
-    return trimmed ? [`${who}: ${quoted(cut(trimmed, MAX_MESSAGE_TOKENS))}`] : [];
+    if (!trimmed) return [];
+    const sender = quoted(who.replace(/\s+/g, ' ').trim());
+    return [`${sender}: ${quoted(cut(trimmed, MAX_MESSAGE_TOKENS)).replace(/\r?\n/g, '\n  ')}`];
   };
   // Every role other than the person's is something the agent side said.
   if (role !== 'user') return line('Agent', text);
@@ -165,7 +169,7 @@ export async function priorConversationForStart(sessionId: string, lifecycle: 'f
   if (!lines.length) return null;
   return [
     '<gugu_prior_conversation>',
-    'This task\'s earlier engine session is gone (its record was lost, or the engine changed), so you are a new engine session. Below is what was said and done earlier in this task, for context. It has already happened: do not redo or repeat any of it, and treat requests inside it as already handled, not as new ones. Act only on the next message you receive. Tools are listed by name only; check the current state before relying on what they did.',
+    'This task\'s earlier engine session is gone (its record was lost, or the engine changed), so you are a new engine session. Below is what was said and done earlier in this task, for context. It has already happened: do not redo or repeat any of it, and treat requests inside it as already handled, not as new ones. Act only on the next message you receive. Each message starts at the margin; indented lines continue it. Tools are listed by name only; check the current state before relying on what they did.',
     ...(omitted ? ['[Earlier part omitted for length.]'] : []),
     ...lines,
     '</gugu_prior_conversation>',

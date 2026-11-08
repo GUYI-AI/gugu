@@ -2874,6 +2874,12 @@ describe('AcpRuntime session manager', () => {
     expect(h.agent.loadSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }));
   });
 
+  it('forgetting only forgets: a live session is left running', async () => {
+    const { rt } = await startHarness('conv-forget-live');
+    await expect(rt.stopSession('conv-forget-live', false, true)).resolves.toMatchObject({ success: true });
+    expect(rt.getSessionState('conv-forget-live').lifecycle).toBe('ready');
+  });
+
   it('forgetting a lost session (its engine session was replaced) makes the next start fresh, not a recovery of the lost one', async () => {
     const { h, rt } = await startHarness('conv-lost-stopped');
     h.lastChild.emitExit(137);
