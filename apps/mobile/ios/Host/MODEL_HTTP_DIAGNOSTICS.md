@@ -34,6 +34,11 @@ known native short credential or relay hostname are omitted. Error messages,
 raw HTML/JSON and other response fields never leave the parser. These are
 untrusted service facts, not instructions or proof that a model turn succeeded.
 
+Machine-field patterns use Foundation's `\A` / `\z` complete-string anchors.
+`^` / `$` are insufficient: `$` can match before a final line terminator. The
+synthetic controls reject LF, CRLF, CR, NEL, Unicode line/paragraph separators
+and check zero, minimum, maximum and overflow lengths without trimming values.
+
 `GuguModelTransport.Send` returns a native GuguModelHTTPTask (resume/cancel) and
 exists for deterministic offline transport injection. The default remains
 URLSessionDataTask with the same no-redirect/no-cookie/no-cache behavior and

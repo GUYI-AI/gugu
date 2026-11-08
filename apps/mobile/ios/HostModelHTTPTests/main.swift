@@ -57,6 +57,19 @@ private struct Fixture {
         let (_, boolCode) = try exercise(400, boolean)
         try require(boolCode.first?.serverErrorCode == nil, "Boolean error field became a server code")
         cases.append("diagnostic_machine_fields_have_strict_length_format_and_scalar_checks")
+        for ending in ["\n", "\r\n", "\r", "\u{0085}", "\u{2028}", "\u{2029}"] {
+            let terminated = try JSONSerialization.data(withJSONObject: ["error": ["code": "invalid_request" + ending], "request_id": "request-id" + ending])
+            let (_, rejected) = try exercise(400, terminated)
+            try require(rejected == [.init(status: 400, serverErrorCode: nil, requestId: nil)], "A final line terminator escaped whole-value field checks")
+        }
+        cases.append("LF_CRLF_CR_and_Unicode_line_terminators_are_rejected_without_trimming")
+        for (codeLength, idLength, valid) in [(0, 0, false), (1, 1, true), (96, 128, true), (97, 129, false)] {
+            let code = String(repeating: "a", count: codeLength), request = String(repeating: "b", count: idLength)
+            let boundary = try JSONSerialization.data(withJSONObject: ["code": code, "request_id": request])
+            let (_, checked) = try exercise(400, boundary)
+            try require(checked == [.init(status: 400, serverErrorCode: valid ? code : nil, requestId: valid ? request : nil)], "Diagnostic field length boundary differs")
+        }
+        cases.append("machine_field_empty_minimum_maximum_and_overflow_lengths_are_exact")
         let (success, noDiagnostic) = try exercise(200, try JSONSerialization.data(withJSONObject: ["choices": []]))
         try require(success["ok"] as? Bool == true && noDiagnostic.isEmpty, "Successful reply emitted a failure diagnostic")
         cases.append("success_does_not_emit_failure_diagnostics")

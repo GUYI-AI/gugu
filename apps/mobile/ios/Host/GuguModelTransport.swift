@@ -140,11 +140,13 @@ final class GuguModelTransport: NSObject, GuguModelCompleting {
     private func scalar(_ value: Any?) -> String? {
         if let string = value as? String { return string }
         if let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
-           number.stringValue.range(of: "^[0-9]{1,9}$", options: .regularExpression) != nil { return number.stringValue }
+           number.stringValue.range(of: "\\A[0-9]{1,9}\\z", options: .regularExpression) != nil { return number.stringValue }
         return nil
     }
     private func safeField(_ value: String, requestId: Bool) -> String? {
-        let pattern = requestId ? "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$" : "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$"
+        // Foundation's $ may match before a final line terminator. These are
+        // full-value machine fields; a partial range is never an accepted value.
+        let pattern = requestId ? "\\A[A-Za-z0-9][A-Za-z0-9_-]{0,127}\\z" : "\\A[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}\\z"
         guard value.range(of: pattern, options: .regularExpression) != nil,
               value.range(of: lease.bearerToken, options: .caseInsensitive) == nil,
               !value.hasPrefix("eyJ"), !value.lowercased().hasPrefix("sk-"),
