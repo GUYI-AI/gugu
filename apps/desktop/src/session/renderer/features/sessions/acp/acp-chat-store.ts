@@ -1,6 +1,7 @@
 import { withTranscriptTurnIdentity } from '@shared/core/sessions/transcript-turn-identity';
 import { projectRejectedSessionInputs } from '@/lib/pendingSessionInput';
 import { messageFailureNotice, type MessageFailureAttempt } from '@/lib/messageFailureNotice';
+import { runNativeInputAction } from '@/lib/nativeInputFailureNotice';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import type {
   ChatContext,
@@ -46,7 +47,7 @@ import { ACP_START_FAILED, lifeHoldIsFailure, lifeIsStarting, type LifeView } fr
 import { sendThroughCustody } from './queue-native-input';
 import { sendHeldInputNow } from './send-held-input-now';
 import { sessionInputBubbles } from '@/lib/sessionInputOutbox';
-import { changeRejectedSessionInput, deleteQueuedSessionInput, editQueuedSessionInput, queuedSessionInputs, reorderQueuedSessionInputs, retrySessionInputs, subscribeSessionInputs } from '@/lib/sessionInputOutboxBridge';
+import { changeRejectedSessionInput, deleteQueuedSessionInput, editQueuedSessionInput, queuedSessionInputs, reorderQueuedSessionInputs, retrySessionInput, subscribeSessionInputs } from '@/lib/sessionInputOutboxBridge';
 import type { SessionInput } from '@/lib/sessionInputOutbox';
 import { sessionSendQueueOrder } from '@/lib/sessionSendQueueOrder';
 import { projectSessionPendingInput } from '@/lib/pendingSessionInput';
@@ -702,8 +703,9 @@ export class AcpChatStore {
   }
 
   discardRejectedInput(itemId: string): void {
-    const discard = this.isRejectedInput(itemId) ? changeRejectedSessionInput(itemId, { kind: 'discard' }) : discardSessionLifeRow(this.runtimeSessionId, itemId);
-    void discard.catch(error => this._toastError('acpFailure.sendMessage', error));
+    void this._messageAction(itemId, () => this.isRejectedInput(itemId)
+      ? changeRejectedSessionInput(itemId, { kind: 'discard' })
+      : discardSessionLifeRow(this.runtimeSessionId, itemId));
   }
 
   beginMessageEdit(itemId: string): void {
@@ -727,11 +729,12 @@ export class AcpChatStore {
     if (edit?.itemId === itemId && edit.text.trim() && this.isRejectedInput(itemId) && !this.reverting) {
       this.reverting = true;
       try {
-        await changeRejectedSessionInput(itemId, { kind: 'edit', text: edit.text });
-        runInAction(() => { this.messageEdit = null; });
-        await changeRejectedSessionInput(itemId, { kind: 'retry' });
-      } catch (error) { this._toastError('acpFailure.sendMessage', error); }
-      finally { runInAction(() => { this.reverting = false; }); }
+        await this._messageAction(itemId, async () => {
+          await changeRejectedSessionInput(itemId, { kind: 'edit', text: edit.text });
+          runInAction(() => { this.messageEdit = null; });
+          await changeRejectedSessionInput(itemId, { kind: 'retry' });
+        });
+      } finally { runInAction(() => { this.reverting = false; }); }
       return;
     }
     const item = this.revertMessageItem(itemId);
@@ -1083,7 +1086,8 @@ export class AcpChatStore {
 
   /** 「继续」 on a message stopped before it went: the host starts and sends it, once, ❌ with a prompt about continuing. */
   continueStoppedRow(): void {
-    void startSessionLife(this.runtimeSessionId).catch((error: unknown) => this._toastError('acpFailure.sendMessage', error));
+    const id = this.stoppedRowId ?? this.chatState.session.state.pendingMessages.find(input => input.stopped)?.id;
+    if (id) void this._messageAction(id, () => startSessionLife(this.runtimeSessionId));
   }
 
   /** What the host says can be taken back (`discardable`): an older host says nothing, so it offers no discard. */
@@ -1101,14 +1105,17 @@ export class AcpChatStore {
     const id = incoming?.id ?? this.stoppedRowId;
     if (!id || (!incoming && turnId !== stoppedTurnId(id))) return;
     const row = sessionLifeView(this.runtimeSessionId)?.pending.items.find(item => item.messageId === id);
-    void discardSessionLifeRow(this.runtimeSessionId, id).then(() => runInAction(() => {
-      if (incoming) this.chatState.session.setPendingMessages(this.chatState.session.state.pendingMessages.filter(input => input.id !== id));
-      if (row) this.setDraftText([row.text, this.draftText.trim()].filter(Boolean).join('\n'));
-    })).catch((error: unknown) => {
+    void this._messageAction(id, async () => {
+      await discardSessionLifeRow(this.runtimeSessionId, id);
+      runInAction(() => {
+        if (incoming) this.chatState.session.setPendingMessages(this.chatState.session.state.pendingMessages.filter(input => input.id !== id));
+        if (row) this.setDraftText([row.text, this.draftText.trim()].filter(Boolean).join('\n'));
+      });
+    }).then(success => {
+      if (success) return;
       // The click already folded the turn away: it did not go, so it comes back into view.
       const folded = turnDiscardedId(turnId);
       if (this.chatState.viewState.isCollapsed(folded)) this.chatState.viewState.toggleCollapsed(folded);
-      this._toastError('acpFailure.sendMessage', error);
     });
   }
 
@@ -1138,21 +1145,20 @@ export class AcpChatStore {
     void this._open();
   }
 
-  retryPendingInput(itemId?: string): void {
-    if (itemId && sessionLifeView(this.runtimeSessionId)?.pending.items.some(row => row.messageId === itemId && row.resendable)) {
-      void retryUnknownSessionInput(this.runtimeSessionId, itemId).catch(error => this._toastError('acpFailure.sendMessage', error));
+  retryPendingInput(itemId: string): void {
+    if (sessionLifeView(this.runtimeSessionId)?.pending.items.some(row => row.messageId === itemId && row.resendable)) {
+      void this._messageAction(itemId, () => retryUnknownSessionInput(this.runtimeSessionId, itemId));
       return;
     }
-    if (itemId && this.chatState.session.state.pendingMessages.some(input => input.id === itemId && input.delivery?.state === 'unknown')) return;
-    if (itemId && this.isRejectedInput(itemId)) {
-      void changeRejectedSessionInput(itemId, { kind: 'retry' }).catch(error => this._toastError('acpFailure.sendMessage', error));
+    if (this.chatState.session.state.pendingMessages.some(input => input.id === itemId && input.delivery?.state === 'unknown')) return;
+    if (this.isRejectedInput(itemId)) {
+      void this._messageAction(itemId, () => changeRejectedSessionInput(itemId, { kind: 'retry' }));
       return;
     }
-    void retrySessionInputs().then(() => {
-      if (sessionLifeView(this.runtimeSessionId)?.kind === 'failed') {
-        return startSessionLife(this.runtimeSessionId);
-      }
-    }).catch((error: unknown) => this._toastError('acpFailure.sendMessage', error));
+    void this._messageAction(itemId, async () => {
+      await retrySessionInput(itemId);
+      if (sessionLifeView(this.runtimeSessionId)?.kind === 'failed') await startSessionLife(this.runtimeSessionId);
+    });
   }
 
   /**
@@ -1773,7 +1779,7 @@ export class AcpChatStore {
 
   /** `steers`:这家能插话(#6574)⇒ 交给运行时插进当前回合;否则挪到队首,在跑就取消当前回合。 */
   sendQueuedPromptNow(id: string, opts: { steers: boolean }): void {
-    void this._sendQueuedPromptNow(id, opts.steers).catch(error => this._toastError('acpFailure.sendMessage', error));
+    void this._messageAction(id, () => this._sendQueuedPromptNow(id, opts.steers));
   }
 
   exportTranscript(kind: 'parsed' | 'raw'): void {
@@ -2423,30 +2429,25 @@ export class AcpChatStore {
       await sendHeldInputNow(this, id, steers);
       return;
     }
-    const session = this._requireSession('acpFailure.sendMessage');
-    if (!session) return;
+    const session = this.session;
+    if (!session) throw new Error('ACP session is not connected');
     const current = session.sessionState.current().queuedPrompts;
     if (!current.some((prompt) => prompt.id === id)) return;
 
     if (steers) {
       // 在不在跑由运行时当场判:这里读到的「在跑」可能已经过时,插不进就留在队首。
       const steerResult = await session.steerQueuedPrompt(id);
-      if (!steerResult.success) this._toastError('acpFailure.sendMessage', steerResult.error);
+      if (!steerResult.success) throw steerResult.error;
       return;
     }
 
     const ids = [id, ...current.map((prompt) => prompt.id).filter((promptId) => promptId !== id)];
     const reorderResult = await session.changeQueuePromptOrder(ids);
-    if (!reorderResult.success) {
-      this._toastError('acpFailure.sendMessage', reorderResult.error);
-      return;
-    }
+    if (!reorderResult.success) throw reorderResult.error;
 
     if (!this.affordances.isWorking) return;
     const cancelResult = await session.cancelTurn();
-    if (!cancelResult.success) {
-      this._toastError('acpFailure.sendMessage', cancelResult.error);
-    }
+    if (!cancelResult.success) throw cancelResult.error;
   }
 
   private async _exportTranscript(kind: 'parsed' | 'raw'): Promise<void> {
@@ -3165,6 +3166,12 @@ export class AcpChatStore {
     const pendingPromptCount = (this.chatState.session.state.pendingPrompt ? 1 : 0) + this.chatState.session.state.pendingMessages.length;
     this.messageCount = committedCount + activeCount + pendingPromptCount;
     this.transcriptRevision += 1;
+  }
+
+  /** Every failed message action has the native row's identity, including a later retry from another view. */
+  private async _messageAction(id: string, action: () => Promise<unknown>): Promise<boolean> {
+    return runNativeInputAction(this.runtimeSessionId, id, machineRegistry.machineOf(this.runtimeSessionId), action,
+      (error, attempt) => this._toastError('acpFailure.sendMessage', error, undefined, attempt));
   }
 
   /** Keep the failure reason visible through the existing one-line sanitizer, and persist its full detail. */

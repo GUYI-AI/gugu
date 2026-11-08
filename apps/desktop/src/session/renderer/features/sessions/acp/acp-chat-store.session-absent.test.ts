@@ -9,6 +9,7 @@
  * 没收下时还字、报错的是 `sendThroughCustody` 自己。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { setLocalePreference } from '@/i18n';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { reaction, runInAction } from 'mobx';
 import { WireError } from '@gugu/session-wire';
@@ -25,11 +26,13 @@ vi.mock('@/lib/sessionInputOutboxBridge', async (importOriginal) => ({
 }));
 
 const toasts: Array<{ title: string; description?: string; variant?: string }> = [];
-vi.mock('@renderer/lib/hooks/use-toast', () => ({
-  toast: (arg: { title: string; description?: string; variant?: string }) => {
-    toasts.push(arg);
-  },
-}));
+vi.mock('@/lib/loading/LoadingIndicator', () => ({ LoadingIndicator: () => null }));
+vi.mock('@/lib/notices', async original => {
+  const notices = await original<typeof import('@/lib/notices')>();
+  return { ...notices, notify: (notice: import('@/lib/notices').Notice) => { toasts.push(notice as typeof toasts[number]); return notices.notify(notice); } };
+});
+vi.mock('@renderer/lib/hooks/use-toast', async () => ({ toast: (await import('@/lib/notices')).notify }));
+
 
 type StoreModule = typeof import('./acp-chat-store');
 type StoreCtor = StoreModule['AcpChatStore'];
@@ -86,6 +89,7 @@ describe('#3500 发送只走 custody', () => {
 });
 
 describe('#3507 会话不在时的其余副作用', () => {
+  setLocalePreference('zh-CN');
   const absentSessionActions: Array<[
     label: string,
     title: string,
