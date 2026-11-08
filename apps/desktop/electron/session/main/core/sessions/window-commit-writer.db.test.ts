@@ -10,6 +10,7 @@ import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { createWindowCommitReceipts, type WindowCommitReceipt } from '../session-timeline/window-commit-receipt';
 import * as writeHelpers from '../session-timeline/window-commit-write';
 import { readWindowCommitSourceChunk, readWindowCommitSourceManifest } from '../session-timeline/window-commit-source';
+import { readWindowCommitSourceCatalog } from '../session-timeline/window-commit-source-catalog';
 import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 import { EventStreamSource } from '@gugu/session-wire';
 import { createWindowCommitRuntime } from '../session-timeline/window-commit-runtime';
@@ -107,10 +108,12 @@ describe('actual canonical writer capture', () => {
     expect(fixture.sqlite.prepare('SELECT source_id FROM session_window_commit_receipts').all()).toEqual([]);
   });
 
-  it('owns production source metadata in the canonical receipt without writing a duplicate cache manifest', async () => {
+  it('keeps canonical metadata and GC provenance without writing a duplicate raw cache head', async () => {
     await persistCommittedTurn({ sessionId: 'c', source: 'live', turn: turn('receipt-owned source'), windowCapture: capture(3, []) });
     const receipt = createWindowCommitReceipts(fixture.sqlite).byReference('c', 'source:real')!;
-    expect((await readdir(root)).filter(name => !name.endsWith('.source'))).toEqual([]);
+    expect((await readdir(root)).filter(name => !name.endsWith('.source'))).toEqual(['source-versions']);
+    expect(await readWindowCommitSourceCatalog(root, receipt.binding.scope, receipt.sourceId, createWindowBudget()))
+      .toEqual({ kind: 'hit', receipt });
     expect(await readWindowCommitSourceManifest(root, receipt.binding, createWindowBudget())).toMatchObject({ kind: 'miss', reason: 'not_found' });
     expect(new TextDecoder().decode(await readWindowCommitSourceChunk(root, receipt.binding, receipt.source, 0, createWindowBudget())))
       .toContain('receipt-owned source');
