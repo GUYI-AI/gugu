@@ -11,9 +11,7 @@ import { downloadBlob } from '../../lib/download'
 import { attachmentBytes, attachmentPreview, openAttachmentInSystemApp, sourceKeyOf } from '../../lib/attachmentBytes'
 import { FileReadRevokedError } from '@gugu/core/shared/fileResolver'
 import { rendererLogger } from '../../lib/log'
-import { offlineHolder } from '../../lib/fileHost'
-import { useDevicesStore } from '../../store/devicesContext'
-import { isDeviceOnline } from '@gugu/core/shared/enums/deviceModels'
+import { holderOfflineText, offlineHolder, useHolderBack } from '../../lib/fileHost'
 import { messageForUser } from '../../lib/userFacingError'
 import { useToast } from '../toastContext'
 import { MessageFilePreviewPanel } from './MessageFilePreviewPanel'
@@ -139,16 +137,9 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   // A chat folder's HTML document is given its folder: the files its page names beside it are shown (preview-protocol).
   const [besideOffline, setBesideOffline] = useState<{ machine: string; deviceId: string } | null>(null)
   // The machine a failed read waits for: when the device list sees it go from off to on, the file is read again by itself.
-  const [waitingFor, setWaitingFor] = useState<string | null>(null)
+  const [waitingFor, setWaitingFor] = useState<{ deviceId: string; itemId?: string; version?: number } | null>(null)
   const [attempt, setAttempt] = useState(0)
-  const { devices } = useDevicesStore()
-  const seenOff = useRef(false)
-  useEffect(() => {
-    if (!waitingFor) { seenOff.current = false; return }
-    const online = devices.some((device) => device.device_id === waitingFor && isDeviceOnline(device.status))
-    if (!online) { seenOff.current = true; return }
-    if (seenOff.current) { seenOff.current = false; setWaitingFor(null); setBesideOffline(null); setAttempt((n) => n + 1) }
-  }, [devices, waitingFor])
+  useHolderBack(waitingFor, () => { setWaitingFor(null); setBesideOffline(null); setAttempt((n) => n + 1) })
   const itemId = file.source.kind === 'item' ? file.source.itemId : null
   const at = useFilePlace(itemId)
   const hostedHtml = file.source.kind === 'hosted' ? file.source.registerHtml : undefined
@@ -161,7 +152,7 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
       outside: t('attachmentView.besideOutside'),
       offline: t('attachmentView.besideOffline'),
       palette: { surface: style.getPropertyValue('--bg-secondary').trim(), border: style.getPropertyValue('--border-strong').trim(), text: style.getPropertyValue('--text-secondary').trim() },
-    }, (holder) => { setBesideOffline(holder); setWaitingFor(holder.deviceId) })
+    }, (holder) => { setBesideOffline(holder); setWaitingFor(holder) })
   }, [hostedHtml, itemId, t])
   useEffect(() => {
     activeKey.current = key
@@ -181,8 +172,8 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
         // A project file kept on a machine that is off now says so, from a fresh read of where it is kept.
         const offline = source.kind === 'item' ? await offlineHolder(source.itemId, source.version) : null
         if (!live) return
-        setWaitingFor(offline?.deviceId ?? null)
-        setRead(offline !== null ? { content: null, errorStatus: 'failed', error: t('attachmentView.holderOffline', { machine: offline.machine || t('attachmentView.holderMachine') }) } : previewFailure(error, t))
+        setWaitingFor(offline)
+        setRead(offline !== null ? { content: null, errorStatus: 'failed', error: holderOfflineText(offline) } : previewFailure(error, t))
       },
     )
     return () => { live = false; void release?.() }

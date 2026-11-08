@@ -44,6 +44,7 @@ import {
   type ChatPeekFile,
   type PeekTarget,
   type PreparedChatFile,
+  FORWARD_MAX_BYTES,
 } from '@shared/extensions/app-runtime-protocol';
 import { extensionsService } from '@main/core/extensions/extensions-root';
 import { currentAccountAccessToken, resolveAccountFile, publishAccountFile } from '@main/core/extensions/account-token';
@@ -773,8 +774,7 @@ export async function uploadAppFiles(
 
 export const messageToShow = files.messageToShow;
 
-/** What a forward holds in memory at once, with a File and a copy for the send on top of it. Past it: said, before it is read. */
-export const FORWARD_MAX_BYTES = 512 * 1024 * 1024;
+export { FORWARD_MAX_BYTES };
 
 /**
  * `files.forward`: a chat's files go by reference. A working copy's file is in no chat to refer to, so what it holds goes:

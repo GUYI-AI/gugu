@@ -30,7 +30,7 @@ import { adoptOptimisticChatRow } from '../lib/optimisticChatIdentity'
 import { bindRepositoryMessageCache } from './chatDiskWindow'
 import { applyMessageWindowRevalidation } from '../lib/chatMessageRevalidation'
 import { platform } from '../platform'
-import { bindOutboxActions, createOutboxWiring, type OutboxWiring } from './chatOutboxWiring'
+import { bindOutboxActions, createOutboxWiring, forwardingDeviceFiles, type OutboxWiring } from './chatOutboxWiring'
 import { markLatestThreadRead, markManualUnreadAndRefresh } from '../lib/chatUnreadLocator'
 import { useChatUnreadStreamNavigation } from '../lib/chatUnreadStreamNavigation'
 import { ChatStoreProvider, type SendMessageOptions, type SendAttachmentOptions, useDraftAttachmentsStore, useDraftMentionsStore, useTextDraftStore, useDraftQuotesStore, useDraftWhispersStore } from './chatContext'
@@ -883,7 +883,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
         setActiveChatId,
         sendMessageToChat,
         sendAttachmentsToChat,
-        ...outboxActions,
+        ...forwardingDeviceFiles(outboxActions, sendAttachmentsToChat),
         refreshChats: loadChats,
         createGroupChat,
         upsertChat,

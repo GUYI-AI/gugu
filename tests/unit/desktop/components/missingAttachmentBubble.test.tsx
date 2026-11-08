@@ -9,7 +9,7 @@ import { MissingFileObjectError } from '@gugu/core/shared/fileResolver'
 import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 
 const f = vi.hoisted(() => ({ resolve: vi.fn() }))
-vi.mock('@/lib/fileAccess', () => ({ resolveFile: f.resolve, fileReader: () => ({ accountId: 'user-1', actorId: 'user-1' }), fileReadSignal: () => undefined, attachmentCache: vi.fn(), putAttachment: vi.fn(), attachmentCacheOrigin: 'https://fixture.invalid' }))
+vi.mock('@/lib/fileAccess', () => ({ fileMetadata: async () => ({ status: 'gone' }), resolveFile: f.resolve, fileReader: () => ({ accountId: 'user-1', actorId: 'user-1' }), fileReadSignal: () => undefined, attachmentCache: vi.fn(), putAttachment: vi.fn(), attachmentCacheOrigin: 'https://fixture.invalid' }))
 vi.mock('@/lib/chat', () => ({ chatService: { getMessageById: vi.fn() } }))
 vi.mock('@/components/chat/sendAttachmentBatch', () => ({ sendAttachmentBatch: vi.fn() }))
 vi.mock('@/components/extensionBundle/ExtensionBundleCard', () => ({ ExtensionBundleCard: () => null }))
