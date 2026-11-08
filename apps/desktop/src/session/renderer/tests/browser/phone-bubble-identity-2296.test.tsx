@@ -27,14 +27,14 @@ const store = <T,>(initial: T) => {
   return {
     get: () => value,
     set: (next: T) => { value = next; for (const listener of listeners) listener(); },
-    use: () => useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }, () => value),
+    useValue: () => useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener); }; }, () => value),
   };
 };
 
-const hostLife = vi.hoisted(() => ({ store: null as null | { get: () => LifeView | null; use: () => LifeView | null } }));
+const hostLife = vi.hoisted(() => ({ store: null as null | { get: () => LifeView | null; useValue: () => LifeView | null } }));
 vi.mock('@/mobile/agent-watch/useSessionLifeView', () => ({
   useSessionLifeView: () => {
-    const view = hostLife.store!.use();
+    const view = hostLife.store!.useValue();
     return { view, error: null, current: () => hostLife.store!.get() };
   },
 }));
@@ -112,7 +112,7 @@ it('composer outbox: the sender row, the host row and the native message are one
   const input = { id: 'composer-client-id', sessionId: SESSION, accountId: 'owner', deviceId: 'device', text, createdAt: Date.now(), queued: false };
   Object.assign(state(), { accountId: 'owner', rows: [input], valid: () => true });
   function Page() {
-    return <SessionConversation {...props} timeline={timeline.use()} pendingSends={[]} />;
+    return <SessionConversation {...props} timeline={timeline.useValue()} pendingSends={[]} />;
   }
   await mount(<Page />);
   await until('the sender row is drawn', () => !!harness.container.querySelector('[data-user-card]'));
@@ -134,7 +134,7 @@ it('restart startup row: the starting prompt, the host row and the native messag
   // As useSessionRestart builds it from the host row.
   const startup = store<PendingPrompt | null>({ id, text, starting: 'starting', held: true, sentAt: SENT_AT });
   function Page() {
-    return <SessionConversation {...props} timeline={timeline.use()} startupPrompt={startup.use()} pendingSends={[]} />;
+    return <SessionConversation {...props} timeline={timeline.useValue()} startupPrompt={startup.useValue()} pendingSends={[]} />;
   }
   life.set(hostRow(id, text));
   await mount(<Page />);
@@ -160,7 +160,7 @@ it('new session first prompt: the optimistic send, the creation row and the nati
     cancelSessionTurn: async () => ({ cancelled: false }), respondToSettlement: () => new Promise(() => {}),
   };
   function Page() {
-    const current = timeline.use();
+    const current = timeline.useValue();
     // The page's own optimistic send, settled against the same record the transcript reads.
     const { pendingSends } = useTimelineSession(idle, 'mobile', 'device', SESSION, false, firstPrompt);
     return <SessionConversation {...props} timeline={current} pendingSends={settlePendingSends(pendingSends, current.turns, current.queuedPrompts)} />;
