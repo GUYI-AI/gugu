@@ -839,6 +839,11 @@ export async function syncDeviceHeartbeat(
   try {
     const register = publishedCapabilities?.get(identity.deviceId) !== content
     let result = await write(register)
+    // 诊断:一次心跳写「成功返回、却没碰到任何行」时说出来 —— 这正是「本机无失败、库里却没落」那一类(写被吞)。
+    // 只记日志,行为不变(UPDATE 0 行照旧走下面那次完整 upsert 补登记)。upsert 不带 select 时 data 为空,判不了,不报。
+    if (!result.error && Array.isArray(result.data) && result.data.length === 0) {
+      log.warn({ device: identity.deviceId.slice(-8), write: register ? 'upsert' : 'update' }, 'device heartbeat write affected 0 rows')
+    }
     if (!result.error && !register && result.data?.[0]?.runtimes == null) result = await write(true)
     if (result.error) throw new Error(result.error.message)
     publishedCapabilities?.set(identity.deviceId, content)
