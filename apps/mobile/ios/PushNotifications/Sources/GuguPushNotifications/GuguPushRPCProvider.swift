@@ -14,11 +14,17 @@ import CoreFoundation
 /// the actual signed build, never a WebView parameter.
 @MainActor final class GuguPushRPCProvider: GuguPushProvider {
     private let transport: GuguPushRPCTransport
-    private let environment: GuguPushEnvironment
+    private let environment: GuguPushEnvironment?
     init(transport: GuguPushRPCTransport, environment: GuguPushEnvironment) {
         self.transport = transport; self.environment = environment
     }
+    /// Only durable original-session close. It cannot advertise or perform
+    /// ordinary registration/revoke when a signed APNs environment is unknown.
+    init(retirementTransport: GuguPushRPCTransport) {
+        transport = retirementTransport; environment = nil
+    }
     func register(_ request: GuguPushRegistrationRequest) async throws -> GuguPushRegistrationReceipt {
+        guard let environment else { throw GuguPushFailure.unavailable }
         try request.ticket.binding.validate()
         let parameters: [String: Any] = try request.withDeviceToken { bytes in
             guard !bytes.isEmpty, bytes.count <= 2048 else {
@@ -45,6 +51,7 @@ import CoreFoundation
         try receipt.validate(); return receipt
     }
     func revoke(_ request: GuguPushRevocationRequest) async throws -> Bool {
+        guard environment != nil else { throw GuguPushFailure.unavailable }
         try request.receipt.validate()
         let raw: Any
         do {

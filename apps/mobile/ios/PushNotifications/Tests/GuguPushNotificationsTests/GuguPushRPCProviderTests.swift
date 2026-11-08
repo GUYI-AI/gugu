@@ -78,6 +78,24 @@ import Testing
         #expect(proof.scope == scope && proof.kind.rawValue == kind)
         #expect((kind == "session_absent") == (proof.fenceId == nil))
     }
+    @Test func retirementOnlyProviderNeedsNoAPNsEnvironmentAndAllowsOnlyClose() async throws {
+        let t = Transport()
+        let provider = GuguPushRPCProvider(retirementTransport: t)
+        let registration = request()
+        do { _ = try await provider.register(registration); Issue.record("Expected registration rejection") }
+        catch let e as GuguPushFailure { #expect(e.code == "backend_unavailable") }
+        let ack = GuguPushRegistrationReceipt(ticket: registration.ticket, registrationId: "55555555-5555-4555-8555-555555555555",
+            serverGeneration: UUID(), preferences: registration.preferences)
+        let closeOnly = GuguPushRPCProvider(retirementTransport: t)
+        do { _ = try await closeOnly.revoke(.init(receipt: ack)); Issue.record("Expected ordinary revoke rejection") }
+        catch let e as GuguPushFailure { #expect(e.code == "backend_unavailable") }
+        #expect(t.calls == 0)
+        t.result = closeReply()
+        let proof = try await closeOnly.closeInstallation(scope: scope)
+        #expect(proof.scope == scope && proof.kind == .installationFenced)
+        #expect(t.calls == 1 && t.function == "mobile_push_close_installation")
+        #expect(t.parameters["p_environment"] == nil && t.parameters["p_token"] == nil)
+    }
     @Test(arguments: ["boolVersion", "stringVersion", "falseClosed", "numericClosed", "null", "missingFence", "emptyFence", "badFence", "nullFence", "absentWithFence", "owner", "session", "installation", "device", "kind"])
     func invalidCloseEvidenceNeverReleasesBarrier(field: String) async {
         let t = Transport(), provider = GuguPushRPCProvider(transport: t, environment: .sandbox)
