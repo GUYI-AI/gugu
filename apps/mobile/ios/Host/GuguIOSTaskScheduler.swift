@@ -57,14 +57,17 @@ final class GuguIOSTaskScheduler {
             do { _ = try self.host(agent); completion(.success(())) } catch { completion(.failure(error)) }
         }
     }
-    func admit(agent: [String: Any], text: String, id: String, clientMessageId: String? = nil,
+    func admit(agent: [String: Any], text: String, id: String, clientMessageId: String? = nil, delivery: GuguIOSInboxDelivery? = nil,
                completion: @escaping (Result<Void, Error>) -> Void) {
         queue.async {
             do {
                 try self.check(); guard !self.stopped, UUID(uuidString: id) != nil, !text.isEmpty else { throw Self.failure("invalid_args", "Native task input is unavailable or invalid") }
                 try self.validate(agent)
                 if let clientMessageId, UUID(uuidString: clientMessageId) == nil { throw Self.failure("invalid_args", "Client message identity must be a UUID") }
-                let fingerprint = try GuguHostJournal.digest(["sessionId": agent["sessionId"]!, "text": text, "clientMessageId": clientMessageId as Any? ?? NSNull()])
+                if let delivery { guard delivery.sourceMessageId == id, delivery.prompt == text, clientMessageId == nil else { throw Self.failure("invalid_args", "Inbox admission must retain its original source identity and projected text") } }
+                let identity: [String: Any] = delivery.map { ["kind": "inbox", "agentId": agent["agentUserId"]!, "sessionId": agent["sessionId"]!, "contextEpoch": agent["contextEpoch"]!, "sourceMessageId": $0.sourceMessageId, "chatId": $0.chatId] }
+                    ?? ["sessionId": agent["sessionId"]!, "text": text, "clientMessageId": clientMessageId as Any? ?? NSNull()]
+                let fingerprint = try GuguHostJournal.digest(identity)
                 try self.store.transaction { state in
                     var rows = state["inputs"] as? [String: [String: Any]] ?? [:]
                     if let existing = rows[id] {
@@ -73,6 +76,24 @@ final class GuguIOSTaskScheduler {
                     let sequence = (state["nextInputSequence"] as? Int ?? 0) + 1; state["nextInputSequence"] = sequence
                     rows[id] = ["id": id, "fingerprint": fingerprint, "agentId": agent["agentUserId"]!, "sessionId": agent["sessionId"]!,
                         "contextEpoch": agent["contextEpoch"]!, "prompt": text, "clientMessageId": clientMessageId as Any? ?? NSNull(), "status": "queued", "sequence": sequence]
+                    if let delivery {
+                        var agents = state["agents"] as? [String: [String: Any]] ?? [:]
+                        guard var current = agents[agent["agentUserId"] as! String], current["agentUserId"] as? String == agent["agentUserId"] as? String,
+                              current["ownerId"] as? String == self.binding.ownerId, current["deviceId"] as? String == self.binding.deviceId,
+                              current["sessionId"] as? String == agent["sessionId"] as? String, current["contextEpoch"] as? String == agent["contextEpoch"] as? String else { throw Self.failure("stale_context", "Inbox target changed before durable admission") }
+                        var chats: [String] = []
+                        if let raw = current["usedChatIds"] {
+                            guard let stored = raw as? [String], stored.allSatisfy({ UUID(uuidString: $0) != nil }) else { throw Self.failure("invalid_journal", "Inbox target source lineage is unreadable") }; chats = stored
+                        }
+                        if !chats.contains(delivery.chatId) { chats.append(delivery.chatId) }
+                        current["usedChatIds"] = chats; agents[agent["agentUserId"] as! String] = current; state["agents"] = agents
+                        rows[id]?["route"] = delivery.route; rows[id]?["usedChatIds"] = [delivery.chatId]
+                        if let version = delivery.rulesVersion {
+                            var requests = state["requests"] as? [String: [String: Any]] ?? [:]
+                            requests["rules:\(agent["agentUserId"] as! String):\(delivery.chatId):\(agent["contextEpoch"] as! String)"] = ["version": version, "contextEpoch": agent["contextEpoch"]!]
+                            state["requests"] = requests
+                        }
+                    }
                     state["inputs"] = rows
                 }
                 // The accepted receipt follows persistence and precedes execution.
@@ -345,7 +366,8 @@ final class GuguIOSTaskScheduler {
               let id = agent["agentUserId"] as? String, UUID(uuidString: id) != nil,
               let session = agent["sessionId"] as? String, UUID(uuidString: session) != nil,
               let epoch = agent["contextEpoch"] as? String, UUID(uuidString: epoch) != nil,
-              let saved = try store.record("agents", id: id), saved["sessionId"] as? String == session, saved["contextEpoch"] as? String == epoch else {
+              let saved = try store.record("agents", id: id), saved["agentUserId"] as? String == id, saved["ownerId"] as? String == binding.ownerId, saved["deviceId"] as? String == binding.deviceId,
+              saved["sessionId"] as? String == session, saved["contextEpoch"] as? String == epoch else {
             throw Self.failure("stale_context", "Task does not match the durable native session registry")
         }
     }

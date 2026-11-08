@@ -17,7 +17,11 @@ whisper with no exact recipient fail closed. Private attachments remain
 unsupported until the native reader can verify their identity and bytes.
 
 Projection alone does not establish permission or durable admission and does not
-advance a read cursor. The future native inbox pump must recheck the original
+advance a read cursor. `GuguIOSInboxDelivery` checks the projection against its
+authoritative row. Scheduler admission atomically retains the original source
+UUID, input, private/thread route, context source lineage and delivered rule
+version before accepting it. Re-projection after a name/rule change cannot run
+the original UUID again or credit a new rule version to its old input. The future native inbox pump must recheck the original
 source context, persist the exact input/route/rules receipt, then acknowledge
 delivery using the existing cloud cursor/fence protocol. Reopening a projection
 or journal never executes an input or retries an uncertain write. Inbox pumping,

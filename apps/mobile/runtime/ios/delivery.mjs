@@ -72,5 +72,5 @@ export function nativeChatDelivery(input) {
   { message: 'message_send' }, { listenMode: resolveListenModeDefault(row.listen_mode), messageContext, threadContext, groupRules })
   return { sourceMessageId: id, seq: row.seq, chatId: chat, envelope,
     route: { kind: 'chat', chatId: chat, sourceMessageId: id, senderUserId: sender, threadRootId: thread, whisper: row.is_whisper === true },
-    groupRulesDelivered: groupRules ? { chatId: chat, version: groupRules.version } : null }
+    groupRulesDelivered: groupRules && groupRules.text !== null ? { chatId: chat, version: groupRules.version } : null }
 }
