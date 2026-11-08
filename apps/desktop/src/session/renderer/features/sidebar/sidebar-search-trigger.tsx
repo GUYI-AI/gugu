@@ -26,7 +26,9 @@ export function SidebarSearchTrigger() {
     >
       <Search className="h-5 w-5 shrink-0 sm:h-4 sm:w-4" />
       <span className="min-w-0 flex-1 truncate text-left">{translate('sidebar.searchPlaceholder')}</span>
-      <BoundShortcut commandId="app.globalSearch" variant="keycaps" className={sidebarRowShortcutClass} />
+      {/* 顶部固定按钮占掉部分宽度,窄侧栏优先完整显示搜索文字;隐藏键帽时也释放它的占位。 */}
+      <BoundShortcut commandId="app.globalSearch" variant="keycaps"
+        className={cn(sidebarRowShortcutClass, '@max-[240px]/sidebar-header:hidden')} />
     </button>
   );
 }

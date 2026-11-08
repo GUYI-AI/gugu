@@ -8,7 +8,7 @@ import { SIDEBAR_HEADER_CONTROLS_PX } from '@/lib/window-chrome';
 export function SidebarSpace({ children }: { children?: ReactNode }) {
   return (
     <div
-      className="flex h-10 w-full shrink-0 items-center pr-3 [-webkit-app-region:drag]"
+      className="@container/sidebar-header flex h-10 w-full shrink-0 items-center pr-3 [-webkit-app-region:drag]"
       style={{ paddingLeft: SIDEBAR_HEADER_CONTROLS_PX }}
       data-sidebar-space=""
     >

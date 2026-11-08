@@ -33,6 +33,8 @@ import {
   sidebarRowShortcutClass,
 } from '@renderer/features/sidebar/sidebar-primitives'
 import { SidebarSearchTrigger } from '@renderer/features/sidebar/sidebar-search-trigger'
+import { SidebarSpace } from '@renderer/features/sidebar/sidebar-space'
+import { setLocalePreference } from '@/i18n'
 import { commandRegistry } from '@renderer/lib/commands/registry'
 import { BoundShortcut } from '@renderer/lib/ui/shortcut'
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
@@ -57,9 +59,37 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
+  setLocalePreference('en-US')
   root.unmount()
   host.remove()
   pointerPark.remove()
+})
+
+it.each(['zh-CN', 'en-US'])('搜索提示在真实顶部栏的最窄和常规宽度下完整显示(%s)', async locale => {
+  setLocalePreference(locale as 'zh-CN' | 'en-US')
+  root.render(<QueryClientProvider client={new QueryClient()}>
+    <SessionLocalizationProvider><SidebarSpace><SidebarSearchTrigger /></SidebarSpace></SessionLocalizationProvider>
+  </QueryClientProvider>)
+  await until('search header mounted', () => host.querySelector('[data-testid="sidebar-search-trigger"]') !== null)
+  const search = host.querySelector<HTMLElement>('[data-testid="sidebar-search-trigger"]')!
+  const label = search.querySelector<HTMLElement>('span:not([data-slot])')!
+  const shortcut = search.querySelector<HTMLElement>('[data-slot="shortcut"]')!
+  expect(label.textContent).toBe(locale === 'zh-CN' ? '搜索...' : 'Search...')
+  for (const width of [200, 240, 280]) {
+    host.style.width = `${width}px`
+    await until(`header width is ${width}px`, () => host.getBoundingClientRect().width === width)
+    expect(label.clientWidth).toBeGreaterThan(0)
+    expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth)
+    expect(shortcut.getBoundingClientRect().width).toBe(0)
+    const rest = label.getBoundingClientRect()
+    await userEvent.hover(search)
+    expect(label.getBoundingClientRect().width).toBeCloseTo(rest.width, 1)
+    expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth)
+    await userEvent.hover(pointerPark)
+  }
+  host.style.width = '420px'
+  await until('shortcut fits in a wide header', () => shortcut.getBoundingClientRect().width > 0)
+  expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth)
 })
 
 /**
