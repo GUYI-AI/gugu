@@ -24,7 +24,8 @@ describe('bounded canonical projection host adapter', () => {
   const turn = (): TranscriptTurn => ({ id: 't', referenceId: 'reference', seq: 0, initiator: 'agent', startedAt: 123,
     outcome: { kind: 'error', reason: 'process_closed', detail },
     items: [{ kind: 'mcp-tool-call', id: 'tool', seq: 4, toolCallId: 'provider-call', title: 'Read', status: 'done', tool: 'read',
-      parentToolCallId: 'provider-parent', locations: [{ path: '/real/path' }], rawInput: '{"real":true}', rawOutput: 'raw result' },
+      parentToolCallId: 'provider-parent', locations: [{ path: '/real/path' }],
+      contentBlocks: [{ type: 'fixture', array: [], object: {} }], rawInput: '{"real":true}', rawOutput: 'raw result' },
     { kind: 'message', id: 'answer', seq: 9, role: 'assistant', text: body }] });
   beforeEach(async () => {
     fixture = await openFixture('empty'); state.db = fixture.db; state.sqlite = fixture.sqlite;
@@ -98,6 +99,26 @@ describe('bounded canonical projection host adapter', () => {
     const key = await g.adapter.readField(g.owner, object.entries[0].key!, budget());
     const value = await g.adapter.readField(g.owner, object.entries[0].value.handle, budget());
     expect(key).toMatchObject({ kind: 'body', text: 'path' }); expect(value).toMatchObject({ kind: 'body', text: '/real/path' });
+  });
+  it('preserves empty array and object kinds through nested opaque metadata handles', async () => {
+    const g = gateway(), opened = await g.adapter.open(g.owner, position, budget()), row = await g.adapter.readPage(g.owner, opened.next!, budget());
+    const blocks = row.header.fields.find(v => v.field === 'contentBlocks')!;
+    const array = await g.adapter.readField(g.owner, blocks.handle, budget());
+    expect(array).toMatchObject({ kind: 'values', containerKind: 'array' });
+    if (array.kind !== 'values' || array.entries[0]?.value.kind !== 'field') throw new Error('missing content block');
+    expect(array.entries[0].value).toHaveProperty('fieldKind', 'object');
+    const object = await g.adapter.readField(g.owner, array.entries[0].value.handle, budget());
+    expect(object).toMatchObject({ kind: 'values', containerKind: 'object' });
+    if (object.kind !== 'values') throw new Error('missing content members');
+    const kinds: Record<string, unknown> = {};
+    for (const entry of object.entries) {
+      const key = await g.adapter.readField(g.owner, entry.key!, budget());
+      if (key.kind !== 'body' || entry.value.kind !== 'field' || !['array', 'object'].includes(key.text)) continue;
+      const empty = await g.adapter.readField(g.owner, entry.value.handle, budget());
+      expect(empty).toMatchObject({ kind: 'values', containerKind: key.text, entries: [], next: null });
+      kinds[key.text] = entry.value;
+    }
+    expect(kinds).toMatchObject({ array: { fieldKind: 'array' }, object: { fieldKind: 'object' } });
   });
   it('refuses another owner, forged handles and handles after release; release failures never restore read authority', async () => {
     const g = gateway(), opened = await g.adapter.open(g.owner, position, budget());

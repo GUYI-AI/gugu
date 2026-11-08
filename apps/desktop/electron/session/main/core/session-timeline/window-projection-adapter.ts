@@ -133,9 +133,10 @@ export function createWindowProjectionAdapter(ports: Ports) {
         const page = await readProjectionField(ports.directory, lease.receipt, value.position, budget, combined);
         const output = page.kind === 'body' ? { kind: 'body' as const, text: page.text, offset: page.offset,
           next: page.complete ? null : field(lease, page.next) }
-          : { kind: 'values' as const, entries: page.members.map(member => ({ ordinal: member.ordinal,
+          : { kind: 'values' as const, containerKind: page.containerKind, entries: page.members.map(member => ({ ordinal: member.ordinal,
             key: member.key ? field(lease, member.key) : null,
-            value: member.value.kind === 'scalar' ? member.value : { kind: 'field' as const, handle: field(lease, member.value.position) } })),
+            value: member.value.kind === 'scalar' ? member.value : { kind: 'field' as const, fieldKind: member.value.position.kind,
+              handle: field(lease, member.value.position) } })),
           next: page.complete ? null : field(lease, page.next) };
         if (page.kind === 'values') budget.charge('outputBytes', Buffer.byteLength(JSON.stringify(output)));
         await assertWindowCommitSource(ports.directory, lease.receipt.binding, lease.receipt.source);

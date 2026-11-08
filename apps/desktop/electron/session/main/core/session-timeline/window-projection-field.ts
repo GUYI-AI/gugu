@@ -28,7 +28,7 @@ export async function readProjectionField(directory: string, receipt: WindowComm
   const result = await readCommitContainerPage(directory, receipt.binding, receipt.source, state, budget, signal);
   // Keys, including gigantic keys, are field capabilities too. Their content
   // is never decoded merely to enumerate a structured metadata page.
-  return { kind: 'values' as const, members: result.members.map(member => ({ ordinal: member.ordinal,
+  return { kind: 'values' as const, containerKind: kind, members: result.members.map(member => ({ ordinal: member.ordinal,
     key: member.key ? { kind: 'string' as const, range: { ...member.key } } : null,
     value: member.kind === 'primitive' ? { kind: 'scalar' as const, value: member.value }
       : { kind: 'field' as const, position: { kind: member.kind, range: { ...member.range } } } })),
