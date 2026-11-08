@@ -381,6 +381,7 @@ import { admitCreationTurns, bindIdentityThenCreate, claimIdentityCreation } fro
 import { unbindSessionAgent } from '@main/core/sessionpage/sessionpage-session-agent'
 import { isLifeSession, lifeSessions, lifeStore } from '@main/core/sessions/session-pending'
 import { sessionLifeSources } from '@main/core/sessions/session-life-host'
+import { nativePendingInputLookup } from '@main/core/sessions/session-pending-history'
 import { createAcpLegAdapter } from '@main/core/acp/session-life-acp'
 import { forkStore, runtimeFork, runtimeForks, runtimeForksOf } from '@main/core/sessions/session-life-forks'
 import { sessionOwnedBy } from '@main/core/sessionpage/sessionpage-session-agent'
@@ -577,6 +578,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
     ownedBy: (sessionId, userId) => sessionOwnedBy(sessionId, process.env, userId),
     markRead: row => sessionLifeSources.markRead(row),
     reportFailure: (rows, cause) => sessionLifeSources.reportFailure(rows, cause),
+    nativeInputs: sessionId => nativePendingInputLookup(sessionId),
     publish: view => {
       events.emit(sessionLifeViewChannel, view)
       for (const cb of lifeViewSubscribers) cb(view)
