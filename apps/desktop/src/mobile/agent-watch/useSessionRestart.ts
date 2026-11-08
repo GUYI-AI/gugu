@@ -3,6 +3,7 @@ import type { PendingPrompt } from '@gugu/session-chat-ui'
 import { failedOnMissingEngineSession, lifeIsStarting, type LifeView } from '@/session/shared/core/sessions/session-life'
 import { canStartFreshSession } from '@/session/shared/core/sessions/session-recovery'
 import { sessionInputBubbles } from '@/lib/sessionInputOutbox'
+import { queuedSessionInputs } from '@/lib/sessionInputOutboxBridge'
 import { messageForUser } from '@/lib/userFacingError'
 import { machineRpc } from './sessionpage-rpc'
 import { recoverTimelineRead } from './timeline-read-recovery'
@@ -92,7 +93,11 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
       if (fresh) {
         const result = await host.sessions.restartSession(projectId, sessionId)
         // An older host answers nothing: it always replaced.
-        if (result?.replaced !== false) replaced.current = request
+        if (result?.replaced !== false) {
+          replaced.current = request
+          // Messages queued here while the lost turn ran release only into a running engine: start it for them.
+          if (queuedSessionInputs(sessionId).some(input => input.sendQueue)) await host.sessions.lifeStart(sessionId)
+        }
         else if (current.current === key && inFlight.current === request) {
           // Already continued elsewhere: nothing to wait for, show the session as it is now.
           setAttempt(null)

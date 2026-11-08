@@ -8,6 +8,8 @@ import { useSessionRestart } from '../../../apps/desktop/src/mobile/agent-watch/
 import { SessionLoadFailure } from '../../../apps/desktop/src/mobile/agent-watch/SessionLoadFailure'
 
 const host = vi.hoisted(() => ({ read: vi.fn(), life: vi.fn(), restart: vi.fn(), retry: vi.fn(), ready: vi.fn() }))
+const composer = vi.hoisted(() => ({ queued: [] as { sendQueue?: object }[] }))
+vi.mock('../../../apps/desktop/src/lib/sessionInputOutboxBridge', async importOriginal => ({ ...await importOriginal<object>(), queuedSessionInputs: () => composer.queued }))
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
   machineRpc: () => ({ sessions: { getUnarchivedSession: host.read, lifeView: host.life, restartSession: host.restart, lifeStart: host.retry } }),
 }))
@@ -33,6 +35,7 @@ beforeEach(() => {
   host.restart.mockReset().mockResolvedValue(undefined)
   host.retry.mockReset().mockResolvedValue(undefined)
   host.ready.mockReset().mockResolvedValue(undefined)
+  composer.queued = []
   harness = createReactHarness()
 })
 afterEach(() => { harness.cleanup(); vi.useRealTimers() })
@@ -84,6 +87,13 @@ describe('phone missing-session recovery (#996)', () => {
     expect(host.ready).toHaveBeenCalledOnce()
     expect(recovery.pendingPrompt).toBeNull()
     expect(recovery.busy).toBe(false)
+  })
+  it('messages queued on the phone while the lost turn ran start the new engine after the replacement', async () => {
+    composer.queued = [{ sendQueue: { order: 1 } }]
+    await harness.render(<Fixture />); await tick()
+    await act(async () => { freshButton()!.click() }); await tick()
+    expect(host.restart).toHaveBeenCalledExactlyOnceWith('p', 's')
+    expect(host.retry).toHaveBeenCalledExactlyOnceWith('s')
   })
   it('another surface continued it first: the host replaces nothing, the page shows the session as it is now', async () => {
     await harness.render(<Fixture />); await tick()

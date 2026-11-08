@@ -17,6 +17,9 @@ vi.mock('@renderer/features/sessions/stores/open-file-in-file-editor', () => ({
 
 const archiveSession = vi.hoisted(() => vi.fn());
 const restartSession = vi.hoisted(() => vi.fn());
+const composer = vi.hoisted(() => ({ queued: [] as { sendQueue?: object }[], start: vi.fn() }));
+vi.mock('@/lib/sessionInputOutboxBridge', async importOriginal => ({ ...await importOriginal<object>(), queuedSessionInputs: () => composer.queued }));
+vi.mock('./stores/session-life-views', () => ({ startSessionLife: composer.start }));
 /** 记下每个频道的 handler —— 不记就测不到「事件到达之后发生了什么」。 */
 const eventHandlers = vi.hoisted(() => new Map<unknown, ((payload: unknown) => void)[]>());
 
@@ -384,6 +387,8 @@ describe('PageSessionsStore restartSession', () => {
     initialQueue: [{ text: 'run the tests', origin: 'manual' as const }],
   };
 
+  beforeEach(() => { composer.queued = []; composer.start.mockReset().mockResolvedValue(undefined); });
+
   it('a session created in this window drops its creation turns, so reopening it starts nothing', async () => {
     restartSession.mockResolvedValueOnce({ replaced: true });
     const store = new PageSessionsStore('project-1', 'a', [created]);
@@ -393,6 +398,16 @@ describe('PageSessionsStore restartSession', () => {
     expect(data.initialQueue).toBeUndefined();
     expect(data.providerSessionId).toBeUndefined();
     expect(data.providerSessionState).toBeUndefined();
+    expect(composer.start).not.toHaveBeenCalled();
+    store.dispose();
+  });
+
+  it('messages waiting in the composer queue (sent while the lost turn ran) start the new engine', async () => {
+    restartSession.mockResolvedValueOnce({ replaced: true });
+    composer.queued = [{ sendQueue: { order: 1 } }];
+    const store = new PageSessionsStore('project-1', 'a', [created]);
+    await store.restartSession('a');
+    expect(composer.start).toHaveBeenCalledExactlyOnceWith('a');
     store.dispose();
   });
 

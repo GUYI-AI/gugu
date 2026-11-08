@@ -21,6 +21,8 @@ import {
 import { makePtySessionId } from '@shared/core/pty/ptySessionId';
 import { sessionDescendantIds } from './session-descendants';
 import { getRendererSession } from '@/lib/sessionPublication';
+import { queuedSessionInputs } from '@/lib/sessionInputOutboxBridge';
+import { startSessionLife } from './stores/session-life-views';
 import { rememberTask } from '@renderer/features/command-palette/recent-tasks';
 
 export class PageSessionsStore implements IDisposable {
@@ -228,6 +230,9 @@ export class PageSessionsStore implements IDisposable {
    */
   async restartSession(sessionId: string): Promise<void> {
     const { replaced } = await rpc.sessions.restartSession(this.projectId, sessionId);
+    // Messages sent while the lost turn ran wait in the composer queue, which releases only into a running engine and
+    // never starts one. They were really said: start the new engine for them (the host starts only for its own queue).
+    if (replaced && queuedSessionInputs(sessionId).some(input => input.sendQueue)) await startSessionLife(sessionId);
     // The change event may arrive after this reply, and the caller reopens from this record now. A session created in
     // this window still holds its creation turns here: left in place, reopening would start the engine at once.
     // Not replaced (another window or the phone continued it first): the record is newer than this window; keep it.
