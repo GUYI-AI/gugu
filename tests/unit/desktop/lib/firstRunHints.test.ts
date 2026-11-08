@@ -1,7 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const io = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn() }))
-vi.mock('@gugu/core/cloud/userSettings', () => ({ readUserSettingsConfig: io.read, writeUserSettingsConfig: io.write }))
+vi.mock('@gugu/core/cloud/userSettings', () => ({
+  readUserSettingsConfig: io.read,
+  updateUserSettingsKey: async (client: unknown, user: string, scope: string, key: string, edit: (value: unknown) => unknown) => {
+    const before = await io.read(client, user, scope)
+    const config = { ...before, [key]: edit(before[key]) }
+    await io.write(client, user, scope, config)
+    return { scope, config }
+  },
+}))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ identityDb: {} }))
 const { allFirstRunHintsDismissed, parseFirstRunHints, readFirstRunHints, startFirstRunHints, dismissFirstRunHints } = await import('../../../../apps/desktop/src/lib/firstRunHints')
 
