@@ -31,6 +31,24 @@ it('keeps the day-card July 4 date correct across same-probe zones and after ret
   expect(actual).toEqual(expected);
 });
 
+it('reads the default zone through Temporal when the runtime has it, without building an Intl formatter', async () => {
+  vi.resetModules();
+  vi.stubGlobal('Temporal', { Now: { timeZoneId: () => process.env.TZ } });
+  try {
+    const { formatDate } = await import('./format');
+    const instant = Date.UTC(2026, 6, 4, 4, 30); // 利马 7 月 3 日 23:30、纽约 7 月 4 日 00:30
+    vi.stubEnv('TZ', 'America/Lima');
+    expect(formatDate(instant, { dateStyle: 'short' }, 'en-US')).toBe('7/3/26');
+    vi.stubEnv('TZ', 'America/New_York');
+    expect(formatDate(instant, { dateStyle: 'short' }, 'en-US')).toBe('7/4/26');
+    const dateTime = vi.spyOn(Intl, 'DateTimeFormat');
+    for (let i = 0; i < 50; i += 1) formatDate(instant + i, { dateStyle: 'short' }, 'en-US');
+    expect(dateTime).not.toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it.each(['inherited', 'non-enumerable', 'getter'] as const)('honors %s number options after warming the decimal cache', async (shape) => {
   vi.resetModules();
   const { formatNumber } = await import('./format');

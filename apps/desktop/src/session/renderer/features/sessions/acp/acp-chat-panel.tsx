@@ -106,7 +106,7 @@ import { openComposerImage, openImageViewer } from '@/lib/imageViewer';
 import { showModal, useShowModal } from '@renderer/lib/modal/modal-provider';
 import { resolveSignInTarget } from '@renderer/features/settings/agents-page/agent-account';
 import { pushTaskDirectory, taskAttachmentUsesSsh } from '@/lib/taskAttachmentTarget';
-import { droppedDirectoryMention } from '@renderer/lib/drag-files';
+import { droppedDirectoryMention, pathMention } from '@renderer/lib/drag-files';
 import { pathAttachmentTarget } from '@gugu/session-chat-ui/markdown-attachment-mentions';
 import { readMermaidTheme } from '@gugu/session-chat-ui/mermaid';
 import { SessionScheduleChip } from '../session-schedule-chip';
@@ -636,6 +636,14 @@ const ComposerForStore = observer(function ComposerForStore({
     provider: localSessionMentionProvider,
     editorApiRef,
     selfSessionId: store.sessionId,
+    attachFiles: (files) => {
+      attachFiles(files).catch((error: unknown) => log.error('Failed to attach dropped files', { error }));
+    },
+    // A folder on this computer: the same pill a folder dropped from the system gets; a task on another machine cannot read it.
+    dropFolder: (path) => {
+      if (machineRegistry.machineOf(store.projectId)) toast({ title: translate('chat.folderDropUnsupportedTitle'), variant: 'destructive' });
+      else editorApiRef.current?.insertMention(pathMention(path));
+    },
   });
 
   // 落在这条会话的**正中**(聊天记录那一片)也算落在输入框上(behavior session-page「把会话拖成 @」):一块的上下左右边

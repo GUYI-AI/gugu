@@ -379,7 +379,7 @@ function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boole
   const previews = useRef(new Map<File, string>());
   const { byEngine, renderMentionIcon } = useSessionAgentCreationTools();
   const mentionProvider = useMemo(() => createLocalSessionMentionProvider({ creationToolsByEngine: byEngine }), [byEngine]);
-  const { dataDropTypes, onDataDropped } = useSessionMentionDrop({ provider: mentionProvider, editorApiRef: editor });
+  const { dataDropTypes, onDataDropped } = useSessionMentionDrop({ provider: mentionProvider, editorApiRef: editor, attachFiles: capabilities.attachments ? (files) => addFiles(files) : undefined });
   useEffect(() => {
     if (editor.current?.getText() !== text) editor.current?.setText(text);
   }, [text]);
