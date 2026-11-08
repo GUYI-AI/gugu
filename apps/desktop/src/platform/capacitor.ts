@@ -124,9 +124,9 @@ function backgroundWatchSettings({ label, text }: BackgroundWatchNotice) {
     text: text ?? hostCatalog(resolvedLocale).backgroundWatch.text,
     // 小图标也自己给:不给就是插件的默认图形,跟咕咕别的通知不是一家。
     icon: 'ic_stat_gugu',
-    // 着色同理 —— 插件默认是它自己的绿(157f1f),与咕咕的 colorAccent 差一截,
+    // 着色同理 —— 插件默认是它自己的绿(157f1f),与咕咕的 colorAccent(墨色)不同色,
     // 两条咕咕通知并排时一眼看得出不是一家。这里写 App 清单里那个值(res/values/colors.xml)。
-    color: '07C160',
+    color: '1A1C1F',
     // 常驻通知不写时间:它不是「刚刚发生的一件事」,挂上时间戳只会让人以为刚响过。
     showWhen: false,
     // 不响不震:这条通知是「我还守着」的凭证,不是提醒本身 —— 提醒只走那一个通道(系统横幅)。

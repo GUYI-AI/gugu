@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="colorPrimary">#F7F8FA</color>
-    <color name="colorPrimaryDark">#F7F8FA</color>
-    <color name="colorAccent">#07C160</color>
-    <color name="gugu_mobile_shell_surface">#F7F8FA</color>
     <!-- 系统栏底下的窗口底色,跟页面色调走(MobileShellChrome):等于 tokens.css 浅、深两套的 bg 变量。 -->
     <color name="gugu_mobile_shell_bar_light">#FFFFFF</color>
     <color name="gugu_mobile_shell_bar_dark">#181818</color>
+    <!-- 启动底色,与 StartupTheme.color、androidStartupHandoff.ts 同值:一段启动只有一种底色。
+         深色版只在 values-night-v31:安卓 12 起应用自己的深浅能映射给系统启动窗(StartupTheme.applyApplicationMode)。
+         12 以下系统启动窗只认系统深浅,而页面默认浅色(老 WebView 在深色手机上也报浅色),这里给深色反而先黑后白。 -->
+    <color name="gugu_mobile_shell_surface">@color/gugu_mobile_shell_bar_light</color>
+    <color name="colorPrimary">@color/gugu_mobile_shell_surface</color>
+    <color name="colorPrimaryDark">@color/gugu_mobile_shell_surface</color>
+    <!-- = tokens.css 的 primary(墨色,即浅色 fg)。原生主题恒为 Light,所以只有这一个值。 -->
+    <color name="colorAccent">#1A1C1F</color>
 </resources>

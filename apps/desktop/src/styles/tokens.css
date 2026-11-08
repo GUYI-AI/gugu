@@ -541,7 +541,7 @@
   --bg-transparent: transparent;
 
   /* Auth / login page surfaces */
-  --bg-auth-page: var(--page); /* was #0e0d12 —— H=294,离面族 26° */
+  --bg-auth-page: var(--bg); /* 与手机系统栏同色(MobileShellChrome 取 bg),上下不留接缝 */
 
   /* Status / feedback text */
 
@@ -729,7 +729,7 @@
 
   --bg-transparent: transparent;
 
-  --bg-auth-page: var(--page);
+  --bg-auth-page: var(--bg);
 
 
 
@@ -1287,7 +1287,7 @@ body.barcode-scanner-active #root {
   --ta-app-bg: linear-gradient(180deg, #14171c 0%, #17181b 60%, #1b1916 100%);
   --ta-panel-bg: linear-gradient(180deg, #1f2c3d 0%, #23283a 45%, #2a2531 70%, #33271f 100%);
   --ta-panel-border: rgba(255, 255, 255, 0.08);
-  --ta-glass: rgba(255, 255, 255, 0.1);
+  --ta-glass: var(--accent-glow-soft); /* 种子算出来的:墨色 11%,和原来白 10% 差 ΔE 0.005 */
   --ta-glass-strong: rgba(255, 255, 255, 0.16);
   --ta-glass-hover: rgba(255, 255, 255, 0.14);
   --ta-glass-edge: rgba(255, 255, 255, 0.2);
@@ -1318,7 +1318,7 @@ body.barcode-scanner-active #root {
   --ta-tint-ink: color-mix(in oklab, var(--ta-tint) 85%, var(--fg));
   --ta-panel-bg: linear-gradient(180deg, #a9c9ea 0%, #c5d8ef 30%, #e2e5f3 60%, #f4e6dc 80%, #fcd9b5 100%);
   --ta-panel-border: rgba(255, 255, 255, 0.6);
-  --ta-glass: rgba(255, 255, 255, 0.6);
+  --ta-glass: color-mix(in oklab, var(--card) 60%, transparent);
   --ta-glass-strong: rgba(255, 255, 255, 0.78);
   --ta-glass-hover: rgba(255, 255, 255, 0.72);
   --ta-glass-edge: rgba(255, 255, 255, 0.55);

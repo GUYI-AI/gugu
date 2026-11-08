@@ -186,7 +186,7 @@ describe('background watch', () => {
       disableWebViewOptimization: true,
       // 小图标与着色都跟别的咕咕通知同一套 —— 不给的话是插件自带的图形与它自己的绿。
       icon: 'ic_stat_gugu',
-      color: '07C160',
+      color: '1A1C1F',
     })
     /*
      * 正文与图标都必须**我们自己**给。2026-09-16 实测:只给标题时,模拟器通知栏里第二行显示的是
