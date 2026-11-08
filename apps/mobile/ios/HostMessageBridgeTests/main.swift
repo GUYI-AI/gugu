@@ -12,12 +12,13 @@ private final class Fixture {
     let binding: GuguIOSHostBinding, context: GuguHostContext, store: GuguIOSBackendStore
     let chat = UUID().uuidString.lowercased(), source = UUID().uuidString.lowercased(), recipient = UUID().uuidString.lowercased(), thread = UUID().uuidString.lowercased()
     var allowed = true, sourceMember = true, moved = false, rules = "Preserve privacy", loseACK = true, writes = 0, sendIDs: [String] = [], requestBodies: [[String: Any]] = [], messages: Set<String> = []
-    var calendarAllowed = true, revokeAfterSend = false
+    var calendarAllowed = true, revokeAfterSend = false, revokeAfterHistory = false
     init(_ root: URL) throws {
         let owner = UUID().uuidString.lowercased(), install = UUID().uuidString.lowercased()
         binding = .init(ownerId: owner, deviceId: "phone-\(install)-\(owner)", installationId: install)
         context = .init(ownerId: owner, installationId: install, agentUserId: UUID().uuidString.lowercased(), sessionId: UUID().uuidString.lowercased(), jobId: UUID().uuidString.lowercased(), contextEpoch: UUID().uuidString.lowercased(), runtimeInstanceId: UUID().uuidString.lowercased())
         store = try .init(root: root, binding: binding)
+        _ = try store.admit("agents", id: context.agentUserId, fingerprint: "fixture-agent") { ["ownerId": owner, "deviceId": binding.deviceId, "agentUserId": context.agentUserId, "sessionId": context.sessionId, "contextEpoch": context.contextEpoch] }
         _ = try store.admit("inputs", id: context.jobId, fingerprint: "fixture") { ["agentId": context.agentUserId, "sessionId": context.sessionId, "contextEpoch": context.contextEpoch, "status": "running", "route": ["chatId": chat, "threadRootId": thread], "usedChatIds": [source]] }
     }
     lazy var broker = try! GuguIOSCloudBroker(configuration: .init(version: 1, supabaseUrl: "https://fixture.invalid", anonKey: "public"), credentials: { expected in
@@ -30,7 +31,9 @@ private final class Fixture {
         case "active_users": value = [["id": self.context.agentUserId, "type": "agent", "owner_user_id": self.binding.ownerId, "device_id": self.moved ? "another-device" : self.binding.deviceId]]
         case "list_member_ids": value = body["p_chat_id"] as? String == self.source && !self.sourceMember ? [] : [["user_id": self.context.agentUserId], ["user_id": self.recipient]]
         case "chat_facts": value = [["id": self.chat, "kind": "group", "group_prompt": self.rules]]
-        case "message_history_as": value = [["id": UUID().uuidString.lowercased(), "sender_user_id": self.recipient, "content": "Synthetic private agent-visible history"]]
+        case "message_history_as":
+            value = [["id": UUID().uuidString.lowercased(), "sender_user_id": self.recipient, "content": "Synthetic private agent-visible history"]]
+            if self.revokeAfterHistory { self.sourceMember = false }
         case "send_message_idempotent":
             let id = body["p_message_id"] as! String; self.sendIDs.append(id)
             if self.messages.insert(id).inserted { self.writes += 1 }
@@ -82,6 +85,11 @@ private final class Fixture {
         try require(history["ok"] as? Bool == true && data?.first?["sender_user_id"] as? String == "user:\(f.recipient)" && (data?.first?["id"] as? String)?.hasPrefix("msg:") == true, "Agent-as history lacked typed addresses")
         try require(f.requestBodies.filter { $0["p_as_user_id"] != nil }.allSatisfy { $0["p_as_user_id"] as? String == f.context.agentUserId }, "Owner JWT broadened agent-as reads")
         cases.append("history_uses_native_Agent_identity_and_returns_typed_addresses")
+        f.revokeAfterHistory = true
+        let lateRead = try f.invoke(reopened, "message_history", ["chat_id": f.chat])
+        try require(lateRead["code"] as? String == "not_granted" && lateRead["data"] == nil, "Revocation during a history read released private data")
+        f.revokeAfterHistory = false; f.sourceMember = true
+        cases.append("source_revocation_during_history_read_withholds_data_after_HTTP_completion")
         f.moved = true
         let moved = try f.invoke(reopened, "message_send", args)
         try require(moved["code"] as? String == "not_granted" && f.sendIDs.count == 2, "Moved Agent identity reused old native outbox")

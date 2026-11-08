@@ -57,7 +57,11 @@ extension GuguIOSNativeBackend {
                         _ = try verified.get()
                         let method = call.channel == "sessionTimeline.sessionSnapshot" ? "snapshot" : call.channel == "sessionTimeline.sessionAfter" ? "after" : "older"
                         try self.schedulerOrThrow().timeline(agent: row, method: method, input: input) { reply in
-                            if reply["ok"] as? Bool == true, let value = reply["data"] { result(value) }
+                            if reply["ok"] as? Bool == true, let value = reply["data"] {
+                                self.queue.async { self.verify(row, binding: call.binding) { checked in
+                                    do { _ = try checked.get(); result(value) } catch { failed(error) }
+                                } }
+                            }
                             else { failed(Self.failure(reply["code"] as? String ?? "record_unreadable", reply["message"] as? String ?? "Native timeline cannot be read")) }
                         }
                     } catch { failed(error) }
@@ -159,12 +163,9 @@ extension GuguIOSNativeBackend {
     }
     func bareSession(_ id: String) -> String { id.hasPrefix("session:") ? String(id.dropFirst(8)) : id }
     func verify(_ agent: [String: Any], binding: GuguIOSHostBinding, completion: @escaping (Result<Void, Error>) -> Void) {
-        guard let id = agent["agentUserId"] as? String else { completion(.failure(Self.failure("invalid_journal", "Native Agent binding is missing"))); return }
-        broker.perform(.activeAgent(id), binding: binding) { response in
-            completion(response.flatMap { raw in Result {
-                guard let row = (raw as? [[String: Any]])?.first, row["id"] as? String == id, row["type"] as? String == "agent", row["owner_user_id"] as? String == binding.ownerId, row["device_id"] as? String == binding.deviceId else { throw Self.failure("not_granted", "Agent does not belong to this native phone") }
-            } })
-        }
+        guard self.binding == binding, let sources else { completion(.failure(Self.failure("stale_context", "Native source authority changed"))); return }
+        guard let id = agent["agentUserId"] as? String, let session = agent["sessionId"] as? String, let epoch = agent["contextEpoch"] as? String else { completion(.failure(Self.failure("invalid_journal", "Native Agent binding is missing"))); return }
+        sources.authorizeSession(agentId: id, sessionId: session, contextEpoch: epoch, completion: completion)
     }
     func schedulerOrThrow() throws -> GuguIOSTaskScheduler { guard let scheduler else { throw Self.failure("host_not_ready", "Native task scheduler is unavailable") }; return scheduler }
 }

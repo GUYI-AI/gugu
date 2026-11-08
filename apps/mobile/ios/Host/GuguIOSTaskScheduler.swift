@@ -6,14 +6,14 @@ final class GuguIOSTaskScheduler {
     private static let custodyLock = NSLock()
     private static var schedulers: [String: GuguIOSTaskScheduler] = [:]
     static func open(store: GuguIOSBackendStore, lifecycle: GuguIOSHostLifecycle, runtime: GuguPackagedRuntime, broker: GuguIOSCloudBroker,
-                     check: @escaping () throws -> Void, executor: @escaping () -> GuguNativeToolExecutor, changed: @escaping () -> Void,
+                     check: @escaping () throws -> Void, executor: @escaping () -> GuguNativeToolExecutor, changed: @escaping () -> Void, sourceAuthorization: GuguInProcessHost.SourceAuthorization? = nil,
                      modelTransport: @escaping (GuguNativeModelLease) throws -> GuguModelCompleting = { try GuguModelTransport(lease: $0) }) throws -> GuguIOSTaskScheduler {
         custodyLock.lock(); defer { custodyLock.unlock() }
         if let existing = schedulers[store.custodyKey], !existing.sync({ existing.retired }) {
             guard existing.binding == store.binding, existing.runtime.sha256 == runtime.sha256 else { throw failure("stale_context", "Live scheduler belongs to another native binding or runtime") }
             return existing
         }
-        let scheduler = try GuguIOSTaskScheduler(store: store, lifecycle: lifecycle, runtime: runtime, broker: broker, check: check, executor: executor, changed: changed, modelTransport: modelTransport)
+        let scheduler = try GuguIOSTaskScheduler(store: store, lifecycle: lifecycle, runtime: runtime, broker: broker, check: check, executor: executor, changed: changed, sourceAuthorization: sourceAuthorization, modelTransport: modelTransport)
         schedulers[store.custodyKey] = scheduler; return scheduler
     }
     private let queue = DispatchQueue(label: "app.gugu.ios.task-scheduler")
@@ -27,6 +27,7 @@ final class GuguIOSTaskScheduler {
     private let executor: () -> GuguNativeToolExecutor
     private let modelTransport: (GuguNativeModelLease) throws -> GuguModelCompleting
     private let changed: () -> Void
+    private let sourceAuthorization: GuguInProcessHost.SourceAuthorization?
     private var hosts: [String: GuguInProcessHost] = [:]
     private var models: [String: GuguIOSLeaseModel] = [:]
     private var running: GuguHostContext?
@@ -35,10 +36,11 @@ final class GuguIOSTaskScheduler {
     private var cleanupError: Error?
 
     private init(store: GuguIOSBackendStore, lifecycle: GuguIOSHostLifecycle, runtime: GuguPackagedRuntime, broker: GuguIOSCloudBroker,
-         check: @escaping () throws -> Void, executor: @escaping () -> GuguNativeToolExecutor, changed: @escaping () -> Void,
+         check: @escaping () throws -> Void, executor: @escaping () -> GuguNativeToolExecutor, changed: @escaping () -> Void, sourceAuthorization: GuguInProcessHost.SourceAuthorization? = nil,
          modelTransport: @escaping (GuguNativeModelLease) throws -> GuguModelCompleting = { try GuguModelTransport(lease: $0) }) throws {
         binding = store.binding; self.store = store; self.lifecycle = lifecycle; self.runtime = runtime; self.broker = broker
         self.check = check; self.executor = executor; self.changed = changed; self.modelTransport = modelTransport
+        self.sourceAuthorization = sourceAuthorization
         queue.setSpecific(key: key, value: true)
         // These records were admitted by an earlier scheduler/process; they are
         // visible interrupted custody, not an instruction to replay execution.
@@ -276,7 +278,7 @@ final class GuguIOSTaskScheduler {
         let model = GuguIOSLeaseModel(binding: binding, agentId: agentId, sessionId: sessionId, modelId: modelId, broker: broker, store: store, check: check, makeTransport: modelTransport)
         let host = try lifecycle.host(binding: binding, nativeKey: sessionId) { journal in
             try GuguInProcessHost(asset: self.runtime.asset, expectedSHA256: self.runtime.sha256, journal: journal, executor: self.executor(), model: model,
-                currentIdentity: { (try? self.check()) == nil ? ("", "") : (self.binding.ownerId, self.binding.installationId) }, event: { event in self.queue.async { self.consume(event) } })
+                currentIdentity: { (try? self.check()) == nil ? ("", "") : (self.binding.ownerId, self.binding.installationId) }, event: { event in self.queue.async { self.consume(event) } }, sourceAuthorization: self.sourceAuthorization)
         }
         let diagnostics = try host.diagnostics()
         guard diagnostics["piVersion"] as? String == "1.4.0", diagnostics["engine"] as? String == "JavaScriptCore", diagnostics["node"] as? Bool == false else { throw Self.failure("runtime_not_ready", "Packaged native Pi runtime did not verify") }

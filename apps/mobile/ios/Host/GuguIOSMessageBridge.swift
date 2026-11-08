@@ -11,14 +11,23 @@ final class GuguIOSMessageBridge {
     private let store: GuguIOSBackendStore
     private let broker: GuguIOSCloudBroker
     private let check: Authorize
-    init(store: GuguIOSBackendStore, broker: GuguIOSCloudBroker, check: @escaping Authorize) { self.store = store; self.broker = broker; self.check = check }
+    private let sources: GuguIOSSourceAccess
+    init(store: GuguIOSBackendStore, broker: GuguIOSCloudBroker, check: @escaping Authorize) {
+        self.store = store; self.broker = broker; self.check = check
+        sources = GuguIOSSourceAccess(store: store, broker: broker, check: check)
+    }
 
     func invoke(context: GuguHostContext, name: String, args: [String: Any], authorize: @escaping Authorize,
                 completion: @escaping ([String: Any]) -> Void) {
         queue.async {
             let done: (Result<Any, Error>) -> Void = { result in self.queue.async {
-                do { try self.check(); try authorize(); completion(["ok": true, "data": try result.get()]) }
-                catch { completion(Self.safe(error).envelope) }
+                do {
+                    let data = try result.get(); try self.check(); try authorize()
+                    self.verifySources(context, authorize) { verified in self.queue.async {
+                        do { _ = try verified.get(); try self.check(); try authorize(); completion(["ok": true, "data": data]) }
+                        catch { completion(Self.safe(error).envelope) }
+                    } }
+                } catch { completion(Self.safe(error).envelope) }
             } }
             do {
                 try self.validate(context); try authorize(); try GuguIOSCloudBroker.rejectCredentials(args)
@@ -52,7 +61,7 @@ final class GuguIOSMessageBridge {
                                         _ = try membership.get()
                                         if name == "message_rules" {
                                             self.rules(chat, context.agentUserId, authorize) { response in self.queue.async {
-                                                do { let text = try response.get(); try self.saveRules(context, chat, text); done(.success(["chat_id": chat, "rules": text])) }
+                                                do { let text = try response.get(); try self.usedChat(context, chat); try self.saveRules(context, chat, text); done(.success(["chat_id": chat, "rules": text])) }
                                                 catch { done(.failure(error)) }
                                             } }; return
                                         }
@@ -137,24 +146,14 @@ final class GuguIOSMessageBridge {
     private func verifySources(_ context: GuguHostContext, _ authorize: @escaping Authorize, _ done: @escaping (Result<Void, Error>) -> Void) {
         do {
             try validate(context); try authorize()
-            let groups = try store.record("inputs", id: context.jobId)?["usedChatIds"] as? [String] ?? []
-            func next(_ index: Int) {
-                guard index < groups.count else { done(.success(())); return }
-                member(groups[index], context.agentUserId, authorize) { response in self.queue.async {
-                    do { _ = try response.get(); next(index + 1) } catch { done(.failure(error)) }
-                } }
-            }
-            perform(.activeAgent(context.agentUserId), authorize) { response in self.queue.async {
-                do {
-                    let identity = try Self.row(response.get())
-                    guard identity["id"] as? String == context.agentUserId, identity["type"] as? String == "agent", identity["owner_user_id"] as? String == context.ownerId, identity["device_id"] as? String == self.store.binding.deviceId else { throw Self.failure("not_granted", "Agent identity no longer belongs to this native host") }
-                    next(0)
-                } catch { done(.failure(error)) }
+            sources.authorize(context) { response in self.queue.async {
+                do { _ = try response.get(); try authorize(); done(.success(())) }
+                catch { done(.failure(error)) }
             } }
         } catch { done(.failure(error)) }
     }
     private func usedChat(_ context: GuguHostContext, _ chat: String) throws {
-        try store.update("inputs", id: context.jobId) { input in var groups = input["usedChatIds"] as? [String] ?? []; if !groups.contains(chat) { groups.append(chat) }; input["usedChatIds"] = groups }
+        try sources.includeChat(chat, context: context)
     }
     private func member(_ chat: String, _ agent: String, _ authorize: @escaping Authorize, recipients: [String] = [], _ done: @escaping (Result<Void, Error>) -> Void) {
         perform(.chatMembers(chatId: chat, agentId: agent), authorize) { response in done(response.flatMap { raw in Result {

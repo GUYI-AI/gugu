@@ -35,6 +35,7 @@ final class GuguIOSNativeBackend: GuguIOSHostBackend {
     let remoteProtocol = 18, minimumClientProtocol = 17
     var binding: GuguIOSHostBinding?
     var store: GuguIOSBackendStore?
+    var sources: GuguIOSSourceAccess?
     var scheduler: GuguIOSTaskScheduler?
     var provisioner: GuguIOSProvisioner?
     var createCommand: GuguIOSCreateCommand?
@@ -89,8 +90,9 @@ final class GuguIOSNativeBackend: GuguIOSHostBackend {
                 guard diagnostics["piVersion"] as? String == "1.4.0", diagnostics["engine"] as? String == "JavaScriptCore", diagnostics["node"] as? Bool == false else { throw Self.failure("runtime_not_ready", "Packaged native Pi did not verify") }
                 self.proof = proof
                 let check = { try self.gate.require(epoch); try self.check(configuration.binding); try self.gate.require(epoch) }
+                let sources = GuguIOSSourceAccess(store: store, broker: self.broker, check: check); self.sources = sources
                 let scheduler = try GuguIOSTaskScheduler.open(store: store, lifecycle: self.lifecycle, runtime: self.runtime, broker: self.broker, check: check,
-                    executor: { self.executorFactory(configuration.binding) }, changed: { self.queue.async { self.publish() } }, modelTransport: self.modelTransport); self.scheduler = scheduler
+                    executor: { self.executorFactory(configuration.binding) }, changed: { self.queue.async { self.publish() } }, sourceAuthorization: { context, done in sources.authorize(context, completion: done) }, modelTransport: self.modelTransport); self.scheduler = scheduler
                 let create = GuguIOSCreateCommand(broker: self.broker, store: store, instanceId: self.instanceId, projectPath: self.workspacePath,
                     check: check, start: { agent, done in scheduler.establish(agent, completion: done) }); self.createCommand = create
                 self.provisioner = try GuguIOSProvisioner(store: store, broker: self.broker, projectPath: self.workspacePath, check: check,

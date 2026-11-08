@@ -3,6 +3,7 @@ import Foundation
 /// Native coordinator for the packaged Pi loop. This is intentionally not a
 /// GuguAgent/Capacitor capability declaration; renderer/cloud admission is separate.
 final class GuguInProcessHost {
+    typealias SourceAuthorization = (GuguHostContext, @escaping (Result<Void, Error>) -> Void) -> Void
     private struct Pending {
         let request: GuguNativeToolRequest
         let reply: GuguJavaScriptRuntime.Reply
@@ -12,6 +13,7 @@ final class GuguInProcessHost {
     private let model: GuguModelCompleting?
     private let currentIdentity: () -> (ownerId: String, installationId: String)
     private let emit: ([String: Any]) -> Void
+    private let sourceAuthorization: SourceAuthorization?
     private let pendingLock = NSRecursiveLock()
     private var pending: [String: Pending] = [:]
     private var runningContexts: [String: GuguHostContext] = [:]
@@ -22,12 +24,13 @@ final class GuguInProcessHost {
     init(asset: Data, expectedSHA256: String, journal: GuguHostJournal,
          executor: GuguNativeToolExecutor, model: GuguModelCompleting?,
          currentIdentity: @escaping () -> (ownerId: String, installationId: String),
-         event: @escaping ([String: Any]) -> Void) throws {
+         event: @escaping ([String: Any]) -> Void, sourceAuthorization: SourceAuthorization? = nil) throws {
         self.journal = journal
         self.executor = executor
         self.model = model
         self.currentIdentity = currentIdentity
         emit = event
+        self.sourceAuthorization = sourceAuthorization
         runtime = try GuguJavaScriptRuntime(asset: asset, expectedSHA256: expectedSHA256, request: { [weak self] request, reply in
             self?.handle(request, reply: reply)
         }, cancel: { [weak self] id in self?.cancelNative(id) }, event: { [weak self] event in self?.deliver(event) })
@@ -204,9 +207,18 @@ final class GuguInProcessHost {
             case "model.complete":
                 try checkDataAccess(context)
                 guard let body = bridge.payload["body"] as? [String: Any], let model else { throw failure("model_ticket_missing", "A real assigned model lease is required") }
-                model.complete(id: bridge.id, context: context, body: body) { [weak self] result in
+                authorizeSources(context) { [weak self] authorized in
                     guard let self else { return }
-                    do { try self.checkDataAccess(context); reply(result) }
+                    do {
+                        _ = try authorized.get(); try self.checkDataAccess(context)
+                        model.complete(id: bridge.id, context: context, body: body) { [weak self] result in
+                            guard let self else { return }
+                            self.authorizeSources(context) { checked in
+                                do { _ = try checked.get(); try self.checkDataAccess(context); reply(result) }
+                                catch { reply(self.envelope(error)) }
+                            }
+                        }
+                    }
                     catch { reply(self.envelope(error)) }
                 }
             case "tool.execute":
@@ -293,6 +305,9 @@ final class GuguInProcessHost {
             do { try executor.validateAccess(guardOnly) }
             catch { if isPermissionFailure(error) { try revokeCalendarAccess() }; throw error }
         }
+    }
+    private func authorizeSources(_ context: GuguHostContext, completion: @escaping (Result<Void, Error>) -> Void) {
+        if let sourceAuthorization { sourceAuthorization(context, completion) } else { completion(.success(())) }
     }
     private func isPermissionFailure(_ error: Error) -> Bool {
         guard let code = (error as? GuguHostFailure)?.code else { return false }
