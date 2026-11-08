@@ -24,6 +24,20 @@ function failed(error: unknown): { ok: false; error: { code: string; message: st
   // Native filesystem and SQLite messages can contain private host paths.
   return { ok: false, error: { code, message: code === 'cancelled' ? 'Projection request cancelled' : 'The requested projection is unavailable' } };
 }
+// Keep final proofs out of wire values. The exact result object carries its
+// host-only proof to the controller's last synchronous return boundary.
+const replies = new WeakMap<object, () => void>();
+function completed<T>(value: T, verify: () => void): WindowLiveResult<T> {
+  verify(); const result = { ok: true as const, value }; replies.set(result, verify); return result;
+}
+export function finishWindowProjectionReply<T>(result: WindowLiveResult<T>): WindowLiveResult<T> {
+  if (!result.ok) return result;
+  try {
+    const verify = replies.get(result);
+    if (!verify) throw new Error('Projection reply has no host proof');
+    verify(); return result;
+  } catch (error) { return failed(error); }
+}
 export function closeWindowProjectionOwner(identity: object) {
   if (current) void current.close(identity).catch(() => {}); // The host retains and reports failed cleanup.
 }
@@ -54,7 +68,7 @@ export async function readWindowProjection(ownerOf: () => WindowProjectionOwner,
       : request.kind === 'page' ? windowProjectionPageSchema.parse(result) : undefined;
     if (request.kind === 'release' && result !== undefined) throw new Error('Projection release returned an unexpected value');
     // The public export has its own synchronous final gate after its last await.
-    selected.assertCurrent(owner); owner.signal?.throwIfAborted(); verify(); return { ok: true, value };
+    return completed(value, () => { selected.assertCurrent(owner); owner.signal?.throwIfAborted(); verify(); });
   } catch (error) { return failed(error); }
 }
 export async function readWindowProjectionBody(ownerOf: () => WindowProjectionOwner, input: WindowProjectionBodyReadRequest): Promise<WindowLiveResult<WindowProjectionFieldPage>> {
@@ -66,6 +80,6 @@ export async function readWindowProjectionBody(ownerOf: () => WindowProjectionOw
       verify = () => adapter.assertHandle(identity, handle); return value;
     });
     const value = windowProjectionFieldPageSchema.parse(result);
-    selected.assertCurrent(owner); owner.signal?.throwIfAborted(); verify(); return { ok: true, value };
+    return completed(value, () => { selected.assertCurrent(owner); owner.signal?.throwIfAborted(); verify(); });
   } catch (error) { return failed(error); }
 }

@@ -36,7 +36,7 @@ import { readTaskExchanges, watchTaskExchanges, unwatchTaskExchanges } from './t
 import type { TaskExchangeRequest } from '@shared/core/sessions/task-collaboration';
 import { windowLiveReadRequestSchema, windowLiveAckRequestSchema } from '@gugu/session-wire/session-window-live';
 import { windowProjectionReadRequestSchema, windowProjectionBodyReadRequestSchema } from '@gugu/session-wire/session-window-projection';
-import { readWindowProjection, readWindowProjectionBody } from './window-projection-production';
+import { finishWindowProjectionReply, readWindowProjection, readWindowProjectionBody } from './window-projection-production';
 import { taskExchangeChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
 
 /**
@@ -98,13 +98,18 @@ function legacyOwned<T extends { ok: boolean }>(sender: number, id: string, star
   return owning(sender, 'timeline', id, start);
 }
 function liveOwned<I extends { subscriptionId: string }, V>(sender: number, input: unknown,
-  schema: { safeParse(value: unknown): { success: false } | { success: true; data: I } }, read: (value: I) => Promise<service.SessionTimelineResult<V>>) {
+  schema: { safeParse(value: unknown): { success: false } | { success: true; data: I } }, read: (value: I) => Promise<service.SessionTimelineResult<V>>,
+  finish?: (result: service.SessionTimelineResult<V>) => service.SessionTimelineResult<V>) {
   const checked = schema.safeParse(input);
   if (!checked.success || !owned.get(sender)?.windows.has(checked.data.subscriptionId))
     return Promise.resolve({ ok: false as const, error: { code: 'invalid_subscription', message: 'Invalid window request or connection owner' } });
   const token = owned.get(sender)!.windows.get(checked.data.subscriptionId);
-  return read(checked.data).then(result => owned.get(sender)?.windows.get(checked.data.subscriptionId) === token ? result
-    : { ok: false as const, error: { code: 'invalid_subscription', message: 'Window connection owner changed' } });
+  return read(checked.data).then(result => {
+    if (owned.get(sender)?.windows.get(checked.data.subscriptionId) !== token)
+      return { ok: false as const, error: { code: 'invalid_subscription', message: 'Window connection owner changed' } };
+    // No await follows the projection's owner/lease/receipt/source proof.
+    return finish ? finish(result) : result;
+  });
 }
 
 function trimmed<T>(result: service.SessionTimelineResult<T>, trim: boolean | undefined, cut: (value: T) => T) {
@@ -145,9 +150,9 @@ export const sessionTimelineController = createRPCController({
   sessionWindowLiveRead: withSender((sender: number, input: unknown) => liveOwned(sender, input, windowLiveReadRequestSchema, service.windowLiveRead)),
   sessionWindowLiveAck: withSender((sender: number, input: unknown) => liveOwned(sender, input, windowLiveAckRequestSchema, service.windowLiveAck)),
   sessionWindowProjectionRead: withSender((sender: number, input: unknown) => liveOwned(sender, input, windowProjectionReadRequestSchema,
-    value => readWindowProjection(() => service.windowProjectionOwner(value), value))),
+    value => readWindowProjection(() => service.windowProjectionOwner(value), value), finishWindowProjectionReply)),
   sessionWindowProjectionBodyRead: withSender((sender: number, input: unknown) => liveOwned(sender, input, windowProjectionBodyReadRequestSchema,
-    value => readWindowProjectionBody(() => service.windowProjectionOwner(value), value))),
+    value => readWindowProjectionBody(() => service.windowProjectionOwner(value), value), finishWindowProjectionReply)),
   sessionWindowAfter: (input: SessionpageSessionAfterRequest) => service.windowAfter(input),
   sessionWindowOlder: (input: SessionpageSessionOlderRequest) => service.windowOlder(input),
   sessionBody: (input: SessionpageSessionBodyReadRequest) => service.body(input),

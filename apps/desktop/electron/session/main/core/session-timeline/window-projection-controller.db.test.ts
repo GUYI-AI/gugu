@@ -6,27 +6,40 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import type { AppDb } from '@main/db/client';
-import { openFixture } from '@tooling/utils/db';
+import type { openFixture } from '@tooling/utils/db';
 import { windowProjectionReadResultSchema, windowProjectionBodyReadResultSchema } from '@gugu/session-wire/session-window-projection';
 
 const state = vi.hoisted(() => ({ directory: '', db: undefined as AppDb | undefined, sqlite: undefined as Database.Database | undefined,
   owners: new Map<string, { sessionId: string; alive: boolean; ready: boolean; abort: AbortController }>(),
   host: undefined as ReturnType<typeof import('./window-projection-host').createWindowProjectionHost> | undefined,
-  afterRun: undefined as (() => void | Promise<void>) | undefined }));
+  afterRun: undefined as (() => void | Promise<void>) | undefined,
+  afterReply: undefined as ((result: unknown) => void | Promise<void>) | undefined }));
 vi.mock('@main/db/client', () => ({ get db() { return state.db; }, get sqlite() { return state.sqlite; }, sessionDatabaseConnection: () => state.sqlite }));
 vi.mock('electron', () => ({ app: { getPath: () => state.directory } }));
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
 vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn() } }));
-vi.mock('./window-projection-host', async original => {
-  const actual = await original<typeof import('./window-projection-host')>();
-  return { ...actual, createWindowProjectionHost(input: Parameters<typeof actual.createWindowProjectionHost>[0]) {
-    const host = actual.createWindowProjectionHost({ ...input, lockDirectory: join(state.directory, 'guards') });
-    state.host = host;
-    return { ...host, async run<T>(...args: Parameters<typeof host.run<T>>) {
-      const value = await host.run<T>(...args); const after = state.afterRun; state.afterRun = undefined; await after?.(); return value;
+function projectionMocks() {
+  vi.doMock('./window-projection-host', async original => {
+    const actual = await original<typeof import('./window-projection-host')>();
+    return { ...actual, createWindowProjectionHost(input: Parameters<typeof actual.createWindowProjectionHost>[0]) {
+      const host = actual.createWindowProjectionHost({ ...input, lockDirectory: join(state.directory, 'guards') });
+      state.host = host;
+      return { ...host, async run<T>(...args: Parameters<typeof host.run<T>>) {
+        const value = await host.run<T>(...args); const after = state.afterRun; state.afterRun = undefined; await after?.(); return value;
+      } };
     } };
-  } };
-});
+  });
+  vi.doMock('./window-projection-production', async original => {
+    const actual = await original<typeof import('./window-projection-production')>();
+    async function returned<T>(pending: Promise<T>) {
+      const result = await pending, after = state.afterReply; state.afterReply = undefined; await after?.(result); return result;
+    }
+    return { ...actual,
+      readWindowProjection: (...args: Parameters<typeof actual.readWindowProjection>) => returned(actual.readWindowProjection(...args)),
+      readWindowProjectionBody: (...args: Parameters<typeof actual.readWindowProjectionBody>) => returned(actual.readWindowProjectionBody(...args)),
+    };
+  });
+}
 vi.mock('./create-session', () => ({}));
 vi.mock('./turn-files', () => ({ prefetchFiles: vi.fn() }));
 vi.mock('./task-exchanges', () => ({ readTaskExchanges: vi.fn(), watchTaskExchanges: vi.fn(), unwatchTaskExchanges: vi.fn() }));
@@ -56,9 +69,9 @@ describe('registered projection RPC with real source, publication, handles and p
   let position: import('@gugu/session-wire/session-window-live').WindowLivePosition;
   const owner = { conversationId: 'c', subscriptionId: 'projection-window' };
   beforeEach(async () => {
-    vi.resetModules(); state.owners.clear(); state.host = undefined; state.afterRun = undefined;
+    vi.resetModules(); projectionMocks(); state.owners.clear(); state.host = undefined; state.afterRun = undefined; state.afterReply = undefined;
     state.directory = await mkdtemp(join(tmpdir(), 'projection-rpc-'));
-    fixture = await openFixture('empty'); state.db = fixture.db; state.sqlite = fixture.sqlite;
+    fixture = await (await import('@tooling/utils/db')).openFixture('empty'); state.db = fixture.db; state.sqlite = fixture.sqlite;
     fixture.sqlite.exec("INSERT INTO projects(id,name,path) VALUES('p','P','/fixture'); INSERT INTO sessions(id,project_id) VALUES('c','p')");
     const directory = join(state.directory, 'session-window-cache', 'committed'); await mkdir(directory, { recursive: true });
     const { persistCommittedTurn } = await import('../sessions/session-turn-store');
@@ -85,7 +98,7 @@ describe('registered projection RPC with real source, publication, handles and p
     if (!opened.ok || !opened.value || !('root' in opened.value)) throw new Error('missing actual open');
     const page = windowProjectionReadResultSchema.parse(await call(920, 'sessionWindowProjectionRead', { ...owner, kind: 'page', cursor: opened.value.next }));
     if (!page.ok || !page.value || !('bodies' in page.value)) throw new Error('missing actual page');
-    return { lease: opened.value.lease, handle: page.value.bodies[0].handle };
+    return { lease: opened.value.lease, handle: page.value.bodies[0].handle, cursor: opened.value.next! };
   }
   it('binds both real routes to sender, rejects extra fields and retains a resident body after ACK', async () => {
     await expect(call(921, 'sessionWindowProjectionRead', { ...owner, kind: 'open', position })).resolves.toMatchObject({ ok: false });
@@ -120,4 +133,30 @@ describe('registered projection RPC with real source, publication, handles and p
     await expect(call(920, 'sessionWindowProjectionBodyRead', { ...owner, handle: opened.handle }))
       .resolves.toMatchObject({ ok: false, error: { code: 'needs_location' } });
   });
+  it.each(['open', 'page', 'body'] as const)('rejects %s after a real helper success followed by canonical DELETE before the controller continuation', async kind => {
+    const opened = kind === 'open' ? undefined : await body();
+    state.afterReply = result => { expect(result).toMatchObject({ ok: true });
+      fixture.sqlite.prepare('DELETE FROM session_turns WHERE id=?').run(position.rowId); };
+    const method = kind === 'body' ? 'sessionWindowProjectionBodyRead' : 'sessionWindowProjectionRead';
+    const request = kind === 'open' ? { kind, position } : kind === 'page' ? { kind, cursor: opened!.cursor } : { handle: opened!.handle };
+    await expect(call(920, method, { ...owner, ...request })).resolves.toMatchObject({ ok: false, error: { code: 'needs_location' } });
+    expect(fixture.sqlite.prepare('SELECT COUNT(*) AS count FROM session_window_commit_receipts').get()).toEqual({ count: 0 });
+  });
+  it('rejects a completed body after release of its real lease in the controller return gap', async () => {
+    const opened = await body();
+    state.afterReply = async result => { expect(result).toMatchObject({ ok: true });
+      await expect(call(920, 'sessionWindowProjectionRead', { ...owner, kind: 'release', lease: opened.lease })).resolves.toMatchObject({ ok: true }); };
+    await expect(call(920, 'sessionWindowProjectionBodyRead', { ...owner, handle: opened.handle }))
+      .resolves.toMatchObject({ ok: false, error: { code: 'closed' } });
+  });
+  it('rejects a completed body after physical source deletion in the controller return gap', async () => {
+    const opened = await body(), { createWindowCommitReceipts } = await import('./window-commit-receipt');
+    const { windowCommitSourcePath } = await import('./window-commit-source');
+    const receipt = createWindowCommitReceipts(fixture.sqlite).bySource(position.projectionId.split('/')[0])!;
+    state.afterReply = result => { expect(result).toMatchObject({ ok: true });
+      rmSync(windowCommitSourcePath(join(state.directory, 'session-window-cache', 'committed'), receipt.binding)); };
+    await expect(call(920, 'sessionWindowProjectionBodyRead', { ...owner, handle: opened.handle }))
+      .resolves.toMatchObject({ ok: false, error: { code: 'needs_location' } });
+  });
+
 });
