@@ -1,6 +1,6 @@
-import { readDeliveryEnvelope, type DeliveryReadFacts } from '@gugu/core/local/agent/deliveryEnvelope';
+import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { messageReferenceId } from '@gugu/session-core/acp/client';
-import type { SendAddresses } from '@gugu/session-core/session-record/send-addresses';
+import type { PreviewActivitySource } from '@gugu/session-core/session-record/preview-activity';
 import type { SegmentCtx } from '../core/units';
 import type { ChatMessage, TranscriptTurn } from '../model';
 import { incomingActivity, outgoingActivity, viewerGroupReply } from './agent-activity';
@@ -10,9 +10,7 @@ import { planConversationSegments } from './conversation-segments';
 import { withSentReplies } from './sent-replies';
 
 /** Search keeps source identity, never a second copy of a folded message's text. */
-export type ActivityPreviewSource =
-  | { kind: 'received'; id: string; facts: (DeliveryReadFacts | null)[] }
-  | { kind: 'sent'; id: string; addresses: SendAddresses | null };
+export type ActivityPreviewSource = PreviewActivitySource;
 
 export function activityPreviewSources(turn: TranscriptTurn): Map<string, ActivityPreviewSource | null> {
   const sources = new Map<string, ActivityPreviewSource | null>();
@@ -22,7 +20,7 @@ export function activityPreviewSources(turn: TranscriptTurn): Map<string, Activi
     if (block.kind === 'input') {
       const item = block.item;
       const delivery = item.kind === 'message' ? readDeliveryEnvelope(item.text) : null;
-      input = delivery ? { kind: 'received', id: item.id, facts: delivery.segments.map(part => part.facts) } : null;
+      input = delivery ? { kind: 'received', id: item.id, facts: delivery.segments.map(({ facts }) => facts ? { fromId: facts.fromId, from: facts.from, ...(facts.fromType !== undefined ? { fromType: facts.fromType } : {}) } : null) } : null;
       sources.set(messageReferenceId(turn, item.id) ?? item.id, input);
     } else {
       const reply = conversationOutput(block.items).reply;

@@ -1,4 +1,3 @@
-import { personalConversationPreview } from '@gugu/session-core/session-record/personal-conversation';
 import type { SessionCommandDefinition } from '@gugu/session-core/acp';
 import type { AcpPermissionParams } from '@gugu/session-core/agents/plugins';
 import { findToolImage, trimItemsForTransport, type ToolImageLookup } from '@gugu/session-core/session-record';
@@ -2624,13 +2623,13 @@ export class SessionManager implements InboundRouter {
   }
 
   private publishConversationActivity(record: SessionRecord, closed = false): void {
-    if (record.input.sourceSessionId || !this.deps.onConversationActivity) return;
+    if (record.input.sourceSessionId || !this.deps.conversationPreview) return;
     const turn = !closed && !record.replaying ? record.cell.transcript.activeTurn : null;
-    const preview = turn ? personalConversationPreview(turn) : null;
+    const preview = turn ? this.deps.conversationPreview.project(turn) : null;
     const value = JSON.stringify(preview);
     if ((this.conversationPreviews.get(record.cell) ?? 'null') === value) return;
     this.conversationPreviews.set(record.cell, value);
-    this.deps.onConversationActivity({ sessionId: record.input.sessionId, preview });
+    this.deps.conversationPreview.onChange({ sessionId: record.input.sessionId, preview });
   }
 
   private upsertSessionSummary(

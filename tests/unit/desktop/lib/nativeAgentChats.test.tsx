@@ -27,7 +27,7 @@ it('uses newer native activity for the same agent row and keeps newer IM activit
   remove = installOwnedAgentEntry({ open: () => true, owns: id => id === 'own-agent' })
   publishDirectoryDevices([{ device_id: 'host', is_online: true, capabilities: {} } as Device])
   const chats = [{ id: 'dm', kind: 'dm', peer_user_id: 'own-agent', unread_count: 0, last_message_preview: 'Earlier file', last_message_at: '2026-10-29T08:00:00Z' }] as ChatItem[]
-  const session = { conversationId: 'session', agent: { userId: 'own-agent' }, nativeLastMessage: { text: 'Native answer', at: '2026-10-29T11:00:00Z' } }
+  const session = { conversationId: 'session', agent: { userId: 'own-agent' }, nativeLastMessage: { activityVersion: 1, activity: null, text: 'Native answer', at: '2026-10-29T11:00:00Z' } }
   updateDeviceSessions('host', { cached: false, sessions: [session as never] })
   function Fixture() { const row = useNativeAgentChats(chats)[0]!; return <div>{row.last_message_preview}|{row.last_message_at}</div> }
   await harness.render(<Fixture />)
@@ -51,7 +51,7 @@ it.each([false, true])('publishes a new native preview and time without retainin
   }
   await harness.render(<Fixture />)
   await act(async () => updateDeviceSessions('host', { sessions: [{ ...session,
-    nativeLastMessage: { text: 'New native reply', at: '2026-11-06T05:12:00Z' }, nativeUnreadKeys: ['reply'],
+    nativeLastMessage: { activityVersion: 1, activity: null, text: 'New native reply', at: '2026-11-06T05:12:00Z' }, nativeUnreadKeys: ['reply'],
   } as never] }))
   expect(harness.container.textContent).toBe('New native reply|2026-11-06T05:12:00Z')
   expect(projected!.unread_count).toBe(2)
@@ -80,9 +80,9 @@ it.each([false, true])("uses the newest actual reply across an agent's tasks (mo
     last_message_at: '2026-11-06T04:49:00Z', last_message_preview: 'Owner input' }] as ChatItem[]
   updateDeviceSessions('host', { cached: false, sessions: [
     { conversationId: 'new-task', agent: { userId: 'own-agent' }, lastInteractedAt: '2026-11-06T05:00:00Z',
-      nativeLastMessage: { text: 'First reply', at: '2026-11-06T05:01:00Z' } },
+      nativeLastMessage: { activityVersion: 1, activity: null, text: 'First reply', at: '2026-11-06T05:01:00Z' } },
     { conversationId: 'older-task', agent: { userId: 'own-agent' }, lastInteractedAt: '2026-11-06T04:49:00Z',
-      nativeLastMessage: { text: 'Last independent reply', at: '2026-11-06T05:12:00Z' } },
+      nativeLastMessage: { activityVersion: 1, activity: null, text: 'Last independent reply', at: '2026-11-06T05:12:00Z' } },
   ] as never })
   function Fixture() { const row = useNativeAgentChats(chats)[0]!; return <div>{chatPreviewText(row)}|{row.last_message_at}</div> }
   await harness.render(<Fixture />)
