@@ -31,7 +31,7 @@ bash "$here/../seed-mise-cache.sh" linux-arm64
 bash "$here/../seed-mise-cache.sh" --pin "$here/tmux-release.json" --base https://github.com/tmux/tmux-builds/releases/download \
   linux-x64 linux-arm64
 # 远程隧道的中转客户端 frpc(scripts/build/build-frpc-bundle.mjs),同一个缓存、同一条「容器里不联网」的规矩。
-bash "$here/../seed-mise-cache.sh" --pin "$here/../frpc-release.json" --base https://github.com/fatedier/frp/releases/download \
+bash "$here/../seed-mise-cache.sh" --pin "$here/../frpc-release.json" --base https://download.gugu.nextmind.space/releases/vendor/frp \
   linux-x64 linux-arm64
 NODE_PIN="$(tr -d '[:space:]' < "$here/../../.node-version")"
 NPM_CACHE_VOLUME=$("$DOCKER" inspect -f '{{range .Mounts}}{{if eq .Destination "/npm-cache"}}{{.Name}}{{end}}{{end}}' "$GUGU_LINUX_CONTAINER")

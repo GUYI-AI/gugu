@@ -4,6 +4,7 @@ import { commitAttachment, forwardAttachment, shareAttachment, type CommitArgs }
 import { messageItemFromRow } from '@gugu/core/cloud/messageItem'
 import { attachmentsEndpoint, prepareChatAttachment, type PreparedChatAttachment } from '../lib/attachmentsEndpoint'
 import { parseComposerCard } from '@gugu/core/shared/ui/taskCardModels'
+import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
 import { topicService, type CreateTopicInput, type CreatedTopic } from '../lib/topics'
 // @@@send-outbox (#1762 洞③/#1941) — outbox 与 chat store 的接线层(卫星,参照 chatRealtimeMutations
 // 的 mutators-bag 抽法):乐观行构造、状态迁移落 UI、送达连带动作(水位/预览/agent 运行态点亮)、
@@ -99,6 +100,23 @@ export function bindOutboxActions(
     },
     retrySend: (id) => { ref.current?.retrySend(id) },
     discardSend: (id) => { ref.current?.discardSend(id) },
+  }
+}
+
+/** Every forward comes through here: a file kept on a machine has no cloud object to refer to, so what it holds goes instead. */
+export function forwardingDeviceFiles<Actions extends Pick<ChatContextValue, 'forwardMessage'>>(
+  actions: Actions, sendAttachments: (chatId: string, files: File[], opts?: { caption?: string }) => Promise<unknown>,
+): Actions {
+  return {
+    ...actions,
+    forwardMessage: async (source, targetChatId) => {
+      const { deviceFileCopy } = await import('../lib/forwardDeviceFile')
+      const copy = await deviceFileCopy(source)
+      if (!copy) return actions.forwardMessage(source, targetChatId)
+      // A message holds one file; its caption goes with the copy, as it does with a forward by reference.
+      const caption = 'itemId' in source ? undefined : parseAttachmentContent(source.content)?.caption
+      await sendAttachments(targetChatId, [copy], caption ? { caption } : undefined)
+    },
   }
 }
 

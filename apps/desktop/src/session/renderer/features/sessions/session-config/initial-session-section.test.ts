@@ -165,10 +165,6 @@ vi.mock('@renderer/features/integrations/provider-logo', () => ({
   ProviderLogo: () => null,
 }));
 
-vi.mock('../create-session-modal/use-prompt-file-drop', () => ({
-  usePromptFileDrop: () => ({ isDragOver: false, dropHandlers: {} }),
-}));
-
 vi.mock('../context-bar/add-context-popover', () => ({
   AddContextPopover: () => null,
 }));

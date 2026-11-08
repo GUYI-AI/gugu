@@ -8,8 +8,8 @@
   --phone-nav-clearance: calc(var(--phone-nav-height) + var(--spacing-lg) * 2 + env(safe-area-inset-bottom));
   --bubble-mine: var(--ta-bubble-mine);
   --conversation-bubble-mine: var(--ta-bubble-mine);
-  --conversation-bubble-mine-fg: var(--foreground);
-  --conversation-bubble-mine-color-scheme: var(--chat-color-scheme);
+  --conversation-bubble-mine-fg: var(--text-primary);
+  --conversation-bubble-mine-color-scheme: dark;
   --bubble-other: var(--ta-bubble-other);
   --bubble-own: var(--ta-bubble-mine);
   --bubble-agent: var(--ta-bubble-other);
@@ -22,6 +22,7 @@
 /* 浅色:选中胶囊原是 78% 白叠在 60% 白的玻璃上,两层白几乎一样,米色底上那颗胶囊看不出来(owner 10-28 真机)。
    换成掺一成二前景色的浅灰,再借输入框那道细边影,和玻璃拉开;深色那颗本来就看得清,不动。 */
 [data-theme='light'] [data-phone-shell] {
+  --conversation-bubble-mine-color-scheme: light;
   --phone-nav-selected-bg: color-mix(in srgb, var(--primary) 12%, var(--card));
   --phone-nav-selected-fx: var(--shadow-composer);
 }
