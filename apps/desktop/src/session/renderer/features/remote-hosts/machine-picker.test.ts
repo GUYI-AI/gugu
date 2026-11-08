@@ -279,8 +279,14 @@ describe('机器选择器:一个组件、一个位置(#6264)', () => {
     expect(pickers).toHaveLength(1);
     expect(pickers[0]?.closest('[data-slot="page-sidebar-header"]')).not.toBeNull();
     expect(container.querySelector('[data-slot="page-title-row"] [data-testid="machine-picker"]')).toBeNull();
+    // 本机:标题里没有连接状态。
+    expect(container.querySelector('[data-testid="device-scope-status"]')).toBeNull();
     await act(async () => (container.querySelector('[data-device-id="d22"]') as HTMLButtonElement).click());
     expect(pickers[0]?.getAttribute('data-selected-id')).toBe('d22');
+    // 选了别的机器:子页标题里说那台的连接状态,标题本身不说是哪台 ⇒ 带上名字。
+    const status = container.querySelector('[data-slot="page-title-row"] [data-testid="device-scope-status"]');
+    expect(status?.getAttribute('data-state')).toBe('online');
+    expect(status?.textContent).toContain('d22');
   });
 });
 
