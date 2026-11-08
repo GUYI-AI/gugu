@@ -463,6 +463,8 @@ export default {
   },
   "forward": {
     "fileFailed": "{{name}} could not be forwarded with the task",
+    "fileGone": "{{name}} is gone and wasn't forwarded.",
+    "fileTooLarge": "{{name}} is too large. At most 512 MB is forwarded at once.",
     "batchPreview": "Forward {{count}} messages",
     "batchPreview_one": "Forward {{count}} message",
     "batchPreview_other": "Forward {{count}} messages",

@@ -4,7 +4,7 @@ import { FileReadRevokedError } from '@gugu/core/shared/fileResolver'
 import { attachmentBytes } from '@/lib/attachmentBytes'
 
 const io = vi.hoisted(() => ({ resolve: vi.fn(), shown: vi.fn(), put: vi.fn(), remove: vi.fn() }))
-vi.mock('@/lib/fileAccess', () => ({
+vi.mock('@/lib/fileAccess', () => ({ fileMetadata: async () => ({ status: 'gone' }),
   resolveFile: io.resolve, fileReader: () => ({ accountId: 'account', actorId: 'account' }), fileReadSignal: () => undefined,
   attachmentCache: async () => ({ put: io.put, delete: io.remove }), putAttachment: io.put, attachmentCacheOrigin: 'https://attachments.test',
 }))

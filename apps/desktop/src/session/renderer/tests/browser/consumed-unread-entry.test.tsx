@@ -84,7 +84,7 @@ async function renderConversation(width: number, naturallySeen = false, surface:
     const listRef = useRef<FlowListHandle | null>(null), isAtBottomRef = useRef(true)
     const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [flashMessageId, setFlashMessageId] = useState<string | null>(null)
-    const memory = useConversationScrollMemory({ chatId: 'long-chat', viewportKey: `consumed-unread-${width}`, activationKey: 'long-chat',
+    const memory = useConversationScrollMemory({ listRef, chatId: 'long-chat', viewportKey: `consumed-unread-${width}`, activationKey: 'long-chat',
       enabled: true, discardSaved: !!entry, messageIds: messages.map((row) => row.id), isAtBottomRef, setFollowingTail: history.setFollowingTail, loadMessageAnchor })
     const resetKey = `long-chat#${window.viewVersion}`
     const input = { activeChatId: 'long-chat', navigationTarget: true, rows, scrollerRef: memory.scrollerRef, listRef,
@@ -118,7 +118,7 @@ async function renderConversation(width: number, naturallySeen = false, surface:
   slotHarness = createReactHarness()
   await slotHarness.render(<Slot />)
   await renderWithAppProviders(harness, createElement(Host))
-  await until('the long conversation has completed its initial tail layout', () => scroller()?.querySelectorAll('[data-msg-id]').length === 40)
+  await until('the long conversation has completed its initial tail layout', () => Number(scroller()?.querySelector('[aria-setsize]')?.getAttribute('aria-setsize')) === 40)
   if (!naturallySeen) {
     await page.getByRole('button', { name: 'Jump to first unread' }).click()
     await until('unread navigation confirms the visible row or reports its failure', () => confirmed.mock.calls.length > 0 || rejected.mock.calls.length > 0)
@@ -137,7 +137,7 @@ describe('consumed first-unread entry', () => {
       const row = firstUnread()?.getBoundingClientRect(), bounds = view.scroller()?.getBoundingClientRect()
       return !!row && !!bounds && row.bottom > bounds.top && row.top < bounds.bottom
     })
-    await act(async () => { view.history.update(rowsBetween(301, 380)) })
+    await act(async () => { view.history.update(rowsBetween(301, 360)) })
     await until('later rows have moved the already-seen target above the viewport', () => {
       const row = firstUnread()?.getBoundingClientRect(), bounds = view.scroller()?.getBoundingClientRect()
       return !!row && !!bounds && row.bottom <= bounds.top
@@ -167,7 +167,7 @@ describe('consumed first-unread entry', () => {
     // follows the tail, the withdrawal awaited below is already true and does not prove the scroll's painted frame was read.
     await until('the latest window has filled its rows, reached its actual bottom and follows the tail', () => {
       const surface = view.scroller()
-      return !view.history.getSnapshot().hasNewer && surface.querySelectorAll('[data-msg-id]').length === view.history.getSnapshot().messages.length
+      return !view.history.getSnapshot().hasNewer && Number(surface.querySelector('[aria-setsize]')?.getAttribute('aria-setsize')) === view.history.getSnapshot().messages.length
         && surface.scrollHeight - surface.scrollTop - surface.clientHeight <= 1 && view.history.isFollowingTail()
     })
     const visible = () => {

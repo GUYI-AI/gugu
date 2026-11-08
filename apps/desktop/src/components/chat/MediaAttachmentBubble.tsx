@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
+import { holderOfflineText, useHolderBack } from '../../lib/fileHost'
 import { attachmentBytes, attachmentMetadata, sourceKeyOf, useAttachmentObjectUrl } from '../../lib/attachmentBytes'
 import { useAuth } from '../../store/auth'
 import { attachmentQuery, attachmentQueryClient } from '../../lib/attachmentQueryClient'
@@ -66,6 +67,8 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
   const near = useNearViewport(box)
   const view = useAttachmentObjectUrl(meta.source, 'thumb', near, meta.fileMetadata)
   const img = useRef<HTMLImageElement>(null)
+  const holder = view.status === 'failed' ? view.holder : null
+  useHolderBack(holder, view.retry)
   const dimensions = meta.fileMetadata?.status === 'ready' ? meta.fileMetadata.revision : meta.imageDimensions ?? ('link' in view ? view.link : undefined)
   const imageStyle = inlineImageStyle(dimensions)
   const ready = view.status === 'ready'
@@ -93,7 +96,7 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
       <FileAttachmentCard
         file={meta}
         isMine={isMine}
-        details={t('attachmentView.imageUnavailable')}
+        details={holder ? holderOfflineText(holder) : t('attachmentView.imageUnavailable')}
       />
     )
   }

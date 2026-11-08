@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import { buildMentionRender } from '../../lib/mentionRenderModel'
-import { MENTION_MARKER_PREFIX } from '../../lib/mentionMdast'
+import { cachedMentionRender } from '../../lib/mentionRenderModel'
+import { getLocaleSnapshot } from '../../i18n/runtime'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { useChatClashNames } from './ChatClashNames'
@@ -24,16 +24,14 @@ export function useMentionRender(
   memberProfiles: Record<string, MemberProfileCardModel> | undefined,
 ): MentionRender {
   const { names } = useChatClashNames()
-  // 每个 Markdown 实例一枚 nonce marker:发消息者写正文时无从预知 → 无法伪造 data-mention;稳定于本次挂载 →
-  // memo 友好,且令注入后内容唯一 → 天然绕开 Streamdown 按内容缓存导致的串味。
-  const marker = useMemo(() => `${MENTION_MARKER_PREFIX}${crypto.randomUUID()}`, [])
+  const locale = getLocaleSnapshot().resolvedLocale
   return useMemo(() => {
     if (!isGroup || msg.is_whisper) return { content: undefined, mentionMarker: undefined, fallbackLabels: [] }
-    const model = buildMentionRender(msg.content ?? '', msg.to_user_ids, {
+    const model = cachedMentionRender(msg.content ?? '', msg.to_user_ids, {
       nameOf: (id) => names.get(id) ?? memberProfiles?.[id]?.displayName,
       excludeIds: msg.reply_to_sender_user_id ? [msg.reply_to_sender_user_id] : [],
-      marker,
+      locale,
     })
-    return { content: model.content, mentionMarker: marker, fallbackLabels: model.fallbackLabels }
-  }, [isGroup, msg.is_whisper, msg.to_user_ids, msg.content, msg.reply_to_sender_user_id, memberProfiles, marker, names])
+    return { content: model.content, mentionMarker: model.marker, fallbackLabels: model.fallbackLabels }
+  }, [isGroup, msg.is_whisper, msg.to_user_ids, msg.content, msg.reply_to_sender_user_id, memberProfiles, locale, names])
 }
