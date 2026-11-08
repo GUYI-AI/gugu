@@ -3,7 +3,7 @@ import type { CreateTopicInput, CreatedTopic } from '../lib/topics'
 import type { UnreadLocatorCommit } from '../lib/chatUnreadLocatorWindow'
 import type { ChatConversationAccess } from './useChatConversation'
 import type { HistoryWindow } from './chatHistoryWindow'
-import { createContext, createElement, useCallback, useContext, useLayoutEffect, useRef, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { createContext, createElement, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import type { ChatItem, MessageItem, NotificationLevel } from '@gugu/core/shared/types/chat'
 import type { AttachmentKind } from '@gugu/core/shared/ui/attachmentModels'
 import type { ThreadScope } from './threadScope'
@@ -275,6 +275,22 @@ export function useChatStoreReader(): () => ChatStoreValue {
 export function useChatStoreSelect<T>(select: (store: ChatStoreValue) => T): T {
   const handle = useContext(ChatContext)
   return useSyncExternalStore(handle.subscribe, () => select(handle.get()))
+}
+
+const CHAT_ACTIVITY_BLANK = {
+  last_message_at: null, last_message_preview: null, last_message_failure: null, unread_count: 0, unread_locator: null,
+  last_read_seq: 0, is_marked_unread: false, read_state_version: 0, member_updated_at: null, next_message_seq: 0,
+}
+
+/**
+ * 正看着的这条对话本身(名字、成员、置顶、通知档……)。一条消息会把列表里这一行换好几次,换的只是活动字段(最后一条、未读、
+ * 水位):那些字段由列表和消息流自己读,这里沿用上一份,对话面不跟着每次换行整面重渲。要活动字段的用 useChatStore('activeChat')。
+ */
+export function useActiveChatIdentity(): ChatStoreValue['activeChat'] {
+  const read = useChatStoreReader()
+  const signature = useChatStoreSelect((store) => store.activeChat && JSON.stringify({ ...store.activeChat, ...CHAT_ACTIVITY_BLANK }))
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the signature is the dependency
+  return useMemo(() => read().activeChat, [signature])
 }
 
 // Drop a chat's entry from a per-chat record (drafts / mentions / attachments); no-op if absent. Shared

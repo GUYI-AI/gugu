@@ -1,12 +1,12 @@
 import { useSidebarChatView } from '../lib/sidebarChatsBridge'
-import { memo, useEffect, useSyncExternalStore } from 'react'
+import { memo, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { CHAT_SLOT_PREFIX, InChatSlot, chatPartSlotKey, installShellSlots, readShellSlots } from '../lib/shellSlots'
 import { ChatAreaPanel } from './ChatAreaPanel'
 import { TaskChatScope } from './assistant/TaskChatScope'
 import type { AssistantChatHandlers } from './assistant/AssistantChatSlot'
 import { useProjectGroupChats } from '../lib/projectGroupChatsBridge'
-import { useChatStore } from '../store/chatContext'
+import { useChatStore, useChatStoreReader, useChatStoreSelect } from '../store/chatContext'
 import { useTheme } from '../store/theme'
 import { SessionUiTheme } from './sessionpage/SessionUiTheme'
 
@@ -24,7 +24,7 @@ const EMPTY: ReadonlyMap<string, HTMLElement> = new Map()
 // memo: the shell re-renders on every tab switch; the chat blocks it portals must not (@@@shell-tab-store).
 export const ChatSlotHost = memo(function ChatSlotHost(handlers: AssistantChatHandlers) {
   const entryReady = useOwnedAgentEntries()
-  const { chats, identitiesById, chatsRead, chatsLoadFailed } = useChatStore('chats', 'identitiesById', 'chatsRead', 'chatsLoadFailed')
+  const { identitiesById, chatsRead, chatsLoadFailed } = useChatStore('identitiesById', 'chatsRead', 'chatsLoadFailed')
   // 会话页据此决定项目块正中摆文件夹卡(群里还没有消息)还是消息流,会话里「来自 X」写群名。列表读成之前那份空列表是
   // 「还不知道」:不发,❌ 发一份空的让每个项目块先画首页。
   // 名字与对话列表那一行同一个函数(chatDisplayName):私聊没有自己的名字,写对方(备注优先)——列表、⌘K 面板、
@@ -37,6 +37,16 @@ export const ChatSlotHost = memo(function ChatSlotHost(handlers: AssistantChatHa
     (listener) => slots?.subscribeSlots(listener) ?? (() => undefined),
     () => slots?.getSlots() ?? EMPTY,
   )
+  // Only what the slots below read: a message changes the chat list on every commit, and each re-render here redraws the
+  // whole chat block. Empty signature = no slot has a chat yet.
+  const slotChatIds = [...entries.keys()].filter(key => key.startsWith(CHAT_SLOT_PREFIX)).map(key => key.slice(CHAT_SLOT_PREFIX.length))
+  const readChats = useChatStoreReader()
+  const slotChatsSignature = useChatStoreSelect(store => JSON.stringify(slotChatIds.map(id => {
+    const chat = store.chats.find(chat => chat.id === id)
+    return chat ? [id, chat.kind, chat.peer_user_id, chat.name] : null
+  })))
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the signature above is exactly what the slots read
+  const chats = useMemo(() => readChats().chats, [slotChatsSignature])
   return (
     <>
       {[...entries].flatMap(([key, element]) => {

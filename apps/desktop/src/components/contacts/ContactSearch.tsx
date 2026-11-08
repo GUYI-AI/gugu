@@ -9,7 +9,7 @@ import { useShellTabIs } from '../../lib/shellTab'
 import { recentChatActivity, searchContacts, type ContactSearchHit } from '../../lib/contactSearch'
 import { displayName } from '../../lib/contactsListSort'
 import { graphemes, normalizeMentionKey } from '../../lib/mentionMatch'
-import { useChatStore } from '../../store/chatContext'
+import { useChatStore, useChatStoreReader } from '../../store/chatContext'
 import { Avatar } from '../Avatar'
 import { ListRow } from '../ui/ListRow'
 import { SearchField } from '../ui/SearchField'
@@ -83,10 +83,12 @@ export function ContactSearch({ query, onQuery, mobile = false, head, people, ag
   // 手机:这一页此刻在屏上(见 HeaderSearch)。Read here, not threaded from the panel (@@@shell-tab-store).
   const onScreen = useShellTabIs('contacts')
   const { t } = useTranslation('contacts')
-  const { chats } = useChatStore('chats')
+  // Ranking is read when the query changes: this page is always mounted, and must not redraw for every message elsewhere.
+  const readChats = useChatStoreReader()
   const [active, setActive] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
-  const recentAt = useMemo(() => recentChatActivity(chats), [chats])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- see readChats above
+  const recentAt = useMemo(() => recentChatActivity(readChats().chats), [query])
   const result = useMemo(() => searchContacts(query, { people, agents, groups, recentAt }), [query, people, agents, groups, recentAt])
 
   const sections = result ? [

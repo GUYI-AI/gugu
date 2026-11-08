@@ -116,6 +116,11 @@ export function useChatSummaries(): Summaries {
 
 const NO_SUMMARIES: Summaries = new Map()
 
+/** 只订阅从摘要里算出来的一个值(select 要返回原始值或稳定引用):值不变,别的对话来消息也不重渲。 */
+export function useChatSummariesSelect<T>(select: (summaries: Summaries) => T): T {
+  return useSyncExternalStore(subscribeChatSummaries, () => select(read() ?? NO_SUMMARIES), () => select(NO_SUMMARIES))
+}
+
 export type ContactSummary = { id: string; name: string }
 const CONTACT_KEY = '__GUGU_CONTACT_SUMMARIES__'
 const NO_CONTACTS: readonly ContactSummary[] = []
