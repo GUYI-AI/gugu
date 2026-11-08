@@ -321,7 +321,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     canDiscardSend: id => !!rejectedInputCommands.canDiscardSend?.(id) || settledHostRow(lifeView.current, id),
     onDiscardSend: id => {
       if (rejectedInputCommands.canDiscardSend?.(id)) return rejectedInputCommands.onDiscardSend?.(id)
-      void machineRpc(deviceId, local).sessions.lifeDiscard(sessionId, id).catch(error => setBackgroundError(messageForUser(error)))
+      void runNativeInputAction(sessionId, id, local ? null : deviceId, () => machineRpc(deviceId, local).sessions.lifeDiscard(sessionId, id))
     },
     ...(nativeRecord && !phoneHost ? userAttachments : { onViewAttachment: userAttachments.onViewAttachment }),
     classifyLink: classifyFileLink, onOpenLink: followConversationLink, onOpenSender: openMessageSender,

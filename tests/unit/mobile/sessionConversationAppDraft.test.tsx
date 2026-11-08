@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../support/testHarness'
 import { readComposer, writeComposer } from '../../support/composerEditor'
 import { stubVisibleIntersection } from '../../support/visibleIntersection'
+import type { LifeView } from '../../../apps/desktop/src/session/shared/core/sessions/session-life'
 const sendNotices = vi.hoisted(() => new Map<string | number, string>())
 vi.mock('sonner', () => {
   let sequence = 0
@@ -13,14 +14,23 @@ vi.mock('sonner', () => {
 vi.mock('../../../apps/desktop/src/lib/loading/LoadingIndicator', () => ({ LoadingIndicator: () => null }))
 vi.mock('../../../apps/desktop/src/components/markdown/Markdown', () => ({ Markdown: ({ content }: { content: string }) => <span>{content}</span> }))
 const lifeRead = vi.hoisted(() => vi.fn())
+const hostActions = vi.hoisted(() => ({
+  retry: vi.fn<(_sessionId: string, _inputId: string) => Promise<void>>(),
+  discard: vi.fn<(_sessionId: string, _inputId: string) => Promise<void>>(),
+  listeners: new Set<(view: LifeView) => void>(),
+}))
 const transcriptCommands = vi.hoisted(() => vi.fn())
 const transcriptView = vi.hoisted(() => ({ setScrollMode: vi.fn(), openItem: vi.fn(() => false) }))
 const openImageViewer = vi.hoisted(() => vi.fn())
 vi.mock('../../../apps/desktop/src/lib/imageViewer', () => ({ openImageViewer }))
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class extends Error {}, fetchSessionOptions: vi.fn(() => new Promise(() => {})),
-  setSessionOption: vi.fn(), onMachineEvent: vi.fn(() => () => {}), onLinkChange: vi.fn(() => () => {}),
-  machineRpc: () => ({ sessions: { lifeView: lifeRead } }),
+  setSessionOption: vi.fn(), onLinkChange: vi.fn(() => () => {}),
+  onMachineEvent: vi.fn((_device: string, channel: { name: string }, listener: (view: LifeView) => void) => {
+    if (channel.name === 'session:life-view') hostActions.listeners.add(listener)
+    return () => { hostActions.listeners.delete(listener) }
+  }),
+  machineRpc: () => ({ sessions: { lifeView: lifeRead, lifeRetryUnknown: hostActions.retry, lifeDiscard: hostActions.discard } }),
 }))
 vi.mock('../../../apps/desktop/src/components/assistant-ui/session-transcript-view.aui', () => ({ SessionTranscriptView: (props: { composerContent: import('react').ReactNode; commands?: unknown; pendingMessages?: unknown; onReady?: (view: unknown) => void }) => {
   transcriptCommands(props.commands, props.pendingMessages)
@@ -45,6 +55,7 @@ const oldWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')!
 beforeEach(() => { sendNotices.clear(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 }); harness = createReactHarness(); stubVisibleIntersection(); Element.prototype.scrollTo = () => undefined })
 afterEach(() => { Object.defineProperty(window, 'innerWidth', oldWidth); harness.cleanup(); vi.restoreAllMocks(); Element.prototype.scrollTo = oldScroll; vi.unstubAllGlobals();
   Object.assign(state(), { accountId: null, queue: null, rows: EMPTY, valid: () => false }); changed(); lifeRead.mockReset(); transcriptView.setScrollMode.mockClear()
+  hostActions.retry.mockReset(); hostActions.discard.mockReset(); hostActions.listeners.clear()
 })
 it('puts each App draft in the real task composer once, preserving human edits and sending nothing', async () => {
   const onSend = vi.fn(), applied = vi.fn()
@@ -232,4 +243,37 @@ it('adding a file creates a new submission without settling the earlier text-onl
   await send()
   expect(onSend.mock.calls[1][1]).toEqual([expect.objectContaining({ name: 'new.txt' })])
   expect(sendNotices.size).toBe(1)
+})
+
+it('settles only the discarded host input notice when the real life event removes its unknown row', async () => {
+  Object.assign(state(), { accountId: 'owner', valid: () => true })
+  const sessionId = 'host-discard-notice'
+  const view = (version: number, ids: string[]): LifeView => ({ sessionId, version, kind: 'ready', stage: null,
+    hold: null, failure: null, lastExit: null, nativeSession: null, pending: { count: 0,
+      items: ids.map((messageId, seq) => ({ seq, messageId, preview: messageId, text: messageId,
+        kind: 'session-direct', state: 'unknown', discardable: true, resendable: true, failure: null })) } })
+  await renderWithAppProviders(harness, createNode(SessionConversation, {
+    timeline: emptyAgentWatchTimeline(), deviceId: 'desktop', sessionId, agentName: 'Test agent', sessionRuntime: 'acp',
+    respondingItemId: null, onRespond: vi.fn(), onSend: vi.fn(), pendingSends: [], sending: false, agentWorking: false,
+    onStop: vi.fn(), stopping: false, onLoadOlder: async () => undefined,
+  }))
+  await waitForCondition(() => hostActions.listeners.size > 0, 'real host life subscription ready')
+  await act(async () => { for (const listener of hostActions.listeners) listener(view(1, ['host-a', 'host-b'])) })
+  const pending = () => (transcriptCommands.mock.lastCall![1] as { id: string }[]).map(input => input.id)
+  await waitForCondition(() => pending().length === 2, 'both actual host rows projected')
+  const commands = () => transcriptCommands.mock.lastCall![0] as import('@gugu/session-chat-ui').ChatCommands
+  hostActions.retry.mockRejectedValue(new Error('host retry refused'))
+  await act(async () => { commands().onRetrySend!('host-a'); commands().onRetrySend!('host-b') })
+  await vi.waitFor(() => expect(sendNotices.size).toBe(2))
+  hostActions.discard.mockRejectedValueOnce(new Error('host discard refused'))
+  await act(async () => commands().onDiscardSend!('host-a'))
+  expect(sendNotices.size).toBe(2); expect(pending()).toEqual(['host-a', 'host-b'])
+  hostActions.discard.mockImplementation(async (_sessionId, id) => {
+    for (const listener of hostActions.listeners) listener(view(2, ['host-b']))
+    expect(id).toBe('host-a')
+  })
+  await act(async () => commands().onDiscardSend!('host-a'))
+  await vi.waitFor(() => expect(pending()).toEqual(['host-b']))
+  expect(sendNotices.size).toBe(1)
+  expect(hostActions.discard.mock.calls).toEqual([[sessionId, 'host-a'], [sessionId, 'host-a']])
 })
