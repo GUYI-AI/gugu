@@ -6,10 +6,20 @@ import type { WindowCommitReceipt } from './window-commit-receipt';
 
 type Fault = Error & { code: string };
 type Journal = ReturnType<typeof createWindowCommitJournal>;
-type Owner = { conversationId: string; failed(error: Fault): void; journal?: Journal; after?: WindowLiveCursor; authorized?: boolean; pending: number; closed: boolean; abort: AbortController; released: ReturnType<typeof Promise.withResolvers<null>> };
+type Owner = { conversationId: string; failed(error: Fault): void; journal?: Journal; after?: WindowLiveCursor; authorized?: boolean; pending: number; closed: boolean; abort: AbortController };
 export type WindowCommitProjection = { projectionId: string; validate?(): void };
 const fault = (code: string, message: string): Fault => Object.assign(new Error(message), { code });
 const equal = (a: WindowLiveCursor, b: WindowLiveCursor) => a.workerEpoch === b.workerEpoch && a.storeEpoch === b.storeEpoch && a.sequence === b.sequence;
+
+// Each wait must detach its cancellation handler while the lease remains open.
+async function untilReleased<T>(owner: Owner, work: Promise<T>): Promise<T | null> {
+  const signal = owner.abort.signal, released = Promise.withResolvers<null>();
+  const release = () => released.resolve(null);
+  if (signal.aborted) release();
+  else signal.addEventListener('abort', release, { once: true });
+  try { return await Promise.race([work, released.promise]); }
+  finally { signal.removeEventListener('abort', release); }
+}
 
 /** Main-owned reservations exist even before a worker does. attach must be awaited
  * inside lazyWorker.onSpawned; this module never calls get/start or retains turns. */
@@ -28,7 +38,7 @@ export function createWindowCommitRuntime(ports: {
   let tap: ReturnType<typeof createWindowCommitTap> | undefined;
   const report = (error: unknown) => { try { ports.report(error); } catch { /* Reporting cannot alter canonical persistence or other owners. */ } };
   const notify = (owner: Owner, error: Fault) => { try { owner.failed(error); } catch (cause) { report(cause); } };
-  const releaseOwner = (owner: Owner) => { owner.closed = true; owner.abort.abort(); owner.released.resolve(null); };
+  const releaseOwner = (owner: Owner) => { owner.closed = true; owner.abort.abort(); };
   function fail(owner: Owner, error: Fault) {
     if (owner.closed) return;
     if (owner.journal) owner.journal.fail(error.code, error.message);
@@ -110,13 +120,13 @@ export function createWindowCommitRuntime(ports: {
       if (closed) throw fault('unsubscribed', 'Commit runtime is closed');
       if (!id || !conversationId || id.length > 2048 || conversationId.length > 2048 || owners.has(id)) throw fault('invalid_subscription', 'Invalid or occupied commit subscription');
       if (owners.size >= 32) throw fault('window_capacity', 'Too many commit subscriptions');
-      const owner: Owner = { conversationId, failed, pending: 0, closed: false, abort: new AbortController(), released: Promise.withResolvers<null>() }; owners.set(id, owner);
+      const owner: Owner = { conversationId, failed, pending: 0, closed: false, abort: new AbortController() }; owners.set(id, owner);
       const active = () => { if (owner.closed || owners.get(id) !== owner) throw fault('unsubscribed', 'Commit subscription was released'); return owner; };
       return {
         async prepare(): Promise<WindowLiveCursor> {
           const prepared = active().after; if (prepared) return { ...prepared };
           let current: { sequence: number } | null;
-          try { current = tap ? await Promise.race([tap.resample(), owner.released.promise]) : { sequence: 0 }; }
+          try { current = tap ? await untilReleased(owner, tap.resample()) : { sequence: 0 }; }
           catch (error) { const failure = fault('live_source_gap', String(error)); fail(owner, failure); throw failure; }
           active(); if (owner.after) return { ...owner.after };
           if (!current) { const failure = fault('live_source_gap', 'Committed-event continuity is unavailable'); fail(owner, failure); throw failure; }
@@ -138,7 +148,7 @@ export function createWindowCommitRuntime(ports: {
         async wait<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
           active(); const work = Promise.resolve().then(() => { active(); return operation(owner.abort.signal); })
             .then(value => ({ ok: true as const, value }), error => ({ ok: false as const, error }));
-          const result = await Promise.race([work, owner.released.promise]);
+          const result = await untilReleased(owner, work);
           active(); if (!result) throw fault('unsubscribed', 'Commit subscription was released');
           if (!result.ok) throw result.error; return result.value;
         },

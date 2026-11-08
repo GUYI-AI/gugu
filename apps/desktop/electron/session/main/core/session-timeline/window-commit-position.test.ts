@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
+import { getEventListeners } from 'node:events';
 import { EventStreamSource } from '@gugu/session-wire';
 import { acpRuntimeApiContract } from '@gugu/session-core/acp';
 import { defineContract } from '@gugu/session-wire/api';
@@ -24,6 +25,33 @@ async function fixture() {
   return { runtime, events, failed, lease, after, request, known };
 }
 const absent = () => vi.fn(async (): Promise<Committed | null> => null);
+
+it.each(['committed', 'not_committed'] as const)('releases cancellation waiters after serial %s queries on one open lease', async kind => {
+  const f = await fixture(), signals = new Set<AbortSignal>();
+  const observe = <T>(value: T) => async (signal: AbortSignal) => {
+    signals.add(signal);
+    expect(signal.aborted).toBe(false);
+    expect(getEventListeners(signal, 'abort')).toHaveLength(1);
+    return value;
+  };
+  for (let index = 0; index < 128; index++) {
+    expect(await lookup(f.lease, f.request, {
+      durable: observe(kind === 'committed' ? f.known() : null), primaryActive: observe(true),
+    })).toMatchObject({ kind });
+    expect(signals.size).toBe(1);
+    for (const signal of signals) {
+      expect(signal.aborted).toBe(false);
+      expect(getEventListeners(signal, 'abort')).toHaveLength(0);
+    }
+  }
+});
+it('removes a cancellation waiter when its operation rejects without closing the lease', async () => {
+  const f = await fixture(); let signal!: AbortSignal;
+  await expect(lookup(f.lease, f.request, { durable: async value => { signal = value; throw new Error('storage failed'); }, primaryActive: async () => true }))
+    .rejects.toThrow('storage failed');
+  expect(signal.aborted).toBe(false); expect(getEventListeners(signal, 'abort')).toHaveLength(0);
+  expect(await lookup(f.lease, f.request, { durable: async () => f.known(), primaryActive: async () => true })).toEqual(f.known());
+});
 
 it('prefers a durable position and preserves null-first historical updates without asking the worker', async () => {
   const f = await fixture(), primaryActive = vi.fn(async () => true);
