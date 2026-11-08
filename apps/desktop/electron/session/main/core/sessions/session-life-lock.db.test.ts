@@ -240,3 +240,44 @@ it('sign-out during the ownership check cannot create a late recovery entry', as
   await r.owner.signIn('B'); await r.owner.signOut();
   expect(lifeStore.read('s').hold).toBeNull(); expect(lifeStore.row('s', seq).state).toBe('unknown');
 });
+
+function refused(id = 'refused', kind: 'session-direct' | 'inbox-batch' = 'session-direct') {
+  const seq = kind === 'inbox-batch'
+    ? lifeStore.enqueue({ sessionId: 's', text: 'batch', kind, sources: [] }).seq
+    : lifeStore.enqueue({ sessionId: 's', messageId: id, text: 'typed words', kind }).seq;
+  lifeStore.commit('s', [{ e: 'write-receipt', seq, receipt: { state: 'failed', cause: { name: 'AdmissionDeclined', message: 'declined' } } }]);
+  return seq;
+}
+
+it('a failed row a person resends goes out once, without a history lookup, as the same row', async () => {
+  const seq = refused(); const r = rig(); await r.owner.signIn('A');
+  expect(r.owner.read('s').pending.items.find(row => row.messageId === 'refused')).toMatchObject({ state: 'failed', resendable: true, discardable: true });
+  const lookup = vi.fn(async () => null);
+  await Promise.all([r.owner.retryUnknownRow('s', 'refused', lookup), r.owner.retryUnknownRow('s', 'refused', lookup)]);
+  await vi.waitFor(() => expect(r.dispatch).toHaveBeenCalledTimes(1));
+  await r.owner.quiescent('s');
+  expect(lookup).not.toHaveBeenCalled();
+  expect(lifeStore.row('s', seq).state).toBe('accepted');
+  expect(fixture.sqlite.prepare("SELECT count(*) AS n FROM session_pending WHERE session_id='s'").get()).toEqual({ n: 1 });
+});
+
+it('discarding a failed or unknown row removes it and its message for good', async () => {
+  refused(); interrupted(); const r = rig(); await r.owner.signIn('A');
+  expect(r.owner.read('s').pending.items.map(row => row.state)).toEqual(['failed', 'unknown']);
+  r.owner.discardRow('s', 'refused'); r.owner.discardRow('s', 'interrupted');
+  expect(r.owner.read('s').pending.items).toEqual([]);
+  expect(fixture.sqlite.prepare("SELECT count(*) AS n FROM messages WHERE id IN ('refused','interrupted')").get()).toEqual({ n: 0 });
+  await r.owner.signOut();
+  const again = rig(); await again.owner.signIn('A');
+  expect(again.owner.read('s').pending.items).toEqual([]);
+  expect(again.dispatch).not.toHaveBeenCalled();
+});
+
+it('a failed inbox batch is neither resent nor discarded by hand: its sources were told', async () => {
+  refused('batch', 'inbox-batch'); const r = rig(); await r.owner.signIn('A');
+  const row = r.owner.read('s').pending.items[0]!;
+  expect(row).toMatchObject({ state: 'failed', resendable: false, discardable: false });
+  await r.owner.retryUnknownRow('s', row.messageId, async () => null);
+  expect(() => r.owner.discardRow('s', row.messageId)).toThrow('cannot be discarded');
+  expect(r.dispatch).not.toHaveBeenCalled();
+});

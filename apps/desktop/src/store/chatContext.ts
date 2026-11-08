@@ -95,6 +95,9 @@ export interface ChatContextValue {
   draftAttachments: Record<string, DraftAttachment[]>
   draftQuotes: Record<string, DraftQuote>
   setDraftQuote: (chatId: string, quote: SetStateAction<DraftQuote | null | undefined>) => void
+  // The peer a draft stays private to without a quote (an annotated whisper image); cleared on send or Exit whisper.
+  draftWhispers: Record<string, string>
+  setDraftWhisper: (chatId: string, userId: string | null) => void
   // @@@threads (#957) — 当前会话的话题摘要（rootId → 回复数/最后回复），驱动主线 tanchor + subtab 列表。
   // 当前打开的话题 root 消息 id（null = 看主时间线 Chat 视图）。
   activeThreadRootId: string | null
@@ -179,6 +182,8 @@ const EMPTY_CHAT_STORE: ChatContextValue = {
   draftAttachments: {},
   draftQuotes: {},
   setDraftQuote: () => {},
+  draftWhispers: {},
+  setDraftWhisper: () => {},
   activeThreadRootId: null,
   threadMessages: [],
   loadingThread: false,
@@ -261,6 +266,17 @@ export function useChatStore(...keys: (keyof ChatStoreValue)[]): Partial<ChatSto
   return useSyncExternalStore(handle.subscribe, getSnapshot)
 }
 
+/** 只在回调里读、不订阅(读的那一刻的整份值):外壳和点开时才要会话列表的 hook 用它,每条消息就不必把整棵壳重渲一遍。 */
+export function useChatStoreReader(): () => ChatStoreValue {
+  return useContext(ChatContext).get
+}
+
+/** 只订阅从 store 里算出来的一个值(select 要返回原始值或稳定引用):值不变,别的会话来消息也不重渲。 */
+export function useChatStoreSelect<T>(select: (store: ChatStoreValue) => T): T {
+  const handle = useContext(ChatContext)
+  return useSyncExternalStore(handle.subscribe, () => select(handle.get()))
+}
+
 // Drop a chat's entry from a per-chat record (drafts / mentions / attachments); no-op if absent. Shared
 // by the delete-chat / leave-group cleanup so the identical "copy → delete key" block isn't repeated per map.
 export function dropChatKey<T>(setState: Dispatch<SetStateAction<Record<string, T>>>, chatId: string): void {
@@ -285,6 +301,15 @@ export function useDraftQuotesStore() {
     })
   }, [])
   return { draftQuotes, setDraftQuote }
+}
+
+export function useDraftWhispersStore() {
+  const [draftWhispers, setWhispers] = useState<Record<string, string>>({})
+  const setDraftWhisper = useCallback((chatId: string, userId: string | null) => {
+    if (userId) setWhispers(previous => previous[chatId] === userId ? previous : { ...previous, [chatId]: userId })
+    else dropChatKey(setWhispers, chatId)
+  }, [])
+  return { draftWhispers, setDraftWhisper }
 }
 
 export function useTextDraftStore(): {

@@ -46,7 +46,7 @@ vi.mock('@renderer/lib/commands/use-command-provider', () => ({
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({
   translate: (key: string) => ({ 'workspace.sideTask': 'Side chat', 'workspace.review': 'Review', 'workspace.terminal': 'Terminal', 'workspace.browser': 'Browser', 'remotePorts.tool': 'Ports', 'extensions.appsSection': 'Apps', 'extensions.addAction': 'Add App', 'task.addPanel': 'Add panel' } as Record<string, string>)[key] ?? key,
 }) }));
-vi.mock('react-i18next', async (importOriginal) => ({ ...await importOriginal<typeof import('react-i18next')>(), useTranslation: () => ({ t: (key: string) => ({ 'header.folder': 'Folder', 'header.groupFolder': 'Group folder' } as Record<string, string>)[key] ?? key }) }));
+vi.mock('react-i18next', async (importOriginal) => ({ ...await importOriginal<typeof import('react-i18next')>(), useTranslation: () => ({ t: (key: string) => ({ 'header.folder': 'Folder' } as Record<string, string>)[key] ?? key }) }));
 vi.mock('@/store/chatContext', () => ({ useChatStore: () => ({ chats: h.chats }) }));
 vi.mock('@/lib/chatSummariesBridge', () => ({
   readChatSummary: (id: string) => h.chats.find((chat) => chat.id === id), subscribeChatSummaries: () => () => {},
@@ -117,14 +117,14 @@ describe('folder entry E1-E3', () => {
   });
   it.each(['dm', 'group'])('E2: %s offers its own named folder first and opens that chat', async (chatId) => {
     const items = await menu(chatId);
-    expect(text(items[0]!)).toBe(chatId === 'group' ? 'Group folder' : 'Folder');
+    expect(text(items[0]!)).toBe('Folder');
     expect(glyph(items[0]!)).toBe(new DOMParser().parseFromString(renderToStaticMarkup(<Folder />), 'text/html').querySelector('svg')?.innerHTML);
     await act(async () => items[0]!.click());
     expect(h.chatOpen).toHaveBeenCalledWith(chatId, { kind: 'workspace.main', title: '' });
   });
   it.each(['task', 'dm', 'group'])('E3: %s tab matches its menu label and Folder glyph', async (place) => {
     const items = await menu(place === 'task' ? undefined : place);
-    const item = items.find((row) => text(row) === (place === 'group' ? 'Group folder' : 'Folder'))!;
+    const item = items.find((row) => text(row) === ('Folder'))!;
     const label = text(item);
     const provider = place === 'task' ? createExtensionTabProvider('workspace', 'main') : chatPanelTabProvider;
     const entry = { tabId: 'folder', kind: place === 'task' ? 'workspace.main' : 'chat-panel', isPreview: false, state: { kind: 'workspace.main', title: '' } };

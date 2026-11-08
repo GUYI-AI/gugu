@@ -292,7 +292,6 @@ export default {
     "markUnreadFailed": "Could not mark this chat unread. Try again.",
     "muted": "Notifications muted",
     "noResults": "No chats found",
-    "searchMessages": "Search messages for “{{query}}”",
     "searchMessagesTitle": "Search messages",
     "listLabel": "Chats",
     "pin": "Pin",
@@ -349,6 +348,7 @@ export default {
     "send": "Send",
     "settings": "Settings"
   },
+  "linkPill": {"unavailable": "Unavailable: removed, or you cannot see it", "message": "{{sender}}: {{words}}"},
   "attachmentView": {
     "types": {"pdf": "PDF document", "word": "Word document", "excel": "Excel spreadsheet", "presentation": "Presentation", "text": "Text", "markdown": "Markdown document", "csv": "CSV spreadsheet", "html": "Web page", "json": "JSON document", "archive": "Archive", "image": "Image", "audio": "Audio", "video": "Video"},
     "fileGone": "File deleted",
@@ -363,6 +363,8 @@ export default {
     "usageUnavailable": "File storage usage is unavailable right now.",
 
     "fileUnavailable": "File unavailable right now",
+    "fileNoAccess": "You no longer have access to this file",
+    "fileUpdated": "This file was updated; open it again",
     "holderOffline": "{{machine}} is offline. This file opens when it is back online.",
     "holderMachine": "The computer that keeps it",
     "besideOffline": "On {machine}, not connected",
@@ -511,7 +513,6 @@ export default {
     "memberList": {
       "agentLeave": "Take it out of this group",
       "clearSearch": "Clear search",
-      "createAgent": "New Agent in this group",
       "invite": "Invite members",
       "makeAdmin": "Make admin",
       "manage": "Manage {{name}}",
@@ -521,7 +522,7 @@ export default {
       "setActive": "Switch to active",
       "setPassive": "Switch to passive",
       "loadFailed": "Could not load the member list. Close and reopen 👥 to try again.",
-      "notParticipant": "You are not in this topic yet, so its member list is not visible. Say something in it to join.",
+      "notParticipant": "No members of this topic are visible right now",
       "sectionAgents": "Agents",
       "sectionPeople": "People",
       "myAgents": "My agents · {{count}}",
@@ -682,8 +683,7 @@ export default {
     "more": "More actions",
     "searchChat": "Search chat",
     "searchConversation": "Search this chat",
-    "groupFolder": "Group folder",
-    "folder": "Folder"
+    "folder": "Files"
   },
   "history": {
     "searchTopics": "Search topics",
@@ -850,6 +850,8 @@ export default {
   },
   "topic": {
     "leave": "Leave topic",
+    "leaveHint": "You can still read it, but won't get notifications from this topic",
+    "removeHint": "They can still read it, but won't get notifications from this topic",
     "calledYou": "Someone @ you",
     "pins": {
       "pin": "Pin {{name}} to group",

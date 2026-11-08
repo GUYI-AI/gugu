@@ -115,7 +115,7 @@ export interface MessageListRowProps {
   /** 这条线上「agent 超过 5 个已自动转 passive」的那条系统消息(每条线至多一条)。 */
   agentFloodNoticeMessageId: string | null | undefined
   onAgentFloodUndone: (() => void) | undefined
-  onOpenFile: ((meta: ParsedAttachment, message?: MessageItem) => void) | undefined; onOpenLocalFileLink: ((path: string) => void) | undefined
+  onOpenFile: ((meta: ParsedAttachment, message?: MessageItem) => void) | undefined
   onMentionMember: ((target: MentionTarget) => void) | undefined // @@@6386 入群灰字里点名字 → 输入框插 @
   // @@@multi-select (#988) — 多选态：行首勾选框 + 整行点击切换选中；onEnterSelectMode 透传给气泡「多选」菜单项。
   selectMode: boolean
@@ -175,7 +175,7 @@ const MessageListRow = memo(function MessageListRow({
   onVisible,
   onOpenMemberProfile,
   onOpenTopic, topicAnchors, onOpenTopicAnchor, agentFloodNoticeMessageId, onAgentFloodUndone,
-  onOpenFile, onOpenLocalFileLink, onMentionMember,
+  onOpenFile, onMentionMember,
   selectMode,
   selectedIds,
   onToggleSelect,
@@ -263,7 +263,7 @@ const MessageListRow = memo(function MessageListRow({
       onOpenMemberProfile={onOpenMemberProfile}
       compactMobile={mobile}
       // 直接透传稳定 handler；话题里不传则不显示「开话题」菜单项(单层不嵌套)。
-      onOpenTopic={onOpenTopic} onOpenTopicAnchor={msg.content_type === 'system' ? onOpenTopicAnchor : undefined} onOpenFile={onOpenFile} onOpenLocalFileLink={onOpenLocalFileLink}
+      onOpenTopic={onOpenTopic} onOpenTopicAnchor={msg.content_type === 'system' ? onOpenTopicAnchor : undefined} onOpenFile={onOpenFile}
       memberProfiles={bubbleMemberProfiles}
       // @@@multi-select (#988) — More 菜单「多选」入口;多选态的勾选/底色在外层 MessageListRow 处理。
       onEnterSelectMode={onEnterSelectMode}

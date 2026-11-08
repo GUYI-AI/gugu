@@ -3,7 +3,7 @@
  * WebSocket)也要到**那台机器**,❌ 打到这台电脑自己的端口上。照 VS Code:它把用到的端口都转过来且尽量同号
  * (autoForwardPorts + 集成浏览器的 remote proxy),页面里写死的 `http://localhost:8000` 于是照样通。
  *
- * 做法:浏览器分区上挂一个只看回环地址的 onBeforeRequest。请求来自一个绑定了机器的页签时:
+ * 做法:复用浏览器分区的单一 onBeforeRequest 链,转发部分只看回环地址。请求来自一个绑定了机器的页签时:
  *  · 端口已经是这台机器某条转发的本机那一头 ⇒ 放行;
  *  · 否则当它是那台机器上的端口 ⇒ 先转过来(优先同号),同号就原样放行,不同号就改写到本机那个端口;
  *  · 转不过来 ⇒ 拦掉(❌ 放它打到这台电脑上同号的某个别的服务)。
@@ -11,6 +11,7 @@
  * 第一次用到某个端口时起一条 SSH 转发(之后复用)。
  */
 import type { Session } from 'electron';
+import { markVaultLoginNetworkInstalled, vaultLoginRequestBlocked } from './vault-browser-login-network';
 
 export type RemoteBrowserBinding = { deviceId: string; sessionId: string };
 
@@ -111,8 +112,11 @@ export function installRemoteLoopbackRequests(
   browserIdFor: (webContentsId: number) => string | null,
   warn: (message: string, fields: Record<string, unknown>) => void
 ): void {
-  ses.webRequest.onBeforeRequest({ urls: LOOPBACK_URL_PATTERNS }, (details, callback) => {
-    if (!forwarding || bindings.size === 0) {
+  // Electron keeps only the last listener. Compose the private-login guard BEFORE remote forwarding.
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    try { if (vaultLoginRequestBlocked(ses, details)) { callback({ cancel: true }); return; } }
+    catch { callback({ cancel: true }); return; }
+    if (!forwarding || bindings.size === 0 || loopbackPortOf(details.url) === null) {
       callback({});
       return;
     }
@@ -128,4 +132,5 @@ export function installRemoteLoopbackRequests(
       () => callback({})
     );
   });
+  markVaultLoginNetworkInstalled(ses, 'requests');
 }

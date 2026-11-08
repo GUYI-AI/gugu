@@ -26,7 +26,7 @@ let serial = 0
 let harness: ReturnType<typeof createReactHarness>
 const onShow = vi.fn<(_chat: string, _tab: string) => void | Promise<void>>()
 function Entry() {
-  useLinkNavigation({ ownerId: 'owner', chats: [{ id: state.chat, kind: 'group' }] as never, contacts: [],
+  useLinkNavigation({ ownerId: 'owner', chats: () => [{ id: state.chat, kind: 'group' }] as never, contacts: () => [],
     openChat() {}, openAssistant() {}, openApp() {}, openOwnApp() {}, openProject() {},
     openFile: (chat, target, source) => askChatFile(chat, { itemId: target.itemId, ...source }),
   })

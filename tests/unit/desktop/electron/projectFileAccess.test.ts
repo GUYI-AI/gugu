@@ -310,10 +310,10 @@ describe('local read fence and verified snapshot', () => {
     expect(await readdir(tempRoot)).toEqual([])
   })
   it('anchors current metadata, then detects modification, unbinding and account changes', async () => {
+    // A part asked once the file has changed is refused (parts asked before are of the anchored version, and run ahead).
     const source = await openProjectFileSource(revision, request => reader()(request, 'owner'))
-    expect(await source.read(0, 1)).toEqual(new Uint8Array([83]))
     await writeFile(join(root, 'file.bin'), Buffer.alloc(bytes.length, 9))
-    await expect(source.read(1, 1)).rejects.toThrow('changed during read')
+    await expect(source.read(0, 1)).rejects.toThrow('changed during read')
     await forgetProjectGroupId('project', 'owner', env)
     await expect(reader()({ ref, offset: 0, length: 0 }, 'owner')).rejects.toThrow('unavailable')
     accountId = 'other'
@@ -337,17 +337,23 @@ describe('local read fence and verified snapshot', () => {
 describe('the owner’s already-held SSH link', () => {
   it('uses the real requester envelope and host read core, without opening or closing the window connection', async () => {
     let tap: { onMessage(message: unknown): void; onClosed(reason: string): void } | undefined
-    const untap = vi.fn(), open = vi.fn(), close = vi.fn()
+    const untap = vi.fn(), open = vi.fn(), close = vi.fn(), asked: number[] = [], spans: [number, number][] = []
+    let pending = 0, most = 0
     const links = { ownedOpen: vi.fn(async () => true), open, close, tap: vi.fn((_device: string, handlers: typeof tap) => { tap = handlers; return untap }), send: vi.fn((_device: string, message: unknown) => {
       const envelope = (message as { payload: { request_id: string; user_id: string; payload: Parameters<ReturnType<typeof createProjectFileReader>>[0] } }).payload
-      void reader()(envelope.payload, envelope.user_id).then(result => tap!.onMessage({ payload: { type: 'file.read:reply', request_id: envelope.request_id, result } }))
+      asked.push(envelope.payload.length); spans.push([envelope.payload.offset, envelope.payload.offset + envelope.payload.length]); most = Math.max(most, ++pending)
+      void reader()(envelope.payload, envelope.user_id).then(result => { pending--; tap!.onMessage({ payload: { type: 'file.read:reply', request_id: envelope.request_id, result } }) })
       return true
     }) }
     const file = await ownSshFileProvider(links, tempRoot)(revision, { ref, actor })
     expect(file).not.toBeNull()
     expect(await file!.read(0, 4)).toEqual(new Uint8Array([83, 83, 83, 83]))
-    // One metadata anchor, then the source in parts growing from the smallest while each is quick (64K, 128K, 256K, the rest).
-    expect(links.send).toHaveBeenCalledTimes(6)
+    // One metadata anchor, then the source from the smallest part, growing while each is quick; once the line has shown
+    // it is quick, the next part is already asked for while one is on it.
+    expect(asked.slice(0, 3)).toEqual([0, 64 * 1024, 128 * 1024])
+    expect(most).toBe(2)
+    // The parts run ahead of the 512 KB reads that verify the file: one is asked across the first read's end.
+    expect(spans.some(([from, to]) => from < 524_288 && to > 524_288)).toBe(true)
     expect(open).not.toHaveBeenCalled(); expect(close).not.toHaveBeenCalled(); expect(untap).toHaveBeenCalledTimes(1)
     await file!.dispose()
   })
@@ -357,15 +363,23 @@ describe('the owner’s already-held SSH link', () => {
     await writeFile(join(root, 'design.html'), html)
     const page: FileRevision = { ...revision, item_id: 'design', file_name: 'design.html', content_type: 'text/html', size_bytes: html.length, sha256: digest(html), relative_path: 'design.html' }
     await rememberProjectFile(page, 'owner', env)
-    // Every call on this line takes two seconds, whatever it carries: a part must shrink to the smallest, not hold the line.
-    let now = 0
+    // A line that carries one reply at a time, each taking two seconds whatever it holds: a part must shrink to the
+    // smallest, not hold the line. Replies leave in the order asked, each two seconds after the line is free.
+    let now = 0, lineFree = 0, line = Promise.resolve()
     const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
     const asked: number[] = []
+    let open = 0, most = 0
     let tap: { onMessage(message: unknown): void; onClosed(reason: string): void } | undefined
     const links = { ownedOpen: vi.fn(async () => true), tap: vi.fn((_device: string, handlers: typeof tap) => { tap = handlers; return vi.fn() }), send: vi.fn((_device: string, message: unknown) => {
       const envelope = (message as { payload: { request_id: string; user_id: string; payload: Parameters<ReturnType<typeof createProjectFileReader>>[0] } }).payload
-      asked.push(envelope.payload.length); now += 2_000
-      void reader()(envelope.payload, envelope.user_id).then(result => tap!.onMessage({ payload: { type: 'file.read:reply', request_id: envelope.request_id, result } }))
+      asked.push(envelope.payload.length); most = Math.max(most, ++open)
+      const arrives = lineFree = Math.max(lineFree, now) + 2_000, reply = reader()(envelope.payload, envelope.user_id)
+      line = line.then(async () => {
+        const result = await reply
+        await new Promise(resolve => setTimeout(resolve, 0)) // the reader takes in the reply before it, as a line would
+        now = arrives; open--
+        tap!.onMessage({ payload: { type: 'file.read:reply', request_id: envelope.request_id, result } })
+      })
       return true
     }) }
     const seen: [number, number][] = []
@@ -377,6 +391,8 @@ describe('the owner’s already-held SSH link', () => {
       await file!.dispose()
     } finally { clock.mockRestore() }
     expect(Math.max(...asked)).toBe(64 * 1024)
+    // Two of these parts would hold the line past its budget: whatever else it carries must get through, so one at a time.
+    expect(most).toBe(1)
     expect(seen.at(-1)).toEqual([html.length, html.length])
     expect(seen.every(([done], index) => index === 0 || done > seen[index - 1]![0])).toBe(true)
   })

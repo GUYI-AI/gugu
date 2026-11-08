@@ -555,6 +555,22 @@ describe('ChatMessageComposer', () => {
     expect(container.querySelector('[contenteditable]')?.getAttribute('contenteditable')).toBe('false')
     expect(onSend).not.toHaveBeenCalled()
   })
+  it('sends a draft kept private to a peer as a whisper without any reply, and drops that audience after sending', async () => {
+    const onSend = vi.fn(async () => {})
+    let draftWhispers: Record<string, string> = { 'group-1': 'ada' }
+    const setDraftWhisper = vi.fn((chatId: string, userId: string | null) => { draftWhispers = { ...draftWhispers }; if (userId) draftWhispers[chatId] = userId; else delete draftWhispers[chatId] })
+    const renderComposer = () => harness.render(createElement(ChatStoreProvider, { value: { ...chatStore(), draftWhispers, setDraftWhisper } },
+      createElement(ChatMessageComposer, { onSend, chatId: 'group-1', isGroupChat: true, currentUserId: 'me', groupMembers: [rosterMember('ada', 'Ada')] })))
+    await renderComposer()
+    expect(container.textContent).toContain('悄悄话给 Ada')
+    expect(container.querySelector('[data-testid="quote-thumb"]')).toBeNull()
+    await typeInComposer('annotated')
+    await clickSend()
+    expect(onSend).toHaveBeenCalledWith('annotated', expect.objectContaining({ toUserIds: ['ada'], isWhisper: true, replyToMessageId: null }))
+    expect(setDraftWhisper).toHaveBeenCalledWith('group-1', null)
+    await renderComposer()
+    expect(container.textContent).not.toContain('悄悄话给 Ada')
+  })
   it('preserves the reply id when whisper mode was selected manually', async () => {
     const onSend = vi.fn(async () => {})
     await harness.render(createElement(ChatMessageComposer, {

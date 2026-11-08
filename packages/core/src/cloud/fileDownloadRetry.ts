@@ -48,7 +48,11 @@ export async function retryFileDownload<T>(hop: () => Hop, action: () => Promise
   for (let attempt = 0;; attempt++) {
     signal?.throwIfAborted()
     const target = hop()
-    try { return await action() } catch (error) {
+    try {
+      const result = await action()
+      signal?.throwIfAborted()
+      return result
+    } catch (error) {
       signal?.throwIfAborted()
       if ((error as { name?: unknown } | null)?.name === 'AbortError' || error instanceof FileDownloadFailure) throw error
       // Keep typed authorization/validation refusals intact for existing callers.
@@ -59,6 +63,7 @@ export async function retryFileDownload<T>(hop: () => Hop, action: () => Promise
       const remaining = RETRY_WINDOW_MS - (Date.now() - started)
       if (!retryable || remaining <= 0) throw typeof failure.status === 'number' ? error : failure
       await wait(Math.min(attempt === 0 ? 500 : 1000 * 2 ** Math.min(attempt, 4), 10_000, remaining), signal)
+      signal?.throwIfAborted()
       await prepareRetry?.()
     }
   }

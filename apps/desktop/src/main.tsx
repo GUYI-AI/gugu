@@ -5,6 +5,8 @@ import { detectHostOs } from '@shared/host-os'
 import './lib/errorCaptureBootstrap'
 // 网页形态按 http://<ip> 直开时浏览器不给 crypto.randomUUID,全仓裸用 → 会话页启动即白;import 即装垫片。
 import './lib/insecure-context-shims'
+// 没更新过的老 Android WebView(Chrome 91)没有 structuredClone,首屏渲染即抛;同样 import 即装。
+import './lib/legacy-webview-shims'
 import React from 'react'
 import App from './App'
 import { renderEntryRoot } from './lib/renderer-entry-root'

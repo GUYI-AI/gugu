@@ -1,3 +1,5 @@
+import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
+import { PasswordSection } from './settings/PasswordSection'
 import { lazy, Suspense, useRef, useState } from 'react'
 import { useAuth } from '../store/auth'
 import { useContactsStore } from '../store/contactsContext'
@@ -47,6 +49,7 @@ import { useTranslation } from 'react-i18next'
 const sectionsFor = (mobile: boolean): ActiveSection[] =>
   SETTINGS_SECTIONS.filter(
     (section) =>
+      (section !== 'passwords' || (PASSWORD_BETA_ENABLED && platform.kind === 'electron' && !mobile)) &&
       (section !== 'permissions' || platform.kind === 'electron' || platform.systemPermissions.length > 0) &&
       (section !== 'apps' || platform.kind === 'capacitor') &&
       (section !== 'phone' || platform.kind === 'capacitor') &&
@@ -102,6 +105,7 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
   const setMobilePane = onPaneChange ?? setInternalPane
   const [detailPage, setDetailPage] = useState<SettingsDetailState>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const passwordActions = useRef<HTMLDivElement>(null)
   const attachBody = usePanelScroll(bodyRef, `${activeSection}:${detailPage?.key ?? ''}`)
   const [parentSection, setParentSection] = useState<ActiveSection | null>(null)
   const back = () => {
@@ -126,6 +130,7 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
       case 'usage':    return <UsageSection />
       case 'about':    return <AboutSection />
       case 'permissions': return <PermissionsSection />
+      case 'passwords': return PASSWORD_BETA_ENABLED ? <PasswordSection actionsHost={() => passwordActions.current} /> : null
       case 'apps':     return <Suspense fallback={null}><MobileAppsSection appDetail={appDetail} /></Suspense>
       case 'phone':    return <PhoneDeviceActionsPage />
       case 'sessions':
@@ -158,7 +163,7 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
   }
 
   // 内容区顶部条的标题:与 SettingsNav 里同一个 key 的导航项同一份翻译("账户"/"通用"/…)。
-  const sectionTitle = t(`settings.nav.${activeSection}`)
+  const sectionTitle = activeSection === 'passwords' ? '密码' : activeSection === 'permissions' ? '本机控制' : t(`settings.nav.${activeSection}`)
 
   const card = (
       <div
@@ -190,10 +195,13 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
                 </IconButton>
               ) : undefined}
               actions={!mobile ? (
-                // @@@1787 owner: ✗ 是桌面弹窗逻辑;移动端出口统一为左上返回箭头(SettingsNav onBack),✗ 只留桌面
+                <>
+                {activeSection === 'passwords' && <div ref={passwordActions} />}
+                {/* @@@1787 owner: ✗ 是桌面弹窗逻辑;移动端出口统一为左上返回箭头(SettingsNav onBack),✗ 只留桌面 */}
                 <IconButton shape="pill" size="lg" className="bg-foreground/[0.06]" aria-label={t('settings.close')} onClick={onClose}>
                   <X />
                 </IconButton>
+                </>
               ) : undefined}
             />
             {/* @@@6436 内页排版(桌面与手机的内边距差别也在内)全在 settings/settings.css。 */}

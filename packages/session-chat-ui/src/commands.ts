@@ -42,7 +42,7 @@ export type ChatCommands = {
   /** Mount the host's tooltip or source popover without coupling Solid to the host UI framework. */
   onTooltipMount?: (target: { root: HTMLElement; text: string; onOpenOriginal?: () => void; originalLabel?: string }) => void | (() => void);
   /** Mount the host's existing failed-message menu in the measured status line. */
-  onInputSendFailureMount?: (target: { root: HTMLElement; itemId: string; error?: string; reason?: string }) => void | (() => void);
+  onInputSendFailureMount?: (target: { root: HTMLElement; itemId: string; error?: string; reason?: string; unknown?: boolean; retryable: boolean }) => void | (() => void);
   canDiscardSend?: (itemId: string) => boolean;
   onDiscardSend?: (itemId: string) => void;
   /** A recycled row supplies live getters; the host returns its DOM-listener cleanup. */

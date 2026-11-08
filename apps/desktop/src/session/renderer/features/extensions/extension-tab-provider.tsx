@@ -48,6 +48,11 @@ import { FileIcon } from '@renderer/lib/editor/file-icon';
 export type ExtensionTabState = {
   filePath?: string;
   /**
+   * The host opened `filePath` for an agent or an App (`open_in_tab`, `files.openWith`), not the person: a file outside the
+   * working copy is not read through it (`@@@outside-file`). Its own tab: the person opening the same file gets one of their own.
+   */
+  byHost?: true;
+  /**
    * 改版前(#7052 之前)开出来的那种页签各带一个现发的身份 —— 那时「一种类型可以开很多个」。存档里还留着,
    * 读回来不再用它:一个 App 只有一份,为自己开的那一枚按类型就是唯一的。
    */
@@ -66,6 +71,8 @@ export class ExtensionTabResource implements TabResource {
     readonly filePath: string | undefined = undefined,
     private readonly readTitle?: () => string,
     private readonly readHoldsUnsaved?: () => boolean,
+    /** The host opened `filePath` for an agent or an App (`ExtensionTabState.byHost`). */
+    readonly byHost = false,
   ) {}
 
   get holdsUnsaved(): boolean {
@@ -141,6 +148,7 @@ function createExtensionTabContent(extensionId: string, kind: string) {
         navigation={navigation}
         viewState={history?.pages[history.index]?.viewState}
         filePath={resource.filePath}
+        {...(resource.byHost ? { byHost: true } : {})}
       />
     );
   });
@@ -188,8 +196,11 @@ export function createExtensionTabProvider(
 
   return createTabProvider({
     kind,
-    resourceKey: (state: ExtensionTabState) => (state?.filePath ? filePathKey(state.filePath) : 'app'),
-    onBeforeOpen: (args: ExtensionTabState): ExtensionTabState => args?.filePath ? { filePath: args.filePath } : (isPerSession(kind) ? { perSession: true } : {}),
+    resourceKey: (state: ExtensionTabState) => (state?.filePath ? `${state.byHost ? 'host\u0000' : ''}${filePathKey(state.filePath)}` : 'app'),
+    // Its own page beside the conversation takes the width its manifest declares (`sideWidth`, read now: an update can
+    // change it); a file opened in it is the conversation's peer, half each.
+    sideWidth: (state: ExtensionTabState) => (state?.filePath ? undefined : installedExtensionsStore.sideWidth(kind)),
+    onBeforeOpen: (args: ExtensionTabState): ExtensionTabState => args?.filePath ? { filePath: args.filePath, ...(args.byHost ? { byHost: true as const } : {}) } : (isPerSession(kind) ? { perSession: true } : {}),
     // `entry.state` is the only path a per-tab fact travels on, and until now it
     // was read by nobody — which is why a tab could not be told which file it was
     // opened for. Reading it here is what makes the file claim mean anything.
@@ -197,7 +208,7 @@ export function createExtensionTabProvider(
       if (entry.state?.filePath) return fileBaseName(entry.state.filePath);
       const surface = extensionSurfaceStore.sharedState(residentPageKey(kind, residentPlace({ ...ctx.place, tabId: entry.tabId, perSession: isPerSession(kind) })));
       return extensionTabTitle(surface, titleOf()).label;
-    }, () => extensionSurfaceStore.state(ctx.place?.kind === 'session' ? ctx.place.sessionId : null, entry.tabId).dirtyIn !== null),
+    }, () => extensionSurfaceStore.state(ctx.place?.kind === 'session' ? ctx.place.sessionId : null, entry.tabId).dirtyIn !== null, entry.state?.byHost === true),
     dispose: (entry, resource: ExtensionTabResource, ctx) => {
       // Drop what the extension said about this tab along with the tab. A
       // reopened tab is a new one and starts at its manifest title, not at the

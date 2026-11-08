@@ -13,6 +13,7 @@ import { createComputerFamily } from './computer'
 import { createMailFamily } from './mail'
 import { createMessagesFamily } from './messages'
 import { createNotesFamily } from './notes'
+import { createPerfFamily } from './perf'
 import { createRemindersFamily } from './reminders'
 import { createSystemFamily } from './system'
 
@@ -31,5 +32,6 @@ export function createAllFamilies(nativeDir: string | null): ActionFamily[] {
     createDeviceFamily(),
     createSystemFamily(),
     createExtrasFamily(),
+    createPerfFamily(),
   ]
 }

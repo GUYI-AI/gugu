@@ -13,7 +13,7 @@ function setup(points = 3, bytes = 100_000, ageMs = 1000) {
   const directory = mkdtempSync(join(tmpdir(), 'resource-history-')); directories.push(directory);
   const connection = new Database(join(directory, 'history.db')); connections.push(connection);
   connection.pragma('journal_mode = WAL');
-  connection.exec(readFileSync(new URL('../../../drizzle/0038_resource_history.sql', import.meta.url), 'utf8'));
+  for (const migration of ['0038_resource_history', '0047_resource_history_page']) connection.exec(readFileSync(new URL(`../../../drizzle/${migration}.sql`, import.meta.url), 'utf8'));
   return { connection, store: new ResourceHistoryStore(connection, { points, bytes, ageMs }) };
 }
 const sample = (timestamp: number, memory = 20): ResourceSnapshot => ({ timestamp, cpuCount: 1, totalMemoryBytes: 100, runId: 'a', app: { cpuPercent: 2, memoryBytes: memory }, appProcesses: [], entries: [] });
@@ -90,5 +90,21 @@ describe('bounded local resource history', () => {
     store.append({ ...sample(1), app: {} });
     expect(store.read().points[0].memory).toBeUndefined();
     expect((await exported(store)).samples[0].app).not.toHaveProperty('memoryBytes');
+  });
+  it('keeps page metrics per point and sums the last minute for the tiles and the external reading', () => {
+    const { store } = setup(100, 1_000_000, 1_000_000);
+    const paged = (at: number, longFrames: number, slowInteractions: number, styleLayoutMs?: number): ResourceSnapshot => ({
+      ...sample(at), page: { intervalMs: 3000, longFrames, blockingMs: 0, slowInteractions, ...(styleLayoutMs === undefined ? {} : { styleLayoutMs }) },
+    });
+    store.append(sample(1_000)); // before page metrics: no page columns
+    store.append(paged(10_000, 9, 9, 900)); // older than the window
+    store.append(paged(70_000, 2, 1, 120.5));
+    store.append(paged(73_000, 0, 0, 3.2));
+    store.append(paged(76_000, 1, 0));
+    expect(store.recent(76_000)).toEqual({ windowMs: 60_000, samples: 3, longFrames: 3, slowInteractions: 1, styleLayoutMs: 123.7 });
+    const points = store.read().points;
+    expect(points.find((p) => p.timestamp === 70_000)).toMatchObject({ longFrames: 2, slowInteractions: 1, styleLayoutMs: 120.5, pageIntervalMs: 3000 });
+    expect(points.find((p) => p.timestamp === 1_000)).not.toHaveProperty('longFrames');
+    expect(store.recent(1_000_000)).toEqual({ windowMs: 60_000, samples: 0, longFrames: 0, slowInteractions: 0 });
   });
 });

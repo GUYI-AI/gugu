@@ -105,6 +105,14 @@ export interface FamilyDeps {
   selfApp?(): SelfApp
   /** 电脑控制的「正在操作 · 停止」小条与人接管(computer-control.ts)。 */
   computerControl?: ComputerControlHooks
+  /** 咕咕自己的资源监视器读数(perf.*):和设置页同一份记录、同一层投影;监视器关着时抛 ResourceMonitorOffError。 */
+  perf?: PerfReadings
+}
+
+export interface PerfReadings {
+  snapshot(): unknown
+  history(since: number, until: number): unknown
+  capture(seconds: number): Promise<unknown>
 }
 
 /** 咕咕自己:电脑控制不许 agent 操作它。 */

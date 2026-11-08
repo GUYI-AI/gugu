@@ -283,8 +283,8 @@ export type DeviceBoundAgent = { id: string; display_name: string; avatar: strin
 export type GroupCollabLoad = { snapshot: GroupCollabSnapshot; identities: DisplayIdentity[] }
 
 /**
- * 名册读到 0 行。@@@5856 这**不是**「没权限」:话题里它的正常含义是「你看得见这条话题,但还不是
- * 它的参与者」(spec:参与靠说话或被 @ 进来)。调用方据此给一句能照做的话,❌ 不是「关掉再打开一次」。
+ * 名册读到 0 行。@@@5856 这**不是**加载故障:来源会话成员读得到话题参与者,0 行只在话题里已经没有在册的
+ * 参与者,或读的人不在来源会话时出现。调用方如实说「暂时看不到成员」,❌ 不是「关掉再打开一次」。
  */
 export class GroupCollabEmptyError extends Error { constructor() { super('Group collab roster is empty for this viewer') } }
 

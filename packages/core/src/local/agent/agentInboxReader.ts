@@ -48,7 +48,8 @@ import { coreLogger } from '../../log'
 import { agentFailureNeedsModelChoice, agentFailureReason, type AgentFailureReason } from '../../shared/agentQuotaReason'
 import { turnFailureMarker } from '../../shared/ui/systemNotice'
 import { sessionArchiveRefusesMessage, type SessionArchivalState } from '../../shared/sessionArchival'
-import { beginInboxAttempt, clearInboxRetry, resetInboxRetries, retryInboxFailure } from './inboxRetry'
+import { beginInboxAttempt, clearInboxReceiptRetry, clearInboxRetry, resetInboxRetries, retryInboxFailure, retryInboxReceipt } from './inboxRetry'
+import { isTransientNetworkError } from '../../shared/networkError'
 import { attachmentFailureReason, attachmentStage } from '../files/attachmentDiagnostics'
 
 const log = coreLogger('agent-inbox-reader')
@@ -1047,9 +1048,22 @@ async function settleAccepted(agentUserId: string, sources: readonly AgentInboxS
   }
 }
 
-/** An enqueuing host's agent accepted these rows: settle them exactly as an accepted injection does. */
-export function markInboxRowsRead(agentUserId: string, sources: readonly AgentInboxSource[], deps: AgentInboxReaderDeps): Promise<void> {
-  return settleAccepted(agentUserId, sources, deps)
+/**
+ * An enqueuing host's agent accepted these rows: settle them exactly as an accepted injection does. This runs outside
+ * any pull, so a receipt that failed on the network or a 5xx schedules its own bounded re-pull (`retryInboxReceipt`)
+ * — ❌ waiting for the next message to re-pull it. Any other refusal is not retried.
+ */
+export async function markInboxRowsRead(agentUserId: string, sources: readonly AgentInboxSource[], deps: AgentInboxReaderDeps): Promise<void> {
+  try {
+    await settleAccepted(agentUserId, sources, deps)
+    clearInboxReceiptRetry(agentUserId)
+  } catch (error) {
+    const status = (error as { status?: unknown } | null)?.status
+    if ((typeof status === 'number' && status >= 500) || isTransientNetworkError(error)) {
+      retryInboxReceipt(agentUserId, error, () => kickAgentInboxPull(agentUserId, deps, 'receipt-retry'))
+    }
+    throw error
+  }
 }
 
 /**

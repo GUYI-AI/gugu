@@ -125,6 +125,8 @@ const detachedPromptResponseSchema = z.object({
   steered: z.boolean().optional(),
   declined: z.boolean(),
   missing: z.literal(true).optional(),
+  /** Why the runtime declined before admission (a failed live setting), shown on the refused input. */
+  reason: z.string().optional(),
 });
 const detachedPromptWaitInputSchema = z.object({ requestId: z.string() });
 

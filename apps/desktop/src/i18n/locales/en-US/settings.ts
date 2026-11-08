@@ -373,7 +373,8 @@ export default {
         "alarm": "Alarms",
         "dnd": "Do Not Disturb",
         "timer": "Timer",
-        "health": "Health"
+        "health": "Health",
+        "perf": "Performance readings"
       },
       "groupDesc": {
         "calendar": "Used to view and manage calendars and events on this computer.",
@@ -395,7 +396,8 @@ export default {
         "shell": "Used to run local terminal and automation commands on this computer (asks you every time).",
         "notification": "Used to show system notifications on this computer.",
         "url": "Used to open web pages in this computer's default browser.",
-        "shortcuts": "Used to list and run your Shortcuts (asks you before every run)."
+        "shortcuts": "Used to list and run your Shortcuts (asks you before every run).",
+        "perf": "Used to read Gugu's own resource monitor (numbers only, no titles or content); asks you before recording a stretch."
       }
     },
     "cloud": {

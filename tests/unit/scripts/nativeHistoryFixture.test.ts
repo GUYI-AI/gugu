@@ -32,7 +32,12 @@ describe('history acceptance admission and fixture construction', () => {
           const records = bytes.toString('utf8').split('\n').filter(line => line.trim()).map(line => JSON.parse(line))
           expect(records.length).toBeGreaterThan(1)
           if (kind !== 'legacy-giant') expect(bytes.toString('utf8')).toContain(JSON.stringify(VISIBLE_MARKER).slice(1, -1))
-        } else expect(bytes.includes(Buffer.from('POISON_PREFIX'))).toBe(true)
+        } else {
+          expect(bytes.includes(Buffer.from('POISON_PREFIX'))).toBe(true)
+          // Discovery needs a real LF before the tail, independently of the hole's unknown start.
+          const lastLine = bytes.toString('utf8').split('\n').at(-2)!
+          expect(JSON.stringify(JSON.parse(lastLine))).toContain(JSON.stringify(VISIBLE_MARKER).slice(1, -1))
+        }
       }
     } finally { await rm(dir, { recursive: true, force: true }) }
   })

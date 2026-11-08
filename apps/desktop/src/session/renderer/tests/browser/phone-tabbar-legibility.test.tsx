@@ -4,10 +4,11 @@
  */
 import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, expect, it } from 'vitest'
+import { afterAll, afterEach, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { LocalizationProvider, getLocaleSnapshot, setLocalePreference } from '@/i18n'
 import { PhoneTabBar } from '@/mobile/PhoneTabBar'
+import { commandRegistry } from '@renderer/lib/commands/registry'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/i18n/registerMainCatalog'
 import '@/i18n/registerMessagingCatalog'
@@ -17,6 +18,9 @@ import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
 let root: Root | null = null
+// Releasing a press on search opens the global search panel; the shell mounts its host, this page stands one in.
+const releasePanelHost = commandRegistry.register({ scopeId: 'app', getCommands: () => [{ id: 'app.globalSearch', hideFromPalette: true, execute: () => {} }] })
+afterAll(releasePanelHost)
 const previousLocale = getLocaleSnapshot().preference
 afterEach(() => {
   setLocalePreference(previousLocale)

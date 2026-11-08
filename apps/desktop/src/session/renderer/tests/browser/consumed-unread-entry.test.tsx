@@ -104,7 +104,7 @@ async function renderConversation(width: number, naturallySeen = false, surface:
       isGroupChat: true, onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible: noop, selectMode: false,
       selectedIds: new Set(), onToggleSelect: noop, onEnterSelectMode: noop, flashMessageId, threeParty: undefined,
       onShowReadReceipt: undefined, onOpenMemberProfile: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
-      agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined, onOpenLocalFileLink: undefined, onMentionMember: undefined }
+      agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined, onMentionMember: undefined }
     return <><button onClick={pinToBottom}>Return to latest</button>
       <button onClick={() => setEmptySearch(!emptySearch)}>Toggle empty search</button>
       <button onClick={() => setHidden(!hidden)}>Toggle workspace</button>
@@ -163,10 +163,12 @@ describe('consumed first-unread entry', () => {
   ])('restores reading after consuming unread navigation and reopening its slot while the account observer survives at width $width ($scenario)', async ({ width, staleTailLevel }) => {
     const view = await renderConversation(width)
     await page.getByRole('button', { name: 'Return to latest' }).click()
-    await until('the latest window has filled its rows and reached its actual bottom', () => {
+    // The list reports the bottom after a painted frame (lib/afterPaint), so geometry alone arrives first. Until the window
+    // follows the tail, the withdrawal awaited below is already true and does not prove the scroll's painted frame was read.
+    await until('the latest window has filled its rows, reached its actual bottom and follows the tail', () => {
       const surface = view.scroller()
       return !view.history.getSnapshot().hasNewer && surface.querySelectorAll('[data-msg-id]').length === view.history.getSnapshot().messages.length
-        && surface.scrollHeight - surface.scrollTop - surface.clientHeight <= 1
+        && surface.scrollHeight - surface.scrollTop - surface.clientHeight <= 1 && view.history.isFollowingTail()
     })
     const visible = () => {
       const surface = view.scroller(), bounds = surface.getBoundingClientRect()

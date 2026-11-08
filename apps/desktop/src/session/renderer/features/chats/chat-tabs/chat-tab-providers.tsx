@@ -1,11 +1,10 @@
 import { observer } from 'mobx-react-lite';
-import { createContext, useCallback, useContext, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Folder, MessageSquare, Users } from '@/lib/icons';
 import { FileIcon } from '@renderer/lib/editor/file-icon';
 import { chatTabSlotKey, readShellSlots } from '@/lib/shellSlots';
-import { readChatSummary, subscribeChatSummaries } from '@/lib/chatSummariesBridge';
-import { chatFolderNameKeyOf } from '@/components/chat/chatFolderName';
+import { useChatFolderName } from '@/components/chat/chatFolderName';
 import { RailAppIcon } from '@/components/RailAppIcon';
 import { FileHostMark } from '@/components/appSlot/FileHostMark';
 import { openFileStorageSettings, useFileHost } from '@/lib/fileHost';
@@ -23,6 +22,7 @@ import { groupPageSlot, isFolderItem, panelItemKey, type PanelItem } from './cha
 import { takeRestore } from './chat-tab-restores';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { RetainedTabContent, useRetainedTabs } from '@renderer/features/tabs/retained-tab-content';
+import { SIDE_PAGE_WIDTH_PX } from '@renderer/features/tabs/side-width';
 
 /** The chat itself: its messages and composer, first in its strip, never closed. */
 export const CHAT_TAB_KIND = 'chat';
@@ -39,8 +39,6 @@ export const CHAT_INFO_TAB_KIND = 'chat-info';
 export type ChatTabState = { chatId: string };
 export type ChatTopicState = { topicChatId: string; name: string };
 export type ChatInfoState = { group: boolean; page?: 'main' | 'members' | 'announcement'; at?: number; topic?: ChatTopicState };
-
-/** A list of rows: as wide as the drawers it replaces (spec session-page「并排」: a page declares its width beside the chat). */
 
 /** The chat a strip belongs to (its place, `chat-layouts`). */
 export const chatIdOfView = (ctx: TabViewContext): string => (ctx.place?.kind === 'chat' ? ctx.place.chatId : '');
@@ -95,20 +93,9 @@ export const chatTabProvider = createTabProvider<typeof CHAT_TAB_KIND, ChatTabSt
   TabContent: ChatTabContent,
 });
 
-/** What people call this chat's folder, read where the shell's chat list is not (chatFolderNameKey). */
-function useFolderName(chatId: string): string {
-  const { t } = useTranslation('messaging');
-  // Re-read when the summaries change (a chat renamed into a group's topic is still that group's).
-  useSyncExternalStore(subscribeChatSummaries, () => readChatSummary(chatId));
-  return t(chatFolderNameKeyOf(chatId, (id) => {
-    const summary = readChatSummary(id);
-    return summary ? { kind: summary.kind, source_chat_id: summary.sourceChatId } : null;
-  }));
-}
-
 /** A panel tab's name as its strip says it: what its page called itself, else the App's tab title or the file's name. */
 function usePanelPresentation(chatId: string, tabId: string, item: PanelItem) {
-  const folderName = useFolderName(chatId);
+  const folderName = useChatFolderName();
   return extensionTabTitle(
     extensionSurfaceStore.said(null, groupPageSlot(chatId, tabId)),
     isFolderItem(item) ? folderName : item.kind ? (installedExtensionsStore.tabTitle(item.kind) ?? item.title) : item.title,
@@ -188,6 +175,8 @@ export const chatPanelTabProvider = createTabProvider<typeof CHAT_PANEL_TAB_KIND
   kind: CHAT_PANEL_TAB_KIND,
 
   resourceKey: panelItemKey,
+  // An App's own page beside the chat is as wide as its manifest says (`sideWidth`); a file is the chat's peer: half each.
+  sideWidth: (item) => (item.kind && !item.itemId ? installedExtensionsStore.sideWidth(item.kind) : undefined),
   // The host's preview holds a message and a file version of this moment: gone with the window, as before.
   isPersistent: (item) => item.kind !== null,
   initialize: stateResource,
@@ -256,6 +245,7 @@ export const chatInfoTabProvider = createTabProvider<typeof CHAT_INFO_TAB_KIND, 
   isPersistent: (state) => !state.topic,
 
   resourceKey: (state) => `${state.topic?.topicChatId ?? ''}:${state.page}:${state.at ?? ''}`,
+  sideWidth: () => SIDE_PAGE_WIDTH_PX,
   initialize: stateResource,
   dispose: () => {},
   TabBarItem: InfoTabItem,
