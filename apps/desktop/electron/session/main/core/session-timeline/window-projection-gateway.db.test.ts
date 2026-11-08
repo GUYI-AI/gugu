@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { openPhysicalDatabase } from '../../db/physical-connection';
 import { linkSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,7 +11,7 @@ describe('physical canonical DB projection gateway', () => {
   const gateways: ReturnType<typeof openWindowProjectionGateway>[] = [];
   beforeEach(() => {
     directory = mkdtempSync(join(tmpdir(), 'projection-gateway-'));
-    connection = new Database(join(directory, 'canonical.sqlite'));
+    connection = openPhysicalDatabase(join(directory, 'canonical.sqlite'));
     connection.exec('CREATE TABLE actual_rows(id TEXT PRIMARY KEY)');
     mkdirSync(join(directory, 'cache-a')); mkdirSync(join(directory, 'cache-b'));
   });
@@ -26,7 +27,7 @@ describe('physical canonical DB projection gateway', () => {
     for (const alias of ['symbolic.sqlite', 'hard.sqlite']) {
       if (alias === 'symbolic.sqlite') symlinkSync(connection.name, join(directory, alias));
       else linkSync(connection.name, join(directory, alias));
-      const other = new Database(join(directory, alias));
+      const other = openPhysicalDatabase(join(directory, alias));
       try { expect(() => open(other, 'cache-b')).toThrow('gateway'); } finally { other.close(); }
     }
     await first.close(); const next = open(connection, 'cache-b'); next.proof.assertHeld();
@@ -49,6 +50,12 @@ describe('physical canonical DB projection gateway', () => {
     gate.resolve(); await rejected;
     rmSync(join(directory, 'cache-a'), { recursive: true }); renameSync(join(directory, 'retired-cache'), join(directory, 'cache-a'));
     expect(() => first.proof.assertHeld()).toThrow('gateway');
+  });
+  it('rejects a DB path replaced after connection open but before the first gateway', () => {
+    renameSync(connection.name, join(directory, 'retired.sqlite'));
+    const replacement = new Database(connection.name); replacement.close();
+    expect(connection.prepare('SELECT COUNT(*) AS count FROM actual_rows').get()).toEqual({ count: 0 });
+    expect(() => open()).toThrow('gateway');
   });
   it('refuses a replaced DB path even while the original connection remains open', () => {
     const first = open(); renameSync(connection.name, join(directory, 'retired.sqlite'));
