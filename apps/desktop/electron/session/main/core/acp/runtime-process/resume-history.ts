@@ -22,17 +22,18 @@ type Deps = {
  * - 回合序号从库里接着数,❌ 从 0 数撞上上一次运行留下的同名回合。
  *
  * 记录这次读不出来(没有、读失败)⇒ 照旧重放:那是 agent 自己那份历史唯一还拿得到的路。
- * 只有 Claude、Codex、Hermes 三家不重放(`recordIdentityFor`);其余几家照旧重放。新开、分叉、还没有 provider 会话的不是「接回」,三格都不带。
+ * 只有 Claude、Codex、Hermes 三家不重放(`recordIdentityFor`);其余几家照旧重放。分叉不是「接回」,三格都不带。
+ * 新开(还没有 provider 会话)只带回合序号:引擎换过的会话库里已有回合,从 0 数会和它们撞号,新的回合被当成重复藏起来。
  * 读不了记录的那几家也带上回合序号:适配器只声明了 `session/resume` 时运行时不会有重放,回合从库尾接着数
  * (用不用由运行时按适配器的能力定,重放的那几家照旧从 0 数)。
  * 三格**无条件写回**(缺席也写成 undefined):它们只由宿主给,渲染进程递来的同名字段不许穿过。
  */
 export async function resumeHistoryFacts(input: AcpRuntimeStartInput, deps: Deps): Promise<ResumeHistoryFacts> {
   const none: ResumeHistoryFacts = { replayHistory: undefined, recordedDeliveryIds: undefined, turnIndexBase: undefined };
-  if (!input.providerSessionId || input.forkFromProviderSessionId) return none;
+  if (input.forkFromProviderSessionId) return none;
   const readTurnIndexBase = deps.turnIndexBase
     ?? (async (id: string) => (await import('@main/core/sessions/session-turn-store')).storedTurnIndexBase(id));
-  if (!recordIdentityFor(sessionRecordHarnessForProvider(input.providerId))) {
+  if (!input.providerSessionId || !recordIdentityFor(sessionRecordHarnessForProvider(input.providerId))) {
     try {
       return { ...none, turnIndexBase: await readTurnIndexBase(input.sessionId) };
     } catch (error) {

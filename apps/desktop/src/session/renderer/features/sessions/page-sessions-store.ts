@@ -223,11 +223,17 @@ export class PageSessionsStore implements IDisposable {
   }
 
   /**
-   * spec session-resume:引擎侧什么都没有的会话,照咕咕记着的那句首轮重来。
+   * spec session-resume:引擎侧什么都没有的会话,换一条新的引擎会话,等下一句话才起。
    * ❌ 不是新建一条顶上 —— 会话 id、标题、在任务里的位置原样保留。
    */
   async restartSession(sessionId: string): Promise<void> {
     await rpc.sessions.restartSession(this.projectId, sessionId);
+    // The change event may arrive after this reply, and the caller reopens from this record now.
+    const store = this.sessions.get(sessionId);
+    if (store) runInAction(() => {
+      store.data.providerSessionState = undefined;
+      store.data.providerSessionId = undefined;
+    });
   }
 
   /**

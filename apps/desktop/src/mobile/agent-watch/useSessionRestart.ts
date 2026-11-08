@@ -80,8 +80,14 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
     setBusy(key); setError(null); setView(null)
     try {
       const host = machineRpc(deviceId, local)
-      if (fresh) await host.sessions.restartSession(projectId, sessionId)
-      else await host.sessions.lifeStart(sessionId)
+      if (fresh) {
+        // Replacing the engine session starts nothing, so no lifecycle view will settle this attempt.
+        await host.sessions.restartSession(projectId, sessionId)
+        if (current.current === key && inFlight.current === request) {
+          setAttempt(null)
+          await ready.current()
+        }
+      } else await host.sessions.lifeStart(sessionId)
     } catch (cause) {
       // Once the host has progressed, its lifecycle settles this attempt even if the RPC acknowledgement is lost.
       if (current.current === key && inFlight.current === request && observed.current !== request) {

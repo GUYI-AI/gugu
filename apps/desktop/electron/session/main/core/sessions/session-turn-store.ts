@@ -214,6 +214,12 @@ export async function storedTurnIndexBase(sessionId: string): Promise<number> {
   return max + 1;
 }
 
+/** The seq the next stored turn will take: every turn stored so far is below it. */
+export async function storedTurnEnd(sessionId: string): Promise<number> {
+  await persistenceTails.get(sessionId);
+  return nextSeq(sessionId);
+}
+
 async function storedTurnCount(sessionId: string): Promise<number> {
   const rows = await db
     .select({ count: sql<number>`count(*)` })

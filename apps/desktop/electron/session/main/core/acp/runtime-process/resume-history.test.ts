@@ -93,4 +93,9 @@ describe('resuming without replay (#980)', () => {
     });
     expect(facts).toEqual({ replayHistory: undefined, recordedDeliveryIds: undefined, turnIndexBase: undefined });
   });
+
+  it('a fresh start continues turn numbers after the stored ones, with nothing to replay', async () => {
+    const facts = await resumeHistoryFacts(input({ providerSessionId: null }), { turnIndexBase: async () => 5 });
+    expect(facts).toEqual({ replayHistory: undefined, recordedDeliveryIds: undefined, turnIndexBase: 5 });
+  });
 });

@@ -120,6 +120,8 @@ const ptyConfigV1 = z.object({
    * ❌ 不是投递载荷:载荷是上面的 `initialPrompt`,可能已经被投递路径搬走。
    */
   firstUtterance: z.string().optional(),
+  /** The engine session was replaced here: stored turns below this seq are the new engine's prior conversation. */
+  priorTurnsBefore: z.number().int().nonnegative().optional(),
   startupOrigin: z.enum(['chat-page', 'session-page']).optional(),
   /** Stable id for a startup-delivered first user message. */
   initialMessageId: z.string().optional(),
@@ -187,6 +189,8 @@ const acpConfigV1 = z.object({
   pendingRestart: pendingRestartSchema.optional(),
   /** spec session-resume:口径与 pty 那份完全一致 —— 咕咕记着的那句首轮。 */
   firstUtterance: z.string().optional(),
+  /** The engine session was replaced here: stored turns below this seq are the new engine's prior conversation. */
+  priorTurnsBefore: z.number().int().nonnegative().optional(),
   startupOrigin: z.enum(['chat-page', 'session-page']).optional(),
   /** Stable id for a startup-delivered first user message. */
   initialMessageId: z.string().optional(),

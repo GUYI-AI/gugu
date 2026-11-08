@@ -27,6 +27,7 @@ import {
 import { resumeHistoryFacts } from './runtime-process/resume-history';
 import { renderFirstTurn } from '@gugu/core/local/agent/firstTurnRender';
 import { ACP_START_FAILED } from '@shared/core/sessions/session-life';
+import { priorConversationBlock } from '../sessions/prior-conversation';
 import { lifeStore } from '../sessions/session-pending';
 import { forkStore } from '../sessions/session-life-forks';
 import { log } from '@main/lib/logger';
@@ -165,8 +166,12 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
     },
     async platform(have): Promise<PlatformTicket> {
       const { injection, facts: f } = read<Capabilities>(have.capabilities);
+      const prior = fork ? null : await priorConversationBlock(sessionId);
+      const sessionPrompt = prior
+        ? { value: [injection.sessionPrompt?.value, prior].filter(Boolean).join('\n\n'), carrier: injection.sessionPrompt?.carrier ?? 'system' as const }
+        : injection.sessionPrompt;
       const platform = await withEmdashPlatformInjection(
-        injection.command, lifecycleOf(known(), fork), f, injection.mcpServers, injection.sessionPrompt, injection.sessionMeta,
+        injection.command, lifecycleOf(known(), fork), f, injection.mcpServers, sessionPrompt, injection.sessionMeta,
         injection.capabilitySpawnEnv, injection.capabilitySpawnArgs, injection.platformConfigured,
         injection.platformAccessSessionId, injection.platformModel,
       );

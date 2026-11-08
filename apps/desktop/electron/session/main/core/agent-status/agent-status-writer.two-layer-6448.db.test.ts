@@ -214,14 +214,14 @@ describe('#6448 基础态 + 附属态 + 功能布尔', () => {
       agentStatusDetail: 'running',
     });
     expect(outputs.length).toBe(before + 1);
-    expect(outputs.at(-1)).toEqual({ status: 'working', detail: 'running', running: true, background: null });
-    expect(row()).toEqual({ status: 'working', detail: 'running', seen: 1 });
-    await deliverNoop(event('start'));
+    expect(outputs.at(-1)).toMatchObject({ status: 'idle', running: false });
+    expect(row()).toMatchObject({ status: 'idle', seen: 1 });
+    await deliver(event('start'));
     await deliver(event('stop'));
     expect(row()).toEqual({ status: 'idle', detail: 'done', seen: 0 });
   });
 
-  it('重开也是出生:做完的会话重开 ⇒ 日志从 working/running 重新开始并播出,这一轮照常收口', async () => {
+  it('引擎会话换新:日志重新开始并播出,没有一轮在跑;下一轮照常开始、收口', async () => {
     seed('working');
     await deliver(event('stop'));
     expect(row()).toEqual({ status: 'idle', detail: 'done', seen: 0 });

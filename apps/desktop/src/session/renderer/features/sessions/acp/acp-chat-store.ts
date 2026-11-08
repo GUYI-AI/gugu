@@ -411,6 +411,7 @@ export class AcpChatStore {
       setDraftText: action,
       exportTranscript: action,
       retry: action,
+      reopen: action,
       installVisualEvidenceFixture: action,
     });
   }
@@ -1229,6 +1230,11 @@ export class AcpChatStore {
 
   retry(): void {
     this._retry(this._reopenOnRetry ? 'open' : 'start');
+  }
+
+  /** The engine session was replaced: draw the page parked, and the next message starts it. */
+  reopen(): void {
+    this._retry('open');
   }
 
   /**

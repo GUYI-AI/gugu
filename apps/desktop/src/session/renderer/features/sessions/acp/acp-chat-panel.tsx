@@ -1822,12 +1822,12 @@ export const AcpChatPanel = observer(function AcpChatPanel({
    */
   // 会话还在起这件事 ❌ 不进这一格(behavior session-page「打开速度」):首条消息下面那一行自己写「启动中」,计时从发出算;
   // 「正在打开引擎会话」一类的启动步骤对用户不存在。要人做的事(登录、会员)照常在下面说。
-  // 「重来」在途:按钮停下,❌ 连点各投一遍首轮。
+  // 换引擎会话在途:按钮停下。
   const [restarting, setRestarting] = useState(false);
   const conditionRuns = useRef<readonly ((anchor?: HTMLElement) => void)[]>([]);
   useEffect(() => {
     if (!store) return;
-    // 有没有可重来的首轮,**进这一行之前就知道**(同 ProviderSessionMissingView 的判据)。
+    // 能不能换引擎会话,**进这一行之前就知道**(同 ProviderSessionMissingView 的判据)。
     const canRestartSession = canStartFreshSession('provider_session_missing',
       sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId)?.data
         .firstUtterance
@@ -1938,9 +1938,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           };
         case 'provider_session_missing':
           // 上面的聊天记录都还在(库里那份先画出来了);没的是引擎那侧的上下文。
-          // ⚠️ 必须给出路:`restartSession` 是全产品唯一一条「照记着的首轮重来」的路
-          //    (spec session-resume),此前它只挂在被这次改造拆掉的那张整屏页上。
-          //    没有首轮可重来的存量空壳会话不摆这颗 —— ❌ 不摆点下去才发现不行的按钮。
+          // ⚠️ 必须给出路:`restartSession` 换一条新的引擎会话,带着前文等下一句话(spec session-resume)。
+          //    存量空壳会话不摆这颗 —— ❌ 不摆点下去才发现不行的按钮。
           return {
             code: 'provider-session-missing',
             detail: error.message,
@@ -1957,7 +1956,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
                       void sessionRegistry
                         .get(store.sessionId)
                         ?.restartSession(store.sessionId)
-                        .then(() => store.retry())
+                        .then(() => store.reopen())
                         .catch(() => {})
                         .finally(() => setRestarting(false));
                     },

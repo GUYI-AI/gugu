@@ -975,6 +975,7 @@ export class SessionManager implements InboundRouter {
       }
 
       if (record.phase === 'starting') {
+        if (input.turnIndexBase !== undefined) record.cell.continueTurnIndexAt(input.turnIndexBase);
         // Own the startup queue in the runtime from the moment the adapter connection exists.
         // The provider session id is not known yet, but queued prompts do not need an ACP address
         // until SessionReady drains them. This removes the renderer-side handoff window.

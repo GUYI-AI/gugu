@@ -282,7 +282,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
   }
 
   /**
-   * 重开 = 这一句重新跑:日志重新开始,写库、发布。会话行的其它列由调用方改,状态列只有这里写。
+   * 引擎会话换新:日志重新开始,没有一轮在跑,写库、发布。会话行的其它列由调用方改,状态列只有这里写。
    */
   restart(params: StatusWriteParams): Promise<void> {
     return this.inOrder(params.sessionId, async () => {
@@ -293,7 +293,6 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
         state: emptyStatusLogState(),
         written: previous.written,
       };
-      entry.state.running = true;
       this.logs.set(params.sessionId, entry);
       await this.publish(params.sessionId, entry, readStatusLog(entry.state), false, this.now(), { persist: true, active: true });
     });

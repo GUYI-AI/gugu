@@ -419,7 +419,7 @@ export class LocalSessionProvider implements SessionProvider {
       // ⚠️ 这道闸必须**自己再判一次**「这一家真的吃启动 prompt 吗」,❌ 不能只信渲染进程当初的选路。
       //    反例是可达的:一条对话页会话建成时 provider 声明 `argv`(于是带上了 startupOrigin +
       //    initialMessageId),之后那一家的声明被改成 `keystroke`(本 PR 对 kimi 做的正是这种改动)——
-      //    `restart-session.ts` 会原样保留 startupOrigin/initialMessageId 并重新给出 initialPrompt,
+      //    行上的 startupOrigin/initialMessageId 与还没投出去的 initialPrompt 都原样留着,
       //    于是 `planSystemBootstrap` 返回 `{ readyText: <信封> }`,**整个 route=chat 信封会被打进 pty**
       //    —— 正是本 PR 与 [[session-injection]]「禁止写 pty」要判死的那件事。
       //    ACP 腿早有对称的闸(main.ts:`initialMessageId && !startupOrigin` 即抛),PTY 腿补上。

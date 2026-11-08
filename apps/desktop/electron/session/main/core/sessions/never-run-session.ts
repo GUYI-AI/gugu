@@ -19,8 +19,8 @@ export const RESIDENT_AGENT_FIRST_UTTERANCE = 'preset team member runtime';
  *
  * 不认的两种,照旧如实报 missing:
  * - 有已提交回合(`session_turns`,#5381)= 聊过。
- * - 记着真首轮的 = 首轮没跑完的会话,spec session-resume 说照**那句**重来,由界面的「重来」走 restartSession;
- *   这里 ❌ 不替它重放 —— 存下来的那句没有当时的投递信封,原样重发会把回复送错地方。
+ * - 记着真首轮的 = 首轮没跑完的会话,由界面上的人决定怎么接着走(restartSession);
+ *   这里 ❌ 不替它决定。
  *
  * ⚠️ 盲区:#5381 之前聊过、之后没重开过(或从编程模式切过来)的会话同样没有回合行;若它恰好也没有真首轮,
  * 会被认成这一种。runtime 新开时照旧画「往上的内容它没有」那条界,如实告知,❌ 静默换掉。

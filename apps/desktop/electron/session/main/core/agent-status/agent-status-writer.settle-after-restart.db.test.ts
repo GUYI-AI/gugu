@@ -118,8 +118,7 @@ describe('settling after a restart leaves sessions whose engine survived in tmux
     expect(turnCount()).toEqual(historyBefore);
 
     await agentStatusWriter.restart({ sessionId: 'acp', projectId: 'p1' });
-    expect(status('acp').status).toBe('working');
-    expect(readInterruptedTurn('acp')).toBeNull();
+    expect(status('acp').status).toBe('idle');
   });
 
   it('no word left by the last exit = it did not shut down cleanly', async () => {

@@ -5648,14 +5648,14 @@ app.whenReady().then(async () => {
       }
       // @@@5004 首句只随首次 spawn 的载荷来(spec delivery-routing)。`startupOrigin`/`initialMessageId`
       // 是创建那一刻的事实、随会话永久持久化;`initialMessageText` 才是这次 start 的载荷 —— 渲染端只在
-      // 行上 sessionId 为空时(首次 spawn / restart)才把 initialQueue 递过来。会话页 store 重建后重新
+      // 行上 sessionId 为空时(首次 spawn)才把 initialQueue 递过来。会话页 store 重建后重新
       // 挂载(渲染进程重载、页签释放过宽限)、宿主唤醒冷会话,都是「再打开一条启动过的会话」:没有
       // 载荷,注入器就无事可做。此前这里对每一次 lifecycle=fresh 的 chat-page start 都索要 id+text,
       // 于是聊天页照常回复、会话页却报 requires initial message id and text —— 把一条活着的会话读成
       // 打不开。与 PTY 腿(local-session.ts 的 chatPageFirstTurn)同一判据:有载荷才落首句。
       // 这一腿上两种不一致仍响亮失败:载荷在而稳定 id 缺(没有 id 就写不出那条幂等的聊天行);
-      // 行上 sessionId 为空(首次 spawn / 重来)却没带载荷 —— 那是载荷没跟上会话行,❌ 不许静默开一条
-      // 空会话冒充首轮(重来路径的载荷失联本身归 session-resume 那条票,这里只保证它响亮)。
+      // 行上 sessionId 为空(首次 spawn)却没带载荷 —— 那是载荷没跟上会话行,❌ 不许静默开一条
+      // 空会话冒充首轮。换引擎会话(restart-session)不走这道闸:它把 initialMessageId 这张欠条一起去掉了。
       // gugu-dev#181:派出去的任务(taskChatId)与对话页同形 —— 首句是一条真的咕咕消息(那张任务卡)。
       const chatPageFirstTurnText = (info.startupOrigin === 'chat-page' || info.taskChatId) && info.lifecycle === 'fresh'
         ? info.initialMessageText?.trim()
