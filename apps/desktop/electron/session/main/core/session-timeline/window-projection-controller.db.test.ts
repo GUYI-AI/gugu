@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -110,5 +111,13 @@ describe('registered projection RPC with real source, publication, handles and p
     await entered.promise; release(920); gate.resolve();
     await expect(reading).resolves.toMatchObject({ ok: false });
     await expect(call(921, 'sessionWindowProjectionBodyRead', { ...owner, handle: opened.handle })).resolves.toMatchObject({ ok: false });
+  });
+  it('rejects physical source deletion after the host helper returns and before the public reply', async () => {
+    const opened = await body(), { createWindowCommitReceipts } = await import('./window-commit-receipt');
+    const { windowCommitSourcePath } = await import('./window-commit-source');
+    const receipt = createWindowCommitReceipts(fixture.sqlite).bySource(position.projectionId.split('/')[0])!;
+    state.afterRun = () => { rmSync(windowCommitSourcePath(join(state.directory, 'session-window-cache', 'committed'), receipt.binding)); };
+    await expect(call(920, 'sessionWindowProjectionBodyRead', { ...owner, handle: opened.handle }))
+      .resolves.toMatchObject({ ok: false, error: { code: 'needs_location' } });
   });
 });
