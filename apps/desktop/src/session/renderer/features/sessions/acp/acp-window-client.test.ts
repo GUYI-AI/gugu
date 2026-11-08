@@ -115,6 +115,26 @@ describe('ACP window IPC binding', () => {
     expect(wire.invoke).toHaveBeenLastCalledWith('sessionTimeline.sessionUnsubscribe', { subscriptionId: 'old-opening' });
   });
 
+  it.each(['replaced', 'closed'] as const)('does not publish materialized content after its owner is %s', async reason => {
+    const body = Promise.withResolvers<string>(), materialize = vi.fn(() => body.promise);
+    const resident = ['already painted body'], commit = vi.fn((value: string) => { resident.push(value); }), failed = vi.fn();
+    let current = true;
+    wire.invoke.mockImplementation(async channel => channel.endsWith('LiveRead') ? { ok: true, value: livePage(8) } : undefined);
+    const reader = startAcpWindowCommitIpc({ conversationId: 'conversation', subscriptionId: 'old-opening', after: at(7) }, {
+      isCurrent: () => current, materialize, commit, failed,
+    }); cleanups.push(reader.close);
+    await vi.waitFor(() => expect(materialize).toHaveBeenCalledOnce());
+    if (reason === 'replaced') current = false;
+    else reader.close();
+    body.resolve('late old body'); await reader.completed;
+    expect(resident).toEqual(['already painted body']); expect(commit).not.toHaveBeenCalled();
+    expect(failed).not.toHaveBeenCalled();
+    expect(wire.invoke.mock.calls).toEqual([
+      ['sessionTimeline.sessionWindowLiveRead', { conversationId: 'conversation', subscriptionId: 'old-opening', after: at(7) }],
+      ['sessionTimeline.sessionUnsubscribe', { subscriptionId: 'old-opening' }],
+    ]);
+  });
+
   it('discards a late failure after the store generation changed without reporting it to the new opening', async () => {
     const waiting = Promise.withResolvers<unknown>(), failed = vi.fn(); let current = true;
     wire.invoke.mockImplementation(channel => channel.endsWith('LiveRead') ? waiting.promise : Promise.resolve(undefined));

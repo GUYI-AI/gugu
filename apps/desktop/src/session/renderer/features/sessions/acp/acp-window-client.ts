@@ -33,10 +33,15 @@ export function startAcpWindowCommitIpc<Resident>(
 ) {
   const owner = { conversationId: input.conversationId, subscriptionId: input.subscriptionId };
   let closed = false;
-  const client = createAcpWindowLiveReadIpcClient(owner, () => !closed && port.isCurrent());
+  const current = () => !closed && port.isCurrent();
+  const client = createAcpWindowLiveReadIpcClient(owner, current);
   return startAcpWindowCommitReader(input.after, {
     read: client.read, cursor: page => page.next, materialize: page => port.materialize(page),
-    commit: (resident, page) => port.commit(resident, page), ack: client.ack,
+    commit(resident, page) {
+      // Materialization awaits body pages after the RPC ownership check.
+      if (!current()) throw Object.assign(new Error('The history view was released'), { code: 'unsubscribed' });
+      port.commit(resident, page);
+    }, ack: client.ack,
     release() { closed = true; void acpWindowHistoryClient.unsubscribe(owner.subscriptionId).catch(() => undefined); },
     failed(error) { if (port.isCurrent()) port.failed(error); },
   });
