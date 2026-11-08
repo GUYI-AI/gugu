@@ -1302,6 +1302,14 @@ export class SessionManager implements InboundRouter {
       }
       record = this.cells.get(sessionId);
     }
+    // A lost record is kept only for the next explicit attempt to recover it. The owner stopping the session ends
+    // that: otherwise its provider session would be loaded again by the next start, even one the host made fresh
+    // (the engine session replaced after it went missing).
+    if (record?.phase === 'lost') {
+      record.live.dispose();
+      this.disposeLostRecord(record);
+      return ok();
+    }
     if (!record || record.phase !== 'ready') return ok();
     // Withdraw admission synchronously, before session/close can remove the provider-side id.
     record.closing = true;

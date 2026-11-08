@@ -2861,6 +2861,20 @@ describe('AcpRuntime session manager', () => {
     expect(h.agent.prompt).toHaveBeenCalledTimes(3);
   });
 
+  it('stopping a lost session ends it: the next start is fresh, not a recovery of the provider session that was lost', async () => {
+    const { h, rt } = await startHarness('conv-lost-stopped');
+    h.lastChild.emitExit(137);
+    await untilSessionSummary(rt, 'conv-lost-stopped', 'the session is lost', (summary) => summary?.lifecycle === 'lost');
+
+    await expect(rt.stopSession('conv-lost-stopped')).resolves.toMatchObject({ success: true });
+    expect(rt.sessionLiveModels('conv-lost-stopped')).toBeNull();
+
+    h.agent.newSession.mockResolvedValueOnce({ sessionId: 'session-2' });
+    await expect(rt.startSession(makeStartInput({ sessionId: 'conv-lost-stopped' })))
+      .resolves.toMatchObject({ success: true, data: { providerSessionId: 'session-2' } });
+    expect(h.agent.loadSession).not.toHaveBeenCalled();
+  });
+
   /**
    * ⭐ **防回归的那一条(#5858 的要害)。**
    *
