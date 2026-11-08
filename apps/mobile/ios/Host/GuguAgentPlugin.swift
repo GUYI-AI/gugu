@@ -27,7 +27,10 @@ final class GuguAgentPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func hostCall(_ call: CAPPluginCall) { service.hostCall(call.jsObjectRepresentation) { call.resolve($0) } }
     @objc func stopHost(_ call: CAPPluginCall) { service.stopHost(call.jsObjectRepresentation) { self.settle(call, $0) } }
     @objc func authSession(_ call: CAPPluginCall) {
-        service.authSession(call.jsObjectRepresentation) { response in
+        // Shared phoneHostAuth still carries a legacy refreshToken argument.
+        // Read only the action; never materialize/pass that credential object.
+        guard let action = call.getString("action") else { call.reject("Auth delegation action is required", "invalid_args"); return }
+        service.authSession(["action": action]) { response in
             switch response {
             case .success(let value): call.resolve(value)
             case .failure(let error): let safe = GuguIOSNativeBackend.safe(error); call.reject(safe.message, safe.code)

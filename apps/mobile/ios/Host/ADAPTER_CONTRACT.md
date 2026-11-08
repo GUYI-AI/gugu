@@ -25,6 +25,12 @@ A provides the shared-login side and native registration. B owns Host implementa
 
 The `authSession` Swift completion is `Result<[String:Any],Error>`: successful get/refresh delegation returns available=false; sign-out first awaits actual backend stop. A must reject the Capacitor promise on `.failure`, including repeated stop failure. A JSON error object resolved as successful auth would accidentally trigger the shared logout fallback. For configure/hostState/stopHost, an adapter `error` envelope also rejects the plugin promise; hostCall alone returns the existing result-or-error host envelope.
 
+The plugin's auth method extracts only `call.getString("action")`; it must never
+forward `call.jsObjectRepresentation` into the service. The existing shared
+phoneHostAuth refresh caller still includes a legacy refreshToken field. It is
+neither read nor passed onward; refresh continues through available=false into
+the existing coordinator fallback. Configure remains strict and rejects tokens.
+
 Mutating calls persist custody before backend invocation. A duplicate in flight returns admission_uncertain, a restarted uncertain call goes to backend.reconcile, and a completed receipt rechecks authorizeReplay. The backend must reconcile actual per-phase cloud/native IDs rather than execute again. Terminal host receipts cannot be overwritten; late receipts remain stored under their original owner after retirement but cannot be delivered to the next owner. Startup reads are never permanently cached as not-ready. These properties have only injected-backend macOS tests until a real backend and App path exist.
 
 ## Owner and calendar category boundary
