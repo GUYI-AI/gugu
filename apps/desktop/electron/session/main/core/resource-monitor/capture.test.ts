@@ -1,7 +1,8 @@
 import { writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { describe, expect, it, vi } from 'vitest';
-const tracing = vi.hoisted(() => ({ release: () => {}, file: '' }));
+import { until } from '../../../../../../../tests/support/awaitCondition';
+const tracing = vi.hoisted(() => ({ release: undefined as (() => void) | undefined, file: '' }));
 vi.mock('electron', () => ({
   app: { getPath: () => tmpdir() },
   webContents: { getAllWebContents: () => [] },
@@ -55,14 +56,14 @@ describe('recordTrace', () => {
   it('runs one recording at a time, returns its events and deletes the raw trace', async () => {
     const first = recordTrace({}, 0, 'test');
     await expect(recordTrace({}, 0, 'test')).rejects.toThrow('in progress');
-    await vi.waitFor(() => expect(tracing.release).not.toBe(undefined));
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    tracing.release();
+    await until('first recording reached stopRecording', () => tracing.release !== undefined);
+    tracing.release!();
     await expect(first).resolves.toEqual([{ name: 'x' }]);
     expect(existsSync(tracing.file)).toBe(false);
+    tracing.release = undefined;
     const second = recordTrace({}, 0, 'test');
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    tracing.release();
+    await until('second recording reached stopRecording', () => tracing.release !== undefined);
+    tracing.release!();
     await expect(second).resolves.toHaveLength(1);
   });
 });
