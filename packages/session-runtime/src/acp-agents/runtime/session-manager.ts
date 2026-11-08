@@ -1270,7 +1270,7 @@ export class SessionManager implements InboundRouter {
     return record.cell.setPromptDraft(draft);
   }
 
-  async stop(sessionId: string, onlyIfIdle = false): Promise<Result<void, AcpStopSessionError>> {
+  async stop(sessionId: string, onlyIfIdle = false, forgetLost = false): Promise<Result<void, AcpStopSessionError>> {
     const pending = this.stoppingSessions.get(sessionId);
     if (pending) return pending;
     let record = this.cells.get(sessionId);
@@ -1302,12 +1302,15 @@ export class SessionManager implements InboundRouter {
       }
       record = this.cells.get(sessionId);
     }
-    // A lost record is kept only for the next explicit attempt to recover it. The owner stopping the session ends
-    // that: otherwise its provider session would be loaded again by the next start, even one the host made fresh
-    // (the engine session replaced after it went missing).
-    if (record?.phase === 'lost') {
+    // A lost record outlives an ordinary stop (a crash teardown stops it too): the next start reconnects through it, which
+    // is how a side chat gets its own provider session back. `forgetLost` is for an owner who replaced the engine session
+    // (it went missing): the next start must not load the lost one again.
+    if (forgetLost && record?.phase === 'lost') {
       record.live.dispose();
       this.disposeLostRecord(record);
+      this.sessionsList.states.list.produce((draft) => {
+        delete draft[sessionId];
+      });
       return ok();
     }
     if (!record || record.phase !== 'ready') return ok();

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PendingPrompt } from '@gugu/session-chat-ui'
-import { lifeIsStarting, type LifeView } from '@/session/shared/core/sessions/session-life'
+import { failedOnMissingEngineSession, lifeIsStarting, type LifeView } from '@/session/shared/core/sessions/session-life'
 import { canStartFreshSession } from '@/session/shared/core/sessions/session-recovery'
 import { sessionInputBubbles } from '@/lib/sessionInputOutbox'
 import { messageForUser } from '@/lib/userFacingError'
@@ -35,7 +35,8 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
     const host = machineRpc(deviceId, local)
     void Promise.all([host.sessions.getUnarchivedSession(projectId, sessionId), host.sessions.lifeView(sessionId)]).then(([rows, life]) => {
       if (active) baseline.current = { key, version: life.version }
-      const absent = rows[0]?.providerSessionState === 'missing' || life.kind === 'dormant'
+      // The host's own rule (restartSession): marked missing, or a start that failed because the engine lost it.
+      const absent = rows[0]?.providerSessionState === 'missing' || failedOnMissingEngineSession(life)
       if (active) setEligible(absent && !lifeIsStarting(life) && life.kind !== 'ready'
         && canStartFreshSession('provider_session_missing', rows[0]?.firstUtterance) ? key : null)
     }, () => { if (active) setEligible(null) })
@@ -89,8 +90,14 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
     try {
       const host = machineRpc(deviceId, local)
       if (fresh) {
-        await host.sessions.restartSession(projectId, sessionId)
-        replaced.current = request
+        const result = await host.sessions.restartSession(projectId, sessionId)
+        // An older host answers nothing: it always replaced.
+        if (result?.replaced !== false) replaced.current = request
+        else if (current.current === key && inFlight.current === request) {
+          // Already continued elsewhere: nothing to wait for, show the session as it is now.
+          setAttempt(null)
+          try { await ready.current() } catch (cause) { setError({ key, message: messageForUser(cause) }) }
+        }
       } else await host.sessions.lifeStart(sessionId)
     } catch (cause) {
       // Once the host has progressed, its lifecycle settles this attempt even if the RPC acknowledgement is lost.

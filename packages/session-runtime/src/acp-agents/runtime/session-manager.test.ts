@@ -2861,13 +2861,28 @@ describe('AcpRuntime session manager', () => {
     expect(h.agent.prompt).toHaveBeenCalledTimes(3);
   });
 
-  it('stopping a lost session ends it: the next start is fresh, not a recovery of the provider session that was lost', async () => {
+  it('an ordinary stop of a lost session (the teardown after a crash) keeps it: the next start loads its provider session again', async () => {
+    const { h, rt } = await startHarness('conv-lost-teardown');
+    h.lastChild.emitExit(137);
+    await untilSessionSummary(rt, 'conv-lost-teardown', 'the session is lost', (summary) => summary?.lifecycle === 'lost');
+    // session-life tears every exited run down with an ordinary stop.
+    await expect(rt.stopSession('conv-lost-teardown')).resolves.toMatchObject({ success: true });
+
+    h.agent.loadSession = vi.fn().mockResolvedValue({});
+    await expect(rt.startSession(makeStartInput({ sessionId: 'conv-lost-teardown' })))
+      .resolves.toEqual({ success: true, data: { providerSessionId: 'session-1' } });
+    expect(h.agent.loadSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }));
+  });
+
+  it('forgetting a lost session (its engine session was replaced) makes the next start fresh, not a recovery of the lost one', async () => {
     const { h, rt } = await startHarness('conv-lost-stopped');
     h.lastChild.emitExit(137);
     await untilSessionSummary(rt, 'conv-lost-stopped', 'the session is lost', (summary) => summary?.lifecycle === 'lost');
 
-    await expect(rt.stopSession('conv-lost-stopped')).resolves.toMatchObject({ success: true });
+    await expect(rt.stopSession('conv-lost-stopped', false, true)).resolves.toMatchObject({ success: true });
     expect(rt.sessionLiveModels('conv-lost-stopped')).toBeNull();
+    // The lost summary (the error dot) goes with the record.
+    expect(rt.sessionsListLiveModel().states.list.snapshot().data['conv-lost-stopped']).toBeUndefined();
 
     h.agent.newSession.mockResolvedValueOnce({ sessionId: 'session-2' });
     await expect(rt.startSession(makeStartInput({ sessionId: 'conv-lost-stopped' })))

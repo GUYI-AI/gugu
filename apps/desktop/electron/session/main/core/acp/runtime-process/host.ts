@@ -679,6 +679,17 @@ export async function stopAcpSessionAndSettle(client: ContractClient<AcpRuntimeA
 }
 
 /**
+ * The engine session was replaced after it went missing: the worker's lost record still pins the missing provider
+ * session, and the next start would load it again. Never starts a worker: none running means no record.
+ */
+export async function forgetLostAcpSession(sessionId: string): Promise<void> {
+  const client = await peekAcpWorkerClient();
+  if (!client) return;
+  const result = await stopAcpWorkerSession(client, { sessionId, forgetLost: true });
+  if (!result.success) throw new Error(`ACP session ${sessionId} kept its lost record: ${result.error.message ?? result.error.type}`);
+}
+
+/**
  * The host's decoration of the worker client: the turn-side operations the host owns too (human-tool waits and
  * browser tools on cancel, stored history on revert). Starting and stopping a session is not here: session-life is
  * the only start owner and stopper, for persisted sessions and side chats alike.

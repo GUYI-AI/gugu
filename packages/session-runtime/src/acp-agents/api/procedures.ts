@@ -63,8 +63,10 @@ export function createAcpProcedures(runtime: AcpRuntime) {
     stopSession(input: {
       sessionId: string;
       onlyIfIdle?: boolean;
+      /** The engine session was replaced: drop a lost record instead of keeping it for reconnect. */
+      forgetLost?: boolean;
     }): Promise<Result<void, AcpStopSessionError>> {
-      return runtime.stopSession(input.sessionId, input.onlyIfIdle);
+      return runtime.stopSession(input.sessionId, input.onlyIfIdle, input.forgetLost);
     },
     sendPrompt(input: {
       sessionId: string;

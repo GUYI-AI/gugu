@@ -85,6 +85,26 @@ describe('phone missing-session recovery (#996)', () => {
     expect(recovery.pendingPrompt).toBeNull()
     expect(recovery.busy).toBe(false)
   })
+  it('another surface continued it first: the host replaces nothing, the page shows the session as it is now', async () => {
+    await harness.render(<Fixture />); await tick()
+    host.restart.mockResolvedValue({ replaced: false })
+    await act(async () => { freshButton()!.click() }); await tick()
+    expect(host.ready).toHaveBeenCalledOnce()
+    expect(recovery.busy).toBe(false)
+    expect(recovery.error).toBeNull()
+    await tick(600)
+    expect(host.ready).toHaveBeenCalledOnce()
+    expect(host.retry).not.toHaveBeenCalled()
+  })
+  it('offers Start fresh by the host\'s rule: an unmarked start that failed on the missing engine session, not any resting session', async () => {
+    host.read.mockResolvedValue([{ firstUtterance: 'Original first message' }])
+    await harness.render(<Fixture />); await tick()
+    expect(freshButton()).toBeUndefined()
+    const missing = view('failed', 'did not start: provider_session_missing')
+    host.life.mockResolvedValue({ ...missing, failure: { ...missing.failure!, cause: { name: 'AcpStartFailed', message: 'did not start', data: JSON.stringify({ type: 'provider_session_missing' }) } } })
+    await harness.render(<Fixture id="other" />); await tick()
+    expect(freshButton()).toBeDefined()
+  })
   it('uses the existing restart RPC once, and draws Starting only after the host reports it', async () => {
     await harness.render(<Fixture />); await tick()
     let finish!: () => void

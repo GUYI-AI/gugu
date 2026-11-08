@@ -6,7 +6,7 @@ import type { AppDb } from '@main/db/client';
 const mocks = vi.hoisted(() => ({
   db: undefined as AppDb | undefined,
   calls: [] as string[],
-  lifeKind: 'dormant',
+  failure: null as null | { cause: { name: string; message: string; data?: string } },
 }));
 vi.mock('@main/db/client', () => ({
   get db() {
@@ -17,12 +17,13 @@ vi.mock('@main/db/client', () => ({
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock('@main/core/agent-status/agent-status-writer', () => ({ agentStatusWriter: { restart: vi.fn(async () => {}) } }));
+vi.mock('@main/core/acp/runtime-process/host', () => ({ forgetLostAcpSession: vi.fn(async (sessionId: string) => { mocks.calls.push(`forget:${sessionId}`); }) }));
 vi.mock('./hydrateSession', () => ({ hydrateSession: vi.fn(async () => { mocks.calls.push('hydrate'); }) }));
 vi.mock('./session-life', () => {
   return { sessionLife: () => ({
-  interrupt: async (sessionId: string, event: { reason: string }) => { mocks.calls.push(`${event.reason}:${sessionId}`); },
+  interrupt: async (sessionId: string, event: { reason: string }) => { mocks.calls.push(`${event.reason}:${sessionId}`); mocks.failure = null; },
   start: (sessionId: string, origin: string) => { mocks.calls.push(`start:${sessionId}:${origin}`); },
-  read: () => ({ kind: mocks.lifeKind }),
+  read: () => ({ kind: mocks.failure ? 'failed' : 'dormant', failure: mocks.failure }),
   }) };
 });
 
@@ -32,7 +33,7 @@ describe('restartSession on a session-life session', () => {
   let fixture: Awaited<ReturnType<typeof openFixture>>;
   beforeEach(async () => {
     mocks.calls = [];
-    mocks.lifeKind = 'dormant';
+    mocks.failure = null;
     fixture = await openFixture('empty');
     mocks.db = fixture.db;
     const config = JSON.stringify({ version: '1', type: 'acp', agentDisplayName: 'T', providerSessionState: 'missing', firstUtterance: '把测试跑一遍', initialMessageId: 'first', initialQueue: [{ text: '把测试跑一遍', origin: 'manual' }] });
@@ -52,7 +53,7 @@ describe('restartSession on a session-life session', () => {
 
   it('clears the engine session and runs nothing: no row, no start, the first turn is not replayed', async () => {
     await restartSession('p', 's');
-    expect(mocks.calls).toEqual(['reconfigure:s']);
+    expect(mocks.calls).toEqual(['reconfigure:s', 'forget:s']);
     expect(pendingRows()).toEqual([]);
     const { providerSessionId, config } = stored();
     expect(providerSessionId).toBeNull();
@@ -71,14 +72,35 @@ describe('restartSession on a session-life session', () => {
     expect(stored().providerSessionId).toBe('new-engine');
   });
 
-  it('a start that failed on the missing engine session is replaceable even when the mark could not be written', async () => {
+  const startFailed = (type: string) => ({ cause: { name: 'AcpStartFailed', message: `did not start: ${type}`, data: JSON.stringify({ type }) } });
+  const unmarked = () => {
     const config = { ...stored().config };
     delete config.providerSessionState;
     fixture.sqlite.prepare("UPDATE sessions SET provider_session_id = NULL, config = ? WHERE id = 's'").run(JSON.stringify(config));
+  };
+
+  it('a start that failed on the missing engine session is replaceable even when the mark could not be written', async () => {
+    unmarked();
     expect(await restartSession('p', 's')).toEqual({ replaced: false });
-    mocks.lifeKind = 'failed';
+    mocks.failure = startFailed('provider_session_missing');
     expect(await restartSession('p', 's')).toEqual({ replaced: true });
-    expect(mocks.calls).toEqual(['reconfigure:s']);
+    expect(mocks.calls).toEqual(['reconfigure:s', 'forget:s']);
+  });
+
+  it('a start that failed for another reason (quota, sign-in, network) keeps its engine session', async () => {
+    fixture.sqlite.prepare("UPDATE sessions SET config = json_remove(config, '$.providerSessionState') WHERE id = 's'").run();
+    mocks.failure = startFailed('quota_exceeded');
+    expect(await restartSession('p', 's')).toEqual({ replaced: false });
+    expect(stored().providerSessionId).toBe('native-gone');
+    expect(mocks.calls).toEqual([]);
+  });
+
+  it('two clicks at once with no engine session id: one replaces, the other does nothing', async () => {
+    unmarked();
+    mocks.failure = startFailed('provider_session_missing');
+    const results = await Promise.all([restartSession('p', 's'), restartSession('p', 's')]);
+    expect(results.map(result => result.replaced).sort()).toEqual([false, true]);
+    expect(mocks.calls).toEqual(['reconfigure:s', 'forget:s']);
   });
 
   it('a first turn still queued (the engine died on its first dispatch) keeps its message id, so it can still be delivered', async () => {
@@ -86,13 +108,13 @@ describe('restartSession on a session-life session', () => {
     enqueuePending({ sessionId: 's', messageId: 'first', text: '把测试跑一遍', kind: 'ordinary', turn: { kind: 'chat-page-first-turn' } });
     await restartSession('p', 's');
     expect(stored().config.initialMessageId).toBe('first');
-    expect(mocks.calls).toEqual(['reconfigure:s', 'start:s:retry']);
+    expect(mocks.calls).toEqual(['reconfigure:s', 'forget:s', 'start:s:retry']);
   });
 
   it('input already waiting was really said: it starts the session and is delivered', async () => {
     const { enqueuePending } = await import('./session-pending');
     enqueuePending({ sessionId: 's', messageId: 'waiting', text: '接着做', kind: 'ordinary', turn: { kind: 'prompt', origin: 'manual' } });
     await restartSession('p', 's');
-    expect(mocks.calls).toEqual(['reconfigure:s', 'start:s:retry']);
+    expect(mocks.calls).toEqual(['reconfigure:s', 'forget:s', 'start:s:retry']);
   });
 });

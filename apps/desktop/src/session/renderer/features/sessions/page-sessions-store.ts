@@ -227,10 +227,11 @@ export class PageSessionsStore implements IDisposable {
    * ❌ 不是新建一条顶上 —— 会话 id、标题、在任务里的位置原样保留。
    */
   async restartSession(sessionId: string): Promise<void> {
-    await rpc.sessions.restartSession(this.projectId, sessionId);
+    const { replaced } = await rpc.sessions.restartSession(this.projectId, sessionId);
     // The change event may arrive after this reply, and the caller reopens from this record now. A session created in
     // this window still holds its creation turns here: left in place, reopening would start the engine at once.
-    const store = this.sessions.get(sessionId);
+    // Not replaced (another window or the phone continued it first): the record is newer than this window; keep it.
+    const store = replaced ? this.sessions.get(sessionId) : undefined;
     if (store) runInAction(() => {
       store.data.providerSessionState = undefined;
       store.data.providerSessionId = undefined;

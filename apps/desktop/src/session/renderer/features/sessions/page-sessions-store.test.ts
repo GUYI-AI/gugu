@@ -16,6 +16,7 @@ vi.mock('@renderer/features/sessions/stores/open-file-in-file-editor', () => ({
 }));
 
 const archiveSession = vi.hoisted(() => vi.fn());
+const restartSession = vi.hoisted(() => vi.fn());
 /** 记下每个频道的 handler —— 不记就测不到「事件到达之后发生了什么」。 */
 const eventHandlers = vi.hoisted(() => new Map<unknown, ((payload: unknown) => void)[]>());
 
@@ -36,6 +37,7 @@ vi.mock('@renderer/lib/ipc', () => {
       getUnarchivedSession: vi.fn(),
       hydrateSession,
       markSessionSeen: vi.fn().mockResolvedValue(undefined),
+      restartSession,
     },
   },
 };
@@ -366,6 +368,40 @@ describe('PageSessionsStore 引擎那边的状态清掉了 (#7223)', () => {
     const store = new PageSessionsStore('project-1', 'a', [missingRow]);
     deliverOverJson({ title: 'renamed' });
     expect(store.sessions.get('a')?.data.providerSessionState).toBe('missing');
+    store.dispose();
+  });
+});
+
+describe('PageSessionsStore restartSession', () => {
+  const created = {
+    id: 'a',
+    projectId: 'project-1',
+    providerId: 'claude' as const,
+    title: 'a',
+    lastInteractedAt: null,
+    providerSessionId: 'gone',
+    providerSessionState: 'missing' as const,
+    initialQueue: [{ text: 'run the tests', origin: 'manual' as const }],
+  };
+
+  it('a session created in this window drops its creation turns, so reopening it starts nothing', async () => {
+    restartSession.mockResolvedValueOnce({ replaced: true });
+    const store = new PageSessionsStore('project-1', 'a', [created]);
+    await store.restartSession('a');
+    expect(restartSession).toHaveBeenCalledWith('project-1', 'a');
+    const data = store.sessions.get('a')!.data;
+    expect(data.initialQueue).toBeUndefined();
+    expect(data.providerSessionId).toBeUndefined();
+    expect(data.providerSessionState).toBeUndefined();
+    store.dispose();
+  });
+
+  it('not replaced (another window continued it first): the record is left as it is', async () => {
+    restartSession.mockResolvedValueOnce({ replaced: false });
+    const store = new PageSessionsStore('project-1', 'a', [{ ...created, providerSessionState: undefined, providerSessionId: 'newer' }]);
+    await store.restartSession('a');
+    expect(store.sessions.get('a')!.data.providerSessionId).toBe('newer');
+    expect(store.sessions.get('a')!.data.initialQueue).toHaveLength(1);
     store.dispose();
   });
 });

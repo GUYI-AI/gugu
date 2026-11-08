@@ -4,6 +4,17 @@ import type { AgentStatus } from '@gugu/core/shared/agentStatus';
 /** A start the ACP runtime refused: the failure cause carries its AcpRuntimeError as JSON `data`. */
 export const ACP_START_FAILED = 'AcpStartFailed';
 
+/** The start failed because the engine no longer has the session: the failure a new engine session replaces. */
+export function failedOnMissingEngineSession(view: Pick<LifeView, 'kind' | 'failure'>): boolean {
+  const data = view.kind === 'failed' ? view.failure?.cause.data : undefined;
+  if (typeof data !== 'string') return false;
+  try {
+    return (JSON.parse(data) as { type?: unknown }).type === 'provider_session_missing';
+  } catch {
+    return false;
+  }
+}
+
 /** A projection of the host owner, never persisted or used as a runtime authority. */
 export interface LifeView {
   readonly sessionId: string;
