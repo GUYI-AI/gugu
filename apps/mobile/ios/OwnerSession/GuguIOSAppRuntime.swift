@@ -15,7 +15,7 @@ final class GuguIOSAppRuntime {
     private let retirementQueue = DispatchQueue(label: "app.gugu.native-retirement", qos: .userInitiated)
     let backendConfiguration: GuguIOSBackendConfiguration
     let calendarStore = EventKitPhoneCalendarStore()
-    private lazy var calendarService = PhoneCalendarService(store: calendarStore)
+    private lazy var calendarService: PhoneCalendarService = PhoneCalendarService(store: calendarStore)
 
     static func open() throws -> GuguIOSAppRuntime {
         singletonLock.lock(); defer { singletonLock.unlock() }
@@ -41,7 +41,7 @@ final class GuguIOSAppRuntime {
         installation = GuguIOSInstallation(directory: root.appendingPathComponent("installation", isDirectory: true))
     }
 
-    lazy var ownerSession = GuguIOSOwnerSession(readStored: { [weak self] in
+    lazy var ownerSession: GuguIOSOwnerSession = GuguIOSOwnerSession(readStored: { [weak self] in
         guard let self else { throw Self.unavailable() }; return try self.keychain.read()
     }, installationId: { [weak self] in
         guard let self else { throw Self.unavailable() }; return try self.installation.identifier()
@@ -65,10 +65,10 @@ final class GuguIOSAppRuntime {
     // Cleanup needs no APNs environment and never exposes registration. The
     // ordinary provider remains absent until signed-build configuration and
     // actual renderer preference/reconciliation wiring are available.
-    @MainActor private lazy var pushPlatform = GuguUNPushPlatform(onUnsolicitedCallback: { [weak self] in
+    @MainActor private lazy var pushPlatform: GuguUNPushPlatform = GuguUNPushPlatform(onUnsolicitedCallback: { [weak self] in
         self?.pushCleanupClient.invalidate()
     })
-    @MainActor private lazy var pushCleanupClient = GuguPushClient(platform: pushPlatform, provider: nil,
+    @MainActor private lazy var pushCleanupClient: GuguPushClient = GuguPushClient(platform: pushPlatform, provider: nil,
         currentBinding: { [weak self] in
             guard let self else { throw Self.unavailable() }
             let binding = try self.currentBinding()
@@ -76,19 +76,19 @@ final class GuguIOSAppRuntime {
         }, requireOwnerUI: { try Self.requireForegroundOwnerUI() },
         preferences: { .init(chatEnabled: false, taskEnabled: false, chatSoundEnabled: false, taskSoundEnabled: false) },
         foregroundPresentation: { _ in false }, onHint: { _ in })
-    @MainActor private lazy var pushRetirement = GuguIOSPushRetirement(ownerSession: ownerSession,
+    @MainActor private lazy var pushRetirement: GuguIOSPushRetirement = GuguIOSPushRetirement(ownerSession: ownerSession,
         client: pushCleanupClient, close: { [weak self] scope, capability in
             guard let self else { throw Self.unavailable() }
             return try await GuguIOSPushRetirement.close(configuration: self.backendConfiguration,
                 ownerSession: self.ownerSession, capability: capability, scope: scope)
         })
 
-    lazy var lifecycle = GuguIOSHostLifecycle(root: root.appendingPathComponent("host", isDirectory: true),
+    lazy var lifecycle: GuguIOSHostLifecycle = GuguIOSHostLifecycle(root: root.appendingPathComponent("host", isDirectory: true),
         verifiedIdentity: { [weak self] in
             guard let self else { throw Self.unavailable() }; return try self.currentBinding()
         })
 
-    lazy var ownerAccess = GuguIOSOwnerAccess(root: root.appendingPathComponent("categories", isDirectory: true),
+    lazy var ownerAccess: GuguIOSOwnerAccess = GuguIOSOwnerAccess(root: root.appendingPathComponent("categories", isDirectory: true),
         verifiedIdentity: { [weak self] in
             guard let self else { throw Self.unavailable() }; return try self.currentBinding()
         }, requireOwnerUI: { try Self.requireForegroundOwnerUI() },
