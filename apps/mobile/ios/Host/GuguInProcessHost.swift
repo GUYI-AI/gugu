@@ -223,48 +223,74 @@ final class GuguInProcessHost {
                 }
             case "tool.execute":
                 try checkActive(context)
-                guard let action = bridge.payload["actionName"] as? String,
-                      let args = bridge.payload["args"] as? [String: Any],
-                      let callId = bridge.payload["toolCallId"] as? String else { throw failure("invalid_args", "Native tool payload is incomplete") }
-                let deadline = Int64(Date().timeIntervalSince1970 * 1000) + 15 * 60 * 1000
-                let (request, prior) = try journal.admitTool(context, toolCallId: callId, action: action, arguments: args, deadlineAtMs: deadline)
-                let access = control(for: request)
-                try executor.validateAccess(access)
-                if let prior {
-                    switch prior["status"] as? String {
-                    case "completed":
-                        guard let receipt = prior["receipt"] as? [String: Any] else { throw failure("invalid_journal", "Saved receipt is missing") }
-                        try executor.validateAccess(access)
-                        reply(["ok": true, "data": receipt])
-                    case "execution_unknown": throw failure("execution_unknown", "A previous write has no confirmed result; do not replay")
-                    default: throw failure("duplicate_conflict", "This native request is already pending or interrupted")
-                    }
-                    return
+                authorizeSources(context) { [weak self] authorized in
+                    guard let self else { return }
+                    do { _ = try authorized.get(); try self.checkDataAccess(context); try self.prepareTool(bridge, context: context, raw: raw, reply: reply) }
+                    catch { reply(self.envelope(error)) }
                 }
-                let entry = Pending(request: request, reply: reply)
-                pendingLock.lock(); pending[bridge.id] = entry; pendingLock.unlock()
-                if action == "calendar.events.list" { execute(bridge.id, entry) }
-                else {
-                    try checkActive(context)
-                    emit(["type": "confirmation_pending", "context": raw, "requestId": request.requestId,
-                          "toolCallId": request.toolCallId, "actionName": action,
-                          "argumentsJSON": request.argumentsJSON, "argumentsSHA256": request.argumentsSHA256,
-                          "deadlineAtMs": request.deadlineAtMs])
-                }
-                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 15 * 60) { [weak self] in self?.expire(bridge.id) }
             default: throw failure("unknown_action", "Native bridge method is not available")
             }
         } catch { reply(envelope(error)) }
     }
 
+    private func prepareTool(_ bridge: GuguBridgeRequest, context: GuguHostContext, raw: [String: Any], reply: @escaping GuguJavaScriptRuntime.Reply) throws {
+        try checkActive(context)
+        guard let action = bridge.payload["actionName"] as? String,
+              let args = bridge.payload["args"] as? [String: Any],
+              let callId = bridge.payload["toolCallId"] as? String else { throw failure("invalid_args", "Native tool payload is incomplete") }
+        let deadline = Int64(Date().timeIntervalSince1970 * 1000) + 15 * 60 * 1000
+        let (request, prior) = try journal.admitTool(context, toolCallId: callId, action: action, arguments: args, deadlineAtMs: deadline)
+        let access = control(for: request)
+        try executor.validateAccess(access)
+        if let prior {
+            switch prior["status"] as? String {
+            case "completed":
+                guard let receipt = prior["receipt"] as? [String: Any] else { throw failure("invalid_journal", "Saved receipt is missing") }
+                try executor.validateAccess(access)
+                reply(["ok": true, "data": receipt])
+            case "execution_unknown": throw failure("execution_unknown", "A previous write has no confirmed result; do not replay")
+            default: throw failure("duplicate_conflict", "This native request is already pending or interrupted")
+            }
+            return
+        }
+        let entry = Pending(request: request, reply: reply)
+        pendingLock.lock(); pending[bridge.id] = entry; pendingLock.unlock()
+        if action == "calendar.events.list" { execute(bridge.id, entry) }
+        else {
+            try checkActive(context)
+            emit(["type": "confirmation_pending", "context": raw, "requestId": request.requestId,
+                  "toolCallId": request.toolCallId, "actionName": action,
+                  "argumentsJSON": request.argumentsJSON, "argumentsSHA256": request.argumentsSHA256,
+                  "deadlineAtMs": request.deadlineAtMs])
+        }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 15 * 60) { [weak self] in self?.expire(bridge.id) }
+    }
+
     private func execute(_ id: String, _ entry: Pending) {
-        executor.execute(entry.request, control: control(for: entry.request)) { [weak self] result in
-            guard let self, let pending = self.removePending(id) else { return }
+        authorizeSources(entry.request.context) { [weak self] authorized in
+            guard let self else { return }
             do {
-                let receipt = try self.journal.completeTool(pending.request, result: result)
-                try self.executor.validateAccess(self.control(for: pending.request))
-                pending.reply(["ok": true, "data": receipt])
-            } catch { pending.reply(self.envelope(error)) }
+                _ = try authorized.get(); try self.checkDataAccess(entry.request.context)
+                self.pendingLock.lock(); let current = self.pending[id]; self.pendingLock.unlock()
+                guard current?.request.requestId == entry.request.requestId else { return }
+                try self.executor.validateAccess(self.control(for: entry.request))
+                self.executor.execute(entry.request, control: self.control(for: entry.request)) { [weak self] result in
+                    guard let self, let pending = self.removePending(id) else { return }
+                    do {
+                        // Keep known OS/write custody before checking whether its
+                        // result may still be returned to this task context.
+                        let receipt = try self.journal.completeTool(pending.request, result: result)
+                        self.authorizeSources(pending.request.context) { checked in
+                            do { _ = try checked.get(); try self.checkDataAccess(pending.request.context); try self.executor.validateAccess(self.control(for: pending.request)); pending.reply(["ok": true, "data": receipt]) }
+                            catch { pending.reply(self.envelope(error)) }
+                        }
+                    } catch { pending.reply(self.envelope(error)) }
+                }
+            } catch {
+                guard let pending = self.removePending(id) else { return }
+                _ = try? self.journal.completeTool(pending.request, result: self.envelope(error))
+                pending.reply(self.envelope(error))
+            }
         }
     }
 

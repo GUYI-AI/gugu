@@ -16,7 +16,9 @@ explicit check; it is not silently treated as empty.
 
 The production backend supplies this authority to the scheduler and in-process
 host. The model request is checked before dispatch and again before its reply
-reaches Pi. Timeline reads check sources before projection and before returning
+reaches Pi. Native tool admission, actual executor dispatch (including a later
+approval), and result delivery use the same source checks. Known native receipts
+remain in their original journal even when their return is withheld. Timeline reads check sources before projection and before returning
 projected data to the caller. The communication core checks sources before work
 and before returning successful data or a cached message receipt. Rules reads
 also become sources. A known outbound write receipt is durably recorded before

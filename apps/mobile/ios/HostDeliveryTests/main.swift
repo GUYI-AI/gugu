@@ -23,6 +23,10 @@ private func read(_ runtime: GuguJavaScriptRuntime, _ input: [String: Any]) thro
         try require(envelope.contains(rules) && envelope.contains(version) && envelope.contains("Authoritative Agent-visible thread seed") && envelope.contains("user:\(agent)"), "Shared rules, thread bootstrap or mention identity was not retained")
         try require((data?["route"] as? [String: Any])?["threadRootId"] as? String == thread && data?["sourceMessageId"] as? String == message, "Projection replaced source message/thread identity")
         var cases = ["shared_sole_envelope_producer_preserves_privacy_reply_thread_rules_and_mentions"]
+        var alreadyRead = input; alreadyRead["groupRules"] = ["version": version, "text": NSNull()]
+        let withoutText = try read(runtime, alreadyRead), withoutData = withoutText["data"] as? [String: Any]
+        try require(withoutText["ok"] as? Bool == true && withoutData?["groupRulesDelivered"] is NSNull, "Version-only projection claimed a new rule-text delivery")
+        cases.append("version_only_envelope_does_not_create_new_rule_text_delivery_credit")
         var dm = row; dm["chat_kind"] = "dm"; dm["sender_user_id"] = owner; dm["is_whisper"] = false
         let privateReply = try read(runtime, ["agentUserId": agent, "ownerId": owner, "row": dm])
         let privateEnvelope = (privateReply["data"] as? [String: Any])?["envelope"] as? String ?? ""
