@@ -5,7 +5,7 @@ import { snapshotWindowCommitReceipt, type createWindowCommitReceipts, type Wind
 import { readPublishedCommitEntity, readWindowCommitPublicationVersion, type WindowCommitPublication } from './window-commit-publisher';
 import { readCommitHeader } from './window-commit-header';
 import type { CommitHeader } from './window-commit-header-fields';
-import { assertWindowCommitSource } from './window-commit-source';
+import { assertWindowCommitSource, assertWindowCommitSourceNow } from './window-commit-source';
 import { createWindowProjectionHandles } from './window-projection-handles';
 import { readProjectionField, type ProjectionFieldPosition } from './window-projection-field';
 
@@ -37,6 +37,7 @@ export function createWindowProjectionAdapter(ports: Ports) {
     ports.assertOwner(lease.owner, lease.receipt); lease.abort.signal.throwIfAborted();
     const stored = ports.receipts.bySource(lease.receipt.sourceId);
     if (!stored || JSON.stringify(snapshotWindowCommitReceipt(stored)) !== JSON.stringify(lease.receipt)) throw failure('Projection receipt no longer exists');
+    assertWindowCommitSourceNow(ports.directory, lease.receipt.binding, lease.receipt.source);
   }
   function selected(owner: Owner, id: string) {
     const lease = leases.get(id);
