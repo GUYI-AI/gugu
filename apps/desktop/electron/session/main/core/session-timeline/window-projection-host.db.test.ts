@@ -1,10 +1,12 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { openFixture } from '@tooling/utils/db';
 import type { AppDb } from '@main/db/client';
+import { readWindowFrame } from '@gugu/session-core/session-record/window-cache/disk-frame';
+import { windowFrameName } from '@gugu/session-core/session-record/window-cache/frame';
 import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 import { createWindowCommitPublisher } from './window-commit-publisher';
 import { createWindowCommitReceipts } from './window-commit-receipt';
@@ -57,6 +59,33 @@ describe('production projection ownership with durable pins', () => {
     const rejected = expect(reading).rejects.toMatchObject({ name: 'AbortError' }); await entered.promise;
     alive = false; let closed = false; const closing = host.close(owner.identity).then(() => { closed = true; });
     await Promise.resolve(); expect(closed).toBe(false); gate.resolve(); await rejected; await closing;
+  });
+  it('retries durable cleanup before admitting a new owner when all 32 slots were retained', async () => {
+    const position = await published();
+    const receipt = createWindowCommitReceipts(fixture.sqlite).bySource(position.projectionId.split('/')[0])!;
+    const key = { ...receipt.binding, kind: 'head' as const, cursor: `version:pin:${receipt.sourceId}` };
+    const pin = join(directory, windowFrameName(key));
+    async function holders() {
+      const frame = await readWindowFrame(directory, key, budget());
+      if (frame.kind !== 'hit') throw new Error('missing durable pin head');
+      return (JSON.parse(Buffer.from(frame.bytes).toString()) as { holders: unknown[] }).holders.length;
+    }
+    const owners = Array.from({ length: 32 }, () => ({ identity: {}, sessionId: 'c', assertCurrent() {} }));
+    for (const owner of owners) await host.run(owner, budget(), (adapter, id, io) => adapter.open(id, position, io));
+    expect(await holders()).toBe(32);
+    // An actual directory in place of the pin file makes every durable release
+    // fail. Keep and restore the original frame; do not substitute a fake pin.
+    await rename(pin, `${pin}.saved`); await mkdir(pin);
+    const closed = await Promise.allSettled(owners.map(owner => host.close(owner.identity)));
+    expect(closed.every(result => result.status === 'rejected')).toBe(true);
+    await rm(pin, { recursive: true }); await rename(`${pin}.saved`, pin);
+    expect(await holders()).toBe(32);
+    for (let i = 0; i < 32; i++) {
+      const owner = { identity: {}, sessionId: 'c', assertCurrent() {} };
+      await expect(host.run(owner, budget(), (adapter, id, io) => adapter.open(id, position, io))).resolves.toMatchObject({ count: 1 });
+      await host.close(owner.identity);
+    }
+    expect(await holders()).toBe(0);
   });
   it('requires the receipt session to match the actual subscription session', async () => {
     const position = await published(), owner = { identity: {}, sessionId: 'another-session', assertCurrent() {} };
