@@ -4,6 +4,7 @@ import './browser-user-agent-bootstrap'
 import './page-navigation-bootstrap'
 import { attachTabHistorySwipe } from './tab-history-swipe'
 import { startServerUsageSync } from './server/usage-sync'
+import { createSelfGuguNumber } from './self-gugu-number'
 import { readStateFile, writeStateFile } from './app-state'
 import { noteExitReason } from './lib/exit-reason'
 import {assistantWorkHistoryPosition} from './assistant-work-history-position'
@@ -20,6 +21,7 @@ import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
 import { writeTaskCopy } from './projectFilePublication'
 import { resourceMonitorWindow } from './resource-monitor-window'
 import { linkProjectDevice } from './session/main/core/projects/project-device-link'
+import { killAllMiseProcessesSync } from './session/main/core/dependencies/mise-process'
 import {
   app,
   // @@@5747 Electron 自带的那个 autoUpdater(Squirrel 的直接封装),与 electron-updater 的同名导出
@@ -1373,6 +1375,19 @@ const hostPresentationListeners = new Set<() => void>()
 function tellHostPresentationChanged(): void {
   for (const listener of hostPresentationListeners) listener()
 }
+// App 页的 `operator.guguNumber`:登录账号自己的咕咕号,按信封同一张身份表查,一个账号查一次。
+const selfGuguNumber = createSelfGuguNumber({
+  userId: () => SERVER_MODE ? serverAuth?.signedInUserId() ?? null : humanAuthUserId(),
+  lookup: async (userId) => {
+    const auth = await (authProvider ?? desktopAuthProvider()).getAuth()
+    if (auth?.userId !== userId) throw new Error('the account changed while its 咕咕号 was looked up')
+    const identity = (await resolveGuguIdsForInbox([userId], auth.accessToken)).get(userId)
+    if (!identity) throw new Error(`no identity row for ${userId}`)
+    return identity.guguNumber
+  },
+  changed: tellHostPresentationChanged,
+  failed: (error) => createLogger('extensions/self').error({ error: String(error) }, 'Looking up the account\'s own 咕咕号 failed'),
+})
 
 // @@@close-to-tray-hint - close hides the window to the tray instead of quitting; without a signal users
 // think the app vanished. Notify the FIRST time only, persisting the flag in app-state.json under userData.
@@ -3349,6 +3364,7 @@ const killEnginesOnCrash = createNativeLegReap({
     ['opencode-serve-attach', () => opencodeServeAttachSessionDelivery.disposeSync()],
     ['droid-daemon', () => droidDaemonSessionDelivery.disposeSync()],
     ['extension-programs', () => emdashBridge?.emdashExtensionPrograms().killAllSync()],
+    ['mise', killAllMiseProcessesSync],
     ['remote-tunnel', () => {
       closeTunnelMachines?.()
       tunnelEndpoint?.stop()
@@ -4356,6 +4372,7 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
       onHostWindowFocusChange,
       hostLocale: currentHostLocale,
       hostTone: readWindowTone,
+      selfGuguNumber,
       onHostPresentationChange: (listener) => {
         hostPresentationListeners.add(listener)
         return () => hostPresentationListeners.delete(listener)
@@ -4420,6 +4437,8 @@ async function stopDesktopOwnedResources(): Promise<void> {
       () => droidDaemonSessionDelivery.dispose(),
       reportShutdownPhase,
     ),
+    // 首启 / 设置里装 agent 的 `mise install`(自成一组、没有时限):不收就在实例停掉后接着跑,还占着继承来的调试端口。
+    runShutdownPhase('mise', killAllMiseProcessesSync, reportShutdownPhase),
     // #7199 / #7317 电脑控制的 cua-driver 守护进程与代理、Mac 小助手:同一条规矩,漏了它们每重启一次就留一个孤儿
     // (真机实测:旧实例退出后 `cua-driver serve` ppid 变成 1)。守护进程自己也认 stdin EOF(见 cua-client),这里是正路。
     runShutdownPhase(
@@ -5021,6 +5040,7 @@ app.whenReady().then(async () => {
       isThisDevice: (deviceId) => crossMachine().isThisDevice(deviceId),
       appSpawn: (app, deviceId, action) => crossMachine().appSpawn(app, deviceId, action),
       sessions: (since, options) => crossMachine().sessionsElsewhere(since, options),
+      sessionHome: (sessionId) => crossMachine().sessionHome(sessionId),
       archive: (deviceId, sessionId, removeSocialIdentity) => crossMachine().archiveOn(deviceId, sessionId, removeSocialIdentity),
       appMessage: (app, deviceId, sessionId, text, how) => crossMachine().appMessage(app, deviceId, sessionId, text, how),
       appCall: (app, deviceId, action) => crossMachine().appCall(app, deviceId, action),

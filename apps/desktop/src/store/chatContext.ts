@@ -266,6 +266,17 @@ export function useChatStore(...keys: (keyof ChatStoreValue)[]): Partial<ChatSto
   return useSyncExternalStore(handle.subscribe, getSnapshot)
 }
 
+/** 只在回调里读、不订阅(读的那一刻的整份值):外壳和点开时才要会话列表的 hook 用它,每条消息就不必把整棵壳重渲一遍。 */
+export function useChatStoreReader(): () => ChatStoreValue {
+  return useContext(ChatContext).get
+}
+
+/** 只订阅从 store 里算出来的一个值(select 要返回原始值或稳定引用):值不变,别的会话来消息也不重渲。 */
+export function useChatStoreSelect<T>(select: (store: ChatStoreValue) => T): T {
+  const handle = useContext(ChatContext)
+  return useSyncExternalStore(handle.subscribe, () => select(handle.get()))
+}
+
 // Drop a chat's entry from a per-chat record (drafts / mentions / attachments); no-op if absent. Shared
 // by the delete-chat / leave-group cleanup so the identical "copy → delete key" block isn't repeated per map.
 export function dropChatKey<T>(setState: Dispatch<SetStateAction<Record<string, T>>>, chatId: string): void {

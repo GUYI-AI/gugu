@@ -15,7 +15,7 @@ const installed = vi.hoisted(() => ({ version: '0.7.0' as string | null, refusal
 const folder = vi.hoisted(() => ({ root: '' }));
 const callFromPage = vi.hoisted(() => vi.fn());
 const appCall = vi.hoisted(() => vi.fn());
-const sessionsElsewhere = vi.hoisted(() => vi.fn());
+const sessionHome = vi.hoisted(() => vi.fn());
 const fileCapabilities = vi.hoisted(() => ({ granted: null as Set<string> | null }));
 const readWorkingCopy = vi.hoisted(() => vi.fn());
 vi.mock('@main/core/extensions/working-copy-files', () => ({ readWorkingCopy }));
@@ -39,8 +39,12 @@ vi.mock('@main/core/extensions/extension-programs', () => ({
 vi.mock('@main/core/extensions/extension-agent-context', () => ({
   agentSessionContext: async (sessionId: string) => (sessionId === 's-here' ? { sessionId, projectId: 'p-1', workspaceRoot: '/repo' } : null),
 }));
-vi.mock('@main/core/extensions/extension-agents', () => ({ sessionsElsewhere }));
-vi.mock('@main/core/sessions/session-family', () => ({ otherMachines: () => ({ appCall, isThisDevice: async (id: string) => id === 'dev-here' }) }));
+vi.mock('@main/core/sessions/session-family', () => ({ otherMachines: () => ({ appCall, sessionHome, isThisDevice: async (id: string) => id === 'dev-here' }) }));
+/** The machines' lists, as `sessionHome` reads them for one session: the machine that lists it, else none. */
+const listed = (rows: Array<{ deviceId: string; deviceLabel: string; session: { conversationId: string } & Record<string, unknown> }>) => sessionHome.mockImplementation(async (id: string) => {
+  const row = rows.find((r) => r.session.conversationId === id);
+  return row ? { found: { deviceId: row.deviceId, label: row.deviceLabel, session: row.session, listsAgents: true }, unreached: [] } : { found: null, unreached: [] };
+});
 const elsewhere = await import('./app-programs-elsewhere');
 
 const CALLER = { kind: 'app', deviceId: 'dev-a', deviceLabel: 'laptop', extensionId: 'spexcode', extensionName: 'SpexCode' } as const;
@@ -60,7 +64,7 @@ beforeEach(() => {
   folder.root = mkdtempSync(join(tmpdir(), 'appprog-data-'));
   callFromPage.mockReset();
   appCall.mockReset();
-  sessionsElsewhere.mockReset();
+  sessionHome.mockReset();
   fileCapabilities.granted = null;
   readWorkingCopy.mockReset();
 });
@@ -82,7 +86,7 @@ describe('the machine that has the session does the call', () => {
       action({ call_id: 'workspace-with-read', method: 'filesRead' },
         { ref: { workspace: 'session:s-here', id: 'data.bin' }, offset: 0, length: 3 })))
       .toEqual({ size: 3, offset: 0, data: 'AP+A' });
-    expect(readWorkingCopy).toHaveBeenCalledWith({ workspace: 'session:s-here', id: 'data.bin' }, 'data.bin', 0, 3);
+    expect(readWorkingCopy).toHaveBeenCalledWith({ workspace: 'session:s-here', id: 'data.bin' }, 'data.bin', 0, 3, null);
   });
 
   it('a file call asks nothing of the App: another version, not installed, switched off, no capability here', async () => {
@@ -129,7 +133,7 @@ describe('the machine that has the session does the call', () => {
     const sent = appCall.mock.calls[0]![2];
     expect(sent).toMatchObject({ device_id: 'dev-there', method: 'callProgram' });
     expect(sent).not.toHaveProperty('session_id');
-    expect(sessionsElsewhere).not.toHaveBeenCalled();
+    expect(sessionHome).not.toHaveBeenCalled();
     expect(await elsewhere.callOnSessionMachine(app as Parameters<typeof elsewhere.callOnSessionMachine>[0], { deviceId: 'dev-here' }, 'callProgram', {}, false)).toEqual({ there: false });
     callFromPage.mockResolvedValue(OK);
     expect(await elsewhere.answerAppCall(CALLER, { ...action(), session_id: undefined, device_id: 'dev-here', call_id: 'device-answer' })).toEqual(OK);
@@ -273,20 +277,14 @@ describe('the machine that has the session keeps the App\'s data (161 10-16ã€Œåœ
 describe('the asking machine', () => {
   const MANIFEST = { name: 'SpexCode', version: '0.7.0', contributes: { tabs: [], mcpServers: [{ tools: 'tools.js' }] } } as never;
   const app = { extensionId: 'spexcode', manifest: MANIFEST };
-  const there = () => sessionsElsewhere.mockResolvedValue({
-    rows: [{ deviceId: 'dev-b', deviceLabel: 'server', session: { conversationId: 's-there', projectId: 'p-2', agent: null } }],
-    unreached: [],
-  });
+  const there = () => listed([{ deviceId: 'dev-b', deviceLabel: 'server', session: { conversationId: 's-there', projectId: 'p-2', agent: null } }]);
 
   it('finds a session on another machine once, and tells a session of this computer from one nowhere', async () => {
-    sessionsElsewhere.mockResolvedValue({
-      rows: [{ deviceId: 'dev-b', deviceLabel: 'server', session: { conversationId: 's-there', projectId: 'p-2', agent: { userId: '0a000000-0000-4000-8000-0000000000b2' } } }],
-      unreached: [],
-    });
+    listed([{ deviceId: 'dev-b', deviceLabel: 'server', session: { conversationId: 's-there', projectId: 'p-2', agent: { userId: '0a000000-0000-4000-8000-0000000000b2' } } }]);
     expect(await elsewhere.sessionMachine('s-here')).toBeNull();
     expect(await elsewhere.sessionMachine('s-there')).toEqual({ deviceId: 'dev-b', deviceLabel: 'server', projectId: 'p-2', agentId: 'user:0a000000-0000-4000-8000-0000000000b2' });
     expect(await elsewhere.sessionMachine('s-there')).toMatchObject({ deviceId: 'dev-b' });
-    expect(sessionsElsewhere).toHaveBeenCalledTimes(1);
+    expect(sessionHome).toHaveBeenCalledTimes(1);
     expect(await refusal(elsewhere.sessionMachine('s-nowhere'))).toMatchObject({ code: 'not-found' });
   });
 

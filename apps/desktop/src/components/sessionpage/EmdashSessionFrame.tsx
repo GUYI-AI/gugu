@@ -60,9 +60,13 @@ interface EmdashAssets {
  * 只要某个动态 import 的依赖清单里出现了入口那张表(比如某个大编辑器包静态引了入口 chunk),它就再插一个 link ——
  * 477 KB 重新下载、重新解析、字体重新取(mac1 实测：第一次打开 diff 因此慢 40–50 ms)。用 link 挂，相对 url() 也按表自己的位置解析，
  * 不必再改写。
+ * 两个入口共用的 chunk(vendor、mermaid…)index.html 已经挂过：再挂一个 link，同一份规则就进文档两次，
+ * 还被挪到宿主自己的表之后，改了层叠序。已经挂着的那张直接用。
  */
 function attachStylesheet(href: string): Promise<void> {
   return new Promise((resolve, reject) => {
+    // index.html 的样式表会阻塞渲染：脚本跑到这里时它们早已加载完。
+    if ([...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].some((link) => link.href === href)) return resolve()
     const link = document.createElement('link')
     link.rel = 'stylesheet'
     link.href = href

@@ -1,6 +1,6 @@
 import { withTranscriptTurnIdentity } from '@shared/core/sessions/transcript-turn-identity';
 import { projectRejectedSessionInputs } from '@/lib/pendingSessionInput';
-import type { MessageFailureAttempt } from '@/lib/messageFailureNotice';
+import { messageFailureNotice, type MessageFailureAttempt } from '@/lib/messageFailureNotice';
 import { runNativeInputAction } from '@/lib/nativeInputFailureNotice';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import type {
@@ -51,7 +51,7 @@ import { changeRejectedSessionInput, deleteQueuedSessionInput, editQueuedSession
 import type { SessionInput } from '@/lib/sessionInputOutbox';
 import { sessionSendQueueOrder } from '@/lib/sessionSendQueueOrder';
 import { projectSessionPendingInput } from '@/lib/pendingSessionInput';
-import { isTranscriptDelivery, loadPendingDeliveryHistory, projectSessionPendingDeliveries } from '@/lib/pendingSessionDeliveries';
+import { isTranscriptDelivery, loadPendingDeliveryHistory, projectSessionPendingDeliveries, settledHostRow } from '@/lib/pendingSessionDeliveries';
 import { batch } from 'solid-js';
 import { AcpLiveSession, AcpStartError, asValueSource } from '@renderer/lib/acp/acp-live-session';
 import { attachAcpSessionWhenReady } from '@renderer/lib/acp/acp-session-attachment';
@@ -158,6 +158,9 @@ export class AcpChatStore {
   historyLoading = true;
   /** A failure of opening / attaching this page; a failed session-life view says its own (`loadError`). */
   private _loadError: AcpLoadError | null = null;
+  private _draftSubmissionId = crypto.randomUUID();
+  get draftSubmissionId(): string { return this._draftSubmissionId; }
+  renewDraftSubmission(): void { this._draftSubmissionId = crypto.randomUUID(); }
   /** Life views up to this version answered an earlier attempt: a retry does not show them again. */
   private _lifeRetriedVersion = 0;
   private _unwatchLife: (() => void) | null = null;
@@ -694,8 +697,15 @@ export class AcpChatStore {
     return queuedSessionInputs(this.runtimeSessionId).some(input => input.id === itemId && input.admission === 'rejected');
   }
 
+  /** A failed send, the sender's refusal or the host's settled row, can be let go. */
+  canDiscardSend(itemId: string): boolean {
+    return this.isRejectedInput(itemId) || settledHostRow(sessionLifeView(this.runtimeSessionId), itemId);
+  }
+
   discardRejectedInput(itemId: string): void {
-    void this._messageAction(itemId, () => changeRejectedSessionInput(itemId, { kind: 'discard' }));
+    void this._messageAction(itemId, () => this.isRejectedInput(itemId)
+      ? changeRejectedSessionInput(itemId, { kind: 'discard' })
+      : discardSessionLifeRow(this.runtimeSessionId, itemId));
   }
 
   beginMessageEdit(itemId: string): void {
@@ -1136,10 +1146,11 @@ export class AcpChatStore {
   }
 
   retryPendingInput(itemId: string): void {
-    if (this.chatState.session.state.pendingMessages.some(input => input.id === itemId && input.delivery?.state === 'unknown')) {
-      if (sessionLifeView(this.runtimeSessionId)?.pending.items.some(row => row.messageId === itemId && row.resendable)) void this._messageAction(itemId, () => retryUnknownSessionInput(this.runtimeSessionId, itemId));
+    if (sessionLifeView(this.runtimeSessionId)?.pending.items.some(row => row.messageId === itemId && row.resendable)) {
+      void this._messageAction(itemId, () => retryUnknownSessionInput(this.runtimeSessionId, itemId));
       return;
     }
+    if (this.chatState.session.state.pendingMessages.some(input => input.id === itemId && input.delivery?.state === 'unknown')) return;
     if (this.isRejectedInput(itemId)) {
       void this._messageAction(itemId, () => changeRejectedSessionInput(itemId, { kind: 'retry' }));
       return;
@@ -1406,18 +1417,22 @@ export class AcpChatStore {
    * Both sends take the one custody path (sender outbox → host session_pending), persisted session or side chat;
    * the host decides whether the input runs now or queues.
    */
-  async submitPrompt(text: string, attachments: AcpPromptAttachment[] = [], files: TurnFileRef[] = []): Promise<void> {
+  async submitPrompt(text: string, attachments: AcpPromptAttachment[] = [], files: TurnFileRef[] = [], submissionId: string = crypto.randomUUID()): Promise<void> {
+    const failure = messageFailureNotice(['acp', machineRegistry.machineOf(this.runtimeSessionId) ?? 'local', this.runtimeSessionId, submissionId]);
+    const attempt = failure.begin();
     try {
       if (this.reverting || this.messageEdit) throw new Error('A message is being edited; send or cancel the edit first');
       await sendThroughCustody(this, text, attachments, files);
+      attempt.succeeded();
     } catch (error) {
       // The one toast of a failed send; the caller keeps its words.
-      this._toastError('acpFailure.sendMessage', error);
+      this._toastError('acpFailure.sendMessage', error, undefined, attempt);
       throw error;
     }
   }
 
   setDraftText(text: string): void {
+    this.renewDraftSubmission();
     if (text === this.draftText) return;
     this.draftText = text;
     this._draftRev += 1;

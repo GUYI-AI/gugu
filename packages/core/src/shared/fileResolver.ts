@@ -52,11 +52,17 @@ export type FileMetadata = { status: 'ready'; revision: FileRevision } | { statu
 export class MissingFileObjectError extends Error {
   constructor() { super('missing') }
 }
+/** The read acknowledgement found access withdrawn, the file gone or expired, or the version moved on: bytes already shown must be taken down. */
+export class FileReadRevokedError extends Error {
+  constructor(readonly reason: 'access' | 'revision' | 'gone' | 'expired') { super(reason === 'gone' || reason === 'expired' ? reason : 'File access or revision changed during download') }
+}
 export interface FileBytes {
   /** An authorized immutable snapshot with exact length; stored digests are verified when present. */
   readonly size: number
   read(offset: number, length: number): Promise<Uint8Array>
   dispose(): Promise<void>
+  /** Bytes returned before the server acknowledged the read: this settles that acknowledgement. */
+  readonly acknowledged?: Promise<void>
 }
 export type ResolvedFile = Exclude<FileMetadata, { status: 'ready' }> | {
   status: 'ready'
@@ -65,6 +71,8 @@ export type ResolvedFile = Exclude<FileMetadata, { status: 'ready' }> | {
   revision: FileRevision
   read(offset: number, length: number): Promise<Uint8Array>
   stream(): AsyncIterable<Uint8Array>
+  /** Opened with `showFirst`: rejects (FileReadRevokedError) when what was read must be taken down. Otherwise already settled by the first read. */
+  acknowledgement?(): Promise<void>
   dispose(): Promise<void>
   saveTo?(directory: string, name: string): Promise<SavedFile>
 }
@@ -133,7 +141,8 @@ export async function openFileBytes(providers: FileProviders, revision: FileRevi
   local?: Awaited<ReturnType<FileProviders['local']>>, destination?: FileSink): Promise<FileBytes> {
   const consume = async (source: FileBytes) => {
     if (!destination) return source
-    try { return await copyVerifiedFile(revision, source, destination, context.signal) }
+    // A copy written to a sink cannot be taken back: it waits for the read acknowledgement.
+    try { await source.acknowledged; return await copyVerifiedFile(revision, source, destination, context.signal) }
     finally { await source.dispose() }
   }
   if (local) return consume(await local.open())
@@ -153,8 +162,8 @@ export async function openFileBytes(providers: FileProviders, revision: FileRevi
 export function createFileResolver(providers: FileProviders) {
   function resolveFile(ref: FileRef, actor: FileActor, options: { localOnly: true; purpose?: 'file'; signal?: AbortSignal }): Promise<ResolvedFile | null>
   function resolveFile(ref: FileRef, actor: FileActor, options: { purpose: 'preview'; metadata?: FileMetadata; signal?: AbortSignal }): Promise<ResolvedPreview>
-  function resolveFile(ref: FileRef, actor: FileActor, options?: { purpose?: 'file'; signal?: AbortSignal; progress?: FileContext['progress'] }): Promise<ResolvedFile>
-  async function resolveFile(ref: FileRef, actor: FileActor, options: { purpose?: 'file' | 'preview'; metadata?: FileMetadata; localOnly?: boolean; signal?: AbortSignal; progress?: FileContext['progress'] } = {}): Promise<ResolvedFile | ResolvedPreview | null> {
+  function resolveFile(ref: FileRef, actor: FileActor, options?: { purpose?: 'file'; signal?: AbortSignal; progress?: FileContext['progress']; showFirst?: true }): Promise<ResolvedFile>
+  async function resolveFile(ref: FileRef, actor: FileActor, options: { purpose?: 'file' | 'preview'; metadata?: FileMetadata; localOnly?: boolean; signal?: AbortSignal; progress?: FileContext['progress']; showFirst?: true } = {}): Promise<ResolvedFile | ResolvedPreview | null> {
     if (!actor.accountId || !actor.actorId) throw new Error('File reader is not signed in')
     fileRefKey(ref)
     const cancellation = new AbortController()
@@ -185,6 +194,8 @@ export function createFileResolver(providers: FileProviders) {
       try {
         check()
         if (file.size !== revision.size_bytes) throw new Error('File snapshot size changed')
+        // Only a reader that can take its display down reads before the acknowledgement.
+        if (!options.showFirst) { await file.acknowledged; check() }
         return file
       } catch (error) { await file.dispose(); throw error }
     })
@@ -213,7 +224,7 @@ export function createFileResolver(providers: FileProviders) {
         return revision.source === 'managed-object' && revision.content_type.startsWith('video/') ? load() : image ??= load()
       } }
     }
-    return { status: 'ready', purpose: 'file', reader: context.actor, revision, read, dispose,
+    return { status: 'ready', purpose: 'file', reader: context.actor, revision, read, dispose, acknowledgement: async () => { await (await get()).acknowledged },
       ...(providers.saveTo ? { saveTo: async (directory: string, name: string) => {
         check()
         try { return await providers.saveTo!(revision, context, directory, name) }
@@ -232,15 +243,24 @@ export function createFileResolver(providers: FileProviders) {
   return resolveFile
 }
 
+const handleBlob = (file: FileHandle) => {
+  const chunks = file.stream()[Symbol.asyncIterator]()
+  return new Response(new ReadableStream({ async pull(controller) {
+    const next = await chunks.next()
+    if (next.done) controller.close(); else controller.enqueue(next.value)
+  }, async cancel() { await chunks.return?.(); } })).blob().then(blob => blob.slice(0, blob.size, file.revision.content_type))
+}
 /** A browser Blob consumes only the original capability; previews cannot be passed here. */
 export async function fileBlob(file: FileHandle): Promise<Blob> {
-  const chunks = file.stream()[Symbol.asyncIterator]()
-  try {
-    return await new Response(new ReadableStream({ async pull(controller) {
-      const next = await chunks.next()
-      if (next.done) controller.close(); else controller.enqueue(next.value)
-    }, async cancel() { await chunks.return?.(); } })).blob().then(blob => blob.slice(0, blob.size, file.revision.content_type))
-  } finally { await file.dispose() }
+  try { return await handleBlob(file) } finally { await file.dispose() }
+}
+/** A handle opened with `showFirst`: the Blob now, and the acknowledgement that may take it back. Disposes once settled. */
+export async function shownFileBlob(file: FileHandle): Promise<{ blob: Blob; acknowledged: Promise<void> }> {
+  let blob: Blob
+  try { blob = await handleBlob(file) } catch (error) { await file.dispose(); throw error }
+  const acknowledged = (file.acknowledgement?.() ?? Promise.resolve()).finally(() => file.dispose())
+  acknowledged.catch(() => undefined)
+  return { blob, acknowledged }
 }
 
 /** Only already-verified snapshots reach this display adapter. */

@@ -152,3 +152,41 @@ it('retries a rejected input through real sender storage, preserving another mes
   await vi.waitFor(() => expect(visible.size).toBe(1));
   expect((await queue.list()).map(input => input.id)).toEqual([b.id]);
 });
+
+it('keeps host-owned unknown retries message-owned even before they enter the local pending projection', async () => {
+  const { store } = makeStore();
+  let refuse = true;
+  const retried: string[] = [];
+  installAcpChatStoreHost(async (channel, ...args) => {
+    if (channel === 'sessions.lifeView') return { sessionId: store.runtimeSessionId, kind: 'ready', version: 1,
+      pending: { items: ['host-a', 'host-b'].map(messageId => ({ messageId, state: 'unknown', resendable: true })), count: 0 } };
+    if (channel === 'sessions.lifeRetryUnknown') {
+      expect(args[0]).toBe(store.runtimeSessionId); retried.push(args[1]);
+      if (refuse) throw new Error('host retry refused');
+    }
+    return [];
+  });
+  await (await import('../stores/session-life-views')).readSessionLife(store.runtimeSessionId);
+  expect(store.chatState.session.state.pendingMessages).toEqual([]);
+  store.retryPendingInput('host-a'); store.retryPendingInput('host-b');
+  await vi.waitFor(() => expect(visible.size).toBe(2));
+  store.retryPendingInput('host-a'); await settle();
+  expect(visible.size).toBe(2);
+  refuse = false; store.retryPendingInput('host-a');
+  await vi.waitFor(() => expect(visible.size).toBe(1));
+  expect(retried).toEqual(['host-a', 'host-b', 'host-a', 'host-a']);
+});
+
+it('settles the host row notice through its real discard RPC rather than the sender rejected-input branch', async () => {
+  const { store } = makeStore();
+  const discard = vi.fn<() => Promise<void>>(async () => { throw new Error('host discard refused'); });
+  installAcpChatStoreHost(async (channel, ...args) => {
+    if (channel === 'sessions.lifeDiscard') { expect(args).toEqual([store.runtimeSessionId, 'host-row']); return discard(); }
+    return [];
+  });
+  store.discardRejectedInput('host-row');
+  await vi.waitFor(() => expect(visible.size).toBe(1));
+  discard.mockResolvedValue(undefined); store.discardRejectedInput('host-row');
+  await vi.waitFor(() => expect(visible.size).toBe(0));
+  expect(discard).toHaveBeenCalledTimes(2);
+});

@@ -56,6 +56,7 @@ import { sessionRegistry } from '@renderer/features/sessions/stores/session-regi
 import { IntegrationIcon } from '@renderer/features/integrations/integration-icon';
 import { useConnectedIssueProviders } from '@renderer/features/integrations/use-connected-issue-providers';
 import { usePromptLibrary } from '@renderer/features/library/prompts/use-prompt-library';
+import { promptSlashItems } from '@renderer/features/library/prompts/prompt-slash-items';
 import { asMounted, getProjectStore, getProjectViewStore } from '@renderer/features/projects/stores/project-selectors';
 import { composerLayerHoldsFocus, sessionNavigationFocus } from '@renderer/features/sidebar/session-navigation-focus';
 import { useComposerEntryFocus } from '@/lib/composerEntryFocus';
@@ -212,10 +213,6 @@ const ISSUE_SEARCH_LIMIT = 20;
 /** 空态最多摆几个建议芯片 —— 再多就成了一堵墙,而空态要的是「开个头」。 */
 const WELCOME_SUGGESTION_LIMIT = 3;
 
-function promptPreview(text: string): string {
-  return text.split(/\r?\n/, 1)[0] ?? '';
-}
-
 function declaredMessageKey(key: string | null | undefined): SessionMessageKey | undefined {
   if (!key) return undefined;
   if (!Object.prototype.hasOwnProperty.call(enUSMessages, key)) {
@@ -338,9 +335,10 @@ const ComposerForStore = observer(function ComposerForStore({
   // 发送等待的是上传 promise;账本必须在它 resolve 前更新,不能等 React 的下一次渲染。
   const setAttachments = useCallback((update: ComposerAttachment[] | ((prev: ComposerAttachment[]) => ComposerAttachment[])) => {
     const next = typeof update === 'function' ? update(attachmentsRef.current) : update;
+    if (next.length !== attachmentsRef.current.length || next.some((item, i) => item.id !== attachmentsRef.current[i]?.id)) store.renewDraftSubmission();
     attachmentsRef.current = next;
     setAttachmentState(next);
-  }, []);
+  }, [store]);
   // 图片与文件同一条:贴上来就放进这个 agent 私聊的文件夹,进度在 chip 上,这一轮带着引用发出去(P3)。
   const fileUploads = useComposerFileUploads({
     resumable: true,
@@ -358,7 +356,7 @@ const ComposerForStore = observer(function ComposerForStore({
   const [sendHold, setSendHold] = useState<'waiting' | 'blocked' | null>(null);
   const sendingRef = useRef(false);
   const promptEditor = useSessionPromptEditor(store, editorApiRef);
-  const { value: promptLibrary } = usePromptLibrary();
+  const { value: promptLibrary, overrides: promptOverrides } = usePromptLibrary();
 
   // Autofocus when the slot becomes available — only while the session page is on screen. 宿主把它常驻挂载在
   // 对话页后面(隐藏);启动时恢复会话在后台挂上这里,抢走对话页输入框的焦点,用户打的字进了看不见的这一格。
@@ -406,12 +404,12 @@ const ComposerForStore = observer(function ComposerForStore({
         sendingRef.current = false;
       }
     },
-    [fileUploads, store, onScrollToBottom]
+    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments]
   );
 
   const handleSubmit = useCallback(
     // The store's one send entry (custody; it toasts a failure); a send that cannot be kept goes back in the draft below.
-    (value: string) => sendWhenReady(value, (text, files) => store.submitPrompt(text, [], files)),
+    (value: string) => { const id = store.draftSubmissionId; return sendWhenReady(value, (text, files) => store.submitPrompt(text, [], files, id)); },
     [store, sendWhenReady]
   );
 
@@ -1369,22 +1367,8 @@ const ComposerForStore = observer(function ComposerForStore({
           ...command,
           section: translate('chat.commands'),
         }));
-      const prompts = promptLibrary
-        .filter((prompt) => {
-          if (!normalized) return true;
-          return [prompt.title, prompt.prompt].some((value) =>
-            value.toLowerCase().includes(normalized)
-          );
-        })
-        .map((prompt) => ({
-          id: `prompt:${prompt.id}`,
-          name: prompt.title,
-          label: prompt.title,
-          description: promptPreview(prompt.prompt),
-          behavior: 'insert-text' as const,
-          insertText: prompt.prompt,
-          section: translate('chat.prompts'),
-        }));
+      // 提示词:我的一组,各 App 各一组(prompt-slash-items.ts,聊天输入框用的是同一份)。
+      const prompts = promptSlashItems(promptLibrary, promptOverrides, translate('chat.prompts'), normalized);
       // @@@gugu-client-commands —— `/mcp` 是**咕咕自己的**命令,不是 agent 报上来的:
       // 选中时被 `onCommand` 拦下来开面板,**一个字都不发给 agent**。
       // ⚠️ 它出现在这里的前提是 apply 那条路已经接通(面板 → 记录 → 重开)——
@@ -1404,7 +1388,7 @@ const ComposerForStore = observer(function ComposerForStore({
         : [];
       return [...clientCommands, ...commands, ...prompts];
     },
-    [store, promptLibrary, translate]
+    [store, promptLibrary, promptOverrides, translate]
   );
 
   const a = store.affordances;
@@ -2120,7 +2104,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       // 与 #3500 同形）。composer 上那颗是另一条路，它一直是通的，于是这颗死按钮
       // 被它掩护着看不出来。⇒ 这里补上；同时 UserMessageCard 改成没接回调就不渲染。
       canRevertMessage: (itemId) => (store?.isRejectedInput(itemId) ?? false) || (historyActionsEnabled && (store?.canRevertMessage(itemId) ?? false)),
-      canDiscardSend: (itemId) => store?.isRejectedInput(itemId) ?? false,
+      canDiscardSend: (itemId) => store?.canDiscardSend(itemId) ?? false,
       onDiscardSend: (itemId) => store?.discardRejectedInput(itemId),
       onEditMessage: ({ itemId }) => store?.beginMessageEdit(itemId),
       onRetrySend: (itemId) => store?.retryPendingInput(itemId),

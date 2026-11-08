@@ -99,9 +99,11 @@ describe('approved A2A activity', () => {
   });
   it('keeps the owner pinned while reading ordinary reply content beside a closed activity', async () => {
     const t = await mount(800, [turn('own', [ordinary('Owner question', 'user'), delivery('incoming'),
-      ...Array.from({ length: 24 }, (_, i) => ordinary(`Reply ${i}. `.repeat(45)))]),
+      ordinary(Array.from({ length: 24 }, (_, i) => `Reply ${i}. `.repeat(45)).join('\n\n'))]),
       turn('next', [ordinary('Next owner question', 'user'), ordinary('Next answer')])]);
     expect(t.button().getAttribute('aria-expanded')).toBe('false');
+    t.host.querySelector<HTMLButtonElement>('[data-expand-user-card]')!.click();
+    await untilStable('the full final answer is measured', () => t.scroll().scrollHeight);
     t.scroll().scrollTop = 850;
     await untilStable('owner reading ordinary reply', () => t.host.querySelector('[data-agent-conversation-message="Owner question"]')?.getBoundingClientRect().top);
     const row = t.host.querySelector<HTMLElement>('[data-agent-conversation-message="Owner question"]');
@@ -176,9 +178,9 @@ describe('approved A2A activity', () => {
     expect(card.bottom).toBeLessThanOrEqual(viewport.bottom + 1);
     expect(card.top).toBeGreaterThanOrEqual(viewport.top - 1);
   });
-  it('keeps human deliveries and every panel reply visible between the A2A regions', async () => {
+  it('keeps human deliveries and the final panel reply visible between the A2A regions', async () => {
     const t = await mount(800, [turn('t', [delivery('a'), ordinary('First panel text'), ordinary('Second panel text'), delivery('human', 'Human group message', 'human'), delivery('b')])]);
-    expect(t.host.querySelector('[data-agent-conversation-message="First panel text"]')).not.toBeNull();
+    expect(t.host.querySelector('[data-user-card="First panel text"]')).toBeNull();
     expect(t.host.querySelector('[data-agent-conversation-message="Second panel text"]')).not.toBeNull();
     expect(t.host.querySelector('[data-user-card="human"]')?.textContent).toContain('Human group message');
     expect(t.host.querySelector('[data-user-card="a"]')).toBeNull();
@@ -383,13 +385,33 @@ describe('approved A2A activity', () => {
     for (const mask of masks()) expect(getComputedStyle(mask).opacity).toBe('0');
   });
   it.each([
-    { width: 360, background: '#ffffff' }, { width: 1280, background: '#ffffff' },
-    { width: 360, background: '#212121' }, { width: 1280, background: '#212121' },
-  ])('keeps the pinned semantic line quiet and its page-colored strip inside the row ($width/$background)', async ({ width, background }) => {
+    ...[
+      { width: 360, background: '#ffffff', endInset: 0 }, { width: 1280, background: '#ffffff', endInset: 15 },
+      { width: 360, background: '#212121', endInset: 0 }, { width: 1280, background: '#212121', endInset: 15 },
+    ].map(value => ({ ...value, classic: false, frameWidth: value.width })),
+    ...['#ffffff', '#212121'].map(background => ({ width: 1280, background, endInset: 0, classic: true, frameWidth: 1280 })),
+    ...[false, true].map(classic => ({ width: 1280, background: '#ffffff', endInset: 0, classic, frameWidth: 960 })),
+  ])('keeps the pinned semantic line quiet and its page-colored strip inside the row ($width/$background/$endInset/classic=$classic/frame=$frameWidth)', async ({ width, background, endInset, classic, frameWidth }) => {
+    if (classic) {
+      // A custom Chromium scrollbar reserves real layout space, including on overlay-scrollbar Macs.
+      const scrollbar = document.head.appendChild(document.createElement('style'));
+      scrollbar.textContent = '[data-chat-scroll]::-webkit-scrollbar { width: 15px; height: 15px; }';
+      cleanup.push(() => scrollbar.remove());
+    }
     const question = 'A longer owner question above the agent exchange. '.repeat(3);
     const t = await mount(width, [turn('own', [ordinary(question, 'user'),
       ...Array.from({ length: 20 }, (_, i) => delivery(`quiet${i}`, `Long underlying message ${i}. `.repeat(45)))]),
       turn('conclusion', [ordinary('Following conclusion. '.repeat(60))])]);
+    if (frameWidth !== width) {
+      t.host.style.width = `${frameWidth}px`;
+      t.host.style.left = '120px';
+      await untilStable('split conversation geometry settles', () => t.host.querySelector('[data-chat-width-probe]')?.getBoundingClientRect().width);
+    }
+    if (classic) expect(t.scroll().offsetWidth - t.scroll().clientWidth, 'a real classic scrollbar reserves 15px').toBe(15);
+    // A non-overlay scrollbar consumes an asymmetric trailing gutter. Exercise
+    // the same column offset on overlay-scrollbar platforms as well.
+    t.scroll().style.paddingRight = `${16 + endInset}px`;
+    await untilStable('asymmetric content gutter settles', () => t.host.querySelector('[data-chat-width-probe]')?.getBoundingClientRect().width);
     if (background === '#212121') t.host.classList.add('emdark');
     t.host.style.setProperty('--chat-bg', background);
     const label = () => t.head()!.lastElementChild as HTMLElement;
@@ -409,6 +431,9 @@ describe('approved A2A activity', () => {
     const lane = t.head()!.closest<HTMLElement>('[data-index]')!;
     const backdrop = lane.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!;
     const paint = backdrop.getBoundingClientRect(), viewport = t.scroll().getBoundingClientRect();
+    console.info('ACTIVITY_PIN_FRAME', JSON.stringify({ width, background, endInset, classic, frameWidth,
+      offsetWidth: t.scroll().offsetWidth, clientWidth: t.scroll().clientWidth,
+      viewport: { left: viewport.left, right: viewport.right }, paint: { left: paint.left, right: paint.right } }));
     const style = getComputedStyle(backdrop);
     expect(style.opacity).toBe('1');
     expect(style.backgroundColor).toBe(background === '#ffffff' ? 'rgb(255, 255, 255)' : 'rgb(33, 33, 33)');
@@ -418,7 +443,10 @@ describe('approved A2A activity', () => {
     expect(Math.abs(paint.top - own.bottom), 'the two page-colored pins meet without exposing half a body line in their seam').toBeLessThan(1);
     expect(Math.abs(paint.bottom - row.bottom), 'no opaque band below the semantic row').toBeLessThan(1);
     expect(paint.left).toBeLessThanOrEqual(viewport.left);
-    expect(paint.right).toBeGreaterThanOrEqual(viewport.right - 1);
+    // The strip must reach the right edge of what the scroller paints: its client box. A classic scrollbar (Linux,
+    // Windows) takes the last pixels of the border box and paints over anything beneath; overlay scrollbars take none.
+    const scroller = t.scroll();
+    expect(paint.right).toBeGreaterThanOrEqual(viewport.left + scroller.clientLeft + scroller.clientWidth - 1);
     expect(getComputedStyle(lane).contain.split(' ')).not.toContain('paint');
     expect(style.borderTopWidth).toBe('0px');
     expect(style.borderLeftWidth).toBe('0px');
@@ -426,6 +454,17 @@ describe('approved A2A activity', () => {
     expect(style.borderBottomWidth).toBe('1px');
     const fadeSelector = pinFade.split(/\s+/).map(name => `.${name}`).join('');
     expect(t.host.querySelectorAll(fadeSelector), 'neither pin may paint a fade across the preceding message').toHaveLength(0);
+    if (frameWidth !== width) {
+      expect(paint.left).toBeGreaterThanOrEqual(viewport.left - 1);
+      expect(paint.right).toBeLessThanOrEqual(viewport.right + 1);
+      const column = t.host.querySelector('[data-chat-width-probe]')!.getBoundingClientRect().width;
+      t.host.style.width = '1040px';
+      await untilStable('split frame resizes while its content column remains capped', () => [t.scroll().offsetWidth, backdrop.getBoundingClientRect().width]);
+      expect(t.host.querySelector('[data-chat-width-probe]')!.getBoundingClientRect().width).toBe(column);
+      const resized = t.scroll().getBoundingClientRect(), resizedPaint = backdrop.getBoundingClientRect();
+      expect(Math.abs(resizedPaint.left - resized.left)).toBeLessThan(1);
+      expect(Math.abs(resizedPaint.right - resized.right)).toBeLessThan(1);
+    }
   });
   it.each(['#ffffff', '#212121'])('covers the reserved viewport gap above a standalone opened activity (%s)', async background => {
     const t = await mount(390, [turn('incoming', Array.from({ length: 16 }, (_, i) => delivery(`standalone${i}`, `Underlying old message ${i}. `.repeat(45)))),

@@ -1,4 +1,4 @@
-import { isImageMimeType, resolveAttachmentMimeType } from '../imageMime.mjs'
+import { extensionOf, isImageMimeType, mimeTypeFromName, resolveAttachmentMimeType } from '../imageMime.mjs'
 import type { FileMetadata, FileRef } from '../fileResolver'
 
 export type AttachmentKind = 'image' | 'file'
@@ -173,9 +173,36 @@ export function formatAttachmentSize(sizeBytes: number): string {
   return `${(sizeBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
 }
 
-/** 附件的 mime:浏览器给的 file.type 为空(无扩展名、某些应用拖进来的文件)时按文件名补。 */
+/**
+ * 附件的 mime:文件名在那张表里有就按表(imageMime.mjs);表里没有才用浏览器给的 file.type,再没有按 resolveAttachmentMimeType 补。
+ * file.type 是操作系统按后缀猜的,不是谁声明的:同一个 `.ts`,macOS 和 Electron 给 video/mp2t,Linux 给 text/vnd.trolltech.linguist。
+ * 两义的后缀(TS_AMBIGUOUS)要先 `sniffFileMimeType` 看过文件头;没看过的照旧用 file.type。
+ */
 export function resolveFileMimeType(file: { name?: string; type?: string }): string {
-  return resolveAttachmentMimeType(file.name ?? '', file.type ?? '')
+  return sniffedMimeTypes.get(file) ?? (TS_AMBIGUOUS.has(extensionOf(file.name)) ? null : mimeTypeFromName(file.name))
+    ?? resolveAttachmentMimeType(file.name ?? '', file.type ?? '')
+}
+
+/** 既可能是 TypeScript 源码,也可能是 MPEG-TS 视频(录屏的 .ts,AVCHD 摄像机的 .mts / .m2ts)的后缀,名字分不清。 */
+const TS_AMBIGUOUS = new Set(['ts', 'mts', 'm2ts'])
+const sniffedMimeTypes = new WeakMap<object, string>()
+
+/**
+ * 两义后缀的文件是不是 MPEG-TS 视频:每包以同步字节 0x47 开头,包长 188(AVCHD 的 192 字节包前面多 4 字节时间戳),
+ * 连着两包对上就是。发送前定 mime 和打开时选预览都看这一处。
+ */
+export async function isMpegTsVideo(name: string | undefined, bytes: Blob): Promise<boolean> {
+  if (!TS_AMBIGUOUS.has(extensionOf(name))) return false
+  const head = new Uint8Array(await bytes.slice(0, 197).arrayBuffer())
+  return (head[0] === 0x47 && head[188] === 0x47) || (head[4] === 0x47 && head[196] === 0x47)
+}
+
+/** 发送前定 mime:两义的后缀看文件头,不是视频就按表(.ts / .mts 是 TypeScript)。结果记在这个 File 上,之后 resolveFileMimeType 同步读到。 */
+export async function sniffFileMimeType(file: Blob & { name?: string; type?: string }): Promise<string> {
+  if (TS_AMBIGUOUS.has(extensionOf(file.name)) && !sniffedMimeTypes.has(file)) {
+    sniffedMimeTypes.set(file, await isMpegTsVideo(file.name, file) ? 'video/mp2t' : mimeTypeFromName(file.name) ?? resolveAttachmentMimeType(file.name ?? '', file.type))
+  }
+  return resolveFileMimeType(file)
 }
 
 export function inferAttachmentKind(file: { name?: string; type?: string }): AttachmentKind {

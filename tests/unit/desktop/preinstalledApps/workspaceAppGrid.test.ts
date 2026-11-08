@@ -5,6 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
+import { listedIn } from './folderList'
 import { until } from '../../../support/awaitCondition'
 
 const now = Date.parse('2026-10-28T12:00:00Z')
@@ -38,7 +39,7 @@ const gugu = {
     // Asked as a row's menu opens (a list carries no delete answer); the rig answers from its fixtures.
     canDelete: vi.fn(async (files: unknown) => [files].flat().map((file) => (file as { canDelete?: boolean }).canDelete === true)),
     viewPreferences: vi.fn(async () => ({ showAppData: false })),
-    list: vi.fn(async () => ENTRIES.map((e) => ({ ...e }))),
+    list: vi.fn(async (place?: { folder?: string }) => listedIn(ENTRIES, place)),
     onChanged: vi.fn(() => () => {}),
     openWith: vi.fn(async () => {}),
     download: vi.fn(async () => true),
@@ -150,7 +151,7 @@ describe('details', () => {
     expect(said['大小']).toBe('1.1 MB · PDF')
     expect(said['上传']).toMatch(/^张三 · /)
     expect(said['改动']).toMatch(/^小雨 · .* · 第 2 版$/)
-    expect(said['位置']).toBe('群文件夹')
+    expect(said['位置']).toBe('聊天文件')
     expect(said['保留']).toMatch(/^临时 · .*清除云端副本$/)
     await until('its versions', () => $('details').querySelectorAll('.details-versions li').length === 2)
     expect(gugu.files.versions).toHaveBeenCalledWith(expect.objectContaining({ id: 'spec' }))

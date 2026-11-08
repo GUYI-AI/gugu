@@ -335,7 +335,7 @@ function pinnedConnectionId(row: SessionRow): string | undefined {
   return undefined;
 }
 
-function locateRow(row: SessionRow): SessionRecordLocation {
+export function locateRow(row: SessionRow): SessionRecordLocation {
   const managed = managedConfigRootFor(row.provider);
   if (managed.problem) return { supported: false, reason: managed.problem };
   const legacy = connectionRootFor(row);

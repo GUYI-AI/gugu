@@ -4,10 +4,10 @@ import type { AppDetailLink } from '@gugu/core/shared/ui/guguLink'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { observer } from 'mobx-react-lite'
 import { QueryClientProvider, useQuery, useQueryClient } from '@tanstack/react-query'
-import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
 import { rendererLogger } from '@/lib/log'
 import { useTheme } from '@/store/theme'
 import { sessionSkinClassName } from '../sessionpage/sessionSkin'
+import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
 import { queryClient } from '@/session/renderer/lib/query-client'
 import { useSessionMessages } from '@/session/renderer/localization/use-session-messages'
 import { AppMarketContent, type MarketBrowsePage } from '@/session/renderer/features/extensions/panel/app-market-content'
@@ -68,7 +68,6 @@ const MobileAppsContent = observer(function MobileAppsContent({ appDetail }: { a
   const [pending, setPending] = useState<Record<string, ExtensionPendingAction>>({})
   const inFlight = useRef(false)
   const [failed, setFailed] = useState<{ title: string; cause: string } | null>(null)
-  const [layer, setLayer] = useState<HTMLDivElement | null>(null)
   const openedLink = useRef<AppDetailLink | undefined>(undefined)
   useEffect(() => {
     if (!appDetail || !catalog.data || openedLink.current === appDetail) return
@@ -192,7 +191,7 @@ const MobileAppsContent = observer(function MobileAppsContent({ appDetail }: { a
       {detail ? (
         <Sheet fullScreenMobile onClose={() => setDetail(null)} testId="phone-app-product" ariaLabel={localizedManifestText(detail.manifest, locale).name}>
           <div className={`${skin} phone-app-product`}>
-            <UiPortalContainerProvider value={layer}>
+            <SessionUiTheme theme={theme} skin>
               {error}
               <AppProductPage
                 key={detail.manifest.id}
@@ -208,8 +207,7 @@ const MobileAppsContent = observer(function MobileAppsContent({ appDetail }: { a
                   ...(store.autoUpdates(installed.id) !== null ? { autoUpdate: { on: store.autoUpdates(installed.id)!, onToggle: (on: boolean) => void change(installed.id, undefined, () => phoneApps.setAutoUpdate(installed.id, on)) } } : {}),
                 } : {}}
               />
-            </UiPortalContainerProvider>
-            <div ref={setLayer} className={`${skin} gg-session-settings-layer`} />
+            </SessionUiTheme>
           </div>
         </Sheet>
       ) : null}

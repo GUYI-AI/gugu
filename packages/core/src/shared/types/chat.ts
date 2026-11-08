@@ -372,7 +372,7 @@ export interface DeviceCapabilities extends Partial<DeviceHostInfo> {
   actions?: DeviceActionsSummary
 }
 
-export type GuguSettingsScope = 'user' | `device:${string}` | `chat:${string}`
+export type GuguSettingsScope = 'user' | 'prompts' | `device:${string}` | `chat:${string}`
 
 export interface GuguSettingsRow {
   scope: GuguSettingsScope

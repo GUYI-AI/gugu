@@ -457,20 +457,41 @@ export const LIST_PAGE = 1000;
 
 /**
  * Every row a `workspace_list_as` read names, page by page until its `total`: one answer stops at the gateway's row cap,
- * and a list cut there was shown as the whole folder (a 1416-item chat missed its oldest 416, folders among them).
+ * and a list cut there was shown as the whole folder (a 1416-item chat missed its oldest 416, folders among them). The
+ * first page says the total, so the rest are asked at once (a 7,800-item chat was eight reads one after another).
  */
 async function listedRows(token: string, args: Record<string, unknown>): Promise<ItemRow[]> {
-  const rows: ItemRow[] = [];
-  for (;;) {
-    const page = await agentRows(token, 'workspace_list_as', { ...args, p_offset: rows.length, p_limit: LIST_PAGE });
-    rows.push(...page);
-    const said = (page[0] as { total?: unknown } | undefined)?.total;
-    const total = typeof said === 'number' || (typeof said === 'string' && said !== '') ? Number(said) : NaN;
-    if (page.length === 0 || (Number.isFinite(total) ? rows.length >= total : page.length < LIST_PAGE)) {
-      // A file added between two pages moves the last row of the first onto the second.
-      return [...new Map(rows.map((row) => [row.id, row])).values()];
+  const page = (offset: number) => agentRows(token, 'workspace_list_as', { ...args, p_offset: offset, p_limit: LIST_PAGE });
+  const totalOf = (rows: readonly ItemRow[]) => {
+    const said = (rows[0] as { total?: unknown } | undefined)?.total;
+    return typeof said === 'number' || (typeof said === 'string' && said !== '') ? Number(said) : NaN;
+  };
+  const raised = (total: number, rows: readonly ItemRow[]) => {
+    const said = totalOf(rows);
+    return Number.isFinite(said) && !(said <= total) ? said : total;
+  };
+  let last = await page(0);
+  const rows = [...last];
+  // The largest total a page said: files added while the pages are read raise it.
+  let total = totalOf(last);
+  if (Number.isFinite(total) && last.length > 0 && last.length < total) {
+    const step = last.length;
+    const offsets: number[] = [];
+    for (let offset = step; offset < total; offset += step) offsets.push(offset);
+    for (const more of await Promise.all(offsets.map(page))) {
+      rows.push(...more);
+      total = raised(total, more);
+      last = more;
     }
   }
+  // One page at a time from where the rows end, as before: a page that said no total, or files added meanwhile.
+  while (last.length > 0 && (Number.isFinite(total) ? rows.length < total : last.length === LIST_PAGE)) {
+    last = await page(rows.length);
+    rows.push(...last);
+    total = raised(total, last);
+  }
+  // A file added between two pages moves the last row of one onto the next.
+  return [...new Map(rows.map((row) => [row.id, row])).values()];
 }
 
 /** Every row of a chat, newest first, as `actor` (the person, or the agent a program works for) sees them. */
@@ -546,6 +567,20 @@ async function itemById(token: string, itemId: string, actor: string): Promise<I
     throw new AppFileError(codeOf(error), error.message);
   }
   return ((Array.isArray(data) ? data[0] : data) as ItemRow | undefined) ?? null;
+}
+
+/**
+ * A file read by its id as its folder lists it: with how long its cloud copy is kept and the machine that keeps it
+ * (`workspace_list_as` only), so a page that hears it changed need not read its whole list again for that. Read by its
+ * name in its folder; one the list does not name (renamed or moved meanwhile, a folder) stays as it was read.
+ */
+async function asListed(token: string, row: ItemRow, actor: string): Promise<ItemRow> {
+  if (row.kind === 'folder') return row;
+  const found = await agentRows(token, 'workspace_list_as', { p_chat_id: row.chat_id, p_as_user_id: actor, p_folder: row.parent_id ?? '', p_name: row.filename, p_exact: true })
+    .catch(() => []);
+  const listed = found.find((one) => one.id === row.id);
+  // A list that does not say which machine holds it (undefined) leaves that to be resolved, as the row from get does.
+  return listed ? { ...row, expires_at: listed.expires_at ?? null, is_mine: listed.is_mine ?? null, host_device_id: listed.host_device_id } : row;
 }
 
 /**
@@ -903,7 +938,7 @@ export function createAppFiles(platform: FilesPlatform) {
     const { token, userId } = await platform.account();
     const rows = (await Promise.all(wanted.map((id) => itemById(token, id, as.asAgent ?? userId)))).filter((row): row is ItemRow => row !== null);
     if (rows.some((row) => row.chat_id !== chatId)) chatId = await resourceChatIdOf(token, chatId, as.asAgent ?? userId);
-    const here = rows.filter((row) => row.chat_id === chatId);
+    const here = await Promise.all(rows.filter((row) => row.chat_id === chatId).map((row) => asListed(token, row, as.asAgent ?? userId)));
     const found = new Set(here.map((row) => row.id));
     return { entries: await listedEntriesOf(token, here, platform, as.asAgent ?? userId), gone: wanted.filter((id) => !found.has(id)) };
   }

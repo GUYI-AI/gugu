@@ -1,9 +1,8 @@
+import { observer } from 'mobx-react-lite';
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
-import { Pencil, Plus, Trash2 } from '@/lib/icons';
+import { EyeOff, Pencil, Plus, RotateCcw, Trash2, type IconComponent } from '@/lib/icons';
 import { useMemo, useRef, useState } from 'react';
-import { useLibraryHost } from '@renderer/features/library/library-host';
 import { DeviceScopeNoticeLine } from '@renderer/features/remote-hosts/device-scope-picker';
-import { deviceScopeNotice } from '@renderer/features/remote-hosts/device-scope-notice';
 import { MultiLineListItem } from '@renderer/lib/components/multi-line-list-item';
 import { PageHeader } from '@renderer/lib/components/page-header';
 import { PageLoading } from '@renderer/lib/components/page-layout';
@@ -12,14 +11,10 @@ import { EmptyState } from '@renderer/lib/ui/empty-state';
 import { SearchInput } from '@renderer/lib/ui/search-input';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
-import { usePromptLibraryActions } from './use-prompt-library-actions';
-import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
+import { APP_PROMPT_ACTIONS } from '@shared/prompt-library';
+import { usePromptLibraryActions, type AppPromptRow } from './use-prompt-library-actions';
 
-type PromptListItem = {
-  id: string;
-  title: string;
-  prompt: string;
-};
+type PromptListItem = { title: string; prompt: string } | AppPromptRow;
 
 function matchesSearch(item: PromptListItem, search: string) {
   if (!search) return true;
@@ -27,56 +22,52 @@ function matchesSearch(item: PromptListItem, search: string) {
   return haystack.includes(search.toLowerCase());
 }
 
+type RowAction = { icon: IconComponent; label: string; onClick: () => void };
+
 function PromptRow({
   item,
   disabled,
+  tag,
   onEdit,
-  onDelete,
+  actions,
 }: {
   item: PromptListItem;
   disabled: boolean;
-  onEdit: () => void;
-  onDelete: () => void;
+  /** 「已修改」/「已隐藏」 on an App's prompt; a hidden one is drawn muted. */
+  tag?: string;
+  /** Absent: the row's text opens nothing (a hidden App prompt). */
+  onEdit?: () => void;
+  actions: RowAction[];
 }) {
-  const { translate } = useSessionMessages();
   return (
     <div className="flex w-full">
       <button
         type="button"
         className="min-w-0 flex-1 text-left"
         onClick={onEdit}
-        disabled={disabled}
+        disabled={disabled || !onEdit}
       >
-        <div className="text-md truncate text-foreground">{item.title}</div>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className={cn('text-md truncate', 'state' in item && item.state === 'hidden' ? 'text-foreground-muted' : 'text-foreground')}>{item.title}</span>
+          {tag && <span className="shrink-0 rounded border border-border px-1 text-xs text-foreground-muted">{tag}</span>}
+        </div>
         <div className="mt-1 line-clamp-1 text-xs leading-relaxed text-foreground-muted">
           {item.prompt}
         </div>
       </button>
       <div className="flex shrink-0 items-center gap-1 opacity-100 sm:opacity-0 sm:transition-opacity sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={onEdit}
-          disabled={disabled}
-          aria-label={translate('prompts.editLabel', { title: item.title })}
-        >
-          <Pencil />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={onDelete}
-          disabled={disabled}
-          aria-label={translate('prompts.deleteLabel', { title: item.title })}
-        >
-          <Trash2 />
-        </Button>
+        {actions.map(({ icon: Icon, label, onClick }) => (
+          <Button key={label} variant="ghost" size="icon-xs" onClick={onClick} disabled={disabled} aria-label={label} title={label}>
+            <Icon />
+          </Button>
+        ))}
       </div>
     </div>
   );
 }
 
-export function PromptLibraryView() {
+/** Sections like the composer's `/` (prompt-slash-items.ts): the person's own, then each enabled App's. */
+export const PromptLibraryView = observer(function PromptLibraryView() {
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   useCommandProvider({
@@ -88,19 +79,30 @@ export function PromptLibraryView() {
   const actions = usePromptLibraryActions();
   const { prompts: promptLibrary, createPrompt, editPrompt, deletePrompt } = actions;
   const { translate } = useSessionMessages();
-  const host = useLibraryHost();
-  // 看的是别的机器、它此刻给不出东西:说一句人话;离线时照旧画上次读到的、只读。一份都没有 ❌ 画「还没有提示词」。
-  const notice = deviceScopeNotice(
-    { remote: host.remote, error: actions.error, hasData: actions.hasData, now: Date.now(), cloud: remoteHostsStore.cloudScope(host.remote?.deviceId) },
-    translate
-  );
-  const isDisabled = actions.isBusy || !!notice?.readOnly;
+  // 提示词是账号的(use-prompt-library.ts):资源库选了哪台机器都是这一份,没有「那台机器离线」这回事。
+  const isDisabled = actions.isBusy;
   const [search, setSearch] = useState('');
 
   const filteredItems = useMemo(
     () => promptLibrary.filter((item) => matchesSearch(item, search.trim())),
     [promptLibrary, search]
   );
+  const appSections = new Map<string, AppPromptRow[]>();
+  for (const item of actions.appPrompts.filter((prompt) => matchesSearch(prompt, search.trim()))) appSections.set(item.appName, [...(appSections.get(item.appName) ?? []), item]);
+  const appRow = (prompt: AppPromptRow) => {
+    const offered = APP_PROMPT_ACTIONS[prompt.state];
+    const all = {
+      edit: { icon: Pencil, label: translate('prompts.editLabel', { title: prompt.title }), onClick: () => actions.editAppPrompt(prompt) },
+      hide: { icon: EyeOff, label: translate('prompts.hide'), onClick: () => actions.hideAppPrompt(prompt) },
+      restore: { icon: RotateCcw, label: translate('prompts.restore'), onClick: () => actions.restoreAppPrompt(prompt) },
+    };
+    return (
+      <MultiLineListItem key={prompt.key} className="py-3">
+        <PromptRow item={prompt} disabled={isDisabled} tag={prompt.state === 'modified' ? translate('prompts.modified') : prompt.state === 'hidden' ? translate('prompts.hidden') : undefined}
+          onEdit={offered.includes('edit') ? all.edit.onClick : undefined} actions={offered.map((action) => all[action])} />
+      </MultiLineListItem>
+    );
+  };
 
   return (
     <div ref={rootRef} className="flex flex-col text-foreground">
@@ -125,23 +127,37 @@ export function PromptLibraryView() {
           </Button>
         </div>
       </PageHeader>
-      {notice && <DeviceScopeNoticeLine notice={notice} onRetry={actions.reload} />}
+      {!!actions.error && !actions.hasData && (
+        <DeviceScopeNoticeLine notice={{ kind: 'failed', text: translate('prompts.loadFailed'), retry: true, readOnly: false }} onRetry={actions.reload} />
+      )}
       {/* 还没读到(在读 / 读不到):❌ 先画一句「还没有提示词」冒充它是空的。读不到时上面那一句说清楚。 */}
       {actions.isLoading ? (
         <PageLoading />
       ) : !actions.hasData ? null : (
-        <div className={cn('flex flex-col py-2', filteredItems.length === 0 && 'min-h-64')}>
-          {filteredItems.length > 0 ? (
-            filteredItems.map((prompt) => (
-              <MultiLineListItem key={prompt.id} className="py-3">
-                <PromptRow
-                  item={prompt}
-                  disabled={isDisabled}
-                  onEdit={() => editPrompt(prompt)}
-                  onDelete={() => deletePrompt(prompt)}
-                />
-              </MultiLineListItem>
-            ))
+        <div className={cn('flex flex-col py-2', filteredItems.length === 0 && appSections.size === 0 && 'min-h-64')}>
+          {filteredItems.length > 0 || appSections.size > 0 ? (
+            <>
+              <div className="px-3 pt-2 text-xs text-foreground-muted">{translate('chat.prompts')}</div>
+              {filteredItems.map((prompt) => (
+                <MultiLineListItem key={prompt.id} className="py-3">
+                  <PromptRow
+                    item={prompt}
+                    disabled={isDisabled}
+                    onEdit={() => editPrompt(prompt)}
+                    actions={[
+                      { icon: Pencil, label: translate('prompts.editLabel', { title: prompt.title }), onClick: () => editPrompt(prompt) },
+                      { icon: Trash2, label: translate('prompts.deleteLabel', { title: prompt.title }), onClick: () => deletePrompt(prompt) },
+                    ]}
+                  />
+                </MultiLineListItem>
+              ))}
+              {[...appSections].map(([app, prompts]) => (
+                <div key={app}>
+                  <div className="px-3 pt-4 text-xs text-foreground-muted">{app}</div>
+                  {prompts.map(appRow)}
+                </div>
+              ))}
+            </>
           ) : (
             <EmptyState
               label={translate('prompts.empty')}
@@ -152,4 +168,4 @@ export function PromptLibraryView() {
       )}
     </div>
   );
-}
+});

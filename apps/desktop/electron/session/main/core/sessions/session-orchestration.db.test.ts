@@ -628,7 +628,7 @@ describe('session orchestration', () => {
       setOtherMachines({
         devices: async () => [], isThisDevice: async () => false, appSpawn,
         sessions: async () => ({ sessions: [], unreached: [] }), archive: vi.fn(),
-        appMessage: vi.fn(), appCall: vi.fn(),
+        appMessage: vi.fn(), appCall: vi.fn(), sessionHome: vi.fn(),
       });
       try {
         expect(await spawnSessionForApp({ extensionId: 'context', extensionName: 'Context', envelope, prompt: 'inspect', device: 'device:remote', project: '/remote/project', harness: 'codex' })).toEqual({ agentId: 'user:remote-agent' });
@@ -2053,7 +2053,7 @@ describe('session orchestration', () => {
         sessions: [{ deviceId: 'device-c', label: 'Third computer', session: { conversationId: 'chosen-remote', projectId: 'remote-project', parentConversationId: 'unreachable-ancestor' } as SessionpageSessionSummary, listsAgents: true }],
         unreached: [{ deviceId: 'device-d', label: 'Offline computer', detail: 'no answer' }],
       }),
-      archive: vi.fn(), appMessage: vi.fn(), appCall: vi.fn(),
+      archive: vi.fn(), appMessage: vi.fn(), appCall: vi.fn(), sessionHome: vi.fn(),
     });
     const action = { action: 'spawn' as const, prompt: 'x', project_id: 'project-2', parent_session_id: 'chosen-remote' };
     const child = await (remoteCaller
@@ -2506,7 +2506,7 @@ describe('session_set_parent', () => {
 
   it('records a parent on another machine in config, and drops the older nested mark so it is read only once', async () => {
     seed('visitor', null, null, { version: '1', type: 'acp', spawnedByRemote: { deviceId: 'dev-old', sessionId: 'old-parent', nested: true } });
-    setOtherMachines({ devices: async () => [], isThisDevice: async () => false, appSpawn: vi.fn(),
+    setOtherMachines({ devices: async () => [], isThisDevice: async () => false, appSpawn: vi.fn(), sessionHome: vi.fn(),
       sessions: async () => ({
         sessions: [{ deviceId: 'dev-far', label: 'far box', session: { conversationId: 'far', projectId: 'p-far', parentConversationId: null } as SessionpageSessionSummary, listsAgents: true }],
         unreached: [],

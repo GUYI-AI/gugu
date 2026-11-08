@@ -11,6 +11,7 @@ vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({
   fileReader: () => ({ accountId: 'account-1', actorId: 'account-1' }),
   fileReadSignal: () => undefined,
   attachmentCache: async () => ({ match: async () => undefined, put: async () => undefined }),
+  putAttachment: async () => undefined,
   attachmentCacheOrigin: 'https://attachments.gugu.invalid',
 }))
 

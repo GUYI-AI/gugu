@@ -17,7 +17,7 @@ afterEach(()=>harness.cleanup())
 it('opens a session link from its account work before any device or panel directory has received it',async()=>{
  const opened=vi.fn(),openAssistant=vi.fn()
  cloud.list.mockResolvedValue([{work_id:'new-work',assistant_user_id:'assistant',owner_user_id:'owner',title:'Just dispatched',executors:[{session_id:'prepared-session',device_id:'sleeping',agent_user_id:null}],coordinator_session_id:'main',coordinator_device_id:'home'}])
- function Navigation(){useLinkNavigation({ownerId:'owner',chats:[],contacts:[],openChat:vi.fn(),openFile:vi.fn(),openApp:vi.fn(),openProject:vi.fn(),openOwnApp:vi.fn(),openAssistant});return null}
+ function Navigation(){useLinkNavigation({ownerId:'owner',chats:() => [],contacts:() => [],openChat:vi.fn(),openFile:vi.fn(),openApp:vi.fn(),openProject:vi.fn(),openOwnApp:vi.fn(),openAssistant});return null}
  await harness.render(<Navigation/>);window.addEventListener(OPEN_ASSISTANT_TASK_CHAT,opened)
  try{
   await act(async()=>{await new Promise<void>((resolve,reject)=>window.dispatchEvent(new CustomEvent('gugu:open-link-target',{detail:{target:{kind:'session',sessionId:'prepared-session'},resolve,reject},cancelable:true})))})

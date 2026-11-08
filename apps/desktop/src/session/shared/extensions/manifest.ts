@@ -33,6 +33,8 @@ export const ENGINES_RANGE_PATTERN = /^(>=|\^)(\d+\.\d+\.\d+)$/;
 // and must split back unambiguously.
 const EXTENSION_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,63}$/;
 const TAB_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
+/** A prompt an App offers (`contributes.prompts`): plain text the person inserts and sends. */
+const promptTextSchema = z.string().trim().min(1).max(2000);
 const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 // A shelf category is a slug, not a label: the host maps known ones to words in
 // the user's language and shows an unknown one as-is, so authors can add their
@@ -374,6 +376,8 @@ export const EXTENSION_CAPABILITIES = [
    * (superRefine),于是「给 agent 加了东西却没问过用户」在清单层就写不出来。
    */
   'agents:tools',
+  // 读写这个人的提示词(输入框 `/` 里「我的」那一组):`gugu.prompts`。只有装了它的 App 的 agent 才碰得到,默认谁都没有。
+  'prompts',
   // 发系统横幅。横幅是咕咕唯一的提醒通道,扩展借用它就要在装的时候说出来。
   'notifications',
 ] as const;
@@ -551,6 +555,10 @@ export const extensionManifestSchema = z
               })
             )
             .optional(),
+          /** API 34: a prompt's title and text in this language, by prompt name; the text falls back to the base one. */
+          prompts: z
+            .record(z.string().regex(TAB_NAME_PATTERN), z.strictObject({ title: z.string().trim().min(1).max(48).optional(), prompt: promptTextSchema.optional() }))
+            .optional(),
         })
       )
       .optional(),
@@ -601,6 +609,11 @@ export const extensionManifestSchema = z
        * first install — after that it is the person's switch, which no upgrade turns.
        */
       toolsListed: z.literal(true).optional(),
+      /**
+       * API 34: plain-text prompts this App offers in the composer's `/` menu, under its name. Only text the person
+       * inserts, reads and sends themselves — so no capability: nothing runs, nothing is sent on the App's behalf.
+       */
+      prompts: z.array(z.strictObject({ name: z.string().regex(TAB_NAME_PATTERN), title: z.string().trim().min(1).max(48), prompt: promptTextSchema })).min(1).max(8).optional(),
     }),
   })
   .superRefine((manifest, ctx) => {
@@ -608,6 +621,9 @@ export const extensionManifestSchema = z
     for (const [tag, entry] of Object.entries(manifest.localized ?? {})) {
       if (language(tag) === language(manifest.defaultLocale)) {
         ctx.addIssue({ code: 'custom', path: ['localized', tag], message: `the base fields are already in ${manifest.defaultLocale} (defaultLocale)` });
+      }
+      for (const name of Object.keys(entry.prompts ?? {})) {
+        if (!manifest.contributes.prompts?.some((prompt) => prompt.name === name)) ctx.addIssue({ code: 'custom', path: ['localized', tag, 'prompts', name], message: `this App has no prompt named ${name}` });
       }
       // A localized tab or command is one the App has: a name or id it does not declare is a typo, said so.
       for (const [name, text] of Object.entries(entry.tabs ?? {})) {
@@ -663,6 +679,10 @@ export const extensionManifestSchema = z
         }
       }
     }
+    const prompts = manifest.contributes.prompts ?? [];
+    if (prompts.length > 0 && manifest.apiVersion < 34) ctx.addIssue({ code: 'custom', path: ['contributes', 'prompts'], message: 'prompts require apiVersion 34' });
+    if (new Set(prompts.map((prompt) => prompt.name)).size !== prompts.length) ctx.addIssue({ code: 'custom', path: ['contributes', 'prompts'], message: 'duplicate prompt name' });
+    if ((manifest.permissions?.capabilities ?? []).includes('prompts') && manifest.apiVersion < 34) ctx.addIssue({ code: 'custom', path: ['permissions', 'capabilities'], message: '"prompts" requires apiVersion 34' });
     if (manifest.contributes.tabs.filter((tab) => tab.chatFile !== undefined).length > 1) {
       ctx.addIssue({ code: 'custom', path: ['contributes', 'tabs'], message: 'one tab at most names the file it shows in a chat (chatFile)' });
     }
@@ -772,7 +792,7 @@ export function programLine(server: ExtensionMcpServerContribution): string {
 
 export class ExtensionManifestError extends Error {
   constructor(public readonly issues: string[]) {
-    super(`Invalid App manifest:\n- ${issues.join('\n- ')}`);
+    super(`Invalid App manifest: ${issues.join('; ')}`);
     this.name = 'ExtensionManifestError';
   }
 }

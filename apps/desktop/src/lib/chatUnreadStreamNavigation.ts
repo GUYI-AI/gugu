@@ -173,8 +173,8 @@ export function useChatUnreadStreamNavigation(deps: Deps) {
       const saved = { ...locator, message_id: locator.message_id, message_seq: locator.message_seq }
       const entry = { chatId, epoch: getMessageSnapshotEpoch(chatId), locator: saved, onSeen: () => consumeUnreadEntry(chatId, saved) }
       setUnreadEntries((previous) => ({ ...previous, [chatId]: entry }))
-    }
-  }, [deps.chatsRef, getMessageSnapshotEpoch, consumeUnreadEntry])
+    } else dropUnreadEntry(chatId) // an opening with nothing new has no first unread: an earlier opening's pill goes
+  }, [deps.chatsRef, getMessageSnapshotEpoch, consumeUnreadEntry, dropUnreadEntry])
   const openUnreadChat = useCallback(async (chatId: string, alreadyOpen = latestDeps.current.activeChatIdRef.current === chatId): Promise<void> => {
     const deps = latestDeps.current
     const locator = deps.chatsRef.current.find((chat) => chat.id === chatId)?.unread_locator

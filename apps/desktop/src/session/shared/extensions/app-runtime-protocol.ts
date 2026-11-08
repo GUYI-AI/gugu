@@ -231,6 +231,12 @@ const WORKSPACE_ID = /^(session|project):(.+)$/;
 
 /** A session's working copy's workspace id; a project's root folder's. */
 export const sessionWorkspace = (sessionId: string): string => `session:${sessionId}`;
+
+/**
+ * The preinstalled workspace App (apps/desktop/preinstalled-apps/workspace; 文件 / Files to people). It stays an App in code, but it is
+ * the chat's own folder, not something one installs or removes, so the App lists leave it out (owner 10-10).
+ */
+export const WORKSPACE_APP_ID = 'workspace';
 export const projectWorkspace = (projectId: string): string => `project:${projectId}`;
 
 /** What a workspace id names. What is not one throws `invalid`. */

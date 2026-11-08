@@ -49,7 +49,7 @@ beforeEach(async () => {
   focus.guest = false; focus.destroyed = false; focus.host.mockClear();
   setExtensionBridgeHost({
     deliver: () => Promise.resolve(),
-    presentation: () => ({ locale: 'en', themeMode: 'dark' as const, fullscreen: false, windowFocused: true }),
+    selfGuguNumber: () => undefined, presentation: () => ({ locale: 'en', themeMode: 'dark' as const, fullscreen: false, windowFocused: true }),
   });
   await bindExtensionSurface({ webContentsId: PAGE, extensionId: 'workspace', tabId: 'slot-1', tabKind: 'workspace.main', conversation: CHAT, itemId: PLAN });
   updateExtensionSurfaceLayout(PAGE, { visible: true, width: 440, height: 700 });
