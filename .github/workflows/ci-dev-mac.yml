@@ -91,7 +91,11 @@ jobs:
       - name: Build the current renderer and packaged Pi runtime; sync iOS
         run: |
           set -euo pipefail
-          pnpm cap:sync:ios 2>&1 | tee "$DIAG_ROOT/evidence/renderer-runtime-sync.log"
+          node scripts/build/prepare-ios-backend.mts 2>&1 | tee "$DIAG_ROOT/evidence/backend.log"
+          pnpm build:renderer 2>&1 | tee "$DIAG_ROOT/evidence/renderer.log"
+          node scripts/build/phone-web-dir.mts 2>&1 | tee "$DIAG_ROOT/evidence/phone-web-dir.log"
+          node scripts/build/build-ios-agent.mjs 2>&1 | tee "$DIAG_ROOT/evidence/pi-runtime.log"
+          pnpm exec cap copy ios 2>&1 | tee "$DIAG_ROOT/evidence/cap-copy.log"
       - name: Verify packaged inputs before SDK compilation
         run: |
           set -euo pipefail
