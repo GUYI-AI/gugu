@@ -83,7 +83,8 @@ export async function releaseQueuedSessionInput(sessionId: string, turns: readon
     if (typeof item._meta?.guguClientMessageId === 'string') completed.add(item._meta.guguClientMessageId)
   }
   const queue = await currentQueue()
-  const input = await queue.releaseQueued(sessionId, sessionInputBaseline(turns), completed, nowId, steers, canRelease)
+  const input = await queue.releaseQueued(sessionId, sessionInputBaseline(turns), completed, nowId, steers, canRelease,
+    new Set(turns.map(turn => turn.id)))
   if (input) void queue.flush().catch(error => rendererLogger('session/input-outbox').warn({ error: String(error) }, 'Could not flush released input'))
   return input
 }

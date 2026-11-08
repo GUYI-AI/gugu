@@ -38,7 +38,10 @@ function quoted(text: string): string {
   return text.replace(OWN_TAG, '&lt;$1$2');
 }
 
-/** Who a delivered message came from: only what was typed into this session is the person's. */
+/**
+ * Who a delivered message came from: only what was typed into this session is the person's. Every label has a fixed
+ * lead-in, so a name (free text) cannot make its line start like another speaker's (`Person: …`).
+ */
 function senderOf(facts: DeliveryReadFacts | null): string {
   if (!facts) return 'Delivered message';
   if (facts.route === 'system') return 'Gugu system notice';
@@ -46,8 +49,11 @@ function senderOf(facts: DeliveryReadFacts | null): string {
   if (facts.route === 'app') return `App ${facts.viaApp ?? facts.from ?? ''}`.trim();
   const via = facts.route === 'chat' ? (facts.chatKind === 'dm' ? 'direct message' : 'chat')
     : facts.route === 'session-direct' ? 'session message' : facts.route;
-  return `${facts.from ?? 'Unknown sender'} (${via})`;
+  return `From ${facts.from ?? 'an unknown sender'} (${via})`;
 }
+
+// Every break a tokenizer or renderer may start a new line at, not only \n.
+const LINE_BREAK = /\r\n|[\r\n\u2028\u2029\u0085]/g;
 
 function messageLines(role: string, text: string): string[] {
   // A message starts at the margin and its later lines are indented: a newline inside it cannot pass for another line
@@ -55,8 +61,8 @@ function messageLines(role: string, text: string): string[] {
   const line = (who: string, body: string) => {
     const trimmed = body.trim();
     if (!trimmed) return [];
-    const sender = quoted(who.replace(/\s+/g, ' ').trim());
-    return [`${sender}: ${quoted(cut(trimmed, MAX_MESSAGE_TOKENS)).replace(/\r?\n/g, '\n  ')}`];
+    const sender = quoted(who.replace(/[\s\u0085]+/g, ' ').trim());
+    return [`${sender}: ${quoted(cut(trimmed, MAX_MESSAGE_TOKENS)).replace(LINE_BREAK, '\n  ')}`];
   };
   // Every role other than the person's is something the agent side said.
   if (role !== 'user') return line('Agent', text);

@@ -236,19 +236,29 @@ export class SessionInputOutbox {
     })
   }
 
-  /** One foreground completion releases one input, never all of a session's queue. */
+  /**
+   * One foreground completion releases one input, never all of a session's queue.
+   *
+   * `historyTurnIds` (the turns the release was judged on): an input queued after a turn that is not among them was
+   * queued on an engine session since replaced (turn numbering continues across a replacement, so an old turn never
+   * reappears). Its predecessor's completion lives only in that engine's history: it waits for it no more. This holds on
+   * every device that queued, not only the one where the replacement was asked for.
+   */
   releaseQueued(sessionId: string, baseline: Pick<SessionInput, 'baseline' | 'afterTurnId'>,
-    completed: ReadonlySet<string>, nowId?: string, steers = false, canRelease: () => boolean = () => true): Promise<SessionInput | null> {
+    completed: ReadonlySet<string>, nowId?: string, steers = false, canRelease: () => boolean = () => true,
+    historyTurnIds?: ReadonlySet<string>): Promise<SessionInput | null> {
     return this.write(async () => {
       const rows = (await this.list()).filter(row => row.sessionId === sessionId)
       if (!canRelease() || (!nowId && rows.some(row => !row.sendQueue && row.admission !== 'rejected'))) return null
       const queued = rows.filter(row => row.sendQueue).sort((a, b) => a.sendQueue!.order - b.sendQueue!.order)
       const input = nowId ? queued.find(row => row.id === nowId) : queued[0]
       const predecessor = input?.sendQueue?.afterInputId
-      if (!input || input.sendQueue!.edit || (!nowId && predecessor && !completed.has(predecessor)
+      const replacedUnder = input?.afterTurnId !== undefined && historyTurnIds !== undefined && !historyTurnIds.has(input.afterTurnId)
+      if (!input || input.sendQueue!.edit || (!nowId && predecessor && !completed.has(predecessor) && !replacedUnder
         && !rows.some(row => row.id === predecessor && row.admission === 'rejected'))) return null
-      // Remaining entries wait for this exact input to finish, including across a shell restart.
-      const following = queued.filter(row => row.id !== input.id).map(row => ({ ...row, sendQueue: { ...row.sendQueue!, afterInputId: input.id } }))
+      // Remaining entries wait for this exact input to finish, including across a shell restart, on the engine it goes to.
+      const following = queued.filter(row => row.id !== input.id).map(row => ({ ...row,
+        ...(replacedUnder ? { afterTurnId: baseline.afterTurnId } : {}), sendQueue: { ...row.sendQueue!, afterInputId: input.id } }))
       const { sendQueue: _queue, ...released } = input
       const sent: SessionInput = { ...released, ...baseline, queued: false, ...(steers ? { steerIfBusy: true } : {}) }
       await this.persist([...following, sent])

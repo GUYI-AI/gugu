@@ -33,6 +33,26 @@ describe('composer-owned durable send queue', () => {
     expect(await queue.releaseQueued('session', {}, new Set([held.id]))).toMatchObject({ id: later.id })
   })
 
+  it('another device that queued while the lost turn ran releases on the new engine by itself, one turn at a time', async () => {
+    // The replacement was asked for elsewhere: nothing detached this client's queue.
+    const storage = await openSessionInputStorage(new IDBFactory())
+    const queue = new SessionInputOutbox('owner', storage, async () => {}, () => true)
+    const queuedOnLost = { ...target, afterTurnId: 's:turn:s3' }
+    const held = await queue.enqueue({ ...queuedOnLost, sendQueue: { order: 0, afterInputId: 'prompt-on-the-lost-engine' } })
+    const later = await queue.enqueue({ ...queuedOnLost, sendQueue: { order: 1, afterInputId: 'prompt-on-the-lost-engine' } })
+    // The same engine: its history has the turn the input was queued after, so the input keeps waiting.
+    expect(await queue.releaseQueued('session', {}, new Set(), undefined, false, () => true, new Set(['s:turn:s3']))).toBeNull()
+    // The new engine continues the numbering: the turn is not in its history.
+    const fresh = { afterTurnId: 's:turn:s4' }
+    expect(await queue.releaseQueued('session', fresh, new Set(), undefined, false, () => true, new Set(['s:turn:s4'])))
+      .toMatchObject({ id: held.id })
+    await queue.flush()
+    // The next one now waits for the released input on the new engine.
+    expect(await queue.releaseQueued('session', fresh, new Set(), undefined, false, () => true, new Set(['s:turn:s4']))).toBeNull()
+    expect(await queue.releaseQueued('session', fresh, new Set([held.id]), undefined, false, () => true, new Set(['s:turn:s4', 's:turn:s5'])))
+      .toMatchObject({ id: later.id })
+  })
+
   it('a replacement leaves a predecessor that is still in the outbox alone', async () => {
     const storage = await openSessionInputStorage(new IDBFactory())
     const queue = new SessionInputOutbox('owner', storage, async () => { throw new SessionInputAdmissionError('refused', 'rejected') }, () => true)
