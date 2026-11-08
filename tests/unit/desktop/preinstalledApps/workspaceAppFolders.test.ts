@@ -339,8 +339,10 @@ describe('making, moving, uploading, deleting', () => {
     try {
       const listed = gugu.files.list.mock.calls.length
       ;[...$('move-targets').querySelectorAll<HTMLButtonElement>('.move-target')].find((t) => t.textContent === '合同')!.click()
-      await readAgain(listed)
+      // Nothing moved: the banner says why, and the list is not read again (the row stays where it was).
+      await until('the failure said', () => said().length > 0)
       expect(said()).toEqual(['这个文件夹里已经有「notes.md」了'])
+      expect([gugu.files.list.mock.calls.length, row('notes').isConnected]).toEqual([listed, true])
     } finally {
       css.remove()
     }

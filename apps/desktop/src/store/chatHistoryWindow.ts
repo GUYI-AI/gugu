@@ -46,14 +46,11 @@ function boundRows(rows: MessageItem[], limit: number, edge: 'head' | 'tail' = '
   return [...(capacity === 0 ? [] : edge === 'head' ? settled.slice(0, capacity) : settled.slice(-capacity)), ...pending]
 }
 
-// @@@6352 A tail-following window slides; it never shrinks in bulk while the list is mounted. Rejoining
-// the tail after reading history used to crop 120 rows to 40 at once: the old virtualized list compensated
-// a removal of thousands of pixels above the reader over several frames (blank frames, a transient scrollTop≈0 that
-// even requested an older page). New tail rows grow the window up to MAX_WINDOW, then drop one head row
-// each (#6530: sliding a burst of k rows keeps the length, so that list never saw an append and its
-// follow-output did not fire — the reader stayed ~2000px above the bottom). A reset opens at 40.
-function tailBound(rows: readonly MessageItem[]): number {
-  return Math.min(MAX_WINDOW, Math.max(MESSAGE_WINDOW, rows.length))
+// @@@tail-window A window at the tail stays small: mounted rows are what every style pass pays for, so a chat left open must not
+// cost more than a chat just opened. New tail rows never grow it; a window a reader widened gives one row back per arrival. A reader
+// returning to the tail keeps the rows it paged in: scrolling up again right away must not pay for laying a whole page out again.
+function tailBound(previous: readonly MessageItem[]): number {
+  return Math.max(MESSAGE_WINDOW, previous.length - 1)
 }
 
 /** One committed row set owns its bounds and virtual indices; requests own an activation token. */
@@ -146,7 +143,7 @@ export class ChatHistoryWindow {
       // range. Only explicit older navigation is allowed to extend its old end.
       const lower = oldestSeq(previous.messages)
       const rows = Number.isFinite(lower) ? incoming.filter((row) => row.seq < 1 || row.seq >= lower) : incoming
-      this.commit(boundRows(rows, tailBound(rows)), { latestSeen, change: 'update' })
+      this.commit(boundRows(rows, tailBound(previous.messages)), { latestSeen, change: 'update' })
       return
     }
     const upper = maxMainlineSeq(previous.messages)
