@@ -4,6 +4,7 @@ import { fileSha256 } from '@gugu/core/shared/fileCipher'
 import { attachmentFileRef, type AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
 import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment } from './fileAccess'
 import { attachmentQuery, attachmentQueryClient } from './attachmentQueryClient'
+import { offlineHolder, type OfflineHolder } from './fileHost'
 import { platform } from '../platform'
 import { openImageViewer, type ImageViewerItem } from './imageViewer'
 import { rendererLogger } from './log'
@@ -81,7 +82,7 @@ export type AttachmentView =
   | { status: 'gone' }
   | { status: 'expired' }
   | { status: 'missing' }
-  | { status: 'failed' }
+  | { status: 'failed'; holder: OfflineHolder | null }
 
 /** 缩略图在内存里只是一个 blob:记在本次运行里,超过这么久没人再取就丢。 */
 const THUMB_GC_MS = 30 * 60_000
@@ -153,7 +154,10 @@ export function useAttachmentObjectUrl(source: AttachmentSource, variant: Attach
         if (!alive) return URL.revokeObjectURL(objectUrl)
         show({ status: 'ready', objectUrl, link: bytes.link }, objectUrl)
       },
-      () => alive && show({ status: 'failed' }),
+      async () => {
+        const holder = source.kind === 'item' ? await offlineHolder(source.itemId, source.version) : null
+        if (alive) show({ status: 'failed', holder })
+      },
     )
     return () => {
       alive = false

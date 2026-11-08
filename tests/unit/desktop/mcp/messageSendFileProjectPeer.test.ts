@@ -1,5 +1,5 @@
-// message_send_file in a project chat: a file other than an image goes through this machine's publisher (the composer's) and
-// stays on this machine; an image is uploaded when sent; a folder file's next version, an image's too, is published here from
+// message_send_file in a project chat: a file goes through this machine's publisher (the composer's) and stays on this
+// machine; a folder file's next version, an image's too, is published here from
 // the version named, on whichever member's machine sends it.
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -52,12 +52,12 @@ describe('message_send_file in a project chat', () => {
     expect(receipt).toMatchObject({ status: 'sent', file_name: 'notes.pdf', message_id: `msg:${message.message_id}` })
   })
 
-  test('an image is uploaded when sent, with its type', async () => {
-    const publish = vi.fn()
+  test('an image goes through the same publisher, with its type', async () => {
+    const publish = vi.fn(async (_chat: string, _file: unknown, _actor: string, message: Record<string, unknown>) => ({ message: { id: message.message_id, chat_id: CHAT, content: envelope } }))
     const { send, uploads } = setup({ publish })
     expect(JSON.parse(await send({ file_path: png }))).toMatchObject({ status: 'sent', file_name: 'shot.png' })
-    expect(publish).not.toHaveBeenCalled()
-    expect(uploads).toEqual([expect.objectContaining({ content_type: 'image/png' })])
+    expect(publish.mock.calls[0]![1]).toEqual({ name: 'shot.png', path: png, size: 9, contentType: 'image/png' })
+    expect(uploads).toEqual([])
   })
 
   test('a text file the shared classifier makes a document is uploaded for the server to make it one, not published here', async () => {
