@@ -17,19 +17,30 @@ import Testing
         installationId: "33333333-3333-4333-8333-333333333333")
     private func request(_ data: Data = Data([0, 1, 255])) -> GuguPushRegistrationRequest {
         .init(ticket: .init(binding: binding, generation: UUID()),
-              preferences: .init(chatEnabled: true, taskEnabled: false, soundEnabled: false), deviceToken: data)
+              preferences: .init(chatEnabled: true, taskEnabled: false, chatSoundEnabled: false, taskSoundEnabled: false), deviceToken: data)
     }
     @Test func exactWireMappingUsesSignedEnvironmentAndServerGeneration() async throws {
         let transport = Transport(), request = request()
         let provider = GuguPushRPCProvider(transport: transport, environment: .production)
         let ack = try await provider.register(request)
         #expect(transport.function == "mobile_push_register")
-        #expect(Set(transport.parameters.keys) == ["p_installation_id", "p_device_id", "p_token", "p_environment", "p_topic", "p_chat_enabled", "p_task_enabled", "p_sound_enabled"])
+        #expect(Set(transport.parameters.keys) == ["p_installation_id", "p_device_id", "p_token", "p_environment", "p_topic", "p_chat_enabled", "p_task_enabled", "p_chat_sound_enabled", "p_task_sound_enabled"])
         #expect(transport.parameters["p_token"] as? String == "0001ff")
         #expect(transport.parameters["p_environment"] as? String == "production")
         #expect(transport.parameters["p_topic"] as? String == "app.gugu.chat")
         #expect(ack.ticket == request.ticket && ack.serverGeneration != request.ticket.generation)
         #expect(ack.serverGeneration.uuidString.lowercased() == "66666666-6666-4666-8666-666666666666")
+    }
+    @Test(arguments: [false, true]) func independentSoundsAreSentWithoutMerging(chatSound: Bool) async throws {
+        let t = Transport(), provider = GuguPushRPCProvider(transport: t, environment: .production)
+        let request = GuguPushRegistrationRequest(ticket: .init(binding: binding, generation: UUID()),
+            preferences: .init(chatEnabled: true, taskEnabled: true, chatSoundEnabled: chatSound, taskSoundEnabled: !chatSound),
+            deviceToken: Data([0, 1]))
+        let receipt = try await provider.register(request)
+        #expect(t.parameters.count == 9 && t.parameters["p_sound_enabled"] == nil)
+        #expect(t.parameters["p_chat_sound_enabled"] as? Bool == chatSound)
+        #expect(t.parameters["p_task_sound_enabled"] as? Bool == !chatSound)
+        #expect(receipt.preferences == request.preferences)
     }
     @Test func tokenLimitCountsHexCharactersAndPreservesAllBytes() async throws {
         let t = Transport(), p = GuguPushRPCProvider(transport: Transport(), environment: .sandbox)

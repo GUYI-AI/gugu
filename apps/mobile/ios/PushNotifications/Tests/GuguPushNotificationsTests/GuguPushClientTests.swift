@@ -56,7 +56,7 @@ private func pushSettings(_ authorization: GuguPushAuthorization = .authorized, 
         #expect(request.customMirror.children.isEmpty)
         if failRegister { throw NSError(domain: "raw secret must not escape", code: 1) }
         if delayRegister { return try await withCheckedThrowingContinuation { registerGate = $0 } }
-        return replaceAck ?? receipt(request.ticket)
+        return replaceAck ?? receipt(request.ticket, preferences: request.preferences)
     }
     func revoke(_ request: GuguPushRevocationRequest) async throws -> Bool {
         revocations.append(request)
@@ -65,10 +65,10 @@ private func pushSettings(_ authorization: GuguPushAuthorization = .authorized, 
         if cancelAfterRevoke { withUnsafeCurrentTask { $0?.cancel() } }
         return revokeValue
     }
-    func receipt(_ ticket: GuguPushTicket) -> GuguPushRegistrationReceipt {
+    func receipt(_ ticket: GuguPushTicket, preferences: GuguPushPreferences = .init(chatEnabled: true, taskEnabled: true, chatSoundEnabled: false, taskSoundEnabled: false)) -> GuguPushRegistrationReceipt {
         if let saved = receipts[ticket.generation] { return saved }
         let value = GuguPushRegistrationReceipt(ticket: ticket, registrationId: UUID().uuidString.lowercased(),
-            serverGeneration: UUID(), preferences: .init(chatEnabled: true, taskEnabled: true, soundEnabled: false))
+            serverGeneration: UUID(), preferences: preferences)
         receipts[ticket.generation] = value; return value
     }
 }
@@ -76,7 +76,7 @@ private func pushSettings(_ authorization: GuguPushAuthorization = .authorized, 
 @MainActor private final class Fixture {
     let platform = Platform(), provider = Provider()
     var current = binding(), foreground = true
-    var preferences = GuguPushPreferences(chatEnabled: true, taskEnabled: true, soundEnabled: false)
+    var preferences = GuguPushPreferences(chatEnabled: true, taskEnabled: true, chatSoundEnabled: false, taskSoundEnabled: false)
     var present = true
     var publicationAvailable = true, retirementCapabilityValid = true, retirementChecks = 0
     var originalSessionId = "77777777-7777-4777-8777-777777777777"
@@ -439,7 +439,7 @@ private func proof(_ scope: GuguPushRetirementScope, kind: GuguPushCleanupKind =
         f.present = false
         #expect(f.client.presentation(for: envelope) == .none)
         #expect(f.hints.count == 1)
-        f.preferences = .init(chatEnabled: false, taskEnabled: true, soundEnabled: false)
+        f.preferences = .init(chatEnabled: false, taskEnabled: true, chatSoundEnabled: false, taskSoundEnabled: false)
         #expect(await !f.client.handle(envelope, kind: .opened))
         #expect(try await !f.client.status(expectedBinding: f.current).serverRegistered)
     }
@@ -460,6 +460,29 @@ private func proof(_ scope: GuguPushRetirementScope, kind: GuguPushCleanupKind =
         let envelope = f.envelope()
         f.duringPresentation = { f.current = binding(ownerB) }
         #expect(f.client.presentation(for: envelope) == .none)
+    }
+
+    @Test(arguments: [false, true]) func foregroundSelectsIndependentSoundByKind(chatSound: Bool) async throws {
+        let f = Fixture()
+        f.preferences = .init(chatEnabled: true, taskEnabled: true, chatSoundEnabled: chatSound, taskSoundEnabled: !chatSound)
+        _ = try await f.client.register(expectedBinding: f.current)
+        let chat = f.envelope()
+        let task = GuguPushEnvelope(binding: chat.binding, registrationId: chat.registrationId, serverGeneration: chat.serverGeneration,
+            eventId: UUID().uuidString.lowercased(), kind: .taskAttention, revision: chat.revision)
+        #expect(f.client.presentation(for: chat) == (chatSound ? .alertWithSound : .alert))
+        #expect(f.client.presentation(for: task) == (chatSound ? .alert : .alertWithSound))
+    }
+
+    @Test(arguments: ["chat", "task"]) func eitherSoundChangeWithdrawsOldAcknowledgement(field: String) async throws {
+        let f = Fixture(); _ = try await f.client.register(expectedBinding: f.current)
+        let old = f.envelope()
+        f.preferences = .init(chatEnabled: true, taskEnabled: true, chatSoundEnabled: field == "chat", taskSoundEnabled: field == "task")
+        #expect(f.client.presentation(for: old) == .none)
+        #expect(await !f.client.handle(old, kind: .received))
+        #expect(try await !f.client.status(expectedBinding: f.current).serverRegistered)
+        _ = try await f.client.register(expectedBinding: f.current)
+        #expect(try await f.client.status(expectedBinding: f.current).serverRegistered)
+        #expect(f.client.presentation(for: old) == .none)
     }
 
     @Test func retirementUsesOnlyRestrictedBindingAfterOrdinaryPublicationCloses() async throws {

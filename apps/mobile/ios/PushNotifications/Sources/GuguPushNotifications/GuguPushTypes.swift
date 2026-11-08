@@ -47,8 +47,15 @@ struct GuguPushTicket: Equatable {
 struct GuguPushPreferences: Equatable {
     let chatEnabled: Bool
     let taskEnabled: Bool
-    let soundEnabled: Bool
+    let chatSoundEnabled: Bool
+    let taskSoundEnabled: Bool
     func allows(_ kind: GuguPushKind) -> Bool { kind == .chatMessage ? chatEnabled : taskEnabled }
+    func sound(for kind: GuguPushKind) -> Bool {
+        switch kind {
+        case .chatMessage: return chatSoundEnabled
+        case .taskAttention: return taskSoundEnabled
+        }
+    }
 }
 enum GuguPushEnvironment: String { case sandbox, production }
 enum GuguPushKind: String { case chatMessage = "chat_message", taskAttention = "task_attention" }

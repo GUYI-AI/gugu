@@ -8,8 +8,8 @@ import CoreFoundation
     func call(_ function: String, parameters: [String: Any], binding: GuguPushBinding) async throws -> Any
 }
 
-/// Register/revoke mapping frozen at gugu-supabase 94fb939d29e6ac004a3ac26b24eca7ceead550d4.
-/// Close contract additionally frozen by the backend owner on 2026-11-08.
+/// Wire mapping frozen at gugu-supabase 3b473356f3b99ab8de6b19c5dec16de586498227.
+/// Chat/task sounds are independent. Close/revoke retain the prior contract.
 /// No HTTP implementation or environment fallback. Configuration comes from
 /// the actual signed build, never a WebView parameter.
 @MainActor final class GuguPushRPCProvider: GuguPushProvider {
@@ -36,7 +36,8 @@ import CoreFoundation
                     "p_environment": environment.rawValue, "p_topic": "app.gugu.chat",
                     "p_chat_enabled": request.preferences.chatEnabled,
                     "p_task_enabled": request.preferences.taskEnabled,
-                    "p_sound_enabled": request.preferences.soundEnabled]
+                    "p_chat_sound_enabled": request.preferences.chatSoundEnabled,
+                    "p_task_sound_enabled": request.preferences.taskSoundEnabled]
         }
         let raw: Any
         do { raw = try await transport.call("mobile_push_register", parameters: parameters, binding: request.ticket.binding) }

@@ -304,7 +304,7 @@ import Foundation
         // An injected foreground policy cannot make an earlier binding check
         // authorize an account transition performed while it was consulted.
         guard (try? check(envelope.binding)) != nil, matches(envelope) else { return .none }
-        return receipt.preferences.soundEnabled ? .alertWithSound : .alert
+        return receipt.preferences.sound(for: envelope.kind) ? .alertWithSound : .alert
     }
 
     private func matches(_ envelope: GuguPushEnvelope) -> Bool {
