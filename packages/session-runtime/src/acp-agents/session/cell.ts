@@ -73,6 +73,7 @@ import type {
 import { PermissionBroker, selectAutoApproveOption } from './permission-broker';
 import { RawAcpLog, type RawAcpEvent } from './raw-log';
 import { acceptPromptMessage, cancelledPromptResult, settleAcceptedRequests, type PromptRequest, type PromptResult } from './prompt-request';
+import { PromptEchoes } from './prompt-echoes';
 import { prepareNativePrompt, type NativePromptPreparation } from './prompt-preparation';
 import { canYieldRepliedAssistant, replyItems } from '@gugu/session-core/session-record/reply-process';
 
@@ -84,6 +85,7 @@ export interface AcpChatHistory {
 type ConfigDimension = 'model' | 'effort';
 
 export class SessionCell {
+  private readonly promptEchoes = new PromptEchoes();
   readonly machine: SessionMachine;
   readonly transcript: AcpTranscriptParser;
   readonly rawLog: RawAcpLog;
@@ -536,7 +538,7 @@ export class SessionCell {
     return merge(texts);
   }
 
-  push(event: NormalizedEvent): void {
+  push(event: NormalizedEvent, submitted = false): void {
     if (event.kind === 'ignored') return;
     if (event.kind === 'terminal_snapshots') {
       this.transcript.pushEvent(event);
@@ -588,6 +590,9 @@ export class SessionCell {
       return;
     }
     if (!this.replayingHistory && event.kind === 'message' && event.role === 'user') {
+      const resolved = submitted ? event : this.promptEchoes.receive(event, this.transcript, !!this.transcript.activeTurn && !!this.activeTurnCompletion);
+      if (!resolved) return;
+      event = resolved;
       // Multiple inserted user messages can belong to the same foreground cycle.
       if (this.transcript.activeTurn && this.activeTurnCompletion) event = { ...event, steering: true };
     }
@@ -1643,6 +1648,7 @@ export class SessionCell {
       ? cancelledPromptResult(this.sessionId, id)
       : acpErr.promptFailed({ name: 'ConnectionClosed', message: 'ACP process closed' }));
     this.requests.clear();
+    this.promptEchoes.clear();
     this.applyEvent({ type: 'ProcessClosed', exit, abnormal });
   }
 
@@ -1663,6 +1669,7 @@ export class SessionCell {
       ? cancelledPromptResult(this.sessionId, id)
       : acpErr.promptFailed({ name: 'ConnectionClosed', message: 'ACP session closed' }));
     this.requests.clear();
+    this.promptEchoes.clear();
     this.permissions.drain(this.machine.pendingPermissions);
   }
 
@@ -1990,12 +1997,7 @@ export class SessionCell {
       });
     }
     const cycle = this.activeTurnCompletion;
-    // Queued inputs keep their stable ID; steering uses its own input ID.
-    const messageId = opts?.fromQueue
-      ? prompt.id
-      : steered
-        ? `${this.sessionId}-steer-${prompt.id}-user`
-        : `${this.sessionId}-${this.promptSequence}-user`;
+    const messageId = prompt.clientMessageId ?? prompt.id;
     // #6387 扩展的「附带」只随**新开的一轮**进去:插进在飞那一轮的消息(可能是别的 agent / 别的扩展的)
     // ❌ 把它带走 —— 附带承诺的是「不打断、下一轮」。同步取走 —— 并发的下一轮不会再带上它。
     const turnContext = started && !steered ? this.takeTurnContext() : null;
@@ -2015,11 +2017,11 @@ export class SessionCell {
         role: 'user',
         messageId,
         text: prompt.text,
-        ...((prompt.clientMessageId || steered) ? { _meta: {
-          ...(prompt.clientMessageId ? { guguClientMessageId: prompt.clientMessageId } : {}),
+        _meta: {
+          guguClientMessageId: messageId,
           // Steering does not change who opened the turn; retain this input's own origin for conversation readers.
           ...(steered ? { guguOwnerInput: isOwnerOrigin(prompt.origin) } : {}),
-        } } : {}),
+        },
         ...(prompt.files?.length ? { files: prompt.files.map(({ itemId, version, name, mimeType, sizeBytes }) => ({ itemId, version, name, mimeType, sizeBytes })) } : {}),
         content: [{ type: 'text', text: prompt.text }],
         contentMode: 'replace',
@@ -2037,7 +2039,7 @@ export class SessionCell {
       };
     const recordUserMessage = () => {
       if (alreadyRecorded) return;
-      this.push(submittedMessage);
+      this.push(submittedMessage, true);
     };
     if (!nativeSteer) recordUserMessage();
     // 原生插话要等 agent 受理(`injected`)才算发出:它回 `promptRequired` 时这句还没进去(#7087)。
@@ -2156,7 +2158,7 @@ export class SessionCell {
       if (promptMeta) {
         // Bind the exact native bytes to our original prompt, without putting any marker on the wire.
         submittedMessage._meta = { ...submittedMessage._meta, ...promptMeta };
-        if (!nativeSteer) this.push({ ...submittedMessage, steering: true, trigger: undefined });
+        if (!nativeSteer) this.push({ ...submittedMessage, steering: true, trigger: undefined }, true);
       }
       this.rawLog.record({
         kind: 'prompt',
@@ -2221,6 +2223,7 @@ export class SessionCell {
       }
 
       const agent = this.agent;
+      this.promptEchoes.register(request);
       // B: a communication prompt must not block the inbox on a native receipt that never comes. The
       // transport cancels it and fails it as prompt_admission_timeout; the procedure owner then stops
       // the session (procedures.promptDetached). v1 has no native receipt, so no deadline, as on dev.
@@ -2241,16 +2244,18 @@ export class SessionCell {
         if (steered) confirmPreparation();
         admit();
         if (receipt.status === 'accepted') {
-          acceptPromptMessage(request, receipt.messageId, this.transcript, event => this.push(event), this.deps.providerId);
+          acceptPromptMessage(request, receipt.messageId, event => this.push(event, true), this.deps.providerId,
+            this.promptEchoes.accept(request, receipt.messageId, this.transcript));
           logReceipt({ state: 'inserted', messageId: receipt.messageId });
           this.applyReceiptMetadata(requestId, receipt._meta);
           this.settleRequests();
-          const owner = this.transcript.entityOwner({ ...submittedMessage, messageId: receipt.messageId });
+          const owner = this.transcript.entityOwner({ ...submittedMessage, messageId: request.messageId });
           if (!opts?.fromQueue || owner?.outcome?.kind !== 'error') this.releaseDispatch();
         } else {
           logReceipt({ state: 'unknown', admission: 'dispatched' });
           // Request-activity transports identify their aggregate cycle on dispatch acknowledgement.
           request.dispatched = true;
+          this.promptEchoes.dispatched(request);
           void (cycle ?? Promise.resolve(ok({ queued: false }))).then(result => {
             request.completion.resolve(result);
             this.requests.delete(requestId);

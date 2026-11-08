@@ -736,6 +736,6 @@ export function requestActivityCell(
   const boundary = createRequestActivity(agent.observed() as never, ({ event }) => cell.push(event), options);
   const cell = new SessionCell({ ...deps, agent: boundary.agent });
   const push = cell.push.bind(cell);
-  cell.push = (event) => { boundary.observe(deps.acpSessionId, event); push(event); };
+  cell.push = (event, submitted) => { boundary.observe(deps.acpSessionId, event); push(event, submitted); };
   return cell;
 }

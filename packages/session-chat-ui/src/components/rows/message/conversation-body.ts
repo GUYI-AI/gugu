@@ -22,6 +22,7 @@ export function latestConversationBubbleId(units: UnitsView, ctx: Pick<MeasureCt
 
 /** Persist the reader's choice by actual message identity, not the mutable live/stored row prefix. */
 export function conversationBubbleKey(item: ChatMessage): string {
+  if (typeof item._meta?.guguClientMessageId === 'string') return `conversation-bubble:${item._meta.guguClientMessageId}`;
   const messageId = item.guguDelivery?.segments.length === 1 ? item.guguDelivery.segments[0]?.facts?.messageId : undefined;
   const batch = /:batch-\d+$/.exec(item.id)?.[0] ?? '';
   return `conversation-bubble:${messageId ?? (item.sourceItemId ? item.sourceItemId + batch : item.id)}`;
