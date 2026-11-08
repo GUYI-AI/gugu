@@ -3,8 +3,9 @@ import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync, realpathSync, statSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
+import { physicalDatabaseBinding } from '../../db/physical-connection';
 
-type Connection = Pick<Database.Database, 'name' | 'open'>;
+type Connection = Database.Database;
 const physical = (path: string) => { const value = statSync(path, { bigint: true }); return `${value.dev}:${value.ino}`; };
 const fault = () => Object.assign(new Error('The projection database gateway is unavailable'), { code: 'needs_location' });
 
@@ -15,8 +16,8 @@ const fault = () => Object.assign(new Error('The projection database gateway is 
  * from a PID, timestamp, a new epoch or Electron's different instance locks. */
 export function openWindowProjectionGateway(connection: Connection, directory: string, lockDirectory = join(userInfo().homedir, '.gugu', 'window-gateway-locks')) {
   if (!connection.open || !connection.name || connection.name === ':memory:') throw fault();
-  const database = realpathSync(connection.name), cache = realpathSync(directory);
-  const identity = physical(database), cacheIdentity = physical(cache);
+  const binding = physicalDatabaseBinding(connection), database = binding.path, cache = realpathSync(directory);
+  const identity = binding.identity, cacheIdentity = physical(cache);
   mkdirSync(lockDirectory, { recursive: true, mode: 0o700 });
   const file = join(realpathSync(lockDirectory), `${createHash('sha256').update(identity).digest('hex')}.sqlite`);
   const guard = new Database(file, { timeout: 0 });

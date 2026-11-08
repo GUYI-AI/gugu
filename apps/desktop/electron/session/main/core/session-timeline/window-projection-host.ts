@@ -69,10 +69,9 @@ export function createWindowProjectionHost(input: {
         if (!complete) await adapter.settled(identity);
       }
       if (owners.get(identity) === owner) owners.delete(identity);
-    });
+    }).finally(() => { if (owner.cleanup === cleanup) owner.cleanup = undefined; });
     owner.cleanup = cleanup;
-    void cleanup.catch(error => { try { input.report(error); } catch { /* preserve the cleanup record */ } })
-      .finally(() => { if (owner.cleanup === cleanup) owner.cleanup = undefined; });
+    void cleanup.catch(error => { try { input.report(error); } catch { /* preserve the cleanup record */ } });
     return cleanup;
   }
   return {
@@ -85,11 +84,13 @@ export function createWindowProjectionHost(input: {
     },
     async run<T>(inputOwner: WindowProjectionOwner, budget: WindowBudget,
       operation: (adapter: Awaited<typeof ready>, identity: object, budget: WindowBudget) => Promise<T>) {
+      inputOwner.assertCurrent(); if (retired.has(inputOwner.identity)) throw failure();
+      // Retry one retained closed owner before capacity admission. Joining an
+      // in-flight cleanup is safe; its record clears before its promise settles.
+      // Failure retains the record and capacity for the next request's retry.
+      const previous = [...owners.values()].find(value => value.closed);
+      if (previous) await close(previous.identity).catch(() => {});
       const owner = selected(inputOwner);
-      // Retry one retained closed owner per request; this is bounded cleanup,
-      // not a timer or a history-sized scan. Failures keep the owner retained.
-      const retired = [...owners.values()].find(value => value.closed && !value.cleanup);
-      if (retired) void close(retired.identity).catch(() => {});
       const adapter = await ready; owner.assertCurrent();
       if (owner.closed) throw failure();
       const value = await gateway.run(() => operation(adapter, owner.identity, budget));
