@@ -1,0 +1,149 @@
+{
+  "reviewedAt": "2026-11-08T01:26:17.725983+00:00",
+  "beforeHead": "dc2bdfa72ab288ce6f37d3ef9b99145f407ee302",
+  "afterHead": "a09ca1d27fcdab84df1a134957f5cb5e6f28492e",
+  "manualOriginalsViewed": 22,
+  "primaryCases": 12,
+  "expandedImages": 6,
+  "scrollImages": 4,
+  "scope": "Controlled shared-engine rendering in an actual Electron BrowserWindow, 390px conversation column; not cloud reception; not verified on a physical phone because none was used.",
+  "mechanical": {
+    "complete": true,
+    "red": true,
+    "green": true,
+    "cases": 12,
+    "scope": "controlled shared engine; no cloud reception; no physical phone",
+    "acceptance": "REQUIRES_MANUAL_ORIGINAL_IMAGE_REVIEW"
+  },
+  "retirement": {
+    "at": 1794100995.315857,
+    "gate": "/Users/mac1/gates/g02",
+    "retired": true,
+    "privateAbsent": 25,
+    "recordedAlive": [],
+    "unknownRootProcesses": [],
+    "ownedCwd": [],
+    "ownedListeners": [],
+    "foregroundReturned": true,
+    "gateReturned": true
+  },
+  "findings": {
+    "background": "Both themes: actual old closed row shows raw command; new 32px row shows localized outcome, opens original command, and closes normally.",
+    "a2a": "Both themes: historical bare and-others suffix replaced by counted three-destination suffix; repeated single sender has no suffix; open reveals all three original messages.",
+    "scheduled": "Both themes: actual old prompt is an incoming user bubble; new centered gray title has a right arrow, retains the original on open, and re-closes. Separate scheduled negative and owner question/answer positive scroll controls pass at unchanged 1/64px geometry tolerance.",
+    "theme": "All originals show complete source/scope stamps and actual light/dark surface. Native light owner bubbles have white text on dark background after loading the real fixed-source PostCSS configuration.",
+    "priorAttempts": "r1 fixture refusal, r2 incomplete scroll assumption, and r3 manual theme rejection remain separate unaccepted evidence. No image was edited or relabelled."
+  },
+  "images": [
+    {
+      "name": "after-a2a-dark-a09ca1d27f-open.png",
+      "bytes": 89025,
+      "sha256": "a1e07eba41a3be76630b91e3da2e2577a80ce11549dee1bf0f43500d78cdc61f"
+    },
+    {
+      "name": "after-a2a-dark-a09ca1d27f.png",
+      "bytes": 57558,
+      "sha256": "9e312e8d62fb31350e69c33c3626719b1bd7f3bedd4c106a2fa3da71d2c4e097"
+    },
+    {
+      "name": "after-a2a-light-a09ca1d27f-open.png",
+      "bytes": 90154,
+      "sha256": "ec02aa906886c10c32633dc66c301996303dabeb60eb3384d51c67a4836ac064"
+    },
+    {
+      "name": "after-a2a-light-a09ca1d27f.png",
+      "bytes": 58364,
+      "sha256": "d6f3131f6f0732d0e598fc125e366d7880083eeedf8ee51506490a3210b9be2b"
+    },
+    {
+      "name": "after-background-dark-a09ca1d27f-open.png",
+      "bytes": 49008,
+      "sha256": "be7676c926c5be0aaecc2da592dfa192e116ed5551e52526764a9041cd3a0b32"
+    },
+    {
+      "name": "after-background-dark-a09ca1d27f.png",
+      "bytes": 43536,
+      "sha256": "8c7a9f238e497879fc6845131784e75b6213e6031308de74630897c93603331a"
+    },
+    {
+      "name": "after-background-light-a09ca1d27f-open.png",
+      "bytes": 48492,
+      "sha256": "374f031ec14d869c9d762f302c52b3c327865f1297ba83510f9e97a7d1e0b81d"
+    },
+    {
+      "name": "after-background-light-a09ca1d27f.png",
+      "bytes": 44122,
+      "sha256": "dede9f0032158b7242e364332ef51b58c98d3e5b0ff5f8e2acb07e5ef426369a"
+    },
+    {
+      "name": "after-scheduled-dark-a09ca1d27f-open.png",
+      "bytes": 100979,
+      "sha256": "207c894538d022b590df1030cf6cb942dd5e3bc6df22464c0f97339f45d76dca"
+    },
+    {
+      "name": "after-scheduled-dark-a09ca1d27f-owner-control.png",
+      "bytes": 107961,
+      "sha256": "22e1a45ca06b107997564e7068259bd2c0e98a9cf3a705285ddaabec774f68b4"
+    },
+    {
+      "name": "after-scheduled-dark-a09ca1d27f-scroll.png",
+      "bytes": 125471,
+      "sha256": "a412e841c90f7bbdc7779516f8abb0354ae634615117054d629d3e83bddaadd9"
+    },
+    {
+      "name": "after-scheduled-dark-a09ca1d27f.png",
+      "bytes": 104086,
+      "sha256": "ec73078f707f7f6a2f8ce20c6f8a431d752d40ae6306961d74affb4500d9208b"
+    },
+    {
+      "name": "after-scheduled-light-a09ca1d27f-open.png",
+      "bytes": 101048,
+      "sha256": "55a6bb83f42f8340425c33953977edb3167c246032bbbc726935ecc3977dd200"
+    },
+    {
+      "name": "after-scheduled-light-a09ca1d27f-owner-control.png",
+      "bytes": 106344,
+      "sha256": "844ace39fe25b0bf543f37b4d156b036263dc1deda1f662e269e3cdda637ceb0"
+    },
+    {
+      "name": "after-scheduled-light-a09ca1d27f-scroll.png",
+      "bytes": 123482,
+      "sha256": "548d42ac27c3da606f91c4b4bf6a95ed9ad3c70b74f0baf5ed02588fd34ab931"
+    },
+    {
+      "name": "after-scheduled-light-a09ca1d27f.png",
+      "bytes": 103207,
+      "sha256": "3c427071ca91b9647f95cf72444a459323b30055e467d349d1b98efb5b136d82"
+    },
+    {
+      "name": "before-a2a-dark-dc2bdfa72a.png",
+      "bytes": 55361,
+      "sha256": "75487150887d661d71ad8ce25442b79344ee0adb7daa717d90417a9f4b84f19e"
+    },
+    {
+      "name": "before-a2a-light-dc2bdfa72a.png",
+      "bytes": 56282,
+      "sha256": "6ed176e0bcbce769a75e7caad517b43f781561bdecfdfe6d4c1f314b3fcb4bad"
+    },
+    {
+      "name": "before-background-dark-dc2bdfa72a.png",
+      "bytes": 46821,
+      "sha256": "f07c7da7f4a3284cd0e9f19fae293d34766b1659652f9bde48661feeb32ea463"
+    },
+    {
+      "name": "before-background-light-dc2bdfa72a.png",
+      "bytes": 47426,
+      "sha256": "e65f465a4effc00e40cefc42c778de49801112d4667b8fa62ac05c22f16cd91c"
+    },
+    {
+      "name": "before-scheduled-dark-dc2bdfa72a.png",
+      "bytes": 93452,
+      "sha256": "29f6c8ef619ad7b95f834e00f0cb50eab22dd0d31ad783a7e78c9766a222ae71"
+    },
+    {
+      "name": "before-scheduled-light-dc2bdfa72a.png",
+      "bytes": 93657,
+      "sha256": "7f728091342aa89b591e7054cf117a3fff5f5555b762ec08725daca18ff3f64d"
+    }
+  ]
+}
