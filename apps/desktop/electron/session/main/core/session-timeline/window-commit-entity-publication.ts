@@ -9,6 +9,7 @@ import { advanceCommitEntityFields, commitEntityIndex, commitEntityPublicationId
 import { openCommitBodySlot, advanceCommitBodySlot, readCommitBodySlot } from './window-commit-slot';
 import { readWindowCommitProjection } from './window-commit-projection';
 import { assertWindowCommitSource } from './window-commit-source';
+import { publishCommitHeader } from './window-commit-header';
 
 /** Background producer, one admitted I/O budget then yield per step. It keeps
  * one entity plus at most three slot references, never a whole turn/item list.
@@ -58,6 +59,8 @@ export async function publishCommitEntity(input: { directory: string; receipts: 
     await setImmediate(undefined, { signal });
   }
   const value: CommitEntityPublication = { version: 1, rootBuildId, position, state }, data = Buffer.from(JSON.stringify(value));
+  await publishCommitHeader({ directory, receipts, receipt, index, target: position.entity, headerId: id,
+    observed: input.observed, report: input.report }, signal);
   if (data.length > 8192) throw new Error('Entity publication exceeds 8 KiB');
   const key = commitEntityPublicationKey(receipt, id);
   signal?.throwIfAborted(); committed(); await assertWindowCommitSource(directory, receipt.binding, receipt.source);
