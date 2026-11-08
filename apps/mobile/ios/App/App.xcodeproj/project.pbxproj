@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B57FB3E22BF7007E7FBDA0D6 /* GuguIOSSourceAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81FAE6B62F71E8E595310DB4 /* GuguIOSSourceAccess.swift */; };
+		59EAC6C35A8C5E5E93CC571C /* GuguIOSMessageBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06F121108113ED780BD8C9E0 /* GuguIOSMessageBridge.swift */; };
+		2EC63888A37A309CFC7DC685 /* GuguIOSInboxDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD46B8DFDDBA07A4FE3C341C /* GuguIOSInboxDelivery.swift */; };
 		E98E000000000000000001A1 /* GuguIOSOwnerRetirementStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E000000000000000000A1 /* GuguIOSOwnerRetirementStore.swift */; };
 		E98E00000000000000000169 /* GuguIOSPushRetirement.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000069 /* GuguIOSPushRetirement.swift */; };
 		E98E00000000000000000201 /* DHostedRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000211 /* DHostedRuntimeTests.swift */; };
@@ -84,6 +87,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		81FAE6B62F71E8E595310DB4 /* GuguIOSSourceAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSSourceAccess.swift; sourceTree = "<group>"; };
+		06F121108113ED780BD8C9E0 /* GuguIOSMessageBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSMessageBridge.swift; sourceTree = "<group>"; };
+		CD46B8DFDDBA07A4FE3C341C /* GuguIOSInboxDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSInboxDelivery.swift; sourceTree = "<group>"; };
 		E98E000000000000000000A1 /* GuguIOSOwnerRetirementStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSOwnerRetirementStore.swift; sourceTree = "<group>"; };
 		E98E00000000000000000069 /* GuguIOSPushRetirement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSPushRetirement.swift; sourceTree = "<group>"; };
 		E98E00000000000000000211 /* DHostedRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DHostedRuntimeTests.swift; sourceTree = "<group>"; };
@@ -217,6 +223,9 @@
 		E98E00000000000000000020 /* Host */ = {
 			isa = PBXGroup;
 			children = (
+				81FAE6B62F71E8E595310DB4 /* GuguIOSSourceAccess.swift */,
+				06F121108113ED780BD8C9E0 /* GuguIOSMessageBridge.swift */,
+				CD46B8DFDDBA07A4FE3C341C /* GuguIOSInboxDelivery.swift */,
 				0092F72670DB64A878302410 /* GuguAgentPlugin.swift */,
 				F1B8D5CD166D0BEB1316D3BB /* GuguIOSBackendNetwork.swift */,
 				A6B8954C7573825116DDC63F /* GuguIOSBackendSessions.swift */,
@@ -451,6 +460,9 @@
 				E98E00000000000000000167 /* GuguIOSAppRuntime.swift in Sources */,
 				E98E0000000000000000011A /* GuguIOSHostLifecycle.swift in Sources */,
 				E98E000000000000000001A1 /* GuguIOSOwnerRetirementStore.swift in Sources */,
+				B57FB3E22BF7007E7FBDA0D6 /* GuguIOSSourceAccess.swift in Sources */,
+				59EAC6C35A8C5E5E93CC571C /* GuguIOSMessageBridge.swift in Sources */,
+				2EC63888A37A309CFC7DC685 /* GuguIOSInboxDelivery.swift in Sources */,
 				E98E00000000000000000161 /* GuguIOSOwnerSession.swift in Sources */,
 				E98E00000000000000000162 /* GuguIOSInstallation.swift in Sources */,
 				E98E00000000000000000163 /* GuguIOSOwnerKeychain.swift in Sources */,
