@@ -24,9 +24,9 @@ The following message-core slice adds `GuguIOSMessageBridge` and named existing
 chat operations. It is not yet installed into the Pi bridge or an inbox pump.
 Its agent-as reads, current group-rule ledger, source-membership checks and
 stable-ID outbox are separately exercised on APFS. Reopening the store sends
-nothing; an explicit retry after a lost ACK reuses the same message ID. Complete
-context lineage, inbox envelope admission, attachments and full integration
-remain required before removing the delivery blocker.
+nothing; an explicit retry after a lost ACK reuses the same message ID. Native context lineage and atomic shared-envelope input admission are now present;
+the inbox scan/mark-read pump, Pi communication-tool installation, private attachments
+and full command/session-direct integration still block availability.
 
 ## App construction
 
@@ -62,12 +62,19 @@ with C's actual EventKit implementation. No token is passed through this sample
 except inside the native credential closure's return value.
 
 Before sealing/retiring an owner's credential publication, await
-`service.prepareOwnerRetirement(ownerId:completion:)`. Reject an error envelope;
+`service.prepareOwnerRetirement(expectedBinding:completion:)`. Reject an error envelope;
 it includes unknown model checkpoint/revoke or device-withdrawal results. Then
 run the existing sessionCoordinator ordered main-write barrier and native
 OwnerSession retirement. A late completion never selects the next binding.
-Stopping after publication has already been sealed still cancels native work,
-but network cleanup correctly fails and retains known lease IDs for recovery.
+For sealed publication and cold start, use the separate native
+`service.retireOwner(expectedBinding:retirementId:completion:)` path. Inject the
+`retirementAuthorization` provider when constructing the service, as specified in
+[NATIVE_RETIREMENT_CONTRACT.md](NATIVE_RETIREMENT_CONTRACT.md). It accepts only the
+original persisted retirement transaction and four named cleanup operations; it
+never supplies ordinary Broker credentials. The native-only Authorization
+constructor is `try .init(binding:retirementId:operation:accessToken:expiresAt:)`.
+A must use the same verified expiry/deadline before and after each request. A
+missing provider fails with cleanup_not_configured and cannot release the barrier.
 
 ## Exact JS surface
 
@@ -81,9 +88,9 @@ await GuguAgent.configure({
   expectedBinding: { ownerId, deviceId, installationId },
   device: { label: 'My iPhone' }, // optional, display only
 })
-await GuguAgent.hostState({ ownerId })
-await GuguAgent.hostCall({ ownerId, id: originalUUID, channel, args })
-await GuguAgent.stopHost({ ownerId })
+await GuguAgent.hostState({ expectedBinding: { ownerId, deviceId, installationId } })
+await GuguAgent.hostCall({ expectedBinding: { ownerId, deviceId, installationId }, id: originalUUID, channel, args })
+await GuguAgent.stopHost({ expectedBinding: { ownerId, deviceId, installationId } })
 await GuguAgent.authSession({ action: 'get' }) // refresh / sign_out also delegate
 ```
 

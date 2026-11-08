@@ -144,3 +144,42 @@ expired permits issue zero HTTP; permit changes during a held response; unknown
 issue never reissues; device CAS conflict cannot withdraw a replacement; known
 receipts survive late revocation; and ordinary catalog/issue/renew/hostCall cannot
 use the cleanup provider. Real account/device cleanup remains A's execution.
+
+## Frozen implementation assembly
+
+The Host service initializer now accepts the optional native dependency
+`retirementAuthorization: GuguIOSRetirementCleanup.Authorize? = nil`. Omission
+keeps ordinary service construction compatible but makes `retireOwner` reject
+with cleanup_not_configured; it does not lend ordinary credentials to cleanup.
+A assembles this provider from the original verified OwnerSession retirement
+capability. The exact throwing constructor is:
+
+```swift
+try GuguIOSRetirementAuthorization(
+    binding: expectedBinding,
+    retirementId: originalRetirementId,
+    operation: operation,
+    accessToken: originalRetirementCredentials.accessToken,
+    expiresAt: stableVerifiedRetirementDeadline
+)
+```
+
+The deadline is bounded by the original token expiry and five-minute verified
+retirement window. It remains stable across the before/after checks for that
+request. Do not recalculate a rolling now+5min deadline on each callback.
+
+Add these four production Swift files to A's existing Host target:
+GuguIOSRetirementAuthorization.swift, GuguIOSRetirementCleanup.swift,
+GuguIOSRetirementDevice.swift, GuguIOSBackendRetirement.swift. The token field is
+read only inside GuguIOSRetirementAuthorization.swift's fixed-operation HTTP
+transport. The service's native retireOwner method quiesces before running the
+ledger. A still owns Keychain/JWT/getUser verification and the persistent main
+write barrier. It must not mark cleanup complete from a push/local-stop-only
+result.
+
+External quiescence discards live short tokens and cancels renewal/model work.
+Late turn/issue/ordinary-settlement callbacks cannot dispatch another ordinary
+cleanup request or downgrade an already settled native receipt. A late original
+grant may add its known lease ID to the original ledger; it never infers or
+automatically settles after quiescence. The same original retirement ID must be
+explicitly reconciled again.
