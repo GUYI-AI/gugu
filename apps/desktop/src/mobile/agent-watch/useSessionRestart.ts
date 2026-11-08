@@ -21,6 +21,7 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
   ready.current = onReady
   const inFlight = useRef<RestartAttempt | null>(null)
   const observed = useRef<RestartAttempt | null>(null)
+  const replaced = useRef<RestartAttempt | null>(null)
   const baseline = useRef<{ key: string; version: number } | null>(null)
   const [eligible, setEligible] = useState<string | null>(null)
   const [attempt, setAttempt] = useState<RestartAttempt | null>(null)
@@ -50,6 +51,12 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
       try {
         const next = await recoverTimelineRead(() => machineRpc(deviceId, local).sessions.lifeView(sessionId), recoveryAbort.signal)
         if (!active) return
+        // Replacing the engine session starts nothing unless input was waiting: resting after it is its success.
+        if (replaced.current === attempt && next.kind === 'dormant' && next.hold === null) {
+          try { await ready.current() } catch (cause) { if (active) setError({ key, message: messageForUser(cause) }) }
+          if (active) setAttempt(null)
+          return
+        }
         if (next.version > attempt.afterVersion) {
           observed.current = attempt
           setView({ key, value: next })
@@ -81,12 +88,8 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
     try {
       const host = machineRpc(deviceId, local)
       if (fresh) {
-        // Replacing the engine session starts nothing, so no lifecycle view will settle this attempt.
         await host.sessions.restartSession(projectId, sessionId)
-        if (current.current === key && inFlight.current === request) {
-          setAttempt(null)
-          await ready.current()
-        }
+        replaced.current = request
       } else await host.sessions.lifeStart(sessionId)
     } catch (cause) {
       // Once the host has progressed, its lifecycle settles this attempt even if the RPC acknowledgement is lost.

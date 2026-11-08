@@ -174,8 +174,8 @@ describe('task locale resources', () => {
 
     expect(enUSCopy).not.toMatch(/provider|engine|recording|session identity|honest way|shell/i);
     expect(zhCNCopy).not.toMatch(/Provider|引擎|首轮|咕咕|空壳|诚实的出路|存量/);
-    expect(enUSMessages['chat.providerSessionMissingAction']).toBe('Start again');
-    expect(zhCNMessages['chat.providerSessionMissingAction']).toBe('重新开始');
+    expect(enUSMessages['chat.providerSessionMissingAction']).toBe('Start a new session');
+    expect(zhCNMessages['chat.providerSessionMissingAction']).toBe('开一条新会话');
     // #6949: the dead end offers archiving (the button reuses「归档任务」), never deleting.
     expect(enUSMessages['chat.providerSessionMissingLegacyDescription']).not.toMatch(/delete/i);
     expect(zhCNMessages['chat.providerSessionMissingLegacyDescription']).not.toMatch(/删除/);

@@ -642,8 +642,8 @@ const enUSCoreMessages = {
   'chat.sideChatForkFailed': 'Side chat could not be opened.',
   'chat.providerSessionMissingTitle': 'Task cannot be restored',
   'chat.providerSessionMissingDescription':
-    'The engine no longer has this session. You can start a new one, but in coding mode it won’t know the earlier conversation. Nothing runs until you send a message.',
-  'chat.providerSessionMissingAction': 'Start a new engine session',
+    'This task’s earlier session is gone. You can start a new one, but in coding mode it won’t know what was said before. Nothing runs until you send a message.',
+  'chat.providerSessionMissingAction': 'Start a new session',
   'chat.providerSessionMissingActionBusy': 'Starting…',
   'chat.providerSessionMissingLegacyDescription':
     'The previous conversation history is no longer available, and this task cannot be started again. Archive it to continue.',
@@ -1037,6 +1037,7 @@ const enUSCoreMessages = {
   'transcript.condition.retry': 'Try again',
   'transcript.condition.restartAgent': 'Restart',
   'transcript.condition.startFresh': 'Continue in a new engine session',
+  'transcript.condition.startFreshFailed': 'Couldn’t start a new engine session',
   'transcript.condition.reconnectOriginal': 'Try again (reconnect)',
   'transcript.hookNoticeFrom': 'from the {hook} hook',
   'transcript.hookNoticeLevel.notice': 'Notice',
@@ -1713,8 +1714,8 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'chat.sideChatForkFailed': '无法打开侧边聊天。',
   'chat.providerSessionMissingTitle': '会话无法恢复',
   'chat.providerSessionMissingDescription':
-    '引擎那边已经没有这条会话了。你可以开一条新的，但编程模式下它不知道之前聊过什么。你发话之前不会执行任何东西。',
-  'chat.providerSessionMissingAction': '开一条新的引擎会话',
+    '这个任务之前的会话已经没了。你可以开一条新的，但编程模式下它不知道之前聊过什么。你发话之前不会执行任何东西。',
+  'chat.providerSessionMissingAction': '开一条新会话',
   'chat.providerSessionMissingActionBusy': '正在开始…',
   'chat.providerSessionMissingLegacyDescription':
     '之前的对话记录已丢失，这个会话也无法重新开始。请先把它归档。',
@@ -2097,6 +2098,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'transcript.condition.retry': '再试一次',
   'transcript.condition.restartAgent': '重新启动',
   'transcript.condition.startFresh': '开一条新的引擎会话接着聊',
+  'transcript.condition.startFreshFailed': '没能开新的引擎会话',
   'transcript.condition.reconnectOriginal': '再试一次（接回原会话）',
   'transcript.hookNoticeFrom': '来自 {hook} 钩子',
   'transcript.hookNoticeLevel.notice': '提示',

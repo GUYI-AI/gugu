@@ -76,6 +76,15 @@ describe('phone missing-session recovery (#996)', () => {
     await harness.render(<Fixture id="other" />); await tick()
     expect(freshButton()).toBeUndefined()
   })
+  it('replacing the engine session starts nothing: resting after it refreshes the page, with no start and no first message', async () => {
+    await harness.render(<Fixture />); await tick()
+    await act(async () => { freshButton()!.click() }); await tick(600)
+    expect(host.restart).toHaveBeenCalledExactlyOnceWith('p', 's')
+    expect(host.retry).not.toHaveBeenCalled()
+    expect(host.ready).toHaveBeenCalledOnce()
+    expect(recovery.pendingPrompt).toBeNull()
+    expect(recovery.busy).toBe(false)
+  })
   it('uses the existing restart RPC once, and draws Starting only after the host reports it', async () => {
     await harness.render(<Fixture />); await tick()
     let finish!: () => void

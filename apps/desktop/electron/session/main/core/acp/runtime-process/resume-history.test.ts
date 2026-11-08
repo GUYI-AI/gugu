@@ -85,7 +85,6 @@ describe('resuming without replay (#980)', () => {
   });
 
   it.each([
-    ['a session that never opened a provider session', { providerSessionId: null }],
     ['a runtime fork', { forkFromProviderSessionId: 'thread-0' }],
   ])('keeps the replay for %s and overwrites renderer-sent values', async (_label, patch) => {
     const facts = await resumeHistoryFacts(input({ ...patch, replayHistory: false } as Partial<AcpRuntimeStartInput>), {

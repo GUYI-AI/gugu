@@ -1957,7 +1957,10 @@ export const AcpChatPanel = observer(function AcpChatPanel({
                         .get(store.sessionId)
                         ?.restartSession(store.sessionId)
                         .then(() => store.reopen())
-                        .catch(() => {})
+                        .catch((error: unknown) => {
+                          log.error('Could not replace the engine session', { sessionId: store.sessionId, error });
+                          toast({ title: translate('transcript.condition.startFreshFailed'), description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+                        })
                         .finally(() => setRestarting(false));
                     },
                   }]
