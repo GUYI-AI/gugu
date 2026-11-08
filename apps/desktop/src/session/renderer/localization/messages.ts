@@ -642,7 +642,7 @@ const enUSCoreMessages = {
   'chat.sideChatForkFailed': 'Side chat could not be opened.',
   'chat.providerSessionMissingTitle': 'Task cannot be restored',
   'chat.providerSessionMissingDescription':
-    'This task’s earlier session is gone. You can start a new one, but in coding mode it won’t know what was said before. Nothing runs until you send a message.',
+    'This task’s earlier session is gone. You can start a new one, but it won’t know what was said before. Nothing runs until you send a message.',
   'chat.providerSessionMissingAction': 'Start a new session',
   'chat.providerSessionMissingActionBusy': 'Starting…',
   'chat.providerSessionMissingLegacyDescription':
@@ -1714,7 +1714,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'chat.sideChatForkFailed': '无法打开侧边聊天。',
   'chat.providerSessionMissingTitle': '会话无法恢复',
   'chat.providerSessionMissingDescription':
-    '这个任务之前的会话已经没了。你可以开一条新的，但编程模式下它不知道之前聊过什么。你发话之前不会执行任何东西。',
+    '这个任务之前的会话已经没了。你可以开一条新的，但它不知道之前聊过什么。你发话之前不会执行任何东西。',
   'chat.providerSessionMissingAction': '开一条新会话',
   'chat.providerSessionMissingActionBusy': '正在开始…',
   'chat.providerSessionMissingLegacyDescription':
