@@ -62,13 +62,17 @@ async function mount(kind: typeof platform.kind, width: number) {
   const wrapper = () => card()?.closest('[data-index]')?.firstElementChild as HTMLElement | null;
   const pinned = () => wrapper() != null && getComputedStyle(wrapper()!).position === 'sticky';
   const top = () => card()!.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-  const reply = () => {
+  const reply = async () => {
     const turn: TranscriptTurn = { id: 'running-turn', seq: 0, initiator: 'user', items: [
       { kind: 'message', id: 'own-message', seq: 0, role: 'user', text: 'Please keep my sent message in the conversation.' },
-      ...Array.from({ length: 90 }, (_, i) => ({ kind: 'message' as const, id: `reply-${i}`, seq: i + 1, role: 'assistant' as const,
-        text: `Response ${i + 1}: this reply leaves enough room to exercise transcript scrolling.` })),
+      { kind: 'message', id: 'reply-final', seq: 1, role: 'assistant',
+        text: Array.from({ length: 90 }, (_, i) => `Response ${i + 1}: this reply leaves enough room to exercise transcript scrolling.`).join('\n\n') },
     ] };
     publishReply(turn);
+    await until('the long final answer mounts', () => !!host.querySelector('[data-user-card="reply-final"]'));
+    // The latest running answer is already full; open it only if retained history collapsed it.
+    host.querySelector<HTMLButtonElement>('[data-expand-user-card="reply-final"]')?.click();
+    await untilStable('the full final answer is measured', () => scroller.scrollHeight);
   };
   const scrollTo = async (value: number) => {
     scroller.scrollTop = value;
@@ -95,7 +99,7 @@ it.each([
   expect(t.pinned()).toBe(pins);
   if (!pins) expect(t.wrapper()!.querySelector('[data-chat-pin-backdrop]')).toBeNull();
 
-  t.reply();
+  await t.reply();
   await until('running reply supplies scrollable content', () => t.scroller.scrollHeight > 2000);
   await t.scrollTo(0);
   const initialTop = t.top();
@@ -112,7 +116,7 @@ it.each([
 
 it('updates phone pinning on a retained web transcript without remounting', async () => {
   const t = await mount('web', 1000);
-  t.reply();
+  await t.reply();
   await until('desktop user message mounted', () => t.card() != null && t.pinned());
   await page.viewport(390, 844);
   await until('phone layout disables the existing pin lane', () => !t.pinned());
