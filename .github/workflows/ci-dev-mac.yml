@@ -1,85 +1,335 @@
-name: Dev Mac build
+# Diagnostic branch only. Never merge this replacement into dev/main.
+name: iOS App-hosted launch-root diagnostics (11000ab)
 on:
-  push:
-    branches: [dev]
   workflow_dispatch:
+    inputs:
+      expected_revision:
+        description: Exact reviewed diagnostic commit; must match the selected ref.
+        required: true
+        type: string
 permissions:
   contents: read
-  actions: read
 concurrency:
-  group: community-ci-dev-mac
-  cancel-in-progress: true
-env:
-  CI: true
-  GUGU_SUPABASE_URL: http://127.0.0.1:54321
-  VITE_SUPABASE_URL: http://127.0.0.1:54321
-  GUGU_SUPABASE_ANON_KEY: community-build-placeholder
-  VITE_SUPABASE_ANON_KEY: community-build-placeholder
-  PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.59.1-noble@sha256:b0ab6f3cb99aa7803adbc14d9027ec1785fc6e433b97e134e0f8fe61683b6b53
+  group: ios-rootproof-diag-11000ab-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  desktop-build-mac:
-    name: Dev desktop app build (macos-15)
-    runs-on: macos-15
+  ios-build-for-testing:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'GUYI-AI/gugu' && github.ref == 'refs/heads/diag/ios-hosted-rootproof-20261108'
+    name: iOS App-hosted three-test diagnostics (macos-26)
+    runs-on: macos-26
     timeout-minutes: 45
-    permissions:
-      contents: read
-      actions: read
-      issues: write
     env:
+      EXPECTED_BASE: 11000ab0173fe01552204988fa51f3e0ce50d5de
+      EXPECTED_REVISION: ${{ inputs.expected_revision }}
+      EXPECTED_RUNTIME_SHA256: c7d44369233fdcb10ef5509866edbd47a8e77d1fc7898ee96f68ec1aa398585b
+      EXPECTED_TEST_SHA256: 2fece627b09a7060e14cb51db7066d22cadd178fbfa5664d5e73e2c71cd0210f
+      EXPECTED_MANUAL_SHA256: 8499de84ffca0fc5619bb7e14fea1bc7b31fa5e798cc7d091cedd3a5f1bcf687
+      EXPECTED_RUNTIME_BYTES: '669413'
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      CI: 'true'
+      GUGU_BUILD_SERIAL: '1'
+      NODE_OPTIONS: --max-old-space-size=6144
       GUGU_CLOUD_COMPUTER_ENABLED: 'false'
       VITE_GUGU_CLOUD_COMPUTER_ENABLED: 'false'
       GUGU_PLATFORM_MODELS_ENABLED: 'false'
       VITE_GUGU_PLATFORM_MODELS_ENABLED: 'false'
-      NODE_OPTIONS: --max-old-space-size=6144
+      # Public, synthetic compile-only values. No service exists at this reserved domain.
+      GUGU_SUPABASE_URL: https://ios-sdk-diag.invalid
+      VITE_SUPABASE_URL: https://ios-sdk-diag.invalid
+      GUGU_SUPABASE_ANON_KEY: sb_publishable_ios_sdk_diagnostic_not_a_credential
+      VITE_SUPABASE_ANON_KEY: sb_publishable_ios_sdk_diagnostic_not_a_credential
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - run: command -v tmux || brew install tmux
-      - uses: ./.github/actions/setup-community
-      - run: pnpm build:app:ci
-        env:
-          GUGU_BUILD_SERIAL: '1'
-      - run: pnpm rebuild:native
-      - name: Report a failed dev Mac build
-        if: failure()
-        uses: actions/github-script@v7
+      - name: Bind isolated build paths
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = macOS
+          test "$(uname -m)" = arm64
+          diagnostic_root="$RUNNER_TEMP/gugu-ios-sdk-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -p "$diagnostic_root/evidence" "$diagnostic_root/gugu-home" "$diagnostic_root/user-data"
+          chmod 700 "$diagnostic_root" "$diagnostic_root/gugu-home" "$diagnostic_root/user-data"
+          printf '%s\n' "DIAG_ROOT=$diagnostic_root" "GUGU_HOME=$diagnostic_root/gugu-home" "GUGU_USER_DATA_DIR=$diagnostic_root/user-data" >> "$GITHUB_ENV"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          script: |
-            const { owner, repo } = context.repo;
-            const label = 'ci-mac-red';
-            const marker = `<!-- ci-dev-mac:${context.sha} -->`;
-            const title = `Dev Mac build failed at ${context.sha.slice(0, 7)}`;
-            const runUrl = `${process.env.GITHUB_SERVER_URL}/${owner}/${repo}/actions/runs/${context.runId}`;
-            const actor = context.payload.sender?.login || context.actor;
-            const body = [
-              marker,
-              `The macOS build failed after a push to dev.`,
-              `Commit: ${context.sha}`,
-              `Merged/pushed by: @${actor}`,
-              `Run: ${runUrl}`,
-              `Inspect the build and native-rebuild logs before the next release.`,
-            ].join('\n\n');
-            try {
-              await github.rest.issues.getLabel({ owner, repo, name: label });
-            } catch (error) {
-              if (error.status !== 404) throw error;
-              try {
-                await github.rest.issues.createLabel({
-                  owner, repo, name: label, color: 'b60205',
-                  description: 'The macOS build failed on dev',
-                });
-              } catch (labelError) {
-                if (labelError.status !== 422) throw labelError;
-                await github.rest.issues.getLabel({ owner, repo, name: label });
-              }
-            }
-            const issues = await github.paginate(github.rest.issues.listForRepo, {
-              owner, repo, labels: label, state: 'all', per_page: 100,
-            });
-            const existing = issues.find(issue => !issue.pull_request && issue.body?.includes(marker));
-            if (existing) {
-              await github.rest.issues.update({
-                owner, repo, issue_number: existing.number, title, body, state: 'open',
-              });
-            } else {
-              await github.rest.issues.create({ owner, repo, title, body, labels: [label] });
-            }
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify the reviewed source and D-only setup difference
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$EXPECTED_BASE"
+          node <<'NODE' | tee "$DIAG_ROOT/evidence/source.json"
+          const fs = require('node:fs');
+          const { execFileSync } = require('node:child_process');
+          const crypto = require('node:crypto');
+          const git = (...args) => execFileSync('git', args, { encoding: 'utf8' }).trim();
+          const head = git('rev-parse', 'HEAD');
+          if (!/^[a-f0-9]{40}$/.test(process.env.EXPECTED_REVISION || '') || head !== process.env.EXPECTED_REVISION || head !== process.env.GITHUB_SHA) throw new Error('Diagnostic ref differs from reviewed commit');
+          const changed = git('diff', '--name-only', process.env.EXPECTED_BASE, head).split('\n');
+          const testFile = 'apps/mobile/ios/HostValidation/DHostedRuntimeTests.swift';
+          const allowed = ['.github/workflows/ci-dev-mac.yml', testFile];
+          if (JSON.stringify(changed.slice().sort()) !== JSON.stringify(allowed.slice().sort()) || git('status', '--porcelain')) throw new Error('Only the reviewed workflow and D read-only setup may differ');
+          const testText = fs.readFileSync(testFile, 'utf8');
+          const baseTest = execFileSync('git', ['show', process.env.EXPECTED_BASE + ':' + testFile], {encoding:'utf8'});
+          const firstTest = '    func testPackagedResourceAndProcessDiagnosticsInActualAppHost()';
+          if (!testText.includes(firstTest) || !baseTest.includes(firstTest) || testText.slice(testText.indexOf(firstTest)) !== baseTest.slice(baseTest.indexOf(firstTest))) throw new Error('Existing test bodies changed');
+          const sha = name => crypto.createHash('sha256').update(fs.readFileSync(name)).digest('hex');
+          if (sha(testFile) !== process.env.EXPECTED_TEST_SHA256) throw new Error('Unreviewed D setup bytes');
+          const version = execFileSync(process.env.DEVELOPER_DIR + '/usr/bin/xcodebuild', ['-version'], {encoding:'utf8'});
+          if (version !== 'Xcode 26.6\nBuild version 17F113\n') throw new Error('Selected Xcode version changed');
+          if (sha(process.env.DEVELOPER_DIR + '/usr/share/man/man5/xcodebuild.xctestrun.5') !== process.env.EXPECTED_MANUAL_SHA256) throw new Error('Selected Xcode manual changed');
+          const record = { head, base: process.env.EXPECTED_BASE, changed, workflowSHA256: sha('.github/workflows/ci-dev-mac.yml'), testSetupSHA256: sha(testFile), selectedXcodeVersion: version, lockSHA256: sha('pnpm-lock.yaml'),
+            imageOS: process.env.ImageOS, imageVersion: process.env.ImageVersion,
+            guguHome: process.env.GUGU_HOME, userData: process.env.GUGU_USER_DATA_DIR, scope: 'three deterministic App-hosted tests; no real auth, model, EventKit or business HTTP' };
+          console.log(JSON.stringify(record, null, 2));
+          NODE
+          sw_vers > "$DIAG_ROOT/evidence/macos.txt"
+          xcodebuild -version > "$DIAG_ROOT/evidence/xcode.txt"
+          xcodebuild -showsdks > "$DIAG_ROOT/evidence/sdks.txt"
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+      - name: Install the normal locked workspace
+        run: |
+          set -euo pipefail
+          node --version | tee "$DIAG_ROOT/evidence/node.txt"
+          pnpm --version | tee "$DIAG_ROOT/evidence/pnpm.txt"
+          pnpm install --frozen-lockfile --store-dir "$DIAG_ROOT/pnpm-store" 2>&1 | tee "$DIAG_ROOT/evidence/install.log"
+      - name: Build the current renderer and packaged Pi runtime; sync iOS
+        run: |
+          set -euo pipefail
+          node scripts/build/prepare-ios-backend.mts 2>&1 | tee "$DIAG_ROOT/evidence/backend.log"
+          pnpm build:renderer 2>&1 | tee "$DIAG_ROOT/evidence/renderer.log"
+          node scripts/build/phone-web-dir.mts 2>&1 | tee "$DIAG_ROOT/evidence/phone-web-dir.log"
+          node scripts/build/build-ios-agent.mjs 2>&1 | tee "$DIAG_ROOT/evidence/pi-runtime.log"
+          pnpm exec cap copy ios 2>&1 | tee "$DIAG_ROOT/evidence/cap-copy.log"
+      - name: Verify packaged inputs before SDK compilation
+        run: |
+          set -euo pipefail
+          node <<'NODE' | tee "$DIAG_ROOT/evidence/packaged-inputs.json"
+          const fs = require('node:fs');
+          const crypto = require('node:crypto');
+          const root = 'apps/mobile/ios/App/App/HostRuntime/';
+          const manifest = JSON.parse(fs.readFileSync(root + 'manifest.json', 'utf8'));
+          const bytes = fs.readFileSync(root + 'agent.js');
+          const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+          if (manifest.piVersion !== '1.4.0' || manifest.protocolVersion !== 1 || manifest.sha256 !== sha256 || manifest.bytes !== bytes.length || sha256 !== process.env.EXPECTED_RUNTIME_SHA256 || bytes.length !== Number(process.env.EXPECTED_RUNTIME_BYTES)) throw new Error('Packaged Pi differs from the frozen runtime');
+          if (manifest.inputs.some(x => x.startsWith('node:') || x.includes('pi-coding-agent/'))) throw new Error('Node-only dependency in packaged iOS runtime');
+          const backend = JSON.parse(fs.readFileSync(root + 'GuguBackend.json', 'utf8'));
+          if (backend.version !== 1 || backend.supabaseUrl !== process.env.VITE_SUPABASE_URL || backend.anonKey !== process.env.VITE_SUPABASE_ANON_KEY) throw new Error('Compile-only backend mismatch');
+          const notices = JSON.parse(fs.readFileSync(root + 'licenses/npm-packages.json', 'utf8'));
+          if (!notices.length || notices.some(x => !x.files.length || x.files.some(f => !fs.existsSync(root + 'licenses/' + f)))) throw new Error('Packaged license body missing');
+          if (!fs.existsSync('dist-phone/index.html') || !fs.existsSync('apps/mobile/ios/App/App/public/index.html')) throw new Error('Current renderer was not copied into iOS');
+          fs.appendFileSync(process.env.GITHUB_ENV, 'GUGU_D_EXPECTED_ASSET_SHA256=' + sha256 + '\n');
+          console.log(JSON.stringify({ piVersion: manifest.piVersion, sha256, bytes: bytes.length, licensePackages: notices.length, backend: 'public synthetic compile-only', renderer: 'built and copied' }, null, 2));
+          NODE
+          git diff --exit-code
+          test -z "$(git status --porcelain --untracked-files=no)"
+      - name: Resolve only pinned Swift packages
+        run: |
+          set -euo pipefail
+          xcodebuild -resolvePackageDependencies \
+            -project apps/mobile/ios/App/App.xcodeproj -scheme IOSHostValidation \
+            -clonedSourcePackagesDirPath "$DIAG_ROOT/spm" \
+            -packageCachePath "$DIAG_ROOT/package-cache" \
+            -onlyUsePackageVersionsFromResolvedFile \
+            2>&1 | tee "$DIAG_ROOT/evidence/spm.log"
+      - name: Build the actual App TestHost without running it
+        run: |
+          set -euo pipefail
+          xcodebuild -project apps/mobile/ios/App/App.xcodeproj -scheme IOSHostValidation \
+            -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -jobs 1 -derivedDataPath "$DIAG_ROOT/derived" \
+            -clonedSourcePackagesDirPath "$DIAG_ROOT/spm" \
+            -packageCachePath "$DIAG_ROOT/package-cache" \
+            -resultBundlePath "$DIAG_ROOT/evidence/build.xcresult" \
+            -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
+            "GUGU_D_EXPECTED_ASSET_SHA256=$GUGU_D_EXPECTED_ASSET_SHA256" \
+            build-for-testing 2>&1 | tee "$DIAG_ROOT/evidence/xcodebuild.log"
+      - name: Preserve built products and verify the final tracked source
+        run: |
+          set -euo pipefail
+          node <<'NODE' | tee "$DIAG_ROOT/evidence/products.json"
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const crypto = require('node:crypto');
+          const root = path.join(process.env.DIAG_ROOT, 'derived/Build/Products');
+          if (!fs.readdirSync(root).some(x => x.endsWith('.xctestrun'))) throw new Error('build-for-testing produced no xctestrun');
+          const record = {};
+          const walk = directory => { for (const x of fs.readdirSync(directory, { withFileTypes: true })) { const file = path.join(directory, x.name); if (x.isDirectory()) walk(file); else if (x.isFile()) record[path.relative(root, file)] = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); } };
+          walk(root); console.log(JSON.stringify(record, null, 2));
+          NODE
+          tar -czf "$DIAG_ROOT/evidence/build-products.tar.gz" -C "$DIAG_ROOT/derived/Build" Products
+          git diff --exit-code
+          test -z "$(git status --porcelain --untracked-files=no)"
+      - name: Run only three deterministic tests on an owned new Simulator
+        run: |
+          set -euo pipefail
+          cat > "$DIAG_ROOT/run_three_xctests.py" <<'PYTEST'
+          import hashlib,json,os,plistlib,re,subprocess,sys,time,uuid
+          from pathlib import Path
+          root=Path(os.environ['DIAG_ROOT']);evidence=root/'evidence';statefile=evidence/'owned-simulator.json'
+          allowed=['testPackagedResourceAndProcessDiagnosticsInActualAppHost','testDeterministicPiToSwiftRoundTripInActualAppHost','testCalendarSavedReceiptGuardPreservesPermissionFailureCodes']
+          excluded='testCalendarFixtureThroughCExecutorAndIndependentEventKitOracle'
+          name='Gugu-D-'+os.environ['GITHUB_RUN_ID']+'-'+os.environ['GITHUB_RUN_ATTEMPT']
+          record={'name':name,'scope':'three deterministic App-hosted tests only','deviceSet':'GitHub-hosted runner default device set; ownership is only the newly created exact UDID','commands':[],'realModelCalls':0,'realBusinessHTTP':0,'realEventKitCalls':0,'permissionRequests':0}
+          def save():statefile.write_text(json.dumps(record,indent=2)+'\n')
+          def command(label,args,required=True,timeout=180):
+              stem=label;attempt=1
+              while (evidence/(stem+'.stdout.log')).exists():
+                  attempt+=1;stem=label+'-'+str(attempt)
+              with (evidence/(stem+'.stdout.log')).open('wb') as out,(evidence/(stem+'.stderr.log')).open('wb') as err:
+                  started=time.monotonic()
+                  try:
+                      p=subprocess.run(args,stdout=out,stderr=err,timeout=timeout);code=p.returncode
+                  except subprocess.TimeoutExpired:code=124
+              record['commands'].append({'label':label,'argv':args,'exit':code,'stdout':stem+'.stdout.log','stderr':stem+'.stderr.log','elapsedSeconds':round(time.monotonic()-started,3)});save()
+              if required and code:raise RuntimeError(label+' failed: '+str(code))
+              return (evidence/(stem+'.stdout.log')).read_bytes()
+          def sim(label,*args,**kw):return command(label,['xcrun','simctl',*args],**kw)
+          def devices(label):
+              data=json.loads(sim(label,'list','devices','--json'))
+              return {d['udid']:d for group in data['devices'].values() for d in group}
+          def owned_id():
+              path=evidence/'create-device.stdout.log'
+              if not path.exists():return None
+              value=path.read_text().strip()
+              if not re.fullmatch('[0-9A-Fa-f-]{36}',value) or str(uuid.UUID(value)).lower()!=value.lower():raise RuntimeError('Invalid creation receipt')
+              return value
+          
+          def cleanup():
+              # Only a printed create receipt absent from the before-inventory grants custody.
+              udid=owned_id()
+              if not udid:return
+              baseline=json.loads((evidence/'devices-before.stdout.log').read_text())
+              prior={d['udid'] for rows in baseline['devices'].values() for d in rows}
+              if udid in prior:raise RuntimeError('Refuse pre-existing simulator custody')
+              current=devices('devices-cleanup-before')
+              if udid in current:
+                  if current[udid]['name']!=name:raise RuntimeError('Owned device identity differs')
+                  if current[udid]['state']!='Shutdown':sim('shutdown-owned','shutdown',udid,required=False,timeout=60)
+                  sim('delete-owned','delete',udid,timeout=60)
+              final=devices('devices-after')
+              if udid in final:raise RuntimeError('Owned simulator was not deleted')
+              record['cleanup']={'ownedUDID':udid,'ownedDeviceDeleted':True,'unknownNewDevicesPreserved':sorted(set(final)-prior),'baselineDevicesStillPresent':sorted(prior & set(final))};save()
+              if set(final)-prior:raise RuntimeError('Unowned new simulator retained; no global clean claim')
+          if len(sys.argv)>1 and sys.argv[1]=='cleanup':
+              if statefile.exists():record=json.loads(statefile.read_text())
+              cleanup();sys.exit(0)
+          
+          try:
+              before=devices('devices-before')
+              runtimes=json.loads(sim('runtimes','list','runtimes','--json'))['runtimes']
+              runtime=next((x for x in runtimes if x['identifier']=='com.apple.CoreSimulator.SimRuntime.iOS-26-5' and x.get('isAvailable')),None)
+              if not runtime:raise RuntimeError('Required installed iOS26.5 runtime unavailable; do not install another runtime')
+              types=json.loads(sim('device-types','list','devicetypes','--json'))['devicetypes']
+              dtype='com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro'
+              if not any(x['identifier']==dtype for x in types):raise RuntimeError('Required installed iPhone17Pro device type unavailable')
+              record.update(runtime=runtime['identifier'],deviceType=dtype)
+              sim('create-device','create',name,dtype,runtime['identifier'])
+              udid=owned_id();assert udid not in before;record['ownedUDID']=udid;save()
+              sim('boot-owned','boot',udid,timeout=90)
+              sim('boot-status','bootstatus',udid,'-b',timeout=300)
+              products=root/'derived/Build/Products';originals=list(products.glob('*.xctestrun'))
+              if len(originals)!=1:raise RuntimeError('Expected exactly one original xctestrun')
+              original=originals[0];originalBytes=original.read_bytes();data=plistlib.loads(originalBytes)
+              if set(data)-{'__xctestrun_metadata__'}!={'HostValidation'}:raise RuntimeError('Unexpected test target in original manifest')
+              target=data['HostValidation']
+              assert target['IsAppHostedTestBundle'] is True and target['TestHostBundleIdentifier']=='app.gugu.chat'
+              # Candidate: requires the Xcode26.6 shipped man page before execution.
+              target['UseDestinationArtifacts']=True
+              for key in ['TestBundlePath','TestHostPath','UITargetAppPath']:target.pop(key,None)
+              target['TestBundleDestinationRelativePath']='__TESTHOST__/PlugIns/HostValidation.xctest'
+              target['UITargetAppBundleIdentifier']='app.gugu.chat'
+              app=products/'Debug-iphonesimulator/App.app'
+              asset=(app/'HostRuntime/agent.js').read_bytes();sha=hashlib.sha256(asset).hexdigest()
+              assert sha==os.environ['EXPECTED_RUNTIME_SHA256']
+              sim('install-owned-testhost','install',udid,str(app),timeout=120)
+              container=Path(sim('app-data-container','get_app_container',udid,'app.gugu.chat','data').decode().strip()).resolve()
+              assert '/'+udid+'/data/Containers/Data/Application/' in str(container)
+              home=container/'D-Test-GuguHome';userData=container/'D-Test-UserData'
+              for p in [home,userData]:p.mkdir(mode=0o700,exist_ok=True)
+              env=target.setdefault('EnvironmentVariables',{})
+              env['GUGU_D_EXPECTED_ASSET_SHA256']=sha
+              env.pop('GUGU_D_ISOLATED_SIMULATOR',None)
+              env['GUGU_HOME']=str(home);env['GUGU_USER_DATA_DIR']=str(userData)
+              env['GUGU_D_EXPECTED_SIMULATOR_UDID']=udid
+              env['GUGU_CLOUD_COMPUTER_ENABLED']='false';env['GUGU_PLATFORM_MODELS_ENABLED']='false'
+              target['OnlyTestIdentifiers']=['DHostedRuntimeTests/'+x for x in allowed]
+              target['SkipTestIdentifiers']=['DHostedRuntimeTests/'+excluded]
+              derived=original.with_name('D-three-tests.xctestrun');derivedBytes=plistlib.dumps(data,fmt=plistlib.FMT_XML);derived.write_bytes(derivedBytes)
+              (evidence/'original.xctestrun').write_bytes(originalBytes);(evidence/'derived-three-tests.xctestrun').write_bytes(derivedBytes)
+              record['xctestrun']={'original':str(original),'derived':str(derived),'originalSHA256':hashlib.sha256(originalBytes).hexdigest(),'derivedSHA256':hashlib.sha256(derivedBytes).hexdigest(),'assetSHA256':sha,'onlyTesting':allowed,'skipTesting':[excluded],'guguHome':str(home),'guguUserData':str(userData)};save()
+              args=['xcodebuild','test-without-building','-xctestrun',str(derived),'-destination','platform=iOS Simulator,id='+udid,'-parallel-testing-enabled','NO','-maximum-concurrent-test-simulator-destinations','1','-resultBundlePath',str(evidence/'test.xcresult'),'-test-timeouts-enabled','YES','-default-test-execution-time-allowance','120','-maximum-test-execution-time-allowance','120']
+              args+=['-only-testing:HostValidation/DHostedRuntimeTests/'+x for x in allowed]
+              args+=['-skip-testing:HostValidation/DHostedRuntimeTests/'+excluded]
+              result=command('three-tests',args,required=False,timeout=900)
+              code=record['commands'][-1]['exit']
+              summary=command('test-summary',['xcrun','xcresulttool','get','test-results','summary','--path',str(evidence/'test.xcresult')],required=False)
+              command('test-tree',['xcrun','xcresulttool','get','test-results','tests','--path',str(evidence/'test.xcresult')],required=False)
+              command('test-attachments',['xcrun','xcresulttool','export','attachments','--path',str(evidence/'test.xcresult'),'--output-path',str(evidence/'test-attachments')],required=False)
+              sim('testhost-screenshot','io',udid,'screenshot',str(evidence/'testhost-after.png'),required=False)
+              sim('app-device-logs','spawn',udid,'log','show','--style','json','--last','10m','--predicate','process == "App"',required=False,timeout=60)
+              after=Path(sim('app-data-container-after','get_app_container',udid,'app.gugu.chat','data').decode().strip()).resolve()
+              # Preserve the old postcondition; also require actual read-only TestHost receipts.
+              assert after==container,'Test installation changed isolated container'
+              manifest=json.loads((evidence/'test-attachments/manifest.json').read_text())
+              rootReports=[]
+              for test in manifest:
+                  for item in test.get('attachments',[]):
+                      if not item.get('suggestedHumanReadableName','').startswith('D-App-prelaunch-root-readback_'):continue
+                      leaf=item['exportedFileName']
+                      assert Path(leaf).name==leaf and leaf.endswith('.json'),'Invalid exported root receipt path'
+                      report=json.loads((evidence/'test-attachments'/leaf).read_text())
+                      assert report['phase']=='read-only-before-test-body' and report['environmentMutationPerformed'] is False
+                      assert report['rootCreationPerformed'] is False and report['bundleId']=='app.gugu.chat'
+                      assert report['expectedSimulatorUDID'].lower()==report['observedSimulatorUDID'].lower()==udid.lower()
+                      assert Path(report['currentContainer']).resolve()==after
+                      assert report['roots']=={'GUGU_HOME':str(home),'GUGU_USER_DATA_DIR':str(userData)}
+                      assert report['cEnvironmentRoots']==report['roots']
+                      assert test['testIdentifier'] in ['DHostedRuntimeTests/'+x+'()' for x in allowed]
+                      rootReports.append({'test':test['testIdentifier'],'report':report})
+              assert len(rootReports)==3 and len({x['test'] for x in rootReports})==3,'Require current-container launch-root proof for all three tests'
+              record['effectiveRootReadbacks']=rootReports;save()
+              assert original.read_bytes()==originalBytes,'Original xctestrun was modified'
+              pattern=r"Test Case '-\[[^\]]+ (test[A-Za-z0-9_]+)\]' (passed|failed|skipped)"
+              cases=re.findall(pattern,result.decode(errors='replace'))
+              record['observedTestCases']=cases;save()
+              assert code==0 and len(cases)==3 and {x[0] for x in cases}==set(allowed) and all(x[1]=='passed' for x in cases),'Expected exactly three passed selected tests'
+              parsed=json.loads(summary)
+              assert parsed['totalTestCount']==3 and parsed['passedTests']==3 and parsed['failedTests']==0 and parsed['skippedTests']==0,'Unexpected structured test counts'
+              record['testSummary']=parsed;record['testStatus']='three-selected-tests-passed';save()
+              command('final-source-diff',['git','diff','--exit-code'])
+          finally:
+              cleanup()
+          PYTEST
+          python3 "$DIAG_ROOT/run_three_xctests.py"
+      - name: Retry exact owned-device cleanup on abnormal exit
+        if: always()
+        run: |
+          set -euo pipefail
+          if test -f "$DIAG_ROOT/run_three_xctests.py"; then
+            python3 "$DIAG_ROOT/run_three_xctests.py" cleanup
+          fi
+      - name: Preserve status even when a build step fails
+        if: always()
+        run: |
+          set -euo pipefail
+          git status --short > "$DIAG_ROOT/evidence/final-status.txt"
+          git diff > "$DIAG_ROOT/evidence/generated-tracked-diff.patch"
+          printf '%s\n' 'Only three deterministic App-hosted tests authorized. Real Keychain/auth/HTTP/EventKit/permissions/model/APNs/TestFlight remain unverified.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ios-rootproof-11000ab-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gugu-ios-sdk-${{ github.run_id }}-${{ github.run_attempt }}/evidence/
+          retention-days: 5
+          if-no-files-found: error

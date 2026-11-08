@@ -1,5 +1,6 @@
 #if DEBUG && os(iOS) && targetEnvironment(simulator)
 import XCTest
+import Darwin
 import EventKit
 import CryptoKit
 @testable import App
@@ -40,6 +41,44 @@ final class DHostedRuntimeTests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    // Read-only launch-input verification. No environment mutation or root creation here.
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        let environment = ProcessInfo.processInfo.environment
+        guard Bundle.main.bundleIdentifier == "app.gugu.chat",
+              let expectedUDID = environment["GUGU_D_EXPECTED_SIMULATOR_UDID"],
+              UUID(uuidString: expectedUDID) != nil,
+              environment["SIMULATOR_UDID"]?.lowercased() == expectedUDID.lowercased() else {
+            throw GuguHostFailure(code: "D_wrong_test_host", message: "TestHost destination differs from launch input")
+        }
+        let container = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            .resolvingSymlinksInPath().standardizedFileURL
+        var roots: [String: Any] = [:]
+        var cRoots: [String: Any] = [:]
+        for (key, leaf) in [("GUGU_HOME", "D-Test-GuguHome"), ("GUGU_USER_DATA_DIR", "D-Test-UserData")] {
+            let expected = container.appendingPathComponent(leaf, isDirectory: true)
+                .resolvingSymlinksInPath().standardizedFileURL
+            guard let raw = environment[key], raw == expected.path,
+                  let cValue = getenv(key), String(cString: cValue) == raw else {
+                throw GuguHostFailure(code: "D_stale_data_root", message: "Launch input is outside the current App container")
+            }
+            let attributes = try FileManager.default.attributesOfItem(atPath: raw)
+            guard attributes[.type] as? FileAttributeType == .typeDirectory,
+                  (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700 else {
+                throw GuguHostFailure(code: "D_invalid_data_root", message: "Launch root is missing or not private")
+            }
+            roots[key] = raw
+            cRoots[key] = String(cString: cValue)
+        }
+        let support = try XCTUnwrap(FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first)
+        try attach("D-App-prelaunch-root-readback", ["phase": "read-only-before-test-body",
+            "bundleId": Bundle.main.bundleIdentifier ?? "", "pid": ProcessInfo.processInfo.processIdentifier,
+            "expectedSimulatorUDID": expectedUDID, "observedSimulatorUDID": environment["SIMULATOR_UDID"] ?? "",
+            "currentContainer": container.path, "roots": roots, "cEnvironmentRoots": cRoots,
+            "nativeApplicationSupport": support.resolvingSymlinksInPath().standardizedFileURL.path,
+            "environmentMutationPerformed": false, "rootCreationPerformed": false])
     }
 
     private func asset() throws -> (Data, String) {
