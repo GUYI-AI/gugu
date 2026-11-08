@@ -75,7 +75,7 @@ function running(gen: Gen, progress: Progress, told: Seq | null): Transition {
 }
 
 /** A row whose delivery outcome cannot be known: written unknown (never replayed) and reported to its source, once. */
-export const OUTCOME_UNKNOWN = { name: 'OutcomeUnknown', message: 'The delivery outcome is unknown: it may have arrived, and it is not resent' }
+export const OUTCOME_UNKNOWN = { name: 'OutcomeUnknown', message: 'No delivery acknowledgement was received; delivery is unconfirmed and this input was not resent' }
 function unknownRows(seqs: readonly Seq[]): Effect[] {
   return seqs.length ? [...seqs.map((seq): Effect => ({ e: 'write-receipt', seq, receipt: { state: 'unknown' } })),
     { e: 'report-failure', seqs, cause: OUTCOME_UNKNOWN }] : []

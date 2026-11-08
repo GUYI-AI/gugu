@@ -60,7 +60,7 @@ export default {
       "card": {
         "appUnavailable": "App unavailable",
         "deliveryRejected": "Message not delivered",
-        "outcomeUnknown": "Delivery result unknown",
+        "outcomeUnknown": "Delivery unconfirmed",
         "generic": "Reply not completed",
         "authentication": "Model authorization refused",
         "network": "Cannot reach the model service",
@@ -90,7 +90,7 @@ export default {
       "generic": "This Agent could not complete the reply",
       "deliveryRejected": "This message did not reach the assistant and will not be resent automatically.",
       "notAdmitted": "Messages retained. Your assistant will reply when ready.",
-      "outcomeUnknown": "Delivery result unknown: the message may have reached your assistant, and it was not resent.",
+      "outcomeUnknown": "No acknowledgement from your assistant was received, so delivery could not be confirmed. This message was not resent.",
       "undelivered": "Not delivered yet: no running Gugu instance holds this Agent. It will read the message once that instance is open.",
       "appUnavailable": "Not delivered: this came from an App that cannot run where this Agent lives (not installed, turned off, needs an update, or not possible on a phone).",
       "retry": "Retry",
@@ -777,7 +777,9 @@ export default {
       "undelivered": "instance not running, not delivered",
       "sending": "Sending",
       "stopped": "Stopped. Sends with your next message.",
-      "unknownNotResent": "Result unknown; not resent",
+      "unknownNotResent": "Delivery unconfirmed; not resent",
+      "unconfirmedHint": "Delivery unconfirmed; view message actions",
+      "unconfirmedActions": "Unconfirmed delivery actions",
       "failure": {
         "hostOffline": "The computer running this task is offline. It will be sent automatically once that computer is back.",
         "hostNotReady": "The computer running this task is not ready for messages yet. Retry in a moment.",

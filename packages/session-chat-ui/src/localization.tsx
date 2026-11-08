@@ -140,7 +140,7 @@ const fallbackMessages = {
   'transcript.waitingSendInterrupted': 'Send interrupted',
   'transcript.waitingAcknowledgement': 'Awaiting acknowledgement',
   'transcript.sendFailed': 'Send failed',
-  'transcript.sendUnknown': 'Delivery unknown; not resent',
+  'transcript.sendUnknown': 'Delivery unconfirmed; not resent',
   'transcript.retrySend': 'Retry',
   'transcript.resendInput': 'Resend',
   'transcript.processStepsOne': '{count} step',

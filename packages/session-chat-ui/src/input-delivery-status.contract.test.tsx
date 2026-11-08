@@ -42,5 +42,5 @@ it('does not expose an unsupported resend on an older host or with no command', 
   const old = status('unknown', false, { onRetrySend: vi.fn() });
   const detached = status('unknown', true, {});
   expect(old.querySelector('button')).toBeNull(); expect(detached.querySelector('button')).toBeNull();
-  expect(old.textContent).toContain('Delivery unknown'); expect(detached.textContent).toContain('Delivery unknown');
+  expect(old.textContent).toContain('Delivery unconfirmed'); expect(detached.textContent).toContain('Delivery unconfirmed');
 });

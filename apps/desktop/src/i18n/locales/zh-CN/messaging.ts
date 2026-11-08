@@ -60,7 +60,7 @@ export default {
       "card": {
         "appUnavailable": "App 用不了",
         "deliveryRejected": "消息未送达",
-        "outcomeUnknown": "投递结果未知",
+        "outcomeUnknown": "未确认送达",
         "generic": "回复没有完成",
         "authentication": "模型服务拒绝了授权",
         "network": "连不上模型服务",
@@ -89,7 +89,7 @@ export default {
       "generic": "Agent 本次回复出错，未能完成",
       "deliveryRejected": "这条消息没有送到助理，也不会自动重投。",
       "notAdmitted": "消息已保留，助理就绪后回复。",
-      "outcomeUnknown": "投递结果未知：消息可能已经送到助理，没有重投。",
+      "outcomeUnknown": "未收到助理的接收确认，无法确定消息是否送达；这条消息没有重发。",
       "undelivered": "消息暂未送达：没有运行中的咕咕实例持有这个 Agent，打开那个实例后会由它读取。",
       "appUnavailable": "未送达：这条来自一个 App，它在这个 Agent 所在的设备上用不了（没有安装、已关闭、需要更新，或手机上不能运行）。",
       "retry": "重试",
@@ -775,7 +775,9 @@ export default {
       "undelivered": "所在实例未运行、未送达",
       "sending": "发送中",
       "stopped": "已停止，下一句发出时一起发送",
-      "unknownNotResent": "结果未知，没有重发",
+      "unknownNotResent": "未确认送达，未重发",
+      "unconfirmedHint": "未确认送达，点击查看消息操作",
+      "unconfirmedActions": "未确认送达消息操作",
       "failure": {
         "hostOffline": "这个任务所在的电脑现在不在线，它上线后会自动发出",
         "hostNotReady": "这个任务所在的电脑还没准备好接收消息，稍后点重试",
