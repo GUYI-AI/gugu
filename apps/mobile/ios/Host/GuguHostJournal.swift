@@ -107,7 +107,7 @@ final class GuguHostJournal {
         }
     }
 
-    func admit(_ context: GuguHostContext, prompt: String, modelId: String, systemPrompt: String = "", tools: [[String: Any]] = [], messages: [[String: Any]] = [], calendarProtected: Bool = false) throws -> Bool {
+    func admit(_ context: GuguHostContext, prompt: String, modelId: String, systemPrompt: String = "", tools: [[String: Any]] = [], messages: [[String: Any]] = [], calendarProtected: Bool = false, clientMessageId: String? = nil) throws -> Bool {
         try lock.lock(); defer { lock.unlock() }
         try validate(context)
         return try update { next in
@@ -115,6 +115,10 @@ final class GuguHostJournal {
             let binding = try Self.object(context)
             var fingerprint: [String: Any] = ["context": binding, "prompt": prompt, "modelId": modelId, "systemPrompt": systemPrompt, "tools": tools, "messages": messages]
             if calendarProtected { fingerprint["calendarProtected"] = true }
+            if let clientMessageId {
+                guard UUID(uuidString: clientMessageId) != nil else { throw Self.failure("invalid_args", "Client message identity must be a UUID") }
+                fingerprint["clientMessageId"] = clientMessageId
+            }
             let digest = try Self.digest(fingerprint)
             if let saved = jobs[context.jobId] {
                 guard saved["inputSHA256"] as? String == digest else { throw Self.failure("duplicate_conflict", "Job ID has different input or binding") }
@@ -137,6 +141,7 @@ final class GuguHostJournal {
             // A native continuation carries the source data category before its
             // first journal event or model request, even without another tool call.
             if calendarProtected { jobs[context.jobId]?["usedCalendar"] = true }
+            if let clientMessageId { jobs[context.jobId]?["clientMessageId"] = clientMessageId }
             next["jobs"] = jobs
             return true
         }
@@ -248,6 +253,20 @@ final class GuguHostJournal {
             call["approvedArgumentsSHA256"] = request.argumentsSHA256
         }
         try updateJob(request.context.jobId) { $0["status"] = "running" }
+    }
+
+    func reject(_ request: GuguNativeToolRequest) throws -> [String: Any] {
+        try lock.lock(); defer { lock.unlock() }
+        try checkActive(request.context); try checkDeadline(request)
+        let receipt = Self.failure("cancelled", "Owner declined this exact native operation").envelope
+        try updateCall(request.requestId) { call in
+            guard call["status"] as? String == "needs_confirmation", call["argumentsSHA256"] as? String == request.argumentsSHA256,
+                  call["actionName"] as? String == request.actionName else { throw Self.failure("duplicate_conflict", "Permission decision is no longer pending") }
+            call["status"] = "completed"; call["receipt"] = receipt
+            call["rejectedBy"] = request.context.ownerId; call["rejectedAtMs"] = Int64(Date().timeIntervalSince1970 * 1000)
+        }
+        try updateJob(request.context.jobId) { $0["status"] = "running" }
+        return receipt
     }
 
     func beginMutation(_ request: GuguNativeToolRequest) throws {

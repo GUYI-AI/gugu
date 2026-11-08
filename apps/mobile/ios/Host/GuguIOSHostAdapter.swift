@@ -20,11 +20,13 @@ final class GuguIOSHostAdapter {
         "sessionTimeline.sessionsList", "sessionTimeline.sessionOfAgent", "sessionTimeline.sessionCreateOptions",
         "sessionTimeline.sessionCreateModels", "sessionTimeline.sessionSnapshot", "sessionTimeline.sessionAfter",
         "sessionTimeline.sessionOlder", "sessionTimeline.sessionToolImage", "sessionTimeline.sessionOptions",
+        "appSettings.get", "appSettings.getWithMeta",
     ]
     private static let mutations: Set<String> = [
         "sessionTimeline.sessionCreate", "sessionTimeline.sessionSend", "sessionTimeline.sessionRespond",
         "sessionTimeline.sessionQueue", "sessionTimeline.sessionCancel", "sessionTimeline.sessionSetOption",
         "sessionTimeline.sessionReloadModel", "sessionTimeline.prefetchFiles", "sessions.markSessionSeen",
+        "appSettings.update",
     ]
 
     init(root: URL, backend: GuguIOSHostBackend,
@@ -92,7 +94,7 @@ final class GuguIOSHostAdapter {
         }
     }
 
-    func hostCall(ownerId: String, id: String, channel: String, args: [Any], origin: GuguIOSHostCallOrigin,
+    func hostCall(ownerId: String, id: String, channel: String, args: [Any], origin: GuguIOSHostCallOrigin, expectedBinding: GuguIOSHostBinding? = nil,
                   completion: @escaping ([String: Any]) -> Void) {
         queue.async {
             var custodyAttempted = false
@@ -100,15 +102,21 @@ final class GuguIOSHostAdapter {
                 guard UUID(uuidString: id) != nil else { throw Self.failure("invalid_args", "Host call requires the original UUID") }
                 guard Self.reads.contains(channel) || Self.mutations.contains(channel) else { throw Self.failure("unknown_method", "Host channel is not implemented") }
                 guard let binding = self.configured, binding.ownerId == ownerId, let store = self.store else { throw Self.failure("host_not_ready", "Native host is not configured") }
+                guard expectedBinding == nil || binding == expectedBinding else { throw Self.failure("stale_context", "Original host-call binding was retired") }
                 try self.check(binding)
                 try Self.rejectCredentialFields(args)
+                let settings = channel.hasPrefix("appSettings.")
+                if settings {
+                    guard origin == .localOwnerUI else { throw Self.failure("not_granted", "Phone settings require the local owner surface") }
+                    if channel == "appSettings.update" { try self.requireOwnerUI() }
+                }
                 if channel == "sessionTimeline.sessionRespond" {
                     guard origin == .localOwnerUI else { throw Self.failure("not_granted", "Permission decisions require the local owner UI") }
                     try self.requireOwnerUI()
                 }
                 let state = try self.backend.state(binding: binding)
                 try Self.validateState(state, binding: binding)
-                guard state["ready"] as? Bool == true else { throw Self.failure("host_not_ready", "Native task host is not ready") }
+                guard settings || state["ready"] as? Bool == true else { throw Self.failure("host_not_ready", "Native task host is not ready") }
                 let call = GuguIOSHostInvocation(binding: binding, requestId: id, channel: channel, arguments: args, origin: origin)
                 let callGeneration = self.generation
                 if Self.reads.contains(channel) {

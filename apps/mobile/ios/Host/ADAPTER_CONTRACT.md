@@ -2,12 +2,19 @@
 
 Refs #1877. This adapter does not declare the phone host available by itself. The existing shared session coordinator remains the sole human-authentication authority. The native Pi host does not receive, persist, refresh or return a human refresh token.
 
+The current iOS plugin input shape, concrete service construction, scoped
+appSettings channels and real broker execution sequence are frozen in
+[NATIVE_BACKEND_HANDOFF.md](NATIVE_BACKEND_HANDOFF.md). Current code includes a
+concrete backend; complete message/attachment delivery remains unconnected and
+blocks ready/capability. Earlier inventory statements below describe their
+original slice, not proof of current end-to-end availability.
+
 ## Native plugin surface
 
 The integrator registers `GuguAgent` only when the actual App path is ready. Registering it affects authentication immediately: `phoneHostAuth.ts` checks plugin presence, not the local-host capability flag. Consequently `authSession` is required along with `configure`, `hostState`, `hostCall` and `stopHost`.
 
 - `authSession({action: get|refresh|sign_out})` delegates auth ownership by returning `{available:false, session:null}`. `phoneHostAuth.ts` then executes its existing sessionCoordinator/SDK operation inside the existing ordered gate. The native method never reads a `refreshToken` parameter. On sign_out it first stops native task execution, without claiming logout or clearing shared Keychain state, then returns the delegation result. Unknown actions reject.
-- `configure` receives a native typed configuration with ownerId/deviceId/installationId, category grants and public device metadata. The plugin must construct that type field-by-field and discard the legacy renderer refreshToken input; do not retain the whole CAPPluginCall/config dictionary. Native current identity and installation must match the shared-login publication. Cloud/model credentials come from a separately injected broker, not from this configuration or journal.
+- `configure` accepts only expectedBinding and an optional device display label. Native typed configuration is constructed field-by-field; category truth comes from OwnerAccess. Unknown/legacy credential, grant and endpoint fields reject before their values are read. Native current identity and installation must match the shared-login publication. Cloud/model credentials come from a separately injected broker, not from this configuration or journal.
 - `hostState({ownerId})` returns the actual backend state. Authentication missing, native runtime/storage unavailable, cloud registration missing or a retired host cannot report ready. This adapter's existence is insufficient evidence for ready or taskTimeline support.
 - `hostCall({ownerId,id,channel,args})` preserves the supplied UUID. It checks current owner/installation, an explicit allowlist and a native origin. The source is constructed by native UI/RPC glue, never read from args. A local permission settlement requires the owner's real local task UI. A remote device/agent cannot supply an owner decision.
 - `stopHost` retires native execution and volatile broker bindings. It never rotates or deletes the shared auth session; sessionCoordinator owns that path. `clearCredentials` cannot be interpreted as permission to erase unrelated Keychain entries.

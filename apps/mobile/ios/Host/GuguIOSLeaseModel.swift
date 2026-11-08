@@ -12,7 +12,7 @@ final class GuguIOSLeaseModel: GuguModelCompleting {
     private let binding: GuguIOSHostBinding
     private let agentId: String
     private let sessionId: String
-    private let modelId: String
+    private var modelId: String
     private let broker: GuguIOSCloudBroker
     private let store: GuguIOSBackendStore
     private let check: () throws -> Void
@@ -79,6 +79,18 @@ final class GuguIOSLeaseModel: GuguModelCompleting {
             } catch {
                 if self.requests[id] != nil { self.finish(id, Self.envelope(error)) } else { completion(Self.envelope(error)) }
             }
+        }
+    }
+
+    func selectModel(_ id: String, persist: @escaping () throws -> Void, completion: @escaping (Result<Void, Error>) -> Void) {
+        queue.async {
+            do {
+                try self.check()
+                guard !self.stopped, !id.isEmpty, self.grant == nil, self.issuingJobId == nil, self.requests.isEmpty else { throw Self.failure("session_busy", "Current model lease must finish before changing selection") }
+                let rows = try self.store.snapshot()["leases"] as? [String: [String: Any]] ?? [:]
+                guard !rows.values.contains(where: { $0["agentId"] as? String == self.agentId && $0["sessionId"] as? String == self.sessionId && $0["status"] as? String != "settled" }) else { throw Self.failure("model_cleanup_pending", "Original model cleanup is still pending") }
+                try persist(); self.modelId = id; completion(.success(()))
+            } catch { completion(.failure(error)) }
         }
     }
 

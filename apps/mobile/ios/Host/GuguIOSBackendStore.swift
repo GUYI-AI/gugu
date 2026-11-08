@@ -21,6 +21,7 @@ final class GuguIOSBackendStore {
     let binding: GuguIOSHostBinding
     private let path: URL
     private let lock: GuguJournalFileLock
+    var custodyKey: String { path.resolvingSymlinksInPath().standardizedFileURL.path }
     init(root: URL, binding: GuguIOSHostBinding) throws {
         try binding.validate(); self.binding = binding
         var directory = root.appendingPathComponent(binding.ownerId, isDirectory: true)

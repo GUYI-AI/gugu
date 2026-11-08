@@ -5,6 +5,8 @@ import Foundation
 enum GuguIOSCloudOperation {
     case registerDevice([String: Any])
     case heartbeat(instanceId: String)
+    case readDevice
+    case withdrawDevice([String: Any])
     case activeAgent(String)
     case startProvision(operationId: String, provisionId: String, displayName: String, modelId: String)
     case readProvision(String)
@@ -138,6 +140,10 @@ final class GuguIOSCloudBroker {
         case .registerDevice(let row):
             guard row["device_id"] as? String == b.deviceId, row["user_id"] as? String == b.ownerId else { throw Self.failure("stale_context", "Device registration differs from native binding") }
             return Spec(path: "rest/v1/gugu_devices", body: row, query: [.init(name: "on_conflict", value: "device_id")], prefer: "resolution=merge-duplicates,return=representation")
+        case .readDevice: return read("gugu_devices", "device_id,user_id,capabilities", [("device_id", b.deviceId), ("user_id", b.ownerId)])
+        case .withdrawDevice(let capabilities):
+            return Spec(path: "rest/v1/gugu_devices", method: "PATCH", body: ["capabilities": capabilities, "updated_at": ISO8601DateFormatter().string(from: Date())],
+                query: [.init(name: "device_id", value: "eq.\(b.deviceId)"), .init(name: "user_id", value: "eq.\(b.ownerId)"), .init(name: "select", value: "device_id")], prefer: "return=representation")
         case .heartbeat(let instance): return rpc("runtime_instance_heartbeat", ["p_instance_id": try id(instance), "p_device_id": b.deviceId])
         case .activeAgent(let agent): return read("active_users", "id,type,owner_user_id,device_id,display_name,gugu_number,desired_status", [("id", try id(agent)), ("owner_user_id", b.ownerId), ("device_id", b.deviceId), ("type", "agent")])
         case .startProvision(let operation, let provision, let name, let model):

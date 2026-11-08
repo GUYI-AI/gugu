@@ -2,6 +2,14 @@
 
 Refs #1877. This slice runs the packaged JavaScript with Apple's JavaScriptCore in the App process. It must not spawn Node or delegate the agent loop to a remote host. Remote model inference is a network transport, while the Pi loop, native tools, cancellation and journal remain local.
 
+The current concrete native service, token-free GuguAgent entry, named local
+notification settings and A-only real broker driver are documented in
+[NATIVE_BACKEND_HANDOFF.md](NATIVE_BACKEND_HANDOFF.md). That document supersedes
+the historical slice inventories below. Inbox/outbox and private attachments
+remain unconnected; current native state and device registration explicitly keep
+host readiness/capability unavailable. Author fixtures are not live cloud/model,
+EventKit or iOS App acceptance.
+
 ## Boundary v1
 
 `GuguHostContracts.swift` defines the native calendar boundary. Each request includes `ownerId`, `installationId`, `agentUserId`, `sessionId`, `jobId`, `contextEpoch`, `runtimeInstanceId`, `requestId`, `toolCallId`, `actionName`, canonical `argumentsJSON`, its SHA-256 and a native deadline. Identifiers and current account/installation are validated by the host before dispatch. The model cannot supply approval or identity fields.

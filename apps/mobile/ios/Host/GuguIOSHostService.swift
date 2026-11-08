@@ -1,0 +1,99 @@
+import Foundation
+
+/// One App-owned facade. Native root, credentials, endpoints, lifecycle and tool
+/// executor are constructor dependencies; none can be selected by WebView input.
+final class GuguIOSHostService {
+    private final class RemoteRouter {
+        weak var adapter: GuguIOSHostAdapter?
+        func invoke(_ expected: GuguIOSHostBinding, _ channel: String, _ args: [Any], _ id: String, _ done: @escaping ([String: Any]) -> Void) {
+            guard let adapter else { done(GuguIOSNativeBackend.replyError(GuguIOSNativeBackend.failure("host_not_ready", "Native service is unavailable"), admission: "rejected")); return }
+            adapter.hostCall(ownerId: expected.ownerId, id: id, channel: channel, args: args, origin: .remoteAgent, expectedBinding: expected, completion: done)
+        }
+    }
+    private final class StateEvents {
+        private let lock = NSLock()
+        private var listener: (([String: Any]) -> Void)?
+        func observe(_ value: @escaping ([String: Any]) -> Void) { lock.lock(); defer { lock.unlock() }; listener = value }
+        func emit(_ value: [String: Any]) { lock.lock(); let callback = listener; lock.unlock(); callback?(value) }
+    }
+    let backend: GuguIOSNativeBackend
+    let adapter: GuguIOSHostAdapter
+    private let ownerAccess: GuguIOSOwnerAccess
+    private let metadata: () -> [String: Any]
+    private let events = StateEvents()
+
+    init(root: URL, runtime: GuguPackagedRuntime, lifecycle: GuguIOSHostLifecycle, ownerAccess: GuguIOSOwnerAccess,
+         configuration: GuguIOSBackendConfiguration, credentials: @escaping GuguIOSCloudBroker.Credentials,
+         executor: @escaping (GuguIOSHostBinding) -> GuguNativeToolExecutor, deviceMetadata: @escaping () -> [String: Any],
+         brokerSend: GuguIOSCloudBroker.Send? = nil, socketFactory: GuguIOSRealtimeTransport.SocketFactory? = nil,
+         modelTransport: @escaping (GuguNativeModelLease) throws -> GuguModelCompleting = { try GuguModelTransport(lease: $0) }) throws {
+        self.ownerAccess = ownerAccess; metadata = deviceMetadata
+        let router = RemoteRouter(), events = self.events
+        backend = try GuguIOSNativeBackend(root: root, runtime: runtime, lifecycle: lifecycle, ownerAccess: ownerAccess,
+            configuration: configuration, credentials: credentials, executor: executor,
+            remoteInvoke: { expected, channel, args, id, done in router.invoke(expected, channel, args, id, done) },
+            event: { events.emit($0) }, brokerSend: brokerSend, socketFactory: socketFactory, modelTransport: modelTransport)
+        adapter = GuguIOSHostAdapter(root: root.appendingPathComponent("host-calls"), backend: backend,
+            currentIdentity: { try? ownerAccess.ownerBinding() }, requireOwnerUI: { try ownerAccess.requireLocalOwnerUI() })
+        router.adapter = adapter
+    }
+    func observeState(_ listener: @escaping ([String: Any]) -> Void) { events.observe(listener) }
+    func configure(_ options: [String: Any], completion: @escaping ([String: Any]) -> Void) {
+        do {
+            try Self.keys(options, allowed: ["expectedBinding", "device"])
+            guard let raw = options["expectedBinding"] as? [String: Any] else { throw Self.failure("invalid_args", "Current native binding is required") }
+            try Self.keys(raw, allowed: ["ownerId", "deviceId", "installationId"])
+            guard let owner = raw["ownerId"] as? String, let device = raw["deviceId"] as? String, let install = raw["installationId"] as? String else { throw Self.failure("invalid_args", "Native binding is incomplete") }
+            let expected = GuguIOSHostBinding(ownerId: owner, deviceId: device, installationId: install)
+            try expected.validate()
+            guard try ownerAccess.ownerBinding() == expected else { throw Self.failure("stale_context", "Native publication changed") }
+            var deviceMetadata = metadata()
+            if let display = options["device"] {
+                guard let display = display as? [String: Any] else { throw Self.failure("invalid_args", "Device display options must be an object") }
+                try Self.keys(display, allowed: ["label"])
+                if let label = display["label"] {
+                    guard let label = label as? String, !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, label.utf8.count <= 256 else { throw Self.failure("invalid_args", "Device label is invalid") }
+                    deviceMetadata["label"] = label
+                }
+            }
+            // The backend/executor observes ownerAccess. JS cannot publish grants.
+            adapter.configure(.init(binding: expected, grants: [:], deviceMetadata: deviceMetadata), completion: completion)
+        } catch { completion(GuguIOSNativeBackend.replyError(error, admission: "rejected")) }
+    }
+    func hostState(_ options: [String: Any], completion: @escaping ([String: Any]) -> Void) {
+        do { try Self.keys(options, allowed: ["ownerId"]); adapter.hostState(ownerId: try Self.owner(options), completion: completion) }
+        catch { completion(GuguIOSNativeBackend.replyError(error, admission: "rejected")) }
+    }
+    func hostCall(_ options: [String: Any], completion: @escaping ([String: Any]) -> Void) {
+        do {
+            try Self.keys(options, allowed: ["ownerId", "id", "channel", "args"])
+            let owner = try Self.owner(options)
+            guard let id = options["id"] as? String, let channel = options["channel"] as? String, let args = options["args"] as? [Any] else { throw Self.failure("invalid_args", "Original host-call ID, channel and arguments are required") }
+            let expected = try ownerAccess.ownerBinding()
+            guard expected.ownerId == owner else { throw Self.failure("stale_context", "Native owner changed") }
+            adapter.hostCall(ownerId: owner, id: id, channel: channel, args: args, origin: .localOwnerUI, expectedBinding: expected, completion: completion)
+        } catch { completion(GuguIOSNativeBackend.replyError(error, admission: "rejected")) }
+    }
+    func stopHost(_ options: [String: Any], completion: @escaping ([String: Any]) -> Void) {
+        do { try Self.keys(options, allowed: ["ownerId"]); adapter.stopHost(ownerId: try Self.owner(options), completion: completion) }
+        catch { completion(GuguIOSNativeBackend.replyError(error, admission: "rejected")) }
+    }
+    /// Run while the original native credential publication is still available.
+    /// Completion includes model checkpoint/revoke and device withdrawal errors.
+    func prepareOwnerRetirement(ownerId: String, completion: @escaping ([String: Any]) -> Void) { adapter.stopHost(ownerId: ownerId, completion: completion) }
+    func authSession(_ options: [String: Any], completion: @escaping (Result<[String: Any], Error>) -> Void) {
+        do {
+            try Self.keys(options, allowed: ["action"])
+            guard let action = options["action"] as? String else { throw Self.failure("invalid_args", "Auth delegation action is required") }
+            adapter.authSession(action: action, completion: completion)
+        } catch { completion(.failure(error)) }
+    }
+    private static func owner(_ options: [String: Any]) throws -> String {
+        guard let value = options["ownerId"] as? String, UUID(uuidString: value) != nil else { throw failure("invalid_args", "Current owner ID is required") }; return value
+    }
+    private static func keys(_ options: [String: Any], allowed: Set<String>) throws {
+        // Validate names before reading values: legacy auth/URL objects are never retained.
+        guard Set(options.keys).isSubset(of: allowed) else { throw failure("invalid_args", "Unsupported native host field") }
+    }
+    private static func failure(_ code: String, _ text: String) -> GuguHostFailure { .init(code: code, message: text) }
+}

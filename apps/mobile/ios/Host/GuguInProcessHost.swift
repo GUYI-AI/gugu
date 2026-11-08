@@ -36,15 +36,15 @@ final class GuguInProcessHost {
     func diagnostics() throws -> [String: Any] { try runtime.diagnostics() }
 
     func start(context: GuguHostContext, prompt: String, modelId: String, systemPrompt: String,
-               tools: [[String: Any]]) throws -> [String: Any] {
-        try start(context: context, prompt: prompt, modelId: modelId, systemPrompt: systemPrompt, tools: tools, messages: [])
+               tools: [[String: Any]], clientMessageId: String? = nil) throws -> [String: Any] {
+        try start(context: context, prompt: prompt, modelId: modelId, systemPrompt: systemPrompt, tools: tools, messages: [], clientMessageId: clientMessageId)
     }
 
     private func start(context: GuguHostContext, prompt: String, modelId: String, systemPrompt: String,
-                       tools: [[String: Any]], messages: [[String: Any]], calendarProtected: Bool = false) throws -> [String: Any] {
+                       tools: [[String: Any]], messages: [[String: Any]], calendarProtected: Bool = false, clientMessageId: String? = nil) throws -> [String: Any] {
         pendingLock.lock(); defer { pendingLock.unlock() }
         try checkCurrent(context)
-        guard try journal.admit(context, prompt: prompt, modelId: modelId, systemPrompt: systemPrompt, tools: tools, messages: messages, calendarProtected: calendarProtected) else {
+        guard try journal.admit(context, prompt: prompt, modelId: modelId, systemPrompt: systemPrompt, tools: tools, messages: messages, calendarProtected: calendarProtected, clientMessageId: clientMessageId) else {
             return ["accepted": false, "jobId": context.jobId, "status": try journal.job(context.jobId)["status"] ?? "unknown"]
         }
         runningContexts[context.jobId] = context
@@ -82,6 +82,7 @@ final class GuguInProcessHost {
     /// supply its verified session context; renderer input cannot create one.
     func readTimeline(context: GuguHostContext, method: String, cursor: [String: Any]? = nil,
                       limit: Int? = nil, beforeTurnId: String? = nil, trim: Bool = true,
+                      pendingRequests: [[String: Any]] = [], queuedPrompts: [[String: Any]] = [], settlements: [[String: Any]] = [],
                       completion: @escaping ([String: Any]) -> Void) throws {
         try checkHistoricalIdentity(context)
         guard ["snapshot", "after", "older"].contains(method) else { throw failure("unknown_method", "Unsupported native timeline read") }
@@ -92,7 +93,7 @@ final class GuguInProcessHost {
         }
         let authorized = try ids.map { try readTask(jobId: $0) }
         let key = [context.ownerId, context.installationId, context.agentUserId, context.sessionId, context.contextEpoch, runtimeInstanceId].joined(separator: ":")
-        var input: [String: Any] = ["key": key, "sessionId": context.sessionId, "jobs": authorized, "method": method, "trim": trim]
+        var input: [String: Any] = ["key": key, "sessionId": context.sessionId, "jobs": authorized, "method": method, "trim": trim, "pendingRequests": pendingRequests, "queuedPrompts": queuedPrompts, "settlements": settlements]
         if let cursor { input["cursor"] = cursor }; if let limit { input["limit"] = limit }; if let beforeTurnId { input["beforeTurnId"] = beforeTurnId }
         try runtime.readTimeline(input) { [weak self] reply in
             guard let self else { completion(["ok": false, "code": "cancelled", "message": "Native host stopped before projection"]); return }
@@ -107,7 +108,7 @@ final class GuguInProcessHost {
     /// Explicit owner continuation uses a new job ID. Initialization never resumes
     /// a task or replays a write automatically. Revoked history is not copied.
     func continueTask(previousJobId: String, context: GuguHostContext, prompt: String,
-                      modelId: String, systemPrompt: String, tools: [[String: Any]]) throws -> [String: Any] {
+                      modelId: String, systemPrompt: String, tools: [[String: Any]], clientMessageId: String? = nil) throws -> [String: Any] {
         let previous = try readTask(jobId: previousJobId)
         guard let raw = previous["context"] as? [String: Any] else { throw failure("invalid_journal", "Task binding is missing") }
         let historical = try GuguHostJournal.context(raw)
@@ -117,7 +118,7 @@ final class GuguInProcessHost {
         }
         let messages = try journal.continuationTranscript(jobId: previousJobId)
         return try start(context: context, prompt: prompt, modelId: modelId, systemPrompt: systemPrompt,
-                         tools: tools, messages: messages, calendarProtected: previous["usedCalendar"] as? Bool == true)
+                         tools: tools, messages: messages, calendarProtected: previous["usedCalendar"] as? Bool == true, clientMessageId: clientMessageId)
     }
 
     func cancel(context: GuguHostContext) throws {
@@ -173,6 +174,15 @@ final class GuguInProcessHost {
         try executor.validateAccess(control(for: pair.1.request))
         try journal.approve(pair.1.request)
         execute(pair.0, pair.1)
+    }
+
+    func reject(requestId: String, nativeOwnerId: String) throws {
+        guard let pair = pendingValue(requestId: requestId), nativeOwnerId == currentIdentity().ownerId,
+              pair.1.request.context.ownerId == nativeOwnerId else { throw failure("not_granted", "Decision requires the current native owner") }
+        try checkActive(pair.1.request.context)
+        let receipt = try journal.reject(pair.1.request)
+        guard let pending = removePending(pair.0) else { throw failure("duplicate_conflict", "Permission request was already consumed") }
+        pending.reply(["ok": true, "data": receipt])
     }
 
     private func handle(_ bridge: GuguBridgeRequest, reply: @escaping GuguJavaScriptRuntime.Reply) {

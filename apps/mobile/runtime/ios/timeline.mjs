@@ -81,11 +81,15 @@ async function read(input) {
   const { entries, clients } = entriesOf(jobs)
   let cached = sources.get(key)
   if (!cached) {
-    let sink
+    let sink, settlementAt = null
     const timeline = await createSessionTimeline({ locator: { harness: 'pi', providerSessionId: sessionId, roots: [] },
       async start(events) { sink = events; events.onEntries(entries) }, async catchUp() {}, stop() {},
-    }, { sessionId })
-    cached = { timeline, sink, entries }; sources.set(key, cached)
+    }, { sessionId, now: () => settlementAt ?? Date.now() })
+    cached = { timeline, sink, entries, settle: value => {
+      settlementAt = value.resolvedAt
+      try { timeline.settle({ itemId: value.itemId, optionId: value.optionId, by: value.resolvedBy }) }
+      finally { settlementAt = null }
+    } }; sources.set(key, cached)
   } else {
     const prefix = cached.entries.length <= entries.length && cached.entries.every((entry, index) => JSON.stringify(entry) === JSON.stringify(entries[index]))
     if (!prefix) cached.sink.onReset('source_replaced')
@@ -93,7 +97,9 @@ async function read(input) {
     cached.entries = entries
   }
   await cached.timeline.catchUp()
-  cached.timeline.syncPendingRequests(input.pendingRequests ?? [])
+  const settlements = input.settlements ?? []
+  cached.timeline.syncPendingRequests([...(input.pendingRequests ?? []), ...settlements.map(({ itemId, kind, title, detail, options }) => ({ itemId, kind, title, detail, options }))])
+  for (const settlement of settlements) cached.settle(settlement)
   cached.timeline.syncQueuedPrompts(input.queuedPrompts ?? [])
   let value
   if (method === 'snapshot') value = cached.timeline.getSnapshot({ limit: input.limit })
