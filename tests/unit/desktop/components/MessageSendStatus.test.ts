@@ -71,7 +71,7 @@ describe('MessageSendStatus', () => {
     const trigger = document.body.querySelector('[data-testid="message-send-failed"]') as HTMLElement
     expect(trigger.title).toBe('Recipient left [path] [redacted token]')
     await clickElement(trigger)
-    expect(document.body.querySelector('[role="menu"][aria-label="未送达消息操作"]')).not.toBeNull()
+    expect(document.body.querySelector('[role="menu"][aria-label="发送失败消息操作"]')).not.toBeNull()
     expect(document.body.querySelector('[data-testid="message-send-failed-menu"]')?.textContent).toContain('Recipient left [path] [redacted token]')
     const retry = document.body.querySelector('[data-testid="message-send-retry"]') as HTMLElement
     await clickElement(retry)
