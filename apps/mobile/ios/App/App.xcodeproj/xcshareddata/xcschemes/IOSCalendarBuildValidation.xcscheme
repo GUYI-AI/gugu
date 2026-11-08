@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Scheme LastUpgradeVersion="2660" version="1.3">
+  <BuildAction parallelizeBuildables="NO" buildImplicitDependencies="YES"><BuildActionEntries>
+    <BuildActionEntry buildForTesting="YES" buildForRunning="NO" buildForProfiling="NO" buildForArchiving="NO" buildForAnalyzing="NO"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="504EC3031FED79650016851F" BuildableName="App.app" BlueprintName="App" ReferencedContainer="container:App.xcodeproj"/></BuildActionEntry>
+    <BuildActionEntry buildForTesting="YES" buildForRunning="NO" buildForProfiling="NO" buildForArchiving="NO" buildForAnalyzing="NO"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="E98E00000000000000000230" BuildableName="HostValidation.xctest" BlueprintName="HostValidation" ReferencedContainer="container:App.xcodeproj"/></BuildActionEntry>
+    <BuildActionEntry buildForTesting="YES" buildForRunning="NO" buildForProfiling="NO" buildForArchiving="NO" buildForAnalyzing="NO"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="75A741FACE00E05714D4B088" BuildableName="CalendarUIValidation.xctest" BlueprintName="CalendarUIValidation" ReferencedContainer="container:App.xcodeproj"/></BuildActionEntry>
+  </BuildActionEntries></BuildAction>
+  <TestAction buildConfiguration="Debug" shouldUseLaunchSchemeArgsEnv="NO"><Testables>
+    <TestableReference skipped="NO" parallelizable="NO"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="E98E00000000000000000230" BuildableName="HostValidation.xctest" BlueprintName="HostValidation" ReferencedContainer="container:App.xcodeproj"/></TestableReference>
+    <TestableReference skipped="NO" parallelizable="NO"><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="75A741FACE00E05714D4B088" BuildableName="CalendarUIValidation.xctest" BlueprintName="CalendarUIValidation" ReferencedContainer="container:App.xcodeproj"/></TestableReference>
+  </Testables><MacroExpansion><BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="504EC3031FED79650016851F" BuildableName="App.app" BlueprintName="App" ReferencedContainer="container:App.xcodeproj"/></MacroExpansion></TestAction>
+</Scheme>

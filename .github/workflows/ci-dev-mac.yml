@@ -1,85 +1,157 @@
-name: Dev Mac build
+# Diagnostic branch only. Never merge this replacement into dev/main.
+name: iOS Calendar build-only (91ac833)
 on:
-  push:
-    branches: [dev]
   workflow_dispatch:
+    inputs:
+      expected_revision:
+        description: Exact reviewed diagnostic commit; must match this ref.
+        required: true
+        type: string
 permissions:
   contents: read
-  actions: read
 concurrency:
-  group: community-ci-dev-mac
-  cancel-in-progress: true
-env:
-  CI: true
-  GUGU_SUPABASE_URL: http://127.0.0.1:54321
-  VITE_SUPABASE_URL: http://127.0.0.1:54321
-  GUGU_SUPABASE_ANON_KEY: community-build-placeholder
-  VITE_SUPABASE_ANON_KEY: community-build-placeholder
-  PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.59.1-noble@sha256:b0ab6f3cb99aa7803adbc14d9027ec1785fc6e433b97e134e0f8fe61683b6b53
+  group: ios-calendar-build-only-91ac833-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  desktop-build-mac:
-    name: Dev desktop app build (macos-15)
-    runs-on: macos-15
+  calendar-build-only:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'GUYI-AI/gugu' && github.actor == 'AGI886' && github.ref == 'refs/heads/diag/ios-calendar-build-only-20261108'
+    name: Protocol, time policy and SDK products only (macos-26)
+    runs-on: macos-26
     timeout-minutes: 45
-    permissions:
-      contents: read
-      actions: read
-      issues: write
     env:
+      EXPECTED_REVISION: ${{ inputs.expected_revision }}
+      EXPECTED_BASE: 91ac8333415b688916669047bd3940ef49cfda11
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      CI: 'true'
+      GUGU_BUILD_SERIAL: '1'
+      GUGU_DB_TARGET: shared-test
+      GUGU_BUILD_MODE: production
+      NODE_OPTIONS: --max-old-space-size=6144
       GUGU_CLOUD_COMPUTER_ENABLED: 'false'
       VITE_GUGU_CLOUD_COMPUTER_ENABLED: 'false'
       GUGU_PLATFORM_MODELS_ENABLED: 'false'
       VITE_GUGU_PLATFORM_MODELS_ENABLED: 'false'
-      NODE_OPTIONS: --max-old-space-size=6144
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONOPTIMIZE: ''
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - run: command -v tmux || brew install tmux
-      - uses: ./.github/actions/setup-community
-      - run: pnpm build:app:ci
-        env:
-          GUGU_BUILD_SERIAL: '1'
-      - run: pnpm rebuild:native
-      - name: Report a failed dev Mac build
-        if: failure()
-        uses: actions/github-script@v7
+      - name: Bind isolated hosted build paths
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = macOS
+          test "$(uname -m)" = arm64
+          build_root="$RUNNER_TEMP/gugu-calendar-build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -p "$build_root/evidence" "$build_root/gugu-home" "$build_root/user-data" "$build_root/module-cache"
+          chmod 700 "$build_root" "$build_root/gugu-home" "$build_root/user-data"
+          printf '%s\n' "DIAG_ROOT=$build_root" "GUGU_HOME=$build_root/gugu-home" "GUGU_USER_DATA_DIR=$build_root/user-data" "npm_config_cache=$build_root/npm-cache" "CLANG_MODULE_CACHE_PATH=$build_root/module-cache" "SWIFT_MODULECACHE_PATH=$build_root/module-cache" >> "$GITHUB_ENV"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          script: |
-            const { owner, repo } = context.repo;
-            const label = 'ci-mac-red';
-            const marker = `<!-- ci-dev-mac:${context.sha} -->`;
-            const title = `Dev Mac build failed at ${context.sha.slice(0, 7)}`;
-            const runUrl = `${process.env.GITHUB_SERVER_URL}/${owner}/${repo}/actions/runs/${context.runId}`;
-            const actor = context.payload.sender?.login || context.actor;
-            const body = [
-              marker,
-              `The macOS build failed after a push to dev.`,
-              `Commit: ${context.sha}`,
-              `Merged/pushed by: @${actor}`,
-              `Run: ${runUrl}`,
-              `Inspect the build and native-rebuild logs before the next release.`,
-            ].join('\n\n');
-            try {
-              await github.rest.issues.getLabel({ owner, repo, name: label });
-            } catch (error) {
-              if (error.status !== 404) throw error;
-              try {
-                await github.rest.issues.createLabel({
-                  owner, repo, name: label, color: 'b60205',
-                  description: 'The macOS build failed on dev',
-                });
-              } catch (labelError) {
-                if (labelError.status !== 422) throw labelError;
-                await github.rest.issues.getLabel({ owner, repo, name: label });
-              }
-            }
-            const issues = await github.paginate(github.rest.issues.listForRepo, {
-              owner, repo, labels: label, state: 'all', per_page: 100,
-            });
-            const existing = issues.find(issue => !issue.pull_request && issue.body?.includes(marker));
-            if (existing) {
-              await github.rest.issues.update({
-                owner, repo, issue_number: existing.number, title, body, state: 'open',
-              });
-            } else {
-              await github.rest.issues.create({ owner, repo, title, body, labels: [label] });
-            }
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Bind complete reviewed source and public configuration
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$EXPECTED_BASE"
+          python3 scripts/diagnostics/ios-calendar-build/build_evidence.py source
+          python3 scripts/diagnostics/ios-calendar-build/build_evidence.py public-env
+          sw_vers > "$DIAG_ROOT/evidence/macos.txt"
+          xcodebuild -showsdks > "$DIAG_ROOT/evidence/sdks.txt"
+          df -k > "$DIAG_ROOT/evidence/hosted-disk.txt"
+          sysctl hw.memsize > "$DIAG_ROOT/evidence/hosted-memory.txt"
+      - name: Run only eleven offline file-protocol cases
+        run: |
+          set -euo pipefail
+          mkdir -p "$DIAG_ROOT/offline"
+          cp scripts/diagnostics/ios-calendar-build/ui_once.py "$DIAG_ROOT/offline/"
+          cp scripts/diagnostics/ios-calendar-build/test_file_protocol.py "$DIAG_ROOT/offline/"
+          python3 - <<'PY' 2>&1 | tee "$DIAG_ROOT/evidence/protocol.log"
+          import json,os,pathlib,sys,unittest
+          root=pathlib.Path(os.environ['DIAG_ROOT'])
+          suite=unittest.defaultTestLoader.discover(str(root/'offline'),pattern='test_file_protocol.py')
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          record={'testsRun':result.testsRun,'successful':result.wasSuccessful(),
+            'failures':len(result.failures),'errors':len(result.errors),'skipped':len(result.skipped),
+            'scope':'offline actual CLI functions only; no UI, Simulator, auth or HTTP'}
+          (root/'evidence/protocol-result.json').write_text(json.dumps(record,indent=2)+'\n')
+          if result.testsRun!=11 or not result.wasSuccessful() or result.skipped:sys.exit(1)
+          PY
+      - name: Compile and run only fifteen shared CLT time-policy probes
+        run: |
+          set -euo pipefail
+          xcrun --sdk macosx swiftc -parse-as-library -module-cache-path "$DIAG_ROOT/module-cache" \
+            apps/mobile/ios/HostValidationUI/RuntimeUITimePolicy.swift \
+            scripts/diagnostics/ios-calendar-build/time_policy_probes.swift \
+            -o "$DIAG_ROOT/time-policy-probes" \
+            > "$DIAG_ROOT/evidence/time-policy-compile.stdout.log" 2> "$DIAG_ROOT/evidence/time-policy-compile.stderr.log"
+          "$DIAG_ROOT/time-policy-probes" > "$DIAG_ROOT/evidence/time-policy-result.json" 2> "$DIAG_ROOT/evidence/time-policy-run.stderr.log"
+          python3 scripts/diagnostics/ios-calendar-build/build_evidence.py offline
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+      - name: Install the normal locked workspace
+        run: |
+          set -euo pipefail
+          node --version > "$DIAG_ROOT/evidence/node.txt"
+          pnpm --version > "$DIAG_ROOT/evidence/pnpm.txt"
+          pnpm install --frozen-lockfile --store-dir "$DIAG_ROOT/pnpm-store" 2>&1 | tee "$DIAG_ROOT/evidence/install.log"
+      - name: Prepare the same public backend and current renderer and Pi assets
+        run: |
+          set -euo pipefail
+          node scripts/build/prepare-ios-backend.mts 2>&1 | tee "$DIAG_ROOT/evidence/backend.log"
+          pnpm build:renderer 2>&1 | tee "$DIAG_ROOT/evidence/renderer.log"
+          node scripts/build/phone-web-dir.mts 2>&1 | tee "$DIAG_ROOT/evidence/phone-web-dir.log"
+          node scripts/build/build-ios-agent.mjs 2>&1 | tee "$DIAG_ROOT/evidence/pi-runtime.log"
+          pnpm exec cap copy ios 2>&1 | tee "$DIAG_ROOT/evidence/cap-copy.log"
+          node scripts/build/build-env-preflight.mts --verify-dist dist-phone 2>&1 | tee "$DIAG_ROOT/evidence/renderer-backend-preflight.log"
+          python3 scripts/diagnostics/ios-calendar-build/build_evidence.py packaged
+          git diff --exit-code
+      - name: Resolve only pinned Swift packages
+        run: |
+          set -euo pipefail
+          xcodebuild -resolvePackageDependencies \
+            -project apps/mobile/ios/App/App.xcodeproj -scheme IOSCalendarBuildValidation \
+            -clonedSourcePackagesDirPath "$DIAG_ROOT/spm" -packageCachePath "$DIAG_ROOT/package-cache" \
+            -onlyUsePackageVersionsFromResolvedFile 2>&1 | tee "$DIAG_ROOT/evidence/spm.log"
+      - name: Build App and both test products without running them
+        run: |
+          set -euo pipefail
+          xcodebuild -project apps/mobile/ios/App/App.xcodeproj -scheme IOSCalendarBuildValidation \
+            -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -jobs 1 -derivedDataPath "$DIAG_ROOT/derived" \
+            -clonedSourcePackagesDirPath "$DIAG_ROOT/spm" -packageCachePath "$DIAG_ROOT/package-cache" \
+            -resultBundlePath "$DIAG_ROOT/evidence/build.xcresult" \
+            -disableAutomaticPackageResolution -onlyUsePackageVersionsFromResolvedFile \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
+            build-for-testing 2>&1 | tee "$DIAG_ROOT/evidence/xcodebuild.log"
+      - name: Inspect actual product bytes, purposes and ad-hoc signatures
+        run: |
+          set -euo pipefail
+          tar -czf "$DIAG_ROOT/evidence/build-products.tar.gz" -C "$DIAG_ROOT/derived/Build" Products
+          python3 scripts/diagnostics/ios-calendar-build/build_evidence.py products
+          git diff --exit-code
+          test -z "$(git status --porcelain --untracked-files=no)"
+      - name: Preserve final status even on failure
+        if: always()
+        run: |
+          set -euo pipefail
+          if test -d "$DIAG_ROOT/derived/Build/Products" && ! test -f "$DIAG_ROOT/evidence/build-products.tar.gz"; then
+            tar -czf "$DIAG_ROOT/evidence/build-products.tar.gz" -C "$DIAG_ROOT/derived/Build" Products
+          fi
+          git status --short > "$DIAG_ROOT/evidence/final-status.txt"
+          git diff > "$DIAG_ROOT/evidence/generated-tracked-diff.patch"
+          printf '%s\n' 'Build-only: 11 offline protocol cases, 15 CLT time-policy probes, SDK products. No App/Simulator/auth/model/EventKit execution authorized.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ios-calendar-build-only-91ac833-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gugu-calendar-build-${{ github.run_id }}-${{ github.run_attempt }}/evidence/
+          retention-days: 5
+          if-no-files-found: error

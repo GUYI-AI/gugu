@@ -1,0 +1,23 @@
+{
+  "base": "91ac8333415b688916669047bd3940ef49cfda11",
+  "dTestHead": "c1861dec9da674aee8012f2c3f767575263d5de4",
+  "uiV3ArchiveSHA256": "2be79185308f845bc24c073cbbc0af37f309c49d803f505024d8a0c4db9c35a5",
+  "backendSHA256": "adf2fe6d86c12c7cee5e585bb288cb77280d49643e7be0098f255f13b112e71b",
+  "runtimeSHA256": "a6c63a25e4a892c7d9a3428a7026cb72783850a76366de5aa80d5944c56cf9df",
+  "runtimeBytes": 685208,
+  "files": {
+    "apps/mobile/ios/App/App.xcodeproj/project.pbxproj": "2eda884eae80c8e8d8782c5100faf8aa27aa2aa69d8db2326a5b7ac6d8c50bed",
+    "apps/mobile/ios/App/App.xcodeproj/xcshareddata/xcschemes/CalendarUIValidation.xcscheme": "91eeb230466b7914125e9aa7042c3e56d8fc6eff34d3f9edd466afd29ac46021",
+    "apps/mobile/ios/App/App.xcodeproj/xcshareddata/xcschemes/IOSCalendarBuildValidation.xcscheme": "da52164580b439877719f8ba6fd0abb1d74249750111320862fc084a6b218066",
+    "apps/mobile/ios/HostValidation/DCalendarSnapshotOracle.swift": "1d3c3a0df7100a7429041461d546b6394e1f5af6e3717bf1e96e9da04434c98f",
+    "apps/mobile/ios/HostValidation/DHostedRuntimeTests.swift": "c59bb99a4d4944b3b78f7743681161bf97a6188eb7e0b6391b9c8fba070d3a51",
+    "apps/mobile/ios/HostValidationUI/RuntimeUIDriver.swift": "31967a89d055c978ea520feda77f89c3632c590fb04913eac6c25c7f52e1a83d",
+    "apps/mobile/ios/HostValidationUI/RuntimeUITimePolicy.swift": "76bb86b50e49cb59bc86f75415ec1b9f8bcb6bc1ada0208ae0d12cfae9e7d5b9",
+    "scripts/diagnostics/ios-calendar-build/README.md": "3d25220bf23643b55e87e29b1596793f2e7658bcb0c8a1b635a8e200ebd65d44",
+    "scripts/diagnostics/ios-calendar-build/build_evidence.py": "7b06005f872a193c40dbd5680333ec7661b550c8155f15b98b7878074febee19",
+    "scripts/diagnostics/ios-calendar-build/public-backend.snapshot.json": "adf2fe6d86c12c7cee5e585bb288cb77280d49643e7be0098f255f13b112e71b",
+    "scripts/diagnostics/ios-calendar-build/test_file_protocol.py": "8a1a80ef11d58d7c9e699337f491019151ed1023b02911dbca358540d59028d3",
+    "scripts/diagnostics/ios-calendar-build/time_policy_probes.swift": "9d97e3f26705675c5112411e8698519dfe153afefeba2648543c3ee3b4a16eb7",
+    "scripts/diagnostics/ios-calendar-build/ui_once.py": "1810c74f6717d692835422c56c09f1180f28b3e11decbd317c9980f8710f20d5"
+  }
+}

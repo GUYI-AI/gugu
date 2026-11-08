@@ -1,769 +1,2422 @@
-// !$*UTF8*$!
-{
-	archiveVersion = 1;
-	classes = {
-	};
-	objectVersion = 60;
-	objects = {
-
-/* Begin PBXBuildFile section */
-		E5089134A49C9FA24F670BBA /* GuguIOSNativeRetirement.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2B265772D7DF92155465D30 /* GuguIOSNativeRetirement.swift */; };
-		C7CBAAA63E2E08565C4FE89F /* GuguIOSRetirementDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99B55E03C9056D186D85264F /* GuguIOSRetirementDevice.swift */; };
-		67DCC4FA0810A3EA99C00C89 /* GuguIOSRetirementCleanup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A0283074C6438EC779CA39 /* GuguIOSRetirementCleanup.swift */; };
-		203CF3FC7D332A8F0BA9D02D /* GuguIOSRetirementAuthorization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06482991D192BDEE7A9EC0B3 /* GuguIOSRetirementAuthorization.swift */; };
-		1F7C08D36C61979C7B5E6BE0 /* GuguIOSBackendRetirement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DD839FE49596D79BDF870E3 /* GuguIOSBackendRetirement.swift */; };
-		B57FB3E22BF7007E7FBDA0D6 /* GuguIOSSourceAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81FAE6B62F71E8E595310DB4 /* GuguIOSSourceAccess.swift */; };
-		59EAC6C35A8C5E5E93CC571C /* GuguIOSMessageBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06F121108113ED780BD8C9E0 /* GuguIOSMessageBridge.swift */; };
-		2EC63888A37A309CFC7DC685 /* GuguIOSInboxDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD46B8DFDDBA07A4FE3C341C /* GuguIOSInboxDelivery.swift */; };
-		E98E000000000000000001A1 /* GuguIOSOwnerRetirementStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E000000000000000000A1 /* GuguIOSOwnerRetirementStore.swift */; };
-		E98E00000000000000000169 /* GuguIOSPushRetirement.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000069 /* GuguIOSPushRetirement.swift */; };
-		E98E00000000000000000201 /* DHostedRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000211 /* DHostedRuntimeTests.swift */; };
-		E98E00000000000000000202 /* DCalendarSnapshotOracle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000212 /* DCalendarSnapshotOracle.swift */; };
-		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
-		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
-		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
-		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
-		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
-		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
-		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
-		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
-		E98E00000000000000000101 /* GuguViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000001 /* GuguViewController.swift */; };
-		E98E00000000000000000102 /* GuguAuthStoragePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000002 /* GuguAuthStoragePlugin.swift */; };
-		E98E00000000000000000103 /* GuguSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000003 /* GuguSceneDelegate.swift */; };
-		E98E00000000000000000110 /* GuguHostContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000010 /* GuguHostContracts.swift */; };
-		E98E00000000000000000111 /* GuguJavaScriptRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000011 /* GuguJavaScriptRuntime.swift */; };
-		E98E00000000000000000112 /* GuguPackagedRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000012 /* GuguPackagedRuntime.swift */; };
-		E98E00000000000000000130 /* HostRuntime in Resources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000030 /* HostRuntime */; };
-		E98E00000000000000000141 /* GuguCalendarExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000041 /* GuguCalendarExecutor.swift */; };
-		E98E00000000000000000142 /* GuguCalendarPermissionsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000042 /* GuguCalendarPermissionsPlugin.swift */; };
-		E98E00000000000000000144 /* EventKitPhoneCalendarStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000044 /* EventKitPhoneCalendarStore.swift */; };
-		E98E00000000000000000145 /* PhoneCalendarDates.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000045 /* PhoneCalendarDates.swift */; };
-		E98E00000000000000000146 /* PhoneCalendarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000046 /* PhoneCalendarService.swift */; };
-		E98E00000000000000000147 /* PhoneCalendarSimulatorFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000047 /* PhoneCalendarSimulatorFixture.swift */; };
-		E98E00000000000000000148 /* PhoneCalendarTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000048 /* PhoneCalendarTypes.swift */; };
-		E98E00000000000000000113 /* GuguHostJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000013 /* GuguHostJournal.swift */; };
-		E98E00000000000000000114 /* GuguInProcessHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000014 /* GuguInProcessHost.swift */; };
-		E98E00000000000000000115 /* GuguModelTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000015 /* GuguModelTransport.swift */; };
-		E98E00000000000000000116 /* GuguIOSHostAdapterContracts.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000016 /* GuguIOSHostAdapterContracts.swift */; };
-		E98E00000000000000000117 /* GuguIOSOwnerAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000017 /* GuguIOSOwnerAccess.swift */; };
-		E98E00000000000000000118 /* GuguIOSHostAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000018 /* GuguIOSHostAdapter.swift */; };
-		E98E00000000000000000119 /* GuguHostCallStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000019 /* GuguHostCallStore.swift */; };
-		E98E00000000000000000149 /* GuguCalendarConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000049 /* GuguCalendarConnection.swift */; };
-		E98E00000000000000000161 /* GuguIOSOwnerSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000061 /* GuguIOSOwnerSession.swift */; };
-		E98E00000000000000000162 /* GuguIOSInstallation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000062 /* GuguIOSInstallation.swift */; };
-		E98E00000000000000000163 /* GuguIOSOwnerKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000063 /* GuguIOSOwnerKeychain.swift */; };
-		E98E00000000000000000164 /* GuguIOSBackendConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000064 /* GuguIOSBackendConfiguration.swift */; };
-		E98E00000000000000000165 /* GuguIOSOwnerVerifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000065 /* GuguIOSOwnerVerifier.swift */; };
-		E98E00000000000000000166 /* GuguIOSOwnerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000066 /* GuguIOSOwnerPlugin.swift */; };
-		E98E0000000000000000011A /* GuguIOSHostLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E0000000000000000001A /* GuguIOSHostLifecycle.swift */; };
-		E98E00000000000000000167 /* GuguIOSAppRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000067 /* GuguIOSAppRuntime.swift */; };
-		E98E00000000000000000401 /* GuguPushTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000301 /* GuguPushTypes.swift */; };
-		E98E00000000000000000402 /* GuguPushClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000302 /* GuguPushClient.swift */; };
-		E98E00000000000000000403 /* GuguPushRPCProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000303 /* GuguPushRPCProvider.swift */; };
-		E98E00000000000000000404 /* GuguUNPushPlatform.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000304 /* GuguUNPushPlatform.swift */; };
-		E98E00000000000000000405 /* GuguPushNotificationsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000305 /* GuguPushNotificationsPlugin.swift */; };
-		BBD59E5BDEBB525637AEF182 /* GuguIOSBackendStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5276C817ED5C956B2C0708EB /* GuguIOSBackendStore.swift */; };
-		137DF6514D7FE5883548EB60 /* GuguIOSCloudBroker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 080520AA42F1B6E14A11FEAB /* GuguIOSCloudBroker.swift */; };
-		1A72670345467E9D4EB56189 /* GuguIOSModelBroker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3F3F95D50CD6ED7C56E9B45 /* GuguIOSModelBroker.swift */; };
-		CD1640A0232AC2AEF3EC514F /* GuguIOSProvisioner.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA81FBF0D5D6A3E8A4DA3DA9 /* GuguIOSProvisioner.swift */; };
-		E98E00000000000000000168 /* GuguIOSPushTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000068 /* GuguIOSPushTransport.swift */; };
-		91B86F06AF986FDD958906E8 /* GuguAgentPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0092F72670DB64A878302410 /* GuguAgentPlugin.swift */; };
-		517470A9C4010C2E8912659F /* GuguIOSBackendNetwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B8D5CD166D0BEB1316D3BB /* GuguIOSBackendNetwork.swift */; };
-		0EAE745CA28241E7E7910DF7 /* GuguIOSBackendSessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6B8954C7573825116DDC63F /* GuguIOSBackendSessions.swift */; };
-		2328672879E948E6BD026C85 /* GuguIOSCreateCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 954333D437E6D2768C7C8DA2 /* GuguIOSCreateCommand.swift */; };
-		125D3428C991C7D5F091D5B9 /* GuguIOSHostProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD4A87BB26055E474F85824 /* GuguIOSHostProbe.swift */; };
-		C8C514A6CF923C7648F69BB5 /* GuguIOSHostService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BF22FD833255A903BD964FD /* GuguIOSHostService.swift */; };
-		5657C8D352786A69DEDE0B2C /* GuguIOSLeaseModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11F642F7BAAFA27884DD3C7 /* GuguIOSLeaseModel.swift */; };
-		9E49E8AB7659F68FC053C1AA /* GuguIOSLocalAppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0A23259A9172732685CEAD /* GuguIOSLocalAppSettings.swift */; };
-		05FA40801E749AF8732E5EEF /* GuguIOSNativeBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5E7C29DC1AA0B740BA3816F /* GuguIOSNativeBackend.swift */; };
-		3D1B9B625F53EE05176BDAF8 /* GuguIOSRealtimeHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AF7795C70E71BBC4D98DE5A /* GuguIOSRealtimeHost.swift */; };
-		4D637E986A532B1062FBD991 /* GuguIOSRealtimeTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3307B7F449BF52786CF1575 /* GuguIOSRealtimeTransport.swift */; };
-		CF947CBF9285262A3F298117 /* GuguIOSTaskScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 461EAD471BBBC0673C88C9F8 /* GuguIOSTaskScheduler.swift */; };
-/* End PBXBuildFile section */
-
-/* Begin PBXContainerItemProxy section */
-		E98E00000000000000000220 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 504EC3031FED79650016851F;
-			remoteInfo = App;
-		};
-/* End PBXContainerItemProxy section */
-
-/* Begin PBXFileReference section */
-		D2B265772D7DF92155465D30 /* GuguIOSNativeRetirement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSNativeRetirement.swift; sourceTree = "<group>"; };
-		99B55E03C9056D186D85264F /* GuguIOSRetirementDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSRetirementDevice.swift; sourceTree = "<group>"; };
-		52A0283074C6438EC779CA39 /* GuguIOSRetirementCleanup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSRetirementCleanup.swift; sourceTree = "<group>"; };
-		06482991D192BDEE7A9EC0B3 /* GuguIOSRetirementAuthorization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSRetirementAuthorization.swift; sourceTree = "<group>"; };
-		1DD839FE49596D79BDF870E3 /* GuguIOSBackendRetirement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSBackendRetirement.swift; sourceTree = "<group>"; };
-		81FAE6B62F71E8E595310DB4 /* GuguIOSSourceAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSSourceAccess.swift; sourceTree = "<group>"; };
-		06F121108113ED780BD8C9E0 /* GuguIOSMessageBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSMessageBridge.swift; sourceTree = "<group>"; };
-		CD46B8DFDDBA07A4FE3C341C /* GuguIOSInboxDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSInboxDelivery.swift; sourceTree = "<group>"; };
-		E98E000000000000000000A1 /* GuguIOSOwnerRetirementStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSOwnerRetirementStore.swift; sourceTree = "<group>"; };
-		E98E00000000000000000069 /* GuguIOSPushRetirement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSPushRetirement.swift; sourceTree = "<group>"; };
-		E98E00000000000000000211 /* DHostedRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DHostedRuntimeTests.swift; sourceTree = "<group>"; };
-		E98E00000000000000000212 /* DCalendarSnapshotOracle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DCalendarSnapshotOracle.swift; sourceTree = "<group>"; };
-		E98E00000000000000000213 /* HostValidation.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HostValidation.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
-		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
-		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		504EC30C1FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
-		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
-		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
-		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
-		E98E00000000000000000001 /* GuguViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguViewController.swift; sourceTree = "<group>"; };
-		E98E00000000000000000002 /* GuguAuthStoragePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguAuthStoragePlugin.swift; sourceTree = "<group>"; };
-		E98E00000000000000000003 /* GuguSceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguSceneDelegate.swift; sourceTree = "<group>"; };
-		E98E00000000000000000010 /* GuguHostContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguHostContracts.swift; sourceTree = "<group>"; };
-		E98E00000000000000000011 /* GuguJavaScriptRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguJavaScriptRuntime.swift; sourceTree = "<group>"; };
-		E98E00000000000000000012 /* GuguPackagedRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguPackagedRuntime.swift; sourceTree = "<group>"; };
-		E98E00000000000000000030 /* HostRuntime */ = {isa = PBXFileReference; lastKnownFileType = folder; path = HostRuntime; sourceTree = "<group>"; };
-		E98E00000000000000000041 /* GuguCalendarExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguCalendarExecutor.swift; sourceTree = "<group>"; };
-		E98E00000000000000000042 /* GuguCalendarPermissionsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguCalendarPermissionsPlugin.swift; sourceTree = "<group>"; };
-		E98E00000000000000000044 /* EventKitPhoneCalendarStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventKitPhoneCalendarStore.swift; sourceTree = "<group>"; };
-		E98E00000000000000000045 /* PhoneCalendarDates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneCalendarDates.swift; sourceTree = "<group>"; };
-		E98E00000000000000000046 /* PhoneCalendarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneCalendarService.swift; sourceTree = "<group>"; };
-		E98E00000000000000000047 /* PhoneCalendarSimulatorFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneCalendarSimulatorFixture.swift; sourceTree = "<group>"; };
-		E98E00000000000000000048 /* PhoneCalendarTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneCalendarTypes.swift; sourceTree = "<group>"; };
-		E98E00000000000000000013 /* GuguHostJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguHostJournal.swift; sourceTree = "<group>"; };
-		E98E00000000000000000014 /* GuguInProcessHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguInProcessHost.swift; sourceTree = "<group>"; };
-		E98E00000000000000000015 /* GuguModelTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguModelTransport.swift; sourceTree = "<group>"; };
-		E98E00000000000000000016 /* GuguIOSHostAdapterContracts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSHostAdapterContracts.swift; sourceTree = "<group>"; };
-		E98E00000000000000000017 /* GuguIOSOwnerAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSOwnerAccess.swift; sourceTree = "<group>"; };
-		E98E00000000000000000018 /* GuguIOSHostAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSHostAdapter.swift; sourceTree = "<group>"; };
-		E98E00000000000000000019 /* GuguHostCallStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguHostCallStore.swift; sourceTree = "<group>"; };
-		E98E00000000000000000049 /* GuguCalendarConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguCalendarConnection.swift; sourceTree = "<group>"; };
-		E98E00000000000000000061 /* GuguIOSOwnerSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSOwnerSession.swift; sourceTree = "<group>"; };
-		E98E00000000000000000062 /* GuguIOSInstallation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSInstallation.swift; sourceTree = "<group>"; };
-		E98E00000000000000000063 /* GuguIOSOwnerKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSOwnerKeychain.swift; sourceTree = "<group>"; };
-		E98E00000000000000000064 /* GuguIOSBackendConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSBackendConfiguration.swift; sourceTree = "<group>"; };
-		E98E00000000000000000065 /* GuguIOSOwnerVerifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSOwnerVerifier.swift; sourceTree = "<group>"; };
-		E98E00000000000000000066 /* GuguIOSOwnerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSOwnerPlugin.swift; sourceTree = "<group>"; };
-		E98E0000000000000000001A /* GuguIOSHostLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSHostLifecycle.swift; sourceTree = "<group>"; };
-		E98E00000000000000000067 /* GuguIOSAppRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSAppRuntime.swift; sourceTree = "<group>"; };
-		E98E00000000000000000301 /* GuguPushTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/GuguPushNotifications/GuguPushTypes.swift; sourceTree = "<group>"; };
-		E98E00000000000000000302 /* GuguPushClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/GuguPushNotifications/GuguPushClient.swift; sourceTree = "<group>"; };
-		E98E00000000000000000303 /* GuguPushRPCProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/GuguPushNotifications/GuguPushRPCProvider.swift; sourceTree = "<group>"; };
-		E98E00000000000000000304 /* GuguUNPushPlatform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/GuguPushNotifications/GuguUNPushPlatform.swift; sourceTree = "<group>"; };
-		E98E00000000000000000305 /* GuguPushNotificationsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguPushNotificationsPlugin.swift; sourceTree = "<group>"; };
-		5276C817ED5C956B2C0708EB /* GuguIOSBackendStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSBackendStore.swift; sourceTree = "<group>"; };
-		080520AA42F1B6E14A11FEAB /* GuguIOSCloudBroker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSCloudBroker.swift; sourceTree = "<group>"; };
-		C3F3F95D50CD6ED7C56E9B45 /* GuguIOSModelBroker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSModelBroker.swift; sourceTree = "<group>"; };
-		DA81FBF0D5D6A3E8A4DA3DA9 /* GuguIOSProvisioner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSProvisioner.swift; sourceTree = "<group>"; };
-		E98E00000000000000000068 /* GuguIOSPushTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSPushTransport.swift; sourceTree = "<group>"; };
-		0092F72670DB64A878302410 /* GuguAgentPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguAgentPlugin.swift; sourceTree = "<group>"; };
-		F1B8D5CD166D0BEB1316D3BB /* GuguIOSBackendNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSBackendNetwork.swift; sourceTree = "<group>"; };
-		A6B8954C7573825116DDC63F /* GuguIOSBackendSessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSBackendSessions.swift; sourceTree = "<group>"; };
-		954333D437E6D2768C7C8DA2 /* GuguIOSCreateCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSCreateCommand.swift; sourceTree = "<group>"; };
-		7BD4A87BB26055E474F85824 /* GuguIOSHostProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSHostProbe.swift; sourceTree = "<group>"; };
-		1BF22FD833255A903BD964FD /* GuguIOSHostService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSHostService.swift; sourceTree = "<group>"; };
-		A11F642F7BAAFA27884DD3C7 /* GuguIOSLeaseModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSLeaseModel.swift; sourceTree = "<group>"; };
-		FA0A23259A9172732685CEAD /* GuguIOSLocalAppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSLocalAppSettings.swift; sourceTree = "<group>"; };
-		C5E7C29DC1AA0B740BA3816F /* GuguIOSNativeBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSNativeBackend.swift; sourceTree = "<group>"; };
-		0AF7795C70E71BBC4D98DE5A /* GuguIOSRealtimeHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSRealtimeHost.swift; sourceTree = "<group>"; };
-		B3307B7F449BF52786CF1575 /* GuguIOSRealtimeTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSRealtimeTransport.swift; sourceTree = "<group>"; };
-		461EAD471BBBC0673C88C9F8 /* GuguIOSTaskScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSTaskScheduler.swift; sourceTree = "<group>"; };
-/* End PBXFileReference section */
-
-/* Begin PBXFrameworksBuildPhase section */
-		E98E00000000000000000231 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = ();
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		504EC3011FED79650016851F /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXFrameworksBuildPhase section */
-
-/* Begin PBXGroup section */
-		504EC2FB1FED79650016851F = {
-			isa = PBXGroup;
-			children = (
-				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
-				504EC3061FED79650016851F /* App */,
-				E98E00000000000000000043 /* PhoneCalendar */,
-				E98E00000000000000000040 /* CalendarBridge */,
-				E98E00000000000000000080 /* OwnerSession */,
-				E98E00000000000000000300 /* PushNotifications */,
-				E98E00000000000000000020 /* Host */,
-				E98E00000000000000000214 /* HostValidation */,
-				504EC3051FED79650016851F /* Products */,
-			);
-			sourceTree = "<group>";
-		};
-		504EC3051FED79650016851F /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				504EC3041FED79650016851F /* App.app */,
-				E98E00000000000000000213 /* HostValidation.xctest */,
-			);
-			name = Products;
-			sourceTree = "<group>";
-		};
-		504EC3061FED79650016851F /* App */ = {
-			isa = PBXGroup;
-			children = (
-				50379B222058CBB4000EE86E /* capacitor.config.json */,
-				504EC3071FED79650016851F /* AppDelegate.swift */,
-				E98E00000000000000000003 /* GuguSceneDelegate.swift */,
-				E98E00000000000000000002 /* GuguAuthStoragePlugin.swift */,
-				E98E00000000000000000001 /* GuguViewController.swift */,
-				504EC30B1FED79650016851F /* Main.storyboard */,
-				504EC30E1FED79650016851F /* Assets.xcassets */,
-				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
-				504EC3131FED79650016851F /* Info.plist */,
-				2FAD9762203C412B000D30F8 /* config.xml */,
-				E98E00000000000000000030 /* HostRuntime */,
-				50B271D01FEDC1A000F3C39B /* public */,
-			);
-			path = App;
-			sourceTree = "<group>";
-		};
-		E98E00000000000000000020 /* Host */ = {
-			isa = PBXGroup;
-			children = (
-				99B55E03C9056D186D85264F /* GuguIOSRetirementDevice.swift */,
-				52A0283074C6438EC779CA39 /* GuguIOSRetirementCleanup.swift */,
-				06482991D192BDEE7A9EC0B3 /* GuguIOSRetirementAuthorization.swift */,
-				1DD839FE49596D79BDF870E3 /* GuguIOSBackendRetirement.swift */,
-				81FAE6B62F71E8E595310DB4 /* GuguIOSSourceAccess.swift */,
-				06F121108113ED780BD8C9E0 /* GuguIOSMessageBridge.swift */,
-				CD46B8DFDDBA07A4FE3C341C /* GuguIOSInboxDelivery.swift */,
-				0092F72670DB64A878302410 /* GuguAgentPlugin.swift */,
-				F1B8D5CD166D0BEB1316D3BB /* GuguIOSBackendNetwork.swift */,
-				A6B8954C7573825116DDC63F /* GuguIOSBackendSessions.swift */,
-				954333D437E6D2768C7C8DA2 /* GuguIOSCreateCommand.swift */,
-				7BD4A87BB26055E474F85824 /* GuguIOSHostProbe.swift */,
-				1BF22FD833255A903BD964FD /* GuguIOSHostService.swift */,
-				A11F642F7BAAFA27884DD3C7 /* GuguIOSLeaseModel.swift */,
-				FA0A23259A9172732685CEAD /* GuguIOSLocalAppSettings.swift */,
-				C5E7C29DC1AA0B740BA3816F /* GuguIOSNativeBackend.swift */,
-				0AF7795C70E71BBC4D98DE5A /* GuguIOSRealtimeHost.swift */,
-				B3307B7F449BF52786CF1575 /* GuguIOSRealtimeTransport.swift */,
-				461EAD471BBBC0673C88C9F8 /* GuguIOSTaskScheduler.swift */,
-				5276C817ED5C956B2C0708EB /* GuguIOSBackendStore.swift */,
-				080520AA42F1B6E14A11FEAB /* GuguIOSCloudBroker.swift */,
-				C3F3F95D50CD6ED7C56E9B45 /* GuguIOSModelBroker.swift */,
-				DA81FBF0D5D6A3E8A4DA3DA9 /* GuguIOSProvisioner.swift */,
-				E98E0000000000000000001A /* GuguIOSHostLifecycle.swift */,
-				E98E00000000000000000019 /* GuguHostCallStore.swift */,
-				E98E00000000000000000018 /* GuguIOSHostAdapter.swift */,
-				E98E00000000000000000017 /* GuguIOSOwnerAccess.swift */,
-				E98E00000000000000000016 /* GuguIOSHostAdapterContracts.swift */,
-				E98E00000000000000000010 /* GuguHostContracts.swift */,
-				E98E00000000000000000015 /* GuguModelTransport.swift */,
-				E98E00000000000000000014 /* GuguInProcessHost.swift */,
-				E98E00000000000000000013 /* GuguHostJournal.swift */,
-				E98E00000000000000000011 /* GuguJavaScriptRuntime.swift */,
-				E98E00000000000000000012 /* GuguPackagedRuntime.swift */,
-			);
-			path = ../Host;
-			sourceTree = "<group>";
-		};
-		E98E00000000000000000040 /* CalendarBridge */ = {
-			isa = PBXGroup;
-			children = (
-				E98E00000000000000000049 /* GuguCalendarConnection.swift */,
-				E98E00000000000000000041 /* GuguCalendarExecutor.swift */,
-				E98E00000000000000000042 /* GuguCalendarPermissionsPlugin.swift */,
-			);
-			path = ../CalendarBridge;
-			sourceTree = "<group>";
-		};
-		E98E00000000000000000043 /* PhoneCalendar */ = {
-			isa = PBXGroup;
-			children = (
-				E98E00000000000000000044 /* EventKitPhoneCalendarStore.swift */,
-				E98E00000000000000000045 /* PhoneCalendarDates.swift */,
-				E98E00000000000000000046 /* PhoneCalendarService.swift */,
-				E98E00000000000000000047 /* PhoneCalendarSimulatorFixture.swift */,
-				E98E00000000000000000048 /* PhoneCalendarTypes.swift */,
-			);
-			path = ../PhoneCalendar/Sources/GuguPhoneCalendar;
-			sourceTree = "<group>";
-		};
-		E98E00000000000000000214 /* HostValidation */ = {
-			isa = PBXGroup;
-			children = (
-				E98E00000000000000000211 /* DHostedRuntimeTests.swift */,
-				E98E00000000000000000212 /* DCalendarSnapshotOracle.swift */,
-			);
-			path = ../HostValidation;
-			sourceTree = "<group>";
-		};
-		E98E00000000000000000080 /* OwnerSession */ = {
-			isa = PBXGroup;
-			children = (
-				D2B265772D7DF92155465D30 /* GuguIOSNativeRetirement.swift */,
-				E98E00000000000000000069 /* GuguIOSPushRetirement.swift */,
-				E98E00000000000000000068 /* GuguIOSPushTransport.swift */,
-				E98E00000000000000000067 /* GuguIOSAppRuntime.swift */,
-				E98E000000000000000000A1 /* GuguIOSOwnerRetirementStore.swift */,
-				E98E00000000000000000061 /* GuguIOSOwnerSession.swift */,
-				E98E00000000000000000062 /* GuguIOSInstallation.swift */,
-				E98E00000000000000000063 /* GuguIOSOwnerKeychain.swift */,
-				E98E00000000000000000064 /* GuguIOSBackendConfiguration.swift */,
-				E98E00000000000000000065 /* GuguIOSOwnerVerifier.swift */,
-				E98E00000000000000000066 /* GuguIOSOwnerPlugin.swift */,
-			);
-			path = ../OwnerSession;
-			sourceTree = "<group>";
-		};
-		E98E00000000000000000300 /* PushNotifications */ = {
-			isa = PBXGroup;
-			children = (
-				E98E00000000000000000301 /* GuguPushTypes.swift */,
-				E98E00000000000000000302 /* GuguPushClient.swift */,
-				E98E00000000000000000303 /* GuguPushRPCProvider.swift */,
-				E98E00000000000000000304 /* GuguUNPushPlatform.swift */,
-				E98E00000000000000000305 /* GuguPushNotificationsPlugin.swift */,
-			);
-			path = ../PushNotifications;
-			sourceTree = "<group>";
-		};
-/* End PBXGroup section */
-
-/* Begin PBXNativeTarget section */
-		E98E00000000000000000230 /* HostValidation */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = E98E00000000000000000240;
-			buildPhases = (
-				E98E00000000000000000232 /* Sources */,
-				E98E00000000000000000231 /* Frameworks */,
-				E98E00000000000000000233 /* Resources */,
-			);
-			buildRules = ();
-			dependencies = (E98E00000000000000000221 /* PBXTargetDependency */,);
-			name = HostValidation;
-			productName = HostValidation;
-			productReference = E98E00000000000000000213 /* HostValidation.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		504EC3031FED79650016851F /* App */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 504EC3161FED79650016851F /* Build configuration list for PBXNativeTarget "App" */;
-			buildPhases = (
-				504EC3001FED79650016851F /* Sources */,
-				504EC3011FED79650016851F /* Frameworks */,
-				504EC3021FED79650016851F /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = App;
-			packageProductDependencies = (
-				4D22ABE82AF431CB00220026 /* CapApp-SPM */,
-			);
-			productName = App;
-			productReference = 504EC3041FED79650016851F /* App.app */;
-			productType = "com.apple.product-type.application";
-		};
-/* End PBXNativeTarget section */
-
-/* Begin PBXProject section */
-		504EC2FC1FED79650016851F /* Project object */ = {
-			isa = PBXProject;
-			attributes = {
-				LastSwiftUpdateCheck = 0920;
-				LastUpgradeCheck = 0920;
-				TargetAttributes = {
-					E98E00000000000000000230 = {
-						CreatedOnToolsVersion = 27.0;
-						TestTargetID = 504EC3031FED79650016851F;
-					};
-					504EC3031FED79650016851F = {
-						CreatedOnToolsVersion = 9.2;
-						LastSwiftMigration = 1100;
-						ProvisioningStyle = Automatic;
-					};
-				};
-			};
-			buildConfigurationList = 504EC2FF1FED79650016851F /* Build configuration list for PBXProject "App" */;
-			compatibilityVersion = "Xcode 8.0";
-			developmentRegion = en;
-			hasScannedForEncodings = 0;
-			knownRegions = (
-				en,
-				Base,
-			);
-			mainGroup = 504EC2FB1FED79650016851F;
-			packageReferences = (
-				D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */,
-			);
-			productRefGroup = 504EC3051FED79650016851F /* Products */;
-			projectDirPath = "";
-			projectRoot = "";
-			targets = (
-				504EC3031FED79650016851F /* App */,
-				E98E00000000000000000230 /* HostValidation */,
-			);
-		};
-/* End PBXProject section */
-
-/* Begin PBXResourcesBuildPhase section */
-		E98E00000000000000000233 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = ();
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		504EC3021FED79650016851F /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */,
-				E98E00000000000000000130 /* HostRuntime in Resources */,
-				50B271D11FEDC1A000F3C39B /* public in Resources */,
-				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
-				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
-				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
-				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXResourcesBuildPhase section */
-
-/* Begin PBXSourcesBuildPhase section */
-		E98E00000000000000000232 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				E98E00000000000000000201 /* DHostedRuntimeTests.swift in Sources */,
-				E98E00000000000000000202 /* DCalendarSnapshotOracle.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		504EC3001FED79650016851F /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				91B86F06AF986FDD958906E8 /* GuguAgentPlugin.swift in Sources */,
-				517470A9C4010C2E8912659F /* GuguIOSBackendNetwork.swift in Sources */,
-				0EAE745CA28241E7E7910DF7 /* GuguIOSBackendSessions.swift in Sources */,
-				2328672879E948E6BD026C85 /* GuguIOSCreateCommand.swift in Sources */,
-				125D3428C991C7D5F091D5B9 /* GuguIOSHostProbe.swift in Sources */,
-				C8C514A6CF923C7648F69BB5 /* GuguIOSHostService.swift in Sources */,
-				5657C8D352786A69DEDE0B2C /* GuguIOSLeaseModel.swift in Sources */,
-				9E49E8AB7659F68FC053C1AA /* GuguIOSLocalAppSettings.swift in Sources */,
-				05FA40801E749AF8732E5EEF /* GuguIOSNativeBackend.swift in Sources */,
-				3D1B9B625F53EE05176BDAF8 /* GuguIOSRealtimeHost.swift in Sources */,
-				4D637E986A532B1062FBD991 /* GuguIOSRealtimeTransport.swift in Sources */,
-				CF947CBF9285262A3F298117 /* GuguIOSTaskScheduler.swift in Sources */,
-				E98E00000000000000000169 /* GuguIOSPushRetirement.swift in Sources */,
-				E98E00000000000000000168 /* GuguIOSPushTransport.swift in Sources */,
-				BBD59E5BDEBB525637AEF182 /* GuguIOSBackendStore.swift in Sources */,
-				137DF6514D7FE5883548EB60 /* GuguIOSCloudBroker.swift in Sources */,
-				1A72670345467E9D4EB56189 /* GuguIOSModelBroker.swift in Sources */,
-				CD1640A0232AC2AEF3EC514F /* GuguIOSProvisioner.swift in Sources */,
-				E98E00000000000000000401 /* GuguPushTypes.swift in Sources */,
-				E98E00000000000000000402 /* GuguPushClient.swift in Sources */,
-				E98E00000000000000000403 /* GuguPushRPCProvider.swift in Sources */,
-				E98E00000000000000000404 /* GuguUNPushPlatform.swift in Sources */,
-				E98E00000000000000000405 /* GuguPushNotificationsPlugin.swift in Sources */,
-				E98E00000000000000000167 /* GuguIOSAppRuntime.swift in Sources */,
-				E98E0000000000000000011A /* GuguIOSHostLifecycle.swift in Sources */,
-				E98E000000000000000001A1 /* GuguIOSOwnerRetirementStore.swift in Sources */,
-				E5089134A49C9FA24F670BBA /* GuguIOSNativeRetirement.swift in Sources */,
-				C7CBAAA63E2E08565C4FE89F /* GuguIOSRetirementDevice.swift in Sources */,
-				67DCC4FA0810A3EA99C00C89 /* GuguIOSRetirementCleanup.swift in Sources */,
-				203CF3FC7D332A8F0BA9D02D /* GuguIOSRetirementAuthorization.swift in Sources */,
-				1F7C08D36C61979C7B5E6BE0 /* GuguIOSBackendRetirement.swift in Sources */,
-				B57FB3E22BF7007E7FBDA0D6 /* GuguIOSSourceAccess.swift in Sources */,
-				59EAC6C35A8C5E5E93CC571C /* GuguIOSMessageBridge.swift in Sources */,
-				2EC63888A37A309CFC7DC685 /* GuguIOSInboxDelivery.swift in Sources */,
-				E98E00000000000000000161 /* GuguIOSOwnerSession.swift in Sources */,
-				E98E00000000000000000162 /* GuguIOSInstallation.swift in Sources */,
-				E98E00000000000000000163 /* GuguIOSOwnerKeychain.swift in Sources */,
-				E98E00000000000000000164 /* GuguIOSBackendConfiguration.swift in Sources */,
-				E98E00000000000000000165 /* GuguIOSOwnerVerifier.swift in Sources */,
-				E98E00000000000000000166 /* GuguIOSOwnerPlugin.swift in Sources */,
-				E98E00000000000000000149 /* GuguCalendarConnection.swift in Sources */,
-				E98E00000000000000000119 /* GuguHostCallStore.swift in Sources */,
-				E98E00000000000000000118 /* GuguIOSHostAdapter.swift in Sources */,
-				E98E00000000000000000117 /* GuguIOSOwnerAccess.swift in Sources */,
-				E98E00000000000000000116 /* GuguIOSHostAdapterContracts.swift in Sources */,
-				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
-				E98E00000000000000000115 /* GuguModelTransport.swift in Sources */,
-				E98E00000000000000000114 /* GuguInProcessHost.swift in Sources */,
-				E98E00000000000000000113 /* GuguHostJournal.swift in Sources */,
-				E98E00000000000000000148 /* PhoneCalendarTypes.swift in Sources */,
-				E98E00000000000000000147 /* PhoneCalendarSimulatorFixture.swift in Sources */,
-				E98E00000000000000000146 /* PhoneCalendarService.swift in Sources */,
-				E98E00000000000000000145 /* PhoneCalendarDates.swift in Sources */,
-				E98E00000000000000000144 /* EventKitPhoneCalendarStore.swift in Sources */,
-				E98E00000000000000000142 /* GuguCalendarPermissionsPlugin.swift in Sources */,
-				E98E00000000000000000141 /* GuguCalendarExecutor.swift in Sources */,
-				E98E00000000000000000112 /* GuguPackagedRuntime.swift in Sources */,
-				E98E00000000000000000111 /* GuguJavaScriptRuntime.swift in Sources */,
-				E98E00000000000000000110 /* GuguHostContracts.swift in Sources */,
-				E98E00000000000000000103 /* GuguSceneDelegate.swift in Sources */,
-				E98E00000000000000000102 /* GuguAuthStoragePlugin.swift in Sources */,
-				E98E00000000000000000101 /* GuguViewController.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		E98E00000000000000000221 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 504EC3031FED79650016851F /* App */;
-			targetProxy = E98E00000000000000000220 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
-/* Begin PBXVariantGroup section */
-		504EC30B1FED79650016851F /* Main.storyboard */ = {
-			isa = PBXVariantGroup;
-			children = (
-				504EC30C1FED79650016851F /* Base */,
-			);
-			name = Main.storyboard;
-			sourceTree = "<group>";
-		};
-		504EC3101FED79650016851F /* LaunchScreen.storyboard */ = {
-			isa = PBXVariantGroup;
-			children = (
-				504EC3111FED79650016851F /* Base */,
-			);
-			name = LaunchScreen.storyboard;
-			sourceTree = "<group>";
-		};
-/* End PBXVariantGroup section */
-
-/* Begin XCBuildConfiguration section */
-		E98E00000000000000000241 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Manual;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
-				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks",);
-				PRODUCT_BUNDLE_IDENTIFIER = app.gugu.chat.HostValidation;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphonesimulator;
-				SKIP_INSTALL = YES;
-				SUPPORTED_PLATFORMS = iphonesimulator;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/App";
-			};
-			name = Debug;
-		};
-		504EC3141FED79650016851F /* Debug */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
-			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
-				CLANG_CXX_LIBRARY = "libc++";
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
-				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = dwarf;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_TESTABILITY = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu11;
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"DEBUG=1",
-					"$(inherited)",
-				);
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
-				MTL_ENABLE_DEBUG_INFO = YES;
-				ONLY_ACTIVE_ARCH = YES;
-				SDKROOT = iphoneos;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-			};
-			name = Debug;
-		};
-		504EC3151FED79650016851F /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
-				CLANG_CXX_LIBRARY = "libc++";
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
-				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				ENABLE_NS_ASSERTIONS = NO;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu11;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
-				MTL_ENABLE_DEBUG_INFO = NO;
-				SDKROOT = iphoneos;
-				SWIFT_COMPILATION_MODE = wholemodule;
-				SWIFT_OPTIMIZATION_LEVEL = "-O";
-				VALIDATE_PRODUCT = YES;
-			};
-			name = Release;
-		};
-		504EC3171FED79650016851F /* Debug */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				APS_ENVIRONMENT = development;
-				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = App/App.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 0.3.2;
-				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
-				PRODUCT_BUNDLE_IDENTIFIER = app.gugu.chat;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-			};
-			name = Debug;
-		};
-		504EC3181FED79650016851F /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				APS_ENVIRONMENT = production;
-				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = App/App.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 0.3.2;
-				PRODUCT_BUNDLE_IDENTIFIER = app.gugu.chat;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
-			};
-			name = Release;
-		};
-/* End XCBuildConfiguration section */
-
-/* Begin XCConfigurationList section */
-		E98E00000000000000000240 /* Build configuration list for PBXNativeTarget "HostValidation" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (E98E00000000000000000241 /* Debug */,);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
-		504EC2FF1FED79650016851F /* Build configuration list for PBXProject "App" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				504EC3141FED79650016851F /* Debug */,
-				504EC3151FED79650016851F /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		504EC3161FED79650016851F /* Build configuration list for PBXNativeTarget "App" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				504EC3171FED79650016851F /* Debug */,
-				504EC3181FED79650016851F /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-/* End XCConfigurationList section */
-
-/* Begin XCLocalSwiftPackageReference section */
-		D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "CapApp-SPM";
-		};
-/* End XCLocalSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		4D22ABE82AF431CB00220026 /* CapApp-SPM */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */;
-			productName = "CapApp-SPM";
-		};
-/* End XCSwiftPackageProductDependency section */
-	};
-	rootObject = 504EC2FC1FED79650016851F /* Project object */;
-}
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>archiveVersion</key>
+	<string>1</string>
+	<key>classes</key>
+	<dict/>
+	<key>objectVersion</key>
+	<string>60</string>
+	<key>objects</key>
+	<dict>
+		<key>0092F72670DB64A878302410</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguAgentPlugin.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>05FA40801E749AF8732E5EEF</key>
+		<dict>
+			<key>fileRef</key>
+			<string>C5E7C29DC1AA0B740BA3816F</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>06482991D192BDEE7A9EC0B3</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSRetirementAuthorization.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>06F121108113ED780BD8C9E0</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSMessageBridge.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>080520AA42F1B6E14A11FEAB</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSCloudBroker.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>0AF7795C70E71BBC4D98DE5A</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSRealtimeHost.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>0EAE745CA28241E7E7910DF7</key>
+		<dict>
+			<key>fileRef</key>
+			<string>A6B8954C7573825116DDC63F</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>125D3428C991C7D5F091D5B9</key>
+		<dict>
+			<key>fileRef</key>
+			<string>7BD4A87BB26055E474F85824</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>137DF6514D7FE5883548EB60</key>
+		<dict>
+			<key>fileRef</key>
+			<string>080520AA42F1B6E14A11FEAB</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>1A72670345467E9D4EB56189</key>
+		<dict>
+			<key>fileRef</key>
+			<string>C3F3F95D50CD6ED7C56E9B45</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>1BF22FD833255A903BD964FD</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSHostService.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>1DD839FE49596D79BDF870E3</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSBackendRetirement.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>1F7C08D36C61979C7B5E6BE0</key>
+		<dict>
+			<key>fileRef</key>
+			<string>1DD839FE49596D79BDF870E3</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>2010D1C91C38621F8DC2179D</key>
+		<dict>
+			<key>containerPortal</key>
+			<string>504EC2FC1FED79650016851F</string>
+			<key>isa</key>
+			<string>PBXContainerItemProxy</string>
+			<key>proxyType</key>
+			<string>1</string>
+			<key>remoteGlobalIDString</key>
+			<string>504EC3031FED79650016851F</string>
+			<key>remoteInfo</key>
+			<string>App</string>
+		</dict>
+		<key>203CF3FC7D332A8F0BA9D02D</key>
+		<dict>
+			<key>fileRef</key>
+			<string>06482991D192BDEE7A9EC0B3</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>2328672879E948E6BD026C85</key>
+		<dict>
+			<key>fileRef</key>
+			<string>954333D437E6D2768C7C8DA2</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>2AD65DA52429ACD8EB83E3D3</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>../HostValidationUI/RuntimeUIDriver.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>2EC63888A37A309CFC7DC685</key>
+		<dict>
+			<key>fileRef</key>
+			<string>CD46B8DFDDBA07A4FE3C341C</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>2FAD9762203C412B000D30F8</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.xml</string>
+			<key>path</key>
+			<string>config.xml</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>2FAD9763203C412B000D30F8</key>
+		<dict>
+			<key>fileRef</key>
+			<string>2FAD9762203C412B000D30F8</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>3343C22C17B0EFE0339E1779</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXTargetDependency</string>
+			<key>target</key>
+			<string>504EC3031FED79650016851F</string>
+			<key>targetProxy</key>
+			<string>2010D1C91C38621F8DC2179D</string>
+		</dict>
+		<key>3D1B9B625F53EE05176BDAF8</key>
+		<dict>
+			<key>fileRef</key>
+			<string>0AF7795C70E71BBC4D98DE5A</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>461EAD471BBBC0673C88C9F8</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSTaskScheduler.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>4D22ABE82AF431CB00220026</key>
+		<dict>
+			<key>isa</key>
+			<string>XCSwiftPackageProductDependency</string>
+			<key>package</key>
+			<string>D4C12C0A2AAA248700AAC8A2</string>
+			<key>productName</key>
+			<string>CapApp-SPM</string>
+		</dict>
+		<key>4D22ABE92AF431CB00220026</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+			<key>productRef</key>
+			<string>4D22ABE82AF431CB00220026</string>
+		</dict>
+		<key>4D637E986A532B1062FBD991</key>
+		<dict>
+			<key>fileRef</key>
+			<string>B3307B7F449BF52786CF1575</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>50379B222058CBB4000EE86E</key>
+		<dict>
+			<key>fileEncoding</key>
+			<string>4</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.json</string>
+			<key>path</key>
+			<string>capacitor.config.json</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>50379B232058CBB4000EE86E</key>
+		<dict>
+			<key>fileRef</key>
+			<string>50379B222058CBB4000EE86E</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>504EC2FB1FED79650016851F</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>958DCC722DB07C7200EA8C5F</string>
+				<string>504EC3061FED79650016851F</string>
+				<string>E98E00000000000000000043</string>
+				<string>E98E00000000000000000040</string>
+				<string>E98E00000000000000000080</string>
+				<string>E98E00000000000000000300</string>
+				<string>E98E00000000000000000020</string>
+				<string>E98E00000000000000000214</string>
+				<string>504EC3051FED79650016851F</string>
+				<string>2AD65DA52429ACD8EB83E3D3</string>
+				<string>BDD5ED58766F95F5E9CEDF3A</string>
+			</array>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>504EC2FC1FED79650016851F</key>
+		<dict>
+			<key>attributes</key>
+			<dict>
+				<key>LastSwiftUpdateCheck</key>
+				<string>0920</string>
+				<key>LastUpgradeCheck</key>
+				<string>0920</string>
+				<key>TargetAttributes</key>
+				<dict>
+					<key>504EC3031FED79650016851F</key>
+					<dict>
+						<key>CreatedOnToolsVersion</key>
+						<string>9.2</string>
+						<key>LastSwiftMigration</key>
+						<string>1100</string>
+						<key>ProvisioningStyle</key>
+						<string>Automatic</string>
+					</dict>
+					<key>75A741FACE00E05714D4B088</key>
+					<dict>
+						<key>TestTargetID</key>
+						<string>504EC3031FED79650016851F</string>
+					</dict>
+					<key>E98E00000000000000000230</key>
+					<dict>
+						<key>CreatedOnToolsVersion</key>
+						<string>27.0</string>
+						<key>TestTargetID</key>
+						<string>504EC3031FED79650016851F</string>
+					</dict>
+				</dict>
+			</dict>
+			<key>buildConfigurationList</key>
+			<string>504EC2FF1FED79650016851F</string>
+			<key>compatibilityVersion</key>
+			<string>Xcode 8.0</string>
+			<key>developmentRegion</key>
+			<string>en</string>
+			<key>hasScannedForEncodings</key>
+			<string>0</string>
+			<key>isa</key>
+			<string>PBXProject</string>
+			<key>knownRegions</key>
+			<array>
+				<string>en</string>
+				<string>Base</string>
+			</array>
+			<key>mainGroup</key>
+			<string>504EC2FB1FED79650016851F</string>
+			<key>packageReferences</key>
+			<array>
+				<string>D4C12C0A2AAA248700AAC8A2</string>
+			</array>
+			<key>productRefGroup</key>
+			<string>504EC3051FED79650016851F</string>
+			<key>projectDirPath</key>
+			<string></string>
+			<key>projectRoot</key>
+			<string></string>
+			<key>targets</key>
+			<array>
+				<string>504EC3031FED79650016851F</string>
+				<string>E98E00000000000000000230</string>
+				<string>75A741FACE00E05714D4B088</string>
+			</array>
+		</dict>
+		<key>504EC2FF1FED79650016851F</key>
+		<dict>
+			<key>buildConfigurations</key>
+			<array>
+				<string>504EC3141FED79650016851F</string>
+				<string>504EC3151FED79650016851F</string>
+			</array>
+			<key>defaultConfigurationIsVisible</key>
+			<string>0</string>
+			<key>defaultConfigurationName</key>
+			<string>Release</string>
+			<key>isa</key>
+			<string>XCConfigurationList</string>
+		</dict>
+		<key>504EC3001FED79650016851F</key>
+		<dict>
+			<key>buildActionMask</key>
+			<string>2147483647</string>
+			<key>files</key>
+			<array>
+				<string>91B86F06AF986FDD958906E8</string>
+				<string>517470A9C4010C2E8912659F</string>
+				<string>0EAE745CA28241E7E7910DF7</string>
+				<string>2328672879E948E6BD026C85</string>
+				<string>125D3428C991C7D5F091D5B9</string>
+				<string>C8C514A6CF923C7648F69BB5</string>
+				<string>5657C8D352786A69DEDE0B2C</string>
+				<string>9E49E8AB7659F68FC053C1AA</string>
+				<string>05FA40801E749AF8732E5EEF</string>
+				<string>3D1B9B625F53EE05176BDAF8</string>
+				<string>4D637E986A532B1062FBD991</string>
+				<string>CF947CBF9285262A3F298117</string>
+				<string>E98E00000000000000000169</string>
+				<string>E98E00000000000000000168</string>
+				<string>BBD59E5BDEBB525637AEF182</string>
+				<string>137DF6514D7FE5883548EB60</string>
+				<string>1A72670345467E9D4EB56189</string>
+				<string>CD1640A0232AC2AEF3EC514F</string>
+				<string>E98E00000000000000000401</string>
+				<string>E98E00000000000000000402</string>
+				<string>E98E00000000000000000403</string>
+				<string>E98E00000000000000000404</string>
+				<string>E98E00000000000000000405</string>
+				<string>E98E00000000000000000167</string>
+				<string>E98E0000000000000000011A</string>
+				<string>E98E000000000000000001A1</string>
+				<string>E5089134A49C9FA24F670BBA</string>
+				<string>C7CBAAA63E2E08565C4FE89F</string>
+				<string>67DCC4FA0810A3EA99C00C89</string>
+				<string>203CF3FC7D332A8F0BA9D02D</string>
+				<string>1F7C08D36C61979C7B5E6BE0</string>
+				<string>B57FB3E22BF7007E7FBDA0D6</string>
+				<string>59EAC6C35A8C5E5E93CC571C</string>
+				<string>2EC63888A37A309CFC7DC685</string>
+				<string>E98E00000000000000000161</string>
+				<string>E98E00000000000000000162</string>
+				<string>E98E00000000000000000163</string>
+				<string>E98E00000000000000000164</string>
+				<string>E98E00000000000000000165</string>
+				<string>E98E00000000000000000166</string>
+				<string>E98E00000000000000000149</string>
+				<string>E98E00000000000000000119</string>
+				<string>E98E00000000000000000118</string>
+				<string>E98E00000000000000000117</string>
+				<string>E98E00000000000000000116</string>
+				<string>504EC3081FED79650016851F</string>
+				<string>E98E00000000000000000115</string>
+				<string>E98E00000000000000000114</string>
+				<string>E98E00000000000000000113</string>
+				<string>E98E00000000000000000148</string>
+				<string>E98E00000000000000000147</string>
+				<string>E98E00000000000000000146</string>
+				<string>E98E00000000000000000145</string>
+				<string>E98E00000000000000000144</string>
+				<string>E98E00000000000000000142</string>
+				<string>E98E00000000000000000141</string>
+				<string>E98E00000000000000000112</string>
+				<string>E98E00000000000000000111</string>
+				<string>E98E00000000000000000110</string>
+				<string>E98E00000000000000000103</string>
+				<string>E98E00000000000000000102</string>
+				<string>E98E00000000000000000101</string>
+			</array>
+			<key>isa</key>
+			<string>PBXSourcesBuildPhase</string>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<string>0</string>
+		</dict>
+		<key>504EC3011FED79650016851F</key>
+		<dict>
+			<key>buildActionMask</key>
+			<string>2147483647</string>
+			<key>files</key>
+			<array>
+				<string>4D22ABE92AF431CB00220026</string>
+			</array>
+			<key>isa</key>
+			<string>PBXFrameworksBuildPhase</string>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<string>0</string>
+		</dict>
+		<key>504EC3021FED79650016851F</key>
+		<dict>
+			<key>buildActionMask</key>
+			<string>2147483647</string>
+			<key>files</key>
+			<array>
+				<string>504EC3121FED79650016851F</string>
+				<string>E98E00000000000000000130</string>
+				<string>50B271D11FEDC1A000F3C39B</string>
+				<string>504EC30F1FED79650016851F</string>
+				<string>50379B232058CBB4000EE86E</string>
+				<string>504EC30D1FED79650016851F</string>
+				<string>2FAD9763203C412B000D30F8</string>
+			</array>
+			<key>isa</key>
+			<string>PBXResourcesBuildPhase</string>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<string>0</string>
+		</dict>
+		<key>504EC3031FED79650016851F</key>
+		<dict>
+			<key>buildConfigurationList</key>
+			<string>504EC3161FED79650016851F</string>
+			<key>buildPhases</key>
+			<array>
+				<string>504EC3001FED79650016851F</string>
+				<string>504EC3011FED79650016851F</string>
+				<string>504EC3021FED79650016851F</string>
+			</array>
+			<key>buildRules</key>
+			<array/>
+			<key>dependencies</key>
+			<array/>
+			<key>isa</key>
+			<string>PBXNativeTarget</string>
+			<key>name</key>
+			<string>App</string>
+			<key>packageProductDependencies</key>
+			<array>
+				<string>4D22ABE82AF431CB00220026</string>
+			</array>
+			<key>productName</key>
+			<string>App</string>
+			<key>productReference</key>
+			<string>504EC3041FED79650016851F</string>
+			<key>productType</key>
+			<string>com.apple.product-type.application</string>
+		</dict>
+		<key>504EC3041FED79650016851F</key>
+		<dict>
+			<key>explicitFileType</key>
+			<string>wrapper.application</string>
+			<key>includeInIndex</key>
+			<string>0</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>App.app</string>
+			<key>sourceTree</key>
+			<string>BUILT_PRODUCTS_DIR</string>
+		</dict>
+		<key>504EC3051FED79650016851F</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>504EC3041FED79650016851F</string>
+				<string>E98E00000000000000000213</string>
+				<string>671F35ECB7BD2825695F1EFE</string>
+			</array>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>name</key>
+			<string>Products</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>504EC3061FED79650016851F</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>50379B222058CBB4000EE86E</string>
+				<string>504EC3071FED79650016851F</string>
+				<string>E98E00000000000000000003</string>
+				<string>E98E00000000000000000002</string>
+				<string>E98E00000000000000000001</string>
+				<string>504EC30B1FED79650016851F</string>
+				<string>504EC30E1FED79650016851F</string>
+				<string>504EC3101FED79650016851F</string>
+				<string>504EC3131FED79650016851F</string>
+				<string>2FAD9762203C412B000D30F8</string>
+				<string>E98E00000000000000000030</string>
+				<string>50B271D01FEDC1A000F3C39B</string>
+			</array>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>path</key>
+			<string>App</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>504EC3071FED79650016851F</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>AppDelegate.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>504EC3081FED79650016851F</key>
+		<dict>
+			<key>fileRef</key>
+			<string>504EC3071FED79650016851F</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>504EC30B1FED79650016851F</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>504EC30C1FED79650016851F</string>
+			</array>
+			<key>isa</key>
+			<string>PBXVariantGroup</string>
+			<key>name</key>
+			<string>Main.storyboard</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>504EC30C1FED79650016851F</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>file.storyboard</string>
+			<key>name</key>
+			<string>Base</string>
+			<key>path</key>
+			<string>Base.lproj/Main.storyboard</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>504EC30D1FED79650016851F</key>
+		<dict>
+			<key>fileRef</key>
+			<string>504EC30B1FED79650016851F</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>504EC30E1FED79650016851F</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>folder.assetcatalog</string>
+			<key>path</key>
+			<string>Assets.xcassets</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>504EC30F1FED79650016851F</key>
+		<dict>
+			<key>fileRef</key>
+			<string>504EC30E1FED79650016851F</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>504EC3101FED79650016851F</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>504EC3111FED79650016851F</string>
+			</array>
+			<key>isa</key>
+			<string>PBXVariantGroup</string>
+			<key>name</key>
+			<string>LaunchScreen.storyboard</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>504EC3111FED79650016851F</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>file.storyboard</string>
+			<key>name</key>
+			<string>Base</string>
+			<key>path</key>
+			<string>Base.lproj/LaunchScreen.storyboard</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>504EC3121FED79650016851F</key>
+		<dict>
+			<key>fileRef</key>
+			<string>504EC3101FED79650016851F</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>504EC3131FED79650016851F</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.plist.xml</string>
+			<key>path</key>
+			<string>Info.plist</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>504EC3141FED79650016851F</key>
+		<dict>
+			<key>baseConfigurationReference</key>
+			<string>958DCC722DB07C7200EA8C5F</string>
+			<key>buildSettings</key>
+			<dict>
+				<key>ALWAYS_SEARCH_USER_PATHS</key>
+				<string>NO</string>
+				<key>CLANG_ANALYZER_NONNULL</key>
+				<string>YES</string>
+				<key>CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION</key>
+				<string>YES_AGGRESSIVE</string>
+				<key>CLANG_CXX_LANGUAGE_STANDARD</key>
+				<string>gnu++14</string>
+				<key>CLANG_CXX_LIBRARY</key>
+				<string>libc++</string>
+				<key>CLANG_ENABLE_MODULES</key>
+				<string>YES</string>
+				<key>CLANG_ENABLE_OBJC_ARC</key>
+				<string>YES</string>
+				<key>CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING</key>
+				<string>YES</string>
+				<key>CLANG_WARN_BOOL_CONVERSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_COMMA</key>
+				<string>YES</string>
+				<key>CLANG_WARN_CONSTANT_CONVERSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_DIRECT_OBJC_ISA_USAGE</key>
+				<string>YES_ERROR</string>
+				<key>CLANG_WARN_DOCUMENTATION_COMMENTS</key>
+				<string>YES</string>
+				<key>CLANG_WARN_EMPTY_BODY</key>
+				<string>YES</string>
+				<key>CLANG_WARN_ENUM_CONVERSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_INFINITE_RECURSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_INT_CONVERSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_NON_LITERAL_NULL_CONVERSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_OBJC_LITERAL_CONVERSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_OBJC_ROOT_CLASS</key>
+				<string>YES_ERROR</string>
+				<key>CLANG_WARN_RANGE_LOOP_ANALYSIS</key>
+				<string>YES</string>
+				<key>CLANG_WARN_STRICT_PROTOTYPES</key>
+				<string>YES</string>
+				<key>CLANG_WARN_SUSPICIOUS_MOVE</key>
+				<string>YES</string>
+				<key>CLANG_WARN_UNGUARDED_AVAILABILITY</key>
+				<string>YES_AGGRESSIVE</string>
+				<key>CLANG_WARN_UNREACHABLE_CODE</key>
+				<string>YES</string>
+				<key>CLANG_WARN__DUPLICATE_METHOD_MATCH</key>
+				<string>YES</string>
+				<key>CODE_SIGN_IDENTITY</key>
+				<string>iPhone Developer</string>
+				<key>COPY_PHASE_STRIP</key>
+				<string>NO</string>
+				<key>DEBUG_INFORMATION_FORMAT</key>
+				<string>dwarf</string>
+				<key>ENABLE_STRICT_OBJC_MSGSEND</key>
+				<string>YES</string>
+				<key>ENABLE_TESTABILITY</key>
+				<string>YES</string>
+				<key>GCC_C_LANGUAGE_STANDARD</key>
+				<string>gnu11</string>
+				<key>GCC_DYNAMIC_NO_PIC</key>
+				<string>NO</string>
+				<key>GCC_NO_COMMON_BLOCKS</key>
+				<string>YES</string>
+				<key>GCC_OPTIMIZATION_LEVEL</key>
+				<string>0</string>
+				<key>GCC_PREPROCESSOR_DEFINITIONS</key>
+				<array>
+					<string>DEBUG=1</string>
+					<string>$(inherited)</string>
+				</array>
+				<key>GCC_WARN_64_TO_32_BIT_CONVERSION</key>
+				<string>YES</string>
+				<key>GCC_WARN_ABOUT_RETURN_TYPE</key>
+				<string>YES_ERROR</string>
+				<key>GCC_WARN_UNDECLARED_SELECTOR</key>
+				<string>YES</string>
+				<key>GCC_WARN_UNINITIALIZED_AUTOS</key>
+				<string>YES_AGGRESSIVE</string>
+				<key>GCC_WARN_UNUSED_FUNCTION</key>
+				<string>YES</string>
+				<key>GCC_WARN_UNUSED_VARIABLE</key>
+				<string>YES</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>15.0</string>
+				<key>MTL_ENABLE_DEBUG_INFO</key>
+				<string>YES</string>
+				<key>ONLY_ACTIVE_ARCH</key>
+				<string>YES</string>
+				<key>SDKROOT</key>
+				<string>iphoneos</string>
+				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
+				<string>DEBUG</string>
+				<key>SWIFT_OPTIMIZATION_LEVEL</key>
+				<string>-Onone</string>
+			</dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>name</key>
+			<string>Debug</string>
+		</dict>
+		<key>504EC3151FED79650016851F</key>
+		<dict>
+			<key>buildSettings</key>
+			<dict>
+				<key>ALWAYS_SEARCH_USER_PATHS</key>
+				<string>NO</string>
+				<key>CLANG_ANALYZER_NONNULL</key>
+				<string>YES</string>
+				<key>CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION</key>
+				<string>YES_AGGRESSIVE</string>
+				<key>CLANG_CXX_LANGUAGE_STANDARD</key>
+				<string>gnu++14</string>
+				<key>CLANG_CXX_LIBRARY</key>
+				<string>libc++</string>
+				<key>CLANG_ENABLE_MODULES</key>
+				<string>YES</string>
+				<key>CLANG_ENABLE_OBJC_ARC</key>
+				<string>YES</string>
+				<key>CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING</key>
+				<string>YES</string>
+				<key>CLANG_WARN_BOOL_CONVERSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_COMMA</key>
+				<string>YES</string>
+				<key>CLANG_WARN_CONSTANT_CONVERSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_DIRECT_OBJC_ISA_USAGE</key>
+				<string>YES_ERROR</string>
+				<key>CLANG_WARN_DOCUMENTATION_COMMENTS</key>
+				<string>YES</string>
+				<key>CLANG_WARN_EMPTY_BODY</key>
+				<string>YES</string>
+				<key>CLANG_WARN_ENUM_CONVERSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_INFINITE_RECURSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_INT_CONVERSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_NON_LITERAL_NULL_CONVERSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_OBJC_LITERAL_CONVERSION</key>
+				<string>YES</string>
+				<key>CLANG_WARN_OBJC_ROOT_CLASS</key>
+				<string>YES_ERROR</string>
+				<key>CLANG_WARN_RANGE_LOOP_ANALYSIS</key>
+				<string>YES</string>
+				<key>CLANG_WARN_STRICT_PROTOTYPES</key>
+				<string>YES</string>
+				<key>CLANG_WARN_SUSPICIOUS_MOVE</key>
+				<string>YES</string>
+				<key>CLANG_WARN_UNGUARDED_AVAILABILITY</key>
+				<string>YES_AGGRESSIVE</string>
+				<key>CLANG_WARN_UNREACHABLE_CODE</key>
+				<string>YES</string>
+				<key>CLANG_WARN__DUPLICATE_METHOD_MATCH</key>
+				<string>YES</string>
+				<key>CODE_SIGN_IDENTITY</key>
+				<string>iPhone Developer</string>
+				<key>COPY_PHASE_STRIP</key>
+				<string>NO</string>
+				<key>DEBUG_INFORMATION_FORMAT</key>
+				<string>dwarf-with-dsym</string>
+				<key>ENABLE_NS_ASSERTIONS</key>
+				<string>NO</string>
+				<key>ENABLE_STRICT_OBJC_MSGSEND</key>
+				<string>YES</string>
+				<key>GCC_C_LANGUAGE_STANDARD</key>
+				<string>gnu11</string>
+				<key>GCC_NO_COMMON_BLOCKS</key>
+				<string>YES</string>
+				<key>GCC_WARN_64_TO_32_BIT_CONVERSION</key>
+				<string>YES</string>
+				<key>GCC_WARN_ABOUT_RETURN_TYPE</key>
+				<string>YES_ERROR</string>
+				<key>GCC_WARN_UNDECLARED_SELECTOR</key>
+				<string>YES</string>
+				<key>GCC_WARN_UNINITIALIZED_AUTOS</key>
+				<string>YES_AGGRESSIVE</string>
+				<key>GCC_WARN_UNUSED_FUNCTION</key>
+				<string>YES</string>
+				<key>GCC_WARN_UNUSED_VARIABLE</key>
+				<string>YES</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>15.0</string>
+				<key>MTL_ENABLE_DEBUG_INFO</key>
+				<string>NO</string>
+				<key>SDKROOT</key>
+				<string>iphoneos</string>
+				<key>SWIFT_COMPILATION_MODE</key>
+				<string>wholemodule</string>
+				<key>SWIFT_OPTIMIZATION_LEVEL</key>
+				<string>-O</string>
+				<key>VALIDATE_PRODUCT</key>
+				<string>YES</string>
+			</dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>name</key>
+			<string>Release</string>
+		</dict>
+		<key>504EC3161FED79650016851F</key>
+		<dict>
+			<key>buildConfigurations</key>
+			<array>
+				<string>504EC3171FED79650016851F</string>
+				<string>504EC3181FED79650016851F</string>
+			</array>
+			<key>defaultConfigurationIsVisible</key>
+			<string>0</string>
+			<key>defaultConfigurationName</key>
+			<string>Release</string>
+			<key>isa</key>
+			<string>XCConfigurationList</string>
+		</dict>
+		<key>504EC3171FED79650016851F</key>
+		<dict>
+			<key>baseConfigurationReference</key>
+			<string>958DCC722DB07C7200EA8C5F</string>
+			<key>buildSettings</key>
+			<dict>
+				<key>APS_ENVIRONMENT</key>
+				<string>development</string>
+				<key>ASSETCATALOG_COMPILER_APPICON_NAME</key>
+				<string>AppIcon</string>
+				<key>CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]</key>
+				<string>App/App.entitlements</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Automatic</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>1</string>
+				<key>INFOPLIST_FILE</key>
+				<string>App/Info.plist</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>15.0</string>
+				<key>LD_RUNPATH_SEARCH_PATHS</key>
+				<array>
+					<string>$(inherited)</string>
+					<string>@executable_path/Frameworks</string>
+				</array>
+				<key>MARKETING_VERSION</key>
+				<string>0.3.2</string>
+				<key>OTHER_SWIFT_FLAGS</key>
+				<string>$(inherited) "-D" "COCOAPODS" "-DDEBUG"</string>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>app.gugu.chat</string>
+				<key>PRODUCT_NAME</key>
+				<string>$(TARGET_NAME)</string>
+				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
+				<string>DEBUG</string>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1</string>
+			</dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>name</key>
+			<string>Debug</string>
+		</dict>
+		<key>504EC3181FED79650016851F</key>
+		<dict>
+			<key>buildSettings</key>
+			<dict>
+				<key>APS_ENVIRONMENT</key>
+				<string>production</string>
+				<key>ASSETCATALOG_COMPILER_APPICON_NAME</key>
+				<string>AppIcon</string>
+				<key>CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]</key>
+				<string>App/App.entitlements</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Automatic</string>
+				<key>CURRENT_PROJECT_VERSION</key>
+				<string>1</string>
+				<key>INFOPLIST_FILE</key>
+				<string>App/Info.plist</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>15.0</string>
+				<key>LD_RUNPATH_SEARCH_PATHS</key>
+				<array>
+					<string>$(inherited)</string>
+					<string>@executable_path/Frameworks</string>
+				</array>
+				<key>MARKETING_VERSION</key>
+				<string>0.3.2</string>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>app.gugu.chat</string>
+				<key>PRODUCT_NAME</key>
+				<string>$(TARGET_NAME)</string>
+				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
+				<string></string>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1</string>
+			</dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>name</key>
+			<string>Release</string>
+		</dict>
+		<key>50B271D01FEDC1A000F3C39B</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>folder</string>
+			<key>path</key>
+			<string>public</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>50B271D11FEDC1A000F3C39B</key>
+		<dict>
+			<key>fileRef</key>
+			<string>50B271D01FEDC1A000F3C39B</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>517470A9C4010C2E8912659F</key>
+		<dict>
+			<key>fileRef</key>
+			<string>F1B8D5CD166D0BEB1316D3BB</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>5276C817ED5C956B2C0708EB</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSBackendStore.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>52A0283074C6438EC779CA39</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSRetirementCleanup.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>5657C8D352786A69DEDE0B2C</key>
+		<dict>
+			<key>fileRef</key>
+			<string>A11F642F7BAAFA27884DD3C7</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>59EAC6C35A8C5E5E93CC571C</key>
+		<dict>
+			<key>fileRef</key>
+			<string>06F121108113ED780BD8C9E0</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>5B1FBA16D04A301D29232798</key>
+		<dict>
+			<key>fileRef</key>
+			<string>BDD5ED58766F95F5E9CEDF3A</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>671F35ECB7BD2825695F1EFE</key>
+		<dict>
+			<key>explicitFileType</key>
+			<string>wrapper.cfbundle</string>
+			<key>includeInIndex</key>
+			<string>0</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>CalendarUIValidation.xctest</string>
+			<key>sourceTree</key>
+			<string>BUILT_PRODUCTS_DIR</string>
+		</dict>
+		<key>67DCC4FA0810A3EA99C00C89</key>
+		<dict>
+			<key>fileRef</key>
+			<string>52A0283074C6438EC779CA39</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>6E5A326256C7A0D28B8038B5</key>
+		<dict>
+			<key>buildSettings</key>
+			<dict>
+				<key>CODE_SIGNING_ALLOWED</key>
+				<string>YES</string>
+				<key>CODE_SIGN_IDENTITY</key>
+				<string>-</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Manual</string>
+				<key>DEVELOPMENT_TEAM</key>
+				<string></string>
+				<key>GENERATE_INFOPLIST_FILE</key>
+				<string>YES</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>15.0</string>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>app.gugu.chat.CalendarUIValidation</string>
+				<key>PRODUCT_NAME</key>
+				<string>$(TARGET_NAME)</string>
+				<key>PROVISIONING_PROFILE_SPECIFIER</key>
+				<string></string>
+				<key>SDKROOT</key>
+				<string>iphonesimulator</string>
+				<key>SUPPORTED_PLATFORMS</key>
+				<string>iphonesimulator</string>
+				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
+				<string>DEBUG</string>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1,2</string>
+				<key>TEST_TARGET_NAME</key>
+				<string>App</string>
+			</dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>name</key>
+			<string>Debug</string>
+		</dict>
+		<key>75A741FACE00E05714D4B088</key>
+		<dict>
+			<key>buildConfigurationList</key>
+			<string>F0F3D60A8BCDE5BF617B85EC</string>
+			<key>buildPhases</key>
+			<array>
+				<string>9C357C58E8528909B3FE6C9A</string>
+			</array>
+			<key>buildRules</key>
+			<array/>
+			<key>dependencies</key>
+			<array>
+				<string>3343C22C17B0EFE0339E1779</string>
+			</array>
+			<key>isa</key>
+			<string>PBXNativeTarget</string>
+			<key>name</key>
+			<string>CalendarUIValidation</string>
+			<key>productName</key>
+			<string>CalendarUIValidation</string>
+			<key>productReference</key>
+			<string>671F35ECB7BD2825695F1EFE</string>
+			<key>productType</key>
+			<string>com.apple.product-type.bundle.ui-testing</string>
+		</dict>
+		<key>7BD4A87BB26055E474F85824</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSHostProbe.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>81FAE6B62F71E8E595310DB4</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSSourceAccess.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>91B86F06AF986FDD958906E8</key>
+		<dict>
+			<key>fileRef</key>
+			<string>0092F72670DB64A878302410</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>954333D437E6D2768C7C8DA2</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSCreateCommand.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>958DCC722DB07C7200EA8C5F</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>text.xcconfig</string>
+			<key>name</key>
+			<string>debug.xcconfig</string>
+			<key>path</key>
+			<string>../debug.xcconfig</string>
+			<key>sourceTree</key>
+			<string>SOURCE_ROOT</string>
+		</dict>
+		<key>99B55E03C9056D186D85264F</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSRetirementDevice.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>9C357C58E8528909B3FE6C9A</key>
+		<dict>
+			<key>buildActionMask</key>
+			<string>2147483647</string>
+			<key>files</key>
+			<array>
+				<string>F5011D58E7744A0E34D4CE2E</string>
+				<string>5B1FBA16D04A301D29232798</string>
+			</array>
+			<key>isa</key>
+			<string>PBXSourcesBuildPhase</string>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<string>0</string>
+		</dict>
+		<key>9E49E8AB7659F68FC053C1AA</key>
+		<dict>
+			<key>fileRef</key>
+			<string>FA0A23259A9172732685CEAD</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>A11F642F7BAAFA27884DD3C7</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSLeaseModel.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>A6B8954C7573825116DDC63F</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSBackendSessions.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>B3307B7F449BF52786CF1575</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSRealtimeTransport.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>B57FB3E22BF7007E7FBDA0D6</key>
+		<dict>
+			<key>fileRef</key>
+			<string>81FAE6B62F71E8E595310DB4</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>BBD59E5BDEBB525637AEF182</key>
+		<dict>
+			<key>fileRef</key>
+			<string>5276C817ED5C956B2C0708EB</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>BDD5ED58766F95F5E9CEDF3A</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>../HostValidationUI/RuntimeUITimePolicy.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>C3F3F95D50CD6ED7C56E9B45</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSModelBroker.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>C5E7C29DC1AA0B740BA3816F</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSNativeBackend.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>C7CBAAA63E2E08565C4FE89F</key>
+		<dict>
+			<key>fileRef</key>
+			<string>99B55E03C9056D186D85264F</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>C8C514A6CF923C7648F69BB5</key>
+		<dict>
+			<key>fileRef</key>
+			<string>1BF22FD833255A903BD964FD</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>CD1640A0232AC2AEF3EC514F</key>
+		<dict>
+			<key>fileRef</key>
+			<string>DA81FBF0D5D6A3E8A4DA3DA9</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>CD46B8DFDDBA07A4FE3C341C</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSInboxDelivery.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>CF947CBF9285262A3F298117</key>
+		<dict>
+			<key>fileRef</key>
+			<string>461EAD471BBBC0673C88C9F8</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>D2B265772D7DF92155465D30</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSNativeRetirement.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>D4C12C0A2AAA248700AAC8A2</key>
+		<dict>
+			<key>isa</key>
+			<string>XCLocalSwiftPackageReference</string>
+			<key>relativePath</key>
+			<string>CapApp-SPM</string>
+		</dict>
+		<key>DA81FBF0D5D6A3E8A4DA3DA9</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSProvisioner.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E5089134A49C9FA24F670BBA</key>
+		<dict>
+			<key>fileRef</key>
+			<string>D2B265772D7DF92155465D30</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000001</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguViewController.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000002</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguAuthStoragePlugin.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000003</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguSceneDelegate.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000010</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguHostContracts.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000011</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguJavaScriptRuntime.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000012</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguPackagedRuntime.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000013</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguHostJournal.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000014</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguInProcessHost.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000015</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguModelTransport.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000016</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSHostAdapterContracts.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000017</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSOwnerAccess.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000018</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSHostAdapter.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000019</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguHostCallStore.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E0000000000000000001A</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSHostLifecycle.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000020</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>99B55E03C9056D186D85264F</string>
+				<string>52A0283074C6438EC779CA39</string>
+				<string>06482991D192BDEE7A9EC0B3</string>
+				<string>1DD839FE49596D79BDF870E3</string>
+				<string>81FAE6B62F71E8E595310DB4</string>
+				<string>06F121108113ED780BD8C9E0</string>
+				<string>CD46B8DFDDBA07A4FE3C341C</string>
+				<string>0092F72670DB64A878302410</string>
+				<string>F1B8D5CD166D0BEB1316D3BB</string>
+				<string>A6B8954C7573825116DDC63F</string>
+				<string>954333D437E6D2768C7C8DA2</string>
+				<string>7BD4A87BB26055E474F85824</string>
+				<string>1BF22FD833255A903BD964FD</string>
+				<string>A11F642F7BAAFA27884DD3C7</string>
+				<string>FA0A23259A9172732685CEAD</string>
+				<string>C5E7C29DC1AA0B740BA3816F</string>
+				<string>0AF7795C70E71BBC4D98DE5A</string>
+				<string>B3307B7F449BF52786CF1575</string>
+				<string>461EAD471BBBC0673C88C9F8</string>
+				<string>5276C817ED5C956B2C0708EB</string>
+				<string>080520AA42F1B6E14A11FEAB</string>
+				<string>C3F3F95D50CD6ED7C56E9B45</string>
+				<string>DA81FBF0D5D6A3E8A4DA3DA9</string>
+				<string>E98E0000000000000000001A</string>
+				<string>E98E00000000000000000019</string>
+				<string>E98E00000000000000000018</string>
+				<string>E98E00000000000000000017</string>
+				<string>E98E00000000000000000016</string>
+				<string>E98E00000000000000000010</string>
+				<string>E98E00000000000000000015</string>
+				<string>E98E00000000000000000014</string>
+				<string>E98E00000000000000000013</string>
+				<string>E98E00000000000000000011</string>
+				<string>E98E00000000000000000012</string>
+			</array>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>path</key>
+			<string>../Host</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000030</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>folder</string>
+			<key>path</key>
+			<string>HostRuntime</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000040</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>E98E00000000000000000049</string>
+				<string>E98E00000000000000000041</string>
+				<string>E98E00000000000000000042</string>
+			</array>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>path</key>
+			<string>../CalendarBridge</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000041</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguCalendarExecutor.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000042</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguCalendarPermissionsPlugin.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000043</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>E98E00000000000000000044</string>
+				<string>E98E00000000000000000045</string>
+				<string>E98E00000000000000000046</string>
+				<string>E98E00000000000000000047</string>
+				<string>E98E00000000000000000048</string>
+			</array>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>path</key>
+			<string>../PhoneCalendar/Sources/GuguPhoneCalendar</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000044</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>EventKitPhoneCalendarStore.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000045</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>PhoneCalendarDates.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000046</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>PhoneCalendarService.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000047</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>PhoneCalendarSimulatorFixture.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000048</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>PhoneCalendarTypes.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000049</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguCalendarConnection.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000061</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSOwnerSession.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000062</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSInstallation.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000063</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSOwnerKeychain.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000064</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSBackendConfiguration.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000065</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSOwnerVerifier.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000066</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSOwnerPlugin.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000067</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSAppRuntime.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000068</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSPushTransport.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000069</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSPushRetirement.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000080</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>D2B265772D7DF92155465D30</string>
+				<string>E98E00000000000000000069</string>
+				<string>E98E00000000000000000068</string>
+				<string>E98E00000000000000000067</string>
+				<string>E98E000000000000000000A1</string>
+				<string>E98E00000000000000000061</string>
+				<string>E98E00000000000000000062</string>
+				<string>E98E00000000000000000063</string>
+				<string>E98E00000000000000000064</string>
+				<string>E98E00000000000000000065</string>
+				<string>E98E00000000000000000066</string>
+			</array>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>path</key>
+			<string>../OwnerSession</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E000000000000000000A1</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSOwnerRetirementStore.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000101</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000001</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000102</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000002</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000103</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000003</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000110</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000010</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000111</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000011</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000112</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000012</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000113</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000013</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000114</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000014</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000115</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000015</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000116</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000016</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000117</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000017</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000118</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000018</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000119</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000019</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E0000000000000000011A</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E0000000000000000001A</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000130</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000030</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000141</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000041</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000142</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000042</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000144</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000044</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000145</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000045</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000146</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000046</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000147</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000047</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000148</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000048</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000149</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000049</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000161</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000061</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000162</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000062</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000163</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000063</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000164</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000064</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000165</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000065</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000166</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000066</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000167</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000067</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000168</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000068</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000169</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000069</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E000000000000000001A1</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E000000000000000000A1</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000201</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000211</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000202</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000212</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000211</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>DHostedRuntimeTests.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000212</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>DCalendarSnapshotOracle.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000213</key>
+		<dict>
+			<key>explicitFileType</key>
+			<string>wrapper.cfbundle</string>
+			<key>includeInIndex</key>
+			<string>0</string>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>path</key>
+			<string>HostValidation.xctest</string>
+			<key>sourceTree</key>
+			<string>BUILT_PRODUCTS_DIR</string>
+		</dict>
+		<key>E98E00000000000000000214</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>E98E00000000000000000211</string>
+				<string>E98E00000000000000000212</string>
+			</array>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>path</key>
+			<string>../HostValidation</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000220</key>
+		<dict>
+			<key>containerPortal</key>
+			<string>504EC2FC1FED79650016851F</string>
+			<key>isa</key>
+			<string>PBXContainerItemProxy</string>
+			<key>proxyType</key>
+			<string>1</string>
+			<key>remoteGlobalIDString</key>
+			<string>504EC3031FED79650016851F</string>
+			<key>remoteInfo</key>
+			<string>App</string>
+		</dict>
+		<key>E98E00000000000000000221</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXTargetDependency</string>
+			<key>target</key>
+			<string>504EC3031FED79650016851F</string>
+			<key>targetProxy</key>
+			<string>E98E00000000000000000220</string>
+		</dict>
+		<key>E98E00000000000000000230</key>
+		<dict>
+			<key>buildConfigurationList</key>
+			<string>E98E00000000000000000240</string>
+			<key>buildPhases</key>
+			<array>
+				<string>E98E00000000000000000232</string>
+				<string>E98E00000000000000000231</string>
+				<string>E98E00000000000000000233</string>
+			</array>
+			<key>buildRules</key>
+			<array/>
+			<key>dependencies</key>
+			<array>
+				<string>E98E00000000000000000221</string>
+			</array>
+			<key>isa</key>
+			<string>PBXNativeTarget</string>
+			<key>name</key>
+			<string>HostValidation</string>
+			<key>productName</key>
+			<string>HostValidation</string>
+			<key>productReference</key>
+			<string>E98E00000000000000000213</string>
+			<key>productType</key>
+			<string>com.apple.product-type.bundle.unit-test</string>
+		</dict>
+		<key>E98E00000000000000000231</key>
+		<dict>
+			<key>buildActionMask</key>
+			<string>2147483647</string>
+			<key>files</key>
+			<array/>
+			<key>isa</key>
+			<string>PBXFrameworksBuildPhase</string>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<string>0</string>
+		</dict>
+		<key>E98E00000000000000000232</key>
+		<dict>
+			<key>buildActionMask</key>
+			<string>2147483647</string>
+			<key>files</key>
+			<array>
+				<string>E98E00000000000000000201</string>
+				<string>E98E00000000000000000202</string>
+			</array>
+			<key>isa</key>
+			<string>PBXSourcesBuildPhase</string>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<string>0</string>
+		</dict>
+		<key>E98E00000000000000000233</key>
+		<dict>
+			<key>buildActionMask</key>
+			<string>2147483647</string>
+			<key>files</key>
+			<array/>
+			<key>isa</key>
+			<string>PBXResourcesBuildPhase</string>
+			<key>runOnlyForDeploymentPostprocessing</key>
+			<string>0</string>
+		</dict>
+		<key>E98E00000000000000000240</key>
+		<dict>
+			<key>buildConfigurations</key>
+			<array>
+				<string>E98E00000000000000000241</string>
+			</array>
+			<key>defaultConfigurationIsVisible</key>
+			<string>0</string>
+			<key>defaultConfigurationName</key>
+			<string>Debug</string>
+			<key>isa</key>
+			<string>XCConfigurationList</string>
+		</dict>
+		<key>E98E00000000000000000241</key>
+		<dict>
+			<key>buildSettings</key>
+			<dict>
+				<key>BUNDLE_LOADER</key>
+				<string>$(TEST_HOST)</string>
+				<key>CODE_SIGN_STYLE</key>
+				<string>Manual</string>
+				<key>GENERATE_INFOPLIST_FILE</key>
+				<string>YES</string>
+				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
+				<string>15.0</string>
+				<key>LD_RUNPATH_SEARCH_PATHS</key>
+				<array>
+					<string>$(inherited)</string>
+					<string>@executable_path/Frameworks</string>
+					<string>@loader_path/Frameworks</string>
+				</array>
+				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
+				<string>app.gugu.chat.HostValidation</string>
+				<key>PRODUCT_NAME</key>
+				<string>$(TARGET_NAME)</string>
+				<key>SDKROOT</key>
+				<string>iphonesimulator</string>
+				<key>SKIP_INSTALL</key>
+				<string>YES</string>
+				<key>SUPPORTED_PLATFORMS</key>
+				<string>iphonesimulator</string>
+				<key>SWIFT_ACTIVE_COMPILATION_CONDITIONS</key>
+				<string>DEBUG</string>
+				<key>SWIFT_VERSION</key>
+				<string>5.0</string>
+				<key>TARGETED_DEVICE_FAMILY</key>
+				<string>1</string>
+				<key>TEST_HOST</key>
+				<string>$(BUILT_PRODUCTS_DIR)/App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/App</string>
+			</dict>
+			<key>isa</key>
+			<string>XCBuildConfiguration</string>
+			<key>name</key>
+			<string>Debug</string>
+		</dict>
+		<key>E98E00000000000000000300</key>
+		<dict>
+			<key>children</key>
+			<array>
+				<string>E98E00000000000000000301</string>
+				<string>E98E00000000000000000302</string>
+				<string>E98E00000000000000000303</string>
+				<string>E98E00000000000000000304</string>
+				<string>E98E00000000000000000305</string>
+			</array>
+			<key>isa</key>
+			<string>PBXGroup</string>
+			<key>path</key>
+			<string>../PushNotifications</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000301</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>Sources/GuguPushNotifications/GuguPushTypes.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000302</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>Sources/GuguPushNotifications/GuguPushClient.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000303</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>Sources/GuguPushNotifications/GuguPushRPCProvider.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000304</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>Sources/GuguPushNotifications/GuguUNPushPlatform.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000305</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguPushNotificationsPlugin.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>E98E00000000000000000401</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000301</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000402</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000302</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000403</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000303</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000404</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000304</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>E98E00000000000000000405</key>
+		<dict>
+			<key>fileRef</key>
+			<string>E98E00000000000000000305</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>F0F3D60A8BCDE5BF617B85EC</key>
+		<dict>
+			<key>buildConfigurations</key>
+			<array>
+				<string>6E5A326256C7A0D28B8038B5</string>
+			</array>
+			<key>defaultConfigurationIsVisible</key>
+			<string>0</string>
+			<key>defaultConfigurationName</key>
+			<string>Debug</string>
+			<key>isa</key>
+			<string>XCConfigurationList</string>
+		</dict>
+		<key>F1B8D5CD166D0BEB1316D3BB</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSBackendNetwork.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+		<key>F5011D58E7744A0E34D4CE2E</key>
+		<dict>
+			<key>fileRef</key>
+			<string>2AD65DA52429ACD8EB83E3D3</string>
+			<key>isa</key>
+			<string>PBXBuildFile</string>
+		</dict>
+		<key>FA0A23259A9172732685CEAD</key>
+		<dict>
+			<key>isa</key>
+			<string>PBXFileReference</string>
+			<key>lastKnownFileType</key>
+			<string>sourcecode.swift</string>
+			<key>path</key>
+			<string>GuguIOSLocalAppSettings.swift</string>
+			<key>sourceTree</key>
+			<string>&lt;group&gt;</string>
+		</dict>
+	</dict>
+	<key>rootObject</key>
+	<string>504EC2FC1FED79650016851F</string>
+</dict>
+</plist>
