@@ -35,6 +35,8 @@ import { markNativeConversationVisible, nativeConversationUnread, nativeOwnerNot
 import { readTaskExchanges, watchTaskExchanges, unwatchTaskExchanges } from './task-exchanges';
 import type { TaskExchangeRequest } from '@shared/core/sessions/task-collaboration';
 import { windowLiveReadRequestSchema, windowLiveAckRequestSchema } from '@gugu/session-wire/session-window-live';
+import { windowProjectionReadRequestSchema, windowProjectionBodyReadRequestSchema } from '@gugu/session-wire/session-window-projection';
+import { readWindowProjection, readWindowProjectionBody } from './window-projection-production';
 import { taskExchangeChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
 
 /**
@@ -100,7 +102,9 @@ function liveOwned<I extends { subscriptionId: string }, V>(sender: number, inpu
   const checked = schema.safeParse(input);
   if (!checked.success || !owned.get(sender)?.windows.has(checked.data.subscriptionId))
     return Promise.resolve({ ok: false as const, error: { code: 'invalid_subscription', message: 'Invalid window request or connection owner' } });
-  return read(checked.data);
+  const token = owned.get(sender)!.windows.get(checked.data.subscriptionId);
+  return read(checked.data).then(result => owned.get(sender)?.windows.get(checked.data.subscriptionId) === token ? result
+    : { ok: false as const, error: { code: 'invalid_subscription', message: 'Window connection owner changed' } });
 }
 
 function trimmed<T>(result: service.SessionTimelineResult<T>, trim: boolean | undefined, cut: (value: T) => T) {
@@ -140,6 +144,10 @@ export const sessionTimelineController = createRPCController({
   sessionWindowSnapshot: (input: SessionpageSessionSnapshotRequest) => service.windowSnapshot(input),
   sessionWindowLiveRead: withSender((sender: number, input: unknown) => liveOwned(sender, input, windowLiveReadRequestSchema, service.windowLiveRead)),
   sessionWindowLiveAck: withSender((sender: number, input: unknown) => liveOwned(sender, input, windowLiveAckRequestSchema, service.windowLiveAck)),
+  sessionWindowProjectionRead: withSender((sender: number, input: unknown) => liveOwned(sender, input, windowProjectionReadRequestSchema,
+    value => readWindowProjection(() => service.windowProjectionOwner(value), value))),
+  sessionWindowProjectionBodyRead: withSender((sender: number, input: unknown) => liveOwned(sender, input, windowProjectionBodyReadRequestSchema,
+    value => readWindowProjectionBody(() => service.windowProjectionOwner(value), value))),
   sessionWindowAfter: (input: SessionpageSessionAfterRequest) => service.windowAfter(input),
   sessionWindowOlder: (input: SessionpageSessionOlderRequest) => service.windowOlder(input),
   sessionBody: (input: SessionpageSessionBodyReadRequest) => service.body(input),
