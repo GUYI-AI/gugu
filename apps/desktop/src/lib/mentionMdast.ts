@@ -3,12 +3,11 @@
 //
 // owner 铁律:群内定向消息的每个路由收件人必须恰好一个可见表达(正文高亮 XOR 气泡兜底徽标),绝不「都没有」= 寻址
 // 静默消失。三条约束一并满足:
-//  · 不可伪造(019 二审破口①):背书真源 = to_user_ids,不是用户可手打的 markdown 串。marker = **每次渲染唯一 nonce**
-//    (`#ggm-<uuid>`,见 useMentionRender),发消息者无从预知 → 无法伪造 data-mention。
+//  · 不可伪造(019 二审破口①):背书真源 = to_user_ids。marker用接收端随机nonce，按完整正文/路由/名字缓存；
+//    改正文伪造旧marker会换缓存key和nonce，发消息者不能预知新nonce。
 //  · 判定 ≡ 渲染(019 二审破口②):高亮名单 = 把**注入后的最终内容**再解析一遍(survivingMarkedNames)收集真正存活为
 //    本次 marker link 的名字 = 渲染真相。`\@X` 注入后被反斜杠转义破坏 link → 不存活 → 走兜底,不会误判可高亮而静默丢。
-//  · 缓存安全:Streamdown 按块内容字符串缓存渲染块、无视 remarkPlugins 状态;nonce 令注入后内容每次挂载唯一 →
-//    缓存 key 不同 → 同 body 不同路由不串味(返工初版靠插件按 backedMentions 选择性切,命中该缓存盲区、会串味)。
+//  · 缓存安全:Streamdown按内容缓存、无视插件状态。不同路由/名字各有随机nonce，注入内容不同；同一完整key回访复用。
 // link/inline-code/code-fence/image 里的 @X 不进注入(见 findInjectableMentionSpans)→ 走兜底徽标。
 
 import { markdownMentionReferences, parseMarkdown } from '@gugu/session-shared/markdown/dialect'
@@ -22,8 +21,8 @@ export type MdNode = {
   position?: { start: { offset?: number }; end: { offset?: number } }
 }
 
-// @@@2017 019f64ea 二审:@提及标记链接的 url 前缀。**完整 marker = 前缀 + 每次渲染唯一的 nonce**(见 mentionRenderModel
-// 由 crypto.randomUUID 每个 Markdown 实例生成)。为什么带 nonce:固定 marker(旧 `#gg-mention`)是用户可在正文
+// @@@2017 019f64ea 二审:@提及标记链接的 url 前缀。**完整 marker = 前缀 + 每个完整渲染模型的随机nonce**(见 mentionRenderModel
+// 由crypto.randomUUID在接收端生成，精确模型缓存可跨挂载复用)。为什么带 nonce:固定 marker(旧 `#gg-mention`)是用户可在正文
 // 手打的 markdown 串 → `[@X](#gg-mention)` 能伪造 data-mention、绕过 to_user_ids 背书(019 抓到的破口①)。nonce 在接收端
 // 渲染时才生成,发消息者写正文时无从预知 → 无法伪造。components.a 仅当 href===本次 nonce marker 才渲 mention;其余
 // `#ggm-*`(非本 nonce / 陈旧 / 伪造)一律中和成纯文本。纯 # 片段,过 rehype-sanitize。
@@ -58,6 +57,7 @@ export function findInjectableMentionSpans(content: string, names: readonly stri
   if (!content) return []
   const uniq = names.filter((n, i) => Boolean(n) && names.indexOf(n) === i)
   if (uniq.length === 0) return []
+  if (findMentionSpans(content, uniq).length === 0) return []
 
   const tree = parseMarkdown(content) as unknown as MdNode
   const spans: InjectableMentionSpan[] = []
@@ -105,7 +105,7 @@ export function displayAgentReferences(content: string, addressed?: (id: string,
 }
 
 // @@@2017 把被背书的 @token 就地包成标记链接 `[@Name](marker)`(marker = 本次渲染唯一 nonce),交给 Streamdown 前完成
-// → 缓存安全(nonce 令每次挂载内容唯一,不串味)+ 免疫 markdown 对昵称的拆解 + 不可伪造(用户不知 nonce)。
+// → 缓存安全(不同寻址模型的随机nonce令内容不同，不串味)+ 免疫 markdown 对昵称的拆解 + 不可伪造(用户不知 nonce)。
 // 倒序 splice 保留靠前区间偏移。names 空 / 无命中 → 原样返回(零改动、零开销)。
 export function injectBackedMentions(content: string, names: readonly string[], marker: string): string {
   const spans = findInjectableMentionSpans(content, names)

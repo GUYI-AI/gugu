@@ -140,13 +140,13 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
       return item ? decorate(item) : null
     },
   }), [isGroupChat, whisperTarget, members, agentStatuses, decorate, localProvider, t, chatId, currentUserId, messages, participantIds, projectMemberIds, quoteContent?.messageId])
-  const { dataDropTypes, onDataDropped, invitation } = useChatTaskDrop({ chatId, isGroupChat: isGroupChat && !mobile, groupMembers, provider: mentionProvider, editorApiRef, enabled: !hidden && !disabled })
   const receiveInput = useCallback((element: HTMLElement | null) => { inputRef.current = element }, [])
   const enqueueFiles = useCallback((files: File[]) => {
     const picked = fileSelection.choose(files)
     if (picked.length) setAttachments((pending) => [...pending, ...picked.map(({ file, id }) => makePendingAttachment(file, id))])
     return picked
   }, [fileSelection, setAttachments])
+  const { dataDropTypes, onDataDropped, onDirectoriesDropped, invitation } = useChatTaskDrop({ chatId, isGroupChat: isGroupChat && !mobile, groupMembers, provider: mentionProvider, editorApiRef, enabled: !hidden && !disabled, attachFiles: enqueueFiles })
   // 照片 / 拍摄先原样进附件区,压完按 id 换成压缩件:这期间发送、删除、切会话都找不到这个 id,换不到别处去。
   const enqueuePhotos = useCallback((files: File[]) => {
     for (const { file, id } of enqueueFiles(files)) {
@@ -229,7 +229,7 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
           placeholder={props.conversation ? undefined : phoneTask.placeholder ?? (whisperTarget ? t('composer.whisperPlaceholder', { name: whisperTarget.displayName }) : placeholder ?? (mobile && isGroupChat ? t('composer.mobilePlaceholder') : projectName && !mobile ? t('composer.projectGroupPlaceholder', { name: projectName }) : t('composer.placeholder')))}
           onInputChange={setText} onSubmitWhileWorking={props.conversation ? handleSend : undefined} onSubmit={value => phoneTask.active ? phoneTask.send(value) : handleSend(value)} onMentionInsert={onMentionInsert}
           mentionProvider={mentionProvider} renderMentionIcon={renderMentionIcon} queryCommands={queryPrompts} dataDropTypes={dataDropTypes} onDataDropped={onDataDropped}
-          onFilesDropped={enqueueFiles} onImageFilesDropped={enqueueFiles}
+          onFilesDropped={enqueueFiles} onImageFilesDropped={enqueueFiles} onDirectoriesDropped={onDirectoriesDropped}
           attachments={composerAttachments} onAttachmentsChange={(next) => { const kept = attachments.filter((file) => next.some((item) => item.id === file.id)); revokeAttachmentPreviewUrls(attachments.filter((file) => !kept.includes(file))); setAttachments(kept) }}
           onAttachmentQualityChange={(id) => setAttachments((pending) => pending.map((item) => item.id === id && item.photo ? { ...item, file: item.file === item.photo.compressed ? item.photo.original : item.photo.compressed } : item))}
           toolbarExtra={<>{mobile

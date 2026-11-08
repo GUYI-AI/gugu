@@ -1497,7 +1497,8 @@ async function moveTo(entry, folderId) {
   try {
     await gugu.files.move(entry, { folder: folderId ?? '' })
   } catch (error) {
-    showBanner(error.code === 'name-taken' ? fmt(state.t.nameTaken, { name: entry.name }) : failureText(error), 'error')
+    // Not moved: the row stays where it is, with the banner saying why.
+    return showBanner(error.code === 'name-taken' ? fmt(state.t.nameTaken, { name: entry.name }) : failureText(error), 'error')
   }
   if (inWorkspace()) await readAgain(entry, folderId ?? '')
   await refreshList()
@@ -1852,7 +1853,7 @@ function listItem(entry, now = new Date(Date.now())) {
       if (isLink) event.dataTransfer?.setData('text/uri-list', text)
       // Into a session's composer or terminal: the path where its agent runs, as the host's own drags carry it.
       if (entry.absolutePath && entry.workspaceId) {
-        event.dataTransfer?.setData('application/x-emdash-workspace-file', JSON.stringify({ workspaceId: entry.workspaceId, targetPath: entry.absolutePath }))
+        event.dataTransfer?.setData('application/x-emdash-workspace-file', JSON.stringify({ projectId: entry.projectId, workspaceId: entry.workspaceId, targetPath: entry.absolutePath, ...(folder ? { directory: true } : {}) }))
         event.dataTransfer?.setData('text/plain', entry.absolutePath)
       }
     })
