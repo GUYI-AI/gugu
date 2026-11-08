@@ -54,4 +54,63 @@ try session.commitMainWrite(write!.get()) {
     stored = .init(ownerId: other, accessToken: "synthetic-b", expiresAt: Date(timeIntervalSince1970: 2000))
 }
 check(rejects { _ = try session.retirementCredentials(second, expectedBinding: binding) }, "new stored owner cannot revive previous retirement access")
+var scopeStored: GuguIOSStoredSession? = .init(ownerId: owner, accessToken: "synthetic-scope", expiresAt: Date(timeIntervalSince1970: 2000))
+var scopeLocal: [(Result<Void, Error>) -> Void] = []
+var scopeExternal: [(GuguIOSRetirementAccess?, (Result<Void, Error>) -> Void)] = []
+let scoped = GuguIOSOwnerSession(readStored: { scopeStored }, installationId: { installation },
+    verifyUser: { _, done in done(.success(owner)) }, stopNative: { scopeLocal.append($0) },
+    retireExternal: { access, done in scopeExternal.append((access, done)) }, now: { now })
+scoped.publish(ownerId: owner, accessToken: "synthetic-scope") { published = $0 }
+var stopped: Result<Void, Error>?
+scoped.retire(expectedOwnerId: owner) { stopped = $0 }
+check(scopeExternal.isEmpty && scopeLocal.count == 1, "publication stop does not permanently close the still-committed Auth session")
+scopeLocal[0](.success(()))
+scoped.publish(ownerId: owner, accessToken: "synthetic-scope") { published = $0 }
+check(success(stopped) && success(published), "ordinary publication stop supports re-verifying the same saved login")
+var pending: Result<GuguIOSMainWritePermit, Error>?
+scoped.prepareMainWrite(nextOwnerId: nil) { pending = $0 }
+scopeExternal[0].1(.success(())); scopeLocal[1](.success(()))
+let pendingPermit = try pending!.get()
+check(rejects { try scoped.commitMainWrite(pendingPermit) { throw GuguHostFailure(code: "fixture_io", message: "synthetic") } }, "failed Keychain persistence preserves the original storage intent")
+scoped.retire(expectedOwnerId: owner) { stopped = $0 }
+check(scopeExternal.count == 2 && scopeExternal[1].0 != nil, "stop retry retains required server cleanup for the pending storage intent")
+scopeExternal[1].1(.success(())); scopeLocal[2](.success(()))
+scoped.publish(ownerId: owner, accessToken: "synthetic-scope") { published = $0 }
+check(success(stopped) && !success(published), "successful stop cannot bypass a failed credential-write retirement latch")
+func jwt(_ sessionId: String, _ nonce: String) throws -> String {
+    let data = try JSONSerialization.data(withJSONObject: ["sub": owner, "session_id": sessionId, "nonce": nonce])
+    return "fixture." + data.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "") + ".synthetic"
+}
+let s1 = "55555555-5555-4555-8555-555555555555"
+let s2 = "66666666-6666-4666-8666-666666666666"
+let t1 = try jwt(s1, "initial"), refreshed = try jwt(s1, "refresh"), t2 = try jwt(s2, "replacement")
+var authStored: GuguIOSStoredSession? = .init(ownerId: owner, accessToken: t1, expiresAt: Date(timeIntervalSince1970: 2000))
+var authExternal: [(GuguIOSRetirementAccess?, (Result<Void, Error>) -> Void)] = []
+var authLocal: [(Result<Void, Error>) -> Void] = []
+let auth = GuguIOSOwnerSession(readStored: { authStored }, installationId: { installation },
+    verifyUser: { _, done in done(.success(owner)) }, stopNative: { authLocal.append($0) },
+    retireExternal: { cap, done in authExternal.append((cap, done)) }, now: { now })
+var authWrite: Result<GuguIOSMainWritePermit, Error>?
+auth.prepareMainWrite(nextOwnerId: owner, nextAccessToken: refreshed) { authWrite = $0 }
+check(success(authWrite) && authExternal.isEmpty && authLocal.isEmpty, "same-session refresh before publication does not close its Auth session")
+try auth.commitMainWrite(authWrite!.get()) { authStored = .init(ownerId: owner, accessToken: refreshed, expiresAt: Date(timeIntervalSince1970: 2000)) }
+auth.publish(ownerId: owner, accessToken: refreshed) { published = $0 }
+check(success(published), "refreshed access is usable only after fresh server identity verification")
+authWrite = nil
+auth.prepareMainWrite(nextOwnerId: owner, nextAccessToken: t2) { authWrite = $0 }
+check(authWrite == nil && authExternal.count == 1 && authLocal.count == 1, "same owner with a new Auth session starts both retirement barriers")
+let authCap = authExternal[0].0!
+check(try auth.retirementCredentials(authCap, expectedBinding: binding).originalSessionId() == s1, "session replacement cleanup retains the original JWT session scope")
+check(rejects { _ = try auth.credentials(expectedBinding: binding) }, "session replacement seals ordinary credentials before cleanup")
+authExternal[0].1(.success(()))
+check(authWrite == nil && authStored?.accessToken == refreshed, "server cleanup alone cannot commit replacement credentials")
+authLocal[0](.success(()))
+try auth.commitMainWrite(authWrite!.get()) { authStored = .init(ownerId: owner, accessToken: t2, expiresAt: Date(timeIntervalSince1970: 2000)) }
+auth.publish(ownerId: owner, accessToken: t2) { published = $0 }
+check(try success(published) && auth.credentials(expectedBinding: binding).originalSessionId() == s2, "new session publishes after cleanup and committed storage")
+let t2refresh = try jwt(s2, "refreshed")
+auth.prepareMainWrite(nextOwnerId: owner, nextAccessToken: t2refresh) { authWrite = $0 }
+check(authExternal.count == 1 && authLocal.count == 1 && success(authWrite), "published same-session token refresh preserves push registration")
+check(rejects { try auth.commitMainWrite(authWrite!.get()) { authStored = .init(ownerId: owner, accessToken: t1, expiresAt: Date(timeIntervalSince1970: 2000)) } }, "storage permit rejects a different same-owner token than the prepared write")
+check(rejects { _ = try auth.credentials(expectedBinding: binding) }, "mismatched write readback stays sealed")
 print("SUMMARY \(count) retirement policy checks; synthetic credentials only; no Keychain/HTTP/APNs/App")

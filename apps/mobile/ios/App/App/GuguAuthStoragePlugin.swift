@@ -20,7 +20,7 @@ public final class GuguAuthStoragePlugin: CAPPlugin, CAPBridgedPlugin {
         let id = UUID()
         let key: String
         let value: String
-        let owner: String?
+        let session: GuguIOSStoredSession?
         let call: CAPPluginCall
     }
     private var writes: [PendingWrite] = []
@@ -72,11 +72,11 @@ public final class GuguAuthStoragePlugin: CAPPlugin, CAPBridgedPlugin {
     @objc public func write(_ call: CAPPluginCall) {
         guard let key = key(call) else { return }
         guard let value = call.getString("value") else { call.reject("Missing storage value"); return }
-        let owner: String?
-        do { owner = key == "sb-main" ? try GuguIOSOwnerKeychain.ownerForMainWrite(value) : nil }
+        let session: GuguIOSStoredSession?
+        do { session = key == "sb-main" ? try GuguIOSOwnerKeychain.decode(Data(value.utf8)) : nil }
         catch { call.reject("Invalid main auth envelope", "AUTH_STORAGE_INVALID"); return }
         queue.async {
-            self.writes.append(PendingWrite(key: key, value: value, owner: owner, call: call))
+            self.writes.append(PendingWrite(key: key, value: value, session: session, call: call))
             self.startNextWrite()
         }
     }
@@ -105,7 +105,7 @@ public final class GuguAuthStoragePlugin: CAPPlugin, CAPBridgedPlugin {
             }
         }
         if pending.key == "sb-main", let ownerSession {
-            ownerSession.prepareMainWrite(nextOwnerId: pending.owner) { prepared($0.map { Optional.some($0) }) }
+            ownerSession.prepareMainWrite(nextOwnerId: pending.session?.ownerId, nextAccessToken: pending.session?.accessToken) { prepared($0.map { Optional.some($0) }) }
         } else { prepared(.success(nil)) }
     }
 
