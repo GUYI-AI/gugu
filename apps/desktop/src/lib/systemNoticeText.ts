@@ -8,6 +8,9 @@ import { markdownPlainText } from './markdownPlainText'
 // @@@system-notice-text A system row in the reader's language. The server stores one Chinese sentence in content for
 // agents and old clients; the marker says what kind of row it is (systemNotice.ts), so old rows read right too. Only
 // the names, and for member-managed which sentence, come from content. A sentence not recognised stays as written.
+// The sentences matched here are written by these gugu-supabase functions: member-joined by chat.insert_group_member,
+// agent-flood by chat.apply_agent_flood_rule and chat.enforce_agent_flood_passive, member-managed (left / removed /
+// made admin / admin revoked) by chat.announce_group_management, topic-opened by chat.create_topic.
 const say = (key: Parameters<typeof i18n.t>[0], values?: Record<string, string>) => i18n.t(key, { ns: 'messaging', ...values })
 
 const JOINED = ' 加入了群聊'

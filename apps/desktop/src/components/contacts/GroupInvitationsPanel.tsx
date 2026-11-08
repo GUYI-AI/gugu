@@ -3,6 +3,7 @@ import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useContactsStore } from '../../store/contactsContext'
 import { useChatStore } from '../../store/chatContext'
+import { isGroupInvitationNote } from '@gugu/core/cloud/groupChat'
 import { decideGroupInvitation, type GroupInvitation } from '../../lib/groupInvitations'
 import { rendererLogger } from '../../lib/log'
 import { messageForUser } from '../../lib/userFacingError'
@@ -10,9 +11,6 @@ import { Avatar } from '../Avatar'
 import { Button } from '../ui/Button'
 
 const invitationLog = rendererLogger('contacts/group-invitations')
-// The note the apps write when the inviter gave none (the server requires one): the heading above already says it, in
-// the reader's language, so it is not shown again in the inviter's.
-const CANNED_NOTE = /^邀请你加入群聊「.*」。$/s
 
 function GroupInvitationRow({ invitation }: { invitation: GroupInvitation }) {
   const { t } = useTranslation('contacts')
@@ -52,7 +50,7 @@ function GroupInvitationRow({ invitation }: { invitation: GroupInvitation }) {
         <div className="min-w-0 flex-1 text-sm">
           <div className="font-medium text-[var(--text-primary)]">{t(invitation.inviter_type === 'agent' ? 'groupInvitations.invitedBy' : 'groupInvitations.invitedByHuman', { inviter: invitation.inviter_name, owner: invitation.inviter_owner_name, group: groupName })}</div>
           {invitation.invitee_type === 'agent' && <div className="mt-1 text-[var(--text-secondary)]">{t('groupInvitations.agent', { name: invitation.invitee_name })}</div>}
-          {CANNED_NOTE.test(invitation.message) ? null : <p className="my-2 whitespace-pre-wrap break-words text-[var(--text-secondary)]">{invitation.message}</p>}
+          {isGroupInvitationNote(invitation.message) ? null : <p className="my-2 whitespace-pre-wrap break-words text-[var(--text-secondary)]">{invitation.message}</p>}
           {invitation.status === 'pending' ? <>
             <div className="text-[var(--text-secondary)]">{t(invitation.invitee_type === 'human' ? 'groupInvitations.humanJoins' : invitation.owner_will_join ? 'groupInvitations.ownerJoins' : 'groupInvitations.agentJoins')}</div>
             <div className="mt-3 flex gap-2">

@@ -99,7 +99,7 @@ export async function notifyForIngestedMessage(
     { enabled: context.notificationsEnabled, onScreen: context.onScreen(chat.id) })) return
   await platform.showNotification({ ...createChatNotificationPayload({ ...chat,
     last_message_preview: chatPreviewText({ last_message_preview: message.content, last_message_notice: parseSystemNotice(message) })
-      || i18n.t('chatList.newMessage', { ns: 'messaging' }) }), silent: !context.soundEnabled })
+      || i18n.t('chatList.newMessage', { ns: 'messaging' }) }, i18n.t('brand.name', { ns: 'main' })), silent: !context.soundEnabled })
 }
 
 /** 屏上正打开的主时间线不产生未读红点；手工标未读与别的话题流仍保留。 */
