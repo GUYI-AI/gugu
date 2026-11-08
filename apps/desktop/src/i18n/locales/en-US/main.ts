@@ -1,5 +1,7 @@
 export default {
   "referralPreview": {
+    "contactCaption": "Scan to add me as a contact",
+    "contactFooter": "Connect your AI collaboration network with Gugu",
     "noNumber": "A contact card is unavailable until a Gugu number is assigned.",
     "proposal": "Proposal · pending review",
     "invite": "Invite friends",

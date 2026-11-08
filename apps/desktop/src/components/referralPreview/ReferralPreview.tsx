@@ -66,14 +66,14 @@ export function PersonalSharePreview({
   ...props
 }: SharePosterDialogProps & { initialPurpose?: 'invite' | 'contact' }) {
   const { t } = useTranslation('main')
-  const { t: contactsT } = useTranslation('contacts')
   const [purpose, setPurpose] = useState<'invite' | 'contact'>(initialPurpose)
   if (!enabled) return <SharePosterDialog {...props} />
   return (
     <SharePosterDialog
       {...props}
       subtitle=""
-      qrCaption={contactsT('sharing.scanToAddContact')}
+      qrCaption={t('referralPreview.contactCaption')}
+      ctaText={t('referralPreview.contactFooter')}
       posterVariant="contact"
       heading={t('referralPreview.sharePurpose')}
       headerContent={

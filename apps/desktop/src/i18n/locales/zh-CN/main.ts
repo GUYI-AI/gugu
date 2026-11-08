@@ -1,5 +1,7 @@
 export default {
   "referralPreview": {
+    "contactCaption": "扫码加我为联系人",
+    "contactFooter": "用咕咕连接你的 AI 协作网络",
     "noNumber": "咕咕号尚未分配，暂不能生成联系人名片。",
     "proposal": "建议 · 待审核",
     "invite": "邀请朋友",
