@@ -23,8 +23,8 @@ function freezePage(page: WindowCommitPage): WindowCommitPage {
 
 /** Uses only the public wire. The IPC binding supplies the real generated API;
  * the history owner invalidates isCurrent before releasing its subscription. */
-export function createAcpWindowLiveClient(
-  input: { conversationId: string; subscriptionId: string }, api: WindowLiveApi, isCurrent: () => boolean,
+export function createAcpWindowLiveReadClient(
+  input: { conversationId: string; subscriptionId: string }, api: Pick<WindowLiveApi, 'read' | 'ack'>, isCurrent: () => boolean,
 ) {
   const owner = Object.freeze({ ...input });
   const current = () => { if (!isCurrent()) throw fault('unsubscribed', 'The history view was released'); };
@@ -45,6 +45,17 @@ export function createAcpWindowLiveClient(
       const response = await api.ack(request); current();
       decode(windowLiveAckResultSchema, response);
     },
+  };
+}
+
+/** Position is bound only when the host actually provides that endpoint. */
+export function createAcpWindowLiveClient(
+  input: { conversationId: string; subscriptionId: string }, api: WindowLiveApi, isCurrent: () => boolean,
+) {
+  const owner = Object.freeze({ ...input });
+  const current = () => { if (!isCurrent()) throw fault('unsubscribed', 'The history view was released'); };
+  return {
+    ...createAcpWindowLiveReadClient(owner, api, isCurrent),
     async position(referenceId: string, appliedCursor: WindowLiveCursor): Promise<WindowLivePositionResult> {
       current();
       const request = windowLivePositionRequestSchema.parse({ ...owner, referenceId, appliedCursor });

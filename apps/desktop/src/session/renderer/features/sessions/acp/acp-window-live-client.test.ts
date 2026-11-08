@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { WindowCommitPage, WindowLiveApi, WindowLiveCursor, WindowLivePositionResult } from '@gugu/session-wire/session-window-live';
-import { createAcpWindowLiveClient } from './acp-window-live-client';
+import { createAcpWindowLiveClient, createAcpWindowLiveReadClient } from './acp-window-live-client';
 import { startAcpWindowCommitReader } from './acp-window-commit-reader';
 
 const at = (sequence: number): WindowLiveCursor => ({ workerEpoch: 'worker', storeEpoch: 'store', sequence });
@@ -16,6 +16,14 @@ function fixture() {
 }
 
 describe('public committed-history client', () => {
+  it('binds a Read/ACK-only host without inventing a Position capability', async () => {
+    const f = fixture(); f.api.read.mockResolvedValue({ ok: true, value: page(4) }); f.api.ack.mockResolvedValue({ ok: true, value: undefined });
+    const client = createAcpWindowLiveReadClient(f.owner, { read: f.api.read, ack: f.api.ack }, () => true);
+    expect(client).not.toHaveProperty('position');
+    const value = await client.read(at(3)); await client.ack(value.next);
+    expect(f.api.ack).toHaveBeenCalledWith({ ...f.owner, through: at(4) });
+  });
+
   it('snapshots the same opening owner and exact Prepare cursor before awaiting, and freezes the delivered page', async () => {
     const f = fixture(), after = at(3), pending = Promise.withResolvers<Awaited<ReturnType<WindowLiveApi['read']>>>();
     f.api.read.mockReturnValue(pending.promise);
