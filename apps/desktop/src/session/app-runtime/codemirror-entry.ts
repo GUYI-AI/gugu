@@ -21,6 +21,7 @@ import { diffHunks, mergeThreeWay } from './apply-from';
 import { guguError } from './host';
 import { imeHold, keepCaretAboveKeyboard, sameLineHold } from './ime-hold';
 import { internals } from './open-file';
+import { leftCarets } from './remote-carets';
 
 /**
  * `/_gugu/<ver>/codemirror.js` — the platform's pinned CodeMirror 6, and the one-line binding.
@@ -148,6 +149,11 @@ export function bindCodemirror(view: unknown, file: unknown, verbs?: PictureVerb
     undoManager = new Y.UndoManager(text);
     return [
       yCollab(text, inner.awareness, { undoManager }),
+      leftCarets(text, inner.awareness, () => inner.connected),
+      // A collaborator's name on their caret, in the editor's own type rather than the library's serif.
+      EditorView.theme({
+        '.cm-ySelectionInfo': { fontFamily: 'inherit', fontWeight: '500', padding: '1px 4px' },
+      }),
       // Undo only undoes this person's typing; ahead of any history() the App's setup brought.
       Prec.highest(keymap.of(yUndoManagerKeymap)),
       EditorState.readOnly.of(inner.readOnly),

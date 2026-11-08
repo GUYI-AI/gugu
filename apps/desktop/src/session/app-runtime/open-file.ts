@@ -51,6 +51,8 @@ export interface FileInternals {
   readonly text: Y.Text;
   readonly awareness: NonNullable<HocuspocusProvider['awareness']>;
   readonly readOnly: boolean;
+  /** The file's connection is up: a presence that goes now is someone leaving, not this page going offline. */
+  readonly connected: boolean;
   onSwap(handler: () => void): () => void;
   /** Hold the open file's incoming updates until the returned release (IME commit window; `SyncLink.hold`). */
   holdRemote(): () => void;
@@ -93,6 +95,8 @@ const RETRY_MAX_MS = 30_000;
 const WILL_DELAY_MS = 200;
 /** A paused file's changes wait in the provider's batch for this long (F71): the longest timer there is, never reached. */
 const HELD_MS = 2 ** 31 - 1;
+/** How long a program that put out a caret waits, closing, for its write to be confirmed (`caretNotSeenYet`). */
+const CARET_SEEN_MS = 2_000;
 /** Reopens at a new epoch in a row with no sync between them (refused as stale each time): one more and the file is gone. */
 const MAX_REOPENS = 3;
 /**
@@ -203,6 +207,11 @@ export class OpenFile {
   /** Reopening at a new epoch (a compaction, 摩擦单 F71): one at a time; a close meanwhile waits for it (`closeAfterSwap`). */
   private reopening = false;
   private closeAfterSwap = false;
+  /** A program's close waiting for its write to be confirmed (`caretNotSeenYet`): called, it stops waiting. */
+  private stopWaiting: (() => void) | null = null;
+  private waited = false;
+  /** The close that waited asked for a will even online (`close(true)`, after a swap). */
+  private willOnClose = false;
   readonly self: Peer;
 
   constructor(
@@ -227,6 +236,8 @@ export class OpenFile {
   handle(): object {
     // Opened again while a close waited for a swap: it stays open.
     this.closeAfterSwap = false;
+    this.stopWaiting?.();
+    this.waited = this.willOnClose = false;
     const handle: Handle = { closed: false, off: new Set() };
     this.handles.add(handle);
     const file = this.type === 'json' ? this.makeJsonFile(handle) : this.makeTextFile(handle);
@@ -381,7 +392,7 @@ export class OpenFile {
     provider.awareness?.on('change', () => {
       if (this.provider === provider) this.emitPresence();
     });
-    // Nor is it anyone in the file for the others: no local presence state at all.
+    // Nor is it anyone in the file for the others until it writes (`programWrote`): no local presence state.
     if (this.host.program) provider.awareness?.setLocalState(null);
     // Who this page is, as the file service says once it has authenticated this document connection:
     // the same stamp it puts on this person's presence for everyone else (真源 §2.4, 摩擦单 F9).
@@ -422,6 +433,7 @@ export class OpenFile {
         if (this.swapping || (this.filling && !transaction.local)) return;
         this.emitChange({ local: transaction.local, delta: event.delta as TextDelta });
         if (transaction.local) this.localChanged();
+        if (transaction.local && this.host.program) this.programWrote(text, event.delta as TextDelta);
       };
       text.observe(handler);
       this.detachDoc = () => text.unobserve(handler);
@@ -838,6 +850,12 @@ export class OpenFile {
   gone(why?: Error, reason?: SyncRevokeReason): void {
     // Said twice for one deletion — the service's Close (`deleted`), then main's `revoked` — in either order.
     if (reason === 'deleted' && !this.closed) returning.set(this.docName, this);
+    // Its call is over while it waits to close (`caretNotSeenYet`): main waits for the page to close it itself (LET_GO_MS),
+    // and the wait ends in that close, at the latest after CARET_SEEN_MS. Opened again from now on, it is another file.
+    if (reason === 'unbound' && this.stopWaiting) {
+      if (openFiles.get(fileKey(this.entry)) === this) openFiles.delete(fileKey(this.entry));
+      return;
+    }
     if (this.status === 'gone') return;
     this.connecting?.reject(why ?? guguError('failed', `${this.entry.name} is no longer available`));
     this.setStatus('gone');
@@ -848,6 +866,11 @@ export class OpenFile {
     this.compaction = null;
     if (this.provider) this.destroyProvider();
     this.stopSyncing();
+    // Gone while closing (`caretNotSeenYet`): nothing more will be confirmed, the close finishes now.
+    if (this.stopWaiting) {
+      this.stopWaiting();
+      this.close();
+    }
   }
 
   /**
@@ -925,6 +948,10 @@ export class OpenFile {
       this.closeAfterSwap = true;
       return;
     }
+    if (this.caretNotSeenYet()) {
+      this.willOnClose ||= willEvenOnline;
+      return;
+    }
     this.closed = true;
     if (openFiles.get(fileKey(this.entry)) === this) openFiles.delete(fileKey(this.entry));
     if (returning.get(this.docName) === this) returning.delete(this.docName);
@@ -941,6 +968,35 @@ export class OpenFile {
     }
     this.stopSyncing();
     void this.host.appFiles.close({ docName: this.docName }).catch(() => undefined);
+  }
+
+  /**
+   * A program that put out a caret closes once its write is confirmed (one round trip, at most CARET_SEEN_MS). The file
+   * service passes presence on once per turn of its loop, the latest of each client (Hocuspocus `flushDelay: 0`): a caret
+   * and the Close right behind it would reach the others as a client that left, never as one that wrote. It confirms the
+   * write in the turn that took it, so the caret has gone out by then. Opened again meanwhile, it stays open.
+   */
+  private caretNotSeenYet(): boolean {
+    if (this.stopWaiting) return true;
+    const provider = this.provider;
+    const caret = this.host.program && (provider?.awareness?.getLocalState() as { cursor?: unknown } | null)?.cursor;
+    if (this.waited || !caret || !provider.hasUnsyncedChanges || this.status !== 'online') return false;
+    const confirmed = ({ number }: { number: number }) => number === 0 && done();
+    const stop = () => {
+      clearTimeout(timer);
+      provider.off('unsyncedChanges', confirmed);
+      this.stopWaiting = null;
+    };
+    const done = () => {
+      stop();
+      // Waited once: it closes now, with a will as the close that waited asked (unconfirmed writes offline, or after a swap).
+      this.waited = true;
+      if (this.handles.size === 0) this.close(this.willOnClose);
+    };
+    const timer = setTimeout(done, CARET_SEEN_MS);
+    provider.on('unsyncedChanges', confirmed);
+    this.stopWaiting = stop;
+    return true;
   }
 
   /** The page's socket rests once none of its files is syncing: an empty one kept main's connection spinning (摩擦单 F46). */
@@ -1110,7 +1166,7 @@ export class OpenFile {
    * placeholder until the service overwrites it.
    */
   private publishPresence(awareness = this.provider.awareness): void {
-    // A program's copy is on nobody's screen: it says nothing about who is here (F16).
+    // A program's copy is on nobody's screen: it says nothing about who is here (F16), only where it writes (`programWrote`).
     if (this.host.program) return;
     if (!awareness) return;
     // Sent at once; over its presence rate the file service passes on the latest and drops the ones between (F38).
@@ -1119,6 +1175,24 @@ export class OpenFile {
     const state = awareness.getLocalState();
     if (state === null) return;
     awareness.setLocalState({ ...state, user: { id: this.self.userId, name: this.self.name, color: this.self.color }, s: this.presenceState });
+  }
+
+  /**
+   * A program wrote this text: the people in the file see its caret at the end of the change, named and coloured by the
+   * file service's stamp of who it acts as (never a name of its own). It goes with the program's connection — at the
+   * latest when the call that handed it the file ends — and editors keep its last place a moment as it fades.
+   */
+  private programWrote(text: Y.Text, delta: TextDelta): void {
+    let at = 0;
+    let end = 0;
+    for (const op of delta) {
+      if ('retain' in op) at += op.retain;
+      // An embed is one place in the text.
+      else if ('insert' in op) end = at += typeof op.insert === 'string' ? op.insert.length : 1;
+      else end = at;
+    }
+    const place = Y.createRelativePositionFromTypeIndex(text, end);
+    this.provider.awareness?.setLocalState({ cursor: { anchor: place, head: place } });
   }
 
   /**
@@ -1461,6 +1535,8 @@ export class OpenFile {
       text: { get: () => text() },
       awareness: { get: () => this.provider.awareness! },
       readOnly: { value: this.readOnly },
+      // Hocuspocus drops everyone's presence when its socket closes, after it stops being authenticated.
+      connected: { get: () => this.provider?.isAuthenticated === true },
       onSwap: { value: (handler: () => void) => this.onSwap(handler) },
       holdRemote: { value: () => syncLink().hold(this.docName) },
       inspectRemote: {
@@ -1556,6 +1632,8 @@ export class StoredTextSnapshot {
       text: this.text,
       awareness: this.awareness,
       readOnly: true,
+      // Nobody else is in stored bytes: no one leaves them.
+      connected: false,
       onSwap: noop,
       holdRemote: noop,
       inspectRemote: noop,

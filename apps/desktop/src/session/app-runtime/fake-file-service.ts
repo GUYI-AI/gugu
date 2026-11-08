@@ -309,7 +309,7 @@ export function fileOpened(type: 'text' | 'json'): AppFileOpened {
  * A page with the runtime loaded afresh, its sync port on a fake file service; `open()` opens item-1.
  * `checkPage`: the check's page (摩擦单 F69), its host reporting counts to `host.checkPage.report`.
  */
-export async function loadPage<File>(type: 'text' | 'json' = 'text', options: { checkPage?: boolean } = {}) {
+export async function loadPage<File>(type: 'text' | 'json' = 'text', options: { checkPage?: boolean; program?: boolean } = {}) {
   vi.resetModules();
   const service = new FakeService();
   const { setSyncPortSource } = await import('./sync-link');
@@ -328,6 +328,7 @@ export async function loadPage<File>(type: 'text' | 'json' = 'text', options: { 
   const opened = fileOpened(type);
   const host = {
     apiVersion: EXTENSION_API_VERSION,
+    ...(options.program ? { program: true } : {}),
     reportError: vi.fn(async (_message: string) => undefined),
     onFilesChanged: () => () => undefined,
     appFiles: {
