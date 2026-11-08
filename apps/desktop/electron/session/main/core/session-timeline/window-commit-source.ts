@@ -13,7 +13,8 @@ export type WindowCommitSourceManifest = {
 };
 const key = (binding: Binding, ordinal: number): WindowFrameKey => ({ ...binding, kind: 'segment', cursor: `raw:${String(ordinal).padStart(16, '0')}` });
 const rootKey = (binding: Binding): WindowFrameKey => ({ ...binding, kind: 'head', cursor: 'raw:head' });
-const sourcePath = (directory: string, binding: Binding) => join(directory, `${windowFrameName({ ...binding, kind: 'segment', cursor: 'raw:data' })}.source`);
+export const windowCommitSourcePath = (directory: string, binding: Binding) => join(directory, `${windowFrameName({ ...binding, kind: 'segment', cursor: 'raw:data' })}.source`);
+const sourcePath = windowCommitSourcePath;
 const stride = (binding: Binding) => encodeWindowFrame(key(binding, 0), new Uint8Array(0)).byteLength + CHUNK;
 const physical = (value: { dev: bigint; ino: bigint; mtimeNs: bigint; ctimeNs: bigint }): Physical => ({
   dev: String(value.dev), ino: String(value.ino), mtimeNs: String(value.mtimeNs), ctimeNs: String(value.ctimeNs),
@@ -41,9 +42,10 @@ export async function assertWindowCommitSource(directory: string, binding: Bindi
  * adds bounded encoding buffers, not a second full stringify/Buffer. The
  * writer's existing full serialization cost is deliberately not hidden. */
 export async function writeWindowCommitSource(directory: string, binding: Binding, serialized: string,
-  signal?: AbortSignal, receiptOwnsManifest = false): Promise<WindowCommitSourceManifest> {
+  signal?: AbortSignal, receiptOwnsManifest = false, temporaryId = randomUUID()): Promise<WindowCommitSourceManifest> {
   if (!serialized.length) throw new Error('Commit source must not be empty');
-  const path = sourcePath(directory, binding), temporary = `${path}.${randomUUID()}.tmp`;
+  if (!/^[a-f0-9-]{36}$/.test(temporaryId)) throw new Error('Invalid commit source temporary id');
+  const path = sourcePath(directory, binding), temporary = `${path}.${temporaryId}.tmp`;
   const width = stride(binding), buffer = Buffer.alloc(CHUNK), digest = createHash('sha256');
   let used = 0, chunks = 0, bytes = 0;
   try {
