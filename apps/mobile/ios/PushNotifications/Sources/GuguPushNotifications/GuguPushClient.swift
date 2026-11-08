@@ -17,6 +17,8 @@ import Foundation
     private var uncertain: GuguPushRegistrationRequest?
     private var known: [String: GuguPushRegistrationReceipt] = [:]
     private var settled: [UUID: GuguPushRegistrationReceipt] = [:]
+    private var serverClearedTickets: Set<UUID> = []
+    private var registrationAttempted = false
     private var retiring = false
     private var cleanBindings: [GuguPushBinding] = []
     private var seen: Set<String> = []
@@ -88,6 +90,7 @@ import Foundation
             guard current.visibleAlertsAllowed else { throw GuguPushFailure.permission }
             guard selected == preferences() else { throw GuguPushFailure.stale }
             phase = .registering
+            registrationAttempted = true
             cleanBindings.removeAll { $0 == expectedBinding }
             let request = GuguPushRegistrationRequest(ticket: ticket, preferences: selected, deviceToken: token)
             let task = Task { try await provider.register(request) }
@@ -97,14 +100,14 @@ import Foundation
             catch {
                 // Preserve unknown write scope and memory-only token for an
                 // explicit idempotent recovery, never an automatic replay.
-                uncertain = request
+                if !serverClearedTickets.contains(request.ticket.generation) { uncertain = request }
                 if rpc?.request.ticket == ticket { rpc = nil }
                 throw GuguPushFailure(code: "registration_unknown", message: "Notification registration was not confirmed; resolve before signing out")
             }
             // Book known side effects BEFORE cancellation/retirement rejection.
             do { try remember(ack, request: request) }
             catch {
-                uncertain = request
+                if !serverClearedTickets.contains(request.ticket.generation) { uncertain = request }
                 if rpc?.request.ticket == ticket { rpc = nil }
                 throw GuguPushFailure(code: "registration_unknown", message: "Notification registration acknowledgement was not confirmed")
             }
@@ -126,10 +129,16 @@ import Foundation
     /// Explicit recovery of a prior unknown idempotent register. It only saves
     /// cleanup metadata, never publishes registration authority or reuses it as
     /// a new owner/session. Call before credential retirement when requested.
-    func resolveUncertainRegistration(expectedBinding: GuguPushBinding) async throws {
-        try check(expectedBinding, ownerUI: true)
+    typealias RetirementBinding = (GuguPushBinding) throws -> GuguPushRetirementScope
+    typealias CleanupEvidence = (GuguPushRetirementScope) async throws -> GuguPushCleanupEvidence?
+
+    func resolveUncertainRegistration(expectedBinding: GuguPushBinding,
+                                     retirementBinding: @escaping RetirementBinding) async throws {
+        let scope = try checkRetirement(expectedBinding, using: retirementBinding)
+        let epoch = generation
         guard !retiring, rpc == nil, let request = uncertain,
               request.ticket.binding == expectedBinding, let provider else { throw GuguPushFailure.unavailable }
+        registrationAttempted = true
         let task = Task { try await provider.register(request) }
         rpc = (request, task)
         do {
@@ -137,7 +146,8 @@ import Foundation
             try remember(ack, request: request)
             if rpc?.request.ticket == request.ticket { rpc = nil }
             if uncertain?.ticket == request.ticket { uncertain = nil }
-            try check(expectedBinding)
+            guard try checkRetirement(expectedBinding, using: retirementBinding) == scope,
+                  generation == epoch else { throw GuguPushFailure.stale }
         } catch {
             if rpc?.request.ticket == request.ticket { rpc = nil }
             if let failure = error as? GuguPushFailure { throw failure }
@@ -147,57 +157,120 @@ import Foundation
 
     func revoke(expectedBinding: GuguPushBinding) async throws -> GuguPushSnapshot {
         try check(expectedBinding, ownerUI: true)
-        try await retire(expectedBinding: expectedBinding)
+        let report = try await retireCore(expectedBinding: expectedBinding,
+            validateBinding: { try self.check(expectedBinding) }, cleanupEvidence: nil)
+        guard report.disposition == .exactRegistrationsRevoked else {
+            throw GuguPushFailure(code: "revocation_unknown", message: "Server notification cleanup remains unverified")
+        }
         return try await status(expectedBinding: expectedBinding)
     }
 
-    /// Native credential-write barrier: caller retains an explicit revocation
-    /// credential capability until this finishes. It must not bypass OwnerSession.
-    func retire(expectedBinding: GuguPushBinding) async throws {
-        try check(expectedBinding)
+    /// Only native retirement receives this validator; ordinary APIs cannot
+    /// fall back to it when OwnerSession has sealed general publication.
+    func retire(expectedBinding: GuguPushBinding, retirementBinding: @escaping RetirementBinding,
+                cleanupEvidence: CleanupEvidence? = nil) async throws -> GuguPushRetirementReport {
+        let scope = try checkRetirement(expectedBinding, using: retirementBinding)
+        return try await retireCore(expectedBinding: expectedBinding,
+            validateBinding: {
+                guard try self.checkRetirement(expectedBinding, using: retirementBinding) == scope else {
+                    throw GuguPushFailure.stale
+                }
+            }, cleanupEvidence: cleanupEvidence.map { getEvidence in {
+                guard let proof = try await getEvidence(scope) else { return nil }
+                try proof.validate(expectedScope: scope)
+                return proof
+            } })
+    }
+
+    private func retireCore(expectedBinding: GuguPushBinding, validateBinding: @escaping () throws -> Void,
+                            cleanupEvidence: (() async throws -> GuguPushCleanupEvidence?)?) async throws -> GuguPushRetirementReport {
+        try validateBinding()
         guard !retiring else { throw GuguPushFailure.busy }
         let pending = rpc
         invalidate(); activeBinding = expectedBinding; phase = .revoking; retiring = true
         platform.unregister(); platform.clearDelivered()
         let epoch = generation
+        let ensure: () throws -> Void = {
+            try validateBinding()
+            guard self.generation == epoch else { throw GuguPushFailure.stale }
+        }
         defer { retiring = false }
         do {
-            guard let provider else { throw GuguPushFailure.unavailable }
+            var pendingUnknown = false
             if let pending {
                 do {
                     let ack = try await pending.task.value
                     try remember(ack, request: pending.request)
                     if uncertain?.ticket == pending.request.ticket { uncertain = nil }
-                } catch {
-                    throw GuguPushFailure(code: "revocation_unknown", message: "Pending notification registration must be resolved before signing out")
+                } catch { pendingUnknown = true }
+            }
+            try ensure()
+            if let cleanupEvidence {
+                let proof = try await cleanupEvidence()
+                try ensure()
+                if let proof {
+                    // A durable close covers this original session/install,
+                    // including an unknown or late registration result.
+                    if let pending { serverClearedTickets.insert(pending.request.ticket.generation) }
+                    if let unknown = uncertain, unknown.ticket.binding == expectedBinding {
+                        serverClearedTickets.insert(unknown.ticket.generation); uncertain = nil
+                    }
+                    for old in known.values where old.ticket.binding == expectedBinding {
+                        serverClearedTickets.insert(old.ticket.generation)
+                    }
+                    known = known.filter { $0.value.ticket.binding != expectedBinding }
+                    if !cleanBindings.contains(expectedBinding) { cleanBindings.append(expectedBinding) }
+                    phase = .revoked
+                    return report(proof.kind == .installationFenced ? .installationFenced : .sessionAbsent, evidence: proof)
                 }
             }
-            try check(expectedBinding, generation: epoch)
-            guard uncertain == nil else {
+            guard !pendingUnknown, uncertain == nil else {
                 throw GuguPushFailure(code: "revocation_unknown", message: "Unknown notification registration must be resolved before signing out")
             }
             let targets = known.values.filter { $0.ticket.binding == expectedBinding }
-            guard !targets.isEmpty || cleanBindings.contains(expectedBinding) else {
-                throw GuguPushFailure(code: "revocation_unknown", message: "No server registration scope is known; reconcile before signing out")
+            if targets.isEmpty, !cleanBindings.contains(expectedBinding) {
+                // Empty process memory is not evidence of server absence. Return
+                // a local outcome so A can obtain cleanup evidence rather than
+                // trapping every first/cold logout in an identical retry error.
+                phase = .retiredUnverified
+                return report(.serverCleanupUnverified)
             }
-            for target in targets {
-                try check(expectedBinding, generation: epoch)
-                let removed = try await provider.revoke(.init(receipt: target))
-                // Keep the true server receipt even if cancellation/account
-                // retirement wins before the caller receives completion.
-                if removed, known[target.registrationId] == target { known.removeValue(forKey: target.registrationId) }
-                guard removed else {
-                    throw GuguPushFailure(code: "revocation_unknown", message: "The exact server notification registration was not removed")
+            if !targets.isEmpty {
+                guard let provider else { throw GuguPushFailure.unavailable }
+                for target in targets {
+                    try ensure()
+                    let removed = try await provider.revoke(.init(receipt: target))
+                    if removed, known[target.registrationId] == target { known.removeValue(forKey: target.registrationId) }
+                    guard removed else {
+                        throw GuguPushFailure(code: "revocation_unknown", message: "The exact server notification registration was not removed")
+                    }
                 }
             }
             if !cleanBindings.contains(expectedBinding) { cleanBindings.append(expectedBinding) }
-            try check(expectedBinding, generation: epoch)
-            phase = .revoked
+            try ensure(); phase = .revoked
+            return report(.exactRegistrationsRevoked)
         } catch {
             if generation == epoch { phase = .failed }
             if let failure = error as? GuguPushFailure { throw failure }
             throw GuguPushFailure(code: "revocation_unknown", message: "Server notification revocation was not confirmed")
         }
+    }
+
+    private func report(_ disposition: GuguPushRetirementDisposition, evidence: GuguPushCleanupEvidence? = nil) -> GuguPushRetirementReport {
+        .init(disposition: disposition, registrationAttemptedThisProcess: registrationAttempted, cleanupEvidence: evidence)
+    }
+
+    private func checkRetirement(_ binding: GuguPushBinding, using validate: RetirementBinding) throws -> GuguPushRetirementScope {
+        guard !Task.isCancelled else { throw GuguPushFailure(code: "cancelled", message: "Notification retirement was cancelled") }
+        try binding.validate()
+        do {
+            let scope = try validate(binding)
+            try scope.validate()
+            guard scope.binding == binding else { throw GuguPushFailure.stale }
+            return scope
+        }
+        catch let failure as GuguPushFailure { throw failure }
+        catch { throw GuguPushFailure(code: "retirement_unavailable", message: "The restricted native retirement capability is no longer valid") }
     }
 
     /// Local withdrawal only. Known/pending writes survive for exact cleanup.
@@ -242,6 +315,7 @@ import Foundation
     private func remember(_ ack: GuguPushRegistrationReceipt, request: GuguPushRegistrationRequest) throws {
         try ack.validate()
         guard ack.ticket == request.ticket, ack.preferences == request.preferences else { throw GuguPushFailure.stale }
+        if serverClearedTickets.contains(request.ticket.generation) { return }
         // Both the original register caller and a retirement barrier may await
         // one RPC. A later reader must not reinsert an already-revoked receipt.
         if let prior = settled[request.ticket.generation] {

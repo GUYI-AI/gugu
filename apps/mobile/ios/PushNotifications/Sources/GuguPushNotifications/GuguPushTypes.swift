@@ -102,7 +102,41 @@ struct GuguPushRevocationRequest {
     func clearDelivered()
 }
 
-enum GuguPushPhase: String { case none, awaitingAPNs, registering, registered, revoking, revoked, blocked, failed }
+enum GuguPushPhase: String { case none, awaitingAPNs, registering, registered, revoking, revoked, retiredUnverified, blocked, failed }
+/// Projected only from the original access JWT held by a native retirement cap.
+/// This is separate from both the local epoch and server registration generation.
+struct GuguPushRetirementScope: Equatable {
+    let binding: GuguPushBinding
+    let originalSessionId: String
+    func validate() throws {
+        try binding.validate()
+        guard UUID(uuidString: originalSessionId)?.uuidString.lowercased() == originalSessionId else {
+            throw GuguPushFailure.stale
+        }
+    }
+}
+enum GuguPushCleanupKind: String { case installationFenced = "installation_fenced", sessionAbsent = "session_absent" }
+/// Validated close RPC evidence, never a JavaScript boolean or an empty RAM map.
+struct GuguPushCleanupEvidence: Equatable {
+    let scope: GuguPushRetirementScope
+    let kind: GuguPushCleanupKind
+    let fenceId: String?
+    func validate(expectedScope: GuguPushRetirementScope) throws {
+        try scope.validate()
+        guard scope == expectedScope,
+              (kind == .sessionAbsent && fenceId == nil) ||
+              (kind == .installationFenced && fenceId.flatMap { UUID(uuidString: $0)?.uuidString.lowercased() } == fenceId && fenceId != nil) else {
+            throw GuguPushFailure(code: "revocation_unknown", message: "Server cleanup evidence does not match the original notification session")
+        }
+    }
+}
+enum GuguPushRetirementDisposition { case exactRegistrationsRevoked, installationFenced, sessionAbsent, serverCleanupUnverified }
+struct GuguPushRetirementReport {
+    let disposition: GuguPushRetirementDisposition
+    let registrationAttemptedThisProcess: Bool
+    let cleanupEvidence: GuguPushCleanupEvidence?
+    var serverCleanupVerified: Bool { cleanupEvidence != nil }
+}
 enum GuguPushEventKind: String { case received, opened }
 struct GuguPushEnvelope {
     let binding: GuguPushBinding

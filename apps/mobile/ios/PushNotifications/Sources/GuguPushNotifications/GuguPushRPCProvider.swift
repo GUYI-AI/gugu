@@ -8,7 +8,8 @@ import CoreFoundation
     func call(_ function: String, parameters: [String: Any], binding: GuguPushBinding) async throws -> Any
 }
 
-/// Wire mapping frozen at gugu-supabase 94fb939d29e6ac004a3ac26b24eca7ceead550d4.
+/// Register/revoke mapping frozen at gugu-supabase 94fb939d29e6ac004a3ac26b24eca7ceead550d4.
+/// Close contract additionally frozen by the backend owner on 2026-11-08.
 /// No HTTP implementation or environment fallback. Configuration comes from
 /// the actual signed build, never a WebView parameter.
 @MainActor final class GuguPushRPCProvider: GuguPushProvider {
@@ -58,6 +59,33 @@ import CoreFoundation
             throw GuguPushFailure(code: "revocation_unknown", message: "Notification revocation response is invalid")
         }
         return number.boolValue
+    }
+    /// Native retirement only. Transport must authorize this exact original JWT
+    /// session and parameters with the still-valid restricted retirement cap.
+    func closeInstallation(scope: GuguPushRetirementScope) async throws -> GuguPushCleanupEvidence {
+        try scope.validate()
+        let raw: Any
+        do {
+            raw = try await transport.call("mobile_push_close_installation", parameters: [
+                "p_installation_id": scope.binding.installationId,
+                "p_device_id": scope.binding.deviceId,
+                "p_original_session_id": scope.originalSessionId,
+            ], binding: scope.binding)
+        } catch { throw GuguPushFailure(code: "revocation_unknown", message: "Notification installation close was not confirmed") }
+        guard let object = raw as? [String: Any],
+              let version = object["v"] as? NSNumber, CFGetTypeID(version) != CFBooleanGetTypeID(), version.doubleValue == 1,
+              let closed = object["closed"] as? NSNumber, CFGetTypeID(closed) == CFBooleanGetTypeID(), closed.boolValue,
+              object["owner_id"] as? String == scope.binding.ownerId,
+              object["session_id"] as? String == scope.originalSessionId,
+              object["installation_id"] as? String == scope.binding.installationId,
+              object["device_id"] as? String == scope.binding.deviceId,
+              let value = object["evidence"] as? String, let kind = GuguPushCleanupKind(rawValue: value),
+              object.keys.contains("fence_id"), object["fence_id"] is String || object["fence_id"] is NSNull else {
+            throw GuguPushFailure(code: "revocation_unknown", message: "Notification installation close response is invalid")
+        }
+        let proof = GuguPushCleanupEvidence(scope: scope, kind: kind, fenceId: object["fence_id"] as? String)
+        try proof.validate(expectedScope: scope)
+        return proof
     }
 }
 

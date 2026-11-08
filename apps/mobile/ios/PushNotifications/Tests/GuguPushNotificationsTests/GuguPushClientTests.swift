@@ -78,13 +78,28 @@ private func pushSettings(_ authorization: GuguPushAuthorization = .authorized, 
     var current = binding(), foreground = true
     var preferences = GuguPushPreferences(chatEnabled: true, taskEnabled: true, soundEnabled: false)
     var present = true
+    var publicationAvailable = true, retirementCapabilityValid = true, retirementChecks = 0
+    var originalSessionId = "77777777-7777-4777-8777-777777777777"
     var duringPresentation: (() -> Void)?
     var hints: [GuguPushReconciliationHint] = []
     lazy var client = make(provider: provider)
     func make(provider: Provider?) -> GuguPushClient {
-        GuguPushClient(platform: platform, provider: provider, currentBinding: { self.current }, requireOwnerUI: {
+        GuguPushClient(platform: platform, provider: provider, currentBinding: {
+            guard self.publicationAvailable else { throw NSError(domain: "ordinary publication is sealed", code: 1) }; return self.current
+        }, requireOwnerUI: {
             guard self.foreground else { throw GuguPushFailure(code: "not_granted", message: "Foreground owner UI is required") }
         }, preferences: { self.preferences }, foregroundPresentation: { _ in self.duringPresentation?(); return self.present }, onHint: { self.hints.append($0) })
+    }
+    func validateRetirement(_ binding: GuguPushBinding) throws -> GuguPushRetirementScope {
+        retirementChecks += 1
+        guard retirementCapabilityValid, binding == current else { throw GuguPushFailure.stale }
+        return .init(binding: binding, originalSessionId: originalSessionId)
+    }
+    func retire(cleanupEvidence: GuguPushClient.CleanupEvidence? = nil) async throws -> GuguPushRetirementReport {
+        try await client.retire(expectedBinding: current, retirementBinding: validateRetirement, cleanupEvidence: cleanupEvidence)
+    }
+    func resolve() async throws {
+        try await client.resolveUncertainRegistration(expectedBinding: current, retirementBinding: validateRetirement)
     }
     func envelope() -> GuguPushEnvelope {
         let r = provider.receipt(provider.registrations.last!)
@@ -93,8 +108,12 @@ private func pushSettings(_ authorization: GuguPushAuthorization = .authorized, 
     }
 }
 
-@MainActor private func code(_ operation: () async throws -> Void) async -> String {
-    do { try await operation(); return "success" }
+private func proof(_ scope: GuguPushRetirementScope, kind: GuguPushCleanupKind = .installationFenced) -> GuguPushCleanupEvidence {
+    .init(scope: scope, kind: kind, fenceId: kind == .installationFenced ? "99999999-9999-4999-8999-999999999999" : nil)
+}
+
+@MainActor private func code<T>(_ operation: () async throws -> T) async -> String {
+    do { _ = try await operation(); return "success" }
     catch let failure as GuguPushFailure { return failure.code }
     catch { return "unexpected" }
 }
@@ -372,29 +391,29 @@ private func pushSettings(_ authorization: GuguPushAuthorization = .authorized, 
         await waitUntil { f.provider.registerGate != nil }
         let ticket = f.provider.registrations[0], ack = f.provider.receipt(f.provider.registrations[0])
         #expect(ack.serverGeneration != ticket.generation)
-        let retirement = Task { try await f.client.retire(expectedBinding: f.current) }
+        let retirement = Task { try await f.retire() }
         await waitUntil { f.platform.unregisters == 1 }
         #expect(f.provider.revocations.isEmpty && f.platform.clears == 1)
         f.provider.registerGate?.resume(returning: ack); f.provider.registerGate = nil
         #expect(await register.value == "stale_context")
-        try await retirement.value
+        #expect(try await retirement.value.disposition == .exactRegistrationsRevoked)
         #expect(f.provider.revocations.count == 1)
         #expect(f.provider.revocations[0].receipt == ack)
         #expect(try await f.client.status(expectedBinding: f.current).phase == .revoked)
         // Both readers of the same register task have now finished. Re-reading
         // retirement must not reinsert/revoke the already-removed receipt.
         f.provider.revokeValue = false
-        try await f.client.retire(expectedBinding: f.current)
+        _ = try await f.retire()
         #expect(f.provider.revocations.count == 1)
     }
 
     @Test func falseRevokeNeverReleasesRetirementBarrier() async throws {
         let f = Fixture(); _ = try await f.client.register(expectedBinding: f.current)
         f.provider.revokeValue = false
-        #expect(await code { try await f.client.retire(expectedBinding: f.current) } == "revocation_unknown")
+        #expect(await code { try await f.retire() } == "revocation_unknown")
         #expect(try await !f.client.status(expectedBinding: f.current).serverRegistered)
         f.provider.revokeValue = true
-        try await f.client.retire(expectedBinding: f.current)
+        _ = try await f.retire()
         #expect(f.provider.revocations.count == 2)
         #expect(f.provider.revocations[0].receipt == f.provider.revocations[1].receipt)
     }
@@ -402,13 +421,13 @@ private func pushSettings(_ authorization: GuguPushAuthorization = .authorized, 
     @Test func unknownRegisterRequiresExplicitRecoveryBeforeRetirement() async throws {
         let f = Fixture(); f.provider.failRegister = true
         #expect(await code { _ = try await f.client.register(expectedBinding: f.current) } == "registration_unknown")
-        #expect(await code { try await f.client.retire(expectedBinding: f.current) } == "revocation_unknown")
+        #expect(await code { try await f.retire() } == "revocation_unknown")
         #expect(f.provider.revocations.isEmpty && f.provider.registrations.count == 1)
         f.provider.failRegister = false
-        try await f.client.resolveUncertainRegistration(expectedBinding: f.current)
+        try await f.resolve()
         #expect(try await !f.client.status(expectedBinding: f.current).serverRegistered)
         #expect(f.provider.registrations[0] == f.provider.registrations[1])
-        try await f.client.retire(expectedBinding: f.current)
+        _ = try await f.retire()
         #expect(f.provider.revocations.count == 1)
     }
 
@@ -428,11 +447,11 @@ private func pushSettings(_ authorization: GuguPushAuthorization = .authorized, 
     @Test func trueRevokeReceiptSurvivesCallerCancellationWithoutSecondWrite() async throws {
         let f = Fixture(); _ = try await f.client.register(expectedBinding: f.current)
         f.provider.cancelAfterRevoke = true
-        let task = Task { await code { try await f.client.retire(expectedBinding: f.current) } }
+        let task = Task { await code { try await f.retire() } }
         #expect(await task.value == "cancelled")
         #expect(f.provider.revocations.count == 1)
         f.provider.cancelAfterRevoke = false
-        try await f.client.retire(expectedBinding: f.current)
+        _ = try await f.retire()
         #expect(f.provider.revocations.count == 1)
     }
 
@@ -442,4 +461,138 @@ private func pushSettings(_ authorization: GuguPushAuthorization = .authorized, 
         f.duringPresentation = { f.current = binding(ownerB) }
         #expect(f.client.presentation(for: envelope) == .none)
     }
+
+    @Test func retirementUsesOnlyRestrictedBindingAfterOrdinaryPublicationCloses() async throws {
+        let f = Fixture(); _ = try await f.client.register(expectedBinding: f.current)
+        f.publicationAvailable = false
+        let reads = f.platform.reads, checks = f.retirementChecks
+        #expect(await code { _ = try await f.client.status(expectedBinding: f.current) } == "owner_unavailable")
+        #expect(await code { _ = try await f.client.requestAuthorization(expectedBinding: f.current) } == "owner_unavailable")
+        #expect(await code { _ = try await f.client.register(expectedBinding: f.current) } == "owner_unavailable")
+        #expect(await code { _ = try await f.client.revoke(expectedBinding: f.current) } == "owner_unavailable")
+        #expect(f.platform.reads == reads && f.retirementChecks == checks)
+        #expect(try await f.retire().disposition == .exactRegistrationsRevoked)
+        #expect(f.retirementChecks > checks && f.provider.revocations.count == 1)
+    }
+
+    @Test func expiredRestrictedCapabilityRejectsBeforeOSEffectsOrRPC() async throws {
+        let f = Fixture(); _ = try await f.client.register(expectedBinding: f.current)
+        f.publicationAvailable = false; f.retirementCapabilityValid = false
+        #expect(await code { try await f.retire() } == "stale_context")
+        #expect(f.platform.unregisters == 0 && f.platform.clears == 0 && f.provider.revocations.isEmpty)
+    }
+
+    @Test func restrictedCapabilityIsRecheckedAfterRevokeReply() async throws {
+        let f = Fixture(); _ = try await f.client.register(expectedBinding: f.current)
+        f.publicationAvailable = false; f.provider.delayRevoke = true
+        let task = Task { await code { try await f.retire() } }
+        await waitUntil { f.provider.revokeGate != nil }
+        f.retirementCapabilityValid = false
+        f.provider.revokeGate?.resume(returning: true); f.provider.revokeGate = nil
+        #expect(await task.value == "stale_context")
+        f.retirementCapabilityValid = true
+        // Known true revocation survives the rejected late caller.
+        #expect(try await f.retire().disposition == .exactRegistrationsRevoked)
+        #expect(f.provider.revocations.count == 1)
+    }
+
+    @Test func firstOrColdEmptyMemoryReturnsUnverifiedLocalOutcomeWithoutRPC() async throws {
+        let f = Fixture(); f.publicationAvailable = false
+        let report = try await f.retire()
+        #expect(!report.serverCleanupVerified && !report.registrationAttemptedThisProcess)
+        #expect(report.disposition == .serverCleanupUnverified)
+        #expect(f.provider.registrations.isEmpty && f.provider.revocations.isEmpty)
+        #expect(f.platform.unregisters == 1 && f.platform.clears == 1)
+    }
+
+    @Test func nativeScopeCloseCanCompleteColdExitWithoutRegistrationProvider() async throws {
+        let f = Fixture(), client = Fixture().make(provider: nil)
+        let report = try await client.retire(expectedBinding: f.current, retirementBinding: f.validateRetirement,
+            cleanupEvidence: { proof($0) })
+        #expect(report.serverCleanupVerified && report.disposition == .installationFenced)
+        #expect(report.cleanupEvidence?.scope.originalSessionId == f.originalSessionId)
+        #expect(!report.registrationAttemptedThisProcess)
+    }
+
+    @Test func cleanupFromAnotherSessionCannotEraseAnAttemptedUnknownWrite() async {
+        let f = Fixture(); f.provider.failRegister = true
+        #expect(await code { _ = try await f.client.register(expectedBinding: f.current) } == "registration_unknown")
+        f.publicationAvailable = false
+        #expect(await code { try await f.retire(cleanupEvidence: { scope in
+            proof(.init(binding: scope.binding, originalSessionId: UUID().uuidString.lowercased()))
+        }) } == "revocation_unknown")
+        #expect(await code { try await f.retire() } == "revocation_unknown")
+        #expect(f.provider.revocations.isEmpty)
+    }
+
+    @Test func explicitUnknownRecoveryUsesRestrictedBindingWithoutPublishing() async throws {
+        let f = Fixture(); f.provider.failRegister = true
+        #expect(await code { _ = try await f.client.register(expectedBinding: f.current) } == "registration_unknown")
+        f.publicationAvailable = false; f.foreground = false; f.provider.failRegister = false
+        try await f.resolve()
+        #expect(f.provider.registrations.count == 2)
+        #expect(await code { _ = try await f.client.status(expectedBinding: f.current) } == "owner_unavailable")
+        #expect(try await f.retire().disposition == .exactRegistrationsRevoked)
+    }
+
+    @Test func independentSessionAbsentProofResolvesUnknownCleanup() async throws {
+        let f = Fixture(); f.provider.failRegister = true
+        #expect(await code { _ = try await f.client.register(expectedBinding: f.current) } == "registration_unknown")
+        f.publicationAvailable = false
+        let report = try await f.retire(cleanupEvidence: { proof($0, kind: .sessionAbsent) })
+        #expect(report.serverCleanupVerified && report.disposition == .sessionAbsent)
+        #expect(f.provider.revocations.isEmpty)
+    }
+
+    @Test func cleanupProofFromRevokedCapabilityCannotAdmitCredentialWrite() async {
+        let f = Fixture(); f.publicationAvailable = false
+        #expect(await code { try await f.retire(cleanupEvidence: { scope in
+            f.retirementCapabilityValid = false; return proof(scope)
+        }) } == "stale_context")
+    }
+    @Test func exactRevokeDoesNotProveDurableInstallationCleanup() async throws {
+        let f = Fixture(); _ = try await f.client.register(expectedBinding: f.current)
+        let report = try await f.retire()
+        #expect(report.disposition == .exactRegistrationsRevoked)
+        #expect(!report.serverCleanupVerified && report.cleanupEvidence == nil)
+        let fenced = try await f.retire(cleanupEvidence: { proof($0) })
+        #expect(fenced.serverCleanupVerified && fenced.disposition == .installationFenced)
+    }
+
+    @Test func sameOwnerNewSessionDuringCloseRejectsOldProof() async {
+        let f = Fixture(); f.publicationAvailable = false
+        #expect(await code { try await f.retire(cleanupEvidence: { scope in
+            f.originalSessionId = UUID().uuidString.lowercased()
+            return proof(scope)
+        }) } == "stale_context")
+    }
+
+    @Test func scopeCloseWaitsForRegisterThenCoversUnknownWithoutReplay() async throws {
+        let f = Fixture(); f.provider.delayRegister = true
+        let register = Task { await code { try await f.client.register(expectedBinding: f.current) } }
+        await waitUntil { f.provider.registerGate != nil }
+        var closeCalls = 0
+        let retire = Task { try await f.retire(cleanupEvidence: { scope in closeCalls += 1; return proof(scope) }) }
+        await waitUntil { f.platform.unregisters == 1 }
+        #expect(closeCalls == 0)
+        f.provider.registerGate?.resume(throwing: NSError(domain: "unknown network result", code: 1)); f.provider.registerGate = nil
+        #expect(try await retire.value.serverCleanupVerified)
+        #expect(await register.value == "registration_unknown")
+        #expect(closeCalls == 1 && f.provider.registrations.count == 1 && f.provider.revocations.isEmpty)
+        // The late original waiter cannot restore the unknown RAM record.
+        #expect(try await f.retire().disposition == .exactRegistrationsRevoked)
+    }
+
+    @Test func recoveryCannotCarryOldSessionAcrossAsyncReply() async {
+        let f = Fixture(); f.provider.failRegister = true
+        #expect(await code { try await f.client.register(expectedBinding: f.current) } == "registration_unknown")
+        f.provider.failRegister = false; f.provider.delayRegister = true; f.publicationAvailable = false
+        let resolve = Task { await code { try await f.resolve() } }
+        await waitUntil { f.provider.registerGate != nil }
+        f.originalSessionId = UUID().uuidString.lowercased()
+        f.provider.registerGate?.resume(returning: f.provider.receipt(f.provider.registrations.last!)); f.provider.registerGate = nil
+        #expect(await resolve.value == "stale_context")
+        #expect(await code { try await f.client.status(expectedBinding: f.current) } == "owner_unavailable")
+    }
+
 }
