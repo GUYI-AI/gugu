@@ -270,11 +270,13 @@ final class GuguIOSTaskScheduler {
             }
         }
     }
-    func stop(completion: @escaping (Result<Void, Error>) -> Void) {
+    func stop(completion: @escaping (Result<Void, Error>) -> Void) { finishStop(settleRemote: true, completion: completion) }
+    func quiesce(completion: @escaping (Result<Void, Error>) -> Void) { finishStop(settleRemote: false, completion: completion) }
+    private func finishStop(settleRemote: Bool, completion: @escaping (Result<Void, Error>) -> Void) {
         queue.async {
             self.stopped = true
             var first: Error?
-            do { try self.lifecycle.stop(ownerId: self.binding.ownerId) } catch { first = error }
+            do { try self.lifecycle.stop(binding: self.binding) } catch { first = error }
             do {
                 try self.store.transaction { state in
                     var rows = state["inputs"] as? [String: [String: Any]] ?? [:]
@@ -286,10 +288,13 @@ final class GuguIOSTaskScheduler {
             let models = Array(self.models.values)
             guard !models.isEmpty else { self.retired = first == nil; completion(first.map { .failure($0) } ?? .success(())); return }
             var remaining = models.count
-            for model in models { model.stop { result in self.queue.async {
-                if case .failure(let error) = result, first == nil { first = error }; remaining -= 1
-                if remaining == 0 { self.retired = first == nil; completion(first.map { .failure($0) } ?? .success(())) }
-            } } }
+            for model in models {
+                let done: (Result<Void, Error>) -> Void = { result in self.queue.async {
+                    if case .failure(let error) = result, first == nil { first = error }; remaining -= 1
+                    if remaining == 0 { self.retired = first == nil; completion(first.map { .failure($0) } ?? .success(())) }
+                } }
+                if settleRemote { model.stop(completion: done) } else { model.quiesce(completion: done) }
+            }
         }
     }
     private func host(_ agent: [String: Any]) throws -> GuguInProcessHost {

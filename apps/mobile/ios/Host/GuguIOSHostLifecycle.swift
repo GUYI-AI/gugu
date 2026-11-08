@@ -103,8 +103,16 @@ final class GuguIOSHostLifecycle {
     /// are attempted even if another journal/runtime fails to stop.
     func stop(ownerId: String) throws {
         guard UUID(uuidString: ownerId) != nil else { throw Self.failure("invalid_args", "Invalid native owner") }
+        try stopEntries { $0.binding.ownerId == ownerId }
+    }
+    /// Cleanup already owns a sealed original binding; no current publication is
+    /// required and another account/installation's native hosts are untouched.
+    func stop(binding: GuguIOSHostBinding) throws {
+        try binding.validate(); try stopEntries { $0.binding == binding }
+    }
+    private func stopEntries(_ matches: (Entry) -> Bool) throws {
         custody.lock.lock()
-        let values = custody.entries.values.filter { $0.binding.ownerId == ownerId && $0.phase != .stopped }
+        let values = custody.entries.values.filter { matches($0) && $0.phase != .stopped }
         if values.contains(where: { $0.phase == .stopping }) {
             custody.lock.unlock(); throw Self.failure("host_stopping", "Native owner retirement is already in progress")
         }

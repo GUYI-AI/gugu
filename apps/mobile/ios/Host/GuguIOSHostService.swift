@@ -20,13 +20,18 @@ final class GuguIOSHostService {
     let adapter: GuguIOSHostAdapter
     private let ownerAccess: GuguIOSOwnerAccess
     private let metadata: () -> [String: Any]
+    private let retirementCleanup: GuguIOSRetirementCleanup?
+    private let retirementAuthorization: GuguIOSRetirementCleanup.Authorize?
     private let events = StateEvents()
 
     init(root: URL, runtime: GuguPackagedRuntime, lifecycle: GuguIOSHostLifecycle, ownerAccess: GuguIOSOwnerAccess,
          configuration: GuguIOSBackendConfiguration, credentials: @escaping GuguIOSCloudBroker.Credentials,
          executor: @escaping (GuguIOSHostBinding) -> GuguNativeToolExecutor, deviceMetadata: @escaping () -> [String: Any],
          brokerSend: GuguIOSCloudBroker.Send? = nil, socketFactory: GuguIOSRealtimeTransport.SocketFactory? = nil,
-         modelTransport: @escaping (GuguNativeModelLease) throws -> GuguModelCompleting = { try GuguModelTransport(lease: $0) }) throws {
+         modelTransport: @escaping (GuguNativeModelLease) throws -> GuguModelCompleting = { try GuguModelTransport(lease: $0) },
+         retirementAuthorization: GuguIOSRetirementCleanup.Authorize? = nil) throws {
+        self.retirementAuthorization = retirementAuthorization
+        retirementCleanup = try retirementAuthorization.map { try GuguIOSRetirementCleanup(root: root, configuration: configuration, authorize: $0, send: brokerSend) }
         self.ownerAccess = ownerAccess; metadata = deviceMetadata
         let router = RemoteRouter(), events = self.events
         backend = try GuguIOSNativeBackend(root: root, runtime: runtime, lifecycle: lifecycle, ownerAccess: ownerAccess,
@@ -90,6 +95,19 @@ final class GuguIOSHostService {
     /// Run while the original native credential publication is still available.
     /// Completion includes model checkpoint/revoke and device withdrawal errors.
     func prepareOwnerRetirement(expectedBinding: GuguIOSHostBinding, completion: @escaping ([String: Any]) -> Void) { adapter.stopHost(expectedBinding: expectedBinding, completion: completion) }
+    /// Native-only sealed/cold path. It never calls ownerAccess/currentBinding
+    /// and never lends its permit to ordinary catalog/issue/hostCall requests.
+    func retireOwner(expectedBinding: GuguIOSHostBinding, retirementId: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        do {
+            guard let retirementCleanup, let retirementAuthorization else { throw Self.failure("cleanup_not_configured", "Native retirement authorization was not assembled") }
+            _ = try GuguIOSRetirementHTTP.permit(retirementAuthorization, binding: expectedBinding, retirementId: retirementId, operation: .readOwnedDevice)
+            backend.quiesceForRetirement(expectedBinding) { local in
+                retirementCleanup.retire(expectedBinding: expectedBinding, retirementId: retirementId) { cleanup in
+                    if case .failure = local { completion(local) } else { completion(cleanup) }
+                }
+            }
+        } catch { completion(.failure(error)) }
+    }
     func authSession(_ options: [String: Any], completion: @escaping (Result<[String: Any], Error>) -> Void) {
         do {
             try Self.keys(options, allowed: ["action"])

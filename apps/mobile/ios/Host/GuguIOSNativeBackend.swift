@@ -119,6 +119,10 @@ final class GuguIOSNativeBackend: GuguIOSHostBackend {
             }
         }
     }
+    func sealForNativeRetirement() {
+        stopped = true; generation &+= 1; gate.set(generation, active: false)
+        heartbeatTimer?.cancel(); remoteConnected = false; startupComplete = false
+    }
     func state(binding: GuguIOSHostBinding) throws -> [String: Any] { try sync { try snapshot(binding) } }
     func invoke(_ call: GuguIOSHostInvocation, completion: @escaping ([String: Any]) -> Void) { queue.async { self.route(call, completion) } }
     func reconcile(_ call: GuguIOSHostInvocation, completion: @escaping ([String: Any]) -> Void) { queue.async { self.route(call, completion) } }

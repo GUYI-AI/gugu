@@ -128,6 +128,18 @@ final class GuguIOSLeaseModel: GuguModelCompleting {
         }
     }
 
+    /// Sealed/cold retirement stops local activity without requesting ordinary
+    /// credentials. The separate cleanup runner reconciles the retained ledger.
+    func quiesce(completion: @escaping (Result<Void, Error>) -> Void) {
+        queue.async {
+            self.stopped = true; self.renewal?.cancel(); self.renewal = nil
+            for (id, transport) in self.transports { transport.cancel(id: id) }
+            for id in Array(self.requests.keys) { self.finish(id, Self.failure("cancelled", "Native model host retired").envelope) }
+            if self.issuingJobId != nil { completion(.failure(Self.failure("model_issue_uncertain", "Original issue is still in flight"))) }
+            else { completion(.success(())) }
+        }
+    }
+
     private func send(_ id: String, _ grant: GuguIOSModelGrant) throws {
         try check()
         guard !stopped, grant.lease.expiresAt > Date(), let request = requests[id], transports[id] == nil else {

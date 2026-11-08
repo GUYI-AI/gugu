@@ -6,9 +6,10 @@ must work from the original persisted retirement transaction even when this
 process has never published an owner. The existing pre-seal
 `prepareOwnerRetirement` path alone does not cover that case.
 
-This is the assembly contract for the next complete backend head. The dedicated
-cleanup transport/runner is not implemented or verified by this document. It
-must not be emulated by passing retirement credentials to the ordinary broker.
+This is the native assembly contract. Implementation and targeted verification
+are delivered separately with a frozen source head; this document alone is not
+a passing-run claim. Retirement credentials are never passed to the ordinary
+broker.
 
 ## Native signatures
 
