@@ -118,9 +118,9 @@ export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, on
         <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '16px 18px 12px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
             {onBack ? <IconButton size="md" aria-label={t('common.back')} onClick={onBack}><ChevronLeft size={18} /></IconButton> : <FileText size={18} color="var(--text-link)" />}
-            <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            <span className="flex min-w-0 flex-col">
               <strong style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-primary)', fontSize: 'var(--font-title)' }}>{file.fileName}</strong>
-              {connection ? <span style={{ display: 'flex', minWidth: 0, color: 'var(--text-secondary)', fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)' }}>{connection}</span> : null}
+              {connection ? <span className="flex min-w-0 text-[length:var(--font-caption)] leading-[var(--lh-caption)] text-[var(--text-secondary)]">{connection}</span> : null}
             </span>
           </div>
           <IconButton size="md" aria-label={onBack ? t('common.close') : t('chatArea.filePreview.close')} title={onBack ? t('common.close') : t('chatArea.filePreview.close')} onClick={onClose}><X size={18} /></IconButton>
@@ -129,7 +129,7 @@ export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, on
       {fileToolbar ?? (mobile ? null : <div style={{ display: 'flex', gap: 8, padding: '10px 18px', flexShrink: 0 }}>
         {actions.map((item) => <Button key={item.key} variant="secondary" size="sm" aria-label={item.label} title={item.label} disabled={item.disabled} onClick={item.onSelect}><item.icon size={15} />{item.label}</Button>)}
         {onOpenExternal ? <Button variant="secondary" size="sm" aria-label={t('chatArea.filePreview.openExternal')} title={t('chatArea.filePreview.openExternal')} onClick={onOpenExternal}><ExternalLink size={15} />{t('chatArea.filePreview.openExternal')}</Button> : null}
-        {tabbed && connection ? <span style={{ display: 'flex', alignItems: 'center', minWidth: 0, color: 'var(--text-secondary)', fontSize: 'var(--font-caption)' }}>{connection}</span> : null}
+        {tabbed && connection ? <span className="flex min-w-0 items-center text-[length:var(--font-caption)] text-[var(--text-secondary)]">{connection}</span> : null}
       </div>)}
       {/* 大小还不知道(手机附件卡正从那台电脑读,或没读到)就不写,❌ 写一个「0 B」。手机上这一行进了页头。 */}
       {fileToolbar || mobile || ((loading || error) && file.sizeBytes === 0) ? null : <div style={{ padding: '0 18px 10px', color: 'var(--text-tertiary)', fontSize: 'var(--font-caption)', flexShrink: 0 }}>{formatAttachmentSize(file.sizeBytes)}{file.mimeType ? ` · ${file.mimeType}` : ''}</div>}
