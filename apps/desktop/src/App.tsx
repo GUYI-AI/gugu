@@ -30,6 +30,7 @@ import { installAssistantPanelHost } from './components/assistant/assistant-pane
 import { usePhoneImeDismiss } from './mobile/usePhoneImeDismiss'
 import { iosOwnerAvailable } from './mobile/ios-runtime/iosOwnerClient'
 import { startIOSOwnerPublication } from './mobile/ios-runtime/startIOSOwnerPublication'
+import { IOSHostRoot } from './mobile/ios-host/IOSHostRoot'
 
 import { platform } from './platform'
 import { type RendererRpcHandlers, useRendererRpcHandlers } from './rpc-renderer/rendererRpc'
@@ -193,6 +194,7 @@ export default function App() {
         <ToastProvider>
           <ContentContextMenuHost />
           <AuthContext.Provider value={authContextValue}>
+            <IOSHostRoot />
             {/* 新账号先走一遍首次引导(product spec,#7348);老账号 / 走完的直接进主界面 */}
             <FirstRunGate key={user.id} user={user}>
               <AuthenticatedProduct key={user.id} user={user} />
