@@ -74,3 +74,45 @@ jobs:
       - uses: ./.github/actions/setup-playwright
         with:
           save-cache: 'true'
+  gradle:
+    name: Seed Android Gradle dependencies
+    # Remain inside the existing one-job background budget; do not delay Vitest seeding.
+    needs: unit
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GUGU_CLOUD_COMPUTER_ENABLED: 'false'
+      VITE_GUGU_CLOUD_COMPUTER_ENABLED: 'false'
+      GUGU_PLATFORM_MODELS_ENABLED: 'false'
+      VITE_GUGU_PLATFORM_MODELS_ENABLED: 'false'
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - uses: actions/checkout@v4
+      - id: java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - id: gradle
+        uses: ./.github/actions/setup-gradle-cache
+        with:
+          java-version: ${{ steps.java.outputs.version }}
+          lookup-only: 'true'
+      - if: steps.gradle.outputs.cache-hit != 'true'
+        uses: ./.github/actions/setup-community
+      - if: steps.gradle.outputs.cache-hit != 'true'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends icu-devtools llvm clang lld
+      - if: steps.gradle.outputs.cache-hit != 'true'
+        run: pnpm android:build
+      - if: steps.gradle.outputs.cache-hit != 'true'
+        name: Resolve JVM and instrumentation build dependencies without an emulator
+        run: |
+          bash scripts/build/android-gradle-build.sh testDebugUnitTest
+          bash scripts/build/android-gradle-build.sh assembleDebugAndroidTest
+          bash scripts/build/android-gradle-build.sh --stop
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.gradle.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.gradle.outputs.cache-paths }}
+          key: ${{ steps.gradle.outputs.cache-key }}

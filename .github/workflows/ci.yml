@@ -243,15 +243,15 @@ jobs:
       NODE_OPTIONS: --max-old-space-size=6144
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - id: java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-          cache: gradle
-          cache-dependency-path: |
-            apps/mobile/android/**/*.gradle*
-            apps/mobile/android/**/gradle-wrapper.properties
-            apps/mobile/android/gradle.properties
+      - id: gradle
+        uses: ./.github/actions/setup-gradle-cache
+        with:
+          java-version: ${{ steps.java.outputs.version }}
       - uses: ./.github/actions/setup-community
       # The embedded runtime's ICU data is trimmed with ICU's tools and relinked with LLVM (apps/mobile/runtime/README.md).
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends icu-devtools llvm clang lld
