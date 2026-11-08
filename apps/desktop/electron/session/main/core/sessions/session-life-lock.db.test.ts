@@ -13,8 +13,14 @@ import { SessionLife } from './session-life';
 import { readNativeInputTail } from '@gugu/session-core/session-record';
 import { renderDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 
-const mocks = vi.hoisted(() => ({ db: undefined as AppDb | undefined }));
+const mocks = vi.hoisted(() => ({ db: undefined as AppDb | undefined, nativePath: '' }));
 vi.mock('@main/db/client', () => ({ get db() { if (!mocks.db) throw new Error('Missing fixture'); return mocks.db; } }));
+vi.mock('../session-timeline/service', () => ({
+  readSessionRow: () => fixture.sqlite.prepare('SELECT provider, provider_session_id AS providerSessionId, runtime FROM sessions WHERE id = ?').get('s'),
+  locateRow: (row: { providerSessionId: string }) => ({ supported: true, locator: { harness: 'codex', providerSessionId: row.providerSessionId, roots: [] } }),
+}));
+vi.mock('../acp/agent-status-bridge', () => ({ acpAgentStatusBridge: { current: () => new Map([['s', { providerId: 'codex', transcriptPath: mocks.nativePath }]]) } }));
+import { nativePendingInputLookup } from './session-pending-history';
 import { lifeStore } from './session-pending';
 
 let fixture: Awaited<ReturnType<typeof openFixture>>;
@@ -364,5 +370,34 @@ it.each([true, false])('reconciles a real native file after timeout with receive
     expect(fixture.sqlite.prepare("SELECT count(*) AS n FROM session_turns WHERE session_id = 's'").get()).toEqual({ n: 0 });
     expect(r.dispatch).toHaveBeenCalledTimes(1);
     expect(fixture.sqlite.prepare("SELECT count(*) AS n FROM session_pending WHERE session_id = 's'").get()).toEqual({ n: 1 });
+  } finally { await r.owner.signOut(); await rm(directory, { recursive: true, force: true }); }
+});
+// Covers both the final await for one input and the interval between inputs sharing a native tail.
+it.each([2, 3])('native binding change at ownership check %i cannot settle stale evidence', async changeCheck => {
+  const directory = await mkdtemp(join(tmpdir(), 'gugu-review-native-binding-'));
+  const path = join(directory, 'rollout-fixture-native-session.jsonl');
+  mocks.nativePath = path;
+  fixture.sqlite.prepare("UPDATE sessions SET provider = 'codex', provider_session_id = 'native-session' WHERE id = 's'").run();
+  const messages = ['first', 'second'].map(id => ({ id, text: renderDeliveryEnvelope({ route: 'session-direct', from: 'Sender', fromType: 'agent', fromId: 'session:sender', messageId: `msg:${id}`, at: 'now', content: 'task' }) }));
+  const seqs = messages.map(({ id, text }) => {
+    const seq = lifeStore.enqueue({ sessionId: 's', messageId: id, text, kind: 'session-direct' }).seq;
+    lifeStore.commit('s', [{ e: 'write-receipt', seq, receipt: { state: 'dispatching', attempt: 1 as never } }]);
+    return seq;
+  });
+  await writeFile(path, [JSON.stringify({ type: 'session_meta', payload: { id: 'native-session' } }), ...messages.map(({ text }) => JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } }))].join('\n')+'\n');
+  let checks = 0;
+  let reconciling = false;
+  const r = rig(async () => {
+    if (reconciling && ++checks === changeCheck) fixture.sqlite.prepare("UPDATE sessions SET provider_session_id = 'replacement' WHERE id = 's'").run();
+    return true;
+  });
+  try {
+    await r.owner.signIn('A'); reconciling = true;
+    await r.owner.reconcileUnknownRows('s', nativePendingInputLookup('s'));
+    expect(lifeStore.row('s', seqs[0]!).state).toBe(changeCheck === 2 ? 'unknown' : 'accepted');
+    expect(fixture.sqlite.prepare("SELECT provider_session_id AS id FROM sessions WHERE id='s'").get()).toEqual({ id: 'replacement' });
+    expect(lifeStore.row('s', seqs[1]!).state).toBe('unknown');
+    expect(lifeStore.row('s', seqs[1]!)).toMatchObject({ state: 'unknown', failure: { code: 'native_session_changed' } });
+    expect(r.dispatch).not.toHaveBeenCalled();
   } finally { await r.owner.signOut(); await rm(directory, { recursive: true, force: true }); }
 });

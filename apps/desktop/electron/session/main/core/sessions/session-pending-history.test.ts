@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import type { NativeInputEvidence } from '@gugu/core/local/agent/deliveryIdentity';
 
 const mocks = vi.hoisted(() => ({
-  row: { provider: 'codex', providerSessionId: 'native-session' } as { provider: string; providerSessionId: string } | null,
+  row: { provider: 'codex', providerSessionId: 'native-session', runtime: 'acp' } as { provider: string; providerSessionId: string; runtime?: string } | null,
   read: vi.fn(),
   locate: vi.fn(),
   current: vi.fn(),
@@ -14,7 +14,7 @@ import { nativePendingInputLookup } from './session-pending-history';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.row = { provider: 'codex', providerSessionId: 'native-session' };
+  mocks.row = { provider: 'codex', providerSessionId: 'native-session', runtime: 'acp' };
   mocks.locate.mockReturnValue({ supported: true, locator: { harness: 'codex', providerSessionId: 'native-session', roots: ['/native'] } });
   mocks.current.mockReturnValue(new Map());
   mocks.read.mockResolvedValue({ find: () => ({ state: 'received', nativeReceiptId: 'native-user' }) });
@@ -52,4 +52,14 @@ it('reports unsupported and missing locations without reading another session', 
   mocks.locate.mockReturnValue({ supported: false, reason: 'not supported' });
   expect(await nativePendingInputLookup('s')({ id: 'id', text: 'delivery' })).toEqual({ state: 'incomplete', reason: 'native_location_unavailable' });
   expect(mocks.read).not.toHaveBeenCalled();
+});
+it.each(['providerSessionId', 'provider', 'runtime', 'missing'] as const)('rejects a shared tail after its %s binding changes', async field => {
+  const lookup = nativePendingInputLookup('s');
+  expect(await lookup({ id: 'first', text: 'delivery' })).toEqual({ state: 'received', nativeReceiptId: 'native-user' });
+  expect(lookup.isCurrent?.()).toBe(true);
+  if (field === 'missing') mocks.row = null;
+  else mocks.row![field] = 'replacement';
+  expect(lookup.isCurrent?.()).toBe(false);
+  expect(await lookup({ id: 'second', text: 'delivery' })).toEqual({ state: 'incomplete', reason: 'native_session_changed' });
+  expect(mocks.read).toHaveBeenCalledTimes(1);
 });

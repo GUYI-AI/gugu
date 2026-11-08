@@ -347,6 +347,13 @@ export class SessionLife {
     }
     // Another click or a receipt may have consumed this exact row while history was read.
     if (!store.unaccepted(sessionId).some(current => current.seq === row.seq && current.state === row.state)) return;
+    // Ownership may await while the native session is rebound. No await may separate this check from the receipt commit.
+    try {
+      if (row.state === 'unknown' && findEcho.isCurrent?.() === false) evidence = { state: 'incomplete', reason: 'native_session_changed' };
+    } catch (error) {
+      lookupFailed = true; lookupError = error;
+      evidence = { state: 'incomplete', reason: 'native_lookup_failed', detail: String(error) };
+    }
     if (evidence.state !== 'received' && (!resend || evidence.state === 'incomplete')) {
       const cause = { name: 'NativeInputUnresolved', code: evidence.reason,
         message: evidence.state === 'incomplete' ? evidence.detail ?? evidence.reason : evidence.reason };
