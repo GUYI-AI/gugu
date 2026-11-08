@@ -175,9 +175,16 @@ def products():
     require(info['CFBundleIdentifier'] == 'app.gugu.chat', 'Wrong actual App bundle')
     require(info['CFBundleShortVersionString'] == '0.3.2' and str(info['CFBundleVersion']) == '1', 'Unexpected App version/build')
     require(str(info['DTSDKName']).startswith('iphonesimulator'), 'Wrong App SDK')
-    purposes = ['NSCalendarsUsageDescription', 'NSCalendarsFullAccessUsageDescription', 'NSCalendarsWriteOnlyAccessUsageDescription']
+    purposes = ['NSCalendarsUsageDescription', 'NSCalendarsFullAccessUsageDescription']
     for key in purposes:
         require(isinstance(source_info.get(key), str) and source_info[key] and info.get(key) == source_info[key], 'Calendar purpose text changed: ' + key)
+    write_only_key = 'NSCalendarsWriteOnlyAccessUsageDescription'
+    write_only_declared = write_only_key in source_info
+    if write_only_declared:
+        require(isinstance(source_info[write_only_key], str) and source_info[write_only_key] and info.get(write_only_key) == source_info[write_only_key], 'Calendar purpose text changed: ' + write_only_key)
+        purposes.append(write_only_key)
+    else:
+        require(write_only_key not in info, 'Unexpected calendar write-only purpose declaration')
     required_bundles = []
     for name in ['HostValidation.xctest', 'CalendarUIValidation.xctest']:
         found = sorted(products_root.rglob(name))
@@ -204,6 +211,8 @@ def products():
     save('built-app.json', {'head': git('rev-parse', 'HEAD'), 'bundleIdentifier': info['CFBundleIdentifier'],
         'version': info['CFBundleShortVersionString'], 'build': info['CFBundleVersion'], 'sdk': info['DTSDKName'],
         'calendarPurposeStatements': {key: info[key] for key in purposes}, 'runtime': app_runtime,
+        'calendarWriteOnlyPurpose': {'declaredInSource': write_only_declared,
+            'declaredInProduct': write_only_key in info, 'status': 'declared' if write_only_declared else 'not-declared'},
         'renderer': app_renderer, 'originalXctestruns': run_records, 'signatures': signed,
         'actualAppExecutions': 0, 'actualSimulatorExecutions': 0, 'actualAuthentication': False,
         'actualEventKit': False, 'actualModelHTTP': False})
