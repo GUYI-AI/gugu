@@ -6,11 +6,11 @@ type Position = { turnId: string; afterItemId?: string };
 
 /** Native echoes do not identify a host submission until its receipt names their exact ID. */
 export class PromptEchoes {
-  private readonly submitted = new Set<string>();
+  private readonly submitted = new Set<PromptRequest>();
   private readonly pending = new Map<string, { event: UserMessage; position: Position }>();
   private readonly bindings = new Map<string, UserMessage>();
 
-  register(request: PromptRequest): void { this.submitted.add(request.messageId); }
+  register(request: PromptRequest): void { this.submitted.add(request); }
 
   receive(event: UserMessage, transcript: AcpTranscriptParser, continueTurn: boolean): UserMessage | null {
     if (!event.messageId) return event;
@@ -31,14 +31,15 @@ export class PromptEchoes {
     const echo = this.pending.get(nativeId);
     if (!echo) return;
     this.pending.delete(nativeId);
-    this.submitted.delete(request.messageId);
+    this.settle(request);
     this.bindings.set(nativeId, request.submitted);
     const event = this.update(request.submitted, echo.event, nativeId);
     transcript.placeUserMessage(event, echo.position);
     return event;
   }
 
-  dispatched(request: PromptRequest): void { this.submitted.delete(request.messageId); }
+  /** Settle only this dispatch; another retry can already own the same client message ID. */
+  settle(request: PromptRequest): void { this.submitted.delete(request); }
 
   clear(): void { this.submitted.clear(); this.pending.clear(); this.bindings.clear(); }
 

@@ -3,6 +3,9 @@ import type { SessionPromptReceipt } from '@gugu/session-core/acp';
 import type { AcpAgentApi } from '@gugu/session-core/agents/plugins';
 import { noopLogger } from '@gugu/session-shared/logger';
 import { SessionCell } from './cell';
+import type { ChatMessage } from '@session-chat/model';
+import { conversationBubbleKey } from '../../../../session-chat-ui/src/components/rows/message/conversation-body';
+import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 
 const users = (history: ReturnType<SessionCell['history']>) => [...history.committed, ...(history.active ? [history.active] : [])]
   .flatMap(turn => turn.items.filter((item): item is Extract<typeof item, { kind: 'message' }> => item.kind === 'message' && item.role === 'user'));
@@ -109,4 +112,63 @@ describe('one submitted user identity through native admission', () => {
     expect(p.snapshots.every(snapshot => users(snapshot).length === 1)).toBe(true);
     p.cell.dispose();
   });
+
+  it.each([
+    { code: 'prompt_admission_timeout', message: 'timed out' },
+    { code: 'provider_failure', message: 'failed' },
+    { code: 'CANCELLED', message: 'cancelled' },
+    { code: -32002, message: 'Session not found', data: { sessionId: 's' } },
+  ])('a rejected receipt ($code) does not hide later unrelated native inputs', async error => {
+    const p = fixture();
+    try {
+      const a = p.cell.promptDetached({ text: 'identical body', clientMessageId: 'client-a' });
+      await vi.waitFor(() => expect(p.prompt).toHaveBeenCalledTimes(1));
+      p.echo('native-a'); p.receipts[0]!.reject(error);
+      expect(await a.completion).toMatchObject({ success: false });
+      const b = p.cell.promptDetached({ text: 'identical body', clientMessageId: 'client-b' });
+      await vi.waitFor(() => expect(p.prompt).toHaveBeenCalledTimes(2));
+      p.echo('native-b'); p.receipts[1]!.resolve({ status: 'accepted', requestId: 'b', messageId: 'native-b' });
+      await flush(); p.idle(); await b.completion;
+      const before = users(p.cell.history()).length;
+      p.echo('native-a');
+      expect(users(p.cell.history())).toHaveLength(before);
+      p.echo('unrelated-c'); p.echo('unrelated-d');
+      expect(users(p.cell.history())).toHaveLength(before + 2);
+    } finally { p.cell.dispose(); }
+  });
+
+  it('keeps a cancellation-racing receipt bound to the same client entity until admission settles', async () => {
+    const p = fixture();
+    try {
+      const sent = p.cell.promptDetached({ text: 'identical body', clientMessageId: 'cancel-race' });
+      await vi.waitFor(() => expect(p.prompt).toHaveBeenCalledTimes(1));
+      p.cell.push({ kind: 'agent_state', source: 'agent', state: 'running' });
+      expect(await p.cell.cancel()).toMatchObject({ success: true });
+      p.echo('native-cancel-race');
+      p.receipts[0]!.resolve({ status: 'accepted', requestId: 'cancel-race', messageId: 'native-cancel-race' });
+      await flush();
+      p.cell.push({ kind: 'agent_state', source: 'agent', state: 'idle', stopReason: 'cancelled' });
+      await sent.completion;
+      expect(p.snapshots.every(snapshot => users(snapshot).length === 1 && users(snapshot)[0]!.id === 'cancel-race')).toBe(true);
+      p.echo('future-native');
+      expect(users(p.cell.history())).toHaveLength(2);
+    } finally { p.cell.dispose(); }
+  });
+});
+
+it('keeps independently expanded delivery segments distinct despite their shared client identity', () => {
+  const parent: ChatMessage = { kind: 'message', role: 'user', id: 'batch-client', text: 'batch',
+    _meta: { guguClientMessageId: 'batch-client' } };
+  const segments = ['msg:source-a', 'msg:source-b'].map((messageId, index): ChatMessage => ({
+    ...parent, id: `${parent.id}:batch-${index}`,
+    guguDelivery: readDeliveryEnvelope(`<gugu_delivery route="chat" msg="${messageId}"><![CDATA[body]]></gugu_delivery>`)!,
+  }));
+  expect(segments.map(conversationBubbleKey)).toEqual(['conversation-bubble:msg:source-a', 'conversation-bubble:msg:source-b']);
+  const expanded = new Set([conversationBubbleKey(segments[0]!)]);
+  expect(segments.map(item => expanded.has(conversationBubbleKey(item)))).toEqual([true, false]);
+});
+
+it('uses the stable client identity for a single unsplit bubble', () => {
+  expect(conversationBubbleKey({ kind: 'message', role: 'user', id: 'display-prefix', text: 'body',
+    _meta: { guguClientMessageId: 'client-owned' } })).toBe('conversation-bubble:client-owned');
 });

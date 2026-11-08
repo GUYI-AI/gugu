@@ -566,6 +566,7 @@ export class SessionCell {
     if (event.kind === 'prompt_result') {
       this.applyReceiptMetadata(event.requestId, event._meta);
       const request = this.requests.get(event.requestId);
+      if (event.error && request) this.promptEchoes.settle(request);
       const dequeueAfterFailure = this.dequeueAfterFailure;
       if (event.error) this.deps.logger.error('SessionCell: prompt failed', { sessionId: this.sessionId, requestId: event.requestId, cause: event.error });
       if (request?.prompt.origin === 'communication' && event.error && isInvalidToken(event.error)) {
@@ -2068,6 +2069,7 @@ export class SessionCell {
     // Pre-admission refusal: no provider update was received, so this was never a turn. Restore only
     // our tentative projection, before any failed turn can reach durable history.
     const refuse = (error: unknown) => {
+      this.promptEchoes.settle(request);
       this.requests.delete(requestId);
       this.rawLog.record({ kind: 'prompt_result', sessionId: this.acpSessionId, stopReason: null, error: toSerializedError(error) });
       this.deps.logger.warn('SessionCell: provider refused a prompt before admission', { sessionId: this.sessionId,
@@ -2255,7 +2257,7 @@ export class SessionCell {
           logReceipt({ state: 'unknown', admission: 'dispatched' });
           // Request-activity transports identify their aggregate cycle on dispatch acknowledgement.
           request.dispatched = true;
-          this.promptEchoes.dispatched(request);
+          this.promptEchoes.settle(request);
           void (cycle ?? Promise.resolve(ok({ queued: false }))).then(result => {
             request.completion.resolve(result);
             this.requests.delete(requestId);
@@ -2264,6 +2266,7 @@ export class SessionCell {
         }
         return ok({ queued: false });
       }).catch(async (error: unknown) => {
+        this.promptEchoes.settle(request);
         if (this._agent !== agent || !providerRejectedMissingSession(error)) logReceipt({ state: 'unknown', cause: toSerializedError(error) });
         if (this._agent !== agent) return this.failedPrompt(toSerializedError(error), requestId);
         if (steered) await releasePreparation();
@@ -2286,6 +2289,7 @@ export class SessionCell {
       });
       return steered ? receipt : request.completion.promise;
     } catch (error) {
+      this.promptEchoes.settle(request);
       logReceipt({ state: 'unknown', cause: toSerializedError(error) });
       await releasePreparation();
       recordUserMessage();
