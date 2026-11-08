@@ -15,7 +15,7 @@ import {
   notifyWatchedChatsChanged,
   notifyInstalledAppsChanged,
   invokeExtensionCommand,
-  deliverToOpeningPage,
+  deliverToChatFilePage,
   deliverToSessionFilePage,
   setExtensionAppView,
   unbindExtensionSurfaces,
@@ -322,7 +322,7 @@ export const extensionsController = createRPCController({
       const target = await files.groupFile(chatId, String(args?.itemId ?? ''));
       const choice = files.openerChoice(target.typedName);
       const place = placeFor(choice, args?.at);
-      if (place) deliverToOpeningPage(place.candidate.extensionId, placeLink(place.candidate, place.at, target.itemId), { chat: chatId }, target.itemId);
+      if (place) deliverToChatFilePage(place.candidate.extensionId, placeLink(place.candidate, place.at, target.itemId), chatId, target.itemId);
       return { success: true as const, data: { ...target, choice } };
     } catch (error) {
       log.warn('Failed to resolve who opens a group file:', error);

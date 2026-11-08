@@ -794,6 +794,21 @@ export function deliverToOpeningPage(extensionId: string, event: ExtensionHostEv
 }
 
 /**
+ * A pill's place in a chat file, for the App tab showing it: a page of that file in that chat already open is told now
+ * (a tab already open is brought forward, not opened again); else the page about to open it, as `deliverToOpeningPage`.
+ */
+export function deliverToChatFilePage(extensionId: string, event: ExtensionHostEvent, chatId: string, itemId: string): void {
+  let told = 0;
+  for (const [webContentsId, binding] of bindings) {
+    if (binding.extensionId !== extensionId || binding.conversation !== chatId || binding.itemId !== itemId) continue;
+    if (event.type === 'link' && event.tab !== binding.tabName) continue;
+    const contents = webContents.fromId(webContentsId);
+    if (contents && !contents.isDestroyed()) { sendEvent(contents, event); told += 1; }
+  }
+  if (told === 0) deliverToOpeningPage(extensionId, event, { chat: chatId }, itemId);
+}
+
+/**
  * The place a link in a session's chat names in one of its working copy's files (`path#k=v&…`), for the App tab that opens
  * it — as a chat file's pill tells its page (`deliverToOpeningPage`). A session shows a file in one tab: one already open
  * on it is told now; else the page about to open it, or be moved to it, when it binds there.
@@ -2118,7 +2133,7 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
         if (tab !== undefined) resumed = await present();
         const { chatId, itemId } = target.target;
         const place = placeFor(choice, (args as { at?: unknown }).at);
-        if (place) deliverToOpeningPage(place.candidate.extensionId, placeLink(place.candidate, place.at, itemId), { chat: chatId }, itemId);
+        if (place) deliverToChatFilePage(place.candidate.extensionId, placeLink(place.candidate, place.at, itemId), chatId, itemId);
         const detail = { ...target.target, choice, intent, ...(args.viewState && typeof args.viewState === 'object' && !Array.isArray(args.viewState) ? { viewState: structuredClone(args.viewState as Record<string, unknown>) } : {}), ...(resumed ? { background: true } : {}) };
         if (peek) return void (await deliver(shown, { kind: 'peek', target: { kind: 'chat', detail } }));
         await deliver(shown, { kind: 'openWith', detail });

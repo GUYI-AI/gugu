@@ -23,8 +23,8 @@ const mine = { id: 'agent', type: 'agent', owner_user_id: 'user-1', display_name
 const theirs = { id: 'their-agent', type: 'agent', owner_user_id: 'someone', display_name: 'Theirs' } as ContactUser
 
 function Shell() {
-  useOwnedAgentConversationEntry({ ownerId: 'user-1', chats: [], contacts: [mine, theirs], mobile: true, onOpen: noop })
-  useLinkNavigation({ ownerId: 'user-1', chats: [], contacts: [mine, theirs], openSender: noop, openChat: vi.fn(), openFile: vi.fn(), openApp: vi.fn(), openProject: vi.fn(), openOwnApp: vi.fn(), openAssistant: vi.fn() } as never)
+  useOwnedAgentConversationEntry({ ownerId: 'user-1', chats: () => [], contacts: () => [mine, theirs], mobile: true, onOpen: noop })
+  useLinkNavigation({ ownerId: 'user-1', chats: () => [], contacts: () => [mine, theirs], openSender: noop, openChat: vi.fn(), openFile: vi.fn(), openApp: vi.fn(), openProject: vi.fn(), openOwnApp: vi.fn(), openAssistant: vi.fn() } as never)
   return null
 }
 

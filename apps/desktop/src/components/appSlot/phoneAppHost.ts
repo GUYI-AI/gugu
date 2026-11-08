@@ -293,7 +293,12 @@ const failure = (error: unknown): { success: false; error: string } => ({ succes
 const OPENING_LINK_TTL_MS = 30_000
 const openingLinks: { extensionId: string; chatId: string | null; itemId: string | null; sessionId?: string; event: ExtensionHostEvent; expiresAt: number }[] = []
 export function holdPlaceForOpeningPage(chatId: string, itemId: string, candidate: FileOpenerCandidate, at: Record<string, string>): void {
-  openingLinks.push({ extensionId: candidate.extensionId, chatId, itemId, event: placeLink(candidate, at, itemId), expiresAt: Date.now() + OPENING_LINK_TTL_MS })
+  const event = placeLink(candidate, at, itemId)
+  // A page of that file already open is told now: its tab is brought forward, not opened again.
+  const open = [...frames.values()].filter(({ binding }) => binding.extensionId === candidate.extensionId && binding.chatId === chatId
+    && binding.itemId === itemId && (event.type !== 'link' || event.tab === binding.tabName))
+  for (const hosted of open) hosted.deliver(event)
+  if (open.length === 0) openingLinks.push({ extensionId: candidate.extensionId, chatId, itemId, event, expiresAt: Date.now() + OPENING_LINK_TTL_MS })
 }
 function takeOpeningLinks(binding: PhoneAppBinding): ExtensionHostEvent[] {
   const now = Date.now()

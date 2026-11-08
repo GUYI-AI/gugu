@@ -40,7 +40,7 @@ const opened = () => extensionSurfaceBindingForTests(PAGE)?.personOpened;
 
 beforeEach(() => {
   unbindExtensionSurface(PAGE);
-  setExtensionBridgeHost({ deliver: () => Promise.resolve(), presentation: () => ({ locale: 'en', themeMode: 'dark' as const, fullscreen: false, windowFocused: true }) });
+  setExtensionBridgeHost({ deliver: () => Promise.resolve(), selfGuguNumber: () => undefined, presentation: () => ({ locale: 'en', themeMode: 'dark' as const, fullscreen: false, windowFocused: true }) });
 });
 
 describe('a file outside the working copy, as a person opened it', () => {
