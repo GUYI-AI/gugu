@@ -56,7 +56,7 @@ export interface GuguHost extends ProjectionHost {
     search(args: AppFileSearch): Promise<AppFileEntry[]>;
     recent(args: { limit?: number }): Promise<AppFileEntry[]>;
     viewPreferences(args: { place: AppPlace; showAppData?: boolean }): Promise<{ showAppData: boolean }>;
-    create(args: { place: AppPlace; name: string; content: string; contentType?: string; sourceMessageIds?: string[]; folder?: string }): Promise<AppFileEntry>;
+    create(args: { place: AppPlace; name: string; content: string; contentType?: string; sourceMessageIds?: string[]; folder?: string; ifExists?: 'use' }): Promise<AppFileEntry>;
     /** 子文件夹: a chat's folder at `path`, made all the way down; one already there is answered as it is. */
     mkdir(args: { place: AppPlace; path: string }): Promise<AppFileEntry>;
     /** 子文件夹: into another folder (`folder`, '' the top; not given, where it is), renamed too when `name` is given. */

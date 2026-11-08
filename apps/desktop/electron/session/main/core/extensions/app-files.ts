@@ -621,12 +621,13 @@ function noSourceMessagesInWorkingCopy(sourceMessageIds: unknown): void {
 
 export async function createAppFile(
   page: DesktopFilePage,
-  args: { place?: unknown; name: string; content: string; contentType?: string; sourceMessageIds?: unknown; folder?: unknown },
+  args: { place?: unknown; name: string; content: string; contentType?: string; sourceMessageIds?: unknown; folder?: unknown; ifExists?: unknown },
 ): Promise<AppFileEntry> {
   const place = placeOf(args.place);
   const file = { name: args.name, content: args.content, ...(args.contentType ? { contentType: args.contentType } : {}) };
-  if ('chat' in place) return files.create(place.chat, { ...file, sourceMessageIds: args.sourceMessageIds, folder: args.folder }, { asAgent: page.asAgent ?? null, extensionId: page.extensionId });
+  if ('chat' in place) return files.create(place.chat, { ...file, sourceMessageIds: args.sourceMessageIds, folder: args.folder, ifExists: args.ifExists }, { asAgent: page.asAgent ?? null, extensionId: page.extensionId });
   noSourceMessagesInWorkingCopy(args.sourceMessageIds);
+  if (args.ifExists !== undefined) throw new AppFileError('invalid', "ifExists is for a chat's files: a working copy's name already there is name-taken");
   const named = { ...file, name: inFolder(folderOf(args.folder), args.name) };
   const there = await onItsMachine(page, place, 'filesCreate', { place, ...named });
   if (there.there) return there.value as AppFileEntry;

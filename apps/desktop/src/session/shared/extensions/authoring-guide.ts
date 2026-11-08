@@ -609,6 +609,7 @@ Each call names a file: an entry, \`ctx.file\`, or \`{ chat | workspace, name }\
   create and upload take \`folder\` too (made if missing); \`gugu.files.mkdir({ chat, path })\`,
   \`gugu.files.move(entry, { folder, name })\`; remove takes a whole folder. A name the folder has (any case):
   a new file gets \` (2)\`, a rename or move is \`name-taken\`. 「附件」 (\`systemRole\`) stays put.
+  \`files.create(place, content, { ifExists: 'use' })\`: the file already there instead (two at once: both get one).
 - A session's working copy, listing and changing it on its own machine: \`apps-working-copy\`.
 - \`gugu.files.onChanged(place, fn)\` → unsubscribe. Chat: \`{ kind: 'entries', entries, gone }\`.
 - \`gugu.files.openWith(entry)\`: claim or "always use"; \`{ ask: true }\`: pick among all.

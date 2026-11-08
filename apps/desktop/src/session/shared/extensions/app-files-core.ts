@@ -665,6 +665,22 @@ function insertDocument(
 }
 
 /**
+ * The file at `name` in `folder` (a path, or the top), made by `make` when it is not there. Two making it at once: the folder
+ * names the later one apart (「 (2)」), which goes again, and both answer the first.
+ */
+async function madeOnce(token: string, chatId: string, folder: string | undefined, name: string, actor: string, make: () => Promise<ItemRow>): Promise<ItemRow> {
+  const first = async () => (await itemsByPath(token, chatId, folder ? `${folder}/${name}` : name, actor)).find((row) => row.kind !== 'folder');
+  const found = await first();
+  if (found) return found;
+  const made = await make();
+  if (made.filename === name) return made;
+  await agentRows(token, 'workspace_delete_as', { p_item_id: made.id, p_as_user_id: actor });
+  const row = await first();
+  if (!row) throw new AppFileError('failed', `${name} was made as ${made.filename}, and the one it gave way to is gone`);
+  return row;
+}
+
+/**
  * The folder a new file goes in, by its id (子文件夹): made all the way down when it is not there, through the door — as the
  * person, or the agent a program works for. Not given, '' or '/': the top.
  */
@@ -1082,7 +1098,7 @@ export function createAppFiles(platform: FilesPlatform) {
     /**
      * API 14 `chatFile`: the file an App names for a chat, as a file of it opened with that App — at the top of the chat's
      * folder, made empty for the person the first time (`{}` for JSON, a JSON file holding an object; the App fills it).
-     * Two making it at once: the folder names the later one apart, which goes again, and both open the first.
+     * Two making it at once: both open the first (`madeOnce`).
      */
     async appChatFile(chatId: string, manifest: ExtensionManifest | undefined): Promise<AppOpenWithDetail> {
       const tab = manifest?.contributes.tabs.find((candidate) => candidate.chatFile !== undefined);
@@ -1091,20 +1107,14 @@ export function createAppFiles(platform: FilesPlatform) {
       const candidate = fileOpenersFor(name, [manifest], 'chat').find((opener) => opener.tabKind === `${manifest.id}.${tab.name}`);
       if (!candidate) throw new AppFileError('invalid', `${manifest.id}.${tab.name} does not open ${name} in a chat`);
       const { token, userId } = await platform.account();
-      const first = async () => (await itemsByPath(token, chatId, name, userId)).find((row) => row.kind !== 'folder' && row.parent_id === null);
-      let row = await first();
-      if (!row) {
-        const contentType = contentTypeOf(name);
-        const made = await insertDocument(token, { chatId, name, contentType, content: /json/i.test(contentType) ? '{}' : '', sourceMessageIds: [], parentId: null }, userId);
-        if (made.filename !== name) await agentRows(token, 'workspace_delete_as', { p_item_id: made.id, p_as_user_id: userId });
-        row = made.filename === name ? made : await first();
-        if (!row) throw new AppFileError('failed', `${name} was made as ${made.filename}, and the one it gave way to is gone`);
-      }
+      const contentType = contentTypeOf(name);
+      const row = await madeOnce(token, chatId, undefined, name, userId, () =>
+        insertDocument(token, { chatId, name, contentType, content: /json/i.test(contentType) ? '{}' : '', sourceMessageIds: [], parentId: null }, userId));
       return { ...(await this.groupFile(chatId, row.id)), choice: { kind: 'one', candidate } };
     },
 
     /** `folder` (子文件夹): the folder it goes in, made all the way down when it is not there; not given, the top. */
-    async create(chatId: string, args: { name: string; content: string; contentType?: string; sourceMessageIds?: unknown; folder?: unknown },
+    async create(chatId: string, args: { name: string; content: string; contentType?: string; sourceMessageIds?: unknown; folder?: unknown; ifExists?: unknown },
       as: { asAgent?: string | null; extensionId?: string } = {}): Promise<AppFileEntry> {
       const { token, userId } = await platform.account();
       const name = String(args.name ?? '').trim();
@@ -1126,8 +1136,9 @@ export function createAppFiles(platform: FilesPlatform) {
         }
       }
       const actor = as.asAgent ?? userId;
-      const parentId = await folderIdFor(token, chatId, folder, actor);
-      return entryOne(token, await insertDocument(token, { chatId, name, contentType, content, sourceMessageIds, parentId }, actor), actor);
+      const make = async () => insertDocument(token, { chatId, name, contentType, content, sourceMessageIds, parentId: await folderIdFor(token, chatId, folder, actor) }, actor);
+      if (args.ifExists !== undefined && args.ifExists !== 'use') throw new AppFileError('invalid', "files.create: ifExists is 'use' or not given");
+      return entryOne(token, args.ifExists === 'use' ? await madeOnce(token, chatId, folder, name, actor, make) : await make(), actor);
     },
 
     /** 子文件夹: a chat's folder at `path`, made all the way down — one already there is answered as it is. */
