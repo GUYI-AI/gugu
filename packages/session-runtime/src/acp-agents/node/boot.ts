@@ -23,6 +23,7 @@ import { ChildAcpProcessHost } from './child-process-host';
 import { LocalAttachmentStore } from './local-attachment-store';
 import { createPromptAttachmentResolver } from './resolve-prompt-attachment';
 import { LocalPromptQueueStore } from './local-prompt-queue-store';
+import { createAcceptanceCommitObserver } from './acceptance-commit-observer';
 
 export type BootAcpRuntimeProcessOptions = {
   pluginRegistry: PluginRegistry<CLIAgentPluginProvider>;
@@ -46,6 +47,11 @@ export function bootAcpRuntimeProcess(options: BootAcpRuntimeProcessOptions): vo
   const childHost = new ChildAcpProcessHost();
   void serveWorkerProcess(
     (scope) => {
+      let observer: ReturnType<typeof createAcceptanceCommitObserver>;
+      try { observer = createAcceptanceCommitObserver(env, error => logger.warn('Acceptance commit observation failed', { error }),
+        file => logger.info('Acceptance commit observer ready', { file })); }
+      catch (error) { logger.warn('Acceptance commit observation unavailable', { error }); }
+      scope.add(() => observer?.close());
       const attachmentsDir = env.GUGU_ACP_ATTACHMENTS_DIR;
       if (!attachmentsDir) {
         throw new Error('ACP runtime process started without GUGU_ACP_ATTACHMENTS_DIR');
@@ -97,7 +103,7 @@ export function bootAcpRuntimeProcess(options: BootAcpRuntimeProcessOptions): vo
             ...(platformAccessSessionId ? { platformAccessSessionId } : {}),
           }),
         onConversationActivity: (event) => conversationActivity.emit(undefined, event),
-        onTurnCommitted: (event) => turnCommitted.emit(undefined, event),
+        onTurnCommitted: (event) => { turnCommitted.emit(undefined, event); observer?.record(event); },
         onPromptSteered: (sessionId) => promptSteered.emit(undefined, { sessionId }),
         onForkHandshake: (providerId, fork) => forkHandshake.emit(undefined, { providerId, fork }),
       } satisfies AcpRuntimeDeps);
