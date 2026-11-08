@@ -260,26 +260,28 @@ final class GuguIOSOwnerSession {
         lock.lock(); defer { lock.unlock() }
         guard generation == permit.generation,
               !retiring || permit.holdsRetirement else { throw Self.stale() }
-        let record = try retirementStore?.snapshot()
-        if retirementStore != nil, permit.holdsRetirement {
-            guard let record, record.id == permit.retirementId else { throw Self.stale() }
-        }
-        if let record {
-            guard permit.holdsRetirement, record.cleanupComplete,
-                  record.target == (try .init(ownerId: permit.nextOwnerId, accessToken: permit.nextAccessToken)) else { throw Self.stale() }
-        }
-        try persist()
+        if let retirementStore {
+            if permit.holdsRetirement && permit.retirementId == nil { throw Self.stale() }
+            try retirementStore.commit(id: permit.retirementId,
+                target: .init(ownerId: permit.nextOwnerId, accessToken: permit.nextAccessToken)) {
+                try persist()
+                return try readBackMainWrite(permit)
+            }
+        } else { try persist(); _ = try readBackMainWrite(permit) }
+        generation &+= 1
+        retirementAccess = nil
+        retirementVerifiedUntil = nil
+        if permit.holdsRetirement { retiring = false; storageRetirementPending = false }
+    }
+
+    private func readBackMainWrite(_ permit: GuguIOSMainWritePermit) throws -> GuguIOSStoredSession? {
         let current = try readStored()
         guard current?.ownerId == permit.nextOwnerId,
               permit.nextAccessToken == nil || current?.accessToken == permit.nextAccessToken else {
             retiring = true; active = nil; storageRetirementPending = true
             throw Self.failure("auth_storage_invalid", "Native login write did not preserve the prepared owner")
         }
-        if let record { try retirementStore?.finishCommit(id: record.id, stored: current) }
-        generation &+= 1
-        retirementAccess = nil
-        retirementVerifiedUntil = nil
-        if permit.holdsRetirement { retiring = false; storageRetirementPending = false }
+        return current
     }
 
     func retire(expectedOwnerId: String, completion: @escaping (Result<Void, Error>) -> Void) {

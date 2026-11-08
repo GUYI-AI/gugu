@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 let owner = "11111111-1111-4111-8111-111111111111"
 let other = "22222222-2222-4222-8222-222222222222"
@@ -29,6 +30,17 @@ func check(_ value: @autoclosure () throws -> Bool, _ label: String) {
 }
 func rejects(_ body: () throws -> Void) -> Bool { do { try body(); return false } catch { return true } }
 func succeeded<T>(_ result: Result<T, Error>?) -> Bool { if case .success? = result { return true }; return false }
+
+if CommandLine.arguments.contains("--competing-target") {
+    let fd = open(root.appendingPathComponent("owner-retirement.json.lock").path, O_RDWR | O_CLOEXEC)
+    guard fd >= 0 else { exit(2) }
+    let probe = flock(fd, LOCK_EX | LOCK_NB)
+    let outcome = probe == 0 ? "unlocked" : (errno == EWOULDBLOCK ? "blocked" : "unexpected")
+    if probe == 0 { flock(fd, LOCK_UN) }; close(fd)
+    try Data(outcome.utf8).write(to: root.appendingPathComponent("competing-lock-probe"))
+    _ = try store.begin(target: .init(ownerId: other, accessToken: "synthetic-other"))
+    exit(0)
+}
 
 if CommandLine.arguments.contains("--cold-child") {
     let expected = CommandLine.arguments.last!
@@ -159,8 +171,33 @@ check(rejects { try firstSession.commitMainWrite(firstPermit) { wroteBeforeTarge
       "retargeted transaction rejects earlier permit before Keychain mutation")
 _ = try firstLogin.begin(target: .init(ownerId: owner, accessToken: token))
 // Represents another process completing that same prepared commit.
-try firstLogin.finishCommit(id: firstID, stored: .init(ownerId: owner, accessToken: token, expiresAt: now))
+try firstLogin.commit(id: firstID, target: .init(ownerId: owner, accessToken: token),
+    persist: { .init(ownerId: owner, accessToken: token, expiresAt: now) })
 var wroteAfterOtherCommit = false
 check(rejects { try firstSession.commitMainWrite(firstPermit) { wroteAfterOtherCommit = true } } && !wroteAfterOtherCommit,
       "cross-handle completed transaction rejects stale permit before Keychain mutation")
+
+let raceRoot = root.appendingPathComponent("commit-race")
+let raceStore = GuguIOSOwnerRetirementStore(directory: raceRoot)
+var raceStored: GuguIOSStoredSession?
+let raceSession = GuguIOSOwnerSession(readStored: { raceStored }, installationId: { installation },
+    verifyUser: { _, done in done(.success(owner)) }, stopNative: { $0(.success(())) },
+    retireExternal: { _, done in done(.success(())) }, retirementStore: raceStore, now: { now })
+raceSession.prepareMainWrite(nextOwnerId: owner, nextAccessToken: token) { permit = $0 }
+let racePermit = try permit!.get(), raceID = try raceStore.snapshot()!.id
+let writer = Process(); writer.executableURL = URL(fileURLWithPath: CommandLine.arguments[0]); writer.arguments = ["--competing-target"]
+writer.environment = ProcessInfo.processInfo.environment.merging(["GUGU_OWNER_TEST_ROOT": raceRoot.path]) { _, new in new }
+try raceSession.commitMainWrite(racePermit) {
+    try writer.run()
+    let probe = raceRoot.appendingPathComponent("competing-lock-probe"), deadline = Date().addingTimeInterval(5)
+    while !FileManager.default.fileExists(atPath: probe.path), Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+    check(try String(contentsOf: probe, encoding: .utf8) == "blocked", "fresh process observes custody lock held at actual Keychain mutation")
+    let held = try JSONDecoder().decode(GuguIOSOwnerRetirementStore.Record.self,
+        from: Data(contentsOf: raceRoot.appendingPathComponent("owner-retirement.json")))
+    check(held.id == raceID && held.target.ownerId == owner, "competing writer cannot retarget the prepared commit")
+    raceStored = .init(ownerId: owner, accessToken: token, expiresAt: Date(timeIntervalSince1970: 3000))
+}
+writer.waitUntilExit()
+check(try writer.terminationStatus == 0 && raceStore.snapshot()?.target.ownerId == other && raceStore.snapshot()?.id != raceID,
+      "competing target starts a new transaction only after exact commit and unlock")
 print("SUMMARY \(count) parent checks plus fresh-exec checks; private APFS and injected identity; no Keychain/HTTP/App")

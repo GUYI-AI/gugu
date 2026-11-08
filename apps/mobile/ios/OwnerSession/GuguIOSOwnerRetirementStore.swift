@@ -85,12 +85,24 @@ final class GuguIOSOwnerRetirementStore {
         }
     }
 
-    func finishCommit(id: String, stored: GuguIOSStoredSession?) throws {
+    /// The lock spans both custody validation and the actual synchronous Keychain
+    /// mutation/readback. A competing process cannot retarget between those steps.
+    func commit(id: String?, target: Target, persist: () throws -> GuguIOSStoredSession?) throws {
         try transaction {
-            guard let value = try read(), value.id == id, value.cleanupComplete,
-                  value.captureComplete, value.target.matches(stored) else { throw Self.failure() }
-            try FileManager.default.removeItem(at: path)
-            try syncDirectory()
+            if let id {
+                guard let value = try read(), value.id == id, value.cleanupComplete,
+                      value.captureComplete, value.target == target else { throw Self.failure() }
+            } else {
+                guard try read() == nil else { throw Self.failure() }
+            }
+            let stored = try persist()
+            guard target.matches(stored) else {
+                throw GuguHostFailure(code: "auth_storage_invalid", message: "Native login write differs from its prepared target")
+            }
+            if id != nil {
+                try FileManager.default.removeItem(at: path)
+                try syncDirectory()
+            }
         }
     }
 

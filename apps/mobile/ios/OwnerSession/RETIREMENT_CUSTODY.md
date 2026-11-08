@@ -23,7 +23,8 @@ each use checks the exact transaction, token, installation and generation.
 
 Successful external cleanup and local stop persist the cleanup phase before a
 write permit is returned. The permit compares the original transaction UUID and
-the exact prepared target before invoking Keychain persistence. A later explicit
+the exact prepared target under the same sidecar lock held across synchronous
+Keychain persistence, exact readback and transaction removal. A later explicit
 storage intent may change the target while keeping original cleanup custody;
 that invalidates a prior target's permit. Write failure retains the barrier.
 Only a successful exact readback removes it. A process crash after cleanup and
