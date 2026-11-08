@@ -441,7 +441,7 @@ export function flattenTier(
     const artifactItems = new Set<string>(), turnOutputs = outputsOfRun(opened, turnIndex, absorbed);
     if (ctx.agentConversation) {
       const live = ctx.active && turnIndex === turns.length - 1;
-      const blocks = planConversationSegments(turn, live, true);
+      const blocks = planConversationSegments(turn, live);
       let inputActivity: AgentActivityEvent | undefined;
       let sentActivity: AgentActivityEvent | undefined;
       for (const block of blocks) {

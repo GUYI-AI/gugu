@@ -99,9 +99,11 @@ describe('approved A2A activity', () => {
   });
   it('keeps the owner pinned while reading ordinary reply content beside a closed activity', async () => {
     const t = await mount(800, [turn('own', [ordinary('Owner question', 'user'), delivery('incoming'),
-      ...Array.from({ length: 24 }, (_, i) => ordinary(`Reply ${i}. `.repeat(45)))]),
+      ordinary(Array.from({ length: 24 }, (_, i) => `Reply ${i}. `.repeat(45)).join('\n\n'))]),
       turn('next', [ordinary('Next owner question', 'user'), ordinary('Next answer')])]);
     expect(t.button().getAttribute('aria-expanded')).toBe('false');
+    t.host.querySelector<HTMLButtonElement>('[data-expand-user-card]')!.click();
+    await untilStable('the full final answer is measured', () => t.scroll().scrollHeight);
     t.scroll().scrollTop = 850;
     await untilStable('owner reading ordinary reply', () => t.host.querySelector('[data-agent-conversation-message="Owner question"]')?.getBoundingClientRect().top);
     const row = t.host.querySelector<HTMLElement>('[data-agent-conversation-message="Owner question"]');
@@ -176,9 +178,9 @@ describe('approved A2A activity', () => {
     expect(card.bottom).toBeLessThanOrEqual(viewport.bottom + 1);
     expect(card.top).toBeGreaterThanOrEqual(viewport.top - 1);
   });
-  it('keeps human deliveries and every panel reply visible between the A2A regions', async () => {
+  it('keeps human deliveries and the final panel reply visible between the A2A regions', async () => {
     const t = await mount(800, [turn('t', [delivery('a'), ordinary('First panel text'), ordinary('Second panel text'), delivery('human', 'Human group message', 'human'), delivery('b')])]);
-    expect(t.host.querySelector('[data-agent-conversation-message="First panel text"]')).not.toBeNull();
+    expect(t.host.querySelector('[data-user-card="First panel text"]')).toBeNull();
     expect(t.host.querySelector('[data-agent-conversation-message="Second panel text"]')).not.toBeNull();
     expect(t.host.querySelector('[data-user-card="human"]')?.textContent).toContain('Human group message');
     expect(t.host.querySelector('[data-user-card="a"]')).toBeNull();

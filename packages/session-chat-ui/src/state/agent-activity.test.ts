@@ -90,13 +90,17 @@ describe('agent activity identity and grouping', () => {
     const duplicate = foldActivityUnits([{ ...unit('message', later, later, { key: 'self' }), activityEvent: event }, { ...unit('message', later, later, { key: 'self' }), activityEvent: event }]);
     expect((duplicate[0].data as import('./agent-activity').AgentActivityGroup).events).toHaveLength(1);
   });
-  it('keeps every panel text between activity folds in its own original bubble', () => {
+  it('keeps the final panel reply between activity folds and earlier words in its process', () => {
     const rows = flattenTier([turn('t', [incoming('one'), message('first'), message('second'), incoming('two')])], ctx, segmenters);
-    for (const id of ['first', 'second']) {
-      const row = rows.find(row => row.itemId === id)!;
-      expect(row.activityFold).toBeUndefined();
-      expect((row.data as ChatMessage).conversationNarration).toBeUndefined();
-    }
+    const reply = rows.find(row => row.itemId === 'second')!;
+    expect(reply.activityFold).toBeUndefined();
+    expect((reply.data as ChatMessage).conversationPart).toBe('body');
+    expect(rows.some(row => row.itemId === 'first')).toBe(false);
+    const expanded = flattenTier([turn('t', [incoming('one'), message('first'), message('second'), incoming('two')])],
+      { ...ctx, revealAllFolds: true }, segmenters);
+    const narration = expanded.find(row => row.itemId === 'first')!;
+    expect(narration.activityFold).toBeUndefined();
+    expect((narration.data as ChatMessage).conversationNarration).toBe(true);
     expect(rows.filter(row => row.kind === 'agent-activity')).toHaveLength(2);
   });
   it('keeps unsuccessful completed sends outside the collapsed incoming process and confirmed count', () => {

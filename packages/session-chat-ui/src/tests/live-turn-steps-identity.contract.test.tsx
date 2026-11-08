@@ -23,8 +23,7 @@ function liveTurn(steps: number): TranscriptTurn {
   for (let step = 1; step <= steps; step++) {
     items.push({ kind: 'execute-tool-call', id: `run-${step}`, seq: step * 2 - 1, toolCallId: `run-${step}`, toolName: 'Bash',
       title: `echo step ${step}`, command: `echo step ${step}`, status: step === steps ? 'running' : 'done' } as TranscriptItem);
-    // Keep these in one real process list. Panel text intentionally seals that
-    // list into separate bubbles; then its former tail is a different row.
+    if (step < steps) items.push({ kind: 'message', id: `say-${step}`, seq: step * 2, role: 'assistant', text: `Step ${step} printed its line.` });
   }
   return { id: 'live', seq: 0, initiator: 'user', startedAt: 1000, items };
 }
@@ -34,13 +33,12 @@ describe('live turn steps', () => {
     const context = createChatContext({ locale: () => 'en-US' });
     context.setLayout({ preset: 'double', userGutter: 72, agentConversation: true });
     const state = createChatState(context);
-    state.viewState.setCollapsed('live:run:run-1', true);
     const host = document.createElement('div');
     host.style.cssText = 'position:fixed;inset:0;width:900px;height:1000px';
     document.body.append(host);
     const view = createChatView({ context, state, parent: host, commands: { conversationClock: () => 22000 } });
     disposers.push(() => { view.dispose(); state.dispose(); context.dispose(); host.remove(); });
-    const steps = () => [...host.querySelectorAll<HTMLElement>('[data-process-step][data-row-kind="conversation-step"]')];
+    const steps = () => [...host.querySelectorAll<HTMLElement>('[data-process-step]')];
 
     state.transcript.activeTurn.set(liveTurn(6));
     await until('process steps appear', () => steps().length, (n) => n > 0);
@@ -49,7 +47,7 @@ describe('live turn steps', () => {
 
     for (const next of [7, 8, 9]) {
       state.transcript.activeTurn.set(liveTurn(next));
-      await until(`step ${next} command is mounted`, () => host.querySelector(`[data-conversation-step="run-${next}"]`) !== null);
+      await until(`step ${next - 1} reply on screen`, () => host.textContent ?? '', (text) => text.includes(`Step ${next - 1} printed its line.`));
     }
     await untilStable('steps settle', () => steps().length);
 
