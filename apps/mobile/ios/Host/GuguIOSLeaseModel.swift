@@ -24,6 +24,7 @@ final class GuguIOSLeaseModel: GuguModelCompleting {
     private var transports: [String: GuguModelCompleting] = [:]
     private var seen: Set<String> = []
     private var stopped = false
+    private var externalRetirement = false
     private var renewal: DispatchWorkItem?
     private var settlementWaiters: [(Result<Void, Error>) -> Void] = []
 
@@ -63,9 +64,10 @@ final class GuguIOSLeaseModel: GuguModelCompleting {
                     self.issuingJobId = nil
                     switch result {
                     case .failure(let error):
-                        try? self.store.update("leases", id: key) { $0["status"] = $0["leaseId"] == nil ? "issue_uncertain" : "cleanup_required" }
+                        try? self.store.update("leases", id: key) { if $0["status"] as? String != "settled" { $0["status"] = $0["leaseId"] == nil ? "issue_uncertain" : "cleanup_required" } }
                         self.failRequests(jobId: context.jobId, error: error)
                     case .success(let grant):
+                        if self.externalRetirement { return }
                         self.grant = grant; self.grantJobId = context.jobId
                         if self.stopped || !self.requests.values.contains(where: { $0.context.jobId == context.jobId }) {
                             self.settleCurrent { _ in }; return
@@ -105,6 +107,13 @@ final class GuguIOSLeaseModel: GuguModelCompleting {
     /// replacement until that cleanup succeeds. No token is persisted on failure.
     func finishTurn(jobId: String, completion: @escaping (Result<Void, Error>) -> Void) {
         queue.async {
+            if self.externalRetirement {
+                do {
+                    let record = try self.store.record("leases", id: "issue:\(jobId)")
+                    guard record == nil || record?["status"] as? String == "settled" else { throw Self.failure("model_cleanup_pending", "Original lease is held by native retirement cleanup") }
+                    completion(.success(()))
+                } catch { completion(.failure(error)) }; return
+            }
             guard self.issuingJobId != jobId else { completion(.failure(Self.failure("model_issue_uncertain", "Model issue is still in flight"))); return }
             guard self.grantJobId == jobId else {
                 do {
@@ -132,6 +141,7 @@ final class GuguIOSLeaseModel: GuguModelCompleting {
     /// credentials. The separate cleanup runner reconciles the retained ledger.
     func quiesce(completion: @escaping (Result<Void, Error>) -> Void) {
         queue.async {
+            self.externalRetirement = true; self.grant = nil; self.grantJobId = nil
             self.stopped = true; self.renewal?.cancel(); self.renewal = nil
             for (id, transport) in self.transports { transport.cancel(id: id) }
             for id in Array(self.requests.keys) { self.finish(id, Self.failure("cancelled", "Native model host retired").envelope) }
@@ -184,6 +194,13 @@ final class GuguIOSLeaseModel: GuguModelCompleting {
         } }
     }
     private func settleCurrent(_ completion: @escaping (Result<Void, Error>) -> Void) {
+        if externalRetirement {
+            do {
+                let rows = try store.snapshot()["leases"] as? [String: [String: Any]] ?? [:]
+                guard !rows.values.contains(where: { $0["agentId"] as? String == agentId && $0["sessionId"] as? String == sessionId && $0["status"] as? String != "settled" }) else { throw Self.failure("model_cleanup_pending", "Original lease is held by native retirement cleanup") }
+                completion(.success(()))
+            } catch { completion(.failure(error)) }; return
+        }
         renewal?.cancel(); renewal = nil
         guard let grant, let jobId = grantJobId else {
             do {
@@ -207,7 +224,7 @@ final class GuguIOSLeaseModel: GuguModelCompleting {
                 try self.store.update("leases", id: "issue:\(jobId)") { $0["status"] = "settled" }
                 self.grant = nil; self.grantJobId = nil; finish(.success(()))
             } catch {
-                try? self.store.update("leases", id: "issue:\(jobId)") { $0["status"] = "cleanup_required" }
+                try? self.store.update("leases", id: "issue:\(jobId)") { if $0["status"] as? String != "settled" { $0["status"] = "cleanup_required" } }
                 finish(.failure(error))
             }
         } }

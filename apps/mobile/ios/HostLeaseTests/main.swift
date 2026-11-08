@@ -19,7 +19,9 @@ private final class ModelFixture: GuguModelCompleting {
 private final class Fixture {
     let binding: GuguIOSHostBinding, store: GuguIOSBackendStore
     let agentId = UUID().uuidString.lowercased(), sessionId = UUID().uuidString.lowercased()
-    var actions: [String] = [], loseIssue = false, allowed = true
+    var actions: [String] = [], loseIssue = false, allowed = true, credentialReads = 0
+    var holdAction: String?, held: (() -> Void)?
+    let entered = DispatchSemaphore(value: 0)
     let transport = ModelFixture()
     init(_ root: URL) throws {
         let owner = UUID().uuidString.lowercased(), installation = UUID().uuidString.lowercased()
@@ -27,6 +29,7 @@ private final class Fixture {
         store = try .init(root: root, binding: binding)
     }
     lazy var broker = try! GuguIOSCloudBroker(configuration: .init(version: 1, supabaseUrl: "https://fixture.invalid", anonKey: "public"), credentials: { expected in
+        self.credentialReads += 1
         guard self.allowed, expected == self.binding else { throw GuguHostFailure(code: "stale_context", message: "Synthetic owner retired") }
         return .init(binding: expected, accessToken: "synthetic-human-native-only", expiresAt: Date().addingTimeInterval(3600))
     }, send: { request, done in
@@ -34,7 +37,8 @@ private final class Fixture {
         self.actions.append(action)
         if action == "issue" && self.loseIssue { done(nil, nil, URLError(.networkConnectionLost)); return }
         let reply: [String: Any] = action == "issue" ? ["session_id": UUID().uuidString.lowercased(), "protocol": "openai-chat-completions", "relay_url": "https://model.invalid/prefix", "token": "synthetic-model-native-only", "model": "wire-model", "expires_at": ISO8601DateFormatter().string(from: Date().addingTimeInterval(3600))] : ["ok": true]
-        done(try! JSONSerialization.data(withJSONObject: reply), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil), nil)
+        let finish = { done(try! JSONSerialization.data(withJSONObject: reply), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil), nil) }
+        if self.holdAction == action { self.held = finish; self.entered.signal() } else { finish() }
     })
     func model() -> GuguIOSLeaseModel {
         .init(binding: binding, agentId: agentId, sessionId: sessionId, modelId: "catalog-id", broker: broker, store: store, check: {
@@ -81,6 +85,44 @@ private final class Fixture {
         let blocked: Result<Void, Error> = try awaitResult { unknownModel.stop(completion: $0) }
         guard case .failure(let error as GuguHostFailure) = blocked, error.code == "model_cleanup_pending" else { throw GuguHostFailure(code: "lease_test_failed", message: "Unresolved issue reported clean retirement") }
         cases.append("unresolved_issue_does_not_report_successful_retirement")
+        let sealed = try Fixture(root.appendingPathComponent("external-cleanup")), sealedModel = sealed.model(), sealedContext = sealed.context()
+        let issued: [String: Any] = try awaitResult { sealedModel.complete(id: "sealed-first", context: sealedContext, body: body, completion: $0) }
+        try require(issued["ok"] as? Bool == true, "External retirement fixture did not issue")
+        let quiet: Result<Void, Error> = try awaitResult { sealedModel.quiesce(completion: $0) }; _ = try quiet.get()
+        let reads = sealed.credentialReads; sealed.allowed = false
+        let pending: Result<Void, Error> = try awaitResult { sealedModel.finishTurn(jobId: sealedContext.jobId, completion: $0) }
+        guard case .failure(let pendingError as GuguHostFailure) = pending, pendingError.code == "model_cleanup_pending" else { throw GuguHostFailure(code: "lease_test_failed", message: "Quiesced finish hid pending cleanup") }
+        try require(sealed.credentialReads == reads && sealed.actions == ["issue"], "Quiesced finish borrowed ordinary credentials")
+        cases.append("external_quiescence_and_late_turn_finish_request_zero_ordinary_credentials")
+        try sealed.store.update("leases", id: "issue:\(sealedContext.jobId)") { $0["status"] = "settled" }
+        let cleaned: Result<Void, Error> = try awaitResult { sealedModel.finishTurn(jobId: sealedContext.jobId, completion: $0) }; _ = try cleaned.get()
+        try require(sealed.credentialReads == reads && (try sealed.store.record("leases", id: "issue:\(sealedContext.jobId)"))?["status"] as? String == "settled", "Late finish downgraded native cleanup receipt")
+        cases.append("late_finish_preserves_external_known_settlement_without_ordinary_HTTP")
+        let racing = try Fixture(root.appendingPathComponent("late-old-checkpoint")), racingModel = racing.model(), racingContext = racing.context()
+        let racingIssue: [String: Any] = try awaitResult { racingModel.complete(id: "race-first", context: racingContext, body: body, completion: $0) }; try require(racingIssue["ok"] as? Bool == true, "Race fixture did not issue")
+        racing.holdAction = "checkpoint"
+        let finished = DispatchSemaphore(value: 0); var oldFinish: Result<Void, Error>?
+        racingModel.finishTurn(jobId: racingContext.jobId) { oldFinish = $0; finished.signal() }
+        try require(racing.entered.wait(timeout: .now() + 10) == .success, "Old ordinary checkpoint was not held")
+        let raceQuiet: Result<Void, Error> = try awaitResult { racingModel.quiesce(completion: $0) }; _ = try raceQuiet.get()
+        racing.allowed = false; try racing.store.update("leases", id: "issue:\(racingContext.jobId)") { $0["status"] = "settled" }
+        racing.held?(); racing.held = nil
+        try require(finished.wait(timeout: .now() + 10) == .success, "Old settlement callback did not finish")
+        guard case .failure = oldFinish! else { throw GuguHostFailure(code: "lease_test_failed", message: "Retired old checkpoint unexpectedly succeeded") }
+        try require((try racing.store.record("leases", id: "issue:\(racingContext.jobId)"))?["status"] as? String == "settled" && racing.actions == ["issue", "checkpoint"], "Late ordinary failure erased external known receipt or sent another request")
+        cases.append("held_old_settlement_failure_cannot_downgrade_external_terminal_receipt")
+        let lateGrant = try Fixture(root.appendingPathComponent("late-old-issue")); lateGrant.holdAction = "issue"
+        let grantModel = lateGrant.model(), grantContext = lateGrant.context(), grantDone = DispatchSemaphore(value: 0)
+        grantModel.complete(id: "held-issue", context: grantContext, body: body) { _ in grantDone.signal() }
+        try require(lateGrant.entered.wait(timeout: .now() + 10) == .success, "Original issue was not held")
+        let grantQuiet: Result<Void, Error> = try awaitResult { grantModel.quiesce(completion: $0) }
+        guard case .failure = grantQuiet else { throw GuguHostFailure(code: "lease_test_failed", message: "In-flight issue was reported locally resolved") }
+        try require(grantDone.wait(timeout: .now() + 10) == .success, "Quiescence did not cancel pending model reply")
+        lateGrant.held?(); lateGrant.held = nil
+        let lateFinish: Result<Void, Error> = try awaitResult { grantModel.finishTurn(jobId: grantContext.jobId, completion: $0) }
+        guard case .failure = lateFinish else { throw GuguHostFailure(code: "lease_test_failed", message: "Late grant was silently settled") }
+        try require(lateGrant.actions == ["issue"] && lateGrant.transport.bodies.isEmpty && (try lateGrant.store.record("leases", id: "issue:\(grantContext.jobId)"))?["leaseId"] is String, "Late grant inferred or automatically settled after external retirement")
+        cases.append("late_original_issue_records_known_lease_but_never_infers_or_auto_settles_after_quiescence")
         print(String(decoding: try JSONSerialization.data(withJSONObject: ["kind": "native_model_lease_lifecycle_APFS_with_synthetic_broker_and_model", "result": "pass", "cases": cases, "realModelCalls": 0, "realCloudHTTPCalls": 0, "iosAppRuns": 0], options: [.prettyPrinted, .sortedKeys]), as: UTF8.self))
     }
 }
