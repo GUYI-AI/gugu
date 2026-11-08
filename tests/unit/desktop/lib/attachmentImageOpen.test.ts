@@ -5,7 +5,7 @@ import { openAttachmentImage } from '@/lib/attachmentBytes'
 import { registerImageViewerHost, type ImageViewerRequest } from '@/lib/imageViewer'
 
 const io = vi.hoisted(() => ({ resolve: vi.fn(), original: vi.fn(), put: vi.fn(), url: vi.fn(), revoke: vi.fn() }))
-vi.mock('@/lib/fileAccess', () => ({
+vi.mock('@/lib/fileAccess', () => ({ fileMetadata: async () => ({ status: 'gone' }),
   resolveFile: io.resolve, fileReader: () => ({ accountId: 'account', actorId: 'account' }), fileReadSignal: () => undefined,
   attachmentCache: async () => ({ put: io.put }), putAttachment: io.put, attachmentCacheOrigin: 'https://attachments.test',
 }))

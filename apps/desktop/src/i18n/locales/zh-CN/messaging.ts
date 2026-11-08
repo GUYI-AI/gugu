@@ -462,6 +462,8 @@ export default {
   },
   "forward": {
     "fileFailed": "{{name}} 没能一起转发",
+    "fileGone": "{{name}} 已经不在了，没转发出去。",
+    "fileTooLarge": "{{name}} 太大，一次最多转发 512 MB。",
     "batchPreview": "转发 {{count}} 条消息",
     "batchPreview_one": "转发 {{count}} 条消息",
     "batchPreview_other": "转发 {{count}} 条消息",

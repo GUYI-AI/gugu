@@ -35,10 +35,16 @@ export function useChatHistoryPagination({ resetKey, messages, enabled, scroller
   const { capture, cancel, isRestoring } = useHistoryPageAnchor({ resetKey, enabled, scroller, window, onError })
   const requestAtEdge = useCallback((edges: 'both' | 'bottom') => {
     if (!enabled || !scroller || window?.loading || isRestoring()) return
-    const canLoadOlder = edges === 'both' && !atBeginning
-    const canLoadNewer = !!window?.hasNewer && !!loadNewer
+    let canLoadOlder = edges === 'both' && !atBeginning
+    let canLoadNewer = !!window?.hasNewer && !!loadNewer
     // Tail updates invalidate this callback even when no newer page exists.
     // Decide whether either direction can act before reading layout dimensions.
+    if (!canLoadOlder && !canLoadNewer) return
+    // 文档流只挂了数据窗口的一段时,本地边缘先由 FlowList 补挂,不能当成数据窗口的翻页边缘。
+    const mounted = scroller.firstElementChild?.querySelectorAll(':scope > [aria-posinset][aria-setsize]')
+    const first = mounted?.[0], last = mounted?.[mounted.length - 1]
+    canLoadOlder &&= first?.getAttribute('aria-posinset') === '1'
+    canLoadNewer &&= !!last && last.getAttribute('aria-posinset') === last.getAttribute('aria-setsize')
     if (!canLoadOlder && !canLoadNewer) return
     if (scroller.scrollHeight - scroller.clientHeight <= 80) return
     const request = canLoadOlder && scroller.scrollTop <= 120 ? loadOlder

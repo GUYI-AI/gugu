@@ -11,7 +11,7 @@ import { getRendererSession, observeRendererSession } from './sessionPublication
 export const attachmentCache = () => caches.open('gugu-attachments-v1')
 export const attachmentCacheOrigin = 'https://attachments.gugu.invalid'
 const log = rendererLogger('attachments')
-export const ATTACHMENT_CACHE_BYTES = 512 * 1024 * 1024
+export const ATTACHMENT_CACHE_BYTES = 10 * 1024 ** 3
 const CHUNK_PREFIX = `${attachmentCacheOrigin}/chunks/`
 /** 续传分片带写入时刻:一天内的是读到一半的(不计入、不删,别的窗口也可能正在读),更早的是崩溃留下的(删)。 */
 const CHUNK_WRITTEN_AT = 'x-gugu-written-at'

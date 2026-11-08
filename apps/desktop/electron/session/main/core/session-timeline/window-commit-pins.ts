@@ -11,7 +11,7 @@ export type CommitVersion = CommitSourceVersion & { projectionId: string };
 export type WindowGatewayProof = { namespace: string; assertHeld(): void };
 type Receipt = WindowCommitReceipt;
 type State = { version: 1; sourceId: string; namespace: string; epoch: string; stage: 'active' | 'collecting' | 'collected'; holders: { id: string; count: number }[] };
-type Held = { receipt: Receipt; tokens: Set<object> };
+type Held = { receipt: Receipt; tokens: Set<object>; dirty: boolean };
 type Owner = { id: string; closed: boolean; versions: Map<string, Held> };
 const tails = new Map<string, Promise<void>>();
 function serial<T>(namespace: string, run: () => Promise<T>): Promise<T> {
@@ -73,6 +73,9 @@ export async function openWindowCommitPins(input: {
   async function save(receipt: Receipt, s: State) {
     proof(); await writeWindowFrame(directory, key(receipt), Buffer.from(JSON.stringify(s))); proof();
   }
+  async function confirmDirectory(abort?: AbortSignal) {
+    proof(); abort?.throwIfAborted(); await syncWindowDirectory(directory); proof(); abort?.throwIfAborted();
+  }
   function owner(object: object) {
     let selected = owners.get(object);
     if (!selected) { selected = { id: randomUUID(), closed: false, versions: new Map() }; owners.set(object, selected); }
@@ -82,24 +85,35 @@ export async function openWindowCommitPins(input: {
     const found = input.receipts.bySource(receipt.sourceId);
     if (!found || JSON.stringify(snapshotWindowCommitReceipt(found)) !== JSON.stringify(receipt)) throw fault('commit_receipt_changed');
   }
+  async function flush(selected: Owner, held: Held, loaded: { found: boolean; state: State }) {
+    const s = loaded.state, count = held.tokens.size;
+    if (count && s.stage !== 'active') throw fault('version_collecting');
+    s.holders = s.holders.filter(h => h.id !== selected.id);
+    if (count) s.holders.push({ id: selected.id, count });
+    // Absolute logical ownership makes a retry independent of whether the
+    // previous rename reached disk before file/dir sync reported failure.
+    if (loaded.found || count) await save(held.receipt, s);
+    else { proof(); await syncWindowDirectory(directory); proof(); }
+    held.dirty = false;
+    if (!count) selected.versions.delete(held.receipt.sourceId);
+  }
   async function hold(object: object, inputReceipt: Receipt, b: WindowBudget, abort?: AbortSignal) {
     const receipt = snapshotWindowCommitReceipt(inputReceipt), selected = owner(object), token = {};
     await serial(namespace, async () => {
       await current(b, abort); if (selected.closed) throw fault('unsubscribed'); committed(receipt);
-      const s = await load(receipt, b); if (s.stage !== 'active') throw fault('version_collecting');
-      const h = s.holders.find(value => value.id === selected.id);
-      if (h) h.count++; else s.holders.push({ id: selected.id, count: 1 });
-      abort?.throwIfAborted(); await save(receipt, s);
-      const held = selected.versions.get(receipt.sourceId) ?? { receipt, tokens: new Set<object>() };
-      held.tokens.add(token); selected.versions.set(receipt.sourceId, held);
+      const loaded = await readState(receipt, b); if (loaded.state.stage !== 'active') throw fault('version_collecting');
+      abort?.throwIfAborted(); if (selected.closed) throw fault('unsubscribed');
+      const held = selected.versions.get(receipt.sourceId) ?? { receipt, tokens: new Set<object>(), dirty: false };
+      held.tokens.add(token); held.dirty = true; selected.versions.set(receipt.sourceId, held);
+      try { await flush(selected, held, loaded); abort?.throwIfAborted(); if (selected.closed) throw fault('unsubscribed'); }
+      catch (error) { held.tokens.delete(token); held.dirty = true; selected.versions.set(receipt.sourceId, held); throw error; }
     });
     return async (releaseBudget: WindowBudget, releaseSignal?: AbortSignal) => serial(namespace, async () => {
-      const held = selected.versions.get(receipt.sourceId); if (!held?.tokens.has(token)) return;
-      await current(releaseBudget, releaseSignal); const s = await load(receipt, releaseBudget);
-      const h = s.holders.find(value => value.id === selected.id); if (!h) throw fault('version_pin_lost');
-      if (--h.count === 0) s.holders = s.holders.filter(value => value !== h);
-      releaseSignal?.throwIfAborted(); await save(receipt, s); held.tokens.delete(token);
-      if (!held.tokens.size) selected.versions.delete(receipt.sourceId);
+      const held = selected.versions.get(receipt.sourceId); if (!held || (!held.tokens.has(token) && !held.dirty)) return;
+      await current(releaseBudget, releaseSignal); const loaded = await readState(receipt, releaseBudget);
+      if (held.tokens.size - Number(held.tokens.has(token)) > 0 && !loaded.state.holders.some(h => h.id === selected.id)) throw fault('version_pin_lost');
+      releaseSignal?.throwIfAborted(); held.tokens.delete(token); held.dirty = true;
+      await flush(selected, held, loaded);
     });
   }
   return {
@@ -116,9 +130,8 @@ export async function openWindowCommitPins(input: {
       return serial(namespace, async () => {
         const first = selected.versions.values().next().value as Held | undefined;
         if (!first) return { complete: true };
-        await current(b, abort); const s = await load(first.receipt, b);
-        s.holders = s.holders.filter(h => h.id !== selected.id);
-        abort?.throwIfAborted(); await save(first.receipt, s); first.tokens.clear(); selected.versions.delete(first.receipt.sourceId);
+        await current(b, abort); const loaded = await readState(first.receipt, b);
+        abort?.throwIfAborted(); first.tokens.clear(); first.dirty = true; await flush(selected, first, loaded);
         return { complete: selected.versions.size === 0 };
       });
     },
@@ -131,7 +144,7 @@ export async function openWindowCommitPins(input: {
         await current(b, abort); const s = await load(receipt, b);
         if (s.holders.length) return 'pinned' as const;
         if (input.receipts.byRow(receipt.rowId)?.sourceId === receipt.sourceId) return 'current' as const;
-        if (s.stage !== 'active') return s.stage;
+        if (s.stage !== 'active') { await confirmDirectory(abort); return s.stage; }
         if (!await input.canCollect(selected, b, abort)) return 'protected' as const;
         abort?.throwIfAborted(); s.stage = 'collecting'; await save(receipt, s); return 'collecting' as const;
       });
@@ -140,7 +153,8 @@ export async function openWindowCommitPins(input: {
       const receipt = snapshotWindowCommitReceipt(version.receipt);
       return serial(namespace, async () => {
         await current(b, abort); const s = await load(receipt, b);
-        if (s.stage !== 'collecting' || s.holders.length) throw fault('version_not_collecting');
+        if (s.holders.length || (s.stage !== 'collecting' && s.stage !== 'collected')) throw fault('version_not_collecting');
+        if (s.stage === 'collected') { await confirmDirectory(abort); return; }
         abort?.throwIfAborted(); s.stage = 'collected'; await save(receipt, s);
       });
     },
@@ -152,6 +166,7 @@ export async function openWindowCommitPins(input: {
         await current(b, abort); const s = await load(receipt, b);
         if (s.stage !== 'collecting' || s.holders.length || input.receipts.byRow(receipt.rowId)?.sourceId === receipt.sourceId)
           throw fault('version_not_collecting');
+        await confirmDirectory(abort); // A visible claim may still await its failed post-rename sync.
         const held = () => { proof(); abort?.throwIfAborted(); }; held();
         try { return await remove(held); } finally { proof(); }
       });
@@ -163,10 +178,10 @@ export async function openWindowCommitPins(input: {
       return serial(namespace, async () => {
         await current(b, abort); const loaded = await readState(receipt, b);
         if (input.receipts.bySource(receipt.sourceId)) throw fault('commit_receipt_retained');
-        if (!loaded.found) return;
+        if (!loaded.found) { await confirmDirectory(abort); return; }
         if (loaded.state.stage !== 'collected' || loaded.state.holders.length) throw fault('version_not_collected');
         abort?.throwIfAborted(); proof(); await rm(join(directory, windowFrameName(key(receipt))), { force: true });
-        proof(); await syncWindowDirectory(directory); proof();
+        await confirmDirectory(abort);
       });
     },
   };
