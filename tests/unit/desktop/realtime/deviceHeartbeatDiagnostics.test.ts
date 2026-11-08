@@ -8,14 +8,15 @@ import { until } from '../../../support/awaitCondition'
 async function run(jumpMs: number) {
   const env = await isolatedGuguEnv('gugu-heartbeat-diag-')
   const client = new MemoryRuntimeIdentityClient([], { insertError: 'not used', singleError: 'not used' })
-  let offset = 0
+  // 注入时钟:真实定时器差 1ms 就会让「晚了多少」差 1ms,断言不稳。这里时间只由测试推进,晚到/间隔毫秒数是确定的。
+  let clock = 1_800_000_000_000
   const warnings: string[] = []
   const host = createDeviceRuntimeHostLoop({
     env,
     intervalMs: 15,
     superviseIntervalMs: 60_000,
     heartbeatIntervalMs: 20,
-    nowMs: () => Date.now() + offset,
+    nowMs: () => clock,
     warn: (message) => warnings.push(message),
     machineIdentifier: () => 'heartbeat-diag-machine',
     capabilities: { terminals: [], runtimes: [] },
@@ -33,13 +34,15 @@ async function run(jumpMs: number) {
     await until('first heartbeat landed', () => writes() >= 1 && !host.getDebugSnapshot().ticking)
     await until('steady heartbeats land', () => writes() >= 3)
     const before = writes()
-    offset += jumpMs
+    clock += jumpMs
     await until('a heartbeat lands after the jump', () => writes() >= before + 2)
   } finally {
     await host.stop()
   }
   return warnings
 }
+
+const INTERVAL_MS = 20
 
 const late = (w: string[]) => w.filter((m) => m.includes('heartbeat timer fired'))
 const gap = (w: string[]) => w.filter((m) => m.includes('after the previous landed heartbeat'))
@@ -54,13 +57,14 @@ describe('device heartbeat diagnostics', () => {
   test('timer fires > 5 s late: warns with the lag, no landed-gap warning under 60 s', async () => {
     const warnings = await run(6_000)
     expect(late(warnings)).toHaveLength(1)
-    expect(Number(/fired (\d+) ms late/.exec(late(warnings)[0])?.[1])).toBeGreaterThanOrEqual(6_000)
+    // 时钟冻结 + 跳 6000:定时器预定时刻 = 跳前时钟 + 间隔,所以迟到恰为 跳变 - 间隔。
+    expect(Number(/fired (\d+) ms late/.exec(late(warnings)[0])?.[1])).toBe(6_000 - INTERVAL_MS)
     expect(gap(warnings)).toEqual([])
   })
 
   test('two landed heartbeats > 60 s apart: warns with the actual gap', async () => {
     const warnings = await run(61_000)
     expect(gap(warnings)).toHaveLength(1)
-    expect(Number(/landed (\d+) ms after/.exec(gap(warnings)[0])?.[1])).toBeGreaterThan(60_000)
+    expect(Number(/landed (\d+) ms after/.exec(gap(warnings)[0])?.[1])).toBe(61_000)
   })
 })
