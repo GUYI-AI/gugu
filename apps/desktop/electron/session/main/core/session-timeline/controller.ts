@@ -34,6 +34,7 @@ import { prefetchFiles } from './turn-files';
 import { markNativeConversationVisible, nativeConversationUnread, nativeOwnerNotificationUnread } from '../sessions/session-conversation-read';
 import { readTaskExchanges, watchTaskExchanges, unwatchTaskExchanges } from './task-exchanges';
 import type { TaskExchangeRequest } from '@shared/core/sessions/task-collaboration';
+import { windowLiveReadRequestSchema, windowLiveAckRequestSchema } from '@gugu/session-wire/session-window-live';
 import { taskExchangeChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
 
 /**
@@ -94,6 +95,13 @@ function legacyOwned<T extends { ok: boolean }>(sender: number, id: string, star
   owned.get(sender)?.windows.delete(id);
   return owning(sender, 'timeline', id, start);
 }
+function liveOwned<I extends { subscriptionId: string }, V>(sender: number, input: unknown,
+  schema: { safeParse(value: unknown): { success: false } | { success: true; data: I } }, read: (value: I) => Promise<service.SessionTimelineResult<V>>) {
+  const checked = schema.safeParse(input);
+  if (!checked.success || !owned.get(sender)?.windows.has(checked.data.subscriptionId))
+    return Promise.resolve({ ok: false as const, error: { code: 'invalid_subscription', message: 'Invalid window request or connection owner' } });
+  return read(checked.data);
+}
 
 function trimmed<T>(result: service.SessionTimelineResult<T>, trim: boolean | undefined, cut: (value: T) => T) {
   return trim && result.ok ? { ok: true as const, value: cut(result.value) } : result;
@@ -127,8 +135,11 @@ export const sessionTimelineController = createRPCController({
   sessionReadState: (input: { conversationId: string }) => ({ unreadKeys: nativeConversationUnread(input.conversationId), ownerNotificationUnreadKeys: nativeOwnerNotificationUnread(input.conversationId) }),
   sessionVisible: (input: { conversationId: string; itemIds: string[] }) => ({ unreadKeys: markNativeConversationVisible(input.conversationId, input.itemIds) }),
   sessionWindowPrepare: withSender(async (sender: number, input: { conversationId: string; subscriptionId: string }) =>
-    openingOwned(sender, input.subscriptionId, () => service.windowPrepare(input), result => result.ok && result.value.source === 'window')),
+    openingOwned(sender, input.subscriptionId, () => service.windowPrepare(input, status =>
+      events.emit(sessionpageSessionWindowStatusChannel, status, input.subscriptionId)), result => result.ok && result.value.source === 'window')),
   sessionWindowSnapshot: (input: SessionpageSessionSnapshotRequest) => service.windowSnapshot(input),
+  sessionWindowLiveRead: withSender((sender: number, input: unknown) => liveOwned(sender, input, windowLiveReadRequestSchema, service.windowLiveRead)),
+  sessionWindowLiveAck: withSender((sender: number, input: unknown) => liveOwned(sender, input, windowLiveAckRequestSchema, service.windowLiveAck)),
   sessionWindowAfter: (input: SessionpageSessionAfterRequest) => service.windowAfter(input),
   sessionWindowOlder: (input: SessionpageSessionOlderRequest) => service.windowOlder(input),
   sessionBody: (input: SessionpageSessionBodyReadRequest) => service.body(input),
