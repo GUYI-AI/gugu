@@ -33,7 +33,7 @@ import type { TerminalState } from '@gugu/session-core/acp/client';
  * conversationId in AcpChatPanel) — this assumption is intentional.
  */
 
-import { createMemo, createRoot, createSignal } from 'solid-js';
+import { batch, createMemo, createRoot, createSignal } from 'solid-js';
 import type { BackgroundCommandEntry } from '@session-chat/lib/background-command-roster';
 import type { SubagentRosterEntry } from '@session-chat/lib/subagent-roster';
 import type { ChatContext } from '../chat-context';
@@ -396,7 +396,10 @@ export function connectSession(
     state.session.setPlan(source.plan.getSnapshot() ?? null);
   };
 
-  const syncActiveTurn = (): void => {
+  // One transcript update (#2296): clearing the landed pending prompt and setting the turn that carries it
+  // are a single Solid batch. Two writes let every row observe the turn without its input in between, so
+  // the input's row is unmounted and mounted again with new DOM nodes.
+  const syncActiveTurn = (): void => batch(() => {
     const turn = source.activeTurn.getSnapshot() ?? null;
     const pending = state.session.state.pendingPrompt;
     if (turn && pending && (!pending.delivery || pendingPromptLanded(pending, [turn]))) state.session.setPendingPrompt(null);
@@ -413,7 +416,7 @@ export function connectSession(
       state.transcript.activeTurn.set(turn);
     }
     activeTurnId = turn?.id ?? null;
-  };
+  });
   const syncTerminals = (): void => {
     if (!source.terminals) return;
     state.session.setTerminals(source.terminals.getSnapshot() ?? []);
