@@ -13,6 +13,24 @@ struct GuguIOSOwnerCredentials: CustomDebugStringConvertible {
     let accessToken: String
     let expiresAt: Date
     var debugDescription: String { "GuguIOSOwnerCredentials(<redacted>)" }
+
+    /// Projection of the already-authorized token, never a new authentication
+    /// authority. The server independently verifies this same JWT/session scope.
+    func originalSessionId() throws -> String {
+        struct Scope: Decodable { let sub: String; let session_id: String }
+        let parts = accessToken.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 3, accessToken.utf8.count <= 65536 else { throw Self.invalidScope() }
+        var payload = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
+        guard let bytes = Data(base64Encoded: payload), let scope = try? JSONDecoder().decode(Scope.self, from: bytes),
+              scope.sub == binding.ownerId, UUID(uuidString: scope.session_id)?.uuidString.lowercased() == scope.session_id else {
+            throw Self.invalidScope()
+        }
+        return scope.session_id
+    }
+    private static func invalidScope() -> GuguHostFailure {
+        GuguHostFailure(code: "auth_session_invalid", message: "Original authenticated session scope is unavailable")
+    }
 }
 
 struct GuguIOSMainWritePermit {
