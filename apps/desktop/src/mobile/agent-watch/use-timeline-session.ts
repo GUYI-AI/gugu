@@ -60,6 +60,9 @@ function rpcErrorCode(err: unknown): string | null {
   return null
 }
 
+/** A new session's first prompt and the client message id its create request gave it. */
+export type FirstPrompt = { id: string; text: string; sentAt: number }
+
 export type AgentWatchPhase = 'loading' | 'ready' | 'error'
 
 /**
@@ -142,8 +145,11 @@ export function useTimelineSession(
   deviceId: string | null,
   sessionId: string | null,
   enabled: boolean,
-  /** 刚建的会话:建它时带的那句,机器已受理。挂载时就是一句在路上的发送,记录里那一行到了照常让位。 */
-  firstPrompt?: string,
+  /**
+   * 刚建的会话:建它时带的那句,机器已受理。挂载时就是一句在路上的发送,记录里那一行到了照常让位。
+   * `id` 是建会话请求里给它铸的那个(宿主以它收下首句):乐观那一行、待发行、原生消息是同一个身份(#2296)。
+   */
+  firstPrompt?: FirstPrompt,
 ): AgentWatchSession {
   /*
    * 内存里有上次看到的那一份就拿它当**初值**:第一帧就是完整的时间线。❌ 先画一帧空线程、再在下面的 effect 里换上 ——
@@ -163,7 +169,7 @@ export function useTimelineSession(
   const [sending, setSending] = useState(false)
   // 乐观发送按会话存(`key`):换了会话,上一条会话的那几句在渲染时就不认,❌ 靠 effect 事后清 —— 那样会在新会话里闪一帧。
   const [pendingState, setPendingState] = useState<{ key: string; sends: readonly PendingSend[] }>(() => (firstPrompt
-    ? { key: `${deviceId ?? ''}/${sessionId ?? ''}`, sends: [{ id: `pending:${newLocalId()}`, text: firstPrompt, baseline: new Set(), accepted: true }] }
+    ? { key: `${deviceId ?? ''}/${sessionId ?? ''}`, sends: [{ id: firstPrompt.id, text: firstPrompt.text, sentAt: firstPrompt.sentAt, baseline: new Set(), accepted: true }] }
     : { key: '', sends: NO_SENDS }))
   const [respondingItemId, setRespondingItemId] = useState<string | null>(null)
   const [reloadNonce, setReloadNonce] = useState(0)

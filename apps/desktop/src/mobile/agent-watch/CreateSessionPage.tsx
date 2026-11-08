@@ -1,3 +1,4 @@
+import type { FirstPrompt } from './use-timeline-session'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererLogger } from '@/lib/log'
@@ -85,7 +86,8 @@ export function CreateSessionPage({
   taskGroup?: { chatId: string; name: string } | null
   onBack?: () => void
   /** 建成了:带着攒好的摘要与那句话跳进时间线(那句由时间线页接着画)。 */
-  onCreated: (session: SessionpageSessionSummary, firstPrompt: string, result?: SessionpageSessionCreateResult) => void
+  /** firstPrompt: absent only when retrying a stored phone attempt from before the first prompt carried its id. */
+  onCreated: (session: SessionpageSessionSummary, firstPrompt: FirstPrompt | undefined, result?: SessionpageSessionCreateResult) => void
 }) {
   const { t } = useTranslation('main')
   const { t: tFlow } = useTranslation('mobileTaskFlow')
@@ -198,6 +200,7 @@ export function CreateSessionPage({
       }
       setCreateError(null)
       setPendingText(text)
+      const sentAt = Date.now()
       let submittedPhoneRequest: SessionpageSessionCreateRequest | null = null
       try {
         if (phone && !ownerId) throw new Error('请先登录后创建 Agent')
@@ -207,6 +210,8 @@ export function CreateSessionPage({
           projectId: selection.projectId!,
           harness: selection.harness!,
           prompt: text,
+          // The host admits the first prompt under this id; the page's optimistic first bubble uses the same one.
+          initialMessageId: crypto.randomUUID(),
           ...(selection.model ? { model: selection.model } : {}),
           ...(selection.permissionMode ? { permissionMode: selection.permissionMode } : {}),
           ...(selection.effort ? { effort: selection.effort } : {}),
@@ -224,7 +229,7 @@ export function CreateSessionPage({
           if (page.active) setPhoneAttempt(null)
         }
         submittedDraft?.accepted(text)
-        if (page.active) onCreated(result.session ?? toSessionSummary(result, selection.harness!, new Date().toISOString()), text, result)
+        if (page.active) onCreated(result.session ?? toSessionSummary(result, selection.harness!, new Date().toISOString()), request.initialMessageId ? { id: request.initialMessageId, text, sentAt } : undefined, result)
       } catch (err) {
         // 机器那边装 agent 没装成:原因进日志,人看到的是能照做的下一步(按本端语言,❌ 机器那边拼的双语原文)。
         // 其余原因同理:按原因码归类说人话(remoteFailureKind),原文只进日志。

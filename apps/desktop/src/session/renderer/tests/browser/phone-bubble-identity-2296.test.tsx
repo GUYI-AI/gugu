@@ -55,13 +55,15 @@ afterEach(() => {
 });
 
 const SESSION = 'phone-task';
+// Current hosts report each row's admission time; the native turn starts at that same time.
+const SENT_AT = Date.now();
 const hostRow = (messageId: string, text: string): LifeView => ({ sessionId: SESSION, version: 1, kind: 'starting', stage: null, hold: null, failure: null,
-  lastExit: null, nativeSession: null, pending: { count: 1, items: [{ seq: 1, messageId, kind: 'ordinary', text, preview: text, state: 'queued', failure: null }] } });
+  lastExit: null, nativeSession: null, pending: { count: 1, items: [{ seq: 1, messageId, kind: 'ordinary', text, preview: text, sentAt: SENT_AT, state: 'queued', failure: null }] } });
 const hostIdle = (): LifeView => ({ sessionId: SESSION, version: 2, kind: 'ready', stage: null, hold: null, failure: null, lastExit: null, nativeSession: null,
   pending: { count: 0, items: [] } });
 // The record stores a submitted input under its client identity (#2299); storage renumbers only the turn prefix.
 const landed = (clientId: string, text: string): AgentWatchTimeline => ({ ...emptyAgentWatchTimeline(), turns: [{
-  id: `${SESSION}:turn:s0`, seq: 0, initiator: 'user', startedAt: Date.now(),
+  id: `${SESSION}:turn:s0`, seq: 0, initiator: 'user', startedAt: SENT_AT,
   items: [{ kind: 'message', role: 'user', id: clientId, seq: 0, text, _meta: { guguClientMessageId: clientId, guguNativeMessageId: 'provider-uuid' } }],
 } satisfies TranscriptTurn] });
 
@@ -71,11 +73,17 @@ function sampleBubbles(host: HTMLElement) {
   const samples: { phase: string; count: number; sameNode: boolean; id: string | null }[] = [];
   let phase = 'pending';
   let sampling = true;
-  const sample = () => {
+  const record = () => {
     const bubbles = host.querySelectorAll('[data-user-card]');
     samples.push({ phase, count: bubbles.length, sameNode: bubbles[0] === original, id: bubbles[0]?.getAttribute('data-user-card') ?? null });
+  };
+  const sample = () => {
+    record();
     if (sampling) requestAnimationFrame(sample);
   };
+  // The state before the first change is a sample too: rows are keyed by index, so an id change can keep the
+  // node while the unit (its height and tween registration) is replaced underneath it.
+  record();
   requestAnimationFrame(sample);
   return {
     original,
@@ -123,7 +131,8 @@ it('composer outbox: the sender row, the host row and the native message are one
 it('restart startup row: the starting prompt, the host row and the native message are one bubble entity', async () => {
   const text = 'continue after restart';
   const id = 'restart-client-id';
-  const startup = store<PendingPrompt | null>({ id, text, starting: 'starting', held: true });
+  // As useSessionRestart builds it from the host row.
+  const startup = store<PendingPrompt | null>({ id, text, starting: 'starting', held: true, sentAt: SENT_AT });
   function Page() {
     return <SessionConversation {...props} timeline={timeline.use()} startupPrompt={startup.use()} pendingSends={[]} />;
   }
@@ -143,7 +152,7 @@ it('restart startup row: the starting prompt, the host row and the native messag
 it('new session first prompt: the optimistic send, the creation row and the native message are one bubble entity', async () => {
   const text = 'start the new task';
   // The id the phone sent with its create request; the host admits the creation turn under it.
-  const firstPrompt = { id: 'first-prompt-client-id', text };
+  const firstPrompt = { id: 'first-prompt-client-id', text, sentAt: SENT_AT };
   const idle: SessionpageTimelineClient = {
     fetchSnapshot: () => new Promise(() => {}), fetchAfter: () => new Promise(() => {}), fetchOlder: () => new Promise(() => {}),
     fetchToolImage: () => new Promise(() => {}), subscribeSession: async () => null, unsubscribeSession: async () => null,
