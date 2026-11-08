@@ -55,7 +55,7 @@ export interface MarkdownProps {
   density?: MarkdownDensity
   hardBreaks?: boolean
   frontmatter?: boolean
-  /** Chat: the per-render nonce that `useMentionRender` injected for @mentions backed by to_user_ids. */
+  /** Chat: the render-model nonce that `useMentionRender` injected for @mentions backed by to_user_ids. */
   mentionMarker?: string
   /** Drawn on an accent-coloured surface (your own bubble): links take the text colour. */
   onAccent?: boolean
