@@ -1,7 +1,9 @@
 #if DEBUG && os(iOS) && targetEnvironment(simulator)
 import XCTest
+import Darwin
 import EventKit
 import CryptoKit
+import CoreFoundation
 @testable import App
 #if canImport(GuguPhoneCalendar)
 import GuguPhoneCalendar
@@ -40,6 +42,76 @@ final class DHostedRuntimeTests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    // Read-only launch input checks; only the parent prepares stable Simulator roots.
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        let environment = ProcessInfo.processInfo.environment
+        guard Bundle.main.bundleIdentifier == "app.gugu.chat",
+              let expectedUDID = environment["GUGU_D_EXPECTED_SIMULATOR_UDID"],
+              UUID(uuidString: expectedUDID) != nil,
+              environment["SIMULATOR_UDID"]?.lowercased() == expectedUDID.lowercased(),
+              let isolationID = environment["GUGU_D_ISOLATION_UUID"],
+              UUID(uuidString: isolationID)?.uuidString.lowercased() == isolationID else {
+            throw GuguHostFailure(code: "D_wrong_test_host", message: "TestHost differs from the owned Simulator launch input")
+        }
+        let container = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            .resolvingSymlinksInPath().standardizedFileURL
+        let dataRoot = container.deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let appParent = dataRoot.appendingPathComponent("Containers/Data/Application", isDirectory: true)
+        guard dataRoot.lastPathComponent == "data",
+              dataRoot.deletingLastPathComponent().lastPathComponent.lowercased() == expectedUDID.lowercased(),
+              container.deletingLastPathComponent().path == appParent.path,
+              UUID(uuidString: container.lastPathComponent) != nil else {
+            throw GuguHostFailure(code: "D_wrong_container", message: "Actual App container escapes the owned Simulator")
+        }
+        let stable = dataRoot.appendingPathComponent("GuguDIsolated", isDirectory: true)
+            .appendingPathComponent(isolationID, isDirectory: true).standardizedFileURL
+        guard environment["GUGU_D_EXPECTED_STABLE_ROOT"] == stable.path,
+              stable.resolvingSymlinksInPath().path == stable.path,
+              let expectedMarkerSHA = environment["GUGU_D_ROOT_MARKER_SHA256"] else {
+            throw GuguHostFailure(code: "D_wrong_stable_root", message: "Stable root launch identity is missing")
+        }
+        var roots: [String: Any] = [:], cRoots: [String: Any] = [:], accessChecks: [String: Bool] = [:]
+        for (key, leaf) in [("GUGU_HOME", "home"), ("GUGU_USER_DATA_DIR", "user-data")] {
+            let expected = stable.appendingPathComponent(leaf, isDirectory: true)
+            guard let raw = environment[key], raw == expected.path,
+                  expected.resolvingSymlinksInPath().path == raw,
+                  let cValue = getenv(key), String(cString: cValue) == raw else {
+                throw GuguHostFailure(code: "D_stale_data_root", message: "Process environment differs from the owned stable root")
+            }
+            let attributes = try FileManager.default.attributesOfItem(atPath: raw)
+            guard attributes[.type] as? FileAttributeType == .typeDirectory,
+                  (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700,
+                  (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(),
+                  access(raw, R_OK | W_OK | X_OK) == 0 else {
+                throw GuguHostFailure(code: "D_invalid_data_root", message: "Root is not owned, private, readable and writable")
+            }
+            let bytes = try Data(contentsOf: expected.appendingPathComponent(".d-root-owner.json"))
+            let markerSHA = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+            let marker = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: String])
+            guard markerSHA == expectedMarkerSHA, marker["ownedUDID"] == expectedUDID,
+                  marker["isolationUUID"] == isolationID else {
+                throw GuguHostFailure(code: "D_wrong_root_marker", message: "Prelaunch root marker differs from launch custody")
+            }
+            roots[key] = raw; cRoots[key] = String(cString: cValue); accessChecks[key] = true
+        }
+        let support = try XCTUnwrap(FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first)
+            .resolvingSymlinksInPath().standardizedFileURL
+        guard support.path.hasPrefix(container.path + "/") else {
+            throw GuguHostFailure(code: "D_wrong_support_root", message: "ApplicationSupport escapes the current App container")
+        }
+        try attach("D-App-prelaunch-root-readback", ["phase": "read-only-before-test-body",
+            "bundleId": Bundle.main.bundleIdentifier ?? "", "pid": ProcessInfo.processInfo.processIdentifier,
+            "expectedSimulatorUDID": expectedUDID, "observedSimulatorUDID": environment["SIMULATOR_UDID"] ?? "",
+            "currentContainer": container.path, "roots": roots, "cEnvironmentRoots": cRoots,
+            "stableRoot": stable.path, "isolationUUID": isolationID, "markerSHA256": expectedMarkerSHA,
+            "markerReadVerified": true, "writeAccessChecked": true, "writeExercisePerformed": false,
+            "readWriteSearchAccess": accessChecks, "privateDirectoryUID": getuid(),
+            "nativeApplicationSupport": support.path,
+            "environmentMutationPerformed": false, "rootCreationPerformed": false])
     }
 
     private func asset() throws -> (Data, String) {
@@ -234,46 +306,164 @@ final class DHostedRuntimeTests: XCTestCase {
         catch let error as PhoneCalendarFailure where error.code == "unavailable" {
             throw XCTSkip("No local fixture calendar source; no account source will be created")
         }
-        addTeardownBlock {
-            try fixture.remove(manifestURL: manifestURL)
-            XCTAssertNil(EKEventStore().calendar(withIdentifier: fixture.manifest.calendarIdentifier))
-        }
-        let reopened = try PhoneCalendarSimulatorFixture.open(manifestURL: manifestURL)
-        XCTAssertEqual(reopened.manifest.calendarIdentifier, fixture.manifest.calendarIdentifier)
-        let manifestData = try Data(contentsOf: manifestURL)
-        try attach("D-calendar-fixture-manifest", JSONSerialization.jsonObject(with: manifestData))
-        let executor = GuguCalendarExecutor(service: PhoneCalendarService(store: try fixture.makeStore()), calendarEnabled: { true })
-        let binding = context()
         let start: Int64 = 1_794_144_600_000
         let end = start + 3_600_000
-        let title = "D isolated EventKit \(fixture.manifest.runID)"
-        func oracle(_ events: [DExpectedCalendarEvent]) throws {
-            try DCalendarSnapshotOracle.assertMatches(DCalendarOracleSpec(
-                calendarIdentifier: fixture.manifest.calendarIdentifier, expectedCalendarTitle: fixture.manifest.title,
-                start_ms: start - 86_400_000, end_ms: end + 86_400_000, events: events))
+        let manifestObject = ["runID": fixture.manifest.runID,
+            "calendarIdentifier": fixture.manifest.calendarIdentifier, "title": fixture.manifest.title,
+            "sourceIdentifier": fixture.manifest.sourceIdentifier]
+        var manifestSHA = ""
+        var manifestReadVerified = false
+        func require(_ condition: Bool, _ message: String) throws {
+            XCTAssertTrue(condition, message)
+            guard condition else { throw DCalendarOracleFailure.snapshotMismatch }
         }
-        try oracle([])
-        let created = try invoke(executor, binding, "calendar.events.create", ["title": title, "start_ms": start,
+        func json<Value: Encodable>(_ value: Value) throws -> Any {
+            try JSONSerialization.jsonObject(with: JSONEncoder().encode(value))
+        }
+        func spec(_ expected: [DExpectedCalendarEvent]) -> DCalendarOracleSpec {
+            DCalendarOracleSpec(calendarIdentifier: fixture.manifest.calendarIdentifier,
+                expectedCalendarTitle: fixture.manifest.title,
+                expectedSourceIdentifier: fixture.manifest.sourceIdentifier,
+                start_ms: start - 86_400_000, end_ms: end + 86_400_000, events: expected)
+        }
+        @discardableResult func oracle(_ phase: String, _ expected: [DExpectedCalendarEvent],
+                                      assertExpected: Bool = true) throws -> DCalendarOracleSnapshot {
+            let expectedSpec = spec(expected)
+            do {
+                let observed = try DCalendarSnapshotOracle.snapshot(expectedSpec)
+                try attach("D-calendar-oracle-" + phase, ["phase": phase,
+                    "fixture": manifestObject, "manifestSHA256": manifestSHA,
+                    "manifestReadVerified": manifestReadVerified, "expected": try json(expectedSpec), "observed": try json(observed),
+                    "bundleId": Bundle.main.bundleIdentifier ?? "",
+                    "simulatorUDID": ProcessInfo.processInfo.environment["SIMULATOR_UDID"] ?? "",
+                    "approvalAndReceiptInjected": true, "realHostJournalVerified": false])
+                if assertExpected { try DCalendarSnapshotOracle.assertMatches(expectedSpec, observed: observed.events) }
+                return observed
+            } catch {
+                try attach("D-calendar-oracle-failure-" + phase, ["phase": phase,
+                    "fixture": manifestObject, "manifestSHA256": manifestSHA,
+                    "authorizationRawValue": EKEventStore.authorizationStatus(for: .event).rawValue,
+                    "failureType": String(describing: type(of: error))])
+                throw error
+            }
+        }
+        // Register exact cleanup before any assertion or subsequent EventKit operation can fail.
+        addTeardownBlock {
+            var cleanup: [String: Any] = ["fixture": manifestObject, "manifestSHA256": manifestSHA,
+                "manifestPath": manifestURL.path, "manifestReadVerified": manifestReadVerified,
+                "pid": Int(ProcessInfo.processInfo.processIdentifier),
+                "bundleId": Bundle.main.bundleIdentifier ?? "",
+                "simulatorUDID": ProcessInfo.processInfo.environment["SIMULATOR_UDID"] ?? "",
+                "attempted": false, "removeReturned": false,
+                "verified": false, "authorizationBefore": EKEventStore.authorizationStatus(for: .event).rawValue]
+            do {
+                _ = try oracle("cleanup-before", [], assertExpected: false)
+                cleanup["attempted"] = true
+                try fixture.remove(manifestURL: manifestURL)
+                cleanup["removeReturned"] = true
+                let after = EKEventStore.authorizationStatus(for: .event)
+                cleanup["authorizationAfter"] = after.rawValue
+                let allowed: Bool
+                if #available(iOS 17.0, *) { allowed = after == .fullAccess }
+                else { allowed = after == .authorized }
+                guard allowed else { throw DCalendarOracleFailure.missingReadPermission }
+                let store = EKEventStore()
+                let calendarAbsent = store.calendar(withIdentifier: fixture.manifest.calendarIdentifier) == nil
+                let manifestAbsent = !FileManager.default.fileExists(atPath: manifestURL.path)
+                let finalStatus = EKEventStore.authorizationStatus(for: .event)
+                cleanup["authorizationAfterAbsenceRead"] = finalStatus.rawValue
+                if #available(iOS 17.0, *) {
+                    guard finalStatus == .fullAccess else { throw DCalendarOracleFailure.missingReadPermission }
+                } else {
+                    guard finalStatus == .authorized else { throw DCalendarOracleFailure.missingReadPermission }
+                }
+                cleanup["calendarAbsent"] = calendarAbsent
+                cleanup["manifestAbsent"] = manifestAbsent
+                cleanup["verified"] = calendarAbsent && manifestAbsent
+                try self.attach("D-calendar-fixture-cleanup", cleanup)
+                try require(calendarAbsent && manifestAbsent, "Exact calendar and manifest must be absent with read permission")
+            } catch {
+                cleanup["verified"] = false
+                cleanup["authorizationAfter"] = EKEventStore.authorizationStatus(for: .event).rawValue
+                cleanup["manifestStillExists"] = FileManager.default.fileExists(atPath: manifestURL.path)
+                cleanup["failureType"] = String(describing: type(of: error))
+                try self.attach("D-calendar-fixture-cleanup-failed", cleanup)
+                throw error
+            }
+        }
+        let manifestData = try Data(contentsOf: manifestURL)
+        let savedManifest = try XCTUnwrap(JSONSerialization.jsonObject(with: manifestData) as? [String: String])
+        manifestSHA = SHA256.hash(data: manifestData).map { String(format: "%02x", $0) }.joined()
+        try require(savedManifest == manifestObject, "Saved fixture manifest must retain all exact identity fields")
+        manifestReadVerified = true
+        try attach("D-calendar-fixture-manifest", ["fixture": manifestObject,
+            "manifestSHA256": manifestSHA, "manifestReadVerified": manifestReadVerified,
+            "manifestPath": manifestURL.path,
+            "pid": Int(ProcessInfo.processInfo.processIdentifier),
+            "bundleId": Bundle.main.bundleIdentifier ?? "",
+            "authorizationRawValue": status.rawValue])
+        let reopened = try PhoneCalendarSimulatorFixture.open(manifestURL: manifestURL)
+        try require(reopened.manifest.calendarIdentifier == fixture.manifest.calendarIdentifier
+            && reopened.manifest.runID == fixture.manifest.runID
+            && reopened.manifest.title == fixture.manifest.title
+            && reopened.manifest.sourceIdentifier == fixture.manifest.sourceIdentifier,
+            "Reopened fixture must retain all exact identity fields")
+        let executor = GuguCalendarExecutor(service: PhoneCalendarService(store: try fixture.makeStore()), calendarEnabled: { true })
+        let binding = context()
+        let title = "D isolated EventKit \(fixture.manifest.runID)"
+        func call(_ phase: String, _ action: String, _ args: [String: Any]) throws -> [String: Any] {
+            try invoke(executor, binding, action, args, record: { try self.attach("D-calendar-native-" + phase, $0) })
+        }
+        func assertList(_ reply: [String: Any], _ expected: [DExpectedCalendarEvent]) throws {
+            var rows = try XCTUnwrap(reply["events"] as? [[String: Any]])
+            try require(rows.count == expected.count, "List count must equal the scenario")
+            for wanted in expected {
+                let id = try XCTUnwrap(wanted.event_id)
+                let index = try XCTUnwrap(rows.firstIndex { $0["event_id"] as? String == id })
+                let row = rows.remove(at: index)
+                let from = try XCTUnwrap(row["start_ms"] as? NSNumber)
+                let until = try XCTUnwrap(row["end_ms"] as? NSNumber)
+                let allDay = try XCTUnwrap(row["all_day"] as? NSNumber)
+                try require(CFGetTypeID(from) != CFBooleanGetTypeID() && CFGetTypeID(until) != CFBooleanGetTypeID()
+                    && from.doubleValue == Double(wanted.start_ms) && until.doubleValue == Double(wanted.end_ms),
+                    "List must retain exact integral millisecond times")
+                try require(CFGetTypeID(allDay) == CFBooleanGetTypeID() && allDay.boolValue == wanted.all_day,
+                    "List all_day must be the exact Boolean value")
+                try require(row["event_id"] as? String == id
+                    && row["calendar_id"] as? String == fixture.manifest.calendarIdentifier
+                    && row["title"] as? String == wanted.title, "List must retain exact event/calendar IDs and title")
+            }
+            try require(rows.isEmpty, "List must not contain extra events")
+        }
+        try oracle("baseline", [])
+        let created = try call("create", "calendar.events.create", ["title": title, "start_ms": start,
             "end_ms": end, "all_day": false, "calendar_id": fixture.manifest.calendarIdentifier])
         let eventId = try XCTUnwrap(created["event_id"] as? String)
-        try oracle([DExpectedCalendarEvent(event_id: eventId, title: title, start_ms: start, end_ms: end, all_day: false)])
+        try require(!eventId.isEmpty && (created["calendar_id"] as? String) == fixture.manifest.calendarIdentifier,
+                    "Create receipt must bind the exact fixture calendar")
+        try oracle("create", [DExpectedCalendarEvent(event_id: eventId, title: title, start_ms: start, end_ms: end, all_day: false)])
         let revised = title + " updated"
-        _ = try invoke(executor, binding, "calendar.events.update", ["event_id": eventId, "title": revised])
-        try oracle([DExpectedCalendarEvent(event_id: eventId, title: revised, start_ms: start, end_ms: end, all_day: false)])
-        let listed = try invoke(executor, binding, "calendar.events.list", ["start_ms": start - 86_400_000, "end_ms": end + 86_400_000])
-        let events = try XCTUnwrap(listed["events"] as? [[String: Any]])
-        XCTAssertEqual(events.count, 1)
-        XCTAssertEqual(events.first?["title"] as? String, revised)
-        _ = try invoke(executor, binding, "calendar.events.delete", ["event_id": eventId])
-        try oracle([])
+        let updated = try call("update", "calendar.events.update", ["event_id": eventId, "title": revised])
+        try require(updated["event_id"] as? String == eventId, "Update must retain the original exact event ID")
+        let expected = [DExpectedCalendarEvent(event_id: eventId, title: revised, start_ms: start, end_ms: end, all_day: false)]
+        try oracle("update", expected)
+        let listed = try call("list", "calendar.events.list", ["start_ms": start - 86_400_000, "end_ms": end + 86_400_000])
+        try assertList(listed, expected)
+        let deleted = try call("delete", "calendar.events.delete", ["event_id": eventId])
+        try require(deleted["event_id"] as? String == eventId, "Delete must address the same exact event ID")
+        try oracle("delete", [])
+        let empty = try call("list-after-delete", "calendar.events.list", ["start_ms": start - 86_400_000, "end_ms": end + 86_400_000])
+        try assertList(empty, [])
         try attach("D-calendar-fixture-result", ["calendarIdentifier": fixture.manifest.calendarIdentifier,
-            "event_id": eventId, "executionSurface": "C executor and isolated EventKit fixture; verdict is in xcresult", "realUserCalendarAccessed": false,
-            "realModelCalls": 0, "realPermissionPromptVerified": false, "realHostJournalVerified": false,
-            "productionTaskEntryVerified": false])
+            "event_id": eventId, "executionSurface": "C executor and independent fresh EventKit stores; verdict is in xcresult",
+            "realUserCalendarAccessed": false, "realModelCalls": 0, "realPermissionPromptVerified": false,
+            "approvalAndReceiptInjected": true, "realHostJournalVerified": false,
+            "productionTaskEntryVerified": false, "cleanupStatus": "pending-teardown; require verified cleanup receipt"])
     }
 
     private func invoke(_ executor: GuguCalendarExecutor, _ binding: GuguHostContext,
-                        _ action: String, _ args: [String: Any]) throws -> [String: Any] {
+                        _ action: String, _ args: [String: Any],
+                        record: (([String: Any]) throws -> Void)? = nil) throws -> [String: Any] {
         let data = try JSONSerialization.data(withJSONObject: args, options: [.sortedKeys])
         let request = GuguNativeToolRequest(context: binding, requestId: UUID().uuidString, toolCallId: UUID().uuidString,
             actionName: action, argumentsJSON: String(decoding: data, as: UTF8.self),
@@ -291,10 +481,21 @@ final class DHostedRuntimeTests: XCTestCase {
         executor.execute(request, control: control) { envelope in result.access { $0 = envelope }; completed.fulfill() }
         wait(for: [completed], timeout: 10)
         let envelope = try XCTUnwrap(result.access { $0 })
-        XCTAssertEqual(envelope["ok"] as? Bool, true, "\(envelope["code"] ?? "missing code")")
         let writes = action == "calendar.events.list" ? 0 : 1
-        XCTAssertEqual(claims.access { $0 }, writes)
-        XCTAssertEqual(receipts.access { $0 }, writes)
+        let claimCount = claims.access { $0 }, receiptCount = receipts.access { $0 }
+        try record?(["requestId": request.requestId, "toolCallId": request.toolCallId,
+            "pid": Int(ProcessInfo.processInfo.processIdentifier),
+            "bundleId": Bundle.main.bundleIdentifier ?? "",
+            "simulatorUDID": ProcessInfo.processInfo.environment["SIMULATOR_UDID"] ?? "",
+            "action": action, "arguments": args, "argumentsSHA256": request.argumentsSHA256,
+            "fixtureContext": try jsonContext(binding), "approvalAndReceiptInjected": true,
+            "claimCount": claimCount, "receiptCount": receiptCount, "envelope": envelope])
+        XCTAssertEqual(envelope["ok"] as? Bool, true, "\(envelope["code"] ?? "missing code")")
+        XCTAssertEqual(claimCount, writes)
+        XCTAssertEqual(receiptCount, writes)
+        guard envelope["ok"] as? Bool == true, claimCount == writes, receiptCount == writes else {
+            throw DCalendarOracleFailure.snapshotMismatch
+        }
         return try XCTUnwrap(envelope["data"] as? [String: Any])
     }
 }
