@@ -10,6 +10,7 @@ final class GuguIOSHostAdapter {
     private let requireOwnerUI: () throws -> Void
     private var configured: GuguIOSHostBinding?
     private var store: GuguHostCallStore?
+    private let generationLock = NSLock()
     private var generation = 0
     private var configurationSequence = 0
     private var configuringBinding: GuguIOSHostBinding?
@@ -81,29 +82,34 @@ final class GuguIOSHostAdapter {
         }
     }
 
-    func hostState(ownerId: String, completion: @escaping ([String: Any]) -> Void) {
+    func hostState(expectedBinding binding: GuguIOSHostBinding, completion: @escaping ([String: Any]) -> Void) {
+        let admission = currentGeneration()
         queue.async {
             do {
-                guard let binding = self.currentIdentity(), binding.ownerId == ownerId else { throw Self.failure("stale_context", "Current owner is unavailable") }
                 try self.check(binding)
+                guard self.currentGeneration() == admission else { throw Self.failure("stale_context", "Native state was retired before queue admission") }
                 guard self.configured == binding else { throw Self.failure("host_not_ready", "Native host is not configured") }
+                try self.checkGeneration(admission, binding)
                 let state = try self.backend.state(binding: binding)
                 try Self.validateState(state, binding: binding)
+                try self.checkGeneration(admission, binding)
                 completion(state)
             } catch { completion(Self.envelope(error)) }
         }
     }
 
-    func hostCall(ownerId: String, id: String, channel: String, args: [Any], origin: GuguIOSHostCallOrigin, expectedBinding: GuguIOSHostBinding? = nil,
+    func hostCall(ownerId: String, id: String, channel: String, args: [Any], origin: GuguIOSHostCallOrigin, expectedBinding: GuguIOSHostBinding,
                   completion: @escaping ([String: Any]) -> Void) {
+        let admission = currentGeneration()
         queue.async {
             var custodyAttempted = false
             do {
                 guard UUID(uuidString: id) != nil else { throw Self.failure("invalid_args", "Host call requires the original UUID") }
                 guard Self.reads.contains(channel) || Self.mutations.contains(channel) else { throw Self.failure("unknown_method", "Host channel is not implemented") }
+                guard self.currentGeneration() == admission else { throw Self.failure("stale_context", "Native call was retired before queue admission") }
                 guard let binding = self.configured, binding.ownerId == ownerId, let store = self.store else { throw Self.failure("host_not_ready", "Native host is not configured") }
-                guard expectedBinding == nil || binding == expectedBinding else { throw Self.failure("stale_context", "Original host-call binding was retired") }
-                try self.check(binding)
+                guard binding == expectedBinding else { throw Self.failure("stale_context", "Original host-call binding was retired") }
+                try self.checkGeneration(admission, binding)
                 try Self.rejectCredentialFields(args)
                 let settings = channel.hasPrefix("appSettings.")
                 if settings {
@@ -118,7 +124,8 @@ final class GuguIOSHostAdapter {
                 try Self.validateState(state, binding: binding)
                 guard settings || state["ready"] as? Bool == true else { throw Self.failure("host_not_ready", "Native task host is not ready") }
                 let call = GuguIOSHostInvocation(binding: binding, requestId: id, channel: channel, arguments: args, origin: origin)
-                let callGeneration = self.generation
+                let callGeneration = admission
+                try self.checkGeneration(callGeneration, binding)
                 if Self.reads.contains(channel) {
                     self.backend.invoke(call) { reply in self.queue.async {
                         do { try self.checkGeneration(callGeneration, binding); try Self.validateReply(reply); completion(reply) }
@@ -131,6 +138,7 @@ final class GuguIOSHostAdapter {
                 if prior["status"] as? String == "completed" {
                     try self.backend.authorizeReplay(call)
                     guard let saved = prior["reply"] as? [String: Any] else { throw Self.failure("invalid_journal", "Host-call receipt is missing") }
+                    try self.checkGeneration(callGeneration, binding)
                     completion(saved); return
                 }
                 let flightKey = "\(callGeneration):\(id)"
@@ -160,16 +168,28 @@ final class GuguIOSHostAdapter {
         }
     }
 
-    func stopHost(ownerId: String, completion: @escaping ([String: Any]) -> Void) {
+    func stopHost(expectedBinding expected: GuguIOSHostBinding, completion: @escaping ([String: Any]) -> Void) {
+        let admission = currentGeneration()
         queue.async {
-            guard let binding = self.configured ?? self.configuringBinding ?? self.retiringBinding else { completion([:]); return }
-            guard binding.ownerId == ownerId else { completion(Self.error("stale_context", "Cannot stop another native owner", admission: "rejected")); return }
-            self.retire(binding) { error in completion(error.map { Self.envelope($0) } ?? [:]) }
+            do {
+                try self.check(expected)
+                guard self.currentGeneration() == admission else { throw Self.failure("stale_context", "Native stop was superseded before admission") }
+                guard let binding = self.configured ?? self.configuringBinding ?? self.retiringBinding else { completion([:]); return }
+                guard binding == expected else { throw Self.failure("stale_context", "Cannot stop another native binding") }
+                self.retire(binding) { error in
+                    do {
+                        if let error { throw error }
+                        try self.check(expected)
+                        guard self.currentGeneration() == admission + 1 else { throw Self.failure("stale_context", "Original stop generation was superseded") }
+                        completion([:])
+                    } catch { completion(Self.envelope(error)) }
+                }
+            } catch { completion(Self.envelope(error)) }
         }
     }
 
     private func retire(_ binding: GuguIOSHostBinding, completion: @escaping (Error?) -> Void) {
-        generation += 1
+        generationLock.lock(); generation += 1; generationLock.unlock()
         configurationSequence += 1
         configured = nil; configuringBinding = nil; store = nil
         retiringBinding = binding
@@ -178,13 +198,14 @@ final class GuguIOSHostAdapter {
             completion(error)
         } }
     }
+    private func currentGeneration() -> Int { generationLock.lock(); defer { generationLock.unlock() }; return generation }
     private func check(_ binding: GuguIOSHostBinding) throws {
         try binding.validate()
         guard currentIdentity() == binding else { throw Self.failure("stale_context", "Owner, device or native installation changed") }
     }
     private func checkGeneration(_ expected: Int, _ binding: GuguIOSHostBinding) throws {
         try check(binding)
-        guard generation == expected, configured == binding else { throw Self.failure("stale_context", "Native host was retired before reply") }
+        guard currentGeneration() == expected, configured == binding else { throw Self.failure("stale_context", "Native host was retired before reply") }
     }
     private static func validateState(_ state: [String: Any], binding: GuguIOSHostBinding) throws {
         guard state["ownerId"] as? String == binding.ownerId, state["deviceId"] as? String == binding.deviceId,

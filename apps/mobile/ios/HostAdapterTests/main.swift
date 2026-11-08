@@ -5,13 +5,15 @@ final class AdapterFixtureBackend: GuguIOSHostBackend {
     var invocations: [GuguIOSHostInvocation] = []
     var reconciliations = 0, stops = 0
     var pending: (([String: Any]) -> Void)?
+    var stateHook: (() -> Void)?
     var reconcileReply: [String: Any] = ["error": ["code": "execution_unknown", "message": "Fixture has no known receipt", "admission": "uncertain"]]
     let invoked = DispatchSemaphore(value: 0)
     func configure(_ configuration: GuguIOSHostConfiguration, completion: @escaping ([String: Any]) -> Void) {
         completion(try! state(binding: configuration.binding))
     }
     func state(binding: GuguIOSHostBinding) throws -> [String: Any] {
-        ["ownerId": binding.ownerId, "deviceId": binding.deviceId, "status": ready ? "ready" : "starting", "ready": ready, "sessions": []]
+        stateHook?()
+        return ["ownerId": binding.ownerId, "deviceId": binding.deviceId, "status": ready ? "ready" : "starting", "ready": ready, "sessions": []]
     }
     func invoke(_ call: GuguIOSHostInvocation, completion: @escaping ([String: Any]) -> Void) {
         invocations.append(call)
@@ -56,6 +58,22 @@ final class AdapterFixtureBackend: GuguIOSHostBackend {
         try error(try awaitReply { adapter.configure(.init(binding: foreign, grants: [:], deviceMetadata: [:]), completion: $0) }, "stale_context")
         _ = try awaitReply { adapter.configure(configuration, completion: $0) }
         cases.append("configure_checks_native_identity_and_rejects_credential_metadata")
+        backend.stateHook = { current = foreign }
+        try error(try awaitReply { adapter.hostState(expectedBinding: binding, completion: $0) }, "stale_context")
+        backend.stateHook = nil; current = binding
+        cases.append("state_rechecks_original_full_binding_after_synchronous_backend_read")
+        let entered = DispatchSemaphore(value: 0), unblock = DispatchSemaphore(value: 0), stateDone = DispatchSemaphore(value: 0)
+        backend.stateHook = { backend.stateHook = nil; entered.signal(); _ = unblock.wait(timeout: .now() + 10) }
+        adapter.hostState(expectedBinding: binding) { _ in stateDone.signal() }; try wait(entered)
+        let stopDone = DispatchSemaphore(value: 0), queuedDone = DispatchSemaphore(value: 0); var queued: [String: Any] = [:]
+        adapter.stopHost(expectedBinding: binding) { _ in stopDone.signal() }
+        let countBeforeQueue = backend.invocations.count
+        adapter.hostCall(ownerId: binding.ownerId, id: UUID().uuidString, channel: "sessionTimeline.sessionCreateOptions", args: [], origin: .localOwnerUI, expectedBinding: binding) { queued = $0; queuedDone.signal() }
+        unblock.signal(); try wait(stateDone); try wait(queuedDone); try wait(stopDone)
+        try error(queued, "stale_context"); try require(backend.invocations.count == countBeforeQueue, "Call queued before retirement entered a new generation")
+        _ = try awaitReply { adapter.configure(configuration, completion: $0) }
+        cases.append("queue_ingress_generation_rejects_call_queued_behind_retirement_before_backend_effect")
+
 
         backend.ready = false
         let startupId = UUID().uuidString
@@ -68,7 +86,7 @@ final class AdapterFixtureBackend: GuguIOSHostBackend {
         backend.hold = true
         let id = UUID().uuidString, firstDone = DispatchSemaphore(value: 0)
         var first: [String: Any] = [:]
-        adapter.hostCall(ownerId: binding.ownerId, id: id, channel: "sessionTimeline.sessionSend", args: ["fixture-input"], origin: .localOwnerUI) {
+        adapter.hostCall(ownerId: binding.ownerId, id: id, channel: "sessionTimeline.sessionSend", args: ["fixture-input"], origin: .localOwnerUI, expectedBinding: binding) {
             first = $0; firstDone.signal()
         }
         try wait(backend.invoked)
@@ -99,11 +117,11 @@ final class AdapterFixtureBackend: GuguIOSHostBackend {
         backend.hold = true
         let lateId = UUID().uuidString, lateDone = DispatchSemaphore(value: 0)
         var late: [String: Any] = [:]
-        adapter.hostCall(ownerId: binding.ownerId, id: lateId, channel: "sessionTimeline.sessionSend", args: [], origin: .localOwnerUI) {
+        adapter.hostCall(ownerId: binding.ownerId, id: lateId, channel: "sessionTimeline.sessionSend", args: [], origin: .localOwnerUI, expectedBinding: binding) {
             late = $0; lateDone.signal()
         }
         try wait(backend.invoked)
-        _ = try awaitReply { adapter.stopHost(ownerId: binding.ownerId, completion: $0) }
+        _ = try awaitReply { adapter.stopHost(expectedBinding: binding, completion: $0) }
         current = foreign
         backend.pending?(["result": ["accepted": true, "requestId": lateId]])
         try wait(lateDone)
@@ -118,7 +136,7 @@ final class AdapterFixtureBackend: GuguIOSHostBackend {
         let uncertainId = UUID().uuidString
         let uncertain = GuguIOSHostInvocation(binding: binding, requestId: uncertainId, channel: "sessionTimeline.sessionSend", arguments: ["uncertain"], origin: .localOwnerUI)
         _ = try oldStore.admit(uncertain); try oldStore.begin(uncertain)
-        _ = try awaitReply { adapter.stopHost(ownerId: binding.ownerId, completion: $0) }
+        _ = try awaitReply { adapter.stopHost(expectedBinding: binding, completion: $0) }
         _ = try awaitReply { adapter.configure(configuration, completion: $0) }
         backend.reconcileReply = ["result": ["accepted": true, "requestId": uncertainId]]
         let invokedBeforeReconcile = backend.invocations.count
@@ -154,7 +172,7 @@ final class AdapterFixtureBackend: GuguIOSHostBackend {
     }
     static func invoke(_ adapter: GuguIOSHostAdapter, _ binding: GuguIOSHostBinding, _ id: String, _ channel: String,
                        args: [Any] = [], origin: GuguIOSHostCallOrigin = .localOwnerUI) throws -> [String: Any] {
-        try awaitReply { adapter.hostCall(ownerId: binding.ownerId, id: id, channel: channel, args: args, origin: origin, completion: $0) }
+        try awaitReply { adapter.hostCall(ownerId: binding.ownerId, id: id, channel: channel, args: args, origin: origin, expectedBinding: binding, completion: $0) }
     }
     static func awaitReply(_ work: (@escaping ([String: Any]) -> Void) -> Void) throws -> [String: Any] {
         let done = DispatchSemaphore(value: 0); var reply: [String: Any] = [:]

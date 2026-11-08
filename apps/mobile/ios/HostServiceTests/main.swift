@@ -66,9 +66,21 @@ private final class Executor: GuguNativeToolExecutor {
         }
         try require(network == 0, "Rejected configuration sent a cloud request")
         cases.append("constructor_and_rejected_token_URL_grant_inputs_perform_zero_HTTP")
+        for method in ["state", "call", "stop"] {
+            let rejected: [String: Any] = try wait { done in
+                if method == "state" { service.hostState(["ownerId": owner], completion: done) }
+                else if method == "stop" { service.stopHost(["ownerId": owner], completion: done) }
+                else { service.hostCall(["ownerId": owner, "id": UUID().uuidString.lowercased(), "channel": "appSettings.get", "args": ["notifications"]], completion: done) }
+            }
+            try require((rejected["error"] as? [String: Any])?["code"] as? String == "invalid_args", "Owner-only native wire remained a successful bypass")
+        }
+        let incomplete: [String: Any] = try wait { service.hostState(["expectedBinding": ["ownerId": owner]], completion: $0) }
+        try require((incomplete["error"] as? [String: Any])?["code"] as? String == "invalid_args" && network == 0, "Incomplete native wire binding reached backend")
+        cases.append("owner_only_and_incomplete_binding_wire_reject_before_HTTP")
+
         let configured: [String: Any] = try wait { service.configure(["expectedBinding": raw], completion: $0) }
         try require(configured["ownerId"] as? String == owner && configured["ready"] as? Bool == false && configured["errorCode"] as? String == "delivery_not_connected", "Partial delivery claimed ready")
-        let read: (String, [Any]) throws -> [String: Any] = { channel, args in try wait { service.hostCall(["ownerId": owner, "id": UUID().uuidString.lowercased(), "channel": channel, "args": args], completion: $0) } }
+        let read: (String, [Any]) throws -> [String: Any] = { channel, args in try wait { service.hostCall(["expectedBinding": raw, "id": UUID().uuidString.lowercased(), "channel": channel, "args": args], completion: $0) } }
         let absent = try read("appSettings.get", ["notifications"])
         try require((absent["error"] as? [String: Any])?["code"] as? String == "settings_unavailable", "Absent preference was inferred enabled")
         _ = try read("appSettings.update", ["notifications", ["enabled": false, "sound": true]])
@@ -90,12 +102,17 @@ private final class Executor: GuguNativeToolExecutor {
         current = .init(ownerId: owner, deviceId: "phone-\(anotherInstall)-\(owner)", installationId: anotherInstall)
         let stale: [String: Any] = try wait { service.adapter.hostCall(ownerId: owner, id: UUID().uuidString.lowercased(), channel: "appSettings.get", args: ["notifications"], origin: .remoteAgent, expectedBinding: old, completion: $0) }
         try require((stale["error"] as? [String: Any])?["code"] as? String == "stale_context", "Old installation selected current owner")
+        let staleState: [String: Any] = try wait { service.hostState(["expectedBinding": raw], completion: $0) }
+        let staleCall: [String: Any] = try wait { service.hostCall(["expectedBinding": raw, "id": UUID().uuidString.lowercased(), "channel": "appSettings.get", "args": ["notifications"]], completion: $0) }
+        let staleStop: [String: Any] = try wait { service.stopHost(["expectedBinding": raw], completion: $0) }
+        try require([staleState, staleCall, staleStop].allSatisfy { ($0["error"] as? [String: Any])?["code"] as? String == "stale_context" } && !service.backend.stopped, "Old-install wire selected or stopped the replacement binding")
+        cases.append("all_three_wire_entries_reject_original_binding_after_installation_change")
         let newStore = try GuguIOSBackendStore(root: root.appendingPathComponent("other-install"), binding: current)
         do { _ = try GuguIOSLocalAppSettings(store: newStore).get(); throw GuguHostFailure(code: "service_test_failed", message: "Preference crossed installations") }
         catch let error as GuguHostFailure { try require(error.code == "settings_unavailable", "New installation did not remain unknown") }
         current = old
         cases.append("captured_binding_and_local_settings_do_not_cross_installations")
-        let stopped: [String: Any] = try wait { service.stopHost(["ownerId": owner], completion: $0) }
+        let stopped: [String: Any] = try wait { service.stopHost(["expectedBinding": raw], completion: $0) }
         try require(stopped.isEmpty, "Known clean local stop failed")
         lock.lock(); let ads = advertisements; lock.unlock()
         try require(!ads.isEmpty && ads.allSatisfy { ($0["capabilities"] as? [String: Any])?["host_runtime_capability"] as? Int == 0 }, "Partial delivery advertised a host capability")

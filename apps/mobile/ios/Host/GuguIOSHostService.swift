@@ -61,26 +61,35 @@ final class GuguIOSHostService {
         } catch { completion(GuguIOSNativeBackend.replyError(error, admission: "rejected")) }
     }
     func hostState(_ options: [String: Any], completion: @escaping ([String: Any]) -> Void) {
-        do { try Self.keys(options, allowed: ["ownerId"]); adapter.hostState(ownerId: try Self.owner(options), completion: completion) }
+        do {
+            try Self.keys(options, allowed: ["expectedBinding"])
+            let expected = try Self.expected(options)
+            guard try ownerAccess.ownerBinding() == expected else { throw Self.failure("stale_context", "Original native state binding changed") }
+            adapter.hostState(expectedBinding: expected, completion: completion)
+        }
         catch { completion(GuguIOSNativeBackend.replyError(error, admission: "rejected")) }
     }
     func hostCall(_ options: [String: Any], completion: @escaping ([String: Any]) -> Void) {
         do {
-            try Self.keys(options, allowed: ["ownerId", "id", "channel", "args"])
-            let owner = try Self.owner(options)
+            try Self.keys(options, allowed: ["expectedBinding", "id", "channel", "args"])
+            let expected = try Self.expected(options)
             guard let id = options["id"] as? String, let channel = options["channel"] as? String, let args = options["args"] as? [Any] else { throw Self.failure("invalid_args", "Original host-call ID, channel and arguments are required") }
-            let expected = try ownerAccess.ownerBinding()
-            guard expected.ownerId == owner else { throw Self.failure("stale_context", "Native owner changed") }
-            adapter.hostCall(ownerId: owner, id: id, channel: channel, args: args, origin: .localOwnerUI, expectedBinding: expected, completion: completion)
+            guard try ownerAccess.ownerBinding() == expected else { throw Self.failure("stale_context", "Original native host-call binding changed") }
+            adapter.hostCall(ownerId: expected.ownerId, id: id, channel: channel, args: args, origin: .localOwnerUI, expectedBinding: expected, completion: completion)
         } catch { completion(GuguIOSNativeBackend.replyError(error, admission: "rejected")) }
     }
     func stopHost(_ options: [String: Any], completion: @escaping ([String: Any]) -> Void) {
-        do { try Self.keys(options, allowed: ["ownerId"]); adapter.stopHost(ownerId: try Self.owner(options), completion: completion) }
+        do {
+            try Self.keys(options, allowed: ["expectedBinding"])
+            let expected = try Self.expected(options)
+            guard try ownerAccess.ownerBinding() == expected else { throw Self.failure("stale_context", "Original native stop binding changed") }
+            adapter.stopHost(expectedBinding: expected, completion: completion)
+        }
         catch { completion(GuguIOSNativeBackend.replyError(error, admission: "rejected")) }
     }
     /// Run while the original native credential publication is still available.
     /// Completion includes model checkpoint/revoke and device withdrawal errors.
-    func prepareOwnerRetirement(ownerId: String, completion: @escaping ([String: Any]) -> Void) { adapter.stopHost(ownerId: ownerId, completion: completion) }
+    func prepareOwnerRetirement(expectedBinding: GuguIOSHostBinding, completion: @escaping ([String: Any]) -> Void) { adapter.stopHost(expectedBinding: expectedBinding, completion: completion) }
     func authSession(_ options: [String: Any], completion: @escaping (Result<[String: Any], Error>) -> Void) {
         do {
             try Self.keys(options, allowed: ["action"])
@@ -88,8 +97,12 @@ final class GuguIOSHostService {
             adapter.authSession(action: action, completion: completion)
         } catch { completion(.failure(error)) }
     }
-    private static func owner(_ options: [String: Any]) throws -> String {
-        guard let value = options["ownerId"] as? String, UUID(uuidString: value) != nil else { throw failure("invalid_args", "Current owner ID is required") }; return value
+    private static func expected(_ options: [String: Any]) throws -> GuguIOSHostBinding {
+        guard let raw = options["expectedBinding"] as? [String: Any] else { throw failure("invalid_args", "Original native binding is required") }
+        try keys(raw, allowed: ["ownerId", "deviceId", "installationId"])
+        guard let owner = raw["ownerId"] as? String, let device = raw["deviceId"] as? String, let installation = raw["installationId"] as? String else { throw failure("invalid_args", "Original native binding is incomplete") }
+        let binding = GuguIOSHostBinding(ownerId: owner, deviceId: device, installationId: installation)
+        try binding.validate(); return binding
     }
     private static func keys(_ options: [String: Any], allowed: Set<String>) throws {
         // Validate names before reading values: legacy auth/URL objects are never retained.

@@ -114,7 +114,7 @@ private final class Fixture {
         try require(finalJSON.contains("Synthetic real Pi broker path completed") && finalJSON.contains("resolved") && f.calendar.writes == 1 && f.model.calls == 2, "Real Pi/timeline did not complete exact approved path")
         let repeated: [String: Any] = try wait { probe.create(requestId: original, prompt: "Synthetic broker path calendar approval", completion: $0) }
         try require((repeated["result"] as? [String: Any])?["conversationId"] as? String == session && f.starts == 1 && f.model.calls == 2, "Original probe retry regenerated saga or reran inference")
-        let stopped: [String: Any] = try wait { service.prepareOwnerRetirement(ownerId: f.binding.ownerId, completion: $0) }
+        let stopped: [String: Any] = try wait { service.prepareOwnerRetirement(expectedBinding: f.binding, completion: $0) }
         try require(stopped.isEmpty && f.modelActions.filter { $0 == "issue" }.count == 1 && f.modelActions.contains("checkpoint") && f.modelActions.contains("revoke"), "Native short-lease cleanup did not settle")
         let state = String(decoding: try Data(contentsOf: root.appendingPathComponent("service/backend/\(f.binding.ownerId)/backend.json")), as: UTF8.self)
         try require(!state.contains("synthetic-native-human") && !state.contains("synthetic-short-lease-only"), "Credential entered native durable records")
