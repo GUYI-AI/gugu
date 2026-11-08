@@ -5,7 +5,7 @@ import { readWindowFrame, writeWindowFrame, syncWindowDirectory } from '@gugu/se
 import type { WindowBudget } from '@gugu/session-core/session-record/window-cache/types';
 import { readWindowCommitSourceCatalog, removeWindowCommitSourceCatalog } from './window-commit-source-catalog';
 import { windowCommitProjectionDirectory } from './window-commit-projection-disk';
-import { windowCommitSourcePath } from './window-commit-source';
+import { assertWindowCommitSource, windowCommitSourcePath } from './window-commit-source';
 import type { openWindowCommitPins } from './window-commit-pins';
 import type { WindowReceiptDatabase, WindowCommitReceipt } from './window-commit-receipt';
 
@@ -62,6 +62,14 @@ export async function openWindowCommitCollector(input: { directory: string; scop
     if (complete) { await rmdir(path); check(); await syncWindowDirectory(join(path, '..')); check(); }
     return complete;
   }
+  async function assertSource(receipt: WindowCommitReceipt, check: () => void) {
+    check();
+    try { await assertWindowCommitSource(directory, receipt.binding, receipt.source); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    // A crashed batch may already have unlinked the owned file. A present
+    // replacement must never inherit that receipt's physical identity.
+    check();
+  }
   return {
     /** undefined resumes the fixed checkpoint; a new candidate comes only from
      * the bounded source catalog discovery port, never renderer-supplied paths. */
@@ -86,7 +94,9 @@ export async function openWindowCommitCollector(input: { directory: string; scop
           await save(job, budget, signal);
           if (state === 'collecting') {
             const complete = await pins.withCollection(version, budget, async check => {
+              await assertSource(catalog.receipt, check);
               if (!await removeProjection(catalog.receipt, check)) return false;
+              await assertSource(catalog.receipt, check);
               check(); await rm(windowCommitSourcePath(directory, catalog.receipt.binding), { force: true }); check();
               await syncWindowDirectory(directory); check();
               connection.prepare(`DELETE FROM session_window_commit_receipts WHERE source_id=?

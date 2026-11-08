@@ -58,6 +58,30 @@ const exists = async (path: string) => files.stat(path).then(() => true, error =
 });
 
 describe('bounded version reclamation with durable final cleanup', () => {
+  it('does not unlink a replacement at the original path when its receipt physical identity no longer matches', async () => {
+    const f = await fixture(), old = await f.version(); await f.version();
+    await writeWindowFrame(f.directory, { ...old.binding, kind: 'locator', cursor: 'keep-until-proved' }, new Uint8Array([1]));
+    const source = windowCommitSourcePath(f.directory, old.binding); await files.writeFile(source, 'replacement');
+    await expect(f.collector.step(old.sourceId, createWindowBudget())).rejects.toThrow('Immutable commit source changed');
+    expect(await files.readFile(source, 'utf8')).toBe('replacement');
+    expect(await exists(windowCommitProjectionDirectory(f.directory, old.binding))).toBe(true);
+    expect(f.receipts.bySource(old.sourceId)).not.toBeNull();
+  });
+
+  it('rechecks the physical identity after asynchronous projection deletion before unlinking the raw path', async () => {
+    const f = await fixture(), old = await f.version(); await f.version();
+    await writeWindowFrame(f.directory, { ...old.binding, kind: 'locator', cursor: 'before-replacement' }, new Uint8Array([1]));
+    const path = windowCommitProjectionDirectory(f.directory, old.binding), raw = windowCommitSourcePath(f.directory, old.binding);
+    const handle = await files.open(path), identity = await handle.stat({ bigint: true });
+    const proto = Object.getPrototypeOf(handle) as files.FileHandle, sync = proto.sync; await handle.close();
+    vi.spyOn(proto, 'sync').mockImplementation(async function(this: files.FileHandle) {
+      await Reflect.apply(sync, this, []); const current = await this.stat({ bigint: true });
+      if (current.dev === identity.dev && current.ino === identity.ino) await files.writeFile(raw, 'late replacement');
+    });
+    await expect(f.collector.step(old.sourceId, createWindowBudget())).rejects.toThrow('Immutable commit source changed');
+    expect(await files.readFile(raw, 'utf8')).toBe('late replacement'); expect(f.receipts.bySource(old.sourceId)).not.toBeNull();
+  });
+
   it('requires both resident releases, protects the current row and recovery intents, and deletes only the retired version', async () => {
     const f = await fixture(), old = await f.version(), latest = await f.version(), owner = {};
     const version = { receipt: old, projectionId: `${old.sourceId}/${'b'.repeat(32)}` };
