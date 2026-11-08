@@ -5,6 +5,7 @@ import { AssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-s
 import { collapseSystemMessages, getCurrentTools } from '@earendil-works/pi-ai/utils/transcript'
 import { getSystemMessageText } from '@earendil-works/pi-ai'
 import { readNativeTimeline } from './timeline.mjs'
+import { nativeChatDelivery } from './delivery.mjs'
 
 // JSC has ECMAScript primitives, but no browser/Node host API. The native boundary
 // below is deliberately narrower than fetch/filesystem and never receives a token.
@@ -154,6 +155,12 @@ globalThis.GuguIOSRuntime = Object.freeze({
     void Promise.resolve().then(() => readNativeTimeline(JSON.parse(json))).then(
       data => __guguNativeProjection(id, JSON.stringify({ ok: true, data })),
       error => __guguNativeProjection(id, JSON.stringify({ ok: false, code: error.code ?? 'record_unreadable', message: error.message })),
+    )
+  },
+  delivery(id, json) {
+    void Promise.resolve().then(() => nativeChatDelivery(JSON.parse(json))).then(
+      data => __guguNativeProjection(id, JSON.stringify({ ok: true, data })),
+      error => __guguNativeProjection(id, JSON.stringify({ ok: false, code: error.code ?? 'delivery_invalid', message: error.message })),
     )
   },
   start(json) {

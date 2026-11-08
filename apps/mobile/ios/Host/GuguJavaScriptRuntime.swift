@@ -129,6 +129,25 @@ final class GuguJavaScriptRuntime {
         return queue.sync(execute: cancel)
     }
 
+    /// Native inbox only: a picked cloud row, identity/rules facts and no token.
+    /// The caller must persist its admitted input before advancing read receipts.
+    func readDelivery(_ input: [String: Any], completion: @escaping Reply) throws {
+        try GuguIOSCloudBroker.rejectCredentials(input)
+        let json = try Self.json(input), id = UUID().uuidString.lowercased()
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.projections[id] = completion
+            self.context.objectForKeyedSubscript("GuguIOSRuntime")?.invokeMethod("delivery", withArguments: [id, json])
+            if let message = self.scriptError {
+                self.scriptError = nil
+                self.projections.removeValue(forKey: id)?(["ok": false, "code": "delivery_invalid", "message": message])
+            }
+        }
+        queue.asyncAfter(deadline: .now() + 15) { [weak self] in
+            self?.projections.removeValue(forKey: id)?(["ok": false, "code": "delivery_invalid", "message": "Native inbox projection timed out"])
+        }
+    }
+
     func cancelAsynchronously(_ binding: GuguHostContext) throws {
         let json = String(decoding: try JSONEncoder().encode(binding), as: UTF8.self)
         queue.async { [weak self] in
