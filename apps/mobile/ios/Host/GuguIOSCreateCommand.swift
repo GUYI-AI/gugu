@@ -89,7 +89,7 @@ final class GuguIOSCreateCommand {
                       let name = payload["display_name"] as? String, !name.isEmpty,
                       payload["effort"] == nil || payload["effort"] is NSNull,
                       payload["permission_mode"] == nil || payload["permission_mode"] is NSNull,
-                      payload["project_path"] == nil || payload["project_path"] is NSNull || payload["project_path"] as? String == self.projectPath else {
+                      Self.acceptsProjectPath(payload["project_path"], nativeRoot: self.projectPath) else {
                     throw Self.failure("unsupported", "Create command has unsupported phone runtime parameters")
                 }
                 // A routed initial message requires the shared delivery envelope,
@@ -164,6 +164,14 @@ final class GuguIOSCreateCommand {
         return row
     }
     private static func first(_ value: Any) -> [String: Any]? { (value as? [[String: Any]])?.first ?? value as? [String: Any] }
+    private static func acceptsProjectPath(_ value: Any?, nativeRoot: String) -> Bool {
+        guard let value, !(value is NSNull) else { return true }
+        guard let text = value as? String else { return false }
+        // shared deviceCommandRuntime.text + Android startAgentSession: an
+        // omitted/blank path means the phone's private root, never an OS path.
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty || normalized == nativeRoot
+    }
     private static func now() -> String { ISO8601DateFormatter().string(from: Date()) }
     private static func failure(_ code: String, _ text: String) -> GuguHostFailure { GuguHostFailure(code: code, message: text) }
 }

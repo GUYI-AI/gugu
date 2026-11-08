@@ -111,6 +111,25 @@ final class GuguIOSProvisioner {
     private func finishCommand(_ key: String, _ saved: [String: Any], _ row: [String: Any], _ done: @escaping (Result<[String: Any], Error>) -> Void) {
         guard let command = row["create_command_id"] as? String, UUID(uuidString: command) != nil,
               let agentId = row["agent_user_id"] as? String, UUID(uuidString: agentId) != nil else { done(.failure(Self.failure("admission_uncertain", "Provision has not returned its Agent and create command"))); return }
+        // A prior error is already terminal. Settle it into the existing member
+        // before another explicit same-intent retry can claim a failed slot.
+        perform(.readCommand(command)) { result in
+            do {
+                guard let prior = Self.first(try result.get()), prior["id"] as? String == command, let status = prior["status"] as? String else { throw Self.failure("cloud_protocol_error", "Original create command is unreadable") }
+                if status == "error" {
+                    self.perform(.settleProvision(saved["provisionId"] as! String)) { result in
+                        do {
+                            let failed = try self.row(result.get(), intent: saved)
+                            guard failed["phase"] as? String == "failed", failed["agent_user_id"] as? String == agentId, failed["create_command_id"] as? String == command else { throw Self.failure("stale_context", "Failed provision no longer owns the original Agent and command") }
+                            done(.failure(Self.failure("provision_failed", "Original create command is settled failed; explicitly retry the same creation request")))
+                        } catch { done(.failure(error)) }
+                    }; return
+                }
+                self.executeCreatedCommand(command, agentId, key, saved, done)
+            } catch { done(.failure(error)) }
+        }
+    }
+    private func executeCreatedCommand(_ command: String, _ agentId: String, _ key: String, _ saved: [String: Any], _ done: @escaping (Result<[String: Any], Error>) -> Void) {
         executeCreate(command) { result in self.queue.async {
             do { _ = try result.get(); try self.check() }
             catch { done(.failure(error)); return }

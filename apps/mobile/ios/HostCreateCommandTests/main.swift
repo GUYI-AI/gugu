@@ -12,12 +12,17 @@ private final class Fixture {
     let binding: GuguIOSHostBinding, store: GuguIOSBackendStore
     let commandId = UUID().uuidString.lowercased(), instanceId = UUID().uuidString.lowercased(), agentId = UUID().uuidString.lowercased(), chatId = UUID().uuidString.lowercased()
     var status = "pending", token: String?, claimedBy: String?, loseSettle = true, allowLease = true, foreignAgent = false, starts: [String] = [], casCount = 0
+    var commandPath: Any?
     init(_ root: URL) throws {
         let owner = UUID().uuidString.lowercased(), install = UUID().uuidString.lowercased()
         binding = .init(ownerId: owner, deviceId: "phone-\(install)-\(owner)", installationId: install)
         store = try .init(root: root, binding: binding)
     }
-    var row: [String: Any] { ["id": commandId, "device_id": binding.deviceId, "type": "agent.create", "status": status, "claim_token": token as Any? ?? NSNull(), "claimed_by": claimedBy as Any? ?? NSNull(), "payload": ["agent_user_id": agentId, "agent_type": "pi", "greeting_chat_id": chatId, "display_name": "fixture", "model": "platform:catalog-id"]] }
+    var row: [String: Any] {
+        var payload: [String: Any] = ["agent_user_id": agentId, "agent_type": "pi", "greeting_chat_id": chatId, "display_name": "fixture", "model": "platform:catalog-id"]
+        if let commandPath { payload["project_path"] = commandPath }
+        return ["id": commandId, "device_id": binding.deviceId, "type": "agent.create", "status": status, "claim_token": token as Any? ?? NSNull(), "claimed_by": claimedBy as Any? ?? NSNull(), "payload": payload]
+    }
     lazy var broker = try! GuguIOSCloudBroker(configuration: .init(version: 1, supabaseUrl: "https://fixture.invalid", anonKey: "public"), credentials: { expected in .init(binding: expected, accessToken: "synthetic", expiresAt: Date().addingTimeInterval(3600)) }, send: { request, done in
         do {
             let body = request.httpBody.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
@@ -69,6 +74,18 @@ private final class Fixture {
         guard case .failure(let error as GuguHostFailure) = try awaitExecute(busy.executor(), id: busy.commandId), error.code == "admission_uncertain" else { throw GuguHostFailure(code: "create_command_test_failed", message: "Foreign running claim was stolen") }
         try require(busy.starts.isEmpty && busy.casCount == 0, "Foreign running command was reclaimed")
         cases.append("another_runtime_claim_is_preserved")
+        for (index, path) in ["", " \t\n", "/private/phone"].enumerated() {
+            let blank = try Fixture(root.appendingPathComponent("native-root-\(index)")); blank.commandPath = path; blank.loseSettle = false
+            _ = try awaitExecute(blank.executor(), id: blank.commandId).get()
+            try require(blank.starts.count == 1 && blank.status == "done", "Shared blank/native-root path did not start native session")
+        }
+        cases.append("shared_blank_path_uses_native_private_root_and_exact_root_remains_valid")
+        for (index, path) in ["/private/another-phone", "relative/path"].enumerated() {
+            let wrongPath = try Fixture(root.appendingPathComponent("wrong-path-\(index)")); wrongPath.commandPath = path; wrongPath.loseSettle = false
+            guard case .failure(let error as GuguHostFailure) = try awaitExecute(wrongPath.executor(), id: wrongPath.commandId), error.code == "unsupported" else { throw GuguHostFailure(code: "create_command_test_failed", message: "Nonempty foreign path was accepted") }
+            try require(wrongPath.starts.isEmpty && wrongPath.status == "error", "Foreign path constructed native runtime")
+        }
+        cases.append("nonempty_foreign_project_paths_remain_rejected_before_runtime_construction")
         print(String(decoding: try JSONSerialization.data(withJSONObject: ["kind": "native_agent_create_CAS_APFS_with_synthetic_cloud_and_runtime_factory", "result": "pass", "cases": cases, "realCloudHTTPCalls": 0, "realModelCalls": 0, "realPiRuntimeConstructions": 0, "iosAppRuns": 0], options: [.prettyPrinted, .sortedKeys]), as: UTF8.self))
     }
 }
