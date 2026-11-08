@@ -39,6 +39,10 @@ export const sqlite = new Proxy({} as Database.Database, {
 
 export const db = drizzle(sqlite, { schema });
 
+/** Host lifetime proofs need this exact connection, not the stable proxy which
+ * can resolve to a new incarnation after closeDatabase(). Opens no second DB. */
+export function sessionDatabaseConnection(): Database.Database { return getSqlite(); }
+
 export function closeDatabase(): void {
   if (!sqliteInstance) return;
   if (!sqliteInstance.open) return;
