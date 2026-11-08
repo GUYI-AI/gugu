@@ -101,9 +101,12 @@ final class GuguIOSHostService {
         do {
             guard let retirementCleanup, let retirementAuthorization else { throw Self.failure("cleanup_not_configured", "Native retirement authorization was not assembled") }
             _ = try GuguIOSRetirementHTTP.permit(retirementAuthorization, binding: expectedBinding, retirementId: retirementId, operation: .readOwnedDevice)
-            backend.quiesceForRetirement(expectedBinding) { local in
-                retirementCleanup.retire(expectedBinding: expectedBinding, retirementId: retirementId) { cleanup in
-                    if case .failure = local { completion(local) } else { completion(cleanup) }
+            adapter.invalidateForRetirement(expectedBinding: expectedBinding) { invalidated in
+                do { try invalidated.get() } catch { completion(.failure(error)); return }
+                self.backend.quiesceForRetirement(expectedBinding) { local in
+                    retirementCleanup.retire(expectedBinding: expectedBinding, retirementId: retirementId) { cleanup in
+                        if case .failure = local { completion(local) } else { completion(cleanup) }
+                    }
                 }
             }
         } catch { completion(.failure(error)) }

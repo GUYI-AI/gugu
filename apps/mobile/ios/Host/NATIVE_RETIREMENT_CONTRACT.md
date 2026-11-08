@@ -124,11 +124,22 @@ timeline, hostCall, model inference or a caller-selected RPC/body. Ordinary
 
 ## Ordering and durable outcomes
 
-First seal/quiesce native execution and cancel its original transports/timers;
+First invalidate the Adapter's original configured/configuring binding and advance
+its retirement generation, then seal/quiesce native execution and cancel its original transports/timers;
 do not require a working ordinary broker to stop local work. The separate runner
 then reconciles only the captured cleanup ledger. A known revoke/withdraw receipt
 is retained before a late permit rejection; it cannot be attributed to a new
 binding. Partial/unknown outcomes stay under their original transaction.
+
+Adapter invalidation does not call backend.stop or consult current publication.
+An already active different binding is left unchanged, including its generation.
+Late original mutations retain their known receipt in their captured original
+store before rejecting delivery. A pending old configure completion cannot
+restore the retired configuration. After successful retirement and A's explicit
+new publication, even the same owner/device/installation must configure again:
+hostState returns host_not_ready until that configure completes. This is a
+retirement barrier, not a new JS publication-ID contract; A still prevents a new
+publication while its original retirement transaction is pending.
 
 Completion succeeds only when local quiescence, all required checkpoint/revoke
 results and original device withdrawal/absence are confirmed. Checkpoint failure

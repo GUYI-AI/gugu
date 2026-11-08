@@ -188,6 +188,26 @@ final class GuguIOSHostAdapter {
         }
     }
 
+    /// Native sealed-retirement barrier. It invalidates only the original
+    /// adapter binding; remote cleanup and local execution stop are separate.
+    /// In-flight closures retain their old store so known receipts are not lost.
+    func invalidateForRetirement(expectedBinding expected: GuguIOSHostBinding, completion: @escaping (Result<Void, Error>) -> Void) {
+        queue.async {
+            do {
+                try expected.validate()
+                let active = self.configured ?? self.configuringBinding
+                if let active, active != expected { completion(.success(())); return }
+                guard active == expected || self.retiringBinding == expected else { completion(.success(())); return }
+                self.generationLock.lock(); self.generation += 1; self.generationLock.unlock()
+                self.configurationSequence += 1
+                if self.configured == expected { self.configured = nil; self.store = nil }
+                if self.configuringBinding == expected { self.configuringBinding = nil }
+                if self.retiringBinding == expected { self.retiringBinding = nil }
+                completion(.success(()))
+            } catch { completion(.failure(error)) }
+        }
+    }
+
     private func retire(_ binding: GuguIOSHostBinding, completion: @escaping (Error?) -> Void) {
         generationLock.lock(); generation += 1; generationLock.unlock()
         configurationSequence += 1

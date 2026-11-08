@@ -35,15 +35,23 @@ private final class Executor: GuguNativeToolExecutor {
         let root = URL(fileURLWithPath: CommandLine.arguments[1]), asset = try Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[2]))
         let owner = UUID().uuidString.lowercased(), install = UUID().uuidString.lowercased()
         let binding = GuguIOSHostBinding(ownerId: owner, deviceId: "phone-\(install)-\(owner)", installationId: install)
-        var current = binding, localUI = true
-        let access = GuguIOSOwnerAccess(root: root.appendingPathComponent("owner"), verifiedIdentity: { current }, requireOwnerUI: {
+        var current = binding, localUI = true, publicationAvailable = true
+        let access = GuguIOSOwnerAccess(root: root.appendingPathComponent("owner"), verifiedIdentity: {
+            guard publicationAvailable else { throw GuguHostFailure(code: "stale_context", message: "Synthetic publication sealed") }
+            return current
+        }, requireOwnerUI: {
             guard localUI else { throw GuguHostFailure(code: "not_granted", message: "Synthetic foreground UI unavailable") }
         }, calendarHasFullAccess: { false }, revokeCalendarAccess: { _ in })
         let lifecycle = GuguIOSHostLifecycle(root: root.appendingPathComponent("journal"), verifiedIdentity: { current })
         let runtime = GuguPackagedRuntime(asset: asset, sha256: SHA256.hash(data: asset).map { String(format: "%02x", $0) }.joined(), piVersion: "1.4.0")
-        let lock = NSLock(); var network = 0, advertisements: [[String: Any]] = []
+        let lock = NSLock(); var network = 0, sealedOrdinaryAttempts = 0, advertisements: [[String: Any]] = []
+        let retirementId = UUID().uuidString.lowercased(), retirementDeadline = Date().addingTimeInterval(120)
         let service = try GuguIOSHostService(root: root.appendingPathComponent("service"), runtime: runtime, lifecycle: lifecycle, ownerAccess: access,
             configuration: .init(version: 1, supabaseUrl: "https://fixture.invalid", anonKey: "public"), credentials: { expected in
+                guard publicationAvailable else {
+                    lock.lock(); sealedOrdinaryAttempts += 1; lock.unlock()
+                    throw GuguHostFailure(code: "stale_context", message: "Synthetic ordinary credentials sealed")
+                }
                 guard expected == current else { throw GuguHostFailure(code: "stale_context", message: "Synthetic publication changed") }
                 return .init(binding: expected, accessToken: "synthetic-native-human", expiresAt: Date().addingTimeInterval(3600))
             }, executor: { _ in Executor() }, deviceMetadata: { ["label": "Synthetic iPhone", "hostname": "synthetic", "osName": "iOS fixture", "tier": "mobile"] }, brokerSend: { request, done in
@@ -56,7 +64,10 @@ private final class Executor: GuguNativeToolExecutor {
                     lock.lock(); advertisements.append(value); lock.unlock(); reply = [value]
                 }
                 done(try! JSONSerialization.data(withJSONObject: reply, options: [.fragmentsAllowed]), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil), nil)
-            }, socketFactory: { _ in Socket() })
+            }, socketFactory: { _ in Socket() }, retirementAuthorization: { expected, id, operation in
+                try require(expected == binding && id == retirementId, "Retirement permit escaped its original scope")
+                return try .init(binding: expected, retirementId: id, operation: operation, accessToken: "synthetic-native-retirement", expiresAt: retirementDeadline)
+            })
         let raw: [String: Any] = ["ownerId": owner, "deviceId": binding.deviceId, "installationId": install]
         var cases: [String] = []
         try require(network == 0, "Construction performed a cloud call")
@@ -112,6 +123,17 @@ private final class Executor: GuguNativeToolExecutor {
         catch let error as GuguHostFailure { try require(error.code == "settings_unavailable", "New installation did not remain unknown") }
         current = old
         cases.append("captured_binding_and_local_settings_do_not_cross_installations")
+        publicationAvailable = false
+        let retirement: Result<Void, Error> = try wait { service.retireOwner(expectedBinding: binding, retirementId: retirementId, completion: $0) }
+        try retirement.get()
+        lock.lock(); let ordinaryAfterRetirement = sealedOrdinaryAttempts; lock.unlock()
+        try require(ordinaryAfterRetirement == 0 && service.backend.stopped, "Sealed retirement borrowed ordinary credentials or left local backend running")
+        publicationAvailable = true
+        let afterRetirement: [String: Any] = try wait { service.hostState(["expectedBinding": raw], completion: $0) }
+        try require((afterRetirement["error"] as? [String: Any])?["code"] as? String == "host_not_ready", "Retired same-binding hostState returned a configured stopped host")
+        let reopened: [String: Any] = try wait { service.configure(["expectedBinding": raw], completion: $0) }
+        try require(reopened["ownerId"] as? String == owner && reopened["errorCode"] as? String == "delivery_not_connected", "Explicit same-binding configuration did not reopen the native host")
+        cases.append("sealed_service_retirement_requires_same_binding_reconfigure_without_ordinary_credentials")
         let stopped: [String: Any] = try wait { service.stopHost(["expectedBinding": raw], completion: $0) }
         try require(stopped.isEmpty, "Known clean local stop failed")
         lock.lock(); let ads = advertisements; lock.unlock()

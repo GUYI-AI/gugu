@@ -1,15 +1,17 @@
 import Foundation
 
 final class AdapterFixtureBackend: GuguIOSHostBackend {
-    var ready = true, permitReplay = true, failStop = false, hold = false
+    var ready = true, permitReplay = true, failStop = false, hold = false, holdConfigure = false
     var invocations: [GuguIOSHostInvocation] = []
     var reconciliations = 0, stops = 0
     var pending: (([String: Any]) -> Void)?
+    var pendingConfigure: (([String: Any]) -> Void)?
     var stateHook: (() -> Void)?
     var reconcileReply: [String: Any] = ["error": ["code": "execution_unknown", "message": "Fixture has no known receipt", "admission": "uncertain"]]
     let invoked = DispatchSemaphore(value: 0)
     func configure(_ configuration: GuguIOSHostConfiguration, completion: @escaping ([String: Any]) -> Void) {
-        completion(try! state(binding: configuration.binding))
+        if holdConfigure { pendingConfigure = completion; invoked.signal() }
+        else { completion(try! state(binding: configuration.binding)) }
     }
     func state(binding: GuguIOSHostBinding) throws -> [String: Any] {
         stateHook?()
@@ -167,6 +169,56 @@ final class AdapterFixtureBackend: GuguIOSHostBackend {
         catch let failure as GuguHostFailure { if failure.code != "duplicate_conflict" { throw failure } }
         cases.append("call_store_rotation_preserves_both_terminal_receipts")
 
+        let sealedRoot = root.appendingPathComponent("sealed-retirement")
+        let sealedBackend = AdapterFixtureBackend()
+        var sealedIdentity: GuguIOSHostBinding? = binding
+        let sealedAdapter = GuguIOSHostAdapter(root: sealedRoot, backend: sealedBackend, currentIdentity: { sealedIdentity }, requireOwnerUI: {})
+        _ = try awaitReply { sealedAdapter.configure(configuration, completion: $0) }
+        sealedBackend.hold = true
+        let sealedId = UUID().uuidString, sealedDone = DispatchSemaphore(value: 0)
+        var sealedReply: [String: Any] = [:]
+        sealedAdapter.hostCall(ownerId: binding.ownerId, id: sealedId, channel: "sessionTimeline.sessionSend", args: [], origin: .localOwnerUI, expectedBinding: binding) { sealedReply = $0; sealedDone.signal() }
+        try wait(sealedBackend.invoked)
+        sealedIdentity = nil
+        try invalidate(sealedAdapter, binding)
+        try require(sealedBackend.stops == 0, "Sealed invalidation borrowed ordinary backend stop")
+        // The fixture republishes the same account/installation. It does not
+        // claim to exercise OwnerSession/JWT or a distinct native publication ID.
+        sealedIdentity = binding
+        try error(try awaitReply { sealedAdapter.hostState(expectedBinding: binding, completion: $0) }, "host_not_ready")
+        _ = try awaitReply { sealedAdapter.configure(configuration, completion: $0) }
+        sealedBackend.pending?(["result": ["accepted": true, "requestId": sealedId]])
+        try wait(sealedDone); try error(sealedReply, "stale_context")
+        let sealedStore = try GuguHostCallStore(root: sealedRoot, binding: binding)
+        let sealedCall = GuguIOSHostInvocation(binding: binding, requestId: sealedId, channel: "sessionTimeline.sessionSend", arguments: [], origin: .localOwnerUI)
+        try require(try sealedStore.admit(sealedCall)["status"] as? String == "completed", "Sealed retirement discarded late known receipt")
+        try require(try awaitReply { sealedAdapter.hostState(expectedBinding: binding, completion: $0) }["ready"] as? Bool == true, "Explicit configuration failed to reopen the retired binding")
+        cases.append("sealed_retirement_requires_same_binding_reconfigure_and_retains_late_original_receipt")
+
+        sealedIdentity = foreign; sealedBackend.hold = false
+        _ = try awaitReply { sealedAdapter.configure(.init(binding: foreign, grants: [:], deviceMetadata: [:]), completion: $0) }
+        sealedBackend.hold = true
+        let bDone = DispatchSemaphore(value: 0); var bReply: [String: Any] = [:]
+        sealedAdapter.hostCall(ownerId: foreign.ownerId, id: UUID().uuidString, channel: "sessionTimeline.sessionSend", args: [], origin: .localOwnerUI, expectedBinding: foreign) { bReply = $0; bDone.signal() }
+        try wait(sealedBackend.invoked)
+        let stopsBeforeA = sealedBackend.stops
+        try invalidate(sealedAdapter, binding)
+        sealedBackend.pending?(["result": ["accepted": true]])
+        try wait(bDone)
+        try require(bReply["result"] != nil && sealedBackend.stops == stopsBeforeA, "Old A retirement invalidated B's generation or stopped B")
+        try require(try awaitReply { sealedAdapter.hostState(expectedBinding: foreign, completion: $0) }["ready"] as? Bool == true, "Old A retirement cleared B's configuration")
+        cases.append("sealed_old_owner_invalidation_preserves_current_B_configuration_generation_and_receipt")
+
+        let configuringBackend = AdapterFixtureBackend(); configuringBackend.holdConfigure = true
+        let configuringAdapter = GuguIOSHostAdapter(root: root.appendingPathComponent("sealed-configuring"), backend: configuringBackend, currentIdentity: { binding }, requireOwnerUI: {})
+        let configuredDone = DispatchSemaphore(value: 0); var lateConfiguration: [String: Any] = [:]
+        configuringAdapter.configure(configuration) { lateConfiguration = $0; configuredDone.signal() }
+        try wait(configuringBackend.invoked); try invalidate(configuringAdapter, binding)
+        configuringBackend.pendingConfigure?(try configuringBackend.state(binding: binding))
+        try wait(configuredDone); try error(lateConfiguration, "stale_context")
+        try error(try awaitReply { configuringAdapter.hostState(expectedBinding: binding, completion: $0) }, "host_not_ready")
+        cases.append("sealed_retirement_supersedes_pending_configuration_before_late_completion")
+
         print(String(data: try JSONSerialization.data(withJSONObject: ["kind": "macos_adapter_with_injected_backend_only", "result": "pass", "cases": cases,
             "realCloudCalls": 0, "realModelCalls": 0, "realEventKitCalls": 0, "iosAppRuns": 0], options: [.prettyPrinted, .sortedKeys]), encoding: .utf8)!)
     }
@@ -181,6 +233,11 @@ final class AdapterFixtureBackend: GuguIOSHostBackend {
     static func auth(_ adapter: GuguIOSHostAdapter, _ action: String) throws -> [String: Any] {
         let done = DispatchSemaphore(value: 0); var result: Result<[String: Any], Error>?
         adapter.authSession(action: action) { result = $0; done.signal() }; try wait(done); return try result!.get()
+    }
+    static func invalidate(_ adapter: GuguIOSHostAdapter, _ binding: GuguIOSHostBinding) throws {
+        let done = DispatchSemaphore(value: 0); var result: Result<Void, Error>?
+        adapter.invalidateForRetirement(expectedBinding: binding) { result = $0; done.signal() }
+        try wait(done); try result!.get()
     }
     static func wait(_ done: DispatchSemaphore) throws { if done.wait(timeout: .now() + 10) != .success { throw failure("Callback timed out") } }
     static func require(_ value: Bool, _ message: String) throws { if !value { throw failure(message) } }

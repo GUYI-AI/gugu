@@ -23,6 +23,13 @@ mutating receipt is retained under its original binding before a late reply is
 rejected. A stale stop cannot stop a replacement installation. An auth sign-out
 delegation still uses the existing coordinator-owned native retirement path.
 
+Native sealed retireOwner invalidates only its original Adapter binding before
+quiescing and restricted cleanup. It advances the admitted retirement generation
+without an ordinary credential request or backend.stop. Known late receipts stay
+in the original store; an active different binding remains untouched. On a later
+same-binding publication, hostState requires an explicit configure and returns
+host_not_ready until then, rather than returning the old stopped configuration.
+
 This binds account/device/installation and the native retirement generation that
 the request entered. A new owner publication with the same owner and installation
 has no separate JS publication ID in this contract; this slice does not claim to
