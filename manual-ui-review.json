@@ -1,0 +1,34 @@
+{
+  "scope": "测试环境渲染，未经真机验证，原因：无真机",
+  "inputs": "Synthetic someone@example.com only",
+  "images": [
+    {
+      "file": "owner-2245-before-light.png",
+      "bytes": 21696,
+      "sha256": "752bdce47683cbf2769a7e701debee769712da476539f5b21734df5681884e13",
+      "source": "9f633292116b452e6523627c0cba5b6dc785f904",
+      "manualReview": "Original inspected: baseline has unreadable text/domain file pill; fixed rendering has readable text and intact email link. Theme and full source caption visible."
+    },
+    {
+      "file": "owner-2245-before-dark.png",
+      "bytes": 20288,
+      "sha256": "d0fe70ec93428d664d9e95a0b2e866e1226d8a9419f2aa198cd2048b3ce8f442",
+      "source": "9f633292116b452e6523627c0cba5b6dc785f904",
+      "manualReview": "Original inspected: baseline has unreadable text/domain file pill; fixed rendering has readable text and intact email link. Theme and full source caption visible."
+    },
+    {
+      "file": "owner-2245-after-light.png",
+      "bytes": 25362,
+      "sha256": "385e308d78f6f1b567021069cb02ddb13ca639268996bc27e43c9620ff9c165b",
+      "source": "b5ec8c1936dfe287d1299b2e7f61a499707d4ed8",
+      "manualReview": "Original inspected: baseline has unreadable text/domain file pill; fixed rendering has readable text and intact email link. Theme and full source caption visible."
+    },
+    {
+      "file": "owner-2245-after-dark.png",
+      "bytes": 21677,
+      "sha256": "87c7a13ad5a88bc72996e0671cf476c4c00696991c825772a4e95f21a37158b4",
+      "source": "b5ec8c1936dfe287d1299b2e7f61a499707d4ed8",
+      "manualReview": "Original inspected: baseline has unreadable text/domain file pill; fixed rendering has readable text and intact email link. Theme and full source caption visible."
+    }
+  ]
+}
