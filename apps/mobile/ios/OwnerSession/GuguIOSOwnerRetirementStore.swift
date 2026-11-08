@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 import Darwin
 
-/// Credential-write custody only. No token, cloud request or task journal is
+/// Original cleanup custody. No token, cloud request or task journal is
 /// stored here. Opening this store never starts cleanup or interrupts a task.
 final class GuguIOSOwnerRetirementStore {
     struct Target: Codable, Equatable {
@@ -36,6 +36,9 @@ final class GuguIOSOwnerRetirementStore {
         var captureComplete: Bool
         var original: Original?
         var cleanupComplete: Bool
+        // Missing in older records means credential-write retirement.
+        var publicationOnly: Bool?
+        var isPublicationOnly: Bool { publicationOnly == true }
     }
 
     private let path: URL
@@ -48,9 +51,12 @@ final class GuguIOSOwnerRetirementStore {
     func snapshot() throws -> Record? { try transaction { try read() } }
 
     /// Save intent before any fallible read of the old credential envelope.
-    func begin(target: Target) throws -> Record {
+    func begin(target: Target, publicationOnly: Bool = false) throws -> Record {
         try transaction {
             if var prior = try read() {
+                // A refresh/write must finish a pending ordinary stop first. It
+                // cannot silently turn that stop into a permanent push close.
+                guard prior.isPublicationOnly == publicationOnly else { throw Self.failure() }
                 // A new explicit storage intent may change the eventual write,
                 // while retaining the same old cleanup custody and transaction.
                 // Outstanding permits compare the exact target before mutation.
@@ -58,7 +64,8 @@ final class GuguIOSOwnerRetirementStore {
                 return prior
             }
             let value = Record(version: 1, id: UUID().uuidString.lowercased(), target: target,
-                               captureComplete: false, original: nil, cleanupComplete: false)
+                               captureComplete: false, original: nil, cleanupComplete: false,
+                               publicationOnly: publicationOnly ? true : nil)
             try write(value)
             return value
         }
@@ -91,7 +98,8 @@ final class GuguIOSOwnerRetirementStore {
         try transaction {
             if let id {
                 guard let value = try read(), value.id == id, value.cleanupComplete,
-                      value.captureComplete, value.target == target else { throw Self.failure() }
+                      value.captureComplete, !value.isPublicationOnly,
+                      value.target == target else { throw Self.failure() }
             } else {
                 guard try read() == nil else { throw Self.failure() }
             }
@@ -110,11 +118,23 @@ final class GuguIOSOwnerRetirementStore {
     /// remote mutation. An incomplete cleanup or a different token stays sealed.
     @discardableResult func recoverCommittedWrite(stored: GuguIOSStoredSession?) throws -> Bool {
         try transaction {
-            guard let value = try read(), value.cleanupComplete, value.captureComplete,
+            guard let value = try read(), !value.isPublicationOnly, value.cleanupComplete, value.captureComplete,
                   value.target.matches(stored) else { return false }
             try FileManager.default.removeItem(at: path)
             try syncDirectory()
             return true
+        }
+    }
+
+    /// Ordinary publication stop leaves the saved Auth session untouched. Only
+    /// its exact completed cleanup can release this separate custody record.
+    func finishPublicationStop(id: String, stored: GuguIOSStoredSession?) throws {
+        try transaction {
+            guard let value = try read(), value.id == id, value.isPublicationOnly,
+                  value.captureComplete, value.cleanupComplete,
+                  value.target.matches(stored) else { throw Self.failure() }
+            try FileManager.default.removeItem(at: path)
+            try syncDirectory()
         }
     }
 

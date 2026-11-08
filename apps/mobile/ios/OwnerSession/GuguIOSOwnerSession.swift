@@ -44,7 +44,7 @@ struct GuguIOSMainWritePermit {
     fileprivate let retirementId: String?
 }
 
-/// An opaque, native-only capability for retiring the original push registration.
+/// An opaque, native-only capability for cleaning the original authenticated scope.
 /// It never reopens ordinary host credentials and is invalid after retirement.
 struct GuguIOSRetirementAccess: CustomDebugStringConvertible {
     let binding: GuguIOSHostBinding
@@ -65,6 +65,7 @@ final class GuguIOSOwnerSession {
     private let verifyUser: Verify
     private let stopNative: Stop
     private let retireExternal: RetireExternal?
+    private let retireNative: RetireExternal?
     private let retirementStore: GuguIOSOwnerRetirementStore?
     private let now: () -> Date
     private var generation: UInt64 = 0
@@ -76,11 +77,13 @@ final class GuguIOSOwnerSession {
 
     init(readStored: @escaping () throws -> GuguIOSStoredSession?, installationId: @escaping () throws -> String,
          verifyUser: @escaping Verify, stopNative: @escaping Stop,
-         retireExternal: RetireExternal? = nil, retirementStore: GuguIOSOwnerRetirementStore? = nil,
+         retireExternal: RetireExternal? = nil, retireNative: RetireExternal? = nil,
+         retirementStore: GuguIOSOwnerRetirementStore? = nil,
          now: @escaping () -> Date = Date.init) {
         self.readStored = readStored; self.installationId = installationId
         self.verifyUser = verifyUser; self.stopNative = stopNative
-        self.retireExternal = retireExternal; self.retirementStore = retirementStore; self.now = now
+        self.retireExternal = retireExternal; self.retireNative = retireNative
+        self.retirementStore = retirementStore; self.now = now
     }
 
     func publish(ownerId: String, accessToken: String,
@@ -184,6 +187,19 @@ final class GuguIOSOwnerSession {
         return access.credentials
     }
 
+    /// Used only by A's fixed-operation native cleanup authorization projection.
+    /// Unlike ordinary credentials this requires a verified durable retirement.
+    func verifiedRetirementCredentials(expectedBinding: GuguIOSHostBinding,
+                                       retirementId: String) throws -> GuguIOSOwnerCredentials {
+        lock.lock(); defer { lock.unlock() }
+        guard retirementStore != nil, let access = retirementAccess,
+              access.capability.retirementId == retirementId,
+              let deadline = retirementVerifiedUntil else { throw Self.stale() }
+        let original = try retirementCredentials(access.capability, expectedBinding: expectedBinding)
+        return .init(binding: original.binding, accessToken: original.accessToken,
+                     expiresAt: min(original.expiresAt, deadline))
+    }
+
     /// AuthStorage must call this barrier before committing retirement or another
     /// owner. A failed stop rejects the write and does not restore native access.
     func prepareMainWrite(nextOwnerId: String?, nextAccessToken: String? = nil, completion: @escaping (Result<GuguIOSMainWritePermit, Error>) -> Void) {
@@ -192,6 +208,19 @@ final class GuguIOSOwnerSession {
         do {
             try restoreRetirementBarrier()
             stored = try readStored()
+            if let record = try retirementStore?.snapshot(), record.isPublicationOnly {
+                guard let owner = record.original?.binding.ownerId ?? stored?.ownerId else { throw Self.stale() }
+                lock.unlock()
+                // Settle the original ordinary stop before considering a token
+                // refresh or a different Auth session. No push close is added.
+                retire(expectedOwnerId: owner) { result in
+                    do {
+                        try result.get()
+                        self.prepareMainWrite(nextOwnerId: nextOwnerId, nextAccessToken: nextAccessToken, completion: completion)
+                    } catch { completion(.failure(error)) }
+                }
+                return
+            }
         }
         catch {
             // Failure to read the old envelope must not leave its native access
@@ -287,20 +316,28 @@ final class GuguIOSOwnerSession {
     func retire(expectedOwnerId: String, completion: @escaping (Result<Void, Error>) -> Void) {
         lock.lock()
         let capability: GuguIOSRetirementAccess?
-        let requiresStorageCleanup: Bool
+        let requiresCleanup: Bool
+        let publicationOnly: Bool
         do {
             try restoreRetirementBarrier()
-            requiresStorageCleanup = storageRetirementPending
             let stored = try readStored()
             let storedOwner = stored?.ownerId
             guard (active == nil || active?.binding.ownerId == expectedOwnerId),
                   storedOwner == nil || storedOwner == expectedOwnerId else { throw Self.stale() }
             generation &+= 1; active = nil; retiring = true
             do {
-                // A WebView/publication stop retains its existing Auth session.
+                var record = try retirementStore?.snapshot()
+                if record == nil, retireNative != nil {
+                    guard let retirementStore else { throw Self.stale() }
+                    record = try retirementStore.begin(target: .init(ownerId: stored?.ownerId,
+                        accessToken: stored?.accessToken), publicationOnly: true)
+                    _ = try retirementStore.capture(id: record!.id, original: originalRetirement(stored))
+                }
+                publicationOnly = record?.isPublicationOnly == true
+                requiresCleanup = storageRetirementPending || publicationOnly
                 // Permanent push close belongs only to a credential-write intent.
-                capability = requiresStorageCleanup ? try captureRetirement(stored) : nil
-                if !requiresStorageCleanup { retirementAccess = nil }
+                capability = requiresCleanup ? try captureRetirement(stored) : nil
+                if !requiresCleanup { retirementAccess = nil }
             }
             catch {
                 retirementAccess = nil; lock.unlock()
@@ -310,23 +347,30 @@ final class GuguIOSOwnerSession {
         } catch { lock.unlock(); completion(.failure(error)); return }
         let issued = generation
         lock.unlock()
-        finishStop(issued: issued, capability: capability, requiresStorageCleanup: requiresStorageCleanup, completion: completion)
+        finishStop(issued: issued, capability: capability, requiresCleanup: requiresCleanup,
+                   publicationOnly: publicationOnly, completion: completion)
     }
 
-    private func finishStop(issued: UInt64, capability: GuguIOSRetirementAccess?, requiresStorageCleanup: Bool,
+    private func finishStop(issued: UInt64, capability: GuguIOSRetirementAccess?, requiresCleanup: Bool, publicationOnly: Bool,
                             completion: @escaping (Result<Void, Error>) -> Void) {
         let finished: (Result<Void, Error>) -> Void = { result in
             self.lock.lock()
             let outcome: Result<Void, Error>
-            if self.generation != issued { outcome = .failure(Self.stale()) }
-            else {
-                if case .success = result, !self.storageRetirementPending { self.retiring = false }
-                outcome = result
-            }
+            do {
+                guard self.generation == issued else { throw Self.stale() }
+                try result.get()
+                if publicationOnly {
+                    guard let record = try self.retirementStore?.snapshot(), record.isPublicationOnly else { throw Self.stale() }
+                    try self.retirementStore?.finishPublicationStop(id: record.id, stored: self.readStored())
+                }
+                if !self.storageRetirementPending { self.retiring = false }
+                outcome = .success(())
+            } catch { outcome = .failure(error) }
             self.lock.unlock()
             completion(outcome)
         }
-        if requiresStorageCleanup { runRetirement(issued: issued, capability: capability, completion: finished) }
+        if requiresCleanup { runRetirement(issued: issued, capability: capability,
+                                           includeExternal: !publicationOnly, completion: finished) }
         else { stopNative(finished) }
     }
 
@@ -336,7 +380,7 @@ final class GuguIOSOwnerSession {
         if let record = try retirementStore?.snapshot() {
             guard record.captureComplete, record.original == (try originalRetirement(stored)) else { throw Self.stale() }
         }
-        guard retireExternal != nil, let stored else { return nil }
+        guard retireExternal != nil || retireNative != nil, let stored else { return nil }
         let install = try installationId()
         let binding = GuguIOSHostBinding(ownerId: stored.ownerId,
             deviceId: "phone-\(install)-\(stored.ownerId)", installationId: install)
@@ -348,21 +392,25 @@ final class GuguIOSOwnerSession {
         return capability
     }
 
-    private func runRetirement(issued: UInt64, capability: GuguIOSRetirementAccess?,
+    private func runRetirement(issued: UInt64, capability: GuguIOSRetirementAccess?, includeExternal: Bool = true,
                                completion: @escaping (Result<Void, Error>) -> Void) {
         let durableTransaction = Result { try retirementStore?.snapshot() }
         // Both branches must finish, even when one fails; a network failure must
         // not leave local model/tool transports running or permit a Keychain write.
         let resultLock = NSLock()
-        var externalResult: Result<Void, Error>?, localResult: Result<Void, Error>?
+        var externalResult: Result<Void, Error>? = retireExternal == nil || !includeExternal ? .success(()) : nil
+        var nativeResult: Result<Void, Error>? = retireNative == nil ? .success(()) : nil
+        var localResult: Result<Void, Error>?, verification: Result<Void, Error>?
+        var nativeStarted = false
         var delivered = false
         let finish = {
             resultLock.lock()
-            guard !delivered, let external = externalResult, let local = localResult else { resultLock.unlock(); return }
+            guard !delivered, let external = externalResult, let local = localResult,
+                  let native = nativeResult else { resultLock.unlock(); return }
             delivered = true; resultLock.unlock()
             let outcome: Result<Void, Error>
             do {
-                try external.get(); try local.get()
+                try external.get(); try local.get(); try native.get()
                 self.lock.lock()
                 defer { self.lock.unlock() }
                 guard self.generation == issued else { throw Self.stale() }
@@ -376,22 +424,38 @@ final class GuguIOSOwnerSession {
             } catch { outcome = .failure(error) }
             completion(outcome)
         }
-        if let retireExternal {
+        let startNativeWhenReady = {
+            resultLock.lock()
+            guard let retireNative = self.retireNative, !nativeStarted,
+                  localResult != nil, let verified = verification else { resultLock.unlock(); return }
+            nativeStarted = true; resultLock.unlock()
             let complete: (Result<Void, Error>) -> Void = { result in
-                resultLock.lock(); if case nil = externalResult { externalResult = result }; resultLock.unlock(); finish()
+                resultLock.lock(); if case nil = nativeResult { nativeResult = result }; resultLock.unlock(); finish()
             }
-            if retirementStore != nil, let capability {
-                verifyRetirement(capability) { result in
-                    do { try result.get(); retireExternal(capability, complete) }
-                    catch { complete(.failure(error)) }
-                }
-            } else {
-                retireExternal(capability, complete)
-            }
-        } else { externalResult = .success(()) }
-        stopNative { result in
-            resultLock.lock(); if case nil = localResult { localResult = result }; resultLock.unlock(); finish()
+            do { try verified.get(); retireNative(capability, complete) }
+            catch { complete(.failure(error)) }
         }
+        // Local lifecycle stop precedes the dedicated runner's quiesce. Two
+        // overlapping lifecycle.stop calls must not manufacture host_stopping.
+        stopNative { result in
+            resultLock.lock(); if case nil = localResult { localResult = result }; resultLock.unlock()
+            startNativeWhenReady(); finish()
+        }
+        let admitted: (Result<Void, Error>) -> Void = { result in
+            resultLock.lock()
+            guard verification == nil else { resultLock.unlock(); return }
+            verification = result; resultLock.unlock()
+            if includeExternal, let retireExternal = self.retireExternal {
+                let complete: (Result<Void, Error>) -> Void = { external in
+                    resultLock.lock(); if case nil = externalResult { externalResult = external }; resultLock.unlock(); finish()
+                }
+                do { try result.get(); retireExternal(capability, complete) }
+                catch { complete(.failure(error)) }
+            }
+            startNativeWhenReady(); finish()
+        }
+        if retirementStore != nil, let capability { verifyRetirement(capability, completion: admitted) }
+        else { admitted(.success(())) }
     }
 
     private func originalRetirement(_ stored: GuguIOSStoredSession?) throws -> GuguIOSOwnerRetirementStore.Original? {
@@ -440,7 +504,7 @@ final class GuguIOSOwnerSession {
                 retirementAccess = nil; retirementVerifiedUntil = nil
                 return
             }
-            active = nil; retiring = true; storageRetirementPending = true
+            active = nil; retiring = true; storageRetirementPending = !record.isPublicationOnly
         }
     }
 

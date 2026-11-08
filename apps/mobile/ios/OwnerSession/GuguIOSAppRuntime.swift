@@ -3,6 +3,13 @@ import Capacitor
 import Foundation
 import UIKit
 
+private final class GuguUnavailableNativeExecutor: GuguNativeToolExecutor {
+    private var failure: GuguHostFailure { .init(code: "host_not_ready", message: "Native App runtime is unavailable") }
+    func validateAccess(_ control: GuguNativeToolControl) throws { throw failure }
+    func execute(_ request: GuguNativeToolRequest, control: GuguNativeToolControl,
+                 completion: @escaping ([String: Any]) -> Void) { completion(failure.envelope) }
+}
+
 /// One App-lifetime assembly. Calendar settings and the task backend share the
 /// same native owner and journal custody; a new WebView does not create a host.
 final class GuguIOSAppRuntime {
@@ -13,6 +20,8 @@ final class GuguIOSAppRuntime {
     private let installation: GuguIOSInstallation
     private let verifier: GuguIOSOwnerVerifier
     private let retirementQueue = DispatchQueue(label: "app.gugu.native-retirement", qos: .userInitiated)
+    private let hostServiceLock = NSRecursiveLock()
+    private var hostServiceStorage: GuguIOSHostService?
     let backendConfiguration: GuguIOSBackendConfiguration
     let calendarStore = EventKitPhoneCalendarStore()
     private lazy var calendarService: PhoneCalendarService = PhoneCalendarService(store: calendarStore)
@@ -60,7 +69,42 @@ final class GuguIOSAppRuntime {
             do { try await self.pushRetirement.retire(capability); completion(.success(())) }
             catch { completion(.failure(error)) }
         }
+    }, retireNative: { [weak self] capability, completion in
+        guard let self else { completion(.failure(Self.unavailable())); return }
+        guard let capability else { completion(.success(())); return }
+        self.retirementQueue.async {
+            do {
+                try self.nativeHostService().retireOwner(expectedBinding: capability.binding,
+                    retirementId: capability.retirementId, completion: completion)
+            } catch { completion(.failure(error)) }
+        }
     }, retirementStore: GuguIOSOwnerRetirementStore(directory: root.appendingPathComponent("retirement", isDirectory: true)))
+
+    /// Construction performs no configure/HTTP and does not register a plugin.
+    /// The same instance must own ordinary calls and sealed native cleanup.
+    private func nativeHostService() throws -> GuguIOSHostService {
+        hostServiceLock.lock(); defer { hostServiceLock.unlock() }
+        if let hostServiceStorage { return hostServiceStorage }
+        let service = try GuguIOSHostService(root: root.appendingPathComponent("service", isDirectory: true),
+            runtime: .load(), lifecycle: lifecycle, ownerAccess: ownerAccess, configuration: backendConfiguration,
+            credentials: { [weak self] binding in
+                guard let self else { throw Self.unavailable() }
+                return try self.ownerSession.credentials(expectedBinding: binding)
+            }, executor: { [weak self] binding in
+                // This factory is retained by the App-lifetime service.
+                guard let self else { return GuguUnavailableNativeExecutor() }
+                return self.calendarExecutor(binding: binding)
+            }, deviceMetadata: {
+                ["label": "iPhone", "hostname": "iPhone", "osName": "iOS", "tier": "mobile",
+                 "appVersion": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"]
+            }, retirementAuthorization: { [weak self] binding, retirementId, operation in
+                guard let self else { throw Self.unavailable() }
+                return try self.ownerSession.retirementAuthorization(expectedBinding: binding,
+                    retirementId: retirementId, operation: operation)
+            })
+        hostServiceStorage = service
+        return service
+    }
 
     // Cleanup needs no APNs environment and never exposes registration. The
     // ordinary provider remains absent until signed-build configuration and
