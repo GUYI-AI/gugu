@@ -9,13 +9,20 @@ export class PromptEchoes {
   private readonly submitted = new Set<PromptRequest>();
   private readonly pending = new Map<string, { event: UserMessage; position: Position }>();
   private readonly bindings = new Map<string, UserMessage>();
+  private retiring = false;
 
-  register(request: PromptRequest): void { this.submitted.add(request); }
+  get admissionClosed(): boolean { return this.retiring; }
+
+  register(request: PromptRequest): void {
+    if (this.retiring) throw new Error('ACP prompt admission is closed until executor teardown');
+    this.submitted.add(request);
+  }
 
   receive(event: UserMessage, transcript: AcpTranscriptParser, continueTurn: boolean): UserMessage | null {
-    if (!event.messageId) return event;
+    if (!event.messageId) return this.retiring ? null : event;
     const bound = this.bindings.get(event.messageId);
     if (bound) return this.update(bound, event, event.messageId);
+    if (this.retiring && !this.submitted.size) return null;
     const previous = this.pending.get(event.messageId);
     // An unconfirmed echo stays private through failure/retry until an exact receipt or teardown.
     if (!this.submitted.size && !previous) return event;
@@ -39,9 +46,13 @@ export class PromptEchoes {
   }
 
   /** Settle only this dispatch; another retry can already own the same client message ID. */
-  settle(request: PromptRequest): void { this.submitted.delete(request); }
+  settle(request: PromptRequest, cause?: { code?: unknown }): void {
+    this.submitted.delete(request);
+    // The local watchdog abandoned the RPC, not the native input. Its executor must retire.
+    if (cause?.code === 'prompt_admission_timeout') this.retiring = true;
+  }
 
-  clear(): void { this.submitted.clear(); this.pending.clear(); this.bindings.clear(); }
+  clear(): void { this.submitted.clear(); this.pending.clear(); this.bindings.clear(); this.retiring = false; }
 
   private update(submitted: UserMessage, echo: UserMessage, nativeId: string): UserMessage {
     return { ...echo, ...submitted, contentMode: 'replace',

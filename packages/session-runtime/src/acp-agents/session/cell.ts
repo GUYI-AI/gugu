@@ -309,7 +309,7 @@ export class SessionCell {
 
   get idleCompactionState(): { idle: boolean; contextTokens: number | null; revision: number } {
     return {
-      idle: !this.compacting && !this.reverting && !this.closeRequested
+      idle: !this.compacting && !this.reverting && !this.closeRequested && !this.promptEchoes.admissionClosed
         && this.machine.phase.kind === 'ready' && !this.activeTurnCompletion
         && !this.machine.queuedPrompts.length && !this.machine.pendingPermissions.length
         && !this.settingsInFlight && !this.settingsBlockedReason
@@ -566,7 +566,8 @@ export class SessionCell {
     if (event.kind === 'prompt_result') {
       this.applyReceiptMetadata(event.requestId, event._meta);
       const request = this.requests.get(event.requestId);
-      if (event.error && request) this.promptEchoes.settle(request);
+      if (event.error && request) this.promptEchoes.settle(request, event.error);
+      if (this.promptEchoes.admissionClosed) this.dequeueAfterFailure = false;
       const dequeueAfterFailure = this.dequeueAfterFailure;
       if (event.error) this.deps.logger.error('SessionCell: prompt failed', { sessionId: this.sessionId, requestId: event.requestId, cause: event.error });
       if (request?.prompt.origin === 'communication' && event.error && isInvalidToken(event.error)) {
@@ -722,7 +723,7 @@ export class SessionCell {
   }
 
   queuePrompt(input: PromptInput): Result<void, InvalidStateError> {
-    if (this.closeRequested) return acpErr.invalidState('Session is closing; resume it after teardown');
+    if (this.closeRequested || this.promptEchoes.admissionClosed) return acpErr.invalidState('Session is closing; resume it after teardown');
     if (this.reverting) return acpErr.invalidState('Conversation revert is in progress.');
     const now = Date.now();
     const result = this.dispatchFor<InvalidStateError>(
@@ -1452,7 +1453,7 @@ export class SessionCell {
 
   private releaseDispatch(): void {
     // Closing keeps the queue for the closing side to decide (#743), like WorkEnded in endWork.
-    if (this.closeRequested) return;
+    if (this.closeRequested || this.promptEchoes.admissionClosed) return;
     if (this.machine.phase.kind === 'ready' && this.settingsInFlight === 0 && !this.settingsBlockedReason) {
       // The drain sends the next queued batch; its failure is reported as endWork reports it.
       try { this.applyEvent({ type: 'AdmissionReady' }); } catch (error) {
@@ -1894,7 +1895,7 @@ export class SessionCell {
       onAdmission?: (result: Result<{ queued: boolean; steered?: boolean }, AcpSendPromptError>) => void;
     },
   ): Promise<Result<SessionPromptResult, AcpSendPromptError>> {
-    if (this.closeRequested) return acpErr.sessionBusy('Session is closing; resume it after teardown');
+    if (this.closeRequested || this.promptEchoes.admissionClosed) return acpErr.sessionBusy('Session is closing; resume it after teardown');
     if (!opts?.fromQueue) {
       prompt = { ...prompt, queueTiming: opts?.steerIfBusy && prompt.origin === 'communication'
         ? 'next-tool-call' : undefined };
@@ -2266,7 +2267,7 @@ export class SessionCell {
         }
         return ok({ queued: false });
       }).catch(async (error: unknown) => {
-        this.promptEchoes.settle(request);
+        this.promptEchoes.settle(request, toSerializedError(error));
         if (this._agent !== agent || !providerRejectedMissingSession(error)) logReceipt({ state: 'unknown', cause: toSerializedError(error) });
         if (this._agent !== agent) return this.failedPrompt(toSerializedError(error), requestId);
         if (steered) await releasePreparation();
@@ -2289,7 +2290,7 @@ export class SessionCell {
       });
       return steered ? receipt : request.completion.promise;
     } catch (error) {
-      this.promptEchoes.settle(request);
+      this.promptEchoes.settle(request, toSerializedError(error));
       logReceipt({ state: 'unknown', cause: toSerializedError(error) });
       await releasePreparation();
       recordUserMessage();
@@ -2365,7 +2366,7 @@ export class SessionCell {
     if (this.queuedSteeringInFlight) return;
     this.queuedSteeringInFlight = true;
     try {
-      while (!this.closeRequested && !this.replayingHistory && !this.compacting && !this.reverting
+      while (!this.closeRequested && !this.promptEchoes.admissionClosed && !this.replayingHistory && !this.compacting && !this.reverting
         && !this.queuedTurnFence
         && this.machine.phase.kind === 'working' && this.settingsInFlight === 0
         && this.settingsBlockedReason === null && this.machine.pendingPermissions.length === 0) {
@@ -2586,7 +2587,7 @@ export class SessionCell {
       // Acceptance only admits an input. Before the provider reports running the machine is still
       // ready, but that foreground cycle owns the lane until its real completion (including a
       // command that goes straight to idle). A receipt must not drain ordinary queued inputs.
-      dispatchPending: this.activeTurnCompletion !== null
+      dispatchPending: this.promptEchoes.admissionClosed || this.activeTurnCompletion !== null
         || [...this.requests.values()].some(request => !request.steered && !request.accepted && !request.dispatched),
       modeIds: this.transcript.config.modeOptions?.available.map((mode) => mode.id) ?? [],
       configOptionIds: [

@@ -1129,17 +1129,10 @@ export class SessionManager implements InboundRouter {
   }
 
   async prompt(input: SendPromptInput): Promise<Result<{ queued: boolean }, AcpSendPromptError>> {
-    const record = this.cells.get(input.sessionId);
-    if (!record) return acpErr.sessionNotFound(input.sessionId);
-    if (record.closing) return acpErr.sessionBusy('Session is closing; resume it after teardown');
-    if (record.phase === 'lost') {
-      return acpErr.invalidState(
-        `Session '${input.sessionId}' lost its ACP adapter: ${record.loss.message}; reconnect before sending`
-      );
-    }
-    const dispatched = record.cell.promptDetached(input.prompt, input.steerIfBusy ? { steerIfBusy: true } : undefined);
-    void dispatched.completion.catch((error: unknown) => this.deps.logger.error('SessionManager: cycle completion failed', { sessionId: input.sessionId, error }));
-    return dispatched.admission;
+    const dispatched = this.promptDetached(input);
+    if (!dispatched.success) return dispatched;
+    void dispatched.data.completion.catch((error: unknown) => this.deps.logger.error('SessionManager: cycle completion failed', { sessionId: input.sessionId, error }));
+    return dispatched.data.admission;
   }
 
   /** Internal host path: resolve admission without waiting for the provider turn. */
@@ -1158,7 +1151,13 @@ export class SessionManager implements InboundRouter {
     const detached = record.cell.promptDetached(input.prompt, input.steerIfBusy ? { steerIfBusy: true } : undefined);
     return ok({
       admission: detached.admission,
-      completion: detached.completion,
+      completion: detached.completion.then(async result => {
+        if (!result.success && 'cause' in result.error && result.error.cause?.code === 'prompt_admission_timeout') {
+          // The abandoned native RPC still owns this transport. Retire it on every runtime entry.
+          await this.stop(input.sessionId);
+        }
+        return result;
+      }),
     });
   }
 
