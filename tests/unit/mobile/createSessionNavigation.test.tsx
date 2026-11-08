@@ -92,6 +92,6 @@ describe('creation keeps its navigation and draft ownership', () => {
     const stoppedPhone = { ...device, platform: 'android', capabilities: { host_kind: 'phone', host_runtime_capability: 0, terminals: [], runtimes: [] } } as Device
     await harness.render(createNode(CreateSessionPage, { device: stoppedPhone, onBack: vi.fn(), onCreated: vi.fn() }))
     expect(rpc.options).not.toHaveBeenCalled()
-    expect(harness.container.querySelector('[data-testid="agent-watch-offline-why"]')).not.toBeNull()
+    expect(harness.container.querySelector('[data-testid="agent-watch-create-page"] [data-slot="pane-header"] [data-testid="agent-watch-connection-status"]')?.getAttribute('data-state')).toBe('device_offline')
   })
 })
