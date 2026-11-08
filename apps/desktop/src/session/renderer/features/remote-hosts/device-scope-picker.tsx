@@ -9,7 +9,9 @@ import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-s
 import { PageScopeProvider, type PageScope } from '@renderer/lib/components/page-header';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { RemoteHostDevice } from '@/session/shared/remote-hosts';
+import { ConnectionStatus } from '@/components/connection/ConnectionStatus';
 import type { DeviceScopeNotice } from './device-scope-notice';
+import { headerConnectionState } from './header-connection-state';
 import { LOCAL_DEVICE_SCOPE, deviceScopeTrayDevices, type DeviceScopeStore } from './device-scope-store';
 import { MachinePicker } from './machine-picker';
 import { useWakeCloudOnce } from './use-wake-cloud-once';
@@ -59,6 +61,31 @@ export const DeviceScopePicker = observer(function DeviceScopePicker({
 });
 
 /**
+ * The selected machine's connection state, inline in the heading that scopes the page to it. This computer = nothing.
+ * `withName` when the heading does not already show the machine (the library's picker lives in its left column).
+ */
+export const DeviceScopeStatus = observer(function DeviceScopeStatus({
+  store,
+  withName = false,
+}: {
+  store: DeviceScopeStore;
+  withName?: boolean;
+}) {
+  const deviceId = store.effective((id) => remoteHostsStore.hosts.has(id));
+  const device = deviceId === LOCAL_DEVICE_SCOPE ? null : remoteHostsStore.device(deviceId);
+  const state = device ? headerConnectionState(remoteHostsStore.connectionState(device.id)) : null;
+  if (!device || !state) return null;
+  return (
+    <ConnectionStatus
+      state={state}
+      lastSeenAt={device.lastSeenAt}
+      subject={withName ? device.label : null}
+      testId="device-scope-status"
+    />
+  );
+});
+
+/**
  * 模块层挂这一份机器选择器。
  * `inTitle`(缺省)= 选择器画在页标题右边(已安排:整个模块就一页);
  * 资源库、设置不画在子页上 —— owner:「设备是资源库级别的」「资源库改了,你设置页也改啊」,选择器在左栏列头下只有一个。
@@ -74,7 +101,10 @@ export const DeviceScopeProvider = observer(function DeviceScopeProvider({
 }) {
   useSelectedRemoteDevice(store);
   const scope = useMemo<PageScope>(
-    () => ({ control: inTitle ? <DeviceScopePicker store={store} /> : null }),
+    () => ({
+      control: inTitle ? <DeviceScopePicker store={store} /> : null,
+      status: <DeviceScopeStatus store={store} withName={!inTitle} />,
+    }),
     [store, inTitle]
   );
   return <PageScopeProvider value={scope}>{children}</PageScopeProvider>;
