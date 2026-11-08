@@ -153,12 +153,14 @@ describe('分机器的模块那一句 / 导入会话 / 工作区', () => {
 
   it('资源库这类页面:说正在唤醒(只读到醒),❌ 说离线', () => {
     const notice = deviceScopeNotice({ remote, error: null, hasData: true, now: NOW, cloud: { state: 'asleep', failure: null } }, zh);
-    expect(notice).toEqual({ kind: 'waking', text: '「小咕」正在醒来。显示的是缓存，醒了就能修改。', retry: false, readOnly: true });
+    expect(notice).toEqual({ kind: 'waking', text: '「小咕」正在醒来。显示的是缓存，醒了就能修改。', retry: false, readOnly: true, inHeading: true, cached: true });
     const failed = deviceScopeNotice(
       { remote, error: null, hasData: false, now: NOW, cloud: { state: 'wake-failed', failure: { reason: 'timeout', code: null, message: 'x' } } },
       zh
     );
     expect(failed?.text).toBe('小咕 两分钟内没醒来，稍后再试。');
+    // The failure reason is not in the heading: that line stays.
+    expect(failed?.inHeading).toBe(false);
     // 对照:不是云电脑照旧说离线。
     expect(deviceScopeNotice({ remote, error: null, hasData: true, now: NOW }, zh)?.kind).toBe('offline');
   });
