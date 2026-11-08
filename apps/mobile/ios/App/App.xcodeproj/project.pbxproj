@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E98E000000000000000001A1 /* GuguIOSOwnerRetirementStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E000000000000000000A1 /* GuguIOSOwnerRetirementStore.swift */; };
 		E98E00000000000000000169 /* GuguIOSPushRetirement.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000069 /* GuguIOSPushRetirement.swift */; };
 		E98E00000000000000000201 /* DHostedRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000211 /* DHostedRuntimeTests.swift */; };
 		E98E00000000000000000202 /* DCalendarSnapshotOracle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98E00000000000000000212 /* DCalendarSnapshotOracle.swift */; };
@@ -83,6 +84,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		E98E000000000000000000A1 /* GuguIOSOwnerRetirementStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSOwnerRetirementStore.swift; sourceTree = "<group>"; };
 		E98E00000000000000000069 /* GuguIOSPushRetirement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuguIOSPushRetirement.swift; sourceTree = "<group>"; };
 		E98E00000000000000000211 /* DHostedRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DHostedRuntimeTests.swift; sourceTree = "<group>"; };
 		E98E00000000000000000212 /* DCalendarSnapshotOracle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DCalendarSnapshotOracle.swift; sourceTree = "<group>"; };
@@ -283,6 +285,7 @@
 				E98E00000000000000000069 /* GuguIOSPushRetirement.swift */,
 				E98E00000000000000000068 /* GuguIOSPushTransport.swift */,
 				E98E00000000000000000067 /* GuguIOSAppRuntime.swift */,
+				E98E000000000000000000A1 /* GuguIOSOwnerRetirementStore.swift */,
 				E98E00000000000000000061 /* GuguIOSOwnerSession.swift */,
 				E98E00000000000000000062 /* GuguIOSInstallation.swift */,
 				E98E00000000000000000063 /* GuguIOSOwnerKeychain.swift */,
@@ -447,6 +450,7 @@
 				E98E00000000000000000405 /* GuguPushNotificationsPlugin.swift in Sources */,
 				E98E00000000000000000167 /* GuguIOSAppRuntime.swift in Sources */,
 				E98E0000000000000000011A /* GuguIOSHostLifecycle.swift in Sources */,
+				E98E000000000000000001A1 /* GuguIOSOwnerRetirementStore.swift in Sources */,
 				E98E00000000000000000161 /* GuguIOSOwnerSession.swift in Sources */,
 				E98E00000000000000000162 /* GuguIOSInstallation.swift in Sources */,
 				E98E00000000000000000163 /* GuguIOSOwnerKeychain.swift in Sources */,

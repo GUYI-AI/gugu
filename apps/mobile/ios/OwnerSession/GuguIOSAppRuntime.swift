@@ -60,7 +60,7 @@ final class GuguIOSAppRuntime {
             do { try await self.pushRetirement.retire(capability); completion(.success(())) }
             catch { completion(.failure(error)) }
         }
-    })
+    }, retirementStore: GuguIOSOwnerRetirementStore(directory: root.appendingPathComponent("retirement", isDirectory: true)))
 
     // Cleanup needs no APNs environment and never exposes registration. The
     // ordinary provider remains absent until signed-build configuration and

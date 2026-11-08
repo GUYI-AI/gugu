@@ -41,12 +41,14 @@ struct GuguIOSMainWritePermit {
     fileprivate let nextOwnerId: String?
     fileprivate let nextAccessToken: String?
     fileprivate let holdsRetirement: Bool
+    fileprivate let retirementId: String?
 }
 
 /// An opaque, native-only capability for retiring the original push registration.
 /// It never reopens ordinary host credentials and is invalid after retirement.
 struct GuguIOSRetirementAccess: CustomDebugStringConvertible {
     let binding: GuguIOSHostBinding
+    let retirementId: String
     fileprivate let id: UUID
     var debugDescription: String { "GuguIOSRetirementAccess(<redacted>)" }
 }
@@ -63,19 +65,22 @@ final class GuguIOSOwnerSession {
     private let verifyUser: Verify
     private let stopNative: Stop
     private let retireExternal: RetireExternal?
+    private let retirementStore: GuguIOSOwnerRetirementStore?
     private let now: () -> Date
     private var generation: UInt64 = 0
     private var active: GuguIOSOwnerCredentials?
     private var retiring = false
     private var storageRetirementPending = false
     private var retirementAccess: (capability: GuguIOSRetirementAccess, credentials: GuguIOSOwnerCredentials, generation: UInt64)?
+    private var retirementVerifiedUntil: Date?
 
     init(readStored: @escaping () throws -> GuguIOSStoredSession?, installationId: @escaping () throws -> String,
          verifyUser: @escaping Verify, stopNative: @escaping Stop,
-         retireExternal: RetireExternal? = nil, now: @escaping () -> Date = Date.init) {
+         retireExternal: RetireExternal? = nil, retirementStore: GuguIOSOwnerRetirementStore? = nil,
+         now: @escaping () -> Date = Date.init) {
         self.readStored = readStored; self.installationId = installationId
         self.verifyUser = verifyUser; self.stopNative = stopNative
-        self.retireExternal = retireExternal; self.now = now
+        self.retireExternal = retireExternal; self.retirementStore = retirementStore; self.now = now
     }
 
     func publish(ownerId: String, accessToken: String,
@@ -84,6 +89,7 @@ final class GuguIOSOwnerSession {
             lock.lock()
             let stored: GuguIOSStoredSession
             do {
+                try restoreRetirementBarrier()
                 guard !retiring else { throw Self.failure("host_not_ready", "Native retirement must finish before publication") }
                 stored = try matchingStored(ownerId: ownerId, accessToken: accessToken)
                 generation &+= 1
@@ -96,6 +102,7 @@ final class GuguIOSOwnerSession {
                 let outcome: Result<GuguIOSHostBinding, Error>
                 do {
                     guard self.generation == issued && !self.retiring else { throw Self.stale() }
+                    try self.requireNoDurableRetirement()
                     let verifiedOwner = try result.get()
                     guard verifiedOwner == ownerId else { throw Self.failure("auth_identity_mismatch", "Verified user differs from the committed owner") }
                     let current = try self.matchingStored(ownerId: ownerId, accessToken: accessToken)
@@ -120,6 +127,7 @@ final class GuguIOSOwnerSession {
 
     func snapshot(expectedOwnerId: String) throws -> GuguIOSHostBinding? {
         lock.lock(); defer { lock.unlock() }
+        try restoreRetirementBarrier()
         guard let stored = try readStored() else { return nil }
         guard stored.ownerId == expectedOwnerId else { throw Self.stale() }
         guard !retiring, let active else { return nil }
@@ -132,6 +140,7 @@ final class GuguIOSOwnerSession {
 
     func credentials(expectedBinding: GuguIOSHostBinding) throws -> GuguIOSOwnerCredentials {
         lock.lock(); defer { lock.unlock() }
+        try restoreRetirementBarrier()
         guard !retiring, let active, active.binding == expectedBinding else { throw Self.stale() }
         _ = try matchingStored(ownerId: expectedBinding.ownerId, accessToken: active.accessToken)
         try checkInstallation(active.binding)
@@ -163,6 +172,12 @@ final class GuguIOSOwnerSession {
         guard retiring, let access = retirementAccess, access.generation == generation,
               access.capability.id == capability.id, capability.binding == expectedBinding,
               access.credentials.binding == expectedBinding else { throw Self.stale() }
+        if let retirementStore {
+            guard let record = try retirementStore.snapshot(), record.id == capability.retirementId,
+                  record.original?.binding == expectedBinding,
+                  record.original?.accessSHA256 == GuguIOSOwnerRetirementStore.digest(access.credentials.accessToken),
+                  let until = retirementVerifiedUntil, until > now() else { throw Self.stale() }
+        }
         _ = try matchingStored(ownerId: expectedBinding.ownerId, accessToken: access.credentials.accessToken)
         try checkInstallation(expectedBinding)
         guard access.credentials.expiresAt > now() else { throw Self.failure("auth_expired", "Retirement access has expired") }
@@ -174,13 +189,25 @@ final class GuguIOSOwnerSession {
     func prepareMainWrite(nextOwnerId: String?, nextAccessToken: String? = nil, completion: @escaping (Result<GuguIOSMainWritePermit, Error>) -> Void) {
         lock.lock()
         let stored: GuguIOSStoredSession?
-        do { stored = try readStored() }
+        do {
+            try restoreRetirementBarrier()
+            stored = try readStored()
+        }
         catch {
             // Failure to read the old envelope must not leave its native access
             // alive while a retirement/write intent is already in flight.
             generation &+= 1; active = nil; retiring = true; retirementAccess = nil; storageRetirementPending = true
+            retirementVerifiedUntil = nil
+            // Even an unreadable old Keychain envelope leaves a durable intent.
+            // Failure to persist this intent is propagated and never admits a write.
+            var failure: Error = error
+            do {
+                if let retirementStore {
+                    _ = try retirementStore.begin(target: .init(ownerId: nextOwnerId, accessToken: nextAccessToken))
+                }
+            } catch { failure = error }
             lock.unlock()
-            stopNative { _ in completion(.failure(error)) }
+            stopNative { _ in completion(.failure(failure)) }
             return
         }
         let sameAuthSession: Bool
@@ -192,13 +219,21 @@ final class GuguIOSOwnerSession {
         } else { sameAuthSession = false }
         if !retiring && sameAuthSession && (active == nil || active?.binding.ownerId == nextOwnerId) {
             let permit = GuguIOSMainWritePermit(generation: generation, nextOwnerId: nextOwnerId,
-                nextAccessToken: nextAccessToken, holdsRetirement: false)
+                nextAccessToken: nextAccessToken, holdsRetirement: false, retirementId: nil)
             lock.unlock(); completion(.success(permit)); return
         }
         generation &+= 1; active = nil; retiring = true; storageRetirementPending = true
+        retirementVerifiedUntil = nil
         let issued = generation
         let capability: GuguIOSRetirementAccess?
-        do { capability = try captureRetirement(stored) }
+        do {
+            if let retirementStore {
+                let record = try retirementStore.begin(target: .init(ownerId: nextOwnerId, accessToken: nextAccessToken))
+                let original = try originalRetirement(stored)
+                _ = try retirementStore.capture(id: record.id, original: original)
+            }
+            capability = try captureRetirement(stored)
+        }
         catch {
             retirementAccess = nil; lock.unlock()
             stopNative { _ in completion(.failure(error)) }
@@ -211,7 +246,9 @@ final class GuguIOSOwnerSession {
             do {
                 guard self.generation == issued else { throw Self.stale() }
                 try result.get()
-                outcome = .success(GuguIOSMainWritePermit(generation: issued, nextOwnerId: nextOwnerId, nextAccessToken: nextAccessToken, holdsRetirement: true))
+                outcome = .success(GuguIOSMainWritePermit(generation: issued, nextOwnerId: nextOwnerId,
+                    nextAccessToken: nextAccessToken, holdsRetirement: true,
+                    retirementId: try self.retirementStore?.snapshot()?.id))
             } catch { outcome = .failure(error) }
             self.lock.unlock(); completion(outcome)
         }
@@ -223,6 +260,14 @@ final class GuguIOSOwnerSession {
         lock.lock(); defer { lock.unlock() }
         guard generation == permit.generation,
               !retiring || permit.holdsRetirement else { throw Self.stale() }
+        let record = try retirementStore?.snapshot()
+        if retirementStore != nil, permit.holdsRetirement {
+            guard let record, record.id == permit.retirementId else { throw Self.stale() }
+        }
+        if let record {
+            guard permit.holdsRetirement, record.cleanupComplete,
+                  record.target == (try .init(ownerId: permit.nextOwnerId, accessToken: permit.nextAccessToken)) else { throw Self.stale() }
+        }
         try persist()
         let current = try readStored()
         guard current?.ownerId == permit.nextOwnerId,
@@ -230,16 +275,20 @@ final class GuguIOSOwnerSession {
             retiring = true; active = nil; storageRetirementPending = true
             throw Self.failure("auth_storage_invalid", "Native login write did not preserve the prepared owner")
         }
+        if let record { try retirementStore?.finishCommit(id: record.id, stored: current) }
         generation &+= 1
         retirementAccess = nil
+        retirementVerifiedUntil = nil
         if permit.holdsRetirement { retiring = false; storageRetirementPending = false }
     }
 
     func retire(expectedOwnerId: String, completion: @escaping (Result<Void, Error>) -> Void) {
         lock.lock()
         let capability: GuguIOSRetirementAccess?
-        let requiresStorageCleanup = storageRetirementPending
+        let requiresStorageCleanup: Bool
         do {
+            try restoreRetirementBarrier()
+            requiresStorageCleanup = storageRetirementPending
             let stored = try readStored()
             let storedOwner = stored?.ownerId
             guard (active == nil || active?.binding.ownerId == expectedOwnerId),
@@ -281,12 +330,17 @@ final class GuguIOSOwnerSession {
 
     private func captureRetirement(_ stored: GuguIOSStoredSession?) throws -> GuguIOSRetirementAccess? {
         retirementAccess = nil
+        retirementVerifiedUntil = nil
+        if let record = try retirementStore?.snapshot() {
+            guard record.captureComplete, record.original == (try originalRetirement(stored)) else { throw Self.stale() }
+        }
         guard retireExternal != nil, let stored else { return nil }
         let install = try installationId()
         let binding = GuguIOSHostBinding(ownerId: stored.ownerId,
             deviceId: "phone-\(install)-\(stored.ownerId)", installationId: install)
         try binding.validate()
-        let capability = GuguIOSRetirementAccess(binding: binding, id: UUID())
+        let transactionId = try retirementStore?.snapshot()?.id ?? UUID().uuidString.lowercased()
+        let capability = GuguIOSRetirementAccess(binding: binding, retirementId: transactionId, id: UUID())
         retirementAccess = (capability, GuguIOSOwnerCredentials(binding: binding,
             accessToken: stored.accessToken, expiresAt: stored.expiresAt), generation)
         return capability
@@ -294,6 +348,7 @@ final class GuguIOSOwnerSession {
 
     private func runRetirement(issued: UInt64, capability: GuguIOSRetirementAccess?,
                                completion: @escaping (Result<Void, Error>) -> Void) {
+        let durableTransaction = Result { try retirementStore?.snapshot() }
         // Both branches must finish, even when one fails; a network failure must
         // not leave local model/tool transports running or permit a Keychain write.
         let resultLock = NSLock()
@@ -307,19 +362,83 @@ final class GuguIOSOwnerSession {
             do {
                 try external.get(); try local.get()
                 self.lock.lock()
-                if self.generation == issued { self.retirementAccess = nil }
-                self.lock.unlock()
+                defer { self.lock.unlock() }
+                guard self.generation == issued else { throw Self.stale() }
+                let originalTransaction = try durableTransaction.get()
+                guard try self.retirementStore?.snapshot()?.id == originalTransaction?.id else { throw Self.stale() }
+                if let record = originalTransaction {
+                    try self.retirementStore?.markCleanupComplete(id: record.id)
+                }
+                self.retirementAccess = nil; self.retirementVerifiedUntil = nil
                 outcome = .success(())
             } catch { outcome = .failure(error) }
             completion(outcome)
         }
         if let retireExternal {
-            retireExternal(capability) { result in
+            let complete: (Result<Void, Error>) -> Void = { result in
                 resultLock.lock(); if case nil = externalResult { externalResult = result }; resultLock.unlock(); finish()
+            }
+            if retirementStore != nil, let capability {
+                verifyRetirement(capability) { result in
+                    do { try result.get(); retireExternal(capability, complete) }
+                    catch { complete(.failure(error)) }
+                }
+            } else {
+                retireExternal(capability, complete)
             }
         } else { externalResult = .success(()) }
         stopNative { result in
             resultLock.lock(); if case nil = localResult { localResult = result }; resultLock.unlock(); finish()
+        }
+    }
+
+    private func originalRetirement(_ stored: GuguIOSStoredSession?) throws -> GuguIOSOwnerRetirementStore.Original? {
+        guard let stored else { return nil }
+        let install = try installationId()
+        let binding = GuguIOSHostBinding(ownerId: stored.ownerId, deviceId: "phone-\(install)-\(stored.ownerId)", installationId: install)
+        try binding.validate()
+        return .init(binding: binding, sessionId: try GuguIOSOwnerCredentials.sessionId(ownerId: stored.ownerId, accessToken: stored.accessToken),
+                     accessSHA256: GuguIOSOwnerRetirementStore.digest(stored.accessToken))
+    }
+
+    private func verifyRetirement(_ capability: GuguIOSRetirementAccess, completion: @escaping (Result<Void, Error>) -> Void) {
+        lock.lock()
+        guard let issued = retirementAccess, issued.capability.id == capability.id else {
+            lock.unlock(); completion(.failure(Self.stale())); return
+        }
+        let token = issued.credentials.accessToken
+        lock.unlock()
+        verifyUser(token) { result in
+            self.lock.lock()
+            let outcome: Result<Void, Error>
+            do {
+                guard try result.get() == capability.binding.ownerId,
+                      let current = self.retirementAccess, current.capability.id == capability.id,
+                      current.generation == self.generation, self.retiring,
+                      let record = try self.retirementStore?.snapshot(), record.id == capability.retirementId,
+                      record.original == (try self.originalRetirement(self.readStored())) else { throw Self.stale() }
+                _ = try self.matchingStored(ownerId: capability.binding.ownerId, accessToken: token)
+                try self.checkInstallation(capability.binding)
+                self.retirementVerifiedUntil = min(current.credentials.expiresAt, self.now().addingTimeInterval(300))
+                outcome = .success(())
+            } catch { outcome = .failure(error) }
+            self.lock.unlock(); completion(outcome)
+        }
+    }
+
+    private func requireNoDurableRetirement() throws {
+        guard try retirementStore?.snapshot() == nil else { throw Self.stale() }
+    }
+
+    private func restoreRetirementBarrier() throws {
+        guard let retirementStore else { return }
+        if let record = try retirementStore.snapshot() {
+            if record.cleanupComplete, try retirementStore.recoverCommittedWrite(stored: readStored()) {
+                generation &+= 1; active = nil; retiring = false; storageRetirementPending = false
+                retirementAccess = nil; retirementVerifiedUntil = nil
+                return
+            }
+            active = nil; retiring = true; storageRetirementPending = true
         }
     }
 
