@@ -8,7 +8,8 @@ const fixture = vi.hoisted(() => ({
   rows: [] as Array<{ id: string; accountId: string; deviceId: string | null; sessionId: string; sendQueue: { order: number } }>,
   valid: true, accountId: 'owner', lifecycle: 'ready', activeTurnId: null as string | null, lastTurnOutcome: 'none', queuedPrompts: [] as unknown[],
   snapshot: null as import('@gugu/session-core/acp/client').SessionState | null,
-  hold: null as string | null, lifeKind: 'ready', history: vi.fn(), release: vi.fn(), dispose: vi.fn(), stopLife: vi.fn(),
+  hold: null as string | null, lifeKind: 'ready', history: vi.fn(), release: vi.fn(), dispose: vi.fn(), stopLife: vi.fn(), startReplaced: vi.fn(),
+  readyError: null as Error | null,
   rowListeners: new Set<() => void>(), changes: new Set<() => void>(),
   gone: undefined as undefined | ((error: unknown) => void), lifeEvent: undefined as undefined | ((view: { sessionId: string }) => void),
 }))
@@ -16,9 +17,10 @@ vi.mock('@/lib/sessionInputOutboxBridge', () => ({
   state: () => ({ get rows() { return fixture.rows }, get accountId() { return fixture.accountId }, valid: () => fixture.valid }),
   subscribeSessionInputs: (listener: () => void) => { fixture.rowListeners.add(listener); return () => fixture.rowListeners.delete(listener) },
   releaseQueuedSessionInput: (...args: unknown[]) => fixture.release(...args),
+  startReplacedEngine: (...args: unknown[]) => fixture.startReplaced(...args),
 }))
 vi.mock('@gugu/session-wire', async importOriginal => ({ ...await importOriginal<typeof import('@gugu/session-wire')>(), ReplicaState: class {
-  ready = Promise.resolve()
+  ready = fixture.readyError ? Promise.reject(fixture.readyError) : Promise.resolve()
   current() { return fixture.snapshot ?? { lifecycle: fixture.lifecycle, activeTurnId: fixture.activeTurnId, lastTurnOutcome: fixture.lastTurnOutcome, queuedPrompts: fixture.queuedPrompts } }
   onChange(listener: () => void) { fixture.changes.add(listener) }
   onGone(listener: (error: unknown) => void) { fixture.gone = listener }
@@ -38,7 +40,8 @@ let close: (() => void) | undefined
 const emit = () => { for (const listener of fixture.rowListeners) listener() }
 beforeEach(() => {
   vi.clearAllMocks()
-  Object.assign(fixture, { valid: true, accountId: 'owner', lifecycle: 'ready', activeTurnId: null, lastTurnOutcome: 'none', hold: null, lifeKind: 'ready', gone: undefined, lifeEvent: undefined })
+  Object.assign(fixture, { valid: true, accountId: 'owner', lifecycle: 'ready', activeTurnId: null, lastTurnOutcome: 'none', hold: null, lifeKind: 'ready', gone: undefined, lifeEvent: undefined, readyError: null })
+  fixture.startReplaced.mockResolvedValue(undefined)
   fixture.rows = [{ id: 'held', accountId: 'owner', deviceId: null, sessionId: 'session', sendQueue: { order: 1 } }]
   fixture.snapshot = null
   fixture.queuedPrompts = []
@@ -177,4 +180,16 @@ it('invalidates queued release on logout and can reconnect a gone replica on the
   await expect.poll(() => fixture.release.mock.calls.length).toBe(2)
   close(); close = undefined
   expect(guard()).toBe(false)
+})
+
+it('asks the host to start a replaced engine when the runtime has no live session for the queue, and nothing else', async () => {
+  close = watchSessionSendQueues('owner', () => undefined)
+  await expect.poll(() => fixture.release.mock.calls.length).toBe(1)
+  expect(fixture.startReplaced).not.toHaveBeenCalled()
+  close(); close = undefined
+  fixture.readyError = new Error("Unknown live topic 'session.state' (no instance for this key)")
+  close = watchSessionSendQueues('owner', () => undefined)
+  await expect.poll(() => fixture.startReplaced.mock.calls.length).toBe(1)
+  expect(fixture.startReplaced.mock.calls[0][1]).toBe('session')
+  expect(fixture.release).toHaveBeenCalledOnce()
 })

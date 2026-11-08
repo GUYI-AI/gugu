@@ -6,6 +6,7 @@ import { sessionInputBaseline } from './pendingSessionInput'
 import { nativeMessageKey } from '@gugu/session-core/session-record/native-read'
 import { liveDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
+import type { rpc } from '@/session/renderer/lib/ipc'
 
 type State = { accountId: string | null; queue: Promise<SessionInputOutbox> | null; rows: readonly SessionInput[]; listeners: Set<() => void>; valid: () => boolean }
 const KEY = '__GUGU_NATIVE_INPUT_OUTBOX__'
@@ -70,6 +71,18 @@ export async function reorderQueuedSessionInputs(sessionId: string, ids: readonl
 /** After the engine session was replaced: true when composer-queued input waits for the new engine (see the queue). */
 export async function queueOntoReplacedEngine(sessionId: string): Promise<boolean> {
   return sessionInputOutboxAvailable() ? (await currentQueue()).detachFromReplacedEngine(sessionId) : false
+}
+
+/**
+ * Another device continued the session in a new engine session and had nothing to send, so nothing started it: this
+ * device's queue waits for it. Start it then, and only then. A stopped, held or failed session, and one that still has its
+ * engine session (an app restart), stays as it is.
+ */
+export async function startReplacedEngine(sessions: Pick<typeof rpc.sessions, 'lifeView' | 'getSessions' | 'lifeStart'>, sessionId: string): Promise<void> {
+  const life = await sessions.lifeView(sessionId)
+  if (life.kind !== 'dormant' || life.hold !== null || life.pending.count) return
+  const session = (await sessions.getSessions()).find(row => row.id === sessionId)
+  if (session && !session.providerSessionId && await queueOntoReplacedEngine(sessionId)) await sessions.lifeStart(sessionId)
 }
 
 /** Call only with an authoritative foreground-idle snapshot, or the person's explicit send-now action. */

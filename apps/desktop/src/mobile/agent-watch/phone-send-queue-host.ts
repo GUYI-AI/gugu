@@ -1,5 +1,5 @@
 import type { SessionInput } from '@/lib/sessionInputOutbox'
-import { releaseQueuedSessionInput, state, subscribeSessionInputs } from '@/lib/sessionInputOutboxBridge'
+import { releaseQueuedSessionInput, startReplacedEngine, state, subscribeSessionInputs } from '@/lib/sessionInputOutboxBridge'
 import { rendererLogger } from '@/lib/log'
 import { subscribeCachedDevices } from '@/store/devicesCache'
 import { isAgentHostDevice, isPhoneDevice } from '@gugu/core/cloud/devices'
@@ -72,6 +72,7 @@ export function watchPhoneSessionSendQueues(accountId: string, options?: { phone
         const readingEpoch = epoch
         if (closed || !connected || !current()) return { ready: false, turns: [] }
         const life = phone ? null : await remote.machineRpc(deviceId).sessions.lifeView(sessionId)
+        if (life?.kind === 'dormant') void startReplacedEngine(remote.machineRpc(deviceId).sessions, sessionId).catch(report)
         if (!phone && (!life || life.kind !== 'ready' || life.hold !== null)) return { ready: false, turns: [] }
         const snapshot = await client.fetchSnapshot(deviceId, sessionId, 100)
         const summary = liveDeviceSessions()[deviceId]?.sessions.find(session => session.conversationId === sessionId)

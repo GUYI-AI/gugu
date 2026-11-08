@@ -1,7 +1,7 @@
 import { ReplicaState } from '@gugu/session-wire'
 import { sessionStateSchema, type SessionState } from '@gugu/session-core/acp/client'
 import { getAcpRuntimeClient } from '@/session/renderer/lib/acp/runtime-client'
-import { releaseQueuedSessionInput, state, subscribeSessionInputs } from './sessionInputOutboxBridge'
+import { releaseQueuedSessionInput, startReplacedEngine, state, subscribeSessionInputs } from './sessionInputOutboxBridge'
 import { rendererLogger } from './log'
 import { onMachineEvent, rpcOn } from '@/session/renderer/lib/ipc'
 import { sessionLifeViewChannel } from '@/session/shared/core/sessions/sessionEvents'
@@ -13,7 +13,7 @@ function foregroundQueueReady(snapshot: SessionState): boolean {
   return snapshot.lifecycle === 'ready' && snapshot.activeTurnId === null && !snapshot.queuedPrompts.length && completed
 }
 
-/** Observe only sessions with composer-owned inputs; no engine is started by this observer. */
+/** Observe only sessions with composer-owned inputs; the only engine it starts is a replaced one (startReplacedEngine). */
 export function watchSessionSendQueues(accountId: string, currentDeviceId: () => string | undefined,
   includeInput: (input: SessionInput) => boolean = () => true): () => void {
   type Watch = { closed: boolean; replica?: ReplicaState<SessionState>; checking: boolean; again: boolean; check?: () => Promise<void>; stopLife?: () => void }
@@ -77,6 +77,8 @@ export function watchSessionSendQueues(accountId: string, currentDeviceId: () =>
       }).catch(error => {
         report(error); watch.closed = true; watch.stopLife?.(); void watch.replica?.dispose()
         if (watches.get(key) === watch) watches.delete(key)
+        // The runtime has no live session for it (a replaced engine session is forgotten until it starts).
+        if (!closed) void startReplacedEngine(rpcOn(machine).sessions, input.sessionId).catch(report)
       })
     }
   }
