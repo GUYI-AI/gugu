@@ -71,7 +71,7 @@ import type { ChatCaches } from './core/caches';
 import type { ThemeVarKey } from './core/config';
 import type { MeasureCtx } from './core/define';
 import { genericEstimate } from './core/layout/generic-estimate';
-import { SCROLL_END_EPSILON_PX } from './core/stick-to-bottom';
+import { landedAtEnd, SCROLL_END_EPSILON_PX } from './core/stick-to-bottom';
 import { keepUnchangedUnits, unitContainsItem, unitItemIds, unitReservedHeight } from './core/units';
 import { Virtualizer } from './core/virtualizer';
 import type { ChatItem, ChatMessage, TranscriptTurn } from './model';
@@ -1475,7 +1475,7 @@ export function ChatRoot(props: ChatRootProps) {
       // arithmetic clamp in writeScrollTop is never misread as a user scroll.
       lastUserScrollAt = performance.now();
       expectedScrollTop = st;
-      const nowAtBottom = userDelta > 0 && maxScrollTop() - st <= SCROLL_END_EPSILON_PX;
+      const nowAtBottom = landedAtEnd(userDelta, maxScrollTop() - st);
       const prevAnchor = anchor();
       const prevAtBottom = prevAnchor.kind === 'tail';
       if (nowAtBottom) {

@@ -9,6 +9,16 @@ export const STICK_THRESHOLD_PX = 48;
 /** Only tolerate the browser's fractional scroll-height rounding when resuming follow. */
 export const SCROLL_END_EPSILON_PX = 1;
 
+/**
+ * Did a scrollTop change the frame did not write leave the reader at the end? A move down within the epsilon did.
+ * @@@subpixel-is-not-a-gesture — at a fractional device scale the browser snaps scrollTop to device pixels, so a frame can
+ * read a backward delta of a fraction of a pixel nobody asked for, under a pixel from the end. A reader's upward step,
+ * however small, leaves at least a pixel below. Only the first keeps following.
+ */
+export function landedAtEnd(delta: number, distanceToEnd: number): boolean {
+  return delta > 0 ? distanceToEnd <= SCROLL_END_EPSILON_PX : distanceToEnd < SCROLL_END_EPSILON_PX;
+}
+
 export class StickToBottom {
   private el: HTMLElement;
   private stuck = true;
