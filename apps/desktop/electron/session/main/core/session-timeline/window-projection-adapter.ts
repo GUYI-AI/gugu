@@ -22,7 +22,7 @@ type Ports = {
   report?(error: unknown): void;
 };
 type Lease = { owner: Owner; id: string; receipt: WindowCommitReceipt; position: WindowLivePosition;
-  pinOwner: Owner; publication?: WindowCommitPublication; release?: Release; closing: boolean; abort: AbortController; busy: boolean };
+  pinOwner: Owner; publication?: WindowCommitPublication; release?: Release; closing: boolean; abort: AbortController; busy: boolean; settled?: Promise<void> };
 type PageHandle = { type: 'page'; lease: string; ordinal: number };
 type FieldHandle = { type: 'field'; lease: string; position: ProjectionFieldPosition };
 
@@ -55,6 +55,7 @@ export function createWindowProjectionAdapter(ports: Ports) {
     proof(lease); signal?.throwIfAborted();
     if (lease.busy || pending >= 16) throw failure('Projection read is occupied', 'capacity');
     lease.busy = true; pending++;
+    const settled = Promise.withResolvers<void>(); lease.settled = settled.promise;
     const controller = new AbortController();
     const abort = () => controller.abort(lease.abort.signal.aborted ? lease.abort.signal.reason : signal?.reason);
     lease.abort.signal.addEventListener('abort', abort, { once: true });
@@ -65,10 +66,16 @@ export function createWindowProjectionAdapter(ports: Ports) {
       proof(lease); signal?.throwIfAborted(); return result;
     } finally {
       lease.abort.signal.removeEventListener('abort', abort); signal?.removeEventListener('abort', abort);
-      lease.busy = false; pending--;
+      lease.busy = false; pending--; lease.settled = undefined; settled.resolve();
     }
   }
   return {
+    assertLease(owner: Owner, id: string) { selected(owner, id); },
+    assertHandle(owner: Owner, token: string) {
+      const value = handles.open(token) as PageHandle | FieldHandle;
+      if (!value || !['page', 'field'].includes(value.type)) throw failure('Invalid projection handle');
+      selected(owner, value.lease);
+    },
     async open(owner: Owner, input: WindowLivePosition, budget: WindowBudget, signal?: AbortSignal) {
       // Snapshot the scalar locator before any await. Superseded revisions use
       // their own receipt and are never silently replaced with latest-by-row.
@@ -154,6 +161,9 @@ export function createWindowProjectionAdapter(ports: Ports) {
       else if (!(await ports.releaseOwner(lease.pinOwner, budget, signal)).complete) return;
       leases.delete(id);
     },
+    /** Wait only for actual admitted work, without a cleanup polling timer. */
+    settled(owner: Owner) { return Promise.all([...leases.values()].filter(lease => lease.owner === owner)
+      .map(lease => lease.settled)).then(() => {}); },
     /** One version per call; the host repeats with a new budget until complete.
      * Closing prevents new reads immediately, while capacity stays held until
      * every in-flight read and durable pin release actually settles. */
