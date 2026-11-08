@@ -10,7 +10,7 @@ import { createReactHarness,clickElement,deferred } from '../../../support/testH
 const fixture=vi.hoisted(()=>({host:null as unknown,metadata:null as unknown,context:null as unknown,online:false}))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/integrations/integrations-provider',()=>({IntegrationsProvider:({children}:{children:ReactNode})=>children,useIntegrationsContext:()=>fixture.context}))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/library/library-host',()=>({LibraryHostProvider:({children}:{children:ReactNode})=>children,useLibraryHost:()=>fixture.host}))
-vi.mock('../../../../apps/desktop/src/session/renderer/features/remote-hosts/remote-hosts-store',()=>({remoteHostsStore:{device:()=>({isOnline:fixture.online})}}))
+vi.mock('../../../../apps/desktop/src/session/renderer/features/remote-hosts/remote-hosts-store',()=>({remoteHostsStore:{device:()=>({isOnline:fixture.online,lastSeenAt:null}),connectionState:()=>fixture.online?'connected':'offline'}}))
 vi.mock('../../../../apps/desktop/src/components/assistant/useAssistantPanelIntegration',()=>({useAssistantPanelIntegration:()=>({data:fixture.metadata,error:null,loading:false})}))
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/ui/dialog',()=>({DialogHeader:({children}:{children:ReactNode})=><div>{children}</div>,DialogTitle:({children}:{children:ReactNode})=><h2>{children}</h2>,DialogContentArea:({children}:{children:ReactNode})=><div>{children}</div>,DialogFooter:({children}:{children:ReactNode})=><footer>{children}</footer>}))
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/ui/confirm-button',()=>({ConfirmButton:({children,...props}:ButtonHTMLAttributes<HTMLButtonElement>)=><button {...props}>{children}</button>}))
@@ -54,4 +54,20 @@ it('explains missing form fields instead of leaving a disabled submit button',as
 it.each(['feishu','notion'])('does not start %s authorization after the person closes the dialog during preparation',async id=>{
  const pending=deferred<void>(),f=setup(id,vi.fn(()=>pending.promise))
  try{await f.render();await clickElement(f.h.container.querySelector('footer button:last-child')!);await f.h.render(null);pending.resolve();await f.h.render(null);expect(f.native).not.toHaveBeenCalled();expect(f.success).not.toHaveBeenCalled()}finally{pending.resolve();f.h.cleanup()}
+})
+it('keeps Cancel usable and names the unreachable machine in the title while the form is disabled',async()=>{
+ const f=setup('linear')
+ // A plain library host (no assistant authorization flow): the machine being offline disables the form.
+ const host={...(fixture.host as LibraryHost)};delete (host as {prepareAssistantAction?:unknown}).prepareAssistantAction
+ try{
+  await f.h.render(<IntegrationSetupModal host={host} integration="linear" onSuccess={f.success} onClose={f.close}/>)
+  const status=f.h.container.querySelector('[data-testid="dialog-machine-status"]')
+  expect(status?.getAttribute('data-state')).toBe('device_offline')
+  expect(status?.textContent).toContain('云端')
+  const [cancel,submit]=[...f.h.container.querySelectorAll<HTMLButtonElement>('footer button')]
+  expect(submit!.matches(':disabled')).toBe(true)
+  expect(cancel!.matches(':disabled')).toBe(false)
+  await clickElement(cancel!)
+  expect(f.close).toHaveBeenCalledTimes(1)
+ }finally{f.h.cleanup()}
 })

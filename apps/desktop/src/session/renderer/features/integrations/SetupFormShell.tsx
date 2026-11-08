@@ -5,6 +5,7 @@ import { useToast } from '@renderer/lib/hooks/use-toast';
 import { Button } from '@renderer/lib/ui/button';
 import { ConfirmButton } from '@renderer/lib/ui/confirm-button';
 import { DialogContentArea, DialogFooter } from '@renderer/lib/ui/dialog';
+import { LibraryHostFieldset } from '@renderer/features/library/library-host-scope';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useIntegrationsContext } from './integrations-provider';
 import type { IntegrationFormInput } from './types';
@@ -67,6 +68,7 @@ export function SetupFormShell({
 
   return (
     <>
+      <LibraryHostFieldset>
       <DialogContentArea className="pt-1">
         {children}
         {error ? (
@@ -75,15 +77,18 @@ export function SetupFormShell({
           </p>
         ) : null}
       </DialogContentArea>
+      </LibraryHostFieldset>
       <DialogFooter>
         <Button variant="outline" onClick={onClose}>
           {translate('common.cancel')}
         </Button>
+        <LibraryHostFieldset>
         {/* 「授权配置」:「保存并连接」→「正在验证…」(连上之前要真去对方那边核一遍)。 */}
         <ConfirmButton onClick={() => void handleSubmit()} disabled={isMutating}>
           {isMutating && <LoadingIndicator size="inline" className="mr-2" />}
           {isMutating ? translate('integrations.credentialsVerifying') : translate('integrations.credentialsSubmit')}
         </ConfirmButton>
+        </LibraryHostFieldset>
       </DialogFooter>
     </>
   );

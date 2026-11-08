@@ -19,7 +19,7 @@ import {
 } from '@renderer/lib/ui/dialog';
 import { Input } from '@renderer/lib/ui/input';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { LibraryHostScope } from '@renderer/features/library/library-host-scope';
+import { LibraryHostDialogStatus, LibraryHostFieldset, LibraryHostScope } from '@renderer/features/library/library-host-scope';
 import { useLibraryHost, type LibraryHost } from '@renderer/features/library/library-host';
 import {
   useIntegrationsContext,
@@ -76,6 +76,7 @@ function IntegrationSetupModalBody({ integration, editAccount, onSuccess, onClos
               })
             : translate('integrations.setupTitle')}
         </DialogTitle>
+        <LibraryHostDialogStatus />
       </DialogHeader>
       {detail.error ? <p role="alert">{assistantPanelFailure(detail.error,t)}</p> : detail.loading ? <LoadingIndicator size="inline" /> : null}
       {metadata ? (
@@ -169,6 +170,7 @@ function IntegrationBrowserAuthorization({
 
   return (
     <>
+      <LibraryHostFieldset>
       <DialogContentArea className="pt-1">
         {metadata.auth.methods.map((method) => method.kind === 'mcp-oauth' && method.help
           ? <p key={method.kind} className="text-sm text-foreground-muted">{method.help}</p> : null)}
@@ -188,10 +190,12 @@ function IntegrationBrowserAuthorization({
           </p>
         ) : null}
       </DialogContentArea>
+      </LibraryHostFieldset>
       <DialogFooter>
         <Button variant="outline" onClick={onClose}>
           {translate('common.cancel')}
         </Button>
+        <LibraryHostFieldset>
         <ConfirmButton onClick={() => void start()} disabled={waiting}>
           {waiting ? (
             <LoadingIndicator size="inline" className="mr-2" />
@@ -202,6 +206,7 @@ function IntegrationBrowserAuthorization({
             ? translate('integrations.browserAuthRetry')
             : translate('integrations.browserAuthAction')}
         </ConfirmButton>
+        </LibraryHostFieldset>
       </DialogFooter>
     </>
   );
@@ -320,6 +325,7 @@ function IntegrationCliLogin({
 
   return (
     <>
+      <LibraryHostFieldset>
       <DialogContentArea className="grid gap-3 pt-1">
         {phase === 'waiting' && prompt ? (
           prompt.kind === 'device-link' ? (
@@ -378,10 +384,12 @@ function IntegrationCliLogin({
           </p>
         ) : null}
       </DialogContentArea>
+      </LibraryHostFieldset>
       <DialogFooter>
         <Button variant="outline" onClick={onClose}>
           {translate('common.cancel')}
         </Button>
+        <LibraryHostFieldset>
         {phase === 'waiting' && promptUrl && (prompt?.kind === 'device-link' || method.tool === 'lark-cli') ? (
           <ConfirmButton onClick={() => openUrl(promptUrl)}>
             <ExternalLink className="mr-2 h-4 w-4" />
@@ -397,6 +405,7 @@ function IntegrationCliLogin({
                 : translate('integrations.connectAction')}
           </ConfirmButton>
         )}
+        </LibraryHostFieldset>
       </DialogFooter>
     </>
   );
