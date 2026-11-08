@@ -939,6 +939,19 @@ export async function widgetCheckScopeOf(context, target, injected = {}) {
   }
 }
 
+/** widget_get: a widget's spec by its id, read as this agent through the same registry and checks as references. */
+export async function widgetGetOf(context, widgetId, injected = {}) {
+  const deps = createDeps(context, injected)
+  const unreadable = () => new Error(`widget_get: there is no widget ${widgetId} you can read`)
+  if (typeof widgetId !== 'string' || !widgetId.length || widgetId.includes('\0')) throw unreadable()
+  const found = await readableWidgetOf(deps, widgetId)
+  if (!found) throw unreadable()
+  const { widget, message } = found
+  const height = parseWidgetMessage(message.content)?.height
+  return JSON.stringify({ widget_id: widget.id, chat_id: widget.chat_id, message_id: widget.message_id, app: widget.app, view: widget.view,
+    text: widget.text, ...(height === undefined ? {} : { height }), data: widget.data, sender: widget.created_by })
+}
+
 async function assertReadableMessageReferences(deps, content) {
   for (const { target } of messageReferenceBlocks(content).blocks) {
     const id = target.kind === 'widget' ? target.widgetId : target.messageId

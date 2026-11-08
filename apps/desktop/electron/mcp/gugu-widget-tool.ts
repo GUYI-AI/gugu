@@ -13,7 +13,7 @@ const schema = z.object({
 export type WidgetSendArgs = z.infer<typeof schema>
 
 export function registerGuguWidgetTool(server: McpServer, source: AppSearchSource,
-  send: (args: WidgetSendArgs, content: string) => Promise<string>): void {
+  send: (args: WidgetSendArgs, content: string) => Promise<string>, get: (widgetId: string) => Promise<string>): void {
   const description = 'Send an App view in a chat message. The installed, enabled App must declare this widget view. height overrides the view\'s default. text is the plain preview (1–200 characters); data is immutable JSON, at most 4096 UTF-8 bytes. Does not wake agents. guide_read widgets explains callbacks.'
   assertMcpToolDescriptionWithinBudget('widget_send', description)
   server.registerTool('widget_send', { description, inputSchema: schema }, async args => {
@@ -26,4 +26,8 @@ export function registerGuguWidgetTool(server: McpServer, source: AppSearchSourc
     if (!installed.widgetViews?.some(tab => tab.view === view)) throw new Error(`widget_send: ${app} does not declare widget view ${view}`)
     return { content: [{ type: 'text', text: await send(args, content) }] }
   })
+  const getDescription = 'Read a widget by its widget_id (from widget_send, a gugu-widget:// reference or an App\'s context): its chat, original message, app, view, text, height, data and sender. Read with your own permissions: a widget whose original you cannot read is not found.'
+  assertMcpToolDescriptionWithinBudget('widget_get', getDescription)
+  server.registerTool('widget_get', { description: getDescription, inputSchema: z.object({ widget_id: z.string().min(1) }).strict() },
+    async ({ widget_id }) => ({ content: [{ type: 'text', text: await get(widget_id) }] }))
 }

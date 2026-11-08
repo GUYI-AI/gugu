@@ -108,7 +108,7 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
       ...ACTIVITY_TOOL_DEFS.map((def) => def.name),
       ...SCHEDULE_TOOL_DEFS.map((def) => def.name),
       ...EXTENSION_TOOL_DEFS.map((def) => def.name),
-      'guide_topics', 'guide_read', 'catalog_list', 'catalog_describe', 'catalog_call', 'app_search', 'widget_send',
+      'guide_topics', 'guide_read', 'catalog_list', 'catalog_describe', 'catalog_call', 'app_search', 'widget_send', 'widget_get',
     ]
     for (const name of listed) expect(GUGU_LISTED_TOOLS.has(name), name).toBe(true)
     for (const name of catalog) expect(GUGU_LISTED_TOOLS.has(name), name).toBe(false)
