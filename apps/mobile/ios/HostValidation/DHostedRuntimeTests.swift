@@ -1,5 +1,6 @@
 #if DEBUG && os(iOS) && targetEnvironment(simulator)
 import XCTest
+import Darwin
 import EventKit
 import CryptoKit
 @testable import App
@@ -40,6 +41,76 @@ final class DHostedRuntimeTests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    // Read-only launch input checks; only the parent prepares stable Simulator roots.
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        let environment = ProcessInfo.processInfo.environment
+        guard Bundle.main.bundleIdentifier == "app.gugu.chat",
+              let expectedUDID = environment["GUGU_D_EXPECTED_SIMULATOR_UDID"],
+              UUID(uuidString: expectedUDID) != nil,
+              environment["SIMULATOR_UDID"]?.lowercased() == expectedUDID.lowercased(),
+              let isolationID = environment["GUGU_D_ISOLATION_UUID"],
+              UUID(uuidString: isolationID)?.uuidString.lowercased() == isolationID else {
+            throw GuguHostFailure(code: "D_wrong_test_host", message: "TestHost differs from the owned Simulator launch input")
+        }
+        let container = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            .resolvingSymlinksInPath().standardizedFileURL
+        let dataRoot = container.deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let appParent = dataRoot.appendingPathComponent("Containers/Data/Application", isDirectory: true)
+        guard dataRoot.lastPathComponent == "data",
+              dataRoot.deletingLastPathComponent().lastPathComponent.lowercased() == expectedUDID.lowercased(),
+              container.deletingLastPathComponent().path == appParent.path,
+              UUID(uuidString: container.lastPathComponent) != nil else {
+            throw GuguHostFailure(code: "D_wrong_container", message: "Actual App container escapes the owned Simulator")
+        }
+        let stable = dataRoot.appendingPathComponent("GuguDIsolated", isDirectory: true)
+            .appendingPathComponent(isolationID, isDirectory: true).standardizedFileURL
+        guard environment["GUGU_D_EXPECTED_STABLE_ROOT"] == stable.path,
+              stable.resolvingSymlinksInPath().path == stable.path,
+              let expectedMarkerSHA = environment["GUGU_D_ROOT_MARKER_SHA256"] else {
+            throw GuguHostFailure(code: "D_wrong_stable_root", message: "Stable root launch identity is missing")
+        }
+        var roots: [String: Any] = [:], cRoots: [String: Any] = [:], accessChecks: [String: Bool] = [:]
+        for (key, leaf) in [("GUGU_HOME", "home"), ("GUGU_USER_DATA_DIR", "user-data")] {
+            let expected = stable.appendingPathComponent(leaf, isDirectory: true)
+            guard let raw = environment[key], raw == expected.path,
+                  expected.resolvingSymlinksInPath().path == raw,
+                  let cValue = getenv(key), String(cString: cValue) == raw else {
+                throw GuguHostFailure(code: "D_stale_data_root", message: "Process environment differs from the owned stable root")
+            }
+            let attributes = try FileManager.default.attributesOfItem(atPath: raw)
+            guard attributes[.type] as? FileAttributeType == .typeDirectory,
+                  (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700,
+                  (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(),
+                  access(raw, R_OK | W_OK | X_OK) == 0 else {
+                throw GuguHostFailure(code: "D_invalid_data_root", message: "Root is not owned, private, readable and writable")
+            }
+            let bytes = try Data(contentsOf: expected.appendingPathComponent(".d-root-owner.json"))
+            let markerSHA = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+            let marker = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: String])
+            guard markerSHA == expectedMarkerSHA, marker["ownedUDID"] == expectedUDID,
+                  marker["isolationUUID"] == isolationID else {
+                throw GuguHostFailure(code: "D_wrong_root_marker", message: "Prelaunch root marker differs from launch custody")
+            }
+            roots[key] = raw; cRoots[key] = String(cString: cValue); accessChecks[key] = true
+        }
+        let support = try XCTUnwrap(FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first)
+            .resolvingSymlinksInPath().standardizedFileURL
+        guard support.path.hasPrefix(container.path + "/") else {
+            throw GuguHostFailure(code: "D_wrong_support_root", message: "ApplicationSupport escapes the current App container")
+        }
+        try attach("D-App-prelaunch-root-readback", ["phase": "read-only-before-test-body",
+            "bundleId": Bundle.main.bundleIdentifier ?? "", "pid": ProcessInfo.processInfo.processIdentifier,
+            "expectedSimulatorUDID": expectedUDID, "observedSimulatorUDID": environment["SIMULATOR_UDID"] ?? "",
+            "currentContainer": container.path, "roots": roots, "cEnvironmentRoots": cRoots,
+            "stableRoot": stable.path, "isolationUUID": isolationID, "markerSHA256": expectedMarkerSHA,
+            "markerReadVerified": true, "writeAccessChecked": true, "writeExercisePerformed": false,
+            "readWriteSearchAccess": accessChecks, "privateDirectoryUID": getuid(),
+            "nativeApplicationSupport": support.path,
+            "environmentMutationPerformed": false, "rootCreationPerformed": false])
     }
 
     private func asset() throws -> (Data, String) {
