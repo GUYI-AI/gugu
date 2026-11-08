@@ -150,6 +150,8 @@ export default {
       "daysLater_other": "{{count}} 天后",
       "exhausted": "会员额度与不过期积分都已用完，充值加量包可立即恢复，或{{available}}随周期刷新",
       "exhaustedHeld": "会员额度与不过期积分都已用完（{{credits}} 积分已为进行中的会话预留），充值加量包可立即恢复，或{{available}}随周期刷新",
+      "exhaustedReadonly": "会员额度与不过期积分都已用完，{{available}}随周期刷新",
+      "exhaustedHeldReadonly": "会员额度与不过期积分都已用完（{{credits}} 积分已为进行中的会话预留），{{available}}随周期刷新",
       "hoursLater": "{{count}} 小时后",
       "hoursLater_one": "{{count}} 小时后",
       "hoursLater_other": "{{count}} 小时后",

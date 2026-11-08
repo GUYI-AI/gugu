@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core'
+
 // @@@app-links - shared deploy-time links. The Android download page doubles as the QR landing URL:
 export const GUGU_ANDROID_DOWNLOAD_URL =
   'https://download.gugu.nextmind.space/releases/android/latest/gugu-android.apk'
@@ -25,11 +27,17 @@ export const GUGU_BILLING_URL = 'https://gugu.nextmind.space/dashboard/'
 /** 积分充值直达加量包页;会员管理和账单等入口仍使用面板总览。 */
 export const GUGU_TOPUP_URL = `${GUGU_BILLING_URL}#topup`
 
+/** The first iOS package displays account entitlements without purchase links. */
+export function billingLinksAvailable(): boolean {
+  return !(Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios')
+}
+
 /**
  * 去网页面板(开会员、续费)。三端同一条路:Electron 里 window.open 被主窗口的 setWindowOpenHandler
  * 交给系统浏览器,网页版是用户自己浏览器里的新标签,手机交给系统浏览器。
  * ❌ 任务页那条 `rpc.app.openExternal`:网页版上它由服务器那台机器执行,开不到用户眼前(#7056)。
  */
 export function openBillingPage(): void {
+  if (!billingLinksAvailable()) return
   window.open(GUGU_BILLING_URL, '_blank', 'noopener,noreferrer')
 }

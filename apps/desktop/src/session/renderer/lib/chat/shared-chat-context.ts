@@ -10,6 +10,7 @@ import { chatMentionProvider, registerIssueMentionIcons } from './chat-mention-p
 import { getSessionLocaleSnapshot, subscribeSessionLocale, translateSessionMessage } from '../../localization/locale-store';
 import { subscribeChatNames } from '@/lib/chatSummariesBridge';
 import { chatDisplayName } from './chat-name';
+import { billingLinksAvailable } from '@/lib/appLinks';
 
 let shared: ChatContext | null = null;
 let didPreloadIssueMentionIcons = false;
@@ -49,7 +50,9 @@ export function createSessionChatContext(): ChatContext {
     config: SESSION_CHAT_CONFIG,
     mentionProvider: chatMentionProvider,
     commandProvider: advertisedCommandProvider,
-    translator: translateSessionMessage,
+    translator: (key, values) => translateSessionMessage(
+      key === 'transcript.creditsExhausted' && !billingLinksAvailable()
+        ? 'transcript.creditsExhaustedReadonly' : key, values),
     subscribeTranslator: subscribeSessionLocale,
     // #5048 「我是谁」经 window.__GUGU_SELF_IDENTITY__ 从咕咕壳送进来;桥缺席(独立打开的会话页)= 没人,
     // 投递卡退回信封事实。懒读:桥由 gugu 的 App 在登录态变化时装/更新。

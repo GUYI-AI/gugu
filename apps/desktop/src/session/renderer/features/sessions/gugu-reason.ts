@@ -2,6 +2,7 @@ import { translateSessionMessage } from '@renderer/localization/locale-store';
 // All user-facing failures share the reason catalog and redacted first-line exit below.
 import { guguReasonInText, guguReasonOf, type GuguCatalogReason } from '@gugu/session-core/session-record/contract';
 import type { SessionMessageKey } from '@renderer/localization/messages';
+import { billingLinksAvailable } from '@/lib/appLinks';
 
 /** 原因上的那一个按钮(规格原因表的按钮列);`null` = 只说一句(没有动作能改变它)。 */
 export type GuguReasonAction = 'retry' | 'switch-model' | 'join-membership' | 'sign-in' | null;
@@ -38,6 +39,10 @@ const GUGU_REASONS: Record<GuguCatalogReason, GuguReasonCopy> = {
 };
 
 export function guguReasonCopy(kind: GuguCatalogReason): GuguReasonCopy {
+  if (kind === 'membership-required' && !billingLinksAvailable()) {
+    return { ...GUGU_REASONS[kind], copy: 'guguCatalog.reason.membership-required-readonly',
+      named: 'guguCatalog.namedReason.membership-required-readonly' };
+  }
   return GUGU_REASONS[kind];
 }
 
@@ -45,6 +50,11 @@ type Translate = (key: SessionMessageKey, values?: Record<string, string>) => st
 
 /** 那一句话:说得出模型名就点名「咕咕 X」,说不出就用不带名字的那一句。 */
 export function guguReasonText(kind: GuguCatalogReason, translate: Translate, modelName?: string | null): string {
+  if (kind === 'membership-required' && !billingLinksAvailable()) {
+    return modelName
+      ? translate('guguCatalog.namedReason.membership-required-readonly', { model: translate('composer.platformModelShortName', { model: modelName }) })
+      : translate('guguCatalog.reason.membership-required-readonly');
+  }
   const entry = GUGU_REASONS[kind];
   return entry.named && modelName
     ? translate(entry.named, { model: translate('composer.platformModelShortName', { model: modelName }) })
@@ -75,6 +85,9 @@ export function reasonActions(kind: GuguCatalogReason, handlers: GuguReasonHandl
   const { retry, switchModel, joinMembership } = handlers;
   switch (GUGU_REASONS[kind].action) {
     case 'join-membership':
+      if (!billingLinksAvailable()) {
+        return retry ? [{ kind: 'retry', label: translate('taskError.sessionStartRetry'), run: retry }] : [];
+      }
       return [
         ...(joinMembership ? [{ kind: 'join-membership' as const, label: translate('chat.membershipJoin'), run: joinMembership }] : []),
         ...(retry ? [{ kind: 'joined' as const, label: translate('chat.membershipJoined'), run: retry }] : []),
