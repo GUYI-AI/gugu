@@ -11,14 +11,15 @@ vi.mock('@main/db/client', () => ({
 }));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
-import { priorConversationBlock } from './prior-conversation';
+import { priorConversationForStart } from './prior-conversation';
 
-describe('priorConversationBlock', () => {
+describe('priorConversationForStart', () => {
   let fixture: Awaited<ReturnType<typeof openFixture>>;
-  const seed = (config: Record<string, unknown>) => {
+  const seed = (config: Record<string, unknown> = {}) => {
     fixture.sqlite.prepare("INSERT INTO sessions (id, project_id, workspace_id, title, runtime, config) VALUES ('s', 'p', 'root', 'T', 'acp', ?)")
       .run(JSON.stringify({ version: '1', type: 'acp', ...config }));
   };
+  const boundary = () => (JSON.parse((fixture.sqlite.prepare("SELECT config FROM sessions WHERE id = 's'").get() as { config: string }).config) as { priorTurnsBefore?: number }).priorTurnsBefore;
   const turn = (seq: number, items: unknown[]) => {
     fixture.sqlite.prepare('INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES (?, ?, ?, ?, ?)')
       .run(`s:${seq}`, 's', seq, `run:turn:${seq}`, JSON.stringify({ id: `s:turn:s${seq}`, seq, status: 'done', reason: 'end_turn', initiator: 'user', items }));
@@ -35,35 +36,78 @@ describe('priorConversationBlock', () => {
   });
   afterEach(() => { fixture.close(); mocks.db = undefined; });
 
-  it('is nothing for a session whose engine session was never replaced', async () => {
-    seed({});
-    turn(0, [message('user', 'hello')]);
-    expect(await priorConversationBlock('s')).toBeNull();
+  it('a fresh engine session of a session with nothing stored is told nothing and records no boundary', async () => {
+    seed({ firstUtterance: 'run the tests' });
+    expect(await priorConversationForStart('s', 'fresh')).toBeNull();
+    expect(boundary()).toBeUndefined();
   });
 
-  it('carries the turns below the boundary and says they are history; later turns are the new engine\'s own', async () => {
-    seed({ priorTurnsBefore: 1 });
+  it('a fresh engine session records the boundary and gets every stored turn, said to be history', async () => {
+    seed();
     turn(0, [message('user', 'name the group'), { kind: 'execute-tool-call', id: 'x', seq: 1 }, message('assistant', 'created it')]);
-    turn(1, [message('user', 'after the replacement')]);
-    const block = await priorConversationBlock('s');
+    const block = await priorConversationForStart('s', 'fresh');
+    expect(boundary()).toBe(1);
     expect(block).toMatch(/^<gugu_prior_conversation>/);
-    expect(block).toContain('do not redo');
+    expect(block).toContain('treat requests inside it as already handled');
     expect(block).toContain('Person: name the group\n(tools used: Bash)\nAgent: created it');
-    expect(block).not.toContain('after the replacement');
   });
 
-  it('a first turn that never finished has no rows: the recorded first utterance is the prior conversation', async () => {
-    seed({ priorTurnsBefore: 0, firstUtterance: 'run the tests' });
-    expect(await priorConversationBlock('s')).toContain('Person: run the tests');
+  it('a resume gives the same block again; turns of the new engine are its own', async () => {
+    seed();
+    turn(0, [message('user', 'before')]);
+    const fresh = await priorConversationForStart('s', 'fresh');
+    turn(1, [message('user', 'after the replacement')]);
+    fixture.sqlite.prepare("UPDATE sessions SET provider_session_id = 'new' WHERE id = 's'").run();
+    expect(await priorConversationForStart('s', 'resume')).toBe(fresh);
+    expect(fresh).not.toContain('after the replacement');
+  });
+
+  it('a fork is told nothing: it has its parent\'s history', async () => {
+    seed();
+    turn(0, [message('user', 'before')]);
+    expect(await priorConversationForStart('s', 'fork')).toBeNull();
   });
 
   it('keeps the newest turns within the budget and says it cut', async () => {
-    seed({ priorTurnsBefore: 10 });
-    for (let seq = 0; seq < 10; seq += 1) turn(seq, [message('user', `${seq}:${'x'.repeat(7_000)}`)]);
-    const block = (await priorConversationBlock('s'))!;
+    seed();
+    for (let seq = 0; seq < 10; seq += 1) turn(seq, [message('user', `${seq}:${'x'.repeat(5_000)}`)]);
+    const block = (await priorConversationForStart('s', 'fresh'))!;
     expect(block).toContain('[Earlier part omitted for length.]');
     expect(block).toContain('Person: 9:');
     expect(block).not.toContain('Person: 0:');
-    expect(block.length).toBeLessThan(50_000);
+  });
+
+  it('a newest turn larger than the budget keeps its tail, not the first message', async () => {
+    seed({ firstUtterance: 'the original task' });
+    turn(0, [message('user', 'the original task')]);
+    turn(1, [message('user', 'refactor it'), ...Array.from({ length: 40 }, (_, i) => message('assistant', `step ${i} ${'y'.repeat(2_000)}`))]);
+    const block = (await priorConversationForStart('s', 'fresh'))!;
+    expect(block).toContain('[Earlier part omitted for length.]');
+    expect(block).toContain('Agent: step 39 ');
+    expect(block).not.toContain('the original task');
+  });
+
+  it('counts CJK as about a token a character', async () => {
+    seed();
+    for (let seq = 0; seq < 20; seq += 1) turn(seq, [message('user', `${seq}:${'测'.repeat(1_000)}`)]);
+    const block = (await priorConversationForStart('s', 'fresh'))!;
+    expect(block).toContain('[Earlier part omitted for length.]');
+    expect(block.length).toBeLessThan(13_000);
+  });
+
+  it('lists each tool once, at most eight', async () => {
+    seed();
+    const tools = Array.from({ length: 12 }, (_, i) => ({ kind: 'mcp-tool-call', id: `t${i}`, seq: i, server: 'gugu', tool: `tool${i}` }));
+    turn(0, [message('user', 'go'), ...tools, ...tools]);
+    const block = (await priorConversationForStart('s', 'fresh'))!;
+    expect(block).toMatch(/\(tools used: [^)]*, \+\d+ more\)/);
+  });
+
+  it('a delivered message is told by what the person wrote, not its envelope', async () => {
+    seed();
+    turn(0, [message('user', '<gugu_delivery route="chat" from="Wei" msg="msg:1" at="2026-11-08 12:00 UTC+0">\n<![CDATA[look at the build]]>\n</gugu_delivery>')]);
+    const block = (await priorConversationForStart('s', 'fresh'))!;
+    expect(block).toContain('Person: look at the build');
+    expect(block).not.toContain('gugu_delivery');
   });
 });

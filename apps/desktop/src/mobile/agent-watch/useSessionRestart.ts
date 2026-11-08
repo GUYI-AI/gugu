@@ -51,8 +51,8 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
       try {
         const next = await recoverTimelineRead(() => machineRpc(deviceId, local).sessions.lifeView(sessionId), recoveryAbort.signal)
         if (!active) return
-        // Replacing the engine session starts nothing unless input was waiting: resting after it is its success.
-        if (replaced.current === attempt && next.kind === 'dormant' && next.hold === null) {
+        // Replacing the engine session starts nothing unless input was waiting: resting after it, held or not, is its success.
+        if (replaced.current === attempt && next.kind === 'dormant') {
           try { await ready.current() } catch (cause) { if (active) setError({ key, message: messageForUser(cause) }) }
           if (active) setAttempt(null)
           return
@@ -66,7 +66,8 @@ export function useSessionRestart({ deviceId, projectId, sessionId, missing, onl
             if (active) setAttempt(null)
             return
           }
-          if (next.kind === 'dormant' && next.hold !== null) { setAttempt(null); return }
+          // Resting after the host moved settles it too, also when the acknowledgement was lost on the way back.
+          if (next.kind === 'dormant') { setAttempt(null); return }
         }
       } catch (cause) {
         if (!active) return

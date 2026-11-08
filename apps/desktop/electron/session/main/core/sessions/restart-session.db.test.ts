@@ -32,7 +32,7 @@ describe('restartSession on a session-life session', () => {
     mocks.calls = [];
     fixture = await openFixture('empty');
     mocks.db = fixture.db;
-    const config = JSON.stringify({ version: '1', type: 'acp', agentDisplayName: 'T', firstUtterance: '把测试跑一遍', initialQueue: [{ text: '把测试跑一遍', origin: 'manual' }] });
+    const config = JSON.stringify({ version: '1', type: 'acp', agentDisplayName: 'T', providerSessionState: 'missing', firstUtterance: '把测试跑一遍', initialMessageId: 'first', initialQueue: [{ text: '把测试跑一遍', origin: 'manual' }] });
     fixture.sqlite.exec(`
       INSERT INTO workspaces (id, type, kind, location, path, key) VALUES ('root', 'local', 'project-root', 'local', '/repo', 'root');
       INSERT INTO projects (id, name, path, repository_workspace_id) VALUES ('p', 'P', '/repo', 'root');
@@ -59,12 +59,21 @@ describe('restartSession on a session-life session', () => {
     expect(config.firstUtterance).toBe('把测试跑一遍');
   });
 
-  it('marks where the prior conversation ends, each time', async () => {
+  it('replaces only an engine session that is missing: a second click (another window, the phone) does nothing', async () => {
+    expect(await restartSession('p', 's')).toEqual({ replaced: true });
+    fixture.sqlite.prepare("UPDATE sessions SET provider_session_id = 'new-engine' WHERE id = 's'").run();
+    mocks.calls = [];
+    expect(await restartSession('p', 's')).toEqual({ replaced: false });
+    expect(mocks.calls).toEqual([]);
+    expect(stored().providerSessionId).toBe('new-engine');
+  });
+
+  it('a first turn still queued (the engine died on its first dispatch) keeps its message id, so it can still be delivered', async () => {
+    const { enqueuePending } = await import('./session-pending');
+    enqueuePending({ sessionId: 's', messageId: 'first', text: '把测试跑一遍', kind: 'ordinary', turn: { kind: 'chat-page-first-turn' } });
     await restartSession('p', 's');
-    expect(stored().config.priorTurnsBefore).toBe(0);
-    fixture.sqlite.prepare("INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES ('s:6', 's', 6, 't', '{}')").run();
-    await restartSession('p', 's');
-    expect(stored().config.priorTurnsBefore).toBe(7);
+    expect(stored().config.initialMessageId).toBe('first');
+    expect(mocks.calls).toEqual(['reconfigure:s', 'start:s:retry']);
   });
 
   it('input already waiting was really said: it starts the session and is delivered', async () => {

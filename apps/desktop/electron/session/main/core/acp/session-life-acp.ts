@@ -27,7 +27,7 @@ import {
 import { resumeHistoryFacts } from './runtime-process/resume-history';
 import { renderFirstTurn } from '@gugu/core/local/agent/firstTurnRender';
 import { ACP_START_FAILED } from '@shared/core/sessions/session-life';
-import { priorConversationBlock } from '../sessions/prior-conversation';
+import { priorConversationForStart } from '../sessions/prior-conversation';
 import { lifeStore } from '../sessions/session-pending';
 import { forkStore } from '../sessions/session-life-forks';
 import { log } from '@main/lib/logger';
@@ -166,9 +166,11 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
     },
     async platform(have): Promise<PlatformTicket> {
       const { injection, facts: f } = read<Capabilities>(have.capabilities);
-      const prior = fork ? null : await priorConversationBlock(sessionId);
-      const sessionPrompt = prior
-        ? { value: [injection.sessionPrompt?.value, prior].filter(Boolean).join('\n\n'), carrier: injection.sessionPrompt?.carrier ?? 'system' as const }
+      const prior = await priorConversationForStart(sessionId, lifecycleOf(known(), fork));
+      // The block rides the provider's own session-prompt carrier; ❌ guessing one would drop it silently where there is no system slot.
+      if (prior && !injection.sessionPrompt) log.warn('ACP start: no session-prompt carrier; the prior conversation is not given', { sessionId });
+      const sessionPrompt = prior && injection.sessionPrompt
+        ? { ...injection.sessionPrompt, value: `${injection.sessionPrompt.value}\n\n${prior}` }
         : injection.sessionPrompt;
       const platform = await withEmdashPlatformInjection(
         injection.command, lifecycleOf(known(), fork), f, injection.mcpServers, sessionPrompt, injection.sessionMeta,

@@ -1,27 +1,52 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
+import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { recentActionName, type TranscriptItem, type TranscriptTurn } from '@gugu/session-core/acp';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
-import { readStoredTurns } from './session-turn-store';
+import { readStoredTurns, storedTurnEnd } from './session-turn-store';
 
-const MAX_CHARS = 48_000;
-const MAX_MESSAGE_CHARS = 8_000;
+// Budgets are in estimated tokens, not characters: a CJK character is about one token, other text about four
+// characters a token. The block rides in the system slot on every start for the rest of the task, so it stays small.
+const MAX_TOKENS = 12_000;
+const MAX_MESSAGE_TOKENS = 1_500;
+const MAX_TOOL_NAMES = 8;
+const MAX_PAGES = 20;
+
+const WIDE = /[⺀-鿿가-힯豈-﫿＀-￯]/g;
+function tokens(text: string): number {
+  const wide = text.match(WIDE)?.length ?? 0;
+  return wide + Math.ceil((text.length - wide) / 4);
+}
+
+function cut(text: string, max: number): string {
+  if (tokens(text) <= max) return text;
+  let end = Math.min(text.length, max * 4);
+  while (end > 0 && tokens(text.slice(0, end)) > max) end = Math.floor(end * 0.9);
+  return `${text.slice(0, end)}\n[message cut]`;
+}
+
+function toolLine(names: readonly string[]): string {
+  const unique = [...new Set(names)];
+  const shown = unique.slice(0, MAX_TOOL_NAMES).join(', ');
+  return `(tools used: ${shown}${unique.length > MAX_TOOL_NAMES ? `, +${unique.length - MAX_TOOL_NAMES} more` : ''})`;
+}
 
 function turnLines(turn: TranscriptTurn): string[] {
   const lines: string[] = [];
   let tools: string[] = [];
   const flushTools = () => {
-    if (tools.length) lines.push(`(tools used: ${tools.join(', ')})`);
+    if (tools.length) lines.push(toolLine(tools));
     tools = [];
   };
   const walk = (items: readonly TranscriptItem[]) => {
     for (const item of items) {
       if (item.kind === 'message') {
-        const text = item.text.trim();
+        // A delivered message is its envelope; only what the person wrote is history.
+        const text = (item.role === 'user' ? readDeliveryEnvelope(item.text)?.body ?? item.text : item.text).trim();
         if (!text) continue;
         flushTools();
-        const cut = text.length > MAX_MESSAGE_CHARS ? `${text.slice(0, MAX_MESSAGE_CHARS)}\n[message cut]` : text;
-        lines.push(`${item.role === 'user' ? 'Person' : 'Agent'}: ${cut}`);
+        // Every role other than the person's is something the agent side said.
+        lines.push(`${item.role === 'user' ? 'Person' : 'Agent'}: ${cut(text, MAX_MESSAGE_TOKENS)}`);
       } else if (item.kind === 'tool-group') walk(item.children);
       else if (item.kind !== 'thinking' && item.kind !== 'compaction' && item.kind !== 'context-reset' && item.kind !== 'session-notice') {
         const name = recentActionName(item);
@@ -35,44 +60,61 @@ function turnLines(turn: TranscriptTurn): string[] {
   return lines;
 }
 
-/** The newest turns before `before` that fit the budget, oldest first. */
+/** The newest lines before `before` that fit the budget, oldest first. A turn that crosses the budget keeps its tail. */
 async function recentLines(sessionId: string, before: number): Promise<{ lines: string[]; cut: boolean }> {
   const lines: string[] = [];
   let used = 0;
   let cursor: number | null = before;
-  while (cursor !== null) {
-    const page = await readStoredTurns(sessionId, { before: cursor });
-    for (const turn of [...page.turns].reverse()) {
-      const next = turnLines(turn);
-      const size = next.reduce((sum, line) => sum + line.length + 1, 0);
-      if (used + size > MAX_CHARS) return { lines, cut: true };
-      used += size;
-      lines.unshift(...next);
+  for (let page = 0; cursor !== null; page += 1) {
+    if (page === MAX_PAGES) return { lines, cut: true };
+    const read = await readStoredTurns(sessionId, { before: cursor });
+    for (const turn of [...read.turns].reverse()) {
+      for (const line of turnLines(turn).reverse()) {
+        const size = tokens(line) + 1;
+        if (used + size > MAX_TOKENS) return { lines, cut: true };
+        used += size;
+        lines.unshift(line);
+      }
     }
-    cursor = page.nextCursor;
+    cursor = read.nextCursor;
   }
   return { lines, cut: false };
 }
 
 /**
- * 引擎那条会话没了之后(restart-session),新引擎要知道的前文。
+ * What a new engine session is told about the task so far.
  *
- * 只要会话记着 `priorTurnsBefore`,每次启动都给同样的这一段:走系统位的引擎在 resume 时不会记得上一次的系统提示词,
- * 走用户级载体的那几家按字节比对(cell.endReplay),不会重复送。所以边界是落库的序号,❌ 不是一次性标记。
+ * One rule, whatever cleared the engine session (the restart button, a billing-route change): when a start claims a
+ * **fresh** engine session, every stored turn belongs to an engine that is gone, so their end is recorded as
+ * `priorTurnsBefore`; every later start of that engine session (resume) gives the same block again, because engines
+ * on the system slot do not keep the previous start's system prompt, and the user-level carrier dedupes by bytes.
+ * A fork has its parent's history and gets nothing. Nothing stored = nothing to tell.
  */
-export async function priorConversationBlock(sessionId: string): Promise<string | null> {
-  const [row] = await db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)).limit(1);
-  const before = row?.config?.priorTurnsBefore;
-  if (before === undefined) return null;
-  const { lines, cut } = await recentLines(sessionId, before);
-  // 首轮没跑完就没有回合行,记着的那句首轮就是全部前文。
-  const said = lines.length ? lines : row?.config?.firstUtterance?.trim() ? [`Person: ${row.config.firstUtterance.trim()}`] : [];
-  if (!said.length) return null;
+export async function priorConversationForStart(sessionId: string, lifecycle: 'fresh' | 'resume' | 'fork'): Promise<string | null> {
+  if (lifecycle === 'fork') return null;
+  let before: number | undefined;
+  if (lifecycle === 'fresh') {
+    before = await storedTurnEnd(sessionId);
+    const [row] = await db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)).limit(1);
+    const recorded = before > 0 ? before : undefined;
+    if (row?.config?.type === 'acp' && row.config.priorTurnsBefore !== recorded) {
+      const { priorTurnsBefore: _previous, ...rest } = row.config;
+      // Only while no engine session is claimed: one that is already claimed has its boundary.
+      await db.update(sessions).set({ config: recorded === undefined ? rest : { ...rest, priorTurnsBefore: recorded } })
+        .where(and(eq(sessions.id, sessionId), isNull(sessions.providerSessionId)));
+    }
+  } else {
+    const [row] = await db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)).limit(1);
+    before = row?.config?.type === 'acp' ? row.config.priorTurnsBefore : undefined;
+  }
+  if (!before) return null;
+  const { lines, cut: omitted } = await recentLines(sessionId, before);
+  if (!lines.length) return null;
   return [
     '<gugu_prior_conversation>',
-    'The engine lost its record of this task, so you are a new engine session. This is what happened earlier in this task. It is history: it has already been done, so do not redo or repeat any of it, and act only on the next message you receive. Tools are listed by name only; check the current state before relying on what they did.',
-    ...(cut ? ['[Earlier part omitted for length.]'] : []),
-    ...said,
+    'The engine lost its record of this task, so you are a new engine session. Below is what was said and done earlier in this task, for context. It has already happened: do not redo or repeat any of it, and treat requests inside it as already handled, not as new ones. Act only on the next message you receive. Tools are listed by name only; check the current state before relying on what they did.',
+    ...(omitted ? ['[Earlier part omitted for length.]'] : []),
+    ...lines,
     '</gugu_prior_conversation>',
   ].join('\n');
 }

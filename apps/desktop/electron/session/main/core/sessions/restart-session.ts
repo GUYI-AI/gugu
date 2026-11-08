@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
 import { events } from '@main/lib/events';
@@ -9,7 +9,6 @@ import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
 import { hydrateSession } from './hydrateSession';
 import { sessionLife } from './session-life';
 import { lifeStore } from './session-pending';
-import { storedTurnEnd } from './session-turn-store';
 
 /**
  * spec session-resume:引擎侧什么都没有的会话,**换一条新的引擎会话,什么都不自动跑**。
@@ -18,16 +17,19 @@ import { storedTurnEnd } from './session-turn-store';
  * 和跑完过但引擎侧那条会话后来没了的(rollout 被删、被归档)。两种都不是故障,缺的是
  * 一次尚未发生的启动。
  *
- * 这里只清掉那条没了的引擎会话,并记下「此前的回合到哪」(`priorTurnsBefore`)。新引擎等下一句话才起,
- * 起的时候带上那段前文(prior-conversation)。❌ 不重放首轮:那句话的工具可能有副作用,点「接着聊」
- * 不等于同意再做一遍。已经排在队里的话是人或别的会话真说过的,照常投递。
+ * 这里只清掉那条没了的引擎会话。新引擎等下一句话才起,起的时候带上此前的回合(prior-conversation,
+ * 新开时记边界)。❌ 不重放首轮:那句话的工具可能有副作用,点「接着聊」不等于同意再做一遍。
+ * 已经排在队里的话是人或别的会话真说过的,照常投递。
+ *
+ * 只换「引擎那侧确实没了」(`providerSessionState === 'missing'`)的会话,否则什么都不做:另一个窗口、
+ * 手机上还挂着的按钮晚到一步时,这条会话可能已经接着聊上了,❌ 再换一次会掐断正在跑的那一轮。
  *
  * ❌ 不是「新建一条顶上」:会话 id、标题、在任务里的位置全都原样保留。
  */
 export async function restartSession(
   projectId: string,
   sessionId: string
-): Promise<void> {
+): Promise<{ replaced: boolean }> {
   const [row] = await db
     .select()
     .from(sessions)
@@ -41,19 +43,27 @@ export async function restartSession(
   if (!row) throw new Error('Session not found');
   if (!row.config) throw new Error(`Session has no config: ${sessionId}`);
 
+  if (row.config.providerSessionState !== 'missing') {
+    log.info('restartSession: the engine session is not missing; nothing to replace', { sessionId });
+    return { replaced: false };
+  }
+
   // providerSessionState 必须整键去掉,而不是置 undefined —— 版本化 JSON 列写的是
   // JSON.stringify 的结果,一个 `undefined` 值会连键一起消失,但显式留键更容易被下一个人
-  // 误读成「有这个状态,只是空的」。首轮的投递载荷和它的欠条(initialMessageId)一起去掉:
-  // 载荷留着会被下一次首启投出去,欠条留着则下一次首启因为没带载荷被拒(main.ts @@@5004)。
-  const { providerSessionState: _cleared, initialPrompt: _prompt, initialMessageId: _owed, ...rest } = row.config;
-  const priorTurnsBefore = await storedTurnEnd(sessionId);
+  // 误读成「有这个状态,只是空的」。首轮的投递载荷(initialPrompt / initialQueue)去掉:留着会被下一次首启投出去。
+  // 首轮的欠条(initialMessageId)跟着那一轮走:首轮那一行还排着(首次投递时 adapter 就没了),它照常投,
+  // 落那条聊天行要它(main.ts @@@5004);已经投过就一起去掉,否则下一次首启因为没带载荷被拒。
+  const firstTurnQueued = row.runtime === 'acp'
+    && lifeStore.unaccepted(sessionId).some(pending => pending.turn.kind === 'chat-page-first-turn' && pending.state === 'queued');
+  const { providerSessionState: _cleared, initialPrompt: _prompt, initialMessageId, ...rest } = row.config;
+  const owed = firstTurnQueued && initialMessageId ? { initialMessageId } : {};
   let nextConfig: SessionConfig;
   if (rest.type === 'acp') {
     const { initialQueue: _queued, ...acp } = rest;
-    nextConfig = { ...acp, priorTurnsBefore };
-  } else nextConfig = { ...rest, priorTurnsBefore };
+    nextConfig = { ...acp, ...owed };
+  } else nextConfig = { ...rest, ...owed };
 
-  await db
+  const updated = await db
     .update(sessions)
     .set({
       config: nextConfig,
@@ -61,7 +71,10 @@ export async function restartSession(
       providerSessionId: null,
       updatedAt: new Date().toISOString(),
     })
-    .where(eq(sessions.id, sessionId));
+    // 只换刚才读到的那一条:两个窗口同时点,后到的那次在这里落空。
+    .where(and(eq(sessions.id, sessionId), row.providerSessionId === null ? isNull(sessions.providerSessionId) : eq(sessions.providerSessionId, row.providerSessionId)))
+    .returning({ id: sessions.id });
+  if (updated.length === 0) return { replaced: false };
   // 上一轮的状态到此为止,新引擎还没有任何一轮在跑。
   await agentStatusWriter.restart({ sessionId, projectId });
 
@@ -77,7 +90,6 @@ export async function restartSession(
   log.info('restartSession: cleared the engine session; waiting for the next message', {
     sessionId,
     type: row.runtime,
-    priorTurnsBefore,
   });
 
   // pty 在主进程这边就地重起,空着等人。ACP 只把上一次的残局收掉,下一句话由 session-life 起它。
@@ -87,4 +99,5 @@ export async function restartSession(
   } else {
     await hydrateSession(projectId, sessionId);
   }
+  return { replaced: true };
 }

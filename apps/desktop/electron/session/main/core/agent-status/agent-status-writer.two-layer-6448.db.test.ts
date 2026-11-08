@@ -214,9 +214,9 @@ describe('#6448 基础态 + 附属态 + 功能布尔', () => {
       agentStatusDetail: 'running',
     });
     expect(outputs.length).toBe(before + 1);
-    expect(outputs.at(-1)).toMatchObject({ status: 'idle', running: false });
-    expect(row()).toMatchObject({ status: 'idle', seen: 1 });
-    await deliver(event('start'));
+    expect(outputs.at(-1)).toEqual({ status: 'working', detail: 'running', running: true, background: null });
+    expect(row()).toEqual({ status: 'working', detail: 'running', seen: 1 });
+    await deliverNoop(event('start'));
     await deliver(event('stop'));
     expect(row()).toEqual({ status: 'idle', detail: 'done', seen: 0 });
   });
@@ -225,10 +225,13 @@ describe('#6448 基础态 + 附属态 + 功能布尔', () => {
     seed('working');
     await deliver(event('stop'));
     expect(row()).toEqual({ status: 'idle', detail: 'done', seen: 0 });
+    const before = outputs.length;
     await agentStatusWriter.restart({ sessionId: cid, projectId: 'p1' });
-    expect(outputs.at(-1)).toEqual({ status: 'working', detail: 'running', running: true, background: null });
-    expect(row()).toEqual({ status: 'working', detail: 'running', seen: 1 });
-    await deliverNoop(event('start'));
+    expect(outputs.length).toBe(before + 1);
+    expect(outputs.at(-1)).toMatchObject({ status: 'idle', running: false });
+    expect(row()).toMatchObject({ status: 'idle', seen: 1 });
+    await deliver(event('start'));
+    expect(row()).toMatchObject({ status: 'working' });
     await deliver(event('stop'));
     expect(row()).toEqual({ status: 'idle', detail: 'done', seen: 0 });
   });
