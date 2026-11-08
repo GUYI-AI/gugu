@@ -28,6 +28,12 @@ enum GuguIOSCloudOperation {
     case sendMessage([String: Any])
     case birthGroup(String)
     case joinBirthGroup(chatId: String, agentId: String)
+    case resolveChat(String)
+    case resolveUser(String)
+    case chatFacts(chatId: String, agentId: String)
+    case chatMembers(chatId: String, agentId: String)
+    case chatList(agentId: String)
+    case chatHistory(chatId: String, agentId: String, before: Int?, limit: Int, thread: String?)
 }
 
 private final class GuguIOSBrokerRedirects: NSObject, URLSessionTaskDelegate {
@@ -187,6 +193,18 @@ final class GuguIOSCloudBroker {
             let numeric = !target.isEmpty && target.allSatisfy { $0.isASCII && $0.isNumber }
             return Spec(path: "rest/v1/chats", method: "GET", schema: "chat", query: [.init(name: "select", value: "id,kind,status"), .init(name: numeric ? "public_id" : "id", value: "eq.\(numeric ? target : try id(target))")])
         case .joinBirthGroup(let chat, let agent): return rpc("add_group_agent", ["p_chat_id": try id(chat), "p_agent_user_id": try id(agent), "p_message": NSNull(), "p_as_user_id": b.ownerId, "p_as_task": true], schema: "chat")
+        case .resolveChat(let address):
+            guard !address.isEmpty, address.allSatisfy({ $0.isASCII && $0.isNumber }), Int64(address) != nil else { throw Self.failure("invalid_args", "Chat public ID must be numeric") }
+            return Spec(path: "rest/v1/chats", method: "GET", schema: "chat", query: [.init(name: "select", value: "id"), .init(name: "public_id", value: "eq.\(address)")])
+        case .resolveUser(let address):
+            guard !address.isEmpty, address.allSatisfy({ $0.isASCII && $0.isNumber }), Int64(address) != nil else { throw Self.failure("invalid_args", "Gugu public ID must be numeric") }
+            return Spec(path: "rest/v1/active_users", method: "GET", query: [.init(name: "select", value: "id,display_name,type,gugu_number"), .init(name: "gugu_number", value: "eq.\(address)")])
+        case .chatFacts(let chat, let agent): return rpc("chat_facts", ["p_chat_id": try id(chat), "p_as_user_id": try id(agent)], schema: "chat")
+        case .chatMembers(let chat, let agent): return rpc("list_member_ids", ["p_chat_id": try id(chat), "p_as_user_id": try id(agent)], schema: "chat")
+        case .chatList(let agent): return rpc("list_my_chats_as", ["p_as_user_id": try id(agent)], schema: "chat")
+        case .chatHistory(let chat, let agent, let before, let limit, let thread):
+            guard (1...100).contains(limit) else { throw Self.failure("invalid_args", "History limit must be between 1 and 100") }
+            return rpc("message_history_as", ["p_chat_id": try id(chat), "p_as_user_id": try id(agent), "p_before_seq": before as Any? ?? NSNull(), "p_limit": limit, "p_thread_root_id": try thread.map(id) as Any? ?? NSNull()], schema: "chat")
         }
     }
 

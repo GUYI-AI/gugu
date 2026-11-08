@@ -5,7 +5,7 @@ import CryptoKit
 /// UUID nibble substitutions. IDs are never regenerated when a reply is lost.
 enum GuguIOSStableID {
     static func strings(_ parts: String...) throws -> String { try values(parts) }
-    private static func values(_ parts: [Any]) throws -> String {
+    static func values(_ parts: [Any]) throws -> String {
         let bytes = try JSONSerialization.data(withJSONObject: parts, options: [.withoutEscapingSlashes])
         let hex = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
         let chars = Array(hex)

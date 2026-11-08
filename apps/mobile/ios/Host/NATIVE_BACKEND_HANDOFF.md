@@ -20,6 +20,14 @@ Private subscription/heartbeat success cannot turn this into ready. Unsupported
 device commands and attachment methods fail explicitly. Keep the product flag
 off. No actual cloud/model/EventKit/iOS App result is claimed by author tests.
 
+The following message-core slice adds `GuguIOSMessageBridge` and named existing
+chat operations. It is not yet installed into the Pi bridge or an inbox pump.
+Its agent-as reads, current group-rule ledger, source-membership checks and
+stable-ID outbox are separately exercised on APFS. Reopening the store sends
+nothing; an explicit retry after a lost ACK reuses the same message ID. Complete
+context lineage, inbox envelope admission, attachments and full integration
+remain required before removing the delivery blocker.
+
 ## App construction
 
 Use the one App-owned `GuguIOSHostLifecycle` also passed to OwnerAccess/calendar.
