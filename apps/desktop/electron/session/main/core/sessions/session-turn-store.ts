@@ -3,7 +3,7 @@ export { renumberStoredTurn } from './session-turn-identity';
 import { findToolImage, trimCursorPageForTransport, trimTurnsForTransport } from '@gugu/session-core/session-record';
 import { and, asc, desc, eq, gte, like, lt, notLike, sql } from 'drizzle-orm';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
-import { db } from '@main/db/client';
+import { db, sqlite } from '@main/db/client';
 import { sessionTurns } from '@main/db/schema';
 import { randomUUID } from 'node:crypto';
 import { activitySignal } from '../activity/signals';
@@ -15,6 +15,9 @@ import { ownerNotificationEpoch, rewindOwnerNotificationState, publishOwnerNotif
 import { persistWithTurnSettlement } from './turn-settlement';
 import { events } from '@main/lib/events';
 import { sessionTurnSettledChannel, type StoredSettledTurn } from '@shared/core/sessions/sessionEvents';
+import { commitWindowReceipt, prepareWindowCommitWrite, type WindowCommitCapture } from '../session-timeline/window-commit-write';
+import type { WindowCommitReceipt } from '../session-timeline/window-commit-receipt';
+import { deliverWindowCommit } from '../session-timeline/window-commit-delivery';
 
 /**
  * 会话历史的落盘（#5381）。
@@ -52,20 +55,33 @@ export type CommittedTurnSource = 'live' | 'replay' | 'revision' | 'backfill';
  * `backfill`(更早那一轮被后台命令的终态补了内容,#6582)落盘与 `revision` 同一条路:按 turn id 找行、整轮替换。
  */
 const persistenceTails = new Map<string, Promise<void>>();
-type PersistInput = { sessionId: string; source: CommittedTurnSource; turn: TranscriptTurn };
+type PersistInput = { sessionId: string; source: CommittedTurnSource; turn: TranscriptTurn; windowCapture?: WindowCommitCapture };
 
 export function persistCommittedTurn(input: PersistInput): Promise<void> {
+  if (input.windowCapture) input = { ...input, windowCapture: { ...input.windowCapture, cursor: { ...input.windowCapture.cursor } } };
   const previous = persistenceTails.get(input.sessionId) ?? Promise.resolve();
-  const write = () => persistWithTurnSettlement(input, () => persistCommittedTurnNow(input),
-    receipt => events.emit(sessionTurnSettledChannel, receipt));
+  const write = async () => {
+    let captured: WindowCommitReceipt | undefined, phaseError: unknown, phaseFailed = false;
+    await persistWithTurnSettlement(input, async () => { captured = await persistCommittedTurnNow(input, error => { phaseError = error; phaseFailed = true; }); },
+      receipt => events.emit(sessionTurnSettledChannel, receipt));
+    if (phaseFailed) throw phaseError;
+    return captured;
+  };
   const next = previous.then(write, write);
-  persistenceTails.set(input.sessionId, next);
-  return next.finally(() => {
-    if (persistenceTails.get(input.sessionId) === next) persistenceTails.delete(input.sessionId);
+  const tail = next.then(() => undefined, () => undefined);
+  persistenceTails.set(input.sessionId, tail);
+  void tail.then(() => {
+    if (persistenceTails.get(input.sessionId) === tail) persistenceTails.delete(input.sessionId);
   });
+  return deliverWindowCommit(next, input.windowCapture?.committed);
 }
 
-async function persistCommittedTurnNow(input: PersistInput): Promise<void> {
+async function persistCommittedTurnNow(input: PersistInput, observationFailed: (error: unknown) => void): Promise<WindowCommitReceipt | undefined> {
+  const observeCommit = (receipt: WindowCommitReceipt | undefined) => {
+    if (!receipt) return;
+    try { input.windowCapture?.phase?.('canonical_committed', receipt); }
+    catch (error) { observationFailed(error); }
+  };
   if (input.source === 'revision' || input.source === 'backfill') {
     const [row] = await db
       .select({ id: sessionTurns.id, seq: sessionTurns.seq })
@@ -79,13 +95,17 @@ async function persistCommittedTurnNow(input: PersistInput): Promise<void> {
     if (!row) throw new Error(`Cannot revise missing stored turn: sessionId=${input.sessionId} turnId=${input.turn.id} source=${input.source}`);
     // 改口的可能是结局(进程退出改写 prompt_failed),也可能是内容(落定后才到的尾巴,#6191)
     // ⇒ 整轮按库里的序号重编号后替换,❌ 只挑某个字段写。
+    const revised = renumberStoredTurn(input.turn, input.sessionId, row.seq), serialized = JSON.stringify(revised);
+    const captured = input.windowCapture ? await prepareWindowCommitWrite(sqlite, { sessionId: input.sessionId, referenceId: input.turn.referenceId,
+      rowId: row.id, storedSeq: row.seq, insert: false, serialized, capture: input.windowCapture }) : undefined;
     const publish = db.transaction(tx => {
-      const revised = renumberStoredTurn(input.turn, input.sessionId, row.seq);
-      tx.update(sessionTurns).set({ data: JSON.stringify(revised) }).where(eq(sessionTurns.id, row.id)).run();
+      tx.update(sessionTurns).set({ data: serialized }).where(eq(sessionTurns.id, row.id)).run();
+      if (captured) commitWindowReceipt(sqlite, captured);
       return noteNativeConversationReplies(input.sessionId, revised, input.turn, tx);
     });
+    observeCommit(captured);
     publish?.();
-    return;
+    return captured;
   }
   if (input.source === 'replay') {
     const stored = await storedTurnCount(input.sessionId);
@@ -96,6 +116,9 @@ async function persistCommittedTurnNow(input: PersistInput): Promise<void> {
   // 之后的一段，直接拿来当键必然与库里已有的行撞号。
   const next = await nextSeq(input.sessionId);
   const turn = renumberStoredTurn(input.turn, input.sessionId, next);
+  const serialized = JSON.stringify(turn);
+  const captured = input.windowCapture ? await prepareWindowCommitWrite(sqlite, { sessionId: input.sessionId, referenceId: input.turn.referenceId,
+    rowId: `${input.sessionId}:${next}`, storedSeq: next, insert: true, serialized, capture: input.windowCapture }) : undefined;
   const inserted = db.transaction(tx => {
     const result = tx.insert(sessionTurns)
     .values({
@@ -105,10 +128,11 @@ async function persistCommittedTurnNow(input: PersistInput): Promise<void> {
       // turn_id 记**这一行来自引擎的哪一轮**(运行时原始 turn id);库里自己的 id 在 data 里(`:turn:sN`)。
       // 界面据此判断「引擎里新提交的那一轮是否已经落库」—— 按身份去重,❌ 不按条数(#5381 评审 #2/#3)。
       turnId: input.turn.id,
-      data: JSON.stringify(turn),
+      data: serialized,
     })
     .onConflictDoNothing()
     .returning({ seq: sessionTurns.seq }).all();
+    if (result.length && captured) commitWindowReceipt(sqlite, captured);
     const publish = !result.length ? undefined : input.source === 'live'
       ? noteNativeConversationReplies(input.sessionId, turn, input.turn, tx)
       : noteNativeConversationHistory(input.sessionId, turn, tx);
@@ -116,6 +140,7 @@ async function persistCommittedTurnNow(input: PersistInput): Promise<void> {
       ? queueNativeConversationInbox(input.sessionId, tx) : false;
     return { rows: result, publish, inbox };
   });
+  if (inserted.rows.length) observeCommit(captured);
   inserted.publish?.();
   if (inserted.inbox) publishNativeConversationInbox();
   if (input.source === 'replay' && inserted.rows.length) didFillReplay(input.sessionId, input.turn.seq);
@@ -126,6 +151,7 @@ async function persistCommittedTurnNow(input: PersistInput): Promise<void> {
     activitySignal({ event_id: `session.turn_recorded:${randomUUID()}`, kind: 'session.turn_recorded',
       session_id: input.sessionId, turn_seq: next, occurred_at: input.turn.endedAt ?? null });
   }
+  return inserted.rows.length ? captured : undefined;
 }
 
 /**

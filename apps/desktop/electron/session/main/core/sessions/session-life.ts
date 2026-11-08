@@ -418,6 +418,22 @@ export class SessionLife {
     return entry ? this.drain(entry) : Promise.resolve();
   }
 
+  /** A stopped history read may not cross a start, even if it stops again before
+   * the first page arrives. Keep the entry identity as well as its published
+   * version so delete/recreate and account restarts cannot pass an ABA check.
+   * This deliberately does not read or serialize the pending input projection. */
+  async stoppedReadFence(sessionId: string): Promise<(() => boolean) | null> {
+    const entry = this.entry(sessionId);
+    if (entry.life.kind !== 'dormant' || this.leaving) return null;
+    const version = entry.version, epoch = this.epoch;
+    await this.drain(entry);
+    if (this.entries.get(sessionId) !== entry || entry.version !== version || this.epoch !== epoch
+      || entry.life.kind !== 'dormant' || this.leaving)
+      throw Object.assign(new Error('The stopped session changed while preparing history'), { code: 'scope_changed' });
+    return () => this.entries.get(sessionId) === entry && entry.version === version
+      && this.epoch === epoch && !this.leaving && entry.life.kind === 'dormant';
+  }
+
   private async drain(entry: Entry): Promise<void> {
     for (;;) {
       const pending = entry.effects;
