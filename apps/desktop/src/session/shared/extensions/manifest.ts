@@ -772,7 +772,7 @@ export function programLine(server: ExtensionMcpServerContribution): string {
 
 export class ExtensionManifestError extends Error {
   constructor(public readonly issues: string[]) {
-    super(`Invalid App manifest:\n- ${issues.join('\n- ')}`);
+    super(`Invalid App manifest: ${issues.join('; ')}`);
     this.name = 'ExtensionManifestError';
   }
 }

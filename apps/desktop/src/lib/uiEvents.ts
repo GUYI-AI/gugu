@@ -44,7 +44,6 @@ export const UI_EVENTS = {
   // 手机的全局设置与资料页打开同一份连接应用流程。
   openAssistantConnectors: '__open_assistant_connectors',
   openContact: '__open_contact',
-  openPhoneListSearch: '__open_phone_list_search',
   sessionpageShareAgentUnavailable: '__sessionpage_share_agent_unavailable',
   // #6646 会话页要人当场决定一件事(装扩展的同意框就画在它里面):不在任务 tab 上就切过去。
   sessionpageReveal: '__sessionpage_reveal',

@@ -56,11 +56,7 @@ export type InstalledExtensionsList = NonNullable<Awaited<ReturnType<InstalledEx
 
 export type ExtensionDisclosureLevel = 'full' | 'progressive';
 
-/**
- * The preinstalled workspace App (apps/desktop/preinstalled-apps/workspace; 群文件夹 / 文件夹 to people, chatFolderName.ts). It stays an App in code, but it is
- * the chat's own folder, not something one installs or removes, so the App lists leave it out (owner 10-10).
- */
-export const WORKSPACE_APP_ID = 'workspace';
+export { WORKSPACE_APP_ID } from '@shared/extensions/app-runtime-protocol';
 
 /** An App as the far-left rail draws it: its icon (or, absent, its first letter) and the page it opens. */
 export interface RailApp {

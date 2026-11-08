@@ -77,6 +77,7 @@ export async function callOnSessionMachine(
   method: string,
   args: Record<string, unknown>,
   workedByAgent: boolean,
+  handed?: AppCallAction['handed'],
 ): Promise<{ there: false } | { there: true; value: unknown }> {
   const { otherMachines } = await import('@main/core/sessions/session-family');
   const machine = typeof sessionId === 'string' ? await sessionMachine(sessionId)
@@ -88,7 +89,7 @@ export async function callOnSessionMachine(
   if (workedByAgent && method === 'callProgram') {
     throw Object.assign(new Error('A page an agent works calls its program on this computer only; this session is on another machine'), { code: 'invalid' });
   }
-  const action = appCallAction(sessionId, app.manifest.version, method, args, randomUUID());
+  const action = appCallAction(sessionId, app.manifest.version, method, args, randomUUID(), handed);
   const tooLarge = overCallLimit('call', action, action);
   if (tooLarge) throw tooLarge;
   try {
@@ -127,7 +128,7 @@ export async function answerAppCall(caller: RemoteAppCaller, action: AppCallActi
   const result = (async () => {
     await admit(caller, action);
     reached = true;
-    const value = await machineVerbs[action.method as MachineVerb | PlaceVerb](caller.extensionId, action.args, action.session_id ? { sessionId: action.session_id } : {});
+    const value = await machineVerbs[action.method as MachineVerb | PlaceVerb](caller.extensionId, action.args, action.session_id ? { sessionId: action.session_id } : {}, action.handed ?? null);
     const tooLarge = overCallLimit('answer', action, value);
     if (tooLarge) throw tooLarge;
     log.info('[app-programs] a call done for a page on another machine', { device: caller.deviceId, app: caller.extensionId, session: action.session_id, method: action.method });

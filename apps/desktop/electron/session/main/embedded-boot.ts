@@ -436,8 +436,9 @@ export async function bootEmdashModule(ipcMain: IpcMain, discovery?: Pick<Sessio
   const devWs = await maybeStartDevWsHost()
   // #6264 别的桌面经设备连接(SSH / 咕咕云)用这台机器的会话页宿主 —— 与本机窗口同一张路由表(host-ws/device-session-host.ts)。
   const deviceHost = installDeviceSessionHost({ appVersion: () => app.getVersion() })
-  // 看着这台机器上会话的那几台电脑(订阅随连接生灭):open_in_tab 的 tab 开到它们那里(host-ws/device-pane-relay.ts)。
-  if (HEADLESS_SERVER) installDevicePaneRelay(deviceHost, sharedRemotePaneRoute())
+  // 看着这台机器上会话的那几台电脑(订阅随连接生灭,host-ws/device-pane-relay.ts):每台机器都记 —— 空闲回收据此
+  // 不停别的电脑正看着的会话(install-idle-reclaim.ts)。tab 推过去只在 server 上(上面的 opener);桌面开在自己面板。
+  installDevicePaneRelay(deviceHost, sharedRemotePaneRoute())
   await bootSessionHostCore({
     hostIpc: composeHostIpc(devWs ? [electronIpc, deviceHost, devWs] : [electronIpc, deviceHost]),
     browserFeatures: true,

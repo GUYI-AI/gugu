@@ -53,7 +53,7 @@ vi.mock('@main/core/workspaces/workspace-runtime', () => ({
   },
 }));
 
-const { removeAppFile, forwardTargets, downloadAppFile, entryPath, revealAppFile, listAppFiles, writeAppFileChunk, readAppFileText, openAppFileIn, watchAppFile, watchAppFolder, FORWARD_MAX_BYTES } = await import('./app-files');
+const { removeAppFile, forwardTargets, downloadAppFile, entryPath, revealAppFile, listAppFiles, writeAppFileChunk, readAppFileText, openAppFileIn, openWithTarget, watchAppFile, watchAppFolder, FORWARD_MAX_BYTES } = await import('./app-files');
 const { events } = await import('@main/lib/events');
 const { appFileWatchElsewhereChannel, workingCopyMovedChannel } = await import('@shared/events/appEvents');
 const { releaseWorkingCopies } = await import('./working-copy-files');
@@ -126,7 +126,7 @@ describe('forward', () => {
 
   it('the file a page was handed needs nothing', async () => {
     fs.writeFileSync(path.join(f.root, 'mine.txt'), 'mine');
-    const handed = { pageId: 7, extensionId: 'reader', handed: { workspace, id: 'mine.txt' } } as never;
+    const handed = { pageId: 7, extensionId: 'reader', handed: { workspace, id: 'mine.txt' }, personOpened: true } as never;
     const detail = await forwardTargets(handed, { refs: [{ workspace, id: 'mine.txt' }] }) as { copies: { bytes: Uint8Array }[] };
     expect(Buffer.from(detail.copies[0]!.bytes).toString()).toBe('mine');
   });
@@ -402,7 +402,7 @@ describe('reveal', () => {
 });
 
 describe('reveal and Open in, to a program of this computer', () => {
-  const handedPage = (id: string) => ({ pageId: 7, extensionId: 'reader', handed: { workspace, id } }) as never;
+  const handedPage = (id: string) => ({ pageId: 7, extensionId: 'reader', handed: { workspace, id }, personOpened: true }) as never;
 
   it('a page with no file capability reaches neither', async () => {
     fs.writeFileSync(path.join(f.root, 'a.txt'), 'x');
@@ -421,6 +421,23 @@ describe('reveal and Open in, to a program of this computer', () => {
     expect(f.openIn).not.toHaveBeenCalled();
     await openAppFileIn(handedPage(file), { ref: { workspace, id: file }, app: 'vscode' });
     expect(f.openIn).toHaveBeenCalledWith({ app: 'vscode', path: file });
+  });
+
+  it('a file outside opened for an agent or an App, not by the person: not revealed, not opened in a program or another tab', async () => {
+    f.capabilities.add('files:read');
+    const file = path.join(outside, 'mine.txt');
+    fs.writeFileSync(file, 'x');
+    // The tab names the file (`handed`), but the host opened it for an agent (`byHost`): no `personOpened`.
+    const agentOpened = { pageId: 7, extensionId: 'reader', handed: { workspace, id: file } } as never;
+    const ref = { workspace, id: file };
+    await expect(revealAppFile(agentOpened, { ref })).rejects.toThrow(/only as the file a person opened/);
+    await expect(openAppFileIn(agentOpened, { ref, app: 'vscode' })).rejects.toThrow(/only as the file a person opened/);
+    await expect(openWithTarget(agentOpened, { ref })).rejects.toThrow(/only as the file a person opened/);
+    expect(f.shown).toEqual([]);
+    expect(f.openIn).not.toHaveBeenCalled();
+    // The same file, opened by the person: revealed.
+    await revealAppFile(handedPage(file), { ref });
+    expect(f.shown).toEqual([file]);
   });
 
   it('Open in does not pass through a link out of the working copy, or to protected storage', async () => {
@@ -442,11 +459,38 @@ describe('reveal and Open in, to a program of this computer', () => {
   });
 });
 
+describe('reading a file outside the working copy', () => {
+  it('a page, or the agent working it, reads no absolute path it was not handed; the handed one reads, through a link too', async () => {
+    f.capabilities.add('files:read');
+    const file = path.join(outside, 'notes.md');
+    fs.writeFileSync(file, 'outside');
+    fs.symlinkSync(file, path.join(outside, 'link.md'));
+    const agentPage = { pageId: 7, extensionId: 'reader', handed: null, asAgent: 'agent-of-someone' } as never;
+    for (const named of [file, path.join(outside, 'link.md')]) {
+      await expect(readAppFileText(page(), { ref: { workspace, id: named } })).rejects.toThrow(DENIED);
+      await expect(readAppFileText(agentPage, { ref: { workspace, id: named } })).rejects.toThrow(DENIED);
+      const handed = { pageId: 7, extensionId: 'reader', handed: { workspace, id: named }, personOpened: true } as never;
+      expect((await readAppFileText(handed, { ref: { workspace, id: named } })).content).toBe('outside');
+    }
+  });
+
+  it('a link in the working copy to a file outside is not followed, by the page or for the file it was handed', async () => {
+    f.capabilities.add('files:read');
+    const key = path.join(outside, 'id_ed25519');
+    fs.writeFileSync(key, 'canary');
+    fs.symlinkSync(key, path.join(f.root, 'keys.txt'));
+    await expect(readAppFileText(page(), { ref: { workspace, id: 'keys.txt' } })).rejects.toThrow(/outside this workspace/);
+    const named = path.join(f.root, 'keys.txt');
+    const handed = { pageId: 7, extensionId: 'reader', handed: { workspace, id: named }, personOpened: true } as never;
+    await expect(readAppFileText(handed, { ref: { workspace, id: named } })).rejects.toThrow(/outside this workspace/);
+  });
+});
+
 describe('saving a file', () => {
   it('a file outside the working copy, handed to the page, saves with no capability', async () => {
     const file = path.join(outside, 'mine.txt');
     fs.writeFileSync(file, 'outside');
-    const handed = { pageId: 7, extensionId: 'reader', handed: { workspace, id: file } } as never;
+    const handed = { pageId: 7, extensionId: 'reader', handed: { workspace, id: file }, personOpened: true } as never;
     let saved = '';
     await downloadAppFile(handed, { ref: { workspace, id: file } }, null, undefined, (at) => { saved = at; });
     expect(saved).toBe(f.dialogFile);

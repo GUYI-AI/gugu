@@ -336,6 +336,73 @@ describe('an enqueuing host (session-life)', () => {
     expect(cloud.markReadCalls).toEqual([{ chatId: chat, messageId: row(1).id }, { chatId: chat, messageId: row(2).id }])
   })
 
+  // A read receipt the host writes after acceptance runs outside any pull, and the real host (session-life) does not wait
+  // for it. A network error or 5xx schedules a bounded re-pull of its own; a pull succeeding does not reset it.
+  describe('a failed host read receipt', () => {
+    const host = (cloud: FakeCloud, markRead: AgentInboxReaderDeps['markRead']) => {
+      const accepted = new Set<string>()
+      const delivered: string[] = []
+      let pulls = 0
+      const { deps } = makeDeps(cloud, {
+        markRead,
+        fetchUnread: async (input) => { pulls += 1; return cloud.fetchUnread(input) },
+        // The host delivers a new row once; for every accepted row (new, or seen again) it writes the receipt without waiting.
+        inject: async (input) => {
+          const sources = input.sources ?? []
+          for (const source of sources) if (!accepted.has(source.row.id)) { accepted.add(source.row.id); delivered.push(source.row.id) }
+          void markInboxRowsRead(AGENT, sources, deps).catch(() => undefined)
+          return 'enqueued'
+        },
+      })
+      return { deps, delivered, pulls: () => pulls }
+    }
+    const failing = (status: number | 'network') => Object.assign(status === 'network' ? new TypeError('fetch failed') : new Error('mark_read_on_deliver failed'), status === 'network' ? {} : { status })
+
+    it('is written by a re-pull without another message, and the row is delivered once', async () => {
+      vi.useFakeTimers()
+      try {
+        const cloud = cloudWith(1)
+        let failNext = true
+        const { deps, delivered } = host(cloud, async (input) => {
+          if (failNext) { failNext = false; throw failing('network') }
+          await cloud.markRead(input)
+        })
+        await pullAgentInbox(AGENT, deps)
+        await vi.advanceTimersByTimeAsync(0)
+        expect(cloud.readRows.has(`${row(1).id}:${AGENT}`)).toBe(false)
+        await vi.advanceTimersByTimeAsync(1_000)
+        await vi.waitFor(() => expect(cloud.readRows.has(`${row(1).id}:${AGENT}`)).toBe(true))
+        expect(delivered).toEqual([row(1).id])
+      } finally { vi.useRealTimers() }
+    })
+
+    it('a receipt that keeps failing with a 5xx re-pulls a bounded number of times, even though every pull succeeds', async () => {
+      vi.useFakeTimers()
+      try {
+        const cloud = cloudWith(1)
+        const { deps, delivered, pulls } = host(cloud, async () => { throw failing(503) })
+        await pullAgentInbox(AGENT, deps)
+        await vi.advanceTimersByTimeAsync(10 * 60_000)
+        // The first pull, then one re-pull per backoff round (1, 2, 4, 8, 16 s), then nothing more.
+        expect(pulls()).toBe(1 + 5)
+        await vi.advanceTimersByTimeAsync(10 * 60_000)
+        expect(pulls()).toBe(1 + 5)
+        expect(delivered).toEqual([row(1).id])
+      } finally { vi.useRealTimers() }
+    })
+
+    it('a refusal that is neither a network error nor a 5xx is not retried', async () => {
+      vi.useFakeTimers()
+      try {
+        const cloud = cloudWith(1)
+        const { deps, pulls } = host(cloud, async () => { throw failing(403) })
+        await pullAgentInbox(AGENT, deps)
+        await vi.advanceTimersByTimeAsync(10 * 60_000)
+        expect(pulls()).toBe(1)
+      } finally { vi.useRealTimers() }
+    })
+  })
+
   it('a rejected row is terminal while earlier queued rows remain unread', async () => {
     const cloud = cloudWith(1, 2)
     cloud.post({ ...row(3), id: `msg:${row(3).id}` })

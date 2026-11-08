@@ -86,7 +86,8 @@ export const EXTENSION_THEME_CHANNEL = 'gugu-ext:theme';
 export const EXTENSION_TOOL_CONFINEMENT_API_VERSION = 29;
 // 30: source-aware page history; navigation.go(-1|1) and context navigation availability.
 // 31: `gugu.cloud` (app-cloud-core.ts), an App's own part of the cloud, and `gugu.pickAgent`, the person's pick of one of their agents.
-export const EXTENSION_API_VERSION = 31;
+// 32: a person's `getContext().operator` carries their own `guguNumber`.
+export const EXTENSION_API_VERSION = 32;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
@@ -167,6 +168,12 @@ export interface ExtensionWorkspace {
  * name is done in this one's.
  */
 export type ExtensionOperator = { kind: 'person' } | { kind: 'agent'; id: string };
+/**
+ * API 32: a person's page also says who that person is by 咕咕号 — the signed-in account's own, the number people add and
+ * @ them by. Absent until the host has looked it up (a context update follows); `null` when the account has none or it
+ * could not be read (say so).
+ */
+export type ExtensionContextOperator = { kind: 'person'; guguNumber?: number | null } | { kind: 'agent'; id: string };
 
 /**
  * Where this surface sits right now (真源原则 13): read-only facts, no permission needed. Where a page is open decides
@@ -209,7 +216,7 @@ export interface ExtensionHostContext {
   /** API26: untrusted, immutable initial data from the sender of a message. */
   widget?: { messageId: string; data: Record<string, unknown>; sender: string | null };
   /** Who is working this page (`user:<uuid>` for an agent). Absent on a page nobody draws — the background page, a program. */
-  operator?: ExtensionOperator;
+  operator?: ExtensionContextOperator;
   /** BCP-47 tag of the interface language the user is reading. */
   locale: string;
   /** Whether the host is currently painting light or dark. */
@@ -513,6 +520,8 @@ export type ExtensionHostEvent =
    * the same capability checks as anything else.
    */
   | { type: 'command'; commandId: string }
+  /** The host's Back, given to the page that claimed it (`navigationClaimBack`). */
+  | { type: 'back' }
   /**
    * 后台实例发给视图的一条消息。
    *
@@ -692,6 +701,8 @@ export const BRIDGE_VERBS = {
   /** Facts about where this surface sits. */
   getContext: { needs: null },
   navigationGo: { needs: null, only: 'page' },
+  /** The page holds a Back step of its own (a folder inside the App): the host's Back goes to it first (`onBack`). */
+  navigationClaimBack: { needs: null, only: 'page' },
   showContextMenu: { needs: null, only: 'page' },
   /**
    * What the app is showing right now.

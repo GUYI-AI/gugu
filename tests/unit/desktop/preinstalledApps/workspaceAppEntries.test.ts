@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest'
+import { listedIn } from './folderList'
 import { until } from '../../../support/awaitCondition'
 
 const now = Date.parse('2026-10-25T12:00:00Z')
@@ -50,7 +51,7 @@ const gugu = {
     // Asked as a row's menu opens (a list carries no delete answer); the rig answers from its fixtures.
     canDelete: vi.fn(async (files: unknown) => [files].flat().map((file) => (file as { canDelete?: boolean }).canDelete === true)),
     viewPreferences: vi.fn(async () => ({ showAppData: false })),
-    list: vi.fn(async () => entries),
+    list: vi.fn(async (place?: { folder?: string }) => listedIn(entries, place)),
     onChanged: vi.fn((_place: unknown, fn: typeof filesChanged) => { filesChanged = fn; return () => {} }),
     // Only what the host hands this page (context.file) is opened here; no file service in this rig.
     open: vi.fn(async () => { throw new Error('rig: no file service here') }),
@@ -190,19 +191,20 @@ describe('workspace App: what the old workspace panel did', () => {
     const lists = gugu.files.list.mock.calls.length
     const opens = gugu.files.open.mock.calls.length
     $('upload').click()
-    await vi.waitFor(() => expect(gugu.files.list.mock.calls.length).toBe(lists + 1))
+    // The top read again: it and 「附件」, whose files are shown with it.
+    await vi.waitFor(() => expect(gugu.files.list.mock.calls.length).toBe(lists + 2))
     expect(gugu.files.upload).toHaveBeenLastCalledWith({ chat: 'chat-1' }) // every call names its chat (真源原则 13)
     expect(banner()).toBe('')
 
     gugu.files.upload.mockRejectedValueOnce(Object.assign(new Error('上限 25 MiB'), { code: 'too-large' }))
     $('upload').click()
     await vi.waitFor(() => expect(banner()).toBe('文件太大：上限 25 MiB'))
-    expect(gugu.files.list.mock.calls.length).toBe(lists + 2)
+    expect(gugu.files.list.mock.calls.length).toBe(lists + 4)
 
     // One binary file arrives: it is in the list, the page stays on what it showed.
     gugu.files.upload.mockResolvedValueOnce([entries[1]])
     $('upload').click()
-    await vi.waitFor(() => expect(gugu.files.list.mock.calls.length).toBe(lists + 3))
+    await vi.waitFor(() => expect(gugu.files.list.mock.calls.length).toBe(lists + 6))
     expect(gugu.files.open).toHaveBeenCalledTimes(opens)
   })
 

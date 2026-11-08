@@ -5,7 +5,7 @@ import { BlockStackView } from '@session-chat/components/primitives/BlockStackVi
 import { clipTrackedHeight, isCardAnimating } from '@session-chat/components/primitives/card-clip';
 import { GenericFileIcon, IconStop, ImageOffIcon } from '@session-chat/components/primitives/icons';
 import type { StackLayout } from '@session-chat/core/compose';
-import type { Measured, RenderCtx } from '@session-chat/core/define';
+import type { Measured, MeasureCtx, RenderCtx } from '@session-chat/core/define';
 import { layoutBlockStack } from '@session-chat/core/layout/block-stack';
 import { blockPlainText } from '@session-chat/core/markdown/plain-text';
 import { pxTokens } from '@session-chat/styles/px-tokens';
@@ -104,11 +104,14 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
   });
 
   const innerWidth = () => (mCtx() ? userInnerWidth(availableWidth(), vars()) : 0);
+  // One parse path for layout and copy text: a full parse drops the streaming record, so every
+  // chunk would re-parse the reply and remount its settled blocks (and lose a selection in them).
+  const parse = (ctx: MeasureCtx) => (props.data.streaming ? ctx.caches.parseBlocksStreaming : ctx.caches.parseBlocks)(props.data.id, props.data.text);
 
   const stack = createMemo<Measured<StackLayout> | null>(() => {
     const ctx = mCtx();
     if (!ctx) return null;
-    const blocks = props.data.streaming ? ctx.caches.parseBlocksStreaming(props.data.id, props.data.text) : ctx.caches.parseBlocks(props.data.id, props.data.text);
+    const blocks = parse(ctx);
     if (blocks.length === 0) return null;
     const innerCtx = { ...ctx, width: innerWidth() };
     return layoutBlockStack(blocks, innerCtx, { isCollapsed: ctx.isCollapsed });
@@ -123,7 +126,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
     const v = vars();
     if (!ctx) return v.collapsedMaxH;
     const innerW = userInnerWidth(availableWidth(), v);
-    const blocks = props.data.streaming ? ctx.caches.parseBlocksStreaming(props.data.id, props.data.text) : ctx.caches.parseBlocks(props.data.id, props.data.text);
+    const blocks = parse(ctx);
     // 还在流、一个字没到:先占一行的气泡;收口了还没正文(只有附件)就没有气泡。
     if (blocks.length === 0) return props.data.streaming ? ctx.theme.fonts.body.lineHeight + 2 * v.userCardPadY + 2 * v.cardBorder : 0;
     const innerCtx = { ...ctx, width: innerW };
@@ -168,7 +171,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
   const plainText = () => {
     const ctx = mCtx();
     if (!ctx) return props.data.text;
-    return ctx.caches.parseBlocks(props.data.id, props.data.text).map(blockPlainText).join('\n\n');
+    return parse(ctx).map(blockPlainText).join('\n\n');
   };
   const edit = () => {
     if (props.data.guguDelivery) return undefined;

@@ -43,8 +43,8 @@ export function notOnSessionMachine(manifest: Pick<ExtensionManifest, 'contribut
 }
 
 /** The one action a page's call travels in. `callId` names this call: sent again after a lost answer, it joins the first. */
-export function appCallAction(target: string | { deviceId: string }, version: string, method: string, args: Record<string, unknown>, callId: string): AppCallAction {
-  return { action: 'app_call', call_id: callId, ...(typeof target === 'string' ? { session_id: target } : { device_id: target.deviceId }), version, method, args }
+export function appCallAction(target: string | { deviceId: string }, version: string, method: string, args: Record<string, unknown>, callId: string, handed?: AppCallAction['handed']): AppCallAction {
+  return { action: 'app_call', call_id: callId, ...(typeof target === 'string' ? { session_id: target } : { device_id: target.deviceId }), version, method, args, ...(handed ? { handed } : {}) }
 }
 
 const bytesOf = (value: unknown) => new TextEncoder().encode(JSON.stringify(value ?? null)).byteLength

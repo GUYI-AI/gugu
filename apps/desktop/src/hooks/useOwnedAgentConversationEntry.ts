@@ -1,7 +1,7 @@
 import { hostOwnedAgentResources, resumeOwnedAgentResources, suspendOwnedAgentResources } from '@/lib/ownedAgentResources'
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge'
 import type { NativeComposerDraft } from '@/lib/nativeComposerHandoff'
-import { appendToDraft, useChatStore } from '@/store/chatContext'
+import { appendToDraft, useChatStoreReader } from '@/store/chatContext'
 import { composeTaskDraft } from '@/lib/composeDraft'
 import { useCallback, useEffect, useRef } from 'react'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
@@ -34,15 +34,14 @@ async function openFileInTask(target: Awaited<ReturnType<typeof ownedAgentConver
 
 /** Ownership is checked before looking up a private timeline. An async open cannot cross an account switch. */
 export function useOwnedAgentConversationEntry(input: {
-  ownerId: string; chats: readonly ChatItem[]; contacts: readonly ContactUser[]; mobile: boolean; onOpen: () => void
+  ownerId: string; chats: () => readonly ChatItem[]; contacts: () => readonly ContactUser[]; mobile: boolean; onOpen: () => void
 }): (chatId: string | undefined, peerId?: string, draft?: string | NativeComposerDraft, sourceChatId?: string, purpose?: 'resource') => boolean {
-  const { drafts, writeDraft, draftAttachments, setDraftAttachments, identitiesById, setActiveChatId } = useChatStore('drafts', 'writeDraft', 'draftAttachments', 'setDraftAttachments', 'identitiesById', 'setActiveChatId')
-  const draftState = useRef({ drafts, writeDraft, draftAttachments, setDraftAttachments })
-  draftState.current = { drafts, writeDraft, draftAttachments, setDraftAttachments }
+  // Read at open time: subscribing here re-rendered the whole shell on every draft write and identity update.
+  const readChats = useChatStoreReader()
   // The account IM repository already retains canonical ownership. Cold offline
   // entry must not depend on the network-only contact relationship refresh.
-  const current = useRef({ ...input, identitiesById, setActiveChatId })
-  current.current = { ...input, identitiesById, setActiveChatId }
+  const current = useRef({ ...input, readChats })
+  current.current = { ...input, readChats }
   const generation = useRef(0)
   const cancelGroupRequest = useRef<GroupParticipantRequest | undefined>(undefined)
   useEffect(() => () => { ++generation.current; cancelGroupRequest.current?.() }, [input.ownerId])
@@ -50,15 +49,15 @@ export function useOwnedAgentConversationEntry(input: {
     const state = current.current
     const asked = ++generation.current
     cancelGroupRequest.current?.()
-    const peer = state.chats.find(chat => chat.id === chatId && (chat.kind === 'dm' || chat.kind === 'ai'))?.peer_user_id ?? peerId
-    const contact = state.contacts.find(one => one.id === peer) ?? (peer ? state.identitiesById[peer] : undefined)
+    const store = state.readChats()
+    const peer = state.chats().find(chat => chat.id === chatId && (chat.kind === 'dm' || chat.kind === 'ai'))?.peer_user_id ?? peerId
+    const contact = state.contacts().find(one => one.id === peer) ?? (peer ? store.identitiesById[peer] : undefined)
     if (!contact || !isOwnedAgent(contact, state.ownerId) || contact.id === readAssistantShellBridge()?.getSnapshot()?.assistant?.id) return false
     if (purpose && chatId && !state.mobile) suspendOwnedAgentResources(state.ownerId, chatId)
-    const old = draftState.current
     const incoming: NativeComposerDraft | undefined = typeof draft === 'string' ? { text: draft } : draft
-    const text = incoming ? incoming.append ? appendToDraft(chatId ? old.drafts?.[chatId] ?? '' : '', incoming.text) : incoming.text : chatId ? old.drafts?.[chatId] ?? '' : ''
-    const carried = [...(chatId ? old.draftAttachments?.[chatId] ?? [] : []), ...(incoming?.files ?? []).map(file => ({ id: crypto.randomUUID(), file, kind: file.type.startsWith('image/') ? 'image' as const : 'file' as const }))]
-    if (incoming && chatId) { old.writeDraft(chatId, text); old.setDraftAttachments(chatId, carried) }
+    const text = incoming ? incoming.append ? appendToDraft(chatId ? store.drafts?.[chatId] ?? '' : '', incoming.text) : incoming.text : chatId ? store.drafts?.[chatId] ?? '' : ''
+    const carried = [...(chatId ? store.draftAttachments?.[chatId] ?? [] : []), ...(incoming?.files ?? []).map(file => ({ id: crypto.randomUUID(), file, kind: file.type.startsWith('image/') ? 'image' as const : 'file' as const }))]
+    if (incoming && chatId) { store.writeDraft(chatId, text); store.setDraftAttachments(chatId, carried) }
     const api = desktopIpc()
     void ownedAgentConversation(contact.id, {
       // Read when opening, not subscribed: the shell that calls this re-rendered on every device heartbeat. Same list the
@@ -73,7 +72,7 @@ export function useOwnedAgentConversationEntry(input: {
       // The phone task is a pushed layer. Keep its IM opener selected underneath
       // so Back returns there instead of exposing an empty agent DM.
       if (!sourceChatId && !state.mobile) {
-        if (chatId) state.setActiveChatId(chatId)
+        if (chatId) store.setActiveChatId(chatId)
         state.onOpen()
       }
       let groupParticipantRequestId: string | undefined
@@ -89,7 +88,7 @@ export function useOwnedAgentConversationEntry(input: {
         const row = target.kind === 'remote' ? target : { session: { conversationId: target.sessionId, projectId: target.projectId } as import('@gugu/session-core/session-record/contract').SessionpageSessionSummary }
         await composeTaskDraft(row, text, state.mobile, carried.map(one => one.file), ...requestArgs)
         if (chatId && asked === generation.current && current.current.ownerId === state.ownerId) {
-          const latest = draftState.current
+          const latest = current.current.readChats()
           if (latest.drafts?.[chatId] === text) latest.writeDraft(chatId, '')
           const ids = new Set(carried.map(one => one.id))
           latest.setDraftAttachments(chatId, (latest.draftAttachments?.[chatId] ?? []).filter(one => !ids.has(one.id)))
@@ -118,6 +117,6 @@ export function useOwnedAgentConversationEntry(input: {
     })
     return true
   }, [])
-  useEffect(() => installOwnedAgentEntry({ open, owns: id => id !== readAssistantShellBridge()?.getSnapshot()?.assistant?.id && isOwnedAgent(current.current.contacts.find(contact => contact.id === id) ?? current.current.identitiesById[id], current.current.ownerId) }), [open, input.ownerId, input.contacts, identitiesById])
+  useEffect(() => installOwnedAgentEntry({ open, owns: id => id !== readAssistantShellBridge()?.getSnapshot()?.assistant?.id && isOwnedAgent(current.current.contacts().find(contact => contact.id === id) ?? current.current.readChats().identitiesById[id], current.current.ownerId) }), [open, input.ownerId])
   return open
 }

@@ -2120,7 +2120,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       // 与 #3500 同形）。composer 上那颗是另一条路，它一直是通的，于是这颗死按钮
       // 被它掩护着看不出来。⇒ 这里补上；同时 UserMessageCard 改成没接回调就不渲染。
       canRevertMessage: (itemId) => (store?.isRejectedInput(itemId) ?? false) || (historyActionsEnabled && (store?.canRevertMessage(itemId) ?? false)),
-      canDiscardSend: (itemId) => store?.isRejectedInput(itemId) ?? false,
+      canDiscardSend: (itemId) => store?.canDiscardSend(itemId) ?? false,
       onDiscardSend: (itemId) => store?.discardRejectedInput(itemId),
       onEditMessage: ({ itemId }) => store?.beginMessageEdit(itemId),
       onRetrySend: (itemId) => store?.retryPendingInput(itemId),

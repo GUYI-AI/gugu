@@ -1,11 +1,10 @@
 import { observer } from 'mobx-react-lite';
-import { createContext, useCallback, useContext, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Folder, MessageSquare, Users } from '@/lib/icons';
 import { FileIcon } from '@renderer/lib/editor/file-icon';
 import { chatTabSlotKey, readShellSlots } from '@/lib/shellSlots';
-import { readChatSummary, subscribeChatSummaries } from '@/lib/chatSummariesBridge';
-import { chatFolderNameKeyOf } from '@/components/chat/chatFolderName';
+import { useChatFolderName } from '@/components/chat/chatFolderName';
 import { RailAppIcon } from '@/components/RailAppIcon';
 import { FileHostMark } from '@/components/appSlot/FileHostMark';
 import { openFileStorageSettings, useFileHost } from '@/lib/fileHost';
@@ -94,20 +93,9 @@ export const chatTabProvider = createTabProvider<typeof CHAT_TAB_KIND, ChatTabSt
   TabContent: ChatTabContent,
 });
 
-/** What people call this chat's folder, read where the shell's chat list is not (chatFolderNameKey). */
-function useFolderName(chatId: string): string {
-  const { t } = useTranslation('messaging');
-  // Re-read when the summaries change (a chat renamed into a group's topic is still that group's).
-  useSyncExternalStore(subscribeChatSummaries, () => readChatSummary(chatId));
-  return t(chatFolderNameKeyOf(chatId, (id) => {
-    const summary = readChatSummary(id);
-    return summary ? { kind: summary.kind, source_chat_id: summary.sourceChatId } : null;
-  }));
-}
-
 /** A panel tab's name as its strip says it: what its page called itself, else the App's tab title or the file's name. */
 function usePanelPresentation(chatId: string, tabId: string, item: PanelItem) {
-  const folderName = useFolderName(chatId);
+  const folderName = useChatFolderName();
   return extensionTabTitle(
     extensionSurfaceStore.said(null, groupPageSlot(chatId, tabId)),
     isFolderItem(item) ? folderName : item.kind ? (installedExtensionsStore.tabTitle(item.kind) ?? item.title) : item.title,

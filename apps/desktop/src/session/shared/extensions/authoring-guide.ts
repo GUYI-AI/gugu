@@ -197,7 +197,7 @@ the dock/background have neither chat nor session. Read context before drawing.
 \`await gugu.modal.open({ entry: 'new.html', title: 'New card', size: 'md', data })\` opens your bundle's HTML in
 gugu's window-level dialog (phone: fullscreen). Sizes: xs/sm/md/lg/xl. No new consent.
 The page stays sandboxed with the opener's context/grants; \`(await gugu.getContext()).modal.data\` holds \`data\`.
-Save, then \`gugu.modal.close(result)\`: the opener receives the result; cancellation returns null.
+Save, then \`gugu.modal.close(result)\`: the opener gets it, or null if cancelled.
 The host handles Escape, Tab traversal, Back and focus restoration.
 
 Free:
@@ -208,13 +208,13 @@ Free:
   Members: \`{ id: 'user:<uuid>', name, kind: 'human' | 'agent', avatar? }\`; \`avatar\` is a \`data:\` image. Pick from these; never copy them into files.
   \`session\`: \`{ id, agentId?, projectId?, root?, deviceId?, deviceLabel? }\`; \`agentId\` is \`user:<uuid>\`.
   Local \`root\` needs \`files:*\`; remote sessions carry \`deviceId\` instead. \`file\`: open with \`files.open(ctx.file)\`.
-  \`operator\`: \`{ kind: 'person' }\` or \`{ kind: 'agent', id }\`. \`capabilities\`: current grants, reflecting revocations.
+  \`operator\`: \`{ kind: 'person', guguNumber? }\` (API 32: own 咕咕号; \`null\`: none/unread) or \`{ kind: 'agent', id }\`. \`capabilities\`: current grants, revocations applied.
 - \`gugu.navigation.go(-1|1)\` → boolean; own history/chat opener. State: \`getContext().navigation\`.
 - \`onContextChanged(fn)\` → theme, language, visibility and size changes; member changes only through API 26. Returns an unsubscribe.
-- \`onCommand(fn)\` → the person picked one of your declared menu/toolbar entries; you get your own id back.
+- \`onCommand(fn)\` → the person picked one of your menu/toolbar entries: its id.
 - \`showContextMenu({ x, y, items: [{ id, label, enabled?, items? }, { type: "separator" }] })\` (API 18, page): App-local point, shared host menu → id or null.
 - \`setTabTitle(title)\` → title (max 48); file tabs use it as a tooltip. Back/forward stay local.
-- \`setTabBadge(badge)\` → a count (99+ at most, <=0 none), a string (a dot), or \`null\` (none).
+- \`setTabBadge(badge)\` → a count (99+ max, <=0 none), a string (a dot) or \`null\`.
 - \`openBrowserTab(url)\` → http(s) only.
 - \`reportError(message)\` → shown to the person. Never fail silently.
 - \`sendToBackground(message)\` → your background page (none: rejects); host stamps \`from\`.
@@ -554,7 +554,7 @@ The place is \`{ workspace: ctx.workspace.id }\`. An entry's \`id\` is its path 
 
 - \`gugu.files.list({ workspace, folder })\` lists one folder (\`''\` the top), never a whole tree. Non-documents: \`f.read(offset, length)\`, \`f.blob()\`.
 - \`gugu.files.onChanged({ workspace, folder }, fn)\`: \`{ kind: 'changes', changes }\` or \`resync\`, below \`folder\` only.
-- \`gugu.files.openWith({ workspace, folder })\` (a click or key): that folder in the Folder app's list, in this tab.
+- \`gugu.files.openWith({ workspace, folder })\` (a click or key): that folder in the Files App's list, in this tab.
 - Another machine's working copy needs \`files:read:all-machines\` as well; every call below is done on that machine.
 - With \`files:write\`: \`gugu.files.create\`, \`gugu.files.rename\` (a path moves it), \`gugu.files.mkdir({ workspace, path })\`, \`gugu.files.move(entry, { folder, name })\`, \`gugu.files.remove\` (a folder with all in it; a link, not what it points at). A name already there: \`name-taken\`, nothing changed.
 - \`gugu.files.upload({ workspace, folder }, file, { replace, onProgress, signal })\`: a File or a list of them, in parts, of any size, folders made as needed. A name already there is \`name-taken\` until \`replace: true\`. \`onProgress\` is told the bytes sent and the total; an aborted \`signal\` leaves nothing.
@@ -966,6 +966,7 @@ export const EXTENSION_GUIDE_SETTINGS = `# Tools-only Apps and host settings
 
 Declare human UI hosts in \`platforms\` (API 12): desktop, phone, or both. A phone UI may declare agent
 capabilities; those features run only on computers. Phone plus \`notifications\` is refused at publication and install.
+On a phone, a page with steps of its own (folders) holds Back with \`gugu.navigation.onBack(fn)\` → a release; let go at the top.
 
 ## The agents' line
 

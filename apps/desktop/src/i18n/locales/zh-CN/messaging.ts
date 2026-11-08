@@ -291,7 +291,6 @@ export default {
     "markUnreadFailed": "标记未读失败，请重试",
     "muted": "消息免打扰",
     "noResults": "未找到对话",
-    "searchMessages": "搜索消息「{{query}}」",
     "searchMessagesTitle": "搜索消息",
     "listLabel": "对话列表",
     "pin": "置顶",
@@ -512,7 +511,6 @@ export default {
     "memberList": {
       "agentLeave": "让它退出群聊",
       "clearSearch": "清除搜索",
-      "createAgent": "新建 Agent 并加入本群",
       "invite": "邀请成员",
       "makeAdmin": "设为管理员",
       "manage": "管理 {{name}}",
@@ -522,7 +520,7 @@ export default {
       "setActive": "改为主动",
       "setPassive": "改为被动",
       "loadFailed": "成员名单没加载出来。关掉再打开一次 👥 试试。",
-      "notParticipant": "你还不是这条话题的参与者，所以看不到成员名单。在里面说一句就进来了。",
+      "notParticipant": "暂时看不到这条话题的成员",
       "sectionAgents": "Agent",
       "sectionPeople": "人",
       "myAgents": "我的 agent · {{count}}",
@@ -682,8 +680,7 @@ export default {
     "more": "更多操作",
     "searchChat": "搜索对话",
     "searchConversation": "在对话中搜索",
-    "groupFolder": "群文件夹",
-    "folder": "文件夹"
+    "folder": "文件"
   },
   "history": {
     "searchTopics": "搜索话题",
@@ -850,6 +847,8 @@ export default {
   },
   "topic": {
     "leave": "退出话题",
+    "leaveHint": "你仍可阅读，只是不再收到这个话题的通知",
+    "removeHint": "对方仍可阅读，只是不再收到这个话题的通知",
     "calledYou": "有人 @ 你",
     "pins": {
       "pin": "将“{{name}}”置顶到主群",

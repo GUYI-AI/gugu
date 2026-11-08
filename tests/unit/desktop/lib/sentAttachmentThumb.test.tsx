@@ -15,6 +15,7 @@ vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({
   // Holds node:buffer Blobs: jsdom's Blob (and a Response's, here) has no stream(); the renderer's does.
   attachmentCache: async () => ({ match: async (key: string) => f.store.has(key) ? { blob: async () => f.store.get(key) } : undefined,
     put: async (key: string, response: Response) => { f.store.set(key, new NodeBlob([await response.arrayBuffer()])) } }),
+  putAttachment: async (key: string, body: Blob) => { f.store.set(key, new NodeBlob([await body.arrayBuffer()])) },
   attachmentCacheOrigin: 'https://attachments.gugu.invalid',
 }))
 

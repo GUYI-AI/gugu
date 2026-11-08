@@ -17,7 +17,7 @@ const scope = vi.hoisted(() => ({
 }))
 vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({
   appendToDraft: (old: string, text: string) => [old, text].filter(Boolean).join('\n'),
-  useChatStore: () => ({ drafts: scope.drafts, draftAttachments: scope.attachments, writeDraft: scope.write, setDraftAttachments: scope.setFiles, identitiesById: scope.identities, setActiveChatId: scope.select }),
+  useChatStoreReader: () => () => ({ drafts: scope.drafts, draftAttachments: scope.attachments, writeDraft: scope.write, setDraftAttachments: scope.setFiles, identitiesById: scope.identities, setActiveChatId: scope.select }),
 }))
 vi.mock('../../../../apps/desktop/src/session/shared/remote-sessions/session-directory', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../../../apps/desktop/src/session/shared/remote-sessions/session-directory')>(),
@@ -36,7 +36,7 @@ let harness: ReturnType<typeof createReactHarness>
 const chats = [{ id: 'dm', kind: 'dm', peer_user_id: 'agent' }] as ChatItem[]
 const contacts = [{ id: 'agent', type: 'agent', owner_user_id: 'owner' }] as ContactUser[]
 let openEntry: ReturnType<typeof useOwnedAgentConversationEntry>
-function Fixture() { openEntry = useOwnedAgentConversationEntry({ ownerId: 'owner', chats, contacts: scope.contacts, mobile: scope.mobile, onOpen: scope.onOpen }); return null }
+function Fixture() { openEntry = useOwnedAgentConversationEntry({ ownerId: 'owner', chats: () => chats, contacts: () => scope.contacts, mobile: scope.mobile, onOpen: scope.onOpen }); return null }
 beforeEach(() => {
   harness = createReactHarness(); vi.clearAllMocks(); scope.drafts = {}; scope.attachments = {}; scope.assistant = null
   scope.identities = {}; scope.contacts = contacts; scope.mobile = false; scope.native = true; scope.devices = []

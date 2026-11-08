@@ -418,7 +418,10 @@ describe('approved A2A activity', () => {
     expect(Math.abs(paint.top - own.bottom), 'the two page-colored pins meet without exposing half a body line in their seam').toBeLessThan(1);
     expect(Math.abs(paint.bottom - row.bottom), 'no opaque band below the semantic row').toBeLessThan(1);
     expect(paint.left).toBeLessThanOrEqual(viewport.left);
-    expect(paint.right).toBeGreaterThanOrEqual(viewport.right - 1);
+    // The strip must reach the right edge of what the scroller paints: its client box. A classic scrollbar (Linux,
+    // Windows) takes the last pixels of the border box and paints over anything beneath; overlay scrollbars take none.
+    const scroller = t.scroll();
+    expect(paint.right).toBeGreaterThanOrEqual(viewport.left + scroller.clientLeft + scroller.clientWidth - 1);
     expect(getComputedStyle(lane).contain.split(' ')).not.toContain('paint');
     expect(style.borderTopWidth).toBe('0px');
     expect(style.borderLeftWidth).toBe('0px');

@@ -142,11 +142,30 @@ export function releaseWorkingCopies(pageId: number): void {
 }
 
 /**
- * Where the chunked transfer finds a file a call names: by its path in the working copy, or, named absolute, in its own
- * folder. Both then go through the same reads and writes, on the machine the file is on; who may name an absolute path
- * is decided before that (`app-files`, the file the host handed the page).
+ * The file outside its working copy a person opened in a page, as a call carries it (`AppCallAction.handed`): stamped by
+ * that page's host from its binding, never from the page's args. Reads only: no write takes it.
  */
-export async function fileRootOf(place: WorkspacePlace, file: string): Promise<{ root: string; path: string }> {
+export type HandedFile = { workspace: string; id: string } | null;
+
+/**
+ * @@@outside-file - the one gate, on the machine the file is on, for every page wherever it is (this desktop, another one,
+ * the phone): a file outside the working copy is read only as the file a person opened in that page, as its host stamped
+ * it. Nothing is kept here: the stamp is a same-account client's word, which is the trust boundary of every call between
+ * an account's machines. Writes carry no stamp, so a file outside is never written through a page.
+ */
+async function outsideFile(place: WorkspacePlace, file: string, handed: HandedFile): Promise<string> {
+  if (!handed || handed.workspace !== place.workspace || handed.id !== file) {
+    throw new AppFileError('denied', 'Not permitted: a file outside the working copy is opened read-only, and only as the file a person opened in this page');
+  }
+  return await fsp.realpath(file).catch(() => { throw new AppFileError('not-found', `No file ${file} on this computer`); });
+}
+
+/**
+ * Where the chunked transfer finds a file a call names: by its path in the working copy (named absolute or not), or, to read, the file
+ * outside it a person opened (`outsideFile`), in its real folder. Both then go through the same reads and writes, on
+ * the machine the file is on, with the working copy's bound and private storage shut.
+ */
+export async function fileRootOf(place: WorkspacePlace, file: string, handed: HandedFile): Promise<{ root: string; path: string }> {
   const { localRootOf } = await import('./app-files');
   // A working copy is handed over whole, so its whole tree is checked; a file named outside it only itself, by what reads it.
   if (!path.isAbsolute(file)) {
@@ -159,13 +178,14 @@ export async function fileRootOf(place: WorkspacePlace, file: string): Promise<{
     await requireAgentFileTreeAccess(root);
     return { root, path: file.slice(root.length + 1) };
   }
-  return { root: path.dirname(file), path: path.basename(file) };
+  const real = await outsideFile(place, file, handed);
+  return { root: path.dirname(real), path: path.basename(real) };
 }
 
 /** `f.read(offset, length)`: up to 512 KB of a working copy's file, as the file panel reads it. */
-export async function readWorkingCopy(place: WorkspacePlace, file: string, offset: number, length: number): Promise<{ size: number; etag: string; offset: number; data: string }> {
+export async function readWorkingCopy(place: WorkspacePlace, file: string, offset: number, length: number, handed: HandedFile): Promise<{ size: number; etag: string; offset: number; data: string }> {
   const { readWorkspaceChunk, WorkspaceTransferError } = await import('@main/core/files/workspace-transfer');
-  const found = await fileRootOf(place, file);
+  const found = await fileRootOf(place, file, handed);
   try {
     const chunk = await readWorkspaceChunk(found.root, { path: found.path, offset, length: Math.min(length, REMOTE_WORKSPACE_CHUNK_BYTES) });
     return { size: chunk.size, etag: chunk.etag, offset: chunk.offset, data: chunk.data };
@@ -187,7 +207,7 @@ export async function writeWorkingCopyChunk(place: WorkspacePlace, chunk: Worksp
     await uploads.abort(chunk.uploadId);
     return { received: 0 };
   }
-  const found = await fileRootOf(place, chunk.path);
+  const found = await fileRootOf(place, chunk.path, null);
   const taken = () => new AppFileError('name-taken', `${chunk.path} already exists`);
   try {
     if (chunk.offset === 0) {
@@ -231,8 +251,8 @@ export async function watchWorkingCopy(place: WorkspacePlace, folder: string | u
 }
 
 /** One file, as a call names it, on the machine it is on: from the feed of the working copy it is in, or of its own folder. */
-export async function watchWorkingCopyFile(place: WorkspacePlace, file: string, hear: (change: ExtensionFileChangeBatch) => void): Promise<() => void> {
-  const found = await fileRootOf(place, file);
+export async function watchWorkingCopyFile(place: WorkspacePlace, file: string, hear: (change: ExtensionFileChangeBatch) => void, handed: HandedFile): Promise<() => void> {
+  const found = await fileRootOf(place, file, handed);
   return watchFeed(found.root, path.dirname(path.resolve(found.root, found.path)), (rel) => rel === found.path.split(path.sep).join('/'), () => file, hear);
 }
 
