@@ -128,7 +128,7 @@ export function HtmlPreviewFrame({ fileName, rawContent, register, onLink, reloa
 
   if (failed) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-[var(--bg-elevated)] px-6 text-center text-xs text-[var(--text-tertiary)]">
+      <div className="flex h-full w-full items-center justify-center bg-[var(--bg-elevated)] px-6 text-center text-xs text-[var(--text-secondary)]">
         {failed}
       </div>
     );
