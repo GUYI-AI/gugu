@@ -1,9 +1,16 @@
+import { windowFrameBackend } from '@gugu/session-core/session-record/window-cache/frame-backend';
 import { promptAttachmentSchema, turnFileRefSchema } from '@gugu/session-core/acp/client';
 import { SessionInputAdmissionError, sessionInputAdmission, type SessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission';
 import { createNativeRecordReader } from './native-record';
 import { createWindowOpenings, type WindowOpeningInput, type WindowOpeningLease, type WindowOpeningProof, type WindowOpeningSelection } from './window-opening';
 import { reserveWindowCommitHost } from './window-commit-production';
-import type { WindowLiveReadRequest, WindowLiveAckRequest, WindowCommitPage } from '@gugu/session-wire/session-window-live';
+import type { WindowLiveReadRequest, WindowLiveAckRequest, WindowCommitPage, WindowLivePositionRequest, WindowLivePositionResult } from '@gugu/session-wire/session-window-live';
+import { lookupWindowCommitPosition } from './window-commit-position';
+import { createWindowCommitReceipts, type WindowCommitReceipt } from './window-commit-receipt';
+import { pendingWindowCommitDelivery } from './window-commit-delivery';
+import { readWindowCommitPublication } from './window-commit-publisher';
+import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
+import { withStoredTurns } from '../sessions/session-turn-store';
 import { priorInputAdmission, sameInput, type InputAdmissionPayload } from './input-admission';
 import { ask, withdrawAll } from '../asks';
 import { hostAsks, resetAsks, respond as respondAsk, respondQuestion as respondAskQuestion } from '../asks/ask';
@@ -60,7 +67,7 @@ import { getPlugin, isValidProviderId } from '@main/core/agents/plugin-registry'
 import { sessionParentId, sessionSpawnerId, mapSessionRowToSession } from '@main/core/sessions/utils';
 import { taskName } from '@main/core/sessions/task-name';
 import { agentIdsBySession, sessionAgents } from '@main/core/sessionpage/sessionpage-session-agent';
-import { db } from '@main/db/client';
+import { db, sqlite } from '@main/db/client';
 import { sessions, projects, type SessionRow } from '@main/db/schema';
 import { persistedWorkspacePath } from '@main/core/projects/utils';
 import { tapMainEvents } from '@main/lib/events';
@@ -885,6 +892,45 @@ export async function windowLiveRead(input: WindowLiveReadRequest): Promise<Sess
 export async function windowLiveAck(input: WindowLiveAckRequest): Promise<SessionTimelineResult<void>> {
   try { windowLiveLease(input).ack(input.through); return { ok: true, value: undefined }; }
   catch (error) { return fail((error as { code?: string }).code ?? 'live_ack_failed', (error as Error).message); }
+}
+export async function windowLivePosition(input: WindowLivePositionRequest): Promise<SessionTimelineResult<WindowLivePositionResult>> {
+  const { conversationId, subscriptionId, referenceId } = input;
+  const applied = { ...input.appliedCursor };
+  try {
+    const lease = windowLiveLease({ conversationId, subscriptionId }), budget = createWindowBudget();
+    const receipts = createWindowCommitReceipts(sqlite);
+    let proof: WindowCommitReceipt | undefined, publicationProof: (()=>void)|undefined;
+    const value = await lookupWindowCommitPosition(lease, { conversationId, subscriptionId, referenceId, appliedCursor: applied }, {
+      durable: async signal => {
+        const receipt = await withStoredTurns(conversationId, async () => { lease.sample(applied); return receipts.byReference(conversationId, referenceId); });
+        if (!receipt) return null;
+        // Wait only the admitted projection, outside the canonical write tail.
+        await pendingWindowCommitDelivery(conversationId, receipt.sourceId); lease.sample(applied);
+        const [{ app }, { join }] = await Promise.all([import('electron'), import('node:path')]);
+        const directory=join(app.getPath('userData'), 'session-window-cache', 'committed');
+        const publication = await readWindowCommitPublication({ directory, receipts, receipt }, budget, signal);
+        const backend=windowFrameBackend(directory);
+        publicationProof=()=>{
+          if(!backend?.assert||windowFrameBackend(directory)!==backend)throw Object.assign(new Error('The projection namespace changed'),{code:'needs_location'});
+          backend.assert({...receipt.binding,kind:'projection',cursor:`publisher:${publication.buildId}:publication`});
+        };
+        lease.sample(applied); proof = receipt;
+        return { kind: 'committed', position: { projectionId: publication.projectionId, rowId: receipt.rowId, storedSeq: receipt.storedSeq, referenceId },
+          firstCommitCursor: receipt.firstCommitCursor, latestRevisionCursor: receipt.latestRevisionCursor };
+      },
+      primaryActive: async signal => {
+        const { peekAcpWorkerClient } = await import('../acp/runtime-process/host');
+        const client = await peekAcpWorkerClient();
+        lease.sample(applied);
+        return client ? client.windowActiveReference({ sessionId: conversationId, referenceId }, { signal }) : false;
+      },
+    });
+    if (windowLiveLease({ conversationId, subscriptionId }) !== lease) throw Object.assign(new Error('Commit subscription changed'), { code: 'unsubscribed' });
+    if(value.kind==='committed')publicationProof?.();
+    if (value.kind === 'committed' && (!proof || JSON.stringify(receipts.bySource(proof.sourceId)) !== JSON.stringify(proof)))
+      throw Object.assign(new Error('The committed position was withdrawn'), { code: 'needs_location' });
+    return { ok: true, value };
+  } catch (error) { return fail((error as { code?: string }).code ?? 'live_position_failed', (error as Error).message); }
 }
 
 export async function windowSubscribe(input: SessionpageSessionSubscribeRequest,

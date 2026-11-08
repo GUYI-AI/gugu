@@ -7,6 +7,7 @@ import type { WindowBudget } from './types';
 export type WindowFrameBackend = {
   read(key: WindowFrameKey, budget: WindowBudget): Promise<WindowFrameRead>;
   write(key: WindowFrameKey, packet: Uint8Array): Promise<void>;
+  assert?(key: WindowFrameKey): void;
 };
 const backends = new Map<string, WeakRef<WindowFrameBackend>>();
 const collected = new FinalizationRegistry<{ path: string; ref: WeakRef<WindowFrameBackend> }>(({ path, ref }) => {

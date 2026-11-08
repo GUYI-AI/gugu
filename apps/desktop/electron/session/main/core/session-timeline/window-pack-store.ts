@@ -99,7 +99,17 @@ export function createWindowPackStore(directory: string, db: WindowReceiptDataba
       return decodeWindowFrame(key,packet);
     } finally { await file.close(); }
   }
-  const backend: WindowFrameBackend = { read, async write(key, packet) {
+  function proof(name: string) {
+      const location=index.current(name);if(!location)throw fault('Packed publication has no committed location');
+      return ()=>{
+        const current=index.lookup(location.groupId,name);
+        if(!current||JSON.stringify(current)!==JSON.stringify(location))throw fault('Packed publication lost its canonical position');
+        try{const physical=statSync(path(location.groupId),{bigint:true});
+          if(!physical.isFile()||!same(identity(physical),location.physical))throw fault('Packed publication physical identity changed');
+        }catch{throw fault('Packed publication physical identity changed');}
+      };
+    }
+  const backend: WindowFrameBackend = { read, assert(key){proof(windowFrameName(key))();}, async write(key, packet) {
     const build = selected(), name = windowFrameName(key);
     const source = build.sources.find(s => s.binding.scope === key.scope && s.binding.sourceLineage === key.sourceLineage
       && s.binding.decoderVersion === key.decoderVersion);
@@ -118,16 +128,7 @@ export function createWindowPackStore(directory: string, db: WindowReceiptDataba
   } };
   const unregister = registerWindowFrameBackend(directory,backend);
   return {
-    proof(name: string) {
-      const location=index.current(name);if(!location)throw fault('Packed publication has no committed location');
-      return ()=>{
-        const current=index.lookup(location.groupId,name);
-        if(!current||JSON.stringify(current)!==JSON.stringify(location))throw fault('Packed publication lost its canonical position');
-        try{const physical=statSync(path(location.groupId),{bigint:true});
-          if(!physical.isFile()||!same(identity(physical),location.physical))throw fault('Packed publication physical identity changed');
-        }catch{throw fault('Packed publication physical identity changed');}
-      };
-    },
+    proof,
     backend, // Keep the weak namespace registration alive for this owner.
     /** Invocations are independent. The dispatcher chooses at most eight same-
      * conversation receipts; a giant build emits bounded progress packs. */

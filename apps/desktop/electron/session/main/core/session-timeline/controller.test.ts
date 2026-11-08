@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   legacyStarts: vi.fn(),
   liveRead: vi.fn(async (_input: unknown) => ({ ok: true, value: { entries: [], next: { workerEpoch: 'w', storeEpoch: 's', sequence: 0 }, hasMore: false } })),
   liveAck: vi.fn(async (_input: unknown) => ({ ok: true, value: undefined })),
+  livePosition: vi.fn(async (_input: unknown) => ({ ok: true, value: { kind: 'not_committed', sampledCursor: { workerEpoch: 'w', storeEpoch: 's', sequence: 0 } } })),
   unsubscribe: vi.fn(),
   unsubscribeSessions: vi.fn(),
   unwatch: vi.fn(),
@@ -35,6 +36,7 @@ vi.mock('./service', () => ({
   nativeRecord: vi.fn(), nativeToolImage: vi.fn(), nativeAttachment: vi.fn(),
   windowLiveRead: (input: unknown) => state.liveRead(input),
   windowLiveAck: (input: unknown) => state.liveAck(input),
+  windowLivePosition: (input: unknown) => state.livePosition(input),
   windowPrepare: async () => { if (state.gate) await state.gate; return { ok: true, value: { source: 'window' } }; },
   snapshot: async () => ({ ok: true, value: { cursor: { epoch: 'e', seq: 1 }, turns: [turnWith(HUGE)], settlements: [], hasOlder: false } }),
   subscribe: async (input: { subscriptionId: string }, emit: (event: unknown) => void) => {
@@ -86,10 +88,11 @@ beforeEach(() => {
 });
 
 describe('会话时间线路由(本机窗口、别的电脑、手机同一张)', () => {
-  it.each(['Read', 'Ack'])('binds Live%s to its actual sender and rejects extra payload fields before calling the service', async method => {
+  it.each(['Read', 'Ack', 'Position'])('binds Live%s to its actual sender and rejects extra payload fields before calling the service', async method => {
     const input = { conversationId: 'live-owner', subscriptionId: `live-${method}` }, cursor = { workerEpoch: 'w', storeEpoch: 's', sequence: 0 };
     await call(820, 'sessionWindowPrepare', input);
-    const request = { ...input, [method === 'Read' ? 'after' : 'through']: cursor };
+    const request = method === 'Position' ? { ...input, referenceId: 'real-reference', appliedCursor: cursor }
+      : { ...input, [method === 'Read' ? 'after' : 'through']: cursor };
     await expect(call(821, `sessionWindowLive${method}`, request)).resolves.toMatchObject({ ok: false });
     await expect(call(820, `sessionWindowLive${method}`, { ...request, turn: {} })).resolves.toMatchObject({ ok: false });
     await expect(call(820, `sessionWindowLive${method}`, request)).resolves.toMatchObject({ ok: true });
