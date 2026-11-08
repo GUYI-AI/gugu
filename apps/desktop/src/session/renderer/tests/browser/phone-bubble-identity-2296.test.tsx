@@ -149,16 +149,17 @@ it('restart startup row: the starting prompt, the host row and the native messag
   expectOneEntity(run, id);
 });
 
+const idle: SessionpageTimelineClient = {
+  fetchSnapshot: () => new Promise(() => {}), fetchAfter: () => new Promise(() => {}), fetchOlder: () => new Promise(() => {}),
+  fetchToolImage: () => new Promise(() => {}), subscribeSession: async () => null, unsubscribeSession: async () => null,
+  subscribeSessionEvents: () => () => {}, onLinkChange: () => () => {}, sendSessionText: async () => null,
+  cancelSessionTurn: async () => ({ cancelled: false }), respondToSettlement: () => new Promise(() => {}),
+};
+
 it('new session first prompt: the optimistic send, the creation row and the native message are one bubble entity', async () => {
   const text = 'start the new task';
   // The id the phone sent with its create request; the host admits the creation turn under it.
   const firstPrompt = { id: 'first-prompt-client-id', text, sentAt: SENT_AT };
-  const idle: SessionpageTimelineClient = {
-    fetchSnapshot: () => new Promise(() => {}), fetchAfter: () => new Promise(() => {}), fetchOlder: () => new Promise(() => {}),
-    fetchToolImage: () => new Promise(() => {}), subscribeSession: async () => null, unsubscribeSession: async () => null,
-    subscribeSessionEvents: () => () => {}, onLinkChange: () => () => {}, sendSessionText: async () => null,
-    cancelSessionTurn: async () => ({ cancelled: false }), respondToSettlement: () => new Promise(() => {}),
-  };
   function Page() {
     const current = timeline.useValue();
     // The page's own optimistic send, settled against the same record the transcript reads.
@@ -179,4 +180,43 @@ it('new session first prompt: the optimistic send, the creation row and the nati
   run.stop();
   expect(run.samples.length).toBeGreaterThanOrEqual(6);
   expectOneEntity(run, firstPrompt.id);
+});
+
+/*
+ * Mixed versions: a new phone talking to a host from before #2296. That host ignores `initialMessageId` and admits
+ * the first prompt as `<session>:creation:0`, exactly as dev does. It must not be worse than before the fix: never a
+ * second bubble, never a lost message, at most the one id change the first prompt always had.
+ */
+it.each([
+  ['the host reports its creation row before the record lands', true],
+  ['the record lands before the phone sees the creation row', false],
+])('new phone + old host: one bubble, no lost message, at most the pre-fix id change (%s)', async (_label, seesRow) => {
+  const text = 'start the task on an old host';
+  const firstPrompt = { id: 'first-prompt-client-id', text, sentAt: SENT_AT };
+  const hostId = `${SESSION}:creation:0`;
+  function Page() {
+    const current = timeline.useValue();
+    const { pendingSends } = useTimelineSession(idle, 'mobile', 'device', SESSION, false, firstPrompt);
+    return <SessionConversation {...props} timeline={current} pendingSends={settlePendingSends(pendingSends, current.turns, current.queuedPrompts)} />;
+  }
+  await mount(<Page />);
+  await until('the first prompt is drawn at once', () => !!harness.container.querySelector('[data-user-card]'));
+  const run = sampleBubbles(harness.container);
+  if (seesRow) {
+    run.phase('creation-row');
+    await act(async () => { life.set(hostRow(hostId, text)); });
+    await frames();
+  }
+  run.phase('landed');
+  await act(async () => { timeline.set(landed(hostId, text)); life.set(hostIdle()); });
+  await frames();
+  run.stop();
+  expect(run.samples.length).toBeGreaterThanOrEqual(4);
+  // Never a second bubble, never an empty frame.
+  expect(run.samples.every(sample => sample.count === 1)).toBe(true);
+  // At most the one change the first prompt had before the fix: the phone's id, then the host's.
+  const ids = run.samples.map(sample => sample.id).filter((id, index, all) => index === 0 || id !== all[index - 1]);
+  expect(ids).toEqual([firstPrompt.id, hostId]);
+  // The message is there, as the host recorded it.
+  expect(harness.container.querySelector(`[data-user-card="${hostId}"]`)?.textContent).toContain(text);
 });
