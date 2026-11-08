@@ -1,0 +1,91 @@
+{
+  "scope": "测试环境渲染，未经真机验证，原因：无真机",
+  "images": [
+    {
+      "file": "owner-2245-before-light.png",
+      "bytes": 21696,
+      "sha256": "752bdce47683cbf2769a7e701debee769712da476539f5b21734df5681884e13",
+      "observedSource": "9f633292116b452e6523627c0cba5b6dc785f904",
+      "manualReview": "Inspected original: source/scope caption readable; actual theme matches; before/after matches target regression and test assertions."
+    },
+    {
+      "file": "owner-2245-before-dark.png",
+      "bytes": 20288,
+      "sha256": "d0fe70ec93428d664d9e95a0b2e866e1226d8a9419f2aa198cd2048b3ce8f442",
+      "observedSource": "9f633292116b452e6523627c0cba5b6dc785f904",
+      "manualReview": "Inspected original: source/scope caption readable; actual theme matches; before/after matches target regression and test assertions."
+    },
+    {
+      "file": "owner-2245-extension-before-task-light.png",
+      "bytes": 21187,
+      "sha256": "514006472cf2f9631ad4947a05e390e6f8f7c712ea1754f53c6a096497adbbac",
+      "observedSource": "b5ec8c1936dfe287d1299b2e7f61a499707d4ed8",
+      "manualReview": "Inspected original: source/scope caption readable; actual theme matches; before/after matches target regression and test assertions."
+    },
+    {
+      "file": "owner-2245-extension-before-task-dark.png",
+      "bytes": 19848,
+      "sha256": "660356359a8b61b8d5e72c2bcd9cceab201033e779c7af654c8ac00106c3cd81",
+      "observedSource": "b5ec8c1936dfe287d1299b2e7f61a499707d4ed8",
+      "manualReview": "Inspected original: source/scope caption readable; actual theme matches; before/after matches target regression and test assertions."
+    },
+    {
+      "file": "owner-2245-extension-before-attention-light.png",
+      "bytes": 8607,
+      "sha256": "c78c5f55161b22d47a3de71c692ba74f4281a7206cd168a8ade2059eb85e5c78",
+      "observedSource": "b5ec8c1936dfe287d1299b2e7f61a499707d4ed8",
+      "manualReview": "Inspected original: source/scope caption readable; actual theme matches; before/after matches target regression and test assertions."
+    },
+    {
+      "file": "owner-2245-extension-before-attention-dark.png",
+      "bytes": 7116,
+      "sha256": "b1f54a0818b416e4fa8eb0215bab1d2e19375bd4c93d6fd59ebfa899cb6f6192",
+      "observedSource": "b5ec8c1936dfe287d1299b2e7f61a499707d4ed8",
+      "manualReview": "Inspected original: source/scope caption readable; actual theme matches; before/after matches target regression and test assertions."
+    },
+    {
+      "file": "owner-2245-after-conversation-light.png",
+      "bytes": 25286,
+      "sha256": "f74592dac7e3c140cc208582a206e0dc9c3ca8ac033443b1a292e9769bab8172",
+      "observedSource": "3a1c7b3a575b91c4f95fc53ce171b46666e0defc",
+      "manualReview": "Inspected original: source/scope caption readable; actual theme matches; before/after matches target regression and test assertions."
+    },
+    {
+      "file": "owner-2245-after-conversation-dark.png",
+      "bytes": 21600,
+      "sha256": "31103937c2164f3744747fd8db0aa0692d238e4e58bd52883283308d8628d52b",
+      "observedSource": "3a1c7b3a575b91c4f95fc53ce171b46666e0defc",
+      "manualReview": "Inspected original: source/scope caption readable; actual theme matches; before/after matches target regression and test assertions."
+    },
+    {
+      "file": "owner-2245-after-task-light.png",
+      "bytes": 25286,
+      "sha256": "f74592dac7e3c140cc208582a206e0dc9c3ca8ac033443b1a292e9769bab8172",
+      "observedSource": "3a1c7b3a575b91c4f95fc53ce171b46666e0defc",
+      "manualReview": "Inspected original: source/scope caption readable; actual theme matches; before/after matches target regression and test assertions."
+    },
+    {
+      "file": "owner-2245-after-task-dark.png",
+      "bytes": 21600,
+      "sha256": "31103937c2164f3744747fd8db0aa0692d238e4e58bd52883283308d8628d52b",
+      "observedSource": "3a1c7b3a575b91c4f95fc53ce171b46666e0defc",
+      "manualReview": "Inspected original: source/scope caption readable; actual theme matches; before/after matches target regression and test assertions."
+    },
+    {
+      "file": "owner-2245-after-attention-light.png",
+      "bytes": 8555,
+      "sha256": "17307340b0a500bf5c7f2eb3988a844e4217b9fc08cdb8f5c0a25c80d65dffa2",
+      "observedSource": "3a1c7b3a575b91c4f95fc53ce171b46666e0defc",
+      "manualReview": "Inspected original: source/scope caption readable; actual theme matches; before/after matches target regression and test assertions."
+    },
+    {
+      "file": "owner-2245-after-attention-dark.png",
+      "bytes": 7114,
+      "sha256": "0dbceb1840169c9821fb94d2a1686d8a6c8387f6be203ae608cea875bab036f6",
+      "observedSource": "3a1c7b3a575b91c4f95fc53ce171b46666e0defc",
+      "manualReview": "Inspected original: source/scope caption readable; actual theme matches; before/after matches target regression and test assertions."
+    }
+  ],
+  "testResult": "54 related cases passed; no unhandled test errors",
+  "limits": "Headless Chromium shared-product rendering, not a full native client or physical phone; synthetic input only."
+}
