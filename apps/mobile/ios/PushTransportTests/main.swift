@@ -41,7 +41,7 @@ import Foundation
         check(await rejects("mobile_push_revoke", wrong) && sends == before, "another installation cannot enter the transport")
         wrong = revoke; wrong["p_access_token"] = "synthetic-forbidden"
         check(await rejects("mobile_push_revoke", wrong) && sends == before, "extra credential-shaped parameters are rejected")
-        var registration: [String: Any] = ["p_installation_id": installation, "p_device_id": binding.deviceId, "p_token": "00ab", "p_environment": "production", "p_topic": "app.gugu.chat", "p_chat_enabled": true, "p_task_enabled": true, "p_sound_enabled": false]
+        var registration: [String: Any] = ["p_installation_id": installation, "p_device_id": binding.deviceId, "p_token": "00ab", "p_environment": "production", "p_topic": "app.gugu.chat", "p_chat_enabled": true, "p_task_enabled": true, "p_chat_sound_enabled": false, "p_task_sound_enabled": true]
         registration["p_chat_enabled"] = NSNumber(value: 1)
         check(await rejects("mobile_push_register", registration) && sends == before, "numeric permission truthiness cannot issue registration")
         registration["p_chat_enabled"] = true; registration["p_token"] = "00AB"

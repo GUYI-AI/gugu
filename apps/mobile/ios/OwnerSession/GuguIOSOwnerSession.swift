@@ -139,6 +139,22 @@ final class GuguIOSOwnerSession {
         return active
     }
 
+    /// Checks only a response to a request already admitted with these native
+    /// credentials. It issues no credential and cannot authorize another request.
+    /// Retaining this original ack lets push cleanup settle an in-flight register
+    /// after ordinary publication has closed, without moving it to a new session.
+    func validateIssuedPushReceipt(_ issued: GuguIOSOwnerCredentials) throws {
+        lock.lock(); defer { lock.unlock() }
+        _ = try matchingStored(ownerId: issued.binding.ownerId, accessToken: issued.accessToken)
+        try checkInstallation(issued.binding)
+        guard issued.expiresAt > now() else { throw Self.failure("auth_expired", "Issued notification access has expired") }
+        if storageRetirementPending {
+            guard let access = retirementAccess, access.generation == generation,
+                  access.credentials.binding == issued.binding,
+                  access.credentials.accessToken == issued.accessToken else { throw Self.stale() }
+        }
+    }
+
     /// Only the assembled push provider receives the capability. It must expose
     /// named retirement RPCs, never this access token or a generic cloud call.
     func retirementCredentials(_ capability: GuguIOSRetirementAccess,

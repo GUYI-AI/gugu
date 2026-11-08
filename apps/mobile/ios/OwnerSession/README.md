@@ -20,4 +20,8 @@ Publication stop retains the existing Auth session and does not permanently clos
 
 `cap:sync:ios` prepares `HostRuntime/GuguBackend.json` using the existing renderer environment resolver, bundles the static runtime and synchronizes the WebView. Only the public URL and anon/publishable key ship; a privileged or human token is rejected. Invalid preparation removes the previous generated configuration. The renderer mounts a publication subscriber without creating another auth coordinator or refresher.
 
+The App's `retireExternal` callback now runs `GuguIOSPushRetirement` through the original native retirement capability. It uses a close-only provider, requires a matching original-session cleanup report, and propagates any failure to the serialized AuthStorage write. It also waits for local host shutdown. The cleanup path has no APNs environment and cannot register a token. First login without an original credential envelope does not claim an old server scope was cleaned.
+
+Ordinary push registration remains unavailable: the cleanup client's provider is absent, no Push plugin is registered, and foreground presentation is disabled. Actual signed APNs environment, persisted notification preference mirror, AppDelegate forwarding and canonical wake wiring must be connected before registration. The strict register transport is pinned to the backend's nine-parameter contract at `3b473356f3b99ab8de6b19c5dec16de586498227`, with independent chat/task sounds.
+
 The real App/SDK/Keychain/HTTP paths remain unverified. Native policy and injected transport tests do not establish an iOS local host or end-to-end calendar result.

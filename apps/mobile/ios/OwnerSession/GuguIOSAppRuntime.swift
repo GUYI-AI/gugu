@@ -54,7 +54,34 @@ final class GuguIOSAppRuntime {
             do { try self.lifecycle.stopAll(); completion(.success(())) }
             catch { completion(.failure(error)) }
         }
+    }, retireExternal: { [weak self] capability, completion in
+        Task { @MainActor in
+            guard let self else { completion(.failure(Self.unavailable())); return }
+            do { try await self.pushRetirement.retire(capability); completion(.success(())) }
+            catch { completion(.failure(error)) }
+        }
     })
+
+    // Cleanup needs no APNs environment and never exposes registration. The
+    // ordinary provider remains absent until signed-build configuration and
+    // actual renderer preference/reconciliation wiring are available.
+    @MainActor private lazy var pushPlatform = GuguUNPushPlatform(onUnsolicitedCallback: { [weak self] in
+        self?.pushCleanupClient.invalidate()
+    })
+    @MainActor private lazy var pushCleanupClient = GuguPushClient(platform: pushPlatform, provider: nil,
+        currentBinding: { [weak self] in
+            guard let self else { throw Self.unavailable() }
+            let binding = try self.currentBinding()
+            return .init(ownerId: binding.ownerId, deviceId: binding.deviceId, installationId: binding.installationId)
+        }, requireOwnerUI: { try Self.requireForegroundOwnerUI() },
+        preferences: { .init(chatEnabled: false, taskEnabled: false, soundEnabled: false) },
+        foregroundPresentation: { _ in false }, onHint: { _ in })
+    @MainActor private lazy var pushRetirement = GuguIOSPushRetirement(ownerSession: ownerSession,
+        client: pushCleanupClient, close: { [weak self] scope, capability in
+            guard let self else { throw Self.unavailable() }
+            return try await GuguIOSPushRetirement.close(configuration: self.backendConfiguration,
+                ownerSession: self.ownerSession, capability: capability, scope: scope)
+        })
 
     lazy var lifecycle = GuguIOSHostLifecycle(root: root.appendingPathComponent("host", isDirectory: true),
         verifiedIdentity: { [weak self] in

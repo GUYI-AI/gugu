@@ -47,6 +47,8 @@ private final class GuguIOSPushRedirects: NSObject, URLSessionTaskDelegate {
         }
     }
 
+    deinit { session?.invalidateAndCancel() }
+
     func call(_ function: String, parameters: [String: Any], binding: GuguPushBinding) async throws -> Any {
         try binding.validate()
         try Self.validate(function, parameters: parameters, binding: binding)
@@ -87,13 +89,13 @@ private final class GuguIOSPushRedirects: NSObject, URLSessionTaskDelegate {
         guard p["p_installation_id"] as? String == binding.installationId else { throw failure("invalid_args") }
         switch function {
         case "mobile_push_register":
-            let expected: Set<String> = ["p_installation_id", "p_device_id", "p_token", "p_environment", "p_topic", "p_chat_enabled", "p_task_enabled", "p_sound_enabled"]
+            let expected: Set<String> = ["p_installation_id", "p_device_id", "p_token", "p_environment", "p_topic", "p_chat_enabled", "p_task_enabled", "p_chat_sound_enabled", "p_task_sound_enabled"]
             guard Set(p.keys) == expected, p["p_device_id"] as? String == binding.deviceId,
                   p["p_topic"] as? String == "app.gugu.chat", let environment = p["p_environment"] as? String,
                   GuguPushEnvironment(rawValue: environment) != nil, let token = p["p_token"] as? String,
                   !token.isEmpty, token.utf8.count <= 4096, token.utf8.count.isMultiple(of: 2),
                   token.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { throw failure("invalid_args") }
-            for field in ["p_chat_enabled", "p_task_enabled", "p_sound_enabled"] {
+            for field in ["p_chat_enabled", "p_task_enabled", "p_chat_sound_enabled", "p_task_sound_enabled"] {
                 guard let value = p[field] as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID() else { throw failure("invalid_args") }
             }
         case "mobile_push_revoke":
