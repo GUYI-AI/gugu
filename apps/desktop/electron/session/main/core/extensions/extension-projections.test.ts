@@ -178,10 +178,10 @@ describe('App/session scoped picture and input', () => {
     await s.resource.close();
   });
 
-  it('does not send local preview pictures over an unnegotiated direct or relay connection', () => {
+  it("sends pictures only to a page here or to one on another of the person's computers, never over another transport", () => {
     const s = setup();
     for (const transport of ['direct', 'relay']) {
-      expect(() => s.resources.connect(owner, s.resource.id, { ...wire(), transport: transport as 'local' })).toThrow(/local only/);
+      expect(() => s.resources.connect(owner, s.resource.id, { ...wire(), transport: transport as 'local' })).toThrow(/Unknown projection transport/);
     }
     expect(s.source.refresh).not.toHaveBeenCalled();
   });

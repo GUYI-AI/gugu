@@ -91,7 +91,8 @@ export const EXTENSION_TOOL_CONFINEMENT_API_VERSION = 29;
 // 35: `contributes.settingsTab`, the App's own tab its settings page links to.
 // 36: shared task resources for App-owned capabilities (#1607): task page leases, projection viewers, scoped task
 //     messages, authorized file payloads and non-activating App surfaces.
-export const EXTENSION_API_VERSION = 36;
+// 37: account-bound, single-conversation unread grants. No content or Agent authority.
+export const EXTENSION_API_VERSION = 37;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
@@ -809,6 +810,7 @@ export const BRIDGE_VERBS = {
    * A chat's messages, as whoever reads sees them (`app-messages-core.ts`): a stretch of its timeline or one thread, and the
    * ones holding a piece of text or naming a file — the doors an agent's `message_history` / `message_search` take.
    */
+  bindingsGet: { needs: 'chat:unread', only: 'page' },
   messagesHistory: { needs: 'chat:read' },
   messagesSearch: { needs: 'chat:read' },
   /**

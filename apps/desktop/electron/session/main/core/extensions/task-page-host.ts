@@ -7,7 +7,7 @@ import { sessionEvents } from '../sessions/session-events';
 import { projectEvents } from '../projects/project-events';
 import path from 'node:path';
 import { app, BrowserWindow, type WebContents } from 'electron';
-import type { ServerTaskBrowser } from '../../../../server/server-task-browser';
+import type { ServerTaskBrowser, TaskPageScreenTarget } from '../../../../server/server-task-browser';
 import { leaseBrowserPagePresentation, browserPagePresentation, onBrowserPagePresentation } from '../browser/browser-page-views';
 import { extensionPagePresentation } from './extension-bridge';
 import { log } from '@main/lib/logger';
@@ -74,6 +74,11 @@ projectEvents.on('project:deleted', projectId => extensionTaskPages.closeScope({
 
 let serverBrowser: ServerTaskBrowser | null = null;
 
+/** A task's page on this Gugu server, for another computer to watch and take over; null when it has none. */
+export async function taskPageForScreen(sessionId: string): Promise<TaskPageScreenTarget | null> {
+  return serverBrowser ? serverBrowser.existingPage(sessionId) : null;
+}
+
 /**
  * #1607 4b: on a Gugu server the task's page is a page of the account's headless Chromium (server-task-browser.ts),
  * leased through the same restricted page protocol as a desktop tab. It has no window: people watch it through the
@@ -92,6 +97,9 @@ async function serverTaskPage(sessionId: string, url: string | undefined, signal
   }
   const contents = await serverBrowser.pageFor(sessionId, url, signal) as unknown as WebContents;
   signal.throwIfAborted();
+  // The person sees it where they look at this task, and can take it over there.
+  const { showTaskPageOnDesktop } = await import('../sessions/session-orchestration');
+  void showTaskPageOnDesktop(sessionId).catch((error: unknown) => log.warn('Task page could not be shown on the desktop', { error: String(error) }));
   const { protocol, cleanup } = leasePageProtocol(contents, {
     ready: Promise.resolve(),
     capture: params => contents.debugger.sendCommand('Page.captureScreenshot', params),

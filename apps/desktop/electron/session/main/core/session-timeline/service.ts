@@ -4,6 +4,8 @@ import { SessionInputAdmissionError, sessionInputAdmission, type SessionInputAdm
 import { createNativeRecordReader } from './native-record';
 import { createWindowOpenings, type WindowOpeningInput, type WindowOpeningLease, type WindowOpeningProof, type WindowOpeningSelection } from './window-opening';
 import { reserveWindowCommitHost } from './window-commit-production';
+import { closeWindowProjectionOwner } from './window-projection-production';
+import type { WindowProjectionOwner } from './window-projection-host';
 import type { WindowLiveReadRequest, WindowLiveAckRequest, WindowCommitPage, WindowLivePositionRequest, WindowLivePositionResult } from '@gugu/session-wire/session-window-live';
 import { priorInputAdmission, sameInput, type InputAdmissionPayload } from './input-admission';
 import { ask, withdrawAll } from '../asks';
@@ -207,6 +209,7 @@ type ActiveSubscription = {
   conversationId: string;
   stop: () => void;
   live?: WindowOpeningLease;
+  projection?: WindowProjectionOwner;
 };
 
 const subscriptions = new Map<string, ActiveSubscription>();
@@ -876,6 +879,12 @@ function windowLiveLease(input: WindowOpeningInput): WindowOpeningLease {
     throw Object.assign(new Error('This window has no commit lease'), { code: 'invalid_subscription' });
   return owner.live;
 }
+export function windowProjectionOwner(input: WindowOpeningInput): WindowProjectionOwner {
+  const owner = subscriptions.get(input.subscriptionId);
+  if (!owner?.projection || owner.conversationId !== input.conversationId)
+    throw Object.assign(new Error('This window has no projection owner'), { code: 'invalid_subscription' });
+  owner.projection.assertCurrent(); return owner.projection;
+}
 export async function windowLiveRead(input: WindowLiveReadRequest): Promise<SessionTimelineResult<WindowCommitPage>> {
   try {
     const lease = windowLiveLease(input), value = await lease.read(input.after);
@@ -902,10 +911,14 @@ export async function windowSubscribe(input: SessionpageSessionSubscribeRequest,
   const subscriptionId = input.subscriptionId?.trim();
   if (!subscriptionId) return fail('invalid_subscription', 'subscriptionId is required');
   let opening: WindowOpeningProof | undefined;
-  let stopped = false, readFailed = false, teardown: (() => void) | undefined;
+  let stopped = false, readFailed = false, projectionReady = false, teardown: (() => void) | undefined;
   const abort = new AbortController();
   const mine: ActiveSubscription = { conversationId: input.conversationId,
-    stop: () => { stopped = true; abort.abort(); teardown?.(); opening?.live.close(); } };
+    stop: () => { stopped = true; abort.abort(); closeWindowProjectionOwner(mine); teardown?.(); opening?.live.close(); } };
+  mine.projection = { identity: mine, sessionId: input.conversationId, signal: abort.signal, assertCurrent() {
+    if (stopped || !projectionReady || subscriptions.get(subscriptionId) !== mine)
+      throw Object.assign(new Error('Projection subscription is not active'), { code: 'unsubscribed' });
+  } };
   const forget = () => { if (subscriptions.get(subscriptionId) === mine) subscriptions.delete(subscriptionId); };
   const onFailure = (status: SessionpageSessionWindowStatusEvent) => {
     if (stopped) return;
@@ -926,7 +939,7 @@ export async function windowSubscribe(input: SessionpageSessionSubscribeRequest,
       if (stopped) return;
       emit(event);
       const fields = event.result.ok ? event.result.batch : event.result.snapshot;
-      if (!fields.pendingLongRecords?.length) opening!.live.authorize();
+      if (!fields.pendingLongRecords?.length) { opening!.live.authorize(); projectionReady = true; }
     }, onFailure, abort.signal, opening);
     if (stopped) {
       teardown();
