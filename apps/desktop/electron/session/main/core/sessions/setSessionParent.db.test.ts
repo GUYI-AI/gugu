@@ -36,7 +36,7 @@ describe('setSessionParent asks other machines only when this one cannot answer'
     fixture.sqlite.prepare(`INSERT INTO projects (id, name, path) VALUES ('p1', 'P', '/repo')`).run();
     sessions.mockReset();
     sessions.mockResolvedValue({ sessions: [], unreached: [{ deviceId: 'dev-c', label: 'Silent Mac', detail: 'no answer' }] });
-    setOtherMachines({ devices: async () => [], isThisDevice: async () => false, appSpawn: vi.fn(), sessions, archive: vi.fn(),
+    setOtherMachines({ devices: async () => [], isThisDevice: async () => false, appSpawn: vi.fn(), sessionHome: vi.fn(), sessions, archive: vi.fn(),
       appMessage: vi.fn(), appCall: vi.fn() });
   });
   afterEach(() => {

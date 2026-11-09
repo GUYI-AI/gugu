@@ -224,6 +224,8 @@ class RecordTimeline implements SessionTimeline {
   private imageOrigins = new Map<string, RecordImageRef>();
   /** 存档装回来、图只剩位置的那些工具条目:条目 id → 每一张图的位置(与条目的 `imageRefs` 对齐)。 */
   private archivedImages = new Map<string, readonly RecordImageRef[]>();
+  /** Snapshot reads: a picture's position by its tool call, as the fold assigns item ids later. */
+  private snapshotImages = new Map<string, readonly RecordImageRef[]>();
   /** 这一代是被什么换掉的。拿旧 epoch 游标来续的人要看到真原因，不是笼统的 epoch_changed。 */
   private lastResetReason: RecordResetReason | null = null;
   private needsPublish = false;
@@ -407,8 +409,9 @@ class RecordTimeline implements SessionTimeline {
     if (found.ok || found.code !== 'no_such_image') return found;
     // 存档装回来的条目:图只剩类型和字数,位置在 `archivedImages` 里。
     const node = findToolItem(turns, input.itemId)?.node;
-    const shown = node && node.kind !== 'tool-group' && !node.images ? node.imageRefs?.[input.index] : undefined;
-    const ref = shown ? this.archivedImages.get(input.itemId)?.[input.index] : undefined;
+    const tool = node && node.kind !== 'tool-group' ? node : undefined;
+    const shown = tool && !tool.images ? tool.imageRefs?.[input.index] : undefined;
+    const ref = tool && shown ? (this.archivedImages.get(input.itemId) ?? this.snapshotImages.get(tool.toolCallId))?.[input.index] : undefined;
     if (!shown || !ref) return found;
     if (ref.chars > maxChars) {
       return { ok: false, code: 'too_large', message: `picture #${input.index} is ${ref.chars} chars; over ${maxChars}` };
@@ -678,7 +681,9 @@ class RecordTimeline implements SessionTimeline {
         this.parser.settleTurn(outcomeOf(entry.boundary), at);
       } else {
         const origins = entry.imageOrigins;
-        if (origins && entry.event.kind === 'tool_update' && entry.event.images) {
+        if (origins && entry.event.kind === 'tool_update' && entry.event.imageRefs) {
+          this.snapshotImages.set(entry.event.toolCallId, origins as readonly RecordImageRef[]);
+        } else if (origins && entry.event.kind === 'tool_update' && entry.event.images) {
           entry.event.images.forEach((image, index) => {
             const origin = origins[index];
             if (origin) this.imageOrigins.set(image.data, origin);
@@ -792,6 +797,7 @@ class RecordTimeline implements SessionTimeline {
     this.recentActionEntries = new Map();
     this.imageOrigins = new Map();
     this.archivedImages = new Map();
+    this.snapshotImages = new Map();
     this.needsPublish = true;
     // 不当场发：源紧接着就会把重读的内容送进来，那时快照才是完整的。
     // 但也不能只等它 —— 一份被删掉的记录不会再有任何 onEntries，所以补一个兜底节拍。

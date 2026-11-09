@@ -1,3 +1,6 @@
+import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
+import { registerPasswordBetaTools } from './mcp/password-beta-tools'
+import { guguMcpToolScope } from './mcp/password-native-identity'
 import { registerGuguActivityTools } from './mcp/gugu-activity-tool'
 import type { ProjectFileMessage, ProjectFileNextVersion, SelectedProjectFile } from './projectFilePublication'
 import { registerGuguWebSearchTool, type SessionWebSearch } from './mcp/gugu-web-search-tool'
@@ -161,6 +164,8 @@ interface GuguMcpContextBase {
   runExtensionAction?: (action: unknown, signal?: AbortSignal) => Promise<unknown>
   /** #6615 这张卡的 key(`taskpage:<会话>`):扩展目录按它认会话。 */
   grantKey?: string
+  /** Raw session ID stamped by the native bridge creator; never parse grantKey for identity. */
+  nativeSessionId?: string
 }
 
 /** #6615 会话经 catalog_* 够得到的扩展工具,与此刻被排除在外的程序(问题 16);扩展服务就绪后由宿主设上,没设 = 没有。 */
@@ -214,7 +219,8 @@ export function createDesktopGuguMcpHost(persistence?: GuguMcpHostPersistence): 
       const initial = getContext()
       const baseTools = initial.personalAssistant ? GUGU_ASSISTANT_LISTED_TOOLS : GUGU_LISTED_TOOLS
       const search = initial.webSearch?.available() ? initial.webSearch : undefined
-      const listedTools = search ? new Set([...baseTools, 'web_search']) : baseTools
+      const listedTools = new Set<string>(search ? [...baseTools, 'web_search'] : baseTools)
+      if (PASSWORD_BETA_ENABLED) for (const name of ['password_credentials', 'password_login']) listedTools.add(name)
       const trackRequest: GuguMcpRequestTracker = (work, toolName, requestId) => {
         const tracked = trackHostRequest(work, toolName, requestId)
         if (initial.personalAssistant && toolName) {
@@ -315,6 +321,7 @@ export function createDesktopGuguMcpHost(persistence?: GuguMcpHostPersistence): 
         if (context.kind !== 'social') throw new Error('widget_send needs a Gugu identity')
         return trackRequest(sendWidgetOf({ ...context, getAccessToken: () => context.getAccessToken(grantSignal) }, args, content, {}, imState), 'widget_send')
       })
+      registerPasswordBetaTools(server, getContext, trackRequest, grantSignal)
       serveToolsList(server, getContext, (name: string) => listedTools.has(name))
       return server
     },
@@ -323,12 +330,7 @@ export function createDesktopGuguMcpHost(persistence?: GuguMcpHostPersistence): 
       subjectId: context.subjectId,
       // 分叉的 IM 工具「注册但不可执行」—— 台账要照实记,否则一条不能收发消息的 grant 会以
       // 「gugu+session」的面目留在审计里。
-      toolScope: (context.kind !== 'social'
-        ? 'session-only'
-        : context.forkOf !== undefined
-          ? (context.runSessionAction ? 'runtime-fork+session' : 'runtime-fork')
-          : (context.runSessionAction ? 'gugu+session' : 'gugu'))
-        + (context.personalAssistant ? ':assistant' : ''),
+      toolScope: guguMcpToolScope(context),
     }),
     persistence,
   )
@@ -348,6 +350,7 @@ export interface BuildSocialBridgeDeps {
   getSupabaseAnonKey?: () => string
   host: DesktopGuguMcpHost
   grantKey: string
+  nativeSessionId?: string
   personalAssistant?: true
   assistantWork?: AssistantWorkBinding
   runHostAction?: (action: unknown, auth: RuntimeAuth, signal: AbortSignal) => Promise<unknown>
@@ -392,6 +395,7 @@ export async function buildSocialBridge(
       threadRootId: threadRootId ?? null,
       guguHome: resolveGuguHome(context.env),
       grantKey: deps.grantKey,
+      nativeSessionId: deps.nativeSessionId,
       ...(deps.webSearch ? { webSearch: {
         available: deps.webSearch.available,
         run: async (query: string, signal: AbortSignal) => {
@@ -449,7 +453,7 @@ export async function buildSocialBridge(
 export async function buildSessionOnlyBridge(
   context: AcpEngineRuntimeContext,
   subjectId: string,
-  deps: Pick<BuildSocialBridgeDeps, 'host' | 'grantKey' | 'runSessionAction' | 'runExtensionAction'>,
+  deps: Pick<BuildSocialBridgeDeps, 'host' | 'grantKey' | 'nativeSessionId' | 'runSessionAction' | 'runExtensionAction'>,
 ): Promise<AcpMcpServer[]> {
   if (!deps.runSessionAction) throw new Error('session_* action dispatcher is required')
   const { userId: expectedOwnerUserId } = await requireRuntimeAuth(
@@ -468,6 +472,7 @@ export async function buildSessionOnlyBridge(
   }
   const grant = await deps.host.grant(deps.grantKey, {
     kind: 'session-only',
+    nativeSessionId: deps.nativeSessionId,
     expectedOwnerUserId,
     subjectId,
     runSessionAction: async (action, signal) => {

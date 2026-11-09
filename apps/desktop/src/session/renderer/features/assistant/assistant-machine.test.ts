@@ -26,10 +26,18 @@ it.each([local, remote, cloud])('opening an assistant on $deviceId never registe
   const machine = await openAssistantMachine(home, '/home/me/assistant');
   const projectId = home === local ? 'tasks-local' : 'tasks-remote';
   expect(machine.projectId).toBe(projectId); expect(machine.workspaceId).toBe('assistant-cwd');
-  expect(state.acquire).toHaveBeenCalledWith(projectId, '/home/me/assistant');
+  // 住云上的说明、记忆、技能、资料都在主目录下、工作目录外:工作区圈住主目录。
+  expect(state.acquire).toHaveBeenCalledWith(projectId, home === cloud ? '/home/me' : '/home/me/assistant');
   expect(state.create).not.toHaveBeenCalled(); expect(state.project).not.toHaveBeenCalled(); expect(state.homeProject).not.toHaveBeenCalled();
   expect(state.rootLease).not.toHaveBeenCalled();
   if (home !== local) expect(state.remote).toHaveBeenCalledWith(home.deviceId, true);
+});
+it('a cloud home can write its instructions, memory, skills and resources: every path is inside the acquired root', async () => {
+  const machine = await openAssistantMachine(cloud, '/home/me/assistant');
+  const root = state.acquire.mock.calls[0][1] as string;
+  for (const path of [machine.paths.instructions, machine.paths.memoryDir, machine.paths.skillsDir, machine.paths.resourcesDir]) {
+    expect(path.startsWith(`${root}/`)).toBe(true);
+  }
 });
 it('fails closed instead of creating a home project when an older remote cannot supply a task workspace', async () => {
   state.remote.mockRejectedValue(new Error('TASK_WORKSPACE_UNAVAILABLE'));

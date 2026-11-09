@@ -143,6 +143,15 @@ describe('phone missing-session recovery (#996)', () => {
     expect(recovery.error).toBeNull()
     expect(host.ready).toHaveBeenCalledOnce()
   })
+  it('settles when the restarted session rests with nothing to run (its first turn already ran)', async () => {
+    await harness.render(<Fixture />); await tick()
+    host.life.mockResolvedValue({ ...view('dormant'), version: 1 })
+    await act(async () => { freshButton()!.click() }); await tick(500)
+    expect(recovery.busy).toBe(false)
+    expect(recovery.error).toBeNull()
+    expect(host.ready).toHaveBeenCalledOnce()
+    expect(host.retry).not.toHaveBeenCalled()
+  })
   it('keeps the existing failure visible when the restart RPC is refused', async () => {
     await harness.render(<Fixture />); await tick()
     host.restart.mockRejectedValue(new Error('Restart refused'))

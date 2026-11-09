@@ -1,6 +1,8 @@
 import type { OutboxWiring } from '../../store/chatOutboxWiring'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
-import { formatAttachmentMetadata, inferAttachmentKind, resolveFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
+import { formatAttachmentMetadata, inferAttachmentKind, resolveFileMimeType, sniffFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
+import { keepSentAttachment } from '../../lib/attachmentBytes'
+import { rendererLogger } from '../../lib/log'
 import { type AttachmentsEndpoint } from '@gugu/core/cloud/attachmentsApi'
 import { attachmentsEndpoint, prepareChatAttachment, type PreparedChatAttachment } from '../../lib/attachmentsEndpoint'
 import { requireThreadCapableChat } from '../../lib/chatThreadGate'
@@ -103,6 +105,7 @@ export async function sendAttachmentBatch(args: {
 }): Promise<string | undefined> {
   if (!args.files.length) return undefined
   if (args.threadRootId != null || args.isThreadRoot === true) await requireThreadCapableChat(args.chatId, 'sendAttachmentBatch')
+  await Promise.all(args.files.map(sniffFileMimeType))
   const captionIndex = args.files.findLastIndex(file => inferAttachmentKind(file) === 'image')
   const placeholders: Awaited<ReturnType<typeof placeholderRow>>[] = []
   let index = 0
@@ -122,6 +125,8 @@ export async function sendAttachmentBatch(args: {
     for (; index < args.files.length; index++) {
       const file = args.files[index], row = placeholders[index]
       const prepared = await uploads[index]
+      // Uploaded bytes are kept by content before the commit, so the committed row draws them instead of downloading them again.
+      if (inferAttachmentKind(file) === 'image') void keepSentAttachment(file).catch((error) => rendererLogger('chat/send').error({ error: String(error) }, 'sent image local copy not kept'))
       await args.outbox.commitAttachment(row.message, prepared, {
         message_id: row.message.id, chat_id: args.chatId, sender_user_id: args.senderId,
         file_name: file.name || 'file', content_type: resolveFileMimeType(file), to_user_ids: args.toUserIds ?? [],

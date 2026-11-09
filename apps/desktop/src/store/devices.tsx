@@ -265,8 +265,14 @@ export function DevicesProvider({ children, active = true }: { children: React.R
     return chatService.listAgentsOnDevice(deviceId)
   }, [])
 
+  // A fresh value on every provider render re-rendered every device reader (sidebar, composer, contacts sections) even when
+  // the render changed nothing they read.
+  const value = useMemo(
+    () => ({ devices: machines, phones, loading, error, refresh, rename, remove, listBoundAgents, recentMachineLimitRefusal, cloudComputer }),
+    [machines, phones, loading, error, refresh, rename, remove, listBoundAgents, cloudComputer],
+  )
   return (
-    <DevicesContext.Provider value={{ devices: machines, phones, loading, error, refresh, rename, remove, listBoundAgents, recentMachineLimitRefusal, cloudComputer }}>
+    <DevicesContext.Provider value={value}>
       {children}
     </DevicesContext.Provider>
   )

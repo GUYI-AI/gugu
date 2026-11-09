@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
+import { listedIn } from './folderList'
 import { until } from '../../../support/awaitCondition'
 
 const now = Date.parse('2026-10-28T12:00:00Z')
@@ -37,7 +38,7 @@ const gugu = {
     // Asked as a row's menu opens (a list carries no delete answer); the rig answers from its fixtures.
     canDelete: vi.fn(async (files: unknown) => [files].flat().map((file) => (file as { canDelete?: boolean }).canDelete === true)),
     viewPreferences: vi.fn(async () => ({ showAppData: false })),
-    list: vi.fn(async () => ENTRIES.map((e) => ({ ...e }))),
+    list: vi.fn(async (place?: { folder?: string }) => listedIn(ENTRIES, place)),
     onChanged: vi.fn(() => () => {}),
     openWith: vi.fn(async () => {}),
     download: vi.fn(async () => true),
@@ -195,7 +196,7 @@ describe('a file that arrives while the folder is open', () => {
     const [, changed] = gugu.files.onChanged.mock.calls.at(-1) as unknown as [unknown, (change: unknown) => void]
     const arrived = file('late', 'late.pdf', 'application/pdf', 10, ago(5))
     const listed = { ...arrived, keep: { expiresAt: null, mine: false } }
-    gugu.files.list.mockImplementation(async () => [...ENTRIES, listed].map((e) => ({ ...e })))
+    gugu.files.list.mockImplementation(async (place?: { folder?: string }) => listedIn([...ENTRIES, listed], place))
     const reads = gugu.files.list.mock.calls.length
     changed({ kind: 'entries', entries: [arrived], gone: [] })
     changed({ kind: 'entries', entries: [{ ...arrived, name: 'late.pdf' }], gone: [] })
@@ -215,7 +216,7 @@ describe('a long time section', () => {
   test('shows its first 20 under its heading and its count, the rest one press away; the heading folds it away and back', async () => {
     const [, changed] = gugu.files.onChanged.mock.calls.at(-1) as unknown as [unknown, (change: unknown) => void]
     const many = Array.from({ length: 25 }, (_, i) => file(`today-${i}`, `today-${String(i).padStart(2, '0')}.txt`, 'text/plain', 10, ago(60 + i)))
-    gugu.files.list.mockImplementation(async () => [...ENTRIES, ...many].map((e) => ({ ...e })))
+    gugu.files.list.mockImplementation(async (place?: { folder?: string }) => listedIn([...ENTRIES, ...many], place))
     changed({ kind: 'entries', entries: many, gone: [] })
     await until('the new files drawn', () => ids().includes('today-0'))
     const today = () => ids().filter((id) => id !== undefined && (id.startsWith('today-') || id === 'spec' || id === 'clip' || id === 'late'))

@@ -85,7 +85,7 @@ vi.mock('@main/core/agents/agent-run-context', () => ({
     cli: { kind: 'resolved' as const, path: '/usr/local/bin/codex' },
     env: {},
     configRootEnv: {},
-    selfUpdateEnv: {},
+    pinnedEnv: {},
     extraArgs: [],
   })),
 }));
@@ -667,7 +667,7 @@ describe('divert 真的把选择接进了 app-server 的启动 argv', () => {
       env: { OPENAI_API_KEY: 'inherited-wrong-key' },
       configRootEnv: { CODEX_HOME: options.sessionId === sessionId ? '/accounts/free/.codex' : '/accounts/current-pro/.codex' },
       unsetEnv: ['OPENAI_API_KEY'],
-      selfUpdateEnv: {},
+      pinnedEnv: {},
       extraArgs: [],
     }))
     await provisionAndOverride({

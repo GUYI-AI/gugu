@@ -465,6 +465,14 @@ describe('task file preview routing', () => {
     expect(mocks.activePaneOpen).not.toHaveBeenCalled();
   });
 
+  it('a file outside an App asked to open (files.openWith) opens marked byHost; the person clicking it, not', async () => {
+    await openFileInSessionEditor('project-1', 'session-1', '/tmp/other.md', { from: 'source-tab', intent: 'navigate', byHost: true });
+    await vi.waitFor(() => expect(mocks.paneLayoutOpen).toHaveBeenCalledWith('workspace.file', { filePath: '/tmp/other.md', byHost: true }, { from: 'source-tab', intent: 'navigate' }));
+    mocks.paneLayoutOpen.mockClear();
+    await openFileInSessionEditor('project-1', 'session-1', '/tmp/other.md', { from: 'source-tab', intent: 'navigate' });
+    await vi.waitFor(() => expect(mocks.paneLayoutOpen).toHaveBeenCalledWith('workspace.file', { filePath: '/tmp/other.md' }, { from: 'source-tab', intent: 'navigate' }));
+  });
+
   it('routes outside-workspace Markdown through the same external preview fallback', async () => {
     await openFileInSessionEditor('project-1', 'session-1', '/tmp/Application Support/note.md');
     await openFileBesideConversation('project-1', 'session-1', '/tmp/Application Support/note.md');
@@ -502,10 +510,11 @@ describe('task file preview routing', () => {
     await vi.waitFor(() =>
       expect(onResult).toHaveBeenCalledWith({ success: true, openedWith: null })
     );
-    // 开在对话右边并排,❌ 盖住对话(spec gugu-plugin「在工作区打开文件」)。
+    // 开在对话右边并排,❌ 盖住对话(spec gugu-plugin「在工作区打开文件」)。Opened for an agent, not the person: `byHost`,
+    // so the page drawing it reads nothing outside the working copy.
     expect(mocks.paneLayoutOpen).toHaveBeenCalledWith(
       'workspace.file',
-      { filePath: '/tmp/Application Support/note.md' },
+      { filePath: '/tmp/Application Support/note.md', byHost: true },
       { from: null, intent: 'beside', activate: false }
     );
     dispose();

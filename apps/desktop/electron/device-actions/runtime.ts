@@ -34,7 +34,7 @@ import { createDeviceActionsProvider } from './provider'
 type Log = { info(fields: Record<string, unknown>, msg: string): void; warn(fields: Record<string, unknown>, msg: string): void }
 
 /** 主进程注入的、只有 Electron 才有的能力。 */
-export type ElectronDeviceDeps = Pick<FamilyDeps, 'clipboardRead' | 'clipboardWrite' | 'clipboardReadImage' | 'notify' | 'openExternal' | 'trashItem' | 'captureScreen' | 'shrinkImage' | 'sampleImage'>
+export type ElectronDeviceDeps = Pick<FamilyDeps, 'clipboardRead' | 'clipboardWrite' | 'clipboardReadImage' | 'notify' | 'openExternal' | 'trashItem' | 'captureScreen' | 'shrinkImage' | 'sampleImage' | 'perf'>
 
 export interface DeviceActionsRuntime {
   capability(): DeviceActionsCapability | null
@@ -52,6 +52,8 @@ export interface DeviceActionsRuntime {
   /** #7317 一张窗口的只读画面,给「电脑」页签(见 families/computer 的 peekWindow)。 */
   peekWindow(target: { pid: number; window_id: number }, options: { maxDimension: number; signal?: AbortSignal; viewer?: string; cursorSession?: string }): Promise<Outcome>
   registerIpc(ipcMain: IpcMain, getWindows: () => Array<{ isDestroyed(): boolean; webContents: { send(channel: string): void } }>): void
+  /** 原生助手(只 Mac;没编进来时 null):资源监视器借它读进程 footprint,❌ 另起一个。 */
+  macHelper(): MacHelperClient | null
   /** 授权变了,或开关在 App 上的那一组随 App 开关了(之后要重新登记这台电脑的动作)。 */
   onGrantsChanged(listener: () => void): () => void
   /** 那个 App 装上 / 卸掉 / 启用 / 停用了(`appSwitch`):重新登记、刷新设置页;关了就停掉它的原生程序。 */
@@ -266,6 +268,11 @@ export function createDeviceActionsRuntime(input: {
         ...(input.selfApp ? { self: input.selfApp } : {}),
         ...(computerControl ? { stoppedFor: (pid: number) => computerControl.stoppedFor(pid) } : {}),
       })
+    },
+    macHelper() {
+      if (platform !== 'darwin') return null
+      const client = makeHelper()
+      return client.available().ok ? client : null
     },
     registerIpc(ipcMain, getWindows) {
       ipcMain.handle(DEVICE_ACTIONS_CHANNELS.state, () => state())

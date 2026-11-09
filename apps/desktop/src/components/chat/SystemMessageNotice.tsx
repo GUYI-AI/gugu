@@ -3,6 +3,7 @@ import { agentFailureNeedsModelChoice, type AgentFailureReason } from '@gugu/cor
 import { isPendingDelivery, parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import type { TurnFailureGroup } from '@/lib/projectTurnFailureMessages'
+import { systemNoticeText, topicOpenedParts } from '@/lib/systemNoticeText'
 import { useContactsStore } from '@/store/contactsContext'
 import { TurnFailureCard } from './TurnFailureCard'
 import { MessageSendStatus } from './MessageSendStatus'
@@ -15,19 +16,18 @@ type NoticeMessage = Pick<MessageItem, 'id' | 'content' | 'content_type' | 'send
 }
 
 export function SystemMessageNotice({ message, senderName, onOpenTopic }: { message: NoticeMessage; senderName?: string; onOpenTopic?: (topicChatId: string) => void }) {
+  useTranslation('messaging') // The row is said in the reader's language (systemNoticeText): switching it redraws the row.
   const notice = parseSystemNotice(message)
   const reason = notice?.kind === 'turn-failure' ? notice.reason : null
   // 额度/模型类失败由运行条那一排的 agent 状态位说（#7685），❌ 在消息流里再叠一行。
   if (reason && (agentFailureNeedsModelChoice(reason) || isPendingDelivery(message))) return null
   if (reason) return <AgentReplyFailureNotice reason={reason} message={message} senderName={senderName} />
-  // The server writes this one format; the marker supplies the identity even if the topic is renamed or deleted.
-  const separator = ' 开了话题:'
-  const split = message.content?.indexOf(separator) ?? -1
-  if (notice?.kind === 'topic-opened' && onOpenTopic && split >= 0) {
-    const end = split + separator.length
-    return <div className="system-message-notice"><span>{message.content!.slice(0, end)}<InlineAction testId="topic-opened-link" onClick={() => onOpenTopic(notice.topicChatId)}>{message.content!.slice(end)}</InlineAction></span></div>
+  // The marker supplies the topic's identity even if the topic is renamed or deleted.
+  const topic = notice?.kind === 'topic-opened' && onOpenTopic ? topicOpenedParts(message.content ?? '') : null
+  if (notice?.kind === 'topic-opened' && onOpenTopic && topic) {
+    return <div className="system-message-notice"><span>{topic.lead}<InlineAction testId="topic-opened-link" onClick={() => onOpenTopic(notice.topicChatId)}>{topic.name}</InlineAction></span></div>
   }
-  return <div className="system-message-notice"><span>{message.content}</span>
+  return <div className="system-message-notice"><span>{systemNoticeText(notice, message.content ?? '')}</span>
     {message.local_send_state && <MessageSendStatus state={message.local_send_state} messageId={message.id} reason={message.local_send_error} retryable={message.local_send_retryable} />}
   </div>
 }

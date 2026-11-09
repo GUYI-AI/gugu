@@ -149,6 +149,7 @@ export type UnitRowProps = {
    */
   expandedId?: string | null;
   editingMessage?: MeasureCtx['editingMessage'];
+  bodySize?: MeasureCtx['bodySize'];
   /** 跑完后的最后一条回复(从 ChatRoot 来),只有它量出页脚 —— 见 MeasureCtx.finalReplyId。 */
   finalReplyId?: string | null;
   latestConversationMessageId?: string | null;
@@ -207,6 +208,7 @@ export function UnitRow(props: UnitRowProps) {
     caches: props.caches,
     measureEpoch: props.measureEpoch,
     expandedId: props.expandedId,
+    bodySize: props.bodySize,
     editingMessage: props.editingMessage,
     finalReplyId: finalReplyId(),
     latestConversationMessageId: latestConversationMessageId(),
@@ -406,6 +408,7 @@ export function UnitRow(props: UnitRowProps) {
     // While collapsing a user-message card: hold expandedId so the expanded
     // render is kept alive during the tween.
     expandedId: collapsing() ? rowItemId() : props.expandedId,
+    bodySize: props.bodySize,
     editingMessage: props.editingMessage,
     finalReplyId: finalReplyId(),
     latestConversationMessageId: latestConversationMessageId(),

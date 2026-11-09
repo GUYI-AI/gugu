@@ -67,6 +67,16 @@ describe('chat projection read scope', () => {
     expect(new Set(accessWrites.map((write) => (write as { access: { chatId: string } }).access.chatId))).toEqual(new Set(['c-2']))
   })
 
+  it('holds every other member read position of a conversation it has read, so a newly opened chat paints its receipts', async () => {
+    const peer = (user_id: string, last_read_seq: number) => ({ ...(rowsByKey.get('active_members') as Record<string, unknown>[])[0], user_id, last_read_seq })
+    rowsByKey.set('active_members', [...(rowsByKey.get('active_members') as unknown[]), peer('u-b', 7), peer('u-agent', 3)])
+    const projection = createChatProjection(VIEWER)
+    expect(projection.memberReadSeqs('c-1')).toBeUndefined()
+    await projection.hydrate('0', new AbortController().signal)
+    expect(projection.memberReadSeqs('c-1')).toEqual({ 'u-b': 7, 'u-agent': 3 })
+    expect(projection.memberReadSeqs('c-unknown')).toBeUndefined()
+  })
+
   it('a message in one chat asks the unread projection for that chat only', async () => {
     const projection = createChatProjection(VIEWER)
     const signal = new AbortController().signal

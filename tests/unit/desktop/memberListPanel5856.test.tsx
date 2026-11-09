@@ -126,7 +126,7 @@ async function renderPanel(
 }
 
 describe('@@@5856 名册读不到', () => {
-  it('「看得见但还不是参与者」给的是照做能改变现状的话,❌ 不是「关掉再打开一次」', async () => {
+  it('话题名册 0 行如实说「暂时看不到成员」,❌ 不是「关掉再打开一次」,也不教人「说一句」', async () => {
     getGroupCollab.mockRejectedValueOnce(new GroupCollabEmptyError())
     await renderWithAppProviders(
       harness,
@@ -136,7 +136,9 @@ describe('@@@5856 名册读不到', () => {
     await act(async () => { await Promise.resolve(); await Promise.resolve() })
     const box = harness.container.querySelector('[data-testid="member-list-error"]')
     expect(box?.getAttribute('data-member-list-error')).toBe('not-participant')
-    expect(box?.textContent).toContain('说一句就进来了')
+    expect(box?.textContent).toContain('暂时看不到这条话题的成员')
+    // Source members can read the other participants; 0 rows only means nobody is visible now. No cause, no instruction.
+    expect(box?.textContent).not.toContain('说一句')
     expect(box?.textContent).not.toContain('关掉再打开')
   })
 })

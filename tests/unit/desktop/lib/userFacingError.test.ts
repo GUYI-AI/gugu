@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const translate = vi.hoisted(() => vi.fn(() => 'The connection to the machine was lost. Try again when it reconnects.'));
 vi.mock('../../../../apps/desktop/src/session/renderer/localization/locale-store', () => ({ translateSessionMessage: translate }));
 import { messageForUser } from '../../../../apps/desktop/src/lib/userFacingError';
+import { EXTENSION_API_VERSION, parseExtensionManifest } from '../../../../apps/desktop/src/session/shared/extensions/manifest';
 beforeEach(() => translate.mockClear());
 
 describe('the shared user-facing failure exit', () => {
@@ -29,5 +30,13 @@ describe('the shared user-facing failure exit', () => {
     expect(messageForUser(new Error('Wire call cancelled'))).toBe('Wire call cancelled');
     expect(messageForUser(new Error('Provider refused this model'))).toBe('Provider refused this model');
     expect(translate).not.toHaveBeenCalled();
+  });
+  it('shows every App manifest violation, not just its heading', () => {
+    let thrown: unknown;
+    try {
+      parseExtensionManifest({ id: 'board', name: 'Board', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', subtitle: 'x'.repeat(31), entry: 'main.html', contributes: { tabs: [{ name: 'main', title: 'Board' }] } });
+    } catch (error) { thrown = error; }
+    const shown = messageForUser(new Error(`Error invoking remote method 'extensions:install': Error: ${(thrown as Error).message}`));
+    expect(shown).toMatch(/^Invalid App manifest: subtitle: .*30/);
   });
 });

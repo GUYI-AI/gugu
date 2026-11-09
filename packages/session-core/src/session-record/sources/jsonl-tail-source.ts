@@ -5,7 +5,7 @@ import type {
   SessionRecordSource,
   SessionRecordSourceEvents
 } from '../contract';
-import { locateImages, readRecordImage } from './record-images';
+import { locateImages, readRecordImage, snapshotRetainer } from './record-images';
 import { emitJsonLines, pollInterval, warnOf, type SessionRecordSourceOptions } from './shared';
 import { TailReader, type TailResume } from './tail-reader';
 
@@ -40,17 +40,23 @@ export function createJsonlTailSource<S>(
   let state = format.initial();
   let sink: SessionRecordSourceEvents | null = null;
   let stopped = false;
+  const retain = options?.readMode === 'snapshot' ? snapshotRetainer() : null;
+  let emitFailure: { reason: unknown } | null = null;
 
   const emit = (lines: string[], offsets: number[]) => {
     if (stopped || !sink) return;
     const events = sink;
     const file = path;
-    emitJsonLines(lines, format.name, warn, (entries) => events.onEntries(entries), (record) => format.decode(record, state),
-      // Compressed offsets cannot address JSONL bytes. Keep those images inline for canonical storage.
-      file && !file.endsWith('.zst') ? (entries, index) => locateImages(entries, lines[index], offsets[index], file) : undefined);
+    try {
+      emitJsonLines(lines, format.name, warn, (entries) => events.onEntries(entries), (record) => format.decode(record, state),
+        file ? (entries, index) => (retain ? retain(entries, lines[index], offsets[index], file) : locateImages(entries, lines[index], offsets[index], file)) : undefined);
+    } catch (reason) {
+      emitFailure = { reason };
+      throw reason;
+    }
   };
 
-  return {
+  const source: SessionRecordSource = {
     locator,
     async start(events, resume) {
       sink = events;
@@ -110,4 +116,8 @@ export function createJsonlTailSource<S>(
       sink = null;
     }
   };
+  // A read that stops mid-stream can surface as a pipeline abort or the EBADF of its closed fd. Callers act on the reason.
+  const start = source.start.bind(source);
+  source.start = (events, resume) => start(events, resume).catch((error: unknown) => { throw emitFailure ? emitFailure.reason : error; });
+  return source;
 }

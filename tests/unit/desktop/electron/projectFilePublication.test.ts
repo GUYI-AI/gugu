@@ -6,6 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createProjectFilePublisher, writeTaskCopy } from '../../../../apps/desktop/electron/projectFilePublication'
 import { DEFAULT_FILE_STORAGE } from '@gugu/core/shared/fileStorage'
 import { readProjectFile, rememberProjectGroupId } from '../../../../apps/desktop/electron/sessionpage/sessionpage-project-groups'
+import type { FileStorage } from '@gugu/core/shared/fileStorage'
+const logged = vi.hoisted(() => ({ warn: vi.fn() }))
+vi.mock('../../../../apps/desktop/electron/lib/logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: logged.warn, error: vi.fn(), debug: vi.fn() }) }))
 const copyFault = vi.hoisted(() => ({ mode: '' }))
 vi.mock('node:fs/promises', async original => {
   const fs = await original<typeof import('node:fs/promises')>()
@@ -138,18 +141,18 @@ describe('external selections become durable project-owned copies through the sa
 const publishedPaths = (f: ReturnType<typeof fixture>) => f.rpc.mock.calls.filter(([name]) => name === 'file_device_publish').map(([, args]) => args.p_path as string)
 afterEach(async () => { expect(home.startsWith(join(tmpdir(), 'gugu-file-publication-153-'))).toBe(true); await rm(home, { recursive: true, force: true }) })
 /** `projectChat`: whether a device of this account binds the chat (here, any chat but 'ordinary'). */
-function fixture(proactive = false, identity = { accountId: 'owner', deviceId: 'device' }) {
+function fixture(proactive = false, identity = { accountId: 'owner', deviceId: 'device' }, storage: Partial<FileStorage> = {}) {
   let accountId = identity.accountId
   const rpc = vi.fn(async (name: string, _args: Record<string, unknown>): Promise<unknown> => {
     if (name === 'file_device_publish') return { item_id: 'item', ...(_args.p_message ? { message: { id: 'message', file_item_id: 'item', file_version: 1 } } : {}) }
     if (name === 'workspace_get_as') return [row]
     throw new Error(`Unexpected RPC ${name}`)
   })
-  const cloud = vi.fn(async () => row)
+  const cloud = vi.fn(async () => row), requestCopy = vi.fn(async (_itemId: string, _version: number): Promise<unknown> => ({ status: 'pending' }))
   const publish = createProjectFilePublisher({ identity: async () => ({ accountId, deviceId: identity.deviceId }),
-    root: async id => id === 'project' ? root : id === 'device-store' ? store : null, rpc, env,
-    storage: async () => ({ ...DEFAULT_FILE_STORAGE, proactive_upload: proactive }), projectChat: async chat => chat !== 'ordinary' })
-  return { publish, rpc, store: cloud, account: (value: string) => { accountId = value } }
+    root: async id => id === 'project' ? root : id === 'device-store' ? store : null, rpc, env, requestCopy,
+    storage: async () => ({ ...DEFAULT_FILE_STORAGE, proactive_upload: proactive, ...storage }), projectChat: async chat => chat !== 'ordinary' })
+  return { publish, rpc, store: cloud, requestCopy, account: (value: string) => { accountId = value } }
 }
 describe('project file publication runs before document conversion or cloud upload', () => {
   it('publishes only metadata by default and stores authentic workspace fields in the existing local index', async () => {
@@ -252,5 +255,36 @@ describe('every device keeps what it sends into a project chat', () => {
     const f = fixture()
     f.rpc.mockRejectedValueOnce(new Error('File revision conflict'))
     await expect(f.publish('group', file, null, 'owner', undefined, { next: { itemId: 'item', expectedVersion: 1 } })).rejects.toThrow('File revision conflict')
+  })
+})
+
+// An image is looked at when its machine may be off: sent with a message, its temporary copy is asked for as soon as it is published.
+describe('a sent image asks for its temporary copy when it is published', () => {
+  const image = { name: 'shot.png', bytes: data.buffer, contentType: 'image/png' }
+  const message = { message_id: 'message', chat_id: 'group', sender_user_id: 'owner', file_name: 'shot.png' }
+  beforeEach(() => logged.warn.mockReset())
+  it('asks for the copy of the version it published', async () => {
+    const f = fixture()
+    await expect(f.publish('group', image, null, 'owner', undefined, { message })).resolves.toMatchObject({ message: { id: 'message' } })
+    expect(f.requestCopy).toHaveBeenCalledExactlyOnceWith('item', 1)
+  })
+  it.each([['copies are turned off', { temporary_transfer: false }], ['a copy is read once', { retention: 'read-once' as const }]])('asks for nothing when %s', async (_case, storage) => {
+    const f = fixture(false, undefined, storage)
+    await f.publish('group', image, null, 'owner', undefined, { message })
+    expect(f.rpc.mock.calls.some(([name]) => name === 'file_device_publish')).toBe(true)
+    expect(f.requestCopy).not.toHaveBeenCalled()
+  })
+  it('asks for nothing for another kind of file, or for an image put in the folder without a message', async () => {
+    const f = fixture()
+    await f.publish('group', file, null, 'owner', undefined, { message: { ...message, file_name: file.name } })
+    await f.publish('group', image, null, 'owner')
+    expect(f.rpc.mock.calls.filter(([name]) => name === 'file_device_publish')).toHaveLength(2)
+    expect(f.requestCopy).not.toHaveBeenCalled()
+  })
+  it('a refused request is only logged: the image is still sent', async () => {
+    const f = fixture()
+    f.requestCopy.mockRejectedValueOnce(new Error('transfer refused'))
+    await expect(f.publish('group', image, null, 'owner', undefined, { message })).resolves.toMatchObject({ message: { id: 'message' } })
+    await vi.waitFor(() => expect(logged.warn).toHaveBeenCalledWith({ item: 'item', error: 'Error: transfer refused' }, 'image copy request failed'))
   })
 })

@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { safeStorage } from 'electron';
 import { db as appDb } from '@main/db/client';
 import { appSecrets } from '@main/db/schema';
+import { SecureStorageUnavailableError } from './secure-storage-unavailable';
 
 export class EncryptedAppSecretsStore {
   constructor(
@@ -50,7 +51,7 @@ export class EncryptedAppSecretsStore {
 
   private assertSecureStorageAvailable(): void {
     if (!this.safeStorageApi.isEncryptionAvailable()) {
-      throw new Error('Secure secret storage is unavailable on this system.');
+      throw new SecureStorageUnavailableError('Secure secret storage is unavailable on this system.');
     }
 
     if (this.platform !== 'linux') {
@@ -59,7 +60,7 @@ export class EncryptedAppSecretsStore {
 
     const backend = this.safeStorageApi.getSelectedStorageBackend?.();
     if (backend === 'basic_text') {
-      throw new Error(
+      throw new SecureStorageUnavailableError(
         'Secure secret storage is unavailable: Linux safeStorage backend is basic_text.'
       );
     }

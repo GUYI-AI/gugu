@@ -113,6 +113,12 @@ export function toolRunCategory(item: ChatItem, conversation = false): ToolRunCa
   }
 }
 
+/** A call that handed pictures back, inline or as references the history left behind (the strip draws exactly these). */
+export function hasToolPictures(item: object): boolean {
+  const call = item as { toolCallId?: string; images?: readonly unknown[]; imageRefs?: readonly unknown[] };
+  return call.toolCallId !== undefined && !!(call.images?.length || call.imageRefs?.length);
+}
+
 export type ToolRunTally = Partial<Record<ToolRunCategory, number>>;
 
 export function tallyToolRun(items: readonly ChatItem[], conversation = false): ToolRunTally {

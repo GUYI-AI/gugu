@@ -23,10 +23,10 @@ export interface WorkspaceTerminals {
   readonly isLoaded: boolean;
   readonly terminals: { get(id: string): WorkspaceTerminalRecord | undefined; has(id: string): boolean };
   readonly sessions: { get(id: string): PtySession | undefined };
-  /** 新开一条(名字「终端 N」由它起)。 */
-  createDefaultTerminal(): Promise<{ id: string }>;
-  /** 这条终端没了(那头 exit、页签关掉):本机留着记录由终端抽屉管;别的机器上的就此断开。 */
+  /** 这条终端的视图没了(那头 exit、页签关掉、应用退出):别的机器上的连接活不过视图,就此断开。 */
   closeTerminal?(id: string): void;
+  /** 页签关掉了:本机这条连同 shell 和记录一起结束。 */
+  deleteTerminal?(id: string): Promise<void>;
   /** 这一条开不出来时的那一句(可观察);开着 / 在开 = null。 */
   failure?(id: string): string | null;
   retry?(id: string): void;

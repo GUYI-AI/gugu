@@ -41,6 +41,19 @@ export async function readJsonStringBodyPage(source: WindowByteSource, options: 
   if (failed) throw failure;
   signal?.throwIfAborted();
   if (used !== length || !same(snapshot, await source.snapshot())) return { kind: 'reset', reason: 'source_changed' };
+  return decodeJsonStringBodyBytes(bytes, { position, end, maxBytes, budget, signal });
+}
+
+/** Decode an already admitted, bounded raw span. The caller owns physical I/O
+ * accounting and source validation; a logical byte adapter must not charge it twice. */
+export function decodeJsonStringBodyBytes(bytes: Uint8Array, options: {
+  position: JsonBodyPosition; end: number; maxBytes: number; budget: WindowBudget; signal?: AbortSignal;
+}): Extract<JsonBodyPage, { kind: 'body' }> {
+  const { position, end, maxBytes, budget, signal } = options, length = bytes.length;
+  if (![position.rawOffset, position.decodedOffset, end, maxBytes].every(Number.isSafeInteger) ||
+    position.rawOffset < 0 || position.decodedOffset < 0 || end <= position.rawOffset ||
+    length < 1 || length > Math.min(64 * 1024, end - position.rawOffset) ||
+    maxBytes < 4 || maxBytes > BODY_TEXT_BYTES) throw new RangeError('Invalid body decode span');
   const parts: string[] = [];
   let cursor = 0, decoded = 0, complete = false;
   const unicode = (at: number) => {

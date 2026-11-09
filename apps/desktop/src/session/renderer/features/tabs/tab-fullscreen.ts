@@ -1,5 +1,5 @@
 import { action, makeObservable, observable, reaction } from 'mobx';
-import type { CSSProperties } from 'react';
+import { createContext, type CSSProperties } from 'react';
 import { escapeIsFree } from '@shared/escape-is-free';
 
 /**
@@ -20,6 +20,12 @@ export type TabFullscreenTarget = { pane: TabFullscreenPane; tabId: string };
 
 /** 工作区的锚点名:ScreenFrame(这一屏的骨架)挂着它,全屏的那一格贴到它的四条边上。 */
 export const WORKSPACE_ANCHOR = '--gg-workspace';
+
+/**
+ * A strip drawn over the workspace with a page in full screen: it spans the workspace, so its right end is the window's
+ * whichever block it belongs to — its actions make room for the window controls there (`TabBarActionRow`).
+ */
+export const OverFullscreenStrip = createContext(false);
 
 /** Pinned to the workspace, over everything in it, from `top` to `bottom`. */
 export function fullscreenCover(top: string, bottom: string): CSSProperties {

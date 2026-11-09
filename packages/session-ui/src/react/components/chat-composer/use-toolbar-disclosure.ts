@@ -141,6 +141,8 @@ export function useToolbarDisclosure(): ToolbarDisclosure {
   useLayoutEffect(() => {
     const el = nodeRef.current
     if (!el) return
+    // Compare the observer's first width with the width that was actually fitted, too.
+    lastWidthRef.current ??= el.clientWidth
     // 放不下就升一档。每次 render 后跑一次,一档一档爬,不在这里循环——
     // setLevel 会再触发一次 layout effect,天然就是下一次迭代。
     if (level < TOOLBAR_DISCLOSURE_MAX_LEVEL && isOverflowing(el)) {
@@ -151,12 +153,12 @@ export function useToolbarDisclosure(): ToolbarDisclosure {
   useLayoutEffect(() => {
     const el = nodeRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width
-      if (width === undefined) return
+    const observer = new ResizeObserver(() => {
+      const width = el.clientWidth
       const previous = lastWidthRef.current
       lastWidthRef.current = width
       // 宽度没变(是我们自己升档导致的重排)就别动档位,否则来回震荡。
+      // The first layout effect already converged. Initial observation must not restart every level.
       if (previous !== null && Math.abs(previous - width) < 1) return
       // 回到档 0 重爬(变宽了要能爬回来),并显式要求重判一次。
       setLevel(0)

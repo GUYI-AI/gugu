@@ -196,6 +196,13 @@ describe('助理搬家拷文件 (#7199)', () => {
     expect(node?.kind === 'file' && node.bytes[COPY_CHUNK_BYTES + 5]).toBe((COPY_CHUNK_BYTES + 5) % 251);
   });
 
+  it('助理页的同步账本 .panel-state-*.json 不拷:每台机器自己记,新家接过后已经写了自己那份', async () => {
+    const old = memoryDisk({ '/o': 'dir', '/o/a.md': 'NOTE', '/o/.panel-state-abc.json': '{"v":"old"}' });
+    const plan = await planTree(old.fs, '/o');
+    expect(plan.files.map((file) => file.rel)).toEqual(['a.md']);
+    expect(plan.skipped).toEqual([]);
+  });
+
   it('软链接不跟、逐条回报;超过单文件上限 = 搬之前就失败', async () => {
     const old = memoryDisk({ '/o': 'dir', '/o/a.md': 'a', '/o/link': 'symlink' });
     const plan = await planTree(old.fs, '/o');

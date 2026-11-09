@@ -3,6 +3,7 @@ import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useContactsStore } from '../../store/contactsContext'
 import { useChatStore } from '../../store/chatContext'
+import { isGroupInvitationNote } from '@gugu/core/cloud/groupChat'
 import { decideGroupInvitation, type GroupInvitation } from '../../lib/groupInvitations'
 import { rendererLogger } from '../../lib/log'
 import { messageForUser } from '../../lib/userFacingError'
@@ -49,7 +50,7 @@ function GroupInvitationRow({ invitation }: { invitation: GroupInvitation }) {
         <div className="min-w-0 flex-1 text-sm">
           <div className="font-medium text-[var(--text-primary)]">{t(invitation.inviter_type === 'agent' ? 'groupInvitations.invitedBy' : 'groupInvitations.invitedByHuman', { inviter: invitation.inviter_name, owner: invitation.inviter_owner_name, group: groupName })}</div>
           {invitation.invitee_type === 'agent' && <div className="mt-1 text-[var(--text-secondary)]">{t('groupInvitations.agent', { name: invitation.invitee_name })}</div>}
-          <p className="my-2 whitespace-pre-wrap break-words text-[var(--text-secondary)]">{invitation.message}</p>
+          {isGroupInvitationNote(invitation.message) ? null : <p className="my-2 whitespace-pre-wrap break-words text-[var(--text-secondary)]">{invitation.message}</p>}
           {invitation.status === 'pending' ? <>
             <div className="text-[var(--text-secondary)]">{t(invitation.invitee_type === 'human' ? 'groupInvitations.humanJoins' : invitation.owner_will_join ? 'groupInvitations.ownerJoins' : 'groupInvitations.agentJoins')}</div>
             <div className="mt-3 flex gap-2">
