@@ -36,21 +36,21 @@ export const WINDOW_PROJECTION_ITEM_FIELDS: Readonly<Record<string, string>> = O
     'create-plan-tool-call': 'planId', 'unknown-tool-call': 'name',
   }).map(([kind, extra]) => [kind, `${toolFields} ${extra}`])),
 });
-const rootFields = {
+export const WINDOW_PROJECTION_ROOT_FIELDS: Readonly<Record<'turn' | 'terminal', string>> = Object.freeze({
   turn: 'id seq referenceId initiator startedAt endedAt outcome trigger foreground',
   terminal: 'terminalId owner canKill command args cwd outputBytes truncated exitStatus',
-};
-const children: Readonly<Record<string, string>> = {
+});
+export const WINDOW_PROJECTION_HEADER_CHILDREN: Readonly<Record<string, string>> = Object.freeze({
   'turn:outcome': 'kind reason detail signInRequired guguReason said', 'turn:trigger': 'kind chatIds',
   'terminal:exitStatus': 'exitCode signal', 'item:exitStatus': 'exitCode signal',
-};
+});
 const names = (value: string) => value.trim().split(/\s+/);
 export function windowProjectionHeaderFieldAllowed(kind: 'turn' | 'item' | 'terminal', itemKind: string, field: string) {
   const [name, child, extra] = field.split('.');
   const allowed = kind === 'item' ? Object.hasOwn(WINDOW_PROJECTION_ITEM_FIELDS, itemKind)
-    ? WINDOW_PROJECTION_ITEM_FIELDS[itemKind] : undefined : rootFields[kind];
+    ? WINDOW_PROJECTION_ITEM_FIELDS[itemKind] : undefined : WINDOW_PROJECTION_ROOT_FIELDS[kind];
   return !!allowed && extra === undefined && names(allowed).includes(name)
-    && (child === undefined || child.length > 0 && names(children[`${kind}:${name}`] ?? '').includes(child));
+    && (child === undefined || child.length > 0 && names(WINDOW_PROJECTION_HEADER_CHILDREN[`${kind}:${name}`] ?? '').includes(child));
 }
 export const windowProjectionHeaderSchema = z.strictObject({
   target, values: z.record(z.string().max(128), scalar).refine(value => Object.keys(value).length <= 64

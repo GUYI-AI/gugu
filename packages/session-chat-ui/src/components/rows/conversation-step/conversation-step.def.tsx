@@ -11,9 +11,12 @@ import { toolStepDetail as stepDetail } from '@session-chat/lib/tool-step-detail
 import { ConversationTextBody, conversationNarrationHeight, conversationTextKey } from '../message/ConversationNarration';
 import { conversationTextOverflow, conversationTextWidth } from '../message/conversation-text-overflow';
 import { CollapseHeader } from '@session-chat/components/primitives/CollapseHeader';
+import { ToolThumbs } from '../tools/tool/Tool';
+import { toolPictures, toolThumbsFor } from '../tools/tool/tool.def';
+import { STEP_STRIP_INSET } from '../tools/tool/tool-images';
 
 type Step = Exclude<ToolNode, { kind: 'tool-group' }>;
-type ConversationStepData = Step & { actionLabel: string; stateLabel: string | null };
+type ConversationStepData = Step & { actionLabel: string; stateLabel: string | null; pictures: ReturnType<typeof toolPictures> };
 const completion = (item: Step) => item.kind === 'subagent-done-tool-call' || item.kind === 'background-command-done-tool-call';
 function stepText(item: Step): ChatMessage {
   const text = completion(item) ? [...new Set([item.title, 'summary' in item ? item.summary : undefined].filter(Boolean))].join('\n\n') : stepDetail(item) ?? '';
@@ -35,7 +38,7 @@ export function conversationStepData(item: Step, translate: ChatTranslator): Con
   const outcome = completion(item) && 'outcome' in item ? item.outcome : undefined;
   const actionLabel = completion(item) ? translate(`transcript.${prefix}${outcome === 'stopped' ? 'Stopped' : outcome !== 'completed' ? 'Failed' : 'Done'}`)
     : toolRunLabel(tallyToolRun([item], true), translate);
-  return { ...item, actionLabel, stateLabel: stateLabel(item, translate) };
+  return { ...item, actionLabel, stateLabel: stateLabel(item, translate), pictures: toolPictures(item) };
 }
 function canExpand(item: ConversationStepData, ctx: MeasureCtx): boolean {
   if (completion(item)) return !!stepText(item).text.trim();
@@ -45,11 +48,14 @@ function canExpand(item: ConversationStepData, ctx: MeasureCtx): boolean {
     - (item.stateLabel ? 8 + conversationTextWidth(item.stateLabel, ctx, 12) : 0);
   return conversationTextOverflow(text, ctx, width, 12);
 }
+function pictureStrip(item: ConversationStepData, ctx: MeasureCtx) {
+  return toolThumbsFor(item.pictures, ctx.width - STEP_STRIP_INSET);
+}
 
 /** Prototype toolRow(): an action stays whole; only clipped details have a disclosure. */
 export const conversationStepUnitDef = defineUnit<ConversationStepData, Record<string, never>>({
   kind: 'conversation-step', margin: { top: 0, bottom: 0 }, vars: {},
-  measure: (item, ctx) => conversationNarrationHeight(stepText(item), ctx, canExpand(item, ctx)),
+  measure: (item, ctx) => conversationNarrationHeight(stepText(item), ctx, canExpand(item, ctx)) + (pictureStrip(item, ctx)?.stripH ?? 0),
   Render(props) {
     const notice = () => completion(props.data);
     const failed = () => props.data.status === 'error' || ('outcome' in props.data && props.data.outcome !== 'completed');
@@ -57,6 +63,7 @@ export const conversationStepUnitDef = defineUnit<ConversationStepData, Record<s
     const text = () => stepText(props.data);
     const expandable = () => !!props.ctx.measureCtx && canExpand(props.data, props.ctx.measureCtx());
     const expanded = () => props.ctx.viewState.isCollapsed(conversationTextKey(props.data.id));
+    const strip = () => { const ctx = props.ctx.measureCtx?.(); return ctx ? pictureStrip(props.data, ctx) : null; };
     return <div class={styles.row} data-conversation-step={props.data.id}>
       <Show when={notice()} fallback={
       <button type="button" class={styles.step} data-collapse-id={expandable() ? conversationTextKey(props.data.id) : undefined}
@@ -69,6 +76,7 @@ export const conversationStepUnitDef = defineUnit<ConversationStepData, Record<s
         <CollapseHeader id={conversationTextKey(props.data.id)} anchorId={props.data.id} height={32} wrap labelSize={12} labelLineHeight={18}
           collapsible={expandable()} expanded={expanded()}>{props.data.actionLabel}</CollapseHeader>
       </Show>
+      <Show when={strip()}>{value => <div style={{ 'padding-left': `${STEP_STRIP_INSET}px` }}><ToolThumbs item={{ id: props.data.id, ...props.data.pictures }} strip={value()} /></div>}</Show>
       <ConversationTextBody data={text()} ctx={props.ctx} canExpand={expandable()} />
     </div>;
   },

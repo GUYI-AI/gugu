@@ -2,7 +2,7 @@
 import { onMount } from 'solid-js';
 import type { ChatCommands } from '@session-chat/commands';
 import { useChatTranslator } from '@session-chat/localization';
-import { messageEditor, messageEditorActions, messageEditorButton, messageEditorSend, messageEditorText } from './message-editor.css';
+import { messageEditor, messageEditorActions, messageEditorButton, messageEditorNotice, messageEditorSend, messageEditorText } from './message-editor.css';
 
 export function UserMessageEditor(props: {
   edit: NonNullable<ChatCommands['editingMessage']>;
@@ -24,6 +24,7 @@ export function UserMessageEditor(props: {
           event.preventDefault(); props.edit.onSubmit();
         }
       }} />
+    {props.edit.notice && <div class={messageEditorNotice}>{props.edit.notice}</div>}
     <div class={messageEditorActions}>
       <button type="button" class={messageEditorButton} disabled={props.edit.pending}
         onClick={() => props.edit.onCancel()}>{translate('transcript.cancelEdit')}</button>

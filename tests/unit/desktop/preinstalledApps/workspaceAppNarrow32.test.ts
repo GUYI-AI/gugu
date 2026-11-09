@@ -146,9 +146,9 @@ describe('workspace App in a narrow pane (F32)', () => {
     expect(document.body.classList.contains('show-doc')).toBe(false)
     expect($('doc-message').textContent).not.toMatch(/pick a file/i)
     const files = document.querySelector('.files')!
-    // The kinds, the order and the view under the search, then the filters; 子文件夹: the crumbs between them and the list (hidden at the top), then the
-    // list's own line for what went wrong.
-    expect([...files.children].map((e) => e.id || e.classList[0]).slice(0, 8)).toEqual(['files-toolbar', 'pick-bar', 'list-banner', 'files-empty', 'file-list'])
+    // The toolbar (the picks take its place), the path on its own line (hidden at a chat folder's top), then the list's own line for what went wrong.
+    expect([...files.children].map((e) => e.id || e.classList[0]).slice(0, 8)).toEqual(['files-toolbar', 'pick-bar', 'crumbs', 'list-banner', 'files-empty', 'file-list'])
+    expect($('crumbs').hidden).toBe(true)
     expect($('pick-bar').hidden).toBe(true)
   })
 

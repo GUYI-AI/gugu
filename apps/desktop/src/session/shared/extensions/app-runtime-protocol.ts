@@ -202,7 +202,7 @@ export interface AppWhere {
 }
 
 /** What a workspace id names: a session's working copy, or a project's root folder. */
-export type WorkspaceTarget = { session: string } | { project: string };
+export type WorkspaceTarget = { session: string } | { project: string } | { folder: { deviceId: string; workspaceId: string } };
 
 /**
  * A file, named so that where it lives is said: a working-copy file by its workspace and its path there (`id`, or `name`
@@ -227,7 +227,7 @@ export function placeKey(place: AppPlace): string {
   return 'chat' in place ? `chat:${place.chat}` : place.workspace;
 }
 
-const WORKSPACE_ID = /^(session|project):(.+)$/;
+const WORKSPACE_ID = /^(session|project|folder):(.+)$/;
 
 /** A session's working copy's workspace id; a project's root folder's. */
 export const sessionWorkspace = (sessionId: string): string => `session:${sessionId}`;
@@ -238,11 +238,26 @@ export const sessionWorkspace = (sessionId: string): string => `session:${sessio
  */
 export const WORKSPACE_APP_ID = 'workspace';
 export const projectWorkspace = (projectId: string): string => `project:${projectId}`;
+/** One folder of a project, on the machine that has it (`ctx.chat.folders`): a project may hold several, on several machines. */
+export const folderWorkspace = (deviceId: string, workspaceId: string): string => `folder:${deviceId}/${workspaceId}`;
+
+/** The project folder a workspace id names, and its machine; null for a session's or a project's. */
+export function workspaceFolder(place: { workspace?: string | null } | null | undefined): { deviceId: string; workspaceId: string } | null {
+  const match = place?.workspace ? WORKSPACE_ID.exec(place.workspace) : null;
+  if (match?.[1] !== 'folder') return null;
+  const at = match[2]!.indexOf('/');
+  return at > 0 && at < match[2]!.length - 1 ? { deviceId: match[2]!.slice(0, at), workspaceId: match[2]!.slice(at + 1) } : null;
+}
 
 /** What a workspace id names. What is not one throws `invalid`. */
 export function workspaceTarget(place: WorkspacePlace): WorkspaceTarget {
   const match = WORKSPACE_ID.exec(place.workspace);
   if (!match) throw invalidPlace(`workspace is a working copy's id, as ctx.workspace.id gives it — ${JSON.stringify(place.workspace)} is not one`);
+  if (match[1] === 'folder') {
+    const folder = workspaceFolder(place);
+    if (!folder) throw invalidPlace(`${JSON.stringify(place.workspace)} is not a project folder's id`);
+    return { folder };
+  }
   return match[1] === 'session' ? { session: match[2]! } : { project: match[2]! };
 }
 

@@ -1,25 +1,24 @@
 import { join } from 'node:path';
 import { app } from 'electron';
 import { sqlite } from '@main/db/client';
-import { createWindowCommitReceipts, snapshotWindowCommitReceipt } from './window-commit-receipt';
-import { createWindowCommitPublisher } from './window-commit-publisher';
+import { createWindowPackPublisher } from './window-pack-publisher';
 import { ensureWindowCommitProjection, reserveWindowCommitHost as reserve } from './window-commit-host';
+import type { WindowReceiptDatabase } from './window-commit-receipt';
 
-/** Bind the actual durable publisher before reserving the stopped-session
- * boundary. Preparing only creates scalar SQLite statements and a cold lease;
- * source/projection I/O starts on a real commit after onSpawned's tap barrier. */
+// One cache backend for an application gateway, shared across worker generations.
+// A replaced host retains only its own admitted callbacks and cannot close the
+// next host's reader or namespace. Weak keys do not retain closed fixture DBs.
+const publishers=new WeakMap<WindowReceiptDatabase,{directory:string;publisher:ReturnType<typeof createWindowPackPublisher>}>();
 export function reserveWindowCommitHost(...input: Parameters<typeof reserve>) {
   ensureWindowCommitProjection(() => {
-    const receipts = createWindowCommitReceipts(sqlite);
-    const publisher = createWindowCommitPublisher(join(app.getPath('userData'), 'session-window-cache', 'committed'), receipts);
-    return async input => {
-      const receipt = snapshotWindowCommitReceipt(input), expected = JSON.stringify(receipt);
-      const { projectionId } = await publisher.publish(receipt);
-      return { projectionId, validate() {
-        if (JSON.stringify(receipts.bySource(receipt.sourceId)) !== expected)
-          throw Object.assign(new Error('The canonical receipt changed before journal publication'), { code: 'needs_location' });
-      } };
-    };
+    const directory=join(app.getPath('userData'),'session-window-cache','committed');
+    let shared=publishers.get(sqlite);
+    if(shared&&shared.directory!==directory)throw new Error('Commit gateway changed its cache namespace');
+    if(!shared){shared={directory,publisher:createWindowPackPublisher(directory,sqlite)};publishers.set(sqlite,shared);}
+    const publisher=shared.publisher;let closing=false;
+    return Object.assign((receipt: Parameters<typeof publisher.project>[0])=>publisher.project(receipt,closing),{
+      flush(sessionId?:string){if(sessionId===undefined)closing=true;return publisher.flush(sessionId);},
+    });
   });
   return reserve(...input);
 }

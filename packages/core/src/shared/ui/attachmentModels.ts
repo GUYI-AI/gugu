@@ -19,6 +19,7 @@ export interface AttachmentMeta {
  * - item:新消息,指向群文件夹里一个条目的某一版(消息行的 file_item_id / file_version),链接经 attachments/urls 现签;
  * - message:悄悄话的附件,不进群文件夹(owner 10-17 定),消息直接指字节(file_blob_id);能读这条消息的人才签得到链接;
  * - attachment:Agent 之间交付的文件引用,通过同一文件读取器按当前账号核权取原件;
+ * - session-file:agent 在任务时间线里交给主人的文件(主人通知),留在那台机器上那个会话的目录里,照那条时间线读它的方式读;
  * - gone:新消息,但条目已经删了(file_item_id 随删除置空)—— 名字还在,字节没了。
  */
 export type AttachmentSource =
@@ -26,6 +27,7 @@ export type AttachmentSource =
   | { kind: 'item'; itemId: string; version: number }
   | { kind: 'message'; messageId: string }
   | { kind: 'attachment'; attachmentId: string }
+  | { kind: 'session-file'; sessionId: string | null; path: string; sha256: string }
   | { kind: 'gone' }
 
 /** Legacy text is metadata, never an address to fetch; canonical references resolve bytes through the file reader. */
@@ -51,6 +53,7 @@ export interface MessageFileRef {
   file_item_id?: string | null
   file_version?: number | null
   file_blob_id?: string | null
+  session_file?: { path: string; sha256: string; session_id?: string | null } | null
   local_send_state?: 'sending' | 'failed' | 'unknown' | null
   file_metadata?: FileMetadata | null
   image_dimensions?: { width: number; height: number }
@@ -129,6 +132,8 @@ export function parseAttachmentContent(content: string | null, ref?: MessageFile
     source = { kind: 'item', itemId: ref.file_item_id, version: ref.file_version as number }
   } else if (ref?.file_blob_id && ref.id) {
     source = { kind: 'message', messageId: ref.id }
+  } else if (ref?.session_file) {
+    source = { kind: 'session-file', sessionId: ref.session_file.session_id ?? null, path: ref.session_file.path, sha256: ref.session_file.sha256 }
   } else {
     source = { kind: 'gone' }
   }

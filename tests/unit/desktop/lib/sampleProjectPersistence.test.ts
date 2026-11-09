@@ -63,10 +63,7 @@ describe('durable sample removal', () => {
     } finally { stop() }
   })
 
-  // Explicitly documents the deferred C work: A's conditional edit cannot make an
-  // unrelated module's later unconditional upsert conditional. This is not coverage
-  // of the desired no-resurrection guarantee across all settings writers.
-  it.fails('known C gap: a stale whole-config upsert can still overwrite a confirmed dismissal', async () => {
+  it('does not let a delayed tour save overwrite a confirmed dismissal', async () => {
     await sample.enrollSampleProject('u')
     const wait = deferred()
     io.readWait = wait.promise

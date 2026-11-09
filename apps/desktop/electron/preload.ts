@@ -153,8 +153,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // @@@window-tone — 无边框窗口露出来的那块底色要跟着咕咕的主题走(见 main.ts 同名注释)。
   // 用 send 不用 invoke:它在首帧前就要发一次,不该让渲染阻塞等主进程应答。
-  syncWindowTone: (tone: 'light' | 'dark'): void => {
-    ipcRenderer.send('window:sync-tone', tone)
+  syncWindowTone: (tone: 'light' | 'dark', themeColors?: Record<string, string>): void => {
+    ipcRenderer.send('window:sync-tone', tone, themeColors)
   },
   // @@@native-appearance (#7333) 偏好原样给主进程(mac 上照抄成 nativeTheme.themeSource),同步答回此刻的真实明暗 ——
   // 切回「跟随系统」时 renderer 用这个答案落主题,不先拿旧的 matchMedia 画错一帧。主进程同步失败答 null。

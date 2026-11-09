@@ -37,6 +37,19 @@
         document.documentElement.setAttribute('data-theme-preference', pref);
       })();
     </script>
+    <!-- @@@theme-pack-slots 资源库「主题」选过的配色:首帧之前插上,❌ 先闪咕咕默认色再换。
+         样式表是选主题时算好存下的(`src/session/renderer/lib/theme/theme-pack-store.ts`,key 与 style id 逐字一致);
+         这里只原样插,不解析、不计算。 -->
+    <script>
+      (function() {
+        var css = localStorage.getItem('app-theme-pack-css');
+        if (!css) return;
+        var style = document.createElement('style');
+        style.id = 'gugu-theme-pack';
+        style.textContent = css;
+        document.head.appendChild(style);
+      })();
+    </script>
     <!-- @@@sidebar-tint 同理:侧栏渐进底色开着时,首帧之前就要落上属性,否则会先闪一下
          未染色的侧栏。规则必须与 `src/lib/sidebarTint.ts` 逐字一致:只有存下来的字面量是
          'true' 才算开,其余(缺失/旧值/被改过)一律算关。 -->

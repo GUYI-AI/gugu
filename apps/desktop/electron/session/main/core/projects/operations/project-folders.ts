@@ -106,6 +106,15 @@ export async function projectRootFolder(projectId: string): Promise<{ workspaceI
   return { workspaceId, path: rootRow?.path ?? project.path };
 }
 
+/** 这条工作区记录属于哪个项目(挂上的,或是它的根目录);不是项目的文件夹 = undefined。App 的 `{ folder }` 文件位置只认这些。 */
+export async function projectFolderOfWorkspace(workspaceId: string): Promise<{ projectId: string; workspaceId: string; path: string } | undefined> {
+  const [row] = await db.select({ path: workspaces.path, projectId: workspaces.projectId }).from(workspaces).where(eq(workspaces.id, workspaceId)).limit(1);
+  if (!row?.path) return undefined;
+  if (row.projectId) return { projectId: row.projectId, workspaceId, path: row.path };
+  const [root] = await db.select({ id: projects.id }).from(projects).where(and(eq(projects.repositoryWorkspaceId, workspaceId), eq(projects.rootFolderDetached, false))).limit(1);
+  return root ? { projectId: root.id, workspaceId, path: row.path } : undefined;
+}
+
 /** 根目录在前,挂上的按挂上的先后。 */
 export async function listProjectFolders(
   projectId: string

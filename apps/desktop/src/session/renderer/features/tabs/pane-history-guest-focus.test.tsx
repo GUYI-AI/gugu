@@ -56,6 +56,8 @@ const Guests = observer(() => <>{[...extensionViewStore.residentPages.values()].
 })}</>);
 
 beforeEach(() => {
+  // jsdom has no hit testing; the App surface's occlusion check samples it. Nothing covers these pages.
+  document.elementFromPoint = () => null;
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel');
   frames = []; nextGuestId = 40; native.guest = null;

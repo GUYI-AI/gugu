@@ -14,7 +14,7 @@ import { useProjectGroupMembers } from '@/lib/projectGroupChatsBridge'
 import { AUTOMATION_TEST_IDS } from '@/lib/automationDom'
 import { UI_EVENTS } from '@/lib/uiEvents'
 import { useContactsStore } from '../../store/contactsContext'
-import { useChatStore } from '../../store/chatContext'
+import { useChatStore, useChatStoreSelect } from '../../store/chatContext'
 import { useTheme } from '../../store/theme'
 import { useMobileShell } from '../../hooks/useMobileShell'
 import { Avatar } from '../Avatar'
@@ -92,11 +92,12 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
   const projectName = useChatSlotProjectName()
   const takenOver = useComposerVerbTakeover(chatId)
   const { contacts } = useContactsStore()
-  const { chats, identitiesById, writeDraft, registerDraftEditor } = useChatStore('chats', 'identitiesById', 'writeDraft', 'registerDraftEditor')
+  const { identitiesById, writeDraft, registerDraftEditor } = useChatStore('identitiesById', 'writeDraft', 'registerDraftEditor')
+  const sourceChatId = useChatStoreSelect((store) => store.chats.find((chat) => chat.id === chatId)?.source_chat_id ?? null)
   // 手机项目群的「新任务」(电脑上是 ComposerVerbs 换上会话页那一侧的框;手机就地换成新任务的框)。
   const phoneTask = usePhoneNewTask({ chatId, enabled: mobile && isMain && !!isGroupChat, clear: () => writeDraft(chatId, '') })
   const projectMembers = useProjectGroupMembers()
-  const projectMemberIds = projectMembers.get(chats.find((chat) => chat.id === chatId)?.source_chat_id ?? chatId ?? '')
+  const projectMemberIds = projectMembers.get(sourceChatId ?? chatId ?? '')
   const members = useMemo<MentionCandidate[]>(() => isGroupChat ? [
     { id: '__all__', name: t('composer.mentionAll'), type: 'all' },
     ...groupMembers.filter((member) => member.id !== currentUserId).map((member) => ({ ...member, alias: contacts.find((contact) => contact.id === member.id)?.alias })),

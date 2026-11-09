@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { integrationErrorText } from '@renderer/features/integrations/integration-display';
 import { keptByPlatform } from '@renderer/features/integrations/integration-setup-model';
+import { integrationSections } from '@renderer/features/integrations/integration-sections';
 import { useIntegrationsContext } from '@renderer/features/integrations/integrations-provider';
 import { PageLoading } from '@renderer/lib/components/page-layout';
 import type { IntegrationAccountSummary } from '@renderer/features/integrations/use-integration-accounts';
@@ -19,6 +20,7 @@ import type { AgentIconAsset } from '@shared/core/agents/agent-payload';
 import type { ConnectionStatus } from '@shared/issue-providers';
 import { IntegrationDetailSidebar } from './IntegrationDetailSidebar';
 import { IntegrationGridCard } from './IntegrationGridCard';
+import { useLibrarySheetSelection } from './use-library-sheet-selection';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 
 export type IntegrationItem = {
@@ -42,6 +44,8 @@ export type IntegrationItem = {
   /** #7240 详情「能力」「推荐玩法」(主进程按界面语言给好的字符串)。 */
   abilities: string[];
   playbooks: { title: string; prompt: string }[];
+  /** 连上以后 agent 能不能直接用(主进程判定);false = 只在咕咕界面里用。不知道 = undefined。 */
+  agentUse?: boolean;
   /** 一家能连几个账号(邮箱):详情逐个列账号、「添加另一个账号」。 */
   multiAccount: boolean;
   /** 填表连的那几家:「编辑凭据」(预填不保密的那几项,授权码留空沿用)。 */
@@ -72,7 +76,7 @@ const IntegrationsCard: React.FC = () => {
     () => sortGitHubAccountsByDefault(githubAccounts),
     [githubAccounts]
   );
-  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+  const [selectedProvider, setSelectedProvider] = useLibrarySheetSelection();
   const showIntegrationSetup = useShowModal('integrationSetupModal');
   const showConnectGitHub = useShowModal('githubConnectModal');
   const showConfirm = useShowModal('confirmActionModal');
@@ -175,6 +179,7 @@ const IntegrationsCard: React.FC = () => {
         abilities: integration.abilities ?? [],
         playbooks: integration.playbooks ?? [],
         multiAccount: false,
+        agentUse: integration.agentUse,
         onTryPlaybook: tryPlaybook,
       };
     }
@@ -196,6 +201,7 @@ const IntegrationsCard: React.FC = () => {
       abilities: integration.abilities ?? [],
       playbooks: integration.playbooks ?? [],
       multiAccount: integration.multiAccount ?? false,
+      agentUse: integration.agentUse,
       onTryPlaybook: tryPlaybook,
       ...(hasForm && !notice?.readOnly
         ? {
@@ -232,10 +238,11 @@ const IntegrationsCard: React.FC = () => {
     };
   });
 
-  const connectedIntegrations = integrations.filter((integration) => integration.isConfigured);
-  const availableIntegrations = integrations.filter(
-    (integration) => integration.isConfigurationKnown && !integration.isConfigured
-  );
+  const {
+    connected: connectedIntegrations,
+    available: availableIntegrations,
+    uiOnly: uiOnlyIntegrations,
+  } = integrationSections(integrations);
   const selectedIntegration = selectedProvider
     ? (integrations.find((integration) => integration.id === selectedProvider) ?? null)
     : null;
@@ -276,6 +283,22 @@ const IntegrationsCard: React.FC = () => {
             />
           ))}
         </IntegrationSection>
+
+        {uiOnlyIntegrations.length > 0 && (
+          <IntegrationSection
+            title={translate('integrations.sectionUiOnly')}
+            hint={translate('integrations.sectionUiOnlyHint')}
+          >
+            {uiOnlyIntegrations.map((integration) => (
+              <IntegrationGridCard
+                key={integration.id}
+                integration={integration}
+                selected={integration.id === selectedProvider}
+                onSelect={() => setSelectedProvider(integration.id)}
+              />
+            ))}
+          </IntegrationSection>
+        )}
       </div>
 
       <Sheet open={selectedIntegration !== null} onOpenChange={(open) => !open && closeSheet()}>
@@ -293,10 +316,13 @@ const IntegrationsCard: React.FC = () => {
   );
 };
 
-function IntegrationSection({ title, children }: { title: string; children: React.ReactNode }) {
+function IntegrationSection({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <section className="space-y-3">
-      <h3 className="text-sm font-normal text-foreground">{title}</h3>
+      <div className="space-y-1">
+        <h3 className="text-sm font-normal text-foreground">{title}</h3>
+        {hint && <p className="text-xs text-foreground-muted">{hint}</p>}
+      </div>
       <div
         className="grid gap-3"
         style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}

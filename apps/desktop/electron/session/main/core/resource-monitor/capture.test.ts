@@ -1,16 +1,21 @@
 import { writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { describe, expect, it, vi } from 'vitest';
-const tracing = vi.hoisted(() => ({ release: () => {}, file: '' }));
+// Each recording's stopRecording hands its release to the test that armed it with nextStop(), so the test releases the
+// recording that is actually waiting — not a stale no-op from before stopRecording was reached (#2339).
+const tracing = vi.hoisted(() => ({ stops: [] as ((release: () => void) => void)[], file: '' }));
 vi.mock('electron', () => ({
   app: { getPath: () => tmpdir() },
   webContents: { getAllWebContents: () => [] },
   contentTracing: {
     startRecording: async () => {},
-    stopRecording: async (file: string) => { await new Promise<void>((resolve) => { tracing.release = resolve; }); writeFileSync(file, JSON.stringify({ traceEvents: [{ name: 'x' }] })); tracing.file = file; return file; },
+    stopRecording: async (file: string) => { await new Promise<void>((resolve) => { tracing.stops.shift()!(resolve); }); writeFileSync(file, JSON.stringify({ traceEvents: [{ name: 'x' }] })); tracing.file = file; return file; },
   },
 }));
 import { recordTrace, summarizeTrace, type TraceEvent } from './capture';
+import { awaitPending } from '../../../../../../../tests/support/awaitFact';
+
+const nextStop = () => new Promise<() => void>((resolve) => { tracing.stops.push(resolve); });
 
 const PID = 7;
 const main = (name: string, ts: number, dur: number, args?: TraceEvent['args']): TraceEvent => ({ ph: 'X', pid: PID, tid: 1, name, ts, dur, args });
@@ -53,16 +58,15 @@ describe('summarizeTrace', () => {
 
 describe('recordTrace', () => {
   it('runs one recording at a time, returns its events and deletes the raw trace', async () => {
+    const firstStop = nextStop();
     const first = recordTrace({}, 0, 'test');
     await expect(recordTrace({}, 0, 'test')).rejects.toThrow('in progress');
-    await vi.waitFor(() => expect(tracing.release).not.toBe(undefined));
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    tracing.release();
+    (await awaitPending('first recording reaches stopRecording', firstStop))();
     await expect(first).resolves.toEqual([{ name: 'x' }]);
     expect(existsSync(tracing.file)).toBe(false);
+    const secondStop = nextStop();
     const second = recordTrace({}, 0, 'test');
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    tracing.release();
+    (await awaitPending('second recording reaches stopRecording', secondStop))();
     await expect(second).resolves.toHaveLength(1);
   });
 });

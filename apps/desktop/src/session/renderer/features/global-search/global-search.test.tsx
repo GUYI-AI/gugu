@@ -129,6 +129,7 @@ let latestSession: SearchSession | null = null
 function SessionProbe() { latestSession = useSearchSession(); return null }
 const sessionSnapshot = () => latestSession
 const options = () => [...host.querySelectorAll<HTMLElement>('[role=option]')]
+const recentWords = () => [...host.querySelectorAll<HTMLElement>('[data-testid=global-search-recent] button:not([data-testid=global-search-recent-clear])')].map((button) => button.textContent)
 const headers = () => [...host.querySelectorAll<HTMLElement>('[role=listbox] > button:not([role=option])')].map((button) => button.textContent)
 const tab = (key: string) => [...host.querySelectorAll<HTMLElement>('[role=tab]')].find((button) => button.textContent!.startsWith(key))!
 
@@ -197,6 +198,29 @@ describe('global search sender avatars', () => {
 })
 
 describe('global search panel', () => {
+  it('shows only a group reply destination when a search hit was sent to the owner in a group', async () => {
+    remote.turns.mockResolvedValue([{ ...turn, excerpt: 'private owner group reply', activity: { kind: 'sent', id: 'send', addresses: {
+      target: { kind: 'chat', conversationId: GROUP, whisper: false, threadRootId: null }, recipients: ['user:me-1'], confirmed: true, chatKind: 'group', replyTo: null,
+    } } }])
+    await render('private')
+    expect(host.innerHTML).not.toContain('private owner group reply')
+    expect(host.textContent).not.toContain('private owner group reply')
+    expect(options()[1]!.textContent).toContain('搜索测试群甲')
+  })
+
+  it('keeps an activity search hit without rendering its body in text, title or accessible labels', async () => {
+    const { readDeliveryEnvelope } = await import('@gugu/core/local/agent/deliveryEnvelope')
+    const facts = readDeliveryEnvelope('<gugu_delivery route="chat" from="Worker" from_id="user:worker" from_type="agent"><![CDATA[private folded body]]></gugu_delivery>')!.segments.map(part => part.facts)
+    remote.turns.mockResolvedValue([{ ...turn, role: 'user', excerpt: 'private folded body', activity: { kind: 'received', id: 'input', facts } }])
+    await render('private')
+    expect(host.innerHTML).not.toContain('private folded body')
+    expect(host.textContent).not.toContain('private folded body')
+    expect(options()).toHaveLength(3)
+    expect(options()[1]!.textContent).toContain('Worker')
+    await act(async () => options()[1]!.click())
+    expect(takeTaskReveal('s1')).toBe(messageQuoteLink({ kind: 'session', sessionId: 's1', itemId: turn.itemId }))
+  })
+
   it('preserves system-row filtering and neutral sender identity for scoped SQLite results', async () => {
     remote.desktop = true
     setNetwork(false)
@@ -497,7 +521,20 @@ describe('global search panel', () => {
     expect(remote.opened).toEqual([conversationLink(OTHER, OLD)])
     await act(async () => updateSearchSession({ text: '' }))
     await settle()
-    expect([...host.querySelectorAll('[data-testid=global-search-recent] button')].map((button) => button.textContent)).toEqual(['回滚'])
+    expect(recentWords()).toEqual(['回滚'])
+  })
+
+  it('remembers the words of an opened result with nothing in scope, apart from each conversation, and Clear forgets them', async () => {
+    await render('回滚')
+    await act(async () => options()[0]!.click())
+    await act(async () => updateSearchSession({ text: '' }))
+    await settle()
+    expect(recentWords()).toEqual(['回滚'])
+    await act(async () => updateSearchSession({ chips: [{ kind: 'in', chatId: GROUP }] }))
+    expect(recentWords(), 'a conversation keeps its own words').toEqual([])
+    await act(async () => updateSearchSession({ chips: [] }))
+    await act(async () => host.querySelector<HTMLElement>('[data-testid=global-search-recent-clear]')!.click())
+    expect(host.querySelector('[data-testid=global-search-recent]')).toBeNull()
   })
 
   it('without local tasks (the phone) it searches chats only and has no task filter', async () => {

@@ -91,7 +91,7 @@ describe('the main-process commit host and actual canonical writer', () => {
       emit('one'); await entered.promise; emit('two');
       await vi.waitFor(() => expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 2 }));
       expect(await withStoredTurns('c', async () => createWindowCommitReceipts(fixture.sqlite).byReference('c', 'two')?.storedSeq)).toBe(1);
-      expect(project).toHaveBeenCalledTimes(1); expect(seen).not.toHaveBeenCalled();
+      expect(project).toHaveBeenCalledTimes(2); expect(seen).not.toHaveBeenCalled();
     } finally { gate.resolve({ projectionId: 'projection-one' }); await withStoredTurns('c', async () => {}); }
     const first = await reading; expect(first.entries[0].referenceId).toBe('one'); owner.ack(first.next);
     const second = await owner.read(first.next); expect(second.entries[0].referenceId).toBe('two'); owner.ack(second.next);
