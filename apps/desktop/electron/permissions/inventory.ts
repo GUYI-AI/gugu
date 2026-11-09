@@ -33,7 +33,7 @@ export const DEVICE_ACTION_RISKS: Readonly<Record<string, ToolRisk>> = {
     fs.volumes.list imessage.chats.list imessage.conversation.get imessage.search imessage.unread location.get
     mail.accounts.list mail.mailboxes.list mail.messages.find mail.messages.get mail.messages.contentPreview.get mail.messages.list
     notes.folders.list notes.get notes.list perf.capture perf.history perf.snapshot reminders.get reminders.list reminders.lists.get reminders.sources.list
-    reminders.status screen.capture screen.elements.find screen.get sdef.get shortcuts.list system.apps.list system.get system.shell.get
+    reminders.status screen.elements.find screen.get sdef.get shortcuts.list system.apps.list system.get system.shell.get
     system.user.get system.users.list`),
   ...entries('write', 'medium', `calendar.calendars.create calendar.calendars.delete calendar.calendars.update
     calendar.events.create calendar.events.delete calendar.events.update clipboard.write contacts.delete contacts.update

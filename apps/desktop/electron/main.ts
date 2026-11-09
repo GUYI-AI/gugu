@@ -2090,24 +2090,14 @@ function deviceActionsRuntime(): DeviceActionsRuntime {
         const out = resized.getSize()
         return { mimeType: 'image/jpeg', data: resized.toJPEG(quality).toString('base64'), width: out.width, height: out.height }
       },
-      captureScreenNative: createScreenCapture({
+      // 截主屏一张,长边缩到 maxEdge(模型看图的甜区);macOS 上要「屏幕录制」权限,只读真实状态、不向系统要。
+      captureScreen: createScreenCapture({
         platform: process.platform,
         primaryDisplay: () => screen.getPrimaryDisplay(),
         displayCount: () => screen.getAllDisplays().length,
         screenAccess: () => systemPreferences.getMediaAccessStatus('screen'),
         sources: options => desktopCapturer.getSources(options),
       }),
-      // 截主屏一张,长边缩到 maxEdge(模型看图的甜区);macOS 上要「屏幕录制」权限,没有时系统只给桌面背景。
-      captureScreen: async ({ maxEdge }) => {
-        const primary = screen.getPrimaryDisplay()
-        const scale = Math.min(1, maxEdge / Math.max(primary.size.width, primary.size.height))
-        const width = Math.round(primary.size.width * scale)
-        const height = Math.round(primary.size.height * scale)
-        const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width, height } })
-        const source = sources.find((s) => s.display_id === String(primary.id)) ?? sources[0]
-        if (!source || source.thumbnail.isEmpty()) throw new Error('截不到屏幕：系统没给咕咕「屏幕录制」权限')
-        return { mimeType: 'image/jpeg', data: source.thumbnail.toJPEG(72).toString('base64'), width, height, displays: sources.length }
-      },
     },
     nativeDir: nativeComponentsDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() }),
     isPackaged: app.isPackaged,

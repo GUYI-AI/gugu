@@ -99,10 +99,8 @@ export interface FamilyDeps {
   /** 把一张图缩到长边 maxEdge、转 JPEG(Electron nativeImage);结果里的大图过设备频道前用它压。 */
   shrinkImage?(image: { mimeType: string; data: string }, options: { maxEdge: number; quality: number }): Promise<{ mimeType: string; data: string; width: number; height: number }>
   sampleImage?(base64: string): Uint8Array
-  /** 截整块屏幕(Electron desktopCapturer;macOS 要「屏幕录制」权限)。 */
+  /** 截主屏(Electron desktopCapturer,screen-capture.ts;macOS 要「屏幕录制」权限)。screen.get 用,不经过 Computer Use。 */
   captureScreen?(options: { maxEdge: number }): Promise<{ mimeType: string; data: string; width: number; height: number; displays: number }>
-  /** Generic Electron capture for screen.capture; the legacy screen.get dependency stays unchanged. */
-  captureScreenNative?: FamilyDeps['captureScreen']
   jxa: typeof runJxa
   exec(file: string, args: readonly string[], options?: { signal?: AbortSignal; timeoutMs?: number; input?: string; cwd?: string; env?: Record<string, string>; maxBuffer?: number }): Promise<ExecResult>
   macHelper(): MacHelperClient
