@@ -27,6 +27,7 @@ const PAGE_METHODS = new Set(`
   Page.getNavigationHistory Page.navigateToHistoryEntry Page.stopLoading Page.captureScreenshot
   Page.createIsolatedWorld Page.addScriptToEvaluateOnNewDocument Page.removeScriptToEvaluateOnNewDocument
   Page.setLifecycleEventsEnabled Page.handleJavaScriptDialog Page.setInterceptFileChooserDialog
+  Page.startScreencast Page.stopScreencast Page.screencastFrameAck
   DOM.enable DOM.disable DOM.getDocument DOM.describeNode DOM.resolveNode DOM.requestNode
   DOM.querySelector DOM.querySelectorAll DOM.getBoxModel DOM.getContentQuads DOM.getOuterHTML
   DOM.scrollIntoViewIfNeeded DOM.setFileInputFiles DOM.getFrameOwner

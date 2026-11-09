@@ -24,6 +24,8 @@ it('maintains a native-owned child session without attributing its initializatio
       ['Network.enable'], ['Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }],
       ['Emulation.setEmulatedMedia', defaults], ['Runtime.runIfWaitingForDebugger'],
       ['Page.createIsolatedWorld', { frameId: 'known-frame', worldName: 'app-utility-world', grantUniveralAccess: true }],
+      // #1607 node 5: a screencast a task call started is paced and stopped without one.
+      ['Page.screencastFrameAck', { sessionId: 7 }], ['Page.stopScreencast', {}],
     ];
     for (const [method, params] of commands) await protocol.maintain!(method, params, 'child-session');
     expect(native.debuggerApi.sendCommand).toHaveBeenCalledWith('Page.createIsolatedWorld',
@@ -44,6 +46,9 @@ it('rejects actions, scripts, file paths and altered initialization parameters b
       ['Network.enable', { arbitrary: 'parameter' }], ['Browser.getVersion', {}],
       ['Emulation.setEmulatedMedia', { ...defaults, media: 'print' }],
       ['Emulation.setEmulatedMedia', { media: '', features: [{ name: '__proto__', value: 'x' }] }],
+      // Starting a screencast reads the page: a task call's action. Its pacing takes exactly a frame number.
+      ['Page.startScreencast', { format: 'jpeg' }], ['Page.screencastFrameAck', { sessionId: 'x' }],
+      ['Page.screencastFrameAck', { sessionId: 1, extra: true }], ['Page.stopScreencast', { reason: 'x' }],
     ] as [string, Record<string, unknown>][]) await expect(protocol.maintain!(method, params)).rejects.toThrow('not connection maintenance');
     expect(native.debuggerApi.sendCommand).not.toHaveBeenCalled();
   } finally { protocol.close(); }

@@ -22,6 +22,10 @@ export function pageProtocolMaintenance(method: string, params: Record<string, u
       && name(params.worldName) && (params.grantUniveralAccess === undefined || params.grantUniveralAccess === true);
   }
   if (method === 'Network.enable') return hasOnly(params, []);
+  // A started screencast's pacing (#1607 node 5): acknowledging a frame or stopping reads and changes nothing on the page.
+  // Starting one stays a task call's action.
+  if (method === 'Page.screencastFrameAck') return hasOnly(params, ['sessionId']) && Number.isSafeInteger(params.sessionId);
+  if (method === 'Page.stopScreencast') return hasOnly(params, []);
   if (method === 'Target.setAutoAttach') {
     return hasOnly(params, ['autoAttach', 'waitForDebuggerOnStart', 'flatten'])
       && params.autoAttach === true && params.waitForDebuggerOnStart === true && params.flatten === true;
