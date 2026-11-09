@@ -28,10 +28,14 @@ const referenceFields = {
 };
 
 /** Inserts prove a live first commit. A historical update can lack that proof;
- * it may replace an existing resident row, but must not insert a new row. */
+ * it may replace an existing resident row, but must not insert a new row.
+ * `needs_location` names a committed turn too large for one bounded projection:
+ * it has no projection, only this turn must be located through the full read
+ * path, and the subscription continues. */
 export const windowCommitReferenceSchema = z.discriminatedUnion('kind', [
   z.strictObject({ ...referenceFields, kind: z.literal('insert'), firstCommitCursor: windowLiveCursorSchema }),
   z.strictObject({ ...referenceFields, kind: z.literal('update') }),
+  z.strictObject({ referenceId: id, rowId: id, storedSeq: sequence, ...revisionFields, kind: z.literal('needs_location') }),
 ]).refine(value => validRevision(value) && (value.kind !== 'insert'
   || equalCursor(value.firstCommitCursor, value.latestRevisionCursor)), 'Invalid commit revision');
 export type WindowCommitReference = z.infer<typeof windowCommitReferenceSchema>;

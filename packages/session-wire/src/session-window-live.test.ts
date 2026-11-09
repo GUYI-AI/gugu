@@ -9,7 +9,7 @@ import {
 
 const cursor = (sequence: number): WindowLiveCursor => ({ workerEpoch: 'worker', storeEpoch: 'store', sequence });
 const owner = { conversationId: 'conversation', subscriptionId: 'fresh-uuid' };
-const reference = (sequence = 1): WindowCommitReference => ({
+const reference = (sequence = 1): Extract<WindowCommitReference, { kind: 'insert' }> => ({
   kind: 'insert', referenceId: `ref-${sequence}`, projectionId: 'projection', rowId: 'row', storedSeq: 7,
   firstCommitCursor: cursor(sequence), latestRevisionCursor: cursor(sequence),
 });
@@ -39,6 +39,15 @@ describe('window live public contract', () => {
     expect(windowCommitReferenceSchema.parse(historical)).toEqual(historical);
     expect(windowCommitReferenceSchema.parse({ ...historical, firstCommitCursor: cursor(1) }).firstCommitCursor)
       .toEqual(cursor(1));
+  });
+
+  it('accepts a needs_location reference without a projection, and nothing else on it', () => {
+    const { projectionId: _projection, ...located } = reference(3);
+    const tooLarge = { ...located, kind: 'needs_location' };
+    expect(windowCommitReferenceSchema.parse(tooLarge)).toEqual(tooLarge);
+    expect(windowCommitReferenceSchema.parse({ ...tooLarge, firstCommitCursor: null })).toEqual({ ...tooLarge, firstCommitCursor: null });
+    expect(windowCommitReferenceSchema.safeParse({ ...tooLarge, projectionId: 'p' }).success).toBe(false);
+    expect(windowCommitReferenceSchema.safeParse({ ...tooLarge, firstCommitCursor: cursor(4) }).success).toBe(false);
   });
 
   it('rejects epoch mixing and revisions before the first commit', () => {

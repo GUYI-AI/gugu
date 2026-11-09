@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { createWindowCommitJournal, type WindowLiveCursor, type WindowCommitReference, type WindowCommitPage } from './window-commit-journal';
 
 const at = (sequence: number): WindowLiveCursor => ({ workerEpoch: 'worker', storeEpoch: 'store', sequence });
-function item(n: number, revision = n): WindowCommitReference {
+type Projected = Exclude<WindowCommitReference, { kind: 'needs_location' }>;
+function item(n: number, revision = n): Projected {
   return { kind: n === revision ? 'insert' : 'update', referenceId: `ref-${n}`, rowId: `row-${n}`,
     storedSeq: n, projectionId: `projection-${n}-${revision}`, firstCommitCursor: at(n), latestRevisionCursor: at(revision) };
 }
@@ -49,7 +50,7 @@ describe('a window owner’s durable commit reference journal', () => {
     source.projectionId = 'mutated'; source.latestRevisionCursor.sequence = 999;
     journal.publish(item(3, 10));
     expect(await journal.read(at(0))).toBe(first);
-    expect(first.entries[0].projectionId).toBe('projection-3-3');
+    expect((first.entries[0] as Projected).projectionId).toBe('projection-3-3');
     expect(Object.isFrozen(first.entries[0].firstCommitCursor)).toBe(true);
     journal.ack(first.next);
     const revision = await journal.read(first.next);
@@ -120,6 +121,16 @@ describe('a window owner’s durable commit reference journal', () => {
     expect(tiny.failed).toHaveBeenCalledTimes(1);
     const bytes = fixture({ pageBytes: 10 }); bytes.ready(); bytes.journal.publish(item(1));
     expect(bytes.failed).toHaveBeenCalledWith(expect.objectContaining({ code: 'live_buffer_overflow' }));
+  });
+
+  it('carries a needs_location reference with only its scalar locator and keeps delivering later commits', async () => {
+    const { journal, failed, ready } = fixture(); ready();
+    const { projectionId: _projection, ...located } = item(2);
+    journal.publish({ ...located, kind: 'needs_location', turn: 'never retained' } as unknown as WindowCommitReference); journal.publish(item(3));
+    const page = await journal.read(at(0));
+    expect(page.entries).toEqual([{ referenceId: 'ref-2', rowId: 'row-2', storedSeq: 2, kind: 'needs_location', firstCommitCursor: at(2), latestRevisionCursor: at(2) },
+      expect.objectContaining({ kind: 'insert', referenceId: 'ref-3', projectionId: 'projection-3-3' })]);
+    journal.ack(page.next); expect(failed).not.toHaveBeenCalled();
   });
 
   it('preserves an unproven historical first cursor as an update while still advancing its real revision ACK', async () => {
