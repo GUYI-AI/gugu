@@ -2,13 +2,16 @@ import { readDocumentText, ChatFolderReadError } from './chat-folder-text';
 import { FILE_KEEPS, type FileKeep } from '@gugu/core/shared/fileStorage';
 import { AttachmentsError, configuredEndpoint, placeAttachment, uploadAttachmentBytes } from '@gugu/core/cloud/attachmentsApi';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
+import { coreLogger } from '@gugu/core/log';
+import { isDeviceOnline } from '@gugu/core/shared/enums/deviceModels';
 import { FILE_CHUNK_BYTES, MissingFileObjectError, fileBlob, type FileHandle, type ResolvedFile } from '@gugu/core/shared/fileResolver';
 import { fetchInChunks } from '@gugu/core/shared/inChunks';
 import { mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
 import { opensAsStoredText, workspaceUploadKind } from '@gugu/core/shared/workspaceUpload.mjs';
-import type { ErrorDetail, ExtensionChat } from './bridge-protocol';
+import type { ErrorDetail, ExtensionChat, ExtensionChatFolder } from './bridge-protocol';
 import type { Grant, PageSync } from './file-sync-core';
 import {
+  folderWorkspace,
   APP_FILE_MAX_BYTES,
   fileSuffixOf,
   fileTypeOf,
@@ -60,7 +63,7 @@ import { readUserSettingsConfig, updateUserSettingsConfig, type VersionedSetting
 /** A refusal of `gugu.files`: `code` and `detail` are what an App branches on (bridge-protocol.ts `ErrorDetail`), the message is for people. */
 export class AppFileError extends Error {
   constructor(
-    readonly code: 'denied' | 'invalid' | 'failed' | 'not-found' | 'ambiguous' | 'too-large' | 'content-changed' | 'name-taken' | 'unavailable' | 'stale-version',
+    readonly code: 'denied' | 'invalid' | 'failed' | 'not-found' | 'elsewhere' | 'ambiguous' | 'too-large' | 'content-changed' | 'name-taken' | 'unavailable' | 'stale-version',
     message: string,
     readonly detail?: ErrorDetail,
   ) {
@@ -308,19 +311,25 @@ async function peopleOf(token: string, entries: readonly AppFileEntry[], identit
 /** Who is in a chat (摩擦单 F36), as `getContext().chat.members` and `gugu.chats.members` carry them. */
 type ChatMember = { id: string; name: string; kind: 'human' | 'agent'; avatar?: string };
 
-/** One row of a chat's members changed, as `chat_members_changed` says it (`readMemberRosterRevision`). */
-export type MemberChange = { memberId: string | null; left: boolean };
+/**
+ * One row of a chat's members changed, as `chat_members_changed` says it (`readMemberRosterRevision`); or `renamed`: a
+ * person's name or face changed, as `agent_changed` says it (`readRenamedMembers`) — kept on their account, not on a
+ * member row, so no `chat_members_changed` comes for it.
+ */
+export type MemberChange = { memberId: string | null; left: boolean; renamed?: boolean };
 
 /**
- * Whether these changes moved who is in the chat — someone left, or an id not among `members` came (or one not known):
- * only then are `getContext().chat.members` read again and pushed. Every update of a member row sends one too — a read mark,
- * a pin, mute, listen mode — and those change nobody: a 112-person group sent 224 in 38 s (统筹 10-05, 画廊车道 §6).
- * Not read yet (`null`): read.
+ * Whether these changes moved who is in the chat — someone left, or an id not among `members` came (or one not known), or
+ * one of `members` was renamed: only then are `getContext().chat.members` read again and pushed. Every update of a member
+ * row sends one too — a read mark, a pin, mute, listen mode — and those change nobody: a 112-person group sent 224 in 38 s
+ * (统筹 10-05, 画廊车道 §6); a rename of someone not in the chat changes nobody in it either. Not read yet (`null`): read.
  */
 export function rosterMoved(members: readonly { id: string }[] | null, changes: readonly MemberChange[]): boolean {
   if (!members) return true;
   const ids = new Set(members.map((member) => member.id));
-  return changes.some((change) => change.left || !change.memberId || !ids.has(personId(change.memberId)));
+  return changes.some((change) => change.renamed
+    ? !!change.memberId && ids.has(personId(change.memberId))
+    : change.left || !change.memberId || !ids.has(personId(change.memberId)));
 }
 
 /**
@@ -370,6 +379,27 @@ export type AppChat = Pick<ExtensionChat, 'id' | 'name' | 'kind'> & { lastMessag
  * they gave themselves — never the viewer's remark for them, which is the viewer's own, not the App's. Null for a chat
  * with no workspace ('ai').
  */
+/** What the account records of a project group's folders (identity.device_projects, the reader's own machines only). */
+async function projectFoldersOfChat(token: string, viewerId: string, chatId: string): Promise<ExtensionChatFolder[]> {
+  const identity = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
+  const { data, error } = await identity.from('device_projects').select('device_id, folders').eq('user_id', viewerId).eq('chat_id', chatId);
+  if (error) throw new AppFileError('failed', error.message);
+  const rows = (data ?? []) as { device_id: string; folders: { workspace_id: string; kind: string; path: string }[] }[];
+  if (!rows.length) return [];
+  const machines = await identity.from('gugu_devices').select('device_id, label, hostname, status').in('device_id', rows.map((row) => row.device_id));
+  if (machines.error) throw new AppFileError('failed', machines.error.message);
+  const machineOf = new Map(((machines.data ?? []) as { device_id: string; label: string | null; hostname: string | null; status: string }[]).map((device) => [device.device_id, device]));
+  return rows.flatMap((row) => {
+    const machine = machineOf.get(row.device_id);
+    return [...row.folders].sort((a, b) => Number(b.kind === 'root') - Number(a.kind === 'root')).map((folder) => ({
+      workspace: folderWorkspace(row.device_id, folder.workspace_id),
+      path: folder.path,
+      machine: machine?.label || machine?.hostname || row.device_id,
+      online: !!machine && isDeviceOnline(machine.status as Parameters<typeof isDeviceOnline>[0]),
+    }));
+  });
+}
+
 export async function extensionChatOf(
   token: string,
   chatId: string,
@@ -385,7 +415,14 @@ export async function extensionChatOf(
   if (!row) throw new AppFileError('not-found', 'This chat could not be read');
   if (row.kind === 'topic') row = row.source_chat_id ? await read(row.source_chat_id) : null;
   if (!row) throw new AppFileError('not-found', 'This chat could not be read');
-  if (row.kind === 'group') return { id: row.id, name: row.name ?? '', kind: 'group', groupId: row.id };
+  if (row.kind === 'group') {
+    // A chat whose folders cannot be read now is still that chat: its own files must not go with them.
+    const folders = await projectFoldersOfChat(token, viewerId, row.id).catch((error: unknown) => {
+      coreLogger('app-files').warn({ chatId: row.id, error: error instanceof Error ? error.message : String(error) }, 'The folders of a project group could not be read');
+      return [];
+    });
+    return { id: row.id, name: row.name ?? '', kind: 'group', groupId: row.id, ...(folders.length ? { folders } : {}) };
+  }
   if (row.kind === 'dm') {
     const { data, error } = await chatClient(token).from('active_members').select('user_id').eq('chat_id', row.id);
     if (error) throw new AppFileError('failed', error.message);
@@ -457,20 +494,41 @@ export const LIST_PAGE = 1000;
 
 /**
  * Every row a `workspace_list_as` read names, page by page until its `total`: one answer stops at the gateway's row cap,
- * and a list cut there was shown as the whole folder (a 1416-item chat missed its oldest 416, folders among them).
+ * and a list cut there was shown as the whole folder (a 1416-item chat missed its oldest 416, folders among them). The
+ * first page says the total, so the rest are asked at once (a 7,800-item chat was eight reads one after another).
  */
 async function listedRows(token: string, args: Record<string, unknown>): Promise<ItemRow[]> {
-  const rows: ItemRow[] = [];
-  for (;;) {
-    const page = await agentRows(token, 'workspace_list_as', { ...args, p_offset: rows.length, p_limit: LIST_PAGE });
-    rows.push(...page);
-    const said = (page[0] as { total?: unknown } | undefined)?.total;
-    const total = typeof said === 'number' || (typeof said === 'string' && said !== '') ? Number(said) : NaN;
-    if (page.length === 0 || (Number.isFinite(total) ? rows.length >= total : page.length < LIST_PAGE)) {
-      // A file added between two pages moves the last row of the first onto the second.
-      return [...new Map(rows.map((row) => [row.id, row])).values()];
+  const page = (offset: number) => agentRows(token, 'workspace_list_as', { ...args, p_offset: offset, p_limit: LIST_PAGE });
+  const totalOf = (rows: readonly ItemRow[]) => {
+    const said = (rows[0] as { total?: unknown } | undefined)?.total;
+    return typeof said === 'number' || (typeof said === 'string' && said !== '') ? Number(said) : NaN;
+  };
+  const raised = (total: number, rows: readonly ItemRow[]) => {
+    const said = totalOf(rows);
+    return Number.isFinite(said) && !(said <= total) ? said : total;
+  };
+  let last = await page(0);
+  const rows = [...last];
+  // The largest total a page said: files added while the pages are read raise it.
+  let total = totalOf(last);
+  if (Number.isFinite(total) && last.length > 0 && last.length < total) {
+    const step = last.length;
+    const offsets: number[] = [];
+    for (let offset = step; offset < total; offset += step) offsets.push(offset);
+    for (const more of await Promise.all(offsets.map(page))) {
+      rows.push(...more);
+      total = raised(total, more);
+      last = more;
     }
   }
+  // One page at a time from where the rows end, as before: a page that said no total, or files added meanwhile.
+  while (last.length > 0 && (Number.isFinite(total) ? rows.length < total : last.length === LIST_PAGE)) {
+    last = await page(rows.length);
+    rows.push(...last);
+    total = raised(total, last);
+  }
+  // A file added between two pages moves the last row of one onto the next.
+  return [...new Map(rows.map((row) => [row.id, row])).values()];
 }
 
 /** Every row of a chat, newest first, as `actor` (the person, or the agent a program works for) sees them. */
@@ -546,6 +604,20 @@ async function itemById(token: string, itemId: string, actor: string): Promise<I
     throw new AppFileError(codeOf(error), error.message);
   }
   return ((Array.isArray(data) ? data[0] : data) as ItemRow | undefined) ?? null;
+}
+
+/**
+ * A file read by its id as its folder lists it: with how long its cloud copy is kept and the machine that keeps it
+ * (`workspace_list_as` only), so a page that hears it changed need not read its whole list again for that. Read by its
+ * name in its folder; one the list does not name (renamed or moved meanwhile, a folder) stays as it was read.
+ */
+async function asListed(token: string, row: ItemRow, actor: string): Promise<ItemRow> {
+  if (row.kind === 'folder') return row;
+  const found = await agentRows(token, 'workspace_list_as', { p_chat_id: row.chat_id, p_as_user_id: actor, p_folder: row.parent_id ?? '', p_name: row.filename, p_exact: true })
+    .catch(() => []);
+  const listed = found.find((one) => one.id === row.id);
+  // A list that does not say which machine holds it (undefined) leaves that to be resolved, as the row from get does.
+  return listed ? { ...row, expires_at: listed.expires_at ?? null, is_mine: listed.is_mine ?? null, host_device_id: listed.host_device_id } : row;
 }
 
 /**
@@ -903,7 +975,7 @@ export function createAppFiles(platform: FilesPlatform) {
     const { token, userId } = await platform.account();
     const rows = (await Promise.all(wanted.map((id) => itemById(token, id, as.asAgent ?? userId)))).filter((row): row is ItemRow => row !== null);
     if (rows.some((row) => row.chat_id !== chatId)) chatId = await resourceChatIdOf(token, chatId, as.asAgent ?? userId);
-    const here = rows.filter((row) => row.chat_id === chatId);
+    const here = await Promise.all(rows.filter((row) => row.chat_id === chatId).map((row) => asListed(token, row, as.asAgent ?? userId)));
     const found = new Set(here.map((row) => row.id));
     return { entries: await listedEntriesOf(token, here, platform, as.asAgent ?? userId), gone: wanted.filter((id) => !found.has(id)) };
   }
@@ -941,6 +1013,16 @@ export function createAppFiles(platform: FilesPlatform) {
     open,
     self,
     read,
+    /** Host-only metadata for a separately authorized, bounded file payload read. */
+    async payloadMetadata(surface: FileSurface, args: { ref: ChatFileRef }) {
+      surface.signal?.throwIfAborted();
+      const account = await platform.account();
+      surface.signal?.throwIfAborted();
+      const row = await readable(surface, account, args.ref, 'opening');
+      surface.signal?.throwIfAborted();
+      return { id: row.id, chat: row.chat_id, name: row.filename, contentType: row.content_type,
+        version: row.version, size: row.size_bytes ?? null };
+    },
     /** Diagnostic only; no bridge capability exposes this counter. */
     readHandleCount: () => [...snapshots.values()].filter(entry => entry.file !== undefined).length,
 

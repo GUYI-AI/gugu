@@ -26,6 +26,7 @@ import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-s
 import { sessionKeyboardNav } from './session-keyboard-nav';
 import { ProjectNeedsYouDot, ProjectRowTitle } from './project-row-parts';
 import { SidebarUnreadCount } from './sidebar-list-switch';
+import { requestTopicSplit } from '@/lib/topicSplitRequest';
 import { useSidebarChatSignals } from '@/lib/sidebarChatsBridge';
 import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
 import {
@@ -97,6 +98,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
   const groupChatId = projectGroupsStore.chatIdOf(projectId);
   const chatSignals = useSidebarChatSignals();
   const groupUnread = chatSignals?.groupUnread.get(groupChatId ?? '') ?? 0;
+  const callingTopic = chatSignals?.groupCallingTopic.get(groupChatId ?? '');
   // 挂在别的会话下面的一条拖回它自己的项目行 = 回到根(spec session-page「把会话拖成 child」)。
   // 只有它不挂着时本来就显示在这一行的才收:换项目不是这个动作。
   const unnestDrop = useSessionDropTarget();
@@ -115,6 +117,8 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
   const disambiguationPath = hasNameTwin ? project.data?.path : undefined;
   // Opening a project never changes disclosure; only its arrow or the explicit keyboard action does.
   const openProject = (beside = false) => {
+    // 行尾的数里有话题叫到你:话题不是项目行的子行,这一下就是去读它的入口(owner 11-07「红点消不掉」)。
+    if (callingTopic && groupChatId) requestTopicSplit({ chatId: callingTopic.chatId, name: callingTopic.name, sourceChatId: groupChatId, focusComposer: true });
     // behavior session-page「键盘导航」: the project row is a station too, so a click moves the cursor
     // onto it — ↓ afterwards continues from here.
     sessionKeyboardNav.syncCursorFromPointer({ kind: 'project', projectId });

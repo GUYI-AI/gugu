@@ -30,7 +30,7 @@ vi.mock('../extensions/installed-extensions-store', () => ({ installedExtensions
 vi.mock('../extensions/extension-surface-store', () => ({ extensionSurfaceStore: { setWebContentsId() {}, forgetShared() {} } }));
 vi.mock('../extensions/app-settings-page', () => ({ AppSettingsPage: () => null }));
 vi.mock('../extensions/extension-tab-toolbar', () => ({ ExtensionTabToolbar: () => null }));
-vi.mock('@/lib/taskConversation', () => ({ useTaskConversation: () => null }));
+vi.mock('@/lib/taskConversation', () => ({ useTaskConversation: () => null, useTaskProjectChat: () => null }));
 vi.mock('@/components/appSlot/AppPeekSlot', () => ({ AppPeekSlot: ({ children }: { children: React.ReactNode }) => children }));
 
 const kind = 'workspace.main';
@@ -56,6 +56,8 @@ const Guests = observer(() => <>{[...extensionViewStore.residentPages.values()].
 })}</>);
 
 beforeEach(() => {
+  // jsdom has no hit testing; the App surface's occlusion check samples it. Nothing covers these pages.
+  document.elementFromPoint = () => null;
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel');
   frames = []; nextGuestId = 40; native.guest = null;

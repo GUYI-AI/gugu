@@ -60,6 +60,7 @@ import { log } from '@main/lib/logger';
 import { sessionStartStageChannel } from '@shared/core/sessions/sessionEvents';
 import { desktopWorkerPath } from '@main/worker-manifest';
 import { stripUntrustedSessionAuthority, trustedPlatformInputPatch } from './session-meta';
+import { cancelExtensionSessionCalls } from '@main/core/extensions/extension-program-access';
 
 export { mergeTrustedSessionMeta, stripUntrustedSessionAuthority } from './session-meta';
 
@@ -193,7 +194,7 @@ export type AcpRuntimeClient = ContractClient<AcpApiContract> & {
     sessionId: string;
     prompt: PromptInput;
     steerIfBusy?: boolean;
-  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true }>;
+  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true; reason?: string }>;
   waitPromptDetached(input: { requestId: string }): Promise<{ queued: boolean }>;
   /**
    * #6396 告诉一条会话一件事:转录里一行 / agent 下一轮的开头(见 SessionManager.announce)。
@@ -209,7 +210,7 @@ type AcpRuntimeProcessClient = ContractClient<AcpRuntimeApiContract> & {
     sessionId: string;
     prompt: PromptInput;
     steerIfBusy?: boolean;
-  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true }>;
+  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true; reason?: string }>;
   waitPromptDetached(input: { requestId: string }): Promise<{ queued: boolean }>;
   /**
    * #6396 告诉一条会话一件事:转录里一行 / agent 下一轮的开头(见 SessionManager.announce)。
@@ -662,12 +663,24 @@ async function stopAcpWorkerSession(
  * owns the process — fork ownership and the platform ticket. Throws while the worker still owns the process.
  */
 export async function stopAcpSessionAndSettle(client: ContractClient<AcpRuntimeApiContract>, sessionId: string): Promise<void> {
+  cancelExtensionSessionCalls(sessionId);
   const [result] = await Promise.all([stopAcpWorkerSession(client, { sessionId }), closeAcpBrowserToolsBestEffort(sessionId)]);
   if (!result.success && await (client as AcpRuntimeProcessClient).adapterProvenance({ sessionId }) !== null) {
     throw new Error(`ACP session ${sessionId} did not stop: ${result.error.message ?? result.error.type}`);
   }
   await closeRuntimeForkOwnershipForRuntimeSession(sessionId);
   await releaseEmdashPlatformSession(sessionId);
+}
+
+/**
+ * The engine session was replaced after it went missing: the worker's lost record still pins the missing provider
+ * session, and the next start would load it again. Never starts a worker: none running means no record.
+ */
+export async function forgetLostAcpSession(sessionId: string): Promise<void> {
+  const client = await peekAcpWorkerClient();
+  if (!client) return;
+  const result = await stopAcpWorkerSession(client, { sessionId, forgetLost: true });
+  if (!result.success) throw new Error(`ACP session ${sessionId} kept its lost record: ${result.error.message ?? result.error.type}`);
 }
 
 /**
@@ -680,6 +693,9 @@ function decorateRuntimeClient(client: ContractClient<AcpRuntimeApiContract>): A
   return {
     ...client,
     cancelTurn: async (input, meta) => {
+      // Snapshot the current calls before any async cleanup. A later turn's calls
+      // must not be cancelled when this interruption eventually finishes.
+      cancelExtensionSessionCalls(input.sessionId);
       const { stopHumanToolWaits } = await import('../../asks/human-tool-wait');
       stopHumanToolWaits(input.sessionId);
       // Harnesses do not all cancel their outstanding MCP requests when interrupted.

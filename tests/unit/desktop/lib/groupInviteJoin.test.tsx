@@ -142,4 +142,11 @@ describe('useGroupInviteJoin (#3303)', () => {
     expect(current.joinError).toContain('群已满员')
     expect(thrown).toMatchObject({ message: current.joinError, originalError })
   })
+
+  it('群满了就说群满了：数据库的英文原句换成现成的「群成员已满」文案', async () => {
+    mocks.directJoin.mockRejectedValue(new Error('Group member limit reached'))
+    await act(async () => { await current.join(group(), 'token').catch(() => undefined) })
+    expect(current.joinError).toContain('群成员已满')
+    expect(current.joinError).not.toContain('Group member limit reached')
+  })
 })

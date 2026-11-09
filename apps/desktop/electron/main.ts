@@ -4,6 +4,7 @@ import './browser-user-agent-bootstrap'
 import './page-navigation-bootstrap'
 import { attachTabHistorySwipe } from './tab-history-swipe'
 import { startServerUsageSync } from './server/usage-sync'
+import { createSelfGuguNumber } from './self-gugu-number'
 import { readStateFile, writeStateFile } from './app-state'
 import { noteExitReason } from './lib/exit-reason'
 import {assistantWorkHistoryPosition} from './assistant-work-history-position'
@@ -17,9 +18,11 @@ import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/fi
 import { createDesktopFileAccess, signedInFileRpc } from './desktopFileAccess'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
 import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
+import { fileStoreDirectory } from '@gugu/core/local/files/fileSnapshots'
 import { writeTaskCopy } from './projectFilePublication'
 import { resourceMonitorWindow } from './resource-monitor-window'
 import { linkProjectDevice } from './session/main/core/projects/project-device-link'
+import { killAllMiseProcessesSync } from './session/main/core/dependencies/mise-process'
 import {
   app,
   // @@@5747 Electron 自带的那个 autoUpdater(Squirrel 的直接封装),与 electron-updater 的同名导出
@@ -42,6 +45,7 @@ import {
   safeStorage,
   screen,
   desktopCapturer,
+  systemPreferences,
   webContents,
   type OpenDialogOptions
 } from 'electron'
@@ -52,6 +56,7 @@ import { captureReading, currentReading, historyReading } from './session/main/c
 import { setMacFootprintReader } from './session/main/core/resource-monitor/footprint'
 import { clearTraceLeftovers } from './session/main/core/resource-monitor/capture'
 import { sampleCuaImage } from './device-actions/native/cua-image-sample'
+import { createScreenCapture } from './device-actions/screen-capture'
 import { createComputerControlWindow } from './device-actions/computer-control-window'
 import { computerControlWindowReaders } from './device-actions/computer-control-foreground'
 import { installNativeAppearanceSync, installWindowMaterial, type WindowMaterialHost } from './window-material'
@@ -1373,6 +1378,19 @@ const hostPresentationListeners = new Set<() => void>()
 function tellHostPresentationChanged(): void {
   for (const listener of hostPresentationListeners) listener()
 }
+// App 页的 `operator.guguNumber`:登录账号自己的咕咕号,按信封同一张身份表查,一个账号查一次。
+const selfGuguNumber = createSelfGuguNumber({
+  userId: () => SERVER_MODE ? serverAuth?.signedInUserId() ?? null : humanAuthUserId(),
+  lookup: async (userId) => {
+    const auth = await (authProvider ?? desktopAuthProvider()).getAuth()
+    if (auth?.userId !== userId) throw new Error('the account changed while its 咕咕号 was looked up')
+    const identity = (await resolveGuguIdsForInbox([userId], auth.accessToken)).get(userId)
+    if (!identity) throw new Error(`no identity row for ${userId}`)
+    return identity.guguNumber
+  },
+  changed: tellHostPresentationChanged,
+  failed: (error) => createLogger('extensions/self').error({ error: String(error) }, 'Looking up the account\'s own 咕咕号 failed'),
+})
 
 // @@@close-to-tray-hint - close hides the window to the tray instead of quitting; without a signal users
 // think the app vanished. Notify the FIRST time only, persisting the flag in app-state.json under userData.
@@ -1399,6 +1417,8 @@ const writeAppState = (state: Record<string, unknown>): void => writeStateFile(a
  */
 const WINDOW_TONE_BG = { light: '#ffffff', dark: '#111114' } as const
 type WindowTone = keyof typeof WINDOW_TONE_BG
+
+let hostThemeColors: Record<string, string> | undefined
 
 function readWindowTone(): WindowTone {
   const saved = readAppState().windowTone
@@ -2070,17 +2090,14 @@ function deviceActionsRuntime(): DeviceActionsRuntime {
         const out = resized.getSize()
         return { mimeType: 'image/jpeg', data: resized.toJPEG(quality).toString('base64'), width: out.width, height: out.height }
       },
-      // 截主屏一张,长边缩到 maxEdge(模型看图的甜区);macOS 上要「屏幕录制」权限,没有时系统只给桌面背景。
-      captureScreen: async ({ maxEdge }) => {
-        const primary = screen.getPrimaryDisplay()
-        const scale = Math.min(1, maxEdge / Math.max(primary.size.width, primary.size.height))
-        const width = Math.round(primary.size.width * scale)
-        const height = Math.round(primary.size.height * scale)
-        const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width, height } })
-        const source = sources.find((s) => s.display_id === String(primary.id)) ?? sources[0]
-        if (!source || source.thumbnail.isEmpty()) throw new Error('截不到屏幕：系统没给咕咕「屏幕录制」权限')
-        return { mimeType: 'image/jpeg', data: source.thumbnail.toJPEG(72).toString('base64'), width, height, displays: sources.length }
-      },
+      // 截主屏一张,长边缩到 maxEdge(模型看图的甜区);macOS 上要「屏幕录制」权限,只读真实状态、不向系统要。
+      captureScreen: createScreenCapture({
+        platform: process.platform,
+        primaryDisplay: () => screen.getPrimaryDisplay(),
+        displayCount: () => screen.getAllDisplays().length,
+        screenAccess: () => systemPreferences.getMediaAccessStatus('screen'),
+        sources: options => desktopCapturer.getSources(options),
+      }),
     },
     nativeDir: nativeComponentsDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() }),
     isPackaged: app.isPackaged,
@@ -2382,8 +2399,13 @@ ipcMain.handle('locale:sync-resolved', (_event, locale: unknown) => {
   syncResolvedHostLocale(locale)
 })
 // @@@window-tone — 渲染层是主题真值的唯一写入者,落属性时顺带告诉主进程,主进程只被告知。
-ipcMain.on('window:sync-tone', (_event, tone: unknown) => {
+ipcMain.on('window:sync-tone', (event, tone: unknown, colors: Record<string, string> | undefined) => {
+  // @@@app-theme-colors 主题的配色只听主窗的:别的窗口也发 tone,但它们的文档不带主题样式表。
+  const colorsChanged = event.sender === mainWindow?.webContents && JSON.stringify(colors) !== JSON.stringify(hostThemeColors)
+  if (colorsChanged) hostThemeColors = colors
+  const toneBefore = readWindowTone()
   syncWindowTone(tone)
+  if (colorsChanged && readWindowTone() === toneBefore) tellHostPresentationChanged()
 })
 // @@@host-system-languages — renderer 判定「跟随系统」的唯一真值源。**不能**让 renderer 自己读
 // navigator.languages:Electron 把 Chromium 界面语言排在那个列表首位(中文 macOS 实测 ['en-US',
@@ -2457,7 +2479,7 @@ const remoteFileTempRoot = join(app.getPath('userData'), 'cache', 'remote-files'
 const remoteFileOpenDirectories = new Set<string>()
 const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider().getAuth(), tempRoot: remoteFileTempRoot,
   rpc: signedInFileRpc(() => desktopAuthProvider().getAuth(), makeChatClient),
-  downloads: join(resolveGuguHome(process.env), 'attachments'), fetch: electronFetch, links: () => sshLinks,
+  downloads: fileStoreDirectory(resolveGuguHome(process.env)), fetch: electronFetch, links: () => sshLinks,
   root: async projectId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectRoot(projectId) },
   deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
 })
@@ -3349,6 +3371,7 @@ const killEnginesOnCrash = createNativeLegReap({
     ['opencode-serve-attach', () => opencodeServeAttachSessionDelivery.disposeSync()],
     ['droid-daemon', () => droidDaemonSessionDelivery.disposeSync()],
     ['extension-programs', () => emdashBridge?.emdashExtensionPrograms().killAllSync()],
+    ['mise', killAllMiseProcessesSync],
     ['remote-tunnel', () => {
       closeTunnelMachines?.()
       tunnelEndpoint?.stop()
@@ -4297,6 +4320,7 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
     // 全要走宿主这个 renderer 通道,而通道的实现住在 main.js。传函数不传值,所以此刻窗口还没建
     // 也没关系——调用时才读。
     emdashBridge.setExtensionHostWindowChannel({
+      openProjectionViewer: pageId => projectionDeviceRuntime.openViewer(pageId),
       invokeRendererExtensions,
       requestExtensionInstallConsent: (request, options) => {
         if (!mainWindow || mainWindow.isDestroyed()) {
@@ -4356,6 +4380,8 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
       onHostWindowFocusChange,
       hostLocale: currentHostLocale,
       hostTone: readWindowTone,
+      hostThemeColors: () => hostThemeColors,
+      selfGuguNumber,
       onHostPresentationChange: (listener) => {
         hostPresentationListeners.add(listener)
         return () => hostPresentationListeners.delete(listener)
@@ -4420,6 +4446,8 @@ async function stopDesktopOwnedResources(): Promise<void> {
       () => droidDaemonSessionDelivery.dispose(),
       reportShutdownPhase,
     ),
+    // 首启 / 设置里装 agent 的 `mise install`(自成一组、没有时限):不收就在实例停掉后接着跑,还占着继承来的调试端口。
+    runShutdownPhase('mise', killAllMiseProcessesSync, reportShutdownPhase),
     // #7199 / #7317 电脑控制的 cua-driver 守护进程与代理、Mac 小助手:同一条规矩,漏了它们每重启一次就留一个孤儿
     // (真机实测:旧实例退出后 `cua-driver serve` ppid 变成 1)。守护进程自己也认 stdin EOF(见 cua-client),这里是正路。
     runShutdownPhase(
@@ -5021,6 +5049,7 @@ app.whenReady().then(async () => {
       isThisDevice: (deviceId) => crossMachine().isThisDevice(deviceId),
       appSpawn: (app, deviceId, action) => crossMachine().appSpawn(app, deviceId, action),
       sessions: (since, options) => crossMachine().sessionsElsewhere(since, options),
+      sessionHome: (sessionId) => crossMachine().sessionHome(sessionId),
       archive: (deviceId, sessionId, removeSocialIdentity) => crossMachine().archiveOn(deviceId, sessionId, removeSocialIdentity),
       appMessage: (app, deviceId, sessionId, text, how) => crossMachine().appMessage(app, deviceId, sessionId, text, how),
       appCall: (app, deviceId, action) => crossMachine().appCall(app, deviceId, action),
@@ -5458,6 +5487,7 @@ app.whenReady().then(async () => {
                 ? { additionalEnv: configuredMcp.env }
                 : {})),
             additionalMcpServers: configuredMcp.servers,
+            ...(info.sourceSessionId ? { libraryFrom: info.sourceSessionId } : {}),
             // 运行时分叉(侧边聊天)沿用启动输入解析出的同一权限档；ACP adapter 的进程参数
             // 与普通 app-server 由同一 session bundle 物化，不能在桥里另猜一档。
             autonomy: info.permissionMode
@@ -6436,8 +6466,8 @@ app.whenReady().then(async () => {
         })
         // 资源库 → MCP:这条任务带上的那几台,经能力包送进去。包建好以后连同留在外面的(让给这一家自己的、
         // 这条腿收不到的、和咕咕自己的撞了的、资源库里已删的)记成这一次的事实,任务的 `/mcp` 面板读它。
-        setSessionLibraryMcpBridge(async (sessionId) => {
-          const picked = await emdash.emdashLibraryMcpForSession(sessionId)
+        setSessionLibraryMcpBridge(async (sessionId, selectionFrom) => {
+          const picked = await emdash.emdashLibraryMcpForSession(selectionFrom ?? sessionId)
           const servers = picked.servers.map((server) => ({
             name: server.name,
             transport: server.transport,
@@ -6454,6 +6484,8 @@ app.whenReady().then(async () => {
             settle: ({ delivered, collided }) => {
               const leftOut = [...picked.leftOut, ...collided.map((item) => ({ name: item.name, reason: 'collides' as const, with: item.with }))]
               if (leftOut.length > 0) createLogger('library-mcp').info({ sessionId, leftOut }, 'library MCP left out of the session')
+              // 分叉没有自己的行可记;来源任务那一份是来源自己那一次起进程的事实,❌ 拿分叉的盖掉它。
+              if (selectionFrom) return
               void emdash.emdashRecordLibraryMcp(sessionId, { delivered, leftOut }).catch((error: unknown) =>
                 createLogger('library-mcp').warn({ sessionId, error: String(error) }, 'could not record the library MCP delivery'))
             },
@@ -6470,6 +6502,7 @@ app.whenReady().then(async () => {
           client: (accessToken) => makeIdentityClient(accessToken) as unknown as DeviceProjectsRpcClient,
           records: () => emdash.listDeviceProjectRecords(),
           warn: (message, fields) => createLogger('device-projects').warn(fields, message),
+          onPublished: () => emdash.projectFoldersPublished(),
         })
         try {
           emdash.onDeviceProjectsMaybeChanged(() => deviceProjectsPublisher?.notify())

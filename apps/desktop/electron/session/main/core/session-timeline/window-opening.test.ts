@@ -4,7 +4,8 @@ import { createWindowCommitRuntime } from './window-commit-runtime';
 
 function fixture(capture: (conversationId: string) => Promise<(() => boolean) | null> = vi.fn(async () => () => true)) {
   const runtime = createWindowCommitRuntime({ persist: vi.fn(async () => {}),
-    capture: () => { throw new Error('No turn is produced by opening history'); }, project: vi.fn(), report: vi.fn() });
+    capture: () => { throw new Error('No turn is produced by opening history'); },
+    project: vi.fn(async () => { throw new Error('No projection is produced by opening history'); }), report: vi.fn() });
   const reserve = vi.fn((input: typeof inputValue, failed: Parameters<typeof runtime.reserve>[2]) => runtime.reserve(input.subscriptionId, input.conversationId, failed));
   const owners = new Map<string, { stop(): void }>();
   const book = createWindowOpenings({ capture, reserve, register: (id, owner) => {

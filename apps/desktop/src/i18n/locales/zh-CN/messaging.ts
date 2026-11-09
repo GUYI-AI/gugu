@@ -60,7 +60,7 @@ export default {
       "card": {
         "appUnavailable": "App 用不了",
         "deliveryRejected": "消息未送达",
-        "outcomeUnknown": "投递结果未知",
+        "outcomeUnknown": "发送失败",
         "generic": "回复没有完成",
         "authentication": "模型服务拒绝了授权",
         "network": "连不上模型服务",
@@ -89,7 +89,7 @@ export default {
       "generic": "Agent 本次回复出错，未能完成",
       "deliveryRejected": "这条消息没有送到助理，也不会自动重投。",
       "notAdmitted": "消息已保留，助理就绪后回复。",
-      "outcomeUnknown": "投递结果未知：消息可能已经送到助理，没有重投。",
+      "outcomeUnknown": "消息发送失败。",
       "undelivered": "消息暂未送达：没有运行中的咕咕实例持有这个 Agent，打开那个实例后会由它读取。",
       "appUnavailable": "未送达：这条来自一个 App，它在这个 Agent 所在的设备上用不了（没有安装、已关闭、需要更新，或手机上不能运行）。",
       "retry": "重试",
@@ -187,7 +187,7 @@ export default {
     },
     "appEnable": {
       "devices": "装到哪几台电脑",
-      "devicesHint": "新装上的电脑，所有 agent 都能用；要改给谁，去「App」页。",
+      "devicesHint": "每台新装的电脑上，所有 agent 默认都能用；之后可以在 App 设置里改。",
       "addsChat": "这台电脑上已经装了、只给了部分 agent：这次只加上群「{{name}}」，别的不变。",
       "decline": "不装",
       "machine": "这台电脑",
@@ -213,7 +213,6 @@ export default {
       "done": "完成",
       "noPlaces": "你还没有 agent，也不在任何群里",
       "noMatch": "没有找到",
-      "used": "给了：",
       "hereAll": "本机所有 agent",
       "hereAllOn": "「{{machine}}」上所有 agent",
       "more": "{{names}} 等 {{count}} 处",
@@ -251,6 +250,7 @@ export default {
       "showRaw": "查看原始内容",
       "hideRaw": "收起原始内容",
       "install": "安装",
+      "goToApps": "去 App 页",
       "unavailable": "这个 App 现在打不开：没装上，或者已经停用。",
       "title": "用哪个打开「{{name}}」"
     },
@@ -290,8 +290,8 @@ export default {
     "markAllReadPartial_other": "有 {{count}} 个会话未能标为已读，请重试",
     "markUnreadFailed": "标记未读失败，请重试",
     "muted": "消息免打扰",
+    "newMessage": "收到一条新消息",
     "noResults": "未找到对话",
-    "searchMessages": "搜索消息「{{query}}」",
     "searchMessagesTitle": "搜索消息",
     "listLabel": "对话列表",
     "pin": "置顶",
@@ -348,6 +348,7 @@ export default {
     "send": "发送",
     "settings": "设置"
   },
+  "linkPill": {"unavailable": "不可用：已删除，或你无权查看", "message": "{{sender}}：{{words}}"},
   "attachmentView": {
     "types": {"pdf": "PDF 文档", "word": "Word 文档", "excel": "Excel 表格", "presentation": "演示文稿", "text": "文本", "markdown": "Markdown 文档", "csv": "CSV 表格", "html": "网页", "json": "JSON 文档", "archive": "压缩文件", "image": "图片", "audio": "音频", "video": "视频"},
     "fileGone": "文件已删除",
@@ -446,7 +447,20 @@ export default {
     "mobilePlaceholder": "消息",
     "projectGroupPlaceholder": "发消息给 {{name}}… @ 某个 agent 叫它",
     "removeAttachment": "移除 {{fileName}}",
-    "sendFailed": "发送失败：{{reason}}",
+    "sendFailed": "消息没发出去：{{guidance}}",
+    "failedFileLabel": "{{kind}} {{name}}",
+    "failedFileKind": { "image": "图片", "video": "视频", "audio": "音频", "file": "文件" },
+    "fileSendFailed": "{{file}} 没发出去：{{guidance}}",
+    "filesSendFailed": "{{count}} 个文件没发出去：{{guidance}}",
+    "failureReason": {
+      "tooLarge": "文件太大，请缩小后重新发送",
+      "signIn": "登录已失效，请重新登录后发送",
+      "denied": "没有发送权限，请确认对话权限后重新发送",
+      "busy": "发送过于频繁，请稍后重新发送",
+      "chatUnavailable": "对话已不可用，请返回消息列表确认",
+      "timeout": "发送超时，请稍后重新发送",
+      "unavailable": "发送未完成，请稍后重新发送"
+    },
     "verb": {
       "task": "新任务"
     },
@@ -462,6 +476,8 @@ export default {
   },
   "forward": {
     "fileFailed": "{{name}} 没能一起转发",
+    "fileGone": "{{name}} 已经不在了，没转发出去。",
+    "fileTooLarge": "{{name}} 太大，一次最多转发 512 MB。",
     "batchPreview": "转发 {{count}} 条消息",
     "batchPreview_one": "转发 {{count}} 条消息",
     "batchPreview_other": "转发 {{count}} 条消息",
@@ -509,10 +525,18 @@ export default {
       "mentionHint": "在输入框里 @{{name}}",
       "separator": "、"
     },
+    "notice": {
+      "agentFloodGroup": "这个群里 agent 较多，已把它们都转为被动模式，@ 它们才会回。",
+      "agentFloodTopic": "这条话题里 agent 较多，已把它们都转为被动模式，@ 它们才会回。",
+      "left": "{{actor}} 退出了群聊",
+      "madeAdmin": "{{actor}} 将 {{target}} 设为管理员",
+      "removed": "{{actor}} 将 {{target}} 移出了群聊",
+      "revokedAdmin": "{{actor}} 撤销了 {{target}} 的管理员身份",
+      "topicOpened": "{{actor}} 开了话题："
+    },
     "memberList": {
       "agentLeave": "让它退出群聊",
       "clearSearch": "清除搜索",
-      "createAgent": "新建 Agent 并加入本群",
       "invite": "邀请成员",
       "makeAdmin": "设为管理员",
       "manage": "管理 {{name}}",
@@ -522,7 +546,7 @@ export default {
       "setActive": "改为主动",
       "setPassive": "改为被动",
       "loadFailed": "成员名单没加载出来。关掉再打开一次 👥 试试。",
-      "notParticipant": "你还不是这条话题的参与者，所以看不到成员名单。在里面说一句就进来了。",
+      "notParticipant": "暂时看不到这条话题的成员",
       "sectionAgents": "Agent",
       "sectionPeople": "人",
       "myAgents": "我的 agent · {{count}}",
@@ -682,8 +706,7 @@ export default {
     "more": "更多操作",
     "searchChat": "搜索对话",
     "searchConversation": "在对话中搜索",
-    "groupFolder": "群文件夹",
-    "folder": "文件夹"
+    "folder": "文件"
   },
   "history": {
     "searchTopics": "搜索话题",
@@ -749,6 +772,11 @@ export default {
       "react": "表情回应",
       "reply": "回复",
       "quoteSelection": "引用选中文字",
+      "quoteToComposer": "引用到输入框",
+      "quoteSelectionToComposer": "引用选中内容",
+      "openFile": "打开",
+      "editMessage": "编辑重发",
+      "forkTask": "分叉这个任务",
       "select": "多选"
     },
     "attachment": "[附件]",
@@ -768,16 +796,17 @@ export default {
     "retracted": "消息已撤回",
     "deliveredFrom": "来自 {{name}}",
     "sendStatus": {
+      "resend": "重发",
       "unknown": "状态待确认",
       "unknownHint": "正在等待发布结果，消息到达后会自动更新，无需重发。",
       "archived": "对方已归档、未送达",
-      "failed": "未送达",
-      "failedActions": "未送达消息操作",
-      "failedHint": "未送达，点击重试或丢弃",
+      "failed": "发送失败",
+      "failedActions": "发送失败消息操作",
+      "failedHint": "发送失败，点击查看消息操作",
       "undelivered": "所在实例未运行、未送达",
       "sending": "发送中",
       "stopped": "已停止，下一句发出时一起发送",
-      "unknownNotResent": "结果未知，没有重发",
+      "unknownNotResent": "发送失败",
       "failure": {
         "hostOffline": "这个任务所在的电脑现在不在线，它上线后会自动发出",
         "hostNotReady": "这个任务所在的电脑还没准备好接收消息，稍后点重试",
@@ -829,7 +858,8 @@ export default {
     "sourceDiscarded": "原消息未发出，已被丢弃",
     "deliveryTimeout": "投递超时 {{seconds}}s（网络挂起）",
     "discarded": "已丢弃",
-    "offscreenFailure": "有消息未送达，回到对应对话可重试或丢弃",
+    "offscreenFailure": "「{{chatName}}」中的消息未送达，回到该对话可重试或丢弃",
+    "chatById": "会话 {{id}}",
     "recipientMissing": "收件人已不可用，消息未发送。",
     "sendFailed": "发送失败"
   },
@@ -850,6 +880,8 @@ export default {
   },
   "topic": {
     "leave": "退出话题",
+    "leaveHint": "你仍可阅读，只是不再收到这个话题的通知",
+    "removeHint": "对方仍可阅读，只是不再收到这个话题的通知",
     "calledYou": "有人 @ 你",
     "pins": {
       "pin": "将“{{name}}”置顶到主群",

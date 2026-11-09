@@ -40,7 +40,7 @@ beforeEach(async () => {
     return memory.commit(operations)
   } } })
   rows = { current: [incoming()] }
-  const deps = { ledger: createChatListProjectionLedger(), repositoryRef: { current: repository },
+  const deps = { ledger: createChatListProjectionLedger(), conversations: { readSeqsOf: () => undefined }, repositoryRef: { current: repository },
     getRepository: async () => repository, chatsRef: rows, activeChatIdRef: { current: 'tuple-race' }, requestSeqRef: { current: 0 },
     setChats: (next: ChatItem[]) => { rows.current = next }, onActiveRevoked: () => undefined,
     canAcknowledge: () => true, visibleSeqOf: () => 5, notifications: { chatMessages: false, sound: false } }

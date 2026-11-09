@@ -73,6 +73,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/lib/ui/dropdown-menu', ()
 }))
 vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', () => ({
   summaryOf: async () => ({ ok: true, manifest }),
+  watchReading: () => () => undefined,
   packageKey: (card: { source: { kind: string; url?: string }; messageId: string }) => (card.source.kind === 'url' ? `url:${card.source.url}` : `msg:${card.messageId}`),
   installPackageOf: (card: { messageId: string }) => ({ messageId: card.messageId }),
   showPackage: () => () => undefined,

@@ -17,8 +17,9 @@ import { openOwnedAgentFile } from '../lib/ownedAgentConversation'
 /** The navigation belongs to the chat shell, not a Markdown renderer or an agent. */
 export function useLinkNavigation(input: {
   ownerId: string
-  chats: readonly ChatItem[]
-  contacts: readonly ContactUser[]
+  /** Read when a link opens: the shell does not subscribe to the chat list or contacts for this. */
+  chats: () => readonly ChatItem[]
+  contacts: () => readonly ContactUser[]
   openChat: (chatId: string) => string | void
   openSender?: (sender: ContactUser, sourceChatId?: string) => Promise<void> | void
   openFile: (chatId: string, target: Extract<GuguLinkTarget, { kind: 'file' }>, source: Pick<LinkNavigation, 'message' | 'restore'>) => void | Promise<void>
@@ -40,12 +41,12 @@ export function useLinkNavigation(input: {
       const asked = generation
       const state = current.current
       if (target.kind === 'sender') {
-        const sender = state.contacts.find(contact => contact.id === target.userId)
+        const sender = state.contacts().find(contact => contact.id === target.userId)
           ?? readIdentityDirectoryBridge()?.getSnapshot()?.[target.userId]
         if (!target.file && (!sender || !state.openSender)) throw new Error(messages.current.t('links.unavailable'))
         let sourceChatId: string | undefined
         if (target.sourceChatId && !readMobileShell()) {
-          const source = state.chats.find(chat => chat.id === target.sourceChatId)
+          const source = state.chats().find(chat => chat.id === target.sourceChatId)
           if (!source || (source.kind !== 'group' && source.kind !== 'topic')) throw new Error(messages.current.t('links.unavailable'))
           sourceChatId = (source.kind === 'topic' ? source.source_chat_id : source.id) ?? undefined
           if (!sourceChatId) throw new Error(messages.current.t('links.unavailable'))
@@ -68,7 +69,7 @@ export function useLinkNavigation(input: {
           groupId = data?.chat_id
         }
         if (asked !== generation || current.current.ownerId !== state.ownerId) throw new Error('The file opening was superseded')
-        const fileChat = state.chats.find((row) => row.id === groupId)
+        const fileChat = state.chats().find((row) => row.id === groupId)
         if (!fileChat) throw new Error('File reference is unavailable')
         const chatId = fileChat.kind === 'topic' ? fileChat.source_chat_id! : fileChat.id
         await state.openFile(chatId, target, request)
@@ -78,7 +79,7 @@ export function useLinkNavigation(input: {
       if (target.kind === 'app' && !target.place) { state.openOwnApp(target.extensionId, target.tab); return 'own' as const }
       if (target.kind === 'app' && target.place && 'chat' in target.place) {
         const chatId = target.place.chat
-        if (!state.chats.some((row) => row.id === chatId)) throw new Error('App chat is unavailable')
+        if (!state.chats().some((row) => row.id === chatId)) throw new Error('App chat is unavailable')
         state.openApp(chatId, target.extensionId, target.tab)
         window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked, { detail: { chatId } }))
         return { chat: chatId }
@@ -123,7 +124,7 @@ export function useLinkNavigation(input: {
         return
       }
       if (target.kind !== 'chat') throw new Error('This target is not available in the chat shell')
-      const chat = state.chats.find((row) => row.id === target.chatId)
+      const chat = state.chats().find((row) => row.id === target.chatId)
       if (!target || !chat) throw new Error('Conversation reference is unavailable')
       if (target.messageId) {
         const message = await chatService.getMessageById(target.messageId, state.ownerId)
@@ -132,7 +133,7 @@ export function useLinkNavigation(input: {
       if (asked !== generation || current.current.ownerId !== state.ownerId) return
       const assistant = readAssistantShellBridge()?.getSnapshot()
       let task: AssistantTaskChat | null = null
-      const contact = state.contacts.find((row) => row.id === chat.peer_user_id)
+      const contact = state.contacts().find((row) => row.id === chat.peer_user_id)
       if (assistant?.assistant && contact?.type === 'agent' && contact.owner_user_id === state.ownerId
         && contact.id !== assistant.assistant.id) {
         // Choosing the known task viewport must not wait for its cloud reader to be ready.

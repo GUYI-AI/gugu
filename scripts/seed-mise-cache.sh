@@ -8,7 +8,7 @@
 set -euo pipefail
 : "${GUGU_MISE_CACHE_DIR:?}"
 pin="$(dirname "$0")/../apps/desktop/src/session/shared/core/agents/mise-release.json"
-base=https://github.com/jdx/mise/releases/download
+base=https://download.gugu.nextmind.space/releases/vendor/mise
 while [ "${1:-}" = --pin ] || [ "${1:-}" = --base ]; do
   case "$1" in --pin) pin="$2" ;; --base) base="$2" ;; esac
   shift 2

@@ -21,12 +21,15 @@ import { remoteHostsStore } from '@/session/renderer/features/remote-hosts/remot
 import { alsoOnMachines, INSTALL_CONSENT_HUMAN_WINDOW_MS, type InstallAlsoOnMachine } from '@shared/extensions/host-actions'
 import { answered, installAgreedOn, InstallRefusedError } from '@/session/shared/extensions/install-agreed-on'
 import { rendererLogger } from '../../lib/log'
+import { useTheme } from '../../store/theme'
+import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
 import { appsHere } from '../appSlot/appsHere'
 import { openApp } from '../appSlot/useOpenApp'
 import { Button } from '../ui/Button'
+import { Progress } from '../ui/Progress'
 import { ConsentLines } from './ConsentDetails'
 import { installedHereLine, refusedLine } from './installedHere'
-import { installPackageOf, newestShownPackage, packageKey, showPackage, shownPackagesVersion, subscribeShownPackages, summaryOf, type PackageCard } from './sharedPackages'
+import { installPackageOf, newestShownPackage, packageKey, showPackage, shownPackagesVersion, subscribeShownPackages, summaryOf, watchReading, type PackageCard } from './sharedPackages'
 import type { ExtensionBundleSummary } from './summarizeExtensionBundle'
 import type { HandedConsent } from '@/session/shared/extensions/install-consent-flow'
 
@@ -61,13 +64,14 @@ function useInstalled(id: string | undefined): { version: string; origin: Extens
  */
 const InstallTarget = observer(function InstallTarget({ selectedId, onSelect }: { selectedId: string; onSelect: (id: string) => void }) {
   useEffect(() => remoteHostsStore.start(), [])
+  const { theme } = useTheme()
   const hosts = [...remoteHostsStore.hosts.values()]
   if (hosts.length === 0) return null
   const machines = deviceScopeTrayDevices(
     translateSessionMessage('task.deviceLocal'),
     hosts.map(({ device }) => ({ device, connection: remoteHostsStore.connectionState(device.id) })),
   )
-  return <MachinePicker machines={machines} selectedId={selectedId} onSelect={onSelect} size="compact" side="bottom" testId="extension-bundle-card-machine" />
+  return <SessionUiTheme theme={theme}><MachinePicker machines={machines} selectedId={selectedId} onSelect={onSelect} size="compact" side="bottom" testId="extension-bundle-card-machine" /></SessionUiTheme>
 })
 
 /**
@@ -105,9 +109,32 @@ function PermissionsFold({ text, strong, muted }: { text: string; strong: string
   )
 }
 
+/**
+ * While the package is read (owner 11-08: no feedback, and the card jumped when it came): the card's own rows at their own
+ * size — the permissions row says it is reading, the button row shows how far the bytes have come.
+ */
+function PackageReading({ card, muted }: { card: PackageCard; muted: string }) {
+  const [read, setRead] = useState<{ done: number; total: number } | null>(null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- key is the card's identity
+  useEffect(() => watchReading(card, (done, total) => setRead({ done, total })), [packageKey(card)])
+  const t = translateSessionMessage
+  return (
+    <>
+      <div data-testid="extension-bundle-card-reading" className={`flex min-w-0 items-center gap-2 rounded-md bg-[var(--hover)] px-2 py-1 text-[var(--font-body)] ${muted}`}>
+        <Shield size={14} aria-hidden className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate">{t('extensions.bundleCardReading')}</span>
+      </div>
+      <div className={`flex min-h-[var(--control-h-sm)] min-w-0 items-center gap-3 max-[719px]:min-h-[var(--control-h-touch)] ${muted}`}>
+        <Progress value={read && read.total > 0 ? (read.done / read.total) * 100 : null} label={t('extensions.bundleCardReading')} />
+        {read && <span className="shrink-0 text-[var(--font-caption)] tabular-nums">{`${formatAttachmentSize(read.done)} / ${formatAttachmentSize(read.total)}`}</span>}
+      </div>
+    </>
+  )
+}
+
 /** An extension package (`.guguext`) in a chat, drawn from its own manifest (#6646). */
 export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta, card, isMine, senderName, chatId }: {
-  meta: Pick<ParsedAttachment, 'fileName' | 'sizeBytes'>
+  meta: Pick<ParsedAttachment, 'fileName' | 'sizeBytes' | 'fileMetadata'>
   card: PackageCard
   isMine: boolean
   senderName?: string
@@ -119,7 +146,7 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
   useEffect(() => {
     let live = true
     setSummary(null)
-    void summaryOf(card).then((next) => live && setSummary(next))
+    void summaryOf(card, meta.fileMetadata?.status === 'ready' ? meta.fileMetadata.revision.sha256 : null).then((next) => live && setSummary(next))
     return () => {
       live = false
     }
@@ -283,11 +310,11 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
       data-extension-id={manifest?.id}
       data-installed={installed ? 'true' : undefined}
       data-problem={summary && !summary.ok ? summary.problem : undefined}
-      className="mb-2 box-border flex w-[min(100%,440px)] min-w-0 flex-col gap-2 rounded-xl border border-[var(--border)] p-3"
+      className="mb-2 box-border flex w-[440px] max-w-full min-w-0 flex-col gap-2 rounded-xl border border-[var(--border)] p-3"
     >
       <div className="flex min-w-0 items-center gap-3">
-        <span aria-hidden className={`grid size-8 shrink-0 place-items-center rounded-[var(--radius-document)] border border-[var(--border)] font-mono text-[var(--font-body)] ${strong}`}>
-          {name ? extensionMonogram(name) : '?'}
+        <span aria-hidden className={`grid size-8 shrink-0 place-items-center rounded-[var(--radius-document)] border border-[var(--border)] font-mono text-[var(--font-body)] ${strong} ${summary ? '' : 'animate-pulse bg-[var(--hover)] motion-reduce:animate-none'}`}>
+          {name ? extensionMonogram(name) : summary ? '?' : null}
         </span>
         <div className="flex min-w-0 flex-col gap-1">
           <span className={`truncate text-[var(--font-body)] font-semibold ${strong}`}>
@@ -298,7 +325,7 @@ export const ExtensionBundleCard = observer(function ExtensionBundleCard({ meta,
           </span>
         </div>
       </div>
-      {!summary && <span className={`text-[var(--font-caption)] ${muted}`}>{t('extensions.bundleCardReading')}</span>}
+      {!summary && <PackageReading card={card} muted={muted} />}
       {summary && !summary.ok && (
         <span data-testid="extension-bundle-card-problem" className="text-[var(--font-body)] text-[var(--text-error)]">
           {summary.compat ? marketCompatText(summary.compat, t) : t('extensions.bundleCardUnreadable')}

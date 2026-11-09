@@ -1,5 +1,9 @@
 import { WIDGET_HEIGHT_MIN, WIDGET_HEIGHT_MAX } from '@gugu/core/shared/ui/widgetModels';
 import { EXTENSION_API_VERSION, EXTENSION_TOOL_CONFINEMENT_API_VERSION } from './bridge-protocol';
+import { TASK_MESSAGE_GUIDE } from './task-message-guide';
+import { TASK_PAGE_PRESENTATION_GUIDE } from './task-page-presentation-guide';
+import { TASK_PAGE_FILES_GUIDE } from './task-page-files-guide';
+import { APP_SURFACE_DECORATIVE_GUIDE } from './app-surface-decorative-guide';
 
 /**
  * 交给 agent 的「怎么写一个 tab 扩展」简报。
@@ -197,7 +201,7 @@ the dock/background have neither chat nor session. Read context before drawing.
 \`await gugu.modal.open({ entry: 'new.html', title: 'New card', size: 'md', data })\` opens your bundle's HTML in
 gugu's window-level dialog (phone: fullscreen). Sizes: xs/sm/md/lg/xl. No new consent.
 The page stays sandboxed with the opener's context/grants; \`(await gugu.getContext()).modal.data\` holds \`data\`.
-Save, then \`gugu.modal.close(result)\`: the opener receives the result; cancellation returns null.
+Save, then \`gugu.modal.close(result)\`: the opener gets it, or null if cancelled.
 The host handles Escape, Tab traversal, Back and focus restoration.
 
 Free:
@@ -208,13 +212,13 @@ Free:
   Members: \`{ id: 'user:<uuid>', name, kind: 'human' | 'agent', avatar? }\`; \`avatar\` is a \`data:\` image. Pick from these; never copy them into files.
   \`session\`: \`{ id, agentId?, projectId?, root?, deviceId?, deviceLabel? }\`; \`agentId\` is \`user:<uuid>\`.
   Local \`root\` needs \`files:*\`; remote sessions carry \`deviceId\` instead. \`file\`: open with \`files.open(ctx.file)\`.
-  \`operator\`: \`{ kind: 'person' }\` or \`{ kind: 'agent', id }\`. \`capabilities\`: current grants, reflecting revocations.
+  \`operator\`: \`{ kind: 'person', guguNumber? }\` (API 32: own 咕咕号; \`null\`: none/unread) or \`{ kind: 'agent', id }\`. \`capabilities\`: current grants, revocations applied.
 - \`gugu.navigation.go(-1|1)\` → boolean; own history/chat opener. State: \`getContext().navigation\`.
 - \`onContextChanged(fn)\` → theme, language, visibility and size changes; member changes only through API 26. Returns an unsubscribe.
-- \`onCommand(fn)\` → the person picked one of your declared menu/toolbar entries; you get your own id back.
+- \`onCommand(fn)\` → the person picked one of your menu/toolbar entries: its id.
 - \`showContextMenu({ x, y, items: [{ id, label, enabled?, items? }, { type: "separator" }] })\` (API 18, page): App-local point, shared host menu → id or null.
 - \`setTabTitle(title)\` → title (max 48); file tabs use it as a tooltip. Back/forward stay local.
-- \`setTabBadge(badge)\` → a count (99+ at most, <=0 none), a string (a dot), or \`null\` (none).
+- \`setTabBadge(badge)\` → a count (99+ max, <=0 none), a string (a dot) or \`null\`.
 - \`openBrowserTab(url)\` → http(s) only.
 - \`reportError(message)\` → shown to the person. Never fail silently.
 - \`sendToBackground(message)\` → your background page (none: rejects); host stamps \`from\`.
@@ -398,7 +402,7 @@ can tell any of the person's agents. A sheet pick needs no capability.
   person uninstalls you.
 `;
 
-export const EXTENSION_GUIDE_PROJECTION = `# Local App picture and input resources
+export const EXTENSION_GUIDE_PROJECTION = `# App picture and input resources
 
 Needs \`agents:tools\`
 
@@ -421,9 +425,10 @@ API 22 — scoped local previews and human input (desktop, \`agents:tools\`):
   \`driver.disconnect(viewer)\` releases that viewer's held keys/buttons before another viewer's input; \`driver.close()\` stops capture
   and input, and resolves after cleanup. Only one viewer drives at a time; others can still watch. App revocation,
   task archive/deletion, project deletion or withdrawn App access closes resources. An active task keeps its resources even without viewers.
-- In the same App's task page, \`gugu.projection.mount(element, id, { state?, error? })\` returns \`{ close, pendingText, discardPendingText }\`.
+- In the same App's task page, \`gugu.projection.mount(element, id, { state?, error?, painted? })\` returns \`{ close, pendingText, discardPendingText }\`.
   It draws the picture and accepts input there, with no extra text form. State is \`connecting\`, \`live\`, \`input-paused\`, or \`closed\`;
-  input is disabled until a fresh picture paints. Disconnects discard queued input; reconnects require a new generation.
+  The \`painted\` callback gives the actually painted \`{sequence,width,height}\`, or null when invalidated; match App decorations by sequence.
+  Input is disabled until a fresh picture paints. Disconnects discard queued input; reconnects require a new generation.
   For the local preview feed, only one unacknowledged picture and the newest pending picture are retained.
   Focus loss invalidates the old input generation and releases its held input before fresh input is admitted.
   Rejection drops that operation and leaves the viewer usable. Unknown outcomes require a fresh generation.
@@ -433,7 +438,44 @@ API 22 — scoped local previews and human input (desktop, \`agents:tools\`):
   Your App decides where to mount a mirror; original local Browser pages already receive native input.
   Pictures never travel through App-wide program notifications or replayable tool calls.
   This bitmap feed is local only. A page on another computer requires the shared media transport; there is no
-  bitmap-over-network, tool-result, cloud-notification or relay fallback.
+  bitmap-over-network, tool-result, cloud-notification or relay fallback. API 36 connects a remote task page through
+  the authenticated direct media transport, using the same mount() call and input outcomes. Only a fresh decoded frame
+  enables input; a sent control packet is not proof of execution. Main retains every proof and control key.
+
+API 36 shared task resources (desktop, \`agents:tools\`):
+- Program: \`showTaskPages()\` opens this App's declared perSession tabs beside its calling task, preserving the person's current tab.
+  No task argument; needs a live task call. Returns tab kinds. Your App chooses first-use/retry policy; the host never reopens on its own.
+- Custom stdio MCP adapters enter \`gugu.withCall(request.params._meta, () => work())\` in their tool handler;
+  tools modules already enter it. Main checks the random call ID against this program's live calls, never tool arguments.
+  Tools modules also receive \`call.agentName\` / \`call.taskTitle\` (same task name) and \`call.callId\`.
+- Program: \`gugu.pages.acquire({ url? })\` returns \`{ id, title, url, send, onMessage, onClose, close }\`.
+  Main selects the calling task's real page, never an App-supplied contents ID or partition. Adapt your own driver with
+  \`lease.send(method, params?, cdpSessionId?)\`, \`lease.onMessage(fn)\` and \`lease.onClose(fn)\` (both return unsubscribe).
+  Commands need a live call of that task. Protocol methods, navigation and child sessions remain host-restricted.
+  Local file inputs (DOM.setFileInputFiles) are unavailable.
+  Call cancellation ends its acquisition/commands, not the shared connection or other calls.
+  Closing releases this lease's held keys/buttons and control, not the person's page or login. Task stop closes its old leases. A host without a desktop says unavailable.
+- Protocol events carry no tool-call authority. \`lease.maintain(method, params?, cdpSessionId?)\` is App/program/task-owned initialization:
+  Page.enable/getFrameTree, Log/Runtime/Network.enable, Runtime.runIfWaitingForDebugger, lifecycle enabled:true,
+  empty-source named worlds (frame checked natively), fixed autoAttach/waitForDebuggerOnStart/flatten:true, screen media preferences, known-child detach.
+  Main checks exact parameters; input/navigation/scripts/files/browser-wide commands are refused. Task stop, revocation or exit ends maintenance.
+  Route it separately from live-call send; never borrow another call.
+- Task page: \`await gugu.pages.mount(element, id, {error?})\` returns \`{ close }\`; mount only a lease of this App/task.
+  Main clips its native page to the host-measured App viewport; native clicks go to the real page. Failed layout reports error and unmounts.
+- Program: \`await gugu.surfaces.open({ entry, bounds:{x,y,width,height}, data?, visible?, relativeTo? })\` returns
+  \`{ id, shown:false, update, close, onEvent }\` immediately, before native loading/display. \`entry\` is a bundle HTML file;
+  bounds are screen DIP. \`surface.update({ bounds?, data?, visible?, relativeTo? })\`, \`surface.close()\`, \`surface.onEvent(fn)\` returns unsubscribe.
+  Use \`visible:false\` to prepare a hidden handle; show it later. \`relativeTo:{windowId:string}\` places it directly
+  above that native window, not permanently above unrelated Apps; null removes the relation.
+  \`gugu.surfaces.screen({bounds,space:'screen-dip'|'windows-screen-pixels'})\` returns DIP \`{bounds,workArea,scaleFactor}\`.
+  Windows pixel conversion uses native screenToDipRect; other hosts reject that pixel space. The App selects its window and placement.
+  Events: \`{id,type:'display',shown,reason?}\`, \`{id,type:'message',message}\`, \`{id,type:'closed',reason}\`.
+  Display failure is informational, never permission to reject, delay or authorize an action.
+- Surface HTML uses its ordinary sandbox/grants; \`getContext().surface\` has \`{id,data}\`, refreshed with
+  \`onContextChanged\`. Its buttons call \`gugu.surfaces.post(message)\` to its owning program.
+  App: content, targets and Stop/Continue. Host: non-activation, capture protection and teardown. Decorations: \`apps-surface-decoration\`.
+  An owned display can update outside a tool call. Normal tool completion does not cancel loading; actual interruption does.
+  Revocation, program exit, task archive or project deletion closes it. Late native results are released.
 
 Use \`resource.close()\` to release the source and \`view.close()\` to remove the mounted viewer.
 `;
@@ -472,17 +514,18 @@ export const follow = {
   Files: gugu.files + files:read/write. Network: granted permissions.network hosts.
   No IPs/listeners/subprocesses/addons/WASI/inspector/sqlite/eval workers; bundle workers inherit limits.
   Not an OS sandbox. Older tools/commands retain full rights.
-  Other owners must install the App to give their agents tools; never store agent ids.
+  Owners install for their agents; never store agent IDs.
 - Another language, or an existing MCP server: \`{ "name", "command", "args"? }\`, MCP over stdio.
   \`command\` \`node\` runs on gugu's own runtime; \`./x\` is a program in your bundle; anything else
   is found on PATH (\`npx\`, \`uvx\`, \`python3\`). An argument naming a file in your bundle is passed
-  as its absolute path; the install sheet shows the command verbatim. Answer every request with its
-  \`id\`, errors too: an error reply without one fails every call in flight. Each call's \`_meta\`
-  carries the same stamp: \`gugu/agent\`, \`gugu/sessionId\`, \`gugu/conversation\` (its private chat with you), \`gugu/workspaceRoot\`, \`gugu/model\`, \`gugu/modelLabel\`. A long tool reports progress on the
-  call's \`progressToken\` at least every 60 seconds, or Claude aborts it at 300 seconds.
+  as an absolute path; installation shows the command verbatim. Every reply, including errors, needs its request's
+  \`id\`; omitting it fails all in-flight calls. Host-stamped \`_meta\`: \`gugu/agent\`, \`gugu/sessionId\`,
+  \`gugu/conversation\` (its private chat), \`gugu/workspaceRoot\`, \`gugu/model\`, \`gugu/modelLabel\`,
+  optional \`gugu/agentName\` / \`gugu/taskTitle\` (same task name). Task stop cancels that task's calls;
+  honor the signal and finish input cleanup. Report progress on \`progressToken\` every 60 seconds or Claude aborts at 300.
 - Either way the working directory is your bundle, with \`GUGU_EXTENSION_ID\` and
-  \`GUGU_EXTENSION_DATA_DIR\` — the folder your pages reach with \`readData\`/\`writeData\`. One copy
-  serves every session; gugu starts it on first use and stops it when idle (never while it holds a chat file open).
+  \`GUGU_EXTENSION_DATA_DIR\` — the folder pages use via \`readData\`/\`writeData\`. One process serves all sessions;
+  starts on use; open files and host resources prevent idle reclaim.
   A program on \`node\` has the global \`gugu\` — a page's, but for the page's own verbs; a \`worker_threads\`
   worker has none (relay through the main thread yourself). It opens a chat file it
   is handed by its id, \`{ id }\`, and \`gugu.dispatch(text, { to: { chat, member }, refs })\` whispers in that file's chat.
@@ -554,7 +597,7 @@ The place is \`{ workspace: ctx.workspace.id }\`. An entry's \`id\` is its path 
 
 - \`gugu.files.list({ workspace, folder })\` lists one folder (\`''\` the top), never a whole tree. Non-documents: \`f.read(offset, length)\`, \`f.blob()\`.
 - \`gugu.files.onChanged({ workspace, folder }, fn)\`: \`{ kind: 'changes', changes }\` or \`resync\`, below \`folder\` only.
-- \`gugu.files.openWith({ workspace, folder })\` (a click or key): that folder in the Folder app's list, in this tab.
+- \`gugu.files.openWith({ workspace, folder })\` (a click or key): that folder in the Files App's list, in this tab.
 - Another machine's working copy needs \`files:read:all-machines\` as well; every call below is done on that machine.
 - With \`files:write\`: \`gugu.files.create\`, \`gugu.files.rename\` (a path moves it), \`gugu.files.mkdir({ workspace, path })\`, \`gugu.files.move(entry, { folder, name })\`, \`gugu.files.remove\` (a folder with all in it; a link, not what it points at). A name already there: \`name-taken\`, nothing changed.
 - \`gugu.files.upload({ workspace, folder }, file, { replace, onProgress, signal })\`: a File or a list of them, in parts, of any size, folders made as needed. A name already there is \`name-taken\` until \`replace: true\`. \`onProgress\` is told the bytes sent and the total; an aborted \`signal\` leaves nothing.
@@ -925,8 +968,8 @@ into \`bind.codemirror\` uploads beside it.
 A canvas, a board, an editor: write your own CSS, and take the values from the tokens — they follow light and dark by
 themselves. Colours: \`--em-background\`, \`--em-background-1\` (a card), \`--em-background-3\`, \`--em-foreground\`,
 \`--em-foreground-muted\`, \`--em-foreground-passive\`, \`--em-border\`, \`--em-border-1\`, \`--em-accent-9\` /
-\`--em-accent-contrast\` (gugu's primary is ink, not a hue), \`--em-foreground-destructive|success|warning|info\` and their
-\`--em-background-*\`, \`--em-hover\` / \`--em-press\` / \`--em-selected\`. Sizes: \`--em-font-caption|body|title|heading|page\`
+\`--em-accent-contrast\` (gugu's primary is ink, not a hue), \`--em-foreground-destructive|success|warning|info\` (text) and their
+\`--em-background-*\`, \`--em-danger-solid\` (fill under a white label), \`--em-danger\` / \`--em-warn\` (fills with nothing on them; the foregrounds are for text), \`--em-hover\` / \`--em-press\` / \`--em-selected\`. Sizes: \`--em-font-caption|body|title|heading|page\`
 (11–20) with \`--em-lh-*\`, \`--em-spacing-xs\`…\`-2xl\` (4–24), \`--em-radius-control\` (8) / \`-xl\` (12), \`--em-control-h-md\`.
 The page's edge is \`body\`'s margin: \`body { margin: 0 }\` and the page is yours edge to edge.
 
@@ -966,12 +1009,22 @@ export const EXTENSION_GUIDE_SETTINGS = `# Tools-only Apps and host settings
 
 Declare human UI hosts in \`platforms\` (API 12): desktop, phone, or both. A phone UI may declare agent
 capabilities; those features run only on computers. Phone plus \`notifications\` is refused at publication and install.
+On a phone, a page with steps of its own (folders) holds Back with \`gugu.navigation.onBack(fn)\` → a release; let go at the top.
 
 ## The agents' line
 
 \`contributes.instructions\` (<= 160 characters; required with programs or skills, refused without) is your App's
 whole line in every new session's \`<gugu_apps>\`: name the tools that matter and when to read which skill. Longer
 standing behavior is a skill whose description says when to read it.
+
+## Prompts (API 34)
+
+\`contributes.prompts\`: up to 8 \`{ "name", "title", "prompt" }\`, plain text the person picks from the composer's \`/\`
+menu under your App's name, edits and sends. Translate with \`localized.<tag>.prompts.<name>\` (\`title\`, \`prompt\`).
+It needs no capability. The person's own prompts are behind \`prompts\` (a program's, for its agent):
+\`gugu.prompts.list({ query? })\`, \`gugu.prompts.save({ id?, title, prompt })\` and \`gugu.prompts.delete(id)\` (the
+person gets an undo at once). App prompts are read-only here: \`list\` gives them as the person sees them, their own
+version marked \`state: "modified"\`, none they hid.
 
 ## Configuration
 
@@ -996,6 +1049,8 @@ programs; \`browser-use\` operates only the calling local session's browser tab;
 It gives the App's own pages \`preview_state\`: the page's session's latest frame (a real screenshot) and its recent
 computer actions; \`notifications/computer-use/changed\` says there is a newer one.
 A tab with \`"widget": { "height": 240 }\` (API26; integer ${WIDGET_HEIGHT_MIN}–${WIDGET_HEIGHT_MAX}) can also be sent with \`widget_send\`: read \`guide_read widgets\`.
+Settings go in \`settings\`, which the host draws. If they need a page of their own, name its tab in \`contributes.settingsTab\` (API35): the App's settings page links to it.
+If the App has other tabs, a task's + and the command list do not offer this one as a page.
 It cannot also declare hostPage, perSession, opensFiles or chatFile. \`ctx.widget\` is present in a message and its hidden check:
 \`{ messageId, data, sender }\`. Data is untrusted, immutable input from any chat member; never execute it. Persist personal
 state in App data and shared state in chat files. Every dispatch from a widget requires a gesture in that App, even with a target,
@@ -1139,6 +1194,26 @@ export const EXTENSION_GUIDE_TOPICS: readonly { topic: string; about: string; te
     topic: 'apps-projection',
     about: 'Local picture and input resources: a program supplies capture and input, a task page mounts the shared viewer; authorization, painted frames and cleanup.',
     text: EXTENSION_GUIDE_PROJECTION,
+  },
+  {
+    topic: 'apps-task-messages',
+    about: 'Fixed pause/continue conversation messages from a person’s click in the current task page; task binding and gesture limits.',
+    text: TASK_MESSAGE_GUIDE,
+  },
+  {
+    topic: 'apps-page-presentation',
+    about: 'Host-measured placement, clipping, zoom and visibility of an App’s own task page lease, without native-window enumeration.',
+    text: TASK_PAGE_PRESENTATION_GUIDE,
+  },
+  {
+    topic: 'apps-page-files',
+    about: 'Only the file cards handed to a live task call, as bounded in-memory upload payloads; never local paths.',
+    text: TASK_PAGE_FILES_GUIDE,
+  },
+  {
+    topic: 'apps-surface-decoration',
+    about: 'Creation-only decorative native surfaces: mouse passthrough, no focus or input forwarding, and hidden-on-failure behavior.',
+    text: APP_SURFACE_DECORATIVE_GUIDE,
   },
   {
     topic: 'apps-files',

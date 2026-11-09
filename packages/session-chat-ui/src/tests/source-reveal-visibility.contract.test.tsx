@@ -5,7 +5,6 @@ import { createChatView } from '../chat-view';
 import { buildChatTheme, DEFAULT_CONFIG } from '../core/theme';
 import type { TranscriptTurn } from '../model';
 import { createChatState } from '../state/chat-state';
-import { pinFade, pinSticky } from '../chat-root.css';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
 
 describe('source message visibility below the pinned question', () => {
@@ -47,18 +46,15 @@ describe('source message visibility below the pinned question', () => {
       expect(marker).not.toBeNull();
       const range = document.createRange(); range.setStart(marker!, 0); range.setEnd(marker!, 'SOURCE913-MARKER'.length);
       const firstLine = range.getBoundingClientRect();
-      const fadeSelector = pinFade.split(/\s+/).map(name => `.${name}`).join('');
-      const fade = question.closest(`.${pinSticky}`)!.querySelector<HTMLElement>(`:scope > ${fadeSelector}`)!;
-      expect(fade).not.toBeNull();
-      // The fade paints only while the question is stuck. Cover both its
-      // painted and transparent states using the real scroll-state style.
-      const fadeStyle = getComputedStyle(fade);
-      const readableTop = question.getBoundingClientRect().bottom
-        + (Number(fadeStyle.opacity) > 0 ? parseFloat(fadeStyle.height) : 0);
+      // The question's summary shows only once the question has gone by; until then the question itself is the top.
+      const summary = host.querySelector<HTMLElement>('[data-pin-summary="question"]')!;
+      const stuck = summary.closest<HTMLElement>('[data-index]')!.dataset.pinStuck === 'true';
+      const readableTop = (stuck ? summary : question).getBoundingClientRect().bottom;
       expect(scroll.scrollTop).toBeGreaterThan(0);
       expect(firstLine.top).toBeGreaterThanOrEqual(readableTop - 1);
       expect(firstLine.bottom).toBeLessThanOrEqual(scroll.getBoundingClientRect().bottom);
-      expect(Number(fadeStyle.opacity)).toBe(preamble ? 1 : 0);
+      if (stuck) expect(question.getBoundingClientRect().bottom).toBeLessThanOrEqual(summary.getBoundingClientRect().top + 1);
+      else expect(question.getBoundingClientRect().bottom).toBeGreaterThan(scroll.getBoundingClientRect().top);
     } finally { view.dispose(); host.remove(); }
   });
 });

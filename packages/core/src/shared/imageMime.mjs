@@ -31,6 +31,8 @@ const MIME_BY_EXT = {
   cjs: 'text/javascript',
   jsx: 'text/javascript',
   ts: 'text/typescript',
+  mts: 'text/typescript',
+  cts: 'text/typescript',
   tsx: 'text/typescript',
   py: 'text/x-python',
   rb: 'text/x-ruby',

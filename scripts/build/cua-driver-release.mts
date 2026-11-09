@@ -24,9 +24,9 @@ const ASSET: Record<string, string> = {
   'win32-x64': `cua-driver-rs-${CUA_DRIVER_VERSION}-windows-x86_64-binary.zip`,
   'win32-arm64': `cua-driver-rs-${CUA_DRIVER_VERSION}-windows-arm64-binary.zip`,
 }
-const BASE_URL = `https://github.com/trycua/cua/releases/download/cua-driver-rs-v${CUA_DRIVER_VERSION}/`
-// The maintained Mac archive is an asset of this repository's `assets` prerelease; the sha256 above pins its bytes.
-const MAC_BASE_URL = 'https://github.com/OpenDCAI/gugu/releases/download/assets/'
+const BASE_URL = `https://download.gugu.nextmind.space/releases/vendor/cua-driver/${CUA_DRIVER_VERSION}/`
+// The maintained Mac revision retains its own bytes and SHA pin in the immutable vendor store.
+const MAC_BASE_URL = `https://download.gugu.nextmind.space/releases/vendor/cua-driver/${CUA_DRIVER_MAC_REVISION}/`
 const CACHE_DIR = path.join(root, 'node_modules', '.cache', 'gugu-native')
 const LICENSE_DIR = path.join(root, 'apps', 'desktop', 'native', 'cua-driver')
 

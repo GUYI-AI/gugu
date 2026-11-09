@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // #6595 消息列表按文档流排整个消息窗口(滚动机制在 lib/flowList.ts,那边有落点 / 贴底 / 头部插行的几何用例)。
-// 这里判列表组件自己的几件事:窗口里每一行都在、两栏各报各的表面、落点未定时整块藏着、「↑ N 条新消息」。
+// 这里判列表组件自己的几件事:已挂行顺序与完整窗口的可达性、两栏各报各的表面、落点未定时整块藏着、「↑ N 条新消息」。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, createElement } from 'react'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
@@ -58,19 +58,14 @@ describe('MessageList 文档流', () => {
       vi.unstubAllGlobals()
     }
   })
-  it('窗口里的每一行都按顺序排在滚动容器里(不再只渲染视口附近的几行)', async () => {
+  it('已挂尾行保持数据顺序和完整窗口的辅助信息,其余行按需挂载', async () => {
     await harness.render(createElement(MessageList, listProps('chat-1', 30)))
     const scroller = harness.container.querySelector('[data-testid="chat-message-list"]')
     expect(scroller?.getAttribute('data-unread-stream-surface')).toBe('main')
-    expect(ids(scroller)).toEqual(Array.from({ length: 30 }, (_, i) => `chat-1-m${i}`))
-  })
-
-  it('topInset:顶部给悬浮小鸟让位 —— 加在滚动容器的内边距上(滚到最上面时第一条不在它脚下);不传 = 不加', async () => {
-    const scroller = () => harness.container.querySelector<HTMLElement>('[data-testid="chat-message-list"]')!
-    await harness.render(createElement(MessageList, { ...listProps('chat-1', 3), topInset: 16 }))
-    expect(scroller().style.paddingTop).toBe('16px')
-    await harness.render(createElement(MessageList, { ...listProps('chat-1', 3) }))
-    expect(scroller().style.paddingTop).toBe('')
+    expect(ids(scroller)).toEqual(Array.from({ length: 6 }, (_, i) => `chat-1-m${24 + i}`))
+    const mounted = scroller!.querySelectorAll('[data-msg-id]')
+    expect([...mounted].map(row => row.getAttribute('aria-posinset'))).toEqual(['25', '26', '27', '28', '29', '30'])
+    expect([...mounted].every(row => row.getAttribute('aria-setsize') === '30')).toBe(true)
   })
 
   it('副栏报自己的表面,未读定位器只看得见主线', async () => {

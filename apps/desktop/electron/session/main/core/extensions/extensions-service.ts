@@ -24,6 +24,7 @@ import { assertConfinedProgramBundle } from './extension-validate';
 import { z } from 'zod';
 import { BUNDLE_SKIP_NAMES } from '@shared/extensions/market';
 import { appVariantsSchema, type AppVariants, type ExtensionVariant } from '@shared/extensions/variants';
+import { removeTreeSync } from '@main/core/utils/remove-tree';
 
 export type { ExtensionOrigin };
 
@@ -67,6 +68,12 @@ const REVOCATIONS_FILENAME = '.revoked-permissions.json';
  */
 const DISABLED_FILENAME = '.disabled-extensions.json';
 const SETTINGS_FILENAME = '.app-settings.json';
+
+/**
+ * The pages the person took out of the menus: `{ [extensionId]: tabName[] }`. The App keeps working, and a file or an agent
+ * can still open them; only the rail, a task's 「+」 and the command list stop offering them. Pruned on uninstall.
+ */
+const HIDDEN_TABS_FILENAME = '.hidden-tabs.json';
 
 /**
  * The Apps pinned to the far-left rail (its dock), `extensionId[]` in the order they show. This machine's only: an App is
@@ -160,12 +167,13 @@ export class ExtensionsService {
   private readonly disabledFile: JsonFile<string[]>;
   private readonly fullDisclosureFile: JsonFile<string[]>;
   private readonly dockFile: JsonFile<string[]>;
+  private readonly hiddenTabsFile: JsonFile<Record<string, string[]>>;
   private readonly autoUpdateOffFile: JsonFile<string[]>;
   private readonly givenHereFile: JsonFile<Record<string, string[]>>;
   private readonly originsFile: JsonFile<Record<string, ExtensionOrigin>>;
   private readonly publishersFile: JsonFile<Record<string, ExtensionPublisher>>;
   private readonly openWithFile: JsonFile<Record<string, string>>;
-  private readonly readings = new Map<string, { stamps: { file: string; stamp: string | null }[]; installed: InstalledExtension }>();
+  private readonly readings = new Map<string, { stamps: { file: string; stamp: FileStamp | null }[]; installed: InstalledExtension }>();
 
   constructor(private readonly rootDir: string) {
     this.variantsFile = jsonFile(rootDir, '.variants.json', '{}', (value) => Object.assign(Object.create(null) as Record<string, AppVariants>, z.record(z.string(), appVariantsSchema).parse(value)));
@@ -178,6 +186,7 @@ export class ExtensionsService {
     this.disabledFile = jsonFile(rootDir, DISABLED_FILENAME, '[]', stringList(DISABLED_FILENAME, 'extension ids'));
     this.fullDisclosureFile = jsonFile(rootDir, FULL_DISCLOSURE_FILENAME, '[]', stringList(FULL_DISCLOSURE_FILENAME, 'extension ids'));
     this.dockFile = jsonFile(rootDir, DOCK_FILENAME, '[]', stringList(DOCK_FILENAME, 'App ids'));
+    this.hiddenTabsFile = jsonFile(rootDir, HIDDEN_TABS_FILENAME, '{}', mapOf<string[]>(HIDDEN_TABS_FILENAME, 'hidden tab names', (tabs) => Array.isArray(tabs) && tabs.every((tab) => typeof tab === 'string')));
     this.autoUpdateOffFile = jsonFile(rootDir, AUTO_UPDATE_OFF_FILENAME, '[]', stringList(AUTO_UPDATE_OFF_FILENAME, 'App ids'));
     this.givenHereFile = jsonFile(rootDir, GIVEN_HERE_FILENAME, '{}', mapOf<string[]>(GIVEN_HERE_FILENAME, 'places',
       (value) => Array.isArray(value) && value.every((place) => typeof place === 'string')));
@@ -350,8 +359,8 @@ export class ExtensionsService {
       }
       throw error;
     } finally {
-      fs.rmSync(staging, { recursive: true, force: true });
-      if (displaced) fs.rmSync(displaced, { recursive: true, force: true });
+      removeTreeSync(staging);
+      if (displaced) removeTreeSync(displaced);
     }
     // No install restores a withdrawal; only the person does, in settings (`keptRevocations`).
     const kept = keptRevocations(revocations[manifest.id] ?? [], { ...manifest, permissions: approved });
@@ -418,7 +427,7 @@ export class ExtensionsService {
     const dir = this.variantDirectory(id, name);
     variants[id] = { ...state, variants: state.variants.filter((variant) => variant.name !== name) };
     this.variantsFile.write(variants);
-    try { fs.rmSync(dir, { recursive: true, force: true }); }
+    try { removeTreeSync(dir); }
     catch (error) { return { removed: true, warning: `The fork registration was removed, but its cache could not be cleared: ${String(error)}` }; }
     return { removed: true };
   }
@@ -447,10 +456,10 @@ export class ExtensionsService {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     try {
       fs.cpSync(sourceDir, staging, { recursive: true, dereference: false, verbatimSymlinks: true, filter: (source) => !BUNDLE_SKIP_NAMES.has(path.basename(source)) });
-      fs.rmSync(target, { recursive: true, force: true });
+      removeTreeSync(target);
       fs.renameSync(staging, target);
     } finally {
-      fs.rmSync(staging, { recursive: true, force: true });
+      removeTreeSync(staging);
     }
     return target;
   }
@@ -534,7 +543,7 @@ export class ExtensionsService {
     for (const entry of fs.readdirSync(this.rootDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       if (!entry.name.startsWith(STAGING_PREFIX) && !entry.name.startsWith(TRASH_PREFIX)) continue;
-      fs.rmSync(path.join(this.rootDir, entry.name), { recursive: true, force: true });
+      removeTreeSync(path.join(this.rootDir, entry.name));
     }
   }
 
@@ -629,6 +638,20 @@ export class ExtensionsService {
     if (on) off.delete(extensionId);
     else off.add(extensionId);
     this.autoUpdateOffFile.write([...off]);
+  }
+
+  hiddenTabs(): Record<string, string[]> {
+    return this.hiddenTabsFile.read();
+  }
+
+  setTabHidden(extensionId: string, tab: string, hidden: boolean): Record<string, string[]> {
+    if (this.origins()[extensionId] === 'preinstalled') throw new Error(`"${extensionId}" comes with gugu; its pages stay where gugu puts them`);
+    if (!this.get(extensionId).manifest.contributes.tabs.some((candidate) => candidate.name === tab)) throw new Error(`"${extensionId}" has no tab named ${tab}`);
+    const { [extensionId]: current = [], ...others } = this.hiddenTabsFile.read();
+    const tabs = hidden ? [...new Set([...current, tab])] : current.filter((name) => name !== tab);
+    const next = tabs.length > 0 ? { ...others, [extensionId]: tabs } : others;
+    this.hiddenTabsFile.write(next);
+    return next;
   }
 
   /** The Apps on the far-left rail, in order (its dock). Unreadable throws, like the lists above. */
@@ -746,7 +769,7 @@ export class ExtensionsService {
     const variants = this.variantsFile.read();
     delete variants[extensionId];
     this.variantsFile.write(variants);
-    fs.rmSync(path.dirname(this.variantDirectory(extensionId, 'upstream')), { recursive: true, force: true });
+    removeTreeSync(path.dirname(this.variantDirectory(extensionId, 'upstream')));
     const origins = this.origins();
     if (origins[extensionId]) {
       delete origins[extensionId];
@@ -767,12 +790,14 @@ export class ExtensionsService {
     if (full.includes(extensionId)) this.fullDisclosureFile.write(full.filter((id) => id !== extensionId));
     const dock = this.dock();
     if (dock.includes(extensionId)) this.dockFile.write(dock.filter((id) => id !== extensionId));
+    const { [extensionId]: hiddenTabs, ...otherHiddenTabs } = this.hiddenTabsFile.read();
+    if (hiddenTabs) this.hiddenTabsFile.write(otherHiddenTabs);
     const autoUpdateOff = this.autoUpdateOffFile.read();
     if (autoUpdateOff.includes(extensionId)) this.autoUpdateOffFile.write(autoUpdateOff.filter((id) => id !== extensionId));
 
     const trash = path.join(this.rootDir, `${TRASH_PREFIX}${extensionId}-${randomHex()}`);
     fs.renameSync(target, trash);
-    fs.rmSync(trash, { recursive: true, force: true });
+    removeTreeSync(trash);
   }
 
   /**
@@ -818,9 +843,11 @@ export class ExtensionsService {
     // @@@bundle-reading - Every bridge call asks through here (grantedCapabilities), so a parse per call is main-thread
     // work per call. A reading holds while the files it read are the same files: an install lands by rename and an edit
     // moves mtime or size, so nothing has to remember to invalidate it, and a bundle gone bad is still reported at once.
+    // Only while the files have settled: see SETTLED_MS.
     const known = this.readings.get(dirName);
-    if (known && known.stamps.every(({ file, stamp }) => fileStamp(file) === stamp)) return known.installed;
+    if (known && known.stamps.every(({ file, stamp }) => fileStamp(file)?.id === stamp?.id)) return known.installed;
     this.readings.delete(dirName);
+    const readAt = Date.now();
     const bundleDir = path.join(this.rootDir, dirName);
     const manifestFile = path.join(bundleDir, EXTENSION_MANIFEST_FILENAME);
     const manifestStamp = fileStamp(manifestFile);
@@ -847,15 +874,24 @@ export class ExtensionsService {
     const manifestDigest = createHash('sha256').update(text).digest('hex');
     const installed = { manifest: parsed.manifest, rootDir: bundleDir, manifestDigest };
     // A link is read anew every time: what it points at can change without the link changing.
-    if (stamps.every(({ stamp }) => stamp !== null)) this.readings.set(dirName, { stamps, installed });
+    if (stamps.every(({ stamp }) => stamp !== null && readAt - stamp.mtimeMs > SETTLED_MS)) this.readings.set(dirName, { stamps, installed });
     return installed;
   }
 }
 
-/** Identifies one regular file's contents as a reading saw them; null for anything else. */
-function fileStamp(file: string): string | null {
+/**
+ * A stamp only identifies contents once the file has settled. File timestamps are coarse — a kernel tick on Linux
+ * (measured: 1978 of 2000 back-to-back same-size rewrites on tmpfs kept the same `mtimeMs`), whole seconds on HFS+ and
+ * ext3, two on FAT — so a file changed within that window of a reading can change again without its stamp moving.
+ * Such a reading is not kept (git's "racily clean" rule); the next call reads again.
+ */
+const SETTLED_MS = 2_000;
+
+/** Identifies one regular file's contents as a reading saw them (`id`), with the mtime it was taken at; null for anything else. */
+type FileStamp = { id: string; mtimeMs: number };
+function fileStamp(file: string): FileStamp | null {
   const stat = fs.lstatSync(file, { throwIfNoEntry: false });
-  return stat?.isFile() ? `${stat.ino}:${stat.size}:${stat.mtimeMs}` : null;
+  return stat?.isFile() ? { id: `${stat.ino}:${stat.size}:${stat.mtimeMs}`, mtimeMs: stat.mtimeMs } : null;
 }
 
 /**

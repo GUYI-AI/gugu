@@ -5,6 +5,8 @@ import { fileRefOf, type AppFileChunk, type AppFileEntry, type AppFileOpened, ty
 import type { BridgeErrorCode, ErrorDetail, ExtensionFileChangeBatch, PageCounts } from '@shared/extensions/bridge-protocol';
 import type { AppSessionIndexOptions, AppSessionIndex, AppSessionReadOptions, AppSessionRead } from '@shared/extensions/app-sessions';
 import type { ProjectionHost } from './projection-source';
+import type { TaskPageHost } from '@shared/extensions/task-page-protocol';
+import type { AppSurfaceHost } from '@shared/extensions/app-surface';
 
 /**
  * What the preload exposes as `window.__guguHost` and the runtime builds `window.gugu` from.
@@ -12,7 +14,8 @@ import type { ProjectionHost } from './projection-source';
  * Only the part the runtime itself calls is typed here; every other member is copied onto
  * `window.gugu` verbatim (`gugu-entry.ts`), so the v1 verbs keep their preload-side types.
  */
-export interface GuguHost extends ProjectionHost {
+export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
+  taskMessage?(args: { intent: 'pause' | 'continue' }): Promise<void>;
   readonly sessions?: {
     index(options?: AppSessionIndexOptions): Promise<AppSessionIndex>;
     read(options: AppSessionReadOptions): Promise<AppSessionRead>;
@@ -24,6 +27,9 @@ export interface GuguHost extends ProjectionHost {
   };
   onModalFocus?(handler: (edge: 'first' | 'last') => void): () => void;
   navigationGo?(args: { delta: -1 | 1 }): Promise<boolean>;
+  /** The page holds a Back step of its own; the host says whether it has a Back to hand over (the phone does, a desktop tab not). */
+  navigationClaimBack?(claimed: boolean): Promise<boolean>;
+  onBack?(handler: () => void): () => void;
   readonly apiVersion: number;
   /** An iframe of the outer gugu page (the phone), not a desktop webview: `framed-host.ts`. */
   readonly framed?: boolean;
@@ -35,6 +41,8 @@ export interface GuguHost extends ProjectionHost {
    * the theme from its context. A phone frame has none: its host answers only by message, after the first paint.
    */
   readonly theme?: 'light' | 'dark';
+  /** With `theme`, the person's color theme for that first paint (`ExtensionHostContext.themeColors`). */
+  readonly themeColors?: Readonly<Record<string, string>>;
   /** The page `app_check` runs (摩擦单 F69, `CHECK_PAGE_ARG`): it says how often it wrote, set presence and opened files. */
   readonly checkPage?: { report(counts: PageCounts): Promise<void> };
   /** `level: 'hint'` (摩擦单 F62): for the App's author, not a sign it is broken — recorded, but no red dot. Default `error`. */
@@ -103,6 +111,12 @@ export interface GuguHost extends ProjectionHost {
   readonly chats?: {
     list(): Promise<unknown>;
     members(args: Record<string, unknown>): Promise<unknown>;
+  };
+  /** `gugu.prompts` (34, `prompts`): the person's own prompts (`prompt-library.ts`). */
+  readonly prompts?: {
+    list(args?: Record<string, unknown>): Promise<unknown>;
+    save(args: Record<string, unknown>): Promise<unknown>;
+    delete(id: string): Promise<unknown>;
   };
   /** `gugu.cloud` (31, `app-cloud-core.ts`): `on` is composed of subscribe and `onCloudHeard`; a program writes with `programWrite`. */
   readonly cloud?: {

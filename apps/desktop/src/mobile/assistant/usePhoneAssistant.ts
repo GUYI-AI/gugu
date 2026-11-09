@@ -4,7 +4,7 @@ import { assistantHomePlace, type AssistantHomePlace } from '@/lib/assistantHome
 import { readSetupStep, writeSetupStep } from '@/lib/assistantSetupState'
 import { useMyAssistantContact } from '@/lib/myAssistant'
 import { useAuth } from '@/store/auth'
-import { useContactsStore } from '@/store/contactsContext'
+import { useContactList } from '@/store/contactsContext'
 import { getCloudComputerState, subscribeCloudComputerState } from '@/lib/cloudComputerStore'
 import { directoryDevices, subscribeDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import type { Device } from '@gugu/core/shared/types/chat'
@@ -40,10 +40,10 @@ export type PhoneAssistantState = {
  */
 export function usePhoneAssistant(enabled: boolean): PhoneAssistantState {
   const { user } = useAuth()
-  const { contacts } = useContactsStore()
+  const contacts = useContactList(enabled)
   const cloudComputer = useSyncExternalStore(subscribeCloudComputerState, getCloudComputerState, getCloudComputerState)
-  // The shell calls this on the desktop too (disabled). Reading the device context there re-rendered the whole shell on every
-  // device heartbeat; the published device list is only subscribed to where the phone assistant exists.
+  // The shell calls this on the desktop too (disabled). Reading the contacts or the device context there re-rendered the whole
+  // shell on every contacts update and device heartbeat; both are only subscribed to where the phone assistant exists.
   const devices = useSyncExternalStore(enabled ? subscribeDeviceSessions : noSubscription, enabled ? directoryDevices : noDevices, noDevices)
   const snapshot = enabled ? cloudComputer?.snapshot ?? null : null
   const cloudDeviceId = enabled ? snapshot?.deviceId ?? devices.find((device) => device.cloud_computer)?.device_id ?? null : null

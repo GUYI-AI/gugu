@@ -37,6 +37,11 @@ function providerSessionIdForFork(source: Session): string {
   return source.id;
 }
 
+/** A fork of a fork is still named after the original task; the row's fork icon and the unique suffix do the rest. */
+export function forkTitle(title: string): string {
+  return `${title.replace(/(-fork)+( \d+)?$/, '')}-fork`.slice(0, MAX_SESSION_TITLE_LENGTH);
+}
+
 export async function forkSession(params: ForkSessionParams): Promise<Session> {
   const [row] = await db
     .select()
@@ -48,7 +53,7 @@ export async function forkSession(params: ForkSessionParams): Promise<Session> {
   if (!row) throw new Error('Session not found');
 
   const source = mapSessionRowToSession(row);
-  const name = `${source.title}-fork`.slice(0, MAX_SESSION_TITLE_LENGTH);
+  const name = forkTitle(source.title);
   // 先把「这次分叉成不成立」说清楚,再落任何一行。
   const forkFromProviderSessionId = providerSessionIdForFork(source);
   // #6269 分叉出来的会话是一条独立会话,工作目录与来源同一行 workspace(与 session_spawn / 扩展派活同一处)。

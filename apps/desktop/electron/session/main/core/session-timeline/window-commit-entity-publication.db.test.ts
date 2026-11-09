@@ -1,3 +1,4 @@
+import { windowCommitProjectionDirectory } from './window-commit-projection-disk';
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -77,12 +78,12 @@ describe('immutable canonical entity publication', () => {
     });
     await expect(publishCommitEntity(c)).rejects.toMatchObject({ code: 'EIO' }); interrupted.mockRestore();
     const id = commitEntityPublicationId(c.position), key = commitEntityPublicationKey(c.receipt, id);
-    expect(await disk.readWindowFrame(directory, key, createWindowBudget())).toMatchObject({ kind: 'miss', reason: 'not_found' });
+    expect(await disk.readWindowFrame(windowCommitProjectionDirectory(directory, key), key, createWindowBudget())).toMatchObject({ kind: 'miss', reason: 'not_found' });
     expect(await publishCommitEntity(c)).toEqual({ kind: 'published', entityId: id });
-    const saved = await disk.readWindowFrame(directory, key, createWindowBudget()); if (saved.kind !== 'hit') throw new Error('Missing publication');
+    const saved = await disk.readWindowFrame(windowCommitProjectionDirectory(directory, key), key, createWindowBudget()); if (saved.kind !== 'hit') throw new Error('Missing publication');
     expect(await publishCommitEntity(c)).toEqual({ kind: 'published', entityId: id });
-    expect(await disk.readWindowFrame(directory, key, createWindowBudget())).toEqual(saved);
-    await rm(join(directory, windowFrameName(key))); await disk.writeWindowFrame(directory, key, Buffer.from('{"version":0}'));
+    expect(await disk.readWindowFrame(windowCommitProjectionDirectory(directory, key), key, createWindowBudget())).toEqual(saved);
+    await rm(join(windowCommitProjectionDirectory(directory, key), windowFrameName(key))); await disk.writeWindowFrame(windowCommitProjectionDirectory(directory, key), key, Buffer.from('{"version":0}'));
     expect((await readCommitEntityPublication(directory, c.receipts, c.receipt, id, createWindowBudget())).kind).toBe('rebuild');
     await expect(publishCommitEntity(c)).rejects.toThrow('Conflicting immutable entity');
   });

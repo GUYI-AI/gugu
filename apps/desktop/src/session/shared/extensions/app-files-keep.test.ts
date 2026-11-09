@@ -18,8 +18,9 @@ const listed = [
 // As workspace_get_as answers one file: without the two.
 const { expires_at: _expires, is_mine: _mine, ...single } = listed[0]!;
 let refusal: { message: string; hint: string } | null = null;
+let listMisses = false;
 const rpc = vi.fn((name: string, _args: Record<string, unknown>) => {
-  const data = name === 'workspace_list_as' ? listed
+  const data = name === 'workspace_list_as' ? (listMisses && _args.p_name ? [] : listed)
     : name === 'workspace_get_as' ? [single]
       : name === 'workspace_deletable_as' ? [] : name === 'file_storage_mark_as' ? 1 : [];
   const answer = Promise.resolve(name === 'file_storage_mark_as' && refusal ? { data: null, error: refusal } : { data, error: null });
@@ -32,6 +33,7 @@ let platform: FilesPlatform;
 beforeEach(() => {
   vi.clearAllMocks();
   refusal = null;
+  listMisses = false;
   platform = { account: async () => ({ token: 'token', userId: person }), hasCapability: () => true,
     sync: { pageFor: () => ({}), grant: vi.fn(), ungrant: vi.fn(), revoke: vi.fn() } as never,
     identities: async () => [], faces: async () => ({}), filesUrl: () => 'http://files.invalid', warn: vi.fn() };
@@ -46,7 +48,15 @@ it('the list says how long each cloud copy is kept and whose it is; no cloud cop
   ]);
 });
 
-it('a read that does not say (one file at a time) leaves keep out rather than saying there is no copy', async () => {
+it('a file heard changed says keep as the list does (read by its name in its folder), not by reading the whole list again', async () => {
+  const { entries } = await createAppFiles(platform).groupEntries(chat, [item]);
+  expect(entries[0]!.keep).toEqual({ expiresAt: '2026-11-04T00:00:00Z', mine: true });
+  expect(rpc.mock.calls.filter(([name]) => name === 'workspace_list_as').map(([, args]) => args))
+    .toEqual([{ p_chat_id: chat, p_as_user_id: person, p_folder: '', p_name: 'mine.pdf', p_exact: true }]);
+});
+
+it('a file the list does not name (renamed meanwhile) leaves keep out rather than saying there is no copy', async () => {
+  listMisses = true;
   const { entries } = await createAppFiles(platform).groupEntries(chat, [item]);
   expect(entries[0]).not.toHaveProperty('keep');
 });

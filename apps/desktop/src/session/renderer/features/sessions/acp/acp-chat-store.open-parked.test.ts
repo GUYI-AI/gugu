@@ -146,7 +146,17 @@ vi.mock('@renderer/lib/acp/acp-live-session', async (importOriginal) => ({
 }));
 
 const toasts = vi.hoisted(() => [] as unknown[]);
-vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: (arg: unknown) => toasts.push(arg) }));
+const sendNotices = vi.hoisted(() => new Map<string | number, string>());
+vi.mock('sonner', () => {
+  let sequence = 0;
+  const show = (title: string, options?: { id?: string }) => {
+    const id = options?.id ?? ++sequence;
+    toasts.push({ title, ...options }); sendNotices.set(id, title); return id;
+  };
+  return { toast: Object.assign(show, { error: show, info: show, success: show, warning: show, dismiss: (id: string | number) => sendNotices.delete(id) }) };
+});
+vi.mock('@/lib/loading/LoadingIndicator', () => ({ LoadingIndicator: () => null }));
+vi.mock('@renderer/lib/hooks/use-toast', async () => ({ toast: (await import('@/lib/notices')).notify }));
 
 type StoredPage = { turns: TranscriptTurn[]; originTurnIds: string[]; nextCursor: number | null };
 const host = {
@@ -400,6 +410,7 @@ beforeEach(() => {
   attachment.wait = null; attachment.calls.mockClear();
   Object.assign(inputState(), { accountId: null, rows: NO_INPUTS, valid: () => false });
   toasts.length = 0;
+  sendNotices.clear();
   running.phases.clear();
   running.watchers.clear();
   running.failWith = null;
@@ -987,6 +998,55 @@ describe('the parked page reads its failed state from session-life only', () => 
 });
 
 describe('composer send through submitPrompt', () => {
+  it('retires a successful retry only for its submission, while another task remains failed', async () => {
+    const first = storeFor().store, second = storeFor().store;
+    custody.mockRejectedValueOnce(new Error('first refused')).mockRejectedValueOnce(new Error('second refused'));
+    await expect(first.submitPrompt('same words', [], [], 'first-submission')).rejects.toThrow('first refused');
+    await expect(second.submitPrompt('same words', [], [], 'second-submission')).rejects.toThrow('second refused');
+    expect(sendNotices.size).toBe(2);
+    await first.submitPrompt('same words', [], [], 'first-submission');
+    expect([...sendNotices.values()]).toHaveLength(1);
+    second.dispose(); first.dispose();
+  });
+
+  it('a failed retry updates its notice; late earlier success cannot hide it', async () => {
+    const { store } = storeFor();
+    custody.mockRejectedValueOnce(new Error('first refused'));
+    await expect(store.submitPrompt('words', [], [], 'retry-submission')).rejects.toThrow('first refused');
+    let finish!: () => void;
+    custody.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    const old = store.submitPrompt('words', [], [], 'retry-submission');
+    custody.mockRejectedValueOnce(new Error('retry refused'));
+    await expect(store.submitPrompt('words', [], [], 'retry-submission')).rejects.toThrow('retry refused');
+    expect(sendNotices.size).toBe(1);
+    finish(); await old;
+    expect(sendNotices.size).toBe(1);
+    await store.submitPrompt('words', [], [], 'retry-submission');
+    expect(sendNotices.size).toBe(0);
+    store.dispose();
+  });
+
+  it('a new direct submission does not settle an earlier failure, including identical words', async () => {
+    const { store } = storeFor();
+    custody.mockRejectedValueOnce(new Error('first refused'));
+    await expect(store.submitPrompt('same words')).rejects.toThrow('first refused');
+    await store.submitPrompt('same words');
+    expect(sendNotices.size).toBe(1);
+    store.dispose();
+  });
+
+  it('a draft edit advances its explicit submission identity without settling the previous input', async () => {
+    const { store } = storeFor();
+    store.setDraftText('first'); const first = store.draftSubmissionId;
+    custody.mockRejectedValueOnce(new Error('first refused'));
+    await expect(store.submitPrompt('first', [], [], first)).rejects.toThrow('first refused');
+    store.setDraftText('second');
+    expect(store.draftSubmissionId).not.toBe(first);
+    await store.submitPrompt('second', [], [], store.draftSubmissionId);
+    expect(sendNotices.size).toBe(1);
+    store.dispose();
+  });
+
   it('a send that cannot be kept rejects to its caller (which keeps the words) and toasts once', async () => {
     const { store } = storeFor();
     store.bootstrap();

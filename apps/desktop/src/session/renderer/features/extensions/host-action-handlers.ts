@@ -129,6 +129,12 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
 function perform(sessionId: string | null, tabId: string, action: ExtensionHostAction, extensionId: string): ExtensionHostActionResult | Promise<ExtensionHostActionResult> {
   // What a page says about itself: a task's tab or a group's slot (sessionId null), kept by page (extensionSurfaceStore.say).
   switch (action.kind) {
+    case 'taskMessage': {
+      const target = sessionId === null ? undefined : findSessionAnywhere(sessionId);
+      if (!target || !sessionId) throw new Error('This task is no longer open');
+      return rpc.sessions.sendMessage({ projectId: target.projectId, sessionId, clientMessageId: crypto.randomUUID(), text: action.text })
+        .then(result => { if (result.status === 'outcome-unknown') throw new Error('Task message delivery is unknown'); });
+    }
     case 'navigateTab':
       if (action.delta !== -1 && action.delta !== 1) throw Object.assign(new Error('Navigation delta must be -1 or 1'), { code: 'invalid' });
       return (async () => {
@@ -269,7 +275,7 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
           pane?.setPageViewState(tabId, action.viewState);
         }
         // The person cancelled 「用哪个打开」: nothing opens, and nothing went wrong.
-        await openFileInSessionEditor(projectId, action.sessionId, action.path, { ask: action.ask, intent: action.intent, ...(sessionId === action.sessionId ? { from: tabId } : {}) });
+        await openFileInSessionEditor(projectId, action.sessionId, action.path, { ask: action.ask, intent: action.intent, byHost: true, ...(sessionId === action.sessionId ? { from: tabId } : {}) });
       })();
     }
     case 'openSessionFolder': {

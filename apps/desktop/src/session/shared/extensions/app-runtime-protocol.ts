@@ -202,7 +202,7 @@ export interface AppWhere {
 }
 
 /** What a workspace id names: a session's working copy, or a project's root folder. */
-export type WorkspaceTarget = { session: string } | { project: string };
+export type WorkspaceTarget = { session: string } | { project: string } | { folder: { deviceId: string; workspaceId: string } };
 
 /**
  * A file, named so that where it lives is said: a working-copy file by its workspace and its path there (`id`, or `name`
@@ -227,16 +227,37 @@ export function placeKey(place: AppPlace): string {
   return 'chat' in place ? `chat:${place.chat}` : place.workspace;
 }
 
-const WORKSPACE_ID = /^(session|project):(.+)$/;
+const WORKSPACE_ID = /^(session|project|folder):(.+)$/;
 
 /** A session's working copy's workspace id; a project's root folder's. */
 export const sessionWorkspace = (sessionId: string): string => `session:${sessionId}`;
+
+/**
+ * The preinstalled workspace App (apps/desktop/preinstalled-apps/workspace; 文件 / Files to people). It stays an App in code, but it is
+ * the chat's own folder, not something one installs or removes, so the App lists leave it out (owner 10-10).
+ */
+export const WORKSPACE_APP_ID = 'workspace';
 export const projectWorkspace = (projectId: string): string => `project:${projectId}`;
+/** One folder of a project, on the machine that has it (`ctx.chat.folders`): a project may hold several, on several machines. */
+export const folderWorkspace = (deviceId: string, workspaceId: string): string => `folder:${deviceId}/${workspaceId}`;
+
+/** The project folder a workspace id names, and its machine; null for a session's or a project's. */
+export function workspaceFolder(place: { workspace?: string | null } | null | undefined): { deviceId: string; workspaceId: string } | null {
+  const match = place?.workspace ? WORKSPACE_ID.exec(place.workspace) : null;
+  if (match?.[1] !== 'folder') return null;
+  const at = match[2]!.indexOf('/');
+  return at > 0 && at < match[2]!.length - 1 ? { deviceId: match[2]!.slice(0, at), workspaceId: match[2]!.slice(at + 1) } : null;
+}
 
 /** What a workspace id names. What is not one throws `invalid`. */
 export function workspaceTarget(place: WorkspacePlace): WorkspaceTarget {
   const match = WORKSPACE_ID.exec(place.workspace);
   if (!match) throw invalidPlace(`workspace is a working copy's id, as ctx.workspace.id gives it — ${JSON.stringify(place.workspace)} is not one`);
+  if (match[1] === 'folder') {
+    const folder = workspaceFolder(place);
+    if (!folder) throw invalidPlace(`${JSON.stringify(place.workspace)} is not a project folder's id`);
+    return { folder };
+  }
   return match[1] === 'session' ? { session: match[2]! } : { project: match[2]! };
 }
 
@@ -402,7 +423,8 @@ export interface AppFileEntry {
   parentId: string | null;
   /** A working copy's: its absolute path on the machine it is on. */
   absolutePath?: string;
-  /** A working copy's: the workspace id a host's own drags of it name. */
+  /** A working copy's: the project and workspace a host's own drags of it name. */
+  projectId?: string;
   workspaceId?: string;
   /** A working copy's: what git says of it, when it has changed. */
   gitStatus?: string;
@@ -637,6 +659,8 @@ export interface AppShowMessageDetail {
  * file card per file, sent by reference (attachments/share) — a stored file at the version the page named, a text
  * document as its text is now. Where the files are is the chat the page leaves out of the list, as a message's forward does.
  */
+/** What a forward holds in memory at once, with a File and a copy for the send on top of it. Past it: said, before it is read. */
+export const FORWARD_MAX_BYTES = 512 * 1024 * 1024;
 export const APP_FORWARD_FILES_EVENT = 'gugu:app-forward-files';
 export type AppForwardFilesDetail =
   | { chatId: string; files: Array<{ itemId: string; version: number; name: string; document: boolean }> }

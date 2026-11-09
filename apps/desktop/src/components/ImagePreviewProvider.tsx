@@ -19,7 +19,7 @@ import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { fetchBlob, downloadBlob } from '../lib/download'
 import { canWriteImageToClipboard, writeImageBlobToClipboard } from '../lib/imageClipboard'
 import { rendererLogger } from '../lib/log'
-import { offlineHolder } from '../lib/fileHost'
+import { holderOfflineText, offlineHolder } from '../lib/fileHost'
 import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
 import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
 import { commandRegistry } from '@renderer/lib/commands/registry'
@@ -50,7 +50,6 @@ const PRELOADER_DELAY_MS = 300
  * 指针与缩略图都按窗口坐标算。它的三处几何都要换成「根的盒子」:视口高度、指针偏移、起落位置。其余平台是 0。
  */
 const viewerTop = () => windowTitlebarHeight(readRendererPlatform())
-const DOUBLE_CLICK_MS = 300
 
 async function fetchImageAsPngBlob(url: string): Promise<Blob> {
   const blob = await fetchBlob(url)
@@ -88,12 +87,13 @@ async function fetchImageAsPngBlob(url: string): Promise<Blob> {
 type ViewerSlide = SlideData & { item: ImageViewerItem; sizeKnown: boolean; loadingStarted?: boolean }
 
 function slideFor(item: ImageViewerItem): ViewerSlide {
-  const size = decodedSizeOf(item.thumb)
+  // 另有原图可取时,缩略图的 natural 尺寸不是原图的:不拿它排版
+  const size = item.size ?? (item.full || item.preview ? null : decodedSizeOf(item.thumb))
   return {
     src: item.url,
     ...(item.preview ? { type: 'image' } : {}),
     alt: item.alt,
-    // 尺寸未知时按视口占位(宽为 0 PhotoSwipe 不加载图),loadComplete 里回填真尺寸
+    // 尺寸未知时按视口占位(宽为 0 PhotoSwipe 不加载图),第一份像素到了定一次,之后不再变
     width: size?.width ?? window.innerWidth,
     height: size?.height ?? window.innerHeight,
     msrc: size ? item.url : undefined,
@@ -131,11 +131,14 @@ function viewerOptions(request: ImageViewerRequest, mobile: boolean, errorMsg: s
     hideAnimationDuration: DUR_SLOW_MS,
     zoomAnimationDuration: DUR_SLOW_MS,
     easing: `cubic-bezier(${EASE.join(', ')})`,
-    bgOpacity: mobile ? 1 : 0.9,
+    // 底不透明:后面的对话一直在动(新消息、滚动、「N 条新消息」提示),透一成底就是查看器里一闪一闪的暗块
+    bgOpacity: 1,
     loop: false,
     escKey: false,
     wheelToZoom: true,
     tapAction: 'close',
+    // 桌面单击图不做事,双击见 wireViewer(PhotoSwipe 默认单击就缩放,双击会放大又缩回)
+    imageClickAction: false,
     errorMsg,
     zoom: false,
     close: false,
@@ -152,9 +155,11 @@ function viewerOptions(request: ImageViewerRequest, mobile: boolean, errorMsg: s
 }
 
 function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: ImageViewerItem, error: unknown) => void): void {
-  const applyReadingZoom = wireReadingZoom(pswp)
+  wireReadingZoom(pswp)
   // 缩略图打开的那几张:翻到哪张,取哪张的原图,换上(取不到就留着缩略图;item.full 自己记着结果,不重复下)。
+  // 打开动画期间不换:它从缩略图的状态飞向这张幻灯片,换图会改掉它的起点和终点
   const upgrade = (index: number) => {
+    if (!pswp.opener.isOpen) return
     const slides = pswp.options.dataSource
     const data = (Array.isArray(slides) ? slides[index] : undefined) as ViewerSlide | undefined
     if (!data || data.loadingStarted || (!data.item.preview && !data.item.full)) return
@@ -189,32 +194,24 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
       }
     })
   }
-  pswp.on('afterInit', () => upgrade(pswp.currIndex))
+  pswp.on('openingAnimationEnd', () => upgrade(pswp.currIndex))
   pswp.on('change', () => upgrade(pswp.currIndex))
+  // 几何只定一次:尺寸已知(文件记录或打开前解码好的原图)就从不改;未知的,第一份像素到了按它定。之后换源只换像素
   pswp.on('loadComplete', ({ content, isError }) => {
     const data = content.data as ViewerSlide
     const img = content.element
-    if (isError || !(img instanceof HTMLImageElement) || !img.naturalWidth || !img.naturalHeight) return
-    if (data.sizeKnown && data.width === img.naturalWidth && data.height === img.naturalHeight) return
-    const wasKnown = data.sizeKnown
-    const slide = content.slide
-    const zoom = slide ? slide.currZoomLevel * slide.width / img.naturalWidth : 0
-    data.width = content.width = img.naturalWidth
-    data.height = content.height = img.naturalHeight
+    if (data.sizeKnown || pswp.isDestroying || isError || !(img instanceof HTMLImageElement) || !img.naturalWidth || !img.naturalHeight) return
+    const size = data.item.size ?? { width: img.naturalWidth, height: img.naturalHeight }
+    data.width = content.width = size.width
+    data.height = content.height = size.height
     data.sizeKnown = true
+    const slide = content.slide
     if (!slide) return
     slide.width = content.width
     slide.height = content.height
     slide.calculateSize()
-    if (wasKnown) {
-      // A higher-resolution source has the same visible rectangle at a smaller pixel zoom.
-      slide.setZoomLevel(zoom)
-      slide.currentResolution = zoom
-    } else {
-      slide.currentResolution = 0
-      slide.zoomAndPanToInitial()
-      applyReadingZoom()
-    }
+    slide.currentResolution = 0
+    slide.zoomAndPanToInitial()
     slide.updateContentSize(true)
     slide.applyCurrentZoomPan()
   })
@@ -253,19 +250,19 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
     slide.panTo(slide.pan.x - wheel.deltaX, slide.pan.y - wheel.deltaY)
   })
 
-  // 桌面:单击图不做事,双击缩放到光标处(PhotoSwipe 默认单击就缩放,双击会放大又缩回)
-  let lastImageClick = -Infinity
-  pswp.on('imageClickAction', (event) => {
-    event.preventDefault()
-    const at = event.originalEvent.timeStamp
-    if (at - lastImageClick > DOUBLE_CLICK_MS) {
-      lastImageClick = at
-      return
-    }
-    lastImageClick = -Infinity
-    const { x, y } = event.point
-    if (x === undefined || y === undefined) throw new Error('PhotoSwipe reported an image click without a point')
-    pswp.currSlide?.toggleZoom({ x, y })
+  // 还没有像素的「图」(在下载的 img、空白占位)只是背景:PhotoSwipe 按 class 把它们算成点在图上,点了没反应
+  pswp.on('imageClickAction', ({ originalEvent: { target } }) => {
+    if (!(target instanceof HTMLImageElement && target.naturalWidth)) pswp.close()
+  })
+
+  // 鼠标双击缩放到光标处,连击归系统设置;手机的双击是 PhotoSwipe 自己的 doubleTap,这里不再算一次
+  pswp.on('bindEvents', () => {
+    if (!pswp.element) throw new Error('PhotoSwipe bound its events without a root element')
+    pswp.events.add(pswp.element, 'click', (event) => {
+      const { detail, pointerType, pageX, pageY, target } = event as PointerEvent
+      if (!pswp.opener.isOpen || detail !== 2 || pointerType !== 'mouse' || !(target instanceof Element && target.classList.contains('pswp__img'))) return
+      pswp.currSlide?.toggleZoom({ x: pageX - pswp.offset.x, y: pageY - pswp.offset.y })
+    })
   })
 
   pswp.on('keydown', ({ originalEvent }) => {
@@ -420,8 +417,8 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
             void (async () => {
               const offline = target?.kind === 'file' ? await offlineHolder(target.itemId, target.version) : null
               if (pswp.isDestroying || !pswp.isOpen) return
-              const { t, i18n, toast } = latest.current
-              toast(offline ? i18n.t('attachmentView.holderOffline', { ns: 'messaging', machine: offline.machine || i18n.t('attachmentView.holderMachine', { ns: 'messaging' }) }) : t('shell.imagePreview.loadFailed'), 'error', offline ? undefined : messageForUser(error))
+              const { t, toast } = latest.current
+              toast(offline ? holderOfflineText(offline) : t('shell.imagePreview.loadFailed'), 'error', offline ? undefined : messageForUser(error))
             })()
           })
           let unbindMenu: (() => void) | undefined
