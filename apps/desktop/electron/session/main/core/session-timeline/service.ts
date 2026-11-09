@@ -78,7 +78,6 @@ import {
   type SessionSchedule,
 } from '@shared/core/automations/session-schedule';
 import { log } from '@main/lib/logger';
-import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import {
   legacyAgentStatusWord,
   parseAgentStatus,
@@ -96,8 +95,7 @@ import {
   saveTimelineArchive,
 } from './archive-store';
 import { watchSessionState, type SessionStateWatch } from './live-permissions';
-import { locateSessionRecord, sessionRecordHarnessForProvider, type SessionRecordLocation } from './locate';
-import { hermesRecordedDeliveryIds } from './hermes-delivery-receipts';
+import { locateSessionRecord, type SessionRecordLocation } from './locate';
 import { OpenedFileError, readOpenedFileChunk } from './opened-file';
 import { sessionOpenedFile, sessionOutputs } from '../sessions/session-outputs';
 import { createStandInTimeline } from './stand-in-timeline';
@@ -1162,100 +1160,18 @@ export async function recordHistoryPage(input: {
   }
 }
 
-/**
- * #980 agent 自己的记录里,它收到过的每一条投递的消息编号。接回会话不再让 agent 重放之后,重启补投之前的去重
- * 靠它(从前那份事实来自重放)。`null` = 这里读不出来(没有记录、读失败):调用方照「历史未知」处理,
- * 补投照旧、标「可能已收到」—— ❌ 当成「一条都没收到」。
- */
-export async function recordedDeliveryIds(conversationId: string): Promise<string[] | null> {
-  const turns = await recordTurns(conversationId);
-  if (!turns) return null;
-  if (sessionRecordHarnessForProvider(readSessionRow(conversationId)?.provider) === 'hermes') {
-    const { withStoredTurns, readStoredTailNow } = await import('../sessions/session-turn-store');
-    const stored = await withStoredTurns(conversationId, () => readStoredTailNow(conversationId, Number.MAX_SAFE_INTEGER));
-    return hermesRecordedDeliveryIds(turns, stored);
-  }
-  const ids = new Set<string>();
-  for (const turn of turns) {
-    for (const item of turn.items) {
-      if (item.kind !== 'message' || item.role !== 'user') continue;
-      for (const segment of readDeliveryEnvelope(item.text)?.segments ?? []) {
-        if (segment.facts?.messageId) ids.add(segment.facts.messageId);
-      }
-    }
-  }
-  return [...ids];
-}
-
-/**
- * #980 这条会话在 agent 自己的记录里的全部回合,读到此刻的文件尾。`null` = 这里读不出来(没有记录、读失败)。
- * 与手机、助理读的是同一份时间线(同一份存档,只读文件新长出来的那一截)。
- */
-export async function recordTurns(conversationId: string): Promise<TimelineSnapshot['turns'] | null> {
-  const picked = await pickRecordTurns(conversationId, async (turns) => turns, { images: false });
-  return picked.ok ? picked.turns : null;
-}
-
-type TranscriptTurns = TimelineSnapshot['turns'];
-
-/**
- * #980 从记录的全部回合里挑出一些(`pick`),交回时**带着真图**。
- *
- * 存档装回来的轮里,工具截图只剩类型和字数(`imageRefs`),图要看时才按位置从记录里读回来。要把这几轮抄进库的人
- * 拿到的必须是带图的那份 —— 库里那份没有别处可以再取。读不回来的那张保持只有字数(与「图不在了」同一种降级)。
- * `ok: false` = 这里没有记录可读;`turns: null` = `pick` 说不挑(记录与库岔开了)。
- */
-/** Ingestion owns this reader. It cannot populate or dispose the interactive cache. */
-async function openIngestionRecord(conversationId: string, includeArchived?: boolean, parentLineage?: readonly RecordLineageNode[], readMode: 'snapshot' | 'live' = 'snapshot'): Promise<SessionTimeline | null> {
+/** The settling watch owns this reader. It cannot populate or dispose the interactive cache. */
+async function openIngestionRecord(conversationId: string, includeArchived?: boolean): Promise<SessionTimeline | null> {
   const row = readSessionRow(conversationId, { includeArchived });
   if (!row || !timelineFactory) return null;
   const location = locateRow(row);
   if (!location.supported) return null;
   const generation = resetGeneration;
-  const timeline = await timelineFactory({ locator: location.locator, conversationId, ...(readMode === 'snapshot' ? { readMode } : {}), parentLineage });
+  const timeline = await timelineFactory({ locator: location.locator, conversationId });
   if (generation !== resetGeneration) { timeline.dispose(); return null; }
   return timeline;
 }
 
-export async function pickRecordTurns(
-  conversationId: string,
-  pick: (turns: TranscriptTurns) => Promise<TranscriptTurns | null>,
-  options: { images: boolean; committedOnly?: boolean; includeArchived?: boolean; afterForkOf?: string } = { images: true },
-): Promise<{ ok: true; turns: TranscriptTurns | null; complete: boolean } | { ok: false; reason?: 'diverged' | 'too_large' }> {
-  const opened: SessionTimeline[] = [];
-  let provingParent = !!options.afterForkOf;
-  try {
-    let parentLineage: readonly RecordLineageNode[] | undefined;
-    if (options.afterForkOf) {
-      const parent = await openIngestionRecord(options.afterForkOf, true);
-      if (!parent) return { ok: false, reason: 'diverged' };
-      opened.push(parent);
-      parentLineage = parent.getRecordLineage?.() ?? undefined;
-      if (!parentLineage?.length) return { ok: false, reason: 'diverged' };
-    }
-    provingParent = false;
-    const timeline = await openIngestionRecord(conversationId, options.includeArchived, parentLineage);
-    if (!timeline) return { ok: false };
-    opened.push(timeline);
-    await timeline.catchUp();
-    const all = timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns;
-    const prefix = options.committedOnly ? timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER, committedOnly: true }).turns : all;
-    const complete = prefix.length === all.length;
-    const picked = await pick(prefix);
-    if (!picked || !options.images) return { ok: true, turns: picked, complete };
-    const budget = { chars: READ_BACK_MAX_CHARS };
-    const turns: TranscriptTurns = [];
-    for (const turn of picked) turns.push(await withImagesReadBack(timeline, turn, budget));
-    if (budget.chars < 0) log.warn('[session-timeline] pictures over the read-back budget keep only their size', { conversationId });
-    return { ok: true, turns, complete };
-  } catch (error) {
-    log.warn('[session-timeline] record unreadable', { conversationId, error: (error as Error)?.message ?? String(error) });
-    if ((error as Error)?.name === 'SessionRecordTooLargeError') return { ok: false, reason: 'too_large' };
-    return { ok: false, ...(provingParent || (error as Error)?.name === 'SessionRecordForkDivergedError' ? { reason: 'diverged' as const } : {}) };
-  } finally {
-    for (const timeline of opened.reverse()) timeline.dispose();
-  }
-}
 
 /**
  * A terminal reports idle before its buffered record write lands (record-backfill `settling`). Ingestion follows
@@ -1263,7 +1179,7 @@ export async function pickRecordTurns(
  * the watch first. A record that cannot be reopened fails loudly.
  */
 export async function watchRecordSettled(conversationId: string, signal: AbortSignal): Promise<boolean> {
-  const timeline = await openIngestionRecord(conversationId, true, undefined, 'live');
+  const timeline = await openIngestionRecord(conversationId, true);
   if (!timeline) throw new Error(`record unavailable for ${conversationId}`);
   let unsubscribe = () => {};
   try {
@@ -1281,37 +1197,6 @@ export async function watchRecordSettled(conversationId: string, signal: AbortSi
   }
 }
 
-type ImageNode = { id: string; images?: unknown[]; imageRefs?: unknown[]; children?: ImageNode[] };
-
-/** Pictures being copied into the store are all on the heap until the copy ends. Past this they keep only their size. */
-const READ_BACK_MAX_CHARS = 256 * 1024 * 1024;
-
-async function withImagesReadBack<T extends TranscriptTurns[number]>(timeline: SessionTimeline, turn: T, budget: { chars: number }): Promise<T> {
-  const readBack = async (node: ImageNode): Promise<ImageNode> => {
-    let next = node;
-    const refs = (node.imageRefs ?? []) as Array<{ chars: number }>;
-    const chars = refs.reduce((sum, ref) => sum + ref.chars, 0);
-    if (!node.images && refs.length && timeline.toolImage && (budget.chars -= chars) >= 0) {
-      const found = [];
-      for (let index = 0; index < refs.length; index += 1) {
-        found.push(await timeline.toolImage({ itemId: node.id, index, maxChars: Number.POSITIVE_INFINITY }));
-      }
-      if (found.every((one) => one.ok)) {
-        const { imageRefs: _refs, ...rest } = node;
-        next = { ...rest, images: found.map((one) => (one as Extract<typeof one, { ok: true }>).image) };
-      }
-    }
-    if (next.children?.length) {
-      const children: ImageNode[] = [];
-      for (const child of next.children) children.push(await readBack(child));
-      next = { ...next, children };
-    }
-    return next;
-  };
-  const items: ImageNode[] = [];
-  for (const item of turn.items) items.push(await readBack(item as unknown as ImageNode));
-  return { ...turn, items: items as unknown as T['items'] };
-}
 
 /**
  * 手机点开一张附件卡(#7193):读这条会话打开给人看的那份文件的一段(`opened-file.ts`)。只读它真的打开过的 ——

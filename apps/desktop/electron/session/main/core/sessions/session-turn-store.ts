@@ -1,9 +1,10 @@
 import { beginCanonicalQueueTask } from './canonical-queue-state';
 import { renumberStoredTurn, rewriteTurnId } from './session-turn-identity';
 export { renumberStoredTurn } from './session-turn-identity';
-import { findToolImage, trimCursorPageForTransport, trimTurnsForTransport } from '@gugu/session-core/session-record';
+import { findToolImage, findToolItem, trimCursorPageForTransport, trimTurnsForTransport } from '@gugu/session-core/session-record';
 import { and, asc, desc, eq, gte, like, lt, notLike, sql } from 'drizzle-orm';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
+import { hermesNativeDigest } from '@gugu/session-core/acp/hermes-prompt';
 import { db, sqlite } from '@main/db/client';
 import { sessionTurns } from '@main/db/schema';
 import { randomUUID } from 'node:crypto';
@@ -167,7 +168,7 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
  * #980 记录补库与运行时落库走**同一条**按会话排队的写链:补的时候插不进一轮运行时的提交,运行时也插不进来,
  * 补进来的几轮因此总是接在当时的库尾。
  */
-export function withStoredTurns<T>(sessionId: string, run: () => Promise<T>): Promise<T> {
+export function withStoredTurns<T>(sessionId: string, run: () => T | Promise<T>): Promise<T> {
   const previous = persistenceTails.get(sessionId) ?? Promise.resolve();
   const completed = beginCanonicalQueueTask(sessionId);
   const result = previous.then(run, run).finally(completed);
@@ -191,6 +192,44 @@ export async function readStoredTailNow(sessionId: string, limit: number): Promi
 }
 
 /**
+ * Store rows newest first, one row at a time: a row can hold megabytes of pictures, so a fill never reads a page of them.
+ * `limit` caps the count. Only inside `withStoredTurns`.
+ */
+export function* storedTurnsNewestFirstNow(sessionId: string, limit = Number.MAX_SAFE_INTEGER): Generator<{ seq: number; turn: TranscriptTurn }> {
+  // Sequences a page at a time too: a reader that stops early never lists the whole session.
+  let before = Number.MAX_SAFE_INTEGER, left = limit;
+  while (left > 0) {
+    const seqs = db.select({ seq: sessionTurns.seq }).from(sessionTurns)
+      .where(and(eq(sessionTurns.sessionId, sessionId), lt(sessionTurns.seq, before)))
+      .orderBy(desc(sessionTurns.seq)).limit(Math.min(left, STORED_SEQ_PAGE)).all();
+    for (const { seq } of seqs) {
+      const row = db.select({ data: sessionTurns.data }).from(sessionTurns)
+        .where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.seq, seq))).limit(1).get();
+      if (row) yield { seq, turn: JSON.parse(row.data) as TranscriptTurn };
+    }
+    if (seqs.length < Math.min(left, STORED_SEQ_PAGE)) return;
+    before = seqs.at(-1)!.seq; left -= seqs.length;
+  }
+}
+const STORED_SEQ_PAGE = 200;
+
+/** The messages of this session's rows that carry the Hermes receipt for `nativeText` (found by SQL, not read in turn). */
+export function storedMessagesWithPromptHash(sessionId: string, nativeText: string): TranscriptTurn['items'] {
+  const digest = hermesNativeDigest(nativeText);
+  return db.select({ data: sessionTurns.data }).from(sessionTurns)
+    .where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.data, `%${digest}%`))).all()
+    .flatMap(row => (JSON.parse(row.data) as TranscriptTurn).items.filter(item => item.kind === 'message'));
+}
+
+/** Record-backed rows without an outcome, with their sequence: a later read may complete them (see below). */
+export function readUnfinishedRecordRowsNow(sessionId: string): Array<{ seq: number; turn: TranscriptTurn }> {
+  return db.select({ seq: sessionTurns.seq, data: sessionTurns.data }).from(sessionTurns)
+    .where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.turnId, 'record:%'),
+      sql`json_extract(${sessionTurns.data}, '$.outcome.kind') IS NULL`)).all()
+    .map(row => ({ seq: row.seq, turn: JSON.parse(row.data) as TranscriptTurn }));
+}
+
+/**
  * Record-backed rows retain their source identity so a later snapshot can complete the same stored row.
  * Only call inside `withStoredTurns`; revisions are historical and publish no live-message side effects.
  * `turn_id` 记 `record:` 开头的记录侧 id:这一行**不来自引擎的哪一轮**,界面按引擎 turn id 去重时不会把它认成谁。
@@ -203,9 +242,10 @@ export async function readUnfinishedRecordTurnsNow(sessionId: string): Promise<T
 }
 
 /** The record matcher has proved this unfinished row's native identity; keep its stored sequence/references. */
-export async function reviseRecordTurnNow(sessionId: string, seq: number, turn: TranscriptTurn): Promise<void> {
-  const [stored] = await db.select({ id: sessionTurns.id, seq: sessionTurns.seq, data: sessionTurns.data })
-    .from(sessionTurns).where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.seq, seq), like(sessionTurns.turnId, 'record:%'))).limit(1);
+export function reviseRecordTurnNow(sessionId: string, seq: number, turn: TranscriptTurn): void {
+  // Synchronous: a fill writes each turn as the record streams (resume-tail), inside the reader's callback.
+  const stored = db.select({ id: sessionTurns.id, seq: sessionTurns.seq, data: sessionTurns.data })
+    .from(sessionTurns).where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.seq, seq), like(sessionTurns.turnId, 'record:%'))).limit(1).get();
   if (!stored) throw new Error(`Cannot revise missing record turn: sessionId=${sessionId} seq=${seq}`);
   const data = JSON.stringify(renumberStoredTurn(turn, sessionId, stored.seq));
   if (stored.data !== data) {
@@ -218,8 +258,9 @@ export async function reviseRecordTurnNow(sessionId: string, seq: number, turn: 
 }
 
 /** Append only a missing record turn, inside `withStoredTurns`. */
-export async function appendRecordTurnNow(sessionId: string, turn: TranscriptTurn): Promise<void> {
-  const next = await nextSeq(sessionId);
+/** Synchronous, as `reviseRecordTurnNow`. Returns the new row's sequence. */
+export function appendRecordTurnNow(sessionId: string, turn: TranscriptTurn): number {
+  const next = nextSeqNow(sessionId);
   const stored = renumberStoredTurn(turn, sessionId, next);
   const publish = db.transaction(tx => {
     const inserted = tx.insert(sessionTurns).values({
@@ -228,6 +269,7 @@ export async function appendRecordTurnNow(sessionId: string, turn: TranscriptTur
     return inserted.length ? noteNativeConversationHistory(sessionId, stored, tx) : undefined;
   });
   publish?.();
+  return next;
 }
 
 /**
@@ -259,12 +301,19 @@ async function storedTurnCount(sessionId: string): Promise<number> {
 }
 
 async function nextSeq(sessionId: string): Promise<number> {
-  const rows = await db
-    .select({ max: sql<number | null>`max(${sessionTurns.seq})` })
-    .from(sessionTurns)
-    .where(eq(sessionTurns.sessionId, sessionId));
-  const max = rows[0]?.max;
+  return nextSeqNow(sessionId);
+}
+
+function nextSeqNow(sessionId: string): number {
+  const row = db.select({ max: sql<number | null>`max(${sessionTurns.seq})` }).from(sessionTurns)
+    .where(eq(sessionTurns.sessionId, sessionId)).get();
+  const max = row?.max;
   return max === null || max === undefined ? 0 : max + 1;
+}
+
+/** The newest sequence of the session's rows, or -1 (the fill's stamp records it). */
+export function storedHeadNow(sessionId: string): number {
+  return nextSeqNow(sessionId) - 1;
 }
 
 /**
@@ -311,7 +360,15 @@ export async function getStoredToolImage(params: {
   const turn = row ? JSON.parse(row.data) as TranscriptTurn : null;
   const itemId = row && turn && !('seq' in params)
     ? rewriteTurnId(params.itemId, row.turnId, turn.id) : params.itemId;
-  return findToolImage(turn ? [turn] : [], itemId, params.index, Number.POSITIVE_INFINITY);
+  const found = findToolImage(turn ? [turn] : [], itemId, params.index, Number.POSITIVE_INFINITY);
+  if (found.ok || found.code !== 'no_such_image' || !turn) return found;
+  // A turn a fill copied from the record keeps its pictures there (resume-tail): read back by place, else only the size.
+  const node = findToolItem([turn], itemId)?.node;
+  const ref = node && node.kind !== 'tool-group' && !node.images ? node.imageRefs?.[params.index] : undefined;
+  if (!ref?.record) return found;
+  const { readFilledPicture } = await import('./record-backfill');
+  const data = await readFilledPicture(params.sessionId, { ...ref.record, chars: ref.chars });
+  return data === null ? found : { ok: true as const, image: { mimeType: ref.mimeType, data } };
 }
 
 /** Read one immutable live origin, even after its runtime record was removed. No provider is contacted. */

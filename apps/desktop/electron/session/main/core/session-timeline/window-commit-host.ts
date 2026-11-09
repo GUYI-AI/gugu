@@ -66,7 +66,9 @@ export async function connectWindowCommitHost(source: Parameters<Runtime['attach
     throw error;
   }
   return { invalidate: () => selected.runtime.invalidate(), close() {
-    releaseDisconnect(); selected.runtime.invalidate(); selected.runtime.close(); if (current === selected) current = undefined;
+    releaseDisconnect(); selected.runtime.invalidate(); selected.runtime.close();
+    void selected.producer?.project.flush?.().catch(error => report('sessionWindow: final projection flush failed',error));
+    if (current === selected) current = undefined;
   } };
 }
 /** The durable producer must exist before a route can reserve the new handoff. */

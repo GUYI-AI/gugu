@@ -141,15 +141,14 @@ export const pinBackdrop = style({
 
 /**
  * A user message's two-line summary: present only while stuck, i.e. once the message itself has gone
- * by, so the two are never on screen together. A short fade covers the hand-over from message to summary.
+ * by, so the two are never on screen together. It switches in the frame the lane state changes; a fade
+ * would keep it on screen while the message scrolls back into view.
  */
 export const pinSummaryLayer = style({
   paddingBottom: PIN_SUMMARY_GAP,
   opacity: 0,
   pointerEvents: 'none',
-  transition: 'opacity 150ms ease',
   selectors: { '[data-pin-stuck="true"] &': { opacity: 1, pointerEvents: 'auto' } },
-  '@media': { '(prefers-reduced-motion: reduce)': { transition: 'none' } },
 });
 
 /** Page-colored, square strip, including its seam so body text cannot peek between the two pins. */

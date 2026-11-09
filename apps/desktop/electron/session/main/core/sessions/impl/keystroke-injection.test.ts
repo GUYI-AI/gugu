@@ -8,6 +8,7 @@ import {
   planSystemBootstrap,
   setPtyStartupGate,
 } from './keystroke-injection';
+import { setProjectGroupHost, type ProjectGroupHost } from '@main/core/projects/project-group-host';
 
 const agentRow = vi.hoisted(() => ({ cache: {} as Record<string, unknown> }));
 vi.mock('@main/core/sessionpage/sessionpage-session-agent', () => ({
@@ -376,5 +377,26 @@ describe('injectSystemBootstrapWhenReady project context (#2347)', () => {
     expect(await bootstrapText({ ...group, sessionpage_cloud_identity_state: 'ready' })).toContain('already a member of that group');
     // Rows written before cloud identity states existed landed long ago.
     expect(await bootstrapText(group)).toContain('already a member of that group');
+  });
+
+  it('a refused join leaves no group on the row: the block still names the mapped project group, unconfirmed', async () => {
+    const asked: string[][] = [];
+    setProjectGroupHost({
+      listBindings: async (projectIds: readonly string[]) => {
+        asked.push([...projectIds]);
+        return { success: true, data: [{ projectId: 'proj-1', chatId: 'group-1' }] };
+      },
+    } as unknown as ProjectGroupHost);
+    try {
+      const text = await bootstrapText({
+        emdash_project_id: 'proj-1', sessionpage_group_chat_id: '', sessionpage_cloud_identity_state: 'ready',
+      });
+      expect(asked).toEqual([['proj-1']]);
+      expect(text).toContain('group-1');
+      expect(text).toContain('profile_whoami');
+      expect(text).not.toContain('already a member of that group');
+    } finally {
+      setProjectGroupHost(null);
+    }
   });
 });
