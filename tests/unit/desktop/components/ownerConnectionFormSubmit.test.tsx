@@ -47,7 +47,7 @@ function setup() {
     ownerAccounts: vi.fn(async () => [{ providerId: 'asana',accountId: 'asana-account',configured: true,publicMetadata: { version: 1,providerId: 'asana',accountId: 'asana-account' } }]),
     ownerAuthorizationCommit: vi.fn(async (input: { operationId: string; scopeKey: string; resourceKey?: string }) => ({ operationId: input.operationId,scopeKey: input.scopeKey,resourceKey: input.resourceKey ?? 'k',revision: '1',status: 'applied' })),
     ownerAuthorizationCommitBatch: vi.fn() }
-  const base = { ...LOCAL_LIBRARY_HOST,integrations: native } as LibraryHost
+  const base = { ...LOCAL_LIBRARY_HOST,integrations: native } as unknown as LibraryHost
   const host = ownerConnectionActions(base,connectionLibraryHost(base,store,async () => {}),'device-1',route)
   fixture.platform.saveCredential.mockResolvedValue({ ok: true })
   fixture.platform.list.mockResolvedValue([{ provider: 'amap',accounts: [{ accountId: 'amap-account',connected: true,updatedAt: '2026-11-09T00:00:00Z' }] }])
