@@ -66,6 +66,7 @@ import {
   detachProjectFolder,
   getProjectOwningAttachedFolder,
   listProjectFolders,
+  projectFolderOfWorkspace,
   resolveProjectFolder,
 } from './project-folders';
 
@@ -106,6 +107,22 @@ describe('project folders', () => {
     fixture.close();
     mocks.db = undefined;
     await rm(tmp, { recursive: true, force: true });
+  });
+
+  it('a folder place names only a folder a project still holds', async () => {
+    const attached = await attachOk('project-a', related);
+    expect(await projectFolderOfWorkspace(attached.workspaceId)).toMatchObject({ projectId: 'project-a', path: related });
+    const listed = await listProjectFolders('project-a');
+    const root = listed.success ? listed.data.find((folder) => folder.kind === 'root')! : null;
+    expect(await projectFolderOfWorkspace(root!.workspaceId)).toMatchObject({ projectId: 'project-a' });
+    expect(await projectFolderOfWorkspace('no-such-workspace')).toBeUndefined();
+    await detachProjectFolder('project-a', root!.workspaceId);
+    expect(await projectFolderOfWorkspace(root!.workspaceId), 'a detached root').toBeUndefined();
+    const extra = path.join(tmp, 'extra');
+    await mkdir(extra);
+    await attachOk('project-a', extra);
+    await detachProjectFolder('project-a', attached.workspaceId);
+    expect(await projectFolderOfWorkspace(attached.workspaceId), 'a detached folder').toBeUndefined();
   });
 
   it('records real folder membership changes once, excluding repeats and refusals', async () => {

@@ -57,6 +57,7 @@ import { ChatFileForwardHost } from '../components/chat/ChatFileForwardHost'
 import { useSessionpageReveal } from '../hooks/useSessionpageReveal'
 import { useOwnedAgentConversationEntry } from '../hooks/useOwnedAgentConversationEntry'
 import { SessionInputOutboxHost } from '../hooks/useSessionInputOutbox'
+import { SentMessageBodyHost } from '../components/chat/SentMessageBodyHost'
 import { NeedsYouHost } from '../components/needsYou/NeedsYouHost'
 import { AgentFailureSlotHost } from '../components/AgentTurnFailureBar'
 import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestBridge'
@@ -102,6 +103,9 @@ import { PlatformError } from '../platform/errors'
 import { CameraPermissionSheet } from '../components/CameraPermissionSheet'
 import { RemoteMachinesHost } from '../components/sessionpage/RemoteMachinesHost'
 import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
+import { IconButton } from '../components/ui/IconButton'
+import { Settings } from '@/lib/icons'
+import { parseExtensionTabKind } from '../session/shared/extensions/manifest'
 import { followLink, openLink } from '../lib/guguLinks'
 import { useMobileShell, readMobileShell } from '../hooks/useMobileShell'
 import { useMobileChatOpenNonce } from '../hooks/useMobileChatOpenNonce'
@@ -513,9 +517,11 @@ function InnerLayout({
     const closeForFeedback = () => setSettingsModalOpen(false)
     window.addEventListener(UI_EVENTS.openSettings, open)
     window.addEventListener(UI_EVENTS.sessionpageOpenFeedback, closeForFeedback)
+    window.addEventListener(UI_EVENTS.closeSettings, closeForFeedback)
     return () => {
       window.removeEventListener(UI_EVENTS.openSettings, open)
       window.removeEventListener(UI_EVENTS.sessionpageOpenFeedback, closeForFeedback)
+      window.removeEventListener(UI_EVENTS.closeSettings, closeForFeedback)
     }
   }, [openSettingsSection])
 
@@ -1161,7 +1167,7 @@ function InnerLayout({
           </div>
         )}
 
-        {effectsActive && <SessionInputOutboxHost accountId={user.id} />}{mobile && <AgentWatchRoot />}
+        <SentMessageBodyHost />{effectsActive && <SessionInputOutboxHost accountId={user.id} />}{mobile && <AgentWatchRoot />}
         {mobile && platform.kind === 'capacitor' && <PhoneDeviceRoot />}
 
         {/* The mobile navigation is shell chrome, not state owned by a retained tab subtree. */}
@@ -1185,7 +1191,25 @@ function InnerLayout({
       <AgentShareHost />
       {openedPhoneApp && (
         <Sheet fullScreenMobile onClose={() => setOpenedPhoneApp(null)} testId="app-link-page" ariaLabel={openedPhoneApp.name}>
-          <PaneHeader mobile divider title={openedPhoneApp.name} leading={<RightPanelBackButton onBack={() => setOpenedPhoneApp(null)} />} />
+          <PaneHeader
+            mobile
+            divider
+            title={openedPhoneApp.name}
+            leading={<RightPanelBackButton onBack={() => setOpenedPhoneApp(null)} />}
+            actions={(
+              <IconButton
+                size="lg"
+                data-testid="app-link-page-settings"
+                aria-label={translateSessionMessage('extensions.appSettings')}
+                onClick={() => {
+                  setOpenedPhoneApp(null)
+                  void followLink({ kind: 'app-detail', extensionId: parseExtensionTabKind(openedPhoneApp.kind)!.extensionId })
+                }}
+              >
+                <Settings />
+              </IconButton>
+            )}
+          />
           <SessionAppFrame kind={openedPhoneApp.kind} />
         </Sheet>
       )}

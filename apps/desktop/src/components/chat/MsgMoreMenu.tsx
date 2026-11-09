@@ -11,7 +11,7 @@ import { PhoneMessageMenu } from './PhoneMessageMenu'
  * The hover menu, bubble context menu and phone long-press menu share message actions and quick reactions.
  * 桌面:指针处 / ⋯ 按钮下的菜单。手机长按(`lift`):同一份动作,换成「气泡浮起 + 旁边窄列表」那一层(PhoneMessageMenu)。
  */
-export function MsgMoreMenu({ hasHoverBar, onReact, onClose, lift, isRetracted, content, hasSelection, onReply, onQuoteSelection, onCopy, onSelectText, onCopyLink, onOpenLink, onForward, onDownload, onKeep, onDelete, onSelect, onOpenTopic, ...anchor }: Partial<MenuAnchorProps> & MessageActionTarget & MessageMenuCapabilities & {
+export function MsgMoreMenu({ hasHoverBar, onReact, onClose, lift, isRetracted, content, hasSelection, onReply, onQuoteSelection, onCopy, onSelectText, onCopyLink, onOpenLink, onForward, onDownload, onKeep, onDelete, onSelect, onOpenTopic, onQuoteToComposer, onOpenFile, onEditMessage, onForkTask, ...anchor }: Partial<MenuAnchorProps> & MessageActionTarget & MessageMenuCapabilities & {
   onReact: (emoji: string) => void
   onClose: () => void
   /** 手机长按:被按的气泡、手指按下的高度;open=false 时播收起动画。 */
@@ -20,7 +20,7 @@ export function MsgMoreMenu({ hasHoverBar, onReact, onClose, lift, isRetracted, 
   const { t } = useTranslation('messaging')
   const [expanded, setExpanded] = useState(false)
   const { showReactions } = messageMenuModel({ hasHoverBar })
-  const items = messageActionItems({ isRetracted, content, hasSelection, onReply, onQuoteSelection, onCopy, onSelectText, onCopyLink, onOpenLink, onForward, onDownload, onKeep, onDelete, onSelect, onOpenTopic }, t)
+  const items = messageActionItems({ isRetracted, content, hasSelection, onReply, onQuoteSelection, onCopy, onSelectText, onCopyLink, onOpenLink, onForward, onDownload, onKeep, onDelete, onSelect, onOpenTopic, onQuoteToComposer, onOpenFile, onEditMessage, onForkTask }, t)
   if (lift) {
     return <PhoneMessageMenu open={lift.open} bubble={lift.bubble} touchY={lift.touchY} mine={lift.mine} items={items}
       reactionsDisabled={isRetracted} onReact={onReact} onClose={onClose} />

@@ -9,7 +9,6 @@ import { createChatState } from '../state/chat-state';
 import { createChatView } from '../chat-view';
 import type { ChatMessage, TranscriptTurn } from '../model';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
-import { pinFade } from '../chat-root.css';
 
 const peer = 'user:11111111-1111-4111-8111-111111111111';
 const me = '22222222-2222-4222-8222-222222222222';
@@ -105,8 +104,8 @@ describe('approved A2A activity', () => {
     t.host.querySelector<HTMLButtonElement>('[data-expand-user-card]')!.click();
     await untilStable('the full final answer is measured', () => t.scroll().scrollHeight);
     t.scroll().scrollTop = 850;
-    await untilStable('owner reading ordinary reply', () => t.host.querySelector('[data-agent-conversation-message="Owner question"]')?.getBoundingClientRect().top);
-    const row = t.host.querySelector<HTMLElement>('[data-agent-conversation-message="Owner question"]');
+    await untilStable('owner reading ordinary reply', () => t.host.querySelector('[data-pin-summary="Owner question"]')?.getBoundingClientRect().top);
+    const row = t.host.querySelector<HTMLElement>('[data-pin-summary="Owner question"]');
     expect(row).not.toBeNull();
     expect(row!.getBoundingClientRect().top).toBeCloseTo(t.scroll().getBoundingClientRect().top + 8, 0);
   });
@@ -117,8 +116,8 @@ describe('approved A2A activity', () => {
     t.button().click();
     await untilStable('human owner activity geometry', () => t.scroll().scrollHeight);
     t.scroll().scrollTop = 850;
-    await untilStable('human owner sticky position', () => t.host.querySelector('[data-agent-conversation-message="Owner message"]')?.getBoundingClientRect().top);
-    const row = t.host.querySelector<HTMLElement>('[data-agent-conversation-message="Owner message"]');
+    await untilStable('human owner sticky position', () => t.host.querySelector('[data-pin-summary="Owner message"]')?.getBoundingClientRect().top);
+    const row = t.host.querySelector<HTMLElement>('[data-pin-summary="Owner message"]');
     expect(row, 'the viewer message must remain mounted while its activity is read').not.toBeNull();
     expect(row!.getBoundingClientRect().top).toBeCloseTo(t.scroll().getBoundingClientRect().top + 8, 0);
   });
@@ -127,6 +126,9 @@ describe('approved A2A activity', () => {
     const t = await mount(width);
     expect(t.head()!.textContent).toContain('Received 1 message from d3');
     expect(t.button().getAttribute('aria-expanded')).toBe('false');
+    // Includes title, aria-label, previews and copy controls in the closed subtree.
+    expect(t.host.innerHTML).not.toContain('Agent update');
+    expect(t.head()!.querySelector('[data-slot=message-copy]')).toBeNull();
     expect(t.host.querySelector('[data-agent-conversation-message="incoming"]')).toBeNull();
     const row = t.head()!.getBoundingClientRect();
     expect(row.height).toBe(44);
@@ -139,6 +141,7 @@ describe('approved A2A activity', () => {
     expect(t.host.querySelector('[data-user-card="incoming"]')?.textContent).toContain('Agent update');
     t.button().click();
     await until('original bubble removed after shrink', () => !t.host.querySelector('[data-agent-conversation-message="incoming"]'));
+    expect(t.host.innerHTML).not.toContain('Agent update');
     expect(t.host.querySelector('[data-agent-conversation-message="Panel answer"]')).not.toBeNull();
   });
   it('navigates an agent name independently of expanding the record', async () => {
@@ -204,20 +207,45 @@ describe('approved A2A activity', () => {
     await until('settled confirmed count', () => !!t.head()?.textContent?.includes('Exchanged 2 messages'));
     expect(t.head()).toBe(head);
     expect(t.head()!.getAttribute('data-live')).toBe('false');
+    expect(t.host.innerHTML).not.toContain('Real reply content');
     expect(t.button().getAttribute('aria-expanded')).toBe('false');
   });
-  it('shows the viewer group reply as one source-linked line without unfolding A2A or manufacturing a message', async () => {
+  it('folds a group reply to the viewer into the same activity row, with no text and an exact source link', async () => {
+    const base: ChatMessage = { ...ordinary('reply:sent:receipt'), text: 'I answered your question.',
+      sentAddresses: { target: { kind: 'chat', conversationId: 'group', whisper: false, threadRootId: null },
+        recipients: [`user:${me}`], confirmed: true, chatKind: 'group', replyTo: null } };
+    const question = ordinary('The owner asks in the panel.', 'user');
+    const t = await mount(800, [turn('ask', [question]), turn('reply', [base])]);
+    expect(t.host.querySelectorAll('[data-agent-activity]')).toHaveLength(1);
+    expect(t.head()!.textContent).toContain('Replied to you in gugu');
+    expect(t.button().getAttribute('aria-expanded')).toBe('false');
+    expect(t.host.innerHTML).not.toContain('I answered your question.');
+    expect(t.host.querySelector(`[data-user-card="${question.id}"]`)?.textContent).toContain(question.text);
+    t.head()!.querySelector<HTMLElement>('[data-activity-target="group"]')!.click();
+    expect(t.open).toHaveBeenCalledWith({ kind: 'chat', chatId: 'group', messageId: 'receipt' });
+    t.button().click();
+    await until('the original reply opens inside the activity', () => !!t.host.textContent?.includes('I answered your question.'));
+    expect(t.state.transcript.state.committedTurns[1].items).toHaveLength(1);
+  });
+  it('joins a group reply to the viewer with adjacent agent activity in one row', async () => {
     const base: ChatMessage = { ...ordinary('reply:sent:receipt'), text: 'I answered your question.',
       sentAddresses: { target: { kind: 'chat', conversationId: 'group', whisper: false, threadRootId: null },
         recipients: [`user:${me}`], confirmed: true, chatKind: 'group', replyTo: null } };
     const t = await mount(800, [turn('a', [delivery('incoming')]), turn('reply', [base])]);
-    const reply = t.host.querySelector<HTMLElement>('[data-group-reply]')!;
-    expect(reply.textContent).toContain('Replied to you in gugu');
-    expect(reply.getBoundingClientRect().height).toBe(32);
-    expect(t.host.querySelector('[data-user-card="reply:sent:receipt"]')).toBeNull();
-    reply.querySelector('button')!.click();
-    expect(t.open).toHaveBeenCalledWith({ kind: 'chat', chatId: 'group', messageId: 'receipt' });
-    expect(t.state.transcript.state.committedTurns[1].items).toHaveLength(1);
+    expect(t.host.querySelectorAll('[data-agent-activity]')).toHaveLength(1);
+    expect(t.head()!.textContent).toContain('Exchanged 2 messages');
+    expect(t.host.innerHTML).not.toContain('I answered your question.');
+  });
+  it('keeps the owner question and a direct send to the owner visible', async () => {
+    const target = { kind: 'chat' as const, conversationId: 'direct', whisper: false, threadRootId: null, recipientUserId: me };
+    const sent: ChatMessage = { ...ordinary('owner-send:sent:receipt'), text: 'The owner still sees this answer.', sentTo: target,
+      sentAddresses: { target, recipients: [`user:${me}`], confirmed: true, chatKind: 'ai', replyTo: null } };
+    const question = ordinary('The owner still sees this question.', 'user');
+    const t = await mount(800, [turn('activity', [delivery('incoming')]), turn('owner', [question, sent])]);
+    expect(t.host.querySelector(`[data-user-card="${question.id}"]`)?.textContent).toContain(question.text);
+    expect(t.host.querySelector(`[data-user-card="${sent.id}"]`)?.textContent).toContain(sent.text);
+    expect(t.host.querySelector('[data-agent-activity]')?.textContent ?? '').not.toContain('Replied to you');
+    expect(t.state.transcript.state.committedTurns[1].items).toEqual([question, sent]);
   });
   it('keeps an opened group and source identity when older adjacent messages are prepended', async () => {
     const t = await mount(800, [turn('a', [delivery('incoming')]), turn('p', [ordinary('Panel answer')])]);
@@ -275,8 +303,8 @@ describe('approved A2A activity', () => {
     t.button().click();
     await untilStable('open activity heights settled', () => t.scroll().scrollHeight);
     t.scroll().scrollTop = 850;
-    await untilStable('both sticky lanes settled', () => [t.head()?.getBoundingClientRect().top, t.host.querySelector('[data-user-card="Owner question"]')?.getBoundingClientRect().top]);
-    const own = t.host.querySelector('[data-agent-conversation-message="Owner question"]')!.getBoundingClientRect();
+    await untilStable('both sticky lanes settled', () => [t.head()?.getBoundingClientRect().top, t.host.querySelector('[data-pin-summary="Owner question"]')?.getBoundingClientRect().top]);
+    const own = t.host.querySelector('[data-pin-summary="Owner question"]')!.getBoundingClientRect();
     const activity = t.head()!.getBoundingClientRect();
     expect(Math.abs(own.top - t.scroll().getBoundingClientRect().top - 8)).toBeLessThan(2);
     expect(activity.top).toBeGreaterThanOrEqual(own.bottom + 6);
@@ -291,9 +319,11 @@ describe('approved A2A activity', () => {
     await untilStable('push-out rows measured', () => t.scroll().scrollHeight);
     t.scroll().scrollTop = 850;
     await untilStable('push-out lanes mounted', () => t.head()?.getBoundingClientRect().top);
-    const own = () => t.host.querySelector<HTMLElement>('[data-agent-conversation-message="Owner question"]')!;
+    const own = () => t.host.querySelector<HTMLElement>('[data-pin-summary="Owner question"]')!;
     const sample = () => ({ scroll: t.scroll().scrollTop, own: own()?.getBoundingClientRect().top,
       activity: t.head()?.getBoundingClientRect().top, opaque: t.head() && getComputedStyle(t.head()!.closest('[data-index]')!.querySelector('[data-chat-pin-backdrop]')!).opacity });
+    await untilStable('both pins settled', () => [sample().own, sample().activity]);
+    const pinned = sample();
     const row = t.head()!.closest<HTMLElement>('[data-index]')!;
     const end = Number.parseFloat(row.style.top) + Number.parseFloat(row.style.height);
     const samples = [];
@@ -317,7 +347,7 @@ describe('approved A2A activity', () => {
     t.scroll().scrollTop = 850;
     await untilStable('reverse scroll restores the same pins', () => [sample().own, sample().activity]);
     expect(sample().own).toBe(8);
-    expect(sample().activity).toBe(108);
+    expect(sample().activity).toBe(pinned.activity);
     expect(sample().opaque).toBe('1');
   });
   it.each([true, false])('returns pinned rows during the height collapse without skipping to the final anchor (following conclusion: %s)', async following => {
@@ -327,7 +357,7 @@ describe('approved A2A activity', () => {
     await untilStable('collapse source measured', () => t.scroll().scrollHeight);
     t.scroll().scrollTop = 850;
     await untilStable('collapse starts with two pinned rows', () => t.head()?.getBoundingClientRect().top);
-    const own = () => t.host.querySelector('[data-agent-conversation-message="Owner question"]')?.getBoundingClientRect();
+    const own = () => t.host.querySelector('[data-pin-summary="Owner question"]')?.getBoundingClientRect();
     const start = t.scroll().scrollTop;
     // Drive the real layout tween with a frame clock. A busy browser can deliver
     // its next animation frame after the entire 200ms duration has elapsed.
@@ -372,7 +402,7 @@ describe('approved A2A activity', () => {
     // Older Android WebViews do not implement scroll-state queries. Disable
     // those containers while exercising the real sticky layout and paint.
     for (const row of t.host.querySelectorAll<HTMLElement>('[data-index] > div')) row.style.containerType = 'normal';
-    const own = () => t.host.querySelector(`[data-agent-conversation-message="${question}"]`)!;
+    const own = () => t.host.querySelector(`[data-pin-summary="${question}"]`)!;
     const masks = () => [own(), t.head()!].map(row => row.closest('[data-index]')!.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!);
     t.scroll().scrollTop = 850;
     await untilStable('both opaque lanes stuck', () => [own().getBoundingClientRect().top, t.head()?.getBoundingClientRect().top]);
@@ -437,8 +467,8 @@ describe('approved A2A activity', () => {
     const style = getComputedStyle(backdrop);
     expect(style.opacity).toBe('1');
     expect(style.backgroundColor).toBe(background === '#ffffff' ? 'rgb(255, 255, 255)' : 'rgb(33, 33, 33)');
-    const own = t.host.querySelector('[data-agent-conversation-message]')!.getBoundingClientRect();
-    const ownPaint = t.host.querySelector('[data-agent-conversation-message]')!.closest('[data-index]')!.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!.getBoundingClientRect();
+    const own = t.host.querySelector('[data-pin-summary]')!.closest<HTMLElement>('[data-index] > div:last-child')!.getBoundingClientRect();
+    const ownPaint = t.host.querySelector('[data-pin-summary]')!.closest('[data-index]')!.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!.getBoundingClientRect();
     expect(ownPaint.top, 'the reserved top gap above the owner pin must not expose an older body line').toBeLessThanOrEqual(viewport.top);
     expect(Math.abs(paint.top - own.bottom), 'the two page-colored pins meet without exposing half a body line in their seam').toBeLessThan(1);
     expect(Math.abs(paint.bottom - row.bottom), 'no opaque band below the semantic row').toBeLessThan(1);
@@ -452,8 +482,6 @@ describe('approved A2A activity', () => {
     expect(style.borderLeftWidth).toBe('0px');
     expect(style.borderRightWidth).toBe('0px');
     expect(style.borderBottomWidth).toBe('1px');
-    const fadeSelector = pinFade.split(/\s+/).map(name => `.${name}`).join('');
-    expect(t.host.querySelectorAll(fadeSelector), 'neither pin may paint a fade across the preceding message').toHaveLength(0);
     if (frameWidth !== width) {
       expect(paint.left).toBeGreaterThanOrEqual(viewport.left - 1);
       expect(paint.right).toBeLessThanOrEqual(viewport.right + 1);

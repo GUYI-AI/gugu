@@ -26,7 +26,7 @@ import {
 import { archiveRefusal, bundleProblems, unpackedTooMuch, type BundleEntry } from '../../session/shared/extensions/bundle-checks'
 import { INSTALL_CONSENT_HUMAN_WINDOW_MS } from '../../session/shared/extensions/host-actions'
 import { agreeThenInstall, type InstallConsent } from '../../session/shared/extensions/install-consent-flow'
-import { extensionTabKind, safeParseExtensionManifest, type ExtensionManifest } from '../../session/shared/extensions/manifest'
+import { extensionTabKind, parseExtensionManifest, safeParseExtensionManifest, type ExtensionManifest } from '../../session/shared/extensions/manifest'
 import { PHONE_CAPABILITIES, requireAppPlatform } from '../../session/shared/extensions/app-platforms'
 import { BUNDLE_SKIP_NAMES, currentMarketHost, type MarketCodeSource, type MarketUpdatesSummary } from '../../session/shared/extensions/market'
 import { autoUpdatesFrom, pinsAutoUpdate } from '../../session/shared/extensions/market-entries'
@@ -175,6 +175,7 @@ function tell(): void {
     appIcons: Object.assign({ ...shippedAppIcons }, ...installed.flatMap((record) => (record.appIcon ? [{ [record.manifest.id]: record.appIcon }] : []))) as Record<string, string>,
     // The far-left rail and its dock are the desktop's: the phone has neither.
     dock: [],
+    hiddenTabs: {},
     disabled: index.disabled ?? [],
     autoUpdateOff: index.autoUpdateOff ?? [],
     // Quit from the rail (#7050): the phone has no rail, and no background to stop.
@@ -496,9 +497,7 @@ async function readPackage(bytes: Uint8Array): Promise<ReadPackage> {
   } catch {
     throw new Error('manifest.json is not valid JSON')
   }
-  const parsed = safeParseExtensionManifest(raw)
-  if (!parsed.ok) throw new Error(`Invalid manifest:\n- ${parsed.issues.join('\n- ')}`)
-  const manifest = parsed.manifest
+  const manifest = parseExtensionManifest(raw)
   requireAppPlatform(manifest, 'phone')
   if (manifest.contributes.tabs.some((tab) => tab.hostPage)) throw new Error('This App needs Gugu Desktop to configure and run its tools.')
   if (manifest.entry && !files.has(manifest.entry)) throw new Error(`The manifest's entry is not in the package: ${manifest.entry}`)

@@ -20,6 +20,24 @@ import { assignInlineVars } from '@vanilla-extract/dynamic';
 import { For, Show, createMemo } from 'solid-js';
 import { ScheduledPrompt, isScheduledPrompt, scheduledPromptHeight, scheduledPromptParts } from './ScheduledPrompt';
 import type { ChatMessage } from '@session-chat/model';
+import type { MessageItem } from '@gugu/core/shared/types/chat';
+import { attachmentEnvelope } from '@gugu/core/shared/ui/attachmentModels';
+import { sentChatMessage } from '@gugu/session-core/session-record/sent-message';
+import { passwordRequest } from './PasswordRequestCard';
+
+/**
+ * What an agent handed its owner in the timeline (an owner notification), as chat messages for the host's MessageBody:
+ * its words, then each file kept in the session's folder. A file-only note's text is the file's name: not said twice.
+ */
+function ownerNotificationMessages(item: ChatMessage): MessageItem[] | undefined {
+  const note = item.ownerNotification;
+  if (!note || passwordRequest(item)) return undefined;
+  const files = (note.files ?? []).map((file, index) => sentChatMessage({ id: `${note.requestId}:file:${index}`, chat_id: '', at: item.at,
+    content: attachmentEnvelope(file.name, file.sizeBytes, file.mimeType), content_type: 'attachment', session_file: { path: file.path, sha256: file.sha256 } }));
+  const text = item.text.trim() && item.text !== note.files?.[0]?.name
+    ? [sentChatMessage({ id: note.requestId, chat_id: '', at: item.at, content: item.text, content_type: 'text' })] : [];
+  return [...text, ...files];
+}
 import {
   effectiveMessageVars,
   type MessageVars,
@@ -51,6 +69,9 @@ import {
 const QUESTION_ANSWER_H = 24;
 
 export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: string) => DeliveryMessagePresentation | undefined): ChatMessage {
+  // A message the agent sent to people is drawn by the host's MessageBody (its own text and files go with it).
+  const sentMessages = item.sentMessages ?? ownerNotificationMessages(item);
+  if (sentMessages?.length) return { ...item, sentMessages, attachments: undefined };
   const sentFiles = item.sentAttachments ?? (item.sentAttachment ? [item.sentAttachment] : undefined);
   const ownerFiles: ChatMessage['attachments'] = item.ownerNotification?.files?.map(file => ({ id: `path:${file.path}`, name: file.name,
     kind: file.mimeType.startsWith('image/') ? 'image' as const : 'file' as const }));
@@ -139,7 +160,7 @@ export function measureMessage(item: ChatMessage, ctx: MeasureCtx, baseVars: Mes
     return measureHookNotice(item, ctx, HOOK_NOTICE_VARS, { label: rowTranslator(ctx)('transcript.hookNoticeFrom', { hook: item.hookNotice.hookName }) });
   }
 
-  if (item.role === 'user' || item.sentAttachment || item.sentAttachments || item.ownerNotification?.files?.length) return measureUserMessage(item, ctx, baseVars);
+  if (item.role === 'user' || item.sentMessages?.length || item.sentAttachment || item.sentAttachments || item.ownerNotification?.files?.length) return measureUserMessage(item, ctx, baseVars);
 
   // assistant / thought
   const footer = isFinalReply(item, ctx) ? vars.footerH : 0;
@@ -301,7 +322,7 @@ function MessageBodyRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Mes
       fallback={
         <Show
           when={props.data.role === 'user'}
-          fallback={<Show when={props.data.sentAttachment || props.data.sentAttachments || props.data.ownerNotification?.files?.length} fallback={<AssistantRender data={props.data} ctx={props.ctx} vars={props.vars} />}><UserMessageCard {...props} conversation /></Show>}
+          fallback={<Show when={props.data.sentMessages?.length || props.data.sentAttachment || props.data.sentAttachments || props.data.ownerNotification?.files?.length} fallback={<AssistantRender data={props.data} ctx={props.ctx} vars={props.vars} />}><UserMessageCard {...props} conversation /></Show>}
         >
           <UserMessageRender data={props.data} ctx={props.ctx} vars={props.vars} />
         </Show>

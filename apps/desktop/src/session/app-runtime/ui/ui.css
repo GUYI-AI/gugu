@@ -125,10 +125,10 @@
 :where(button, input, a).primary { border-color: transparent; background-color: var(--em-accent-9); color: var(--em-accent-contrast); }
 /* 危险 = 咕咕唯一的那个红；字色与 ui/Button 的 danger 变体相同：红底白字（--em-color-white），明暗两侧一样。
    ❌ 用 --em-accent-contrast：那是墨色主按钮的反相字，暗色下是表面色 #181818，红底上就成了深灰字（#7333）。 */
-:where(button, input, a).danger { border-color: transparent; background-color: var(--em-foreground-destructive); color: var(--em-color-white); }
+:where(button, input, a).danger { border-color: transparent; background-color: var(--em-danger-solid); color: var(--em-color-white); }
 @media (hover: hover) {
   :where(button, input, a):is(.primary, .danger):hover:not(:disabled) { background-color: var(--em-accent-9); opacity: 0.88; }
-  :where(button, input, a).danger:hover:not(:disabled) { background-color: var(--em-foreground-destructive); }
+  :where(button, input, a).danger:hover:not(:disabled) { background-color: var(--em-danger-solid); }
 }
 :where(button, input, a):is(.primary, .danger):active:not(:disabled) { opacity: 0.78; }
 /* 其它元素上的 .danger 是「出事了」的字色，.primary 是墨色强调 */
@@ -307,8 +307,8 @@
 @keyframes em-progress-run { to { background-position: 167% 0; } }
 :where(meter)::-webkit-meter-bar { height: 6px; border: 0; background: var(--em-border); border-radius: var(--em-radius-capsule); }
 :where(meter)::-webkit-meter-optimum-value { background: var(--em-accent-9); }
-:where(meter)::-webkit-meter-suboptimum-value { background: var(--em-foreground-warning); }
-:where(meter)::-webkit-meter-even-less-good-value { background: var(--em-foreground-destructive); }
+:where(meter)::-webkit-meter-suboptimum-value { background: var(--em-warn); }
+:where(meter)::-webkit-meter-even-less-good-value { background: var(--em-danger); }
 
 /* ── 分段标签：role="tablist" 里的 role="tab" = 宿主文件顶栏那组描边分段（owner 11-06）：一圈 hairline 框、控件圆角，
    段与段之间不留缝；选中 = 中性实底（muted）+ fg ── */

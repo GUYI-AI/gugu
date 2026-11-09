@@ -59,9 +59,12 @@ async function mount(kind: typeof platform.kind, width: number) {
   await until('conversation composer mounted', () => !!view && !!host.querySelector('[data-testid="prompt-editor"]'));
   const scroller = host.querySelector<HTMLElement>('[data-chat-scroll]')!;
   const card = () => host.querySelector<HTMLElement>('[data-user-card="own-message"]');
-  const wrapper = () => card()?.closest('[data-index]')?.firstElementChild as HTMLElement | null;
-  const pinned = () => wrapper() != null && getComputedStyle(wrapper()!).position === 'sticky';
+  const lane = () => card()?.closest<HTMLElement>('[data-index]') ?? null;
+  // The message scrolls like any row; its lane sticks the two-line summary below it (@@@sticky-user-lanes).
+  const summary = () => lane()?.querySelector<HTMLElement>('[data-pin-summary="own-message"]') ?? null;
+  const pinned = () => summary() != null && getComputedStyle(summary()!.closest('[data-index] > *')!).position === 'sticky';
   const top = () => card()!.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+  const summaryTop = () => summary()!.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
   const reply = async () => {
     const turn: TranscriptTurn = { id: 'running-turn', seq: 0, initiator: 'user', items: [
       { kind: 'message', id: 'own-message', seq: 0, role: 'user', text: 'Please keep my sent message in the conversation.' },
@@ -78,7 +81,7 @@ async function mount(kind: typeof platform.kind, width: number) {
     scroller.scrollTop = value;
     await untilStable('transcript scroll settles', () => [scroller.scrollTop, scroller.scrollHeight]);
   };
-  return { host, card, wrapper, pinned, top, reply, scrollTo, scroller, composer: view.composerSlot!, mounts: () => mounts };
+  return { host, card, lane, pinned, top, summaryTop, reply, scrollTo, scroller, composer: view.composerSlot!, mounts: () => mounts };
 }
 
 it.each([
@@ -97,7 +100,7 @@ it.each([
   expect(sent.top).toBeGreaterThanOrEqual(t.scroller.getBoundingClientRect().top);
   expect(sent.bottom).toBeLessThanOrEqual(composer.top);
   expect(t.pinned()).toBe(pins);
-  if (!pins) expect(t.wrapper()!.querySelector('[data-chat-pin-backdrop]')).toBeNull();
+  if (!pins) expect(t.lane()!.querySelector('[data-chat-pin-backdrop]')).toBeNull();
 
   await t.reply();
   await until('running reply supplies scrollable content', () => t.scroller.scrollHeight > 2000);
@@ -105,12 +108,14 @@ it.each([
   const initialTop = t.top();
   await t.scrollTo(200);
   expect(t.pinned()).toBe(pins);
+  expect(t.top()).toBeCloseTo(initialTop - 200, 0);
   if (pins) {
-    const pinnedTop = t.top();
+    expect(t.lane()!.dataset.pinStuck).toBe('true');
+    const pinnedTop = t.summaryTop();
     expect(pinnedTop).toBeGreaterThanOrEqual(0);
     await t.scrollTo(300);
-    expect(t.top()).toBeCloseTo(pinnedTop, 0);
-  } else expect(t.top()).toBeCloseTo(initialTop - 200, 0);
+    expect(t.summaryTop()).toBeCloseTo(pinnedTop, 0);
+  }
   expect(t.mounts()).toBe(1);
 });
 
@@ -121,8 +126,8 @@ it('updates phone pinning on a retained web transcript without remounting', asyn
   await page.viewport(390, 844);
   await until('phone layout disables the existing pin lane', () => !t.pinned());
   await t.scrollTo(0);
-  await until('phone user message remains in normal flow', () => t.wrapper() != null && !t.pinned());
-  expect(t.wrapper()!.querySelector('[data-chat-pin-backdrop]')).toBeNull();
+  await until('phone user message remains in normal flow', () => t.lane() != null && !t.pinned());
+  expect(t.lane()!.querySelector('[data-chat-pin-backdrop]')).toBeNull();
   await page.viewport(1000, 844);
   await until('desktop layout restores its pin lane', t.pinned);
   expect(t.mounts()).toBe(1);

@@ -699,6 +699,9 @@ export function materializeClaudeSessionBundle(
     // 向 SDK 声明这一点(0.3.257 起认):按「停止」中断这一轮时**放过**还在跑的后台子智能体,
     // 由用户一个个停;不声明的话 SDK 会在中断时把后台任务全杀掉(它的 fail-closed 默认)。
     perTaskStopAffordance: true,
+    // The adapter turns this on by default: after every turn the CLI sends one more full request to predict
+    // the next prompt. Gugu never shows that prediction, and a reply arriving before its first byte cancels it.
+    promptSuggestions: false,
   };
   if (ctx.surface === 'acp') {
     // spec `mcp-session-toggle`:用户在 `/mcp` 里关掉的那几台,交给 claude 自己的 `disallowedTools`

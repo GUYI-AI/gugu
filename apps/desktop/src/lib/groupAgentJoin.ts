@@ -10,6 +10,8 @@ export type GroupAgentJoinOutcome = 'joined' | 'pending_approval'
 /** 库里抛的拒绝标识 → messaging 命名空间里的文案 key。认不出的返回 null(交给通用失败文案)。 */
 const DENIAL_KEYS: Record<string, string> = {
   member_limit_reached: 'group.join.denied.memberLimit',
+  // 链接入群、审批、加好友入群这几条路抛的是这句英文,与 member_limit_reached 同一件事:群满了。
+  'Group member limit reached': 'group.join.denied.memberLimit',
   cloud_agent: 'chatService.errors.cloudAgentGroupUnsupported',
   agent_not_owned: 'group.join.denied.agentNotOwned',
   actor_not_member: 'group.join.denied.notMember',

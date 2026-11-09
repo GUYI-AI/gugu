@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import { SettingsGroup, SettingsNote, SettingsRow } from '@/components/settings/SettingsPrimitives'
@@ -13,18 +14,19 @@ export function PhoneAgentSetup({ ownerId, onFinish, onLater, saveError }: {
   onLater: () => void
   saveError: string | null
 }) {
+  const { t } = useTranslation('settings')
   return (
     <form className="gg-phone-setup" data-testid="phone-agent-setup-form" onSubmit={event => { event.preventDefault(); onFinish() }}>
-      <header className="gg-phone-setup-header"><h2 id="phone-agent-setup-heading" className="gg-phone-setup-heading">设置这台手机</h2></header>
+      <header className="gg-phone-setup-header"><h2 id="phone-agent-setup-heading" className="gg-phone-setup-heading">{t('devices.phoneActions.setupTitle')}</h2></header>
       <div className="gg-phone-setup-body">
         <PhoneAgentHostControl ownerId={ownerId} setup />
-        <SettingsGroup presentation="navigation"><SettingsRow title="权限" data-testid="phone-setup-open-permissions" control={<ChevronRight className="size-4" aria-hidden="true" />} onClick={() => { onLater(); openPhonePermissions() }} /></SettingsGroup>
+        <SettingsGroup presentation="navigation"><SettingsRow title={t('settings.nav.permissions', { ns: 'main' })} data-testid="phone-setup-open-permissions" control={<ChevronRight className="size-4" aria-hidden="true" />} onClick={() => { onLater(); openPhonePermissions() }} /></SettingsGroup>
       </div>
       <div className="gg-phone-setup-footer">
         {saveError && <SettingsNote role="alert" tone="danger">{saveError}</SettingsNote>}
         <div className="gg-phone-setup-navigation">
-          <IconButton size="lg" className="gg-phone-setup-back" aria-label="返回咕咕" onClick={onLater}><ChevronLeft /></IconButton>
-          <Button variant="primary" type="submit" data-testid="phone-agent-setup-finish">完成</Button>
+          <IconButton size="lg" className="gg-phone-setup-back" aria-label={t('devices.phoneActions.setupBack')} onClick={onLater}><ChevronLeft /></IconButton>
+          <Button variant="primary" type="submit" data-testid="phone-agent-setup-finish">{t('devices.phoneActions.setupDone')}</Button>
         </div>
       </div>
     </form>

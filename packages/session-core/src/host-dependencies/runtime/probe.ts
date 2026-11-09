@@ -93,6 +93,22 @@ function windowsWhereArgument(command: string): string {
 }
 
 /**
+ * Windows 上找命令:本机上下文在进程内按 PATH × PATHEXT 找(`findWindowsCommandPaths`);
+ * 找不了的上下文才退回 `where`。`where` 的输出是控制台代码页(中文系统 GBK),按 UTF-8 解出来,
+ * 非 ASCII 路径(中文用户名、`测试 目录`)全成乱码 —— 装上了也「未检测到」,会话卡在 spawn ENOENT。
+ */
+async function windowsCommandLookup(
+  command: string,
+  ctx: IExecutionContext,
+  env?: Record<string, string>,
+): Promise<string[]> {
+  const found = await ctx.findWindowsCommandPaths?.(command, env);
+  if (found) return found;
+  const { stdout } = await ctx.exec('where', [windowsWhereArgument(command)], { timeout: WHICH_TIMEOUT_MS, env });
+  return windowsCommandPaths(stdout);
+}
+
+/**
  * Resolves all usable absolute paths for a command binary. Uses `where` on
  * Windows (filtering non-Windows shims) and `which -a` on
  * macOS/Linux. Returns an empty array when the command is not found.
@@ -107,13 +123,7 @@ export async function resolveAllCommandPaths(
 ): Promise<string[]> {
   const plat = targetPlatform(platform);
   try {
-    if (plat === 'windows') {
-      const { stdout } = await ctx.exec('where', [windowsWhereArgument(command)], {
-        timeout: WHICH_TIMEOUT_MS,
-        env,
-      });
-      return windowsCommandPaths(stdout);
-    }
+    if (plat === 'windows') return await windowsCommandLookup(command, ctx, env);
     const { stdout } = await ctx.exec('which', ['-a', command], { timeout: WHICH_TIMEOUT_MS, env });
     return outputLines(stdout);
   } catch {
@@ -136,6 +146,13 @@ export async function resolveKnownPaths(
   const plat = targetPlatform(platform);
   const found: string[] = [];
   for (const declared of paths) {
+    // 本机 Windows:`%VAR%` 与查找都在进程内做 —— `cmd /c echo` 的回显同样是控制台代码页,中文用户名的
+    // `%LOCALAPPDATA%` 展开回来就是乱码。
+    const local = plat === 'windows' ? await ctx.findWindowsCommandPaths?.(declared, env) : null;
+    if (local) {
+      if (local[0]) found.push(local[0]);
+      continue;
+    }
     const expanded = await expandKnownPath(declared, ctx, plat);
     if (!expanded) continue;
     const resolved = await resolveCommandPath(expanded, ctx, plat, env);
@@ -174,12 +191,10 @@ export async function resolveCommandPath(
   env?: Record<string, string>,
 ): Promise<string | null> {
   const plat = targetPlatform(platform);
-  const resolveCmd = plat === 'windows' ? 'where' : 'which';
-  const resolveArg = plat === 'windows' ? windowsWhereArgument(command) : command;
   try {
-    const { stdout } = await ctx.exec(resolveCmd, [resolveArg], { timeout: WHICH_TIMEOUT_MS, env });
-    const paths = plat === 'windows' ? windowsCommandPaths(stdout) : outputLines(stdout);
-    return paths[0] ?? null;
+    if (plat === 'windows') return (await windowsCommandLookup(command, ctx, env))[0] ?? null;
+    const { stdout } = await ctx.exec('which', [command], { timeout: WHICH_TIMEOUT_MS, env });
+    return outputLines(stdout)[0] ?? null;
   } catch {
     return null;
   }

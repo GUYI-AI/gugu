@@ -1,7 +1,7 @@
 import { ingestMessages } from './messageIngest'
 import { ingestFetchedMessagePage } from './chatMessagePages'
 import { dbPayload } from '@gugu/core/cloud/supabase'
-import { createGroupWithInvitations } from '@gugu/core/cloud/groupChat'
+import { createGroupWithInvitations, groupInvitationNote } from '@gugu/core/cloud/groupChat'
 import {
   getDeviceCommand as getCoreDeviceCommand,
   pollDeviceCommandUntilDone,
@@ -852,7 +852,7 @@ export const chatService = {
   async inviteGroupMember(chatId: string, userId: string) {
     const admin = await currentGroupAdmin()
     const group = await admin.info(chatId)
-    return admin.invite(chatId, userId, `邀请你加入群聊「${String(group.name)}」。`)
+    return admin.invite(chatId, userId, groupInvitationNote(String(group.name)))
   },
 
   // @@@remove-member - Generic remove (manager removing a member, or an owner taking their own agent out); for agents this also cleans up group_agent_states.

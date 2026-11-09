@@ -50,13 +50,13 @@ export const agentRunContextSchema = z.object({
    */
   configRootEnv: z.record(z.string(), z.string()),
   /**
-   * 关掉这一家自更新的会话级 env(descriptor 的 `selfUpdate`,#6186)。
+   * descriptor 钉死的 env:关自更新(`selfUpdate`,#6186)与关厂商数据(`vendorDataOff`)。
    *
    * 放进这一格而不是让各 spawn 点自己读 descriptor:终端腿、聊天(ACP)腿、版本探针都从这份上下文起,
    * 一处算好就全到。它压过用户 export 的同名变量 —— 「咕咕起的会话一律不自更新」是 owner 定的产品合同,
    * 不是可被偏好覆盖的默认值。
    */
-  selfUpdateEnv: z.record(z.string(), z.string()),
+  pinnedEnv: z.record(z.string(), z.string()),
   /** 用户在 Agents 设置里填的额外参数。此前只有终端腿吃得到。 */
   extraArgs: z.array(z.string()),
   /** 跑这一家需要的运行时(`GUGU_NODE_BIN`);缺省表示用系统的。 */
@@ -99,7 +99,7 @@ export function agentRunContextKey(ctx: AgentRunContext): string {
     envKey(ctx.env),
     envKey(ctx.configRootEnv),
     envKey(ctx.credentialEnv ?? {}),
-    envKey(ctx.selfUpdateEnv),
+    envKey(ctx.pinnedEnv),
     ctx.extraArgs.join(KEY_ITEM_SEP),
     ctx.runtimeExecutable ?? '',
     ctx.acpAdapterEntry ?? '',
@@ -130,7 +130,7 @@ function envKey(env: Record<string, string>): string {
  *    它压过用户设置是**故意的**:`CLAUDE_CODE_EXECUTABLE` / `GUGU_CODEX_BIN` 这类值指的正是
  *    「宿主选中的那一份」,用户 export 一个同名变量就能把它顶掉,恰恰是本票要判死的那件事。
  * 3. `ctx.configRootEnv` —— 咕咕给这一家的独立配置根;分家的前提就是咕咕这份赢。
- *    `ctx.selfUpdateEnv` 同层 —— 关自更新的会话级开关,同样必须赢过用户与 provider。
+ *    `ctx.pinnedEnv` 同层 —— 关自更新的会话级开关,同样必须赢过用户与 provider。
  * 4. `hostInjections` —— 每次调用才有的宿主注入:工作区信任、平台中转/能力包、
  *    任务级变量、钩子端口。它压在最上面(理由见 #2503:宿主的注入不是用户偏好)。
  */
@@ -145,7 +145,7 @@ export function composeAgentSpawnEnv(
     ...ctx.env,
   };
   for (const key of ctx.unsetEnv ?? []) delete env[key];
-  Object.assign(env, ctx.credentialEnv, layers.providerEnv, ctx.configRootEnv, ctx.selfUpdateEnv);
+  Object.assign(env, ctx.credentialEnv, layers.providerEnv, ctx.configRootEnv, ctx.pinnedEnv);
   for (const injection of layers.hostInjections ?? []) {
     if (injection) Object.assign(env, injection);
   }

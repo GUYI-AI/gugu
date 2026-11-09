@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
+import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import { clickElement, createNode, createReactHarness } from '../../../support/testHarness'
 
 vi.mock('../../../../apps/desktop/src/store/contactsContext', () => ({ useContactsStore: () => ({ contacts: [{ id: 'agent-1', type: 'agent' }] }) }))
@@ -139,20 +141,31 @@ describe('topic-opened system notice', () => {
     await harness.render(createNode(SystemMessageNotice, { message, onOpenTopic }))
     const link = harness.container.querySelector<HTMLButtonElement>('[data-testid="topic-opened-link"]')!
     expect(link.textContent).toBe('Release: notes')
-    expect(harness.container.textContent).toBe(message.content)
+    expect(harness.container.textContent).toBe('Codex 1 开了话题：Release: notes')
     await clickElement(link)
     expect(onOpenTopic).toHaveBeenCalledExactlyOnceWith('topic-chat-id')
   })
   it('does not infer a topic from matching words without the server marker or an opening path', async () => {
-    for (const props of [
-      { message: { ...message, client_message_id: null }, onOpenTopic: vi.fn() },
-      { message: { ...message, content_type: 'text' as const }, onOpenTopic: vi.fn() },
-      { message },
-    ]) {
+    for (const [props, text] of [
+      [{ message: { ...message, client_message_id: null }, onOpenTopic: vi.fn() }, message.content],
+      [{ message: { ...message, content_type: 'text' as const }, onOpenTopic: vi.fn() }, message.content],
+      [{ message }, 'Codex 1 开了话题：Release: notes'],
+    ] as const) {
       await harness.render(createNode(SystemMessageNotice, props))
-      expect(harness.container.textContent).toBe(message.content)
+      expect(harness.container.textContent).toBe(text)
       expect(harness.container.querySelector('button')).toBeNull()
     }
+  })
+})
+
+
+describe('a server row in the reader\'s language', () => {
+  it('is said again when the reader switches language, with no new message', async () => {
+    const message = { id: 'm-1', content: 'Ann 将 Leo Park 设为管理员', content_type: 'system' as const, sender_user_id: null, client_message_id: 'member-managed:m-1:u-1,u-2' }
+    await harness.render(createNode(SystemMessageNotice, { message }))
+    expect(harness.container.textContent).toBe('Ann 将 Leo Park 设为管理员')
+    await act(async () => { setLocalePreference('en-US') })
+    expect(harness.container.textContent).toBe('Ann made Leo Park an admin')
   })
 })
 

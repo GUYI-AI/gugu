@@ -322,7 +322,7 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
       if (panelFull(chatId, tabId)) setPanelFull(chatId, tabId, false)
     }
   }, [peekingSession, tabbed, mobile, chatId, tabId])
-  const heading = extensionTabTitle(shown, isFolderItem(item) ? folderName : kind ? installedExtensionsStore.tabTitle(kind) ?? item.title : item.title, item.itemId ? { name: item.title, path: item.fileName ?? item.title } : undefined)
+  const heading = extensionTabTitle(shown, isFolderItem(item) ? folderName : kind ? installedExtensionsStore.tabTitle(kind) ?? item.title : item.title, item.itemId && !installedExtensionsStore.isChatFile(item.kind, item.fileName) ? { name: item.title, path: item.fileName ?? item.title } : undefined)
   const badge = shown.badge
   const hasBadge = badge !== null && badge !== ''
   const fileHost = useFileHost(item.itemId && !isFolderItem(item) ? item.itemId : null)

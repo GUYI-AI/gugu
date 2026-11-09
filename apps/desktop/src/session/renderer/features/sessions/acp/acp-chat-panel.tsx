@@ -1,3 +1,5 @@
+import { useSessionInputNotice, type SessionInputNotice } from '../session-input-notice';
+import { sessionStartupFailureCopy } from '../session-input-failure-copy';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
 import { agentSupportsConnectionManagement } from '@shared/core/agents/agent-payload';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
@@ -9,6 +11,7 @@ import { appendToDraft } from '@/store/chatContext';
 import { registerNativeComposer } from '@/lib/nativeComposerHandoff';
 import { useSearchedTaskReveal, useSessionSourceMessage } from './use-session-source-message';
 import { canQueueNativeInput } from './queue-native-input';
+import { composerCanSubmit } from './composer-can-submit';
 import { sendComposerInput } from './send-composer-input';
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
 import { useNativeConversationRead } from '@/hooks/useNativeConversationRead';
@@ -103,7 +106,7 @@ import { isEmbedVisible } from '@renderer/lib/portal-container';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { platformModelIdFromRuntimeOption, platformOptionId } from '@/session/shared/platform-model-id';
 import { openComposerImage, openImageViewer } from '@/lib/imageViewer';
-import { showModal, useShowModal } from '@renderer/lib/modal/modal-provider';
+import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { resolveSignInTarget } from '@renderer/features/settings/agents-page/agent-account';
 import { pushTaskDirectory, taskAttachmentUsesSsh } from '@/lib/taskAttachmentTarget';
 import { droppedDirectoryMention, pathMention } from '@renderer/lib/drag-files';
@@ -120,6 +123,8 @@ import { useComposerFileUploads } from './use-composer-file-uploads';
 import { shellPort } from '@renderer/lib/shell-port';
 import { getRendererSession } from '@/lib/sessionPublication';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { agentForksOn } from '@shared/core/agents/agent-payload';
+import { forkTask } from '@renderer/features/sessions/fork-task';
 import {
   ThreadWelcome,
   type ThreadSuggestion,
@@ -353,6 +358,11 @@ const ComposerForStore = observer(function ComposerForStore({
     translate,
   });
   /** 发送时附件还没传完:在等(发送键禁用、输入框上方一句话);有一件没成:不发,说一句。 */
+  const [inputFailure, setInputFailure] = useState<SessionInputNotice | null>(null);
+  useSessionInputNotice(`session-settings:${store.sessionId}`, inputFailure && { ...inputFailure, attempt: inputFailure });
+  const reportInputFailure = useCallback((title: string, diagnostic?: unknown, description?: string) => {
+    setInputFailure({ title, description: description ?? translate('taskError.settingFailedRetry'), diagnostic });
+  }, [translate]);
   const [sendHold, setSendHold] = useState<'waiting' | 'blocked' | null>(null);
   const sendingRef = useRef(false);
   const promptEditor = useSessionPromptEditor(store, editorApiRef);
@@ -468,17 +478,12 @@ const ComposerForStore = observer(function ComposerForStore({
    */
   const reportUnwiredRestart = useCallback(
     (dimension: 'permission' | 'effort', requestedValue: string) => {
-      showModal('confirmActionModal', {
-        title: translate('chat.settingRestartUnwiredTitle'),
-        description: translate('chat.settingRestartUnwiredBody', {
+      reportInputFailure(translate('chat.settingRestartUnwiredTitle'), undefined, translate('chat.settingRestartUnwiredBody', {
           dimension,
           target: requestedValue,
-        }),
-        confirmLabel: translate('common.close'),
-        onSuccess: () => undefined,
-      });
+        }));
     },
-    [showModal, translate]
+    [reportInputFailure, translate]
   );
 
   const handleAttach = useCallback(() => {
@@ -908,7 +913,7 @@ const ComposerForStore = observer(function ComposerForStore({
   );
   const runningOn = runningPlatformModel ? 'platform' : 'own';
   const retiredModel = unavailablePlatformModelId({ ...platformCatalog, liveModel: store.model });
-  const modelSettingNotice = retiredModel ? translate('composer.modelRetired') : store.modelSettingError;
+  const modelSettingNotice = retiredModel ? translate('composer.modelRetired') : null;
 
   /**
    * #7056 会员中途到期:正在用的咕咕模型这一档用不了了 ⇒ 下一轮之前就停下(发送键不放行),面板那一行说清原因、
@@ -965,10 +970,12 @@ const ComposerForStore = observer(function ComposerForStore({
   );
   const merged = useComposerModelOptions(ownTier, platformCatalog.models, providerId, runningPlatformModel);
 
+  const lockedForTurn = store.modelLockedForTurn(providerCapabilities?.acp.liveSettings?.model);
   const sessionModelOptions = useMemo(() => {
     // 能力声明还没到 ⇒ 还答不出「哪些能当场换」:❌ 不拿「未声明」去判(那会把整张菜单暂时置灰)。
     if ((!merged && !retiredModel) || !providerCapabilities) return null;
     const catalog = platformCatalog.models;
+    const selectedOption = composerSelectedOptionId({ platformModel: runningPlatformModel, model: store.model });
     const options = Object.fromEntries(
       Object.entries(merged ?? {}).map(([id, option]) => {
         // 四态见 @@@session-options-disabled。hot / reload 都是"能选",
@@ -980,6 +987,10 @@ const ComposerForStore = observer(function ComposerForStore({
           runningOn,
           liveSetting: providerCapabilities?.acp.liveSettings?.model,
         });
+        // A hot switch this provider refuses during a turn: say so on the row, rather than offer one that can only fail.
+        if (plan.kind === 'hot' && lockedForTurn && id !== selectedOption) {
+          return [id, { ...option, disabled: true, disabledReason: translate('composer.modelBusy') }];
+        }
         if (plan.kind !== 'unavailable' && plan.kind !== 'unsupported') return [id, option];
         return [
           id,
@@ -1009,6 +1020,8 @@ const ComposerForStore = observer(function ComposerForStore({
     runningOn,
     runningPlatformModel,
     providerCapabilities,
+    lockedForTurn,
+    store.model,
     translate,
   ]);
 
@@ -1068,21 +1081,17 @@ const ComposerForStore = observer(function ComposerForStore({
       try {
         const result = await requestSessionReload(reloadRequestFor(target, store.sessionId));
         if (!result.ok) {
-          showModal('confirmActionModal', {
-            title: translate('chat.modelSwitchFailedTitle', { target: target.label }),
-            description: result.error ?? '',
-            confirmLabel: translate('common.close'),
-            onSuccess: () => undefined,
-          });
+          reportInputFailure(translate('chat.modelSwitchFailedTitle', { target: target.label }), result.error ?? '');
           return;
         }
+        setInputFailure(null);
         platformCatalog.retry();
         if (result.notStarted) store.retry();
       } finally {
         setReloading(false);
       }
     },
-    [store, platformCatalog, showModal, translate]
+    [store, platformCatalog, reportInputFailure, translate]
   );
 
   /**
@@ -1151,7 +1160,7 @@ const ComposerForStore = observer(function ComposerForStore({
             platformCatalog.refresh();
             return;
           }
-          if (store.isTransient) return;
+          if (store.isTransient) { setInputFailure(null); return; }
           // 记的是活会话**确认在跑的**那个(`effectiveValue`),不是我们请求的那个 —— provider 可能把别名规范成另一条。
           // 平台模型的生效值是它自己的寻址形式(`gugu-platform/<id>`),翻回规范 id;翻不出就是我们请求的那条(copilot 这类不回读的家)。
           const recorded = source === 'platform'
@@ -1168,14 +1177,10 @@ const ComposerForStore = observer(function ComposerForStore({
             });
           } catch (error) {
             // 活会话已经换了、记录没跟上 ⇒ 下次启动会回到旧模型。响亮说出来,❌ 不吞。
-            showModal('confirmActionModal', {
-              title: translate('chat.modelSwitchNotRecordedTitle', { target: catalogName ?? plan.modelId }),
-              description: error instanceof Error ? error.message : String(error),
-              confirmLabel: translate('common.close'),
-              onSuccess: () => undefined,
-            });
+            reportInputFailure(translate('chat.modelSwitchNotRecordedTitle', { target: catalogName ?? plan.modelId }), error instanceof Error ? error.message : String(error));
             return;
           }
+          setInputFailure(null);
           platformCatalog.refresh();
         });
         return;
@@ -1183,21 +1188,11 @@ const ComposerForStore = observer(function ComposerForStore({
       if (plan.kind === 'unavailable') {
         // 目录里压根没有 = 界面状态过期。重开一次也换不成,所以直接说,
         // ❌ 不拿用户的一次中断去换一个我们已经知道的答案。
-        showModal('confirmActionModal', {
-          title: translate('chat.modelUnavailableTitle', { agentName: providerId ?? '' }),
-          description: translate('chat.modelUnavailableHint'),
-          confirmLabel: translate('common.close'),
-          onSuccess: () => undefined,
-        });
+        reportInputFailure(translate('chat.modelUnavailableTitle', { agentName: providerId ?? '' }), undefined, translate('chat.modelUnavailableHint'));
         return;
       }
       if (plan.kind === 'unsupported') {
-        showModal('confirmActionModal', {
-          title: translate('chat.modelUnavailableTitle', { agentName: providerId ?? '' }),
-          description: translate('chat.modelSwitchUnsupportedHint'),
-          confirmLabel: translate('common.close'),
-          onSuccess: () => undefined,
-        });
+        reportInputFailure(translate('chat.modelUnavailableTitle', { agentName: providerId ?? '' }), undefined, translate('chat.modelSwitchUnsupportedHint'));
         return;
       }
       // `source` 与模型一起送到宿主 —— 少了它重开会带着**旧的**那条计费路重来
@@ -1209,7 +1204,7 @@ const ComposerForStore = observer(function ComposerForStore({
         source: plan.source === 'platform' ? 'platform' : 'own',
       });
     },
-    [store, advertisedModels, platformCatalog.models, runningOn, providerCapabilities, showModal, translate, providerId, switchBeforeFirstStart]
+    [store, advertisedModels, platformCatalog.models, runningOn, providerCapabilities, reportInputFailure, translate, providerId, switchBeforeFirstStart]
   );
 
   /**
@@ -1231,28 +1226,24 @@ const ComposerForStore = observer(function ComposerForStore({
       // 宿主停掉又重开之后,聊天面自己重挂(`_onSessionClosedByHost`:副本跟着会话 id 走)。失败时保留确认层，允许用户重试。
       if (result.ok) {
         succeeded = true;
+        setInputFailure(null);
         // The host persists the new platform/own decision before reopening. Refresh the
         // catalog so a platform -> BYOK handoff cannot keep the old source label in the UI.
         platformCatalog.retry();
       }
       if (!result.ok) {
         // 原话直接给用户 —— ❌ 不折成「重开失败」:两种事故的下一步完全不同。
-        showModal('confirmActionModal', {
-          title: translate(
+        reportInputFailure(translate(
             pending.dimension === 'permission' ? 'chat.reloadConfirmTitlePermission' : 'chat.reloadConfirmTitleModel',
             { target: pending.label },
-          ),
-          description: result.error ?? '',
-          confirmLabel: translate('common.close'),
-          onSuccess: () => undefined,
-        });
+          ), result.error ?? '');
       }
     } finally {
       setReloading(false);
       // Keep the target in the confirmation surface after a failed restart so it can be retried.
       if (succeeded) setPendingReload(null);
     }
-  }, [pendingReload, store, platformCatalog, showModal, translate]);
+  }, [pendingReload, store, platformCatalog, reportInputFailure, translate]);
 
   /**
    * `/mcp` —— **咕咕自己的**命令:拦下来开面板,**一个字都不发给 agent**。
@@ -1264,17 +1255,13 @@ const ComposerForStore = observer(function ComposerForStore({
     const result = await rpc.mcp.sessionPanel(store.sessionId);
     if (!result.success || !result.data) {
       // 拿不到就说出来 —— ❌ 不开一个空面板让用户以为「这条会话没有 MCP」。
-      showModal('confirmActionModal', {
-        title: translate('mcpSession.title'),
-        description: result.error ?? '',
-        confirmLabel: translate('common.close'),
-        onSuccess: () => undefined,
-      });
+      reportInputFailure(translate('mcpSession.title'), result.error ?? '');
       return;
     }
+    setInputFailure(null);
     const { servers, skills, toggleSupported, dialect, granularity } = result.data;
     setMcpPanel({ servers, skills, toggleSupported, dialect, granularity });
-  }, [store.sessionId, providerId, showModal, translate]);
+  }, [store.sessionId, providerId, reportInputFailure, translate]);
 
   const applyMcpSelection = useCallback(
     (enabled: string[]) => {
@@ -1306,18 +1293,15 @@ const ComposerForStore = observer(function ComposerForStore({
         mcpDisabledServers: pending.disabled,
       });
       if (!result.ok) {
-        showModal('confirmActionModal', {
-          title: translate('mcpSession.title'),
-          description: result.error ?? '',
-          confirmLabel: translate('common.close'),
-          onSuccess: () => undefined,
-        });
+        reportInputFailure(translate('mcpSession.title'), result.error ?? '');
+      } else {
+        setInputFailure(null);
       }
     } finally {
       setReloading(false);
       setPendingMcp(null);
     }
-  }, [pendingMcp, store.sessionId, showModal, translate]);
+  }, [pendingMcp, store.sessionId, reportInputFailure, translate]);
 
   /**
    * Same rule as the creation page (`resolveEffortCatalog`): a platform model offers the levels this
@@ -1482,8 +1466,9 @@ const ComposerForStore = observer(function ComposerForStore({
         }
         // Store owns both live sending and pre-session queue admission.
         // 正在用的咕咕模型要会员了(#7056):下一轮之前停下,原因与去路在面板那一行。
-        canSubmit={(a.canSubmit || canQueueNativeInput(store)) && (store.draftText.trim().length > 0 || attachments.length > 0)
-          && sendHold !== 'waiting' && !membershipLockedModel}
+        canSubmit={composerCanSubmit({ promptReady: a.canSubmit, isWorking: a.isWorking, reverting: store.reverting, editingMessage: !!store.messageEdit,
+          queuesOffline: canQueueNativeInput(store), hasDraft: store.draftText.trim().length > 0 || attachments.length > 0,
+          attachmentWaiting: sendHold === 'waiting', membershipLocked: membershipLockedModel !== null })}
         placeholder={startupPlaceholderKeyValue ? translate(startupPlaceholderKeyValue) : undefined}
         onSubmit={handleSubmit}
         editorOptions={{ clearOnSubmit: false }}
@@ -1517,6 +1502,7 @@ const ComposerForStore = observer(function ComposerForStore({
         onModelChange={handleModelChange}
         modelMenuOpenRequest={modelMenuRequest}
         modelSettingNotice={modelSettingNotice}
+        modelMenuNotice={lockedForTurn ? translate('composer.modelBusy') : undefined}
         onModelMenuOpen={platformCatalog.refresh}
         // 底部「管理模型 / 升级解锁更多模型」(#7056),三个模型菜单同一份。
         {...composerModelFooter(platformCatalog.models)}
@@ -1826,6 +1812,9 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const [restarting, setRestarting] = useState(false);
   const conditionRuns = useRef<readonly ((anchor?: HTMLElement) => void)[]>([]);
   useEffect(() => {
+    if (store?.loadError) log.error('Session condition failure', { sessionId: store.sessionId, error: store.loadError });
+  }, [store, store?.loadError]);
+  useEffect(() => {
     if (!store) return;
     // 有没有可重来的首轮,**进这一行之前就知道**(同 ProviderSessionMissingView 的判据)。
     const canRestartSession = canStartFreshSession('provider_session_missing',
@@ -1982,7 +1971,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         case 'history_unavailable':
           return {
             code: 'history-unavailable',
-            label: `${translate('transcript.condition.historyFailed')}: ${error.message}`,
+            label: translate('transcript.condition.historyFailed'),
             detail: error.message,
             actions: [retry],
           };
@@ -1990,12 +1979,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           // 咕咕这一侧的失败按原因表说、给原因表的按钮(#7103);咕咕以外的(harness / provider)递它的原话(#4657)+ 重试。
           const reason = failureReason(error.message);
           const membership = reason !== null && guguReasonCopy(reason).action === 'join-membership';
-          const text = failureText(error.message, translate, membership ? membershipLock?.modelName : null);
-          if (!reason) {
-            const at = sessionLifeView(store.runtimeSessionId)?.failure?.at;
-            const lead = at ? translate('chat.lifeStageFailed', { stage: translate(`chat.lifeStage.${at}`) }) : translate('transcript.condition.startFailed');
-            return { code: 'start-failed', label: `${lead}: ${text}`, detail: text, actions: [retry] };
-          }
+          const text = reason ? failureText(error.message, translate, membership ? membershipLock?.modelName : null) : sessionStartupFailureCopy(error.message, translate);
+          if (!reason) return { code: 'start-failed', label: text, detail: text, actions: [retry] };
           return {
             code: membership ? 'membership-required' : 'start-failed',
             label: text,
@@ -2095,7 +2080,12 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const messageEditPending = store?.reverting ?? false;
   // The agent speaking in this transcript is this task; its name is the task's one name.
   const conversationAgentName = sessionStore?.data.title ?? null;
-  const quotes = useSessionMessageQuotes(store, editorApiRef);
+  const canForkTask = !!store && agentForksOn(agents?.find(agent => agent.id === providerId)?.capabilities, 'acp');
+  const quotes = useSessionMessageQuotes(store, editorApiRef, {
+    canEdit: (itemId) => (store?.isRejectedInput(itemId) ?? false) || (historyActionsEnabled && (store?.canRevertMessage(itemId) ?? false)),
+    onEdit: (itemId) => store?.beginMessageEdit(itemId),
+    ...(canForkTask ? { onForkTask: () => forkTask({ projectId: store.projectId, sessionId: store.sessionId, navigate, translate }) } : {}),
+  });
   const transcriptCommands = useMemo<ChatCommands>(
     () => ({
       ...outputMenu.commands,
@@ -2120,6 +2110,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         ...messageEdit,
         pending: messageEditPending,
         canSubmit: (historyActionsEnabled || !!store?.isRejectedInput(messageEdit.itemId)) && !messageEditPending && messageEdit.text.trim().length > 0,
+        // A rejected input has no reply yet: sending it removes nothing.
+        notice: store?.isRejectedInput(messageEdit.itemId) ? undefined : translate('transcript.editRemoves'),
         onChange: (text) => store?.changeMessageEdit(messageEdit.itemId, text),
         onCancel: () => store?.cancelMessageEdit(messageEdit.itemId),
         onSubmit: () => void store?.sendMessageEdit(messageEdit.itemId),
@@ -2244,7 +2236,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         if (store) dismissSubagent(store.sessionId, entryId);
       },
     }),
-    [store, quotes.onMessageTextMount, quotes.restorePrompt, sourceMessage.reveal, sourceMessage.flashMessageId, conversationAgentName, historyActionsEnabled, messageEdit, messageEditPending, handleViewerOpen, translate, membershipLock?.modelName, outputMenu.commands]
+    [store, translate, quotes.onMessageTextMount, quotes.restorePrompt, sourceMessage.reveal, sourceMessage.flashMessageId, conversationAgentName, historyActionsEnabled, messageEdit, messageEditPending, handleViewerOpen, translate, membershipLock?.modelName, outputMenu.commands]
   );
 
   // A freshly-created task can publish its tab before the resource manager has finished attaching

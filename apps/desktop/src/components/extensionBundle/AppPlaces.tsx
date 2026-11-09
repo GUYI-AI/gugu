@@ -207,7 +207,6 @@ export function AppPlacesSummary({ places, machineName }: { places: readonly Ena
   const names = on.slice(0, 3).map(label).join(' · ')
   return (
     <span data-testid="app-places-summary" className="inline-flex min-w-0 items-center gap-1">
-      {t('chatArea.appEnable.used')}
       <span className="inline-flex items-center gap-px">
         {on.slice(0, 3).map((place) =>
           place.kind === 'here' ? (

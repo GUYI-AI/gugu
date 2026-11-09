@@ -47,6 +47,52 @@ describe('Windows `where` is asked in a shape it accepts', () => {
   });
 });
 
+describe('a local Windows context looks commands up in-process, never through `where`', () => {
+  // `where` prints in the console code page (GBK on Chinese Windows) and exec decodes UTF-8:
+  // a Chinese user name came back as mojibake, so an installed agent read as missing.
+  const launcher = 'C:\\Users\\张 三\\gugu-home\\agents\\mise-bin\\codex.cmd';
+
+  function localWindows(found: Record<string, string[]>) {
+    const { ctx, calls } = recordingContext('');
+    const asked: Array<{ command: string; env?: Record<string, string> }> = [];
+    (ctx as { findWindowsCommandPaths?: unknown }).findWindowsCommandPaths = async (command: string, env?: Record<string, string>) => {
+      asked.push({ command, env });
+      return found[command] ?? [];
+    };
+    return { ctx, calls, asked };
+  }
+
+  it('returns the non-ASCII path as found, with the probe env, and runs nothing', async () => {
+    const { ctx, calls, asked } = localWindows({ codex: [launcher, 'C:\\other\\codex.exe'] });
+    const env = { PATH: 'C:\\Users\\张 三\\gugu-home\\agents\\mise-bin' };
+    await expect(resolveCommandPath('codex', ctx, 'windows', env)).resolves.toBe(launcher);
+    await expect(resolveAllCommandPaths('codex', ctx, 'windows', env)).resolves.toEqual([launcher, 'C:\\other\\codex.exe']);
+    await expect(resolveCommandPath('missing', ctx, 'windows')).resolves.toBeNull();
+    expect(asked.map((a) => a.command)).toEqual(['codex', 'codex', 'missing']);
+    expect(asked[0]?.env).toBe(env);
+    expect(calls).toEqual([]);
+  });
+
+  it('resolves vendor locations with %VAR% in-process too, instead of `cmd /c echo`', async () => {
+    const zcode = 'C:\\Users\\张 三\\AppData\\Local\\Programs\\ZCode\\resources\\glm\\zcode.cjs';
+    const declared = '%LOCALAPPDATA%\\Programs\\ZCode\\resources\\glm\\zcode.cjs';
+    const { ctx, calls } = localWindows({ [declared]: [zcode] });
+    await expect(resolveKnownPaths(['%NOPE%\\zcode.cjs', declared], ctx, 'windows')).resolves.toEqual([zcode]);
+    expect(calls).toEqual([]);
+  });
+
+  it('falls back to `where` when the context cannot look itself (null), and POSIX stays on `which`', async () => {
+    const { ctx, calls } = recordingContext('C:\\node\\claude.cmd\r\n');
+    (ctx as { findWindowsCommandPaths?: unknown }).findWindowsCommandPaths = async () => null;
+    await expect(resolveCommandPath('claude', ctx, 'windows')).resolves.toBe('C:\\node\\claude.cmd');
+    await resolveCommandPath('claude', ctx, 'linux');
+    expect(calls).toEqual([
+      { command: 'where', args: ['claude'] },
+      { command: 'which', args: ['claude'] },
+    ]);
+  });
+});
+
 /** A host where only `existing` files are found and `~`/`%VAR%` expand to the given values. */
 function hostWith(existing: string[], expand: { home?: string; vars?: Record<string, string> }) {
   const calls: Array<{ command: string; args: string[] }> = [];

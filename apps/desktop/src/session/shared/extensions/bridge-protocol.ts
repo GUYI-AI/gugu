@@ -82,13 +82,16 @@ export const EXTENSION_THEME_CHANNEL = 'gugu-ext:theme';
 // 27: pages read members explicitly with chats.members(); context keeps the chat summary without a roster.
 // Pages declaring 26 or earlier retain their initial members and roster context updates.
 // 29: tools modules are host-confined.
-/** Tools modules opt into host confinement from this API. Final numbering follows dev at merge. */
+/** Tools modules opt into host confinement from this API. */
 export const EXTENSION_TOOL_CONFINEMENT_API_VERSION = 29;
 // 30: source-aware page history; navigation.go(-1|1) and context navigation availability.
 // 31: `gugu.cloud` (app-cloud-core.ts), an App's own part of the cloud, and `gugu.pickAgent`, the person's pick of one of their agents.
 // 32: a person's `getContext().operator` carries their own `guguNumber`.
 // 34: `contributes.prompts` (the App's prompts in the composer's `/` menu) and `gugu.prompts`, the person's own prompts (`prompts`).
-export const EXTENSION_API_VERSION = 34;
+// 35: `contributes.settingsTab`, the App's own tab its settings page links to.
+// 36: shared task resources for App-owned capabilities (#1607): task page leases, projection viewers, scoped task
+//     messages, authorized file payloads and non-activating App surfaces.
+export const EXTENSION_API_VERSION = 36;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
@@ -121,6 +124,27 @@ export interface ExtensionChat {
   kind: 'group' | 'topic' | 'dm';
   /** The group: this chat for a group, the one a topic grew out of; null for a private chat and a topic of one. */
   groupId: string | null;
+  /** A project group's folders on the reader's own machines, the project's root first. Absent: none, or not a project group. */
+  folders?: ExtensionChatFolder[];
+}
+
+/** A chat as a page sees it: a project's folders (paths, machines) only for a page that may read files. */
+export function chatForCapabilities<T extends ExtensionChat>(chat: T, capabilities: readonly string[]): T {
+  if (!chat.folders || capabilities.some((capability) => capability.startsWith('files:'))) return chat;
+  const { folders: _folders, ...rest } = chat;
+  return rest as T;
+}
+
+/** One folder of a project group, as the account records it. Its machine may be offline, or no longer have it. */
+export interface ExtensionChatFolder {
+  /** `folder:<device>/<workspace>`: the place `gugu.files.list({ workspace })` lists, on that machine. */
+  workspace: string;
+  path: string;
+  /** The machine's name. */
+  machine: string;
+  online: boolean;
+  /** Whether this computer is that machine: files elsewhere are only read. Absent on a phone. */
+  thisMachine?: boolean;
 }
 
 /**
@@ -149,6 +173,8 @@ export interface ExtensionWorkspace {
   agentId?: string;
   /** The project it is in; absent for a session in none — a real answer, ❌ "". */
   projectId?: string;
+  /** The folder every task with no project works in, shared by them all: no project's, and not this task's alone. */
+  taskHome?: true;
   /**
    * Absolute path of its working copy — present only with `files:read` or `files:write`. Absent means "not
    * granted" (or not open on this computer), never "none": an extension must not read a missing root as permission to guess.
@@ -195,6 +221,8 @@ export interface ExtensionHostContext {
   navigation?: { canBack: boolean; canForward: boolean; backToConversation?: boolean };
   /** A host modal's initial data, under the opener's context and existing grants. */
   modal?: { data?: unknown };
+  /** An App-owned, non-activating native surface; content and control rules belong to the App. */
+  surface?: { id: string; data?: unknown; decorative?: boolean };
   /**
    * The conversation this surface is in (its panel, 「在本群打开」, a session's tab): a group, a topic or a private chat, with who is in
    * it — changes arrive by `onContextChanged`. Absent is a real answer: not in a chat. ❌ No `placement` field: an App
@@ -222,6 +250,8 @@ export interface ExtensionHostContext {
   locale: string;
   /** Whether the host is currently painting light or dark. */
   themeMode: 'light' | 'dark';
+  /** The person's color theme, when one is on: `--em-*` palette values the runtime applies over ui.css. Not for pages to read: they use the `--em-*` names. */
+  themeColors?: Readonly<Record<string, string>>;
   /** What this extension may actually do right now, after any revocations, on this host. */
   capabilities: readonly ExtensionCapability[];
   /** How the host is showing this surface at the moment. Absent on a page nobody draws. */
@@ -255,6 +285,10 @@ export interface ExtensionSurfaceMetrics {
   visible: boolean;
   width: number;
   height: number;
+  /** Trusted host renderer's position in its content viewport, when native page mounting is available. */
+  x?: number;
+  y?: number;
+  clip?: { x: number; y: number; width: number; height: number };
 }
 
 /**
@@ -504,6 +538,8 @@ export interface ExtensionAgentHistoryPage {
 
 /** Events the host pushes to a surface. Each is a fact, never a command. */
 export type ExtensionHostEvent =
+  | { type: 'appSurface'; event: import('./app-surface').AppSurfaceEvent }
+  | { type: 'taskPage'; event: import('./task-page-protocol').TaskPageEvent }
   | { type: 'projection'; watchId: string; packet: import('./projection-protocol').ProjectionHostPacket }
   | { type: 'projectionSource'; event: import('./projection-protocol').ProjectionSourceEvent }
   | { type: 'context'; context: ExtensionHostContext }
@@ -690,6 +726,16 @@ export interface VerbFacts {
  * and a row without any of its facts does not build.
  */
 export const BRIDGE_VERBS = {
+  taskMessage: { needs: 'agents:tools', only: 'page', gesture: true },
+  showTaskPages: { needs: 'agents:tools', only: 'program' },
+  taskPageAcquire: { needs: 'agents:tools', only: 'program' },
+  taskPageSend: { needs: 'agents:tools', only: 'program' },
+  taskPageMaintain: { needs: 'agents:tools', only: 'program' },
+  taskPagePresentation: { needs: 'agents:tools', only: 'program' },
+  taskPageFilePayloads: { needs: 'agents:tools', only: 'program' },
+  taskPageRelease: { needs: 'agents:tools', only: 'program' },
+  taskPageMount: { needs: 'agents:tools', only: 'page' },
+  taskPageUnmount: { needs: 'agents:tools', only: 'page' },
   /** Generic picture/input resources. Scope comes from the host's task binding, not the argument object. */
   projectionCreate: { needs: 'agents:tools', only: 'program' },
   projectionPublish: { needs: 'agents:tools', only: 'program' },
@@ -697,10 +743,19 @@ export const BRIDGE_VERBS = {
   projectionClosed: { needs: 'agents:tools', only: 'program' },
   projectionInputResult: { needs: 'agents:tools', only: 'program' },
   projectionWatch: { needs: 'agents:tools', only: 'page' },
+  projectionMediaOpen: { needs: 'agents:tools', only: 'page' },
+  projectionMediaAnswer: { needs: 'agents:tools', only: 'page' },
+  projectionMediaSign: { needs: 'agents:tools', only: 'page' },
+  projectionMediaClose: { needs: 'agents:tools', only: 'page' },
   projectionUnwatch: { needs: 'agents:tools', only: 'page' },
   projectionSend: { needs: 'agents:tools', only: 'page' },
   /** The App's own sandboxed page, in the host's dialog shell. No new authority or per-call consent. */
   modalOpen: { needs: null, only: 'page', toAgent: { answer: null } },
+  appSurfaceOpen: { needs: 'agents:tools', only: 'program' },
+  appSurfaceScreen: { needs: 'agents:tools', only: 'program' },
+  appSurfaceUpdate: { needs: 'agents:tools', only: 'program' },
+  appSurfaceClose: { needs: 'agents:tools', only: 'program' },
+  appSurfacePost: { needs: 'agents:tools', only: 'page' },
   modalClose: { needs: null, only: 'page' },
   /** Runtime keyboard traversal at the edge of a modal guest; not an App-facing member. */
   modalKey: { needs: null, only: 'page' },
@@ -989,7 +1044,7 @@ export const CALLER_WORDS = { page: 'a page', background: 'the background page',
  * document, the App frame's parent in an origin of its own (gate.ts). Every host reads it there and hands it here.
  */
 export type CallRefusalCaller =
-  | { kind: 'page'; has: (capability: ExtensionCapability) => boolean; gesture: boolean; widget: boolean }
+  | { kind: 'page'; has: (capability: ExtensionCapability) => boolean; gesture: boolean; widget: boolean; decorative?: boolean }
   | { kind: 'background' | 'program'; has: (capability: ExtensionCapability) => boolean };
 
 /**
@@ -1009,6 +1064,10 @@ export function callRefusal(
   // Named so the author can see which declaration is missing (or was taken back) instead of guessing why a call stopped working.
   const needs = capabilityNeeded(facts, args);
   if (needs !== null && !caller.has(needs)) return { code: 'denied', message: `Not permitted: this App does not have "${needs}"` };
+  if (caller.kind === 'page' && caller.decorative
+    && (needsGesture(method, args) || ['appSurfacePost', 'modalOpen', 'modalKey', 'projectionSend', 'openLink'].includes(method))) {
+    return { code: 'denied', message: 'A decorative surface cannot receive input, request focus or forward a person’s actions' };
+  }
   // Only a page has a gesture: the background page and a program never make a call that needs one.
   if ((caller.kind !== 'page' || !caller.gesture)
     && (needsGesture(method, args) || (caller.kind === 'page' && caller.widget && method === 'dispatch'))) return gestureRefusal(method);
@@ -1036,6 +1095,8 @@ export function callRefusal(
 export const BRIDGE_ERROR_CODES = [
   'denied', 'invalid', 'failed', 'not-found', 'ambiguous', 'too-large', 'rate-limited', 'content-changed', 'unavailable',
   'name-taken', 'not-installed', 'version-mismatch', 'stale-version', 'machine-outdated',
+  // This computer cannot open that file: it is on another machine, with nothing here to open it through.
+  'elsewhere',
 ] as const;
 export type BridgeErrorCode = (typeof BRIDGE_ERROR_CODES)[number];
 

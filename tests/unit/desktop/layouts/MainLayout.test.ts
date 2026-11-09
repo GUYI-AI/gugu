@@ -331,6 +331,7 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', async (importOriginal)
   }),
   useChatStoreReader: () => () => chatStoreMock,
   useChatStoreSelect: <T,>(select: (store: typeof chatStoreMock) => T) => select(chatStoreMock),
+  useStoreValueBy: <T,>(read: (store: typeof chatStoreMock) => T) => read(chatStoreMock),
 }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({
   chatService: chatServiceMock
