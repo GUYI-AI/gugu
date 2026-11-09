@@ -2,9 +2,8 @@ import { platformModelAccessEnv, resolveGuguHome } from '@gugu/core'
 import type {
   CapabilityPackage,
   ExtensionSkill,
-  DirectorySymlinkOverlay,
   GeneratedArtifact,
-  GeneratedSymlink,
+  GeneratedDirectoryCopy,
   HarnessSessionSurface,
   JsonMerge,
   JsonOverlay,
@@ -235,8 +234,7 @@ export interface Materialization {
   artifacts?: readonly GeneratedArtifact[]
   tomlOverlays?: readonly TomlOverlay[]
   jsonOverlays?: readonly JsonOverlay[]
-  symlinks?: readonly GeneratedSymlink[]
-  directorySymlinkOverlays?: readonly DirectorySymlinkOverlay[]
+  directoryCopies?: readonly GeneratedDirectoryCopy[]
   retiredArtifacts?: readonly RetiredArtifact[]
   /**
    * promptBlocks 里已经通过本 loader 的**原生 session-open 通道**送达的那些键。
@@ -873,8 +871,7 @@ function fromCoreMaterialization(
     artifacts: materialization.artifacts,
     tomlOverlays: materialization.tomlOverlays,
     jsonOverlays: materialization.jsonOverlays,
-    symlinks: materialization.symlinks,
-    directorySymlinkOverlays: materialization.directorySymlinkOverlays,
+    directoryCopies: materialization.directoryCopies,
     ...(materialization.retiredArtifacts
       ? { retiredArtifacts: materialization.retiredArtifacts }
       : {}),

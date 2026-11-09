@@ -71,7 +71,7 @@ describe('connectedCliSkills —— 连上的官方命令行带的 skills 进会
     const installed = installFakeDws();
     const skills = await connectedCliSkills(async (id) => id === 'dingtalk', () => {});
     expect(skills).toEqual([
-      { extensionId: 'dingtalk', name: 'dws', description: '用 dws 操作钉钉', dir: path.join(installed.skillsDir, 'dws') },
+      { extensionId: 'dingtalk', name: 'dws', description: '用 dws 操作钉钉', dir: path.join(installed.skillsDir, 'dws'), contentDigest: expect.stringMatching(/^[0-9a-f]{64}$/) },
     ]);
   });
 

@@ -25,22 +25,20 @@ export const GUGU_CODEX_DIRECT_TOOL_NAMESPACES_ENV = 'GUGU_CODEX_DIRECT_TOOL_NAM
 export const GUGU_CODEX_SKILL_ROOTS_ENV = 'GUGU_CODEX_SKILL_ROOTS';
 
 /**
- * #6387 Skills installed Apps bring, as one skill root gugu owns: `<extension>-<skill>` links to where the App keeps each
- * skill, in a folder named by its content (like claude's package folder: a session gets the set it opened with). codex
+ * #6387 Skills installed Apps bring, as one skill root gugu owns: `<extension>-<skill>` copies of each skill, in a folder named by its content (like claude's package folder: a session gets the set it opened with). codex
  * registers it at runtime — app-server `skills/extraRoots/set` (codex-rs app-server-protocol common.rs, since 0.136.0) —
  * and lists those skills as its own. Nothing lands in the person's ~/.codex.
  */
-function extensionSkillRoot(bundle: SessionCapabilityBundle): { root: string; symlinks: GeneratedSymlink[] } | null {
+function extensionSkillRoot(bundle: SessionCapabilityBundle): { root: string; copies: GeneratedDirectoryCopy[] } | null {
   const skills = bundle.extensionSkills ?? [];
   if (skills.length === 0) return null;
   const guguHome = bundle.env.GUGU_HOME?.trim();
   if (!guguHome) throw new Error('Codex session adapter requires bundle.env.GUGU_HOME');
-  const links = skills.map((skill) => ({ folder: extensionSkillFolderName(skill), source: skill.dir }));
-  const fingerprint = createHash('sha256').update(JSON.stringify(links)).digest('hex').slice(0, 12);
+  const fingerprint = createHash('sha256').update(extensionSkillsFingerprintInput(skills)).digest('hex').slice(0, 12);
   const root = join(guguHome, 'capability-packages', 'codex', 'skills', fingerprint);
   return {
     root,
-    symlinks: links.map((link) => ({ sourcePath: link.source, path: join(root, link.folder), optionalSource: false })),
+    copies: skills.map((skill) => ({ sourcePath: skill.dir, path: join(root, extensionSkillFolderName(skill)) })),
   };
 }
 
@@ -93,7 +91,8 @@ import {
   agentHomeSegments,
   type CapabilityPackage,
   extensionSkillFolderName,
-  type GeneratedSymlink,
+  extensionSkillsFingerprintInput,
+  type GeneratedDirectoryCopy,
   type HarnessSessionSurface,
   type NativeHome,
   resolveSessionCredentialLifecycle,
@@ -1024,8 +1023,7 @@ export function materializeCodexSessionBundle(
     artifacts: [],
     // 一条都不需要了:home 是用户的,他的 sessions / auth.json / skills / 插件缓存本来就在原地。
     tomlOverlays: [trust],
-    symlinks: skillRoot?.symlinks ?? [],
-    directorySymlinkOverlays: [],
+    directoryCopies: skillRoot?.copies ?? [],
     report: report(ctx, bundle),
   };
 }

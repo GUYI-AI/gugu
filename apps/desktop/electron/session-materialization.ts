@@ -1,11 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { chmod, lstat, mkdir, readFile, readdir, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, resolve, sep } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import type {
-  DirectorySymlinkOverlay,
   GeneratedArtifact,
-  GeneratedSymlink,
+  GeneratedDirectoryCopy,
   JsonMerge,
   JsonOverlay,
   RetiredArtifact,
@@ -13,14 +12,14 @@ import type {
 } from '@gugu/session-core/agents/plugins'
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml'
 import { parseJsoncObject } from '@gugu/session-core/agents/plugins/helpers'
+import { ensureSessionSnapshot } from './session/main/core/extensions/extension-session-snapshot'
 
 export interface ApplicableSessionMaterialization {
   artifacts?: readonly GeneratedArtifact[]
   configMerges?: readonly JsonMerge[]
   tomlOverlays?: readonly TomlOverlay[]
   jsonOverlays?: readonly JsonOverlay[]
-  symlinks?: readonly GeneratedSymlink[]
-  directorySymlinkOverlays?: readonly DirectorySymlinkOverlay[]
+  directoryCopies?: readonly GeneratedDirectoryCopy[]
   retiredArtifacts?: readonly RetiredArtifact[]
 }
 
@@ -181,77 +180,6 @@ function mergeOverwriting(
   return merged
 }
 
-async function pathKind(file: string): Promise<'missing' | 'file' | 'directory' | 'symlink'> {
-  try {
-    const stat = await lstat(file)
-    if (stat.isSymbolicLink()) return 'symlink'
-    if (stat.isDirectory()) return 'directory'
-    return 'file'
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing'
-    throw error
-  }
-}
-
-async function applySymlink(guguHome: string, link: GeneratedSymlink): Promise<void> {
-  if (link.ensureSourceDirectory && link.optionalSource) {
-    throw new Error(
-      `Session symlink '${link.path}' declares both ensureSourceDirectory and optionalSource`,
-    )
-  }
-  let sourceKind = await pathKind(link.sourcePath)
-  if (sourceKind === 'missing' && link.ensureSourceDirectory) {
-    await mkdir(link.sourcePath, { recursive: true })
-    sourceKind = 'directory'
-  }
-  if (sourceKind === 'missing') {
-    if (link.optionalSource) return
-    throw new Error(`Session symlink source does not exist: ${link.sourcePath}`)
-  }
-  const target = within(guguHome, link.path, 'Session symlink')
-  const targetKind = await pathKind(target)
-  if (targetKind === 'symlink') {
-    const current = resolve(dirname(target), await readlink(target))
-    if (current === resolve(link.sourcePath)) return
-    throw new Error(`Session symlink conflict at '${target}'`)
-  }
-  if (targetKind !== 'missing') throw new Error(`Session symlink conflict at '${target}'`)
-  await mkdir(dirname(target), { recursive: true })
-  // Windows junction 不要求 Developer Mode / SeCreateSymbolicLinkPrivilege，普通安装也能挂载扩展 skill。
-  const linkType = sourceKind === 'directory'
-    ? (process.platform === 'win32' ? 'junction' : 'dir')
-    : 'file'
-  await symlink(link.sourcePath, target, linkType)
-}
-
-async function applyDirectorySymlinkOverlay(
-  guguHome: string,
-  overlay: DirectorySymlinkOverlay,
-): Promise<void> {
-  if (overlay.conflict !== 'fail') {
-    throw new Error(`Unsupported directory overlay conflict policy for '${overlay.path}'`)
-  }
-  const sourceKind = await pathKind(overlay.sourcePath)
-  if (sourceKind === 'missing') {
-    if (overlay.optionalSource) return
-    throw new Error(`Directory overlay source does not exist: ${overlay.sourcePath}`)
-  }
-  if (sourceKind !== 'directory') {
-    throw new Error(`Directory overlay source is not a directory: ${overlay.sourcePath}`)
-  }
-  const target = within(guguHome, overlay.path, 'Session directory overlay')
-  await mkdir(target, { recursive: true })
-  const suffixes = overlay.includeSuffixes
-  for (const entry of await readdir(overlay.sourcePath)) {
-    if (suffixes && !suffixes.some((suffix) => entry.endsWith(suffix))) continue
-    await applySymlink(guguHome, {
-      sourcePath: resolve(overlay.sourcePath, entry),
-      path: resolve(target, entry),
-      optionalSource: false,
-    })
-  }
-}
-
 /**
  * 回收 Gugu 历史上写下的工件,按**逐字节**匹配:盘上内容与声明的 `content` 深等才删,不等就
  * 原样留着 —— 那是用户自己的文件,不是我们的残留。Gugu 不再写这个文件,只认自己那份字节把它
@@ -298,11 +226,8 @@ export async function applySessionMaterialization(input: {
   for (const overlay of input.materialization.jsonOverlays ?? []) {
     await applyJsonOverlay(guguHome, overlay)
   }
-  for (const link of input.materialization.symlinks ?? []) {
-    await applySymlink(guguHome, link)
-  }
-  for (const overlay of input.materialization.directorySymlinkOverlays ?? []) {
-    await applyDirectorySymlinkOverlay(guguHome, overlay)
+  for (const copy of input.materialization.directoryCopies ?? []) {
+    ensureSessionSnapshot(copy.sourcePath, within(guguHome, copy.path, 'Session directory copy'))
   }
   for (const artifact of input.materialization.artifacts ?? []) {
     if (!isAbsolute(artifact.path)) {

@@ -126,8 +126,7 @@ describe('Codex 会话不再动用户的 home', () => {
         codexBundle(guguHome, userHome),
       )
       expect(materialization.env.CODEX_HOME).toBe(userHome)
-      expect(materialization.symlinks ?? []).toEqual([])
-      expect(materialization.directorySymlinkOverlays ?? []).toEqual([])
+      expect(materialization.directoryCopies ?? []).toEqual([])
       expect(materialization.tomlOverlays).toHaveLength(1)
     } finally {
       await rm(root, { recursive: true, force: true })

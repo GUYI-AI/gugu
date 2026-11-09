@@ -199,14 +199,16 @@ describe('where extension skills reach the agent (#6387)', () => {
     const withSkills = behavior.materialize(ctx, claudeBundle(skills))
     const without = behavior.materialize(ctx, claudeBundle([]))
 
-    expect(withSkills.symlinks).toHaveLength(1)
-    const [link] = withSkills.symlinks!
-    expect(link.sourcePath).toBe(join(root, 'skills', 'agent-notes'))
-    expect(link.path).toMatch(/capability-packages\/claude\/gugu-product\/[^/]+\/skills\/agent-notes-agent-notes$/)
-    expect(without.symlinks).toEqual([])
-    // 卸掉扩展后新会话必须换一份目录,否则旧软链还躺在复用的目录里。
+    expect(withSkills.directoryCopies).toHaveLength(1)
+    const [copy] = withSkills.directoryCopies!
+    expect(copy.sourcePath).toBe(join(root, 'skills', 'agent-notes'))
+    expect(copy.path).toMatch(/capability-packages\/claude\/gugu-product\/[^/]+\/skills\/agent-notes-agent-notes$/)
+    expect(without.directoryCopies).toEqual([])
+    // 卸掉扩展后新会话必须换一份目录,否则旧副本还躺在复用的目录里;内容变了也一样,副本不跟着源走。
     const pluginDir = (m: typeof without) => m.artifacts.find((a) => a.path.endsWith('.mcp.json'))!.path
     expect(pluginDir(withSkills)).not.toBe(pluginDir(without))
+    const changed = behavior.materialize(ctx, claudeBundle(skills.map((skill) => ({ ...skill, contentDigest: 'other' }))))
+    expect(pluginDir(withSkills)).not.toBe(pluginDir(changed))
   })
 
   it('exactly one path per harness: claude and codex mount them, the rest read the catalog in the platform block', () => {
@@ -306,7 +308,7 @@ describe('what the /mcp panel is told this session got from extensions (#6387)',
   it('each program and each skill, with the extension it came from — nothing else from the bundle', () => {
     const bundle = {
       extensionServerOrigins: [{ name: 'agent-notes', extensionId: 'agent-notes' }],
-      extensionSkills: [{ extensionId: 'agent-notes', name: 'agent-notes', description: 'd', dir: '/x/skills/agent-notes' }],
+      extensionSkills: [{ extensionId: 'agent-notes', name: 'agent-notes', description: 'd', contentDigest: 'c', dir: '/x/skills/agent-notes' }],
     } as unknown as Parameters<typeof sessionExtensionDelivery>[0]
     expect(sessionExtensionDelivery(bundle)).toEqual({
       servers: [{ name: 'agent-notes', extensionId: 'agent-notes' }],

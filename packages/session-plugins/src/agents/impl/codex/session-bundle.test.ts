@@ -114,21 +114,24 @@ describe('Codex native tool surfaces preserve the catalog and explicit App discl
 
 describe('#6387 installed Apps\' skills: one skill root gugu owns, registered by codex as extra skill roots', () => {
   const skills = [
-    { extensionId: 'choukatai', name: 'choukatai', description: 'Work a card table.', dir: '/apps/choukatai/skills/choukatai' },
-    { extensionId: 'notes-app', name: 'notes', description: 'Keep notes.', dir: '/apps/notes-app/skills/notes' },
+    { extensionId: 'choukatai', name: 'choukatai', description: 'Work a card table.', dir: '/apps/choukatai/skills/choukatai', contentDigest: 'a1' },
+    { extensionId: 'notes-app', name: 'notes', description: 'Keep notes.', dir: '/apps/notes-app/skills/notes', contentDigest: 'b2' },
   ];
 
-  it('links each skill as <extension>-<skill> in a root under GUGU_HOME, named by its content', () => {
+  it('copies each skill as <extension>-<skill> in a root under GUGU_HOME, named by its content', () => {
     const result = materializeCodexSessionBundle(ctx, bundle({ extensionSkills: skills }));
     const root = JSON.parse(result.env.GUGU_CODEX_SKILL_ROOTS ?? 'null')?.[0] as string;
     expect(root).toMatch(/^\/gugu\/capability-packages\/codex\/skills\/[0-9a-f]{12}$/);
-    expect(result.symlinks).toEqual([
-      { sourcePath: '/apps/choukatai/skills/choukatai', path: `${root}/choukatai-choukatai`, optionalSource: false },
-      { sourcePath: '/apps/notes-app/skills/notes', path: `${root}/notes-app-notes`, optionalSource: false },
+    expect(result.directoryCopies).toEqual([
+      { sourcePath: '/apps/choukatai/skills/choukatai', path: `${root}/choukatai-choukatai` },
+      { sourcePath: '/apps/notes-app/skills/notes', path: `${root}/notes-app-notes` },
     ]);
     // Another set is another folder: a skill taken away is not left in a root a new session reads.
     const fewer = materializeCodexSessionBundle(ctx, bundle({ extensionSkills: skills.slice(0, 1) }));
     expect(JSON.parse(fewer.env.GUGU_CODEX_SKILL_ROOTS ?? 'null')).not.toEqual([root]);
+    // A copy does not follow its source: the same skill with other content is another folder too.
+    const changed = materializeCodexSessionBundle(ctx, bundle({ extensionSkills: [{ ...skills[0]!, contentDigest: 'a2' }, skills[1]!] }));
+    expect(JSON.parse(changed.env.GUGU_CODEX_SKILL_ROOTS ?? 'null')).not.toEqual([root]);
   });
 
   it('the chat leg hands the root to the ACP bridge; the terminal leg to its host, as skillRoots', () => {
@@ -137,7 +140,7 @@ describe('#6387 installed Apps\' skills: one skill root gugu owns, registered by
     const terminal = materializeCodexSessionBundle({ ...ctx, surface: 'app-server' as const }, bundle({ extensionSkills: skills }));
     expect(terminal.env).not.toHaveProperty('GUGU_CODEX_SKILL_ROOTS');
     expect(terminal.skillRoots).toEqual(JSON.parse(chat.env.GUGU_CODEX_SKILL_ROOTS ?? 'null'));
-    expect(terminal.symlinks).toEqual(chat.symlinks);
+    expect(terminal.directoryCopies).toEqual(chat.directoryCopies);
   });
 
   it('a resumed session registers them again: the roots belong to the app-server process', () => {
@@ -148,6 +151,6 @@ describe('#6387 installed Apps\' skills: one skill root gugu owns, registered by
   it('no skills, no root', () => {
     const result = materializeCodexSessionBundle(ctx, bundle());
     expect(result.env).not.toHaveProperty('GUGU_CODEX_SKILL_ROOTS');
-    expect(result.symlinks).toEqual([]);
+    expect(result.directoryCopies).toEqual([]);
   });
 });

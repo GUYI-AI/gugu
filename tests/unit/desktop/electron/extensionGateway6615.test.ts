@@ -640,7 +640,7 @@ describe('an App reaches only the sessions its owner gave it to (D-30)', () => {
   it('#6387 its skills follow its tools: listed to a session it is given to, not to one it is not, nor once it may not give tools', async () => {
     setSessionAppScope('given', async (extensionId) => extensionId === 'agent-notes')
     setSessionAppScope('not-given', async () => false)
-    const skill = (extensionId: string) => ({ extensionId, name: 'notes', description: 'Keep notes.', dir: `/apps/${extensionId}/skills/notes` })
+    const skill = (extensionId: string) => ({ extensionId, name: 'notes', contentDigest: 'c', description: 'Keep notes.', dir: `/apps/${extensionId}/skills/notes` })
     let refused: string | null = null
     const catalog = createExtensionCatalog({
       programs: () => ({ ...programs, agentToolsRefusal: () => refused }),

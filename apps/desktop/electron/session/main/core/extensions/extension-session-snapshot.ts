@@ -29,17 +29,8 @@ export function sessionSnapshotDir(userDataDir: string, extensionId: string, bun
   return path.join(sessionSnapshotsRoot(userDataDir), extensionId, bundleDigest.slice(0, 16));
 }
 
-const bundleDigests = new Map<string, { stamp: string; digest: string }>();
-
-/**
- * What an installed bundle is, by content: every file's path and bytes (links by target). Read once per install — an
- * install lands as a new folder, so its inode and times say when to read again.
- */
-export function bundleContentDigest(dir: string): string {
-  const stat = fs.statSync(dir);
-  const stamp = `${stat.ino}:${stat.birthtimeMs}:${stat.mtimeMs}`;
-  const known = bundleDigests.get(dir);
-  if (known?.stamp === stamp) return known.digest;
+/** What a folder holds, by content: every file's path and bytes (links by target). */
+export function directoryContentDigest(dir: string): string {
   const hash = createHash('sha256');
   const walk = (rel: string): void => {
     const entries = fs.readdirSync(path.join(dir, rel), { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1));
@@ -51,7 +42,20 @@ export function bundleContentDigest(dir: string): string {
     }
   };
   walk('');
-  const digest = hash.digest('hex');
+  return hash.digest('hex');
+}
+
+const bundleDigests = new Map<string, { stamp: string; digest: string }>();
+
+/**
+ * What an installed bundle is, by content (directoryContentDigest). Read once per install — an install lands as a new folder, so its inode and times say when to read again.
+ */
+export function bundleContentDigest(dir: string): string {
+  const stat = fs.statSync(dir);
+  const stamp = `${stat.ino}:${stat.birthtimeMs}:${stat.mtimeMs}`;
+  const known = bundleDigests.get(dir);
+  if (known?.stamp === stamp) return known.digest;
+  const digest = directoryContentDigest(dir);
   bundleDigests.set(dir, { stamp, digest });
   return digest;
 }
@@ -96,6 +100,17 @@ export function pruneSessionSnapshots(
     for (const version of fs.readdirSync(extensionDir)) {
       if (version !== keep) fs.rmSync(path.join(extensionDir, version), { recursive: true, force: true });
     }
+  }
+}
+
+/**
+ * At gugu's start, before any session: the folders of skill copies sessions held (a session makes its own again when it
+ * starts or resumes), for the same reason as pruneSessionSnapshots. A folder from before copies may hold links: removing
+ * one takes the link, never what it points at.
+ */
+export function pruneSessionSkillCopies(guguHome: string): void {
+  for (const folder of [['claude', 'gugu-product'], ['codex', 'skills']]) {
+    fs.rmSync(path.join(guguHome, 'capability-packages', ...folder), { recursive: true, force: true });
   }
 }
 

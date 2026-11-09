@@ -505,7 +505,7 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
       name: 'choukatai__board', description: 'Read a card table. More.', inputSchema: { type: 'object', required: ['board'], properties: { board: {} } },
       run: async () => ({ content: [{ type: 'text', text: 'ran' }] }),
     }
-    const skill = { extensionId: 'choukatai', name: 'choukatai', description: 'Work a card table. When woken about one.', dir: '/apps/choukatai/skills/choukatai' }
+    const skill = { extensionId: 'choukatai', name: 'choukatai', contentDigest: 'c', description: 'Work a card table. When woken about one.', dir: '/apps/choukatai/skills/choukatai' }
     const server = new McpServer({ name: 'catalog-skills', version: '1' })
     registerGuguCatalogTools(server, () => [tool], undefined, () => [skill])
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -521,7 +521,7 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
   })
 
   it('#6387 真宿主上:任务页会话的 catalog_list 列出扩展目录给的 skill;侧边聊天(分叉)不带扩展,也就不列', async () => {
-    const skill = { extensionId: 'choukatai', name: 'choukatai', description: 'Work a card table.', dir: '/apps/choukatai/skills/choukatai' }
+    const skill = { extensionId: 'choukatai', name: 'choukatai', contentDigest: 'c', description: 'Work a card table.', dir: '/apps/choukatai/skills/choukatai' }
     const asked: string[] = []
     setSessionExtensionCatalog({ tools: async () => [], apps: async () => ({ apps: [] }), skills: async (grantKey) => (asked.push(grantKey), [skill]) })
     try {

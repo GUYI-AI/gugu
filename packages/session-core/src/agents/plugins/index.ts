@@ -210,10 +210,9 @@ export type {
   ExtensionSkill,
   CapabilityUnit,
   Degradation,
-  DirectorySymlinkOverlay,
   ExtensionDelivery,
   GeneratedArtifact,
-  GeneratedSymlink,
+  GeneratedDirectoryCopy,
   HarnessSessionSurface,
   HarnessSelfUpdateControl,
   HarnessSessionChannelKind,
@@ -263,6 +262,7 @@ export {
 export {
   SESSION_BUNDLE_CHANNEL_MATERIALIZATION_FIELDS,
   extensionSkillFolderName,
+  extensionSkillsFingerprintInput,
   mountsExtensionSkillsNatively,
 } from './capabilities/session-bundle';
 // 独立 home 的**类型层**。⚠️ 算路径与落盘都在 `helpers/agent-home.ts`(node 侧)——

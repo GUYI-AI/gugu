@@ -38,12 +38,14 @@ import {
   bundleContentDigest,
   ensureSessionSnapshot,
   pruneExtensionData,
+  pruneSessionSkillCopies,
   pruneSessionSnapshots,
   sessionSnapshotDir,
 } from './core/extensions/extension-session-snapshot'
 // 装完之后重新读登录 shell PATH 的注入口 —— 实现(hydrateLoginShellPath)住宿主,理由见
 // utils/userEnv.ts 的 setLoginShellPathRehydrator 注释:那个模块有模块级状态,跨 bundle
 // import 只会拿到复制品。
+import { resolveGuguHome } from '@gugu/core/local/state/paths'
 import { encryptedAppSecretsStore } from '@main/core/secrets/encrypted-app-secrets-store'
 import { interruptTuiTurn } from '@main/core/sessions/interrupt-tui-turn'
 import { resolveSystemProxy } from '@main/utils/systemProxyEnv'
@@ -1017,6 +1019,7 @@ function sweepExtensionSessionLeftovers(): void {
     new Set([...extensions.map(({ manifest }) => manifest.id), ...invalid.map(({ dirName }) => dirName)])
   )
   pruneSessionSnapshots(userData, new Map(extensions.map(({ manifest, rootDir }) => [manifest.id, bundleContentDigest(rootDir)])))
+  pruneSessionSkillCopies(resolveGuguHome())
 }
 
 /**

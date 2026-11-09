@@ -4,6 +4,7 @@ import { parse as parseYaml } from 'yaml'
 import type { ExtensionSkill } from '@gugu/session-core/agents/plugins'
 import type { AcpMcpServer } from './acp-engine-utils'
 import type { ExtensionProgram } from './session/main/core/extensions/extension-programs'
+import { directoryContentDigest } from './session/main/core/extensions/extension-session-snapshot'
 import { resolvesInside } from './session/main/core/extensions/path-containment'
 import { hostProgramLine, isConfinedToolProgram, programName, type ExtensionManifest } from '@shared/extensions/manifest'
 
@@ -106,7 +107,7 @@ export function readExtensionSkills(extensionId: string, skillsDir: string, onPr
       const front = parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {}
       const description = frontmatterField(front, 'description')
       if (!description) throw new Error('its frontmatter has no description')
-      skills.push({ extensionId, name: frontmatterField(front, 'name') ?? entry.name, description, dir })
+      skills.push({ extensionId, name: frontmatterField(front, 'name') ?? entry.name, description, dir, contentDigest: directoryContentDigest(dir) })
     } catch (error) {
       onProblem(`extension ${extensionId}: skill ${entry.name} left out of the session (${file}): ${said(error)}`)
     }

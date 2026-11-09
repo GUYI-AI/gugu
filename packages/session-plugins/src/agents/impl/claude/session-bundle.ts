@@ -8,7 +8,7 @@ import {
 import type {
   CapabilityPackage,
   GeneratedArtifact,
-  GeneratedSymlink,
+  GeneratedDirectoryCopy,
   NativeHome,
   SessionBundleDescriptor,
   SessionCapabilityBundle,
@@ -17,7 +17,7 @@ import type {
   SessionMcpServer,
   SessionPromptBlocks,
 } from '@gugu/session-core/agents/plugins';
-import { extensionSkillFolderName } from '@gugu/session-core/agents/plugins';
+import { extensionSkillFolderName, extensionSkillsFingerprintInput } from '@gugu/session-core/agents/plugins';
 import { claudePlatformModelOption } from '@gugu/session-core/acp/platform-model-address';
 import { mcpToggleDirective, type McpToggleServer } from '@gugu/session-core/mcp';
 import {
@@ -484,7 +484,7 @@ function packageRoot(bundle: SessionCapabilityBundle): string {
   const fingerprint = createHash('sha256')
     .update(pluginMcpConfigContent(bundle))
     // 扩展带的 skill 也进指纹:装上/卸掉一个扩展就是另一份目录,卸掉的 skill 不会留在旧目录里被新会话看到。
-    .update(JSON.stringify(extensionSkillLinks(bundle, '')))
+    .update(extensionSkillsFingerprintInput(bundle.extensionSkills ?? []))
     .digest('hex')
     .slice(0, 12);
   return join(
@@ -499,13 +499,12 @@ function packageRoot(bundle: SessionCapabilityBundle): string {
 /**
  * #6387 Skills installed extensions bring, mounted into this session's plugin folder as
  * `skills/<extension>-<skill>` — Claude then lists them like its own (`gugu-product:<name>`), and reads
- * SKILL.md where the extension keeps it. Nothing is copied, nothing lands in the person's home.
+ * SKILL.md in that copy. Nothing lands in the person's home.
  */
-function extensionSkillLinks(bundle: SessionCapabilityBundle, root: string): GeneratedSymlink[] {
+function extensionSkillCopies(bundle: SessionCapabilityBundle, root: string): GeneratedDirectoryCopy[] {
   return (bundle.extensionSkills ?? []).map((skill) => ({
     sourcePath: skill.dir,
     path: join(root, 'skills', extensionSkillFolderName(skill)),
-    optionalSource: false,
   }));
 }
 
@@ -669,8 +668,7 @@ export function materializeClaudeSessionBundle(
     env,
     artifacts,
     tomlOverlays: [],
-    symlinks: plugin ? extensionSkillLinks(bundle, plugin.root) : [],
-    directorySymlinkOverlays: [],
+    directoryCopies: plugin ? extensionSkillCopies(bundle, plugin.root) : [],
     report: report(ctx, bundle),
   };
 

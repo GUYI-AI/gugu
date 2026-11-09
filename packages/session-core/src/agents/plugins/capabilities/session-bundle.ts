@@ -1267,32 +1267,13 @@ export interface JsonOverlay {
   mode: 0o600;
 }
 
-export interface GeneratedSymlink {
+/**
+ * A folder copied into gugu's home for a session, whole, on every filesystem: a link is refused on exFAT and some network
+ * drives. `path` is named by the source's content, so a copy already there is this copy.
+ */
+export interface GeneratedDirectoryCopy {
   sourcePath: string;
   path: string;
-  optionalSource: boolean;
-  /**
-   * 源目录缺失时创建它,而不是跳过。用于「必须落在用户真实 home 的持久化存储」:run-scoped home 是
-   * 一次性的,跳过软链就等于把该存储写进用完即弃的目录 —— 数据当场看着正常,下一次 run 才发现没了。
-   * 与 optionalSource 互斥(同时为真 = 声明自相矛盾,物化时 fail loud)。
-   */
-  ensureSourceDirectory?: boolean;
-}
-
-export interface DirectorySymlinkOverlay {
-  sourcePath: string;
-  path: string;
-  optionalSource: boolean;
-  conflict: 'fail';
-  /**
-   * 只接源目录里以这些后缀结尾的**顶层文件**;省略 = 接全部条目(既有行为)。
-   *
-   * 用于「源目录里只有一部分是跨-run 用户数据」的情形:overlay 的落点常常就是 run-scoped home
-   * 自己,把整个用户 home 接过来会和本次 run 要写的配置撞车。按后缀而不是按文件名,是因为
-   * 承载状态的文件名往往带 schema 版本号(`state_5.sqlite`);写死文件名的话,上游一升版就**静默**
-   * 退回「每次 run 重建一次状态」——没有任何判据会红,只有用户会变慢。
-   */
-  includeSuffixes?: readonly string[];
 }
 
 /**
@@ -1305,6 +1286,8 @@ export interface ExtensionSkill {
   name: string;
   description: string;
   dir: string;
+  /** What `dir` holds now, by content. A session's copy of the skill is named by it. */
+  contentDigest: string;
 }
 
 /**
@@ -1324,6 +1307,11 @@ export function mountsExtensionSkillsNatively(extension: ExtensionDelivery | und
 export function extensionSkillFolderName(skill: ExtensionSkill): string {
   const folder = skill.dir.split(/[\\/]/).filter(Boolean).pop() ?? skill.name;
   return `${skill.extensionId}-${folder}`;
+}
+
+/** What names a folder of skill copies: another set, or another content of one, is another folder. */
+export function extensionSkillsFingerprintInput(skills: readonly ExtensionSkill[]): string {
+  return JSON.stringify(skills.map((skill) => [extensionSkillFolderName(skill), skill.contentDigest]));
 }
 
 export interface CapabilityPackage {
@@ -1412,7 +1400,7 @@ export interface SessionMaterialization {
   threadStart?: Readonly<Record<string, unknown>>;
   /**
    * #6387 Skill folders the engine registers at runtime as extra skill roots (activation `'skill-roots'`):
-   * each holds `<skill>/SKILL.md` entries, made by this materialization's `symlinks`.
+   * each holds `<skill>/SKILL.md` entries, made by this materialization's `directoryCopies`.
    */
   skillRoots?: readonly string[];
   /** Provider-native fields for an HTTP/session create request (for example OpenCode's agent mode). */
@@ -1450,8 +1438,7 @@ export interface SessionMaterialization {
   retiredArtifacts?: readonly RetiredArtifact[];
   tomlOverlays?: readonly TomlOverlay[];
   jsonOverlays?: readonly JsonOverlay[];
-  symlinks?: readonly GeneratedSymlink[];
-  directorySymlinkOverlays?: readonly DirectorySymlinkOverlay[];
+  directoryCopies?: readonly GeneratedDirectoryCopy[];
   report: {
     adapterId: string;
     surface: HarnessSessionSurface;
