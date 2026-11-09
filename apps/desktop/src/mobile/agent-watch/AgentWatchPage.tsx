@@ -194,7 +194,7 @@ export function AgentWatchPage({
               log.error({ deviceId: device.device_id, sessionId: session.conversationId, chatId: result.birthGroup.chatId, reason: result.birthGroup.error ?? null }, 'phone agent created but group join failed')
               // 认得出的拒绝(群满了、群已解散……)直接说原因;只有说不清的才用「暂时无法加入」。
               const denial = groupJoinDenialKey(result.birthGroup.error)
-              if (denial) toast(tWorkspace('groupJoinDenied', { reason: tMessaging(denial) }), 'error')
+              if (denial) toast(tWorkspace('groupJoinDenied'), 'error', tMessaging(denial))
               else toast(tWorkspace('groupJoinFailed'), 'error', messageForUser(result.birthGroup.error))
             }
             const groupId = phone ? result?.birthGroup?.chatId : taskGroup?.chatId
