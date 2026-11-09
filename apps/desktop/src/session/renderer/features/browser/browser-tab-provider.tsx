@@ -33,6 +33,8 @@ export const browserTabProvider: TabProvider<
 > = createTabProvider({
   kind: 'browser',
   resourceKey: (s: BrowserState) => s.browserId,
+  // Every open is a new browser session: where it shows is remembered for the kind.
+  placementKey: () => 'browser',
   // 两个网页并排:两页都在这一层里各摆一边,❌ 另一页单独挂一份(挪过去 = 重新加载)。
   isPersistent: (s: BrowserState) => !s.ephemeral,
 

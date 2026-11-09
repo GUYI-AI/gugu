@@ -2,6 +2,7 @@ import { translateSessionMessage } from '@renderer/localization/locale-store';
 // All user-facing failures share the reason catalog and redacted first-line exit below.
 import { guguReasonInText, guguReasonOf, type GuguCatalogReason } from '@gugu/session-core/session-record/contract';
 import type { SessionMessageKey } from '@renderer/localization/messages';
+import { assistantFileFailure, type AssistantFileOperation } from '@gugu/core/shared/assistantFileError';
 
 /** 原因上的那一个按钮(规格原因表的按钮列);`null` = 只说一句(没有动作能改变它)。 */
 export type GuguReasonAction = 'retry' | 'switch-model' | 'join-membership' | 'sign-in' | null;
@@ -94,6 +95,8 @@ const MAX_FAILURE_LINE_LENGTH = 280;
 
 /** 拒绝方原话的第一行:保留它说的事,去掉路径、profile、令牌与栈。 */
 export function safeFailureLine(message: string): string {
+  // These host-authored failures contain a repair path, not settings or provider output.
+  if (assistantFileFailure(message)) return message.replace(/^Error invoking remote method '[^']+':\s*/, '').replace(/^Error:\s*/, '');
   const firstLine = message
     .split(/\r?\n/, 1)[0]!
     .replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, '')
@@ -116,6 +119,14 @@ export function failureReason(message: string): GuguCatalogReason | null {
  * 一行、去敏;原话是空的就是没人说清 ⇒「咕咕这边出错了」。
  */
 export function failureText(message: string, translate: Translate, modelName?: string | null): string {
+  const file = assistantFileFailure(message);
+  if (file) {
+    const copy: Record<AssistantFileOperation, SessionMessageKey> = {
+      invalid: 'taskError.assistantFileInvalid', read: 'taskError.assistantFileRead',
+      backup: 'taskError.assistantFileBackup', write: 'taskError.assistantFileWrite',
+    };
+    return translate(copy[file.operation], { path: file.path });
+  }
   const reason = failureReason(message);
   if (reason) return guguReasonText(reason, translate, modelName);
   return safeFailureLine(message) || guguReasonText('service-unavailable', translate);

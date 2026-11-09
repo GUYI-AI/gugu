@@ -42,6 +42,41 @@ const FIRST = 'Look at this project.'
 const header = (host: HTMLElement) => host.querySelector<HTMLElement>('[data-slot="turn-process"]')
 
 describe('ordinary sending stays in the transcript', () => {
+  it('retains the exact bubble node and key when the runtime confirms a submitted identity', async () => {
+    const { state, host } = mount('double', { agentConversation: true })
+    const clientId = 'stable-client-input'
+    const sentAt = Date.now()
+    state.session.setPendingPrompt({ id: clientId, text: FIRST, sentAt, delivery: { state: 'sending' } })
+    await until('the submitted bubble is visible', () => !!host.querySelector('[data-user-card]'))
+    const original = host.querySelector('[data-user-card]')!
+    const key = original.getAttribute('data-conversation-bubble-key')
+    expect(key).toBe(`conversation-bubble:${clientId}`)
+    let phase = 'submitted'
+    const samples: { phase: string; count: number; sameNode: boolean; key: string | null }[] = []
+    let sampling = true
+    const sample = () => {
+      const bubbles = host.querySelectorAll('[data-user-card]')
+      samples.push({ phase, count: bubbles.length, sameNode: bubbles[0] === original, key: bubbles[0]?.getAttribute('data-conversation-bubble-key') ?? null })
+      if (sampling) requestAnimationFrame(sample)
+    }
+    requestAnimationFrame(sample)
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    const turn: TranscriptTurn = { id: 'native-turn', seq: 0, initiator: 'user', startedAt: sentAt,
+      items: [{ kind: 'message', role: 'user', id: clientId, seq: 0, text: FIRST, _meta: { guguClientMessageId: clientId } }] }
+    phase = 'runtime'
+    state.transcript.activeTurn.set(turn)
+    await frame()
+    // The uncorrelated native echo is withheld by the runtime; the visible entity stays unchanged.
+    await frame()
+    const accepted = { ...turn, items: turn.items.map(item => ({ ...item, _meta: { guguClientMessageId: clientId, guguNativeMessageId: 'native-uuid' } })) }
+    phase = 'receipt'
+    state.transcript.activeTurn.set(accepted)
+    await frame()
+    sampling = false
+    expect(samples.length).toBeGreaterThanOrEqual(4)
+    expect(samples).toEqual(samples.map(sample => ({ phase: sample.phase, count: 1, sameNode: true, key })))
+  })
+
   it('keeps the last bubble stationary when a long conversation enters host startup', async () => {
     const { state, host, view } = mount('double', { agentConversation: true })
     state.transcript.history.seed(Array.from({ length: 12 }, (_, seq) => ({
@@ -292,6 +327,21 @@ describe('session start with a first message', () => {
     expect(signIn).toHaveBeenCalledOnce()
   })
 
+  it('keeps the session condition row and action without exposing raw hover diagnostics', async () => {
+    const { state, host, view } = mount('double');
+    const retry = vi.fn();
+    view.setCommands({ onConditionAction: retry });
+    const label = 'Codex could not start. Update Codex, then retry.';
+    state.session.setCondition({ code: 'start-failed', label, detail: 'local Codex app-server exited (code=1 signal=null)', actions: [{ label: 'Retry' }] });
+    await until('condition mounts', () => Boolean(host.querySelector('[data-slot="session-condition"]')));
+    const row = host.querySelector<HTMLElement>('[data-slot="session-condition"]')!;
+    expect(row.textContent).toContain(label);
+    expect(row.title).toBe(label);
+    expect(row.outerHTML).not.toMatch(/app-server|code=1|signal=null/);
+    row.querySelector<HTMLButtonElement>('button')!.click();
+    expect(retry).toHaveBeenCalledOnce();
+  });
+
   it('an action whose call is in flight is disabled: a second click does not repeat it', async () => {
     const { state, host, view } = mount('double')
     const restart = vi.fn()
@@ -330,7 +380,7 @@ describe('incoming deliveries share the transcript layout', () => {
   })
 
   it('clears delivered unknown receipts with compression and a cancelled turn, without duplicating native messages', async () => {
-    const { state, host } = mount('double', { agentConversation: true, pinUserMessages: true })
+    const { state, host, view } = mount('double', { agentConversation: true, pinUserMessages: true })
     const inputs: PendingPrompt[] = ['a', 'b', 'c'].map(id => ({ id, text: incomingText(`source-${id}`, `Incoming ${id}`), received: true, delivery: { state: 'unknown', retryable: false } }))
     const history: TranscriptTurn[] = inputs.map((input, seq) => ({ id: `turn-${seq}`, seq, initiator: 'agent', items: [
       { kind: 'message', id: `echo-${seq}`, seq: 0, role: 'user', text: input.text },
@@ -339,6 +389,7 @@ describe('incoming deliveries share the transcript layout', () => {
     state.transcript.history.seed(history)
     state.session.setPendingMessages(inputs)
     state.session.setCondition({ code: 'auth-required', detail: 'sign-in-missing', label: 'Host status remains visible' })
+    for (let seq = 0; seq < 3; seq++) view.openItem(`echo-${seq}`)
     await until('all native messages replace their unknown markers', () => host.querySelectorAll('[data-user-card]').length === 3 && !host.querySelector('[data-send-state="unknown"]'))
     expect(host.querySelectorAll('[data-user-card]')).toHaveLength(3)
     expect(host.querySelectorAll('[data-send-state="unknown"] button')).toHaveLength(0)
@@ -367,7 +418,7 @@ it('shows a sending indicator alongside the existing restoring process line with
 })
 
 it('removes the tail fallback as soon as out-of-budget native history arrives, and keeps the native identity afterward', async () => {
-  const { state, host } = mount('double', { agentConversation: true })
+  const { state, host, view } = mount('double', { agentConversation: true })
   const input: PendingPrompt = { id: 'budget-fallback', text: incomingText('budget-source', 'Legacy unconfirmed input'), received: true, delivery: { state: 'unknown', retryable: false } }
   const newest: TranscriptTurn = { id: 'newer', seq: 100, initiator: 'user', items: [{ kind: 'message', id: 'newer-user', seq: 0, role: 'user', text: 'Newer input' }] }
   state.transcript.history.seed([newest])
@@ -375,6 +426,7 @@ it('removes the tail fallback as soon as out-of-budget native history arrives, a
   await until('the budget fallback is in the normal transcript', () => !!host.querySelector('[data-user-card="budget-fallback"]') && !!host.querySelector('[data-send-state="unknown"]'))
   const native: TranscriptTurn = { id: 'legacy', seq: 50, initiator: 'agent', items: [{ kind: 'message', id: 'legacy-native', seq: 0, role: 'user', text: input.text }] }
   state.transcript.history.seed([native, newest])
+  view.openItem('legacy-native')
   await until('native history removes the fallback in the same handoff', () => !!host.querySelector('[data-user-card="legacy-native"]') && !host.querySelector('[data-user-card="budget-fallback"]'))
   expect(host.querySelectorAll('[data-send-state="unknown"]')).toHaveLength(0)
   state.transcript.history.prepend([{ id: 'older', seq: 10, initiator: 'user', items: [{ kind: 'message', id: 'older-user', seq: 0, role: 'user', text: 'Earlier history' }] }])
@@ -386,6 +438,7 @@ it('removes the tail fallback as soon as out-of-budget native history arrives, a
   await until('a narrower history window omits the native row', () => !host.querySelector('[data-user-card="legacy-native"]'))
   expect(host.querySelector('[data-user-card="budget-fallback"]')).toBeNull()
   state.transcript.history.seed([native, newest])
+  view.openItem('legacy-native')
   await until('the same native identity returns without a false unresolved marker', () => !!host.querySelector('[data-user-card="legacy-native"]') && !host.querySelector('[data-send-state="unknown"]'))
   expect(host.querySelector('[data-user-card="budget-fallback"]')).toBeNull()
 })

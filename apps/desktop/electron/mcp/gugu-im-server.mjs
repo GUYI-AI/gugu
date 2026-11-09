@@ -4,6 +4,7 @@ import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
 import { archivedDeliveryReceipt, messageDeliveryBlocks } from './message-delivery-blocks.mjs'
 
 import { downloadSessionFile } from '@gugu/core/local/agent/sessionFileHandoff'
+import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
 import { randomUUID } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { basename, isAbsolute, join as joinPath, resolve as resolvePath } from 'node:path'
@@ -14,8 +15,8 @@ import { z } from 'zod'
 import { tokenizeMarkdownMath } from '../../../../packages/core/src/shared/markdownMath.mjs'
 import { findRosterNameHits } from '../../../../packages/core/src/shared/rosterNameMatching.mjs'
 import { findMentionSpans } from '../../../../packages/core/src/shared/mentionToken.mjs'
-import { EXTENSION_ARCHIVE_MIME, isImageMimeType, resolveAttachmentMimeType } from '../../../../packages/core/src/shared/imageMime.mjs'
-import { saveFileHandle } from '@gugu/core/local/files/fileSnapshots'
+import { EXTENSION_ARCHIVE_MIME, resolveAttachmentMimeType } from '../../../../packages/core/src/shared/imageMime.mjs'
+import { fileStoreDirectory, saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
 import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
 import { workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
 import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
@@ -25,7 +26,6 @@ import { AttachmentsError, commitAttachment, sendFileAsOwner, shareAttachment, u
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 import { createGroupAdmin, setGroupAvatar } from '../../../../packages/core/src/cloud/groupAdmin'
 import { registerGuguTool } from './register-gugu-tool.mjs'
-import { FORUM_TOOL_DEFS } from './gugu-forum-tools.mjs'
 import {
   agentStatusFilterSchema,
   listWindowShape,
@@ -591,6 +591,7 @@ async function resolveWriteTarget(args, deps) {
 }
 
 async function sendOwnerNotification(args, deps, target, recipients, file) {
+  if (file) await requireAgentFileAccess(file.path)
   if (!deps.context.runHostAction) throw new Error('The sending native session host is unavailable; no owner notification was sent')
   if (recipients?.some(id => id !== target.owner)) throw new Error('An owner notification can address only your owner')
   if (args.reply_to_message_id) throw new Error('A proactive owner notification has no IM reply_to_message_id; omit that field')
@@ -642,7 +643,7 @@ export async function readUploadBytes(label, args, maxBytes) {
   const filePath = typeof args?.file_path === 'string' ? args.file_path.trim() : ''
   if (!filePath) throw new Error(`${label}: file_path is required`)
   if (!isAbsolute(filePath)) throw new Error(`${label}: file_path must be absolute, got ${filePath}`)
-  const target = resolvePath(filePath)
+  const target = await requireAgentFileAccess(resolvePath(filePath))
   let info
   try {
     info = await stat(target)
@@ -2196,10 +2197,10 @@ async function publishHere(args, deps, chatId, message, next) {
   if (!publish) return null
   const fileName = resolveUploadName(args)
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
-  if (!next && isImageMimeType(contentType)) return null
   const filePath = typeof args?.file_path === 'string' ? args.file_path.trim() : ''
   if (!isAbsolute(filePath)) throw new Error(`message_send_file: file_path must be absolute, got ${filePath}`)
   const target = resolvePath(filePath)
+  await requireAgentFileAccess(target)
   const info = await stat(target).catch((err) => { throw new Error(`message_send_file: cannot read ${target} (${err?.code || err?.message || 'unknown'})`) })
   if (!info.isFile()) throw new Error(`message_send_file: ${target} is not a file`)
   const sent = await publish(chatId, { name: fileName, path: target, size: info.size, contentType }, deps.context.agentId,
@@ -2292,7 +2293,7 @@ async function downloadAttachment(messageId, deps) {
   if (file.status !== 'ready') throw new Error(`message_download_file: the file of message ${messageId} is no longer readable`)
   const home = typeof deps.context.guguHome === 'string' ? deps.context.guguHome.trim() : ''
   if (!home) { await file.dispose(); throw new Error('gugu MCP context has no guguHome; cannot save the attachment') }
-  const saved = await saveFileHandle(file, joinPath(home, 'chat-media'), attachment.fileName)
+  const saved = await saveToFileStore(file, home, attachment.fileName)
   const folder = attachment.source.kind === 'item'
     ? { file: groupFileLink(attachment.source.itemId, { version: attachment.source.version }), next: attachmentFolderLine(attachment.source.itemId, attachment.source.version) }
     : {}
@@ -2336,7 +2337,7 @@ async function handleFile(args, deps) {
         if (!home) { await resolved.dispose(); throw new Error('The native session file cache is unavailable') }
         mime ??= resolved.revision.content_type
         name ??= resolved.revision.file_name
-        const saved = await saveFileHandle(resolved, joinPath(home, 'session-media'), name)
+        const saved = await saveToFileStore(resolved, home, name)
         filePath = saved.file_path
       }
       if (!filePath) throw new Error('message_send_file: give file_path or an existing folder file')
@@ -2405,14 +2406,17 @@ async function handleFile(args, deps) {
       ? { file: groupFileLink(message.file_item_id, { version: message.file_version }), version: message.file_version }
       : {}
     const blocks = await messageDeliveryBlocks(deps, message.id)
-    return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...pinned, ...(blocks.length ? { not_delivered_to: blocks, delivery_note: '对方已归档、未送达; retained in history, no replay after restoration' } : {}),
+    // Size and type let the task timeline draw the same file card as the chat (sentMessageOf), without reading the row back.
+    const sent = parseAttachmentContent(String(message.content ?? ''), message)
+    const card = sent ? { size_bytes: sent.sizeBytes, mime_type: sent.mimeType, ...(typeof message.file_blob_id === 'string' ? { file_blob_id: message.file_blob_id } : {}) } : {}
+    return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...card, ...pinned, ...(blocks.length ? { not_delivered_to: blocks, delivery_note: '对方已归档、未送达; retained in history, no replay after restoration' } : {}),
       source_link: conversationLink(chatId, String(message.id).replace(/^msg:/, '')) })
   }
   if (args.action === 'download-attachment') {
     if (args.source_attachment_id) {
       const home = deps.context.guguHome
       if (!home) throw new Error('Gugu home is unavailable')
-      return JSON.stringify(await downloadSessionFile(await deps.attachmentsEndpoint(), String(args.source_attachment_id), deps.context.agentId, joinPath(home, 'session-media')))
+      return JSON.stringify(await downloadSessionFile(await deps.attachmentsEndpoint(), String(args.source_attachment_id), deps.context.agentId, fileStoreDirectory(home), undefined, true))
     }
     return downloadAttachment(String(args.source_message_id ?? ''), deps)
   }
@@ -2624,7 +2628,7 @@ export const TOOL_DEFS = [
   },
   {
     name: 'message_download_file',
-    description: 'Download original bytes from a visible chat message (source_message_id) or a session-message attachment reference (source_attachment_id). Returns file_path, actual size_bytes and full sha256; session files are verified against their reference.',
+    description: 'Download original bytes from a visible chat message (source_message_id) or a session-message attachment reference (source_attachment_id). Returns file_path (read_only: true means a shared file: do not change it or its permissions; to change it, write your version to a new file of your own), actual size_bytes and full sha256; session files are verified against their reference.',
     schema: z.object({ source_message_id: z.string().optional(), source_attachment_id: z.string().uuid().optional() }).refine(args => Boolean(args.source_message_id) !== Boolean(args.source_attachment_id), 'Give exactly one attachment source'),
     handler: (args, deps) => handleFile({ ...args, action: 'download-attachment' }, deps),
   },
@@ -2872,7 +2876,6 @@ export const TOOL_DEFS = [
       return result.map((row) => ({ ...row, is_self: row?.identity?.users?.id === deps.context.agentId }))
     },
   },
-  ...FORUM_TOOL_DEFS,
 ]
 
 MESSAGE_ROW_TOOLS = new Set(TOOL_DEFS.filter((d) => d.messageRows).map((d) => d.name))
@@ -2938,7 +2941,8 @@ export async function sendWidgetOf(context, args, content, injected = {}, state 
   if (!members.some(member => String(member.user_id) === context.agentId)) throw new Error('widget_send: the agent must be a member of this chat')
   const row = buildMessageRow(context, { id: randomUUID(), chatId, content, contentType: 'widget', replyToMessageId, threadRootId: context.threadRootId ?? null })
   await postCommandMessageRow(deps, row)
-  return `sent (id=${row.id})`
+  // The task timeline draws this send from its arguments and this receipt (sentMessageOf): the chat it landed in rides here.
+  return JSON.stringify({ status: 'sent', message_id: row.id, source_link: conversationLink(chatId, row.id) })
 }
 
 // ── MCP server（官方 SDK） ─────────────────────────────────────────

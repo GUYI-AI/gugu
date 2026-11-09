@@ -1,4 +1,5 @@
 /** @jsxImportSource solid-js */
+import { PasswordRequestCard, passwordRequest, PASSWORD_CARD_HEIGHT } from './PasswordRequestCard';
 import { conversationSpeaker, messageReplyReference } from '@session-chat/state/conversation-density';
 import { For, Show, createMemo } from 'solid-js';
 import { conversationHeaderLayout } from './conversation-header-layout';
@@ -29,7 +30,7 @@ import { measureUserMessage } from './user-message-metrics';
 import { userMessageActionsHeight, type MessageVars } from './metrics';
 import { conversationRoot, conversationHeader, conversationName, conversationTime, conversationProcessButton, conversationProcessChevron, conversationTimeSeparator, conversationReferenceSeparator } from './conversation-message.css';
 
-import { CONVERSATION_PREVIEW_MAX_H } from '@session-chat/components/engine/row-metrics';
+import { CONVERSATION_PREVIEW_MAX_H, USER_PREVIEW_MAX_H } from '@session-chat/components/engine/row-metrics';
 
 export function conversationContext(ctx: MeasureCtx, item?: ChatMessage): MeasureCtx {
   return { ...ctx,
@@ -38,8 +39,10 @@ export function conversationContext(ctx: MeasureCtx, item?: ChatMessage): Measur
 }
 
 export function conversationVars(item: ChatMessage, vars: MessageVars): MessageVars {
-  const long = !item.conversationFull && (item.text.length > 700 || item.text.split('\n').length > 10);
-  return { ...vars, footerH: CONVERSATION_FOOTER_H, collapsedMaxH: long ? CONVERSATION_PREVIEW_MAX_H : Number.MAX_SAFE_INTEGER, expandedMaxH: Number.MAX_SAFE_INTEGER };
+  // A person's message folds sooner than a reply: about five lines (owner 2026-11-07, 「折叠的 threshold 压小一点」).
+  const [chars, lines, cap] = item.role === 'user' ? [200, 5, USER_PREVIEW_MAX_H] : [700, 10, CONVERSATION_PREVIEW_MAX_H];
+  const long = !item.conversationFull && (item.text.length > chars || item.text.split('\n').length > lines);
+  return { ...vars, footerH: CONVERSATION_FOOTER_H, collapsedMaxH: long ? cap : Number.MAX_SAFE_INTEGER, expandedMaxH: Number.MAX_SAFE_INTEGER };
 }
 
 function segments(item: ChatMessage): ChatMessage[] {
@@ -88,10 +91,11 @@ function singleHeight(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars): nu
     return head.height + backgroundHeight(item, ctx) + (head.referenceInFooter ? measureUserMessage(item, conversationContext(ctx, item), conversationVars(item, vars)) : 0);
   }
   const header = item.conversationPart === 'body' ? 0 : headerLayout(item, ctx).height;
+  if (passwordRequest(item)) return header + PASSWORD_CARD_HEIGHT;
   const bodyVars = conversationVars(item, vars);
   // 时间、复制、编辑那一行照原气泡画在气泡下面(owner 定稿 0 号图);没有正文就没有气泡,也不留这一行。
   const bodyCtx = conversationContext(ctx, item);
-  const body = measureUserMessage(item, bodyCtx, bodyVars);
+  const body = passwordRequest(item) ? PASSWORD_CARD_HEIGHT : measureUserMessage(item, bodyCtx, bodyVars);
   // 折着 ⇔ 展开量出来比现在高;那时气泡下面多一行「展开全文」。
   const folded = bodyCtx.expandedId !== item.id && !isMessageEditing(item.id, ctx) && measureUserMessage(item, { ...bodyCtx, expandedId: item.id }, bodyVars) > body;
   const canCollapse = ctx.expanded(conversationBubbleKey(item)) && ctx.latestConversationMessageId !== item.id
@@ -159,8 +163,8 @@ function SingleConversationMessage(props: { data: ChatMessage; ctx: RenderCtx; v
       <ProcessBackgroundList ownerId={props.data.id} ctx={props.ctx} />
     </Show>
     <Show when={props.data.conversationPart !== 'head' || head().referenceInFooter}>
-      <UserMessageCard data={props.data} ctx={bodyCtx} vars={conversationVars(props.data, props.vars)} conversation sender={name}
-        footerReference={head().referenceInFooter ? reference : undefined} />
+      <Show when={passwordRequest(props.data)} fallback={<UserMessageCard data={props.data} ctx={bodyCtx} vars={conversationVars(props.data, props.vars)} conversation sender={name}
+        footerReference={head().referenceInFooter ? reference : undefined} />}>{request => <PasswordRequestCard request={request()} />}</Show>
     </Show>
   </div>;
 }

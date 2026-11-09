@@ -16,6 +16,7 @@ import type {
 } from '@shared/core/session-history/session-history';
 import { SESSION_HOME_SECTION_KEY } from '@shared/core/session-history/session-history';
 import { isMacHost } from '@shared/host-os';
+import '@/styles/tokens.css';
 import '@renderer/index.css';
 
 vi.mock('@renderer/features/settings/use-app-settings-key', () => ({ useAppSettingsKey: () => ({ value: {} }) }));

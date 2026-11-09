@@ -1,5 +1,5 @@
 // A cited place in a text file (群文件夹 引用 #7238): which lines, as a pill names them (`at`: `{ lines: '12-14', h, n? }`),
-// and finding them again once the file has changed. Pure: no page, no gugu.
+// and finding them again once the file has changed; or the words a link names (`find=`). Pure: no page, no gugu.
 
 /** Some lines' fingerprint: FNV-1a (32 bits) of their text as UTF-8, 8 hex digits — a pill's `h`. */
 export function fingerprint(text) {
@@ -62,4 +62,36 @@ export function relocate(text, [first, last], h, n = 1) {
   if (runs.length === 0 || runs.length < n) return null
   const best = runs.reduce((a, b) => (Math.abs(b - first) < Math.abs(a - first) ? b : a))
   return { first: best, last: best + (last - first), moved: true }
+}
+
+/** Where line `n` (from 1) of `text` starts; past the last line, the end. */
+function lineStart(text, n) {
+  let at = 0
+  for (let k = 1; k < n; k += 1) {
+    const next = text.indexOf('\n', at)
+    if (next < 0) return text.length
+    at = next + 1
+  }
+  return at
+}
+
+/**
+ * Where a link's `find=` words first stand in `text` (`[from, to)`, and the lines they are on): as written, else with case
+ * aside — within lines `span` first when the link names them too, then anywhere. Null when nowhere.
+ */
+export function findIn(text, words, span = null) {
+  if (!words) return null
+  const loose = new RegExp(words.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu')
+  const lineOf = (offset) => text.slice(0, offset).split('\n').length
+  for (const [start, end] of span ? [[lineStart(text, span[0]), lineStart(text, span[1] + 1)], [0, text.length]] : [[0, text.length]]) {
+    let from = text.indexOf(words, start)
+    let to = from + words.length
+    if (from < 0 || to > end) {
+      loose.lastIndex = start
+      const m = loose.exec(text)
+      ;[from, to] = m && m.index + m[0].length <= end ? [m.index, m.index + m[0].length] : [-1, -1]
+    }
+    if (from >= 0) return { from, to, lines: [lineOf(from), lineOf(Math.max(from, to - 1))] }
+  }
+  return null
 }

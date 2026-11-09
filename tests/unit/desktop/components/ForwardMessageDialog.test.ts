@@ -3,7 +3,7 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ForwardMessageDialog } from '../../../../apps/desktop/src/components/chat/ForwardMessageDialog'
-import { forwardPreview, forwardableChats } from '../../../../apps/desktop/src/components/chat/forwardMessageUtils'
+import { chatPickRows, forwardPreview, forwardableChats } from '../../../../apps/desktop/src/components/chat/forwardMessageUtils'
 import messagingZhCN from '../../../../apps/desktop/src/i18n/locales/zh-CN/messaging'
 import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
 function chat(overrides: Partial<ChatItem> = {}): ChatItem {
@@ -68,6 +68,24 @@ describe('forward helpers', () => {
     expect(forwardableChats(chats, 'src', 'alph', displayName)).toEqual([])
     expect(forwardableChats(chats, 'src', 'renamed', displayName).map((c) => c.id)).toEqual(['a'])
     expect(forwardableChats(chats, 'src', 'beta group', displayName).map((c) => c.id)).toEqual(['b'])
+  })
+  it('nests topics under their group; a search for a topic brings its group; a topic of the source stands alone, its group named', () => {
+    const chats = [
+      chat({ id: 'src', kind: 'group', name: 'Source' }),
+      chat({ id: 'g', kind: 'group', name: 'Design' }),
+      chat({ id: 'g-t', kind: 'topic', name: 'Icons', source_chat_id: 'g' }),
+      chat({ id: 'src-t', kind: 'topic', name: 'Launch', source_chat_id: 'src' }),
+      chat({ id: 'd', kind: 'dm', name: '', peer_user_id: 'u-a' }),
+    ]
+    const name = (item: ChatItem) => item.kind === 'dm' ? 'Alpha' : item.name ?? ''
+    const shape = (query: string) => chatPickRows(chats, 'src', query, name, {}).map((row) => ({ id: row.id, hint: row.hint, topics: row.topics?.map((topic) => topic.id) }))
+    expect(shape('')).toEqual([
+      { id: 'g', hint: undefined, topics: ['g-t'] },
+      { id: 'src-t', hint: 'Source', topics: undefined },
+      { id: 'd', hint: undefined, topics: undefined },
+    ])
+    expect(shape('icon')).toEqual([{ id: 'g', hint: undefined, topics: ['g-t'] }])
+    expect(chatPickRows(chats, 'src', '', name, {})[0].topics?.[0].avatar).toBeUndefined()
   })
 })
 let container: HTMLDivElement

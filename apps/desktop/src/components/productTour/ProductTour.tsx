@@ -46,13 +46,15 @@ export function ProductTour({ userId, steps, start, onDone }: {
 }) {
   const { t } = useTranslation('productTour')
   const remember = useRememberProductTourState(userId)
+  const [tourSteps, setTourSteps] = useState(steps)
   const [index, setIndex] = useState(() => Math.max(0, steps.indexOf(start)))
+  const [ended, setEnded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const saveTail = useRef(Promise.resolve())
   const card = useRef<HTMLDivElement>(null)
-  const step = steps[index]
-  const { target, rect } = useTourTarget(step)
-  const last = index === steps.length - 1
+  const step = tourSteps[index]
+  const { target, rect, measured } = useTourTarget(step)
+  const last = index === tourSteps.length - 1
 
   // 普通目标照常能点;之后键盘换步时,焦点回新卡片,不留在刚才的功能入口。
   useLayoutEffect(() => {
@@ -71,9 +73,10 @@ export function ProductTour({ userId, steps, start, onDone }: {
   const goTo = (next: number) => {
     setError(null)
     setIndex(next)
-    persist({ step: steps[next], status: 'active' })
+    persist({ step: tourSteps[next], status: 'active' })
   }
   const exit = (status: 'skipped' | 'done') => {
+    setEnded(true)
     persist({ step, status })
     onDone()
   }
@@ -82,7 +85,17 @@ export function ProductTour({ userId, steps, start, onDone }: {
 
   useEffect(() => { persist({ step, status: 'active' }) }, []) // eslint-disable-line react-hooks/exhaustive-deps -- 开始那一刻记一次
 
-  // 要动手的一步:点了高亮的目标才往下走。
+  // Remove unavailable entries from the route/count instead of leaving an
+  // invisible active step waiting for an impossible click.
+  useEffect(() => {
+    if (ended || !measured || target) return
+    if (last) { exit('done'); return }
+    const remaining = tourSteps.filter((_, at) => at !== index)
+    setTourSteps(remaining)
+    persist({ step: remaining[index], status: 'active' })
+  }, [ended, measured, target, last, tourSteps, index]) // eslint-disable-line react-hooks/exhaustive-deps -- Progress callbacks use this render's route; their identity must not restart a settled measurement.
+
+  // Opening the highlighted sample is an alternative to Next.
   useEffect(() => {
     if (!target?.action) return
     const element = target.element
@@ -98,7 +111,7 @@ export function ProductTour({ userId, steps, start, onDone }: {
       if (event.target instanceof Element && event.target.closest('[data-settings-modal-card]')) return
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); exit('skipped'); return }
       if (event.key === 'ArrowLeft') { event.preventDefault(); previous(); return }
-      if ((event.key === 'ArrowRight' || event.key === 'Enter') && !target?.action) {
+      if (event.key === 'ArrowRight' || event.key === 'Enter') {
         if (event.key === 'Enter' && event.target instanceof HTMLButtonElement && card.current?.contains(event.target)) return
         event.preventDefault()
         next()
@@ -116,7 +129,7 @@ export function ProductTour({ userId, steps, start, onDone }: {
     return () => document.removeEventListener('keydown', onKey, true)
   })
 
-  if (!target || !rect) return null
+  if (ended || !target || !rect) return null
   const copy = step === 'tasks' && target.action ? 'tasksSample' : step
   return <>
     <Spotlight rect={rect} />
@@ -125,8 +138,8 @@ export function ProductTour({ userId, steps, start, onDone }: {
         <Popover.Positioner anchor={target.element} side="right" align="start" alignOffset={-PAD} sideOffset={PAD + 12} collisionPadding={12} className="product-tour-positioner">
           <Popover.Popup ref={card} className="product-tour-bubble" role="dialog" aria-labelledby="product-tour-title" aria-describedby="product-tour-progress" initialFocus={() => card.current?.querySelector<HTMLElement>('[data-primary]') ?? card.current} data-testid={`product-tour-step-${step}`}>
             <Popover.Arrow className="product-tour-arrow" />
-            <div className="product-tour-kicker" id="product-tour-progress" aria-label={t('stepAria', { current: index + 1, total: steps.length })}>
-              {t('stepProgress', { current: index + 1, total: steps.length })}
+            <div className="product-tour-kicker" id="product-tour-progress" aria-label={t('stepAria', { current: index + 1, total: tourSteps.length })}>
+              {t('stepProgress', { current: index + 1, total: tourSteps.length })}
             </div>
             <h2 id="product-tour-title">{t(`steps.${copy}.title`)}</h2>
             <p>{t(`steps.${copy}.body`)}</p>
@@ -135,7 +148,7 @@ export function ProductTour({ userId, steps, start, onDone }: {
               {last ? <span /> : <Button variant="ghost" size="sm" onClick={() => exit('skipped')} data-testid="product-tour-skip">{t('skip')}</Button>}
               <div>
                 {index > 0 && <Button variant="ghost" size="sm" onClick={previous} data-testid="product-tour-previous">{t('previous')}</Button>}
-                {!target.action && <Button variant="primary" size="sm" data-primary onClick={next} data-testid="product-tour-next">{last ? t('done') : t('next')}</Button>}
+                <Button variant="primary" size="sm" data-primary onClick={next} data-testid="product-tour-next">{last ? t('done') : t('next')}</Button>
               </div>
             </footer>
           </Popover.Popup>

@@ -20,7 +20,11 @@ export type SidebarChatSignals = {
   readonly chatsUnread: number
   /** 每个项目群叫到你的未读:群主线(含回复串)全算,从它开出来的话题只算叫到你的;免打扰的不算;没有的群不在里面。 */
   readonly groupUnread: ReadonlyMap<string, number>
+  /** 项目群从哪个话题叫到了你:点项目行直接开它,读了 groupUnread 就减。没有叫到你的话题的群不在里面。 */
+  readonly groupCallingTopic: ReadonlyMap<string, SidebarCallingTopic>
 }
+
+export type SidebarCallingTopic = { readonly chatId: string; readonly name: string }
 
 export type SidebarChatView = {
   readonly focusedChatId: string | null
@@ -42,6 +46,7 @@ const NOTIFICATIONS_EVENT = 'gugu:sidebar-notifications-open'
 export function sidebarChatSignals(chats: readonly ChatItem[], projectGroupChats: ReadonlySet<string>, assistant: AssistantShellSnapshot | null = null): SidebarChatSignals {
   let chatsUnread = 0
   const groupUnread = new Map<string, number>()
+  const groupCallingTopic = new Map<string, SidebarCallingTopic>()
   for (const chat of chats) {
     if (chat.unread_count <= 0 || chat.is_muted || isDuplicateAssistantChat(chat, assistant)) continue
     const line = chat.kind === 'topic' ? (chat.source_chat_id ?? chat.id) : chat.id
@@ -49,9 +54,10 @@ export function sidebarChatSignals(chats: readonly ChatItem[], projectGroupChats
     const count = chatAttention(chat).forYou
     if (projectGroupChats.has(line)) {
       if (count > 0) groupUnread.set(line, (groupUnread.get(line) ?? 0) + count)
+      if (count > 0 && chat.kind === 'topic' && !groupCallingTopic.has(line)) groupCallingTopic.set(line, { chatId: chat.id, name: chat.name ?? '' })
     } else chatsUnread += count
   }
-  return { chatsUnread, groupUnread }
+  return { chatsUnread, groupUnread, groupCallingTopic }
 }
 
 const NO_VIEW: SidebarChatView = { focusedChatId: null, groups: [] }
@@ -91,7 +97,9 @@ export function publishSidebarChatSignals(next: SidebarChatSignals): void {
     current &&
     current.chatsUnread === next.chatsUnread &&
     current.groupUnread.size === next.groupUnread.size &&
-    [...next.groupUnread].every(([chatId, count]) => current.groupUnread.get(chatId) === count)
+    [...next.groupUnread].every(([chatId, count]) => current.groupUnread.get(chatId) === count) &&
+    current.groupCallingTopic.size === next.groupCallingTopic.size &&
+    [...next.groupCallingTopic].every(([chatId, topic]) => current.groupCallingTopic.get(chatId)?.chatId === topic.chatId && current.groupCallingTopic.get(chatId)?.name === topic.name)
   ) return
   write(SIGNALS_KEY, SIGNALS_EVENT, next)
 }

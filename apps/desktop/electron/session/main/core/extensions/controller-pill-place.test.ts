@@ -6,7 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 /**
  * App 引用 pill, the desktop's half (148 17:21): a pill opens its file through the shell's one 「open a group file」 call
  * (`groupFileOpener`); when one App opens it, main tells that App the place right there — the `link` event a gugu link
- * brings, held for the page about to open (each open is a page of its own) — as `openExtensionLinkWith` opens and places.
+ * brings: told now to a page of that file already open there, else held for the page about to open — as
+ * `openExtensionLinkWith` opens and places.
  */
 
 const userDataDir = mkdtempSync(join(tmpdir(), 'gugu-ext-pill-place-'));
@@ -25,26 +26,26 @@ vi.mock('./app-files', async (importOriginal) => ({
   groupFile: async (chatId: string, itemId: string) => ({ chatId, itemId, name: 'deck.pptx', typedName: 'deck.pptx' }),
   openerChoice: () => opener.choice,
 }));
-const placed = vi.hoisted(() => ({ deliverToOpeningPage: vi.fn() }));
+const placed = vi.hoisted(() => ({ deliverToChatFilePage: vi.fn() }));
 vi.mock('./extension-bridge', async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  deliverToOpeningPage: placed.deliverToOpeningPage,
+  deliverToChatFilePage: placed.deliverToChatFilePage,
 }));
 
 const { extensionsController } = await import('./controller');
 
-beforeEach(() => placed.deliverToOpeningPage.mockClear());
+beforeEach(() => placed.deliverToChatFilePage.mockClear());
 
 describe('a pill opens its file: the App that opens it is told the place (App 引用 pill)', () => {
-  it('one App opens it: that App, in that chat, gets the place as a link event for the page about to open', async () => {
+  it('one App opens it: that App, in that chat, gets the place as a link event for its page of that file', async () => {
     opener.choice = { kind: 'one', candidate: office };
     const answer = await extensionsController.groupFileOpener({ chatId: 'chat-1', itemId: 'item-1', at: { slide: '3', shape: '12', k: '2' } });
     expect(answer).toMatchObject({ success: true, data: { choice: { kind: 'one' } } });
-    expect(placed.deliverToOpeningPage).toHaveBeenCalledWith(
+    expect(placed.deliverToChatFilePage).toHaveBeenCalledWith(
       'office',
       // `file`: the file the place is in (#7257), so the page that gets it can tell it is its file's.
       { type: 'link', tab: 'main', path: '', query: { slide: '3', shape: '12', k: '2' }, file: 'item-1' },
-      { chat: 'chat-1' },
+      'chat-1',
       // The file it is for: only a page of that file takes it (复核 71c15165 要改 1).
       'item-1',
     );
@@ -55,6 +56,6 @@ describe('a pill opens its file: the App that opens it is told the place (App �
     await extensionsController.groupFileOpener({ chatId: 'chat-1', itemId: 'item-1' });
     opener.choice = { kind: 'choose', suffix: '.pptx', candidates: [office, board] };
     await extensionsController.groupFileOpener({ chatId: 'chat-1', itemId: 'item-1', at: { slide: '3' } });
-    expect(placed.deliverToOpeningPage).not.toHaveBeenCalled();
+    expect(placed.deliverToChatFilePage).not.toHaveBeenCalled();
   });
 });

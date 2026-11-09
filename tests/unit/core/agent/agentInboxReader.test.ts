@@ -40,7 +40,7 @@ import { memoryGroupRulesLedger } from '@gugu/core/local/agent/groupRulesDeliver
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope'
 import { parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import { storedMessageLink } from '@gugu/core/shared/ui/guguLink'
-import { forumRowFromRpc } from '@gugu/core/local/agent/forumInbox'
+import { appInboxUnreadRow } from '@gugu/core/local/agent/appInbox'
 import type { SessionArchivalState } from '@gugu/core/shared/sessionArchival'
 
 const AGENT = 'agent-0000-0000-0000-000000000001'
@@ -336,6 +336,73 @@ describe('an enqueuing host (session-life)', () => {
     expect(cloud.markReadCalls).toEqual([{ chatId: chat, messageId: row(1).id }, { chatId: chat, messageId: row(2).id }])
   })
 
+  // A read receipt the host writes after acceptance runs outside any pull, and the real host (session-life) does not wait
+  // for it. A network error or 5xx schedules a bounded re-pull of its own; a pull succeeding does not reset it.
+  describe('a failed host read receipt', () => {
+    const host = (cloud: FakeCloud, markRead: AgentInboxReaderDeps['markRead']) => {
+      const accepted = new Set<string>()
+      const delivered: string[] = []
+      let pulls = 0
+      const { deps } = makeDeps(cloud, {
+        markRead,
+        fetchUnread: async (input) => { pulls += 1; return cloud.fetchUnread(input) },
+        // The host delivers a new row once; for every accepted row (new, or seen again) it writes the receipt without waiting.
+        inject: async (input) => {
+          const sources = input.sources ?? []
+          for (const source of sources) if (!accepted.has(source.row.id)) { accepted.add(source.row.id); delivered.push(source.row.id) }
+          void markInboxRowsRead(AGENT, sources, deps).catch(() => undefined)
+          return 'enqueued'
+        },
+      })
+      return { deps, delivered, pulls: () => pulls }
+    }
+    const failing = (status: number | 'network') => Object.assign(status === 'network' ? new TypeError('fetch failed') : new Error('mark_read_on_deliver failed'), status === 'network' ? {} : { status })
+
+    it('is written by a re-pull without another message, and the row is delivered once', async () => {
+      vi.useFakeTimers()
+      try {
+        const cloud = cloudWith(1)
+        let failNext = true
+        const { deps, delivered } = host(cloud, async (input) => {
+          if (failNext) { failNext = false; throw failing('network') }
+          await cloud.markRead(input)
+        })
+        await pullAgentInbox(AGENT, deps)
+        await vi.advanceTimersByTimeAsync(0)
+        expect(cloud.readRows.has(`${row(1).id}:${AGENT}`)).toBe(false)
+        await vi.advanceTimersByTimeAsync(1_000)
+        await vi.waitFor(() => expect(cloud.readRows.has(`${row(1).id}:${AGENT}`)).toBe(true))
+        expect(delivered).toEqual([row(1).id])
+      } finally { vi.useRealTimers() }
+    })
+
+    it('a receipt that keeps failing with a 5xx re-pulls a bounded number of times, even though every pull succeeds', async () => {
+      vi.useFakeTimers()
+      try {
+        const cloud = cloudWith(1)
+        const { deps, delivered, pulls } = host(cloud, async () => { throw failing(503) })
+        await pullAgentInbox(AGENT, deps)
+        await vi.advanceTimersByTimeAsync(10 * 60_000)
+        // The first pull, then one re-pull per backoff round (1, 2, 4, 8, 16 s), then nothing more.
+        expect(pulls()).toBe(1 + 5)
+        await vi.advanceTimersByTimeAsync(10 * 60_000)
+        expect(pulls()).toBe(1 + 5)
+        expect(delivered).toEqual([row(1).id])
+      } finally { vi.useRealTimers() }
+    })
+
+    it('a refusal that is neither a network error nor a 5xx is not retried', async () => {
+      vi.useFakeTimers()
+      try {
+        const cloud = cloudWith(1)
+        const { deps, pulls } = host(cloud, async () => { throw failing(403) })
+        await pullAgentInbox(AGENT, deps)
+        await vi.advanceTimersByTimeAsync(10 * 60_000)
+        expect(pulls()).toBe(1)
+      } finally { vi.useRealTimers() }
+    })
+  })
+
   it('a rejected row is terminal while earlier queued rows remain unread', async () => {
     const cloud = cloudWith(1, 2)
     cloud.post({ ...row(3), id: `msg:${row(3).id}` })
@@ -543,31 +610,30 @@ describe('inbox batch request budgets', () => {
       .toEqual({ first: { fetches: 1, identities: 0, contexts: [false, false, false] }, second: { fetches: 1, identities: 1, contexts: [true] } })
   })
 
-  function forumBatch(timing: AgentInboxDeliveryTiming) {
-    const postId = '63000000-0000-4000-8000-000000000001'
-    const rows = [1, 2].map((seq) => forumRowFromRpc({
-      post_id: postId, seq, kind: 'assigned', entity_id: AGENT, actor_user_id: HUMAN, actor_name: 'Ada', actor_is_agent: false,
-      created_at: '2026-08-29T00:00:00Z', post_title: 'Batch budget', post_body: `Forum message ${seq}`,
-      post_author_id: HUMAN, post_author_name: 'Ada', bounty: null, reply_body: null, reply_to_poster_only: null, reply_to: null, reply_count: 0,
+  function appBatch(timing: AgentInboxDeliveryTiming) {
+    const key = '63000000-0000-4000-8000-000000000001'
+    const rows = [1, 2].map((seq) => appInboxUnreadRow('notes', {
+      key, seq, actor_user_id: HUMAN, actor_name: 'Ada', actor_is_agent: false, created_at: '2026-08-29T00:00:00Z',
+      ref: `note:${key}`, context: 'A note', arrival: 'Answer with notes__reply.', content: `App message ${seq}`,
     }))
-    const ackForum = vi.fn(async () => {})
-    const d = makeDeps(new FakeCloud(), { fetchForumUnread: async () => rows, ackForum, deliveryTiming: () => timing })
-    return { ...d, postId, ackForum }
+    const ackApp = vi.fn(async () => {})
+    const d = makeDeps(new FakeCloud(), { fetchAppUnread: async () => rows, ackApp, deliveryTiming: () => timing })
+    return { ...d, key, ackApp }
   }
 
-  it('f1: acknowledges only the maximum forum sequence in a merged admission', async () => {
-    const d = forumBatch('next-tool-call')
+  it('f1: acknowledges only the maximum App sequence in a merged admission', async () => {
+    const d = appBatch('next-tool-call')
     await pullAgentInbox(AGENT, d.deps)
     expect(d.injections).toHaveLength(1)
-    expect(d.ackForum.mock.calls).toEqual([[{ agentUserId: AGENT, postId: d.postId, seq: 2 }]])
+    expect(d.ackApp.mock.calls).toEqual([[{ source: 'notes', agentUserId: AGENT, key: d.key, seq: 2 }]])
   })
 
-  it('f2: idle forum admissions still acknowledge each admitted row immediately', async () => {
-    const d = forumBatch('idle-only')
+  it('f2: idle App admissions still acknowledge each admitted row immediately', async () => {
+    const d = appBatch('idle-only')
     await pullAgentInbox(AGENT, d.deps)
     expect(d.injections).toHaveLength(2)
-    expect(d.ackForum.mock.calls).toEqual([
-      [{ agentUserId: AGENT, postId: d.postId, seq: 1 }], [{ agentUserId: AGENT, postId: d.postId, seq: 2 }],
+    expect(d.ackApp.mock.calls).toEqual([
+      [{ source: 'notes', agentUserId: AGENT, key: d.key, seq: 1 }], [{ source: 'notes', agentUserId: AGENT, key: d.key, seq: 2 }],
     ])
   })
 })

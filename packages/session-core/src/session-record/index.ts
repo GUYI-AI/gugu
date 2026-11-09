@@ -6,6 +6,8 @@
  * `@gugu/session-core/session-record/contract` 那条出口 —— 从这里取会把 node 依赖拖进浏览器包。
  */
 export * from './contract';
+export { readNativeInputTail, type NativeInputTail } from './native-input-evidence';
+export { fitsTimelineArchiveSourceBudget } from './archive-budget';
 
 export {
   createSessionTimeline,

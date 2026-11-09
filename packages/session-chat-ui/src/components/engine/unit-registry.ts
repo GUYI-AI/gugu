@@ -16,6 +16,7 @@
  */
 
 import { compactionUnitDef } from '@session-chat/components/rows/boundary/compaction.def';
+import { activityUnitDef } from '@session-chat/components/rows/agent-activity/activity.def';
 import { contextResetUnitDef } from '@session-chat/components/rows/boundary/context-reset.def';
 import { sessionConditionUnitDef } from '@session-chat/components/rows/boundary/session-condition.def';
 import { backgroundTasksUnitDef } from '@session-chat/components/rows/background-tasks/background-tasks.def';
@@ -128,7 +129,7 @@ const messageSegmenter: ItemSegmenter = {
     // message is text a person typed, and quoting it is not declining anything.
     if (data.role === 'assistant' && isGuguSilence(data.text, { streaming: data.streaming })) return [];
     // 对话布局里回复的头那一行(名字 + 过程行)不带正文,正文在下面的气泡行里。
-    if (!ctx.active && data.role === 'assistant' && !data.text.trim() && !data.attachments?.length && data.conversationPart !== 'head') return [];
+    if (!ctx.active && data.role === 'assistant' && !data.text.trim() && !data.attachments?.length && !data.sentMessages?.length && data.conversationPart !== 'head') return [];
     const u = unit('message', item, data, { key: 'self' });
     u.chrome = data.hookNotice ? COMPOSITE_CHROME : MESSAGE_CHROME;
     return [u];
@@ -143,7 +144,7 @@ const agentSendSegmenter: ItemSegmenter = {
   kind: 'agent-send',
   segment: (item, ctx) => {
     const send = item as AgentSendItem;
-    const said = { kind: 'message', id: send.id, seq: 0, role: 'assistant', text: send.send.text } as ChatMessage;
+    const said = { kind: 'message', id: send.id, seq: 0, role: 'assistant', text: send.send.text, ...(send.sentMessages ? { sentMessages: send.sentMessages } : {}) } as ChatMessage;
     const body = messageSegmenter.segment(said, ctx);
     if (body.length === 0) return [];
     const to = unit('agent-send-to', send, send, { key: 'to' });
@@ -290,6 +291,7 @@ export const SEGMENTERS: Record<string, ItemSegmenter> = {
  * Composite item unit defs also handle their own internal layout.
  */
 export const UNIT_REGISTRY: Record<string, RegistryUnitDef> = {
+  'agent-activity': activityUnitDef as unknown as RegistryUnitDef,
   'conversation-process-steps': createProcessStepsUnitDef(() => UNIT_REGISTRY) as unknown as RegistryUnitDef,
   // Message unit (single unit per message, renders block stack internally)
   message: messageUnitDef as unknown as RegistryUnitDef,

@@ -20,6 +20,8 @@ export class TerminalManagerStore implements IDisposable {
   /** Session layer keyed by terminal id — created alongside data, connected lazily. */
   sessions = observable.map<string, PtySession>();
   private readonly _disposeReaction: () => void;
+  /** New terminals whose shell has not started yet: the tab is open, the record only exists here. */
+  private readonly _starting = new Map<string, { gridMeasured(dims?: { cols: number; rows: number }): void; created: Promise<Terminal | undefined> }>();
 
   constructor(projectId: string, sessionId: string) {
     this.projectId = projectId;
@@ -57,7 +59,7 @@ export class TerminalManagerStore implements IDisposable {
           }
 
           // Remove stale entries.
-          const staleIds = Array.from(this.terminals.keys()).filter((id) => !incomingIds.has(id));
+          const staleIds = Array.from(this.terminals.keys()).filter((id) => !incomingIds.has(id) && !this._starting.has(id));
           for (const id of staleIds) {
             this.sessions.get(id)?.destroy();
             this.sessions.delete(id);
@@ -73,7 +75,14 @@ export class TerminalManagerStore implements IDisposable {
     return this.list.data !== null;
   }
 
-  async createTerminal(params: CreateTerminalParams): Promise<Terminal> {
+  /**
+   * @@@spawn-at-measured-grid - the record exists at once, so the tab opens without waiting for a process. The shell starts when
+   * the xterm in that tab has measured its grid: a shell started at a default size and resized while printing its first prompt
+   * leaves that prompt cut off or zsh's stray `%`, and the half-width pane beside a conversation is always a resize away from it.
+   * The xterm reports `undefined` if it cannot measure at all, and the shell then starts at the default size. A tab that is
+   * never on screen starts no shell. `created` settles when the shell has started; undefined = the terminal was closed first.
+   */
+  createTerminal(params: CreateTerminalParams): { id: string; created: Promise<Terminal | undefined> } {
     const defaultShell = getAppSettingValueSnapshot('terminal')?.defaultShell ?? 'system';
     const optimistic: Terminal = {
       id: params.id,
@@ -82,32 +91,40 @@ export class TerminalManagerStore implements IDisposable {
       shellId: params.shell ?? defaultShell,
       name: params.name,
     };
-
+    let gridMeasured!: (dims?: { cols: number; rows: number }) => void;
+    const grid = new Promise<{ cols: number; rows: number } | undefined>((resolve) => {
+      gridMeasured = resolve;
+    });
+    const created = grid
+      .then(async (initialSize) => {
+        if (!this.terminals.has(params.id)) return undefined;
+        const terminal = await rpc.terminals.createTerminal(initialSize ? { ...params, initialSize } : params);
+        runInAction(() => {
+          const store = this.terminals.get(params.id);
+          if (store) Object.assign(store.data, terminal);
+        });
+        return terminal;
+      })
+      .catch((error: unknown) => {
+        runInAction(() => {
+          this.sessions.get(params.id)?.destroy();
+          this.sessions.delete(params.id);
+          this.terminals.delete(params.id);
+        });
+        throw error;
+      })
+      .finally(() => {
+        this._starting.delete(params.id);
+      });
+    this._starting.set(params.id, { gridMeasured, created });
     runInAction(() => {
       this.terminals.set(params.id, new TerminalStore(optimistic));
       this.sessions.set(params.id, this.createSession(optimistic));
     });
-
-    try {
-      const terminal = await rpc.terminals.createTerminal(params);
-      runInAction(() => {
-        const store = this.terminals.get(params.id);
-        if (store) {
-          Object.assign(store.data, terminal);
-        }
-      });
-      return terminal;
-    } catch (err) {
-      runInAction(() => {
-        this.sessions.get(params.id)?.destroy();
-        this.sessions.delete(params.id);
-        this.terminals.delete(params.id);
-      });
-      throw err;
-    }
+    return { id: params.id, created };
   }
 
-  async createDefaultTerminal(shell?: TerminalShellId): Promise<Terminal> {
+  createDefaultTerminal(shell?: TerminalShellId): { id: string; created: Promise<Terminal | undefined> } {
     const names = Array.from(this.terminals.values()).map((t) => t.data.name);
     const name = nextTerminalName(names);
     const id = crypto.randomUUID();
@@ -132,6 +149,10 @@ export class TerminalManagerStore implements IDisposable {
     });
 
     try {
+      // Closed while its shell is still starting: end it after it has started, or the delete finds nothing and the shell lives on.
+      const starting = this._starting.get(terminalId);
+      starting?.gridMeasured();
+      await starting?.created.catch(() => undefined);
       await rpc.terminals.deleteTerminal({
         projectId: this.projectId,
         sessionId: this.sessionId,
@@ -189,9 +210,12 @@ export class TerminalManagerStore implements IDisposable {
     const handlers = makeFileLinkHandlers(terminal.projectId, terminal.sessionId);
     return new PtySession(
       makePtySessionId(terminal.projectId, terminal.sessionId, terminal.id),
-      () => this.hydrateTerminal(terminal.id),
+      async () => {
+        if (!this._starting.has(terminal.id)) await this.hydrateTerminal(terminal.id);
+      },
       handlers.onOpenFile,
-      handlers.onOpenExternal
+      handlers.onOpenExternal,
+      { onGridMeasured: (dims) => this._starting.get(terminal.id)?.gridMeasured(dims) }
     );
   }
 }

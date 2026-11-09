@@ -1,12 +1,12 @@
 import { dirname, join, resolve } from 'node:path'
-import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { AssistantFileError } from '@gugu/core/shared/assistantFileError'
 import {
   ASSISTANT_COMPUTER_WORKDIR_NAME, assistantBrief, assistantGuide,
   assistantHomePaths, upsertAssistantGuide, withDeniedTools, type AssistantHomeKind,
 } from '@gugu/core/shared/assistantPolicy'
 import type { AssistantEngine } from '../../src/lib/assistantHomeIpc'
+import { preserveDamagedAssistantSettings, readAssistantFile, writeAssistantFile } from './assistant-files'
 
 const refreshes = new Map<string, Promise<void>>()
 
@@ -32,36 +32,34 @@ async function writeAssistantContext(cwd: string, kind: AssistantHomeKind, home:
   const paths = assistantHomePaths(home, cwd, kind)
   const brief = assistantBrief(kind, reference, paths.memoryDir)
   const instructions = paths.instructions
-  const current = await readFile(instructions, 'utf8').catch((error: NodeJS.ErrnoException) => {
-    if (error.code === 'ENOENT') return ''
-    throw error
-  })
+  const current = await readAssistantFile(instructions) ?? ''
   const settings = kind === 'computer' && engine === 'claude' ? [[paths.settings, await localAssistantSettings(paths.settings, cwd)]] : []
   // Install the complete reference first, so the brief never points to an absent file.
   for (const [path, content] of [[reference, full], [instructions, upsertAssistantGuide(current, brief)], ...settings]) {
-    const old = path === instructions ? current : await readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => {
-      if (error.code === 'ENOENT') return null
-      throw error
-    })
+    const old = path === instructions ? current : await readAssistantFile(path)
     if (old === content) continue
-    await mkdir(dirname(path), { recursive: true })
-    const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`
-    await writeFile(tmp, content, 'utf8')
-    await rename(tmp, path)
+    await writeAssistantFile(path, content)
   }
 }
 
 /** Project-only settings still load ancestor CLAUDE.md files (CLI 2.1.306).
  * Exclude that coding context while retaining this assistant's own instructions. */
 async function localAssistantSettings(path: string, cwd: string): Promise<string> {
-  const raw = await readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => {
-    if (error.code === 'ENOENT') return '{}'
-    throw error
-  })
-  const settings = JSON.parse(withDeniedTools(raw)) as Record<string, unknown>
-  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('Assistant settings must be an object')
-  const existing = settings.claudeMdExcludes ?? []
-  if (!Array.isArray(existing) || existing.some(value => typeof value !== 'string')) throw new Error('Assistant instruction exclusions must be strings')
+  let raw = await readAssistantFile(path)
+  // Damaged settings are replaced only if they are still the bytes we read; otherwise judge the newer content.
+  for (let attempt = 0; attempt < 3 && raw !== null && /^[\0\s]*$/u.test(raw); attempt++) {
+    if (await preserveDamagedAssistantSettings(path, raw)) { raw = null; break }
+    raw = await readAssistantFile(path)
+  }
+  let settings: Record<string, unknown>
+  let existing: string[]
+  try {
+    settings = JSON.parse(withDeniedTools(raw)) as Record<string, unknown>
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('Assistant settings must be an object')
+    const excluded = settings.claudeMdExcludes ?? []
+    if (!Array.isArray(excluded) || excluded.some(value => typeof value !== 'string')) throw new Error('Assistant instruction exclusions must be strings')
+    existing = excluded
+  } catch (cause) { throw new AssistantFileError(path, 'invalid', cause) }
   const excluded: string[] = []
   for (let parent = dirname(resolve(cwd)); ; parent = dirname(parent)) {
     const literal = parent.replaceAll('\\', '/').replace(/[?*[\]{}()!+@]/g, '\\$&')

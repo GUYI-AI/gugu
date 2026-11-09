@@ -1,6 +1,8 @@
 import type { ContentContextMenu, ContentMenuItem } from '../session/shared/content-context-menu'
+import type { MessageActionTarget } from '../components/chat/messageActionItems'
 
 export const RENDERER_CONTENT_MENU_OPEN = 'gugu:content-menu-open'
+export const RENDERER_MESSAGE_MENU_OPEN = 'gugu:message-menu-open'
 let pending: { id: string; resolve: (action: string | null) => void } | null = null
 
 /** A DOM range stays inside the renderer event; it never crosses the host IPC boundary. */
@@ -21,4 +23,11 @@ export function finishRendererContentMenu(requestId: string, actionId?: string):
   pending.resolve(actionId ?? null)
   pending = null
   return true
+}
+
+/** A message menu asked for by the task timeline, drawn by the app's host with the chat's own MsgMoreMenu. */
+export type RendererMessageMenu = MessageActionTarget & { x: number; y: number; requestId: string }
+
+export function showRendererMessageMenu(menu: Omit<RendererMessageMenu, 'requestId'>): void {
+  window.dispatchEvent(new CustomEvent<RendererMessageMenu>(RENDERER_MESSAGE_MENU_OPEN, { detail: { ...menu, requestId: crypto.randomUUID() } }))
 }

@@ -1,19 +1,18 @@
 <div align="center">
 <a id="readme-top"></a>
 
-# 咕咕 Gugu
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-logo-dark-20261108.png">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-logo-light-20261108.png" width="300" alt="咕咕 Gugu">
+</picture>
 
-**咕咕是一个面向 AGI 的应用。**
+# 为 AGI 打造的应用。
 
-### 别自己做，让 Agent 来。
-
-你把事情直接交给 Agent，它按任务需要调用工具和设备，组织协作，交回结果。
+AGI 不会独自到来，它将以群体的形式到来。咕咕把你的 agent 和伙伴连在一起：共享上下文、接力干活、一起思考。
 
 [English](README.md) · **简体中文** · [关于咕咕](#关于咕咕) · [官网](https://gugu.nextmind.space/zh/) · [文档](https://gugu.nextmind.space/help/) · [产品对比](https://gugu.nextmind.space/help/comparison/overview/) · [微信群](#交流)
 
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code-C76B4A?style=flat-square)](#主要功能) [![Codex](https://img.shields.io/badge/agent-Codex-252525?style=flat-square)](#主要功能) [![MCP](https://img.shields.io/badge/tools-MCP-6A50D4?style=flat-square)](#主要功能) [![Skills](https://img.shields.io/badge/workflows-Skills-328788?style=flat-square)](#主要功能) [![Gugu Apps](https://img.shields.io/badge/extensions-Gugu%20Apps-E58F28?style=flat-square)](#主要功能)
-
-<img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-banner-zh-20261031-v66.webp" width="100%" alt="咕咕 Gugu">
 
 </div>
 

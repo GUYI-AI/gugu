@@ -963,6 +963,17 @@ export interface SessionBundleDescriptor {
    * 不声明 = 咕咕还没核过这一家。形状与判据见 `HarnessSelfUpdateControl`。
    */
   selfUpdate?: HarnessSelfUpdateControl;
+  /**
+   * Turn off what this harness sends to its vendor by itself (telemetry, transcript upload): sessions
+   * carry Gugu chat content and identity. Read through `harnessPinnedEnv`, so every process Gugu starts
+   * for this harness gets it, not just the session. Not declared = not checked for this harness.
+   */
+  vendorDataOff?: { env: Readonly<Record<string, string>>; evidence: string };
+  /**
+   * The variable that stops a serve process reading workspace config. The serve/attach adapter sets it when
+   * the cwd is Gugu's own task home. Named per harness: a fork ignores another brand's variable silently.
+   */
+  projectConfigDisableEnv?: string;
 }
 
 /**
@@ -993,6 +1004,13 @@ export function harnessSelfUpdateLaunch(
   if (control?.kind === 'session-env') return { env: control.env, args: [] };
   if (control?.kind === 'session-argv') return { env: {}, args: control.args };
   return { env: {}, args: [] };
+}
+
+/** Env Gugu pins for every process of this harness; it beats the user's own values (see `composeAgentSpawnEnv`). */
+export function harnessPinnedEnv(
+  descriptor: Pick<SessionBundleDescriptor, 'selfUpdate' | 'vendorDataOff'>
+): Readonly<Record<string, string>> {
+  return { ...harnessSelfUpdateLaunch(descriptor).env, ...descriptor.vendorDataOff?.env };
 }
 
 /**
@@ -1091,6 +1109,7 @@ export const MODEL_CONFIG_DIALECTS = [
   'kimi-model-env',
   'qoder-byok-settings',
   'mimocode-config-content',
+  'kilocode-config-content',
   'copilot-provider-env',
   'zcode-provider-table',
   'codebuddy-settings-env',
@@ -1099,7 +1118,7 @@ export const MODEL_CONFIG_DIALECTS = [
 
 export type ModelConfigDialect = (typeof MODEL_CONFIG_DIALECTS)[number];
 
-export const MODEL_CONFIG_DIALECT = { requiresContextWindow: new Set<ModelConfigDialect>(['opencode-config-content', 'mimocode-config-content']) };
+export const MODEL_CONFIG_DIALECT = { requiresContextWindow: new Set<ModelConfigDialect>(['opencode-config-content', 'mimocode-config-content', 'kilocode-config-content']) };
 
 /**
  * 签发响应的 `callable_routes`(#6921):网关路由原文(`/v1/images/generations`)→ 这枚会话令牌在那条路由上能调的模型。
@@ -1986,6 +2005,14 @@ const sessionBundleDescriptorSchema: z.ZodType<SessionBundleDescriptor> = z.obje
     .optional(),
   /** ⚠️ 同上:少了这一条,`selfUpdate` 会被 zod 静默剥掉,宿主读到 undefined,会话照旧自更新。 */
   selfUpdate: harnessSelfUpdateControlSchema.optional(),
+  /** Same as above: not in the schema = stripped by zod, and the vendor keeps receiving data. */
+  vendorDataOff: z.object({
+    env: z.record(z.string().min(1), z.string()).refine((env) => Object.keys(env).length > 0, {
+      message: 'vendorDataOff must name at least one variable',
+    }),
+    evidence: citedEvidenceSchema('vendor-data'),
+  }).strict().optional(),
+  projectConfigDisableEnv: z.string().min(1).optional(),
   /**
    * 必答项 —— ❌ **不给** `.optional()`：没有默认值就是这条规则的全部力气所在（#4834）。
    * ⚠️ 同上:漏进 schema 会被 zod 静默剥掉,于是内核读到 `undefined`、退回「有 configRoot

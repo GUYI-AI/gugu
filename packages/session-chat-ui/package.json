@@ -17,6 +17,7 @@
     "./tool-run": "./src/state/tool-run.ts",
     "./background-rosters": "./src/lib/background-rosters.ts",
     "./opened-outputs": "./src/state/opened-outputs.ts",
+    "./activity-preview": "./src/state/activity-preview.ts",
     "./agent-send": "./src/state/agent-send.ts",
     "./source-preview": "./src/lib/source-preview.ts",
     "./source-preview-style": "./src/styles/source-preview.css.ts",

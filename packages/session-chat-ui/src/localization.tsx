@@ -19,6 +19,24 @@ export type ChatTranslationSubscriber = (listener: () => void) => () => void;
  * 只是把发现时机从运行时提前到编译时。
  */
 const fallbackMessages = {
+  'transcript.activityReceivedOne': "Received {count} message from {names}",
+  'transcript.activitySentOne': "Sent {count} message to {names}",
+  'transcript.activityGroupSentOne': "Sent {count} message in {names}",
+  'transcript.activityMoreGroups': " and others ({count} groups)",
+  'transcript.activityMoreDestinations': " and others ({count} destinations)",
+  'transcript.activityAgent': "agent",
+  'transcript.activityGroup': "group",
+  'transcript.activitySeparator': ", ",
+  'transcript.activityMore': " and others ({count} agents)",
+  'transcript.activityReceived': "Received {count} messages from {names}",
+  'transcript.activitySent': "Sent {count} messages to {names}",
+  'transcript.activitySending': "Sending to {names}",
+  'transcript.activityGroupSent': "Sent {count} messages in {names}",
+  'transcript.activityExchanged': "Exchanged {count} messages with {names}",
+  'transcript.activityReplyToYou': "Replied to you in {names}",
+  'transcript.activityExpand': "Show activity: {summary}",
+  'transcript.activityCollapse': "Hide activity: {summary}",
+
   'transcript.failed': 'Failed',
   'transcript.error': 'error',
   'transcript.awaitingPermission': 'Awaiting permission',
@@ -121,9 +139,9 @@ const fallbackMessages = {
   'transcript.waitingHostNotReady': 'Machine not ready',
   'transcript.waitingSendInterrupted': 'Send interrupted',
   'transcript.waitingAcknowledgement': 'Awaiting acknowledgement',
-  'transcript.sendFailed': 'Send failed',
-  'transcript.sendUnknown': 'Delivery unknown; not resent',
-  'transcript.retrySend': 'Retry',
+  'transcript.sendFailed': 'Failed to send',
+  'transcript.sendUnknown': 'Failed to send',
+  'transcript.retrySend': 'Resend',
   'transcript.resendInput': 'Resend',
   'transcript.processStepsOne': '{count} step',
   'transcript.processSteps': '{count} steps',
@@ -190,9 +208,10 @@ const fallbackMessages = {
   'transcript.deliveryViaApp': 'from app {app}',
   'transcript.deliveryViaSession': 'from a task',
   'transcript.deliveryViaExtension': 'from an App',
-  'transcript.deliveryViaForum': 'from the forum',
   'transcript.deliveryFromGugu': 'from 咕咕',
   'transcript.deliveryScheduled': 'scheduled, due now',
+  'transcript.scheduledTask': 'Scheduled task',
+  'transcript.scheduledTaskTitled': 'Scheduled task: {title}',
   'transcript.deliveryScheduledTitled': 'scheduled “{title}”, due now',
   'transcript.deliveryDetails': 'Details',
   'transcript.deliveryReplyTo': 'Replying to {from}: {preview}',
@@ -266,6 +285,8 @@ const fallbackMessages = {
   'transcript.sessionNotice.modelSubstitutedUnknown': 'The engine is not running the model picked',
   'transcript.sessionNotice.effortUnavailable':
     'The reasoning level picked is not accepted by this model — running {running} instead',
+  'transcript.sessionNotice.modelLeaksToolMarkers':
+    '{running} may show raw tool-call markers in its replies. The tools still run; another model avoids them',
   // #6396 会话起来时的名字在登记时已经用过(序号只增不减)⇒ 换成了下一个。行上只说「用过了」:
   // 多数是另一台设备先用了,但刚开 app 一秒内建的会话也可能撞上以前删掉的号,❌ 不断言是哪一种。
   'transcript.sessionNotice.agentRenamed': '{previous} is now {running} — that name had already been used',

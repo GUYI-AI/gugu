@@ -20,6 +20,20 @@ function memoryStorage() {
     setItem: (key: string, value: string) => { values.set(key, value) }, removeItem: (key: string) => { values.delete(key) } }
 }
 describe('OAuth callback boundary', () => {
+  it('reads the callback on a WebView that gives a custom scheme no host (before Chromium 130)', () => {
+    class OldWebViewUrl extends URL {
+      override get hostname() { return /^https?:$/.test(this.protocol) ? super.hostname : '' }
+    }
+    vi.stubGlobal('URL', OldWebViewUrl)
+    try {
+      expect(isOAuthCallback('gugu://auth/callback?code=c')).toBe(true)
+      expect(isOAuthCallback('gugu://chat/callback?code=c')).toBe(false)
+      expect(parseOAuthCallback('gugu://auth/callback?code=c', 'gugu://auth/callback')).toEqual({ kind: 'code', code: 'c' })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it.each(['gugu', 'gugu-beta', 'gugu-dev'])('parses only the originating %s channel', (scheme) => {
     expect(parseOAuthCallback(`${scheme}://auth/callback?code=opaque%2Bcode`, `${scheme}://auth/callback`)).toEqual({ kind: 'code', code: 'opaque+code' })
     const other = scheme === 'gugu' ? 'gugu-beta' : 'gugu'
