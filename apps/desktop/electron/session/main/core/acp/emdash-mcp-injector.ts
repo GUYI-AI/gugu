@@ -131,7 +131,7 @@ export interface EmdashSessionIdentity {
   guguAgentUserId: string;
   chatId: string;
   agentIdentityFacts?: { specialFocus: string | null };
-  projectContext?: { projectId: string; projectName: string; projectPath: string; groupChatId: string; groupName: string };
+  projectContext?: { projectId: string; projectName: string; projectPath: string; groupChatId: string; groupName: string; membership?: 'member' | 'unconfirmed' };
 }
 
 export interface EmdashIdentityRequest {
