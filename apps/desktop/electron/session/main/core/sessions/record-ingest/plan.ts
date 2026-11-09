@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, writeFileSync, writeSync } from 'node:fs';
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readSync, renameSync, statSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import type { RecordLineageNode, SessionRecordLocator, TimelineArchive } from '@gugu/session-core/session-record';
@@ -59,11 +59,14 @@ export type IngestSummary = {
   checkpointWritten: boolean;
   prunedDrops: number;
   resumed: boolean;
-  /** The newest sent store row some record turn anchors: where the next ingest's store window starts. */
-  recognizedSeq: number | null;
+  /**
+   * The store row of the new checkpoint's oldest retained turn, where the next fill's store window must start: the turn
+   * this fill appends (`appended`, a record index) or a row it alone anchors (`seq`). `null` = not provable; no cursor.
+   */
+  cursorAt: { appended: number } | { seq: number } | null;
 };
 
-export type IngestBatch = { revise: Array<{ seq: number; turn: TranscriptTurn }>; append: TranscriptTurn[] };
+export type IngestBatch = { revise: Array<{ seq: number; turn: TranscriptTurn }>; append: Array<{ index: number; turn: TranscriptTurn }> };
 
 /** The newest store rows sent when there is no checkpoint: the host's widest tail window before #resume-mem. */
 export const STORE_TAIL = 200;
@@ -94,7 +97,7 @@ export async function runIngest(request: IngestRequest, readRecord: typeof readR
   const unfinished = request.unfinished.map((one) => ({ seq: one.seq, identity: fromWire(one.identity) }));
   const saved = request.checkpoint ? loadCheckpoint(request.checkpoint) : null;
   // The host's store window is the cursor's: without the checkpoint it belongs to, the read must start over.
-  if (request.checkpoint && !saved) return { summary: { status: 'retry_full', complete: false, lastSettled: false, deliveryIds: [], revise: 0, append: 0, checkpointWritten: false, prunedDrops: 0, resumed: false, recognizedSeq: null }, next: async () => null, close: () => {} };
+  if (request.checkpoint && !saved) return { summary: { status: 'retry_full', complete: false, lastSettled: false, deliveryIds: [], revise: 0, append: 0, checkpointWritten: false, prunedDrops: 0, resumed: false, cursorAt: null }, next: async () => null, close: () => {} };
   const deliveries = new Set(saved?.deliveryIds ?? []);
   // Only what may be copied is spilled: from the first record turn the store tail (or an unfinished row) recognizes.
   // Any shared key, fingerprint or prompt counts (wider than `sameTurn`): starting the spill early only costs disk.
@@ -117,10 +120,7 @@ export async function runIngest(request: IngestRequest, readRecord: typeof readR
     if (seenFrom < 0) seenFrom = index;
     const identity = hashIdentity(identify(turn), digest);
     seen.push(identity);
-    for (const item of turn.items) {
-      if (item.kind !== 'message' || item.role !== 'user') continue;
-      for (const segment of readDeliveryEnvelope(item.text)?.segments ?? []) if (segment.facts?.messageId) deliveries.add(segment.facts.messageId);
-    }
+    for (const id of deliveryIdsOf(turn)) deliveries.add(id);
     if (spillFrom < 0 && mayCopy(identity)) spillFrom = index;
     if (spillFrom >= 0) spill(turn, index);
   };
@@ -139,7 +139,14 @@ export async function runIngest(request: IngestRequest, readRecord: typeof readR
     if (request.parent && !saved) {
       const parent = await readRecord({ locator: request.parent.locator, sessionId: request.parent.sessionId, checkpoint: null, snapshot: true, onSettled: () => {} });
       lineage = parent.lineage ?? undefined;
-      if (!lineage?.length) return finish(diverged());
+      if (!lineage?.length) {
+        // The fork cut is unproved, so nothing is copied; the agent's deliveries are still the record's.
+        const collect = (turn: TranscriptTurn) => { for (const id of deliveryIdsOf(turn)) deliveries.add(id); };
+        const own = await readRecord({ locator: request.locator, sessionId: request.sessionId, checkpoint: null,
+          onSettled: (turns) => turns.forEach(collect) });
+        own.tail.forEach(collect);
+        return finish(diverged());
+      }
     }
     read = await readRecord({
       locator: request.locator,
@@ -176,6 +183,8 @@ export async function runIngest(request: IngestRequest, readRecord: typeof readR
   // An empty record (or one whose only turn is still active under `committedOnly`) has nothing to copy.
   if (seen.length === 0) missing = [];
   else if (saved) {
+    // The cursor's own row is gone (a revert): this window cannot anchor anything; read from the start.
+    if (stored.length === 0) return finish(summary('retry_full'));
     // The window's oldest row is the checkpoint's own turn (the cursor's `storeSeq`); older rows hold older record turns
     // and cannot disambiguate this window: it is complete for matching.
     missing = matchAfterStore(seen, stored, request.identity, { hasOlderStoredTurns: false });
@@ -195,22 +204,22 @@ export async function runIngest(request: IngestRequest, readRecord: typeof readR
   const wanted = new Set([...revise.keys(), ...append]);
   // The anchor can sit before the spill when the tail had no unique anchor: read the record once more for those turns.
   closeSpill();
-  const recognizedSeq = newestRecognized();
+  const cursorAt = cursorRow();
   if ([...wanted].some((index) => spillFrom < 0 || index < spillFrom)) return rescan();
-  return finish({ ...summary('complete'), complete, lastSettled, revise: revise.size, append: append.size, recognizedSeq }, read, { revise, append });
+  return finish({ ...summary('complete'), complete, lastSettled, revise: revise.size, append: append.size, cursorAt }, read, { revise, append });
 
-  function newestRecognized(): number | null {
-    const keys = new Set<string>(), fingerprints = new Set<string>();
-    for (const one of seen) {
-      for (const key of one.keys) keys.add(key);
-      if (one.fingerprint !== null) fingerprints.add(one.fingerprint);
-    }
-    const hit = request.stored.find((row, at) => [...stored[at].keys].some((key) => keys.has(key))
-      || (stored[at].fingerprint !== null && fingerprints.has(stored[at].fingerprint!)));
-    return hit?.seq ?? null;
+  /** Where the new checkpoint's oldest retained turn (`read.tailFrom`) is stored; see `IngestSummary.cursorAt`. */
+  function cursorRow(): IngestSummary['cursorAt'] {
+    const at = read.tailFrom;
+    if (append.has(at)) return { appended: at };
+    if (revise.has(at)) return { seq: revise.get(at)! };
+    const identity = seen[at - seenFrom];
+    if (!identity) return null;
+    const rows = request.stored.filter((_, row) => matchAfterStore([identity], [stored[row]], request.identity)?.length === 0);
+    return rows.length === 1 ? { seq: rows[0].seq } : null;
   }
 
-  async function rescan(recognizedSeq = newestRecognized()): Promise<IngestRun> {
+  async function rescan(): Promise<IngestRun> {
     const fd = openSync(request.spill, 'w');
     offsets.length = 0;
     spillBytes = 0;
@@ -228,11 +237,11 @@ export async function runIngest(request: IngestRequest, readRecord: typeof readR
     const tail = request.committedOnly && again.tail.length > again.committed ? again.tail.slice(0, again.committed) : again.tail;
     tail.forEach((turn, offset) => keep(turn, again.tailFrom + offset));
     closeSync(fd);
-    return finish({ ...summary('complete'), complete, lastSettled, revise: revise.size, append: append.size, recognizedSeq }, read, { revise, append });
+    return finish({ ...summary('complete'), complete, lastSettled, revise: revise.size, append: append.size, cursorAt }, read, { revise, append });
   }
 
   function summary(status: IngestSummary['status']): IngestSummary {
-    return { status, complete: false, lastSettled: false, deliveryIds: [...deliveries], revise: 0, append: 0, checkpointWritten: false, prunedDrops: 0, resumed: !!saved, recognizedSeq: null };
+    return { status, complete: false, lastSettled: false, deliveryIds: [...deliveries], revise: 0, append: 0, checkpointWritten: false, prunedDrops: 0, resumed: !!saved, cursorAt: null };
   }
   function diverged(): IngestSummary {
     return summary('diverged');
@@ -242,9 +251,8 @@ export async function runIngest(request: IngestRequest, readRecord: typeof readR
     if (done) {
       out.prunedDrops = done.prunedDrops;
       out.resumed = done.resumed;
-      if (done.checkpoint) {
-        writeCheckpoint(request.checkpointOut, { version: CHECKPOINT_VERSION, archive: done.checkpoint, deliveryIds: out.deliveryIds });
-        out.checkpointWritten = true;
+      if (done.checkpoint && out.cursorAt) {
+        out.checkpointWritten = writeCheckpoint(request.checkpointOut, { version: CHECKPOINT_VERSION, archive: done.checkpoint, deliveryIds: out.deliveryIds });
       }
     }
     return { summary: out, ...batches(request.spill, request.pictures, plan) };
@@ -255,14 +263,19 @@ export async function runIngest(request: IngestRequest, readRecord: typeof readR
 function batches(spill: string, pictures: string, plan?: { revise: Map<number, number>; append: Set<number> }): Pick<IngestRun, 'next' | 'close'> {
   const passes: Array<'revise' | 'append'> = plan ? ['revise', 'append'] : [];
   let lines: SpillLines | null = null;
-  let carried: { kind: 'revise' | 'append'; seq?: number; turn: TranscriptTurn; bytes: number } | null = null;
+  let carried: { kind: 'revise' | 'append'; index: number; seq?: number; turn: TranscriptTurn; bytes: number } | null = null;
   let budget = FILL_PICTURE_CHARS;
   // A picture within the fill's budget is written to its own file here; the turn the host stores keeps its size and hash.
   const store = (data: string): string => {
     const hash = createHash('sha256').update(data).digest('hex');
     mkdirSync(pictures, { recursive: true });
     const file = join(pictures, hash);
-    if (!existsSync(file)) { writeFileSync(`${file}.part`, data); renameSync(`${file}.part`, file); }
+    // A file left short by a crash is rewritten; a complete one is the same bytes (its name is their hash).
+    if (!existsSync(file) || statSync(file).size !== Buffer.byteLength(data)) {
+      const fd = openSync(`${file}.part`, 'w');
+      try { writeSync(fd, data); fsyncSync(fd); } finally { closeSync(fd); }
+      renameSync(`${file}.part`, file);
+    }
     return hash;
   };
   const pull = (): typeof carried => {
@@ -277,7 +290,7 @@ function batches(spill: string, pictures: string, plan?: { revise: Map<number, n
       const text = line.slice(tab + 1);
       const turn = JSON.parse(text) as TranscriptTurn;
       const kept = keepPictures(turn.items, (chars) => (budget -= chars) >= 0, store);
-      return { kind, seq: plan!.revise.get(index), turn: kept === turn.items ? turn : { ...turn, items: kept }, bytes: text.length };
+      return { kind, index, seq: plan!.revise.get(index), turn: kept === turn.items ? turn : { ...turn, items: kept }, bytes: text.length };
     }
     return null;
   };
@@ -291,7 +304,7 @@ function batches(spill: string, pictures: string, plan?: { revise: Map<number, n
         if (!one) break;
         if (count > 0 && (count >= BATCH_MAX_TURNS || bytes + one.bytes > BATCH_MAX_BYTES)) { carried = one; break; }
         if (one.kind === 'revise') batch.revise.push({ seq: one.seq!, turn: one.turn });
-        else batch.append.push(one.turn);
+        else batch.append.push({ index: one.index, turn: one.turn });
         bytes += one.bytes;
         count += 1;
       }
@@ -367,9 +380,21 @@ function loadCheckpoint(path: string): Checkpoint | null {
   }
 }
 
-function writeCheckpoint(path: string, checkpoint: Checkpoint): void {
+/** A checkpoint is a shortcut: past this size the next fill reads the record again instead. */
+const CHECKPOINT_MAX_CHARS = 64 * 1024 * 1024;
+
+function writeCheckpoint(path: string, checkpoint: Checkpoint): boolean {
+  const text = JSON.stringify(checkpoint);
+  if (text.length > CHECKPOINT_MAX_CHARS) return false;
   const temp = `${path}.tmp`;
   const fd = openSync(temp, 'w');
-  try { writeSync(fd, JSON.stringify(checkpoint)); } finally { closeSync(fd); }
+  try { writeSync(fd, text); fsyncSync(fd); } finally { closeSync(fd); }
   renameSync(temp, path);
+  return true;
+}
+
+function deliveryIdsOf(turn: TranscriptTurn): string[] {
+  return turn.items.flatMap((item) => item.kind === 'message' && item.role === 'user'
+    ? (readDeliveryEnvelope(item.text)?.segments ?? []).flatMap((segment) => segment.facts?.messageId ? [segment.facts.messageId] : [])
+    : []);
 }

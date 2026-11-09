@@ -66,7 +66,11 @@ async function read(
 ): Promise<IngestRead> {
   let next = archive?.retainedFrom ?? 0;
   let resets = 0;
+  let frozen = false;
   const drain = (timeline: SessionTimeline) => {
+    // After the initial read the live source keeps following the file. What it adds stays in the checkpoint's retained
+    // turns and is handed out by the next fill, so this one neither repeats nor skips it.
+    if (frozen) return;
     const drained = timeline.drainSettled!();
     if (drained.resets !== resets) {
       // The source refused the resume point (or the file was replaced) and reads from the start. Before anything was
@@ -87,9 +91,13 @@ async function read(
   const timeline = await createSessionTimeline(source, { sessionId: input.sessionId, archive, onApplied: drain });
   try {
     drain(timeline);
+    frozen = true;
     const tail = timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns;
     const committed = timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER, committedOnly: true }).turns.length;
     const checkpoint = await timeline.archive?.({ maxSourceBytes: Number.MAX_SAFE_INTEGER }) ?? null;
+    // Still the record the tail came from: a replacement after the initial read reset the timeline under it.
+    const after = timeline.drainSettled!();
+    if (after.resets !== resets) throw new Error('Record replaced while it was being ingested');
     return {
       status: 'complete',
       tail,
@@ -97,7 +105,7 @@ async function read(
       tailFrom: next,
       resumed: !!archive && resets === 0,
       checkpoint,
-      prunedDrops: timeline.drainSettled!().prunedDrops,
+      prunedDrops: after.prunedDrops,
       lineage: timeline.getRecordLineage?.() ?? null,
     };
   } finally {

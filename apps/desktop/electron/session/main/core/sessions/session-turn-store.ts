@@ -3,12 +3,12 @@ export { renumberStoredTurn } from './session-turn-identity';
 import { findToolImage, findToolItem, TRANSPORT_PAYLOAD_BUDGET, trimTurnsForTransport } from '@gugu/session-core/session-record';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { recordIngestRoot, recordPicturesDir } from './record-ingest/root';
+import { RECORD_INGEST_KV, recordIngestRoot, recordPicturesDir } from './record-ingest/root';
 import { and, asc, desc, eq, gte, inArray, like, lt, notLike, sql } from 'drizzle-orm';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { db } from '@main/db/client';
-import { sessionTurns } from '@main/db/schema';
-import { randomUUID } from 'node:crypto';
+import { kv, sessionTurns } from '@main/db/schema';
+import { createHash, randomUUID } from 'node:crypto';
 import { activitySignal } from '../activity/signals';
 import { noteNativeConversationReplies, noteNativeConversationHistory, truncateNativeConversationRead } from './session-conversation-read';
 import { nativeConversationActivity } from './session-conversation-activity';
@@ -319,8 +319,9 @@ export async function getStoredToolImage(params: {
   const ref = tool?.imageRefs?.[params.index];
   if (!hash || !ref || !/^[0-9a-f]{64}$/.test(hash)) return found;
   const data = await readFile(join(recordPicturesDir(await recordIngestRoot(), params.sessionId), hash), 'utf8').catch(() => null);
-  // A missing file is the same as a picture that is gone: the caller shows it cannot be fetched.
-  return data === null ? found : { ok: true as const, image: { mimeType: ref.mimeType, data } };
+  // A missing or damaged file is the same as a picture that is gone: the caller shows it cannot be fetched.
+  if (data === null || createHash('sha256').update(data).digest('hex') !== hash) return found;
+  return { ok: true as const, image: { mimeType: ref.mimeType, data } };
 }
 
 /** Read one immutable live origin, even after its runtime record was removed. No provider is contacted. */
@@ -476,6 +477,8 @@ export async function truncateStoredHistory(sessionId: string, fromSeq: number |
     stopFillingReplay(sessionId);
     const removed = db.transaction(tx => {
       const result = tx.delete(sessionTurns).where(and(eq(sessionTurns.sessionId, sessionId), gte(sessionTurns.seq, fromSeq))).returning({ seq: sessionTurns.seq, turnId: sessionTurns.turnId }).all();
+      // The ingest cursor points into the rows just removed: the next fill reads the record from its start (resume-mem).
+      tx.delete(kv).where(eq(kv.key, `${RECORD_INGEST_KV}:${sessionId}`)).run();
       const origins = new Set(result.map(row => row.turnId));
       // A notification commits before its calling provider turn; deleting that turn must remove its earlier notice too.
       const attached = tx.select({ seq: sessionTurns.seq, turnId: sessionTurns.turnId, data: sessionTurns.data }).from(sessionTurns)

@@ -348,3 +348,75 @@ it('stores a copied picture as a file, keeps only its size and hash in the row, 
   expect(await getStoredToolImage({ sessionId: 'c1', seq: 0, itemId: tool.id, index: 0 }))
     .toEqual({ ok: true, image: { mimeType: 'image/png', data: picture } });
 });
+
+async function codexRecord(copies: number) {
+  const root = await mkdtemp(join(tmpdir(), 'codex-cursor-fix-'));
+  const fixtureFile = fileURLToPath(new URL('../../../../../../../packages/session-core/src/session-record/__fixtures__/codex-rollout.jsonl', import.meta.url));
+  const lines = (await readFile(fixtureFile, 'utf8')).split('\n').filter(line => line.trim());
+  const body = lines.filter(line => !line.includes('"session_meta"'));
+  const copy = (n: number) => body.map(line => line.replace(/"((?:msg|call|rs|fc)_)([A-Za-z0-9]+)"/g, (_all, p: string, r: string) => `"${p}c${n}${r}"`)
+    .replace(/"([0-9a-f]{8})(-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/g, (_all, h: string, r: string) => `"${n.toString(16).padStart(2, '0')}${h.slice(2)}${r}"`)
+    .replace(/"(answer|turn)[^"]*"/g, (all) => all.slice(0, -1) + ` ${n}"`));
+  const file = join(root, '2026', '06', '18', 'rollout-2026-06-18T07-03-21-fix-thread.jsonl');
+  await mkdir(join(root, '2026', '06', '18'), { recursive: true });
+  await writeFile(file, [...lines.filter(line => line.includes('"session_meta"')), ...Array.from({ length: copies }, (_, n) => copy(n)).flat()].join('\n') + '\n');
+  state.row.providerSessionId = 'fix-thread'; state.root = root; realRead();
+  return { root, file, copy };
+}
+const cursorRow = () => fixture.sqlite.prepare("SELECT value FROM kv WHERE key = 'record-ingest:c1'").get() as { value: string } | undefined;
+
+it('drops the ingest cursor with the rows a revert removes, so the next fill reads from the start', async () => {
+  const { root } = await codexRecord(3);
+  try {
+    expect(await sync('c1', { runtime: 'pty' })).toMatchObject({ status: 'complete' });
+    expect(cursorRow()).toBeDefined();
+    const { truncateStoredHistory } = await import('./session-turn-store');
+    await truncateStoredHistory('c1', 1);
+    expect(cursorRow()).toBeUndefined();
+    await sync('c1', { runtime: 'pty' });
+    expect(state.requests.at(-1)!.checkpoint).toBeNull();
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+it('drops a checkpoint that fails to resume and reads the record from its start once', async () => {
+  const { root, file, copy } = await codexRecord(2);
+  try {
+    expect(await sync('c1', { runtime: 'pty' })).toEqual({ inserted: 2, status: 'complete' });
+    const before = JSON.parse(cursorRow()!.value) as { generation: number };
+    await appendFile(file, copy(2).join('\n') + '\n');
+    // The child dies on the checkpointed read (a crash, its heap limit): the next attempt has no checkpoint.
+    setRecordIngest({ dir: () => ingestDir, runner: async (request) => {
+      state.requests.push(request);
+      if (request.checkpoint) throw new Error('worker exited');
+      const run = await runIngest(request, readRecordForIngest);
+      return { summary: run.summary, next: run.next, dispose: async () => run.close() };
+    } });
+    expect(await sync('c1', { runtime: 'pty' })).toEqual({ inserted: 1, status: 'complete' });
+    expect(state.requests.slice(-2).map(one => one.checkpoint === null)).toEqual([false, true]);
+    expect(JSON.parse(cursorRow()!.value).generation).toBeGreaterThan(before.generation);
+    expect(rows()).toHaveLength(3);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+it("still returns the record's deliveries when a fork cut cannot be proved", async () => {
+  state.row.config = { forkedFrom: { sessionId: 'parent' } };
+  state.parentLineage = null;
+  state.turns = [{ ...turn(0), items: [{ kind: 'message', id: 'c1:turn:0:message:q', seq: 0, role: 'user',
+    text: buildSystemNoticeEnvelope({ messageId: 'f1', content: 'hi', at: '2026-11-09T03:00:00Z' }) }] }];
+  const result = await syncStoredHistoryFromRecord('c1', { runtime: 'pty' });
+  expect(result).toMatchObject({ inserted: 0, status: 'diverged' });
+  expect(result.deliveryIds).toEqual(['msg:f1']);
+});
+
+it('treats a damaged picture file as a picture that is gone', async () => {
+  const picture = 'iVBORw0KGgo' + 'B'.repeat(4000);
+  state.turns = [{ ...turn(0), items: [...turn(0).items,
+    { kind: 'mcp-tool-call', id: 'c1:turn:0:tool:shot', seq: 2, toolCallId: 'shot', status: 'done', title: 'shot', server: 's', tool: 't',
+      images: [{ mimeType: 'image/png', data: picture }] } as unknown as TranscriptTurn['items'][number]] }];
+  await sync('c1', { runtime: 'pty' });
+  const stored = JSON.parse((rows() as { data: string }[])[0].data) as TranscriptTurn;
+  const tool = stored.items.find(item => item.kind === 'mcp-tool-call') as unknown as { id: string; storedImages: string[] };
+  await writeFile(join(ingestDir, 'pictures', 'c1', tool.storedImages[0]), picture.slice(0, 100));
+  const { getStoredToolImage } = await import('./session-turn-store');
+  expect(await getStoredToolImage({ sessionId: 'c1', seq: 0, itemId: tool.id, index: 0 })).toMatchObject({ ok: false });
+});

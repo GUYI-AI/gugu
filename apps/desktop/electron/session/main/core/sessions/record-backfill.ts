@@ -9,7 +9,7 @@ import { sessionRecordHarnessForProvider } from '@main/core/session-timeline/loc
 import { hashIdentity, identify, recordIdentityFor, recordTurnsAfterStore, type RecordIdentity } from './record-backfill-match';
 import { digest, STORE_TAIL, toWire, type IngestRequest } from './record-ingest/plan';
 import type { IngestRunner, IngestSession } from './record-ingest/runner';
-import { recordIngestRoot, recordPicturesDir, setRecordIngestRoot } from './record-ingest/root';
+import { RECORD_INGEST_KV, recordIngestRoot, recordPicturesDir, setRecordIngestRoot } from './record-ingest/root';
 import { appendRecordTurnNow, readStoredTailNow, readUnfinishedRecordRowsNow, readUnfinishedRecordTurnsNow, reviseRecordTurnNow, storedMaxSeqNow, storedTurnsNewestFirstNow, withStoredTurns } from './session-turn-store';
 import { sessionEngine, sessionProcess } from './session-process';
 
@@ -30,8 +30,9 @@ export function setRecordIngest(next: { dir: () => string; runner: IngestRunner 
   ingestRunner = next?.runner ?? null;
 }
 
-type Cursor = { generation: number; storeSeq: number };
-const cursors = new KV<Record<string, Cursor>>('record-ingest');
+/** The checkpoint generation, the store row its oldest retained turn sits in, and the record it was made from. */
+type Cursor = { generation: number; storeSeq: number; providerSessionId: string };
+const cursors = new KV<Record<string, Cursor>>(RECORD_INGEST_KV);
 
 /**
  * #980 把 agent 自己的记录里有、库里(`session_turns`)还没有的那几轮补进库。
@@ -146,8 +147,9 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
     if (parentId && !parentLocation?.supported) return result('diverged');
     const dir = await recordIngestRoot();
     const runner = ingestRunner ?? (await import('./record-ingest/runner')).childProcessIngest;
-    const cursor = await cursors.get(sessionId);
-    const generation = (cursor?.generation ?? 0) + 1;
+    const saved = await cursors.get(sessionId);
+    // A cursor belongs to the record it was made from: a session that moved to another provider session starts over.
+    const usable = saved && saved.providerSessionId === row.providerSessionId ? saved : null;
     const checkpointOf = (one: number) => join(dir, `${sessionId}.${one}.ckpt`);
     const wire = (turn: TranscriptTurn) => toWire(hashIdentity(identify(turn), digest));
     const storeRows = async (fromSeq?: number, limit?: number) => {
@@ -156,7 +158,8 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
       return rows;
     };
     const unfinished = (await readUnfinishedRecordRowsNow(sessionId)).map((one) => ({ seq: one.seq, identity: wire(one.turn) }));
-    const request = async (mode: 'cursor' | 'tail' | 'store'): Promise<IngestRequest> => {
+    const generation = (saved?.generation ?? 0) + 1;
+    const request = async (mode: 'cursor' | 'tail' | 'store', cursor: Cursor | null): Promise<IngestRequest> => {
       const stored = mode === 'cursor' ? await storeRows(cursor!.storeSeq) : await storeRows(undefined, mode === 'tail' ? STORE_TAIL : undefined);
       return {
         sessionId,
@@ -173,56 +176,82 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
         unfinished,
       };
     };
+    const dropCursor = async () => {
+      await cursors.delOrThrow(sessionId);
+      if (saved) await rm(checkpointOf(saved.generation), { force: true });
+    };
 
-    let session: IngestSession | null = null;
     const startedAt = Date.now();
+    const ingestFrom = async (cursor: Cursor | null): Promise<RecordBackfillResult> => {
+      let session: IngestSession | null = null;
+      try {
+        for (const mode of cursor ? ['cursor', 'tail', 'store'] as const : ['tail', 'store'] as const) {
+          if (options.signal?.aborted) return result('cancelled');
+          session = await runner(await request(mode, cursor));
+          const status = session.summary.status;
+          if (status !== 'retry_full' && status !== 'need_store') break;
+          await session.dispose();
+          session = null;
+          if (status === 'retry_full' && mode !== 'cursor') throw new Error('record-ingest: retry_full without a checkpoint');
+        }
+        const { summary } = session!;
+        log.info('[record-backfill] record ingest', { sessionId, status: summary.status, resumed: summary.resumed,
+          revise: summary.revise, append: summary.append, ms: Date.now() - startedAt });
+        if (summary.status === 'retry_full' || summary.status === 'need_store') throw new Error(`record-ingest: ${summary.status} after every mode`);
+        if (summary.prunedDrops > 0) log.info('[record-backfill] dropped late events for settled turns', { sessionId, events: summary.prunedDrops });
+        if (summary.status === 'unavailable') return result('unavailable');
+        if (summary.status === 'diverged') {
+          log.warn('[record-backfill] the record and the store diverged; nothing filled in', { sessionId });
+          return result('diverged', 0, summary.deliveryIds);
+        }
+        const cursorAt = summary.cursorAt;
+        let cursorSeq = cursorAt && 'seq' in cursorAt ? cursorAt.seq : null;
+        for (let batch = await session!.next(); batch; batch = await session!.next()) {
+          for (const one of batch.revise) {
+            const stop = await write(one.turn, one.seq);
+            if (stop) return result(stop, inserted);
+          }
+          for (const one of batch.append) {
+            const stop = await write(one.turn, undefined);
+            if (stop) return result(stop, inserted);
+            if (cursorAt && 'appended' in cursorAt && cursorAt.appended === one.index) cursorSeq = await storedMaxSeqNow(sessionId);
+          }
+        }
+        if (summary.status === 'complete') {
+          // The cursor moves only after every batch is in: a crash before this line re-reads from the old checkpoint, and
+          // the turns already written are then in its store window and are recognized, not appended twice. Without a
+          // provable row for the new checkpoint there is no cursor: the next fill reads the record from its start.
+          if (summary.checkpointWritten && cursorSeq !== null) {
+            await cursors.setOrThrow(sessionId, { generation, storeSeq: cursorSeq, providerSessionId: row.providerSessionId! });
+            if (saved) await rm(checkpointOf(saved.generation), { force: true });
+          } else {
+            await dropCursor();
+            await rm(checkpointOf(generation), { force: true });
+          }
+        }
+        return finish(summary.complete, summary.lastSettled, summary.deliveryIds);
+      } finally {
+        await session?.dispose();
+        await rm(join(dir, `${sessionId}.spill`), { force: true }).catch(() => {});
+      }
+    };
+
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(dir, { recursive: true });
     try {
-      const { mkdir } = await import('node:fs/promises');
-      await mkdir(dir, { recursive: true });
-      for (const mode of cursor ? ['cursor', 'tail', 'store'] as const : ['tail', 'store'] as const) {
-        if (options.signal?.aborted) return result('cancelled');
-        session = await runner(await request(mode));
-        const status = session.summary.status;
-        if (status !== 'retry_full' && status !== 'need_store') break;
-        await session.dispose();
-        session = null;
-        if (status === 'retry_full' && mode !== 'cursor') throw new Error('record-ingest: retry_full without a checkpoint');
-      }
-      const { summary } = session!;
-      log.info('[record-backfill] record ingest', { sessionId, status: summary.status, resumed: summary.resumed,
-        revise: summary.revise, append: summary.append, ms: Date.now() - startedAt });
-      if (summary.status === 'retry_full' || summary.status === 'need_store') throw new Error(`record-ingest: ${summary.status} after every mode`);
-      if (summary.prunedDrops > 0) log.info('[record-backfill] dropped late events for settled turns', { sessionId, events: summary.prunedDrops });
-      if (summary.status === 'unavailable') return result('unavailable');
-      if (summary.status === 'diverged') {
-        log.warn('[record-backfill] the record and the store diverged; nothing filled in', { sessionId });
-        return result('diverged', 0, summary.deliveryIds);
-      }
-      for (let batch = await session!.next(); batch; batch = await session!.next()) {
-        for (const one of batch.revise) {
-          const stop = await write(one.turn, one.seq);
-          if (stop) return result(stop, inserted);
-        }
-        for (const turn of batch.append) {
-          const stop = await write(turn, undefined);
-          if (stop) return result(stop, inserted);
-        }
-      }
-      if (summary.checkpointWritten) {
-        // The cursor moves only after every batch is in: a crash before this line re-reads from the old checkpoint, and
-        // the turns already written are then newer than its store window and are recognized, not appended twice.
-        const appended = inserted > 0 ? await storedMaxSeqNow(sessionId) : -1;
-        const storeSeq = Math.max(appended, summary.recognizedSeq ?? -1, cursor?.storeSeq ?? -1);
-        await cursors.setOrThrow(sessionId, { generation, storeSeq });
-        if (cursor) await rm(checkpointOf(cursor.generation), { force: true });
-      }
-      return finish(summary.complete, summary.lastSettled, summary.deliveryIds);
+      return await ingestFrom(usable);
     } catch (error) {
-      log.warn('[record-backfill] record ingest failed', { sessionId, error: (error as Error)?.message ?? String(error) });
-      return result('ingest_failed', inserted);
-    } finally {
-      await session?.dispose();
-      await rm(join(dir, `${sessionId}.spill`), { force: true }).catch(() => {});
+      log.warn('[record-backfill] record ingest failed', { sessionId, resumed: !!usable, error: (error as Error)?.message ?? String(error) });
+      if (!usable) return result('ingest_failed', inserted);
+      // A checkpoint that fails once (its child file no longer resumes, it outgrew the child's heap) would fail every
+      // time: drop it and read the record from its start once.
+      try {
+        await dropCursor();
+        return await ingestFrom(null);
+      } catch (again) {
+        log.warn('[record-backfill] record ingest failed from the start too', { sessionId, error: (again as Error)?.message ?? String(again) });
+        return result('ingest_failed', inserted);
+      }
     }
   });
 }

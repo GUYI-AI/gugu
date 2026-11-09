@@ -14,4 +14,7 @@ export async function recordIngestRoot(): Promise<string> {
   return override ?? join((await import('electron')).app.getPath('userData'), 'record-ingest');
 }
 
+/** The kv namespace of the per-session ingest cursor (`record-backfill.ts`); a revert drops it with the rows. */
+export const RECORD_INGEST_KV = 'record-ingest';
+
 export const recordPicturesDir = (root: string, sessionId: string) => join(root, 'pictures', sessionId);
