@@ -46,7 +46,9 @@ describe('public committed-history client', () => {
 
   it('preserves historical update-only null proof in a delivered page', async () => {
     const f = fixture(), value = page(4);
-    value.entries = [{ ...value.entries[0], kind: 'update', firstCommitCursor: null }];
+    const [inserted] = value.entries;
+    if (inserted.kind !== 'insert') throw new Error('fixture must start from an insert');
+    value.entries = [{ ...inserted, kind: 'update', firstCommitCursor: null }];
     f.api.read.mockResolvedValue({ ok: true, value });
     expect((await f.client.read(at(3))).entries[0]).toMatchObject({ kind: 'update', firstCommitCursor: null });
   });
