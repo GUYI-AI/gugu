@@ -79,7 +79,9 @@ describe('bounded version reclamation with durable final cleanup', () => {
       await Reflect.apply(sync, this, []); const current = await this.stat({ bigint: true });
       if (current.dev === identity.dev && current.ino === identity.ino) await files.writeFile(raw, 'late replacement');
     });
-    await expect(f.collector.step(old.sourceId, createWindowBudget())).rejects.toThrow('Immutable commit source changed');
+    // Deletion is time-sliced; a slow batch returns progress before the raw path.
+    const collect = async () => { for (;;) { const step = await f.collector.step(old.sourceId, createWindowBudget()); if (step.kind !== 'progress') return step; } };
+    await expect(collect()).rejects.toThrow('Immutable commit source changed');
     expect(await files.readFile(raw, 'utf8')).toBe('late replacement'); expect(f.receipts.bySource(old.sourceId)).not.toBeNull();
   });
 
