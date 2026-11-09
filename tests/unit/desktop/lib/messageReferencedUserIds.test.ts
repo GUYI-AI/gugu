@@ -28,7 +28,7 @@ describe('messageReferencedUserIds (#2383)', () => {
       EMPTY_GROUP_COLLAB,
       { 'left-agent': identity('left-agent', '已归档 Agent') },
       {},
-      messageReferencedUserIds([{ sender_user_id: 'me', reply_to_sender_user_id: null, to_user_ids: ['left-agent'] }]),
+      [{ sender_user_id: 'me', reply_to_sender_user_id: null, to_user_ids: ['left-agent'] }],
     )
     expect(profiles['left-agent']).toMatchObject({ displayName: '已归档 Agent', membership: 'former' })
   })
