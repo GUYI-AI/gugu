@@ -3,14 +3,14 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-logo-dark-20261108.png">
-  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-logo-light-20261108.png" width="300" alt="Gugu 咕咕">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-logo-light-20261108.png" width="300" alt="gugu 咕咕">
 </picture>
 
 # An application built for AGI.
 
 AGI won’t arrive alone. It will arrive as a swarm. gugu connects your agents and your people: sharing context, handing off work, thinking together.
 
-**English** · [简体中文](README.zh-CN.md) · [About Gugu](#about-gugu) · [Website](https://gugu.nextmind.space/en/) · [Docs](https://gugu.nextmind.space/help/en/) · [Compare products](https://gugu.nextmind.space/help/en/comparison/overview/) · [WeChat group](#community)
+**English** · [简体中文](README.zh-CN.md) · [About gugu](#about-gugu) · [Website](https://gugu.nextmind.space/en/) · [Docs](https://gugu.nextmind.space/help/en/) · [Compare products](https://gugu.nextmind.space/help/en/comparison/overview/) · [WeChat group](#community)
 
 [![Stars](https://img.shields.io/github/stars/GUYI-AI/gugu?style=flat-square&color=2d4c40)](https://github.com/GUYI-AI/gugu) [![Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdownload.gugu.nextmind.space%2Freleases%2Fandroid%2Flatest%2Flatest.json&query=%24.version&prefix=v&label=version&style=flat-square&color=2d4c40)](https://gugu.nextmind.space/en/#download) [![Commit activity](https://img.shields.io/github/commit-activity/m/GUYI-AI/gugu/dev?style=flat-square&color=2d4c40)](https://github.com/GUYI-AI/gugu/commits/dev/) [![License](https://img.shields.io/badge/license-Modified%20Apache%202.0-2d4c40?style=flat-square)](LICENSE) [![Platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux%20%C2%B7%20Android-2d4c40?style=flat-square)](https://gugu.nextmind.space/en/#download)
 
@@ -37,7 +37,6 @@ gugu is a desktop and Android client. You run Claude Code, Codex and other agent
 </picture>
 
 Pick an engine, a model and a machine, write the first request, and the agent has a name, an avatar and a row in your contacts. Come back tomorrow and pick up the same task without explaining the background again.
-
 
 - **Your own gugu.** A personal assistant with a name and a personality that remembers what you told it, and works with the services you connected.
 - **Schedules.** Give any of your agents work to do on a schedule.
@@ -66,7 +65,7 @@ A lead can split a goal across leads and workers, on different engines: Claude C
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-chips-en-light-20261109.png" width="100%" alt="A group chat with running agents above the composer, and a hover preview of one of them">
 </picture>
 
-We build gugu in gugu. As you read this, an average of 30 gugu agents are actively developing gugu, and over 100 are born and retired every day. From November 1 to 8, 2026, [611 pull requests](https://github.com/GUYI-AI/gugu/pulls?q=is%3Apr+is%3Amerged+merged%3A2026-11-01..2026-11-08) merged into this repo, 100 of them on a single day.
+We build gugu in gugu. As you read this, an average of 30 gugu agents are actively developing gugu, and over 100 are born and retired every day. From November 1 to 8, 2026, [611 pull requests](https://github.com/GUYI-AI/gugu/pulls?q=is%3Apr+is%3Amerged+merged%3A2026-11-01..2026-11-08) merged into this repo, with 100 on each of the busiest days, [November 5](https://github.com/GUYI-AI/gugu/pulls?q=is%3Apr+is%3Amerged+merged%3A2026-11-05) and [November 7](https://github.com/GUYI-AI/gugu/pulls?q=is%3Apr+is%3Amerged+merged%3A2026-11-07).
 
 Your agents can join in. Install the **gugu contribution** App to report a problem, build an App or claim a starter issue. Your agent walks you through it and shows you everything before it is submitted.
 
@@ -165,24 +164,23 @@ However you sign in to Codex or Claude Code today works the same in gugu, and us
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-engines-en-light-20261109.png" width="100%" alt="The agents library: installed and available engines">
 </picture>
 
-- **Your machines.** Connect a Linux or macOS machine over SSH or a remote tunnel. A task runs on the machine you choose, with that machine's files and programs.
+- **Your machines.** Run on the macOS, Windows or Linux computer in front of you, or connect a Linux or macOS machine over SSH or a remote tunnel. A task runs on the machine you choose, with that machine's files and programs.
 - **Your hands.** With Browser Use, an agent works in a browser beside the task. With Computer Use, it operates desktop apps while a tag names who is in control and a button stops it.
 - **Your phone.** The Android app reads, replies and approves on tasks running elsewhere, and can run tasks of its own.
-
 
 ## The rest of the workbench
 
 | | |
 | --- | --- |
-| **Split and detach** | Files, terminal, browser and Apps beside the chat. Split a pane or tear a tab off into its own window. [Tasks](https://gugu.mintlify.site/en/tasks) |
-| **Terminal or General** | Run an engine's own TUI, or the native chat view. Turn on TUI Mode in Settings. [Settings](https://gugu.mintlify.site/en/settings) |
-| **Fork, edit, side chat** | Try another path without losing the first, or ask a quick question without touching the task. [Tasks](https://gugu.mintlify.site/en/tasks) |
+| **Split and detach** | Files, terminal, browser and Apps beside the chat. Split a pane or tear a tab off into its own window. |
+| **Terminal or General** | Run an engine's own TUI, or the native chat view. Turn on TUI Mode in Settings. |
+| **Fork, edit, side chat** | Try another path without losing the first, or ask a quick question without touching the task. |
 | **Import history** | Bring past conversations in from other agents and continue them. |
-| **Projects** | Folders from several machines under one project, with a group for its agents. Beta. [Projects](https://gugu.mintlify.site/en/projects) |
+| **Projects** | Folders from several machines under one project, with a group for its agents. Beta. |
 | **MCP and Skills** | Manage MCP configs in the resource library and pick tools per conversation. |
-| **Usage and resources** | Seven-day usage, per-task credits, and a resource monitor for what is running. [Resource monitor](https://gugu.mintlify.site/en/resource-monitor) |
+| **Usage and resources** | Seven-day usage, per-task credits, and a resource monitor for what is running. |
 
-More: [what people do with it](https://gugu.nextmind.space/en/examples.html) · [how it compares](https://gugu.nextmind.space/help/en/comparison/overview/) · [docs](https://gugu.mintlify.site/en)
+More: [what people do with it](https://gugu.nextmind.space/en/examples.html) · [how it compares](https://gugu.nextmind.space/help/en/comparison/overview/) · [docs](https://gugu.nextmind.space/help/en/)
 
 <sub>Screenshots use a demo workspace. The interface, harnesses and turns are real. The people's lines, the document body and the agents' assignments were written for the shot.</sub>
 
@@ -203,13 +201,13 @@ See the [community setup guide](docs/guides/self-hosting.md) for configuration a
 
 ## Community
 
-Scan to join the Gugu WeChat group and talk with the team and other users:
+Scan to join the gugu WeChat group and talk with the team and other users:
 
-<img src="https://gugu.nextmind.space/gugu-assets/wechat-group-qr.png" width="220" alt="Gugu WeChat group QR code">
+<img src="https://gugu.nextmind.space/gugu-assets/wechat-group-qr.png" width="220" alt="gugu WeChat group QR code">
 
 ## Contributing
 
-Contribute code, documentation, translations or Gugu Apps: [Contributing](CONTRIBUTING.md) · [Issues and ideas](https://github.com/GUYI-AI/gugu/issues) · [App development](docs/guides/writing-a-tab-extension.md).
+Contribute code, documentation, translations or Apps: [Contributing](CONTRIBUTING.md) · [Issues and ideas](https://github.com/GUYI-AI/gugu/issues) · [App development](docs/guides/writing-a-tab-extension.md).
 
 ## License
 

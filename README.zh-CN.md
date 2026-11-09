@@ -3,7 +3,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-logo-dark-20261108.png">
-  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-logo-light-20261108.png" width="300" alt="咕咕 Gugu">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-logo-light-20261108.png" width="300" alt="咕咕 gugu">
 </picture>
 
 # 为 AGI 打造的应用。
@@ -38,7 +38,6 @@ AGI 不会独自到来，它将以群体的形式到来。咕咕把你的 agent 
 
 选好引擎、模型和机器，写下第一个请求，它就有了名字、头像，出现在你的通讯录里。第二天回来接着同一个任务说，不用重新交代背景。
 
-
 - **你自己的咕咕。** 有名字、有性格的个人助理，记得你说过的话，也能用你连接的服务干活。
 - **定时任务。** 让任何一个 agent 按时间表干活。
 
@@ -66,7 +65,7 @@ lead 可以把目标拆给组长和执行者，还可以用不同引擎：Claude
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-chips-en-light-20261109.png" width="100%" alt="群聊，输入框上方是运行中的 agent，其中一个正显示悬停预览">
 </picture>
 
-咕咕就是用咕咕做的。此刻，平均有 30 个咕咕 agent 在开发咕咕，每天有 100 多个诞生和退场。2026 年 11 月 1 日到 8 日，这个仓库合并了 [611 个 PR](https://github.com/GUYI-AI/gugu/pulls?q=is%3Apr+is%3Amerged+merged%3A2026-11-01..2026-11-08)，其中一天就有 100 个。
+咕咕就是用咕咕做的。此刻，平均有 30 个咕咕 agent 在开发咕咕，每天有 100 多个诞生和退场。2026 年 11 月 1 日到 8 日，这个仓库合并了 [611 个 PR](https://github.com/GUYI-AI/gugu/pulls?q=is%3Apr+is%3Amerged+merged%3A2026-11-01..2026-11-08)，最多的两天各 100 个（[11 月 5 日](https://github.com/GUYI-AI/gugu/pulls?q=is%3Apr+is%3Amerged+merged%3A2026-11-05)、[11 月 7 日](https://github.com/GUYI-AI/gugu/pulls?q=is%3Apr+is%3Amerged+merged%3A2026-11-07)）。
 
 你的 agent 也可以一起来。装上 **咕咕贡献** App，报告问题、写一个 App，或者认领一个入门 issue。agent 带你走完每一步，提交前都先给你看。
 
@@ -165,24 +164,23 @@ App 开源，审核后进市场。[自己写一个](docs/guides/writing-a-tab-ex
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-engines-en-light-20261109.png" width="100%" alt="资源库里的 agent：已安装和可安装的引擎">
 </picture>
 
-- **你的机器。** 通过 SSH 或远程隧道连接 Linux、macOS 机器。任务在你选的机器上跑，用的是那台机器的文件和程序。
+- **你的机器。** 在手边的 macOS、Windows、Linux 电脑上跑，或者通过 SSH、远程隧道连接 Linux、macOS 机器。任务在你选的机器上跑，用的是那台机器的文件和程序。
 - **它的手。** 有了 Browser Use，agent 在任务旁边的浏览器里操作；有了 Computer Use，它操作桌面应用，窗口上有标签写明谁在控制，一键就能停。
 - **你的手机。** Android 客户端可以查看、回复、审批别处跑着的任务，也能自己跑任务。
-
 
 ## 工作台的其余部分
 
 | | |
 | --- | --- |
-| **分屏与独立窗口** | 文件、终端、浏览器和 App 放在对话旁边，可以分屏，也可以把标签拖成单独的窗口。[任务](https://gugu.mintlify.site/tasks) |
-| **终端或通用模式** | 用引擎自己的 TUI，或者原生对话界面。在设置里打开 TUI 模式。[设置](https://gugu.mintlify.site/settings) |
-| **分叉、改请求、旁聊** | 换条路试，不丢原来的；问个小问题，不碰当前任务。[任务](https://gugu.mintlify.site/tasks) |
+| **分屏与独立窗口** | 文件、终端、浏览器和 App 放在对话旁边，可以分屏，也可以把标签拖成单独的窗口。 |
+| **终端或通用模式** | 用引擎自己的 TUI，或者原生对话界面。在设置里打开 TUI 模式。 |
+| **分叉、改请求、旁聊** | 换条路试，不丢原来的；问个小问题，不碰当前任务。 |
 | **导入历史** | 把其他 agent 的历史对话带进来继续。 |
-| **项目** | 一个项目挂多台机器上的文件夹，项目的 agent 有自己的群。Beta。[项目](https://gugu.mintlify.site/projects) |
+| **项目** | 一个项目挂多台机器上的文件夹，项目的 agent 有自己的群。Beta。 |
 | **MCP 和 Skills** | 在资源库管理 MCP 配置，每个对话选用工具。 |
-| **用量与资源** | 七天用量、按任务看额度，资源监视器看正在跑什么。[资源监视器](https://gugu.mintlify.site/resource-monitor) |
+| **用量与资源** | 七天用量、按任务看额度，资源监视器看正在跑什么。 |
 
-更多：[大家怎么用](https://gugu.nextmind.space/zh/examples.html) · [与其他产品的比较](https://gugu.nextmind.space/help/comparison/overview/) · [文档](https://gugu.mintlify.site/)
+更多：[大家怎么用](https://gugu.nextmind.space/zh/examples.html) · [与其他产品的比较](https://gugu.nextmind.space/help/comparison/overview/) · [文档](https://gugu.nextmind.space/help/)
 
 <sub>截图用的是演示工作区。界面、harness 和回合都是真的；人的台词、文档主体和 agent 的任务是为拍摄写的。</sub>
 
@@ -209,7 +207,7 @@ App 开源，审核后进市场。[自己写一个](docs/guides/writing-a-tab-ex
 
 ## 参与贡献
 
-欢迎贡献代码、文档、翻译和 Gugu App：[贡献指南](CONTRIBUTING.zh-CN.md) · [问题与建议](https://github.com/GUYI-AI/gugu/issues) · [App 开发](docs/guides/writing-a-tab-extension.md)。
+欢迎贡献代码、文档、翻译和 App：[贡献指南](CONTRIBUTING.zh-CN.md) · [问题与建议](https://github.com/GUYI-AI/gugu/issues) · [App 开发](docs/guides/writing-a-tab-extension.md)。
 
 ## 许可
 
