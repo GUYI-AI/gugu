@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { projectSourceFragments } from './state/source-fragments';
+import { projectSourceFragments, sourceWindowSettled } from './state/source-fragments';
 import { appendActivityUnits, preserveActivityIds, trailingActivity } from './state/agent-activity';
 import { activityLanes, joinedActivityLanes } from './state/activity-lanes';
 import { latestViewerInput, resetActivityOnInput } from './state/activity-boundary';
@@ -598,7 +598,7 @@ export function ChatRoot(props: ChatRootProps) {
 
     if (
       prev &&
-      !sourceWindow && !prev.sourceWindow &&
+      sourceWindowSettled(sourceWindow, prev.sourceWindow, itemId => prev.indexById.has(itemId)) &&
       folds === prev.folds &&
       next.length > prevSource.length &&
       (prevSource.length === 0 || next[prevSource.length - 1] === prevSource[prevSource.length - 1]) &&

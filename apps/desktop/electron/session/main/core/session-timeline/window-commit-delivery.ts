@@ -1,11 +1,16 @@
 import type { WindowCommitCapture } from './window-commit-write';
 import type { WindowCommitReceipt } from './window-commit-receipt';
 
-const tails = new Map<string, Promise<void>>();
+const deliveries = new Map<string, { sessionId: string; done: Promise<void> }>();
+export function pendingWindowCommitDelivery(sessionId: string, sourceId: string): Promise<void> | undefined {
+  const pending = deliveries.get(sourceId);
+  return pending?.sessionId === sessionId ? pending.done : undefined;
+}
 
-/** Canonical writes release their own tail before this ordered projection chain.
- * Only a bounded receipt and its owner callback cross this boundary, never a turn.
- * Runtime reservations count pending projections and published references together. */
+/** Preparation may overlap after canonical settlement. Runtime preserves commit
+ * publication order separately, so a slow projection never serializes admission
+ * into the next projection group or blocks the canonical tail. An admitted
+ * delivery stays observable to Position until its projection settles. */
 export async function deliverWindowCommit(
   canonical: Promise<WindowCommitReceipt | undefined>,
   committed: WindowCommitCapture['committed'] | undefined,
@@ -13,10 +18,8 @@ export async function deliverWindowCommit(
   const receipt = await canonical;
   if (!committed) return;
   if (!receipt) return committed(null);
-  const run = () => committed(receipt);
-  const next = (tails.get(receipt.sessionId) ?? Promise.resolve()).then(run, run);
-  const tail = next.then(() => undefined, () => undefined);
-  tails.set(receipt.sessionId, tail);
-  try { await next; }
-  finally { if (tails.get(receipt.sessionId) === tail) tails.delete(receipt.sessionId); }
+  const done = Promise.resolve().then(() => committed(receipt)), delivery = { sessionId: receipt.sessionId, done };
+  deliveries.set(receipt.sourceId, delivery);
+  try { await done; }
+  finally { if (deliveries.get(receipt.sourceId) === delivery) deliveries.delete(receipt.sourceId); }
 }

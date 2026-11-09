@@ -16,6 +16,8 @@ export type SessionpagePaneTarget =
   | { kind: 'file'; path: string }
   | { kind: 'browser'; url: string; linkTarget?: GuguLinkTarget }
   | { kind: 'external'; url: string }
+  /** #1607 node 5 这台机器上这条任务的网页(咕咕 server 的无头浏览器):桌面在浏览器那一格显示它的画面,人可接管。 */
+  | { kind: 'task-page' }
   | { kind: 'tabs' }
   | { kind: 'close-tab'; tabId: string };
 
@@ -59,7 +61,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isSessionpagePaneTarget(value: unknown): value is SessionpagePaneTarget {
   if (!isRecord(value)) return false;
   if (value.kind === 'file') return typeof value.path === 'string' && value.path.length > 0;
-  if (value.kind === 'tabs') return true;
+  if (value.kind === 'tabs' || value.kind === 'task-page') return true;
   if (value.kind === 'close-tab') return typeof value.tabId === 'string' && value.tabId.length > 0;
   if (value.kind === 'browser' || value.kind === 'external') return typeof value.url === 'string' && value.url.length > 0;
   return false;

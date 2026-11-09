@@ -3,11 +3,10 @@ import type { MentionItem, PromptEditorRef } from '@gugu/session-ui/react/compon
 import { stringifyMention } from '@gugu/session-shared/markdown';
 import { getDraggedScreenContent, SCREEN_CONTENT_DRAG_TYPE } from '@renderer/lib/drag-screen-content';
 import { MAX_ATTACHMENT_BYTES } from '@gugu/session-core/session-record/contract';
-import { base64ToBytes } from '@shared/lib/base64';
 import { basenameFromAnyPath } from '@shared/path-name';
 import { fileOnDisk } from '@/lib/fileOnDisk';
 import { getDraggedWorkspaceFile, WORKSPACE_FILE_DRAG_TYPE, type DraggedWorkspaceFile } from '@renderer/lib/drag-files';
-import { workspaceRpc } from '@renderer/features/sessions/workspace-backend/workspace-backend';
+import { readWorkspaceBytes } from '@renderer/features/sessions/workspace-backend/read-workspace-bytes';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { LocalSessionMentionProvider } from './local-session-mention-provider';
@@ -38,18 +37,7 @@ export function terminalSessionMentionInput(
  * Over the attachment limit: said before anything is held.
  */
 async function readWorkspaceFile({ projectId, workspaceId, targetPath }: DraggedWorkspaceFile & { projectId: string }): Promise<File> {
-  const files = workspaceRpc(projectId).files;
-  const parts: BlobPart[] = [];
-  for (let offset = 0, size = Infinity; offset < size;) {
-    const result = await files.readChunk(projectId, workspaceId, { path: targetPath, offset, length: 512 * 1024 });
-    if (!result.success) throw new Error(String(result.error.type));
-    size = result.data.size;
-    if (size > MAX_ATTACHMENT_BYTES) throw Object.assign(new Error('too large'), { code: 'too-large' });
-    const bytes = base64ToBytes(result.data.data);
-    if (bytes.length === 0 && offset < size) throw new Error('The file changed while it was read');
-    parts.push(bytes.slice().buffer);
-    offset += bytes.length;
-  }
+  const parts = await readWorkspaceBytes(projectId, workspaceId, targetPath, MAX_ATTACHMENT_BYTES);
   return fileOnDisk(new File(parts, basenameFromAnyPath(targetPath)), targetPath);
 }
 

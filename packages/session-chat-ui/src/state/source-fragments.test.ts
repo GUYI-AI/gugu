@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fragmentAnchor, projectSourceFragments } from './source-fragments';
+import { fragmentAnchor, projectSourceFragments, sourceWindowSettled } from './source-fragments';
 import { unitItemIds, type RenderUnit } from '../core/units';
 import { Virtualizer } from '../core/virtualizer';
 import type { SourceFragment } from '@gugu/session-core/session-record/contract';
@@ -88,3 +88,34 @@ describe('bounded source row ownership', () => {
     }
   });
 });
+
+describe('settled source window lets appends stay incremental', () => {
+  const owner = (fragmentKey: string, itemId: string) => ({ fragmentKey, turnId: 'turn', itemId });
+  const window = (owners: ReturnType<typeof owner>[], fragments = source) =>
+    ({ sourceLineage: 'lineage', sourceFragments: fragments, resolvedFragmentOwners: owners });
+  const all = [owner('a', 'x'), owner('b', 'y'), owner('c', 'z')];
+  const present = (ids: string[]) => (itemId: string) => ids.includes(itemId);
+
+  it('is settled without any window, and once every owner is unchanged and on screen', () => {
+    expect(sourceWindowSettled(undefined, undefined, present([]))).toBe(true);
+    expect(sourceWindowSettled(window(all), window(all), present(['x', 'y', 'z']))).toBe(true);
+    expect(sourceWindowSettled(window([], []), window([], []), present([]))).toBe(true);
+  });
+
+  it('keeps the full rebuild while a fragment is unresolved or its item has not arrived', () => {
+    expect(sourceWindowSettled(window(all.slice(0, 2)), window(all.slice(0, 2)), present(['x', 'y', 'z']))).toBe(false);
+    expect(sourceWindowSettled(window(all), window(all), present(['x', 'y']))).toBe(false);
+  });
+
+  it('projects once when an owner resolves to an item that is already on screen', () => {
+    expect(sourceWindowSettled(window(all), window(all.slice(0, 2)), present(['x', 'y', 'z']))).toBe(false);
+  });
+
+  it('rebuilds when the window appears, disappears, changes lineage or its fragment set', () => {
+    expect(sourceWindowSettled(window(all), undefined, present(['x', 'y', 'z']))).toBe(false);
+    expect(sourceWindowSettled(undefined, window(all), present(['x', 'y', 'z']))).toBe(false);
+    expect(sourceWindowSettled(window(all), { ...window(all), sourceLineage: 'other' }, present(['x', 'y', 'z']))).toBe(false);
+    expect(sourceWindowSettled(window(all), window(all, source.slice(0, 2)), present(['x', 'y', 'z']))).toBe(false);
+  });
+});
+

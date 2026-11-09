@@ -3,6 +3,7 @@ import { SUBSCRIPTION_IDLE_MS } from '@gugu/session-core/session-record';
 import { createSessionHostDeviceRpcHandlers } from '../../host-ws/device-session-host';
 import { createMessagePreviewHost, type MessagePreviewHostDeps } from './preview-rpc';
 import { createSessionpageProjectionDeviceHost, type ProjectionDeviceFactoryOptions } from '../extensions/projection-device-factory';
+import { createProjectionRemoteHost } from '../extensions/projection-remote-host';
 
 /**
  * 这台机器在设备 RPC 上应答的会话页动词。
@@ -39,11 +40,21 @@ export function createSessionpageSessionDeviceRpcHandlers(options?: {
   // #6264 别的桌面、手机经这条频道用这台机器的整套会话页宿主(一套工作台,见 host-ws/device-session-host.ts)。
   const sessionHost = createSessionHostDeviceRpcHandlers();
   const projection = options?.projection ? createSessionpageProjectionDeviceHost(options.projection) : null;
+  // #1607 node 5: an App's projection watched from another of the person's computers, on cloud and SSH alike.
+  const appProjections = createProjectionRemoteHost(() => ({
+    connect: async (input, send) => (await import('../extensions/projection-remote-admit')).admitRemoteProjection(input, send),
+    page: async (session, send) => {
+      const [{ connectTaskPageScreen }, { taskPageForScreen }] = await Promise.all([
+        import('../browser/task-page-screen'), import('../extensions/task-page-host')]);
+      return connectTaskPageScreen(session, () => taskPageForScreen(session), send);
+    },
+  }));
 
   const handlers: DeviceRpcHandlers = {
     ...sessionHost.handlers,
     ...previewHost?.handlers,
     ...projection?.handlers,
+    ...appProjections.handlers,
   };
 
   return {
@@ -51,6 +62,7 @@ export function createSessionpageSessionDeviceRpcHandlers(options?: {
     sweep,
     dispose: () => {
       sessionHost.dispose();
+      appProjections.dispose();
       if (sweepTimer) clearInterval(sweepTimer);
       previewHost?.dispose();
       return projection?.dispose();
