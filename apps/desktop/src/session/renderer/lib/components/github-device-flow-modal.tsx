@@ -1,15 +1,18 @@
+import { notify } from '@/lib/notices'
+import { i18n } from '@/i18n'
+import '@/components/connections/connection-copy'
 import { platform } from '@/platform';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { messageForUser } from '@/lib/userFacingError';
 import { AlertCircle, Check, Copy, ExternalLink } from '@/lib/icons'
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '@renderer/lib/hooks/use-toast';
-import { LibraryHostScope } from '@renderer/features/library/library-host-scope';
+import { LibraryHostDialogStatus, LibraryHostFieldset, LibraryHostScope } from '@renderer/features/library/library-host-scope';
 import { useLibraryHost, type LibraryHost } from '@renderer/features/library/library-host';
 import { rpc } from '@renderer/lib/ipc';
 import { openShellFeedback } from '@renderer/lib/open-shell-feedback';
 import type { BaseModalProps } from '@renderer/lib/modal/modal-provider';
-import { useGithubContext } from '@renderer/lib/providers/github-context-provider';
+import { useOptionalGithubContext } from '@renderer/lib/providers/github-context-provider';
 import { Button } from '@renderer/lib/ui/button';
 import {
   DialogContentArea,
@@ -47,13 +50,13 @@ export function GithubDeviceFlowModal({ host, ...props }: GithubDeviceFlowModalP
 
 function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubDeviceFlowModalProps, 'host'>) {
   const { toast } = useToast();
-  const { cancelGithubConnect: cancelLocal } = useGithubContext();
+  const localContext = useOptionalGithubContext();
   const library = useLibraryHost();
   const events = library.github;
   const cancelGithubConnect = useCallback(() => {
-    if (library.remote) void library.github.authCancel();
-    else cancelLocal();
-  }, [library, cancelLocal]);
+    if (library.remote || library.connectionMetadataExpected || !localContext) void library.github.authCancel();
+    else localContext.cancelGithubConnect();
+  }, [library, localContext]);
 
   // Presentational state - updated via IPC events from main process
   const [userCode, setUserCode] = useState<string>('');
@@ -195,6 +198,10 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
 
     // Auth error
     const cleanupError = events.onEvent(githubAuthErrorChannel, (data) => {
+      if (library.connectionMetadataExpected) {
+        if (data.error !== 'connection_application_busy') notify({ key: `connections-action:${library.connectionMetadata?.ownerId}:github`,tier: 'error',title: i18n.t('connections:connectFailed',{ name: 'GitHub' }) });
+        onError?.(data.error); onClose(); return;
+      }
       setError(messageForUser(data.message || data.error));
 
       if (onError) {
@@ -214,7 +221,7 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
       cleanupSuccess();
       cleanupError();
     };
-  }, [copyToClipboard, events, onError, onSuccess, toast]);
+  }, [copyToClipboard, events, onError, onSuccess, toast,library.connectionMetadataExpected,library.connectionMetadata?.ownerId,onClose]);
 
   const handleClose = () => {
     onClose();
@@ -250,7 +257,9 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
     <>
       <DialogHeader>
         <DialogTitle>{title}</DialogTitle>
+        <LibraryHostDialogStatus />
       </DialogHeader>
+      <LibraryHostFieldset>
       <DialogContentArea className="gap-4">
         {success ? (
           <div className="rounded-lg border border-border/60 bg-background/60 p-3">
@@ -354,6 +363,7 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
           </>
         )}
       </DialogContentArea>
+      </LibraryHostFieldset>
       <DialogFooter>
         {error || success ? (
           <Button variant="outline" onClick={handleClose}>
@@ -364,6 +374,7 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
             <Button variant="outline" onClick={handleClose}>
               Cancel
             </Button>
+            <LibraryHostFieldset>
             <Button
               variant="outline"
               onClick={() => copyToClipboard(userCode)}
@@ -376,6 +387,7 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
               <ExternalLink className="h-4 w-4" />
               Open GitHub
             </Button>
+            </LibraryHostFieldset>
           </>
         )}
       </DialogFooter>

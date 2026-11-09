@@ -40,6 +40,18 @@ describe('publishMessageWindow', () => {
     expect(Object.keys(imSelectors.identitiesById(repository.snapshot())).sort()).toEqual(['former', 'known', 'quoted'])
   })
 
+  it('#2383 also commits identities for addressed recipients who never spoke (an @-ed member who has since left)', async () => {
+    const repository = await openImRepository('account-2383', { adapter: createMemoryLocalSyncDb(), storage: window.localStorage })
+    await repository.putIdentities([identity('known')])
+    mocks.readDisplayIdentities.mockImplementation(async (ids: string[]) => ids.map(identity))
+
+    await publishMessageWindow(repository, 'chat-1', [messageFixture({ id: 'm1', chat_id: 'chat-1', sender_user_id: 'known', seq: 1, content: 'hi', to_user_ids: ['left-agent', '*'] })])
+
+    // `*` 是「所有人」,不是人,不去读。
+    expect(mocks.readDisplayIdentities).toHaveBeenCalledExactlyOnceWith(['left-agent'])
+    expect(Object.keys(imSelectors.identitiesById(repository.snapshot())).sort()).toEqual(['known', 'left-agent'])
+  })
+
   it('asks once for a sender the identity table does not have, logs it, and asks again only after the retry window', async () => {
     const repository = await openImRepository('account-b', { adapter: createMemoryLocalSyncDb(), storage: window.localStorage })
     mocks.readDisplayIdentities.mockResolvedValue([])

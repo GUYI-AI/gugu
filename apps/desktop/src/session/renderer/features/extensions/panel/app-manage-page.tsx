@@ -31,9 +31,10 @@ import { AppVariantList, type AppVariantRow } from './app-variant-list';
 import { VersionHistorySection, type Loadable } from './app-version-history';
 import { ExtensionMonogram } from './extension-monogram';
 import type { ExtensionPendingAction } from './extension-pending';
+import { AppUnreadBindingSection, type UnreadBindingApi } from './app-unread-binding-section';
 import { InstalledRowNoticeLine, programFailureText, type InstalledRowNotice } from './installed-extension-row';
 
-export type ManagePageApi = { marketHistory: (args: { extensionId: string }) => Promise<{ success: boolean; data?: MarketVersionHistoryEntry[]; error?: string }> } &
+export type ManagePageApi = Partial<UnreadBindingApi> & { marketHistory: (args: { extensionId: string }) => Promise<{ success: boolean; data?: MarketVersionHistoryEntry[]; error?: string }> } &
   Partial<Pick<ExtensionsApi, 'agentTools' | 'agentSkills' | 'appData'>>;
 
 /**
@@ -256,6 +257,10 @@ export function AppManagePage({
           {permission.kind === 'network'
             ? translate('extensions.permissionsNetwork', { hosts: permission.host })
             : describeCapability(permission.key, manifest, translate, machine)}
+          {permission.key === 'chat:unread' && manifest.permissions?.bindings?.[0] && api.unreadBindingChoices && api.setUnreadBinding ?
+            <AppUnreadBindingSection extensionId={manifest.id} name={manifest.permissions.bindings[0].name}
+              api={{ unreadBindingChoices: api.unreadBindingChoices, setUnreadBinding: api.setUnreadBinding }} translate={translate}
+              disabled={readOnly || !enabled || off || pending !== undefined} /> : null}
           {commands ? <pre>{`${commands.caption}\n${commands.lines.join('\n')}`}</pre> : null}
         </span>
         {onTogglePermission ? (

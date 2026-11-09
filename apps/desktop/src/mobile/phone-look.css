@@ -255,7 +255,7 @@
 
 [data-phone-shell] :is(.gg-aw, .gg-aw-thread-host, .gg-aw .aui-thread-viewport-footer) { background: transparent; }
 [data-phone-shell] .gg-aw .gg-aw-card[data-state='pending'] { background: linear-gradient(var(--warn-tint), var(--warn-tint)), var(--card); }
-[data-phone-shell] .gg-aw :is(.gg-aw-card[data-state='resolved'], .gg-aw-card[data-state='cancelled'], .gg-aw-note:not([data-tone]), .gg-aw-offline) {
+[data-phone-shell] .gg-aw :is(.gg-aw-card[data-state='resolved'], .gg-aw-card[data-state='cancelled'], .gg-aw-note:not([data-tone])) {
   border-color: transparent;
   background: var(--ta-glass);
   box-shadow: var(--ta-glass-fx);

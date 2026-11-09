@@ -1,3 +1,4 @@
+import type { FirstPrompt } from './use-timeline-session'
 import { messageForUser } from '@/lib/userFacingError';
 import { groupJoinDenialKey } from '@/lib/groupAgentJoin';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -41,7 +42,7 @@ export type AgentWatchRoute =
    */
   | { name: 'projects'; reveal?: { deviceId: string; sessionId: string } | { projectId: string } }
   /** `deviceId` = 会话所在的机器(跨机器的子会话在它自己那台上打开)。 */
-  | { name: 'timeline'; deviceId: string; session: SessionpageSessionSummary; firstPrompt?: string; appKind?: string; draft?: { text: string } }
+  | { name: 'timeline'; deviceId: string; session: SessionpageSessionSummary; firstPrompt?: FirstPrompt; appKind?: string; draft?: { text: string } }
   /**
    * 新建会话的两步(owner 2026-09-06:「新建任务应该是先选择设备再新建任务」):
    * 根页的 + → `pick-machine`(「在哪台机器上」,离线的点不动)→ `create`。

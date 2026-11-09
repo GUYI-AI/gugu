@@ -77,9 +77,11 @@ describe('ImagePreviewProvider', () => {
     Object.defineProperties(thumb, { complete: { value: true }, naturalWidth: { value: 1200 }, naturalHeight: { value: 800 } })
     let finish!: (url: string) => void
     const original = new Promise<string>(resolve => { finish = resolve })
-    await openViewer({ images: [{ url: 'blob:thumbnail', alt: 'geometry', thumb, full: () => original }] })
+    const size = { width: 1200 * resolution, height: 800 * resolution }
+    await openViewer({ images: [{ url: 'blob:thumbnail', alt: 'geometry', thumb, full: () => original, size }] })
     const pswp = instances[0]
     const slide = pswp.currSlide!
+    expect(slide.width).toBe(size.width)
     await act(async () => {
       slide.zoomTo(1.8, { x: 400, y: 300 }, 0, true)
       slide.panTo(-160, -100)
@@ -91,6 +93,7 @@ describe('ImagePreviewProvider', () => {
     Object.defineProperties(image, { naturalWidth: { value: 1200 * resolution }, naturalHeight: { value: 800 * resolution } })
     await act(async () => image.dispatchEvent(new Event('load')))
     expect(pswp.currSlide).toBe(slide)
+    expect(slide.width).toBe(size.width)
     expect(slide.width * slide.currZoomLevel).toBeCloseTo(before.width)
     expect(slide.height * slide.currZoomLevel).toBeCloseTo(before.height)
     expect(slide.pan).toEqual({ x: before.x, y: before.y })
@@ -148,7 +151,7 @@ describe('ImagePreviewProvider', () => {
     writeFileZoom('image', 1)
   })
 
-  it('waits for the opening zoom before fetching the original, then rests the unzoomed image at its real size', async () => {
+  it('waits for the opening zoom before fetching the original, which lands in the box its recorded size already set', async () => {
     let finish!: (url: string) => void
     const full = vi.fn(() => new Promise<string>(resolve => { finish = resolve }))
     writeFileZoom('image', 1)
@@ -158,9 +161,10 @@ describe('ImagePreviewProvider', () => {
     const thumb = document.body.appendChild(document.createElement('img'))
     Object.defineProperties(thumb, { complete: { value: true }, naturalWidth: { value: 300 }, naturalHeight: { value: 200 } })
     thumb.getBoundingClientRect = () => new DOMRect(100, 100, 300, 200)
-    await openViewer({ images: [{ url: 'blob:thumbnail', alt: 'small', thumb, full }] })
+    await openViewer({ images: [{ url: 'blob:thumbnail', alt: 'small', thumb, full, size: { width: 3000, height: 2000 } }] })
     const pswp = instances[0]
     expect(pswp.opener.isOpening).toBe(true)
+    expect(pswp.currSlide!.width).toBe(3000)
     expect(full).not.toHaveBeenCalled()
     await act(async () => {
       await waitForCondition(() => !pswp.opener.isOpening && full.mock.calls.length === 1, 'the original never started')
@@ -175,6 +179,41 @@ describe('ImagePreviewProvider', () => {
     expect(slide.currZoomLevel).toBe(slide.zoomLevels.initial)
     await act(async () => pswp.destroy())
     thumb.remove()
+  })
+
+  it('without a recorded size, the first pixels set the box once; a later original only repaints it', async () => {
+    let finish!: (url: string) => void
+    const instances = await capturePhotoSwipe()
+    const thumb = document.body.appendChild(document.createElement('img'))
+    Object.defineProperties(thumb, { complete: { value: true }, naturalWidth: { value: 300 }, naturalHeight: { value: 200 } })
+    await openViewer({ images: [{ url: 'blob:thumbnail', alt: 'unrecorded', thumb, full: () => new Promise<string>(resolve => { finish = resolve }) }] })
+    const pswp = instances[0]
+    const slide = pswp.currSlide!
+    // A thumbnail with an original to fetch is not the original: its natural size lays nothing out.
+    expect(slide.width).toBe(window.innerWidth)
+    const shown = slide.content.element as HTMLImageElement
+    Object.defineProperties(shown, { naturalWidth: { value: 300, configurable: true }, naturalHeight: { value: 200, configurable: true } })
+    await act(async () => shown.dispatchEvent(new Event('load')))
+    expect(slide.width).toBe(300)
+    await act(async () => {
+      await waitForCondition(() => !pswp.opener.isOpening, 'opening never ended')
+    })
+    await act(async () => finish('blob:original'))
+    await waitForCondition(() => document.querySelector('img.pswp__img[src="blob:original"]') !== null, 'original bytes were not displayed')
+    const image = slide.content.element as HTMLImageElement
+    Object.defineProperties(image, { naturalWidth: { value: 3000 }, naturalHeight: { value: 2000 } })
+    const before = { level: slide.currZoomLevel, ...slide.pan }
+    await act(async () => image.dispatchEvent(new Event('load')))
+    expect(slide.width).toBe(300)
+    expect({ level: slide.currZoomLevel, ...slide.pan }).toEqual(before)
+    await act(async () => pswp.destroy())
+    thumb.remove()
+  })
+
+  it('desktop backdrop is opaque, so the chat changing underneath never shows through the viewer', async () => {
+    const instances = await capturePhotoSwipe()
+    await openViewer()
+    expect(instances[0].options.bgOpacity).toBe(1)
   })
 
   it('a mouse double click goes from a zoomed image to the whole image and on to the second level; a touch one is left to PhotoSwipe', async () => {

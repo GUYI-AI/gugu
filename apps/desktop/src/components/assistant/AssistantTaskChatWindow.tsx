@@ -18,12 +18,11 @@ import '@/mobile/agent-watch/phone-conversation.css'
 import './assistant-task-chat.css'
 
 /** The task pane's own conversation, alongside the personal assistant: the task's session, as its task page shows it. */
-export function AssistantTaskChatWindow({ agent, task, onClose, status, notice, pendingContent }: {
+export function AssistantTaskChatWindow({ agent, task, onClose, status, pendingContent }: {
   agent: Pick<ContactUser, 'id' | 'display_name' | 'avatar'>
   task: TaskChatEndpoint
   onClose: () => void
-  status?: string
-  notice?: ReactNode
+  status?: ReactNode
   pendingContent?: ReactNode
 }) {
   const { t } = useTranslation('assistant')
@@ -36,10 +35,9 @@ export function AssistantTaskChatWindow({ agent, task, onClose, status, notice, 
   return (
     <section className="assistant-task-chat-window ta-skin" aria-label={name} data-testid="assistant-task-chat-window">
       <TaskChatFilePreviewHost mobile={mobile}>
-        <PeekSessionTimeline sessionId={task.sessionId} local={local} onBack={onClose} fallback={<>
+        <PeekSessionTimeline sessionId={task.sessionId} deviceId={task.deviceId} local={local} onBack={onClose} fallback={<>
           <PaneHeader title={name} subtitle={status} mobile={mobile} divider
             leading={<><IconButton aria-label={t('panel.back')} onClick={onClose} data-testid="assistant-task-chat-close"><ChevronLeft /></IconButton><Avatar name={name} seed={agent.id} avatarUrl={agent.avatar} size="sm" isAgent still harnessBadge={false} /></>} />
-          {notice}
           {pendingContent ?? <div className="assistant-task-chat-window__pending"><LoadingIndicator size="panel" ariaLabel={t('chat.opening', { name })} /></div>}
         </>} />
       </TaskChatFilePreviewHost>

@@ -114,7 +114,9 @@ const itemIds = [...new Set(messages.flatMap((row) => {
 const sampleIdOf = new Map(itemIds.map((itemId, index) => [itemId, `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`]))
 const files = []
 for (const itemId of itemIds) {
-  const revisions = await rows(chatDb.from('file_device_revisions').select('version, relative_path, sha256, file_name, content_type').eq('item_id', itemId), `file ${itemId}`)
+  // One record per file version (gugu-supabase#239): a version the device keeps carries its path, sha256 and name.
+  const revisions = await rows(chatDb.from('workspace_item_versions').select('version:n, relative_path, sha256, file_name, content_type')
+    .eq('item_id', itemId).not('host_project_id', 'is', null), `file ${itemId}`)
   if (revisions.length === 0) fail(`file ${itemId} has no recorded revision`)
   const wanted = versionOf.get(itemId)
   const latest = wanted === undefined ? revisions.reduce((a, b) => (b.version > a.version ? b : a)) : revisions.find((revision) => revision.version === wanted)

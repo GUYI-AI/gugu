@@ -8,6 +8,8 @@ import { createModalApi } from './modal';
 import { countsOf } from './check-counts';
 import { projectionSources } from './projection-source';
 import { mountProjection } from './projection-view';
+import { taskPagesApi, mountTaskPage } from './task-pages';
+import { appSurfacesApi } from './app-surfaces';
 
 /**
  * `gugu` itself, built on a host — the same object wherever an App runs (F16): a page (desktop webview or
@@ -207,7 +209,7 @@ export function createGugu(
   // `files.onChanged`) are host halves.
   const api: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw)) {
-    if (['navigationGo', 'navigationClaimBack', 'onBack', 'appFiles', 'chats', 'checkPage', 'clipboard', 'messages', 'prompts', 'cloud', 'framed', 'program', 'projects', 'sessions', 'theme', 'onFilesChanged', 'onDownloadProgress', 'onCloudHeard', 'modal', 'onModalFocus', 'projection', 'onProjection', 'onProjectionSource'].includes(key)) continue;
+    if (['navigationGo', 'navigationClaimBack', 'onBack', 'appFiles', 'chats', 'checkPage', 'clipboard', 'bindings', 'messages', 'prompts', 'cloud', 'framed', 'program', 'projects', 'sessions', 'theme', 'onFilesChanged', 'onDownloadProgress', 'onCloudHeard', 'modal', 'onModalFocus', 'projection', 'onProjection', 'onProjectionSource', 'pages', 'onTaskPage', 'surfaces', 'onSurface', 'projectionMedia'].includes(key)) continue;
     api[key] = typeof value === 'function' && verbs.has(key) ? coded(value as (...args: never[]) => unknown) : value;
   }
   api.files = files;
@@ -228,6 +230,9 @@ export function createGugu(
       },
     } : {}),
   });
+  if (host.program && host.pages && host.onTaskPage) api.pages = taskPagesApi(host);
+  else if (host.pages) api.pages = Object.freeze({ mount: (element: HTMLElement, id: string, options?: Parameters<typeof mountTaskPage>[3]) => mountTaskPage(host, element, id, options) });
+  if (host.surfaces) api.surfaces = appSurfacesApi(host, !!host.program);
   if (host.program && host.projection && host.onProjectionSource) api.projection = projectionSources(host);
   else if (host.projection && host.onProjection) api.projection = {
     mount: (element: HTMLElement, id: string, options?: Parameters<typeof mountProjection>[3]) => mountProjection(host, element, id, options),
@@ -283,6 +288,7 @@ export function createGugu(
   // Called straight through, not deferred: the preload checks the person's gesture on this very call.
   if (raw.clipboard) api.clipboard = Object.freeze({ writeText: coded(raw.clipboard.writeText) });
   // `gugu.messages` (`chat:read`): a chat's timeline or thread, and the messages holding a text or naming a file.
+  if (raw.bindings) api.bindings = Object.freeze({ get: coded(raw.bindings.get) });
   if (raw.messages) api.messages = Object.freeze({ history: coded(raw.messages.history), search: coded(raw.messages.search) });
   // `gugu.chats` (`chat:read`): the chats whoever reads is in, and who is in one.
   if (raw.chats) api.chats = Object.freeze({ list: coded(raw.chats.list), members: coded(raw.chats.members) });

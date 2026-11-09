@@ -5,6 +5,7 @@ import type { WindowLiveCursor } from './window-commit-journal';
 import { writeWindowCommitSource } from './window-commit-source';
 import { createWindowCommitReceipts, type WindowCommitReceipt, type WindowReceiptDatabase } from './window-commit-receipt';
 import { beginWindowCommitIntent, recoverWindowCommitIntent, windowCommitIntentBinding } from './window-commit-intent';
+import { writeWindowCommitSourceCatalog } from './window-commit-source-catalog';
 
 export type WindowCommitCapture = {
   directory: string; scope: string; cursor: WindowLiveCursor;
@@ -34,6 +35,7 @@ export async function prepareWindowCommitWrite(connection: WindowReceiptDatabase
   const first = input.insert ? current : prior?.workerEpoch === current.workerEpoch && prior.storeEpoch === current.storeEpoch ? prior : null;
   const receipt: WindowCommitReceipt = { version: 1, sourceId, sessionId: input.sessionId, referenceId: input.referenceId,
     rowId: input.rowId, storedSeq: input.storedSeq, firstCommitCursor: first, latestRevisionCursor: current, binding, source };
+  await writeWindowCommitSourceCatalog(capture.directory, receipt);
   capture.phase?.('source_durable', receipt);
   return receipt;
 }

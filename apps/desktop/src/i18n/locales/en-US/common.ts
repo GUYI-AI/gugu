@@ -42,6 +42,13 @@ export default {
       "close_incomplete": "Closing didn't finish. Try again."
     }
   },
+  "connection": {
+    "online": "Online",
+    "connecting": "Connecting",
+    "deviceOffline": "Device offline",
+    "lastSeen": "Last online {{time}}",
+    "retry": "Reconnect"
+  },
   "agentStatus": {
     "running": "Running",
     "parked": "Running in background",

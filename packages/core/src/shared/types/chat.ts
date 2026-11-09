@@ -102,6 +102,13 @@ export interface TopicSummary {
   is_participant: boolean
 }
 
+/**
+ * Why the server kept a message but refused it to one addressed agent: its task was archived (it can be restored), or its
+ * identity was removed (it cannot). The server may add reasons before this client knows them: any other string is still a
+ * refusal of a message that IS in the chat, shown as plain "not delivered" — never a send failure (#2383).
+ */
+export type MessageDeliveryRefusalReason = 'agent_archived' | 'identity_removed' | (string & Record<never, never>)
+
 export interface MessageItem {
   id: string
   chat_id: string
@@ -143,7 +150,7 @@ export interface MessageItem {
   // @@@per-message-read (#598) - user_ids of recipients that have read THIS message (from message_deliveries
   // 'read' rows), independent of the monotonic last_read_seq watermark. Drives precise directed read receipts.
   readers?: string[]
-  delivery_blocks?: Array<{ agent_user_id: string; reason: 'agent_archived' }>
+  delivery_blocks?: Array<{ agent_user_id: string; reason: MessageDeliveryRefusalReason }>
   local_send_state?: 'sending' | 'failed' | 'unknown' | null
   local_send_error?: string | null
   local_send_retryable?: boolean

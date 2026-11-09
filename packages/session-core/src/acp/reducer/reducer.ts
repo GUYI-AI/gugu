@@ -124,8 +124,9 @@ function nextTurnIndex(t: TranscriptSlice, base = 0): number {
   return base + t.committed.length + (t.active ? 1 : 0);
 }
 
-function nextTurnSeq(t: TranscriptSlice): number {
-  return t.committed.at(-1)?.seq !== undefined ? t.committed.at(-1)!.seq + 1 : 0;
+/** After the last committed turn; with none held, at the index base (a read that starts at a later turn of a record). */
+function nextTurnSeq(t: TranscriptSlice, base = 0): number {
+  return t.committed.at(-1)?.seq !== undefined ? t.committed.at(-1)!.seq + 1 : base;
 }
 
 /**
@@ -148,7 +149,7 @@ function openTurn(
   const turn: TranscriptTurn = {
     id,
     ...(deps.newTurnReference ? { referenceId: deps.newTurnReference() } : {}),
-    seq: nextTurnSeq(t),
+    seq: nextTurnSeq(t, deps.turnIndexBase),
     initiator,
     ...(trigger ? { trigger } : {}),
     ...(startedAt !== undefined ? { startedAt } : {}),
