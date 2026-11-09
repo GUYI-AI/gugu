@@ -3698,7 +3698,11 @@ function crossMachine(): CrossMachineSessions {
       : openCloudDeviceRpcPipe({ supabase, deviceId, userId: async () => (await requireAuth()).userId, ...handlers })),
     // #7199 第二步:设备推回来的「还在跑」与结果。「收到」之后管道本来就留着(只有超时且没有在途请求才拆),
     // 拆了也无妨:重发同一个 call_id 会重开管道,设备每 5 秒重推结果。
-    onEvent: (deviceId, payload) => { deviceActionCallerInstance?.onEvent(deviceId, payload) },
+    onEvent: (deviceId, payload) => {
+      // #1607 node 5: a picture of an App projection this computer watches there.
+      if (emdashBridge?.projectionRemoteEvent(deviceId, payload)) return
+      deviceActionCallerInstance?.onEvent(deviceId, payload)
+    },
   })
   crossMachineRequester = requester
   app.on('will-quit', () => requester.closeAll())
@@ -4327,6 +4331,11 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
     // 也没关系——调用时才读。
     emdashBridge.setExtensionHostWindowChannel({
       openProjectionViewer: pageId => projectionDeviceRuntime.openViewer(pageId),
+      callMachine: (deviceId, type, payload, options) => {
+        crossMachine()
+        if (!crossMachineRequester) return Promise.reject(new Error('device RPC requester is not ready'))
+        return crossMachineRequester.call(deviceId, type, payload, options)
+      },
       invokeRendererExtensions,
       requestExtensionInstallConsent: (request, options) => {
         if (!mainWindow || mainWindow.isDestroyed()) {

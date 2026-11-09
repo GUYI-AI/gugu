@@ -9,6 +9,7 @@ import { ProjectionMediaAccess, type ProjectionRemoteMediaBinding } from './proj
 import { projectionVideoFeed } from './projection-video-feed';
 import { extensionsService } from './extensions-root';
 import type { BridgeCaller } from './extension-bridge';
+import type { ProjectionRemoteSources } from './projection-remote-host';
 
 type Source = {
   pageId: number;
@@ -74,6 +75,27 @@ export class ExtensionProjectionBridge {
     createDecoder: Parameters<typeof projectionVideoFeed>[3], createMedia: Parameters<typeof projectionVideoFeed>[4]) {
     return projectionVideoFeed(this.resources, this.mediaAccess.openRemote(binding, sourceId), context, createDecoder, createMedia);
   }
+
+  /**
+   * A page on another of the person's computers watches this App's projection in a session on this machine
+   * (projection-remote-host.ts): this machine's install of the same App version, switched on, for a session here.
+   */
+  readonly remote: ProjectionRemoteSources = {
+    connect: async (input, send) => {
+      const [{ agentSessionContext }, { extensionsService }] = await Promise.all([
+        import('./extension-agent-context'), import('./extensions-root')]);
+      let version: string;
+      try { version = extensionsService().get(input.app).manifest.version; }
+      catch { throw Object.assign(new Error('This App is not installed on that computer'), { code: 'not-installed' }); }
+      // A page and its program are one App, never two halves of different releases (as for app_call).
+      if (version !== input.version) throw Object.assign(new Error(`That computer has version ${version} of this App`), { code: 'version-mismatch' });
+      if (!(await agentSessionContext(input.session))) throw Object.assign(new Error('This task is not on that computer'), { code: 'not-found' });
+      const viewer = this.resources.connect({ extensionId: input.app, sessionId: input.session }, input.source, {
+        transport: 'device', send, onClose: () => () => {},
+      });
+      return { receive: viewer.receive, close: viewer.close };
+    },
+  };
 
   count(pageId: number): number {
     return [...this.sources.values()].filter(source => source.pageId === pageId && source.alive).length;
@@ -197,23 +219,22 @@ export class ExtensionProjectionBridge {
       }
       const token = randomUUID();
       this.watches.set(key, token);
-      // This binding is local. A remote viewer must enter through an authenticated direct connection, never a cloud RPC.
+      // A session on another of the person's computers is watched there, over this computer's device connection to it.
       const epoch = this.epochs.get(caller.pageId) ?? 0;
       const sessionId = workspaceSession(caller.binding)!;
       try {
         const { knownSessionMachine } = await import('./app-programs-elsewhere');
         if (epoch !== (this.epochs.get(caller.pageId) ?? 0) || workspaceSession(caller.binding) !== sessionId
           || this.watches.get(key) !== token) throw new Error('Projection page changed');
-        if (knownSessionMachine(sessionId)?.deviceId) throw new Error('Projection needs a direct connection to that computer');
-        const viewer = this.resources.connect({ extensionId: caller.extensionId, sessionId }, args.id, {
-          transport: 'local',
-          send: (packet: ProjectionHostPacket) => {
-            if (packet.type === 'state' && packet.state === 'closed' && this.watches.get(key) === token) {
-              this.viewers.delete(key); this.watches.delete(key);
-            }
-            caller.hear({ type: 'projection', watchId: args.watchId as string, packet });
-          },
-          onClose: () => () => {},
+        const machine = knownSessionMachine(sessionId)?.deviceId;
+        const deliver = (packet: ProjectionHostPacket) => {
+          if (packet.type === 'state' && packet.state === 'closed' && this.watches.get(key) === token) {
+            this.viewers.delete(key); this.watches.delete(key);
+          }
+          caller.hear({ type: 'projection', watchId: args.watchId as string, packet });
+        };
+        const viewer = machine ? await this.watchElsewhere(caller.extensionId, machine, sessionId, args.id, deliver) : this.resources.connect({ extensionId: caller.extensionId, sessionId }, args.id, {
+          transport: 'local', send: deliver, onClose: () => () => {},
         });
         if (epoch !== (this.epochs.get(caller.pageId) ?? 0) || this.watches.get(key) !== token) { viewer.close(); throw new Error('Projection page changed'); }
         this.viewers.set(key, { pageId: caller.pageId, sessionId, epoch, ...viewer });
@@ -243,6 +264,14 @@ export class ExtensionProjectionBridge {
       }
     }
     throw new Error('Unknown projection call');
+  }
+
+  /** The session is on another of the person's computers: its program publishes there, so watch it there. */
+  private async watchElsewhere(extensionId: string, deviceId: string, sessionId: string, source: string,
+    deliver: (packet: ProjectionHostPacket) => void) {
+    const [{ extensionsService }, { watchRemoteProjection }] = await Promise.all([import('./extensions-root'), import('./projection-remote-viewer')]);
+    const version = extensionsService().get(extensionId).manifest.version;
+    return watchRemoteProjection(deviceId, { app: extensionId, version, session: sessionId, source }, deliver);
   }
 
   closeScope(scope: { sessionId: string } | { projectId: string }): void {
