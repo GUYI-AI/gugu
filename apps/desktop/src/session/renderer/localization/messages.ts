@@ -895,7 +895,7 @@ const enUSCoreMessages = {
   'transcript.activitySending': "Sending to {names}",
   'transcript.activityGroupSent': "Sent {count} messages in {names}",
   'transcript.activityExchanged': "Exchanged {count} messages with {names}",
-  'transcript.activityReplyToYou': "Replied to you in {name}",
+  'transcript.activityReplyToYou': "Replied to you in {names}",
   'transcript.activityExpand': "Show activity: {summary}",
   'transcript.activityCollapse': "Hide activity: {summary}",
 
@@ -2016,7 +2016,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'transcript.activitySending': "正在给 {names} 发消息",
   'transcript.activityGroupSent': "在 {names} 发了 {count} 条消息",
   'transcript.activityExchanged': "与 {names} 往来 {count} 条消息",
-  'transcript.activityReplyToYou': "在 {name} 里回复了你",
+  'transcript.activityReplyToYou': "在 {names} 里回复了你",
   'transcript.activityExpand': "展开往来记录：{summary}",
   'transcript.activityCollapse': "收起往来记录：{summary}",
 

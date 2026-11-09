@@ -10,13 +10,15 @@ export type AgentActivityEvent = {
   direction: 'received' | 'sent' | 'sending';
   actors: readonly ActivityActor[];
   group?: ActivityActor;
+  /** A confirmed group send that names the viewer: the agent answered the viewer there (A2G, folded like any other). */
+  toViewer?: true;
   count: number;
   live: boolean;
 };
 export type AgentActivityGroup = { id: string; events: readonly AgentActivityEvent[]; messageIds?: readonly string[] };
 export const activityId = (id: string) => `agent-activity:${id}`;
 
-type ActivityContext = Pick<SegmentCtx, 'actor' | 'chatName' | 'chatKind' | 'translate'>;
+type ActivityContext = Pick<SegmentCtx, 'actor' | 'chatName' | 'chatKind' | 'translate' | 'viewerId'>;
 
 function actor(address: string, ctx: ActivityContext, fallback?: string | null): ActivityActor | null {
   const known = ctx.actor?.(address);
@@ -55,10 +57,20 @@ function sentGroup(addresses: SendAddresses, ctx: ActivityContext): ActivityActo
   return { id, name: name || ctx.translate('transcript.activityGroup'), target: { kind: 'chat', chatId: id } };
 }
 
-/** Any human/unknown addressee keeps the output visible. A known, unaddressed group is A2A. */
-export function outgoingActivity(id: string, addresses: SendAddresses | undefined | null, ctx: ActivityContext, count = 1): AgentActivityEvent | null {
+/**
+ * Any human/unknown addressee keeps the output visible, except the viewer reached in a group: that answer lives in
+ * the group, so here it is A2G activity like any other group send. `sentMessageId` lets its group name open that
+ * exact message. A known, unaddressed group is A2A.
+ */
+export function outgoingActivity(id: string, addresses: SendAddresses | undefined | null, ctx: ActivityContext, count = 1,
+  sentMessageId?: string): AgentActivityEvent | null {
   if (!addresses) return null;
   const group = sentGroup(addresses, ctx);
+  const viewer = ctx.viewerId?.replace(/^user:/, '');
+  if (group && viewer && addresses.confirmed && addresses.recipients?.includes(`user:${viewer}`)) {
+    const target = group.target.kind === 'chat' && sentMessageId ? { ...group.target, messageId: sentMessageId } : group.target;
+    return { id, direction: 'sent', actors: [], group: { ...group, target }, toViewer: true, count, live: false };
+  }
   const recipients = addresses.recipients ?? (addresses.recipientsExplicit === false && group ? [] : null);
   if (!recipients || !recipients.length && !group) return null;
   if (recipients.some(address => ctx.actor?.(address)?.type !== 'agent')) return null;
@@ -79,14 +91,6 @@ export function hasUnconfirmedSend(items: readonly TranscriptItem[], turn: Trans
     const addresses = sendAddressesOf(item, turn);
     return addresses !== null && !addresses.confirmed;
   });
-}
-
-/** Proven group reply to the viewer: preserve one original source link, no session notification. */
-export function viewerGroupReply(message: ChatMessage, ctx: ActivityContext & Pick<SegmentCtx, 'viewerId'>): ActivityActor | null {
-  const addresses = message.sentAddresses;
-  const viewer = ctx.viewerId?.replace(/^user:/, '');
-  if (!viewer || !addresses?.confirmed || !addresses.recipients?.some(id => id === `user:${viewer}`)) return null;
-  return sentGroup(addresses, ctx) ?? null;
 }
 
 /** Stable flat gate: no nested, unbounded message viewport and no second copy of original bubbles. */

@@ -136,8 +136,7 @@ export type ChatMessage = {
    * process line, each `body` only a bubble. The process steps go between them, so they never land
    * under the bubble; every output of the turn (message_send ones too) is its own bubble.
    */
-  conversationPart?: 'head' | 'body' | 'group-reply';
-  groupReply?: import('./state/agent-activity').ActivityActor;
+  conversationPart?: 'head' | 'body';
   /** A `body`'s head row — background tasks still hang on that process line. */
   conversationHead?: string;
   /**

@@ -33,7 +33,7 @@ const fallbackMessages = {
   'transcript.activitySending': "Sending to {names}",
   'transcript.activityGroupSent': "Sent {count} messages in {names}",
   'transcript.activityExchanged': "Exchanged {count} messages with {names}",
-  'transcript.activityReplyToYou': "Replied to you in {name}",
+  'transcript.activityReplyToYou': "Replied to you in {names}",
   'transcript.activityExpand': "Show activity: {summary}",
   'transcript.activityCollapse': "Hide activity: {summary}",
 
