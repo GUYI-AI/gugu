@@ -10,6 +10,7 @@ import { beginWindowCommitIntent as begin, recoverWindowCommitIntent as recover,
 import { createWindowCommitReceipts, type WindowReceiptDatabase } from './window-commit-receipt';
 import { windowCommitSourcePath, writeWindowCommitSource } from './window-commit-source';
 import { prepareWindowCommitWrite } from './window-commit-write';
+import { writeWindowCommitSourceCatalog } from './window-commit-source-catalog';
 
 type Sqlite = Pick<WindowReceiptDatabase, 'prepare'> & { isOpen: boolean; isTransaction: boolean; exec(sql: string): void; close(): void };
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as { DatabaseSync: new(path: string) => Sqlite };
@@ -33,7 +34,11 @@ async function fixture() {
   const scope = { directory, scope: 'a'.repeat(64), sessionId: 's' }, sourceId = randomUUID();
   const intent = { version: 1 as const, sourceId, sessionId: 's', rowId: 's:0', referenceId: 'ref', storedSeq: 0 };
   const sourceBinding = binding(scope.scope, sourceId), path = windowCommitSourcePath(directory, sourceBinding);
-  const write = () => writeWindowCommitSource(directory, sourceBinding, JSON.stringify({ text: 'body'.repeat(18000) }), undefined, true, sourceId);
+  const write = async () => {
+    const source = await writeWindowCommitSource(directory, sourceBinding, JSON.stringify({ text: 'body'.repeat(18000) }), undefined, true, sourceId);
+    await writeWindowCommitSourceCatalog(directory, { ...intent, binding: sourceBinding, source, firstCommitCursor: null,
+      latestRevisionCursor: { workerEpoch: 'w', storeEpoch: 's', sequence: 1 } }); return source;
+  };
   return { ...c, scope, intent, path, sourceBinding, connect, write };
 }
 

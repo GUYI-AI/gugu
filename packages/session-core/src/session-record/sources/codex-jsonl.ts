@@ -39,6 +39,9 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
     resumeVersion: 6,
     resolve: () => resolveRolloutFile(locator, options?.readMode === 'snapshot'),
     initial: () => ({ turn: 0, item: -1, userSeen: false, calls: {}, children: {} }),
+    // `calls` and `children` are replaced, never changed in place: a snapshot need not copy them.
+    snapshot: (ordinals) => ({ ...ordinals }),
+    childIds: (ordinals) => Object.keys(ordinals.children),
     decode(record, ordinals) {
       const codex = readCodexRecord(record);
       // 序号按**每一条记录**推进，不按「解出了 event 的记录」推进:
@@ -55,7 +58,7 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
       if (item?.kind === 'tool_call' && item.namespace === 'collaboration') {
         let input = item.input;
         if (typeof input === 'string') { try { input = JSON.parse(input); } catch { input = null; } }
-        if (asRecord(input)) ordinals.calls[item.id] = { ...asRecord(input), name: item.name };
+        if (asRecord(input)) ordinals.calls = { ...ordinals.calls, [item.id]: { ...asRecord(input), name: item.name } };
         return [];
       }
       if (item?.kind === 'tool_result' && ordinals.calls[item.callId]) return [];
@@ -67,7 +70,7 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
           ...(typeof input.model === 'string' ? { model: input.model } : {}),
         };
         const first = !ordinals.children[item.threadId];
-        ordinals.children[item.threadId] = child;
+        ordinals.children = { ...ordinals.children, [item.threadId]: child };
         const at = parseTimestamp(codex.timestamp);
         // The child's own task boundaries provide lifecycle; the parent's summary does not complete it.
         if (!first) return [];
@@ -94,7 +97,8 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
   });
   return withSubagentSources(
     root,
-    (id) => createCodexJsonlSource({ ...locator, providerSessionId: id }, options, true),
+    // A child's pictures are in its own file: a place kept for them would point into the root record.
+    (id) => createCodexJsonlSource({ ...locator, providerSessionId: id }, options && { ...options, fill: undefined }, true),
     () => createCodexJsonlSource(locator, options, nativeChild),
     options,
   );

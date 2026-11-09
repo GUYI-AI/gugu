@@ -27,6 +27,8 @@
     "./session-record/personal-conversation": "./src/session-record/personal-conversation.ts",
     "./session-record/preview-activity": "./src/session-record/preview-activity.ts",
     "./session-record/native-read": "./src/session-record/native-read.ts",
+    "./session-record/fill-read": "./src/session-record/fill-read.ts",
+    "./session-record/picture-elider": "./src/session-record/sources/picture-elider.ts",
     "./session-record/owner-notifications": "./src/session-record/owner-notifications.ts",
     "./session-record/tool-image": "./src/session-record/tool-image.ts",
     "./session-record/message-preview": "./src/session-record/message-preview.ts",

@@ -25,6 +25,7 @@ import { resolveLocalAgentRunContext } from '@main/core/agents/agent-run-context
 import { setProviderSessionId } from '@main/core/sessions/set-session-id';
 import { withStoredTurns, storedRevertBoundary, truncateStoredHistory } from '@main/core/sessions/session-turn-store';
 import { connectWindowCommitHost } from '../../session-timeline/window-commit-host';
+import { prepareWindowCommitStorage } from '../../session-timeline/window-projection-production';
 import { openNativeConversationPreviews } from '@main/core/sessions/session-conversation-live';
 import { createHistoryReverter } from './history-revert';
 import { connectNativePromptPreparation } from './native-prompt-preparation';
@@ -60,6 +61,7 @@ import { log } from '@main/lib/logger';
 import { sessionStartStageChannel } from '@shared/core/sessions/sessionEvents';
 import { desktopWorkerPath } from '@main/worker-manifest';
 import { stripUntrustedSessionAuthority, trustedPlatformInputPatch } from './session-meta';
+import { cancelExtensionSessionCalls } from '@main/core/extensions/extension-program-access';
 
 export { mergeTrustedSessionMeta, stripUntrustedSessionAuthority } from './session-meta';
 
@@ -273,7 +275,7 @@ const acpWorker = lazyWorker(
       const committed = await connectWindowCommitHost(handle.client.turnCommitted.handle(undefined), event => {
         // #6264 Keep authentication authority independent of bounded history publication.
         void applyTurnToAuthExpiry(event, authExpiryWriter);
-      }, handle.connection);
+      }, handle.connection, prepareWindowCommitStorage);
       handle.scope.add(() => committed.close());
       const conversationPreviews = openNativeConversationPreviews(sessionId => withStoredTurns(sessionId, async () => undefined));
       handle.scope.add(() => conversationPreviews.dispose());
@@ -662,6 +664,7 @@ async function stopAcpWorkerSession(
  * owns the process — fork ownership and the platform ticket. Throws while the worker still owns the process.
  */
 export async function stopAcpSessionAndSettle(client: ContractClient<AcpRuntimeApiContract>, sessionId: string): Promise<void> {
+  cancelExtensionSessionCalls(sessionId);
   const [result] = await Promise.all([stopAcpWorkerSession(client, { sessionId }), closeAcpBrowserToolsBestEffort(sessionId)]);
   if (!result.success && await (client as AcpRuntimeProcessClient).adapterProvenance({ sessionId }) !== null) {
     throw new Error(`ACP session ${sessionId} did not stop: ${result.error.message ?? result.error.type}`);
@@ -691,6 +694,9 @@ function decorateRuntimeClient(client: ContractClient<AcpRuntimeApiContract>): A
   return {
     ...client,
     cancelTurn: async (input, meta) => {
+      // Snapshot the current calls before any async cleanup. A later turn's calls
+      // must not be cancelled when this interruption eventually finishes.
+      cancelExtensionSessionCalls(input.sessionId);
       const { stopHumanToolWaits } = await import('../../asks/human-tool-wait');
       stopHumanToolWaits(input.sessionId);
       // Harnesses do not all cancel their outstanding MCP requests when interrupted.

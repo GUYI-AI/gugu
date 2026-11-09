@@ -14,6 +14,13 @@ export type DeviceScopeNotice = {
   retry: boolean;
   /** 页面照旧画上次读到的那一份,但动作全灰:那台机器此刻做不了任何事。 */
   readOnly: boolean;
+  /**
+   * #2301 Q5: the scope heading's connection state already says this (offline / waking without a failure reason), so
+   * the page draws no line of its own; whether it is showing the last copy goes into that heading (「只读缓存」).
+   */
+  inHeading: boolean;
+  /** The page still draws the machine's last copy (only with `readOnly`). */
+  cached: boolean;
 };
 
 function errorCode(error: unknown): string | null {
@@ -44,23 +51,23 @@ export function deviceScopeNotice(
     const text = input.cloud.failure
       ? cloudWakeFailureText(input.cloud.failure, device, translate)
       : translate(input.hasData ? 'deviceScope.wakingCached' : 'deviceScope.wakingEmpty', { device });
-    return { kind: 'waking', text, retry: false, readOnly: true };
+    return { kind: 'waking', text, retry: false, readOnly: true, inHeading: !input.cloud.failure, cached: input.hasData };
   }
   if (!remote.online) {
     const ago = formatAgo(remote.lastSeenAt, input.now, translate);
     const text = ago
       ? translate(input.hasData ? 'deviceScope.offlineSinceCached' : 'deviceScope.offlineSinceEmpty', { device, ago })
       : translate(input.hasData ? 'deviceScope.offlineCached' : 'deviceScope.offlineEmpty', { device });
-    return { kind: 'offline', text, retry: false, readOnly: true };
+    return { kind: 'offline', text, retry: false, readOnly: true, inHeading: true, cached: input.hasData };
   }
   if (!input.error) return null;
   const code = errorCode(input.error);
   // 老 server 不认这个动词(`unknown_method`),或不认一套工作台、线根本开不起来(`server_outdated`)。
   if (code && TOO_OLD_CODES.has(code)) {
-    return { kind: 'server-too-old', text: translate('deviceScope.serverTooOld', { device }), retry: false, readOnly: true };
+    return { kind: 'server-too-old', text: translate('deviceScope.serverTooOld', { device }), retry: false, readOnly: true, inHeading: false, cached: false };
   }
   if (input.error instanceof Error && input.error.name === 'DeviceRpcTimeoutError') {
-    return { kind: 'unreachable', text: translate('deviceScope.unreachable', { device }), retry: true, readOnly: false };
+    return { kind: 'unreachable', text: translate('deviceScope.unreachable', { device }), retry: true, readOnly: false, inHeading: false, cached: false };
   }
-  return { kind: 'failed', text: translate('deviceScope.failed', { device }), retry: true, readOnly: false };
+  return { kind: 'failed', text: translate('deviceScope.failed', { device }), retry: true, readOnly: false, inHeading: false, cached: false };
 }

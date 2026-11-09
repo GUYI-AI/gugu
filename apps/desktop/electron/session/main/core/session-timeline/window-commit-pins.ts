@@ -117,6 +117,14 @@ export async function openWindowCommitPins(input: {
     });
   }
   return {
+    namespace: scope,
+    /** Namespace metadata cleanup shares acquire's queue and epoch proof. */
+    withGateway<T>(b: WindowBudget, run: (check: () => void) => Promise<T>, abort?: AbortSignal) {
+      return serial(namespace, async () => {
+        await current(b, abort); const held = () => { proof(); abort?.throwIfAborted(); };
+        held(); try { return await run(held); } finally { proof(); }
+      });
+    },
     acquire(object: object, version: CommitVersion, b: WindowBudget, abort?: AbortSignal) {
       if (version.projectionId !== `${version.receipt.sourceId}/${version.projectionId.split('/')[1]}`
         || !/^[a-f0-9]{32}$/.test(version.projectionId.split('/')[1] ?? '')) throw fault('invalid_projection_version');

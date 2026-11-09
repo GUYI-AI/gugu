@@ -1232,7 +1232,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     const item = { manifest, cloud: subject.cloud, ref: subject.installRef };
     return (
       <div className="mk" data-testid="extensions-product" ref={rootRef}>
-        {notice && <DeviceScopeNoticeLine notice={notice} onRetry={() => void refresh()} />}
+        {notice && <DeviceScopeNoticeLine notice={notice} onRetry={() => void refresh()} noHeading />}
         <div className="pt-10 pb-14">
           <AppProductPage
             // 点「类似 App」是换一个 App:整页重来,❌ 带着上一个的截图、展开的版本历史画一帧。

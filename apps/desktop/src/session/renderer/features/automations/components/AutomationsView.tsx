@@ -169,8 +169,8 @@ function AutomationsViewBody() {
                 createPending={readOnly}
                 onNewAutomation={() => openCreateSheet()}
               />
+              {notice && <DeviceScopeNoticeLine notice={notice} onRetry={() => void automations.refetch()} />}
             </DeviceScopeProvider>
-            {notice && <DeviceScopeNoticeLine notice={notice} onRetry={() => void automations.refetch()} />}
             {notice && !hasLoadedAutomations ? null : isEmpty ? (
               <AutomationTemplatesEmptyState
                 templates={templates}

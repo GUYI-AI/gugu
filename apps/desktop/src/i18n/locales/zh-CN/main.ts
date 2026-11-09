@@ -92,6 +92,8 @@ export default {
     "continue": "继续",
     "saving": "正在保存…",
     "saveFailed": "没保存成功，请重试。",
+    "helpImprove": "帮助改进咕咕：出错时自动发送错误摘要，不含对话和文件内容",
+    "helpImproveFailed": "这个选择没保存上，请再点一次。",
     "harnessRecommended": "推荐",
     "harnessTitle": "选择智能体",
     "harnessSub": "可多选，咕咕会在后台安装并管理。",
@@ -164,14 +166,6 @@ export default {
   "agentWatch": {
     "title": "机器与项目",
     "backgroundWatch": "咕咕正在看管 {{count}} 台机器",
-    "cloud": {
-      "connecting": "正在连接你的咕咕…",
-      "dropped": "和你的咕咕的连接断了。",
-      "reconnect": "重新连接",
-      "retry": "重试",
-      "wakeFailed": "连不上你的咕咕：",
-      "creditsExhausted": "积分已用完，你的咕咕暂停处理消息。"
-    },
     "projects": {
       "title": "项目",
       "loading": "正在读取项目…",
@@ -211,14 +205,6 @@ export default {
       "showLess": "收起",
       "renameSave": "保存",
       "archive": "归档"
-    },
-    "offline": {
-      "phoneTitle": "手机未连接 Agent 宿主",
-      "phoneBody": "会话记录保存在这台手机上。重新连接并启用 Agent 后，可以查看记录、继续任务。",
-      "title": "「{{machine}}」未连接",
-      "body": "时间线要从这台机器上实时读取，它不在线时读不到。把它开机并登录同一账号后再回来。",
-      "sendLater": "现在发送的消息会在它重新连接后送达。",
-      "lastSeen": "最后在线：{{time}}"
     },
     "output": {
       "machineOnly": "只能在那台电脑上打开",
@@ -499,6 +485,9 @@ export default {
       "notificationsTestRejectedMobile": "系统没让这条通知弹出来——咕咕还没拿到通知权限。去「我的 → 本机控制 → 通知」开。",
       "terminal": "允许以终端（TUI）模式启动 agent",
       "terminalDescription": "开启后，新建任务时可以选「通用」或「终端」，默认仍是通用；已有任务不受影响。",
+      "helpImprove": "帮助改进咕咕",
+      "helpImproveDescription": "出错时自动发送错误摘要（错误类型、代码位置、版本、系统），不含对话和文件内容。",
+      "helpImproveFailed": "没保存上，请再试一次。",
       "trayBadge": "托盘角标",
       "trayBadgeAria": "在托盘图标上显示未读数",
       "trayBadgeEnabled": "在托盘图标上显示未读数",

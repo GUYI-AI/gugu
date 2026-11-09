@@ -1,6 +1,7 @@
 import type { AgentDisplayStatus, GroupAgentItem, GroupCollabSnapshot, GroupMemberItem, GroupMemberRole } from '@gugu/core/shared/types/chat'
 import type { DisplayIdentity } from '../lib/displayIdentity'
 import type { MemberProfileCardModel } from './MemberProfileCard'
+import { messageReferencedUserIds } from '../lib/messageReferencedUserIds'
 
 export type MemberProfileSide = 'left' | 'right'
 
@@ -43,7 +44,7 @@ export function toHumanProfile(member: GroupMemberItem, identity: DisplayIdentit
 export function toAgentProfile(agent: GroupAgentItem, identity: DisplayIdentity, status?: AgentDisplayStatus, ownerDisplayName?: string | null): MemberProfileCardModel { return toIdentityProfile(identity, agent.role, 'group', agent, status, ownerDisplayName) }
 
 /**
- * 名册成员的资料 + 「发过消息但已不在名册」的人(退群 / 被移出)的资料。后者的身份由消息窗口写入时提交
+ * 名册成员的资料 + 消息引用到(发过言、被回复、被 @)但已不在名册的人(退群 / 被移出)的资料(#2383)。后者的身份由消息窗口写入时提交
  * (chatMessageWindowPublication),这里只要 identitiesById 里有就出资料,标 membership: 'former' —— 成员列表
  * 靠这个标记不列他,消息气泡和资料卡照常(#5610 §2.3)。
  */
@@ -51,11 +52,11 @@ export function buildMemberProfileMap(
   snapshot: GroupCollabSnapshot,
   identities: Readonly<Record<string, DisplayIdentity>>,
   agentStatuses: Record<string, AgentDisplayStatus> = {},
-  senderIds: Iterable<string | null | undefined> = [],
+  messages: Parameters<typeof messageReferencedUserIds>[0] = [],
 ): Record<string, MemberProfileCardModel> {
   const profiles: Record<string, MemberProfileCardModel> = {}
   for (const member of snapshot.humans) if (identities[member.id]) profiles[member.id] = toHumanProfile(member, identities[member.id])
   for (const agent of snapshot.agents) if (identities[agent.id]) profiles[agent.id] = toAgentProfile(agent, identities[agent.id], agentStatuses[agent.id], agentOwnerDisplayName(identities[agent.id], identities))
-  for (const id of senderIds) if (id && !profiles[id] && identities[id]) profiles[id] = { ...toIdentityProfile(identities[id], 'member', 'group', undefined, undefined, agentOwnerDisplayName(identities[id], identities)), membership: 'former' }
+  for (const id of messageReferencedUserIds(messages)) if (!profiles[id] && identities[id]) profiles[id] = { ...toIdentityProfile(identities[id], 'member', 'group', undefined, undefined, agentOwnerDisplayName(identities[id], identities)), membership: 'former' }
   return profiles
 }

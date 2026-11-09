@@ -12,7 +12,7 @@ export function projectPhonePendingInputs(previous: readonly PendingPrompt[], se
     ...ordinary.map(input => input.messageId)])
   return [...ids].flatMap(id => {
     const receipt = ordinary.find(input => input.messageId === id)
-    let prior: PendingPrompt | null = previous.find(input => input.id === id) ?? (receipt ? { id, text: receipt.text, held: true,
+    let prior: PendingPrompt | null = previous.find(input => input.id === id) ?? (receipt ? { id, text: receipt.text, held: true, ...(receipt.sentAt !== undefined ? { sentAt: receipt.sentAt } : {}),
       baselineMessageIds: sessionInputBaseline(turns).baseline, afterTurnId: turns.at(-1)?.id,
       delivery: { state: 'sending' as const } } : null)
     const ownSender = sender.filter(input => input.id === id)

@@ -1,6 +1,7 @@
 import { DndContext } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
 import { useEffect } from 'react';
+import { SessionMachineStatus } from './session-machine-status';
 import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { auxLeadingReserve, PutBackButton } from '@renderer/app/aux-window-host';
 import { BlockGrip, CloseBlockButton, droppedOutsideWindow, startSessionBlockDrag } from '@renderer/app/screen-frame';
@@ -227,6 +228,7 @@ const SessionBlockActions = observer(function SessionBlockActions({ atScreenEdge
   const startupFailure = useSessionStartupFailure(sessionId ?? null);
   return (
     <TabBarActionRow atWindowEdge={atScreenEdge}>
+      <SessionMachineStatus />
       {/* spec session-terminal-model-switch:终端会话看不到输入框,换模型的入口在这里;通用模式的输入框里已经有一颗。
           从没起过的会话只在首启失败时摆(#7092:会员模型被拒,换一个再起);正在首启的那段不摆,换了也赶不上这一次。 */}
       {session && sessionId && sessionViewOfRuntime(session.data.runtime ?? 'pty') === 'code'

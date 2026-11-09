@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { link, open, rm, stat } from 'node:fs/promises';
+import { statSync } from 'node:fs';
 import { join } from 'node:path';
 import { decodeWindowFrame, encodeWindowFrame, windowFrameName, type WindowFrameKey } from '@gugu/session-core/session-record/window-cache/frame';
 import { readWindowFrame, syncWindowDirectory, writeWindowFrame } from '@gugu/session-core/session-record/window-cache/disk-frame';
@@ -7,6 +8,9 @@ import type { WindowBudget } from '@gugu/session-core/session-record/window-cach
 
 const CHUNK = 16 * 1024;
 type Binding = Pick<WindowFrameKey, 'scope' | 'sourceLineage' | 'decoderVersion'>;
+export const windowCommitSourceBinding = (scope: string, sourceId: string) => ({
+  scope, sourceLineage: createHash('sha256').update(sourceId).digest('hex'), decoderVersion: 1,
+});
 type Physical = { dev: string; ino: string; mtimeNs: string; ctimeNs: string };
 export type WindowCommitSourceManifest = {
   version: 1; bytes: number; chunks: number; stride: number; sha256: string; physical: Physical;
@@ -36,6 +40,17 @@ export async function assertWindowCommitSource(directory: string, binding: Bindi
   const current = await stat(sourcePath(directory, binding), { bigint: true });
   if (!current.isFile() || current.size !== BigInt(fileBytes(source)) || !same(physical(current), source.physical))
     throw new Error('Immutable commit source changed');
+}
+
+/** Final export-boundary metadata proof. No await may separate this check from
+ * a successful public return; it reads no body bytes or projection history. */
+export function assertWindowCommitSourceNow(directory: string, binding: Binding, source: WindowCommitSourceManifest): void {
+  try {
+    bound(source, binding);
+    const current = statSync(sourcePath(directory, binding), { bigint: true });
+    if (!current.isFile() || current.size !== BigInt(fileBytes(source)) || !same(physical(current), source.physical))
+      throw new Error('Immutable commit source changed');
+  } catch (cause) { throw Object.assign(new Error('Immutable commit source changed', { cause }), { code: 'needs_location' }); }
 }
 
 /** The existing canonical writer supplies its already serialized value. This

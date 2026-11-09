@@ -75,6 +75,7 @@ import {
 } from './lib/logger'
 import { createRendererLogForwarder } from './local-renderer-diagnostics'
 import { registerErrorSummaryReporting } from './error-summary-reporting-host'
+import { registerErrorSummaryConsent } from './error-summary-consent-host'
 import { autoApproveFromPermissionMode, type GuguPermissionMode } from '@gugu/session-core/acp'
 import { classifyFatal, recordFatalSync } from './lib/fatal-triage'
 import { pathToFileURL } from 'node:url'
@@ -420,7 +421,7 @@ import { integrationCredentialStore } from './session/main/core/integrations/int
 import { applySessionMaterialization } from './session-materialization'
 import { assistantHomeTaskContext, preparePersonalAssistantContext } from './sessionpage/assistant-context'
 import { startupDiscovery } from './sessionpage/startup-discovery'
-import { createAssistantPanelRuntime } from './sessionpage/assistant-panel-runtime'
+import { createPanelConnectionRuntime } from './sessionpage/panel-connection-runtime'
 import { isPersonalAssistantAgent, personalAssistantSessionBindings } from './sessionpage/assistant-agent-role'
 import { assistantWorkBinding, assistantWorkForAgent } from './sessionpage/assistant-work'
 import { createStableMcpPersistence, persistedMcpGrantCount, sessionpageSessionOfGrantKey } from './stable-mcp-persistence'
@@ -2726,13 +2727,18 @@ async function sessionLifeEnter(): Promise<void> {
   const userId = pushedUserId()
   if (sessionLifeBooted && userId) await bootedSessionLife().signIn(userId)
 }
+// 「帮助改进咕咕」开关在所有桌面版上都记;真正发送仍只在配好接收地址的已发布 Beta 上(下一段)。
+const errorSummaryConsent = registerErrorSummaryConsent({
+  eligible: !SERVER_MODE,
+  owner: () => pushedHumanAuth === undefined ? undefined : pushedUserId(),
+})
 registerErrorSummaryReporting({
   eligible: !SERVER_MODE && __GUGU_TIER__ === 'beta' && __GUGU_BUILD_DISTRIBUTION__ === 'published',
   owner: () => pushedHumanAuth === undefined ? undefined : pushedUserId(),
 })
 const humanAuthSessionIpc = createHumanAuthSessionIpc({
   toAuth: runtimeAuthFromSupabaseTokens,
-  set: (auth) => { pushedHumanAuth = auth },
+  set: (auth) => { pushedHumanAuth = auth; errorSummaryConsent.identityChanged() },
   revoke: () => projectionDeviceRuntime.invalidate(),
   persist: (mirror: Parameters<typeof writeHumanAuthSession>[0]) => writeHumanAuthSession(mirror),
   erase: () => clearHumanAuthSession(),
@@ -3583,7 +3589,7 @@ function definedEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   return out
 }
 let emdashBridge: EmdashBridgeModule | null = null
-let assistantPanelRuntime: ReturnType<typeof createAssistantPanelRuntime> | null = null
+let assistantPanelRuntime: ReturnType<typeof createPanelConnectionRuntime> | null = null
 let reconcileSessionpagePlatformOnResume: (() => Promise<void>) | null = null
 let sessionpagePlatformRecovery: SessionpagePlatformRecoveryCoordinator | null = null
 let sessionpagePlatformRecoveryHooks: SessionpagePlatformHooks | null = null
@@ -3692,7 +3698,11 @@ function crossMachine(): CrossMachineSessions {
       : openCloudDeviceRpcPipe({ supabase, deviceId, userId: async () => (await requireAuth()).userId, ...handlers })),
     // #7199 第二步:设备推回来的「还在跑」与结果。「收到」之后管道本来就留着(只有超时且没有在途请求才拆),
     // 拆了也无妨:重发同一个 call_id 会重开管道,设备每 5 秒重推结果。
-    onEvent: (deviceId, payload) => { deviceActionCallerInstance?.onEvent(deviceId, payload) },
+    onEvent: (deviceId, payload) => {
+      // #1607 node 5: a picture of an App projection this computer watches there.
+      if (emdashBridge?.projectionRemoteEvent(deviceId, payload)) return
+      deviceActionCallerInstance?.onEvent(deviceId, payload)
+    },
   })
   crossMachineRequester = requester
   app.on('will-quit', () => requester.closeAll())
@@ -4320,6 +4330,12 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
     // 全要走宿主这个 renderer 通道,而通道的实现住在 main.js。传函数不传值,所以此刻窗口还没建
     // 也没关系——调用时才读。
     emdashBridge.setExtensionHostWindowChannel({
+      openProjectionViewer: pageId => projectionDeviceRuntime.openViewer(pageId),
+      callMachine: (deviceId, type, payload, options) => {
+        crossMachine()
+        if (!crossMachineRequester) return Promise.reject(new Error('device RPC requester is not ready'))
+        return crossMachineRequester.call(deviceId, type, payload, options)
+      },
       invokeRendererExtensions,
       requestExtensionInstallConsent: (request, options) => {
         if (!mainWindow || mainWindow.isDestroyed()) {
@@ -5157,10 +5173,10 @@ app.whenReady().then(async () => {
       open: async target => (await sessionpageIdentityHost.ensureAgentAddress(target)).chatId,
       failed: error => createLogger('sessionpage/personal-inbox').warn({ error: String(error) }, 'Personal conversation address remains pending'),
     })
-    app.once('will-quit', nativeInbox.dispose)
+    app.once('will-quit', () => { nativeInbox.dispose(); assistantPanelRuntime?.dispose() })
     // 项目的跨设备身份由宿主的群对照维护；每次写入后通知渲染层重读。
     emdash.setUserLibraryOwner(async () => (await getSessionpageAuth())?.userId ?? null)
-    const assistantPanel = assistantPanelRuntime = createAssistantPanelRuntime({
+    const assistantPanel = assistantPanelRuntime = createPanelConnectionRuntime({
       locale: currentHostLocale,
       getAuth: getSessionpageAuth,
       instanceId: () => deviceRuntimeHost?.instanceId ?? null,

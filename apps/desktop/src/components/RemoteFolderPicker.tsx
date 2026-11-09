@@ -423,15 +423,26 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
             </div>
           </>
         )}
-        <IconButton
-          size="sm"
-          onClick={retry}
-          disabled={loading}
-          title={t('create.remoteFolders.refresh')}
-          aria-label={t('create.remoteFolders.refresh')}
-        >
-          <RefreshCw size={12} />
-        </IconButton>
+        {/* 去不成的原因:留在原地、在地址栏里说清楚、刷新钮换成「重试」(owner 11-08:❌ 横幅 / 列表上方另起一条)。
+            手上有读数时列表照常可用。 */}
+        {navError && !initialLoading ? (
+          <span role="alert" className="flex min-w-0 max-w-[60%] shrink items-center gap-1 text-[length:var(--font-caption)] text-[var(--danger-fg)]">
+            <span className="min-w-0 truncate" title={navErrorMessage(navError, t)}>{navErrorMessage(navError, t)}</span>
+            <Button variant="ghost" size="sm" className="shrink-0" onClick={retry}>
+              {t('create.remoteFolders.retry')}
+            </Button>
+          </span>
+        ) : (
+          <IconButton
+            size="sm"
+            onClick={retry}
+            disabled={loading}
+            title={t('create.remoteFolders.refresh')}
+            aria-label={t('create.remoteFolders.refresh')}
+          >
+            <RefreshCw size={12} />
+          </IconButton>
+        )}
         {pathDraft !== null && suggestions.length > 0 ? (
           <ul
             id="remote-folder-path-suggestions"
@@ -491,16 +502,6 @@ export function RemoteFolderPicker({ deviceId, initialPath = '~', onSelect, onCa
           {t('create.remoteFolders.truncated', { count: truncatedCount })}
         </div>
       )}
-
-      {/* 去不成的原因:留在原地、说清楚、给重试。手上有读数时列表照常可用。 */}
-      {navError && !initialLoading ? (
-        <div role="alert" className="mx-2 mb-1 flex items-center gap-2 border-l-2 border-[var(--danger)] bg-foreground/[0.025] px-3 py-2 text-[length:var(--font-body)] text-[var(--danger-fg)] dark:bg-foreground/[0.04]">
-          <span className="min-w-0 flex-1">{navErrorMessage(navError, t)}</span>
-          <Button variant="secondary" size="sm" className="shrink-0" onClick={retry}>
-            {t('create.remoteFolders.retry')}
-          </Button>
-        </div>
-      ) : null}
 
       <div className={cn('relative flex-1 overflow-auto', loading && listing && 'opacity-60')}>
         {initialLoading ? (

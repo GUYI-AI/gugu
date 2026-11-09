@@ -17,6 +17,25 @@ interface HostCall {
 const same = (args?: unknown) => args;
 
 export const HOST_CALLS = {
+  taskMessage: { verb: 'taskMessage' },
+  showTaskPages: { verb: 'showTaskPages', pack: () => ({}) },
+  'projectionMedia.open': { verb: 'projectionMediaOpen' },
+  'projectionMedia.answer': { verb: 'projectionMediaAnswer' },
+  'projectionMedia.sign': { verb: 'projectionMediaSign' },
+  'projectionMedia.close': { verb: 'projectionMediaClose' },
+  'surfaces.open': { verb: 'appSurfaceOpen' },
+  'surfaces.screen': { verb: 'appSurfaceScreen' },
+  'surfaces.update': { verb: 'appSurfaceUpdate' },
+  'surfaces.close': { verb: 'appSurfaceClose' },
+  'surfaces.post': { verb: 'appSurfacePost' },
+  'pages.acquire': { verb: 'taskPageAcquire' },
+  'pages.send': { verb: 'taskPageSend' },
+  'pages.maintain': { verb: 'taskPageMaintain' },
+  'pages.presentation': { verb: 'taskPagePresentation' },
+  'pages.filePayloads': { verb: 'taskPageFilePayloads' },
+  'pages.release': { verb: 'taskPageRelease' },
+  'pages.mount': { verb: 'taskPageMount' },
+  'pages.unmount': { verb: 'taskPageUnmount' },
   'projection.create': { verb: 'projectionCreate' },
   'projection.publish': { verb: 'projectionPublish' },
   'projection.close': { verb: 'projectionClose' },
@@ -43,6 +62,7 @@ export const HOST_CALLS = {
   /** `gugu.dispatch(text, options)` (15): the one way to hand something to someone; `images` arrive as bytes (create-gugu.ts). */
   dispatch: { verb: 'dispatch', pack: (text: string, options?: Record<string, unknown>) => ({ ...options, text }) },
   // A chat's messages (`chat:read`): each call names its chat, as a file call names its place.
+  'bindings.get': { verb: 'bindingsGet', pack: (name: string) => ({ name }) },
   'messages.history': { verb: 'messagesHistory' },
   'messages.search': { verb: 'messagesSearch' },
   // The chats whoever reads is in, and one's members (`chat:read`): `{ chat }` names it.
@@ -136,6 +156,8 @@ interface HostEvent {
 
 /** The events a host hands on, one row per `on…` member: which event, and what the handler gets of it. */
 export const HOST_EVENTS = {
+  onSurface: { event: 'appSurface', only: 'program', pick: (event: Event<'appSurface'>) => [event.event] },
+  onTaskPage: { event: 'taskPage', only: 'program', pick: (event: Event<'taskPage'>) => [event.event] },
   onProjection: { event: 'projection', only: 'page', pick: (event: Event<'projection'>) => [event.watchId, event.packet] },
   onProjectionSource: { event: 'projectionSource', only: 'program', pick: (event: Event<'projectionSource'>) => [event.event] },
   onModalFocus: { event: 'modalFocus', only: 'page', pick: (event: Event<'modalFocus'>) => [event.edge] },

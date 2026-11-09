@@ -1,11 +1,12 @@
 import { AlertCircle, ArrowRight, KeyRound, type IconComponent, Terminal } from '@/lib/icons'
+import { notify } from '@/lib/notices'
 import { useState } from 'react';
 import { useToast } from '@renderer/lib/hooks/use-toast';
 import {
   useGitHubDeviceFlowAuth,
   useImportGitHubCliAccounts,
 } from '@renderer/lib/hooks/useGithubAccounts';
-import { LibraryHostScope } from '@renderer/features/library/library-host-scope';
+import { LibraryHostDialogStatus, LibraryHostFieldset, LibraryHostScope } from '@renderer/features/library/library-host-scope';
 import type { LibraryHost } from '@renderer/features/library/library-host';
 import { type BaseModalProps } from '@renderer/lib/modal/modal-provider';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
@@ -72,6 +73,7 @@ function GithubConnectModalBody({ onSuccess, onClose, host }: BaseModalProps<voi
       }
 
       if (result.importedAccountIds.length === 0) {
+        if (host?.connectionMetadataExpected) notify({ tier: 'error',title: translate('github.noCliSession') });
         setError({
           method: 'cli',
           message: translate('github.noCliSession'),
@@ -102,7 +104,9 @@ function GithubConnectModalBody({ onSuccess, onClose, host }: BaseModalProps<voi
     <>
       <DialogHeader>
         <DialogTitle>{translate('github.connectTitle')}</DialogTitle>
+        <LibraryHostDialogStatus />
       </DialogHeader>
+      <LibraryHostFieldset>
       <DialogContentArea className="gap-3">
         <ConnectMethodCard
           icon={Terminal}
@@ -113,7 +117,7 @@ function GithubConnectModalBody({ onSuccess, onClose, host }: BaseModalProps<voi
           loading={cliLoading}
           disabled={anyLoading}
           onClick={() => void refreshCliAuth()}
-          error={error?.method === 'cli' ? error.message : undefined}
+          error={!host?.connectionMetadataExpected && error?.method === 'cli' ? error.message : undefined}
         />
 
         <ConnectMethodCard
@@ -125,9 +129,10 @@ function GithubConnectModalBody({ onSuccess, onClose, host }: BaseModalProps<voi
           loading={deviceFlowLoading}
           disabled={anyLoading}
           onClick={connectDeviceFlow}
-          error={error?.method === 'device_flow' ? error.message : undefined}
+          error={!host?.connectionMetadataExpected && error?.method === 'device_flow' ? error.message : undefined}
         />
       </DialogContentArea>
+      </LibraryHostFieldset>
       <DialogFooter>
         <Button variant="outline" onClick={onClose} disabled={anyLoading}>
           {translate('common.cancel')}
