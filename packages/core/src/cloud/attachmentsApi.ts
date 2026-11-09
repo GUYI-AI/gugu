@@ -31,7 +31,8 @@ export function configuredEndpoint(token: string): AttachmentsEndpoint {
 
 /** A refusal from the function, with its code (upload_used, version_conflict, too_large, denied, …) — said, never swallowed. */
 export class AttachmentsError extends Error {
-  constructor(readonly route: string, readonly status: number, readonly code: string, message: string) {
+  /** `details`: only on recipient_not_member — the refused ids, comma-separated in to_user_ids order (gugu-supabase#242). */
+  constructor(readonly route: string, readonly status: number, readonly code: string, message: string, readonly details?: string) {
     super(`attachments/${route}: ${message}`)
   }
 }
@@ -50,9 +51,10 @@ async function call(endpoint: AttachmentsEndpoint, route: string, body: Record<s
     let json: unknown = null
     try { json = JSON.parse(text) } catch { /* not json: said below as it is */ }
     if (!response.ok) {
-      const said = (json ?? {}) as { error?: unknown; message?: unknown }
+      const said = (json ?? {}) as { error?: unknown; message?: unknown; details?: unknown }
       throw new AttachmentsError(route, response.status, typeof said.error === 'string' ? said.error : 'failed',
-        typeof said.message === 'string' ? said.message : `HTTP ${response.status} ${text.slice(0, 200)}`)
+        typeof said.message === 'string' ? said.message : `HTTP ${response.status} ${text.slice(0, 200)}`,
+        typeof said.details === 'string' ? said.details : undefined)
     }
     return json
   }

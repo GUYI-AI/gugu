@@ -19,6 +19,7 @@ export function useAgentWatchSession(
   firstPrompt?: FirstPrompt,
   phoneHost = false,
   local = false,
+  windowHistory = false,
 ): AgentWatchSession {
-  return useTimelineSession(phoneHost ? phoneTimelineClient : local ? assistantTimelineClient(true) : sessionpageRpc, MOBILE_RESPONDER_ID, deviceId, sessionId, enabled, firstPrompt)
+  return useTimelineSession(phoneHost ? phoneTimelineClient : windowHistory ? assistantTimelineClient(local, { window: true }) : local ? assistantTimelineClient(true) : sessionpageRpc, MOBILE_RESPONDER_ID, deviceId, sessionId, enabled, firstPrompt)
 }

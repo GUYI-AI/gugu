@@ -11,7 +11,7 @@ import { mergeNativeRecordPage, projectNativeRecord } from './native-record-stat
 /** ACP records come from the task page archive, not a second parse of the provider's JSONL. */
 export function useNativeSessionRecord(deviceId: string, sessionId: string, enabled: boolean, online: boolean, local = false) {
   // What this phone read last time is drawn first, and is all there is while that machine is away.
-  const [record, setRecord] = useState<NativeSessionRecord | null>(() => readCachedNativeRecord({ deviceId, sessionId }))
+  const [record, setRecord] = useState<NativeSessionRecord | null>(() => enabled ? readCachedNativeRecord({ deviceId, sessionId }) : null)
   const [error, setError] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<string | null>(null)
   /** The last read failed because that machine did not answer (not because it refused): the page says it is away. */
@@ -34,9 +34,9 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
     connected.current = online; setConfirmed(null)
     // Reconcile the latest page first, even when the cache or host's first unread is far behind.
     requests.current = Promise.resolve(); tailRequested.current = true
-    const cached = readCachedNativeRecord({ deviceId, sessionId })
+    const cached = enabled ? readCachedNativeRecord({ deviceId, sessionId }) : null
     value.current = cached; setRecord(cached); setError(null); setErrorCode(null)
-    if (!cached) void hydrateCachedNativeRecord({ deviceId, sessionId }).then((stored) => {
+    if (enabled && !cached) void hydrateCachedNativeRecord({ deviceId, sessionId }).then((stored) => {
       if (!stored || epoch.current !== generation || value.current) return
       value.current = stored; setRecord(stored)
     })
