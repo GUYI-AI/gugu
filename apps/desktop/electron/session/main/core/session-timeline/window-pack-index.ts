@@ -56,6 +56,18 @@ export function createWindowPackIndex(db: WindowReceiptDatabase, receipt: (sourc
       return selected ? lookup(selected.group_id,key) : null;
     },
     lookup,
+    /** Direct dependencies of one committed group, never transitive. */
+    dependencies(groupId: string, limit: number): PackLocation[] {
+      if (!id(groupId)) throw new Error('Invalid pack group');
+      const rows = db.prepare('SELECT dependency_id AS groupId,frame_name AS name FROM session_window_pack_dependencies WHERE group_id=? ORDER BY dependency_id LIMIT ?')
+        .all(groupId,limit + 1) as { groupId: string; name: string }[];
+      if (rows.length > limit) throw Object.assign(new Error('Pack dependency capacity exceeded'), { code: 'needs_location' });
+      return rows.map(row => {
+        const location = lookup(row.groupId,row.name);
+        if (!location) throw Object.assign(new Error('Pack dependency is unavailable'), { code: 'needs_location' });
+        return location;
+      });
+    },
     complete(groupId: string, p: PackPhysical, sources: readonly WindowCommitReceipt[], frames: readonly PackFrame[], dependencies: readonly PackLocation[]) {
       const saved = physical(p), members = new Set(sources.map(s => s.sourceId));
       if (!id(groupId) || frames.length < 1 || frames.length > 128 || dependencies.length > 128) throw new Error('Invalid pack commit size');

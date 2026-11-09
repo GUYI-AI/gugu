@@ -1,4 +1,3 @@
-import { windowFrameBackend } from './frame-backend';
 import { randomUUID } from 'node:crypto';
 import { link, open, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -15,8 +14,6 @@ export async function syncWindowDirectory(directory: string, fs: FrameWriteFs = 
 }
 
 export async function readWindowFrame(directory: string, key: WindowFrameKey, budget: WindowBudget): Promise<WindowFrameRead> {
-  const backend = windowFrameBackend(directory);
-  if (backend) return backend.read(key, budget);
   const path = join(directory, windowFrameName(key));
   try {
     const file = await open(path, 'r');
@@ -50,8 +47,6 @@ export async function readWindowFrame(directory: string, key: WindowFrameKey, bu
 /** Host supplies an existing durable namespace. Content is immutable; only a head permits replacement. */
 export async function writeWindowFrame(directory: string, key: WindowFrameKey, bytes: Uint8Array, fs: FrameWriteFs = nativeWriteFs): Promise<void> {
   const packet = encodeWindowFrame(key, bytes);
-  const backend = fs === nativeWriteFs ? windowFrameBackend(directory) : undefined;
-  if (backend) return backend.write(key, packet);
   const path = join(directory, windowFrameName(key));
   const temporary = `${path}.${randomUUID()}.tmp`;
   try {

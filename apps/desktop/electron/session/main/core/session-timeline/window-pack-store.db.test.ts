@@ -7,7 +7,7 @@ import type Database from 'better-sqlite3';
 import type { AppDb } from '@main/db/client';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { windowFrameName } from '@gugu/session-core/session-record/window-cache/frame';
-import { readWindowFrame,writeWindowFrame } from '@gugu/session-core/session-record/window-cache/disk-frame';
+import { readWindowFrame,writeWindowFrame } from './window-commit-projection-disk';
 import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 import { createWindowCommitReceipts,type WindowCommitReceipt } from './window-commit-receipt';
 import { createWindowPackStore } from './window-pack-store';
@@ -85,6 +85,27 @@ describe('immutable projection pack and atomic point index',() => {
     await expect(store.build([receipt],()=>write('page:0','conflict'))).rejects.toMatchObject({code:'EEXIST'});
     expect(text(await read('page:0'))).toBe('body:0');
   });
+  it('refuses a multi-pack publication after a middle pack of its build is deleted',async()=>{
+    store=createWindowPackStore(directory,fixture.sqlite);
+    await store.build([receipt],async()=>{for(let i=0;i<300;i++)await write(`page:${i}`,`body:${i}`);await write('publication','final');});
+    expect((await readdir(directory)).filter(n=>n.endsWith('.pack'))).toHaveLength(3);
+    const proof=store.proof(windowFrameName(key('publication')));expect(()=>proof()).not.toThrow();
+    const middle=fixture.sqlite.prepare('SELECT group_id g FROM session_window_pack_positions WHERE frame_name=?')
+      .get(windowFrameName(key('page:150'))) as {g:string};
+    const last=fixture.sqlite.prepare('SELECT group_id g FROM session_window_pack_positions WHERE frame_name=?')
+      .get(windowFrameName(key('publication'))) as {g:string};
+    expect(middle.g).not.toBe(last.g);
+    await rm(join(directory,`${middle.g}.pack`));
+    expect(()=>proof()).toThrow(expect.objectContaining({code:'needs_location'}));
+    expect(()=>store!.proof(windowFrameName(key('publication')))()).toThrow(expect.objectContaining({code:'needs_location'}));
+  });
+  it('fails the build with needs_location when it would need a 129th pack',async()=>{
+    store=createWindowPackStore(directory,fixture.sqlite);
+    await expect(store.build([receipt],async()=>{for(let i=0;i<128*128+1;i++)await write(`page:${i}`,'x');}))
+      .rejects.toMatchObject({code:'needs_location'});
+    expect(fixture.sqlite.prepare("SELECT count(*) n FROM session_window_pack_groups WHERE state='complete'").get()).toEqual({n:128});
+    expect(fixture.sqlite.prepare("SELECT count(*) n FROM session_window_pack_groups WHERE state='building'").get()).toEqual({n:0});
+  },120_000);
   it('rolls back every position if SQLite aborts after a new head but before the last page',async()=>{
     store=createWindowPackStore(directory,fixture.sqlite);await store.build([receipt],()=>write('head','A',true));
     const target=windowFrameName(key('new-page'));

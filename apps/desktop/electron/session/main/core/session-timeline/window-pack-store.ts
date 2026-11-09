@@ -17,7 +17,11 @@ function identity(s: { dev: bigint; ino: bigint; size: bigint; mtimeNs: bigint; 
 const same = (a: PackPhysical, b: PackPhysical) => JSON.stringify(a) === JSON.stringify(b);
 const fault = (message: string) => Object.assign(new Error(message), { code: 'needs_location' });
 type Group = { id: string; file?: FileHandle; bytes: number; writes: number; frames: Map<string, PackFrame>; dependencies: Map<string, PackLocation> };
-type Build = { sources: WindowCommitReceipt[]; group?: Group; carry?: PackLocation; closed: boolean };
+/** `packs` holds one position per pack this build has committed or read: the
+ * build's own earlier progress packs and every pack they depended on. */
+type Build = { sources: WindowCommitReceipt[]; group?: Group; packs: Map<string, PackLocation>; closed: boolean };
+/** A publication proves every pack of its build with one bounded stat each. */
+export const WINDOW_PACK_DEPENDENCIES = 128;
 export type WindowPackObserver = (phase: 'intent' | 'pack_synced' | 'directory_synced' | 'positions_committed', groupId: string) => void;
 
 /** One application gateway and a task-local private view. External readers only
@@ -33,8 +37,10 @@ export function createWindowPackStore(directory: string, db: WindowReceiptDataba
     return build;
   }
   async function start(build: Build) {
+    // A build whose packs no longer fit one bounded proof cannot be published.
+    if (build.packs.size >= WINDOW_PACK_DEPENDENCIES) throw fault('Projection build exceeds its bounded pack proof');
     const id = randomUUID().replaceAll('-', ''); index.begin(id,build.sources);
-    const group: Group = { id, bytes: 0, writes: 0, frames: new Map(), dependencies: new Map(build.carry ? [[`${build.carry.groupId}/${build.carry.name}`,build.carry]] : []) }; build.group = group;
+    const group: Group = { id, bytes: 0, writes: 0, frames: new Map(), dependencies: new Map(build.packs) }; build.group = group;
     observed?.('intent',id);
     group.file = await open(`${path(id)}.tmp`,'wx+',0o600); return group;
   }
@@ -55,11 +61,12 @@ export function createWindowPackStore(directory: string, db: WindowReceiptDataba
       if (!saved.isFile() || !same(identity(saved),dependency.physical)) throw fault('Pack dependency physical identity changed');
     }
     index.complete(group.id,identity(stat),build.sources,[...group.frames.values()],[...group.dependencies.values()]);
-    // A progress pack may end between a data page and its next checkpoint.
-    // Carry the previous atomic group's physical proof into the next group even
-    // when that checkpoint is written before the page is read again.
-    const last=[...group.frames.values()].at(-1)!;
-    build.carry=index.lookup(group.id,last.name)??undefined;
+    // Every later pack of this build directly depends on this one and on what it
+    // read, so the final publication's direct dependencies cover the whole build.
+    const last=[...group.frames.values()].at(-1)!, committed=index.lookup(group.id,last.name);
+    if (!committed) throw fault('Pack position changed after publication');
+    for (const [key,value] of group.dependencies) build.packs.set(key,value);
+    build.packs.set(group.id,committed);
     build.group = undefined; observed?.('positions_committed',group.id);
   }
   async function readPacket(file: FileHandle, location: PackFrame, budget: WindowBudget) {
@@ -92,8 +99,8 @@ export function createWindowPackStore(directory: string, db: WindowReceiptDataba
       if (!current || JSON.stringify(current) !== JSON.stringify(location)) throw fault('Pack receipt or position changed during read');
       if (build && !build.closed) {
         if (!build.group) await start(build);
-        const dependencies = build.group!.dependencies, dependencyKey = `${location.groupId}/${name}`;
-        if (!dependencies.has(dependencyKey) && dependencies.size >= 128) { await flush(build); await start(build); }
+        const dependencies = build.group!.dependencies, dependencyKey = location.groupId;
+        if (!dependencies.has(dependencyKey) && dependencies.size >= WINDOW_PACK_DEPENDENCIES) { await flush(build); await start(build); }
         build.group!.dependencies.set(dependencyKey,location);
       }
       return decodeWindowFrame(key,packet);
@@ -118,14 +125,21 @@ export function createWindowPackStore(directory: string, db: WindowReceiptDataba
   } };
   const unregister = registerWindowFrameBackend(directory,backend);
   return {
+    /** Bounded: the publication pack plus its at most 128 direct dependencies,
+     * which include every earlier pack of the same build. No recursive walk. */
     proof(name: string) {
       const location=index.current(name);if(!location)throw fault('Packed publication has no committed location');
+      const dependencies=index.dependencies(location.groupId,WINDOW_PACK_DEPENDENCIES);
       return ()=>{
         const current=index.lookup(location.groupId,name);
         if(!current||JSON.stringify(current)!==JSON.stringify(location))throw fault('Packed publication lost its canonical position');
-        try{const physical=statSync(path(location.groupId),{bigint:true});
-          if(!physical.isFile()||!same(identity(physical),location.physical))throw fault('Packed publication physical identity changed');
-        }catch{throw fault('Packed publication physical identity changed');}
+        for(const pack of [location,...dependencies]){
+          const held=index.lookup(pack.groupId,pack.name);
+          if(!held||JSON.stringify(held)!==JSON.stringify(pack))throw fault('Packed publication dependency lost its canonical position');
+          try{const physical=statSync(path(pack.groupId),{bigint:true});
+            if(!physical.isFile()||!same(identity(physical),pack.physical))throw fault('Packed publication physical identity changed');
+          }catch{throw fault('Packed publication physical identity changed');}
+        }
       };
     },
     backend, // Keep the weak namespace registration alive for this owner.
@@ -136,7 +150,7 @@ export function createWindowPackStore(directory: string, db: WindowReceiptDataba
       const saved = sources.map(snapshotWindowCommitReceipt);
       if (saved.length < 1 || saved.length > 8 || saved.some(s => s.sessionId !== saved[0].sessionId)
         || [...active].some(b => b.sources.some(s => saved.some(v => v.sourceId === s.sourceId)))) throw new Error('Pack sources are occupied or invalid');
-      const build: Build = { sources: saved, closed: false }; active.add(build);
+      const build: Build = { sources: saved, packs: new Map(), closed: false }; active.add(build);
       try { return await local.run(build,async () => {
         const result = await run(); await flush(build); return result;
       }); } finally { build.closed = true; active.delete(build); await build.group?.file?.close(); }
