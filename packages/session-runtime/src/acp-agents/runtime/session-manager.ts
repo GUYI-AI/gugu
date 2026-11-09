@@ -1796,6 +1796,14 @@ export class SessionManager implements InboundRouter {
     return this.cells.get(sessionId)?.cell.turnEnvelope ?? null;
   }
 
+  windowActiveReference(sessionId: string, referenceId: string): boolean {
+    const record = this.cells.get(sessionId);
+    // record.replaying belongs to the actual replay caller, including the
+    // endReplay callback window where lifecycle phase has already changed.
+    return !!record && record.phase === 'ready' && !record.replaying && !record.input.sourceSessionId
+      && record.cell.transcript.activeTurn?.referenceId === referenceId;
+  }
+
   getChatHistory(sessionId: string): AcpChatHistory {
     const live = this.cells.get(sessionId);
     if (live) return live.cell.history();

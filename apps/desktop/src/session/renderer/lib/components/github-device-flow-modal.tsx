@@ -7,7 +7,7 @@ import { messageForUser } from '@/lib/userFacingError';
 import { AlertCircle, Check, Copy, ExternalLink } from '@/lib/icons'
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '@renderer/lib/hooks/use-toast';
-import { LibraryHostScope } from '@renderer/features/library/library-host-scope';
+import { LibraryHostDialogStatus, LibraryHostFieldset, LibraryHostScope } from '@renderer/features/library/library-host-scope';
 import { useLibraryHost, type LibraryHost } from '@renderer/features/library/library-host';
 import { rpc } from '@renderer/lib/ipc';
 import { openShellFeedback } from '@renderer/lib/open-shell-feedback';
@@ -257,7 +257,9 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
     <>
       <DialogHeader>
         <DialogTitle>{title}</DialogTitle>
+        <LibraryHostDialogStatus />
       </DialogHeader>
+      <LibraryHostFieldset>
       <DialogContentArea className="gap-4">
         {success ? (
           <div className="rounded-lg border border-border/60 bg-background/60 p-3">
@@ -361,6 +363,7 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
           </>
         )}
       </DialogContentArea>
+      </LibraryHostFieldset>
       <DialogFooter>
         {error || success ? (
           <Button variant="outline" onClick={handleClose}>
@@ -371,6 +374,7 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
             <Button variant="outline" onClick={handleClose}>
               Cancel
             </Button>
+            <LibraryHostFieldset>
             <Button
               variant="outline"
               onClick={() => copyToClipboard(userCode)}
@@ -383,6 +387,7 @@ function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubD
               <ExternalLink className="h-4 w-4" />
               Open GitHub
             </Button>
+            </LibraryHostFieldset>
           </>
         )}
       </DialogFooter>

@@ -484,48 +484,6 @@
 }
 .gg-aw .gg-aw-head-state { flex: none; }
 
-/* ── 「机器离线」一行提示 + 渐进披露 ────────────────────────────────────────
-   形制照 orca 的 HostRouteNoticeBanner:单行次级文字、单色、贴一条下边框。
-   ❌ 不借用报错的红 —— 机器关机是常态,不是故障(orca 那个文件的首行注释就写着这句)。
-   解释文字收在 Collapse 里,想知道「为什么打不开」才点开。 */
-.gg-aw .gg-aw-offline {
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-elevated);
-}
-.gg-aw .gg-aw-offline-line {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  width: 100%;
-  min-height: 44px;              /* @@@1787 触控下限 */
-  padding: var(--spacing-sm) var(--spacing-md);
-  border: 0;
-  background: transparent;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.gg-aw .gg-aw-offline-text {
-  flex: 1;
-  min-width: 0;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-}
-.gg-aw .gg-aw-offline-caret {
-  display: inline-flex;
-  flex-shrink: 0;
-  color: var(--text-muted);
-  transition: transform var(--transition-fast);
-}
-.gg-aw .gg-aw-offline-caret svg { width: 14px; height: 14px; }
-.gg-aw .gg-aw-offline-caret[data-open] { transform: rotate(180deg); }
-.gg-aw .gg-aw-offline-body {
-  padding: 0 var(--spacing-md) var(--spacing-sm);
-  color: var(--text-muted);
-  font-size: var(--font-size-sm);
-  line-height: 1.6;
-}
-
 /* ── 选项抽屉:下钻结构 ─────────────────────────────────────────────────────
    尺寸逐条照 orca(mobile/src/session/MobileNativeChatSessionOptionRows.tsx 的 styles):
    胶囊 maxWidth 180 / minHeight 28 / gap 4 / 字重 600;圆钮 36×36;radio 18×18;

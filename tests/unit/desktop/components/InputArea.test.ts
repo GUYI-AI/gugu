@@ -695,9 +695,8 @@ describe('ChatMessageComposer', () => {
       offlineOption?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
     })
     await flush()
-    expect(container.querySelector('[data-agent-status-surface="mention-selection"][data-agent-id="offline-agent"]')?.textContent)
-      .toContain('当前不在线，可能无法及时回复')
-    expect(container.querySelector('[data-agent-status-surface="mention-selection"][data-agent-id="reachable-agent"]')).toBeNull()
+    // owner 11-08: no bar beside the composer for an offline agent — the @ menu row above already said it.
+    expect(container.querySelector('[data-agent-status-surface="mention-selection"]')).toBeNull()
   })
   it('3a a name with a space stays pickable, and picking it closes the popup', async () => {
     const onSend = vi.fn(async (_content: string, _opts?: unknown) => {})

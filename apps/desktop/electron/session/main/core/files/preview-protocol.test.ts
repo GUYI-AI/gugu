@@ -501,7 +501,7 @@ it('cancels a timed-out served remote stream and removes its pending reply liste
 });
 
 describe('a chat folder document previewed with its folder', () => {
-  const copy = { unavailable: '这个文件现在取不到。', outside: '只能取到这份文档所在文件夹里的文件。', offline: '在「{machine}」上，未连接', palette: { surface: 'white', border: 'gray', text: 'black' } };
+  const copy = { unavailable: '这个文件现在取不到。', outside: '只能取到这份文档所在文件夹里的文件。', offline: '在「{machine}」上，设备离线', palette: { surface: 'white', border: 'gray', text: 'black' } };
   const get = (url: string, headers: Record<string, string> = {}) => handlePreviewRequest(new Request(url, { headers }), 'pane');
 
   it('gives the document its folder: the files beside it are served, a video by ranges, nothing above the folder', async () => {
@@ -547,11 +547,11 @@ describe('a chat folder document previewed with its folder', () => {
     const picture = await get(`${base}shot.png`);
     expect(picture.status).toBe(200);
     expect(picture.headers.get('Content-Type')).toBe('image/svg+xml');
-    expect(await picture.text()).toContain('在「mac1」上，未连接');
+    expect(await picture.text()).toContain('在「mac1」上，设备离线');
     expect(bus.emitted.map((event) => event.name)).toContain('session:preview-holder-offline');
     const video = await get(`${base}a.mp4`);
     expect(video.status).toBe(503);
-    expect(await video.text()).toBe('在「mac1」上，未连接');
+    expect(await video.text()).toBe('在「mac1」上，设备离线');
   });
 
   it('a document someone may not read gets no preview', async () => {

@@ -1,0 +1,57 @@
+/*
+ * Connection state in a header subtitle (ConnectionStatus.tsx). Inherits the subtitle's 12/18 type and muted color;
+ * no background, border or padding of its own — it is never a banner.
+ * The glyph is the agent-watch 12×12 shell / 8×8 inner (StatusGlyph), on the machine axis: live blue, ❌ agent tones.
+ */
+.gg-conn-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+.gg-conn-glyph {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+.gg-conn-glyph-inner {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-circle);
+  background: var(--muted-fg);
+  opacity: 0.4;
+}
+.gg-conn-glyph[data-state='online'] .gg-conn-glyph-inner {
+  background: var(--live);
+  opacity: 1;
+}
+/* Connecting: a whole ring that breathes. An agent at work is an orange ring with a gap that turns. */
+.gg-conn-glyph[data-state='connecting'] .gg-conn-glyph-inner {
+  background: transparent;
+  border: 1.5px solid var(--live);
+  opacity: 1;
+  animation: gg-conn-breathe 1.6s ease-in-out infinite;
+}
+@keyframes gg-conn-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gg-conn-glyph[data-state='connecting'] .gg-conn-glyph-inner { animation: none; }
+}
+.gg-conn-word,
+.gg-conn-sep { flex: none; }
+.gg-conn-subject,
+.gg-conn-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The subject gives way after the trailing detail: the state word stays whole. */
+.gg-conn-subject { flex: 0 1 auto; }
+.gg-conn-detail { flex: 0 100 auto; }
