@@ -97,18 +97,23 @@ describe('managed native effect custody transaction',()=>{
   expect(saved()).toHaveLength(1);expect(await accounts.listAccounts('github')).toHaveLength(1);
   expect(service.read(a).state).toBe('started');
  });
+ const generation=async(accounts:ProviderAccountRegistry)=>(await accounts.resolveSecretGeneration('github','first'))!.generation!;
  it('allows a conditional refresh and rejects a stale refresh after reauthorization or deletion',async()=>{
   const accounts=registry();await accounts.upsertAccount({providerId:'github',accountId:'first',secret:'fixture-old'});
-  expect(await accounts.compareAndSwapSecret('github','first','fixture-old','fixture-refreshed')).toBe(true);
+  const original=await generation(accounts);
+  expect(await accounts.compareAndSwapSecret('github','first',original,'fixture-refreshed')).toBe(true);
   expect(await accounts.resolveSecret('github','first')).toBe('fixture-refreshed');
+  expect(await accounts.compareAndSwapSecret('github','first',original,'fixture-replayed-refresh')).toBe(false);
+  const refreshed=await generation(accounts);
   await accounts.upsertAccount({providerId:'github',accountId:'first',secret:'fixture-new-authorization'});
-  expect(await accounts.compareAndSwapSecret('github','first','fixture-refreshed','fixture-stale-refresh')).toBe(false);
+  expect(await accounts.compareAndSwapSecret('github','first',refreshed,'fixture-stale-refresh')).toBe(false);
   expect(await accounts.resolveSecret('github','first')).toBe('fixture-new-authorization');
+  const latest=await generation(accounts);
   await accounts.removeAccount('github','first');
-  expect(await accounts.compareAndSwapSecret('github','first','fixture-new-authorization','fixture-late-refresh')).toBe(false);
+  expect(await accounts.compareAndSwapSecret('github','first',latest,'fixture-late-refresh')).toBe(false);
   expect(saved()).toHaveLength(0);expect(await accounts.listAccounts('github')).toHaveLength(0);
  });
- it.each(['reauthorize','disconnect'] as const)('rejects a refresh paused between encryption and commit during %s',async(mode)=>{
+ function pausedRegistry(){
   let entered!:()=>void,release!:()=>void;
   const paused=new Promise<void>(resolve=>{entered=resolve;});
   const resume=new Promise<void>(resolve=>{release=resolve;});
@@ -117,14 +122,44 @@ describe('managed native effect custody transaction',()=>{
     const write=await super.atomicSecretCompareAndSwap(...args);entered();await resume;return write;
    }
   }
-  const accounts=new ProviderAccountRegistry(fixture.db,new PausedSecrets(fixture.db,secureStorage as never,'darwin'));
+  return {accounts:new ProviderAccountRegistry(fixture.db,new PausedSecrets(fixture.db,secureStorage as never,'darwin')),paused,release};
+ }
+ it.each(['reauthorize','disconnect'] as const)('rejects a refresh paused between encryption and commit during %s',async(mode)=>{
+  const {accounts,paused,release}=pausedRegistry();
   await accounts.upsertAccount({providerId:'github',accountId:'first',secret:'fixture-original'});
-  const refresh=accounts.compareAndSwapSecret('github','first','fixture-original','fixture-stale');
+  const refresh=accounts.compareAndSwapSecret('github','first',await generation(accounts),'fixture-stale');
   await paused;
   if(mode==='reauthorize')await accounts.upsertAccount({providerId:'github',accountId:'first',secret:'fixture-new'});
   else await accounts.removeAccount('github','first');
   release();expect(await refresh).toBe(false);
   expect(await accounts.resolveSecret('github','first')).toBe(mode==='reauthorize'?'fixture-new':null);
+ });
+ it('rejects a paused refresh after a revocation fence that retains the account and its secret',async()=>{
+  const {accounts,paused,release}=pausedRegistry(),service=createNativeConnectionEvidence(fixture.db);
+  await accounts.upsertAccount({providerId:'github',accountId:'first',secret:'fixture-original'});
+  const refresh=accounts.compareAndSwapSecret('github','first',await generation(accounts),'fixture-refreshed');
+  await paused;
+  service.begin({...attempt(),accountId:'first',effectKind:'remove' as const});
+  expect(await accounts.listAccounts('github')).toHaveLength(1);expect(saved()).toHaveLength(1);
+  release();expect(await refresh).toBe(false);
+  expect(await accounts.resolveSecret('github','first')).toBeNull();
+  expect(await accounts.resolveSecretGeneration('github','first')).toBeNull();
+  const sealed=fixture.db.select().from(appSecrets).all()[0]!.secret;
+  expect(Buffer.from(sealed,'base64').toString()).toBe('sealed:fixture-original');
+ });
+ it('rejects a paused refresh after a newer authorization with identical plaintext',async()=>{
+  const {accounts,paused,release}=pausedRegistry();
+  await accounts.upsertAccount({providerId:'github',accountId:'first',secret:'fixture-same'});
+  const refresh=accounts.compareAndSwapSecret('github','first',await generation(accounts),'fixture-refreshed');
+  await paused;
+  await accounts.upsertAccount({providerId:'github',accountId:'first',secret:'fixture-same'});
+  release();expect(await refresh).toBe(false);
+  expect(await accounts.resolveSecret('github','first')).toBe('fixture-same');
+  // Read before the network wait; the identical newer authorization lands before the swap starts.
+  const read=await generation(accounts);
+  await accounts.upsertAccount({providerId:'github',accountId:'first',secret:'fixture-same'});
+  expect(await registry().compareAndSwapSecret('github','first',read,'fixture-late-refresh')).toBe(false);
+  expect(await accounts.resolveSecret('github','first')).toBe('fixture-same');
  });
  it('persists a fence for a missing attempt without replacing a newer provider attempt',async()=>{
   const service=createNativeConnectionEvidence(fixture.db),old=attempt(),newer={...old,operationId:randomUUID(),attemptId:randomUUID(),attemptOrder:'2'};
