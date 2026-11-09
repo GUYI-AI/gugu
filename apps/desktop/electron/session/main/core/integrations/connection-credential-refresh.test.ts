@@ -28,7 +28,7 @@ describe('conditional credential refresh delivery',()=>{
   const f=fixture();const request=refreshIntegrationAccount(f.input,'github',undefined,true);
   await Promise.resolve();await Promise.resolve();
   f.current=mode==='reauthorize'?{accountId:'account',credentials:{token:'fixture-new-authorization'}}:null;
-  const changed=f.current;f.finish();expect(await request).toBeNull();expect(f.current).toEqual(changed);
+  const changed=f.current;f.finish();expect(await request).toEqual(changed);expect(f.current).toEqual(changed);
   expect(f.input.pending.size).toBe(0);
  });
  it('leaves non OAuth credentials and disabled refreshes on the existing read path',async()=>{

@@ -15,9 +15,10 @@ export async function refreshIntegrationAccount(input:{store:Store;pending:Map<s
   const refresh=(async()=>{
     const refreshed=await(input.refresh??refreshMcpCredentials)(parsed.data);
     const next={...account,credentials:toIntegrationCredentials(refreshed)};
-    // Never hand the old caller credentials read after a concurrent disconnect,
-    // edit or authorization. The next request may read the current connection.
-    if(!await input.store.compareAndSwapAccount(integrationId,account,next.credentials))return null;
+    // The person may have disconnected or authorized again while this was on the
+    // network: their change wins. The caller gets what is stored now (nothing after a
+    // disconnect, the new authorization after a reauthorization), never the stale grant.
+    if(!await input.store.compareAndSwapAccount(integrationId,account,next.credentials))return input.store.getAccount(integrationId,account.accountId);
     return next;
   })().finally(()=>input.pending.delete(key));
   input.pending.set(key,refresh);

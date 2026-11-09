@@ -665,7 +665,7 @@ export class IntegrationConnectionService {
       }
       if (result.credentials) {
         if(!await integrationCredentialStore.compareAndSwapAccount(integrationId,account,result.credentials)) {
-          return { connected:false,error:'Connection changed during this check.',capabilities };
+          return { connected:false,error:'The connection changed during this check.',capabilities };
         }
       }
       return {
