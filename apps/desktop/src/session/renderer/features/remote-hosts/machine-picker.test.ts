@@ -16,6 +16,7 @@ import type { MachineChoice } from './machine-choice';
 
 const mocks = vi.hoisted(() => ({
   hosts: new Map<string, { device: RemoteHostDevice }>(),
+  states: new Map<string, string>(),
 }));
 
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
@@ -26,7 +27,8 @@ vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
     },
     rpc: {},
     device: (id: string) => mocks.hosts.get(id)?.device ?? null,
-    connectionState: () => 'connected',
+    connectionState: (id: string) => mocks.states.get(id) ?? 'connected',
+    cloudScope: () => null,
     canAddMachine: false,
     openAddMachine: () => {},
   },
@@ -300,6 +302,50 @@ describe('机器选择器:一个组件、一个位置(#6264)', () => {
     const status = container.querySelector('[data-slot="page-title-row"] [data-testid="device-scope-status"]');
     expect(status?.getAttribute('data-state')).toBe('online');
     expect(status?.textContent).toContain('d22');
+  });
+
+  it('#2301 Q5:离线那句只在标题里说(「只读缓存」),正文不再画;连不上 / 读取失败照旧带「再试一次」', async () => {
+    mocks.hosts.set('d22', { device: host('d22', { isOnline: false, lastSeenAt: new Date(Date.now() - 120_000).toISOString() }) });
+    mocks.states.set('d22', 'offline');
+    const store = new DeviceScopeStore('gugu.automations.device', memoryStorage());
+    store.select('d22');
+    const { DeviceScopeNoticeLine } = await import('./device-scope-picker');
+    const base = { retry: false, readOnly: true, inHeading: true };
+    const page = (cached: boolean, extra: React.ReactNode = null) =>
+      React.createElement(DeviceScopeProvider, {
+        store,
+        children: [
+          React.createElement(PageHeader, { key: 'h', title: '已安排' }),
+          React.createElement(DeviceScopeNoticeLine, { key: 'n', notice: { ...base, kind: 'offline', text: 'offline line', cached } }),
+          extra,
+        ],
+      });
+    await render(page(true));
+    const status = () => container.querySelector('[data-slot="page-title-row"] [data-testid="device-scope-status"]');
+    expect(status()?.getAttribute('data-state')).toBe('device_offline');
+    expect(status()?.textContent).toMatch(/2 分钟前|2 minutes ago/);
+    expect(status()?.textContent).toMatch(/只读缓存|Read-only copy/);
+    expect(container.querySelector('[data-testid="device-scope-notice"]')).toBeNull();
+
+    // 一份都没有:不说「只读缓存」,只说离线多久。
+    await render(page(false));
+    expect(status()?.textContent).not.toMatch(/只读缓存|Read-only copy/);
+    expect(store.cachedViews).toBe(0);
+
+    // 普通请求失败不是连接状态:那一行连同「再试一次」都在。
+    mocks.states.set('d22', 'connected');
+    let retried = 0;
+    const failed = React.createElement(DeviceScopeNoticeLine, {
+      key: 'f',
+      notice: { kind: 'unreachable', text: 'unreachable line', retry: true, readOnly: false, inHeading: false, cached: false },
+      onRetry: () => (retried += 1),
+    });
+    await render(page(false, failed));
+    const line = container.querySelector('[data-testid="device-scope-notice"][data-kind="unreachable"]');
+    expect(line?.textContent).toContain('unreachable line');
+    await act(async () => (line?.querySelector('button') as HTMLButtonElement).click());
+    expect(retried).toBe(1);
+    mocks.states.delete('d22');
   });
 });
 

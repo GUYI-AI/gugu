@@ -1,3 +1,4 @@
+import { useLibraryHost } from '@renderer/features/library/library-host'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 
 import { useState, type ReactNode } from 'react';
@@ -37,6 +38,7 @@ export function SetupFormShell({
   onClose,
   children,
 }: SetupFormShellProps) {
+  const host = useLibraryHost();
   const { connectIntegration, isIntegrationMutating } = useIntegrationsContext();
   const { toast } = useToast();
   const { translate } = useSessionMessages();
@@ -71,7 +73,7 @@ export function SetupFormShell({
       <LibraryHostFieldset>
       <DialogContentArea className="pt-1">
         {children}
-        {error ? (
+        {error && (!host.connectionMetadataExpected || error === validationMessage) ? (
           <p className="text-xs text-foreground-destructive" role="alert">
             {error}
           </p>

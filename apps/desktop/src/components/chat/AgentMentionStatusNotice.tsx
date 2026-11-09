@@ -1,9 +1,6 @@
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
 import { useTranslation } from 'react-i18next'
 import type { MentionCandidate } from '@/lib/mention'
-import type { MentionTarget } from './useChatDraft'
-import type { AgentStatusById } from './agentMentionStatusModels'
-import { ComposerNotice } from './ComposerNotice'
 import { useShownAgentStatus } from './useAgentsOnCloudComputer'
 
 export function AgentMentionOptionLabel({
@@ -34,36 +31,5 @@ export function AgentMentionOptionLabel({
         </span>
       ) : null}
     </span>
-  )
-}
-
-/**
- * The line beside the composer after @-ing an agent: only for an archived one, which will not answer at all.
- * An offline agent is warned about in the @ menu row (AgentMentionOptionLabel) and is not repeated as a bar
- * beside the composer (owner 2026-11-08: no banners for connection state anywhere).
- */
-export function AgentMentionSelectionNotice({
-  members,
-  mentionTargets,
-  agentStatuses,
-}: {
-  members: MentionCandidate[]
-  mentionTargets: MentionTarget[]
-  agentStatuses: AgentStatusById
-}) {
-  const { t } = useTranslation('messaging')
-  const archived = mentionTargets.map((target) => members.find((member) => member.id === target.userId && member.type === 'agent'))
-    .find((member) => member && agentStatuses[member.id] === 'archived')
-  if (!archived) return null
-
-  return (
-    <ComposerNotice
-      data-agent-status-surface="mention-selection"
-      data-agent-id={archived.id}
-      data-agent-display-status="archived"
-      data-agent-status-warning="archived"
-    >
-      {t('agent.archivedWarning', { name: archived.name })}
-    </ComposerNotice>
   )
 }

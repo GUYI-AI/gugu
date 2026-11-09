@@ -39,6 +39,7 @@ describe('a Gugu server task browser (#1607 4b)', () => {
     const pages: Record<string, string> = {
       '/first': '<title>first</title>',
       '/inner': '<p>in</p>',
+      '/field': '<title>Field</title><input autofocus id=f>',
     }
     const server = createServer((request, response) => { response.setHeader('content-type', 'text/html'); response.end(pages[request.url ?? ''] ?? '') })
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -74,6 +75,23 @@ describe('a Gugu server task browser (#1607 4b)', () => {
       const ended = new Promise<string>(resolve => again.onClose(resolve))
       await again.send('Runtime.evaluate', { expression: `location.href = URL.createObjectURL(new Blob(['<p>local</p>'], { type: 'text/html' }))` }).catch(() => {})
       expect(await ended).toBe('page protocol: unsupported navigation URL')
+
+      // #1607 node 5: the person on another computer sees it painted and types into it directly.
+      const other = createPageProtocol((await browser.pageFor('task-2', undefined, signal)) as unknown as WebContents);
+      await other.send('Page.navigate', { url: `${site}/field` });
+      await vi.waitFor(async () => expect((await other.send('Runtime.evaluate', { expression: 'document.title', returnByValue: true }) as { result: { value: string } }).result.value).toBe('Field'));
+      await other.send('Runtime.evaluate', { expression: 'document.getElementById("f").focus()' });
+      const screen = (await browser.existingPage('task-2'))!;
+      const frames: { data: string; width: number; height: number }[] = [];
+      await screen.startScreen(frame => frames.push(frame));
+      await vi.waitFor(() => expect(frames.length).toBeGreaterThan(0), { timeout: 10_000 });
+      expect(Buffer.from(frames[0]!.data, 'base64').subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
+      expect(frames[0]!.width).toBeGreaterThan(0);
+      await screen.input('Input.insertText', { text: 'typed there' });
+      expect((await other.send('Runtime.evaluate', { expression: 'document.getElementById("f").value', returnByValue: true }) as { result: { value: string } }).result.value).toBe('typed there');
+      other.close('done');
+      await screen.stopScreen();
+      expect(await browser.existingPage('task-without-page')).toBeNull();
 
       await browser.closeTask('task-1')
       expect(page.isDestroyed()).toBe(true)

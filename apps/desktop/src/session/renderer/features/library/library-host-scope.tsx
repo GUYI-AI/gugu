@@ -19,8 +19,9 @@ export const LibraryHostScope = observer(function LibraryHostScope({
   host?: LibraryHost | null;
   children: ReactNode;
 }) {
-  // 本机(或没带):应用根上那一份就是本机的,原样用。
-  if (!host?.remote) return <>{children}</>;
+  // 没带:应用根上那一份就是本机的,原样用。带了本机的 owner 宿主:它自带账号元数据和动作,也要挂上。
+  if (!host) return <>{children}</>;
+  if (!host.remote) return <LibraryHostProvider value={host}><IntegrationsProvider>{children}</IntegrationsProvider></LibraryHostProvider>;
   const online = remoteHostsStore.device(host.remote.deviceId)?.isOnline ?? host.remote.online;
   const unavailable = !online && !host.prepareAssistantAction;
   return (
