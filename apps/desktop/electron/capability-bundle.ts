@@ -1078,7 +1078,6 @@ function guguToolNamingLine(
   }
 }
 
-/** Removed host browser implementation: the App must supply its own remote control before it can be used here. */
 export function guguSessionSurfaceBlock(
   surface: HarnessSessionSurface,
   providerId: string,
