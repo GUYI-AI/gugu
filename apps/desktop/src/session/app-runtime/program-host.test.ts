@@ -175,6 +175,30 @@ describe('gugu in a program', () => {
     await expect(published).resolves.toBe(1);
   });
 
+  it('runs a person\'s projection input in the person\'s call main opened for it, never in a surrounding call', async () => {
+    const { gugu, sent, deliver, nextCall } = await program();
+    const { programCall } = await import('./program-call');
+    const api = gugu.projection as { create(driver: { input(): Promise<void>; disconnect(): Promise<void>; refresh(): void; close(): void }): Promise<{ id: string }> };
+    let listed: Promise<unknown> | undefined;
+    const created = programCall.run('projection-tool-call', () => api.create({
+      // What the driver does for the input (here: a verb) is done in that person's call.
+      input: async () => { listed = gugu.files.list({ chat: CHAT }); await listed; },
+      disconnect: async () => {}, refresh() {}, close() {},
+    }));
+    const creation = await nextCall(0);
+    deliver({ m: APP_FRAME_MARKER, t: 'result', id: creation.id, ok: true, value: { id: 'projection-resource' } });
+    const source = await created;
+    const before = sent.length;
+    programCall.run('unrelated-active-call', () => deliver({ m: APP_FRAME_MARKER, t: 'event', event: { type: 'projectionSource', event: {
+      type: 'input', id: source.id, requestId: 'r1', viewer: 'v', call: 'person-input-call',
+      input: { kind: 'text', text: 'hi' }, frame: { sequence: 1, width: 10, height: 10 } } } }));
+    await vi.waitFor(() => expect(sent.slice(before).some(message => message.method === 'filesList')).toBe(true));
+    const verb = sent.slice(before).find(message => message.method === 'filesList')!;
+    expect(verb).toMatchObject({ call: 'person-input-call' });
+    deliver({ m: APP_FRAME_MARKER, t: 'result', id: verb.id, ok: true, value: [] });
+    await listed;
+  });
+
   it('keeps file sync frames apart from calls: a sync frame is never taken for an answer', async () => {
     const { gugu, sent, deliver, nextCall } = await program();
     const before = sent.length;

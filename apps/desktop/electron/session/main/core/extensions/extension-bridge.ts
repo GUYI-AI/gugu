@@ -199,6 +199,11 @@ export interface BridgeCaller {
   interruption?: AbortSignal;
   /** A page's: whether its preload read the person's activation as the call left the page (`CallRefusalCaller`). */
   gesture?: boolean;
+  /**
+   * A program's: open a call of the person's own in a task of theirs (no agent), as a page's call to the program is —
+   * for the person's input on this program's projection (#1607 node 5). Released when that input is done.
+   */
+  personCall?(sessionId: string, signal: AbortSignal): { id: string; release(): Promise<void> };
 }
 
 /** Events to a page or the background page: their webContents, while it lives. */

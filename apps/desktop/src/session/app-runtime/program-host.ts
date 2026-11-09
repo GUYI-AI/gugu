@@ -40,10 +40,14 @@ export function startProgramGugu(channel: ProgramChannel): Readonly<Record<strin
           }
           // A host-owned projection callback can arrive while a different tool
           // call is running. It never inherits that call's agent authority.
-          const event = message as { t?: string; event?: { type?: string } } | null;
+          const event = message as { t?: string; event?: { type?: string; event?: { call?: unknown } } } | null;
           if (frame?.m === APP_FRAME_MARKER && event?.t === 'event'
-            && ['projectionSource', 'appSurface', 'taskPage'].includes(event.event?.type ?? '')) programCall.exit(() => handler(message));
-          else handler(message);
+            && ['projectionSource', 'appSurface', 'taskPage'].includes(event.event?.type ?? '')) {
+            // The person's input on a projection: main opened a call of theirs in the task for it (#1607 node 5).
+            const personCall = event.event?.type === 'projectionSource' ? event.event.event?.call : undefined;
+            if (typeof personCall === 'string' && personCall) programCall.run(personCall, () => handler(message));
+            else programCall.exit(() => handler(message));
+          } else handler(message);
         });
         // Listening does not keep the program alive: it lives as long as its own work does (its MCP server reading stdin).
         // A program that failed and stopped working exits instead of hanging until gugu's initialize times out.

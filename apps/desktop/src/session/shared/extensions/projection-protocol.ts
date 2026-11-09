@@ -40,8 +40,9 @@ export type ProjectionSourceEvent =
   | { type: 'refresh'; id: string }
   | { type: 'close'; id: string }
   | { type: 'cancel'; id: string; requestId: string }
-  | { type: 'disconnect'; id: string; requestId: string; viewer: string }
-  | { type: 'input'; id: string; requestId: string; viewer: string; input: ProjectionInput; frame: Pick<ProjectionFrame, 'sequence' | 'width' | 'height'> };
+  /** `call`: the person's own call in the task the program runs this in (`gugu/call`), as for a page's call to it. */
+  | { type: 'disconnect'; id: string; requestId: string; viewer: string; call?: string }
+  | { type: 'input'; id: string; requestId: string; viewer: string; input: ProjectionInput; frame: Pick<ProjectionFrame, 'sequence' | 'width' | 'height'>; call?: string };
 
 const record = (value: unknown): Record<string, unknown> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid projection packet');

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ExtensionHostEvent } from '@shared/extensions/bridge-protocol';
+import type { ProjectionHostPacket, ProjectionSourceEvent } from '@shared/extensions/projection-protocol';
 import { projectionSources, type ProjectionHost } from '../../../../../src/session/app-runtime/projection-source';
 import type { BridgeCaller } from './extension-bridge';
 import { revokeExtensionProgramAccess } from './extension-program-access';
@@ -54,6 +55,38 @@ describe('App program → dedicated host resource → bound App page', () => {
     await source.close();
     expect(second.signal.aborted).toBe(true);
     expect(() => second.assertCurrent()).toThrow();
+  });
+
+  it('runs the person\'s input as their own call in the projection\'s task, ended with that input', async () => {
+    const bridge = new ExtensionProjectionBridge(() => {}, async () => 'project-test');
+    const opened: { sessionId: string; signal: AbortSignal; released: boolean }[] = [];
+    const heard: ProjectionSourceEvent[] = [];
+    const producer = { ...program(event => { if (event.type === 'projectionSource') heard.push(event.event); }),
+      personCall: (sessionId: string, signal: AbortSignal) => {
+        const call = { sessionId, signal, released: false };
+        opened.push(call);
+        return { id: `person-${opened.length}`, release: async () => { call.released = true; } };
+      } } as BridgeCaller;
+    const { id } = await bridge.call(producer, 'projectionCreate', {}) as { id: string };
+    const packets: ProjectionHostPacket[] = [];
+    const viewer = page(120, 'task-a', event => { if (event.type === 'projection') packets.push(event.packet); });
+    await bridge.call(viewer, 'projectionWatch', { id, watchId: 'w' });
+    await bridge.call(producer, 'projectionPublish', { id, frame: { ...frame, sequence: 1 } });
+    const generation = (packets[0] as { generation: string }).generation;
+    await bridge.call(viewer, 'projectionSend', { watchId: 'w', packet: { type: 'ack', generation, frame: 1 } });
+    const sending = bridge.call(viewer, 'projectionSend', { watchId: 'w', packet: { type: 'input', generation, frame: 1, sequence: 1, input: { kind: 'text', text: 'hi' } } });
+    await vi.waitFor(() => expect(heard.some(event => event.type === 'input')).toBe(true));
+    const input = heard.find(event => event.type === 'input') as Extract<ProjectionSourceEvent, { type: 'input' }>;
+    // The person's call is in the task the projection was made in, not one a page names.
+    expect(input.call).toBe('person-1');
+    expect(opened[0]).toMatchObject({ sessionId: 'task-a', released: false });
+    expect(opened[0]!.signal.aborted).toBe(false);
+    await bridge.call(producer, 'projectionInputResult', { id, requestId: input.requestId });
+    await expect(sending).resolves.toEqual({ status: 'applied' });
+    expect(opened[0]!.signal.aborted).toBe(true);
+    await vi.waitFor(() => expect(opened[0]!.released).toBe(true));
+    bridge.closePage(120);
+    bridge.closePage(owner.pageId);
   });
 
   it('requires the exact call\'s host-stamped session, ignoring a forged session argument', async () => {

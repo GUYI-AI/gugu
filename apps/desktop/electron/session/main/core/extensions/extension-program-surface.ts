@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { ChildProcess } from 'node:child_process';
 import { userIdFromSupabaseAccessToken } from '@gugu/core';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
@@ -120,6 +121,10 @@ export function attachProgramSurface(extensionId: string, child: ChildProcess): 
         return filePage(ref ? { ...args, ref: { ...ref, chat } } : { ...args, place: { chat } }, callId, true, call);
       },
       hear: (event) => post({ m: APP_FRAME_MARKER, t: 'event', event }),
+      personCall: (sessionId, signal) => {
+        const id = randomUUID();
+        return { id, release: surface.hand(id, null, [], [], sessionId, 'person', signal) };
+      },
       // Each host-stamped call has an id; a person's page has a task but no calling agent.
       ...(callId === undefined || call?.callerKind === 'person' ? {} : { callingAgent: call?.agent ?? null }),
       ...(callId === undefined || !call?.sessionId ? {} : { callingSession: call.sessionId }),
@@ -150,7 +155,7 @@ export function attachProgramSurface(extensionId: string, child: ChildProcess): 
   };
   child.on('message', onMessage);
 
-  return {
+  const surface: ProgramSurface = {
     pageId,
     hand(callId, agent, files, chats = [], sessionId, callerKind = 'agent', parent) {
       const controller = new AbortController();
@@ -194,6 +199,7 @@ export function attachProgramSurface(extensionId: string, child: ChildProcess): 
       return closing;
     },
   };
+  return surface;
 }
 
 /** The person's token as a client of the chat schema: every agent read below acts as their agent with it. */

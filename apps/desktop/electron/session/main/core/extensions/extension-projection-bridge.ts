@@ -17,12 +17,14 @@ type Source = {
   handle: ReturnType<ExtensionProjections['open']>;
   alive: boolean;
   hear(event: ProjectionSourceEvent): void;
+  /** The person's input runs as their own call in this task: its program may drive what it holds for the task with it. */
+  personCall?: (signal: AbortSignal) => { id: string; release(): Promise<void> };
   closed?: { resolve(): void; reject(reason: Error): void };
 };
 type PendingInput = { source: Source; resolve(outcome?: ProjectionInputOutcome): void; reject(error: Error): void };
 type Viewer = { pageId: number; sessionId: string; epoch: number; receive(packet: unknown): Promise<void>; close(): void };
-type SourceCommand = Omit<Extract<ProjectionSourceEvent, { type: 'input' }>, 'id' | 'requestId'>
-  | Omit<Extract<ProjectionSourceEvent, { type: 'disconnect' }>, 'id' | 'requestId'>;
+type SourceCommand = Omit<Extract<ProjectionSourceEvent, { type: 'input' }>, 'id' | 'requestId' | 'call'>
+  | Omit<Extract<ProjectionSourceEvent, { type: 'disconnect' }>, 'id' | 'requestId' | 'call'>;
 
 /** Dedicated, exact-recipient events. Pictures never use the App-wide program notification broadcaster. */
 export class ExtensionProjectionBridge {
@@ -121,12 +123,17 @@ export class ExtensionProjectionBridge {
       const requestId = randomUUID();
       let timer: ReturnType<typeof setTimeout> | undefined;
       let finished = false;
+      // Ends with this input: aborting it ends the person's call the program runs it in.
+      const ended = new AbortController();
+      const call = source.personCall?.(ended.signal);
       const finish = (error?: Error, outcome?: ProjectionInputOutcome) => {
         if (finished) return;
         finished = true;
         clearTimeout(timer);
         signal?.removeEventListener('abort', abort);
         this.inputs.delete(requestId);
+        ended.abort();
+        void call?.release().catch(() => undefined);
         if (error) reject(error); else resolve(outcome);
       };
       const boundCleanup = () => {
@@ -145,7 +152,7 @@ export class ExtensionProjectionBridge {
       this.inputs.set(requestId, { source, resolve: outcome => finish(undefined, outcome), reject: finish });
       signal?.addEventListener('abort', abort, { once: true });
       if (signal?.aborted) { finish(new Error('Projection input cancelled')); return; }
-      try { source.hear({ ...event, id: source.handle.id, requestId }); }
+      try { source.hear({ ...event, id: source.handle.id, requestId, ...(call ? { call: call.id } : {}) }); }
       catch (error) { finish(error instanceof Error ? error : new Error(String(error))); }
     });
   }
@@ -187,7 +194,9 @@ export class ExtensionProjectionBridge {
           if (source.alive) await this.command(source, { type: 'disconnect', viewer });
         },
       });
-      const source: Source = { pageId: caller.pageId, extensionId: caller.extensionId, handle, alive: true, hear };
+      const session = caller.callingSession;
+      const source: Source = { pageId: caller.pageId, extensionId: caller.extensionId, handle, alive: true, hear,
+        ...(caller.personCall ? { personCall: (signal: AbortSignal) => caller.personCall!(session, signal) } : {}) };
       this.sources.set(handle.id, source);
       return { id: handle.id };
     }
