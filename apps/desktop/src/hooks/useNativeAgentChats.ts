@@ -47,7 +47,7 @@ export function useNativeAgentChats(chats: readonly ChatItem[]): ChatItem[] {
     // row stays, placed by when the task was last used: it is the way in, and that page says the machine is away.
     // ❌ On a computer: its session page waits for that machine without a word, so the row would do nothing when clicked.
     const seen = mobile && sessions[0] && last === undefined && !chat.last_message_at ? sessions[0].lastInteractedAt : undefined
-    return newer ? { ...withNotifications, last_message_preview: activityText(last.activity) ?? last.text, last_message_at: last.at, last_message_failure: null } : seen ? { ...withNotifications, last_message_at: seen } : withNotifications
+    return newer ? { ...withNotifications, last_message_preview: activityText(last.activity) ?? last.text, last_message_at: last.at, last_message_notice: null } : seen ? { ...withNotifications, last_message_at: seen } : withNotifications
   }), [mobile, activityText])
   const shared = useRef<ChatItem[]>([])
   shared.current = shareRows(shared.current, chats.map(chat => project(chat,

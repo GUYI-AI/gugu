@@ -69,6 +69,12 @@ const DISABLED_FILENAME = '.disabled-extensions.json';
 const SETTINGS_FILENAME = '.app-settings.json';
 
 /**
+ * The pages the person took out of the menus: `{ [extensionId]: tabName[] }`. The App keeps working, and a file or an agent
+ * can still open them; only the rail, a task's 「+」 and the command list stop offering them. Pruned on uninstall.
+ */
+const HIDDEN_TABS_FILENAME = '.hidden-tabs.json';
+
+/**
  * The Apps pinned to the far-left rail (its dock), `extensionId[]` in the order they show. This machine's only: an App is
  * installed on a machine, and what is not installed here cannot open here. Same file discipline, pruned on uninstall.
  */
@@ -160,6 +166,7 @@ export class ExtensionsService {
   private readonly disabledFile: JsonFile<string[]>;
   private readonly fullDisclosureFile: JsonFile<string[]>;
   private readonly dockFile: JsonFile<string[]>;
+  private readonly hiddenTabsFile: JsonFile<Record<string, string[]>>;
   private readonly autoUpdateOffFile: JsonFile<string[]>;
   private readonly givenHereFile: JsonFile<Record<string, string[]>>;
   private readonly originsFile: JsonFile<Record<string, ExtensionOrigin>>;
@@ -178,6 +185,7 @@ export class ExtensionsService {
     this.disabledFile = jsonFile(rootDir, DISABLED_FILENAME, '[]', stringList(DISABLED_FILENAME, 'extension ids'));
     this.fullDisclosureFile = jsonFile(rootDir, FULL_DISCLOSURE_FILENAME, '[]', stringList(FULL_DISCLOSURE_FILENAME, 'extension ids'));
     this.dockFile = jsonFile(rootDir, DOCK_FILENAME, '[]', stringList(DOCK_FILENAME, 'App ids'));
+    this.hiddenTabsFile = jsonFile(rootDir, HIDDEN_TABS_FILENAME, '{}', mapOf<string[]>(HIDDEN_TABS_FILENAME, 'hidden tab names', (tabs) => Array.isArray(tabs) && tabs.every((tab) => typeof tab === 'string')));
     this.autoUpdateOffFile = jsonFile(rootDir, AUTO_UPDATE_OFF_FILENAME, '[]', stringList(AUTO_UPDATE_OFF_FILENAME, 'App ids'));
     this.givenHereFile = jsonFile(rootDir, GIVEN_HERE_FILENAME, '{}', mapOf<string[]>(GIVEN_HERE_FILENAME, 'places',
       (value) => Array.isArray(value) && value.every((place) => typeof place === 'string')));
@@ -631,6 +639,20 @@ export class ExtensionsService {
     this.autoUpdateOffFile.write([...off]);
   }
 
+  hiddenTabs(): Record<string, string[]> {
+    return this.hiddenTabsFile.read();
+  }
+
+  setTabHidden(extensionId: string, tab: string, hidden: boolean): Record<string, string[]> {
+    if (this.origins()[extensionId] === 'preinstalled') throw new Error(`"${extensionId}" comes with gugu; its pages stay where gugu puts them`);
+    if (!this.get(extensionId).manifest.contributes.tabs.some((candidate) => candidate.name === tab)) throw new Error(`"${extensionId}" has no tab named ${tab}`);
+    const { [extensionId]: current = [], ...others } = this.hiddenTabsFile.read();
+    const tabs = hidden ? [...new Set([...current, tab])] : current.filter((name) => name !== tab);
+    const next = tabs.length > 0 ? { ...others, [extensionId]: tabs } : others;
+    this.hiddenTabsFile.write(next);
+    return next;
+  }
+
   /** The Apps on the far-left rail, in order (its dock). Unreadable throws, like the lists above. */
   dock(): string[] {
     return this.dockFile.read();
@@ -767,6 +789,8 @@ export class ExtensionsService {
     if (full.includes(extensionId)) this.fullDisclosureFile.write(full.filter((id) => id !== extensionId));
     const dock = this.dock();
     if (dock.includes(extensionId)) this.dockFile.write(dock.filter((id) => id !== extensionId));
+    const { [extensionId]: hiddenTabs, ...otherHiddenTabs } = this.hiddenTabsFile.read();
+    if (hiddenTabs) this.hiddenTabsFile.write(otherHiddenTabs);
     const autoUpdateOff = this.autoUpdateOffFile.read();
     if (autoUpdateOff.includes(extensionId)) this.autoUpdateOffFile.write(autoUpdateOff.filter((id) => id !== extensionId));
 

@@ -14,7 +14,7 @@ import type {
   TranscriptTurn,
 } from '../models/turns';
 import { deriveConfigGroups } from './config-derive';
-import { makeMessageId, makeThinkingId, makeTurnId } from './ids';
+import { makeMessageId, messageEntityId, makeThinkingId, makeTurnId } from './ids';
 import { foldItem, finalizeItems, type FoldEvent } from './item-fold';
 import { projectSubagentProgress } from './subagent-progress';
 import type { NormalizedEvent } from './normalized-event';
@@ -57,6 +57,7 @@ export interface ParserState {
 }
 
 export type ReducerInput =
+  | { kind: 'user_boundary'; at: number }
   | { kind: 'event'; event: NormalizedEvent; at: number }
   | { kind: 'replay_start'; at: number }
   | { kind: 'replay_end'; at: number; outcome?: TranscriptTurnOutcome }
@@ -192,7 +193,7 @@ export function isNewUserMessage(
     if (segment.open === 'message:user') return false;
     return active.items.some((it) => it.kind !== 'message' || it.role !== 'user');
   }
-  const id = makeMessageId(active.id, event.messageId, 'user');
+  const id = messageEntityId(active.id, { ...event, messageId: event.messageId });
   return !active.items.some((it) => it.kind === 'message' && it.id === id);
 }
 
@@ -877,6 +878,9 @@ export function reduce(s: ParserState, input: ReducerInput, deps: ReducerDeps): 
 }
 
 function reduceState(s: ParserState, input: ReducerInput, deps: ReducerDeps): ParserState {
+  if (input.kind === 'user_boundary') {
+    return { ...s, transcript: openTurn(closeActive(s.transcript, input.at), deps, 'user', input.at), segment: initialSegment() };
+  }
   if (input.kind === 'replay_start') {
     return { ...initialState(), replaying: true };
   }

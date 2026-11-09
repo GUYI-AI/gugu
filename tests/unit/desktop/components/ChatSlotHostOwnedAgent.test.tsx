@@ -9,9 +9,12 @@ const state = vi.hoisted(() => ({
 vi.mock('../../../../apps/desktop/src/lib/ownedAgentConversation', () => ({
   useOwnedAgentEntries: () => state.ready, isOwnedAgentPeer: () => state.owned, openOwnedAgentEntry: state.open,
 }))
-vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => ({
+vi.mock('../../../../apps/desktop/src/store/chatContext', () => {
+  const store = () => ({
   chatsRead: state.chatsRead, chatsLoadFailed: state.chatsLoadFailed, chats: [{ id: 'restored-dm', kind: 'dm', peer_user_id: 'agent' }], identitiesById: state.identity ? { agent: { type: 'agent' } } : {},
-}) }))
+})
+  return { useChatStore: store, useStoreValueBy: (read: (value: ReturnType<typeof store>) => unknown) => read(store()) }
+})
 vi.mock('../../../../apps/desktop/src/lib/sidebarChatsBridge', () => ({ useSidebarChatView: () => ({ focusedChatId: null }) }))
 vi.mock('../../../../apps/desktop/src/lib/projectGroupChatsBridge', () => ({ useProjectGroupChats: () => new Set() }))
 vi.mock('../../../../apps/desktop/src/components/assistant/TaskChatScope', () => ({ TaskChatScope: ({ children }: { children: React.ReactNode }) => children }))

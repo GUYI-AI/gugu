@@ -22,6 +22,7 @@ import { phoneApps } from './phoneApps'
 import type { SessionpageOpenedFileChunk, SessionpageOpenedFileReadRequest } from '@gugu/session-core/session-record/contract'
 import { composeChatDraft } from '../../lib/composeDraft'
 import { peekStore } from '../../session/renderer/features/extensions/peek-store'
+import { Button } from '../ui/Button'
 import { useBackLayer } from '../ui/sheetStack'
 
 const OpenedFilePreview = lazy(() => import('../../mobile/agent-watch/opened-file-preview').then((m) => ({ default: m.OpenedFilePreview })))
@@ -245,6 +246,9 @@ export function PhoneAppFrame({
     return (
       <div hidden={hidden} className="min-h-0 flex-1" data-testid={missingTestId}>
         <p className="!p-4 text-[length:var(--font-body)] text-[var(--text-secondary)]">{t('chatArea.openWith.unavailable')}</p>
+        <div className="!px-4">
+          <Button variant="secondary" data-testid="phone-app-missing-apps" onClick={() => void followLink({ kind: 'app-detail', extensionId })}>{t('chatArea.openWith.goToApps')}</Button>
+        </div>
       </div>
     )
   }

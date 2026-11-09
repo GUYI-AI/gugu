@@ -15,7 +15,7 @@ import { matchRanges } from '@shared/core/search'
 import { Shortcut } from '@renderer/lib/ui/shortcut'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { cn } from '@renderer/utils/utils'
-import { recentSearches, rememberSearch, updateSearchSession, useSearchSession, type SearchChip, type SearchFacet, type SearchKind } from './search-session'
+import { EVERYWHERE, forgetSearches, recentSearches, rememberSearch, updateSearchSession, useSearchSession, type SearchChip, type SearchFacet, type SearchKind } from './search-session'
 import { firstMessageOn, instant, SEARCH_LIMIT, useGlobalSearch, type SearchHit } from './use-global-search'
 import { sessionAgentBindings } from '../sessions/stores/session-agent-bindings'
 import { openGroup, openPerson, useNameMatches } from '../command-palette/palette-chats'
@@ -123,8 +123,8 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
     if (hit.kind === 'message') {
       const hits = ordered.flatMap((one) => one.kind === 'message' ? [{ chatId: one.chatId, messageId: one.messageId }] : [])
       updateSearchSession({ selectedId: hit.id, trail: { hits, index: hits.findIndex((one) => one.messageId === hit.messageId), query: view.query } })
-      if (inChat && view.query) rememberSearch(inChat, view.query)
     }
+    if (view.query) rememberSearch(recentScope, view.query)
     onOpen(); openHit(hit)
   }
   const addKind = (type: SearchKind) => { if (!chips.some((chip) => chip.kind === 'type' && chip.type === type)) setChips([...chips, { kind: 'type', type }]) }
@@ -145,7 +145,9 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
     { key: 'link', icon: <Link size={16} />, label: translate('globalSearch.kind.link'), run: () => addKind('link') },
     { key: 'mention', icon: <AtSign size={16} />, label: translate('globalSearch.kind.mention'), run: () => addKind('mention') },
   ]
-  const recent = inChat ? recentSearches(inChat) : []
+  const recentScope = inChat ?? EVERYWHERE
+  const [, setForgotten] = useState(0)
+  const recent = recentSearches(recentScope)
   const move = (direction: 1 | -1) => {
     if (!ordered.length) return
     const at = selected ? ordered.indexOf(selected) : -1
@@ -229,7 +231,11 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
         {!hasQuery && dateNote && <div role="status" className="px-3 pt-2 text-sm text-foreground/50">{dateNote}</div>}
         {!hasQuery && recent.length > 0 && (
           <div className="px-1 pt-3" data-testid="global-search-recent">
-            <div className="px-3 pb-1 text-xs text-foreground/40">{translate('globalSearch.recentHere')}</div>
+            <div className="flex items-center justify-between px-3 pb-1 text-xs text-foreground/40">
+              <span>{translate(inChat ? 'globalSearch.recentHere' : 'globalSearch.recent')}</span>
+              <button type="button" data-testid="global-search-recent-clear" className="-my-2 -mr-2 min-h-9 px-2 hover:text-foreground/70 max-sm:min-h-11"
+                onClick={() => { forgetSearches(recentScope); setForgotten((count) => count + 1) }}>{translate('globalSearch.clearRecent')}</button>
+            </div>
             {recent.map((words) => (
               <button type="button" key={words} onClick={() => updateSearchSession({ text: words, selectedId: null })}
                 className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-foreground/75 hover:bg-foreground/[0.06] max-sm:min-h-11">
@@ -239,7 +245,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
           </div>
         )}
         {!hasQuery && (
-          <div className="px-3 pb-4 pt-3 text-[length:var(--font-body)] leading-6 text-foreground/50">
+          <div className="px-3 pb-4 pt-3 text-[length:var(--font-body)] leading-6 text-foreground/50 max-sm:hidden">
             <div>{translate(tasks ? 'globalSearch.introWhat' : 'globalSearch.introWhatChats')}</div>
             <div>{translate('globalSearch.introScope')} <code className="rounded bg-foreground/[0.06] px-1 font-mono text-xs text-foreground/70">in:</code> <code className="rounded bg-foreground/[0.06] px-1 font-mono text-xs text-foreground/70">from:</code></div>
           </div>
@@ -248,7 +254,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
         {nameRows.length > 0 && (
           <div data-testid="global-search-names">
             <div className="px-3 pb-1 pt-3 text-xs font-medium text-foreground/45">{translate('globalSearch.names')}</div>
-            {nameRows.map((row) => <NameRow key={row.id} id={row.id} userId={row.userId} name={row.name} query={view.query} onOpen={() => { onOpen(); row.open() }} />)}
+            {nameRows.map((row) => <NameRow key={row.id} id={row.id} userId={row.userId} name={row.name} query={view.query} onOpen={() => { rememberSearch(recentScope, view.query); onOpen(); row.open() }} />)}
           </div>
         )}
         {hasQuery && !view.unresolved && !view.loading && !view.error && ordered.length === 0 && nameRows.length === 0 && (

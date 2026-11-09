@@ -4,6 +4,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { chmodSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { createInterface } from 'node:readline'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -48,9 +49,12 @@ rl.on('line', (line) => {
     const turnId = 'turn-' + (++turnSeq)
     const text = JSON.stringify(m.params.input ?? '')
     const key = Object.keys(SCRIPTS).find((k) => text.includes(k))
+    const viewed = /VIEW (\\S+)/.exec(m.params.input?.[0]?.text ?? '')?.[1]
     out({ id: m.id, result: { turn: { id: turnId, status: 'inProgress' } } })
     out({ method: 'turn/started', params: { threadId: THREAD, turn: { id: turnId, status: 'inProgress' } } })
-    const item = { type: 'mcpToolCall', id: turnId + '-tool', server: 'gugu', tool: 'catalog_call', arguments: { tool: 'app_check' }, ...SCRIPTS[key] }
+    // Code mode's view_image, as codex 0.167 reports it: only the file, as a file:// URL.
+    const item = viewed ? { type: 'imageView', id: 'exec-' + turnId, path: viewed }
+      : { type: 'mcpToolCall', id: turnId + '-tool', server: 'gugu', tool: 'catalog_call', arguments: { tool: 'app_check' }, ...SCRIPTS[key] }
     out({ method: 'item/completed', params: { threadId: THREAD, turnId, item } })
     out({ method: 'item/completed', params: { threadId: THREAD, turnId, item: { type: 'agentMessage', id: turnId + '-msg', text: 'DONE' } } })
     return out({ method: 'turn/completed', params: { threadId: THREAD, turn: { id: turnId, status: 'completed' } } })
@@ -75,11 +79,12 @@ afterEach(async () => {
 
 type ToolUpdate = { sessionUpdate: string; toolCallId: string; content?: unknown; rawOutput?: unknown }
 
-/** One prompt through the bridge: the tool-call updates it sent for that turn. */
-async function toolUpdates(script: string): Promise<ToolUpdate[]> {
+/** One prompt through the bridge (or one written once its directory exists): the tool-call updates it sent for that turn. */
+async function toolUpdates(prompt: string | ((path: (name: string) => string) => string)): Promise<ToolUpdate[]> {
   const raw = join(tmpdir(), `codex-tool-content-${process.pid}-${Date.now()}`)
   mkdirSync(raw, { recursive: true })
   dir = realpathSync(raw)
+  const script = typeof prompt === 'string' ? prompt : prompt((name) => join(dir, name))
   const fake = join(dir, 'fake-codex.cjs')
   writeFileSync(fake, FAKE_CODEX)
   chmodSync(fake, 0o755)
@@ -141,5 +146,29 @@ describe('codex ACP bridge: an MCP tool result reaches the client as ACP content
     const [update] = await toolUpdates('FAILED')
     expect(update).not.toHaveProperty('content')
     expect(update!.rawOutput).toEqual({ message: 'no such tab' })
+  })
+})
+
+// The task page drew no row at all when codex looked at a picture: code mode's view_image reaches the app-server only
+// as an `imageView` item naming the file, and the bridge had no mapping for it.
+describe('codex ACP bridge: a picture codex viewed is a read of that file, with the picture as its content', () => {
+  const PNG = 'iVBORw0KGgo='
+
+  it('the file it names comes back as an image block', async () => {
+    const updates = await toolUpdates((path) => {
+      writeFileSync(path('shot.png'), Buffer.from(PNG, 'base64'))
+      return `VIEW ${pathToFileURL(path('shot.png')).href}`
+    })
+    expect(updates).toEqual([expect.objectContaining({
+      sessionUpdate: 'tool_call_update', toolCallId: 'exec-turn-1', status: 'completed', kind: 'read',
+      locations: [{ path: join(dir, 'shot.png') }],
+      content: [{ type: 'content', content: { type: 'image', mimeType: 'image/png', data: PNG } }],
+    })])
+  })
+
+  it('a file no longer there still has its row, without a picture', async () => {
+    const [update] = await toolUpdates((path) => `VIEW ${pathToFileURL(path('gone.png')).href}`)
+    expect(update).toMatchObject({ toolCallId: 'exec-turn-1', kind: 'read', locations: [{ path: join(dir, 'gone.png') }] })
+    expect(update).not.toHaveProperty('content')
   })
 })

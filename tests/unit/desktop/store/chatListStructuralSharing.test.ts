@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { applyFetchedChatList, createChatListProjectionLedger } from '../../../../apps/desktop/src/store/chatListProjection'
 import { openImRepository, type AccountImRepository } from '../../../../apps/desktop/src/lib/imRepository'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
+import { patchChatRows } from '../../../../apps/desktop/src/store/chatRealtimeMutations'
 import { chat } from '../../../support/testHarness'
 
 let repository: AccountImRepository
@@ -64,3 +65,18 @@ it('keeps a remote personal deletion out of active and optimistic rows while pre
     {currentChats:next,activeChatId:null,revokeMissingActive:false,isConversationDeleted:id => id === 'dm'});
   expect(refreshed.map(row => row.id)).toEqual(['new','other']);
 });
+
+describe('patchChatRows 结构共享', () => {
+  it('写入的值和原来一样 ⇒ 还是原来那个数组(订阅列表的组件不重渲)', () => {
+    const current = [chat({ id: 'a', last_read_seq: 3 }), chat({ id: 'b' })]
+    expect(patchChatRows(current, 'a', { last_read_seq: 3 })).toBe(current)
+  })
+
+  it('真变了 ⇒ 只换那一行', () => {
+    const current = [chat({ id: 'a', last_read_seq: 3 }), chat({ id: 'b' })]
+    const next = patchChatRows(current, 'a', { last_read_seq: 4 })
+    expect(next).not.toBe(current)
+    expect(next[0]).toMatchObject({ last_read_seq: 4 })
+    expect(next[1]).toBe(current[1])
+  })
+})

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, createElement, Fragment, Profiler, useCallback, useMemo, useState, type SetStateAction } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatMessageComposer } from '../../../../apps/desktop/src/components/chat/ChatMessageComposer'
 import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
@@ -209,7 +210,7 @@ describe('ChatMessageComposer', () => {
     expect(container.querySelectorAll('[data-slot="composer-attachment"]')).toHaveLength(1)
     expect(URL.createObjectURL).toHaveBeenCalledTimes(2)
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:gugu-preview')
-    expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: '发送失败：upload denied [path] [redacted token]', tier: 'error', key: expect.any(String) }))
+    expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: '图片 avatar.png 没发出去：发送未完成，请稍后重新发送', tier: 'error', key: expect.any(String) }))
     expect(sendErrorLog).toHaveBeenCalledWith(expect.objectContaining({ error: 'upload denied /Users/test/private sk-synthetic-secret\nstack detail' }), 'message send failed')
   })
   it('#2188 restores only the text when every attachment committed before the text failed', async () => {
@@ -230,7 +231,7 @@ describe('ChatMessageComposer', () => {
     expect(onSend).toHaveBeenCalledTimes(1)
     expect(readComposer(container.querySelector('[contenteditable]'))).toBe('send this text after the file')
     expect(container.querySelectorAll('[data-slot="composer-attachment"]'), 'the committed attachment must not return to the draft').toHaveLength(0)
-    expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: '发送失败：text denied', tier: 'error', key: expect.any(String) }))
+    expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: '消息没发出去：发送未完成，请稍后重新发送', tier: 'error', key: expect.any(String) }))
     await clickSend()
     expect(onSendAttachments, 'retry must not resend the committed attachment').toHaveBeenCalledTimes(1)
     expect(onSend).toHaveBeenCalledTimes(2)
@@ -256,6 +257,11 @@ describe('ChatMessageComposer', () => {
     expect(chips[1].textContent).toContain('never-attempted.txt')
     expect(readComposer(container.querySelector('[contenteditable]')), 'the unattempted text stays recoverable').toBe('text never attempted')
     expect(onSend, 'the text half never ran').toHaveBeenCalledTimes(0)
+    expect(noticeMock).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ title: '2 个文件没发出去：发送未完成，请稍后重新发送' }))
+    const failureFiles = renderToStaticMarkup(createElement(Fragment, null, noticeMock.mock.calls[0][0].description))
+    expect(failureFiles).toContain('failed-verification.txt')
+    expect(failureFiles).toContain('never-attempted.txt')
+    expect(failureFiles).not.toContain('already-sent.txt')
     onSendAttachments.mockImplementationOnce(async (files: File[], opts?: { onSent?: (f: File, index: number) => void }) => {
       files.forEach((f, index) => opts?.onSent?.(f, index))
     })
@@ -398,7 +404,7 @@ describe('ChatMessageComposer', () => {
     await act(async () => { rejectSend(new Error('upload denied')); await Promise.resolve() })
     await flush()
     expect(chips(), 'failed send must not leak into the now-active chat-b').toHaveLength(0)
-    expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: '发送失败：upload denied', tier: 'error', key: expect.any(String) }))
+    expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: expect.stringContaining('没发出去：发送未完成，请稍后重新发送'), tier: 'error', key: expect.any(String) }))
     await harness.render(createElement(StatefulHost, { chatId: 'chat-a', onSend: vi.fn(async () => {}), onSendAttachments }))
     await flush()
     expect(chips(), 'failed send is recoverable in its original chat-a').toHaveLength(1)

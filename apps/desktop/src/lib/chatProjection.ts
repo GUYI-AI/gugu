@@ -12,7 +12,7 @@
 // 那就是第二个属主在原地 —— #3271 的病只治了增量那一半。
 
 import type { ChatItem, ChatUnreadLocator, GroupMemberRole, NotificationLevel } from '@gugu/core/shared/types/chat'
-import { isPendingDelivery, turnFailureReason } from '@gugu/core/shared/ui/systemNotice'
+import { isPendingDelivery, parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import {
   assemble,
   reassemble,
@@ -300,7 +300,7 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       // 一起截,忙会话会把安静会话的那一行挤掉。
       const { data, error } = await chatDb.rpc('list_chat_previews', { p_chat_ids: [...ids] }).abortSignal(signal)
       if (error) throw new Error(error.message)
-      const found = (data ?? []) as Array<Record<string, unknown> & { chat_id: string } & Parameters<typeof turnFailureReason>[0]>
+      const found = (data ?? []) as Array<Record<string, unknown> & { chat_id: string } & Parameters<typeof parseSystemNotice>[0]>
       const byChat = new Map<string, unknown>()
       for (const row of found) {
         // 还在等 agent 接走的那种行不画(气泡上说),也不当预览;与 sync_snapshot 的 chat.is_pending_delivery 同一判据。
@@ -311,8 +311,8 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
           // 预览在库里算好(messages_view 的计算列 preview:附件给文件名、其它截 100 字),这里原样用;
           // 任务卡截出来是半截 JSON,读回成一行原话(gugu-dev#181,serializeComposerCard 让原话排在前面)。
           preview: typeof row.preview === 'string' ? composerCardLine(row.preview) : null,
-          // 最后一条是 agent 的失败行:列表按看的人的语言说它的原因(systemNotice.ts),❌ 显示那句给 agent 读的英文。
-          failure: turnFailureReason(row),
+          // 最后一条是系统行:列表按看的人的语言说(systemNotice.ts),❌ 显示那句写进库里的原文。
+          notice: parseSystemNotice(row),
         })
       }
       return indexExact(ids, byChat)

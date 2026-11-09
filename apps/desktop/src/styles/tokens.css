@@ -415,7 +415,7 @@
   --menu-bg: var(--popover);
   --menu-fg: var(--fg);
   --menu-icon: var(--faint-fg);
-  --menu-item-hover: var(--hover);                 /* @@@2322 收敛别名 → --hover */
+  --menu-item-hover: var(--press);                 /* 菜单每行都可点,高亮要比页面上的 --hover 深一档,才看得出落在哪行;❌ 用 --selected:和单选行的选中分不开 */
 
   /* ══════════════════════════════════════════════════════════════════════════
      @@@shadow-lift (Refs #6104) — design.md:「**Shadows are zeroed globally.
@@ -667,6 +667,7 @@
   --sidebar:  var(--page);
   --fg:       #dfdfdf; /* gray-fixed-150 */
   --muted:    #2a2a2a; /* 填充面(分段底、输入底):比 --card 高一档,卡片里也分得出 */
+  --menu-bg: var(--muted); /* 菜单比气泡(#262626)高一档:同色或更深时像气泡上的一个洞。只动菜单这一格,❌ 动 --popover:浮层里的 --muted 填充会融进底色 */
   /* 次级文字 = 前景 62% 混进 --bg:对 --card 5.24、对 --muted 4.67(过 AA 4.5)。 */
   --muted-fg: #939393;
   /* 装饰色(图标、禁用、状态点),❌ 承载信息。图标也要分得出(WCAG 1.4.11):对 --muted 3.07,其余面更高。 */
@@ -885,6 +886,7 @@
   --page:     #f9f9f9; /* 窗口底层:rail、会话列表(gray-fixed-50) */
   --card:     #ffffff;
   --popover:  #ffffff;
+  --menu-bg: var(--popover);
   --sidebar:  var(--page);
   --fg:       #1a1c1f; /* 亮色前景 */
   --muted:    #ededed; /* 填充面(gray-fixed-100) */

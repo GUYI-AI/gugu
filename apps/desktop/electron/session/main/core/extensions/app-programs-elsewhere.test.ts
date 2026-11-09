@@ -161,6 +161,12 @@ describe('the machine that has the session does the call', () => {
     expect(callFromPage).not.toHaveBeenCalled();
   });
 
+  it('a project folder here is only read from elsewhere, whatever the asker\'s host checked', async () => {
+    const place = { workspace: 'folder:dev-here/w1' };
+    expect(await refusal(elsewhere.answerAppCall(CALLER, action({ call_id: 'fw', method: 'filesCreate' }, { place, name: 'x.md' })))).toMatchObject({ code: 'denied' });
+    expect(await refusal(elsewhere.answerAppCall(CALLER, action({ call_id: 'fr', method: 'filesRename' }, { ref: { ...place, id: 'a' }, name: 'b' })))).toMatchObject({ code: 'denied' });
+  });
+
   it('does only a verb whose row follows the session\'s machine — never a program gugu hosts (161 10-17), never any other verb', async () => {
     installed.servers = [{ name: 'browser', host: 'browser-use' }];
     expect(await refusal(elsewhere.answerAppCall(CALLER, action({ call_id: 'hosted' }, { name: 'open' })))).toMatchObject({ code: 'invalid' });

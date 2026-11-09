@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { MAX_APP_DATA_FILE_BYTES as MAX_EXTENSION_DATA_FILE_BYTES } from '@shared/extensions/app-data';
 import {
   extensionDataDir,
+  folderBytes,
   listExtensionData,
   readExtensionData,
   removeExtensionData,
@@ -45,5 +46,20 @@ describe('extension data folder (#6387)', () => {
     writeExtensionData(root, 'notes.json', '[]');
     removeExtensionData(root);
     expect(fs.existsSync(root)).toBe(false);
+  });
+});
+
+describe('folderBytes', () => {
+  it('counts files at every depth, and a folder that is not there is none', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'folder-bytes-'));
+    try {
+      fs.mkdirSync(path.join(root, 'a/b'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'one'), '123');
+      fs.writeFileSync(path.join(root, 'a/b/two'), '45');
+      expect(await folderBytes(root)).toBe(5);
+      expect(await folderBytes(path.join(root, 'nothing'))).toBe(0);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

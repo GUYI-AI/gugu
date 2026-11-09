@@ -12,7 +12,7 @@ vi.mock('../../../../apps/desktop/src/components/Avatar', () => ({ Avatar: () =>
 vi.mock('../../../../apps/desktop/src/store/chatContext', async original => ({ ...await original<object>(), useChatStore: () => ({ messages: [{ id: '6417511d-8f36-4cbc-8cbb-81ce9f97df72', sender_user_id: '11111111-1111-4111-8111-111111111111', content: 'someone@example.com', retracted_at: null }], threadMessages: [], identitiesById: {} }) }))
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/chat/actor-identity', () => ({ chatActor: (id: string) => ({ id, name: id.startsWith('user:111') ? 'Worker' : 'Owner', type: id.startsWith('user:111') ? 'agent' : 'human' }) }))
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/chat/chat-name', () => ({ chatDisplayName: () => 'Test group' }))
-vi.mock('../../../../apps/desktop/src/lib/chatSummariesBridge', () => ({ useChatSummaries: () => new Map([['group', { kind: 'group' }]]), readChatSummary: () => ({ kind: 'group' }), resolveChatId: (id: string) => id }))
+vi.mock('../../../../apps/desktop/src/lib/chatSummariesBridge', () => ({ subscribeChatNames: () => () => undefined, chatNamesVersion: () => 0, useChatSummaries: () => new Map([['group', { kind: 'group' }]]), readChatSummary: () => ({ kind: 'group' }), resolveChatId: (id: string) => id }))
 const { MessagePreviewCard } = await import('../../../../apps/desktop/src/components/MessagePreviewCard')
 let h: ReturnType<typeof createReactHarness>
 beforeEach(() => { h = createReactHarness() })

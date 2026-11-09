@@ -1,4 +1,5 @@
 import type { ExtensionFileChangeBatch } from '@shared/extensions/bridge-protocol';
+import { chatForCapabilities } from '@shared/extensions/bridge-protocol';
 import { appStateOf } from '@shared/extensions/app-state';
 import { groupFileLink } from '@gugu/core/shared/ui/guguLink';
 import * as fs from 'node:fs';
@@ -51,7 +52,8 @@ import type {
   ExtensionHostActionResult,
 } from '@shared/extensions/host-actions';
 import { fileSync } from '@main/core/extensions/file-sync';
-import { fileRefOf, folderOf, isWorkspace, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
+import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
+import { fileRefOf, folderOf, isWorkspace, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
 import { placeFor, placeLink, type FileOpenerCandidate } from '@shared/extensions/file-openers';
 import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
 import { rosterMoved, type MemberChange } from '@shared/extensions/app-files-core';
@@ -1210,8 +1212,11 @@ async function readChatMembers(chatId: string, includeMembers = true): Promise<v
     return;
   }
   const files = await import('@main/core/extensions/app-files');
-  const [members, chat] = await Promise.all([includeMembers ? files.chatMembersOf(chatId) : undefined, files.surfaceChatOf(chatId)]);
-  chatsDrawnIn.set(chatId, { chat, members });
+  const [members, read] = await Promise.all([includeMembers ? files.chatMembersOf(chatId) : undefined, files.surfaceChatOf(chatId)]);
+  // Which of a project's folders are on this computer: the account's record cannot say, the machine reading it can.
+  const others = read?.folders ? (await import('@main/core/sessions/session-family')).otherMachines() : null;
+  const folders = others && read?.folders && await Promise.all(read.folders.map(async (folder) => ({ ...folder, thisMachine: await others.isThisDevice(workspaceFolder({ workspace: folder.workspace })!.deviceId) })));
+  chatsDrawnIn.set(chatId, { chat: read && folders ? { ...read, folders } : read, members });
 }
 /** Pages of a chat not read yet wait on the one read under way, not a read each (a folder's page asks three ways at once). */
 const chatsBeingRead = new Map<string, Promise<void>>();
@@ -1228,6 +1233,17 @@ function chatRead(chatId: string, includeMembers = true): Promise<void> {
 }
 const unread = (chatId: string) => (error: unknown) =>
   log.warn('The chat could not be read', { chatId, message: error instanceof Error ? error.message : String(error) });
+
+/** The account's record of this machine's projects moved: a group's pages read its folders again and are told. */
+export function projectFoldersPublished(): void {
+  for (const chatId of chatsWithPages()) {
+    const drawn = chatsDrawnIn.get(chatId);
+    if (drawn?.chat?.kind !== 'group') continue;
+    void chatRead(chatId, drawn.members !== undefined).then(() => {
+      for (const [id, binding] of bindings) if (binding.conversation === chatId) pushContext(id);
+    }, unread(chatId));
+  }
+}
 
 /** The chats some page is drawn in: where a change to a person, which names no chat, may move who is shown. */
 export function chatsWithPages(): string[] {
@@ -1278,7 +1294,7 @@ async function workspaceOf(binding: SurfaceBinding): Promise<ExtensionWorkspace 
       id,
       sessionId,
       ...(elsewhere.agentId ? { agentId: elsewhere.agentId } : {}),
-      ...(elsewhere.projectId ? { projectId: elsewhere.projectId } : {}),
+      ...(elsewhere.projectId ? { projectId: elsewhere.projectId, ...(isImplicitSessionHomeProjectId(elsewhere.projectId) ? { taskHome: true as const } : {}) } : {}),
       deviceId: elsewhere.deviceId,
       ...(elsewhere.deviceLabel ? { deviceLabel: elsewhere.deviceLabel } : {}),
     };
@@ -1293,7 +1309,7 @@ async function workspaceOf(binding: SurfaceBinding): Promise<ExtensionWorkspace 
     id,
     sessionId,
     ...(agentId ? { agentId } : {}),
-    ...(facts?.projectId ? { projectId: facts.projectId } : {}),
+    ...(facts?.projectId ? { projectId: facts.projectId, ...(isImplicitSessionHomeProjectId(facts.projectId) ? { taskHome: true as const } : {}) } : {}),
     ...(mayReachWorkspace && facts?.workspaceRoot ? { root: fs.realpathSync(facts.workspaceRoot) } : {}),
   };
 }
@@ -1320,7 +1336,9 @@ function handedFileOf(binding: SurfaceBinding): (AppFileRef & { id: string }) | 
 /** Which page a message or a call came from (`ExtensionPageFrom`): the place facts of its context, filled by the host. */
 async function pageFrom(binding: SurfaceBinding): Promise<ExtensionPageFrom> {
   const workspace = await workspaceOf(binding);
-  const chat = binding.conversation ? chatsDrawnIn.get(binding.conversation)?.chat : undefined;
+  // Where a project's folders are is the page's own to know (`contextFor`), not told with what it says.
+  const { folders: _folders, ...drawn } = (binding.conversation ? chatsDrawnIn.get(binding.conversation)?.chat : undefined) ?? {};
+  const chat = 'id' in drawn ? drawn as ExtensionChat : undefined;
   const file = handedFileOf(binding);
   return { tabId: binding.tabId, ...(workspace ? { workspace } : {}), ...(chat ? { chat } : {}), ...(file ? { file } : {}), operator: binding.operator };
 }
@@ -1341,7 +1359,7 @@ function contextFor(binding: SurfaceBinding, workspace: ExtensionWorkspace | und
     ...(binding.viewState ? { viewState: structuredClone(binding.viewState) } : {}),
     tabId: binding.tabId,
     ...(binding.modal ? { modal: { data: binding.modal.data } } : {}),
-    ...(drawnIn?.chat ? { chat: { ...drawnIn.chat, ...(contextHasMembers(binding) ? { members: drawnIn.members } : {}) } } : {}),
+    ...(drawnIn?.chat ? { chat: { ...chatForCapabilities(drawnIn.chat, capabilities), ...(contextHasMembers(binding) ? { members: drawnIn.members } : {}) } } : {}),
     ...(workspace ? { workspace } : {}),
     // Absent stays absent: a tab opened from the entry rail has no file.
     ...(file ? { file } : {}),

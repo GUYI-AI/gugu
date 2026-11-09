@@ -614,6 +614,11 @@ export const extensionManifestSchema = z
        * inserts, reads and sends themselves — so no capability: nothing runs, nothing is sent on the App's behalf.
        */
       prompts: z.array(z.strictObject({ name: z.string().regex(TAB_NAME_PATTERN), title: z.string().trim().min(1).max(48), prompt: promptTextSchema })).min(1).max(8).optional(),
+      /**
+       * API 35: the tab that holds settings this App draws itself. Its settings page links to it, not embeds it: permissions,
+       * agents, versions and uninstalling stay the host's. Fields the host can draw belong in `settings`.
+       */
+      settingsTab: z.string().regex(TAB_NAME_PATTERN).optional(),
     }),
   })
   .superRefine((manifest, ctx) => {
@@ -678,6 +683,13 @@ export const extensionManifestSchema = z
           ctx.addIssue({ code: 'custom', path: ['contributes', 'tabs', index, 'chatFile'], message: `"${tab.chatFile}" is not a file this tab opens in a chat (its opensFiles.chat: ${chatClaims.join(', ') || 'none'})` });
         }
       }
+    }
+    const settingsTab = manifest.contributes.settingsTab;
+    if (settingsTab !== undefined) {
+      if (manifest.apiVersion < 35) ctx.addIssue({ code: 'custom', path: ['contributes', 'settingsTab'], message: 'settingsTab requires apiVersion 35' });
+      const tab = manifest.contributes.tabs.find((candidate) => candidate.name === settingsTab);
+      if (!tab) ctx.addIssue({ code: 'custom', path: ['contributes', 'settingsTab'], message: `this App has no tab named ${settingsTab}` });
+      else if (!isOwnPage(manifest, tab) || tab.widget || tab.hostPage || tab.perSession) ctx.addIssue({ code: 'custom', path: ['contributes', 'settingsTab'], message: 'settingsTab must name a page of its own, not a host page, a card, a file opener or a per-task tab' });
     }
     const prompts = manifest.contributes.prompts ?? [];
     if (prompts.length > 0 && manifest.apiVersion < 34) ctx.addIssue({ code: 'custom', path: ['contributes', 'prompts'], message: 'prompts require apiVersion 34' });
@@ -915,6 +927,15 @@ export type FileOpenContext = 'session' | 'chat';
  */
 export function declaredContexts(tab: Parameters<typeof claimedSuffixes>[0]): FileOpenContext[] {
   return (['session', 'chat'] as const).filter((context) => claimedSuffixes(tab, context).length > 0);
+}
+
+/**
+ * Whether a task's 「+」 and the command list offer a tab as a page. A tab that opens files has nothing to show without one. A
+ * tab with `widget` is the App's card in a message, unless it is all the App has. Only those lists: the rail and every open
+ * read the App's main tab (`mainTabOf`), so a published App keeps its place there.
+ */
+export function isOwnPage(manifest: Pick<ExtensionManifest, 'contributes'>, tab: ExtensionManifest['contributes']['tabs'][number]): boolean {
+  return declaredContexts(tab).length === 0 && (!tab.widget || manifest.contributes.tabs.length === 1);
 }
 
 /** Whether the App has something to open in a chat: a page of its own (it opens in any chat), or a tab of chat files. */

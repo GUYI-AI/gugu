@@ -1,19 +1,29 @@
 import { createHash } from 'node:crypto'
-import { mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
+// The store's fallbacks need a link or a rename to fail on a filesystem that would not fail them.
+const fsHooks = vi.hoisted(() => ({} as { link?: (from: string, to: string) => Promise<void>; rename?: (from: string, to: string) => Promise<void> }))
+vi.mock('node:fs/promises', async importOriginal => {
+  const fs = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...fs,
+    link: (from: string, to: string) => (fsHooks.link ?? fs.link)(from, to),
+    rename: (from: string, to: string) => (fsHooks.rename ?? fs.rename)(from, to),
+    __actualRename: fs.rename }
+})
+import { chmod, mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createFileResolver, type FileProviders, type FileRevision } from '../../../../packages/core/src/shared/fileResolver'
 import { ciphertextSize, createFileKey, transformFile } from '../../../../packages/core/src/shared/fileCipher'
 import { createProjectTransferHost } from '../../../../apps/desktop/electron/projectFileTransferHost'
 import { createFileChunkCache, createFileSink } from '../../../../apps/desktop/electron/fileSnapshot'
-import { createNodeFileResolver, saveFileHandle } from '@gugu/core/local/files/fileSnapshots'
+import { createNodeFileResolver, saveFileHandle, saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
 import { createProjectFileReader, localProjectFileProvider, openProjectFileSource, snapshotProjectFile } from '../../../../apps/desktop/electron/projectFileHost'
 import { ownSshFileProvider } from '../../../../apps/desktop/electron/projectFileSsh'
 import { createDesktopFileAccess } from '../../../../apps/desktop/electron/desktopFileAccess'
 import { deviceFile, writeDeviceIdCache } from '@gugu/core/cloud/deviceRuntime'
 import { forgetProjectFile, forgetProjectGroupId, readProjectFile, rememberProjectFile, rememberProjectGroupId } from '../../../../apps/desktop/electron/sessionpage/sessionpage-project-groups'
 
+const { __actualRename: actualRename } = await import('node:fs/promises') as unknown as { __actualRename: (from: string, to: string) => Promise<void> }
 let home: string, root: string, tempRoot: string, env: NodeJS.ProcessEnv
 let accountId: string, revision: FileRevision
 const bytes = Buffer.alloc(700_001, 83)
@@ -34,6 +44,139 @@ describe('downloads consume one file without the random-read cache', () => {
     })
     return { resolve: createNodeFileResolver(tempRoot, async () => ({ supabaseUrl: 'https://files.invalid', anonKey: 'public', token: 'test', fetch: fetcher as typeof fetch })), fetcher }
   }
+  it('two agents saving one new file into the store both succeed, and no private name is left', async () => {
+    const { resolve } = remote()
+    const save = async () => {
+      const file = await resolve(ref, actor)
+      if (file.status !== 'ready') throw new Error(file.status)
+      return saveToFileStore(file, home, 'report.bin')
+    }
+    const [a, b] = await Promise.all([save(), save()])
+    expect(a.file_path).toBe(b.file_path)
+    expect(await readdir(join(home, 'file-store', revision.sha256!))).toEqual(['report.bin'])
+    expect(digest(await readFile(a.file_path))).toBe(revision.sha256)
+  })
+  it('stores one sha once: read-only, a second name is the same bytes, and a changed file is fetched again', async () => {
+    const { resolve, fetcher } = remote()
+    const store = join(home, 'file-store')
+    const saveAs = async (name: string) => {
+      const file = await resolve(ref, actor)
+      if (file.status !== 'ready') throw new Error(file.status)
+      return saveToFileStore(file, home, name)
+    }
+    const first = await saveAs('report.bin')
+    const second = await saveAs('renamed.bin')
+    expect(fetcher.mock.calls.filter(([url]) => String(url) === 'https://objects.invalid/file')).toHaveLength(1)
+    const [a, b] = await Promise.all([stat(first.file_path), stat(second.file_path)])
+    expect(a.ino).toBe(b.ino)
+    expect(a.mode & 0o777).toBe(0o444)
+    expect(await readdir(join(store, revision.sha256!))).toEqual(['renamed.bin', 'report.bin'])
+    expect(first.read_only).toBe(true)
+    // An agent that forced a write changes both names, they are one file. Neither is handed out as this version, and the
+    // edit is kept, moved aside.
+    await chmod(first.file_path, 0o644)
+    const edit = Buffer.alloc(bytes.length, 1)
+    await writeFile(first.file_path, edit)
+    const healed = await saveAs('report.bin')
+    expect(digest(await readFile(healed.file_path))).toBe(revision.sha256)
+    expect((await stat(healed.file_path)).mode & 0o777).toBe(0o444)
+    expect(await readdir(join(store, revision.sha256!))).toEqual(['report.bin'])
+    const aside = await readdir(join(store, '.changed'))
+    expect(aside).toHaveLength(2)
+    const kept = await Promise.all(aside.map(async id => { const [name] = await readdir(join(store, '.changed', id)); return readFile(join(store, '.changed', id, name!)) }))
+    for (const file of kept) expect(file.equals(edit)).toBe(true)
+  })
+  it('a second name is its own stored copy where hard links are unavailable', async () => {
+    const { resolve } = remote()
+    fsHooks.link = async () => { throw Object.assign(new Error('no links'), { code: 'EPERM' }) }
+    const saveAs = async (name: string) => {
+      const file = await resolve(ref, actor)
+      if (file.status !== 'ready') throw new Error(file.status)
+      return saveToFileStore(file, home, name)
+    }
+    const [a, b] = [await saveAs('one.bin'), await saveAs('two.bin')]
+    const [x, y] = await Promise.all([stat(a.file_path), stat(b.file_path)])
+    expect(x.ino).not.toBe(y.ino)
+    expect([x.mode & 0o777, y.mode & 0o777]).toEqual([0o444, 0o444])
+    expect(digest(await readFile(b.file_path))).toBe(revision.sha256)
+    expect((await readdir(join(home, 'file-store', revision.sha256!))).sort()).toEqual(['one.bin', 'two.bin'])
+  })
+  it('where hard links are unavailable and another save got there first, the rename refused onto it is still a success', async () => {
+    const { resolve } = remote()
+    const path = join(home, 'file-store', revision.sha256!, 'report.bin')
+    fsHooks.link = async () => { throw Object.assign(new Error('no links'), { code: 'EPERM' }) }
+    fsHooks.rename = async (from, to) => {
+      if (to !== path) return actualRename(from, to)
+      await writeFile(path, bytes)
+      throw Object.assign(new Error('read-only target'), { code: 'EPERM' })
+    }
+    const file = await resolve(ref, actor)
+    if (file.status !== 'ready') throw new Error(file.status)
+    const saved = await saveToFileStore(file, home, 'report.bin')
+    expect(digest(await readFile(saved.file_path))).toBe(revision.sha256)
+    expect((await stat(saved.file_path)).mode & 0o777).toBe(0o444)
+    expect(await readdir(join(home, 'file-store', revision.sha256!))).toEqual(['report.bin'])
+  })
+  const savedTo = async (resolve: ReturnType<typeof remote>['resolve'], name: string) => {
+    const file = await resolve(ref, actor)
+    if (file.status !== 'ready') throw new Error(file.status)
+    return saveToFileStore(file, home, name)
+  }
+  const asideFiles = async () => {
+    const root = join(home, 'file-store', '.changed')
+    return Promise.all((await readdir(root)).map(async id => readFile(join(root, id, (await readdir(join(root, id)))[0]!))))
+  }
+  it.each([['a link', 'EEXIST'], ['a rename, without hard links', 'EPERM']])('a changed file that appears at the name while it saves is moved aside by %s', async (_, code) => {
+    const { resolve } = remote()
+    const edit = Buffer.alloc(bytes.length, 1)
+    fsHooks.link = async (_from, to) => {
+      if (code === 'EEXIST') delete fsHooks.link
+      await writeFile(to, edit)
+      throw Object.assign(new Error('link'), { code })
+    }
+    const saved = await savedTo(resolve, 'report.bin')
+    expect(digest(await readFile(saved.file_path))).toBe(revision.sha256)
+    expect((await stat(saved.file_path)).mode & 0o777).toBe(0o444)
+    const aside = await asideFiles()
+    expect(aside).toHaveLength(1)
+    expect(aside[0]!.equals(edit)).toBe(true)
+  })
+  it('where hard links are unavailable and another save already finished this name, the save succeeds on its file', async () => {
+    const { resolve } = remote()
+    fsHooks.link = async (_from, to) => {
+      await writeFile(to, bytes)
+      throw Object.assign(new Error('no links'), { code: 'EPERM' })
+    }
+    const saved = await savedTo(resolve, 'report.bin')
+    expect(digest(await readFile(saved.file_path))).toBe(revision.sha256)
+    expect((await stat(saved.file_path)).mode & 0o777).toBe(0o444)
+    expect(await readdir(dirname(saved.file_path))).toEqual(['report.bin'])
+    expect(await stat(join(home, 'file-store', '.changed')).catch(() => null)).toBeNull()
+  })
+  it('a changed name that cannot move holds back only its own hand-out', async () => {
+    const { resolve } = remote()
+    const first = await savedTo(resolve, 'report.bin')
+    const locked = await savedTo(resolve, 'locked.bin')
+    await chmod(first.file_path, 0o644)
+    await writeFile(first.file_path, Buffer.alloc(bytes.length, 1))
+    fsHooks.rename = async (from, to) => {
+      if (from === locked.file_path) throw Object.assign(new Error('open elsewhere'), { code: 'EBUSY' })
+      return actualRename(from, to)
+    }
+    expect(digest(await readFile((await savedTo(resolve, 'report.bin')).file_path))).toBe(revision.sha256)
+    expect((await readdir(dirname(locked.file_path))).sort()).toEqual(['locked.bin', 'report.bin'])
+    await expect(savedTo(resolve, 'locked.bin')).rejects.toThrow('open elsewhere')
+  })
+  it('hands out a name read-only again when only its flag was cleared', async () => {
+    const { resolve } = remote()
+    const first = await savedTo(resolve, 'report.bin')
+    await chmod(first.file_path, 0o644)
+    expect((await stat((await savedTo(resolve, 'report.bin')).file_path)).mode & 0o777).toBe(0o444)
+    await chmod(first.file_path, 0o644)
+    const second = await savedTo(resolve, 'renamed.bin')
+    expect((await stat(second.file_path)).mode & 0o777).toBe(0o444)
+    expect((await stat(second.file_path)).ino).toBe((await stat(first.file_path)).ino)
+  })
   it('writes one authenticated destination, reuses its verified digest, and leaves no remote-files chunks or snapshot', async () => {
     const { resolve, fetcher } = remote()
     const save = async () => {
@@ -119,6 +262,7 @@ describe('downloads consume one file without the random-read cache', () => {
   })
 })
 beforeEach(async () => {
+  delete fsHooks.link; delete fsHooks.rename
   home = await mkdtemp(join(tmpdir(), 'gugu-project-file-access-'))
   root = join(home, 'project'); tempRoot = join(home, 'snapshots')
   env = { GUGU_HOME: home }; accountId = 'owner'
@@ -271,6 +415,16 @@ describe('local read fence and verified snapshot', () => {
     await writeFile(join(tempRoot, `open-${key}`, '1'), new Uint8Array(524_289))
     await expect(second.get(key, 1)).rejects.toThrow('Invalid file range')
     await second.clear(key); expect(await readdir(tempRoot)).toEqual([])
+  })
+  it('an agent reading by message gets the file on this disk, with no temporary transfer through the cloud', async () => {
+    const read = createProjectFileReader({ identity, root: async () => root, env })
+    const never = vi.fn(async () => { throw Error('Network must remain unused') })
+    const providers: FileProviders = { local: localProjectFileProvider({ identity, read, tempRoot, env }), metadata: vi.fn(async () => ({ status: 'ready' as const, revision })), managed: never, ssh: never, temporary: never }
+    const file = await createFileResolver(providers)({ message_id: 'message' }, { accountId, actorId: 'agent' })
+    if (file.status !== 'ready') throw Error('ready expected')
+    expect(await file.read(0, 2)).toEqual(new Uint8Array([83, 83]))
+    await file.dispose()
+    expect(never).not.toHaveBeenCalled()
   })
   it('resolves locally before cloud lookup, is lazy, and exposes immutable bytes without paths or writes', async () => {
     const read = vi.fn(reader())

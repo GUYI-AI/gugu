@@ -34,6 +34,7 @@
     "./session-record/send-addresses": "./src/session-record/send-addresses.ts",
     "./session-record/sent-attachment": "./src/session-record/sent-attachment.ts",
     "./session-record/send-receipt": "./src/session-record/send-receipt.ts",
+    "./session-record/sent-message": "./src/session-record/sent-message.ts",
     "./session-record/sent-file-groups": "./src/session-record/sent-file-groups.ts",
     "./session-record/question-answer": "./src/session-record/question-answer.ts",
     "./session-record/live-reply": "./src/session-record/live-reply.ts",

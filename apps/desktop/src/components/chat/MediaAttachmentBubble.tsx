@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject, type CSSProperties } from 'react'
+import { useContext, useEffect, useRef, useState, type RefObject, type CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
@@ -12,6 +12,7 @@ import { ExtensionBundleCard } from '../extensionBundle/ExtensionBundleCard'; im
 import { openImageFromThumb, registerFullImage } from '../../lib/imageViewer'
 import { Button } from '../ui/Button'
 import { FileAttachmentCard } from './FileAttachmentCard'
+import { SentMessageSurface } from './sentMessageSurface'
 import { ExpiredAttachmentCard } from './ExpiredAttachmentCard'
 import { Markdown } from '../markdown/Markdown'
 import './mediaAttachmentBubble.css'
@@ -41,15 +42,15 @@ export function MediaAttachmentBubble({ meta, messageId, isMine, onOpenFile, sen
     enabled: near && !!user && managedFile,
   }, attachmentQueryClient)
   const caption = meta.caption ? <Markdown trust="chat" content={meta.caption} onAccent={isMine} /> : null
-  if (metadata.data?.status === 'missing') return <div ref={box} className={FIT_BUBBLE}><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileMissing')} />{caption}</div>
-  if (metadata.data?.status === 'expired') return <div ref={box} className={FIT_BUBBLE}><ExpiredAttachmentCard meta={meta} messageId={messageId} isMine={isMine} />{caption}</div>
-  if (metadata.data?.status === 'gone' || metadata.isError) return <div ref={box} className={FIT_BUBBLE}><FileAttachmentCard file={meta} isMine={isMine}
+  if (metadata.data?.status === 'missing') return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileMissing')} />{caption}</div>
+  if (metadata.data?.status === 'expired') return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><ExpiredAttachmentCard meta={meta} messageId={messageId} isMine={isMine} />{caption}</div>
+  if (metadata.data?.status === 'gone' || metadata.isError) return <div ref={box} className={FIT_BUBBLE} data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine}
     details={t(metadata.isError ? 'attachmentView.fileUnavailable' : 'attachmentView.fileGone')} />{caption}</div>
   const renderable = isRenderableImage(meta.fileName, meta.mimeType)
   // A sending row owns an ephemeral blob preview, not a committed download capability.
   if (meta.source.kind === 'url' && meta.source.url.startsWith('blob:') && !renderable) return <div ref={box} className={FIT_BUBBLE}><FileAttachmentCard file={meta} isMine={isMine} onOpen={() => undefined} />{caption}</div>
   // App 包:按这条消息装(发布者就是发送者,装的时候由宿主读这条消息)。
-  if (isExtensionBundle(meta) && meta.source.kind !== 'gone' && meta.source.kind !== 'attachment') return <div ref={box} className={FIT_BUBBLE}><ExtensionBundleCard meta={meta} card={{ source: meta.source, messageId }} isMine={isMine} senderName={senderName} chatId={chatId} />{caption}</div>
+  if (isExtensionBundle(meta) && meta.source.kind !== 'gone' && meta.source.kind !== 'attachment' && meta.source.kind !== 'session-file') return <div ref={box} className={FIT_BUBBLE}><ExtensionBundleCard meta={meta} card={{ source: meta.source, messageId }} isMine={isMine} senderName={senderName} chatId={chatId} />{caption}</div>
   if (meta.source.kind === 'gone') {
     return <div className={FIT_BUBBLE}><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileGone')} onOpen={() => undefined} />{caption}</div>
   }
@@ -64,7 +65,8 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
   const { t } = useTranslation('messaging')
   // Observed in either state: a sending row is drawn from its local preview without ever being pending.
   const box = useRef<HTMLElement>(null)
-  const near = useNearViewport(box)
+  const onMount = useContext(SentMessageSurface)
+  const near = useNearViewport(box, !onMount) || onMount
   const view = useAttachmentObjectUrl(meta.source, 'thumb', near, meta.fileMetadata)
   const img = useRef<HTMLImageElement>(null)
   const holder = view.status === 'failed' ? view.holder : null
@@ -88,9 +90,9 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sourceKey 就是 meta.source 的身份
   }, [ready, sourceKey, meta.fileName, meta.mimeType, chatId, messageId])
 
-  if (view.status === 'gone') return <FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileGone')} onOpen={() => undefined} />
+  if (view.status === 'gone') return <span className="contents" data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileGone')} onOpen={() => undefined} /></span>
   if (view.status === 'missing') return <FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileMissing')} />
-  if (view.status === 'expired') return <ExpiredAttachmentCard meta={meta} messageId={messageId} isMine={isMine} />
+  if (view.status === 'expired') return <span className="contents" data-attachment-unavailable><ExpiredAttachmentCard meta={meta} messageId={messageId} isMine={isMine} /></span>
   if (view.status === 'failed') {
     return (
       <FileAttachmentCard

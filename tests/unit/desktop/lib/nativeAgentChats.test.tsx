@@ -5,7 +5,7 @@ import { useNativeAgentChats } from '../../../../apps/desktop/src/hooks/useNativ
 import { installOwnedAgentEntry } from '../../../../apps/desktop/src/lib/ownedAgentConversation'
 import { publishDirectoryDevices, updateDeviceSessions, removeDeviceSessions } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 import type { ChatItem, Device } from '@gugu/core/shared/types/chat'
-import { chatPreviewText } from '../../../../apps/desktop/src/lib/agentTurnFailure'
+import { chatPreviewText } from '../../../../apps/desktop/src/lib/systemNoticeText'
 import { act } from 'react'
 const shell = vi.hoisted(() => ({ mobile: false }))
 vi.mock('@/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
@@ -41,7 +41,7 @@ it.each([false, true])('publishes a new native preview and time without retainin
   remove = installOwnedAgentEntry({ open: () => true, owns: id => id === 'own-agent' })
   publishDirectoryDevices([{ device_id: 'host', is_online: true, capabilities: {} } as Device])
   const chats = [{ id: 'dm', kind: 'dm', peer_user_id: 'own-agent', unread_count: 2, is_marked_unread: true,
-    last_message_preview: 'Earlier input', last_message_at: '2026-11-06T04:49:00Z', last_message_failure: 'generic' }] as ChatItem[]
+    last_message_preview: 'Earlier input', last_message_at: '2026-11-06T04:49:00Z', last_message_notice: { kind: 'turn-failure', reason: 'generic' } }] as ChatItem[]
   const session = { conversationId: 'session', agent: { userId: 'own-agent' }, nativeLastMessage: null }
   updateDeviceSessions('host', { cached: false, sessions: [session as never] })
   let projected: ChatItem
@@ -56,7 +56,7 @@ it.each([false, true])('publishes a new native preview and time without retainin
   expect(harness.container.textContent).toBe('New native reply|2026-11-06T05:12:00Z')
   expect(projected!.unread_count).toBe(2)
   expect(projected!.is_marked_unread).toBe(true)
-  expect(chats[0]!.last_message_failure).toBe('generic')
+  expect(chats[0]!.last_message_notice).toEqual({ kind: 'turn-failure', reason: 'generic' })
 })
 it('on the phone, keeps the agent row listed from the heartbeat summary while its machine is away; on a computer it stays hidden', async () => {
   shell.mobile = true

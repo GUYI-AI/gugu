@@ -249,6 +249,8 @@ export interface ChatComposerProps {
   modelMenuOpenRequest?: number;
   /** Failure/recovery copy stays inside the model setting; other settings remain usable. */
   modelSettingNotice?: string | null;
+  /** A passing fact shown inside the open model menu only; unlike `modelSettingNotice` it does not replace the trigger. */
+  modelMenuNotice?: string;
   onModelMenuOpen?: () => void;
   /**
    * 拿不到模型时「模型」那一行放什么。设了它,面板即使一个模型都没有也照常打开 ——
@@ -430,6 +432,7 @@ export function ChatComposer({
   onModelChange,
   modelMenuOpenRequest,
   modelSettingNotice,
+  modelMenuNotice,
   onModelMenuOpen,
   modelUnlock,
   onModelUnlock,
@@ -991,6 +994,7 @@ export function ChatComposer({
                 onModelChange={onModelChange}
                 openRequest={modelMenuOpenRequest}
                 settingNotice={modelSettingNotice}
+                menuNotice={modelMenuNotice}
                 onOpen={onModelMenuOpen}
                 modelUnlock={modelUnlock}
                 onModelUnlock={onModelUnlock}

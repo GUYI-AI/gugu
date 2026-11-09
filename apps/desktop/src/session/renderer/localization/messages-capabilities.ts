@@ -474,6 +474,7 @@ export const enUSCapabilityMessages = {
   'agentsPage.installWithManaged': 'Install',
   /* 只认不装的那些家 —— 界面上明写咕咕装不了,并指路上面那个选择器(#6098)。 */
   'agentsPage.installDocsLink': 'Vendor install instructions',
+  'agentsPage.installYourselfHint': "Not installed. Gugu can't install it on this computer, so install it from the vendor.",
   'agentsPage.cancel': 'Cancel',
   // 「检查更新」的落点(#6101)。点下去必须留下一个看得见的答案 —— 有新版本时是更新按钮
   // 自己,没有新版本 / 问不到 / 查失败各有一句。
@@ -489,6 +490,7 @@ export const enUSCapabilityMessages = {
   'agentsPage.addVariable': 'Add variable',
   'agentsPage.customConfigurationApplied': 'Custom configuration is applied',
   'agentsPage.supports': 'Supports: {capabilities}',
+  'agentsPage.supportsSeparator': ', ',
   'agentsPage.capabilityPrompts': 'Prompts',
   'agentsPage.capabilityHooks': 'Hooks',
   'agentsPage.capabilitySessions': 'Tasks',
@@ -1368,6 +1370,7 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'agentsPage.installingToGuguHome': '正在下载…',
   'agentsPage.installWithManaged': '安装',
   'agentsPage.installDocsLink': '厂商的安装说明',
+  'agentsPage.installYourselfHint': '未安装。咕咕没法在这台电脑上代装，请按厂商说明自己安装。',
   'agentsPage.cancel': '取消',
   'agentsPage.uninstalled': '{name} 已成功卸载',
   'agentsPage.uninstallFailed': '卸载 {name} 失败',
@@ -1381,6 +1384,7 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'agentsPage.addVariable': '添加变量',
   'agentsPage.customConfigurationApplied': '已应用自定义配置',
   'agentsPage.supports': '支持：{capabilities}',
+  'agentsPage.supportsSeparator': '、',
   'agentsPage.capabilityPrompts': '提示词',
   'agentsPage.capabilityHooks': 'Hooks',
   'agentsPage.capabilitySessions': '会话',

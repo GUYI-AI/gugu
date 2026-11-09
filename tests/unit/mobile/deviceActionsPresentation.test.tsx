@@ -112,7 +112,7 @@ it('keeps system permissions and every task grant together, including folder aut
   await clickElement(h.container.querySelector<HTMLElement>('[data-testid="settings-device-action-connect-files.documents"]')!)
   expect(mocks.invoke).toHaveBeenCalledWith('device-actions:connect', 'files.documents')
   expect(mocks.reload).toHaveBeenCalledTimes(1)
-  expect(h.container.querySelector('[data-testid="settings-device-action-detail-back"]')?.textContent).toContain('权限')
+  expect(h.container.querySelector('[data-testid="settings-device-action-detail-back"]')?.textContent).toContain('本机控制')
 })
 
 it('lets the permissions frame own a single title and its back action', async () => {

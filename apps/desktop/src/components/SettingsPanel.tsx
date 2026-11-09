@@ -172,7 +172,7 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
   }
 
   // 内容区顶部条的标题:与 SettingsNav 里同一个 key 的导航项同一份翻译("账户"/"通用"/…)。
-  const sectionTitle = activeSection === 'passwords' ? '密码' : activeSection === 'permissions' ? '本机控制' : t(`settings.nav.${activeSection}`)
+  const sectionTitle = t(`settings.nav.${activeSection}`)
 
   const card = (
       <div

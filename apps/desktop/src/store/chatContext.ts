@@ -3,7 +3,7 @@ import type { CreateTopicInput, CreatedTopic } from '../lib/topics'
 import type { UnreadLocatorCommit } from '../lib/chatUnreadLocatorWindow'
 import type { ChatConversationAccess } from './useChatConversation'
 import type { HistoryWindow } from './chatHistoryWindow'
-import { createContext, createElement, useCallback, useContext, useLayoutEffect, useRef, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { createContext, createElement, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import type { ChatItem, MessageItem, NotificationLevel } from '@gugu/core/shared/types/chat'
 import type { AttachmentKind } from '@gugu/core/shared/ui/attachmentModels'
 import type { ThreadScope } from './threadScope'
@@ -275,6 +275,35 @@ export function useChatStoreReader(): () => ChatStoreValue {
 export function useChatStoreSelect<T>(select: (store: ChatStoreValue) => T): T {
   const handle = useContext(ChatContext)
   return useSyncExternalStore(handle.subscribe, () => select(handle.get()))
+}
+
+/**
+ * 从 store 读一个值,只有 signature 变了才换一份。一条消息会把会话列表换好几次,多数订阅者只读其中几个字段:
+ * 它们写清自己读什么,别的字段变了不重渲。
+ */
+export function useStoreValueBy<T>(read: (store: ChatStoreValue) => T, signature: (store: ChatStoreValue) => unknown): T {
+  const get = useChatStoreReader()
+  const current = useChatStoreSelect((store) => JSON.stringify(signature(store)))
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the signature is the dependency
+  return useMemo(() => read(get()), [current])
+}
+
+const NO_CHATS: ChatItem[] = []
+
+/** 只在用得上的时候订阅整份列表(开着分栏、搜索框里有字):平时别的会话来消息不重渲。 */
+export function useChatsWhile(needed: boolean): ChatItem[] {
+  return useChatStoreSelect((store) => (needed ? store.chats : NO_CHATS))
+}
+
+/** 活动字段(最后一条、未读、水位)由列表和消息流自己读;对话本身的字段才算这条对话变了。 */
+const CHAT_ACTIVITY_BLANK = {
+  last_message_at: null, last_message_preview: null, last_message_notice: null, last_message_failure: null, unread_count: 0, unread_locator: null,
+  last_read_seq: 0, is_marked_unread: false, read_state_version: 0, member_updated_at: null, next_message_seq: 0,
+}
+
+/** 正看着的这条对话本身。要活动字段的用 useChatStore('activeChat')。 */
+export function useActiveChatIdentity(): ChatStoreValue['activeChat'] {
+  return useStoreValueBy((store) => store.activeChat, (store) => store.activeChat && { ...store.activeChat, ...CHAT_ACTIVITY_BLANK })
 }
 
 // Drop a chat's entry from a per-chat record (drafts / mentions / attachments); no-op if absent. Shared

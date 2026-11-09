@@ -2,13 +2,16 @@ import { readDocumentText, ChatFolderReadError } from './chat-folder-text';
 import { FILE_KEEPS, type FileKeep } from '@gugu/core/shared/fileStorage';
 import { AttachmentsError, configuredEndpoint, placeAttachment, uploadAttachmentBytes } from '@gugu/core/cloud/attachmentsApi';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
+import { coreLogger } from '@gugu/core/log';
+import { isDeviceOnline } from '@gugu/core/shared/enums/deviceModels';
 import { FILE_CHUNK_BYTES, MissingFileObjectError, fileBlob, type FileHandle, type ResolvedFile } from '@gugu/core/shared/fileResolver';
 import { fetchInChunks } from '@gugu/core/shared/inChunks';
 import { mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
 import { opensAsStoredText, workspaceUploadKind } from '@gugu/core/shared/workspaceUpload.mjs';
-import type { ErrorDetail, ExtensionChat } from './bridge-protocol';
+import type { ErrorDetail, ExtensionChat, ExtensionChatFolder } from './bridge-protocol';
 import type { Grant, PageSync } from './file-sync-core';
 import {
+  folderWorkspace,
   APP_FILE_MAX_BYTES,
   fileSuffixOf,
   fileTypeOf,
@@ -60,7 +63,7 @@ import { readUserSettingsConfig, updateUserSettingsConfig, type VersionedSetting
 /** A refusal of `gugu.files`: `code` and `detail` are what an App branches on (bridge-protocol.ts `ErrorDetail`), the message is for people. */
 export class AppFileError extends Error {
   constructor(
-    readonly code: 'denied' | 'invalid' | 'failed' | 'not-found' | 'ambiguous' | 'too-large' | 'content-changed' | 'name-taken' | 'unavailable' | 'stale-version',
+    readonly code: 'denied' | 'invalid' | 'failed' | 'not-found' | 'elsewhere' | 'ambiguous' | 'too-large' | 'content-changed' | 'name-taken' | 'unavailable' | 'stale-version',
     message: string,
     readonly detail?: ErrorDetail,
   ) {
@@ -376,6 +379,27 @@ export type AppChat = Pick<ExtensionChat, 'id' | 'name' | 'kind'> & { lastMessag
  * they gave themselves — never the viewer's remark for them, which is the viewer's own, not the App's. Null for a chat
  * with no workspace ('ai').
  */
+/** What the account records of a project group's folders (identity.device_projects, the reader's own machines only). */
+async function projectFoldersOfChat(token: string, viewerId: string, chatId: string): Promise<ExtensionChatFolder[]> {
+  const identity = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
+  const { data, error } = await identity.from('device_projects').select('device_id, folders').eq('user_id', viewerId).eq('chat_id', chatId);
+  if (error) throw new AppFileError('failed', error.message);
+  const rows = (data ?? []) as { device_id: string; folders: { workspace_id: string; kind: string; path: string }[] }[];
+  if (!rows.length) return [];
+  const machines = await identity.from('gugu_devices').select('device_id, label, hostname, status').in('device_id', rows.map((row) => row.device_id));
+  if (machines.error) throw new AppFileError('failed', machines.error.message);
+  const machineOf = new Map(((machines.data ?? []) as { device_id: string; label: string | null; hostname: string | null; status: string }[]).map((device) => [device.device_id, device]));
+  return rows.flatMap((row) => {
+    const machine = machineOf.get(row.device_id);
+    return [...row.folders].sort((a, b) => Number(b.kind === 'root') - Number(a.kind === 'root')).map((folder) => ({
+      workspace: folderWorkspace(row.device_id, folder.workspace_id),
+      path: folder.path,
+      machine: machine?.label || machine?.hostname || row.device_id,
+      online: !!machine && isDeviceOnline(machine.status as Parameters<typeof isDeviceOnline>[0]),
+    }));
+  });
+}
+
 export async function extensionChatOf(
   token: string,
   chatId: string,
@@ -391,7 +415,14 @@ export async function extensionChatOf(
   if (!row) throw new AppFileError('not-found', 'This chat could not be read');
   if (row.kind === 'topic') row = row.source_chat_id ? await read(row.source_chat_id) : null;
   if (!row) throw new AppFileError('not-found', 'This chat could not be read');
-  if (row.kind === 'group') return { id: row.id, name: row.name ?? '', kind: 'group', groupId: row.id };
+  if (row.kind === 'group') {
+    // A chat whose folders cannot be read now is still that chat: its own files must not go with them.
+    const folders = await projectFoldersOfChat(token, viewerId, row.id).catch((error: unknown) => {
+      coreLogger('app-files').warn({ chatId: row.id, error: error instanceof Error ? error.message : String(error) }, 'The folders of a project group could not be read');
+      return [];
+    });
+    return { id: row.id, name: row.name ?? '', kind: 'group', groupId: row.id, ...(folders.length ? { folders } : {}) };
+  }
   if (row.kind === 'dm') {
     const { data, error } = await chatClient(token).from('active_members').select('user_id').eq('chat_id', row.id);
     if (error) throw new AppFileError('failed', error.message);

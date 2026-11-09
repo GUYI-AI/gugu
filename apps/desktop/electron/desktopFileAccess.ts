@@ -113,10 +113,10 @@ export function createDesktopFileAccess(deps: {
         if (resolved.status !== 'ready') throw new Error('File is no longer available')
         return resolved
       })
-      const saved = await step('save', () => saveFileHandle(file, deps.downloads, name))
+      const saved = await step('save', () => saveFileHandle(file, deps.downloads, name, true))
       const bytes = saved.content_type.startsWith('image/')
         ? await step('read-image', async () => new Uint8Array(await readFile(saved.file_path))) : new Uint8Array()
-      return { localPath: saved.file_path, bytes }
+      return { localPath: saved.file_path, bytes, readOnly: saved.read_only }
     },
   }
 }

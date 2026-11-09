@@ -194,6 +194,8 @@ export class FrontendPty {
   /** 挂在界面上没有(mount / unmount),以及所在的页露没露着(setShown)。两者都成立才用 WebGL。 */
   private mounted = false;
   private shown = true;
+  /** The pane measured this terminal's grid, or (undefined) gave up measuring: TerminalManagerStore.createTerminal starts a new shell on it. */
+  onGridMeasured: ((dims?: { cols: number; rows: number }) => void) | null = null;
   /** Last { cols, rows } sent to rpc.pty.resize(). Used by PaneSizingContext to skip redundant IPC calls. */
   lastSentDims: { cols: number; rows: number } | null = null;
   /**

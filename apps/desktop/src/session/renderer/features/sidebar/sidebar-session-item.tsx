@@ -1,7 +1,6 @@
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
 import { platform } from '@/platform';
-import { messageForUser } from '@/lib/userFacingError';
 import { safeFailureLine } from '../sessions/gugu-reason';
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import { dissolveScreenGroup, isScreenView, showSessionBeside, takeSessionOutOfGroup } from '@renderer/app/screen-layout-actions';
@@ -10,17 +9,15 @@ import { GitFork } from '@/lib/icons'
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
 import { spawnedByExtensionLabel as spawnedByExtensionLabelFor } from '@renderer/features/extensions/spawned-by-extension-label';
 import { useAssistantShell } from '@renderer/features/assistant/assistant-shell';
-import { when } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useRef } from 'react';
 import { requestArchiveSession } from '@renderer/features/sessions/archive-session-flow';
 import { moveSessionUnder } from '@renderer/features/sessions/set-session-parent-flow';
+import { forkTask } from '@renderer/features/sessions/fork-task';
 import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-session-in-session';
 import { focusedSessionId } from '@renderer/features/sessions/pane-selectors';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import {
-  asProvisioned,
-  getSessionPageStore,
   getSessionView,
 } from '@renderer/features/sessions/stores/session-selectors';
 import { toast } from '@renderer/lib/hooks/use-toast';
@@ -222,45 +219,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
     }
   };
 
-  const handleFork = () => {
-    // The fork's own task reuses the source task's workspace, which exists only once the source
-    // task is provisioned — navigate first, fork when ready, then open the fork in its own task.
-    navigate('session', { projectId, sessionId: sessionId });
-    when(
-      () =>
-        Boolean(asProvisioned(getSessionPageStore(projectId, sessionId)) && sessionRegistry.get(sessionId)),
-      () => {
-        void sessionRegistry
-          .get(sessionId)
-          ?.forkSession(sessionId)
-          .then((created) => {
-            // #6269 分叉住在自己的新任务里 —— 去那项任务打开,❌ 在来源任务里开。
-            navigate('session', { projectId, sessionId: created.id });
-            openSessionInSessionWhenReady({
-              projectId,
-              sessionId: created.id,
-            });
-          })
-          .catch((error: unknown) => {
-            toast({
-              title: translate('sidebar.forkFailed'),
-              description: messageForUser(error),
-              variant: 'destructive',
-            });
-          });
-      },
-      {
-        timeout: 15_000,
-        onError: () => {
-          toast({
-            title: translate('sidebar.forkFailed'),
-            description: translate('sidebar.workspaceNotReady'),
-            variant: 'destructive',
-          });
-        },
-      }
-    );
-  };
+  const handleFork = () => forkTask({ projectId, sessionId, navigate, translate });
 
 
   // 另一条会话拖到这一行上 = 挂到这一条下面(spec session-page「把会话拖成 child」)。挂不上的不给落点:

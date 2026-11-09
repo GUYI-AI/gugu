@@ -154,7 +154,7 @@ export const pinSummaryLayer = style({
 
 /** Page-colored, square strip, including its seam so body text cannot peek between the two pins. */
 export const activityPinBackdrop = style({
-  left: 'var(--chat-pin-frame-left, 0px)', right: 'auto', width: 'var(--chat-pin-frame-width, 100%)', boxShadow: 'none',
+  right: 'auto', boxShadow: 'none',
   borderBottom: `1px solid color-mix(in srgb, ${vars.fgMuted} 16%, transparent)`,
 });
 

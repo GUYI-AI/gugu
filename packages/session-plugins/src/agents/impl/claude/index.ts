@@ -16,7 +16,7 @@ import {
   buildStandardCommand,
   miseDependency,
 } from '@gugu/session-core/agents/plugins/helpers';
-import { resolveWindowsHandoffExecutable } from '@gugu/session-core/exec';
+import { resolveWindowsHandoffLaunch, type WindowsHandoffLaunch } from '@gugu/session-core/exec';
 import { connectStdioAcpV2 } from '../../helpers/acp-v2';
 import { requireBridgeEntry } from '../../helpers/acp-bridge-entry';
 import {
@@ -100,13 +100,17 @@ const CLAUDE_ULTRACODE_SETTINGS = '{"ultracode":true}';
  * ⇒ 翻译不出来就**当场响亮失败**,❌ 不静默回落到 SDK 自带的那份二进制:
  *   那会让用户以为跑的是他自己装的那份 claude。
  */
-function claudeExecutableForAdapter(cli: string): string {
-  const spawnable = resolveWindowsHandoffExecutable(cli);
-  if (spawnable) return spawnable;
+function claudeLaunchForAdapter(cli: string, env: Record<string, string>): WindowsHandoffLaunch {
+  // 壳在调 claude.exe 前设的变量(用户手写的 `set ANTHROPIC_BASE_URL=…`)随 env 交出,叠进适配器的环境,
+  // SDK 起的 claude 照样拿得到 —— 与经壳起时一样。
+  // 读不全的设置不挡启动(适配器这边没有壳可退):与从前一样交出 claude.exe,只是不带那份设置。
+  const launch = resolveWindowsHandoffLaunch(cli, { env, unreadableEnv: 'drop' });
+  if (launch) return launch;
   throw new Error(
-    `Claude Code 解析到的是一个 Windows 壳脚本(${cli}),而 ACP 适配器会直接 spawn 它 —— `
-      + 'Node 在 Windows 上不允许直接执行 .cmd/.bat(CVE-2024-27980),表现是 spawn EINVAL。'
-      + '请安装官方 claude.exe(irm https://claude.ai/install.ps1 | iex),或把 Claude Code 的路径指向 claude.exe。'
+    `Claude Code 解析到的是一个 Windows 启动脚本(${cli}),而 ACP 适配器会直接 spawn 它 —— `
+      + 'Node 在 Windows 上不允许直接执行 .cmd/.bat(CVE-2024-27980)。咕咕只认得「一行调用一个 exe、'
+      + '前面只设固定环境变量」的脚本,这一份读不出要跑的 claude.exe(可能是 node 脚本、条件分支,或引用了未定义的变量)。'
+      + '请把 Claude Code 的路径指向 claude.exe 本身,或安装官方 claude.exe(irm https://claude.ai/install.ps1 | iex)。'
   );
 }
 
@@ -381,33 +385,37 @@ export const provider = registerPluginBehavior(plugin, {
       entry: 'dist/index.js',
       pairWith: 'claude',
     },
-    buildSpawn: (ctx) => ({
-      // @@@sessionpage claude-acp-node — 解释器在**要用它的这个进程里、这一刻**现解析，并把最低版本
-      // 要求一起说出来（以桥接 package.json 的 engines 为准：Node ≥22，见 NODE_FOR_CLAUDE_ACP）。
-      // ❌ 读一个别处、别的时刻塞进 process.env 的全局：那样「谁先跑」就成了正确性的前提 —— ACP worker
-      // 是独立进程，env 是 spawn 那一刻的快照，宿主的赋值只要晚一步，这里就静悄悄回落到 Electron 自带的
-      // Node 18，界面只剩一句 "ACP connection closed"。够不着就在这里响亮地说清楚要什么、试过谁。
-      //
-      // ⚠️ 这里**故意不传 ctx.env**（= agentEnv）：agentEnv 由宿主的白名单造出来（pty-env.ts `buildAgentEnv`），
-      // `GUGU_NODE_BIN` 根本不在那份 allowlist 上。传 ctx.env 会让显式覆盖项静默失效，
-      // PATH 一侧却一个字都不会变 —— 换句话说：只有坏处。挑出来的是绝对路径，子进程不需要它在 PATH 上。
-      command: resolveNodeInterpreter({
-        require: NODE_FOR_CLAUDE_ACP,
-        purpose: 'claude 的 ACP adapter',
-      }).command,
-      executable: claudeExecutableForAdapter(ctx.cli),
-      // 宿主按 `bridge` 声明解析好的桥:用户这份 Claude 的版本配对出来的那份,或随包的那份(#6394)。
-      args: [requireBridgeEntry(ctx, 'claude')],
-      env: {
-        ELECTRON_RUN_AS_NODE: '1',
-        // Point the adapter's Claude Agent SDK at the host-installed claude
-        // binary instead of the SDK's auto-downloaded native binary.
-        CLAUDE_CODE_EXECUTABLE: claudeExecutableForAdapter(ctx.cli),
-        // 以 root 跑咕咕时,桥会把「完全访问」这一档整个不报 —— 取证与 A/B 见 ./root-bypass.ts。
-        // 非 root 上返回 {},这一行什么都不加。
-        ...claudeAcpRootBypassEnv(),
-      },
-    }),
+    buildSpawn: (ctx) => {
+      const claude = claudeLaunchForAdapter(ctx.cli, ctx.env);
+      return {
+        // @@@sessionpage claude-acp-node — 解释器在**要用它的这个进程里、这一刻**现解析，并把最低版本
+        // 要求一起说出来（以桥接 package.json 的 engines 为准：Node ≥22，见 NODE_FOR_CLAUDE_ACP）。
+        // ❌ 读一个别处、别的时刻塞进 process.env 的全局：那样「谁先跑」就成了正确性的前提 —— ACP worker
+        // 是独立进程，env 是 spawn 那一刻的快照，宿主的赋值只要晚一步，这里就静悄悄回落到 Electron 自带的
+        // Node 18，界面只剩一句 "ACP connection closed"。够不着就在这里响亮地说清楚要什么、试过谁。
+        //
+        // ⚠️ 这里**故意不传 ctx.env**（= agentEnv）：agentEnv 由宿主的白名单造出来（pty-env.ts `buildAgentEnv`），
+        // `GUGU_NODE_BIN` 根本不在那份 allowlist 上。传 ctx.env 会让显式覆盖项静默失效，
+        // PATH 一侧却一个字都不会变 —— 换句话说：只有坏处。挑出来的是绝对路径，子进程不需要它在 PATH 上。
+        command: resolveNodeInterpreter({
+          require: NODE_FOR_CLAUDE_ACP,
+          purpose: 'claude 的 ACP adapter',
+        }).command,
+        executable: claude.program,
+        // 宿主按 `bridge` 声明解析好的桥:用户这份 Claude 的版本配对出来的那份,或随包的那份(#6394)。
+        args: [requireBridgeEntry(ctx, 'claude')],
+        env: {
+          ...claude.env,
+          ELECTRON_RUN_AS_NODE: '1',
+          // Point the adapter's Claude Agent SDK at the host-installed claude
+          // binary instead of the SDK's auto-downloaded native binary.
+          CLAUDE_CODE_EXECUTABLE: claude.program,
+          // 以 root 跑咕咕时,桥会把「完全访问」这一档整个不报 —— 取证与 A/B 见 ./root-bypass.ts。
+          // 非 root 上返回 {},这一行什么都不加。
+          ...claudeAcpRootBypassEnv(),
+        },
+      };
+    },
     // ACP v2:一轮在前台 idle 处结束,后台子智能体不再扣住这一轮的结局(子智能体在跑时下一句不进队列)。
     connect: (io, toClient) => connectStdioAcpV2(io, toClient, createClaudeSessionDecoder()),
   },

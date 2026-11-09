@@ -18,6 +18,7 @@ import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/fi
 import { createDesktopFileAccess, signedInFileRpc } from './desktopFileAccess'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
 import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
+import { fileStoreDirectory } from '@gugu/core/local/files/fileSnapshots'
 import { writeTaskCopy } from './projectFilePublication'
 import { resourceMonitorWindow } from './resource-monitor-window'
 import { linkProjectDevice } from './session/main/core/projects/project-device-link'
@@ -2488,7 +2489,7 @@ const remoteFileTempRoot = join(app.getPath('userData'), 'cache', 'remote-files'
 const remoteFileOpenDirectories = new Set<string>()
 const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider().getAuth(), tempRoot: remoteFileTempRoot,
   rpc: signedInFileRpc(() => desktopAuthProvider().getAuth(), makeChatClient),
-  downloads: join(resolveGuguHome(process.env), 'attachments'), fetch: electronFetch, links: () => sshLinks,
+  downloads: fileStoreDirectory(resolveGuguHome(process.env)), fetch: electronFetch, links: () => sshLinks,
   root: async projectId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectRoot(projectId) },
   deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
 })
@@ -6507,6 +6508,7 @@ app.whenReady().then(async () => {
           client: (accessToken) => makeIdentityClient(accessToken) as unknown as DeviceProjectsRpcClient,
           records: () => emdash.listDeviceProjectRecords(),
           warn: (message, fields) => createLogger('device-projects').warn(fields, message),
+          onPublished: () => emdash.projectFoldersPublished(),
         })
         try {
           emdash.onDeviceProjectsMaybeChanged(() => deviceProjectsPublisher?.notify())

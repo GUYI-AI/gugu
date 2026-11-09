@@ -129,6 +129,7 @@ let latestSession: SearchSession | null = null
 function SessionProbe() { latestSession = useSearchSession(); return null }
 const sessionSnapshot = () => latestSession
 const options = () => [...host.querySelectorAll<HTMLElement>('[role=option]')]
+const recentWords = () => [...host.querySelectorAll<HTMLElement>('[data-testid=global-search-recent] button:not([data-testid=global-search-recent-clear])')].map((button) => button.textContent)
 const headers = () => [...host.querySelectorAll<HTMLElement>('[role=listbox] > button:not([role=option])')].map((button) => button.textContent)
 const tab = (key: string) => [...host.querySelectorAll<HTMLElement>('[role=tab]')].find((button) => button.textContent!.startsWith(key))!
 
@@ -520,7 +521,20 @@ describe('global search panel', () => {
     expect(remote.opened).toEqual([conversationLink(OTHER, OLD)])
     await act(async () => updateSearchSession({ text: '' }))
     await settle()
-    expect([...host.querySelectorAll('[data-testid=global-search-recent] button')].map((button) => button.textContent)).toEqual(['回滚'])
+    expect(recentWords()).toEqual(['回滚'])
+  })
+
+  it('remembers the words of an opened result with nothing in scope, apart from each conversation, and Clear forgets them', async () => {
+    await render('回滚')
+    await act(async () => options()[0]!.click())
+    await act(async () => updateSearchSession({ text: '' }))
+    await settle()
+    expect(recentWords()).toEqual(['回滚'])
+    await act(async () => updateSearchSession({ chips: [{ kind: 'in', chatId: GROUP }] }))
+    expect(recentWords(), 'a conversation keeps its own words').toEqual([])
+    await act(async () => updateSearchSession({ chips: [] }))
+    await act(async () => host.querySelector<HTMLElement>('[data-testid=global-search-recent-clear]')!.click())
+    expect(host.querySelector('[data-testid=global-search-recent]')).toBeNull()
   })
 
   it('without local tasks (the phone) it searches chats only and has no task filter', async () => {

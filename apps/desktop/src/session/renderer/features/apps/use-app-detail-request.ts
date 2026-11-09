@@ -3,13 +3,16 @@ import type { AppDetailLink } from '@gugu/core/shared/ui/guguLink';
 import { readCachedDevices } from '@/store/devicesCache';
 import { messageForUser } from '@/lib/userFacingError';
 import type { ExtensionsHost } from '@renderer/features/extensions/extensions-host';
-import type { ExtensionDetailSubject } from '@renderer/features/extensions/panel/app-product-page';
+import type { AppDetail } from '@renderer/features/settings/components/ExtensionsSettingsCard';
 import { toast } from '@renderer/lib/hooks/use-toast';
 
-/** Navigation opens a detail once; background market refreshes do not reopen a page the person left. */
+/**
+ * Navigation opens a detail once: an installed App's settings page, or the market's page of one that is not here.
+ * Background market refreshes do not reopen a page the person left.
+ */
 export function useAppDetailRequest({ target, ready, host, setDetail, detail, rootRef }: {
   target?: AppDetailLink; ready: boolean; host: ExtensionsHost;
-  setDetail: Dispatch<SetStateAction<ExtensionDetailSubject | null>>; detail: ExtensionDetailSubject | null;
+  setDetail: Dispatch<SetStateAction<AppDetail | null>>; detail: AppDetail | null;
   rootRef: RefObject<HTMLDivElement | null>;
 }) {
   useEffect(() => {
@@ -22,18 +25,23 @@ export function useAppDetailRequest({ target, ready, host, setDetail, detail, ro
       }
       const installed = host.store.manifests.find((row) => row.id === target.extensionId);
       if (target.variant && !installed) throw new Error('The installed App is no longer available on this device.');
+      if (installed) {
+        setDetail({ page: 'manage', extensionId: target.extensionId, fromApp: target.fromApp });
+        // The same App's page may already be showing, scrolled down: asking for it again starts at the top.
+        rootRef.current?.scrollIntoView({ block: 'start' });
+        return;
+      }
       const result = await host.api.marketEntry({ extensionId: target.extensionId });
       if (cancelled) return;
-      const item = result.success ? result.data : undefined;
-      if (!item && !installed) throw new Error(result.error ?? 'This App is no longer in the market.');
-      setDetail({ manifest: item?.manifest ?? installed!, installed, cloud: item?.cloud ?? null, installRef: item?.ref });
+      if (!result.success || !result.data) throw new Error(result.error ?? 'This App is no longer in the market.');
+      setDetail({ page: 'market', subject: { manifest: result.data.manifest, cloud: result.data.cloud, installRef: result.data.ref } });
     };
     void open().catch((error: unknown) => { if (!cancelled) toast({ title: messageForUser(error), variant: 'destructive' }); });
     return () => { cancelled = true; };
-  }, [target, ready, host, setDetail]);
+  }, [target, ready, host, setDetail, rootRef]);
   const variants = target ? host.store.variants[target.extensionId] : undefined;
   useEffect(() => {
-    if (target?.variant && detail?.manifest.id === target.extensionId) {
+    if (target?.variant && detail?.page === 'manage' && detail.extensionId === target.extensionId) {
       rootRef.current?.querySelector(`[data-testid="app-variant-${target.variant}"]`)?.scrollIntoView({ block: 'center' });
     }
   }, [target, detail, variants, rootRef]);

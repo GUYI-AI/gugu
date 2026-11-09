@@ -16,6 +16,7 @@ import { Sheet } from '../../../../apps/desktop/src/components/ui/Sheet'
 import type { ToastContextValue } from '../../../../apps/desktop/src/components/toastContext'
 import * as platformMock from '../../../support/capacitorPlatformTestDouble'
 import { anchorDownload } from '../../../../apps/desktop/src/platform/anchorDownload'
+import { readFileZoom, writeFileZoom } from '../../../../apps/desktop/src/components/preview/file-content-zoom'
 import * as fileHost from '../../../../apps/desktop/src/lib/fileHost'
 import {
   clickElement,
@@ -93,6 +94,137 @@ describe('ImagePreviewProvider', () => {
     expect(slide.width * slide.currZoomLevel).toBeCloseTo(before.width)
     expect(slide.height * slide.currZoomLevel).toBeCloseTo(before.height)
     expect(slide.pan).toEqual({ x: before.x, y: before.y })
+  })
+
+  async function capturePhotoSwipe() {
+    const { default: PhotoSwipeCtor } = await import('photoswipe')
+    const init = PhotoSwipeCtor.prototype.init
+    const instances: PhotoSwipe[] = []
+    vi.spyOn(PhotoSwipeCtor.prototype, 'init').mockImplementation(function (this: PhotoSwipe) {
+      instances.push(this)
+      return init.call(this)
+    })
+    return instances
+  }
+
+  async function openAt(preference: number, motion: boolean) {
+    writeFileZoom('image', preference)
+    if (motion) vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} }))
+    vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(1280)
+    const { default: PhotoSwipeCtor } = await import('photoswipe')
+    const init = PhotoSwipeCtor.prototype.init
+    const instances: PhotoSwipe[] = []
+    let levelAfterInit = 0
+    vi.spyOn(PhotoSwipeCtor.prototype, 'init').mockImplementation(function (this: PhotoSwipe) {
+      instances.push(this)
+      const result = init.call(this)
+      levelAfterInit = this.currSlide!.currZoomLevel
+      return result
+    })
+    const thumb = document.body.appendChild(document.createElement('img'))
+    Object.defineProperties(thumb, { complete: { value: true }, naturalWidth: { value: 400 }, naturalHeight: { value: 200 } })
+    thumb.getBoundingClientRect = () => new DOMRect(100, 100, 100, 50)
+    await openViewer({ images: [{ url: 'https://example.test/one.png', alt: 'one', thumb }, { url: 'https://example.test/two.png', alt: 'two', thumb }] })
+    return { pswp: instances[0], thumb, levelAfterInit }
+  }
+
+  it('opens from the thumbnail to the reading zoom, and opening does not write the preference', async () => {
+    const { pswp, thumb, levelAfterInit } = await openAt(1.4, true)
+    const slide = pswp.currSlide!
+    // init ends with the slide still at the thumbnail: that is what the opening zoom animates from.
+    expect(levelAfterInit).toBeCloseTo(100 / 400)
+    // Input during the opening neither zooms nor writes the preference.
+    const toggleZoom = vi.spyOn(slide, 'toggleZoom')
+    slide.container.querySelector('.pswp__img')!.dispatchEvent(new PointerEvent('click', { bubbles: true, detail: 2, pointerType: 'mouse' }))
+    expect(toggleZoom).not.toHaveBeenCalled()
+    await act(async () => {
+      await waitForCondition(() => !pswp.opener.isOpening, 'opening never ended')
+    })
+    expect(slide.currZoomLevel).toBeCloseTo(1.4)
+    expect(slide.zoomLevels.initial).toBe(1)
+    expect(readFileZoom('image')).toBe(1.4)
+    await act(async () => pswp.destroy())
+    thumb.remove()
+    writeFileZoom('image', 1)
+  })
+
+  it('waits for the opening zoom before fetching the original, then rests the unzoomed image at its real size', async () => {
+    let finish!: (url: string) => void
+    const full = vi.fn(() => new Promise<string>(resolve => { finish = resolve }))
+    writeFileZoom('image', 1)
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} }))
+    vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(1280)
+    const instances = await capturePhotoSwipe()
+    const thumb = document.body.appendChild(document.createElement('img'))
+    Object.defineProperties(thumb, { complete: { value: true }, naturalWidth: { value: 300 }, naturalHeight: { value: 200 } })
+    thumb.getBoundingClientRect = () => new DOMRect(100, 100, 300, 200)
+    await openViewer({ images: [{ url: 'blob:thumbnail', alt: 'small', thumb, full }] })
+    const pswp = instances[0]
+    expect(pswp.opener.isOpening).toBe(true)
+    expect(full).not.toHaveBeenCalled()
+    await act(async () => {
+      await waitForCondition(() => !pswp.opener.isOpening && full.mock.calls.length === 1, 'the original never started')
+    })
+    const slide = pswp.currSlide!
+    await act(async () => finish('blob:original'))
+    await waitForCondition(() => document.querySelector('img.pswp__img[src="blob:original"]') !== null, 'original bytes were not displayed')
+    const image = slide.content.element as HTMLImageElement
+    Object.defineProperties(image, { naturalWidth: { value: 3000 }, naturalHeight: { value: 2000 } })
+    await act(async () => image.dispatchEvent(new Event('load')))
+    expect(slide.width).toBe(3000)
+    expect(slide.currZoomLevel).toBe(slide.zoomLevels.initial)
+    await act(async () => pswp.destroy())
+    thumb.remove()
+  })
+
+  it('a mouse double click goes from a zoomed image to the whole image and on to the second level; a touch one is left to PhotoSwipe', async () => {
+    const { pswp, thumb } = await openAt(1.4, false)
+    const slide = pswp.currSlide!
+    const image = slide.container.querySelector('.pswp__img')!
+    const click = (pointerType: string) => act(async () => {
+      image.dispatchEvent(new PointerEvent('click', { bubbles: true, detail: 2, pointerType, clientX: 200, clientY: 200 }))
+      await waitForCondition(() => pswp.animations.activeAnimations.length === 0, 'zoom never finished')
+    })
+    expect(slide.currZoomLevel).toBeCloseTo(1.4)
+    await click('touch')
+    expect(slide.currZoomLevel).toBeCloseTo(1.4)
+    await click('mouse')
+    expect(slide.currZoomLevel).toBeCloseTo(1)
+    await click('mouse')
+    expect(slide.currZoomLevel).toBeCloseTo(2)
+    // The second level is a peek: the next image does not open there.
+    expect(readFileZoom('image')).toBe(1)
+    thumb.remove()
+    writeFileZoom('image', 1)
+  })
+
+  it('a slide paged to follows the preference changed on the one before it', async () => {
+    const { pswp, thumb } = await openAt(1, false)
+    await act(async () => pswp.currSlide!.zoomTo(1.5, undefined, 0))
+    expect(readFileZoom('image')).toBe(1.5)
+    await act(async () => pswp.next())
+    expect(pswp.currIndex).toBe(1)
+    expect(pswp.currSlide!.currZoomLevel).toBeCloseTo(1.5)
+    thumb.remove()
+    writeFileZoom('image', 1)
+  })
+
+  it('a click on an image without pixels yet counts as the background; one on a shown image does nothing', async () => {
+    vi.spyOn(document.documentElement, 'clientWidth', 'get').mockReturnValue(1280)
+    const instances = await capturePhotoSwipe()
+    await openViewer()
+    const pswp = instances[0]
+    const shown = document.createElement('img')
+    Object.defineProperty(shown, 'naturalWidth', { value: 400 })
+    const click = (target: Element) => {
+      const event = new PointerEvent('pointerup', { pointerType: 'mouse' })
+      Object.defineProperty(event, 'target', { value: target })
+      pswp.dispatch('imageClickAction', { point: { x: 1, y: 1 }, originalEvent: event })
+    }
+    click(shown)
+    expect(pswp.isDestroying).toBe(false)
+    await act(async () => click(document.createElement('img')))
+    expect(pswp.isDestroying).toBe(true)
   })
 
   it('shows the viewer before thumbnail bytes, then upgrades through the existing original loader', async () => {

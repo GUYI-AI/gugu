@@ -8,6 +8,7 @@ import { offlineHolder, type OfflineHolder } from './fileHost'
 import { platform } from '../platform'
 import { openImageViewer, type ImageViewerItem } from './imageViewer'
 import { rendererLogger } from './log'
+import { sessionFileReader } from './sessionFileReaders'
 
 const log = rendererLogger('attachment-bytes')
 
@@ -17,6 +18,7 @@ export async function resolveAttachment(source: AttachmentSource, options: { sho
   return ref ? resolveFile(ref, fileReader(), { signal: fileReadSignal(), ...options }) : { status: 'gone' as const, sha256: null }
 }
 export async function attachmentMetadata(source: AttachmentSource): Promise<FileMetadata> {
+  if (source.kind === 'session-file') return { status: 'ready', revision: sessionFileRevision(source, '', 0) }
   const file = await resolveAttachment(source)
   if (file.status !== 'ready') return file
   await file.dispose(); return { status: 'ready', revision: file.revision }
@@ -25,13 +27,24 @@ export async function attachmentPreview(source: AttachmentSource, metadata?: Fil
   const ref = attachmentFileRef(source)
   return ref ? resolveFile(ref, fileReader(), { purpose: 'preview', metadata, signal: fileReadSignal() }) : { status: 'gone' as const, sha256: null }
 }
+async function sessionFileBytes(source: Extract<AttachmentSource, { kind: 'session-file' }>): Promise<AttachmentBytes> {
+  const read = sessionFileReader(source.sessionId)
+  if (!read) throw new Error('This file is kept in its task on another view; open it from that task')
+  const dataUrl = await read(source.path)
+  if (!dataUrl) return { status: 'missing' }
+  const blob = await (await fetch(dataUrl)).blob()
+  return { status: 'ready', blob, link: sessionFileRevision(source, blob.type, blob.size) }
+}
+function sessionFileRevision(source: Extract<AttachmentSource, { kind: 'session-file' }>, contentType: string, size: number): FileRevision {
+  return { source: 'local', file_name: source.path.split(/[\\/]/).at(-1) ?? '', content_type: contentType, size_bytes: size, sha256: source.sha256 }
+}
 const fullKey = (accountId: string, sha: string) => `${attachmentCacheOrigin}/account/${encodeURIComponent(accountId)}/sha256/${sha}`
 
 export type AttachmentVariant = 'full' | 'thumb'
 
 /** 一个附件来源的身份(effect 的依赖):每次渲染重新解析出来的对象不同,身份相同。 */
 export function sourceKeyOf(source: AttachmentSource): string {
-  return source.kind === 'url' ? `url:${source.url}` : source.kind === 'item' ? `item:${source.itemId}@${source.version}` : source.kind === 'message' ? `msg:${source.messageId}` : source.kind === 'attachment' ? `attachment:${source.attachmentId}` : 'gone'
+  return source.kind === 'url' ? `url:${source.url}` : source.kind === 'item' ? `item:${source.itemId}@${source.version}` : source.kind === 'message' ? `msg:${source.messageId}` : source.kind === 'attachment' ? `attachment:${source.attachmentId}` : source.kind === 'session-file' ? `session-file:${source.sessionId ?? ''}:${source.sha256}` : 'gone'
 }
 
 /** `acknowledged`: only for 'shown' — the bytes came before the server acknowledged the read; rejecting means take them down. */
@@ -45,6 +58,7 @@ export async function attachmentBytes(source: AttachmentSource, variant: Attachm
 }
 
 async function readAttachmentBytes(source: AttachmentSource, variant: AttachmentVariant | 'shown', onLink?: (link: FileRevision) => void, metadata?: FileMetadata, progress?: (done: number, total: number) => void): Promise<AttachmentBytes> {
+  if (source.kind === 'session-file') return sessionFileBytes(source)
   if (variant === 'thumb') {
     // A full copy already on this device (sent from here, or opened before) is the thumbnail: no signing, no download.
     const local = metadata?.status === 'ready' && metadata.revision.content_type.startsWith('image/') ? await cachedAttachmentCopy(metadata.revision.sha256) : null
@@ -87,7 +101,7 @@ export type AttachmentView =
 /** 缩略图在内存里只是一个 blob:记在本次运行里,超过这么久没人再取就丢。 */
 const THUMB_GC_MS = 30 * 60_000
 /** 内容不会变的来源:一条消息 / 一个附件 / 群文件的某一版。 */
-const immutableSource = (source: AttachmentSource) => source.kind === 'message' || source.kind === 'attachment' || source.kind === 'item'
+const immutableSource = (source: AttachmentSource) => source.kind === 'message' || source.kind === 'attachment' || source.kind === 'item' || source.kind === 'session-file'
 
 /**
  * 缩略图按来源记在 attachmentQueryClient 里。本地缓存(Cache Storage)按内容哈希存,优先使用消息的固定版本元数据;旧行才需要先问 file-resolve:

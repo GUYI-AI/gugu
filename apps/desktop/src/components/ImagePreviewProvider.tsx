@@ -50,7 +50,6 @@ const PRELOADER_DELAY_MS = 300
  * 指针与缩略图都按窗口坐标算。它的三处几何都要换成「根的盒子」:视口高度、指针偏移、起落位置。其余平台是 0。
  */
 const viewerTop = () => windowTitlebarHeight(readRendererPlatform())
-const DOUBLE_CLICK_MS = 300
 
 async function fetchImageAsPngBlob(url: string): Promise<Blob> {
   const blob = await fetchBlob(url)
@@ -136,6 +135,8 @@ function viewerOptions(request: ImageViewerRequest, mobile: boolean, errorMsg: s
     escKey: false,
     wheelToZoom: true,
     tapAction: 'close',
+    // 桌面单击图不做事,双击见 wireViewer(PhotoSwipe 默认单击就缩放,双击会放大又缩回)
+    imageClickAction: false,
     errorMsg,
     zoom: false,
     close: false,
@@ -152,9 +153,11 @@ function viewerOptions(request: ImageViewerRequest, mobile: boolean, errorMsg: s
 }
 
 function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: ImageViewerItem, error: unknown) => void): void {
-  const applyReadingZoom = wireReadingZoom(pswp)
+  wireReadingZoom(pswp)
   // 缩略图打开的那几张:翻到哪张,取哪张的原图,换上(取不到就留着缩略图;item.full 自己记着结果,不重复下)。
+  // 打开动画期间不换:它从缩略图的状态飞向这张幻灯片,换图会改掉它的起点和终点
   const upgrade = (index: number) => {
+    if (!pswp.opener.isOpen) return
     const slides = pswp.options.dataSource
     const data = (Array.isArray(slides) ? slides[index] : undefined) as ViewerSlide | undefined
     if (!data || data.loadingStarted || (!data.item.preview && !data.item.full)) return
@@ -189,16 +192,16 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
       }
     })
   }
-  pswp.on('afterInit', () => upgrade(pswp.currIndex))
+  pswp.on('openingAnimationEnd', () => upgrade(pswp.currIndex))
   pswp.on('change', () => upgrade(pswp.currIndex))
   pswp.on('loadComplete', ({ content, isError }) => {
     const data = content.data as ViewerSlide
     const img = content.element
-    if (isError || !(img instanceof HTMLImageElement) || !img.naturalWidth || !img.naturalHeight) return
+    if (pswp.isDestroying || isError || !(img instanceof HTMLImageElement) || !img.naturalWidth || !img.naturalHeight) return
     if (data.sizeKnown && data.width === img.naturalWidth && data.height === img.naturalHeight) return
     const wasKnown = data.sizeKnown
     const slide = content.slide
-    const zoom = slide ? slide.currZoomLevel * slide.width / img.naturalWidth : 0
+    const ratio = slide ? slide.currZoomLevel / slide.zoomLevels.initial : 0
     data.width = content.width = img.naturalWidth
     data.height = content.height = img.naturalHeight
     data.sizeKnown = true
@@ -207,13 +210,15 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
     slide.height = content.height
     slide.calculateSize()
     if (wasKnown) {
-      // A higher-resolution source has the same visible rectangle at a smaller pixel zoom.
+      // The ratio over the whole-image size survives a new source: the same rectangle, or a bigger one if the thumbnail was too small to fill it.
+      const zoom = ratio * slide.zoomLevels.initial
       slide.setZoomLevel(zoom)
       slide.currentResolution = zoom
+      slide.pan.x = slide.bounds.correctPan('x', slide.pan.x)
+      slide.pan.y = slide.bounds.correctPan('y', slide.pan.y)
     } else {
       slide.currentResolution = 0
       slide.zoomAndPanToInitial()
-      applyReadingZoom()
     }
     slide.updateContentSize(true)
     slide.applyCurrentZoomPan()
@@ -253,19 +258,19 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
     slide.panTo(slide.pan.x - wheel.deltaX, slide.pan.y - wheel.deltaY)
   })
 
-  // 桌面:单击图不做事,双击缩放到光标处(PhotoSwipe 默认单击就缩放,双击会放大又缩回)
-  let lastImageClick = -Infinity
-  pswp.on('imageClickAction', (event) => {
-    event.preventDefault()
-    const at = event.originalEvent.timeStamp
-    if (at - lastImageClick > DOUBLE_CLICK_MS) {
-      lastImageClick = at
-      return
-    }
-    lastImageClick = -Infinity
-    const { x, y } = event.point
-    if (x === undefined || y === undefined) throw new Error('PhotoSwipe reported an image click without a point')
-    pswp.currSlide?.toggleZoom({ x, y })
+  // 还没有像素的「图」(在下载的 img、空白占位)只是背景:PhotoSwipe 按 class 把它们算成点在图上,点了没反应
+  pswp.on('imageClickAction', ({ originalEvent: { target } }) => {
+    if (!(target instanceof HTMLImageElement && target.naturalWidth)) pswp.close()
+  })
+
+  // 鼠标双击缩放到光标处,连击归系统设置;手机的双击是 PhotoSwipe 自己的 doubleTap,这里不再算一次
+  pswp.on('bindEvents', () => {
+    if (!pswp.element) throw new Error('PhotoSwipe bound its events without a root element')
+    pswp.events.add(pswp.element, 'click', (event) => {
+      const { detail, pointerType, pageX, pageY, target } = event as PointerEvent
+      if (!pswp.opener.isOpen || detail !== 2 || pointerType !== 'mouse' || !(target instanceof Element && target.classList.contains('pswp__img'))) return
+      pswp.currSlide?.toggleZoom({ x: pageX - pswp.offset.x, y: pageY - pswp.offset.y })
+    })
   })
 
   pswp.on('keydown', ({ originalEvent }) => {

@@ -12,7 +12,7 @@ import { publishDirectoryDevices, removeDeviceSessions, updateDeviceSessions } f
 vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => true }))
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/chat/actor-identity', () => ({ chatActor: (id: string) => ({ id, name: 'Worker', type: id.startsWith('user:111') ? 'agent' : 'human' }) }))
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/chat/chat-name', () => ({ chatDisplayName: () => 'Test group' }))
-vi.mock('../../../../apps/desktop/src/lib/chatSummariesBridge', () => ({ useChatSummaries: () => new Map([['group', { kind: 'group' }]]), readChatSummary: () => ({ kind: 'group' }), resolveChatId: (id: string) => id }))
+vi.mock('../../../../apps/desktop/src/lib/chatSummariesBridge', () => ({ subscribeChatNames: () => () => undefined, chatNamesVersion: () => 0, useChatSummaries: () => new Map([['group', { kind: 'group' }]]), readChatSummary: () => ({ kind: 'group' }), resolveChatId: (id: string) => id }))
 let h: ReturnType<typeof createReactHarness> | undefined
 let release: (() => void) | undefined
 afterEach(() => { h?.cleanup(); release?.(); publishDirectoryDevices([]); removeDeviceSessions('host') })
