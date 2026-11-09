@@ -4,7 +4,8 @@ import type { AppDb, DrizzleTx } from '@main/db/client';
 import { providerAccounts, type ProviderAccountRow } from '@main/db/schema';
 import type { ProviderAccountMeta } from '@shared/core/provider-accounts/provider-account-meta';
 import { log } from '@main/lib/logger';
-import { compareAndSwapProviderSecret, nextProviderAccountUpdate, readProviderSecretGeneration } from './provider-secret-cas';
+import { compareAndSwapProviderSecret,nextProviderAccountUpdate,readProviderSecretGeneration } from './provider-secret-cas';
+import { currentManagedConnectionAttempt,isManagedConnectionRevoked, writeManagedProviderAccount } from './connection-effect-evidence';
 
 /** Meta payload without the schema version field, which the registry supplies. */
 export type ProviderAccountMetaInput = Omit<ProviderAccountMeta, 'version'>;
@@ -46,10 +47,10 @@ export type ProviderAccountSecretStore = {
   getSecret(key: string): Promise<string | null>;
   setSecret(key: string, value: string): Promise<void>;
   deleteSecret(key: string): Promise<void>;
-  /** Stores that can read a secret with its sealed bytes and replace exactly those
-   * bytes inside a database transaction (the app's encrypted store). */
   atomicSecretSnapshot?(db: AppDb | DrizzleTx, key: string): { sealed: string; secret: string } | null;
-  atomicSecretCompareAndSwap?(db: AppDb, key: string, expectedSealed: string, replacement: string): Promise<(tx: DrizzleTx) => boolean>;
+  atomicSecretCompareAndSwap?(db: AppDb, key: string, expectedSealed: string, replacement: string): Promise<((tx: DrizzleTx) => boolean) | null>;
+  atomicSecretRemover?(db: AppDb): (tx: DrizzleTx, key: string) => void;
+  atomicSecretWriter?(db: AppDb, key: string, secret: string): (tx: DrizzleTx, currentKey?: string) => void;
 };
 
 export function defaultCredentialRef(providerId: string, accountId: string): string {
@@ -104,14 +105,19 @@ export class ProviderAccountRegistry {
       input.credentialRef ??
       defaultCredentialRef(input.providerId, input.accountId);
 
+    const attempt=currentManagedConnectionAttempt();
+    let atomicSecret: ((tx: DrizzleTx,currentKey?: string)=>void) | undefined;
     if (input.secret !== undefined) {
-      await this.secretStore.setSecret(credentialRef, input.secret);
+      if(attempt){
+        if(!this.secretStore.atomicSecretWriter)throw new Error('CONNECTION_ATOMIC_STORE_UNAVAILABLE');
+        atomicSecret=this.secretStore.atomicSecretWriter(this.db,credentialRef,input.secret);
+      } else await this.secretStore.setSecret(credentialRef, input.secret);
     }
 
     const meta: ProviderAccountMeta | undefined =
       input.meta === undefined ? undefined : { version: '1', ...input.meta };
 
-    const row = this.db.transaction((tx): ProviderAccountRow => {
+    const row = this.db.transaction((tx): ProviderAccountRow => writeManagedProviderAccount(tx,attempt,input.providerId,input.accountId,()=>{
       const now = Date.now();
       const current = tx
         .select()
@@ -124,7 +130,9 @@ export class ProviderAccountRegistry {
         )
         .get();
 
+      atomicSecret?.(tx,current?.credentialRef ?? credentialRef);
       if (current) {
+        // Strictly increasing: part of the credential generation a delayed refresh must still find.
         const updatedAt = nextProviderAccountUpdate(current.updatedAt, now);
         tx.update(providerAccounts)
           .set({ updatedAt, ...(meta !== undefined ? { meta } : {}) })
@@ -156,7 +164,7 @@ export class ProviderAccountRegistry {
       };
       tx.insert(providerAccounts).values(inserted).run();
       return inserted;
-    });
+    }));
 
     this.changed();
     return {
@@ -194,7 +202,8 @@ export class ProviderAccountRegistry {
 
   /** Make an existing account the provider default. Returns null for unknown accounts. */
   async setDefaultAccount(providerId: string, accountId: string): Promise<ProviderAccount | null> {
-    const row = this.db.transaction((tx) => {
+    const attempt=currentManagedConnectionAttempt();
+    const row = this.db.transaction((tx) => writeManagedProviderAccount(tx,attempt,providerId,accountId,()=>{
       const target = tx
         .select()
         .from(providerAccounts)
@@ -205,7 +214,7 @@ export class ProviderAccountRegistry {
           )
         )
         .get();
-      if (!target) return null;
+      if (!target) { if(attempt)throw Object.assign(new Error('CONNECTION_ACCOUNT_UNAVAILABLE'),{knownNoEffect:true,code:'CONNECTION_ACCOUNT_UNAVAILABLE'}); return null; }
       if (target.isDefault) return target;
 
       // Clear before set: the partial unique index rejects two defaults.
@@ -220,30 +229,29 @@ export class ProviderAccountRegistry {
         .where(eq(providerAccounts.id, target.id))
         .run();
       return { ...target, isDefault: true };
-    });
+    },'default'));
     if (row) this.changed();
     return row ? toProviderAccount(row) : null;
   }
 
-  /** The secret with the generation it was read at, for a later conditional
-   * replacement. Null for a missing or platform-kept account. Stores without
-   * transactional snapshots answer null, so their callers never replace blindly. */
-  async resolveSecretGeneration(providerId: string, accountId: string): Promise<{ secret: string; generation: string } | null> {
-    if (!this.secretStore.atomicSecretSnapshot) return null;
-    return readProviderSecretGeneration(this.db, this.secretStore, providerId, accountId);
+  /** The secret and its generation from one read, for a later conditional replacement. */
+  async resolveSecretGeneration(providerId: string, accountId: string): Promise<{ secret: string; generation: string | null } | null> {
+    if (!this.secretStore.atomicSecretSnapshot) {
+      // A store without atomic reads can still be read; it just cannot be conditionally replaced.
+      const secret = await this.resolveSecret(providerId, accountId);
+      return secret === null ? null : { secret, generation: null };
+    }
+    return readProviderSecretGeneration(this.db,this.secretStore,providerId,accountId);
   }
 
-  /** Replace the secret only if it is still the generation read before. */
-  async compareAndSwapSecret(providerId: string, accountId: string, generation: string, replacement: string): Promise<boolean> {
-    const swapped = await compareAndSwapProviderSecret(this.db, this.secretStore, providerId, accountId, generation, replacement);
-    if (swapped) this.changed();
-    return swapped;
+  compareAndSwapSecret(providerId: string, accountId: string, generation: string, replacement: string): Promise<boolean> {
+    return compareAndSwapProviderSecret(this.db,this.secretStore,providerId,accountId,generation,replacement);
   }
 
   /** Read the secret stored at the account's credentialRef. */
   async resolveSecret(providerId: string, accountId?: string): Promise<string | null> {
     const account = await this.getAccount(providerId, accountId);
-    if (!account) return null;
+    if (!account || isManagedConnectionRevoked(this.db,providerId,account.accountId)) return null;
     return this.secretStore.getSecret(account.credentialRef);
   }
 
@@ -266,7 +274,10 @@ export class ProviderAccountRegistry {
    * Returns the removed account, or null if it did not exist.
    */
   async removeAccount(providerId: string, accountId: string): Promise<ProviderAccount | null> {
-    const removed = this.db.transaction((tx) => {
+    const attempt=currentManagedConnectionAttempt();
+    const removeSecret=attempt ? this.secretStore.atomicSecretRemover?.(this.db) : undefined;
+    if(attempt && !removeSecret)throw new Error('CONNECTION_ATOMIC_STORE_UNAVAILABLE');
+    const removed = this.db.transaction((tx) => writeManagedProviderAccount(tx,attempt,providerId,accountId,()=>{
       const target = tx
         .select()
         .from(providerAccounts)
@@ -279,15 +290,16 @@ export class ProviderAccountRegistry {
         .get();
       if (!target) return null;
 
+      removeSecret?.(tx,target.credentialRef);
       tx.delete(providerAccounts).where(eq(providerAccounts.id, target.id)).run();
       if (target.isDefault) {
         this.promoteOldestAccount(tx, providerId);
       }
       return target;
-    });
+    },'remove'));
 
     if (!removed) return null;
-    try { await this.secretStore.deleteSecret(removed.credentialRef); }
+    try { if(!attempt)await this.secretStore.deleteSecret(removed.credentialRef); }
     finally { this.changed(); }
     return toProviderAccount(removed);
   }

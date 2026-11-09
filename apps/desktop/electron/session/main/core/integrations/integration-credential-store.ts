@@ -25,8 +25,8 @@ export type IntegrationAccountRecord = {
   accountId: string;
   displayName?: string;
   credentials: IntegrationCredentials;
-  /** Opaque generation the credentials were read at; a conditional replacement
-   * must still find it. Absent for platform-kept accounts. */
+  /** Opaque credential generation read together with `credentials`; a
+   * conditional replacement must still find it. Absent for platform-kept accounts. */
   generation?: string;
 };
 
@@ -40,12 +40,10 @@ type IntegrationAccountStore = Pick<
   | 'setDefaultAccount'
   | 'upsertAccount'
   | 'resolveSecret'
-  | 'resolveSecretGeneration'
-  | 'compareAndSwapSecret'
   | 'removeAccount'
   | 'removeAllAccounts'
   | 'isConfigured'
->;
+> & Partial<Pick<ProviderAccountRegistry,'compareAndSwapSecret'|'resolveSecretGeneration'>>;
 
 type LegacySecretStore = {
   getSecret(key: string): Promise<string | null>;
@@ -116,23 +114,15 @@ export class IntegrationCredentialStore {
     if (!account) return null;
     if (keptByPlatform(account)) return toIntegrationAccount(account, {});
 
-    const read = await this.accounts.resolveSecretGeneration(integrationId, account.accountId);
-    const raw = read ? read.secret : await this.accounts.resolveSecret(integrationId, account.accountId);
+    const read = this.accounts.resolveSecretGeneration
+      ? await this.accounts.resolveSecretGeneration(integrationId, account.accountId)
+      : null;
+    const raw = this.accounts.resolveSecretGeneration ? read?.secret ?? null : await this.accounts.resolveSecret(integrationId, account.accountId);
     const credentials = raw ? parseJson(raw) : null;
     if (!credentials || typeof credentials !== 'object' || Array.isArray(credentials)) return null;
 
     const record = toIntegrationAccount(account, credentials as IntegrationCredentials);
-    return read ? { ...record, generation: read.generation } : record;
-  }
-
-  /**
-   * Store credentials derived from `prior` (a refresh, a check that renewed them) only if
-   * the account still holds the generation `prior` was read at. False when the person
-   * disconnected or authorized again meanwhile: their change wins, nothing is written.
-   */
-  async compareAndSwapAccount(integrationId: string, prior: IntegrationAccountRecord, credentials: IntegrationCredentials): Promise<boolean> {
-    if (!prior.generation) throw new Error(`No credential generation for ${integrationId}; refusing an unconditional write`);
-    return this.accounts.compareAndSwapSecret(integrationId, prior.accountId, prior.generation, JSON.stringify(credentials));
+    return read?.generation ? { ...record, generation: read.generation } : record;
   }
 
   /** #7240 这一家存着的每个账号(多账号:邮箱一个地址一个),按连上的先后。凭据读不出来的那一个跳过不给。 */
@@ -189,6 +179,14 @@ export class IntegrationCredentialStore {
       secret: JSON.stringify(account.credentials),
       meta: account.displayName ? { displayName: account.displayName } : {},
     });
+  }
+
+  compareAndSwapAccount(integrationId: string, prior: IntegrationAccountRecord, credentials: IntegrationCredentials): Promise<boolean> {
+    if(!this.accounts.compareAndSwapSecret)throw new Error('CONNECTION_ATOMIC_STORE_UNAVAILABLE');
+    // Only the generation read before the refresh may be replaced; a record
+    // without one (platform-kept) was never a local secret to replace.
+    if(!prior.generation)return Promise.resolve(false);
+    return this.accounts.compareAndSwapSecret(integrationId,prior.accountId,prior.generation,JSON.stringify(credentials));
   }
 
   /** Remove one account, or every account when no accountId is given. */

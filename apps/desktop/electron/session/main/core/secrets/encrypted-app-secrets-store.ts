@@ -27,23 +27,24 @@ export class EncryptedAppSecretsStore {
     return this.safeStorageApi.decryptString(Buffer.from(secret, 'base64'));
   }
 
-  /** Sealed bytes and plaintext from one read; the sealed value is part of the
-   * generation a later conditional write must still find. */
-  atomicSecretSnapshot(db: AppDb | DrizzleTx, key: string): { sealed: string; secret: string } | null {
-    const sealed = db.select({ secret: appSecrets.secret }).from(appSecrets).where(eq(appSecrets.key, key)).get()?.secret;
-    if (!sealed) return null;
+  /** Prepare encryption before entering SQLite; the returned write is sync
+   * and can only be used with this store's actual database transaction. */
+  atomicSecretWriter(db: AppDb, key: string, secret: string): (tx: DrizzleTx, currentKey?: string) => void {
+    if(db!==this.db)throw new Error('CONNECTION_ATOMIC_STORE_UNAVAILABLE');
     this.assertSecureStorageAvailable();
-    return { sealed, secret: this.safeStorageApi.decryptString(Buffer.from(sealed, 'base64')) };
+    const encryptedSecret=this.safeStorageApi.encryptString(secret).toString('base64');
+    return (tx,currentKey=key)=>{
+      tx.insert(appSecrets).values({key:currentKey,secret:encryptedSecret})
+        .onConflictDoUpdate({target:appSecrets.key,set:{secret:encryptedSecret}}).run();
+    };
   }
 
-  /** Encrypt before entering SQLite; the returned write replaces only the exact
-   * sealed bytes captured at the original read, inside the caller's transaction. */
-  async atomicSecretCompareAndSwap(db: AppDb, key: string, expectedSealed: string, replacement: string): Promise<(tx: DrizzleTx) => boolean> {
-    if (db !== this.db) throw new Error('Secret compare-and-swap needs this store\'s own database');
+  /** Immutable key material must never be replaced by a concurrent creator. */
+  async createSecret(key: string, secret: string): Promise<boolean> {
     this.assertSecureStorageAvailable();
-    const sealed = this.safeStorageApi.encryptString(replacement).toString('base64');
-    return (tx) => tx.update(appSecrets).set({ secret: sealed })
-      .where(and(eq(appSecrets.key, key), eq(appSecrets.secret, expectedSealed))).run().changes === 1;
+    const encryptedSecret = this.safeStorageApi.encryptString(secret).toString('base64');
+    return this.db.insert(appSecrets).values({key,secret:encryptedSecret})
+      .onConflictDoNothing({target:appSecrets.key}).run().changes === 1;
   }
 
   async setSecret(key: string, secret: string): Promise<void> {
@@ -62,6 +63,29 @@ export class EncryptedAppSecretsStore {
       })
       .onConflictDoUpdate({ target: appSecrets.key, set: { secret: encryptedSecret } })
       .execute();
+  }
+
+  /** Sealed bytes and plaintext from one read; the sealed value is the
+   * generation a later conditional write must still find. */
+  atomicSecretSnapshot(db: AppDb | DrizzleTx, key: string): { sealed: string; secret: string } | null {
+    const sealed=db.select({secret:appSecrets.secret}).from(appSecrets).where(eq(appSecrets.key,key)).get()?.secret;
+    if(!sealed)return null;
+    this.assertSecureStorageAvailable();
+    return {sealed,secret:this.safeStorageApi.decryptString(Buffer.from(sealed,'base64'))};
+  }
+
+  /** Replace only the exact sealed bytes captured at the original read. */
+  async atomicSecretCompareAndSwap(db: AppDb, key: string, expectedSealed: string, replacement: string): Promise<((tx: DrizzleTx) => boolean) | null> {
+    if(db!==this.db)throw new Error('CONNECTION_ATOMIC_STORE_UNAVAILABLE');
+    this.assertSecureStorageAvailable();
+    const sealed=this.safeStorageApi.encryptString(replacement).toString('base64');
+    return tx=>tx.update(appSecrets).set({secret:sealed})
+      .where(and(eq(appSecrets.key,key),eq(appSecrets.secret,expectedSealed))).run().changes===1;
+  }
+
+  atomicSecretRemover(db: AppDb): (tx: DrizzleTx, key: string) => void {
+    if(db!==this.db)throw new Error('CONNECTION_ATOMIC_STORE_UNAVAILABLE');
+    return (tx,key)=>{tx.delete(appSecrets).where(eq(appSecrets.key,key)).run();};
   }
 
   async deleteSecret(key: string): Promise<void> {

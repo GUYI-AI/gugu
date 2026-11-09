@@ -1,8 +1,7 @@
+import {currentManagedConnectionAttempt} from '../provider-accounts/connection-effect-evidence';
 import type { IntegrationCliTool, IntegrationCredentials, IntegrationError } from '@gugu/session-plugins/integrations';
 import {
-  accessTokenExpiresSoon,
   integrationPluginRegistry,
-  mcpOAuthCredentialsSchema,
   toIntegrationCredentials,
 } from '@gugu/session-plugins/integrations';
 import { log } from '@main/lib/logger';
@@ -24,9 +23,9 @@ import { integrationCredentialStore } from './integration-credential-store-insta
 import {
   authorizeMcpServer,
   McpReauthorizationRequiredError,
-  refreshMcpCredentials,
 } from './mcp-oauth-flow';
 import { platformCredentials } from './platform-credentials-instance';
+import { refreshIntegrationAccount } from './connection-credential-refresh';
 import { SecureStorageUnavailableError } from '@main/core/secrets/secure-storage-unavailable';
 
 /** 改了服务器 / 地址、授权码却留空:要重新填(界面按 `secret_required` 说,❌ 当成格式不对)。 */
@@ -403,29 +402,8 @@ export class IntegrationConnectionService {
     integrationId: string,
     accountId?: string
   ): Promise<IntegrationAccountRecord | null> {
-    const account = await integrationCredentialStore.getAccount(integrationId, accountId);
-    if (!account || !mcpOAuthServerUrl(integrationId)) return account;
-    const parsed = mcpOAuthCredentialsSchema.safeParse(account.credentials);
-    // An unparseable record is reported by the plugin, which owns the reconnect wording.
-    if (!parsed.success || !accessTokenExpiresSoon(parsed.data)) return account;
-
-    const key = `${integrationId}:${account.accountId}`;
-    const inFlight = this.pendingRefreshes.get(key);
-    if (inFlight) return inFlight;
-
-    const refresh = (async () => {
-      const refreshed = await refreshMcpCredentials(parsed.data);
-      const next = { ...account, credentials: toIntegrationCredentials(refreshed) };
-      // The person may have disconnected or authorized again while this was on the
-      // network: their change wins. The caller gets what is stored now (nothing after a
-      // disconnect, the new authorization after a reauthorization), never the stale grant.
-      if (!(await integrationCredentialStore.compareAndSwapAccount(integrationId, account, next.credentials))) {
-        return integrationCredentialStore.getAccount(integrationId, account.accountId);
-      }
-      return next;
-    })().finally(() => this.pendingRefreshes.delete(key));
-    this.pendingRefreshes.set(key, refresh);
-    return refresh;
+    return refreshIntegrationAccount({store:integrationCredentialStore,pending:this.pendingRefreshes},
+      integrationId,accountId,mcpOAuthServerUrl(integrationId)!==null);
   }
 
   async connect(
@@ -439,7 +417,12 @@ export class IntegrationConnectionService {
     if (!plugin) return { success: false, error: `Unknown integration: ${integrationId}` };
     // #921 凭据由平台保管:表单交给平台(它先向对方验过再存),本机只记一行,❌ 进本机凭据库。
     // 只有这个安装压根没有这项平台服务时(`keepHere`),才照下面的老路存在这台电脑上。
-    if (platformCredentials.isPlatformProvider(integrationId)) {
+    const managed=currentManagedConnectionAttempt();
+    if(managed&&platformCredentials.custody(integrationId)==='platform')throw new Error('CONNECTION_CUSTODY_CHANGED');
+    if(managed&&editAccountId&&managed.accountId!==editAccountId)throw Object.assign(new Error('CONNECTION_ACCOUNT_CHANGED'),{knownNoEffect:true,code:'CONNECTION_ACCOUNT_CHANGED'});
+    // A captured device attempt never calls an untracked platform save. Known
+    // local custody stays on its actual local store for the complete attempt.
+    if (platformCredentials.isPlatformProvider(integrationId)&&!managed) {
       const kept = await platformCredentials.connect(integrationId, input, { editing: !!editAccountId });
       if (!('keepHere' in kept)) return kept.success && includeAccountId ? { ...kept, accountId: DEFAULT_INTEGRATION_ACCOUNT_ID } : kept;
     }
@@ -680,10 +663,10 @@ export class IntegrationConnectionService {
           };
         }
       }
-      if (result.credentials
-        && !(await integrationCredentialStore.compareAndSwapAccount(integrationId, account, result.credentials))) {
-        // Disconnected or authorized again during the check: this result is about credentials that are gone.
-        return { connected: false, error: 'The connection changed during this check.', capabilities };
+      if (result.credentials) {
+        if(!await integrationCredentialStore.compareAndSwapAccount(integrationId,account,result.credentials)) {
+          return { connected:false,error:'The connection changed during this check.',capabilities };
+        }
       }
       return {
         connected: true,
