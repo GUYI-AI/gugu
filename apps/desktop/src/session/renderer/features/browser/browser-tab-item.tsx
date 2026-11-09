@@ -25,7 +25,7 @@ function pagePath(url: string | undefined): string {
 
 // The page title and host are raw page data; only the "no page yet" stand-in
 // is localized.
-function browserTabLabel(
+export function browserTabLabel(
   session: BrowserSessionSnapshot | undefined,
   translate: ProjectsTranslate
 ): string {

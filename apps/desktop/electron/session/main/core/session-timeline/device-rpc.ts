@@ -43,10 +43,10 @@ export function createSessionpageSessionDeviceRpcHandlers(options?: {
   // #1607 node 5: an App's projection watched from another of the person's computers, on cloud and SSH alike.
   const appProjections = createProjectionRemoteHost(() => ({
     connect: async (input, send) => (await import('../extensions/projection-remote-admit')).admitRemoteProjection(input, send),
-    page: async (session, send) => {
+    page: async (session, send, state) => {
       const [{ connectTaskPageScreen }, { taskPageForScreen }] = await Promise.all([
         import('../browser/task-page-screen'), import('../extensions/task-page-host')]);
-      return connectTaskPageScreen(session, () => taskPageForScreen(session), send);
+      return connectTaskPageScreen(session, () => taskPageForScreen(session), send, state);
     },
   }));
 

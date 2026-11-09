@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectionHostPacket } from '@shared/extensions/projection-protocol';
+import type { TaskPageState } from '@shared/browser-task-page';
 import { ExtensionProjections, type ProjectionSource } from './extension-projections';
 import { revokeExtensionProgramAccess } from './extension-program-access';
 import { createProjectionRemoteHost, PROJECTION_REMOTE_VIEWERS, type ProjectionRemoteSources } from './projection-remote-host';
@@ -13,7 +14,8 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 0));
  * (projection-remote-host) through a fake device connection that, like the real one, answers calls and pushes events to
  * the asker only.
  */
-function twoComputers(overrides: Partial<ProjectionSource> = {}, admit?: (input: Parameters<ProjectionRemoteSources['connect']>[0]) => void) {
+function twoComputers(overrides: Partial<ProjectionSource> = {}, admit?: (input: Parameters<ProjectionRemoteSources['connect']>[0]) => void,
+  page?: ProjectionRemoteSources['page']) {
   const resources = new ExtensionProjections(() => {});
   const source: ProjectionSource = { input: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), refresh: vi.fn(), close: vi.fn(), ...overrides };
   const resource = resources.open(owner, source);
@@ -23,7 +25,7 @@ function twoComputers(overrides: Partial<ProjectionSource> = {}, admit?: (input:
       const viewer = resources.connect({ extensionId: input.app, sessionId: input.session }, input.source, { transport: 'device', send, onClose: () => () => {} });
       return { receive: viewer.receive, close: viewer.close };
     },
-    page: async () => { throw Object.assign(new Error('This task has no browser page'), { code: 'not-found' }); },
+    page: page ?? (async () => { throw Object.assign(new Error('This task has no browser page'), { code: 'not-found' }); }),
   }));
   const detached = new Set<() => void>();
   const pushed: unknown[] = [];
@@ -34,7 +36,8 @@ function twoComputers(overrides: Partial<ProjectionSource> = {}, admit?: (input:
       // The wire is JSON both ways.
       return JSON.parse(JSON.stringify(await handler(JSON.parse(JSON.stringify(payload)), {
         request: {} as never, env: {},
-        publishEvent: (event: unknown) => { pushed.push(event); projectionRemoteEvent('device-d22', JSON.parse(JSON.stringify(event))); },
+        // The requester hands pushes over in their broadcast envelope, as both Gugu cloud and SSH deliver them.
+        publishEvent: (event: unknown) => { pushed.push(event); projectionRemoteEvent('device-d22', JSON.parse(JSON.stringify({ type: 'broadcast', event: 'broadcast', payload: event }))); },
         asker: { onDetached: (listener: () => void) => { detached.add(listener); return () => detached.delete(listener); } } as never,
       })));
     },
@@ -53,6 +56,27 @@ afterEach(() => {
 });
 
 describe('an App projection watched from another computer (#1607 node 5)', () => {
+  it("a task page's toolbar there: its state comes back with the watch and as it changes; its controls reach the page", async () => {
+    const control = vi.fn(async () => {});
+    let report: ((state: TaskPageState) => void) | null = null;
+    const page: TaskPageState = { url: 'https://example.com/', title: 'Example', isLoading: false, canGoBack: false, canGoForward: false };
+    twoComputers({}, undefined, async (_session, _send, state) => {
+      report = state;
+      state(page);
+      return { receive: async () => {}, control, close: () => {} };
+    });
+    const states: TaskPageState[] = [];
+    const viewer = await watchRemoteProjection('device-d22', { session: 'task-on-d22', page: true }, () => {}, state => states.push(state));
+    expect(states).toEqual([page]);
+    report!({ ...page, url: 'https://example.org/', canGoBack: true });
+    expect(states.at(-1)).toMatchObject({ url: 'https://example.org/', canGoBack: true });
+    await viewer.control({ action: 'resize', width: 800, height: 600, scale: 2 });
+    expect(control).toHaveBeenCalledWith({ action: 'resize', width: 800, height: 600, scale: 2 });
+    // Not a control: refused there, before the page.
+    await expect(viewer.control({ action: 'jump' } as never)).rejects.toMatchObject({ code: 'invalid_payload' });
+    viewer.close();
+  });
+
   it('pictures come back one at a time; acknowledged input reaches the source on that machine', async () => {
     const c = twoComputers();
     const packets: ProjectionHostPacket[] = [];

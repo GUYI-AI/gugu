@@ -39,7 +39,8 @@ describe('a Gugu server task browser (#1607 4b)', () => {
     const pages: Record<string, string> = {
       '/first': '<title>first</title>',
       '/inner': '<p>in</p>',
-      '/field': '<title>Field</title><input autofocus id=f>',
+      '/field': '<title>Field</title><form action="/sent"><input autofocus id=f name=q></form>',
+      '/sent?q=typed+there': '<title>Sent</title>',
     }
     const server = createServer((request, response) => { response.setHeader('content-type', 'text/html'); response.end(pages[request.url ?? ''] ?? '') })
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -89,6 +90,21 @@ describe('a Gugu server task browser (#1607 4b)', () => {
       expect(frames[0]!.width).toBeGreaterThan(0);
       await screen.input('Input.insertText', { text: 'typed there' });
       expect((await other.send('Runtime.evaluate', { expression: 'document.getElementById("f").value', returnByValue: true }) as { result: { value: string } }).result.value).toBe('typed there');
+      // Enter, as the person presses it there, submits the form.
+      const { taskPageInput } = await import('../../../../apps/desktop/electron/session/main/core/browser/task-page-screen');
+      const keys = { buttons: new Set<'left' | 'middle' | 'right'>(), keys: new Set<string>() };
+      for (const action of ['down', 'up'] as const) {
+        for (const command of taskPageInput({ kind: 'key', action, key: 'Enter' }, frames[0]!, keys)) await screen.input(command.method, command.params);
+      }
+      await vi.waitFor(async () => expect((await other.send('Runtime.evaluate', { expression: 'document.title', returnByValue: true }) as { result: { value: string } }).result.value).toBe('Sent'), { timeout: 10_000 });
+      // The toolbar there: where the page is now, and back / the tab's size applied to it.
+      await vi.waitFor(() => expect(screen.state()).toMatchObject({ url: `${site}/sent?q=typed+there`, title: 'Sent', canGoBack: true, canGoForward: false }), { timeout: 10_000 });
+      await screen.control({ action: 'back' });
+      await vi.waitFor(() => expect(screen.state()).toMatchObject({ title: 'Field', canGoForward: true }), { timeout: 10_000 });
+      await screen.control({ action: 'resize', width: 640, height: 480, scale: 2 });
+      const fitted = await other.send('Runtime.evaluate', { expression: '[innerWidth, innerHeight, devicePixelRatio].join()', returnByValue: true }) as { result: { value: string } };
+      expect(fitted.result.value).toBe('640,480,2');
+      await expect(screen.control({ action: 'navigate', url: 'file:///etc/hostname' })).rejects.toThrow('Only web pages');
       other.close('done');
       await screen.stopScreen();
       expect(await browser.existingPage('task-without-page')).toBeNull();

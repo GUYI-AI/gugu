@@ -1,5 +1,6 @@
 import type { ProjectionFrame, ProjectionHostPacket, ProjectionInput } from '@shared/extensions/projection-protocol';
 import { PROJECTION_FRAME_BYTES } from '@shared/extensions/projection-protocol';
+import type { TaskPageControl, TaskPageState } from '@shared/browser-task-page';
 import { ExtensionProjections } from '../extensions/extension-projections';
 import type { TaskPageScreenTarget } from '../../../../server/server-task-browser';
 
@@ -16,7 +17,7 @@ const screens = new ExtensionProjections(() => {});
 /** The projection principal of a task's page: gugu's own, not an App's. */
 const TASK_PAGE = 'gugu:task-page';
 
-type Open = { id: string; viewers: number; close(): Promise<void> };
+type Open = { id: string; viewers: number; page: TaskPageScreenTarget; close(): Promise<void> };
 const open = new Map<string, Promise<Open>>();
 
 type CdpInput = { method: 'Input.dispatchMouseEvent' | 'Input.dispatchKeyEvent' | 'Input.insertText'; params: Record<string, unknown> };
@@ -49,8 +50,11 @@ export function taskPageInput(input: ProjectionInput, frame: Pick<ProjectionFram
     case 'key': {
       if (input.action === 'down') held.keys.add(input.key); else held.keys.delete(input.key);
       const code = KEY_CODES[input.key] ?? (input.key.length === 1 ? input.key.toUpperCase().charCodeAt(0) : undefined);
-      return [{ method: 'Input.dispatchKeyEvent', params: { type: input.action === 'down' ? 'rawKeyDown' : 'keyUp', key: input.key, modifiers,
-        ...(code === undefined ? {} : { windowsVirtualKeyCode: code, nativeVirtualKeyCode: code }) } }];
+      // Enter acts (submits a form, adds a line) through the character it types: a key-down without it does nothing.
+      // Everything else that types arrives as text; the rest acts on its key code alone.
+      const typed = input.action === 'down' && input.key === 'Enter' ? { text: '\r', unmodifiedText: '\r' } : null;
+      return [{ method: 'Input.dispatchKeyEvent', params: { type: input.action === 'down' ? (typed ? 'keyDown' : 'rawKeyDown') : 'keyUp', key: input.key, modifiers,
+        ...(code === undefined ? {} : { windowsVirtualKeyCode: code, nativeVirtualKeyCode: code }), ...typed } }];
     }
     case 'text':
       return [{ method: 'Input.insertText', params: { text: input.text } }];
@@ -92,7 +96,7 @@ async function openScreen(sessionId: string, page: TaskPageScreenTarget): Promis
     async close() { await starting?.catch(() => {}); await page.stopScreen(); },
   });
   page.once('destroyed', () => { void handle.close(); });
-  return { id: handle.id, viewers: 0, close: () => handle.close() };
+  return { id: handle.id, viewers: 0, page, close: () => handle.close() };
 }
 
 /**
@@ -100,7 +104,8 @@ async function openScreen(sessionId: string, page: TaskPageScreenTarget): Promis
  * viewer leaving stops the screencast.
  */
 export async function connectTaskPageScreen(sessionId: string, page: () => Promise<TaskPageScreenTarget | null>,
-  send: (packet: ProjectionHostPacket) => void): Promise<{ receive(packet: unknown): Promise<void>; close(): void }> {
+  send: (packet: ProjectionHostPacket) => void, state: (state: TaskPageState) => void = () => {},
+): Promise<{ receive(packet: unknown): Promise<void>; control(control: TaskPageControl): Promise<void>; close(): void }> {
   let entry = open.get(sessionId);
   if (!entry) {
     const target = await page();
@@ -120,11 +125,17 @@ export async function connectTaskPageScreen(sessionId: string, page: () => Promi
   }
   screen.viewers += 1;
   let closed = false;
+  // The toolbar there: where the page is, its title, whether it is loading, whether it can go back or forward.
+  const report = () => state(screen.page.state());
+  screen.page.on('state', report);
+  report();
   return {
     receive: viewer.receive,
+    control: (control) => screen.page.control(control),
     close() {
       if (closed) return;
       closed = true;
+      screen.page.off('state', report);
       viewer.close();
       screen.viewers -= 1;
       if (screen.viewers === 0 && open.get(sessionId) === entry) {

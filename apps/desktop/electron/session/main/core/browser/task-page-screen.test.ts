@@ -25,13 +25,15 @@ describe('the person\'s input on a task page\'s picture, as page input (#1607 no
     expect(taskPageInput({ kind: 'wheel', x: 0.1, y: 0.1, deltaX: 0, deltaY: 120 }, frame, own)[0]!.params)
       .toEqual({ type: 'mouseWheel', x: 128, y: 72, modifiers: 0, deltaX: 0, deltaY: 120 });
     expect(taskPageInput({ kind: 'key', action: 'down', key: 'Enter' }, frame, own)[0]!.params)
-      .toEqual({ type: 'rawKeyDown', key: 'Enter', modifiers: 0, windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+      .toEqual({ type: 'keyDown', key: 'Enter', modifiers: 0, windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, text: '\r', unmodifiedText: '\r' });
+    expect(taskPageInput({ kind: 'key', action: 'down', key: 'ArrowDown' }, frame, own)[0]!.params)
+      .toEqual({ type: 'rawKeyDown', key: 'ArrowDown', modifiers: 0, windowsVirtualKeyCode: 40, nativeVirtualKeyCode: 40 });
     expect(taskPageInput({ kind: 'key', action: 'down', key: 'a', modifiers: ['meta'] }, frame, own)[0]!.params)
       .toMatchObject({ key: 'a', modifiers: 4, windowsVirtualKeyCode: 65 });
     expect(taskPageInput({ kind: 'text', text: '你好' }, frame, own)).toEqual([{ method: 'Input.insertText', params: { text: '你好' } }]);
     // Leaving releases exactly what is still held.
     expect(releaseHeld(own).map(command => command.params)).toEqual([
-      { type: 'keyUp', key: 'Enter' }, { type: 'keyUp', key: 'a' },
+      { type: 'keyUp', key: 'Enter' }, { type: 'keyUp', key: 'ArrowDown' }, { type: 'keyUp', key: 'a' },
     ]);
     expect(own.keys.size).toBe(0);
   });
@@ -46,8 +48,13 @@ function fakePage() {
     input: vi.fn(async () => ({})),
     isDestroyed: () => false,
     once: (event: 'destroyed', listener: () => void) => emitter.once(event, listener),
+    state: vi.fn(() => ({ url: 'https://example.com/', title: 'Example', isLoading: false, canGoBack: false, canGoForward: false })),
+    control: vi.fn(async () => {}),
+    on: (event: 'state', listener: () => void) => emitter.on(event, listener),
+    off: (event: 'state', listener: () => void) => emitter.off(event, listener),
   } satisfies TaskPageScreenTarget;
-  return { page, paint: (data = 'aGVsbG8=') => onFrame?.({ data, width: 1280, height: 720 }), destroy: () => emitter.emit('destroyed') };
+  return { page, paint: (data = 'aGVsbG8=') => onFrame?.({ data, width: 1280, height: 720 }), destroy: () => emitter.emit('destroyed'),
+    changed: () => emitter.emit('state') };
 }
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -70,6 +77,22 @@ describe('a task page watched from another computer', () => {
     // The held button is released, and nobody watching means no painting.
     expect(page.input).toHaveBeenLastCalledWith('Input.dispatchMouseEvent', expect.objectContaining({ type: 'mouseReleased', button: 'left' }));
     expect(page.stopScreen).toHaveBeenCalled();
+  });
+
+  it('the toolbar there sees where the page is as it changes, and drives it', async () => {
+    const { page, changed } = fakePage();
+    const states: unknown[] = [];
+    const viewer = await connectTaskPageScreen('task-screen-3', async () => page, () => {}, state => states.push(state));
+    expect(states).toEqual([expect.objectContaining({ url: 'https://example.com/', title: 'Example' })]);
+    page.state.mockReturnValue({ url: 'https://example.org/', title: 'Org', isLoading: true, canGoBack: true, canGoForward: false });
+    changed();
+    expect(states.at(-1)).toEqual({ url: 'https://example.org/', title: 'Org', isLoading: true, canGoBack: true, canGoForward: false });
+    await viewer.control({ action: 'back' });
+    expect(page.control).toHaveBeenCalledWith({ action: 'back' });
+    viewer.close();
+    changed();
+    // A viewer that left hears nothing more.
+    expect(states).toHaveLength(2);
   });
 
   it('watching never opens a page, and a closed page ends its viewers', async () => {

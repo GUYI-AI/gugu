@@ -19,7 +19,8 @@ import {
   type BrowserPageCommand,
 } from '@main/core/browser/browser-page-views';
 import { browserWebContentsRegistry } from '@main/core/browser/browser-webcontents-registry';
-import { sendRemoteTaskPage, unwatchRemoteTaskPage, watchRemoteTaskPage } from '@main/core/browser/remote-task-page';
+import { controlRemoteTaskPage, sendRemoteTaskPage, unwatchRemoteTaskPage, watchRemoteTaskPage } from '@main/core/browser/remote-task-page';
+import type { TaskPageControl } from '@shared/browser-task-page';
 import { isBrowserPartition } from '@main/core/browser/webview-security';
 import { appSettingsService } from '@main/core/settings/settings-service';
 import {
@@ -79,6 +80,7 @@ export const browserController = createRPCController({
    */
   watchTaskPage: (args: { watchId: string; deviceId: string; sessionId: string }) => watchRemoteTaskPage(args),
   sendTaskPage: (args: { watchId: string; packet: unknown }) => sendRemoteTaskPage(args),
+  controlTaskPage: (args: { watchId: string; control: TaskPageControl }) => controlRemoteTaskPage(args),
   unwatchTaskPage: (watchId: string) => ({ success: unwatchRemoteTaskPage(watchId) }),
   /** 界面要把焦点拿回自己身上(网页这个独立 view 拿着窗口焦点时,界面 JS 的 focus() 挪不动)。 */
   focusHost: (windowName: string) => ({ success: focusBrowserHost(windowName) }),

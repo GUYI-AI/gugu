@@ -1,5 +1,6 @@
 import type { DeviceRpcHandlerContext, DeviceRpcHandlers } from '@gugu/core/cloud/deviceRpcResponder';
 import type { ProjectionHostPacket } from '@shared/extensions/projection-protocol';
+import { readTaskPageControl, type TaskPageControl, type TaskPageState } from '@shared/browser-task-page';
 import { log } from '@main/lib/logger';
 
 /**
@@ -16,8 +17,12 @@ export const PROJECTION_REMOTE_RPC = {
   watch: 'appProjection.watch',
   send: 'appProjection.send',
   unwatch: 'appProjection.unwatch',
+  /** A task page's toolbar there: go to an address, back, forward, reload, stop, the tab's size. */
+  control: 'appProjection.pageControl',
 } as const;
 export const PROJECTION_REMOTE_PACKET = 'appProjection.packet';
+/** A task page's toolbar state, pushed to its watcher whenever it changes. */
+export const PROJECTION_REMOTE_PAGE_STATE = 'appProjection.pageState';
 /** Viewers held for other computers at once (each is one page watching one projection). */
 export const PROJECTION_REMOTE_VIEWERS = 32;
 
@@ -25,13 +30,14 @@ export const PROJECTION_REMOTE_VIEWERS = 32;
 export type ProjectionRemoteAppWatch = { app: string; version: string; session: string; source: string };
 export type ProjectionRemoteWatch = { watch: string } & (ProjectionRemoteAppWatch | { session: string; page: true });
 export type ProjectionRemotePacketEvent = { type: typeof PROJECTION_REMOTE_PACKET; watch: string; packet: ProjectionHostPacket };
+export type ProjectionRemotePageStateEvent = { type: typeof PROJECTION_REMOTE_PAGE_STATE; watch: string; state: TaskPageState };
 
-type Viewer = { receive(packet: unknown): Promise<void>; close(): void };
+type Viewer = { receive(packet: unknown): Promise<void>; control?(control: TaskPageControl): Promise<void>; close(): void };
 export interface ProjectionRemoteSources {
   /** Admit a viewer for this App's projection in this session, on this machine; throws a coded refusal. */
   connect(input: ProjectionRemoteAppWatch, send: (packet: ProjectionHostPacket) => void): Promise<Viewer>;
-  /** The task's own browser page on this machine. */
-  page(session: string, send: (packet: ProjectionHostPacket) => void): Promise<Viewer>;
+  /** The task's own browser page on this machine, with its toolbar's state. */
+  page(session: string, send: (packet: ProjectionHostPacket) => void, state: (state: TaskPageState) => void): Promise<Viewer>;
 }
 
 const ID = /^[A-Za-z0-9_-]{8,128}$/;
@@ -72,7 +78,11 @@ export function createProjectionRemoteHost(sources: () => ProjectionRemoteSource
             if (entry?.viewer === viewer) { viewers.delete(watch); entry.stop(); }
           }
         };
-        viewer = page ? await sources().page(session, send)
+        const state = (state: TaskPageState) => {
+          void Promise.resolve(ctx.publishEvent({ type: PROJECTION_REMOTE_PAGE_STATE, watch, state } satisfies ProjectionRemotePageStateEvent))
+            .catch((error: unknown) => log.warn('[projection-remote] page state push failed', { error: String(error) }));
+        };
+        viewer = page ? await sources().page(session, send, state)
           : await sources().connect({ app: body.app as string, version: body.version as string, session, source: body.source as string }, send);
       } catch (error) {
         const code = typeof (error as { code?: unknown } | null)?.code === 'string' ? (error as { code: string }).code : 'refused';
@@ -96,6 +106,21 @@ export function createProjectionRemoteHost(sources: () => ProjectionRemoteSource
         const failure = error as { uncertain?: unknown; outcome?: unknown };
         return { result: { status: 'failed', message: error instanceof Error ? error.message : String(error),
           uncertain: failure?.uncertain === true, ...(failure?.outcome ? { outcome: failure.outcome } : {}) } };
+      }
+    },
+    [PROJECTION_REMOTE_RPC.control]: async (payload) => {
+      const body = (payload ?? {}) as { watch?: unknown; control?: unknown };
+      const control = readTaskPageControl(body.control);
+      if (Object.keys(body).some(key => !['watch', 'control'].includes(key)) || !text(body.watch) || !control) {
+        return refuse('invalid_payload', 'watch and a page control are required');
+      }
+      const entry = viewers.get(body.watch);
+      if (!entry?.viewer.control) return refuse('not_open', 'This page is not watched');
+      try {
+        await entry.viewer.control(control);
+        return { result: { done: true } };
+      } catch (error) {
+        return refuse('failed', error instanceof Error ? error.message : String(error));
       }
     },
     [PROJECTION_REMOTE_RPC.unwatch]: (payload) => {

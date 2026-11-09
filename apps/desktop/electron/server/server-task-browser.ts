@@ -5,6 +5,7 @@ import { onErrorEvents } from '@gugu/session-shared';
 import { mkdir } from 'node:fs/promises';
 import type { Readable, Writable } from 'node:stream';
 import { promisify } from 'node:util';
+import type { TaskPageControl, TaskPageState } from '@shared/browser-task-page';
 
 /**
  * #1607 node 4b — a Gugu server's task pages (owner decision 11-08): one headless Chromium ("new" headless) per
@@ -104,7 +105,7 @@ class PageTarget extends EventEmitter implements TaskPageContents {
   private watchSession: string | null = null;
   private mainFrame: string | null = null;
   private loading = false;
-  private history: { entries: { url: string }[]; index: number } = { entries: [], index: -1 };
+  private history: { entries: { url: string }[]; ids: number[]; index: number } = { entries: [], ids: [], index: -1 };
   title = '';
   url = 'about:blank';
 
@@ -117,7 +118,7 @@ class PageTarget extends EventEmitter implements TaskPageContents {
     if (message.method === 'Target.targetDestroyed' && message.params?.targetId === this.targetId) return this.destroy();
     if (message.method === 'Target.targetInfoChanged') {
       const info = message.params?.targetInfo as { targetId?: string; title?: string; url?: string } | undefined;
-      if (info?.targetId === this.targetId) { this.title = info.title ?? this.title; this.url = info.url ?? this.url; }
+      if (info?.targetId === this.targetId) { this.title = info.title ?? this.title; this.url = info.url ?? this.url; this.changed(); }
       return;
     }
     if (message.method === 'Target.detachedFromTarget' && message.params?.sessionId === this.session) {
@@ -176,10 +177,10 @@ class PageTarget extends EventEmitter implements TaskPageContents {
         if (main(params.frameId)) this.emit('did-start-navigation', { isMainFrame: true, url: String(params.url) });
         break;
       case 'Page.frameStartedLoading':
-        if (main(params.frameId)) this.loading = true;
+        if (main(params.frameId)) { this.loading = true; this.changed(); }
         break;
       case 'Page.frameStoppedLoading':
-        if (main(params.frameId)) { this.loading = false; this.emit('did-stop-loading', {}); }
+        if (main(params.frameId)) { this.loading = false; this.emit('did-stop-loading', {}); this.changed(); void this.readTitle(); }
         break;
       case 'Page.frameNavigated': {
         const frame = params.frame as { id?: string; parentId?: string; url?: string; urlFragment?: string } | undefined;
@@ -241,10 +242,58 @@ class PageTarget extends EventEmitter implements TaskPageContents {
   private async readHistory() {
     if (!this.watchSession || this.destroyed) return;
     const read = await this.connection.send('Page.getNavigationHistory', {}, this.watchSession).catch(() => null) as
-      { currentIndex: number; entries: { url: string }[] } | null;
+      { currentIndex: number; entries: { id: number; url: string }[] } | null;
     if (!read) return;
     // A page that has not committed yet reports '' — the same empty document Electron calls about:blank.
-    this.history = { entries: read.entries.map(({ url }) => ({ url: url || 'about:blank' })), index: read.currentIndex };
+    this.history = { entries: read.entries.map(({ url }) => ({ url: url || 'about:blank' })), ids: read.entries.map(({ id }) => id), index: read.currentIndex };
+    this.changed();
+  }
+
+  /** The page's title once it loaded: target info changes are not reported for every title. */
+  private async readTitle() {
+    if (this.destroyed) return;
+    const read = await this.connection.send('Target.getTargetInfo', { targetId: this.targetId }).catch(() => null) as
+      { targetInfo?: { title?: string } } | null;
+    const title = read?.targetInfo?.title;
+    if (typeof title === 'string' && title !== this.title) { this.title = title; this.changed(); }
+  }
+
+  /** What the person's toolbar shows for this page on another computer. */
+  state(): TaskPageState {
+    const { index, ids } = this.history;
+    return { url: this.url, title: this.title, isLoading: this.loading, canGoBack: index > 0, canGoForward: index >= 0 && index < ids.length - 1 };
+  }
+
+  private changed() { if (!this.destroyed) this.emit('state'); }
+
+  /**
+   * The person's toolbar on another computer: what the same toolbar does to a page on their own (go to an address, back,
+   * forward, reload, stop), and the size of the tab it fills there.
+   */
+  async control(control: TaskPageControl): Promise<void> {
+    const session = this.watchSession;
+    if (!session || this.destroyed) throw new Error('the task page was closed');
+    switch (control.action) {
+      case 'navigate': {
+        // The same pages the agent's lease may load: web pages, not this machine's own documents.
+        const protocol = (() => { try { return new URL(control.url).protocol; } catch { return ''; } })();
+        if (protocol !== 'http:' && protocol !== 'https:') throw new Error('Only web pages open here');
+        await this.connection.send('Page.navigate', { url: control.url }, session);
+        return;
+      }
+      case 'back':
+      case 'forward': {
+        const id = this.history.ids[this.history.index + (control.action === 'back' ? -1 : 1)];
+        if (id !== undefined) await this.connection.send('Page.navigateToHistoryEntry', { entryId: id }, session);
+        return;
+      }
+      case 'reload': await this.connection.send('Page.reload', {}, session); return;
+      case 'stop': await this.connection.send('Page.stopLoading', {}, session); return;
+      case 'resize':
+        await this.connection.send('Emulation.setDeviceMetricsOverride',
+          { width: control.width, height: control.height, deviceScaleFactor: control.scale, mobile: false }, session);
+        return;
+    }
   }
 
   readonly navigationHistory = {
@@ -290,8 +339,12 @@ export interface TaskPageScreenTarget {
   startScreen(onFrame: (frame: TaskPageScreenFrame) => void): Promise<void>;
   stopScreen(): Promise<void>;
   input(method: 'Input.dispatchMouseEvent' | 'Input.dispatchKeyEvent' | 'Input.insertText', params: Record<string, unknown>): Promise<unknown>;
+  state(): TaskPageState;
+  control(control: TaskPageControl): Promise<void>;
   isDestroyed(): boolean;
   once(event: 'destroyed', listener: () => void): unknown;
+  on(event: 'state', listener: () => void): unknown;
+  off(event: 'state', listener: () => void): unknown;
 }
 
 export interface ServerTaskBrowser {
