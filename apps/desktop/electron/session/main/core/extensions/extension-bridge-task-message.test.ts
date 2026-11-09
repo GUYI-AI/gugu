@@ -26,7 +26,7 @@ const call = (args: Record<string, unknown>, gesture = true) => handlers.get(EXT
 beforeEach(async () => {
   Object.assign(state, { granted: true, enabled: true, installed: true }); deliver.mockClear();
   unbindExtensionSurface(7);
-  setExtensionBridgeHost({ deliver, presentation: () => ({ locale: 'zh-CN', themeMode: 'light', fullscreen: false, windowFocused: true }) });
+  setExtensionBridgeHost({ deliver, selfGuguNumber: () => undefined, presentation: () => ({ locale: 'zh-CN', themeMode: 'light', fullscreen: false, windowFocused: true }) });
   await bindExtensionSurface({ webContentsId: 7, extensionId: 'task-app', tabId: 'task-tab', tabKind: 'task-app.task', workspace: sessionWorkspace('bound-task') });
 });
 
