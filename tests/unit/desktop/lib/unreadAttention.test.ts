@@ -119,12 +119,14 @@ describe('addressed_count is a required column of list_unread_locators', () => {
     expect(mergeUnreadRows([row('main:topic', 4, 1), row('thread:root', 2, 1)]).get('topic')).toMatchObject({ unread_count: 6, addressed_count: 2 })
   })
 
-  it('keeps the earliest addressed message across streams, and no message when the backend names none', () => {
+  it('lands on the first addressed message of the main stream; a reply thread has no view to land in', () => {
     const addressed = (id: string, seq: number | string) => ({ first_addressed_message_id: id, first_addressed_seq: seq })
     expect(mergeUnreadRows([{ ...row('main:topic', 4, 1), ...addressed('later', 9) }, { ...row('thread:root', 2, 1), ...addressed('earlier', '3') }]).get('topic'))
-      .toMatchObject({ first_addressed_message_id: 'earlier', first_addressed_seq: 3 })
+      .toMatchObject({ first_addressed_message_id: 'later', first_addressed_seq: 9, addressed_count: 2 })
+    expect(mergeUnreadRows([{ ...row('thread:root', 2, 1), ...addressed('earlier', '3') }, { ...row('main:topic', 4, 1), ...addressed('later', 9) }]).get('topic'))
+      .toMatchObject({ first_addressed_message_id: 'later', first_addressed_seq: 9 })
     expect(mergeUnreadRows([row('main:topic', 4, 1), { ...row('thread:root', 2, 1), ...addressed('only', 5) }]).get('topic'))
-      .toMatchObject({ first_addressed_message_id: 'only', first_addressed_seq: 5 })
+      .toMatchObject({ first_addressed_message_id: null, first_addressed_seq: null, addressed_count: 2 })
     expect(mergeUnreadRows([row('main:topic', 4, 1)]).get('topic')).toMatchObject({ first_addressed_message_id: null, first_addressed_seq: null })
   })
 

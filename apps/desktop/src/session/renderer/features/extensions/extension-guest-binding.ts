@@ -7,6 +7,8 @@ export interface ExtensionGuestTarget extends AppWhere {
   tabId: string;
   itemId?: string;
   filePath?: string;
+  /** `filePath` was opened by the host for an agent or an App, not by the person. */
+  byHost?: boolean;
   viewState?: Record<string, unknown>;
   navigation?: { canBack: boolean; canForward: boolean; backToConversation?: boolean };
 }

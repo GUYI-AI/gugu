@@ -64,7 +64,7 @@ export async function packInstalledExtension(
     const { bytes, sha256, manifest } = await packExtensionArchive(service, copy);
     return { bytes, sha256, fileName: `${manifest.id}-${manifest.version}${EXTENSION_ARCHIVE_SUFFIX}`, manifest };
   } finally {
-    fs.rmSync(staging, { recursive: true, force: true });
+    await fs.promises.rm(staging, { recursive: true, force: true });
   }
 }
 

@@ -28,6 +28,12 @@ export type ExtensionsApi = Pick<
   | 'uninstall'
   | 'agentStatus'
   | 'agentTools'
+  | 'agentSkills'
+  | 'appData'
+  | 'clearAppData'
+  | 'setTabHidden'
+  | 'settings'
+  | 'setSettings'
 >;
 
 export type ExtensionsHost = {

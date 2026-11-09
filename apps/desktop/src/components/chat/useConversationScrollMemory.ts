@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react'
 import { rendererLogger } from '../../lib/log'
 import { restoreLanding } from '../../lib/listLanding'
-import type { ListLanding } from '../../lib/flowList'
+import type { FlowListHandle, ListLanding } from '../../lib/flowList'
 import { currentAuthSessionSignal } from '../../lib/authSessionLoss'
 import type { UnreadLocatorCommit } from '../../lib/chatUnreadLocatorWindow'
 import { afterPaint } from '../../lib/afterPaint'
@@ -47,6 +47,7 @@ export function resolveConversationRestoreLocation(
 }
 
 interface UseConversationScrollMemoryOptions {
+  listRef: RefObject<FlowListHandle | null>
   chatId: string | null
   viewportKey: string
   // Conversation-scoped on purpose: an openNonce remount reopens at LAST (#461), it does not replay the saved anchor.
@@ -71,6 +72,7 @@ const REVEAL_VIEWPORT_FRACTION = 0.35
 const LAND_ON_OFFSET = 120
 
 export function useConversationScrollMemory({
+  listRef,
   chatId,
   viewportKey,
   activationKey,
@@ -283,11 +285,12 @@ export function useConversationScrollMemory({
 
     let frame = 0
     let stableFrames = 0
+    const mountedRow = () => Array.from(scroller.querySelectorAll<HTMLElement>('[data-msg-id]'))
+      .find((candidate) => candidate.dataset.msgId === position.messageId)
     const settle = (now: number) => {
       if (restoringActivationRef.current !== activationKey) return
       // @@@6595 列表挂载时在第一次绘制之前就落在这一行(openLocation;锚点后载进来时整列表重挂),这里只核对偏移。
-      const row = Array.from(scroller.querySelectorAll<HTMLElement>('[data-msg-id]'))
-        .find((candidate) => candidate.dataset.msgId === position.messageId)
+      const row = mountedRow()
       if (row) {
         const actualOffset = row.getBoundingClientRect().top - scroller.getBoundingClientRect().top
         const delta = actualOffset - position.offset
@@ -316,6 +319,8 @@ export function useConversationScrollMemory({
       }
       frame = requestAnimationFrame(settle)
     }
+    // 已加载但尚未挂载的行也沿同一个 FlowList 句柄补挂;不为恢复再维护一份切片或位置。
+    if (!mountedRow()) listRef.current?.scrollToIndex({ index: location.index, align: 'start', offset: location.offset })
     // An already loaded target also moves before paint; a window replacement uses openLocation above.
     settle(performance.now())
     return () => {
@@ -326,6 +331,7 @@ export function useConversationScrollMemory({
     activationKey,
     chatId,
     enabled,
+    listRef,
     isAtBottomRef,
     messageIds,
     scrollerEl,

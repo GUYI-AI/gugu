@@ -17,10 +17,19 @@ vi.mock('./summarizeExtensionBundle', () => ({
     return { ok: true, manifest: { id, name: id, version } }
   },
 }))
-// Bytes are read like any attachment's (lib/attachmentBytes): here, the URL's own text.
+// Bytes are read like any attachment's (lib/attachmentBytes): here, the URL's own text, said to arrive in two halves.
+// A copy this device keeps is found by the bytes' sha256.
+const kept = new Map<string, Blob>()
+const download = vi.fn(async (source: { url: string }, ...rest: unknown[]) => {
+  const progress = rest[3] as ((done: number, total: number) => void) | undefined
+  progress?.(1, 2)
+  progress?.(2, 2)
+  return { status: 'ready', blob: new Blob([source.url]) }
+})
 vi.mock('../../lib/attachmentBytes', () => ({
   sourceKeyOf: (source: { url: string }) => `url:${source.url}`,
-  attachmentBytes: async (source: { url: string }) => ({ status: 'ready', blob: new Blob([source.url]) }),
+  attachmentBytes: (source: { url: string }, ...rest: unknown[]) => download(source, ...rest),
+  cachedAttachmentCopy: async (sha256: string | null) => (sha256 ? kept.get(sha256) ?? null : null),
 }))
 
 const pkg = (id: string, version: string) => {
@@ -31,10 +40,14 @@ const pkg = (id: string, version: string) => {
 async function load() {
   vi.resetModules()
   getChatFiles.mockClear()
+  download.mockClear()
   return import('./sharedPackages')
 }
 
-beforeEach(() => files.clear())
+beforeEach(() => {
+  files.clear()
+  kept.clear()
+})
 
 describe('sharedPackagesOf', () => {
   it('everyone asking about one chat shares one read', async () => {
@@ -70,5 +83,29 @@ describe('sharedPackagesOf', () => {
     expect(told).toEqual([])
     await sharedPackagesOf('chat-1', 'me')
     expect(getChatFiles).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('summaryOf', () => {
+  it('a copy this device keeps is read from disk: no download', async () => {
+    const { summaryOf } = await load()
+    const vote = pkg('vote', '1.0.0')
+    kept.set('sha-vote', new Blob([vote.source.url]))
+    expect(await summaryOf(vote, 'sha-vote')).toMatchObject({ ok: true, manifest: { id: 'vote', version: '1.0.0' } })
+    expect(download).not.toHaveBeenCalled()
+  })
+
+  it('a download tells the cards watching it how far it has come, until they stop watching', async () => {
+    const { summaryOf, watchReading } = await load()
+    const vote = pkg('vote', '1.0.0')
+    const seen: number[][] = []
+    const stop = watchReading(vote, (done, total) => seen.push([done, total]))
+    await summaryOf(vote, 'sha-not-kept')
+    expect(seen).toEqual([[1, 2], [2, 2]])
+    stop()
+    const poll = pkg('poll', '1.0.0')
+    watchReading(poll, () => undefined)()
+    await summaryOf(poll)
+    expect(seen).toHaveLength(2)
   })
 })

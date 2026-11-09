@@ -79,8 +79,8 @@ it.each([false, true])('keeps phone history stable while typing with rejected in
     await act(async () => { transcript.commands?.editingMessage?.onCancel() })
     expect(transcript.commands?.editingMessage).toBeUndefined()
   } else {
-    expect(flush).toHaveBeenCalledExactlyOnceWith(true)
-    expect(retry).not.toHaveBeenCalled()
+    expect(retry).toHaveBeenCalledExactlyOnceWith('ordinary-failure')
+    expect(flush).not.toHaveBeenCalled()
   }
 })
 

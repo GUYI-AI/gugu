@@ -1,9 +1,9 @@
 // @@@mise-archive-cache (#6258) — 内置 mise 归档按「sha256 / 文件名」内容寻址存一份,命中就不访问网络。
 //
-// 每次构建现从 github.com 拉一个第三方二进制,一次断连(curl 55 Broken pipe)就把 required 聚合打红;
+// 每次构建从自有 vendor 存储取固定归档,一次断连(curl 55 Broken pipe)就把 required 聚合打红;
 // 版本与 sha256 早已入库(mise-release.json),缺的是「拿过一次就别再拿」。CI 上由 setup-ci-slot 指到
 // 全机共用的 ~/.gugu-ci-shared/mise(16 个槽共一份,理由同 fixture-bin #5360);本地落在 XDG 缓存下。
-// 下载源可换(GUGU_MISE_DOWNLOAD_BASE,镜像用),但只认入库的 sha256。拿不到就响亮失败并报出来源,
+// mise 构建只用自有 vendor 根;通用归档调用方显式传自己的来源。只认入库的 sha256,拿不到就响亮失败,
 // ❌ 重试到绿、❌ 换来源兜底。
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-export const DEFAULT_MISE_DOWNLOAD_BASE: string = 'https://github.com/jdx/mise/releases/download'
+export const DEFAULT_MISE_DOWNLOAD_BASE: string = 'https://download.gugu.nextmind.space/releases/vendor/mise'
 
 export function defaultMiseCacheDir(env: Record<string, string | undefined> = process.env): string {
   return env.GUGU_MISE_CACHE_DIR || join(env.XDG_CACHE_HOME || join(homedir(), '.cache'), 'gugu', 'mise')

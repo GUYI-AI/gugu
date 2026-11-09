@@ -144,7 +144,7 @@ const QUOTA_STYLE = `
 .aqs-tok:not([data-disabled]):hover .aqs-state{text-decoration:underline;text-underline-offset:2px}
 .aqs-tok[data-disabled]{opacity:1;cursor:default}
 .aqs-nm{color:var(--faint-fg)}
-.aqs-state{color:var(--warn);font-weight:500}
+.aqs-state{color:var(--warn-fg);font-weight:500}
 `
 
 const turnFailureLog = rendererLogger('agent/turn-failure')

@@ -53,9 +53,21 @@ export async function openPhoneAgentStore(root, ownerId) {
   return { directory, state, save, flush: () => writing }
 }
 
+/** New inbox jobs belong to a recipient/source pair. Keep an already admitted legacy
+ * chat job at its original ID so upgrading cannot replay a completed or interrupted turn. */
+export function phoneInboxJobId(store, agentUserId, sourceMessageId) {
+  uuid(agentUserId, 'agentUserId')
+  uuid(sourceMessageId, 'sourceMessageId')
+  const legacy = store.state.jobs[sourceMessageId]
+  if (legacy?.agentUserId === agentUserId && legacy.route?.kind === 'chat' && legacy.route.sourceMessageId === sourceMessageId) return sourceMessageId
+  return stableId('phone-inbox', agentUserId, sourceMessageId)
+}
+
 export async function admitPhoneJob(store, input) {
   uuid(input.id, 'job id')
   uuid(input.agentUserId, 'agentUserId')
+  const existing = store.state.jobs[input.id]
+  if (existing && existing.agentUserId !== input.agentUserId) throw new Error('phone job id belongs to another agent')
   const job = store.state.jobs[input.id] ?? { ...input, status: 'queued', createdAt: new Date().toISOString() }
   store.state.jobs[input.id] = job
   // A prior save may have failed after admission entered memory. A duplicate is acknowledged

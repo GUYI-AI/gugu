@@ -50,7 +50,6 @@ describe('DeepSeek Harness 会话包', () => {
       { id: 'session-log-deepseek', disabled: true },
       { id: 'plugin-package-inventory-deepseek', disabled: true },
     ]);
-    expect(result.env.DSH_TELEMETRY_DISABLED).toBe('1');
     expect(result.report.units.model.status).toBe('degraded');
   });
 

@@ -2,7 +2,7 @@
 // 云上那一份由管家在那台机器上写(gugu-supabase services/cloud-computer),这里照同一份说明(@gugu/core/shared/assistantPolicy)写本机这份,
 // 只是位置不同:人自己的 ~/.claude 是他自己的 Claude Code 每个会话都读的,❌ 往里写 —— 一切都在它的工作目录里(项目级说明 / 设置 / 记忆),
 // Claude Code 认的那一夹记忆目录链到那里。不依赖 electron,可单测。
-import { lstat, mkdir, readdir, readFile, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readdir, readlink, rename, rm, symlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { resolveGuguHome } from '@gugu/core/local/state/paths'
@@ -16,25 +16,9 @@ import {
 import type { PrepareLocalHomeInput, PrepareLocalHomeResult, WipeLocalHomeResult } from '../src/lib/assistantHomeIpc'
 import { createLogger } from './lib/logger'
 import { refreshAssistantContext } from './sessionpage/assistant-instructions'
+import { readAssistantFile, writeAssistantFile } from './sessionpage/assistant-files'
 
 const log = createLogger('assistant-home')
-
-async function readOrNull(path: string): Promise<string | null> {
-  try {
-    return await readFile(path, 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
-  }
-}
-
-/** 先写临时文件再换上去:写到一半崩了也不留半截说明 / 半截设置。 */
-async function writeAtomic(path: string, content: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  const tmp = `${path}.${process.pid}.tmp`
-  await writeFile(tmp, content, 'utf8')
-  await rename(tmp, path)
-}
 
 /**
  * Claude Code 认的那一夹(`~/.claude/projects/<目录名>/memory`)链到它家里的 `.claude/memory`。
@@ -108,8 +92,8 @@ export async function prepareLocalAssistantHome(
   await refreshAssistantContext(workdir, env.guguHome ?? resolveGuguHome(), 'computer', home, input.engine)
   const profile = input.ownerProfile?.trim()
   if (profile) {
-    await writeAtomic(join(paths.memoryDir, OWNER_PROFILE_MEMORY_FILE), ownerProfileMemoryFile(profile))
-    await writeAtomic(paths.memoryIndex, withOwnerProfileIndex(await readOrNull(paths.memoryIndex)))
+    await writeAssistantFile(join(paths.memoryDir, OWNER_PROFILE_MEMORY_FILE), ownerProfileMemoryFile(profile))
+    await writeAssistantFile(paths.memoryIndex, withOwnerProfileIndex(await readAssistantFile(paths.memoryIndex)))
   }
   log.info({ workdir, wroteProfile: !!profile }, 'local assistant home prepared')
   return { workdir, home }

@@ -16,7 +16,7 @@ const electron = vi.hoisted(() => ({
 }))
 vi.mock('electron', () => ({
   contextBridge: { exposeInMainWorld: (name: string, api: unknown) => void (electron.exposed[name] = api) },
-  ipcRenderer: { invoke: electron.invoke, on: electron.on, removeListener: () => undefined, sendSync: () => 'light' },
+  ipcRenderer: { invoke: electron.invoke, on: electron.on, removeListener: () => undefined, sendSync: () => ({ theme: 'light' }) },
 }))
 
 const activation = { isActive: false }

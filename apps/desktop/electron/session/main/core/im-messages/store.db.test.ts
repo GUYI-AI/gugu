@@ -62,6 +62,17 @@ describe('durable local IM messages', () => {
     integrity()
   })
 
+  it('keeps stored reactions and refusals when a body-only row rewrites the message; an explicit overlay replaces them', async () => {
+    const store = createImMessageStore(fixture.sqlite)
+    const reactions = [{ emoji: '👍', count: 1, my_reaction: true }]
+    const blocks = [{ agent_user_id: 'agent-a', reason: 'agent_archived' as const }]
+    store.ingest(account, batch(message('one', 'orchid original', 1, { reactions, delivery_blocks: blocks })))
+    store.ingest(account, batch(message('one', 'violet revised')))
+    expect(store.windows(account, ['chat-a'], 1)[0]).toMatchObject({ content: 'violet revised', reactions, delivery_blocks: blocks })
+    store.ingest(account, batch(message('one', 'violet revised', 1, { reactions: [], delivery_blocks: [] })))
+    expect(store.windows(account, ['chat-a'], 1)[0]).toMatchObject({ reactions: [], delivery_blocks: [] })
+  })
+
   it('keeps the explicit integer row IDs and FTS mappings stable across VACUUM', async () => {
     const store = createImMessageStore(fixture.sqlite)
     store.ingest(account, batch(message('removed'), message('kept', 'violet survivor', 2)))

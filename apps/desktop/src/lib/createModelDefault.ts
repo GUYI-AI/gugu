@@ -1,7 +1,7 @@
 import type { SessionpageSessionCreateModels } from '@gugu/session-core/session-record/contract'
-import { offeredInModelPicker } from '@/session/shared/core/agents/platform-model'
-import { DEFAULT_FREE_PLATFORM_MODEL, DEFAULT_PLATFORM_MODEL_BY_PROVIDER } from '@/session/shared/core/sessions/new-session-defaults'
-import { platformOptionId } from '@/session/shared/platform-model-id'
+import { offeredInModelPicker } from '../session/shared/core/agents/platform-model'
+import { DEFAULT_FREE_PLATFORM_MODEL, DEFAULT_PLATFORM_MODEL_BY_PROVIDER } from '../session/shared/core/sessions/new-session-defaults'
+import { platformOptionId } from '../session/shared/platform-model-id'
 
 /**
  * 远端建 agent 时(#6264)模型的默认值,与桌面创建框同一条规则:

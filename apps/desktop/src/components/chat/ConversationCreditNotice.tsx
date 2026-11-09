@@ -26,7 +26,7 @@ function AccountCreditNotice({ userId }: { userId: string }) {
   const { t } = useTranslation('settings')
   const credits = power?.spendable
   if (credits === undefined || !isLowBalance(credits)) return null
-  return <div data-testid="conversation-credit-notice" role="status"
+  return <div data-testid="conversation-credit-notice" data-composer-top-band="credit" role="status"
     style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', padding: '4px 0', overflowWrap: 'anywhere' }}>
     {t('lowBalance.remaining', { credits: formatCredits(credits), count: creditCount(credits) })}
     {' · '}

@@ -4,15 +4,14 @@ import { messageActionItems } from './messageActionItems'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { bindFileViewerMenu } from '../preview/file-viewer-menu'
 import { quoteChatFile, selectedTextQuote } from '../preview/quote-preview-file'
-import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
+import { isMpegTsVideo, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { downloadBlob } from '../../lib/download'
 import { attachmentBytes, attachmentPreview, openAttachmentInSystemApp, sourceKeyOf } from '../../lib/attachmentBytes'
+import { FileReadRevokedError } from '@gugu/core/shared/fileResolver'
 import { rendererLogger } from '../../lib/log'
-import { offlineHolder } from '../../lib/fileHost'
-import { useDevicesStore } from '../../store/devicesContext'
-import { isDeviceOnline } from '@gugu/core/shared/enums/deviceModels'
+import { holderOfflineText, offlineHolder, useHolderBack } from '../../lib/fileHost'
 import { messageForUser } from '../../lib/userFacingError'
 import { useToast } from '../toastContext'
 import { MessageFilePreviewPanel } from './MessageFilePreviewPanel'
@@ -21,6 +20,7 @@ import { savedFileName } from '../../session/shared/extensions/app-runtime-proto
 import { chatFolderPreview } from '../preview/chat-folder-preview-registration'
 import type { HtmlPreviewRegistration } from '../preview/HtmlPreviewFrame'
 import type { FileViewerSelection } from '@/session/shared/preview/file-viewer-menu'
+import { useFilePlace } from '../preview/file-place'
 
 const fileOpenLog = rendererLogger('chat/file-open')
 
@@ -52,18 +52,21 @@ export interface HostedPreviewSource {
 }
 export type HostedPreviewFile = Omit<PreviewFile, 'source' | 'document'> & { source: HostedPreviewSource; document?: undefined }
 
-/** 预览要读的那份字节:经 lib/attachmentBytes(签名链接 + Cache Storage);条目删了就说出来。 */
-async function previewBytes(file: PreviewFile | HostedPreviewFile, progress?: (done: number, total: number) => void): Promise<Blob> {
-  if (file.source.kind === 'hosted') return file.source.read()
+/**
+ * 预览要读的那份字节:经 lib/attachmentBytes(签名链接 + Cache Storage);条目删了就说出来。
+ * shown:先显示、后核验,`acknowledged` 失败时由显示它的预览撤下;下载不走这条。progress:读到哪了(预览的进度条)。
+ */
+async function previewBytes(file: PreviewFile | HostedPreviewFile, options: { shown?: true; progress?: (done: number, total: number) => void } = {}): Promise<{ blob: Blob; acknowledged?: Promise<void> }> {
+  if (file.source.kind === 'hosted') return { blob: await file.source.read() }
   if (file.document && file.source.kind === 'item') {
     const { readChatFolderText } = await import('../../lib/chatFolder')
     const document = await readChatFolderText({ id: file.source.itemId })
     if (!document) throw new Error('gone')
-    return new Blob([document.text], { type: file.mimeType })
+    return { blob: new Blob([document.text], { type: file.mimeType }) }
   }
-  const bytes = await attachmentBytes(file.source, 'full', undefined, undefined, progress)
+  const bytes = await attachmentBytes(file.source, options.shown ? 'shown' : 'full', undefined, undefined, options.progress)
   if (bytes.status !== 'ready') throw new Error(bytes.status)
-  return bytes.blob
+  return bytes
 }
 
 /**
@@ -71,8 +74,9 @@ async function previewBytes(file: PreviewFile | HostedPreviewFile, progress?: (d
  * ranges); anything else, its bytes — as text for what is read as text. A file gone throws `gone`. The chat's preview and
  * a peek beside an App (AppPeek) read it this one way.
  */
-type PreviewRead = { content: string | ArrayBuffer | null; videoUrl?: string; expiresAt?: number; renew?: () => Promise<{ videoUrl: string; expiresAt: number }>; release?: () => Promise<void>; error?: string; errorStatus?: 'gone' | 'expired' | 'missing' | 'failed' }
+type PreviewRead = { content: string | ArrayBuffer | null; binary?: boolean; acknowledged?: Promise<void>; videoUrl?: string; expiresAt?: number; renew?: () => Promise<{ videoUrl: string; expiresAt: number }>; release?: () => Promise<void>; error?: string; errorStatus?: 'gone' | 'expired' | 'missing' | 'failed' }
 function previewFailure(error: unknown, t: TFunction<'messaging'>): PreviewRead {
+  if (error instanceof FileReadRevokedError && (error.reason === 'access' || error.reason === 'revision')) return { content: null, errorStatus: 'failed', error: t(error.reason === 'access' ? 'attachmentView.fileNoAccess' : 'attachmentView.fileUpdated') }
   const errorStatus = error instanceof Error && (error.message === 'gone' || error.message === 'expired' || error.message === 'missing') ? error.message : 'failed'
   return { content: null, errorStatus, error: t(errorStatus === 'gone' ? 'attachmentView.fileGone' : errorStatus === 'expired' ? 'attachmentView.fileExpired' : errorStatus === 'missing' ? 'attachmentView.fileMissing' : 'attachmentView.fileUnavailable') }
 }
@@ -94,12 +98,15 @@ async function readPreview(file: PreviewFile | HostedPreviewFile, kind: Document
     const release = async () => { if (objectUrl) URL.revokeObjectURL(objectUrl); await preview.dispose() }
     try { return { content: null, ...await renew(), renew, release } } catch (error) { await release(); throw error }
   }
-  const blob = await previewBytes(file, progress)
+  const { blob, acknowledged } = await previewBytes(file, { shown: true, progress })
   if (kind === 'image') {
     const content = URL.createObjectURL(blob)
-    return { content, release: async () => URL.revokeObjectURL(content) }
+    return { content, acknowledged, release: async () => URL.revokeObjectURL(content) }
   }
-  return { content: kind === 'text' || kind === 'markdown' || kind === 'html' ? await blob.text() : await blob.arrayBuffer() }
+  // A `.ts` / `.mts` is TypeScript or a recording whatever type it was stored with; only its bytes tell. A recording is shown
+  // like any video this preview cannot play.
+  if (kind === 'text' && await isMpegTsVideo(file.fileName, blob)) return { content: null, binary: true, acknowledged }
+  return { content: kind === 'text' || kind === 'markdown' || kind === 'html' ? await blob.text() : await blob.arrayBuffer(), acknowledged }
 }
 
 /** The host's preview wherever a file opens: messages, the chat's folder and an App's peek. */
@@ -130,17 +137,11 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   // A chat folder's HTML document is given its folder: the files its page names beside it are shown (preview-protocol).
   const [besideOffline, setBesideOffline] = useState<{ machine: string; deviceId: string } | null>(null)
   // The machine a failed read waits for: when the device list sees it go from off to on, the file is read again by itself.
-  const [waitingFor, setWaitingFor] = useState<string | null>(null)
+  const [waitingFor, setWaitingFor] = useState<{ deviceId: string; itemId?: string; version?: number } | null>(null)
   const [attempt, setAttempt] = useState(0)
-  const { devices } = useDevicesStore()
-  const seenOff = useRef(false)
-  useEffect(() => {
-    if (!waitingFor) { seenOff.current = false; return }
-    const online = devices.some((device) => device.device_id === waitingFor && isDeviceOnline(device.status))
-    if (!online) { seenOff.current = true; return }
-    if (seenOff.current) { seenOff.current = false; setWaitingFor(null); setBesideOffline(null); setAttempt((n) => n + 1) }
-  }, [devices, waitingFor])
+  useHolderBack(waitingFor, () => { setWaitingFor(null); setBesideOffline(null); setAttempt((n) => n + 1) })
   const itemId = file.source.kind === 'item' ? file.source.itemId : null
+  const at = useFilePlace(itemId)
   const hostedHtml = file.source.kind === 'hosted' ? file.source.registerHtml : undefined
   const registerHtml = useMemo(() => {
     if (hostedHtml) return hostedHtml
@@ -151,7 +152,7 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
       outside: t('attachmentView.besideOutside'),
       offline: t('attachmentView.besideOffline'),
       palette: { surface: style.getPropertyValue('--bg-secondary').trim(), border: style.getPropertyValue('--border-strong').trim(), text: style.getPropertyValue('--text-secondary').trim() },
-    }, (holder) => { setBesideOffline(holder); setWaitingFor(holder.deviceId) })
+    }, (holder) => { setBesideOffline(holder); setWaitingFor(holder) })
   }, [hostedHtml, itemId, t])
   useEffect(() => {
     activeKey.current = key
@@ -160,13 +161,19 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
     setFraction(undefined)
     const source = file.source
     if (kind !== 'unsupported') void readPreview(file, kind, (done, total) => { if (live && total > 0) setFraction(done / total) }).then(
-      (done) => { release = done.release; if (!live) { void release?.(); return } setRead(done) },
+      (done) => {
+        release = done.release
+        // Shown before the server acknowledged the read: a refusal takes it down and says why.
+        done.acknowledged?.catch((error) => { if (!live) return; void release?.(); release = undefined; setRead(previewFailure(error, t)) })
+        if (!live) { void release?.(); return }
+        setRead(done)
+      },
       async (error) => {
         // A project file kept on a machine that is off now says so, from a fresh read of where it is kept.
         const offline = source.kind === 'item' ? await offlineHolder(source.itemId, source.version) : null
         if (!live) return
-        setWaitingFor(offline?.deviceId ?? null)
-        setRead(offline !== null ? { content: null, errorStatus: 'failed', error: t('attachmentView.holderOffline', { machine: offline.machine || t('attachmentView.holderMachine') }) } : previewFailure(error, t))
+        setWaitingFor(offline)
+        setRead(offline !== null ? { content: null, errorStatus: 'failed', error: holderOfflineText(offline) } : previewFailure(error, t))
       },
     )
     return () => { live = false; void release?.() }
@@ -205,7 +212,7 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   const download = () => {
     if (missing) return
     if (file.source.kind === 'hosted') { file.source.download(); return }
-    void previewBytes(file).then((blob) => downloadBlob(blob, savedName)).catch((error) => {
+    void previewBytes(file).then(({ blob }) => downloadBlob(blob, savedName)).catch((error) => {
       if (rememberMissing(error)) return
       fileOpenLog.error({ error }, 'preview file download failed'); toast(t('chatArea.downloadFailed'), 'error', messageForUser(error))
     })
@@ -214,5 +221,6 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   if (file.source.kind === 'hosted' && !missing) for (const app of file.source.openIn ?? []) actions.push({ key: `open-in-${app.key}`, icon: SquareArrowRight, label: app.label, onSelect: app.open })
   const notice = besideOffline ? t('attachmentView.besideOfflineNotice', { machine: besideOffline.machine || t('attachmentView.holderMachine') }) : undefined
   // `key`: a read again (the machine back) gives the HTML preview a new registration, so its files are asked for again.
-  return <MessageFilePreviewPanel key={attempt} {...(file.source.kind === 'hosted' ? { folders: file.source.folders, unreadableAction: file.source.unreadableAction, ...(file.source.edit ? { onEdit: file.source.edit } : {}) } : {})} notice={notice} registerHtml={registerHtml} viewerRef={viewerRef} fill={fill} tabbed={tabbed} mobile={mobile} file={file} kind={kind} content={read?.content ?? null} videoUrl={read?.videoUrl} onVideoError={renewVideo} loading={kind !== 'unsupported' && read === null} {...(fraction === undefined ? {} : { loadingFraction: fraction })} error={read?.error} onBack={onBack} onClose={onClose} actions={actions} onOpenExternal={missing || file.document || (file.source.kind === 'hosted' ? !file.source.openExternal : kind === 'unsupported') ? undefined : openExternal} />
+  const shown = read?.binary ? 'unsupported' : kind
+  return <MessageFilePreviewPanel key={attempt} {...(file.source.kind === 'hosted' ? { folders: file.source.folders, unreadableAction: file.source.unreadableAction, ...(file.source.edit ? { onEdit: file.source.edit } : {}) } : {})} notice={notice} registerHtml={registerHtml} at={at} viewerRef={viewerRef} fill={fill} tabbed={tabbed} mobile={mobile} file={file} kind={shown} content={read?.content ?? null} videoUrl={read?.videoUrl} onVideoError={renewVideo} loading={kind !== 'unsupported' && read === null} {...(fraction === undefined ? {} : { loadingFraction: fraction })} error={read?.error} onBack={onBack} onClose={onClose} actions={actions} onOpenExternal={missing || file.document || (file.source.kind === 'hosted' ? !file.source.openExternal : shown === 'unsupported') ? undefined : openExternal} />
 }

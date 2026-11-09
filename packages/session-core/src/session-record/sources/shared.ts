@@ -150,6 +150,14 @@ export function emitJsonLines(
   if (batch.length > 0) sink(batch);
 }
 
+/** A snapshot would not fit the host's heap. Nothing partial is returned: the caller treats this history as unknown. */
+export class SessionRecordTooLargeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SessionRecordTooLargeError';
+  }
+}
+
 /** 定位失败一律抛这个：上层要能把「没这份记录」和「解析炸了」分开报给用户。 */
 export class SessionRecordNotFoundError extends Error {
   constructor(

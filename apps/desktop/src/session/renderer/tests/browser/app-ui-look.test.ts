@@ -130,9 +130,9 @@ describe('an App page with gugu\'s look', () => {
       await until(`the theme is ${themeMode}`, () => document.documentElement.dataset.guguTheme === themeMode);
       // The label colour has a transition: if it were theme-bound (the ink's inverse), its old value would still read
       // white on the first frames after the switch. So wait for it to settle, then compare — a quick match proves nothing.
-      await untilStable(`danger label settles in ${themeMode}`, () => css(danger, 'color'));
+      await untilStable(`danger button settles in ${themeMode}`, () => `${css(danger, 'color')} ${css(danger, 'background-color')}`);
       expect(css(danger, 'color')).toBe(white);
-      expect(css(danger, 'background-color')).toBe(tokenColor('--em-foreground-destructive'));
+      expect(css(danger, 'background-color')).toBe(tokenColor('--em-danger-solid'));
     }
   });
 
@@ -370,7 +370,7 @@ describe('the App primitives\' interaction states, like the host\'s (#7333)', ()
       await setTheme(themeMode);
       for (const [id, label, fill] of [
         ['icon-primary', '--em-accent-contrast', '--em-accent-9'],
-        ['icon-danger', '--em-color-white', '--em-foreground-destructive'],
+        ['icon-danger', '--em-color-white', '--em-danger-solid'],
       ] as const) {
         const button = byId(id);
         const ink = { color: tokenColor(label, 'color'), background: tokenColor(fill) };

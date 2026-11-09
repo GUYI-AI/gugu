@@ -621,7 +621,7 @@ describe('an App program as a caller of its App (F16)', () => {
   });
 
   it('getContext: who it is for, never where — no tab, no session, no chat', async () => {
-    setExtensionBridgeHost({ deliver: async () => undefined, presentation: () => ({ locale: 'zh-CN', themeMode: 'dark', fullscreen: false, windowFocused: true }) });
+    setExtensionBridgeHost({ deliver: async () => undefined, selfGuguNumber: () => undefined, presentation: () => ({ locale: 'zh-CN', themeMode: 'dark', fullscreen: false, windowFocused: true }) });
     granted.add('files:read');
     const child = fakeChild();
     attachProgramSurface('board', child as unknown as ChildProcess);

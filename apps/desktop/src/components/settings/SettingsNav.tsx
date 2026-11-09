@@ -39,7 +39,7 @@ type NavGroupId = SettingsGroupId | 'diagnostics'
 const DESKTOP_NAV_GROUPS: readonly { id: NavGroupId; sections: readonly ActiveSection[] }[] = [
   { id: 'account', sections: ['account', 'subscriptions', 'usage'] },
   { id: 'assistant', sections: ['assistant', 'connectors'] },
-  { id: 'preferences', sections: ['general', 'interface', 'model', 'permissions'] },
+  { id: 'preferences', sections: ['general', 'interface', 'model', 'permissions', 'passwords'] },
   { id: 'work', sections: ['sessions', 'devices', 'browser', 'files'] },
   { id: 'diagnostics', sections: ['resource-monitor', 'about'] },
 ]
@@ -137,6 +137,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'connectors', labelKey: 'settings.nav.connectors', il: <Plug size={15} />, ib: <PlugFilled size={15} /> },
   { key: 'account', labelKey: 'settings.nav.account', il: <IlAccount />, ib: <IbAccount /> },
   { key: 'general', labelKey: 'settings.nav.general', il: <IlGeneral />, ib: <IbGeneral /> },
+  { key: 'passwords', labelKey: 'settings.nav.passwords', il: <IlPermissions />, ib: <IbPermissions /> },
   { key: 'permissions', labelKey: 'settings.nav.permissions', il: <IlPermissions />, ib: <IbPermissions /> },
   { key: 'devices', labelKey: 'settings.nav.devices', il: <IlDevices />, ib: <IbDevices /> },
   { key: 'model',   labelKey: 'settings.nav.model', il: <SidebarMinimalistic size={15} />,   ib: <IbModel />   },

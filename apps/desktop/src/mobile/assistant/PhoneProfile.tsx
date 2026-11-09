@@ -78,7 +78,7 @@ export function PhoneProfile(input: PhonePageProps) {
         {renaming && opened
           ? <div className="ta-page-head"><div className="min-w-0 flex-1">
             <DeviceRenameField label={opened.label} onSave={(next) => void deviceRename.save(opened, next)} onCancel={deviceRename.cancel} />
-            {renameFailed && <p className="ta-page-sub text-[var(--danger)]">{renameFailed}</p>}
+            {renameFailed && <p className="ta-page-sub text-[var(--danger-fg)]">{renameFailed}</p>}
           </div></div>
           : <PageHead title={title} action={opened && (
             <IconButton aria-label={settings('devices.menu.rename')} title={settings('devices.menu.rename')} data-testid="settings-device-actions-rename" onClick={() => deviceRename.start(opened)}>

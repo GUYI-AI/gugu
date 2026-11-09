@@ -12,7 +12,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const local = vi.hoisted(() => {
   const fn = <T,>(value: T) => vi.fn(async () => value);
   return {
-    promptLibrary: { get: fn([{ id: 'local-prompt', title: 'L', text: 'l' }]), update: fn(undefined) },
     integrations: {
       list: fn([]),
       connect: fn({ success: true }),
@@ -30,7 +29,6 @@ const local = vi.hoisted(() => {
 const machine = vi.hoisted(() => {
   const calls: Array<[string, string, unknown[]]> = [];
   const answer = (verb: string): unknown => {
-    if (verb === 'promptLibrary.get') return [{ id: 'd22-prompt', title: 'R', text: 'r' }];
     if (verb === 'integrations.list') return [{ id: 'linear', name: 'Linear', features: [] }];
     if (verb === 'agents.listManagement') return [{ id: 'codex', name: 'Codex', reading: 'installed' }];
     if (verb.startsWith('agents.list') || verb.startsWith('github.list')) return [];
@@ -68,7 +66,6 @@ vi.mock('@renderer/features/settings/components/ExtensionsSettingsCard', () => (
 }));
 
 const { createRemoteLibraryHost, LibraryHostProvider } = await import('./library-host');
-const { usePromptLibrary } = await import('./prompts/use-prompt-library');
 const { IntegrationsProvider, useIntegrationsContext } = await import(
   '@renderer/features/integrations/integrations-provider'
 );
@@ -77,7 +74,6 @@ const { useManagementAgents } = await import('@renderer/lib/stores/use-agents');
 const { ExtensionsLibraryPage } = await import('./extensions-library-page');
 
 type Seen = {
-  prompts: ReturnType<typeof usePromptLibrary>;
   integrations: ReturnType<typeof useIntegrationsContext>;
   github: ReturnType<typeof useGitHubAccounts>;
   agents: ReturnType<typeof useManagementAgents>;
@@ -85,7 +81,6 @@ type Seen = {
 
 function Probe({ onReady }: { onReady: (seen: Seen) => void }) {
   onReady({
-    prompts: usePromptLibrary(),
     integrations: useIntegrationsContext(),
     github: useGitHubAccounts(),
     agents: useManagementAgents(),
@@ -140,7 +135,7 @@ describe('资源库的机器选择管整个模块:每一格都跟着它(#6264)',
 
   const probe = () => React.createElement(Probe, { onReady: (value: Seen) => void (seen = value) });
 
-  it('选了 d22:提示词、集成(含连没连上)、GitHub、智能体全去 d22,本机一问都不发', async () => {
+  it('选了 d22:集成(含连没连上)、GitHub、智能体全去 d22,本机一问都不发(提示词是账号的,不在这里)', async () => {
     const host = createRemoteLibraryHost({ deviceId: 'd22', deviceLabel: 'Linux 1', online: true, lastSeenAt: null });
     await render(
       React.createElement(
@@ -158,7 +153,6 @@ describe('资源库的机器选择管整个模块:每一格都跟着它(#6264)',
         'integrations.checkAllConnections',
         'integrations.checkConfiguredConnections',
         'integrations.list',
-        'promptLibrary.get',
       ].sort()
     );
     expect(machine.calls.every((call) => call[0] === 'd22')).toBe(true);
@@ -167,24 +161,10 @@ describe('资源库的机器选择管整个模块:每一格都跟着它(#6264)',
     expect(machine.calls.find((call) => call[1] === 'integrations.list')?.[2]).toEqual([
       getSessionLocaleSnapshot().resolvedLocale,
     ]);
-    expect(local.promptLibrary.get).not.toHaveBeenCalled();
     expect(local.integrations.checkAllConnections).not.toHaveBeenCalled();
     expect(local.github.listAccounts).not.toHaveBeenCalled();
     expect(local.agents.listManagement).not.toHaveBeenCalled();
-    expect(seen?.prompts.value.map((p) => p.id)).toEqual(['d22-prompt']);
     expect(seen?.integrations.integrations.map((i) => i.id)).toEqual(['linear']);
-  });
-
-  it('选了 d22 再写:提示词写回的是 d22 那一份', async () => {
-    const host = createRemoteLibraryHost({ deviceId: 'd22', deviceLabel: 'Linux 1', online: true, lastSeenAt: null });
-    await render(
-      React.createElement(LibraryHostProvider, { value: host }, React.createElement(IntegrationsProvider, null, probe()))
-    );
-    await settle();
-    act(() => seen!.prompts.update([{ id: 'new', title: 'N', text: 'n' } as never]));
-    await settle();
-    expect(machine.calls).toContainEqual(['d22', 'promptLibrary.update', [[{ id: 'new', title: 'N', text: 'n' }]]]);
-    expect(local.promptLibrary.update).not.toHaveBeenCalled();
   });
 
   it('d22 离线:哪一格都不去问(问不到只会挂满超时)', async () => {
@@ -199,11 +179,9 @@ describe('资源库的机器选择管整个模块:每一格都跟着它(#6264)',
   it('没挂资源库机器的地方(输入框的「添加上下文」、聊天里的 @issue)= 本机', async () => {
     await render(React.createElement(IntegrationsProvider, null, probe()));
     await settle();
-    expect(local.promptLibrary.get).toHaveBeenCalled();
     expect(local.integrations.list).toHaveBeenCalled();
     expect(local.integrations.checkAllConnections).toHaveBeenCalled();
     expect(local.github.listAccounts).toHaveBeenCalled();
-    expect(seen?.prompts.value.map((p) => p.id)).toEqual(['local-prompt']);
   });
 
   it('扩展:看咕咕 server 时是那台的卡片(161 10-15:server 照样装 App,人在这里看、卸),上头如实说它没有窗口', async () => {

@@ -1,19 +1,18 @@
 <div align="center">
 <a id="readme-top"></a>
 
-# Gugu 咕咕
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-logo-dark-20261108.png">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-logo-light-20261108.png" width="300" alt="Gugu 咕咕">
+</picture>
 
-**Gugu is an application built for AGI.**
+# An application built for AGI.
 
-### Let an Agent do the work.
-
-Hand a task to an Agent. It calls on tools and devices as needed, coordinates the work and brings back the result.
+AGI won’t arrive alone. It will arrive as a swarm. gugu connects your agents and your people: sharing context, handing off work, thinking together.
 
 **English** · [简体中文](README.zh-CN.md) · [About Gugu](#about-gugu) · [Website](https://gugu.nextmind.space/en/) · [Docs](https://gugu.nextmind.space/help/en/) · [Compare products](https://gugu.nextmind.space/help/en/comparison/overview/) · [WeChat group](#community)
 
 [![Claude Code](https://img.shields.io/badge/agent-Claude%20Code-C76B4A?style=flat-square)](#key-features) [![Codex](https://img.shields.io/badge/agent-Codex-252525?style=flat-square)](#key-features) [![MCP](https://img.shields.io/badge/tools-MCP-6A50D4?style=flat-square)](#key-features) [![Skills](https://img.shields.io/badge/workflows-Skills-328788?style=flat-square)](#key-features) [![Gugu Apps](https://img.shields.io/badge/extensions-Gugu%20Apps-E58F28?style=flat-square)](#key-features)
-
-<img src="https://github.com/OpenDCAI/gugu/releases/download/assets/gugu-readme-banner-en-20261031-v66.webp" width="100%" alt="Gugu 咕咕">
 
 </div>
 
