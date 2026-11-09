@@ -8,6 +8,7 @@ import type { WindowLivePositionRequest, WindowLivePositionResult } from '@gugu/
 import { withStoredTurns } from '../sessions/session-turn-store';
 import { pendingWindowCommitDelivery } from './window-commit-delivery';
 import { lookupWindowCommitPosition } from './window-commit-position';
+import { windowCommitProjectionDirectory } from './window-commit-projection-disk';
 import { readWindowCommitPublication } from './window-commit-publisher';
 import { createWindowCommitReceipts, snapshotWindowCommitReceipt } from './window-commit-receipt';
 import { assertWindowCommitSourceNow } from './window-commit-source';
@@ -41,7 +42,7 @@ export async function prepareWindowLivePosition(lease: WindowOpeningLease, input
       await pendingWindowCommitDelivery(conversationId, receipt.sourceId); lease.sample(applied);
       const checks: (() => void)[] = [];
       const publication = await readWindowCommitPublication({ directory, receipts, receipt }, budget, signal,
-        key => checks.push(fence(join(directory, windowFrameName(key)))));
+        key => checks.push(fence(join(windowCommitProjectionDirectory(directory, key), windowFrameName(key)))));
       if (checks.length !== 2) throw missing();
       verify = () => {
         try { checks.forEach(check => check()); assertWindowCommitSourceNow(directory, receipt.binding, receipt.source); }

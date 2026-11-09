@@ -1,4 +1,4 @@
-import { unlinkSync } from 'node:fs';
+import { existsSync, unlinkSync } from 'node:fs';
 import { windowFrameName } from '@gugu/session-core/session-record/window-cache/frame';
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -12,6 +12,7 @@ import { connect, memoryTransportPair } from '@gugu/session-wire/api';
 import { connectWindowCommitHost } from './window-commit-host';
 import type { WindowCommittedEvent } from './window-commit-tap';
 import * as publishers from './window-commit-publisher';
+import { windowCommitProjectionDirectory } from './window-commit-projection-disk';
 import * as service from './service';
 import { persistCommittedTurn } from '../sessions/session-turn-store';
 
@@ -95,8 +96,8 @@ it('preserves committed historical null-first proof and reports a missing public
   expect(await service.windowLivePosition(request)).toMatchObject({ ok: true, value: { kind: 'committed', firstCommitCursor: null } });
   const read = publishers.readWindowCommitPublication;
   vi.spyOn(publishers, 'readWindowCommitPublication').mockImplementation(async (...args) => {
-    const path = join(state.root, 'session-window-cache', 'committed',
-      windowFrameName({ ...args[0].receipt.binding, kind: 'head', cursor: 'publisher:job' }));
+    const key = { ...args[0].receipt.binding, kind: 'head' as const, cursor: 'publisher:job' };
+    const path = join(windowCommitProjectionDirectory(join(state.root, 'session-window-cache', 'committed'), key), windowFrameName(key));
     unlinkSync(path); return read(...args);
   });
   expect(await service.windowLivePosition(request)).toMatchObject({ ok: false, error: { code: 'needs_location' } });
@@ -116,18 +117,21 @@ it('rechecks the actual receipt after the last asynchronous descriptor read befo
 it.each(['publication', 'head', 'source'])('rechecks the independent %s after the final descriptor await', async target => {
   const after = await open(); emit('A'); const page = await service.windowLiveRead({ ...input, after });
   if (!page.ok) throw new Error(JSON.stringify(page));
-  const read = publishers.readWindowCommitPublication;
+  const read = publishers.readWindowCommitPublication, removed: boolean[] = [];
   vi.spyOn(publishers, 'readWindowCommitPublication').mockImplementation(async (...args) => {
     const publication = await read(...args), binding = args[0].receipt.binding;
     const key = target === 'source' ? { ...binding, kind: 'segment' as const, cursor: 'raw:data' }
       : target === 'head' ? { ...binding, kind: 'head' as const, cursor: 'publisher:job' }
       : { ...binding, kind: 'projection' as const, cursor: `publisher:${publication.buildId}:publication` };
-    queueMicrotask(() => unlinkSync(join(state.root, 'session-window-cache', 'committed',
-      windowFrameName(key) + (target === 'source' ? '.source' : ''))));
+    const committed = join(state.root, 'session-window-cache', 'committed');
+    const path = target === 'source' ? join(committed, `${windowFrameName(key)}.source`)
+      : join(windowCommitProjectionDirectory(committed, key), windowFrameName(key));
+    removed.push(existsSync(path)); queueMicrotask(() => unlinkSync(path));
     return publication;
   });
   expect(await service.windowLivePosition({ ...input, referenceId: 'A', appliedCursor: page.value.next }))
     .toMatchObject({ ok: false, error: { code: 'needs_location' } });
+  expect(removed).toEqual([true]);
 });
 
 it('returns the real committed A after an old positive probe travels across A commit and B start',async()=>{
