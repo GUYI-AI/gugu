@@ -48,7 +48,12 @@ it.each([
   expect(rect.right).toBeLessThanOrEqual(area.right)
   expect(rect.top).toBeGreaterThanOrEqual(area.top)
   expect(hint.element().querySelector('kbd svg')).not.toBeNull()
-  await input.click(); await userEvent.keyboard(`{${accept}}`)
+  // A mouse click on the hint only focuses the editor, like a click on its blank area; only the keyboard accepts.
+  await hint.click({ force: true })
+  await until('clicking the hint focuses the editor', () => input.element().contains(document.activeElement))
+  expect(input.element().querySelector('[data-mention-id="recall-agent"]')).toBeNull()
+  expect(hint.elements()).toHaveLength(1)
+  await userEvent.keyboard(`{${accept}}`)
   await until('recalled member token inserted', () => input.element().querySelector('[data-mention-id="recall-agent"]') !== null)
   expect(input.element().querySelector('[data-mention-id="recall-agent"]')!.textContent).toBe(manual)
   expect(onSend).toHaveBeenCalledTimes(1)

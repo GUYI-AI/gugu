@@ -1173,7 +1173,8 @@ export function createFilesFamily(options: { findRipgrep?: () => Promise<string 
         ...(link?.isSymbolicLink() ? { linkPath: given, linkTarget: await fsp.readlink(given) } : {}),
         type: typeOf(st),
         size: st.size,
-        created: isoLocal(st.birthtime),
+        // A file system that keeps no creation time reports 1970: none, then.
+        ...(st.birthtimeMs > 0 ? { created: isoLocal(st.birthtime) } : {}),
         modified: isoLocal(st.mtime),
         accessed: isoLocal(st.atime),
         mode: `0${(st.mode & 0o7777).toString(8)}`,

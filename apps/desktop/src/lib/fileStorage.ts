@@ -1,4 +1,4 @@
-import { readUserSettingsConfig, writeUserSettingsConfig, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
+import { readUserSettingsConfig, updateUserSettingsKey, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
 import { parseFileStorage, type FileStorage } from '@gugu/core/shared/fileStorage'
 import { chatDb, identityDb } from './supabase'
 
@@ -13,10 +13,10 @@ export async function readFileStorage(userId: string): Promise<FileStorage> {
 
 /** 读-改-写同一行:配置里别的键原样留着,file_storage 里这一版不认识的键(更新的客户端写的)也原样留着。 */
 export async function writeFileStorage(userId: string, change: Partial<FileStorage>): Promise<FileStorage> {
-  const config = await readUserSettingsConfig(settingsClient, userId, USER_SCOPE)
-  const next = { ...parseFileStorage(config), ...change }
-  await writeUserSettingsConfig(settingsClient, userId, USER_SCOPE, { ...config, file_storage: { ...(config.file_storage as Record<string, unknown> | undefined), ...next } })
-  return next
+  const saved = await updateUserSettingsKey(settingsClient, userId, USER_SCOPE, 'file_storage', (value) => ({
+    ...(value as Record<string, unknown> | undefined), ...parseFileStorage({ file_storage: value }), ...change,
+  }))
+  return parseFileStorage(saved.config)
 }
 
 /** What the 「文件存储与读取」 dashboard shows: the caller's own cloud copies (chat.file_storage_overview_as). */

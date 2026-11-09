@@ -84,7 +84,7 @@ async function renderConversation(width: number, naturallySeen = false, surface:
     const listRef = useRef<FlowListHandle | null>(null), isAtBottomRef = useRef(true)
     const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [flashMessageId, setFlashMessageId] = useState<string | null>(null)
-    const memory = useConversationScrollMemory({ chatId: 'long-chat', viewportKey: `consumed-unread-${width}`, activationKey: 'long-chat',
+    const memory = useConversationScrollMemory({ listRef, chatId: 'long-chat', viewportKey: `consumed-unread-${width}`, activationKey: 'long-chat',
       enabled: true, discardSaved: !!entry, messageIds: messages.map((row) => row.id), isAtBottomRef, setFollowingTail: history.setFollowingTail, loadMessageAnchor })
     const resetKey = `long-chat#${window.viewVersion}`
     const input = { activeChatId: 'long-chat', navigationTarget: true, rows, scrollerRef: memory.scrollerRef, listRef,
@@ -104,7 +104,7 @@ async function renderConversation(width: number, naturallySeen = false, surface:
       isGroupChat: true, onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible: noop, selectMode: false,
       selectedIds: new Set(), onToggleSelect: noop, onEnterSelectMode: noop, flashMessageId, threeParty: undefined,
       onShowReadReceipt: undefined, onOpenMemberProfile: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
-      agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined, onOpenLocalFileLink: undefined, onMentionMember: undefined }
+      agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined, onMentionMember: undefined }
     return <><button onClick={pinToBottom}>Return to latest</button>
       <button onClick={() => setEmptySearch(!emptySearch)}>Toggle empty search</button>
       <button onClick={() => setHidden(!hidden)}>Toggle workspace</button>
@@ -118,7 +118,7 @@ async function renderConversation(width: number, naturallySeen = false, surface:
   slotHarness = createReactHarness()
   await slotHarness.render(<Slot />)
   await renderWithAppProviders(harness, createElement(Host))
-  await until('the long conversation has completed its initial tail layout', () => scroller()?.querySelectorAll('[data-msg-id]').length === 40)
+  await until('the long conversation has completed its initial tail layout', () => Number(scroller()?.querySelector('[aria-setsize]')?.getAttribute('aria-setsize')) === 40)
   if (!naturallySeen) {
     await page.getByRole('button', { name: 'Jump to first unread' }).click()
     await until('unread navigation confirms the visible row or reports its failure', () => confirmed.mock.calls.length > 0 || rejected.mock.calls.length > 0)
@@ -137,7 +137,7 @@ describe('consumed first-unread entry', () => {
       const row = firstUnread()?.getBoundingClientRect(), bounds = view.scroller()?.getBoundingClientRect()
       return !!row && !!bounds && row.bottom > bounds.top && row.top < bounds.bottom
     })
-    await act(async () => { view.history.update(rowsBetween(301, 380)) })
+    await act(async () => { view.history.update(rowsBetween(301, 360)) })
     await until('later rows have moved the already-seen target above the viewport', () => {
       const row = firstUnread()?.getBoundingClientRect(), bounds = view.scroller()?.getBoundingClientRect()
       return !!row && !!bounds && row.bottom <= bounds.top
@@ -156,13 +156,19 @@ describe('consumed first-unread entry', () => {
     await until('the retained slot has remounted its message list', () => !!view.scroller())
     expect(surfaceRootPill(view.scroller())).toBeNull()
   })
-  it.each([1100, 390])('restores reading after consuming unread navigation and reopening its slot while the account observer survives at width %i', async (width) => {
+  it.each([
+    { width: 1100, staleTailLevel: false, scenario: 'ordinary scroll' },
+    { width: 390, staleTailLevel: false, scenario: 'ordinary scroll' },
+    { width: 1100, staleTailLevel: true, scenario: 'controlled already-false tail level' },
+  ])('restores reading after consuming unread navigation and reopening its slot while the account observer survives at width $width ($scenario)', async ({ width, staleTailLevel }) => {
     const view = await renderConversation(width)
     await page.getByRole('button', { name: 'Return to latest' }).click()
-    await until('the latest window has filled its rows and reached its actual bottom', () => {
+    // The list reports the bottom after a painted frame (lib/afterPaint), so geometry alone arrives first. Until the window
+    // follows the tail, the withdrawal awaited below is already true and does not prove the scroll's painted frame was read.
+    await until('the latest window has filled its rows, reached its actual bottom and follows the tail', () => {
       const surface = view.scroller()
-      return !view.history.getSnapshot().hasNewer && surface.querySelectorAll('[data-msg-id]').length === view.history.getSnapshot().messages.length
-        && surface.scrollHeight - surface.scrollTop - surface.clientHeight <= 1
+      return !view.history.getSnapshot().hasNewer && Number(surface.querySelector('[aria-setsize]')?.getAttribute('aria-setsize')) === view.history.getSnapshot().messages.length
+        && surface.scrollHeight - surface.scrollTop - surface.clientHeight <= 1 && view.history.isFollowingTail()
     })
     const visible = () => {
       const surface = view.scroller(), bounds = surface.getBoundingClientRect()
@@ -171,11 +177,20 @@ describe('consumed first-unread entry', () => {
       })!
       return { id: row.dataset.msgId, top: row.getBoundingClientRect().top - bounds.top }
     }
+    if (staleTailLevel) {
+      // Controlled precondition: the old level must not stand in for this scroll's painted position.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve)))
+      await act(async () => { view.history.setFollowingTail(false) })
+    }
+    const followingBeforeScroll = view.history.isFollowingTail()
+    if (staleTailLevel) expect(followingBeforeScroll).toBe(false)
     const surface = view.scroller()
     const scrolled = new Promise<void>((resolve) => surface.addEventListener('scroll', () => resolve(), { once: true }))
     surface.scrollTop = surface.scrollHeight - surface.clientHeight - 500
     await scrolled
     await until('the real scroll event withdraws tail following', () => !view.history.isFollowingTail())
+    // Scroll memory records painted frames; close the slot after this position has been painted.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve)))
     const before = visible()
     await view.closeSlot()
     await until('the other root has removed the conversation slot', () => !view.scroller())
@@ -188,7 +203,7 @@ describe('consumed first-unread entry', () => {
     await view.reopenSlot()
     await until('twelve restored viewport frames are recorded', () => restored.length >= 12)
     cancelAnimationFrame(frame)
-    expect(restored.every((row) => row.id === before.id && Math.abs(row.top - before.top) <= 1), JSON.stringify({ before, restored })).toBe(true)
+    expect(restored.every((row) => row.id === before.id && Math.abs(row.top - before.top) <= 1), JSON.stringify({ staleTailLevel, followingBeforeScroll, before, restored })).toBe(true)
   })
 })
 

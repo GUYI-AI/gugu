@@ -1,5 +1,5 @@
 /* global gugu */ // An App program's gugu: the page's, for the page's own verbs (guide apps-programs).
-// The 群文件夹 App's tools for an agent's chat folder (moved into the App 2026-10-11): list, read,
+// The Files App's tools for an agent's chat files (moved into the App 2026-10-11): list, read,
 // create, edit, delete — the agent works on a chat's files the way it works on local ones: read, edit(old, new), create.
 // Every one acts as the agent that calls it: a chat it hands (`gugu-chat`) or a file it hands (`gugu-file`) is checked as
 // that agent at the gateway, and what the tool reads and writes there is the agent's, by its own membership.
@@ -211,7 +211,7 @@ async function saveLocally(entry, data, agent) {
 
 export const list = {
   description:
-    'The files in a chat\'s folder (群文件夹 of a source group or private chat), newest first: id, name, path (from the top: 合同/2026/甲方.pdf), type (folder for a subfolder), size, version, who made it, link; the header counts its text files, stored files and folders. folder lists only what is directly in that folder.',
+    'Chat files (聊天文件 in the Files App), shared by a source group or private chat, newest first: id, name, path (from the top: 合同/2026/甲方.pdf), type (folder for a subfolder), size, version, who made it, link; the header counts its text files, stored files and folders. folder lists only what is directly in that folder.',
   inputSchema: {
     type: 'object',
     required: ['chat_id'],
@@ -265,7 +265,7 @@ export const list = {
 
 export const read = {
   description:
-    'Read a file of a chat\'s folder. A text or JSON file comes a page at a time: a one-line JSON header, a blank line, then its lines verbatim — copy old for edit from them; next_offset reads on. Stored UTF-8 text also comes as read-only pages; to edit it, use save: true, then edit with the saved path and version. Other stored files (an image, a PDF, a .pptx…), or save: true, are saved whole on this computer in a folder of their own for that version; the version edit\'s expected_version names when you store your change. A link\'s #lines=12-14 is the lines a person picked: read from offset 12 and change those, not the same words elsewhere.',
+    'Read a file of a chat\'s folder. A text or JSON file comes a page at a time: a one-line JSON header, a blank line, then its lines verbatim — copy old for edit from them; next_offset reads on. Stored UTF-8 text also comes as read-only pages; to edit it, use save: true, then edit with the saved path and version. Other stored files (an image, a PDF, a .pptx…), or save: true, are saved whole on this computer in a folder of their own for that version; the version edit\'s expected_version names when you store your change. A link\'s #lines=12-14 is the lines a person picked: read from offset 12 and change those, not the same words elsewhere. To point someone at a place, add #lines=12-14 or #find=<words> (URL-encoded) to the file\'s link: it opens there, marked.',
   inputSchema: {
     type: 'object',
     required: ['item_id'],

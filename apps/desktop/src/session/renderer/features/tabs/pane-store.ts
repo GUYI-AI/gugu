@@ -99,6 +99,8 @@ export interface PaneSplitter {
   entryForTab?(tabId: string): TabEntry | undefined;
   hasSibling?(): boolean;
   isFocusedPane?(): boolean;
+  /** Selection may move a tab to the other pane before its strip click returns focus. */
+  focusedPane?(): PaneStore;
   /** This tab's place in the pair on the strip ('start' = left), undefined = not in the pair. */
   pairRole?(tabId: string): 'start' | 'end' | undefined;
   /** The side pane, drawn joined into this pane's strip (only for the main pane while paired). */
@@ -108,6 +110,9 @@ export interface PaneSplitter {
   /** 拆开. */
   separatePair?(): void;
 }
+
+/** Which pane holds each entry now: tabs move between panes with their resource and its handle (see `_buildHandle`). */
+const entryHolders = new WeakMap<TabEntryImpl, object>();
 
 export class PaneStore<R extends TabRegistry = TabRegistry>
   implements Snapshottable<TabManagerSnapshot>, TabHost
@@ -429,9 +434,12 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     return { tabs, activeTabId: tabs.some((tab) => tab.tabId === this.activeTabId) ? this.activeTabId : tabs[0]?.tabId };
   }
 
-  private _persistentDescriptor(entry: TabEntry): TabDescriptor | undefined {
+  private _persistentDescriptor(entry: TabEntry, closing = false): TabDescriptor | undefined {
     const history = this.navigationOf(entry.tabId)!;
-    const retained = history.pages.map((page, index) => ({ page, index })).filter(({ page }) => !this.registry.has(page.kind) || this.registry.get(page.kind).isPersistent?.(page.state as never) !== false);
+    const retained = history.pages.map((page, index) => ({ page, index })).filter(({ page }) => {
+      const provider = this.registry.has(page.kind) ? this.registry.get(page.kind) : undefined;
+      return provider?.isPersistent?.(page.state as never) !== false && !(closing && provider?.reopenable === false);
+    });
     if (!retained.length) return undefined;
     const index = Math.max(0, retained.findLastIndex((page) => page.index <= history.index));
     const page = retained[index].page;
@@ -502,15 +510,19 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     entry.history = { pages, index: history.index };
   }
 
-  navigate(tabId: string, kind: string, state: unknown): void {
+  /** `viewState`: where the new page shows, set with it: leaving this page can take a while (`onBeforeClose`). */
+  navigate(tabId: string, kind: string, state: unknown, viewState?: Record<string, unknown>): void {
     const entry = this.entries.get(tabId);
     const history = this.navigationOf(tabId);
     if (!entry || !history || !this.registry.has(kind)) return;
-    if (entry.kind === kind && this.registry.get(kind).resourceKey(entry.state as never) === this.registry.get(kind).resourceKey(state as never)) return;
+    if (entry.kind === kind && this.registry.get(kind).resourceKey(entry.state as never) === this.registry.get(kind).resourceKey(state as never)) {
+      if (viewState) this.setPageViewState(tabId, viewState);
+      return;
+    }
     this._beforeNavigate(entry, () => {
       const pages = history.pages.slice(0, history.index + 1);
       pages[history.index] = { ...pages[history.index], kind: entry.kind, state: toJS(entry.state) };
-      pages.push({ kind, state });
+      pages.push({ kind, state, ...(viewState ? { viewState } : {}) });
       this._showPage(entry, { pages, index: pages.length - 1 });
     });
   }
@@ -579,6 +591,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     entry.history = history;
     entry.openerTabId = oldEntry.openerTabId;
     this.entries.set(entry.tabId, entry);
+    entryHolders.set(entry, this);
     this._resources.set(entry.tabId, this.registry.has(entry.kind)
       ? this.registry.get(entry.kind).initialize(entry as never, this._buildHandle(entry), this._ctx)
       : createUnavailableTabResource());
@@ -748,9 +761,9 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
   }
 
   focusActiveContent(): void {
-    const focuser = this._contentFocuser;
-    if (!focuser) return;
-    requestAnimationFrame(() => focuser());
+    const focused = this._layoutSplitter?.focusedPane?.() ?? this;
+    if (!this._contentFocuser && !focused._contentFocuser) return;
+    requestAnimationFrame(() => (this._layoutSplitter?.focusedPane?.() ?? this)._contentFocuser?.());
   }
 
   /** User-initiated close — calls onBeforeClose if defined, then closes on confirm. */
@@ -843,6 +856,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     opts?: { insertBeforeTabId?: string; activate?: boolean }
   ): void {
     this.entries.set(entry.tabId, entry);
+    entryHolders.set(entry, this);
     this._resources.set(entry.tabId, resource);
     const insertIdx = opts?.insertBeforeTabId ? this.tabOrder.indexOf(opts.insertBeforeTabId) : -1;
     if (insertIdx === -1) {
@@ -865,6 +879,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     const def = this.registry.get(kind);
     const resource = def.initialize(entry as never, this._buildHandle(entry), this._ctx);
     this.entries.set(entry.tabId, entry);
+    entryHolders.set(entry, this);
     this._resources.set(entry.tabId, resource);
     const insertAt = Math.min(index, this.tabOrder.length);
     this.tabOrder.splice(insertAt, 0, entry.tabId);
@@ -879,6 +894,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     const def = this.registry.get(entry.kind);
     const resource = def.initialize(entry as never, this._buildHandle(entry), this._ctx);
     this.entries.set(entry.tabId, entry);
+    entryHolders.set(entry, this);
     this._resources.set(entry.tabId, resource);
     addTabId(this, entry.tabId);
     if (opts?.activate) this.setActiveTab(entry.tabId);
@@ -886,6 +902,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
 
   private _attachUnavailableEntry(entry: TabEntryImpl): void {
     this.entries.set(entry.tabId, entry);
+    entryHolders.set(entry, this);
     this._resources.set(entry.tabId, createUnavailableTabResource());
     addTabId(this, entry.tabId);
   }
@@ -898,7 +915,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
 
     // Record for reopen history before removing.
     const index = this.tabOrder.indexOf(id);
-    const descriptor = this._persistentDescriptor(entry);
+    const descriptor = this._persistentDescriptor(entry, true);
     if (descriptor) this._closedTabHistory.push({ desc: descriptor, index });
     if (this._closedTabHistory.length > PaneStore._MAX_CLOSED_HISTORY) {
       this._closedTabHistory.shift();
@@ -908,8 +925,10 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     this.entries.delete(id);
     this._resources.delete(id);
     removeTabId(this, id);
-    const kinds = new Set([entry.kind, ...(entry.history?.pages.map((page) => page.kind) ?? [])]);
-    for (const kind of kinds) if (this.registry.has(kind)) this.registry.get(kind).closed?.(id, this._ctx);
+    const pages = entry.history?.pages ?? [{ kind: entry.kind, state: entry.state }];
+    for (const kind of new Set(pages.map((page) => page.kind))) {
+      if (this.registry.has(kind)) this.registry.get(kind).closed?.(id, this._ctx, pages.filter((page) => page.kind === kind).map((page) => page.state) as never);
+    }
     this._layoutSplitter?.tabRemoved?.(id, wasActive);
   }
 
@@ -924,42 +943,39 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
     resource.dispose();
   }
 
+  private _closeFromHandle(entry: TabEntryImpl, opts?: { force?: boolean }): Promise<boolean> {
+    const resource = this._resources.get(entry.tabId);
+    const def = this.registry.has(entry.kind) ? this.registry.get(entry.kind) : undefined;
+    // User-style close: run onBeforeClose veto.
+    if (!opts?.force && resource && def?.onBeforeClose) {
+      return Promise.resolve(def.onBeforeClose(entry as never, resource as never, this._ctx, { alone: false })).then((proceed) => {
+        if (proceed && this.entries.get(entry.tabId) === entry) runInAction(() => this._removeTab(entry.tabId));
+        return proceed;
+      });
+    }
+    runInAction(() => this._removeTab(entry.tabId));
+    return Promise.resolve(true);
+  }
+
   /** Builds the TabHandle interface for an entry. */
   private _buildHandle(entry: TabEntryImpl): TabHandle {
+    // A resource keeps its handle when its tab moves to another pane (the side of a pair, a window): `this` may no longer hold it.
+    const holder = (): PaneStore<R> | undefined => {
+      const pane = entryHolders.get(entry) as PaneStore<R> | undefined;
+      return pane?.entries.get(entry.tabId) === entry ? pane : undefined;
+    };
     return {
       tabId: entry.tabId,
-      close: (opts?: { force?: boolean }): Promise<boolean> => {
-        if (this.entries.get(entry.tabId) !== entry) return Promise.resolve(false);
-        if (opts?.force) {
-          runInAction(() => this._removeTab(entry.tabId));
-          return Promise.resolve(true);
-        }
-        // User-style close: run onBeforeClose veto.
-        const entryRef = this.entries.get(entry.tabId);
-        if (!entryRef) return Promise.resolve(false);
-        const resource = this._resources.get(entry.tabId);
-        if (resource && this.registry.has(entryRef.kind)) {
-          const def = this.registry.get(entryRef.kind);
-          if (def.onBeforeClose) {
-            return Promise.resolve(
-              def.onBeforeClose(entryRef as never, resource as never, this._ctx, { alone: false })
-            ).then((proceed) => {
-              if (proceed && this.entries.get(entry.tabId) === entry) runInAction(() => this._removeTab(entry.tabId));
-              return proceed;
-            });
-          }
-        }
-        runInAction(() => this._removeTab(entry.tabId));
-        return Promise.resolve(true);
-      },
+      close: (opts?: { force?: boolean }): Promise<boolean> => holder()?._closeFromHandle(entry, opts) ?? Promise.resolve(false),
       open: (
         kind: string,
         args: Record<string, unknown>,
         config?: Partial<TabOpenOptions>
       ) => {
-        if (this.entries.get(entry.tabId) !== entry) return;
-        if (this._layoutOpener) this._layoutOpener(kind, args, { ...config, from: entry.tabId, intent: config?.intent ?? 'navigate' });
-        else { this.setActiveTab(entry.tabId); this.openKind(kind, args, config); }
+        const pane = holder();
+        if (!pane) return;
+        if (pane._layoutOpener) pane._layoutOpener(kind, args, { ...config, from: entry.tabId, intent: config?.intent ?? 'navigate' });
+        else { pane.setActiveTab(entry.tabId); pane.openKind(kind, args, config); }
       },
     };
   }

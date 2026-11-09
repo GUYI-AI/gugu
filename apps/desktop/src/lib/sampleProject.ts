@@ -1,4 +1,4 @@
-import { readUserSettingsConfig, writeUserSettingsConfig, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
+import { readUserSettingsConfig, updateUserSettingsConfig, type VersionedSettingsTableClient } from '@gugu/core/cloud/userSettings'
 import { rendererLogger } from './log'
 import { identityDb } from './supabase'
 
@@ -8,7 +8,7 @@ import { identityDb } from './supabase'
 // the key, so the sample never comes back on any device.
 export type SampleProjectState = { version: 1; dismissed: boolean }
 const KEY = 'sampleProject'
-const client = identityDb as unknown as SettingsTableClient
+const client = identityDb as unknown as VersionedSettingsTableClient
 const log = rendererLogger('sample-project')
 const listeners = new Set<(userId: string) => void>()
 
@@ -33,6 +33,25 @@ export function subscribeSampleProject(listener: (userId: string) => void): () =
   return () => { listeners.delete(listener) }
 }
 
+function notifySampleProject(userId: string): void {
+  for (const listener of listeners) {
+    try {
+      listener(userId)
+    } catch (error) {
+      log.error({ error: String(error) }, 'sample project listener failed')
+    }
+  }
+}
+
+/** Keep the key as a tombstone. Only acknowledge removal after the account save succeeds. */
+export async function dismissSampleProject(userId: string): Promise<void> {
+  await updateUserSettingsConfig(client, userId, 'user', (config) => {
+    parseSampleProject(config)
+    return { ...config, [KEY]: { version: 1, dismissed: true } }
+  })
+  notifySampleProject(userId)
+}
+
 /**
  * Called when the first-run intro is left, after first-run hints are enrolled. Retrying the intro keeps
  * the existing key. Never throws: a failure only costs this account its sample project and must not
@@ -42,16 +61,13 @@ export async function enrollSampleProject(userId: string): Promise<void> {
   try {
     const config = await readUserSettingsConfig(client, userId, 'user')
     if (parseSampleProject(config)) return
-    await writeUserSettingsConfig(client, userId, 'user', { ...config, [KEY]: { version: 1, dismissed: false } })
+    // The first read may predate a removal on another window/device. Recheck the
+    // latest row on every conditional-write attempt instead of replacing its key.
+    await updateUserSettingsConfig(client, userId, 'user', (latest) => parseSampleProject(latest)
+      ? latest : { ...latest, [KEY]: { version: 1, dismissed: false } })
   } catch (error) {
     log.error({ error: String(error) }, 'enroll sample project failed')
     return
   }
-  for (const listener of listeners) {
-    try {
-      listener(userId)
-    } catch (error) {
-      log.error({ error: String(error) }, 'sample project listener failed')
-    }
-  }
+  notifySampleProject(userId)
 }

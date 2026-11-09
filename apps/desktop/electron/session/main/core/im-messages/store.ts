@@ -9,7 +9,7 @@ import { searchMessages } from './search'
 /** All durable messages and their derived index share the existing session connection. */
 export function createImMessageStore(database: MessageSqlDatabase) {
   const connection = reusingStatements(database)
-  const find = connection.prepare('SELECT rowid, claimed_revision FROM im_messages WHERE account_id = ? AND id = ?')
+  const find = connection.prepare('SELECT rowid, claimed_revision, rest FROM im_messages WHERE account_id = ? AND id = ?')
   const indexDelete = connection.prepare('DELETE FROM im_messages_text WHERE rowid = ?')
   const indexInsert = connection.prepare('INSERT INTO im_messages_text(rowid, text) VALUES (?, ?)')
   const isDeleted = connection.prepare(`SELECT 1 FROM im_message_tombstones
@@ -65,8 +65,8 @@ export function createImMessageStore(database: MessageSqlDatabase) {
     if (message.seq < 1 || isDeleted.get(accountId, message.chat_id, message.id)) return []
     // Compute before mutating; either the original row and index both change, or neither does.
     const text = projectMessageSearchText(message)
-    const rest = encodeRest(message)
-    const old = find.get(accountId, message.id) as { rowid: number; claimed_revision: string | null } | undefined
+    const old = find.get(accountId, message.id) as { rowid: number; claimed_revision: string | null; rest: string } | undefined
+    const rest = encodeRest(old ? withStoredOverlays(message, old.rest) : message)
     // @@@arrival-claim - the first revision that delivers a message claims it, even if a page fetch stored the body first;
     // the claim lives and dies with the row.
     const claims = revision !== undefined && !old?.claimed_revision
@@ -180,4 +180,11 @@ export function createImMessageStore(database: MessageSqlDatabase) {
       }
     }),
   }
+}
+
+/** A body-only row (no reactions / delivery_blocks) does not speak for the overlay facts already stored. */
+function withStoredOverlays(message: MessageItem, storedRest: string): MessageItem {
+  if (message.reactions && message.delivery_blocks) return message
+  const stored = JSON.parse(storedRest) as Pick<MessageItem, 'reactions' | 'delivery_blocks'>
+  return { ...message, reactions: message.reactions ?? stored.reactions, delivery_blocks: message.delivery_blocks ?? stored.delivery_blocks }
 }

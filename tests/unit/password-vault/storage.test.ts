@@ -29,7 +29,7 @@ async function fixture(overrides: Partial<VaultDependencies> = {}) {
   }
   const dependencies: VaultDependencies = { root: join(root, 'private', 'password-vault', 'v1'), accountId: owner, installationBinding: randomUUID(),
     assertLocalPerson: context => { if (context !== person) throw new Error('forged principal') },
-    assertPrivateStorageReady: vi.fn(async () => undefined), assertFeatureReady: vi.fn(async () => undefined),
+    assertPrivateStorageReady: vi.fn(async () => undefined), acquireFeatureGuard: vi.fn(async () => ({ status: 'ready' as const, signal: new AbortController().signal, assertCurrent() {} })),
     invalidate: vi.fn(async () => undefined), keys, ...overrides }
   const vault = new LocalPasswordVault(dependencies); vaults.push(vault)
   return { root, dependencies, vault, keys }
@@ -64,12 +64,13 @@ describe('local encrypted vault: storage and lifecycle', () => {
       for (const encoded of [secret, Buffer.from(secret).toString('base64'), Buffer.from(secret).toString('hex'), encodeURIComponent(secret)]) expect(files.some(bytes => bytes.includes(encoded))).toBe(false)
     }
     expect(JSON.stringify(summary).includes(input.password)).toBe(false)
-    expect(summary.maskedAccount).toBe('••••')
+    expect(summary.maskedAccount === input.account[0] + '***').toBe(true)
     await vault.dispose()
     const restarted = new LocalPasswordVault(dependencies); vaults.push(restarted)
     expect(restarted.state().status).toBe('locked')
     await restarted.unlock(person)
     const saved = await restarted.list(person)
+    expect(saved[0].maskedAccount === summary.maskedAccount).toBe(true)
     expect(saved[0].reference.id).toBe(summary.reference.id)
     expect(saved[0].reference.epoch === summary.reference.epoch).toBe(false)
   })
@@ -165,7 +166,7 @@ describe('local encrypted vault: storage and lifecycle', () => {
     await expect(vault.beginSetup(person)).rejects.toMatchObject({ code: 'UNAVAILABLE' })
     expect((await readdir(root)).length).toBe(0)
     vi.mocked(dependencies.assertPrivateStorageReady).mockResolvedValue()
-    vi.mocked(dependencies.assertFeatureReady).mockRejectedValue(new Error('observe only'))
+    vi.mocked(dependencies.acquireFeatureGuard!).mockRejectedValue(new Error('observe only'))
     await expect(vault.beginSetup(person)).rejects.toMatchObject({ code: 'UNAVAILABLE' })
     expect((await readdir(root)).length).toBe(0)
   })

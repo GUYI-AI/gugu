@@ -155,6 +155,15 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
     });
   });
 
+  it('retains activity source metadata and the original anchor without copying delivery text into that metadata', async () => {
+    const text = '<gugu_delivery route="chat" from="Worker" from_id="user:worker" from_type="agent"><![CDATA[private folded body]]></gugu_delivery>';
+    await persistCommittedTurn({ sessionId: 's1', source: 'live', turn: { ...turn('t0', [said('t0:u', 'user', text)]), referenceId: 'source' } });
+    const [hit] = searchService.searchTaskTurns('folded');
+    expect(hit!.activity).toMatchObject({ kind: 'received', facts: [{ fromType: 'agent', fromId: 'user:worker' }] });
+    expect(JSON.stringify(hit!.activity)).not.toContain('private folded body');
+    expect(hit!.itemId).toBe('source:u');
+  });
+
   it('indexes what a delivery said, not its envelope, and never the silence marker', async () => {
     const { buildSystemNoticeEnvelope } = await import('@gugu/core/local/agent/deliveryEnvelope');
     const delivered = buildSystemNoticeEnvelope({ messageId: '0b1e7c1a-0000-4000-8000-000000000001', content: '主人把你改名为小橘', at: '2026-10-31T10:00:00Z' });

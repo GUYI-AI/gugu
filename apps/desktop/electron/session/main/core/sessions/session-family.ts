@@ -37,6 +37,11 @@ export type OtherMachines = {
     sessions: Array<{ deviceId: string; label: string; session: SessionpageSessionSummary; listsAgents: boolean }>;
     unreached: UnreachedMachine[];
   }>;
+  /** The machine one session is on: the first machine to list it (the rest are not waited for); null when none does. */
+  sessionHome(sessionId: string): Promise<{
+    found: { deviceId: string; label: string; session: SessionpageSessionSummary; listsAgents: boolean } | null;
+    unreached: UnreachedMachine[];
+  }>;
   archive(deviceId: string, sessionId: string, removeSocialIdentity?: boolean): Promise<void>;
   /** 这台机器上的一个 App 给别的机器上的一条会话发消息(`agents:control:all-machines`)。 */
   appMessage(app: { extensionId: string; extensionName: string }, deviceId: string, sessionId: string, text: string, how: AppMessageOptions): Promise<AppMessageReceipt>;

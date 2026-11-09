@@ -10,6 +10,7 @@ const ROOTS = [
   'apps/desktop/electron/session/main/core/session-timeline',
   'packages/core/src/local/agent/transcriptInventory.ts',
   'apps/desktop/electron/sessionpage/local-session-source.ts',
+  'apps/desktop/electron/sessionpage/local-session-preview.ts',
 ]
 const FORBIDDEN = new Set(['readFile', 'readFileSync', 'createReadStream', 'readFromStart', 'readSnapshot', 'readLines'])
 const debt = require('./native-history-reads-debt.json')

@@ -31,7 +31,9 @@ function channel(record: { locale: string; tone: 'light' | 'dark' }) {
     isHostWindowFocused: () => true,
     onHostWindowFocusChange: () => () => {},
     hostLocale: () => record.locale,
+    hostThemeColors: () => undefined,
     hostTone: () => record.tone,
+    selfGuguNumber: () => undefined,
     onHostPresentationChange: (listener: () => void) => {
       presentationChanged = listener;
       return () => {};

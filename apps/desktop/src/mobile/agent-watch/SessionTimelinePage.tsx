@@ -42,7 +42,7 @@ import { translateSessionMessage } from '@/session/renderer/localization/locale-
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { hostedInputIds } from './local-queued-inputs'
 import { canResumePhoneInput, phoneInputQueueIntent } from './phone-input-queue'
-import { messageForUser } from '@/lib/userFacingError'
+import { runNativeInputAction } from '@/lib/nativeInputFailureNotice'
 
 /**
  * owner 10-16 The App tabs a session offers on the phone: installed, switched on, opening no file — the session page's 「+」
@@ -94,7 +94,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   const cloudAsleep = device.cloud_computer === 'asleep' || device.cloud_computer === 'waking'
   const [appliedDraft, setAppliedDraft] = useState<typeof draft>(undefined)
   const [menuAnchor, setMenuAnchor] = useState<Element | null>(null)
-  const [inputQueueError, setInputQueueError] = useState<string | null>(null)
   // owner 10-16 The App this page shows instead of the timeline, picked from the mode button; null = the timeline.
   const [appKind, setAppKind] = useState<string | null>(initialAppKind ?? null)
   useEffect(() => showPhoneAppView({
@@ -170,15 +169,14 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   // Its durable input queue waits for the host's stable acknowledgement contract.
   // 动作失败贴着**动作发生的地方**显示(输入框正上方),❌ 不跑到页顶去冒充「打不开时间线」——
   // 发送失败时时间线好端端在那儿,页顶那个红框还配一个「重新读取」,对发送毫无意义。
-  const sendError = actionError ?? inputQueueError
+  const sendError = actionError
   const actionErrorNotice = sendError ? (
     <div
       className="gg-aw-action-error"
       data-testid="agent-watch-action-error"
       /*
-       * 这条横幅是发送失败的**唯一**去处 —— 没有 toast 兜底。它一出现,屏幕上其余部分
-       * 一切照旧(时间线还在、输入框还在),看不见的人不会察觉自己刚才那句话没发出去。
-       * 所以要报出来:role=alert + assertive,让读屏当场打断念出来(orca 同款)。
+       * Runtime actions retain their existing accessible banner. Message submission and native queue
+       * failures use the shared message-owned notice and retire only with that message's action.
        */
       role="alert"
       aria-live="assertive"
@@ -189,7 +187,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
         variant="ghost"
         size="sm"
         data-testid="agent-watch-action-error-dismiss"
-        onClick={() => { dismissActionError(); setInputQueueError(null) }}
+        onClick={dismissActionError}
       >
         {t('agentWatch.composer.dismiss')}
       </Button>
@@ -261,15 +259,13 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           onBeforeSend={beforeSend}
           onSend={async (text, files) => {
             beforeSend()
-            setInputQueueError(null)
             const request = { deviceId: device.device_id, sessionId: session.conversationId, text, composer: true as const,
               ...phoneInputQueueIntent(foregroundWorking, queuedInputs), ...sessionInputBaseline(conversation.turns), ...(files?.length ? { files } : {}) }
             await enqueueSessionInput(request)
             if (canResumePhoneInput(queueReady, foregroundWorking, conversation.turns)) {
               const head = [...queuedSessionInputs(session.conversationId)].filter(input => input.sendQueue).sort((a, b) => a.sendQueue!.order - b.sendQueue!.order)[0]
               if (head) {
-                try { await releaseQueuedSessionInput(session.conversationId, conversation.turns, head.id) }
-                catch (error) { setInputQueueError(messageForUser(error)) }
+                await runNativeInputAction(session.conversationId, head.id, head.deviceId, () => releaseQueuedSessionInput(session.conversationId, conversation.turns, head.id))
               }
             }
             if (native) nativeRecord.followTail()

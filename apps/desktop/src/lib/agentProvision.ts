@@ -263,6 +263,18 @@ export async function listOperationMembers(operationId: string): Promise<AgentPr
   return (data ?? []) as AgentProvision[]
 }
 
+// The database allows one open adoption per agent (agent_provisions_adopt_inflight_uidx), so at most one row matches.
+export async function findOpenAdoption(agentUserId: string): Promise<AgentProvision | null> {
+  const { data, error } = await identityDb
+    .from('agent_provisions')
+    .select('*')
+    .eq('existing_agent_user_id', agentUserId)
+    .not('phase', 'in', '(completed,cancelled)')
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return (data as AgentProvision | null) ?? null
+}
+
 // Rediscovery after a crash/reload: owner's non-terminal operations (RLS-scoped). 'failed' is included
 // because a failed member is resumable via explicit same-agent retry.
 const RESUMABLE_OPERATION_PHASES: AgentProvisionOperationPhase[] = [

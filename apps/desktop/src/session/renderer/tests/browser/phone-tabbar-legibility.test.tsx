@@ -4,10 +4,11 @@
  */
 import { createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, expect, it } from 'vitest'
+import { afterAll, afterEach, expect, it } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { LocalizationProvider, getLocaleSnapshot, setLocalePreference } from '@/i18n'
 import { PhoneTabBar } from '@/mobile/PhoneTabBar'
+import { commandRegistry } from '@renderer/lib/commands/registry'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/i18n/registerMainCatalog'
 import '@/i18n/registerMessagingCatalog'
@@ -17,6 +18,9 @@ import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
 let root: Root | null = null
+// Releasing a press on search opens the global search panel; the shell mounts its host, this page stands one in.
+const releasePanelHost = commandRegistry.register({ scopeId: 'app', getCommands: () => [{ id: 'app.globalSearch', hideFromPalette: true, execute: () => {} }] })
+afterAll(releasePanelHost)
 const previousLocale = getLocaleSnapshot().preference
 afterEach(() => {
   setLocalePreference(previousLocale)
@@ -52,6 +56,17 @@ async function mountBar(theme: 'dark' | 'light', activeTab: (typeof TABS)[number
 function rgb(css: string): number[] {
   const srgb = css.match(/color\(srgb ([\d.e-]+) ([\d.e-]+) ([\d.e-]+)/)
   if (srgb) return [Number(srgb[1]), Number(srgb[2]), Number(srgb[3])]
+  // 从种子色 color-mix(in oklab, …) 出来的值,Chromium 原样报 oklab(L a b / α)。
+  const ok = css.match(/oklab\(([\d.e-]+) ([\d.e-]+) ([\d.e-]+)/)
+  if (ok) {
+    const [L, A, B] = [Number(ok[1]), Number(ok[2]), Number(ok[3])]
+    const [l, mm, s] = [L + 0.3963377774 * A + 0.2158037573 * B, L - 0.1055613458 * A - 0.0638541728 * B, L - 0.0894841775 * A - 1.291485548 * B].map((v) => v ** 3)
+    return [
+      4.0767416621 * l! - 3.3077115913 * mm! + 0.2309699292 * s!,
+      -1.2684380046 * l! + 2.6097574011 * mm! - 0.3413193965 * s!,
+      -0.0041960863 * l! - 0.7034186147 * mm! + 1.707614701 * s!,
+    ].map((v) => (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055))
+  }
   const m = css.match(/rgba?\(([\d.]+),? ([\d.]+),? ([\d.]+)/)
   if (!m) throw new Error(`unparsed color: ${css}`)
   return [Number(m[1]) / 255, Number(m[2]) / 255, Number(m[3]) / 255]

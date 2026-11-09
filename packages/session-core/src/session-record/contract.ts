@@ -582,6 +582,11 @@ export type AppCallAction = {
   version: string;
   method: string;
   args: Record<string, unknown>;
+  /**
+   * The file outside its working copy a person opened in the page, to read only: stamped by
+   * the host from the page's binding, never from the page's args. The machine the file is on checks it (`fileRootOf`).
+   */
+  handed?: { workspace: string; id: string };
 };
 
 /**
@@ -665,7 +670,7 @@ export type SessionpageSessionSummary = {
   /** Explicit insert-now intent is preserved through durable host custody. */
   nativeInputSteering?: true;
   /** Live native activity, not a second IM row. Offline heartbeat digests carry no message text. */
-  nativeLastMessage?: { text: string; at: string } | null;
+  nativeLastMessage?: ({ text: string; at: string } & import('./preview-activity').PreviewActivity) | null;
   /** Raw personal conversation replies. IM deliveries keep their existing unread counter. */
   nativeUnreadKeys?: string[];
   /** Only deliberate owner notifications contribute a numeric notification badge. */
@@ -1206,6 +1211,16 @@ export type SessionpageSessionRespondResult = {
 export type SessionpageSessionEvent = {
   subscriptionId: string;
   result: TimelineAfterResult;
+};
+
+/** Terminal desktop-window read failure; emitted separately from timeline/reset pushes. */
+export type SessionpageSessionWindowStatusEvent = {
+  conversationId: string;
+  /** Fresh per subscription generation; clients also reject stale local generation callbacks. */
+  subscriptionId: string;
+  state: 'failed';
+  /** Same error fields as the window setup RPC; this status does not request recovery. */
+  error: { code: string; message: string };
 };
 
 /**

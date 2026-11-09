@@ -52,7 +52,7 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
 }: ChatHeaderActionsProps) {
   const { t } = useTranslation('messaging')
   const { activeChatId } = useChatStore('activeChatId')
-  const folderName = useChatFolderName(activeChatId)
+  const folderName = useChatFolderName()
   const narrow = useHeaderNarrow(moreButtonRef, Boolean(mobile))
   const groupId = isGroupChat ? activeChatId : null
   const topics = useChatTopicPins(mobile ? null : groupId)

@@ -1,16 +1,22 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import { useAssistantDm } from '@/components/assistant/useAssistantDm'
 import { assistantHomePlace, type AssistantHomePlace } from '@/lib/assistantHome'
 import { readSetupStep, writeSetupStep } from '@/lib/assistantSetupState'
 import { useMyAssistantContact } from '@/lib/myAssistant'
 import { useAuth } from '@/store/auth'
-import { useContactsStore } from '@/store/contactsContext'
-import { useDevicesStore } from '@/store/devicesContext'
+import { useContactList } from '@/store/contactsContext'
+import { getCloudComputerState, subscribeCloudComputerState } from '@/lib/cloudComputerStore'
+import { directoryDevices, subscribeDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
+import type { Device } from '@gugu/core/shared/types/chat'
 import type { PhoneAssistant } from './MobileAssistantApp'
 import { publishPhoneAssistant } from './phoneAssistantIdentity'
 import { phoneAssistantStage, type PhoneAssistantStage } from './phoneAssistantStage'
 
 export type { PhoneAssistantStage } from './phoneAssistantStage'
+
+const noSubscription = () => () => {}
+const NO_DEVICES: readonly Device[] = []
+const noDevices = () => NO_DEVICES
 
 export type PhoneAssistantState = {
   /** 手机壳里有这一格:一直有(owner 10-16「没有咕咕的新用户那一格照样在」),没有它时那一格里是给它安家的引导。 */
@@ -34,8 +40,11 @@ export type PhoneAssistantState = {
  */
 export function usePhoneAssistant(enabled: boolean): PhoneAssistantState {
   const { user } = useAuth()
-  const { contacts } = useContactsStore()
-  const { cloudComputer, devices } = useDevicesStore()
+  const contacts = useContactList(enabled)
+  const cloudComputer = useSyncExternalStore(subscribeCloudComputerState, getCloudComputerState, getCloudComputerState)
+  // The shell calls this on the desktop too (disabled). Reading the contacts or the device context there re-rendered the whole
+  // shell on every contacts update and device heartbeat; both are only subscribed to where the phone assistant exists.
+  const devices = useSyncExternalStore(enabled ? subscribeDeviceSessions : noSubscription, enabled ? directoryDevices : noDevices, noDevices)
   const snapshot = enabled ? cloudComputer?.snapshot ?? null : null
   const cloudDeviceId = enabled ? snapshot?.deviceId ?? devices.find((device) => device.cloud_computer)?.device_id ?? null : null
   const mine = useMyAssistantContact(contacts)

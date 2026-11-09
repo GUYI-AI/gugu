@@ -1,8 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('./turn-files', () => ({ prefetchFiles: vi.fn() }));
+
+vi.mock('../sessions/session-conversation-read', () => ({
+  markNativeConversationVisible: vi.fn(), nativeConversationUnread: () => [], nativeOwnerNotificationUnread: () => [],
+}));
+
 const state = vi.hoisted(() => ({
   emits: [] as Array<{ name: string; data: unknown; topic?: string }>,
   pushes: new Map<string, (event: unknown) => void>(),
+  failures: new Map<string, (event: unknown) => void>(),
+  legacyStarts: vi.fn(),
+  liveRead: vi.fn(async (_input: unknown) => ({ ok: true, value: { entries: [], next: { workerEpoch: 'w', storeEpoch: 's', sequence: 0 }, hasMore: false } })),
+  liveAck: vi.fn(async (_input: unknown) => ({ ok: true, value: undefined })),
   unsubscribe: vi.fn(),
   unsubscribeSessions: vi.fn(),
   unwatch: vi.fn(),
@@ -23,9 +33,17 @@ vi.mock('./create-session', () => ({
 }));
 vi.mock('./service', () => ({
   nativeRecord: vi.fn(), nativeToolImage: vi.fn(), nativeAttachment: vi.fn(),
+  windowLiveRead: (input: unknown) => state.liveRead(input),
+  windowLiveAck: (input: unknown) => state.liveAck(input),
+  windowPrepare: async () => { if (state.gate) await state.gate; return { ok: true, value: { source: 'window' } }; },
   snapshot: async () => ({ ok: true, value: { cursor: { epoch: 'e', seq: 1 }, turns: [turnWith(HUGE)], settlements: [], hasOlder: false } }),
   subscribe: async (input: { subscriptionId: string }, emit: (event: unknown) => void) => {
+    state.legacyStarts(input.subscriptionId);
     state.pushes.set(input.subscriptionId, emit);
+    return { ok: true, value: { subscriptionId: input.subscriptionId } };
+  },
+  windowSubscribe: async (input: { subscriptionId: string }, emit: (event: unknown) => void, failed: (event: unknown) => void) => {
+    state.pushes.set(input.subscriptionId, emit); state.failures.set(input.subscriptionId, failed);
     return { ok: true, value: { subscriptionId: input.subscriptionId } };
   },
   unsubscribe: (...args: unknown[]) => state.unsubscribe(...args),
@@ -59,6 +77,8 @@ const outputOf = (value: unknown) => (value as { turns: Array<{ items: Array<{ o
 beforeEach(() => {
   state.emits = [];
   state.pushes.clear();
+  state.failures.clear();
+  state.legacyStarts.mockClear();
   state.unsubscribe = vi.fn();
   state.unsubscribeSessions = vi.fn();
   state.unwatch = vi.fn();
@@ -66,6 +86,61 @@ beforeEach(() => {
 });
 
 describe('会话时间线路由(本机窗口、别的电脑、手机同一张)', () => {
+  it.each(['Read', 'Ack'])('binds Live%s to its actual sender and rejects extra payload fields before calling the service', async method => {
+    const input = { conversationId: 'live-owner', subscriptionId: `live-${method}` }, cursor = { workerEpoch: 'w', storeEpoch: 's', sequence: 0 };
+    await call(820, 'sessionWindowPrepare', input);
+    const request = { ...input, [method === 'Read' ? 'after' : 'through']: cursor };
+    await expect(call(821, `sessionWindowLive${method}`, request)).resolves.toMatchObject({ ok: false });
+    await expect(call(820, `sessionWindowLive${method}`, { ...request, turn: {} })).resolves.toMatchObject({ ok: false });
+    await expect(call(820, `sessionWindowLive${method}`, request)).resolves.toMatchObject({ ok: true });
+    releaseSubscriptionsOf(820);
+    await expect(call(820, `sessionWindowLive${method}`, request)).resolves.toMatchObject({ ok: false });
+  });
+  it.each(['preparing', 'prepared', 'subscribed'])('refuses legacy cross-connection takeover of a %s window and keeps the original reader usable', async stage => {
+    const input = { conversationId: 'window-owner', subscriptionId: `owned-${stage}`, cursor: null };
+    let release = () => {};
+    if (stage === 'preparing') state.gate = new Promise<void>(yes => { release = yes; });
+    const preparing = call(810, 'sessionWindowPrepare', input);
+    if (stage !== 'preparing') await preparing;
+    if (stage === 'subscribed') await call(810, 'sessionWindowSubscribe', input);
+    await expect(call(811, 'sessionSubscribe', input))
+      .resolves.toMatchObject({ ok: false, error: { code: 'invalid_subscription' } });
+    expect(state.legacyStarts).not.toHaveBeenCalled();
+    releaseSubscriptionsOf(811); expect(state.unsubscribe).not.toHaveBeenCalled();
+    release(); await preparing;
+    if (stage !== 'subscribed') await call(810, 'sessionWindowSubscribe', input);
+    state.pushes.get(input.subscriptionId)!({ subscriptionId: input.subscriptionId, result: { ok: true } });
+    expect(state.emits.at(-1)).toMatchObject({ name: 'session-timeline:push', topic: input.subscriptionId });
+    releaseSubscriptionsOf(810);
+    await expect(call(811, 'sessionSubscribe', input)).resolves.toMatchObject({ ok: true });
+    releaseSubscriptionsOf(811);
+  });
+  it('preserves the existing cross-connection legacy reconnect selection', async () => {
+    const input = { conversationId: 'legacy', subscriptionId: 'legacy-reconnect', cursor: null };
+    await expect(call(812, 'sessionSubscribe', input)).resolves.toMatchObject({ ok: true });
+    await expect(call(813, 'sessionSubscribe', input)).resolves.toMatchObject({ ok: true });
+    expect(state.legacyStarts).toHaveBeenCalledTimes(2);
+    releaseSubscriptionsOf(812); releaseSubscriptionsOf(813);
+  });
+  it('owns a pending window preparation before its ACK and refuses another connection using that UUID', async () => {
+    let release!: () => void;
+    state.gate = new Promise<void>(yes => { release = yes; });
+    const opening = call(801, 'sessionWindowPrepare', { conversationId: 's', subscriptionId: 'prepared' });
+    await expect(call(802, 'sessionWindowSubscribe', { conversationId: 's', subscriptionId: 'prepared', cursor: null }))
+      .resolves.toMatchObject({ ok: false, error: { code: 'invalid_subscription' } });
+    releaseSubscriptionsOf(801);
+    expect(state.unsubscribe).toHaveBeenCalledWith('prepared');
+    release(); await opening;
+  });
+  it('routes window failures only through the typed status channel and subscription topic', async () => {
+    await call(799, 'sessionWindowSubscribe', { conversationId: 'window-session', subscriptionId: 'window-generation', cursor: null });
+    const status = { conversationId: 'window-session', subscriptionId: 'window-generation', state: 'failed',
+      error: { code: 'source_changed', message: 'Source changed' } };
+    state.failures.get('window-generation')!(status);
+    expect(state.emits).toEqual([{ name: 'session-window:status', topic: 'window-generation', data: status }]);
+    releaseSubscriptionsOf(799);
+    expect(state.unsubscribe).toHaveBeenCalledWith('window-generation');
+  });
   it('task exchange subscriptions are scoped to the requesting connection and released with it', async () => {
     await call(700, 'taskExchangesSubscribe', { conversationId: 'task', fromSessionId: 'assistant', subscriptionId: 'exchange-a' });
     await call(701, 'taskExchangesUnsubscribe', { subscriptionId: 'exchange-a' });

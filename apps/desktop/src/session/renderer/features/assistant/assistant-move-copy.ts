@@ -120,6 +120,8 @@ export async function planTree(fs: HomeFs, root: string): Promise<CopyPlan> {
   async function walk(abs: string, rel: string): Promise<void> {
     for (const entry of await fs.list(abs)) {
       const entryRel = rel ? `${rel}/${entry.name}` : entry.name;
+      // 助理页的同步账本(`.panel-state-*.json`)是每台机器自己记的,新家接过后会自己写一份;拷过去只会和它撞。
+      if (entry.name.startsWith('.panel-state-')) continue;
       if (entry.type === 'symlink') {
         plan.skipped.push({ rel: entryRel, reason: 'symlink' });
       } else if (entry.type === 'directory') {

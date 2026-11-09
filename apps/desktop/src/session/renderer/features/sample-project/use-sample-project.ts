@@ -14,31 +14,34 @@ export function sampleProjectContent(locale: SupportedLocale): SampleProjectCont
   return CONTENT[locale];
 }
 
-// 这个账号看不看得到示例项目:账号上那一个键(lib/sampleProject)。侧栏那一行和那一块读同一份,一个账号只读一次;
+// 这个账号看不看得到示例项目:账号上那一个键(lib/sampleProject)。侧栏那一行和那一块挂着时读同一份;
 // 走完首次引导那一刻(主界面早已挂在引导下面)写上键,这里跟着重读。
 // 读不到 ≠ 没有:那一行先不出现,屏上留着的那一块也不收(收了就存进布局、下次也没了),过一会儿再读。
 type Reading = { userId: string; shown: boolean | null };
 let reading: Reading | null = null;
+let readers = 0;
+let generation = 0;
 let retry: ReturnType<typeof setTimeout> | null = null;
 const RETRY_MS = [5_000, 30_000, 120_000, 300_000];
 const listeners = new Set<() => void>();
 
-function publish(next: Reading): void {
+function publish(next: Reading | null): void {
   reading = next;
   for (const listener of listeners) listener();
 }
 
 function load(userId: string, attempt = 0): void {
+  const request = ++generation;
   if (retry) clearTimeout(retry);
   retry = null;
   publish({ userId, shown: null });
   readSampleProjectShown(userId).then(
-    (shown) => { if (reading?.userId === userId) publish({ userId, shown }); },
+    (shown) => { if (request === generation && reading?.userId === userId) publish({ userId, shown }); },
     (error: unknown) => {
       log.error('[sample-project] reading the account key failed', { error: String(error), attempt });
-      if (reading?.userId !== userId) return;
+      if (request !== generation || reading?.userId !== userId) return;
       const wait = RETRY_MS[Math.min(attempt, RETRY_MS.length - 1)];
-      retry = setTimeout(() => { if (reading?.userId === userId) load(userId, attempt + 1); }, wait);
+      retry = setTimeout(() => { if (request === generation && reading?.userId === userId) load(userId, attempt + 1); }, wait);
     },
   );
 }
@@ -60,7 +63,18 @@ export function useSampleProject(): { shown: boolean; settled: boolean; owner: S
   const shell = useAssistantShell();
   const userId = shell?.ownerId ?? null;
   useEffect(() => {
-    if (userId && reading?.userId !== userId) load(userId);
+    if (!userId) return;
+    readers++;
+    if (readers === 1 || reading?.userId !== userId) load(userId);
+    return () => {
+      if (--readers !== 0) return;
+      // Sign-out unmounts the account tree. The same account signing back in
+      // must read its persisted choice, and old in-flight responses lose ownership.
+      generation++;
+      if (retry) clearTimeout(retry);
+      retry = null;
+      publish(null);
+    };
   }, [userId]);
   const current = useSyncExternalStore(subscribe, () => reading);
   const mine = !!userId && current?.userId === userId;

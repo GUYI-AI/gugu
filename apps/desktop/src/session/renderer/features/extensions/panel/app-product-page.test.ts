@@ -7,8 +7,6 @@ import { describe, expect, it, vi } from 'vitest';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 vi.mock('@renderer/lib/ipc', () => ({ rpc: { extensions: {} }, events: { on: () => () => {} } }));
-// The 「给哪些 agent」 section reaches the window-bound platform layer; these pages are about the page's own words.
-vi.mock('./app-given-section', () => ({ AppGivenSection: () => null }));
 
 const { AppProductPage } = await import('./app-product-page');
 
@@ -43,8 +41,7 @@ async function render(props: Record<string, unknown>, act_?: (document: Document
   await act(async () => {
     root.render(
       React.createElement(AppProductPage, {
-        subject: { manifest: pomodoro, installed: pomodoro, installRef: undefined, cloud: null },
-        enabled: true,
+        subject: { manifest: pomodoro, installRef: { extensionId: 'pomodoro-log', version: '1.2.0' }, cloud: cloud('1.2.0') },
         lifecycle: null,
         locale: 'en',
         translate,
@@ -52,7 +49,6 @@ async function render(props: Record<string, unknown>, act_?: (document: Document
         onBack: () => undefined,
         onLifecycle: () => undefined,
         onInstallVersion: () => undefined,
-        menu: {},
         ...props,
       } as never)
     );
@@ -89,22 +85,6 @@ describe('App 的产品页 (#7059)', () => {
     } finally { unregister(); }
   });
 
-  it('shows the platforms declared by the installed version rather than the market version', async () => {
-    const market = { ...(pomodoro as object), platforms: ['desktop', 'phone'] };
-    const installed = { ...(pomodoro as object), platforms: ['desktop'] };
-    await render({ subject: { manifest: market, installed, cloud: null } }, async (document) => {
-      const row = [...document.querySelectorAll('dt')].find((label) => label.textContent === 'extensions.infoPlatforms')?.parentElement;
-      expect(row?.querySelector('dd')?.textContent).toBe('extensions.platform.desktop');
-    });
-  });
-
-  it('does not invent platform metadata for an installed older App', async () => {
-    const market = { ...(pomodoro as object), platforms: ['desktop', 'phone'] };
-    expect((await render({ subject: { manifest: market, installed: pomodoro, cloud: null } })).text).not.toContain('extensions.infoPlatforms');
-    const uninstalled = await render({ subject: { manifest: market, installed: undefined, cloud: null } });
-    expect(uninstalled.text).toContain('extensions.platform.desktop and extensions.platform.phone');
-  });
-
   it('offers an information control for declared phone Agent capabilities without a fixed warning', async () => {
     await render({ phoneAgentCapabilities: ['agents:tools'] }, async (document) => {
       expect(document.querySelector('[data-testid="app-product-phone-agent-features"]')).toBeNull();
@@ -138,17 +118,9 @@ describe('App 的产品页 (#7059)', () => {
     expect((await render({})).text).toContain('node mcp/server.mjs');
   });
 
-  it('没写作者时,只有市场上那份写官方;文件夹装的、聊天里收到的不写', async () => {
-    expect((await render({})).text).not.toContain('extensions.official');
-    const source = { repo: 'shuxueshuxue/promo-skills', path: '.', commit: '6f46446' + 'a'.repeat(33) };
-    expect((await render({ subject: { manifest: pomodoro, installed: undefined, installRef: { extensionId: 'pomodoro-log', version: '1.2.0' }, cloud: { source } } })).text).toContain(
-      'extensions.official'
-    );
-  });
-
   it('市场有来源时显示「查看源码」,仓、提交和目录只在悬停提示里;没有来源记录的旧版本不写', async () => {
     const source = { repo: 'shuxueshuxue/promo-skills', path: '.', commit: '6f46446' + 'a'.repeat(33) };
-    const subject = (cloud: unknown) => ({ subject: { manifest: pomodoro, installed: pomodoro, installRef: undefined, cloud } });
+    const subject = (cloud: unknown) => ({ subject: { manifest: pomodoro, installRef: { extensionId: 'pomodoro-log', version: '1.2.0' }, cloud } });
     for (const path of ['.', 'app']) {
       const page = await render(subject({ source: { ...source, path } }), async (document) => {
         const button = document.querySelector('[data-testid="app-product-review"] button')!;
@@ -159,6 +131,27 @@ describe('App 的产品页 (#7059)', () => {
       expect(page.text).not.toContain('shuxueshuxue/promo-skills');
     }
     expect((await render(subject({ source: null }))).text).not.toContain('extensions.viewSource');
+  });
+
+  it('只说市场上这一版:装着的是别的版本就说一句,页上没有开关和「收回」;去管它走「App 设置」', async () => {
+    const onManage = vi.fn();
+    const notes = { ...(pomodoro as object), permissions: { capabilities: ['notifications'] }, platforms: ['desktop', 'phone'] };
+    const { text } = await render({ subject: { manifest: notes, installRef: { extensionId: 'pomodoro-log', version: '1.2.0' }, cloud: cloud('1.2.0'), installedVersion: '1.0.0' }, onManage }, async (document) => {
+      expect(document.querySelector('[role="switch"]')).toBeNull();
+      expect(document.querySelector('[data-testid="app-product-installed-version"]')?.textContent).toBe('extensions.installedVersionNote(1.0.0)');
+      await act(async () => void document.querySelector('[data-testid="app-product-manage"]')!.dispatchEvent(new document.defaultView!.MouseEvent('click', { bubbles: true })));
+    });
+    expect(onManage).toHaveBeenCalledOnce();
+    expect(text).not.toContain('extensions.revoke');
+    expect(text).toContain('extensions.platform.desktop and extensions.platform.phone');
+    expect(text).toContain('v1.2.0');
+    expect((await render({ subject: { manifest: pomodoro, installRef: { extensionId: 'pomodoro-log', version: '1.2.0' }, cloud: cloud('1.2.0'), installedVersion: '1.2.0' } })).text).not.toContain('extensions.installedVersionNote');
+  });
+
+  it('市场版本的介绍读不到就照实说', async () => {
+    expect((await render({ api: listingOf(null) as never })).text).toContain('extensions.listingUnavailable');
+    const outdated = Object.assign(new Error('older gugu'), { code: 'server_outdated' });
+    expect((await render({ api: listingOf(outdated) as never })).text).toContain('extensions.listingPeerOutdated');
   });
 
   it('头上那颗按钮:能打开就写「打开」,按了交给屏幕去开;没有可开的就不画', async () => {
@@ -174,7 +167,7 @@ describe('App 的产品页 (#7059)', () => {
   });
 
   it('那台机器离线 / 太旧(#6264):装、卸、收回、装某一版一起灰,「‹ App」照样能回去', async () => {
-    const off = await render({ readOnly: true, lifecycle: { kind: 'get' }, onTogglePermission: () => undefined });
+    const off = await render({ readOnly: true, lifecycle: { kind: 'get' } });
     expect(off.fieldsetDisabled).toBe(true);
     expect(off.buttonsDisabled.length).toBeGreaterThan(0);
     expect(off.buttonsDisabled.every(Boolean)).toBe(true);
@@ -182,29 +175,11 @@ describe('App 的产品页 (#7059)', () => {
     expect((await render({ readOnly: false })).fieldsetDisabled).toBe(false);
   });
 
-  it('权限分「它能看 / 它能做」,装着的每项能单独收回;收回的那项划掉、写「恢复」', async () => {
-    const notes = {
-      ...(pomodoro as object),
-      id: 'agent-notes',
-      permissions: { capabilities: ['agents:read:all', 'notifications'], network: ['example.com'] },
-    } as never;
-    const { text } = await render({
-      subject: { manifest: notes, installed: notes, installRef: undefined, cloud: null },
-      revoked: ['notifications'],
-      onTogglePermission: () => undefined,
-    });
-    expect(text).toContain('extensions.permissionsSee');
-    expect(text).toContain('extensions.permissionsDo');
-    expect(text).toContain('extensions.restore');
-    expect(text).toContain('extensions.revoke');
-    expect(text).toContain('extensions.permissionsWithdrawnNote(3|1)');
-  });
-
   it('「对 agent 说」:manifest 写了示例就画出来,点一句交给屏幕去新建任务', async () => {
     const asked: string[] = [];
     const withExamples = { ...(pomodoro as object), examples: ['把刚才查到的三个结论记进随手记'] } as never;
     const { text } = await render(
-      { subject: { manifest: withExamples, installed: undefined, installRef: undefined, cloud: null }, onAsk: (line: string) => asked.push(line) },
+      { subject: { manifest: withExamples, installRef: { extensionId: 'pomodoro-log', version: '1.2.0' }, cloud: cloud('1.2.0') }, onAsk: (line: string) => asked.push(line) },
       async (document) => {
         const ask = document.querySelector('.mk-ask') as HTMLButtonElement;
         await act(async () => void ask.dispatchEvent(new document.defaultView!.MouseEvent('click', { bubbles: true })));
@@ -232,18 +207,6 @@ describe('App 的产品页 (#7059)', () => {
     });
   });
 
-  it('本机装的(没有市场版本)没有「关于」和截图,也不去问;市场版本读不到就照实说', async () => {
-    const api = listingOf(null);
-    await render({ api: api as never }, async (document) => {
-      expect(document.querySelector('[data-testid="app-product-about"]')).toBeNull();
-      expect(document.querySelector('[data-testid="app-product-preview"]')).toBeNull();
-    });
-    expect(api.marketListing).not.toHaveBeenCalled();
-    const market = { subject: { manifest: pomodoro, installed: undefined, installRef: undefined, cloud: cloud('1.2.0') } };
-    expect((await render({ ...market, api: listingOf(null) as never })).text).toContain('extensions.listingUnavailable');
-    const outdated = Object.assign(new Error('older gugu'), { code: 'server_outdated' });
-    expect((await render({ ...market, api: listingOf(outdated) as never })).text).toContain('extensions.listingPeerOutdated');
-  });
 });
 
 describe('产品页的语言与去重', () => {

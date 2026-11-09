@@ -27,7 +27,7 @@ export default {
     },
     "tasksSample": {
       "title": "项目：集中推进一件事",
-      "body": "点开示例项目，看看一件事是怎么推进的。"
+      "body": "点开左侧示例项目看看，或点「下一步」继续。"
     },
     "chats": {
       "title": "对话：和人、和 Agent 聊",

@@ -338,6 +338,8 @@ export class TailReader {
   }
 
   private acceptText(text: string, sink: LineSink): void {
+    // A line longer than a read arrives in many pieces; joining and splitting on each one is quadratic in its length.
+    if (!text.includes('\n')) { this.partial += text; return; }
     const parts = (this.partial + text).split('\n');
     this.partial = parts.pop() ?? '';
     const lines: string[] = [], offsets: number[] = [];

@@ -108,7 +108,8 @@ export const startSessionCommandSchema = z.object({ input: acpStartInputSchema }
 export const resumeSessionCommandSchema = z.object({
   input: acpStartInputSchema.extend({ providerSessionId: z.string() }),
 });
-export const stopSessionCommandSchema = z.object({ sessionId: z.string(), onlyIfIdle: z.boolean().optional() });
+// `forgetLost`: the engine session was replaced, so a lost record is dropped instead of kept for reconnect.
+export const stopSessionCommandSchema = z.object({ sessionId: z.string(), onlyIfIdle: z.boolean().optional(), forgetLost: z.boolean().optional() });
 export const sendPromptCommandSchema = z.object({
   sessionId: z.string(),
   prompt: promptInputSchema,

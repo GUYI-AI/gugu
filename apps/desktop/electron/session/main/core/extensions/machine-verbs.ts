@@ -5,6 +5,7 @@ import { HOSTED_PROGRAM_ELSEWHERE, hostsProgram } from '@shared/extensions/progr
 import { listExtensionData, readExtensionData, writeExtensionData } from '@main/core/extensions/extension-data';
 import { extensionDataRoot, extensionsService } from '@main/core/extensions/extensions-root';
 import { extensionPrograms } from '@main/core/extensions/extension-programs';
+import type { HandedFile } from '@main/core/extensions/working-copy-files';
 
 /**
  * The verbs that follow the machine of a page's session (`BRIDGE_VERBS` rows with `machine`), as THIS machine does them:
@@ -57,11 +58,11 @@ export const machineVerbs = {
     const { listWorkingCopy } = await import('./working-copy-files');
     return listWorkingCopy(place, folderOf(args.folder), null);
   },
-  filesRead: async (_extensionId, args) => {
+  filesRead: async (_extensionId, args, _from, handed) => {
     const ref = fileRefOf(args.ref);
     if (!isWorkspace(ref)) throw invalid('A chat\'s file is opened whole: files.open');
     const { readWorkingCopy } = await import('./working-copy-files');
-    return readWorkingCopy(ref, 'id' in ref ? ref.id : ref.name, Number(args.offset) || 0, Number(args.length) || 0);
+    return readWorkingCopy(ref, 'id' in ref ? ref.id : ref.name, Number(args.offset) || 0, Number(args.length) || 0, handed);
   },
   // A working copy's writes: what this machine's own pages call, for the page elsewhere that named it.
   filesCreate: async (extensionId, args) => (await import('./app-files')).createAppFile(pageOf(extensionId), args as never),
@@ -74,10 +75,10 @@ export const machineVerbs = {
     if (!isWorkspace(ref) || !('id' in ref)) throw invalid('A draft is of a working copy\'s file, by its path');
     return (await import('./app-files')).draftHere(ref as never, args.text);
   },
-  // Who may name what was decided where the page is (`writeAppFileChunk`): a file handed to it there has no page here.
+  // The capability was judged where the page is; a write carries no handed file, so nothing outside the working copy.
   filesWriteChunk: async (_extensionId, args) => {
     const place = placeOf(args.place);
     if (!isWorkspace(place)) throw invalid('A chat\'s file is uploaded whole: files.upload');
     return (await import('./working-copy-files')).writeWorkingCopyChunk(place, args as never);
   },
-} satisfies Record<MachineVerb | PlaceVerb, (extensionId: string, args: Record<string, unknown>, from: MachineCallFrom) => Promise<unknown>>;
+} satisfies Record<MachineVerb | PlaceVerb, (extensionId: string, args: Record<string, unknown>, from: MachineCallFrom, handed: HandedFile) => Promise<unknown>>;

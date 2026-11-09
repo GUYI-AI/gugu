@@ -1,11 +1,14 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { copyVerifiedFile, ciphertextSize, transformFile, type FileSink } from '../shared/fileCipher'
-import { FILE_CHUNK_BYTES, MissingFileObjectError, fileRefKey, requireFileRange, parseFileMetadata, snapshotBlob, type FileBytes, type FileContext, type FileMetadata, type FileProviders, type FileRevision } from '../shared/fileResolver'
+import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileRefKey, requireFileRange, parseFileMetadata, snapshotBlob, type FileBytes, type FileContext, type FileMetadata, type FileProviders, type FileRevision } from '../shared/fileResolver'
 import type { FileChunkCache } from '../shared/fileCache'
-import { attachmentRequest, type AttachmentsEndpoint } from './attachmentsApi'
+import { AttachmentsError, attachmentRequest, type AttachmentsEndpoint } from './attachmentsApi'
 import { withBoundedOperation } from './boundedOperation'
 import { anySignal } from '../shared/anySignal'
 import { isTransientFileReadError, retryFileDownload } from './fileDownloadRetry'
+
+/** How long bytes shown before their read acknowledgement may stay up while it is pending. */
+const ACKNOWLEDGEMENT_MS = 15_000
 
 export type { FileChunkCache } from '../shared/fileCache'
 type Download = { status: string; code?: string; url: string; expires_at?: string; origin_available?: boolean; thumb_url?: string | null; download_id: string; key?: string; codec?: string; sha256: string | null; size_bytes: number; ciphertext_bytes?: number; ciphertext_sha256?: string; bucket_id?: string; object_name?: string; message_id?: string }
@@ -89,29 +92,40 @@ export function cloudFileProviders(deps: {
   imageCache?: Pick<Cache, 'match' | 'put'>
 }): Pick<FileProviders, 'metadata' | 'managed' | 'temporary' | 'preview' | 'download'> {
   const request = async (context: FileContext, route: string, body: Record<string, unknown>) => {
+    context.signal?.throwIfAborted()
     const endpoint = await deps.endpoint(context)
+    context.signal?.throwIfAborted()
     return attachmentRequest(endpoint, route, body, context.signal)
   }
-  const objectFetch = async (context: FileContext, url: RequestInfo | URL, init?: RequestInit) =>
-    (deps.fetch ?? (await deps.endpoint(context)).fetch ?? fetch)(url, init)
+  const objectFetch = async (context: FileContext, url: RequestInfo | URL, init?: RequestInit) => {
+    context.signal?.throwIfAborted()
+    const fetcher = deps.fetch ?? (await deps.endpoint(context)).fetch ?? fetch
+    context.signal?.throwIfAborted()
+    return fetcher(url, init)
+  }
   const read = async (revision: FileRevision, context: FileContext, encrypted: boolean, destination?: FileSink): Promise<FileBytes> => {
     const ref = 'item_id' in context.ref ? { ...context.ref, version: revision.version } : context.ref
+    // A server that knows `download_request_id` answers `download` (the lease, once the copy is ready) and checks the
+    // version in the read acknowledgement, which a read for display does not wait for. Older servers answer neither.
+    let lease: Download | undefined, combined = false
+    const downloadRequest = crypto.randomUUID()
     if (encrypted) await withBoundedOperation(600_000, () => new Error('File device is unavailable or its transfer timed out'), async timeout => {
       const waiting = { ...context, signal: anySignal([context.signal, timeout]) }, requestId = crypto.randomUUID()
       for (;;) {
         waiting.signal.throwIfAborted()
-        const state = await request(waiting, 'file-request', { ref, as: context.actor.actorId, request_id: requestId }) as { status: string; transfer_status: string; host_label?: string | null; host_online?: boolean }
+        const state = await request(waiting, 'file-request', { ref, as: context.actor.actorId, request_id: requestId, download_request_id: downloadRequest }) as { status: string; transfer_status: string; host_label?: string | null; host_online?: boolean; download?: Download | null }
         if (state.status !== 'ready' || state.transfer_status === 'retired') throw new Error('File transfer is no longer available')
-        if (state.transfer_status === 'ready') break
+        if (state.transfer_status === 'ready') {
+          combined = state.download !== undefined
+          if (state.download) lease = accept(state.download)
+          break
+        }
         // Only the device that keeps this version can send it: say so instead of waiting while it is offline.
         if (state.host_online === false) throw new Error(`${state.host_label?.trim() || 'The computer that keeps this file'} is offline. This file opens when it is back online.`)
         await new Promise(resolve => setTimeout(resolve, 700))
       }
     })
-    let lease: Download | undefined
-    const sign = async (renew = false, origin = false) => {
-      const row = await request(context, 'file-download', { ref, as: context.actor.actorId,
-        request_id: origin && !renew && lease ? lease.download_id : crypto.randomUUID(), ...(origin ? { origin: true } : {}) }) as Download
+    function accept(row: Download) {
       if (missingObject(row)) throw new MissingFileObjectError()
       if (row.status !== 'ready' || typeof row.url !== 'string' || row.size_bytes !== (encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes) || row.sha256 !== revision.sha256 || !sameLegacyObject(revision, row) ||
         row.origin_available !== undefined && typeof row.origin_available !== 'boolean' ||
@@ -119,8 +133,10 @@ export function cloudFileProviders(deps: {
           lease && (row.ciphertext_sha256 !== lease.ciphertext_sha256 || row.key !== lease.key))) throw new Error('File download commitment changed')
       return lease = row
     }
+    const sign = async (renew = false, origin = false) => accept(await request(context, 'file-download', { ref, as: context.actor.actorId,
+      request_id: origin && !renew && lease ? lease.download_id : crypto.randomUUID(), ...(origin ? { origin: true } : {}) }) as Download)
     // A key still requires the current download ACL, even if every ciphertext chunk is cached.
-    if (encrypted) await sign()
+    if (encrypted && !lease) await sign()
     const digest = encrypted ? lease!.ciphertext_sha256! : revision.sha256, key = cacheKey(context, digest ?? crypto.randomUUID())
     const source = remoteSource(encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes, key, destination || revision.legacy_object ? uncached : deps.cache, async (renew, origin) => renew || origin ? sign(renew, origin) : lease ?? await sign(), (url, init) => objectFetch(context, url, init), context.signal, context.progress)
     let dataKey: Uint8Array | undefined
@@ -135,10 +151,45 @@ export function cloudFileProviders(deps: {
       // Downloads publish only after the final authorization read; private snapshot readers retain their existing sink.
       const writing = destination ? { ...sink, commit: async (): Promise<FileBytes> => ({ size: revision.size_bytes, read: async () => { throw new Error('Download is not committed') }, dispose: async () => {} }) } : sink
       const file = encrypted ? (await transformFile({ direction: 'decrypt', revision, source, sink: writing, key: dataKey!, ciphertextSha256: lease!.ciphertext_sha256!, signal: context.signal })).file : await copyVerifiedFile(revision, source, writing, context.signal)
+      const changed = (current: Download) => {
+        if (missingObject(current)) throw new MissingFileObjectError()
+        if (current.status !== 'ready') throw new FileReadRevokedError(current.status === 'gone' || current.status === 'expired' ? current.status : 'access')
+        if (current.sha256 !== revision.sha256 || current.size_bytes !== revision.size_bytes || !sameLegacyObject(revision, current)) throw new FileReadRevokedError('revision')
+      }
+      if (encrypted && combined) {
+        const downloadId = lease!.download_id
+        // Bounded, so a stalled request cannot keep a shown read up; one retry for a transient failure, never for a refusal.
+        const acknowledge = () => withBoundedOperation(ACKNOWLEDGEMENT_MS, () => new Error('File read acknowledgement timed out'), async timeout => {
+          const acknowledging = { ...context, signal: anySignal([context.signal, timeout]) }
+          for (let attempt = 0; ; attempt++) {
+            try {
+              const read = await request(acknowledging, 'file-read-complete', { download_id: downloadId, as: context.actor.actorId,
+                ref, expect: { sha256: revision.sha256, size_bytes: revision.size_bytes } }) as { acknowledged: boolean; current: Download }
+              changed(read.current)
+              if (!read.acknowledged) throw new FileReadRevokedError('revision')
+              return
+            } catch (error) {
+              if (error instanceof AttachmentsError && (error.status === 403 || error.status === 404)) throw new FileReadRevokedError('access')
+              if (attempt || !isTransientFileReadError(error)) throw error
+            }
+          }
+        })
+        // A saved copy cannot be taken back: a download still waits. Bytes for display are returned now and the
+        // acknowledgement follows; whoever shows them takes them down if it fails (`acknowledged`).
+        if (destination) { await acknowledge(); return await sink.commit() }
+        const acknowledged = acknowledge().catch(async error => {
+          if (error instanceof FileReadRevokedError || error instanceof MissingFileObjectError) await deps.cache.clear(key)
+          throw error
+        })
+        acknowledged.catch(() => undefined)
+        return { size: file.size, read: (offset, length) => file.read(offset, length), dispose: () => file.dispose(), acknowledged }
+      }
+      context.signal?.throwIfAborted()
       const current = await metadata({ ...context, ref }) as Download
-      if (missingObject(current)) throw new MissingFileObjectError()
-      if (current.status !== 'ready' || current.sha256 !== revision.sha256 || current.size_bytes !== revision.size_bytes || !sameLegacyObject(revision, current)) throw new Error('File access or revision changed during download')
+      context.signal?.throwIfAborted()
+      changed(current)
       if (encrypted) await request(context, 'file-read-complete', { download_id: lease!.download_id, as: context.actor.actorId })
+      context.signal?.throwIfAborted()
       return destination ? await sink.commit() : file
     } catch (error) {
       await sink?.abort()
@@ -150,7 +201,10 @@ export function cloudFileProviders(deps: {
   return {
     download: (revision, context, sink) => read(revision, context, revision.source === 'local', sink),
     async metadata(context): Promise<FileMetadata> {
-      return parseFileMetadata(await metadata(context), context.ref)
+      context.signal?.throwIfAborted()
+      const result = await metadata(context)
+      context.signal?.throwIfAborted()
+      return parseFileMetadata(result, context.ref)
     },
     managed: (revision, context) => read(revision, context, false),
     temporary: (revision, context) => read(revision, context, true),

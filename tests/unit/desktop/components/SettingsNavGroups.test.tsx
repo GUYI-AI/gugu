@@ -30,6 +30,8 @@ const captions = () => [...harness.container.querySelectorAll('.gg-settings-nav-
 // SettingsPanel excludes apps/phone on desktop. Permission/session-host capability filters
 // can only remove more entries, so this covers every section a desktop host may supply.
 const desktopSections = SETTINGS_SECTIONS.filter((section) => section !== 'apps' && section !== 'phone')
+// SettingsPanel never supplies the native Beta password destination to the mobile shell.
+const mobileSections = SETTINGS_SECTIONS.filter((section) => section !== 'passwords')
 
 // Desktop order follows the approved sidebar; mobile retains its existing groups.
 describe('the one settings nav', () => {
@@ -38,7 +40,7 @@ describe('the one settings nav', () => {
     expect(groups()).toEqual([
       ['account', 'subscriptions', 'usage'],
       ['assistant', 'connectors'],
-      ['general', 'interface', 'model', 'permissions'],
+      ['general', 'interface', 'model', 'permissions', 'passwords'],
       ['sessions', 'devices', 'browser', 'files'],
       ['resource-monitor', 'about'],
     ])
@@ -54,7 +56,7 @@ describe('the one settings nav', () => {
   })
 
   it('preserves every mobile group and its existing order', async () => {
-    await render(SETTINGS_SECTIONS, { mobile: true })
+    await render(mobileSections, { mobile: true })
     expect(groups()).toEqual([
       ['assistant', 'connectors'],
       ['account', 'usage', 'files', 'subscriptions'],
@@ -66,7 +68,7 @@ describe('the one settings nav', () => {
 
   // 手机「我的」没有会话页那几格(订阅、云端连接应用也在其中:读数要会话页宿主):同一份分组,少掉的格不画,整组空了就连组带小标题一起不画。
   it('drops the sections a host does not show, and a group left empty', async () => {
-    await render(SETTINGS_SECTIONS.filter((section) => !SESSION_HOST_SETTINGS_SECTIONS.includes(section) && section !== 'devices' && section !== 'channels' && section !== 'apps' && section !== 'phone'), { mobile: true })
+    await render(mobileSections.filter((section) => !SESSION_HOST_SETTINGS_SECTIONS.includes(section) && section !== 'devices' && section !== 'channels' && section !== 'apps' && section !== 'phone'), { mobile: true })
     expect(groups()).toEqual([
       ['assistant'],
       ['account', 'usage', 'files'],
@@ -97,7 +99,7 @@ describe('the one settings nav', () => {
   })
 
   it('preserves mobile captions and the uncaptioned About entry', async () => {
-    await render(SETTINGS_SECTIONS, { assistantName: '小咕', mobile: true })
+    await render(mobileSections, { assistantName: '小咕', mobile: true })
     expect(captions()).toEqual(['小咕', '我的', '偏好', '工作'])
     expect(harness.container.querySelector('[data-group="about"] .gg-settings-nav-caption')).toBeNull()
     harness.cleanup()

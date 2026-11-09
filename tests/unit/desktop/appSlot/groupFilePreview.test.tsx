@@ -229,7 +229,7 @@ describe('unclaimed group files use the message preview from every entry', () =>
     await until('the report HTML is drawn', () => boundary.previewContents.get(harness.container.querySelector('iframe')?.getAttribute('src') ?? '')?.includes('lane report') === true)
     expect(appsHere!.groupFileOpener).toHaveBeenCalledWith({ chatId: file.chatId, itemId: file.itemId })
     expect(harness.container.querySelector('iframe')?.getAttribute('sandbox')).toBe('allow-scripts')
-    expect(boundary.read).toHaveBeenCalledWith({ kind: 'item', itemId: file.itemId, version: 3 }, 'full', undefined, undefined, expect.any(Function))
+    expect(boundary.read).toHaveBeenCalledWith({ kind: 'item', itemId: file.itemId, version: 3 }, 'shown', undefined, undefined, expect.any(Function))
   })
 
   it('peek has the same content and download as ordinary openWith', async () => {

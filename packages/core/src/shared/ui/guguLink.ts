@@ -228,7 +228,7 @@ function buildAppLink(input: ParsedExtensionLink, scheme: string): string {
 
 /** Stored chat/file links are independent of the build that writes or reads the message. */
 export const APP_VARIANT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/
-export type AppDetailLink = { kind: 'app-detail'; extensionId: string; deviceId?: string; variant?: string }
+export type AppDetailLink = { kind: 'app-detail'; extensionId: string; deviceId?: string; variant?: string; /** Asked from inside the App: back returns there. Never in the URL. */ fromApp?: boolean }
 function validAppDetail(target: AppDetailLink): boolean {
   return /^[a-z0-9][a-z0-9-]{1,63}$/.test(target.extensionId)
     && (target.deviceId === undefined || (!!target.deviceId && target.deviceId.trim() === target.deviceId && !/\s/.test(target.deviceId)))
@@ -252,6 +252,29 @@ export type AgentSessionTarget = { kind: 'session'; agentId: string; deviceId?: 
 /** What a click may open: any link target, or an agent's session named by the agent. */
 export type OpenTarget = GuguLinkTarget | AgentSessionTarget
 
+/**
+ * A gugu URL read the same in every browser. Before Chromium 130 a custom scheme's URL has no host (`hostname` is empty and the
+ * authority stays in `pathname`), so every gugu://ext link read as no link at all on those phones. The authority is taken from
+ * the text, as a current browser reads it: case kept, an explicit port kept. The rest is read as https, with a backslash kept
+ * as written (https would turn it into a slash). No authority, or an invalid one, is no gugu URL.
+ */
+export function readGuguUrl(raw: string): { url: URL; host: string; port: string } | null {
+  let href: string
+  try {
+    const parsed = new URL(raw)
+    if (!/^gugu(?:-[a-z0-9-]+)?:$/.test(parsed.protocol)) return null
+    if (!parsed.href.startsWith(`${parsed.protocol}//`)) return null
+    href = parsed.href.slice(parsed.protocol.length + 2)
+  } catch { return null }
+  const end = href.search(/[/?#]/)
+  const authority = end === -1 ? href : href.slice(0, end)
+  const hostPort = /^(?:[^@]*@)?([^:@]*)(?::(\d*))?$/.exec(authority)
+  if (!hostPort?.[1] || authority.includes('\\')) return null
+  try {
+    return { url: new URL(`https://${href.replace(/\\/g, '%5C')}`), host: hostPort[1], port: hostPort[2] ?? '' }
+  } catch { return null }
+}
+
 /** One reader for stored references and OS links. Only external invocation binds a link to a build's scheme. */
 export function parseGuguLink(raw: string, options: { supabaseUrl?: string } = {}): GuguLinkTarget | null {
   const chat = parseConversationLink(raw)
@@ -268,17 +291,19 @@ export function parseGuguLink(raw: string, options: { supabaseUrl?: string } = {
       }
     } catch { /* An invalid database URL cannot name a login approval. */ }
   }
-  const scheme = url.protocol.slice(0, -1)
-  if (!/^gugu(?:-[a-z0-9-]+)?$/.test(scheme)) return null
-  if (url.hostname === 'app') {
-    if (url.username || url.password || url.port || url.hash || !/^\/[^/]+$/.test(url.pathname)
+  const read = readGuguUrl(raw)
+  if (!read) return null
+  const { host, port } = read
+  url = read.url
+  if (host === 'app') {
+    if (url.username || url.password || port || url.hash || !/^\/[^/]+$/.test(url.pathname)
       || [...url.searchParams.keys()].some((key) => !['device', 'variant'].includes(key) || url.searchParams.getAll(key).length !== 1)) return null
     const target: AppDetailLink = { kind: 'app-detail', extensionId: url.pathname.slice(1),
       ...(url.searchParams.has('device') ? { deviceId: url.searchParams.get('device')! } : {}),
       ...(url.searchParams.has('variant') ? { variant: url.searchParams.get('variant')! } : {}) }
     return validAppDetail(target) ? target : null
   }
-  if (url.hostname === 'ext') {
+  if (host === 'ext') {
     if (raw.length > MAX_EXTENSION_LINK_LENGTH) return null
     const [extensionId, tab, ...rest] = url.pathname.split('/').filter(Boolean)
     if (!extensionId || !tab) return null
@@ -290,19 +315,19 @@ export function parseGuguLink(raw: string, options: { supabaseUrl?: string } = {
     for (const [key, value] of url.searchParams) if (!key.startsWith('gugu.')) query[key] = value
     return { kind: 'app', extensionId, tab, path, query, place: session ? { session } : chat ? { chat } : null }
   }
-  if (url.hostname === 'chat') {
+  if (host === 'chat') {
     const match = new RegExp(`^/(${UUID})(?:/message/(${UUID}))?/?$`, 'i').exec(url.pathname)
     return match ? { kind: 'chat', chatId: match[1]!.toLowerCase(), ...(match[2] ? { messageId: match[2].toLowerCase() } : {}) } : null
   }
-  if (url.hostname === 'file') {
+  if (host === 'file') {
     const target = parseGroupFileLink(`gugu-file://${url.pathname.slice(1)}${url.search}${url.hash}`)
     return target ? { kind: 'file', ...target } : null
   }
   const id = url.pathname.slice(1)
   if (!id || id.includes('/') || url.search || url.hash) return null
   try {
-    if (url.hostname === 'session') return { kind: 'session', sessionId: decodeURIComponent(id) }
-    if (url.hostname === 'project') return { kind: 'project', projectId: decodeURIComponent(id) }
+    if (host === 'session') return { kind: 'session', sessionId: decodeURIComponent(id) }
+    if (host === 'project') return { kind: 'project', projectId: decodeURIComponent(id) }
   } catch { return null }
   return null
 }
