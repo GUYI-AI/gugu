@@ -5496,6 +5496,7 @@ app.whenReady().then(async () => {
                 ? { additionalEnv: configuredMcp.env }
                 : {})),
             additionalMcpServers: configuredMcp.servers,
+            ...(info.sourceSessionId ? { libraryFrom: info.sourceSessionId } : {}),
             // 运行时分叉(侧边聊天)沿用启动输入解析出的同一权限档；ACP adapter 的进程参数
             // 与普通 app-server 由同一 session bundle 物化，不能在桥里另猜一档。
             autonomy: info.permissionMode
@@ -6474,8 +6475,8 @@ app.whenReady().then(async () => {
         })
         // 资源库 → MCP:这条任务带上的那几台,经能力包送进去。包建好以后连同留在外面的(让给这一家自己的、
         // 这条腿收不到的、和咕咕自己的撞了的、资源库里已删的)记成这一次的事实,任务的 `/mcp` 面板读它。
-        setSessionLibraryMcpBridge(async (sessionId) => {
-          const picked = await emdash.emdashLibraryMcpForSession(sessionId)
+        setSessionLibraryMcpBridge(async (sessionId, selectionFrom) => {
+          const picked = await emdash.emdashLibraryMcpForSession(selectionFrom ?? sessionId)
           const servers = picked.servers.map((server) => ({
             name: server.name,
             transport: server.transport,
@@ -6492,6 +6493,8 @@ app.whenReady().then(async () => {
             settle: ({ delivered, collided }) => {
               const leftOut = [...picked.leftOut, ...collided.map((item) => ({ name: item.name, reason: 'collides' as const, with: item.with }))]
               if (leftOut.length > 0) createLogger('library-mcp').info({ sessionId, leftOut }, 'library MCP left out of the session')
+              // 分叉没有自己的行可记;来源任务那一份是来源自己那一次起进程的事实,❌ 拿分叉的盖掉它。
+              if (selectionFrom) return
               void emdash.emdashRecordLibraryMcp(sessionId, { delivered, leftOut }).catch((error: unknown) =>
                 createLogger('library-mcp').warn({ sessionId, error: String(error) }, 'could not record the library MCP delivery'))
             },
