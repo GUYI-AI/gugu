@@ -105,6 +105,19 @@ export function buildTheme(theme?: SessionTheme): ITerminalOptions['theme'] {
   return resolved;
 }
 
+/**
+ * App 主题下终端的默认字色 / 底色报给宿主,主进程的屏幕拿它应答 OSC 10/11(@@@color-report,pty-screen.ts)。
+ * 主题提供者挂上 / 换主题时报,每个终端建起来时也报一次(挂上那一刻样式可能还没就位:变量为空就不报,❌ 报黑色)。
+ */
+function reportTerminalColors(): void {
+  if (!cssVar('--xterm-fg') || !cssVar('--xterm-bg')) return;
+  const { foreground, background } = buildTheme() ?? {};
+  if (!foreground || !background) return;
+  void rpc.pty.setReportColors({ foreground, background }).then((result) => {
+    if (!result.success) log.warn('pty: session host rejected terminal colors', { error: result.error });
+  }, (error: unknown) => log.warn('pty: failed to report terminal colors', { error: String(error) }));
+}
+
 // @@@xterm-on-demand — xterm 随第一个终端加载，不随应用启动加载。这个文件经任务页的 store 链静态可达，
 // 咕咕主界面(手机也是)启动时就会执行它;静态 import xterm 等于每次启动都多解析 0.33 MB 的终端引擎。
 // FrontendPty 只在 PtySession.connect()(本就是异步)里构造，那里先 await loadXterm()。
@@ -194,6 +207,8 @@ export class FrontendPty {
   /** 挂在界面上没有(mount / unmount),以及所在的页露没露着(setShown)。两者都成立才用 WebGL。 */
   private mounted = false;
   private shown = true;
+  /** The pane measured this terminal's grid, or (undefined) gave up measuring: TerminalManagerStore.createTerminal starts a new shell on it. */
+  onGridMeasured: ((dims?: { cols: number; rows: number }) => void) | null = null;
   /** Last { cols, rows } sent to rpc.pty.resize(). Used by PaneSizingContext to skip redundant IPC calls. */
   lastSentDims: { cols: number; rows: number } | null = null;
   /**
@@ -304,6 +319,13 @@ export class FrontendPty {
     this.terminal.parser.registerCsiHandler({ intermediates: '$', final: 'p' }, replyDecrqm(''));
     this.terminal.parser.registerCsiHandler({ prefix: '?', intermediates: '$', final: 'p' }, replyDecrqm('?'));
 
+    // @@@color-report — 默认字色 / 底色的查询(OSC 10/11 `?`)由主进程那块屏幕当场应答(pty-screen.ts),这里只吞掉。
+    // 这里再答一份,就是经 IPC、排在界面主线程上的那份迟到的应答,会作为按键落进 TUI 的输入框。
+    for (const ident of [10, 11]) {
+      this.terminal.parser.registerOscHandler(ident, (data) => data === '?');
+    }
+    reportTerminalColors();
+
     this.terminal.parser.registerOscHandler(52, (data) => {
       const text = decodeOsc52ClipboardData(data);
       if (text === null) return false;
@@ -315,8 +337,8 @@ export class FrontendPty {
       return true;
     });
 
-    // xterm emits terminal protocol replies (OSC color reports, cursor position,
-    // device attributes) through onData. Agent TUIs query these during startup,
+    // xterm emits terminal protocol replies (cursor position, device attributes)
+    // through onData; color reports come from the main-process screen (@@@color-report). Agent TUIs query these during startup,
     // before the visible pane mounts and installs its keyboard handler.
     this.inputDisposable = this.terminal.onData((data) => {
       if (this.replayingHistory) return;
@@ -721,6 +743,7 @@ export function getFrontendPty(ptySessionId: string): FrontendPty | undefined {
 
 /** Apply a theme to all live terminals. Called on app-level theme change. */
 export function applyThemeToAll(theme?: SessionTheme): void {
+  if (!theme) reportTerminalColors();
   for (const pty of FrontendPty.all) {
     if (theme) {
       pty.setTheme(theme);

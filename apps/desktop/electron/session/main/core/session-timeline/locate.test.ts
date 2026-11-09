@@ -42,9 +42,20 @@ describe('locateSessionRecord · opencode 族', () => {
     expect(locator.roots).toEqual(['/xdg/opencode/opencode.db', `${home}/.local/share/opencode/opencode.db`]);
   });
 
+  // Kilo 7.8.27 real install, measured: the record is `~/.local/share/kilo/kilo.db` (provider id is kilocode, app is
+  // kilo), tables session/message/part, no `message.agent_id` column.
+  it('kilocode 的库在 kilo 目录下,不是 kilocode', () => {
+    const locator = opencodeLocator('kilocode', {});
+    expect(locator.agentId).toBeUndefined();
+    expect(locator.roots).toEqual([`${home}/.local/share/kilo/kilo.db`]);
+    expect(locator.channelDbs?.app).toBe('kilo');
+    expect(opencodeLocator('kilocode', { KILO_DB: '/custom/k.db' }).roots[0]).toBe('/custom/k.db');
+    expect(opencodeLocator('kilocode', { XDG_DATA_HOME: '/xdg' }).roots[0]).toBe('/xdg/kilo/kilo.db');
+  });
+
   it('表里没有的家不支持,也不按名字形状推', () => {
-    expect(sessionRecordHarnessForProvider('kilocode')).toBeNull();
-    expect(locateSessionRecord({ provider: 'kilocode', providerSessionId: 'ses_1' }).supported).toBe(false);
+    expect(sessionRecordHarnessForProvider('kiro')).toBeNull();
+    expect(locateSessionRecord({ provider: 'kiro', providerSessionId: 'ses_1' }).supported).toBe(false);
   });
 });
 

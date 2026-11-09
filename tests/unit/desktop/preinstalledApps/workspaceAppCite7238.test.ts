@@ -24,7 +24,7 @@ import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import { fingerprint } from '../../../../apps/desktop/preinstalled-apps/workspace/lines.js'
 import { until } from '../../../support/awaitCondition'
 
-const TEXT = ['# 发布计划', '', '目标：十月上线', '负责人：小王', '', '## 风险', '- 支付接口可能延期', '', '- 甲', '- 乙'].join('\n')
+const TEXT = ['# 发布计划', '', '目标：十月上线', '负责人：小王', '', '## 风险', '- 支付接口可能延期', '', '- 甲：Api 文档，API 冻结', '- 乙'].join('\n')
 const entry = {
   id: 'plan', chat: 'chat-1', name: 'plan.md', displayName: 'plan', contentType: 'text/markdown', type: 'text', size: 9,
   createdAt: null, updatedAt: null, createdBy: null, sourceMessageIds: [],
@@ -74,6 +74,8 @@ const config = {
   toJSON: () => ({ a: '**粗**', b: '# 不是标题' }), onChange: () => () => {}, onStatus: () => () => {},
 }
 // Another markdown file, opened as itself (its text, when it is opened, as plan's).
+// A chat's .txt, live text that is not markdown.
+const notes = { ...file, entry: { ...entry, id: 'notes', name: 'notes.txt', contentType: 'text/plain' }, text: 'one\ntwo: the Blue Heron\nthree', onChange: () => () => {}, onStatus: () => () => {} }
 const slowFile = () => ({ ...file, entry: { ...entry, id: 'slow', name: 'slow.md' }, text: file.text, onChange: () => () => {}, onStatus: () => () => {} })
 const ctxOf = (id: string) => ({ chat: { id: 'chat-1', name: 'G', kind: 'group', groupId: 'chat-1' }, file: { chat: 'chat-1', id }, locale: 'en', capabilities: ['files:read', 'files:write'] })
 let link: (event: { type: 'link'; tab: string; path: string; query: Record<string, string>; file: string | null }) => void = () => {}
@@ -101,7 +103,7 @@ const gugu = {
     }),
   },
   files: {
-    viewPreferences: vi.fn(async () => ({ showAppData: false })), list: vi.fn(async () => [entry]), onChanged: vi.fn(() => () => {}), open: vi.fn(async (handle: { id: string }): Promise<unknown> => (handle.id === 'cfg' ? config : handle.id === 'slow' ? slowFile() : file)) },
+    viewPreferences: vi.fn(async () => ({ showAppData: false })), list: vi.fn(async () => [entry]), onChanged: vi.fn(() => () => {}), open: vi.fn(async (handle: { id: string }): Promise<unknown> => (handle.id === 'cfg' ? config : handle.id === 'slow' ? slowFile() : handle.id === 'notes' ? notes : file)) },
 }
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement
@@ -251,6 +253,69 @@ describe('a pill opens the file at its lines', () => {
     pill('3-4', h)
     expect(marked('cm-found')).toEqual([])
     expect($('banner').textContent).toBe('The cited lines changed since: this is where they were')
+  })
+})
+
+describe("a link's find= opens the file at its words", () => {
+  const find = (query: Record<string, string>) => link({ type: 'link', tab: 'main', path: '', query, file: 'plan' })
+  const words = () => [...document.querySelectorAll('.cm-found-text')].map((w) => w.textContent).join('')
+
+  test('the first place they stand: their line marked in the source and the preview, the words themselves too', () => {
+    find({ find: '支付接口' })
+    const at = marked('cm-found')
+    expect(at).toHaveLength(1)
+    expect(view().state.doc.line(at[0]!).text).toContain('支付接口')
+    expect(words()).toBe('支付接口')
+    expect(previewMarked('md-found')).toHaveLength(1)
+    expect($('banner').hidden).toBe(true)
+    $('editor').dispatchEvent(new Event('pointerdown'))
+    expect(marked('cm-found')).toEqual([])
+    expect(words()).toBe('')
+  })
+
+  test('in the preview, the words within their block are what the page highlights', () => {
+    const ranges: Range[] = []
+    Object.assign(globalThis.CSS ??= {} as typeof CSS, { highlights: { set: (_: string, h: { r: Range }) => ranges.push(h.r), delete: () => true } })
+    Object.assign(globalThis, { Highlight: class { r: Range; constructor(r: Range) { this.r = r } } })
+    try {
+      find({ find: '十月上线' })
+      expect(ranges.at(-1)?.toString()).toBe('十月上线')
+      // As written before case aside, as the source finds them: both sides mark the same words.
+      find({ find: 'API' })
+      expect(words()).toBe('API')
+      expect(ranges.at(-1)?.toString()).toBe('API')
+    } finally {
+      delete (globalThis.CSS as { highlights?: unknown }).highlights
+    }
+  })
+
+  test('with lines too: found within those lines', () => {
+    const text = view().state.doc.toString().split('\n')
+    const listed = text.findIndex((l) => l === '- 乙') + 1
+    find({ lines: `${listed}`, find: '- ' })
+    expect(marked('cm-found')).toEqual([listed])
+  })
+
+  test('a .txt: its text alone, no markdown preview, found there', async () => {
+    md.render.mockClear()
+    contextChanged(ctxOf('notes'))
+    await until('notes is in the editor', () => document.querySelector('.cm-editor') !== null && view().state.doc.toString() === notes.text)
+    link({ type: 'link', tab: 'main', path: '', query: { find: 'blue heron' }, file: 'notes' })
+    expect(marked('cm-found')).toEqual([2])
+    expect(words()).toBe('Blue Heron')
+    expect(md.render).not.toHaveBeenCalled()
+    expect(document.body.dataset.kind).toBe('json')
+    contextChanged(ctxOf('plan'))
+    await until('plan is in the editor again', () => document.querySelector('.cm-editor') !== null && view().state.doc.toString() === file.text)
+  })
+
+  test('nowhere: said, and nothing marked', () => {
+    find({ find: '没有这几个字' })
+    expect(marked('cm-found')).toEqual([])
+    expect(words()).toBe('')
+    expect($('banner').textContent).toBe('Not found: “没有这几个字”')
+    $('editor').dispatchEvent(new Event('pointerdown'))
+    expect($('banner').hidden).toBe(true)
   })
 })
 

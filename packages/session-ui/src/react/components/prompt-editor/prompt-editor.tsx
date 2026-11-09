@@ -18,6 +18,7 @@ import { CONTENT_MENU_EVENT, type ContentMenuRequest } from '@gugu/session-share
 import { cx } from '@session-ui/styles/utilities/cx';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { Slice } from '@tiptap/pm/model';
+import type { EditorProps } from '@tiptap/pm/view';
 import { StarterKit } from '@tiptap/starter-kit';
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
 import {
@@ -88,11 +89,11 @@ function firstInitial(value: string): string {
 }
 
 function commandToPopupItem(item: CommandItem): ComboboxPopupItem {
-  // Command entries show the token the agent will actually receive; raw prompt
-  // entries keep their title.
+  // Command entries show the token the agent will actually receive; prompts
+  // (raw text, or a folded block whose token is the text) keep their title.
   const token = item.token ?? fallbackToken(item.name);
   const label =
-    item.behavior === 'insert-text'
+    item.behavior === 'insert-text' || item.kind === 'prompt'
       ? (item.label ?? item.name)
       : item.inputHint
         ? `${token} ${item.inputHint}`
@@ -308,7 +309,7 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
     onSubmitRef.current(text);
   }, []);
 
-  const mentionExtension = buildMentionExtension(
+  const mentionExtension = useMemo(() => buildMentionExtension(
     {
       items: async ({ query }: { query: string }) => {
         // Prefer mentionProvider over the legacy queryMentions callback.
@@ -341,9 +342,9 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
         onMentionInsertRef.current?.(item);
       },
     }
-  );
+  ), [mentionProvider?.allowSpaces]);
 
-  const slashExtension = buildSlashCommandExtension(
+  const slashExtension = useMemo(() => buildSlashCommandExtension(
     {
       items: async ({ query }: { query: string }) =>
         (await queryCommandsRef.current?.(query)) ?? [],
@@ -352,23 +353,25 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
     (item: CommandItem) => {
       onCommandRef.current?.(item);
     }
-  );
+  ), []);
 
-  const submitKeymap = buildSubmitKeymap(handleSubmitFromKeymap, () => enterBehaviorRef.current);
+  const submitKeymap = useMemo(
+    () => buildSubmitKeymap(handleSubmitFromKeymap, () => enterBehaviorRef.current),
+    [handleSubmitFromKeymap]
+  );
 
   // Read through a ref so a host that rebuilds the getter each render does not rebuild the editor.
   const getPromptHistoryRef = useRef(getPromptHistory);
   getPromptHistoryRef.current = getPromptHistory;
-  // useMemo with an empty dep list: `useEditor` reads `extensions` once, so the closure holding
-  // the walk state has to be the first render's — rebuilding it per render would allocate a fresh
-  // (and unused) one each time and hide where that state actually lives.
+  // Keep the history walk state and extensions stable across host renders.
   const historyKeymap = useMemo(
     () => buildPromptHistoryKeymap({ getHistory: () => getPromptHistoryRef.current?.() ?? [], restoreText: (text) => plainTextDoc(text, mentionProviderRef.current?.resolve) }),
     []
   );
 
-  const editor = useEditor({
-    extensions: [
+  // TipTap compares extension identities and editorProps before deciding to update its view.
+  // Callbacks read the refs above, so a host render does not need to reset editor options.
+  const extensions = useMemo(() => [
       StarterKit.configure({
         // Disable block-level nodes we don't need for a chat input.
         heading: false,
@@ -395,8 +398,8 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
       // default 100. `priority: 90` below makes that explicit instead of inherited from a
       // third-party default that could change under us.
       historyKeymap,
-    ],
-    editorProps: {
+    ], [mentionExtension, slashExtension, submitKeymap, historyKeymap]);
+  const editorProps = useMemo<EditorProps>(() => ({
       // Leave composition keys to the IME's native default action and skip submit keymaps.
       handleDOMEvents: { keydown: (_view, event) => event.isComposing || event.keyCode === 229 },
       attributes: {
@@ -436,9 +439,13 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
         slice.content.forEach((node) => parts.push(serializeNode(node)));
         return parts.join('\n').replace(/\n+$/, '');
       },
-    },
+    }), [inputTestId, disabled, placeholder, enterBehavior]);
+  const onEditorUnmount = useCallback(() => setEditorDom(null), []);
+  const editor = useEditor({
+    extensions,
+    editorProps,
     onCreate({ editor: e }) { setEditorDom(e.view.dom); },
-    onUnmount() { setEditorDom(null); },
+    onUnmount: onEditorUnmount,
     onUpdate({ editor: e }) {
       setIsEmpty(isEmptyPromptDocument(e.state.doc));
       const text = serializeDoc(e.state.doc);
@@ -479,7 +486,9 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
     },
     isEmpty() { return editor ? isEmptyPromptDocument(editor.state.doc) : true; },
     setText(text) {
-      editor?.commands.setContent(plainTextDoc(text, mentionProviderRef.current?.resolve), { emitUpdate: true });
+      if (!editor) return;
+      const next = editor.schema.nodeFromJSON(plainTextDoc(text, mentionProviderRef.current?.resolve));
+      if (!editor.state.doc.eq(next)) editor.commands.setContent(next, { emitUpdate: true });
     },
     insertText(text, position) {
       if (!editor) return;

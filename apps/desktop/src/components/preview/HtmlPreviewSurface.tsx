@@ -5,7 +5,7 @@ import { DOCUMENT_MIN_ZOOM, DOCUMENT_MAX_ZOOM, pinchZoom, clampZoom } from '@/se
 import { useFileZoom, zoomForCommand } from './file-content-zoom';
 
 /** Keep the last page painted until its replacement has loaded and restored its scroll. */
-export function HtmlPreviewSurface({ fileName, url, onLink, scrollPosition }: { fileName: string; url: string; onLink: (href: string) => void; scrollPosition?: { x: number; y: number } }) {
+export function HtmlPreviewSurface({ fileName, url, onLink, scrollPosition, anchor }: { fileName: string; url: string; onLink: (href: string) => void; scrollPosition?: { x: number; y: number }; anchor?: { id: string } }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(url);
   const frames = useRef(new Map<string, HTMLIFrameElement>());
@@ -20,6 +20,15 @@ export function HtmlPreviewSurface({ fileName, url, onLink, scrollPosition }: { 
   const [loaded, setLoaded] = useState<{ frame: HTMLIFrameElement }>();
   const localScroll = useRef({ x: 0, y: 0 });
   const scroll = scrollPosition ?? localScroll.current;
+  // A link's anchor: the page shown now scrolls to it; one still loading goes there instead of the kept position.
+  const pendingAnchor = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!anchor) return;
+    const frame = frames.current.get(url);
+    if (visible === url && frame && scripted.current.has(frame)) frame.contentWindow?.postMessage({ type: PREVIEW_RESTORE_MESSAGE_TYPE, anchor: anchor.id }, '*');
+    else pendingAnchor.current = anchor.id;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a newly named anchor moves the page
+  }, [anchor]);
   useEffect(() => {
     frames.current.get(visible)?.contentWindow?.postMessage({ type: PREVIEW_SET_ZOOM_MESSAGE_TYPE, zoom }, '*');
   }, [zoom, visible]);
@@ -69,7 +78,8 @@ export function HtmlPreviewSurface({ fileName, url, onLink, scrollPosition }: { 
             if (source !== url) return;
             scripted.current.delete(event.currentTarget);
             frames.current.get(source)?.contentWindow?.postMessage({ type: PREVIEW_SET_ZOOM_MESSAGE_TYPE, zoom }, '*');
-            frames.current.get(source)?.contentWindow?.postMessage({ type: PREVIEW_RESTORE_MESSAGE_TYPE, ...scroll }, '*');
+            frames.current.get(source)?.contentWindow?.postMessage({ type: PREVIEW_RESTORE_MESSAGE_TYPE, ...(pendingAnchor.current === undefined ? scroll : { anchor: pendingAnchor.current }) }, '*');
+            pendingAnchor.current = undefined;
             // A page's own CSP can block the injected script. Still reveal that page after load.
             setLoaded({ frame: event.currentTarget });
           }}

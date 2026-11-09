@@ -140,7 +140,6 @@ vi.mock('../../../../apps/desktop/src/lib/chatProjection', () => ({
       if (projectionStub.advanceImpl) return projectionStub.advanceImpl()
       return projectionStub.rows
     },
-    ingestLocalWrite: () => projectionStub.rows,
     attach: ({ subscribe, cursor, signal, publish }: {
       subscribe: (events: readonly string[], listener: (operations: readonly unknown[]) => void | Promise<void>) => () => void
       cursor: () => string
@@ -154,6 +153,7 @@ vi.mock('../../../../apps/desktop/src/lib/chatProjection', () => ({
     current: () => projectionStub.rows,
     identities: () => projectionStub.identityRows,
     isMembershipRevoked: (chatId: string) => projectionStub.revoked.has(chatId),
+    memberReadSeqs: () => undefined,
     isConversationDeleted: (chatId: string) => projectionStub.deleted.has(chatId),
     ledger: () => [],
     reset: () => undefined,
@@ -168,7 +168,7 @@ vi.mock('../../../../apps/desktop/src/lib/notificationSettings', () => ({
   useNotificationSettings: () => notificationSettings,
 }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
-  platform: {
+  platform: { subscribeAppForeground: () => () => {},
     capabilities: { notifications: false, badge: true },
     showNotification: vi.fn(),
     setBadge: vi.fn(),

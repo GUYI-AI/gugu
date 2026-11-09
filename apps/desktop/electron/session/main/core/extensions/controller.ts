@@ -1,20 +1,25 @@
-import type { ChatFileRef } from '@shared/extensions/app-files-core';
+import { getMainWindow } from '@main/app/window';
+import type { ChatFileRef, MemberChange } from '@shared/extensions/app-files-core';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { app } from 'electron';
 import {
   clearExtensionSessionData,
+  clearExtensionStorage,
+  extensionSessionBytes,
   configureExtensionSession,
   reloadExtensionSurfaces,
 } from '@main/core/extensions/extension-session';
 import {
   chatMembersChanged,
+  chatsWithPages,
   bindExtensionSurface,
   retargetExtensionSurface,
   notifyGroupWorkspaceChanged,
   notifyWatchedChatsChanged,
   notifyInstalledAppsChanged,
   invokeExtensionCommand,
-  deliverToOpeningPage,
+  deliverToChatFilePage,
   deliverToSessionFilePage,
   setExtensionAppView,
   unbindExtensionSurfaces,
@@ -26,6 +31,8 @@ import {
 } from '@main/core/extensions/extensions-root';
 import type { ExtensionDisclosure } from '@main/core/extensions/extensions-service';
 import type { AppVariants } from '@shared/extensions/variants';
+import { folderBytes, removeExtensionData } from '@main/core/extensions/extension-data';
+import { readExtensionSkills } from '../../../../extension-session-mcp';
 import { placeFor, placeLink } from '@shared/extensions/file-openers';
 import { removeUninstalledLeftovers } from '@main/core/extensions/extension-session-snapshot';
 import { extensionPrograms, extensionProgramStatus, retireExtensionPrograms, revokeExtensionPrograms, toolVisibleTo } from '@main/core/extensions/extension-programs';
@@ -90,6 +97,11 @@ function entryForTab(manifest: ExtensionManifest, tabKind: string | undefined): 
   const entry = contribution.entry ?? manifest.entry;
   if (contribution.hostPage || !entry) throw new Error('This App tab uses the host settings page');
   return entry;
+}
+
+/** An App gugu ships is where gugu puts it, and other Apps and every task lean on it: nobody manages it from outside. */
+function refuseBuiltIn(extensionId: string): void {
+  if (extensionsService().origins()[extensionId] === 'preinstalled') throw new Error(`"${extensionId}" comes with gugu; it is not changed from here`);
 }
 
 /** For each extension that gives agents tools: whether new sessions list them up front. */
@@ -170,6 +182,7 @@ export const extensionsController = createRPCController({
           // 「退出了、还没再打开」的(#7050):启用着,后台却没在跑。
           quit: quitExtensions(),
           dock: extensionsService().dock(),
+          hiddenTabs: extensionsService().hiddenTabs(),
           disclosure: disclosureOf(extensions.map((entry) => entry.manifest)),
           // Where each came from (E-05): the session page keeps the preinstalled ones out of every session's tabs, and a
           // chat's card offers an update only of one that came from a chat — the only kind a package from chat may replace.
@@ -263,6 +276,8 @@ export const extensionsController = createRPCController({
     tabKind: string;
     /** The file of its workspace this tab was opened for (an extension claimed its type). */
     filePath?: string;
+    /** The host opened that file for an agent or an App, not a person: a file outside is not read through it (`@@@outside-file`). */
+    byHost?: boolean;
     /** The chat file it was opened for (L3). */
     itemId?: string;
   } & Partial<import('@shared/extensions/app-runtime-protocol').AppWhere>) => {
@@ -319,7 +334,7 @@ export const extensionsController = createRPCController({
       const target = await files.groupFile(chatId, String(args?.itemId ?? ''));
       const choice = files.openerChoice(target.typedName);
       const place = placeFor(choice, args?.at);
-      if (place) deliverToOpeningPage(place.candidate.extensionId, placeLink(place.candidate, place.at, target.itemId), { chat: chatId }, target.itemId);
+      if (place) deliverToChatFilePage(place.candidate.extensionId, placeLink(place.candidate, place.at, target.itemId), chatId, target.itemId);
       return { success: true as const, data: { ...target, choice } };
     } catch (error) {
       log.warn('Failed to resolve who opens a group file:', error);
@@ -421,6 +436,7 @@ export const extensionsController = createRPCController({
     webContentsId: number;
     tabId: string;
     filePath?: string;
+    byHost?: boolean;
     itemId?: string;
   } & Partial<import('@shared/extensions/app-runtime-protocol').AppWhere>) => {
     try {
@@ -440,12 +456,32 @@ export const extensionsController = createRPCController({
    * a menu item that silently does nothing is the same fake as a placeholder
    * button.
    */
-  /** 摩擦单 F36: the window saw rows of these chats' members change (who, left or not); the pages sitting in them are told when that moved who is there. */
-  chatMembersChanged: async (args: { changes: { chatId: string; memberId: string | null; left: boolean }[] }) => {
-    const byChat = new Map<string, { memberId: string | null; left: boolean }[]>();
+  /** A session's file on another machine, saved from the host's preview: an App's download, for the file that preview shows. */
+  downloadWorkingCopyFile: async (args: { sessionId: string; path: string }) => {
+    const { downloadAppFile } = await import('@main/core/extensions/app-files');
+    const { sessionWorkspace } = await import('@shared/extensions/app-runtime-protocol');
+    const ref = { workspace: sessionWorkspace(args.sessionId), id: args.path };
+    let target: string | null = null;
+    try {
+      await downloadAppFile({ pageId: 0, extensionId: 'workspace', handed: ref }, { ref }, getMainWindow()?.webContents ?? null, undefined, (filePath) => { target = filePath; });
+      return { success: true as const, target };
+    } catch (error) {
+      return { success: false as const, error: error instanceof Error ? error.message : String(error), code: (error as { code?: string }).code };
+    }
+  },
+  /**
+   * 摩擦单 F36: the window saw rows of these chats' members change (who, left or not), or these people renamed (`renamed`:
+   * no chat named, so every chat a page sits in hears it); the pages are told when that moved who is there.
+   */
+  chatMembersChanged: async (args: { changes?: { chatId: string; memberId: string | null; left: boolean }[]; renamed?: string[] }) => {
+    const byChat = new Map<string, MemberChange[]>();
     for (const change of Array.isArray(args?.changes) ? args.changes : []) {
       if (typeof change?.chatId !== 'string') continue;
       byChat.set(change.chatId, [...(byChat.get(change.chatId) ?? []), { memberId: typeof change.memberId === 'string' ? change.memberId : null, left: change.left === true }]);
+    }
+    const renamed = (Array.isArray(args?.renamed) ? args.renamed : []).filter((id): id is string => typeof id === 'string' && id !== '');
+    if (renamed.length > 0) {
+      for (const chatId of chatsWithPages()) byChat.set(chatId, [...(byChat.get(chatId) ?? []), ...renamed.map((memberId) => ({ memberId, left: false, renamed: true }))]);
     }
     await Promise.all([...byChat].map(([chatId, changes]) => chatMembersChanged(chatId, changes)));
     return { success: true as const };
@@ -469,11 +505,17 @@ export const extensionsController = createRPCController({
     visible: boolean;
     width: number;
     height: number;
+    x?: number;
+    y?: number;
+    clip?: { x: number; y: number; width: number; height: number };
   }) => {
     updateExtensionSurfaceLayout(args.webContentsId, {
       visible: args.visible,
       width: args.width,
       height: args.height,
+      x: args.x,
+      y: args.y,
+      clip: args.clip,
     });
     return { success: true };
   },
@@ -819,6 +861,7 @@ export const extensionsController = createRPCController({
   }) => {
     try {
       const service = extensionsService();
+      refuseBuiltIn(args.extensionId);
       service.setPermissionGranted(args.extensionId, args.permission, args.granted);
       const installed = service.get(args.extensionId);
       if ((!args.granted && args.permission === 'agents:tools') || (
@@ -866,6 +909,59 @@ export const extensionsController = createRPCController({
    * placeholder in the renderer, which withdraws the providers); on needs
    * nothing here, the next activate hardens the session as usual.
    */
+  /** Takes one of an App's pages out of the menus, or puts it back (`hiddenTabs`). */
+  setTabHidden: async (args: { extensionId: string; tab: string; hidden: boolean }) => {
+    try {
+      return { success: true as const, data: extensionsService().setTabHidden(args.extensionId, args.tab, args.hidden) };
+    } catch (error) {
+      log.error('Failed to change a hidden tab:', error);
+      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
+  /** What an App keeps on this device, in bytes: its data folder and its browser storage. */
+  appData: async (args: { extensionId: string }) => {
+    try {
+      extensionsService().get(args.extensionId);
+      const [folder, storage] = await Promise.all([folderBytes(extensionDataRoot(args.extensionId)), extensionSessionBytes(args.extensionId)]);
+      return { success: true as const, data: { bytes: folder + storage } };
+    } catch (error) {
+      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
+  /**
+   * Empties what an App keeps on this device, its settings aside. It stops first (as uninstalling does, it must not write while
+   * this runs) and starts again when it is next opened or called.
+   */
+  clearAppData: async (args: { extensionId: string }) => {
+    try {
+      const service = extensionsService();
+      const installed = service.get(args.extensionId);
+      refuseBuiltIn(args.extensionId);
+      quitExtension(installed.manifest.id);
+      events.emit(extensionsQuitChangedChannel, { quit: quitExtensions() });
+      await retireExtensionPrograms(args.extensionId);
+      await clearExtensionStorage(args.extensionId);
+      await removeExtensionData(extensionDataRoot(args.extensionId));
+      return { success: true as const, data: { bytes: 0 } };
+    } catch (error) {
+      log.error('Failed to clear an App\'s data:', error);
+      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
+  /** The names of the skills an App brings, as agents read them. */
+  agentSkills: async (args: { extensionId: string }) => {
+    try {
+      const { manifest, rootDir } = extensionsService().get(args.extensionId);
+      const skills = manifest.contributes.skills ? readExtensionSkills(manifest.id, path.join(rootDir, manifest.contributes.skills), () => {}) : [];
+      return { success: true as const, data: skills.map((skill) => skill.name) };
+    } catch (error) {
+      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
   setEnabled: async (args: { extensionId: string; enabled: boolean }) => {
     try {
       const service = extensionsService();
@@ -929,6 +1025,7 @@ export const extensionsController = createRPCController({
   /** Whether new sessions list this extension's agent tools up front; sessions already open keep theirs. */
   setDisclosure: async (args: { extensionId: string; level: ExtensionDisclosure }) => {
     try {
+      refuseBuiltIn(args.extensionId);
       extensionsService().setDisclosure(args.extensionId, args.level);
       return { success: true, data: { level: extensionsService().disclosure(args.extensionId) } };
     } catch (error) {
@@ -1060,7 +1157,7 @@ export const extensionsController = createRPCController({
       if (!extensionsService().isInstalled(extensionId)) {
         if (identity) void grants!.forgetAccountGrants(identity);
         await clearExtensionSessionData(extensionId);
-        removeUninstalledLeftovers(app.getPath('userData'), extensionDataRoot(extensionId), extensionId);
+        await removeUninstalledLeftovers(app.getPath('userData'), extensionDataRoot(extensionId), extensionId);
       }
       if (forgetQuit(extensionId)) events.emit(extensionsQuitChangedChannel, { quit: quitExtensions() });
       syncExtensionBackgrounds();

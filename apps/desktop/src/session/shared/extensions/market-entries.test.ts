@@ -93,7 +93,7 @@ describe('App API prompt contract', () => {
   });
   it('A8 every existing text surface uses the shared compatibility wording', () => {
     const readers = [
-      'apps/desktop/src/components/settings/AppsSection.tsx',
+      'apps/desktop/src/session/renderer/features/extensions/panel/app-version-history.tsx',
       'apps/desktop/src/session/renderer/features/extensions/panel/app-lifecycle.ts',
       'apps/desktop/src/session/renderer/features/extensions/panel/app-market-content.tsx',
       'apps/desktop/src/session/renderer/features/extensions/panel/app-product-page.tsx',

@@ -18,7 +18,7 @@ import { setSessionParent } from './session-family';
 import { switchSessionRuntime } from './switch-session-runtime';
 import { sendMessage } from './sendMessage';
 import { sessionLife } from './session-life';
-import { storedPendingInputLookup } from './session-pending-history';
+import { nativePendingInputLookup } from './session-pending-history';
 import { stopSessionByPerson } from './session-orchestration';
 import { ensurePlatformSessionReady } from './platform-recovery-gate';
 import { recordLiveSessionSetting } from './record-live-session-setting';
@@ -79,11 +79,11 @@ export const sessionController = createRPCController({
   // session-life: the ACP lifecycle projection (later changes arrive on sessionLifeViewChannel) and the person's
   // explicit start — the only way a page brings an ACP session up.
   lifeView: async (sessionId: string) => {
-    await sessionLife().reconcileUnknownRows(sessionId, storedPendingInputLookup(sessionId));
+    await sessionLife().reconcileUnknownRows(sessionId, nativePendingInputLookup(sessionId));
     return sessionLife().read(sessionId);
   },
   lifeStart: async (sessionId: string) => { sessionLife().start(sessionId, 'user-open'); },
-  lifeRetryUnknown: (sessionId: string, messageId: string) => sessionLife().retryUnknownRow(sessionId, messageId, storedPendingInputLookup(sessionId)),
+  lifeRetryUnknown: (sessionId: string, messageId: string) => sessionLife().retryUnknownRow(sessionId, messageId, nativePendingInputLookup(sessionId)),
   lifeStop: (sessionId: string) => stopSessionByPerson(sessionId),
   lifeDiscard: async (sessionId: string, messageId: string) => { sessionLife().discardRow(sessionId, messageId); },
   // A side chat is a fork entry of Life: opened by its page, fed through the same custody send, ended when the

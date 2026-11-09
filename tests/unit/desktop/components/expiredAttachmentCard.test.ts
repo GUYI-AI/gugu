@@ -72,10 +72,15 @@ describe('expired attachment re-upload', () => {
   it.each(['file', 'image'] as const)('keeps an uncommitted %s in its local preview without querying an uncommitted message', async kind => {
     const content = formatAttachmentMetadata({ kind, fileName: kind === 'image' ? 'sending.png' : 'sending.bin', mimeType: kind === 'image' ? 'image/png' : 'application/octet-stream', sizeBytes: 60, url: 'blob:https://fixture.invalid/selected-file' })
     const pending = parseAttachmentContent(content, { id: 'not-yet-committed', local_send_state: 'sending' })!
+    // The real hook answers a sending row's own preview as ready from its first render (sentImageContinuity.test).
+    f.view.mockReturnValue({ status: 'ready', objectUrl: 'blob:https://fixture.invalid/selected-file' })
     await renderWithAppProviders(harness, createElement(MediaAttachmentBubble, { meta: pending, messageId: 'not-yet-committed', isMine: true }), { toast, chat: { sendAttachmentsToChat: f.send } })
     await act(async () => {})
     expect(harness.container.textContent).not.toContain('attachmentView.fileGone')
-    if (kind === 'image') expect(harness.container.querySelector('img')?.getAttribute('src')).toBe('blob:https://fixture.invalid/selected-file')
+    if (kind === 'image') {
+      expect(harness.container.querySelector('img')?.getAttribute('src')).toBe('blob:https://fixture.invalid/selected-file')
+      expect(f.view.mock.calls[0][0]).toEqual({ kind: 'url', url: 'blob:https://fixture.invalid/selected-file' })
+    }
     else expect(harness.container.textContent).toContain('sending.bin')
     for (const mock of [f.metadata, f.cached, f.send, f.signed]) expect(mock).not.toHaveBeenCalled()
   })
@@ -83,12 +88,14 @@ describe('expired attachment re-upload', () => {
     // jsdom checks the three rendering states share one geometry contract; real layout is measured natively.
     const content = formatAttachmentMetadata({ kind: 'image', fileName: 'shot.png', mimeType: 'image/png', sizeBytes: 3, url: 'blob:preview' })
     const local = parseAttachmentContent(content, { id: 'message', local_send_state: 'sending', image_dimensions: { width: 1200, height: 900 } })!
+    f.view.mockReturnValue({ status: 'ready', objectUrl: 'blob:preview' })
     await renderWithAppProviders(harness, createElement(MediaAttachmentBubble, { meta: local, messageId: 'message', isMine: true }))
     const geometry = (element: HTMLElement) => [element.style.width, element.style.height, element.style.aspectRatio, element.style.maxWidth]
-    const sending = geometry(harness.container.querySelector('img')!)
+    const sending = geometry(harness.container.querySelector('img[src="blob:preview"]')!.closest('button')!)
     expect(sending.slice(0, 3)).toEqual(['280px', 'auto', '280 / 210'])
     const revision = { source: 'managed-object' as const, item_id: 'file', version: 1, file_name: 'shot.png', content_type: 'image/png', size_bytes: 3, sha256: 'ab'.repeat(32), width: 1200, height: 900 }
     const committed = { ...local, source: { kind: 'item' as const, itemId: 'file', version: 1 }, fileMetadata: { status: 'ready' as const, revision } }
+    f.view.mockReturnValue({ status: 'loading' })
     await renderWithAppProviders(harness, createElement(MediaAttachmentBubble, { meta: committed, messageId: 'message', isMine: true }))
     expect(geometry(harness.container.querySelector<HTMLDivElement>('[aria-label="shot.png"]')!)).toEqual(sending)
     f.view.mockReturnValue({ status: 'ready', objectUrl: 'blob:decoded', link: revision })

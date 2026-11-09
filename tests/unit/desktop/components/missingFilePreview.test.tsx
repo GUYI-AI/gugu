@@ -3,7 +3,7 @@ import { act, createElement } from 'react'
 import { Blob as NodeBlob } from 'node:buffer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MessageFilePreview, type PreviewFile } from '../../../../apps/desktop/src/components/chat/MessageFilePreview'
-import { MissingFileObjectError } from '@gugu/core/shared/fileResolver'
+import { FileReadRevokedError, MissingFileObjectError } from '@gugu/core/shared/fileResolver'
 import { i18n } from '../../../../apps/desktop/src/i18n'
 import { createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 
@@ -37,6 +37,20 @@ describe('file preview missing-object actions', () => {
     expect(download()?.disabled ?? true).toBe(true)
     expect(external()?.disabled ?? true).toBe(true)
   }
+  it('draws how far the bytes have come while they are read', async () => {
+    let finish!: () => void, report!: (done: number, total: number) => void
+    io.bytes.mockImplementation((_source: unknown, _variant: unknown, _link: unknown, _metadata: unknown, progress: typeof report) => {
+      report = progress
+      return new Promise(resolve => { finish = () => resolve({ status: 'ready', blob: new Blob(['notes']) }) })
+    })
+    await render()
+    expect(harness.container.querySelector('progress')).toBeNull()
+    await act(async () => { report(1_048_576, 4_194_304) })
+    expect(harness.container.querySelector('progress')?.value).toBe(0.25)
+    await act(async () => { finish() })
+    await vi.waitFor(async () => { await act(async () => {}); expect(harness.container.querySelector('pre')?.textContent).toBe('notes') })
+    expect(harness.container.querySelector('progress')).toBeNull()
+  })
   it.each([[false, 'file'], [true, 'file'], [false, 'image'], [true, 'image']] as const)('blocks reading a missing %s/%s preview without another request', async (mobile, kind) => {
     io.bytes.mockResolvedValue({ status: 'missing' })
     await render(kind === 'image' ? { ...file, kind: 'image', fileName: 'photo.png', mimeType: 'image/png' } : file, mobile)
@@ -85,5 +99,16 @@ describe('file preview missing-object actions', () => {
       await act(async () => { download()!.click() })
       expect(io.bytes).toHaveBeenCalledTimes(1); expect(io.download).toHaveBeenCalledTimes(1)
     }
+  })
+  // Shown before the server acknowledged the read: a refusal behind it takes the preview down and says why.
+  it.each([['access', 'attachmentView.fileNoAccess'], ['revision', 'attachmentView.fileUpdated'], ['gone', 'attachmentView.fileGone'], ['expired', 'attachmentView.fileExpired']] as const)('takes a shown preview down when its read acknowledgement is refused (%s)', async (reason, said) => {
+    let refuse!: (error: Error) => void
+    io.bytes.mockResolvedValue({ status: 'ready', blob: new Blob(['shown plaintext']), acknowledged: new Promise<void>((_resolve, reject) => { refuse = reject }) })
+    await render()
+    await vi.waitFor(async () => { await act(async () => {}); expect(harness.container.querySelector('pre')?.textContent).toBe('shown plaintext') })
+    await act(async () => { refuse(new FileReadRevokedError(reason)) })
+    await settled(translate(said))
+    expect(harness.container.querySelector('pre')).toBeNull()
+    expect(harness.container.textContent).not.toContain('shown plaintext')
   })
 })

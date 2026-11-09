@@ -49,7 +49,7 @@ const actions = () => deliver.mock.calls.map(([, action]) => action);
 beforeEach(async () => {
   deliver.mockClear();
   chooser.kind = 'none';
-  setExtensionBridgeHost({ deliver, presentation: () => ({ locale: 'en', themeMode: 'light' as const, fullscreen: false, windowFocused: true }) });
+  setExtensionBridgeHost({ deliver, selfGuguNumber: () => undefined, presentation: () => ({ locale: 'en', themeMode: 'light' as const, fullscreen: false, windowFocused: true }) });
   await bindExtensionSurface({ webContentsId: PAGE, extensionId: 'kanban', tabId: 'dock', tabKind: 'kanban.board' });
   vi.mocked(resourceChatOf).mockClear();
 });

@@ -10,6 +10,7 @@ import type { PtySession } from '@renderer/lib/pty/pty-session';
 import { workspaceBackend } from '../workspace-backend/workspace-backend';
 import type { WorkspaceTerminalRecord, WorkspaceTerminals } from '../workspace-backend/workspace-terminal-backend';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { log } from '@renderer/utils/logger';
 
 // 终端页签只有这一种:这台电脑上的是本机 pty,别的机器上的是经 SSH 在会话目录里开的 shell
 // (照 VS Code 远程终端 —— 终端跑在那台机器上,视图是同一个)。按机器不同的那一半在 workspace-terminal-backend。
@@ -31,8 +32,8 @@ export interface TerminalTabResourceView extends TabResource {
   /** 开不出来时的那一句(别的机器上的终端);其余 = null。 */
   readonly failure: string | null;
   retry(): void;
-  /** 那头 exit 了:别的机器上的这条就此断开,页签随之关掉(本机的终端由抽屉管,这里不动)。 */
-  exited(): void;
+  /** 那头 exit 了:别的机器上的这条就此断开;本机的正常退出(人敲了 exit)= 结束,异常退出由宿主重启。两种结束都带走页签。 */
+  exited(info: { exitCode: number | undefined; signal?: number }): void;
 }
 
 class TerminalTabResource implements TerminalTabResourceView {
@@ -79,8 +80,9 @@ class TerminalTabResource implements TerminalTabResourceView {
     this.terminalManager.retry?.(this.terminalId);
   }
 
-  exited(): void {
-    this.terminalManager.closeTerminal?.(this.terminalId);
+  exited({ exitCode, signal }: { exitCode: number | undefined; signal?: number }): void {
+    if (this.terminalManager.closeTerminal) this.terminalManager.closeTerminal(this.terminalId);
+    else if (exitCode === 0 && signal === undefined) void this.terminalManager.deleteTerminal?.(this.terminalId).catch((error: unknown) => log.error('Failed to end the exited terminal', { terminalId: this.terminalId, error }));
   }
 
   dispose(): void {
@@ -157,6 +159,9 @@ export const terminalTabProvider: TabProvider<
   kind: 'terminal',
 
   resourceKey: (state: TerminalTabState) => state.terminalId,
+  // Every open is a new terminal: where it shows is remembered for the kind, not for one id that will never open again.
+  placementKey: () => 'terminal',
+  reopenable: false,
   isPersistent: (state: TerminalTabState) => !state.ephemeral,
 
   onBeforeOpen(args: TerminalTabOpenArgs, ctx: TabViewContext): TerminalTabState | null {
@@ -182,6 +187,14 @@ export const terminalTabProvider: TabProvider<
 
   dispose(_entry: TabEntry<TerminalTabState>, resource: TerminalTabResourceView): void {
     resource.dispose();
+  },
+
+  // Closed = the shell ends with it. Nothing else can reach a terminal without a tab; disposing a view (a restart) keeps it.
+  closed(_tabId, ctx, states) {
+    const terminals = workspaceBackend((ctx as SessionTabContext).projectId).terminal.terminals(ctx as SessionTabContext);
+    for (const { terminalId } of states) {
+      void terminals?.deleteTerminal?.(terminalId).catch((error: unknown) => log.error('Failed to end the closed terminal', { terminalId, error }));
+    }
   },
 
   TabBarItem: TerminalTabBarItem,

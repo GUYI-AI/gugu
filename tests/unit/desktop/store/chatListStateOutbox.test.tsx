@@ -37,7 +37,7 @@ it.each(['send', 'restore-native'] as const)('%s read failure cannot be resurrec
     patch = (id, partial, version) => setRows(previous => patchChatRows(previous, id, partial, version))
     const ledger = useRef(createChatListProjectionLedger()), repositoryRef = useRef(repository)
     const activeChatIdRef = useRef<string | null>(basis.id), requestSeqRef = useRef(0)
-    binding = useChatProjectionBinding({ ledger: ledger.current, repositoryRef, chatsRef: current,
+    binding = useChatProjectionBinding({ ledger: ledger.current, conversations: { readSeqsOf: () => undefined }, repositoryRef, chatsRef: current,
       activeChatIdRef, requestSeqRef, getRepository: async () => repository, setChats: setRows,
       canAcknowledge: () => true, visibleSeqOf: () => 5, onActiveRevoked: () => undefined,
       notifications: { chatMessages: false, sound: false } })

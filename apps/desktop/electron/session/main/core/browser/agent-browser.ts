@@ -3,7 +3,7 @@ import { awaitBrowserCall, browserCallSignal } from './browser-call-scope';
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 import { agentSessionContext } from '@main/core/extensions/extension-agent-context';
-import { openAgentBrowserPane } from '@main/core/sessions/session-orchestration';
+import { openTaskBrowserPane } from '@main/core/sessions/session-orchestration';
 import {
   browserAgentCursorChannel,
   browserAgentStateChannel,
@@ -13,6 +13,7 @@ import {
 import { browserWebContentsRegistry } from './browser-webcontents-registry';
 import { acquireBrowserPage } from './browser-page-runtime';
 import { createPageProtocol } from './page-protocol';
+import { assertCredentialAgentContents } from './credential-isolation-registry';
 import type { ExtensionAgentStatus } from '@shared/extensions/agent-status';
 
 /**
@@ -218,7 +219,7 @@ async function acquireSessionBrowser(
   if (!context) throw new Error('this session is not on this computer, so it has no browser tab to drive');
   const url = pendingInitialUrl.get(sessionId);
   pendingInitialUrl.delete(sessionId);
-  const browserId = await openAgentBrowserPane(
+  const browserId = await openTaskBrowserPane(
     { projectId: context.projectId, sessionId }, url, signal,
     boundBrowserBySession.get(sessionId) ?? browserWebContentsRegistry.preferredBrowserOfSession(sessionId),
   );
@@ -249,6 +250,7 @@ export function createPaneTransport(
   signal?: AbortSignal,
 ): AgentBrowserTransport {
   signal?.throwIfAborted();
+  assertCredentialAgentContents(webContents);
   boundBrowserBySession.set(sessionId, browserId);
   const children = new Set<string>();
   let targetInfo: Record<string, unknown> | null = null;

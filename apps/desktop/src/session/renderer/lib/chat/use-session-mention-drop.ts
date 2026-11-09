@@ -2,11 +2,17 @@ import { useCallback } from 'react';
 import type { MentionItem, PromptEditorRef } from '@gugu/session-ui/react/components';
 import { stringifyMention } from '@gugu/session-shared/markdown';
 import { getDraggedScreenContent, SCREEN_CONTENT_DRAG_TYPE } from '@renderer/lib/drag-screen-content';
+import { MAX_ATTACHMENT_BYTES } from '@gugu/session-core/session-record/contract';
+import { base64ToBytes } from '@shared/lib/base64';
+import { basenameFromAnyPath } from '@shared/path-name';
+import { fileOnDisk } from '@/lib/fileOnDisk';
+import { getDraggedWorkspaceFile, WORKSPACE_FILE_DRAG_TYPE, type DraggedWorkspaceFile } from '@renderer/lib/drag-files';
+import { workspaceRpc } from '@renderer/features/sessions/workspace-backend/workspace-backend';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { LocalSessionMentionProvider } from './local-session-mention-provider';
 
-const SESSION_DROP_TYPES = [SCREEN_CONTENT_DRAG_TYPE] as const;
+const SESSION_DROP_TYPES = [SCREEN_CONTENT_DRAG_TYPE, WORKSPACE_FILE_DRAG_TYPE] as const;
 
 /**
  * 把会话拖到**终端**上时写进去的那段字(编程形态的会话没有 composer,终端就是输入框)。
@@ -28,16 +34,42 @@ export function terminalSessionMentionInput(
 }
 
 /**
+ * A computer file is read where it is (`readChunk`) and keeps its path, so the attachment it becomes references it in place.
+ * Over the attachment limit: said before anything is held.
+ */
+async function readWorkspaceFile({ projectId, workspaceId, targetPath }: DraggedWorkspaceFile & { projectId: string }): Promise<File> {
+  const files = workspaceRpc(projectId).files;
+  const parts: BlobPart[] = [];
+  for (let offset = 0, size = Infinity; offset < size;) {
+    const result = await files.readChunk(projectId, workspaceId, { path: targetPath, offset, length: 512 * 1024 });
+    if (!result.success) throw new Error(String(result.error.type));
+    size = result.data.size;
+    if (size > MAX_ATTACHMENT_BYTES) throw Object.assign(new Error('too large'), { code: 'too-large' });
+    const bytes = base64ToBytes(result.data.data);
+    if (bytes.length === 0 && offset < size) throw new Error('The file changed while it was read');
+    parts.push(bytes.slice().buffer);
+    offset += bytes.length;
+  }
+  return fileOnDisk(new File(parts, basenameFromAnyPath(targetPath)), targetPath);
+}
+
+/**
  * 把侧栏的一条会话行拖进 composer = 在这里插一枚 @ 提及。
  *
  * behavior session-page「把会话拖成 @」: 拖拽只是 @ 弹层的第二个入口,两条路给出**同一枚** pill ——
  * 所以身份解析走的是弹层那个 provider,而不是另拼一份。
+ *
+ * 文件夹 App 里电脑文件的一行拖进来 = 附件,任何输入框都一样(owner 11-08):读出来交给这个输入框自己的附件路
+ * (`attachFiles`,和回形针、拖系统文件同一条)。❌ 插路径:那条路径只在这台电脑上,任务可能在别的机器。
+ * 文件夹行交给 `dropFolder`(这个输入框对文件夹的现成处理);没有就说「文件夹不能作为附件」。
  */
 export function useSessionMentionDrop({
   provider,
   editorApiRef,
   selfSessionId,
   onMentionResolved,
+  attachFiles,
+  dropFolder,
 }: {
   provider: LocalSessionMentionProvider | null;
   editorApiRef: { current: PromptEditorRef | null };
@@ -45,6 +77,10 @@ export function useSessionMentionDrop({
   selfSessionId?: string;
   /** 解析成功、插入之前的记账口;返回 false 时由落点处理(如邀请群外的 Agent),不插入提及。 */
   onMentionResolved?: (item: MentionItem) => boolean | void;
+  /** This composer's attachment path; without it a computer file dropped here is said to be refused. */
+  attachFiles?: (files: File[]) => void;
+  /** A folder row, by its path on this computer. */
+  dropFolder?: (path: string) => void;
 }): {
   dataDropTypes: readonly string[];
   onDataDropped: (dataTransfer: DataTransfer) => void;
@@ -53,6 +89,20 @@ export function useSessionMentionDrop({
 
   const onDataDropped = useCallback(
     (dataTransfer: DataTransfer) => {
+      const workspaceFile = getDraggedWorkspaceFile(dataTransfer);
+      if (workspaceFile) {
+        if (workspaceFile.directory) {
+          if (dropFolder) dropFolder(workspaceFile.targetPath);
+          else toast({ title: translate('chat.folderDropUnsupportedTitle'), variant: 'destructive' });
+          return;
+        }
+        const { projectId } = workspaceFile;
+        const failed = (error: { code?: string }) => toast({ variant: 'destructive',
+          title: translate(error.code === 'too-large' ? 'composer.attachmentTooLarge' : 'composer.attachmentUploadFailed') });
+        if (!attachFiles || !projectId) return failed({});
+        void readWorkspaceFile({ ...workspaceFile, projectId }).then((file) => attachFiles([file]), failed);
+        return;
+      }
       const dragged = getDraggedScreenContent(dataTransfer);
       if (dragged?.kind !== 'session' || !provider) return;
       if (dragged.sessionId === selfSessionId) return;
@@ -76,7 +126,7 @@ export function useSessionMentionDrop({
         editor?.insertMention(item);
       })();
     },
-    [editorApiRef, onMentionResolved, provider, selfSessionId, translate],
+    [attachFiles, dropFolder, editorApiRef, onMentionResolved, provider, selfSessionId, translate],
   );
 
   return { dataDropTypes: SESSION_DROP_TYPES, onDataDropped };

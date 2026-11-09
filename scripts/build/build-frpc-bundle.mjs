@@ -24,7 +24,7 @@ if (existsSync(join(destination, exe)) && existsSync(join(destination, 'release.
 } else {
   const archive = obtainMiseArchive({
     cacheDir: defaultMiseCacheDir(),
-    downloadBase: process.env.GUGU_FRPC_DOWNLOAD_BASE || 'https://github.com/fatedier/frp/releases/download',
+    downloadBase: 'https://download.gugu.nextmind.space/releases/vendor/frp',
     version: release.version,
     asset: target.asset,
     sha256: target.sha256,

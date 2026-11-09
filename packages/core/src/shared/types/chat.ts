@@ -3,7 +3,7 @@ import type { AgentType } from '@gugu/core/agentTypes'
 import type { AgentStatusView } from '../agentStatus'
 import type { CloudComputerPresence, DeviceHostInfo } from './deviceHost'
 import type { DeviceProject } from './deviceProject'
-import type { AgentFailureReason } from '../agentQuotaReason'
+import type { SystemNotice } from '../ui/systemNotice'
 import type { FileMetadata } from '../fileResolver'
 export type { AgentType } from '@gugu/core/agentTypes'
 
@@ -40,6 +40,9 @@ export type ChatUnreadLocator = {
    * 必有:缺这一列是协议错误(chatProjection 读到就抛);本机缓存里缺它的行按无效缓存重建(localSyncDb)。
    */
   addressed_count: number
+  /** 第一条未读里叫到你的消息:打开话题落在这里。手动标未读、老后端没有这一条(null/缺席),照常落在最新处。 */
+  first_addressed_message_id?: string | null
+  first_addressed_seq?: number | null
   cursor_seq: number
   version: number
   is_marked_unread: boolean
@@ -62,8 +65,8 @@ export interface ChatItem {
   created_at: string
   last_message_at: string | null
   last_message_preview: string | null
-  /** The last message is an agent's failure row: the list says this reason in the viewer's language, not the preview. */
-  last_message_failure?: AgentFailureReason | null
+  /** The last message is a system row with a marker: the list says it in the viewer's language, not as stored. */
+  last_message_notice?: SystemNotice | null
   unread_count: number
   /** The server-owned stream/message locator for the first unread projection. */
   unread_locator?: ChatUnreadLocator | null
@@ -117,6 +120,9 @@ export interface MessageItem {
   file_version?: number | null
   /** #7290 悄悄话的附件:不进群文件夹,直接指字节;能读这条消息的人才签得到链接。 */
   file_blob_id?: string | null
+  /** A file an agent handed its owner in the task timeline (an owner notification): it stays in that session's folder on
+   * the session's machine and is read the way that session's timeline reads it. `session_id`: filled in by the host. */
+  session_file?: { path: string; sha256: string; session_id?: string | null } | null
   /** Authorized pinned-file display metadata; original reads still use the file resolver. */
   file_metadata?: FileMetadata | null
   /** Local sending preview only; committed dimensions come from the verified file metadata. */
@@ -129,7 +135,8 @@ export interface MessageItem {
   reply_to_content?: string | null
   retracted_at: string | null
   created_at: string
-  reactions: ReactionGroup[]
+  /** Absent = a body-only row (messages_view has no reactions); it does not speak for the reactions already known. */
+  reactions?: ReactionGroup[]
   is_mine: boolean
   delivered: boolean
   delivery_status: MessageDeliveryStatus | null
@@ -368,7 +375,7 @@ export interface DeviceCapabilities extends Partial<DeviceHostInfo> {
   actions?: DeviceActionsSummary
 }
 
-export type GuguSettingsScope = 'user' | `device:${string}` | `chat:${string}`
+export type GuguSettingsScope = 'user' | 'prompts' | `device:${string}` | `chat:${string}`
 
 export interface GuguSettingsRow {
   scope: GuguSettingsScope
