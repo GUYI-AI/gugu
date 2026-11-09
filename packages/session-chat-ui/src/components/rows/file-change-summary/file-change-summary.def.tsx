@@ -8,7 +8,7 @@ import { useChatTranslator } from '@session-chat/localization'
 import { basename } from '@session-chat/lib/path'
 import type { FileChangeSummaryItem } from '@session-chat/model'
 import { openedOutputLook } from '@session-chat/state/opened-outputs'
-import { accentOf, OPENED_OUTPUT_ROW_H, outputControlWidth, OutputRowEnd } from '../opened-output/opened-output.def'
+import { accentOf, lastTwoFolders, OPENED_OUTPUT_ROW_H, outputControlWidth, OutputRowEnd } from '../opened-output/opened-output.def'
 import { chevron, detail, nameRow, text, tile } from '../opened-output/opened-output.css'
 import { readableLabel, rowTranslator } from '../readable-label'
 import * as css from './file-change-summary.css'
@@ -27,11 +27,6 @@ const BORDER = 2
 const isSingle = (item: FileChangeSummaryItem) => item.files.length === 1
 type File = FileChangeSummaryItem['files'][number]
 
-/** The folder a file sits in, as its last two levels: 「…/task-home/notes」; the whole path is the row's tooltip. */
-export function lastTwoFolders(path: string): string {
-  const parts = path.split(/[\\/]/).filter(Boolean).slice(0, -1)
-  return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : parts.join('/')
-}
 type Counts = { adds: number | null; dels: number | null }
 const hasStats = (counts: Counts) => counts.adds !== null && counts.dels !== null
 const statsText = (counts: Counts) => (hasStats(counts) ? `+${counts.adds} −${counts.dels}` : '')

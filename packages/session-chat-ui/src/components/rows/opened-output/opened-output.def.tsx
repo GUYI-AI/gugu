@@ -16,7 +16,7 @@ import { IconChevronDown, IconChevronRight, IconDocument, IconGlobe, IconImage }
 import { defineUnit } from '@session-chat/core/units';
 import { useChatTranslator } from '@session-chat/localization';
 import type { OpenedOutput, OpenedOutputItem } from '@session-chat/model';
-import { openedOutputLook } from '@session-chat/state/opened-outputs';
+import { openedFilePath, openedOutputLook } from '@session-chat/state/opened-outputs';
 import { Match, Show, Switch } from 'solid-js';
 import { vars } from '@session-chat/styles/theme.css';
 import { card, cardClickable, chevron, detail, modeButton, modeLabel, nameRow, slot, text, tile } from './opened-output.css';
@@ -49,6 +49,12 @@ export function splitOutputName(name: string, isFile: boolean): { stem: string; 
   // 名字本来就短(「周报.md」):不拆,❌ 拆出一个空主干在前面空一截。
   if (keep <= 0) return { stem: name, tail: '' };
   return { stem: name.slice(0, keep), tail: name.slice(keep) };
+}
+
+/** The folder a file sits in, as its last two levels: 「…/task-home/notes」; the whole path is the row's tooltip. */
+export function lastTwoFolders(path: string): string {
+  const parts = path.split(/[\\/]/).filter(Boolean).slice(0, -1);
+  return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : parts.join('/');
 }
 
 /** The width the row's end takes: 「Open with ▾」 where the host has that menu (only ▾ when narrow), else the › of an openable row. */
@@ -109,7 +115,10 @@ function outputLayout(data: OpenedOutputItem, ctx: MeasureCtx) {
   const width = ctx.width - 26 - 40 - 12 - (control ? control + 12 : 0);
   const ext = look.extension;
   const format = ext === 'PPTX' || ext === 'PPT' ? 'PowerPoint' : ext === 'DOCX' || ext === 'DOC' ? 'Word' : ext === 'XLSX' || ext === 'XLS' ? 'Excel' : null;
-  const detail = reason ? `${kind} · ${reason}` : look.kind === 'page' ? t('transcript.outputWebsite') : format ?? (ext ? `${kind} · ${ext}` : kind);
+  // 文件也写所在文件夹,与「已编辑」那一行同一个说法:同名的两份(原件与拷进工作目录的那份)看得出各在哪。
+  const path = openedFilePath(data.output);
+  const type = format ?? (ext ? `${kind} · ${ext}` : kind);
+  const detail = reason ? `${kind} · ${reason}` : look.kind === 'page' ? t('transcript.outputWebsite') : [type, path && lastTwoFolders(path)].filter(Boolean).join(' · ');
   const name = readableLabel(look.kind === 'page' ? t('transcript.outputWebPreview') : look.name, ctx, width, 14, 20, 500);
   const description = readableLabel(detail, ctx, width, 12, 18);
   return { name, description, rowHeight: Math.max(OPENED_OUTPUT_ROW_H, name.height + description.height + 24) };

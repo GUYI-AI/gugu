@@ -187,6 +187,8 @@ describe('opened-output cards on a mounted ChatView', () => {
       }
       expect(cards().map((card) => card.dataset.outputKind)).toEqual(['document', 'page']);
       expect(cards()[0]!.textContent).toContain('汇报-10-15.html');
+      // 文件卡写出所在文件夹(与「已编辑」行同一个说法),同名的两份分得开
+      expect(cards()[0]!.querySelector('[data-slot="opened-output-detail"]')!.textContent).toBe('Document · HTML · …/me/reports');
 
       await page.screenshot({ element: host, path: '__screenshots__/opened-output-cards.png' });
       // 一组:首行有上圆角那条边、末行有下圆角,中间不留缝
