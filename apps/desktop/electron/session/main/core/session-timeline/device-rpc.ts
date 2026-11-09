@@ -4,7 +4,6 @@ import { createSessionHostDeviceRpcHandlers } from '../../host-ws/device-session
 import { createMessagePreviewHost, type MessagePreviewHostDeps } from './preview-rpc';
 import { createSessionpageProjectionDeviceHost, type ProjectionDeviceFactoryOptions } from '../extensions/projection-device-factory';
 import { createProjectionRemoteHost } from '../extensions/projection-remote-host';
-import { extensionProjections } from '../extensions/extension-projection-bridge';
 
 /**
  * 这台机器在设备 RPC 上应答的会话页动词。
@@ -43,7 +42,7 @@ export function createSessionpageSessionDeviceRpcHandlers(options?: {
   const projection = options?.projection ? createSessionpageProjectionDeviceHost(options.projection) : null;
   // #1607 node 5: an App's projection watched from another of the person's computers, on cloud and SSH alike.
   const appProjections = createProjectionRemoteHost(() => ({
-    connect: extensionProjections.remote.connect,
+    connect: async (input, send) => (await import('../extensions/projection-remote-admit')).admitRemoteProjection(input, send),
     page: async (session, send) => {
       const [{ connectTaskPageScreen }, { taskPageForScreen }] = await Promise.all([
         import('../browser/task-page-screen'), import('../extensions/task-page-host')]);
