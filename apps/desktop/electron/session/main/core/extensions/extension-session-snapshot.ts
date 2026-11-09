@@ -103,7 +103,10 @@ export function pruneSessionSnapshots(
   }
 }
 
-/** @@@follows-junctions - fs.rm with recursive goes through a Windows junction and empties what it points at: a link is unlinked here. */
+/**
+ * @@@follows-junctions - On Windows, recursive fs.rm under Electron 44's Node goes through a junction and empties what it
+ * points at (plain Node 24 does not). A link is unlinked here.
+ */
 function removeWithoutFollowingLinks(target: string): void {
   const stat = fs.lstatSync(target, { throwIfNoEntry: false });
   if (!stat) return;
