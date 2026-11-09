@@ -170,3 +170,34 @@ it('passes pictures over without moving a turn start, keeping their place in the
     return bytes.subarray(place.start, place.start + place.chars).toString('latin1');
   })).toEqual(images(whole.turns));
 });
+
+it('merges child records in a fixed order: the same record reads the same every time', async () => {
+  const thread = '019ed98a-a0ce-7f63-a9aa-04e0760a80c2';
+  const root = await temp('fill-read-children-');
+  const day = join(root, '2026', '06', '18');
+  await mkdir(day, { recursive: true });
+  const line = (type: string, payload: object) => JSON.stringify({ timestamp: '2026-06-18T07:03:21Z', type, payload });
+  const children = Array.from({ length: 6 }, (_, n) => `child-${n}`);
+  // Children of different sizes, so their reads finish in a different order from the one they started in.
+  for (const [n, id] of children.entries()) {
+    await writeFile(join(day, `rollout-2026-06-18T07-03-21-${id}.jsonl`), [
+      line('event_msg', { type: 'task_started' }),
+      line('response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: `task ${id}` }] }),
+      ...Array.from({ length: (6 - n) * 40 }, (_, k) => line('response_item', { type: 'function_call', name: 'exec_command', call_id: `${id}-${k}`, arguments: '{}' })),
+      line('response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: `result ${id}` }] }),
+      line('event_msg', { type: 'task_complete' }),
+    ].join('\n') + '\n');
+  }
+  await writeFile(join(day, `rollout-2026-06-18T07-03-21-${thread}.jsonl`), [
+    line('event_msg', { type: 'task_started' }),
+    line('response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'start them' }] }),
+    ...children.flatMap((id) => [
+      line('response_item', { type: 'function_call', namespace: 'collaboration', name: 'spawn_agent', call_id: `spawn-${id}`, arguments: JSON.stringify({ task_name: id, message: `task ${id}` }) }),
+      line('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: `spawn-${id}`, kind: 'started', agent_thread_id: id, agent_path: `/root/${id}` } }),
+    ]),
+    line('response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'started' }] }),
+  ].join('\n') + '\n');
+  const locator: SessionRecordLocator = { harness: 'codex', providerSessionId: thread, roots: [root] };
+  const first = JSON.stringify((await readAll(locator, null)).turns);
+  for (let read = 0; read < 20; read++) expect(JSON.stringify((await readAll(locator, null)).turns)).toBe(first);
+});

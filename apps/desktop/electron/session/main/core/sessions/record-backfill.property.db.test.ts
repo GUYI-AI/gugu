@@ -52,9 +52,10 @@ type Harness = 'codex' | 'claude' | 'hermes';
 type Picture = { chars: number; fill: string };
 type Turn = {
   prompt: string; reply: string; tool?: { id: string; picture?: Picture; text?: string }; done: boolean;
-  /** Codex: a subagent this turn starts (its own record); `later` = it finishes in a later turn. */
+  /** A subagent this turn starts (its own record); `later` = it finishes in a later turn (Claude: a background agent,
+   * else a foreground one whose result is its finish). */
   sub?: { id: string; later: boolean };
-  /** Codex: the later turn a subagent finishes in. */
+  /** The later turn a subagent finishes in. */
   subDone?: string;
 };
 type Op = { kind: 'grow'; turns: Turn[]; cuts: number } | { kind: 'rewind'; keep: number } | { kind: 'replace'; turns: Turn[] } | { kind: 'archive' };
@@ -71,7 +72,7 @@ function randomTurns(r: ReturnType<typeof random>, harness: Harness, count: numb
     const picture = harness !== 'hermes' && r.chance(0.35)
       ? { chars: r.chance(0.5) ? r.int(70, 110) * 1024 : r.int(1, 8) * 512, fill: r.pick(['QUJD', 'WFla', 'MTIz', 'cXdl']) } : undefined;
     const tool = r.chance(0.5) ? { id: `t${tag}${n}`, ...(picture ? { picture } : { text: r.pick(REPLIES) }) } : undefined;
-    const sub = harness === 'codex' && r.chance(0.15) ? { id: `child-${tag}-${n}`, later: r.chance(0.5) } : undefined;
+    const sub = harness !== 'hermes' && r.chance(0.15) ? { id: `child-${tag}-${n}`, later: r.chance(0.5) } : undefined;
     return {
       prompt: envelopes && r.chance(0.15) ? envelope(r.pick(DELIVERED)) : r.pick(PROMPTS),
       reply: r.pick(REPLIES), ...(tool ? { tool } : {}), ...(sub ? { sub } : {}), done: true,
@@ -101,7 +102,8 @@ function randomCase(seed: number): Case {
   const last = [...ops].reverse().find((op): op is Extract<Op, { kind: 'grow' }> => op.kind === 'grow');
   if (last && r.chance(0.3)) last.turns.at(-1)!.done = false;
   // A forked session's own deliveries arrive after it exists: none is in the turns it inherits.
-  const fork = harness === 'claude' && r.chance(0.3) ? randomTurns(r, harness, r.int(1, 4), 'p', false) : undefined;
+  const fork = harness === 'claude' && r.chance(0.3)
+    ? randomTurns(r, harness, r.int(1, 4), 'p', false).map(({ sub: _sub, subDone: _done, ...turn }) => turn) : undefined;
   return { seed, harness, ops, ...(fork ? { fork } : {}) };
 }
 
@@ -114,7 +116,12 @@ const HERMES = '20261109_000000_prop00';
 const pictureData = (p: Picture) => p.fill.repeat(Math.ceil(p.chars / p.fill.length)).slice(0, p.chars);
 
 const codexLine = (type: string, payload: object) => JSON.stringify({ timestamp: '2026-06-18T07:03:21Z', type, payload });
-const subFinished = (id: string) => codexLine('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: `done-${id}`, kind: 'completed', agent_thread_id: id, agent_path: `/root/${id}` } });
+/** The parent's record noting a subagent finished, then the child's final answer handed to the parent (as Codex writes them). */
+const subFinished = (id: string) => [
+  codexLine('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: `done-${id}`, kind: 'completed', agent_thread_id: id, agent_path: `/root/${id}` } }),
+  codexLine('response_item', { type: 'agent_message', author: `/root/${id}`, recipient: '/root',
+    content: [{ type: 'input_text', text: `Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/${id}\nPayload:\nresult of ${id}` }] }),
+];
 /** A subagent's own record: written when it starts, finished when the parent records it finishing. */
 const childLines = (id: string, finished: boolean) => [
   codexLine('event_msg', { type: 'task_started' }),
@@ -126,6 +133,19 @@ const childLines = (id: string, finished: boolean) => [
     codexLine('event_msg', { type: 'task_complete' }),
   ] : []),
 ];
+
+/** A Claude subagent's own record, finished when the parent's record has its result or notification. */
+const claudeChildLines = (id: string, finished: boolean) => {
+  const line = (uuid: string, role: 'user' | 'assistant', content: unknown[], end = false) => JSON.stringify({ type: role, uuid: `${id}-${uuid}`,
+    sessionId: CLAUDE, isSidechain: true, agentId: id, timestamp: '2026-10-31T00:00:00Z',
+    message: { id: `m-${id}-${uuid}`, role, content, ...(end ? { stop_reason: 'end_turn' } : {}) } });
+  return [
+    line('u', 'user', [{ type: 'text', text: `task ${id}` }]),
+    line('c', 'assistant', [{ type: 'tool_use', id: `step-${id}`, name: 'Bash', input: { command: 'ls' } }]),
+    line('r', 'user', [{ type: 'tool_result', tool_use_id: `step-${id}`, content: `step of ${id}` }]),
+    ...(finished ? [line('a', 'assistant', [{ type: 'text', text: `result of ${id}` }], true)] : []),
+  ];
+};
 
 /** One record line per entry; a turn's lines as the harness writes them. Unique ids come from `n`. */
 function codexLines(turns: Turn[], from: number): string[] {
@@ -139,9 +159,9 @@ function codexLines(turns: Turn[], from: number): string[] {
         line('response_item', { type: 'function_call', namespace: 'collaboration', name: 'spawn_agent', call_id: `spawn-${turn.sub.id}`, arguments: JSON.stringify({ task_name: turn.sub.id, message: `task ${turn.sub.id}` }) }),
         line('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: `spawn-${turn.sub.id}`, kind: 'started', agent_thread_id: turn.sub.id, agent_path: `/root/${turn.sub.id}` } }),
         line('response_item', { type: 'function_call_output', call_id: `spawn-${turn.sub.id}`, output: JSON.stringify({ task_name: `/root/${turn.sub.id}` }) }),
-        ...(turn.sub.later ? [] : [subFinished(turn.sub.id)]),
+        ...(turn.sub.later ? [] : subFinished(turn.sub.id)),
       ] : []),
-      ...(turn.subDone ? [subFinished(turn.subDone)] : []),
+      ...(turn.subDone ? subFinished(turn.subDone) : []),
       ...(turn.tool ? [
         line('response_item', { type: 'function_call', name: 'shot', arguments: '{}', call_id: `${turn.tool.id}-${n}` }),
         line('response_item', { type: 'function_call_output', call_id: `${turn.tool.id}-${n}`, output: turn.tool.picture
@@ -157,14 +177,25 @@ function codexLines(turns: Turn[], from: number): string[] {
 
 function claudeLines(turns: Turn[], from: number, parent: { uuid: string | null }): string[] {
   const out: string[] = [];
-  const push = (role: 'user' | 'assistant', uuid: string, content: unknown[], end = false) => {
+  const push = (role: 'user' | 'assistant', uuid: string, content: unknown, end = false, extra: object = {}) => {
     out.push(JSON.stringify({ type: role, uuid, parentUuid: parent.uuid, sessionId: CLAUDE, timestamp: '2026-10-31T00:00:00Z',
-      message: { id: `m-${uuid}`, role, content, ...(end ? { stop_reason: 'end_turn' } : {}) } }));
+      message: { id: `m-${uuid}`, role, content, ...(end ? { stop_reason: 'end_turn' } : {}) }, ...extra }));
     parent.uuid = uuid;
   };
   turns.forEach((turn, k) => {
     const n = from + k;
     push('user', `u${n}`, [{ type: 'text', text: turn.prompt }]);
+    if (turn.sub) {
+      const { id, later } = turn.sub;
+      push('assistant', `s${n}`, [{ type: 'tool_use', id: `agent-${id}`, name: 'Agent', input: { description: `task ${id}`, prompt: `task ${id}`, ...(later ? { run_in_background: true } : {}) } }]);
+      push('user', `sr${n}`, [{ type: 'tool_result', tool_use_id: `agent-${id}`, content: [{ type: 'text', text: later ? 'launched' : `result of ${id}` }] }], false,
+        { toolUseResult: later ? { isAsync: true, status: 'async_launched', agentId: id }
+          : { status: 'completed', agentId: id, content: [{ type: 'text', text: `result of ${id}` }] } });
+    }
+    if (turn.subDone) {
+      push('user', `n${n}`, `<task-notification>\n<task-id>${turn.subDone}</task-id>\n<tool-use-id>agent-${turn.subDone}</tool-use-id>\n`
+        + `<status>completed</status>\n<result>result of ${turn.subDone}</result>\n</task-notification>`, false, { origin: { kind: 'task-notification' } });
+    }
     if (turn.tool) {
       push('assistant', `c${n}`, [{ type: 'tool_use', id: `${turn.tool.id}-${n}`, name: 'Shot', input: {} }]);
       push('user', `r${n}`, [{ type: 'tool_result', tool_use_id: `${turn.tool.id}-${n}`, content: turn.tool.picture
@@ -245,8 +276,18 @@ class RecordFile {
         }
         continue;
       }
-      units.push(...(this.harness === 'claude' ? claudeLines([turn], from + k, this.claudeParent)
-          : hermesRows([turn], from + k).map((row) => JSON.stringify(row))));
+      if (this.harness === 'claude') {
+        for (const line of claudeLines([turn], from + k, this.claudeParent)) {
+          const record = JSON.parse(line) as { toolUseResult?: { agentId: string; status: string }; message: { content: unknown } };
+          const notified = typeof record.message.content === 'string' ? /<task-id>([^<]*)</.exec(record.message.content)?.[1] : undefined;
+          const child = record.toolUseResult ? { id: record.toolUseResult.agentId, finished: record.toolUseResult.status === 'completed' }
+            : notified ? { id: notified, finished: true } : null;
+          if (child) this.children.set(this.units.length + units.length, [...(this.children.get(this.units.length + units.length) ?? []), child]);
+          units.push(line);
+        }
+        continue;
+      }
+      units.push(...hermesRows([turn], from + k).map((row) => JSON.stringify(row)));
     }
     this.units.push(...units);
     return units;
@@ -278,7 +319,10 @@ class RecordFile {
       for (const change of changes) children.set(change.id, children.get(change.id) || change.finished);
     }
     for (const [id, finished] of children) {
-      await writeFile(join(this.root, '2026', '06', '18', `rollout-2026-06-18T07-03-21-${id}.jsonl`), childLines(id, finished).map((line) => `${line}\n`).join(''));
+      if (this.harness === 'claude') {
+        await mkdir(join(this.root, 'project', CLAUDE, 'subagents'), { recursive: true });
+        await writeFile(join(this.root, 'project', CLAUDE, 'subagents', `agent-${id}.jsonl`), claudeChildLines(id, finished).map((line) => `${line}\n`).join(''));
+      } else await writeFile(join(this.root, '2026', '06', '18', `rollout-2026-06-18T07-03-21-${id}.jsonl`), childLines(id, finished).map((line) => `${line}\n`).join(''));
     }
   }
 
@@ -429,35 +473,9 @@ async function comparable(fixture: Fixture, sessionId: string): Promise<unknown[
       }
     };
     await visit(turn.items);
-    // A turn of a child's finish alone is not written in the root record: the timeline makes it when the child's record
-    // is read, after the root's, so a whole-record fill appends it again each time the record grows (dev's defect,
-    // EQUIVALENCE.md). Its card text depends on the launch card turns earlier; only that such a row is there is compared.
-    if (turn.initiator === 'agent' && turn.items.every(item => item.kind === 'subagent-done-tool-call')) continue;
-    // Child records are read concurrently once the root's is read: the order their finishes reach a turn is the order the
-    // reads complete, in a whole-record fill as well (EQUIVALENCE.md). They are compared as a set.
-    const finishes = turn.items.filter(item => item.kind === 'subagent-done-tool-call')
-      .map(item => { const { seq: _seq, ...rest } = item as unknown as { seq: number }; return rest; })
-      .sort((x, y) => JSON.stringify(x).localeCompare(JSON.stringify(y)));
-    turn.items = turn.items.filter(item => item.kind !== 'subagent-done-tool-call');
-    if (finishes.length) (turn as unknown as { finishes: unknown[] }).finishes = finishes;
-    // The same race decides the item numbers in a turn a child writes into (its records' entries interleave with them).
-    if (finishes.length || JSON.stringify(turn.items).includes('"subagentSessionId"')) {
-      const unnumber = (items: unknown[]) => items.forEach((item) => {
-        const node = item as { seq?: number; children?: unknown[] };
-        delete node.seq;
-        if (node.children) unnumber(node.children);
-      });
-      unnumber(turn.items);
-    }
     out.push({ turn, pictures });
   }
-  // Compared by order: the dropped rows (above) leave gaps, so a row's seq and the ids made of it are its ordinal.
-  return out.map((row, ordinal) => {
-    const { turn } = row as { turn: TranscriptTurn };
-    const seq = turn.seq;
-    return JSON.parse(JSON.stringify({ ...(row as object), ordinal }).split(`S:turn:s${seq}:`).join(`S:turn:#${ordinal}:`)
-      .split(`"S:turn:s${seq}"`).join(`"S:turn:#${ordinal}"`).replace(`"seq":${seq},"initiator"`, `"seq":"#${ordinal}","initiator"`));
-  });
+  return out;
 }
 
 /** Equal, or an error that shows where the two first differ. */

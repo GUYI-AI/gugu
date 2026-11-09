@@ -72,8 +72,11 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
         const first = !ordinals.children[item.threadId];
         ordinals.children = { ...ordinals.children, [item.threadId]: child };
         const at = parseTimestamp(codex.timestamp);
-        // The child's own task boundaries provide lifecycle; the parent's summary does not complete it.
-        if (!first) return [];
+        // The child's own record updates its card; the root's `completed` activity is the row saying it finished,
+        // in the root turn that was running when it did (its text arrives with the child's FINAL_ANSWER, below).
+        const done: RecordEntry[] = item.activity === 'completed'
+          ? [{ key, at, event: { kind: 'subagent_done', parentRecord: true, toolCallId: child.id, agentId: child.id, status: 'completed' } }] : [];
+        if (!first) return done;
         return [{ key: `${key}#0`, at, event: {
           kind: 'subagent', toolCallId: child.id, subagentSessionId: child.id,
           ...(child.name ? { title: child.name } : {}),
@@ -82,8 +85,11 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
           ...(child.model ? { model: child.model } : {}),
           ...(child.callId ? { agentToolUseId: child.callId } : {}),
           ...(child.task ? { rawInput: child.task } : {}),
-        } }];
+        } }, ...done];
       }
+      const answer = finalAnswer(record, ordinals.children);
+      if (answer) return [{ key, at: parseTimestamp(codex.timestamp), event: {
+        kind: 'subagent_done', parentRecord: true, toolCallId: answer.child.id, agentId: answer.child.id, status: 'completed', outputText: answer.text } }];
       const entry = decode(codex, key);
       const event = entry?.event;
       if (entry && event?.kind === 'message' && event.role === 'user') {
@@ -102,6 +108,18 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
     () => createCodexJsonlSource(locator, options, nativeChild),
     options,
   );
+}
+
+/** A child's final answer, which Codex hands to its parent as an `agent_message` in the parent's record:
+ * `Message Type: FINAL_ANSWER` … `Payload:` and the child's reply. */
+function finalAnswer(record: Record<string, unknown>, children: Record<string, Child>): { child: Child; text: string } | null {
+  const payload = asRecord(record.payload);
+  if (record.type !== 'response_item' || payload?.type !== 'agent_message' || typeof payload.author !== 'string') return null;
+  const child = Object.values(children).find((candidate) => candidate.name === payload.author);
+  if (!child || !Array.isArray(payload.content)) return null;
+  const text = payload.content.map((part) => asRecord(part)?.text).filter((part): part is string => typeof part === 'string').join('');
+  const reply = /^Message Type: FINAL_ANSWER\n[\s\S]*?\nPayload:\n([\s\S]*)$/.exec(text)?.[1];
+  return reply === undefined ? null : { child, text: reply };
 }
 
 /** Decode one already-budgeted window record with its real source-anchor key, without prefix ordinals/state. */

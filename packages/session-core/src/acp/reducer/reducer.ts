@@ -669,6 +669,7 @@ function updateAgentSlice(
 ): AgentState[] {
   // 「它跑完了」现在是转录里的又一次工具调用(见 claude/acp-transform.ts),登记册照样要跟上 ——
   // 会话忙不忙那一路读的是登记册,不是转录。
+  if (event.kind === 'subagent_done' && event.parentRecord) return agents;
   const notified = event.kind === 'subagent_done' ? event : undefined;
   if (notified === undefined && event.kind !== 'subagent' && event.kind !== 'subagent_update') {
     return agents;
