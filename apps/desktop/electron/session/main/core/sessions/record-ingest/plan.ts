@@ -1,7 +1,5 @@
 import { createHash } from 'node:crypto';
-import { closeSync, openSync, readFileSync, renameSync, writeSync } from 'node:fs';
-import { createReadStream } from 'node:fs';
-import { createInterface } from 'node:readline';
+import { closeSync, openSync, readFileSync, readSync, renameSync, writeSync } from 'node:fs';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import type { RecordLineageNode, SessionRecordLocator, TimelineArchive } from '@gugu/session-core/session-record';
 import { SessionRecordNotFoundError, trimTurnsForTransport } from '@gugu/session-core/session-record';
@@ -248,19 +246,18 @@ export async function runIngest(request: IngestRequest, readRecord: typeof readR
 /** Revised turns first, then appended ones, each in record order: the order the host wrote them in before. */
 function batches(spill: string, plan?: { revise: Map<number, number>; append: Set<number> }): Pick<IngestRun, 'next' | 'close'> {
   const passes: Array<'revise' | 'append'> = plan ? ['revise', 'append'] : [];
-  let lines: AsyncIterator<string> | null = null;
+  let lines: SpillLines | null = null;
   let carried: { kind: 'revise' | 'append'; seq?: number; turn: TranscriptTurn; bytes: number } | null = null;
-  const open = () => createInterface({ input: createReadStream(spill, { encoding: 'utf8' }), crlfDelay: Infinity })[Symbol.asyncIterator]();
-  const pull = async (): Promise<typeof carried> => {
+  const pull = (): typeof carried => {
     while (passes.length) {
-      lines ??= open();
-      const line = await lines.next();
-      if (line.done) { lines = null; passes.shift(); continue; }
-      const tab = line.value.indexOf('\t');
-      const index = Number(line.value.slice(0, tab));
+      lines ??= spillLines(spill);
+      const line = lines.next();
+      if (line === null) { lines.close(); lines = null; passes.shift(); continue; }
+      const tab = line.indexOf('\t');
+      const index = Number(line.slice(0, tab));
       const kind = passes[0];
       if (kind === 'revise' ? !plan!.revise.has(index) : !plan!.append.has(index)) continue;
-      const text = line.value.slice(tab + 1);
+      const text = line.slice(tab + 1);
       return { kind, seq: plan!.revise.get(index), turn: JSON.parse(text) as TranscriptTurn, bytes: text.length };
     }
     return null;
@@ -270,7 +267,7 @@ function batches(spill: string, plan?: { revise: Map<number, number>; append: Se
       const batch: IngestBatch = { revise: [], append: [] };
       let bytes = 0, count = 0;
       for (;;) {
-        const one = carried ?? await pull();
+        const one = carried ?? pull();
         carried = null;
         if (!one) break;
         if (count > 0 && (count >= BATCH_MAX_TURNS || bytes + one.bytes > BATCH_MAX_BYTES)) { carried = one; break; }
@@ -282,8 +279,38 @@ function batches(spill: string, plan?: { revise: Map<number, number>; append: Se
       return count ? batch : null;
     },
     close() {
-      void lines?.return?.();
+      lines?.close();
+      lines = null;
     },
+  };
+}
+
+type SpillLines = { next(): string | null; close(): void };
+
+/** The spill's lines, read a chunk at a time and only as they are asked for: the spill can be gigabytes. */
+function spillLines(path: string): SpillLines {
+  const fd = openSync(path, 'r');
+  const chunk = Buffer.alloc(1024 * 1024);
+  let parts: Buffer[] = [];
+  let position = 0;
+  let done = false;
+  return {
+    next() {
+      for (;;) {
+        const pending = Buffer.concat(parts);
+        const end = pending.indexOf(10);
+        if (end >= 0) {
+          parts = [pending.subarray(end + 1)];
+          return pending.subarray(0, end).toString('utf8');
+        }
+        if (done) return pending.length ? (parts = [], pending.toString('utf8')) : null;
+        const read = readSync(fd, chunk, 0, chunk.length, position);
+        position += read;
+        if (read === 0) done = true;
+        else parts = [pending, Buffer.from(chunk.subarray(0, read))];
+      }
+    },
+    close() { closeSync(fd); },
   };
 }
 
