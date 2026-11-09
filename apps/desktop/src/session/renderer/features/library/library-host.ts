@@ -5,6 +5,7 @@
 // 不认它,照旧渲染同一套控件,只是数据与动作来自另一台机器(与新建框的 remote-create-source 同一种做法)。
 // 提示词不在这里:它是账号的(`@shared/prompt-library`,owner 11-07),哪台机器看都是同一份。
 import { createContext, useContext } from 'react';
+import type { ConnectionPreviousPresentation } from '@/components/connections/connection-verification';
 import type { AgentInstallProgress } from '@gugu/session-core/workspace-server';
 import { events, onMachineEvent, rpc, rpcOn } from '@renderer/lib/ipc';
 import { TOO_OLD_CODES } from '@renderer/features/remote-hosts/connection-status';
@@ -105,6 +106,8 @@ export type LibraryHost = {
   connectionMetadata?: ConnectionMetadataStore;
   connectionMetadataExpected?: boolean;
   connectionMetadataError?: unknown;
+  canAuthorizeConnection?: (providerId: string) => boolean;
+  connectionAuthorizationOpened?: (providerId: string,previous: ConnectionPreviousPresentation) => void;
   assistantPanel?: AssistantPanelFiles;
   assistantPanelExpected?: boolean;
   assistantPanelError?: unknown;
