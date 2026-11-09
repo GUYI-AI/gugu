@@ -119,7 +119,8 @@ export function createJsonlTailSource<S>(
     catchUp: async () => { if (options?.readMode !== 'snapshot') await reader?.catchUp(); },
     readImage: readRecordImage,
     async resumePoint(budget) {
-      if (path?.endsWith('.zst') && options?.readMode === 'snapshot') {
+      // Only ingestion keeps a `.zst` resume point: its pictures are inline, so no interactive archive is written from one.
+      if (path?.endsWith('.zst') && options?.readMode === 'snapshot' && options.drained) {
         if (!zstEnd || (budget && (budget.remainingBytes -= zstEnd) < 0)) return null;
         const info = await stat(path);
         const tail: TailResume = { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs, lineOffset: zstEnd };
