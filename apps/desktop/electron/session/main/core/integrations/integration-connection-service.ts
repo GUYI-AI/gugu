@@ -95,7 +95,7 @@ function mcpOAuthServerUrl(integrationId: string): string | null {
 
 export class IntegrationConnectionService {
   private readonly pendingAuthorizations = new Map<string, AbortController>();
-  private readonly pendingRefreshes = new Map<string, Promise<IntegrationAccountRecord>>();
+  private readonly pendingRefreshes = new Map<string, Promise<IntegrationAccountRecord | null>>();
   private readonly cliLogins = new Map<string, PendingCliLogin>();
   /** 正在装 / 正在起登录的那一次连接的号(见 cliLoginStart)。 */
   private readonly cliStarts = new Map<string, symbol>();
@@ -416,7 +416,12 @@ export class IntegrationConnectionService {
     const refresh = (async () => {
       const refreshed = await refreshMcpCredentials(parsed.data);
       const next = { ...account, credentials: toIntegrationCredentials(refreshed) };
-      await integrationCredentialStore.upsertAccount(integrationId, next);
+      // The person may have disconnected or authorized again while this was on the
+      // network: their change wins. The caller gets what is stored now (nothing after a
+      // disconnect, the new authorization after a reauthorization), never the stale grant.
+      if (!(await integrationCredentialStore.compareAndSwapAccount(integrationId, account, next.credentials))) {
+        return integrationCredentialStore.getAccount(integrationId, account.accountId);
+      }
       return next;
     })().finally(() => this.pendingRefreshes.delete(key));
     this.pendingRefreshes.set(key, refresh);
@@ -675,11 +680,10 @@ export class IntegrationConnectionService {
           };
         }
       }
-      if (result.credentials) {
-        await integrationCredentialStore.upsertAccount(integrationId, {
-          ...account,
-          credentials: result.credentials,
-        });
+      if (result.credentials
+        && !(await integrationCredentialStore.compareAndSwapAccount(integrationId, account, result.credentials))) {
+        // Disconnected or authorized again during the check: this result is about credentials that are gone.
+        return { connected: false, error: 'The connection changed during this check.', capabilities };
       }
       return {
         connected: true,
