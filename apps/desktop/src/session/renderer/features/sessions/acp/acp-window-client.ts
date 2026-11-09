@@ -6,6 +6,7 @@ import type { AcpWindowHistoryClient } from './acp-window-history';
 import { windowLiveCursorSchema, type WindowCommitPage, type WindowLiveCursor } from '@gugu/session-wire/session-window-live';
 import { createAcpWindowLiveReadClient } from './acp-window-live-client';
 import { startAcpWindowCommitReader } from './acp-window-commit-reader';
+import type { WindowProjectionApi } from '@gugu/session-wire/session-window-projection';
 
 /** This metadata-only decision must finish before any legacy history I/O. */
 export async function prepareAcpWindowHistory(conversationId: string, subscriptionId: string) {
@@ -67,4 +68,10 @@ export const acpWindowHistoryClient: AcpWindowHistoryClient = {
     return result.value;
   },
   unsubscribe: subscriptionId => rpcOn(null).sessionTimeline.sessionUnsubscribe({ subscriptionId }),
+};
+
+/** The host binds both projection routes to this sender and the prepared subscription. */
+export const acpWindowProjectionApi: WindowProjectionApi = {
+  read: input => rpcOn(null).sessionTimeline.sessionWindowProjectionRead(input),
+  readBody: input => rpcOn(null).sessionTimeline.sessionWindowProjectionBodyRead(input),
 };

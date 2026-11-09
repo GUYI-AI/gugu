@@ -15,12 +15,18 @@ vi.mock('@gugu/session-chat-ui', async () => ({
 }));
 
 const prepared = { workerEpoch: 'worker', storeEpoch: 'store', sequence: 7 };
+const LEASE = '00000000-0000-4000-8000-000000000001';
+const GAP_POSITION = { projectionId: 'source/projection', rowId: 'gap-row', storedSeq: 1, referenceId: 'gap-ref' };
+const handle = (name: string) => `${name}-${'h'.repeat(40)}`;
+const gapCommit = (kind: 'insert' | 'needs_location') => ({ hasMore: false, next: { ...prepared, sequence: 8 }, entries: [kind === 'insert'
+  ? { kind, ...GAP_POSITION, firstCommitCursor: { ...prepared, sequence: 8 }, latestRevisionCursor: { ...prepared, sequence: 8 } }
+  : { kind, referenceId: 'gap-ref', rowId: 'gap-row', storedSeq: 1, firstCommitCursor: { ...prepared, sequence: 8 }, latestRevisionCursor: { ...prepared, sequence: 8 } }] });
 const f = vi.hoisted(() => ({
   records: new Map<string, Partial<Session>>(), listeners: new Map<string, (event: unknown) => void>(),
   calls: [] as string[], phase: 'stopped', source: 'window', prepare: null as Promise<unknown> | null,
   setupFailure: null as { code: string; message: string } | null,
   watchChanged: () => {}, live: null as unknown, attach: null as Promise<unknown> | null,
-  liveReads: [] as unknown[],
+  liveReads: [] as unknown[], commitPages: [] as unknown[], projection: [] as string[],
 }));
 vi.mock('../stores/session-registry', () => ({ sessionRegistry: { get: (id: string) =>
   f.records.has(id) ? { sessions: new Map([[id, { data: f.records.get(id) }]]) } : undefined } }));
@@ -42,12 +48,23 @@ installAcpChatStoreHost(async (channel: string, ...args: unknown[]) => {
   f.calls.push(channel);
   if (channel === 'sessionTimeline.sessionWindowPrepare') return f.prepare ?? { ok: true, value: f.source === 'window' ? { source: 'window', liveCursor: prepared } : { source: 'legacy' } };
   if (channel === 'sessionTimeline.sessionWindowLiveRead') {
-    // The host's commit queue after the Prepare cursor: the gap turn committed while no live listener was attached.
+    // The host's commit queue after the Prepare cursor; an empty queue keeps the unique read waiting.
     f.liveReads.push(args[0]);
-    if (f.liveReads.length > 1) return new Promise(() => {});
-    return { ok: true, value: { hasMore: false, next: { ...prepared, sequence: 8 }, entries: [{ kind: 'insert', referenceId: 'gap-ref',
-      projectionId: 'projection', rowId: 'gap-turn', storedSeq: 1, firstCommitCursor: { ...prepared, sequence: 8 }, latestRevisionCursor: { ...prepared, sequence: 8 } }] } };
+    const page = f.commitPages.shift();
+    return page ? { ok: true, value: page } : new Promise(() => {});
   }
+  if (channel === 'sessionTimeline.sessionWindowProjectionRead') {
+    const input = args[0] as { kind: string; cursor?: string };
+    f.projection.push(input.kind);
+    if (input.kind === 'open') return { ok: true, value: { lease: LEASE, position: GAP_POSITION, count: 1, next: handle('page-0'),
+      root: { target: 'turn', values: { id: 'gap-turn', seq: 1, referenceId: 'gap-ref', initiator: 'user' }, fields: [] } } };
+    if (input.kind === 'page') return { ok: true, value: { lease: LEASE, position: GAP_POSITION, ordinal: 0, entityId: 'gap-reply-entity',
+      parentEntityId: null, hasChildren: false, next: null, bodies: [{ field: 'text', handle: handle('text') }],
+      header: { target: 'item', values: { id: 'gap-reply', seq: 0, kind: 'message', role: 'assistant' }, fields: [] } } };
+    return { ok: true, value: undefined };
+  }
+  if (channel === 'sessionTimeline.sessionWindowProjectionBodyRead')
+    return { ok: true, value: { kind: 'body', offset: 0, text: 'Reply from another sender', next: null } };
   if (channel === 'sessionTimeline.sessionWindowLiveAck') return { ok: true, value: undefined };
   if (channel === 'sessionTimeline.sessionWindowSubscribe') {
     if (f.setupFailure) return { ok: false, error: f.setupFailure };
@@ -89,7 +106,7 @@ function live() {
   };
 }
 const readable = async (store: InstanceType<typeof AcpChatStore>) => vi.waitFor(() => expect(store.sourceWindow?.sourceFragments?.[0]?.text).toBe('Persisted bounded history'));
-beforeEach(() => { f.calls.length = 0; f.phase = 'stopped'; f.source = 'window'; f.prepare = null; f.setupFailure = null; f.live = live(); f.attach = null; f.liveReads.length = 0; });
+beforeEach(() => { f.calls.length = 0; f.phase = 'stopped'; f.source = 'window'; f.prepare = null; f.setupFailure = null; f.live = live(); f.attach = null; f.liveReads.length = 0; f.commitPages.length = 0; f.projection.length = 0; });
 afterEach(() => { stores.splice(0).forEach(store => store.dispose()); f.records.clear(); vi.restoreAllMocks(); });
 
 it('chooses the source before stored/backfill I/O and displays bounded body without a canonical turn', async () => {
@@ -214,10 +231,11 @@ it('reopens a released stopped transcript through a new preparation without read
 it('shows a turn completed between the opening window and live attachment from the committed queue', async () => {
   let attach!: () => void;
   f.attach = new Promise<void>(yes => { attach = yes; });
+  f.commitPages.push(gapCommit('insert'));
   const store = makeStore(); store.bootstrap(); await readable(store);
   f.phase = 'running'; f.watchChanged();
   const session = f.live as ReturnType<typeof live>;
-  session.activeTurn.push({ id: 'gap-turn', seq: 0, initiator: 'user', items: [
+  session.activeTurn.push({ id: 'gap-turn', seq: 1, initiator: 'user', items: [
     { kind: 'message', id: 'gap-reply', seq: 0, role: 'assistant', text: 'Reply from another sender' },
   ] });
   session.activeTurn.push(null);
@@ -225,6 +243,21 @@ it('shows a turn completed between the opening window and live attachment from t
   await vi.waitFor(() => expect(store.session).not.toBeNull());
   await vi.waitFor(() => expect(store.chatState.transcript.state.committedTurns.map(row => row.id)).toContain('gap-turn'));
   expect(f.liveReads[0]).toMatchObject({ conversationId: store.sessionId, after: prepared });
+  const turn = store.chatState.transcript.state.committedTurns.find(row => row.id === 'gap-turn')!;
+  expect(turn.items).toMatchObject([{ id: 'gap-reply', kind: 'message', role: 'assistant', text: 'Reply from another sender' }]);
+  expect(store.chatState.transcript.state.committedTurns.filter(row => row.id === 'gap-turn')).toHaveLength(1);
+  await vi.waitFor(() => expect(f.calls).toContain('sessionTimeline.sessionWindowLiveAck'));
+  expect(f.projection).toEqual(['open', 'page', 'release']);
   expect(session.getHistory).not.toHaveBeenCalled();
   expect(f.calls).not.toContain('sessions.getStoredHistory');
+});
+
+it('keeps an over-large committed turn as unlocated without failing or dropping later turns', async () => {
+  f.commitPages.push(gapCommit('needs_location'));
+  const store = makeStore(); store.bootstrap(); await readable(store);
+  await vi.waitFor(() => expect(store.windowUnlocatedTurns).toEqual([{ referenceId: 'gap-ref', storedSeq: 1 }]));
+  expect(store.loadError).toBeNull();
+  expect(f.projection).toEqual([]);
+  await vi.waitFor(() => expect(f.calls).toContain('sessionTimeline.sessionWindowLiveAck'));
+  expect(f.liveReads).toHaveLength(2);
 });

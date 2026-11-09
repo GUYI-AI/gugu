@@ -60,7 +60,9 @@ import { getAcpRuntimeClient } from '@renderer/lib/acp/runtime-client';
 import { watchRunningSession, type RunningSessionWatch } from '@renderer/lib/acp/running-sessions';
 import { supportsSourceWindow } from '@gugu/session-core/session-record/window-cache/formats';
 import { AcpWindowHistory } from './acp-window-history';
-import { acpWindowHistoryClient, prepareAcpWindowHistory } from './acp-window-client';
+import { acpWindowHistoryClient, acpWindowProjectionApi, prepareAcpWindowHistory, startAcpWindowCommitIpc } from './acp-window-client';
+import { materializeCommittedTurn } from './acp-window-projection';
+import type { WindowCommitPage } from '@gugu/session-wire/session-window-live';
 import { machineLinkHandingOff, machineLinkState, onMachineReconnected } from '@renderer/lib/machine-clients';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
@@ -218,6 +220,9 @@ export class AcpChatStore {
   sourceWindow: ChatCommands['sourceWindow'];
   private _windowHistory: AcpWindowHistory | null = null;
   private _windowSubscriptionId: string | null = null;
+  private _windowCommits: { close(): void } | null = null;
+  /** Committed turns too large for one bounded projection: only that turn must be located through the full read path. */
+  windowUnlocatedTurns: readonly { referenceId: string; storedSeq: number }[] = [];
   private _openingHistoryChoice: Promise<void> | null = null;
   private _historySource: 'legacy' | 'choosing' | 'window' = 'legacy';
   private _windowFailure: AcpLoadError | null = null;
@@ -357,6 +362,7 @@ export class AcpChatStore {
 
     makeObservable<this, '_bootstrapped' | '_bootstrapsInFlight' | '_runtimeBackgroundTaskIds' | '_runtimeLiveSubagentIds' | '_storedQueue' | '_loadError' | '_lifeRetriedVersion' | '_senderInputs' | '_windowFailure'>(this, {
       sourceWindow: observable.ref,
+      windowUnlocatedTurns: observable.ref,
       _windowFailure: observable.ref,
       _senderInputs: observable.ref,
       _bootstrapped: observable,
@@ -1981,12 +1987,14 @@ export class AcpChatStore {
    * 照旧走原来那条开场的几种见 `_opensThroughStartup`。
    */
   private _closeWindowHistory(): void {
+    this._windowCommits?.close();
+    this._windowCommits = null;
     this._windowHistory?.close();
     this._windowHistory = null;
     const id = this._windowSubscriptionId;
     this._windowSubscriptionId = null;
     if (id) void acpWindowHistoryClient.unsubscribe(id).catch(() => undefined);
-    runInAction(() => { this.sourceWindow = undefined; this._windowFailure = null; });
+    runInAction(() => { this.sourceWindow = undefined; this._windowFailure = null; this.windowUnlocatedTurns = []; });
   }
 
   /** Lock the source before stored/history/backfill I/O; a failed choice never selects the legacy reader. */
@@ -2021,6 +2029,7 @@ export class AcpChatStore {
       }, () => id);
       this._windowHistory = history;
       await history.open();
+      if (this._windowHistory === history && history.view.phase !== 'failed') this._readWindowCommits(id, source.liveCursor);
     } catch (error) {
       if (!current()) return;
       this._historySource = 'window';
@@ -2031,6 +2040,58 @@ export class AcpChatStore {
       });
       void acpWindowHistoryClient.unsubscribe(id).catch(() => undefined);
     }
+  }
+
+  /**
+   * The continuous handoff from the pinned opening window to live history: every turn the host
+   * commits after the Prepare cursor arrives here, including one that started and finished before
+   * the live listener attached. Each reference is materialized from its projection before ACK.
+   */
+  private _readWindowCommits(subscriptionId: string, after: Parameters<typeof startAcpWindowCommitIpc>[0]['after']): void {
+    const owner = { conversationId: this.sessionId, subscriptionId };
+    const current = () => !this._disposed && this._windowSubscriptionId === subscriptionId;
+    type Resident = Array<{ kind: 'turn'; insert: boolean; turn: TranscriptTurn } | { kind: 'needs_location'; referenceId: string; storedSeq: number }>;
+    this._windowCommits = startAcpWindowCommitIpc<Resident>({ ...owner, after }, {
+      isCurrent: current,
+      async materialize(page: WindowCommitPage) {
+        const rows: Resident = [];
+        // One resident version at a time: the host bounds concurrent projection reads.
+        for (const entry of page.entries) {
+          if (entry.kind === 'needs_location') { rows.push({ kind: 'needs_location', referenceId: entry.referenceId, storedSeq: entry.storedSeq }); continue; }
+          const turn = await materializeCommittedTurn(acpWindowProjectionApi, owner,
+            { projectionId: entry.projectionId, rowId: entry.rowId, storedSeq: entry.storedSeq, referenceId: entry.referenceId }, current);
+          rows.push({ kind: 'turn', insert: entry.kind === 'insert', turn });
+        }
+        return rows;
+      },
+      commit: rows => this._commitWindowTurns(rows),
+      failed: error => runInAction(() => {
+        this._windowFailure = { kind: 'history_unavailable', message: resultError(error).message };
+        this._reopenOnRetry = true;
+      }),
+    });
+  }
+
+  private _commitWindowTurns(rows: ReadonlyArray<{ kind: 'turn'; insert: boolean; turn: TranscriptTurn } | { kind: 'needs_location'; referenceId: string; storedSeq: number }>): void {
+    if (this._transcriptReleased) return;
+    runInAction(() => batch(() => {
+      const live = this.session?.activeTurn.current();
+      const turns = new Map(this._runtimeTurns.map(row => [row.id, row]));
+      const unlocated = [...this.windowUnlocatedTurns];
+      for (const row of rows) {
+        if (row.kind === 'needs_location') {
+          if (!unlocated.some(value => value.referenceId === row.referenceId)) unlocated.push({ referenceId: row.referenceId, storedSeq: row.storedSeq });
+          continue;
+        }
+        // A historical update may replace a resident row; only an insert proves a new one.
+        if (row.insert || turns.has(row.turn.id)) turns.set(row.turn.id, row.turn);
+      }
+      this._runtimeTurns = [...turns.values()].sort((a, b) => a.seq - b.seq);
+      this.windowUnlocatedTurns = unlocated;
+      this.chatState.transcript.history.seed(this._composedHistory());
+      if (live && !turns.has(live.id)) this.chatState.transcript.activeTurn.set(live);
+      this._syncMessageCount();
+    }));
   }
 
   private async _open(): Promise<void> {
