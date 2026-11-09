@@ -8,6 +8,7 @@ type Fault = Error & { code: string };
 type Journal = ReturnType<typeof createWindowCommitJournal>;
 type Owner = { conversationId: string; failed(error: Fault): void; journal?: Journal; after?: WindowLiveCursor; authorized?: boolean; pending: number; closed: boolean; abort: AbortController };
 export type WindowCommitProjection = { projectionId: string; validate?(): void };
+export type WindowCommitProject = ((receipt:WindowCommitReceipt)=>Promise<WindowCommitProjection>) & {flush?(sessionId?:string):Promise<void>};
 const fault = (code: string, message: string): Fault => Object.assign(new Error(message), { code });
 const equal = (a: WindowLiveCursor, b: WindowLiveCursor) => a.workerEpoch === b.workerEpoch && a.storeEpoch === b.storeEpoch && a.sequence === b.sequence;
 
@@ -26,13 +27,15 @@ async function untilReleased<T>(owner: Owner, work: Promise<T>): Promise<T | nul
 export function createWindowCommitRuntime(ports: {
   persist(event: WindowCommittedEvent, capture?: WindowCommitCapture): Promise<void>;
   capture(event: WindowCommittedEvent, cursor: WindowLiveCursor, committed: WindowCommitCapture['committed']): WindowCommitCapture & {
-    project?(receipt: WindowCommitReceipt): Promise<WindowCommitProjection>;
+    project?: WindowCommitProject;
   };
-  project(receipt: WindowCommitReceipt): Promise<WindowCommitProjection>;
+  project: WindowCommitProject;
+  flush?(sessionId:string):void;
   report(error: unknown): void;
 }) {
   const owners = new Map<string, Owner>();
   const pending = new Map<string, number>();
+  const publications = new Map<string,Promise<void>>();
   let pendingCount = 0;
   let workerEpoch = randomUUID(), storeEpoch = randomUUID(), closed = false;
   let tap: ReturnType<typeof createWindowCommitTap> | undefined;
@@ -76,7 +79,17 @@ export function createWindowCommitRuntime(ports: {
             if (!receipt) return;
             if (receipt.sessionId !== sessionId || receipt.referenceId !== referenceId || !equal(receipt.latestRevisionCursor, at))
               throw fault('live_identity_mismatch', 'The persisted commit does not match its runtime source');
-            const projection = await project(receipt);
+            // Start work before waiting for the previous publication. Attach the
+            // rejection handler immediately, even if an older group is slow.
+            const prepared = Promise.resolve().then(() => {
+              const result=project(receipt);
+              if(recipients.some(owner=>owner.closed))void project.flush?.(sessionId).catch(report);
+              return result;
+            }).then(
+              value => ({ ok: true as const,value }), error => ({ ok: false as const,error }));
+            const publish = async () => {
+            const result = await prepared; if (!result.ok) throw result.error;
+            const projection = result.value;
             const values = { referenceId: receipt.referenceId, rowId: receipt.rowId, storedSeq: receipt.storedSeq,
               projectionId: projection.projectionId, latestRevisionCursor: receipt.latestRevisionCursor };
             const entry: WindowCommitReference = source === 'live' && receipt.firstCommitCursor && equal(receipt.firstCommitCursor, at)
@@ -86,6 +99,10 @@ export function createWindowCommitRuntime(ports: {
               projection.validate?.();
               owner.journal!.publish(entry);
             }
+            };
+            const next = (publications.get(sessionId) ?? Promise.resolve()).then(publish,publish);
+            const tail = next.then(() => undefined,() => undefined); publications.set(sessionId,tail);
+            try { await next; } finally { if (publications.get(sessionId) === tail) publications.delete(sessionId); }
           });
           const committed = capture.committed;
           capture.committed = async receipt => { try { await committed(receipt); } finally { release(); } };
@@ -154,7 +171,9 @@ export function createWindowCommitRuntime(ports: {
         },
         read(after: WindowLiveCursor) { active(); if (!owner.journal) return Promise.reject(fault('scope_changed', 'History boundary is not prepared')); return owner.journal.read(after); },
         ack(through: WindowLiveCursor) { active(); if (!owner.journal) throw fault('scope_changed', 'History boundary is not prepared'); owner.journal.ack(through); },
-        close() { if (owner.closed) return; releaseOwner(owner); if (owners.get(id) === owner) owners.delete(id); owner.journal?.close(); },
+        close() { if (owner.closed) return; releaseOwner(owner); if (owners.get(id) === owner) owners.delete(id); owner.journal?.close();
+          try{ports.flush?.(conversationId);}catch(error){report(error);}
+        },
       };
     },
     invalidate() { if (tap) tap.invalidate(); else invalidated(fault('live_source_gap', 'The committed-event worker changed')); },

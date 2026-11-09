@@ -4,6 +4,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { pipeline } from 'node:stream/promises';
 import { createZstdDecompress } from 'node:zlib';
 import { zstdFrames } from './zstd-frames';
+import { ELIDED_PICTURE, PictureElider, elidedBytes } from './picture-elider';
 
 import type { RecordSourceWarn } from './shared';
 
@@ -71,8 +72,15 @@ export class TailReader {
     private path: string,
     private readonly pollIntervalMs: number,
     private readonly events: TailReaderEvents,
-    private readonly warn: RecordSourceWarn
-  ) {}
+    private readonly warn: RecordSourceWarn,
+    elidePictures = false
+  ) {
+    this.elider = elidePictures ? new PictureElider() : null;
+  }
+
+  /** A fill's reader passes most pictures' base64 over (`picture-elider.ts`); `elidedFor` = the read it follows. */
+  private readonly elider: PictureElider | null;
+  private elidedFor: StringDecoder | null = null;
 
   /** 此刻盯着的那份文件。分叉串联会把它换掉，所以续读点要连它一起记。 */
   get currentPath(): string {
@@ -338,6 +346,11 @@ export class TailReader {
   }
 
   private acceptText(text: string, sink: LineSink): void {
+    if (this.elider) {
+      // Every read starts with a fresh decoder, at `lineOffset` with nothing partial.
+      if (this.elidedFor !== this.decoder) { this.elidedFor = this.decoder; this.elider.restart(this.lineOffset + Buffer.byteLength(this.partial, 'utf8')); }
+      text = this.elider.write(text);
+    }
     // A line longer than a read arrives in many pieces; joining and splitting on each one is quadratic in its length.
     if (!text.includes('\n')) { this.partial += text; return; }
     const parts = (this.partial + text).split('\n');
@@ -345,7 +358,7 @@ export class TailReader {
     const lines: string[] = [], offsets: number[] = [];
     for (const part of parts) {
       if (part.trim()) { lines.push(part); offsets.push(this.lineOffset); }
-      this.lineOffset += Buffer.byteLength(part, 'utf8') + 1;
+      this.lineOffset += Buffer.byteLength(part, 'utf8') + 1 + (this.elider && part.includes(ELIDED_PICTURE) ? elidedBytes(part) : 0);
     }
     if (lines.length > 0) sink(lines, offsets);
   }

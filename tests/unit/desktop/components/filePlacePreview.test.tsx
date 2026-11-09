@@ -46,13 +46,39 @@ it('control: a place nobody took within 30 s is not taken by a later preview of 
 })
 
 const PDFJS = '../../../../apps/desktop/node_modules/pdfjs-dist/legacy/build/pdf.mjs'
+const PDF_VIEWER = '../../../../apps/desktop/node_modules/pdfjs-dist/legacy/web/pdf_viewer.mjs'
 
-it.each([['3', '3 / 5'], ['9', '5 / 5'], ['x', '1 / 5']])('a PDF opens at page=%s (%s)', async (page, shown) => {
-  const document = { numPages: 5, getPage: () => new Promise(() => {}), destroy() {} }
+/** pdf.js's viewer, as far as the preview drives it: pages come in, the current page is set and announced. */
+function fakeViewer() {
+  class EventBus {
+    listeners = new Map<string, ((event: object) => void)[]>()
+    on(name: string, listener: (event: object) => void) { this.listeners.set(name, [...(this.listeners.get(name) ?? []), listener]) }
+    dispatch(name: string, event: object) { for (const listener of this.listeners.get(name) ?? []) listener(event) }
+  }
+  class PDFViewer {
+    page = 1
+    eventBus: EventBus
+    currentScale = 1
+    currentScaleValue = 'auto'
+    constructor({ eventBus }: { eventBus: EventBus }) { this.eventBus = eventBus }
+    setDocument() { queueMicrotask(() => this.eventBus.dispatch('pagesinit', {})) }
+    get currentPageNumber() { return this.page }
+    set currentPageNumber(page: number) { this.page = page; this.eventBus.dispatch('pagechanging', { pageNumber: page }) }
+  }
+  return { EventBus, LinkTarget: { BLANK: 2 }, PDFFindController: class {}, PDFLinkService: class { setViewer() {} setDocument() {} }, PDFViewer }
+}
+
+it.each([['3', '3'], ['9', '5'], ['x', '1']])('a PDF opens at page=%s (page %s of 5)', async (page, shown) => {
+  const document = { numPages: 5, getOutline: async () => null, destroy() {} }
   vi.doMock(PDFJS, () => ({ GlobalWorkerOptions: {}, getDocument: () => ({ promise: Promise.resolve(document), destroy() {} }) }))
+  vi.doMock(PDF_VIEWER, fakeViewer)
   await harness.render(createElement(DocumentPreviewContent, { kind: 'pdf', content: new ArrayBuffer(0), title: 'report.pdf', at: { page } }))
-  await vi.waitFor(() => expect(harness.container.querySelector('.document-preview-page-count')!.textContent).toBe(shown))
+  await vi.waitFor(() => {
+    expect(harness.container.querySelector<HTMLInputElement>('.document-preview-page-input')!.value).toBe(shown)
+    expect(harness.container.querySelector('.document-preview-page-count')!.textContent).toBe('/ 5')
+  })
   vi.doUnmock(PDFJS)
+  vi.doUnmock(PDF_VIEWER)
 })
 
 const restores = (frame: HTMLIFrameElement) => (frame.contentWindow!.postMessage as ReturnType<typeof vi.fn>).mock.calls

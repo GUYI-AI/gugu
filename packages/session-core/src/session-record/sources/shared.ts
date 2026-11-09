@@ -27,6 +27,11 @@ export type SessionRecordSourceOptions = {
   windowCache?: WindowCacheContext;
   /** A bounded historical read; compressed archives are never followed as live files. */
   readMode?: 'snapshot';
+  /**
+   * A store fill's read: long pictures' base64 is left in the record, replaced by its place there (`picture-elider.ts`),
+   * and each entry carries the decoder state before its line (`RecordEntry.state`), so a later fill can start there.
+   */
+  fill?: boolean;
   /** The parent's primary-file UUID chain. A fork snapshot emits only after its proven common prefix. */
   parentLineage?: readonly RecordLineageNode[];
   /**
@@ -131,13 +136,15 @@ export function emitJsonLines(
   warn: RecordSourceWarn,
   sink: (entries: RecordEntry[]) => void,
   decode: (record: Record<string, unknown>) => RecordEntry[] | null,
-  annotate?: (entries: RecordEntry[], index: number) => void
+  annotate?: (entries: RecordEntry[], index: number) => void,
+  offsets?: readonly number[],
 ): void {
   let batch: RecordEntry[] = [];
   forEachJsonLine(lines, name, warn, (record, index) => {
     const entries = decode(record);
     if (!entries) return false;
     annotate?.(entries, index);
+    if (offsets) for (const entry of entries) entry.position = offsets[index];
     for (const entry of entries) {
       batch.push(entry);
       if (batch.length >= EMIT_CHUNK) {
@@ -148,14 +155,6 @@ export function emitJsonLines(
     return true;
   });
   if (batch.length > 0) sink(batch);
-}
-
-/** A snapshot would not fit the host's heap. Nothing partial is returned: the caller treats this history as unknown. */
-export class SessionRecordTooLargeError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'SessionRecordTooLargeError';
-  }
 }
 
 /** 定位失败一律抛这个：上层要能把「没这份记录」和「解析炸了」分开报给用户。 */

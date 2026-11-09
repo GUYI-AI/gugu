@@ -16,6 +16,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from '@renderer/lib/query-client'
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key'
 import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled'
+import { HelpImproveSettingGroup } from '../HelpImprove'
 
 const LANGUAGE_OPTIONS: readonly LocalePreference[] = ['system', ...SUPPORTED_LOCALES]
 
@@ -238,6 +239,8 @@ export function GeneralSection({ onOpenPermissions, onOpenThemes }: { onOpenPerm
           />
         </SettingsGroup>
       )}
+
+      <HelpImproveSettingGroup />
     </SettingsPage>
   )
 }

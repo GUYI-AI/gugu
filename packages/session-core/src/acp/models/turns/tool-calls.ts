@@ -40,6 +40,11 @@ export function toolImageUrl(image: ToolImage): string {
 export const toolImageRefSchema = z.object({
   mimeType: z.string(),
   chars: z.number().int().nonnegative(),
+  /**
+   * A turn a fill copied from the session's own record keeps its pictures there (resume-tail): where the base64 starts
+   * (a decoded-byte offset, the same in a `.zst` archive) and its first and last characters, to check what is read back.
+   */
+  record: z.object({ start: z.number().int().nonnegative(), head: z.string(), tail: z.string() }).optional(),
 });
 export type ToolImageRef = z.infer<typeof toolImageRefSchema>;
 

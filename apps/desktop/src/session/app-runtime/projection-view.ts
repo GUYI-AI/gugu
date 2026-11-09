@@ -2,7 +2,6 @@ import { PROJECTION_NOT_SENT, PROJECTION_UNCONFIRMED, type ProjectionFrame, type
 import { ProjectionInputNotSent } from './projection-input-queue';
 import { projectionClient } from './projection-client';
 import type { ProjectionHost } from './projection-source';
-import { projectionVideoClient } from './projection-video-client';
 export type PendingProjectionText = { id: number; text: string; state: 'not-sent' | 'unconfirmed'; reason?: string };
 export type ProjectionViewState = 'connecting' | 'live' | 'input-paused' | 'closed';
 
@@ -11,12 +10,11 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
   state?(state: ProjectionViewState, reason?: string): void; error?(error: unknown): void;
   painted?(frame: Pick<ProjectionFrame, 'sequence' | 'width' | 'height'> | null): void;
 } = {}) {
-  const remote = !!(await host.getContext?.())?.workspace?.deviceId;
   const surface = document.createElement('div');
   surface.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;touch-action:none';
-  const image = remote ? document.createElement('video') : document.createElement('img');
-  if (image instanceof HTMLImageElement) image.alt = '';
-  else { image.autoplay = true; image.muted = true; image.playsInline = true; }
+  // A session on another computer is watched the same way: its machine sends the pictures (projection-remote-host.ts).
+  const image = document.createElement('img');
+  image.alt = '';
   image.draggable = false;
   image.style.cssText = 'display:block;width:100%;height:100%;object-fit:contain;user-select:none';
   // A focus proxy lets the platform IME commit text normally, with no second input form.
@@ -148,15 +146,13 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
     const painted = (next: Pick<ProjectionFrame, 'sequence' | 'width' | 'height'> | null) => {
       frame = next; if (next) recoveryAttempts = 0; options.painted?.(next);
     };
-    client = remote ? await projectionVideoClient(host, image as HTMLVideoElement, id, {
-      frame: next => painted(next ? { sequence: next.sequence, width: next.width, height: next.height } : null), state: changed, error: pause,
-    }) : await projectionClient(host, id, {
+    client = await projectionClient(host, id, {
       paint: async (next, current) => {
         const decoded = new Image();
         decoded.src = `data:${next.mime};base64,${next.data}`;
         await decoded.decode();
         if (!current()) return;
-        (image as HTMLImageElement).src = decoded.src;
+        image.src = decoded.src;
         await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       },
       painted,

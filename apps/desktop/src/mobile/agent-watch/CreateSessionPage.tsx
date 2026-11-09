@@ -26,8 +26,10 @@ import { AgentWatchScreen } from './AgentWatchChrome'
 import { LiveGlyph } from './StatusGlyph'
 import { CreateOptionsPill } from './CreateOptionsPill'
 import { useMachineLabel } from './useMachineLabel'
-import { OfflineNote } from './OfflineNote'
-import { CloudComputerNote } from './CloudComputerNote'
+import { ConnectionStatus } from '@/components/connection/ConnectionStatus'
+import { connectionStateOf } from '@/components/connection/connectionState'
+import { IconButton } from '@/components/ui/IconButton'
+import { RefreshCw } from '@/lib/icons'
 import { useCloudComputerWake } from '../../hooks/useWakeCloudComputer'
 import { guguReasonInText, remoteFailureKind } from '@gugu/session-core/session-record/contract'
 import { guguReasonText } from '@renderer/features/sessions/gugu-reason'
@@ -91,6 +93,7 @@ export function CreateSessionPage({
 }) {
   const { t } = useTranslation('main')
   const { t: tFlow } = useTranslation('mobileTaskFlow')
+  const { t: tc } = useTranslation('common')
   const { label: machineLabel } = useMachineLabel()
   const ownerId = useAuth().user?.id ?? null
   const phone = isPhoneDevice(device)
@@ -359,7 +362,19 @@ export function CreateSessionPage({
     : online && !options && !optionsError
       ? t('agentWatch.create.loadingOptions')
       : null
-  const subtitle = busyLabel ? (
+  // Not reachable: the machine's state is the header subtitle (owner 11-08), ❌ a line under the header.
+  const cloudAsleep = device.cloud_computer === 'asleep' || device.cloud_computer === 'waking'
+  const wakeFailed = cloudAsleep && wakeIssue !== null
+  const connection = online ? 'online' as const : connectionStateOf({ deviceOnline: false, cloudWaking: cloudAsleep, cloudWakeFailed: wakeFailed })
+  const subtitle = connection !== 'online' ? (
+    <ConnectionStatus
+      state={connection}
+      subject={machineLabel(device)}
+      lastSeenAt={device.last_seen_at}
+      detail={wakeFailed && wakeIssue ? tc(`cloudComputer.reason.${wakeIssue.kind}`) : null}
+      testId="agent-watch-connection-status"
+    />
+  ) : busyLabel ? (
     <span className="gg-aw-head-status" role="status" data-testid="agent-watch-create-status">
       <LiveGlyph state="busy" />
       <span>{busyLabel}</span>
@@ -372,13 +387,15 @@ export function CreateSessionPage({
     <AgentWatchScreen
       title={t('agentWatch.create.title')}
       subtitle={subtitle}
+      actions={cloudAsleep && (wakeIssue || wakeDropped) ? (
+        <IconButton size="md" aria-label={tc('connection.retry')} title={tc('connection.retry')} data-testid="agent-watch-cloud-computer-retry" onClick={retryWake}>
+          <RefreshCw />
+        </IconButton>
+      ) : undefined}
       onBack={onBack}
       testId="agent-watch-create-page"
       bodyFill
     >
-      {!online ? device.cloud_computer === 'asleep' || device.cloud_computer === 'waking'
-        ? <CloudComputerNote device={device} issue={wakeIssue} dropped={wakeDropped} onRetry={retryWake} />
-        : <OfflineNote device={device} /> : null}
         <AssistantRuntimeProvider runtime={runtime}>
           <div className="gg-aw-thread-host" data-testid="agent-watch-create-thread">
             <ComposerExtrasProvider

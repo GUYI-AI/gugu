@@ -66,7 +66,7 @@ function MachineKindIcon({ machine, className }: { machine: MachineChoice; class
  * 侧栏那一格与它菜单里的机器方块(shadcn TeamSwitcher 的 logo 方块):触发器与菜单行同一种细边空心方块(owner 嫌墨色实心「太黑」),
  * 触发器上的小一号。别的机器在方块右下角挂在线点,外圈一道底色把点和方块分开(头像在线点的惯例)。
  */
-export function MachineTile({ machine, solid }: { machine: MachineChoice | null; solid: boolean }) {
+export function MachineTile({ machine, solid, dot = true }: { machine: MachineChoice | null; solid: boolean; dot?: boolean }) {
   return (
     <span
       className={cn(
@@ -79,7 +79,7 @@ export function MachineTile({ machine, solid }: { machine: MachineChoice | null;
       ) : (
         <Monitor aria-hidden="true" className="size-3.5 shrink-0" />
       )}
-      {machine && !machine.isLocal ? (
+      {dot && machine && !machine.isLocal ? (
         <span
           className={cn(
             'absolute right-[-3px] bottom-[-3px] flex rounded-[var(--radius-circle,50%)] p-[2px]',
@@ -143,6 +143,7 @@ export function MachinePicker({
   testId = 'machine-picker',
   lockedHint,
   wakeOnPick = 'always',
+  stateInHeading = false,
 }: {
   machines: readonly MachineChoice[];
   selectedId: string | null;
@@ -175,6 +176,11 @@ export function MachinePicker({
    * 悬停说这一句。长相同托盘里的只读项(sessionComposerTrayChipClassName),❌ 摆一个点了没反应的按钮。
    */
   lockedHint?: string;
+  /**
+   * The heading this picker sits in already says the selected machine's connection state (ConnectionStatus): the
+   * trigger drops its own dot and 「离线」 so the state is said once. The menu rows keep theirs.
+   */
+  stateInHeading?: boolean;
 }) {
   const { translate } = useSessionMessages();
   const ordered = orderMachines(machines);
@@ -232,7 +238,7 @@ export function MachinePicker({
               data-selected-id={selected?.id ?? ''}
               title={selected?.hint ?? undefined}
             >
-              <MachineTile machine={selected} solid />
+              <MachineTile machine={selected} solid dot={!stateInHeading} />
               {/* 一行:名字。系统与连法只在菜单里 —— 两行会把这一列撑宽,和下面两个字的导航项之间空出一大片。 */}
               <span title={label} className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
                 {label}
@@ -253,12 +259,12 @@ export function MachinePicker({
             ) : (
               <Monitor aria-hidden="true" className={cn('shrink-0', iconSize)} />
             )}
-            {selected && !selected.isLocal ? <MachineDot machine={selected} /> : null}
+            {selected && !selected.isLocal && !stateInHeading ? <MachineDot machine={selected} /> : null}
             {/* 长名字截断,悬停看全名。 */}
             <span title={label} className={cn('min-w-0 truncate', compact ? 'max-w-[160px]' : 'max-w-[14rem]')}>
               {label}
             </span>
-            {selectedOffline ? (
+            {selectedOffline && !stateInHeading ? (
               <span data-slot="machine-offline" className="shrink-0 text-foreground-passive">
                 {translate('machinePicker.offline')}
               </span>

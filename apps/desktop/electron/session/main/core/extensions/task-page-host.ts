@@ -5,11 +5,13 @@ import { acquireBrowserPage } from '../browser/browser-page-runtime';
 import { leasePageProtocol } from '../browser/leased-page-protocol';
 import { sessionEvents } from '../sessions/session-events';
 import { projectEvents } from '../projects/project-events';
-import { BrowserWindow } from 'electron';
+import path from 'node:path';
+import { app, BrowserWindow, type WebContents } from 'electron';
+import type { ServerTaskBrowser, TaskPageScreenTarget } from '../../../../server/server-task-browser';
 import { leaseBrowserPagePresentation, browserPagePresentation, onBrowserPagePresentation } from '../browser/browser-page-views';
 import { extensionPagePresentation } from './extension-bridge';
 import { log } from '@main/lib/logger';
-import type { TaskPageRect } from './extension-task-pages';
+import type { TaskPageNative, TaskPageRect } from './extension-task-pages';
 import { taskPageViewport } from '@shared/extensions/task-page-viewport';
 import { readTaskFilePayloads, taskFilePayloadSource } from './task-file-payloads';
 
@@ -21,6 +23,7 @@ export const extensionTaskPages = new ExtensionTaskPages(extensionId => {
     throw new Error('App task page access was revoked');
   }
 }, async ({ sessionId, url, signal }) => {
+  if (process.env.GUGU_SERVER_MODE === '1') return serverTaskPage(sessionId, url, signal);
   const { agentSessionContext } = await import('./extension-agent-context');
   const { openTaskBrowserPane } = await import('../sessions/session-orchestration');
   const { projectionTaskProject } = await import('./projection-task');
@@ -63,5 +66,48 @@ export const extensionTaskPages = new ExtensionTaskPages(extensionId => {
 }, error => log.warn('Task page cleanup failed', { error: String(error) }),
 async (caller, refs, signal) => readTaskFilePayloads(caller, refs, signal, await taskFilePayloadSource()));
 
-sessionEvents.on('session:archived', sessionId => extensionTaskPages.closeScope({ sessionId }));
+sessionEvents.on('session:archived', sessionId => {
+  extensionTaskPages.closeScope({ sessionId });
+  if (serverBrowser) void serverBrowser.closeTask(sessionId);
+});
 projectEvents.on('project:deleted', projectId => extensionTaskPages.closeScope({ projectId }));
+
+let serverBrowser: ServerTaskBrowser | null = null;
+
+/** A task's page on this Gugu server, for another computer to watch and take over; null when it has none. */
+export async function taskPageForScreen(sessionId: string): Promise<TaskPageScreenTarget | null> {
+  return serverBrowser ? serverBrowser.existingPage(sessionId) : null;
+}
+
+/**
+ * #1607 4b: on a Gugu server the task's page is a page of the account's headless Chromium (server-task-browser.ts),
+ * leased through the same restricted page protocol as a desktop tab. It has no window: people watch it through the
+ * App, not a native view.
+ */
+async function serverTaskPage(sessionId: string, url: string | undefined, signal: AbortSignal): Promise<TaskPageNative> {
+  const { agentSessionContext } = await import('./extension-agent-context');
+  const context = await agentSessionContext(sessionId);
+  signal.throwIfAborted();
+  if (!context) throw new Error('The task has no page on this computer');
+  if (!serverBrowser) {
+    const { createServerTaskBrowser } = await import('../../../../server/server-task-browser');
+    const { findAppBrowser } = await import('../../../../server/app-browser');
+    serverBrowser = createServerTaskBrowser({ binary: () => findAppBrowser(process.env), log,
+      profile: path.join(app.getPath('userData'), 'TaskBrowser') });
+  }
+  const contents = await serverBrowser.pageFor(sessionId, url, signal) as unknown as WebContents;
+  signal.throwIfAborted();
+  // The person sees it where they look at this task, and can take it over there.
+  const { showTaskPageOnDesktop } = await import('../sessions/session-orchestration');
+  void showTaskPageOnDesktop(sessionId).catch((error: unknown) => log.warn('Task page could not be shown on the desktop', { error: String(error) }));
+  const { protocol, cleanup } = leasePageProtocol(contents, {
+    ready: Promise.resolve(),
+    capture: params => contents.debugger.sendCommand('Page.captureScreenshot', params),
+  });
+  return { projectId: context.projectId, title: contents.getTitle(), url: contents.getURL(), protocol, cleanup,
+    presentation: () => null,
+    onPresentation: () => () => {},
+    setActive: () => {},
+    // The page is the task's: releasing a lease hands it back, it does not close it.
+    release: () => {} };
+}

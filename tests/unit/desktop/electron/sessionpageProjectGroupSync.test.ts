@@ -911,6 +911,41 @@ describe('#6396 序号只增不减', () => {
       expect(calls).toEqual([group.chatId, group.chatId])
       expect(tombstones).toEqual([])
     })
+    // #2347:入群在身份落地时才发生,可能被拒(群满)。会话的项目说明只在确认进了群时说「已经是群成员」;
+    // 没确认就如实说没确认、怎么查,被拒之后重开也照样带上项目群,❌ 整段消失。
+    it('项目说明只在确认入群后才说已是成员;没进群时如实说明,重开也一样', async () => {
+      const { buildSessionpageProjectContextBlock } = await import('../../../../apps/desktop/src/session/shared/prompt-injection')
+      await provisionFresh('conv-seed-2347', { projectId: 'proj-alpha' })
+      const group = groups[0]!
+      const fullGroup = {
+        ...oneTripDeps,
+        provisionOneTrip: async (input: { agentId: string; displayName: string }) =>
+          ({ agentId: input.agentId, displayName: input.displayName, groupChatId: '', groupCreated: false, priorGroupState: 'join_failed:member_limit_reached' }),
+      }
+      const claimsMembership = /already a member of that group/
+      const born = await provisionFresh('conv-full-2347', { projectId: 'proj-alpha' }, fullGroup)
+      expect(born.projectContext).toMatchObject({ groupChatId: group.chatId, membership: 'unconfirmed' })
+      const bornBlock = buildSessionpageProjectContextBlock(born.projectContext)
+      expect(bornBlock).toContain(group.chatId)
+      expect(bornBlock).not.toMatch(claimsMembership)
+      expect(bornBlock).toMatch(/profile_whoami/)
+
+      const reopened = await provisionFresh('conv-full-2347', { projectId: 'proj-alpha' }, fullGroup)
+      expect(reopened.guguAgentUserId).toBe(born.guguAgentUserId)
+      expect(reopened.projectContext, '被拒后重开:项目群仍在说明里,但不说已是成员').toMatchObject({ groupChatId: group.chatId, membership: 'unconfirmed' })
+      expect(buildSessionpageProjectContextBlock(reopened.projectContext)).not.toMatch(claimsMembership)
+
+      const seated = {
+        ...oneTripDeps,
+        provisionOneTrip: async (input: { agentId: string; displayName: string }) =>
+          ({ agentId: input.agentId, displayName: input.displayName, groupChatId: group.chatId, groupCreated: false, priorGroupState: 'joined' }),
+      }
+      const joined = await provisionFresh('conv-seat-2347', { projectId: 'proj-alpha' }, seated)
+      expect(joined.projectContext?.membership, '刚起、还没落地:未确认').toBe('unconfirmed')
+      const back = await provisionFresh('conv-seat-2347', { projectId: 'proj-alpha' }, oneTripDeps)
+      expect(back.projectContext).toMatchObject({ groupChatId: group.chatId, membership: 'member' })
+      expect(buildSessionpageProjectContextBlock(back.projectContext)).toMatch(claimsMembership)
+    })
     // 第 19 条(10-12):开户本身失败,#5419 撤掉这次铸的身份;会话照跑,手里还是发给它的 gugu MCP 卡。
     // 这条会话再起来要铸新身份 —— 先收旧身份的卡,host 才肯给新身份发卡(同一条会话不许换主体)。撤行那一刻 ❌ 收:
     // 照跑的会话会当场没了 gugu MCP。别的会话不动;落了地的身份重开是复用,什么也不收。

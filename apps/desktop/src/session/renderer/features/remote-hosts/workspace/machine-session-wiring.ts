@@ -94,6 +94,14 @@ function openRequested(session: ViewedMachineSession, request: SessionpagePaneOp
       (error: unknown) => ({ ok: false, failure: 'open_failed', error: error instanceof Error ? error.message : String(error) }),
     );
   }
+  if (request.target.kind === 'task-page') {
+    // #1607 node 5 that machine's page for this task: its live picture in the browser cell, beside the conversation.
+    const view = sessionView(session.projectId, session.sessionId);
+    if (!view) return { ok: false, failure: 'open_failed' };
+    const from = sessionConversationTabId(view.paneLayout, session.sessionId);
+    view.paneLayout.open('task-page', { deviceId: session.deviceId, sessionId: session.sessionId }, { from, intent: 'navigate', activate: false });
+    return { ok: true, tabs: sessionPaneTabs(view.paneLayout) };
+  }
   if (request.target.kind === 'external') {
     return openExternalFromMachine(
       {

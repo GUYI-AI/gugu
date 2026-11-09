@@ -41,8 +41,10 @@ import { AndroidStartupFrame } from './platform/AndroidStartupFrame'
 import '@gugu/session-shared/animation-visibility.css'
 import { isAnimationWindowVisible } from '@gugu/session-shared/animation-visibility'
 import { installPerfCounterResponder } from './lib/perfCounterResponder'
+import { installErrorSummaryConsent } from './lib/errorSummaryConsent'
 
 installPerfCounterResponder(window.electronAPI)
+installErrorSummaryConsent()
 // The shared getter also installs this document's native/DOM visibility listeners.
 isAnimationWindowVisible()
 

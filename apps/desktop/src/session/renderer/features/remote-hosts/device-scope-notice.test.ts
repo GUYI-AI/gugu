@@ -23,7 +23,8 @@ describe('分机器的模块看别的机器时那一句话(#6264)', () => {
 
   it('离线、手上有上次的:说离线多久了,页面照旧画但只读', () => {
     const notice = deviceScopeNotice({ remote: offline, error: null, hasData: true, now: NOW }, translate);
-    expect(notice).toMatchObject({ kind: 'offline', readOnly: true, retry: false });
+    // #2301 Q5: the heading says it (「设备离线 · 最后在线 … · 只读缓存」); the page draws no line of its own.
+    expect(notice).toMatchObject({ kind: 'offline', readOnly: true, retry: false, inHeading: true, cached: true });
     expect(notice?.text).toContain('deviceScope.offlineSinceCached');
     expect(notice?.text).toContain('"device":"d22"');
     expect(notice?.text).toContain('remoteHost.agoHours');
@@ -34,13 +35,13 @@ describe('分机器的模块看别的机器时那一句话(#6264)', () => {
       { remote: { ...offline, lastSeenAt: null }, error: null, hasData: false, now: NOW },
       translate
     );
-    expect(notice).toMatchObject({ kind: 'offline', readOnly: true });
+    expect(notice).toMatchObject({ kind: 'offline', readOnly: true, inHeading: true, cached: false });
     expect(notice?.text).toContain('deviceScope.offlineEmpty');
   });
 
   it('老 server 不认这个动词:说那台机器上的咕咕 server 太旧、会自己升级,❌ 报错码', () => {
     const notice = deviceScopeNotice({ remote: online, error: rpcError('unknown_method'), hasData: false, now: NOW }, translate);
-    expect(notice).toMatchObject({ kind: 'server-too-old', retry: false, readOnly: true });
+    expect(notice).toMatchObject({ kind: 'server-too-old', retry: false, readOnly: true, inHeading: false });
     expect(notice?.text).toBe('deviceScope.serverTooOld {"device":"d22"}');
     expect(notice?.text).not.toContain('unknown_method');
   });
@@ -53,7 +54,8 @@ describe('分机器的模块看别的机器时那一句话(#6264)', () => {
   it('问不通(超时):说此刻连不上,带「再试一次」', () => {
     const timeout = Object.assign(new Error('timed out'), { name: 'DeviceRpcTimeoutError' });
     const notice = deviceScopeNotice({ remote: online, error: timeout, hasData: false, now: NOW }, translate);
-    expect(notice).toMatchObject({ kind: 'unreachable', retry: true, readOnly: false });
+    // A per-request error, not a connection state: the line and its retry stay on the page.
+    expect(notice).toMatchObject({ kind: 'unreachable', retry: true, readOnly: false, inHeading: false });
   });
 
   it('别的失败:只说没读到,原文 ❌ 进句子', () => {
