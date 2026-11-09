@@ -2001,7 +2001,7 @@ export class AcpChatStore {
     try {
       const source = await prepareAcpWindowHistory(this.sessionId, id);
       if (!current()) { void acpWindowHistoryClient.unsubscribe(id).catch(() => undefined); return; }
-      if (source === 'legacy') {
+      if (source.source === 'legacy') {
         this._windowSubscriptionId = null;
         this._historySource = 'legacy';
         void acpWindowHistoryClient.unsubscribe(id).catch(() => undefined);

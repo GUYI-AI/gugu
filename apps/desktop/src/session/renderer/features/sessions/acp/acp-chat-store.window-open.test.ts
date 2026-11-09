@@ -14,11 +14,13 @@ vi.mock('@gugu/session-chat-ui', async () => ({
   turnDiscardedId: (await import('@session-chat/state/flatten')).turnDiscardedId,
 }));
 
+const prepared = { workerEpoch: 'worker', storeEpoch: 'store', sequence: 7 };
 const f = vi.hoisted(() => ({
   records: new Map<string, Partial<Session>>(), listeners: new Map<string, (event: unknown) => void>(),
   calls: [] as string[], phase: 'stopped', source: 'window', prepare: null as Promise<unknown> | null,
   setupFailure: null as { code: string; message: string } | null,
-  watchChanged: () => {}, live: null as unknown,
+  watchChanged: () => {}, live: null as unknown, attach: null as Promise<unknown> | null,
+  liveReads: [] as unknown[],
 }));
 vi.mock('../stores/session-registry', () => ({ sessionRegistry: { get: (id: string) =>
   f.records.has(id) ? { sessions: new Map([[id, { data: f.records.get(id) }]]) } : undefined } }));
@@ -26,7 +28,7 @@ vi.mock('@renderer/lib/acp/running-sessions', () => ({ watchRunningSession: asyn
   f.watchChanged = callbacks.onChange;
   return { phase: () => f.phase, dispose: () => {} };
 } }));
-vi.mock('@renderer/lib/acp/acp-session-attachment', () => ({ attachAcpSessionWhenReady: async () => f.live }));
+vi.mock('@renderer/lib/acp/acp-session-attachment', () => ({ attachAcpSessionWhenReady: async () => { await f.attach; return f.live; } }));
 vi.mock('@renderer/lib/acp/runtime-client', () => ({ getAcpRuntimeClient: async () => ({ getStoredQueue: async () => [] }) }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: () => {} }));
 vi.mock('./queue-native-input', () => ({ sendThroughCustody: async () => {}, canQueueNativeInput: () => false }));
@@ -38,7 +40,15 @@ vi.mock('../stores/session-life-views', () => ({
 
 installAcpChatStoreHost(async (channel: string, ...args: unknown[]) => {
   f.calls.push(channel);
-  if (channel === 'sessionTimeline.sessionWindowPrepare') return f.prepare ?? { ok: true, value: { source: f.source } };
+  if (channel === 'sessionTimeline.sessionWindowPrepare') return f.prepare ?? { ok: true, value: f.source === 'window' ? { source: 'window', liveCursor: prepared } : { source: 'legacy' } };
+  if (channel === 'sessionTimeline.sessionWindowLiveRead') {
+    // The host's commit queue after the Prepare cursor: the gap turn committed while no live listener was attached.
+    f.liveReads.push(args[0]);
+    if (f.liveReads.length > 1) return new Promise(() => {});
+    return { ok: true, value: { hasMore: false, next: { ...prepared, sequence: 8 }, entries: [{ kind: 'insert', referenceId: 'gap-ref',
+      projectionId: 'projection', rowId: 'gap-turn', storedSeq: 1, firstCommitCursor: { ...prepared, sequence: 8 }, latestRevisionCursor: { ...prepared, sequence: 8 } }] } };
+  }
+  if (channel === 'sessionTimeline.sessionWindowLiveAck') return { ok: true, value: undefined };
   if (channel === 'sessionTimeline.sessionWindowSubscribe') {
     if (f.setupFailure) return { ok: false, error: f.setupFailure };
     const { subscriptionId } = args[0] as { subscriptionId: string };
@@ -79,7 +89,7 @@ function live() {
   };
 }
 const readable = async (store: InstanceType<typeof AcpChatStore>) => vi.waitFor(() => expect(store.sourceWindow?.sourceFragments?.[0]?.text).toBe('Persisted bounded history'));
-beforeEach(() => { f.calls.length = 0; f.phase = 'stopped'; f.source = 'window'; f.prepare = null; f.setupFailure = null; f.live = live(); });
+beforeEach(() => { f.calls.length = 0; f.phase = 'stopped'; f.source = 'window'; f.prepare = null; f.setupFailure = null; f.live = live(); f.attach = null; f.liveReads.length = 0; });
 afterEach(() => { stores.splice(0).forEach(store => store.dispose()); f.records.clear(); vi.restoreAllMocks(); });
 
 it('chooses the source before stored/backfill I/O and displays bounded body without a canonical turn', async () => {
@@ -90,7 +100,7 @@ it('chooses the source before stored/backfill I/O and displays bounded body with
   await vi.waitFor(() => expect(f.calls).toContain('sessionTimeline.sessionWindowPrepare'));
   expect(f.calls).not.toContain('sessions.getStoredHistory');
   expect(f.calls).not.toContain('sessions.syncStoredHistoryFromRecord');
-  resolve({ ok: true, value: { source: 'window' } });
+  resolve({ ok: true, value: { source: 'window', liveCursor: prepared } });
   await readable(store);
   await vi.waitFor(() => expect(store.historyLoading).toBe(false));
   expect(store.chatState.transcript.state.committedTurns).toEqual([]);
@@ -132,7 +142,7 @@ it('releases a late preparation after the real store has been disposed without s
   const store = makeStore(); store.bootstrap();
   await vi.waitFor(() => expect(f.calls).toContain('sessionTimeline.sessionWindowPrepare'));
   store.dispose();
-  resolve({ ok: true, value: { source: 'window' } });
+  resolve({ ok: true, value: { source: 'window', liveCursor: prepared } });
   await vi.waitFor(() => expect(f.calls.filter(name => name === 'sessionTimeline.sessionUnsubscribe').length).toBeGreaterThanOrEqual(2));
   expect(f.calls).not.toContain('sessionTimeline.sessionWindowSubscribe');
   expect(f.calls).not.toContain('sessions.getStoredHistory');
@@ -194,4 +204,27 @@ it('reopens a released stopped transcript through a new preparation without read
   expect(f.calls.filter(name => name === 'sessionTimeline.sessionWindowPrepare')).toHaveLength(2);
   expect(f.calls).not.toContain('sessions.getStoredHistory');
   expect(f.calls).not.toContain('sessions.syncStoredHistoryFromRecord');
+});
+
+// #2165 review blocker (6745567c): after the opening window is readable and before the live listener
+// attaches, another sender can start and finish a whole turn. The pinned window excludes it and the
+// attached activeTurn is already null, so only the host's committed queue after the Prepare cursor
+// proves it happened. Materializing that reference into a turn needs the canonical projection read
+// (#2279); until it is wired this case stays red. No timestamp, size or text dedupe may satisfy it.
+it('shows a turn completed between the opening window and live attachment from the committed queue', async () => {
+  let attach!: () => void;
+  f.attach = new Promise<void>(yes => { attach = yes; });
+  const store = makeStore(); store.bootstrap(); await readable(store);
+  f.phase = 'running'; f.watchChanged();
+  const session = f.live as ReturnType<typeof live>;
+  session.activeTurn.push({ id: 'gap-turn', seq: 0, initiator: 'user', items: [
+    { kind: 'message', id: 'gap-reply', seq: 0, role: 'assistant', text: 'Reply from another sender' },
+  ] });
+  session.activeTurn.push(null);
+  attach();
+  await vi.waitFor(() => expect(store.session).not.toBeNull());
+  await vi.waitFor(() => expect(store.chatState.transcript.state.committedTurns.map(row => row.id)).toContain('gap-turn'));
+  expect(f.liveReads[0]).toMatchObject({ conversationId: store.sessionId, after: prepared });
+  expect(session.getHistory).not.toHaveBeenCalled();
+  expect(f.calls).not.toContain('sessions.getStoredHistory');
 });
