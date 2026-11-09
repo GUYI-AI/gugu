@@ -1,3 +1,4 @@
+import { statSync } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { link, open, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -34,6 +35,15 @@ const fileBytes = (source: WindowCommitSourceManifest) => source.bytes + source.
 export async function assertWindowCommitSource(directory: string, binding: Binding, source: WindowCommitSourceManifest): Promise<void> {
   bound(source, binding);
   const current = await stat(sourcePath(directory, binding), { bigint: true });
+  if (!current.isFile() || current.size !== BigInt(fileBytes(source)) || !same(physical(current), source.physical))
+    throw new Error('Immutable commit source changed');
+}
+
+/** Final metadata fence after the Position query's last await. Source pages
+ * still verify their actual bytes/checksums when read. */
+export function assertWindowCommitSourceNow(directory: string, binding: Binding, source: WindowCommitSourceManifest): void {
+  bound(source, binding);
+  const current = statSync(sourcePath(directory, binding), { bigint: true });
   if (!current.isFile() || current.size !== BigInt(fileBytes(source)) || !same(physical(current), source.physical))
     throw new Error('Immutable commit source changed');
 }

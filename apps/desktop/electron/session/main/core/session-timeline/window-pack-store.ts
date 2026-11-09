@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { statSync } from 'node:fs';
 import { link, open, rm, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
-import { registerWindowFrameBackend, type WindowFrameBackend } from '@gugu/session-core/session-record/window-cache/frame-backend';
+import { registerWindowFrameBackend, windowFrameBackend, type WindowFrameBackend } from '@gugu/session-core/session-record/window-cache/frame-backend';
 import { decodeWindowFrame, windowFrameName, type WindowFrameKey, type WindowFrameRead } from '@gugu/session-core/session-record/window-cache/frame';
 import type { WindowBudget } from '@gugu/session-core/session-record/window-cache/types';
 import { syncWindowDirectory } from '@gugu/session-core/session-record/window-cache/disk-frame';
@@ -22,6 +22,14 @@ type Group = { id: string; file?: FileHandle; bytes: number; writes: number; fra
 type Build = { sources: WindowCommitReceipt[]; group?: Group; packs: Map<string, PackLocation>; closed: boolean };
 /** A publication proves every pack of its build with one bounded stat each. */
 export const WINDOW_PACK_DEPENDENCIES = 128;
+const proofs = new WeakMap<WindowFrameBackend, (name: string) => () => void>();
+/** Bounded proof for one committed frame of the pack store that owns `directory`.
+ * Without an owning store there is no packed version to prove. */
+export function windowPackProof(directory: string, key: WindowFrameKey): () => void {
+  const backend = windowFrameBackend(directory), proof = backend && proofs.get(backend);
+  if (!proof) throw fault('Projection pack store is unavailable');
+  return proof(windowFrameName(key));
+}
 export type WindowPackObserver = (phase: 'intent' | 'pack_synced' | 'directory_synced' | 'positions_committed', groupId: string) => void;
 
 /** One application gateway and a task-local private view. External readers only
@@ -124,10 +132,9 @@ export function createWindowPackStore(directory: string, db: WindowReceiptDataba
     group.bytes += packet.length; group.writes++;
   } };
   const unregister = registerWindowFrameBackend(directory,backend);
-  return {
-    /** Bounded: the publication pack plus its at most 128 direct dependencies,
-     * which include every earlier pack of the same build. No recursive walk. */
-    proof(name: string) {
+  /** Bounded: the publication pack plus its at most 128 direct dependencies,
+   * which include every earlier pack of the same build. No recursive walk. */
+  function proof(name: string) {
       const location=index.current(name);if(!location)throw fault('Packed publication has no committed location');
       const dependencies=index.dependencies(location.groupId,WINDOW_PACK_DEPENDENCIES);
       return ()=>{
@@ -141,7 +148,10 @@ export function createWindowPackStore(directory: string, db: WindowReceiptDataba
           }catch{throw fault('Packed publication physical identity changed');}
         }
       };
-    },
+  }
+  proofs.set(backend,proof);
+  return {
+    proof,
     backend, // Keep the weak namespace registration alive for this owner.
     /** Invocations are independent. The dispatcher chooses at most eight same-
      * conversation receipts; a giant build emits bounded progress packs. */

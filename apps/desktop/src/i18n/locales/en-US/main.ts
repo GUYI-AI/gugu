@@ -92,6 +92,8 @@ export default {
     "continue": "Continue",
     "saving": "Saving…",
     "saveFailed": "Couldn't save. Please try again.",
+    "helpImprove": "Help improve Gugu: send an error summary automatically when something goes wrong. Your chats and files are never included.",
+    "helpImproveFailed": "Your choice wasn't saved. Please try again.",
     "harnessRecommended": "Recommended",
     "harnessTitle": "Choose your agents",
     "harnessSub": "Select one or both. Gugu installs and manages them in the background.",
@@ -253,6 +255,7 @@ export default {
       "tooLarge": "Too large · view on desktop"
     },
     "timeline": {
+      "loadingWindow": "Loading…",
       "outputTrimmed_one": "… {{count}} char omitted from this preview",
       "outputTrimmed_other": "… {{count}} chars omitted from this preview",
       "loading": "Loading the timeline…",
@@ -504,6 +507,9 @@ export default {
       "notificationsTestRejectedMobile": "The system refused to show it — Gugu has no notification permission yet. Turn it on from Me → Device control → Notifications.",
       "terminal": "Allow starting agents in terminal (TUI) mode",
       "terminalDescription": "When on, a new task lets you pick General or Terminal; General stays the default. Existing tasks are unchanged.",
+      "helpImprove": "Help improve Gugu",
+      "helpImproveDescription": "When something goes wrong, automatically send an error summary (error type, code location, version, system). Your chats and files are never included.",
+      "helpImproveFailed": "Couldn't save. Please try again.",
       "trayBadge": "Tray badge",
       "trayBadgeAria": "Show the unread count on the tray icon",
       "trayBadgeEnabled": "Show the unread count on the tray icon",
