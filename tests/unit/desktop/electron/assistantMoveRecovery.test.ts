@@ -59,8 +59,7 @@ function nativeFs(root: string): HomeFs {
 function side(root: string, instructions: string, deviceId: string): MoveSide {
   return { label: deviceId, deviceId, workdir: root, base: root, fs: nativeFs(root),
     paths: { instructions, memoryDir: join(root, 'memory'), skillsDir: join(root, 'skills'), resourcesDir: join(root, 'resources') },
-    integrations: { exportForMove: async () => ({ accounts: [], skipped: [] }), importFromMove: async () => ({ imported: 0, skipped: [] }),
-      accountIds: async () => [], disconnect: async () => {} },
+    integrations: { exportForMove: async () => ({ accounts: [], skipped: [] }), importFromMove: async () => ({ imported: 0, skipped: [] }) },
     schedules: { list: async () => [], restore: async () => ({ restored: 0, skipped: [] }) } };
 }
 

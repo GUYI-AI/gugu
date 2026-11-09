@@ -1,3 +1,5 @@
+import * as path from 'node:path';
+import { folderBytes } from '@main/core/extensions/extension-data';
 import { session, webContents, type Session } from 'electron';
 import { log } from '@main/lib/logger';
 import { extensionPartition } from '@shared/extensions/partition';
@@ -140,6 +142,38 @@ export async function clearExtensionSessionData(extensionId: string): Promise<vo
   teardownExtensionProtocol(ses);
   await ses.clearStorageData();
   await ses.clearCache();
+}
+
+/** Where a session's folder holds what a page saved. The rest is Chromium's own (caches, quota and network state), and clearing makes that grow. */
+const SESSION_SAVED = ['Local Storage', 'IndexedDB', 'File System', 'Service Worker/CacheStorage'];
+
+/** What Chromium's bookkeeping leaves in those folders once they are empty: below this, a page saved nothing. */
+const SESSION_EMPTY_BYTES = 4096;
+
+/** What an App keeps in browser storage (localStorage, IndexedDB and the like), in bytes. */
+export async function extensionSessionBytes(extensionId: string): Promise<number> {
+  const folder = (configured.get(extensionId)?.session ?? session.fromPartition(extensionPartition(extensionId))).getStoragePath();
+  if (!folder) return 0;
+  const sizes = await Promise.all(SESSION_SAVED.map((name) => folderBytes(path.join(folder, name))));
+  const total = sizes.reduce((sum, size) => sum + size, 0);
+  return total < SESSION_EMPTY_BYTES ? 0 : total;
+}
+
+/**
+ * Empties an App's browser storage, which stays installed: its protocol handler and partition stay. A page still showing (a card in
+ * a message) leaves before the storage goes and comes back after: left running, or only reloaded afterwards, it wrote what it held in
+ * memory straight back (6 of 6 on a real card). Uninstalling is `clearExtensionSessionData`.
+ */
+export async function clearExtensionStorage(extensionId: string): Promise<void> {
+  const ses = configured.get(extensionId)?.session ?? session.fromPartition(extensionPartition(extensionId));
+  const pages = webContents.getAllWebContents().filter((contents) => contents.session === ses && !contents.isDestroyed()).map((contents) => ({ contents, url: contents.getURL() }));
+  await Promise.all(pages.map(({ contents }) => contents.loadURL('about:blank')));
+  try {
+    await ses.clearStorageData();
+    await ses.clearCache();
+  } finally {
+    await Promise.all(pages.filter(({ contents }) => !contents.isDestroyed()).map(({ contents, url }) => contents.loadURL(url)));
+  }
 }
 
 /** Whether this extension's session was hardened in this run. */

@@ -813,7 +813,7 @@ export function createLocalAppFiles(platform: {
       await requireAgentFileTreeAccess(surface.workspaceRoot);
       const found = entryAt(surface.workspaceRoot, pathOf(surface, args.ref));
       try {
-        fs.rmSync(found.abs, { recursive: true });
+        await fs.promises.rm(found.abs, { recursive: true });
       } catch (error) {
         throw new AppFileError('failed', `${found.rel} was not deleted: ${messageOf(error)}`);
       }

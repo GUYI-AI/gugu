@@ -22,8 +22,9 @@ export function latestConversationBubbleId(units: UnitsView, ctx: Pick<MeasureCt
 
 /** Persist the reader's choice by actual message identity, not the mutable live/stored row prefix. */
 export function conversationBubbleKey(item: ChatMessage): string {
-  const messageId = item.guguDelivery?.segments.length === 1 ? item.guguDelivery.segments[0]?.facts?.messageId : undefined;
   const batch = /:batch-\d+$/.exec(item.id)?.[0] ?? '';
+  if (!batch && typeof item._meta?.guguClientMessageId === 'string') return `conversation-bubble:${item._meta.guguClientMessageId}`;
+  const messageId = item.guguDelivery?.segments.length === 1 ? item.guguDelivery.segments[0]?.facts?.messageId : undefined;
   return `conversation-bubble:${messageId ?? (item.sourceItemId ? item.sourceItemId + batch : item.id)}`;
 }
 
@@ -58,5 +59,5 @@ export function hasConversationActions(item: ChatMessage): boolean {
 
 /** 对话布局里这条有没有要画的正文或附件:只有过程、一个字没回的那一轮没有气泡,也不留时间那一行。 */
 export function hasConversationBody(item: ChatMessage): boolean {
-  return Boolean(item.streaming || item.text?.trim() || item.attachments?.length);
+  return Boolean(item.streaming || item.text?.trim() || item.attachments?.length || item.sentMessages?.length);
 }

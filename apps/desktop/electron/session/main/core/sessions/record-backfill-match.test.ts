@@ -31,6 +31,15 @@ describe('filling the store from the record (#980)', () => {
       .toEqual(new Set(['message:msg_1', 'tool:call_9']));
   });
 
+  it('matches a stable client entity to native history by its confirmed receipt metadata', () => {
+    const stored = turn('S:turn:s0', 'continue');
+    stored.items[0] = { ...stored.items[0]!, id: 'stable-client', _meta: { guguClientMessageId: 'stable-client', guguNativeMessageId: 'native-user' } } as typeof stored.items[number];
+    const native = turn('S:turn:0', 'continue');
+    native.items[0] = { ...native.items[0]!, id: 'S:turn:0:message:native-user' };
+    expect(turnIdentityKeys(stored)).toEqual(new Set(['message:native-user']));
+    expect(recordTurnsAfterStore([native], [stored], 'ids')).toEqual([]);
+  });
+
   it('appends only the turns after the store, e.g. ones just run in terminal mode', () => {
     const stored = [turn('S:turn:s1', 'second', { tool: 'b' }), turn('S:turn:s0', 'first', { message: 'a' })];
     const record = [

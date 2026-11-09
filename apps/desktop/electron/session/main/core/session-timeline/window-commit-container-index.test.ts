@@ -1,3 +1,4 @@
+import { windowCommitProjectionDirectory } from './window-commit-projection-disk';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { mkdtemp, open, rm, writeFile, type FileHandle } from 'node:fs/promises';
@@ -39,7 +40,7 @@ describe('durable bounded container indexes', () => {
   it('reopens a completed build and seeks a late page without reading predecessors or the raw prefix', async () => {
     const c = await fixture(), h = await complete(c), pageOrdinal = h.pages - 2;
     expect(h.pages).toBeGreaterThan(5); expect(h.state.ordinal).toBe(200);
-    const proto = await prototype(join(c.directory, windowFrameName(key(c, null)))), original = proto.read;
+    const proto = await prototype(join(windowCommitProjectionDirectory(c.directory, binding), windowFrameName(key(c, null)))), original = proto.read;
     let actual = 0; const reads = vi.spyOn(proto, 'read').mockImplementation((async function(this: FileHandle, buffer: Uint8Array, offset: number, length: number, at: number) {
       const result = await (Reflect.apply(original, this, [buffer, offset, length, at]) as ReturnType<typeof original>);
       actual += result.bytesRead; return result;
@@ -57,7 +58,7 @@ describe('durable bounded container indexes', () => {
   it('recovers a durable page whose checkpoint write was interrupted without duplicating members', async () => {
     const c = await fixture(), first = await advance(c, createWindowBudget());
     expect(first.kind).toBe('progress');
-    await rm(join(c.directory, windowFrameName(key(c, null))));
+    await rm(join(windowCommitProjectionDirectory(c.directory, binding), windowFrameName(key(c, null))));
     const recovered = await advance(c, createWindowBudget()); expect(recovered).toEqual(first);
     const h = await complete(c); expect(h.state.ordinal).toBe(200);
   });
@@ -67,7 +68,7 @@ describe('durable bounded container indexes', () => {
     const first = await advance(c, createWindowBudget());
     if (first.kind !== 'progress') throw new Error('Expected partial progress');
     expect(first.head.pages).toBe(0); expect(first.head.state.lex.offset).toBeGreaterThan(c.index.range.start + 16000);
-    const proto = await prototype(join(c.directory, windowFrameName(key(c, null)))), original = proto.read, raw: number[] = [];
+    const proto = await prototype(join(windowCommitProjectionDirectory(c.directory, binding), windowFrameName(key(c, null)))), original = proto.read, raw: number[] = [];
     vi.spyOn(proto, 'read').mockImplementation((async function(this: FileHandle, buffer: Uint8Array, offset: number, length: number, at: number) {
       if (length > 4096) raw.push(at);
       return Reflect.apply(original, this, [buffer, offset, length, at]) as ReturnType<typeof original>;
@@ -79,11 +80,11 @@ describe('durable bounded container indexes', () => {
 
   it('requests a new build at the same known anchor for damaged/version-mismatched metadata', async () => {
     const c = await fixture(), h = await complete(c);
-    await writeWindowFrame(c.directory, key(c, null), Buffer.from(JSON.stringify({ ...h, version: 2 })));
+    await writeWindowFrame(windowCommitProjectionDirectory(c.directory, binding), key(c, null), Buffer.from(JSON.stringify({ ...h, version: 2 })));
     expect(await advance(c, createWindowBudget())).toEqual({ kind: 'rebuild', anchor: c.index.range });
     const fresh = { ...c, index: { ...c.index, buildId: 'generation-B' } };
     expect((await complete(fresh)).state.ordinal).toBe(200);
-    await writeFile(join(fresh.directory, windowFrameName(key(fresh, 0))), 'broken frame');
+    await writeFile(join(windowCommitProjectionDirectory(fresh.directory, binding), windowFrameName(key(fresh, 0))), 'broken frame');
     expect((await read(fresh, 0, createWindowBudget())).kind).toBe('rebuild');
     expect((await read(c, 0, createWindowBudget())).kind).toBe('rebuild');
   });
@@ -99,7 +100,7 @@ describe('durable bounded container indexes', () => {
 
   it('propagates real I/O and budget failures instead of classifying them as a rebuild', async () => {
     const c = await fixture(); await advance(c, createWindowBudget());
-    const proto = await prototype(join(c.directory, windowFrameName(key(c, null))));
+    const proto = await prototype(join(windowCommitProjectionDirectory(c.directory, binding), windowFrameName(key(c, null))));
     vi.spyOn(proto, 'read').mockRejectedValueOnce(Object.assign(new Error('injected read failure'), { code: 'EIO' }));
     await expect(advance(c, createWindowBudget())).rejects.toMatchObject({ code: 'EIO' });
     vi.restoreAllMocks(); const budget = createWindowBudget(); await budget.read('indexBytes', 65536, async () => 65536);

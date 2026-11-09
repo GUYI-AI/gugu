@@ -4,6 +4,7 @@
 // The desktop main bundle reads the SAME GUGU_TIER (via vite define) to pick its default home
 // (~/.gugu vs ~/.gugu-beta); core's resolveGuguHome is untouched so the standalone CLI default stays ~/.gugu.
 const { guguLinkScheme } = require('./packages/core/src/shared/ui/linkScheme.mjs')
+require('./scripts/build/vendor-download-env.cjs').configureVendorDownloads()
 const tier = process.env.GUGU_TIER || 'production'
 const buildDistribution = process.env.GUGU_BUILD_DISTRIBUTION || 'local'
 if (buildDistribution !== 'local' && buildDistribution !== 'published') {

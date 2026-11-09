@@ -1,0 +1,13 @@
+/* Keep hidden focus guards keyboard-focusable without making them native
+   selection endpoints. Only the visible menu and its action accept pointer hits. */
+.gg-selected-text-menu,
+.gg-selected-text-menu [data-base-ui-focus-guard] {
+  -webkit-user-select: none;
+  user-select: none;
+  pointer-events: none;
+}
+
+.gg-selected-text-menu [role='menu'],
+.gg-selected-text-menu [role='menuitem'] {
+  pointer-events: auto;
+}

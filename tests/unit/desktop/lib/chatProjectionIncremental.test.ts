@@ -47,7 +47,7 @@ const base = mergeCells(new Map(), cells('1', [
 
 describe('reassemble = assemble', () => {
   const cases: Array<[string, Array<[EntityKey, EntityValue | null]>]> = [
-    ['a new message moves its conversation to the top', [[entityKey('preview', 'g1'), { chat_id: 'g1', created_at: t(30), preview: 'hi', failure: null }]]],
+    ['a new message moves its conversation to the top', [[entityKey('preview', 'g1'), { chat_id: 'g1', created_at: t(30), preview: 'hi', notice: null }]]],
     ['my membership is revoked', [[entityKey('membership', membershipId('g2', viewer)), null]]],
     ['a peer alias changes', [[entityKey('override', 'a2'), { alias: 'Bob' }]]],
     ['a member identity disappears', [[entityKey('identity', 'a1'), null]]],

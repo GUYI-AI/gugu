@@ -24,6 +24,7 @@ import { assertConfinedProgramBundle } from './extension-validate';
 import { z } from 'zod';
 import { BUNDLE_SKIP_NAMES } from '@shared/extensions/market';
 import { appVariantsSchema, type AppVariants, type ExtensionVariant } from '@shared/extensions/variants';
+import { removeTreeSync } from '@main/core/utils/remove-tree';
 
 export type { ExtensionOrigin };
 
@@ -67,6 +68,12 @@ const REVOCATIONS_FILENAME = '.revoked-permissions.json';
  */
 const DISABLED_FILENAME = '.disabled-extensions.json';
 const SETTINGS_FILENAME = '.app-settings.json';
+
+/**
+ * The pages the person took out of the menus: `{ [extensionId]: tabName[] }`. The App keeps working, and a file or an agent
+ * can still open them; only the rail, a task's 「+」 and the command list stop offering them. Pruned on uninstall.
+ */
+const HIDDEN_TABS_FILENAME = '.hidden-tabs.json';
 
 /**
  * The Apps pinned to the far-left rail (its dock), `extensionId[]` in the order they show. This machine's only: an App is
@@ -160,6 +167,7 @@ export class ExtensionsService {
   private readonly disabledFile: JsonFile<string[]>;
   private readonly fullDisclosureFile: JsonFile<string[]>;
   private readonly dockFile: JsonFile<string[]>;
+  private readonly hiddenTabsFile: JsonFile<Record<string, string[]>>;
   private readonly autoUpdateOffFile: JsonFile<string[]>;
   private readonly givenHereFile: JsonFile<Record<string, string[]>>;
   private readonly originsFile: JsonFile<Record<string, ExtensionOrigin>>;
@@ -178,6 +186,7 @@ export class ExtensionsService {
     this.disabledFile = jsonFile(rootDir, DISABLED_FILENAME, '[]', stringList(DISABLED_FILENAME, 'extension ids'));
     this.fullDisclosureFile = jsonFile(rootDir, FULL_DISCLOSURE_FILENAME, '[]', stringList(FULL_DISCLOSURE_FILENAME, 'extension ids'));
     this.dockFile = jsonFile(rootDir, DOCK_FILENAME, '[]', stringList(DOCK_FILENAME, 'App ids'));
+    this.hiddenTabsFile = jsonFile(rootDir, HIDDEN_TABS_FILENAME, '{}', mapOf<string[]>(HIDDEN_TABS_FILENAME, 'hidden tab names', (tabs) => Array.isArray(tabs) && tabs.every((tab) => typeof tab === 'string')));
     this.autoUpdateOffFile = jsonFile(rootDir, AUTO_UPDATE_OFF_FILENAME, '[]', stringList(AUTO_UPDATE_OFF_FILENAME, 'App ids'));
     this.givenHereFile = jsonFile(rootDir, GIVEN_HERE_FILENAME, '{}', mapOf<string[]>(GIVEN_HERE_FILENAME, 'places',
       (value) => Array.isArray(value) && value.every((place) => typeof place === 'string')));
@@ -350,8 +359,8 @@ export class ExtensionsService {
       }
       throw error;
     } finally {
-      fs.rmSync(staging, { recursive: true, force: true });
-      if (displaced) fs.rmSync(displaced, { recursive: true, force: true });
+      removeTreeSync(staging);
+      if (displaced) removeTreeSync(displaced);
     }
     // No install restores a withdrawal; only the person does, in settings (`keptRevocations`).
     const kept = keptRevocations(revocations[manifest.id] ?? [], { ...manifest, permissions: approved });
@@ -418,7 +427,7 @@ export class ExtensionsService {
     const dir = this.variantDirectory(id, name);
     variants[id] = { ...state, variants: state.variants.filter((variant) => variant.name !== name) };
     this.variantsFile.write(variants);
-    try { fs.rmSync(dir, { recursive: true, force: true }); }
+    try { removeTreeSync(dir); }
     catch (error) { return { removed: true, warning: `The fork registration was removed, but its cache could not be cleared: ${String(error)}` }; }
     return { removed: true };
   }
@@ -447,10 +456,10 @@ export class ExtensionsService {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     try {
       fs.cpSync(sourceDir, staging, { recursive: true, dereference: false, verbatimSymlinks: true, filter: (source) => !BUNDLE_SKIP_NAMES.has(path.basename(source)) });
-      fs.rmSync(target, { recursive: true, force: true });
+      removeTreeSync(target);
       fs.renameSync(staging, target);
     } finally {
-      fs.rmSync(staging, { recursive: true, force: true });
+      removeTreeSync(staging);
     }
     return target;
   }
@@ -534,7 +543,7 @@ export class ExtensionsService {
     for (const entry of fs.readdirSync(this.rootDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       if (!entry.name.startsWith(STAGING_PREFIX) && !entry.name.startsWith(TRASH_PREFIX)) continue;
-      fs.rmSync(path.join(this.rootDir, entry.name), { recursive: true, force: true });
+      removeTreeSync(path.join(this.rootDir, entry.name));
     }
   }
 
@@ -629,6 +638,20 @@ export class ExtensionsService {
     if (on) off.delete(extensionId);
     else off.add(extensionId);
     this.autoUpdateOffFile.write([...off]);
+  }
+
+  hiddenTabs(): Record<string, string[]> {
+    return this.hiddenTabsFile.read();
+  }
+
+  setTabHidden(extensionId: string, tab: string, hidden: boolean): Record<string, string[]> {
+    if (this.origins()[extensionId] === 'preinstalled') throw new Error(`"${extensionId}" comes with gugu; its pages stay where gugu puts them`);
+    if (!this.get(extensionId).manifest.contributes.tabs.some((candidate) => candidate.name === tab)) throw new Error(`"${extensionId}" has no tab named ${tab}`);
+    const { [extensionId]: current = [], ...others } = this.hiddenTabsFile.read();
+    const tabs = hidden ? [...new Set([...current, tab])] : current.filter((name) => name !== tab);
+    const next = tabs.length > 0 ? { ...others, [extensionId]: tabs } : others;
+    this.hiddenTabsFile.write(next);
+    return next;
   }
 
   /** The Apps on the far-left rail, in order (its dock). Unreadable throws, like the lists above. */
@@ -746,7 +769,7 @@ export class ExtensionsService {
     const variants = this.variantsFile.read();
     delete variants[extensionId];
     this.variantsFile.write(variants);
-    fs.rmSync(path.dirname(this.variantDirectory(extensionId, 'upstream')), { recursive: true, force: true });
+    removeTreeSync(path.dirname(this.variantDirectory(extensionId, 'upstream')));
     const origins = this.origins();
     if (origins[extensionId]) {
       delete origins[extensionId];
@@ -767,12 +790,14 @@ export class ExtensionsService {
     if (full.includes(extensionId)) this.fullDisclosureFile.write(full.filter((id) => id !== extensionId));
     const dock = this.dock();
     if (dock.includes(extensionId)) this.dockFile.write(dock.filter((id) => id !== extensionId));
+    const { [extensionId]: hiddenTabs, ...otherHiddenTabs } = this.hiddenTabsFile.read();
+    if (hiddenTabs) this.hiddenTabsFile.write(otherHiddenTabs);
     const autoUpdateOff = this.autoUpdateOffFile.read();
     if (autoUpdateOff.includes(extensionId)) this.autoUpdateOffFile.write(autoUpdateOff.filter((id) => id !== extensionId));
 
     const trash = path.join(this.rootDir, `${TRASH_PREFIX}${extensionId}-${randomHex()}`);
     fs.renameSync(target, trash);
-    fs.rmSync(trash, { recursive: true, force: true });
+    removeTreeSync(trash);
   }
 
   /**

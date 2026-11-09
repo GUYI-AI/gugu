@@ -159,6 +159,12 @@ export interface TabProvider<
    */
   resourceKey(state: S): string;
 
+  /** What shares a remembered placement (separate / beside), when every open is a new resource. Default: `resourceKey`. */
+  placementKey?(state: S): string;
+
+  /** Closing ends the resource, so ⌘⇧T has nothing to bring back. Default: reopenable. */
+  reopenable?: false;
+
   /** Runtime-only tabs return false so neither snapshots nor closed-tab history can resurrect them. */
   isPersistent?(state: S): boolean;
 
@@ -206,8 +212,9 @@ export interface TabProvider<
   /**
    * The tab `tabId` is closed for good, and one of its pages (now or in its Back/Forward history) was of this kind.
    * `dispose` also runs when a page leaves its tab through history navigation; this runs only on close.
+   * `states`: the state of each of the tab's pages of this kind.
    */
-  closed?(tabId: string, ctx: TabViewContext): void;
+  closed?(tabId: string, ctx: TabViewContext, states: S[]): void;
 
   /** Named capabilities surfaced as context-menu items and keyboard commands. */
   commands?: Record<string, CommandEntry<T>>;

@@ -3,6 +3,7 @@
 .tool-app-header { display: flex; gap: 18px; align-items: center; margin-bottom: 30px; }
 .tool-app-icon { width: 56px; height: 56px; border-radius: 20%; flex: none; object-fit: contain; }
 .tool-app-heading { min-width: 0; }
+.tool-app-header > .mk-link { margin-left: auto; flex: none; }
 .tool-app-title { display: flex; gap: 12px; align-items: baseline; }
 .tool-app-title h1 { font-size: var(--font-size-xl); font-weight: var(--font-weight-semibold); line-height: var(--lh-page); letter-spacing: -.4px; }
 .tool-app-title span { font-size: var(--font-size-xs); color: var(--foreground-muted); }

@@ -83,7 +83,7 @@
 }
 
 /* 详情里的状态、危险钮。 */
-.ta-phone-warn { color: var(--warn); }
+.ta-phone-warn { color: var(--warn-fg); }
 .ta-phone-setup .ta-wide-btn,
 .ta-wide-btn[data-tone='danger'] { min-height: 44px; }
 .ta-wide-btn[data-tone='danger'] { color: var(--danger-fg); }

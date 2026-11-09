@@ -117,6 +117,7 @@ export function usePtyPaneResize(
     if (prev?.cols !== dims.cols || prev.rows !== dims.rows) {
       runInAction(() => box.set(dims));
     }
+    for (const id of sessionsRef.current) getFrontendPty(id)?.onGridMeasured?.(dims);
     schedulerRef.current?.schedule(dims);
   }, []);
 

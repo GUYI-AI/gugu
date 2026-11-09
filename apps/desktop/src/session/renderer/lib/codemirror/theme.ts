@@ -37,9 +37,9 @@ export function codeTheme(dark: boolean) {
     '.cm-mergeView &.cm-merge-b': { borderLeft: '1px solid var(--border)' },
   }, { dark }), syntaxHighlighting(HighlightStyle.define([
     // Token roles in the vs / vs-dark palette the file editor has always used.
-    { tag: [tags.keyword, tags.bool, tags.null], color: 'var(--blue-11)' },
-    { tag: [tags.string, tags.regexp], color: 'var(--red-11)' },
-    { tag: [tags.number, tags.comment], color: 'var(--green-11)' },
-    { tag: [tags.typeName, tags.className], color: 'var(--cyan-11)' },
+    { tag: [tags.keyword, tags.bool, tags.null], color: 'var(--syntax-keyword)' },
+    { tag: [tags.string, tags.regexp], color: 'var(--syntax-string)' },
+    { tag: [tags.number, tags.comment], color: 'var(--syntax-number)' },
+    { tag: [tags.typeName, tags.className], color: 'var(--syntax-type)' },
   ]))];
 }

@@ -1,4 +1,4 @@
-import { readWindowFrame, writeWindowFrame } from '@gugu/session-core/session-record/window-cache/disk-frame';
+import { readWindowFrame, writeWindowFrame } from './window-commit-projection-disk';
 import type { WindowBudget } from '@gugu/session-core/session-record/window-cache/types';
 import { advanceCommitContainerIndex, readIndexedCommitContainerPage, type CommitContainerIndex } from './window-commit-container-index';
 import { advanceCommitRootFields, advanceCommitRootBatch, createCommitRootState, resumeCommitRootState, type CommitRootState, type CommitRootFacts } from './window-commit-root';

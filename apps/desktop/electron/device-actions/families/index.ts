@@ -16,6 +16,7 @@ import { createNotesFamily } from './notes'
 import { createPerfFamily } from './perf'
 import { createRemindersFamily } from './reminders'
 import { createSystemFamily } from './system'
+import { createScreenFamily } from './screen'
 
 /** nativeDir:Mac 原生组件目录(电脑控制从那里读 cua-driver 的工具清单);不是 Mac 时为 null。 */
 export function createAllFamilies(nativeDir: string | null): ActionFamily[] {
@@ -28,6 +29,7 @@ export function createAllFamilies(nativeDir: string | null): ActionFamily[] {
     createMessagesFamily(),
     createFilesFamily(),
     createComputerFamily(nativeDir),
+    createScreenFamily(),
     createClipboardFamily(),
     createDeviceFamily(),
     createSystemFamily(),

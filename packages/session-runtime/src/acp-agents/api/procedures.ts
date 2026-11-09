@@ -63,8 +63,10 @@ export function createAcpProcedures(runtime: AcpRuntime) {
     stopSession(input: {
       sessionId: string;
       onlyIfIdle?: boolean;
+      /** The engine session was replaced: drop a lost record instead of keeping it for reconnect. */
+      forgetLost?: boolean;
     }): Promise<Result<void, AcpStopSessionError>> {
-      return runtime.stopSession(input.sessionId, input.onlyIfIdle);
+      return runtime.stopSession(input.sessionId, input.onlyIfIdle, input.forgetLost);
     },
     sendPrompt(input: {
       sessionId: string;
@@ -85,14 +87,7 @@ export function createAcpProcedures(runtime: AcpRuntime) {
         }
         throw promptError(started.error);
       }
-      const completion = started.data.completion.then(async result => {
-        if (!result.success && 'cause' in result.error && result.error.cause?.code === 'prompt_admission_timeout') {
-          // A silent request still owns its transport. Stop it before a later prompt can reuse it;
-          // stop_pending remains closing and can be retried, rather than claiming the process exited.
-          await runtime.stopSession(input.sessionId);
-        }
-        return result;
-      });
+      const completion = started.data.completion;
       void completion.catch(() => undefined);
       const admission = await started.data.admission;
       if (!admission.success) {

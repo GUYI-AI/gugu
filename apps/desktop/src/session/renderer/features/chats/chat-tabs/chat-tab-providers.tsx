@@ -99,7 +99,7 @@ function usePanelPresentation(chatId: string, tabId: string, item: PanelItem) {
   return extensionTabTitle(
     extensionSurfaceStore.said(null, groupPageSlot(chatId, tabId)),
     isFolderItem(item) ? folderName : item.kind ? (installedExtensionsStore.tabTitle(item.kind) ?? item.title) : item.title,
-    item.itemId ? { name: item.title, path: item.fileName ?? item.title } : undefined,
+    item.itemId && !installedExtensionsStore.isChatFile(item.kind, item.fileName) ? { name: item.title, path: item.fileName ?? item.title } : undefined,
   );
 }
 
@@ -139,7 +139,8 @@ const PanelTabItem = observer(function PanelTabItem({ tab, host, ctx }: TabBarIt
 
 const PanelTabDragPreview = observer(function PanelTabDragPreview({ tab }: { tab: ResolvedTab }) {
   const item = stateOf<PanelItem>(tab);
-  return <GenericTabDragPreview preSlot={<PanelIcon item={item} />} label={item.title} />;
+  const label = installedExtensionsStore.isChatFile(item.kind, item.fileName) ? installedExtensionsStore.tabTitle(item.kind!) ?? item.title : item.title;
+  return <GenericTabDragPreview preSlot={<PanelIcon item={item} />} label={label} />;
 });
 
 /**
