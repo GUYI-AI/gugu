@@ -168,14 +168,6 @@ export default {
     "title": "Machines & tasks",
     "backgroundWatch_one": "Gugu is watching 1 machine",
     "backgroundWatch_other": "Gugu is watching {{count}} machines",
-    "cloud": {
-      "connecting": "Connecting to your Gugu…",
-      "dropped": "Lost the connection to your Gugu.",
-      "reconnect": "Reconnect",
-      "retry": "Retry",
-      "wakeFailed": "Can't reach your Gugu: ",
-      "creditsExhausted": "Out of credits, so your Gugu has paused handling messages."
-    },
     "projects": {
       "title": "Projects",
       "loading": "Loading projects…",
@@ -219,14 +211,6 @@ export default {
       "showLess": "Collapse",
       "renameSave": "Save",
       "archive": "Archive"
-    },
-    "offline": {
-      "phoneTitle": "Phone Agent host disconnected",
-      "phoneBody": "Task records stay on this phone. Reconnect and enable its Agent host to read the records and continue.",
-      "title": "{{machine}} is not connected",
-      "body": "The timeline is read live from this machine, so it is unreachable while the machine is offline. Turn it on, sign in with the same account, then come back.",
-      "sendLater": "Messages sent now are delivered when it reconnects.",
-      "lastSeen": "Last seen: {{time}}"
     },
     "output": {
       "machineOnly": "Opens only on that computer",

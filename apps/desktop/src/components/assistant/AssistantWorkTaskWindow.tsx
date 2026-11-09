@@ -19,6 +19,7 @@ import {TaskExchangeBubble} from './TaskExchangeBubble'
 import {TaskChatFilePreviewHost} from './TaskChatFilePreviewHost'
 import {useMessageFilePreview} from '../chat/useMessageFilePreview'
 import {useAssistantWorkRuntime} from './useAssistantWorkRuntime'
+import {ConnectionStatus} from '../connection/ConnectionStatus'
 
 export function AssistantWorkTaskWindow({ownerId,request}:{ownerId:string;request:AssistantTaskChat}){
  const {t}=useTranslation('assistant'),mobile=useMobileShell()
@@ -62,17 +63,21 @@ export function AssistantWorkTaskWindow({ownerId,request}:{ownerId:string;reques
  const agent=contact??(identity?.ownerId===ownerId&&identity.agent.id===agentId?identity.agent:null)
  const title=detail?.work.title??request.title??t('tasks.title')
  const state=detail?.work.outcome??request.outcome??'active'
- const status=t(state==='active'&&!agentId?'tasks.starting':`tasks.workState.${state}`)
- const notice=<>{read.error||identityFailed?<div className="task-chat-notice" role="status">{t('tasks.chatUnavailable')}</div>:null}
-  {runtime.reason?<div className="task-chat-notice" role="status">{t('tasks.liveUnavailable',{reason:runtime.reason})}</div>
-   :runtime.waking?<div className="task-chat-notice" role="status">{t('tasks.liveWaking')}</div>:null}</>
+ const workState=t(state==='active'&&!agentId?'tasks.starting':`tasks.workState.${state}`)
+ // owner 11-08: the computer's connection state and what could not be read sit in the header subtitle, ❌ lines under it.
+ const unreadable=read.error||identityFailed?t('tasks.chatUnavailable'):null
+ const status=runtime.connection==='online'&&!unreadable?workState:<span className="task-chat-subtitle">
+  <span className="task-chat-subtitle__state">{workState}</span>
+  {runtime.connection!=='online'?<ConnectionStatus state={runtime.connection} lastSeenAt={runtime.lastSeenAt} detail={runtime.detail} testId="assistant-task-connection-status"/>:null}
+  {unreadable?<span className="task-chat-subtitle__detail" role="status" title={unreadable}>{unreadable}</span>:null}
+ </span>
  const close=()=>showAssistantTaskChat(null)
  const transcript=<CloudTaskTranscript mobile={mobile} request={canonical??request} events={detail?.events??[]}/>
- if(agent)return <AssistantTaskChatWindow agent={{...agent,display_name:title}} task={(canonical??request).task} onClose={close} status={status} notice={notice} pendingContent={transcript}/>
+ if(agent)return <AssistantTaskChatWindow agent={{...agent,display_name:title}} task={(canonical??request).task} onClose={close} status={status} pendingContent={transcript}/>
  return <section className="assistant-task-chat-window ta-skin" data-testid="assistant-task-chat-window" aria-label={title}>
   <TaskChatFilePreviewHost mobile={mobile}>
    <PaneHeader title={title} subtitle={status} mobile={mobile} divider leading={<IconButton aria-label={t('panel.back')} onClick={close} data-testid="assistant-task-chat-close"><ChevronLeft/></IconButton>}/>
-   {notice}{transcript}
+   {transcript}
   </TaskChatFilePreviewHost>
  </section>
 }

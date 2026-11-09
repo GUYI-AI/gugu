@@ -234,6 +234,6 @@ describe('phone first-send host readiness', () => {
     expect(readComposer(field)).toBe('稍后再发')
     expect(field.getAttribute('contenteditable')).toBe('true')
     expect(send().disabled).toBe(true)
-    expect(harness.container.querySelector('[data-testid="agent-watch-offline-why"]')).toBeTruthy()
+    expect(harness.container.querySelector('[data-testid="agent-watch-connection-status"]')?.getAttribute('data-state')).toBe('device_offline')
   })
 })

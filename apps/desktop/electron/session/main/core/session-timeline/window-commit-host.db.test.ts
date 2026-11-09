@@ -1,6 +1,6 @@
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type Database from 'better-sqlite3';
@@ -67,6 +67,21 @@ describe('the main-process commit host and actual canonical writer', () => {
     expect(received.mock.calls[0][0].entries[0]).toMatchObject({ rowId: 'c:0', storedSeq: 0, referenceId: 'actual-ref' });
     owner.ack(received.mock.calls[0][0].next); expect(failed).not.toHaveBeenCalled();
     expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 1 });
+  });
+
+  it('writes no commit source, catalog or intent for a production canonical write while no window subscribes', async () => {
+    const events = source(), project = vi.fn(async () => ({ projectionId: 'unused' }));
+    bindWindowCommitProjection(project);
+    connected = await connectWindowCommitHost(stream(events), () => {}, connection);
+    events.emit({ sessionId: 'c', providerId: 'claude', platformCredentials: false, source: 'live', turn: {
+      id: 'unwatched', seq: 0, referenceId: 'unwatched-ref', initiator: 'user', outcome: { kind: 'done' },
+      items: [{ kind: 'message', id: 'unwatched-item', seq: 0, role: 'assistant', text: 'no window is open' }] } });
+    await vi.waitFor(() => expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 1 }));
+    await withStoredTurns('c', async () => {});
+    // Until host GC reclaims them, sources exist only for a subscribed window.
+    expect(await readdir(join(state.root, 'session-window-cache', 'committed'))).toEqual([]);
+    expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_window_commit_receipts').get()).toEqual({ n: 0 });
+    expect(project).not.toHaveBeenCalled();
   });
 
   it('rejects new handoff reservations without a durable producer rather than declaring a successful empty view', () => {

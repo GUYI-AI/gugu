@@ -95,12 +95,6 @@
   font-weight: var(--font-weight-medium);
 }
 
-.gg-aw .gg-aw-offline {
-  border: 0;
-  border-radius: var(--radius-surface);
-  background: var(--muted);
-}
-
 .gg-aw .gg-aw-placeholder {
   gap: var(--spacing-sm);
   text-align: center;

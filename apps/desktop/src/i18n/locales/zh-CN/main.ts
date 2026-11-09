@@ -166,14 +166,6 @@ export default {
   "agentWatch": {
     "title": "机器与项目",
     "backgroundWatch": "咕咕正在看管 {{count}} 台机器",
-    "cloud": {
-      "connecting": "正在连接你的咕咕…",
-      "dropped": "和你的咕咕的连接断了。",
-      "reconnect": "重新连接",
-      "retry": "重试",
-      "wakeFailed": "连不上你的咕咕：",
-      "creditsExhausted": "积分已用完，你的咕咕暂停处理消息。"
-    },
     "projects": {
       "title": "项目",
       "loading": "正在读取项目…",
@@ -213,14 +205,6 @@ export default {
       "showLess": "收起",
       "renameSave": "保存",
       "archive": "归档"
-    },
-    "offline": {
-      "phoneTitle": "手机未连接 Agent 宿主",
-      "phoneBody": "会话记录保存在这台手机上。重新连接并启用 Agent 后，可以查看记录、继续任务。",
-      "title": "「{{machine}}」未连接",
-      "body": "时间线要从这台机器上实时读取，它不在线时读不到。把它开机并登录同一账号后再回来。",
-      "sendLater": "现在发送的消息会在它重新连接后送达。",
-      "lastSeen": "最后在线：{{time}}"
     },
     "output": {
       "machineOnly": "只能在那台电脑上打开",
