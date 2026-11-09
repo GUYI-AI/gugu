@@ -117,6 +117,12 @@ export type ChatMessage = {
   conversationFull?: boolean;
   /** View-only: the closing reply of a finished turn — the only agent bubble with the time / copy row (design 0 `tail`). */
   conversationTail?: boolean;
+  /**
+   * View-only: the chat messages this bubble is (what the agent sent to people — a send into a chat, or a note to its
+   * owner). The host draws them with the chat's own MessageBody into a slot (`onMessageBodyMount`); this row keeps only
+   * its frame. Absent = drawn from `text` / `attachments` as before.
+   */
+  sentMessages?: import('@gugu/core/shared/types/chat').MessageItem[];
   /** Where this message_send output went (same reading as the session page's 「发到 …」 line, `agentSendOf`). */
   sentTo?: AgentSend['to'];
   /** Original typed addresses, kept separate from transport display names. */
@@ -130,8 +136,7 @@ export type ChatMessage = {
    * process line, each `body` only a bubble. The process steps go between them, so they never land
    * under the bubble; every output of the turn (message_send ones too) is its own bubble.
    */
-  conversationPart?: 'head' | 'body' | 'group-reply';
-  groupReply?: import('./state/agent-activity').ActivityActor;
+  conversationPart?: 'head' | 'body';
   /** A `body`'s head row — background tasks still hang on that process line. */
   conversationHead?: string;
   /**
@@ -588,6 +593,8 @@ export type ToolRunItem = {
   live?: boolean;
   /** 跑着的这一段此刻在做什么(`toolRunNow`):在跑的命令或在思考;只在活动层、只在有的时候写。 */
   now?: ToolRunNow;
+  /** Folded only: the last step that handed back pictures, so its strip shows without opening the line. */
+  pictureStep?: ToolNode;
 };
 
 /**
@@ -684,6 +691,8 @@ export type AgentSendItem = {
   id: string;
   turnId: string;
   send: AgentSend;
+  /** The chat message that send put there, drawn by the host's MessageBody (see `ChatMessage.sentMessages`). */
+  sentMessages?: import('@gugu/core/shared/types/chat').MessageItem[];
   /** 还在发 / 已发出(那次调用的状态;发失败的不造这一项,照常是一行工具)。 */
   status: 'running' | 'done';
 };

@@ -129,7 +129,7 @@ describe('opening the folder: API compatibility and one-use preloads', () => {
     expect(result.files.every((answer) => (answer as { ok: boolean }).ok)).toBe(true);
     expect(waves.length, JSON.stringify(waves)).toBeLessThanOrEqual(2);
     // Two folders, each with who made what is in it.
-    expect(routeNames().sort(), JSON.stringify(routeNames())).toEqual(['chats', 'rpc/workspace_list_as', 'rpc/workspace_list_as', 'user_settings', 'users', 'users'].sort());
+    expect(routeNames().sort(), JSON.stringify(routeNames())).toEqual(['chats', 'device_projects', 'rpc/workspace_list_as', 'rpc/workspace_list_as', 'user_settings', 'users', 'users'].sort());
   });
 
   it('p2: a second list reads afresh', async () => {
@@ -172,7 +172,7 @@ describe('opening the folder: API compatibility and one-use preloads', () => {
     })());
     expect(waves.length, JSON.stringify(waves)).toBeLessThanOrEqual(2);
     // Two folders, each with who made what is in it.
-    expect(routeNames().sort(), JSON.stringify(routeNames())).toEqual(['chats', 'rpc/workspace_list_as', 'rpc/workspace_list_as', 'user_settings', 'users', 'users'].sort());
+    expect(routeNames().sort(), JSON.stringify(routeNames())).toEqual(['chats', 'device_projects', 'rpc/workspace_list_as', 'rpc/workspace_list_as', 'user_settings', 'users', 'users'].sort());
   });
 
   it('retargeting another chat preloads that chat once', async () => {

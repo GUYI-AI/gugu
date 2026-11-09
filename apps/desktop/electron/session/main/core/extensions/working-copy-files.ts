@@ -122,7 +122,11 @@ export async function listWorkingCopy(place: WorkspacePlace, folder: string | un
     if (folder && !resolvesInside(view.root, folder)) throw new AppFileError('invalid', `${folder} is outside this working copy`);
     const listed = await view.projector.listDir(view.subscriptionId, folderPath(view.root, folder));
     if (!listed.success) throw new AppFileError('not-found', `No folder ${JSON.stringify(folder ?? '')} in this working copy`);
-    return await entriesOf(view, folderPath(view.root, folder) ?? view.root);
+    return await entriesOf(view, folderPath(view.root, folder) ?? view.root).catch((error: NodeJS.ErrnoException) => {
+      // Gone from disk since this page first opened it: what the tree would have said had it been asked first.
+      if (error.code === 'ENOENT') throw new AppFileError('not-found', `No folder ${JSON.stringify(folder ?? '')} in this working copy`);
+      throw error;
+    });
   } finally {
     if (pageId === null) await view.close();
   }

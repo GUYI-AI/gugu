@@ -41,6 +41,15 @@ describe('sidebar unread counts follow the visible conversation list', () => {
     // 对照:话题里点名你的那条照样把项目行顶起来。
     const named = sidebarChatSignals([chat({ id: 'project', kind: 'group', unread_count: 0 }), topic('a', 'project', 84, 1)], new Set(['project']), shell)
     expect(named.groupUnread.get('project')).toBe(1)
+    expect(named.groupCallingTopic.get('project')).toEqual({ chatId: 'a', name: expect.any(String) })
+  })
+
+  it('names a topic to open only when a topic is what calls you', () => {
+    const mainline = sidebarChatSignals([chat({ id: 'project', kind: 'group', unread_count: 2 }), topic('quiet', 'project', 84, 0)], new Set(['project']), shell)
+    expect(mainline.groupUnread.get('project')).toBe(2)
+    expect(mainline.groupCallingTopic.has('project')).toBe(false)
+    const muted = sidebarChatSignals([{ ...topic('a', 'project', 3, 1), is_muted: true }], new Set(['project']), shell)
+    expect(muted.groupCallingTopic.has('project')).toBe(false)
   })
 
   it('does not hide unread until the assistant and its canonical DM are actually known', () => {

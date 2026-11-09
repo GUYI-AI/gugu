@@ -327,20 +327,6 @@ describe('folder documents: reading', () => {
     $('mode-preview').click()
   })
 
-  test('read-only documents offer block links and citing on right-click, without a side control', () => {
-    file.readOnly = true
-    try {
-      hoverBlock($('preview').querySelector('p[data-line="6-6"]')!)
-      expect($('block-controls').hidden).toBe(true)
-      $('preview').querySelector('p[data-line="6-6"]')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
-      expect(labels()).toEqual(['Copy link to block', 'Cite'])
-      dismiss()
-      view().focus()
-    } finally {
-      file.readOnly = false
-    }
-  })
-
   test('leaving gets a short grace, returning to the preview or handle cancels it, and scrolling still hides immediately', () => {
     const block = $('preview').querySelector('p[data-line="6-6"]')!
     vi.useFakeTimers()

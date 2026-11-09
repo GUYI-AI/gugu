@@ -67,7 +67,8 @@ function windowsNormalize(p: string): string {
 
 /** 壳里的 `%dp0%` / `%~dp0` = 壳自己所在目录(带尾分隔符)。 */
 function expandShimDirectory(template: string, shimPath: string): string {
-  return template.replace(/%~?dp0%?/gi, `${windowsDirname(shimPath)}\\`);
+  // `%~dp0`(cmd 的参数修饰,没有收尾的 `%`)或变量 `%dp0%`;❌ `%~?dp0%?` —— 会把 `%~dp0%FOO%` 里 FOO 的开头 `%` 吃掉。
+  return template.replace(/%~dp0|%dp0%/gi, `${windowsDirname(shimPath)}\\`);
 }
 
 /**
@@ -81,9 +82,9 @@ function expandShimDirectory(template: string, shimPath: string): string {
  */
 const SHIM_SET = /(?:^|&)\s*@?SET\s+(?:"([^="\r\n]+)=([^"\r\n]*)"|([^="\s&]+)=([^&\r\n]*))/gim;
 
-type ShimSets = { variables: Map<string, string>; pathPin?: string; nodePath?: string };
+export type ShimSets = { variables: Map<string, string>; pathPin?: string; nodePath?: string };
 
-function readShimSets(text: string, shimPath: string): ShimSets | null {
+export function readShimSets(text: string, shimPath: string): ShimSets | null {
   const sets: ShimSets = { variables: new Map() };
   for (const match of text.matchAll(SHIM_SET)) {
     const key = (match[1] ?? match[3])!.toLowerCase();
@@ -106,6 +107,38 @@ function readShimSets(text: string, shimPath: string): ShimSets | null {
     }
   }
   return sets;
+}
+
+/**
+ * 壳在跑程序之前给它设的环境:绕过壳直接起程序时,要原样带上的那份(用户自己写的 `set CODEX_HOME=…` /
+ * `set "PATH=C:\\tools;%PATH%"` 再调 exe)。`dp0` / `_prog` / `PATHEXT` 只在壳里用,不算。
+ * 值里的 `%VAR%` 按 `base` 与前面已设的展开,键名沿用 `base` 里的写法(Windows 不分大小写,`Path` 与 `PATH`
+ * 不能并存)。展不开,或 SET 落在 IF / ELSE 里(不知道走哪支)⇒ null:这份壳认不全,调用方照旧起壳。
+ */
+export function readShimEnv(
+  text: string,
+  shimPath: string,
+  base: Readonly<Record<string, string | undefined>>
+): Record<string, string> | null {
+  const env: Record<string, string> = {};
+  const keyOf = (name: string): string | undefined =>
+    [...Object.keys(env), ...Object.keys(base)].find((key) => key.toLowerCase() === name.toLowerCase());
+  const conditional = /^\s*@?IF\b|\)\s*ELSE\b/im.test(text);
+  for (const match of text.matchAll(SHIM_SET)) {
+    const name = (match[1] ?? match[3])!;
+    if (/^(?:dp0|_prog|pathext)$/i.test(name)) continue;
+    if (conditional) return null;
+    let unresolved = false;
+    const value = expandShimDirectory((match[2] ?? match[4])!.trim(), shimPath).replace(/%([^%\r\n]+)%/g, (literal, variable: string) => {
+      const key = keyOf(variable);
+      const known = key === undefined ? undefined : env[key] ?? base[key];
+      if (known === undefined) unresolved = true;
+      return known ?? literal;
+    });
+    if (unresolved) return null;
+    env[keyOf(name) ?? name] = value;
+  }
+  return env;
 }
 
 function resolveShimNode(token: string, variables: Map<string, string>, shimPath: string): string {

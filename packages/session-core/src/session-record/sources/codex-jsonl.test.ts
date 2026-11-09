@@ -1,5 +1,6 @@
 import { recordProjection } from '../test-support';
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,11 +19,14 @@ import {
 } from '../test-support';
 import { toolDisplayName, type ToolCallItem } from '../../acp/models/turns/tool-calls';
 import { createCodexJsonlSource } from './codex-jsonl';
-import { SessionRecordNotFoundError } from './shared';
+import { snapshotRetainer } from './record-images';
+import { SessionRecordNotFoundError, SessionRecordTooLargeError } from './shared';
 import { TailReader } from './tail-reader';
 
 const FIXTURE = fileURLToPath(new URL('../__fixtures__/codex-rollout.jsonl', import.meta.url));
 const THREAD_ID = '019ed98a-a0ce-7f63-a9aa-04e0760a80c2';
+
+type TimelineTurns = Parameters<typeof collectItems>[0];
 
 const disposers: Array<() => void | Promise<void>> = [];
 
@@ -123,6 +127,68 @@ describe('codex rollout 记录源', () => {
     const tool = collectItems(timeline.getSnapshot().turns).find((item): item is ToolCallItem => item.kind.endsWith('-tool-call'));
     expect(tool?.images).toEqual([{ mimeType: 'image/png', data: 'aGVsbG8=' }]);
     expect(tool).not.toHaveProperty('imageRefs');
+  });
+
+  const pictureRollout = (pictures: string[]) => pictures.flatMap((picture, index) => [
+    JSON.stringify({ type: 'response_item', payload: { type: 'function_call', name: 'catalog_call', namespace: 'mcp__gugu', arguments: '{}', call_id: `picture-${index}` } }),
+    JSON.stringify({ type: 'response_item', payload: { type: 'function_call_output', call_id: `picture-${index}`, output: [{ type: 'input_image', image_url: `data:image/png;base64,${picture}` }] } }),
+  ]);
+  const toolsOf = (timeline: { getSnapshot: (o: { limit: number }) => { turns: TimelineTurns } }) => collectItems(timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns)
+    .filter((item): item is ToolCallItem => item.kind.endsWith('-tool-call') && (item as ToolCallItem).toolCallId.startsWith('picture-'));
+
+  it('keeps a plain snapshot\'s pictures off the heap and reads them back by position', async () => {
+    const pictures = ['first', 'second'].map((seed) => Buffer.from(seed.repeat(500)).toString('base64'));
+    const { root } = await stage(pictureRollout(pictures));
+    const timeline = await createSessionTimeline(createCodexJsonlSource({ harness: 'codex', providerSessionId: THREAD_ID, roots: [root] }, { readMode: 'snapshot' }), { sessionId: 'pictures' });
+    disposers.push(() => timeline.dispose());
+    const tools = toolsOf(timeline);
+    expect(tools.map((tool) => tool.imageRefs)).toEqual(pictures.map((picture) => [{ mimeType: 'image/png', chars: picture.length }]));
+    expect(tools.every((tool) => !tool.images)).toBe(true);
+    for (const [index, tool] of tools.entries()) {
+      await expect(timeline.toolImage!({ itemId: tool.id, index: 0, maxChars: Number.POSITIVE_INFINITY }))
+        .resolves.toEqual({ ok: true, image: { mimeType: 'image/png', data: pictures[index] } });
+    }
+  });
+
+  it('keeps an archive\'s pictures inline, never as a position, and never writes a timeline archive from it', async () => {
+    const picture = Buffer.from('archived'.repeat(500)).toString('base64');
+    const { root, file } = await stage(pictureRollout([picture]));
+    await writeFile(`${file}.zst`, zstdCompressSync(await readFile(file)));
+    await rm(file);
+    const timeline = await createSessionTimeline(createCodexJsonlSource({ harness: 'codex', providerSessionId: THREAD_ID, roots: [root] }, { readMode: 'snapshot' }), { sessionId: 'archived-pictures' });
+    disposers.push(() => timeline.dispose());
+    const [tool] = toolsOf(timeline);
+    expect(tool.images).toEqual([{ mimeType: 'image/png', data: picture }]);
+    expect(tool).not.toHaveProperty('imageRefs');
+    await expect(timeline.archive!()).resolves.toBeNull();
+    await expect(timeline.toolImage!({ itemId: tool.id, index: 0, maxChars: Number.POSITIVE_INFINITY }))
+      .resolves.toEqual({ ok: true, image: { mimeType: 'image/png', data: picture } });
+  });
+
+  it('accounts a snapshot before the fold can exhaust V8', () => {
+    const picture = 'A'.repeat(1000);
+    const entry = (): RecordEntry => ({ key: 'k', event: { kind: 'tool_update', toolCallId: 't', images: [{ mimeType: 'image/png', data: picture }] } });
+    const line = JSON.stringify({ picture });
+    const retain = snapshotRetainer({ kept: 2000, seen: 3000, archivePictures: 1000 });
+    const archived = [entry(), entry()];
+    retain(archived.slice(0, 1), line, 0, '/x.jsonl.zst');
+    expect(archived[0].event).toMatchObject({ images: [{ data: picture }] });
+    retain(archived.slice(1), line, 0, '/x.jsonl.zst');
+    expect(archived[1].event).toMatchObject({ imageRefs: [{ mimeType: 'image/png', chars: 1000 }] });
+    expect(archived[1].event).not.toHaveProperty('images');
+    expect(archived.every((one) => !one.imageOrigins)).toBe(true);
+    expect(() => snapshotRetainer({ kept: 100, seen: 3000, archivePictures: 0 })([], 'x'.repeat(101), 0, '/x.jsonl')).toThrow(SessionRecordTooLargeError);
+    expect(() => snapshotRetainer({ kept: 100, seen: 3000, archivePictures: 0 })([entry()], `${line}${'x'.repeat(3000)}`, 0, '/x.jsonl')).toThrow(SessionRecordTooLargeError);
+  });
+
+  it('fails an archive with the budget reason, not the abort of its stopped stream', async () => {
+    const { root, file } = await stage(Array.from({ length: 64 }, (_, i) => JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: `${i}${randomBytes(64 * 1024).toString('base64')}` }] } })));
+    await writeFile(`${file}.zst`, zstdCompressSync(await readFile(file)));
+    await rm(file);
+    const source = createCodexJsonlSource({ harness: 'codex', providerSessionId: THREAD_ID, roots: [root] }, { readMode: 'snapshot' });
+    await expect(source.start({ onEntries: () => { throw new SessionRecordTooLargeError('over'); }, onReset: () => {} }))
+      .rejects.toBeInstanceOf(SessionRecordTooLargeError);
+    source.stop();
   });
 
   it('prefers an available JSONL in another root over a compressed archive', async () => {

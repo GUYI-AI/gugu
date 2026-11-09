@@ -7,7 +7,7 @@ import type { SessionView } from '@shared/core/sessions/sessions';
  *   启动通道,codex 那一格;判据 `terminalLegUnstartableForCreation`),这一条只能用通用视角;
  *   同一家在别的入口上终端照样可选。
  * - `code-only`:这一家声明了通用视角,但会话页那一面还没接通(身份与投递通道声明仍是 none;
- *   判定在 initial-session-section.tsx),这一条只能用编程视角(kiro 这一类)。
+ *   判定在 initial-session-section.tsx),这一条只能用编程视角。
  * - `remote-needs-ssh`:会话页在别的机器上开会话,而那台机器只经云端连着(不是在这台电脑上用 SSH
  *   装上的)—— 编程视角是真终端,要 SSH 直连才有(#6264),这一条只能用通用视角。
  */

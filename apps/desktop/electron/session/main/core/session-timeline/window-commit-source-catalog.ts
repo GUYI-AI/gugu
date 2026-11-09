@@ -22,6 +22,9 @@ export async function writeWindowCommitSourceCatalog(directory: string, input: W
   if (JSON.stringify(receipt.binding) !== JSON.stringify(windowCommitSourceBinding(scope, sourceId))) throw new Error('Source catalog binding mismatch');
   const packet = encodeWindowFrame(key(scope, sourceId), Buffer.from(JSON.stringify(receipt)));
   await prepareWindowCommitDirectory(directory, ['source-versions', scope]);
+  // Callers hold the canonical writer tail for this source; a temporary left by
+  // an interrupted earlier attempt is never published and must not block a retry.
+  await rm(temporary, { force: true });
   try {
     const file = await open(temporary, 'wx', 0o600);
     try {
@@ -35,12 +38,11 @@ export async function writeWindowCommitSourceCatalog(directory: string, input: W
 }
 
 /** Exact write-set cleanup for the source-before intent; no directory listing. */
-export async function removeWindowCommitSourceCatalog(directory: string, scope: string, sourceId: string, check?: () => void) {
+export async function removeWindowCommitSourceCatalog(directory: string, scope: string, sourceId: string) {
   const path = windowCommitCatalogPath(directory, scope, sourceId);
-  check?.(); await rm(`${path}.tmp`, { force: true }); check?.(); await rm(path, { force: true }); check?.();
+  await rm(`${path}.tmp`, { force: true }); await rm(path, { force: true });
   try { await syncWindowDirectory(join(directory, 'source-versions', scope)); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-  check?.();
 }
 
 export async function readWindowCommitSourceCatalog(directory: string, scope: string, sourceId: string, budget: WindowBudget, signal?: AbortSignal) {

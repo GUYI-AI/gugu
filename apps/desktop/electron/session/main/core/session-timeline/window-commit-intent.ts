@@ -5,7 +5,7 @@ import { readWindowFrame, syncWindowDirectory, writeWindowFrame } from '@gugu/se
 import type { WindowBudget } from '@gugu/session-core/session-record/window-cache/types';
 import { assertWindowCommitSource, windowCommitSourceBinding, windowCommitSourcePath } from './window-commit-source';
 import { createWindowCommitReceipts, type WindowReceiptDatabase } from './window-commit-receipt';
-import { readWindowCommitSourceCatalog, removeWindowCommitSourceCatalog } from './window-commit-source-catalog';
+import { readWindowCommitSourceCatalog, removeWindowCommitSourceCatalog, writeWindowCommitSourceCatalog } from './window-commit-source-catalog';
 
 type Scope = { directory: string; scope: string; sessionId: string };
 type Intent = { version: 1; sourceId: string; sessionId: string; rowId: string; referenceId: string; storedSeq: number };
@@ -49,7 +49,11 @@ export async function recoverWindowCommitIntent(connection: WindowReceiptDatabas
       throw new Error('Commit source intent receipt mismatch');
     await assertWindowCommitSource(input.directory, binding, receipt.source);
     const catalog = await readWindowCommitSourceCatalog(input.directory, input.scope, intent.sourceId, budget, signal);
-    if (catalog.kind !== 'hit' || JSON.stringify(catalog.receipt) !== JSON.stringify(receipt)) throw new Error('Commit source catalog is not durable');
+    // A receipt committed by a build before source catalogs has none. The receipt
+    // is exactly the catalog content, so migrate it instead of failing every
+    // later canonical write in this session. A different catalog stays an error.
+    if (catalog.kind === 'miss') await writeWindowCommitSourceCatalog(input.directory, receipt);
+    else if (JSON.stringify(catalog.receipt) !== JSON.stringify(receipt)) throw new Error('Commit source catalog is not durable');
   } else {
     const source = windowCommitSourcePath(input.directory, binding);
     await rm(`${source}.${intent.sourceId}.tmp`, { force: true });

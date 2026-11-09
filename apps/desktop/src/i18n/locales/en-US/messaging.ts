@@ -188,7 +188,7 @@ export default {
     },
     "appEnable": {
       "devices": "Install on",
-      "devicesHint": "Every agent on a computer it is new to can use it; to change who, use the App page.",
+      "devicesHint": "On each computer it is new to, every agent can use it. You can change this in the App's settings.",
       "addsChat": "Installed here already for some agents only: this adds the group “{{name}}” and changes nothing else.",
       "decline": "Don't install",
       "machine": "This computer",
@@ -214,7 +214,6 @@ export default {
       "done": "Done",
       "noPlaces": "You have no agents and are in no groups yet",
       "noMatch": "Nothing found",
-      "used": "Given to: ",
       "hereAll": "All agents here",
       "hereAllOn": "All agents on {{machine}}",
       "more": "{{names}} and {{count}} in all",
@@ -252,6 +251,7 @@ export default {
       "showRaw": "Show the raw content",
       "hideRaw": "Hide the raw content",
       "install": "Install",
+      "goToApps": "Go to Apps",
       "unavailable": "This App cannot open here right now: it is not installed, or it is switched off.",
       "title": "Open “{{name}}” with"
     },
@@ -291,6 +291,7 @@ export default {
     "markAllReadPartial_other": "{{count}} chats could not be marked as read. Try again.",
     "markUnreadFailed": "Could not mark this chat unread. Try again.",
     "muted": "Notifications muted",
+    "newMessage": "New message",
     "noResults": "No chats found",
     "searchMessagesTitle": "Search messages",
     "listLabel": "Chats",
@@ -447,7 +448,21 @@ export default {
     "mobilePlaceholder": "Message",
     "projectGroupPlaceholder": "Message {{name}}… @ an agent to call it",
     "removeAttachment": "Remove {{fileName}}",
-    "sendFailed": "Could not send: {{reason}}",
+    "sendFailed": "Message was not sent: {{guidance}}",
+    "failedFileLabel": "{{kind}} {{name}}",
+    "failedFileKind": { "image": "Image", "video": "Video", "audio": "Audio", "file": "File" },
+    "fileSendFailed": "{{file}} was not sent: {{guidance}}",
+    "filesSendFailed_one": "{{count}} file was not sent: {{guidance}}",
+    "filesSendFailed_other": "{{count}} files were not sent: {{guidance}}",
+    "failureReason": {
+      "tooLarge": "The file is too large. Reduce its size and send it again.",
+      "signIn": "Your sign-in expired. Sign in and send again.",
+      "denied": "You do not have permission to send. Check the conversation permissions before sending again.",
+      "busy": "Too many sends. Wait a moment and send again.",
+      "chatUnavailable": "The conversation is unavailable. Return to the message list to check it.",
+      "timeout": "The send timed out. Try sending again later.",
+      "unavailable": "The send did not finish. Try sending again later."
+    },
     "verb": {
       "task": "New task"
     },
@@ -508,9 +523,18 @@ export default {
       "unknown": "Unknown member"
     },
     "memberJoined": {
-      "joined": " joined the group chat",
+      "joined": " joined the group",
       "mentionHint": "Mention {{name}} in the message box",
       "separator": ", "
+    },
+    "notice": {
+      "agentFloodGroup": "This group has many agents, so they now reply only when @-mentioned.",
+      "agentFloodTopic": "This topic has many agents, so they now reply only when @-mentioned.",
+      "left": "{{actor}} left the group",
+      "madeAdmin": "{{actor}} made {{target}} an admin",
+      "removed": "{{actor}} removed {{target}} from the group",
+      "revokedAdmin": "{{actor}} removed {{target}} as an admin",
+      "topicOpened": "{{actor}} opened a topic: "
     },
     "memberList": {
       "agentLeave": "Take it out of this group",
@@ -751,6 +775,11 @@ export default {
       "react": "React",
       "reply": "Reply",
       "quoteSelection": "Quote selection",
+      "quoteToComposer": "Quote in reply",
+      "quoteSelectionToComposer": "Quote selection",
+      "openFile": "Open",
+      "editMessage": "Edit and resend",
+      "forkTask": "Fork this task",
       "select": "Select"
     },
     "attachment": "[Attachment]",
@@ -832,7 +861,8 @@ export default {
     "sourceDiscarded": "The original message was discarded before it was sent",
     "deliveryTimeout": "Delivery timed out after {{seconds}}s because the network stopped responding",
     "discarded": "Discarded",
-    "offscreenFailure": "A message was not delivered. Return to its chat to retry or discard it.",
+    "offscreenFailure": "A message in “{{chatName}}” was not delivered. Return to that conversation to retry or discard it.",
+    "chatById": "Conversation {{id}}",
     "recipientMissing": "The recipient is no longer available. The message was not sent.",
     "sendFailed": "Could not send"
   },

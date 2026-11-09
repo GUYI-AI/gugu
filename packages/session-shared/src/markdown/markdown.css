@@ -246,14 +246,27 @@
 }
 
 /* ── math ────────────────────────────────────────────────────────────────── */
-/* KaTeX ships `.katex-display{display:block}` unlayered; (0,2,0) wins it. `safe` falls back to start
-   alignment when a formula is wider than the body, so its beginning scrolls into view instead of being cut. */
+/* KaTeX ships `.katex-display{display:block}` unlayered; (0,2,0) wins it. Auto margins centre the formula and
+   resolve to 0 when it is wider than the body, so its beginning stays in the scroll range instead of being cut.
+   Not `justify-content: safe center`: Android WebView before 115 parses `safe` but lays it out as plain `center`. */
 .gg-md .katex-display {
   display: flex;
-  justify-content: safe center;
   overflow-x: auto;
   overflow-y: hidden;
   padding: 0.2em 0;
+}
+.gg-md .katex-display > .katex { margin-inline: auto; }
+/* An inline formula is one unit: it moves to the next line whole, and one wider than the line scrolls inside it
+   rather than running out of the bubble. A grid scroll box keeps its content's baseline (an inline-block one would
+   sit on its bottom edge). The padding, given back by the margin, leaves room for italic and accent ink that KaTeX
+   draws past its boxes, which the scroll box would otherwise clip. */
+.gg-md :not(.katex-display) > .katex {
+  display: inline-grid;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.1em;
+  margin: -0.1em;
 }
 /* `sourceLines` sets display math in a block that says its lines (to-html.ts): the block keeps the rhythm, as the
    formula does on its own. */

@@ -34,6 +34,11 @@ async function fixture() {
 }
 
 describe('bounded source-version provenance independent of canonical FK lifetime', () => {
+  it('rewrites a catalog after an interrupted attempt left only its unpublished temporary', async () => {
+    const f = await fixture(); await rm(f.path); await writeFile(`${f.path}.tmp`, 'interrupted');
+    await write(f.directory, f.receipt);
+    expect(await read(f.directory, f.scope.scope, f.receipt.sourceId, createWindowBudget())).toEqual({ kind: 'hit', receipt: f.receipt });
+  });
   it('persists before canonical publication and survives actual receipt cascade without reading any source body', async () => {
     const f = await fixture(), before = createWindowBudget();
     expect(createWindowCommitReceipts(f.connection).bySource(f.receipt.sourceId)).toBeNull();

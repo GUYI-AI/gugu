@@ -521,8 +521,13 @@
   color: var(--foreground-passive);
   text-decoration: line-through;
 }
+.xp-history-more {
+  display: block;
+  margin-top: 6px;
+}
 .xp-history-date {
   flex: 0 0 auto;
+  min-width: 52px;
   color: var(--foreground-passive);
   font-size: var(--font-size-xs);
   font-variant-numeric: tabular-nums;
