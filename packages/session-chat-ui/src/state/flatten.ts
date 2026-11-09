@@ -1,11 +1,11 @@
 import { decorateConversationDensity } from './conversation-density';
 import { conversationOutput } from './conversation-process';
 import { conversationMessages } from './conversation-messages';
-import { withSentReplies } from './sent-replies';
+import { sentMessagesOf, withSentReplies } from './sent-replies';
 import { activityArtifacts } from './activity-artifacts';
 import { planConversationSegments } from './conversation-segments';
 import { continuedActivityHeader, foldActivityUnits, hasUnconfirmedSend, incomingActivity, outgoingActivity, pendingActivity,
-  viewerGroupReply, type AgentActivityEvent, type AgentActivityGroup } from './agent-activity';
+  type AgentActivityEvent, type AgentActivityGroup } from './agent-activity';
 /**
  * flatten — segment a transcript into a two-tier UnitsView.
  *
@@ -68,10 +68,10 @@ import { resolveSeamGap } from '@session-chat/core/spacing';
 import type { FoldGate, ItemSegmenter, Margin, RenderUnit, SegmentCtx } from '@session-chat/core/units';
 import { stampGroupRoles } from '@session-chat/core/units';
 import { localDayKey } from '@session-chat/lib/day-boundary';
-import type { ChatItem, ChatMessage, FileChangeSummaryItem, SyntheticItem, TranscriptItem, TranscriptTurn } from '@session-chat/model';
+import type { ChatItem, ChatMessage, FileChangeSummaryItem, SyntheticItem, ToolRunItem, TranscriptItem, TranscriptTurn } from '@session-chat/model';
 import { fileChangeSummary, isListedInSummary, successfulFileDiff } from '@session-chat/state/file-change-summary';
 import { collectOpenedOutputs, openedFilePath, openedOutputKey, outputsOfRun } from '@session-chat/state/opened-outputs';
-import { tallyToolRun, toolRunCategory, toolRunLabel, toolRunNow } from '@session-chat/state/tool-run';
+import { hasToolPictures, tallyToolRun, toolRunCategory, toolRunLabel, toolRunNow } from '@session-chat/state/tool-run';
 import { completedTurnResult, itemIsUser, pendingTurnHeader, placeholderTurnHeader, planTurnFoldRuns, turnFoldView, turnProcessExpanded } from '@session-chat/state/turn-fold';
 import { isEmptyAgentTurn } from './turn-visibility';
 import { processHookNotice } from '@session-chat/lib/hook-notice';
@@ -329,7 +329,7 @@ export function flattenTier(
         // agent 经 message_send / session_message 说的话:画成它说的话、标明发到了哪里,❌ 一行「调用了 MCP 工具」。
         const send = !ctx.agentConversation && 'toolCallId' in op.item && !sentReplyCalls.has(op.item.id) ? agentSendOf(op.item as TranscriptItem, sendTurn) : null;
         processItem(send
-          ? { kind: 'agent-send', id: op.item.id, turnId, send, status: (op.item as { status?: string }).status === 'running' ? 'running' : 'done' }
+          ? { kind: 'agent-send', id: op.item.id, turnId, send, status: (op.item as { status?: string }).status === 'running' ? 'running' : 'done', ...sentMessagesOf(op.item as TranscriptItem) }
           : op.item, folds);
         continue;
       }
@@ -344,6 +344,10 @@ export function flattenTier(
       // 跑着时这一句只说做了多少;此刻在跑哪条命令 / 在想,接在后面(`toolRunNow`),跑完自然恢复原样。
       // 对话布局不接:owner 0 号图跑着的步骤组只说「跑了 5 条命令」,❌「正在跑 cd … && export PATH=…」原始命令(10-28)。
       const now = live && !ctx.agentConversation ? toolRunNow(op.rows) : null;
+      const expanded = ctx.revealAllFolds || (ctx.isTurnProcessExpanded?.(runId) ?? false);
+      // Folded, a step's pictures would be out of sight: the line carries the last ones (tool-images.ts — seen unopened).
+      // Open, each step below draws its own.
+      const pictureStep = expanded ? undefined : op.rows.findLast(hasToolPictures) as ToolRunItem['pictureStep'];
       processItem({
         kind: 'tool-run',
         id: runId,
@@ -352,8 +356,9 @@ export function flattenTier(
         stepCount: op.rows.length,
         ...(live ? { live: true as const } : {}),
         ...(now ? { now } : {}),
+        ...(pictureStep ? { pictureStep } : {}),
       }, folds);
-      if (ctx.revealAllFolds || (ctx.isTurnProcessExpanded?.(runId) ?? false)) {
+      if (expanded) {
         for (const row of op.rows) processItem(row, [...folds, { id: runId, stored: true }]);
       }
     }
@@ -455,7 +460,8 @@ export function flattenTier(
         const ops = planRows(outsideProcess(output.rest));
         activityEvent = output.reply
           ? outgoingActivity(output.reply.id.replace(/:sent:[^:]+$/, ''), output.reply.sentAddresses, ctx,
-            output.reply.sentAttachments?.length ? new Set(output.reply.sentAttachments.map(file => file.messageId)).size : 1) ?? undefined
+            output.reply.sentAttachments?.length ? new Set(output.reply.sentAttachments.map(file => file.messageId)).size : 1,
+            /:sent:([^:]+)$/.exec(output.reply.id)?.[1]) ?? undefined
           : pendingActivity(block.items as TranscriptItem[], turn, ctx) ?? inputActivity;
         // A successful send closes its segment before the trailing silence.
         // Keep that empty tail with its proven A2A owner, not a new process.
@@ -501,10 +507,7 @@ export function flattenTier(
         if (output.reply) {
           const reply = { ...output.reply, conversationProcess: process,
             ...(block.fullReply ? { conversationFull: true } : {}) };
-          const groupReply = viewerGroupReply(reply, ctx);
-          if (groupReply) {
-            processItem({ ...reply, conversationPart: 'group-reply', groupReply });
-          } else emitConversationReply(reply, [], steps, replyActivity);
+          emitConversationReply(reply, [], steps, replyActivity);
         } else {
           processItem({ kind: 'turn-process', ...process, turnId: turn.id,
             ...(output.silent ? { silent: true } : {}),

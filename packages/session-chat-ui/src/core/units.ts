@@ -79,6 +79,10 @@ export type RenderUnit<D = unknown> = {
   id: string;
   itemId: string;
   groupId: string;
+  /** Display-only source anchor, independent of the canonical item identity. */
+  sourceFragment?: import('@gugu/session-core/session-record/contract').SourceFragment;
+  sourceOwner?: { turnId: string; itemId: string };
+  anchorIds?: readonly string[];
   kind: string;
   data: D;
   groupRole: GroupRole;
@@ -322,12 +326,13 @@ export function stampGroupRoles(units: RenderUnit[]): void {
 
 /** Source-item lookup includes rows inside a native process viewport. */
 export function unitContainsItem(unit: RenderUnit | undefined, id: string): boolean {
-  return !!unit && (unit.itemId === id || !!unit.children?.some(child => unitContainsItem(child, id)));
+  return !!unit && (unit.itemId === id || !!unit.anchorIds?.includes(id) || !!unit.children?.some(child => unitContainsItem(child, id)));
 }
 
 /** Include nested leaf ids in the committed tier's source-navigation index. */
 export function* unitItemIds(unit: RenderUnit): IterableIterator<string> {
   yield unit.itemId;
+  yield* unit.anchorIds ?? [];
   for (const child of unit.children ?? []) yield* unitItemIds(child);
 }
 

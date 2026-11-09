@@ -15,7 +15,7 @@ describe('message hover bar opens for a moving pointer, not for a row scrolled u
   beforeEach(() => { harness = createReactHarness() })
   afterEach(() => harness.cleanup())
 
-  const at = (type: string, x: number) => new MouseEvent(type, { bubbles: type !== 'mouseenter', clientX: x, clientY: 10 })
+  const at = (type: string, x: number, buttons = 0) => new MouseEvent(type, { bubbles: type !== 'mouseenter', clientX: x, clientY: 10, buttons })
   async function renderRow() {
     await harness.render(
       <MessageHoverRegion enabled forceOpen={false} style={{}} actions={<span data-bar="row" />}>
@@ -39,6 +39,39 @@ describe('message hover bar opens for a moving pointer, not for a row scrolled u
   it('a pointer that moves onto the row opens it at once', async () => {
     const row = await renderRow()
     await act(async () => { row.dispatchEvent(at('mouseenter', 14)) })
+    expect(bar()).not.toBeNull()
+  })
+
+  it('dragging onto and across the row stays closed, then releasing on it restores hover', async () => {
+    const row = await renderRow()
+    await act(async () => { row.dispatchEvent(at('mouseenter', 14, 1)) })
+    expect(bar()).toBeNull()
+    await act(async () => { row.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 18, clientY: 10, buttons: 1 })) })
+    expect(bar()).toBeNull()
+    await act(async () => { row.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 18, clientY: 10, buttons: 0 })) })
+    expect(bar()).not.toBeNull()
+  })
+
+  it('a row resting under the pointer does not open when selection starts moving across it', async () => {
+    const row = await renderRow()
+    await act(async () => { row.dispatchEvent(at('mouseenter', 10)) })
+    await act(async () => { row.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 12, clientY: 10, buttons: 1 })) })
+    expect(bar()).toBeNull()
+    await act(async () => { row.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 14, clientY: 10 })) })
+    expect(bar()).not.toBeNull()
+  })
+
+  it('does not intercept a normal click', async () => {
+    const row = await renderRow()
+    let clicks = 0
+    row.addEventListener('click', () => { clicks++ })
+    await act(async () => {
+      row.dispatchEvent(at('mouseenter', 14))
+      row.dispatchEvent(at('mousedown', 14, 1))
+      row.dispatchEvent(at('mouseup', 14))
+      row.dispatchEvent(at('click', 14))
+    })
+    expect(clicks).toBe(1)
     expect(bar()).not.toBeNull()
   })
 })

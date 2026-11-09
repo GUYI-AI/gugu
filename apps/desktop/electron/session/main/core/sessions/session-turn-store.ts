@@ -1,3 +1,4 @@
+import { beginCanonicalQueueTask } from './canonical-queue-state';
 import { renumberStoredTurn, rewriteTurnId } from './session-turn-identity';
 export { renumberStoredTurn } from './session-turn-identity';
 import { findToolImage, trimCursorPageForTransport, trimTurnsForTransport } from '@gugu/session-core/session-record';
@@ -74,7 +75,8 @@ export function persistCommittedTurn(input: PersistInput): Promise<void> {
     if (phaseFailed) throw phaseError;
     return captured;
   };
-  const next = previous.then(write, write);
+  const completed = beginCanonicalQueueTask(input.sessionId);
+  const next = previous.then(write, write).finally(completed);
   const tail = next.then(() => undefined, () => undefined);
   persistenceTails.set(input.sessionId, tail);
   void tail.then(() => {
@@ -167,7 +169,8 @@ async function persistCommittedTurnNow(input: PersistInput, observationFailed: (
  */
 export function withStoredTurns<T>(sessionId: string, run: () => Promise<T>): Promise<T> {
   const previous = persistenceTails.get(sessionId) ?? Promise.resolve();
-  const result = previous.then(run, run);
+  const completed = beginCanonicalQueueTask(sessionId);
+  const result = previous.then(run, run).finally(completed);
   const tail = result.then(() => undefined, () => undefined);
   persistenceTails.set(sessionId, tail);
   void tail.then(() => {

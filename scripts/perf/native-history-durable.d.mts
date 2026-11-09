@@ -1,0 +1,25 @@
+export type Quantiles = { n: number; p50Ms: number; p95Ms: number; maxMs: number };
+export type SqlitePolicy = { journalMode: string; synchronous: number; fullfsync?: number; walAutocheckpoint?: number };
+export type WriteMetadata = { sourceSha: string; writerEntry: string; databasePath: string; additionsEnabled: boolean; sqlite: SqlitePolicy };
+export type WriteIdentity = { rowId: string; receiptId?: string; projectionRef?: string };
+export type WriteInput = { index: number; text: string };
+export type WriteContext = {
+  metadata(): Promise<WriteMetadata>;
+  commit(input: WriteInput, mark: (phase: string) => void): Promise<WriteIdentity | void>;
+  identity?(input: WriteInput, result: WriteIdentity | void): Promise<WriteIdentity>;
+  verify(): Promise<{ canonicalRows: number; durableProjections?: number }>;
+  close(): Promise<void>;
+};
+export type WriteSample = { mode: string; index: number; warmup: boolean; payloadBytes: number; elapsedMs: number;
+  phases: { name: string; ms: number }[]; rowId: string };
+export type WriteSummary = { mode: string; meta: WriteMetadata; payloadBytes: number; count: number; warmup: number;
+  expectedCanonicalRows: number; expectedDurableProjections: number;
+  latency: Quantiles; verified: { canonicalRows: number; durableProjections?: number } };
+export function quantiles(values: readonly number[]): Quantiles;
+export function measureWrites(options: { adapter: { open(options: { directory: string; mode: string }): Promise<WriteContext> };
+  directory: string; mode: string; count?: number; warmup?: number; payloadBytes?: number;
+  expectedCanonicalRows?: number; expectedDurableProjections?: number }): Promise<{ summary: WriteSummary; samples: WriteSample[] }>;
+type Comparison = { summary: Pick<WriteSummary, 'mode' | 'payloadBytes' | 'count' | 'warmup' | 'latency' | 'expectedCanonicalRows'> & { meta: { sqlite: SqlitePolicy } };
+  samples: Pick<WriteSample, 'index' | 'elapsedMs'>[] };
+export function compareWrites(before: Comparison, after: Comparison): { before: Quantiles; after: Quantiles;
+  p50DifferenceMs: number; p95DifferenceMs: number; pairedDeltaP50Ms: number; pairedDeltaP95Ms: number };

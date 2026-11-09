@@ -7,6 +7,7 @@ import { appOrigin, gateOrigin } from '../../../../apps/desktop/src/components/a
 import { extensionContentSecurityPolicy } from '../../../../apps/desktop/src/session/shared/extensions/app-csp'
 import { APP_RUNTIME_FORGET_PAGE, APP_RUNTIME_GATE_PAGE, appRuntimeScriptTag, RUNTIME_SCRIPT_TAG } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 import { fileIconKey } from '../../../../apps/desktop/src/session/shared/extensions/app-icon'
+import { messageForUser } from '../../../../apps/desktop/src/lib/userFacingError'
 
 // L9 (摩擦单 F76): the phone's App store (phoneApps.ts) — install, update, uninstall, re-tag, where an App's page is,
 // and its data. The shell's plugin is played here by a map with the Java side's semantics (GuguAppStorePlugin: files
@@ -300,6 +301,19 @@ describe('U3 the phone App store: install, update, uninstall, re-tag', () => {
     expect(refused).toMatchObject({ success: false, error: expect.stringContaining('phone does not support notifications') })
     expect(shell.asked).toEqual([])
     expect(index().installed.vote).toBeUndefined()
+  })
+
+  it('refuses a manifest this build does not read with its reason in the one line the person is shown', async () => {
+    const messageId = await publish('vote', '1.0.0')
+    const zip = new JSZip()
+    zip.file('manifest.json', JSON.stringify({ ...manifest('vote', '1.0.0'), contributes: { tabs: [{ name: 'main', title: 'Main' }], instructions: 'x'.repeat(161) } }))
+    zip.file('index.html', '<!doctype html>')
+    shell.packages.set(cards.get(messageId)!.url, await zip.generateAsync({ type: 'uint8array' }))
+    const apps = await start()
+    const refused = await apps.installAttachment({ messageId })
+    expect(refused.success).toBe(false)
+    expect(messageForUser(refused.success ? '' : refused.error)).toContain('contributes.instructions')
+    expect(shell.asked).toEqual([])
   })
 
   it('asks in full when another publisher sends the same id, however little it asks for', async () => {

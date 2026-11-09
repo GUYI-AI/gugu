@@ -36,6 +36,8 @@ import { createElement, Fragment, useCallback, useContext, useEffect, useLayoutE
 import { createPortal } from 'react-dom';
 import { Hint } from '@/components/ui/Tooltip';
 import { FailedSendStatus } from '@/components/chat/FailedSendStatus';
+import { lendSessionFileReader } from '@/lib/sessionFileReaders';
+import { offerSentMessageSlot } from '@/components/chat/sentMessageSlots';
 import { safeFailureLine } from '@renderer/features/sessions/gugu-reason';
 import { ConversationSourcePopover } from './conversation-source-popover';
 import { toast } from '@renderer/lib/hooks/use-toast';
@@ -131,6 +133,19 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
     return () => setInputFailures(current => current.filter(entry => entry !== target));
   }, []);
 
+  // What the agent sent to people: the slot each row reserves goes to the app's SentMessageBodyHost, which draws the
+  // chat's own MessageBody there and reports its size back into this conversation's state.
+  const onMessageBodyMount = useCallback<NonNullable<ChatCommands['onMessageBodyMount']>>(({ root, message }) => offerSentMessageSlot({
+    root, message, commands: () => propsRef.current.commands,
+    onSize: size => propsRef.current.state.session.setBodySize(message.id, size),
+  }), []);
+  // A file the agent handed its owner is read the way this timeline reads its pictures (`resolveAttachment`).
+  useEffect(() => {
+    const sessionId = props.commands?.conversationAgentSession?.(), resolve = props.commands?.resolveAttachment;
+    if (!sessionId || !resolve) return;
+    return lendSessionFileReader(sessionId, path => resolve({ id: `path:${path}`, name: path.split(/[\\/]/).at(-1) ?? '' }));
+  }, [props.commands]);
+
   // 模块已经加载过(`loadChatUi`)就在 layout effect 里同步建视图:**第一次绘制之前**就有正文。❌ passive effect / 每次 import():
   // 先画一帧空容器、过几百 ms 才长出正文 —— 手机把它嵌在思考行里,一进页那一行先 0 高再撑开,
   // 整条线程跟着再跳一次(owner 10-12「进去就颤两下」,WebView 113 实测 +27px)。
@@ -166,7 +181,7 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
         pinUserMessages: p.pinUserMessages,
         class: p.class,
         contentClass: p.contentClass,
-        commands: { onCopyError, onTooltipMount, onInputSendFailureMount, onRechargeCredits: openCreditSettings, ...p.commands, writeClipboardText },
+        commands: { onCopyError, onTooltipMount, onInputSendFailureMount, onMessageBodyMount, onRechargeCredits: openCreditSettings, ...p.commands, writeClipboardText },
         padTop: p.padTop,
         embedded: p.embedded,
         // Thread stable wrappers that read from propsRef at call time — never stale.
@@ -216,7 +231,7 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
 
   // Push command callbacks reactively so inline functions are never stale.
   useEffect(() => {
-    viewRef.current?.setCommands({ onCopyError, onTooltipMount, onInputSendFailureMount, onRechargeCredits: openCreditSettings, ...props.commands, writeClipboardText });
+    viewRef.current?.setCommands({ onCopyError, onTooltipMount, onInputSendFailureMount, onMessageBodyMount, onRechargeCredits: openCreditSettings, ...props.commands, writeClipboardText });
   }, [props.commands]);
 
   // Layout lives on the process-long context (measurement-coupled), not on the

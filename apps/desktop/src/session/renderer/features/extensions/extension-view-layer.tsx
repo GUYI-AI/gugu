@@ -10,6 +10,7 @@ import { sessionWorkspace } from '@shared/extensions/app-runtime-protocol';
 import { installedExtensionsStore } from './installed-extensions-store';
 import { AppSettingsPage } from './app-settings-page';
 import { ExtensionGuestBinding, type ExtensionGuestTarget } from './extension-guest-binding';
+import { nativeAppSurfaceMetrics, observeNativeSurfaceOcclusion } from './native-app-surface';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
 import { bindAppPageZoom } from '@/components/preview/file-content-zoom';
 
@@ -225,11 +226,14 @@ export const ExtensionPage = observer(function ExtensionPage({
   const report = useCallback((visible: boolean, width: number, height: number) => {
     const webContentsId = guestBinding.boundWebContentsId;
     if (webContentsId === null || guestReadyRef.current !== webviewRef.current) return;
-    const key = `${visible}:${width}:${height}`;
+    const element = webviewRef.current, clipElement = boxRef.current;
+    if (!element || !clipElement) return;
+    const metrics = nativeAppSurfaceMetrics(element, clipElement, visible, width, height);
+    const key = JSON.stringify(metrics);
     if (key === lastReportRef.current) return;
     lastReportRef.current = key;
     void rpc.extensions
-      .reportLayout({ webContentsId, visible, width, height })
+      .reportLayout({ webContentsId, ...metrics })
       .catch((error: unknown) => log.warn('Failed to report extension surface layout:', error));
   }, [guestBinding]);
 
@@ -443,10 +447,12 @@ export const ExtensionPage = observer(function ExtensionPage({
           window.addEventListener('resize', place);
           document.addEventListener('scroll', place, true);
           document.addEventListener('visibilitychange', place);
+          const stopOcclusion = observeNativeSurfaceOcclusion(place);
           teardownRef.current = () => {
             if (frame) cancelAnimationFrame(frame);
             observer.disconnect();
             restyled.disconnect();
+            stopOcclusion();
             window.removeEventListener('resize', place);
             document.removeEventListener('scroll', place, true);
             document.removeEventListener('visibilitychange', place);

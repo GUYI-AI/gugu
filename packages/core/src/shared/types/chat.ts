@@ -3,7 +3,7 @@ import type { AgentType } from '@gugu/core/agentTypes'
 import type { AgentStatusView } from '../agentStatus'
 import type { CloudComputerPresence, DeviceHostInfo } from './deviceHost'
 import type { DeviceProject } from './deviceProject'
-import type { AgentFailureReason } from '../agentQuotaReason'
+import type { SystemNotice } from '../ui/systemNotice'
 import type { FileMetadata } from '../fileResolver'
 export type { AgentType } from '@gugu/core/agentTypes'
 
@@ -65,8 +65,8 @@ export interface ChatItem {
   created_at: string
   last_message_at: string | null
   last_message_preview: string | null
-  /** The last message is an agent's failure row: the list says this reason in the viewer's language, not the preview. */
-  last_message_failure?: AgentFailureReason | null
+  /** The last message is a system row with a marker: the list says it in the viewer's language, not as stored. */
+  last_message_notice?: SystemNotice | null
   unread_count: number
   /** The server-owned stream/message locator for the first unread projection. */
   unread_locator?: ChatUnreadLocator | null
@@ -120,6 +120,9 @@ export interface MessageItem {
   file_version?: number | null
   /** #7290 悄悄话的附件:不进群文件夹,直接指字节;能读这条消息的人才签得到链接。 */
   file_blob_id?: string | null
+  /** A file an agent handed its owner in the task timeline (an owner notification): it stays in that session's folder on
+   * the session's machine and is read the way that session's timeline reads it. `session_id`: filled in by the host. */
+  session_file?: { path: string; sha256: string; session_id?: string | null } | null
   /** Authorized pinned-file display metadata; original reads still use the file resolver. */
   file_metadata?: FileMetadata | null
   /** Local sending preview only; committed dimensions come from the verified file metadata. */

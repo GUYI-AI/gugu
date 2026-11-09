@@ -6,6 +6,7 @@ import { cn } from '@/lib/cn'
 import type { ContentMenuItem } from '@/session/shared/content-context-menu'
 import { menuRowClassName, menuRowLabelClassName, menuSurfaceClassName } from './ui/Menu'
 import { useBackLayer } from './ui/sheetStack'
+import './selected-text-menu.css'
 
 type Item = Exclude<ContentMenuItem, { type: 'separator' }>
 const selectionGap = 12
@@ -60,7 +61,7 @@ export function SelectedTextMenu({ range, item, onClose, onCopy }: {
     <Popover.Positioner
       anchor={anchor} positionMethod="fixed" side="top" align="start" sideOffset={selectionGap}
       collisionPadding={8} collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}
-      className="gg-menu-positioner window-no-drag-region z-[var(--z-menu)] outline-none"
+      className="gg-selected-text-menu gg-menu-positioner window-no-drag-region z-[var(--z-menu)] outline-none"
     >
       <Popover.Popup ref={popup} role="menu" aria-label={item.label} initialFocus={false} finalFocus={false}
         data-occludes-browser-page className={cn(menuSurfaceClassName, 'min-w-40 p-[var(--gg-menu-padding,4px)]')}>

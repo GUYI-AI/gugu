@@ -1,7 +1,7 @@
 // The chat list row showed an assistant reply's raw Markdown (`**10/27 全天复盘** **凌晨…`); previews are plain text.
 // Inline code stays literal (taskMentionRouting.test.ts holds the same contract for references inside code).
 import { describe, expect, it } from 'vitest'
-import { chatPreviewText } from '../../../../apps/desktop/src/lib/agentTurnFailure'
+import { chatPreviewText } from '../../../../apps/desktop/src/lib/systemNoticeText'
 import { markdownPlainText } from '../../../../apps/desktop/src/lib/markdownPlainText'
 
 describe('markdownPlainText', () => {
@@ -33,6 +33,6 @@ describe('markdownPlainText', () => {
 
 describe('chatPreviewText', () => {
   it('shows the last message as plain text', () => {
-    expect(chatPreviewText({ last_message_preview: '**晚报 · 10/27** **今天做成的**', last_message_failure: null })).toBe('晚报 · 10/27 今天做成的')
+    expect(chatPreviewText({ last_message_preview: '**晚报 · 10/27** **今天做成的**', last_message_notice: null })).toBe('晚报 · 10/27 今天做成的')
   })
 })

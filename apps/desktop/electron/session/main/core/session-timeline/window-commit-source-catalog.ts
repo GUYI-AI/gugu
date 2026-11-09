@@ -22,6 +22,9 @@ export async function writeWindowCommitSourceCatalog(directory: string, input: W
   if (JSON.stringify(receipt.binding) !== JSON.stringify(windowCommitSourceBinding(scope, sourceId))) throw new Error('Source catalog binding mismatch');
   const packet = encodeWindowFrame(key(scope, sourceId), Buffer.from(JSON.stringify(receipt)));
   await prepareWindowCommitDirectory(directory, ['source-versions', scope]);
+  // Callers hold the canonical writer tail for this source; a temporary left by
+  // an interrupted earlier attempt is never published and must not block a retry.
+  await rm(temporary, { force: true });
   try {
     const file = await open(temporary, 'wx', 0o600);
     try {

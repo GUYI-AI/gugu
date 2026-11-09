@@ -2,6 +2,8 @@ import { ComposerModelMenu, MessageProvider, type ComposerModelItem } from '@gug
 import { useTranslation } from 'react-i18next'
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
 import type { SessionMessageLookupKey } from '@/session/renderer/localization/messages'
+import { useTheme } from '@/store/theme'
+import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
 
 /** 与会话输入框共用模型菜单：搜索、厂商筛选、来源分组和受控滚动。 */
 export function AgentModelPicker({ items, value, disabled, onChange }: {
@@ -11,16 +13,19 @@ export function AgentModelPicker({ items, value, disabled, onChange }: {
   onChange: (value: string) => void
 }) {
   const { i18n } = useTranslation()
+  const { theme } = useTheme()
   return (
-    <MessageProvider locale={i18n.language} translate={(key, values) => translateSessionMessage(key as SessionMessageLookupKey, values)}>
-      <ComposerModelMenu
-        panel={{ kind: 'shown', modelRow: 'list' }}
-        modelItems={items}
-        selectedModel={value}
-        onModelChange={onChange}
-        disabled={disabled}
-        effortItems={[]}
-      />
-    </MessageProvider>
+    <SessionUiTheme theme={theme} skin>
+      <MessageProvider locale={i18n.language} translate={(key, values) => translateSessionMessage(key as SessionMessageLookupKey, values)}>
+        <ComposerModelMenu
+          panel={{ kind: 'shown', modelRow: 'list' }}
+          modelItems={items}
+          selectedModel={value}
+          onModelChange={onChange}
+          disabled={disabled}
+          effortItems={[]}
+        />
+      </MessageProvider>
+    </SessionUiTheme>
   )
 }

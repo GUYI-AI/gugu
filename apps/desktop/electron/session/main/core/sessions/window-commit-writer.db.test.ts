@@ -10,7 +10,8 @@ import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { createWindowCommitReceipts, type WindowCommitReceipt } from '../session-timeline/window-commit-receipt';
 import * as writeHelpers from '../session-timeline/window-commit-write';
 import { readWindowCommitSourceChunk, readWindowCommitSourceManifest } from '../session-timeline/window-commit-source';
-import { readWindowCommitSourceCatalog } from '../session-timeline/window-commit-source-catalog';
+import { readWindowCommitSourceCatalog, windowCommitCatalogPath } from '../session-timeline/window-commit-source-catalog';
+import { beginWindowCommitIntent } from '../session-timeline/window-commit-intent';
 import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 import { EventStreamSource } from '@gugu/session-wire';
 import { createWindowCommitRuntime } from '../session-timeline/window-commit-runtime';
@@ -67,6 +68,19 @@ describe('actual canonical writer capture', () => {
     expect(phases).toEqual(['source_durable', 'canonical_committed', 'owner-publication']);
     expect(serializations).toBe(1); expect(committed).toHaveBeenCalledTimes(1);
     expect(createWindowCommitReceipts(fixture.sqlite).byReference('c', 'source:real')).toMatchObject({ rowId: 'c:0', storedSeq: 0, firstCommitCursor: cursor(3) });
+  });
+
+  it('keeps writing after upgrading from a build that left a committed receipt and its intent but wrote no source catalog', async () => {
+    await persistCommittedTurn({ sessionId: 'c', source: 'live', turn: turn('written before catalogs'), windowCapture: capture(3, []) });
+    const old = createWindowCommitReceipts(fixture.sqlite).byReference('c', 'source:real')!;
+    // The pre-catalog build crashed after the canonical commit, before clearing its intent.
+    await beginWindowCommitIntent({ directory: root, scope: old.binding.scope, sessionId: 'c' },
+      { version: 1, sourceId: old.sourceId, sessionId: 'c', rowId: old.rowId, referenceId: old.referenceId, storedSeq: old.storedSeq });
+    await rm(windowCommitCatalogPath(root, old.binding.scope, old.sourceId));
+    const next: TranscriptTurn = { ...turn('after upgrade'), id: 'runtime:1', seq: 1, referenceId: 'source:next' };
+    await persistCommittedTurn({ sessionId: 'c', source: 'live', turn: next, windowCapture: capture(4, []) });
+    expect(createWindowCommitReceipts(fixture.sqlite).byReference('c', 'source:next')).toMatchObject({ storedSeq: 1 });
+    expect(await readWindowCommitSourceCatalog(root, old.binding.scope, old.sourceId, createWindowBudget())).toEqual({ kind: 'hit', receipt: old });
   });
 
   it('rolls the actual canonical insert back when receipt insertion fails, and never calls the publication callback', async () => {

@@ -1,3 +1,4 @@
+import type { WindowFrameKey } from '@gugu/session-core/session-record/window-cache/frame';
 import { createHash, randomUUID } from 'node:crypto';
 import { setImmediate } from 'node:timers/promises';
 import { readWindowFrame, writeWindowFrame } from './window-commit-projection-disk';
@@ -9,19 +10,21 @@ import { advanceCommitContainerIndex, readIndexedCommitContainerPage, type Commi
 import { commitChildArray, commitRootArray, openCommitEntity, readCommitEntityPublication } from './window-commit-entity';
 import { publishCommitEntity } from './window-commit-entity-publication';
 import { assertWindowCommitSource } from './window-commit-source';
+import { publishCommitHeader } from './window-commit-header';
 
 type Receipts = Pick<ReturnType<typeof createWindowCommitReceipts>, 'bySource'>;
 type Task = { parent: string | null; entity: 'item' | 'terminal'; page: number; member: number; next: number | null };
-type Head = { version: 1; sourceId: string; buildId: string; stage: 'structure' | 'entities' | 'complete'; count: number; nodes: number; task: Task | null };
+type Head = { version: 1; headers?: 1; sourceId: string; buildId: string; stage: 'structure' | 'entities' | 'complete'; count: number; nodes: number; task: Task | null };
 export type WindowCommitPublication = { version: 1; sourceId: string; buildId: string; projectionId: string; count: number; nodes: number };
 type Row = { version: 1; ordinal: number; entityId: string; parent: string | null };
 type Context = { directory: string; receipts: Receipts; receipt: WindowCommitReceipt };
+type ProjectionContext = Pick<Context, 'directory' | 'receipt'>;
 type Ports = { observed?(io: Readonly<WindowIoCounters>): void; phase?(phase: 'projection_durable', publication: WindowCommitPublication): void;
   report?(error: unknown): void };
 const integer = (n: number) => Number.isSafeInteger(n) && n >= 0;
 const id = (s: string) => typeof s === 'string' && /^[a-f0-9]{64}$/.test(s);
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const key = (c: Context, cursor: string, mutable = false) => ({ ...c.receipt.binding, kind: mutable ? 'head' as const : 'projection' as const, cursor: `publisher:${cursor}` });
+const key = (c: ProjectionContext, cursor: string, mutable = false) => ({ ...c.receipt.binding, kind: mutable ? 'head' as const : 'projection' as const, cursor: `publisher:${cursor}` });
 function committed(c: Context) {
   const stored = c.receipts.bySource(c.receipt.sourceId);
   if (!stored || JSON.stringify(snapshotWindowCommitReceipt(stored)) !== JSON.stringify(c.receipt)) throw new Error('Publisher lost its committed receipt');
@@ -41,22 +44,22 @@ function task(value: unknown, nodes: number): Task {
     || !integer(t.member) || t.member > 15 || !(t.next === null || integer(t.next) && t.next < nodes)) throw new Error('Invalid publisher task');
   return { parent: t.parent, entity: t.entity, page: t.page, member: t.member, next: t.next };
 }
-function head(c: Context, value: unknown): Head {
+function head(c: ProjectionContext, value: unknown): Head {
   const h = value as Head;
   if (!h || h.version !== 1 || h.sourceId !== c.receipt.sourceId || !/^[a-f0-9]{32}$/.test(h.buildId)
     || !['structure', 'entities', 'complete'].includes(h.stage) || !integer(h.count) || h.count > c.receipt.source.bytes
     || !integer(h.nodes) || h.nodes > c.receipt.source.bytes || (h.stage === 'complete' && h.task !== null)) throw new Error('Invalid publisher checkpoint');
-  return { version: 1, sourceId: h.sourceId, buildId: h.buildId, stage: h.stage, count: h.count, nodes: h.nodes,
+  return { version: 1, ...(h.headers === 1 ? { headers: 1 as const } : {}), sourceId: h.sourceId, buildId: h.buildId, stage: h.stage, count: h.count, nodes: h.nodes,
     task: h.task === null ? null : task(h.task, h.nodes) };
 }
-function publication(c: Context, value: unknown): WindowCommitPublication {
+function publication(c: ProjectionContext, value: unknown): WindowCommitPublication {
   const p = value as WindowCommitPublication;
   if (!p || p.version !== 1 || p.sourceId !== c.receipt.sourceId || !/^[a-f0-9]{32}$/.test(p.buildId)
     || p.projectionId !== `${p.sourceId}/${p.buildId}` || !integer(p.count) || p.count > c.receipt.source.bytes
     || !integer(p.nodes) || p.nodes > c.receipt.source.bytes) throw new Error('Invalid commit publication');
   return { version: 1, sourceId: p.sourceId, buildId: p.buildId, projectionId: p.projectionId, count: p.count, nodes: p.nodes };
 }
-async function load(c: Context, cursor: string, budget: WindowBudget, mutable = false) {
+async function load(c: ProjectionContext, cursor: string, budget: WindowBudget, mutable = false) {
   const result = await readWindowFrame(c.directory, key(c, cursor, mutable), budget);
   if (result.kind === 'miss' && result.reason === 'io') throw result.error;
   if (result.kind === 'miss' && result.reason !== 'not_found') throw new Error('Publisher cache needs a new build');
@@ -101,6 +104,8 @@ export function createWindowCommitPublisher(directory: string, receipts: Receipt
       if (built.kind === 'rebuild') throw new Error('Structural projection needs a new build');
       if (built.kind !== 'complete') return;
       const root = await step(b => readWindowCommitProjection(ctx, b, signal)); if (root.kind !== 'projection') throw new Error('Missing durable root');
+      await publishCommitHeader({ ...c, index: root.rootIndex, target: 'turn', headerId: h.buildId,
+        observed: ports.observed, report }, signal);
       const next = root.terminalsIndex ? await push(c, h, { parent: null, entity: 'terminal', page: 0, member: 0, next: null }) : null;
       h.stage = 'entities'; h.task = { parent: null, entity: 'item', page: 0, member: 0, next }; return;
     }
@@ -145,9 +150,12 @@ export function createWindowCommitPublisher(directory: string, receipts: Receipt
       active.add(c.receipt.sourceId);
       try {
         const loaded = await step(b => load(c, 'job', b, true));
-        const h: Head = loaded ? head(c, loaded) : { version: 1, sourceId: c.receipt.sourceId, buildId: randomUUID().replaceAll('-', ''),
+        const previous = loaded ? head(c, loaded) : null;
+        // Older private publications lacked rendering facts. Rebuild under a
+        // new immutable build id; never rewrite a previously delivered version.
+        const h: Head = previous?.headers === 1 ? previous : { version: 1, headers: 1, sourceId: c.receipt.sourceId, buildId: randomUUID().replaceAll('-', ''),
           stage: 'structure', count: 0, nodes: 0, task: null };
-        if (!loaded) await writeWindowFrame(directory, key(c, 'job', true), encode(h));
+        if (previous !== h) await writeWindowFrame(directory, key(c, 'job', true), encode(h));
         while (h.stage !== 'complete') {
           const previous = encode(h);
           await advance(c, h, signal); signal?.throwIfAborted(); committed(c);
@@ -171,17 +179,44 @@ export function createWindowCommitPublisher(directory: string, receipts: Receipt
   };
 }
 
+/** Read the build checkpoint and completion record even after canonical receipt
+ * deletion. Does not recover a build, read its source, or grant GC permission. */
+export async function hasPendingWindowCommitBuild(input: ProjectionContext, budget: WindowBudget, signal?: AbortSignal) {
+  const c = { directory: input.directory, receipt: snapshotWindowCommitReceipt(input.receipt) }; signal?.throwIfAborted();
+  const saved = await load(c, 'job', budget, true); signal?.throwIfAborted();
+  if (!saved) return false;
+  const h = head(c, saved);
+  if (h.stage !== 'complete') return true;
+  const p = publication(c, await load(c, `${h.buildId}:publication`, budget)); signal?.throwIfAborted();
+  if (p.count !== h.count || p.nodes !== h.nodes) throw new Error('Commit publication checkpoint mismatch');
+  return false;
+}
+
 /** Resolve the source's durable version by point lookup. A canonical receipt
  * without this publication is needs_location, never an ACKable empty turn. */
-export async function readWindowCommitPublication(input: Context, budget: WindowBudget, signal?: AbortSignal) {
+export async function readWindowCommitPublication(input: Context, budget: WindowBudget, signal?: AbortSignal,
+  beforeRead?: (key: WindowFrameKey) => void) {
   const c = snapshot(input); signal?.throwIfAborted();
+  beforeRead?.(key(c, 'job', true));
   const saved = await load(c, 'job', budget, true);
   if (!saved) throw Object.assign(new Error('Commit projection has not been published'), { code: 'needs_location' });
   const h = head(c, saved);
-  if (h.stage !== 'complete') throw Object.assign(new Error('Commit projection is not durable'), { code: 'needs_location' });
+  if (h.stage !== 'complete' || h.headers !== 1) throw Object.assign(new Error('Commit projection is not durable'), { code: 'needs_location' });
+  beforeRead?.(key(c, `${h.buildId}:publication`));
   const p = publication(c, await load(c, `${h.buildId}:publication`, budget));
   if (p.count !== h.count || p.nodes !== h.nodes) throw new Error('Commit publication checkpoint mismatch');
   await assertWindowCommitSource(c.directory, c.receipt.binding, c.receipt.source); committed(c); signal?.throwIfAborted(); return p;
+}
+
+/** Resolve the requested immutable version, including one retained by an older
+ * resident. The mutable job head is not a substitute for that version. */
+export async function readWindowCommitPublicationVersion(input: Context, projectionId: string, budget: WindowBudget, signal?: AbortSignal) {
+  const c = snapshot(input), prefix = `${c.receipt.sourceId}/`, buildId = projectionId.slice(prefix.length);
+  if (!projectionId.startsWith(prefix) || !/^[a-f0-9]{32}$/.test(buildId)) throw new Error('Invalid publication version');
+  signal?.throwIfAborted();
+  const p = publication(c, await load(c, `${buildId}:publication`, budget));
+  await assertWindowCommitSource(c.directory, c.receipt.binding, c.receipt.source); committed(c); signal?.throwIfAborted();
+  return p;
 }
 
 /** Point lookup of one already-published entity; caller supplies its actual

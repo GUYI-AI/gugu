@@ -258,6 +258,11 @@ export interface CapabilityLoader {
 }
 
 export interface BuildSessionBundleDeps {
+  /**
+   * 资源库 → MCP 的选择取自哪条任务;缺省就是这条。运行时分叉(侧边聊天)给来源任务:分叉是视图、自己没有行,
+   * 从前这里按分叉的 view id 去找,找不到就一台都不带。
+   */
+  libraryFrom?: string
   runtime: AcpEngineRuntimeContext
   agentUserId: string
   /** Stable product conversation/session key used by harnesses with per-session config roots. */
@@ -472,8 +477,9 @@ export function setSessionExtensionBridge(bridge: SessionExtensionBridge | null)
  * 与资源库里连上的服务同一层(`owner: 'integration'`):咕咕投递、可以在 `/mcp` 里为这条会话关掉;
  * ❌ 记成 `'user'` —— 那一层是「各家自己会读」的,Claude 会跳过它,`sessionUserServers: 'inherit'` 的几家会丢掉。
  * `settle`:包建好以后报回哪几台真送进去了、哪几台和咕咕自己的撞了 —— `/mcp` 面板读的是这份事实,❌ 读「勾了」。
+ * `selectionFrom`:选的那几台记在哪条任务上 —— 运行时分叉(侧边聊天)自己没有行,选择照来源任务(见 `libraryFrom`)。
  */
-type SessionLibraryMcpBridge = (sessionId: string) => Promise<{
+type SessionLibraryMcpBridge = (sessionId: string, selectionFrom?: string) => Promise<{
   servers: readonly CanonicalMcpServer[]
   settle: (outcome: { delivered: string[]; collided: { name: string; with: string }[] }) => void
 }>
@@ -527,7 +533,7 @@ export async function buildSessionBundle(
   const bootstrap = buildSessionBootstrapBundle(deps)
   const taken = [...bootstrap.mcpServers, ...socialBridge, ...integrations, ...extensions.servers]
   // 密钥(env 值、Authorization)与用户自己的那批同一种转换:换成 GUGU_SESSION_MCP_ENV_* 引用,值随 env 走。
-  const picked = sessionLibraryMcpBridge && agentId ? await sessionLibraryMcpBridge(agentId) : null
+  const picked = sessionLibraryMcpBridge && agentId ? await sessionLibraryMcpBridge(agentId, deps.libraryFrom) : null
   const library = picked ? canonicalMcpServersToSessionServers(picked.servers) : { servers: [], env: {} }
   // 人在资源库里默认启用的,和 App 一样直接摆在模型的工具表上(`alwaysLoad`),❌ 藏在各家自己的延迟加载后面。
   const { kept, collided } = libraryMcpWithoutCollisions(

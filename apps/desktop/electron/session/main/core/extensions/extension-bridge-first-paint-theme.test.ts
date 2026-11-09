@@ -31,9 +31,10 @@ vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), error: vi.fn(), info:
 const { bindExtensionSurface, registerExtensionBridge, setExtensionBridgeHost, showAgentPageInTheme } = await import('./extension-bridge');
 const { EXTENSION_THEME_CHANNEL } = await import('@shared/extensions/bridge-protocol');
 registerExtensionBridge();
+let themeColors: Record<string, string> | undefined;
 setExtensionBridgeHost({
   deliver: async () => undefined,
-  selfGuguNumber: () => undefined, presentation: () => ({ locale: 'zh-CN', themeMode: 'light', fullscreen: false, windowFocused: true }),
+  selfGuguNumber: () => undefined, presentation: () => ({ locale: 'zh-CN', themeMode: 'light', themeColors, fullscreen: false, windowFocused: true }),
 });
 
 const themeAsked = (sender: number): unknown => {
@@ -44,15 +45,23 @@ const themeAsked = (sender: number): unknown => {
 
 describe('the theme a page loads in (its first paint)', () => {
   it('is the host\'s, before the page is bound and after', async () => {
-    expect(themeAsked(UNBOUND)).toBe('light');
+    expect(themeAsked(UNBOUND)).toEqual({ theme: 'light' });
     await bindExtensionSurface({ webContentsId: PAGE, extensionId: 'board', tabId: 'slot', tabKind: 'board.main' });
-    expect(themeAsked(PAGE)).toBe('light');
+    expect(themeAsked(PAGE)).toEqual({ theme: 'light' });
+  });
+
+  it('carries the person\'s color theme when one is on', () => {
+    themeColors = { '--em-background': '#112233' };
+    expect(themeAsked(PAGE)).toEqual({ theme: 'light', themeColors });
+    themeColors = undefined;
   });
 
   it('is the check\'s own where app_check shows its page in a theme of its own', async () => {
     await bindExtensionSurface({ webContentsId: CHECK, extensionId: 'board', tabId: 'extension-check:9', tabKind: 'board.main', operator: { kind: 'agent', id: 'user:agent-f' } });
     showAgentPageInTheme(CHECK, 'dark');
-    expect(themeAsked(CHECK)).toBe('dark');
-    expect(themeAsked(PAGE)).toBe('light');
+    themeColors = { '--em-background': '#112233' };
+    expect(themeAsked(CHECK), 'its own theme, not the person\'s colors').toEqual({ theme: 'dark' });
+    themeColors = undefined;
+    expect(themeAsked(PAGE)).toEqual({ theme: 'light' });
   });
 });

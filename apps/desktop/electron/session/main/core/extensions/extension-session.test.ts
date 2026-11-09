@@ -73,10 +73,14 @@ class FakeSession {
     this.permissionCheckHandler = handler;
   }
   clearStorageData = vi.fn(async () => {});
+  storagePath: string | null = null;
+  getStoragePath = () => this.storagePath;
   clearCache = vi.fn(async () => {});
 }
 
+const pages = vi.hoisted(() => [] as { session: unknown; isDestroyed: () => boolean; getURL: () => string; loadURL: (url: string) => Promise<void> }[]);
 vi.mock('electron', () => ({
+  webContents: { getAllWebContents: () => pages },
   session: {
     fromPartition: (partition: string) => {
       const existing = sessions.get(partition);
@@ -99,7 +103,9 @@ import { extensionPartition } from '@shared/extensions/partition';
 import { log } from '@main/lib/logger';
 import {
   clearExtensionSessionData,
+  clearExtensionStorage,
   configureExtensionSession,
+  extensionSessionBytes,
   configuredExtensionIds,
   extensionIdForSession,
 } from './extension-session';
@@ -328,5 +334,50 @@ describe('configureExtensionSession', () => {
     expect(extensionIdForSession(ses)).toBeNull();
     expect(ses.clearStorageData).toHaveBeenCalled();
     expect(ses.clearCache).toHaveBeenCalled();
+  });
+});
+
+describe('what an App saved, while it stays installed', () => {
+  it('clearing: a page still showing leaves first, the storage empties, and it comes back; the protocol handler stays', async () => {
+    configureExtensionSession(bundle([]));
+    const ses = fakeSessionFor(EXTENSION_ID);
+    const order: string[] = [];
+    ses.clearStorageData.mockImplementationOnce(async () => void order.push('clear'));
+    const loadURL = vi.fn(async (url: string) => void order.push(url));
+    pages.push({ session: ses, isDestroyed: () => false, getURL: () => 'gugu-ext://arxiv-search/card.html', loadURL });
+
+    await clearExtensionStorage(EXTENSION_ID);
+
+    expect(order).toEqual(['about:blank', 'clear', 'gugu-ext://arxiv-search/card.html']);
+    expect(ses.clearCache).toHaveBeenCalledOnce();
+    expect(ses.handledSchemes.has('gugu-ext')).toBe(true);
+    expect(configuredExtensionIds().has(EXTENSION_ID)).toBe(true);
+    pages.length = 0;
+  });
+
+  it('a clear that fails still brings the page back, and says so', async () => {
+    configureExtensionSession(bundle([]));
+    const ses = fakeSessionFor(EXTENSION_ID);
+    ses.clearStorageData.mockRejectedValueOnce(new Error('disk'));
+    const loadURL = vi.fn(async () => undefined);
+    pages.push({ session: ses, isDestroyed: () => false, getURL: () => 'gugu-ext://arxiv-search/card.html', loadURL });
+
+    await expect(clearExtensionStorage(EXTENSION_ID)).rejects.toThrow('disk');
+    expect(loadURL).toHaveBeenLastCalledWith('gugu-ext://arxiv-search/card.html');
+    pages.length = 0;
+  });
+
+  it('counts what a page saved, not Chromium\'s own files; bookkeeping alone is nothing saved', async () => {
+    configureExtensionSession(bundle([]));
+    const root = mkdtempSync(join(tmpdir(), 'gugu-ext-session-'));
+    fakeSessionFor(EXTENSION_ID).storagePath = root;
+    mkdirSync(join(root, 'Local Storage/leveldb'), { recursive: true });
+    mkdirSync(join(root, 'GPUCache'));
+    mkdirSync(join(root, 'Service Worker/CacheStorage'), { recursive: true });
+    writeFileSync(join(root, 'GPUCache/data'), 'x'.repeat(500_000));
+    writeFileSync(join(root, 'Local Storage/leveldb/MANIFEST'), 'x'.repeat(1000));
+    expect(await extensionSessionBytes(EXTENSION_ID)).toBe(0);
+    writeFileSync(join(root, 'Service Worker/CacheStorage/entry'), 'x'.repeat(9000));
+    expect(await extensionSessionBytes(EXTENSION_ID)).toBe(10_000);
   });
 });

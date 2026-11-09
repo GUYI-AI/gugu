@@ -1,3 +1,5 @@
+import { activityPreviewLabel, activityPreviewSources } from '@gugu/session-chat-ui/activity-preview';
+import { messageReferenceId } from '@gugu/session-core/acp/client';
 import { isAppRoute, readDeliveryEnvelope, type DeliveryReadFacts } from '@gugu/core/local/agent/deliveryEnvelope';
 import { timelineRailMessages, timelineRailPreviewText, type TimelineRailOptions } from '@gugu/core/shared/timelineRail';
 import { shownSender, type SelfIdentity, type TranscriptTurn } from '@gugu/session-chat-ui';
@@ -54,9 +56,11 @@ export function timelineTurnsFromTranscript(
   transcript: readonly TranscriptTurn[],
   self: SelfIdentity | null = null,
   options: TimelineRailOptions = {},
+  activityContext?: Parameters<typeof activityPreviewLabel>[1],
 ): TimelineTurn[] {
   const turns: TimelineTurn[] = [];
   for (const turn of transcript) {
+    const activitySources = activityContext ? activityPreviewSources(turn) : null;
     let current: TimelineTurn | undefined;
     let first = true;
     for (const item of turn.items) {
@@ -88,7 +92,8 @@ export function timelineTurnsFromTranscript(
       if (!current) continue;
       current.itemIds.push(item.id);
       if (!current.reply && item.kind === 'message' && item.role === 'assistant') {
-        current.reply = timelineRailPreviewText(item.text);
+        const folded = activitySources && activityPreviewLabel(activitySources.get(messageReferenceId(turn, item.id) ?? item.id), activityContext!) !== null;
+        if (!folded) current.reply = timelineRailPreviewText(item.text);
       }
     }
   }

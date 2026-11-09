@@ -5,7 +5,7 @@ import { readWindowFrame, syncWindowDirectory, writeWindowFrame } from '@gugu/se
 import type { WindowBudget } from '@gugu/session-core/session-record/window-cache/types';
 import { assertWindowCommitSource, windowCommitSourceBinding, windowCommitSourcePath } from './window-commit-source';
 import { createWindowCommitReceipts, type WindowReceiptDatabase } from './window-commit-receipt';
-import { readWindowCommitSourceCatalog, removeWindowCommitSourceCatalog } from './window-commit-source-catalog';
+import { readWindowCommitSourceCatalog, removeWindowCommitSourceCatalog, writeWindowCommitSourceCatalog } from './window-commit-source-catalog';
 
 type Scope = { directory: string; scope: string; sessionId: string };
 type Intent = { version: 1; sourceId: string; sessionId: string; rowId: string; referenceId: string; storedSeq: number };
@@ -27,20 +27,27 @@ export async function beginWindowCommitIntent(input: Scope, intent: Intent): Pro
     referenceId: intent.referenceId, storedSeq: intent.storedSeq })));
 }
 
+/** Read one fixed intent without recovering, unlinking or traversing a source. */
+export async function readWindowCommitIntent(input: Scope, budget: WindowBudget, signal?: AbortSignal): Promise<Intent | null> {
+  signal?.throwIfAborted();
+  const found = await readWindowFrame(input.directory, key(input.scope), budget);
+  signal?.throwIfAborted();
+  if (found.kind !== 'hit') {
+    if (found.reason === 'not_found') return null;
+    throw found.reason === 'io' ? found.error : new Error('Invalid commit source intent frame');
+  }
+  const intent = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(found.bytes)) as Intent;
+  validate(input, intent);
+  return intent;
+}
+
 /** Point recovery shares the caller's budget. SQLite's atomic receipt decides
  * ownership; no canonical JSON, projection or source body is decoded. Call under
  * the canonical writer tail, including when opening a session after restart. */
 export async function recoverWindowCommitIntent(connection: WindowReceiptDatabase, input: Scope,
   budget: WindowBudget, signal?: AbortSignal): Promise<'none' | 'retained' | 'removed'> {
-  signal?.throwIfAborted();
-  const found = await readWindowFrame(input.directory, key(input.scope), budget);
-  signal?.throwIfAborted();
-  if (found.kind !== 'hit') {
-    if (found.reason === 'not_found') return 'none';
-    throw found.reason === 'io' ? found.error : new Error('Invalid commit source intent frame');
-  }
-  const intent = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(found.bytes)) as Intent;
-  validate(input, intent);
+  const intent = await readWindowCommitIntent(input, budget, signal);
+  if (!intent) return 'none';
   const binding = windowCommitIntentBinding(input.scope, intent.sourceId);
   const receipt = createWindowCommitReceipts(connection).bySource(intent.sourceId);
   if (receipt) {
@@ -49,7 +56,11 @@ export async function recoverWindowCommitIntent(connection: WindowReceiptDatabas
       throw new Error('Commit source intent receipt mismatch');
     await assertWindowCommitSource(input.directory, binding, receipt.source);
     const catalog = await readWindowCommitSourceCatalog(input.directory, input.scope, intent.sourceId, budget, signal);
-    if (catalog.kind !== 'hit' || JSON.stringify(catalog.receipt) !== JSON.stringify(receipt)) throw new Error('Commit source catalog is not durable');
+    // A receipt committed by a build before source catalogs has none. The receipt
+    // is exactly the catalog content, so migrate it instead of failing every
+    // later canonical write in this session. A different catalog stays an error.
+    if (catalog.kind === 'miss') await writeWindowCommitSourceCatalog(input.directory, receipt);
+    else if (JSON.stringify(catalog.receipt) !== JSON.stringify(receipt)) throw new Error('Commit source catalog is not durable');
   } else {
     const source = windowCommitSourcePath(input.directory, binding);
     await rm(`${source}.${intent.sourceId}.tmp`, { force: true });

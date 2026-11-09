@@ -43,6 +43,16 @@ export function vendorReleaseManifest() {
   const gradleSha = /^distributionSha256Sum=([a-f0-9]{64})$/m.exec(wrapper)?.[1]
   if (!gradleVersion || !gradleSha) throw new Error('Cannot read the pinned Gradle distribution')
   add('gradle', gradleVersion, 'universal', `gradle-${gradleVersion}-all.zip`, gradleSha, null, 'gradle/gradle-distributions', `v${gradleVersion}`)
+  const buildPins = JSON.parse(readFileSync(resolve(root, 'scripts/build/vendor-build-pins.json'), 'utf8'))
+  const lock = readFileSync(resolve(root, 'pnpm-lock.yaml'), 'utf8')
+  if (readFileSync(resolve(root, '.node-version'), 'utf8').trim() !== buildPins.nodeVersion) throw new Error('Vendor Node pin differs from the repository toolchain')
+  for (const [name, version] of [['electron', buildPins.electronVersion], ['better-sqlite3', buildPins.sqliteVersion], ['app-builder-lib', buildPins.builderVersion]]) {
+    if (!lock.includes(`\n  ${name}@${version}:`)) throw new Error(`Vendor build pins do not match the locked ${name} version`)
+  }
+  for (const item of buildPins.artifacts) {
+    add(item.component, item.version, item.platform, item.file, item.sha256, item.size, item.repository, item.tag, item.asset)
+    if (JSON.stringify(artifacts.at(-1)) !== JSON.stringify(item)) throw new Error('Build archive inventory disagrees with its pin source')
+  }
   if (new Set(artifacts.map(item => item.key)).size !== artifacts.length) throw new Error('Duplicate vendor key')
   return { schema: 1, artifacts }
 }
