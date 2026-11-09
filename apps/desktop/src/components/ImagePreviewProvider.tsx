@@ -87,12 +87,13 @@ async function fetchImageAsPngBlob(url: string): Promise<Blob> {
 type ViewerSlide = SlideData & { item: ImageViewerItem; sizeKnown: boolean; loadingStarted?: boolean }
 
 function slideFor(item: ImageViewerItem): ViewerSlide {
-  const size = decodedSizeOf(item.thumb)
+  // 另有原图可取时,缩略图的 natural 尺寸不是原图的:不拿它排版
+  const size = item.size ?? (item.full || item.preview ? null : decodedSizeOf(item.thumb))
   return {
     src: item.url,
     ...(item.preview ? { type: 'image' } : {}),
     alt: item.alt,
-    // 尺寸未知时按视口占位(宽为 0 PhotoSwipe 不加载图),loadComplete 里回填真尺寸
+    // 尺寸未知时按视口占位(宽为 0 PhotoSwipe 不加载图),第一份像素到了定一次,之后不再变
     width: size?.width ?? window.innerWidth,
     height: size?.height ?? window.innerHeight,
     msrc: size ? item.url : undefined,
@@ -130,7 +131,8 @@ function viewerOptions(request: ImageViewerRequest, mobile: boolean, errorMsg: s
     hideAnimationDuration: DUR_SLOW_MS,
     zoomAnimationDuration: DUR_SLOW_MS,
     easing: `cubic-bezier(${EASE.join(', ')})`,
-    bgOpacity: mobile ? 1 : 0.9,
+    // 底不透明:后面的对话一直在动(新消息、滚动、「N 条新消息」提示),透一成底就是查看器里一闪一闪的暗块
+    bgOpacity: 1,
     loop: false,
     escKey: false,
     wheelToZoom: true,
@@ -194,32 +196,22 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
   }
   pswp.on('openingAnimationEnd', () => upgrade(pswp.currIndex))
   pswp.on('change', () => upgrade(pswp.currIndex))
+  // 几何只定一次:尺寸已知(文件记录或打开前解码好的原图)就从不改;未知的,第一份像素到了按它定。之后换源只换像素
   pswp.on('loadComplete', ({ content, isError }) => {
     const data = content.data as ViewerSlide
     const img = content.element
-    if (pswp.isDestroying || isError || !(img instanceof HTMLImageElement) || !img.naturalWidth || !img.naturalHeight) return
-    if (data.sizeKnown && data.width === img.naturalWidth && data.height === img.naturalHeight) return
-    const wasKnown = data.sizeKnown
-    const slide = content.slide
-    const ratio = slide ? slide.currZoomLevel / slide.zoomLevels.initial : 0
-    data.width = content.width = img.naturalWidth
-    data.height = content.height = img.naturalHeight
+    if (data.sizeKnown || pswp.isDestroying || isError || !(img instanceof HTMLImageElement) || !img.naturalWidth || !img.naturalHeight) return
+    const size = data.item.size ?? { width: img.naturalWidth, height: img.naturalHeight }
+    data.width = content.width = size.width
+    data.height = content.height = size.height
     data.sizeKnown = true
+    const slide = content.slide
     if (!slide) return
     slide.width = content.width
     slide.height = content.height
     slide.calculateSize()
-    if (wasKnown) {
-      // The ratio over the whole-image size survives a new source: the same rectangle, or a bigger one if the thumbnail was too small to fill it.
-      const zoom = ratio * slide.zoomLevels.initial
-      slide.setZoomLevel(zoom)
-      slide.currentResolution = zoom
-      slide.pan.x = slide.bounds.correctPan('x', slide.pan.x)
-      slide.pan.y = slide.bounds.correctPan('y', slide.pan.y)
-    } else {
-      slide.currentResolution = 0
-      slide.zoomAndPanToInitial()
-    }
+    slide.currentResolution = 0
+    slide.zoomAndPanToInitial()
     slide.updateContentSize(true)
     slide.applyCurrentZoomPan()
   })

@@ -193,7 +193,7 @@
 }
 
 /* 推在「消息 / 伙伴」首页上的一层(咕咕、项目、我的;owner 10-26,OpenDCAI/gugu#446):整屏盖住分页器,底栏这时不渲染。
-   藏着时由 RETAINED_SURFACE_HIDDEN_STYLE 接管(PhoneLayer)。 */
+   藏着时由 RETAINED_SURFACE_HIDDEN_STYLE 接管,并且整层 inert(PhoneLayer,#1751)。 */
 [data-phone-layer] {
   position: absolute;
   inset: 0;

@@ -60,6 +60,7 @@ import { log } from '@main/lib/logger';
 import { sessionStartStageChannel } from '@shared/core/sessions/sessionEvents';
 import { desktopWorkerPath } from '@main/worker-manifest';
 import { stripUntrustedSessionAuthority, trustedPlatformInputPatch } from './session-meta';
+import { cancelExtensionSessionCalls } from '@main/core/extensions/extension-program-access';
 
 export { mergeTrustedSessionMeta, stripUntrustedSessionAuthority } from './session-meta';
 
@@ -662,6 +663,7 @@ async function stopAcpWorkerSession(
  * owns the process — fork ownership and the platform ticket. Throws while the worker still owns the process.
  */
 export async function stopAcpSessionAndSettle(client: ContractClient<AcpRuntimeApiContract>, sessionId: string): Promise<void> {
+  cancelExtensionSessionCalls(sessionId);
   const [result] = await Promise.all([stopAcpWorkerSession(client, { sessionId }), closeAcpBrowserToolsBestEffort(sessionId)]);
   if (!result.success && await (client as AcpRuntimeProcessClient).adapterProvenance({ sessionId }) !== null) {
     throw new Error(`ACP session ${sessionId} did not stop: ${result.error.message ?? result.error.type}`);
@@ -691,6 +693,9 @@ function decorateRuntimeClient(client: ContractClient<AcpRuntimeApiContract>): A
   return {
     ...client,
     cancelTurn: async (input, meta) => {
+      // Snapshot the current calls before any async cleanup. A later turn's calls
+      // must not be cancelled when this interruption eventually finishes.
+      cancelExtensionSessionCalls(input.sessionId);
       const { stopHumanToolWaits } = await import('../../asks/human-tool-wait');
       stopHumanToolWaits(input.sessionId);
       // Harnesses do not all cancel their outstanding MCP requests when interrupted.

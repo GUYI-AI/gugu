@@ -72,7 +72,8 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
   const holder = view.status === 'failed' ? view.holder : null
   useHolderBack(holder, view.retry)
   const dimensions = meta.fileMetadata?.status === 'ready' ? meta.fileMetadata.revision : meta.imageDimensions ?? ('link' in view ? view.link : undefined)
-  const imageStyle = inlineImageStyle(dimensions)
+  const size = originalSize(dimensions)
+  const imageStyle = inlineImageStyle(size)
   const ready = view.status === 'ready'
   const sourceKey = sourceKeyOf(meta.source)
   // 查看器:先拿缩略图打开,翻到这一张再取原图(同一份缓存);卸载时收回 object URL。
@@ -82,13 +83,13 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
     const unregister = registerFullImage(img.current, () => (full ??= attachmentBytes(meta.source, 'full').then((bytes) => {
       if (bytes.status !== 'ready') throw new Error('attachment is gone')
       return URL.createObjectURL(bytes.blob)
-    })), meta.source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: meta.source.itemId, version: meta.source.version } } : undefined, { name: meta.fileName, contentType: meta.mimeType }, chatId ? { chatId, messageId } : undefined)
+    })), meta.source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: meta.source.itemId, version: meta.source.version } } : undefined, { name: meta.fileName, contentType: meta.mimeType }, chatId ? { chatId, messageId } : undefined, size)
     return () => {
       unregister()
       void full?.then((url) => URL.revokeObjectURL(url), () => undefined)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sourceKey 就是 meta.source 的身份
-  }, [ready, sourceKey, meta.fileName, meta.mimeType, chatId, messageId])
+  }, [ready, sourceKey, meta.fileName, meta.mimeType, chatId, messageId, size?.width, size?.height])
 
   if (view.status === 'gone') return <span className="contents" data-attachment-unavailable><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileGone')} onOpen={() => undefined} /></span>
   if (view.status === 'missing') return <FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileMissing')} />
@@ -121,6 +122,12 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
   return <div ref={box as RefObject<HTMLDivElement>} aria-label={meta.fileName} className="chat-inline-image chat-inline-image--pending" style={imageStyle} />
 }
 
+/** The file record's pixel size, which the viewer lays the image out by (its thumbnail is smaller). */
+function originalSize(dimensions?: { width?: number | null; height?: number | null }): { width: number; height: number } | undefined {
+  const { width, height } = dimensions ?? {}
+  return typeof width === 'number' && typeof height === 'number' && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? { width, height } : undefined
+}
+
 function fitInline(width: number, height: number): { width: number; height: number } {
   const scale = Math.min(1, INLINE_MAX / width, INLINE_MAX / height)
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) }
@@ -128,10 +135,9 @@ function fitInline(width: number, height: number): { width: number; height: numb
 
 
 /** Sending, loading and decoded pixels keep the same fitted box, including narrow columns. */
-function inlineImageStyle(dimensions?: { width?: number | null; height?: number | null }): CSSProperties | undefined {
-  const { width, height } = dimensions ?? {}
-  if (typeof width !== 'number' || typeof height !== 'number' || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return undefined
-  const fitted = fitInline(width, height)
+function inlineImageStyle(size?: { width: number; height: number }): CSSProperties | undefined {
+  if (!size) return undefined
+  const fitted = fitInline(size.width, size.height)
   return { width: fitted.width, height: 'auto', aspectRatio: `${fitted.width} / ${fitted.height}`, maxWidth: 'min(100%, calc(100cqw - 24px))' }
 }
 
