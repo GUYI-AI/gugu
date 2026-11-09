@@ -8,6 +8,7 @@ import { SessionLocalizationProvider } from '@renderer/localization/localization
 import '@renderer/index.css';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import { installIdentityDirectoryBridge, publishIdentityDirectory } from '@/lib/identityDirectoryBridge';
+import { publishChatSummaries } from '@/lib/chatSummariesBridge';
 import type { DisplayIdentity } from '@/lib/displayIdentity';
 
 const harness = vi.hoisted(() => ({
@@ -93,6 +94,7 @@ afterEach(() => {
   harness.store = undefined;
   harness.context = undefined;
   publishIdentityDirectory(null, null);
+  publishChatSummaries([]);
 });
 const ticks = () => [...host.querySelectorAll<HTMLButtonElement>('[data-tick-index]')];
 const tickFor = (text: string) => ticks().find((tick) => tick.getAttribute('aria-label')?.includes(text))!;
@@ -162,6 +164,22 @@ describe('#6006 live minimap inputs', () => {
     state.transcript.history.seed([parent, { ...turn('live', state.transcript.state.activeTurnSnapshot!.items), outcome: { kind: 'done' } }]);
     state.transcript.activeTurn.set(null);
     await until('replayed human minimap ticks', () => ticks().length === 3);
+  });
+
+  it('removes folded A2G narration from an open minimap preview when group identity arrives', async () => {
+    publishChatSummaries([]);
+    const send = { kind: 'mcp-tool-call' as const, id: 'send', toolCallId: 'send', seq: 2, title: 'Send', tool: 'message_send', server: 'gugu', status: 'done' as const,
+      rawInput: JSON.stringify({ chat_id: 'group', text: 'private outgoing body' }), outputText: 'sent (id=msg:6417511d-8f36-4cbc-8cbb-81ce9f97df73)' };
+    state.transcript.history.seed([turn('owner-send', [message('owner', 'user', 'Owner question'), message('narration', 'assistant', 'private narration body'), send])]);
+    await until('owner tick before group identity arrives', () => !!tickFor('Owner question'));
+    await page.elementLocator(tickFor('Owner question')).hover();
+    await until('unknown destination preserves the current preview', () => document.querySelector('[data-slot="preview-card-content"]')?.textContent?.includes('private narration body') === true);
+    publishChatSummaries([{ id: 'group', kind: 'group', name: 'Test group', unread_count: 0 }]);
+    await until('group identity removes folded narration without another transcript update', () => {
+      const preview = document.querySelector('[data-slot="preview-card-content"]');
+      return preview?.textContent?.includes('Owner question') === true && !preview.textContent.includes('private narration body');
+    });
+    expect(document.querySelector('[data-slot="preview-card-content"]')!.innerHTML).not.toContain('private outgoing body');
   });
 
   it('reprojects historical sender identity when the directory arrives without a transcript change', async () => {

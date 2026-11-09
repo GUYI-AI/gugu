@@ -1,4 +1,5 @@
 import type { NormalizedEvent, NormalizedToolStatus } from '../../acp/reducer/normalized-event';
+import type { WindowCacheContext } from '../window-cache/types';
 import type { EntityContent } from '../../acp/models/entity-content';
 import type { ToolImage } from '../../acp/models/turns/tool-calls';
 import { hasRecordedAnswers, serializePayload, toolOutputText } from '../../acp/models/tool-payload';
@@ -22,6 +23,8 @@ import { RECORD_KEY_BOUNDARY_SUFFIX, type RecordBoundary, type RecordEntry, type
 export type RecordSourceWarn = (message: string, detail?: Record<string, unknown>) => void;
 
 export type SessionRecordSourceOptions = {
+  /** Host-owned namespace for bounded capture/locator writes; no historical export is passed. */
+  windowCache?: WindowCacheContext;
   /** A bounded historical read; compressed archives are never followed as live files. */
   readMode?: 'snapshot';
   /** The parent's primary-file UUID chain. A fork snapshot emits only after its proven common prefix. */
@@ -145,6 +148,14 @@ export function emitJsonLines(
     return true;
   });
   if (batch.length > 0) sink(batch);
+}
+
+/** A snapshot would not fit the host's heap. Nothing partial is returned: the caller treats this history as unknown. */
+export class SessionRecordTooLargeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SessionRecordTooLargeError';
+  }
 }
 
 /** 定位失败一律抛这个：上层要能把「没这份记录」和「解析炸了」分开报给用户。 */

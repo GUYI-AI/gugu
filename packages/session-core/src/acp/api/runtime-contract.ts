@@ -1,5 +1,6 @@
 import { defineContract, eventStream, liveModel, liveState, procedure } from '@gugu/session-wire';
 import { z } from 'zod';
+import { previewActivitySourceSchema } from '../../session-record/preview-activity';
 import { agentRunContextSchema } from '../../agents/agent-run-context';
 import { acpStartInputSchema } from './commands';
 import { terminalStateSchema } from '../models/terminals';
@@ -125,6 +126,8 @@ const detachedPromptResponseSchema = z.object({
   steered: z.boolean().optional(),
   declined: z.boolean(),
   missing: z.literal(true).optional(),
+  /** Why the runtime declined before admission (a failed live setting), shown on the refused input. */
+  reason: z.string().optional(),
 });
 const detachedPromptWaitInputSchema = z.object({ requestId: z.string() });
 
@@ -206,7 +209,9 @@ export const acpRuntimeApiContract = defineContract({
     key: z.void(),
     event: z.object({
       sessionId: z.string().min(1),
-      preview: z.object({ text: z.string().min(1).max(180), at: z.number().finite() }).nullable(),
+      preview: z.object({ text: z.string().min(1).max(180), at: z.number().finite(),
+        activityVersion: z.literal(1).optional(), activity: previewActivitySourceSchema.nullable().optional(),
+      }).nullable(),
     }),
   }),
   turnCommitted: eventStream({

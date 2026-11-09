@@ -10,21 +10,26 @@ type Hunk = { from: number; to: number; insert: string }
 function rig(content: string) {
   let doc = content.replace(/\r\n?/g, '\n')
   const onDisk = { value: content }
+  const drafts = { value: null as string | null }
   const io = {
-    read: vi.fn(async () => ({ content: onDisk.value })),
+    read: vi.fn(async () => ({ content: onDisk.value } as Record<string, unknown>)),
     write: vi.fn(async (text: string) => { onDisk.value = text }),
+    draft: {
+      get: async () => drafts.value,
+      put: vi.fn(async (text: string) => { drafts.value = text }),
+      clear: vi.fn(async () => { drafts.value = null }),
+    },
   }
   const onError = vi.fn()
-  const onDocument = vi.fn()
-  const file = sourceFile({ io, text: { mergeThreeWay, diffHunks }, onChange: () => undefined, onError, onDocument })
-  file.load(content)
+  const file = sourceFile({ io, text: { mergeThreeWay, diffHunks }, onChange: () => undefined, onError })
+  void file.load(0, { content })
   file.attach({
     text: () => doc,
     apply: (hunks: Hunk[]) => {
       for (const hunk of [...hunks].reverse()) doc = doc.slice(0, hunk.from) + hunk.insert + doc.slice(hunk.to)
     },
   })
-  return { file, io, onDisk, onError, onDocument, doc: () => doc, type: (next: string) => { doc = next; file.edited() } }
+  return { file, io, onDisk, drafts, onError, doc: () => doc, type: (next: string) => { doc = next; file.edited() } }
 }
 
 describe('a file edited as a whole', () => {
@@ -67,12 +72,12 @@ describe('a file edited as a whole', () => {
     expect(r.file.dirty).toBe(true)
   })
 
-  test('a save refused as conflict reads again, merges, and writes once more', async () => {
+  test('a save refused as content-changed reads again, merges, and writes once more', async () => {
     const r = rig('one\ntwo\nthree\n')
     r.type('ONE\ntwo\nthree\n')
     r.io.write.mockImplementationOnce(async () => {
       r.onDisk.value = 'one\ntwo\nTHREE\n'
-      throw Object.assign(new Error('replaced'), { code: 'conflict' })
+      throw Object.assign(new Error('replaced'), { code: 'content-changed' })
     })
     expect(await r.file.save()).toBe(true)
     expect(r.onDisk.value).toBe('ONE\ntwo\nTHREE\n')
@@ -100,12 +105,82 @@ describe('a file edited as a whole', () => {
     expect(r.doc()).toBe('a\n')
   })
 
-  test('saved into something that opens live: the page is told', async () => {
-    const r = rig('[1]\n')
-    r.type('{"a":1}\n')
-    r.io.read.mockResolvedValueOnce({ becameDocument: true } as never)
-    await r.file.save()
-    expect(r.onDocument).toHaveBeenCalledOnce()
+  test('a change during a read is read again: an emptied file seen last is not what the buffer keeps', async () => {
+    const r = rig('a\n')
+    let finishFirst = (_: { content: string }) => undefined as void
+    r.io.read.mockImplementationOnce(() => new Promise((resolve) => { finishFirst = resolve }))
+    const first = r.file.refresh()
+    r.onDisk.value = 'filled\n'
+    void r.file.refresh()
+    finishFirst({ content: '' })
+    await first
+    expect(r.doc()).toBe('filled\n')
+    expect(r.file.dirty).toBe(false)
+  })
+
+  test('grown past the limit: said, and no half text over the buffer', async () => {
+    const r = rig('a\n')
+    r.io.read.mockResolvedValueOnce({ content: '', truncated: true, totalSize: 99 })
+    await r.file.refresh()
+    expect(r.file.tooLarge).toBe(99)
+    expect(r.doc()).toBe('a\n')
+  })
+
+  test('a save after it was deleted makes the file again', async () => {
+    const r = rig('a\n')
+    r.io.read.mockRejectedValueOnce(Object.assign(new Error('gone'), { code: 'not-found' }))
+    await r.file.refresh()
+    expect(await r.file.save()).toBe(true)
+    expect(r.io.write).toHaveBeenCalledOnce()
+    expect(r.file.deleted).toBe(false)
+  })
+
+  test('edits survive a crash: kept after a pause, or as the page goes; a save or discarding clears them', async () => {
+    vi.useFakeTimers()
+    try {
+      const r = rig('a\n')
+      r.type('b\n')
+      expect(r.io.draft.put).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(r.drafts.value).toBe('b\n')
+      r.type('c\n')
+      r.file.flush()
+      expect(r.drafts.value).toBe('c\n')
+      await r.file.save()
+      expect(r.drafts.value).toBeNull()
+      r.type('d\n')
+      r.file.flush()
+      r.file.discard()
+      expect(r.drafts.value).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('what a crash left opens as the text, unsaved', async () => {
+    const r = rig('a\n')
+    r.drafts.value = 'from the crash\r\n'
+    const again = sourceFile({ io: r.io, text: { mergeThreeWay, diffHunks }, onChange: () => undefined, onError: r.onError })
+    expect(await again.load(0, { content: 'a\n' })).toEqual({ kind: 'text', initial: 'from the crash\n' })
+    again.attach({ text: () => 'from the crash\n', apply: () => undefined })
+    expect(again.dirty).toBe(true)
+  })
+
+  test('read empty where it was not: read once more, and taken only if it is still empty', async () => {
+    const r = rig('a\n')
+    r.io.read.mockClear()
+    r.onDisk.value = 'filled\n'
+    r.io.read.mockResolvedValueOnce({ content: '' })
+    await r.file.refresh()
+    expect(r.io.read).toHaveBeenCalledTimes(2)
+    expect(r.doc()).toBe('filled\n')
+
+    r.io.read.mockClear()
+    r.onDisk.value = ''
+    await r.file.refresh()
+    expect(r.io.read).toHaveBeenCalledTimes(2)
+    expect(r.doc()).toBe('')
+    expect(r.file.dirty).toBe(false)
   })
 
   test('a change during a read is read again: an emptied file seen last is not what the buffer keeps', async () => {
@@ -144,6 +219,69 @@ describe('a file edited as a whole', () => {
     r.file.discard()
     expect(r.doc()).toBe('a\n')
     expect(r.file.dirty).toBe(false)
+  })
+})
+
+describe('the save its machine could not take, once it is back', () => {
+  const offline = () => {
+    const r = rig('a\nb\n')
+    r.io.write.mockRejectedValueOnce(Object.assign(new Error('offline'), { code: 'unavailable' }))
+    r.type('a\nmine\n')
+    return r
+  }
+
+  test('the file as it was: taken', async () => {
+    const r = offline()
+    expect(await r.file.save()).toBe(false)
+    expect(await r.file.retrySave()).toBe(true)
+    expect(r.onDisk.value).toBe('a\nmine\n')
+    expect(r.file.dirty).toBe(false)
+  })
+
+  test('changed meanwhile: nothing written, said, both kept here', async () => {
+    const r = offline()
+    await r.file.save()
+    r.onDisk.value = 'a\ntheirs\n'
+    r.onError.mockClear()
+    r.io.write.mockClear()
+    expect(await r.file.retrySave()).toBe(false)
+    expect(r.io.write).not.toHaveBeenCalled()
+    expect(r.onDisk.value).toBe('a\ntheirs\n')
+    expect(r.onError).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ code: 'content-changed' }))
+    expect(r.doc()).toContain('mine')
+    expect(r.doc()).toContain('theirs')
+    expect(r.file.dirty).toBe(true)
+  })
+
+  test('changed between the read and the write: the version check refuses, nothing written', async () => {
+    const r = offline()
+    await r.file.save()
+    r.onError.mockClear()
+    r.io.write.mockRejectedValueOnce(Object.assign(new Error('moved'), { code: 'content-changed' }))
+    expect(await r.file.retrySave()).toBe(false)
+    expect(r.onDisk.value).toBe('a\nb\n')
+    expect(r.onError).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ code: 'content-changed' }))
+  })
+
+  test('deleted meanwhile: not made again', async () => {
+    const r = offline()
+    await r.file.save()
+    r.io.write.mockClear()
+    r.io.read.mockRejectedValueOnce(Object.assign(new Error('gone'), { code: 'not-found' }))
+    expect(await r.file.retrySave()).toBe(false)
+    expect(r.io.write).not.toHaveBeenCalled()
+    expect(r.file.deleted).toBe(true)
+  })
+
+  test('still away: nothing written, and it stays owed', async () => {
+    const r = offline()
+    await r.file.save()
+    r.onError.mockClear()
+    r.io.read.mockRejectedValueOnce(Object.assign(new Error('offline'), { code: 'unavailable' }))
+    r.io.write.mockRejectedValueOnce(Object.assign(new Error('offline'), { code: 'unavailable' }))
+    expect(await r.file.retrySave()).toBe(false)
+    expect(r.onDisk.value).toBe('a\nb\n')
+    expect(r.onError).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ code: 'unavailable' }))
   })
 })
 

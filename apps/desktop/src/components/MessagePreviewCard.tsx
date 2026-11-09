@@ -11,6 +11,8 @@ import { Avatar } from './Avatar'
 import { formatRelativeTime } from '../lib/relativeTime'
 import { useAgentMessagePreview } from '../hooks/useAgentMessagePreview'
 import type { RunningToken } from './RunningTokenBar'
+import { useActivityPreviewText } from '../hooks/useActivityPreviewText'
+import { hasPreviewActivity } from '@gugu/session-core/session-record/preview-activity'
 
 // Base UI supplies the anchor/visual-viewport budget for both phone presses and desktop hover.
 const STYLE = `
@@ -72,14 +74,23 @@ type Block =
   /** message 为 null = 看卡的人读不到这条输入,画占位。 */
   | { kind: 'prompt'; id: string; message: PromptMessage | null }
   | { kind: 'text'; id: string; text: string }
+  | { kind: 'activity'; id: string; text: string }
   | { kind: 'tools'; id: string; parts: { state: string; count: number }[] }
 
 /** 条目 → 版块:prompt 读得到画正文、读不到或没有 id 画占位,还在取的先不画;连续工具并成一行、按类别合计。 */
 const promptIdOf = (messageId: string) => messageId.replace(/^msg:/, '')
 
-function toBlocks(entries: readonly MessagePreviewEntry[], lookup: (id: string) => PromptMessage | null | undefined): Block[] {
+function toBlocks(entries: readonly MessagePreviewEntry[], lookup: (id: string) => PromptMessage | null | undefined, activityText: ReturnType<typeof useActivityPreviewText>): Block[] {
   const blocks: Block[] = []
+  const activities = new Set<string>()
   for (const entry of entries) {
+    const label = entry.kind !== 'tool' ? activityText(entry.activity) : null
+    if (label !== null) {
+      const key = `${entry.kind !== 'tool' ? entry.activity?.id : entry.id}:${label}`
+      if (!activities.has(key)) blocks.push({ kind: 'activity', id: entry.id, text: label })
+      activities.add(key)
+      continue
+    }
     if (entry.kind === 'prompt') {
       const message = entry.messageId ? lookup(promptIdOf(entry.messageId)) : null
       if (message === undefined) continue
@@ -100,6 +111,7 @@ function toBlocks(entries: readonly MessagePreviewEntry[], lookup: (id: string) 
 
 function BlockView({ block, senderName }: { block: Block; senderName: (id: string | null) => string }) {
   const { t } = useTranslation('agents')
+  if (block.kind === 'activity') return <div className="mp-mono" data-preview-entry="activity">{block.text}</div>
   if (block.kind === 'prompt') {
     if (!block.message) {
       return (
@@ -145,14 +157,16 @@ export function MessagePreviewCard({
 }) {
   const { t } = useTranslation('agents')
   const state = useAgentMessagePreview(chatId, token.id, open)
-  const preview = state.status === 'live' ? state.preview : null
+  const preview = state.status === 'live' && state.preview.activityVersion === 1
+    && state.preview.entries.every(entry => entry.kind === 'tool' || hasPreviewActivity(entry)) ? state.preview : null
+  const activityText = useActivityPreviewText()
   const { messages, threadMessages, identitiesById } = useChatStore()
   const displayName = useShownAgentName({ id: token.id, chatId, name: rawDisplayName, createdAt: identitiesById[token.id]?.created_at ?? undefined })
   const promptIds = (preview?.entries ?? []).flatMap((entry) =>
-    entry.kind === 'prompt' && entry.messageId ? [promptIdOf(entry.messageId)] : [],
+    entry.kind === 'prompt' && entry.messageId && activityText(entry.activity) === null ? [promptIdOf(entry.messageId)] : [],
   )
   const lookupPrompt = usePromptMessages(promptIds, [...messages, ...threadMessages])
-  const blocks = preview ? toBlocks(preview.entries, lookupPrompt) : []
+  const blocks = preview ? toBlocks(preview.entries, lookupPrompt, activityText) : []
   const senderIds = [...new Set(blocks.flatMap(block => block.kind === 'prompt' && block.message?.sender_user_id ? [block.message.sender_user_id] : []))]
   const senderNames = useShownAgentName(senderIds.map(id => ({ id, chatId, name: identitiesById[id]?.display_name ?? '', createdAt: identitiesById[id]?.type === 'agent' ? identitiesById[id]?.created_at ?? undefined : undefined })))
   const senderName = (id: string | null) => id ? senderNames[senderIds.indexOf(id)] ?? '' : ''
@@ -166,6 +180,7 @@ export function MessagePreviewCard({
     .join(' · ')
 
   let note: string | null = null
+  if (state.status === 'live' && !preview) note = t('runtime.messagePreview.unavailable')
   if (state.status === 'connecting' || state.status === 'idle') note = t('runtime.messagePreview.connecting')
   else if (state.status === 'unavailable')
     note = t(state.error === 'record_not_found' ? 'runtime.messagePreview.recordNotFound' : 'runtime.messagePreview.unavailable')

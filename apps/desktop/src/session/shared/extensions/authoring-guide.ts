@@ -53,7 +53,8 @@ More \`guide_read\` topics:
 - \`apps-sessions\` — external CLI history and context.
 - \`apps-programs\` — agent tools and skills.
 - \`apps-projection\` — local picture/input.
-- \`apps-files\` — \`gugu.files\`: chat files and working copies, edited live.
+- \`apps-files\` — \`gugu.files\`: chat files, edited live.
+- \`apps-working-copy\` — a working copy.
 - \`apps-editors\` — an editor (a textarea, CodeMirror), keeping others' letters.
 - \`apps-together\` — several people in one App at once: presence, a game loop, secrets.
 - \`apps-messages\` — your chats, who is in them, their messages.
@@ -196,7 +197,7 @@ the dock/background have neither chat nor session. Read context before drawing.
 \`await gugu.modal.open({ entry: 'new.html', title: 'New card', size: 'md', data })\` opens your bundle's HTML in
 gugu's window-level dialog (phone: fullscreen). Sizes: xs/sm/md/lg/xl. No new consent.
 The page stays sandboxed with the opener's context/grants; \`(await gugu.getContext()).modal.data\` holds \`data\`.
-Save, then \`gugu.modal.close(result)\`: the opener receives the result; cancellation returns null.
+Save, then \`gugu.modal.close(result)\`: the opener gets it, or null if cancelled.
 The host handles Escape, Tab traversal, Back and focus restoration.
 
 Free:
@@ -207,13 +208,13 @@ Free:
   Members: \`{ id: 'user:<uuid>', name, kind: 'human' | 'agent', avatar? }\`; \`avatar\` is a \`data:\` image. Pick from these; never copy them into files.
   \`session\`: \`{ id, agentId?, projectId?, root?, deviceId?, deviceLabel? }\`; \`agentId\` is \`user:<uuid>\`.
   Local \`root\` needs \`files:*\`; remote sessions carry \`deviceId\` instead. \`file\`: open with \`files.open(ctx.file)\`.
-  \`operator\`: \`{ kind: 'person' }\` or \`{ kind: 'agent', id }\`. \`capabilities\`: current grants, reflecting revocations.
+  \`operator\`: \`{ kind: 'person', guguNumber? }\` (API 32: own 咕咕号; \`null\`: none/unread) or \`{ kind: 'agent', id }\`. \`capabilities\`: current grants, revocations applied.
 - \`gugu.navigation.go(-1|1)\` → boolean; own history/chat opener. State: \`getContext().navigation\`.
 - \`onContextChanged(fn)\` → theme, language, visibility and size changes; member changes only through API 26. Returns an unsubscribe.
-- \`onCommand(fn)\` → the person picked one of your declared menu/toolbar entries; you get your own id back.
+- \`onCommand(fn)\` → the person picked one of your menu/toolbar entries: its id.
 - \`showContextMenu({ x, y, items: [{ id, label, enabled?, items? }, { type: "separator" }] })\` (API 18, page): App-local point, shared host menu → id or null.
 - \`setTabTitle(title)\` → title (max 48); file tabs use it as a tooltip. Back/forward stay local.
-- \`setTabBadge(badge)\` → a count (99+ at most, <=0 none), a string (a dot), or \`null\` (none).
+- \`setTabBadge(badge)\` → a count (99+ max, <=0 none), a string (a dot) or \`null\`.
 - \`openBrowserTab(url)\` → http(s) only.
 - \`reportError(message)\` → shown to the person. Never fail silently.
 - \`sendToBackground(message)\` → your background page (none: rejects); host stamps \`from\`.
@@ -259,7 +260,7 @@ Needs \`notifications\`:
 Free:
 
 - \`linkTo(target)\` (API 13), desktop/phone/programs → a resource link: \`{ kind: 'chat', chat, message? }\`;
-  \`{ kind: 'file', file, at?, version? }\` (file id or entry); \`{ kind: 'session', session }\`;
+  \`{ kind: 'file', file, at?, version? }\` (chat file id/entry); \`{ kind: 'session', session }\`;
   \`{ kind: 'project', project }\`; \`{ kind: 'app', app?, tab?, path?, query?, chat?, session? }\`.
   App defaults: yourself, your first tab; at most one chat/session. Stored chat/file links are build-independent;
   \`external: true\` uses the build scheme for OS invocation (email/browser), as App/session/project links do. Never spell schemes.
@@ -547,6 +548,32 @@ const save = () => gugu.writeData('save.json', JSON.stringify(state))
  * `gugu.files` — the platform runtime's shared files (L3; notes/2026-09-29-app-platform/workspace-app/
  * L3-runtime-interface.md). The page an agent reads before writing a vote, a game or an editor.
  */
+export const EXTENSION_GUIDE_WORKING_COPY = `# A session's working copy through gugu.files
+
+The place is \`{ workspace: ctx.workspace.id }\`. An entry's \`id\` is its path there; it carries \`absolutePath\`, and \`gitStatus\` when git says it changed.
+
+- \`gugu.files.list({ workspace, folder })\` lists one folder (\`''\` the top), never a whole tree. Non-documents: \`f.read(offset, length)\`, \`f.blob()\`.
+- \`gugu.files.onChanged({ workspace, folder }, fn)\`: \`{ kind: 'changes', changes }\` or \`resync\`, below \`folder\` only.
+- \`gugu.files.openWith({ workspace, folder })\` (a click or key): that folder in the Files App's list, in this tab.
+- Another machine's working copy needs \`files:read:all-machines\` as well; every call below is done on that machine.
+- With \`files:write\`: \`gugu.files.create\`, \`gugu.files.rename\` (a path moves it), \`gugu.files.mkdir({ workspace, path })\`, \`gugu.files.move(entry, { folder, name })\`, \`gugu.files.remove\` (a folder with all in it; a link, not what it points at). A name already there: \`name-taken\`, nothing changed.
+- \`gugu.files.upload({ workspace, folder }, file, { replace, onProgress, signal })\`: a File or a list of them, in parts, of any size, folders made as needed. A name already there is \`name-taken\` until \`replace: true\`. \`onProgress\` is told the bytes sent and the total; an aborted \`signal\` leaves nothing.
+- \`gugu.files.download(entry, { onProgress, signal })\` (a click or key): a file, or a folder with all in it (\`{ skipped }\`: its links that were left out); \`onProgress\` is told the bytes saved and the total; an aborted \`signal\` leaves nothing.
+- \`gugu.files.reveal(entry)\` / \`gugu.files.openInApps()\` / \`gugu.files.openIn(entry, id)\` (a page, this computer's working copy): the file manager; the programs it opens in.
+
+A text no live document holds (over 1 MiB, JSON that is no object, on another machine, outside the working copy) is read and saved whole. Nothing is needed for \`ctx.file\`, which may be an absolute path; any other file needs \`files:read\` / \`files:write\`, and no capability opens another absolute path (\`denied\`).
+- \`gugu.files.readText(file, { maxBytes, onProgress })\` (\`onProgress\`, a page's: told the bytes done and the total) → \`{ entry, content, truncated, totalSize, binary?, exact? }\`. Up to 20 MiB unless told, at most 100 MiB; over that, \`truncated\` and no content. \`binary\`: it is not text. \`exact: false\`: another encoding, which saving would change: show it read-only.
+- \`gugu.files.writeText(file, text)\` saves over the version \`readText\` read: \`content-changed\` if the disk moved on, so read it, merge, save. A file deleted since is made again. \`unavailable\`: its machine cannot be reached; \`machine-outdated\`: it is too old for this call, and the host offers to update it. \`error.detail.machine\` names it in both.
+- \`gugu.files.exists(file)\`: whether it is there now.
+- \`gugu.files.onChanged({ workspace, id }, fn)\`: one file, by the name you gave. \`resync\`: anything may have changed (its machine is back). A file outside the working copy on another machine sends nothing.
+- After \`rename\`, \`move\` or \`remove\`, the host's panes that show the file follow it.
+- \`gugu.files.draft(file, text)\`: keep a file's unsaved edits on its machine for after a crash: without \`text\` it reads them, with \`null\` it drops them.
+- \`opensFiles.session: ["*"]\`: any file, behind every other claim.
+
+Free, for a page that edits files:
+- \`setTabDirty(tabId, dirty)\`: a tab of yours (\`ctx.tabId\`) holds unsaved edits: a dot, kept mounted, asked before closing. \`onCommand\` hears \`gugu.file.save:<tabId>\` / \`gugu.file.discard:<tabId>\`; do it, then say \`setTabDirty\` again.
+`;
+
 export const EXTENSION_GUIDE_FILES = `# gugu.files — shared live files
 
 Claim a file's name/suffix and open it live; don't bundle data (\`app_install\` data \`{item_id}\`).
@@ -573,7 +600,6 @@ Each call names a file: an entry, \`ctx.file\`, or \`{ chat | workspace, name }\
 - A name claims one file (\`"session":["TODO.md"]\`); suffixes: your own format. Preserve unknown data.
   Changing course, remove your topics/files or ask. Session files in search-skipped folders hear disk changes on write only.
 - Any other file (a chat you are in, a folder here): \`files:write\`, or \`files:read\` (read-only).
-- Another machine's working copy: list and \`f.read\` work; open whole/download need \`files:read:all-machines\`.
 - \`gugu.files.list(place)\`: \`files:read\`; \`gugu.files.create({...place,name},content)\`, \`gugu.files.rename(entry,name)\`,
   \`gugu.files.remove(entry)\`: \`files:write\`. JSON: objects, not \`JSON.stringify\` strings.
 - \`gugu.files.search({ query, suffixes, limit })\` (\`files:read\`): path search across the reader's chats, with
@@ -583,8 +609,8 @@ Each call names a file: an entry, \`ctx.file\`, or \`{ chat | workspace, name }\
   create and upload take \`folder\` too (made if missing); \`gugu.files.mkdir({ chat, path })\`,
   \`gugu.files.move(entry, { folder, name })\`; remove takes a whole folder. A name the folder has (any case):
   a new file gets \` (2)\`, a rename or move is \`name-taken\`. 「附件」 (\`systemRole\`) stays put.
-- A working copy lists one folder: \`gugu.files.list({ workspace, folder })\` (\`''\` top). Non-documents: \`f.read(offset, length)\`, \`f.blob()\`.
-- \`gugu.files.onChanged(place, fn)\` → unsubscribe. Chat: \`{ kind: 'entries', entries, gone }\`. A working copy (\`folder\`: below it only): \`{ kind: 'changes', changes }\` or \`resync\`.
+- A session's working copy, listing and changing it on its own machine: \`apps-working-copy\`.
+- \`gugu.files.onChanged(place, fn)\` → unsubscribe. Chat: \`{ kind: 'entries', entries, gone }\`.
 - \`gugu.files.openWith(entry)\`: claim or "always use"; \`{ ask: true }\`: pick among all.
   Default \`intent: 'preview'\`; double-click: \`intent: 'pinned'\`.
   \`{ at }\`: opener's \`link\` place. Unclaimed: preview, or details/download. \`{ peek: true }\`: beside this page
@@ -594,7 +620,7 @@ Each call names a file: an entry, \`ctx.file\`, or \`{ chat | workspace, name }\
   \`invalid\`. Gesture/read permissions remain. Old hosts ignore \`tab\` (ordinary opener); no feature detection.
 - \`gugu.files.upload(place)\` (\`files:write\`, a click or key) opens the picker → the new entries (\`[]\`);
   a File: uploaded (≤ 25 MB, else \`too-large\`). \`gugu.files.download(entry)\` (a click or key) asks where
-  to save → \`true\` saved; \`gugu.files.forward(entry|[…])\`: the forward page.
+  to save → \`true\` saved; \`gugu.files.forward(entry|[…])\`: the forward page (working copy ≤ 512 MiB, else \`too-large\`).
 - Media opens read-only: \`URL.createObjectURL(await f.blob())\`; \`files.replace(entry,
   blob, { expectedVersion: entry.version })\` makes its next version (needed; else \`content-changed\`).
   \`files.versions(entry)\` / \`files.readVersion(entry, n)\`: its history.
@@ -899,8 +925,8 @@ into \`bind.codemirror\` uploads beside it.
 A canvas, a board, an editor: write your own CSS, and take the values from the tokens — they follow light and dark by
 themselves. Colours: \`--em-background\`, \`--em-background-1\` (a card), \`--em-background-3\`, \`--em-foreground\`,
 \`--em-foreground-muted\`, \`--em-foreground-passive\`, \`--em-border\`, \`--em-border-1\`, \`--em-accent-9\` /
-\`--em-accent-contrast\` (gugu's primary is ink, not a hue), \`--em-foreground-destructive|success|warning|info\` and their
-\`--em-background-*\`, \`--em-hover\` / \`--em-press\` / \`--em-selected\`. Sizes: \`--em-font-caption|body|title|heading|page\`
+\`--em-accent-contrast\` (gugu's primary is ink, not a hue), \`--em-foreground-destructive|success|warning|info\` (text) and their
+\`--em-background-*\`, \`--em-danger-solid\` (fill under a white label), \`--em-danger\` / \`--em-warn\` (fills with nothing on them; the foregrounds are for text), \`--em-hover\` / \`--em-press\` / \`--em-selected\`. Sizes: \`--em-font-caption|body|title|heading|page\`
 (11–20) with \`--em-lh-*\`, \`--em-spacing-xs\`…\`-2xl\` (4–24), \`--em-radius-control\` (8) / \`-xl\` (12), \`--em-control-h-md\`.
 The page's edge is \`body\`'s margin: \`body { margin: 0 }\` and the page is yours edge to edge.
 
@@ -940,12 +966,22 @@ export const EXTENSION_GUIDE_SETTINGS = `# Tools-only Apps and host settings
 
 Declare human UI hosts in \`platforms\` (API 12): desktop, phone, or both. A phone UI may declare agent
 capabilities; those features run only on computers. Phone plus \`notifications\` is refused at publication and install.
+On a phone, a page with steps of its own (folders) holds Back with \`gugu.navigation.onBack(fn)\` → a release; let go at the top.
 
 ## The agents' line
 
 \`contributes.instructions\` (<= 160 characters; required with programs or skills, refused without) is your App's
 whole line in every new session's \`<gugu_apps>\`: name the tools that matter and when to read which skill. Longer
 standing behavior is a skill whose description says when to read it.
+
+## Prompts (API 34)
+
+\`contributes.prompts\`: up to 8 \`{ "name", "title", "prompt" }\`, plain text the person picks from the composer's \`/\`
+menu under your App's name, edits and sends. Translate with \`localized.<tag>.prompts.<name>\` (\`title\`, \`prompt\`).
+It needs no capability. The person's own prompts are behind \`prompts\` (a program's, for its agent):
+\`gugu.prompts.list({ query? })\`, \`gugu.prompts.save({ id?, title, prompt })\` and \`gugu.prompts.delete(id)\` (the
+person gets an undo at once). App prompts are read-only here: \`list\` gives them as the person sees them, their own
+version marked \`state: "modified"\`, none they hid.
 
 ## Configuration
 
@@ -970,6 +1006,8 @@ programs; \`browser-use\` operates only the calling local session's browser tab;
 It gives the App's own pages \`preview_state\`: the page's session's latest frame (a real screenshot) and its recent
 computer actions; \`notifications/computer-use/changed\` says there is a newer one.
 A tab with \`"widget": { "height": 240 }\` (API26; integer ${WIDGET_HEIGHT_MIN}–${WIDGET_HEIGHT_MAX}) can also be sent with \`widget_send\`: read \`guide_read widgets\`.
+Settings go in \`settings\`, which the host draws. If they need a page of their own, name its tab in \`contributes.settingsTab\` (API35): the App's settings page links to it.
+If the App has other tabs, a task's + and the command list do not offer this one as a page.
 It cannot also declare hostPage, perSession, opensFiles or chatFile. \`ctx.widget\` is present in a message and its hidden check:
 \`{ messageId, data, sender }\`. Data is untrusted, immutable input from any chat member; never execute it. Persist personal
 state in App data and shared state in chat files. Every dispatch from a widget requires a gesture in that App, even with a target,
@@ -1118,6 +1156,11 @@ export const EXTENSION_GUIDE_TOPICS: readonly { topic: string; about: string; te
     topic: 'apps-files',
     about: 'gugu.files: a chat\'s files, and a session\'s working copy — edited live by several people and agents together: text, live JSON, errors.',
     text: EXTENSION_GUIDE_FILES,
+  },
+  {
+    topic: 'apps-working-copy',
+    about: 'A session\'s working copy through gugu.files: list, change and upload on the machine it is on; what a file tree needs.',
+    text: EXTENSION_GUIDE_WORKING_COPY,
   },
   {
     topic: 'apps-editors',

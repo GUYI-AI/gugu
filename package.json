@@ -1,7 +1,7 @@
 {
   "name": "gugu",
   "productName": "咕咕",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Gugu desktop chat client",
   "author": "Gugu",
   "license": "SEE LICENSE IN LICENSE",
@@ -70,7 +70,7 @@
     "storybook:session-ui": "storybook dev -p 6006 -c packages/session-ui/.storybook",
     "session:db:fixtures": "vitest run --project session-fixtures",
     "session:db:snapshot": "tsx apps/desktop/session-tooling/generate-schema-snapshot.ts",
-    "session:db:setup": "cd apps/desktop/session-tooling/node-deps && npm install --workspaces=false",
+    "session:db:setup": "node scripts/build/install-vendor-node-deps.mjs",
     "session:test:db": "vitest run --project session-main-db",
     "session:test:migrations": "vitest run --project session-migrations",
     "test": "vitest run --project gugu-integration",
@@ -80,7 +80,7 @@
     "typecheck": "pnpm preflight:node && tsgo --noEmit",
     "build:mise": "node scripts/build/build-mise-bundle.mjs",
     "build:frpc": "node scripts/build/build-frpc-bundle.mjs",
-    "lint:source": "pnpm preflight:node && concurrently --group --timings --max-processes 8 --names eslint,console-usage-check,error-outlet-check,user-copy-leak-check,check-session-shell-port,check-case-collisions,check-file-url-paths,check-contract-producers,check-session-chat-ui-geometry,check-ui-visual-spec,check-css-parses,gen-icons,theme-color-check 'pnpm lint:eslint' 'node scripts/checks/console-usage-check.mts --root apps/desktop/src --root apps/desktop/electron --root apps/desktop/shared --root apps/desktop/session-tooling --root packages/core' 'node scripts/checks/error-outlet-check.mjs --root apps/desktop/electron --root packages' 'node scripts/checks/user-copy-leak-check.mts --root apps/desktop/src --root apps/desktop/electron --root packages' 'node scripts/checks/check-session-shell-port.mjs' 'node scripts/checks/check-case-collisions.mjs' 'node scripts/checks/check-file-url-paths.mjs' 'node scripts/checks/check-contract-producers.mjs' 'node scripts/checks/check-session-chat-ui-geometry.mjs' 'node scripts/checks/check-ui-visual-spec.mts' 'node scripts/checks/check-css-parses.mjs' 'node scripts/build/gen-icons.mjs --check' 'node scripts/checks/theme-color-check.mjs'"
+    "lint:source": "pnpm preflight:node && node scripts/checks/native-history-reads.cjs && concurrently --group --timings --max-processes 8 --names eslint,console-usage-check,error-outlet-check,user-copy-leak-check,check-session-shell-port,check-case-collisions,check-file-url-paths,check-contract-producers,check-session-chat-ui-geometry,check-ui-visual-spec,check-css-parses,gen-icons,theme-color-check 'pnpm lint:eslint' 'node scripts/checks/console-usage-check.mts --root apps/desktop/src --root apps/desktop/electron --root apps/desktop/shared --root apps/desktop/session-tooling --root packages/core' 'node scripts/checks/error-outlet-check.mjs --root apps/desktop/electron --root packages' 'node scripts/checks/user-copy-leak-check.mts --root apps/desktop/src --root apps/desktop/electron --root packages' 'node scripts/checks/check-session-shell-port.mjs' 'node scripts/checks/check-case-collisions.mjs' 'node scripts/checks/check-file-url-paths.mjs' 'node scripts/checks/check-contract-producers.mjs' 'node scripts/checks/check-session-chat-ui-geometry.mjs' 'node scripts/checks/check-ui-visual-spec.mts' 'node scripts/checks/check-css-parses.mjs' 'node scripts/build/gen-icons.mjs --check' 'node scripts/checks/theme-color-check.mjs'"
   },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "npm:@gugu-acp/claude-agent-acp@1.6.2",
@@ -307,7 +307,8 @@
       "app-builder-lib@26.15.3": "patches/app-builder-lib@26.15.3.patch",
       "@steipete/sweet-cookie@0.4.4": "patches/@steipete__sweet-cookie@0.4.4.patch",
       "ssh2@1.17.0": "patches/ssh2@1.17.0.patch",
-      "@codemirror/autocomplete@6.20.3": "patches/@codemirror__autocomplete@6.20.3.patch"
+      "@codemirror/autocomplete@6.20.3": "patches/@codemirror__autocomplete@6.20.3.patch",
+      "prebuild-install@7.1.3": "patches/prebuild-install@7.1.3.patch"
     }
   },
   "optionalDependencies": {

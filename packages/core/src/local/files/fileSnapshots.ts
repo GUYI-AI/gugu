@@ -1,6 +1,6 @@
 import { requireAgentFileAccess, requireAgentFileTreeAccess } from '../state/agentFileBoundary'
 import { openAsBlob, createReadStream } from 'node:fs'
-import { chmod, mkdir, mkdtemp, open, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
+import { chmod, link, mkdir, mkdtemp, open, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import type { FileSink } from '../../shared/fileCipher'
 import { FILE_CHUNK_BYTES, requireFileRange, requireFileRevision } from '../../shared/fileResolver'
@@ -8,8 +8,9 @@ import type { FileChunkCache } from '../../shared/fileCache'
 import { createHash, randomUUID } from 'node:crypto'
 import { attachmentDownloadName } from '../../shared/attachmentDownloadName.mjs'
 import { cloudFileProviders } from '../../cloud/fileProviders'
-import { createFileResolver, openFileBytes, type FileProviders, type FileContext, type FileHandle } from '../../shared/fileResolver'
+import { createFileResolver, openFileBytes, type FileProviders, type FileContext, type FileHandle, type SavedFile } from '../../shared/fileResolver'
 import type { AttachmentsEndpoint } from '../../cloud/attachmentsApi'
+import { coreLogger } from '../../log'
 const cleanupRemoteFileDirectory = async (directory: string) => rm(await requireAgentFileTreeAccess(directory), { recursive: true, force: true })
 
 /** Raw resumable chunks share the existing private open-file cache and its stale-directory cleanup. */
@@ -36,6 +37,16 @@ export function createFileChunkCache(tempRoot: string): FileChunkCache {
     clear: key => cleanupRemoteFileDirectory(directory(key)),
   }
 }
+
+/**
+ * This machine's one home for the bytes agents read: `<home>/file-store/<sha256>/<name>`. A version's bytes never change, so
+ * one sha is stored once, whoever asked and whatever it was called; a second name is a hard link to the same bytes.
+ * Read-only, because it is shared: an agent that wants to change a file copies it. That does not make a change impossible
+ * (the owner of a file can clear the flag), so every hand-out checks the hash and replaces a file that no longer holds its sha.
+ */
+export const fileStoreDirectory = (guguHome: string) => join(guguHome, 'file-store')
+const STORED_FILE_MODE = 0o444
+const storeLog = coreLogger('file-store')
 
 /** A private bounded staging file. Only a committed, read-only snapshot can leave this sink. */
 export async function createFileSink(tempRoot: string, size: number, destination?: string): Promise<FileSink & { blob(): Promise<Blob>; path(): string }> {
@@ -104,25 +115,75 @@ export function createNodeFileResolver(root: string, endpoint: (context: FileCon
 
 /** Downloads consume the authorized source into one final file. Random-read consumers keep snapshots. */
 export function createFileSaver(providers: FileProviders): NonNullable<FileProviders['saveTo']> {
-  return async (revision, context, directory, name) => {
+  return async (revision, context, directory, name, store = false) => {
     const path = join(directory, revision.sha256 ?? `legacy-${randomUUID()}`, attachmentDownloadName(name))
     await requireAgentFileAccess(path)
-    const saved = { file_path: path, file_name: name, size_bytes: revision.size_bytes, sha256: revision.sha256!, content_type: revision.content_type }
-    if (revision.sha256) {
-      const existing = await stat(path).catch(error => { if (error.code === 'ENOENT') return null; throw error })
-      if (existing?.isFile() && existing.size === revision.size_bytes) {
-        const hash = createHash('sha256')
-        for await (const bytes of createReadStream(path)) { context.signal?.throwIfAborted(); hash.update(bytes) }
-        context.signal?.throwIfAborted()
-        if (hash.digest('hex') === revision.sha256) return saved
+    const saved: SavedFile = { file_path: path, file_name: name, size_bytes: revision.size_bytes, sha256: revision.sha256!, content_type: revision.content_type, ...(store ? { read_only: true as const } : {}) }
+    const target = dirname(path)
+    const holds = async (file: string) => {
+      if (!revision.sha256) return false
+      const existing = await stat(file).catch(error => { if (error.code === 'ENOENT') return null; throw error })
+      if (!existing?.isFile() || existing.size !== revision.size_bytes) return false
+      const hash = createHash('sha256')
+      for await (const bytes of createReadStream(await requireAgentFileAccess(file))) { context.signal?.throwIfAborted(); hash.update(bytes) }
+      context.signal?.throwIfAborted()
+      return hash.digest('hex') === revision.sha256
+    }
+    // A file that does not hold this sha may be someone's work: it moves aside, it is never deleted.
+    const moveAside = async (file: string) => {
+      const aside = join(directory, '.changed', randomUUID())
+      await mkdir(aside, { recursive: true, mode: 0o700 })
+      const moved = await rename(file, join(aside, basename(file))).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error })
+      if (moved) storeLog.warn({ sha256: revision.sha256, name: basename(file), aside }, 'stored file no longer holds its sha: moved aside')
+      else await rmdir(aside)
+    }
+    if (await holds(path)) {
+      if (store) await chmod(path, STORED_FILE_MODE)
+      return saved
+    }
+    if (store && revision.sha256) {
+      // Under this sha, every name that no longer holds it (someone cleared the flag and edited it; hard-linked names change
+      // together) is moved aside, not deleted: it may be an agent's work. One that still holds it gives this name its bytes.
+      let good: string | null = null
+      for (const name of await readdir(target).catch(error => { if (error.code === 'ENOENT') return [] as string[]; throw error })) {
+        const same = join(target, name)
+        if (name.endsWith('.part')) continue
+        if (await holds(same)) { good ??= same; continue }
+        // Only the name being handed out has to move now. Another that is open and locked (Windows) waits for its own hand-out.
+        await moveAside(same).catch(error => {
+          if (same === path) throw error
+          storeLog.warn({ sha256: revision.sha256, name, code: error.code }, 'stored file no longer holds its sha: could not move it aside')
+        })
+      }
+      // A filesystem without hard links (exFAT, some network drives) stores this name as its own copy, below.
+      if (good && await link(await requireAgentFileAccess(good), path).then(() => true, error => error.code === 'EEXIST')) {
+        await chmod(path, STORED_FILE_MODE)
+        return saved
       }
     }
-    const target = dirname(path)
     await mkdir(target, { recursive: true, mode: 0o700 })
-    const sink = await createFileSink(target, revision.size_bytes, path)
+    // The store commits by a link from a private name: two agents saving one new file both succeed, where a rename onto the
+    // other's read-only file fails on Windows.
+    const written = store ? await requireAgentFileAccess(`${path}.${randomUUID()}.part`) : path
+    const sink = await createFileSink(target, revision.size_bytes, written)
     try {
       const bytes = await openFileBytes(providers, revision, { ...context, download: true }, undefined, sink)
       await bytes.dispose()
+      if (store) {
+        await chmod(written, STORED_FILE_MODE)
+        const placed = () => link(written, path).then(() => true, error => error.code === 'EEXIST' ? holds(path) : null)
+        let done = await placed()
+        if (done === false) { await moveAside(path); done = await placed() }
+        if (done === null) {
+          if (!await holds(path)) {
+            await moveAside(path)
+            await rename(written, path).catch(async error => { if (!await holds(path)) throw error })
+          }
+        } else if (!done) throw new Error('The stored file changed while it was saved')
+        // Windows clears the read-only flag on the file to delete a name of it, and the published name shares that file.
+        await rm(written, { force: true })
+        await chmod(path, STORED_FILE_MODE)
+      }
       if (!revision.sha256) {
         const hash = createHash('sha256')
         for await (const bytes of createReadStream(path)) hash.update(bytes)
@@ -131,19 +192,28 @@ export function createFileSaver(providers: FileProviders): NonNullable<FileProvi
       return saved
     } catch (error) {
       await sink.abort()
+      if (store) await rm(written, { force: true })
       await rmdir(target).catch(failure => { if (!['ENOENT', 'ENOTEMPTY'].includes(failure.code)) throw failure })
       throw error
+    } finally {
+      if (store) await rm(written, { force: true })
     }
   }
 }
 
 /** Export only complete original bytes, with the existing portable filename and atomic replacement. */
-export async function saveFileHandle(file: FileHandle, directory: string, name = file.revision.file_name) {
+export async function saveFileHandle(file: FileHandle, directory: string, name = file.revision.file_name, store = false): Promise<SavedFile> {
   const destination = join(directory, file.revision.sha256 ?? `legacy-${randomUUID()}`, attachmentDownloadName(name))
   await requireAgentFileAccess(destination)
-  if (file.saveTo) return file.saveTo(directory, name)
-  return { ...await writeFileHandle(file, destination), file_name: name }
+  if (file.saveTo) return file.saveTo(directory, name, store)
+  if (store) await rm(destination, { force: true })
+  const saved = await writeFileHandle(file, destination)
+  if (store) await chmod(saved.file_path, STORED_FILE_MODE)
+  return { ...saved, file_name: name, ...(store ? { read_only: true as const } : {}) }
 }
+
+/** Save into this machine's file store (`fileStoreDirectory`). */
+export const saveToFileStore = (file: FileHandle, guguHome: string, name = file.revision.file_name) => saveFileHandle(file, fileStoreDirectory(guguHome), name, true)
 
 /** A trusted native save dialog may select an exact destination; the original still verifies before atomic rename. */
 export async function writeFileHandle(file: FileHandle, path: string) {

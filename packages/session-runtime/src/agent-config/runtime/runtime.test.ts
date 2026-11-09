@@ -45,14 +45,14 @@ const SELECTED_CLI: AgentRunContext = {
   cli: { kind: 'resolved', path: '/opt/selected/claude2' },
   env: HOST_ENV,
   configRootEnv: {},
-  selfUpdateEnv: {},
+  pinnedEnv: {},
   extraArgs: [],
 };
 const OTHER_CLI: AgentRunContext = {
   cli: { kind: 'resolved', path: '/opt/other/claude' },
   env: HOST_ENV,
   configRootEnv: {},
-  selfUpdateEnv: {},
+  pinnedEnv: {},
   extraArgs: [],
 };
 

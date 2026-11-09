@@ -15,7 +15,7 @@ export function restoreLanding(saved: { messageId: string; offset: number } | nu
 }
 
 /**
- * 消息行此刻相对滚动视口在哪。按真实几何判:列表渲染的行远多于视口里的(整窗按文档流排),
+ * 消息行此刻相对滚动视口在哪。按真实几何判:挂上的行比视口里的多(落点附近一段按文档流排),
  * 渲染了不等于看得见。行没渲染出来就和已渲染的第一行比序号(aria-posinset = 数据下标 + 1)。
  */
 export function rowPlacement(scroller: HTMLElement, messageId: string, index: number): 'above' | 'visible' | 'below' {

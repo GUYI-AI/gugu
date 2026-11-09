@@ -125,8 +125,9 @@ export function createDeviceActionsProvider(input: {
     ? 'On that computer, open 咕咕 → Settings → Devices → What this computer can do, and connect the locations needed (Desktop / Documents / Downloads / Other locations).'
     : `On that computer, open 咕咕 → Settings → Devices → What this computer can do, and connect "${title(group)}".`
 
-  const markOs = (group: string, outcome: Outcome): Outcome => {
-    for (const g of groupsOf(group)) {
+  const permissionKeys = (def: ActionDef) => def.osPermissionScope === 'action' ? [def.name] : groupsOf(def.group)
+  const markOs = (keys: readonly string[], outcome: Outcome): Outcome => {
+    for (const g of keys) {
       if (outcome.ok) osBlocked.delete(g)
       else if (outcome.code === 'os_permission') osBlocked.set(g, outcome.message)
     }
@@ -152,25 +153,31 @@ export function createDeviceActionsProvider(input: {
 
   const familyContext = (signal: AbortSignal, note: (text: string) => void): FamilyContext => ({ deps, granted: grantedSet, signal, note })
 
-  const shrinkPictures = async (outcome: Outcome): Promise<Outcome> => {
+  const shrinkPictures = async (outcome: Outcome, singlePictureResult = false): Promise<Outcome> => {
     if (!outcome.ok || !outcome.data || typeof outcome.data !== 'object' || !Array.isArray((outcome.data as { pictures?: unknown }).pictures)) return outcome
     const data = outcome.data as { pictures: Array<{ label: string; mimeType: string; data: string }> } & Record<string, unknown>
     const pictures: typeof data.pictures = []
     const omitted: string[] = []
+    let deliveredSize: { width: number; height: number } | undefined
     for (const picture of data.pictures) {
       let current = picture
       for (const maxEdge of [1568, 1024]) {
         if (current.data.length <= PICTURE_MAX_BASE64 || !deps.shrinkImage) break
         const small = await deps.shrinkImage(picture, { maxEdge, quality: 72 })
         current = { label: picture.label, mimeType: small.mimeType, data: small.data }
+        if (singlePictureResult) deliveredSize = { width: small.width, height: small.height }
       }
       if (current.data.length <= PICTURE_MAX_BASE64) pictures.push(current)
       else omitted.push(picture.label)
+    }
+    if (singlePictureResult && pictures.length !== 1) {
+      return { ok: false, code: 'execution_failed', message: 'The picture is too large to return even after resizing' }
     }
     return {
       ok: true,
       data: {
         ...data,
+        ...(deliveredSize ?? {}),
         pictures,
         ...(omitted.length > 0 ? { pictures_omitted: `${omitted.join(', ')}: too large to send back even after shrinking` } : {}),
       },
@@ -198,7 +205,8 @@ export function createDeviceActionsProvider(input: {
       if (grants.deniedActions.includes(def.name)) return { ...base, available: false, unavailable_reason: 'not_granted' as const, unavailable_detail: `Turned off on its own in 咕咕 → Settings → Devices → ${title(def.group)}.` }
       const missing = groupsOf(def.group).map(nativeMissing).find(Boolean) ?? def.unsupportedReason?.(deps)
       if (missing) return { ...base, available: false, unavailable_reason: 'unsupported' as const, unavailable_detail: missing }
-      const blockedMessage = groupsOf(def.group).filter((g) => granted.has(g)).map((g) => osBlocked.get(g)).find(Boolean)
+      const blockedKeys = def.osPermissionScope === 'action' ? [def.name] : groupsOf(def.group).filter((g) => granted.has(g))
+      const blockedMessage = blockedKeys.map((g) => osBlocked.get(g)).find(Boolean)
       if (blockedMessage) return { ...base, available: false, unavailable_reason: 'os_permission' as const, unavailable_detail: blockedMessage }
       return { ...base, available: true }
     })
@@ -237,10 +245,10 @@ export function createDeviceActionsProvider(input: {
       const def = byName.get(action)
       if (!def) return { ok: false, code: 'unknown_action', message: `This computer has no action ${action}` }
       try {
-        const outcome = await shrinkPictures(await def.run(args, { ...familyContext(ctx.signal, ctx.note), callId: ctx.callId, ...(ctx.caller ? { caller: ctx.caller } : {}), ...(ctx.remainingMs ? { remainingMs: ctx.remainingMs } : {}) }))
-        return def.succeedsWithoutPermission && outcome.ok ? outcome : markOs(def.group, outcome)
+        const outcome = await shrinkPictures(await def.run(args, { ...familyContext(ctx.signal, ctx.note), callId: ctx.callId, ...(ctx.caller ? { caller: ctx.caller } : {}), ...(ctx.remainingMs ? { remainingMs: ctx.remainingMs } : {}) }), def.singlePictureResult)
+        return def.succeedsWithoutPermission && outcome.ok ? outcome : markOs(permissionKeys(def), outcome)
       } catch (error) {
-        return markOs(def.group, outcomeOfError(error, def.titleEn))
+        return markOs(permissionKeys(def), outcomeOfError(error, def.titleEn))
       }
     },
     record: (entry) => store.record(entry),
@@ -275,7 +283,7 @@ export function createDeviceActionsProvider(input: {
         } catch (error) {
           outcome = outcomeOfError(error, group)
         }
-        markOs(group, outcome)
+        markOs(groupsOf(group), outcome)
         if (!outcome.ok) {
           const code = outcome.code === 'os_permission' ? 'os_permission' : 'execution_failed'
           // The page of the permission that is missing (a group can need several), else the group's own.

@@ -17,6 +17,7 @@
  * `light` / `dark`,落在 `<html data-theme>` 上。选了 `system` 时真值随系统外观走,
  * 由 `startHostThemeSystemSync()` 一处负责改写属性 —— 两个 React 根都只是观察者。
  */
+import { appThemeColors } from './app-theme-colors';
 import { rendererLogger } from '@/lib/log';
 
 const themeLog = rendererLogger('theme/native-appearance');
@@ -107,7 +108,7 @@ function applyEffectiveTheme(theme: HostTheme, preference: ThemePreference): voi
   if (typeof document === 'undefined') return;
   document.documentElement.dataset.theme = theme;
   document.documentElement.dataset.themePreference = preference;
-  notifyWindowTone(theme);
+  notifyHostTheme();
 }
 
 /**
@@ -115,9 +116,9 @@ function applyEffectiveTheme(theme: HostTheme, preference: ThemePreference): voi
  * 主题真值只有这里一个写入者,所以也只有这里知道该告诉主进程什么;主进程只被告知
  * (见 electron/main.ts 同名注释)。web 构建没有这座桥,静默跳过即可 —— 那里根本没有无边框窗口。
  */
-function notifyWindowTone(theme: HostTheme): void {
+export function notifyHostTheme(): void {
   if (typeof window === 'undefined') return;
-  window.electronAPI?.syncWindowTone?.(theme);
+  window.electronAPI?.syncWindowTone?.(readEffectiveHostTheme(), appThemeColors());
 }
 
 /** 读真值。属性缺失时按浅色 —— 与 index.html 里那段引导脚本的默认一致。 */

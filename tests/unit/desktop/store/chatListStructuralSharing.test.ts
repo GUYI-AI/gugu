@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { applyFetchedChatList, createChatListProjectionLedger } from '../../../../apps/desktop/src/store/chatListProjection'
 import { openImRepository, type AccountImRepository } from '../../../../apps/desktop/src/lib/imRepository'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
+import { patchChatRows } from '../../../../apps/desktop/src/store/chatRealtimeMutations'
 import { chat } from '../../../support/testHarness'
 
 let repository: AccountImRepository
@@ -30,6 +31,26 @@ describe('applyFetchedChatList 结构共享', () => {
       { currentChats: current, activeChatId: null, revokeMissingActive: false })
     expect(next).toBe(current)
   })
+  // 每一份「内容相同的新对象」都是常驻的又一代行:旧列表的持有者(闭包、ref、派生列表)各自留着一整套。
+  it('新消息把一行顶到最前:其余行仍是原来那一版对象(按 id 认行,不按位置)', async () => {
+    const current = [chat({ id: 'a' }), chat({ id: 'b' }), chat({ id: 'c' })]
+    const moved = { ...current[2]!, last_message_preview: 'new' }
+    const next = await applyFetchedChatList(createChatListProjectionLedger(), repository,
+      { fetched: [moved, { ...current[0]! }, { ...current[1]! }], identities: [] },
+      { currentChats: current, activeChatId: null, revokeMissingActive: false })
+    expect(next.map((row) => row.id)).toEqual(['c', 'a', 'b'])
+    expect(next[1]).toBe(current[0])
+    expect(next[2]).toBe(current[1])
+  })
+
+  it('变了的那一行就是投影给出的那个对象,不另拷一份', async () => {
+    const current = [chat({ id: 'a' }), chat({ id: 'b' })]
+    const changed = { ...current[1]!, last_message_preview: 'new' }
+    const next = await applyFetchedChatList(createChatListProjectionLedger(), repository,
+      { fetched: [{ ...current[0]! }, changed], identities: [] },
+      { currentChats: current, activeChatId: null, revokeMissingActive: false })
+    expect(next[1]).toBe(changed)
+  })
 })
 
 it('keeps a remote personal deletion out of active and optimistic rows while preserving unrelated local intent', async () => {
@@ -44,3 +65,18 @@ it('keeps a remote personal deletion out of active and optimistic rows while pre
     {currentChats:next,activeChatId:null,revokeMissingActive:false,isConversationDeleted:id => id === 'dm'});
   expect(refreshed.map(row => row.id)).toEqual(['new','other']);
 });
+
+describe('patchChatRows 结构共享', () => {
+  it('写入的值和原来一样 ⇒ 还是原来那个数组(订阅列表的组件不重渲)', () => {
+    const current = [chat({ id: 'a', last_read_seq: 3 }), chat({ id: 'b' })]
+    expect(patchChatRows(current, 'a', { last_read_seq: 3 })).toBe(current)
+  })
+
+  it('真变了 ⇒ 只换那一行', () => {
+    const current = [chat({ id: 'a', last_read_seq: 3 }), chat({ id: 'b' })]
+    const next = patchChatRows(current, 'a', { last_read_seq: 4 })
+    expect(next).not.toBe(current)
+    expect(next[0]).toMatchObject({ last_read_seq: 4 })
+    expect(next[1]).toBe(current[1])
+  })
+})

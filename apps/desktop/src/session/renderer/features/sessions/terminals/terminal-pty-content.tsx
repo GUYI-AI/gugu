@@ -29,7 +29,7 @@ export interface TerminalPtyContentProps {
   remoteFiles?: RemoteTerminalFiles;
   /** 盖在终端上的那一层(别的机器:连接状态行 / ssh 提问卡片 / 传文件那一行)。 */
   overlay?: (session: PtySession, focusTerminal: () => void) => ReactNode;
-  onExit?: () => void;
+  onExit?: (info: { exitCode: number | undefined; signal?: number }) => void;
 }
 
 export const TerminalPtyContent = observer(function TerminalPtyContent({

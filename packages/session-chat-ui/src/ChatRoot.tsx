@@ -36,6 +36,7 @@ import {
   For,
   Show,
   createEffect,
+  createComputed,
   createMemo,
   createSignal,
   on,
@@ -52,7 +53,7 @@ import { SelfIdentityProvider } from './lib/self-identity';
 import { SenderAvatarProvider } from './lib/sender-avatar';
 import { AppNameProvider } from './lib/app-name';
 import { ChatNameProvider } from './lib/chat-name';
-import { CHAT_COMPOSER_EDGE_FADE_PX, CHAT_PIN_FADE_HEIGHT_PX } from './layout-geometry';
+import { CHAT_COMPOSER_EDGE_FADE_PX, PIN_SUMMARY_GAP } from './layout-geometry';
 import { itemScrollTarget } from './core/scroll-to-item';
 import { collectSubagentRoster } from './lib/subagent-roster';
 import type { ChatCommands, ScrollToItemOptions } from './commands';
@@ -65,6 +66,8 @@ import { createFrameScheduler } from './components/engine/frame-scheduler';
 import { createTweenRegistry } from './components/engine/tween-registry';
 import { createActivityGeometry } from './components/engine/activity-geometry';
 import { SEGMENTERS, UNIT_REGISTRY } from './components/engine/unit-registry';
+import { PinnedUserSummary, pinSummary } from './components/rows/message/PinnedUserSummary';
+import type { MessageVars } from './components/rows/message/metrics';
 import { UnitRow } from './components/engine/UnitRow';
 import { latestConversationBubbleId } from './components/rows/message/conversation-body';
 import type { ChatCaches } from './core/caches';
@@ -107,9 +110,9 @@ import {
   heroSlotVisibleClass,
   outerClip,
   pinBackdrop,
-  pinFade,
   pinLane,
   pinSticky,
+  pinSummaryLayer,
   scrollContainer,
   scrollContainerEmbedded,
   unitRowWrapper,
@@ -117,6 +120,7 @@ import {
 } from './chat-root.css';
 import './chat-fonts.css';
 import { vars } from './styles/theme.css';
+import { syncContentColumnGeometry } from './lib/content-column-geometry';
 
 // Centered content column. The scroll container stays full width (so the
 // scrollbar sits at the viewport edge) while rows are measured and laid out
@@ -416,12 +420,21 @@ export function ChatRoot(props: ChatRootProps) {
   const [viewHeight, setViewHeight] = createSignal(600);
   const [containerWidth, setContainerWidth] = createSignal(0);
 
-  const updateContentColumnGeometry = () => {
-    if (!widthProbeEl) return;
-    const probeRect = widthProbeEl.getBoundingClientRect();
-    if (probeRect.width <= 0) return;
-    setContainerWidth(probeRect.width);
+  // Only the activity pin's backdrop reads this. A custom property on the root would restyle every row on each width change.
+  const [pinFrame, setPinFrame] = createSignal({ left: 0, width: 0 }, { equals: (a, b) => a.left === b.left && a.width === b.width });
+  // @@@width-keeps-the-reading-spot — an anchor is a row plus pixels into it. New width rewraps that row, so the same pixels
+  // are a different part of it; a long reply makes that many sections. The spot is the same share of the row.
+  const setColumnWidth = (width: number) => {
+    if (width === containerWidth()) return;
+    const m = anchor();
+    const i = m.kind === 'anchor' && m.edge === 'top' ? unitIndexOf(m.itemId, m.edge) : -1;
+    if (m.kind !== 'anchor' || i < 0) return void setContainerWidth(width);
+    const before = virt.size(i);
+    setContainerWidth(width);
+    measureUnitAt(i);
+    if (before > 0 && virt.size(i) !== before) setAnchor({ ...m, offset: (m.offset * virt.size(i)) / before });
   };
+  const updateContentColumnGeometry = () => syncContentColumnGeometry(widthProbeEl, scrollEl, setColumnWidth, setPinFrame);
 
   const updateSlotPadBottom = () => {
     if (props.composer !== 'slot' || effectiveComposerPlacement() === 'center') {
@@ -524,109 +537,125 @@ export function ChatRoot(props: ChatRootProps) {
   const segmentCtx = (active = false) => segmentCtxFor(props.context, state(), caches(), active,
     active ? latestTurnId() : committedLatestTurnId());
 
-  let committedUnitsArr: ReturnType<typeof flattenTier> = [];
-  // O(1) lookup: itemId -> index of the FIRST unit for that item in the
-  // committed tier. Maintained in lock-step with committedUnitsArr. Active-tier
-  // items are handled by a small scan in firstUnitIndexOf since activeTurn is
-  // always short (≤ a handful of items per streaming turn).
-  const committedIndexById = new Map<string, number>();
-  // The calendar day the committed tier ends on — the `prevDayKey` seed for the
-  // active tier. Maintained in lock-step with committedUnitsArr, exactly like
-  // the prevKind seam: without it every new active turn would re-announce a day
-  // separator for a day that is already on screen.
-  let committedDayKey: string | undefined;
-  let lastCommitted: readonly TranscriptTurn[] = [];
-  // Identity of the model this effect last built from. A change signals a
-  // view.setModel swap and drives the snapshot + incremental-cache reset.
-  let lastState: ChatState | undefined;
   let itemScrollGeneration = 0;
+  // Row height deltas waiting for above-viewport scroll compensation (applyAboveCompensation).
+  let pendingSizeDeltas: Array<readonly [number, number]> = [];
   onCleanup(() => { itemScrollGeneration++; });
-  const [committedUnitsVersion, setCommittedUnitsVersion] = createSignal(0);
   // Stable empty array passed to makeUnitsView when we need a committed-only
   // view. Must not change identity so memos don't re-run on each access.
   const NO_ACTIVE_UNITS: ReturnType<typeof flattenTier> = [];
   // An incremental append only reads the new tail's fold keys. Keep the full
   // fold snapshot reactive so older headers still rebuild their hidden rows.
   const committedFolds = createMemo(() => viewState().snapshot());
-  let lastCommittedFolds: Record<string, boolean> | undefined;
 
-  // ── Committed-tier build + model-swap reset (single effect) ────────────────
-  // This effect owns BOTH the incremental committed build and the model-swap
-  // reset. They were previously split across two effects that relied on Solid
-  // running them in creation order; that assumption is unsafe — Solid notifies
-  // effects in observer (subscription) order, which shifts as each effect
-  // re-subscribes to state() on every run. On a fast tab swap the reset could
-  // run AFTER the rebuild and wipe the freshly built committedUnitsArr, leaving
-  // an empty transcript until the next named event. Folding both into one
-  // computation makes the ordering deterministic: on a state-identity change we
-  // snapshot the outgoing model and clear the incremental cache first, then
-  // rebuild from the incoming model — all within the same synchronous run.
-  createEffect(() => {
+  /**
+   * One build of the committed tier, derived from the previous build.
+   *
+   * `units` is the committed prefix of `units()`. `indexById` maps an itemId to
+   * the index of its FIRST committed unit (active-tier items are handled by a
+   * small scan in firstUnitIndexOf, the active turn is always short).
+   * `dayKey` is the calendar day the tier ends on — the `prevDayKey` seed for the
+   * active tier, like the prevKind seam: without it every new active turn would
+   * re-announce a day separator that is already on screen.
+   * `reseed` marks a rebuild that moved units between numeric slots: their
+   * measured heights must be kept by identity before the virtualizer is reseeded.
+   */
+  type CommittedBuild = {
+    state: ChatState;
+    source: readonly TranscriptTurn[];
+    folds: Record<string, boolean>;
+    units: ReturnType<typeof flattenTier>;
+    indexById: ReadonlyMap<string, number>;
+    dayKey: string | undefined;
+    reseed: boolean;
+  };
+
+  // ── Committed tier: pure derivation ─────────────────────────────────────────
+  // @@@committed-tier-same-pass (#2296) — the committed tier is a memo, not an
+  // effect. `units()` concatenates it with the active tier (also a memo). When a
+  // turn commits, history.append and activeTurn.set(null) land in one batch; if
+  // the committed tier were built in an effect, every memo between the two (the
+  // per-index `u()` of each row) would first see "old committed + empty active",
+  // read `undefined` at the just-committed indices and unmount those rows, then
+  // remount them with new DOM one pass later. As a memo it is pulled in the same
+  // pass as the active tier, so no row ever observes the half-updated list.
+  // This memo only derives values; it writes nothing. The virtualizer/heightmap
+  // side effects of a swap or a reseeding rebuild live in the createComputed
+  // below.
+  const committedBuild = createMemo<CommittedBuild | undefined>((previous) => {
     const s = state();
     const next = projectedCommitted();
-
-    if (s !== lastState) {
-      itemScrollGeneration++;
-      // Model swap: snapshot the outgoing model's heights while committedUnitsArr
-      // and virt still reflect it, then clear the incremental cache so the build
-      // below re-seeds from scratch for the incoming model.
-      if (lastState) snapshotInto(lastState);
-      // @@@swap-reseeds-virt (#6578) — setCount keeps existing rows: without this the incoming model inherits the outgoing one's row heights.
-      virt.setCount(0, () => 0);
-      pendingSizeDeltas = [];
-      committedUnitsArr = [];
-      committedIndexById.clear();
-      committedDayKey = undefined;
-      lastCommitted = [];
-      lastState = s;
-    }
-
-    const prev = lastCommitted;
     const ctx = segmentCtx(false);
     const folds = committedFolds();
+    // A model swap (view.setModel) starts from an empty incremental cache.
+    const prev = previous && previous.state === s ? previous : undefined;
+    const prevSource = prev?.source ?? [];
+    const prevUnits = prev?.units ?? [];
 
     if (
-      folds === lastCommittedFolds &&
-      next.length > prev.length &&
-      (prev.length === 0 || next[prev.length - 1] === prev[prev.length - 1]) &&
+      prev &&
+      folds === prev.folds &&
+      next.length > prevSource.length &&
+      (prevSource.length === 0 || next[prevSource.length - 1] === prevSource[prevSource.length - 1]) &&
       // The previous acknowledgement stops being the latest when another turn arrives.
-      (prev.length === 0 || !isEmptyAgentTurn(prev[prev.length - 1])) &&
+      (prevSource.length === 0 || !isEmptyAgentTurn(prevSource[prevSource.length - 1])) &&
       // 新来的那一轮要并进上一条还没收尾的折叠(#4981)时,只 flatten 新的画不出合并,走整条重建。
-      !joinsFoldRunAt(next, prev.length, ctx.foldTurnProcess === true)
+      !joinsFoldRunAt(next, prevSource.length, ctx.foldTurnProcess === true)
     ) {
       // Incremental append: only process the new tail.
-      const tail = next.slice(prev.length);
-      const prevKind =
-        committedUnitsArr.length > 0
-          ? committedUnitsArr[committedUnitsArr.length - 1].kind
-          : undefined;
-      const newUnits = flattenTier(tail, ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, committedDayKey, lastConversationMessage(committedUnitsArr), trailingActivity(committedUnitsArr));
-      committedDayKey = trailingDayKey(tail, committedDayKey, ctx.latestTurnId);
-      const base = committedUnitsArr.length;
+      const tail = next.slice(prevSource.length);
+      const prevKind = prevUnits.length > 0 ? prevUnits[prevUnits.length - 1].kind : undefined;
+      const newUnits = flattenTier(tail, ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, prev.dayKey, lastConversationMessage(prevUnits), trailingActivity(prevUnits));
+      const indexById = new Map(prev.indexById);
+      const base = prevUnits.length;
       for (let j = 0; j < newUnits.length; j++) {
         const u = newUnits[j];
         if (u) for (const id of unitItemIds(u)) {
-          if (!committedIndexById.has(id)) committedIndexById.set(id, base + j);
+          if (!indexById.has(id)) indexById.set(id, base + j);
         }
       }
-      committedUnitsArr = appendActivityUnits(committedUnitsArr, newUnits);
-    } else {
-      // Full rebuild (seed, prepend, non-append structural change, or an append that joins the previous fold run).
-      committedUnitsArr = preserveActivityIds(committedUnitsArr, flattenTier(next, ctx, SEGMENTERS, UNIT_REGISTRY));
-      committedDayKey = trailingDayKey(next, undefined, ctx.latestTurnId);
-      committedIndexById.clear();
-      for (let i = 0; i < committedUnitsArr.length; i++) {
-        const u = committedUnitsArr[i];
-        if (u) for (const id of unitItemIds(u)) {
-          if (!committedIndexById.has(id)) committedIndexById.set(id, i);
-        }
-      }
+      return {
+        state: s, source: next, folds, units: appendActivityUnits(prevUnits, newUnits), indexById,
+        dayKey: trailingDayKey(tail, prev.dayKey, ctx.latestTurnId), reseed: false,
+      };
     }
 
-    lastCommitted = next;
-    lastCommittedFolds = folds;
-    setCommittedUnitsVersion((v) => v + 1);
+    // Full rebuild (seed, model swap, prepend, non-append structural change, or an append that joins the previous fold run).
+    const units = preserveActivityIds(prevUnits, flattenTier(next, ctx, SEGMENTERS, UNIT_REGISTRY));
+    const indexById = new Map<string, number>();
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      if (u) for (const id of unitItemIds(u)) {
+        if (!indexById.has(id)) indexById.set(id, i);
+      }
+    }
+    return {
+      state: s, source: next, folds, units, indexById,
+      dayKey: trailingDayKey(next, undefined, ctx.latestTurnId),
+      // Folding, prepending and tail replacement can all move units between numeric slots.
+      reseed: prevUnits.some((unit, index) => units[index]?.id !== unit.id),
+    };
   });
+  const committedUnits = () => committedBuild()!.units;
+
+  // ── Committed tier: virtualizer / heightmap side effects ───────────────────
+  // A computation, not an effect: it runs in the same synchronous update as the
+  // memo above, before any render effect mounts or places a row, and before the
+  // count-sync effect seeds the virtualizer from the new units(). The outgoing
+  // build is still at hand as `previous`, so heights are snapshotted against
+  // the unit ids they were measured for:
+  //  - model swap: snapshot the outgoing model's heights, then reset the
+  //    virtualizer (@@@swap-reseeds-virt (#6578) — setCount keeps existing rows:
+  //    without this the incoming model inherits the outgoing one's row heights);
+  //  - reseeding rebuild: preserve measured heights by identity before reseeding.
+  createComputed(on(committedBuild, (build, previous) => {
+    if (!build) return;
+    if (previous?.state === build.state && !build.reseed) return;
+    if (previous?.state !== build.state) itemScrollGeneration++;
+    if (previous) snapshotInto(previous.state, previous.units);
+    virt.setCount(0, () => 0);
+    pendingSizeDeltas = [];
+  }));
 
   /**
    * 还在跑的后台任务挂在哪(owner 2026-10-27 原型:后台那一句与「执行中」同一行)。
@@ -660,7 +689,7 @@ export function ChatRoot(props: ChatRootProps) {
   };
 
   const activeLayoutNow = () => {
-    committedUnitsVersion();
+    committedBuild();
     const at = projectedInputs().active;
     const pendingPrompt = state().session.state.pendingPrompt;
     const pendingMessages = projectedInputs().waiting;
@@ -670,30 +699,30 @@ export function ChatRoot(props: ChatRootProps) {
     const tasks = state().session.state.backgroundTasks;
     const background = tasks.commands.length > 0 || tasks.subagents.length > 0;
     const prevKind =
-      committedUnitsArr.length > 0
-        ? committedUnitsArr[committedUnitsArr.length - 1].kind
+      committedUnits().length > 0
+        ? committedUnits()[committedUnits().length - 1].kind
         : undefined;
     const build = (withBackground: boolean) => {
       const full = segmentCtx(true);
       const ctx = withBackground ? full : { ...full, backgroundTasks: () => null };
       if (!at && !pendingPrompt && !pendingMessages.length) {
         if (!condition && !withBackground) return [] as ReturnType<typeof flattenTier>;
-        return flattenTier([], ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, committedDayKey, lastConversationMessage(committedUnitsArr), trailingActivity(committedUnitsArr));
+        return flattenTier([], ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, committedBuild()!.dayKey, lastConversationMessage(committedUnits()), trailingActivity(committedUnits()));
       }
       const activeTurn = activeTurnWithInputs(at, pendingPrompt, pendingMessages, state().transcript.state.committedTurns)!;
       // Reserve the same process row from send to startup: adding it at acknowledgement scrolls a long transcript.
       const pending = [...(pendingPrompt ? [pendingPrompt] : []), ...pendingMessages];
       const failedPending = !at && pending.length > 0 && pending.every(input => input.stopped || input.delivery?.state === 'waiting' || input.delivery?.state === 'failed' || input.delivery?.state === 'unknown');
-      const body = flattenTier([activeTurn], failedPending ? { ...ctx, active: false } : ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, committedDayKey, lastConversationMessage(committedUnitsArr), trailingActivity(committedUnitsArr));
+      const body = flattenTier([activeTurn], failedPending ? { ...ctx, active: false } : ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, committedBuild()!.dayKey, lastConversationMessage(committedUnits()), trailingActivity(committedUnits()));
       // A held input has no running process row, but it cannot hide the host's compression/stop/failure state.
       if (!failedPending) return body;
-      return [...body, ...flattenTier([], ctx, SEGMENTERS, UNIT_REGISTRY, body.at(-1)?.kind ?? prevKind, committedDayKey, lastConversationMessage(body), trailingActivity(body))];
+      return [...body, ...flattenTier([], ctx, SEGMENTERS, UNIT_REGISTRY, body.at(-1)?.kind ?? prevKind, committedBuild()!.dayKey, lastConversationMessage(body), trailingActivity(body))];
     };
     const units = build(false);
     if (!background) return { units, backgroundOwner: null as string | null };
     // ⚠️ 不能写 `??`:这一档末尾是别的行(人刚说了话)返回的是 null,它的意思是「别挂」,❌ 接着去已提交那一档找。
     const activeOwner = backgroundOwnerIn(units, true);
-    const owner = activeOwner === undefined ? backgroundOwnerIn(committedUnitsArr) ?? null : activeOwner;
+    const owner = activeOwner === undefined ? backgroundOwnerIn(committedUnits()) ?? null : activeOwner;
     if (owner) return { units, backgroundOwner: owner as string | null };
     // 没有可挂的过程行:后台单独一行贴在最后(轮早就收口了、命令还在跑,这一档也不能空手返回)。
     return { units: build(true), backgroundOwner: BACKGROUND_TASKS_ID as string | null };
@@ -736,12 +765,12 @@ export function ChatRoot(props: ChatRootProps) {
   });
 
   const units = createMemo<UnitsView>(() => {
-    committedUnitsVersion();
-    return makeUnitsView(committedUnitsArr, activeUnits());
+    committedBuild();
+    return makeUnitsView(committedUnits(), activeUnits());
   });
 
-  const committedActivityLanes = createMemo(() => { committedUnitsVersion(); return activityLanes(committedUnitsArr); });
-  const activityLaneRanges = createMemo(() => joinedActivityLanes(committedActivityLanes(), activeUnits(), committedUnitsArr.length));
+  const committedActivityLanes = createMemo(() => { return activityLanes(committedUnits()); });
+  const activityLaneRanges = createMemo(() => joinedActivityLanes(committedActivityLanes(), activeUnits(), committedUnits().length));
   const activityLaneByIndex = createMemo(() => new Map(activityLaneRanges().filter(lane => viewState().isCollapsed(lane.id)).map(lane => [lane.index, lane])));
 
   const latestConversationMessageId = createMemo(() => latestConversationBubbleId(units(), { theme: theme() }));
@@ -809,10 +838,12 @@ export function ChatRoot(props: ChatRootProps) {
   const placeRow = (el: HTMLElement, idx: number, top: number, laneH: number | null) => {
     // Native sticky positioning supplies the reversible push-out. Under reduced motion,
     // hide the complete row as soon as that push starts instead of sliding a partial row.
-    const pinLine = laneH === null ? 0 : shadowScrollTop + userTopGap + activityPinOffset(idx) - (units().at(idx)?.gapBefore ?? 0);
-    const stuck = laneH !== null && pinLine > top + 0.5;
+    // A user lane sticks its summary, which sits right below the message: it sticks once the message has gone by.
+    const summary = laneH !== null && pinAnchorSet().has(idx);
+    const pinLine = laneH === null ? 0 : shadowScrollTop + userTopGap + (summary ? 0 : activityPinOffset(idx) - (units().at(idx)?.gapBefore ?? 0));
+    const stuck = laneH !== null && pinLine > top + (summary ? virt.size(idx) : 0) + 0.5;
     if (el.dataset.pinStuck !== String(stuck)) el.dataset.pinStuck = String(stuck);
-    const leaving = laneH !== null && pinLine > top + laneH - virt.size(idx) + 0.5;
+    const leaving = laneH !== null && pinLine > top + laneH - (summary ? pinHeight(idx) : virt.size(idx)) + 0.5;
     if (el.dataset.pinLeaving !== String(leaving)) el.dataset.pinLeaving = String(leaving);
     const key = laneH === null ? `t${top}` : `l${top}:${laneH}`;
     if (appliedTop.get(idx) === key) return;
@@ -830,6 +861,7 @@ export function ChatRoot(props: ChatRootProps) {
   let lastVisibleStart = 0;
   let lastVisibleEnd = -1;
 
+  const bodySizeOf = (messageId: string) => state().session.state.bodySize(messageId);
   const estimateContext = (): MeasureCtx => ({
         theme: theme(),
         translate: props.context.translate,
@@ -843,6 +875,7 @@ export function ChatRoot(props: ChatRootProps) {
         caches: caches(),
         measureEpoch: measureEpoch(),
         expandedId: expandedUserId(),
+        bodySize: bodySizeOf,
         editingMessage: editingMessage(),
         finalReplyId: finalReplyId(),
         latestConversationMessageId: latestConversationMessageId(),
@@ -850,6 +883,9 @@ export function ChatRoot(props: ChatRootProps) {
   });
 
   // ── Count sync effect ─────────────────────────────────────────────────────
+  // The ids the active-tier slots were last sized for, and where that tier started (@@@sizes-follow-units).
+  let sizedCommittedLength = 0;
+  let sizedActiveIds: (string | undefined)[] = [];
   createEffect(() => {
     const us = units();
     theme();
@@ -859,7 +895,7 @@ export function ChatRoot(props: ChatRootProps) {
       // Skip the Map.get pass entirely on cold mounts (empty heightmap).
       const currentState = state();
       const hasHeightmapSnapshot = currentState.heightmap.lastWidth > 0;
-      virt.setCount(us.length, (i) => {
+      const seed = (i: number) => {
         const u = us.at(i);
         if (!u) return 60;
         // A mounted row's reported height first (a row measured before a swap re-seed won't report again, #6578),
@@ -878,7 +914,21 @@ export function ChatRoot(props: ChatRootProps) {
           unitDef?.estimate?.(u.data, unitCtx, unitDef.vars ?? {}) ??
           genericEstimate(u.data as unknown as ChatItem, unitCtx);
         return unitReservedHeight(u, contentH);
-      });
+      };
+      // @@@sizes-follow-units (#2296) — virt keeps a size per index across setCount. A unit that moved to an
+      // index another unit used to hold must not inherit that unit's size: a pending input pushed down by a
+      // hidden zero-height A2A child would read 0, be left out of the visible set, and never mount to measure
+      // itself. Committed-tier moves already reseed the whole virtualizer (committed-tier computation); only
+      // the slots from the shorter committed prefix on can change hands without that, so only those are compared.
+      const committedLength = committedUnits().length;
+      for (let i = Math.min(sizedCommittedLength, committedLength); i < Math.min(virt.count, us.length); i++) {
+        const before = i >= sizedCommittedLength ? sizedActiveIds[i - sizedCommittedLength] : undefined;
+        if (us.at(i)?.id !== before) virt.setSize(i, seed(i));
+      }
+      virt.setCount(us.length, seed);
+      sizedCommittedLength = committedLength;
+      sizedActiveIds = [];
+      for (let i = committedLength; i < us.length; i++) sizedActiveIds.push(us.at(i)?.id);
       refreshTotal();
       // Defer projection to the write phase: projectAnchor will fire once per
       // frame (not once per row) preventing layout thrashing on streaming updates.
@@ -892,16 +942,16 @@ export function ChatRoot(props: ChatRootProps) {
   // measureEpoch bumps (on font load) invalidate everything globally.
 
   // ── Pin anchors of the committed tier ─────────────────────────────────────
-  // Tracks committedUnitsVersion only — not units() — so it does not recompute
+  // Tracks committedBuild only — not units() — so it does not recompute
   // on every streaming frame. Committed units are always the
-  // [0, committedUnitsArr.length) prefix of the full units() view, so the
+  // [0, committedUnits().length) prefix of the full units() view, so the
   // returned absolute indices remain valid. The active tier's anchors are added
   // in pinAnchors.
   const userTurns = createMemo(() => {
-    committedUnitsVersion();
+    committedBuild();
     return collectUserTurnUnits(
       state().transcript.state.committedTurns,
-      makeUnitsView(committedUnitsArr, NO_ACTIVE_UNITS), { viewerId: props.context.selfIdentity()?.userId }
+      makeUnitsView(committedUnits(), NO_ACTIVE_UNITS), { viewerId: props.context.selfIdentity()?.userId }
     );
   });
 
@@ -910,10 +960,10 @@ export function ChatRoot(props: ChatRootProps) {
   // role message. Scans activeTurn first for the freshly-sent message during
   // streaming, then falls back to committed. Used by the visibility check.
   //
-  // Memoized on committedUnitsVersion + activeTurn identity so it does not
+  // Memoized on committedBuild + activeTurn identity so it does not
   // recompute on every streaming text patch (only on structural turn changes).
   const lastUserUnitIdx = createMemo(() => {
-    committedUnitsVersion();
+    committedBuild();
     const transcript = state().transcript.state;
     let targetId: string | null = null;
 
@@ -996,11 +1046,13 @@ export function ChatRoot(props: ChatRootProps) {
   }
 
   /**
-   * @@@sticky-user-lanes — a user message sticks to the top while its turn is on screen, and the
-   * browser does the sticking. Each user message row (a "pin anchor") is placed in a lane that spans
-   * its turn: from its own top to the next anchor's top (the last one: to the end of the content).
-   * The row is `position: sticky` inside its lane, so it sticks in the same compositor frame as the
-   * scroll and is pushed off by the lane's end, i.e. by the next user message.
+   * @@@sticky-user-lanes — a user message stays at the top while its turn is on screen, as a two-line
+   * summary, and the browser does the sticking. Each user message row (a "pin anchor") is placed in a
+   * lane that spans its turn: from its own top to the next anchor's top (the last one: to the end of
+   * the content). The message scrolls as any row; right below it in the lane sits its summary,
+   * `position: sticky`, so the summary takes over in the same compositor frame as the message leaves,
+   * and is pushed off by the lane's end, i.e. by the next user message. Every message pins, folded or
+   * expanded, long or short: the summary has the same one or two lines either way (owner 2026-11-07).
    *
    * It used to be a JS-positioned copy outside the scroller, placed from the scroll event in rAF.
    * The compositor scrolls first, so that copy was always a frame behind: one frame of the bubble cut
@@ -1019,7 +1071,7 @@ export function ChatRoot(props: ChatRootProps) {
       const active =
         activeTurnWithInputs(projectedInputs().active, pending, projectedInputs().waiting, s.transcript.state.committedTurns);
       if (!active) return userTurns();
-      const base = committedUnitsArr.length;
+      const base = committedUnits().length;
       const inActive = collectUserTurnUnits(
         [active],
         makeUnitsView(activeUnits(), NO_ACTIVE_UNITS), { viewerId: props.context.selfIdentity()?.userId }
@@ -1030,14 +1082,14 @@ export function ChatRoot(props: ChatRootProps) {
     // The active tier is rebuilt on every streaming patch; the anchors only change when a message lands.
     { equals: (a, b) => a.length === b.length && a.every((v, i) => v === b[i]) }
   );
-  const pinAnchorSet = createMemo(() => {
-    // Height changes (including width reflow and composer/viewport resize) can change pin eligibility.
-    totalHeight();
-    containerWidth();
-    measureEpoch();
-    const readableHeight = Math.max(0, viewHeight() - padTop() - padBottom());
-    return new Set(pinAnchors().filter(index => virt.size(index) <= readableHeight / 2));
+  const pinAnchorSet = createMemo(() => new Set(pinAnchors()));
+  /** Height of each anchor's stuck summary (PinnedUserSummary): one or two lines whatever the message's length. */
+  const pinHeights = createMemo(() => {
+    const ctx = estimateContext();
+    return new Map(pinAnchors().map(index => [index,
+      pinSummary(untrack(() => units().at(index)!.data) as ChatMessage, ctx, UNIT_REGISTRY.message!.vars as MessageVars).height + PIN_SUMMARY_GAP]));
   });
+  const pinHeight = (idx: number) => pinHeights().get(idx) ?? 0;
 
   /**
    * Where a lane ends. Normally the next anchor. In the agent conversation a delivered message is a bubble of
@@ -1048,18 +1100,18 @@ export function ChatRoot(props: ChatRootProps) {
   const pinEnds = createMemo<number[]>(
     () => {
       if (!props.pinUserMessages || !theme().layout.agentConversation) return pinAnchors();
-      committedUnitsVersion();
+      committedBuild();
       const s = state();
       const pending = s.session.state.pendingPrompt;
       const active = activeTurnWithInputs(projectedInputs().active, pending, projectedInputs().waiting, s.transcript.state.committedTurns);
-      const committed = collectUserTurnUnits(s.transcript.state.committedTurns, makeUnitsView(committedUnitsArr, NO_ACTIVE_UNITS), { delivered: true });
-      const base = committedUnitsArr.length;
+      const committed = collectUserTurnUnits(s.transcript.state.committedTurns, makeUnitsView(committedUnits(), NO_ACTIVE_UNITS), { delivered: true });
+      const base = committedUnits().length;
       let ends = active
         ? [...committed, ...collectUserTurnUnits([active], makeUnitsView(activeUnits(), NO_ACTIVE_UNITS), { delivered: true }).map((i) => base + i)]
         : committed;
       // Replies and process metadata still belong to the viewer's reading lane.
       // Only another visible input, or the end of an opened activity, releases it.
-      const all = makeUnitsView(committedUnitsArr, active ? activeUnits() : NO_ACTIVE_UNITS);
+      const all = makeUnitsView(committedUnits(), active ? activeUnits() : NO_ACTIVE_UNITS);
       ends = ends.filter(index => !all.at(index)?.activityFold);
       // A separately delivered panel reply starts its own reading boundary.
       for (let i = 0; i < all.length; i++) {
@@ -1089,7 +1141,7 @@ export function ChatRoot(props: ChatRootProps) {
       const end = pinEnds().find(boundary => boundary > index);
       return index < idx && (end === undefined || end > idx);
     });
-    return own === undefined ? 0 : virt.size(own) + userTopGap;
+    return own === undefined ? 0 : pinHeight(own) + userTopGap;
   }
 
   /** The anchor whose lane covers the viewport top (its row is the stuck one), or -1. */
@@ -1199,16 +1251,16 @@ export function ChatRoot(props: ChatRootProps) {
 
   // O(1) lookup: first unit index for the given itemId.
   // Committed tier uses committedIndexById (maintained in lock-step with
-  // committedUnitsArr); active tier falls back to a small linear scan
+  // committedUnits()); active tier falls back to a small linear scan
   // (activeTurn is always short — typically ≤ 5 units per streaming turn).
   // Called from projectAnchor every frame when intent is 'anchor', and from
   // lastUserUnitIdx. Declared as a function (not const) so it is hoisted and
   // accessible from memos created earlier in the component body.
   function firstUnitIndexOf(id: string): number {
-    const committedIdx = committedIndexById.get(id);
+    const committedIdx = committedBuild()!.indexById.get(id);
     if (committedIdx !== undefined) return committedIdx;
     const active = untrack(activeUnits);
-    const base = committedUnitsArr.length;
+    const base = committedUnits().length;
     for (let i = 0; i < active.length; i++) {
       if (unitContainsItem(active[i], id)) return base + i;
     }
@@ -1301,7 +1353,7 @@ export function ChatRoot(props: ChatRootProps) {
   // 浏览器把 scrollTop 存在自己的像素栅格上(实测 DPR 1 时 10946.231 → 10946),补偿量却是小数(tween 高度)。
   // 所以写完要读回浏览器真存下的值:expectedScrollTop 以它为准(否则被舍掉的那点残差会在下一次拖动时被算成
   // 用户位移、被锚吸收,逐帧累加 —— CI 实撞 6 帧累计 2px),残差带进下一次补偿(读者那一行误差 < 1 个像素栅格、不累加)。
-  let pendingSizeDeltas: Array<readonly [number, number]> = [];
+  // `pendingSizeDeltas` is declared next to the committed-tier computation, which clears it on a reseed.
   let lastTopUnitIndex = -1;
 
   const applyAboveCompensation = () => {
@@ -1397,6 +1449,7 @@ export function ChatRoot(props: ChatRootProps) {
       caches: caches(),
       measureEpoch: measureEpoch(),
       expandedId: expandedUserId(),
+      bodySize: bodySizeOf,
       editingMessage: editingMessage(),
       finalReplyId: finalReplyId(),
       latestConversationMessageId: latestConversationMessageId(),
@@ -1440,6 +1493,13 @@ export function ChatRoot(props: ChatRootProps) {
     // entire frame: computeVisible/computePin consume them without re-reading.
     shadowScrollTop = st;
     shadowViewHeight = viewHeight();
+    // @@@clamp-is-not-a-reader — the position we left is past the end: content got shorter, or the end rounds below it, and the
+    // browser put scrollTop at the end. Nobody scrolled. A reader's step up from a position that still exists is a step up.
+    if (st < expectedScrollTop) {
+      const end = el.scrollHeight - el.clientHeight;
+      // `end` is scrollHeight rounded to a whole CSS pixel, so a position within half a pixel of it may still exist.
+      if (expectedScrollTop > end + 0.5 && st >= end - 1) expectedScrollTop = st;
+    }
     const userDelta = st - expectedScrollTop;
     setScrollVelocity(userDelta);
 
@@ -1644,7 +1704,7 @@ export function ChatRoot(props: ChatRootProps) {
   // Output signals (visible, pin) are intentionally NOT in this list —
   // reading them here would create a feedback loop.
   createEffect(() => {
-    // units() already tracks committedUnitsVersion() transitively — no need to
+    // units() already tracks committedBuild() transitively — no need to
     // list it here separately.
     units();
     totalHeight();
@@ -1805,7 +1865,7 @@ export function ChatRoot(props: ChatRootProps) {
       const pin = [...pinAnchorSet()].findLast(anchor => anchor < idx);
       const end = pin === undefined ? undefined : pinEnds().find(boundary => boundary > pin);
       const topInset = pin !== undefined && (end === undefined || idx < end)
-        ? Math.max(0, virt.size(pin) + userTopGap - (us.at(pin)?.gapBefore ?? 0)) + CHAT_PIN_FADE_HEIGHT_PX : 0;
+        ? pinHeight(pin) + userTopGap : 0;
       return itemScrollTarget({ rowTop: virt.top(idx) + padTop(), rowHeight: rowH,
         viewportHeight: Math.max(0, el.clientHeight - padBottom()), topInset, align, offset: extraOffset });
     };
@@ -1876,6 +1936,7 @@ export function ChatRoot(props: ChatRootProps) {
       isCollapsed: () => false,
       expanded: () => false,
       caches: caches(),
+      bodySize: bodySizeOf,
     };
     const count = prependedUnits.length;
     // 前插改变了所有行号;这一批的锚位由下面按 anchorId 重算,旧的逐行增量作废(行号已失效)。
@@ -1915,16 +1976,15 @@ export function ChatRoot(props: ChatRootProps) {
   // is already kept current in ChatState by setAnchor() — no extra DOM reads
   // needed here. Called by the dispose onCleanup and by the swap effect.
 
-  function snapshotInto(target: ChatState): void {
-    // Use committedUnitsArr (not live units()) so that when this is called from
-    // the reset effect (before clearing), it captures the OUTGOING model's unit
-    // ids and measured sizes — not the incoming model's (which virt already
-    // reflects by the time the swap effect fires). Active-turn units are
-    // ephemeral and intentionally excluded; they are re-estimated on next mount.
+  function snapshotInto(target: ChatState, committed = untrack(committedUnits)): void {
+    // Committed units only (not live units()): the committed-tier computation
+    // passes the OUTGOING build, so the ids match the sizes virt still holds for
+    // them — virt is reseeded right after. Active-turn units are ephemeral and
+    // intentionally excluded; they are re-estimated on next mount.
     const w = untrack(containerWidth);
     const entries: Array<[string, number]> = [];
-    for (let i = 0; i < committedUnitsArr.length; i++) {
-      const u = committedUnitsArr[i];
+    for (let i = 0; i < committed.length; i++) {
+      const u = committed[i];
       if (u) entries.push([u.id, virt.size(i)]);
     }
     target.heightmap.setAll(entries);
@@ -2015,6 +2075,7 @@ export function ChatRoot(props: ChatRootProps) {
     if (widthProbeEl) {
       const roWidth = new ResizeObserver(() => updateContentColumnGeometry());
       roWidth.observe(widthProbeEl);
+      roWidth.observe(el);
       updateContentColumnGeometry();
       onCleanup(() => roWidth.disconnect());
     }
@@ -2043,6 +2104,13 @@ export function ChatRoot(props: ChatRootProps) {
           return;
         }
         setExpandedUserId(expand.dataset.expandUserCard);
+        return;
+      }
+
+      // A pinned summary takes the reader back to its message; it never expands in place.
+      const summary = t.closest<HTMLElement>('[data-pin-summary]');
+      if (summary?.dataset.pinSummary) {
+        doScrollToItem(summary.dataset.pinSummary, { behavior: 'smooth' });
         return;
       }
 
@@ -2233,13 +2301,14 @@ export function ChatRoot(props: ChatRootProps) {
                           const unit = u();
                           return unit ? activeTurnItemIds().has(unit.itemId) : false;
                         };
-                        const isPinAnchor = () => pinAnchorSet().has(unitIndex) || activityLaneByIndex().has(unitIndex);
+                        const isActivityPin = () => activityLaneByIndex().has(unitIndex);
+                        const isPinAnchor = () => pinAnchorSet().has(unitIndex) || isActivityPin();
 
                         return (
                           <Show when={u()}>
                             <div
                               class={unitRowWrapper}
-                              classList={{ [pinLane]: isPinAnchor(), [activityPinLane]: activityLaneByIndex().has(unitIndex) }}
+                              classList={{ [pinLane]: isPinAnchor(), [activityPinLane]: isActivityPin() }}
                               ref={(el) => {
                                 rowEls.set(unitIndex, el);
                                 // Seed the placement; commit() reconciles on each frame.
@@ -2251,14 +2320,13 @@ export function ChatRoot(props: ChatRootProps) {
                               }}
                               data-index={String(unitIndex)}
                             >
-                              {/* Stuck with the card on the pin line whatever this row's collapsed top gap is. */}
+                              {/* An opened activity sticks its own header row, on the pin line whatever its collapsed top gap is. */}
                               <div
-                                classList={{ [pinSticky]: isPinAnchor() }}
-                                style={isPinAnchor() ? { top: `${userTopGap + activityPinOffset(unitIndex) - (u()?.gapBefore ?? 0)}px` } : undefined}
+                                classList={{ [pinSticky]: isActivityPin() }}
+                                style={isActivityPin() ? { top: `${userTopGap + activityPinOffset(unitIndex) - (u()?.gapBefore ?? 0)}px` } : { 'pointer-events': 'auto' }}
                               >
-                              <Show when={isPinAnchor()}><div class={pinBackdrop}
-                                classList={{ [activityPinBackdrop]: activityLaneByIndex().has(unitIndex) }}
-                                style={{ top: `${-userTopGap}px` }}
+                              <Show when={isActivityPin()}><div class={`${pinBackdrop} ${activityPinBackdrop}`}
+                                style={{ top: `${-userTopGap}px`, left: `${pinFrame().left}px`, width: `${pinFrame().width}px` }}
                                 data-chat-pin-backdrop="" aria-hidden="true" /></Show>
                               <UnitRow
                                 unit={u()!}
@@ -2275,15 +2343,19 @@ export function ChatRoot(props: ChatRootProps) {
                                 measureEpoch={measureEpoch()}
                                 expandedId={expandedUserId()}
                                 editingMessage={editingMessage()}
+                                bodySize={bodySizeOf}
                                 finalReplyId={finalReplyId()}
                                 latestConversationMessageId={latestConversationMessageId()}
                                 background={backgroundAttachment()}
                               />
-                              <Show when={isPinAnchor() && !theme().layout.agentConversation}>
-                                {/* Signals that rows scroll beneath the stuck message; drawn only while stuck. */}
-                                <div class={pinFade} aria-hidden="true" />
-                              </Show>
                               </div>
+                              {/* A user message's lane sticks its two-line summary, not the message (@@@sticky-user-lanes). */}
+                              <Show when={pinAnchorSet().has(unitIndex)}>
+                                <div class={`${pinSticky} ${pinSummaryLayer}`} style={{ top: `${userTopGap}px` }}>
+                                  <div class={pinBackdrop} style={{ top: `${-userTopGap}px` }} data-chat-pin-backdrop="" aria-hidden="true" />
+                                  <PinnedUserSummary item={u()!.data as ChatMessage} ctx={estimateContext()} vars={UNIT_REGISTRY.message!.vars as MessageVars} />
+                                </div>
+                              </Show>
                             </div>
                           </Show>
                         );

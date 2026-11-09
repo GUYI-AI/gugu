@@ -31,6 +31,7 @@ import {
   fileSearchOf,
   isWorkspace,
   sessionWorkspace,
+  workspaceFolder,
   workspaceSession,
   workspaceAppFileChunk,
   placeOf,
@@ -43,6 +44,7 @@ import {
   type PeekTarget,
 } from '../../session/shared/extensions/app-runtime-protocol'
 import {
+  chatForCapabilities,
   bridgeFailure,
   callRefusal,
   EXTENSION_API_VERSION,
@@ -68,8 +70,9 @@ import { cachedPhoneAgents, phoneDispatch } from './phoneDispatch'
 import { onPhoneAppState, phoneAppState } from './phoneAppState'
 import { subscribeDeviceSessions } from '../../session/shared/remote-sessions/session-directory'
 import { callOnComputer } from './phoneProgramCall'
+import { isImplicitSessionHomeProjectId } from '../../session/shared/core/projects/session-home-project'
 import { openPhoneWorkingCopyFile, type ReadWorkingCopyChunk } from './phone-working-copy-file'
-import { appDeviceId, followsSessionMachine, notOnSessionMachine } from '../../session/shared/extensions/machine-call'
+import { appDeviceId, folderElsewhereRefusal, followsSessionMachine, notOnSessionMachine } from '../../session/shared/extensions/machine-call'
 import { HOSTED_PROGRAM_ELSEWHERE } from '../../session/shared/extensions/program-place'
 import { rendererFileServiceUrl } from '../../lib/chatFolder'
 import { AppModalSessions, type AppModalFocus } from '../../session/shared/extensions/app-modal'
@@ -118,6 +121,8 @@ export interface PhoneAppBinding {
   capabilities: readonly ExtensionCapability[]
   locale: string
   themeMode: 'light' | 'dark'
+  /** The signed-in person's own 咕咕号 (`operator.guguNumber`): absent before their profile is read. */
+  guguNumber?: number | null
 }
 
 interface HostedFrame {
@@ -291,7 +296,12 @@ const failure = (error: unknown): { success: false; error: string } => ({ succes
 const OPENING_LINK_TTL_MS = 30_000
 const openingLinks: { extensionId: string; chatId: string | null; itemId: string | null; sessionId?: string; event: ExtensionHostEvent; expiresAt: number }[] = []
 export function holdPlaceForOpeningPage(chatId: string, itemId: string, candidate: FileOpenerCandidate, at: Record<string, string>): void {
-  openingLinks.push({ extensionId: candidate.extensionId, chatId, itemId, event: placeLink(candidate, at, itemId), expiresAt: Date.now() + OPENING_LINK_TTL_MS })
+  const event = placeLink(candidate, at, itemId)
+  // A page of that file already open is told now: its tab is brought forward, not opened again.
+  const open = [...frames.values()].filter(({ binding }) => binding.extensionId === candidate.extensionId && binding.chatId === chatId
+    && binding.itemId === itemId && (event.type !== 'link' || event.tab === binding.tabName))
+  for (const hosted of open) hosted.deliver(event)
+  if (open.length === 0) openingLinks.push({ extensionId: candidate.extensionId, chatId, itemId, event, expiresAt: Date.now() + OPENING_LINK_TTL_MS })
 }
 function takeOpeningLinks(binding: PhoneAppBinding): ExtensionHostEvent[] {
   const now = Date.now()
@@ -366,13 +376,15 @@ export function hostAppFrame(
     /** 「用 X 打开」 resolved: the slot opens that App on the file, or asks when several claim it. */
     openWith(detail: AppOpenWithDetail): void
     navigate?(delta: -1 | 1): Promise<boolean>
+    /** `navigation.onBack`: the page holds a Back step of its own (a folder), or lets go of it. A host without it has no Back to give. */
+    claimBack?(claimed: boolean): void
     openWorkingCopy?(path: string, read: ReadWorkingCopyChunk): void
     /** G1 Beside the page, over its frame: the frame stays as it was, for the way back. A host without it refuses a peek. */
     peek?(target: PeekTarget): void
     /** `setTabTitle` / `setTabBadge`: drawn on the header of the slot the App is in (摩擦单 F13). */
     chrome(detail: { title?: string | null; badge?: string | number | null; error?: string | null }): void
   },
-): { pageId: number; update(binding: PhoneAppBinding): void; filesChanged(changes: readonly { chatId: string; itemIds: readonly string[] }[]): Promise<void>; membersChanged(changes: readonly MemberChange[]): void; command(commandId: string): void; programNotified(notification: { server: string; method: string; params?: unknown }): void; dispose(): void } {
+): { pageId: number; update(binding: PhoneAppBinding): void; filesChanged(changes: readonly { chatId: string; itemIds: readonly string[] }[]): Promise<void>; membersChanged(changes: readonly MemberChange[]): void; command(commandId: string): void; back(): void; programNotified(notification: { server: string; method: string; params?: unknown }): void; dispose(): void } {
   const pageId = nextPageId++
   const modalHosts = new Map<ReturnType<typeof hostAppFrame>, PhoneAppBinding>()
   // Only ever the App's own document, both ways (appOrigin.ts).
@@ -479,7 +491,7 @@ export function hostAppFrame(
     tabId: hosted.binding.tabId,
     ...(hosted.binding.modal ? { modal: { data: hosted.binding.modal.data } } : {}),
     ...(hosted.binding.widget ? { widget: { messageId: hosted.binding.widget.messageId, data: hosted.binding.widget.data, sender: hosted.binding.widget.senderId } } : {}),
-    ...(chat ? { chat: { ...chat, ...(contextHasMembers() ? { members: members ?? [] } : {}) } } : {}),
+    ...(chat ? { chat: { ...chatForCapabilities(chat, hosted.binding.capabilities), ...(contextHasMembers() ? { members: members ?? [] } : {}) } } : {}),
     ...(hosted.binding.itemId && hosted.binding.chatId ? { file: { chat: hosted.binding.chatId, id: hosted.binding.itemId } } : {}),
     ...(hosted.binding.session
       ? {
@@ -488,18 +500,23 @@ export function hostAppFrame(
             sessionId: hosted.binding.session.id,
             deviceId: hosted.binding.session.deviceId,
             ...(hosted.binding.session.deviceLabel ? { deviceLabel: hosted.binding.session.deviceLabel } : {}),
-            ...(hosted.binding.session.projectId ? { projectId: hosted.binding.session.projectId } : {}),
+            ...(hosted.binding.session.projectId ? { projectId: hosted.binding.session.projectId, ...(isImplicitSessionHomeProjectId(hosted.binding.session.projectId) ? { taskHome: true as const } : {}) } : {}),
           },
         }
       : {}),
     // A page on the phone is the person's to work: no agent opens one there (owner 10-14).
-    operator: { kind: 'person' },
+    operator: hosted.binding.guguNumber !== undefined ? { kind: 'person', guguNumber: hosted.binding.guguNumber } : { kind: 'person' },
     locale: hosted.binding.locale,
     themeMode: hosted.binding.themeMode,
     capabilities: hosted.binding.capabilities.filter((capability) => PHONE_CAPABILITIES.includes(capability)),
     layout: { visible: true, fullscreen: Boolean(hosted.binding.modal), width: frame.clientWidth, height: frame.clientHeight },
   })
 
+  /** A project folder's machine as the phone knows it: its name for what a refusal says, and whether it is there. */
+  const folderMachine = (deviceId: string) => {
+    const device = readCachedDevices().find((known) => known.device_id === deviceId)
+    return { deviceId, deviceLabel: device?.label || device?.hostname || null, online: device?.is_online }
+  }
   /** `gesture`: whether the person's input landed in this App (its gate's reading, or its command just tapped). */
   const answer = async (method: string, args: Record<string, unknown>, gesture: boolean): Promise<unknown> => {
     // Once, from the verb's row (BRIDGE_VERBS), in the words every host says it — a phone frame is a page.
@@ -521,6 +538,15 @@ export function hostAppFrame(
       if (session && followsSessionMachine(manifest, method, args)) {
         return callOnComputer({ extensionId: manifest.id, extensionName: manifest.name, version: manifest.version }, session, method, args).then(computerReply)
       }
+    }
+    // A project's folder names its own machine, wherever this page is.
+    const folder = verbFacts(method)?.machine === 'place' ? workspaceFolder((args.place ?? args.ref) as { workspace?: string } | null) : null
+    if (folder) {
+      const refusal = folderElsewhereRefusal(method, (capability) => hosted.binding.capabilities.includes(capability))
+      if (refusal) throw refusal
+      const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
+      if (!manifest) refused('not-installed', `${hosted.binding.extensionId} is not installed on this phone`)
+      return callOnComputer({ extensionId: manifest.id, extensionName: manifest.name, version: manifest.version }, folderMachine(folder.deviceId), method, args).then(computerReply)
     }
     switch (method) {
       case 'linkTo': {
@@ -554,6 +580,8 @@ export function hostAppFrame(
               const childBinding = { ...modal.binding, modal: { id: modal.id, data: modal.options.data } }
               const childHost = hostAppFrame(childFrame, childBinding, {
                 ...hooks,
+                // Its opener's Back is not the modal's to hold or let go (its hello would release the opener's claim).
+                claimBack: undefined,
                 // The content page's initial hello must not clear its opener's title, badge or error.
                 chrome(detail) { if (detail.error) hooks.chrome({ error: detail.error }) },
               })
@@ -583,6 +611,12 @@ export function hostAppFrame(
         if (args.delta !== -1 && args.delta !== 1) return refused('invalid', 'Navigation delta must be -1 or 1')
         if (!hosted.binding.navigation?.[args.delta === -1 ? 'canBack' : 'canForward']) return false
         return hooks.navigate?.(args.delta) ?? false
+      case 'navigationClaimBack':
+        // Only the page that is the slot's page holds Back: a modal's Back closes the modal (its sheet), a card in a
+        // message has no Back of its own.
+        if (!hooks.claimBack || hosted.binding.modal || hosted.binding.widget) return false
+        hooks.claimBack(args.claimed === true)
+        return true
       case 'getContext':
         // A pill's place waiting for this page goes first, whatever the answer: the frame holds it until `onLink`.
         for (const link of takeOpeningLinks(hosted.binding)) event(link)
@@ -602,6 +636,9 @@ export function hostAppFrame(
         return Promise.resolve(undefined)
       case 'setTabBadge':
         hooks.chrome({ badge: pageArgument('setTabBadge', args) })
+        return Promise.resolve(undefined)
+      // A page's unsaved edits, with no tab to mark here: nothing to draw.
+      case 'setTabDirty':
         return Promise.resolve(undefined)
       case 'openBrowserTab': {
         const url = String(args.url ?? '')
@@ -686,6 +723,15 @@ export function hostAppFrame(
         if (isWorkspace(ref)) {
           if (tab !== undefined) refused('invalid', 'openWith tab is only available for chat files')
           if (!hooks.openWorkingCopy) refused('invalid', 'No file preview in this surface')
+          const folder = workspaceFolder(ref)
+          if (folder) {
+            // Read in pieces on its machine (`filesRead`, gated above) into the phone's own file preview.
+            const refusal = folderElsewhereRefusal('filesRead', (capability) => hosted.binding.capabilities.includes(capability))
+            if (refusal) throw refusal
+            const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
+            if (!manifest) refused('not-installed', 'This App is not installed')
+            return openPhoneWorkingCopyFile({ extensionId: manifest.id, extensionName: manifest.name, version: manifest.version }, folderMachine(folder.deviceId), ref, hooks.openWorkingCopy)
+          }
           const id = workspaceSession(ref)
           const listed = id ? listedSession(readCachedDevices(), liveDeviceSessions(), id) : null
           if (!listed || !('row' in listed)) refused('not-found', 'This session is not in your task list')
@@ -734,7 +780,10 @@ export function hostAppFrame(
       case 'showContextMenu': {
         const menu = appContextMenuOf(args)
         const rect = frame.getBoundingClientRect()
-        return showRendererContentMenu(menu.items, { x: rect.x + menu.x, y: rect.y + menu.y })
+        const picked = await showRendererContentMenu(menu.items, { x: rect.x + menu.x, y: rect.y + menu.y })
+        // A pick is the person's input in this App, as a tap on one of its commands is (@@@command-gesture).
+        if (picked !== null) commandGestureUntil = performance.now() + ACTIVATION_LIFETIME_MS
+        return picked
       }
       case 'filesViewPreferences':
         return files.viewPreferences(chatPlace(args.place), args.showAppData as boolean | undefined)
@@ -850,6 +899,7 @@ export function hostAppFrame(
       heldPort = null
       portWanted = false
       hooks.chrome({ title: null, badge: null, error: null })
+      hooks.claimBack?.(false)
       return
     }
     if (message.t === 'sync-port') {
@@ -900,7 +950,7 @@ export function hostAppFrame(
       previous = snapshot()
       stateChanged()
       // Reuse the parent's existing subscriptions and host events for its sandboxed modal pages too.
-      for (const [childHost, childBinding] of modalHosts) childHost.update({ ...childBinding, locale: binding.locale, themeMode: binding.themeMode, capabilities: binding.capabilities })
+      for (const [childHost, childBinding] of modalHosts) childHost.update({ ...childBinding, locale: binding.locale, themeMode: binding.themeMode, capabilities: binding.capabilities, guguNumber: binding.guguNumber })
       // Moved to a file a pill is waiting to open: its place is this page's now (after the context that names the file).
       const placed = () => { if (moved) for (const link of takeOpeningLinks(hosted.binding)) event(link) }
       // The theme is part of it: the page's ui.js picks its palette from context.themeMode.
@@ -928,6 +978,10 @@ export function hostAppFrame(
     command(commandId) {
       commandGestureUntil = performance.now() + ACTIVATION_LIFETIME_MS
       event({ type: 'command', commandId })
+    },
+    /** The host's Back, to the page holding a Back step of its own (`claimBack`). */
+    back() {
+      event({ type: 'back' })
     },
     /** owner 10-16 The App's program on the session's computer sent a notification (`onProgramNotification`). */
     programNotified(notification) {

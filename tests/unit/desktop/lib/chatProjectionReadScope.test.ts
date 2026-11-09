@@ -32,6 +32,10 @@ vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({
   readDisplayIdentities: async (ids: readonly string[]) => ids.map((id) => ({ id, display_name: `name-${id}`, type: 'human' })),
 }))
+const accessWrites = vi.hoisted(() => [] as unknown[])
+vi.mock('../../../../apps/desktop/src/lib/messageIngest', () => ({
+  ingestMessages: async (_account: string, batch: { writes: unknown[] }) => { accessWrites.push(...batch.writes) },
+}))
 const { createChatProjection, toProjectionOperations } = await import('../../../../apps/desktop/src/lib/chatProjection')
 
 const VIEWER = 'u-viewer'
@@ -50,9 +54,29 @@ function seed(): void {
 }
 const unreadArgs = () => calls.filter((call) => call.key === 'rpc:list_unread_locators_for_chats').map((call) => (call.args as { p_chat_ids: string[] }).p_chat_ids)
 
-beforeEach(() => { calls.length = 0; refuse.clear(); seed() })
+beforeEach(() => { calls.length = 0; accessWrites.length = 0; refuse.clear(); seed() })
 
 describe('chat projection read scope', () => {
+  it('a message in one chat records access facts for that chat only, not for every known chat', async () => {
+    const projection = createChatProjection(VIEWER)
+    const signal = new AbortController().signal
+    await projection.hydrate('0', signal)
+    expect(new Set(accessWrites.map((write) => (write as { access: { chatId: string } }).access.chatId))).toEqual(new Set(chats))
+    accessWrites.length = 0
+    await projection.advance([{ revision: '1', event: 'message_created', chatId: 'c-2', entityId: 'm-1' }], '1', signal)
+    expect(new Set(accessWrites.map((write) => (write as { access: { chatId: string } }).access.chatId))).toEqual(new Set(['c-2']))
+  })
+
+  it('holds every other member read position of a conversation it has read, so a newly opened chat paints its receipts', async () => {
+    const peer = (user_id: string, last_read_seq: number) => ({ ...(rowsByKey.get('active_members') as Record<string, unknown>[])[0], user_id, last_read_seq })
+    rowsByKey.set('active_members', [...(rowsByKey.get('active_members') as unknown[]), peer('u-b', 7), peer('u-agent', 3)])
+    const projection = createChatProjection(VIEWER)
+    expect(projection.memberReadSeqs('c-1')).toBeUndefined()
+    await projection.hydrate('0', new AbortController().signal)
+    expect(projection.memberReadSeqs('c-1')).toEqual({ 'u-b': 7, 'u-agent': 3 })
+    expect(projection.memberReadSeqs('c-unknown')).toBeUndefined()
+  })
+
   it('a message in one chat asks the unread projection for that chat only', async () => {
     const projection = createChatProjection(VIEWER)
     const signal = new AbortController().signal

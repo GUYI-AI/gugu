@@ -5,6 +5,7 @@ import { isScreenView, showBesideOnScreen, showOnScreen } from '@renderer/app/sc
 import { screenLayout } from '@renderer/app/screen-layout';
 import { SampleNewProjectButton } from '@renderer/features/sample-project/sample-new-project-button';
 import { useSampleProject } from '@renderer/features/sample-project/use-sample-project';
+import { SampleProjectRowMenu } from '@renderer/features/sample-project/sample-project-row-menu';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { ProjectRowTitle } from './project-row-parts';
@@ -23,9 +24,9 @@ export const SampleProjectSidebar = observer(function SampleProjectSidebar() {
   return (
     <>
       {/* 和项目行同一层列表留白(虚拟列表里那一层),选中底色才和项目行一样收在两边。 */}
-      {sample.shown ? (
+      {sample.shown && sample.owner ? (
         <div className={sidebarGroupInsetX}>
-          <SampleProjectRow />
+          <SampleProjectRowMenu userId={sample.owner.id}><SampleProjectRow /></SampleProjectRowMenu>
         </div>
       ) : null}
       {empty && sample.settled ? (

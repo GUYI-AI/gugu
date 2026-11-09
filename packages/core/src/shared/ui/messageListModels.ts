@@ -1,7 +1,7 @@
 import { mergeMessageState } from './messageState'
 import type { MessageItem, ReactionGroup } from '../types/chat'
 
-function sameReactions(a: ReactionGroup[], b: ReactionGroup[]): boolean {
+function sameReactions(a: ReactionGroup[] = [], b: ReactionGroup[] = []): boolean {
   if (a === b) return true
   if (a.length !== b.length) return false
   for (let i = 0; i < a.length; i++) {

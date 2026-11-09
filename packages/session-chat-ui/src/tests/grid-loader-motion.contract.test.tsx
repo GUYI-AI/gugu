@@ -3,7 +3,7 @@ import { render } from 'solid-js/web'
 import { ANIMATION_WINDOW_SEEN_EVENT } from '@gugu/session-shared/animation-visibility'
 import '@gugu/session-shared/animation-visibility.css'
 import { GridLoader } from '@session-chat/components/primitives/GridLoader'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { cdp } from 'vitest/browser'
 import { until } from '../../../../tests/support/awaitCondition'
 
@@ -13,11 +13,15 @@ import { until } from '../../../../tests/support/awaitCondition'
  * (It used to swap classes from a 120 ms setInterval, which kept the whole window producing frames.)
  */
 const teardown: Array<() => void> = []
+beforeEach(async () => {
+  // Pin the test baseline instead of inheriting the runner's system Reduce Motion preference.
+  await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] })
+})
 afterEach(async () => {
   while (teardown.length) teardown.pop()?.()
   window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: true }))
   vi.restoreAllMocks()
-  await cdp().send('Emulation.setEmulatedMedia', { features: [] })
+  await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] })
 })
 
 it('pauses offscreen and resumes without replacing its animations', async () => {

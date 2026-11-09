@@ -1,6 +1,8 @@
 import { createRoot, type Root } from 'react-dom/client'
 import type { ReactNode } from 'react'
 import { observeLocalDiagnosticRoot } from './localRendererDiagnostics'
+// Before any root exists: React would otherwise register an animation-iteration listener on it (@@@no-iteration-listener).
+import './no-animation-iteration-listeners'
 
 /**
  * 渲染入口**唯一**的挂载口。两个入口(`main.tsx` 的 `#root`、会话页 `embedded.tsx` 的

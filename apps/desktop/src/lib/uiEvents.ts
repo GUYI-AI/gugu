@@ -39,12 +39,13 @@ export const UI_EVENTS = {
   // 会话页要打开设置(⌘, / 应用菜单 / 命令面板 / 浏览器工具栏):设置是壳的弹窗(product spec),
   // detail = { section?: ActiveSection },缺省落在「账户」。
   openSettings: '__open_settings',
+  // 设置弹窗里开出去的东西要带人去别的页(搬家结果页「去资源库重新连接」):先收起设置弹窗,不然盖在新页上面。
+  closeSettings: '__close_settings',
   // #7350 关闭咕咕:设置里的「关闭咕咕」、通讯录 / agent 设置里删它都只发这一声,确认框只有一个(AssistantCloseHost)。
   closeAssistant: '__close_assistant',
   // 手机的全局设置与资料页打开同一份连接应用流程。
   openAssistantConnectors: '__open_assistant_connectors',
   openContact: '__open_contact',
-  openPhoneListSearch: '__open_phone_list_search',
   sessionpageShareAgentUnavailable: '__sessionpage_share_agent_unavailable',
   // #6646 会话页要人当场决定一件事(装扩展的同意框就画在它里面):不在任务 tab 上就切过去。
   sessionpageReveal: '__sessionpage_reveal',

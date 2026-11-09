@@ -44,8 +44,13 @@ const PREVIEW_SCROLL_SCRIPT = `
       return;
     }
     if (data.type !== '${PREVIEW_RESTORE_MESSAGE_TYPE}') return;
-    if (!Number.isFinite(data.x) || !Number.isFinite(data.y)) return;
-    window.scrollTo({ left: Math.max(0, data.x), top: Math.max(0, data.y), behavior: 'instant' });
+    if (typeof data.anchor === 'string') {
+      // A link's #id: the element it names, as an in-page anchor goes there (above).
+      var target = document.getElementById(data.anchor) || document.getElementsByName(data.anchor)[0];
+      if (target && target.scrollIntoView) target.scrollIntoView({ block: 'start', behavior: 'instant' });
+    } else if (Number.isFinite(data.x) && Number.isFinite(data.y)) {
+      window.scrollTo({ left: Math.max(0, data.x), top: Math.max(0, data.y), behavior: 'instant' });
+    } else return;
     requestAnimationFrame(function(){
       parent.postMessage({ type: '${PREVIEW_RESTORED_MESSAGE_TYPE}' }, '*');
     });

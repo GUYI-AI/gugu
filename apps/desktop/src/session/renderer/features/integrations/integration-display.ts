@@ -62,5 +62,7 @@ const INTEGRATION_ERROR_KEYS = {
   key_rejected: 'integrations.errorKeyRejected',
   provider_unavailable: 'integrations.errorProviderUnavailable',
   service_unavailable: 'integrations.errorServiceUnavailable',
+  secret_required: 'integrations.errorSecretRequired',
+  secure_storage_unavailable: 'integrations.errorSecureStorageUnavailable',
   generic: null,
 } as const satisfies Record<IntegrationError['type'], string | null>;

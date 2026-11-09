@@ -78,6 +78,7 @@ const RECORD_FORMAT_BY_PROVIDER: Readonly<Record<string, RecordFormatRow>> = {
   pi: { format: 'pi', envs: [], defaults: ({ guguHome }) => (['tui', 'acp'] as const).map((surface) => piAgentDir(surface, guguHome)), sub: 'sessions' },
   opencode: opencodeRow('opencode', 'OPENCODE'),
   mimocode: opencodeRow('mimocode', 'MIMOCODE', { homeEnv: 'MIMOCODE_HOME', agentId: 'main' }),
+  kilocode: opencodeRow('kilo', 'KILO'),
 };
 
 function formatRowFor(provider: string | null | undefined): RecordFormatRow | null {

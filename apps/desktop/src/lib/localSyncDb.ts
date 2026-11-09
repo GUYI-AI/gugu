@@ -526,7 +526,7 @@ function validateCurrentRow(store: ImStoreName, raw: unknown, accountId: string)
       if (!isRecord(raw.value)) throw new Error('value')
     } else if (store === 'chat') {
       const value = raw.value
-      if (!Number.isInteger(raw.order) || !isRecord(value) || value.id !== raw.id
+      if (!isRecord(value) || value.id !== raw.id
         || typeof value.kind !== 'string' || typeof value.name !== 'string' || typeof value.created_at !== 'string') throw new Error('chat')
       // 10-28 之前的客户端落的行没有 addressed_count:按无效缓存走快照重建,❌ 拿全部未读顶上。
       if (value.unread_locator != null && (!isRecord(value.unread_locator) || !Number.isInteger(value.unread_locator.addressed_count))) throw new Error('chat unread_locator')
@@ -566,7 +566,7 @@ function validateMessageValue(value: unknown, row: Record<string, unknown>): voi
     || (value.reply_to_message_id !== null && typeof value.reply_to_message_id !== 'string')
     || (value.retracted_at !== null && typeof value.retracted_at !== 'string')
     || typeof value.created_at !== 'string'
-    || !Array.isArray(value.reactions) || !value.reactions.every(isReaction)
+    || (value.reactions !== undefined && (!Array.isArray(value.reactions) || !value.reactions.every(isReaction)))
     || typeof value.is_mine !== 'boolean' || typeof value.delivered !== 'boolean'
     || (value.delivery_status !== null && !['delivered', 'read'].includes(String(value.delivery_status)))) throw new Error('message shape')
   const root = optionalString(value.thread_root_id, 'message.thread_root_id')

@@ -9,5 +9,5 @@ export const AGENT_FAILURE_SLOT_PREFIX = 'agent-failure:'
  */
 export function AgentFailureSlot({ agentUserId }: { agentUserId: string }) {
   const ref = useCallback((element: HTMLDivElement | null) => readShellSlots()?.setSlot(`${AGENT_FAILURE_SLOT_PREFIX}${agentUserId}`, element), [agentUserId])
-  return <div ref={ref} data-agent-failure-slot={agentUserId} className="pointer-events-auto" />
+  return <div ref={ref} data-agent-failure-slot={agentUserId} data-composer-top-band="failure" className="pointer-events-auto" />
 }

@@ -53,3 +53,13 @@ it('uses the converted copy filename and mime type before publishing or SSH plac
   mocks.invoke.mockResolvedValue({ path: '/prepared/photo.png', name: 'photo.png', mimeType: 'image/png', size: 5 })
   expect(await prepareTaskAttachment(new File(['heic'], 'photo.heic', { type: 'image/heic' }))).toMatchObject({ name: 'photo.png', mimeType: 'image/png', path: '/prepared/photo.png', sizeBytes: 5 })
 })
+
+// A computer file dragged in from the Folder App was read from disk: it is referenced where it is, as a system drop is,
+// not copied again (owner 11-08: on the sending machine only the index goes up).
+it('references a file read from this computer in place instead of copying its bytes', async () => {
+  const { fileOnDisk } = await import('../../../../apps/desktop/src/lib/fileOnDisk')
+  mocks.path.mockReturnValue('')
+  const read = fileOnDisk(new File(['FDRAG'], 'notes.md', { type: 'text/markdown' }), '/home/me/repo/notes.md')
+  expect(await prepareTaskAttachment(read)).toMatchObject({ name: 'notes.md', path: '/home/me/repo/notes.md', sizeBytes: 5 })
+  expect(mocks.invoke).not.toHaveBeenCalled()
+})

@@ -3,16 +3,21 @@
 // 示例是屏上唯一一块、被收掉时回首页,❌ 留一屏空白。
 import { act } from 'react'
 import { runInAction } from 'mobx'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness } from '../../../support/testHarness'
 
-const key = vi.hoisted(() => ({
+const key = vi.hoisted(() => {
+  const listeners = new Set<(userId: string) => void>()
+  return {
   readSampleProjectShown: vi.fn<(userId: string) => Promise<boolean>>(),
-  subscribeSampleProject: vi.fn(() => () => undefined),
-}))
+  listeners,
+  subscribeSampleProject: (listener: (userId: string) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+  }
+})
+const owner = vi.hoisted(() => ({ ownerId: 'u1', ownerName: 'Ana', ownerAvatar: null }))
 vi.mock('../../../../apps/desktop/src/lib/sampleProject', () => key)
 vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-shell', () => ({
-  useAssistantShell: () => ({ ownerId: 'u1', ownerName: 'Ana', ownerAvatar: null }),
+  useAssistantShell: () => owner,
 }))
 
 const { useSampleProject } = await import('../../../../apps/desktop/src/session/renderer/features/sample-project/use-sample-project')
@@ -24,6 +29,8 @@ function Probe() {
   const sample = useSampleProject()
   return createNode('output', { 'data-shown': String(sample.shown), 'data-settled': String(sample.settled) })
 }
+let account = 0
+beforeEach(() => { key.readSampleProjectShown.mockReset(); owner.ownerId = `account-${++account}` })
 
 afterEach(() => {
   vi.useRealTimers()
@@ -38,6 +45,48 @@ afterEach(() => {
 })
 
 describe('reading whether this account has the sample (#709)', () => {
+  it('reads the persisted choice again when the same account signs back in', async () => {
+    key.readSampleProjectShown.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+    const first = createReactHarness()
+    await first.render(createNode(Probe))
+    expect(first.container.querySelector('output')?.dataset.shown).toBe('true')
+    first.cleanup()
+    const next = createReactHarness()
+    try {
+      await next.render(createNode(Probe))
+      expect(key.readSampleProjectShown).toHaveBeenCalledTimes(2)
+      expect(next.container.querySelector('output')?.dataset).toMatchObject({ shown: 'false', settled: 'true' })
+    } finally { next.cleanup() }
+  })
+
+  it('ignores a stale visible response after a confirmed removal triggered a fresh read', async () => {
+    let finish!: (shown: boolean) => void
+    key.readSampleProjectShown.mockReturnValueOnce(new Promise<boolean>((resolve) => { finish = resolve })).mockResolvedValue(false)
+    const harness = createReactHarness()
+    try {
+      await harness.render(createNode(Probe))
+      await act(async () => { for (const listener of key.listeners) listener(owner.ownerId) })
+      expect(harness.container.querySelector('output')?.dataset).toMatchObject({ shown: 'false', settled: 'true' })
+      await act(async () => { finish(true) })
+      expect(harness.container.querySelector('output')?.dataset).toMatchObject({ shown: 'false', settled: 'true' })
+    } finally { harness.cleanup() }
+  })
+
+  it('does not let an old account-tree request replace the new sign-in result', async () => {
+    let finish!: (shown: boolean) => void
+    key.readSampleProjectShown.mockReturnValueOnce(new Promise<boolean>((resolve) => { finish = resolve })).mockResolvedValue(false)
+    const first = createReactHarness()
+    await first.render(createNode(Probe))
+    first.cleanup()
+    const next = createReactHarness()
+    try {
+      await next.render(createNode(Probe))
+      expect(key.readSampleProjectShown).toHaveBeenCalledTimes(2)
+      await act(async () => { finish(true) })
+      expect(next.container.querySelector('output')?.dataset).toMatchObject({ shown: 'false', settled: 'true' })
+    } finally { next.cleanup() }
+  })
+
   it('a failed read leaves it unknown — not settled, so nothing is taken off screen — and reads again later', async () => {
     vi.useFakeTimers()
     key.readSampleProjectShown.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(true)
