@@ -40,7 +40,7 @@ gugu is a desktop and Android client. You run Claude Code, Codex and other agent
 <td width="50%" valign="top"><h3>02 · Files and delivery</h3><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-card-files-en-light-20261109.png"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-card-files-en-dark-20261109.png">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-card-files-en-light-20261109.png" width="100%" alt="A document open in the group folder with the carets of two people">
-</picture></a><p>Every group has a folder. People and agents edit the same file, and an agent's edits appear in the editor you have open.</p><p><a href="#files-details">See it in use ↓</a></p></td>
+</picture></a><p>Every group has a folder. People and agents edit the same file, live, in the editor you have open.</p><p><a href="#files-details">See it in use ↓</a></p></td>
 </tr>
 <tr>
 <td width="50%" valign="top"><h3>03 · Personal assistant</h3><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-card-assistant-en-light-20261109.png"><picture>
@@ -50,7 +50,7 @@ gugu is a desktop and Android client. You run Claude Code, Codex and other agent
 <td width="50%" valign="top"><h3>04 · Models and subscriptions</h3><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-card-models-en-light-20261109.png"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-card-models-en-dark-20261109.png">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-card-models-en-light-20261109.png" width="100%" alt="Settings, Models: the models gugu provides, each one switchable">
-</picture></a><p>Keep your Claude Code and Codex sign-ins, bring an API key, or use gugu's models. Pick a model per task.</p><p><a href="#models-details">See it in use ↓</a></p></td>
+</picture></a><p>Pick from gugu's models, bring an API key, or keep your own Claude Code and Codex sign-ins. Choose per task.</p><p><a href="#models-details">See it in use ↓</a></p></td>
 </tr>
 </table>
 
@@ -61,10 +61,10 @@ gugu is a desktop and Android client. You run Claude Code, Codex and other agent
 <td width="50%" valign="top"><h3>05 · Agent teamwork</h3><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-card-teamwork-en-light-20261109.png"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-card-teamwork-en-dark-20261109.png">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-card-teamwork-en-light-20261109.png" width="100%" alt="A tree of agents in the gugu sidebar: a chief with 24 agents under it, next to one worker running">
-</picture></a><p>Hand a big job to one agent. It starts its own leads and workers, and the sidebar draws the tree. Message any of them.</p><p><a href="#teamwork-details">See it in use ↓</a></p></td>
-<td width="50%" valign="top"><h3>06 · Gugu Apps</h3><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-office-en-light-20261109.webp"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-office-en-dark-20261109.webp">
-  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-office-en-light-20261109.webp" width="100%" alt="A deck open in Gugu Office beside the chat">
+</picture></a><p>Hand a big job to one agent, the chief. It starts leads and workers; the sidebar draws the tree.</p><p><a href="#teamwork-details">See it in use ↓</a></p></td>
+<td width="50%" valign="top"><h3>06 · Gugu Apps</h3><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-card-apps-en-light-20261109.png"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-card-apps-en-dark-20261109.png">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-card-apps-en-light-20261109.png" width="100%" alt="A deck open in Gugu Office beside the chat">
 </picture></a><p>Apps open beside the chat. People use the interface, agents work with the same data through tools.</p><p><a href="#apps-details">See it in use ↓</a></p></td>
 </tr>
 <tr>
@@ -75,7 +75,7 @@ gugu is a desktop and Android client. You run Claude Code, Codex and other agent
 <td width="50%" valign="top"><h3>08 · Devices and actions</h3><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-card-devices-en-light-20261109.png"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-card-devices-en-dark-20261109.png">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-card-devices-en-light-20261109.png" width="100%" alt="Settings, Device control: what agents may use on this computer">
-</picture></a><p>Run agents on your computer or on a server over SSH or a tunnel. Browser Use and Computer Use act on web pages and desktop apps.</p><p><a href="#devices-details">See it in use ↓</a></p></td>
+</picture></a><p>Decide what agents may use on each computer. Add servers over SSH or a tunnel; Browser Use and Computer Use act for them.</p><p><a href="#devices-details">See it in use ↓</a></p></td>
 </tr>
 </table>
 
@@ -106,14 +106,14 @@ As you read this, an average of 30 gugu agents are actively developing gugu, and
 
 - **Side by side.** Chats, topics, files, terminal, browser and Apps sit next to each other. Split a pane, or tear a tab off into its own window.
 - **Look without opening.** Hover a running agent above the composer to read its recent turns and progress.
-- **Terminal or General.** Run an engine's own TUI, or the native chat view. Turn on TUI Mode in Settings.
+- **Chat view or terminal.** Use gugu's chat view, or the engine's own TUI (turn on TUI Mode in Settings).
 - **Fork, edit, side chat.** Try another path without losing the first, or ask a quick question without touching the task.
 - **Import history.** Bring past conversations in from other agents and continue them.
 
-<a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-chips-en-light-20261109.png"><picture>
+<p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-chips-en-light-20261109.png"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-chips-en-dark-20261109.png">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-chips-en-light-20261109.png" width="100%" alt="A group chat with running agents above the composer, and a hover preview of one of them">
-</picture></a>
+</picture></a></p>
 
 <a id="files-details"></a>
 
@@ -129,12 +129,12 @@ As you read this, an average of 30 gugu agents are actively developing gugu, and
 
 - **Your own gugu.** A personal assistant with a name and a personality that remembers what you told it.
 - **Schedules.** Ask it, or any of your agents, to do something later or on a schedule.
-- **Agents in your contacts.** Pick an engine, a model and a machine, and an agent has a name. Come back tomorrow and pick up the same task.
+- **Agents in your contacts.** Give an agent an engine, a model and a machine, and it keeps its name and history. Come back tomorrow and pick up the same task.
 
-<a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contacts-en-light-20261109.png"><picture>
+<p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contacts-en-light-20261109.png"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contacts-en-dark-20261109.png">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contacts-en-light-20261109.png" width="100%" alt="Contacts with several named agents, and the profile of one of them">
-</picture></a>
+</picture></a></p>
 
 <a id="models-details"></a>
 
@@ -144,23 +144,23 @@ As you read this, an average of 30 gugu agents are actively developing gugu, and
 - **Pick a model per task.** Bring an API key, or use gugu's models.
 - **Usage and resources.** Seven-day usage, per-task credits, and a resource monitor for what is running.
 
-<a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-engines-en-light-20261109.png"><picture>
+<p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-engines-en-light-20261109.png"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-engines-en-dark-20261109.png">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-engines-en-light-20261109.png" width="100%" alt="The agents library: installed and available engines">
-</picture></a>
+</picture></a></p>
 
 <a id="teamwork-details"></a>
 
 ### 05 · Agent teamwork
 
-- **Leads and workers.** A lead splits a goal across leads and workers, on different engines: Claude Code leading, Codex executing. The sidebar draws the tree.
+- **Chief, leads and workers.** The chief splits a goal across leads and workers, on different engines: Claude Code leading, Codex executing. The sidebar draws the tree.
 - **Message any of them.** Each agent in the tree is a real session you can open and talk to.
 - **Two people, two teams.** Two people bring their own agents into one group, agree on who owns what, and let both teams work. Branch off into a topic from any message; only participants are notified.
 
-<a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-fleet-en-light-20261109.png"><picture>
+<p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-fleet-en-light-20261109.png"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-fleet-en-dark-20261109.png">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-fleet-en-light-20261109.png" width="100%" alt="A tree of agents in the gugu sidebar: a chief with 24 agents under it, next to one worker running">
-</picture></a>
+</picture></a></p>
 
 <a id="apps-details"></a>
 
