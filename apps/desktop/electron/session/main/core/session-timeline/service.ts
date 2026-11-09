@@ -1,9 +1,10 @@
+import { prepareWindowLivePosition } from './window-live-position';
 import { promptAttachmentSchema, turnFileRefSchema } from '@gugu/session-core/acp/client';
 import { SessionInputAdmissionError, sessionInputAdmission, type SessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission';
 import { createNativeRecordReader } from './native-record';
 import { createWindowOpenings, type WindowOpeningInput, type WindowOpeningLease, type WindowOpeningProof, type WindowOpeningSelection } from './window-opening';
 import { reserveWindowCommitHost } from './window-commit-production';
-import type { WindowLiveReadRequest, WindowLiveAckRequest, WindowCommitPage } from '@gugu/session-wire/session-window-live';
+import type { WindowLiveReadRequest, WindowLiveAckRequest, WindowCommitPage, WindowLivePositionRequest, WindowLivePositionResult } from '@gugu/session-wire/session-window-live';
 import { priorInputAdmission, sameInput, type InputAdmissionPayload } from './input-admission';
 import { ask, withdrawAll } from '../asks';
 import { hostAsks, resetAsks, respond as respondAsk, respondQuestion as respondAskQuestion } from '../asks/ask';
@@ -885,6 +886,14 @@ export async function windowLiveRead(input: WindowLiveReadRequest): Promise<Sess
 export async function windowLiveAck(input: WindowLiveAckRequest): Promise<SessionTimelineResult<void>> {
   try { windowLiveLease(input).ack(input.through); return { ok: true, value: undefined }; }
   catch (error) { return fail((error as { code?: string }).code ?? 'live_ack_failed', (error as Error).message); }
+}
+
+export async function windowLivePosition(input: WindowLivePositionRequest): Promise<SessionTimelineResult<WindowLivePositionResult>> {
+  try {
+    const lease = windowLiveLease(input), finish = await prepareWindowLivePosition(lease, input);
+    if (windowLiveLease(input) !== lease) throw Object.assign(new Error('Commit subscription changed'), { code: 'unsubscribed' });
+    return { ok: true, value: finish() };
+  } catch (error) { return fail((error as { code?: string }).code ?? 'live_position_failed', (error as Error).message); }
 }
 
 export async function windowSubscribe(input: SessionpageSessionSubscribeRequest,

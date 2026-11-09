@@ -91,7 +91,7 @@ beforeEach(() => {
   document.body.appendChild(frame)
   posted = vi.fn()
   Object.defineProperty(frame.contentWindow!, 'postMessage', { value: posted, configurable: true })
-  start(['files:read', 'files:write'])
+  start(['files:read', 'files:write', 'agents:tools'])
 })
 afterEach(() => {
   host?.dispose()
@@ -123,6 +123,7 @@ const gestureCalls: Record<string, Record<string, unknown>> = {
   openLink: { url: 'gugu://ext/radar/radar' },
   cloudWrite: { name: 'radar_save', args: {} },
   pickAgent: {},
+  taskMessage: { intent: 'pause' },
 }
 
 describe('the phone refuses a verb outside the gesture it needs, in the same sentence as the desktop (L11 B4)', () => {

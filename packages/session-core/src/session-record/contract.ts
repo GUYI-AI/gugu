@@ -1000,6 +1000,11 @@ export type SessionpageSessionCreateRequest = {
   model?: string;
   /** 第一句话。空的不建 —— 一条没有开场白的会话建出来就是个空壳。 */
   prompt: string;
+  /**
+   * 发起方给第一句铸的 client message id:宿主以它收下首句(待发行、原生消息都是这个身份),
+   * 发起方画的乐观首句与落地那条从头到尾是同一个实体(#2296,桌面新建任务同一做法)。老宿主不认这一格。
+   */
+  initialMessageId?: string;
   /** 展示;不给 = 那台电脑按自己的「终端」开关定(开 → 编程,关 → 通用),这家不给那种就取它给的第一种。给了须在 `sessionViews` 里。 */
   sessionView?: SessionpageSessionView;
   /** 咕咕权限档;不给 = 这家的默认。须在该 harness 的 `permissionModes` 里。 */

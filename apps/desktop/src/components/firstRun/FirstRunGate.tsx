@@ -31,6 +31,7 @@ import { enrollSampleProject } from '../../lib/sampleProject'
 import { FirstRunHints } from './FirstRunHints'
 
 import { ReferralCodePreview } from '../referralPreview/ReferralPreview'
+import { HelpImproveCheck } from '../HelpImprove'
 
 const log = rendererLogger('first-run')
 
@@ -319,6 +320,7 @@ function FirstRunProfile({ user, initial, step, onDone }: { user: AuthUser; init
         >
           {busy === 'save' ? t('firstRun.saving') : t('firstRun.continue')}
         </Button>
+        <HelpImproveCheck />
       </div>
     </>
   )

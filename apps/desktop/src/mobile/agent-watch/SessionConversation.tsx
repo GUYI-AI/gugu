@@ -1,3 +1,4 @@
+import { hasPendingWindow } from './timeline-window-fields'
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection'
 import { useRejectedSessionInputCommands } from '@/hooks/useRejectedSessionInputCommands'
 import { registerNativeComposer } from '@/lib/nativeComposerHandoff'
@@ -16,6 +17,7 @@ import { MessageProvider } from '@gugu/session-ui/react/components'
 import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
 import { appendToDraft } from '@/store/chatContext'
 import { useLocale } from '@/i18n'
+import { useTranslation } from 'react-i18next'
 import { useTheme } from '@/store/theme'
 import { useSessionConversationDraft } from './use-session-conversation-draft'
 import { useMobileShell } from '@/hooks/useMobileShell'
@@ -91,6 +93,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   queueReady?: boolean
 }) {
   const { resolvedLocale } = useLocale()
+  const { t } = useTranslation('main')
   const { theme } = useTheme()
   const visibility = useConversationVisibility(true)
   const localClient = local ? assistantTimelineClient(true) : null
@@ -356,7 +359,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   return <SessionUiTheme theme={theme}><MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
     <div ref={visibility.ref} className="relative flex min-h-0 flex-1 flex-col"><SessionTranscriptView uri={sessionId} turns={turns} pendingPrompt={pendingPrompt ?? startupPrompt ?? pendingSends[0] ?? null} pendingMessages={pendingMessages} mobile commands={commands} backgroundTasks={background}
       onReachStart={() => { void quotes.loadOlder() }} composerContent={composer} shown={visibility.shown} onAtBottomChange={atBottom => { reading.onAtBottomChange(atBottom); if (atBottom) onAtBottom?.() }} onVisibleItems={reading.onVisibleItems} onReady={ready => { view.current = ready; reading.onReady(ready) }} className="relative min-h-0 flex-1" />
-    {turns.length === 0 ? emptyNote : null}</div>{outputs.panel}{options.confirmation}
+    {hasPendingWindow(timeline) ? <div className="gg-aw-placeholder" role="status">{t('agentWatch.timeline.loadingWindow')}</div> : turns.length === 0 ? emptyNote : null}</div>{outputs.panel}{options.confirmation}
   </MessageProvider></SessionUiTheme>
 }
 

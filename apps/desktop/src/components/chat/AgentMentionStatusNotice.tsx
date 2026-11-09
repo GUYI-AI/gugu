@@ -4,7 +4,7 @@ import type { MentionCandidate } from '@/lib/mention'
 import type { MentionTarget } from './useChatDraft'
 import type { AgentStatusById } from './agentMentionStatusModels'
 import { ComposerNotice } from './ComposerNotice'
-import { useAgentsOnCloudComputer, useShownAgentStatus } from './useAgentsOnCloudComputer'
+import { useShownAgentStatus } from './useAgentsOnCloudComputer'
 
 export function AgentMentionOptionLabel({
   member,
@@ -37,6 +37,11 @@ export function AgentMentionOptionLabel({
   )
 }
 
+/**
+ * The line beside the composer after @-ing an agent: only for an archived one, which will not answer at all.
+ * An offline agent is warned about in the @ menu row (AgentMentionOptionLabel) and is not repeated as a bar
+ * beside the composer (owner 2026-11-08: no banners for connection state anywhere).
+ */
 export function AgentMentionSelectionNotice({
   members,
   mentionTargets,
@@ -47,23 +52,18 @@ export function AgentMentionSelectionNotice({
   agentStatuses: AgentStatusById
 }) {
   const { t } = useTranslation('messaging')
-  const onCloud = useAgentsOnCloudComputer()
   const archived = mentionTargets.map((target) => members.find((member) => member.id === target.userId && member.type === 'agent'))
     .find((member) => member && agentStatuses[member.id] === 'archived')
-  const offlineMember = mentionTargets
-    .map((target) => members.find((member) => member.id === target.userId && member.type === 'agent'))
-    .find((member) => member && agentStatuses[member.id] === 'offline' && !onCloud.has(member.id))
-  const warned = archived ?? offlineMember
-  if (!warned) return null
+  if (!archived) return null
 
   return (
     <ComposerNotice
       data-agent-status-surface="mention-selection"
-      data-agent-id={warned.id}
-      data-agent-display-status={archived ? 'archived' : 'offline'}
-      data-agent-status-warning={archived ? 'archived' : 'offline'}
+      data-agent-id={archived.id}
+      data-agent-display-status="archived"
+      data-agent-status-warning="archived"
     >
-      {t(archived ? 'agent.archivedWarning' : 'agent.offlineWarning', { name: warned.name })}
+      {t('agent.archivedWarning', { name: archived.name })}
     </ComposerNotice>
   )
 }

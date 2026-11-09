@@ -202,16 +202,20 @@ export function openAttachmentImage(source: AttachmentSource, fileName: string, 
     const bytes = await (variant === 'thumb' ? sessionThumb(source) : attachmentBytes(source, 'full'))
     if (bytes.status !== 'ready') throw new Error(bytes.status)
     file.contentType = bytes.link.content_type
+    // The record's size reaches the viewer with the first pixels, so the thumbnail is laid out as the original.
+    const { width, height } = bytes.link
+    if (!item.size && width && height) item.size = { width, height }
     const url = URL.createObjectURL(bytes.blob)
     if (released) URL.revokeObjectURL(url); else urls.push(url)
     return url
   }
-  openImageViewer([{
+  const item: ImageViewerItem = {
     url: '', alt: fileName, file, source: origin,
     preview: () => preview ??= read('thumb'), full: () => full ??= read('full'),
     release: () => { released = true; urls.splice(0).forEach(url => URL.revokeObjectURL(url)) },
     resource: source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: source.itemId, version: source.version } } : undefined,
-  }])
+  }
+  openImageViewer([item])
 }
 
 /** 下载一个附件(同一份缓存);条目删了就抛。 */
