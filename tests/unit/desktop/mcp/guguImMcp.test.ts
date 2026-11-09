@@ -979,6 +979,21 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(h.calls.inserts).toHaveLength(1)
     await client.close()
   })
+  test('#2383 message_send reports a removed-identity refusal apart from an archived one', async () => {
+    const h = harness(['agent-1', 'alice', 'bob'])
+    const get = h.deps.restGet
+    h.deps.restGet = async (path: string) => path.startsWith('message_agent_delivery_blocks?')
+      ? [{ agent_user_id: 'alice', reason: 'agent_archived' }, { agent_user_id: 'bob', reason: 'identity_removed' }] : get(path)
+    const client = await connect(h.deps)
+    const result = await client.callTool({ name: 'message_send', arguments: {
+      chat_id: '00000000-0000-4000-8000-000000000001', text: 'Removal marker', to_user_ids: ['user:alice', 'user:bob'],
+    } })
+    expect(result.isError).not.toBe(true)
+    expect(text(result)).toContain('对方已归档、未送达 (user:alice; agent_archived')
+    expect(text(result)).toContain('对方已移除、未送达 (user:bob; identity_removed; retained in history, the identity cannot be restored)')
+    expect(h.calls.inserts).toHaveLength(1)
+    await client.close()
+  })
   // @@@5856 名单读不到时必须说「读不到」,❌ 不许当空集(会把它说成「这些人不是成员」,与事实相反)、
   // ❌ 也不许当全集,更 ❌ 不许直接 .map 一个 null 崩成 TypeError(restRpc 对 void/空 body 回 null)。
   test.each([

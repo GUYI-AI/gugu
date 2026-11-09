@@ -66,6 +66,16 @@ describe('MessageSendStatus', () => {
     expect(notice.textContent).toContain('对方已归档、未送达')
     expect(document.body.querySelector('[data-testid="message-send-failed"]')).toBeNull()
   })
+  it('#2383 names a removed identity apart from an archived one, both beside the delivered message', async () => {
+    await renderWithAppProviders(harness, createNode(MessageSendStatus, { state: 'sent', messageId: 'm',
+      blocks: [{ agent_user_id: 'archived', reason: 'agent_archived' }, { agent_user_id: 'removed', reason: 'identity_removed' }] }),
+    { chat: { retrySend: vi.fn(), discardSend: vi.fn() } })
+    const removed = document.body.querySelector('[data-agent-id="removed"]')!
+    expect(removed.getAttribute('data-agent-delivery-block')).toBe('identity_removed')
+    expect(removed.textContent).toContain('对方已移除、未送达')
+    expect(document.body.querySelector('[data-agent-id="archived"]')!.textContent).toContain('对方已归档、未送达')
+    expect(document.body.querySelector('[data-testid="message-send-failed"]')).toBeNull()
+  })
   it('uses the shared Base UI menu and wires retry/discard actions', async () => {
     const retrySend = vi.fn()
     const discardSend = vi.fn()

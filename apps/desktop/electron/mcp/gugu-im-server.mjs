@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { conversationLink, groupFileLink, parseGroupFileLink } from '@gugu/core/shared/ui/guguLink'
 import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
-import { archivedDeliveryReceipt, messageDeliveryBlocks } from './message-delivery-blocks.mjs'
+import { archivedDeliveryReceipt, deliveryRefusalNotes, messageDeliveryBlocks } from './message-delivery-blocks.mjs'
 
 import { downloadSessionFile } from '@gugu/core/local/agent/sessionFileHandoff'
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
@@ -2409,7 +2409,7 @@ async function handleFile(args, deps) {
     // Size and type let the task timeline draw the same file card as the chat (sentMessageOf), without reading the row back.
     const sent = parseAttachmentContent(String(message.content ?? ''), message)
     const card = sent ? { size_bytes: sent.sizeBytes, mime_type: sent.mimeType, ...(typeof message.file_blob_id === 'string' ? { file_blob_id: message.file_blob_id } : {}) } : {}
-    return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...card, ...pinned, ...(blocks.length ? { not_delivered_to: blocks, delivery_note: '对方已归档、未送达; retained in history, no replay after restoration' } : {}),
+    return JSON.stringify({ status: 'sent', message_id: message.id, file_name: fileName, ...card, ...pinned, ...(blocks.length ? { not_delivered_to: blocks, delivery_note: deliveryRefusalNotes(blocks).join('; ') } : {}),
       source_link: conversationLink(chatId, String(message.id).replace(/^msg:/, '')) })
   }
   if (args.action === 'download-attachment') {
