@@ -70,6 +70,21 @@ export type LibraryMcpFailure = z.infer<typeof libraryMcpFailureSchema>;
 export type LibraryMcpServer = z.infer<typeof libraryMcpServerSchema>;
 
 /**
+ * 资源库 → MCP「咕咕提供」里除「我加的」之外的那几组:每条任务都带的内置那台、连上的集成、给 agent 工具的 App。
+ * 只读:集成在「集成」页连 / 断,App 在「App」页开 / 关,MCP 页只列出来、给跳转。
+ */
+export type LibraryMcpProvided = {
+  builtIn: string[];
+  /** 连上了、会经咕咕的转发口进会话的那几家集成(`connectedSessionIntegrations`)。 */
+  integrations: { id: string; name: string }[];
+  /**
+   * 带 MCP 程序的 App。`disclosure` = full:每条任务直接带它的工具;progressive:agent 按需经 `catalog_*` 找。
+   * `refusal`:此刻不给 agent(停用、撤了权限、配置坏了),原样是那句原因。
+   */
+  apps: { id: string; name: string; disclosure: 'full' | 'progressive'; refusal: string | null }[];
+};
+
+/**
  * 咕咕自己每条会话都送的那几台的名字(`gugu`、浏览器那台)—— 资源库里不许叫这几个(单测钉着它们与宿主常量一致)。
  * App、集成的名字随装随变,加的时候判不全,由送进会话时的撞名检查兜(撞了就那一台留在外面,任务照常起)。
  */

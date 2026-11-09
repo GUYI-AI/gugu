@@ -154,7 +154,7 @@ export const LibraryMainPanel = observer(function LibraryMainPanel() {
     ) : (
       <IntegrationsLibraryPage />
     ),
-    mcp: <McpLibraryView />,
+    mcp: <McpLibraryView onOpenIntegrations={() => onTabChange('integrations')} />,
     themes: <ThemesLibraryPage />,
   };
 

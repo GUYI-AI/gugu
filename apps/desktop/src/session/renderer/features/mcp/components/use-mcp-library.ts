@@ -37,6 +37,13 @@ export function useMcpLibrary() {
     ...(host.remote ? { retry: false } : {}),
   });
 
+  // 「咕咕提供」里的内置、集成、App 三组:和开会话时读的是同一组来源(见 mcp-library/service.ts `provided`)。
+  const provided = useQuery({
+    queryKey: ['mcpLibrary', 'provided', host.key],
+    queryFn: () => host.mcpLibrary.provided(),
+    enabled: reachable,
+    ...(host.remote ? { retry: false } : {}),
+  });
   const agents = useManagementAgents();
   const installed = useMemo(
     () => (agents.data ?? []).filter((agent) => agent.reading !== 'not-detected').sort((a, b) => a.name.localeCompare(b.name)),
@@ -69,6 +76,7 @@ export function useMcpLibrary() {
 
   return {
     servers: list.data ?? [],
+    provided: provided.data,
     /** 装了的那几家,各一个折叠的段头;配置等展开才读。 */
     installed,
     /**
@@ -93,11 +101,12 @@ export function useMcpLibrary() {
       return names;
     },
     // 各家那几组只等「装了哪几家」(段头要画出来);各家的配置等展开才读。
-    isLoading: list.isLoading || agents.isLoading,
-    error: list.error ?? agents.error,
+    isLoading: list.isLoading || agents.isLoading || provided.isLoading,
+    error: list.error ?? agents.error ?? provided.error,
     hasData: list.data !== undefined,
     reload: () => {
       void list.refetch();
+      void provided.refetch();
       void queryClient.invalidateQueries({ queryKey: ['mcpLibrary', 'harness', host.key] });
     },
     isBusy: add.isPending || update.isPending || remove.isPending,
