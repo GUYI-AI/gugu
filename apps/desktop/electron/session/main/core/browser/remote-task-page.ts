@@ -14,9 +14,9 @@ import { watchRemoteProjection } from '../extensions/projection-remote-viewer';
 const watches = new Map<string, Promise<{ receive(packet: unknown): Promise<void>; control(control: TaskPageControl): Promise<void>; close(): void }>>();
 
 export async function watchRemoteTaskPage(args: { watchId: string; deviceId: string; sessionId: string }): Promise<{ success: true }> {
-  if (typeof args.watchId !== 'string' || !args.watchId || args.watchId.length > 128 || watches.has(args.watchId)) {
-    throw new Error('A task page watch needs a new id');
-  }
+  if (typeof args.watchId !== 'string' || !args.watchId || args.watchId.length > 128) throw new Error('A task page watch needs an id');
+  // The picture's reset asks again with the same id (as for a projection on this computer): start that watch over.
+  unwatchRemoteTaskPage(args.watchId);
   const watching = watchRemoteProjection(args.deviceId, { session: args.sessionId, page: true },
     (packet) => events.emit(browserTaskPagePacketChannel, { watchId: args.watchId, packet }),
     (state) => events.emit(browserTaskPageStateChannel, { watchId: args.watchId, state }));

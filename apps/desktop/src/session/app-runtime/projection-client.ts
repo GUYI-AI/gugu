@@ -19,7 +19,23 @@ export async function projectionClient(host: ProjectionHost, id: string, options
   let painting = Promise.resolve();
   let paintEpoch = 0;
   let resetting: Promise<void> | null = null;
-  const inputs = new ProjectionInputQueue(packet => bridge.send({ watchId, packet }), () => reset());
+  /**
+   * The host admits input only on the picture it was told is shown. Input on a painted picture therefore goes out once
+   * that picture's ACK is through, and the next ACK waits for input already on the wire: over a slow link (another
+   * computer) input is held for a moment instead of being refused while the next picture is on its way.
+   */
+  const acks = new Map<string, Promise<unknown>>();
+  const onWire = new Set<Promise<unknown>>();
+  const wire = <T>(sending: Promise<T>): Promise<T> => {
+    onWire.add(sending);
+    void sending.finally(() => onWire.delete(sending)).catch(() => undefined);
+    return sending;
+  };
+  const inputs = new ProjectionInputQueue(
+    packet => (acks.get(`${packet.generation}:${packet.frame}`) ?? Promise.resolve()).then(
+      () => wire(bridge.send({ watchId, packet })),
+      () => { throw new Error('The picture this input was on was not shown'); }),
+    () => reset());
   const state = (value: 'connecting' | 'live' | 'closed', reason?: string) => {
     ready = value === 'live';
     if (!ready) { paintEpoch++; options.painted?.(null); }
@@ -60,7 +76,13 @@ export async function projectionClient(host: ProjectionHost, id: string, options
     painting = work.then(() => {}, () => {});
     try {
       if (!await work) return;
-      await bridge.send({ watchId, packet: { type: 'ack', generation: packet.generation, frame: packet.frame.sequence } });
+      const key = `${packet.generation}:${packet.frame.sequence}`;
+      const acked = Promise.allSettled([...onWire])
+        .then(() => bridge.send({ watchId, packet: { type: 'ack', generation: packet.generation, frame: packet.frame.sequence } }));
+      for (const old of acks.keys()) if (!old.startsWith(`${packet.generation}:`)) acks.delete(old);
+      acks.set(key, acked);
+      void acked.finally(() => { if (acks.size > 8) acks.delete(acks.keys().next().value!); }).catch(() => undefined);
+      await acked;
       if (!closed && packet.generation === generation && paintEpoch === epoch) state('live');
     } catch (error) {
       if (closed || packet.generation !== generation || paintEpoch !== epoch) return;
@@ -91,7 +113,8 @@ export async function projectionClient(host: ProjectionHost, id: string, options
   return Object.freeze({
     reset,
     input(raw: ProjectionInput, sent?: () => void) {
-      if (closed || !ready || !painted) return Promise.reject(new ProjectionInputNotSent('Projection is not ready for input'));
+      // The painted picture is what the person acts on; its ACK may still be on the way (see `acks`).
+      if (closed || !generation || !painted) return Promise.reject(new ProjectionInputNotSent('Projection is not ready for input'));
       let input: ProjectionInput;
       try { input = projectionInput(raw); }
       catch (error) { return Promise.reject(new ProjectionInputNotSent(error instanceof Error ? error.message : String(error))); }
