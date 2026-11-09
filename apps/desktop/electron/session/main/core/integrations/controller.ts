@@ -1,4 +1,5 @@
 import { integrationPluginRegistry, type IntegrationCredentials } from '@gugu/session-plugins/integrations';
+import { log } from '@main/lib/logger';
 import { createRPCController } from '@shared/lib/ipc/rpc';
 import { cliMethodOf } from './cli/cli-integrations';
 import { checkAllIntegrationConnections, checkConfiguredIntegrations } from './connection-statuses';
@@ -7,12 +8,14 @@ import { integrationCredentialStore } from './integration-credential-store-insta
 import {
   exportAccountsForMove,
   importAccountsFromMove,
+  plainFormFields,
   previewAccountsForMove,
   type IntegrationMoveDeps,
   type MovableIntegrationAccount,
 } from './integration-move';
 import { buildIntegrationListPayload } from './integration-payload-builder';
 import { platformCredentials } from './platform-credentials-instance';
+import { integrationReachesAgent } from './session-integrations';
 
 const moveDeps: IntegrationMoveDeps = {
   // #921 平台保管的那几家不随助理搬:平台是按人存的,新家本来就连着。存在这台电脑上的(没有平台服务的安装)照旧搬。
@@ -23,9 +26,12 @@ const moveDeps: IntegrationMoveDeps = {
       .filter((integrationId) => platformCredentials.custody(integrationId) !== 'platform'),
   isCli: (integrationId) => cliMethodOf(integrationId) !== null,
   hasIntegration: (integrationId) => integrationPluginRegistry.get(integrationId) !== undefined,
+  plainFields: (integrationId) => plainFormFields(integrationPluginRegistry.get(integrationId)?.capabilities.auth.methods ?? []),
   listAccounts: (integrationId) => integrationCredentialStore.listAccountsDetailed(integrationId),
   upsertAccount: (integrationId, account) => integrationCredentialStore.upsertAccount(integrationId, account),
   setDefault: (integrationId, accountId) => integrationCredentialStore.setDefault(integrationId, accountId),
+  deleteAccount: (integrationId, accountId) => integrationCredentialStore.delete(integrationId, accountId),
+  warn: (message, context) => log.warn(message, context),
 };
 
 export const integrationsController = createRPCController({
@@ -33,7 +39,7 @@ export const integrationsController = createRPCController({
   list: async (locale?: string) => {
     // #921 连接页要说凭据在哪保管:还不知道这个安装有没有平台服务就先问一次。
     await platformCredentials.knowCustody();
-    return buildIntegrationListPayload(locale, (integrationId) => platformCredentials.custody(integrationId));
+    return buildIntegrationListPayload(locale, (integrationId) => platformCredentials.custody(integrationId), integrationReachesAgent);
   },
 
   /** 资源库那一页:注册表里每一家连没连上(检查一次)/ 存没存着凭据(不联网)。 */

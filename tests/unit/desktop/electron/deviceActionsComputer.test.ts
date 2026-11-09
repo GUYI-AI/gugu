@@ -72,7 +72,6 @@ function setup(options: { callTool?: CallTool; control?: ComputerControlHooks; h
   }
   const store = createDeviceActionGrantsStore(path.join(dir, `grants-${++stores}.json`))
   store.setGroup('computer', true)
-  store.setGroup('screen', true)
   const p = createDeviceActionsProvider({ store, families: [createComputerFamily(dir)], deps })
   const invoke = async (action: string, args: Record<string, unknown>, caller?: { agent_user_id?: string; name?: string; task_title?: string }) => {
     const permit = await p.provider.permit(action)
@@ -207,7 +206,7 @@ describe('电脑控制:登记', () => {
   it('computer.<cua 工具名>,说明照 cua 自己的再补咕咕的规矩;参数去掉 session(咕咕按调用方分)', () => {
     const { p } = setup()
     const names = p.capability()!.actions.filter((a) => a.group === 'computer').map((a) => a.name)
-    expect(names).toEqual(COMPUTER_TOOLS.map((t) => `computer.${t}`))
+    expect(names).toEqual([...COMPUTER_TOOLS.map((t) => `computer.${t}`), 'screen.elements.find'])
     expect(names).not.toContain('computer.run_script')
     expect(names).not.toContain('computer.set_agent_cursor_enabled')
     const click = p.capability()!.actions.find((a) => a.name === 'computer.click')!
@@ -528,19 +527,13 @@ describe('电脑控制:结果', () => {
   })
 })
 
-describe('屏幕(Mac,走 cua 读前台窗口)', () => {
+describe('找屏幕元素(Mac,走 cua 读前台窗口;属于电脑控制)', () => {
   const desk: CallTool = async (name) => {
     if (name === 'list_apps') return { structuredContent: { apps: [{ name: 'Calculator', bundle_id: 'com.apple.calculator', pid: 77, active: true }, { name: 'Chrome', pid: 5, active: false }] } }
     if (name === 'list_windows') return { structuredContent: { windows: [{ window_id: 9, title: '计算器', layer: 0, is_on_screen: true }] } }
     if (name === 'get_window_state') return { structuredContent: { snapshot_id: 's3', tree_markdown: '- [0] AXWindow "计算器"\n  - AXStaticText = "9,240"\n  - [5] AXButton (7) [id=Seven]\n  - [6] AXButton (8) [id=Eight]' } }
     return { content: [] }
   }
-
-  it('screen.get:前台 App、窗口标题、文字;不截图', async () => {
-    const { invoke, callTool } = setup({ callTool: desk })
-    expect(await invoke('screen.get', {})).toMatchObject({ ok: true, data: { app_name: 'Calculator', bundle_id: 'com.apple.calculator', window_title: '计算器', texts: ['9,240'], interactive_elements: 3, ax_coverage: 'full' } })
-    expect(callTool).toHaveBeenCalledWith('get_window_state', expect.objectContaining({ pid: 77, window_id: 9, include_screenshot: false }), expect.anything())
-  })
 
   it('screen.elements.find:按文字找,给出 computer.click 认的 element_token', async () => {
     const { invoke } = setup({ callTool: desk })
@@ -549,7 +542,7 @@ describe('屏幕(Mac,走 cua 读前台窗口)', () => {
 
   it('前台是咕咕自己:不读', async () => {
     const { invoke } = setup({ callTool: async (name) => (name === 'list_apps' ? { structuredContent: { apps: [{ name: '咕咕', pid: GUGU_PID, active: true }] } } : { content: [] }) })
-    expect(await invoke('screen.get', {})).toMatchObject({ ok: false, code: 'invalid_args', message: expect.stringContaining('咕咕 itself') })
+    expect(await invoke('screen.elements.find', { query: '7' })).toMatchObject({ ok: false, code: 'invalid_args', message: expect.stringContaining('咕咕 itself') })
   })
 })
 

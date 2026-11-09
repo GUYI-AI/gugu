@@ -1,3 +1,4 @@
+import { windowCommitProjectionDirectory } from './window-commit-projection-disk';
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -95,10 +96,10 @@ describe('durable exact canonical body slot pages', () => {
     });
     await expect(advance(f.slot, createWindowBudget())).rejects.toMatchObject({ code: 'EIO' }); interrupted.mockRestore();
     const bodyKey = { ...f.receipt.binding, kind: 'body' as const, cursor: `slot:${f.slot.id}:body:0` };
-    const prior = await disk.readWindowFrame(directory, bodyKey, createWindowBudget()); if (prior.kind !== 'hit') throw new Error('Missing durable content');
-    await rm(join(directory, windowFrameName(bodyKey))); await disk.writeWindowFrame(directory, bodyKey, Buffer.from('conflicting content'));
+    const prior = await disk.readWindowFrame(windowCommitProjectionDirectory(directory, bodyKey), bodyKey, createWindowBudget()); if (prior.kind !== 'hit') throw new Error('Missing durable content');
+    await rm(join(windowCommitProjectionDirectory(directory, bodyKey), windowFrameName(bodyKey))); await disk.writeWindowFrame(windowCommitProjectionDirectory(directory, bodyKey), bodyKey, Buffer.from('conflicting content'));
     await expect(advance(f.slot, createWindowBudget())).rejects.toThrow('Conflicting immutable');
-    await rm(join(directory, windowFrameName(bodyKey))); await disk.writeWindowFrame(directory, bodyKey, prior.bytes);
+    await rm(join(windowCommitProjectionDirectory(directory, bodyKey), windowFrameName(bodyKey))); await disk.writeWindowFrame(windowCommitProjectionDirectory(directory, bodyKey), bodyKey, prior.bytes);
     const budget = createWindowBudget(); expect((await advance(f.slot, budget)).kind).toBe('progress');
     expect(budget.counters.indexBytes).toBeLessThanOrEqual(65536);
     const first = await read(f.slot, 0, createWindowBudget()); expect(first).toMatchObject({ kind: 'body' });

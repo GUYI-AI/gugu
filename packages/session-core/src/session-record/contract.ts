@@ -670,7 +670,7 @@ export type SessionpageSessionSummary = {
   /** Explicit insert-now intent is preserved through durable host custody. */
   nativeInputSteering?: true;
   /** Live native activity, not a second IM row. Offline heartbeat digests carry no message text. */
-  nativeLastMessage?: { text: string; at: string } | null;
+  nativeLastMessage?: ({ text: string; at: string } & import('./preview-activity').PreviewActivity) | null;
   /** Raw personal conversation replies. IM deliveries keep their existing unread counter. */
   nativeUnreadKeys?: string[];
   /** Only deliberate owner notifications contribute a numeric notification badge. */

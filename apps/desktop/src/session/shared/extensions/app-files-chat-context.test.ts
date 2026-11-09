@@ -65,6 +65,11 @@ describe('a member row changed: did that move who is in the chat (rosterMoved)',
   it('members not read yet: read them', () => {
     expect(rosterMoved(null, [{ memberId: 'a', left: false }])).toBe(true);
   });
+  // A name lives on the person's account, not on a member row: renaming someone sends agent_changed only.
+  it('someone in it renamed: it moved; someone not in it renamed: nobody in it changed', () => {
+    expect(rosterMoved(members, [{ memberId: 'a', left: false, renamed: true }])).toBe(true);
+    expect(rosterMoved(members, [{ memberId: 'c', left: false, renamed: true }])).toBe(false);
+  });
 });
 
 describe('getContext().chat (extensionChatOf)', () => {

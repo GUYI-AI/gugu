@@ -45,7 +45,7 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 /* The row keeps its time; activity, size and host names stay in hover and Details. */
 .file-list { gap: 2px; }
 .file { position: relative; padding-block: calc(var(--em-row-pad) - var(--em-spacing-xs)); min-height: 56px; }
-.file .file-open { padding-block: 0; padding-inline-end: var(--em-spacing-xs); grid-template-columns: var(--em-icon-xl) minmax(0, 1fr); }
+.file .file-open { padding-block: 0; padding-inline-end: var(--em-spacing-xs); grid-template-columns: var(--em-icon-xl) minmax(0, 1fr); align-content: center; }
 .file .file-mark { width: var(--em-icon-xl); height: var(--em-icon-xl); }
 .file[data-folder] .file-mark { width: 28px; height: 28px; justify-self: center; }
 .file-cell[data-cell='size'] { display: none; }
@@ -127,8 +127,9 @@ img.details-picture { object-fit: contain; }
 /* Wide (an expanded tab): the rows line up as a table, and the details sit beside the list. */
 .files { container-type: inline-size; }
 @container (min-width: 720px) {
-  .table-head { display: grid; grid-template-columns: 22px 24px minmax(0, 1fr) 130px 80px; column-gap: var(--em-spacing-md); align-items: center; padding: 0 8px 4px; font-size: var(--em-font-caption); color: var(--em-foreground-muted); border-bottom: 1px solid var(--em-border); }
+  .table-head { display: grid; grid-template-columns: 22px 24px minmax(0, 1fr) 130px 80px; column-gap: var(--em-spacing-md); align-items: center; padding: 0 8px 4px 4px; font-size: var(--em-font-caption); color: var(--em-foreground-muted); border-bottom: 1px solid var(--em-border); }
   .table-head > [data-cell='name'] { grid-column: 3; }
+  .table-head > [data-cell='size'] { justify-self: start; margin: 0; }
   .table-head > button:not(.pick-all) { border: 0; background: none; padding: 0; min-height: 0; text-align: start; font: inherit; color: inherit; }
   .table-head > [aria-current='true'] { color: var(--em-foreground); font-weight: 600; }
   .file:not(.cell) { padding-block: 4px; padding-inline-start: 38px; min-height: var(--em-control-h-touch); }
@@ -147,7 +148,7 @@ img.details-picture { object-fit: contain; }
    a sheet that slides away. */
 @media (hover: none) and (pointer: coarse) {
   :root { --em-icon-xl: 40px; }
-  .select-files { display: inline-block; }
+  .select-files { display: inline-block; font-size: var(--em-font-caption); }
   .files.has-picks .files-head { display: flex; }
   .file:not(.cell) { min-height: 64px; padding-block: var(--em-row-pad); }
   .selecting .file { display: flex; align-items: center; gap: var(--em-spacing-sm); }
@@ -203,11 +204,23 @@ img.details-picture { object-fit: contain; }
 .empty { margin: var(--em-spacing-lg); color: var(--em-foreground-muted); }
 
 /* Folders and the existing move/upload dialogs. */
-.crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 0 var(--em-spacing-md) var(--em-spacing-sm); color: var(--em-foreground-muted); }
-.crumb { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-inline: var(--em-spacing-xs); border: 0; background: none; color: inherit; }
+/* The path, one line of its own under the toolbar: it stays put, and the end of a long one (where you are) is what shows. */
+.crumbs { display: flex; flex: none; align-items: center; gap: 2px; min-height: 28px; padding: 0 var(--em-spacing-sm); overflow-x: auto; scrollbar-width: none; white-space: nowrap; border-bottom: 1px solid var(--em-border); color: var(--em-foreground-muted); font-size: var(--em-font-caption); }
+.crumbs[hidden] { display: none; }
+.crumbs > * { flex: none; }
+.crumb { max-width: 180px; min-height: 22px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-inline: var(--em-spacing-xs); border: 0; background: none; color: inherit; font-size: inherit; }
+/* A computer's folder by its whole path: what gives way is the start of it, the folder's own name stays readable. */
+.crumb-root { max-width: min(60ch, 70%); direction: rtl; }
 .crumb[aria-current='page'] { color: var(--em-foreground); font-weight: 600; cursor: default; }
 .crumb-sep { opacity: .6; }
-.back { display: inline-flex; align-items: center; gap: 2px; border: 0; background: none; color: var(--em-foreground-muted); }
+/* Picking one of a project's folders: nothing here yet to search, order or add to. */
+.files.choosing-folder .files-toolbar > :not(.place-switch), .files.choosing-folder .files-toolbar > #search-toggle { display: none; }
+.file[data-offline] .file-open { opacity: .6; }
+.crumbs-note { margin-inline-start: auto; padding-inline-start: var(--em-spacing-md); }
+@container (max-width: 600px) { .crumbs-note:not(.crumbs-read-only) { display: none; } }
+.folder-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; direction: rtl; }
+.back { display: inline-flex; align-items: center; gap: 2px; min-height: 22px; padding-inline: 2px var(--em-spacing-xs); border: 0; background: none; color: var(--em-foreground-muted); font-size: inherit; }
+.back:disabled { color: var(--em-foreground-passive, var(--em-foreground-muted)); cursor: default; }
 .file[data-dotfile] .file-open { opacity: 0.6; }
 .file-link { color: var(--em-foreground-muted); }
 .file-title:has(.file-link) .file-name { flex: 0 1 auto; }
@@ -220,6 +233,8 @@ img.details-picture { object-fit: contain; }
 .transfer { padding: var(--em-spacing-xs) var(--em-spacing-sm); border-top: 1px solid var(--em-border); font-size: var(--em-font-caption); color: var(--em-foreground-muted); }
 .transfer[hidden] { display: none; }
 #files-empty-progress { width: 160px; }
+#files-empty-detail { color: var(--em-foreground-muted); font-size: var(--em-font-caption); text-align: center; }
+#files-empty-detail:empty { display: none; }
 .transfer-row { display: flex; align-items: center; gap: var(--em-spacing-sm); }
 .transfer-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-path { font-size: var(--em-font-caption); color: var(--em-foreground-muted); }
@@ -332,32 +347,52 @@ body[data-state='doc'] .doc-message, body.gone .modes { display: none; }
 
 /* A folder and a document each have one content toolbar below the host tab strip. */
 .files-toolbar { flex-wrap: nowrap; min-height: 36px; padding: 2px 8px; gap: 4px; border-bottom: 1px solid var(--em-border); }
+/* The path line closes the bar: one rule under the two of them, not two. */
+.files-toolbar:has(~ .crumbs:not([hidden])) { border-bottom: 0; }
+.place-switch[hidden] { display: none; }
 .place-switch { display: flex; flex: none; gap: 2px; padding: 2px; border-radius: var(--em-radius-control); background: var(--em-background-3); }
 .place-switch button { display: inline-flex; align-items: center; gap: 4px; border: 0; min-height: 26px; padding: 2px 6px; white-space: nowrap; color: var(--em-foreground-muted); background: none; font-size: var(--em-font-caption); }
 .place-switch button[aria-pressed='true'] { color: var(--em-foreground); background: var(--em-background); }
-.place-switch button[aria-disabled='true'] { color: var(--em-foreground-passive, var(--em-foreground-muted)); opacity: .5; }
 .place-switch gugu-icon { width: 14px; height: 14px; }
+.place-switch .short { display: none; }
 @container (max-width: 600px) {
   .files-toolbar > .kinds, .files-toolbar > .views { display: none; }
 }
-.files-toolbar > .kinds, .files-toolbar > .crumbs { min-width: 0; flex: 1; overflow: auto; white-space: nowrap; margin: 0; padding: 0; flex-wrap: nowrap; }
-/* The kinds' grey track hugs its four buttons (owner 11-06: 「Other 尾巴很长」); the controls after it keep to the right. */
-.files-toolbar > .kinds { flex: 0 1 auto; margin-right: auto; }
-/* The kinds alone push the rest right: search, the order, the views, upload and new keep together. */
+/* A phone's width: the places by their short names, so the bar still fits; with the field open, the switch gives it its room. */
+@container (max-width: 420px) {
+  .place-switch button > span:not(.short) { display: none; }
+  .place-switch button > .short { display: inline; }
+  .files-toolbar:has(> .search:not([hidden])) > .place-switch { display: none; }
+}
+.files-toolbar > .kinds { min-width: 0; overflow: auto; white-space: nowrap; margin: 0; padding: 0; flex-wrap: nowrap; }
+/* The kinds' grey track hugs its four buttons (owner 11-06: 「Other 尾巴很长」). */
+.files-toolbar > .kinds { flex: 0 1 auto; }
+/* Search, the order, the views, upload and new keep together at the right, whatever is or isn't drawn on their left. */
+.files-toolbar > #search-toggle { margin-inline-start: auto; }
+/* 🔍 is the bar's height and the size of its neighbours' icons, drawn dead centre. */
+.files-toolbar > #search-toggle { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; }
+.files-toolbar > #search-toggle gugu-icon { width: 16px; height: 16px; }
 .files-toolbar > .sort { margin-inline-start: 0; }
-.files-toolbar:has(.crumbs:not([hidden])) > .kinds { display: none; }
 .files-toolbar > button { flex: none; min-height: 28px; padding: 2px 5px; }
 @container (min-width: 720px) {
   .files-toolbar:has(~ .file-list:not(.as-grid)) > .sort { display: none; }
 }
-/* 按名称筛选 (owner 11-07: no jumping): the field takes the kinds' (or the crumbs') room and fills it, so 🔍 and everything
-   after it keep their place (the box itself stops at 360 on the left); on a phone it covers the whole bar, with 取消, as
-   the host's list search does there. */
-.files-toolbar > .search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; }
+/* 按名称筛选 (owner 11-07: no jumping; 11-08: the field opens beside the 🔍 that was pressed): the box takes the kinds'
+   room, so 🔍 and everything after it keep their place, and the field inside sits at its right end, against 🔍, up to
+   360; on a phone it covers the whole bar, with 取消, as the host's list search does there. */
+.files-toolbar > .search { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
 .files-toolbar > .search[hidden] { display: none; }
 @media not all and (hover: none) and (pointer: coarse) {
-  .files-toolbar:has(> .search:not([hidden])) > :is(.kinds, .crumbs) { display: none; }
   .search-cancel { display: none; }
+  /* 🔍 beside it says what the field is. */
+  .search-field > gugu-icon { display: none; }
+  .search-field { padding-inline-start: 8px; }
+}
+/* Where the field and the kinds do not both fit, the kinds give way while it is open. */
+@container (max-width: 800px) {
+  @media not all and (hover: none) and (pointer: coarse) {
+    .files-toolbar:has(> .search:not([hidden])) > .kinds { display: none; }
+  }
 }
 .search-field { flex: 1; min-width: 0; max-width: 360px; display: flex; flex-direction: row; align-items: center; font-weight: 400; gap: 6px; height: 28px; box-sizing: border-box; padding: 0 2px 0 8px; border: 1px solid var(--em-border-1); border-radius: var(--em-radius-control); background: var(--em-surface-input); color: var(--em-foreground-muted); }
 .search-field:focus-within { border-color: var(--em-accent-9); }

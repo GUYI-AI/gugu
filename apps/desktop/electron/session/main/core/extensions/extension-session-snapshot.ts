@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { removeTreeSync } from '@main/core/utils/remove-tree';
 
 /**
  * What a running agent session holds on to from an extension, kept apart from the installed
@@ -69,7 +70,7 @@ export function ensureSessionSnapshot(installedDir: string, snapshotDir: string)
     fs.renameSync(staging, snapshotDir);
   } catch (error) {
     // Two sessions starting at once: the other one's copy is just as good.
-    fs.rmSync(staging, { recursive: true, force: true });
+    removeTreeSync(staging);
     if (!fs.existsSync(snapshotDir)) throw error;
   }
   return snapshotDir;
@@ -89,20 +90,20 @@ export function pruneSessionSnapshots(
     const extensionDir = path.join(root, extension.name);
     const digest = installed.get(extension.name);
     if (!extension.isDirectory() || !digest) {
-      fs.rmSync(extensionDir, { recursive: true, force: true });
+      removeTreeSync(extensionDir);
       continue;
     }
     const keep = digest.slice(0, 16);
     for (const version of fs.readdirSync(extensionDir)) {
-      if (version !== keep) fs.rmSync(path.join(extensionDir, version), { recursive: true, force: true });
+      if (version !== keep) removeTreeSync(path.join(extensionDir, version));
     }
   }
 }
 
 /** An uninstalled App, once its programs have exited: its data folder and every frozen copy of it go. */
-export function removeUninstalledLeftovers(userDataDir: string, dataDir: string, extensionId: string): void {
-  fs.rmSync(dataDir, { recursive: true, force: true });
-  fs.rmSync(path.join(sessionSnapshotsRoot(userDataDir), extensionId), { recursive: true, force: true });
+export async function removeUninstalledLeftovers(userDataDir: string, dataDir: string, extensionId: string): Promise<void> {
+  await fs.promises.rm(dataDir, { recursive: true, force: true });
+  await fs.promises.rm(path.join(sessionSnapshotsRoot(userDataDir), extensionId), { recursive: true, force: true });
 }
 
 /**
@@ -112,6 +113,6 @@ export function removeUninstalledLeftovers(userDataDir: string, dataDir: string,
 export function pruneExtensionData(dataRoot: string, installed: ReadonlySet<string>): void {
   if (!fs.existsSync(dataRoot)) return;
   for (const entry of fs.readdirSync(dataRoot, { withFileTypes: true })) {
-    if (entry.isDirectory() && !installed.has(entry.name)) fs.rmSync(path.join(dataRoot, entry.name), { recursive: true, force: true });
+    if (entry.isDirectory() && !installed.has(entry.name)) removeTreeSync(path.join(dataRoot, entry.name));
   }
 }

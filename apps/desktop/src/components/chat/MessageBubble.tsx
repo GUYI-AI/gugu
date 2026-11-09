@@ -5,26 +5,23 @@ import { MESSAGE_BUBBLE_LAYOUT as layout } from '@gugu/core/shared/ui/messageBub
 import { memo, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useToast } from '../toastContext'; import { downloadAttachment } from '../../lib/attachmentBytes'
-import { motion, AnimatePresence } from 'framer-motion'; import { MediaAttachmentBubble } from './MediaAttachmentBubble'; import { GroupAvatarSlot } from './StickyGroupAvatar'
+import { motion, AnimatePresence } from 'framer-motion'; import { GroupAvatarSlot } from './StickyGroupAvatar'
 import { MessageSenderAvatar } from './MessageSenderAvatar'; import { platform } from '../../platform'
 import { useAuth } from '../../store/auth'; import { useLongPress } from '../../hooks/useLongPress'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { MessageMetaRow } from './MessageMetaRow'
 import { useMentionRender } from './useMentionRender'
-import { formatVoiceDuration, parseVoiceAttachmentContent } from '@gugu/core/shared/ui/voiceAttachmentModels'
+import { parseVoiceAttachmentContent } from '@gugu/core/shared/ui/voiceAttachmentModels'
 import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'; import { reactionLabel } from '@gugu/core/shared/ui/reactionCatalog'; import { i18n } from '../../i18n/runtime'; import type { MessageItem, MessageSendState, ReactionGroup } from '@gugu/core/shared/types/chat'
 import { MemberProfileAvatarButton } from '../MemberProfileAvatarButton'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
 import type { MemberProfileSide } from '../memberProfileModels'
 import { COLOR_MUTED, readReceiptLabel } from './chatPresentation'
 import { MessageSendStatus } from './MessageSendStatus'; import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'; import { keepAction } from './messageKeep'
-import { Markdown } from '../markdown/Markdown'; import { classifyFileLink } from '@gugu/core/shared/ui/guguLink'; import { openSenderFile } from '@/lib/openMessageSender'
 import { buildBubbleStyle } from './messageBubbleStyle'
-import { ComposerCardView } from './ComposerCardView'
-import { QuestionCardView } from './QuestionCardView'
-import { WidgetBubble } from './WidgetBubble'
-import { parseQuotedContent, partialQuotedContent, type QuoteSelection } from './messageQuoteContent'
+import { MessageBody } from './MessageBody'
+import { parseQuotedContent, type QuoteSelection } from './messageQuoteContent'
 import { DirectMessageQuote, MessageQuote } from './MessageQuote'
 import { parseComposerCard } from '@gugu/core/shared/ui/taskCardModels'
 import { parseWidgetMessage } from '@gugu/core/shared/ui/widgetModels'
@@ -35,80 +32,6 @@ import { canSourceTopic } from './topicSplitModels' // @@@5856 与顶栏那颗�
 import { SystemMessageNotice } from './SystemMessageNotice'
 import { BubbleSender, BubbleTime, ReadReceiptRing } from './MessageBubbleChrome'; import { fmtMsgTime } from './messageRowTime'
 // Sending/failed state and its retry/discard menu live in MessageSendStatus.
-
-function VoiceAttachmentBubble({
-  fileName,
-  durationMs,
-  transcript,
-  isMine,
-}: {
-  fileName: string
-  durationMs: number
-  transcript: string
-  isMine: boolean
-}) {
-  const { t } = useTranslation('messaging')
-  const accentColor = isMine ? 'var(--text-on-bubble-strong)' : 'var(--text-link)'
-  const barColor = isMine ? 'var(--text-on-bubble-muted)' : 'var(--text-quote-author)'
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: '148px', maxWidth: '220px' }}>
-      <div
-        aria-hidden="true"
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          gap: '3px',
-          height: '20px',
-          padding: '2px 0',
-        }}
-      >
-        {[8, 14, 11, 17].map((height, idx) => (
-          <span
-            key={idx}
-            style={{
-              width: '3px',
-              height: `${height}px`,
-              borderRadius: 'var(--radius-capsule)',
-              background: barColor,
-            }}
-          />
-        ))}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
-        <span style={{ fontSize: 'var(--font-body)', fontWeight: 600, color: accentColor }}>
-          {t('message.voice', { duration: formatVoiceDuration(durationMs) })}
-        </span>
-        <span
-          style={{
-            fontSize: 'var(--font-caption)',
-            opacity: 0.72,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            maxWidth: '160px',
-          }}
-        >
-          {fileName}
-        </span>
-        <span
-          style={{
-            fontSize: 'var(--font-caption)',
-            opacity: 0.82,
-            lineHeight: 1.4,
-            display: '-webkit-box',
-            WebkitBoxOrient: 'vertical',
-            WebkitLineClamp: 2,
-            overflow: 'hidden',
-            maxWidth: '160px',
-          }}
-        >
-          {transcript}
-        </span>
-      </div>
-    </div>
-  )
-}
 
 interface BubbleProps {
   msg: MessageItem
@@ -425,64 +348,7 @@ export const MessageBubble = memo(function MessageBubble({
               <span className="msg-time-room-inline" style={{ color: 'var(--muted-fg)', fontStyle: 'italic', '--msg-time-room': timeRoom } as React.CSSProperties}>{t('message.retracted')}</span>
             ) : (
               <div className={timeInline ? 'msg-time-room' : undefined} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', '--msg-time-room': timeRoom } as React.CSSProperties}>
-                {card?.type === 'question' ? (
-                  <QuestionCardView card={card} chatId={msg.chat_id} messageId={msg.id} agentUserId={msg.sender_user_id ?? ''} time={replyQuote ? <>{replyQuote}{fmtMsgTime(msg.created_at)}</> : fmtMsgTime(msg.created_at)} />
-                ) : card ? (
-                  <ComposerCardView card={card} isMine={msg.is_mine} isGroup={isGroup} chatId={msg.chat_id} senderName={avatarName} time={replyQuote ? <>{replyQuote}{fmtMsgTime(msg.created_at)}</> : fmtMsgTime(msg.created_at)} memberProfiles={memberProfiles} onOpenTopic={compactMobile && onOpenTopic && card.type === 'task' ? () => onOpenTopic(msg.id) : undefined} onOpenFile={onOpenFile} />
-                ) : msg.content_type === 'widget' ? (
-                  <WidgetBubble message={msg} />
-                ) : msg.content_type === 'attachment' ? (
-                  voiceAttachment ? (
-                    <VoiceAttachmentBubble
-                      fileName={voiceAttachment.fileName}
-                      durationMs={voiceAttachment.durationMs}
-                      transcript={voiceAttachment.transcript}
-                      isMine={msg.is_mine}
-                    />
-                  ) : mediaAttachment ? (
-                    <MediaAttachmentBubble meta={mediaAttachment} messageId={msg.id} isMine={msg.is_mine} onOpenFile={onOpenFile ? (file) => onOpenFile(file, msg) : undefined} senderName={avatarName} chatId={msg.chat_id} />
-                  ) : (
-                    <span style={{ color: 'var(--text-link)' }}>{t('message.attachment')}</span>
-                  )
-                ) : <div style={compactMobile ? { alignSelf: 'stretch', minWidth: 0, maxWidth: '100%' } : { display: 'contents' }}>{(() => {
-                  const partial = partialQuotedContent(msg)
-                  const raw = partial?.replyText ?? msg.content ?? ''
-                  const quoted = partial ? null : parseQuotedContent(raw)
-                  if (quoted && quoted.replyText) {
-                    return (
-                      // flex column + alignItems:flex-start → each child shrinks to its own content width
-                      // quote block won't stretch the bubble beyond reply text width
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
-                        {quoted.replyText && (
-                          <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                            {quoted.replyText}
-                          </div>
-                        )}
-                        {/* overflow:hidden + maxWidth together cap max-content contribution to parent fit-content */}
-                        <div style={{
-                          display: 'inline-block',
-                          overflow: 'hidden',
-                          borderLeft: `3px solid ${msg.is_mine ? 'var(--bubble-quote-bar-mine)' : 'var(--bubble-quote-bar-other)'}`,
-                          paddingLeft: '7px',
-                          maxWidth: '160px',
-                        }}>
-                          {quoted.senderName && (
-                            <div style={{ fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', fontWeight: 600, opacity: 0.6, marginBottom: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {quoted.senderName}
-                            </div>
-                          )}
-                          <div style={{ fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', opacity: 0.55, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {quoted.quoteText}
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  }
-                  // #1515 段内 Shift+Enter 软换行渲成 <br> 仅对人类手打消息;agent/LLM 内容保持 CommonMark(软换行=空格)。
-                  // @@@2017 群内定向消息:渲染注入 nonce marker 后的正文(mentionRender.content),并把本次 marker 传下 →
-                  // 只有被 to_user_ids 背书的 @Name 才渲成 mention;非群/whisper → content=undefined 用原始 raw、marker 空。
-                  return <Markdown trust="chat" content={partial ? raw : mentionRender.content ?? raw} onAccent={msg.is_mine} hardBreaks={!avatarIsAgent} mentionMarker={mentionRender.mentionMarker} onOpenLink={(href) => { const link = classifyFileLink(href); if (link.kind !== 'workspace-file' || !msg.sender_user_id) return false; openSenderFile(msg.sender_user_id, isGroup ? msg.chat_id : undefined, link); return true }} />
-                })()}</div>}
+                <MessageBody message={msg} compact={compactMobile} isGroup={isGroup} senderName={avatarName} time={replyQuote ? <>{replyQuote}{fmtMsgTime(msg.created_at)}</> : fmtMsgTime(msg.created_at)} mention={mentionRender} memberProfiles={memberProfiles} onOpenTopic={onOpenTopic} onOpenFile={onOpenFile} />
               </div>
             )}
             {!card && (showTime || (!showSender && replyQuote)) && <BubbleTime iso={msg.created_at} isMine={msg.is_mine} inline={timeInline} replyMark={!showSender ? replyQuote : undefined} hideTime={!showTime} />}

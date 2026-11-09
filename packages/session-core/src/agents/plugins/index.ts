@@ -256,6 +256,7 @@ export {
   EVIDENCE_CITATION_PATTERN,
   citedEvidenceSchema,
   harnessSelfUpdateLaunch,
+  harnessPinnedEnv,
   hasCitedEvidence,
   matchesRuntimeCompatibility,
   requiredExactRuntimeCompatibility,

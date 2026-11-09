@@ -1,4 +1,5 @@
 import { messageForUser } from '@/lib/userFacingError';
+import { groupJoinDenialKey } from '@/lib/groupAgentJoin';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Device } from '@gugu/core/shared/types/chat'
@@ -80,6 +81,7 @@ export function AgentWatchPage({
   onOpenGroupChat?: (chatId: string) => void
 }) {
   const { t: tWorkspace } = useTranslation('mobileWorkspace')
+  const { t: tMessaging } = useTranslation('messaging')
   const ownerId = useAuth().user?.id ?? null
   const { devices: hosts, phones } = useDevicesStore()
   const devices = useMemo(() => [...new Map([...hosts, ...(phones ?? [])].map((one) => [one.device_id, one])).values()], [hosts, phones])
@@ -190,7 +192,10 @@ export function AgentWatchPage({
             const phone = isPhoneDevice(device)
             if (phone && result?.birthGroup?.status === 'failed') {
               log.error({ deviceId: device.device_id, sessionId: session.conversationId, chatId: result.birthGroup.chatId, reason: result.birthGroup.error ?? null }, 'phone agent created but group join failed')
-              toast(tWorkspace('groupJoinFailed'), 'error', messageForUser(result.birthGroup.error))
+              // 认得出的拒绝(群满了、群已解散……)直接说原因;只有说不清的才用「暂时无法加入」。
+              const denial = groupJoinDenialKey(result.birthGroup.error)
+              if (denial) toast(tWorkspace('groupJoinDenied'), 'error', tMessaging(denial))
+              else toast(tWorkspace('groupJoinFailed'), 'error', messageForUser(result.birthGroup.error))
             }
             const groupId = phone ? result?.birthGroup?.chatId : taskGroup?.chatId
             if (groupId && onOpenGroupChat && (!phone || result?.birthGroup?.status === 'joined' || result?.birthGroup?.status === 'pending_approval')) {

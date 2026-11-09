@@ -261,6 +261,8 @@ export interface ComposerModelMenuProps {
    */
   openRequest?: number;
   settingNotice?: string | null;
+  /** See `modelMenuNotice` on the composer. */
+  menuNotice?: string;
   onOpen?: () => void;
   modelUnlock?: ComposerModelUnlock | null;
   onModelUnlock?: (anchor?: HTMLElement) => void;
@@ -284,6 +286,7 @@ export function ComposerModelMenu({
   onModelChange,
   openRequest,
   settingNotice,
+  menuNotice,
   onOpen,
   modelUnlock,
   onModelUnlock,
@@ -568,9 +571,9 @@ export function ComposerModelMenu({
             而上游那版就是省略号(`truncate`)。owner 2026-09-06 在实机上看过这一版并认可。
             ⇒ 换了机制、没丢那条修复;要回到「按内容撑宽」,改这一个 className 即可。 */}
         <Combobox.Content ref={setPanelEl} className={styles.modelPanelContent}>
-          {settingNotice && (
+          {(settingNotice || menuNotice) && (
             <div role="status" className={styles.modelSettingNotice} data-testid="composer-model-setting-notice">
-              {settingNotice}
+              {settingNotice || menuNotice}
             </div>
           )}
           {panel.modelRow === 'list' ? (

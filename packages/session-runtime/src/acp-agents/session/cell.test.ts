@@ -51,7 +51,7 @@ function makeCell(agent = new FakeAcpAgent(), extra: Record<string, unknown> = {
     ...extra,
   });
   const push = cell.push.bind(cell);
-  cell.push = event => { boundary.observe('session-1', event); push(event); };
+  cell.push = (event, submitted) => { boundary.observe('session-1', event); push(event, submitted); };
   cell.applySessionReady();
   return { cell, agent };
 }

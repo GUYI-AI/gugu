@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { act } from 'react';
 import { ContentMenu } from '@/components/ContentMenu';
 import type { ContentContextMenu } from '@/session/shared/content-context-menu';
@@ -29,7 +29,7 @@ async function openSelectedTextMenu() {
   await harness.render(<>{previous}{text}<ContentMenu menu={menu} onClose={onClose} onAction={onAction} /></>);
   await until('copy menu is visible', () => !!document.querySelector('[role="menu"]'));
   await until('copy menu position is resolved', () => !!(document.querySelector('[role="menu"]')!.parentElement!.style.getPropertyValue('--anchor-width')));
-  return { selection, node, focusedBefore, onAction, rect };
+  return { selection, node, focusedBefore, onAction, onClose, rect };
 }
 
 it('keeps the native text selection and focus when the copy menu opens', async () => {
@@ -82,4 +82,73 @@ it('keeps endpoints available for a viewport-spanning range', async () => {
   expect(document.elementFromPoint(first.x + 1, first.y + first.height / 2)?.closest('p')).toBe(previous);
   expect(popup.top).toBeGreaterThanOrEqual(0);
   expect(popup.bottom).toBeLessThanOrEqual(innerHeight);
+});
+
+it.each([390, 1100])('excludes the real selection-menu positioning layer from native hits at width %s', async width => {
+  await page.viewport(width, 844);
+  await openSelectedTextMenu();
+  const popup = document.querySelector<HTMLElement>('[role="menu"]')!;
+  const positioner = popup.parentElement!;
+  const button = popup.querySelector<HTMLElement>('[role="menuitem"]')!;
+  expect(getComputedStyle(positioner).userSelect).toBe('none');
+  expect(getComputedStyle(positioner).getPropertyValue('-webkit-user-select')).toBe('none');
+  expect(getComputedStyle(positioner).pointerEvents).toBe('none');
+  expect(getComputedStyle(popup).pointerEvents).toBe('auto');
+  expect(getComputedStyle(button).pointerEvents).toBe('auto');
+});
+
+it.each([390, 1100])('excludes every real inside focus guard while retaining its focus mechanism at width %s', async width => {
+  await page.viewport(width, 844);
+  await openSelectedTextMenu();
+  const popup = document.querySelector<HTMLElement>('[role="menu"]')!;
+  const guards = [...popup.parentElement!.querySelectorAll<HTMLElement>('[data-base-ui-focus-guard]')];
+  expect(guards.length).toBe(2);
+  for (const guard of guards) {
+    expect(getComputedStyle(guard).userSelect).toBe('none');
+    expect(getComputedStyle(guard).getPropertyValue('-webkit-user-select')).toBe('none');
+    expect(getComputedStyle(guard).pointerEvents).toBe('none');
+    expect(guard.tabIndex).toBe(0);
+    expect(guard.getAttribute('data-type')).toBe('inside');
+  }
+});
+
+it('keeps desktop keyboard focus, Enter copy and Escape dismissal working', async () => {
+  await page.viewport(1100, 844);
+  const { selection, onAction, onClose } = await openSelectedTextMenu();
+  const popup = document.querySelector<HTMLElement>('[role="menu"]')!;
+  const button = popup.querySelector<HTMLElement>('[role="menuitem"]')!;
+  const copied: string[] = [];
+  onAction.mockImplementation((id: string) => { if (id === 'copy') copied.push(selection.toString()); });
+  await act(async () => popup.focus());
+  await act(async () => userEvent.keyboard('{Tab}'));
+  expect(document.activeElement).toBe(button);
+  await act(async () => userEvent.keyboard('{Enter}'));
+  expect(onAction).toHaveBeenCalledWith('copy');
+  expect(copied).toEqual(['harbor']);
+  expect(selection.toString()).toBe('harbor');
+  await act(async () => userEvent.keyboard('{Escape}'));
+  expect(onClose).toHaveBeenCalled();
+});
+
+it.each(['light', 'dark'] as const)('renders the selection menu in the %s test theme', async theme => {
+  const oldTheme = document.documentElement.dataset.theme;
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.backgroundColor = 'var(--bg)';
+  document.documentElement.style.color = 'var(--text-primary)';
+  try {
+    const { selection } = await openSelectedTextMenu();
+    await act(async () => window.scrollTo(0, 0));
+    const label = harness.container.appendChild(document.createElement('div'));
+    label.textContent = `测试环境渲染，未经真机验证，原因：无真机\n${import.meta.env.VITE_SELECTION_SOURCE ?? 'regression test'}`;
+    label.style.cssText = 'position:fixed;inset:auto 8px 8px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:var(--font-caption);user-select:none';
+    const phase = import.meta.env.VITE_SELECTION_CAPTURE;
+    if (phase) await page.screenshot({ path: `__screenshots__/selection-1751-${phase}-${theme}.png` });
+    expect(selection.toString()).toBe('harbor');
+    expect(document.querySelector('[role="menuitem"]')?.textContent).toBe('Copy selected text');
+  } finally {
+    if (oldTheme) document.documentElement.dataset.theme = oldTheme;
+    else delete document.documentElement.dataset.theme;
+    document.documentElement.style.removeProperty('background-color');
+    document.documentElement.style.removeProperty('color');
+  }
 });

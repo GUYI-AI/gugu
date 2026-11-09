@@ -31,6 +31,7 @@ import { ConversationDestination } from './ConversationDestination';
 import { UserMessageActions } from './UserMessageActions';
 import { CONVERSATION_EXPAND_H, conversationBubbleKey, hasConversationActions } from './conversation-body';
 import { UserMessageEditor } from './UserMessageEditor';
+import { SentMessageBodies, sentBodiesLayout } from './SentMessageBodies';
 import { InputSendStatus } from './InputSendStatus';
 import { messageEditorMetrics } from './message-editor-metrics';
 import {
@@ -60,7 +61,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
   createEffect(() => {
     const root = textRoot(), bubble = menuRoot(), mount = textMount(), itemId = textMessageId();
     if (!props.conversation || !root || !mount) return;
-    const cleanup = mount({ root, menuRoot: bubble, itemId, message: () => props.data, sender: () => props.sender?.() ?? null });
+    const cleanup = mount({ root, menuRoot: bubble, itemId, message: () => props.data, sender: () => props.sender?.() ?? null, commands });
     if (cleanup) onCleanup(cleanup);
   });
   const turn = useTurnState();
@@ -108,9 +109,14 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
   // chunk would re-parse the reply and remount its settled blocks (and lose a selection in them).
   const parse = (ctx: MeasureCtx) => (props.data.streaming ? ctx.caches.parseBlocksStreaming : ctx.caches.parseBlocks)(props.data.id, props.data.text);
 
+  /** What the agent sent to people is drawn by the host's MessageBody in slots (`SentMessageBodies`), not as text here. */
+  const sent = createMemo(() => {
+    const ctx = mCtx(), messages = props.data.sentMessages;
+    return ctx && messages?.length ? sentBodiesLayout(messages, ctx, innerWidth()) : null;
+  });
   const stack = createMemo<Measured<StackLayout> | null>(() => {
     const ctx = mCtx();
-    if (!ctx) return null;
+    if (!ctx || sent()) return null;
     const blocks = parse(ctx);
     if (blocks.length === 0) return null;
     const innerCtx = { ...ctx, width: innerWidth() };
@@ -126,6 +132,8 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
     const v = vars();
     if (!ctx) return v.collapsedMaxH;
     const innerW = userInnerWidth(availableWidth(), v);
+    const bodies = sent();
+    if (bodies) return bodies.height + 2 * v.userCardPadY + 2 * v.cardBorder;
     const blocks = parse(ctx);
     // 还在流、一个字没到:先占一行的气泡;收口了还没正文(只有附件)就没有气泡。
     if (blocks.length === 0) return props.data.streaming ? ctx.theme.fonts.body.lineHeight + 2 * v.userCardPadY + 2 * v.cardBorder : 0;
@@ -153,7 +161,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
   const paintedWidth = createMemo(() => {
     const available = availableWidth();
     if (!isDoubleColumnLayout(layout())) return available;
-    const s = stack();
+    const s = stack() ?? sent();
     return userPillWidth(available, s ? Math.max(s.width, destination()?.width ?? 0) : null, vars(), layout());
   });
 
@@ -214,7 +222,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
       </Show>
     <Show when={edit()} fallback={<>
     {/* 只有附件、没有正文(长文本自动转成的 pasted-text.txt 就是这样):不画气泡 —— 空气泡是一条整行宽的色带。 */}
-    <Show when={!mCtx() || stack() || props.data.streaming}>
+    <Show when={!mCtx() || stack() || sent() || props.data.streaming}>
     <div
       ref={setMenuRoot}
       data-user-card={props.data.id}
@@ -241,6 +249,8 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
       <div ref={setTextRoot} data-conversation-text={props.conversation ? props.data.id : undefined}
         style={destination() ? { height: `${Math.max(0, cardH() - 2 * vars().userCardPadY - 2 * vars().cardBorder)}px`, overflow: 'hidden' } : undefined}>
         <Show when={stack()}>{(s) => <BlockStackView node={s()} />}</Show>
+        <Show when={props.data.sentMessages?.length && sent() ? props.data.sentMessages : null}>{messages =>
+          <SentMessageBodies messages={messages()} ctx={mCtx} width={innerWidth()} />}</Show>
       </div>
       <Show when={!isExpanded() && isOverflowing()}>
         <div class={cardFadeOverlay} style={destination() ? { bottom: `${destination()!.height + vars().userCardPadY}px` } : undefined} />
