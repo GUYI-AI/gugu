@@ -54,7 +54,6 @@ function remoteHost(agents: FakeAgents, online: boolean): LibraryHost {
   return {
     key: 'remote:d22',
     agents: agents as unknown as LibraryAgentsRpc,
-    prompts: { get: vi.fn(), update: vi.fn() } as never,
     mcpLibrary: {} as never,
     integrations: {} as never,
     github: {} as never,

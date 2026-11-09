@@ -18,7 +18,7 @@ import {
   type SessionRecordSourceEvents
 } from '../contract';
 import { findUnder, isFile } from './find-file';
-import { locateImages, readRecordImage } from './record-images';
+import { locateImages, readRecordImage, snapshotRetainer } from './record-images';
 import {
   SessionRecordNotFoundError,
   SessionRecordForkDivergedError,
@@ -103,6 +103,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
   private ownIncrement = false;
   private consumedFiles = new Map<string, number>();
   private consumedBytes = 0;
+  private readonly retain: ReturnType<typeof snapshotRetainer> | null;
 
   private rememberConsumed(path: string, bytes: number): void {
     this.consumedBytes += bytes - (this.consumedFiles.get(path) ?? 0);
@@ -115,6 +116,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
     private readonly nativeChild = false,
   ) {
     this.warn = warnOf(options);
+    this.retain = options?.readMode === 'snapshot' ? snapshotRetainer() : null;
   }
 
   async start(events: SessionRecordSourceEvents, resume?: SessionRecordResume): Promise<void> {
@@ -268,7 +270,8 @@ class ClaudeJsonlSource implements SessionRecordSource {
     const events = this.events;
     const path = this.reader?.currentPath;
     emitJsonLines(lines, 'claude', this.warn, (entries) => events.onEntries(entries), (record) => this.decodeRecord(record),
-      offsets && path ? (entries, index) => locateImages(entries, lines[index], offsets[index], path) : undefined);
+      path && this.retain ? (entries, index) => this.retain!(entries, lines[index], offsets?.[index], path)
+        : offsets && path ? (entries, index) => locateImages(entries, lines[index], offsets[index], path) : undefined);
   }
 
   private decodeRecord(record: Record<string, unknown>): RecordEntry[] {
@@ -490,7 +493,7 @@ async function readFirstMessageUuid(path: string): Promise<string | null> {
  * 项目目录名是 cwd 的转义，locator 只给根 —— 与其在这里再造一套转义规则（它随 claude 版本变），
  * 不如把根下的目录列一遍去 stat：一次 readdir + 若干 stat，几十毫秒，而且转义规则怎么变都不会错。
  */
-async function resolveSessionFile(locator: SessionRecordLocator, nativeChild = false): Promise<string> {
+export async function resolveSessionFile(locator: SessionRecordLocator, nativeChild = false): Promise<string> {
   const name = `${nativeChild ? 'agent-' : ''}${locator.providerSessionId}.jsonl`;
   for (const root of locator.roots) {
     if (await isFile(join(root, name))) return join(root, name);

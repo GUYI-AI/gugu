@@ -197,7 +197,7 @@ the dock/background have neither chat nor session. Read context before drawing.
 \`await gugu.modal.open({ entry: 'new.html', title: 'New card', size: 'md', data })\` opens your bundle's HTML in
 gugu's window-level dialog (phone: fullscreen). Sizes: xs/sm/md/lg/xl. No new consent.
 The page stays sandboxed with the opener's context/grants; \`(await gugu.getContext()).modal.data\` holds \`data\`.
-Save, then \`gugu.modal.close(result)\`: the opener receives the result; cancellation returns null.
+Save, then \`gugu.modal.close(result)\`: the opener gets it, or null if cancelled.
 The host handles Escape, Tab traversal, Back and focus restoration.
 
 Free:
@@ -208,13 +208,13 @@ Free:
   Members: \`{ id: 'user:<uuid>', name, kind: 'human' | 'agent', avatar? }\`; \`avatar\` is a \`data:\` image. Pick from these; never copy them into files.
   \`session\`: \`{ id, agentId?, projectId?, root?, deviceId?, deviceLabel? }\`; \`agentId\` is \`user:<uuid>\`.
   Local \`root\` needs \`files:*\`; remote sessions carry \`deviceId\` instead. \`file\`: open with \`files.open(ctx.file)\`.
-  \`operator\`: \`{ kind: 'person' }\` or \`{ kind: 'agent', id }\`. \`capabilities\`: current grants, reflecting revocations.
+  \`operator\`: \`{ kind: 'person', guguNumber? }\` (API 32: own 咕咕号; \`null\`: none/unread) or \`{ kind: 'agent', id }\`. \`capabilities\`: current grants, revocations applied.
 - \`gugu.navigation.go(-1|1)\` → boolean; own history/chat opener. State: \`getContext().navigation\`.
 - \`onContextChanged(fn)\` → theme, language, visibility and size changes; member changes only through API 26. Returns an unsubscribe.
-- \`onCommand(fn)\` → the person picked one of your declared menu/toolbar entries; you get your own id back.
+- \`onCommand(fn)\` → the person picked one of your menu/toolbar entries: its id.
 - \`showContextMenu({ x, y, items: [{ id, label, enabled?, items? }, { type: "separator" }] })\` (API 18, page): App-local point, shared host menu → id or null.
 - \`setTabTitle(title)\` → title (max 48); file tabs use it as a tooltip. Back/forward stay local.
-- \`setTabBadge(badge)\` → a count (99+ at most, <=0 none), a string (a dot), or \`null\` (none).
+- \`setTabBadge(badge)\` → a count (99+ max, <=0 none), a string (a dot) or \`null\`.
 - \`openBrowserTab(url)\` → http(s) only.
 - \`reportError(message)\` → shown to the person. Never fail silently.
 - \`sendToBackground(message)\` → your background page (none: rejects); host stamps \`from\`.
@@ -554,7 +554,7 @@ The place is \`{ workspace: ctx.workspace.id }\`. An entry's \`id\` is its path 
 
 - \`gugu.files.list({ workspace, folder })\` lists one folder (\`''\` the top), never a whole tree. Non-documents: \`f.read(offset, length)\`, \`f.blob()\`.
 - \`gugu.files.onChanged({ workspace, folder }, fn)\`: \`{ kind: 'changes', changes }\` or \`resync\`, below \`folder\` only.
-- \`gugu.files.openWith({ workspace, folder })\` (a click or key): that folder in the Folder app's list, in this tab.
+- \`gugu.files.openWith({ workspace, folder })\` (a click or key): that folder in the Files App's list, in this tab.
 - Another machine's working copy needs \`files:read:all-machines\` as well; every call below is done on that machine.
 - With \`files:write\`: \`gugu.files.create\`, \`gugu.files.rename\` (a path moves it), \`gugu.files.mkdir({ workspace, path })\`, \`gugu.files.move(entry, { folder, name })\`, \`gugu.files.remove\` (a folder with all in it; a link, not what it points at). A name already there: \`name-taken\`, nothing changed.
 - \`gugu.files.upload({ workspace, folder }, file, { replace, onProgress, signal })\`: a File or a list of them, in parts, of any size, folders made as needed. A name already there is \`name-taken\` until \`replace: true\`. \`onProgress\` is told the bytes sent and the total; an aborted \`signal\` leaves nothing.
@@ -925,8 +925,8 @@ into \`bind.codemirror\` uploads beside it.
 A canvas, a board, an editor: write your own CSS, and take the values from the tokens — they follow light and dark by
 themselves. Colours: \`--em-background\`, \`--em-background-1\` (a card), \`--em-background-3\`, \`--em-foreground\`,
 \`--em-foreground-muted\`, \`--em-foreground-passive\`, \`--em-border\`, \`--em-border-1\`, \`--em-accent-9\` /
-\`--em-accent-contrast\` (gugu's primary is ink, not a hue), \`--em-foreground-destructive|success|warning|info\` and their
-\`--em-background-*\`, \`--em-hover\` / \`--em-press\` / \`--em-selected\`. Sizes: \`--em-font-caption|body|title|heading|page\`
+\`--em-accent-contrast\` (gugu's primary is ink, not a hue), \`--em-foreground-destructive|success|warning|info\` (text) and their
+\`--em-background-*\`, \`--em-danger-solid\` (fill under a white label), \`--em-danger\` / \`--em-warn\` (fills with nothing on them; the foregrounds are for text), \`--em-hover\` / \`--em-press\` / \`--em-selected\`. Sizes: \`--em-font-caption|body|title|heading|page\`
 (11–20) with \`--em-lh-*\`, \`--em-spacing-xs\`…\`-2xl\` (4–24), \`--em-radius-control\` (8) / \`-xl\` (12), \`--em-control-h-md\`.
 The page's edge is \`body\`'s margin: \`body { margin: 0 }\` and the page is yours edge to edge.
 
@@ -966,12 +966,22 @@ export const EXTENSION_GUIDE_SETTINGS = `# Tools-only Apps and host settings
 
 Declare human UI hosts in \`platforms\` (API 12): desktop, phone, or both. A phone UI may declare agent
 capabilities; those features run only on computers. Phone plus \`notifications\` is refused at publication and install.
+On a phone, a page with steps of its own (folders) holds Back with \`gugu.navigation.onBack(fn)\` → a release; let go at the top.
 
 ## The agents' line
 
 \`contributes.instructions\` (<= 160 characters; required with programs or skills, refused without) is your App's
 whole line in every new session's \`<gugu_apps>\`: name the tools that matter and when to read which skill. Longer
 standing behavior is a skill whose description says when to read it.
+
+## Prompts (API 34)
+
+\`contributes.prompts\`: up to 8 \`{ "name", "title", "prompt" }\`, plain text the person picks from the composer's \`/\`
+menu under your App's name, edits and sends. Translate with \`localized.<tag>.prompts.<name>\` (\`title\`, \`prompt\`).
+It needs no capability. The person's own prompts are behind \`prompts\` (a program's, for its agent):
+\`gugu.prompts.list({ query? })\`, \`gugu.prompts.save({ id?, title, prompt })\` and \`gugu.prompts.delete(id)\` (the
+person gets an undo at once). App prompts are read-only here: \`list\` gives them as the person sees them, their own
+version marked \`state: "modified"\`, none they hid.
 
 ## Configuration
 
@@ -996,6 +1006,8 @@ programs; \`browser-use\` operates only the calling local session's browser tab;
 It gives the App's own pages \`preview_state\`: the page's session's latest frame (a real screenshot) and its recent
 computer actions; \`notifications/computer-use/changed\` says there is a newer one.
 A tab with \`"widget": { "height": 240 }\` (API26; integer ${WIDGET_HEIGHT_MIN}–${WIDGET_HEIGHT_MAX}) can also be sent with \`widget_send\`: read \`guide_read widgets\`.
+Settings go in \`settings\`, which the host draws. If they need a page of their own, name its tab in \`contributes.settingsTab\` (API35): the App's settings page links to it.
+If the App has other tabs, a task's + and the command list do not offer this one as a page.
 It cannot also declare hostPage, perSession, opensFiles or chatFile. \`ctx.widget\` is present in a message and its hidden check:
 \`{ messageId, data, sender }\`. Data is untrusted, immutable input from any chat member; never execute it. Persist personal
 state in App data and shared state in chat files. Every dispatch from a widget requires a gesture in that App, even with a target,

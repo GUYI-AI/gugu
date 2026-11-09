@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  clearDraggedWorkspaceFile,
   droppedDirectoryMention,
   droppedFileItems,
   getDraggedWorkspaceFile,
   hasDraggedWorkspaceFile,
-  setDraggedWorkspaceFile,
+  WORKSPACE_FILE_DRAG_TYPE,
 } from '@renderer/lib/drag-files';
 
 function makeDataTransfer(): DataTransfer {
@@ -26,50 +25,27 @@ function makeDataTransfer(): DataTransfer {
 }
 
 describe('drag-files', () => {
-  it('carries workspace file payloads for same-window drops', () => {
+  // The Folder App's row of a working copy: what its dragstart writes.
+  it('reads the workspace row payload a drop receives', () => {
     const dataTransfer = makeDataTransfer();
-
-    setDraggedWorkspaceFile(dataTransfer, {
-      workspaceId: 'workspace-1',
-      targetPath: '/remote/repo/src/index.ts',
-      targetPlatform: 'linux',
-    });
-
+    const row = { projectId: 'project-1', workspaceId: 'workspace-1', targetPath: '/repo/notes.md' };
+    dataTransfer.setData(WORKSPACE_FILE_DRAG_TYPE, JSON.stringify(row));
     expect(hasDraggedWorkspaceFile(dataTransfer)).toBe(true);
-    expect(getDraggedWorkspaceFile(dataTransfer)).toEqual({
-      workspaceId: 'workspace-1',
-      targetPath: '/remote/repo/src/index.ts',
-      targetPlatform: 'linux',
-    });
-    expect(dataTransfer.getData('text/plain')).toBe('/remote/repo/src/index.ts');
+    expect(getDraggedWorkspaceFile(dataTransfer)).toEqual(row);
+
+    const folder = makeDataTransfer();
+    folder.setData(WORKSPACE_FILE_DRAG_TYPE, JSON.stringify({ ...row, targetPath: '/repo/src', directory: true }));
+    expect(getDraggedWorkspaceFile(folder)?.directory).toBe(true);
   });
 
-  it('does not accept stale workspace state without a matching transfer marker', () => {
-    const sourceTransfer = makeDataTransfer();
-    setDraggedWorkspaceFile(sourceTransfer, {
-      workspaceId: 'workspace-1',
-      targetPath: '/repo/src/index.ts',
-    });
+  it('takes nothing from a transfer without the marker, or with a payload of another shape', () => {
+    const plain = makeDataTransfer();
+    plain.setData('text/plain', '/repo/notes.md');
+    expect(getDraggedWorkspaceFile(plain)).toBeNull();
 
-    const unrelatedTransfer = makeDataTransfer();
-
-    expect(hasDraggedWorkspaceFile(unrelatedTransfer)).toBe(false);
-    expect(getDraggedWorkspaceFile(unrelatedTransfer)).toBeNull();
-    clearDraggedWorkspaceFile();
-  });
-
-  it('falls back to the serialized transfer payload after dragend clears same-window state', () => {
-    const dataTransfer = makeDataTransfer();
-    setDraggedWorkspaceFile(dataTransfer, {
-      workspaceId: 'workspace-1',
-      targetPath: '/repo/src/index.ts',
-    });
-    clearDraggedWorkspaceFile();
-
-    expect(getDraggedWorkspaceFile(dataTransfer)).toEqual({
-      workspaceId: 'workspace-1',
-      targetPath: '/repo/src/index.ts',
-    });
+    const bad = makeDataTransfer();
+    bad.setData(WORKSPACE_FILE_DRAG_TYPE, JSON.stringify({ workspaceId: 'w', targetPath: '/a', projectId: 7 }));
+    expect(getDraggedWorkspaceFile(bad)).toBeNull();
   });
 });
 

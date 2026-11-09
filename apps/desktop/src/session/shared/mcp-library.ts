@@ -70,6 +70,29 @@ export type LibraryMcpFailure = z.infer<typeof libraryMcpFailureSchema>;
 export type LibraryMcpServer = z.infer<typeof libraryMcpServerSchema>;
 
 /**
+ * 资源库 → MCP「咕咕提供」里除「我加的」之外的那几台:每条任务都带的内置那台,以及集成、App 实际递给 agent 的 MCP server。
+ * 只读:集成在「集成」页连 / 断,App 在「App」页开 / 关,MCP 页只列出来、给跳转。
+ */
+export type LibraryMcpProvidedServer = {
+  /** 取工具列表时用的键(`integrations` 或 `app:<扩展>/<程序>`)。 */
+  key: string;
+  group: 'integrations' | 'apps';
+  /** 递给 agent 时这台 server 叫的名字。 */
+  name: string;
+  /** 能说得出才有:集成那台是咕咕的 http 转发口;App 的程序是咕咕起的 stdio(原生程序没有命令)。 */
+  transport?: 'stdio' | 'http';
+  command?: string;
+  args?: string[];
+  /** 它从哪来:集成那台是连上的那几家集成,App 的是那个 App。 */
+  from: string[];
+  /** every-task:每条任务直接带;on-demand:agent 按需经咕咕的 `catalog_*` 找;off:此刻不给(`refusal` 是原因)。 */
+  reach: 'every-task' | 'on-demand' | 'off';
+  refusal?: string;
+};
+
+export type LibraryMcpProvided = { builtIn: string[]; servers: LibraryMcpProvidedServer[] };
+
+/**
  * 咕咕自己每条会话都送的那几台的名字(`gugu`、浏览器那台)—— 资源库里不许叫这几个(单测钉着它们与宿主常量一致)。
  * App、集成的名字随装随变,加的时候判不全,由送进会话时的撞名检查兜(撞了就那一台留在外面,任务照常起)。
  */

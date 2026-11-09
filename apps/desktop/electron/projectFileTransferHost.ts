@@ -1,4 +1,4 @@
-import { attachmentRequest, uploadAttachmentPlan, type AttachmentsEndpoint, type AttachmentUploadPlan } from '@gugu/core/cloud/attachmentsApi'
+import { AttachmentsError, attachmentRequest, uploadAttachmentPlan, type AttachmentsEndpoint, type AttachmentUploadPlan } from '@gugu/core/cloud/attachmentsApi'
 import { ciphertextSize, createFileKey, transformFile } from '@gugu/core/shared/fileCipher'
 import { createFileSink } from './fileSnapshot'
 import { openProjectFileSource, type ProjectFileReader } from './projectFileHost'
@@ -6,15 +6,23 @@ import { readProjectFile, type ProjectFileVersionLookup } from './sessionpage/se
 
 type Pending = { id: string; item_id: string; version: number; chat_id: string; host_device_id: string; relative_path: string; sha256: string; size_bytes: number; state: string }
 
+/** Why a transfer failed, as a fixed reason: a file system error names a local path, so its message is never kept. */
+function failureReason(error: unknown) {
+  if (error instanceof AttachmentsError) return `${error.route} ${error.status} ${error.code}`
+  if (!(error instanceof Error)) return 'unknown'
+  const code = (error as NodeJS.ErrnoException).code
+  return typeof code === 'string' ? code : /^[\w -]+$/.test(error.message) ? error.message : error.name
+}
+
 /** Existing device events and reconnect reconciliation call this drain; no timer or new subscription. */
 export function createProjectTransferHost(deps: {
   identity(): Promise<{ accountId: string; deviceId: string }>
   endpoint(): Promise<AttachmentsEndpoint>
   read: ProjectFileReader; tempRoot: string; env?: NodeJS.ProcessEnv; later?: ProjectFileVersionLookup
 }) {
-  let running: Promise<void> | undefined
+  let running: Promise<void> | undefined, again = false
   const attempted = new Set<string>()
-  const drain = async () => {
+  const drain = async (): Promise<string[]> => {
     const identity = await deps.identity(), endpoint = await deps.endpoint()
     const { transfers } = await attachmentRequest(endpoint, 'file-pending', { device_id: identity.deviceId }) as { transfers: Pending[] }
     const active = new Set(transfers.map(row => row.id))
@@ -41,9 +49,20 @@ export function createProjectTransferHost(deps: {
         await uploadAttachmentPlan(endpoint, permit, { bytes: await sink.blob(), name: 'file.enc', contentType: 'application/octet-stream' })
         // Key travels over the authenticated API only, never the object form, a device event or a log.
         await attachmentRequest(endpoint, 'file-commit', { transfer_id: row.id, ciphertext_bytes: size, ciphertext_sha256: encrypted.ciphertextSha256, key: Buffer.from(key).toString('base64') })
-      } catch { failed.push(row.id) } finally { key?.fill(0); await sink?.abort() }
+      } catch (error) { failed.push(`${row.id}: ${failureReason(error)}`) } finally { key?.fill(0); await sink?.abort() }
     }
-    if (failed.length) throw new Error(`${failed.length} project file transfer(s) failed; no unverified bytes were committed`)
+    return failed
   }
-  return () => running ??= drain().finally(() => { running = undefined })
+  // A request that lands while a drain runs is not in the list that drain read: it reads the list once more when it is done.
+  // `running` is cleared in the same step as the last look at `again`, so a later call starts a new run.
+  const run = async () => {
+    const failed: string[] = []
+    while (again) { again = false; failed.push(...await drain().catch((error: unknown) => [`list: ${failureReason(error)}`])) }
+    running = undefined
+    if (failed.length) throw new Error(`${failed.length} project file transfer(s) failed; no unverified bytes were committed (${failed.join('; ')})`)
+  }
+  return () => {
+    again = true
+    return running ??= run()
+  }
 }

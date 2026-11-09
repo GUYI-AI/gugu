@@ -17,14 +17,16 @@ const MESSAGES = ['messages.history', 'messages.search', 'chats.list', 'chats.me
 // L1 This computer's projects: the desktop's and an App's program's; a phone has none (no member).
 const PROJECTS = ['projects.list']
 const SESSIONS = ['sessions.index', 'sessions.read']
+// `gugu.prompts` (34): the person's own prompts, on the desktop's pages and programs; a phone has none.
+const PROMPTS = ['prompts.list', 'prompts.save', 'prompts.delete']
 // `gugu.cloud` (31): a read is anyone's; writing, hearing and picking an agent are a page's, on the desktop and the phone alike.
 const CLOUD_PAGE = ['cloud.write', 'cloud.subscribe', 'cloud.unsubscribe', 'onCloudHeard', 'pickAgent']
-const EVERYONE = ['cloud.read', 'getContext', 'onContextChanged', 'onFilesChanged', 'getAppState', 'onAppStateChanged', 'onAgentsChanged', 'openBrowserTab', 'reportError', 'listAgents', 'readAgentHistory', 'stopAgent', 'dispatch', ...MESSAGES, ...PROJECTS, ...SESSIONS, 'readData', 'writeData', 'listData', 'callProgram', 'onProgramNotification', 'notify', 'onNotificationClicked', 'linkTo', 'onLink', ...FILES, 'appFiles.canDelete']
+const EVERYONE = ['cloud.read', 'getContext', 'onContextChanged', 'onFilesChanged', 'getAppState', 'onAppStateChanged', 'onAgentsChanged', 'openBrowserTab', 'reportError', 'listAgents', 'readAgentHistory', 'stopAgent', 'dispatch', ...MESSAGES, ...PROJECTS, ...SESSIONS, ...PROMPTS, 'readData', 'writeData', 'listData', 'callProgram', 'onProgramNotification', 'notify', 'onNotificationClicked', 'linkTo', 'onLink', ...FILES, 'appFiles.canDelete']
 const MODAL = ['modal.open', 'modal.close', 'modal.key', 'onModalFocus']
 const PROJECTION_VIEWER = ['projection.watch', 'projection.unwatch', 'projection.send', 'onProjection']
 const PROJECTION_SOURCE = ['projection.create', 'projection.publish', 'projection.close', 'projection.closed', 'projection.inputResult', 'onProjectionSource']
-const PAGE_ONLY = ['navigationGo', 'showContextMenu', 'appFiles.viewPreferences', 'appFiles.keep', 'appFiles.reveal', 'appFiles.openInApps', 'appFiles.openIn', 'appFiles.downloadStop', 'onDownloadProgress', ...MODAL, ...CLOUD_PAGE, ...PROJECTION_VIEWER, 'openLink', 'onCommand', 'setTabTitle', 'setTabBadge', 'setTabDirty', 'sendToBackground', 'onBackgroundMessage', 'showMessage', 'showSession', 'clipboard.writeText', 'appFiles.openWith', 'appFiles.download', 'appFiles.forward']
-const PHONE = ['cloud.read', 'navigationGo', 'showContextMenu', 'appFiles.viewPreferences', 'appFiles.keep', 'appFiles.canDelete', ...MODAL, 'getAppState', 'onAppStateChanged', 'onAgentsChanged', 'listAgents', 'linkTo', 'openLink', 'getContext', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', ...MESSAGES, ...SESSIONS, ...CLOUD_PAGE, 'setTabTitle', 'setTabBadge', 'setTabDirty', 'onCommand', 'onLink', 'showMessage', 'showSession', 'clipboard.writeText', 'readData', 'writeData', 'listData', 'callProgram', ...FILES, 'appFiles.openWith', 'appFiles.download', 'appFiles.forward']
+const PAGE_ONLY = ['navigationGo', 'navigationClaimBack', 'onBack', 'showContextMenu', 'appFiles.viewPreferences', 'appFiles.keep', 'appFiles.reveal', 'appFiles.openInApps', 'appFiles.openIn', 'appFiles.downloadStop', 'onDownloadProgress', ...MODAL, ...CLOUD_PAGE, ...PROJECTION_VIEWER, 'openLink', 'onCommand', 'setTabTitle', 'setTabBadge', 'setTabDirty', 'sendToBackground', 'onBackgroundMessage', 'showMessage', 'showSession', 'clipboard.writeText', 'appFiles.openWith', 'appFiles.download', 'appFiles.forward']
+const PHONE = ['cloud.read', 'navigationGo', 'navigationClaimBack', 'onBack', 'showContextMenu', 'appFiles.viewPreferences', 'appFiles.keep', 'appFiles.canDelete', ...MODAL, 'getAppState', 'onAppStateChanged', 'onAgentsChanged', 'listAgents', 'linkTo', 'openLink', 'getContext', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', ...MESSAGES, ...SESSIONS, ...CLOUD_PAGE, 'setTabTitle', 'setTabBadge', 'setTabDirty', 'onCommand', 'onLink', 'showMessage', 'showSession', 'clipboard.writeText', 'readData', 'writeData', 'listData', 'callProgram', ...FILES, 'appFiles.openWith', 'appFiles.download', 'appFiles.forward']
 
 const desktop = (caller: 'page' | 'background') => hostMembers(caller, () => true, vi.fn(), hostEventHub().on)
 const overMessages = (flags: { framed?: true; program?: true; session?: true }) => messageHost({ post: vi.fn(), listen: () => undefined }, flags) as Record<string, unknown>
@@ -38,7 +40,7 @@ describe('one table, the members each host had', () => {
   it('the phone exposes device calls everywhere and task notifications in task tabs; programs expose the shared index', () => {
     expect(names(overMessages({ framed: true }))).toEqual([...PHONE].sort())
     expect(names(overMessages({ framed: true, session: true }))).toEqual([...PHONE, 'onProgramNotification'].sort())
-    expect(names(overMessages({ program: true }))).toEqual(['cloud.read', 'cloud.programWrite', 'getContext', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', 'linkTo', ...MESSAGES, ...PROJECTS, ...SESSIONS, ...FILES, 'appFiles.canDelete', ...PROJECTION_SOURCE].sort())
+    expect(names(overMessages({ program: true }))).toEqual(['cloud.read', 'cloud.programWrite', 'getContext', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', 'linkTo', ...MESSAGES, ...PROJECTS, ...SESSIONS, ...PROMPTS, ...FILES, 'appFiles.canDelete', ...PROJECTION_SOURCE].sort())
   })
 
   it('a member asks its verb with its arguments packed one way, on every host', () => {

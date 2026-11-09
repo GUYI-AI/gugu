@@ -42,6 +42,41 @@ const FIRST = 'Look at this project.'
 const header = (host: HTMLElement) => host.querySelector<HTMLElement>('[data-slot="turn-process"]')
 
 describe('ordinary sending stays in the transcript', () => {
+  it('retains the exact bubble node and key when the runtime confirms a submitted identity', async () => {
+    const { state, host } = mount('double', { agentConversation: true })
+    const clientId = 'stable-client-input'
+    const sentAt = Date.now()
+    state.session.setPendingPrompt({ id: clientId, text: FIRST, sentAt, delivery: { state: 'sending' } })
+    await until('the submitted bubble is visible', () => !!host.querySelector('[data-user-card]'))
+    const original = host.querySelector('[data-user-card]')!
+    const key = original.getAttribute('data-conversation-bubble-key')
+    expect(key).toBe(`conversation-bubble:${clientId}`)
+    let phase = 'submitted'
+    const samples: { phase: string; count: number; sameNode: boolean; key: string | null }[] = []
+    let sampling = true
+    const sample = () => {
+      const bubbles = host.querySelectorAll('[data-user-card]')
+      samples.push({ phase, count: bubbles.length, sameNode: bubbles[0] === original, key: bubbles[0]?.getAttribute('data-conversation-bubble-key') ?? null })
+      if (sampling) requestAnimationFrame(sample)
+    }
+    requestAnimationFrame(sample)
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    const turn: TranscriptTurn = { id: 'native-turn', seq: 0, initiator: 'user', startedAt: sentAt,
+      items: [{ kind: 'message', role: 'user', id: clientId, seq: 0, text: FIRST, _meta: { guguClientMessageId: clientId } }] }
+    phase = 'runtime'
+    state.transcript.activeTurn.set(turn)
+    await frame()
+    // The uncorrelated native echo is withheld by the runtime; the visible entity stays unchanged.
+    await frame()
+    const accepted = { ...turn, items: turn.items.map(item => ({ ...item, _meta: { guguClientMessageId: clientId, guguNativeMessageId: 'native-uuid' } })) }
+    phase = 'receipt'
+    state.transcript.activeTurn.set(accepted)
+    await frame()
+    sampling = false
+    expect(samples.length).toBeGreaterThanOrEqual(4)
+    expect(samples).toEqual(samples.map(sample => ({ phase: sample.phase, count: 1, sameNode: true, key })))
+  })
+
   it('keeps the last bubble stationary when a long conversation enters host startup', async () => {
     const { state, host, view } = mount('double', { agentConversation: true })
     state.transcript.history.seed(Array.from({ length: 12 }, (_, seq) => ({
@@ -291,6 +326,21 @@ describe('session start with a first message', () => {
     host.querySelector<HTMLButtonElement>('button[data-slot="session-condition-action"]')!.click()
     expect(signIn).toHaveBeenCalledOnce()
   })
+
+  it('keeps the session condition row and action without exposing raw hover diagnostics', async () => {
+    const { state, host, view } = mount('double');
+    const retry = vi.fn();
+    view.setCommands({ onConditionAction: retry });
+    const label = 'Codex could not start. Update Codex, then retry.';
+    state.session.setCondition({ code: 'start-failed', label, detail: 'local Codex app-server exited (code=1 signal=null)', actions: [{ label: 'Retry' }] });
+    await until('condition mounts', () => Boolean(host.querySelector('[data-slot="session-condition"]')));
+    const row = host.querySelector<HTMLElement>('[data-slot="session-condition"]')!;
+    expect(row.textContent).toContain(label);
+    expect(row.title).toBe(label);
+    expect(row.outerHTML).not.toMatch(/app-server|code=1|signal=null/);
+    row.querySelector<HTMLButtonElement>('button')!.click();
+    expect(retry).toHaveBeenCalledOnce();
+  });
 
   it('an action whose call is in flight is disabled: a second click does not repeat it', async () => {
     const { state, host, view } = mount('double')

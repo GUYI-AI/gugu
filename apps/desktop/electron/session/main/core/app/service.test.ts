@@ -151,6 +151,20 @@ describe('AppService.openIn', () => {
     }
   });
 
+  it('走 URL 的终端(Warp)开文件:URL 里也是所在目录,❌ 文件', async () => {
+    const dir = await makeTempDir();
+    const file = join(dir, 'run-me.sh');
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+    try {
+      await writeFile(file, 'echo hi');
+      await appService.openIn({ app: 'warp', path: file });
+      expect(mocks.openExternal).toHaveBeenLastCalledWith(`warp://action/new_window?path=${encodeURIComponent(dir)}`);
+    } finally {
+      platform.mockRestore();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('文件 → 在所在目录里选中它,❌ 不用系统默认程序打开', async () => {
     // 这条是回归守卫。`shell.openPath(文件)` 的语义是「用系统默认程序打开这个文件」——
     // owner 实机点「用 Finder 打开」,macOS 按 .json 的默认程序把 Cursor 拉起来了。

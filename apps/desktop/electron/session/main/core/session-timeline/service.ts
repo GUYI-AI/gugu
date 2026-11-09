@@ -1,7 +1,9 @@
 import { promptAttachmentSchema, turnFileRefSchema } from '@gugu/session-core/acp/client';
 import { SessionInputAdmissionError, sessionInputAdmission, type SessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission';
 import { createNativeRecordReader } from './native-record';
-import { createWindowOpenings, type WindowOpeningInput } from './window-opening';
+import { createWindowOpenings, type WindowOpeningInput, type WindowOpeningLease, type WindowOpeningProof, type WindowOpeningSelection } from './window-opening';
+import { reserveWindowCommitHost } from './window-commit-production';
+import type { WindowLiveReadRequest, WindowLiveAckRequest, WindowCommitPage } from '@gugu/session-wire/session-window-live';
 import { priorInputAdmission, sameInput, type InputAdmissionPayload } from './input-admission';
 import { ask, withdrawAll } from '../asks';
 import { hostAsks, resetAsks, respond as respondAsk, respondQuestion as respondAskQuestion } from '../asks/ask';
@@ -203,6 +205,7 @@ let resetGeneration = 0;
 type ActiveSubscription = {
   conversationId: string;
   stop: () => void;
+  live?: WindowOpeningLease;
 };
 
 const subscriptions = new Map<string, ActiveSubscription>();
@@ -340,7 +343,7 @@ function pinnedConnectionId(row: SessionRow): string | undefined {
   return undefined;
 }
 
-function locateRow(row: SessionRow): SessionRecordLocation {
+export function locateRow(row: SessionRow): SessionRecordLocation {
   const managed = managedConfigRootFor(row.provider);
   if (managed.problem) return { supported: false, reason: managed.problem };
   const legacy = connectionRootFor(row);
@@ -847,6 +850,7 @@ export const windowOlder = (input: SessionpageSessionOlderRequest) => withSource
 export const body = (input: SessionpageSessionBodyReadRequest): Promise<SessionTimelineResult<WindowBodyResult>> => withSourceWindow(reader => reader.body(input));
 
 const windowOpenings = createWindowOpenings({
+  reserve: (input, failed) => reserveWindowCommitHost(input.subscriptionId, input.conversationId, failed),
   capture: async conversationId => {
     const row = readSessionRow(conversationId);
     if (!row) throw Object.assign(new Error('The session is no longer available'), { code: 'session_not_found' });
@@ -860,9 +864,27 @@ const windowOpenings = createWindowOpenings({
     return () => { if (subscriptions.get(id) === owner) subscriptions.delete(id); };
   },
 });
-export async function windowPrepare(input: WindowOpeningInput): Promise<SessionTimelineResult<{ source: 'window' | 'legacy' }>> {
-  try { return { ok: true, value: await windowOpenings.prepare(input) }; }
+export async function windowPrepare(input: WindowOpeningInput, failed?: (event: SessionpageSessionWindowStatusEvent) => void): Promise<SessionTimelineResult<WindowOpeningSelection>> {
+  try { return { ok: true, value: await windowOpenings.prepare(input, error => failed?.({ ...input, state: 'failed',
+    error: { code: error.code, message: error.message } })) }; }
   catch (error) { return fail((error as { code?: string }).code ?? 'scope_changed', (error as Error).message); }
+}
+function windowLiveLease(input: WindowOpeningInput): WindowOpeningLease {
+  const owner = subscriptions.get(input.subscriptionId);
+  if (!owner?.live || owner.conversationId !== input.conversationId)
+    throw Object.assign(new Error('This window has no commit lease'), { code: 'invalid_subscription' });
+  return owner.live;
+}
+export async function windowLiveRead(input: WindowLiveReadRequest): Promise<SessionTimelineResult<WindowCommitPage>> {
+  try {
+    const lease = windowLiveLease(input), value = await lease.read(input.after);
+    if (windowLiveLease(input) !== lease) throw Object.assign(new Error('Commit subscription changed'), { code: 'unsubscribed' });
+    return { ok: true, value };
+  } catch (error) { return fail((error as { code?: string }).code ?? 'live_read_failed', (error as Error).message); }
+}
+export async function windowLiveAck(input: WindowLiveAckRequest): Promise<SessionTimelineResult<void>> {
+  try { windowLiveLease(input).ack(input.through); return { ok: true, value: undefined }; }
+  catch (error) { return fail((error as { code?: string }).code ?? 'live_ack_failed', (error as Error).message); }
 }
 
 export async function windowSubscribe(input: SessionpageSessionSubscribeRequest,
@@ -870,26 +892,33 @@ export async function windowSubscribe(input: SessionpageSessionSubscribeRequest,
   failed: (event: SessionpageSessionWindowStatusEvent) => void): Promise<SessionTimelineResult<{ subscriptionId: string }>> {
   const subscriptionId = input.subscriptionId?.trim();
   if (!subscriptionId) return fail('invalid_subscription', 'subscriptionId is required');
-  let opening: () => void;
-  try { opening = windowOpenings.take(input); opening(); }
+  let opening: WindowOpeningProof | undefined;
+  let stopped = false, readFailed = false, teardown: (() => void) | undefined;
+  const abort = new AbortController();
+  const mine: ActiveSubscription = { conversationId: input.conversationId,
+    stop: () => { stopped = true; abort.abort(); teardown?.(); opening?.live.close(); } };
+  const forget = () => { if (subscriptions.get(subscriptionId) === mine) subscriptions.delete(subscriptionId); };
+  const onFailure = (status: SessionpageSessionWindowStatusEvent) => {
+    if (stopped) return;
+    readFailed = true; mine.stop(); forget(); failed(status);
+    log.warn('sessionWindow: subscription stopped', { subscriptionId, error: status.error });
+  };
+  try { opening = windowOpenings.take(input, error => onFailure({ conversationId: input.conversationId, subscriptionId,
+    state: 'failed', error: { code: error.code, message: error.message } })); opening(); mine.live = opening.live; }
   catch (error) {
+    mine.stop();
     if (subscriptions.get(subscriptionId)?.conversationId === input.conversationId) unsubscribe(subscriptionId);
     return fail((error as { code?: string }).code ?? 'scope_changed', (error as Error).message);
   }
   unsubscribe(subscriptionId);
-  let stopped = false, readFailed = false, teardown: (() => void) | undefined;
-  const abort = new AbortController();
-  const mine = { conversationId: input.conversationId, stop: () => { stopped = true; abort.abort(); teardown?.(); } };
   subscriptions.set(subscriptionId, mine);
-  const forget = () => { if (subscriptions.get(subscriptionId) === mine) subscriptions.delete(subscriptionId); };
   const result = await withSourceWindow(async reader => {
-    teardown = await reader.subscribe(input, event => { if (!stopped) emit(event); }, status => {
+    teardown = await reader.subscribe(input, event => {
       if (stopped) return;
-      readFailed = true;
-      mine.stop(); forget();
-      failed(status);
-      log.warn('sessionWindow: subscription stopped', { subscriptionId, error: status.error });
-    }, abort.signal, opening);
+      emit(event);
+      const fields = event.result.ok ? event.result.batch : event.result.snapshot;
+      if (!fields.pendingLongRecords?.length) opening!.live.authorize();
+    }, onFailure, abort.signal, opening);
     if (stopped) {
       teardown();
       if (!readFailed) throw Object.assign(new Error('Subscription was released before opening'), { code: 'unsubscribed' });
@@ -1170,7 +1199,7 @@ export async function pickRecordTurns(
   conversationId: string,
   pick: (turns: TranscriptTurns) => Promise<TranscriptTurns | null>,
   options: { images: boolean; committedOnly?: boolean; includeArchived?: boolean; afterForkOf?: string } = { images: true },
-): Promise<{ ok: true; turns: TranscriptTurns | null; complete: boolean } | { ok: false; reason?: 'diverged' }> {
+): Promise<{ ok: true; turns: TranscriptTurns | null; complete: boolean } | { ok: false; reason?: 'diverged' | 'too_large' }> {
   const opened: SessionTimeline[] = [];
   let provingParent = !!options.afterForkOf;
   try {
@@ -1192,9 +1221,14 @@ export async function pickRecordTurns(
     const complete = prefix.length === all.length;
     const picked = await pick(prefix);
     if (!picked || !options.images) return { ok: true, turns: picked, complete };
-    return { ok: true, turns: await Promise.all(picked.map((turn) => withImagesReadBack(timeline, turn))), complete };
+    const budget = { chars: READ_BACK_MAX_CHARS };
+    const turns: TranscriptTurns = [];
+    for (const turn of picked) turns.push(await withImagesReadBack(timeline, turn, budget));
+    if (budget.chars < 0) log.warn('[session-timeline] pictures over the read-back budget keep only their size', { conversationId });
+    return { ok: true, turns, complete };
   } catch (error) {
     log.warn('[session-timeline] record unreadable', { conversationId, error: (error as Error)?.message ?? String(error) });
+    if ((error as Error)?.name === 'SessionRecordTooLargeError') return { ok: false, reason: 'too_large' };
     return { ok: false, ...(provingParent || (error as Error)?.name === 'SessionRecordForkDivergedError' ? { reason: 'diverged' as const } : {}) };
   } finally {
     for (const timeline of opened.reverse()) timeline.dispose();
@@ -1227,21 +1261,33 @@ export async function watchRecordSettled(conversationId: string, signal: AbortSi
 
 type ImageNode = { id: string; images?: unknown[]; imageRefs?: unknown[]; children?: ImageNode[] };
 
-async function withImagesReadBack<T extends TranscriptTurns[number]>(timeline: SessionTimeline, turn: T): Promise<T> {
+/** Pictures being copied into the store are all on the heap until the copy ends. Past this they keep only their size. */
+const READ_BACK_MAX_CHARS = 256 * 1024 * 1024;
+
+async function withImagesReadBack<T extends TranscriptTurns[number]>(timeline: SessionTimeline, turn: T, budget: { chars: number }): Promise<T> {
   const readBack = async (node: ImageNode): Promise<ImageNode> => {
     let next = node;
-    if (!node.images && node.imageRefs?.length && timeline.toolImage) {
-      const found = await Promise.all(node.imageRefs.map((_, index) =>
-        timeline.toolImage!({ itemId: node.id, index, maxChars: Number.POSITIVE_INFINITY })));
+    const refs = (node.imageRefs ?? []) as Array<{ chars: number }>;
+    const chars = refs.reduce((sum, ref) => sum + ref.chars, 0);
+    if (!node.images && refs.length && timeline.toolImage && (budget.chars -= chars) >= 0) {
+      const found = [];
+      for (let index = 0; index < refs.length; index += 1) {
+        found.push(await timeline.toolImage({ itemId: node.id, index, maxChars: Number.POSITIVE_INFINITY }));
+      }
       if (found.every((one) => one.ok)) {
         const { imageRefs: _refs, ...rest } = node;
         next = { ...rest, images: found.map((one) => (one as Extract<typeof one, { ok: true }>).image) };
       }
     }
-    if (next.children?.length) next = { ...next, children: await Promise.all(next.children.map(readBack)) };
+    if (next.children?.length) {
+      const children: ImageNode[] = [];
+      for (const child of next.children) children.push(await readBack(child));
+      next = { ...next, children };
+    }
     return next;
   };
-  const items = await Promise.all(turn.items.map((item) => readBack(item as unknown as ImageNode)));
+  const items: ImageNode[] = [];
+  for (const item of turn.items) items.push(await readBack(item as unknown as ImageNode));
   return { ...turn, items: items as unknown as T['items'] };
 }
 

@@ -115,7 +115,6 @@ it.each(['win', 'linux', 'other'] as const)('%s: the table fullscreen overlay ke
       activeTab="tasks"
       mobile={false}
       activeChatId={null}
-      chats={[]}
       sessionHostAvailable
       onSelectTab={() => undefined}
       onOpenChat={() => undefined}

@@ -3,7 +3,7 @@ import type { CreateTopicInput, CreatedTopic } from '../lib/topics'
 import type { UnreadLocatorCommit } from '../lib/chatUnreadLocatorWindow'
 import type { ChatConversationAccess } from './useChatConversation'
 import type { HistoryWindow } from './chatHistoryWindow'
-import { createContext, createElement, useCallback, useContext, useLayoutEffect, useRef, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { createContext, createElement, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import type { ChatItem, MessageItem, NotificationLevel } from '@gugu/core/shared/types/chat'
 import type { AttachmentKind } from '@gugu/core/shared/ui/attachmentModels'
 import type { ThreadScope } from './threadScope'
@@ -95,6 +95,9 @@ export interface ChatContextValue {
   draftAttachments: Record<string, DraftAttachment[]>
   draftQuotes: Record<string, DraftQuote>
   setDraftQuote: (chatId: string, quote: SetStateAction<DraftQuote | null | undefined>) => void
+  // The peer a draft stays private to without a quote (an annotated whisper image); cleared on send or Exit whisper.
+  draftWhispers: Record<string, string>
+  setDraftWhisper: (chatId: string, userId: string | null) => void
   // @@@threads (#957) — 当前会话的话题摘要（rootId → 回复数/最后回复），驱动主线 tanchor + subtab 列表。
   // 当前打开的话题 root 消息 id（null = 看主时间线 Chat 视图）。
   activeThreadRootId: string | null
@@ -179,6 +182,8 @@ const EMPTY_CHAT_STORE: ChatContextValue = {
   draftAttachments: {},
   draftQuotes: {},
   setDraftQuote: () => {},
+  draftWhispers: {},
+  setDraftWhisper: () => {},
   activeThreadRootId: null,
   threadMessages: [],
   loadingThread: false,
@@ -261,6 +266,46 @@ export function useChatStore(...keys: (keyof ChatStoreValue)[]): Partial<ChatSto
   return useSyncExternalStore(handle.subscribe, getSnapshot)
 }
 
+/** 只在回调里读、不订阅(读的那一刻的整份值):外壳和点开时才要会话列表的 hook 用它,每条消息就不必把整棵壳重渲一遍。 */
+export function useChatStoreReader(): () => ChatStoreValue {
+  return useContext(ChatContext).get
+}
+
+/** 只订阅从 store 里算出来的一个值(select 要返回原始值或稳定引用):值不变,别的会话来消息也不重渲。 */
+export function useChatStoreSelect<T>(select: (store: ChatStoreValue) => T): T {
+  const handle = useContext(ChatContext)
+  return useSyncExternalStore(handle.subscribe, () => select(handle.get()))
+}
+
+/**
+ * 从 store 读一个值,只有 signature 变了才换一份。一条消息会把会话列表换好几次,多数订阅者只读其中几个字段:
+ * 它们写清自己读什么,别的字段变了不重渲。
+ */
+export function useStoreValueBy<T>(read: (store: ChatStoreValue) => T, signature: (store: ChatStoreValue) => unknown): T {
+  const get = useChatStoreReader()
+  const current = useChatStoreSelect((store) => JSON.stringify(signature(store)))
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the signature is the dependency
+  return useMemo(() => read(get()), [current])
+}
+
+const NO_CHATS: ChatItem[] = []
+
+/** 只在用得上的时候订阅整份列表(开着分栏、搜索框里有字):平时别的会话来消息不重渲。 */
+export function useChatsWhile(needed: boolean): ChatItem[] {
+  return useChatStoreSelect((store) => (needed ? store.chats : NO_CHATS))
+}
+
+/** 活动字段(最后一条、未读、水位)由列表和消息流自己读;对话本身的字段才算这条对话变了。 */
+const CHAT_ACTIVITY_BLANK = {
+  last_message_at: null, last_message_preview: null, last_message_notice: null, last_message_failure: null, unread_count: 0, unread_locator: null,
+  last_read_seq: 0, is_marked_unread: false, read_state_version: 0, member_updated_at: null, next_message_seq: 0,
+}
+
+/** 正看着的这条对话本身。要活动字段的用 useChatStore('activeChat')。 */
+export function useActiveChatIdentity(): ChatStoreValue['activeChat'] {
+  return useStoreValueBy((store) => store.activeChat, (store) => store.activeChat && { ...store.activeChat, ...CHAT_ACTIVITY_BLANK })
+}
+
 // Drop a chat's entry from a per-chat record (drafts / mentions / attachments); no-op if absent. Shared
 // by the delete-chat / leave-group cleanup so the identical "copy → delete key" block isn't repeated per map.
 export function dropChatKey<T>(setState: Dispatch<SetStateAction<Record<string, T>>>, chatId: string): void {
@@ -285,6 +330,15 @@ export function useDraftQuotesStore() {
     })
   }, [])
   return { draftQuotes, setDraftQuote }
+}
+
+export function useDraftWhispersStore() {
+  const [draftWhispers, setWhispers] = useState<Record<string, string>>({})
+  const setDraftWhisper = useCallback((chatId: string, userId: string | null) => {
+    if (userId) setWhispers(previous => previous[chatId] === userId ? previous : { ...previous, [chatId]: userId })
+    else dropChatKey(setWhispers, chatId)
+  }, [])
+  return { draftWhispers, setDraftWhisper }
 }
 
 export function useTextDraftStore(): {

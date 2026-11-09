@@ -39,6 +39,7 @@ export const ALLOWED_FILES = [
   { re: /\/theme\/__generated__\//, why: 'session-ui 由主题源生成的变量表' },
   { re: /\/theme\/themes\/[^/]+\.theme\.ts$/, why: 'session-ui 各主题的取值表' },
   { re: /session-ui\/src\/theme\/core\/generate\//, why: 'session-ui 主题生成器:由主题源算出取值(色域换算、缺档补齐),产物就是上面的 __generated__' },
+  { re: /apps\/desktop\/src\/session\/renderer\/lib\/theme\/theme-packs\.ts$/, why: '资源库「主题」的配色换算:上游主题缺档时的兜底取 tokens.css 的默认值、默认卡的预览色是 tokens.css 的原样副本(themePacks.test.ts 逐字对齐),合成用的黑底是算术,都不是界面在写死颜色' },
   { re: /\/loading-indicator\/LoadingIndicator\.css$/, why: '属性选择器 path[fill=\'rgb(…)\'] 匹配的是动画素材里的原始填色字符串,不是在用颜色;实际填色已接到 currentColor' },
   { re: /session-chat-ui\/src\/styles\/theme\.css\.ts$/, why: 'session-chat-ui 主题契约的明暗取值' },
   { re: /\/highlight\/bundled-themes\.ts$/, why: '代码高亮配色(shiki 主题),按主题成对给出' },
@@ -70,7 +71,9 @@ const COLOR_PATTERNS = [
   /(?<![\w&$-])#(?=[0-9a-fA-F]*[a-fA-F])(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?![\w-])/g,
   // 纯数字 hex 只在颜色语境里算:`color: #000` 是颜色,注释外的 `#7333` 一般是 issue 号。
   /(?<=[:=(,\s'"`])#(?:\d{8}|\d{6}|\d{3})(?![\w-])/g,
-  /\b(?:rgba?|hsla?|oklch|oklab)\(\s*[0-9.]/g,
+  /\b(?:rgba?|hsla?|hwb|lab|lch|oklch|oklab)\(\s*[0-9.]/g,
+  // color(display-p3 …) / color(srgb …):会话页那套色板就是用它写死的,漏了它门就看不见那几百处。
+  /\bcolor\(\s*(?:display-p3|srgb(?:-linear)?|a98-rgb|prophoto-rgb|rec2020|xyz(?:-d50|-d65)?)\s/g,
   /\b(?:color|background(?:-color)?|fill|stroke|border(?:-color)?|outline-color|caret-color)['"]?\s*[:=]\s*['"]?(?:white|black)\b/gi,
   /(?<![\w-])(?:bg|text|border|ring|divide|outline|fill|stroke|shadow|from|via|to|decoration|placeholder|caret|accent)-(?:white|black|(?:gray|zinc|neutral|slate|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3})(?:\/\d+)?(?![\w-])/g,
 ]

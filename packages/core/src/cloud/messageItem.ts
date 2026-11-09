@@ -94,7 +94,6 @@ export function messageItemFromRow(raw: RawMessageRow, currentUserId: string): M
     forwarded_from_message_id: nullableText(raw.forwarded_from_message_id),
     thread_root_id: nullableText(raw.thread_root_id),
     edited_at: nullableText(raw.edited_at),
-    reactions: [],
     is_mine: senderUserId === currentUserId,
     delivered: false,
     delivery_status: null,

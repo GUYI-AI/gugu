@@ -251,6 +251,8 @@ export function chatStore(overrides: Partial<ChatContextValue> = {}): ChatContex
     draftAttachments: {},
     draftQuotes: {},
     setDraftQuote: vi.fn(),
+    draftWhispers: {},
+    setDraftWhisper: vi.fn(),
     activeThreadRootId: null,
     threadMessages: [],
     loadingThread: false,

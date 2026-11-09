@@ -39,7 +39,7 @@ const OPENCODE_FAMILY_SDK_PACKAGE = {
 } as const
 
 export function openCodeFamilyConfigContent(
-  envKey: 'OPENCODE_CONFIG_CONTENT' | 'MIMOCODE_CONFIG_CONTENT',
+  envKey: 'OPENCODE_CONFIG_CONTENT' | 'MIMOCODE_CONFIG_CONTENT' | 'KILO_CONFIG_CONTENT',
   protocol: keyof typeof OPENCODE_FAMILY_SDK_PACKAGE,
   model: SessionModelCapability,
   reasoning: Parameters<typeof openCodeFamilyReasoningEntry>[0],

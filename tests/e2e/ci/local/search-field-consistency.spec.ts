@@ -186,13 +186,13 @@ test('main renderer search fields share one visual contract', async ({ page }, t
   // #7333 紧凑界面正文统一14px；手机另外验证44px点击区，不再依靠旧的13→14差值。
   // ⚠️ 按 testid 找,❌ 别按 placeholder:通讯录那个框在桌面写「搜索联系人」、在移动壳写
   // 「搜索联系人和 Agent」(ContactsNav 与桌面侧栏各给各的),按文案定位在窄屏必然落空。
-  await page.getByTestId('mobile-messages-nav').click()
-  // The root list opens its header search field from the floating phone search button.
-  await page.getByTestId('phone-list-search').click()
-  const mobileSearch = page.getByTestId('chat-list-search-input')
-  await expect(mobileSearch, '移动壳会话列表的搜索框应可见').toBeVisible({ timeout: 30_000 })
-  const mobileReading = await readSearchMetrics('messages-mobile', mobileSearch)
-  await capture(page, testInfo, 'search-field-messages-mobile')
+  // The floating phone search button opens the global search panel; a page's own search opens from its header.
+  await page.getByTestId('mobile-contacts-nav').click()
+  await page.getByTestId('phone-partners').locator('[data-header-search-open]').click()
+  const mobileSearch = page.getByTestId('phone-partners-search')
+  await expect(mobileSearch, '移动壳伙伴页的搜索框应可见').toBeVisible({ timeout: 30_000 })
+  const mobileReading = await readSearchMetrics('partners-mobile', mobileSearch)
+  await capture(page, testInfo, 'search-field-partners-mobile')
   expect(mobileReading, JSON.stringify(mobileReading)).toMatchObject({
     slot: 'search-field',
     borderRadius: '8px',

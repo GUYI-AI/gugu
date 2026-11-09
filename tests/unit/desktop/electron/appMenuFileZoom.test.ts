@@ -13,6 +13,7 @@ const NATIVE_LABELS: Record<string, string> = {
   appMenu: 'Gugu', about: 'About Gugu', services: 'Services', hide: 'Hide Gugu', hideOthers: 'Hide Others', unhide: 'Show All', quit: 'Quit Gugu',
   fileMenu: 'File', editMenu: 'Edit', viewMenu: 'View', windowMenu: 'Window', reload: 'Reload', forceReload: 'Force Reload',
   toggleDevTools: 'Toggle Developer Tools', resetZoom: 'Actual Size', zoomIn: 'Zoom In', zoomOut: 'Zoom Out', togglefullscreen: 'Toggle Full Screen',
+  selectAll: 'Select All',
 }
 const DEFAULT_VIEW = ['reload', 'forceReload', 'toggleDevTools', 'separator', 'resetZoom', 'zoomIn', 'zoomOut', 'separator', 'togglefullscreen']
 const fakeItems = new WeakSet<object>()
@@ -25,7 +26,7 @@ function buildFromTemplate(template: Array<MenuItemConstructorOptions | FakeItem
       const options = entry as MenuItemConstructorOptions
       const children = Array.isArray(options.submenu) ? options.submenu
         : options.role === 'viewMenu' ? DEFAULT_VIEW.map((role) => role === 'separator' ? { type: 'separator' as const } : { role: role as MenuItemConstructorOptions['role'] })
-          : undefined
+          : options.role === 'editMenu' ? [{ role: 'selectAll' as const }] : undefined
       const submenu = options.submenu && !Array.isArray(options.submenu) ? options.submenu as unknown as FakeMenu : children ? buildFromTemplate(children) : undefined
       const item = { role: options.role, label: options.label ?? NATIVE_LABELS[options.role ?? ''] ?? options.type ?? '', accelerator: options.accelerator as string | undefined, click: options.click as FakeItem['click'] }
       Object.defineProperty(item, 'submenu', { value: submenu, enumerable: true, writable: false })
@@ -37,7 +38,7 @@ function buildFromTemplate(template: Array<MenuItemConstructorOptions | FakeItem
 
 const setApplicationMenu = vi.fn<(menu: FakeMenu) => void>()
 class FakeBrowserWindow {
-  webContents = { executeJavaScript: vi.fn(async (_script: string) => false), getZoomLevel: vi.fn(() => 0), setZoomLevel: vi.fn() }
+  webContents = { executeJavaScript: vi.fn(async (_script: string) => false), selectAll: vi.fn(), getType: vi.fn(() => 'window'), getZoomLevel: vi.fn(() => 0), setZoomLevel: vi.fn() }
   isFullScreen() { return false }
   setFullScreen() {}
 }
@@ -45,6 +46,7 @@ class FakeBrowserWindow {
 vi.mock('electron', () => ({
   app: {},
   BrowserWindow: FakeBrowserWindow,
+  webContents: { getFocusedWebContents: () => null },
   Menu: { buildFromTemplate: (template: never) => buildFromTemplate(template), setApplicationMenu: (menu: FakeMenu) => setApplicationMenu(menu) },
 }))
 
@@ -88,5 +90,16 @@ describe('application menu file zoom (#1625)', () => {
     zoomItem(apply('win32', false), 'Actual Size').click!({}, handled, {})
     await vi.waitFor(() => expect(handled.webContents.executeJavaScript).toHaveBeenCalledWith(fileZoomScript('resetZoom')))
     expect(handled.webContents.setZoomLevel).not.toHaveBeenCalled()
+  })
+
+  it('routes the localized native Select All item through the same preparation and native editing command', async () => {
+    const window = new FakeBrowserWindow()
+    const menu = apply('darwin', true)
+    const select = menu.items.find(item => item.role === 'editMenu')!.submenu!.items.find(item => item.label === 'Select All')!
+    expect(select.role).toBeUndefined()
+    expect(select.accelerator).toBe('CmdOrCtrl+A')
+    select.click!({}, window, {})
+    await vi.waitFor(() => expect(window.webContents.selectAll).toHaveBeenCalledOnce())
+    expect(window.webContents.executeJavaScript).toHaveBeenCalledWith(expect.stringContaining('gugu:prepare-select-all'))
   })
 })

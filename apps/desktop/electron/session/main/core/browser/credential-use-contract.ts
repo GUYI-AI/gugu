@@ -30,7 +30,14 @@ export type CredentialUseBinding = Readonly<{
 }>;
 
 export type CredentialUseLease = Readonly<{
+  /** Stops fill/submit, including intentional proof-only cleanup. Not a lifecycle revocation signal. */
   signal: AbortSignal;
+  /**
+   * The original approval authority's revocation signal, also passed to registerUse.
+   * Proof-only cleanup does not abort it; actual approval/identity/version/lock invalidation does.
+   * Storage must require this signal for continuing feature eligibility, never fall back to signal.
+   */
+  revokedSignal: AbortSignal;
   /**
    * Synchronously rejects invalidated host identity, version, lock or navigation state.
    * The trusted browser must also validate actual fields/form/frame/origin atomically

@@ -276,7 +276,7 @@
   --color-text-primary: var(--fg);
   --color-text-secondary: var(--muted-fg);
   --color-text-placeholder: var(--muted-fg);  /* placeholder 说明「该填什么」,是信息:可读次级字(≥4.5),❌ faint */
-  --color-text-link: var(--live);   /* @@@live-accent —— 链接与「信息」走同一个蓝 */
+  --color-text-link: var(--live-fg);   /* @@@live-accent —— 链接与「信息」走同一个蓝,写字用可读的那一档 */
   --color-text-danger: var(--danger-fg);
   --color-divider: var(--border);
   --color-bubble-received: var(--bubble-agent);
@@ -415,7 +415,7 @@
   --menu-bg: var(--popover);
   --menu-fg: var(--fg);
   --menu-icon: var(--faint-fg);
-  --menu-item-hover: var(--hover);                 /* @@@2322 收敛别名 → --hover */
+  --menu-item-hover: var(--press);                 /* 菜单每行都可点,高亮要比页面上的 --hover 深一档,才看得出落在哪行;❌ 用 --selected:和单选行的选中分不开 */
 
   /* ══════════════════════════════════════════════════════════════════════════
      @@@shadow-lift (Refs #6104) — design.md:「**Shadows are zeroed globally.
@@ -507,7 +507,6 @@
 
   /* ── Semantic theme tokens ───────────────────────────────────────────────── */
   --bg-primary: var(--bg);
-  --bg-secondary: color-mix(in oklab, var(--page) 70%, transparent);
   --bg-settings: var(--card);
   --bg-elevated: var(--card);
   /* 三档文字色。⚠️ 第三档**不是正文色**，是装饰色（图标、状态点、禁用态）。
@@ -527,8 +526,6 @@
   /* @@@primary-ink —— 品牌色 = 墨,与 --primary 同一个值,❌ 不是第二个 accent。 */
   --accent: var(--primary);
   --text-on-accent: var(--primary-fg);
-  --bubble-mine: var(--bubble-own);
-  --bubble-other: var(--bubble-agent);
   --chat-row-active: var(--selected); /* @@@2322 收敛别名 → --selected */
   --chat-row-hover: var(--hover);     /* @@@2322 收敛别名 → --hover */
   --input-bg: color-mix(in oklab, var(--fg) 6%, transparent);
@@ -553,11 +550,9 @@
 
   /* Call status panel */
   --bg-call-panel: rgba(17,17,20,0.94);
-  --bg-accent-soft: rgba(255,255,255,0.10);
 
   /* Text on tinted/translucent surfaces */
   --text-on-overlay: color-mix(in oklab, var(--fg) 72%, transparent);
-  --text-on-bubble-strong: color-mix(in oklab, var(--fg) 92%, transparent);
   --text-on-bubble-muted: color-mix(in oklab, var(--fg) 75%, transparent);
 
   /* Quote bar (reply preview) */
@@ -565,7 +560,7 @@
   --bubble-quote-bar-other: color-mix(in oklab, var(--fg) 25%, transparent);
 
   /* @@@live-accent —— 链接 = 信息 = live,全 app 同一个蓝。 */
-  --text-link: var(--live);
+  --text-link: var(--live-fg);
   --text-quote-author: #7b8ba7;
   /* @@@one-red (Refs #6104) — 「出事了」这件事只有一个红。原来同一族有四个名字各拍一个值:
      --danger(#ef4444)/ --color-danger(#FF3B30,iOS 系统红)/ --badge-red(#FA5151)/
@@ -590,7 +585,6 @@
 
   /* Brand / accent variants */
   --accent-hover: oklch(0.860 0 0); /* was #d4d4d4 */
-  --accent-glow-soft: color-mix(in oklab, var(--fg) 12%, transparent);
   --accent-tint-row: var(--selected); /* @@@2322 收敛别名 → --selected */
 
   /* Transparent fill (gradient endpoints, ghost button backgrounds) */
@@ -659,6 +653,8 @@
   --live-light: oklch(0.623 0.188 260); /* blue-500 #3b82f6 —— 浅底上用满饱和这一档 */
   --live: var(--live-dark);
   --live-soft: color-mix(in oklab, var(--live) 14%, transparent);
+  /* 写成字(链接、「在跑」的状态字)用 --live-fg,同 --danger-fg / --warn-fg / --ok-fg:暗色下 live 本身对所有面 ≥5.6,直接用。 */
+  --live-fg: var(--live);
   /* 选中文字的底:半透明蓝,只叠底、不改字色 —— 页面、反色的用户气泡、代码高亮上原来的字色都还读得出。 */
   --text-selection: color-mix(in oklab, var(--live) 32%, transparent);
 
@@ -671,10 +667,11 @@
   --sidebar:  var(--page);
   --fg:       #dfdfdf; /* gray-fixed-150 */
   --muted:    #2a2a2a; /* 填充面(分段底、输入底):比 --card 高一档,卡片里也分得出 */
+  --menu-bg: var(--muted); /* 菜单比气泡(#262626)高一档:同色或更深时像气泡上的一个洞。只动菜单这一格,❌ 动 --popover:浮层里的 --muted 填充会融进底色 */
   /* 次级文字 = 前景 62% 混进 --bg:对 --card 5.24、对 --muted 4.67(过 AA 4.5)。 */
   --muted-fg: #939393;
-  /* 装饰色(图标、禁用、状态点),❌ 承载信息:对 --bg 3.69。 */
-  --faint-fg: #727272;
+  /* 装饰色(图标、禁用、状态点),❌ 承载信息。图标也要分得出(WCAG 1.4.11):对 --muted 3.07,其余面更高。 */
+  --faint-fg: #747474;
   /* @@@primary-ink (Refs #6104) — design.md:chrome 是墨色,主按钮是前景/背景反相。
      暗色下「墨」就是近白的前景端 —— 值不变,只是不再写成 #fff 这个族外字面量。 */
   --primary:    var(--fg); /* 墨 = 前景(发送钮:前景底、表面色字) */
@@ -712,8 +709,6 @@
   --glass-border: var(--border);
   --shadow-glass: var(--shadow-lift);
   /* #7333 气泡也回到纯灰:别人的一档、自己的高一档(左右位置 + 明度区分,不靠色相)。 */
-  --bubble-agent: #242424;
-  --bubble-own:   #2e2e2e;
   /* --r / --r-lg / --r-xl / --r-bubble / --r-pill 这批短名**已经删了**(见上方 shape 表的说明)。
      ❌ 别在这里(或任何地方)把它们再定义一遍,那正是「六套刻度」的来路。 */
   /* Listen Mode segmented pill — design .lmseg. */
@@ -741,7 +736,13 @@
    live / shadow-lift 同理:引用上面按主题命名的那一份。 */
 .emdark {
   --live: var(--live-dark);
+  /* 代码编辑器(lib/codemirror/theme.ts)的四种语法色:关键字 / 字符串 / 数字与注释 / 类型。从 session/renderer/index.css 原样搬来(Radix 11 档)。 */
+  --syntax-keyword: color(display-p3 0.49 0.72 1);
+  --syntax-string: color(display-p3 1 0.57 0.55);
+  --syntax-number: color(display-p3 0.535 0.807 0.542);
+  --syntax-type: color(display-p3 0.446 0.79 0.887);
   --live-soft: color-mix(in oklab, var(--live) 14%, transparent);
+  --live-fg: var(--live);
   --shadow-lift: var(--shadow-lift-dark);
   /* 16 个基础色(ANSI 0–15)= VS Code Dark+ 的默认终端色(microsoft/vscode
      terminalColorRegistry.ts)。黑 #000000 在深底上本身读不出来,由 pty.ts 的
@@ -765,7 +766,13 @@
 }
 .emlight {
   --live: var(--live-light);
+  /* 代码编辑器的四种语法色,见 .emdark。 */
+  --syntax-keyword: color(display-p3 0.15 0.44 0.84);
+  --syntax-string: color(display-p3 0.744 0.234 0.222);
+  --syntax-number: color(display-p3 0.263 0.488 0.261);
+  --syntax-type: color(display-p3 0.08 0.48 0.63);
   --live-soft: color-mix(in oklab, var(--live) 14%, transparent);
+  --live-fg: color-mix(in oklab, var(--live) 80%, black);
   --shadow-lift: var(--shadow-lift-light);
   /* 16 个基础色(ANSI 0–15)= VS Code Light+ 的默认终端色(microsoft/vscode
      terminalColorRegistry.ts),是跟浅底成套挑过的一组。❌ 不给就回落到 xterm 为黑底
@@ -795,7 +802,6 @@
 /* ── Light theme overrides ─────────────────────────────────────────────────── */
 [data-theme="light"] {
   --bg-primary: var(--bg);
-  --bg-secondary: rgba(249,249,249,0.85);
   --bg-settings: var(--muted);
   /* @@@elevated-opaque - elevated surfaces float above message content; a translucent value
      bleeds the text underneath through pop-out menus/cards (no backdrop blur backs it). Keep
@@ -804,13 +810,8 @@
   --sidebar-bg: rgba(237,237,237,0.85);
   --nav-rail: var(--page); /* #7333 rail 与会话列表同在窗口底层 */
   --topbar-bg: rgba(249,249,249,0.85);
-  --input-bg: rgba(255,255,255,0.6);
+  --input-bg: color-mix(in oklab, var(--card) 60%, transparent);
   --input-card-bg: rgba(255,255,255,0.78);
-  /* @@@bubble-fill - received 暖灰、own 极淡冷蓝，无边框。
-     橙色仍只作真 accent（按钮/未读/选中微染），不进气泡。 */
-  --bubble-other: #f4f4f4;
-  /* @@@bubble-mine-neutral (#815 → #7333) 自己的消息深一档的纯灰,区分但不喧哗。 */
-  --bubble-mine: #ebebeb;
   --text-primary: var(--fg);
   --text-secondary: var(--muted-fg);
   --text-tertiary: var(--faint-fg);
@@ -836,13 +837,11 @@
   --modal-border: var(--border-subtle);
   --modal-shadow: var(--shadow-modal);
   --bg-call-panel: rgba(249,249,249,0.96);
-  --bg-accent-soft: rgba(0,0,0,0.06);
   /* @@@primary-ink — 浅色品牌色 = 墨(--primary) */
   --accent: var(--primary);       /* @@@primary-ink —— 浅色侧的品牌色 = 墨 */
   --color-switch-on: var(--primary);
   --text-on-accent: var(--primary-fg);
   --text-on-overlay: rgba(0,0,0,0.6);
-  --text-on-bubble-strong: rgba(0,0,0,0.85);
   --text-on-bubble-muted: rgba(0,0,0,0.55);
   --bubble-quote-bar-mine: rgba(0,0,0,0.18);
   --bubble-quote-bar-other: rgba(0,0,0,0.14);
@@ -853,7 +852,6 @@
   /* ── Extended semantic tokens (D1 cleanup) — light overrides ───────────── */
 
   --accent-hover: oklch(0.320 0 0); /* was #333333 */
-  --accent-glow-soft: rgba(0,0,0,0.08);
   /* @@@faint-selection - 选中行近乎无感;值随 :root 别名走 --selected(#3b82f612)。 */
 
   --bg-transparent: transparent;
@@ -882,17 +880,20 @@
 
   /* @@@canonical-tokens 浅色覆盖 —— #7333 亮色:#fff 内容 / #f9f9f9 底层 / #1a1c1f 前景。 */
   --live: var(--live-light);
+  /* 浅色 live(blue-500)对白底只有 3.67、对 --muted 3.14,写字不够 4.5。掺 20% 黑:#295fb7,对所有面 ≥5.2;式子跟着 live 走,主题包也照样适用。掺黑而不掺 --fg,是因为 .emlight 作用域没有自己的 --fg。 */
+  --live-fg: color-mix(in oklab, var(--live) 80%, black);
   --bg:       #ffffff; /* 内容表面 */
   --page:     #f9f9f9; /* 窗口底层:rail、会话列表(gray-fixed-50) */
   --card:     #ffffff;
   --popover:  #ffffff;
+  --menu-bg: var(--popover);
   --sidebar:  var(--page);
   --fg:       #1a1c1f; /* 亮色前景 */
   --muted:    #ededed; /* 填充面(gray-fixed-100) */
   /* 次级文字 = 前景 66% 混白:对 --bg 5.5、对 --page 5.22、对 --muted 4.69(都过 AA 4.5)。 */
   --muted-fg: #68696b;
-  /* 装饰色:对 --bg 3.12。 */
-  --faint-fg: #919293;
+  /* 装饰色:对 --muted 3.03(≥3,WCAG 1.4.11),其余面更高。 */
+  --faint-fg: #878889;
   --primary:    var(--fg);
   --primary-fg: var(--bg);
   /* hairline 与状态叠色的式子与暗色侧**逐字相同**:叠的是 --fg,而 --fg 自己分主题。 */
@@ -914,8 +915,6 @@
   --glass-bg: var(--card);
   --glass-border: var(--border);
   --shadow-glass: var(--shadow-lift);
-  --bubble-agent: #f4f4f4;
-  --bubble-own:   #ebebeb;
   --listen-mode-active-bg: var(--bg);
   --listen-mode-active-fg: var(--fg);
   --listen-mode-active-shadow: none; /* @@@shadow-lift —— 分段控件不是浮层,浅色侧也不给 */
@@ -925,6 +924,20 @@
   --team-peach: color-mix(in oklab, var(--fg) 4%, transparent);   --team-peach-ico: color-mix(in oklab, var(--fg) 8%, transparent);
   --team-lav:   color-mix(in oklab, var(--fg) 4%, transparent);   --team-lav-ico:   color-mix(in oklab, var(--fg) 8%, transparent);
   --team-mint:  color-mix(in oklab, var(--fg) 4%, transparent);   --team-mint-ico:  color-mix(in oklab, var(--fg) 8%, transparent);
+}
+
+/* 从种子色算出来的面和字。挂在每个 [data-theme] 上而不是只挂 :root:
+   局部改主题的子树(浏览器面板的固定浅色)重声明了种子,这些得跟着在那一层重算。 */
+:root,
+[data-theme] {
+  --bg-secondary: color-mix(in oklab, var(--page) 75%, transparent);
+  --bg-accent-soft: color-mix(in oklab, var(--fg) 9.5%, transparent);
+  --text-on-bubble-strong: color-mix(in oklab, var(--fg) 94%, transparent);
+  --accent-glow-soft: color-mix(in oklab, var(--fg) 11%, transparent);
+  --bubble-agent: color-mix(in oklab, var(--fg) 3%, var(--card));
+  --bubble-own: color-mix(in oklab, var(--fg) 8%, var(--card));
+  --bubble-other: var(--bubble-agent);
+  --bubble-mine: var(--bubble-own);
 }
 
 /* File-family marks share one App/host palette. Dark keeps the light hue and lightness at 85% chroma. */
@@ -992,16 +1005,12 @@
 
    权重说明:下面第一条 (0,2,0) 压得过 [data-theme="light"] (0,1,0),所以浅色必须由第二条
    (0,3,0) 接住 —— 少了它浅色主题会拿到深色那一档。 */
-:root[data-sidebar-tint='on'] {
-  /* #7333 起 rail 与会话列表默认同在窗口底层(#121212),内容 #181818。打开这一项,会话列表取两者之间那一档,
-     三栏重新成一条阶梯;仍压在卡片面 --card(#212121)之下,侧栏里的卡片不会消失。 */
-  --sidebar: #151515;
-}
-
+:root[data-sidebar-tint='on'],
 :root[data-theme='light'][data-sidebar-tint='on'] {
-  /* 浅色:rail 与会话列表默认都是 --page(#f9f9f9),内容 #fff。打开这一项,会话列表取两者之间的 #fcfcfc。
-     次级文字 --muted-fg(#68696b)在它上面 5.4:1(tests/unit/desktop/styles/textContrast7333.test.ts 钉着)。 */
-  --sidebar: #fcfcfc;
+  /* #7333 起 rail 与会话列表默认同在窗口底层,内容高一档。打开这一项,会话列表取两者正中那一档(默认深色 #151515、浅色 #fcfcfc),
+     三栏重新成一条阶梯;仍压在卡片面 --card 之下,侧栏里的卡片不会消失。式子跟着种子走,主题包也一样。
+     次级文字 --muted-fg(默认浅色 #68696b)在它上面 5.4:1(tests/unit/desktop/styles/textContrast7333.test.ts 钉着)。 */
+  --sidebar: color-mix(in oklab, var(--page) 50%, var(--bg));
 }
 
 /* ── @@@window-material-css (#7333) 窗口底层材质 ─────────────────────────────────────────────
@@ -1424,7 +1433,7 @@ body.barcode-scanner-active #root {
   --ta-app-bg: linear-gradient(180deg, #14171c 0%, #17181b 60%, #1b1916 100%);
   --ta-panel-bg: linear-gradient(180deg, #1f2c3d 0%, #23283a 45%, #2a2531 70%, #33271f 100%);
   --ta-panel-border: rgba(255, 255, 255, 0.08);
-  --ta-glass: rgba(255, 255, 255, 0.1);
+  --ta-glass: var(--accent-glow-soft); /* 种子算出来的:墨色 11%,和原来白 10% 差 ΔE 0.005 */
   --ta-glass-strong: rgba(255, 255, 255, 0.16);
   --ta-glass-hover: rgba(255, 255, 255, 0.14);
   --ta-glass-edge: rgba(255, 255, 255, 0.2);
@@ -1455,7 +1464,7 @@ body.barcode-scanner-active #root {
   --ta-tint-ink: color-mix(in oklab, var(--ta-tint) 85%, var(--fg));
   --ta-panel-bg: linear-gradient(180deg, #a9c9ea 0%, #c5d8ef 30%, #e2e5f3 60%, #f4e6dc 80%, #fcd9b5 100%);
   --ta-panel-border: rgba(255, 255, 255, 0.6);
-  --ta-glass: rgba(255, 255, 255, 0.6);
+  --ta-glass: color-mix(in oklab, var(--card) 60%, transparent);
   --ta-glass-strong: rgba(255, 255, 255, 0.78);
   --ta-glass-hover: rgba(255, 255, 255, 0.72);
   --ta-glass-edge: rgba(255, 255, 255, 0.55);
@@ -1557,6 +1566,9 @@ body.barcode-scanner-active #root {
   --agent-tone-online: var(--green);
   --agent-tone-removed: var(--color-danger);
   --agent-tone-muted: var(--text-tertiary);
+  /* 版本控制里的「冲突」「已合并」:会话页 diff 视图的两种状态字,两套主题同值(从 session/renderer/index.css 搬来)。 */
+  --vcs-conflict: color(display-p3 0.9 0.45 0.2);
+  --vcs-merged: color(display-p3 0.523 0.318 0.751);
 }
 [data-theme='light'] {
   --danger-fg: #b91c1c;
@@ -2168,8 +2180,8 @@ body.barcode-scanner-active #root {
 .gg-chip[data-tone='accent'] { background: var(--primary); color: var(--primary-fg); font-weight: var(--font-weight-semibold); }
 /* danger chip 是实底红上的字:走 --danger-solid 那一对(白字 6.47),不是中性族的一员(同上)。 */
 .gg-chip[data-tone='danger'] { background: var(--danger-solid); color: var(--danger-solid-fg); font-weight: var(--font-weight-semibold); }
-.gg-chip[data-tone='ok'] { background: var(--ok-tint); color: var(--ok); }
-.gg-chip[data-tone='warn'] { background: var(--warn-tint); color: var(--warn); }
+.gg-chip[data-tone='ok'] { background: var(--ok-tint); color: var(--ok-fg); }
+.gg-chip[data-tone='warn'] { background: var(--warn-tint); color: var(--warn-fg); }
 .gg-chip[data-appearance='plain'] { background: transparent; }
 /* 计数徽标:同一 chip 的圆形变体(未读数) */
 .gg-chip[data-shape='count'] { min-width: 18px; padding: 0 5px; justify-content: center; font-variant-numeric: tabular-nums; }

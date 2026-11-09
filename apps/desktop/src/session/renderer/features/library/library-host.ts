@@ -1,13 +1,13 @@
 // #6264 资源库问的是**哪一台机器**(owner:「整个资源库或者其他的都是分设备的」)。
 //
-// 默认本机:取数钩子照旧走本机的 `rpc.<格>.*`。资源库左栏顶上选了别的机器时,**每一格**(提示词、智能体、集成、
+// 默认本机:取数钩子照旧走本机的 `rpc.<格>.*`。资源库左栏顶上选了别的机器时,**每一格**(智能体、集成、
 // MCP、扩展)的钩子都换成这里给的那台机器的同名方法(经设备 RPC 转到那台机器上**同一个控制器**)——界面组件一个都
 // 不认它,照旧渲染同一套控件,只是数据与动作来自另一台机器(与新建框的 remote-create-source 同一种做法)。
+// 提示词不在这里:它是账号的(`@shared/prompt-library`,owner 11-07),哪台机器看都是同一份。
 import { createContext, useContext } from 'react';
 import type { AgentInstallProgress } from '@gugu/session-core/workspace-server';
 import { events, onMachineEvent, rpc, rpcOn } from '@renderer/lib/ipc';
 import { TOO_OLD_CODES } from '@renderer/features/remote-hosts/connection-status';
-import type { PromptLibraryPrompt } from '@shared/prompt-library';
 import {
   createRemoteExtensionsHost,
   LOCAL_EXTENSIONS_HOST,
@@ -45,12 +45,6 @@ export type LibraryAgentsRpc = {
   updateSettings(id: string, config: Partial<ProviderCustomConfig>): Promise<void>;
   /** 这台机器上安装的实时读数;返回退订。 */
   onInstallProgress(listener: (progress: AgentInstallProgress) => void): () => void;
-};
-
-/** 与本机 `rpc.promptLibrary.*` 同名同参。 */
-export type LibraryPromptsRpc = {
-  get(): Promise<PromptLibraryPrompt[]>;
-  update(prompts: PromptLibraryPrompt[]): Promise<void>;
 };
 
 /** 资源库 → MCP:咕咕自己管的那份列表与各家自己的那几台(本机 `rpc.mcpLibrary.*`,别的机器同一个控制器)。 */
@@ -106,7 +100,6 @@ export type LibraryHost = {
   /** 缓存键里区分机器的那一段:本机 `local`,别的机器 `remote:<deviceId>`。 */
   key: string;
   agents: LibraryAgentsRpc;
-  prompts: LibraryPromptsRpc;
   mcpLibrary: LibraryMcpRpc;
   integrations: LibraryIntegrationsRpc;
   github: LibraryGithubRpc;
@@ -135,11 +128,6 @@ const localAgents: LibraryAgentsRpc = {
   getDefaultSettings: (id) => rpc.agents.getDefaultSettings(id) as Promise<ProviderCustomConfig | null>,
   updateSettings: (id, config) => rpc.agents.updateSettings(id, config) as Promise<void>,
   onInstallProgress: (listener) => events.on(agentInstallProgressChannel, listener),
-};
-
-const localPrompts: LibraryPromptsRpc = {
-  get: () => rpc.promptLibrary.get(),
-  update: (prompts) => rpc.promptLibrary.update(prompts),
 };
 
 const localIntegrations: LibraryIntegrationsRpc = {
@@ -176,7 +164,6 @@ const localGithub: LibraryGithubRpc = {
 export const LOCAL_LIBRARY_HOST: LibraryHost = {
   key: LOCAL_HOST_KEY,
   agents: localAgents,
-  prompts: localPrompts,
   mcpLibrary: rpc.mcpLibrary,
   integrations: localIntegrations,
   github: localGithub,
@@ -247,7 +234,6 @@ export function createRemoteLibraryHost(
   return {
     key: `remote:${deviceId}`,
     agents,
-    prompts: { get: () => there.promptLibrary.get(), update: (prompts) => there.promptLibrary.update(prompts) },
     mcpLibrary: there.mcpLibrary,
     integrations,
     github: {

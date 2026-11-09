@@ -5,7 +5,8 @@ import { AppErrorDetails, AppErrorMark } from '@/components/appSlot/AppErrorMark
 import { WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
 import type { ReactNode } from 'react';
 import type { ViewDefinition } from '@renderer/app/view-registry';
-import { SquareArrowOutUpRight } from '@/lib/icons';
+import { SquareArrowOutUpRight, Settings } from '@/lib/icons';
+import { followLink } from '@/lib/guguLinks';
 import { openAppInWindow } from '@renderer/features/extensions/app-dock';
 import { ExtensionSharedSlot } from '@renderer/features/extensions/extension-shared-slot';
 import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
@@ -99,6 +100,16 @@ const AppTitlebar = observer(function AppTitlebar() {
       {main?.enabled && params.appId ? (
         <div className="absolute top-0 right-0 flex" style={{ height: WINDOW_CONTROL_BAR_HEIGHT_PX }}>
           <TabBarActionRow atWindowEdge>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={translate('extensions.appSettings')}
+              title={translate('extensions.appSettings')}
+              onClick={() => params.appId && void followLink({ kind: 'app-detail', extensionId: params.appId, fromApp: true })}
+              data-testid="app-page-settings"
+            >
+              <Settings />
+            </Button>
             <Button
               variant="ghost"
               size="icon-sm"

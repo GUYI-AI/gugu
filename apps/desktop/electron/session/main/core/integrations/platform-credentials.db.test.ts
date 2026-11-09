@@ -32,7 +32,7 @@ vi.mock('./connection-statuses', () => ({
   checkConfiguredIntegrations: async () => ({}),
 }));
 vi.mock('./cli/cli-integrations', () => ({ cliMethodOf: () => null }));
-vi.mock('./integration-move', () => ({ exportAccountsForMove: vi.fn(), importAccountsFromMove: vi.fn(), previewAccountsForMove: vi.fn() }));
+vi.mock('./integration-move', () => ({ exportAccountsForMove: vi.fn(), importAccountsFromMove: vi.fn(), previewAccountsForMove: vi.fn(), plainFormFields: vi.fn(() => []) }));
 vi.mock('./integration-payload-builder', () => ({ buildIntegrationListPayload: vi.fn() }));
 
 const { IntegrationCredentialStore } = await import('./integration-credential-store');
