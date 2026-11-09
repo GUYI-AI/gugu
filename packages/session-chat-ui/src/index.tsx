@@ -128,6 +128,7 @@ export type { CommandProvider, ChatCommandMeta } from './core/markdown/command-p
 // ── Commands + scroll helpers ─────────────────────────────────────────────────
 
 export { CHAT_VIEW_COMMANDS } from './commands';
+export type { ViewportProtection } from './core/viewport-protection';
 export type {
   ChatCommands,
   ChatViewCommand,
