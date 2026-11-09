@@ -9,7 +9,7 @@ type Deps = {
   recordedDeliveryIds?: (conversationId: string) => Promise<string[] | null>;
   turnIndexBase?: (conversationId: string) => Promise<number>;
   /** 起之前先把记录里有、库里还没有的那几轮补进库(编程模式里刚跑完的、咕咕外面跑的)。 */
-  fillFromRecord?: (conversationId: string) => Promise<{ status?: string } | undefined>;
+  fillFromRecord?: (conversationId: string) => Promise<{ status?: string; deliveryIds?: string[] } | undefined>;
 };
 
 /**
@@ -32,7 +32,8 @@ export async function resumeHistoryFacts(input: AcpRuntimeStartInput, deps: Deps
   if (!input.providerSessionId || input.forkFromProviderSessionId) return none;
   const readTurnIndexBase = deps.turnIndexBase
     ?? (async (id: string) => (await import('@main/core/sessions/session-turn-store')).storedTurnIndexBase(id));
-  if (!recordIdentityFor(sessionRecordHarnessForProvider(input.providerId))) {
+  const harness = sessionRecordHarnessForProvider(input.providerId);
+  if (!recordIdentityFor(harness)) {
     try {
       return { ...none, turnIndexBase: await readTurnIndexBase(input.sessionId) };
     } catch (error) {
@@ -47,9 +48,23 @@ export async function resumeHistoryFacts(input: AcpRuntimeStartInput, deps: Deps
   try {
     // 补库在前:之后的轮从补完的库尾接着数。补不成只是少几轮历史,❌ 挡住这次启动。
     const filled = await fill(input.sessionId).catch(() => undefined);
-    // The record would not fit the host's heap, and neither would the agent replaying it: same history, same unknown.
-    if (filled?.status === 'too_large') {
-      log.warn('[acp-start] record too large to read; resuming without replay, history unknown', { sessionId: input.sessionId });
+    // The ingest failed (its process died, ran out of heap, or the record changed under it): replaying the record would
+    // cost the agent what it cost the ingest. Same history, unknown deliveries.
+    if (filled?.status === 'ingest_failed') {
+      log.warn('[acp-start] record ingest failed; resuming without replay, history unknown', { sessionId: input.sessionId });
+      return { replayHistory: false, recordedDeliveryIds: null, turnIndexBase: await readTurnIndexBase(input.sessionId) };
+    }
+    // resume-mem: the ingest that just filled the store read the whole record and carries its delivery ids.
+    if (filled?.deliveryIds) {
+      return { replayHistory: false, recordedDeliveryIds: filled.deliveryIds, turnIndexBase: await readTurnIndexBase(input.sessionId) };
+    }
+    // Only Hermes still reads the record here (its sqlite source). A JSONL record that does not exist is resumed with
+    // replay, the agent's own history being the only one left; any other fill without ids leaves deliveries unknown.
+    if (harness !== 'hermes') {
+      if (filled?.status === 'unavailable') {
+        log.warn('[acp-start] record unreadable; resuming with replay', { sessionId: input.sessionId });
+        return none;
+      }
       return { replayHistory: false, recordedDeliveryIds: null, turnIndexBase: await readTurnIndexBase(input.sessionId) };
     }
     const [recordedDeliveryIds, turnIndexBase] = await Promise.all([

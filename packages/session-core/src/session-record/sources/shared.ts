@@ -38,6 +38,8 @@ export type SessionRecordSourceOptions = {
    */
   pollIntervalMs?: number;
   warn?: RecordSourceWarn;
+  /** The reader hands settled turns out as it goes (ingestion, resume-mem): snapshot reads keep no heap account. */
+  drained?: boolean;
 };
 
 export const DEFAULT_POLL_INTERVAL_MS = 500;

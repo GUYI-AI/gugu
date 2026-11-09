@@ -155,6 +155,35 @@ export async function readStoredTailNow(sessionId: string, limit: number): Promi
 }
 
 /**
+ * Store rows newest first, one row at a time: a row can hold megabytes of pictures, so ingestion (resume-mem) never reads a
+ * page of them. `fromSeq` keeps rows at or after it; `limit` caps the count. Only inside `withStoredTurns`.
+ */
+export async function* storedTurnsNewestFirstNow(sessionId: string, options: { fromSeq?: number; limit?: number } = {}): AsyncGenerator<{ seq: number; turn: TranscriptTurn }> {
+  const where = options.fromSeq === undefined ? eq(sessionTurns.sessionId, sessionId)
+    : and(eq(sessionTurns.sessionId, sessionId), gte(sessionTurns.seq, options.fromSeq));
+  const seqs = await db.select({ seq: sessionTurns.seq }).from(sessionTurns).where(where)
+    .orderBy(desc(sessionTurns.seq)).limit(options.limit ?? Number.MAX_SAFE_INTEGER);
+  for (const { seq } of seqs) {
+    const [row] = await db.select({ data: sessionTurns.data }).from(sessionTurns)
+      .where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.seq, seq))).limit(1);
+    if (row) yield { seq, turn: JSON.parse(row.data) as TranscriptTurn };
+  }
+}
+
+/** Record-backed rows without an outcome, with their sequence: a later read may complete them (see below). */
+export async function readUnfinishedRecordRowsNow(sessionId: string): Promise<Array<{ seq: number; turn: TranscriptTurn }>> {
+  const rows = await db.select({ seq: sessionTurns.seq, data: sessionTurns.data }).from(sessionTurns)
+    .where(and(eq(sessionTurns.sessionId, sessionId), like(sessionTurns.turnId, 'record:%'),
+      sql`json_extract(${sessionTurns.data}, '$.outcome.kind') IS NULL`));
+  return rows.map(row => ({ seq: row.seq, turn: JSON.parse(row.data) as TranscriptTurn }));
+}
+
+/** The newest store sequence, or -1. */
+export async function storedMaxSeqNow(sessionId: string): Promise<number> {
+  return (await nextSeq(sessionId)) - 1;
+}
+
+/**
  * Record-backed rows retain their source identity so a later snapshot can complete the same stored row.
  * Only call inside `withStoredTurns`; revisions are historical and publish no live-message side effects.
  * `turn_id` 记 `record:` 开头的记录侧 id:这一行**不来自引擎的哪一轮**,界面按引擎 turn id 去重时不会把它认成谁。

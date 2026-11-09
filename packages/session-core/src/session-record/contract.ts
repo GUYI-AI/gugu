@@ -497,7 +497,9 @@ export interface SessionTimeline {
    * 交出此刻的存档，供宿主存盘、下次开这条会话时直接装回来。
    * 返回 null = 这条时间线存不了（记录源不支持续读）——那只是慢，不是错。
    */
-  archive?(): Promise<TimelineArchive | null>;
+  archive?(options?: { maxSourceBytes?: number }): Promise<TimelineArchive | null>;
+  /** Ingestion only: hand out settled turns but the last, so a long record never sits on one heap. */
+  drainSettled?(): { turns: TranscriptTurn[]; prunedDrops: number; resets: number };
 }
 
 // ─── agent 的跨机器动作(机器 ↔ 机器)──────────────────────────────────────────────────────────────────

@@ -116,7 +116,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
     private readonly nativeChild = false,
   ) {
     this.warn = warnOf(options);
-    this.retain = options?.readMode === 'snapshot' ? snapshotRetainer() : null;
+    this.retain = options?.readMode === 'snapshot' && !options.drained ? snapshotRetainer() : null;
   }
 
   async start(events: SessionRecordSourceEvents, resume?: SessionRecordResume): Promise<void> {

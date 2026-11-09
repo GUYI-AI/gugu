@@ -28,7 +28,7 @@ const EMDASH_BUNDLE_GLOBALS = Object.fromEntries(
   ].map((name) => [name, 'readonly']),
 )
 
-const BUNDLE_FILE_RE = /(?:^|[\\/])emdash-main-bridge(?:-[^/\\]+)?\.(?:cjs|js)$|(?:^|[\\/])(?:acp-runtime|agent-config-runtime|fs-watch-runtime)\.js$/
+const BUNDLE_FILE_RE = /(?:^|[\\/])emdash-main-bridge(?:-[^/\\]+)?\.(?:cjs|js)$|(?:^|[\\/])(?:acp-runtime|agent-config-runtime|fs-watch-runtime|record-ingest-runtime)\.js$/
 
 function bundleFiles(root: string): string[] {
   const files: string[] = []

@@ -32,6 +32,7 @@ import { TOOL_IMAGE_FETCH_LIMIT } from './contract';
 import { questionAnswered, readQuestion } from './sources/question-tools';
 import { findToolImage, findToolItem } from './tool-image';
 import { TIMELINE_ARCHIVE_MAX_SOURCE_BYTES } from './archive-budget';
+import { SESSION_PLAN_ID } from '../acp/models/plan';
 
 /**
  * 一条已经折算好的时间线的存档。
@@ -71,6 +72,10 @@ export type TimelineArchive = {
    * (`toolImage`)。原先图随存档存原样:存档 72–96% 是 base64,一份 545MB 的 codex 记录折出 108MB 的存档,超上限存不下。
    */
   readonly images: readonly (readonly [string, readonly RecordImageRef[]])[];
+  /** Turns already drained by ingestion (`drainSettled`); the reducer counts on from here. Absent = 0. */
+  readonly retainedFrom?: number;
+  /** Entity ids (message, thinking, tool call, plan) of drained turns: events for them are dropped, not folded elsewhere. */
+  readonly prunedOwners?: readonly string[];
 };
 
 export type TurnPublishArchive = {
@@ -99,6 +104,8 @@ export type SessionTimelineDeps = {
    * 能 ⇒ 提问结算带上整份 `questions`(契约里「有 questions 就能代答」)。
    */
   answerableQuestions?: boolean;
+  /** Called after every applied batch, including the initial read (before `createSessionTimeline` returns). Ingestion drains here. */
+  onApplied?: (timeline: SessionTimeline) => void;
 };
 
 /**
@@ -232,6 +239,11 @@ class RecordTimeline implements SessionTimeline {
   private suspended = false;
   private resetTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
+  /** Turns handed out by `drainSettled` (and their owner ids); restored from an archive. */
+  private retainedFrom = 0;
+  private prunedOwners = new Set<string>();
+  private prunedDrops = 0;
+  private resets = 0;
 
   constructor(
     private readonly source: SessionRecordSource,
@@ -273,6 +285,9 @@ class RecordTimeline implements SessionTimeline {
   private restoreArchive(archive: TimelineArchive | null): boolean {
     if (!archive || archive.version !== TIMELINE_ARCHIVE_VERSION) return false;
     this.parser.restoreState(archive.parser);
+    this.retainedFrom = archive.retainedFrom ?? 0;
+    if (this.retainedFrom) this.parser.setTurnIndexBase(this.retainedFrom);
+    this.prunedOwners = new Set(archive.prunedOwners ?? []);
     // Keep this publisher's fresh epoch: an archive can predate frames already seen by a client.
     this.seq = archive.seq;
     this.lastAt = archive.lastAt;
@@ -320,11 +335,12 @@ class RecordTimeline implements SessionTimeline {
   /**
    * 交出此刻的存档。返回 null = 这条时间线不能存（记录源不支持续读，或此刻续读点取不到）。
    */
-  async archive(): Promise<TimelineArchive | null> {
+  async archive(options: { maxSourceBytes?: number } = {}): Promise<TimelineArchive | null> {
     if (this.disposed) return null;
     // Each source debits its already-known byte offset before copying resume
     // state. No JSON-value walk, entry limit, or native-source-count limit.
-    const budget = { remainingBytes: TIMELINE_ARCHIVE_MAX_SOURCE_BYTES };
+    const maxSourceBytes = options.maxSourceBytes ?? TIMELINE_ARCHIVE_MAX_SOURCE_BYTES;
+    const budget = { remainingBytes: maxSourceBytes };
     const resume = await this.source.resumePoint?.(budget);
     if (!resume || budget.remainingBytes < 0) return null;
     const { parser, images } = this.parserForArchive();
@@ -340,7 +356,7 @@ class RecordTimeline implements SessionTimeline {
     }
     return {
       version: TIMELINE_ARCHIVE_VERSION,
-      sourceBytes: TIMELINE_ARCHIVE_MAX_SOURCE_BYTES - budget.remainingBytes,
+      sourceBytes: maxSourceBytes - budget.remainingBytes,
       resume,
       epoch: this.epochValue,
       seq: this.seq,
@@ -353,7 +369,8 @@ class RecordTimeline implements SessionTimeline {
       removed: [...this.removed].map(([id, at]) => [id, at] as const),
       recentActions: [...this.recentActionEntries.values()],
       published,
-      images
+      images,
+      ...(this.retainedFrom ? { retainedFrom: this.retainedFrom, prunedOwners: [...this.prunedOwners] } : {})
     };
   }
 
@@ -680,6 +697,11 @@ class RecordTimeline implements SessionTimeline {
         // 没有活着的一轮时 reducer 自己 no-op，所以重复的边界是安全的。
         this.parser.settleTurn(outcomeOf(entry.boundary), at);
       } else {
+        // An event for a drained turn would otherwise land in the newest turn: drop it, as a settled stored row is never revised.
+        if (this.prunedOwners.size && eventOwnerIds(entry.event).some((id) => this.prunedOwners.has(id))) {
+          this.prunedDrops += 1;
+          continue;
+        }
         const origins = entry.imageOrigins;
         if (origins && entry.event.kind === 'tool_update' && entry.event.imageRefs) {
           this.snapshotImages.set(entry.event.toolCallId, origins as readonly RecordImageRef[]);
@@ -696,6 +718,30 @@ class RecordTimeline implements SessionTimeline {
       changed = true;
     }
     if (changed) this.publish();
+    this.deps.onApplied?.(this);
+  }
+
+  /**
+   * Hand out committed turns and forget them (resume-mem). The last committed turn stays: it can still be reopened,
+   * tailed or superseded. So does every turn from the first one with a running tool or subagent, whose card a later
+   * line (a background subagent's own file) still completes, unless that holds back more than `DRAIN_HOLD_TURNS`.
+   * Events that reach a turn already handed out are dropped by id (`prunedOwners`), as a settled stored row is never revised.
+   */
+  drainSettled(): { turns: TranscriptTurn[]; prunedDrops: number; resets: number } {
+    const state = this.parser.snapshotState();
+    const { committed } = state.transcript;
+    const last = committed.length - 1;
+    const open = committed.findIndex((turn, index) => index < last && hasRunningItem(turn.items));
+    const cut = open >= 0 && last - open <= DRAIN_HOLD_TURNS ? open : Math.max(0, last);
+    const turns = committed.slice(0, cut);
+    if (turns.length) {
+      for (const turn of turns) collectOwnerIds(turn.items, this.prunedOwners, (image) => this.imageOrigins.delete(image));
+      this.retainedFrom += turns.length;
+      this.parser.restoreState({ ...state, transcript: { ...state.transcript, committed: committed.slice(cut) } });
+      this.parser.setTurnIndexBase(this.retainedFrom);
+      for (const turn of turns) this.published.delete(turn.id);
+    }
+    return { turns, prunedDrops: this.prunedDrops, resets: this.resets };
   }
 
   /**
@@ -798,6 +844,9 @@ class RecordTimeline implements SessionTimeline {
     this.imageOrigins = new Map();
     this.archivedImages = new Map();
     this.snapshotImages = new Map();
+    this.retainedFrom = 0;
+    this.prunedOwners = new Set();
+    this.resets += 1;
     this.needsPublish = true;
     // 不当场发：源紧接着就会把重读的内容送进来，那时快照才是完整的。
     // 但也不能只等它 —— 一份被删掉的记录不会再有任何 onEntries，所以补一个兜底节拍。
@@ -1045,4 +1094,37 @@ function outcomeOf(boundary: RecordBoundary): TranscriptTurnOutcome {
     return { kind: 'error', reason: 'prompt_failed', ...(detail ? { detail } : {}), ...(said ? { said } : {}) };
   }
   return { kind: 'done', reason: boundary.stopReason ?? 'end_turn' };
+}
+
+/** The ids an event folds into: the same fields `findEntityOwner` and the tool lookups read. */
+function eventOwnerIds(event: NormalizedEvent): string[] {
+  const ids: string[] = [];
+  const one = event as { kind: string; messageId?: string | null; toolCallId?: string; parentToolCallId?: string | null; planId?: string };
+  if ((one.kind === 'message' || one.kind === 'thinking') && one.messageId) ids.push(`message:${one.messageId}`);
+  if (one.toolCallId) ids.push(`tool:${one.toolCallId}`);
+  if (one.parentToolCallId) ids.push(`tool:${one.parentToolCallId}`);
+  if (one.kind === 'plan' || one.kind === 'plan_remove') ids.push(`plan:${one.planId ?? SESSION_PLAN_ID}`);
+  return ids;
+}
+
+function collectOwnerIds(items: readonly TranscriptItem[], into: Set<string>, onImage: (data: string) => void): void {
+  for (const item of items) {
+    const node = item as unknown as { kind: string; id: string; toolCallId?: string; planId?: string; images?: ToolImage[]; children?: TranscriptItem[] };
+    const own = /:(?:message|thinking):(.+)$/.exec(node.id)?.[1];
+    if ((node.kind === 'message' || node.kind === 'thinking') && own) into.add(`message:${own}`);
+    if (node.toolCallId) into.add(`tool:${node.toolCallId}`);
+    if (node.kind === 'create-plan-tool-call' && node.planId) into.add(`plan:${node.planId}`);
+    for (const image of node.images ?? []) onImage(image.data);
+    if (node.children) collectOwnerIds(node.children, into, onImage);
+  }
+}
+
+/** A running card can still be completed by a later line; how many turns it may hold back before ingestion drains anyway. */
+const DRAIN_HOLD_TURNS = 64;
+
+function hasRunningItem(items: readonly TranscriptItem[]): boolean {
+  return items.some((item) => {
+    const node = item as unknown as { status?: string; agentStatus?: string; children?: TranscriptItem[] };
+    return node.status === 'running' || node.agentStatus === 'running' || (node.children ? hasRunningItem(node.children) : false);
+  });
 }

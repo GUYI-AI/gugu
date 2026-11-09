@@ -19,6 +19,11 @@ export const desktopWorkers = {
     entry: 'src/main/core/fs-watch/runtime-process/entry.ts',
     file: 'fs-watch-runtime.js',
   },
+  // resume-mem: reads a native record for the store, so the host never decodes one. One ingest per process.
+  'record-ingest': {
+    entry: 'src/main/core/sessions/record-ingest/entry.ts',
+    file: 'record-ingest-runtime.js',
+  },
   // #6334 用量页的 token 扫描。与上面三个不同:它是 worker_threads 线程(纯计算 + 读文件,不需要进程隔离),
   // 不是 fork 子进程;但构建形态一样 —— 同一次 lib 构建的平铺入口,按本 chunk 同目录解析。
   'usage-token-scan': {

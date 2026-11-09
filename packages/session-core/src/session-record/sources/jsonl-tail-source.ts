@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { open, stat } from 'node:fs/promises';
 import type {
   RecordEntry,
   SessionRecordLocator,
@@ -27,7 +29,10 @@ export type JsonlTailFormat<S> = {
   decode(record: Record<string, unknown>, state: S): RecordEntry[] | null;
 };
 
-type ResumeData<S> = { version: number; path: string; tail: TailResume; state: S };
+/** `fence`: sha256 of the last decoded bytes before `tail.lineOffset`, set for a `.zst` snapshot (decoded offsets, as Codex counts them). */
+type ResumeData<S> = { version: number; path: string; tail: TailResume; state: S; fence?: { bytes: number; sha256: string } };
+
+const FENCE_BYTES = 4096;
 
 export function createJsonlTailSource<S>(
   locator: SessionRecordLocator,
@@ -40,13 +45,28 @@ export function createJsonlTailSource<S>(
   let state = format.initial();
   let sink: SessionRecordSourceEvents | null = null;
   let stopped = false;
-  const retain = options?.readMode === 'snapshot' ? snapshotRetainer() : null;
+  // Ingestion drains settled turns as it reads: the heap account for a reader that keeps everything does not apply.
+  const retain = options?.readMode === 'snapshot' && !options.drained ? snapshotRetainer() : null;
   let emitFailure: { reason: unknown } | null = null;
+  // A `.zst` snapshot has no file offsets; its resume point counts decoded bytes and proves them with the last few.
+  let zstEnd = 0;
+  let zstTail = Buffer.alloc(0);
 
   const emit = (lines: string[], offsets: number[]) => {
     if (stopped || !sink) return;
     const events = sink;
     const file = path;
+    if (file?.endsWith('.zst') && lines.length) {
+      // The fence is the longest byte-contiguous suffix (blank lines are not emitted), at most FENCE_BYTES.
+      let from = lines.length - 1, bytes = Buffer.byteLength(lines[from]) + 1;
+      while (from > 0 && bytes < FENCE_BYTES && offsets[from] === offsets[from - 1] + Buffer.byteLength(lines[from - 1]) + 1) {
+        from -= 1;
+        bytes += Buffer.byteLength(lines[from]) + 1;
+      }
+      const text = Buffer.from(lines.slice(from).map((line) => `${line}\n`).join(''));
+      zstTail = Buffer.concat([offsets[from] === zstEnd ? zstTail : Buffer.alloc(0), text]).subarray(-FENCE_BYTES);
+      zstEnd = offsets[lines.length - 1] + Buffer.byteLength(lines[lines.length - 1]) + 1;
+    }
     try {
       emitJsonLines(lines, format.name, warn, (entries) => events.onEntries(entries), (record) => format.decode(record, state),
         file ? (entries, index) => (retain ? retain(entries, lines[index], offsets[index], file) : locateImages(entries, lines[index], offsets[index], file)) : undefined);
@@ -99,6 +119,13 @@ export function createJsonlTailSource<S>(
     catchUp: async () => { if (options?.readMode !== 'snapshot') await reader?.catchUp(); },
     readImage: readRecordImage,
     async resumePoint(budget) {
+      if (path?.endsWith('.zst') && options?.readMode === 'snapshot') {
+        if (!zstEnd || (budget && (budget.remainingBytes -= zstEnd) < 0)) return null;
+        const info = await stat(path);
+        const tail: TailResume = { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs, lineOffset: zstEnd };
+        const data: ResumeData<S> = { version: format.resumeVersion, path, tail, state: structuredClone(state), fence: { bytes: zstTail.length, sha256: digest(zstTail) } };
+        return { data, fingerprint: `${format.name}:${path}:${tail.ino}:${tail.size}:${tail.mtimeMs}` } satisfies SessionRecordResume;
+      }
       if (!reader || !path || options?.readMode === 'snapshot') return null;
       // Debit before yielding/cloning; native children share this counter.
       const consumedBytes = reader.consumedBytes;
@@ -120,4 +147,72 @@ export function createJsonlTailSource<S>(
   const start = source.start.bind(source);
   source.start = (events, resume) => start(events, resume).catch((error: unknown) => { throw emitFailure ? emitFailure.reason : error; });
   return source;
+}
+
+function digest(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+type ResumeTree = { nativeChildren?: number; root?: SessionRecordResume; children?: Record<string, SessionRecordResume> };
+
+/** Each JSONL tail resume in a resume tree, through subagent wrappers (`withSubagentSources`). */
+function jsonlResumes(resume: SessionRecordResume): Array<ResumeData<unknown>> {
+  const tree = resume.data as ResumeTree;
+  if (tree?.nativeChildren === 2) return [...(tree.root ? jsonlResumes(tree.root) : []), ...Object.values(tree.children ?? {}).flatMap(jsonlResumes)];
+  return [resume.data as ResumeData<unknown>];
+}
+
+/** A `.zst` archive that has not changed since its resume point has nothing new: cold archives never grow. */
+export async function zstResumeUnchanged(resume: SessionRecordResume): Promise<boolean> {
+  const all = jsonlResumes(resume);
+  if (!all.some((one) => one.path?.endsWith('.zst'))) return false;
+  for (const one of all) {
+    const info = await stat(one.path).catch(() => null);
+    if (!info || info.ino !== one.tail.ino || info.size !== one.tail.size || info.mtimeMs !== one.tail.mtimeMs) return false;
+    if (one.path.endsWith('.zst') && await stat(one.path.slice(0, -'.zst'.length)).then(() => true, () => false)) return false;
+  }
+  return true;
+}
+
+/**
+ * Move `.zst` resume points to the plain `.jsonl` Codex materializes before appending (Codex
+ * `codex-rs/rollout/src/compression.rs` `materialize_rollout_for_append_blocking`). Decoded offsets carry over;
+ * the fence proves the plain file starts with the same bytes. `null` = some file cannot be proved: read it whole.
+ */
+export async function rebindZstResume(resume: SessionRecordResume): Promise<SessionRecordResume | null> {
+  const rebind = async (data: ResumeData<unknown>): Promise<ResumeData<unknown> | null> => {
+    if (!data.path?.endsWith('.zst')) return data;
+    if (!data.fence) return null;
+    const plain = data.path.slice(0, -'.zst'.length);
+    const info = await stat(plain).catch(() => null);
+    const length = data.fence.bytes;
+    if (!info || info.size < data.tail.lineOffset || length === 0) return null;
+    const handle = await open(plain, 'r');
+    try {
+      const bytes = Buffer.alloc(length);
+      const { bytesRead } = await handle.read(bytes, 0, length, data.tail.lineOffset - length);
+      if (bytesRead !== length || digest(bytes) !== data.fence.sha256) return null;
+    } finally {
+      await handle.close();
+    }
+    const { fence: _fence, ...rest } = data;
+    return { ...rest, path: plain, tail: { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs, lineOffset: data.tail.lineOffset } };
+  };
+  const walk = async (one: SessionRecordResume): Promise<SessionRecordResume | null> => {
+    const tree = one.data as ResumeTree;
+    if (tree?.nativeChildren === 2) {
+      const root = tree.root ? await walk(tree.root) : undefined;
+      if (root === null) return null;
+      const children: Record<string, SessionRecordResume> = {};
+      for (const [id, child] of Object.entries(tree.children ?? {})) {
+        const next = await walk(child);
+        if (!next) return null;
+        children[id] = next;
+      }
+      return { ...one, data: { ...tree, root, children } };
+    }
+    const data = await rebind(one.data as ResumeData<unknown>);
+    return data ? { ...one, data } : null;
+  };
+  return walk(resume);
 }
