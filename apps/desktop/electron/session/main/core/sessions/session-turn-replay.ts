@@ -45,12 +45,13 @@ export function filterReadableStoredRows<T extends StoredReplayRow>(parsed: (T &
 }
 
 /** View repair only: leave archived rows, sequence numbers and message contents unchanged. */
-export async function readableStoredRows(sessionId: string, rows: StoredReplayRow[]) {
+export async function readableStoredRows(sessionId: string, rows: StoredReplayRow[], options: { carry?: boolean } = {}) {
   let previous: TranscriptTurn | null = null;
   const parsed = rows.map(row => ({ ...row, turn: JSON.parse(row.data) as TranscriptTurn }));
   const first = parsed[0];
   // Carry the same preceding settled context across any page boundary, including a leading unfinished row.
-  if (first && !(first.turn.outcome && first.turn.startedAt !== undefined)) {
+  // `carry`: the rows continue a page read in pieces, so the context is always the one before them.
+  if (first && (options.carry || !(first.turn.outcome && first.turn.startedAt !== undefined))) {
     const [row] = await db.select({ data: sessionTurns.data }).from(sessionTurns).where(and(
       eq(sessionTurns.sessionId, sessionId), lt(sessionTurns.seq, first.seq),
       sql`json_extract(${sessionTurns.data}, '$.outcome.kind') IS NOT NULL`,

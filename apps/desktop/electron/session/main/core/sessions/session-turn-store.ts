@@ -1,7 +1,7 @@
 import { renumberStoredTurn, rewriteTurnId } from './session-turn-identity';
 export { renumberStoredTurn } from './session-turn-identity';
-import { findToolImage, trimCursorPageForTransport, trimTurnsForTransport } from '@gugu/session-core/session-record';
-import { and, asc, desc, eq, gte, like, lt, notLike, sql } from 'drizzle-orm';
+import { findToolImage, TRANSPORT_PAYLOAD_BUDGET, trimTurnsForTransport } from '@gugu/session-core/session-record';
+import { and, asc, desc, eq, gte, inArray, like, lt, notLike, sql } from 'drizzle-orm';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { db } from '@main/db/client';
 import { sessionTurns } from '@main/db/schema';
@@ -277,6 +277,11 @@ export async function getStoredHistory(params: {
 }): Promise<StoredTurnPage> {
   for (;;) {
     const epoch = ownerNotificationEpoch(params.sessionId);
+    if (params.fromSeq === undefined) {
+      const page = await readStoredPageForTransport(params.sessionId, { before: params.before, limit: params.limit });
+      if (epoch !== ownerNotificationEpoch(params.sessionId)) continue;
+      return { ...page, nativeOwnerNotificationEpoch: epoch };
+    }
     const page = await readStoredTurns(params.sessionId, {
       before: params.before,
       limit: params.limit,
@@ -286,9 +291,7 @@ export async function getStoredHistory(params: {
     // A revert can reuse every sequence in the page. Its rows and generation must describe the same snapshot.
     if (epoch !== ownerNotificationEpoch(params.sessionId)) continue;
     const snapshot = { ...page, nativeOwnerNotificationEpoch: epoch };
-    return params.fromSeq === undefined
-      ? trimCursorPageForTransport(snapshot)
-      : { ...snapshot, turns: trimTurnsForTransport(page.turns) };
+    return { ...snapshot, turns: trimTurnsForTransport(page.turns) };
   }
 }
 
@@ -391,6 +394,53 @@ export async function readStoredTurns(
     turns: readable.map(row => row.turn),
     originTurnIds: readable.map(row => row.turnId),
     nextCursor: rows.length < limit ? null : (rows.at(-1)?.seq ?? null),
+  };
+}
+
+/** Rows read at a time by `readStoredPageForTransport`: a row can hold megabytes of pictures. */
+const TRANSPORT_PAGE_CHUNK = 8;
+
+/**
+ * `trimCursorPageForTransport(readStoredTurns(…))`, without reading rows the page budget would drop (resume-mem): rows are
+ * read newest first a few at a time, trimmed, and reading stops once the budget is full. A fill of thousands of turns
+ * followed by a reload (`acp-chat-store` `_reloadStoredInPlace`) otherwise loads every one of them on the host.
+ */
+export async function readStoredPageForTransport(sessionId: string, options: { before?: number; limit?: number } = {}): Promise<StoredTurnPage> {
+  const limit = options.limit ?? 100;
+  const where = options.before === undefined ? eq(sessionTurns.sessionId, sessionId)
+    : and(eq(sessionTurns.sessionId, sessionId), lt(sessionTurns.seq, options.before));
+  const seqs = (await db.select({ seq: sessionTurns.seq }).from(sessionTurns).where(where)
+    .orderBy(desc(sessionTurns.seq)).limit(limit)).map(row => row.seq);
+  const encoder = new TextEncoder();
+  const kept: Array<{ turn: TranscriptTurn; turnId: string }> = [];
+  let used = 2; // JSON array brackets, as `fitTurnsToBudget` counts.
+  let dropped = false;
+  let trimmed = false;
+  let readable = 0;
+  for (let at = 0; at < seqs.length && !dropped; at += TRANSPORT_PAGE_CHUNK) {
+    const chunk = seqs.slice(at, at + TRANSPORT_PAGE_CHUNK);
+    const rows = await db.select({ seq: sessionTurns.seq, data: sessionTurns.data, turnId: sessionTurns.turnId }).from(sessionTurns)
+      .where(and(eq(sessionTurns.sessionId, sessionId), inArray(sessionTurns.seq, chunk))).orderBy(asc(sessionTurns.seq));
+    // Every piece but the page's oldest continues the page: its replay context is the row before it.
+    const visible = await readableStoredRows(sessionId, rows, { carry: at + TRANSPORT_PAGE_CHUNK < seqs.length });
+    readable += visible.length;
+    for (const row of visible.reverse()) {
+      const turn = trimTurnsForTransport([row.turn])[0];
+      if (turn !== row.turn) trimmed = true;
+      const next = used + encoder.encode(JSON.stringify(turn)).byteLength + (kept.length ? 1 : 0);
+      // The newest turn is kept whatever its size (`fitTurnsToBudget`).
+      if (next > TRANSPORT_PAYLOAD_BUDGET && kept.length) { dropped = true; break; }
+      used = next;
+      kept.push({ turn, turnId: row.turnId });
+    }
+  }
+  if (!readable && seqs.length === limit && seqs.length) return readStoredPageForTransport(sessionId, { before: seqs.at(-1)!, limit });
+  kept.reverse();
+  return {
+    turns: kept.map(one => one.turn),
+    originTurnIds: kept.map(one => one.turnId),
+    // As `trimCursorPageForTransport`: a trimmed page continues from its first turn, an untouched one from its oldest row.
+    nextCursor: dropped ? (kept[0]?.turn.seq ?? null) : seqs.length < limit ? null : trimmed ? (kept[0]?.turn.seq ?? null) : (seqs.at(-1) ?? null),
   };
 }
 

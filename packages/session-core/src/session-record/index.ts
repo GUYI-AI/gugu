@@ -17,6 +17,7 @@ export {
 } from './timeline';
 
 export {
+  TRANSPORT_PAYLOAD_BUDGET,
   TRANSPORT_TEXT_LIMIT,
   trimAfterResultForTransport,
   trimBatchForTransport,

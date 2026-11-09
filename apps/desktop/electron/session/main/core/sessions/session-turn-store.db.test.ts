@@ -558,3 +558,43 @@ describe('conversation-turn-store · 对账读法', () => {
     expect(page.originTurnIds).toEqual(['c1:turn:1', 'c1:turn:2']);
   });
 });
+
+describe('reading a transport page a few rows at a time (resume-mem)', () => {
+  let fixture: Fixture;
+  beforeEach(async () => {
+    fixture = await openFixture('empty');
+    mocks.db = fixture.db;
+    fixture.sqlite.exec("INSERT INTO projects (id, name, path) VALUES ('p1', 'P', '/repo'); INSERT INTO sessions (id, project_id) VALUES ('c1', 'p1');");
+  });
+  afterEach(() => { fixture.close(); mocks.db = undefined; });
+
+  it('gives exactly the page a whole read trimmed to the budget gives, for every cursor', async () => {
+    const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+    const settled = (seq: number, size: number): TranscriptTurn => ({
+      id: `c1:turn:${seq}`, seq, initiator: 'user', startedAt: 1000 + seq, endedAt: 2000 + seq, outcome: { kind: 'done', reason: 'end_turn' },
+      items: [
+        { kind: 'message', id: `c1:turn:${seq}:message:${uuid(seq * 2)}`, seq: 0, role: 'user', text: `question ${seq}` },
+        { kind: 'message', id: `c1:turn:${seq}:message:${uuid(seq * 2 + 1)}`, seq: 1, role: 'assistant', text: 'x'.repeat(size) },
+        ...(seq % 5 === 0 ? [{ kind: 'execute-tool-call', id: `c1:turn:${seq}:tool:t${seq}`, seq: 2, toolCallId: `t${seq}`, status: 'done', title: 'Bash',
+          outputText: 'o'.repeat(20_000), images: [{ mimeType: 'image/png', data: 'A'.repeat(30_000) }] }] : []),
+      ],
+    }) as TranscriptTurn;
+    // A replayed copy of the previous turn: no times, no outcome, only its messages. The view hides it.
+    const replayed = (of: TranscriptTurn, seq: number): TranscriptTurn => ({ id: of.id, seq, initiator: 'user', items: of.items.filter(item => item.kind === 'message') });
+    let previous: TranscriptTurn | null = null;
+    const insert = fixture.sqlite.prepare('INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES (?, ?, ?, ?, ?)');
+    for (let seq = 0; seq < 60; seq += 1) {
+      const row = previous && seq % 7 === 3 ? replayed(previous, seq) : settled(seq, (seq * 997) % 9000);
+      if (row.outcome) previous = row;
+      insert.run(`c1:${seq}`, 'c1', seq, `c1:turn:${seq}`, JSON.stringify(row));
+    }
+    const { readStoredPageForTransport } = await import('./session-turn-store');
+    const { trimCursorPageForTransport } = await import('@gugu/session-core/session-record');
+    for (const limit of [1, 3, 8, 9, 20, 100]) {
+      for (const before of [undefined, 60, 41, 25, 9, 4, 1]) {
+        const whole = trimCursorPageForTransport(await readStoredTurns('c1', { before, limit }));
+        expect({ limit, before, page: await readStoredPageForTransport('c1', { before, limit }) }).toEqual({ limit, before, page: whole });
+      }
+    }
+  });
+});
