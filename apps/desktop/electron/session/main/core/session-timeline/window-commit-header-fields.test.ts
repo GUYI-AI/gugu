@@ -6,7 +6,7 @@ import { COMMIT_HEADER_CHILDREN, COMMIT_ITEM_HEADER_FIELDS, commitHeaderFields }
 
 const names = (value: string) => value.trim().split(/\s+/).sort();
 const normalized = (value: Readonly<Record<string, string>>) =>
-  Object.fromEntries(Object.entries(value).map(([key, list]) => [key, names(list)]).sort(([a], [b]) => a.localeCompare(b)));
+  Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, list]) => [key, names(list)] as const));
 
 /** The host producer and the public wire validate one canonical header vocabulary.
  * A field dropped or added on either side would make the host emit headers the
