@@ -250,6 +250,7 @@ export default {
       "outputTrimmed_one": "… 此预览省略了 {{count}} 字",
       "outputTrimmed_other": "… 此预览省略了 {{count}} 字",
       "loading": "正在读取时间线…",
+      "loadingWindow": "加载中…",
       "waitingRecord": "会话已开，正在等它写下第一行…",
       "empty": "这个会话还没有内容。",
       "loadFailed": "打不开时间线",

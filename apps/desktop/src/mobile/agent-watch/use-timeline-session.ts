@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { olderTimelineTarget } from './timeline-older-window'
 import { rendererLogger } from '@/lib/log'
 import { messageForUser } from '@/lib/userFacingError'
 import { recoverTimelineRead } from './timeline-read-recovery'
@@ -10,6 +11,7 @@ import type {
   TimelineAfterResult,
   TimelineOlderResult,
   TimelineSnapshot,
+  WindowCursor,
 } from '@gugu/session-core/session-record/contract'
 import type { ToolImage } from '@gugu/session-core/acp/client'
 import {
@@ -29,7 +31,7 @@ import { hydrateCachedTimeline, readCachedTimeline, writeCachedTimeline } from '
 export type SessionpageTimelineClient = {
   fetchSnapshot(deviceId: string, sessionId: string, limit?: number): Promise<TimelineSnapshot>
   fetchAfter(deviceId: string, sessionId: string, cursor: RecordCursor): Promise<TimelineAfterResult>
-  fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number): Promise<TimelineOlderResult>
+  fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number, cursor?: WindowCursor): Promise<TimelineOlderResult>
   /** 一张工具交回来的图(时间线里只有它的字数,见 transport-trim)。 */
   fetchToolImage(deviceId: string, sessionId: string, itemId: string, index: number): Promise<ToolImage>
   subscribeSession(deviceId: string, sessionId: string, subscriptionId: string, cursor: RecordCursor | null): Promise<unknown>
@@ -185,8 +187,16 @@ export function useTimelineSession(
   // 依赖 timeline 会让每次时间线更新都换一个新函数,读 ref 才拿得到当下那份。
   const timelineRef = useRef(timeline)
   timelineRef.current = timeline
+  const olderIdentity = JSON.stringify([deviceId, sessionId, enabled])
+  const olderIdentityRef = useRef(olderIdentity)
+  olderIdentityRef.current = olderIdentity
+  const olderRequest = useRef<{ identity: string; generation: number; promise: Promise<void> } | null>(null)
+  const olderGeneration = useRef(0)
+  useEffect(() => () => { olderGeneration.current++ }, [client, deviceId, sessionId, enabled])
 
   const applyResult = useCallback((result: TimelineAfterResult) => {
+    // Invalidate before applying resolutions: no older promise can resurrect a ticket.
+    if (!result.ok || result.batch.resolvedPendingTickets?.length || result.batch.resolvedFragmentOwners?.length) olderGeneration.current++
     setTimeline((current) => {
       const next = applyTimelineResult(current, result)
       cursorRef.current = next.cursor
@@ -340,6 +350,7 @@ export function useTimelineSession(
         if (cancelled) return
         setWaitingForRecord(false)
         setError(null)
+        olderGeneration.current++
         setTimeline((current) => applySnapshot(current, snapshot))
         cursorRef.current = snapshot.cursor
         readyRef.current = true
@@ -420,17 +431,33 @@ export function useTimelineSession(
    * 被分叉掉，下标会指到另一轮上去）。翻不动了由宿主报 hasOlder=false，界面据此收起入口。
    */
   const loadOlder = useCallback(async () => {
-    if (!deviceId || !sessionId) return
-    const oldest = timelineRef.current.turns[0]
-    if (!oldest || !timelineRef.current.hasOlder) return
-    try {
-      const older = await client.fetchOlder(deviceId, sessionId, oldest.id)
-      setTimeline((current) => prependOlder(current, older))
-    } catch (err) {
-      // 翻页失败不动手里那份：屏幕上那段仍然是真的。
-      setActionError(describe(err))
-    }
-  }, [client, deviceId, sessionId])
+    if (!deviceId || !sessionId || !enabled) return
+    const pinned = timelineRef.current
+    const target = olderTimelineTarget(pinned)
+    if (!target) return
+    const generation = olderGeneration.current
+    const identity = olderIdentityRef.current
+    if (olderRequest.current?.identity === identity && olderRequest.current.generation === generation) return olderRequest.current.promise
+    const reading = (async () => {
+      try {
+        const older = target.cursor
+          ? await client.fetchOlder(deviceId, sessionId, '', undefined, target.cursor)
+          : await client.fetchOlder(deviceId, sessionId, target.beforeTurnId)
+        if (generation !== olderGeneration.current || identity !== olderIdentityRef.current) return
+        setTimeline(current => {
+          if (generation !== olderGeneration.current || identity !== olderIdentityRef.current) return current
+          // An After/reset that overtook this request owns the newer window facts.
+          if (current.cursor?.epoch !== pinned.cursor?.epoch || current.cursor?.seq !== pinned.cursor?.seq
+            || current.sourceLineage !== pinned.sourceLineage || current.snapshotRevision !== pinned.snapshotRevision) return current
+          return prependOlder(current, older)
+        })
+      } catch (err) {
+        if (generation === olderGeneration.current && identity === olderIdentityRef.current) setActionError(describe(err))
+      }
+    })()
+    olderRequest.current = { identity, generation, promise: reading }
+    try { await reading } finally { if (olderRequest.current?.promise === reading) olderRequest.current = null }
+  }, [client, deviceId, sessionId, enabled])
 
   /**
    * 一张工具图去机器上取一次:取到的写回条目,和时间线一起存在手机上(timeline-cache),重开不重取。
