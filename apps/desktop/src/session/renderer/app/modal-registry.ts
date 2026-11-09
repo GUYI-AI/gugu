@@ -3,6 +3,7 @@ import { GlobalSearchModal } from '@renderer/features/global-search/global-searc
 import { KeyboardShortcutsCheatSheet } from '@renderer/features/settings/components/keyboard-shortcuts-cheat-sheet'
 import { IntegrationSetupModal } from '@renderer/features/integrations/integration-setup-modal'
 import { PromptModal } from '@renderer/features/library/prompts/prompt-modal'
+import { ThemeImportModal } from '@renderer/features/library/themes/theme-import-modal'
 import { McpServerModal } from '@renderer/features/mcp/components/mcp-server-modal'
 import { RenameSessionModal } from '@renderer/features/sessions/rename-session-modal'
 import { CreateProjectNameModal } from '@renderer/features/projects/components/create-project-name-modal'
@@ -31,6 +32,7 @@ export const modalRegistry = {
   openWithChooserModal: createModal(OpenWithChooser, { size: 'sm' }),
   unsavedChangesModal: createModal(UnsavedChangesDialog, { size: 'xs' }),
   promptModal: createModal(PromptModal, { size: 'lg' }),
+  themeImportModal: createModal(ThemeImportModal, { size: 'sm' }),
   mcpServerModal: createModal(McpServerModal, { size: 'lg' }),
   createPrModal: createModal(CreatePrModal, { size: 'md' }),
   renameSessionModal: createModal(RenameSessionModal, { size: 'xs' }),

@@ -28,6 +28,7 @@ export type ChatSummary = {
 const KEY = '__GUGU_CHAT_SUMMARIES__'
 const EVENT = 'gugu:chat-summaries'
 const NAMES_EVENT = 'gugu:chat-names'
+const NAMES_VERSION_KEY = '__GUGU_CHAT_NAMES_VERSION__'
 
 type Summaries = ReadonlyMap<string, ChatSummary>
 type SummarySource = {
@@ -60,7 +61,15 @@ export function publishChatSummaries<T extends SummarySource>(chats: readonly T[
   })
   ;(window as unknown as Record<string, unknown>)[KEY] = next
   window.dispatchEvent(new Event(EVENT))
-  if (namesChanged) window.dispatchEvent(new Event(NAMES_EVENT))
+  if (namesChanged) {
+    (window as unknown as Record<string, unknown>)[NAMES_VERSION_KEY] = chatNamesVersion() + 1
+    window.dispatchEvent(new Event(NAMES_EVENT))
+  }
+}
+
+/** Changes with what `subscribeChatNames` announces, for a render that reads names as it draws. On window, as the summaries are. */
+export function chatNamesVersion(): number {
+  return ((window as unknown as Record<string, unknown>)[NAMES_VERSION_KEY] as number | undefined) ?? 0
 }
 
 function read(): Summaries | null {
@@ -115,6 +124,11 @@ export function useChatSummaries(): Summaries {
 }
 
 const NO_SUMMARIES: Summaries = new Map()
+
+/** 只订阅从摘要里算出来的一个值(select 要返回原始值或稳定引用):值不变,别的对话来消息也不重渲。 */
+export function useChatSummariesSelect<T>(select: (summaries: Summaries) => T): T {
+  return useSyncExternalStore(subscribeChatSummaries, () => select(read() ?? NO_SUMMARIES), () => select(NO_SUMMARIES))
+}
 
 export type ContactSummary = { id: string; name: string }
 const CONTACT_KEY = '__GUGU_CONTACT_SUMMARIES__'

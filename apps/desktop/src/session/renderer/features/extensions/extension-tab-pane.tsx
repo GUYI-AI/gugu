@@ -1,6 +1,6 @@
 import { ExtensionGuestBinding, type ExtensionGuestTarget } from './extension-guest-binding';
-import { projectWorkspace, sessionWorkspace } from '@shared/extensions/app-runtime-protocol';
-import { useTaskConversation } from '@/lib/taskConversation';
+import { projectWorkspace, sessionWorkspace, WORKSPACE_APP_ID } from '@shared/extensions/app-runtime-protocol';
+import { useTaskConversation, useTaskProjectChat } from '@/lib/taskConversation';
 import { useCallback, useMemo, useContext, useEffect, useRef, useState } from 'react';
 import { TabLayerShownContext } from '@renderer/features/tabs/retained-tab-content';
 import { PageShownContext } from '@renderer/app/recent-session-pages';
@@ -42,6 +42,7 @@ export function ExtensionTabPane({
   viewState,
   navigation,
   filePath,
+  byHost,
   projectId,
   chatId,
   resourceChat,
@@ -62,6 +63,8 @@ export function ExtensionTabPane({
    * never the surface.
    */
   filePath?: string;
+  /** `filePath` was opened by the host for an agent or an App (`open_in_tab`, `files.openWith`), not by the person. */
+  byHost?: boolean;
   /** G1 With `filePath` and no session: the project whose folder the file is in (a page opened beside another). */
   projectId?: string;
   /** Drawn for a chat (a chat's tab in a window of its own), and the chat file it was opened for. */
@@ -72,11 +75,12 @@ export function ExtensionTabPane({
   const { translate } = useSessionMessages();
   // Where it is (`AppWhere`): a chat's tab is in that chat, a session's in the person's private chat with its agent.
   const taskConversation = useTaskConversation(chatId ? null : sessionId);
+  const taskProjectChat = useTaskProjectChat(!chatId && extensionId === WORKSPACE_APP_ID ? sessionId : null);
   // Read when it binds (a ref: the chat list coming in later must not re-attach the webview).
   const conversationRef = useRef<string | null>(null);
-  conversationRef.current = chatId ?? taskConversation;
+  conversationRef.current = chatId ?? taskConversation ?? taskProjectChat;
   const resourceChatRef = useRef(resourceChat);
-  resourceChatRef.current = resourceChat;
+  resourceChatRef.current = resourceChat ?? taskProjectChat ?? undefined;
   const workspace = sessionId ? sessionWorkspace(sessionId) : projectId && filePath ? projectWorkspace(projectId) : null;
   const [surface, setSurface] = useState<ExtensionSurface | null>(null);
   const [failure, setFailure] = useState<SurfaceFailure | null>(null);
@@ -188,7 +192,7 @@ export function ExtensionTabPane({
     retarget: (webContentsId, target) => rpc.extensions.retargetSurface({ webContentsId, ...target }),
   }), [extensionId, tabKind]);
   const targetRef = useRef<ExtensionGuestTarget>({ tabId, workspace, conversation: conversationRef.current });
-  targetRef.current = { workspace, conversation: conversationRef.current, resourceChat: resourceChatRef.current, tabId, itemId, filePath, viewState, navigation };
+  targetRef.current = { workspace, conversation: conversationRef.current, resourceChat: resourceChatRef.current, tabId, itemId, filePath, ...(byHost ? { byHost } : {}), viewState, navigation };
   // @@@one-guest-many-tabs - Tabs of one kind share this pane and its webview, so another tab is a retarget of the live
   // guest. Nothing the webview's ref depends on may change with the tab: a new ref forgets the guest, and dom-ready, the
   // only thing that hands it back, does not fire again on a page already loaded.
@@ -200,7 +204,7 @@ export function ExtensionTabPane({
     if (result?.success) extensionSurfaceStore.setWebContentsId(slotRef.current.sessionId, slotRef.current.tabId, result.webContentsId);
     return result;
   }, [guestBinding]);
-  useEffect(() => { void aim().catch((error: unknown) => log.warn('Extension surface binding failed:', error)); }, [aim, sessionId, tabId, filePath, itemId, viewState, navigation?.canBack, navigation?.canForward, navigation?.backToConversation]);
+  useEffect(() => { void aim().catch((error: unknown) => log.warn('Extension surface binding failed:', error)); }, [aim, sessionId, tabId, chatId, taskConversation, resourceChat, taskProjectChat, filePath, itemId, viewState, navigation?.canBack, navigation?.canForward, navigation?.backToConversation]);
 
   const attachWebview = useCallback(
     (element: BrowserWebviewElement | null) => {

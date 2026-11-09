@@ -140,17 +140,23 @@ test('read-only capability has no Move action and does not read the folder for i
   expect(gugu.files.list).not.toHaveBeenCalled()
 })
 
-test('the list entry retains its already-loaded folder tree and original move verb', async () => {
+test('the list entry reads every folder once for its targets (the list holds only the folders opened) and keeps its move verb', async () => {
   const entry = documents.get(context.file!.id)!.entry
   const listed = folders()
   gugu.files.list.mockResolvedValue(listed)
   await show({ ...context, file: undefined })
   await vi.waitFor(() => expect(document.querySelector(`[data-id="${entry.id}"]`), $('doc-message').textContent ?? 'document message').not.toBeNull())
   const reads = gugu.files.list.mock.calls.length
-  document.querySelector(`[data-id="${entry.id}"]`)!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
-  offered().find((button) => button.textContent === 'Move to…')!.click()
-  expect(targets().map((button) => button.textContent)).toContain('Target A')
-  expect(gugu.files.list).toHaveBeenCalledTimes(reads)
+  const moveFromList = async () => {
+    document.querySelector(`[data-id="${entry.id}"]`)!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    offered().find((button) => button.textContent === 'Move to…')!.click()
+    await vi.waitFor(() => expect(targets().map((button) => button.textContent)).toContain('Target A'))
+  }
+  await moveFromList()
+  expect(gugu.files.list.mock.calls.slice(reads)).toEqual([[{ chat: entry.chat }]])
+  close()
+  await moveFromList()
+  expect(gugu.files.list, 'read once: the second 「移动到…」 uses it').toHaveBeenCalledTimes(reads + 1)
   targets().find((button) => button.textContent === 'Target A')!.click()
   await vi.waitFor(() => expect(gugu.files.move).toHaveBeenCalledWith(entry, { folder: 'target-a' }))
 })

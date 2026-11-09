@@ -64,6 +64,10 @@ export interface ActionDef {
   confirmsItself?: true
   /** 不要系统授权也能做成(读授权状态这类):它做成了 ≠ 系统授权回来了,❌ 据此清掉「系统没给权限」。 */
   succeedsWithoutPermission?: true
+  /** This action uses a different OS permission from its group's legacy actions; cache its status separately. */
+  osPermissionScope?: 'action'
+  /** A single-picture result keeps data.width/height in sync with transport resizing; an omitted image is a failure. */
+  singlePictureResult?: true
   /**
    * 这台电脑做不了它时说为什么(缺咕咕没带的组件、缺用户该装的工具……);回 null = 做得了。
    * 做不了的照样登记(动作表在各平台保持完整),但标 unsupported、调不了 —— ❌ 登记一个一调就失败的动作冒充能用。
@@ -95,7 +99,7 @@ export interface FamilyDeps {
   /** 把一张图缩到长边 maxEdge、转 JPEG(Electron nativeImage);结果里的大图过设备频道前用它压。 */
   shrinkImage?(image: { mimeType: string; data: string }, options: { maxEdge: number; quality: number }): Promise<{ mimeType: string; data: string; width: number; height: number }>
   sampleImage?(base64: string): Uint8Array
-  /** 截整块屏幕(Electron desktopCapturer;macOS 要「屏幕录制」权限)。 */
+  /** 截主屏(Electron desktopCapturer,screen-capture.ts;macOS 要「屏幕录制」权限)。screen.get 用,不经过 Computer Use。 */
   captureScreen?(options: { maxEdge: number }): Promise<{ mimeType: string; data: string; width: number; height: number; displays: number }>
   jxa: typeof runJxa
   exec(file: string, args: readonly string[], options?: { signal?: AbortSignal; timeoutMs?: number; input?: string; cwd?: string; env?: Record<string, string>; maxBuffer?: number }): Promise<ExecResult>
@@ -105,6 +109,14 @@ export interface FamilyDeps {
   selfApp?(): SelfApp
   /** 电脑控制的「正在操作 · 停止」小条与人接管(computer-control.ts)。 */
   computerControl?: ComputerControlHooks
+  /** 咕咕自己的资源监视器读数(perf.*):和设置页同一份记录、同一层投影;监视器关着时抛 ResourceMonitorOffError。 */
+  perf?: PerfReadings
+}
+
+export interface PerfReadings {
+  snapshot(): unknown
+  history(since: number, until: number): unknown
+  capture(seconds: number): Promise<unknown>
 }
 
 /** 咕咕自己:电脑控制不许 agent 操作它。 */

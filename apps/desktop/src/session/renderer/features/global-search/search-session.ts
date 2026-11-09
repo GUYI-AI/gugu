@@ -68,14 +68,21 @@ export function reopenGlobalSearch(): void {
 
 const RECENT_KEY = 'gugu.globalSearch.recent'
 const RECENT_MAX = 5
-/** 「最近在这里搜过」: the last words searched with this conversation in scope, newest first (this device only). */
-export function recentSearches(chatId: string): string[] {
+/** Where recent words are kept: one conversation (「最近在这里搜过」), or EVERYWHERE for a search with none in scope. */
+export const EVERYWHERE = '*'
+/** The last words searched in this scope whose result was opened, newest first (this device only). */
+export function recentSearches(scope: string): string[] {
   const all = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '{}') as Record<string, string[]>
-  return all[chatId] ?? []
+  return all[scope] ?? []
 }
-export function rememberSearch(chatId: string, text: string): void {
+export function rememberSearch(scope: string, text: string): void {
   const all = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '{}') as Record<string, string[]>
-  all[chatId] = [text, ...(all[chatId] ?? []).filter((old) => old !== text)].slice(0, RECENT_MAX)
+  all[scope] = [text, ...(all[scope] ?? []).filter((old) => old !== text)].slice(0, RECENT_MAX)
+  localStorage.setItem(RECENT_KEY, JSON.stringify(all))
+}
+export function forgetSearches(scope: string): void {
+  const all = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '{}') as Record<string, string[]>
+  delete all[scope]
   localStorage.setItem(RECENT_KEY, JSON.stringify(all))
 }
 

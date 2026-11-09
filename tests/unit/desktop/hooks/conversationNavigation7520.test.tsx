@@ -31,7 +31,7 @@ const chats = [{ id: assistantChat, peer_user_id: 'assistant' }, { id: taskChat,
 const openChat = vi.fn(), openAssistant = vi.fn(), openFile = vi.fn(), openApp = vi.fn(), openOwnApp = vi.fn(), openProject = vi.fn()
 let root: Root, container: HTMLDivElement
 function Hook({ owner = 'owner' }: { owner?: string }) {
-  useLinkNavigation({ ownerId: owner, chats, contacts: [{ id: 'task', type: 'agent', owner_user_id: 'owner' }] as never, openChat, openAssistant, openFile, openApp, openOwnApp, openProject })
+  useLinkNavigation({ ownerId: owner, chats: () => chats, contacts: () => [{ id: 'task', type: 'agent', owner_user_id: 'owner' }] as never, openChat, openAssistant, openFile, openApp, openOwnApp, openProject })
   return null
 }
 function request(target: GuguLinkTarget) {

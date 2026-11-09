@@ -1,14 +1,16 @@
 {
   "id": "workspace",
-  "name": "文件夹",
+  "name": "文件",
   "defaultLocale": "zh-CN",
-  "subtitle": "共享文件：Markdown、JSON 预览与编辑",
+  "subtitle": "聊天文件与电脑文件：Markdown、JSON 预览与编辑",
   "localized": {
-    "en": { "name": "Folder", "subtitle": "Shared Markdown and JSON files", "tabs": { "main": { "title": "Folder" }, "file": { "title": "Folder" } } }
+    "en": { "name": "Files", "subtitle": "Chat and computer files", "tabs": { "main": { "title": "Files" }, "file": { "title": "Files" } },
+      "prompts": { "tidy-folder": { "title": "Tidy up the chat folder", "prompt": "Please tidy up this chat's folder: list every file with workspace__list, propose a new subfolder structure by topic (at most 6 subfolders), and point out duplicate, outdated or unclearly named files with one reason each. Send me the plan first; move or rename only after I agree, and do not delete any file." } }
+    }
   },
   "author": "咕咕",
-  "version": "0.2.74",
-  "apiVersion": 30,
+  "version": "0.2.75",
+  "apiVersion": 34,
   "platforms": ["desktop", "phone"],
   "entry": "index.html",
   "icon": "icon.png",
@@ -19,20 +21,23 @@
     "tabs": [
       {
         "name": "main",
-        "title": "文件夹",
+        "title": "文件",
         "icon": "icon.png",
         "sideWidth": 480
       },
       {
         "name": "file",
-        "title": "文件夹",
+        "title": "文件",
         "icon": "icon.png",
-        "opensFiles": { "chat": [".md", ".json"], "session": ["*"] },
+        "opensFiles": { "chat": [".md", ".json", ".txt"], "session": ["*"] },
         "fileIcons": { ".md": "md.png", ".json": "json.png" },
         "sideWidth": 480
       }
     ],
     "mcpServers": [{ "tools": "tools.js" }],
-    "instructions": "Conversation folders: workspace__list(chat_id), create(chat_id,title,content), read/delete(item_id), edit(item_id,old,new). Edits merge live."
+    "prompts": [
+      { "name": "tidy-folder", "title": "群文件整理", "prompt": "请整理本群文件夹：先用 workspace__list 列出全部文件，按主题提出新的子文件夹结构（不超过 6 个），指出重复、过期、命名不清的文件，各给一句理由。先把方案发给我确认，我同意后再移动或改名，不要删除任何文件。" }
+    ],
+    "instructions": "Chat files: workspace__list(chat_id), create(chat_id,title,content), read/delete(item_id), edit(item_id,old,new). Edits merge live."
   }
 }

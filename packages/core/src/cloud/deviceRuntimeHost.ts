@@ -290,6 +290,11 @@ async function writeDeviceRuntimeOwner(ownerUserId: string, env: NodeJS.ProcessE
   )
 }
 
+/** 相邻两次心跳成功落库的间隔超过它就告警(正常 30 s 一拍,允许丢一拍)。 */
+const HEARTBEAT_LANDED_GAP_WARN_MS = 60_000
+/** 心跳定时器比预定晚到超过它就告警(事件循环被堵)。 */
+const HEARTBEAT_TIMER_LAG_WARN_MS = 5_000
+
 export function createDeviceRuntimeHostLoop(
   options: DeviceRuntimeHostOptions
 ): DeviceRuntimeHost {
@@ -362,6 +367,10 @@ export function createDeviceRuntimeHostLoop(
   const heartbeatFlights = new Map<string, Promise<void>>()
   const publishedCapabilities = new Map<string, string>()
   let lastHeartbeatAt: number | null = null
+  // 心跳诊断(只记日志,不改行为):上一次心跳**成功落库**的时刻,和心跳定时器下一拍该在何时触发。
+  // 用来区分「进程卡住(定时器晚到)」「心跳没发出 / 没写成(两次落库间隔过长)」「写被吞(0 行,见 syncDeviceHeartbeat)」。
+  let lastHeartbeatLandedAt: number | null = null
+  let heartbeatTimerDueAt: number | null = null
   // @@@5912 上一次实例租约续成功的时刻(**不分是哪条腿续的**)。tick 据此跳过自己那一次续租。
   let lastLeaseRenewAt: number | null = null
   // @@@5912 上一次跑 legacy / 陈旧行清理的时刻。换 owner 要重来 —— 那是另一批行。
@@ -494,6 +503,7 @@ export function createDeviceRuntimeHostLoop(
       lastActivityReconcileAt = null
       lastOrphanRecoveryAt = null
       lastHeartbeatAt = null
+      lastHeartbeatLandedAt = null
       lastLeaseRenewAt = null
       lastLegacyCleanupAt = null
       lastDeviceId = null
@@ -573,6 +583,16 @@ export function createDeviceRuntimeHostLoop(
   let deviceRemovedNotified = false
   let machineLimitWarned = false
 
+  function noteHeartbeatLanded(): void {
+    const at = nowMs()
+    if (lastHeartbeatLandedAt !== null && at - lastHeartbeatLandedAt > HEARTBEAT_LANDED_GAP_WARN_MS) {
+      options.warn?.(
+        `[device-runtime] heartbeat landed ${at - lastHeartbeatLandedAt} ms after the previous landed heartbeat (interval ${heartbeatIntervalMs} ms)`,
+      )
+    }
+    lastHeartbeatLandedAt = at
+  }
+
   function writeHeartbeatSingleFlight(
     client: DeviceHeartbeatTableClient,
     heartbeatOptions: DeviceHeartbeatOptions,
@@ -580,7 +600,7 @@ export function createDeviceRuntimeHostLoop(
   ): Promise<void> {
     const active = heartbeatFlights.get(heartbeatOptions.userId)
     if (active) return active
-    const flight = syncDeviceHeartbeat(client, heartbeatOptions, heartbeatEnv, publishedCapabilities).catch((error: unknown) => {
+    const flight = syncDeviceHeartbeat(client, heartbeatOptions, heartbeatEnv, publishedCapabilities).then(noteHeartbeatLanded).catch((error: unknown) => {
       // #6264 这台机器已被账号主人在「设置 → 设备」里移除:库拒收它的心跳(DEVICE_REMOVED)。
       // 只通知一次,由宿主决定怎么收场(server 退出这个账号的登录)。错误照旧抛出,心跳本身按失败处理。
       if (!deviceRemovedNotified && isDeviceRemovedError(error)) {
@@ -1289,7 +1309,15 @@ export function createDeviceRuntimeHostLoop(
       if (scheduledTasksPlanned) scheduleScheduledTasksRun()
     }, superviseIntervalMs)
     scheduleWorkTick()
+    heartbeatTimerDueAt = nowMs() + heartbeatIntervalMs
     heartbeatTimer = setInterval(() => {
+      // 诊断:定时器实际触发比预定晚多少 ≈ 事件循环被堵了多久。
+      const at = nowMs()
+      const lagMs = heartbeatTimerDueAt === null ? 0 : at - heartbeatTimerDueAt
+      heartbeatTimerDueAt = at + heartbeatIntervalMs
+      if (lagMs > HEARTBEAT_TIMER_LAG_WARN_MS) {
+        options.warn?.(`[device-runtime] heartbeat timer fired ${lagMs} ms late (event loop lag; interval ${heartbeatIntervalMs} ms)`)
+      }
       scheduleLeaseRenewal()
       scheduleHeartbeat()
     }, heartbeatIntervalMs)
@@ -1442,6 +1470,8 @@ export function createDeviceRuntimeHostLoop(
     queueBelievedEmpty = false
     if (heartbeatTimer !== null) clearInterval(heartbeatTimer)
     heartbeatTimer = null
+    heartbeatTimerDueAt = null
+    lastHeartbeatLandedAt = null
     if (activityTimer !== null) clearInterval(activityTimer)
     activityTimer = null
     unsubscribeAgentTurnState?.()

@@ -102,7 +102,7 @@ export default {
     "denied": "Allow microphone access in Settings",
     "permissions": "Manage permissions",
     "openSettings": "Open System Settings",
-    "deniedPhone": "Microphone is off. Manage it in My → Permissions.",
+    "deniedPhone": "Microphone is off. Manage it in Me → Device control.",
     "missing": "No microphone found. Connect one and try again.",
     "failed": "Couldn't start recording. Try again.",
     "interrupted": "Recording was interrupted. What was recorded will still be processed.",

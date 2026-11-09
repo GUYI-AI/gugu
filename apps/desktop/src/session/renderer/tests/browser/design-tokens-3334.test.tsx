@@ -29,7 +29,7 @@ const BRIDGE: Array<[string, keyof CSSStyleDeclaration, string, string]> = [
   ['bg-secondary', 'backgroundColor', '--background-2', '--muted'],
   ['bg-muted', 'backgroundColor', '--background-2', '--muted'],
   ['bg-accent', 'backgroundColor', '--background-quaternary-1', '--hover'],
-  ['bg-destructive', 'backgroundColor', '--red-9', '--danger'],
+  ['bg-destructive', 'backgroundColor', '--danger', '--danger'],
   ['text-foreground', 'color', '--foreground', '--fg'],
   ['text-card-foreground', 'color', '--foreground', '--text-primary'],
   ['text-popover-foreground', 'color', '--foreground', '--text-primary'],

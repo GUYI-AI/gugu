@@ -338,7 +338,7 @@ export const antigravitySessionBundleDescriptor = {
   /**
    * 关自更新(#6186)—— 终端腿的 `agy` 会自己检查并装新版(官方 docs/cli/troubleshooting.md
    * 「Opt-out/Disable auto-updates: Set the `AGY_CLI_DISABLE_AUTO_UPDATE` environment variable to `true`」)。
-   * 走 env:两条腿都拿得到(`selfUpdateEnv` 进同一份 run context),`agy_acp_server` 不认它、多带无害。
+   * 走 env:两条腿都拿得到(`pinnedEnv` 进同一份 run context),`agy_acp_server` 不认它、多带无害。
    * 不关的话它会把托管装好的那份换掉,「面板显示哪一份就启动哪一份」随之不成立。
    */
   selfUpdate: {

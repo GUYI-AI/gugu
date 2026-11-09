@@ -18,7 +18,7 @@ it.each([10, 100, 1000])('merges native messages for one changed row among %i ag
   const sessions: SessionpageSessionSummary[] = Array.from({ length: size }, (_, index) => ({
     conversationId: `s${index}`, projectId: 'project', title: `S${index}`, harness: 'codex', runtime: 'acp', agentStatus: 'idle',
     lastInteractedAt: '2026-11-06T12:00:00Z', supported: true, agent: { userId: `agent${index}` },
-    get nativeLastMessage() { reads.push(`agent${index}`); return { text: `reply${index}`, at: '2026-11-06T12:00:00Z' } },
+    get nativeLastMessage() { reads.push(`agent${index}`); return { activityVersion: 1 as const, activity: null, text: `reply${index}`, at: '2026-11-06T12:00:00Z' } },
   }))
   release = installOwnedAgentEntry({ owns: () => true, open: () => true })
   publishDirectoryDevices([device('host', [])])
@@ -37,7 +37,7 @@ it.each([10, 100, 1000])('merges native messages for one changed row among %i ag
   expect(projected[0]!.last_message_preview).toBe('reply0')
   expect(projected[1]).toBe(held[1])
   reads.length = 0
-  await act(async () => updateDeviceSessions('host', { sessions: [{ ...sessions[0]!, nativeLastMessage: { text: 'updated', at: '2026-11-06T13:00:00Z' } }, ...sessions.slice(1)] }))
+  await act(async () => updateDeviceSessions('host', { sessions: [{ ...sessions[0]!, nativeLastMessage: { activityVersion: 1, activity: null, text: 'updated', at: '2026-11-06T13:00:00Z' } }, ...sessions.slice(1)] }))
   expect(projected[0]!.last_message_preview).toBe('updated')
   expect(reads.every(id => id === 'agent0')).toBe(true)
   await act(async () => { release?.(); release = installOwnedAgentEntry({ owns: () => false, open: () => false }) })

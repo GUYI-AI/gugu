@@ -566,7 +566,7 @@ function validateMessageValue(value: unknown, row: Record<string, unknown>): voi
     || (value.reply_to_message_id !== null && typeof value.reply_to_message_id !== 'string')
     || (value.retracted_at !== null && typeof value.retracted_at !== 'string')
     || typeof value.created_at !== 'string'
-    || !Array.isArray(value.reactions) || !value.reactions.every(isReaction)
+    || (value.reactions !== undefined && (!Array.isArray(value.reactions) || !value.reactions.every(isReaction)))
     || typeof value.is_mine !== 'boolean' || typeof value.delivered !== 'boolean'
     || (value.delivery_status !== null && !['delivered', 'read'].includes(String(value.delivery_status)))) throw new Error('message shape')
   const root = optionalString(value.thread_root_id, 'message.thread_root_id')
