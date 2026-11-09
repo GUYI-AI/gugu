@@ -142,7 +142,7 @@ async function resolveAcpRegistryDistribution(
   const executable = acpRegistryExecutable(binary.cmd);
   // `args` 是这一格启动命令的一部分(FORMAT.md),❌ 丢掉:antigravity-acp 1.2.1 给 Linux 写了 `--uid=`,
   // 不带它进程要切到 `nobody` 组,Ubuntu 上没有这个组(那里叫 nogroup)⇒ `Check failed … Group nobody not found` 后 abort。
-  const args = binary.args ?? [];
+  const args = target.backend.registryArgs === 'omit' ? [] : binary.args ?? [];
   if (!Array.isArray(args) || !args.every((arg) => typeof arg === 'string')) throw new Error('ACP registry args must be a string array');
   // sha256 在 FORMAT.md 里是可选的(antigravity-acp 1.1.1 就没给);给了就必须是 64 位十六进制并交给 mise 校验。
   let checksum: string | undefined;

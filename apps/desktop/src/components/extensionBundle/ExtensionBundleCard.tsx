@@ -21,6 +21,8 @@ import { remoteHostsStore } from '@/session/renderer/features/remote-hosts/remot
 import { alsoOnMachines, INSTALL_CONSENT_HUMAN_WINDOW_MS, type InstallAlsoOnMachine } from '@shared/extensions/host-actions'
 import { answered, installAgreedOn, InstallRefusedError } from '@/session/shared/extensions/install-agreed-on'
 import { rendererLogger } from '../../lib/log'
+import { useTheme } from '../../store/theme'
+import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
 import { appsHere } from '../appSlot/appsHere'
 import { openApp } from '../appSlot/useOpenApp'
 import { Button } from '../ui/Button'
@@ -62,13 +64,14 @@ function useInstalled(id: string | undefined): { version: string; origin: Extens
  */
 const InstallTarget = observer(function InstallTarget({ selectedId, onSelect }: { selectedId: string; onSelect: (id: string) => void }) {
   useEffect(() => remoteHostsStore.start(), [])
+  const { theme } = useTheme()
   const hosts = [...remoteHostsStore.hosts.values()]
   if (hosts.length === 0) return null
   const machines = deviceScopeTrayDevices(
     translateSessionMessage('task.deviceLocal'),
     hosts.map(({ device }) => ({ device, connection: remoteHostsStore.connectionState(device.id) })),
   )
-  return <MachinePicker machines={machines} selectedId={selectedId} onSelect={onSelect} size="compact" side="bottom" testId="extension-bundle-card-machine" />
+  return <SessionUiTheme theme={theme}><MachinePicker machines={machines} selectedId={selectedId} onSelect={onSelect} size="compact" side="bottom" testId="extension-bundle-card-machine" /></SessionUiTheme>
 })
 
 /**

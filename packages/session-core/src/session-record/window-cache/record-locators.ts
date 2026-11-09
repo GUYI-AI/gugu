@@ -64,5 +64,6 @@ export async function advanceReverseIndexTask(directory: string, job: JobKey, so
   const result = await stepReverseIndex(source, checkpoint, budget, signal);
   signal?.throwIfAborted();
   if (result.kind !== 'reset') await saveReverseIndexTask(directory, job, result);
+  signal?.throwIfAborted();
   return result;
 }

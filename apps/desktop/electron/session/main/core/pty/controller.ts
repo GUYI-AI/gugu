@@ -14,6 +14,7 @@ import {
   persistDroppedBlobBytes,
 } from './persist-dropped-blob';
 import { buildTerminalEnv } from './pty-env';
+import type { TerminalReportColors } from './pty-screen';
 import { ptySessionRegistry } from './pty-session-registry';
 import { resolveLocalPtySpawn } from './pty-spawn-platform';
 import { getTerminalColorEnv } from './terminal-color-scheme';
@@ -22,6 +23,9 @@ import { writeTerminalInput } from './terminal-input';
 void cleanupExpiredDroppedBlobs().catch((error) => {
   log.warn('pty:cleanupExpiredDroppedBlobs failed', { error });
 });
+
+/** `#rrggbb`,可带 alpha(cssColorToHex 的输出)。 */
+const HEX_COLOR = /^#[0-9a-f]{6}([0-9a-f]{2})?$/i;
 
 /** 临时 shell 起的网格;窗格量好之后渲染层照常发 resize。 */
 const SCRATCH_SIZE = { cols: 80, rows: 24 };
@@ -171,6 +175,18 @@ export const ptyController = createRPCController({
   resize: (ptySessionId: string, cols: number, rows: number) => {
     const resized = ptySessionRegistry.resize(ptySessionId, cols, rows);
     if (!resized) return err({ type: 'not_found' as const });
+    return ok();
+  },
+
+  /**
+   * The app theme's default terminal colors. The main-process screen answers OSC 10/11 color
+   * queries with them for every session (pty-screen.ts @@@color-report).
+   */
+  setReportColors: (colors: TerminalReportColors) => {
+    if (!HEX_COLOR.test(colors.foreground) || !HEX_COLOR.test(colors.background)) {
+      return err({ type: 'invalid_color' as const, message: `expected #rrggbb, got ${colors.foreground} / ${colors.background}` });
+    }
+    ptySessionRegistry.setReportColors(colors);
     return ok();
   },
 

@@ -40,6 +40,7 @@ vi.mock('@main/core/extensions/extensions-root', () => ({ extensionsService: () 
 vi.mock('@main/core/extensions/account-token', () => ({ currentAccountAccessToken: vi.fn(), resolveAccountFile: vi.fn(), publishAccountFile: vi.fn() }));
 vi.mock('@main/core/extensions/file-sync', () => ({ fileSync: {}, localFileService: { removed() {}, renamed() {} }, fileServiceUrl: vi.fn() }));
 vi.mock('@main/core/extensions/extension-icon', () => ({ renderExtensionIcon: vi.fn() }));
+vi.mock('@main/core/sessions/session-family', () => ({ otherMachines: () => ({ isThisDevice: async (id: string) => id === 'dev-here' }) }));
 vi.mock('@main/core/extensions/app-programs-elsewhere', () => ({ sessionMachine: f.machine, callOnSessionMachine: f.remote }));
 vi.mock('@main/core/extensions/extension-agent-context', () => ({ agentSessionContext: async () => ({ workspaceRoot: f.root, projectId: 'p', workspaceId: 'w' }) }));
 vi.mock('@main/core/runtime/runtime-manager', () => ({ runtimeManager: { acquire: async () => ({ value: { git: { openWorktree: async () => { throw new Error('no git'); } } }, release: async () => undefined }) } }));
@@ -53,6 +54,7 @@ vi.mock('@main/core/workspaces/workspace-runtime', () => ({
   },
 }));
 
+const { BRIDGE_ERROR_CODES } = await import('@shared/extensions/bridge-protocol');
 const { removeAppFile, forwardTargets, downloadAppFile, entryPath, revealAppFile, listAppFiles, writeAppFileChunk, readAppFileText, openAppFileIn, openWithTarget, watchAppFile, watchAppFolder, FORWARD_MAX_BYTES } = await import('./app-files');
 const { events } = await import('@main/lib/events');
 const { appFileWatchElsewhereChannel, workingCopyMovedChannel } = await import('@shared/events/appEvents');
@@ -357,6 +359,37 @@ describe('listing', () => {
     await expect(listAppFiles(page(), { place: { workspace }, folder: 'vaultlink' })).rejects.toThrow(/outside this working copy/);
     await expect(listAppFiles(page(), { place: { workspace }, folder: 'outlink' })).rejects.toThrow(/outside this working copy/);
     await expect(listAppFiles(page(), { place: { workspace }, folder: 'inlink' })).resolves.toEqual([]);
+  });
+});
+
+describe('a project folder on another machine', () => {
+  const place = { workspace: 'folder:dev-b/w1' };
+  it('asks for all-machines before anything goes there', async () => {
+    f.capabilities.add('files:read');
+    await expect(listAppFiles(page(), { place })).rejects.toThrow(/files:read:all-machines/);
+    expect(f.remote).not.toHaveBeenCalled();
+  });
+  it('is listed on its machine', async () => {
+    f.capabilities.add('files:read').add('files:read:all-machines');
+    f.remote.mockResolvedValueOnce({ there: true, value: [] });
+    await expect(listAppFiles(page(), { place })).resolves.toEqual([]);
+    expect(f.remote.mock.calls[0]![1]).toEqual({ deviceId: 'dev-b' });
+  });
+  it('takes no write from here, whatever the page holds', async () => {
+    f.capabilities.add('files:read').add('files:read:all-machines').add('files:write');
+    f.remote.mockClear();
+    await expect(writeAppFileChunk(page(), { place, path: 'a.txt', offset: 0, data: '', done: true } as never)).rejects.toThrow(/read-only/);
+    expect(f.remote).not.toHaveBeenCalled();
+  });
+  it('opening one of its files says it is elsewhere, in a code the bridge keeps', async () => {
+    f.capabilities.add('files:read').add('files:read:all-machines');
+    await expect(openWithTarget(page(), { ref: { workspace: place.workspace, id: 'x.txt' } })).rejects.toMatchObject({ code: 'elsewhere' });
+    expect(BRIDGE_ERROR_CODES).toContain('elsewhere');
+  });
+  it('watching one of its files hears nothing, and fails nothing', async () => {
+    f.capabilities.add('files:read').add('files:read:all-machines');
+    const stop = await watchAppFile(page(), { workspace: place.workspace, id: 'x.txt' }, () => undefined);
+    expect(stop()).toBeUndefined();
   });
 });
 

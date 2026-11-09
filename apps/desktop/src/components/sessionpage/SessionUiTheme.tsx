@@ -20,8 +20,7 @@ const THEMED = '.emlight, .emdark'
  * page's values reached every shell element. The theme class moves to where these components are:
  *
  * - Content sits in a `display: contents` wrapper (layout unchanged). It carries the class only when nothing above
- *   it does. A chat drawn in the session page's mount inherits the mount's skin, which bridges the session palette
- *   to the shell's tokens; a class of its own there would re-declare the raw palette closer than the bridge.
+ *   it does: a chat drawn in the session page's mount inherits the mount's class.
  *   Elsewhere (the phone, shell pages, Settings) it carries the class `<html>` used to carry.
  * - Popups portal out of the wrapper and get a themed layer of their own. By default it is a `display: contents`
  *   layer where they already portaled to (the surface's declared layer, else `document.body`), so stacking is what

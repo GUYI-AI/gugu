@@ -68,6 +68,14 @@ describe('sessions on screen', () => {
     ]);
   });
 
+  it.each(['chat', 'project', 'screen'])('a session in a block stays on screen while focus is on the %s view beside it', (currentViewId) => {
+    // The route still remembers the last session: only the blocks count here, never that stale route.
+    setup({ currentViewId, sessionId: 'stale' }, ['a']);
+    expect(sessionsOnScreen()).toEqual(['a']);
+    expect(sessionPageOnScreen('a')).toBe(true);
+    expect(sessionPageOnScreen('stale')).toBe(false);
+  });
+
   it('off the session view, the blocks are not on screen; windows still are', () => {
     setup({ currentViewId: 'home', sessionId: 'a' }, ['a', 'c']);
     auxWindows.add({ kind: 'tab', projectId: 'p', sessionId: 'e', paneId: 'pane-2', home });

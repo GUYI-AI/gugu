@@ -49,13 +49,16 @@ export function MessageHoverRegion({ enabled, forceOpen, style, children, action
     const leave = () => setHovered('closed')
     const move = (event: PointerEvent) => {
       if (!elements.trigger?.contains(event.target as Node)) { setHovered('closed'); return }
+      if (event.buttons !== 0) return
       point.current = { x: event.clientX, y: event.clientY }
       setHovered(claimHoverOwner(id, false, elements, point.current) ? 'open' : 'waiting')
     }
     document?.addEventListener('pointermove', move)
+    document?.addEventListener('pointerup', move)
     trigger?.addEventListener('pointerleave', leave)
     return () => {
       document?.removeEventListener('pointermove', move)
+      document?.removeEventListener('pointerup', move)
       trigger?.removeEventListener('pointerleave', leave)
     }
   }, [hovered, id, elements])

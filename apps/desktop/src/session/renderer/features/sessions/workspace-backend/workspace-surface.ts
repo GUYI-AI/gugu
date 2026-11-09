@@ -36,7 +36,7 @@ export interface WorkspaceSurface {
   /** 开一个文件(路径条下拉里点了一个文件):与文件树点开同一条路。 */
   openFile(path: string): void;
   /** 新开一条终端并开成一格。 */
-  openTerminalAsTab(): Promise<void>;
+  openTerminalAsTab(shell?: undefined, askedIn?: string): Promise<void>;
   /** 浏览器起始页上推荐的本地开发服务地址。 */
   readonly previewServerUrls: readonly string[];
   /**

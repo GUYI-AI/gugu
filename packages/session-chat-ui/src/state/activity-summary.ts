@@ -27,6 +27,7 @@ export function activitySummary(group: AgentActivityGroup, t: ChatTranslator, na
   let text: string;
   if (!count) text = t('transcript.activitySending', { names: people('names', distinct(pending.flatMap(event => event.group ? [event.group] : event.actors))) });
   else if (!sent.length) text = t(count === 1 ? 'transcript.activityReceivedOne' : 'transcript.activityReceived', { names: people('names', from), count });
+  else if (!received.length && sent.every(event => event.toViewer)) text = t('transcript.activityReplyToYou', { names: people('names', groups, 'group') });
   else if (!received.length && groups.length && sent.every(event => event.group)) {
     text = t(count === 1 ? 'transcript.activityGroupSentOne' : 'transcript.activityGroupSent', { names: people('names', groups, 'group'), count });
   } else if (!received.length && !groups.length) text = t(count === 1 ? 'transcript.activitySentOne' : 'transcript.activitySent', { names: people('names', to), count });

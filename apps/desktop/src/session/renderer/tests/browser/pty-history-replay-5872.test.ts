@@ -129,23 +129,40 @@ describe('FrontendPty history replay (#5872)', () => {
 
     await pty.connect();
     expect(liveDataListener).toBeTypeOf('function');
-    liveDataListener?.('\x1b]10;?\x07');
-    await until('live OSC 10 reply sent', () => sentInputs().some((data) => data.includes(']10;rgb:')));
+    liveDataListener?.('\x1b[c');
+    await until('live DA1 reply sent', () => sentInputs().includes('\x1b[?1;2c'));
+  });
 
-    const sent = sentInputs();
-    expect(sent).toContain('\x1b]10;rgb:1717/1717/1717\x1b\\');
+  it('leaves color queries to the main-process screen and reports the app theme colors to it', async () => {
+    // @@@color-report: 这里再答一份 = 经 IPC、排在界面主线程上的迟到应答,会作为按键落进 TUI 输入框。
+    const { FrontendPty, applyThemeToAll } = await getPtyModule();
+    const pty = new FrontendPty('live-color-query');
+    mountVisible(pty);
+    expect(invoke).toHaveBeenCalledWith('pty.setReportColors', { foreground: '#171717', background: '#ffffff' });
+
+    await pty.connect();
+    liveDataListener?.('\x1b]10;?\x07\x1b]11;?\x1b\\\x1b[6n');
+    await until('live cursor-position reply sent after the color queries', () =>
+      sentInputs().some((data) => /^\x1b\[\d+;\d+R$/.test(data))
+    );
+    expect(sentInputs().some((data) => data.includes(']10;') || data.includes(']11;'))).toBe(false);
+
+    document.documentElement.style.setProperty('--xterm-bg', '#1f1f1f');
+    document.documentElement.style.setProperty('--xterm-fg', '#e5e5e5');
+    applyThemeToAll();
+    expect(invoke).toHaveBeenCalledWith('pty.setReportColors', { foreground: '#e5e5e5', background: '#1f1f1f' });
   });
 
   it('answers queries in the output that arrived while the snapshot was cut, not those in the snapshot', async () => {
     // `live` = 主进程要快照之后才到的输出(pty-screen.ts):是新输出,TUI 正等着回话;`buffer` 是旧画面。
-    subscribeData = { buffer: '\x1b]10;?\x07', live: '\x1b]11;?\x07', size: null };
+    subscribeData = { buffer: '\x1b[c', live: '\x1b[6n', size: null };
     const { FrontendPty } = await getPtyModule();
     const pty = new FrontendPty('snapshot-live-tail');
 
     await pty.connect();
-    await until('OSC 11 reply for the live tail', () => sentInputs().some((data) => data.includes(']11;rgb:')));
+    await until('CPR reply for the live tail', () => sentInputs().some((data) => /^\x1b\[\d+;\d+R$/.test(data)));
 
-    expect(sentInputs().some((data) => data.includes(']10;rgb:'))).toBe(false);
+    expect(sentInputs()).not.toContain('\x1b[?1;2c');
   });
 
   it('replays history on the grid the PTY drew it for', async () => {

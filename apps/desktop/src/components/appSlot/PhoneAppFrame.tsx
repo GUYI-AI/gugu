@@ -2,7 +2,7 @@ import { followLink, openLinkTarget } from '../../lib/guguLinks'
 import { reaction } from 'mobx'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { readMemberRosterRevision, readWorkspaceChanges } from '../../lib/accountRevisionCoordinator'
+import { readMemberRosterRevision, readRenamedMembers, readWorkspaceChanges } from '../../lib/accountRevisionCoordinator'
 import { extensionSurfaceStore } from '../../session/renderer/features/extensions/extension-surface-store'
 import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
 import {
@@ -22,6 +22,7 @@ import { phoneApps } from './phoneApps'
 import type { SessionpageOpenedFileChunk, SessionpageOpenedFileReadRequest } from '@gugu/session-core/session-record/contract'
 import { composeChatDraft } from '../../lib/composeDraft'
 import { peekStore } from '../../session/renderer/features/extensions/peek-store'
+import { Button } from '../ui/Button'
 import { useBackLayer } from '../ui/sheetStack'
 
 const OpenedFilePreview = lazy(() => import('../../mobile/agent-watch/opened-file-preview').then((m) => ({ default: m.OpenedFilePreview })))
@@ -230,6 +231,14 @@ export function PhoneAppFrame({
       if (changes.length > 0) hostRef.current?.membersChanged(changes)
     })
   }, [chatId, subscribeAccountRevision])
+  // A name or face is the person's, not a member row's: no chat_members_changed comes for it (`MemberChange.renamed`).
+  useEffect(() => {
+    if (!chatId) return undefined
+    return subscribeAccountRevision('agent_changed', (operations) => {
+      const renamed = readRenamedMembers(operations.map((operation) => operation.payload))
+      if (renamed.length > 0) hostRef.current?.membersChanged(renamed.map((memberId) => ({ memberId, left: false, renamed: true })))
+    })
+  }, [chatId, subscribeAccountRevision])
 
   // Uninstalled, or switched off (161 10-16: the phone has switches now) while its page was what was drawn here: said in
   // the sentence the desktop says it — not a blank page.
@@ -237,6 +246,9 @@ export function PhoneAppFrame({
     return (
       <div hidden={hidden} className="min-h-0 flex-1" data-testid={missingTestId}>
         <p className="!p-4 text-[length:var(--font-body)] text-[var(--text-secondary)]">{t('chatArea.openWith.unavailable')}</p>
+        <div className="!px-4">
+          <Button variant="secondary" data-testid="phone-app-missing-apps" onClick={() => void followLink({ kind: 'app-detail', extensionId })}>{t('chatArea.openWith.goToApps')}</Button>
+        </div>
       </div>
     )
   }

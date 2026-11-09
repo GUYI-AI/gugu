@@ -18,7 +18,7 @@ import {
   type SessionRecordSourceEvents
 } from '../contract';
 import { findUnder, isFile } from './find-file';
-import { locateImages, readRecordImage } from './record-images';
+import { locateImages, readRecordImage, snapshotRetainer } from './record-images';
 import {
   SessionRecordNotFoundError,
   SessionRecordForkDivergedError,
@@ -103,6 +103,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
   private ownIncrement = false;
   private consumedFiles = new Map<string, number>();
   private consumedBytes = 0;
+  private readonly retain: ReturnType<typeof snapshotRetainer> | null;
 
   private rememberConsumed(path: string, bytes: number): void {
     this.consumedBytes += bytes - (this.consumedFiles.get(path) ?? 0);
@@ -115,6 +116,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
     private readonly nativeChild = false,
   ) {
     this.warn = warnOf(options);
+    this.retain = options?.readMode === 'snapshot' ? snapshotRetainer() : null;
   }
 
   async start(events: SessionRecordSourceEvents, resume?: SessionRecordResume): Promise<void> {
@@ -268,7 +270,8 @@ class ClaudeJsonlSource implements SessionRecordSource {
     const events = this.events;
     const path = this.reader?.currentPath;
     emitJsonLines(lines, 'claude', this.warn, (entries) => events.onEntries(entries), (record) => this.decodeRecord(record),
-      offsets && path ? (entries, index) => locateImages(entries, lines[index], offsets[index], path) : undefined);
+      path && this.retain ? (entries, index) => this.retain!(entries, lines[index], offsets?.[index], path)
+        : offsets && path ? (entries, index) => locateImages(entries, lines[index], offsets[index], path) : undefined);
   }
 
   private decodeRecord(record: Record<string, unknown>): RecordEntry[] {

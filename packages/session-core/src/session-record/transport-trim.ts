@@ -1,5 +1,6 @@
 import type { TerminalState, ToolImage, ToolImageRef, ToolNode, TranscriptItem, TranscriptTurn } from '../acp/client';
 import { isGuguServer } from '../acp/models/turns/opened-outputs';
+import { catalogCall } from '../acp/models/turns/tool-calls';
 import type {
   TimelineAfterResult,
   TimelineBatch,
@@ -48,11 +49,12 @@ function trimToolNode(node: ToolNode, limit: number): ToolNode {
   let patch: Record<string, unknown> | null = null;
 
   for (const field of TRIMMED_FIELDS) {
-    // A successful root send contains the conversation's message, just like a message item.
+    // A successful root send contains the conversation's message, just like a message item (a widget's data included).
     // Cutting its JSON makes the reply disappear on phones and remote desktops.
     if (field === 'rawInput' && node.kind === 'mcp-tool-call' && node.status === 'done'
       && !node.parentToolCallId && isGuguServer(node.server)
-      && (node.tool === 'message_send' || node.tool === 'session_message')) continue;
+      && (node.tool === 'message_send' || node.tool === 'session_message' || node.tool === 'widget_send'
+        || catalogCall(node.tool, node.rawInput)?.tool === 'widget_send')) continue;
     const value = source[field];
     if (typeof value !== 'string' || value.length <= limit) continue;
     patch ??= {};

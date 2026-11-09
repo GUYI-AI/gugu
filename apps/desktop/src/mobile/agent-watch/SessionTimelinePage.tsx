@@ -1,3 +1,4 @@
+import type { FirstPrompt } from './use-timeline-session'
 import { observer } from 'mobx-react-lite'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
@@ -73,7 +74,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   device: Device
   session: SessionpageSessionSummary
   /** 刚从新建页建成:建它时带的那句(新建页上已经画着),这一页接着画,❌ 换页时让它消失。 */
-  firstPrompt?: string
+  firstPrompt?: FirstPrompt
   draft?: { text: string }
   initialAppKind?: string
   /** The session is on this computer (desktop assistant task pane): read it over IPC, also without a network. */

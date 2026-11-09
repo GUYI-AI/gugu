@@ -342,6 +342,37 @@ describe('createSession:所选 harness 在这台机器上还没装', () => {
     expect(initialSession).not.toHaveProperty('initialMessageId');
   });
 
+  // #2296 手机新建会话:首句的乐观气泡与落地那条要同一个身份,所以首句以手机铸的那个 id 进待发行(桌面新建任务同一做法)。
+  it('请求带了首句 id:首句以这个 id 进待发行', async () => {
+    const result = await createSession(
+      { projectId: 'proj-1', harness: 'codex', prompt: 'hi', sessionView: 'general', initialMessageId: 'phone-first-input' },
+      { ensureAgentInstalled: async () => {} }
+    );
+    expect(result.ok).toBe(true);
+    expect(state.lifeEnqueued).toEqual([{
+      sessionId: currentSessionId(), messageId: 'phone-first-input', text: 'hi', kind: 'ordinary',
+      turn: { kind: 'prompt', origin: 'manual' },
+    }]);
+    expect(state.createParams[0]).toMatchObject({
+      sessionConfig: { initialSession: { initialMessageId: 'phone-first-input', startupOrigin: 'session-page' } },
+    });
+    expect(result.ok && result.value).not.toHaveProperty('taskMessageId');
+  });
+
+  // #2296 混搭:旧手机的建会话请求不带 initialMessageId。新宿主对它的处理与改前逐字一样:首句仍是 `<会话>:creation:0`,
+  // 会话文档里没有 initialMessageId(旧手机的乐观首句照旧在这一行出现时换一次 id,不多不少)。
+  it('旧手机请求(不带首句 id):与改前一样,首句以 <会话>:creation:0 进待发行', async () => {
+    const result = await createSession({ projectId: 'proj-1', harness: 'codex', prompt: 'hi', sessionView: 'general' }, { ensureAgentInstalled: async () => {} });
+    expect(result.ok).toBe(true);
+    expect(state.lifeEnqueued).toEqual([{
+      sessionId: currentSessionId(), messageId: `${currentSessionId()}:creation:0`, text: 'hi', kind: 'ordinary',
+      turn: { kind: 'prompt', origin: 'manual' },
+    }]);
+    const initialSession = (state.createParams[0] as unknown as { sessionConfig: { initialSession: Record<string, unknown> } }).sessionConfig.initialSession;
+    expect(initialSession).not.toHaveProperty('initialMessageId');
+    expect(initialSession).toMatchObject({ startupOrigin: 'session-page' });
+  });
+
   it('cwd:在项目挂的那个文件夹里开工;不是这个项目的文件夹就拒,一行都不写', async () => {
     await createSession({ projectId: 'proj-1', harness: 'codex', prompt: 'hi', sessionView: 'general', cwd: '/work/docs/' }, { ensureAgentInstalled: async () => {} });
     expect(state.createParams[0]).toMatchObject({ workspaceConfig: { workspace: { kind: 'repository-instance', workspaceId: 'ws-docs' } } });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { activeMentionPicks, resolveMentionUserIds, type MentionCandidate } from '../../../../apps/desktop/src/lib/mention'
 import { buildMentionRender } from '../../../../apps/desktop/src/lib/mentionRenderModel'
 import { displayAgentReferences } from '../../../../apps/desktop/src/lib/mentionMdast'
-import { chatPreviewText } from '../../../../apps/desktop/src/lib/agentTurnFailure'
+import { chatPreviewText } from '../../../../apps/desktop/src/lib/systemNoticeText'
 
 const members: MentionCandidate[] = [
   { id: 'member-a', name: 'Agent 2', type: 'agent' },
@@ -35,8 +35,8 @@ describe('task references in chat', () => {
   it('shows reference names in plain previews while keeping literal code untouched', () => {
     expect(chatPreviewText({
       last_message_preview: 'Ask @[Private\\*task\\*](aid:outside), not `@[Example](aid:literal)`',
-      last_message_failure: null,
+      last_message_notice: null,
     })).toBe('Ask @Private*task*, not `@[Example](aid:literal)`')
-    expect(chatPreviewText({ last_message_preview: null, last_message_failure: null })).toBe('')
+    expect(chatPreviewText({ last_message_preview: null, last_message_notice: null })).toBe('')
   })
 })

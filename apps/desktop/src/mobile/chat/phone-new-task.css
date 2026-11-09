@@ -63,7 +63,7 @@
   cursor: pointer;
 }
 .gg-phone-task-where > span { min-width: 0; overflow-wrap: anywhere; white-space: normal; text-align: left; }
-.gg-phone-task-where[data-blocked] { color: var(--warn); }
+.gg-phone-task-where[data-blocked] { color: var(--warn-fg); }
 .gg-phone-task-tag > .gg-icon-btn { grid-column: 2; grid-row: 1; justify-self: end; }
 .gg-phone-project-empty { display: flex; flex-direction: column; align-items: center; gap: var(--spacing-lg); padding-top: var(--spacing-2xl); color: var(--text-primary); font-size: var(--font-title); }
 [data-chat-surface]:has([data-chat-composer-host][data-phone-task]) .gg-phone-project-empty-start { visibility: hidden; }

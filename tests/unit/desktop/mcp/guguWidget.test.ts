@@ -74,16 +74,19 @@ describe('widget_send', () => {
   })
   it('uses the message writer with a fixed identity, thread and no recipients', async () => {
     const rows: Record<string, unknown>[] = []
+    const chat = '127ec4f0-30b1-4583-b469-706756153bdd'
     const context = { agentId: 'agent', threadRootId: 'thread', guguHome: '/tmp/widget-test' }
     const deps = {
       restGet: async () => [],
-      restRpc: async (name: string) => name === 'chat_facts' ? [{ id: 'chat', kind: 'group', group_prompt: null }] : name === 'list_member_ids' ? [{ user_id: 'agent' }] : [],
+      restRpc: async (name: string) => name === 'chat_facts' ? [{ id: chat, kind: 'group', group_prompt: null }] : name === 'list_member_ids' ? [{ user_id: 'agent' }] : [],
       restInsert: async (_table: string, row: Record<string, unknown>) => { rows.push(row) },
     }
-    await sendWidgetOf(context, args, 'content', deps)
+    const receipt = JSON.parse(await sendWidgetOf(context, { ...args, chat_id: chat }, 'content', deps))
     expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({ sender_user_id: 'agent', chat_id: 'chat', content: 'content', content_type: 'widget', thread_root_id: 'thread', to_user_ids: null })
+    expect(rows[0]).toMatchObject({ sender_user_id: 'agent', chat_id: chat, content: 'content', content_type: 'widget', thread_root_id: 'thread', to_user_ids: null })
     expect(rows[0]!.client_message_id).toBe(rows[0]!.id)
+    // The task timeline draws the widget from its arguments and this receipt: it names the chat it landed in.
+    expect(receipt).toEqual({ status: 'sent', message_id: rows[0]!.id, source_link: `gugu-chat://${chat}/${rows[0]!.id}` })
     await expect(sendWidgetOf({ ...context, forkOf: 'origin' }, args, 'content', deps)).rejects.toThrow('side chat')
   })
 })
