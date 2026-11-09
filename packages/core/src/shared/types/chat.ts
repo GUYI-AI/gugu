@@ -107,7 +107,7 @@ export interface TopicSummary {
  * identity was removed (it cannot). The server may add reasons before this client knows them: any other string is still a
  * refusal of a message that IS in the chat, shown as plain "not delivered" — never a send failure (#2383).
  */
-export type MessageDeliveryRefusalReason = 'agent_archived' | 'identity_removed' | (string & {})
+export type MessageDeliveryRefusalReason = 'agent_archived' | 'identity_removed' | (string & Record<never, never>)
 
 export interface MessageItem {
   id: string
