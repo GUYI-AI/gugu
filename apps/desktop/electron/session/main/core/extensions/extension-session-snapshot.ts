@@ -103,14 +103,23 @@ export function pruneSessionSnapshots(
   }
 }
 
+/** @@@follows-junctions - fs.rm with recursive goes through a Windows junction and empties what it points at: a link is unlinked here. */
+function removeWithoutFollowingLinks(target: string): void {
+  const stat = fs.lstatSync(target, { throwIfNoEntry: false });
+  if (!stat) return;
+  if (!stat.isDirectory() || stat.isSymbolicLink()) return fs.unlinkSync(target);
+  for (const name of fs.readdirSync(target)) removeWithoutFollowingLinks(path.join(target, name));
+  fs.rmdirSync(target);
+}
+
 /**
  * At gugu's start, before any session: the folders of skill copies sessions held (a session makes its own again when it
- * starts or resumes), for the same reason as pruneSessionSnapshots. A folder from before copies may hold links: removing
- * one takes the link, never what it points at.
+ * starts or resumes), for the same reason as pruneSessionSnapshots. A folder from before copies holds links, into the
+ * frozen copies kept above.
  */
 export function pruneSessionSkillCopies(guguHome: string): void {
   for (const folder of [['claude', 'gugu-product'], ['codex', 'skills']]) {
-    fs.rmSync(path.join(guguHome, 'capability-packages', ...folder), { recursive: true, force: true });
+    removeWithoutFollowingLinks(path.join(guguHome, 'capability-packages', ...folder));
   }
 }
 

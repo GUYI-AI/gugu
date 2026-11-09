@@ -43,6 +43,7 @@ describe('a session\'s copy of a skill', () => {
     await expect(materialize()).rejects.toThrow()
   })
 
+  // On Windows this link is a junction, which recursive fs.rm follows: this test tells only there.
   it('goes at gugu\'s start; a link from before copies goes, and what it pointed at stays', async () => {
     await materialize()
     const old = join(guguHome, 'capability-packages', 'claude', 'gugu-product', '1.0.0-old', 'skills')
@@ -54,5 +55,6 @@ describe('a session\'s copy of a skill', () => {
     expect(await readdir(join(guguHome, 'capability-packages', 'codex'))).toEqual([])
     expect(await readdir(join(guguHome, 'capability-packages', 'claude'))).toEqual(['system-prompts'])
     expect(await readFile(join(source, 'SKILL.md'), 'utf8')).toBe('skill')
+    expect(await readFile(join(source, 'lib', 'run.mjs'), 'utf8')).toBe('run')
   })
 })
