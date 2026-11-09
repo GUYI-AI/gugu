@@ -38,11 +38,12 @@ export async function writeWindowCommitSourceCatalog(directory: string, input: W
 }
 
 /** Exact write-set cleanup for the source-before intent; no directory listing. */
-export async function removeWindowCommitSourceCatalog(directory: string, scope: string, sourceId: string) {
+export async function removeWindowCommitSourceCatalog(directory: string, scope: string, sourceId: string, check?: () => void) {
   const path = windowCommitCatalogPath(directory, scope, sourceId);
-  await rm(`${path}.tmp`, { force: true }); await rm(path, { force: true });
+  check?.(); await rm(`${path}.tmp`, { force: true }); check?.(); await rm(path, { force: true }); check?.();
   try { await syncWindowDirectory(join(directory, 'source-versions', scope)); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  check?.();
 }
 
 export async function readWindowCommitSourceCatalog(directory: string, scope: string, sourceId: string, budget: WindowBudget, signal?: AbortSignal) {
