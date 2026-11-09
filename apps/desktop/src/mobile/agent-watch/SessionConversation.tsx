@@ -55,7 +55,7 @@ import { useQueuedSessionInputs, useSessionInputAccount } from '@/lib/sessionInp
 import { localQueuedInputs } from './local-queued-inputs'
 import type { SessionInput } from '@/lib/sessionInputOutbox'
 import { projectRejectedSessionInputs } from '@/lib/pendingSessionInput'
-import { projectPhonePendingInputs } from './phone-pending-inputs'
+import { phoneRecordWait, projectPhonePendingInputs, type PhoneRecordWait } from './phone-pending-inputs'
 import { projectSessionPendingDeliveries, settledHostRow } from '@/lib/pendingSessionDeliveries'
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope'
 import { useSessionLifeView } from './useSessionLifeView'
@@ -261,13 +261,20 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   const background = usePhoneBackgroundTasks(deviceId, sessionId, timeline.turns, dismissals, !phoneHost, localClient?.fetchBackgroundTasks)
   const nativeTurns = timeline.turns
   const pendingInput = useRef<{ sessionId: string; prompts: readonly PendingPrompt[] }>({ sessionId, prompts: [] })
+  // Kept across renders like `pendingInput`: an input judged placeable is never held later (see `phoneRecordWait`).
+  // A held input is withheld from every projection, so each first places it against the record that has its turn.
+  const recordWait = useRef<PhoneRecordWait | null>(null)
+  recordWait.current = phoneRecordWait(recordWait.current, sessionId, senderInputs, nativeTurns)
+  const waitingInputs = recordWait.current.waiting
+  const placeableSender = useMemo(() => waitingInputs.size ? senderInputs.filter(input => !waitingInputs.has(input.id)) : senderInputs, [senderInputs, waitingInputs])
+  const placeableLife = useMemo(() => withoutWaiting(life.view, waitingInputs), [life.view, waitingInputs])
   const hostInputs = useMemo(() => {
-    const inputs = [...(life.view?.pending.items ?? [])]
+    const inputs = [...(placeableLife?.pending.items ?? [])]
     for (const receipt of phoneWaitingReceipts(timeline.queuedPrompts)) if (!inputs.some(input => input.messageId === receipt.messageId)) inputs.push(receipt)
     return inputs
-  }, [life.view?.pending.items, timeline.queuedPrompts])
+  }, [placeableLife?.pending.items, timeline.queuedPrompts])
   const projectedInputs = useMemo(() => projectPhonePendingInputs(pendingInput.current.sessionId === sessionId ? pendingInput.current.prompts : [],
-    senderInputs, hostInputs, nativeTurns), [sessionId, senderInputs, hostInputs, nativeTurns])
+    placeableSender, hostInputs.filter(input => !waitingInputs.has(input.messageId)), nativeTurns), [sessionId, placeableSender, hostInputs, nativeTurns, waitingInputs])
   const projectedInput = projectedInputs[0]
   const pendingPrompt = projectedInput && startupPrompt?.id === projectedInput.id
     ? { ...projectedInput, starting: startupPrompt.starting } : projectedInput
@@ -283,8 +290,8 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       items: timeline.queuedPrompts.flatMap((input, seq) => readDeliveryEnvelope(input.text)
         ? [{ seq, messageId: input.id, text: input.text, preview: input.text, kind: 'session-direct' as const, state: 'queued' as const, failure: null }] : []) } } : null,
   [phoneHost, sessionId, timeline.queuedPrompts])
-  const receivedInputs = useMemo(() => projectSessionPendingDeliveries(received.current.key === receivedKey ? received.current.inputs : [], phonePending ?? life.view, nativeTurns),
-    [receivedKey, phonePending, life.view, nativeTurns])
+  const receivedInputs = useMemo(() => projectSessionPendingDeliveries(received.current.key === receivedKey ? received.current.inputs : [], phonePending ?? placeableLife, nativeTurns),
+    [receivedKey, phonePending, placeableLife, nativeTurns])
   const receiptHistory = usePendingDeliveryHistory({ deviceId, sessionId, local, enabled: nativeRecord && !phoneHost,
     ready: historyReady, cursor: historyCursor, turns: nativeTurns, inputs: receivedInputs })
   const turns = receiptHistory.turns
@@ -348,7 +355,8 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     {phoneHost ? <PhoneTaskDraftRecovery deviceId={deviceId} sessionId={sessionId} composer={recoveryComposer} sending={sending} /> : null}
     {queue.error ? <div role="alert">{queue.error}</div> : null}
     <input ref={input} type="file" hidden multiple onChange={event => { addFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} />
-    <AgentConversationComposer {...options.props} {...queue.props} {...lockedHarness(harness)} queuedPrompts={[...queue.props.queuedPrompts, ...localInputs.filter(input => !input.failure).map(input => ({ id: input.id, text: input.text, origin: 'manual' as const, locked: true }))]} mobile phoneActions={mobile} isWorking={agentWorking} canSubmit={!sending && !stopping && (!!composerDraft.text.trim() || attachments.length > 0)}
+    <AgentConversationComposer {...options.props} {...queue.props} {...lockedHarness(harness)} queuedPrompts={[...queue.props.queuedPrompts, ...localInputs.filter(input => !input.failure).map(input => ({ id: input.id, text: input.text, origin: 'manual' as const, locked: true })),
+      ...[...waitingInputs].filter(([id]) => !queue.props.queuedPrompts.some(prompt => prompt.id === id) && !localInputs.some(input => input.id === id)).map(([id, input]) => ({ id, text: input.text, origin: 'manual' as const, locked: true }))]} mobile phoneActions={mobile} isWorking={agentWorking} canSubmit={!sending && !stopping && (!!composerDraft.text.trim() || attachments.length > 0)}
       onStop={agentWorking ? onStop : undefined} editorApiRef={receiveEditor} editorOptions={{ clearOnSubmit: false, enterBehavior: 'newline' }}
       queuedPromptEdit={quotes.composer.queuedPromptEdit} onChangeQueuedPromptEdit={quotes.composer.changeQueuedPromptEdit} onFinishQueuedPromptEdit={quotes.composer.finishQueuedPromptEdit} renderQueuedPromptText={quotes.composer.renderQueuedPromptText}
       onInputChange={composerDraft.setText} onSubmit={submit} onSubmitWhileWorking={submit}
@@ -362,6 +370,13 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       onReachStart={() => { void quotes.loadOlder() }} composerContent={composer} shown={visibility.shown} onAtBottomChange={atBottom => { reading.onAtBottomChange(atBottom); if (atBottom) onAtBottom?.() }} onVisibleItems={reading.onVisibleItems} onReady={ready => { view.current = ready; reading.onReady(ready) }} className="relative min-h-0 flex-1" />
     {hasPendingWindow(timeline) ? <div className="gg-aw-placeholder" role="status">{t('agentWatch.timeline.loadingWindow')}</div> : turns.length === 0 ? emptyNote : null}</div>{outputs.panel}{options.confirmation}
   </MessageProvider></SessionUiTheme>
+}
+
+/** The host's queue without this phone's inputs that wait for the page's record (`phoneRecordWait`). */
+function withoutWaiting(view: LifeView | null, waiting: ReadonlyMap<string, unknown>): LifeView | null {
+  if (!view || !waiting.size || !view.pending.items.some(item => waiting.has(item.messageId))) return view
+  const items = view.pending.items.filter(item => !waiting.has(item.messageId))
+  return { ...view, pending: { ...view.pending, count: items.length, items } }
 }
 
 /** 模型左边那颗锁着的 harness 标(桌面会话页同一颗);不知道 harness 时照旧不画。 */

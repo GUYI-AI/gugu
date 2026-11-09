@@ -17,6 +17,9 @@ export type SessionInput = {
   sendQueue?: { order: number; afterInputId?: string; edit?: { draftText: string; originalDraftText: string } }
   baseline?: string[]
   afterTurnId?: string
+  /** The send queue released this input after `afterTurnId`, read from the record its releaser checked.
+   * A page drawing an older record shows it as queued until that turn is on the page (#2367). */
+  releasedFromQueue?: true
   /** Explicit send-now insertion, never used by automatic queue release. */
   steerIfBusy?: true
 }
@@ -229,7 +232,7 @@ export class SessionInputOutbox {
       // Remaining entries wait for this exact input to finish, including across a shell restart.
       const following = queued.filter(row => row.id !== input.id).map(row => ({ ...row, sendQueue: { ...row.sendQueue!, afterInputId: input.id } }))
       const { sendQueue: _queue, ...released } = input
-      const sent: SessionInput = { ...released, ...baseline, queued: false, ...(steers ? { steerIfBusy: true } : {}) }
+      const sent: SessionInput = { ...released, ...baseline, queued: false, releasedFromQueue: true, ...(steers ? { steerIfBusy: true } : {}) }
       await this.persist([...following, sent])
       await this.publish()
       return sent

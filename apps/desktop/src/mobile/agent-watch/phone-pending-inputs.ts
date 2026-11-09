@@ -4,6 +4,30 @@ import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope'
 import { projectSessionPendingInput, sessionInputBaseline } from '@/lib/pendingSessionInput'
 import type { HostPendingRow, SessionInput } from '@/lib/sessionInputOutbox'
 
+/**
+ * This phone's queue inputs the page cannot place yet (#2367). The send queue releases an input once the record its
+ * releaser read has the previous turn settled, and records that turn as `afterTurnId`. This page draws its own record,
+ * which can still hold that turn as the running one for a moment; drawn now, the bubble goes under the running turn and
+ * is pushed down a row, its row replaced, when the settled turn's last rows arrive. Whatever source would draw it (the
+ * sender row, or the host's queue row once the host has it), the input stays in the queue until this page's record
+ * has that turn. Each input is judged once: one that could be placed when it was released is never held later.
+ */
+export type PhoneRecordWait = { sessionId: string; waiting: ReadonlyMap<string, { afterTurnId: string; text: string }>; judged: ReadonlySet<string> }
+
+export function phoneRecordWait(previous: PhoneRecordWait | null, sessionId: string, sender: readonly SessionInput[],
+  turns: readonly TranscriptTurn[]): PhoneRecordWait {
+  const kept = previous?.sessionId === sessionId ? previous : null
+  const placed = (turnId: string) => turns.some(turn => turn.id === turnId)
+  const waiting = new Map([...kept?.waiting ?? []].filter(([, input]) => !placed(input.afterTurnId)))
+  const judged = new Set(kept?.judged)
+  for (const input of sender) {
+    if (!input.releasedFromQueue || judged.has(input.id)) continue
+    judged.add(input.id)
+    if (input.afterTurnId !== undefined && !placed(input.afterTurnId)) waiting.set(input.id, { afterTurnId: input.afterTurnId, text: input.text })
+  }
+  return kept && waiting.size === kept.waiting.size && judged.size === kept.judged.size ? kept : { sessionId, waiting, judged }
+}
+
 /** A phone can discover another client's already-sent input in the host queue before seeing its native echo. */
 export function projectPhonePendingInputs(previous: readonly PendingPrompt[], sender: readonly SessionInput[],
   host: readonly HostPendingRow[], turns: readonly TranscriptTurn[]): PendingPrompt[] {
