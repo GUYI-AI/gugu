@@ -21,6 +21,7 @@ import { readPublishedCommitEntity } from './window-commit-publisher';
 import * as publishers from './window-commit-publisher';
 import { openCommitBodySlot, readCommitBodySlot } from './window-commit-slot';
 import { withStoredTurns } from '../sessions/session-turn-store';
+import { beginCanonicalQueueTask } from '../sessions/canonical-queue-state';
 
 const state = vi.hoisted(() => ({ db: undefined as AppDb | undefined, sqlite: undefined as Database.Database | undefined, root: '' }));
 vi.mock('@main/db/client', () => ({ get db() { return state.db; }, get sqlite() { return state.sqlite; } }));
@@ -99,6 +100,27 @@ describe('the main-process commit host and actual canonical writer', () => {
       items: [{ kind: 'message', id: 'kept-item', seq: 0, role: 'assistant', text: 'canonical history still persists' }] } });
     await vi.waitFor(() => expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 1 }));
     expect(project).not.toHaveBeenCalled();
+  });
+
+  it('publishes an admitted, underfilled projection group as soon as the host closes while the canonical queue is busy', async () => {
+    // Frozen timers: only the close itself may publish the group, never the busy ceiling.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const busy = beginCanonicalQueueTask('c'), events = source(), owner = reserveProduction('closing-view', 'c', vi.fn()), after = await owner.prepare();
+    owner.authorize(); void owner.read(after).catch(() => {});
+    const turns = () => new Promise<void>(resolve => setImmediate(resolve));
+    const until = async (done: () => boolean) => { const end = Date.now() + 5_000; while (!done() && Date.now() < end) await turns(); };
+    const complete = () => fixture.sqlite.prepare("SELECT count(*) n FROM session_window_pack_groups WHERE state='complete'").get();
+    try {
+      const host = await connectWindowCommitHost(stream(events), () => {}, connection);
+      events.emit({ sessionId: 'c', source: 'live', turn: { id: 'tail', seq: 0, referenceId: 'tail-ref', initiator: 'user',
+        items: [{ kind: 'message', id: 'tail-item', seq: 0, role: 'assistant', text: 'underfilled tail' }], outcome: { kind: 'done' } } });
+      await until(() => vi.getTimerCount() > 0);
+      expect(vi.getTimerCount()).toBe(1); expect(complete()).toEqual({ n: 0 });
+      host.close();
+      await until(() => (complete() as { n: number }).n > 0);
+      expect(complete()).toEqual({ n: 1 });
+      expect(createWindowCommitReceipts(fixture.sqlite).byReference('c', 'tail-ref')).toBeDefined();
+    } finally { busy(); owner.close(); vi.useRealTimers(); }
   });
 
   it('rejects new handoff reservations without a durable producer rather than declaring a successful empty view', () => {
