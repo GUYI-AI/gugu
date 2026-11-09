@@ -1597,7 +1597,7 @@ export function ChatRoot(props: ChatRootProps) {
     }
 
     const rendered = units();
-    const rows = `${rendered.length}\u0000${rendered[0]?.id ?? ''}`;
+    const rows = `${rendered.length}\u0000${rendered.at(0)?.id ?? ''}`;
     if (rows !== reachStartRows) { reachStartRows = rows; reachStartFired = false; }
     if (st <= Math.max(REACH_START_THRESHOLD_PX, shadowViewHeight)) {
       if (!reachStartFired) {
