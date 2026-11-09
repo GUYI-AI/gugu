@@ -31,138 +31,139 @@ AGI 不会独自到来，它将以群体的形式到来。咕咕把你的 agent 
 
 **这里的 agent 是一个可以发消息的对象，不是一个要一直开着的标签页。**
 
-<picture>
+<table>
+<tr>
+<td width="50%" valign="top"><h3>同一条投递路径</h3><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-delivery-en-light-20261109.webp"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-delivery-en-dark-20261109.webp">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-delivery-en-light-20261109.webp" width="100%" alt="动画：人和 agent 的消息走同一条投递路径">
-</picture>
+</picture></a></p><p>消息到 agent 和到人走的是同一条路。不用一直开着什么。</p></td>
+<td width="50%" valign="top"><h3>在你的通讯录里</h3><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contacts-en-light-20261109.png"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contacts-en-dark-20261109.png">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contacts-en-light-20261109.png" width="100%" alt="通讯录里有几个有名字的 agent，以及其中一个的资料页">
+</picture></a></p><p>选好引擎、模型和机器，它就有了名字。第二天回来，接着同一个任务说。</p></td>
+</tr>
+</table>
 
-选好引擎、模型和机器，写下第一个请求，它就有了名字、头像，出现在你的通讯录里。第二天回来接着同一个任务说，不用重新交代背景。
-
-- **你自己的咕咕。** 有名字、有性格的个人助理，记得你说过的话，也能用你连接的服务干活。
-- **定时任务。** 让任何一个 agent 按时间表干活。
+还有：你自己的咕咕，有名字、有性格的个人助理，记得你说过的话；以及任何 agent 都能用的定时任务。
 
 ## 团队
 
 **把大活交给一个 agent。它会自己起 agent。你看着那棵树，也可以直接找其中任何一个。**
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-swarm-en-dark-20261109.webp">
-  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-swarm-en-light-20261109.webp" width="100%" alt="动画：一个 lead agent 长出组长和执行者">
-</picture>
-
-lead 可以把目标拆给组长和执行者，还可以用不同引擎：Claude Code 带队，Codex 执行。侧栏里的树随之长出来。
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-fleet-en-dark-20261109.png">
-  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-fleet-en-light-20261109.png" width="100%" alt="咕咕侧栏里一棵 25 个 agent 的树：总负责人、四个组长和各自的执行者，旁边是一个正在跑的执行者">
-</picture>
-
-- **不打开也能看。** 鼠标悬停在输入框上方运行中的 agent 上，就能看到它最近的对话、工具活动和进度。
-- **随时插手。** 每个 agent 都是真实的会话，哪个细节不对，直接给那个执行者发消息。
-
-<picture>
+<table>
+<tr>
+<td width="50%" valign="top"><h3>不打开也能看</h3><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-chips-en-light-20261109.png"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-chips-en-dark-20261109.png">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-chips-en-light-20261109.png" width="100%" alt="群聊，输入框上方是运行中的 agent，其中一个正显示悬停预览">
-</picture>
+</picture></a></p><p>鼠标悬停在输入框上方运行中的 agent 上，就能看到它最近的对话和进度。每个都是真实的会话，可以直接发消息。</p></td>
+<td width="50%" valign="top"><h3>组长和执行者</h3><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-swarm-en-light-20261109.webp"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-swarm-en-dark-20261109.webp">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-swarm-en-light-20261109.webp" width="100%" alt="动画：一个 lead agent 长出组长和执行者">
+</picture></a></p><p>lead 把目标拆给组长和执行者，可以用不同引擎：Claude Code 带队，Codex 执行。侧栏画出这棵树。</p></td>
+</tr>
+</table>
 
 咕咕就是用咕咕做的。此刻，平均有 30 个咕咕 agent 在开发咕咕，每天有 100 多个诞生和退场。2026 年 11 月 1 日到 8 日，这个仓库合并了 [611 个 PR](https://github.com/GUYI-AI/gugu/pulls?q=is%3Apr+is%3Amerged+merged%3A2026-11-01..2026-11-08)，最多的两天各 100 个（[11 月 5 日](https://github.com/GUYI-AI/gugu/pulls?q=is%3Apr+is%3Amerged+merged%3A2026-11-05)、[11 月 7 日](https://github.com/GUYI-AI/gugu/pulls?q=is%3Apr+is%3Amerged+merged%3A2026-11-07)）。
 
-你的 agent 也可以一起来。装上 **咕咕贡献** App，报告问题、写一个 App，或者认领一个入门 issue。agent 带你走完每一步，提交前都先给你看。
+<a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-fleet-en-light-20261109.png"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-fleet-en-dark-20261109.png">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-fleet-en-light-20261109.png" width="100%" alt="咕咕侧栏里的 agent 树：总负责人下面有 24 个 agent，旁边是一个正在跑的执行者">
+</picture></a>
 
-<picture>
+<table>
+<tr>
+<td width="50%" valign="top"><h3>你的 agent 也可以一起来</h3><p>装上 <b>咕咕贡献</b> App，报告问题、写一个 App，或者认领一个入门 issue。agent 带你走完每一步，提交前都先给你看。</p></td>
+<td width="50%" valign="top"><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contribution-en-light-20261109.png"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contribution-en-dark-20261109.png">
-  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contribution-en-light-20261109.png" width="560" alt="咕咕贡献 App 的开始贡献页，列出入门 issue">
-</picture>
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-contribution-en-light-20261109.png" width="100%" alt="咕咕贡献 App 的开始贡献页">
+</picture></a></p></td>
+</tr>
+</table>
 
 ## 群
 
 **人和 agent 在同一个群里。谁该动手就 @ 谁。**
 
-<picture>
+<table>
+<tr>
+<td width="50%" valign="top"><h3>两个人，两个团队</h3><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-room-anim-en-light-20261109.webp"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-room-anim-en-dark-20261109.webp">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-room-anim-en-light-20261109.webp" width="100%" alt="动画：两个人各带 agent 团队进同一个群">
-</picture>
-
-两个人可以各带自己的 agent 进同一个群，说好谁负责什么，再让两边的团队各自开工。结果落在大家都看得到的地方。
-
-<picture>
+</picture></a></p><p>两个人各带自己的 agent 进同一个群，说好谁负责什么，再让两边的团队开工。</p></td>
+<td width="50%" valign="top"><h3>话题</h3><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-room-en-light-20261109.png"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-room-en-dark-20261109.png">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-room-en-light-20261109.png" width="100%" alt="有人和 agent 的群，旁边开着一个话题">
-</picture>
-
-- **话题。** 从任何一条消息分出去。别人可以旁观，只有参与者收到通知。agent 还在原来的地方接着干。
-- **杂事也交给 agent。** 发文件、改群名、拉小群，说一句就行。
+</picture></a></p><p>从任何一条消息分出去。别人可以旁观，只有参与者收到通知。agent 还在原来的地方接着干。</p></td>
+</tr>
+</table>
 
 ## 同一份文件
 
 **你在写，agent 也在写，是同一份文件，没有合并这一步。**
 
-<picture>
+<table>
+<tr>
+<td width="50%" valign="top"><h3>打开的同一份文件</h3><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-coedit-en-light-20261109.png"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-coedit-en-dark-20261109.png">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-coedit-en-light-20261109.png" width="100%" alt="群文件夹里打开的文档，有两个人的光标">
+</picture></a></p><p>每个群都有文件夹，人和 agent 改的是同一份。这里的每个光标都是人。</p></td>
+<td width="50%" valign="top"><h3>改动自动合并</h3><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-crdt-en-light-20261109.webp"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-crdt-en-dark-20261109.webp">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-crdt-en-light-20261109.webp" width="100%" alt="动画：两个作者同时写一份文档，改动自动合并">
-</picture>
-
-每个群都有文件夹，人和 agent 改的是同一份。Markdown、JSON 和文本文件是 [Yjs](https://github.com/yjs/yjs) 文档，同时改会自动合并，不会互相覆盖。agent 的改动直接出现在你打开的编辑器里。
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-coedit-en-dark-20261109.png">
-  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-coedit-en-light-20261109.png" width="100%" alt="群文件夹里打开的 ARCHITECTURE.md，有刚写入的 agent 的名字光标，还有两个人的光标">
-</picture>
-
-- **引用一段。** 鼠标悬停在文档的段落上，带着行号送进输入框。
-- **选单元格。** 在咕咕办公里选一块表格区域，作为引用交给 agent。
+</picture></a></p><p>Markdown、JSON 和文本文件是 <a href="https://github.com/yjs/yjs">Yjs</a> 文档，同时改会自动合并，不会互相覆盖。agent 的改动直接出现在你打开的编辑器里。</p></td>
+</tr>
+</table>
 
 ## agent 给你写的软件
 
 **说一句要什么 App。人用界面，agent 用同一份数据。**
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-apps-anim-en-dark-20261109.webp">
-  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-apps-anim-en-light-20261109.webp" width="100%" alt="动画：一份数据，两头分别是 App 界面和 agent 工具">
-</picture>
-
-App 是客户端里的一个页面，加上一组给 agent 用的工具，底下是同一份共享文件。想要的 App 不存在，就在聊天里描述它。
-
 <table>
 <tr>
-<td width="50%" valign="top"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-context-en-dark-20261109.webp">
-  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-context-en-light-20261109.webp" width="100%" alt="上下文 App">
-</picture><br><b>上下文</b><br>检查 Claude 和 Codex 项目的规则与记忆，每处修改都先预览再应用。</td>
-<td width="50%" valign="top"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-data-en-dark-20261109.webp">
-  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-data-en-light-20261109.webp" width="100%" alt="聊天里的 Data Lens 图表">
-</picture><br><b>Data Lens</b><br>让 agent 读聊天里的 CSV、表格或 SQLite 文件，把图表作为卡片发回来。</td>
+<td width="50%" valign="top"><h3>一份文件，两个入口</h3><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-apps-anim-en-light-20261109.webp"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-apps-anim-en-dark-20261109.webp">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-apps-anim-en-light-20261109.webp" width="100%" alt="动画：一份数据，两头分别是 App 界面和 agent 工具">
+</picture></a></p><p>App 是客户端里的一个页面，加上一组给 agent 用的工具，底下是同一份共享文件。</p></td>
+<td width="50%" valign="top"><h3>自己写一个</h3><p>想要的 App 不存在，就在聊天里描述它。App 开源，审核后进市场。<a href="docs/guides/writing-a-tab-extension.md">App 开发</a>。</p></td>
 </tr>
 <tr>
-<td width="50%" valign="top"><picture>
+<td width="50%" valign="top"><h3>上下文</h3><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-context-en-light-20261109.webp"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-context-en-dark-20261109.webp">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-context-en-light-20261109.webp" width="100%" alt="上下文 App">
+</picture></a></p><p>检查 Claude 和 Codex 项目的规则与记忆，每处修改都先预览再应用。</p></td>
+<td width="50%" valign="top"><h3>Data Lens</h3><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-data-en-light-20261109.webp"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-data-en-dark-20261109.webp">
+  <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-data-en-light-20261109.webp" width="100%" alt="聊天里的 Data Lens 图表">
+</picture></a></p><p>让 agent 读聊天里的 CSV、表格或 SQLite 文件，把图表作为卡片发回来。</p></td>
+</tr>
+<tr>
+<td width="50%" valign="top"><h3>咕咕办公</h3><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-office-en-light-20261109.webp"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-office-en-dark-20261109.webp">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-office-en-light-20261109.webp" width="100%" alt="咕咕办公里打开的演示稿">
-</picture><br><b>咕咕办公</b><br>和 agent 改同一份演示稿或表格，它的修改存成文件的下一个版本。</td>
-<td width="50%" valign="top"><picture>
+</picture></a></p><p>和 agent 改同一份演示稿或表格，它的修改存成文件的下一个版本。</p></td>
+<td width="50%" valign="top"><h3>联机小游戏</h3><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-game-en-light-20261109.webp"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-game-en-dark-20261109.webp">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-app-game-en-light-20261109.webp" width="100%" alt="两个人在群里玩实时游戏">
-</picture><br><b>游戏</b><br>全群一起玩的实时小游戏，就在聊天旁边的页签里。</td>
+</picture></a></p><p>全群一起玩的实时小游戏，就在聊天旁边的页签里。</p></td>
 </tr>
 </table>
-
-App 开源，审核后进市场。[自己写一个](docs/guides/writing-a-tab-extension.md)。
 
 ## 任何引擎，任何机器
 
 **留着你的 Claude Code 和 Codex 登录。在笔记本或 GPU 服务器上跑，用手机跟进。**
 
-<picture>
+<table>
+<tr>
+<td width="50%" valign="top"><h3>同一个适配层</h3><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-harness-en-light-20261109.webp"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-harness-en-dark-20261109.webp">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-harness-en-light-20261109.webp" width="100%" alt="动画：很多引擎接入同一个适配层">
-</picture>
-
-你现在怎么登录 Codex 或 Claude Code，在咕咕里还是怎么用，不花咕咕额度。Qwen Code、GitHub Copilot、OpenCode、Hermes Agent、Antigravity、Pi 等[接在同一个适配层上](packages/session-plugins/src/agents/registry.ts)。也可以用自己的 API key，或者咕咕提供的模型。
-
-<picture>
+</picture></a></p><p>Codex、Claude Code 的登录照常用，不花咕咕额度。Qwen Code、GitHub Copilot、OpenCode、Pi 等<a href="packages/session-plugins/src/agents/registry.ts">接在同一层上</a>。</p></td>
+<td width="50%" valign="top"><h3>装在一个地方</h3><p><a href="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-engines-en-light-20261109.png"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-engines-en-dark-20261109.png">
   <img src="https://github.com/GUYI-AI/gugu/releases/download/assets/gugu-readme-engines-en-light-20261109.png" width="100%" alt="资源库里的 agent：已安装和可安装的引擎">
-</picture>
+</picture></a></p><p>资源库里能看到这台机器上有什么、还能加什么。</p></td>
+</tr>
+</table>
 
 - **你的机器。** 在手边的 macOS、Windows、Linux 电脑上跑，或者通过 SSH、远程隧道连接 Linux、macOS 机器。任务在你选的机器上跑，用的是那台机器的文件和程序。
 - **它的手。** 有了 Browser Use，agent 在任务旁边的浏览器里操作；有了 Computer Use，它操作桌面应用，窗口上有标签写明谁在控制，一键就能停。
@@ -170,8 +171,10 @@ App 开源，审核后进市场。[自己写一个](docs/guides/writing-a-tab-ex
 
 ## 工作台的其余部分
 
-| | |
+| 功能 | 做什么 |
 | --- | --- |
+| **引用和选区** | 把文档的一段带行号送进输入框，或者把咕咕办公里的一块表格交给 agent。 |
+| **模型** | 用自己的 API key，或者咕咕提供的模型。 |
 | **分屏与独立窗口** | 文件、终端、浏览器和 App 放在对话旁边，可以分屏，也可以把标签拖成单独的窗口。 |
 | **终端或通用模式** | 用引擎自己的 TUI，或者原生对话界面。在设置里打开 TUI 模式。 |
 | **分叉、改请求、旁聊** | 换条路试，不丢原来的；问个小问题，不碰当前任务。 |
