@@ -183,6 +183,9 @@ export function createAcpProcedures(runtime: AcpRuntime) {
     }): { connectionKey: string; pid: number | null; closing?: true } | null {
       return runtime.adapterProvenance(input.sessionId);
     },
+    windowActiveReference(input: { sessionId: string; referenceId: string }): boolean {
+      return runtime.windowActiveReference(input.sessionId, input.referenceId);
+    },
     announceSession(input: Parameters<AcpRuntime['announceSession']>[0]): { delivered: boolean } {
       return runtime.announceSession(input);
     },

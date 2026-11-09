@@ -6,32 +6,46 @@ import type { WindowCommitReceipt } from './window-commit-receipt';
 
 type Fault = Error & { code: string };
 type Journal = ReturnType<typeof createWindowCommitJournal>;
-type Owner = { conversationId: string; failed(error: Fault): void; journal?: Journal; after?: WindowLiveCursor; pending: number; closed: boolean; released: ReturnType<typeof Promise.withResolvers<null>> };
+type Owner = { conversationId: string; failed(error: Fault): void; journal?: Journal; after?: WindowLiveCursor; authorized?: boolean; pending: number; closed: boolean; abort: AbortController };
 export type WindowCommitProjection = { projectionId: string; validate?(): void };
+export type WindowCommitProject = ((receipt:WindowCommitReceipt)=>Promise<WindowCommitProjection>) & {flush?(sessionId?:string):Promise<void>};
 const fault = (code: string, message: string): Fault => Object.assign(new Error(message), { code });
 const equal = (a: WindowLiveCursor, b: WindowLiveCursor) => a.workerEpoch === b.workerEpoch && a.storeEpoch === b.storeEpoch && a.sequence === b.sequence;
+
+// Each wait must detach its cancellation handler while the lease remains open.
+async function untilReleased<T>(owner: Owner, work: Promise<T>): Promise<T | null> {
+  const signal = owner.abort.signal, released = Promise.withResolvers<null>();
+  const release = () => released.resolve(null);
+  if (signal.aborted) release();
+  else signal.addEventListener('abort', release, { once: true });
+  try { return await Promise.race([work, released.promise]); }
+  finally { signal.removeEventListener('abort', release); }
+}
 
 /** Main-owned reservations exist even before a worker does. attach must be awaited
  * inside lazyWorker.onSpawned; this module never calls get/start or retains turns. */
 export function createWindowCommitRuntime(ports: {
   persist(event: WindowCommittedEvent, capture?: WindowCommitCapture): Promise<void>;
   capture(event: WindowCommittedEvent, cursor: WindowLiveCursor, committed: WindowCommitCapture['committed']): WindowCommitCapture & {
-    project?(receipt: WindowCommitReceipt): Promise<WindowCommitProjection>;
+    project?: WindowCommitProject;
   };
-  project(receipt: WindowCommitReceipt): Promise<WindowCommitProjection>;
+  project: WindowCommitProject;
+  flush?(sessionId:string):void;
   report(error: unknown): void;
 }) {
   const owners = new Map<string, Owner>();
   const pending = new Map<string, number>();
+  const publications = new Map<string,Promise<void>>();
   let pendingCount = 0;
   let workerEpoch = randomUUID(), storeEpoch = randomUUID(), closed = false;
   let tap: ReturnType<typeof createWindowCommitTap> | undefined;
   const report = (error: unknown) => { try { ports.report(error); } catch { /* Reporting cannot alter canonical persistence or other owners. */ } };
   const notify = (owner: Owner, error: Fault) => { try { owner.failed(error); } catch (cause) { report(cause); } };
+  const releaseOwner = (owner: Owner) => { owner.closed = true; owner.abort.abort(); };
   function fail(owner: Owner, error: Fault) {
     if (owner.closed) return;
     if (owner.journal) owner.journal.fail(error.code, error.message);
-    else { owner.closed = true; owner.released.resolve(null); for (const [id, value] of owners) if (value === owner) owners.delete(id); notify(owner, error); }
+    else { releaseOwner(owner); for (const [id, value] of owners) if (value === owner) owners.delete(id); notify(owner, error); }
   }
   function invalidated(error: Fault) {
     workerEpoch = randomUUID();
@@ -65,7 +79,17 @@ export function createWindowCommitRuntime(ports: {
             if (!receipt) return;
             if (receipt.sessionId !== sessionId || receipt.referenceId !== referenceId || !equal(receipt.latestRevisionCursor, at))
               throw fault('live_identity_mismatch', 'The persisted commit does not match its runtime source');
-            const projection = await project(receipt);
+            // Start work before waiting for the previous publication. Attach the
+            // rejection handler immediately, even if an older group is slow.
+            const prepared = Promise.resolve().then(() => {
+              const result=project(receipt);
+              if(recipients.some(owner=>owner.closed))void project.flush?.(sessionId).catch(report);
+              return result;
+            }).then(
+              value => ({ ok: true as const,value }), error => ({ ok: false as const,error }));
+            const publish = async () => {
+            const result = await prepared; if (!result.ok) throw result.error;
+            const projection = result.value;
             const values = { referenceId: receipt.referenceId, rowId: receipt.rowId, storedSeq: receipt.storedSeq,
               projectionId: projection.projectionId, latestRevisionCursor: receipt.latestRevisionCursor };
             const entry: WindowCommitReference = source === 'live' && receipt.firstCommitCursor && equal(receipt.firstCommitCursor, at)
@@ -75,6 +99,10 @@ export function createWindowCommitRuntime(ports: {
               projection.validate?.();
               owner.journal!.publish(entry);
             }
+            };
+            const next = (publications.get(sessionId) ?? Promise.resolve()).then(publish,publish);
+            const tail = next.then(() => undefined,() => undefined); publications.set(sessionId,tail);
+            try { await next; } finally { if (publications.get(sessionId) === tail) publications.delete(sessionId); }
           });
           const committed = capture.committed;
           capture.committed = async receipt => { try { await committed(receipt); } finally { release(); } };
@@ -109,33 +137,49 @@ export function createWindowCommitRuntime(ports: {
       if (closed) throw fault('unsubscribed', 'Commit runtime is closed');
       if (!id || !conversationId || id.length > 2048 || conversationId.length > 2048 || owners.has(id)) throw fault('invalid_subscription', 'Invalid or occupied commit subscription');
       if (owners.size >= 32) throw fault('window_capacity', 'Too many commit subscriptions');
-      const owner: Owner = { conversationId, failed, pending: 0, closed: false, released: Promise.withResolvers<null>() }; owners.set(id, owner);
+      const owner: Owner = { conversationId, failed, pending: 0, closed: false, abort: new AbortController() }; owners.set(id, owner);
       const active = () => { if (owner.closed || owners.get(id) !== owner) throw fault('unsubscribed', 'Commit subscription was released'); return owner; };
       return {
         async prepare(): Promise<WindowLiveCursor> {
           const prepared = active().after; if (prepared) return { ...prepared };
           let current: { sequence: number } | null;
-          try { current = tap ? await Promise.race([tap.resample(), owner.released.promise]) : { sequence: 0 }; }
+          try { current = tap ? await untilReleased(owner, tap.resample()) : { sequence: 0 }; }
           catch (error) { const failure = fault('live_source_gap', String(error)); fail(owner, failure); throw failure; }
           active(); if (owner.after) return { ...owner.after };
           if (!current) { const failure = fault('live_source_gap', 'Committed-event continuity is unavailable'); fail(owner, failure); throw failure; }
           const after = coordinate(current!.sequence);
           owner.journal = createWindowCommitJournal({ epoch: after, onFailed(error) {
-            if (owner.closed) return; owner.closed = true; owner.released.resolve(null);
+            if (owner.closed) return; releaseOwner(owner);
             if (owners.get(id) === owner) owners.delete(id); notify(owner, error);
           } });
           owner.journal.seal(after); owner.after = after; return { ...after };
         },
-        authorize() { active(); if (!owner.journal) throw fault('scope_changed', 'History boundary is not prepared'); owner.journal.authorize(); },
+        authorize() { active(); if (!owner.journal) throw fault('scope_changed', 'History boundary is not prepared'); owner.journal.authorize(); owner.authorized = true; },
+        sample(applied: WindowLiveCursor): WindowLiveCursor {
+          active(); const after = owner.after, raw = tap?.current(), now = coordinate(raw?.sequence ?? 0);
+          if (!owner.authorized || !after) throw fault('scope_changed', 'The history window is not authorized');
+          if ((tap && !raw) || !Number.isSafeInteger(applied.sequence) || !equal({ ...applied, sequence: now.sequence }, now) || applied.sequence < after.sequence || applied.sequence > now.sequence)
+            throw fault('invalid_cursor', 'The applied cursor is outside this live lease');
+          return now;
+        },
+        async wait<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+          active(); const work = Promise.resolve().then(() => { active(); return operation(owner.abort.signal); })
+            .then(value => ({ ok: true as const, value }), error => ({ ok: false as const, error }));
+          const result = await untilReleased(owner, work);
+          active(); if (!result) throw fault('unsubscribed', 'Commit subscription was released');
+          if (!result.ok) throw result.error; return result.value;
+        },
         read(after: WindowLiveCursor) { active(); if (!owner.journal) return Promise.reject(fault('scope_changed', 'History boundary is not prepared')); return owner.journal.read(after); },
         ack(through: WindowLiveCursor) { active(); if (!owner.journal) throw fault('scope_changed', 'History boundary is not prepared'); owner.journal.ack(through); },
-        close() { if (owner.closed) return; owner.closed = true; owner.released.resolve(null); if (owners.get(id) === owner) owners.delete(id); owner.journal?.close(); },
+        close() { if (owner.closed) return; releaseOwner(owner); if (owners.get(id) === owner) owners.delete(id); owner.journal?.close();
+          try{ports.flush?.(conversationId);}catch(error){report(error);}
+        },
       };
     },
     invalidate() { if (tap) tap.invalidate(); else invalidated(fault('live_source_gap', 'The committed-event worker changed')); },
     invalidateStore() { storeEpoch = randomUUID(); invalidated(fault('live_store_changed', 'The canonical history store changed')); },
     close() { if (closed) return; closed = true; tap?.close(); for (const owner of [...owners.values()]) {
-      owner.closed = true; owner.released.resolve(null); owner.journal?.close();
+      releaseOwner(owner); owner.journal?.close();
     } owners.clear(); },
     inspect() { return { owners: owners.size }; },
   };

@@ -6,7 +6,7 @@ import { revokeExtensionProgramAccess } from './extension-program-access';
 
 // Expected failure cases must not open the production file-log transport in Node.
 vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn() } }));
-vi.mock('./extensions-root', () => ({ extensionsService: () => ({ get() {}, isEnabled: () => true, hasCapability: () => true }) }));
+vi.mock('./extensions-root', () => ({ extensionsService: () => ({ get: () => ({ manifest: { version: '1.2.3' } }), isEnabled: () => true, hasCapability: () => true }) }));
 vi.mock('./app-programs-elsewhere', () => ({ knownSessionMachine: (id: string) => id === 'remote-task' ? { deviceId: 'remote' } : undefined }));
 const { ExtensionProjectionBridge } = await import('./extension-projection-bridge');
 const owner = { extensionId: 'projection-bridge-test', kind: 'program', pageId: -400, binding: null, callingSession: 'task-a' };
@@ -107,9 +107,18 @@ describe('App program → dedicated host resource → bound App page', () => {
     bridge.closePage(owner.pageId);
   });
 
-  it('does not route a remote task picture through the generic RPC/notification relay', async () => {
+  it('watches a remote task\'s projection on its machine, over this computer\'s device connection to it', async () => {
     const { bridge } = setup();
-    await expect(bridge.call(page(10, 'remote-task'), 'projectionWatch', { id: 'whatever', watchId: 'v' })).rejects.toThrow(/direct connection/);
+    const { setProjectionRemoteCaller } = await import('./projection-remote-viewer');
+    // No device connection yet: refused, nothing local is opened for a task that is elsewhere.
+    await expect(bridge.call(page(10, 'remote-task'), 'projectionWatch', { id: 'whatever', watchId: 'v' })).rejects.toMatchObject({ code: 'unavailable' });
+    const asked: unknown[] = [];
+    setProjectionRemoteCaller({ call: async (deviceId, type, payload) => { asked.push({ deviceId, type, payload }); return { result: { watching: true } }; } });
+    try {
+      await bridge.call(page(11, 'remote-task'), 'projectionWatch', { id: 'source-there', watchId: 'w' });
+      expect(asked).toEqual([{ deviceId: 'remote', type: 'appProjection.watch',
+        payload: { watch: expect.any(String), app: expect.any(String), version: '1.2.3', session: 'remote-task', source: 'source-there' } }]);
+    } finally { setProjectionRemoteCaller(null); }
   });
 
   it('bounds simultaneous pending watches and releases failed watch reservations', async () => {

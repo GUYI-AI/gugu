@@ -144,7 +144,7 @@ export const PromptLibraryView = observer(function PromptLibraryView() {
         </div>
       </PageHeader>
       {!!actions.error && !actions.hasData && (
-        <DeviceScopeNoticeLine notice={{ kind: 'failed', text: translate('prompts.loadFailed'), retry: true, readOnly: false }} onRetry={actions.reload} />
+        <DeviceScopeNoticeLine notice={{ kind: 'failed', text: translate('prompts.loadFailed'), retry: true, readOnly: false, inHeading: false, cached: false }} onRetry={actions.reload} />
       )}
       {/* 还没读到(在读 / 读不到):❌ 先画一句「还没有提示词」冒充它是空的。读不到时上面那一句说清楚。 */}
       {actions.isLoading ? (

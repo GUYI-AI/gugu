@@ -42,6 +42,13 @@ export default {
       "close_incomplete": "关闭没完成，请重试。"
     }
   },
+  "connection": {
+    "online": "在线",
+    "connecting": "连接中",
+    "deviceOffline": "设备离线",
+    "lastSeen": "最后在线 {{time}}",
+    "retry": "重新连接"
+  },
   "agentStatus": {
     "running": "运行中",
     "parked": "后台运行中",

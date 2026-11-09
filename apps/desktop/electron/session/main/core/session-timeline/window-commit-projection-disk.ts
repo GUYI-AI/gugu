@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { readWindowFrame as readFrame, writeWindowFrame as writeFrame } from '@gugu/session-core/session-record/window-cache/disk-frame';
-import type { WindowFrameKey } from '@gugu/session-core/session-record/window-cache/frame';
+import { encodeWindowFrame, type WindowFrameKey } from '@gugu/session-core/session-record/window-cache/frame';
+import { windowFrameBackend } from '@gugu/session-core/session-record/window-cache/frame-backend';
 import type { WindowBudget } from '@gugu/session-core/session-record/window-cache/types';
 import { prepareWindowCommitDirectory } from './window-commit-directory';
 
@@ -16,10 +17,16 @@ export function windowCommitProjectionDirectory(directory: string, binding: Bind
  * immutable path. A legacy flat projection is an explicit bounded cache miss,
  * rebuilt through its receipt; never moved or silently treated as an empty page. */
 export function readWindowFrame(directory: string, key: WindowFrameKey, budget: WindowBudget) {
+  // A host pack store owns the whole committed namespace; its index is keyed by
+  // frame identity, so it stays the single route for every projection version.
+  const backend = windowFrameBackend(directory);
+  if (backend) { windowCommitProjectionDirectory(directory, key); return backend.read(key, budget); }
   return readFrame(windowCommitProjectionDirectory(directory, key), key, budget);
 }
 export async function writeWindowFrame(directory: string, key: WindowFrameKey, bytes: Uint8Array) {
   windowCommitProjectionDirectory(directory, key);
+  const backend = windowFrameBackend(directory);
+  if (backend) return backend.write(key, encodeWindowFrame(key, bytes));
   await prepareWindowCommitDirectory(directory, parts(key));
   await writeFrame(windowCommitProjectionDirectory(directory, key), key, bytes);
 }

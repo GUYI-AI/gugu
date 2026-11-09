@@ -36,7 +36,9 @@ it('keeps the same native task composer when the phone is cold and offline, with
   const session = { conversationId: 'session', projectId: 'project', title: 'Task', runtime: 'acp', nativeInputVersion: 1, agentStatus: 'idle', status: { status: 'idle', detail: null } } as SessionpageSessionSummary
   await renderWithAppProviders(harness, <SessionTimelinePage device={device('host', [], { is_online: true })} session={session} onBack={() => undefined} />)
   expect(harness.container.querySelector('[data-cold-native-composer]')).not.toBeNull()
-  expect(harness.container.querySelector('[data-testid="agent-watch-local-offline"]')).not.toBeNull()
+  // owner 11-08: this phone's own network being down is 「连接中」 in the header — ❌ a note under it, ❌ 「设备离线」 for a host the directory lists online.
+  expect(harness.container.querySelector('[data-testid="agent-watch-hero"] [data-testid="agent-watch-connection-status"]')?.getAttribute('data-state')).toBe('connecting')
+  expect(harness.container.querySelector('[data-testid="agent-watch-connection-status-detail"]')).toBeNull()
   expect(harness.container.textContent).not.toContain('Host unreachable')
   expect(harness.container.querySelector('[data-testid="agent-watch-session-status"]')).toBeNull()
   await act(async () => { harness.container.querySelector<HTMLButtonElement>('[data-cold-native-composer]')!.click() })
