@@ -1,19 +1,24 @@
 import { setImmediate } from 'node:timers/promises';
 import { createWindowCommitPublisher, type WindowCommitPublication } from './window-commit-publisher';
 import { createWindowCommitReceipts,snapshotWindowCommitReceipt,type WindowCommitReceipt,type WindowReceiptDatabase } from './window-commit-receipt';
-import { createWindowPackStore } from './window-pack-store';
+import { createWindowPackStore, isWindowPackCapacityFault } from './window-pack-store';
 import { observeCanonicalQueue } from '../sessions/canonical-queue-state';
 import { windowFrameName } from '@gugu/session-core/session-record/window-cache/frame';
 import type { WindowCommitProjection } from './window-commit-runtime';
 
-type Job={receipt:WindowCommitReceipt;resolve(value:WindowCommitProjection):void;reject(error:unknown):void};
+/** `alone`: split out of a merged build that exceeded its pack capacity. */
+type Job={receipt:WindowCommitReceipt;alone?:boolean;resolve(value:WindowCommitProjection):void;reject(error:unknown):void};
 type Queue={sessionId:string;jobs:Job[];running:boolean;requested:boolean;processing:number;timer?:ReturnType<typeof setTimeout>;
   idle:ReturnType<typeof observeCanonicalQueue>;drained:ReturnType<typeof Promise.withResolvers<void>>};
-type Ports=NonNullable<Parameters<typeof createWindowCommitPublisher>[2]>;
+type Ports=NonNullable<Parameters<typeof createWindowCommitPublisher>[2]>&{packs?:number};
 /** Same-conversation receipts share one durable pack. The busy timeout is only a
- * ceiling; an idle canonical queue, explicit flush and close act immediately. */
+ * ceiling; an idle canonical queue, explicit flush and close act immediately.
+ * A merged build stops admitting turns once half its pack capacity is used, and
+ * if it still exceeds the capacity each of its turns is rebuilt on its own (the
+ * publisher resumes from its durable progress), so only a turn that alone
+ * exceeds it fails, with the capacity fault. */
 export function createWindowPackPublisher(directory:string,db:WindowReceiptDatabase,ports:Ports={}){
-  const receipts=createWindowCommitReceipts(db),store=createWindowPackStore(directory,db);
+  const receipts=createWindowCommitReceipts(db),store=createWindowPackStore(directory,db,undefined,ports.packs===undefined?undefined:{packs:ports.packs});
   const publisher=createWindowCommitPublisher(directory,receipts,{observed:ports.observed,report:ports.report});
   const queues=new Map<string,Queue>();let closed=false,recovery:Promise<void>|undefined;
   const recovered=()=>recovery??=(async()=>{
@@ -30,11 +35,18 @@ export function createWindowPackPublisher(directory:string,db:WindowReceiptDatab
     if(q.running||!q.requested)return;q.running=true;
     try{
       while(q.requested&&q.jobs.length){
-        q.requested=false;const jobs=q.jobs.splice(0,8),published:WindowCommitPublication[]=[];q.processing=jobs.length;
+        q.requested=false;
+        let take=0;if(q.jobs[0].alone)take=1;else while(take<8&&take<q.jobs.length&&!q.jobs[take].alone)take++;
+        const jobs=q.jobs.splice(0,take),published:WindowCommitPublication[]=[];q.processing=jobs.length;
         try{
           await recovered();
-          await store.build(jobs.map(j=>j.receipt),async()=>{for(const job of jobs)published.push(await publisher.publish(job.receipt));});
-          for(let i=0;i<jobs.length;i++){
+          await store.build(jobs.map(j=>j.receipt),async()=>{for(const job of jobs){
+            if(published.length&&store.used()*2>=store.capacity)break;
+            published.push(await publisher.publish(job.receipt));
+          }});
+          // Turns this build stopped admitting go first in the next one.
+          if(published.length<jobs.length){q.jobs.unshift(...jobs.slice(published.length));q.requested=true;}
+          for(let i=0;i<published.length;i++){
             const job=jobs[i],expected=JSON.stringify(job.receipt),publication=published[i];
             const proof=store.proof(windowFrameName({...job.receipt.binding,kind:'projection',cursor:`publisher:${publication.buildId}:publication`}));
             const validate=()=>{proof();if(JSON.stringify(receipts.bySource(job.receipt.sourceId))!==expected)
@@ -42,8 +54,11 @@ export function createWindowPackPublisher(directory:string,db:WindowReceiptDatab
             validate();try{ports.phase?.('projection_durable',publication);}catch(error){report(error);}
             job.resolve({projectionId:publication.projectionId,validate});
           }
-        }catch(error){for(const job of jobs)job.reject(error);}finally{q.processing=0;}
-        if(q.jobs.length)consider(q);
+        }catch(error){
+          if(jobs.length>1&&isWindowPackCapacityFault(error)){for(const job of jobs)job.alone=true;q.jobs.unshift(...jobs);q.requested=true;}
+          else for(const job of jobs)job.reject(error);
+        }finally{q.processing=0;}
+        if(q.jobs.length&&!q.requested)consider(q);
       }
     }finally{
       q.running=false;

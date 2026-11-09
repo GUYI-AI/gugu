@@ -3,6 +3,7 @@ import { createWindowCommitTap, type WindowCommittedEvent } from './window-commi
 import { createWindowCommitJournal, type WindowLiveCursor, type WindowCommitReference } from './window-commit-journal';
 import type { WindowCommitCapture } from './window-commit-write';
 import type { WindowCommitReceipt } from './window-commit-receipt';
+import { isWindowPackCapacityFault } from './window-pack-store';
 
 type Fault = Error & { code: string };
 type Journal = ReturnType<typeof createWindowCommitJournal>;
@@ -88,7 +89,17 @@ export function createWindowCommitRuntime(ports: {
             }).then(
               value => ({ ok: true as const,value }), error => ({ ok: false as const,error }));
             const publish = async () => {
-            const result = await prepared; if (!result.ok) throw result.error;
+            const result = await prepared;
+            const located = { referenceId: receipt.referenceId, rowId: receipt.rowId, storedSeq: receipt.storedSeq,
+              firstCommitCursor: receipt.firstCommitCursor, latestRevisionCursor: receipt.latestRevisionCursor };
+            if (!result.ok) {
+              // A turn too large for one bounded projection is reported for that
+              // turn alone; the subscription and every other turn continue.
+              if (!isWindowPackCapacityFault(result.error)) throw result.error;
+              report(result.error);
+              for (const owner of recipients) if (!owner.closed) owner.journal!.publish({ ...located, kind: 'needs_location' });
+              return;
+            }
             const projection = result.value;
             const values = { referenceId: receipt.referenceId, rowId: receipt.rowId, storedSeq: receipt.storedSeq,
               projectionId: projection.projectionId, latestRevisionCursor: receipt.latestRevisionCursor };

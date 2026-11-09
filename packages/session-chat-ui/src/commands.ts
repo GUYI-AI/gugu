@@ -7,6 +7,7 @@
  */
 
 import type { TimelineWindowFields } from '@gugu/session-core/session-record/contract';
+import type { ViewportProtection } from './core/viewport-protection';
 import type { ChatAttachment, ChatMessage, OpenedOutput } from './model';
 
 export type ChatViewCommandId = 'chat.scrollToTop' | 'chat.scrollToBottom';
@@ -36,6 +37,8 @@ export const CHAT_VIEW_COMMANDS = [
  * via `view.setCommands(commands)`.
  */
 export type ChatCommands = {
+  /** Mounted rows and reading intent for residency; never an unread acknowledgement. */
+  onViewportProtection?: (protection: ViewportProtection) => void;
   /** Bounded read-only source rows; never canonical input, unread, or permission state. */
   sourceWindow?: Pick<TimelineWindowFields, 'sourceLineage' | 'sourceFragments' | 'resolvedFragmentOwners'> & {
     /** An idle-fenced opening history precedes every subsequently admitted live turn. */

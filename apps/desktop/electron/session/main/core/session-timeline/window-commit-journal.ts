@@ -54,17 +54,19 @@ export function createWindowCommitJournal(options: {
   function reference(input: WindowCommitReference): Readonly<WindowCommitReference> {
     if (input.firstCommitCursor !== null) validate(input.firstCommitCursor);
     validate(input.latestRevisionCursor);
-    if (!id(input.referenceId) || !id(input.projectionId) || !id(input.rowId) || !sequence(input.storedSeq)
-      || !['insert', 'update'].includes(input.kind)
+    if (!id(input.referenceId) || !id(input.rowId) || !sequence(input.storedSeq)
+      || !['insert', 'update', 'needs_location'].includes(input.kind) || (input.kind !== 'needs_location' && !id(input.projectionId))
       || (input.firstCommitCursor !== null && input.firstCommitCursor.sequence > input.latestRevisionCursor.sequence)
       || (input.kind === 'insert' && (!input.firstCommitCursor || input.firstCommitCursor.sequence !== input.latestRevisionCursor.sequence)))
       throw fault('live_invalid_reference', 'Invalid durable commit reference');
     // Explicitly copy only small scalar fields: an accidental `turn` property
     // must never reach JSON sizing, the retained queue or the RPC result.
-    const values = { referenceId: input.referenceId, projectionId: input.projectionId,
-      rowId: input.rowId, storedSeq: input.storedSeq, latestRevisionCursor: cursor(input.latestRevisionCursor) };
+    const located = { referenceId: input.referenceId, rowId: input.rowId, storedSeq: input.storedSeq, latestRevisionCursor: cursor(input.latestRevisionCursor) };
+    const first = input.firstCommitCursor === null ? null : cursor(input.firstCommitCursor);
+    if (input.kind === 'needs_location') return Object.freeze({ ...located, kind: 'needs_location', firstCommitCursor: first });
+    const values = { ...located, projectionId: input.projectionId };
     return input.kind === 'insert' ? Object.freeze({ ...values, kind: 'insert', firstCommitCursor: cursor(input.firstCommitCursor) })
-      : Object.freeze({ ...values, kind: 'update', firstCommitCursor: input.firstCommitCursor === null ? null : cursor(input.firstCommitCursor) });
+      : Object.freeze({ ...values, kind: 'update', firstCommitCursor: first });
   }
 
   return {

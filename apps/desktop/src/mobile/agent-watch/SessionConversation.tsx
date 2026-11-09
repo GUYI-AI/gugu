@@ -1,4 +1,5 @@
 import { hasPendingWindow } from './timeline-window-fields'
+import { boundedWindowReady } from './desktop-window-history'
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection'
 import { useRejectedSessionInputCommands } from '@/hooks/useRejectedSessionInputCommands'
 import { registerNativeComposer } from '@/lib/nativeComposerHandoff'
@@ -357,7 +358,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       toolbarExtra={<><ComposerAttachButton disabled={sending} mobile onPickFile={() => input.current?.click()} /></>} />
   </>
   return <SessionUiTheme theme={theme}><MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
-    <div ref={visibility.ref} className="relative flex min-h-0 flex-1 flex-col"><SessionTranscriptView uri={sessionId} turns={turns} pendingPrompt={pendingPrompt ?? startupPrompt ?? pendingSends[0] ?? null} pendingMessages={pendingMessages} mobile commands={commands} backgroundTasks={background}
+    <div ref={visibility.ref} className="relative flex min-h-0 flex-1 flex-col"><SessionTranscriptView uri={sessionId} sourceWindow={boundedWindowReady(timeline) ? timeline : undefined} turns={turns} pendingPrompt={pendingPrompt ?? startupPrompt ?? pendingSends[0] ?? null} pendingMessages={pendingMessages} mobile commands={commands} backgroundTasks={background}
       onReachStart={() => { void quotes.loadOlder() }} composerContent={composer} shown={visibility.shown} onAtBottomChange={atBottom => { reading.onAtBottomChange(atBottom); if (atBottom) onAtBottom?.() }} onVisibleItems={reading.onVisibleItems} onReady={ready => { view.current = ready; reading.onReady(ready) }} className="relative min-h-0 flex-1" />
     {hasPendingWindow(timeline) ? <div className="gg-aw-placeholder" role="status">{t('agentWatch.timeline.loadingWindow')}</div> : turns.length === 0 ? emptyNote : null}</div>{outputs.panel}{options.confirmation}
   </MessageProvider></SessionUiTheme>

@@ -281,6 +281,15 @@ describe('a sent image asks for its temporary copy when it is published', () => 
     expect(f.rpc.mock.calls.filter(([name]) => name === 'file_device_publish')).toHaveLength(2)
     expect(f.requestCopy).not.toHaveBeenCalled()
   })
+  it('names an image\'s pixel size, read from its header, in its publication', async () => {
+    const png = new Uint8Array(24); png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0x06, 0x40, 0, 0, 0x01, 0x90])
+    const f = fixture()
+    await f.publish('group', { ...image, bytes: png.buffer }, null, 'owner', undefined, { message })
+    await f.publish('group', image, null, 'owner', undefined, { message })
+    const [sized, unread] = f.rpc.mock.calls.filter(([name]) => name === 'file_device_publish').map(([, args]) => args)
+    expect(sized).toMatchObject({ p_width: 1600, p_height: 400 })
+    expect(unread).not.toHaveProperty('p_width')
+  })
   it('a refused request is only logged: the image is still sent', async () => {
     const f = fixture()
     f.requestCopy.mockRejectedValueOnce(new Error('transfer refused'))

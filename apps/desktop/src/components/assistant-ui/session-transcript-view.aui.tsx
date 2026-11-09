@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react'
 import type { ChatCommands, ChatContext, ChatLayout, ChatState } from '@gugu/session-chat-ui'
+import type { TimelineWindowFields } from '@gugu/session-core/session-record/contract'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import { loadChatUi } from '@renderer/lib/chat/chat-transcript'
 import { useSessionChatLayout } from '@renderer/lib/chat/use-session-chat-layout'
@@ -35,6 +36,7 @@ function SessionTranscriptContent({
   turns,
   layout,
   commands,
+  sourceWindow,
   composerContent,
   shown,
   onVisibleItems,
@@ -53,6 +55,7 @@ function SessionTranscriptContent({
   uri: string
   turns: readonly TranscriptTurn[]
   layout?: ChatLayout
+  sourceWindow?: TimelineWindowFields
   commands?: ChatCommands
   composerContent?: ReactNode
   shown?: boolean
@@ -74,6 +77,7 @@ function SessionTranscriptContent({
   const mobileShell = useMobileShell()
   const [model, setModel] = useState<Model | null>(null)
   const written = useRef<readonly TranscriptTurn[]>([])
+  const viewCommands = useMemo(() => ({ ...commands, sourceWindow }), [commands, sourceWindow])
 
   useEffect(() => {
     let live = true
@@ -127,7 +131,7 @@ function SessionTranscriptContent({
       context={model.context}
       state={model.state}
       pinUserMessages={!mobileShell}
-      commands={commands}
+      commands={viewCommands}
       composerContent={composerContent}
       shown={shown}
       onVisibleItems={onVisibleItems}
