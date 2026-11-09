@@ -16,6 +16,8 @@ export function hermesPromptText(blocks: unknown): { text: string; images: { dat
 
 const HOST_PROMPT_HASH = 'gugu.hermesNativePromptSha256';
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
+/** The receipt a host prompt carries for the native text Hermes recorded for it. */
+export const hermesNativeDigest = hash;
 export const hermesPromptMeta = (blocks: unknown): Record<string, string> => ({ [HOST_PROMPT_HASH]: hash(hermesPromptText(blocks).text) });
 export type HermesPromptIndex = ReadonlyMap<string, string | null>;
 

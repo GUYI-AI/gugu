@@ -4,6 +4,8 @@ import {
   setExtensionBridgeHost,
   type ExtensionBridgeHost,
 } from '@main/core/extensions/extension-bridge';
+import { setProjectionViewerOpener, type ProjectionViewerClient } from './projection-viewer-provider';
+import { setProjectionRemoteCaller, type ProjectionRemoteCaller } from './projection-remote-viewer';
 import type { DispatchAsk, DispatchPicked } from '@shared/extensions/app-dispatch-core';
 import {
   EXTENSION_HOST_ACTION_METHOD,
@@ -42,6 +44,10 @@ import {
 
 /** What this relay needs from the host process's own renderer channel. */
 export type ExtensionHostWindowChannel = {
+  /** Authenticated outer-host media entry; no proof or key crosses into App HTML. */
+  openProjectionViewer?: (pageId: number) => Promise<ProjectionViewerClient>;
+  /** This computer's device connection to another of the person's machines (Gugu cloud or SSH), for App projections there. */
+  callMachine?: ProjectionRemoteCaller['call'];
   invokeRendererExtensions: (
     method: string,
     params: unknown,
@@ -108,6 +114,8 @@ export function setExtensionHostWindowChannel(
   unsubscribePresentation?.();
   unsubscribePresentation = null;
   hostWindow = channel;
+  setProjectionViewerOpener(channel?.openProjectionViewer);
+  setProjectionRemoteCaller(channel?.callMachine ? { call: channel.callMachine } : null);
   if (!channel) return;
   // Fullscreen is read from the window, so nothing else would notice it moved.
   unsubscribeFullScreen = channel.onHostWindowFullScreenChange(() => {

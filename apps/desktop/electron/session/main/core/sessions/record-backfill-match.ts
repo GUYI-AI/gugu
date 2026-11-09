@@ -55,10 +55,22 @@ export function turnFingerprint(turn: TranscriptTurn, hermes?: HermesPromptIndex
   return JSON.stringify([prompt, squeeze(reply.text)]);
 }
 
-type Identity = { keys: Set<string>; fingerprint: string | null; prompt: string | null };
+export type Identity = { keys: Set<string>; fingerprint: string | null; prompt: string | null };
 
-const identify = (turn: TranscriptTurn, hermes?: HermesPromptIndex): Identity =>
+export const identify = (turn: TranscriptTurn, hermes?: HermesPromptIndex): Identity =>
   ({ keys: turnIdentityKeys(turn), fingerprint: turnFingerprint(turn, hermes), prompt: turnPrompt(turn, hermes) });
+
+/**
+ * The same identity with every string replaced by a short digest: matching only compares for equality, so the ingest
+ * child can keep one per record turn of a multi-GiB record (resume-mem).
+ */
+export function hashIdentity(identity: Identity, digest: (text: string) => string): Identity {
+  return {
+    keys: new Set([...identity.keys].map(digest)),
+    fingerprint: identity.fingerprint === null ? null : digest(identity.fingerprint),
+    prompt: identity.prompt === null ? null : digest(identity.prompt),
+  };
+}
 
 /** 拿来定位的认法:只认确定的身份 —— 编号,或问答成对的指纹。光凭提问原文不定位:「继续」会重复。 */
 function anchors(a: Identity, b: Identity, mode: RecordIdentity): boolean {
@@ -74,7 +86,7 @@ function sameTurn(a: Identity, b: Identity, mode: RecordIdentity): boolean {
 }
 
 /** 完整内容也会重复:从唯一锚点(或完整库的开头)按已入库回合逐次往后认,不能跳到最后一处。 */
-function contentTail(record: readonly TranscriptTurn[], seen: Identity[], stored: Identity[], hasOlderStoredTurns: boolean): TranscriptTurn[] | null {
+function contentTail(seen: Identity[], stored: Identity[], hasOlderStoredTurns: boolean): { from: number; anchor: Anchor } | null {
   const locations = new Map<string, number[]>();
   const prompts = new Map<string, number[]>();
   const add = (map: Map<string, number[]>, key: string | null, at: number) => {
@@ -101,7 +113,9 @@ function contentTail(record: readonly TranscriptTurn[], seen: Identity[], stored
     }
   }
   if (start < 0) return null;
-  for (const one of chronological.slice(start + 1)) {
+  let anchored = start;
+  for (let index = start + 1; index < chronological.length; index += 1) {
+    const one = chronological[index];
     const matches = one.fingerprint !== null ? locations.get(one.fingerprint) : one.prompt !== null ? prompts.get(one.prompt) : undefined;
     // 相同问答可能有成千上万轮,按有序位置二分,不反复扫描已认过的前缀。
     let low = 0, high = matches?.length ?? 0;
@@ -110,10 +124,13 @@ function contentTail(record: readonly TranscriptTurn[], seen: Identity[], stored
       if (matches![mid] <= at) low = mid + 1;
       else high = mid;
     }
-    if (matches && low < matches.length) at = matches[low];
+    if (matches && low < matches.length) { at = matches[low]; anchored = index; }
   }
-  return record.slice(at + 1);
+  return { from: at + 1, anchor: { seen: at, stored: chronological.length - 1 - anchored } };
 }
+
+/** A record turn and the stored row (index newest first) it was recognized as. */
+export type Anchor = { seen: number; stored: number };
 
 /**
  * 记录里接在库尾之后、库里还没有的那几轮,由旧到新。`storedNewestFirst` 是库尾那几行,由新到旧。
@@ -133,12 +150,40 @@ export function recordTurnsAfterStore(
 ): TranscriptTurn[] | null {
   if (storedNewestFirst.length === 0) return [...record];
   const stored = storedNewestFirst.map((turn) => identify(turn));
-  const mode: RecordIdentity = identity === 'ids' && stored.every((one) => one.keys.size === 0) ? 'content' : identity;
   const hermes = options.hermesPromptReceipts ? indexHermesPrompts(storedNewestFirst.flatMap((turn) => turn.items)) : undefined;
   if (hermes && record.some((turn) => turn.items.some((item) => item.kind === 'message' && item.role === 'user'
     && originalHermesPrompt(item.text, hermes) === null))) return null;
-  const seen = record.map((turn) => identify(turn, hermes));
-  if (mode === 'content') return contentTail(record, seen, stored, options.hasOlderStoredTurns ?? false);
+  const picked = matchAfterStore(record.map((turn) => identify(turn, hermes)), stored, identity, options);
+  return picked === null ? null : picked.map((index) => record[index]);
+}
+
+/**
+ * `recordTurnsAfterStore` on identities alone: the indexes of the record turns to add, oldest first, or `null` when the
+ * store and the record diverged. The ingest child runs it over hashed identities (`hashIdentity`).
+ */
+export function matchAfterStore(
+  seen: readonly Identity[],
+  stored: readonly Identity[],
+  identity: RecordIdentity,
+  options: { hasOlderStoredTurns?: boolean } = {},
+): number[] | null {
+  return matchAfterStoreAt(seen, stored, identity, options)?.missing ?? null;
+}
+
+/** `matchAfterStore`, with the newest record turn it recognized as a stored row (null when the store is empty). */
+export function matchAfterStoreAt(
+  seen: readonly Identity[],
+  stored: readonly Identity[],
+  identity: RecordIdentity,
+  options: { hasOlderStoredTurns?: boolean } = {},
+): { missing: number[]; anchor: Anchor | null } | null {
+  const all = (from: number) => Array.from({ length: Math.max(0, seen.length - from) }, (_, offset) => from + offset);
+  if (stored.length === 0) return { missing: all(0), anchor: null };
+  const mode: RecordIdentity = identity === 'ids' && stored.every((one) => one.keys.size === 0) ? 'content' : identity;
+  if (mode === 'content') {
+    const tail = contentTail([...seen], [...stored], options.hasOlderStoredTurns ?? false);
+    return tail === null ? null : { missing: all(tail.from), anchor: tail.anchor };
+  }
   for (let newer = 0; newer < stored.length; newer += 1) {
     let at = -1;
     for (let index = seen.length - 1; index >= 0; index -= 1) {
@@ -149,12 +194,12 @@ export function recordTurnsAfterStore(
     }
     if (at < 0) continue;
     const unrecognized = stored.slice(0, newer);
-    return record.slice(at + 1).filter((_, offset) => {
-      const hit = unrecognized.findIndex((one) => sameTurn(seen[at + 1 + offset], one, mode));
+    return { anchor: { seen: at, stored: newer }, missing: all(at + 1).filter((index) => {
+      const hit = unrecognized.findIndex((one) => sameTurn(seen[index], one, mode));
       if (hit < 0) return true;
       unrecognized.splice(hit, 1);
       return false;
-    });
+    }) };
   }
   return null;
 }

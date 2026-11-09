@@ -31,14 +31,14 @@ describe('resuming without replay (#980)', () => {
     expect(order).toEqual(['fill', 'base']);
   });
 
-  it('neither rereads nor replays a record too large for the heap', async () => {
+  it('replays when the record cannot be read: the agent holds the only history left', async () => {
     const recordedDeliveryIds = vi.fn(async () => []);
     const facts = await resumeHistoryFacts(input(), {
       recordedDeliveryIds,
-      fillFromRecord: async () => ({ status: 'too_large' }),
+      fillFromRecord: async () => ({ status: 'unavailable' }),
       turnIndexBase: async () => 7,
     });
-    expect(facts).toEqual({ replayHistory: false, recordedDeliveryIds: null, turnIndexBase: 7 });
+    expect(facts).toEqual({ replayHistory: undefined, recordedDeliveryIds: undefined, turnIndexBase: undefined });
     expect(recordedDeliveryIds).not.toHaveBeenCalled();
   });
 

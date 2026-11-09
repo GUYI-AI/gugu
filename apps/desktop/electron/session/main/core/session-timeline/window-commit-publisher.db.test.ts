@@ -10,9 +10,10 @@ import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 import * as disk from '@gugu/session-core/session-record/window-cache/disk-frame';
 import { createWindowCommitReceipts, type WindowCommitReceipt } from './window-commit-receipt';
-import { createWindowCommitPublisher, readPublishedCommitEntity, readWindowCommitPublication } from './window-commit-publisher';
+import { createWindowCommitPublisher, readPublishedCommitEntity, readWindowCommitPublication, readWindowCommitPublicationVersion } from './window-commit-publisher';
 import { openCommitBodySlot, readCommitBodySlot } from './window-commit-slot';
 import * as source from './window-commit-source';
+import { readCommitHeader } from './window-commit-header';
 
 const state = vi.hoisted(() => ({ db: undefined as AppDb | undefined, sqlite: undefined as Database.Database | undefined }));
 vi.mock('@main/db/client', () => ({ get db() { return state.db; }, get sqlite() { return state.sqlite; } }));
@@ -41,6 +42,17 @@ describe('complete durable canonical commit publisher', () => {
   afterEach(async () => { vi.restoreAllMocks(); fixture?.close(); state.db = undefined; state.sqlite = undefined;
     if (directory) await rm(directory, { recursive: true, force: true }); });
   const context = () => ({ directory, receipt, receipts: createWindowCommitReceipts(fixture.sqlite) });
+
+  it('publishes real rendering headers before the complete version, keeping message body out of its header', async () => {
+    const c = context(), published = await createWindowCommitPublisher(directory, c.receipts).publish(receipt);
+    const root = await readCommitHeader({ ...c, target: 'turn', range: { start: 0, end: receipt.source.bytes } }, published.buildId, createWindowBudget());
+    expect(root.values).toMatchObject({ referenceId: receipt.referenceId, seq: receipt.storedSeq, initiator: 'user' });
+    expect(root.values).not.toHaveProperty('startedAt');
+    const row = await readPublishedCommitEntity(c, published.projectionId, 4, createWindowBudget());
+    const header = await readCommitHeader({ ...c, target: 'item', range: row.position.range }, row.entityId, createWindowBudget());
+    expect(header.values).toMatchObject({ id: row.facts.id, kind: 'message', seq: 4, role: 'assistant' });
+    expect(JSON.stringify(header)).not.toContain('real message');
+  }, 30000);
 
   it('persists only changed outer recovery cursors while inner structural checkpoints progress', async () => {
     const write = frames.writeWindowFrame, heads: Buffer[] = [];
@@ -108,12 +120,13 @@ describe('complete durable canonical commit publisher', () => {
     await expect(publisher.publish(receipt)).rejects.toThrow('occupied');
     await expect(pending).rejects.toThrow('committed receipt');
   }, 30000);
-  it('point-reads publication only while the receipt survives the final asynchronous source check', async () => {
-    const c = context(); await createWindowCommitPublisher(directory, c.receipts).publish(receipt);
+  it.each(['latest', 'version'])('point-reads %s only while its receipt survives the final asynchronous source check', async kind => {
+    const c = context(), published = await createWindowCommitPublisher(directory, c.receipts).publish(receipt);
     const validate = source.assertWindowCommitSource;
     vi.spyOn(source, 'assertWindowCommitSource').mockImplementation(async (...args) => {
       await validate(...args); queueMicrotask(() => fixture.sqlite.prepare('DELETE FROM session_turns WHERE id=?').run(c.receipt.rowId));
     });
-    await expect(readWindowCommitPublication(c, createWindowBudget())).rejects.toThrow('committed receipt');
+    await expect(kind === 'latest' ? readWindowCommitPublication(c, createWindowBudget())
+      : readWindowCommitPublicationVersion(c, published.projectionId, createWindowBudget())).rejects.toThrow('committed receipt');
   }, 30000);
 });

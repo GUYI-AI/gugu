@@ -20,7 +20,7 @@ export const OfflineSessionSlotHost = memo(function OfflineSessionSlotHost() {
     const [sessionId, deviceId] = key.slice(OFFLINE_SESSION_SLOT_PREFIX.length).split('/').map(decodeURIComponent)
     const label = slots?.getSlotLabel?.(key) ?? ''
     return [createPortal(<div className="ta-skin flex h-full min-h-0 w-full flex-col">
-      <PeekSessionTimeline sessionId={sessionId} nativeOnly
+      <PeekSessionTimeline sessionId={sessionId} deviceId={deviceId} nativeOnly
         fallback={<OfflineSessionInput deviceId={deviceId} sessionId={sessionId} label={label} />}
         onBack={() => readSessionpageHistory()?.back()} />
     </div>, element, key)]

@@ -10,7 +10,7 @@ import { createWindowCommitRuntime, type WindowCommitProjection } from './window
 import type { WindowCommitReceipt } from './window-commit-receipt';
 import type { WindowCommittedEvent } from './window-commit-tap';
 
-type Producer = (receipt: WindowCommitReceipt) => Promise<WindowCommitProjection>;
+type Producer = ((receipt: WindowCommitReceipt) => Promise<WindowCommitProjection>) & { flush?(sessionId?:string): Promise<void> };
 type Runtime = ReturnType<typeof createWindowCommitRuntime>;
 type Slot = { runtime: Runtime; producer?: { project: Producer }; enabled: boolean; storageFailed?: unknown; observe(event: WindowCommittedEvent): void };
 let current: Slot | undefined;
@@ -34,12 +34,16 @@ function slot(): Slot {
       if (!value.producer) throw Object.assign(new Error('Commit projection is unavailable'), { code: 'live_projection_unavailable' });
       return value.producer.project(receipt);
     },
+    flush(sessionId) { void value.producer?.project.flush?.(sessionId).catch(error => report('sessionWindow: owner projection flush failed',error)); },
     report: error => report('sessionWindow: committed history failed', error),
   }) }; current = value; return value;
 }
 
 /** Await in lazyWorker.onSpawned, before any start/resume can receive the worker. */
-export async function connectWindowCommitHost(source: Parameters<Runtime['attach']>[0], observe: Slot['observe'], connection: Pick<Connection, 'onDisconnect'>) {
+/** `prepare` runs before the committed-event source attaches. If it fails, no
+ * window can reserve a capture; canonical persistence itself still proceeds. */
+export async function connectWindowCommitHost(source: Parameters<Runtime['attach']>[0], observe: Slot['observe'], connection: Pick<Connection, 'onDisconnect'>,
+  prepare?: () => Promise<void>) {
   const selected = slot(); selected.observe = observe;
   const releaseDisconnect = connection.onDisconnect(() => selected.runtime.invalidate());
   // Initialize before the awaited worker-start barrier, never before joining the
@@ -48,6 +52,7 @@ export async function connectWindowCommitHost(source: Parameters<Runtime['attach
   try {
     await mkdir(directory, { recursive: true });
     for (const path of [directory, cache, userData]) await syncWindowDirectory(path);
+    await prepare?.();
     selected.storageFailed = undefined;
   } catch (error) {
     selected.storageFailed = error; selected.runtime.invalidateStore();
@@ -55,11 +60,15 @@ export async function connectWindowCommitHost(source: Parameters<Runtime['attach
   }
   try { await selected.runtime.attach(source); }
   catch (error) {
-    releaseDisconnect(); selected.runtime.invalidate(); selected.runtime.close(); if (current === selected) current = undefined;
+    releaseDisconnect(); selected.runtime.invalidate(); selected.runtime.close();
+    void selected.producer?.project.flush?.().catch(error => report('sessionWindow: final projection flush failed',error));
+    if (current === selected) current = undefined;
     throw error;
   }
   return { invalidate: () => selected.runtime.invalidate(), close() {
-    releaseDisconnect(); selected.runtime.invalidate(); selected.runtime.close(); if (current === selected) current = undefined;
+    releaseDisconnect(); selected.runtime.invalidate(); selected.runtime.close();
+    void selected.producer?.project.flush?.().catch(error => report('sessionWindow: final projection flush failed',error));
+    if (current === selected) current = undefined;
   } };
 }
 /** The durable producer must exist before a route can reserve the new handoff. */
@@ -67,7 +76,8 @@ export function bindWindowCommitProjection(project: Producer): () => void {
   const selected = slot();
   if (selected.producer) throw new Error('A commit projection producer is already bound');
   const producer = { project }; selected.producer = producer; selected.enabled = true;
-  return () => { if (selected.producer !== producer) return; selected.producer = undefined; selected.enabled = false; selected.runtime.invalidateStore(); };
+  return () => { if (selected.producer !== producer) return; selected.producer = undefined; selected.enabled = false; selected.runtime.invalidateStore();
+    void producer.project.flush?.().catch(error => report('sessionWindow: projection release flush failed',error)); };
 }
 /** One main-owned production factory per host generation; no worker get/start. */
 export function ensureWindowCommitProjection(factory: () => Producer): void {

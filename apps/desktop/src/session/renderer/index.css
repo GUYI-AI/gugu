@@ -1385,6 +1385,28 @@ html[data-gugu-dragging] :is(webview, iframe) {
   display: none;
 }
 
+/* 一块自己那条页签条右端的机器状态(session-machine-status.tsx,#2301 Q3):状态字永远完整;机器名、最后在线各最多 8rem,
+   页签条窄了(同上 data-strip-narrow)两者让位,只留圆点和状态字。❌ 截掉状态字、❌ 把页签挤没。 */
+[data-slot="session-machine-status"] :is(.gg-conn-subject, .gg-conn-detail) {
+  max-width: 8rem;
+}
+.session-tab-bar[data-strip-narrow] [data-slot="session-machine-status"] .gg-conn-sep,
+.session-tab-bar[data-strip-narrow] [data-slot="session-machine-status"] :is(.gg-conn-subject, .gg-conn-detail) {
+  display: none;
+}
+/* 再窄到页签保不住「图标加一个字」(session-machine-status.tsx data-compact):只留圆点;状态字仍给读屏、悬停看得到。 */
+[data-slot="session-machine-status"][data-compact] :is(.gg-conn-subject, .gg-conn-sep, .gg-conn-detail) {
+  display: none;
+}
+[data-slot="session-machine-status"][data-compact] .gg-conn-word {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* 页签条右端那一排放不下了(titlebar-actions.tsx 的 data-tabbar-actions-tight):「在 X 中打开」那半颗收起,
    只留「其他打开方式」—— 下拉里每个 app 点了就用它打开,一样都不少。❌ 让这一排伸进窗口按钮那格。 */
 [data-tabbar-actions][data-tabbar-actions-tight] [data-open-in-primary] {

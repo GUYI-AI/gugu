@@ -10,6 +10,7 @@ import { log } from '@renderer/utils/logger';
 import type { BrowserWebviewElement } from '@renderer/features/browser/browser-webview-types';
 import { extensionSurfaceStore } from './extension-surface-store';
 import { ExtensionTabToolbar } from './extension-tab-toolbar';
+import { nativeAppSurfaceMetrics, observeNativeSurfaceOcclusion } from './native-app-surface';
 import { bindAppPageZoom } from '@/components/preview/file-content-zoom';
 
 /**
@@ -154,7 +155,7 @@ export function ExtensionTabPane({
     const container = containerRef.current;
     if (!container) return;
     const report = () => {
-      const box = container.getBoundingClientRect();
+      const box = (webviewRef.current ?? container).getBoundingClientRect();
       const width = Math.round(box.width);
       const height = Math.round(box.height);
       void rpc.extensions
@@ -162,9 +163,8 @@ export function ExtensionTabPane({
           webContentsId,
           // Collapsed to nothing, or the window is not being shown at all: either
           // way the user is not looking at this surface.
-          visible: shownRef.current && document.visibilityState === 'visible' && width > 0 && height > 0,
-          width,
-          height,
+          ...nativeAppSurfaceMetrics(webviewRef.current ?? container, container,
+            shownRef.current && document.visibilityState === 'visible' && width > 0 && height > 0, width, height),
         })
         .catch((error: unknown) => {
           log.warn('Failed to report extension surface layout:', error);
@@ -175,10 +175,14 @@ export function ExtensionTabPane({
     const observer = new ResizeObserver(report);
     observer.observe(container);
     document.addEventListener('visibilitychange', report);
+    document.addEventListener('scroll', report, true);
+    const stopOcclusion = observeNativeSurfaceOcclusion(report);
     layoutTeardownRef.current = () => {
       reportLayoutRef.current = null;
       observer.disconnect();
+      stopOcclusion();
       document.removeEventListener('visibilitychange', report);
+      document.removeEventListener('scroll', report, true);
     };
   }, []);
 

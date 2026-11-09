@@ -49,20 +49,55 @@ export function projectSourceFragments(
   if (window.beforeLive) {
     result.unshift(...[...replacements.values()].flat());
   } else {
+    const resultIds = new Set(result.map(row => row.id));
+    const previousSlot = new Map<string, number>();
+    previous.forEach((row, index) => {
+      const key = row.sourceFragment?.key;
+      if (key !== undefined && !previousSlot.has(key)) previousSlot.set(key, index);
+    });
     for (const [key, rows] of replacements) {
       // Keep the old source slot relative to its next surviving row, even when
       // canonical history arrives in a different order or prepends older turns.
-      const oldIndex = previous.findIndex(row => row.sourceFragment?.key === key);
+      const oldIndex = previousSlot.get(key) ?? -1;
       let at = result.length;
       if (oldIndex >= 0) {
-        const next = previous.slice(oldIndex + 1).find(row => result.some(value => value.id === row.id));
+        let next: RenderUnit | undefined;
+        for (let i = oldIndex + 1; i < previous.length && !next; i++) if (resultIds.has(previous[i].id)) next = previous[i];
         if (next) at = result.findIndex(row => row.id === next.id);
       }
       result.splice(at, 0, ...rows);
+      for (const row of rows) resultIds.add(row.id);
     }
   }
+  if (!aliases.size) return result;
+  const canonicalIdByItem = new Map<string, string>();
+  for (const unit of canonical) if (!canonicalIdByItem.has(unit.itemId)) canonicalIdByItem.set(unit.itemId, unit.id);
   return result.map(row => {
-    const extra = aliases.get(canonical.find(value => value.itemId === row.itemId)?.id ?? '');
+    const extra = aliases.get(canonicalIdByItem.get(row.itemId) ?? '');
     return extra ? { ...row, anchorIds: [...row.anchorIds ?? [], ...extra] } : row;
+  });
+}
+
+/**
+ * Whether an incremental append may skip projection. True once every fragment of
+ * the window has the same owner as in the previous build and that owner's item is
+ * already in it (so it was already replaced there), with the same lineage and fragment set. A window that is still
+ * locating or resolving keeps the full rebuild; a settled one does not cost every
+ * later message a rebuild.
+ */
+export function sourceWindowSettled(
+  window: ChatCommands['sourceWindow'], previous: ChatCommands['sourceWindow'], hasItem: (itemId: string) => boolean,
+): boolean {
+  if (!window && !previous) return true;
+  if (!window || !previous || window.sourceLineage !== previous.sourceLineage) return false;
+  const fragments = window.sourceFragments ?? [];
+  const previousKeys = new Set((previous.sourceFragments ?? []).map(fragment => fragment.key));
+  if (fragments.length !== previousKeys.size || fragments.some(fragment => !previousKeys.has(fragment.key))) return false;
+  const owners = new Map(window.resolvedFragmentOwners?.map(owner => [owner.fragmentKey, owner.itemId]));
+  const previousOwners = new Map(previous.resolvedFragmentOwners?.map(owner => [owner.fragmentKey, owner.itemId]));
+  // An owner that resolves now must be projected once, even if its item is already on screen.
+  return fragments.every(fragment => {
+    const itemId = owners.get(fragment.key);
+    return itemId !== undefined && previousOwners.get(fragment.key) === itemId && hasItem(itemId);
   });
 }
