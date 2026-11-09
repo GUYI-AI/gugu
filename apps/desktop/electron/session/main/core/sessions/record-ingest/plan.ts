@@ -67,6 +67,11 @@ export const STORE_TAIL = 200;
 /** Above this a turn is copied with its pictures as sizes and its tool fields cut (`trimTurnsForTransport`). */
 export const TURN_MAX_BYTES = 4 * 1024 * 1024;
 const TRIMMED_FIELD_CHARS = 512 * 1024;
+/**
+ * Pictures copied into the store by one fill, as before resume-mem (`READ_BACK_MAX_CHARS`): past it a picture keeps
+ * only its size. The store is read whole elsewhere on the host, so it must not grow by the record's pictures.
+ */
+export const FILL_PICTURE_CHARS = 256 * 1024 * 1024;
 /** A batch is at most this many turns or bytes; the host holds one batch at a time. */
 export const BATCH_MAX_TURNS = 64;
 export const BATCH_MAX_BYTES = 4 * 1024 * 1024;
@@ -248,6 +253,7 @@ function batches(spill: string, plan?: { revise: Map<number, number>; append: Se
   const passes: Array<'revise' | 'append'> = plan ? ['revise', 'append'] : [];
   let lines: SpillLines | null = null;
   let carried: { kind: 'revise' | 'append'; seq?: number; turn: TranscriptTurn; bytes: number } | null = null;
+  let pictures = FILL_PICTURE_CHARS;
   const pull = (): typeof carried => {
     while (passes.length) {
       lines ??= spillLines(spill);
@@ -258,7 +264,9 @@ function batches(spill: string, plan?: { revise: Map<number, number>; append: Se
       const kind = passes[0];
       if (kind === 'revise' ? !plan!.revise.has(index) : !plan!.append.has(index)) continue;
       const text = line.slice(tab + 1);
-      return { kind, seq: plan!.revise.get(index), turn: JSON.parse(text) as TranscriptTurn, bytes: text.length };
+      const turn = JSON.parse(text) as TranscriptTurn;
+      const kept = keepPictures(turn.items, (chars) => (pictures -= chars) >= 0);
+      return { kind, seq: plan!.revise.get(index), turn: kept === turn.items ? turn : { ...turn, items: kept }, bytes: text.length };
     }
     return null;
   };
@@ -283,6 +291,25 @@ function batches(spill: string, plan?: { revise: Map<number, number>; append: Se
       lines = null;
     },
   };
+}
+
+/** Pictures the budget refuses keep only their size (`imageRefs`), as the transport projections show them. */
+function keepPictures(items: TranscriptTurn['items'], take: (chars: number) => boolean): TranscriptTurn['items'] {
+  let changed = false;
+  const next = items.map((item) => {
+    const node = item as unknown as { images?: Array<{ mimeType: string; data: string }>; children?: TranscriptTurn['items'] };
+    let out = item;
+    if (node.images?.length && !take(node.images.reduce((sum, image) => sum + image.data.length, 0))) {
+      const { images, ...rest } = node;
+      out = { ...rest, imageRefs: images.map(({ mimeType, data }) => ({ mimeType, chars: data.length })) } as unknown as typeof item;
+    }
+    const children = (out as typeof node).children;
+    const kept = children ? keepPictures(children, take) : children;
+    if (kept !== children) out = { ...out, children: kept } as typeof item;
+    if (out !== item) changed = true;
+    return out;
+  });
+  return changed ? next : items;
 }
 
 type SpillLines = { next(): string | null; close(): void };
