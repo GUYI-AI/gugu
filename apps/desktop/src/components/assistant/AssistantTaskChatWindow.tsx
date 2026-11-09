@@ -36,7 +36,7 @@ export function AssistantTaskChatWindow({ agent, task, onClose, status, notice, 
   return (
     <section className="assistant-task-chat-window ta-skin" aria-label={name} data-testid="assistant-task-chat-window">
       <TaskChatFilePreviewHost mobile={mobile}>
-        <PeekSessionTimeline sessionId={task.sessionId} local={local} onBack={onClose} fallback={<>
+        <PeekSessionTimeline sessionId={task.sessionId} deviceId={task.deviceId} local={local} onBack={onClose} fallback={<>
           <PaneHeader title={name} subtitle={status} mobile={mobile} divider
             leading={<><IconButton aria-label={t('panel.back')} onClick={onClose} data-testid="assistant-task-chat-close"><ChevronLeft /></IconButton><Avatar name={name} seed={agent.id} avatarUrl={agent.avatar} size="sm" isAgent still harnessBadge={false} /></>} />
           {notice}
