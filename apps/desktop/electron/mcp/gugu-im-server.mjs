@@ -337,7 +337,27 @@ async function restInsert(context, table, row, profile = 'chat', fetchImpl = fet
     headers: restHeaders(context, accessToken, profile, { Prefer: 'return=minimal' }),
     body: JSON.stringify(row),
   })
-  if (!res.ok) throw new Error(`INSERT ${table} → ${res.status} ${await res.text()}`)
+  if (!res.ok) throw restWriteError(`INSERT ${table}`, res.status, await res.text())
+}
+/** A refused write keeps PostgREST's code / hint / details, so a caller can tell one refusal from another. */
+export function restWriteError(what, status, body) {
+  const error = new Error(`${what} → ${status} ${body}`)
+  try {
+    const parsed = JSON.parse(body)
+    for (const key of ['code', 'hint', 'details']) if (typeof parsed?.[key] === 'string') error[key] = parsed[key]
+  } catch { /* not JSON: the raw text above is all there is */ }
+  error.status = status
+  return error
+}
+/**
+ * #2383 收件人合不合格由库判(chat.messages 的 BEFORE INSERT 触发器,gugu-supabase#240):退群或身份已移除的
+ * 归档 agent 照收、只给它记 refusal;从来不是成员的 id 才拒,带 hint recipient_not_member、details 列出这些 id。
+ * 发送者自己没权限仍是 RLS 的 42501,不会走到这里。把这种拒绝还原成给 agent 看得懂的一句,其余原样抛。
+ */
+function recipientRefusal(error, chatId) {
+  if (error?.hint !== 'recipient_not_member') return error
+  const ids = String(error.details ?? '').split(',').map((id) => id.trim()).filter(Boolean)
+  return new Error(`收件人不在本 chat（${chatId}）成员里：${ids.join(', ')}。用 message_members 查有效成员后重发。`)
 }
 async function restPatch(context, path, body, profile = 'chat', fetchImpl = fetch, returning = false) {
   const accessToken = await context.getAccessToken()
@@ -1059,7 +1079,7 @@ function parseJoinContext(rows, chatId) {
 // 而这个函数恰恰会在 agent 还没被拉进某话题时被调到(topic_invite 的前置检查)。
 // 把那个 null 记进 Map 就是终身的:这个进程余生里这条线的 kind 都是 unknown ⇒
 // topic_invite 永远抛「不是一条话题」、handleMessage 的 isGroupOrTopic 恒假(@ 一致性闸与裸名闸整条跳过,
-// 而那道闸在话题里**更**重要)、addressableUserIds 按非话题处理(比服务端还严,正是它要避免的那个 bug)。
+// 而那道闸在话题里**更**重要)。
 // 「我这一读没拿到」不是「它是 null」——❌ 不把不知道写成知道。
 async function chatKindOf(deps, chatId) {
   if (deps.state.chatKinds.has(chatId)) return deps.state.chatKinds.get(chatId)
@@ -1094,32 +1114,6 @@ async function topicSourceChatIdOf(deps, chatId) {
   const sourceChatId = row.kind === 'topic' ? (row.source_chat_id ?? null) : null
   deps.state.topicSources.set(chatId, sourceChatId)
   return sourceChatId
-}
-
-/**
- * 这条线里「点得了名的人」= 它的成员;**话题另加来源线的成员** —— 点了名就把他拉进来
- * (BEFORE INSERT 触发器 `chat.join_topic_participants` 落实,见 20260918211500)。
- *
- * ⚠️ 判据必须与数据层 `chat.is_addressable_in` 同形。两侧不同形时,这道客户端闸会在前面拦掉数据层
- * 明明允许的动作,症状是「话题里永远拉不进人」而数据库一条错都没报 —— 闸比规则严,是同样的 bug。
- * 非话题零额外查询:群 / 私聊的可点名集合就是成员集合。
- */
-async function addressableUserIds(deps, chatId, kind, memberRows) {
-  const ids = new Set(memberRows.map((row) => String(row.user_id)))
-  if (kind !== 'topic') return ids
-  const sourceChatId = await topicSourceChatIdOf(deps, chatId)
-  if (!sourceChatId) return ids
-  // 这条**不**走 memberRowsOfMyChat:agent 未必在来源线里,零行在这里是合法答案。
-  const sourceMembers = await deps.restRpc('list_member_ids',
-    { p_chat_id: sourceChatId, p_as_user_id: deps.context.agentId })
-  const rows = Array.isArray(sourceMembers) ? sourceMembers : []
-  // ⚠️ 读到零行 = **我算不出来源线里有谁**,不是「来源线里没有人」(一条线至少有它的创建者)。
-  // 这时候 ❌ 不许拿这个空集去拒人 —— 服务端的 chat.is_addressable_in 放行的是「话题成员 ∪ 来源线成员」,
-  // 客户端据一个算不出来的集合去拒,就是闸比规则严:症状是话题里永远拉不进人,而数据库一条错都不报。
-  // 返回 null 表示「这一关我判不了,交给服务端判」(调用方据此跳过本地 fail-loud)。
-  if (!rows.length) return null
-  for (const row of rows) ids.add(String(row.user_id))
-  return ids
 }
 
 // ── 业务逻辑（每域一个 handler，按 action 分派；deps 可注入便于单测） ──
@@ -1464,15 +1458,6 @@ async function handleMessage(args, deps) {
       if (kind === 'group' && !memberRows.some((row) => String(row.user_id) === deps.context.agentId)) {
         throw new Error(`message_send: you are not a member of group ${chatId}. Reply in your own session or use session_message to contact another session.`)
       }
-      // #849 非成员收件人 fail-loud(复用上面同一次成员查询;话题另收来源线成员,见 addressableUserIds)
-      // addressableUserIds 回 null = 它算不出可点名集合(来源线名单读不到)⇒ 这一关跳过,交给服务端判。
-      const addressable = await addressableUserIds(deps, chatId, kind, memberRows)
-      const invalid = addressable ? recipientsNotInMembers([...addressable], toUserIds) : []
-      if (invalid.length) {
-        throw new Error(
-          `收件人不在本 chat（${chatId}）成员里：${invalid.join(', ')}。用 message_members 查有效成员后重发。`
-        )
-      }
       if ((kind === 'dm' || kind === 'ai') && isReply && !toUserIds?.length) {
         const memberIds = [...new Set(memberRows.map((row) => String(row.user_id)))]
         const peerIds = memberIds.filter((userId) => userId !== deps.context.agentId)
@@ -1526,7 +1511,7 @@ async function handleMessage(args, deps) {
         sendText = rec.content
       }
       row.content = String(sendText ?? '')
-      await postCommandMessageRow(deps, row)
+      await postCommandMessageRow(deps, row).catch((error) => { throw recipientRefusal(error, chatId) })
       sentKind = kind
     }
     const okMsg = () => socialGroup
