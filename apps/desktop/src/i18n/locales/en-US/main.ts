@@ -253,6 +253,7 @@ export default {
       "tooLarge": "Too large · view on desktop"
     },
     "timeline": {
+      "loadingWindow": "Loading…",
       "outputTrimmed_one": "… {{count}} char omitted from this preview",
       "outputTrimmed_other": "… {{count}} chars omitted from this preview",
       "loading": "Loading the timeline…",

@@ -9,6 +9,7 @@ import type {
   SessionLiveReply,
   TurnPatch,
 } from '@gugu/session-core/session-record/contract'
+import { mergeTimelineWindowFields, type TimelineWindowState } from './timeline-window-fields'
 import { settlementFromWire } from '@gugu/session-core/session-record/contract'
 import type { ToolImage, ToolNode, TranscriptItem, TranscriptTurn } from '@gugu/session-core/acp/client'
 
@@ -24,7 +25,7 @@ import type { ToolImage, ToolNode, TranscriptItem, TranscriptTurn } from '@gugu/
  *              + 合并 settlements
  *   ok:false → 整份重载(拿它带来的快照替换全部)
  */
-export type AgentWatchTimeline = {
+export type AgentWatchTimeline = TimelineWindowState & {
   /** 手里这份读到哪了。null = 还没收到过任何快照。 */
   cursor: RecordCursor | null
   /** 按 seq 升序;同 seq 按 id 稳定排序(seq 本该唯一,并列时不许每次渲染换位置)。 */
@@ -159,6 +160,7 @@ export function applySnapshot(
     turns: sortTurns(turns),
     settlements: indexSettlements(snapshot.settlements),
     hasOlder: snapshot.hasOlder,
+    ...mergeTimelineWindowFields({}, snapshot, 'snapshot', turns),
     recentActions: snapshot.recentActions ?? [],
     lastActionAt: snapshot.lastActionAt ?? null,
     queuedPrompts: snapshot.queuedPrompts ?? [],
@@ -185,10 +187,12 @@ export function prependOlder(
   const byId = new Map<string, TranscriptTurn>()
   for (const turn of older.turns) byId.set(turn.id, turn)
   for (const turn of state.turns) byId.set(turn.id, turn)
+  const turns = sortTurns([...byId.values()])
   return {
     ...state,
-    turns: sortTurns([...byId.values()]),
+    turns,
     hasOlder: older.hasOlder,
+    ...mergeTimelineWindowFields(state, older, 'older', turns),
   }
 }
 
@@ -251,12 +255,17 @@ export function applyBatch(state: AgentWatchTimeline, batch: TimelineBatch): Age
   const cursor = state.cursor && state.cursor.seq > batch.cursor.seq ? state.cursor : batch.cursor
   // 队列每批都带全集:只认不比手里旧的那一批,❌ 让重放的旧批把已经被接走的那句又排回去。
   const current = !state.cursor || batch.cursor.seq >= state.cursor.seq
+  const turns = sortTurns([...byId.values()])
 
   return {
     cursor,
-    turns: sortTurns([...byId.values()]),
+    turns,
     settlements: mergeSettlements(state.settlements, batch.settlements, !state.cursor || batch.cursor.seq > state.cursor.seq),
     hasOlder: state.hasOlder,
+    ...mergeTimelineWindowFields(state, current ? batch : {}, 'batch', turns),
+    // After describes the tail; it must not rewind an older-page cursor.
+    olderCursor: state.olderCursor,
+    moreBefore: state.moreBefore,
     recentActions: batch.recentActions !== undefined ? batch.recentActions : state.recentActions,
     lastActionAt: batch.lastActionAt !== undefined ? batch.lastActionAt : state.lastActionAt,
     queuedPrompts: batch.queuedPrompts !== undefined && current ? batch.queuedPrompts : state.queuedPrompts,
