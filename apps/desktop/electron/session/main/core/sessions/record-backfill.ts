@@ -9,6 +9,7 @@ import { sessionRecordHarnessForProvider } from '@main/core/session-timeline/loc
 import { hashIdentity, identify, recordIdentityFor, recordTurnsAfterStore, type RecordIdentity } from './record-backfill-match';
 import { digest, STORE_TAIL, toWire, type IngestRequest } from './record-ingest/plan';
 import type { IngestRunner, IngestSession } from './record-ingest/runner';
+import { recordIngestRoot, recordPicturesDir, setRecordIngestRoot } from './record-ingest/root';
 import { appendRecordTurnNow, readStoredTailNow, readUnfinishedRecordRowsNow, readUnfinishedRecordTurnsNow, reviseRecordTurnNow, storedMaxSeqNow, storedTurnsNewestFirstNow, withStoredTurns } from './session-turn-store';
 import { sessionEngine, sessionProcess } from './session-process';
 
@@ -22,12 +23,10 @@ export type RecordBackfillResult = {
   deliveryIds?: string[];
 };
 
-/** Where the ingest child keeps one checkpoint per session and generation, and its spill files. */
-let ingestDir: (() => string) | null = null;
 let ingestRunner: IngestRunner | null = null;
 /** Tests run the child's own code in process; production spawns the child (`record-ingest/runner.ts`). */
 export function setRecordIngest(next: { dir: () => string; runner: IngestRunner } | null): void {
-  ingestDir = next?.dir ?? null;
+  setRecordIngestRoot(next ? next.dir() : null);
   ingestRunner = next?.runner ?? null;
 }
 
@@ -145,7 +144,7 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
     const parentRow = parentId ? readSessionRow(parentId, { includeArchived: true }) : null;
     const parentLocation = parentRow ? locateRow(parentRow) : null;
     if (parentId && !parentLocation?.supported) return result('diverged');
-    const dir = ingestDir ? ingestDir() : join((await import('electron')).app.getPath('userData'), 'record-ingest');
+    const dir = await recordIngestRoot();
     const runner = ingestRunner ?? (await import('./record-ingest/runner')).childProcessIngest;
     const cursor = await cursors.get(sessionId);
     const generation = (cursor?.generation ?? 0) + 1;
@@ -168,6 +167,7 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
         checkpoint: mode === 'cursor' ? checkpointOf(cursor!.generation) : null,
         checkpointOut: checkpointOf(generation),
         spill: join(dir, `${sessionId}.spill`),
+        pictures: recordPicturesDir(dir, sessionId),
         stored,
         storeComplete: mode !== 'tail' || stored.length < STORE_TAIL,
         unfinished,

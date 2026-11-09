@@ -330,3 +330,21 @@ it('resumes from its checkpoint: appends terminal turns after the cursor, recogn
     expect(rows()).toHaveLength(4);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+it('stores a copied picture as a file, keeps only its size and hash in the row, and reads it back', async () => {
+  const picture = 'iVBORw0KGgo' + 'A'.repeat(4000);
+  state.turns = [{ ...turn(0), items: [...turn(0).items,
+    { kind: 'mcp-tool-call', id: 'c1:turn:0:tool:shot', seq: 2, toolCallId: 'shot', status: 'done', title: 'shot', server: 's', tool: 't',
+      images: [{ mimeType: 'image/png', data: picture }] } as unknown as TranscriptTurn['items'][number]] }, turn(1)];
+  expect(await sync('c1', { runtime: 'pty' })).toEqual({ inserted: 2, status: 'complete' });
+  const stored = JSON.parse((rows() as { data: string }[])[0].data) as TranscriptTurn;
+  const tool = stored.items.find(item => item.kind === 'mcp-tool-call') as unknown as { id: string; images?: unknown; imageRefs: unknown; storedImages: string[] };
+  // The host never held the picture: the row has its size and hash, the bytes are in the ingest root.
+  expect(tool.images).toBeUndefined();
+  expect(tool.imageRefs).toEqual([{ mimeType: 'image/png', chars: picture.length }]);
+  expect(tool.storedImages).toHaveLength(1);
+  expect(await readFile(join(ingestDir, 'pictures', 'c1', tool.storedImages[0]), 'utf8')).toBe(picture);
+  const { getStoredToolImage } = await import('./session-turn-store');
+  expect(await getStoredToolImage({ sessionId: 'c1', seq: 0, itemId: tool.id, index: 0 }))
+    .toEqual({ ok: true, image: { mimeType: 'image/png', data: picture } });
+});

@@ -71,6 +71,11 @@ export interface BaseToolCallItem {
   /** 历史传输投影里替代 `images` 的那一格:每张图的类型和大小,图要另取。见 `ToolImageRef`。 */
   imageRefs?: ToolImageRef[];
   /**
+   * Stored history only (resume-mem): pictures a record fill copied to files instead of into the row, by content hash,
+   * aligned with `imageRefs`. The host reads one back when it is opened (`getStoredToolImage`).
+   */
+  storedImages?: string[];
+  /**
    * 这次调用**留下了一个还在跑的后台任务**(claude 的 `run_in_background` Bash、
    * workflow),供应商给的任务 id(#5117)。停它时报给供应商的是这次调用的 `toolCallId`。
    *

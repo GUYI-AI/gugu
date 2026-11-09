@@ -1,6 +1,9 @@
 import { renumberStoredTurn, rewriteTurnId } from './session-turn-identity';
 export { renumberStoredTurn } from './session-turn-identity';
-import { findToolImage, TRANSPORT_PAYLOAD_BUDGET, trimTurnsForTransport } from '@gugu/session-core/session-record';
+import { findToolImage, findToolItem, TRANSPORT_PAYLOAD_BUDGET, trimTurnsForTransport } from '@gugu/session-core/session-record';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { recordIngestRoot, recordPicturesDir } from './record-ingest/root';
 import { and, asc, desc, eq, gte, inArray, like, lt, notLike, sql } from 'drizzle-orm';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { db } from '@main/db/client';
@@ -307,7 +310,17 @@ export async function getStoredToolImage(params: {
   const turn = row ? JSON.parse(row.data) as TranscriptTurn : null;
   const itemId = row && turn && !('seq' in params)
     ? rewriteTurnId(params.itemId, row.turnId, turn.id) : params.itemId;
-  return findToolImage(turn ? [turn] : [], itemId, params.index, Number.POSITIVE_INFINITY);
+  const found = findToolImage(turn ? [turn] : [], itemId, params.index, Number.POSITIVE_INFINITY);
+  if (found.ok || found.code !== 'no_such_image' || !turn) return found;
+  // A record fill stored this picture as a file (resume-mem): its row keeps the size and the content hash.
+  const node = findToolItem([turn], itemId)?.node;
+  const tool = node && node.kind !== 'tool-group' ? node : undefined;
+  const hash = tool?.storedImages?.[params.index];
+  const ref = tool?.imageRefs?.[params.index];
+  if (!hash || !ref || !/^[0-9a-f]{64}$/.test(hash)) return found;
+  const data = await readFile(join(recordPicturesDir(await recordIngestRoot(), params.sessionId), hash), 'utf8').catch(() => null);
+  // A missing file is the same as a picture that is gone: the caller shows it cannot be fetched.
+  return data === null ? found : { ok: true as const, image: { mimeType: ref.mimeType, data } };
 }
 
 /** Read one immutable live origin, even after its runtime record was removed. No provider is contacted. */

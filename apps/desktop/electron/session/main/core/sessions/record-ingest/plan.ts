@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { closeSync, openSync, readFileSync, readSync, renameSync, writeSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, writeFileSync, writeSync } from 'node:fs';
+import { join } from 'node:path';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import type { RecordLineageNode, SessionRecordLocator, TimelineArchive } from '@gugu/session-core/session-record';
 import { SessionRecordNotFoundError, trimTurnsForTransport } from '@gugu/session-core/session-record';
@@ -29,6 +30,8 @@ export type IngestRequest = {
   checkpointOut: string;
   /** A private file for the turns that may be copied. */
   spill: string;
+  /** Where copied pictures are written, one file per content hash (`record-ingest/root.ts`). */
+  pictures: string;
   /**
    * Store rows, newest first. With a checkpoint: every row from the cursor's `storeSeq` on. Without: the newest
    * `STORE_TAIL` rows; `storeComplete` = they are all the rows there are.
@@ -244,16 +247,24 @@ export async function runIngest(request: IngestRequest, readRecord: typeof readR
         out.checkpointWritten = true;
       }
     }
-    return { summary: out, ...batches(request.spill, plan) };
+    return { summary: out, ...batches(request.spill, request.pictures, plan) };
   }
 }
 
 /** Revised turns first, then appended ones, each in record order: the order the host wrote them in before. */
-function batches(spill: string, plan?: { revise: Map<number, number>; append: Set<number> }): Pick<IngestRun, 'next' | 'close'> {
+function batches(spill: string, pictures: string, plan?: { revise: Map<number, number>; append: Set<number> }): Pick<IngestRun, 'next' | 'close'> {
   const passes: Array<'revise' | 'append'> = plan ? ['revise', 'append'] : [];
   let lines: SpillLines | null = null;
   let carried: { kind: 'revise' | 'append'; seq?: number; turn: TranscriptTurn; bytes: number } | null = null;
-  let pictures = FILL_PICTURE_CHARS;
+  let budget = FILL_PICTURE_CHARS;
+  // A picture within the fill's budget is written to its own file here; the turn the host stores keeps its size and hash.
+  const store = (data: string): string => {
+    const hash = createHash('sha256').update(data).digest('hex');
+    mkdirSync(pictures, { recursive: true });
+    const file = join(pictures, hash);
+    if (!existsSync(file)) { writeFileSync(`${file}.part`, data); renameSync(`${file}.part`, file); }
+    return hash;
+  };
   const pull = (): typeof carried => {
     while (passes.length) {
       lines ??= spillLines(spill);
@@ -265,7 +276,7 @@ function batches(spill: string, plan?: { revise: Map<number, number>; append: Se
       if (kind === 'revise' ? !plan!.revise.has(index) : !plan!.append.has(index)) continue;
       const text = line.slice(tab + 1);
       const turn = JSON.parse(text) as TranscriptTurn;
-      const kept = keepPictures(turn.items, (chars) => (pictures -= chars) >= 0);
+      const kept = keepPictures(turn.items, (chars) => (budget -= chars) >= 0, store);
       return { kind, seq: plan!.revise.get(index), turn: kept === turn.items ? turn : { ...turn, items: kept }, bytes: text.length };
     }
     return null;
@@ -293,18 +304,24 @@ function batches(spill: string, plan?: { revise: Map<number, number>; append: Se
   };
 }
 
-/** Pictures the budget refuses keep only their size (`imageRefs`), as the transport projections show them. */
-function keepPictures(items: TranscriptTurn['items'], take: (chars: number) => boolean): TranscriptTurn['items'] {
+/**
+ * Every picture leaves the turn as its size (`imageRefs`), as the transport projections show it. One the fill's budget
+ * takes is stored to a file and keeps its hash (`storedImages`), read back by `getStoredToolImage`; past the budget a
+ * picture keeps only its size, as before resume-mem.
+ */
+function keepPictures(items: TranscriptTurn['items'], take: (chars: number) => boolean, store: (data: string) => string): TranscriptTurn['items'] {
   let changed = false;
   const next = items.map((item) => {
     const node = item as unknown as { images?: Array<{ mimeType: string; data: string }>; children?: TranscriptTurn['items'] };
     let out = item;
-    if (node.images?.length && !take(node.images.reduce((sum, image) => sum + image.data.length, 0))) {
+    if (node.images?.length) {
       const { images, ...rest } = node;
-      out = { ...rest, imageRefs: images.map(({ mimeType, data }) => ({ mimeType, chars: data.length })) } as unknown as typeof item;
+      const kept = take(images.reduce((sum, image) => sum + image.data.length, 0));
+      out = { ...rest, imageRefs: images.map(({ mimeType, data }) => ({ mimeType, chars: data.length })),
+        ...(kept ? { storedImages: images.map(({ data }) => store(data)) } : {}) } as unknown as typeof item;
     }
     const children = (out as typeof node).children;
-    const kept = children ? keepPictures(children, take) : children;
+    const kept = children ? keepPictures(children, take, store) : children;
     if (kept !== children) out = { ...out, children: kept } as typeof item;
     if (out !== item) changed = true;
     return out;
