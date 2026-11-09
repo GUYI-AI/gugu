@@ -22,6 +22,9 @@ beforeEach(() => {
   fs.mkdirSync(bundle);
   fs.writeFileSync(path.join(bundle, 'index.html'), '<!doctype html>');
   write(manifest('1.0.0'));
+  // An installed bundle has settled: its files were last written well before anyone reads them.
+  const settled = new Date(Date.now() - 60_000);
+  for (const file of ['index.html', 'manifest.json']) fs.utimesSync(path.join(bundle, file), settled, settled);
 });
 afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
@@ -37,6 +40,22 @@ it('an edit in place is seen on the next call', () => {
   const service = new ExtensionsService(root);
   expect(service.get('demo').manifest.version).toBe('1.0.0');
   write(manifest('1.0.1'));
+  expect(service.get('demo').manifest.version).toBe('1.0.1');
+});
+
+// File timestamps are coarse (a kernel tick on Linux, seconds elsewhere): a same-size rewrite inside one tick keeps the
+// same ino, size and mtime. A reading taken while the file was that fresh must not be trusted on its stamp.
+it('a same-size rewrite within one timestamp tick of a fresh manifest is still seen', () => {
+  const file = path.join(bundle, 'manifest.json'), tick = new Date();
+  write(manifest('1.0.0'));
+  fs.utimesSync(file, tick, tick);
+  const service = new ExtensionsService(root);
+  expect(service.get('demo').manifest.version).toBe('1.0.0');
+  const stamp = () => { const stat = fs.statSync(file); return [stat.ino, stat.size, stat.mtimeMs]; };
+  const before = stamp();
+  write(manifest('1.0.1'));
+  fs.utimesSync(file, tick, tick);
+  expect(stamp(), 'the rewrite left ino, size and mtime as they were').toEqual(before);
   expect(service.get('demo').manifest.version).toBe('1.0.1');
 });
 

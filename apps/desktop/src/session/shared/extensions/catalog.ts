@@ -46,6 +46,8 @@ export const CAPABILITY_RISK = {
   'agents:control:all-machines': 'high',
   // Runs a program of the extension's choosing on this machine, with the person's rights.
   'agents:tools': 'high',
+  // Reads and rewrites the person's own prompts; a delete can be undone.
+  'prompts': 'medium',
   // A banner under the extension's own name: noise at worst, bounded per minute.
   'notifications': 'medium',
 } as const satisfies Record<ExtensionCapability, PermissionRisk>;
@@ -213,6 +215,16 @@ export function localizedTabText(
     title: text?.title ?? tab.title,
     toolbar: (tab.toolbar ?? []).map((command) => ({ id: command.id, title: text?.toolbar?.[command.id] ?? command.title })),
   };
+}
+
+/** An App prompt's title and text as a reader in `locale` sees them (`localized.<tag>.prompts`); the base where none. */
+export function localizedPromptText(
+  manifest: Pick<ExtensionManifest, 'defaultLocale' | 'localized'>,
+  prompt: Pick<NonNullable<ExtensionManifest['contributes']['prompts']>[number], 'name' | 'title' | 'prompt'>,
+  locale: string
+): { title: string; prompt: string } {
+  const text = localizedEntry(manifest, locale)?.prompts?.[prompt.name];
+  return { title: text?.title ?? prompt.title, prompt: text?.prompt ?? prompt.prompt };
 }
 
 /**

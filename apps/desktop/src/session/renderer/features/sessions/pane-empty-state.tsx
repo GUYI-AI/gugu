@@ -4,7 +4,6 @@ import { observer } from 'mobx-react-lite';
 import type { ReactNode } from 'react';
 import { ExtensionMark } from '@renderer/features/extensions/extension-mark';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
-import { usePaneContext } from '@renderer/features/tabs/pane-context';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { Button } from '@renderer/lib/ui/button';
 import {
@@ -23,6 +22,7 @@ import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-ena
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { directToolsUnavailableText } from '@renderer/features/remote-hosts/workspace/remote-workspace-routing';
 
+import { usePaneContext } from '@renderer/features/tabs/pane-context';
 import { STATE_LAYERS } from '@renderer/lib/ui/state-layers';
 
 /**
@@ -30,11 +30,10 @@ import { STATE_LAYERS } from '@renderer/lib/ui/state-layers';
  * ordering match the current task context rather than a single global menu.
  */
 export function PaneEmptyState() {
-  const { pane, paneId } = usePaneContext();
   const { paneLayout } = useWorkspaceViewModel();
   const entries = useSessionWorkspaceActions(
-    () => pane.open('browser', { intent: 'newTab' }),
-    (kind) => paneLayout.open(kind, {}, { from: null, intent: 'newTab', target: { paneId } })
+    () => paneLayout.openBeside('browser', {}),
+    (kind) => paneLayout.openBeside(kind, {})
   );
 
   return <WorkspacePanelActionList entries={entries} />;
@@ -48,6 +47,7 @@ export function useSessionWorkspaceActions(
   const { translate } = useSessionMessages();
   const { projectId, sessionId } = useSessionViewContext();
   const sessionView = useWorkspaceViewModel();
+  const { paneId } = usePaneContext();
   // spec session-resume 临时会话:分不出来时这一项**渲染成 disabled 并说明原因**,
   // ❌ 不是点了没反应 —— 远程项目没有本地 ACP runtime，未声明 fork 的 provider 也不能冒充。
   const { data: agents } = useAgents();
@@ -68,13 +68,13 @@ export function useSessionWorkspaceActions(
       id: 'review',
       label: translate('workspace.review'),
       icon: <GitPullRequest className="size-3.5" />,
-      onClick: () => sessionView.paneLayout.open('review', {}, { from: null, intent: 'newTab' })
+      onClick: () => sessionView.paneLayout.openBeside('review', {}, paneId)
     },
     terminal: {
       id: 'terminal',
       label: translate('workspace.terminal'),
       icon: <SquareTerminal className="size-3.5" />,
-      onClick: () => void sessionView.openTerminalAsTab()
+      onClick: () => void sessionView.openTerminalAsTab(undefined, paneId)
     },
     browser: {
       id: 'browser',
@@ -86,7 +86,7 @@ export function useSessionWorkspaceActions(
       id: 'ports',
       label: translate('remotePorts.tool'),
       icon: <Cable className="size-3.5" />,
-      onClick: () => sessionView.paneLayout.open('remote-ports', {}, { from: null, intent: 'newTab' })
+      onClick: () => sessionView.paneLayout.openBeside('remote-ports', {}, paneId)
     }
   };
 

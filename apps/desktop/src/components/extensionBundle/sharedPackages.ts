@@ -1,5 +1,5 @@
 import type { AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
-import { attachmentBytes, sourceKeyOf } from '../../lib/attachmentBytes'
+import { attachmentBytes, cachedAttachmentCopy, sourceKeyOf } from '../../lib/attachmentBytes'
 import { chatService } from '../../lib/chat'
 import type { AttachmentPackage } from '../../session/shared/extensions/attachment-install'
 import { rendererLogger } from '../../lib/log'
@@ -32,15 +32,35 @@ export function installPackageOf(card: PackageCard): AttachmentPackage {
 
 /** One read per package for the life of the window: a message re-rendering must not download it again. */
 const summaries = new Map<string, Promise<ExtensionBundleSummary>>()
+/** The cards waiting on a package's read: how far its bytes have come (`attachmentBytes`' progress). */
+const readers = new Map<string, Set<(done: number, total: number) => void>>()
 
-export function summaryOf(card: PackageCard): Promise<ExtensionBundleSummary> {
+/** Follow how far this package's read has come, while it runs; the returned function stops. */
+export function watchReading(card: PackageCard, listener: (done: number, total: number) => void): () => void {
+  const key = packageKey(card)
+  let set = readers.get(key)
+  if (!set) readers.set(key, (set = new Set()))
+  set.add(listener)
+  return () => {
+    set.delete(listener)
+    if (!set.size) readers.delete(key)
+  }
+}
+
+/**
+ * `sha256`: the message's own record of the bytes. A copy this device already keeps (sent from here, or read before —
+ * `attachmentBytes` keeps every full read) is read from disk, as a thumbnail is: no signing, no download. The install
+ * still reads the package again, authorized.
+ */
+export function summaryOf(card: PackageCard, sha256?: string | null): Promise<ExtensionBundleSummary> {
   const key = packageKey(card)
   let pending = summaries.get(key)
   if (!pending) {
     pending = (async (): Promise<ExtensionBundleSummary> => {
-      const bytes = await attachmentBytes(card.source)
-      if (bytes.status !== 'ready') throw new Error('the package was deleted from the group folder')
-      return summarizeExtensionBundle(new Uint8Array(await bytes.blob.arrayBuffer()), __APP_VERSION__)
+      const kept = await cachedAttachmentCopy(sha256 ?? null).catch(() => null)
+      const bytes = kept ? null : await attachmentBytes(card.source, 'full', undefined, undefined, (done, total) => readers.get(key)?.forEach((listener) => listener(done, total)))
+      if (bytes && bytes.status !== 'ready') throw new Error('the package was deleted from the group folder')
+      return summarizeExtensionBundle(new Uint8Array(await (kept ?? bytes!.blob).arrayBuffer()), __APP_VERSION__)
     })()
       .catch((error: unknown) => {
         // A failed download says nothing about the package: the next time it is asked for, it is read again.

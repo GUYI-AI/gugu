@@ -4,6 +4,7 @@ import { folderItem, type PanelItem } from './chat-panel-item';
 import { askChat, chatAlone, chatBlockContentOf, chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, closeTopicTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, openTopicTab, panelFull, panelTabsOf, setPanelFull, showChatOnly, showChatTab, takeChatAsk, topicTabOf, updateFileNames } from './chat-layouts';
 import { CHAT_INFO_TAB_KIND, CHAT_TAB_KIND } from './chat-tab-providers';
 import { tabFullscreen } from '../../tabs/tab-fullscreen';
+import { SIDE_PAGE_WIDTH_PX } from '../../tabs/side-width';
 
 const file = (id: string): PanelItem => ({ kind: 'workspace.main', itemId: id, title: `${id}.md`, fileName: `${id}.md` });
 const board: PanelItem = { kind: 'kanban.board', title: 'Board' };
@@ -154,5 +155,47 @@ describe('chat navigation uses the same page history and real panes as tasks', (
     askChat('asked', { app: 'workspace' }); askChat('asked', { itemId: 'README', from: 'origin' });
     expect(takeChatAsk('asked')).toEqual({ itemId: 'README', from: 'origin' });
     expect(takeChatAsk('asked')).toBeNull();
+  });
+});
+
+describe('pages beside the chat start at one declared width (side-width.ts, owner 11-07)', () => {
+  const sideWidth = (id: string, width: number) => {
+    const layout = chatLayoutOf(id);
+    const side = layout.groups.find(({ paneId }) => paneId === layout.sidePaneId)!;
+    const at = layout.layout.type === 'split' ? layout.layout.children.findIndex((child) => child.type === 'pane' && child.paneId === side.paneId) : -1;
+    return Math.round((layout.paneSizes[at] / 100) * width);
+  };
+  it('the side page width is 360px', () => expect(SIDE_PAGE_WIDTH_PX).toBe(360));
+  it.each([1280, 1920, 2560])('group info opens at the side page width beside a %ipx chat, not half', (width) => {
+    const id = `side-width-${width}`;
+    chatLayoutOf(id).focusedPane.setDimensions(width, 900);
+    openInfoTab(id, 'members');
+    expect(sideWidth(id, width)).toBe(SIDE_PAGE_WIDTH_PX);
+  });
+  it('never more than half; a file beside the chat stays its peer', () => {
+    chatLayoutOf('side-width-narrow').focusedPane.setDimensions(600, 900);
+    openInfoTab('side-width-narrow', 'members');
+    expect(sideWidth('side-width-narrow', 600)).toBe(300);
+    chatLayoutOf('side-width-file').focusedPane.setDimensions(1600, 900);
+    openPanelItem('side-width-file', file('README'));
+    expect(chatLayoutOf('side-width-file').paneSizes).toEqual([50, 50]);
+  });
+  it('a dragged width stays while open; double-click and reopening come back to the declared width', () => {
+    const id = 'side-width-drag'; const layout = chatLayoutOf(id);
+    layout.focusedPane.setDimensions(2000, 900);
+    openInfoTab(id, 'members');
+    layout.groups.forEach(({ pane }, at) => pane.setDimensions(at === 0 ? 1640 : 360, 900));
+    const cut = layout.layout.type === 'split' ? layout.layout.id : '';
+    layout.setSplitSizes(cut, [40, 60]);
+    openInfoTab(id, 'announcement');
+    expect(layout.paneSizes).toEqual([40, 60]);
+    layout.equalizeSplit(cut);
+    expect(sideWidth(id, 2000)).toBe(SIDE_PAGE_WIDTH_PX);
+    layout.setSplitSizes(cut, [40, 60]);
+    closeInfoTab(id);
+    expect(infoTabOf(id)).toBeNull();
+    layout.focusedPane.setDimensions(2000, 900);
+    openInfoTab(id, 'members');
+    expect(sideWidth(id, 2000)).toBe(SIDE_PAGE_WIDTH_PX);
   });
 });

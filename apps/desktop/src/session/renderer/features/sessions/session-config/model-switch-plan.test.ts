@@ -75,17 +75,29 @@ describe('planModelSwitch — 平台模型的下发值', () => {
   });
 
   /**
-   * 报不出来时**不换通道**:把规范 id 交给 ACP,让 provider 的原始错误到 UI。
-   * ❌ 不许在这里回落成 reload —— 那会把「启动注入漏了这条模型」这个缺口盖掉。
+   * 目录有、活会话**没报**:这条进程的票是签发那一刻按会员档算的,它说不了这条模型
+   * (会话开在免费档、中途开了会员,Haiku 就是这样:裸 id 交给 claude 适配器 ⇒ `Invalid value for config option model`)。
+   * ⇒ 走 reload,按当下的档重签、重开。❌ 不再把裸 id 硬塞给 ACP。
+   * 启动注入真漏了模型不会被这一步盖住:见 `session-manager.test.ts` 的 applyInitialModel 那条。
    */
-  it('falls back to the canonical id so the provider error surfaces', () => {
+  it('reloads when the live session does not advertise a catalog model', () => {
     expect(planModelSwitch({
-      selection: { source: 'platform', modelId: 'glm-5' },
-      advertised: ['opencode/big-pickle'],
-      catalog: [{ id: 'glm-5', displayName: 'GLM 5' }],
+      selection: { source: 'platform', modelId: 'claude-haiku-5-5' },
+      advertised: ['gpt-6-luna', 'glm-5.3-flash', 'deepseek-v4-flash'],
+      catalog: [{ id: 'claude-haiku-5-5', displayName: 'Claude Haiku 5.5' }],
       runningOn: 'platform',
       liveSetting: hotPlatform,
-    })).toEqual({ kind: 'hot', modelId: 'glm-5', wireValue: 'glm-5' });
+    })).toEqual({ kind: 'reload', modelId: 'claude-haiku-5-5', displayName: 'Claude Haiku 5.5', source: 'platform' });
+  });
+
+  it('stays hot when the live session advertises the catalog model in its own spelling', () => {
+    expect(planModelSwitch({
+      selection: { source: 'platform', modelId: 'claude-haiku-5-5' },
+      advertised: ['gpt-6-luna', 'claude-haiku-5-5[1m]'],
+      catalog: [{ id: 'claude-haiku-5-5', displayName: 'Claude Haiku 5.5' }],
+      runningOn: 'platform',
+      liveSetting: hotPlatform,
+    })).toEqual({ kind: 'hot', modelId: 'claude-haiku-5-5', wireValue: 'claude-haiku-5-5[1m]' });
   });
 
   /**

@@ -1,4 +1,5 @@
 import type { ExtensionHostContext, ExtensionMember } from '@shared/extensions/bridge-protocol';
+import { applyThemeColors } from '../theme-colors';
 import { formatCalendarDate } from '@gugu/session-shared/format';
 import { ICONS, ICON_SVG_ATTRIBUTES, timePhrase } from './ui-core';
 
@@ -19,7 +20,7 @@ import { ICONS, ICON_SVG_ATTRIBUTES, timePhrase } from './ui-core';
  * change that); `::part(svg | face | img | name | icon)` reach inside.
  */
 
-type Context = Partial<Pick<ExtensionHostContext, 'locale' | 'themeMode' | 'chat'>>;
+type Context = Partial<Pick<ExtensionHostContext, 'locale' | 'themeMode' | 'themeColors' | 'chat'>>;
 interface PageGugu {
   chats?: { members(args: { chat: string }): Promise<{ members: ExtensionMember[] }> };
   getContext?: () => Promise<Context>;
@@ -68,7 +69,8 @@ async function chatMembers(user: string | null): Promise<ExtensionMember[] | und
   }
   return requestedMembers.read;
 }
-function setTheme(themeMode: Context['themeMode']): void {
+function setTheme({ themeMode, themeColors }: Context): void {
+  applyThemeColors(themeColors);
   if ((themeMode === 'light' || themeMode === 'dark') && document.documentElement.dataset.guguTheme !== themeMode) {
     document.documentElement.dataset.guguTheme = themeMode;
   }
@@ -235,11 +237,11 @@ function install(): void {
   customElements.define('gugu-avatar', GuguAvatar);
   customElements.define('gugu-time', GuguTime);
   customElements.define('gugu-empty', GuguEmpty);
-  void context().then((value) => setTheme(value.themeMode));
+  void context().then(setTheme);
   // The host pushes a new context when the theme, the language or the members change: everything follows.
   host()?.onContextChanged?.((next) => {
     current = Promise.resolve(next ?? {});
-    setTheme(next?.themeMode);
+    setTheme(next ?? {});
     for (const avatar of avatars) void avatar.draw();
     for (const time of times) void time.draw();
   });

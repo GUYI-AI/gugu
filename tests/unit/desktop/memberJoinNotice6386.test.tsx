@@ -22,7 +22,7 @@ describe('parseSystemNotice:只认写这一行的那一方写的那种', () => {
   })
 
   it('别的系统消息、有人发的、中段不是本条 id、没有 id —— 都不算', () => {
-    expect(parseSystemNotice({ ...notice, client_message_id: 'agent-flood:m-1' })).toBeNull()
+    expect(parseSystemNotice({ ...notice, client_message_id: 'other-notice:m-1' })).toBeNull()
     expect(parseSystemNotice({ ...notice, sender_user_id: 'u-x' })).toBeNull()
     expect(parseSystemNotice({ ...notice, content_type: 'text' })).toBeNull()
     expect(parseSystemNotice({ ...notice, client_message_id: 'member-joined:m-2:u-a' })).toBeNull()

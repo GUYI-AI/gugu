@@ -132,7 +132,7 @@ export function SshLinkSignIn() {
       className={`pointer-events-none fixed inset-x-0 top-[calc(var(--titlebar-actions-lane)+8px)] z-[var(--z-toast)] flex justify-center px-4`}
       data-testid="ssh-link-sign-in"
     >
-      <div className="pointer-events-auto w-full max-w-[440px] overflow-hidden rounded-[var(--radius-xl)] bg-background-quaternary text-foreground shadow-lift">
+      <div className="pointer-events-auto w-full max-w-[440px] overflow-hidden rounded-[var(--radius-xl)] bg-[var(--bg-elevated)] text-foreground shadow-lift">
         {shown.reason === 'waitingIdle' && !activePrompt ? (
           // 版本对不上、那台机器在等 agent 空闲:与 SSH 提问同一副卡(机器名一行 + 一句 + 底行按钮),「现在」先当面确认一次。
           <SshPromptFrame

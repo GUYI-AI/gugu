@@ -190,6 +190,8 @@ export function usePty(
               measureRetryTimerRef.current = null;
               measureAndResizeRef.current(retries + 1);
             }, 100);
+          } else {
+            pty.onGridMeasured?.();
           }
           return;
         }
@@ -203,7 +205,7 @@ export function usePty(
         log.warn('useTerminal: measureAndResize failed', { ptySessionId, error: e });
       }
     },
-    [ptySessionId]
+    [ptySessionId, pty]
   );
 
   // Stable ref so the retry setTimeout inside measureAndResize always calls

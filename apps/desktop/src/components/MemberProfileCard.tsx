@@ -9,6 +9,7 @@ import { AgentOwnerLabel } from './AgentOwnerLabel'
 import { useAuth } from '../store/auth'
 import { OwnedAgentNameEditor } from './contacts/OwnedAgentNameEditor'
 import { SharePosterDialog } from './SharePosterDialog'
+import { PersonalSharePreview } from './referralPreview/ReferralPreview'
 import { GUGU_ANDROID_DOWNLOAD_URL } from '../lib/appLinks'
 import { useTranslation } from 'react-i18next'
 import { resolveMessagingValue } from '@/lib/localizedStoredValue'
@@ -141,6 +142,8 @@ export interface MemberProfileEditControls {
   onChangeListenMode?: (mode: ListenMode) => Promise<void> | void
   canRemove?: boolean
   removeLabel?: string
+  /** What the removal does, shown under the button (topics: the person can still read it). */
+  removeHint?: string
   onRemove?: () => Promise<void> | void
   busy?: boolean
   // @@@2247 - error text for the last manage-control mutation (remove / role / listen). The
@@ -268,6 +271,7 @@ export function MemberProfileCard({
       ? createGuguQrScanUrl(createContactQrPayload(member.guguNumber), { downloadUrl: GUGU_ANDROID_DOWNLOAD_URL })
       : null
   const canShare = shareQrValue !== null
+  const SelfOrContactShare = !isAgent && member.id === user?.id ? PersonalSharePreview : SharePosterDialog
 
   const handleOpenChat = () => {
     if (!onOpenChat) return
@@ -456,6 +460,9 @@ export function MemberProfileCard({
               {editControls?.removeLabel ?? (isAgent && member.ownerUserId === user?.id ? t('profile.agentLeaveGroup') : t('profile.removeFromGroup'))}
             </button>
           ) : null}
+          {editControls?.canRemove && editControls.removeHint ? (
+            <div className="text-[length:var(--font-caption)] leading-[1.4] text-[var(--faint-fg)]" data-profile-remove-hint={member.id}>{editControls.removeHint}</div>
+          ) : null}
           {editControls?.editError ? (
             <div className={profileManageErrorClass} role="alert" data-profile-edit-error={member.id}>
               {editControls.editError}
@@ -465,7 +472,7 @@ export function MemberProfileCard({
       ) : null}
     </div>
     {showShare && shareQrValue ? (
-      <SharePosterDialog
+      <SelfOrContactShare
         title={member.displayName}
         subtitle={isAgent ? 'Agent · 咕咕' : '咕咕'}
         qrValue={shareQrValue}

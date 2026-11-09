@@ -1,6 +1,7 @@
-// 电池(battery.get:电量 / 充电 / 温控 / 电源);设置页各分组的 App 图标;前台 App。
+// 电池(battery.get:电量 / 充电 / 温控 / 电源);设置页各分组的 App 图标;前台 App;资源监视器读进程 footprint。
 import AppKit
 import Foundation
+import Darwin
 import IOKit.ps
 
 /// 一个文件 / App 的图标画成 size×size 的 PNG(base64)。
@@ -31,6 +32,21 @@ func registerSystem(_ r: Router) {
             }
         }
         return ["icons": icons]
+    }
+
+    /// 资源监视器:一批进程各自的 phys_footprint(活动监视器「内存」那一列的口径):{ pids: [...] } → { footprints: { "<pid>": bytes } }。
+    /// 读不到的(已退出、不是同一用户)不在结果里。只读自己能读的进程,不碰权限。
+    r.on("process.footprint") { p in
+        let pids = (p.raw["pids"] as? [Any] ?? []).compactMap { ($0 as? Int) ?? ($0 as? Double).map { Int($0) } }.prefix(4096)
+        var footprints: [String: Any] = [:]
+        for pid in pids where pid > 0 {
+            var info = rusage_info_v4()
+            let rc = withUnsafeMutablePointer(to: &info) { ptr in
+                ptr.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(Int32(pid), RUSAGE_INFO_V4, $0) }
+            }
+            if rc == 0 { footprints[String(pid)] = Int(info.ri_phys_footprint) }
+        }
+        return ["footprints": footprints]
     }
 
     r.on("battery.status") { _ in

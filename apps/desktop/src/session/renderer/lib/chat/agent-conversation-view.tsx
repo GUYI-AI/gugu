@@ -10,6 +10,7 @@ import type { ChatView } from '@gugu/session-chat-ui';
 import { ThreadScrollToBottom } from '@renderer/lib/ui/assistant-ui/thread-scroll-to-bottom';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { useLocale } from '@/i18n';
+import { pendingPasswordReveal, passwordRevealCompleted, watchPasswordReveal } from '@/lib/passwordBetaNotifications';
 
 /** Every agent conversation uses the project page's transcript and composer. Hosts own data and navigation. */
 export type AgentConversationViewProps = ChatTranscriptProps & {
@@ -24,6 +25,22 @@ export function AgentConversationView({ layout, composerContent, shown = true, o
   const view = useRef<ChatView | null>(null);
   const [atBottom, setAtBottom] = useState(true);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | undefined;
+    let tries = 0;
+    const reveal = () => {
+      const target = pendingPasswordReveal();
+      if (!target || ++tries > 40) { if (timer) clearInterval(timer); timer = undefined; return; }
+      if (props.commands?.conversationAgentSession?.() !== target.sessionId || !view.current) return;
+      const items = props.state.transcript.state.committedTurns.flatMap(turn => turn.items);
+      const item = items.find(item => item.kind === 'message' && item.ownerNotification?.requestId === target.requestId);
+      if (item && view.current.revealItem(item.id)) { view.current.scrollToItem(item.id, { behavior: 'smooth' }); passwordRevealCompleted(target.requestId); }
+    };
+    const start = () => { if (timer) clearInterval(timer); tries = 0; reveal(); if (pendingPasswordReveal()) timer = setInterval(reveal, 150); };
+    const close = watchPasswordReveal(start);
+    start();
+    return () => { close(); if (timer) clearInterval(timer); };
+  }, [props.state, props.commands]);
   const hostCommands = props.commands;
   // Composer-only renders must not republish commands and remeasure history.
   const commands = useMemo<NonNullable<ChatTranscriptProps['commands']>>(() => ({ ...hostCommands,

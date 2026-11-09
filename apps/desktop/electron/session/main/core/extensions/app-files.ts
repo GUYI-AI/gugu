@@ -26,7 +26,7 @@ import {
   fileSearchOf,
   folderOf,
   isWorkspace,
-  workspaceSession,
+  workspaceFolder, workspaceSession,
   workspaceTarget,
   placeKey,
   placeOf,
@@ -44,6 +44,7 @@ import {
   type ChatPeekFile,
   type PeekTarget,
   type PreparedChatFile,
+  FORWARD_MAX_BYTES,
 } from '@shared/extensions/app-runtime-protocol';
 import { extensionsService } from '@main/core/extensions/extensions-root';
 import { currentAccountAccessToken, resolveAccountFile, publishAccountFile } from '@main/core/extensions/account-token';
@@ -61,8 +62,10 @@ import type { ExtensionManifest } from '@shared/extensions/manifest';
 import { events } from '@main/lib/events';
 import { appFileHeardElsewhereChannel, appFileWatchElsewhereChannel, workingCopyMovedChannel } from '@shared/events/appEvents';
 import type { ExtensionFileChangeBatch, PlaceVerb } from '@shared/extensions/bridge-protocol';
+import { folderElsewhereRefusal } from '@shared/extensions/machine-call';
 import { readOneVersion, uploadInParts } from '@shared/extensions/working-copy-upload';
 import { log } from '@main/lib/logger';
+import type { HandedFile } from '@main/core/extensions/working-copy-files';
 import { isValidOpenInAppId } from '@shared/openInApps';
 
 /**
@@ -121,6 +124,11 @@ export interface DesktopFilePage {
   pageId: number;
   extensionId: string;
   handed: (AppFileRef & { id: string }) | null;
+  /**
+   * A person opened `handed` in this page from the host's UI (`@@@outside-file`): only then may it be read outside its
+   * working copy. Not for a file an agent or an App opened, nor a page an agent works.
+   */
+  personOpened?: true;
   asAgent?: string | null;
   /** A page's own chat, as it was bound: already its resource container (`surfaceResourceChat`). */
   boundChat?: string | null;
@@ -257,6 +265,15 @@ function chatSurface(page: DesktopFilePage): FileSurface {
  */
 export async function localRootOf(place: WorkspacePlace): Promise<{ workspaceRoot: string; projectId: string; workspaceId: string | null }> {
   const target = workspaceTarget(place);
+  if ('folder' in target) {
+    const { otherMachines } = await import('@main/core/sessions/session-family');
+    if (!(await otherMachines().isThisDevice(target.folder.deviceId))) throw new AppFileError('not-found', 'This folder is on another computer');
+    const { projectFolderOfWorkspace } = await import('@main/core/projects/operations/project-folders');
+    const folder = await projectFolderOfWorkspace(target.folder.workspaceId);
+    if (!folder) throw new AppFileError('not-found', 'This folder is no longer in a project on this computer');
+    const workspaceRoot = await fs.realpath(folder.path).catch(() => { throw new AppFileError('not-found', `${folder.path} is no longer on this computer`); });
+    return { workspaceRoot, projectId: folder.projectId, workspaceId: folder.workspaceId };
+  }
   if ('project' in target) {
     const { projectRootFolder } = await import('@main/core/projects/operations/project-folders');
     const root = await projectRootFolder(target.project);
@@ -286,12 +303,30 @@ const withId = (ref: AppFileRef, what: string): AppFileRef & { id: string } => {
 const isHanded = (page: DesktopFilePage, ref: WorkspaceFileRef): boolean =>
   !!page.handed && isWorkspace(page.handed) && page.handed.workspace === ref.workspace && 'id' in ref && page.handed.id === ref.id;
 
-/** An absolute path reaches one file only: the one the host handed this page. No capability opens any other. */
+/** The file outside its working copy a person opened in this page, as a file call carries it to its machine (`fileRootOf`). */
+const handedOf = (page: DesktopFilePage): HandedFile =>
+  page.handed && isWorkspace(page.handed) && page.personOpened ? { workspace: page.handed.workspace, id: page.handed.id } : null;
+
+/**
+ * An absolute path reaches one file only: the one the host handed this page. Every read and write of a file's bytes says so
+ * where the file is (`fileRootOf`); this is for what never gets there — opening it, handing the path to a program.
+ */
 function checkAbsolute(page: DesktopFilePage, ref: WorkspaceFileRef): void {
   const named = 'id' in ref ? ref.id : ref.name;
   if (path.isAbsolute(named) && !isHanded(page, ref)) {
     throw new AppFileError('denied', 'Not permitted: an absolute path reaches only the file the host handed this page');
   }
+}
+
+/**
+ * A file of this computer named by its absolute path, handed to a program here or opened in another tab: outside the
+ * working copy, only the file a person opened in this page (`@@@outside-file`), as its bytes are (`fileRootOf`).
+ */
+async function outsideOnlyAsOpened(page: DesktopFilePage, ref: WorkspaceFileRef): Promise<void> {
+  const named = 'id' in ref ? ref.id : ref.name;
+  if (!path.isAbsolute(named)) return;
+  const { fileRootOf } = await import('./working-copy-files');
+  await fileRootOf(ref, named, handedOf(page));
 }
 
 export async function openAppFile(page: DesktopFilePage, args: { ref?: unknown; readOnly?: boolean; deferDetails?: boolean; expectedVersion?: number }): Promise<AppFileOpened> {
@@ -350,7 +385,6 @@ export async function readAppFile(page: DesktopFilePage, args: { ref?: unknown; 
   const offset = Number(args.offset ?? 0);
   const length = Number(args.length ?? 0);
   if (isChat(ref)) return files.read(chatSurface(page), { ref: { ...ref, version: (args.ref as { version?: number })?.version }, offset, length });
-  checkAbsolute(page, ref);
   return workspaceAppFileChunk(await workingCopyPiece(page, ref, offset, length));
 }
 
@@ -359,7 +393,7 @@ async function workingCopyPiece(page: DesktopFilePage, ref: WorkspaceFileRef, of
   const there = await onItsMachine(page, ref, 'filesRead', { ref, offset, length });
   if (there.there) return there.value as { size: number; etag: string; offset: number; data: string };
   const { readWorkingCopy } = await import('./working-copy-files');
-  return readWorkingCopy(ref, 'id' in ref ? ref.id : ref.name, offset, length);
+  return readWorkingCopy(ref, 'id' in ref ? ref.id : ref.name, offset, length, handedOf(page));
 }
 
 /** What a page may do to a working copy's file, and that it names no absolute path it was not handed. */
@@ -469,9 +503,11 @@ export async function watchAppFile(page: DesktopFilePage, value: unknown, hear: 
   const ref = wholeFileRef(page, value, 'files:read', 'onChanged');
   if (!(await elsewhereGated(page, ref))) {
     const { watchWorkingCopyFile } = await import('./working-copy-files');
-    return watchWorkingCopyFile(ref, ref.id, hear);
+    return watchWorkingCopyFile(ref, ref.id, hear, handedOf(page));
   }
-  return hearElsewhere(workspaceSession(ref)!, { file: ref.id }, hear);
+  const session = workspaceSession(ref);
+  // A project folder's file elsewhere is read as it stands: no session there to hear it through.
+  return session ? hearElsewhere(session, { file: ref.id }, hear) : () => undefined;
 }
 
 /** `files.onChanged({ workspace, folder }, fn)`: what changed below a folder, on a machine the page may reach. */
@@ -535,11 +571,19 @@ export async function draftHere(ref: WorkspaceFileRef & { id: string }, text: un
  * `files:read:all-machines` reads (list, pieces, open, save). Refused, said why, without it; false for this computer's.
  */
 async function elsewhereGated(page: DesktopFilePage, place: WorkspacePlace): Promise<boolean> {
-  if (!(await sessionElsewhere(place))) return false;
+  if (!(await folderElsewhere(place)) && !(await sessionElsewhere(place))) return false;
   if (!extensionsService().hasCapability(page.extensionId, 'files:read:all-machines')) {
     throw new AppFileError('denied', 'Not permitted: a working copy on another of your computers needs "files:read:all-machines"');
   }
   return true;
+}
+
+/** A project folder's machine when that is another one; null for this computer's, and for any other kind of place. */
+async function folderElsewhere(place: WorkspacePlace): Promise<{ deviceId: string } | null> {
+  const folder = workspaceFolder(place);
+  if (!folder) return null;
+  const { otherMachines } = await import('@main/core/sessions/session-family');
+  return (await otherMachines().isThisDevice(folder.deviceId)) ? null : { deviceId: folder.deviceId };
 }
 
 /** A session's working copy on another of the person's machines, and that session's project there; null for this computer's. */
@@ -556,12 +600,19 @@ async function sessionElsewhere(place: WorkspacePlace): Promise<{ sessionId: str
  * same `machineVerbs` that machine's own pages reach. `{ there: false }` for a working copy on this computer.
  */
 async function onItsMachine(page: DesktopFilePage, place: WorkspacePlace, method: PlaceVerb, args: Record<string, unknown>) {
+  const { callOnSessionMachine } = await import('./app-programs-elsewhere');
+  const folder = await folderElsewhere(place);
+  if (folder) {
+    const refusal = folderElsewhereRefusal(method, (capability) => extensionsService().hasCapability(page.extensionId, capability));
+    if (refusal) throw refusal;
+    const manifest = extensionsService().get(page.extensionId).manifest;
+    return callOnSessionMachine({ extensionId: page.extensionId, manifest }, { deviceId: folder.deviceId }, method, args, page.asAgent != null);
+  }
   const session = workspaceSession(place);
   if (!session) return { there: false } as const;
   if (!(await elsewhereGated(page, place))) return { there: false } as const;
-  const { callOnSessionMachine } = await import('./app-programs-elsewhere');
   const manifest = extensionsService().get(page.extensionId).manifest;
-  return callOnSessionMachine({ extensionId: page.extensionId, manifest }, session, method, args, page.asAgent != null);
+  return callOnSessionMachine({ extensionId: page.extensionId, manifest }, session, method, args, page.asAgent != null, handedOf(page) ?? undefined);
 }
 
 /** Across every chat whoever the page works as is in (`files:read`, checked at the door): by a piece of the path; opened last. */
@@ -658,7 +709,6 @@ export async function removeAppFile(page: DesktopFilePage, args: { ref?: unknown
 export async function writeAppFileChunk(page: DesktopFilePage, args: Record<string, unknown>): Promise<unknown> {
   const place = placeOf(args.place);
   if ('chat' in place) throw new AppFileError('invalid', "A chat's file is uploaded whole: files.upload");
-  checkAbsolute(page, { ...place, id: String(args.path) });
   const there = await onItsMachine(page, place, 'filesWriteChunk', args);
   if (there.there) return there.value;
   const { writeWorkingCopyChunk } = await import('./working-copy-files');
@@ -674,8 +724,9 @@ export async function revealAppFile(page: DesktopFilePage, args: { ref?: unknown
 
 /** Where a working copy's file or folder is on this computer, for what hands it to another program; it passes what reading it does. */
 async function localPathOf(page: DesktopFilePage, ref: WorkspaceFileRef, what: string, follow = false): Promise<string> {
-  if (await sessionElsewhere(ref)) throw new AppFileError('invalid', 'This file is on another computer');
+  if ((await sessionElsewhere(ref)) || (await folderElsewhere(ref))) throw new AppFileError('invalid', 'This file is on another computer');
   await mayRead(page, ref, what);
+  await outsideOnlyAsOpened(page, ref);
   return local.localPath(await localFolder(page, ref), { ref, follow });
 }
 
@@ -750,8 +801,7 @@ export async function uploadAppFiles(
 
 export const messageToShow = files.messageToShow;
 
-/** What a forward holds in memory at once, with a File and a copy for the send on top of it. Past it: said, before it is read. */
-export const FORWARD_MAX_BYTES = 512 * 1024 * 1024;
+export { FORWARD_MAX_BYTES };
 
 /**
  * `files.forward`: a chat's files go by reference. A working copy's file is in no chat to refer to, so what it holds goes:
@@ -839,6 +889,12 @@ export async function openWithTarget(
     mayTouch(page, ref, ['files:read', 'files:write'], 'opening');
     return { kind: 'session', target: { sessionId: elsewhere.sessionId, projectId: elsewhere.projectId, deviceId: elsewhere.deviceId, path: name, ask } };
   }
+  // No session there to open it in, and this computer's previews read its own disk: the page says where it can be opened.
+  if (await folderElsewhere(ref)) {
+    mayTouch(page, ref, ['files:read', 'files:write'], 'opening');
+    throw new AppFileError('elsewhere', 'This file can be opened on its own computer');
+  }
+  await outsideOnlyAsOpened(page, ref);
   const copy = await localFolder(page, ref);
   const found = await local.openTarget(copy, { ref: ref as WorkspaceFileRef });
   const session = workspaceSession(found.place);
@@ -886,7 +942,7 @@ async function downloadSourceOf(page: DesktopFilePage, given: unknown): Promise<
   if (isChat(ref)) return await files.downloadSource(chatSurface(page), { ref });
   // A working copy's file, wherever it is, one piece after another. Here a file that is not there is said before the save dialog.
   await mayRead(page, ref, 'saving');
-  if (!path.isAbsolute(pathOfRef(ref)) && !(await sessionElsewhere(ref))) await local.openTarget(await localFolder(page, ref), { ref });
+  if (!path.isAbsolute(pathOfRef(ref)) && !(await sessionElsewhere(ref)) && !(await folderElsewhere(ref))) await local.openTarget(await localFolder(page, ref), { ref });
   return { name: path.posix.basename(pathOfRef(ref)), ref, page, kind: 'pieces' as const };
 }
 

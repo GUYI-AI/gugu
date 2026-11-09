@@ -1,12 +1,13 @@
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { ChevronLeft, ChevronRight } from '@/lib/icons'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask, TextLayer } from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { useTranslation } from 'react-i18next'
 import { usePinchZoom } from '../../hooks/usePinchZoom'
 import { Button } from '../ui/Button'
 import type { DocumentPreviewKind } from './documentPreview'
+import type { FilePlace } from '@gugu/core/shared/ui/guguLink'
 import {
   DOCUMENT_MAX_ZOOM,
   DOCUMENT_MIN_ZOOM,
@@ -30,6 +31,8 @@ interface DocumentPreviewContentProps {
   onOpenExternally?: () => void
   /** How an HTML document is given an address: with the files beside it in its chat's folder, or (absent) on its own. */
   registerHtml?: (documentHtml: string) => Promise<HtmlPreviewRegistration>
+  /** The place a link named: a PDF opens at `page=N`, an HTML page at the element a bare `#id` names. */
+  at?: FilePlace
 }
 
 type ZipLimits = { maxEntries: number; maxEntryUncompressedBytes: number; maxTotalUncompressedBytes: number }
@@ -90,12 +93,14 @@ function openHtmlLink(href: string) {
   if (externalUrl) window.open(externalUrl)
 }
 
-export function DocumentPreviewContent({ kind, content, title, onOpenExternally, registerHtml = registerHtmlPreview }: DocumentPreviewContentProps) {
-  if (kind === 'html' && typeof content === 'string') return <HtmlPreviewFrame fileName={title} rawContent={content} register={registerHtml} onLink={openHtmlLink} />
+export function DocumentPreviewContent({ kind, content, title, onOpenExternally, registerHtml = registerHtmlPreview, at }: DocumentPreviewContentProps) {
+  // A new object per link clicked, so the same anchor clicked again scrolls again.
+  const anchor = useMemo(() => { const id = at && Object.keys(at).find((key) => at[key] === ''); return id ? { id } : undefined }, [at])
+  if (kind === 'html' && typeof content === 'string') return <HtmlPreviewFrame fileName={title} rawContent={content} register={registerHtml} onLink={openHtmlLink} anchor={anchor} />
   if (typeof content === 'string') return null
   if (!content) return null
   if (kind === 'docx') return <DocxPreview data={content} onOpenExternally={onOpenExternally} />
-  if (kind === 'pdf') return <PdfPreview data={content} />
+  if (kind === 'pdf') return <PdfPreview data={content} at={at} />
   if (kind === 'pptx') return <PptxPreview data={content} onOpenExternally={onOpenExternally} />
   if (kind === 'xlsx') return <XlsxPreview data={content} onOpenExternally={onOpenExternally} />
   return null
@@ -167,7 +172,7 @@ function DocxPreview({ data, onOpenExternally }: { data: ArrayBuffer; onOpenExte
   )
 }
 
-function PdfPreview({ data }: { data: ArrayBuffer }) {
+function PdfPreview({ data, at }: { data: ArrayBuffer; at?: FilePlace }) {
   const { t } = useTranslation('messaging')
   const rootRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -218,6 +223,12 @@ function PdfPreview({ data }: { data: ArrayBuffer }) {
       void loadingTask?.destroy()
     }
   }, [data, t])
+
+  // A link's `page=N`: that page once the document is read, the last one past its end.
+  useEffect(() => {
+    const page = Number(at?.page)
+    if (document && Number.isInteger(page) && page >= 1) setPageNumber(Math.min(page, document.numPages))
+  }, [document, at])
 
   useEffect(() => {
     if (!document || !availableWidth) return

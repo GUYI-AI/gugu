@@ -58,6 +58,9 @@ export function makePendingAttachment(file: File, id: string = crypto.randomUUID
 const applyUpdate = <T>(u: SetStateAction<T>, prev: T): T => (typeof u === 'function' ? (u as (p: T) => T)(prev) : u)
 
 export interface ChatDraft {
+  /** Document edits create a new submission; failed-send rollback can retain its captured revision. */
+  revisionOf: (chatId?: string | null) => object
+  markEdited: (chatId?: string | null) => void
   text: string
   setText: (u: SetStateAction<string>) => void
   mentionTargets: MentionTarget[]
@@ -97,6 +100,13 @@ export function useChatDraft(chatId: string | null | undefined): ChatDraft {
   // Current chat key in a ref so setters/flush stay identity-STABLE — read the live key, don't close over it.
   const keyRef = useRef(key)
   keyRef.current = key
+  const revisions = useRef(new Map<string | null, object>())
+  const revisionOf = useCallback((target = keyRef.current) => {
+    let revision = revisions.current.get(target)
+    if (!revision) { revision = {}; revisions.current.set(target, revision) }
+    return revision
+  }, [])
+  const edited = useCallback((target = keyRef.current) => { revisions.current.set(target, {}) }, [])
 
   // Latest editor snapshot and reconciled metadata, persisted on debounce/switch/unmount.
   const synced = useRef<{ chatId: string | null; text: string; mentions: DraftMention[]; attachments: DraftAttachment[] }>({
@@ -127,37 +137,41 @@ export function useChatDraft(chatId: string | null | undefined): ChatDraft {
   }, [cancelFlush, flushTo])
 
   const setText = useCallback((u: SetStateAction<string>) => {
+    edited()
     const next = applyUpdate(u, textRef.current)
     textRef.current = next
     setTextState(next)
     if (keyRef.current) { synced.current.text = next; scheduleFlush() }
-  }, [scheduleFlush])
+  }, [scheduleFlush, edited])
 
   const setMentionTargets = useCallback((u: SetStateAction<MentionTarget[]>) => {
+    edited()
     const next = applyUpdate(u, mentionsRef.current)
     mentionsRef.current = next
     setMentionsState(next)
     if (keyRef.current) { synced.current.mentions = next; scheduleFlush() }
-  }, [scheduleFlush])
+  }, [scheduleFlush, edited])
 
   const setAttachments = useCallback((u: SetStateAction<PendingAttachment[]>) => {
+    edited()
     const next = applyUpdate(u, attachmentsRef.current)
     attachmentsRef.current = next
     setAttachmentsState(next)
     if (keyRef.current) { synced.current.attachments = toDraftAttachments(next); scheduleFlush() }
-  }, [scheduleFlush])
+  }, [scheduleFlush, edited])
 
   // 合并进那条会话的草稿槽,❌ 整段覆盖:发送在途时用户可能已切回那条会话打了新草稿(与同会话回滚同一规矩)。
   // 读的是**结算那一刻**的槽位(ref):persistTo 被发送时的闭包捕获,闭包里的值早就旧了。
   const storedRef = useRef({ draftMentions, draftAttachments })
   storedRef.current = { draftMentions, draftAttachments }
   const persistTo = useCallback((targetChatId: string, snapshot: { text: string; mentions: MentionTarget[]; attachments: PendingAttachment[] }) => {
+    edited(targetChatId)
     const stored = storedRef.current
     const existingMentions = stored.draftMentions[targetChatId] ?? []
     writeDraft(targetChatId, { at: 'start', text: snapshot.text })
     setDraftMentions(targetChatId, [...snapshot.mentions, ...existingMentions.filter((m) => !snapshot.mentions.some((r) => r.userId === m.userId))])
     setDraftAttachments(targetChatId, [...toDraftAttachments(snapshot.attachments), ...(stored.draftAttachments[targetChatId] ?? [])])
-  }, [writeDraft, setDraftMentions, setDraftAttachments])
+  }, [writeDraft, setDraftMentions, setDraftAttachments, edited])
 
   const flush = useCallback(() => {
     if (!flushTimer.current) return
@@ -210,5 +224,5 @@ export function useChatDraft(chatId: string | null | undefined): ChatDraft {
     synced.current.chatId = null
   }, [flushTo])
 
-  return { text: key && synced.current.chatId !== key ? storeText : text, setText, mentionTargets, setMentionTargets, attachments, setAttachments, clear, persistTo, flush }
+  return { revisionOf, markEdited: edited, text: key && synced.current.chatId !== key ? storeText : text, setText, mentionTargets, setMentionTargets, attachments, setAttachments, clear, persistTo, flush }
 }

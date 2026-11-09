@@ -24,7 +24,6 @@ export const mathBlock = style({
   inset: 0,
   display: 'flex',
   alignItems: 'center',
-  justifyContent: 'center',
   // A formula wider than the transcript scrolls rather than being clipped or
   // reflowed; KaTeX does not line-break. Mirrors the code block's containment.
   overflowX: 'auto',
@@ -38,11 +37,14 @@ export const mathBlock = style({
  * exact element the renderer paints. `katex-display` carries a `1em 0` margin
  * of its own that would show up as unreserved height, so it is zeroed here —
  * vertical rhythm around the block belongs to the block def's `margin()`.
+ * Auto inline margins centre it and resolve to 0 when it is wider than the
+ * transcript, so its beginning stays in the scroll range (`justify-content:
+ * center` would push it past the left edge, where no scroll reaches).
  */
 export const mathContent = style({
   display: 'block',
   flex: '0 0 auto',
-  margin: 0,
+  margin: '0 auto',
 });
 
 globalStyle(`${mathContent} .katex-display`, {

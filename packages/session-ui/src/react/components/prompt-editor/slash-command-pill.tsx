@@ -12,6 +12,9 @@
  *
  * On hover a small ✕ button appears so the user can remove the command without
  * keyboard navigation. Matches the visual treatment of MentionPill.
+ *
+ * A saved prompt (kind `prompt`, owner 11-07「就是一段纯文本, 在输入框里有一个比较好看的折叠的 style」) is drawn
+ * folded instead: its title over the first lines of its text. A click unfolds it into that text, in place, to edit.
  */
 
 import { cx } from '@session-ui/styles/utilities/cx';
@@ -21,7 +24,51 @@ import { X } from '../../../icons'
 import React from 'react';
 import * as styles from './mention-pill.css';
 
-export function SlashCommandPill({ node, deleteNode }: NodeViewProps) {
+/** Plain text as the editor's paragraphs: one per line. */
+export function plainTextInsertContent(text: string) {
+  const lines = text.length > 0 ? text.split(/\r?\n/) : [''];
+  return lines.map((line) => ({
+    type: 'paragraph',
+    ...(line.length > 0 ? { content: [{ type: 'text', text: line }] } : {}),
+  }));
+}
+
+function FoldedPrompt({ node, editor, getPos }: NodeViewProps) {
+  const text = (node.attrs.token as string | null) ?? '';
+  const unfold = () => {
+    const pos = getPos();
+    if (typeof pos !== 'number') return;
+    editor.chain().focus().insertContentAt({ from: pos, to: pos + node.nodeSize }, plainTextInsertContent(text)).run();
+  };
+  return (
+    <NodeViewWrapper
+      as="span"
+      contentEditable={false}
+      role="button"
+      tabIndex={0}
+      aria-label={`${node.attrs.name as string}: ${text}`}
+      className={styles.foldedPrompt}
+      data-folded-prompt={node.attrs.id as string}
+      onMouseDown={(event: React.MouseEvent) => {
+        event.preventDefault();
+        unfold();
+      }}
+      onKeyDown={(event: React.KeyboardEvent) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        event.stopPropagation();
+        unfold();
+      }}
+    >
+      <span className={styles.foldedPromptTitle}>{node.attrs.name as string}</span>
+      <span className={styles.foldedPromptText}>{text}</span>
+    </NodeViewWrapper>
+  );
+}
+
+export function SlashCommandPill(props: NodeViewProps) {
+  const { node, deleteNode } = props;
+  if (node.attrs.kind === 'prompt') return <FoldedPrompt {...props} />;
   const token =
     (node.attrs.token as string | null)
     ?? fallbackToken((node.attrs.name as string | null) ?? (node.attrs.id as string | null) ?? '');

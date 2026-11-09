@@ -199,6 +199,31 @@ describe('transcript scroll behaviour across the P3 row redraw', () => {
     expect(reopened.scrollHeight).toBe(reopened.clientHeight);
   });
 
+  it('keeps the reader at the same part of a long reply when the width changes', async () => {
+    const paragraphs = Array.from({ length: 60 }, (_, i) => `Section ${i}. ${'A line of reading that wraps as the column narrows. '.repeat(6)}`);
+    const turns: TranscriptTurn[] = [{ id: 'long', seq: 0, initiator: 'agent', items: [
+      { kind: 'message', id: 'long-reply', seq: 0, role: 'assistant', text: paragraphs.join('\n\n') },
+    ] }];
+    const m = await mountTranscript(0, { turns });
+    const section = () => {
+      const top = m.scrollEl.getBoundingClientRect().top;
+      const shown = [...m.scrollEl.querySelectorAll('p')].find((p) => p.getBoundingClientRect().bottom > top && /^Section \d+/.test(p.innerText));
+      return Number(/^Section (\d+)/.exec(shown!.innerText)![1]);
+    };
+    m.scrollEl.scrollTop = m.scrollEl.scrollHeight * 0.5;
+    await settled(m.scrollEl);
+    expect(m.state.scroll.get().kind).toBe('anchor');
+    const start = section();
+    expect(start).toBeGreaterThan(20);
+    m.host.style.width = '500px';
+    await settled(m.scrollEl);
+    expect(Math.abs(section() - start)).toBeLessThanOrEqual(1);
+    m.host.style.width = '800px';
+    await settled(m.scrollEl);
+    expect(section()).toBe(start);
+    expect(m.state.scroll.get().kind).toBe('anchor');
+  });
+
   it('keeps anchor intent when shrinking content clamps its target', async () => {
     const history: TranscriptTurn[] = [{ id: 'earlier', seq: 0, initiator: 'agent', items: [
       { kind: 'message', id: 'earlier-reply', seq: 0, role: 'assistant', text: 'An earlier reply.' },
@@ -374,6 +399,23 @@ describe('transcript scroll behaviour across the P3 row redraw', () => {
     await settled(m.scrollEl);
     expect(m.state.scroll.get().kind).toBe('anchor');
     m.appendCycle();
+    await settled(m.scrollEl);
+    expect(m.state.scroll.get().kind).toBe('anchor');
+  });
+
+  it('does not read the browser pulling scrollTop back to the end as the reader scrolling up', async () => {
+    const m = await mountTranscript(120);
+    m.view.scrollToBottom();
+    await settled(m.scrollEl);
+    expect(m.state.scroll.get().kind).toBe('tail');
+    const before = m.scrollEl.scrollTop;
+    // The position we left stops existing: the browser moves scrollTop before any frame of ours runs.
+    m.host.style.height = '700px';
+    expect(m.scrollEl.scrollTop).toBeLessThan(before - 200);
+    await settled(m.scrollEl);
+    expect(m.state.scroll.get().kind).toBe('tail');
+    // A step up from the end still leaves it.
+    m.scrollEl.scrollTop -= 1;
     await settled(m.scrollEl);
     expect(m.state.scroll.get().kind).toBe('anchor');
   });
