@@ -131,10 +131,11 @@ export function McpLibraryRow({
       data-source={harnessName ? 'harness' : 'gugu'}
       className="group flex min-h-12 items-center gap-3 px-3 py-2"
     >
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* 名字和命令行排成一行,放不下时省略命令行的尾部;名字不让(哪怕缩 0.1px 也会出省略号),只在超过七成宽时省略。悬停看全文。 */}
+      <div className="flex min-w-0 flex-1 items-baseline gap-2">
         {/* @@@raw server identity — 名字与命令行来自用户自己写的配置,原样显示。 */}
-        <span data-slot="mcp-server-name" className="truncate text-sm text-foreground">{server.name}</span>
-        <span className={cn(mono, 'truncate text-foreground-muted')} title={target}>{target}</span>
+        <span data-slot="mcp-server-name" className="max-w-[70%] shrink-0 truncate text-sm text-foreground" title={server.name}>{server.name}</span>
+        <span data-slot="mcp-server-target" className={cn(mono, 'min-w-0 truncate text-foreground-muted')} title={target}>{target}</span>
       </div>
       <span className={cn(field, mono, 'inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-foreground-muted')}>
         {server.transport === 'http' ? <Globe className="size-3" /> : <Terminal className="size-3" />}
