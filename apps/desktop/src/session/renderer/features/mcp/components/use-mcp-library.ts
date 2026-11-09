@@ -2,11 +2,24 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { useManagementAgents } from '@renderer/lib/stores/use-agents';
-import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import type { LibraryMcpCheck, LibraryMcpHarnessServer, LibraryMcpServer } from '@shared/mcp-library';
 
-/** 这一家自己的那几台,带着它的名字(段头「Claude Code 里配的」)。 */
-export type McpHarnessGroup = { agent: AgentPayload; servers: LibraryMcpHarnessServer['server'][] };
+const harnessKey = (hostKey: string, agentId: string) => ['mcpLibrary', 'harness', hostKey, agentId] as const;
+
+/**
+ * 一家自己配的那几台 —— 段头展开才读(`enabled`),一家一个查询:读哪一家只等哪一家,一家读不了只坏它那一组。
+ * 照读那一家的配置文件,❌ 跑它的 CLI(好几家 `mcp list` 会把每台 stdio server 起一遍)。
+ */
+export function useHarnessMcpServers(agentId: string, enabled: boolean) {
+  const host = useLibraryHost();
+  return useQuery({
+    queryKey: harnessKey(host.key, agentId),
+    queryFn: async (): Promise<LibraryMcpHarnessServer['server'][]> =>
+      (await host.mcpLibrary.harnessServers([agentId])).map((row) => row.server),
+    enabled: enabled && host.remote?.online !== false,
+    ...(host.remote ? { retry: false } : {}),
+  });
+}
 
 /**
  * 资源库 → MCP 的数据:这台机器(资源库选的那台)上咕咕自己管的列表,以及装了的各家自己的用户级那几台。
@@ -29,20 +42,6 @@ export function useMcpLibrary() {
     () => (agents.data ?? []).filter((agent) => agent.reading !== 'not-detected').sort((a, b) => a.name.localeCompare(b.name)),
     [agents.data]
   );
-  const providerIds = installed.map((agent) => agent.id);
-  const harness = useQuery({
-    queryKey: ['mcpLibrary', 'harness', host.key, providerIds],
-    queryFn: () => host.mcpLibrary.harnessServers(providerIds),
-    enabled: reachable && agents.data !== undefined,
-    ...(host.remote ? { retry: false } : {}),
-  });
-  const groups: McpHarnessGroup[] = installed
-    .map((agent) => ({
-      agent,
-      servers: (harness.data ?? []).filter((row) => row.providerId === agent.id).map((row) => row.server),
-    }))
-    .filter((group) => group.servers.length > 0);
-
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: listKey });
   const add = useMutation({ mutationFn: (servers: LibraryMcpServer[]) => host.mcpLibrary.add(servers), onSettled: invalidate });
   const update = useMutation({ mutationFn: (server: LibraryMcpServer) => host.mcpLibrary.update(server), onSettled: invalidate });
@@ -70,14 +69,36 @@ export function useMcpLibrary() {
 
   return {
     servers: list.data ?? [],
-    groups,
-    // 各家那几组先问装了哪几家、再读配置:都回来之前也是「在读」,❌ 先画咕咕那组、各家的过一阵才冒出来。
-    isLoading: list.isLoading || agents.isLoading || harness.isLoading,
-    error: list.error ?? agents.error ?? harness.error,
+    /** 装了的那几家,各一个折叠的段头;配置等展开才读。 */
+    installed,
+    /**
+     * 「添加」时要知道名字和哪几家撞了:那时才把各家的读一遍(已经展开读过的直接用缓存)。
+     * 读不了的那一家不算进来 —— 它那一组展开时自己会把读失败写出来。
+     */
+    harnessNames: async (): Promise<Record<string, string[]>> => {
+      const names: Record<string, string[]> = {};
+      const reads = await Promise.allSettled(
+        installed.map(async (agent) => ({
+          agent,
+          servers: await queryClient.fetchQuery({
+            queryKey: harnessKey(host.key, agent.id),
+            queryFn: async () => (await host.mcpLibrary.harnessServers([agent.id])).map((row) => row.server),
+          }),
+        }))
+      );
+      for (const read of reads) {
+        if (read.status !== 'fulfilled') continue;
+        for (const server of read.value.servers) (names[server.name] ??= []).push(read.value.agent.name);
+      }
+      return names;
+    },
+    // 各家那几组只等「装了哪几家」(段头要画出来);各家的配置等展开才读。
+    isLoading: list.isLoading || agents.isLoading,
+    error: list.error ?? agents.error,
     hasData: list.data !== undefined,
     reload: () => {
       void list.refetch();
-      void harness.refetch();
+      void queryClient.invalidateQueries({ queryKey: ['mcpLibrary', 'harness', host.key] });
     },
     isBusy: add.isPending || update.isPending || remove.isPending,
     add: add.mutateAsync,
