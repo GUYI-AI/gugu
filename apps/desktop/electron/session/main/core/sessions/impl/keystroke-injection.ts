@@ -9,11 +9,13 @@ import {
   buildSessionpageProjectContextBlock,
 } from '../../../../../../src/session/shared/prompt-injection';
 import { localAgentForSession } from '@main/core/sessionpage/sessionpage-session-agent';
+import { projectGroupHost } from '@main/core/projects/project-group-host';
 
 // Keep the session-main boundary independent from the provisioning implementation. These cache keys are
 // the persisted roster contract written by session-page provisioning.
 const PROJECT_CACHE_KEY = 'emdash_project_id';
 const GROUP_CACHE_KEY = 'sessionpage_group_chat_id';
+const CLOUD_STATE_CACHE_KEY = 'sessionpage_cloud_identity_state';
 function cacheString(cache: Record<string, unknown> | null | undefined, key: string): string {
   const value = cache?.[key];
   return typeof value === 'string' ? value.trim() : '';
@@ -327,6 +329,12 @@ export function injectSystemBootstrapWhenReady(args: {
   return afterStartupGate(args.pty, () => injectSystemBootstrapPastGate(args), () => undefined);
 }
 
+async function mappedProjectGroup(projectId: string): Promise<string> {
+  if (!projectId) return '';
+  const bindings = await projectGroupHost().listBindings([projectId]);
+  return bindings.success ? bindings.data.find((binding) => binding.projectId === projectId)?.chatId ?? '' : '';
+}
+
 function injectSystemBootstrapPastGate(args: {
   pty: Pty;
   session: Session;
@@ -339,14 +347,24 @@ function injectSystemBootstrapPastGate(args: {
     })
   }
   const context = localAgentForSession(args.session.id, process.env)
-    .then((agent) => {
+    .then(async (agent) => {
       const projectName = args.projectPath?.split('/').filter(Boolean).at(-1) || args.session.projectId
+      const projectId = cacheString(agent?.cache, PROJECT_CACHE_KEY) || args.session.projectId
+      const recordedGroup = cacheString(agent?.cache, GROUP_CACHE_KEY)
+      // #2347 — a refused join leaves no group on the roster row; the project still has its group, so name it
+      // (unconfirmed) from the project→group mapping, as provisioning does for ACP sessions.
+      const groupChatId = recordedGroup || await mappedProjectGroup(projectId)
       return buildSessionpageProjectContextBlock({
-        projectId: cacheString(agent?.cache, PROJECT_CACHE_KEY) || args.session.projectId,
+        projectId,
         projectName,
         projectPath: args.projectPath,
-        groupChatId: cacheString(agent?.cache, GROUP_CACHE_KEY),
+        groupChatId,
         groupName: projectName,
+        // #2347 — a freshly minted identity records the mapped group before its join lands (and the join can be
+        // refused); only a landed identity's recorded group is a confirmed seat.
+        // Rows from before #5331 carry no state; their identities landed long ago.
+        membership: recordedGroup
+          && !['pending', 'failed'].includes(cacheString(agent?.cache, CLOUD_STATE_CACHE_KEY)) ? 'member' : 'unconfirmed',
       })
     })
     .catch(() => '')

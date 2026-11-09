@@ -12,6 +12,7 @@
 }
 
 .document-preview-status-error { flex-direction: column; color: var(--danger-fg); }
+.document-preview-status-detail { color: var(--text-tertiary); font-size: var(--font-caption); }
 
 .document-preview-office {
   min-height: 100%;
@@ -41,7 +42,8 @@
 
 .document-preview-pdf {
   display: flex;
-  min-height: 100%;
+  height: 100%;
+  min-height: 360px;
   flex-direction: column;
 }
 
@@ -60,38 +62,119 @@
 }
 
 .document-preview-toolbar button { width: 32px; height: 32px; }
-.document-preview-page-count { width: 56px; color: var(--text-secondary); font-size: var(--font-caption); text-align: center; }
-
-.document-preview-pdf-viewport {
-  display: flex;
-  min-height: 360px;
-  flex: 1;
-  align-items: flex-start;
-  justify-content: center;
-  overflow: auto;
-  padding: 12px;
-  background: var(--bg-secondary);
-}
-
-.document-preview-pdf-viewport canvas {
-  display: block;
-  max-width: none;
+.document-preview-toolbar button[aria-pressed="true"] { background: var(--muted); color: var(--text-primary); }
+.document-preview-pdf-toolbar { justify-content: space-between; }
+.document-preview-pdf-toolbar-side { display: flex; min-width: 32px; flex: 1 1 0; gap: 2px; }
+.document-preview-pdf-toolbar-end { justify-content: flex-end; }
+.document-preview-pdf-pages { display: flex; align-items: center; gap: 2px; }
+.document-preview-page-count { min-width: 32px; color: var(--text-secondary); font-size: var(--font-caption); font-variant-numeric: tabular-nums; }
+.document-preview-page-input {
+  width: 40px;
+  height: 26px;
+  padding: 0 4px;
   border: 1px solid var(--border-subtle);
-  /* PDF 的页面是**被渲染的产品内容**(白纸),不是产品的一个面 ⇒ 这个白不受 @@@one-knob 管。 */
-  background: var(--paper);
-  /* @@@shadow-lift (Refs #6104) — 页面不是浮层,投影去掉;它和页边那条 hairline 从前叠在同一条边上。 */
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: var(--font-caption);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.document-preview-page-input:focus { outline: none; border-color: var(--border-focus, var(--accent)); }
+
+.document-preview-pdf-find {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-primary);
+}
+.document-preview-pdf-find button { width: 30px; height: 30px; }
+.document-preview-pdf-find-input {
+  min-width: 0;
+  height: 28px;
+  flex: 1;
+  padding: 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: var(--font-body);
+}
+.document-preview-pdf-find-input:focus { outline: none; border-color: var(--border-focus, var(--accent)); }
+.document-preview-pdf-find-count { margin: 0 4px 0 8px; color: var(--text-secondary); font-size: var(--font-caption); font-variant-numeric: tabular-nums; text-align: right; }
+
+.document-preview-pdf-body { position: relative; display: flex; min-height: 0; flex: 1; container-type: inline-size; }
+
+.document-preview-pdf-outline {
+  width: 220px;
+  max-width: 45%;
+  flex-shrink: 0;
+  overflow: auto;
+  padding: 8px 4px;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-primary);
+}
+.document-preview-pdf-outline ul { margin: 0; padding: 0; list-style: none; }
+.document-preview-pdf-outline ul ul { padding-left: 12px; }
+.document-preview-pdf-outline .document-preview-pdf-outline-item {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  padding: 5px 8px;
+  color: var(--text-primary);
+  font-size: var(--font-caption);
+  font-weight: normal;
+  line-height: 1.4;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A narrow pane (not window): the outline lies over the pages instead of squeezing them. A WebView without container
+   queries keeps it beside them. */
+@container (max-width: 560px) {
+  .document-preview-pdf-outline { position: absolute; inset: 0 auto 0 0; z-index: 3; width: 78%; max-width: none; box-shadow: var(--shadow-lift); }
 }
 
-.document-preview-pdf-page { --scale-round-x: 1px; --scale-round-y: 1px; position: relative; flex-shrink: 0; }
+.document-preview-pdf-viewport { position: relative; min-width: 0; flex: 1; background: var(--bg-secondary); }
+.document-preview-pdf-viewport > .document-preview-status { position: absolute; inset: 0; }
+/* pdf.js's PDFViewer requires its container to be absolutely positioned and to scroll. */
+.document-preview-pdf-scroller { position: absolute; inset: 0; overflow: auto; }
 
-/* @@@pdf-text-layer - pdf.js TextLayer's contract (pdfjs-dist 5.6.205 web/pdf_viewer.css, Apache-2.0):
-   transparent, absolutely positioned spans over the canvas, sized by the custom properties TextLayer sets.
-   Plain selectors on purpose: the Android shell's WebView may predate @scope / CSS nesting, and an
-   unsupported wrapper drops every rule, so the text flows below the page as visible text. */
-.document-preview-pdf-page .textLayer {
+/* @@@pdf-viewer - the parts of pdfjs-dist 5.6.205 web/pdf_viewer.css (Apache-2.0) the viewer's pages, text, links and
+   find highlights need. Not the file itself: it sets variables on `:root *`, follows the system's dark mode instead of
+   the app's, and its light-dark() colours need a newer WebView than the Android shell may have. Plain selectors on
+   purpose: an older WebView drops a whole rule it cannot parse, and the text would flow below the page as visible text. */
+/* The fit leaves 40px across and 5px down for what surrounds a page (pdf.js SCROLLBAR_PADDING / VERTICAL_PADDING):
+   a whole page fits only if the padding above it and its border stay inside those 5px. */
+.pdfViewer { --scale-factor: 1; padding: 2px 0; }
+.pdfViewer .page {
+  --user-unit: 1;
+  --total-scale-factor: calc(var(--scale-factor) * var(--user-unit));
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  position: relative;
+  overflow: visible;
+  margin: 0 auto 8px;
+  direction: ltr;
+  border: 1px solid var(--border-subtle);
+  background-clip: content-box;
+  /* PDF 的页面是**被渲染的产品内容**(白纸),不是产品的一个面 ⇒ 这个白不受 @@@one-knob 管。 */
+  background-color: var(--paper);
+}
+.pdfViewer .page:last-child { margin-bottom: 0; }
+.pdfViewer .canvasWrapper { overflow: hidden; width: 100%; height: 100%; }
+.pdfViewer .canvasWrapper canvas { position: absolute; top: 0; left: 0; display: block; width: 100%; height: 100%; margin: 0; contain: content; }
+.pdfViewer .page.loading::after { content: ""; position: absolute; inset: 0; }
+
+/* @@@pdf-text-layer - TextLayer's contract: transparent, absolutely positioned spans over the canvas, sized by the
+   custom properties TextLayer sets. */
+.pdfViewer .textLayer {
   position: absolute;
   text-align: initial;
-  inset: 1px;
+  inset: 0;
   overflow: clip;
   opacity: 1;
   line-height: 1;
@@ -105,10 +188,10 @@
   --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
   --min-font-size-inv: calc(1 / var(--min-font-size));
 }
-.document-preview-pdf-page .textLayer span,
-.document-preview-pdf-page .textLayer br { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
-.document-preview-pdf-page .textLayer > :not(.markedContent),
-.document-preview-pdf-page .textLayer .markedContent span:not(.markedContent) {
+.pdfViewer .textLayer span,
+.pdfViewer .textLayer br { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
+.pdfViewer .textLayer > :not(.markedContent),
+.pdfViewer .textLayer .markedContent span:not(.markedContent) {
   z-index: 1;
   --font-height: 0;
   font-size: calc(var(--text-scale-factor) * var(--font-height));
@@ -116,12 +199,28 @@
   --rotate: 0deg;
   transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
 }
-.document-preview-pdf-page .textLayer .markedContent { display: contents; }
-.document-preview-pdf-page .textLayer span[role="img"] { user-select: none; cursor: default; }
-.document-preview-pdf-page .textLayer ::selection { background: var(--text-selection); }
-.document-preview-pdf-page .textLayer br::selection { background: transparent; }
+.pdfViewer .textLayer .markedContent { display: contents; }
+.pdfViewer .textLayer span[role="img"] { user-select: none; cursor: default; }
+.pdfViewer .textLayer ::selection { background: var(--text-selection); }
+.pdfViewer .textLayer br::selection { background: transparent; }
+.pdfViewer .textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
+.pdfViewer .textLayer.selecting .endOfContent { top: 0; }
+.pdfViewer .textLayer .highlight { margin: -1px; padding: 1px; border-radius: 4px; background-color: var(--color-warning-highlight); }
+.pdfViewer .textLayer .highlight.appended { position: initial; }
+.pdfViewer .textLayer .highlight.begin { border-radius: 4px 0 0 4px; }
+.pdfViewer .textLayer .highlight.end { border-radius: 0 4px 4px 0; }
+.pdfViewer .textLayer .highlight.middle { border-radius: 0; }
+.pdfViewer .textLayer .highlight.selected { background-color: color-mix(in oklab, var(--warn) 75%, transparent); box-shadow: 0 0 0 2px var(--warn); }
 /* TextLayer measures glyphs on canvases it appends to <body>. */
 .hiddenCanvasElement { display: none; }
+
+/* Links in the PDF: one transparent box per link over the page. */
+.pdfViewer .annotationLayer { position: absolute; top: 0; left: 0; pointer-events: none; transform-origin: 0 0; }
+.pdfViewer .annotationLayer section { position: absolute; text-align: initial; pointer-events: auto; box-sizing: border-box; transform-origin: 0 0; user-select: none; }
+.pdfViewer .textLayer.selecting ~ .annotationLayer section { pointer-events: none; }
+.pdfViewer .annotationLayer .linkAnnotation > a { position: absolute; top: 0; left: 0; width: 100%; height: 100%; font-size: 1em; }
+.pdfViewer .annotationLayer .linkAnnotation > a:hover { background-color: var(--hover); }
+.pdfViewer .annotationLayer > :not(.linkAnnotation) { display: none; }
 
 .document-preview-pptx-shell { position: relative; min-height: 100%; background: var(--bg-secondary); }
 .document-preview-pptx-shell > .document-preview-status { position: absolute; inset: 0; z-index: 2; }

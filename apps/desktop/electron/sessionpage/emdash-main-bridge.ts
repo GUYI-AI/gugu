@@ -14,6 +14,8 @@ export { deliverPasswordBetaDecision } from '../session/main/core/sessions/passw
 export { installPasswordBetaHost, passwordBetaAgent } from '../password-vault/beta-host'
 export { archiveSession } from '../session/main/core/sessions/archiveSession'
 export { appInbox } from '../session/main/core/extensions/app-inbox'
+// #1607 node 5: pushes from another computer for an App projection watched from here; the host's requester hands them over.
+export { projectionRemoteEvent } from '../session/main/core/extensions/projection-remote-viewer'
 export {
   bootEmdashModule,
   startSessionpageSearchBackfill,

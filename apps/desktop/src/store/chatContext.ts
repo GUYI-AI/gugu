@@ -12,6 +12,7 @@ import type { DisplayIdentity } from '../lib/displayIdentity'
 import type { CapturedUnreadEntry } from '../lib/chatUnreadLocator'
 import type { AccountRevisionEvent, AccountRevisionListener } from '../lib/accountRevisionCoordinator'
 import { createDraftWriter } from './chatDraftWrites'
+import { readChatDrafts, removeChatDraft, writeChatDraft } from './chatDraftStorage'
 import type { ChatMessageComposerProps } from '../components/chat/chatComposerModels'
 export { appendToDraft } from './chatDraftWrites'
 
@@ -341,41 +342,51 @@ export function useDraftWhispersStore() {
   return { draftWhispers, setDraftWhisper }
 }
 
-export function useTextDraftStore(): {
+// #2383 — text and @ picks persist per account (chatDraftStorage); a changed account loads its own drafts in the
+// same render, so one account's draft never shows under another. No account = in memory only (tests, signed out).
+function useAccountDrafts<T>(accountId: string | null, read: (accountId: string | null) => Record<string, T>) {
+  const [store, setStore] = useState(() => ({ accountId, value: read(accountId) }))
+  const current = store.accountId === accountId ? store : { accountId, value: read(accountId) }
+  if (current !== store) setStore(current)
+  const ref = useRef(current)
+  ref.current = current
+  const replace = useCallback((value: Record<string, T>) => {
+    ref.current = { accountId: ref.current.accountId, value }
+    setStore(ref.current)
+  }, [])
+  return { value: current.value, ref, replace }
+}
+
+export function useTextDraftStore(accountId: string | null = null): {
   drafts: Record<string, string>
   setDraft: (chatId: string, content: SetStateAction<string>) => void
   dropTextDraft: (chatId: string) => void
 } {
-  const [drafts, setDrafts] = useState<Record<string, string>>({})
-  const draftsRef = useRef<Record<string, string>>({})
-  const replaceDrafts = useCallback((next: Record<string, string>) => {
-    draftsRef.current = next
-    setDrafts(next)
-  }, [])
+  const { value: drafts, ref, replace } = useAccountDrafts(accountId, (account) => readChatDrafts(account).texts)
   const setDraft = useCallback((chatId: string, content: SetStateAction<string>) => {
-    const current = draftsRef.current[chatId] ?? ''
-    replaceDrafts({
-      ...draftsRef.current,
-      [chatId]: typeof content === 'function' ? content(current) : content,
-    })
-  }, [replaceDrafts])
+    const text = typeof content === 'function' ? content(ref.current.value[chatId] ?? '') : content
+    replace({ ...ref.current.value, [chatId]: text })
+    writeChatDraft(ref.current.accountId, chatId, { text })
+  }, [ref, replace])
   const dropTextDraft = useCallback((chatId: string) => {
-    if (!(chatId in draftsRef.current)) return
-    const next = { ...draftsRef.current }
+    removeChatDraft(ref.current.accountId, chatId)
+    if (!(chatId in ref.current.value)) return
+    const next = { ...ref.current.value }
     delete next[chatId]
-    replaceDrafts(next)
-  }, [replaceDrafts])
+    replace(next)
+  }, [ref, replace])
   return { drafts, setDraft, dropTextDraft }
 }
 
-export function useDraftMentionsStore(): {
+export function useDraftMentionsStore(accountId: string | null = null): {
   draftMentions: Record<string, DraftMention[]>
   setDraftMentions: (chatId: string, mentions: DraftMention[]) => void
 } {
-  const [draftMentions, setState] = useState<Record<string, DraftMention[]>>({})
+  const { value: draftMentions, ref, replace } = useAccountDrafts(accountId, (account) => readChatDrafts(account).mentions)
   const setDraftMentions = useCallback((chatId: string, mentions: DraftMention[]) => {
-    setState((prev) => ({ ...prev, [chatId]: mentions }))
-  }, [])
+    replace({ ...ref.current.value, [chatId]: mentions })
+    writeChatDraft(ref.current.accountId, chatId, { mentions: mentions.map(({ userId, displayName }) => ({ userId, displayName })) })
+  }, [ref, replace])
   return { draftMentions, setDraftMentions }
 }
 

@@ -87,15 +87,22 @@ async function mount(
 }
 
 describe('sticky user lanes', () => {
-  it('shows the summary, on an opaque backdrop, only once the message has gone by', async () => {
+  it('shows the summary, on an opaque backdrop, in the same frame the message row goes above the pin line', async () => {
     const t = await mount();
     const lane = t.card('a-user')!.closest<HTMLElement>('[data-index]')!;
     const backdrop = () => lane.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!;
+    const rowBottom = () => lane.firstElementChild!.getBoundingClientRect().bottom - t.scrollEl.getBoundingClientRect().top;
     expect(t.pinTop('a-user')!, 'the message is on screen: its summary waits below it').toBeGreaterThan(PIN_LINE + 1);
-    expect(getComputedStyle(lane.querySelector('[data-pin-summary]')!.parentElement!.parentElement!).opacity).toBe('0');
-    expect(getComputedStyle(backdrop()).opacity).toBe('0');
+    expect(getComputedStyle(backdrop().parentElement!).opacity).toBe('0');
+    // One copy at a time, pixel by pixel across the hand-over, both ways.
+    const handOver = Math.round(rowBottom() - PIN_LINE);
+    for (const st of [-3, -2, -1, 0, 1, 2, 3, 2, 1, 0, -1, -2].map(d => handOver + d)) {
+      await t.scrollTo(st);
+      expect(getComputedStyle(backdrop().parentElement!).opacity, `scrollTop=${st}, row bottom ${rowBottom()}`).toBe(rowBottom() < PIN_LINE ? '1' : '0');
+    }
     await t.scrollTo(900);
-    await until('the summary is backed by the opaque lane', () => getComputedStyle(backdrop()).opacity === '1');
+    expect(getComputedStyle(backdrop().parentElement!).opacity).toBe('1');
+    expect(getComputedStyle(backdrop()).opacity).toBe('1');
     expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 0);
     expect(t.cardTop('a-user')!, 'the message itself scrolled away').toBeLessThan(0);
   });
@@ -221,6 +228,9 @@ describe('sticky user lanes', () => {
     };
     const folded = await pinned();
     expect(folded, 'two lines and the bubble padding, not a screenful').toBeLessThan(3 * lineHeight + 32);
+    const fade = (id: string) => getComputedStyle(t.host.querySelector(`[data-pin-summary="${id}"] > span`)!).maskImage;
+    expect(fade('a-user'), 'a cut-off question fades out').toContain('gradient');
+    expect(fade('b-user'), 'a question that fits does not').toBe('none');
     await t.scrollTo(0);
     t.card('a-user')!.click();
     await until('a expanded', () => t.card('a-user')!.getBoundingClientRect().height, h => h > 400);

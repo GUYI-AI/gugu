@@ -60,14 +60,17 @@ export interface MessageFilePreviewPanelProps {
   onEdit?: () => void
   /** The next step under a file it cannot draw, or could not read. */
   unreadableAction?: ReactNode
-  /** A line above the document: what it could not show and why (files on a machine that is off). */
-  notice?: string
+  /**
+   * The state of the machine the page's files are kept on, in the header (owner 11-08: connection state lives in the
+   * header, ❌ a bar above the document). A `ConnectionStatus`.
+   */
+  connection?: ReactNode
 }
 
 /** The reading zoom each kind of preview keeps (a video or an unsupported file has none). */
 const READING_ZOOM: Partial<Record<DocumentPreviewKind, FileZoomKind>> = { image: 'image', markdown: 'markdown', text: 'text-code', html: 'html', pdf: 'pdf', docx: 'docx' }
 
-export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, onVideoError, kind, content, loading, error, loadingLabel, loadingFraction, actions = [], onOpenExternal, onBack, onClose, mobile = false, fill = false, tabbed = false, registerHtml, at, unreadableAction, onEdit, notice }: MessageFilePreviewPanelProps) {
+export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, onVideoError, kind, content, loading, error, loadingLabel, loadingFraction, actions = [], onOpenExternal, onBack, onClose, mobile = false, fill = false, tabbed = false, registerHtml, at, unreadableAction, onEdit, connection }: MessageFilePreviewPanelProps) {
   const { t } = useTranslation('messaging')
   const { translate } = useSessionMessages()
   const pane = useContext(PaneContext)?.pane
@@ -78,6 +81,7 @@ export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, on
         {folders?.map(({ name, open }, index) => <span key={index} className="flex shrink-0 items-center">{open ? <ToolbarButton size="xs" variant="ghost" className="h-auto px-0 font-normal" onClick={open}>{name}</ToolbarButton> : name}<span className="px-1">/</span></span>)}
       </span>
       <span className="min-w-0 flex-1 truncate" title={file.fileName}>{file.fileName}</span>
+      {connection ? <span className="ml-2 flex min-w-0 shrink text-xs text-[var(--text-secondary)]">{connection}</span> : null}
     </span>} mode={onEdit || kind === 'text' || kind === 'markdown' ? 'preview' : undefined} canEdit={!!onEdit} onModeChange={(next) => { if (next === 'source') onEdit?.() }} menu={<DropdownMenu>
       <DropdownMenuTrigger render={<ToolbarButton size="icon-sm" variant="ghost" aria-label={translate('tabs.more')} title={translate('tabs.more')} />}><MoreHorizontal className="size-3.5" /></DropdownMenuTrigger>
       <DropdownMenuContent align="end">
@@ -104,7 +108,7 @@ export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, on
           title={
             <span className="gg-pane-title-stack">
               <h2 className="gg-pane-title">{file.fileName}</h2>
-              {meta ? <span data-testid="message-file-preview-meta" className="gg-pane-meta">{meta}</span> : null}
+              {meta || connection ? <span data-testid="message-file-preview-meta" className="gg-pane-meta">{meta}{meta && connection ? ' · ' : null}{connection}</span> : null}
             </span>
           }
           leading={<IconButton size="lg" aria-label={t(onBack ? 'common.back' : 'common.close')} onClick={onBack ?? onClose}>{onBack ? <ChevronLeft /> : <X />}</IconButton>}
@@ -114,7 +118,10 @@ export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, on
         <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '16px 18px 12px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
             {onBack ? <IconButton size="md" aria-label={t('common.back')} onClick={onBack}><ChevronLeft size={18} /></IconButton> : <FileText size={18} color="var(--text-link)" />}
-            <strong style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-primary)', fontSize: 'var(--font-title)' }}>{file.fileName}</strong>
+            <span className="flex min-w-0 flex-col">
+              <strong style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-primary)', fontSize: 'var(--font-title)' }}>{file.fileName}</strong>
+              {connection ? <span className="flex min-w-0 text-[length:var(--font-caption)] leading-[var(--lh-caption)] text-[var(--text-secondary)]">{connection}</span> : null}
+            </span>
           </div>
           <IconButton size="md" aria-label={onBack ? t('common.close') : t('chatArea.filePreview.close')} title={onBack ? t('common.close') : t('chatArea.filePreview.close')} onClick={onClose}><X size={18} /></IconButton>
         </header>
@@ -122,10 +129,10 @@ export function MessageFilePreviewPanel({ folders, viewerRef, file, videoUrl, on
       {fileToolbar ?? (mobile ? null : <div style={{ display: 'flex', gap: 8, padding: '10px 18px', flexShrink: 0 }}>
         {actions.map((item) => <Button key={item.key} variant="secondary" size="sm" aria-label={item.label} title={item.label} disabled={item.disabled} onClick={item.onSelect}><item.icon size={15} />{item.label}</Button>)}
         {onOpenExternal ? <Button variant="secondary" size="sm" aria-label={t('chatArea.filePreview.openExternal')} title={t('chatArea.filePreview.openExternal')} onClick={onOpenExternal}><ExternalLink size={15} />{t('chatArea.filePreview.openExternal')}</Button> : null}
+        {tabbed && connection ? <span className="flex min-w-0 items-center text-[length:var(--font-caption)] text-[var(--text-secondary)]">{connection}</span> : null}
       </div>)}
       {/* 大小还不知道(手机附件卡正从那台电脑读,或没读到)就不写,❌ 写一个「0 B」。手机上这一行进了页头。 */}
       {fileToolbar || mobile || ((loading || error) && file.sizeBytes === 0) ? null : <div style={{ padding: '0 18px 10px', color: 'var(--text-tertiary)', fontSize: 'var(--font-caption)', flexShrink: 0 }}>{formatAttachmentSize(file.sizeBytes)}{file.mimeType ? ` · ${file.mimeType}` : ''}</div>}
-      {notice ? <div role="status" data-testid="message-file-preview-notice" className="gg-file-preview-notice">{notice}</div> : null}
       <div ref={kind === 'text' || kind === 'markdown' ? textRef : undefined} data-file-selection style={{ flex: 1, minHeight: 0, overflow: 'auto', color: 'var(--text-primary)' }}>
         {loading ? <div style={statusStyle} data-testid="message-file-preview-loading">{loadingLabel ?? t('chatArea.filePreview.loading')}{loadingFraction !== undefined ? <progress className="gg-progress" value={loadingFraction} max={1} /> : null}</div> : failure ? <div style={{ ...statusStyle, color: 'var(--danger-fg)' }}>{failure}{unreadableAction ? <div>{unreadableAction}</div> : null}</div> : kind === 'video' ? <video data-testid="message-file-preview-video" src={videoUrl} onError={event => onVideoError?.(event.currentTarget)} controls autoPlay playsInline className="block max-h-full w-full" /> : kind === 'unsupported' ? <div style={statusStyle}>{t('chatArea.filePreview.unsupported')}{unreadableAction ? <div>{unreadableAction}</div> : null}</div> : kind === 'image' && typeof content === 'string' ? <ImageRenderer file={{ path: file.fileName, content }} onError={() => setUndrawable(content)} /> : typeof content === 'string' && kind === 'text' && /\.csv$/i.test(file.fileName) ? <CsvTable content={content} /> : typeof content === 'string' && (kind === 'text' || kind === 'markdown') ? <div style={{ padding: fileToolbar ? '4px 18px 16px' : '16px 18px', zoom }}>{kind === 'markdown' ? <Markdown trust="chat" density="comfortable" content={content} hardBreaks /> : <pre style={{ margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontFamily: 'inherit', fontSize: 'var(--font-body)', lineHeight: 1.65 }}>{content}</pre>}</div> : <Suspense fallback={<div style={statusStyle} data-testid="message-file-preview-loading">{loadingLabel ?? t('chatArea.filePreview.loading')}</div>}><DocumentPreviewContent kind={kind} content={content} title={file.fileName} onOpenExternally={onOpenExternal} registerHtml={registerHtml} at={at} /></Suspense>}
       </div>

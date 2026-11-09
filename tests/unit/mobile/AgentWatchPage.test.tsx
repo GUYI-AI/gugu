@@ -102,12 +102,12 @@ vi.mock('../../../apps/desktop/src/mobile/agent-watch/CreateSessionPage', async 
     }: {
       device: Device
       onBack: () => void
-      onCreated: (session: SessionpageSessionSummary, firstPrompt: string) => void
+      onCreated: (session: SessionpageSessionSummary, firstPrompt: { id: string; text: string; sentAt: number } | undefined) => void
     }) => React.createElement(
       'div',
       { 'data-testid': 'create', 'data-device-id': device.device_id },
       React.createElement('button', { type: 'button', 'data-testid': 'create-back', onClick: onBack }, 'back'),
-      React.createElement('button', { type: 'button', 'data-testid': 'create-done', onClick: () => onCreated(device.capabilities.host_kind === 'phone' ? { ...session, conversationId: 'made', supported: true, agent: { userId: 'phone-agent' } } : { ...session, conversationId: 'made' }, 'hello') }, 'done'),
+      React.createElement('button', { type: 'button', 'data-testid': 'create-done', onClick: () => onCreated(device.capabilities.host_kind === 'phone' ? { ...session, conversationId: 'made', supported: true, agent: { userId: 'phone-agent' } } : { ...session, conversationId: 'made' }, { id: 'first-prompt', text: 'hello', sentAt: 0 }) }, 'done'),
     ),
   }
 })

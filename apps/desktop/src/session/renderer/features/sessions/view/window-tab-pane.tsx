@@ -1,5 +1,6 @@
 import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
+import type { ReactNode } from 'react';
 import { auxLeadingReserve, PutBackButton } from '@renderer/app/aux-window-host';
 import { auxWindows } from '@renderer/app/aux-windows';
 import { PaneContent } from '@renderer/features/tabs/pane-content';
@@ -12,6 +13,7 @@ import { ShellTitlebarDragRegion } from '@renderer/lib/components/titlebar/shell
 import { SessionContentGate } from '../main-panel';
 import { useWorkspaceViewModel } from '../session-view-context';
 import { TabBarActionRow } from '../titlebar-actions';
+import { SessionMachineStatus } from './session-machine-status';
 
 /**
  * 单独成窗的一枚页签(spec session-page「一屏几块」:拖到窗口外 = 单独成窗,一枚页签也行):窗里一条页签条只有它,
@@ -31,11 +33,11 @@ export const WindowTabPane = observer(function WindowTabPane({ windowId, paneId 
 });
 
 const SessionWindowTabPane = observer(function SessionWindowTabPane({ windowId, paneId }: { windowId: string; paneId: string }) {
-  return <WindowTabPaneContent windowId={windowId} paneId={paneId} paneLayout={useWorkspaceViewModel().paneLayout} />;
+  return <WindowTabPaneContent windowId={windowId} paneId={paneId} paneLayout={useWorkspaceViewModel().paneLayout} status={<SessionMachineStatus />} />;
 });
 
 /** The window's strip and its one tab, from whichever strip it came out of (a task's, a chat's). */
-export const WindowTabPaneContent = observer(function WindowTabPaneContent({ windowId, paneId, paneLayout }: { windowId: string; paneId: string; paneLayout: PaneLayoutStore }) {
+export const WindowTabPaneContent = observer(function WindowTabPaneContent({ windowId, paneId, paneLayout, status }: { windowId: string; paneId: string; paneLayout: PaneLayoutStore; /** The session's machine state (session tabs only). */ status?: ReactNode }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const group = paneLayout.windowPanes.get(paneId);
   if (!group) return null;
@@ -59,6 +61,7 @@ export const WindowTabPaneContent = observer(function WindowTabPaneContent({ win
             leadingReservePx={auxLeadingReserve()}
             actionsSlot={
               <TabBarActionRow atWindowEdge>
+                {status}
                 <PutBackButton windowId={windowId} />
               </TabBarActionRow>
             }

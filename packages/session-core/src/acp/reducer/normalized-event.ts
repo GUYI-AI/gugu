@@ -18,7 +18,7 @@ import type { SessionCommandDefinition, SessionUsage } from '../models/config';
 import type { PlanEntryInput } from '../models/plan';
 import type { SessionNoticeCode } from '../models/turns/session-notice';
 import type { TranscriptTurnTrigger } from '../models/turns/turn';
-import type { ToolImage, ToolImageRef } from '../models/turns/tool-calls';
+import type { ToolImage } from '../models/turns/tool-calls';
 import type { TerminalExit, TerminalState } from '../models/terminals';
 import type { EntityContent, EntityMeta } from '../models/entity-content';
 import type { SessionTerminalUpdate, SessionTerminalChunk } from '../session-protocol';
@@ -363,8 +363,6 @@ export type NormalizedEvent =
       outputText?: string | null;
       /** As on `tool_call`; undefined leaves the prior pictures unchanged. */
       images?: ToolImage[] | null;
-      /** A snapshot read's pictures: kind and length only, the bytes stay in the record. */
-      imageRefs?: ToolImageRef[] | null;
       /** Serialized ACP `rawInput` — the arguments handed to the tool. */
       rawInput?: string | null;
       inputSummary?: string | null;

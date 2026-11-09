@@ -124,6 +124,8 @@ export interface DesktopFilePage {
   pageId: number;
   extensionId: string;
   handed: (AppFileRef & { id: string }) | null;
+  /** Gateway-stamped versions of the cards handed to this exact call. */
+  handedVersions?: readonly number[];
   /**
    * A person opened `handed` in this page from the host's UI (`@@@outside-file`): only then may it be read outside its
    * working copy. Not for a file an agent or an App opened, nor a page an agent works.
@@ -783,6 +785,11 @@ export async function readAppFileVersion(page: DesktopFilePage, args: { ref?: un
   return files.readVersion(chatSurface(page), { ref, n: Number(args.n) });
 }
 
+/** Internal upload metadata; the page-lease layer first requires the exact live call's handed-file proof. */
+export async function appFilePayloadMetadata(page: DesktopFilePage, args: { ref: ChatFileRef }) {
+  return files.payloadMetadata(chatSurface(page), args);
+}
+
 /** Into a chat's workspace or a session's working copy, as the call names it. */
 export async function uploadAppFiles(
   page: DesktopFilePage,
@@ -833,6 +840,8 @@ export async function forwardTargets(page: DesktopFilePage, args: { refs?: unkno
   }
 }
 export const chatMembersOf = files.members;
+/** Host permission UI only; App content access still goes through chat:read. */
+export const unreadBindingChatChoices = () => files.chats();
 export const chatsOf = files.chats;
 export const surfaceChatOf = files.chat;
 export const resourceChatOf = files.resourceChat;

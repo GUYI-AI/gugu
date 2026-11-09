@@ -2,6 +2,7 @@ import { messageItemFromRow, MESSAGES_VIEW_SELECT, type RawMessageRow } from '@g
 import { agentReaderUserId } from '@gugu/core/shared/ui/messageState'
 import type {
   MessageContentType,
+  MessageDeliveryRefusalReason,
   MessageDeliveryStatus,
   MessageItem,
   ReactionGroup,
@@ -30,7 +31,7 @@ export interface MessageOverlay {
 export interface MessageOverlayRows {
   reactions: { message_id: string; user_id: string; emoji: string }[]
   deliveries: { message_id: string; status: MessageDeliveryStatus; device_id: string }[]
-  delivery_blocks: { message_id: string; agent_user_id: string; reason: 'agent_archived' }[]
+  delivery_blocks: { message_id: string; agent_user_id: string; reason: MessageDeliveryRefusalReason }[]
 }
 
 // @@@msg-cache (#621/P2/#947) - the mutable BODY fields of an already-cached message that can change after
