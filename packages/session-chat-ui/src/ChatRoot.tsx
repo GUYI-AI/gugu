@@ -147,8 +147,10 @@ const PREFETCH_BEHIND = 20;
 // for the browser's own idle tasks).
 const PREFETCH_MIN_REMAINING_MS = 3;
 
-// onReachStart fires when the top row is visible and scrollTop is within this
-// threshold of the canvas top. Debounced: only fires once until reset.
+// onReachStart fires when scrollTop is within this threshold of the canvas top,
+// or within one viewport height when that is larger, so each older page lands a
+// screen ahead of the reader. Debounced: fires once until the reader scrolls away
+// or the rendered history changes (#2403).
 const REACH_START_THRESHOLD_PX = 200;
 
 // Maximum absolute scrollTop delta that can originate from a writeScrollTop
@@ -1403,6 +1405,10 @@ export function ChatRoot(props: ChatRootProps) {
   // Hoisted to component scope so tween arming (from UnitRow createEffects)
   // never hits a null reference. Phases guard on scrollEl for pre-mount safety.
   let reachStartFired = false;
+  // @@@reach-start-rearm (#2403) — a page shorter than the viewport cannot scroll, so "scrolled away" never re-arms
+  // reach-start: the reader would sit above blank space after one page. New rows re-arm it; an empty older page adds
+  // none, so an exhausted history stops asking.
+  let reachStartRows = '';
   // Cache to avoid emitting onActiveUserMessageVisibilityChange on every frame.
   // `undefined` means "not yet emitted" — forces an emit on the first writePhase
   // and after every model swap.
@@ -1590,7 +1596,10 @@ export function ChatRoot(props: ChatRootProps) {
       emitAtBottom(nowAtBottom);
     }
 
-    if (st <= REACH_START_THRESHOLD_PX) {
+    const rendered = units();
+    const rows = `${rendered.length}\u0000${rendered[0]?.id ?? ''}`;
+    if (rows !== reachStartRows) { reachStartRows = rows; reachStartFired = false; }
+    if (st <= Math.max(REACH_START_THRESHOLD_PX, shadowViewHeight)) {
       if (!reachStartFired) {
         reachStartFired = true;
         props.onReachStart?.();
