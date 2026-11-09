@@ -11,6 +11,7 @@ import { createWindowCommitReceipts, type WindowReceiptDatabase } from './window
 import { recoverWindowCommitIntent } from './window-commit-intent';
 import { openWindowCommitPins } from './window-commit-pins';
 import { openWindowCommitCollector } from './window-commit-gc';
+import { openWindowCommitGc } from './window-commit-gc-discovery';
 import { windowCommitSourcePath } from './window-commit-source';
 import { windowCommitCatalogPath } from './window-commit-source-catalog';
 import { windowCommitProjectionDirectory, writeWindowFrame } from './window-commit-projection-disk';
@@ -78,8 +79,29 @@ describe('bounded version reclamation with durable final cleanup', () => {
       await Reflect.apply(sync, this, []); const current = await this.stat({ bigint: true });
       if (current.dev === identity.dev && current.ino === identity.ino) await files.writeFile(raw, 'late replacement');
     });
-    await expect(f.collector.step(old.sourceId, createWindowBudget())).rejects.toThrow('Immutable commit source changed');
+    // Deletion is time-sliced; a slow batch returns progress before the raw path.
+    const collect = async () => { for (;;) { const step = await f.collector.step(old.sourceId, createWindowBudget()); if (step.kind !== 'progress') return step; } };
+    await expect(collect()).rejects.toThrow('Immutable commit source changed');
     expect(await files.readFile(raw, 'utf8')).toBe('late replacement'); expect(f.receipts.bySource(old.sourceId)).not.toBeNull();
+  });
+
+  it('runs actual catalog discovery and collection under one budget, then revisits newly retired versions on a later pass', async () => {
+    const f = await fixture(), old = await f.version(), latest = await f.version();
+    const gc = await openWindowCommitGc({ ...f.scope, pins: f.pins, connection: f.connection });
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < 20; i++) {
+        const budget = createWindowBudget(), result = await gc.run(budget);
+        expect(budget.counters.sourceBytes).toBe(0); expect(budget.counters.indexBytes).toBeLessThanOrEqual(65536);
+        if (result.kind === 'end') break;
+        if (i === 19) throw new Error('Fixture pass did not finish');
+      }
+      if (!pass) {
+        expect(await exists(windowCommitSourcePath(f.directory, old.binding))).toBe(false);
+        expect(await exists(windowCommitSourcePath(f.directory, latest.binding))).toBe(true); await f.version();
+      }
+    }
+    expect(await exists(windowCommitSourcePath(f.directory, latest.binding))).toBe(false); await gc.close();
+    await expect(gc.run(createWindowBudget())).rejects.toThrow('closed');
   });
 
   it('requires both resident releases, protects the current row and recovery intents, and deletes only the retired version', async () => {
