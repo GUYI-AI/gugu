@@ -38,6 +38,23 @@ export function finishWindowProjectionReply<T>(result: WindowLiveResult<T>): Win
     verify(); return result;
   } catch (error) { return failed(error); }
 }
+/** Clear an earlier development cache layout under the projection gateway
+ * before the committed-event writer attaches. */
+export async function prepareWindowCommitStorage(): Promise<void> {
+  const selected = host(); await selected.prepared; scheduleCollection(selected);
+}
+// Background reclamation after the layout is current: first pass soon after
+// start, then periodically. Each pass is bounded; failures are reported only.
+const FIRST_PASS_MS = 30_000, PASS_INTERVAL_MS = 5 * 60_000;
+let timer: ReturnType<typeof setTimeout> | undefined;
+function scheduleCollection(selected: ReturnType<typeof host>, delay = FIRST_PASS_MS) {
+  if (timer) return;
+  timer = setTimeout(() => {
+    void selected.collect().catch(error => { try { log.warn('sessionWindow: commit source collection failed', { error }); } catch { /* diagnostics only */ } })
+      .finally(() => { timer = undefined; if (current === selected) scheduleCollection(selected, PASS_INTERVAL_MS); });
+  }, delay);
+  timer.unref?.();
+}
 export function closeWindowProjectionOwner(identity: object) {
   if (current) void current.close(identity).catch(() => {}); // The host retains and reports failed cleanup.
 }

@@ -40,7 +40,10 @@ function slot(): Slot {
 }
 
 /** Await in lazyWorker.onSpawned, before any start/resume can receive the worker. */
-export async function connectWindowCommitHost(source: Parameters<Runtime['attach']>[0], observe: Slot['observe'], connection: Pick<Connection, 'onDisconnect'>) {
+/** `prepare` runs before the committed-event source attaches. If it fails, no
+ * window can reserve a capture; canonical persistence itself still proceeds. */
+export async function connectWindowCommitHost(source: Parameters<Runtime['attach']>[0], observe: Slot['observe'], connection: Pick<Connection, 'onDisconnect'>,
+  prepare?: () => Promise<void>) {
   const selected = slot(); selected.observe = observe;
   const releaseDisconnect = connection.onDisconnect(() => selected.runtime.invalidate());
   // Initialize before the awaited worker-start barrier, never before joining the
@@ -49,6 +52,7 @@ export async function connectWindowCommitHost(source: Parameters<Runtime['attach
   try {
     await mkdir(directory, { recursive: true });
     for (const path of [directory, cache, userData]) await syncWindowDirectory(path);
+    await prepare?.();
     selected.storageFailed = undefined;
   } catch (error) {
     selected.storageFailed = error; selected.runtime.invalidateStore();

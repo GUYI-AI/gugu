@@ -84,6 +84,23 @@ describe('the main-process commit host and actual canonical writer', () => {
     expect(project).not.toHaveBeenCalled();
   });
 
+  it('attaches the committed-event source only after storage preparation, and refuses windows if it fails', async () => {
+    const events = source(), project = vi.fn(async () => ({ projectionId: 'unused' })), gate = Promise.withResolvers<void>();
+    gate.promise.catch(() => {}); // Handled by connect; avoid an early unhandled-rejection report.
+    bindWindowCommitProjection(project);
+    const connecting = connectWindowCommitHost(stream(events), () => {}, connection, () => gate.promise);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(events.subscriberCount).toBe(0);
+    gate.reject(new Error('layout could not be prepared')); connected = await connecting;
+    expect(events.subscriberCount).toBe(1);
+    expect(() => reserveWindowCommitHost('view', 'c', vi.fn())).toThrow(expect.objectContaining({ code: 'live_projection_unavailable' }));
+    events.emit({ sessionId: 'c', providerId: 'claude', platformCredentials: false, source: 'live', turn: {
+      id: 'kept', seq: 0, referenceId: 'kept-ref', initiator: 'user', outcome: { kind: 'done' },
+      items: [{ kind: 'message', id: 'kept-item', seq: 0, role: 'assistant', text: 'canonical history still persists' }] } });
+    await vi.waitFor(() => expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 1 }));
+    expect(project).not.toHaveBeenCalled();
+  });
+
   it('rejects new handoff reservations without a durable producer rather than declaring a successful empty view', () => {
     expect(() => reserveWindowCommitHost('view', 'c', vi.fn())).toThrow(expect.objectContaining({ code: 'live_projection_unavailable' }));
     expect(fixture.sqlite.prepare('SELECT id FROM session_turns').all()).toEqual([]);

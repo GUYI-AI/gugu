@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'node:crypto';
 import { statSync } from 'node:fs';
-import { link, open, rm, type FileHandle } from 'node:fs/promises';
+import { link, open, opendir, rm, type FileHandle } from 'node:fs/promises';
+import type { Dir } from 'node:fs';
 import { join } from 'node:path';
 import { registerWindowFrameBackend, windowFrameBackend, type WindowFrameBackend } from '@gugu/session-core/session-record/window-cache/frame-backend';
 import { decodeWindowFrame, windowFrameName, type WindowFrameKey, type WindowFrameRead } from '@gugu/session-core/session-record/window-cache/frame';
@@ -178,5 +179,54 @@ export function createWindowPackStore(directory: string, db: WindowReceiptDataba
       return { anchors: page.map(row => ({ groupId: row.groupId, sources: row.sources })), next: page.length === 8 ? page[7].groupId : null };
     },
     close() { if (active.size) throw new Error('Flush admitted pack jobs before releasing their store'); closed = true; unregister(); },
+  };
+}
+
+/** Reclaim committed packs that no frame references any more (their receipts
+ * were collected or cascaded away). At most `limit` packs per call; the file is
+ * removed and synced before its row, so a crash leaves only a row whose file is
+ * already gone, which the next sweep removes. Complete groups never gain frames. */
+export async function sweepWindowPackGroups(directory: string, db: WindowReceiptDatabase, proof: { assertHeld(): void }, limit = 8): Promise<number> {
+  proof.assertHeld();
+  const orphaned = `SELECT group_id FROM session_window_pack_groups g WHERE g.state='complete'
+    AND NOT EXISTS (SELECT 1 FROM session_window_pack_frames f WHERE f.group_id=g.group_id)`;
+  const rows = db.prepare(`${orphaned} LIMIT ?`).all(limit) as { group_id: string }[];
+  if (!rows.length) return 0;
+  for (const row of rows) {
+    if (!/^[a-f0-9]{32}$/.test(row.group_id)) throw new Error('Invalid pack group');
+    proof.assertHeld(); await rm(join(directory, `${row.group_id}.pack`), { force: true });
+  }
+  proof.assertHeld(); await syncWindowDirectory(directory); proof.assertHeld();
+  const remove = db.prepare(`DELETE FROM session_window_pack_groups WHERE group_id=? AND group_id IN (${orphaned})`);
+  for (const row of rows) remove.run(row.group_id);
+  return rows.length;
+}
+
+/** Packs whose group row is gone: deleting a session cascades its group rows
+ * immediately, leaving the files. Walks the namespace with one handle across
+ * calls, examining at most `limit` entries per call, and removes `<group>.pack`
+ * or `<group>.pack.tmp` only when no group row (in any state) exists. A build
+ * always inserts its row before creating either file. */
+export function createWindowPackFileSweeper(directory: string, db: WindowReceiptDatabase) {
+  let handle: Dir | undefined;
+  const known = db.prepare('SELECT 1 FROM session_window_pack_groups WHERE group_id=?');
+  return {
+    async step(proof: { assertHeld(): void }, limit = 64): Promise<'more' | 'end'> {
+      proof.assertHeld();
+      handle ??= await opendir(directory, { bufferSize: 1 });
+      let removed = false;
+      try {
+        for (let examined = 0; examined < limit; examined++) {
+          const entry = await handle.read();
+          if (!entry) { const done = handle; handle = undefined; await done.close(); if (removed) await syncWindowDirectory(directory); return 'end'; }
+          const match = /^([a-f0-9]{32})\.pack(?:\.tmp)?$/.exec(entry.name);
+          if (!match || !entry.isFile() || known.get(match[1])) continue;
+          proof.assertHeld(); await rm(join(directory, entry.name), { force: true }); removed = true;
+        }
+      } catch (error) { const done = handle; handle = undefined; await done?.close(); throw error; }
+      if (removed) await syncWindowDirectory(directory);
+      return 'more';
+    },
+    async close() { const done = handle; handle = undefined; await done?.close(); },
   };
 }

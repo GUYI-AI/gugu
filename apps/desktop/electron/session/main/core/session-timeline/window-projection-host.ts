@@ -1,10 +1,17 @@
 import type Database from 'better-sqlite3';
+import { opendir } from 'node:fs/promises';
+import type { Dir } from 'node:fs';
+import { join } from 'node:path';
 import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 import type { WindowBudget } from '@gugu/session-core/session-record/window-cache/types';
 import { createWindowProjectionAdapter } from './window-projection-adapter';
 import { openWindowProjectionGateway } from './window-projection-gateway';
 import { openWindowCommitPins } from './window-commit-pins';
 import { createWindowCommitReceipts } from './window-commit-receipt';
+import { prepareWindowCommitLayout } from './window-commit-layout';
+import { readWindowCommitCollectionGuard } from './window-commit-collection-guard';
+import { openWindowCommitGc } from './window-commit-gc-discovery';
+import { createWindowPackFileSweeper, sweepWindowPackGroups } from './window-pack-store';
 
 export type WindowProjectionOwner = { identity: object; sessionId: string; signal?: AbortSignal; assertCurrent(): void };
 const failure = () => Object.assign(new Error('The projection subscription was released'), { code: 'unsubscribed' });
@@ -22,7 +29,12 @@ export function createWindowProjectionHost(input: {
   const receipts = createWindowCommitReceipts(input.connection);
   // The collector is deliberately closed until its actual source/build intent
   // guards are supplied by the GC integration. Read pins are durable now.
-  const opening = openWindowCommitPins({ directory: input.directory, proof: gateway.proof, receipts, canCollect: async () => false });
+  // A development-era cache layout is cleared under this gateway before pins,
+  // projections or the committed-event writer can touch the namespace.
+  const prepared = gateway.run(() => prepareWindowCommitLayout({ directory: input.directory, connection: input.connection, proof: gateway.proof }));
+  // A version is collectable only when no source write or projection build intent remains.
+  const opening = prepared.then(() => openWindowCommitPins({ directory: input.directory, proof: gateway.proof, receipts,
+    canCollect: async (version, budget, signal) => await readWindowCommitCollectionGuard(input.directory, version, budget, signal) === 'clear' }));
   const ready = opening.then(pins => {
     function authority(identity: object) {
       gateway.proof.assertHeld(); const owner = owners.get(identity);
@@ -74,7 +86,50 @@ export function createWindowProjectionHost(input: {
     void cleanup.catch(error => { try { input.report(error); } catch { /* preserve the cleanup record */ } });
     return cleanup;
   }
+  // One bounded collection pass: at most SCOPES session scopes and STEPS
+  // collector steps each, then at most 8 orphaned packs. Scope enumeration keeps
+  // one directory handle across passes and starts over after reaching its end.
+  const SCOPES = 16, STEPS = 64;
+  let scopes: Dir | undefined, collecting: Promise<void> | undefined, stopped = false;
+  const packFiles = createWindowPackFileSweeper(input.directory, input.connection);
+  async function nextScopes() {
+    const found: string[] = [];
+    if (!scopes) {
+      try { scopes = await opendir(join(input.directory, 'source-versions'), { bufferSize: 1 }); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return found; throw error; }
+    }
+    while (found.length < SCOPES) {
+      const entry = await scopes.read();
+      if (!entry) { const done = scopes; scopes = undefined; await done.close(); break; }
+      if (entry.isDirectory() && /^[a-f0-9]{64}$/.test(entry.name)) found.push(entry.name);
+    }
+    return found;
+  }
+  async function pass() {
+    const pins = await opening;
+    for (const scope of await nextScopes()) {
+      if (stopped) return;
+      const gc = await gateway.run(() => openWindowCommitGc({ directory: input.directory, scope, pins, connection: input.connection }));
+      try {
+        for (let step = 0; step < STEPS && !stopped; step++) {
+          const result = await gateway.run(() => gc.run(createWindowBudget()));
+          if (result.kind === 'end') break;
+        }
+      } finally { await gc.close(); }
+    }
+    if (stopped) return;
+    await gateway.run(() => sweepWindowPackGroups(input.directory, input.connection, gateway.proof));
+    for (let step = 0; step < STEPS && !stopped; step++)
+      if (await gateway.run(() => packFiles.step(gateway.proof)) === 'end') break;
+  }
+  function collect() {
+    return collecting ??= pass().finally(() => { collecting = undefined; });
+  }
   return {
+    /** One bounded reclamation pass; concurrent calls join the running pass. */
+    collect,
+    /** Resolves once the committed cache layout is current; writers wait on it. */
+    prepared: prepared.then(() => undefined),
     /** Collectors share this epoch and kernel guard; they must never initialize
      * a second registry while a resident read gateway is alive. */
     withPins<T>(run: (pins: Awaited<typeof opening>) => Promise<T>) { return gateway.run(async () => run(await opening)); },
@@ -98,6 +153,7 @@ export function createWindowProjectionHost(input: {
     },
     close,
     async shutdown() {
+      stopped = true; await collecting?.catch(() => {}); const handle = scopes; scopes = undefined; await handle?.close(); await packFiles.close();
       await Promise.allSettled([...owners.keys()].map(close));
       await ready.catch(() => {}); await gateway.close();
     },

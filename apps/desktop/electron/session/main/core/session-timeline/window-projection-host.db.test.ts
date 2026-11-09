@@ -25,6 +25,7 @@ describe('production projection ownership with durable pins', () => {
     fixture.sqlite.exec("INSERT INTO projects(id,name,path) VALUES('p','P','/fixture'); INSERT INTO sessions(id,project_id) VALUES('c','p')");
     directory = await mkdtemp(join(tmpdir(), 'projection-host-'));
     host = createWindowProjectionHost({ connection: fixture.sqlite, directory, lockDirectory: join(directory, 'guards'), report: () => {} });
+    await host.prepared; // Writers start only after the committed layout is current.
   });
   afterEach(async () => { vi.restoreAllMocks(); await host?.shutdown(); fixture?.close(); state.db = undefined; state.sqlite = undefined;
     if (directory) await rm(directory, { recursive: true, force: true }); });

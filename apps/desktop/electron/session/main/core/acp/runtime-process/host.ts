@@ -25,6 +25,7 @@ import { resolveLocalAgentRunContext } from '@main/core/agents/agent-run-context
 import { setProviderSessionId } from '@main/core/sessions/set-session-id';
 import { withStoredTurns, storedRevertBoundary, truncateStoredHistory } from '@main/core/sessions/session-turn-store';
 import { connectWindowCommitHost } from '../../session-timeline/window-commit-host';
+import { prepareWindowCommitStorage } from '../../session-timeline/window-projection-production';
 import { openNativeConversationPreviews } from '@main/core/sessions/session-conversation-live';
 import { createHistoryReverter } from './history-revert';
 import { connectNativePromptPreparation } from './native-prompt-preparation';
@@ -274,7 +275,7 @@ const acpWorker = lazyWorker(
       const committed = await connectWindowCommitHost(handle.client.turnCommitted.handle(undefined), event => {
         // #6264 Keep authentication authority independent of bounded history publication.
         void applyTurnToAuthExpiry(event, authExpiryWriter);
-      }, handle.connection);
+      }, handle.connection, prepareWindowCommitStorage);
       handle.scope.add(() => committed.close());
       const conversationPreviews = openNativeConversationPreviews(sessionId => withStoredTurns(sessionId, async () => undefined));
       handle.scope.add(() => conversationPreviews.dispose());

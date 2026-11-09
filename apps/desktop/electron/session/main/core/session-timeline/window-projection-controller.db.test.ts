@@ -74,6 +74,8 @@ describe('registered projection RPC with real source, publication, handles and p
     fixture = await (await import('@tooling/utils/db')).openFixture('empty'); state.db = fixture.db; state.sqlite = fixture.sqlite;
     fixture.sqlite.exec("INSERT INTO projects(id,name,path) VALUES('p','P','/fixture'); INSERT INTO sessions(id,project_id) VALUES('c','p')");
     const directory = join(state.directory, 'session-window-cache', 'committed'); await mkdir(directory, { recursive: true });
+    // As in production, the committed layout is prepared before any capture writes.
+    await (await import('./window-projection-production')).prepareWindowCommitStorage();
     const { persistCommittedTurn } = await import('../sessions/session-turn-store');
     await persistCommittedTurn({ sessionId: 'c', source: 'live', turn: { id: 't', referenceId: 'real', seq: 0, initiator: 'agent',
       items: [{ kind: 'message', id: 'm', seq: 0, role: 'assistant', text: 'actual RPC 正文' }] }, windowCapture: { directory,
