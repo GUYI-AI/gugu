@@ -2072,6 +2072,22 @@ export class AcpChatStore {
     });
   }
 
+  /**
+   * A needs_location turn is too large for one bounded projection. It is read only when the person asks for it,
+   * through the stored-history path for that one turn, then replaces its unlocated entry. Nothing reads it automatically.
+   */
+  async loadUnlocatedTurn(referenceId: string): Promise<void> {
+    const target = this.windowUnlocatedTurns.find(value => value.referenceId === referenceId);
+    const subscription = this._windowSubscriptionId;
+    if (!target || this._historySource !== 'window' || !subscription) return;
+    const page = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before: target.storedSeq + 1, limit: 1 });
+    if (this._disposed || subscription !== this._windowSubscriptionId) return;
+    const turn = page.turns.find(row => row.referenceId === referenceId);
+    if (!turn) throw Object.assign(new Error('The committed turn is no longer stored'), { code: 'turn_not_found' });
+    this._commitWindowTurns([{ kind: 'turn', insert: true, turn }]);
+    runInAction(() => { this.windowUnlocatedTurns = this.windowUnlocatedTurns.filter(value => value.referenceId !== referenceId); });
+  }
+
   private _commitWindowTurns(rows: ReadonlyArray<{ kind: 'turn'; insert: boolean; turn: TranscriptTurn } | { kind: 'needs_location'; referenceId: string; storedSeq: number }>): void {
     if (this._transcriptReleased) return;
     runInAction(() => batch(() => {

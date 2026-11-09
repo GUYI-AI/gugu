@@ -26,7 +26,7 @@ const f = vi.hoisted(() => ({
   calls: [] as string[], phase: 'stopped', source: 'window', prepare: null as Promise<unknown> | null,
   setupFailure: null as { code: string; message: string } | null,
   watchChanged: () => {}, live: null as unknown, attach: null as Promise<unknown> | null,
-  liveReads: [] as unknown[], commitPages: [] as unknown[], projection: [] as string[],
+  liveReads: [] as unknown[], commitPages: [] as unknown[], projection: [] as string[], storedTurn: null as unknown,
 }));
 vi.mock('../stores/session-registry', () => ({ sessionRegistry: { get: (id: string) =>
   f.records.has(id) ? { sessions: new Map([[id, { data: f.records.get(id) }]]) } : undefined } }));
@@ -77,6 +77,11 @@ installAcpChatStoreHost(async (channel: string, ...args: unknown[]) => {
     return { ok: true, value: null };
   }
   if (channel === 'sessions.getStoredHistory' || channel === 'sessions.syncStoredHistoryFromRecord') {
+    if (channel === 'sessions.getStoredHistory' && f.storedTurn) {
+      const { before, limit } = args[0] as { before?: number; limit?: number };
+      if (before !== 2 || limit !== 1) throw new Error(`Unexpected stored read: ${JSON.stringify(args[0])}`);
+      return { turns: [f.storedTurn], originTurnIds: [], nextCursor: 0 };
+    }
     if (f.source === 'window') throw new Error(`Forbidden legacy read: ${channel}`);
     return channel === 'sessions.getStoredHistory' ? { turns: [], originTurnIds: [], nextCursor: null } : { inserted: 0 };
   }
@@ -106,7 +111,7 @@ function live() {
   };
 }
 const readable = async (store: InstanceType<typeof AcpChatStore>) => vi.waitFor(() => expect(store.sourceWindow?.sourceFragments?.[0]?.text).toBe('Persisted bounded history'));
-beforeEach(() => { f.calls.length = 0; f.phase = 'stopped'; f.source = 'window'; f.prepare = null; f.setupFailure = null; f.live = live(); f.attach = null; f.liveReads.length = 0; f.commitPages.length = 0; f.projection.length = 0; });
+beforeEach(() => { f.calls.length = 0; f.phase = 'stopped'; f.source = 'window'; f.prepare = null; f.setupFailure = null; f.live = live(); f.attach = null; f.liveReads.length = 0; f.commitPages.length = 0; f.projection.length = 0; f.storedTurn = null; });
 afterEach(() => { stores.splice(0).forEach(store => store.dispose()); f.records.clear(); vi.restoreAllMocks(); });
 
 it('chooses the source before stored/backfill I/O and displays bounded body without a canonical turn', async () => {
@@ -260,4 +265,12 @@ it('keeps an over-large committed turn as unlocated without failing or dropping 
   expect(f.projection).toEqual([]);
   await vi.waitFor(() => expect(f.calls).toContain('sessionTimeline.sessionWindowLiveAck'));
   expect(f.liveReads).toHaveLength(2);
+  expect(f.calls).not.toContain('sessions.getStoredHistory');
+  // Only an explicit request reads that one turn, then it replaces the unlocated entry.
+  f.storedTurn = { id: 'gap-turn', seq: 1, referenceId: 'gap-ref', initiator: 'user', items: [
+    { kind: 'message', id: 'gap-reply', seq: 0, role: 'assistant', text: 'A very large reply' }] };
+  await store.loadUnlocatedTurn('gap-ref');
+  expect(store.windowUnlocatedTurns).toEqual([]);
+  expect(store.chatState.transcript.state.committedTurns.map(row => row.id)).toEqual(['gap-turn']);
+  expect(f.calls.filter(name => name === 'sessions.getStoredHistory')).toHaveLength(1);
 });
