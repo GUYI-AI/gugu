@@ -58,8 +58,8 @@ function complete(s: CommitRootState): CommitRootFacts {
  * source, while seq/reference are checked against its transactional receipt.
  * Large payloads/metadata remain byte ranges. This is not an ACK publisher or
  * a lease/row authorization API; its caller owns and validates that receipt. */
-export async function advanceCommitRootFields(directory: string, inputReceipt: WindowCommitReceipt, inputIndex: CommitContainerIndex,
-  input: CommitRootState, budget: WindowBudget, signal?: AbortSignal) {
+async function rootMember(directory: string, inputReceipt: WindowCommitReceipt, inputIndex: CommitContainerIndex,
+  input: CommitRootState, budget: WindowBudget, signal: AbortSignal | undefined, reader: ReturnType<typeof createWindowCommitReader>) {
   const index: CommitContainerIndex = { buildId: inputIndex.buildId, kind: inputIndex.kind, range: { ...inputIndex.range } };
   const receipt = snapshotWindowCommitReceipt(inputReceipt), next = state(receipt, index, input);
   signal?.throwIfAborted();
@@ -72,8 +72,7 @@ export async function advanceCommitRootFields(directory: string, inputReceipt: W
   if (result.kind === 'end') return { kind: 'complete' as const, state: { ...next, done: true }, facts: complete(next) };
   const member = result.page.members[next.member];
   if (!member?.key) throw new Error('Canonical root member checkpoint is outside its page');
-  const reader = createWindowCommitReader(directory, receipt.binding, receipt.source, budget, signal);
-  try {
+  {
     // Known schema names are short even when escaped; giant unknown keys stay opaque.
     const name = member.key.end - member.key.start > 512 ? null : await reader.string(
       { start: member.key.start + 1, end: member.key.end }, { rawOffset: member.key.start + 1, decodedOffset: 0 }, 128);
@@ -92,9 +91,34 @@ export async function advanceCommitRootFields(directory: string, inputReceipt: W
       if (member.kind !== 'array') throw new Error('Canonical root children must be arrays');
       next.facts[field] = { ...member.range };
     }
-  } finally { reader.close(); }
+  }
   if (next.member + 1 < result.page.members.length) next.member++;
   else if (result.next !== null) { next.page = result.next; next.member = 0; }
   else next.done = true;
   return next.done ? { kind: 'complete' as const, state: next, facts: complete(next) } : { kind: 'progress' as const, state: next };
+}
+
+/** Single-member compatibility entry. The batch below owns the same two-frame
+ * reader across a bounded set of members; neither path accepts a foreign reader. */
+export async function advanceCommitRootFields(directory: string, inputReceipt: WindowCommitReceipt, inputIndex: CommitContainerIndex,
+  input: CommitRootState, budget: WindowBudget, signal?: AbortSignal) {
+  const receipt = snapshotWindowCommitReceipt(inputReceipt), index = { ...inputIndex, range: { ...inputIndex.range } };
+  const reader = createWindowCommitReader(directory, receipt.binding, receipt.source, budget, signal);
+  try { return await rootMember(directory, receipt, index, input, budget, signal, reader); }
+  finally { reader.close(); }
+}
+
+/** At most 16 members. Reserve over 48 KiB for another worst-case member:
+ * two <=20 KiB source frames plus the <=4 KiB index head and framed page.
+ * The caller still owns the one 64 KiB budget and durable checkpoint. */
+export async function advanceCommitRootBatch(directory: string, inputReceipt: WindowCommitReceipt, inputIndex: CommitContainerIndex,
+  input: CommitRootState, budget: WindowBudget, signal?: AbortSignal) {
+  const receipt = snapshotWindowCommitReceipt(inputReceipt), index = { ...inputIndex, range: { ...inputIndex.range } };
+  const reader = createWindowCommitReader(directory, receipt.binding, receipt.source, budget, signal);
+  try {
+    let result = await rootMember(directory, receipt, index, input, budget, signal, reader);
+    for (let count = 1; result.kind === 'progress' && count < 16 && budget.counters.indexBytes <= 12 * 1024; count++)
+      result = await rootMember(directory, receipt, index, result.state, budget, signal, reader);
+    return result;
+  } finally { reader.close(); }
 }

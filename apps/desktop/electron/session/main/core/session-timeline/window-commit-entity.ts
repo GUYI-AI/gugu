@@ -1,5 +1,8 @@
+import { createHash } from 'node:crypto';
+import { readWindowFrame } from './window-commit-projection-disk';
 import type { WindowBudget } from '@gugu/session-core/session-record/window-cache/types';
-import { snapshotWindowCommitReceipt, type WindowCommitReceipt } from './window-commit-receipt';
+import { snapshotWindowCommitReceipt, type createWindowCommitReceipts, type WindowCommitReceipt } from './window-commit-receipt';
+import { readWindowCommitProjection } from './window-commit-projection';
 import { isIssuedCommitRootFacts, type CommitRootFacts } from './window-commit-root';
 import { readIndexedCommitContainerPage, type CommitContainerIndex } from './window-commit-container-index';
 import { createWindowCommitReader } from './window-commit-reader';
@@ -16,6 +19,7 @@ export type CommitEntityState = { version: 1; sourceId: string; buildId: string;
 export type CommitEntityFacts = Readonly<{ sourceId: string; rowId: string; turnId: string; entity: Entity; id: string; kind: string;
   children?: Range; slots: readonly Readonly<{ field: Field; range: Range }>[] }>;
 const anchors = new WeakSet<CommitArrayAnchor>(), entities = new WeakSet<CommitEntityFacts>();
+export const isIssuedCommitEntityFacts = (facts: CommitEntityFacts) => entities.has(facts);
 type Context = { directory: string; receipt: WindowCommitReceipt; index: CommitContainerIndex };
 const positions = new WeakMap<CommitEntityPosition, Context>();
 const fields: readonly Field[] = ['text', 'outputText', 'rawOutput', 'rawInput', 'output'];
@@ -62,6 +66,7 @@ export function createCommitEntityState(p: CommitEntityPosition): CommitEntitySt
 function state(p: CommitEntityPosition, input: CommitEntityState): CommitEntityState {
   if (!input || input.version !== 1 || input.sourceId !== p.sourceId || input.buildId !== p.buildId
     || !integer(input.page) || !integer(input.member) || input.member > 15 || typeof input.done !== 'boolean' || !input.candidates
+    || typeof input.candidates !== 'object' || Array.isArray(input.candidates)
     || (input.id !== undefined && !small(input.id)) || (input.kind !== undefined && !small(input.kind))) throw new Error('Invalid entity checkpoint');
   const valid = (r: Range) => r && integer(r.start) && integer(r.end) && r.start > p.range.start && r.end > r.start && r.end < p.range.end;
   const candidates: CommitEntityState['candidates'] = {};
@@ -118,4 +123,52 @@ export async function advanceCommitEntityFields(p: CommitEntityPosition, input: 
   else if (result.next !== null) { next.page = result.next; next.member = 0; }
   else next.done = true;
   return next.done ? { kind: 'complete' as const, state: next, facts: finish(p, next) } : { kind: 'progress' as const, state: next };
+}
+
+export type CommitEntityPublication = { version: 1; rootBuildId: string; position: CommitEntityPosition; state: CommitEntityState };
+const publicationId = (p: CommitEntityPosition) => createHash('sha256').update(JSON.stringify([
+  p.sourceId, p.rowId, p.turnId, p.entity, p.range, p.buildId])).digest('hex');
+export function commitEntityPublicationId(p: CommitEntityPosition) {
+  if (!positions.has(p)) throw new Error('Unknown canonical entity position'); return publicationId(p);
+}
+export const commitEntityPublicationKey = (receipt: WindowCommitReceipt, id: string) => ({
+  ...receipt.binding, kind: 'projection' as const, cursor: `entity:${id}`,
+});
+
+/** Reopen a host-written immutable entity page. Its root version, completed
+ * object index and canonical receipt are validated before reissuing private
+ * child/body capabilities. A renderer cannot provide these facts as a proof. */
+export async function readCommitEntityPublication(directory: string, receipts: Pick<ReturnType<typeof createWindowCommitReceipts>, 'bySource'>,
+  input: WindowCommitReceipt, id: string, budget: WindowBudget, signal?: AbortSignal) {
+  const receipt = snapshotWindowCommitReceipt(input);
+  const committed = () => {
+    const stored = receipts.bySource(receipt.sourceId);
+    if (!stored || JSON.stringify(snapshotWindowCommitReceipt(stored)) !== JSON.stringify(receipt)) throw new Error('Entity publication lost its committed receipt');
+  };
+  committed(); signal?.throwIfAborted(); if (!/^[a-f0-9]{64}$/.test(id)) throw new Error('Invalid entity publication id');
+  const rebuild = () => ({ kind: 'rebuild' as const, anchor: { sourceId: receipt.sourceId, start: 0, end: receipt.source.bytes } });
+  const loaded = await readWindowFrame(directory, commitEntityPublicationKey(receipt, id), budget);
+  if (loaded.kind === 'miss' && loaded.reason === 'io') throw loaded.error;
+  let value: CommitEntityPublication, p: CommitEntityPosition, saved: CommitEntityState;
+  try {
+    if (loaded.kind !== 'hit' || loaded.bytes.length > 8192) return rebuild();
+    value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(loaded.bytes)) as CommitEntityPublication;
+    const raw = value?.position;
+    if (value?.version !== 1 || !/^[A-Za-z0-9_-]{1,48}$/.test(value.rootBuildId) || !raw
+      || raw.sourceId !== receipt.sourceId || raw.rowId !== receipt.rowId || !small(raw.turnId) || !['item', 'terminal'].includes(raw.entity)
+      || !raw.range || !integer(raw.range.start) || raw.range.start < 1 || !integer(raw.range.end) || raw.range.end <= raw.range.start
+      || raw.range.end >= receipt.source.bytes || !/^[A-Za-z0-9_-]{1,64}$/.test(raw.buildId)) return rebuild();
+    p = Object.freeze({ sourceId: raw.sourceId, rowId: raw.rowId, turnId: raw.turnId, entity: raw.entity,
+      buildId: raw.buildId, range: Object.freeze({ start: raw.range.start, end: raw.range.end }) });
+    if (publicationId(p) !== id) return rebuild();
+    saved = state(p, value.state); if (!saved.done) return rebuild();
+  } catch { return rebuild(); }
+  const root = await readWindowCommitProjection({ directory, receipts, receipt, buildId: value.rootBuildId }, budget, signal);
+  if (root.kind !== 'projection' || root.root.turnId !== p.turnId) return rebuild();
+  const index: CommitContainerIndex = { buildId: p.buildId, kind: 'object', range: { ...p.range } };
+  const indexed = await readIndexedCommitContainerPage({ directory, binding: receipt.binding, source: receipt.source, index }, 0, budget, signal);
+  if (indexed.kind !== 'page' && indexed.kind !== 'end') return rebuild();
+  await assertWindowCommitSource(directory, receipt.binding, receipt.source); committed(); signal?.throwIfAborted();
+  positions.set(p, { directory, receipt, index });
+  return { kind: 'entity' as const, position: p, facts: finish(p, saved), rootBuildId: value.rootBuildId, bodyBuildId: id };
 }

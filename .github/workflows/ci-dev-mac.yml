@@ -6,9 +6,6 @@ on:
 permissions:
   contents: read
   actions: read
-concurrency:
-  group: community-ci-dev-mac
-  cancel-in-progress: true
 env:
   CI: true
   GUGU_SUPABASE_URL: http://127.0.0.1:54321

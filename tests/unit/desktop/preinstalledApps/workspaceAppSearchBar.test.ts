@@ -56,9 +56,11 @@ describe('workspace App: 按名称筛选 keeps the bar still', () => {
     expect($('search-toggle').getAttribute('aria-expanded')).toBe('true')
     expect(document.activeElement).toBe(filter())
     // Control (dev 8b5021a92): style.css hid the kinds and capped the field at 180 px, so the row lost the kinds'
-    // margin-right: auto and packed left. Now the field's box fills the kinds' room; only the field inside stops at 360.
+    // margin-right: auto and packed left. Now 🔍 itself holds the row to the right whatever is drawn on its left, the field's
+    // box fills that room, and the field inside stops at 360 against 🔍.
     const css = readFileSync(resolve(process.cwd(), 'apps/desktop/preinstalled-apps/workspace/style.css'), 'utf8')
-    expect(css).toMatch(/\.files-toolbar > \.search \{ flex: 1;/)
+    expect(css).toMatch(/\.files-toolbar > \.search \{ flex: 1;[^}]*justify-content: flex-end;/)
+    expect(css).toMatch(/\.files-toolbar > #search-toggle \{ margin-inline-start: auto; \}/)
     expect(css).not.toMatch(/\.filter[^{]*\{[^}]*max-width: 180px/)
   })
 

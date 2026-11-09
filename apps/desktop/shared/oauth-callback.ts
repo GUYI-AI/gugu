@@ -1,9 +1,8 @@
+import { readGuguUrl } from '@gugu/core/shared/ui/guguLink'
+
 /** OAuth URLs carry credentials. Never pass them to navigation, logs, or extension handlers. */
 export function isOAuthCallback(raw: string): boolean {
-  try {
-    const url = new URL(raw)
-    return /^gugu(?:-[a-z0-9-]+)?:$/.test(url.protocol) && url.hostname === 'auth'
-  } catch { return false }
+  return readGuguUrl(raw)?.host === 'auth'
 }
 
 export type OAuthCallback =

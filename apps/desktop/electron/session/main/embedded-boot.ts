@@ -381,6 +381,7 @@ import { admitCreationTurns, bindIdentityThenCreate, claimIdentityCreation } fro
 import { unbindSessionAgent } from '@main/core/sessionpage/sessionpage-session-agent'
 import { isLifeSession, lifeSessions, lifeStore } from '@main/core/sessions/session-pending'
 import { sessionLifeSources } from '@main/core/sessions/session-life-host'
+import { nativePendingInputLookup } from '@main/core/sessions/session-pending-history'
 import { createAcpLegAdapter } from '@main/core/acp/session-life-acp'
 import { forkStore, runtimeFork, runtimeForks, runtimeForksOf } from '@main/core/sessions/session-life-forks'
 import { sessionOwnedBy } from '@main/core/sessionpage/sessionpage-session-agent'
@@ -436,8 +437,9 @@ export async function bootEmdashModule(ipcMain: IpcMain, discovery?: Pick<Sessio
   const devWs = await maybeStartDevWsHost()
   // #6264 别的桌面经设备连接(SSH / 咕咕云)用这台机器的会话页宿主 —— 与本机窗口同一张路由表(host-ws/device-session-host.ts)。
   const deviceHost = installDeviceSessionHost({ appVersion: () => app.getVersion() })
-  // 看着这台机器上会话的那几台电脑(订阅随连接生灭):open_in_tab 的 tab 开到它们那里(host-ws/device-pane-relay.ts)。
-  if (HEADLESS_SERVER) installDevicePaneRelay(deviceHost, sharedRemotePaneRoute())
+  // 看着这台机器上会话的那几台电脑(订阅随连接生灭,host-ws/device-pane-relay.ts):每台机器都记 —— 空闲回收据此
+  // 不停别的电脑正看着的会话(install-idle-reclaim.ts)。tab 推过去只在 server 上(上面的 opener);桌面开在自己面板。
+  installDevicePaneRelay(deviceHost, sharedRemotePaneRoute())
   await bootSessionHostCore({
     hostIpc: composeHostIpc(devWs ? [electronIpc, deviceHost, devWs] : [electronIpc, deviceHost]),
     browserFeatures: true,
@@ -576,6 +578,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
     ownedBy: (sessionId, userId) => sessionOwnedBy(sessionId, process.env, userId),
     markRead: row => sessionLifeSources.markRead(row),
     reportFailure: (rows, cause) => sessionLifeSources.reportFailure(rows, cause),
+    nativeInputs: sessionId => nativePendingInputLookup(sessionId),
     publish: view => {
       events.emit(sessionLifeViewChannel, view)
       for (const cb of lifeViewSubscribers) cb(view)

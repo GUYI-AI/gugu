@@ -191,6 +191,7 @@ export async function resolveHarnessModelCatalogSpawn(
       hostInjections: [legConfigRootEnv(pluginId, leg)],
     }),
     ...(acp.catalogProbeSessionMeta ? { sessionMeta: acp.catalogProbeSessionMeta } : {}),
+    ...(acp.catalogModelsInConfigUpdate ? { modelsInConfigUpdate: true } : {}),
   };
 }
 

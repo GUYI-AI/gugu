@@ -213,4 +213,25 @@ describe('session page boot, built stylesheets', () => {
     expect(invoke).toHaveBeenCalledWith(SESSION_SHELL_CHANNELS.fatalBoot, expect.stringContaining('vendor-b.css'))
     expect(entry.importSessionEntry).not.toHaveBeenCalled()
   })
+
+  it('a stylesheet the host page already links is used as is, not linked a second time', async () => {
+    const hostLink = document.createElement('link')
+    hostLink.rel = 'stylesheet'
+    hostLink.href = new URL('./assets/vendor-b.css', document.baseURI).href
+    document.head.appendChild(hostLink)
+    try {
+      const { EmdashSessionFrame: Frame } = await import('../../../../apps/desktop/src/components/sessionpage/EmdashSessionFrame')
+      await harness.render(createElement(Frame))
+      while (sheetLinks().length < 1) await act(async () => { await Promise.resolve() })
+
+      expect(sheetLinks().map((link) => link.getAttribute('href')?.split('/').pop())).toEqual(['session-a.css'])
+      expect([...document.head.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].filter((link) => link.href === hostLink.href)).toHaveLength(1)
+
+      await act(async () => { sheetLinks()[0]!.dispatchEvent(new Event('load')) })
+      while (entry.pending.length === 0) await act(async () => { await Promise.resolve() })
+      expect(entry.importSessionEntry).toHaveBeenCalledTimes(1)
+    } finally {
+      hostLink.remove()
+    }
+  })
 })

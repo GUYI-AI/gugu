@@ -1,6 +1,6 @@
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -9,7 +9,7 @@ import type { AppDb } from '@main/db/client';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { createWindowCommitReceipts, type WindowCommitReceipt } from '../session-timeline/window-commit-receipt';
 import * as writeHelpers from '../session-timeline/window-commit-write';
-import { readWindowCommitSourceChunk } from '../session-timeline/window-commit-source';
+import { readWindowCommitSourceChunk, readWindowCommitSourceManifest } from '../session-timeline/window-commit-source';
 import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 import { EventStreamSource } from '@gugu/session-wire';
 import { createWindowCommitRuntime } from '../session-timeline/window-commit-runtime';
@@ -105,6 +105,15 @@ describe('actual canonical writer capture', () => {
     await persistCommittedTurn({ sessionId: 'c', source: 'live', turn: turn('legacy') });
     expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 1 });
     expect(fixture.sqlite.prepare('SELECT source_id FROM session_window_commit_receipts').all()).toEqual([]);
+  });
+
+  it('owns production source metadata in the canonical receipt without writing a duplicate cache manifest', async () => {
+    await persistCommittedTurn({ sessionId: 'c', source: 'live', turn: turn('receipt-owned source'), windowCapture: capture(3, []) });
+    const receipt = createWindowCommitReceipts(fixture.sqlite).byReference('c', 'source:real')!;
+    expect((await readdir(root)).filter(name => !name.endsWith('.source'))).toEqual([]);
+    expect(await readWindowCommitSourceManifest(root, receipt.binding, createWindowBudget())).toMatchObject({ kind: 'miss', reason: 'not_found' });
+    expect(new TextDecoder().decode(await readWindowCommitSourceChunk(root, receipt.binding, receipt.source, 0, createWindowBudget())))
+      .toContain('receipt-owned source');
   });
 
   it('captures the event cursor before awaiting the existing canonical writer queue', async () => {

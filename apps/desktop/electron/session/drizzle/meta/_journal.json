@@ -327,8 +327,15 @@
     {
       "idx": 47,
       "version": "6",
-      "when": 1794087784486,
-      "tag": "0047_window_commit_receipts",
+      "when": 1794057600000,
+      "tag": "0047_resource_history_page",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1794101513307,
+      "tag": "0048_window_commit_receipts",
       "breakpoints": true
     }
   ]

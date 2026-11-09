@@ -20,7 +20,7 @@ import { workspaceRegistry } from './workspace-registry';
 import type { WorkspaceViewModel } from '@renderer/features/sessions/stores/workspace-view-model';
 import { pickSessionOpener } from '@renderer/features/extensions/open-with';
 import { attachmentOpenTarget } from './attachment-open-target';
-import { fileTabTarget } from '../file-view/file-view-kinds';
+import { fileTabTarget, hostFileTabTarget } from '../file-view/file-view-kinds';
 import { workspaceRpc } from '@renderer/features/sessions/workspace-backend/workspace-backend';
 import type { BrowserTabResource } from '@renderer/features/browser/browser-tab-resource';
 import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
@@ -150,19 +150,19 @@ async function openSessionFile(
   target: FileOpenTarget,
   at?: FilePlace,
   ask = false,
-  options?: { intent?: TabOpenIntent; from?: string }
+  options?: { intent?: TabOpenIntent; from?: string | null; byHost?: boolean }
 ): Promise<string | null | undefined> {
   const provisioned = asProvisioned(getSessionPageStore(projectId, sessionId));
   if (!provisioned) throw new Error('This session has no prepared workspace');
   const workspace = workspaceRegistry.get(projectId, provisioned.workspaceId);
   if (!workspace) throw new Error('This session has no workspace');
   const viewModel = provisioned.viewModel;
-  const from = options?.from ?? (target === 'beside' && viewModel ? sessionConversationTabId(viewModel.paneLayout, sessionId) : viewModel?.activePane.resolvedActiveTabId ?? null);
+  const from = options?.from !== undefined ? options.from : target === 'beside' && viewModel ? sessionConversationTabId(viewModel.paneLayout, sessionId) : viewModel?.activePane.resolvedActiveTabId ?? null;
   const intent = options?.intent ?? 'navigate';
   const filePath = await expandHomeTildePath(rawFilePath);
   const resolvedPath = resolveEditorFilePath(workspace.path, filePath);
   if (resolvedPath === null) {
-    await openExternalFilePath(projectId, sessionId, filePath, { from, intent });
+    await openExternalFilePath(projectId, sessionId, filePath, { from, intent, byHost: options?.byHost });
     return null;
   }
 
@@ -196,7 +196,8 @@ export async function openFileInSessionEditor(
   projectId: string,
   sessionId: string,
   filePath: string,
-  opts?: { beside?: boolean; at?: FilePlace; ask?: boolean; intent?: TabOpenIntent; from?: string }
+  /** `byHost`: an App asked for it (`files.openWith`), not the person's click (`@@@outside-file`). */
+  opts?: { beside?: boolean; at?: FilePlace; ask?: boolean; intent?: TabOpenIntent; from?: string | null; byHost?: boolean }
 ): Promise<string | null | undefined> {
   return openSessionFile(projectId, sessionId, filePath, opts?.beside ? 'beside' : 'active', opts?.at, opts?.ask === true, opts);
 }
@@ -217,7 +218,7 @@ export async function openExternalFilePath(
   projectId: string,
   sessionId: string,
   rawFilePath: string,
-  opts?: { beside?: boolean; from?: string | null; intent?: TabOpenIntent }
+  opts?: { beside?: boolean; from?: string | null; intent?: TabOpenIntent; byHost?: boolean }
 ): Promise<void> {
   // `~/` 展开在这条路同样要做:终端链接检测把 `~/` 前缀标成 external 走到这儿,
   // 不展开的话会拿字面 `~` 开外部页签,而 readExternalFile 只收绝对路径 —— 必然坏页签。
@@ -251,7 +252,7 @@ export async function openExternalFilePath(
     // 没有可用的面板就退到系统默认程序 —— ❌ 不许在这里静默 return。
     // 「未选择项目」建出来的任务没有工作区面板,而它照样附得了文件(#5269)。
     if (viewModel) {
-      const tab = fileTabTarget(filePath, true);
+      const tab = opts?.byHost ? hostFileTabTarget(filePath, true) : fileTabTarget(filePath, true);
       viewModel.paneLayout.open(tab.kind, tab.args, { from, intent });
       return;
     }
@@ -281,7 +282,7 @@ export function reopenSessionOutput(projectId: string, sessionId: string, output
 export function makeFileLinkHandlers(
   projectId: string,
   sessionId: string,
-  opts?: { beside?: boolean }
+  opts?: { beside?: boolean; from?: null }
 ): { onOpenFile: (filePath: string, at?: FilePlace) => Promise<void>; onOpenExternal: (filePath: string) => void } {
   return {
     onOpenFile: async (filePath, at) => {
@@ -350,7 +351,7 @@ export function openHostRequestedFileInSessionWhenReady({
         // click path draws the line.
         // 宿主替 agent(或 App)打开的:开在对话右边并排,❌ 盖住对话;用户正看着别的也 ❌ 切走(spec gugu-plugin「在工作区打开文件」)。
         if (external) {
-          const tab = fileTabTarget(path, true);
+          const tab = hostFileTabTarget(path, true);
           session.viewModel.paneLayout.open(
             tab.kind,
             tab.args,
@@ -359,7 +360,7 @@ export function openHostRequestedFileInSessionWhenReady({
           onResult({ success: true, openedWith: null });
         } else if (tabKind) {
           // 摩擦单 F122 «Open with X», named by the caller (main checked X claims it): what「用哪个打开」does once picked.
-          session.viewModel.paneLayout.open(tabKind, { filePath: path }, { from: sessionConversationTabId(session.viewModel.paneLayout, sessionId), intent: 'beside', activate: false });
+          session.viewModel.paneLayout.open(tabKind, { filePath: path, byHost: true }, { from: sessionConversationTabId(session.viewModel.paneLayout, sessionId), intent: 'beside', activate: false });
           onResult({ success: true, openedWith: tabKind });
         } else {
           // Reported, not predicted: the host says what actually opened because the

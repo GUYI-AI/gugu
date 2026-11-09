@@ -19,6 +19,7 @@ const deviceId = `phone-${installId}-${ownerId}`
 const agentId = '558fcc98-9d61-4054-8a18-900d969b1849'
 const chatId = 'a540c592-971b-4bcf-89c3-944484a14640'
 const groupId = '0c44ad9d-8fed-4285-ab8c-469c91101cf6'
+const inboxJob = (journal, messageId) => Object.values(journal.jobs).find(job => job.agentUserId === agentId && job.route?.kind === 'chat' && job.route.sourceMessageId === messageId)
 
 function fakeCloud() {
   const commands = []
@@ -756,7 +757,7 @@ test('a local initial message enters the shared inbox envelope and replies with 
     assert.equal(replies[0].p_reply_to_message_id, messageId)
     assert.deepEqual(replies[0].p_to_user_ids, [ownerId])
     const journal = JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8'))
-    assert.equal(journal.jobs[messageId].prompt.includes('gugu_delivery'), true)
+    assert.equal(inboxJob(journal, messageId).prompt.includes('gugu_delivery'), true)
     assert.equal(JSON.stringify(journal).includes('private-turn-token'), false)
   } finally { await fx.close() }
 })
@@ -775,7 +776,7 @@ test('a failed chat turn is said in the chat as the desktop says it: one system 
     if (table !== 'messages') return query
     const insert = query.insert
     query.insert = async (row) => {
-      onDiskAtNotice.push(JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8')).jobs[messageId].status)
+      onDiskAtNotice.push(inboxJob(JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8')), messageId).status)
       return insert(row)
     }
     return query
@@ -795,8 +796,8 @@ test('a failed chat turn is said in the chat as the desktop says it: one system 
     assert.equal(fx.messages.some((message) => message.p_sender_user_id === agentId), false)
     // The raw error stays in the task: failed job, its error.
     const journal = JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8'))
-    assert.equal(journal.jobs[messageId].status, 'failed')
-    assert.match(journal.jobs[messageId].error, /simulated model failure/)
+    assert.equal(inboxJob(journal, messageId).status, 'failed')
+    assert.match(inboxJob(journal, messageId).error, /simulated model failure/)
   } finally { await fx.close() }
 })
 
@@ -836,7 +837,7 @@ test('a failed turn on a whispered message posts no public notice: it would tell
   fx.inboxRows.push({ chat_id: chatId, chat_kind: 'dm', chat_public_id: null, id: messageId, seq: 1, sender_user_id: ownerId, sender_type: 'human', sender_display_name: '主人', content: '悄悄话', content_type: 'text', to_user_ids: [agentId], is_whisper: true, file_item_id: null, file_version: null, file_blob_id: null, group_rules: null, named_identities: {}, created_at: new Date().toISOString() })
   try {
     await fx.host.invoke('sessionTimeline.sessionCreate', [{ harness: 'pi', model: 'platform:free', prompt: '悄悄话' }], 'failing-whisper-turn')
-    await until(async () => JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8')).jobs[messageId]?.status === 'failed', fx.events)
+    await until(async () => inboxJob(JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8')), messageId)?.status === 'failed', fx.events)
     assert.deepEqual(fx.notices, [])
     assert.equal(fx.messages.some((message) => message.p_sender_user_id === agentId), false)
   } finally { await fx.close() }
@@ -861,11 +862,11 @@ test('an image attachment is durably admitted as safe metadata and acknowledged 
     await until(() => fx.messages.some((message) => message.p_sender_user_id === agentId), fx.events)
     // In-memory completion precedes the journal's asynchronous save. Assert the admitted
     // message itself is durable, rather than racing a different/unsaved idle snapshot.
-    await until(async () => JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8')).jobs[messageId]?.status === 'done', fx.events)
+    await until(async () => inboxJob(JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8')), messageId)?.status === 'done', fx.events)
     assert.match(prompt, new RegExp(`msg:${messageId}`))
     assert.equal(fx.inboxRows.length, 0)
     const journal = JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8'))
-    assert.equal(journal.jobs[messageId].status, 'done')
+    assert.equal(inboxJob(journal, messageId).status, 'done')
   } finally { await fx.close() }
 })
 

@@ -9,7 +9,7 @@ import { sessionEngine, sessionProcess } from './session-process';
 
 export type RecordBackfillResult = {
   inserted: number;
-  status: 'complete' | 'active' | 'settling' | 'unavailable' | 'unsupported' | 'diverged' | 'cancelled' | 'runtime-changed';
+  status: 'complete' | 'active' | 'settling' | 'unavailable' | 'unsupported' | 'diverged' | 'too_large' | 'cancelled' | 'runtime-changed';
 };
 
 /**

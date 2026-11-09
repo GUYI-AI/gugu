@@ -109,4 +109,34 @@ describe('non-waking commit reservations', () => {
     expect(failed).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ code: 'live_source_gap' }));
     expect(f.runtime.inspect()).toEqual({ owners: 0 }); expect(f.persist).not.toHaveBeenCalled(); f.runtime.close();
   });
+
+  it('bounds pending projections together with published unacknowledged references', async () => {
+    const f = fixture(); await f.runtime.attach(f.stream);
+    const failed = vi.fn(), a = f.runtime.reserve('one', 'a', failed), cut = await a.prepare(); a.authorize();
+    const gate = Promise.withResolvers<{ projectionId: string }>(); f.project.mockReturnValueOnce(gate.promise);
+    const reading = expect(a.read(cut)).rejects.toMatchObject({ code: 'live_buffer_overflow' });
+    f.source.emit(event()); await vi.waitFor(() => expect(f.project).toHaveBeenCalledTimes(1));
+    for (let n = 1; n <= 64; n++) f.source.emit(event('a', 'live', `ref-${n}`));
+    await reading; expect(failed).toHaveBeenCalledTimes(1); expect(f.capture).toHaveBeenCalledTimes(64);
+    // Reusing the released owner cannot allocate another queue behind the held job.
+    const bFailed = vi.fn(), b = f.runtime.reserve('one', 'a', bFailed), after = await b.prepare(); b.authorize();
+    const rejected = expect(b.read(after)).rejects.toMatchObject({ code: 'live_buffer_overflow' });
+    f.source.emit(event('a', 'live', 'replacement')); await rejected;
+    expect(f.capture).toHaveBeenCalledTimes(64); expect(bFailed).toHaveBeenCalledTimes(1);
+    gate.resolve({ projectionId: 'held' }); await f.drain();
+    expect(f.persist).toHaveBeenCalledTimes(66); f.runtime.close();
+  });
+
+  it('charges an already delivered unacknowledged page against the pending projection allowance', async () => {
+    const f = fixture(); await f.runtime.attach(f.stream);
+    const failed = vi.fn(), owner = f.runtime.reserve('one', 'a', failed), cut = await owner.prepare(); owner.authorize();
+    f.source.emit(event()); await f.drain(); await owner.read(cut);
+    const gate = Promise.withResolvers<{ projectionId: string }>(); f.project.mockReturnValueOnce(gate.promise);
+    f.source.emit(event('a', 'live', 'second')); await vi.waitFor(() => expect(f.project).toHaveBeenCalledTimes(2));
+    for (let n = 2; n < 64; n++) f.source.emit(event('a', 'live', `ref-${n}`));
+    expect(failed).not.toHaveBeenCalled(); f.source.emit(event('a', 'live', 'overflow'));
+    expect(failed).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ code: 'live_buffer_overflow' }));
+    expect(f.capture).toHaveBeenCalledTimes(64);
+    gate.resolve({ projectionId: 'held' }); await f.drain(); f.runtime.close();
+  });
 });

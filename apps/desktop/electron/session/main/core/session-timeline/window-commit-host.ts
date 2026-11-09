@@ -6,11 +6,11 @@ import type { Connection } from '@gugu/session-wire/api';
 import { app } from 'electron';
 import { log } from '@main/lib/logger';
 import { persistCommittedTurn } from '../sessions/session-turn-store';
-import { createWindowCommitRuntime } from './window-commit-runtime';
+import { createWindowCommitRuntime, type WindowCommitProjection } from './window-commit-runtime';
 import type { WindowCommitReceipt } from './window-commit-receipt';
 import type { WindowCommittedEvent } from './window-commit-tap';
 
-type Producer = (receipt: WindowCommitReceipt) => Promise<{ projectionId: string }>;
+type Producer = (receipt: WindowCommitReceipt) => Promise<WindowCommitProjection>;
 type Runtime = ReturnType<typeof createWindowCommitRuntime>;
 type Slot = { runtime: Runtime; producer?: { project: Producer }; enabled: boolean; storageFailed?: unknown; observe(event: WindowCommittedEvent): void };
 let current: Slot | undefined;
@@ -68,6 +68,12 @@ export function bindWindowCommitProjection(project: Producer): () => void {
   if (selected.producer) throw new Error('A commit projection producer is already bound');
   const producer = { project }; selected.producer = producer; selected.enabled = true;
   return () => { if (selected.producer !== producer) return; selected.producer = undefined; selected.enabled = false; selected.runtime.invalidateStore(); };
+}
+/** One main-owned production factory per host generation; no worker get/start. */
+export function ensureWindowCommitProjection(factory: () => Producer): void {
+  const selected = slot();
+  if (selected.producer) return;
+  selected.producer = { project: factory() }; selected.enabled = true;
 }
 export function reserveWindowCommitHost(...input: Parameters<Runtime['reserve']>) {
   const selected = slot();

@@ -24,10 +24,11 @@ export function recordIdentityFor(harness: string | null | undefined): RecordIde
  */
 export function turnIdentityKeys(turn: TranscriptTurn): Set<string> {
   const keys = new Set<string>();
-  const visit = (item: { kind?: string; id?: string; toolCallId?: string; children?: unknown[] }) => {
+  const visit = (item: { kind?: string; id?: string; role?: string; _meta?: Record<string, unknown>; toolCallId?: string; children?: unknown[] }) => {
     if (item.toolCallId) keys.add(`tool:${item.toolCallId}`);
     if ((item.kind === 'message' || item.kind === 'thinking') && item.id) {
-      const own = /:turn:[^:]+:(?:message|thinking):(.+)$/.exec(item.id)?.[1];
+      const native = item.role === 'user' ? item._meta?.guguNativeMessageId : undefined;
+      const own = typeof native === 'string' ? native : /:turn:[^:]+:(?:message|thinking):(.+)$/.exec(item.id)?.[1];
       if (own && !own.startsWith('auto:')) keys.add(`message:${own}`);
     }
     for (const child of item.children ?? []) visit(child as typeof item);

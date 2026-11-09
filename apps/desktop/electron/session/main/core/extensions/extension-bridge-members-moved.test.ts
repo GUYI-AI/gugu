@@ -37,7 +37,7 @@ vi.mock('@main/core/extensions/app-files', () => ({
   surfaceChatOf: async () => ({ id: '0b000000-0000-4000-8000-000000000001', name: 'G', kind: 'group', groupId: '0b000000-0000-4000-8000-000000000001' }),
 }));
 
-const { bindExtensionSurface, chatMembersChanged, pushContext, setExtensionBridgeHost, unbindExtensionSurface, updateExtensionSurfaceLayout } = await import('./extension-bridge');
+const { bindExtensionSurface, chatMembersChanged, chatsWithPages, pushContext, setExtensionBridgeHost, unbindExtensionSurface, updateExtensionSurfaceLayout } = await import('./extension-bridge');
 
 const pushes = () => sent.filter(({ event }) => event.type === 'context').length;
 
@@ -51,7 +51,7 @@ beforeEach(async () => {
   reads.now = [A, B];
   setExtensionBridgeHost({
     deliver: () => Promise.resolve(),
-    presentation: () => ({ locale: 'en', themeMode: 'dark' as const, fullscreen: false, windowFocused: true }),
+    selfGuguNumber: () => undefined, presentation: () => ({ locale: 'en', themeMode: 'dark' as const, fullscreen: false, windowFocused: true }),
   });
   await bind();
   sent.length = 0;
@@ -99,5 +99,19 @@ describe('a chat not read yet, asked about several times at once', () => {
     // Both asks answered: each push follows the read it waited on.
     await vi.waitFor(() => expect(pushes()).toBe(2), { timeout: 15_000 });
     expect(reads.members).toBe(1);
+  });
+});
+
+/**
+ * A member renamed while the page stays open: the name is on their account (agent_changed), no member row changed, and
+ * the page kept the old name in `getContext().chat.members` while `gugu.chats.members` read the new one.
+ */
+describe('a person renamed (agent_changed, naming no chat)', () => {
+  it('the chats with a page hear it; one of their members: read again and told; someone else: nothing', async () => {
+    expect(chatsWithPages()).toEqual([CHAT]);
+    await chatMembersChanged(CHAT, [{ memberId: C, left: false, renamed: true }]);
+    expect([reads.members, pushes()]).toEqual([0, 0]);
+    await chatMembersChanged(CHAT, [{ memberId: A, left: false, renamed: true }]);
+    expect([reads.members, pushes()]).toEqual([1, 1]);
   });
 });

@@ -193,7 +193,7 @@ export type AcpRuntimeClient = ContractClient<AcpApiContract> & {
     sessionId: string;
     prompt: PromptInput;
     steerIfBusy?: boolean;
-  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true }>;
+  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true; reason?: string }>;
   waitPromptDetached(input: { requestId: string }): Promise<{ queued: boolean }>;
   /**
    * #6396 告诉一条会话一件事:转录里一行 / agent 下一轮的开头(见 SessionManager.announce)。
@@ -209,7 +209,7 @@ type AcpRuntimeProcessClient = ContractClient<AcpRuntimeApiContract> & {
     sessionId: string;
     prompt: PromptInput;
     steerIfBusy?: boolean;
-  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true }>;
+  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true; reason?: string }>;
   waitPromptDetached(input: { requestId: string }): Promise<{ queued: boolean }>;
   /**
    * #6396 告诉一条会话一件事:转录里一行 / agent 下一轮的开头(见 SessionManager.announce)。
@@ -668,6 +668,17 @@ export async function stopAcpSessionAndSettle(client: ContractClient<AcpRuntimeA
   }
   await closeRuntimeForkOwnershipForRuntimeSession(sessionId);
   await releaseEmdashPlatformSession(sessionId);
+}
+
+/**
+ * The engine session was replaced after it went missing: the worker's lost record still pins the missing provider
+ * session, and the next start would load it again. Never starts a worker: none running means no record.
+ */
+export async function forgetLostAcpSession(sessionId: string): Promise<void> {
+  const client = await peekAcpWorkerClient();
+  if (!client) return;
+  const result = await stopAcpWorkerSession(client, { sessionId, forgetLost: true });
+  if (!result.success) throw new Error(`ACP session ${sessionId} kept its lost record: ${result.error.message ?? result.error.type}`);
 }
 
 /**

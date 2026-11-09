@@ -8,7 +8,7 @@ import { createWindowCommitReceipts, type WindowCommitReceipt, type WindowReceip
 import { readWindowCommitSourceChunk, writeWindowCommitSource } from './window-commit-source';
 import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 
-const migration = readFileSync(new URL('../../../drizzle/0047_window_commit_receipts.sql', import.meta.url), 'utf8');
+const migration = readFileSync(new URL('../../../drizzle/0048_window_commit_receipts.sql', import.meta.url), 'utf8');
 type DiskSqlite = Pick<WindowReceiptDatabase, 'prepare'> & { readonly isOpen: boolean; readonly isTransaction: boolean; exec(sql: string): void; close(): void };
 // Use the actual Node SQLite engine without requiring a newer ambient @types/node package.
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as { DatabaseSync: new(path: string) => DiskSqlite };

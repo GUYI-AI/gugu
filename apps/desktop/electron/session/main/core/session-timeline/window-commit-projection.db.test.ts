@@ -1,3 +1,4 @@
+import { windowCommitProjectionDirectory } from './window-commit-projection-disk';
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm, appendFile } from 'node:fs/promises';
@@ -83,15 +84,15 @@ describe('recoverable committed structural projection publication', () => {
 
   it.each(['version', 'rootFacts'])('requests an anchored rebuild for corrupt checkpoint schema %s and preserves old publications', async bad => {
     const c = context(await captured('small')); await finish(c);
-    const old = await disk.readWindowFrame(directory, frame(c, true), createWindowBudget());
-    const checkpoint = await disk.readWindowFrame(directory, frame(c), createWindowBudget());
+    const old = await disk.readWindowFrame(windowCommitProjectionDirectory(directory, c.receipt.binding), frame(c, true), createWindowBudget());
+    const checkpoint = await disk.readWindowFrame(windowCommitProjectionDirectory(directory, c.receipt.binding), frame(c), createWindowBudget());
     if (checkpoint.kind !== 'hit') throw new Error('Missing checkpoint');
     const value = JSON.parse(Buffer.from(checkpoint.bytes).toString()) as { version: number; root: { facts: unknown } };
     if (bad === 'version') value.version = 2; else value.root.facts = null;
-    await disk.writeWindowFrame(directory, frame(c), Buffer.from(JSON.stringify(value)));
+    await disk.writeWindowFrame(windowCommitProjectionDirectory(directory, c.receipt.binding), frame(c), Buffer.from(JSON.stringify(value)));
     expect(await advance(c, createWindowBudget())).toEqual({ kind: 'rebuild', anchor: { sourceId: c.receipt.sourceId, start: 0, end: c.receipt.source.bytes } });
     await finish({ ...c, buildId: 'recovered' });
-    expect(await disk.readWindowFrame(directory, frame(c, true), createWindowBudget())).toEqual(old);
+    expect(await disk.readWindowFrame(windowCommitProjectionDirectory(directory, c.receipt.binding), frame(c, true), createWindowBudget())).toEqual(old);
   });
 
   it('propagates budget/I/O failures and cancellation without publishing success, and rejects uncommitted source claims before I/O', async () => {

@@ -9,7 +9,7 @@ import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 import { createWindowCommitReceipts, type WindowCommitReceipt } from './window-commit-receipt';
 import { advanceCommitContainerIndex, type CommitContainerIndex } from './window-commit-container-index';
-import { advanceCommitRootFields as advance, createCommitRootState as create, type CommitRootState } from './window-commit-root';
+import { advanceCommitRootFields as advance, advanceCommitRootBatch, createCommitRootState as create, type CommitRootState } from './window-commit-root';
 
 const state = vi.hoisted(() => ({ db: undefined as AppDb | undefined, sqlite: undefined as Database.Database | undefined }));
 vi.mock('@main/db/client', () => ({ get db() { return state.db; }, get sqlite() { return state.sqlite; } }));
@@ -89,5 +89,30 @@ describe('canonical root fields from actual writer source', () => {
     const controller = new AbortController(); controller.abort(); const budget = createWindowBudget();
     await expect(advance(directory, receipt, index, initial, budget, controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
     expect(budget.counters.indexBytes).toBe(0); expect(initial).toEqual(create(receipt, index));
+  });
+
+  it('batches a small root with fewer physical reads while retaining the original facts and the same request budget', async () => {
+    const { receipt, index } = await captured([]), initial = create(receipt, index);
+    let cursor = initial, oldBytes = 0;
+    for (;;) {
+      const budget = createWindowBudget(), result = await advance(directory, receipt, index, cursor, budget); oldBytes += budget.counters.indexBytes;
+      if (result.kind === 'complete') break;
+      if (result.kind !== 'progress') throw new Error('Missing root index'); cursor = result.state;
+    }
+    const budget = createWindowBudget(), batched = await advanceCommitRootBatch(directory, receipt, index, initial, budget);
+    expect(batched.kind).toBe('complete');
+    if (batched.kind !== 'complete') throw new Error('Small root did not complete');
+    expect(batched.facts).toEqual((await fields(receipt, index)).facts);
+    expect(budget.counters.indexBytes).toBeLessThan(oldBytes); expect(budget.counters.indexBytes).toBeLessThanOrEqual(65536);
+    expect(initial).toEqual(create(receipt, index));
+  });
+
+  it('keeps a giant opaque child bounded and cancellation silent without losing the caller checkpoint', async () => {
+    const { receipt, index } = await captured(), input = create(receipt, index), budget = createWindowBudget();
+    const result = await advanceCommitRootBatch(directory, receipt, index, input, budget);
+    expect(['progress', 'complete']).toContain(result.kind); expect(budget.counters.indexBytes).toBeLessThanOrEqual(65536);
+    expect(input).toEqual(create(receipt, index));
+    const abort = new AbortController(); abort.abort();
+    await expect(advanceCommitRootBatch(directory, receipt, index, input, createWindowBudget(), abort.signal)).rejects.toMatchObject({ name: 'AbortError' });
   });
 });

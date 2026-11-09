@@ -88,6 +88,23 @@ public class PhoneHostConfigRecoveryTest {
         assertArrayEquals(new String[] { "config.enc" }, credentials().getParentFile().list());
     }
 
+    @Test public void emptyCredentialsWithoutMarkerOrCacheRegisterThisInstallation() throws Exception {
+        commitSession(config(UUID.randomUUID().toString(), 1, 100), owner);
+        write(credentials(), new byte[0]);
+        PhoneInstallationIdentity.Identity installation = new PhoneInstallationIdentity.Identity(install, null);
+        assertEquals(install, GuguPhoneRegistration.resolve(context, installation, owner, null, null));
+        assertEquals(install, GuguPhoneRegistration.resolve(context, installation, owner, null, null));
+        assertTrue(new File(context.getNoBackupFilesDir(), "phone-installation/registration").isFile());
+    }
+
+    @Test public void anotherOwnersNonemptyCredentialsStillBlockRegistration() throws Exception {
+        commitSession(config(UUID.randomUUID().toString(), 1, 100), owner);
+        write(new File(context.getNoBackupFilesDir(), "phone-agent-host/" + UUID.randomUUID() + "/config.enc"), new byte[] { 12 });
+        try { GuguPhoneRegistration.resolve(context, new PhoneInstallationIdentity.Identity(install, null), owner, null, null); fail("Another owner's host was ignored"); }
+        catch (IOException error) { assertEquals("请先在原有手机账号下完成设备登记迁移", error.getMessage()); }
+        assertFalse(new File(context.getNoBackupFilesDir(), "phone-installation/registration").exists());
+    }
+
     @Test public void emptyCredentialsCannotReviveRetiredOrOtherOwnerSessions() throws Exception {
         JSObject input = config(UUID.randomUUID().toString(), 1, 100);
         write(credentials(), new byte[0]);

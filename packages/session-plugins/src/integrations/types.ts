@@ -42,6 +42,13 @@ export type IntegrationError =
    * later. Temporary: never a reauth, never a reason to drop a key. A network or host failure stays `host_unreachable`.
    */
   | { type: 'provider_unavailable'; message: string }
+  /**
+   * 「编辑凭据」改了服务器或地址,保密项(授权码)却留空:存着的那一份只交还给原来那台服务器,要重新填。
+   * 是界面上的一步,不是那一家拒了 —— ❌ 说成「检查一下格式」。
+   */
+  | { type: 'secret_required'; message: string }
+  /** 这台电脑没有系统钥匙串(Linux 只有 basic_text):咕咕不明文存凭据,这一家连不上。 */
+  | { type: 'secure_storage_unavailable'; message: string }
   /** The installed credential service failed; preserve the account and allow retry. */
   | { type: 'service_unavailable'; message: string }
   | { type: 'generic'; message: string };

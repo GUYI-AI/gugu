@@ -17,6 +17,9 @@ import { events } from '@main/lib/events';
 import { sessionTurnSettledChannel, type StoredSettledTurn } from '@shared/core/sessions/sessionEvents';
 import { commitWindowReceipt, prepareWindowCommitWrite, type WindowCommitCapture } from '../session-timeline/window-commit-write';
 import type { WindowCommitReceipt } from '../session-timeline/window-commit-receipt';
+import { deliverWindowCommit } from '../session-timeline/window-commit-delivery';
+import { recoverWindowCommitIntent } from '../session-timeline/window-commit-intent';
+import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 
 /**
  * 会话历史的落盘（#5381）。
@@ -61,16 +64,23 @@ export function persistCommittedTurn(input: PersistInput): Promise<void> {
   const previous = persistenceTails.get(input.sessionId) ?? Promise.resolve();
   const write = async () => {
     let captured: WindowCommitReceipt | undefined, phaseError: unknown, phaseFailed = false;
-    await persistWithTurnSettlement(input, async () => { captured = await persistCommittedTurnNow(input, error => { phaseError = error; phaseFailed = true; }); },
-      receipt => events.emit(sessionTurnSettledChannel, receipt));
+    if (input.windowCapture) input.windowCapture.intentBudget = createWindowBudget();
+    try {
+      await persistWithTurnSettlement(input, async () => { captured = await persistCommittedTurnNow(input, error => { phaseError = error; phaseFailed = true; }); },
+        receipt => events.emit(sessionTurnSettledChannel, receipt));
+    } finally {
+      if (input.windowCapture) await recoverWindowCommitIntent(sqlite, { ...input.windowCapture, sessionId: input.sessionId }, input.windowCapture.intentBudget!);
+    }
     if (phaseFailed) throw phaseError;
-    if (input.windowCapture) await input.windowCapture.committed(captured ?? null);
+    return captured;
   };
   const next = previous.then(write, write);
-  persistenceTails.set(input.sessionId, next);
-  return next.finally(() => {
-    if (persistenceTails.get(input.sessionId) === next) persistenceTails.delete(input.sessionId);
+  const tail = next.then(() => undefined, () => undefined);
+  persistenceTails.set(input.sessionId, tail);
+  void tail.then(() => {
+    if (persistenceTails.get(input.sessionId) === tail) persistenceTails.delete(input.sessionId);
   });
+  return deliverWindowCommit(next, input.windowCapture?.committed);
 }
 
 async function persistCommittedTurnNow(input: PersistInput, observationFailed: (error: unknown) => void): Promise<WindowCommitReceipt | undefined> {

@@ -11,7 +11,7 @@ import { BACKGROUND_PAGE_ARG, EXTENSION_THEME_CHANNEL } from '../../../../apps/d
 
 const electron = vi.hoisted(() => ({
   exposed: {} as Record<string, unknown>,
-  sendSync: vi.fn((_channel: string): unknown => 'dark'),
+  sendSync: vi.fn((_channel: string): unknown => ({ theme: 'dark' })),
 }))
 vi.mock('electron', () => ({
   contextBridge: { exposeInMainWorld: (name: string, api: unknown) => void (electron.exposed[name] = api) },
@@ -36,6 +36,13 @@ describe('the theme an App page loads in', () => {
     const host = await loadPreload()
     expect(electron.sendSync.mock.calls).toEqual([[EXTENSION_THEME_CHANNEL]])
     expect(host?.theme).toBe('dark')
+    expect(host && 'themeColors' in host).toBe(false)
+  })
+
+  it('hands on the person\'s color theme with it, for the same first paint', async () => {
+    electron.sendSync.mockReturnValueOnce({ theme: 'dark', themeColors: { '--em-background': '#112233' } })
+    const host = (await loadPreload()) as { themeColors?: unknown } | undefined
+    expect(host?.themeColors).toEqual({ '--em-background': '#112233' })
   })
 
   it('a background page is drawn nowhere: nothing asked, no theme', async () => {

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { GuguPermissionMode } from '@gugu/session-core/acp'
-import type { SessionTuiHostAdapter } from '@gugu/session-core/agents/plugins'
+import { harnessPinnedEnv, type SessionTuiHostAdapter } from '@gugu/session-core/agents/plugins'
 import { resolveSessionTuiHostAdapter, resolveSessionTuiStartupPolicy } from '@gugu/session-plugins/agents'
+import { getPlugin } from '@main/core/agents/plugin-registry'
 import { createLogger } from '../lib/logger'
 import type { AcpEngineRuntimeContext, BuildSocialBridgeDeps, DesktopGuguMcpHost } from '../acp-engine-utils'
 import { buildAgentIdentityBootstrap } from '../acp-engine-utils'
@@ -360,10 +361,13 @@ const startOpencodeServeAttach: HostStart = async (ctx, info, platformPromise, {
   // `OPENCODE_CONFIG_CONTENT` + 用户全局配置,不该被这个共享 cwd 的内容拖住会话创建。
   // ⚠️ 只在 task-home 设:开在用户真 repo 里的 agent(projectId 非 sentinel)照旧读它自己的 repo
   // `.opencode` —— 那是承诺给用户的、且不走 task-home,不吃这条。判据抽成纯函数便于单测判红。
+  const descriptor = getPlugin(info.providerId).capabilities.sessionBundle
+  // serve and attach do not go through the run context, so the descriptor's pinned env is applied here.
+  const pinnedEnv = harnessPinnedEnv(descriptor)
   const serveEnv = buildOpencodeServeEnv({
     processEnv: process.env,
-    spawnEnv: capabilities.spawnEnv,
-    isSessionHome: isImplicitSessionHomeProjectId(info.projectId),
+    spawnEnv: { ...capabilities.spawnEnv, ...pinnedEnv },
+    projectConfigDisableEnv: isImplicitSessionHomeProjectId(info.projectId) ? descriptor.projectConfigDisableEnv : undefined,
   })
   step('bundle+materialized')
   const handle = await opencodeServeAttachSessionDelivery.startSession(
@@ -439,7 +443,7 @@ const startOpencodeServeAttach: HostStart = async (ctx, info, platformPromise, {
   return {
     command: info.baseCommand,
     args: ['attach', handle.url, '--session', handle.providerSessionId],
-    env: { ...platform.env, ...platform.spawnEnv },
+    env: { ...platform.env, ...platform.spawnEnv, ...pinnedEnv },
   }
 }
 

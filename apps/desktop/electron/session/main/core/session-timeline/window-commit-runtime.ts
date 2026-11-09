@@ -6,7 +6,8 @@ import type { WindowCommitReceipt } from './window-commit-receipt';
 
 type Fault = Error & { code: string };
 type Journal = ReturnType<typeof createWindowCommitJournal>;
-type Owner = { conversationId: string; failed(error: Fault): void; journal?: Journal; after?: WindowLiveCursor; closed: boolean; released: ReturnType<typeof Promise.withResolvers<null>> };
+type Owner = { conversationId: string; failed(error: Fault): void; journal?: Journal; after?: WindowLiveCursor; pending: number; closed: boolean; released: ReturnType<typeof Promise.withResolvers<null>> };
+export type WindowCommitProjection = { projectionId: string; validate?(): void };
 const fault = (code: string, message: string): Fault => Object.assign(new Error(message), { code });
 const equal = (a: WindowLiveCursor, b: WindowLiveCursor) => a.workerEpoch === b.workerEpoch && a.storeEpoch === b.storeEpoch && a.sequence === b.sequence;
 
@@ -15,12 +16,14 @@ const equal = (a: WindowLiveCursor, b: WindowLiveCursor) => a.workerEpoch === b.
 export function createWindowCommitRuntime(ports: {
   persist(event: WindowCommittedEvent, capture?: WindowCommitCapture): Promise<void>;
   capture(event: WindowCommittedEvent, cursor: WindowLiveCursor, committed: WindowCommitCapture['committed']): WindowCommitCapture & {
-    project?(receipt: WindowCommitReceipt): Promise<{ projectionId: string }>;
+    project?(receipt: WindowCommitReceipt): Promise<WindowCommitProjection>;
   };
-  project(receipt: WindowCommitReceipt): Promise<{ projectionId: string }>;
+  project(receipt: WindowCommitReceipt): Promise<WindowCommitProjection>;
   report(error: unknown): void;
 }) {
   const owners = new Map<string, Owner>();
+  const pending = new Map<string, number>();
+  let pendingCount = 0;
   let workerEpoch = randomUUID(), storeEpoch = randomUUID(), closed = false;
   let tap: ReturnType<typeof createWindowCommitTap> | undefined;
   const report = (error: unknown) => { try { ports.report(error); } catch { /* Reporting cannot alter canonical persistence or other owners. */ } };
@@ -37,28 +40,47 @@ export function createWindowCommitRuntime(ports: {
   function coordinate(sequence: number): WindowLiveCursor { return { workerEpoch, storeEpoch, sequence }; }
   function dispatch(event: WindowCommittedEvent, raw: { sequence: number } | null) {
     const selected = [...owners.values()].filter(owner => owner.conversationId === event.sessionId);
+    const { sessionId, source } = event, referenceId = event.turn.referenceId;
     let capture: ReturnType<typeof ports.capture> | undefined;
+    let releaseCapture = () => {};
     if (raw && event.source !== 'replay' && selected.length) {
       const at = Object.freeze(coordinate(raw.sequence));
       for (const owner of selected) if (!owner.journal) fail(owner, fault('scope_changed', 'The session started before its history boundary was prepared'));
+      for (const owner of selected) if (!owner.closed && (owner.pending + owner.journal!.inspect().queued >= 64
+        || (pending.get(sessionId) ?? 0) >= 64 || pendingCount >= 2048))
+        fail(owner, fault('live_buffer_overflow', 'Pending projections and unacknowledged commits exceeded capacity'));
       const recipients = selected.filter(owner => !owner.closed);
       if (recipients.length) {
+        for (const owner of recipients) owner.pending++;
+        pending.set(sessionId, (pending.get(sessionId) ?? 0) + 1); pendingCount++;
+        let released = false;
+        const release = () => { if (!released) {
+          released = true; for (const owner of recipients) owner.pending--; pendingCount--;
+          const remaining = pending.get(sessionId)! - 1;
+          if (remaining) pending.set(sessionId, remaining); else pending.delete(sessionId);
+        } }; releaseCapture = release;
         try {
           let project = ports.project;
           capture = ports.capture(event, at, async receipt => {
             if (!receipt) return;
-            if (receipt.sessionId !== event.sessionId || receipt.referenceId !== event.turn.referenceId || !equal(receipt.latestRevisionCursor, at))
+            if (receipt.sessionId !== sessionId || receipt.referenceId !== referenceId || !equal(receipt.latestRevisionCursor, at))
               throw fault('live_identity_mismatch', 'The persisted commit does not match its runtime source');
-            const { projectionId } = await project(receipt);
+            const projection = await project(receipt);
             const values = { referenceId: receipt.referenceId, rowId: receipt.rowId, storedSeq: receipt.storedSeq,
-              projectionId, latestRevisionCursor: receipt.latestRevisionCursor };
-            const entry: WindowCommitReference = event.source === 'live' && receipt.firstCommitCursor && equal(receipt.firstCommitCursor, at)
+              projectionId: projection.projectionId, latestRevisionCursor: receipt.latestRevisionCursor };
+            const entry: WindowCommitReference = source === 'live' && receipt.firstCommitCursor && equal(receipt.firstCommitCursor, at)
               ? { ...values, kind: 'insert', firstCommitCursor: receipt.firstCommitCursor }
               : { ...values, kind: 'update', firstCommitCursor: receipt.firstCommitCursor };
-            for (const owner of recipients) if (!owner.closed) owner.journal!.publish(entry);
+            for (const owner of recipients) if (!owner.closed) {
+              projection.validate?.();
+              owner.journal!.publish(entry);
+            }
           });
+          const committed = capture.committed;
+          capture.committed = async receipt => { try { await committed(receipt); } finally { release(); } };
           project = capture.project ?? project;
         } catch (error) {
+          release();
           for (const owner of recipients) fail(owner, fault('live_capture_failed', String(error)));
           report(error);
         }
@@ -68,7 +90,8 @@ export function createWindowCommitRuntime(ports: {
       for (const owner of selected) fail(owner, fault('live_commit_failed', String(error)));
       report(error);
     };
-    try { void ports.persist(event, capture).catch(failed); } catch (error) { failed(error); }
+    try { void ports.persist(event, capture).then(releaseCapture, error => { releaseCapture(); failed(error); }); }
+    catch (error) { releaseCapture(); failed(error); }
   }
   return {
     async attach(source: Parameters<ReturnType<typeof createWindowCommitTap>['attach']>[0]) {
@@ -86,7 +109,7 @@ export function createWindowCommitRuntime(ports: {
       if (closed) throw fault('unsubscribed', 'Commit runtime is closed');
       if (!id || !conversationId || id.length > 2048 || conversationId.length > 2048 || owners.has(id)) throw fault('invalid_subscription', 'Invalid or occupied commit subscription');
       if (owners.size >= 32) throw fault('window_capacity', 'Too many commit subscriptions');
-      const owner: Owner = { conversationId, failed, closed: false, released: Promise.withResolvers<null>() }; owners.set(id, owner);
+      const owner: Owner = { conversationId, failed, pending: 0, closed: false, released: Promise.withResolvers<null>() }; owners.set(id, owner);
       const active = () => { if (owner.closed || owners.get(id) !== owner) throw fault('unsubscribed', 'Commit subscription was released'); return owner; };
       return {
         async prepare(): Promise<WindowLiveCursor> {

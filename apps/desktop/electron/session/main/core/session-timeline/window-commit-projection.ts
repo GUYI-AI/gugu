@@ -1,7 +1,7 @@
-import { readWindowFrame, writeWindowFrame } from '@gugu/session-core/session-record/window-cache/disk-frame';
+import { readWindowFrame, writeWindowFrame } from './window-commit-projection-disk';
 import type { WindowBudget } from '@gugu/session-core/session-record/window-cache/types';
 import { advanceCommitContainerIndex, readIndexedCommitContainerPage, type CommitContainerIndex } from './window-commit-container-index';
-import { advanceCommitRootFields, createCommitRootState, resumeCommitRootState, type CommitRootState, type CommitRootFacts } from './window-commit-root';
+import { advanceCommitRootFields, advanceCommitRootBatch, createCommitRootState, resumeCommitRootState, type CommitRootState, type CommitRootFacts } from './window-commit-root';
 import { snapshotWindowCommitReceipt, type createWindowCommitReceipts, type WindowCommitReceipt } from './window-commit-receipt';
 import { assertWindowCommitSource } from './window-commit-source';
 
@@ -83,7 +83,7 @@ export async function advanceWindowCommitProjection(input: Context, budget: Wind
     if (result.kind === 'rebuild') return rebuild(c);
     if (result.kind === 'complete') { head.stage = 'root-fields'; head.root = createCommitRootState(c.receipt, rootIndex); }
   } else {
-    const root = await advanceCommitRootFields(c.directory, c.receipt, rootIndex, head.root, budget, signal);
+    const root = await advanceCommitRootBatch(c.directory, c.receipt, rootIndex, head.root, budget, signal);
     if (root.kind === 'rebuild' || root.kind === 'pending') return rebuild(c);
     head.root = root.state;
     if (head.stage === 'root-fields') {
