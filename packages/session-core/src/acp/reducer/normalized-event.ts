@@ -178,7 +178,7 @@ export type NormalizedEvent =
       agentId?: string;
       /** 会话形态下的身份,见 `subagent` 变体上同名字段。 */
       subagentSessionId?: string;
-      status: NormalizedToolStatus;
+      status: NormalizedToolStatus | 'stopped' | 'disconnected';
       summary?: string;
       outputFile?: string;
     }
@@ -223,8 +223,14 @@ export type NormalizedEvent =
       /**
        * 它回给主智能体的正文。同样**由 reducer 填**(登记册 `output`,由子会话流累计,#5117);
        * 通知本身不带正文。这一行是「它跑完了」这次调用,正文就是这次调用的结果。
+       * 原生记录里父记录自己带着正文(Claude `<result>`、Codex FINAL_ANSWER),由记录源填。
        */
       outputText?: string;
+      /**
+       * The parent's native record notes the finish. It makes this row only: the child's own record (its boundaries,
+       * read after the parent's) settles its card and the registry, as it fills that card.
+       */
+      parentRecord?: true;
     }
   | {
       /**
