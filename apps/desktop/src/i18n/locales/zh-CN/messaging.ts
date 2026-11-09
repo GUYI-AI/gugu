@@ -126,7 +126,7 @@ export default {
     "backToList": "返回对话列表",
     "conversationProfile": "查看对话资料",
     "downloadFailed": "无法下载文件",
-    "filePreview": { "close": "关闭文件预览", "download": "下载", "openExternal": "外部打开", "loading": "读取文件中…", "rendering": "正在生成预览…", "renderFailed": "无法渲染此文件", "sheetTruncated": "表格太大，只显示了前面一部分。完整内容请用 Office 软件打开。", "openInOffice": "用 Office 软件打开", "previewLimits": "此文档过大或结构过于复杂，无法安全预览。", "unsupported": "此文件类型暂不支持内置预览，请下载或使用外部打开。", "readFailed": "读取文件失败（{{status}}）", "pdfControls": "PDF 控制", "previousPage": "上一页", "nextPage": "下一页", "zoomOut": "缩小", "zoomIn": "放大", "zoom": "缩放", "zoomReset": "恢复 100%", "pdfPage": "PDF 第 {{page}} 页" },
+    "filePreview": { "close": "关闭文件预览", "download": "下载", "openExternal": "外部打开", "loading": "读取文件中…", "rendering": "正在生成预览…", "renderFailed": "无法渲染此文件", "sheetTruncated": "表格太大，只显示了前面一部分。完整内容请用 Office 软件打开。", "openInOffice": "用 Office 软件打开", "previewLimits": "此文档过大或结构过于复杂，无法安全预览。", "unsupported": "此文件类型暂不支持内置预览，请下载或使用外部打开。", "readFailed": "读取文件失败（{{status}}）", "pdfControls": "PDF 控制", "previousPage": "上一页", "nextPage": "下一页", "zoomOut": "缩小", "zoomIn": "放大", "zoom": "缩放", "zoomReset": "恢复 100%", "pageNumber": "页码", "outline": "目录", "fitWidth": "适应宽度", "fitPage": "适应整页", "find": "查找", "findPrevious": "上一个", "findNext": "下一个", "closeFind": "关闭查找" },
     "empty": {
       "chats": "选择一个对话开始聊天",
       "contacts": "选择联系人查看详情"
@@ -367,8 +367,7 @@ export default {
     "fileUpdated": "文件已更新，请重新打开",
     "holderOffline": "{{machine}} 离线，上线后才能打开这个文件。",
     "holderMachine": "保存它的那台电脑",
-    "besideOffline": "在「{machine}」上，未连接",
-    "besideOfflineNotice": "这页里有文件存在「{{machine}}」上，它现在未连接；它上线后会自动显示。",
+    "besideOffline": "在「{machine}」上，设备离线",
     "besideUnavailable": "这个文件现在取不到。",
     "besideOutside": "只能取到这份文档所在文件夹里的文件。",
     "imageUnavailable": "图片暂时打不开",
@@ -800,6 +799,8 @@ export default {
       "unknown": "状态待确认",
       "unknownHint": "正在等待发布结果，消息到达后会自动更新，无需重发。",
       "archived": "对方已归档、未送达",
+      "removed": "对方已移除、未送达",
+      "refused": "未送达",
       "failed": "发送失败",
       "failedActions": "发送失败消息操作",
       "failedHint": "发送失败，点击查看消息操作",

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 const { createSessionpageSessionDeviceRpcHandlers } = await import('./device-rpc');
 
 describe('会话页在设备 RPC 上剩下的动词(一套说法:会话页与 agent 跨机器动作都走 taskhost)', () => {
-  it('注册的只剩会话页宿主那条线', () => {
+  it('注册的只剩会话页宿主那条线,和 App 投屏的跨机器观看', () => {
     const { handlers } = createSessionpageSessionDeviceRpcHandlers();
     expect(Object.keys(handlers).sort()).toEqual(
       [
@@ -13,6 +13,10 @@ describe('会话页在设备 RPC 上剩下的动词(一套说法:会话页与 ag
         'taskhost.close',
         // 一问一答、不开窗口(手机回前台补齐;主进程 agent 跨机器的 agentSession.* 与列会话、归档)。
         'taskhost.call',
+        // #1607 node 5: an App's projection watched from another of the person's computers.
+        'appProjection.watch',
+        'appProjection.send',
+        'appProjection.unwatch',
         // Installation update RPCs are composed by main, outside the session host.
       ].sort()
     );

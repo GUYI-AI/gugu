@@ -1,6 +1,6 @@
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type Database from 'better-sqlite3';
@@ -21,6 +21,7 @@ import { readPublishedCommitEntity } from './window-commit-publisher';
 import * as publishers from './window-commit-publisher';
 import { openCommitBodySlot, readCommitBodySlot } from './window-commit-slot';
 import { withStoredTurns } from '../sessions/session-turn-store';
+import { beginCanonicalQueueTask } from '../sessions/canonical-queue-state';
 
 const state = vi.hoisted(() => ({ db: undefined as AppDb | undefined, sqlite: undefined as Database.Database | undefined, root: '' }));
 vi.mock('@main/db/client', () => ({ get db() { return state.db; }, get sqlite() { return state.sqlite; } }));
@@ -69,6 +70,59 @@ describe('the main-process commit host and actual canonical writer', () => {
     expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 1 });
   });
 
+  it('writes no commit source, catalog or intent for a production canonical write while no window subscribes', async () => {
+    const events = source(), project = vi.fn(async () => ({ projectionId: 'unused' }));
+    bindWindowCommitProjection(project);
+    connected = await connectWindowCommitHost(stream(events), () => {}, connection);
+    events.emit({ sessionId: 'c', providerId: 'claude', platformCredentials: false, source: 'live', turn: {
+      id: 'unwatched', seq: 0, referenceId: 'unwatched-ref', initiator: 'user', outcome: { kind: 'done' },
+      items: [{ kind: 'message', id: 'unwatched-item', seq: 0, role: 'assistant', text: 'no window is open' }] } });
+    await vi.waitFor(() => expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 1 }));
+    await withStoredTurns('c', async () => {});
+    // Until host GC reclaims them, sources exist only for a subscribed window.
+    expect(await readdir(join(state.root, 'session-window-cache', 'committed'))).toEqual([]);
+    expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_window_commit_receipts').get()).toEqual({ n: 0 });
+    expect(project).not.toHaveBeenCalled();
+  });
+
+  it('attaches the committed-event source only after storage preparation, and refuses windows if it fails', async () => {
+    const events = source(), project = vi.fn(async () => ({ projectionId: 'unused' })), gate = Promise.withResolvers<void>();
+    gate.promise.catch(() => {}); // Handled by connect; avoid an early unhandled-rejection report.
+    bindWindowCommitProjection(project);
+    const connecting = connectWindowCommitHost(stream(events), () => {}, connection, () => gate.promise);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(events.subscriberCount).toBe(0);
+    gate.reject(new Error('layout could not be prepared')); connected = await connecting;
+    expect(events.subscriberCount).toBe(1);
+    expect(() => reserveWindowCommitHost('view', 'c', vi.fn())).toThrow(expect.objectContaining({ code: 'live_projection_unavailable' }));
+    events.emit({ sessionId: 'c', providerId: 'claude', platformCredentials: false, source: 'live', turn: {
+      id: 'kept', seq: 0, referenceId: 'kept-ref', initiator: 'user', outcome: { kind: 'done' },
+      items: [{ kind: 'message', id: 'kept-item', seq: 0, role: 'assistant', text: 'canonical history still persists' }] } });
+    await vi.waitFor(() => expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 1 }));
+    expect(project).not.toHaveBeenCalled();
+  });
+
+  it('publishes an admitted, underfilled projection group as soon as the host closes while the canonical queue is busy', async () => {
+    // Frozen timers: only the close itself may publish the group, never the busy ceiling.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const busy = beginCanonicalQueueTask('c'), events = source(), owner = reserveProduction('closing-view', 'c', vi.fn()), after = await owner.prepare();
+    owner.authorize(); void owner.read(after).catch(() => {});
+    const turns = () => new Promise<void>(resolve => setImmediate(resolve));
+    const until = async (done: () => boolean) => { const end = Date.now() + 5_000; while (!done() && Date.now() < end) await turns(); };
+    const complete = () => fixture.sqlite.prepare("SELECT count(*) n FROM session_window_pack_groups WHERE state='complete'").get();
+    try {
+      const host = await connectWindowCommitHost(stream(events), () => {}, connection);
+      events.emit({ sessionId: 'c', source: 'live', turn: { id: 'tail', seq: 0, referenceId: 'tail-ref', initiator: 'user',
+        items: [{ kind: 'message', id: 'tail-item', seq: 0, role: 'assistant', text: 'underfilled tail' }], outcome: { kind: 'done' } } });
+      await until(() => vi.getTimerCount() > 0);
+      expect(vi.getTimerCount()).toBe(1); expect(complete()).toEqual({ n: 0 });
+      host.close();
+      await until(() => (complete() as { n: number }).n > 0);
+      expect(complete()).toEqual({ n: 1 });
+      expect(createWindowCommitReceipts(fixture.sqlite).byReference('c', 'tail-ref')).toBeDefined();
+    } finally { busy(); owner.close(); vi.useRealTimers(); }
+  });
+
   it('rejects new handoff reservations without a durable producer rather than declaring a successful empty view', () => {
     expect(() => reserveWindowCommitHost('view', 'c', vi.fn())).toThrow(expect.objectContaining({ code: 'live_projection_unavailable' }));
     expect(fixture.sqlite.prepare('SELECT id FROM session_turns').all()).toEqual([]);
@@ -91,7 +145,7 @@ describe('the main-process commit host and actual canonical writer', () => {
       emit('one'); await entered.promise; emit('two');
       await vi.waitFor(() => expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 2 }));
       expect(await withStoredTurns('c', async () => createWindowCommitReceipts(fixture.sqlite).byReference('c', 'two')?.storedSeq)).toBe(1);
-      expect(project).toHaveBeenCalledTimes(1); expect(seen).not.toHaveBeenCalled();
+      expect(project).toHaveBeenCalledTimes(2); expect(seen).not.toHaveBeenCalled();
     } finally { gate.resolve({ projectionId: 'projection-one' }); await withStoredTurns('c', async () => {}); }
     const first = await reading; expect(first.entries[0].referenceId).toBe('one'); owner.ack(first.next);
     const second = await owner.read(first.next); expect(second.entries[0].referenceId).toBe('two'); owner.ack(second.next);

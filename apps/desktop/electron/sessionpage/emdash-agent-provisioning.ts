@@ -336,6 +336,8 @@ export interface ProvisionedSessionpageAgent {
     projectPath: string
     groupChatId: string
     groupName: string
+    /** #2347: `member` only once the landed identity's roster records the group; see SessionpageProjectContext. */
+    membership: 'member' | 'unconfirmed'
   }
   event: SessionpageAgentProvisionedEvent
 }
@@ -933,11 +935,17 @@ async function provisionLockedBody(
       chatId: directChatId,
     }
     if (!info.deferProvisionedEvent) emitProvisioned(event)
+    // #2347 — the roster records the group only after the landed identity joined it. A refused or still
+    // pending join leaves it empty; the session is still told its project group (the mapping), as unconfirmed.
+    const contextGroupId = groupChatId || (projectId ? await readProjectGroupId(projectId, ownerUserId, env) ?? '' : '')
+    // Rows from before #5331 carry no state: those identities landed long ago (the retry below reads it the same way).
+    const landed = !['pending', 'failed'].includes(cacheString(existing.cache, CLOUD_STATE_CACHE_KEY))
+    const membership = groupChatId && landed ? 'member' : 'unconfirmed'
     return {
       guguAgentUserId: existing.gugu_user_id,
       chatId: directChatId,
-      ...(projectId && groupChatId
-        ? { projectContext: { projectId, projectName, projectPath: info.cwd, groupChatId, groupName: projectName } }
+      ...(projectId && contextGroupId
+        ? { projectContext: { projectId, projectName, projectPath: info.cwd, groupChatId: contextGroupId, groupName: projectName, membership } }
         : {}),
       event,
     }
@@ -1051,8 +1059,10 @@ async function provisionLockedBody(
     chatId: directChatId,
     // 刚铸的身份:persona 必然为空 —— 不必再去库里读。
     ...(identityCreated ? { agentIdentityFacts: { specialFocus: null } } : {}),
+    // #2347 — a freshly minted identity joins in the background (provision_taskpage_agent) and may be refused;
+    // an adopted identity's joinProjectGroup above already returned its seat (or threw).
     ...(projectId && groupChatId
-      ? { projectContext: { projectId, projectName, projectPath: info.cwd, groupChatId, groupName: projectName } }
+      ? { projectContext: { projectId, projectName, projectPath: info.cwd, groupChatId, groupName: projectName, membership: identityCreated ? 'unconfirmed' as const : 'member' as const } }
       : {}),
     event,
   }

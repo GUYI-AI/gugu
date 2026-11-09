@@ -1,6 +1,6 @@
 import { createReadStream } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 
 import { claudeFilePatch } from '../../acp/transport/claude-file-patch';
@@ -18,7 +18,7 @@ import {
   type SessionRecordSourceEvents
 } from '../contract';
 import { findUnder, isFile } from './find-file';
-import { locateImages, readRecordImage, snapshotRetainer } from './record-images';
+import { jsonlCheckAt, locateImages, readRecordImage } from './record-images';
 import {
   SessionRecordNotFoundError,
   SessionRecordForkDivergedError,
@@ -72,11 +72,15 @@ export function createClaudeJsonlSource(
   const root = new ClaudeJsonlSource(locator, options, nativeChild);
   return withSubagentSources(
     root,
-    (id) => createClaudeJsonlSource({ ...locator, providerSessionId: id, roots: root.childRoots[id] }, options, true),
+    // A child's pictures are in its own file: a place kept for them would point into the root record.
+    (id) => createClaudeJsonlSource({ ...locator, providerSessionId: id, roots: root.childRoots[id] }, options && { ...options, fill: undefined }, true),
     () => createClaudeJsonlSource(locator, options, nativeChild),
     options,
   );
 }
+
+/** The decoder state a fill read notes before each line (`RecordEntry.state`) and a fill from there restores. */
+type ClaudeFillState = Pick<ClaudeResumeData, 'lastUuid' | 'launches' | 'childRoots'>;
 
 class ClaudeJsonlSource implements SessionRecordSource {
   private readonly warn: RecordSourceWarn;
@@ -103,7 +107,6 @@ class ClaudeJsonlSource implements SessionRecordSource {
   private ownIncrement = false;
   private consumedFiles = new Map<string, number>();
   private consumedBytes = 0;
-  private readonly retain: ReturnType<typeof snapshotRetainer> | null;
 
   private rememberConsumed(path: string, bytes: number): void {
     this.consumedBytes += bytes - (this.consumedFiles.get(path) ?? 0);
@@ -116,7 +119,6 @@ class ClaudeJsonlSource implements SessionRecordSource {
     private readonly nativeChild = false,
   ) {
     this.warn = warnOf(options);
-    this.retain = options?.readMode === 'snapshot' ? snapshotRetainer() : null;
   }
 
   async start(events: SessionRecordSourceEvents, resume?: SessionRecordResume): Promise<void> {
@@ -141,7 +143,8 @@ class ClaudeJsonlSource implements SessionRecordSource {
           events.onReset(reason);
         }
       },
-      this.warn
+      this.warn,
+      this.options?.fill
     );
     const resumed = this.options?.readMode !== 'snapshot' && resume ? await this.resumeRead(path, resume) : false;
     if (!resumed) {
@@ -227,6 +230,47 @@ class ClaudeJsonlSource implements SessionRecordSource {
     if (this.options?.readMode !== 'snapshot') await this.reader?.catchUp();
   }
 
+  /**
+   * resume-tail: `position` is a place in the primary record (`RecordEntry.position`), `at` the decoder state there
+   * (`ClaudeFillState`). A uuid is written once in a primary record, so a read from there needs no earlier uuids.
+   */
+  async startingAt(position: number, at?: unknown): Promise<SessionRecordResume | null> {
+    const path = position > 0 ? await resolveSessionFile(this.locator, this.nativeChild).catch(() => null) : null;
+    if (!path) return null;
+    const info = await stat(path);
+    const tail: TailResume = { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs, lineOffset: position };
+    const data: ClaudeResumeData = { version: CLAUDE_RESUME_VERSION, primaryPath: path, tailPath: path, tail,
+      seenUuids: [], lastUuid: null, launches: {}, childRoots: {}, ...(at as ClaudeFillState | undefined), consumedFiles: [[path, position]] };
+    return { data, fingerprint: `claude:${path}:${tail.ino}:${tail.size}:${tail.mtimeMs}` };
+  }
+
+  childIdsAt(at: unknown): string[] {
+    return Object.keys((at as ClaudeFillState | undefined)?.childRoots ?? {});
+  }
+
+  async checkAt(position: number): Promise<string | null> {
+    const path = await resolveSessionFile(this.locator, this.nativeChild).catch(() => null);
+    return path ? jsonlCheckAt(path, position) : null;
+  }
+
+  recordPath(): Promise<string | null> {
+    return resolveSessionFile(this.locator, this.nativeChild).catch(() => null);
+  }
+
+  async stamp(): Promise<string | null> {
+    const path = await resolveSessionFile(this.locator, this.nativeChild).catch(() => null);
+    if (!path) return null;
+    const info = await stat(path);
+    // Subagents write their own files (one per subagent): a change there must also reach the fill.
+    const folder = join(dirname(path), basename(path, '.jsonl'), 'subagents');
+    let children = '';
+    for (const name of (await readdir(folder).catch(() => [] as string[])).sort()) {
+      const child = await stat(join(folder, name)).catch(() => null);
+      if (child) children += `|${name}:${child.size}:${child.mtimeMs}`;
+    }
+    return `${path}:${info.ino}:${info.size}:${info.mtimeMs}${children}`;
+  }
+
   getLineage(): readonly RecordLineageNode[] | null { return this.lineageValid ? this.lineage : null; }
 
   readImage(ref: RecordImageRef): Promise<string | null> {
@@ -269,9 +313,16 @@ class ClaudeJsonlSource implements SessionRecordSource {
       Math.max(this.consumedFiles.get(this.reader.currentPath) ?? 0, this.reader.consumedBytes));
     const events = this.events;
     const path = this.reader?.currentPath;
-    emitJsonLines(lines, 'claude', this.warn, (entries) => events.onEntries(entries), (record) => this.decodeRecord(record),
-      path && this.retain ? (entries, index) => this.retain!(entries, lines[index], offsets?.[index], path)
-        : offsets && path ? (entries, index) => locateImages(entries, lines[index], offsets[index], path) : undefined);
+    emitJsonLines(lines, 'claude', this.warn, (entries) => events.onEntries(entries), this.options?.fill ? (record) => {
+      // A fill read: every entry carries the state its line was decoded from, so a later read can start at that line.
+      const before: ClaudeFillState = { lastUuid: this.lastUuid, launches: this.launches, childRoots: this.childRoots };
+      const entries = this.decodeRecord(record);
+      for (const entry of entries) entry.state = before;
+      return entries;
+    } : (record) => this.decodeRecord(record),
+      offsets && path ? (entries, index) => locateImages(entries, lines[index], offsets[index], path) : undefined,
+      // Positions are places in the primary record (`startingAt`); a continuation file's lines have none.
+      path === this.primaryPath ? offsets : undefined);
   }
 
   private decodeRecord(record: Record<string, unknown>): RecordEntry[] {
@@ -304,7 +355,8 @@ class ClaudeJsonlSource implements SessionRecordSource {
     const blocks = Array.isArray(message?.content) ? message.content.map(asRecord) : [];
     for (const block of blocks) {
       if (block?.type === 'tool_use' && typeof block.id === 'string' && (block.name === 'Agent' || block.name === 'Task')) {
-        this.launches[block.id] = { name: block.name, input: block.input };
+        // Replaced, never changed in place: a fill read's per-line state shares it.
+        this.launches = { ...this.launches, [block.id]: { name: block.name, input: block.input } };
       }
     }
     // The launch result supplies the native identity; keep its call paired until then,
@@ -323,8 +375,8 @@ class ClaudeJsonlSource implements SessionRecordSource {
         entry,
       ];
       const input = asRecord(launch.input);
-      this.childRoots[id] = this.nativeChild ? this.locator.roots : [join(dirname(this.primaryPath!),
-        typeof record.sessionId === 'string' ? record.sessionId : this.locator.providerSessionId, 'subagents')];
+      this.childRoots = { ...this.childRoots, [id]: this.nativeChild ? this.locator.roots : [join(dirname(this.primaryPath!),
+        typeof record.sessionId === 'string' ? record.sessionId : this.locator.providerSessionId, 'subagents')] };
       const title = [input?.name, input?.description, launch.name].find((value): value is string => typeof value === 'string' && value !== '');
       const task = [input?.description, input?.prompt].find((value): value is string => typeof value === 'string' && value !== '');
       return [

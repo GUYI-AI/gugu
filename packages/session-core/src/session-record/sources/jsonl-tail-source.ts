@@ -5,9 +5,10 @@ import type {
   SessionRecordSource,
   SessionRecordSourceEvents
 } from '../contract';
-import { locateImages, readRecordImage, snapshotRetainer } from './record-images';
+import { jsonlCheckAt, locateImages, readRecordImage } from './record-images';
 import { emitJsonLines, pollInterval, warnOf, type SessionRecordSourceOptions } from './shared';
 import { TailReader, type TailResume } from './tail-reader';
+import { stat } from 'node:fs/promises';
 
 /**
  * 一份只追加的 JSONL 文件的尾读源(codex、copilot):找到文件 → 整份读或接着续读点读 → 尾读。
@@ -25,6 +26,10 @@ export type JsonlTailFormat<S> = {
   initial(): S;
   /** 一条记录 → 条目;回 null = 坏行。`state` 可以就地改。 */
   decode(record: Record<string, unknown>, state: S): RecordEntry[] | null;
+  /** A copy of `state` that later decoding cannot change (a fill read keeps one per line); default structuredClone. */
+  snapshot?(state: S): S;
+  /** The native children `state` already knows (`SessionRecordSource.childIdsAt`). */
+  childIds?(state: S): string[];
 };
 
 type ResumeData<S> = { version: number; path: string; tail: TailResume; state: S };
@@ -40,20 +45,21 @@ export function createJsonlTailSource<S>(
   let state = format.initial();
   let sink: SessionRecordSourceEvents | null = null;
   let stopped = false;
-  const retain = options?.readMode === 'snapshot' ? snapshotRetainer() : null;
-  let emitFailure: { reason: unknown } | null = null;
 
   const emit = (lines: string[], offsets: number[]) => {
     if (stopped || !sink) return;
     const events = sink;
     const file = path;
-    try {
-      emitJsonLines(lines, format.name, warn, (entries) => events.onEntries(entries), (record) => format.decode(record, state),
-        file ? (entries, index) => (retain ? retain(entries, lines[index], offsets[index], file) : locateImages(entries, lines[index], offsets[index], file)) : undefined);
-    } catch (reason) {
-      emitFailure = { reason };
-      throw reason;
-    }
+    emitJsonLines(lines, format.name, warn, (entries) => events.onEntries(entries), options?.fill ? decodeNoting : (record) => format.decode(record, state),
+      file ? (entries, index) => locateImages(entries, lines[index], offsets[index], file) : undefined, offsets);
+  };
+
+  // A fill read: every entry carries the state its line was decoded from, so a later read can start at that line.
+  const decodeNoting = (record: Record<string, unknown>) => {
+    const before = format.snapshot ? format.snapshot(state) : structuredClone(state);
+    const entries = format.decode(record, state);
+    for (const entry of entries ?? []) entry.state = before;
+    return entries;
   };
 
   const source: SessionRecordSource = {
@@ -73,7 +79,8 @@ export function createJsonlTailSource<S>(
             events.onReset(reason);
           }
         },
-        warn
+        warn,
+        options?.fill
       );
       if (options?.readMode === 'snapshot') {
         if (resume) events.onReset('source_replaced');
@@ -98,6 +105,25 @@ export function createJsonlTailSource<S>(
     },
     catchUp: async () => { if (options?.readMode !== 'snapshot') await reader?.catchUp(); },
     readImage: readRecordImage,
+    // resume-tail: a plain JSONL record starts at a line start, with the decoder state a read had there (a fill read's
+    // `RecordEntry.state`). A `.zst` archive (only found by a snapshot read) starts at its beginning.
+    async startingAt(position, at) {
+      const found = position > 0 ? await format.resolve().catch(() => null) : null;
+      if (!found || found.endsWith('.zst')) return null;
+      const info = await stat(found);
+      const tail: TailResume = { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs, lineOffset: position };
+      const data: ResumeData<S> = { version: format.resumeVersion, path: found, tail, state: at === undefined ? format.initial() : at as S };
+      return { data, fingerprint: `${format.name}:${found}:${tail.ino}:${tail.size}:${tail.mtimeMs}` } satisfies SessionRecordResume;
+    },
+    recordPath: () => format.resolve().catch(() => null),
+    checkAt: async (position) => { const found = await format.resolve().catch(() => null); return found ? jsonlCheckAt(found, position) : null; },
+    ...(format.childIds ? { childIdsAt: (at: unknown) => format.childIds!(at as S) } : {}),
+    async stamp() {
+      const found = await format.resolve().catch(() => null);
+      if (!found) return null;
+      const info = await stat(found);
+      return `${found}:${info.ino}:${info.size}:${info.mtimeMs}`;
+    },
     async resumePoint(budget) {
       if (!reader || !path || options?.readMode === 'snapshot') return null;
       // Debit before yielding/cloning; native children share this counter.
@@ -116,8 +142,5 @@ export function createJsonlTailSource<S>(
       sink = null;
     }
   };
-  // A read that stops mid-stream can surface as a pipeline abort or the EBADF of its closed fd. Callers act on the reason.
-  const start = source.start.bind(source);
-  source.start = (events, resume) => start(events, resume).catch((error: unknown) => { throw emitFailure ? emitFailure.reason : error; });
   return source;
 }

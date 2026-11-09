@@ -470,6 +470,7 @@ async function createSessionSteps(
 
 
   // 派任务(gugu-dev#181):第一句是一条真的咕咕消息(那张卡),要稳定 id —— 与桌面 use-create-session-callback 同。
+  // 不派任务时首句用发起方铸的 id(#2296):手机画的乐观首句与待发行、原生消息是同一个身份。
   const taskChatId = request.taskChatId?.trim() || undefined;
   const taskMessageId = taskChatId ? randomUUID() : undefined;
   const sessionId = randomUUID();
@@ -488,7 +489,7 @@ async function createSessionSteps(
       startupOrigin: 'session-page',
     }),
     ...(runtime === 'acp' ? { initialQueue: [{ text: prompt, origin: 'manual' as const }] } : { initialPrompt: prompt }),
-    ...(taskChatId ? { taskChatId, initialMessageId: taskMessageId } : {}),
+    ...(taskChatId ? { taskChatId, initialMessageId: taskMessageId } : request.initialMessageId ? { initialMessageId: request.initialMessageId } : {}),
   };
   const params: CreateSessionParams = {
     projectId: projectId,

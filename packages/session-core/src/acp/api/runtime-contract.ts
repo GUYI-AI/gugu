@@ -233,6 +233,12 @@ export const acpRuntimeApiContract = defineContract({
       turn: transcriptTurnSchema,
     }),
   }),
+  /** Primary scalar proof for a stopped-window active candidate. This private
+   * point read never clones an active turn or starts a session/worker. */
+  windowActiveReference: procedure({
+    input: z.strictObject({ sessionId: z.string().min(1).max(2048), referenceId: z.string().min(1).max(2048) }),
+    output: z.boolean(),
+  }),
   /** 主进程保存回退后的显示历史,再放开这条会话的发送。 */
   finishHistoryRevert: procedure({
     input: z.object({ sessionId: z.string().min(1) }),

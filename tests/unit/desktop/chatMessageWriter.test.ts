@@ -48,6 +48,12 @@ describe('message send confirmation request budget', () => {
     expect(message.delivery_blocks).toEqual([{ agent_user_id: 'archived-agent', reason: 'agent_archived' }])
   })
 
+  it('#2383 keeps a sent message whose refusal carries a reason this client does not know yet', async () => {
+    const later = { ...row, delivery_blocks: [{ message_id: input.id, agent_user_id: 'removed-agent', reason: 'a_reason_added_later' }] }
+    const message = await writeIdempotentChatMessage(input, client(later))
+    expect(message.id).toBe(input.id)
+    expect(message.delivery_blocks).toEqual([{ agent_user_id: 'removed-agent', reason: 'a_reason_added_later' }])
+  })
   it('s2: a failing refusal-table read cannot turn a persisted send into failure', async () => {
     tableError.blocks = true
     await expect(writeIdempotentChatMessage(input, client())).resolves.toMatchObject({ id: input.id })

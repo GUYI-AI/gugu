@@ -8,9 +8,11 @@ export type ProjectionViewState = 'connecting' | 'live' | 'input-paused' | 'clos
 /** The shared picture/input surface. Its App owns surrounding chrome, target selection, and driver code. */
 export async function mountProjection(host: ProjectionHost, root: HTMLElement, id: string, options: {
   state?(state: ProjectionViewState, reason?: string): void; error?(error: unknown): void;
+  painted?(frame: Pick<ProjectionFrame, 'sequence' | 'width' | 'height'> | null): void;
 } = {}) {
   const surface = document.createElement('div');
   surface.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;touch-action:none';
+  // A session on another computer is watched the same way: its machine sends the pictures (projection-remote-host.ts).
   const image = document.createElement('img');
   image.alt = '';
   image.draggable = false;
@@ -22,7 +24,7 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
   input.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;resize:none';
   surface.append(image, input);
   root.append(surface);
-  let frame: ProjectionFrame | null = null;
+  let frame: Pick<ProjectionFrame, 'sequence' | 'width' | 'height'> | null = null;
   let ready = false;
   let nextText = 0;
   const observed = new WeakSet<Promise<unknown>>();
@@ -68,7 +70,7 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
   const point = (event: MouseEvent, clamp = false) => {
     if (!frame || !ready) return null;
     const box = image.getBoundingClientRect();
-    const ratio = (image.naturalWidth || frame.width) / (image.naturalHeight || frame.height);
+    const ratio = frame.width / frame.height;
     const width = Math.min(box.width, box.height * ratio);
     const height = width / ratio;
     if (width <= 0 || height <= 0) return null;
@@ -138,19 +140,23 @@ export async function mountProjection(host: ProjectionHost, root: HTMLElement, i
     });
   }
   try {
+    const changed = (state: 'connecting' | 'live' | 'closed', reason?: string) => {
+      ready = state === 'live'; input.disabled = !ready; options.state?.(state, reason);
+    };
+    const painted = (next: Pick<ProjectionFrame, 'sequence' | 'width' | 'height'> | null) => {
+      frame = next; if (next) recoveryAttempts = 0; options.painted?.(next);
+    };
     client = await projectionClient(host, id, {
-      paint: async next => {
-        image.src = `data:${next.mime};base64,${next.data}`;
-        await image.decode();
+      paint: async (next, current) => {
+        const decoded = new Image();
+        decoded.src = `data:${next.mime};base64,${next.data}`;
+        await decoded.decode();
+        if (!current()) return;
+        image.src = decoded.src;
         await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-        frame = next;
-        recoveryAttempts = 0;
       },
-      state: (state, reason) => {
-        ready = state === 'live';
-        input.disabled = !ready;
-        options.state?.(state, reason);
-      },
+      painted,
+      state: changed,
       error: pause,
     });
   } catch (error) { lifetime.abort(); surface.remove(); throw error; }
