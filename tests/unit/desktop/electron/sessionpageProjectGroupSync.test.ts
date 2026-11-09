@@ -935,11 +935,12 @@ describe('#6396 序号只增不减', () => {
       expect(reopened.projectContext, '被拒后重开:项目群仍在说明里,但不说已是成员').toMatchObject({ groupChatId: group.chatId, membership: 'unconfirmed' })
       expect(buildSessionpageProjectContextBlock(reopened.projectContext)).not.toMatch(claimsMembership)
 
-      const joined = await provisionFresh('conv-seat-2347', { projectId: 'proj-alpha' }, {
+      const seated = {
         ...oneTripDeps,
         provisionOneTrip: async (input: { agentId: string; displayName: string }) =>
           ({ agentId: input.agentId, displayName: input.displayName, groupChatId: group.chatId, groupCreated: false, priorGroupState: 'joined' }),
-      })
+      }
+      const joined = await provisionFresh('conv-seat-2347', { projectId: 'proj-alpha' }, seated)
       expect(joined.projectContext?.membership, '刚起、还没落地:未确认').toBe('unconfirmed')
       const back = await provisionFresh('conv-seat-2347', { projectId: 'proj-alpha' }, oneTripDeps)
       expect(back.projectContext).toMatchObject({ groupChatId: group.chatId, membership: 'member' })
