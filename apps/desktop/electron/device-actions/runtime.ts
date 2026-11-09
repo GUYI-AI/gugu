@@ -34,7 +34,7 @@ import { createDeviceActionsProvider } from './provider'
 type Log = { info(fields: Record<string, unknown>, msg: string): void; warn(fields: Record<string, unknown>, msg: string): void }
 
 /** 主进程注入的、只有 Electron 才有的能力。 */
-export type ElectronDeviceDeps = Pick<FamilyDeps, 'clipboardRead' | 'clipboardWrite' | 'clipboardReadImage' | 'notify' | 'openExternal' | 'trashItem' | 'captureScreen' | 'captureScreenNative' | 'shrinkImage' | 'sampleImage' | 'perf'>
+export type ElectronDeviceDeps = Pick<FamilyDeps, 'clipboardRead' | 'clipboardWrite' | 'clipboardReadImage' | 'notify' | 'openExternal' | 'trashItem' | 'captureScreen' | 'shrinkImage' | 'sampleImage' | 'perf'>
 
 export interface DeviceActionsRuntime {
   capability(): DeviceActionsCapability | null

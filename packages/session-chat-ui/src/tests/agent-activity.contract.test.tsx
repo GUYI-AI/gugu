@@ -210,19 +210,31 @@ describe('approved A2A activity', () => {
     expect(t.host.innerHTML).not.toContain('Real reply content');
     expect(t.button().getAttribute('aria-expanded')).toBe('false');
   });
-  it('shows the viewer group reply without its former sentence preview or an extra message', async () => {
+  it('folds a group reply to the viewer into the same activity row, with no text and an exact source link', async () => {
+    const base: ChatMessage = { ...ordinary('reply:sent:receipt'), text: 'I answered your question.',
+      sentAddresses: { target: { kind: 'chat', conversationId: 'group', whisper: false, threadRootId: null },
+        recipients: [`user:${me}`], confirmed: true, chatKind: 'group', replyTo: null } };
+    const question = ordinary('The owner asks in the panel.', 'user');
+    const t = await mount(800, [turn('ask', [question]), turn('reply', [base])]);
+    expect(t.host.querySelectorAll('[data-agent-activity]')).toHaveLength(1);
+    expect(t.head()!.textContent).toContain('Replied to you in gugu');
+    expect(t.button().getAttribute('aria-expanded')).toBe('false');
+    expect(t.host.innerHTML).not.toContain('I answered your question.');
+    expect(t.host.querySelector(`[data-user-card="${question.id}"]`)?.textContent).toContain(question.text);
+    t.head()!.querySelector<HTMLElement>('[data-activity-target="group"]')!.click();
+    expect(t.open).toHaveBeenCalledWith({ kind: 'chat', chatId: 'group', messageId: 'receipt' });
+    t.button().click();
+    await until('the original reply opens inside the activity', () => !!t.host.textContent?.includes('I answered your question.'));
+    expect(t.state.transcript.state.committedTurns[1].items).toHaveLength(1);
+  });
+  it('joins a group reply to the viewer with adjacent agent activity in one row', async () => {
     const base: ChatMessage = { ...ordinary('reply:sent:receipt'), text: 'I answered your question.',
       sentAddresses: { target: { kind: 'chat', conversationId: 'group', whisper: false, threadRootId: null },
         recipients: [`user:${me}`], confirmed: true, chatKind: 'group', replyTo: null } };
     const t = await mount(800, [turn('a', [delivery('incoming')]), turn('reply', [base])]);
-    const reply = t.host.querySelector<HTMLElement>('[data-group-reply]')!;
-    expect(reply.textContent).toBe('Replied to you in gugu ›');
+    expect(t.host.querySelectorAll('[data-agent-activity]')).toHaveLength(1);
+    expect(t.head()!.textContent).toContain('Exchanged 2 messages');
     expect(t.host.innerHTML).not.toContain('I answered your question.');
-    expect(reply.getBoundingClientRect().height).toBe(32);
-    expect(t.host.querySelector('[data-user-card="reply:sent:receipt"]')).toBeNull();
-    reply.querySelector('button')!.click();
-    expect(t.open).toHaveBeenCalledWith({ kind: 'chat', chatId: 'group', messageId: 'receipt' });
-    expect(t.state.transcript.state.committedTurns[1].items).toHaveLength(1);
   });
   it('keeps the owner question and a direct send to the owner visible', async () => {
     const target = { kind: 'chat' as const, conversationId: 'direct', whisper: false, threadRootId: null, recipientUserId: me };
@@ -232,7 +244,7 @@ describe('approved A2A activity', () => {
     const t = await mount(800, [turn('activity', [delivery('incoming')]), turn('owner', [question, sent])]);
     expect(t.host.querySelector(`[data-user-card="${question.id}"]`)?.textContent).toContain(question.text);
     expect(t.host.querySelector(`[data-user-card="${sent.id}"]`)?.textContent).toContain(sent.text);
-    expect(t.host.querySelector('[data-group-reply]')).toBeNull();
+    expect(t.host.querySelector('[data-agent-activity]')?.textContent ?? '').not.toContain('Replied to you');
     expect(t.state.transcript.state.committedTurns[1].items).toEqual([question, sent]);
   });
   it('keeps an opened group and source identity when older adjacent messages are prepended', async () => {

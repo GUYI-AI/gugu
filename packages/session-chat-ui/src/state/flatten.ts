@@ -5,7 +5,7 @@ import { sentMessagesOf, withSentReplies } from './sent-replies';
 import { activityArtifacts } from './activity-artifacts';
 import { planConversationSegments } from './conversation-segments';
 import { continuedActivityHeader, foldActivityUnits, hasUnconfirmedSend, incomingActivity, outgoingActivity, pendingActivity,
-  viewerGroupReply, type AgentActivityEvent, type AgentActivityGroup } from './agent-activity';
+  type AgentActivityEvent, type AgentActivityGroup } from './agent-activity';
 /**
  * flatten — segment a transcript into a two-tier UnitsView.
  *
@@ -460,7 +460,8 @@ export function flattenTier(
         const ops = planRows(outsideProcess(output.rest));
         activityEvent = output.reply
           ? outgoingActivity(output.reply.id.replace(/:sent:[^:]+$/, ''), output.reply.sentAddresses, ctx,
-            output.reply.sentAttachments?.length ? new Set(output.reply.sentAttachments.map(file => file.messageId)).size : 1) ?? undefined
+            output.reply.sentAttachments?.length ? new Set(output.reply.sentAttachments.map(file => file.messageId)).size : 1,
+            /:sent:([^:]+)$/.exec(output.reply.id)?.[1]) ?? undefined
           : pendingActivity(block.items as TranscriptItem[], turn, ctx) ?? inputActivity;
         // A successful send closes its segment before the trailing silence.
         // Keep that empty tail with its proven A2A owner, not a new process.
@@ -506,10 +507,7 @@ export function flattenTier(
         if (output.reply) {
           const reply = { ...output.reply, conversationProcess: process,
             ...(block.fullReply ? { conversationFull: true } : {}) };
-          const groupReply = viewerGroupReply(reply, ctx);
-          if (groupReply) {
-            processItem({ ...reply, conversationPart: 'group-reply', groupReply });
-          } else emitConversationReply(reply, [], steps, replyActivity);
+          emitConversationReply(reply, [], steps, replyActivity);
         } else {
           processItem({ kind: 'turn-process', ...process, turnId: turn.id,
             ...(output.silent ? { silent: true } : {}),
