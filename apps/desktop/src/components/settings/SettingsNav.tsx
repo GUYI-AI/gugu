@@ -137,7 +137,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'connectors', labelKey: 'settings.nav.connectors', il: <Plug size={15} />, ib: <PlugFilled size={15} /> },
   { key: 'account', labelKey: 'settings.nav.account', il: <IlAccount />, ib: <IbAccount /> },
   { key: 'general', labelKey: 'settings.nav.general', il: <IlGeneral />, ib: <IbGeneral /> },
-  { key: 'passwords', labelKey: '密码', il: <IlPermissions />, ib: <IbPermissions /> },
+  { key: 'passwords', labelKey: 'settings.nav.passwords', il: <IlPermissions />, ib: <IbPermissions /> },
   { key: 'permissions', labelKey: 'settings.nav.permissions', il: <IlPermissions />, ib: <IbPermissions /> },
   { key: 'devices', labelKey: 'settings.nav.devices', il: <IlDevices />, ib: <IbDevices /> },
   { key: 'model',   labelKey: 'settings.nav.model', il: <SidebarMinimalistic size={15} />,   ib: <IbModel />   },
@@ -236,7 +236,7 @@ export function SettingsNav({ activeSection, sections, mobile = false, user, ass
                       tabIndex={0}
                       aria-current={isActive ? 'page' : undefined}
                       leading={(isActive ? ib : il) ?? <span className="gg-settings-nav-spacer" aria-hidden="true" />}
-                      title={key === 'permissions' ? '本机控制' : t(labelKey)}
+                      title={t(labelKey)}
                       selected={isActive}
                       // #7333 桌面左栏是导航:胶囊行。手机「我的」是整屏入口列表,不是导航胶囊。
                       variant={mobile ? undefined : 'nav'}

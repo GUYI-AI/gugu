@@ -1,8 +1,9 @@
 import type { PersonalConversationPreview } from '@gugu/session-core/session-record/personal-conversation';
+import type { PreviewActivity } from '@gugu/session-core/session-record/preview-activity';
 import { nativeConversationActivity } from './session-conversation-activity';
 import { publishConversationActivity } from './session-conversation-read';
 
-type Preview = { text: string; at: string };
+type Preview = { text: string; at: string } & PreviewActivity;
 let owner: symbol | null = null;
 const live = new Map<string, { preview: Preview; clearing?: true }>();
 
@@ -29,8 +30,8 @@ export function openNativeConversationPreviews(settled: (sessionId: string) => P
       if (owner !== token) return;
       const previous = live.get(event.sessionId);
       if (event.preview) {
-        const preview = { text: event.preview.text, at: new Date(event.preview.at).toISOString() };
-        if (!previous?.clearing && previous?.preview.text === preview.text && previous.preview.at === preview.at) return;
+        const preview = { ...event.preview, at: new Date(event.preview.at).toISOString() };
+        if (!previous?.clearing && JSON.stringify(previous?.preview) === JSON.stringify(preview)) return;
         live.set(event.sessionId, { preview });
         publishConversationActivity(event.sessionId);
       } else if (previous) {

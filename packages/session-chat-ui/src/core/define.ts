@@ -81,10 +81,12 @@ export type MeasureCtx = {
   caches: ChatCaches;
   measureEpoch?: number;
   expandedId?: string | null;
+  /** Lane A: the host's drawn size of a sent message's MessageBody slot (`ChatState.session.setBodySize`). */
+  bodySize?: (messageId: string) => { width: number; height: number } | undefined;
   /** Latest visible conversation bubble: full text without persisting a manual expansion. */
   latestConversationMessageId?: string | null;
   /** The inline user-message editor replaces the measured bubble. */
-  editingMessage?: { itemId: string; text: string };
+  editingMessage?: { itemId: string; text: string; notice?: string };
   /**
    * 「跑完后的最后一条回复」的 id（#4981）—— 只有它带页脚（复制按钮那一行的高度）。
    * 会话还在忙（在流式、等后台子智能体、agent 自发的 cycle 没收口）时为 null：

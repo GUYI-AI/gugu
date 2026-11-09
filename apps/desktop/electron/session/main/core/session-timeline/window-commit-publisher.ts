@@ -1,3 +1,4 @@
+import type { WindowFrameKey } from '@gugu/session-core/session-record/window-cache/frame';
 import { createHash, randomUUID } from 'node:crypto';
 import { setImmediate } from 'node:timers/promises';
 import { readWindowFrame, writeWindowFrame } from './window-commit-projection-disk';
@@ -179,12 +180,15 @@ export function createWindowCommitPublisher(directory: string, receipts: Receipt
 
 /** Resolve the source's durable version by point lookup. A canonical receipt
  * without this publication is needs_location, never an ACKable empty turn. */
-export async function readWindowCommitPublication(input: Context, budget: WindowBudget, signal?: AbortSignal) {
+export async function readWindowCommitPublication(input: Context, budget: WindowBudget, signal?: AbortSignal,
+  beforeRead?: (key: WindowFrameKey) => void) {
   const c = snapshot(input); signal?.throwIfAborted();
+  beforeRead?.(key(c, 'job', true));
   const saved = await load(c, 'job', budget, true);
   if (!saved) throw Object.assign(new Error('Commit projection has not been published'), { code: 'needs_location' });
   const h = head(c, saved);
   if (h.stage !== 'complete' || h.headers !== 1) throw Object.assign(new Error('Commit projection is not durable'), { code: 'needs_location' });
+  beforeRead?.(key(c, `${h.buildId}:publication`));
   const p = publication(c, await load(c, `${h.buildId}:publication`, budget));
   if (p.count !== h.count || p.nodes !== h.nodes) throw new Error('Commit publication checkpoint mismatch');
   await assertWindowCommitSource(c.directory, c.receipt.binding, c.receipt.source); committed(c); signal?.throwIfAborted(); return p;

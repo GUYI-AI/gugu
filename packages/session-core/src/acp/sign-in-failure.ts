@@ -39,6 +39,19 @@ const CLAUDE_SIGN_IN_ERROR_KINDS: ReadonlySet<string> = new Set(['authentication
  */
 const CODEX_UNCLASSIFIED_401 = /\bunauthorized \(401\)/i;
 
+const AUTH_ERROR_TYPE = /auth|credential|sign.?in|login/i;
+
+/**
+ * The ACP code, unless the harness names another error in `data.errorType`: Kiro uses -32000 for its own typed failures
+ * too (`ModelRegistryUnavailableError`, `McpServersNotReadyError`, ...), while its sign-in refusal carries no `data`.
+ * A type that names authentication is still a sign-in failure, whichever harness sent it.
+ */
+export function isAcpAuthRequired(cause: { code?: unknown; data?: unknown }): boolean {
+  if (cause.code !== ACP_AUTH_REQUIRED_CODE) return false;
+  const errorType = (cause.data as { errorType?: unknown } | null | undefined)?.errorType;
+  return typeof errorType !== 'string' || AUTH_ERROR_TYPE.test(errorType);
+}
+
 /**
  * 这次被拒是不是「这家在这台机器上的登录不能用了」(#6264)—— 认结构化信号,❌ 不按句子猜。
  * 唯一的例外是 codex 自己没分类的那一步(见 `CODEX_UNCLASSIFIED_401`),也只认它写出的状态码。
@@ -47,7 +60,7 @@ const CODEX_UNCLASSIFIED_401 = /\bunauthorized \(401\)/i;
  * claude 有「Not logged in」「Session expired」),而协议码与错误分类是对方明确给出的契约。
  */
 export function isSignInFailure(cause: SerializedError): boolean {
-  if (cause.code === ACP_AUTH_REQUIRED_CODE) return true;
+  if (isAcpAuthRequired(cause)) return true;
   const data = cause.data;
   if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
   const record = data as Record<string, unknown>;

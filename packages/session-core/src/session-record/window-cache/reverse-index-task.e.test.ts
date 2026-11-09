@@ -1,7 +1,8 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as frames from './disk-frame.ts';
 import { createWindowBudget, WindowBudgetExceeded } from './read-budget.ts';
 import { advanceReverseIndexTask, loadReverseIndexTask, saveReverseIndexTask } from './record-locators.ts';
 import { REVERSE_INDEX_BLOCK_BYTES as BLOCK, stepReverseIndex } from './reverse-index-task.ts';
@@ -11,7 +12,7 @@ import type { ReverseCheckpoint, SourceSnapshot, WindowByteSource } from './type
 const scope = 'a'.repeat(64), lineage = 'b'.repeat(64);
 const job = { scope, sourceLineage: lineage, decoderVersion: 1, jobId: 'test-job' };
 const directories: string[] = [];
-afterEach(async () => { await Promise.all(directories.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
+afterEach(async () => { vi.restoreAllMocks(); await Promise.all(directories.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
 function fixture(size: number, lf = -1, shortRead = BLOCK) {
   const snapshot: SourceSnapshot = { sourceId: 'source', sourceInstance: 'inode', snapshotRevision: 'revision', size };
   const reads: Array<{ start: number; length: number }> = [];
@@ -31,6 +32,15 @@ function fixture(size: number, lf = -1, shortRead = BLOCK) {
 }
 
 describe('resumable reverse locating', () => {
+  it('does not return a late located result when cancellation arrives during durable publication', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'gugu-locate-')); directories.push(directory);
+    const input = fixture(10), controller = new AbortController(), write = frames.writeWindowFrame;
+    vi.spyOn(frames, 'writeWindowFrame').mockImplementation(async (...args) => { await write(...args); controller.abort(); });
+    await expect(advanceReverseIndexTask(directory, job, input.source, input.checkpoint, createWindowBudget(), controller.signal)).rejects.toThrow();
+    // Valid progress survives, but the cancelled request cannot publish into the current window.
+    expect(await loadReverseIndexTask(directory, job, createWindowBudget())).toMatchObject({ kind: 'hit', position: { kind: 'located' } });
+  });
+
   it('reads one tail block beyond 32-bit offsets without reading the prefix', async () => {
     const input = fixture(20 * 1024 ** 3, 20 * 1024 ** 3 - 19);
     const budget = createWindowBudget();

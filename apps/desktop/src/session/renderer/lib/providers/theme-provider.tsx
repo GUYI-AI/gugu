@@ -12,6 +12,7 @@ import {
   type EffectiveTheme,
   type ThemePreference,
 } from '@renderer/lib/theme/host-theme';
+import { subscribeToThemePacks } from '@renderer/lib/theme/theme-pack-store';
 import type { Theme } from '@shared/core/app-settings';
 import { ThemeContext } from './theme-context';
 
@@ -47,6 +48,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     applyThemeToAll();
   }, [effectiveTheme]);
+
+  // 资源库「主题」换了配色:终端读的是计算样式里的 --xterm-ansi-* 与底色,同样要重读一遍。
+  useEffect(() => subscribeToThemePacks(applyThemeToAll), []);
 
   // @@@5293 会话页可以自己开着(独立 React 根),所以它也要认领一份「跟随系统」的同步;
   // host-theme 里按引用计数做成幂等,与咕咕那份不会重复挂监听。

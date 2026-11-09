@@ -24,6 +24,8 @@ export type DeviceProjectsPublisherDeps = {
   /** 这台机器此刻的项目(会话页后端读本地库)。 */
   records: () => Promise<DeviceProject[]>
   warn: (message: string, fields: Record<string, unknown>) => void
+  /** The account has this machine's record as it is now: whoever reads it may read it again. */
+  onPublished?: () => void
   setTimeout?: (run: () => void, ms: number) => unknown
   clearTimeout?: (handle: unknown) => void
 }
@@ -85,7 +87,10 @@ export function createDeviceProjectsPublisher(deps: DeviceProjectsPublisherDeps)
     }
     if (dirty) schedule('settle', SETTLE_MS)
     else if (outcome === 'failed') schedule('retry', RETRY_MS)
-    else if (outcome === 'published') schedule('refresh', REFRESH_MS)
+    else if (outcome === 'published') {
+      schedule('refresh', REFRESH_MS)
+      deps.onPublished?.()
+    }
   }
 
   return {

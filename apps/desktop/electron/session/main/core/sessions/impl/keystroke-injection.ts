@@ -14,6 +14,7 @@ import { localAgentForSession } from '@main/core/sessionpage/sessionpage-session
 // the persisted roster contract written by session-page provisioning.
 const PROJECT_CACHE_KEY = 'emdash_project_id';
 const GROUP_CACHE_KEY = 'sessionpage_group_chat_id';
+const CLOUD_STATE_CACHE_KEY = 'sessionpage_cloud_identity_state';
 function cacheString(cache: Record<string, unknown> | null | undefined, key: string): string {
   const value = cache?.[key];
   return typeof value === 'string' ? value.trim() : '';
@@ -347,6 +348,11 @@ function injectSystemBootstrapPastGate(args: {
         projectPath: args.projectPath,
         groupChatId: cacheString(agent?.cache, GROUP_CACHE_KEY),
         groupName: projectName,
+        // #2347 — a freshly minted identity records the mapped group before its join lands (and the join can be
+        // refused); only a landed identity's recorded group is a confirmed seat.
+        // Rows from before #5331 carry no state; their identities landed long ago.
+        membership: cacheString(agent?.cache, GROUP_CACHE_KEY)
+          && !['pending', 'failed'].includes(cacheString(agent?.cache, CLOUD_STATE_CACHE_KEY)) ? 'member' : 'unconfirmed',
       })
     })
     .catch(() => '')

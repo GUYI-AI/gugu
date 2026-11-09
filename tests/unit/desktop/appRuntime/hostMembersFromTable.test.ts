@@ -25,7 +25,11 @@ const EVERYONE = ['cloud.read', 'getContext', 'onContextChanged', 'onFilesChange
 const MODAL = ['modal.open', 'modal.close', 'modal.key', 'onModalFocus']
 const PROJECTION_VIEWER = ['projection.watch', 'projection.unwatch', 'projection.send', 'onProjection']
 const PROJECTION_SOURCE = ['projection.create', 'projection.publish', 'projection.close', 'projection.closed', 'projection.inputResult', 'onProjectionSource']
-const PAGE_ONLY = ['navigationGo', 'navigationClaimBack', 'onBack', 'showContextMenu', 'appFiles.viewPreferences', 'appFiles.keep', 'appFiles.reveal', 'appFiles.openInApps', 'appFiles.openIn', 'appFiles.downloadStop', 'onDownloadProgress', ...MODAL, ...CLOUD_PAGE, ...PROJECTION_VIEWER, 'openLink', 'onCommand', 'setTabTitle', 'setTabBadge', 'setTabDirty', 'sendToBackground', 'onBackgroundMessage', 'showMessage', 'showSession', 'clipboard.writeText', 'appFiles.openWith', 'appFiles.download', 'appFiles.forward']
+// #1607 shared task resources (API 36): a page mounts a task page, views projection media and posts its surface; a
+// program leases task pages, opens surfaces and shows the task's pages.
+const TASK_PAGE_VIEWER = ['pages.mount', 'pages.unmount', 'projectionMedia.open', 'projectionMedia.answer', 'projectionMedia.sign', 'projectionMedia.close', 'surfaces.post', 'taskMessage']
+const TASK_PROGRAM = ['pages.acquire', 'pages.send', 'pages.maintain', 'pages.presentation', 'pages.filePayloads', 'pages.release', 'onTaskPage', 'surfaces.open', 'surfaces.update', 'surfaces.close', 'surfaces.screen', 'onSurface', 'showTaskPages']
+const PAGE_ONLY = ['navigationGo', 'navigationClaimBack', 'onBack', 'showContextMenu', 'appFiles.viewPreferences', 'appFiles.keep', 'appFiles.reveal', 'appFiles.openInApps', 'appFiles.openIn', 'appFiles.downloadStop', 'onDownloadProgress', ...MODAL, ...CLOUD_PAGE, ...PROJECTION_VIEWER, ...TASK_PAGE_VIEWER, 'openLink', 'onCommand', 'setTabTitle', 'setTabBadge', 'setTabDirty', 'sendToBackground', 'onBackgroundMessage', 'showMessage', 'showSession', 'clipboard.writeText', 'appFiles.openWith', 'appFiles.download', 'appFiles.forward']
 const PHONE = ['cloud.read', 'navigationGo', 'navigationClaimBack', 'onBack', 'showContextMenu', 'appFiles.viewPreferences', 'appFiles.keep', 'appFiles.canDelete', ...MODAL, 'getAppState', 'onAppStateChanged', 'onAgentsChanged', 'listAgents', 'linkTo', 'openLink', 'getContext', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', ...MESSAGES, ...SESSIONS, ...CLOUD_PAGE, 'setTabTitle', 'setTabBadge', 'setTabDirty', 'onCommand', 'onLink', 'showMessage', 'showSession', 'clipboard.writeText', 'readData', 'writeData', 'listData', 'callProgram', ...FILES, 'appFiles.openWith', 'appFiles.download', 'appFiles.forward']
 
 const desktop = (caller: 'page' | 'background') => hostMembers(caller, () => true, vi.fn(), hostEventHub().on)
@@ -40,7 +44,7 @@ describe('one table, the members each host had', () => {
   it('the phone exposes device calls everywhere and task notifications in task tabs; programs expose the shared index', () => {
     expect(names(overMessages({ framed: true }))).toEqual([...PHONE].sort())
     expect(names(overMessages({ framed: true, session: true }))).toEqual([...PHONE, 'onProgramNotification'].sort())
-    expect(names(overMessages({ program: true }))).toEqual(['cloud.read', 'cloud.programWrite', 'getContext', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', 'linkTo', ...MESSAGES, ...PROJECTS, ...SESSIONS, ...PROMPTS, ...FILES, 'appFiles.canDelete', ...PROJECTION_SOURCE].sort())
+    expect(names(overMessages({ program: true }))).toEqual(['cloud.read', 'cloud.programWrite', 'getContext', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', 'linkTo', ...MESSAGES, ...PROJECTS, ...SESSIONS, ...PROMPTS, ...FILES, 'appFiles.canDelete', ...PROJECTION_SOURCE, ...TASK_PROGRAM].sort())
   })
 
   it('a member asks its verb with its arguments packed one way, on every host', () => {

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { AppCallAction, RemoteAppCaller } from '@gugu/session-core/session-record/contract';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
+import { workspaceFolder } from '@shared/extensions/app-runtime-protocol';
 import { appCallAction, notOnSessionMachine, overCallLimit } from '@shared/extensions/machine-call';
 import { machineVerbs } from '@main/core/extensions/machine-verbs';
 import { events } from '@main/lib/events';
@@ -178,6 +179,9 @@ async function admit(caller: RemoteAppCaller, action: AppCallAction): Promise<vo
   const tooLarge = overCallLimit('call', action, action);
   if (tooLarge) throw tooLarge;
   if (verbFacts(action.method)?.machine !== 'place') admitAppCall(caller, action, service, extensionPrograms);
+  // A project folder is only read from elsewhere: this machine holds that line too, whatever the asker's host checked.
+  const folder = workspaceFolder((action.args.place ?? action.args.ref) as { workspace?: string } | null | undefined);
+  if (folder && verbFacts(action.method)?.reads !== true) throw Object.assign(new Error('A folder on this computer is read-only from another one'), { code: 'denied' });
   if (action.device_id) {
     const { otherMachines } = await import('@main/core/sessions/session-family');
     if (!(await otherMachines().isThisDevice(action.device_id))) throw Object.assign(new Error('App call targets another machine'), { code: 'invalid' });

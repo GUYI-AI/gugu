@@ -67,6 +67,11 @@
 .ta-onb-intro-text { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .ta-onb-actions-stack { flex-direction: column; align-items: stretch; }
 .ta-onb-primary { width: 100%; }
+/* 「继续」下面那一行「帮助改进咕咕」勾选(owner 11-09 方案 B):小字、居中、不和称呼身份抢视线。 */
+.ta-onb-check { display: flex; align-items: flex-start; justify-content: center; gap: 8px; font-size: var(--font-caption); line-height: var(--lh-caption); color: var(--muted-fg); text-align: left; cursor: pointer; }
+.ta-onb-check input { flex: none; margin: 2px 0 0; accent-color: var(--fg); cursor: pointer; }
+/* 应用没有全局声明 color-scheme,原生复选框在深色下会画成亮白方块;只给这一个控件声明深色。 */
+[data-theme='dark'] .ta-onb-check input { color-scheme: dark; }
 /* 「认识你」(FirstRunProfile):身份一排胶囊单选(ui/Button 的 option 变体),这里只管换行与间距。 */
 .ta-onb-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 

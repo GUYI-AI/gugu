@@ -6,7 +6,7 @@ import { firstMentionedUserId, resolveMentionUserIds, type MentionCandidate } fr
 import { rememberGroupMention } from '@/lib/groupMentionRecall'
 import { scheduleComposerFocus } from '@/lib/focusComposer'
 import { rendererLogger } from '@/lib/log'
-import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
+import { chatSendFailureNotice } from './chatSendFailureNotice'
 import { useToast } from '../toastContext'
 import { revokeAttachmentPreviewUrls, withPreviewUrl, type ChatDraft, type MentionTarget } from './useChatDraft'
 import { contentWithQuote } from './messageQuoteContent'
@@ -140,7 +140,7 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       // Drop the now-stale snapshot URLs (replaced by fresh ones above, or unused when persisting to store).
       revokeAttachmentPreviewUrls(snapshotAttachments)
       if (unchanged) submission.revision = draft.revisionOf(chatId ?? null)
-      attempt.failed({ title: t('composer.sendFailed', { reason: safeFailureLine(reason) }), tier: 'error' })
+      attempt.failed(chatSendFailureNotice(unsentAttachments.map((attachment) => attachment.file), err, t))
     } finally {
       sendingRef.current = false
       setSending(false)

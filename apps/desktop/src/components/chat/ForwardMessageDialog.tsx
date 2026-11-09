@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ComponentProps, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
 import { chatPickRows, forwardPreview } from './forwardMessageUtils'
@@ -131,4 +131,10 @@ export function ForwardMessageDialog({ messages = [], preview: subject, topRow, 
       error={error}
     />
   )
+}
+
+/** The dialog with the live list: subscribes only while it is open. */
+export function LiveForwardMessageDialog(props: Omit<ComponentProps<typeof ForwardMessageDialog>, 'chats'>) {
+  const { chats } = useChatStore('chats')
+  return <ForwardMessageDialog {...props} chats={chats} />
 }

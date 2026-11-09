@@ -296,7 +296,7 @@ jobs:
         working-directory: apps/desktop/native/projection-media
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup-vendor-node
         with:
           node-version-file: .node-version
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6

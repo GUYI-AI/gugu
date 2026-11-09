@@ -8,6 +8,9 @@ import type { WindowBudget } from '@gugu/session-core/session-record/window-cach
 
 const CHUNK = 16 * 1024;
 type Binding = Pick<WindowFrameKey, 'scope' | 'sourceLineage' | 'decoderVersion'>;
+export const windowCommitSourceBinding = (scope: string, sourceId: string) => ({
+  scope, sourceLineage: createHash('sha256').update(sourceId).digest('hex'), decoderVersion: 1,
+});
 type Physical = { dev: string; ino: string; mtimeNs: string; ctimeNs: string };
 export type WindowCommitSourceManifest = {
   version: 1; bytes: number; chunks: number; stride: number; sha256: string; physical: Physical;

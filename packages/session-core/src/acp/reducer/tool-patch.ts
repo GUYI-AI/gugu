@@ -20,7 +20,7 @@ function priorContent(item: ToolCallItem): EntityContent[] {
 export function patchToolEntity(item: ToolCallItem, event: ToolEvent): ToolCallItem {
   const next = { ...item };
   const fields = next as unknown as Record<string, unknown>;
-  for (const key of ['toolName', 'toolKind', 'rawInput', 'rawOutput', 'inputSummary', 'terminalId', 'exitStatus', 'parentToolCallId', 'backgroundTaskId', 'backgroundTaskDone'] as const) {
+  for (const key of ['imageRefs', 'toolName', 'toolKind', 'rawInput', 'rawOutput', 'inputSummary', 'terminalId', 'exitStatus', 'parentToolCallId', 'backgroundTaskId', 'backgroundTaskDone'] as const) {
     const value = (event as unknown as Record<string, unknown>)[key];
     if (value === null) delete fields[key];
     else if (value !== undefined) fields[key] = value;

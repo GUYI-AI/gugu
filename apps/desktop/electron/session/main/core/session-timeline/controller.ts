@@ -34,7 +34,7 @@ import { prefetchFiles } from './turn-files';
 import { markNativeConversationVisible, nativeConversationUnread, nativeOwnerNotificationUnread } from '../sessions/session-conversation-read';
 import { readTaskExchanges, watchTaskExchanges, unwatchTaskExchanges } from './task-exchanges';
 import type { TaskExchangeRequest } from '@shared/core/sessions/task-collaboration';
-import { windowLiveReadRequestSchema, windowLiveAckRequestSchema } from '@gugu/session-wire/session-window-live';
+import { windowLiveReadRequestSchema, windowLiveAckRequestSchema, windowLivePositionRequestSchema } from '@gugu/session-wire/session-window-live';
 import { windowProjectionReadRequestSchema, windowProjectionBodyReadRequestSchema } from '@gugu/session-wire/session-window-projection';
 import { finishWindowProjectionReply, readWindowProjection, readWindowProjectionBody } from './window-projection-production';
 import { taskExchangeChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
@@ -149,6 +149,7 @@ export const sessionTimelineController = createRPCController({
   sessionWindowSnapshot: (input: SessionpageSessionSnapshotRequest) => service.windowSnapshot(input),
   sessionWindowLiveRead: withSender((sender: number, input: unknown) => liveOwned(sender, input, windowLiveReadRequestSchema, service.windowLiveRead)),
   sessionWindowLiveAck: withSender((sender: number, input: unknown) => liveOwned(sender, input, windowLiveAckRequestSchema, service.windowLiveAck)),
+  sessionWindowLivePosition: withSender((sender: number, input: unknown) => liveOwned(sender, input, windowLivePositionRequestSchema, service.windowLivePosition)),
   sessionWindowProjectionRead: withSender((sender: number, input: unknown) => liveOwned(sender, input, windowProjectionReadRequestSchema,
     value => readWindowProjection(() => service.windowProjectionOwner(value), value), finishWindowProjectionReply)),
   sessionWindowProjectionBodyRead: withSender((sender: number, input: unknown) => liveOwned(sender, input, windowProjectionBodyReadRequestSchema,

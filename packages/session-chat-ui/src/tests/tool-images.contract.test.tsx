@@ -14,6 +14,9 @@ import { Tool } from '@session-chat/components/rows/tools/tool/Tool'
 import { ROW_H } from '@session-chat/components/engine/row-metrics'
 import { toolGroupUnitDef } from '@session-chat/components/rows/tools/tool-group/tool-group.def'
 import { toolUnitDef } from '@session-chat/components/rows/tools/tool/tool.def'
+import { conversationStepData, conversationStepUnitDef } from '@session-chat/components/rows/conversation-step/conversation-step.def'
+import { CONVERSATION_NARRATION_H } from '@session-chat/components/rows/message/conversation-body'
+import type { ChatTranslator } from '@session-chat/localization'
 import {
   TOOL_THUMB_H,
   TOOL_THUMB_MAX,
@@ -22,10 +25,16 @@ import {
   toolThumbStrip
 } from '@session-chat/components/rows/tools/tool/tool-images'
 import type { ChatCommands } from '@session-chat/commands'
-import type { ChatToolCall } from '@session-chat/model'
-import type { ItemNode } from '@session-chat/state/flatten'
+import type { ChatItem, ChatToolCall, ToolNode, ToolRunItem, TranscriptTurn } from '@session-chat/model'
+import { flattenTier, toolRunId, type ItemNode } from '@session-chat/state/flatten'
+import { toolRunUnitDef } from '@session-chat/components/rows/tool-run/tool-run.def'
+import { unit, type ItemSegmenter, type SegmentCtx, type SegmentItem } from '@session-chat/core/units'
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_THEME } from '@session-chat/core/theme'
+import { ROW_INSET_X } from '@session-chat/components/engine/row-metrics'
 import { makeContractCtx, renderAndMeasureUnit, type ContractInspector } from './contract'
+
+type Step = Parameters<typeof conversationStepData>[0]
 
 const WIDTH = 720
 const NARROW_WIDTH = 180
@@ -67,6 +76,7 @@ const readStrip: ContractInspector = (host) => {
   const more = host.querySelector('[data-slot="tool-call-images-more"]')?.textContent ?? ''
   return {
     stripH: strip?.offsetHeight ?? 0,
+    left: strip ? strip.getBoundingClientRect().left - host.getBoundingClientRect().left : -1,
     boxes: boxes.length,
     maxBoxW: Math.max(0, ...boxes.map((b) => b.getBoundingClientRect().width)),
     maxBoxH: Math.max(0, ...boxes.map((b) => b.getBoundingClientRect().height)),
@@ -177,7 +187,7 @@ describe('点一张缩略图', () => {
 })
 
 describe('transport picture loading', () => {
-  it('waits for the shared viewport, resolves the gallery on click, and clears recycled row pictures', async () => {
+  it('waits for the shared viewport, resolves the gallery on click, clears recycled row pictures, keeps a reseeded one', async () => {
     const host = document.createElement('div')
     Object.assign(host.style, { position: 'fixed', top: '100000px', left: '0', width: '180px' })
     document.body.appendChild(host)
@@ -215,9 +225,160 @@ describe('transport picture loading', () => {
       expect(host.querySelector('img')?.getAttribute('src')).toBeNull()
       finishNext(four[1])
       await expect.poll(() => host.querySelector('img')?.getAttribute('src')).toBe(four[1])
+      // A reseeded transcript hands the same call back as a new object: what is shown stays, nothing is fetched again.
+      const asked = requests.length
+      setItem(tool('next-picture', { imageCount: 1 }))
+      await paint()
+      expect(requests.length).toBe(asked)
+      expect(host.querySelector('button')?.getAttribute('data-image-state')).toBe('ready')
     } finally {
       dispose()
       host.remove()
     }
+  })
+})
+
+describe('transport picture loading: a reseed while the fetch is out', () => {
+  it('asks again when the answer comes back empty after a reseed, and not when nothing moved', async () => {
+    const host = document.createElement('div')
+    Object.assign(host.style, { position: 'fixed', top: '0px', left: '0', width: '180px' })
+    document.body.appendChild(host)
+    const requests: string[] = []
+    const answers: ((value: string | null) => void)[] = []
+    const commands: ChatCommands = {
+      resolveToolImage: (id, index) => {
+        requests.push(id + ':' + index)
+        return new Promise<string | null>(resolve => answers.push(resolve))
+      },
+    }
+    const [item, setItem] = createSignal(tool('reseeded', { imageCount: 1 }))
+    const dispose = render(() => (
+      <CommandsContext.Provider value={() => commands}>
+        <Tool item={item()} collapsible={false} expanded={false}
+          thumbs={toolThumbStrip(1, NARROW_WIDTH)} payload={null} codeLineH={20} />
+      </CommandsContext.Provider>
+    ), host)
+    const paint = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    const state = () => host.querySelector('button')?.getAttribute('data-image-state')
+    try {
+      await expect.poll(() => requests).toEqual(['reseeded:0'])
+      // The store reloads its history while this fetch is out: the same call comes back as a new object, and the
+      // fetch that was out answers empty (the store drops answers from before its reload).
+      setItem(tool('reseeded', { imageCount: 1 }))
+      answers[0](null)
+      await expect.poll(() => requests).toEqual(['reseeded:0', 'reseeded:0'])
+      answers[1](four[0])
+      await expect.poll(state).toBe('ready')
+      // A call whose picture really is gone is asked once.
+      setItem(tool('gone', { imageCount: 1 }))
+      await expect.poll(() => requests.length).toBe(3)
+      answers[2](null)
+      await paint()
+      await paint()
+      expect(requests.length).toBe(3)
+      expect(state()).toBe('unavailable')
+    } finally {
+      dispose()
+      host.remove()
+    }
+  })
+})
+
+// The task page draws every tool call as a conversation step, so a call's pictures have to be there too.
+describe('conversation step: the same strip under the step line', () => {
+  const translate = ((key: string) => key) as unknown as ChatTranslator
+  const step = (extra: Partial<ToolNode> = {}) => conversationStepData({
+    kind: 'unknown-tool-call', id: 'step', toolCallId: 'step', name: 'view_image', status: 'done',
+    inputSummary: 'shot.png', ...extra
+  } as Step, translate)
+
+  it.each([
+    { label: 'inline pictures', data: step({ images: [{ mimeType: 'image/png', data: four[0].split(',')[1] }] } as Partial<ToolNode>), boxes: 1, more: 0 },
+    { label: 'pictures left behind by history', data: step({ imageRefs: Array.from({ length: 6 }, () => ({ mimeType: 'image/png', chars: 9 })) } as Partial<ToolNode>), boxes: TOOL_THUMB_MAX, more: 2 }
+  ])('$label: reserved height = painted height', async ({ data, boxes, more }) => {
+    const reading = await renderAndMeasureUnit(conversationStepUnitDef, data, makeContractCtx({ width: WIDTH }), readStrip)
+    expect(reading.dom).toBe(reading.computed)
+    expect(reading.computed).toBe(CONVERSATION_NARRATION_H + TOOL_THUMB_STRIP_H)
+    expect(reading.inspected.boxes).toBe(boxes)
+    expect(reading.inspected.more).toBe(more)
+    expect(reading.spill).toBe(0)
+  })
+
+  it('a step without pictures keeps its one line', async () => {
+    const reading = await renderAndMeasureUnit(conversationStepUnitDef, step(), makeContractCtx({ width: WIDTH }), readStrip)
+    expect(reading.computed).toBe(CONVERSATION_NARRATION_H)
+    expect(reading.inspected.boxes).toBe(0)
+  })
+})
+
+// A finished turn folds its steps into one line ("读了 1 个文件"), so a step's pictures would be a click away again: the
+// folded line carries the strip of its last step that has any; opened, the steps below draw their own.
+describe('folded steps: the line carries the pictures', () => {
+  const translate = ((key: string) => key) as unknown as ChatTranslator
+  const read = (id: string, extra: Partial<ToolNode> = {}) => ({
+    kind: 'read-tool-call', id, seq: 0, toolCallId: id, title: 'Read', path: `/work/${id}.png`, status: 'done',
+    parentToolCallId: null, ...extra
+  }) as unknown as ChatItem
+  const inline = { images: [{ mimeType: 'image/png', data: four[0].split(',')[1] }] } as Partial<ToolNode>
+  const turn = (items: ChatItem[]) => ({ id: 't', seq: 1, initiator: 'user', outcome: { kind: 'done' },
+    items: [{ kind: 'message', id: 'u', seq: 0, role: 'user', text: 'look' }, ...items, { kind: 'message', id: 'r', seq: 0, role: 'assistant', text: 'seen' }]
+  }) as unknown as TranscriptTurn
+  const passthrough = (kind: string): ItemSegmenter => ({ kind, segment: (item: SegmentItem) => [unit(item.kind, item, item, { key: 'self' })] })
+  const segmenters = Object.fromEntries(['message', 'read-tool-call', 'tool-run', 'turn-process', 'turn-outcome'].map((k) => [k, passthrough(k)]))
+  const runOf = (items: ChatItem[], open: boolean) => flattenTier([turn(items)], {
+    caches: {}, expanded: () => false, active: false, plan: () => null, translate, pendingToolCallIds: () => new Set<string>(),
+    terminalSnapshot: () => null, agentConversation: true,
+    // The turn's own process is open; only the run's fold is under test.
+    isTurnProcessExpanded: (id: string) => id !== toolRunId('t', items[0].id) || open
+  } as unknown as SegmentCtx, segmenters)
+    // The conversation layout gathers a turn's steps into one block; the run is one of its units.
+    .flatMap((u) => [u, ...((u.data as { units?: typeof u[] }).units ?? [])]).find((u) => u.kind === 'tool-run')?.data as ToolRunItem
+
+  it('folded, the line holds the last step with pictures; opened, none', () => {
+    const steps = [read('a', inline), read('b', inline), read('c')]
+    expect(runOf(steps, false).pictureStep?.id).toBe('b')
+    expect(runOf(steps, true).pictureStep).toBeUndefined()
+    expect(runOf([read('c')], false).pictureStep).toBeUndefined()
+  })
+
+  const run = (pictureStep?: ToolNode): ToolRunItem => ({ kind: 'tool-run', id: 'run', turnId: 't', label: 'Read 1 file', stepCount: 1,
+    ...(pictureStep ? { pictureStep } : {}) })
+  const bare = run()
+  it.each([
+    { label: 'inline pictures', data: run(read('a', inline) as unknown as ToolNode), boxes: 1, more: 0 },
+    { label: 'pictures left behind by history', data: run(read('a', { imageRefs: Array.from({ length: 6 }, () => ({ mimeType: 'image/png', chars: 9 })) } as Partial<ToolNode>) as unknown as ToolNode), boxes: TOOL_THUMB_MAX, more: 2 }
+  ])('$label: reserved height = painted height, one strip taller than the bare line', async ({ data, boxes, more }) => {
+    const plain = await renderAndMeasureUnit(toolRunUnitDef, bare, makeContractCtx({ width: WIDTH }), readStrip)
+    const reading = await renderAndMeasureUnit(toolRunUnitDef, data, makeContractCtx({ width: WIDTH }), readStrip)
+    expect(reading.dom).toBe(reading.computed)
+    expect(reading.computed).toBe(plain.computed + TOOL_THUMB_STRIP_H)
+    expect(plain.inspected.boxes).toBe(0)
+    expect(reading.inspected.boxes).toBe(boxes)
+    expect(reading.inspected.more).toBe(more)
+    expect(reading.spill).toBe(0)
+  })
+
+  // Rows sit in their chrome: the tool-run line and a classic tool row are inset by ROW_INSET_X, a conversation step is not.
+  it('opening the line moves the strip down only: same column as the opened row, in both layouts', async () => {
+    const data = run(read('a', inline) as unknown as ToolNode)
+    const conversation = { ...DEFAULT_THEME, layout: { ...DEFAULT_THEME.layout, agentConversation: true } }
+    const foldedConversation = await renderAndMeasureUnit(toolRunUnitDef, data, makeContractCtx({ width: WIDTH, theme: conversation }), readStrip)
+    const step = conversationStepData({ kind: 'read-tool-call', id: 'a', toolCallId: 'a', title: 'Read', path: '/work/a.png',
+      status: 'done', ...inline } as unknown as Step, translate)
+    const openedStep = await renderAndMeasureUnit(conversationStepUnitDef, step, makeContractCtx({ width: WIDTH, theme: conversation }), readStrip)
+    expect(foldedConversation.inspected.left + ROW_INSET_X).toBe(openedStep.inspected.left)
+
+    const foldedClassic = await renderAndMeasureUnit(toolRunUnitDef, data, makeContractCtx({ width: WIDTH }), readStrip)
+    const openedTool = await renderAndMeasureUnit(toolUnitDef, tool('a', { images: [four[0]] }), makeContractCtx({ width: WIDTH }), readStrip)
+    expect(foldedClassic.inspected.left + ROW_INSET_X).toBe(openedTool.inspected.left + ROW_INSET_X)
+    for (const reading of [foldedConversation, foldedClassic]) expect(reading.dom).toBe(reading.computed)
+  })
+
+  it('narrow: still one strip, as many boxes as the width holds', async () => {
+    const data = run(read('a', { images: four.map((url) => ({ mimeType: 'image/png', data: url.split(',')[1] })) } as Partial<ToolNode>) as unknown as ToolNode)
+    const reading = await renderAndMeasureUnit(toolRunUnitDef, data, makeContractCtx({ width: NARROW_WIDTH }), readStrip)
+    expect(reading.dom).toBe(reading.computed)
+    expect(reading.inspected.boxes).toBe(1)
+    expect(reading.inspected.more).toBe(3)
   })
 })

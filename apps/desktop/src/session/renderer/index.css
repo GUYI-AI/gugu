@@ -357,11 +357,10 @@
      项用的就是不透明的 background-quaternary-1(dropdown-menu.tsx:95/120),桥接跟着它走。
      兜底段仍是咕咕的 --hover,所以咕咕作用域一个像素不变。 */
   --color-accent: var(--background-quaternary-1, var(--hover));
-  --color-accent-foreground: var(--foreground, var(--text-primary));
-  /* 会话页语义层没有「实心 destructive 表面」这一格:--background-destructive 是 red-2/red-3
-     的淡底,配 destructive-foreground 的白字会白底白字。Radix 里承担实心填充的是 step 9,
-     所以这里落到 --red-9(与咕咕把它落到 --danger 同一个角色) */
-  --color-destructive: var(--red-9, var(--danger));
+  --color-accent-foreground: var(--foreground, var(--fg));
+  /* 会话页语义层没有「实心 destructive 表面」这一格:--background-destructive 是淡底,
+     配 destructive-foreground 的白字会白底白字。实心填充直接取咕咕的 --danger。 */
+  --color-destructive: var(--danger);
   /* ⚠️ 这一条是本组唯一**不是** `var(会话页 token, 咕咕 token)` 两段式的,不是疏漏,别当先例引用。
      两段式存在的理由是「会话页 token 只在 .emlight/.emdark 下有定义,咕咕作用域取不到」;
      而 `--color-white` 不属于任何一边的主题块 —— 它是 Tailwind v4 **默认主题**自带的色标,
@@ -542,691 +541,383 @@
   display: none !important;
 }
 
+/* 会话页自己的语义名(--foreground-*、--background-*、--code-*、--composer-*…)。中性色经下面那段接到咕咕的 token,
+   所以这里只写结构(哪一档面、哪一档字);两套主题结构不同的放各自的块。原来这里还有一整份 Radix P3 色阶
+   (明暗各 12 × 11 族),跟咕咕主题无关,已删。 */
 @layer base {
+  .emlight,
+  .emdark {
+    /* 页签两面(见 @theme 里 --color-tab-* 的说明):face = 面板里真正在画的那层 --background-1;strip 往下压一档。 */
+    --tab-face: var(--background-1);
+    --background-destructive: var(--danger-tint);
+    /* 状态色:红黄绿蓝都是咕咕那一个(tokens.css 的 --danger / --warn / --ok / --live 与各自的 -fg、-tint)。字用 -fg,底用 tint,线是本色 50%。 */
+    --foreground-destructive: var(--danger-fg);
+    --background-neutral: var(--neutral-12);
+    --foreground-neutral: var(--neutral-1);
+    --border-destructive: color-mix(in oklab, var(--danger) 50%, transparent);
+    /* @@@shape-table — = --radius-control(8px),shadcn 组件相对公式的基准。 */
+    --radius: 8px;
+    /* @@@live-accent — 「运行中」是 live。 */
+    --status-in-progress: var(--live);
+    --status-in-review: var(--ok);
+    --code-line-number: var(--foreground-passive);
+    --code-gutter: var(--code-bg);
+    --code-inserted-text-bg: color-mix(in oklab, var(--ok) 25%, transparent);
+    --code-inserted-line-bg: color-mix(in oklab, var(--ok) 10%, transparent);
+    --code-removed-text-bg: color-mix(in oklab, var(--danger) 25%, transparent);
+    --code-removed-line-bg: color-mix(in oklab, var(--danger) 10%, transparent);
+    --code-selection-bg: var(--selection);
+    --xterm-fg: var(--foreground);
+    --xterm-cursor: var(--foreground);
+    --xterm-cursor-accent: var(--foreground-inverse);
+    --xterm-selection-bg: var(--text-selection);
+    --xterm-selection-fg: var(--selection-foreground);
+    /* diff 与代码编辑器的增删底同样取状态色。 */
+    --foreground-diff-added: var(--ok);
+    --foreground-diff-modified: var(--warn);
+    --foreground-diff-deleted: var(--danger);
+    --foreground-success: var(--ok-fg);
+    --background-success: var(--ok-tint);
+    --background-success-hover: color-mix(in srgb, var(--ok) 18%, transparent);
+    --border-success: color-mix(in oklab, var(--ok) 50%, transparent);
+    --foreground-error: var(--danger-fg);
+    --background-error: var(--danger-tint);
+    --background-error-hover: var(--danger-tint-press);
+    --foreground-warning: var(--warn-fg);
+    --background-warning: var(--warn-tint);
+    --background-warning-hover: color-mix(in srgb, var(--warn) 20%, transparent);
+    --border-warning: color-mix(in oklab, var(--warn) 50%, transparent);
+    --foreground-info: var(--live-fg);
+    --background-info: var(--live-soft);
+    --background-info-hover: color-mix(in oklab, var(--live) 20%, transparent);
+    --border-info: color-mix(in oklab, var(--live) 50%, transparent);
+    --foreground-conflict: var(--vcs-conflict);
+    --foreground-merged: var(--vcs-merged);
+    /* ChatComposer 主题契约(packages/session-ui/.../chat-composer/composer-contract.css.ts)接到上面这套。 */
+    --composer-fg: var(--foreground);
+    --composer-fg-muted: var(--foreground-muted);
+    --composer-fg-passive: var(--foreground-passive);
+    --composer-fg-destructive: var(--foreground-destructive);
+    --composer-fg-warning: var(--foreground-warning);
+    --composer-fg-info: var(--foreground-info);
+    --composer-border: var(--border);
+    --composer-border-strong: var(--border-1);
+    --composer-border-focus: var(--border-primary);
+    --composer-border-destructive: var(--border-destructive);
+    --composer-surface: var(--background-1);
+    --composer-surface-hover: var(--background-2);
+    --composer-surface-selected: var(--background-3);
+    --composer-surface-elevated: var(--background);
+    --composer-surface-elevated-hover: var(--background-1);
+    --composer-accent: var(--primary-button-background);
+    --composer-accent-hover: var(--primary-button-background-hover);
+    --composer-accent-fg: var(--primary-button-foreground);
+    --composer-accent-border: var(--primary-button-border);
+    /* @@@live-accent — 滑杆/强度这类「当前档」是 live。 */
+    --composer-accent-solid: var(--live);
+    --composer-accent-text: var(--live);
+    /* 思考滑杆:圆钮明暗都是纯白,轨道取中性阶梯。 */
+    --composer-knob: var(--color-white);
+    --composer-destructive-bg: var(--background-error);
+    --composer-destructive-hover: var(--background-error-hover);
+    --composer-destructive-selected: var(--background-error-hover);
+    --composer-error-surface: var(--background-error);
+    --composer-error-border: var(--border-destructive);
+    --composer-error-fg: var(--foreground-error);
+    --composer-warning-surface: var(--background-warning);
+    --composer-warning-border: var(--border-warning);
+    --composer-warning-surface-fg: var(--foreground-warning);
+    --composer-info-surface: var(--background-info);
+    --composer-info-border: var(--border-info);
+    --composer-info-surface-fg: var(--foreground-info);
+  }
   .emlight {
-    /* ── Color palette (Radix P3) ──────────────────────────────── */
-
-    /* Neutral */
-    --neutral-1: color(display-p3 0.988 0.988 0.988);
-    --neutral-2: color(display-p3 0.975 0.975 0.975);
-    --neutral-3: color(display-p3 0.939 0.939 0.939);
-    --neutral-4: color(display-p3 0.908 0.908 0.908);
-    --neutral-5: color(display-p3 0.88 0.88 0.88);
-    --neutral-6: color(display-p3 0.849 0.849 0.849);
-    --neutral-7: color(display-p3 0.807 0.807 0.807);
-    --neutral-8: color(display-p3 0.732 0.732 0.732);
-    --neutral-9: color(display-p3 0.553 0.553 0.553);
-    --neutral-10: color(display-p3 0.512 0.512 0.512);
-    --neutral-11: color(display-p3 0.392 0.392 0.392);
-    --neutral-12: color(display-p3 0.125 0.125 0.125);
-
-    /* Red */
-    --red-1: color(display-p3 0.998 0.989 0.988);
-    --red-2: color(display-p3 0.995 0.971 0.971);
-    --red-3: color(display-p3 0.985 0.925 0.925);
-    --red-4: color(display-p3 0.999 0.866 0.866);
-    --red-5: color(display-p3 0.984 0.812 0.811);
-    --red-6: color(display-p3 0.955 0.751 0.749);
-    --red-7: color(display-p3 0.915 0.675 0.672);
-    --red-8: color(display-p3 0.872 0.575 0.572);
-    --red-9: color(display-p3 0.83 0.329 0.324);
-    --red-10: color(display-p3 0.798 0.294 0.285);
-    --red-11: color(display-p3 0.744 0.234 0.222);
-    --red-12: color(display-p3 0.36 0.115 0.143);
-
-    /* Green (Radix grass) */
-    --green-1: color(display-p3 0.986 0.996 0.985);
-    --green-2: color(display-p3 0.966 0.983 0.964);
-    --green-3: color(display-p3 0.923 0.965 0.917);
-    --green-4: color(display-p3 0.872 0.94 0.865);
-    --green-5: color(display-p3 0.811 0.908 0.802);
-    --green-6: color(display-p3 0.733 0.864 0.724);
-    --green-7: color(display-p3 0.628 0.803 0.622);
-    --green-8: color(display-p3 0.477 0.72 0.482);
-    --green-9: color(display-p3 0.38 0.647 0.378);
-    --green-10: color(display-p3 0.344 0.598 0.342);
-    --green-11: color(display-p3 0.263 0.488 0.261);
-    --green-12: color(display-p3 0.151 0.233 0.153);
-
-    /* Blue */
-    --blue-1: color(display-p3 0.986 0.992 0.999);
-    --blue-2: color(display-p3 0.96 0.979 0.998);
-    --blue-3: color(display-p3 0.912 0.956 0.991);
-    --blue-4: color(display-p3 0.853 0.932 1);
-    --blue-5: color(display-p3 0.788 0.894 0.998);
-    --blue-6: color(display-p3 0.709 0.843 0.976);
-    --blue-7: color(display-p3 0.606 0.777 0.947);
-    --blue-8: color(display-p3 0.451 0.688 0.917);
-    --blue-9: color(display-p3 0.247 0.556 0.969);
-    --blue-10: color(display-p3 0.234 0.523 0.912);
-    --blue-11: color(display-p3 0.15 0.44 0.84);
-    --blue-12: color(display-p3 0.102 0.193 0.379);
-
-    /* Yellow */
-    --yellow-1: color(display-p3 0.992 0.992 0.978);
-    --yellow-2: color(display-p3 0.995 0.99 0.922);
-    --yellow-3: color(display-p3 0.997 0.982 0.749);
-    --yellow-4: color(display-p3 0.992 0.953 0.627);
-    --yellow-5: color(display-p3 0.984 0.91 0.51);
-    --yellow-6: color(display-p3 0.934 0.847 0.474);
-    --yellow-7: color(display-p3 0.876 0.785 0.46);
-    --yellow-8: color(display-p3 0.811 0.689 0.313);
-    --yellow-9: color(display-p3 1 0.92 0.22);
-    --yellow-10: color(display-p3 0.977 0.868 0.291);
-    --yellow-11: color(display-p3 0.6 0.44 0);
-    --yellow-12: color(display-p3 0.271 0.233 0.137);
-
-    /* Purple */
-    --purple-1: color(display-p3 0.995 0.988 0.996);
-    --purple-2: color(display-p3 0.983 0.971 0.993);
-    --purple-3: color(display-p3 0.963 0.931 0.989);
-    --purple-4: color(display-p3 0.937 0.888 0.981);
-    --purple-5: color(display-p3 0.904 0.837 0.966);
-    --purple-6: color(display-p3 0.86 0.774 0.942);
-    --purple-7: color(display-p3 0.799 0.69 0.91);
-    --purple-8: color(display-p3 0.719 0.583 0.874);
-    --purple-9: color(display-p3 0.523 0.318 0.751);
-    --purple-10: color(display-p3 0.483 0.289 0.7);
-    --purple-11: color(display-p3 0.473 0.281 0.687);
-    --purple-12: color(display-p3 0.234 0.132 0.363);
-
-    /* Orange */
-    --orange-1: color(display-p3 0.995 0.988 0.985);
-    --orange-2: color(display-p3 0.994 0.968 0.934);
-    --orange-3: color(display-p3 0.989 0.938 0.85);
-    --orange-4: color(display-p3 1 0.874 0.687);
-    --orange-5: color(display-p3 1 0.821 0.583);
-    --orange-6: color(display-p3 0.975 0.767 0.545);
-    --orange-7: color(display-p3 0.919 0.693 0.486);
-    --orange-8: color(display-p3 0.877 0.597 0.379);
-    --orange-9: color(display-p3 0.9 0.45 0.2);
-    --orange-10: color(display-p3 0.87 0.409 0.164);
-    --orange-11: color(display-p3 0.76 0.34 0);
-    --orange-12: color(display-p3 0.323 0.185 0.127);
-
-    /* Cyan */
-    --cyan-1: color(display-p3 0.982 0.992 0.996);
-    --cyan-2: color(display-p3 0.955 0.981 0.984);
-    --cyan-3: color(display-p3 0.888 0.965 0.975);
-    --cyan-4: color(display-p3 0.821 0.941 0.959);
-    --cyan-5: color(display-p3 0.751 0.907 0.935);
-    --cyan-6: color(display-p3 0.671 0.862 0.9);
-    --cyan-7: color(display-p3 0.564 0.8 0.854);
-    --cyan-8: color(display-p3 0.388 0.715 0.798);
-    --cyan-9: color(display-p3 0.282 0.627 0.765);
-    --cyan-10: color(display-p3 0.264 0.583 0.71);
-    --cyan-11: color(display-p3 0.08 0.48 0.63);
-    --cyan-12: color(display-p3 0.108 0.232 0.277);
-
-    /* Amber */
-    --amber-1: color(display-p3 0.995 0.992 0.985);
-    --amber-2: color(display-p3 0.994 0.986 0.921);
-    --amber-3: color(display-p3 0.994 0.969 0.782);
-    --amber-4: color(display-p3 0.989 0.937 0.65);
-    --amber-5: color(display-p3 0.97 0.902 0.527);
-    --amber-6: color(display-p3 0.936 0.844 0.506);
-    --amber-7: color(display-p3 0.89 0.762 0.443);
-    --amber-8: color(display-p3 0.85 0.65 0.3);
-    --amber-9: color(display-p3 1 0.77 0.26);
-    --amber-10: color(display-p3 0.959 0.741 0.274);
-    --amber-11: color(display-p3 0.64 0.4 0);
-    --amber-12: color(display-p3 0.294 0.208 0.145);
-
-    /* Violet */
-    --violet-1: color(display-p3 0.991 0.988 0.995);
-    --violet-2: color(display-p3 0.978 0.974 0.998);
-    --violet-3: color(display-p3 0.953 0.943 0.993);
-    --violet-4: color(display-p3 0.916 0.897 1);
-    --violet-5: color(display-p3 0.876 0.851 1);
-    --violet-6: color(display-p3 0.825 0.793 0.981);
-    --violet-7: color(display-p3 0.752 0.712 0.943);
-    --violet-8: color(display-p3 0.654 0.602 0.902);
-    --violet-9: color(display-p3 0.417 0.341 0.784);
-    --violet-10: color(display-p3 0.381 0.306 0.741);
-    --violet-11: color(display-p3 0.383 0.317 0.702);
-    --violet-12: color(display-p3 0.179 0.15 0.359);
-
-    /* Jade */
-    --jade-1: color(display-p3 0.986 0.996 0.992);
-    --jade-2: color(display-p3 0.962 0.983 0.969);
-    --jade-3: color(display-p3 0.912 0.965 0.932);
-    --jade-4: color(display-p3 0.858 0.941 0.893);
-    --jade-5: color(display-p3 0.795 0.909 0.847);
-    --jade-6: color(display-p3 0.715 0.864 0.791);
-    --jade-7: color(display-p3 0.603 0.802 0.718);
-    --jade-8: color(display-p3 0.44 0.72 0.629);
-    --jade-9: color(display-p3 0.319 0.63 0.521);
-    --jade-10: color(display-p3 0.299 0.592 0.488);
-    --jade-11: color(display-p3 0.15 0.5 0.37);
-    --jade-12: color(display-p3 0.142 0.229 0.194);
-
-    /* ── Semantic tokens ─────────────────────────────────────── */
-    --background: var(--color-white); /* 会话页浅色作用域的底就是白;❌ var(--bg):.emlight 也会在深色宿主里单独挂上 */
-    --background-1: var(--neutral-2);
-    --background-2: var(--neutral-3);
-    --background-3: var(--neutral-4);
-
-    --foreground: var(--neutral-12);
     --foreground-inverse: white;
-    --foreground-muted: var(--neutral-11);
-    --foreground-passive: var(--neutral-8);
-
     --background-secondary: var(--background-1);
     --background-secondary-1: var(--background);
     --background-secondary-2: var(--background-3);
     --background-secondary-3: var(--neutral-6);
-
-    /* 页签两面(见 @theme 里 --color-tab-* 的说明)。
-       face 取 --background-1:gugu 皮肤下它 = --card,而**面板里真正在画的那层就是它**
-       (--code-bg / --xterm-bg 都取 --background-1)。所以这不是新挑的颜色,是把页签和
-       内容对齐到内容本来就有的那一层。亮色下 --card = #fff。
-       strip 往下压一档到 --muted(#f3f4f6)——产品里已经在用的面,不是新造的灰。 */
-    --tab-face: var(--background-1);
     --tab-strip: var(--muted, var(--background-2));
-
     --foreground-secondary: var(--neutral-12);
     --foreground-secondary-muted: var(--neutral-11);
     --foreground-secondary-passive: var(--neutral-8);
-
     --background-tertiary: var(--neutral-3);
     --background-tertiary-1: var(--neutral-4);
     --background-tertiary-2: var(--neutral-5);
     --background-tertiary-3: var(--neutral-6);
-
     --foreground-tertiary: var(--neutral-12);
     --foreground-tertiary-muted: var(--neutral-11);
     --foreground-tertiary-passive: var(--neutral-8);
-    /* @@@sidebar-rest-ink — 侧栏行静止态的字色 = 40% neutral-11 + 60% neutral-12。
-       这不是新挑的颜色:它就是共享设计契约里 `foreground-body` 的配方
-       (packages/session-ui/.../semantic-template.ts 的 'mix(neutral.11 40%, neutral.12)'),
-       会话页当初漏登记而已。亮色下解析为 #3B3B3B。
-
-       为什么静止态不能继续用 -muted(neutral-11 = #646464):那是**次要信息**那一档,
-       白底对比度只有 5.9:1。侧栏行是正文,不是次要信息 —— 让正文停在次要档,等于把
-       「读得清」押在 hover 上。owner 2026-09-05 与 Codex 并排对照后拍板加深。
-       hover/active 仍走 --foreground-tertiary(neutral-12),台阶还在,只是起点抬高了。 */
+    /* @@@sidebar-rest-ink — 侧栏行静止态 = 40% 次级字 + 60% 正文(session-ui 契约 foreground-body 的配方):行是正文,不停在次要档。owner 2026-09-05。 */
     --foreground-tertiary-rest: color-mix(in srgb, var(--neutral-11) 40%, var(--neutral-12));
-
     --background-quaternary: var(--background);
     --background-quaternary-1: var(--background-1);
     --background-quaternary-2: var(--background-2);
-
-    --background-destructive: var(--red-2);
-    --foreground-destructive: var(--red-11);
-
-    --background-neutral: var(--neutral-12);
-    --foreground-neutral: var(--neutral-1);
-
-    /* @@@primary-ink (Refs #6104) — design.md:chrome 是墨色,主按钮是前景/背景反相。
-       原来这三行钉在 jade(hue 171)上 —— 那是会话页事实上的主色,与主 app 的黑白 accent
-       方向相反,同一个产品里两个不相干的 accent。jade 阶梯**不删**,留给 product-data。 */
-    --primary-button-background: var(--foreground);
-    --primary-button-background-hover: var(--foreground-muted);
-    --primary-button-foreground: var(--background);
-    --primary-button-border: transparent;
-
     --border: var(--neutral-5);
-    --border-1: var(--neutral-8);
     --border-2: var(--neutral-9);
-    --border-destructive: var(--red-8);
-    --border-primary: var(--neutral-9);
-
-    /* @@@shape-table — = --radius-control(8px)。shadcn 组件的相对公式基准;派生档已在上面的
-       @theme 里写成语义表的字面值,❌ 别再从这里 calc 出第二套刻度。 */
-    --radius: 8px;
-
-    --selection: var(--blue-6);
-    --selection-foreground: var(--blue-12);
-
-
-    /* @@@live-accent — 「运行中」就是 design.md 说的 live。原值是 amber-11,
-       那是第二个 accent:同一个产品里「在动」用琥珀、「选中」用蓝,读者无从推断二者是一类。 */
-    --status-in-progress: var(--live);
-    --status-in-review: var(--green-10);
     --status-done: var(--neutral-9);
     --status-todo: var(--neutral-9);
     --status-cancelled: var(--neutral-9);
-
-    /* Code editor (CodeMirror) */
     --code-bg: var(--background);
     --code-fg: var(--foreground);
-    --code-error-fg: var(--foreground-destructive);
-
     --code-line-highlight: var(--background-2);
-    --code-line-number: var(--foreground-passive);
-    --code-gutter: var(--code-bg);
-    --code-inserted-text-bg: color(display-p3 0.063 0.725 0.506 / 0.251);
-    --code-inserted-line-bg: color(display-p3 0.925 0.992 0.961 / 0.502);
-    --code-removed-text-bg: color(display-p3 0.957 0.247 0.369 / 0.251);
-    --code-removed-line-bg: color(display-p3 1 0.945 0.949 / 0.502);
-    --code-selection-bg: var(--selection);
-    --code-selection-fg: var(--selection-foreground);
-    --code-inactive-selection-bg: color-mix(in srgb, var(--selection) 15.3%, transparent);
-
-    /* xterm terminals */
     --xterm-bg: var(--background);
-    --xterm-fg: var(--foreground);
-    --xterm-cursor: var(--foreground);
-    --xterm-cursor-accent: var(--foreground-inverse);
-    --xterm-selection-bg: color(display-p3 0.004 0.502 0.984 / 0.212);
-    --xterm-selection-fg: var(--blue-12);
-
-    --foreground-diff-added: var(--green-9);
-    --foreground-diff-modified: var(--amber-9);
-    --foreground-diff-deleted: var(--red-9);
-
-    /* State / indicator tokens */
-    --foreground-success: var(--green-9);
-    --background-success: var(--green-3);
-    --background-success-hover: var(--green-4);
-    --border-success: var(--green-7);
-
-    --foreground-error: var(--red-9);
-    --background-error: var(--red-3);
-    --background-error-hover: var(--red-4);
-
-    --foreground-warning: var(--amber-11);
-    --background-warning: var(--amber-3);
-    --background-warning-hover: var(--amber-4);
-    --border-warning: var(--amber-7);
-
-    /* @@@live-accent — 「信息 / 链接」保留这个角色,但值改成与 live 同一个蓝:
-       design.md「Two blues competing means one of them is decoration」。 */
-    --foreground-info: var(--live);
-    --background-info: var(--blue-3);
-    --background-info-hover: var(--blue-4);
-    --border-info: var(--blue-7);
-
-    --foreground-conflict: var(--orange-9);
-    --foreground-merged: var(--purple-9);
-
-    /* ── ChatComposer theme contract ──────────────────────────── */
-    /* Map --composer-* to desktop tokens for the @gugu/session-ui ChatComposer. */
-    /* See packages/ui/src/react/components/chat-composer/composer-contract.css.ts */
-    --composer-fg: var(--foreground);
-    --composer-fg-muted: var(--foreground-muted);
-    --composer-fg-passive: var(--foreground-passive);
-    --composer-fg-destructive: var(--foreground-destructive);
-    /* @@@one-warning (Refs #6104,2026-09-22) — 这一项现在跟 desktop token 走。
-       原来它是全表**唯一**一个不跟 token 的:亮色侧写死 #e35401,理由是「Codex 在同一处用这个橙,
-       amber-11 亮色下算出来是 ≈#805000 的暗琥珀,并排看不像一件东西」—— 那条理由解决的是
-       「amber-11 在亮色下太暗」,而它给出的解法是**再拍一个色相**,于是同一个「警告」在
-       composer 里是橙、在会话页别处是琥珀、暗色侧又跟着 token 走。三处说同一句话用三个色。
-       design.md:含义必须只有一个色;真嫌 amber-11 亮色太暗,该改的是 --foreground-warning 本身
-       (改一处全站跟着走),❌ 不是在它旁边再开一个私有色。
-       暗色侧本来就跟随 token(见下方 :1182),现在两侧同一条路径。 */
-    --composer-fg-warning: var(--foreground-warning);
-    --composer-fg-info: var(--foreground-info);
-    --composer-border: var(--border);
-    --composer-border-strong: var(--border-1);
-    --composer-border-focus: var(--border-primary);
-    --composer-border-destructive: var(--border-destructive);
-    --composer-surface: var(--background-1);
-    --composer-surface-hover: var(--background-2);
-    --composer-surface-selected: var(--background-3);
-    --composer-surface-elevated: var(--background);
-    --composer-surface-elevated-hover: var(--background-1);
-    --composer-accent: var(--primary-button-background);
-    --composer-accent-hover: var(--primary-button-background-hover);
-    --composer-accent-fg: var(--primary-button-foreground);
-    --composer-accent-border: var(--primary-button-border);
-    /* 强调色的鲜亮档与可读档 —— 见 composer-contract.css.ts 的公开契约那段:
-       --composer-accent 是发送键那颗实心按钮的底色(咕咕钉在 jade-12,近黑),
-       大面积色块与强调色文字各走阶梯 9 / 11。 */
-    /* @@@live-accent — 滑杆/强度这类「当前档」是 live;原来是 jade 的 9/11 两阶。 */
-    --composer-accent-solid: var(--live);
-    --composer-accent-text: var(--live);
-    /* 思考滑杆:圆钮明暗两套都是纯白;轨道取中性阶梯(浅 4/5 档、深 5/6 档 ≈ 契约原先写死的 0.922/0.878、0.184/0.224)。 */
-    --composer-knob: var(--color-white);
     --composer-track: var(--neutral-4);
     --composer-track-hover: var(--neutral-5);
-    --composer-destructive-bg: var(--background-error);
-    --composer-destructive-hover: var(--background-error-hover);
-    --composer-destructive-selected: var(--background-error-hover);
-    --composer-error-surface: var(--background-error);
-    --composer-error-border: var(--border-destructive);
-    --composer-error-fg: var(--foreground-error);
-    --composer-warning-surface: var(--background-warning);
-    --composer-warning-border: var(--border-warning);
-    --composer-warning-surface-fg: var(--foreground-warning);
-    --composer-info-surface: var(--background-info);
-    --composer-info-border: var(--border-info);
-    --composer-info-surface-fg: var(--foreground-info);
   }
-
   .emdark {
-    /* ── Color palette (Radix dark P3) ───────────────────────── */
-
-    /* Neutral */
-    --neutral-1: color(display-p3 0.067 0.067 0.067);
-    --neutral-2: color(display-p3 0.098 0.098 0.098);
-    --neutral-3: color(display-p3 0.135 0.135 0.135);
-    --neutral-4: color(display-p3 0.163 0.163 0.163);
-    --neutral-5: color(display-p3 0.192 0.192 0.192);
-    --neutral-6: color(display-p3 0.228 0.228 0.228);
-    --neutral-7: color(display-p3 0.283 0.283 0.283);
-    --neutral-8: color(display-p3 0.375 0.375 0.375);
-    --neutral-9: color(display-p3 0.431 0.431 0.431);
-    --neutral-10: color(display-p3 0.484 0.484 0.484);
-    --neutral-11: color(display-p3 0.706 0.706 0.706);
-    --neutral-12: color(display-p3 0.933 0.933 0.933);
-
-    /* Red */
-    --red-1: color(display-p3 0.093 0.068 0.067);
-    --red-2: color(display-p3 0.118 0.077 0.079);
-    --red-3: color(display-p3 0.211 0.081 0.099);
-    --red-4: color(display-p3 0.287 0.079 0.113);
-    --red-5: color(display-p3 0.348 0.11 0.142);
-    --red-6: color(display-p3 0.414 0.16 0.183);
-    --red-7: color(display-p3 0.508 0.224 0.236);
-    --red-8: color(display-p3 0.659 0.298 0.297);
-    --red-9: color(display-p3 0.83 0.329 0.324);
-    --red-10: color(display-p3 0.861 0.403 0.387);
-    --red-11: color(display-p3 1 0.57 0.55);
-    --red-12: color(display-p3 0.971 0.826 0.852);
-
-    /* Green (Radix grass dark) */
-    --green-1: color(display-p3 0.062 0.083 0.067);
-    --green-2: color(display-p3 0.083 0.103 0.085);
-    --green-3: color(display-p3 0.118 0.163 0.122);
-    --green-4: color(display-p3 0.142 0.225 0.15);
-    --green-5: color(display-p3 0.178 0.279 0.186);
-    --green-6: color(display-p3 0.217 0.337 0.224);
-    --green-7: color(display-p3 0.258 0.4 0.264);
-    --green-8: color(display-p3 0.302 0.47 0.305);
-    --green-9: color(display-p3 0.38 0.647 0.378);
-    --green-10: color(display-p3 0.426 0.694 0.426);
-    --green-11: color(display-p3 0.535 0.807 0.542);
-    --green-12: color(display-p3 0.797 0.936 0.776);
-
-    /* Blue */
-    --blue-1: color(display-p3 0.057 0.081 0.122);
-    --blue-2: color(display-p3 0.072 0.098 0.147);
-    --blue-3: color(display-p3 0.078 0.154 0.27);
-    --blue-4: color(display-p3 0.033 0.197 0.37);
-    --blue-5: color(display-p3 0.08 0.245 0.441);
-    --blue-6: color(display-p3 0.14 0.298 0.511);
-    --blue-7: color(display-p3 0.195 0.361 0.6);
-    --blue-8: color(display-p3 0.239 0.434 0.72);
-    --blue-9: color(display-p3 0.247 0.556 0.969);
-    --blue-10: color(display-p3 0.344 0.612 0.973);
-    --blue-11: color(display-p3 0.49 0.72 1);
-    --blue-12: color(display-p3 0.788 0.898 0.99);
-
-    /* Yellow */
-    --yellow-1: color(display-p3 0.078 0.069 0.047);
-    --yellow-2: color(display-p3 0.103 0.094 0.063);
-    --yellow-3: color(display-p3 0.168 0.137 0.039);
-    --yellow-4: color(display-p3 0.209 0.169 0);
-    --yellow-5: color(display-p3 0.255 0.209 0);
-    --yellow-6: color(display-p3 0.31 0.261 0.07);
-    --yellow-7: color(display-p3 0.389 0.331 0.135);
-    --yellow-8: color(display-p3 0.497 0.42 0.182);
-    --yellow-9: color(display-p3 1 0.92 0.22);
-    --yellow-10: color(display-p3 1 1 0.456);
-    --yellow-11: color(display-p3 0.948 0.885 0.392);
-    --yellow-12: color(display-p3 0.959 0.934 0.731);
-
-    /* Purple */
-    --purple-1: color(display-p3 0.09 0.068 0.103);
-    --purple-2: color(display-p3 0.113 0.082 0.134);
-    --purple-3: color(display-p3 0.175 0.112 0.224);
-    --purple-4: color(display-p3 0.224 0.137 0.297);
-    --purple-5: color(display-p3 0.264 0.167 0.349);
-    --purple-6: color(display-p3 0.311 0.208 0.406);
-    --purple-7: color(display-p3 0.381 0.266 0.496);
-    --purple-8: color(display-p3 0.49 0.349 0.649);
-    --purple-9: color(display-p3 0.523 0.318 0.751);
-    --purple-10: color(display-p3 0.57 0.373 0.791);
-    --purple-11: color(display-p3 0.8 0.62 1);
-    --purple-12: color(display-p3 0.913 0.854 0.971);
-
-    /* Orange */
-    --orange-1: color(display-p3 0.088 0.07 0.057);
-    --orange-2: color(display-p3 0.113 0.089 0.061);
-    --orange-3: color(display-p3 0.189 0.12 0.056);
-    --orange-4: color(display-p3 0.262 0.132 0);
-    --orange-5: color(display-p3 0.315 0.168 0.016);
-    --orange-6: color(display-p3 0.376 0.219 0.088);
-    --orange-7: color(display-p3 0.465 0.283 0.147);
-    --orange-8: color(display-p3 0.601 0.359 0.201);
-    --orange-9: color(display-p3 0.9 0.45 0.2);
-    --orange-10: color(display-p3 0.98 0.51 0.23);
-    --orange-11: color(display-p3 1 0.63 0.38);
-    --orange-12: color(display-p3 0.98 0.883 0.775);
-
-    /* Cyan */
-    --cyan-1: color(display-p3 0.053 0.085 0.098);
-    --cyan-2: color(display-p3 0.072 0.105 0.122);
-    --cyan-3: color(display-p3 0.073 0.168 0.209);
-    --cyan-4: color(display-p3 0.063 0.216 0.277);
-    --cyan-5: color(display-p3 0.091 0.267 0.336);
-    --cyan-6: color(display-p3 0.137 0.324 0.4);
-    --cyan-7: color(display-p3 0.186 0.398 0.484);
-    --cyan-8: color(display-p3 0.23 0.496 0.6);
-    --cyan-9: color(display-p3 0.282 0.627 0.765);
-    --cyan-10: color(display-p3 0.331 0.675 0.801);
-    --cyan-11: color(display-p3 0.446 0.79 0.887);
-    --cyan-12: color(display-p3 0.757 0.919 0.962);
-
-    /* Amber */
-    --amber-1: color(display-p3 0.082 0.07 0.05);
-    --amber-2: color(display-p3 0.111 0.094 0.064);
-    --amber-3: color(display-p3 0.178 0.128 0.049);
-    --amber-4: color(display-p3 0.239 0.156 0);
-    --amber-5: color(display-p3 0.29 0.193 0);
-    --amber-6: color(display-p3 0.344 0.245 0.076);
-    --amber-7: color(display-p3 0.422 0.314 0.141);
-    --amber-8: color(display-p3 0.535 0.399 0.189);
-    --amber-9: color(display-p3 1 0.77 0.26);
-    --amber-10: color(display-p3 1 0.87 0.15);
-    --amber-11: color(display-p3 1 0.8 0.29);
-    --amber-12: color(display-p3 0.984 0.909 0.726);
-
-    /* Violet */
-    --violet-1: color(display-p3 0.077 0.071 0.118);
-    --violet-2: color(display-p3 0.101 0.084 0.141);
-    --violet-3: color(display-p3 0.154 0.123 0.256);
-    --violet-4: color(display-p3 0.191 0.148 0.345);
-    --violet-5: color(display-p3 0.226 0.182 0.396);
-    --violet-6: color(display-p3 0.269 0.223 0.449);
-    --violet-7: color(display-p3 0.326 0.277 0.53);
-    --violet-8: color(display-p3 0.399 0.346 0.656);
-    --violet-9: color(display-p3 0.417 0.341 0.784);
-    --violet-10: color(display-p3 0.477 0.402 0.823);
-    --violet-11: color(display-p3 0.72 0.65 1);
-    --violet-12: color(display-p3 0.883 0.867 0.986);
-
-    /* Jade */
-    --jade-1: color(display-p3 0.059 0.083 0.071);
-    --jade-2: color(display-p3 0.078 0.11 0.094);
-    --jade-3: color(display-p3 0.091 0.176 0.138);
-    --jade-4: color(display-p3 0.102 0.228 0.177);
-    --jade-5: color(display-p3 0.133 0.279 0.221);
-    --jade-6: color(display-p3 0.174 0.334 0.273);
-    --jade-7: color(display-p3 0.219 0.402 0.335);
-    --jade-8: color(display-p3 0.263 0.488 0.411);
-    --jade-9: color(display-p3 0.319 0.63 0.521);
-    --jade-10: color(display-p3 0.338 0.68 0.555);
-    --jade-11: color(display-p3 0.4 0.835 0.656);
-    --jade-12: color(display-p3 0.734 0.934 0.838);
-
-    /* ── Semantic tokens ─────────────────────────────────────── */
-    --background: var(--neutral-1);
-    --background-1: var(--neutral-2);
-    --background-2: var(--neutral-3);
-    --background-3: var(--neutral-4);
-
-    --foreground: var(--neutral-12);
     --foreground-inverse: var(--neutral-1);
-    --foreground-muted: var(--neutral-11);
-    --foreground-passive: var(--neutral-9);
-
     --background-secondary: var(--background);
     --background-secondary-1: var(--background-1);
     --background-secondary-2: var(--background-2);
     --background-secondary-3: var(--background-3);
-
-    /* 页签两面(见 @theme 里 --color-tab-* 的说明)。face 与亮色同源 = --background-1
-       (gugu 皮肤下 = --card = #1a1c24,正是代码编辑器/xterm 已经在画的那层)。
-       ⚠️ strip 不能照抄亮色的 --muted:暗色下 --muted(#1f2128) 比 face 还**亮**,方向会反。
-       暗色要往下沉一档,取窗体底色 --bg(#111318)——与 face 差 9 级,肉眼分得开;
-       之前试过 --color-bg-window(#0e1014) 只差 3 级,实测太糊。 */
-    --tab-face: var(--background-1);
     --tab-strip: var(--bg, var(--background));
-
     --foreground-secondary: var(--foreground);
     --foreground-secondary-muted: var(--foreground-muted);
     --foreground-secondary-passive: var(--foreground-passive);
-
     --background-tertiary: var(--background);
     --background-tertiary-1: var(--background-1);
     --background-tertiary-2: var(--background-2);
     --background-tertiary-3: var(--background-3);
-
     --foreground-tertiary: var(--foreground);
     --foreground-tertiary-muted: var(--foreground-muted);
     --foreground-tertiary-passive: var(--foreground-passive);
-    /* @@@sidebar-rest-ink — 暗色同样要给,否则 .emdark 下这个变量没定义,
-       text-foreground-tertiary-rest 会解析成空值、字直接掉回继承色。
-       暗色里 --foreground 近白、--foreground-muted 中灰,所以这个 mix 比 muted **更亮**,
-       与亮色下「比 muted 更深」是同一个意思:都是朝正文那一端走一步。 */
+    /* @@@sidebar-rest-ink — 侧栏行静止态 = 40% 次级字 + 60% 正文(session-ui 契约 foreground-body 的配方):行是正文,不停在次要档。owner 2026-09-05。 */
     --foreground-tertiary-rest: color-mix(in srgb, var(--foreground-muted) 40%, var(--foreground));
-
     --background-quaternary: var(--background-1);
     --background-quaternary-1: var(--background-2);
     --background-quaternary-2: var(--background-3);
-
-    --background-destructive: var(--red-3);
-    --background-destructive-1: color(display-p3 0.25 0.102 0.122);
-    --foreground-destructive: var(--red-9);
-    --foreground-destructive-muted: color(display-p3 0.661 0.263 0.26);
-
-    --background-neutral: var(--neutral-12);
-    --foreground-neutral: var(--neutral-1);
-
-    /* @@@primary-ink — 见 .emlight 那段。 */
-    --primary-button-background: var(--foreground);
-    --primary-button-background-hover: var(--foreground-muted);
-    --primary-button-foreground: var(--background);
-    --primary-button-border: transparent;
-
     --border: var(--neutral-6);
-    --border-1: var(--neutral-7);
     --border-2: var(--neutral-8);
-    --border-destructive: var(--red-8);
-    --border-primary: var(--neutral-10);
-
-    /* @@@shape-table — = --radius-control(8px)。shadcn 组件的相对公式基准;派生档已在上面的
-       @theme 里写成语义表的字面值,❌ 别再从这里 calc 出第二套刻度。 */
-    --radius: 8px;
-
-    --selection: var(--blue-9);
-    --selection-foreground: var(--blue-12);
-
-
-    --status-in-progress: var(--live);
-    --status-in-review: var(--green-10);
     --status-done: var(--neutral-10);
     --status-todo: var(--neutral-10);
     --status-cancelled: var(--neutral-10);
-
-    /* Code editor (CodeMirror) */
     --code-bg: var(--background-1);
     --code-fg: var(--foreground-muted);
-    --code-error-fg: color(display-p3 1 0.592 0.49);
-
     --code-line-highlight: var(--neutral-5);
-    --code-line-number: color(display-p3 0.227 0.227 0.227);
-    --code-gutter: var(--code-bg);
-    /* Semi-transparent so the selection layer beneath stays visible (ENG-1248). */
-    --code-inserted-text-bg: color(display-p3 0.145 0.282 0.176 / 0.45);
-    --code-inserted-line-bg: color(display-p3 0.106 0.165 0.118 / 0.55);
-    --code-removed-text-bg: color(display-p3 0.38 0.086 0.137 / 0.45);
-    --code-removed-line-bg: color(display-p3 0.231 0.071 0.098 / 0.55);
-    --code-selection-bg: color(display-p3 0.3 0.52 0.82 / 0.7);
-    --code-selection-fg: color(display-p3 0.95 0.96 0.98);
-    --code-inactive-selection-bg: color(display-p3 0.3 0.52 0.82 / 0.35);
-
-    /* xterm terminals */
     --xterm-bg: var(--background-1);
-    --xterm-fg: var(--foreground);
-    --xterm-cursor: var(--foreground);
-    --xterm-cursor-accent: var(--foreground-inverse);
-    --xterm-selection-bg: color(display-p3 0.224 0.557 1 / 0.475);
-    --xterm-selection-fg: var(--blue-11);
-
-    --foreground-diff-added: var(--green-10);
-    --foreground-diff-modified: var(--amber-9);
-    --foreground-diff-deleted: var(--red-9);
-
-    /* State / indicator tokens */
-    --foreground-success: var(--green-9);
-    --background-success: var(--green-3);
-    --background-success-hover: var(--green-4);
-    --border-success: var(--green-7);
-
-    --foreground-error: var(--red-9);
-    --background-error: var(--red-3);
-    --background-error-hover: var(--red-4);
-
-    --foreground-warning: var(--amber-11);
-    --background-warning: var(--amber-3);
-    --background-warning-hover: var(--amber-4);
-    --border-warning: var(--amber-7);
-
-    /* @@@live-accent — 「信息 / 链接」保留这个角色,但值改成与 live 同一个蓝:
-       design.md「Two blues competing means one of them is decoration」。 */
-    --foreground-info: var(--live);
-    --background-info: var(--blue-3);
-    --background-info-hover: var(--blue-4);
-    --border-info: var(--blue-7);
-
-    --foreground-conflict: var(--orange-9);
-    --foreground-merged: var(--purple-9);
-
-    /* ── ChatComposer theme contract ──────────────────────────── */
-    --composer-fg: var(--foreground);
-    --composer-fg-muted: var(--foreground-muted);
-    --composer-fg-passive: var(--foreground-passive);
-    --composer-fg-destructive: var(--foreground-destructive);
-    --composer-fg-warning: var(--foreground-warning);
-    --composer-fg-info: var(--foreground-info);
-    --composer-border: var(--border);
-    --composer-border-strong: var(--border-1);
-    --composer-border-focus: var(--border-primary);
-    --composer-border-destructive: var(--border-destructive);
-    --composer-surface: var(--background-1);
-    --composer-surface-hover: var(--background-2);
-    --composer-surface-selected: var(--background-3);
-    --composer-surface-elevated: var(--background);
-    --composer-surface-elevated-hover: var(--background-1);
-    --composer-accent: var(--primary-button-background);
-    --composer-accent-hover: var(--primary-button-background-hover);
-    --composer-accent-fg: var(--primary-button-foreground);
-    --composer-accent-border: var(--primary-button-border);
-    /* 强调色的鲜亮档与可读档 —— 见 composer-contract.css.ts 的公开契约那段:
-       --composer-accent 是发送键那颗实心按钮的底色(咕咕钉在 jade-12,近黑),
-       大面积色块与强调色文字各走阶梯 9 / 11。 */
-    /* @@@live-accent — 滑杆/强度这类「当前档」是 live;原来是 jade 的 9/11 两阶。 */
-    --composer-accent-solid: var(--live);
-    --composer-accent-text: var(--live);
-    --composer-knob: var(--color-white);
     --composer-track: var(--neutral-5);
     --composer-track-hover: var(--neutral-6);
-    --composer-destructive-bg: var(--background-error);
-    --composer-destructive-hover: var(--background-error-hover);
-    --composer-destructive-selected: var(--background-error-hover);
-    --composer-error-surface: var(--background-error);
-    --composer-error-border: var(--border-destructive);
-    --composer-error-fg: var(--foreground-error);
-    --composer-warning-surface: var(--background-warning);
-    --composer-warning-border: var(--border-warning);
-    --composer-warning-surface-fg: var(--foreground-warning);
-    --composer-info-surface: var(--background-info);
-    --composer-info-border: var(--border-info);
-    --composer-info-surface-fg: var(--foreground-info);
   }
+}
+
+/* 会话页两套 token 命名空间(上面那份会话页自己的变量、session-ui 生成的 --em-*)接到咕咕的 token 上。
+   原来这段是 EmdashSessionFrame 往 .gugu-skin 上注入的桥,只管会话页挂载点里面;同一份 index.css 的
+   utility(text-foreground-muted…)、session-ui 的 portal、聊天面板在挂载点外面也在用,那里取到的是
+   会话页自带的 Radix P3 色阶,不跟咕咕主题。现在挂在 .emlight / .emdark 上 —— 挂载元素和
+   SessionUiTheme 带的都是跟随咕咕主题的那一个,所以哪里都是同一套值。
+   不分层:压过上面 @layer base 与 session-ui @layer tokens 里的同名默认值。 */
+.emlight,
+.emdark {
+
+  /* UNPREFIXED neutral ramp: 1 = app bg … 12 = primary text */
+  --neutral-1: var(--bg);
+  --neutral-2: var(--card);
+  --neutral-3: var(--card);
+  --neutral-4: var(--muted);
+  --neutral-5: color-mix(in srgb, var(--bg) 82%, var(--fg));
+  --neutral-6: var(--border-color);
+  --neutral-7: var(--border-strong);
+  --neutral-8: color-mix(in srgb, var(--border-strong) 50%, var(--fg));
+  --neutral-9: var(--faint-fg);
+  --neutral-10: var(--faint-fg);
+  --neutral-11: var(--muted-fg);
+  --neutral-12: var(--fg);
+  --neutral-contrast: var(--primary-fg);
+
+  /* explicit background/foreground/border steps (in case some are raw, not var(--neutral-n)) */
+  --background: var(--bg);
+  --background-1: var(--card);
+  --background-2: var(--card);
+  --background-3: var(--muted);
+  --foreground: var(--fg);
+  --foreground-muted: var(--muted-fg);
+  --foreground-passive: var(--faint-fg);
+  --border-1: var(--border-strong);
+  --border-primary: var(--faint-fg);
+
+  /* accent / primary button = gugu mono accent (white on dark / black on light) */
+  --primary-button-background: var(--primary);
+  --primary-button-background-hover: var(--accent-hover);
+  --primary-button-foreground: var(--primary-fg);
+  --primary-button-border: var(--primary);
+  --ring: var(--primary);
+  --selection: var(--text-selection);
+  --selection-foreground: var(--fg);
+
+  /* em neutral ramp (mirror of unprefixed) */
+  --em-neutral-1: var(--bg);
+  --em-neutral-2: var(--card);
+  --em-neutral-3: var(--card);
+  --em-neutral-4: var(--muted);
+  --em-neutral-5: color-mix(in srgb, var(--bg) 82%, var(--fg));
+  --em-neutral-6: var(--border-color);
+  --em-neutral-7: var(--border-strong);
+  --em-neutral-8: color-mix(in srgb, var(--border-strong) 50%, var(--fg));
+  --em-neutral-9: var(--faint-fg);
+  --em-neutral-10: var(--faint-fg);
+  --em-neutral-11: var(--muted-fg);
+  --em-neutral-12: var(--fg);
+  --em-neutral-contrast: var(--primary-fg);
+
+  /* em accent ramp = gugu mono accent */
+  --em-accent-9: var(--primary);
+  --em-accent-10: var(--accent-hover);
+  --em-accent-11: var(--fg);
+  --em-accent-12: var(--fg);
+  --em-accent-contrast: var(--primary-fg);
+
+  /* em backgrounds */
+  --em-background: var(--bg);
+  --em-background-1: var(--card);
+  --em-background-2: var(--card);
+  --em-background-3: var(--muted);
+  --em-background-secondary: var(--sidebar);
+  --em-background-tertiary: var(--card);
+  --em-background-quaternary: var(--bg);
+  --em-background-neutral: var(--fg);
+  --em-foreground-neutral: var(--bg);
+
+  /* em foreground */
+  --em-foreground: var(--fg);
+  --em-foreground-inverse: var(--primary-fg);
+  --em-foreground-body: var(--fg);
+  --em-foreground-muted: var(--muted-fg);
+  --em-foreground-passive: var(--faint-fg);
+  --em-foreground-secondary: var(--fg);
+  --em-foreground-secondary-muted: var(--muted-fg);
+  --em-foreground-secondary-passive: var(--faint-fg);
+  --em-foreground-tertiary: var(--fg);
+  --em-foreground-tertiary-muted: var(--muted-fg);
+  --em-foreground-tertiary-passive: var(--faint-fg);
+  /* 状态字:会话页写字用的红/黄/绿/蓝接咕咕可读的那一档(≥4.5)。没桥之前取 session-ui 自己生成的色阶,浅色下 2.9–4.5。 */
+  --em-foreground-destructive: var(--danger-fg);
+  --em-foreground-warning: var(--warn-fg);
+  --em-foreground-success: var(--ok-fg);
+  --em-foreground-info: var(--live-fg);
+
+  /* em surface families ——每个面的 rest / hover / press / selected 四挡。
+     @@@state-ladder-mix (#2322):hover/press/selected 一律用咕咕那条阶梯的实色配方
+     (--state-tint + --state-*-amount,定义见 styles/tokens.css),对每个面 color-mix 出
+     **与咕咕主体同深度**的实色。桥以前在这里自己拍 92%/85%(= 8%/15% 压色),比咕咕的
+     2.4%/7.x% 深一倍到五倍 —— owner 2026-09-09 抱怨的「深浅不统一」就是这组数。
+     ❌ 别在这里再拍百分比;要调阶梯去改 tokens.css 那一处,两边一起动才叫同源。 */
+  --em-surface-sunken: var(--page);
+  --em-surface-sunken-hover: color-mix(in srgb, var(--state-tint) var(--state-hover-amount), var(--page));
+  --em-surface-sunken-press: color-mix(in srgb, var(--state-tint) var(--state-press-amount), var(--page));
+  --em-surface-sunken-selected: color-mix(in srgb, var(--state-tint-selected) var(--state-selected-amount), var(--page));
+  --em-surface-base: var(--bg);
+  --em-surface-base-hover: color-mix(in srgb, var(--state-tint) var(--state-hover-amount), var(--bg));
+  --em-surface-base-press: color-mix(in srgb, var(--state-tint) var(--state-press-amount), var(--bg));
+  --em-surface-base-selected: color-mix(in srgb, var(--state-tint-selected) var(--state-selected-amount), var(--bg));
+  --em-surface-base-emphasis: var(--card);
+  --em-surface-base-emphasis-hover: color-mix(in srgb, var(--state-tint) var(--state-hover-amount), var(--card));
+  --em-surface-base-emphasis-press: color-mix(in srgb, var(--state-tint) var(--state-press-amount), var(--card));
+  --em-surface-base-emphasis-selected: color-mix(in srgb, var(--state-tint-selected) var(--state-selected-amount), var(--card));
+  --em-surface-elevated: var(--card);
+  --em-surface-elevated-hover: color-mix(in srgb, var(--state-tint) var(--state-hover-amount), var(--card));
+  --em-surface-elevated-press: color-mix(in srgb, var(--state-tint) var(--state-press-amount), var(--card));
+  --em-surface-elevated-selected: color-mix(in srgb, var(--state-tint-selected) var(--state-selected-amount), var(--card));
+  --em-surface-elevated-emphasis: var(--card);
+  --em-surface-elevated-emphasis-hover: color-mix(in srgb, var(--state-tint) var(--state-hover-amount), var(--card));
+  --em-surface-elevated-emphasis-press: color-mix(in srgb, var(--state-tint) var(--state-press-amount), var(--card));
+  --em-surface-elevated-emphasis-selected: color-mix(in srgb, var(--state-tint-selected) var(--state-selected-amount), var(--card));
+  --em-surface: var(--bg);
+  --em-surface-hover: color-mix(in srgb, var(--state-tint) var(--state-hover-amount), var(--bg));
+  --em-surface-press: color-mix(in srgb, var(--state-tint) var(--state-press-amount), var(--bg));
+  --em-surface-selected: color-mix(in srgb, var(--state-tint-selected) var(--state-selected-amount), var(--bg));
+  --em-surface-emphasis: var(--card);
+  --em-surface-emphasis-hover: color-mix(in srgb, var(--state-tint) var(--state-hover-amount), var(--card));
+  --em-surface-emphasis-press: color-mix(in srgb, var(--state-tint) var(--state-press-amount), var(--card));
+  --em-surface-emphasis-selected: color-mix(in srgb, var(--state-tint-selected) var(--state-selected-amount), var(--card));
+  /* paper = 对话流那张「纸」。它的**静息色**故意不桥接(保留任务页自己的纸色,换它是另一件事),
+     这里只把它的三个交互档拉回同一条阶梯 —— 状态深浅统一,表面色不动。 */
+  --em-surface-paper-hover: color-mix(in srgb, var(--state-tint) var(--state-hover-amount), var(--em-surface-paper));
+  --em-surface-paper-press: color-mix(in srgb, var(--state-tint) var(--state-press-amount), var(--em-surface-paper));
+  --em-surface-paper-selected: color-mix(in srgb, var(--state-tint-selected) var(--state-selected-amount), var(--em-surface-paper));
+  --em-surface-input: var(--input-bg);
+  --em-surface-foreground: var(--fg);
+  --em-surface-border: var(--border-color);
+
+  /* em borders / selection */
+  --em-border: var(--border-color);
+  --em-border-1: var(--border-strong);
+  --em-border-2: var(--border-strong);
+  --em-border-primary: var(--faint-fg);
+  --em-selection: var(--bg-accent-soft);
+  --em-selection-foreground: var(--fg);
+
+  /* em primary button = gugu accent */
+  --em-primary-button-background: var(--primary);
+  --em-primary-button-background-hover: var(--accent-hover);
+  --em-primary-button-foreground: var(--primary-fg);
+  --em-primary-button-border: var(--primary);
+
+  /* ── Typography → gugu 正文字体(#7333 起系统字体;下文说的 Sora 即这条正文栈) (#2220 后续:「缺乏精致感,没在一套设计语言上」) ─────────
+     会话页的 --em-type-<role>-font-family 由 vanilla-extract codegen 生成为
+     var(var(--em-font-sans)) —— 双层嵌套 var()。这不是合法 CSS(var() 的第一参数必须是裸
+     自定义属性名,不能再是一个 var() 调用),在真实属性上使用时 computed-value-time 判定
+     invalid;因为 font-family 是继承属性,浏览器退回「继承值」而非「初始值」——恰好等于
+     html/body 上 font-family:var(--em-font-sans) 那条(单层、合法)。也就是说仅改
+     --em-font-sans 大概率也能带到大多数文字,但不能全信这个「无效值退回继承」的隐性行为,
+     故对每个 SANS 角色的 font-family 直接给字面量值,绕开那层坏引用。MONO 角色(code/
+     inline-code)不动——会话页自定义 mono 栈(JetBrains Mono…)保持不变。 */
+  --em-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif; /* #7333 与 tokens.css --font-family-system 同一条栈 */
+  /* 会话页原本只在 :root 声明 --em-font-mono(shadow 树里 :root 不生效的同一个坑,见上),
+     从没在 .emlight/.emdark 这类真能命中挂载元素的地方重声明过——意味着这条 mono 桥接前,
+     var(--em-font-mono) 在 shadow 树内本就是 undefined,not 我们改坏的。显式重声明,保
+     会话页原装 JetBrains Mono 栈,让下面「mono 区域正向兜底」那条规则真的有值可用。 */
+  /* @@@terminal-cjk-cell (#5586) — JetBrains 仍是西文的脸,'Sarasa Mono SC' 只接中文:
+     它带 size-adjust:120%,汉字正好是 JetBrains 西文的两倍宽(见 styles/sarasa-mono.css)。
+     没有它,中文落到系统字体、宽度比 1.661,终端里一行排满就被裁掉行尾。
+     ❌ 别把 Sarasa 提到 JetBrains 前面 —— 那会把西文的脸也换掉。 */
+  --em-font-mono:
+    'JetBrains Mono Variable', 'JetBrains Mono', 'Sarasa Mono SC', Menlo, Monaco, monospace;
+  --em-type-body-font-family: var(--em-font-sans);
+  --em-type-body-bold-font-family: var(--em-font-sans);
+  --em-type-body-italic-font-family: var(--em-font-sans);
+  --em-type-body-link-font-family: var(--em-font-sans);
+  --em-type-code-lang-font-family: var(--em-font-sans);
+  --em-type-h1-font-family: var(--em-font-sans);
+  --em-type-h2-font-family: var(--em-font-sans);
+  --em-type-h3-font-family: var(--em-font-sans);
+  --em-type-mention-font-family: var(--em-font-sans);
+
+  /* type scale → gugu 字阶(#7333:body 14/20、h3 16/24、h2 20/28、h1 24/32,字重钉死)。
+     只改 role 级 var,不碰共享的 --em-text-*(那是一堆非 role 组件/工具类的字号来源,
+     全局改动爆炸半径太大)。字重钉死同样是因为双层 var 坑,不能全信继承。 */
+  --em-type-body-font-size: 14px;
+  --em-type-body-font-weight: 400;
+  --em-type-body-line-height: 20px;
+  --em-type-body-bold-font-size: 14px;
+  --em-type-body-bold-font-weight: 600;
+  --em-type-body-bold-line-height: 20px;
+  --em-type-body-italic-font-size: 14px;
+  --em-type-body-italic-font-weight: 400;
+  --em-type-body-italic-line-height: 20px;
+  --em-type-body-link-font-size: 14px;
+  --em-type-body-link-font-weight: 400;
+  --em-type-body-link-line-height: 20px;
+  --em-type-mention-font-size: 14px;
+  --em-type-mention-font-weight: 600;
+  --em-type-mention-line-height: 20px;
+  --em-type-h3-font-size: 16px;
+  --em-type-h3-font-weight: 600;
+  --em-type-h3-line-height: 24px;
+  --em-type-h2-font-size: 20px;
+  --em-type-h2-font-weight: 600;
+  --em-type-h2-line-height: 28px;
+  --em-type-h1-font-size: 24px;
+  --em-type-h1-font-weight: 600;
+  --em-type-h1-line-height: 32px;
+
+  /* @@@shape-table (Refs #6104) — 圆角这一族**整块删掉了**,这里只留这条说明。
+     原来这 12 行是第七套刻度:它在 .gugu-skin 里把 --radius-lg 改成 12、--radius-xl 改成 16,
+     于是同一个 var(--radius-xl) 在任务页里是 16px、在任务页外是 12px ——
+     「谁是权威源」的空缺就长成这个样子。
+     现在 8 档语义表只有一份(apps/desktop/src/styles/tokens.css),.gugu-skin 是 :root 的后代,
+     直接继承,无需覆盖;--em-radius-* 由 packages/session-ui/src/theme/tokens.css.ts 直接写成
+     同一张表的值。❌ 别把这一族加回来。 */
 }
 
 /*

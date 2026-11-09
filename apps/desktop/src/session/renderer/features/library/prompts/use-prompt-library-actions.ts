@@ -52,7 +52,7 @@ export interface PromptLibraryActions {
   restoreAppPrompt(prompt: AppPromptRow): void;
 }
 
-export function usePromptLibraryActions(): PromptLibraryActions {
+export function usePromptLibraryActions(store: Pick<typeof installedExtensionsStore, 'appPrompts'> = installedExtensionsStore): PromptLibraryActions {
   const { value: prompts, overrides, isLoading, isSaving, error, hasData, reload } = usePromptLibrary();
   const showPromptModal = useShowModal('promptModal');
   const { translate } = useSessionMessages();
@@ -71,7 +71,7 @@ export function usePromptLibraryActions(): PromptLibraryActions {
 
   return {
     prompts,
-    appPrompts: withOverrides(installedExtensionsStore.appPrompts, overrides),
+    appPrompts: withOverrides(store.appPrompts, overrides),
     isLoading,
     isBusy: isLoading || isSaving,
     error,
