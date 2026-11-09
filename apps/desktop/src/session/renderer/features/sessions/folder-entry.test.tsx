@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({
+  WORKSPACE_APP_ID: 'workspace',
   installedExtensionsStore: {
     get enabledTabContributions() { return h.tabs.filter((tab) => h.folderEnabled || tab.extensionId !== 'workspace'); },
     get allTabContributions() { return h.tabs; },
@@ -29,7 +30,7 @@ vi.mock('@renderer/app/screen-block-context', () => ({ useScreenBlock: () => ({ 
 vi.mock('@renderer/features/tabs/pane-context', () => ({ usePaneContext: () => ({ pane: { open: h.open }, paneId: 'pane', isFocusedPane: true }) }));
 vi.mock('@renderer/features/sessions/session-view-context', () => ({
   useSessionViewContext: () => ({ projectId: 'project', sessionId: 'task' }),
-  useWorkspaceViewModel: () => ({ paneLayout: { open: h.open }, openTerminalAsTab: vi.fn() }),
+  useWorkspaceViewModel: () => ({ paneLayout: { openBeside: h.open }, openTerminalAsTab: vi.fn() }),
 }));
 vi.mock('@renderer/features/sessions/start-side-session', () => ({ canStartSideSession: () => true, startSideSession: vi.fn() }));
 vi.mock('@renderer/features/sessions/pane-empty-state', () => ({
@@ -45,7 +46,7 @@ vi.mock('@renderer/lib/commands/use-command-provider', () => ({
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({
   translate: (key: string) => ({ 'workspace.sideTask': 'Side chat', 'workspace.review': 'Review', 'workspace.terminal': 'Terminal', 'workspace.browser': 'Browser', 'remotePorts.tool': 'Ports', 'extensions.appsSection': 'Apps', 'extensions.addAction': 'Add App', 'task.addPanel': 'Add panel' } as Record<string, string>)[key] ?? key,
 }) }));
-vi.mock('react-i18next', async (importOriginal) => ({ ...await importOriginal<typeof import('react-i18next')>(), useTranslation: () => ({ t: (key: string) => ({ 'header.folder': 'Folder', 'header.groupFolder': 'Group folder' } as Record<string, string>)[key] ?? key }) }));
+vi.mock('react-i18next', async (importOriginal) => ({ ...await importOriginal<typeof import('react-i18next')>(), useTranslation: () => ({ t: (key: string) => ({ 'header.folder': 'Folder' } as Record<string, string>)[key] ?? key }) }));
 vi.mock('@/store/chatContext', () => ({ useChatStore: () => ({ chats: h.chats }) }));
 vi.mock('@/lib/chatSummariesBridge', () => ({
   readChatSummary: (id: string) => h.chats.find((chat) => chat.id === id), subscribeChatSummaries: () => () => {},
@@ -108,7 +109,7 @@ describe('folder entry E1-E3', () => {
     expect(items.filter((item) => !item.closest('[data-apps]')).map(text)).toEqual(['Folder', 'Side chat', 'Review', 'Terminal', 'Browser', 'Ports']);
     expect(glyph(items[0]!)).toBe(groupGlyph);
     await act(async () => items[0]!.click());
-    expect(h.open).toHaveBeenCalledWith('workspace.main', {}, { from: null, intent: 'newTab', target: { paneId: 'pane' } });
+    expect(h.open).toHaveBeenCalledWith('workspace.main', {});
   });
   it('E1: the task Apps section omits only the folder and keeps other Apps', async () => {
     await menu();
@@ -116,14 +117,14 @@ describe('folder entry E1-E3', () => {
   });
   it.each(['dm', 'group'])('E2: %s offers its own named folder first and opens that chat', async (chatId) => {
     const items = await menu(chatId);
-    expect(text(items[0]!)).toBe(chatId === 'group' ? 'Group folder' : 'Folder');
+    expect(text(items[0]!)).toBe('Folder');
     expect(glyph(items[0]!)).toBe(new DOMParser().parseFromString(renderToStaticMarkup(<Folder />), 'text/html').querySelector('svg')?.innerHTML);
     await act(async () => items[0]!.click());
     expect(h.chatOpen).toHaveBeenCalledWith(chatId, { kind: 'workspace.main', title: '' });
   });
   it.each(['task', 'dm', 'group'])('E3: %s tab matches its menu label and Folder glyph', async (place) => {
     const items = await menu(place === 'task' ? undefined : place);
-    const item = items.find((row) => text(row) === (place === 'group' ? 'Group folder' : 'Folder'))!;
+    const item = items.find((row) => text(row) === ('Folder'))!;
     const label = text(item);
     const provider = place === 'task' ? createExtensionTabProvider('workspace', 'main') : chatPanelTabProvider;
     const entry = { tabId: 'folder', kind: place === 'task' ? 'workspace.main' : 'chat-panel', isPreview: false, state: { kind: 'workspace.main', title: '' } };
@@ -143,6 +144,6 @@ describe('folder entry E1-E3', () => {
   it('control: other task Apps keep their original opening route', async () => {
     const items = await menu();
     await act(async () => items.find((item) => text(item) === 'Notes')!.click());
-    expect(h.open).toHaveBeenCalledWith('notes.main', {}, { from: null, intent: 'newTab', target: { paneId: 'pane' } });
+    expect(h.open).toHaveBeenCalledWith('notes.main', {});
   });
 });

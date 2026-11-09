@@ -1,5 +1,5 @@
 /* global gugu */ // window.gugu: the platform runtime puts it on the page before this module runs.
-// 群文件夹 / 文件夹 (code: workspace) — the built-in App for a chat's workspace (a group's, a topic's or a private chat's): the file list, a
+// 文件 (code: workspace) — the built-in App for chat and computer files: the file list, a
 // markdown source editor with a preview, and JSON files as editable text. Several people and agents edit the same
 // file at once.
 //
@@ -11,19 +11,19 @@
 // Where it runs is read from the context, never assumed: with a chat it shows that chat's
 // workspace; with a file (ctx.file) it opens the file it was handed; with neither there is nothing to show.
 
-import { placeOf, plainWords, relocate, spanOf } from './lines.js'
+import { findIn, placeOf, plainWords, relocate, spanOf } from './lines.js'
 import { INSERT_BLOCKS, isFrontmatter, listInsertion, moveBlock, previewBlock, sourceBlocks, turnBlockChanges } from './blocks.js'
-import { bufferAnchors, firstBytes, sourceFile } from './source-file.js'
+import { HARD_MAX_BYTES, bufferAnchors, firstBytes, sourceFile } from './source-file.js'
 import { KINDS, SORTS, compareNames, comparer, defaultView, keepable, keptAs, kindOf, markOf, matches, rangeOf, sectionOf, sizeOf, timeLeft, wantsThumb } from './list.js'
 
 const $ = (id) => document.getElementById(id)
 
 const STRINGS = {
   zh: {
-    groupFolder: '群文件夹',
-    folder: '文件夹',
+    folder: '文件',
     title: '{folder}',
     filter: '按文件名筛选',
+    clearFilter: '清空',
     new: '新建',
     newDoc: '新建文档',
     newName: '新文档.md',
@@ -31,6 +31,26 @@ const STRINGS = {
     hideAppData: '隐藏 App 数据',
     newFolder: '新建文件夹',
     newFolderName: '新建文件夹',
+    newFile: '新建文件',
+    invalidName: '这个名字不能用',
+    copyContent: '复制内容',
+    copyPath: '复制路径',
+    copyRelativePath: '复制相对路径',
+    tooLargeToCopy: '文件太大，不能复制内容',
+    revealFile: '在文件管理器中显示',
+    openIn: '打开方式',
+    symlink: '符号链接',
+    savedSkipped: '已保存 {name}，有 {n} 个链接没存：{names}',
+    forwardTooLarge: '{name} 没转发出去：一次最多转发 512 MB，可以先下载。',
+    forwardChanging: '{name} 没转发出去：它正在被改动，等它写完再转发。',
+    confirmRemoveCopy: '永久删除「{name}」？',
+    uploading: '正在上传 {name} · {done} / {total} · {speed}/s',
+    uploaded: '已上传 {name}',
+    downloading: '正在下载 {name} · {done} / {total} · {speed}/s',
+    saved: '已下载 {name}',
+    replaceAsk: '「{name}」已存在',
+    replaceAll: '替换同名文件',
+    skipAll: '跳过同名文件',
     attachments: '附件',
     machineOf: '{owner} 的机器',
     storedOnMine: '保存在 {machine} 上，有人打开时才上传。按你在「设置 › 文件存储」里的设置。',
@@ -42,24 +62,33 @@ const STRINGS = {
     cancel: '取消',
     items: '{n} 项',
     confirmRemoveFolder: '删除它和里面的 {n} 项',
+    confirmRemoveFolderAll: '删除它和里面的全部内容',
     nameTaken: '这个文件夹里已经有「{name}」了',
     alreadyThere: '「{name}」已经有了，新传的这份叫「{new}」。',
     keepBoth: '两个都留',
     replaceOld: '替换原来的',
     dropNew: '不要新传的',
     done: '好',
-    workingCopy: '工作目录',
-    chatFolder: '对话的文件夹',
-    noWorkspace: '这里没有对话的文件夹。在群里打开「群文件夹」、在私聊里打开「文件夹」，或者从对话里的文件「用文件夹打开」。',
-    noFiles: '{folder}还是空的。',
+    workingCopy: '电脑文件',
+    workingCopyShort: '电脑',
+    chatFolder: '聊天文件',
+    chatFolderShort: '聊天',
+    sendToChat: '发到群里',
+    noWorkspace: '这里没有文件。在聊天或任务里打开「文件」，或者从聊天里的文件「用文件打开」。',
+    noFiles: '这里还没有文件。',
     folderEmpty: '这个文件夹还是空的。',
+    taskHomeNote: '没选项目的任务都在这个文件夹工作',
+    folderMachineOffline: '{machine} 现在离线，上线后才能看这个文件夹。',
+    folderGone: '这个文件夹在 {machine} 上找不到了。',
+    openOnMachine: '请在 {machine} 上打开这个文件。',
+    taskHomeEmptyDetail: '没选项目的任务都在这个文件夹工作，agent 写的文件会出现在这里。',
+    listing: '正在读取…',
     noMatch: '没有文件名含「{q}」的文件。',
     denied: '这个 App 没有读取{folder}的权限。',
     openWith: '用别的 App 打开',
     openNewTab: '在新页签打开',
-    back: '文件夹',
+    back: '文件',
     backToConversation: '返回对话',
-    historyForward: '前进',
     openBeside: '在旁边打开',
     more: '更多',
     downloadOnly: '这个文件在这里只能下载，不能在这里看和改。',
@@ -73,7 +102,18 @@ const STRINGS = {
     readOnly: '只读',
     notUtf8ReadOnly: '这个文件不是 UTF-8 编码，在这里只能看，不能改。',
     previewCut: '全文较大，预览只显示前 {size}，请在源码里看全文。',
-    deletedHere: '这个文件已经被删除了。',
+    deletedHere: '这个文件已经被删除了。正文还在，保存一下就重新建出来。',
+    saveFailed: '{name} 没有保存：{e}',
+    saveHeld: '{name} 在连不上的时候被别处改过，这次没有自动保存。两边的改动都合在这里，看过后再保存。',
+    machineUnreachable: '此刻连不上「{machine}」。',
+    machineOutdated: '「{machine}」上的咕咕版本太旧，升级后才能用。',
+    tooLarge: '这个文件有 {size}，打开可能很慢。',
+    grewTooLarge: '这个文件在外面变大了（{size}），这里没有读进来；现在保存会盖掉外面的内容。',
+    openAnyway: '仍然打开',
+    openingLong: '正在打开 {name}（{size}）…',
+    openingProgress: '正在打开 {name}：{done} / {total}',
+    retry: '重试',
+    overHardMax: '这个文件有 {size}，超过了这里能打开的上限（100 MB），可以下载或用别的程序打开。',
     edit: '编辑',
     split: '对照',
     preview: '阅读',
@@ -119,6 +159,7 @@ const STRINGS = {
     lines: '第 {first}–{last} 行',
     placeMoved: '引用的那几行挪到了{lines}',
     placeGone: '引用的那几行之后改过了：这里是它们原来的位置',
+    findGone: '没找到“{words}”',
     failed: '出错了：{e}',
     you: '你',
     justNow: '刚刚',
@@ -126,6 +167,8 @@ const STRINGS = {
     uploadTooLarge: '文件太大：{e}',
     download: '下载',
     forward: '转发',
+    forwardReading: '正在读取 {name} · {done} / {total} · {speed}/s',
+    forwardFailed: '{name} 没转发出去：{e}',
     createdBy: '{who} 创建 · {time}',
     editedBy: '{who} 编辑 · {time}',
     editedAt: '已编辑 · {time}',
@@ -186,6 +229,7 @@ const STRINGS = {
     col_size: '大小',
     d_size: '大小',
     d_by: '上传',
+    d_created: '创建',
     d_edited: '改动',
     d_where: '位置',
     d_stored: '存放',
@@ -215,10 +259,10 @@ const STRINGS = {
     noSources: '选中的文件都不是从聊天里来的。',
   },
   en: {
-    groupFolder: 'Group folder',
-    folder: 'Folder',
+    folder: 'Files',
     title: '{folder}',
     filter: 'Filter by name',
+    clearFilter: 'Clear',
     new: 'New',
     newDoc: 'New document',
     newName: 'Untitled.md',
@@ -226,6 +270,26 @@ const STRINGS = {
     hideAppData: 'Hide App data',
     newFolder: 'New folder',
     newFolderName: 'New folder',
+    newFile: 'New file',
+    invalidName: 'That name cannot be used',
+    copyContent: 'Copy contents',
+    copyPath: 'Copy path',
+    copyRelativePath: 'Copy relative path',
+    tooLargeToCopy: 'Too large to copy its contents',
+    revealFile: 'Show in file manager',
+    openIn: 'Open in',
+    symlink: 'Symbolic link',
+    savedSkipped: 'Saved {name}; {n} links left out: {names}',
+    forwardTooLarge: "{name} wasn't forwarded: at most 512 MB go at once. Download it instead.",
+    forwardChanging: "{name} wasn't forwarded: it is being changed. Forward it once it settles.",
+    confirmRemoveCopy: 'Permanently delete "{name}"?',
+    uploading: 'Uploading {name} · {done} / {total} · {speed}/s',
+    uploaded: 'Uploaded {name}',
+    downloading: 'Downloading {name} · {done} / {total} · {speed}/s',
+    saved: 'Downloaded {name}',
+    replaceAsk: '"{name}" already exists',
+    replaceAll: 'Replace files of the same name',
+    skipAll: 'Skip files of the same name',
     attachments: 'Attachments',
     machineOf: '{owner}’s machine',
     storedOnMine: 'Kept on {machine}; uploaded only when someone opens it. Follows your Settings › File storage.',
@@ -237,24 +301,33 @@ const STRINGS = {
     cancel: 'Cancel',
     items: '{n} items',
     confirmRemoveFolder: 'Delete it and its {n} items',
+    confirmRemoveFolderAll: 'Delete it and everything in it',
     nameTaken: '“{name}” is already in this folder',
     alreadyThere: '“{name}” was already here: the new one is “{new}”.',
     keepBoth: 'Keep both',
     replaceOld: 'Replace the old one',
     dropNew: 'Drop the new one',
     done: 'OK',
-    workingCopy: 'Working folder',
-    chatFolder: 'Conversation folder',
-    noWorkspace: 'There is no chat folder here. Open Group folder in a group or Folder in a private chat, or open a file of one with it.',
+    workingCopy: 'Computer files',
+    workingCopyShort: 'Computer',
+    chatFolder: 'Chat files',
+    chatFolderShort: 'Chat',
+    sendToChat: 'Send to chat',
+    noWorkspace: 'There are no files here. Open Files in a chat or task, or use it to open a file from a chat.',
     noFiles: 'No files here yet.',
     folderEmpty: 'This folder is empty.',
+    taskHomeNote: 'Tasks without a project work in this folder',
+    folderMachineOffline: '{machine} is offline. This folder can be read once it is back.',
+    folderGone: 'This folder is no longer on {machine}.',
+    openOnMachine: 'Open this file on {machine}.',
+    taskHomeEmptyDetail: 'Tasks without a project work in this folder; what their agents write shows up here.',
+    listing: 'Loading…',
     noMatch: 'No file name contains “{q}”.',
     denied: 'This App may not read this folder.',
     openWith: 'Open with another App',
     openNewTab: 'Open in new tab',
-    back: 'Folder',
+    back: 'Files',
     backToConversation: 'Back to conversation',
-    historyForward: 'Forward',
     openBeside: 'Open beside',
     more: 'More',
     downloadOnly: 'This file can only be downloaded here; it cannot be shown or changed here.',
@@ -268,7 +341,18 @@ const STRINGS = {
     readOnly: 'Read-only',
     notUtf8ReadOnly: 'This file is not UTF-8: you can read it here, not change it.',
     previewCut: 'This file is large: the preview shows its first {size}. Read the whole file in its source.',
-    deletedHere: 'This file has been deleted.',
+    deletedHere: 'This file has been deleted. Its text is still here: saving makes the file again.',
+    saveFailed: '{name} was not saved: {e}',
+    saveHeld: '{name} changed elsewhere while it could not be reached, so it was not saved automatically. Both changes are merged here: look them over, then save.',
+    machineUnreachable: "{machine} can't be reached right now.",
+    machineOutdated: 'Gugu on {machine} is too old. Update it to use this file.',
+    tooLarge: 'This file is {size}: opening it may be slow.',
+    grewTooLarge: 'This file grew to {size} outside and was not read in. Saving now writes over what is there.',
+    openAnyway: 'Open anyway',
+    openingLong: 'Opening {name} ({size})…',
+    openingProgress: 'Opening {name}: {done} of {total}',
+    retry: 'Retry',
+    overHardMax: 'This file is {size}, over the 100 MB that can be opened here. Download it, or open it in another program.',
     edit: 'Edit',
     split: 'Side by side',
     preview: 'Read',
@@ -314,6 +398,7 @@ const STRINGS = {
     lines: 'Lines {first}–{last}',
     placeMoved: 'The cited lines moved: {lines}',
     placeGone: 'The cited lines changed since: this is where they were',
+    findGone: 'Not found: “{words}”',
     failed: 'Something went wrong: {e}',
     you: 'You',
     justNow: 'just now',
@@ -321,6 +406,8 @@ const STRINGS = {
     uploadTooLarge: 'File too large: {e}',
     download: 'Download',
     forward: 'Forward',
+    forwardReading: 'Reading {name} · {done} / {total} · {speed}/s',
+    forwardFailed: "{name} wasn't forwarded: {e}",
     createdBy: 'Created by {who} · {time}',
     editedBy: 'Edited by {who} · {time}',
     editedAt: 'Edited · {time}',
@@ -381,6 +468,7 @@ const STRINGS = {
     col_size: 'Size',
     d_size: 'Size',
     d_by: 'Uploaded',
+    d_created: 'Created',
     d_edited: 'Changed',
     d_where: 'Location',
     d_stored: 'Kept on',
@@ -412,8 +500,10 @@ const STRINGS = {
 }
 
 const state = {
+  /** Files edited whole and not shown now, by id, each as `state.current` holds one: see `leaveCurrent`. */
+  parked: new Map(),
   ctx: null,
-  t: stringsFor('zh', null),
+  t: stringsFor('zh'),
   entries: [],
   listError: null,
   filter: '',
@@ -432,11 +522,16 @@ const state = {
   order: [], // the files on screen, in their order: what a range runs along
   locating: null, // 「在聊天中定位」 for a selection: { ids: message ids oldest first, at }
   showAppData: false,
-  // Which of its two roots the list shows: the conversation's folder (`chat`) or the working copy (`workspace`); null, both
-  // (a session's tab has both), for the person to pick.
+  pickedFolder: null, // which of a project group's folders, where it has several
+  // Which root the list shows: the conversation's folder (`chat`) or the working copy (`workspace`); null with neither here.
   root: null,
+  backWanted: false, // a folder is open: the host's Back should be a folder up (holdBack)
+  releaseBack: null, // the held claim's release, once it has succeeded
   folder: null, // the folder the list shows (子文件夹): a folder entry's id, null for the top
-  listed: new Set(), // a working copy's folders listed so far ('' the top): it is read one folder at a time
+  listed: new Set(), // the folders whose contents are known ('' the top): both roots are read one folder at a time
+  whole: null, // the chat's whole tree, read when a search, 「移动到…」 or a folder far down needs it: its read, then true
+  rootOf: null, // a working copy's root once known, for the path of the file open here: { workspace, root }
+  folderWatches: new Map(), // the listed folders below the top that are heard, each by its own watch
   dragging: null, // the entry being dragged onto a folder (desktop)
   mode: 'preview', // 阅读 first (owner 10-30, folder-docs)
   current: null, // { entry, file, view, unbind, offs: [] }
@@ -475,10 +570,10 @@ function isZh(locale) {
   return String(locale || '').toLowerCase().startsWith('zh')
 }
 
-// The shared slot is bound to the source group or private chat; topics use that same folder.
-function stringsFor(locale, chat) {
+// One name for a chat's folder, in every chat.
+function stringsFor(locale) {
   const strings = isZh(locale) ? STRINGS.zh : STRINGS.en
-  const folder = chat?.groupId ? strings.groupFolder : strings.folder
+  const folder = strings.folder
   return Object.fromEntries(Object.entries(strings).map(([key, text]) => [key, typeof text === 'string' ? text.replaceAll('{folder}', folder) : text]))
 }
 
@@ -487,12 +582,27 @@ function can(capability) {
 }
 const canRead = () => can('files:read') || can('files:read:all-machines') || can('files:write')
 const canWrite = () => can('files:write')
-// A working copy is browsed and its files opened here; what is made, moved and uploaded goes to the conversation's folder.
 const inWorkspace = () => state.root === 'workspace'
-const canWriteHere = () => canWrite() && !inWorkspace()
+// A task with no project works in the folder all of them share: what that folder is gets said, it is nobody's project.
+const inTaskHome = () => inWorkspace() && state.ctx?.workspace?.taskHome === true
+// A project folder on another machine is only read from here.
+const canWriteHere = (entry) => canWrite() && (!(entry ? inCopy(entry) : inWorkspace()) || (!touchPane?.matches && !!copyOf() && copyOf().thisMachine !== false))
+// A file or folder of a working copy: named by its path there, read one folder at a time.
+const inCopy = (entry) => 'workspace' in entry
 // The roots this page has: its conversation's folder, and — in a session's tab — that session's working copy.
-const rootsOf = (ctx) => [ctx?.chat ? 'chat' : null, ctx?.workspace && (ctx.capabilities ?? []).some((c) => c.startsWith('files:')) ? 'workspace' : null].filter(Boolean)
-const rootPlace = () => (inWorkspace() ? { workspace: state.ctx.workspace.id } : { chat: state.ctx.chat.id })
+// A project group's folders (the host's `ctx.chat.folders`). One: it is the group's computer files. Several: one is picked first.
+const chatFolders = (ctx = state.ctx) => ctx?.chat?.folders ?? []
+// The computer's folder this page is on: a session's working copy, or the project folder of its group; none while one is to be picked.
+function copyOf(ctx = state.ctx) {
+  if (ctx?.workspace) return ctx.workspace
+  const folders = chatFolders(ctx)
+  const picked = folders.length === 1 ? folders[0] : folders.find((folder) => folder.workspace === state.pickedFolder)
+  return picked ? { id: picked.workspace, root: picked.path, machine: picked.machine, thisMachine: picked.thisMachine === true, ...(picked.thisMachine ? {} : { deviceLabel: picked.machine }) } : null
+}
+const choosesFolder = (ctx = state.ctx) => !ctx?.workspace && chatFolders(ctx).length > 1
+const rootsOf = (ctx) => [ctx?.chat ? 'chat' : null, (ctx?.workspace || chatFolders(ctx).length) && (ctx.capabilities ?? []).some((c) => c.startsWith('files:')) ? 'workspace' : null].filter(Boolean)
+const rootChoiceKey = (ctx) => `root.${ctx?.chat?.id ?? ctx?.workspace?.id ?? ''}`
+const rootPlace = () => (inWorkspace() ? { workspace: copyOf().id } : { chat: state.ctx.chat.id })
 
 function debounce(fn, ms) {
   let timer = null
@@ -547,10 +657,22 @@ function markdownSupport(cm) {
 
 // ─── context ────────────────────────────────────────────────────────────────
 
+// Adds, deletes and renames in this chat's workspace (§2.4: fed from workspace_changed), and in the working copy's folders
+// listed here (the file panel's own pushes) — every call names its place. A folder on another machine is read when entered.
+function watchHere(ctx, roots) {
+  state.unwatch?.()
+  const copy = copyOf(ctx)
+  const watching = canRead() && !ctx.file
+    ? [ctx.chat && gugu.files.onChanged({ chat: ctx.chat.id }, heardIn('chat')), copy && copy.thisMachine !== false && roots.includes('workspace') && gugu.files.onChanged({ workspace: copy.id }, heardIn('workspace'))].filter(Boolean)
+    : []
+  state.unwatch = watching.length ? () => watching.forEach((stop) => stop()) : null
+}
+
 async function applyContext(ctx) {
   const previous = state.ctx
   state.ctx = ctx
-  const restored = !previous || previous.file?.id !== ctx.file?.id || previous.tabId !== ctx.tabId ? ctx.viewState : undefined
+  hearOpenInApps()
+  const restored = !previous || previous.file?.id !== ctx.file?.id || previous.tabId !== ctx.tabId || previous.viewState?.folder !== ctx.viewState?.folder ? ctx.viewState : undefined
   if (restored) {
     if (['chat', 'workspace'].includes(restored.root)) state.root = restored.root
     state.folder = typeof restored.folder === 'string' ? restored.folder : null
@@ -562,32 +684,33 @@ async function applyContext(ctx) {
     state.selecting = restored.selecting === true
     state.pickFrom = typeof restored.pickFrom === 'string' ? restored.pickFrom : null
     $('filter').value = state.filter
+    $('filter-clear').hidden = !state.filter
+    showSearch(!!state.filter, false)
   }
-  state.t = stringsFor(ctx.locale, ctx.chat)
+  state.t = stringsFor(ctx.locale)
   document.documentElement.lang = isZh(ctx.locale) ? 'zh-CN' : 'en'
   renderChrome()
   const roots = rootsOf(ctx)
   const inGroup = roots.length > 0
   // A page the host opened for one file (F3: its own page, bound to that file for life) shows that file only.
   document.body.classList.toggle('no-list', !inGroup || !canRead() || !!ctx.file)
-  if (previous?.chat?.id !== ctx.chat?.id || previous?.workspace?.id !== ctx.workspace?.id || !!previous?.file !== !!ctx.file) {
+  if (previous?.chat?.id !== ctx.chat?.id || copyOf(previous)?.id !== copyOf(ctx)?.id || chatFolders(previous).length !== chatFolders(ctx).length || !!previous?.file !== !!ctx.file) {
     // Adds, deletes and renames in this chat's workspace (§2.4: fed from workspace_changed), and in the working copy's
     // folders listed here (the file panel's own pushes) — every call names its place.
-    state.unwatch?.()
-    const watching = canRead() && !ctx.file
-      ? [ctx.chat && gugu.files.onChanged({ chat: ctx.chat.id }, heardIn('chat')), ctx.workspace && roots.includes('workspace') && gugu.files.onChanged({ workspace: ctx.workspace.id }, heardIn('workspace'))].filter(Boolean)
-      : []
-    state.unwatch = watching.length ? () => watching.forEach((stop) => stop()) : null
-    // One root: that one. Both: the person picks (the list shows the two), unless the one shown is still here.
+    watchHere(ctx, roots)
+    for (const stop of state.folderWatches.values()) stop()
+    state.folderWatches.clear()
+    // Keep this chat's last choice when it is still available; a missing root falls back to the first available one.
     const shown = state.root
-    const shownPlace = (c) => (shown === 'workspace' ? c?.workspace?.id : shown === 'chat' ? c?.chat?.id : undefined)
-    state.root = roots.length === 1 ? roots[0] : roots.includes(state.root) ? state.root : null
+    const shownPlace = (c) => (shown === 'workspace' ? copyOf(c)?.id : shown === 'chat' ? c?.chat?.id : undefined)
+    state.root = roots.includes(restored?.root) ? restored.root
+      : shown !== null && shownPlace(previous) === shownPlace(ctx) && roots.includes(shown) ? shown
+        : remembered(rootChoiceKey(ctx), roots, roots[0] ?? null)
     // The root on screen is the same place still (its conversation arrived, say): the person stays where they are.
     const stays = !!previous && state.root === shown && shown !== null && shownPlace(previous) === shownPlace(ctx) && !!previous.file === !!ctx.file
     if (!stays) {
       if (!restored) state.folder = null
-      state.listed = new Set()
-      state.entries = []
+      forgetListed()
     }
     if (stays) renderList()
     if (!stays && inGroup && canRead() && !ctx.file) {
@@ -595,11 +718,19 @@ async function applyContext(ctx) {
       await refreshList(!restored)
       if (restored && Number.isFinite(restored.scrollTop)) $('file-list').scrollTop = restored.scrollTop
     }
+  } else {
+    // The same place, more said of it (its path, its machine): the line that says where it is says so.
+    renderCrumbs()
+    if (restored && inWorkspace() && !ctx.file) void listDownTo(state.folder ?? '')
   }
   // The host hands this page a file when it picked this App for it (真源 §2.6: a click goes to the host,
   // which picks the most specific claim; .md and plain .json are this App's). The host's header then has
   // the way back, so this page's own Back is not drawn; going back takes the file away again.
   document.body.classList.toggle('host-opened', !!ctx.file)
+  if (ctx.file && state.current?.source && state.current.entry.id === ctx.file.id) {
+    moveToTab(state.current, ctx.tabId)
+    showSourceState(state.current)
+  }
   if (ctx.file && state.current?.entry.id !== ctx.file.id && state.opening?.id !== ctx.file.id) await openHanded()
   else if (!ctx.file && previous?.file) {
     closeCurrent()
@@ -623,14 +754,15 @@ function renderChrome() {
   $('filter').placeholder = t.filter
   $('search-toggle').title = t.filter
   $('search-toggle').setAttribute('aria-label', t.filter)
+  $('filter-clear').title = t.clearFilter
+  $('filter-clear').setAttribute('aria-label', t.clearFilter)
+  $('search-cancel').textContent = t.cancel
   const back = state.ctx?.navigation?.backToConversation ? t.backToConversation : t.back
   $('page-back-label').textContent = back
   $('page-back').title = back
   $('page-back').setAttribute('aria-label', back)
-  $('page-back').disabled = !state.ctx?.navigation?.canBack
-  $('page-forward').disabled = !state.ctx?.navigation?.canForward
-  $('page-forward').title = t.historyForward
-  $('page-forward').setAttribute('aria-label', t.historyForward)
+  // Nothing to go back to on screen (the conversation is beside it): no button that does nothing.
+  $('page-back').hidden = !state.ctx?.navigation?.canBack
   $('select-files').textContent = state.selecting || state.picked.size ? t.pickDone : t.pick
   renderTools()
   $('new-label').textContent = t.new
@@ -673,51 +805,164 @@ function renderChrome() {
 
 // The newest list asked is the one shown (an older one back later — another chat's — is dropped); what the chat says
 // while it is on its way goes over it again when it is back: the list may be from before (#7257).
+// A chat's folder is read one folder at a time too (a 7,800-file chat was read whole, eight pages one after another, for
+// the 36 at its top): the folder on screen — the top with 「附件」, at once — and each folder again as it is entered.
 async function refreshList(readPreferences = false) {
-  if (!state.root || !canRead()) return showList()
-  if (inWorkspace()) return listFolder(state.folder ?? '', true)
-  const asked = (state.listing = { heard: [] })
-  let entries
+  if (!state.root || !canRead() || (inWorkspace() && !copyOf())) return showList()
+  // Drawn as it is asked: a folder not read yet says so (renderList) until its answer is drawn.
+  // Whatever was still being read for the list before this one (the other root, say) has no say in it any more.
+  const asked = (state.listing = inWorkspace() ? null : { heard: [] })
+  renderList()
+  if (inWorkspace()) return listDownTo(state.folder ?? '')
+  // A folder this page was left in (its view state) that no read has named: the whole tree, for the way up to it.
+  const far = state.folder && !state.entries.some((e) => e.id === state.folder)
+  // The whole tree read before is from before now: the next search reads it again (what it holds is shown meanwhile).
+  if (state.whole === true) state.whole = null
   let listError = null
   try {
     const place = rootPlace()
-    const [listed, preferences] = await Promise.all([
-      gugu.files.list(place),
+    const [, preferences] = await Promise.all([
+      far ? readWhole(asked) : readFolders([state.folder ?? ''], asked),
       readPreferences ? gugu.files.viewPreferences(place) : null,
     ])
-    entries = listed
     if (state.listing === asked && preferences) state.showAppData = preferences.showAppData
   } catch (error) {
-    entries = []
-    listError = error.code === 'denied' ? state.t.denied : fmt(state.t.failed, { e: error.message })
+    // The folder on screen is gone (deleted or moved away elsewhere): the top, read instead.
+    if (error.code === 'not-found' && state.folder && state.listing === asked) {
+      state.listing = null
+      state.folder = null
+      return refreshList(readPreferences)
+    }
+    if (state.listing === asked) forgetListed()
+    listError = error.code === 'denied' ? state.t.denied : failureText(error)
   }
   if (state.listing !== asked) return
   state.listing = null
-  state.entries = entries
   state.listError = listError
   for (const change of asked.heard) take(change)
   showList()
+}
+
+// 「附件」 by its path: the database finds it by its role, whatever it is called on screen.
+const ATTACHMENTS = '附件'
+
+function forgetListed() {
+  state.entries = []
+  state.listed = new Set()
+  state.whole = null
+}
+
+/**
+ * Chat folders ('' the top, else a folder's id), all read at once: what is directly in each goes into the list in place of
+ * what was there, drawn as it arrives. The top brings 「附件」 with it (the top shows what was sent in the chat), unless
+ * `withAttachments` is false (a file's own folder read again for its keep).
+ */
+async function readFolders(folders, asked, withAttachments = true) {
+  const chat = state.ctx.chat.id
+  const named = [...new Set(withAttachments && folders.includes('') ? [...folders, ATTACHMENTS] : folders)]
+  await Promise.all(named.map(async (folder) => {
+    let listed
+    try {
+      listed = await gugu.files.list({ chat, folder })
+    } catch (error) {
+      if (folder === ATTACHMENTS && error.code === 'not-found') return // a chat nothing was sent in has none
+      throw error
+    }
+    // Another chat by now, or a newer refresh: this one's answer is dropped.
+    if (state.ctx?.chat?.id !== chat || inWorkspace() || (asked && state.listing !== asked)) return
+    const parent = folder === ATTACHMENTS ? listed[0]?.parentId ?? state.entries.find((e) => e.systemRole === 'attachments')?.id : folder || null
+    if (parent === undefined) return
+    const key = parent ?? ''
+    state.entries = [...state.entries.filter((entry) => (entry.parentId ?? null) !== parent), ...listed]
+    state.listed.add(key)
+    showList()
+  }))
+  // 「附件」 with nothing in it yet: known empty, once the top has named it.
+  const attachments = state.entries.find((e) => e.systemRole === 'attachments' && e.parentId === null)
+  if (attachments && named.includes(ATTACHMENTS)) state.listed.add(attachments.id)
+}
+
+/**
+ * The chat's whole tree, read once (every page at once, the host's), for what needs every folder: a search by name,
+ * 「移动到…」, a folder far down. Changes heard meanwhile go over it again.
+ */
+function readWhole(asked = null) {
+  if (state.whole === true) return Promise.resolve()
+  if (state.whole) return state.whole
+  const chat = state.ctx.chat.id
+  const heard = []
+  const reading = (state.whole = gugu.files.list({ chat }).then((entries) => {
+    if (state.ctx?.chat?.id !== chat || state.whole !== reading) return
+    if (asked && state.listing !== asked) return void (state.whole = null)
+    state.entries = entries
+    state.whole = true
+    state.listed = new Set(['', ...entries.filter(isFolder).map((e) => e.id)])
+    for (const change of heard) take(change)
+  }, (error) => {
+    if (state.whole === reading) state.whole = null
+    throw error
+  }))
+  reading.heard = heard
+  return reading
+}
+
+/** The whole tree read, then `next` (true when it was): what went wrong is said on the list. */
+function wholeThen(next = () => {}) {
+  const chat = state.ctx.chat.id
+  return readWhole().then(() => state.ctx?.chat?.id === chat && state.whole === true && (next(), true), (error) => {
+    showBanner(error.code === 'denied' ? state.t.denied : fmt(state.t.failed, { e: error.message }), 'error')
+    return false
+  })
+}
+
+/**
+ * A chat folder pressed open: drawn with what is known of it, and read (one folder: what it holds now). Back at the top
+ * it is not read again: the top was read with 「附件」, which can be long, and the chat's changes keep it.
+ */
+function readChatFolder(folderId) {
+  if (folderId === '' && state.listed.has('')) return
+  const chat = state.ctx?.chat?.id
+  void readFolders([folderId], null).catch((error) => {
+    // Late, for a list no longer on screen: it has no say in the one that is.
+    if (inWorkspace() || state.ctx?.chat?.id !== chat) return
+    state.listError = error.code === 'denied' ? state.t.denied : fmt(state.t.failed, { e: error.message })
+    showList()
+  })
 }
 
 /**
  * One folder of the working copy ('' the top), as the file panel has it: what is directly in it, into the list beside the
  * folders read before — a folder of ten thousand files is never read whole. `again`: read it anew.
  */
+// A folder named from outside (a path, a page restored): those above it first, whose rows its trail is drawn from.
+async function listDownTo(folder) {
+  const parts = folder ? folder.split('/') : []
+  for (let depth = 0; depth < parts.length; depth++) await listFolder(parts.slice(0, depth).join('/'))
+  return listFolder(folder, true)
+}
+
 async function listFolder(folder, again = false) {
-  if (!inWorkspace() || (!again && state.listed.has(folder))) return showList()
-  const workspace = state.ctx.workspace.id
+  if (!inWorkspace() || !copyOf() || (!again && state.listed.has(folder))) return showList()
+  const copy = copyOf()
+  const workspace = copy.id
   let listed
   try {
     listed = await gugu.files.list({ workspace, folder })
   } catch (error) {
-    if (state.ctx?.workspace?.id !== workspace) return
-    state.listError = error.code === 'denied' ? state.t.denied : fmt(state.t.failed, { e: error.message })
+    if (!inWorkspace() || copyOf()?.id !== workspace) return
+    state.listError = error.code === 'denied' ? state.t.denied
+      : copy.machine && error.code === 'unavailable' ? fmt(state.t.folderMachineOffline, { machine: copy.machine })
+        : copy.machine && error.code === 'not-found' && !folder ? fmt(state.t.folderGone, { machine: copy.machine })
+          : failureText(error)
     return showList()
   }
-  if (!inWorkspace() || state.ctx?.workspace?.id !== workspace) return
+  if (!inWorkspace() || copyOf()?.id !== workspace) return
   const parent = folder || null
   state.listed.add(folder)
-  state.listError = null
+  // Where a tree is watched one folder at a time, a folder is heard once it is named.
+  if (folder && !state.folderWatches.has(folder)) state.folderWatches.set(folder, gugu.files.onChanged({ workspace, folder }, heardIn('workspace')))
+  // Another folder's answer says nothing of an error about the one on screen.
+  if (folder === (state.folder ?? '')) state.listError = null
   state.entries = [...state.entries.filter((entry) => (entry.parentId ?? null) !== parent), ...listed]
   showList()
 }
@@ -727,8 +972,9 @@ async function listFolder(folder, again = false) {
 const heardIn = (root) => (change) => {
   if (state.root !== root) return
   if (root === 'chat') return heard(change)
-  const folders = change.kind === 'resync' ? [...state.listed]
-    : (change.changes ?? []).map((c) => (c.path.includes('/') ? c.path.slice(0, c.path.lastIndexOf('/')) : ''))
+  // The folder on screen too: one its machine was too far away to list is in no list yet.
+  if (change.kind === 'resync') return void new Set([...state.listed, state.folder ?? '']).forEach((folder) => listFolder(folder, true))
+  const folders = (change.changes ?? []).map((c) => (c.path.includes('/') ? c.path.slice(0, c.path.lastIndexOf('/')) : ''))
   for (const folder of new Set(folders)) if (state.listed.has(folder)) void listFolder(folder, true)
 }
 
@@ -737,23 +983,35 @@ const heardIn = (root) => (change) => {
 function heard(change) {
   if (change.kind !== 'entries') return
   state.listing?.heard.push(change)
-  if (take(change)) keepLater()
+  if (state.whole && state.whole !== true) state.whole.heard.push(change)
+  keepLater(take(change))
   showList()
 }
 
-// A change is read one file at a time, which does not say how long a cloud copy is kept (`keep`, the list's): the list's
-// answer stays until the list is read again. A file new to the list has none to keep — true when the list says it
-// (the host's list carries `keep`), so the list is read again for it.
+// A change is read one file at a time, with how long its cloud copy is kept (`keep`, the list's: the host reads it with
+// the file). One it came without keeps the list's answer; a file new to the list with none is read again with its
+// own folder — never the whole tree. Says those folders ('' the top).
 function take(change) {
   const before = new Map(state.entries.map((entry) => [entry.id, entry]))
   const listsKeep = state.entries.some((entry) => 'keep' in entry)
   const fresh = new Map(change.entries.map((entry) => [entry.id, 'keep' in entry || !before.has(entry.id) || !('keep' in before.get(entry.id)) ? entry : { ...entry, keep: before.get(entry.id).keep }]))
   state.entries = [...state.entries.filter((entry) => !fresh.has(entry.id) && !change.gone.includes(entry.id)), ...fresh.values()]
-  return listsKeep && [...fresh.values()].some((entry) => !('keep' in entry) && entry.type !== 'folder')
+  if (!listsKeep) return []
+  return [...fresh.values()].filter((entry) => !('keep' in entry) && entry.type !== 'folder').map((entry) => entry.parentId ?? '')
 }
 
-// Several files arriving together (an upload of ten) are one read of the list, a moment after the last.
-const keepLater = debounce(() => void refreshList(), 800)
+// Several files arriving together (an upload of ten) are one read of each folder they are in, a moment after the last.
+const keepAsked = new Set()
+const keepRead = debounce(() => {
+  const folders = [...keepAsked].filter((folder) => state.listed.has(folder))
+  keepAsked.clear()
+  if (state.root === 'chat' && folders.length) void readFolders(folders, null, false).catch(() => {})
+}, 800)
+function keepLater(folders) {
+  if (!folders.length) return
+  for (const folder of folders) keepAsked.add(folder)
+  keepRead()
+}
 
 function showList() {
   renderList()
@@ -786,6 +1044,7 @@ const isFolder = (entry) => entry.type === 'folder'
 const visibleEntry = (entry) => state.showAppData || !entry.appState
 
 async function folderContextMenu(x, y) {
+  if (inWorkspace() && !state.ctx?.file && canWriteHere()) return void toggleMenu($('new-doc'), makeHereItems(), { point: { x, y } })
   if (!state.ctx?.chat || inWorkspace() || state.ctx.file || !canRead()) return
   const chat = state.ctx.chat.id
   const show = !state.showAppData
@@ -796,7 +1055,7 @@ async function folderContextMenu(x, y) {
     if (state.ctx?.chat?.id !== chat) return
     state.showAppData = preference.showAppData
     renderList()
-  } catch (error) { showBanner(fmt(state.t.failed, { e: error.message }), 'error') }
+  } catch (error) { showBanner(failureText(error), 'error') }
 }
 // What is directly in each folder, made once per list of entries (state.entries is replaced, never changed in place): a
 // drawing of the list, and every dragover, asks it for every folder row.
@@ -821,6 +1080,9 @@ function pathOf(entry) {
   return names.join('/')
 }
 
+// Whether everything under a folder has been read: a folder not read yet is not empty for all the list knows.
+const knownBelow = (folderId) => state.listed.has(folderId) && under(folderId).every((e) => !isFolder(e) || state.listed.has(e.id))
+
 // Everything under a folder, however deep: what its delete takes with it, and where it cannot be moved into.
 function under(folderId) {
   const found = []
@@ -838,6 +1100,8 @@ function topEntries() {
 // The folders of a list: 「附件」 first where a search lists it, the rest by name.
 function folderOrder(a, b) {
   if (!!a.systemRole !== !!b.systemRole) return a.systemRole ? -1 : 1
+  // A computer's hidden folders (.git) come after the ones a person is there for.
+  if (a.name.startsWith('.') !== b.name.startsWith('.')) return a.name.startsWith('.') ? 1 : -1
   return compareNames(a, b, shownName, state.ctx?.locale)
 }
 
@@ -851,10 +1115,18 @@ function renderList() {
   const t = state.t
   const list = $('file-list')
   const empty = $('files-empty')
-  // The folder on screen is gone (deleted, or no longer seen): back to the top.
-  if (state.folder && !state.entries.some((e) => e.id === state.folder)) state.folder = null
+  // The folder on screen is gone (deleted, or no longer seen): back to the top. A working copy's may not have been reached
+  // yet: only the list of the one above says.
+  const heardOf = !inWorkspace() || state.listed.has(state.folder?.includes('/') ? state.folder.slice(0, state.folder.lastIndexOf('/')) : '')
+  if (state.folder && !state.listing && heardOf && !state.entries.some((e) => e.id === state.folder)) state.folder = null
   renderCrumbs()
-  if (!state.root) return renderRoots()
+  if (!state.root) return
+  const choosing = inWorkspace() && !copyOf()
+  document.querySelector('.files').classList.toggle('choosing-folder', choosing)
+  if (choosing) {
+    renderTools()
+    return renderFolderChoice()
+  }
   const needle = state.filter.trim().toLocaleLowerCase()
   // One clock for the whole list, the one relative times read (Date.now).
   const now = new Date(Date.now())
@@ -863,6 +1135,15 @@ function renderList() {
     .filter((e) => !needle || e.name.toLocaleLowerCase().includes(needle) || shownName(e).toLocaleLowerCase().includes(needle))
   const ofKind = (state.ofKind = shown.filter((e) => !isFolder(e) && (state.kind === 'all' || kindOf(e) === state.kind)))
   renderTools()
+  // A folder not read yet, nothing of it known, is not empty: it says it is being read until its answer is drawn (what is
+  // picked in it waits for that answer too).
+  if (!shown.length && canRead() && !state.listError && !state.listed.has(state.folder ?? '')) {
+    list.replaceChildren()
+    $('empty-upload').hidden = true
+    empty.hidden = $('files-empty-progress').hidden = false
+    $('files-empty-message').textContent = t.listing
+    return
+  }
   const filtering = Object.values(state.filters).some(Boolean)
   const folders = state.kind === 'all' && !filtering ? shown.filter(isFolder).sort(folderOrder) : []
   const files = ofKind.filter((e) => matches(e, state.filters, machineOf, now)).sort(comparer(state.sort, shownName, changedAt, state.ctx?.locale))
@@ -911,38 +1192,13 @@ function renderList() {
   }
   const count = folders.length + files.length
   empty.hidden = count > 0
+  $('files-empty-progress').hidden = true
+  // A folder this App may not read is never read: it says so (a read is not on its way).
   $('files-empty-message').textContent = state.listError
-    ?? (needle ? fmt(t.noMatch, { q: state.filter.trim() }) : filtering && ofKind.length ? t.noFiltered
-      : state.kind !== 'all' && shown.length ? t.noKind : state.folder ? t.folderEmpty : t.noFiles)
+    ?? (!canRead() ? t.denied : needle ? fmt(t.noMatch, { q: state.filter.trim() }) : filtering && ofKind.length ? t.noFiltered
+      : state.kind !== 'all' && shown.length ? t.noKind : state.folder || inWorkspace() ? t.folderEmpty : t.noFiles)
+  $('files-empty-detail').textContent = !state.folder && inTaskHome() && !needle && !state.listError ? t.taskHomeEmptyDetail : ''
   $('empty-upload').hidden = !canWriteHere() || !!needle || !!state.listError || (state.kind !== 'all' && shown.length > 0) || filtering
-}
-
-// A session's tab has two roots: its conversation's folder and its working copy — the list's top, each a folder to enter.
-function renderRoots() {
-  const t = state.t
-  // Drawn as the list draws a folder (listItem): the same row, a press enters it.
-  const row = (root, label) => {
-    const li = document.createElement('li')
-    li.className = 'file'
-    li.dataset.folder = ''
-    li.dataset.root = root
-    li.setAttribute('role', 'option')
-    const open = Object.assign(document.createElement('button'), { type: 'button', className: 'file-open' })
-    const title = Object.assign(document.createElement('span'), { className: 'file-title' })
-    title.append(Object.assign(document.createElement('span'), { className: 'file-name', textContent: label }))
-    open.append(folderMark(), title)
-    open.onclick = () => enterRoot(root)
-    li.append(open)
-    return li
-  }
-  $('file-list').classList.remove('as-grid')
-  $('file-list').replaceChildren(row('chat', t.chatFolder), row('workspace', t.workingCopy))
-  $('files-empty').hidden = true
-  $('empty-upload').hidden = true
-  state.order = []
-  // The roots page lists no files: its order's menu offers no filter.
-  state.ofKind = []
-  renderTools()
 }
 
 /** How many files a time section shows before 「再显示 N 条」. */
@@ -1034,6 +1290,21 @@ function machineOf(storedOn) {
 // filters this list has something to pick by (上传者; 存放 where a file stays on a machine; 保留方式 where one has a cloud copy).
 function renderTools() {
   const t = state.t
+  // A folder that cannot be read now has nowhere to put anything.
+  const canAdd = canWriteHere() && !(inWorkspace() && state.listError)
+  $('new-doc').hidden = !canAdd
+  $('upload').hidden = !canAdd
+  $('place-switch').setAttribute('aria-label', t.title)
+  // Only one place here (a chat with no computer): nothing to switch between, so no switch.
+  $('place-switch').hidden = rootsOf(state.ctx).length < 2
+  for (const button of $('place-switch').children) {
+    const root = button.dataset.root
+    const [name, short] = button.querySelectorAll('span')
+    name.textContent = button.title = root === 'chat' ? t.chatFolder : t.workingCopy
+    short.textContent = root === 'chat' ? t.chatFolderShort : t.workingCopyShort
+    button.setAttribute('aria-pressed', String(state.root === root))
+    button.onclick = () => enterRoot(root)
+  }
   const kinds = $('kinds')
   if (kinds.childElementCount !== KINDS.length) {
     kinds.replaceChildren(...KINDS.map((kind) => {
@@ -1126,49 +1397,165 @@ function sortMenu() {
   })), ...(filters.length ? [{ separator: true }, ...filters] : [])])
 }
 
-// The way up and each folder from the top (子文件夹): a press goes there, a dropped file moves there. Not drawn at the top.
+// Where the list is: the way up and each folder from the top; a press goes there, a dropped file moves there. A computer's
+// folder always says which folder it is (its path when this machine can tell, else the machine); a chat's folder has nothing
+// to say at its top. Up stops at the top: a working copy is all a page may read of its computer (working-copy-files.ts).
 function renderCrumbs() {
   const nav = $('crumbs')
   const t = state.t
-  const both = rootsOf(state.ctx).length > 1
-  if ((!state.folder && !(both && state.root)) || state.filter.trim()) {
+  holdBack(backStepWanted())
+  if (!inWorkspace() && !state.folder) {
     nav.hidden = true
     nav.replaceChildren()
     return
   }
+  // A search looks through everything read, not this folder: the line says so by stopping at the top.
+  const searching = !!state.filter.trim()
   const trail = []
-  for (let at = state.entries.find((e) => e.id === state.folder); at; at = state.entries.find((e) => e.id === at.parentId)) trail.unshift(at)
+  for (let at = searching ? null : state.entries.find((e) => e.id === state.folder); at; at = state.entries.find((e) => e.id === at.parentId)) trail.unshift(at)
   const up = document.createElement('button')
   up.type = 'button'
   up.className = 'back'
   up.innerHTML = '<gugu-icon name="chevron-left"></gugu-icon>'
   up.append(Object.assign(document.createElement('span'), { textContent: t.up }))
-  up.onclick = () => (trail.length ? enterFolder(trail.length > 1 ? trail[trail.length - 2].id : null) : enterRoot(null))
+  up.disabled = !state.folder && !(choosesFolder() && copyOf())
+  up.onclick = goUp
   const crumb = (text, folderId, current) => {
     const button = document.createElement('button')
     button.type = 'button'
     button.className = 'crumb'
     button.textContent = text
+    button.title = text
     if (current) button.setAttribute('aria-current', 'page')
     else button.onclick = () => enterFolder(folderId)
     dropOnto(button, folderId)
     return button
   }
-  const rootName = inWorkspace() ? t.workingCopy : both ? t.chatFolder : t.title
-  const parts = [up]
-  if (both) {
-    // The top of both roots: a press goes back to them.
-    const top = Object.assign(document.createElement('button'), { type: 'button', className: 'crumb', textContent: t.title })
-    top.onclick = () => enterRoot(null)
-    parts.push(top, Object.assign(document.createElement('span'), { className: 'crumb-sep', textContent: '/' }))
+  // Several folders: 电脑文件 is the way back to picking one, and the only crumb until one is picked.
+  const choosing = inWorkspace() && choosesFolder()
+  if (choosing && !copyOf()) {
+    nav.replaceChildren(Object.assign(crumb(t.workingCopy, null, true), { onclick: null }))
+    nav.hidden = false
+    return
   }
-  parts.push(crumb(rootName, null, !state.folder))
+  const copy = inWorkspace() ? copyOf() : null
+  const home = crumb(rootName(), null, !state.folder)
+  if (copy?.root) {
+    home.classList.add('crumb-root')
+    home.replaceChildren(Object.assign(document.createElement('bdi'), { textContent: copy.deviceLabel ? `${copy.deviceLabel} · ${copy.root}` : copy.root }))
+  }
+  const parts = choosing ? [up, Object.assign(crumb(t.workingCopy, null, false), { onclick: () => pickFolder(null) }), Object.assign(document.createElement('span'), { className: 'crumb-sep', textContent: '/' }), home] : [up, home]
   trail.forEach((folder, i) => {
     parts.push(Object.assign(document.createElement('span'), { className: 'crumb-sep', textContent: '/' }))
     parts.push(crumb(shownName(folder), folder.id, i === trail.length - 1))
   })
+  if (copy?.thisMachine === false) parts.push(Object.assign(document.createElement('span'), { className: 'crumbs-note crumbs-read-only', textContent: t.readOnly }))
+  if (inTaskHome() && !state.folder && state.entries.length) parts.push(Object.assign(document.createElement('span'), { className: 'crumbs-note', textContent: t.taskHomeNote }))
   nav.replaceChildren(...parts)
   nav.hidden = false
+  // Only a new path scrolls to its end: a redraw leaves the person's own scrolling alone.
+  const path = trail.map((folder) => folder.id).join('/')
+  if (nav.dataset.path !== path) nav.scrollLeft = nav.scrollWidth
+  nav.dataset.path = path
+}
+
+// What the top of this root is called: a working copy by its path, or on another machine by that machine.
+function rootName() {
+  if (!inWorkspace()) return state.t.chatFolder
+  const { root, deviceLabel } = copyOf()
+  return root ?? (deviceLabel ? `${deviceLabel} · ${state.t.workingCopy}` : state.t.workingCopy)
+}
+
+// 按名称筛选 opens in the bar (see style.css); Esc, 取消 or 🔍 again empties it and puts the bar back as it was.
+function showSearch(open, focus = open) {
+  $('search').hidden = !open
+  $('search-toggle').setAttribute('aria-expanded', String(open))
+  if (focus) $('filter').focus()
+}
+
+// A press of 🔍 itself leaves no focus ring on it; Esc and 取消 hand the keyboard back with one.
+function closeSearch(pressed = false) {
+  if (state.filter) setFilterText('')
+  showSearch(false)
+  $('search-toggle').focus({ focusVisible: !pressed })
+}
+
+function setFilterText(text) {
+  clearPicks()
+  state.filter = $('filter').value = text
+  $('filter-clear').hidden = !text
+  renderList()
+}
+
+// One folder up (上一级, and the host's Back on the phone while in a folder).
+// One of a project's folders picked, or (null) back to picking.
+function pickFolder(workspace) {
+  hideBanner()
+  clearPicks()
+  state.pickedFolder = workspace
+  state.folder = null
+  state.listError = null
+  forgetListed()
+  watchHere(state.ctx, rootsOf(state.ctx))
+  renderList()
+  if (workspace) void refreshList()
+}
+
+// The way to a project's folders: each by its name, its machine and its path; an offline machine's is there, and says so.
+function renderFolderChoice() {
+  const t = state.t
+  const list = $('file-list')
+  list.classList.remove('as-grid')
+  $('files-empty').hidden = true
+  list.replaceChildren(...chatFolders().map((folder) => {
+    const li = Object.assign(document.createElement('li'), { className: 'file' })
+    li.dataset.folder = ''
+    if (!folder.online) li.dataset.offline = ''
+    const open = Object.assign(document.createElement('button'), { type: 'button', className: 'file-open', onclick: () => pickFolder(folder.workspace) })
+    open.title = folder.path
+    open.append(folderMark())
+    const title = Object.assign(document.createElement('span'), { className: 'file-title' })
+    title.append(Object.assign(document.createElement('span'), { className: 'file-name', textContent: folder.path.split(/[\\/]/).filter(Boolean).pop() ?? folder.path }))
+    const meta = Object.assign(document.createElement('span'), { className: 'file-meta' })
+    if (!folder.thisMachine) meta.append(`${folder.machine}${folder.online ? '' : ` · ${t.machineOffline}`} · `)
+    // A long path gives way at its start: its end is what tells two folders apart.
+    const where = Object.assign(document.createElement('span'), { className: 'folder-path' })
+    where.append(Object.assign(document.createElement('bdi'), { textContent: folder.path }))
+    meta.append(where)
+    open.append(title, meta)
+    li.append(open)
+    return li
+  }))
+}
+
+function goUp() {
+  if (!state.folder && inWorkspace() && choosesFolder()) return pickFolder(null)
+  enterFolder(state.entries.find((e) => e.id === state.folder)?.parentId ?? null)
+}
+
+// In a folder, or with this page's own menu open, the host's Back (the phone's back key) is a step here rather than leaving
+// the App (gugu.navigation.onBack): the menu closes first, then a folder up; at the top it is the host's again. One claim or release at a time; `state.releaseBack` is set only once a claim has
+// succeeded, so a failed claim is tried again on the next change.
+const backStepWanted = () => ((!!state.folder || (inWorkspace() && choosesFolder() && !!copyOf())) && !state.ctx?.file) || !$('menu').hidden
+const stepBack = () => (!$('menu').hidden ? closeMenu() : goUp())
+let backStep = Promise.resolve()
+function holdBack(want) {
+  if (typeof gugu.navigation?.onBack !== 'function') return
+  state.backWanted = want
+  backStep = backStep.then(async () => {
+    if (state.backWanted === !!state.releaseBack) return
+    try {
+      if (state.releaseBack) {
+        const release = state.releaseBack
+        state.releaseBack = null
+        await release()
+      } else {
+        state.releaseBack = await gugu.navigation.onBack(stepBack)
+      }
+    } catch (error) {
+      showBanner(fmt(state.t.failed, { e: error.message }), 'error')
+    }
+  })
 }
 
 function enterFolder(folderId) {
@@ -1178,20 +1565,27 @@ function enterFolder(folderId) {
   if (state.filter) {
     state.filter = ''
     $('filter').value = ''
+    $('filter-clear').hidden = true
   }
+  showSearch(false)
   renderList()
   $('file-list').scrollTop = 0
-  // A working copy's folder is read when it is entered, once.
+  // A folder is read when it is entered, once (a chat's again on a refresh).
   if (inWorkspace()) void listFolder(folderId ?? '')
+  else if (state.root === 'chat') readChatFolder(folderId ?? '')
 }
 
-// One of the two roots picked (null: back to both).
+// One of the two roots picked (the place switch).
 function enterRoot(root) {
-  if (state.root === root) return enterFolder(null)
+  if (!rootsOf(state.ctx).includes(root)) return
+  if (state.root === root) return
   state.root = root
+  remember(rootChoiceKey(state.ctx), root)
   state.folder = null
-  state.entries = []
-  state.listed = new Set()
+  state.filter = ''
+  $('filter').value = ''
+  state.filters = { who: null, where: null, keep: null }
+  forgetListed()
   state.listError = null
   hideBanner()
   clearPicks()
@@ -1207,13 +1601,18 @@ function dropOnto(el, folderId) {
     return !(isFolder(moving) && under(moving.id).some((e) => e.id === folderId))
   }
   el.addEventListener('dragover', (event) => {
-    if (!fits()) return
+    if (!fits() && !droppingFiles(event)) return
     event.preventDefault()
     el.classList.add('drop-target')
   })
   el.addEventListener('dragleave', () => el.classList.remove('drop-target'))
   el.addEventListener('drop', (event) => {
     el.classList.remove('drop-target')
+    if (droppingFiles(event)) {
+      event.preventDefault()
+      event.stopPropagation()
+      return void uploadDropped(event.dataTransfer, folderId ?? '')
+    }
     if (!fits()) return
     event.preventDefault()
     const moving = state.dragging
@@ -1227,30 +1626,34 @@ async function moveTo(entry, folderId) {
   try {
     await gugu.files.move(entry, { folder: folderId ?? '' })
   } catch (error) {
-    showBanner(error.code === 'name-taken' ? fmt(state.t.nameTaken, { name: entry.name }) : fmt(state.t.failed, { e: error.message }), 'error')
+    // Not moved: the row stays where it is, with the banner saying why.
+    return showBanner(error.code === 'name-taken' ? fmt(state.t.nameTaken, { name: entry.name }) : failureText(error), 'error')
   }
+  if (inWorkspace()) await readAgain(entry, folderId ?? '')
   await refreshList()
 }
 
 // 「移动到…」: every folder of the chat, the top first, each under the one it is in; not the entry itself or what is
 // under it (a folder cannot go inside itself). Where it is now is marked and cannot be picked.
 async function showMoveDialog(entry) {
-  if (!canWriteHere() || entry.systemRole || state.current?.entry.id === entry.id && state.current.file.readOnly) return
+  if (!canWriteHere(entry) || entry.systemRole || state.current?.entry.id === entry.id && state.current.file.readOnly) return
   // A document page has no directory subscription. Read its chat only when Move is chosen; reuse the same tree below.
   if (state.ctx.file) {
     const current = state.current, file = state.ctx.file, chat = state.ctx.chat?.id
     try {
       const entries = await gugu.files.list({ chat: entry.chat })
       if (state.current !== current || state.ctx.file?.id !== file.id || state.ctx.file?.chat !== file.chat
-        || state.ctx.chat?.id !== chat || !canWriteHere() || current?.file.readOnly) return
+        || state.ctx.chat?.id !== chat || !canWriteHere(entry) || current?.file.readOnly) return
       state.entries = entries
     } catch (error) {
       if (state.current === current && state.ctx.file?.id === file.id && state.ctx.chat?.id === chat) {
-        showBanner(error.code === 'denied' ? state.t.denied : fmt(state.t.failed, { e: error.message }), 'error')
+        showBanner(error.code === 'denied' ? state.t.denied : failureText(error), 'error')
       }
       return
     }
   }
+  // Every folder of the chat is a place to move to: the whole tree, read once.
+  if (!state.ctx.file && state.root === 'chat' && state.whole !== true && !(await wholeThen())) return
   const t = state.t
   const off = new Set(isFolder(entry) ? [entry.id, ...under(entry.id).map((e) => e.id)] : [])
   const rows = []
@@ -1261,7 +1664,7 @@ async function showMoveDialog(entry) {
       add(folder.id, depth + 1)
     }
   }
-  rows.push({ id: null, name: t.title, depth: 0 })
+  rows.push({ id: null, name: t.chatFolder, depth: 0 })
   add(null, 1)
   $('move-title').textContent = fmt(t.moveTitle, { name: shownName(entry) })
   $('move-targets').replaceChildren(...rows.map((row) => {
@@ -1445,7 +1848,7 @@ const offline = (entry) => entry.storedOn?.online === false && !entry.keep
 // it is on is read afresh then, never from the list as it was loaded: the list is read again to show it.
 async function navigate(delta) {
   try { return await gugu.navigation.go(delta) }
-  catch (error) { showBanner(fmt(state.t.failed, { e: error.message }), 'error'); return false }
+  catch (error) { showBanner(failureText(error), 'error'); return false }
 }
 window.addEventListener('keydown', (event) => {
   if (event.defaultPrevented || event.isComposing || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return
@@ -1496,8 +1899,9 @@ function metaOf(entry, now) {
   const t = state.t
   const cells = []
   if (isFolder(entry)) {
-    // A working copy is read one folder at a time: one not entered yet has no count to say (never a 0).
-    if (!inWorkspace() || state.listed.has(entry.id)) cells.push(['size', fmt(t.items, { n: inside(entry.id).filter(visibleEntry).length })])
+    // Both roots are read one folder at a time: one not entered yet has no count to say (never a 0).
+    // A computer's folders are read one at a time: a count only for those already entered would come and go.
+    if (state.listed.has(entry.id) && !inCopy(entry)) cells.push(['size', fmt(t.items, { n: inside(entry.id).filter(visibleEntry).length })])
   } else {
     const when = whenOf(changedAt(entry), now)
     if (when) cells.push(['when', when])
@@ -1505,6 +1909,15 @@ function metaOf(entry, now) {
     if (size) cells.push(['size', size])
   }
   return cells
+}
+
+// What a working copy's file or folder is not there any more under: its entries, and the folders read below it; the folder
+// it went to, when read before, is read anew.
+function readAgain(entry, into) {
+  const below = `${entry.id}/`
+  state.entries = state.entries.filter((e) => e.id !== entry.id && !e.id.startsWith(below))
+  for (const folder of [...state.listed]) if (folder === entry.id || folder.startsWith(below)) state.listed.delete(folder)
+  return into !== undefined && state.listed.has(into) ? listFolder(into, true) : undefined
 }
 
 const fileTip = (entry) => [
@@ -1518,6 +1931,7 @@ function listItem(entry, now = new Date(Date.now())) {
   li.dataset.id = entry.id
   li.setAttribute('role', 'option')
   li.setAttribute('aria-selected', String(state.current?.entry.id === entry.id))
+  if (entry.gitStatus) li.dataset.git = entry.gitStatus
   const open = document.createElement('button')
   open.type = 'button'
   open.className = 'file-open'
@@ -1535,6 +1949,12 @@ function listItem(entry, now = new Date(Date.now())) {
     open.append(fileMark(entry))
   }
   title.append(name)
+  if (entry.symlink) {
+    const link = Object.assign(document.createElement('span'), { className: 'file-link', textContent: '↗', title: state.t.symlink })
+    link.setAttribute('aria-label', state.t.symlink)
+    title.append(link)
+  }
+  if (inCopy(entry) && entry.name.startsWith('.')) li.dataset.dotfile = ''
   // The whole name — suffix included — stays one hover (and the details) away; where it is, when the list is a search.
   open.title = folder ? pathOf(entry) : fileTip(entry)
   const meta = document.createElement('span')
@@ -1555,20 +1975,28 @@ function listItem(entry, now = new Date(Date.now())) {
   if (offline(entry)) li.dataset.offline = ''
   // Files carry the same resource link outside this App; folder moves stay inside it.
   const drag = (text, isLink) => {
+    if (touchPane?.matches) return
     li.draggable = true
     li.addEventListener('dragstart', (event) => {
       state.dragging = entry
       event.dataTransfer?.setData('text/plain', text)
       if (isLink) event.dataTransfer?.setData('text/uri-list', text)
+      // Into a session's composer or terminal: the path where its agent runs, as the host's own drags carry it.
+      if (entry.absolutePath && entry.workspaceId) {
+        event.dataTransfer?.setData('application/x-emdash-workspace-file', JSON.stringify({ projectId: entry.projectId, workspaceId: entry.workspaceId, targetPath: entry.absolutePath, ...(folder ? { directory: true } : {}) }))
+        event.dataTransfer?.setData('text/plain', entry.absolutePath)
+      }
     })
     li.addEventListener('dragend', () => (state.dragging = null))
   }
   if (folder) {
     if (canWriteHere() && !entry.systemRole) drag(entry.name, false)
+  } else if (inCopy(entry)) {
+    drag(entry.id, false)
   } else {
     // DataTransfer is writable only during dragstart, before any asynchronous host answer.
     void gugu.linkTo({ kind: 'file', file: entry }).then((link) => drag(link, true))
-      .catch((error) => showBanner(fmt(state.t.failed, { e: error.message }), 'error'))
+      .catch((error) => showBanner(failureText(error), 'error'))
   }
   if (folder) dropOnto(li, entry.id)
   // At the row's end: how long its cloud copy has left, and the machine it stays on.
@@ -1624,7 +2052,7 @@ const deletable = new Map() // `${id}:${version}` → Promise<boolean>
 const deletableSaid = new Map() // the same key → the answer, once it is back
 const deletableKey = (entry) => `${entry.id}:${entry.version}`
 function mayDelete(entry) {
-  if (!canWriteHere() || entry.systemRole) return Promise.resolve(false)
+  if (!canWriteHere(entry) || entry.systemRole) return Promise.resolve(false)
   const key = deletableKey(entry)
   if (!deletable.has(key)) {
     deletable.set(key, gugu.files.canDelete([entry]).then(([yes]) => {
@@ -1639,19 +2067,68 @@ function mayDelete(entry) {
 function fileActions(target, entry, canDelete = false) {
   const t = state.t
   const readOnly = state.current?.entry.id === entry.id && state.current.file.readOnly
-  const writable = canWriteHere() && !entry.systemRole && !readOnly
+  const writable = canWriteHere(entry) && !entry.systemRole && !readOnly
   return [
-    ...(canForward() ? [{ text: t.forward, run: () => forwardEntries([entry]) }] : []),
-    { text: t.copyLink, run: () => copyLink(entry) },
+    // No link names a working copy's file: it goes by its path (copyActions).
+    ...(canForward() ? [{ text: inCopy(entry) ? t.sendToChat : t.forward, run: () => forwardEntries([entry]) }] : []),
+    ...(inCopy(entry) ? [] : [{ text: t.copyLink, run: () => copyLink(entry) }]),
     { text: t.openWith, run: () => openInHost(entry, true) },
     { text: t.download, run: () => downloadEntry(entry) },
     ...(writable ? [
       { text: t.rename, run: () => startRename(target, entry) },
-      { text: t.move, run: () => showMoveDialog(entry) },
+      ...(inCopy(entry) ? [] : [{ text: t.move, run: () => showMoveDialog(entry) }]),
     ] : []),
-    ...(writable && canDelete ? [{ text: t.remove, run: () => removeFile(entry), ask: t.confirmRemove }] : []),
+    ...(writable && canDelete ? [{ text: t.remove, run: () => removeFile(entry), ask: inCopy(entry) ? fmt(t.confirmRemoveCopy, { name: entry.name }) : t.confirmRemove }] : []),
   ]
 }
+
+// What a working copy's row has besides: its paths and contents to copy, where it is on this computer.
+function copyActions(entry) {
+  const t = state.t
+  const copied = (text) => gugu.clipboard.writeText(text).then(() => showBanner(t.copied, 'info'), (error) => showBanner(failureText(error), 'error'))
+  return [
+    ...(isFolder(entry) || entry.type === 'binary' ? [] : [{ text: t.copyContent, run: () => copyContent(entry, copied) }]),
+    ...(absolutePathOf(entry) ? [{ text: t.copyPath, run: () => copied(absolutePathOf(entry)) }] : []),
+    { text: t.copyRelativePath, run: () => copied(entry.id) },
+    ...(!touchPane?.matches && copyOf()?.root && copyOf().thisMachine !== false && gugu.files.reveal ? [{ text: t.revealFile, run: () => gugu.files.reveal(entry).catch((error) => showBanner(failureText(error), 'error')) }] : []),
+    ...openInActions(entry),
+  ]
+}
+
+// 「用 VS Code、访达、终端打开」: this computer's programs, as the project tab's menu lists them.
+let openInApps = []
+// Asked again with each context: settings can change the list, and main keeps the scan of what is installed.
+const hearOpenInApps = () => {
+  if (!copyOf()?.root || copyOf().thisMachine === false || !gugu.files.openInApps) return
+  gugu.files.openInApps().then((apps) => { openInApps = apps }, (error) => showBanner(failureText(error), 'error'))
+}
+function openInActions(entry) {
+  if (touchPane?.matches || !copyOf()?.root || copyOf().thisMachine === false || !openInApps.length) return []
+  const failed = (error) => showBanner(failureText(error), 'error')
+  return [{ text: state.t.openIn, children: openInApps.map((app) => ({ text: app.label, run: () => gugu.files.openIn(entry, app.id).catch(failed) })) }]
+}
+
+const COPY_CONTENT_MAX_BYTES = 10 * 1024 * 1024
+async function copyContent(entry, copied) {
+  if (entry.size > COPY_CONTENT_MAX_BYTES) return showBanner(state.t.tooLargeToCopy, 'error')
+  try {
+    const file = await gugu.files.open(entry, { readOnly: true })
+    try {
+      await copied(await (await file.blob()).text())
+    } finally {
+      file.close()
+    }
+  } catch (error) {
+    showBanner(failureText(error), 'error')
+  }
+}
+
+// In a working copy: what is made and uploaded, into the folder on screen.
+const makeHereItems = (then = () => {}) => [
+  { text: state.t.newFile, run: () => { then(); startCreate('file') } },
+  { text: state.t.newFolder, run: () => { then(); startCreate('folder') } },
+  { text: state.t.upload, run: () => { then(); pickUpload() } },
+]
 
 // Preserve the existing immediate-open and per-version deletion authorization for both entry points.
 function showFileMenu(anchor, entry, items, context = {}) {
@@ -1671,14 +2148,17 @@ function rowMenu(li, entry, canDelete = false) {
   const t = state.t
   const folder = isFolder(entry)
   const open = { text: t.open, run: () => folder ? enterFolder(entry.id) : openFile(entry) }
-  const change = canWriteHere() && !entry.systemRole
-    ? [{ text: t.rename, run: () => startRename(li, entry) }, { text: t.move, run: () => showMoveDialog(entry) }] : []
-  const remove = canWriteHere() && !entry.systemRole && canDelete
-    ? [{ text: t.remove, run: () => removeFile(entry), ask: folder && under(entry.id).length ? fmt(t.confirmRemoveFolder, { n: under(entry.id).length }) : t.confirmRemove }] : []
+  const copy = inCopy(entry)
+  const change = canWriteHere(entry) && !entry.systemRole
+    ? [{ text: t.rename, run: () => startRename(li, entry) }, ...(copy ? [] : [{ text: t.move, run: () => showMoveDialog(entry) }])] : []
+  const remove = canWriteHere(entry) && !entry.systemRole && canDelete
+    ? [{ text: t.remove, run: () => removeFile(entry), ask: copy ? fmt(t.confirmRemoveCopy, { name: entry.name }) : folder && !knownBelow(entry.id) ? t.confirmRemoveFolderAll
+      : folder && under(entry.id).length ? fmt(t.confirmRemoveFolder, { n: under(entry.id).length }) : t.confirmRemove }] : []
   const groups = []
-  if (folder) groups.push([open], change, remove)
+  if (folder && copy) groups.push([open], canWriteHere() ? makeHereItems(() => enterFolder(entry.id)) : [], [{ text: t.download, run: () => downloadEntry(entry) }, ...copyActions(entry)], change, remove)
+  else if (folder) groups.push([open], change, remove)
   else {
-    const navigation = [open, { text: t.openNewTab, run: () => openFile(entry, 'newTab') }, { text: t.openBeside, run: () => openFile(entry, 'beside') }]
+    const navigation = [open, ...(touchPane?.matches ? [] : [{ text: t.openNewTab, run: () => openFile(entry, 'newTab') }, { text: t.openBeside, run: () => openFile(entry, 'beside') }])]
     if (entry.sourceMessageIds?.length) navigation.push({ text: t.showInChat, run: () => showSource(entry.sourceMessageIds.at(-1)) })
     const detail = { text: t.details, run: () => showDetails(entry) }
     const select = { text: t.pick, run: () => { state.selecting = true; pick(entry.id, 'toggle') } }
@@ -1695,7 +2175,7 @@ function rowMenu(li, entry, canDelete = false) {
     if (touchPane?.matches) {
       groups.push(fileActions(li, entry, canDelete), navigation, [select], [{ text: t.more, children: [...keep, detail] }])
     } else {
-      groups.push(fileActions(li, entry, canDelete), navigation, keep, [select, detail])
+      groups.push(fileActions(li, entry, canDelete), navigation, keep, copy ? copyActions(entry) : [], [select, detail])
     }
   }
   return groups.filter((group) => group.length).flatMap((group, i) => i ? [{ separator: true }, ...group] : group)
@@ -1728,7 +2208,7 @@ function fileMenu(li, open, entry) {
       show()
     } else if (state.picked.size <= 1 && canWriteHere() && !entry.systemRole) {
       if (event.key === 'F2') { event.preventDefault(); startRename(li, entry) }
-      if (event.key === 'Delete') {
+      if (event.key === 'Delete' || event.key === 'Backspace' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault()
         void mayDelete(entry).then((yes) => {
           if (!yes) return
@@ -1763,7 +2243,7 @@ async function keepAs(entry, how) {
   try {
     await gugu.files.keep(entry, how)
   } catch (error) {
-    showBanner(error.code === 'denied' ? state.t.keepNotMine : error.code === 'invalid' ? state.t.keepNone : fmt(state.t.failed, { e: error.message }), 'error')
+    showBanner(error.code === 'denied' ? state.t.keepNotMine : error.code === 'invalid' ? state.t.keepNone : failureText(error), 'error')
   }
   await refreshList()
 }
@@ -1772,24 +2252,61 @@ async function keepAs(entry, how) {
 // A host before it has no files.forward: the item is not offered rather than offered and refused.
 const canForward = () => typeof gugu.files.forward === 'function'
 async function forwardEntries(entries, then) {
+  // A working copy's file is read before the page opens, from a machine that may be far.
+  const row = entries.some(inCopy) ? transferRow(state.t.forwardReading, entries[0].name) : null
   try {
-    await gugu.files.forward(entries)
+    await (row ? gugu.files.forward(entries, { onProgress: row.progress, signal: row.signal }) : gugu.files.forward(entries))
     then?.()
   } catch (error) {
-    showBanner(fmt(state.t.failed, { e: error.message }), 'error')
+    if (row?.signal.aborted) return
+    const name = entries[0].name
+    showBanner(machineSays(error) ? fmt(state.t.forwardFailed, { name, e: machineSays(error) }) : error.code === 'too-large' ? fmt(state.t.forwardTooLarge, { name }) : error.code === 'content-changed' ? fmt(state.t.forwardChanging, { name }) : failureText(error), 'error')
+  } finally {
+    row?.done()
   }
 }
 
 async function downloadEntry(entry) {
+  hideBanner()
+  const row = inCopy(entry) ? transferRow(state.t.downloading, entry.name) : null
   try {
-    await gugu.files.download(entry) // false: the person cancelled the save dialog, nothing to say
+    const saved = await (row ? gugu.files.download(entry, { onProgress: row.progress, signal: row.signal }) : gugu.files.download(entry)) // false: the person cancelled the save dialog, nothing to say
+    if (saved?.skipped) showBanner(fmt(state.t.savedSkipped, { name: entry.name, n: saved.skipped.length, names: saved.skipped.join(', ') }), 'info')
+    else if (row && saved) showBanner(fmt(state.t.saved, { name: entry.name }), 'info')
   } catch (error) {
-    showBanner(fmt(state.t.failed, { e: error.message }), 'error')
+    if (!row?.signal.aborted) showBanner(failureText(error), 'error')
+  } finally {
+    row?.done()
+  }
+}
+
+// One line under the list per transfer of a working copy's: real progress, and a way to stop it. Drawn at its first progress
+// (a download waits on the person's save dialog first).
+function transferRow(template, name) {
+  const stop = new AbortController()
+  const started = Date.now()
+  const li = Object.assign(document.createElement('div'), { className: 'transfer-row' })
+  const text = document.createElement('span')
+  const cancel = Object.assign(document.createElement('button'), { type: 'button', textContent: state.t.cancel, onclick: () => stop.abort() })
+  li.append(text, ' ', cancel)
+  return {
+    signal: stop.signal,
+    progress(done, total, shown = name) {
+      if (!li.isConnected) {
+        $('transfer').append(li)
+        $('transfer').hidden = false
+      }
+      text.textContent = fmt(template, { name: shown, done: sizeOf(done) || '0', total: sizeOf(total) || '0', speed: sizeOf(Math.round(done / Math.max((Date.now() - started) / 1000, 0.001))) || '0' })
+    },
+    done() {
+      li.remove()
+      $('transfer').hidden = !$('transfer').childElementCount
+    },
   }
 }
 
 function showSource(messageId) {
-  gugu.showMessage(messageId).catch((error) => showBanner(error.code === 'not-found' ? state.t.sourceGone : fmt(state.t.failed, { e: error.message }), 'error'))
+  gugu.showMessage(messageId).catch((error) => showBanner(error.code === 'not-found' ? state.t.sourceGone : failureText(error), 'error'))
 }
 
 // A link to the file, or to its lines (`at`, a reading block's: the pill's own place).
@@ -1798,7 +2315,7 @@ async function copyLink(entry, at) {
     await gugu.clipboard.writeText(await gugu.linkTo(at ? { kind: 'file', file: entry, at } : { kind: 'file', file: entry }))
     showBanner(state.t.linkCopied, 'info')
   } catch (error) {
-    showBanner(fmt(state.t.failed, { e: error.message }), 'error')
+    showBanner(failureText(error), 'error')
   }
 }
 
@@ -1811,7 +2328,7 @@ async function openInHost(entry, ask = false, intent = 'navigate') {
     const viewState = { root: state.root, folder: state.folder, filter: state.filter, kind: state.kind, sort: state.sort, filters: state.filters, picked: [...state.picked], selecting: state.selecting, pickFrom: state.pickFrom, scrollTop: $('file-list').scrollTop }
     await gugu.files.openWith(entry, { intent, viewState, ...(ask ? { ask: true } : {}) })
   } catch (error) {
-    showBanner(fmt(state.t.failed, { e: error.message }), 'error')
+    showBanner(error.code === 'elsewhere' && copyOf()?.machine ? fmt(state.t.openOnMachine, { machine: copyOf().machine }) : failureText(error), 'error')
   }
 }
 
@@ -1836,8 +2353,9 @@ function startRename(li, entry) {
       try {
         await gugu.files.rename(entry, name)
       } catch (error) {
-        showBanner(error.code === 'name-taken' ? fmt(state.t.nameTaken, { name }) : fmt(state.t.failed, { e: error.message }), 'error')
+        showBanner(error.code === 'name-taken' ? fmt(state.t.nameTaken, { name }) : failureText(error), 'error')
       }
+      if (inWorkspace()) readAgain(entry)
     }
     await refreshList()
   }
@@ -1865,7 +2383,7 @@ async function createDoc() {
     await openInHost(entry)
     await refreshList()
   } catch (error) {
-    showBanner(fmt(state.t.failed, { e: error.message }), 'error')
+    showBanner(failureText(error), 'error')
   }
 }
 
@@ -1880,8 +2398,150 @@ async function createFolder() {
     const li = $('file-list').querySelector(`[data-id="${CSS.escape(entry.id)}"]`)
     if (li) startRename(li, state.entries.find((e) => e.id === entry.id) ?? entry)
   } catch (error) {
-    showBanner(fmt(state.t.failed, { e: error.message }), 'error')
+    showBanner(failureText(error), 'error')
   }
+}
+
+// New in a working copy: nothing is made until it has its name (a stray file there is a change in someone's repository).
+// A row at the top with a field; Enter makes it, Esc leaves nothing. A name refused stays in the field to be changed.
+function startCreate(kind) {
+  hideBanner()
+  const li = Object.assign(document.createElement('li'), { className: 'file' })
+  const input = Object.assign(document.createElement('input'), { className: 'rename-input' })
+  input.setAttribute('aria-label', kind === 'folder' ? state.t.newFolder : state.t.newFile)
+  li.append(input)
+  $('files-empty').hidden = true
+  $('file-list').prepend(li)
+  input.focus()
+  let busy = false
+  const finish = async (commit) => {
+    if (busy) return
+    const name = input.value.trim()
+    if (!commit || !name) {
+      busy = true
+      input.blur()
+      return renderList()
+    }
+    if (name === '.' || name === '..' || /[\\/]/.test(name)) {
+      input.setAttribute('aria-invalid', 'true')
+      return showBanner(state.t.invalidName, 'error')
+    }
+    busy = true
+    const place = { workspace: copyOf().id, ...(state.folder ? { folder: state.folder } : {}) }
+    try {
+      if (kind === 'folder') await gugu.files.mkdir({ workspace: place.workspace, path: state.folder ? `${state.folder}/${name}` : name })
+      const [entry] = kind === 'folder' ? [] : await gugu.files.upload(place, new File([], name))
+      input.blur()
+      await refreshList()
+      if (entry) await openInHost(entry)
+    } catch (error) {
+      busy = false
+      input.setAttribute('aria-invalid', 'true')
+      input.focus()
+      showBanner(error.code === 'name-taken' ? fmt(state.t.nameTaken, { name }) : failureText(error), 'error')
+    }
+  }
+  input.onkeydown = (event) => {
+    event.stopPropagation()
+    if (event.key === 'Enter') void finish(true)
+    if (event.key === 'Escape') void finish(false)
+  }
+  input.onblur = () => { if (!input.hasAttribute('aria-invalid')) void finish(true) }
+}
+
+// The computer's files coming in by the page's own picker or a drop: File objects, sent in parts with real progress.
+const pickInput = () => {
+  const input = Object.assign(document.createElement('input'), { type: 'file', multiple: true })
+  input.onchange = () => void uploadToCopy([...input.files].map((file) => ({ file, path: file.name })), state.folder ?? '')
+  return input
+}
+const pickUpload = () => pickInput().click()
+
+const droppingFiles = (event) => inWorkspace() && canWriteHere() && !state.dragging && !!event.dataTransfer?.types.includes('Files')
+
+// A drop is read at once (the browser takes its items back when the event is over): a folder comes with all that is in it.
+function uploadDropped(transfer, folder) {
+  const roots = [...transfer.items].filter((item) => item.kind === 'file').map((item) => item.webkitGetAsEntry()).filter(Boolean)
+  const walk = async (entry, at, files, folders) => {
+    const here = at ? `${at}/${entry.name}` : entry.name
+    if (entry.isFile) return files.push({ file: await new Promise((yes, no) => entry.file(yes, no)), path: here })
+    folders.push(here)
+    const reader = entry.createReader()
+    for (let batch; (batch = await new Promise((yes, no) => reader.readEntries(yes, no))).length;) {
+      for (const child of batch) await walk(child, here, files, folders)
+    }
+  }
+  return (async () => {
+    const files = [], folders = []
+    try {
+      for (const root of roots) await walk(root, '', files, folders)
+    } catch (error) {
+      return showBanner(failureText(error), 'error')
+    }
+    await uploadToCopy(files, folder, folders)
+  })()
+}
+
+// Into a working copy's folder: its folders first, one file after another. A name already there is asked once for all of them.
+async function uploadToCopy(files, folder, folders = []) {
+  const t = state.t
+  const workspace = copyOf().id
+  const row = transferRow(t.uploading, '')
+  const under = (path) => (folder ? `${folder}/${path}` : path)
+  const total = files.reduce((sum, { file }) => sum + file.size, 0)
+  let sentBefore = 0
+  let answer = null
+  hideBanner()
+  $('upload').disabled = true
+  try {
+    for (const path of folders) {
+      await gugu.files.mkdir({ workspace, path: under(path) }).catch((error) => { if (error.code !== 'name-taken') throw error })
+    }
+    for (const { file, path } of files) {
+      const named = new File([file], path.slice(path.lastIndexOf('/') + 1))
+      const dir = under(path).split('/').slice(0, -1).join('/')
+      const send = (replace) => gugu.files.upload({ workspace, ...(dir ? { folder: dir } : {}) }, named, {
+        replace,
+        signal: row.signal,
+        onProgress: (sent) => row.progress(sentBefore + sent, total, path),
+      })
+      try {
+        await send(answer === 'replace')
+      } catch (error) {
+        if (error.code !== 'name-taken' || answer) throw error
+        answer = await askReplace(path)
+        if (answer === 'replace') await send(true)
+      }
+      sentBefore += file.size
+    }
+    if (!row.signal.aborted) showBanner(fmt(t.uploaded, { name: files.length === 1 ? files[0].path : String(files.length) }), 'info')
+  } catch (error) {
+    if (!row.signal.aborted) showBanner(failureText(error), 'error')
+  } finally {
+    row.done()
+    $('upload').disabled = false
+    await refreshList()
+  }
+}
+
+function askReplace(name) {
+  const t = state.t
+  return new Promise((resolve) => {
+    const answered = (how) => () => {
+      $('conflicts').hidden = true
+      resolve(how)
+    }
+    const li = Object.assign(document.createElement('li'), { className: 'conflict' })
+    li.append(Object.assign(document.createElement('span'), { textContent: fmt(t.replaceAsk, { name }) }))
+    const actions = Object.assign(document.createElement('div'), { className: 'conflict-actions' })
+    for (const [text, how] of [[t.replaceAll, 'replace'], [t.skipAll, 'skip']]) {
+      actions.append(Object.assign(document.createElement('button'), { type: 'button', textContent: text, onclick: answered(how) }))
+    }
+    li.append(actions)
+    $('conflict-list').replaceChildren(li)
+    $('conflicts-done').onclick = answered('skip')
+    $('conflicts').hidden = false
+  })
 }
 
 async function uploadFiles(place = { chat: state.ctx.chat.id, ...(state.folder ? { folder: state.folder } : {}) }) {
@@ -1898,7 +2558,7 @@ async function uploadFiles(place = { chat: state.ctx.chat.id, ...(state.folder ?
   } catch (error) {
     // A partial failure rejects too, after the rest are stored: the list shows what arrived.
     await refreshList()
-    showBanner(fmt(error.code === 'too-large' ? state.t.uploadTooLarge : state.t.failed, { e: error.message }), 'error')
+    showBanner(error.code === 'too-large' ? fmt(state.t.uploadTooLarge, { e: error.message }) : failureText(error), 'error')
   } finally {
     $('upload').disabled = false
   }
@@ -1941,7 +2601,7 @@ function askAboutNames(arrived, before) {
           li.remove()
           if (!$('conflict-list').children.length) finish()
         } catch (error) {
-          showBanner(fmt(t.failed, { e: error.message }), 'error')
+          showBanner(failureText(error), 'error')
         }
         await refreshList()
         for (const b of $('conflicts').querySelectorAll('button')) b.disabled = false
@@ -1973,8 +2633,9 @@ async function removeFile(entry) {
   try {
     if (state.current?.entry.id === entry.id) closeCurrent()
     await gugu.files.remove(entry)
+    if (inWorkspace()) readAgain(entry)
   } catch (error) {
-    showBanner(fmt(state.t.failed, { e: error.message }), 'error')
+    showBanner(failureText(error), 'error')
   }
   await refreshList()
 }
@@ -1989,7 +2650,13 @@ function closeCurrent() {
   for (const off of current.offs) off()
   current.unbind?.()
   current.view?.destroy()
+  current.stopWatching?.()
   current.file?.close()
+  clearShownFile()
+}
+
+function clearShownFile() {
+  syncBlockControls()
   $('editor').replaceChildren()
   $('preview').replaceChildren()
   $('peers').replaceChildren()
@@ -2003,33 +2670,48 @@ function closeCurrent() {
   hideBanner()
 }
 
+/** A file this App edits as a live document: wherever it can be one, as `files.open` says. Other names are edited whole. */
+const isLiveName = (name) => /\.(md|markdown|json)$/i.test(name)
+const isMarkdownName = (name) => /\.(md|markdown)$/i.test(name)
+const LONG_TEXT = 256 * 1024
+const PARKED_CLEAN_FILES = 16
+
 /** The file the host handed this page (ctx.file): every file opens through the host (真源 §2.6). */
-async function openHanded() {
-  const token = { id: state.ctx.file.id }
+async function openHanded(maxBytes) {
+  stopRetry()
+  const handed = state.ctx.file
+  const token = { id: handed.id }
   state.opening = token
   // A place is the file's its link names (#7257): another file opening drops it.
   if (state.place && state.place.file !== token.id) state.place = null
-  closeCurrent()
+  leaveCurrent()
   document.body.classList.add('show-doc')
   try {
-    const file = await gugu.files.open(state.ctx.file)
+    // Left and come back to: as it was, edits and undo history.
+    const parked = state.parked.get(handed.id)
+    if (parked) {
+      state.parked.delete(handed.id)
+      moveToTab(parked, state.ctx.tabId)
+      await showWhole(parked)
+      return
+    }
+    // What an editor left unsaved is in its draft, which a live document never reads: such a file opens whole until it is saved or discarded.
+    if (handed.workspace && (!isLiveName(handed.id) || (await gugu.files.draft(handed).catch(() => null)) !== null)) {
+      await openWhole(handed, token, maxBytes)
+      return
+    }
+    const file = await gugu.files.open(handed)
     if (state.opening !== token) {
       file.close()
       return
     }
-    // Stored text (JSON that is not an object, a file over a document's size): edited as a whole, replaced when saved.
-    if (file.readOnlyReason === 'stored-bytes') {
-      await openStoredText(file, token)
-      return
-    }
-    // Not text, or over what an editor takes: its details, to download. The host handed it to this App (it claims the
-    // name), so nobody else says why: this page does (复核 10-15).
-    if (file.type === 'binary') {
+    if (file.type === 'binary' || file.readOnlyReason === 'stored-bytes') {
+      // Text that cannot be a live document is edited whole; a chat's stored text comes with what it holds.
+      const first = file.readOnlyReason === 'stored-bytes' ? { content: file.text, exact: file.exact } : null
+      const { entry } = file
       file.close()
-      showDocMessage(state.t.downloadOnly)
-      document.body.classList.add('binary', 'show-doc')
-      $('doc-title').textContent = file.entry.name
-      showEntry(file.entry)
+      if (first || entry.workspace) await openWhole(entry, token, maxBytes, first)
+      else showDownloadOnly(entry)
       return
     }
     const current = { entry: file.entry, file, view: null, unbind: null, offs: [] }
@@ -2038,41 +2720,81 @@ async function openHanded() {
     showDoc(file.entry)
     watchStatus(current)
     watchPresence(current)
-    if (file.type === 'text') await mountText(current, previewReady)
-    else mountJson(current)
+    if (file.type !== 'text') mountJson(current)
+    else if (isMarkdownName(file.entry.name)) await mountText(current, previewReady)
+    else await mountPlain(current)
   } catch (error) {
-    if (state.opening === token) showDocMessage(error.code === 'denied' ? state.t.denied : fmt(state.t.failed, { e: error.message }))
+    if (state.opening !== token) return
+    showDocMessage(error.code === 'denied' ? state.t.denied : failureText(error))
+    if (error.code !== 'denied') offerRetry(handed, maxBytes)
   } finally {
     if (state.opening === token) state.opening = null
   }
 }
 
-const isMarkdownName = (name) => /\.(md|markdown)$/i.test(name)
-const LONG_TEXT = 256 * 1024
+// A file that could not be opened (its machine out of reach, say): a way to try again, and again by itself when its machine is back.
+function offerRetry(handed, maxBytes) {
+  const again = () => {
+    stopRetry()
+    void openHanded(maxBytes)
+  }
+  const retry = Object.assign(document.createElement('button'), { type: 'button', textContent: state.t.retry, onclick: again })
+  $('doc-message').append(document.createElement('br'), retry)
+  state.retryWatch = handed.workspace ? gugu.files.onChanged({ workspace: handed.workspace, id: handed.id }, (change) => { if (change.kind === 'resync') again() }) : null
+}
+
+function stopRetry() {
+  state.retryWatch?.()
+  state.retryWatch = null
+}
+
+// The host handed it to this App (it claims the name), so nobody else says why: this page does (复核 10-15).
+function showDownloadOnly(entry) {
+  showDocMessage(state.t.downloadOnly)
+  document.body.classList.add('binary', 'show-doc')
+  $('doc-title').textContent = entry.name
+  showEntry(entry)
+  void showDocPath(entry)
+}
 
 /**
- * A stored text file as this page edits it: what `mountText` and the source view read of a file — `text`, `onChange`,
- * `anchor` / `resolve` — on the editor's own document, and `bind`, which a live file's `gugu.bind.codemirror` stands for.
+ * A file edited whole as this page's views read a file — `text`, `onChange`, `anchor` / `resolve` — on the editor's own
+ * document, and `bind`, which a live file's `gugu.bind.codemirror` stands for. Left with unsaved edits it keeps the editor's
+ * state, and takes the file's changes there.
  */
 function bufferFile(cm, entry, initial, readOnly, source) {
   const anchors = bufferAnchors()
   const listeners = new Set()
+  const { Transaction, StateEffect } = cm.state
+  const outsideHistory = Transaction.addToHistory.of(false)
   let view = null
+  let parked = null
+  const docText = () => (view ? view.state.doc : parked?.doc)?.toString() ?? initial
   return {
     type: isMarkdownName(entry.name) ? 'text' : 'source',
     readOnly,
-    get text() { return view ? view.state.doc.toString() : initial },
+    get text() { return docText() },
     anchor: anchors.anchor,
     resolve: anchors.resolve,
     onChange(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
-    close: () => undefined,
+    close: () => {
+      source.flush()
+      source.close()
+    },
+    park() {
+      parked = view.state
+      view = null
+    },
     bind(editor) {
       view = editor
-      const { Transaction, StateEffect } = cm.state
-      const outsideHistory = Transaction.addToHistory.of(false)
+      if (parked) {
+        view.setState(parked)
+        parked = null
+        return () => undefined
+      }
       view.dispatch({ changes: { from: 0, insert: initial }, annotations: outsideHistory })
       view.dispatch({ effects: StateEffect.appendConfig.of([
         cm.EditorState.readOnly.of(readOnly),
@@ -2085,84 +2807,239 @@ function bufferFile(cm, entry, initial, readOnly, source) {
         }),
       ]) })
       source.attach({
-        text: () => view.state.doc.toString(),
-        apply: (hunks) => view.dispatch({ changes: hunks.map(({ from, to, insert }) => ({ from, to, insert })), annotations: outsideHistory }),
+        text: docText,
+        apply: (hunks) => {
+          const changes = hunks.map(({ from, to, insert }) => ({ from, to, insert }))
+          if (view) view.dispatch({ changes, annotations: outsideHistory })
+          else {
+            const update = parked.update({ changes, annotations: outsideHistory })
+            parked = update.state
+            anchors.moved(update.changes)
+            source.edited()
+          }
+        },
       })
       return () => undefined
     },
   }
 }
 
-/** `handle`: the stored text `files.open` gave. Writing goes through `files.replace`, the stored file's one way in. */
-async function openStoredText(handle, token) {
-  const initial = handle.text
-  const { exact } = handle
-  const entry = handle.entry
-  handle.close()
-  const cm = await editorKit()
-  if (state.opening !== token) return
-  const current = { entry, view: null, unbind: null, offs: [] }
-  const source = sourceFile({
-    io: {
-      async read() {
-        const file = await gugu.files.open(current.entry)
-        try {
-          if (file.readOnlyReason !== 'stored-bytes') return { becameDocument: true }
-          current.entry = file.entry
-          return { content: file.text }
-        } finally {
-          file.close()
-        }
+const noteDraftFailure = (error) => void gugu.reportError(`Unsaved edits were not kept for after a crash: ${error.message}`, { level: 'hint' })
+
+/** A chat's file goes back as its next version, `files.replace`; a working copy's as itself, wherever it is. */
+function wholeFileCalls(current) {
+  const ref = () => current.entry
+  if (current.entry.workspace) {
+    return {
+      read: (maxBytes) => gugu.files.readText(ref(), { maxBytes }),
+      write: (text) => gugu.files.writeText(ref(), text),
+      // A draft not kept is not a save that failed (its machine may be off): the App's record says so, the page does not.
+      draft: {
+        get: () => gugu.files.draft(ref()).catch((error) => { noteDraftFailure(error); return null }),
+        put: (text) => gugu.files.draft(ref(), text).catch(noteDraftFailure),
+        clear: () => gugu.files.draft(ref(), null).catch(noteDraftFailure),
       },
-      async write(text) {
-        const content = new Blob([text], { type: current.entry.contentType })
-        try {
-          current.entry = await gugu.files.replace(current.entry, content, current.entry.workspace ? {} : { expectedVersion: current.entry.version })
-        } catch (error) {
-          throw error.code === 'content-changed' ? Object.assign(new Error(error.message), { code: 'conflict' }) : error
-        }
-      },
+    }
+  }
+  return {
+    async read() {
+      const file = await gugu.files.open(ref())
+      try {
+        if (file.readOnlyReason !== 'stored-bytes') return { becameDocument: true }
+        current.entry = file.entry
+        return { content: file.text }
+      } finally {
+        file.close()
+      }
     },
-    text: cm,
-    onChange: () => showSourceState(current, source),
-    onError: (error) => showBanner(fmt(state.t.failed, { e: error.message }), 'error'),
-    // Saved as what a document is (comments taken out of a JSON file, say): from here on it opens live.
-    onDocument: () => { if (state.current === current) void openHanded() },
-  })
-  source.load(initial)
-  const readOnly = !exact || !canWrite()
-  current.file = bufferFile(cm, entry, initial, readOnly, source)
-  current.source = source
-  current.jsonApply = () => source.save()
-  current.jsonDiscard = () => source.discard()
-  state.current = current
-  bindFileMenu(current)
-  showDoc(entry)
-  if (readOnly) {
-    $('doc-status').textContent = state.t.readOnly
-    if (!exact) showBanner(state.t.notUtf8ReadOnly, 'info', true)
+    async write(text) {
+      current.entry = await gugu.files.replace(ref(), new Blob([text], { type: ref().contentType }), { expectedVersion: ref().version })
+    },
   }
-  const place = entry.workspace ? { workspace: entry.workspace } : { chat: entry.chat }
-  const changedHere = (change) => change.kind === 'resync' || change.gone?.includes(entry.id) || (change.changes ?? change.entries ?? []).some((c) => (c.id ?? c.path) === entry.id)
-  current.offs.push(gugu.files.onChanged(place, (change) => { if (changedHere(change)) void source.refresh() }))
-  if (current.file.type === 'text') {
-    await mountText(current, previewReady)
-    return
-  }
-  document.body.dataset.kind = 'json'
-  current.view = new cm.EditorView({
-    parent: $('editor'),
-    extensions: [cm.basicSetup, /\.json$/i.test(entry.name) ? cm.json() : [], cm.EditorView.lineWrapping, editorTheme(cm, false), selectionWatch(cm)],
-  })
-  current.unbind = current.file.bind(current.view)
 }
 
-function showSourceState(current, source) {
+async function openWhole(entry, token, maxBytes, first = null) {
+  const cm = await editorKit()
+  // The host hands a page a file's place; what it is comes with its first read.
+  if (entry.workspace && !first) {
+    const name = entry.id.split(/[\\/]/).pop()
+    // A file that takes a while says how far it has come; another machine's over a slow link can take minutes.
+    const onProgress = (done, total) => {
+      if (state.opening === token && total > LONG_TEXT) showDocMessage(fmt(state.t.openingProgress, { name, done: sizeOf(done), total: sizeOf(total) }))
+    }
+    first = await gugu.files.readText(entry, { maxBytes, onProgress })
+    entry = first.entry
+  }
+  const current = { entry, view: null, unbind: null, offs: [], tabId: state.ctx.tabId }
+  const source = sourceFile({
+    io: wholeFileCalls(current),
+    text: cm,
+    onChange: () => showSourceState(current),
+    // Saved as what a document is (comments taken out of a JSON file, say): from here on it opens live.
+    onDocument: () => { if (state.current === current) void openHanded() },
+    onError: (error) => {
+      current.saveFailedShown = true
+      // A machine too old stays too old when it reconnects: only one out of reach is worth trying again.
+      current.saveOwed = error.code === 'unavailable'
+      showBanner(error.code === 'content-changed' ? fmt(state.t.saveHeld, { name: current.entry.name }) : fmt(state.t.saveFailed, { name: current.entry.name, e: machineSays(error) ?? error.message }), 'error')
+    },
+  })
+  const loaded = await source.load(maxBytes, first)
+  if (state.opening !== token) return
+  if (loaded.kind === 'binary') return showDownloadOnly(entry)
+  if (loaded.kind === 'too-large') return showTooLarge(entry, loaded.totalSize)
+  current.source = source
+  const readOnly = first?.exact === false || !canWrite()
+  current.file = bufferFile(cm, entry, loaded.initial, readOnly, source)
+  current.readOnlyNote = first?.exact === false
+  current.jsonApply = () => saveWhole(current)
+  current.jsonDiscard = () => source.discard()
+  const stopWatching = gugu.files.onChanged(entry.workspace ? { workspace: entry.workspace, id: entry.id } : { chat: entry.chat }, (change) => {
+    const here = change.kind === 'resync' || change.gone?.includes(entry.id) || (change.changes ?? change.entries ?? []).some((c) => (c.id ?? c.path) === entry.id)
+    if (!here) return
+    // Its machine is back: the save it could not take is taken now, so "cannot be reached" does not outlive the outage.
+    void (change.kind === 'resync' && current.saveOwed && state.current === current ? source.retrySave() : source.refresh())
+  })
+  current.stopWatching = stopWatching
+  await showWhole(current)
+}
+
+async function showWhole(current) {
+  const { file, entry } = current
+  state.current = current
+  applyMode()
+  bindFileMenu(current)
+  showDoc(current.entry)
+  if (file.readOnly) {
+    $('doc-status').textContent = state.t.readOnly
+    if (current.readOnlyNote) showBanner(state.t.notUtf8ReadOnly, 'info', true)
+  }
+  if (file.type === 'text') await mountText(current, previewReady)
+  else {
+    document.body.dataset.kind = 'json'
+    const cm = await editorKit()
+    if (state.current !== current) return
+    const languageId = cm.code.languageFor(entry.name)
+    const language = await cm.code.load(languageId).catch((error) => {
+      void gugu.reportError(`Syntax highlighting of ${languageId} did not load: ${error.message}`)
+      return []
+    })
+    if (state.current !== current) return
+    current.view = new cm.EditorView({
+      parent: $('editor'),
+      extensions: [
+        cm.EditorView.editorAttributes.of({ class: 'code-view' }),
+        cm.view.highlightActiveLine(),
+        cm.commands.history(),
+        cm.keymap.of(cm.commands.historyKeymap),
+        cm.code.editing({ language, dark: state.ctx.themeMode === 'dark', editable: !file.readOnly }),
+        selectionWatch(cm),
+      ],
+    })
+    current.unbind = file.bind(current.view)
+    current.view.focus()
+  }
+  showSourceState(current)
+}
+
+function showTooLarge(entry, size) {
+  if (size > HARD_MAX_BYTES) {
+    showDocMessage(fmt(state.t.overHardMax, { size: sizeOf(size) }))
+    showEntry(entry)
+    return
+  }
+  showDocMessage(fmt(state.t.tooLarge, { size: sizeOf(size) }))
+  showEntry(entry)
+  const open = document.createElement('button')
+  open.type = 'button'
+  open.textContent = state.t.openAnyway
+  open.onclick = () => {
+    showDocMessage(fmt(state.t.openingLong, { name: entry.name, size: sizeOf(size) }))
+    showEntry(entry)
+    void openHanded(HARD_MAX_BYTES)
+  }
+  $('doc-message').append(document.createElement('br'), open)
+}
+
+function saveWhole(current) {
+  return current.source.save()
+}
+
+/** The file shown in another tab now: its edits, and their dot, go with it. */
+function moveToTab(current, tabId) {
+  if (current.tabId === tabId) return
+  if (current.saidDirty) void gugu.setTabDirty?.(current.tabId, false)
+  current.tabId = tabId
+  current.saidDirty = false
+}
+
+function reportDirty(current) {
+  if (current.tabId) void gugu.setTabDirty?.(current.tabId, current.source.dirty)
+}
+
+function showSourceState(current) {
+  const { source } = current
+  if (source.dirty !== current.saidDirty) {
+    current.saidDirty = source.dirty
+    reportDirty(current)
+  }
   if (state.current !== current) return
   document.body.classList.toggle('json-dirty', source.dirty)
-  if (source.deleted) showBanner(state.t.deletedHere, 'info', true)
-  else if (current.deletedShown) hideBanner()
-  current.deletedShown = source.deleted
+  const note = source.deleted ? state.t.deletedHere : source.tooLarge !== null ? fmt(state.t.grewTooLarge, { size: sizeOf(source.tooLarge) }) : null
+  // A failed save's words stay until a save goes through.
+  if (current.saveFailedShown && !source.dirty) {
+    current.saveFailedShown = false
+    hideBanner()
+  }
+  if (note) showBanner(note, 'info', true)
+  else if (current.noteShown) hideBanner()
+  current.noteShown = !!note
+}
+
+/** The host's question about a tab, answered by saying again whether it holds anything unsaved (extension-tab-provider). */
+async function answerAboutTab(commandId) {
+  const [, action, tabId] = /^gugu\.file\.(save|discard):(.+)$/.exec(commandId) ?? []
+  if (!action) return
+  const current = [state.current, ...state.parked.values()].find((one) => one?.source && one.tabId === tabId)
+  if (!current) {
+    void gugu.setTabDirty?.(tabId, false)
+    return
+  }
+  // A parked file's editor state takes the same calls as a shown one.
+  if (action === 'save') await current.source.save()
+  else current.source.discard()
+  reportDirty(current)
+  if (!current.source.dirty && state.parked.get(current.entry.id) === current) letGoOfParked(current)
+}
+
+/**
+ * A file edited whole stays with this page while another is shown (one page serves a pane's file tabs): its edits and its
+ * undo history, as the host's editor kept them while the tab was open. The page is not told when a clean tab closes, so the
+ * clean ones are a bounded few, the oldest going first; what is unsaved always stays.
+ */
+function leaveCurrent() {
+  const current = state.current
+  if (!current?.source || !current.view) {
+    closeCurrent()
+    return
+  }
+  state.current = null
+  for (const off of current.offs) off()
+  current.offs = []
+  current.file.park()
+  current.unbind = null
+  current.view.destroy()
+  current.view = null
+  state.parked.set(current.entry.id, current)
+  clearShownFile()
+  const clean = [...state.parked.values()].filter((one) => !one.source.dirty)
+  for (const one of clean.slice(0, Math.max(0, clean.length - PARKED_CLEAN_FILES))) letGoOfParked(one)
+}
+
+function letGoOfParked(current) {
+  state.parked.delete(current.entry.id)
+  current.stopWatching?.()
+  current.file.close()
 }
 
 async function mountText(current, preview) {
@@ -2202,13 +3079,27 @@ async function mountText(current, preview) {
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   const cm = await editorKit()
   if (state.current !== current) return
-  current.marks = lineMarks(cm)
+  current.marks ??= lineMarks(cm)
   current.view = new cm.EditorView({
     parent: $('editor'),
     extensions: [cm.basicSetup, markdownSupport(cm), cm.EditorView.lineWrapping, editorTheme(cm), selectionWatch(cm), current.marks.extension, blockCompletions(current, cm)],
   })
   current.unbind = file.bind ? file.bind(current.view) : gugu.bind.codemirror(current.view, file)
   syncBlockControls()
+  showPlace()
+}
+
+// A live text file that is not markdown (a chat's .txt): its text alone, as the code view shows a file, with no preview.
+async function mountPlain(current) {
+  document.body.dataset.kind = 'json'
+  const cm = await editorKit()
+  if (state.current !== current) return
+  current.marks ??= lineMarks(cm)
+  current.view = new cm.EditorView({
+    parent: $('editor'),
+    extensions: [cm.basicSetup, cm.EditorView.lineWrapping, editorTheme(cm, false), selectionWatch(cm), current.marks.extension],
+  })
+  current.unbind = current.file.bind ? current.file.bind(current.view) : gugu.bind.codemirror(current.view, current.file)
   showPlace()
 }
 
@@ -2295,7 +3186,7 @@ async function cite(current = state.current, picks = state.picks, held = state.h
     state.held = []
     renderHeld()
   } catch (error) {
-    showBanner(fmt(state.t.failed, { e: error.message }), 'error')
+    showBanner(failureText(error), 'error')
   }
 }
 
@@ -2350,12 +3241,15 @@ function renderHeld() {
   applyMarks()
 }
 
-// Lines marked in the source — the kept places, and the place a pill pointed at — as line decorations that follow edits.
+// Lines marked in the source — the kept places, and the place a pill pointed at — as line decorations that follow edits;
+// a link's found words (`{ from, to, cls }`) as a mark on just them.
 function lineMarks(cm) {
   const { StateEffect, StateField } = cm.state
   const { Decoration } = cm.view
   const set = StateEffect.define()
-  const decorate = (doc, spans) => Decoration.set(spans.flatMap(([first, last, cls]) => {
+  const decorate = (doc, spans) => Decoration.set(spans.flatMap((span) => {
+    if (!Array.isArray(span)) return span.to <= doc.length ? [Decoration.mark({ class: span.cls }).range(span.from, span.to)] : []
+    const [first, last, cls] = span
     const lines = []
     for (let n = first; n <= Math.min(last, doc.lines); n += 1) lines.push(Decoration.line({ class: cls }).range(doc.line(n).from))
     return lines
@@ -2376,6 +3270,7 @@ function applyMarks() {
   const current = state.current
   const kept = state.held.map((ref) => spanOf(ref.at?.lines)).filter(Boolean)
   const spans = [...kept.map(([a, b]) => [a, b, 'cm-held']), ...(state.found?.lines ? [[...state.found.lines, 'cm-found']] : [])]
+  if (state.found?.text) spans.push({ ...state.found.text, cls: 'cm-found-text' })
   if (current?.view && current.marks) current.view.dispatch({ effects: current.marks.set.of(spans) })
   previewMarks()
 }
@@ -2394,10 +3289,41 @@ function previewMarks() {
     block.classList.toggle('md-held', held.has(block))
     block.classList.toggle('md-found', found.has(block))
   }
+  foundWords([...found])
+}
+
+// A link's found words within the preview's block, where the page can mark text without changing it (CSS Custom Highlight).
+function foundWords(blocks) {
+  if (!globalThis.CSS?.highlights) return
+  CSS.highlights.delete('found')
+  const words = state.found?.words
+  for (const block of words ? blocks : []) {
+    const range = textRange(block, words) ?? textRange(block, plainWords(words))
+    if (range) return void CSS.highlights.set('found', new globalThis.Highlight(range))
+  }
+}
+
+/** Where `words` first stand in `root`'s text, by the source's rule (`findIn`), as a range over its text nodes. */
+function textRange(root, words) {
+  const nodes = []
+  let all = ''
+  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  for (let node = walk.nextNode(); node; node = walk.nextNode()) {
+    nodes.push([node, all.length])
+    all += node.data
+  }
+  const hit = findIn(all, words)
+  if (!hit) return null
+  const point = (offset) => { const [node, start] = nodes.findLast(([, s]) => s <= offset); return [node, offset - start] }
+  const range = document.createRange()
+  range.setStart(...point(hit.from))
+  range.setEnd(...point(hit.to))
+  return range
 }
 
 // A pill opened this file (#7238: the `link` event a gugu link brings, `query` the pill's `at`): its lines, found again if
-// the file has changed since (`relocate`), scrolled to and marked in the source and the preview until the next press.
+// the file has changed since (`relocate`), scrolled to and marked in the source and the preview until the next press. A
+// link's `find=` names words instead (or within its lines): their first place, the words themselves marked too.
 // Held until that file's text is drawn: the link names its file (#7257: `link.file`).
 function goTo(link) {
   state.place = { query: link.query, file: link.file }
@@ -2407,22 +3333,30 @@ function goTo(link) {
 function showPlace() {
   const current = state.current
   if (!state.place || !current?.view || state.place.file !== current.entry.id) return
-  const { lines, h, n } = state.place.query
+  const { lines, h, n, find } = state.place.query
   state.place = null
   const span = spanOf(lines)
   // A JSON file's view has no lines of its text.
-  if (!span || current.file.type !== 'text') return
+  if ((!span && !find) || current.file.type !== 'text') return
   const { doc } = current.view.state
-  const found = h ? relocate(current.file.text, span, h, Number(n ?? 1)) : { first: span[0], last: span[1], moved: false }
-  const at = found ? [found.first, found.last] : span.map((n) => Math.min(n, doc.lines))
+  const kept = span && (h ? relocate(current.file.text, span, h, Number(n ?? 1)) : { first: span[0], last: span[1], moved: false })
+  const hit = find ? findIn(current.file.text, find, kept ? [kept.first, kept.last] : span) : null
+  const found = hit ? { first: hit.lines[0], last: hit.lines[1], moved: false } : find ? null : kept
   if (state.found?.said) hideBanner()
-  state.found = { lines: found ? at : null, said: !found || found.moved }
+  const gone = () => showBanner(find ? fmt(state.t.findGone, { words: find }) : state.t.placeGone, 'info', true)
+  if (!found && !span) {
+    state.found = { lines: null, said: true }
+    applyMarks()
+    return gone()
+  }
+  const at = found ? [found.first, found.last] : span.map((n) => Math.min(n, doc.lines))
+  state.found = { lines: found ? at : null, said: !found || found.moved, ...(hit ? { text: { from: hit.from, to: hit.to }, words: find } : {}) }
   applyMarks()
-  current.view.dispatch({ effects: state.cm.EditorView.scrollIntoView(doc.line(at[0]).from, { y: 'center' }) })
+  current.view.dispatch({ effects: state.cm.EditorView.scrollIntoView(hit ? hit.from : doc.line(at[0]).from, { y: 'center' }) })
   blocksOn(at)[0]?.scrollIntoView?.({ block: 'center' })
   // Said until the next press on the file, as the mark stays (the file's status coming in does not take it away).
   if (found?.moved) showBanner(fmt(state.t.placeMoved, { lines: fmt(at[0] === at[1] ? state.t.line : state.t.lines, { first: at[0], last: at[1] }) }), 'info', true)
-  else if (!found) showBanner(state.t.placeGone, 'info', true)
+  else if (!found) gone()
 }
 
 async function copySelection() {
@@ -2433,7 +3367,7 @@ async function copySelection() {
     await gugu.clipboard.writeText(text)
     button.textContent = state.t.copied
   } catch (error) {
-    showBanner(fmt(state.t.failed, { e: error.message }), 'error')
+    showBanner(failureText(error), 'error')
   }
   setTimeout(() => {
     button.textContent = state.t.copy
@@ -2543,7 +3477,7 @@ function showBlockHandle(event) {
   if (handleFrame === null) handleFrame = requestAnimationFrame(() => {
     try { placeBlockHandle() } catch (error) {
       hideBlockHandle(true)
-      showBanner(fmt(state.t.failed, { e: error.message }), 'error')
+      showBanner(failureText(error), 'error')
     }
   })
 }
@@ -2609,7 +3543,7 @@ function resolvedRange(current, range) {
 
 function blockAction(run) {
   return async () => {
-    try { return await run() } catch (error) { showBanner(fmt(state.t.failed, { e: error.message }), 'error') }
+    try { return await run() } catch (error) { showBanner(failureText(error), 'error') }
   }
 }
 
@@ -2654,7 +3588,7 @@ function changeBlock(current, range, change, userEvent = 'input.complete') {
     view.focus()
     hideBlockHandle(true)
   } catch (error) {
-    showBanner(fmt(state.t.failed, { e: error.message }), 'error')
+    showBanner(failureText(error), 'error')
   }
 }
 
@@ -2721,7 +3655,7 @@ function blockMenu(box) {
 
 function blockLinks(current, pick) {
   return [
-    [state.t.copyBlockLink, blockAction(() => { const p = pick(); return copyLink(current.entry, placeOf(current.file.text, p.lines[0], p.lines[1])) })],
+    ...(inCopy(current.entry) ? [] : [[state.t.copyBlockLink, blockAction(() => { const p = pick(); return copyLink(current.entry, placeOf(current.file.text, p.lines[0], p.lines[1])) })]]),
     [state.t.cite, blockAction(() => cite(current, [pick()], state.held))],
   ]
 }
@@ -2954,10 +3888,54 @@ function showDoc(entry) {
   $('doc-title').textContent = entry.name
   $('doc-message').hidden = true
   showEntry(entry)
+  void showDocPath(entry)
+}
+
+// A working copy's root, from what its top lists: an entry says its path there and its path on the disk.
+async function workingCopyRoot(workspace) {
+  if (state.rootOf?.workspace === workspace) return state.rootOf.root
+  const listed = await gugu.files.list({ workspace, folder: '' }).catch(() => [])
+  const known = listed.find((entry) => entry.absolutePath?.endsWith(entry.id))
+  const root = known ? known.absolutePath.slice(0, -known.id.length - 1) : null
+  if (root) state.rootOf = { workspace, root }
+  return root
+}
+
+// A list's entry says where it is; a file a host opened says it by its id, or by the working copy's root as a list told it.
+function absolutePathOf(entry) {
+  if (entry.absolutePath) return entry.absolutePath
+  if (/^([/\\]|[A-Za-z]:[/\\])/.test(entry.id)) return entry.id
+  return state.rootOf?.workspace === entry.workspace ? `${state.rootOf.root}/${entry.id}` : null
+}
+
+// The real place of the file a host opened here: a folder inside its working copy is a way to that folder in the list.
+async function showDocPath(entry) {
+  const nav = $('doc-path')
+  nav.hidden = true
+  nav.replaceChildren()
+  if (!entry.workspace || !document.body.classList.contains('host-opened')) return
+  const root = await workingCopyRoot(entry.workspace)
+  const path = absolutePathOf(entry)
+  if (!path || state.current?.entry.id !== entry.id) return
+  const separator = path.includes('\\') && !path.includes('/') ? '\\' : '/'
+  const parts = path.split(separator)
+  parts.pop()
+  nav.title = path
+  parts.forEach((part, index) => {
+    const here = parts.slice(0, index + 1).join(separator)
+    const folder = root && (here === root || here.startsWith(root + separator)) ? here.slice(root.length + 1).split(separator).join('/') : null
+    const segment = folder === null
+      ? Object.assign(document.createElement('span'), { textContent: part })
+      : Object.assign(document.createElement('button'), { type: 'button', textContent: part, onclick: () => void gugu.files.openWith({ workspace: entry.workspace, folder }).catch((error) => showBanner(failureText(error), 'error', true)) })
+    nav.append(segment, Object.assign(document.createElement('span'), { textContent: separator }))
+  })
+  nav.hidden = false
 }
 
 function showDocMessage(message) {
   document.body.dataset.state = 'message'
+  $('doc-path').hidden = true
+  document.body.classList.remove('json-dirty')
   $('doc-title').textContent = ''
   $('doc-status').textContent = ''
   $('doc-message').hidden = false
@@ -2994,7 +3972,7 @@ function renderDocInfo(entry) {
       link.dataset.messageId = id
       link.textContent = fmt(t.source, { n: i + 1 })
       link.onclick = () =>
-        gugu.showMessage(id).catch((error) => showBanner(error.code === 'not-found' ? t.sourceGone : fmt(t.failed, { e: error.message }), 'error'))
+        gugu.showMessage(id).catch((error) => showBanner(error.code === 'not-found' ? t.sourceGone : failureText(error), 'error'))
       box.append(link)
     })
     parts.push(box)
@@ -3006,6 +3984,15 @@ function renderDocInfo(entry) {
 
 // Said on the page the person is on (F32: one page at a time) — the file's line on the file, the list's own line on the
 // list: the list page does not draw the file's pane, its line included.
+// A machine's trouble, by its name: what it said (its device id too) stays in the logs. Null for any other failure.
+function machineSays(error) {
+  const { machine } = error.detail ?? {}
+  if (error.code === 'machine-outdated') return fmt(state.t.machineOutdated, { machine })
+  return error.code === 'unavailable' && machine ? fmt(state.t.machineUnreachable, { machine }) : null
+}
+
+const failureText = (error) => machineSays(error) ?? fmt(state.t.failed, { e: error.message })
+
 function showBanner(message, tone, sticky = false) {
   const banner = document.body.classList.contains('show-doc') || document.body.classList.contains('no-list') ? $('banner') : $('list-banner')
   banner.hidden = false
@@ -3027,7 +4014,14 @@ function hideBanner() {
 const narrowPane = window.matchMedia?.('(max-width: 640px)') ?? null
 const touchPane = window.matchMedia?.('(hover: none) and (pointer: coarse)') ?? null
 
+const readInHost = () => !!state.current && /\.(html?|csv|svg)$/i.test(state.current.entry.name)
+
 function setMode(mode) {
+  // These are read in the host's file preview: their tab is there, one page of the same file.
+  if (mode === 'preview' && readInHost()) {
+    void gugu.files.openWith(state.current.entry).catch((error) => showBanner(error?.message ?? String(error), 'error', true))
+    return
+  }
   state.mode = mode
   applyMode()
 }
@@ -3036,9 +4030,10 @@ function applyMode() {
   const mode = narrowPane?.matches && state.mode === 'split' ? 'preview' : state.mode
   document.body.dataset.mode = mode
   // One toggle: it shows where a press goes — to editing while reading, to reading otherwise; 对照 is a ⋯ item.
-  $('mode-edit').hidden = mode !== 'preview'
-  $('mode-preview').hidden = mode === 'preview'
+  $('mode-edit').hidden = mode !== 'preview' || readInHost()
+  $('mode-preview').hidden = mode === 'preview' && !readInHost()
   $('mode-split').hidden = true
+  document.body.classList.toggle('read-in-host', readInHost())
   if (mode !== 'edit' && state.current?.previewDeferred) state.current.drawPreview()
   syncBlockControls(true)
 }
@@ -3130,6 +4125,7 @@ function toggleMenu(anchor, items, context = {}) {
   state.menuAnchor = anchor
   anchor.setAttribute('aria-expanded', 'true')
   menu.hidden = false
+  holdBack(backStepWanted())
   menu.style.top = menu.style.left = ''
   if (!fileContext || !touchPane?.matches) {
     const box = context.point ? { left: context.point.x, right: context.point.x, top: context.point.y, bottom: context.point.y } : anchor.getBoundingClientRect()
@@ -3197,10 +4193,10 @@ const pickedEntries = () => state.order.filter((id) => state.picked.has(id)).map
 
 // The same batch actions in the toolbar and the selection's context menu.
 const pickedActions = () => [
-  ...(canForward() ? [{ text: state.t.pickForward, run: () => forwardEntries(pickedEntries(), clearPicks) }] : []),
+  ...(canForward() ? [{ text: inWorkspace() ? state.t.sendToChat : state.t.pickForward, run: () => forwardEntries(pickedEntries(), clearPicks) }] : []),
   { text: state.t.pickDownload, run: downloadPicked },
-  ...(canWrite() ? [{ text: state.t.pickTemporary, run: () => keepPicked('temporary') }, { text: state.t.pickPermanent, run: () => keepPicked('permanent') }] : []),
-  { text: state.t.pickLocate, run: startLocate },
+  ...(!inWorkspace() && canWrite() ? [{ text: state.t.pickTemporary, run: () => keepPicked('temporary') }, { text: state.t.pickPermanent, run: () => keepPicked('permanent') }] : []),
+  ...(!inWorkspace() ? [{ text: state.t.pickLocate, run: startLocate }] : []),
 ]
 
 function pickAll() {
@@ -3239,8 +4235,8 @@ function renderPicks() {
     : [act(t.pickLocate, startLocate)]
   bar.replaceChildren(
     Object.assign(document.createElement('span'), { className: 'pick-count', textContent: fmt(t.picked, { n: count }) }),
-    ...pickedActions().slice(0, -1).map(({ text, run }) => act(text, run)),
-    ...locate,
+    ...pickedActions().slice(0, inWorkspace() ? undefined : -1).map(({ text, run }) => act(text, run)),
+    ...(!inWorkspace() ? locate : []),
     act('✕', () => clearPicks(), { className: 'pick-close', title: t.pickCancel, ariaLabel: t.pickCancel }),
   )
 }
@@ -3254,7 +4250,7 @@ async function downloadPicked() {
     const saved = await gugu.files.download(entries)
     if (typeof saved === 'number' && saved > 0) showBanner(fmt(state.t.savedFiles, { n: saved }), 'info')
   } catch (error) {
-    showBanner(fmt(state.t.failed, { e: error.message }), 'error')
+    showBanner(failureText(error), 'error')
   }
 }
 
@@ -3268,7 +4264,7 @@ async function keepPicked(how) {
   try {
     if (mine.length) said.push(fmt(t.keptFiles, { n: (await gugu.files.keep(mine, how))?.changed ?? mine.length }))
   } catch (error) {
-    return void showBanner(error.code === 'denied' ? t.keepNotMine : fmt(t.failed, { e: error.message }), 'error')
+    return void showBanner(error.code === 'denied' ? t.keepNotMine : failureText(error), 'error')
   }
   if (notMine.length) said.push(fmt(t.skippedNotMine, { n: notMine.length }))
   if (noCopy.length) said.push(fmt(t.skippedNoCopy, { n: noCopy.length }))
@@ -3361,13 +4357,14 @@ function showDetails(entry) {
   }
   const dated = (iso) => (iso ? new Intl.DateTimeFormat(state.ctx?.locale || 'en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso)) : '')
   fact(t.d_size, [sizeOf(entry.size), entry.suffix ? entry.suffix.slice(1).toUpperCase() : ''].filter(Boolean).join(' · '))
-  fact(t.d_by, [entry.createdBy && entry.createdBy.kind !== 'system' ? who(entry.createdBy) : '', dated(entry.createdAt)].filter(Boolean).join(' · '))
-  if (entry.updatedAt && entry.createdAt && Date.parse(entry.updatedAt) - Date.parse(entry.createdAt) > 60_000) {
+  // A working copy's file was made there, not uploaded.
+  fact(inCopy(entry) ? t.d_created : t.d_by, [entry.createdBy && entry.createdBy.kind !== 'system' ? who(entry.createdBy) : '', dated(entry.createdAt)].filter(Boolean).join(' · '))
+  if (entry.updatedAt && (!entry.createdAt || Date.parse(entry.updatedAt) - Date.parse(entry.createdAt) > 60_000)) {
     fact(t.d_edited, [entry.updatedBy ? who(entry.updatedBy) : '', dated(entry.updatedAt), entry.version ? fmt(t.d_version, { n: entry.version }) : ''].filter(Boolean).join(' · '))
   }
   const folders = []
   for (let at = state.entries.find((e) => e.id === entry.parentId); at; at = state.entries.find((e) => e.id === at.parentId)) folders.unshift(shownName(at))
-  fact(t.d_where, [t.title, ...folders].join(' / '))
+  fact(t.d_where, [inCopy(entry) ? t.workingCopy : t.chatFolder, ...folders].join(' / '))
   if (entry.storedOn) fact(t.d_stored, `${machineOf(entry.storedOn)}${entry.storedOn.online === undefined ? '' : ` · ${entry.storedOn.online ? t.machineOnline : t.machineOffline}`}`, storedOnText(entry.storedOn))
   const left = entry.keep?.expiresAt ? fmt(t.clearsAt, { time: dated(entry.keep.expiresAt) }) : null
   if (entry.keep !== undefined) fact(t.d_keep, !entry.keep ? t.noCopy : left ? `${t.keepTemporary} · ${left}` : t.keepPermanent, entry.keep && !entry.keep.mine ? t.keepNotMine : undefined)
@@ -3411,6 +4408,7 @@ function closeMenu() {
   state.menuAnchor?.setAttribute('aria-expanded', 'false')
   state.menuAnchor = null
   $('menu').hidden = true
+  holdBack(backStepWanted())
 }
 
 // ─── start ──────────────────────────────────────────────────────────────────
@@ -3438,10 +4436,17 @@ function start() {
   })
   lasso()
   $('filter').oninput = (event) => {
-    clearPicks()
-    state.filter = event.target.value
-    renderList()
+    setFilterText(event.target.value)
+    // A search names files in every folder: the whole tree is read for it, once (what is read so far is searched meanwhile).
+    if (state.filter.trim() && state.root === 'chat' && state.whole !== true) wholeThen(renderList)
   }
+  $('filter').onkeydown = (event) => { if (event.key === 'Escape') closeSearch() }
+  $('filter-clear').onclick = () => { setFilterText(''); $('filter').focus() }
+  $('search-cancel').onclick = () => closeSearch()
+  // Left empty, the field goes (a press on 🔍 is that button's own, below).
+  $('search').addEventListener('focusout', (event) => {
+    if (!state.filter && !$('search').contains(event.relatedTarget) && event.relatedTarget !== $('search-toggle')) showSearch(false)
+  })
   $('select-files').onclick = () => {
     if (state.selecting || state.picked.size) clearPicks()
     else { state.selecting = true; renderPicks() }
@@ -3453,11 +4458,22 @@ function start() {
       renderList()
     }
   }
-  $('search-toggle').onclick = () => { const input = $('filter'); input.hidden = !input.hidden; $('search-toggle').setAttribute('aria-expanded', String(!input.hidden)); if (!input.hidden) input.focus() }
+  $('search-toggle').onclick = (event) => ($('search').hidden ? showSearch(true) : closeSearch(event.detail > 0))
   $('page-back').onclick = () => navigate(-1)
-  $('page-forward').onclick = () => navigate(1)
-  $('new-doc').onclick = () => toggleMenu($('new-doc'), [[state.t.newDoc, createDoc], [state.t.newFolder, createFolder]])
-  $('upload').onclick = $('empty-upload').onclick = () => uploadFiles()
+  $('new-doc').onclick = () => toggleMenu($('new-doc'), inWorkspace()
+    ? [[state.t.newFile, () => startCreate('file')], [state.t.newFolder, () => startCreate('folder')]]
+    : [[state.t.newDoc, createDoc], [state.t.newFolder, createFolder]])
+  $('upload').onclick = $('empty-upload').onclick = () => (inWorkspace() ? pickUpload() : uploadFiles())
+  // The computer's files dropped on the list: into the folder on screen (a folder's row takes them itself, dropOnto).
+  const listPane = $('file-list').parentElement
+  listPane.addEventListener('dragover', (event) => {
+    if (droppingFiles(event)) event.preventDefault()
+  })
+  listPane.addEventListener('drop', (event) => {
+    if (!droppingFiles(event)) return
+    event.preventDefault()
+    void uploadDropped(event.dataTransfer, state.folder ?? '')
+  })
   $('move-cancel').onclick = closeMoveDialog
   $('move-dialog').addEventListener('pointerdown', (event) => {
     if (event.target === $('move-dialog')) closeMoveDialog()
@@ -3472,7 +4488,7 @@ function start() {
     // 对照 (side by side) is the open text's third way to show itself: a checked item here, where the pane has room.
     const split = state.current?.file.type === 'text' && document.body.dataset.kind !== 'json' && !narrowPane?.matches
       ? [{ text: state.t.split, checked: state.mode === 'split', run: () => setMode(state.mode === 'split' ? 'preview' : 'split') }, { separator: true }] : []
-    if (entry) showFileMenu($('more'), entry, (yes) => [...split, ...fileActions($('doc-title'), entry, yes)])
+    if (entry) showFileMenu($('more'), entry, (yes) => [...split, ...fileActions($('doc-title'), entry, yes), ...(inCopy(entry) ? [{ separator: true }, ...copyActions(entry)] : [])])
   }
   document.addEventListener('pointerdown', (event) => {
     if (state.menuAnchor && !$('menu').contains(event.target) && !state.menuAnchor.contains(event.target)) closeMenu()
@@ -3480,7 +4496,7 @@ function start() {
   document.addEventListener('keydown', (event) => {
     if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key === 's' && state.current?.source) {
       event.preventDefault()
-      void state.current.source.save()
+      void saveWhole(state.current)
     }
     if (event.key !== 'Escape') return
     if (!state.menuAnchor && state.details) closeDetails()
@@ -3522,7 +4538,7 @@ function start() {
   }
   $('empty-draft').onclick = () => {
     const current = state.current
-    if (current) gugu.dispatch(state.t.emptyAsk, { draft: true, refs: [{ file: current.entry }] }).catch((error) => showBanner(fmt(state.t.failed, { e: error.message }), 'error'))
+    if (current) gugu.dispatch(state.t.emptyAsk, { draft: true, refs: [{ file: current.entry }] }).catch((error) => showBanner(failureText(error), 'error'))
   }
   $('held-cite').onclick = () => cite()
   $('held-clear').onclick = () => {
@@ -3538,9 +4554,11 @@ function start() {
       applyMarks()
     })
   }
+  gugu.onCommand?.((id) => void answerAboutTab(id))
+  window.addEventListener('pagehide', () => { for (const one of [state.current, ...state.parked.values()]) one?.source?.flush() })
   gugu.onLink(goTo)
   setMode(state.mode)
-  const contextFailed = (error) => showDocMessage(fmt(state.t.failed, { e: error.message }))
+  const contextFailed = (error) => showDocMessage(failureText(error))
   gugu.onContextChanged((ctx) => applyContext(ctx).catch(contextFailed))
   gugu.getContext().then(applyContext).catch(contextFailed)
 }

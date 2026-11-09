@@ -14,6 +14,8 @@
   pointer-events: none;
 }
 .gg-phone-task-card > * { pointer-events: auto; zoom: 0.72; }
+/* 卡底下那行说明正好落在运行条那一行:卡浮着时运行条让位(行还占着,布局不动),收起或点中文件夹就回来。 */
+[data-chat-surface]:has(.gg-phone-task-card) [data-running-bar-content] { visibility: hidden; }
 .gg-phone-folder-picker { position: absolute; inset: 0; z-index: 20; display: flex; background: var(--ta-panel-bg); }
 
 /* 框上沿那一枚任务标签(原型 v7.12 .v7-task-tag):左缩进让开回形针,和框里的字对齐。 */
@@ -61,7 +63,7 @@
   cursor: pointer;
 }
 .gg-phone-task-where > span { min-width: 0; overflow-wrap: anywhere; white-space: normal; text-align: left; }
-.gg-phone-task-where[data-blocked] { color: var(--warn); }
+.gg-phone-task-where[data-blocked] { color: var(--warn-fg); }
 .gg-phone-task-tag > .gg-icon-btn { grid-column: 2; grid-row: 1; justify-self: end; }
 .gg-phone-project-empty { display: flex; flex-direction: column; align-items: center; gap: var(--spacing-lg); padding-top: var(--spacing-2xl); color: var(--text-primary); font-size: var(--font-title); }
 [data-chat-surface]:has([data-chat-composer-host][data-phone-task]) .gg-phone-project-empty-start { visibility: hidden; }

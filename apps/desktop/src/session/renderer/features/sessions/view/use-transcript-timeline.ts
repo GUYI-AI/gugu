@@ -1,3 +1,7 @@
+import { chatActor } from '@renderer/lib/chat/actor-identity';
+import { chatDisplayName } from '@renderer/lib/chat/chat-name';
+import { readChatSummary, resolveChatId, subscribeChatNames } from '@/lib/chatSummariesBridge';
+import { translateSessionMessage } from '../../../localization/locale-store';
 import { useLayoutEffect, useState } from 'react';
 import { createComputed, createMemo, createRoot, createSignal } from 'solid-js';
 import { readIdentityDirectoryBridge } from '@/lib/identityDirectoryBridge';
@@ -26,6 +30,7 @@ export function useTranscriptTimeline<T>(
       const [identityRevision, setIdentityRevision] = createSignal(0);
       const refreshIdentity = () => setIdentityRevision((revision) => revision + 1);
       const offDirectory = directory?.subscribe(refreshIdentity);
+      const offChatNames = subscribeChatNames(refreshIdentity);
       const offSelf = readSelfIdentityBridge()?.subscribe(refreshIdentity);
       const options: TimelineRailOptions = {
         resolveSenderType: (fromId) => {
@@ -36,20 +41,22 @@ export function useTranscriptTimeline<T>(
           return identity?.type;
         },
       };
+      const activityContext = { get viewerId() { return selfIdentity()?.userId; }, actor: chatActor, chatName: chatDisplayName, translate: translateSessionMessage,
+        chatKind: (id: string) => readChatSummary(resolveChatId(id) ?? id)?.kind ?? null };
       // Streaming only reprojects the active turn, not the entire history.
       const committed = createMemo(() => {
         identityRevision();
-        return timelineTurnsFromTranscript(transcript.state.committedTurns, selfIdentity(), options);
+        return timelineTurnsFromTranscript(transcript.state.committedTurns, selfIdentity(), options, activityContext);
       });
       const active = createMemo(() => {
         identityRevision();
         const pending = session?.state.pendingPrompt;
         const turn = transcript.state.activeTurnSnapshot ?? (pending ? pendingPromptTurn(pending) : null);
-        return timelineTurnsFromTranscript(turn ? [turn] : [], selfIdentity(), options);
+        return timelineTurnsFromTranscript(turn ? [turn] : [], selfIdentity(), options, activityContext);
       });
       const selected = createMemo(() => select([...committed(), ...active()]));
       createComputed(() => setSnapshot({ transcript, value: selected() }));
-      return () => { offDirectory?.(); offSelf?.(); dispose(); };
+      return () => { offDirectory?.(); offChatNames(); offSelf?.(); dispose(); };
     });
   }, [transcript, selfIdentity, select, session]);
 

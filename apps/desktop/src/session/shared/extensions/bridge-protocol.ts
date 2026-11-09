@@ -82,12 +82,17 @@ export const EXTENSION_THEME_CHANNEL = 'gugu-ext:theme';
 // 27: pages read members explicitly with chats.members(); context keeps the chat summary without a roster.
 // Pages declaring 26 or earlier retain their initial members and roster context updates.
 // 29: tools modules are host-confined.
-/** Tools modules opt into host confinement from this API. Final numbering follows dev at merge. */
+/** Tools modules opt into host confinement from this API. */
 export const EXTENSION_TOOL_CONFINEMENT_API_VERSION = 29;
 // 30: source-aware page history; navigation.go(-1|1) and context navigation availability.
 // 31: `gugu.cloud` (app-cloud-core.ts), an App's own part of the cloud, and `gugu.pickAgent`, the person's pick of one of their agents.
-// 32: account-bound, single-conversation unread grants. No content or Agent authority.
-export const EXTENSION_API_VERSION = 32;
+// 32: a person's `getContext().operator` carries their own `guguNumber`.
+// 34: `contributes.prompts` (the App's prompts in the composer's `/` menu) and `gugu.prompts`, the person's own prompts (`prompts`).
+// 35: `contributes.settingsTab`, the App's own tab its settings page links to.
+// 36: shared task resources for App-owned capabilities (#1607): task page leases, projection viewers, scoped task
+//     messages, authorized file payloads and non-activating App surfaces.
+// 37: account-bound, single-conversation unread grants. No content or Agent authority.
+export const EXTENSION_API_VERSION = 37;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
@@ -120,6 +125,27 @@ export interface ExtensionChat {
   kind: 'group' | 'topic' | 'dm';
   /** The group: this chat for a group, the one a topic grew out of; null for a private chat and a topic of one. */
   groupId: string | null;
+  /** A project group's folders on the reader's own machines, the project's root first. Absent: none, or not a project group. */
+  folders?: ExtensionChatFolder[];
+}
+
+/** A chat as a page sees it: a project's folders (paths, machines) only for a page that may read files. */
+export function chatForCapabilities<T extends ExtensionChat>(chat: T, capabilities: readonly string[]): T {
+  if (!chat.folders || capabilities.some((capability) => capability.startsWith('files:'))) return chat;
+  const { folders: _folders, ...rest } = chat;
+  return rest as T;
+}
+
+/** One folder of a project group, as the account records it. Its machine may be offline, or no longer have it. */
+export interface ExtensionChatFolder {
+  /** `folder:<device>/<workspace>`: the place `gugu.files.list({ workspace })` lists, on that machine. */
+  workspace: string;
+  path: string;
+  /** The machine's name. */
+  machine: string;
+  online: boolean;
+  /** Whether this computer is that machine: files elsewhere are only read. Absent on a phone. */
+  thisMachine?: boolean;
 }
 
 /**
@@ -148,6 +174,8 @@ export interface ExtensionWorkspace {
   agentId?: string;
   /** The project it is in; absent for a session in none — a real answer, ❌ "". */
   projectId?: string;
+  /** The folder every task with no project works in, shared by them all: no project's, and not this task's alone. */
+  taskHome?: true;
   /**
    * Absolute path of its working copy — present only with `files:read` or `files:write`. Absent means "not
    * granted" (or not open on this computer), never "none": an extension must not read a missing root as permission to guess.
@@ -168,6 +196,12 @@ export interface ExtensionWorkspace {
  * name is done in this one's.
  */
 export type ExtensionOperator = { kind: 'person' } | { kind: 'agent'; id: string };
+/**
+ * API 32: a person's page also says who that person is by 咕咕号 — the signed-in account's own, the number people add and
+ * @ them by. Absent until the host has looked it up (a context update follows); `null` when the account has none or it
+ * could not be read (say so).
+ */
+export type ExtensionContextOperator = { kind: 'person'; guguNumber?: number | null } | { kind: 'agent'; id: string };
 
 /**
  * Where this surface sits right now (真源原则 13): read-only facts, no permission needed. Where a page is open decides
@@ -188,6 +222,8 @@ export interface ExtensionHostContext {
   navigation?: { canBack: boolean; canForward: boolean; backToConversation?: boolean };
   /** A host modal's initial data, under the opener's context and existing grants. */
   modal?: { data?: unknown };
+  /** An App-owned, non-activating native surface; content and control rules belong to the App. */
+  surface?: { id: string; data?: unknown; decorative?: boolean };
   /**
    * The conversation this surface is in (its panel, 「在本群打开」, a session's tab): a group, a topic or a private chat, with who is in
    * it — changes arrive by `onContextChanged`. Absent is a real answer: not in a chat. ❌ No `placement` field: an App
@@ -210,11 +246,13 @@ export interface ExtensionHostContext {
   /** API26: untrusted, immutable initial data from the sender of a message. */
   widget?: { messageId: string; data: Record<string, unknown>; sender: string | null };
   /** Who is working this page (`user:<uuid>` for an agent). Absent on a page nobody draws — the background page, a program. */
-  operator?: ExtensionOperator;
+  operator?: ExtensionContextOperator;
   /** BCP-47 tag of the interface language the user is reading. */
   locale: string;
   /** Whether the host is currently painting light or dark. */
   themeMode: 'light' | 'dark';
+  /** The person's color theme, when one is on: `--em-*` palette values the runtime applies over ui.css. Not for pages to read: they use the `--em-*` names. */
+  themeColors?: Readonly<Record<string, string>>;
   /** What this extension may actually do right now, after any revocations, on this host. */
   capabilities: readonly ExtensionCapability[];
   /** How the host is showing this surface at the moment. Absent on a page nobody draws. */
@@ -248,6 +286,10 @@ export interface ExtensionSurfaceMetrics {
   visible: boolean;
   width: number;
   height: number;
+  /** Trusted host renderer's position in its content viewport, when native page mounting is available. */
+  x?: number;
+  y?: number;
+  clip?: { x: number; y: number; width: number; height: number };
 }
 
 /**
@@ -497,6 +539,8 @@ export interface ExtensionAgentHistoryPage {
 
 /** Events the host pushes to a surface. Each is a fact, never a command. */
 export type ExtensionHostEvent =
+  | { type: 'appSurface'; event: import('./app-surface').AppSurfaceEvent }
+  | { type: 'taskPage'; event: import('./task-page-protocol').TaskPageEvent }
   | { type: 'projection'; watchId: string; packet: import('./projection-protocol').ProjectionHostPacket }
   | { type: 'projectionSource'; event: import('./projection-protocol').ProjectionSourceEvent }
   | { type: 'context'; context: ExtensionHostContext }
@@ -514,6 +558,8 @@ export type ExtensionHostEvent =
    * the same capability checks as anything else.
    */
   | { type: 'command'; commandId: string }
+  /** The host's Back, given to the page that claimed it (`navigationClaimBack`). */
+  | { type: 'back' }
   /**
    * 后台实例发给视图的一条消息。
    *
@@ -550,6 +596,8 @@ export type ExtensionHostEvent =
    * on purpose — a guessed set would be worse.
    */
   | { type: 'filesChanged'; watchId: string; place: AppPlace; change: ExtensionFileChangeBatch }
+  /** How far a `files.download` of a working copy's file or folder is. */
+  | { type: 'downloadProgress'; transferId: string; done: number; total: number }
   /**
    * What the app is showing moved — a pane switched tabs, the view split, the
    * user changed session, or the window gained or lost the foreground.
@@ -663,6 +711,11 @@ export interface VerbFacts {
    * from every machine.
    */
   machine?: true | 'place';
+  /**
+   * It only reads, on the machine it follows: done or not, nothing there changed. Such a call to another machine goes
+   * out while the cloud computer's state is still being read (a paused one refuses it after); any other call waits for it.
+   */
+  reads?: true;
 }
 
 /**
@@ -674,6 +727,16 @@ export interface VerbFacts {
  * and a row without any of its facts does not build.
  */
 export const BRIDGE_VERBS = {
+  taskMessage: { needs: 'agents:tools', only: 'page', gesture: true },
+  showTaskPages: { needs: 'agents:tools', only: 'program' },
+  taskPageAcquire: { needs: 'agents:tools', only: 'program' },
+  taskPageSend: { needs: 'agents:tools', only: 'program' },
+  taskPageMaintain: { needs: 'agents:tools', only: 'program' },
+  taskPagePresentation: { needs: 'agents:tools', only: 'program' },
+  taskPageFilePayloads: { needs: 'agents:tools', only: 'program' },
+  taskPageRelease: { needs: 'agents:tools', only: 'program' },
+  taskPageMount: { needs: 'agents:tools', only: 'page' },
+  taskPageUnmount: { needs: 'agents:tools', only: 'page' },
   /** Generic picture/input resources. Scope comes from the host's task binding, not the argument object. */
   projectionCreate: { needs: 'agents:tools', only: 'program' },
   projectionPublish: { needs: 'agents:tools', only: 'program' },
@@ -681,16 +744,27 @@ export const BRIDGE_VERBS = {
   projectionClosed: { needs: 'agents:tools', only: 'program' },
   projectionInputResult: { needs: 'agents:tools', only: 'program' },
   projectionWatch: { needs: 'agents:tools', only: 'page' },
+  projectionMediaOpen: { needs: 'agents:tools', only: 'page' },
+  projectionMediaAnswer: { needs: 'agents:tools', only: 'page' },
+  projectionMediaSign: { needs: 'agents:tools', only: 'page' },
+  projectionMediaClose: { needs: 'agents:tools', only: 'page' },
   projectionUnwatch: { needs: 'agents:tools', only: 'page' },
   projectionSend: { needs: 'agents:tools', only: 'page' },
   /** The App's own sandboxed page, in the host's dialog shell. No new authority or per-call consent. */
   modalOpen: { needs: null, only: 'page', toAgent: { answer: null } },
+  appSurfaceOpen: { needs: 'agents:tools', only: 'program' },
+  appSurfaceScreen: { needs: 'agents:tools', only: 'program' },
+  appSurfaceUpdate: { needs: 'agents:tools', only: 'program' },
+  appSurfaceClose: { needs: 'agents:tools', only: 'program' },
+  appSurfacePost: { needs: 'agents:tools', only: 'page' },
   modalClose: { needs: null, only: 'page' },
   /** Runtime keyboard traversal at the edge of a modal guest; not an App-facing member. */
   modalKey: { needs: null, only: 'page' },
   /** Facts about where this surface sits. */
   getContext: { needs: null },
   navigationGo: { needs: null, only: 'page' },
+  /** The page holds a Back step of its own (a folder inside the App): the host's Back goes to it first (`onBack`). */
+  navigationClaimBack: { needs: null, only: 'page' },
   showContextMenu: { needs: null, only: 'page' },
   /**
    * What the app is showing right now.
@@ -706,6 +780,8 @@ export const BRIDGE_VERBS = {
   setTabTitle: { needs: null, only: 'page' },
   /** Mark this tab as having something new (its own tab only). */
   setTabBadge: { needs: null, only: 'page' },
+  /** Say whether a tab this page drew has edits not yet saved: the host's dot, and its question before closing. */
+  setTabDirty: { needs: null, only: 'page' },
   /** Ask the host to open a URL: a browser tab in the page's session, else the person's browser. */
   openBrowserTab: { needs: null, toAgent: { answer: undefined } },
   /** Say something went wrong, loudly, where the user can see it. */
@@ -753,6 +829,13 @@ export const BRIDGE_VERBS = {
    * do what. A read is anyone's. A write is the person's press on a page, and on a page an agent works it is not done; a
    * program writes for the agent whose call it runs, the agent named by what gugu stamped on that call.
    */
+  /**
+   * `gugu.prompts` (34): the person's own prompts, the 「我的」 group of the composer's `/` menu (prompt-library.ts). An App's
+   * prompts are listed, never written; a delete is shown to the person at once with its undo.
+   */
+  promptsList: { needs: 'prompts' },
+  promptsSave: { needs: 'prompts' },
+  promptsDelete: { needs: 'prompts' },
   cloudRead: { needs: null },
   cloudWrite: { needs: null, gesture: true, only: 'page', toAgent: { answer: null } },
   cloudProgramWrite: { needs: null, only: 'program' },
@@ -782,8 +865,8 @@ export const BRIDGE_VERBS = {
    */
   readAgentHistory: { needs: 'agents:history' },
   /** External CLI history is every session, never only the agents this App started. */
-  sessionsIndex: { needs: 'agents:history:all', machine: true },
-  sessionsRead: { needs: 'agents:history:all', machine: true },
+  sessionsIndex: { needs: 'agents:history:all', machine: true, reads: true },
+  sessionsRead: { needs: 'agents:history:all', machine: true, reads: true },
   /**
    * Stopping one of the agents this App reaches (starting one, telling one: `dispatch`).
    *
@@ -798,9 +881,9 @@ export const BRIDGE_VERBS = {
    * reachable by nothing else, and removed with it. Storage only: a program that wants
    * pages to notice what it wrote sends a notification.
    */
-  readData: { needs: null, machine: true },
+  readData: { needs: null, machine: true, reads: true },
   writeData: { needs: null, machine: true },
-  listData: { needs: null, machine: true },
+  listData: { needs: null, machine: true, reads: true },
   /**
    * A tool of this extension's own MCP program whose visibility includes `app` (MCP Apps).
    * No capability of its own, like `sendToBackground`: the extension is talking to itself.
@@ -825,24 +908,39 @@ export const BRIDGE_VERBS = {
   filesOpen: { needs: null },
   filesReopen: { needs: null },
   filesClose: { needs: null },
-  filesList: { needs: 'files:read', machine: 'place' },
+  filesList: { needs: 'files:read', machine: 'place', reads: true },
   /** Up to 512 KB of a working copy's file at an offset (`f.read`): how a file of any size is read, on its own machine. */
-  filesRead: { needs: ({ ref }) => ref !== null && typeof ref === 'object' && 'workspace' in ref ? 'files:read' : null, machine: 'place' },
+  filesRead: { needs: ({ ref }) => ref !== null && typeof ref === 'object' && 'workspace' in ref ? 'files:read' : null, machine: 'place', reads: true },
+  /** A working copy's text whole, and whether it is there, in those pieces: gated as filesOpen, in `app-files.ts`. */
+  filesReadText: { needs: null },
+  filesExists: { needs: null },
+  /** What survives a crash of a file's unsaved edits, on the file's machine: read, kept (`text`), dropped (`text: null`). */
+  filesDraft: { needs: null, machine: 'place' },
+  filesWriteText: { needs: null },
   /**
    * Files across every chat the reader is in (gugu-supabase 20261017002319): found by a piece of their path, and the ones
    * this person opened last. `files:read` already reads any chat they are in, so it is the same consent.
    */
   filesSearch: { needs: 'files:read' },
   filesRecent: { needs: 'files:read' },
-  filesCreate: { needs: 'files:write' },
+  filesCreate: { needs: 'files:write', machine: 'place' },
   filesViewPreferences: { needs: 'files:read', only: 'page' },
-  filesRemove: { needs: 'files:write' },
-  filesRename: { needs: 'files:write' },
+  filesRemove: { needs: 'files:write', machine: 'place' },
+  filesRename: { needs: 'files:write', machine: 'place' },
   /** 「设为临时 / 一直保留」: the person's own upload, from the page they act in (an App's program has no say in it). */
   filesKeep: { needs: 'files:write', only: 'page' },
   /** 子文件夹: a folder made (all the way down; one already there is answered), and a file or folder moved into another. */
-  filesMkdir: { needs: 'files:write' },
-  filesMove: { needs: 'files:write' },
+  filesMkdir: { needs: 'files:write', machine: 'place' },
+  filesMove: { needs: 'files:write', machine: 'place' },
+  /** One part of a file going into a working copy (`files.upload` with bytes): where the working copy is, however large the file. */
+  filesWriteChunk: { needs: 'files:write', machine: 'place' },
+  /** A working copy's file or folder shown in this computer's file manager. */
+  filesReveal: { needs: 'files:read', only: 'page' },
+  /** 「用 VS Code 打开」: the programs of this computer a file can be opened in, and opening it in one. */
+  filesOpenInApps: { needs: 'files:read', only: 'page' },
+  filesOpenIn: { needs: 'files:read', gesture: true, only: 'page' },
+  /** A `files.download` under way stopped: what it had saved goes. */
+  filesDownloadStop: { needs: null, only: 'page' },
   /**
    * A stored file's content replaced: the same file, its next version (G1), the one it had kept as history. Gated like
    * open read-write: the file the host handed this page needs nothing, any other `files:write` (checked in `app-files.ts`).
@@ -948,7 +1046,7 @@ export const CALLER_WORDS = { page: 'a page', background: 'the background page',
  * document, the App frame's parent in an origin of its own (gate.ts). Every host reads it there and hands it here.
  */
 export type CallRefusalCaller =
-  | { kind: 'page'; has: (capability: ExtensionCapability) => boolean; gesture: boolean; widget: boolean }
+  | { kind: 'page'; has: (capability: ExtensionCapability) => boolean; gesture: boolean; widget: boolean; decorative?: boolean }
   | { kind: 'background' | 'program'; has: (capability: ExtensionCapability) => boolean };
 
 /**
@@ -968,6 +1066,10 @@ export function callRefusal(
   // Named so the author can see which declaration is missing (or was taken back) instead of guessing why a call stopped working.
   const needs = capabilityNeeded(facts, args);
   if (needs !== null && !caller.has(needs)) return { code: 'denied', message: `Not permitted: this App does not have "${needs}"` };
+  if (caller.kind === 'page' && caller.decorative
+    && (needsGesture(method, args) || ['appSurfacePost', 'modalOpen', 'modalKey', 'projectionSend', 'openLink'].includes(method))) {
+    return { code: 'denied', message: 'A decorative surface cannot receive input, request focus or forward a person’s actions' };
+  }
   // Only a page has a gesture: the background page and a program never make a call that needs one.
   if ((caller.kind !== 'page' || !caller.gesture)
     && (needsGesture(method, args) || (caller.kind === 'page' && caller.widget && method === 'dispatch'))) return gestureRefusal(method);
@@ -989,11 +1091,14 @@ export function callRefusal(
  *   or `files.replace` when the machine keeping the chat's files is offline or did not take the new version in time.
  * - `not-installed` / `version-mismatch`: a `machine` verb for a session on another machine, where this App is not
  *   installed, or another version of it is.
+ * - `machine-outdated`: a working copy's file call its machine is too old to do. `detail.machine` names it; the host says how to update it.
  * - `name-taken` (子文件夹): a rename or a move to a name another file of that folder already has (case not counted).
  */
 export const BRIDGE_ERROR_CODES = [
   'denied', 'invalid', 'failed', 'not-found', 'ambiguous', 'too-large', 'rate-limited', 'content-changed', 'unavailable',
-  'name-taken', 'not-installed', 'version-mismatch', 'stale-version',
+  'name-taken', 'not-installed', 'version-mismatch', 'stale-version', 'machine-outdated',
+  // This computer cannot open that file: it is on another machine, with nothing here to open it through.
+  'elsewhere',
 ] as const;
 export type BridgeErrorCode = (typeof BRIDGE_ERROR_CODES)[number];
 

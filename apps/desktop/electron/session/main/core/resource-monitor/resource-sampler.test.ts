@@ -11,6 +11,7 @@ const append = vi.fn();
 const ownershipRoots = vi.fn();
 const processRows = vi.fn();
 const activePtys = vi.fn();
+const readTotals = vi.fn();
 const appEvents = new EventEmitter();
 vi.mock('electron', () => ({
   app: {
@@ -32,6 +33,11 @@ vi.mock('./context', () => ({ collectResourceContext: async () => ({ windows: []
 vi.mock('./history', () => ({ resourceHistory: { append } }));
 vi.mock('../acp/runtime-process/resource-roots', () => ({ collectAcpResourceRoots: () => ownershipRoots() }));
 vi.mock('./owned-processes', () => ({ listResourceProcesses: () => processRows(), collectLedgerResourceRoots: async () => [] }));
+vi.mock('./footprint', () => ({ footprintReader: () => null }));
+vi.mock('./page-metrics', () => ({
+  readPageTotals: (...args: unknown[]) => readTotals(...args),
+  pageMetricsSince: () => undefined, commitPageTotals: vi.fn(), stopPageCounters: vi.fn(),
+}));
 
 function tab(cumulativeCPUUsage: number, pid = 7) {
   return { pid, type: 'Tab', cpu: { percentCPUUsage: 0, cumulativeCPUUsage }, memory: { workingSetSize: 1 } };
@@ -47,6 +53,7 @@ beforeEach(() => {
   ownershipRoots.mockResolvedValue([]);
   processRows.mockResolvedValue([]);
   activePtys.mockReturnValue([]);
+  readTotals.mockResolvedValue({ at: 0, frameKey: '', longFrames: 0, blockingMs: 0, slowInteractions: 0 });
   vi.useFakeTimers();
   vi.setSystemTime(0);
 });
@@ -296,16 +303,18 @@ describe('page-scoped advanced diagnostics', () => {
     const { setResourceMonitorOpen } = await import('./resource-sampler');
     // Older versions stored this flag. It must not enable collection on the new page.
     settings.mockResolvedValue({ enabled: true, internals: true });
+    // Renderers are read on every sample (main-window page metrics); their rows are recorded only while expanded.
+    const recorded = () => append.mock.calls.map(([snapshot]) => 'internals' in (snapshot as object));
     setResourceMonitorOpen('client', 'page', true, 1, false);
     await vi.advanceTimersByTimeAsync(3000);
     expect(metrics).toHaveBeenCalled(); // Positive control: the ordinary sampler really ran.
-    expect(collect).not.toHaveBeenCalled();
+    expect(recorded()).not.toContain(true);
     setResourceMonitorOpen('client', 'page', true, 2, true);
     await vi.advanceTimersByTimeAsync(1500);
-    expect(collect).toHaveBeenCalledTimes(1);
+    expect(recorded().at(-1)).toBe(true);
     setResourceMonitorOpen('client', 'page', true, 3, false);
     await vi.advanceTimersByTimeAsync(3000);
-    expect(collect).toHaveBeenCalledTimes(1);
+    expect(recorded().at(-1)).toBe(false);
     setResourceMonitorOpen('client', 'page', false, 4, false);
     const calls = metrics.mock.calls.length;
     await vi.advanceTimersByTimeAsync(60_000);
@@ -341,6 +350,24 @@ describe('page-scoped advanced diagnostics', () => {
     setResourceMonitorOpen('client', 'page', true, 1, true);
     await vi.advanceTimersByTimeAsync(3000);
     expect(metrics).toHaveBeenCalled();
-    expect(collect).not.toHaveBeenCalled();
+    expect(append.mock.calls.some(([snapshot]) => 'internals' in (snapshot as object))).toBe(false);
+  });
+});
+
+describe('resource sampler page counters', () => {
+  it('reads the counters while sampling, and not for a sample still running when monitoring stops', async () => {
+    settings.mockResolvedValue({ enabled: true, pageCounters: true });
+    const { startResourceSampler, stopResourceSampler } = await import('./resource-sampler');
+    startResourceSampler();
+    await vi.advanceTimersByTimeAsync(11_000);
+    expect(readTotals).toHaveBeenLastCalledWith([], true); // Positive control: a running sampler reads them.
+    let renderers!: (value: unknown[]) => void;
+    collect.mockImplementationOnce(() => new Promise((resolve) => { renderers = resolve; }));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(renderers).toBeDefined();
+    stopResourceSampler();
+    renderers([]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(readTotals).toHaveBeenLastCalledWith([], false);
   });
 });

@@ -1,3 +1,4 @@
+import { activityPreviewSource } from '@gugu/session-chat-ui/activity-preview';
 import { eq } from 'drizzle-orm';
 import { db, sqlite } from '@main/db/client';
 import { sessions, workspaces } from '@main/db/schema';
@@ -124,15 +125,15 @@ class SearchService {
     const condition = textCondition(query, 'turn_text', ['r.text']);
     if (!condition) return [];
     const where = condition.sql.replace('turn_text MATCH ?', 'r.id IN (SELECT rowid FROM turn_text WHERE turn_text MATCH ?)');
-    const rows = sqlite.prepare(`SELECT r.session_id, r.item_id, r.role, r.text, json_extract(s.config, '$.agentDisplayName') AS agent_display_name, s.project_id, s.archived_at, t.created_at
+    const rows = sqlite.prepare(`SELECT r.session_id, r.item_id, r.role, r.text, json_extract(s.config, '$.agentDisplayName') AS agent_display_name, s.project_id, s.archived_at, t.created_at, t.data AS turn_data
       FROM turn_text_rows r JOIN sessions s ON s.id = r.session_id JOIN session_turns t ON t.session_id = r.session_id AND t.seq = r.seq
       WHERE ${where} AND NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = s.project_id AND p.workspace_provider != 'local')
       ORDER BY t.created_at DESC, r.id DESC LIMIT ?`).all(...condition.params, Math.min(Math.max(limit, 1), 100)) as {
-        session_id: string; item_id: string; role: string; text: string; agent_display_name: string | null; project_id: string; archived_at: string | null; created_at: string;
+        session_id: string; item_id: string; role: string; text: string; agent_display_name: string | null; project_id: string; archived_at: string | null; created_at: string; turn_data: string;
       }[];
     return rows.map((row) => ({ sessionId: row.session_id, projectId: row.project_id,
       title: taskName({ id: row.session_id, config: { agentDisplayName: row.agent_display_name ?? undefined } }), archived: row.archived_at !== null,
-      itemId: row.item_id, role: row.role === 'user' ? 'user' : 'assistant', excerpt: excerpt(row.text, query), at: row.created_at }));
+      itemId: row.item_id, role: row.role === 'user' ? 'user' : 'assistant', excerpt: excerpt(row.text, query), activity: activityPreviewSource(JSON.parse(row.turn_data), row.item_id), at: row.created_at }));
   }
 
   /** 没有输入时:最近交互的任务。 */

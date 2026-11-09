@@ -12,7 +12,7 @@ import { installPlan } from './install-plan';
 
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
-  return { ...actual, default: actual, rmSync: vi.fn(actual.rmSync) };
+  return { ...actual, default: actual, rmdirSync: vi.fn(actual.rmdirSync) };
 });
 
 const roots: string[] = [];
@@ -128,7 +128,7 @@ it('reports registration removal separately when the inactive fork cache cannot 
   install(source, fork);
   install(service.variantDirectory('demo', 'upstream'), upstream);
   const cache = service.variantDirectory('demo', 'mine');
-  vi.mocked(fs.rmSync).mockImplementationOnce(() => { throw new Error('cache locked'); });
+  vi.mocked(fs.rmdirSync).mockImplementationOnce(() => { throw new Error('cache locked'); });
   expect(service.removeVariant('demo', 'mine')).toMatchObject({ removed: true, warning: expect.stringContaining('cache locked') });
   expect(service.variants('demo').variants.map((row) => row.name)).toEqual(['upstream']);
   expect(existsSync(cache)).toBe(true);

@@ -2,7 +2,22 @@ import { agentSendOf, replyItems, replySend, replySource, sentMessageId, success
 import { sentAttachmentOf } from '@gugu/session-core/session-record/sent-attachment';
 import { sentFileGroups } from '@gugu/session-core/session-record/sent-file-groups';
 import { sendAddressesOf } from '@gugu/session-core/session-record/send-addresses';
-import type { TranscriptTurn } from '@session-chat/model';
+import { sentMessageOf } from '@gugu/session-core/session-record/sent-message';
+import type { TranscriptItem, TranscriptTurn } from '@session-chat/model';
+import type { MessageItem } from '@gugu/core/shared/types/chat';
+
+/** The chat message one send put there, for the host's MessageBody; nothing when the receipt predates it. */
+export function sentMessagesOf(item: TranscriptItem): { sentMessages?: MessageItem[] } {
+  const message = sentMessageOf(item);
+  return message ? { sentMessages: [message] } : {};
+}
+
+/** A group of file sends is one bubble: drawn by MessageBody only when every file in it can be. */
+function sentFileMessages(items: readonly TranscriptItem[], messageIds: readonly string[]): { sentMessages?: MessageItem[] } {
+  const byId = new Map(items.flatMap(item => { const message = sentMessageOf(item); return message ? [[message.id, message] as const] : []; }));
+  const messages = messageIds.map(id => byId.get(id));
+  return messages.every(Boolean) ? { sentMessages: messages as MessageItem[] } : {};
+}
 
 /** Keep successfully delivered replies readable when their tool process is folded. */
 export function withSentReplies(turn: TranscriptTurn, options: { allDestinations?: boolean } = {}): TranscriptTurn {
@@ -31,6 +46,7 @@ export function withSentReplies(turn: TranscriptTurn, options: { allDestinations
     const replyTo = 'replyTo' in send ? send.replyTo : undefined;
     const chat = 'chat' in send ? send.chat : undefined;
     const reply = { kind: 'message' as const, id: `${item.id}:sent:${id}`, seq: item.seq, role: 'assistant' as const, text: send.text, ...(attachment ? { sentAttachment: attachment, sentAttachments: fileGroup!.attachments } : {}),
+      ...(fileGroup ? sentFileMessages(items, fileGroup.attachments.map(file => file.messageId)) : sentMessagesOf(item)),
       ...(item.completedAt !== undefined ? { at: item.completedAt } : {}),
       ...(replyTo ? { sentReplyTo: replyTo } : {}), ...(chat ? { sentChat: chat } : {}) };
     // 对话布局:气泡下面常驻一小段「发到 群名」(管家 10-28),去向与会话页那一行同一个读法。

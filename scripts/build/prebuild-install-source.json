@@ -1,0 +1,14 @@
+{
+  "bin.js": {
+    "sha256": "27e6a2d2e63549eb0b3c2d9a9067b7646f9157a120b7f345a12a1e20c997a998",
+    "before": "const opts = Object.assign({}, rc, { pkg: pkg, log: log })",
+    "after": "const opts = Object.assign({}, rc, { pkg: pkg, log: log })\nrequire('./gugu-vendor').configure(opts)",
+    "patchedSha256": "5371950c8fbde5529647579fc368b1287525c98b6015819a70fb107f8beaa7e0"
+  },
+  "download.js": {
+    "sha256": "91663d22ce22740be17b6f22868e3d2687ea5a759c50b75322f597f0f6ccfb15",
+    "before": "  function unpack () {\n",
+    "after": "  function unpack () {\n    try { require('./gugu-vendor').verifyArchive(cachedPrebuild, opts, downloadUrl) } catch (err) { return cb(err) }\n",
+    "patchedSha256": "aa1fc3091abc068866e46b751bf61bb30f3df20a02b9ddc6b7ae4289bff44b20"
+  }
+}

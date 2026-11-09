@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { AgentDisplayStatus, GroupChatSettings, GroupCollabSnapshot, GroupMemberRole, ListenMode } from '@gugu/core/shared/types/chat'
-import { MoreHorizontal, Plus, UserPlus } from '@/lib/icons'
+import { MoreHorizontal, UserPlus } from '@/lib/icons'
 import { chatService } from '../../lib/chat'
-import { UI_EVENTS } from '../../lib/uiEvents'
 import { groupAgentDisplayStatus } from '../../lib/groupAgentStatus'
 import { useShownAgentStatus } from './useAgentsOnCloudComputer'
 import { canEditAgentListenMode, groupInviteAccess } from '../../lib/groupMemberPermissions'
@@ -15,7 +14,6 @@ import { IconButton } from '../ui/IconButton'
 import { Hint } from '../ui/Tooltip'
 import { Menu, MenuItem } from '../ui/Menu'
 import { AddGroupMembers } from './AddGroupMembers'
-import { InviteButton } from './InviteButton'
 import { useMobileShell } from '../../hooks/useMobileShell'
 import { closeInfoTab } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { settingsErrorStyle } from './groupSettingsStyles'
@@ -39,7 +37,7 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
   onOpenUserChat?: (target: MemberProfileChatTarget) => void
   onWhisper?: (target: MemberProfileChatTarget) => void
 }) {
-  const { t } = useTranslation('messaging')
+  const { t } = useTranslation(['messaging', 'contacts'])
   const viewerIsManager = settings?.can_manage === true
   const isGroup = chatKind === 'group'
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -94,6 +92,10 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
   const isSelfLeaving = useCallback((profile: MemberProfileCardModel) => (
     chatKind === 'topic' && profile.id === currentUserId
   ), [chatKind, currentUserId])
+  const topicRemovalLabel = useCallback((profile: MemberProfileCardModel) => isSelfLeaving(profile)
+    ? t('topic.leave') : t('createGroup.removeMember', { ns: 'contacts', name: profile.displayName }), [isSelfLeaving, t])
+  // Leaving a topic only stops its notifications; the source conversation can still read it. Say so where the action is.
+  const topicRemovalHint = useCallback((profile: MemberProfileCardModel) => t(isSelfLeaving(profile) ? 'topic.leaveHint' : 'topic.removeHint'), [isSelfLeaving, t])
 
   const setRole = useCallback((profile: MemberProfileCardModel, role: GroupMemberRole) => (
     runMutation(() => chatService.setGroupMemberRole(chatId, profile.id, role))
@@ -115,12 +117,13 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
       onChangeRole: isGroup && manageable ? (role) => { void setRole(profile, role) } : undefined,
       onChangeListenMode: canEditListenMode(profile) ? (mode) => { void setListenMode(profile, mode) } : undefined,
       canRemove: manageable || owned || self,
-      removeLabel: self ? t('group.settings.leave') : undefined,
+      removeLabel: !isGroup ? topicRemovalLabel(profile) : undefined,
+      removeHint: !isGroup ? topicRemovalHint(profile) : undefined,
       onRemove: () => remove(profile),
       busy,
       editError: error,
     }
-  }, [busy, canEditListenMode, canManage, error, isGroup, isSelfLeaving, ownsAgent, remove, setListenMode, setRole, t])
+  }, [busy, canEditListenMode, canManage, error, isGroup, isSelfLeaving, ownsAgent, remove, setListenMode, setRole, topicRemovalHint, topicRemovalLabel])
 
   const openProfile = useCallback((memberId: string, anchor: Element) => {
     const profile = profileOf(memberId)
@@ -140,18 +143,8 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
 
   // 项目群不拉人类进来:「邀请」还在(加自己的 agent),人类那一页换成原因。
   const { projectGroup, canInviteHumans: canInvite, showInvite } = groupInviteAccess(chatId, chatKind, settings)
-
-  // 新建一个 Agent 直接进这个群:谁都能把自己的 Agent 加进群(同上),所以入口跟「邀请」一起给。
-  // 桌面上群输入框的「新任务」就是这件事(gugu-dev#181),这里只留给手机。
   const mobile = useMobileShell()
-  const createAgentInGroup = useCallback(() => {
-    if (mobile) closeInfoTab(chatId)
-    window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, { detail: { chatId } }))
-  }, [chatId, mobile])
 
-  const headerActions: ReactNode = showInvite && mobile ? (
-    <InviteButton icon={<Plus />} label={t('group.memberList.createAgent')} onClick={createAgentInGroup} testId="member-list-create-agent" />
-  ) : null
   const inviteAction: ReactNode = showInvite ? (
     <Hint label={t('group.memberList.invite')} side="bottom">
       <IconButton aria-label={t('group.memberList.invite')} onClick={openPicker} data-testid="member-list-invite">
@@ -198,7 +191,8 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
           ) : null}
           {canManage(menuProfile) || ownsAgent(menuProfile) || isSelfLeaving(menuProfile) ? (
             <MenuItem danger onClick={() => { setMenu(null); void remove(menuProfile) }}>
-              {isSelfLeaving(menuProfile) ? t('group.settings.leave') : ownsAgent(menuProfile) ? t('group.memberList.agentLeave') : t('group.settings.removeMemberTitle')}
+              {!isGroup ? <span className="flex flex-col gap-1">{topicRemovalLabel(menuProfile)}<small className="text-[length:var(--font-caption)] text-[var(--faint-fg)]">{topicRemovalHint(menuProfile)}</small></span>
+                : ownsAgent(menuProfile) ? t('group.memberList.agentLeave') : t('group.settings.removeMemberTitle')}
             </MenuItem>
           ) : null}
         </Menu>
@@ -230,5 +224,5 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
     </>
   )
 
-  return { headerActions, inviteAction, rowActions, openProfile, overlays, errorLine, activeMemberId: renderedProfile?.member.id ?? null }
+  return { inviteAction, rowActions, openProfile, overlays, errorLine, activeMemberId: renderedProfile?.member.id ?? null }
 }

@@ -228,12 +228,16 @@ it('keeps an asynchronous runtime edit in the main editor until acknowledgement,
 });
 
 it('keeps a not-yet-connected queue entry read-only without restoring an inline editor', async () => {
-  const h = await mount([{ ...PROMPTS[0], locked: true }, PROMPTS[1]]);
+  const h = await mount([{ ...PROMPTS[0], locked: true }, PROMPTS[1], { id: 'q3', text: '第三条', origin: 'manual' }]);
+  // Positive control: the unlocked rows of this same band keep every action.
+  expect(h.row('q2').querySelectorAll('button').length).toBeGreaterThanOrEqual(4);
+  expect(h.row('q2').querySelector('[draggable="true"]')).not.toBeNull();
   expect(h.row('q1').querySelector('button')).toBeNull();
   expect(h.row('q1').textContent).toContain('第一条原文');
   expect(h.row('q1').querySelector('[draggable="true"]')).toBeNull();
+  h.row('q1').querySelector<HTMLElement>('[data-locked="true"]')!.click();
   expect(host!.querySelector('textarea')).toBeNull();
-  expect(h.onEdit).not.toHaveBeenCalled();
+  for (const handler of [h.onEdit, h.onDelete, h.onReorder, h.onSendNow]) expect(handler).not.toHaveBeenCalled();
 });
 
 it('reorders real queue ids around a locked startup display entry', async () => {

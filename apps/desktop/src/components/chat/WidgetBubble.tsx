@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite'
-import { useEffect, useMemo, useState } from 'react'
+import { useContext, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { parseWidgetMessage, type WidgetMessage } from '@gugu/core/shared/ui/widgetModels'
@@ -13,6 +13,8 @@ import { isInstallRefused } from '../../session/shared/extensions/attachment-ins
 import { refusedLine } from '../extensionBundle/installedHere'
 import { ExtensionPage } from '../../session/renderer/features/extensions/extension-view-layer'
 import { useConversationVisibility } from './useConversationVisibility'
+import { useStayedInView } from './useStayedInView'
+import { SentMessageSurface, widgetTabId } from './sentMessageSurface'
 import { useAuth } from '../../store/auth'
 import { messageForUser } from '../../lib/userFacingError'
 import { rendererLogger } from '../../lib/log'
@@ -38,12 +40,15 @@ export const WidgetBubble = observer(function WidgetBubble({ message }: { messag
 
 function WidgetView({ message, widget, height }: { message: Message; widget: WidgetMessage; height: number }) {
   const { ref, shown } = useConversationVisibility(true)
-  const target = useMemo(() => ({ workspace: null, conversation: message.chat_id, tabId: `widget:${message.id}`,
-    widget: { messageId: message.id, data: widget.data ?? {}, senderId: message.sender_user_id } }), [message.id, message.chat_id, message.sender_user_id, widget.data])
+  const inTimeline = useContext(SentMessageSurface)
+  // A widget's page is a process of its own, and mounting it holds a scroll frame: in a timeline it starts once the row stays.
+  const stayed = useStayedInView(shown && inTimeline)
+  const target = useMemo(() => ({ workspace: null, conversation: message.chat_id, tabId: widgetTabId(message.id, inTimeline),
+    widget: { messageId: message.id, data: widget.data ?? {}, senderId: message.sender_user_id } }), [message.id, message.chat_id, message.sender_user_id, widget.data, inTimeline])
   const kind = `${widget.app}.${widget.view}`
   return <div className="w-[420px] max-w-full min-w-0" data-widget-bubble={message.id}>
     <div ref={ref} className="flex w-full min-w-0 overflow-hidden rounded-md" style={{ height }}>
-      {shown ? platform.kind === 'electron' ? <ExtensionPage extensionId={widget.app} kind={kind} inline={target} /> : <PhoneAppFrame
+      {shown && (stayed || !inTimeline) ? platform.kind === 'electron' ? <ExtensionPage extensionId={widget.app} kind={kind} inline={target} /> : <PhoneAppFrame
         kind={kind} tabId={target.tabId} chatId={message.chat_id} widget={target.widget}
         onOpenWith={detail => window.dispatchEvent(new CustomEvent(APP_OPEN_WITH_EVENT, { detail }))}
         testId="widget-frame" missingTestId="widget-frame-missing"

@@ -7,6 +7,7 @@ import { flattenTier, makeUnitsView } from './flatten';
 import { activitySummary, activitySummaryText } from './activity-summary';
 import { createViewState } from './view-state';
 import { latestViewerInput, resetActivityOnInput } from './activity-boundary';
+import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 
 const a = 'user:11111111-1111-4111-8111-111111111111', human = 'user:22222222-2222-4222-8222-222222222222';
 const ctx: SegmentCtx = { actor: (id: string) => id === a ? { id, type: 'agent', name: 'd3' } : id === human ? { id, type: 'human', name: 'Owner' } : null,
@@ -50,8 +51,23 @@ describe('agent activity identity and grouping', () => {
     expect(outgoingActivity('s', { ...addresses, recipients: [] }, ctx)?.group?.name).toBe('gugu');
     expect(outgoingActivity('s', { ...addresses, confirmed: false }, ctx)).toMatchObject({ count: 0, direction: 'sending', live: true });
   });
-  it.each(['sending', 'receiving', 'waiting', 'accepted', 'failed', 'unknown'] as const)('leaves the %s incoming receipt visible until custody clears', state => {
+  it.each(['sending', 'waiting', 'accepted', 'failed', 'unknown'] as const)('leaves the %s incoming receipt visible until custody clears', state => {
     expect(incomingActivity({ ...incoming('pending'), sendStatus: { state } }, ctx)).toBeNull();
+  });
+  it('classifies a receiving Agent from its first host receipt without delaying ordinary or human inputs', () => {
+    expect(incomingActivity({ ...incoming('pending'), sendStatus: { state: 'receiving' } }, ctx)?.count).toBe(1);
+    expect(incomingActivity({ ...incoming('human', 'human', human), sendStatus: { state: 'receiving' } }, ctx)).toBeNull();
+    expect(incomingActivity({ ...incoming('ordinary'), text: 'Ordinary input', sendStatus: { state: 'receiving' } }, ctx)).toBeNull();
+    const mixed = { ...incoming('batch'), text: incoming('agent').text + incoming('human', 'human', human).text,
+      sendStatus: { state: 'receiving' as const } };
+    expect(incomingActivity(mixed, ctx)).toBeNull();
+  });
+  it('uses structured delivery identity before presentation text, with text parsing only when facts are absent', () => {
+    const agent = readDeliveryEnvelope(incoming('metadata-agent').text)!;
+    expect(incomingActivity({ ...incoming('normalized'), text: 'Already normalized body', guguDelivery: agent,
+      sendStatus: { state: 'receiving' } }, ctx)?.count).toBe(1);
+    const person = readDeliveryEnvelope(incoming('metadata-human', 'human', human).text)!;
+    expect(incomingActivity({ ...incoming('raw-agent'), guguDelivery: person, sendStatus: { state: 'receiving' } }, ctx)).toBeNull();
   });
   it('includes silent historic branches and their process under the same stable fold', () => {
     const records = [turn('old', [incoming('one'), { ...message('quiet'), text: '[NO_REPLY]' }]), turn('last', [incoming('two')])];
@@ -74,13 +90,17 @@ describe('agent activity identity and grouping', () => {
     const duplicate = foldActivityUnits([{ ...unit('message', later, later, { key: 'self' }), activityEvent: event }, { ...unit('message', later, later, { key: 'self' }), activityEvent: event }]);
     expect((duplicate[0].data as import('./agent-activity').AgentActivityGroup).events).toHaveLength(1);
   });
-  it('keeps every panel text between activity folds in its own original bubble', () => {
+  it('keeps the final panel reply between activity folds and earlier words in its process', () => {
     const rows = flattenTier([turn('t', [incoming('one'), message('first'), message('second'), incoming('two')])], ctx, segmenters);
-    for (const id of ['first', 'second']) {
-      const row = rows.find(row => row.itemId === id)!;
-      expect(row.activityFold).toBeUndefined();
-      expect((row.data as ChatMessage).conversationNarration).toBeUndefined();
-    }
+    const reply = rows.find(row => row.itemId === 'second')!;
+    expect(reply.activityFold).toBeUndefined();
+    expect((reply.data as ChatMessage).conversationPart).toBe('body');
+    expect(rows.some(row => row.itemId === 'first')).toBe(false);
+    const expanded = flattenTier([turn('t', [incoming('one'), message('first'), message('second'), incoming('two')])],
+      { ...ctx, revealAllFolds: true }, segmenters);
+    const narration = expanded.find(row => row.itemId === 'first')!;
+    expect(narration.activityFold).toBeUndefined();
+    expect((narration.data as ChatMessage).conversationNarration).toBe(true);
     expect(rows.filter(row => row.kind === 'agent-activity')).toHaveLength(2);
   });
   it('keeps unsuccessful completed sends outside the collapsed incoming process and confirmed count', () => {
@@ -120,6 +140,10 @@ describe('agent activity identity and grouping', () => {
       .map((id, index) => ({ id, name: `Agent ${index}`, target: { kind: 'session' as const, sessionId: id } }));
     const events = actors.map((actor, index) => ({ id: String(index), direction: 'received' as const, actors: [actor], count: 1, live: false }));
     expect(activitySummaryText(activitySummary({ id: 'x', events }, translate))).toBe('Received 3 messages from Agent 0, Agent 1 and others (3 destinations)');
+    const single = { ...events[0], count: 3 };
+    expect(activitySummaryText(activitySummary({ id: 'x', events: [single] }, translate, 1))).toBe('Received 3 messages from Agent 0');
+    expect(activitySummaryText(activitySummary({ id: 'x', events: [events[0], events[0]] }, translate, 1)))
+      .toBe('Received 2 messages from Agent 0');
   });
   it('does not reset reading when the same owner input changes its native/live projection identity', () => {
     const original = { ...message('optimistic'), role: 'user' as const, _meta: { guguClientMessageId: 'client-input' } };

@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import type { FlowListHandle } from '@/lib/flowList'
 import { ChevronLeft, MessageCircle } from '@/lib/icons'
 import { useImPageTab } from '../lib/shellTab'
-import { useChatStore } from '../store/chatContext'
+import { useActiveChatIdentity, useChatStore, useChatStoreReader, useChatsWhile } from '../store/chatContext'
 import { ChatLineScope } from '../store/chatLineScope'
 import { useAuth } from '../store/auth'
 import type { AgentConversationActivity, GroupCollabSnapshot, MessageItem } from '@gugu/core/shared/types/chat'
@@ -17,7 +17,7 @@ import { useChatHistoryPagination } from './chat/useChatHistoryPagination'
 import { useGroupCollabLoader, EMPTY_GROUP_COLLAB } from '../hooks/useGroupCollabLoader'
 import { useRoomAuthorityRevision } from '../hooks/useRoomAuthorityRevision'
 import { useTopicScopedMemberProfile } from '../hooks/useTopicScopedMemberProfile'
-import { ForwardMessageDialog } from './chat/ForwardMessageDialog'
+import { LiveForwardMessageDialog } from './chat/ForwardMessageDialog'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { drainTopicSplitRequest, requestTopicSplit } from '../lib/topicSplitRequest'
@@ -58,7 +58,7 @@ import { useFollowingTail, useTailPinning } from './chat/useFollowingTail'
 import { useConversationScrollMemory } from './chat/useConversationScrollMemory'
 import { sessionComposerDockBandClassName } from '../session/renderer/features/sessions/session-composer-styles'
 import { GroupTabContent } from './appSlot/GroupTabContent'; import { useChatOpener } from './appSlot/useChatOpener'; import { ChatTabPage, ChatTabPortals } from './appSlot/ChatTabHosts'; import { TabBarAddMenu } from '../session/renderer/features/sessions/tab-bar-actions'; import { useTabsReading } from './appSlot/useTabsReading'
-import { folderItem } from '../session/renderer/features/chats/chat-tabs/chat-panel-item'; import { closeInfoTab, focusedChatTab, infoTabOf, openInfoTab, openPanelItem, panelFull, panelTabsOf, setPanelFull, showChatOnly, type ChatPanelTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { folderItem } from '../session/renderer/features/chats/chat-tabs/chat-panel-item'; import { closeInfoTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, panelFull, panelTabsOf, setPanelFull, showChatOnly, type ChatPanelTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { useTopicSurface } from '@/hooks/useTopicSurface'
 import { chatDisplayName, isRoomChat } from '@gugu/core/shared/ui/chatModels'
 import { topicService } from '@/lib/topics'
@@ -118,7 +118,9 @@ export function ChatAreaPanel({ chatId, ...surface }: ChatAreaPanelProps) {
 function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarget = false, hidden = false, mobile = false, openNonce, onBack, chrome, blockHost, onOpenUserChat }: Omit<ChatAreaPanelProps, 'chatId'>) {
   const { toast } = useToast()
   const { t } = useTranslation('messaging')
-  const { getImRepository, subscribeAccountRevision, identitiesById, chats, activeChat, activeChatId, messages, loadingMessages, messagesError, refreshMessages, sendMessage, forwardMessage, toggleReaction, memberReadSeqs, clearMessages, deleteMessage, sendAttachments, pinChat, deleteChat, leaveGroup, setChatNotificationLevel, loadOlderMessages, messageWindow, unreadEntry, jumpToUnreadEntry, loadNewerMessages, loadMessageAnchor, returnToLatestMessages, markMessageVisible, setFollowingTail, threadScope, setActiveChatId } = useChatStore('getImRepository', 'subscribeAccountRevision', 'identitiesById', 'chats', 'activeChat', 'activeChatId', 'messages', 'loadingMessages', 'messagesError', 'refreshMessages', 'sendMessage', 'forwardMessage', 'toggleReaction', 'memberReadSeqs', 'clearMessages', 'deleteMessage', 'sendAttachments', 'pinChat', 'deleteChat', 'leaveGroup', 'setChatNotificationLevel', 'loadOlderMessages', 'messageWindow', 'unreadEntry', 'jumpToUnreadEntry', 'loadNewerMessages', 'loadMessageAnchor', 'returnToLatestMessages', 'markMessageVisible', 'setFollowingTail', 'threadScope', 'setActiveChatId')
+  const readChatStore = useChatStoreReader()
+  const activeChat = useActiveChatIdentity()
+  const { getImRepository, subscribeAccountRevision, identitiesById, activeChatId, messages, loadingMessages, messagesError, refreshMessages, sendMessage, toggleReaction, memberReadSeqs, clearMessages, deleteMessage, sendAttachments, pinChat, deleteChat, leaveGroup, setChatNotificationLevel, loadOlderMessages, messageWindow, unreadEntry, jumpToUnreadEntry, loadNewerMessages, loadMessageAnchor, returnToLatestMessages, markMessageVisible, setFollowingTail, threadScope, setActiveChatId } = useChatStore('getImRepository', 'subscribeAccountRevision', 'identitiesById', 'activeChatId', 'messages', 'loadingMessages', 'messagesError', 'refreshMessages', 'sendMessage', 'toggleReaction', 'memberReadSeqs', 'clearMessages', 'deleteMessage', 'sendAttachments', 'pinChat', 'deleteChat', 'leaveGroup', 'setChatNotificationLevel', 'loadOlderMessages', 'messageWindow', 'unreadEntry', 'jumpToUnreadEntry', 'loadNewerMessages', 'loadMessageAnchor', 'returnToLatestMessages', 'markMessageVisible', 'setFollowingTail', 'threadScope', 'setActiveChatId')
   const { user } = useAuth()
   const surfaceTab = useImPageTab(imPage), surfaceVisible = surfaceTab === 'chats' && !hidden
   const surfaceElement = useRef<HTMLDivElement>(null)
@@ -239,12 +241,12 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const opener = useChatOpener(activeChatId)
   const inBlock = Boolean(blockHost)
   const tabs = useTabsReading(() => {
-    if (!activeChatId) return { page: null as ChatPanelTab | null, chatUp: true, infoShown: false }
+    if (!activeChatId) return { page: null as ChatPanelTab | null, chatUp: true, infoShown: false, memberTopic: null }
     const panels = panelTabsOf(activeChatId)
     const focused = focusedChatTab(activeChatId)
     const full = panels.find((tab) => panelFull(activeChatId, tab.tabId)) ?? null
-    const info = infoTabOf(activeChatId)
-    return { page: full, chatUp: inBlock ? !full : focused?.kind !== 'panel', infoShown: inBlock ? Boolean(info?.shown) : focused?.kind === 'info' }
+    const info = infoTabOf(activeChatId), memberTopic = memberTopicOf(activeChatId)
+    return { page: full, chatUp: inBlock ? !full : focused?.kind !== 'panel', memberTopic, infoShown: (inBlock ? Boolean(info?.shown) : focused?.kind === 'info') && info?.info.topic?.topicChatId === memberTopic?.topicChatId }
   }, [activeChatId, inBlock])
   const handleOpenFolder = useCallback(() => { if (activeChatId) { closeRightSurfaces(); openPanelItem(activeChatId, folderItem()) } }, [activeChatId, closeRightSurfaces])
   // A block draws its shown tabs in the engine's slots; without a strip, one focused page covers the chat (topics too).
@@ -264,7 +266,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   // @@@5856 分栏标题块要说清「引自哪一句」。三态必须分开(pending 还没读到 / null 读到了「没这条」/
   // 有字 = 预览),合并任意两种都会让它说假话:首帧闪「已删除」、读取失败也渲染成「已删除」。
   // @@@3922 另把它 subject-scope(渲染期比对),否则从话题 A 切到 B 时 B 会顶着 A 的预览一个往返。
-  const splitTopicChatIdForPreview = topicSurface.topic?.chatId ?? null
+  const splitTopicChatIdForPreview = mobile ? null : topicSurface.topic?.chatId ?? null // 手机的话题页没有标题块,不读
   const [sourcePreviewState, setSourcePreviewState] = useState<{
     forTopicChatId: string | null
     preview: string | null | 'pending' | 'unreadable'
@@ -336,8 +338,8 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const openTopicFromAnchor = useCallback((topicChatId: string) => {
     const topic = topicSurface.topics.find((item) => item.chat_id === topicChatId)
     if (!topic) return
-    topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name })
-  }, [topicSurface])
+    openSplit({ chatId: topic.chat_id, name: topic.name })
+  }, [topicSurface.topics, openSplit])
   const agentFlood = useAgentFloodNotice(activeChatId, messages)
 
   // @@@1503 — 原「切换聊天关历史/群 thread 面板」那个 reset effect 已并入上方主 reset 的
@@ -356,11 +358,11 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     if (!user || forwardMessages.length === 0) return
     for (const msg of forwardMessages) {
       for (const targetChatId of targetChatIds) {
-        await forwardMessage(msg, targetChatId)
+        await readChatStore().forwardMessage(msg, targetChatId)
       }
     }
     if (selectMode) exitSelectMode()
-  }, [forwardMessages, user, selectMode, exitSelectMode, forwardMessage])
+  }, [forwardMessages, user, selectMode, exitSelectMode, readChatStore])
 
   // Listen for RPC-triggered quote
   useEffect(() => {
@@ -380,7 +382,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
   const { rows: chatListRows, listedMessages, notice: taskChatNotice, threeParty } = useTaskChatRows(messages, user?.id, activeChat?.peer_user_id, surfaceVisible); const deliveryWaits = useDeliveryWaits(messages, memberReadSeqs)
   const chatResetKey = `${activeChatId ?? ''}#${openNonce ?? 0}#${messageWindow?.viewVersion ?? 0}`
-  const { scrollerEl, scrollerRef, setScrollerRef, prepareForSavedPosition, isPreservingPosition, forgetSavedPosition, openLocation, revealMessage } = useConversationScrollMemory({
+  const { scrollerEl, scrollerRef, setScrollerRef, prepareForSavedPosition, isPreservingPosition, forgetSavedPosition, openLocation, revealMessage } = useConversationScrollMemory({ listRef,
     chatId: activeChatId, viewportKey, activationKey: activeChatId ?? '', enabled: true, discardSaved: !!unreadEntry,
     messageIds: chatListRows.map((row) => row.message.id), isAtBottomRef, setFollowingTail, loadMessageAnchor,
   })
@@ -410,11 +412,9 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     () => buildGroupRosterCandidates(groupCollabSnapshot, identitiesById, chatNameScope.names),
     [groupCollabSnapshot, identitiesById, chatNameScope],
   )
+  const splitChats = useChatsWhile(Boolean(splitTopicChatId))
   // Topic addressing includes its source chat; display clashes use only actual topic members.
-  const splitTopicMemberIds = useMemo(
-    () => (splitTopicChatId ? chats.find((chat) => chat.id === splitTopicChatId)?.member_user_ids : undefined),
-    [chats, splitTopicChatId],
-  )
+  const splitTopicMemberIds = splitChats.find((chat) => chat.id === splitTopicChatId)?.member_user_ids
   const splitMentionMembers = useMemo(() => {
     if (!topicSplitOpen || !activeChat) return composerGroupMembers
     const candidates = topicMentionCandidates(composerGroupMembers.map(member => ({ ...member, name: identitiesById[member.id]?.display_name ?? member.name })), activeChat.member_user_ids ?? (activeChat.peer_user_id ? [activeChat.peer_user_id] : []), splitTopicMemberIds, identitiesById)
@@ -491,7 +491,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     onOpenTopicAnchor: openTopicFromAnchor,
     agentFloodNoticeMessageId: agentFlood.noticeMessageId,
     onAgentFloodUndone: agentFlood.reload,
-    onOpenFile: openFilePreview, onOpenLocalFileLink: undefined, onMentionMember: setMentionToInsert,
+    onOpenFile: openFilePreview, onMentionMember: setMentionToInsert,
     selectMode,
     selectedIds,
     onToggleSelect: toggleSelect,
@@ -558,7 +558,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     <>
       <ChatHeaderActions
         isGroupChat={isGroupChat}
-        isRoomChat={isRoomChatSurface}
+        isRoomChat={isRoomChatSurface} memberTopic={tabs.memberTopic} memberTopicCount={topicSurface.topics.find((topic) => topic.chat_id === tabs.memberTopic?.topicChatId)?.participant_count}
         infoShown={tabs.infoShown}
         showHeaderMenu={showHeaderMenu}
         mobile={mobile}
@@ -571,7 +571,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         moreButtonRef={moreButtonRef}
         onSearch={() => { if (activeChatId) searchInChat(activeChatId) }}
         onOpenFolder={handleOpenFolder}
-        onOpenInfo={(page) => { if (activeChatId) openInfoTab(activeChatId, page) }}
+        onOpenInfo={(page) => { if (activeChatId) openInfoTab(activeChatId, page, page === 'members' ? tabs.memberTopic : null) }}
         onCloseInfo={() => { if (activeChatId) closeInfoTab(activeChatId) }}
         onToggleHeaderMenu={() => setShowHeaderMenu((v) => !v)}
         onCloseHeaderMenu={() => setShowHeaderMenu(false)}
@@ -583,7 +583,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const infoPage = () => activeChat && activeChatId ? (
     <GroupRenameContext.Provider value={groupRename}><ChatSettingsPanel
       key={infoTabOf(activeChatId)?.info.at}
-      initialPage={infoTabOf(activeChatId)?.info.page}
+      initialPage={infoTabOf(activeChatId)?.info.page} topic={infoTabOf(activeChatId)?.info.topic}
       activeChat={activeChat}
       messages={messages}
       onClose={() => closeInfoTab(activeChatId)}
@@ -613,7 +613,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       messages={topicSurface.splitLine.messages} history={topicSurface.splitLine}
       loading={topicSurface.splitLine.loadingMessages}
       memberProfiles={messageMemberProfiles}
-      visibleChats={chats}
+      visibleChats={splitChats}
       sourceMessagePreview={topicSourceMessagePreview}
       focusComposerToken={splitFocusToken}
       memberReadSeqs={topicSurface.splitLine.memberReadSeqs}
@@ -778,7 +778,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
           scrollerRef={setScrollerRef}
           rows={chatListRows}
           rowProps={rowProps} footer={chrome?.typing}
-          initialTopMostItemIndex={openLocation()} topInset={0}
+          initialTopMostItemIndex={openLocation()}
           followTail={!unreadNavigationPending && !messageWindow?.hasNewer && messageWindow?.change !== 'newer'} unreadAbove={unreadEntry ? { messageId: unreadEntry.locator.message_id, messageSeq: unreadEntry.locator.message_seq, label: t('chatArea.unreadAbove', { count: unreadEntry.locator.unread_count }), onSeen: unreadEntry.onSeen, onJump: () => void jumpToUnreadEntry(scrollerRef.current).catch(onHistoryError) } : null}
           onAtBottomChange={onAtBottomChange}
           onTotalListHeightChanged={onTotalListHeightChanged}
@@ -855,7 +855,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
           onQuoteConsumed={() => setQuoteText(null)}
           mentionToInsert={mentionToInsert}
           onMentionInserted={() => setMentionToInsert(null)}
-          chatId={activeChatId} hidden={!surfaceVisible || selectMode}
+          chatId={activeChatId} hidden={!surfaceVisible || selectMode} entryActive={navigationTarget && surfaceVisible && tabs.chatUp}
           isGroupChat={isRoomChatSurface}
           groupMembers={composerGroupMembers} currentUserId={user?.id ?? null} agentStatuses={groupAgentStatuses} messages={messages}
           whisperTarget={whisperTarget}
@@ -901,9 +901,8 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         />
       ) : null}
       {forwardMessages.length > 0 && activeChatId ? (
-        <ForwardMessageDialog
+        <LiveForwardMessageDialog
           messages={forwardMessages}
-          chats={chats}
           // 被转发的消息知道自己从哪条 chat 来。写死 activeChatId 会在分栏转发时排掉「来源群」
           // (最自然的目的地),而话题自己反而留在列表里 —— 选中就是原地复制一份还挂「转发」。
           sourceChatId={forwardMessages[0]?.chat_id ?? activeChatId}

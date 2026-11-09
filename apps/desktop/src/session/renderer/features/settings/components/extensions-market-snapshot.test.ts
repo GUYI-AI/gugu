@@ -90,7 +90,8 @@ vi.mock('@renderer/features/library/library-host', async () => {
 
 const { SessionLocalizationProvider } = await import('@renderer/localization/localization-provider');
 const { toast } = await import('@renderer/lib/hooks/use-toast');
-const { ExtensionsSettingsCard } = await import('./ExtensionsSettingsCard');
+const { ExtensionsSettingsCard, MARKET_REOPEN_MIN_MS } = await import('./ExtensionsSettingsCard');
+const { PageShownContext } = await import('@renderer/app/recent-session-pages');
 
 const T1 = '2026-10-16T01:00:00.000Z';
 const T2 = '2026-10-16T01:05:00.000Z';
@@ -120,6 +121,16 @@ describe('the App page market: the index in hand at once, the download site behi
   async function open() {
     await act(async () => {
       root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null, React.createElement(ExtensionsSettingsCard))));
+    });
+  }
+  /** The page as the retained App place draws it (workspace.tsx RetainedPlace): mounted once, then only shown or hidden. */
+  async function place(queryClient: QueryClient, shown: boolean) {
+    await act(async () => {
+      root.render(
+        React.createElement(QueryClientProvider, { client: queryClient },
+          React.createElement(SessionLocalizationProvider, null,
+            React.createElement(PageShownContext.Provider, { value: shown }, React.createElement(ExtensionsSettingsCard))))
+      );
     });
   }
   async function close() {
@@ -221,6 +232,43 @@ describe('the App page market: the index in hand at once, the download site behi
     expect(h.api.marketRefresh).toHaveBeenCalledTimes(1);
     expect(h.api.market).toHaveBeenCalledTimes(1);
     expect(stale()).toBeNull();
+  });
+
+  // owner 11-08「市场里的文字江湖一直显示 0.3.0」: the App place stays mounted (apps-views `retained`), so going back to it
+  // never remounted the page and the download site was asked only the first time it opened.
+  it('the retained App page shown again asks the download site again, at most once a minute — a newer version shows', async () => {
+    let now = Date.parse(T1);
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const queryClient = new QueryClient();
+      await place(queryClient, true);
+      await until('the first read drawn', tileIds, (ids) => ids.length > 0);
+      await until('the download site asked', () => h.api.marketRefresh.mock.calls.length, (n) => n >= 1);
+      await turn();
+      expect(h.api.marketRefresh).toHaveBeenCalledTimes(1);
+      // Hidden while the person is elsewhere: nothing is asked.
+      await place(queryClient, false);
+      await turn();
+      expect(h.api.marketRefresh).toHaveBeenCalledTimes(1);
+      // Back within the minute: the index is not asked again (its own max-age would answer the same copy).
+      now += MARKET_REOPEN_MIN_MS / 2;
+      await place(queryClient, true);
+      await turn();
+      expect(h.api.marketRefresh).toHaveBeenCalledTimes(1);
+      // Away, a newer version published, back after the minute: asked again, and the changed index is drawn — same page.
+      await place(queryClient, false);
+      now += MARKET_REOPEN_MIN_MS;
+      h.api.marketRefresh.mockResolvedValue({ success: true, data: { outcome: 'changed', fetchedAt: T2 } });
+      h.api.market.mockResolvedValue(h.listing(['one', 'two', 'three'], T2));
+      const before = tiles()[0];
+      await place(queryClient, true);
+      await turn();
+      expect(h.api.marketRefresh).toHaveBeenCalledTimes(2);
+      await until('the newer index drawn', tileIds, (ids) => ids.includes('three'));
+      expect(tiles()[0]).toBe(before);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it('the index came back changed → the tiles are read again in place: ❌ skeleton, the unchanged tile is the same element', async () => {

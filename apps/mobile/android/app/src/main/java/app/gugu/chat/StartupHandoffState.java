@@ -9,6 +9,7 @@ final class StartupHandoffState {
     private boolean contentReady;
     private boolean failed;
     private boolean destroyed;
+    private boolean surfaceAbsent;
     private long generation;
 
     boolean requestFrame() {
@@ -32,6 +33,21 @@ final class StartupHandoffState {
         if (!active() || !requested || generation != frameGeneration) return false;
         drawn = true;
         return true;
+    }
+
+    /**
+     * A relaunch (an undeclared configuration change, for one) creates the Activity without a system
+     * splash, so its exit callback never comes. Only an already drawn Web frame may stand in for it;
+     * a launch that never draws keeps its deadline.
+     */
+    boolean markSurfaceAbsent() {
+        if (!active() || !drawn || revealed) return false;
+        surfaceAbsent = true;
+        return true;
+    }
+
+    boolean surfaceAbsent() {
+        return surfaceAbsent;
     }
 
     boolean reveal() {

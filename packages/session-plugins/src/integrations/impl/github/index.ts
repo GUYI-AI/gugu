@@ -7,6 +7,7 @@ import { icon } from './icon';
 const plugin = defineIntegrationPlugin(
   {
     id: 'github',
+    catalog: summary.catalog,
     name: summary.name['zh-CN'],
     description: summary.description,
     websiteUrl: 'https://github.com',
@@ -14,13 +15,11 @@ const plugin = defineIntegrationPlugin(
   {
     auth: {
       methods: [
-        { kind: 'oauth', providerId: 'github' },
         {
           kind: 'oauth-device',
           clientId: 'Ov23ligC35uHWopzCeWf',
           scopes: ['repo', 'read:user', 'read:org'],
         },
-        { kind: 'cli-import', cli: 'gh' },
       ],
     },
   },

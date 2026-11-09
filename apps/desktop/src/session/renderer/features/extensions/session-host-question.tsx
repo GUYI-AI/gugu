@@ -35,7 +35,7 @@ export function SessionHostQuestion({
   );
   if (!sessionId || ask?.origin?.source !== 'agent-question') return null;
   return (
-    <div className="px-2 pt-1" data-testid="session-host-question">
+    <div className="px-2 pt-1" data-testid="session-host-question" data-composer-top-band="question">
       <AgentQuestionCard key={ask.itemId} scope={sessionId} settlement={ask} respond={respond} />
     </div>
   );
