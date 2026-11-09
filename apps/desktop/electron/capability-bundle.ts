@@ -75,11 +75,6 @@ export interface SessionCapabilityBundle {
   browserUse?: true
   /** Disable harness-owned browser routes independently of App availability. */
   disableNativeBrowser?: true
-  /**
-   * Remote hosts explicitly report that Browser Use is not available yet.
-   * Absent for desktop sessions or hosts without the App probe.
-   */
-  browserRule?: 'unavailable'
 }
 
 // Keep the Electron-side declaration available at this boundary as well. The core and
@@ -449,15 +444,19 @@ export function setBrowserUseApp(probe: { installed: () => boolean; server: bool
   browserUseApp = probe
 }
 
-/** The remote Browser Use implementation has been removed; installing the shell App cannot enable it. */
-function browserUseOf(personalAssistant: boolean): Pick<SessionCapabilityBundle, 'browserUse' | 'browserRule' | 'disableNativeBrowser'> {
+/**
+ * #1607 / #2401 The same on a Gugu server as on a desktop: the installed Browser Use App is this machine's browser (on a
+ * server it drives the server's own headless Chromium). A server never offers the agent's built-in browser plugin — it
+ * has no screen for it.
+ */
+function browserUseOf(): Pick<SessionCapabilityBundle, 'browserUse' | 'disableNativeBrowser'> {
   if (!browserUseApp) return {}
-  if (browserUseApp.server) return { disableNativeBrowser: true, ...(!personalAssistant ? { browserRule: 'unavailable' as const } : {}) }
+  const server = browserUseApp.server ? { disableNativeBrowser: true as const } : {}
   try {
-    return browserUseApp.installed() ? { browserUse: true } : {}
+    return browserUseApp.installed() ? { ...server, browserUse: true } : server
   } catch (error) {
     createLogger('capability-bundle').warn({ error: (error as Error).message }, 'could not read whether Browser Use is installed; the session has no browser')
-    return {}
+    return server
   }
 }
 
@@ -549,7 +548,7 @@ export async function buildSessionBundle(
     extensionSkills: [...extensions.skills, ...integrationSkills],
     extensionApps: extensions.apps,
     extensionServerOrigins: extensions.origins,
-    ...browserUseOf(deps.socialBridgeDeps.personalAssistant === true),
+    ...browserUseOf(),
     mcpServers,
     // ⚠️ 这一行就是断过的那一跳。bootstrap 服务 pty 腿、恒为 `undefined`,
     //    ACP 腿的关闭集合必须在这里接回来;`[]` 原样递,❌ 不归一成 undefined。
@@ -1080,17 +1079,14 @@ function guguToolNamingLine(
 }
 
 /** Removed host browser implementation: the App must supply its own remote control before it can be used here. */
-export const BROWSER_UNAVAILABLE_RULE = 'Browser Use is not available on this machine yet. If a task needs browser control, tell the person this directly. Installing the current Browser Use App does not enable it here. Do not launch a replacement browser, Playwright, Chrome or a headless scraper, and do not claim to have viewed a page.'
-
 export function guguSessionSurfaceBlock(
   surface: HarnessSessionSurface,
   providerId: string,
   carriesGuguMcp: boolean,
-  browserRule?: 'unavailable',
 ): string {
   return `<gugu_session_surface>
 ${guguSessionSurfaceBody(surface)}
-${guguToolNamingLine(providerId, surface, carriesGuguMcp)}${SESSION_SPAWN_ROUTING_RULE}${browserRule ? `\n${BROWSER_UNAVAILABLE_RULE}` : ''}
+${guguToolNamingLine(providerId, surface, carriesGuguMcp)}${SESSION_SPAWN_ROUTING_RULE}
 </gugu_session_surface>
 `
 }
@@ -1121,7 +1117,7 @@ function withSurfaceSelfDescription(
   const apps = guguAppsBlock(bundle.extensionApps, nativeSkills ? [] : bundle.extensionSkills)
   return {
     ...bundle,
-    promptBlocks: { ...bundle.promptBlocks, platform: `${platform}${guguSessionSurfaceBlock(surface, providerId, bundle.mcpServers.some((server) => server.owner === 'gugu'), bundle.browserRule)}${apps}` },
+    promptBlocks: { ...bundle.promptBlocks, platform: `${platform}${guguSessionSurfaceBlock(surface, providerId, bundle.mcpServers.some((server) => server.owner === 'gugu'))}${apps}` },
   }
 }
 

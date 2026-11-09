@@ -8,6 +8,7 @@ import { sessionConversationTabId } from '@renderer/features/sessions/view/sessi
 //  · 那台机器上新发现的服务弹一声「可以打开了」(照 VS Code 自动转发后的那条通知),没在看就先记着。
 // 只装一次(启动时)。触发:进出会话页、换任务、那台机器连上 / 断开 —— 都是事件,❌ 定时查。
 import { closeSessionPaneTab, sessionPaneTabs } from '@renderer/features/sessions/stores/session-pane-tabs';
+import { openHostRequestedExtensionInSessionWhenReady } from '@renderer/features/sessions/stores/open-file-in-file-editor';
 import { comparer, reaction } from 'mobx';
 import { openLink } from '@/lib/guguLinks';
 import type { SessionpagePaneOpenRequest } from '@gugu/session-core/session-record/contract';
@@ -101,6 +102,26 @@ function openRequested(session: ViewedMachineSession, request: SessionpagePaneOp
     const from = sessionConversationTabId(view.paneLayout, session.sessionId);
     view.paneLayout.open('task-page', { deviceId: session.deviceId, sessionId: session.sessionId }, { from, intent: 'navigate', activate: false });
     return { ok: true, tabs: sessionPaneTabs(view.paneLayout) };
+  }
+  if (request.target.kind === 'app-tab') {
+    // #1607 An App's per-task page, asked for by its program on that machine: drawn here from this computer's copy of
+    // the App, its program calls and pictures going to that machine — the same tab as for a task on this computer.
+    const { tabKind, ifAbsent } = request.target;
+    return new Promise<PaneOpenResult>((resolve) => {
+      openHostRequestedExtensionInSessionWhenReady({
+        projectId: session.projectId,
+        sessionId: session.sessionId,
+        tabKind,
+        intent: request.intent === 'pinned' ? 'newTab' : 'navigate',
+        ifAbsent: ifAbsent === true,
+        onResult: (result) => {
+          const view = sessionView(session.projectId, session.sessionId);
+          resolve(result.success
+            ? { ok: true, ...(view ? { tabs: sessionPaneTabs(view.paneLayout) } : {}) }
+            : { ok: false, failure: 'open_failed', ...(result.error ? { error: result.error } : {}) });
+        },
+      });
+    });
   }
   if (request.target.kind === 'external') {
     return openExternalFromMachine(

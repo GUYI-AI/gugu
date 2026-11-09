@@ -44,6 +44,7 @@ export function installDevicePaneRelay(host: FrameSessionHost, route: Pick<Remot
         pages: body.pages === true,
         external: body.external === true,
         tabs: body.tabs === true,
+        apps: body.apps === true,
       },
       (open) => {
         host.sendTo(sender, SESSION_HOST_PANE.open, open);

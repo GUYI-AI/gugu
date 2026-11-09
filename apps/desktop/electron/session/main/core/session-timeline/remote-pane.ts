@@ -96,9 +96,9 @@ export function isRemotePageTarget(target: SessionpagePaneTarget): boolean {
   return target.kind === 'browser' && target.url.startsWith('file:');
 }
 
-/** App 的页面画在有窗口的咕咕桌面上;咕咕 server 没有窗口(behavior gugu-server-multi-device「扩展」那一格),装在上面的 App 只有工具和技能。 */
+/** #1607 An App's own tab for this task opens on the desktop showing it; a file of this machine handed to an App's tab does not yet. */
 export const REMOTE_PANE_NO_EXTENSIONS =
-  'cannot open an App tab here: this session runs on a Gugu server, which has no window, so no App page opens on it (Apps installed there give agents their tools and skills only). Open a file with path or a page with url instead.';
+  'cannot open this file in an App tab here: this session runs on a Gugu server, and a file of this machine opens only in the file tab of the desktop showing it. Open it with path alone.';
 
 export type RemotePaneOutcome = ({ opened: true } & SessionPaneTabsResult) | { queued: true; unconfirmed?: true };
 
@@ -111,13 +111,16 @@ type Viewer = {
   /** 接得住「在人那一侧打开网页」(`external`,见 remote-open-external.ts;老桌面不带 = 不能)。 */
   external: boolean;
   tabs: boolean;
+  /** Opens App tabs a program here asks for (older desktops do not). */
+  apps: boolean;
   /** 最后一次订上 / 保活的时刻:这台机器上的程序要开网页、又认不出是哪条会话时,交给最近还活着的那台桌面。 */
   seenAt: number;
   publish: (event: SessionpagePaneOpenEvent) => void;
 };
 
 /** 这台桌面开不开得了这一格。 */
-function canOpen(viewer: Pick<Viewer, 'browser' | 'pages' | 'external' | 'tabs'>, target: SessionpagePaneTarget): boolean {
+function canOpen(viewer: Pick<Viewer, 'browser' | 'pages' | 'external' | 'tabs' | 'apps'>, target: SessionpagePaneTarget): boolean {
+  if (target.kind === 'app-tab') return viewer.apps;
   if (target.kind === 'tabs' || target.kind === 'close-tab') return viewer.tabs;
   if (target.kind === 'external') return viewer.external;
   if (target.kind !== 'browser') return true;
@@ -148,6 +151,7 @@ function sameTarget(a: SessionpagePaneTarget, b: SessionpagePaneTarget): boolean
   if (a.kind === 'file' && b.kind === 'file') return a.path === b.path;
   if (a.kind === 'browser' && b.kind === 'browser') return a.url === b.url;
   if (a.kind === 'external' && b.kind === 'external') return a.url === b.url;
+  if (a.kind === 'app-tab' && b.kind === 'app-tab') return a.tabKind === b.tabKind;
   return false;
 }
 
@@ -213,10 +217,10 @@ export function createRemotePaneRoute(options: RemotePaneRouteOptions = {}) {
 
   return {
     subscribe(
-      input: { subscriptionId: string; sessionId: string; browser: boolean; pages?: boolean; external?: boolean; tabs?: boolean },
+      input: { subscriptionId: string; sessionId: string; browser: boolean; pages?: boolean; external?: boolean; tabs?: boolean; apps?: boolean },
       publish: (event: SessionpagePaneOpenEvent) => void
     ): { pending: SessionpagePaneOpenRequest[] } {
-      const viewer: Viewer = { ...input, pages: input.pages === true, external: input.external === true, tabs: input.tabs === true, seenAt: now(), publish };
+      const viewer: Viewer = { ...input, pages: input.pages === true, external: input.external === true, tabs: input.tabs === true, apps: input.apps === true, seenAt: now(), publish };
       viewers.set(input.subscriptionId, viewer);
       if (input.browser) browserSeen = 'some';
       else if (browserSeen === 'unknown') browserSeen = 'none';
@@ -317,7 +321,7 @@ export function createRemotePaneRoute(options: RemotePaneRouteOptions = {}) {
       if (watching.length > 0 && capable.length === 0) {
         // 有浏览器格、只是太旧渲染不了这台机器上的网页 ⇒ 说「旧」,❌ 说「没有浏览器」让 agent 以为这台机器连不了网页。
         const outdated =
-          target.kind === 'external' || (isRemotePageTarget(target) && watching.some((viewer) => viewer.browser));
+          target.kind === 'external' || target.kind === 'app-tab' || (isRemotePageTarget(target) && watching.some((viewer) => viewer.browser));
         throw new RemotePaneError(outdated ? 'viewer_outdated' : 'no_browser');
       }
       if (watching.length === 0) {

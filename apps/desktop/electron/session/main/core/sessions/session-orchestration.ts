@@ -1680,10 +1680,8 @@ async function openExtensionInTab(
   context: SessionCallerContext,
   action: Extract<SessionAction, { action: 'open_in_tab'; app_tab: string }>,
   signal?: AbortSignal,
-): Promise<TabHygieneResult & { opened: true; app_tab: string; intent: OpenInTabIntent }> {
+): Promise<TabHygieneResult & ({ opened: true; app_tab: string; intent: OpenInTabIntent } | (QueuedOpen & { app_tab: string }))> {
   signal?.throwIfAborted();
-  // 咕咕 server 没有窗口,扩展在它上面跑不起来:当场说清,❌ 等 10 秒超时。
-  if (remotePaneOpener) throw new Error(REMOTE_PANE_NO_EXTENSIONS);
   await requireCallerWorkspace(context, signal);
 
   // Verified against what is actually installed, the way a path is verified against the
@@ -1712,6 +1710,13 @@ async function openExtensionInTab(
     );
     throw new Error(`${requestedKind} opens files and has no tab of its own; open the file instead — ${how.join('; ')}`);
   }
+  if (remotePaneOpener) {
+    // #1607 A Gugu server has no window: the desktop showing this task draws the App's page, its program runs here.
+    const outcome = await remotePaneOpener.open(context.sessionId, { kind: 'app-tab', tabKind: requestedKind }, action.intent, signal);
+    return 'queued' in outcome
+      ? { opened: false, queued: true, app_tab: requestedKind, intent: action.intent, note: remotePaneQueuedNote(outcome) }
+      : { opened: true, app_tab: requestedKind, intent: action.intent, ...tabHygiene(outcome.tabs) };
+  }
   const ack = await requestPaneOpen(sessionOpenExtensionInPaneResultChannel, 'App tab', (requestId) => {
     events.emit(sessionOpenExtensionInPaneChannel, {
       requestId,
@@ -1735,13 +1740,19 @@ export async function openTaskPagesOfApp(
   extensionId: string,
   signal?: AbortSignal,
 ): Promise<string[]> {
-  if (remotePaneOpener) throw new Error(REMOTE_PANE_NO_EXTENSIONS);
   const installed = extensionsService()
     .list()
     .extensions.find((entry) => entry.manifest.id === extensionId);
   if (!installed) throw new Error(`no installed App with id: ${extensionId}`);
   const kinds = installed.manifest.contributes.tabs.filter((tab) => tab.perSession).map((tab) => extensionTabKind(extensionId, tab.name));
   for (const tabKind of kinds) {
+    // #1607 On a Gugu server the desktop showing this task draws it (or gets it when it opens the task).
+    // Not bound to the program's call: once handed over, the desktop opens it whether or not that call is still running
+    // (a fast tool call ending first would only drop the reply, and the App would ask again on every call).
+    if (remotePaneOpener) {
+      await remotePaneOpener.open(target.sessionId, { kind: 'app-tab', tabKind, ifAbsent: true }, 'pinned');
+      continue;
+    }
     await requestPaneOpen(sessionOpenExtensionInPaneResultChannel, 'App tab', (requestId) => {
       events.emit(sessionOpenExtensionInPaneChannel, { requestId, ...target, tabKind, intent: 'pinned', ifAbsent: true });
     }, signal);

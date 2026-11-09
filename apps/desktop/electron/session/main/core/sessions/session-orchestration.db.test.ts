@@ -212,7 +212,6 @@ import { setOtherMachines, type OtherMachines } from './session-family';
 import { setEmdashIdentityProvisioner } from '@main/core/acp/emdash-mcp-injector';
 import { setSessionIdentityHost } from './session-identity-host';
 import {
-  REMOTE_PANE_NO_EXTENSIONS,
   REMOTE_PANE_PAGE_NOT_FILE,
   REMOTE_PANE_QUEUED_NOTE,
   RemotePaneError,
@@ -2784,8 +2783,9 @@ describe('session_archive', () => {
       mocks.stat.mockResolvedValueOnce({ success: false, error: { message: 'file does not exist' } });
       await expect(runSessionAction(context, { action: 'open_in_tab', url: 'file:///repo/ws-1/nope.html', intent: 'pinned' }))
         .rejects.toThrow(REMOTE_PANE_PAGE_NOT_FILE);
+      // #1607 An App tab is drawn by the desktop showing the task, but only one this machine really has installed.
       await expect(runSessionAction(context, { action: 'open_in_tab', app_tab: 'sheets.grid', intent: 'pinned' }))
-        .rejects.toThrow(REMOTE_PANE_NO_EXTENSIONS);
+        .rejects.toThrow('no installed App with id: sheets');
       expect(open).not.toHaveBeenCalled();
     });
 
