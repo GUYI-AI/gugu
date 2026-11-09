@@ -355,9 +355,14 @@ export function restWriteError(what, status, body) {
  * 发送者自己没权限仍是 RLS 的 42501,不会走到这里。把这种拒绝还原成给 agent 看得懂的一句,其余原样抛。
  */
 function recipientRefusal(error, chatId) {
+  // 附件走 attachments 函数:同一个拒绝变成 HTTP 400 { error: 'recipient_not_member', details } (gugu-supabase#242),
+  // 悄悄话的变成 400 invalid、原文照带。
+  const viaAttachments = error instanceof AttachmentsError
   // 悄悄话的收件人由 chat.enforce_whisper_rule 判,仍是 23514「A whisper goes to a member of this chat: <id> is not a member of <chat>」。
-  const whisper = error?.code === '23514' ? /A whisper goes to a member of this chat: (\S+) is not a member of/.exec(error.message) : null
-  if (error?.hint !== 'recipient_not_member' && !whisper) return error
+  const whisper = error?.code === '23514' || (viaAttachments && error.code === 'invalid')
+    ? /A whisper goes to a member of this chat: (\S+) is not a member of/.exec(error.message) : null
+  const notMember = error?.hint === 'recipient_not_member' || (viaAttachments && error.code === 'recipient_not_member')
+  if (!notMember && !whisper) return error
   const ids = whisper ? [whisper[1]] : String(error.details ?? '').split(',').map((id) => id.trim()).filter(Boolean)
   return new Error(`收件人不在本 chat（${chatId}）成员里：${ids.join(', ')}。用 message_members 查有效成员后重发。`)
 }
@@ -737,12 +742,6 @@ function summarizeWorkspaceItem(item) {
   }
 }
 
-// #849：whisper 的 to_user_ids 必须都是该 chat 的成员，否则拒绝——不假装投递成功（fail-loud）。
-// 纯函数（无 I/O）：返回不在成员集里的收件人列表，便于单测。
-export function recipientsNotInMembers(memberIds, toUserIds) {
-  const members = new Set(memberIds)
-  return (toUserIds || []).filter((uid) => !members.has(uid))
-}
 /**
  * 「我自己在的那条线」的成员名单只有一个诚实的形态:**非空数组**——我自己就在里面。
  * 所以「不是数组」(restRpc 对 void/空 body 回 null,见 #1216)与「零行」都只可能是**读不到**,
@@ -920,16 +919,6 @@ export async function widgetCheckScopeOf(context, messageId, injected = {}) {
   return {
     tabKind: `${widget.app}.${widget.view}`, chatId: String(message.chat_id),
     widget: { id: wid ?? String(message.id), messageId: String(message.id), senderId: String(message.sender_user_id), text: widget.text, data: widget.data ?? {}, ...(widget.height === undefined ? {} : { height: widget.height }) },
-  }
-}
-async function assertRecipientsAreMembers(chatId, toUserIds, deps) {
-  if (!toUserIds || !toUserIds.length) return
-  const rows = await memberRowsOfMyChat(chatId, deps)
-  const invalid = recipientsNotInMembers(rows.map((r) => r.user_id), toUserIds)
-  if (invalid.length) {
-    throw new Error(
-      `收件人不在本 chat（${chatId}）成员里：${invalid.join(', ')}。用 message_members 查有效成员后重发。`
-    )
   }
 }
 
@@ -2342,7 +2331,8 @@ async function handleFile(args, deps) {
     }
     // #3641 附件也是往群里说话:与 message_send 同一道群规闸,在上传任何字节之前判。
     await assertGroupRulesSeen(deps, chatId, 'message_send_file')
-    await assertRecipientsAreMembers(chatId, toUserIds, deps)
+    // #2383 收件人合不合格由库判(与 message_send 同一条规则);被拒时 recipientRefusal 说清是谁。
+    const refused = (error) => { throw recipientRefusal(error, chatId) }
     const messageId = randomUUID()
     const thread = { thread_root_id: deps.context.threadRootId ?? null }
     let message
@@ -2355,14 +2345,14 @@ async function handleFile(args, deps) {
       message = await shareAttachment(await deps.attachmentsEndpoint(), {
         item_id: folderFile.itemId, version: folderFile.version ?? null, message_id: messageId, chat_id: chatId,
         sender_user_id: deps.context.agentId, to_user_ids: toUserIds ?? [], ...thread,
-      })
+      }).catch(refused)
       fileName = attachmentNameOf(message)
     } else if (!(documentBytes = folderFile ? null : await documentUploadBytes(args)) && (message = await publishHere(args, deps, chatId, { message_id: messageId, chat_id: chatId,
       sender_user_id: deps.context.agentId, to_user_ids: toUserIds ?? [], ...thread },
       folderFile ? { itemId: folderFile.itemId, expectedVersion: folderFile.version } : undefined).catch(async (error) => {
       const said = String(error?.message ?? error)
       if (folderFile && /File revision conflict/.test(said)) throw new Error(newerVersionRefusal(args.file, folderFile.version))
-      throw error
+      refused(error)
     }))) {
       fileName = resolveUploadName(args)
     } else {
@@ -2384,7 +2374,7 @@ async function handleFile(args, deps) {
         ...(args.temporary === true ? { keep: 'temporary' } : {}),
       }
       message = await commitWithReplay(() => commitAttachment(endpoint, commit)).catch(async (error) => {
-        if (!(error instanceof AttachmentsError && error.code === 'version_conflict')) throw error
+        if (!(error instanceof AttachmentsError && error.code === 'version_conflict')) refused(error)
         throw new Error(newerVersionRefusal(args.file, folderFile.version))
       })
     }
