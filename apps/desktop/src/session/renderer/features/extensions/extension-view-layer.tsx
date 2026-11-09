@@ -11,6 +11,8 @@ import { installedExtensionsStore } from './installed-extensions-store';
 import { AppSettingsPage } from './app-settings-page';
 import { ExtensionGuestBinding, type ExtensionGuestTarget } from './extension-guest-binding';
 import { nativeAppSurfaceMetrics, observeNativeSurfaceOcclusion } from './native-app-surface';
+import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
+import { bindAppPageZoom } from '@/components/preview/file-content-zoom';
 
 /**
  * 常驻扩展的页都住在这一层:每个 App 在每个地方(一个群、一个任务)一张,一生不换地方(摩擦单 F48,
@@ -72,6 +74,17 @@ export const ExtensionViewLayer = observer(function ExtensionViewLayer() {
 /** Following a claimed slot's box after it appears: until it holds still this many frames, or this long. */
 const FOLLOW_STILL_FRAMES = 10;
 const FOLLOW_MAX_MS = 2_000;
+
+function releaseHiddenFocus(box: HTMLElement, claim?: ExtensionViewClaim): void {
+  const focused = box.ownerDocument.activeElement;
+  if (!(focused instanceof HTMLElement) || !box.contains(focused)) return;
+  // A resident guest is outside its pane and can retain native focus after
+  // DOM blur. Use the existing window host-focus route, then its pane context.
+  void rpc.browser.focusHost(box.ownerDocument.defaultView?.name ?? '')
+    .catch((error: unknown) => log.warn('Failed to return extension focus to its host:', error));
+  focused.blur();
+  claim?.focusContent?.();
+}
 
 interface Surface {
   partition: string;
@@ -247,6 +260,8 @@ export const ExtensionPage = observer(function ExtensionPage({
         conversation: claim?.chatId ?? claim?.conversation ?? null,
         ...(claim?.resourceChat ? { resourceChat: claim.resourceChat } : {}),
         tabId: claim?.tabId ?? '',
+        viewState: claim?.viewState,
+        navigation: claim?.navigation,
         ...(claim?.itemId ? { itemId: claim.itemId } : {}),
         ...(claim?.takeOpening ? { opening: claim.takeOpening() } : {}),
       };
@@ -331,13 +346,21 @@ export const ExtensionPage = observer(function ExtensionPage({
         }
       };
       element.addEventListener('ipc-message', wheel);
+      // Same reason for Esc: pressed in the guest, it leaves full screen here (tab-fullscreen).
+      const escape = (event: Event) => { if ((event as Event & { channel: string }).channel === 'gugu-guest-escape') tabFullscreen.exit(); };
+      element.addEventListener('ipc-message', escape);
+      // A tab's page is zoomed by the host, remembered per App (zoom B); a widget in a message keeps the chat's size.
+      const box = inline ? null : element.closest<HTMLElement>('[data-extension-view]');
+      const offZoom = box ? bindAppPageZoom(box, element, extensionId) : null;
       guestTeardownRef.current = () => {
+        offZoom?.();
         element.removeEventListener('dom-ready', ready);
         element.removeEventListener('render-process-gone', gone);
         element.removeEventListener('ipc-message', wheel);
+        element.removeEventListener('ipc-message', escape);
       };
     },
-    [aimAt, claimOf, guestBinding, kind, inline]
+    [aimAt, claimOf, guestBinding, kind, inline, extensionId]
   );
 
   // 认领方一换(切会话 / 换 tab / 聊天栏换会话)→ 重新指向 + 重新摆位。
@@ -354,13 +377,14 @@ export const ExtensionPage = observer(function ExtensionPage({
   useLayoutEffect(
     () => inline ? undefined : reaction(
         () => claimOf(),
-        (claim) => {
+        (claim, previous) => {
           teardownRef.current?.();
           teardownRef.current = null;
           const box = boxRef.current;
           const layer = layerRef.current;
           if (!box || !layer) return;
           if (!claim) {
+            releaseHiddenFocus(box, previous);
             box.style.visibility = 'hidden';
             if (managed) box.style.opacity = '0';
             box.inert = true;
@@ -374,6 +398,7 @@ export const ExtensionPage = observer(function ExtensionPage({
               clip.height > 0 &&
               claim.element.isConnected &&
               claim.element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+            if (!shown) releaseHiddenFocus(box, claim);
             box.style.left = `${clip.left}px`;
             box.style.top = `${clip.top}px`;
             box.style.width = `${clip.width}px`;

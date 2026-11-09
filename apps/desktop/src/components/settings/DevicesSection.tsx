@@ -1,3 +1,4 @@
+import { notifyCopied } from '@/lib/copyFeedback'
 import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -81,6 +82,8 @@ export function DevicesSection({
   const { t } = useTranslation('settings')
   const { toast } = useToast()
   const { devices: deviceRows, phones, loading, error, refresh, rename, cloudComputer } = useDevicesStore()
+  // Disk bytes are on-demand state; the revision journal only announces warning transitions.
+  useEffect(() => { void refresh() }, [refresh])
   const allDevices = useMemo(() => [...deviceRows, ...(phones ?? [])], [deviceRows, phones])
   // #7199 个人助理住的那台云端宿主不在这一页(owner 10-15:用户看不到它住在哪);开通、叫醒、关闭都在「助理」App 里。
   const cloudDeviceId = cloudComputer?.snapshot?.deviceId ?? null
@@ -135,7 +138,7 @@ export function DevicesSection({
   ], [t, devices.length, onlineCount])
 
   const copyAddress = useCallback(async (address: string) => {
-    try { await platform.writeClipboardText(address); toast(t('devices.copied'), 'success') }
+    try { await platform.writeClipboardText(address); notifyCopied(t('devices.copied')) }
     catch (error) { log.error({ error }, 'device address copy failed'); toast(t('actions.copyFailed', { ns: 'common' }), 'error', messageForUser(error)) }
   }, [toast, t])
 

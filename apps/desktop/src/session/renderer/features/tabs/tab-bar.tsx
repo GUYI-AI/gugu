@@ -1,13 +1,13 @@
 import { observer } from 'mobx-react-lite';
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react';
-import { ChevronDown } from '@/lib/icons';
+import { ChevronDown, ChevronLeft } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@renderer/lib/ui/dropdown-menu';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
 import { isStripOverflowing, readStripTabs, wheelToHorizontal, type StripTabEntry } from './tab-bar/tab-overflow';
 import { readRendererPlatform, shellRestoreLane, WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
-import { usePaneContext } from '@renderer/features/tabs/pane-context';
+import { PaneContext, usePaneContext } from '@renderer/features/tabs/pane-context';
 import { PaneDropZone } from './tab-bar/draggable-tab';
 import { SESSION_TAB_HEIGHT_PX } from './tab-bar/tab-chip';
 import { isUnavailableTabResource, UnavailableTabBarItem } from './unavailable-tab';
@@ -32,17 +32,37 @@ export const TabBar = observer(function TabBar({
   /** 这条页签条是不是贴着主内容区左缘(左边再无聊天栏/分栏)。见 <TabStripShell>。 */
   reserveShellRestoreLane?: boolean;
 }) {
-  const { paneId, pane } = usePaneContext();
+  const { paneId, pane, isFocusedPane } = usePaneContext();
+  // 并排时另一页在它自己那一格里,页签画在这条页签条上、紧跟钉住那枚(一条会话只有一条页签条,spec session-page「并排」)。
+  const side = pane.pairSide;
 
+  const { translate } = useSessionMessages();
+  const active = pane.activeEntry;
+  const opener = active?.openerTabId ? pane.entries.get(active.openerTabId) : undefined;
+  const ownsFileToolbar = active?.kind === 'file-view' || active?.kind === 'chat-panel' && !!(active.state as { file?: unknown }).file;
+  // File pages own this action in their content toolbar. Other pages keep it in the
+  // pane's ordinary action group, never in the absolute, fixed-width grip slot.
+  const returnConversation = !ownsFileToolbar && active && opener && pane.registry.has(opener.kind) && pane.registry.get(opener.kind).conversation && (pane.navigationOf(active.tabId)?.index ?? 0) === 0
+    ? <Button size="icon-sm" variant="ghost" data-testid="tab-return-conversation" aria-label={translate('tabs.backToConversation')} title={translate('tabs.backToConversation')} onClick={() => void pane.go(active.tabId, -1)}><ChevronLeft className="size-3.5" /></Button> : null;
   const resolvedTabs = pane.resolvedTabs;
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const order = useTabOrderPreview(pane, scrollContainerRef);
-  const tabsById = new Map(resolvedTabs.map((tab) => [tab.tabId, tab]));
+  const entries = [
+    ...resolvedTabs.map((tab) => ({ tab, host: pane, paneId, focused: isFocusedPane })),
+    ...(side?.pane.resolvedTabs.map((tab) => ({ tab, host: side.pane, paneId: side.paneId, focused: !isFocusedPane })) ?? []),
+  ];
+  const tabsById = new Map(entries.map((entry) => [entry.tab.tabId, entry]));
+  const sideOrder = side ? [...side.pane.resolvedTabs].sort((a, b) => Number(b.isActive) - Number(a.isActive)).map((tab) => tab.tabId) : [];
+  const combined = order.flatMap((id) => id === pane.resolvedActiveTabId ? [id, ...sideOrder] : [id]);
+  const start = entries.find(({ tab }) => tab.pairRole === 'start')?.tab.tabId;
+  const end = entries.find(({ tab }) => tab.pairRole === 'end')?.tab.tabId;
+  // Pair identity can point at two hidden main-pane tabs while the old side is still displayed.
+  const stripOrder = start && end ? combined.filter((id) => id !== end).flatMap((id) => id === start ? [id, end] : [id]) : combined;
 
   // 放不下了没有:滚动区尺寸变了、页签数变了才重算(ResizeObserver,❌ 定时量)。
   const [overflowing, setOverflowing] = useState(false);
-  const tabCount = resolvedTabs.length;
+  const tabCount = entries.length;
   useEffect(() => {
     const scroller = scrollContainerRef.current;
     if (!scroller) return;
@@ -87,25 +107,24 @@ export const TabBar = observer(function TabBar({
         overflowing ? (
           <TabOverflowMenu
             read={() => (scrollContainerRef.current ? readStripTabs(scrollContainerRef.current) : [])}
-            onPick={(tabId) => pane.setActiveTab(tabId)}
+            onPick={(tabId) => tabsById.get(tabId)?.host.setActiveTab(tabId)}
           />
         ) : null
       }
-      actionsSlot={actionsSlot}
+      actionsSlot={returnConversation ? <div data-tabbar-actions="" className="flex h-full shrink-0 items-center">{returnConversation}{actionsSlot}</div> : actionsSlot}
       reserveShellRestoreLane={reserveShellRestoreLane}
       leadingReservePx={leadingReservePx}
       leadingSlot={leadingSlot}
     >
-      <TabStripMotion scroller={scrollContainerRef} order={order.join('\0')} activeTabId={pane.activeTabId}>
-      {order.map((id) => {
-        const tab = tabsById.get(id);
-        if (!tab) return null;
-        if (isUnavailableTabResource(tab.resource) || !pane.registry.has(tab.kind)) {
-          return <UnavailableTabBarItem key={tab.tabId} tab={tab} host={pane} />;
-        }
-        const def = pane.registry.get(tab.kind);
-        const TabItemComponent = def.TabBarItem;
-        return <TabItemComponent key={tab.tabId} tab={tab} host={pane} ctx={pane.ctx} />;
+      <TabStripMotion scroller={scrollContainerRef} order={stripOrder.join('\0')} activeTabId={pane.activeTabId}>
+      {stripOrder.map((id) => {
+        const entry = tabsById.get(id);
+        if (!entry) return null;
+        const { tab, host } = entry;
+        const Item = host.registry.has(tab.kind) ? host.registry.get(tab.kind).TabBarItem : null;
+        return <PaneContext.Provider key={id} value={{ paneId: entry.paneId, pane: host, isFocusedPane: entry.focused }}>
+          {isUnavailableTabResource(tab.resource) || !Item ? <UnavailableTabBarItem tab={tab} host={host} /> : <Item tab={tab} host={host} ctx={host.ctx} />}
+        </PaneContext.Provider>;
       })}
       </TabStripMotion>
     </TabStripShell>

@@ -43,6 +43,13 @@ export interface IExecutionContext {
    */
   readonly supportsLocalSpawn: boolean;
 
+  /**
+   * Windows only: where `command` is on this machine, found in-process along PATH × PATHEXT
+   * (`findWindowsCommandPaths`). `null` = this context cannot look itself (not on Windows, or not local);
+   * callers then fall back to `where`, whose console-code-page output garbles non-ASCII paths.
+   */
+  findWindowsCommandPaths?(command: string, env?: Record<string, string>): Promise<string[] | null>;
+
   /** Run a command and buffer all output. Rejects on non-zero exit code. */
   exec(
     command: string,

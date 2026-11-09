@@ -1,4 +1,5 @@
-import { computed, makeAutoObservable, observable } from 'mobx';
+import { isAssistantHostProject } from '@renderer/features/projects/assistant-project-presentation';
+import { computed, makeAutoObservable, observable, onBecomeObserved, onBecomeUnobserved, type IComputedValue } from 'mobx';
 import { projectSessionTreeRows, summarizeSessionBranches, type ProjectSessionTreeRow } from './sidebar-session-branch';
 import {
   buildSessionTree,
@@ -22,7 +23,7 @@ import type { Snapshottable } from '@renderer/lib/stores/snapshottable';
 import type { SidebarListLayout, SidebarListPage, SidebarSnapshot, SidebarSessionSortBy } from '@shared/view-state';
 import { blockKey, type JoinedGroup, type SidebarJoin } from '@/lib/sidebarJoinedGroups';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
-import { isAssistantSession, launchedByAssistant } from '@renderer/features/assistant/assistant-lineage';
+import { isAssistantAgent, isAssistantSession, launchedByAssistant } from '@renderer/features/assistant/assistant-lineage';
 import { taskPresentation } from '@/lib/taskAgentStatus';
 import type { AgentStatusView } from '@gugu/core/shared/agentStatus';
 import type { AgentStatusPresentation } from '@gugu/core/shared/agentStatusPresentation';
@@ -36,6 +37,7 @@ import {
 } from '@renderer/features/projects/stores/project-group-layout';
 import {
   SIDEBAR_STATE_GROUP_ORDER,
+  needsYouCount,
   sidebarStateGroup,
   type SidebarStateGroup,
 } from './session-groups';
@@ -110,6 +112,8 @@ type SidebarSessionEntry = {
   time: number;
   group: SidebarStateGroup | null;
   presentation?: AgentStatusPresentation | null;
+  /** The host's read bit: a read failure stays in its group but leaves the counts (isNeedsYou). */
+  unseen: boolean;
   hostOnline?: boolean;
   /** Raw addressing name; components decide how to display it. */
   title: string;
@@ -144,6 +148,8 @@ export type SidebarMachines = {
    * 打开就先画上次的样子。`live` 只说明目录连接；Agent 工作态由共享 presence 提供。
    */
   sessionsOf?(deviceId: string): { sessions: readonly SessionpageSessionSummary[]; live: boolean };
+  /** 同一份目录里的一条(按会话 id)。 */
+  session?(deviceId: string, conversationId: string): SessionpageSessionSummary | null;
   /** #7199 这台是不是个人助理住的那台(它上面的项目并成一组,组名是它的名字)。 */
   isAssistantHome?(deviceId: string): boolean;
   /** #7341 这个本地项目绑的项目群;绑在同一个群上的本地项目 = 同一个项目(合成一行)。 */
@@ -226,7 +232,8 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
    */
   assistantAgentId: string | null = null;
   constructor(private readonly projectManager: ProjectManagerStore) {
-    makeAutoObservable(this, {
+    makeAutoObservable<SidebarStore, 'remoteEntryById'>(this, {
+      remoteEntryById: false,
       machines: observable.ref,
       joinedGroups: observable.ref,
       homeLayout: computed,
@@ -254,7 +261,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
    */
   get sidebarProjects(): SidebarProjectRef[] {
     // #609 workspace(任务工作区、主目录等咕咕自己要用的目录;哪台机器上的都算)不是项目:不单列,会话在「任务」里。
-    // 只按真实的项目群绑定合并;个人助理所在设备也没有工作区例外。
+    // 云助理宿主不展示目录项目,其中的会话保留在任务列表;其它项目仍按真实项目群绑定合并。
     const { rowOf } = this.homeLayout;
     const all: SidebarProjectRef[] = Array.from(this.projectManager.projects.values())
       .filter((project) => !isWorkspaceProject(project) && !rowOf.has(project.id))
@@ -335,16 +342,6 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     return summarizeSessionBranches(this.placement.nodeById.values());
   }
 
-  get sessionBranchColumnMetrics() {
-    let totalWidth = 14;
-    let runningWidth = 7;
-    for (const summary of this.sessionBranchSummaries.values()) {
-      totalWidth = Math.max(totalWidth, String(summary.total).length * 7);
-      for (const state of summary.active) runningWidth = Math.max(runningWidth, String(state.count).length * 7);
-    }
-    return { totalWidth, runningWidth, width: totalWidth + runningWidth + 35 };
-  }
-
   get sessionBranchTrail(): { id: string; title: string }[] {
     const trail: { id: string; title: string }[] = [];
     let node = this.sessionBranchRootId ? this.placement.nodeById.get(this.sessionBranchRootId) : undefined;
@@ -392,7 +389,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     return nodes;
   }
 
-  /** 同一个项目群绑定的本地项目合成一行;助理的设备与其它设备遵循同一规则。 */
+  /** 同一个项目群绑定的目录项目合成一行;云助理的任务投影不参与目录项目折叠。 */
   get homeLayout(): MachineHomeLayout {
     // #7341 绑在同一个项目群上的本地项目(各台机器上的)合成一行。
     return foldProjectGroups(EMPTY_MACHINE_HOME_LAYOUT, this.projectGroups);
@@ -403,7 +400,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     const machines = this.machines;
     if (!machines?.projectGroupOf) return EMPTY_PROJECT_GROUP_LAYOUT;
     return projectGroupLayout(
-      Array.from(this.projectManager.projects.values(), (p) => {
+      Array.from(this.projectManager.projects.values()).filter(p => !isAssistantHostProject(p)).map((p) => {
         const machine = machines.machineOf(p.id);
         return { id: p.id, machine, online: machine === null || machines.connected?.(machine) === true, createdAt: p.createdAt };
       }),
@@ -731,6 +728,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     for (const page of sessions) {
       const sessionId = page.data.id;
       for (const session of pageSessions(page)) {
+        if (isAssistantAgent(sessionAgentBindings.bindingFor(session.data.id)?.agentUserId, this.assistantAgentId)) continue;
         entries.push({
           id: session.data.id,
           projectId: project.id,
@@ -742,6 +740,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
             : 0,
           group: sidebarStateGroup(mountedSessionPresentation(session)),
           presentation: mountedSessionPresentation(session),
+          unseen: !session.seen,
           title: session.data.title,
           createdAt: session.data.createdAt,
         });
@@ -755,32 +754,58 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     this.assistantAgentId = id;
   }
 
-  /** 别的机器上一个项目的会话:来自会话目录(列出不挂载),新的在前；助理也保留在任务里。 */
+  /** Remote task entries exclude the assistant's own identity; delegated children remain tasks. */
   private remoteEntries(projectId: string, machine: string): SidebarSessionEntry[] {
     const listed = this.machines?.sessionsOf?.(machine);
     if (!listed) return [];
-    const hostOnline = this.machines?.connected?.(machine) ?? listed.live;
     const entries: SidebarSessionEntry[] = [];
     for (const session of listed.sessions) {
       if (session.projectId !== projectId) continue;
-      entries.push({
-        id: session.conversationId,
-        projectId,
-        sessionId: session.conversationId,
-        parentSessionId: session.parentConversationId ?? null,
-        isPinned: session.isPinned === true,
-        time: session.lastInteractedAt ? new Date(session.lastInteractedAt).getTime() : 0,
-        // Direct-link freshness only governs access; identified agents share presence with avatars.
-        group: sidebarStateGroup(sessionPresentation(session, listed.live,
-          session.agent?.userId ?? sessionAgentBindings.bindingFor(session.conversationId)?.agentUserId)),
-        presentation: sessionPresentation(session, listed.live,
-          session.agent?.userId ?? sessionAgentBindings.bindingFor(session.conversationId)?.agentUserId),
-        hostOnline,
-        title: session.title,
-      });
+      const entry = this.remoteEntry(machine, projectId, session.conversationId);
+      if (entry) entries.push(entry);
     }
     entries.sort((a, b) => b.time - a.time);
     return entries;
+  }
+
+  // @@@entry-by-id — 一条远程会话的条目只由它自己的目录行、它那个 agent 的 presence 与那台机器的连接派生,
+  // 按 id 各一个 computed:一次 presence 推送只重算那个 agent 的那几条,别的条目原样(同一个对象)交回列表。
+  // 表里只放此刻有人在看的那几个:被观察时放进来,没人看了(会话从目录里没了、机器换了、侧栏不在了)就拿掉 ——
+  // ❌ 只加不删:用得越久表越大。只被命令式读一次的那个从不进表,读完即弃。
+  private readonly remoteEntryById = new Map<string, IComputedValue<SidebarSessionEntry | null>>();
+
+  private remoteEntry(machine: string, projectId: string, conversationId: string): SidebarSessionEntry | null {
+    const key = `${machine}\u0000${projectId}\u0000${conversationId}`;
+    let derived = this.remoteEntryById.get(key);
+    if (!derived) {
+      derived = computed(() => {
+        const listed = this.remoteSession(projectId, conversationId);
+        if (!listed) return null;
+        const { summary: session, live } = listed;
+        const agentId = session.agent?.userId ?? sessionAgentBindings.bindingFor(session.conversationId)?.agentUserId;
+        // Direct-link freshness only governs access; identified agents share presence with avatars.
+        const presentation = sessionPresentation(session, live, agentId);
+        return {
+          id: session.conversationId,
+          projectId,
+          sessionId: session.conversationId,
+          parentSessionId: session.parentConversationId ?? null,
+          isPinned: session.isPinned === true,
+          time: session.lastInteractedAt ? new Date(session.lastInteractedAt).getTime() : 0,
+          group: sidebarStateGroup(presentation),
+          presentation,
+          unseen: session.unseen === true,
+          hostOnline: this.machines?.connected?.(machine) ?? live,
+          title: session.title,
+        };
+      });
+      const own = derived;
+      onBecomeObserved(own, () => this.remoteEntryById.set(key, own));
+      onBecomeUnobserved(own, () => {
+        if (this.remoteEntryById.get(key) === own) this.remoteEntryById.delete(key);
+      });
+    }
+    return derived.get();
   }
 
   /** #7199 这条会话是不是个人助理派出来的(父会话 / 由谁派的,一路往上有它自己的那条)。 */
@@ -807,9 +832,10 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
   remoteSession(projectId: string, sessionId: string): RemoteSidebarSession | null {
     const machine = this.machines?.machineOf(projectId) ?? null;
     if (!machine) return null;
-    const listed = this.machines?.sessionsOf?.(machine);
-    const summary = listed?.sessions.find((session) => session.conversationId === sessionId);
-    return listed && summary ? { summary, live: listed.live } : null;
+    const summary = this.machines?.session?.(machine, sessionId) ?? null;
+    if (!summary || summary.projectId !== projectId) return null;
+    const agentId = summary.agent?.userId ?? sessionAgentBindings.bindingFor(sessionId)?.agentUserId;
+    return isAssistantAgent(agentId, this.assistantAgentId) ? null : { summary, live: this.machines?.sessionsOf?.(machine).live ?? false };
   }
 
   /**
@@ -872,7 +898,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
    */
   needsYouCountForProject(projectId: string): number {
     const entries = this.placement.entries.get(projectId) ?? [];
-    return entries.filter((e) => e.group === 'needs-you' && e.hostOnline !== false).length;
+    return needsYouCount(entries);
   }
 
   toggleIdleExpanded(foldKey: string): void {
@@ -911,6 +937,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
           page.state === 'unregistered' || !('archivedAt' in page.data && page.data.archivedAt);
         if (!visible) continue;
         for (const session of pageSessions(page)) {
+          if (isAssistantAgent(sessionAgentBindings.bindingFor(session.data.id)?.agentUserId, this.assistantAgentId)) continue;
           entries.push({
             id: session.data.id,
             projectId: project.id,
@@ -922,6 +949,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
               : 0,
             group: sidebarStateGroup(mountedSessionPresentation(session)),
             presentation: mountedSessionPresentation(session),
+            unseen: !session.seen,
             title: session.data.title,
             createdAt: session.data.createdAt,
           });

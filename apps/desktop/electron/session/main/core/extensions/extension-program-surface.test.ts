@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileHandle } from '@gugu/core/shared/fileResolver';
 import { ownProgramResource } from './program-resource-lifetime';
 import { createAppFiles } from '@shared/extensions/app-files-core';
+import { until } from '../../../../../../../tests/support/awaitCondition';
 import { FileSyncRelay } from '@shared/extensions/file-sync-core';
 
 // Chats are named by their id (编号 18: placeOf refuses anything else).
@@ -59,6 +60,7 @@ const listAppFiles = vi.fn(async () => []);
 const uploadAppFiles = vi.fn(async () => [{ id: 'new-file' }]);
 const renameAppFile = vi.fn(async () => ({ id: 'renamed' }));
 const replaceAppFile = vi.fn(async () => ({ id: 'replaced', version: 2 }));
+const appFilesCanDelete = vi.fn(async (_page: unknown, args: { refs: unknown[] }) => args.refs.map(() => true));
 // #7257: the files a revision named, as the program reads them.
 const changedGroupFiles = vi.fn(async (chatId: string, _reader: string | null, wanted: { ids: readonly string[]; all: boolean }) =>
   ({ entries: (wanted.all ? [] : wanted.ids).map((id) => ({ id, chat: chatId, name: 'board.json', version: 3 })), gone: [] as string[] }));
@@ -76,6 +78,7 @@ vi.mock('@main/core/extensions/app-files', () => ({
   uploadAppFiles,
   renameAppFile,
   replaceAppFile,
+  appFilesCanDelete,
 }));
 // This computer's projects: one of the person's, and the hidden home folder sessions start in with no project chosen.
 vi.mock('@main/core/projects/operations/getProjects', () => ({
@@ -96,6 +99,7 @@ function fakeChild() {
   const child = Object.assign(new EventEmitter(), { connected: true, sent: [] as unknown[] });
   (child as unknown as { send: (message: unknown) => boolean }).send = (message) => {
     child.sent.push(message);
+    child.emit('sent', message);
     const frame = message as { t?: string; event?: { type?: string; event?: { type: string; id: string; requestId?: string } } };
     const event = frame.event?.type === 'projectionSource' ? frame.event.event : undefined;
     if (event?.type === 'close' || event?.type === 'disconnect') queueMicrotask(() => child.emit('message', {
@@ -105,14 +109,18 @@ function fakeChild() {
   };
   return child;
 }
-/** One verb over the channel (made in tool call `inCall`, when given), and its answer once the bridge gave one. */
+/** One verb over the channel (made in tool call `inCall`, when given), and its answer: the frame the bridge sends back. */
 async function call(child: ReturnType<typeof fakeChild>, id: number, method: string, args: unknown, inCall?: string) {
-  child.emit('message', { m: APP_FRAME_MARKER, t: 'call', id, method, args, ...(inCall ? { call: inCall } : {}) });
-  return vi.waitFor(() => {
-    const answer = child.sent.find((frame) => (frame as { id?: number }).id === id);
-    if (!answer) throw new Error(`no answer to ${method} yet`);
-    return answer;
+  const answer = new Promise<unknown>((resolve) => {
+    const onSent = (frame: unknown) => {
+      if ((frame as { id?: number }).id !== id) return;
+      child.off('sent', onSent);
+      resolve(frame);
+    };
+    child.on('sent', onSent);
   });
+  child.emit('message', { m: APP_FRAME_MARKER, t: 'call', id, method, args, ...(inCall ? { call: inCall } : {}) });
+  return answer;
 }
 
 const HANDED = { itemId: 'item-board', chatId: BOARD_CHAT, agentUserId: 'agent-1' };
@@ -237,7 +245,7 @@ describe('an App program as a caller of its App (F16)', () => {
     await call(child, 1300, 'projectionCreate', {}, 'ending-call');
     const { sessionEvents } = await import('../sessions/session-events');
     sessionEvents._emit('session:archived', 'task-ending');
-    await vi.waitFor(() => expect(surface.openFiles()).toBe(0));
+    await until('the archived task\'s projection closed', () => surface.openFiles(), (open) => open === 0);
     expect(child.sent).toContainEqual(expect.objectContaining({ t: 'event', event: { type: 'projectionSource', event: expect.objectContaining({ type: 'close' }) } }));
     await surface.close();
   });
@@ -333,6 +341,20 @@ describe('an App program as a caller of its App (F16)', () => {
     expect(which({ itemId: 'other', needs: null, asAgent: 'agent-1' })).toBe(false);
   });
 
+  // ws-batch (owner 11-05): the folder App's delete with item_ids asks for all of them at once, as the agent that handed them.
+  it('canDelete for several files a call handed it asks as that agent; one it did not hand is refused', async () => {
+    granted.add('files:read');
+    const child = fakeChild();
+    const surface = attachProgramSurface('board', child as unknown as ChildProcess);
+    const release = surface.hand('call-1', 'agent-1', [HANDED, { ...HANDED, itemId: 'item-two' }]);
+    const refs = [{ id: 'item-board' }, { id: 'item-two' }];
+    expect(await call(child, 60, 'filesCanDelete', { refs }, 'call-1')).toMatchObject({ ok: true, value: [true, true] });
+    expect(appFilesCanDelete).toHaveBeenLastCalledWith(
+      { pageId: surface.pageId, extensionId: 'board', handed: null, asAgent: 'agent-1', callId: expect.any(String), signal: expect.any(AbortSignal) }, { refs });
+    expect(await call(child, 61, 'filesCanDelete', { refs: [...refs, { id: 'not-handed' }] }, 'call-1')).toMatchObject({ ok: false, code: 'denied' });
+    await release();
+  });
+
   it('a call ends once the program let go of the file it was handed — its last writes handed on first (F106)', async () => {
     const surface = attachProgramSurface('board', fakeChild() as unknown as ChildProcess);
     const release = surface.hand('call-1', 'agent-1', [HANDED]);
@@ -340,7 +362,8 @@ describe('an App program as a caller of its App (F16)', () => {
     fileSync.revoke.mockReturnValueOnce(new Promise<void>((resolve) => (letGo = resolve)));
     let ended = false;
     const ending = release().then(() => (ended = true));
-    await vi.waitFor(() => expect(fileSync.revoke).toHaveBeenCalledWith(surface.pageId, 'unbound', expect.any(Function)));
+    await until('the handed file revoked as unbound', () => fileSync.revoke.mock.calls.some(([pageId, reason]) => pageId === surface.pageId && reason === 'unbound'));
+    expect(fileSync.revoke).toHaveBeenCalledWith(surface.pageId, 'unbound', expect.any(Function));
     expect(ended, 'not before the program closed it').toBe(false);
     letGo();
     await ending;
@@ -599,7 +622,7 @@ describe('an App program as a caller of its App (F16)', () => {
   });
 
   it('getContext: who it is for, never where — no tab, no session, no chat', async () => {
-    setExtensionBridgeHost({ deliver: async () => undefined, presentation: () => ({ locale: 'zh-CN', themeMode: 'dark', fullscreen: false, windowFocused: true }) });
+    setExtensionBridgeHost({ deliver: async () => undefined, selfGuguNumber: () => undefined, presentation: () => ({ locale: 'zh-CN', themeMode: 'dark', fullscreen: false, windowFocused: true }) });
     granted.add('files:read');
     const child = fakeChild();
     attachProgramSurface('board', child as unknown as ChildProcess);

@@ -23,7 +23,9 @@ import { getHostIpc } from '@main/lib/host-ipc';
 import { appScope } from '@main/app/app-scope';
 import { resolveLocalAgentRunContext } from '@main/core/agents/agent-run-context';
 import { setProviderSessionId } from '@main/core/sessions/set-session-id';
-import { persistCommittedTurn, storedRevertBoundary, truncateStoredHistory } from '@main/core/sessions/session-turn-store';
+import { withStoredTurns, storedRevertBoundary, truncateStoredHistory } from '@main/core/sessions/session-turn-store';
+import { connectWindowCommitHost } from '../../session-timeline/window-commit-host';
+import { openNativeConversationPreviews } from '@main/core/sessions/session-conversation-live';
 import { createHistoryReverter } from './history-revert';
 import { connectNativePromptPreparation } from './native-prompt-preparation';
 import { applyTurnToAuthExpiry, type AuthExpiryWriter } from '@main/core/agent-config/auth-expiry-from-turns';
@@ -192,7 +194,7 @@ export type AcpRuntimeClient = ContractClient<AcpApiContract> & {
     sessionId: string;
     prompt: PromptInput;
     steerIfBusy?: boolean;
-  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true }>;
+  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true; reason?: string }>;
   waitPromptDetached(input: { requestId: string }): Promise<{ queued: boolean }>;
   /**
    * #6396 告诉一条会话一件事:转录里一行 / agent 下一轮的开头(见 SessionManager.announce)。
@@ -208,7 +210,7 @@ type AcpRuntimeProcessClient = ContractClient<AcpRuntimeApiContract> & {
     sessionId: string;
     prompt: PromptInput;
     steerIfBusy?: boolean;
-  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true }>;
+  }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true; reason?: string }>;
   waitPromptDetached(input: { requestId: string }): Promise<{ queued: boolean }>;
   /**
    * #6396 告诉一条会话一件事:转录里一行 / agent 下一轮的开头(见 SessionManager.announce)。
@@ -269,25 +271,24 @@ const acpWorker = lazyWorker(
       // #5381 会话历史落盘。运行时那份 transcript 只活在内存里,进程一走就没了,而重放能不能
       // 把它补回来取决于 provider —— 所以历史在这里落进库,界面重开时直接读库。
       // 写失败**不许**冒到运行时:那会把一次写盘失败升级成会话起不来,而丢一条历史远没有那么严重。
-      handle.scope.add(
-        await handle.client.turnCommitted.subscribe(undefined, {
-          onEvent: (event) => {
-            void persistCommittedTurn(event).catch((error) => {
-              log.warn('session turn persistence failed', {
-                sessionId: event.sessionId,
-                source: event.source,
-                error,
-              });
-            });
-            // #6264 这一轮因鉴权被拒 ⇒ 这家在这台机器上「登录已失效」;之后正常做完一轮 ⇒ 撤掉。
-            void applyTurnToAuthExpiry(event, authExpiryWriter);
-          },
-        })
-      );
+      const committed = await connectWindowCommitHost(handle.client.turnCommitted.handle(undefined), event => {
+        // #6264 Keep authentication authority independent of bounded history publication.
+        void applyTurnToAuthExpiry(event, authExpiryWriter);
+      }, handle.connection);
+      handle.scope.add(() => committed.close());
+      const conversationPreviews = openNativeConversationPreviews(sessionId => withStoredTurns(sessionId, async () => undefined));
+      handle.scope.add(() => conversationPreviews.dispose());
+      handle.scope.add(await handle.client.conversationActivity.subscribe(undefined, {
+        onEvent: event => {
+          void conversationPreviews.update(event).catch(error => log.error('Failed to update personal conversation preview', { sessionId: event.sessionId, error }));
+        },
+      }));
       // #881 The assistant panel's per-turn notice is prepared here, in the host, for the runtime's provider requests.
       handle.scope.add(await connectNativePromptPreparation(handle.client, log));
       handle.scope.add(
         handle.onRestarted(() => {
+          committed.invalidate();
+          conversationPreviews.reset();
           // A restarted worker has no surviving adapter processes or session records.
           void releaseEmdashPlatformSession(null);
         })
@@ -669,6 +670,17 @@ export async function stopAcpSessionAndSettle(client: ContractClient<AcpRuntimeA
   }
   await closeRuntimeForkOwnershipForRuntimeSession(sessionId);
   await releaseEmdashPlatformSession(sessionId);
+}
+
+/**
+ * The engine session was replaced after it went missing: the worker's lost record still pins the missing provider
+ * session, and the next start would load it again. Never starts a worker: none running means no record.
+ */
+export async function forgetLostAcpSession(sessionId: string): Promise<void> {
+  const client = await peekAcpWorkerClient();
+  if (!client) return;
+  const result = await stopAcpWorkerSession(client, { sessionId, forgetLost: true });
+  if (!result.success) throw new Error(`ACP session ${sessionId} kept its lost record: ${result.error.message ?? result.error.type}`);
 }
 
 /**

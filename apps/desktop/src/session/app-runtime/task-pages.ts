@@ -5,21 +5,25 @@ type Message = (method: string, params: Record<string, unknown>, sessionId?: str
 type Lease = { id?: string; closed?: string; messages: Set<Message>; closures: Set<(reason: string) => void>;
   presentations: Set<(value: TaskPagePresentation | null) => void>; presentationVersion: number; presentation?: TaskPagePresentation | null };
 
-function tellPresentation(page: Lease, value: TaskPagePresentation | null): void {
+const describe = (error: unknown) => error instanceof Error ? error.message : String(error);
+const reporter = (host: TaskPageHost) => (what: string, error: unknown) => void host.reportError?.(`${what}: ${describe(error)}`);
+
+function tellPresentation(page: Lease, value: TaskPagePresentation | null, report: (what: string, error: unknown) => void): void {
   page.presentation = value; page.presentationVersion++;
   for (const listener of page.presentations) {
-    try { listener(value); } catch (error) { console.error('App page presentation listener failed', error); }
+    try { listener(value); } catch (error) { report('App page presentation listener failed', error); }
   }
 }
 
 /** One opaque host lease, with App-local protocol adaptation left to the caller. */
 export function taskPagesApi(host: TaskPageHost) {
   const pages = new Map<string, Lease>();
+  const report = reporter(host);
   const finish = (watchId: string, reason: string) => {
     const page = pages.get(watchId);
     if (!page || page.closed) return;
     page.closed = reason;
-    tellPresentation(page, null); page.presentations.clear();
+    tellPresentation(page, null, report); page.presentations.clear();
     for (const listener of page.closures) listener(reason);
     page.closures.clear();
     page.messages.clear();
@@ -29,7 +33,7 @@ export function taskPagesApi(host: TaskPageHost) {
     const page = pages.get(event.watchId);
     if (!page || page.closed) return;
     if (event.type === 'closed') { finish(event.watchId, event.reason); return; }
-    if (event.type === 'presentation') { tellPresentation(page, event.presentation); return; }
+    if (event.type === 'presentation') { tellPresentation(page, event.presentation, report); return; }
     for (const listener of page.messages) listener(event.method, event.params, event.sessionId);
   });
   return Object.freeze({
@@ -104,7 +108,8 @@ export async function mountTaskPage(host: TaskPageHost, element: HTMLElement, id
   let pending: { x: number; y: number; width: number; height: number } | undefined;
   let updating: Promise<void> | undefined;
   const lifetime = new AbortController();
-  const failed = options.error ?? console.error;
+  const tell = reporter(host);
+  const failed = options.error ?? ((error: unknown) => tell('App page mount failed', error));
   const report = () => {
     if (closed) return Promise.resolve();
     const box = element.getBoundingClientRect();

@@ -17,7 +17,7 @@ import { useChatConversation, type ChatConversation } from '@/store/useChatConve
 import { rendererLogger } from '@/lib/log'
 import { topicNameFromMessage } from '@/components/chat/topicAnchorModels'
 import { useTabsReading } from '@/components/appSlot/useTabsReading'
-import { closeTopicTab, focusedChatTab, hideTopicTab, openTopicTab, topicTabOf } from '@/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { closeTopicTab, focusedChatTab, hideTopicTab, openTopicTab, topicTabOf, updateTopicNames } from '@/session/renderer/features/chats/chat-tabs/chat-layouts'
 
 const topicSurfaceLog = rendererLogger('chat/topic-surface')
 
@@ -41,18 +41,6 @@ type UseTopicSurfaceArgs = {
    * the pair is it); else (the phone) the topic is up only while it is the page in front.
    */
   embedded: boolean
-}
-
-/** 事件载荷里的 chat_id —— 形状坏了就当没这条,❌ 不因为一条脏事件把整个订阅拆了。 */
-function revisionChatIds(operations: readonly { payload: unknown }[]): string[] {
-  const ids: string[] = []
-  for (const operation of operations) {
-    const payload = operation.payload
-    if (!payload || typeof payload !== 'object') continue
-    const chatId = (payload as { chat_id?: unknown }).chat_id
-    if (typeof chatId === 'string' && chatId) ids.push(chatId)
-  }
-  return ids
 }
 
 export type TopicSurface = {
@@ -98,15 +86,11 @@ export function useTopicSurface({
   const onCreateFailedRef = useRef(onCreateFailed)
   onCreateFailedRef.current = onCreateFailed
   // 清单只有一个属主:useTopicsOfChat。锚点卡与顶栏话题面板读的是同一份,❌ 不各拉各的。
-  const subscribeChatChanged = useCallback(
-    (listener: (chatIds: readonly string[]) => void) =>
-      subscribeAccountRevision('chat_changed', (operations) => listener(revisionChatIds(operations))),
-    [subscribeAccountRevision],
-  )
   const { topics, bySourceMessageId, reload: reloadTopics } = useTopicsOfChat(
     topicsSourceChatId(chat),
-    subscribeChatChanged,
+    subscribeAccountRevision,
   )
+  useEffect(() => { if (chatId) updateTopicNames(chatId, topics) }, [chatId, topics])
   // 分栏是这条线页签条上的一枚(chat-tabs/chat-layouts):开着哪条话题、在不在屏上都由那里说,按来源线各记各的
   // (@@@3922 的 subject-scoped 由此而来:换了来源线读的就是另一条页签条)。
   const tab = useTabsReading(() => {
@@ -128,6 +112,21 @@ export function useTopicSurface({
 
   // Covers normal opening and an outbox retry opening the existing tab.
   useEffect(() => { if (splitChatId) reloadTopics() }, [splitChatId, reloadTopics])
+
+  // message_created for a topic row reaches only the topic's members; every source-line member gets the source
+  // chat_changed that re-reads this topic in `topics`. So the open line catches up to its own summary whenever the summary is
+  // newer than the line's tail -- one rule for whoever is reading, member or not.
+  const summaryAt = Date.parse(topics.find((summary) => summary.chat_id === splitChatId)?.last_message_at ?? '')
+  // The window is ordered by seq with unsent rows (seq < 1, local clock) last (compareMessageOrder), so the last
+  // confirmed row is the line's server tail.
+  const tail = line.messages.findLast((row) => row.seq > 0)
+  const lineAt = tail ? Date.parse(tail.created_at) : -Infinity
+  const lineSettled = !line.loadingMessages && !line.messageWindow.hasNewer
+  const refreshSplit = line.refreshMessages
+  useEffect(() => {
+    if (!splitChatId || !lineSettled || !(summaryAt > lineAt)) return
+    refreshSplit(splitChatId).catch((error: unknown) => topicSurfaceLog.error({ error, topicChatId: splitChatId }, 'topic catch-up failed'))
+  }, [splitChatId, summaryAt, lineAt, lineSettled, refreshSplit])
 
   const openSplit = useCallback(
     (topic: OpenTopic, toggle = false) => {

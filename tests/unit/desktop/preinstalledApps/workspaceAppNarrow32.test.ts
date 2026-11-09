@@ -44,11 +44,13 @@ const gugu = {
       Object.assign(row, { name, displayName: name })
       return row
     }),
+    canDelete: vi.fn(async () => [true]),
   },
 }
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement
-const pressed = () => ['edit', 'split', 'preview'].filter((m) => $(`mode-${m}`).getAttribute('aria-selected') === 'true')
+// One toggle (owner 11-06): the button shown is where a press goes — ✎ (edit) while reading, 👁 (preview) otherwise.
+const toggle = () => [...document.querySelectorAll<HTMLButtonElement>('.modes > button')].filter((button) => !button.hidden).map((button) => button.id.slice(5))
 // What is on screen, read from the DOM (审计 C4).
 const shown = () => document.body.classList.contains('show-doc') && !$('download').hidden ? $('doc-title').textContent : null
 
@@ -75,11 +77,16 @@ describe('workspace App in a narrow pane (F32)', () => {
   test('side by side is not offered narrow; a document opens on its reading at every width (owner 10-30), and side by side comes back when it is wide', () => {
     // Control (the parent commit): wide, the default was side by side.
     expect(document.body.dataset.mode).toBe('preview')
-    expect(pressed()).toEqual(['preview'])
+    expect(toggle(), 'reading: the one toggle goes to editing').toEqual(['edit'])
     setNarrow(false)
     expect(document.body.dataset.mode, '阅读 first, wide too').toBe('preview')
-    expect(pressed()).toEqual(['preview'])
+    expect(toggle()).toEqual(['edit'])
+    $('mode-edit').click()
+    expect(document.body.dataset.mode).toBe('edit')
+    expect(toggle(), 'editing: the one toggle goes back to reading').toEqual(['preview'])
+    // 对照 is a ⋯ item now (its button stays, hidden, for the page's own code).
     $('mode-split').click()
+    expect(toggle(), 'side by side: the toggle goes to reading').toEqual(['preview'])
     expect(document.body.dataset.mode).toBe('split')
     setNarrow(true)
     expect(document.body.dataset.mode, 'narrow, side by side is the reading').toBe('preview')
@@ -88,8 +95,9 @@ describe('workspace App in a narrow pane (F32)', () => {
     $('mode-preview').click()
     setNarrow(true)
     expect(document.body.dataset.mode).toBe('preview')
-    expect([...document.querySelectorAll('.modes [role=tab]')].map((tab) => tab.id), '阅读 / 编辑 / 对照').toEqual(['mode-preview', 'mode-edit', 'mode-split'])
-    expect([...document.querySelectorAll('.modes [role=tab]')].map((tab) => tab.textContent)).toEqual(['Read', 'Edit', 'Side by side'])
+    expect([...document.querySelectorAll('.modes > button')].map((button) => button.id), '阅读 / 编辑 / 对照').toEqual(['mode-preview', 'mode-edit', 'mode-split'])
+    expect([...document.querySelectorAll('.modes > button')].map((button) => button.getAttribute('aria-label'))).toEqual(['Read', 'Edit', 'Side by side'])
+    expect($('mode-split').hidden, '对照 is not in the head').toBe(true)
   })
 
   test('Download and Open with another App fold behind ⋯, which is there only when one of them is', async () => {
@@ -107,8 +115,8 @@ describe('workspace App in a narrow pane (F32)', () => {
     $('more').click()
     expect($('menu').hidden).toBe(false)
     expect($('more').getAttribute('aria-expanded')).toBe('true')
-    expect([...$('menu').children].map((item) => item.textContent)).toEqual(['Download', 'Open with another App', 'Rename'])
-    ;($('menu').firstElementChild as HTMLButtonElement).click()
+    await vi.waitFor(() => expect([...$('menu').querySelectorAll('button')].map((item) => item.textContent)).toEqual(['Copy link', 'Open with another App', 'Download', 'Rename', 'Move to…', 'Delete']))
+    ;([...$('menu').querySelectorAll('button')].find((item) => item.textContent === 'Download') as HTMLButtonElement).click()
     expect($('menu').hidden, 'choosing closes it').toBe(true)
     expect($('more').getAttribute('aria-expanded')).toBe('false')
     await vi.waitFor(() => expect(gugu.files.download).toHaveBeenCalledWith(expect.objectContaining({ id: 'big' })))
@@ -131,25 +139,24 @@ describe('workspace App in a narrow pane (F32)', () => {
     changed({ ...context })
     await vi.waitFor(() => expect(shown()).toBe(null))
     expect(document.body.classList.contains('show-doc')).toBe(false)
-    expect(gugu.setTabTitle).toHaveBeenLastCalledWith('Group folder')
+    expect(gugu.setTabTitle).toHaveBeenLastCalledWith('Files')
   })
 
   test('the list is the only pane until a file is shown: no "pick a file" beside it, the empty note at the top', () => {
     expect(document.body.classList.contains('show-doc')).toBe(false)
     expect($('doc-message').textContent).not.toMatch(/pick a file/i)
     const files = document.querySelector('.files')!
-    // The kinds, the order and the view under the search, then the filters; 子文件夹: the crumbs between them and the list (hidden at the top), then the
-    // list's own line for what went wrong.
-    expect([...files.children].map((e) => e.id || e.classList[0]).slice(0, 8)).toEqual(['files-head', 'pick-bar', 'files-tools', 'chips', 'crumbs', 'list-banner', 'files-empty', 'file-list'])
+    // The toolbar (the picks take its place), the path on its own line (hidden at a chat folder's top), then the list's own line for what went wrong.
+    expect([...files.children].map((e) => e.id || e.classList[0]).slice(0, 8)).toEqual(['files-toolbar', 'pick-bar', 'crumbs', 'list-banner', 'files-empty', 'file-list'])
+    expect($('crumbs').hidden).toBe(true)
     expect($('pick-bar').hidden).toBe(true)
   })
 
-  // owner 10-11「私聊就叫做文件夹吧，群里面是群文件夹」: a topic goes by the chat it grew out of, which ctx.chat.groupId says.
-  // Control (55ffebac2): every chat's slot said Group folder.
+  // Files has the same name in groups, private chats and topics.
   test.each([
-    [{ id: 'dm-1', name: 'B', kind: 'dm', groupId: null }, 'en-US', 'Folder'],
-    [{ id: 'topic-dm', name: 'T', kind: 'topic', groupId: null }, 'zh-CN', '文件夹'],
-    [{ id: 'topic-g', name: 'T', kind: 'topic', groupId: 'chat-1' }, 'zh-CN', '群文件夹'],
+    [{ id: 'dm-1', name: 'B', kind: 'dm', groupId: null }, 'en-US', 'Files'],
+    [{ id: 'topic-dm', name: 'T', kind: 'topic', groupId: null }, 'zh-CN', '文件'],
+    [{ id: 'topic-g', name: 'T', kind: 'topic', groupId: 'chat-1' }, 'zh-CN', '文件'],
   ])('the slot\'s title follows the chat: %o in %s → %s', async (chat, locale, title) => {
     const changed = (gugu.onContextChanged.mock.calls[0] as unknown as [(ctx: unknown) => void])[0]
     changed({ ...context, chat, locale })
@@ -189,7 +196,7 @@ describe('workspace App in a narrow pane (F32)', () => {
     expect(gugu.setTabTitle).toHaveBeenLastCalledWith('renamed.md')
     expect(gugu.files.open).toHaveBeenCalledTimes(opens)
     expect(file.close).not.toHaveBeenCalled()
-    expect(getComputedStyle($('doc-title')).display, 'the host takes over the title again after renaming').toBe('none')
+    expect(getComputedStyle($('doc-title')).display, 'the compact breadcrumb title remains in the one toolbar').not.toBe('none')
 
     const cancel = rename()
     cancel.value = 'discarded.md'

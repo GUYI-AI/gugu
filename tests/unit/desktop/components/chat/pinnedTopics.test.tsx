@@ -26,21 +26,23 @@ const { queryClient } = await import('@/session/renderer/lib/query-client')
 const { unsubscribePrivateUserEventBus } = await import('@/lib/realtimeChannel')
 const { drainTopicSplitRequest } = await import('@/lib/topicSplitRequest')
 let harness: ReturnType<typeof createReactHarness>
+const locator = (unread: number, addressed: number) => ({ stream_id: 'main', stream_kind: 'main' as const, thread_root_id: null, message_id: 'first', message_seq: 1,
+  unread_count: unread, addressed_count: addressed, cursor_seq: 0, version: 1, is_marked_unread: false })
 const topics = [
-  chat({ id: 'new', kind: 'topic', source_chat_id: 'g', name: 'Recent topic', last_message_at: '2026-10-29T00:00:00Z', last_message_preview: 'Alex: Latest update', unread_count: 4 }),
+  chat({ id: 'new', kind: 'topic', source_chat_id: 'g', name: 'Recent topic', last_message_at: '2026-10-29T00:00:00Z', last_message_preview: 'Alex: Latest update', unread_count: 4, unread_locator: locator(4, 0) }),
   chat({ id: 'old', kind: 'topic', source_chat_id: 'g', name: 'Older topic', last_message_at: '2026-10-20T00:00:00Z', last_message_preview: 'Muted preview', unread_count: 120, is_muted: true }),
 ]
 const summaries = topics.map((topic) => ({ chat_id: topic.id, name: topic.name, source_message_id: topic.id, creator_user_id: 'u', last_message_at: topic.last_message_at, message_count: 2, participant_count: 2, is_participant: true }))
 function save(ids: string[], userId = 'u') { io.rows.set(`${userId}/chat:g`, { scope: 'chat:g', config: { pinnedTopicIds: ids }, updated_at: '2026-10-29T00:00:00.000Z' }) }
 const options = (userId = 'u') => ({ auth: { id: userId }, chat: { activeChatId: 'g', chats: topics } })
 const topicMenu = () => createNode(ChatHeaderActions, {
-  isGroupChat: true, isRoomChat: true, searchMode: false, folderShown: false, infoShown: false, showHeaderMenu: false,
-  moreButtonRef: createRef<HTMLButtonElement>(), onEnterSearchMode: vi.fn(), onOpenFolder: vi.fn(), onCloseWorkspacePanel: vi.fn(),
+  isGroupChat: true, isRoomChat: true, infoShown: false, showHeaderMenu: false,
+  moreButtonRef: createRef<HTMLButtonElement>(), onSearch: vi.fn(), onOpenFolder: vi.fn(),
   onOpenInfo: vi.fn(), onCloseInfo: vi.fn(), onToggleHeaderMenu: vi.fn(), onCloseHeaderMenu: vi.fn(),
 })
 const savedPins = () => (io.rows.get('u/chat:g')?.config as { pinnedTopicIds?: string[] } | undefined)?.pinnedTopicIds
 const tabs = () => [...document.querySelectorAll('[role="tab"]')]
-const strip = (mobile: boolean, onPick = vi.fn(), current: string | null = null) => createNode(PinnedTopicTabs, { chatId: 'g', topics: summaries, messages: [], current, mobile, onPick })
+const strip = (onPick = vi.fn(), current: string | null = null) => createNode(PinnedTopicTabs, { chatId: 'g', topics: summaries, messages: [], current, onPick })
 beforeEach(() => {
   vi.mocked(unsubscribePrivateUserEventBus).mockClear()
   io.rows.clear(); io.listeners.length = 0; io.failRead = false; marked.scopes.length = 0
@@ -50,6 +52,25 @@ beforeEach(() => {
 afterEach(() => { harness.cleanup(); queryClient.clear() })
 
 describe('rich Topics menu', () => {
+  it('shows who is calling you in red, lists that topic first, and opens it', async () => {
+    const calling = chat({ id: 'calling', kind: 'topic', source_chat_id: 'g', name: 'Quiet but calling', last_message_at: '2026-10-01T00:00:00Z', last_message_preview: 'Not this', unread_count: 27, unread_locator: locator(27, 1) })
+    save(['old'])
+    await renderWithAppProviders(harness, topicMenu(), { auth: { id: 'u' }, chat: { activeChatId: 'g', chats: [...topics, calling] } })
+    const button = document.querySelector<HTMLElement>('[data-testid="group-menu-topics"]')!
+    const chip = button.querySelector<HTMLElement>('.gg-chip')!
+    expect(chip.textContent, 'the addressed count, not the raw 31').toBe('@1')
+    expect(chip.dataset.tone).toBe('danger')
+    await clickElement(button)
+    await vi.waitFor(() => expect(document.querySelectorAll('[data-testid="group-menu-topic"]')).toHaveLength(3))
+    expect([...document.querySelectorAll<HTMLElement>('[data-topic-id]')].map(row => row.dataset.topicId), 'older than the rest and not pinned, still first').toEqual(['calling', 'old', 'new'])
+    const row = document.querySelector<HTMLElement>('[data-topic-id="calling"]')!
+    expect(row.querySelector('.gg-topic-preview')?.textContent).not.toContain('Not this')
+    expect(row.querySelector('.gg-topic-preview')).toHaveProperty('dataset.calling', 'true')
+    expect(row.querySelector('.gg-topic-menu-unread .gg-chip')?.textContent, 'one call, not 27 unread').toBe('1')
+    await clickElement(row.querySelector<HTMLElement>('[data-testid="group-menu-topic"]')!)
+    expect(drainTopicSplitRequest('g')?.chatId).toBe('calling')
+  })
+
   it('leaves no permanent pin-width padding on a topic with no unread messages', async () => {
     save(['old'])
     await renderWithAppProviders(harness, topicMenu(), { ...options(), chat: { activeChatId: 'g', chats: topics.map(topic => ({ ...topic, unread_count: 0 })) } })
@@ -173,11 +194,11 @@ describe('Topics menu row actions', () => {
   })
 })
 
-describe.each([false, true])('pinned topic tabs (mobile=%s)', (mobile) => {
+describe('pinned topic tabs', () => {
   it('contains only Group chat and the pinned topics in pin order', async () => {
     save(['old'])
     const onPick = vi.fn()
-    await renderWithAppProviders(harness, strip(mobile, onPick), options())
+    await renderWithAppProviders(harness, strip(onPick), options())
     await vi.waitFor(() => expect(tabs()).toHaveLength(2))
     expect(tabs().map((tab) => tab.getAttribute('data-testid'))).toEqual(['phone-chat-tab-main', 'phone-chat-tab-old'])
     expect(document.querySelector('[data-testid="phone-chat-tab-new"]')).toBeNull()
@@ -189,7 +210,7 @@ describe.each([false, true])('pinned topic tabs (mobile=%s)', (mobile) => {
 
   it('keeps Group chat keyboard-reachable when the open topic is not pinned', async () => {
     save(['old'])
-    await renderWithAppProviders(harness, strip(mobile, vi.fn(), 'new'), options())
+    await renderWithAppProviders(harness, strip(vi.fn(), 'new'), options())
     await vi.waitFor(() => expect(tabs()).toHaveLength(2))
     const group = document.querySelector<HTMLElement>('[data-testid="phone-chat-tab-main"]')!
     expect(group.getAttribute('aria-selected')).toBe('false')
@@ -198,14 +219,14 @@ describe.each([false, true])('pinned topic tabs (mobile=%s)', (mobile) => {
 
   it('hides the entire strip when no topic is pinned, even when the group has topics', async () => {
     save([])
-    await renderWithAppProviders(harness, strip(mobile), options())
+    await renderWithAppProviders(harness, strip(), options())
     await vi.waitFor(() => expect(queryClient.getQueryData(['chat-pins', 'u', 'g'])).toEqual({ topicIds: [] }))
     expect(document.querySelector('[data-testid="phone-chat-tabs"]')).toBeNull()
   })
 
   it('uses refreshed account pins and hides the strip after the final unpin', async () => {
     save(['old'])
-    await renderWithAppProviders(harness, strip(mobile), options())
+    await renderWithAppProviders(harness, strip(), options())
     await vi.waitFor(() => expect(document.querySelector('[data-testid="phone-chat-tab-old"]')).not.toBeNull())
     save(['new'])
     await act(async () => { io.listeners.forEach((receive) => receive()) })
@@ -217,9 +238,9 @@ describe.each([false, true])('pinned topic tabs (mobile=%s)', (mobile) => {
   })
 })
 
-it('pins from Topics and immediately shows that topic in the shared phone strip', async () => {
+it('pins from Topics and immediately shows that topic on the strip', async () => {
   save([])
-  await renderWithAppProviders(harness, createNode('div', {}, strip(true), topicMenu()), options())
+  await renderWithAppProviders(harness, createNode('div', {}, strip(), topicMenu()), options())
   await clickElement(document.querySelector<HTMLElement>('[data-testid="group-menu-topics"]')!)
   const item = () => document.querySelector<HTMLElement>('[data-topic-id="new"] [data-testid="group-topic-pin"]')!
   await vi.waitFor(() => expect(item()?.hasAttribute('data-disabled')).toBe(false))

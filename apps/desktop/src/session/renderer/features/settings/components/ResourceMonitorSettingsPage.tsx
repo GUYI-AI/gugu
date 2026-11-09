@@ -12,6 +12,7 @@ export const ResourceMonitorSettingsPage = observer(function ResourceMonitorSett
   const { value, update, isLoading, isSaving } = useAppSettingsKey('resourceMonitor');
   const { translate } = useSessionMessages();
   const enabled = value?.enabled ?? false;
+  const pageCounters = value?.pageCounters ?? true;
   const store = appState.resourceMonitor;
 
   useEffect(() => {
@@ -20,13 +21,19 @@ export const ResourceMonitorSettingsPage = observer(function ResourceMonitorSett
     return () => { void store.setInternals(false); release(); };
   }, [enabled, store]);
 
+  const busy = isLoading || isSaving;
   return (
     <SettingsPage>
       <SettingsRow
         title={translate('resourceMonitor.enabled')}
         description={translate('resourceMonitor.description')}
-        control={<Switch aria-label={translate('resourceMonitor.enabled')} checked={enabled} disabled={isLoading || isSaving} onCheckedChange={(next) => update({ enabled: next })} />}
+        control={<Switch aria-label={translate('resourceMonitor.enabled')} checked={enabled} disabled={busy} onCheckedChange={(next) => update({ enabled: next })} />}
       />
+      {enabled && <SettingsRow
+        title={translate('resourceMonitor.pageCounters')}
+        description={translate('resourceMonitor.pageCountersDescription')}
+        control={<Switch aria-label={translate('resourceMonitor.pageCounters')} checked={pageCounters} disabled={busy} onCheckedChange={(next) => update({ pageCounters: next })} />}
+      />}
       {!enabled && <SettingsNote>{translate('resourceMonitor.off')}</SettingsNote>}
       <ResourceTimeline live={enabled} onFloat={enabled ? openResourcePopup : undefined} />
     </SettingsPage>

@@ -96,8 +96,7 @@ export class SessionInputOutbox {
 
   async enqueue(target: Pick<SessionInput, 'deviceId' | 'sessionId' | 'text' | 'files' | 'attachments' | 'queued' | 'baseline' | 'afterTurnId' | 'sendQueue'> & { composer?: true }): Promise<SessionInput> {
     if (!this.current()) throw new Error('Session input account changed')
-    const written = this.writing.catch(() => undefined).then(async () => {
-      if (!this.current()) throw new Error('Session input account changed')
+    return this.write(async () => {
       this.beforeEnqueue(target)
       const rows = await this.list()
       const last = Math.max(0, ...rows.map(input => input.createdAt))
@@ -109,24 +108,34 @@ export class SessionInputOutbox {
       const input: SessionInput = { ...body, ...(sendQueue ? { queued: true, sendQueue: { ...sendQueue, order: at } } : {}),
         accountId: this.accountId, id: crypto.randomUUID(), createdAt: at }
       await this.storage.put(input)
-      // Publish the committed snapshot before the composer relinquishes its draft.
-      // A second asynchronous read would leave neither draft nor queue on screen.
       this.changed([...rows, input])
       return input
     })
-    this.writing = written
-    return written
   }
 
   list(): Promise<SessionInput[]> { return this.storage.list(this.accountId) }
 
   /** A rejected input has never been handed over. Only this person's explicit action releases it. */
-  async retry(id: string): Promise<void> {
-    await this.changeRejected(id, input => {
-      const { failure: _failure, admission: _admission, ...body } = input
-      return body
+  retry(id: string): Promise<void> {
+    const run = async () => {
+      await this.write(async () => {
+        const input = (await this.list()).find(row => row.id === id)
+        if (!input) return // Another completed handoff or discard already settled this sender row.
+        const { failure: _failure, admission: _admission, ...body } = input
+        await this.storage.put(body)
+        await this.publish()
+      })
+      await this.drain(true, id)
+    }
+    // A previous bulk drain has its own caller; its failure cannot become this input's failure.
+    const own = this.flushing ? this.flushing.then(run, run) : Promise.resolve().then(run)
+    const lane = own.then(() => this.again ? this.drainUntilCurrent() : undefined).finally(() => {
+      if (this.flushing === lane) this.flushing = null
     })
-    await this.flush()
+    this.flushing = lane
+    // The caller receives `own`; background work requested during it still has a reported result.
+    void lane.catch(error => rendererLogger('session/input-outbox').warn({ error: String(error) }, 'Native input drain failed'))
+    return own
   }
 
   async edit(id: string, text: string): Promise<void> {
@@ -138,8 +147,7 @@ export class SessionInputOutbox {
 
   private async changeRejected(id: string, change: (input: SessionInput) => SessionInput | null): Promise<void> {
     await this.flushing
-    const written = this.writing.catch(() => undefined).then(async () => {
-      if (!this.current()) throw new Error('Session input account changed')
+    await this.write(async () => {
       const input = (await this.list()).find(row => row.id === id)
       if (!input || input.admission !== 'rejected') throw new Error('Session input is not awaiting a manual decision')
       const next = change(input)
@@ -152,13 +160,11 @@ export class SessionInputOutbox {
         })
         await this.persist(following, [id])
       }
-      this.changed()
+      await this.publish()
     })
-    this.writing = written
-    await written
   }
 
-  /** Queue edits and release share the enqueue lane: a deleted/edited input cannot race into send. */
+  /** One ordered lane for every write: a deleted/edited input cannot race into send. */
   private write<T>(operation: () => Promise<T>): Promise<T> {
     const written = this.writing.catch(() => undefined).then(async () => {
       if (!this.current()) throw new Error('Session input account changed')
@@ -167,6 +173,13 @@ export class SessionInputOutbox {
     this.writing = written
     return written
   }
+
+  /**
+   * A write that changed rows publishes them before it resolves. Callers settle their own state on
+   * resolve (the composer relinquishes a draft, a queued edit closes); a later asynchronous read
+   * would show them the rows from before their own write.
+   */
+  private async publish(): Promise<void> { this.changed(await this.list()) }
 
   private async persist(puts: readonly SessionInput[], removes: readonly string[] = []): Promise<void> {
     if (this.storage.writeBatch) return this.storage.writeBatch(this.accountId, puts, removes)
@@ -181,7 +194,7 @@ export class SessionInputOutbox {
       if (change === 'delete') await this.storage.remove(this.accountId, id)
       else await this.storage.put({ ...input, text: change.text, sendQueue: { ...input.sendQueue!,
         ...(change.edit === undefined ? {} : { edit: change.edit ?? undefined }) } })
-      this.changed()
+      await this.publish()
       return true
     })
   }
@@ -198,7 +211,7 @@ export class SessionInputOutbox {
         return { ...input, sendQueue: { ...input.sendQueue!, order: inputs[index]!.sendQueue!.order } }
       })
       await this.persist(reordered)
-      this.changed()
+      await this.publish()
     })
   }
 
@@ -218,7 +231,7 @@ export class SessionInputOutbox {
       const { sendQueue: _queue, ...released } = input
       const sent: SessionInput = { ...released, ...baseline, queued: false, ...(steers ? { steerIfBusy: true } : {}) }
       await this.persist([...following, sent])
-      this.changed()
+      await this.publish()
       return sent
     })
   }
@@ -226,8 +239,9 @@ export class SessionInputOutbox {
   flush(retryFailures = false): Promise<void> {
     this.retryFailures ||= retryFailures
     if (this.flushing) { this.again = true; return this.flushing }
-    this.flushing = this.drainUntilCurrent().finally(() => { this.flushing = null })
-    return this.flushing
+    const running = this.drainUntilCurrent().finally(() => { if (this.flushing === running) this.flushing = null })
+    this.flushing = running
+    return running
   }
 
   private async drainUntilCurrent(): Promise<void> {
@@ -239,9 +253,9 @@ export class SessionInputOutbox {
     } while (this.again && this.current())
   }
 
-  private async drain(retryFailures: boolean): Promise<void> {
+  private async drain(retryFailures: boolean, onlyId?: string): Promise<void> {
     const blocked = new Set<string>()
-    const rows = (await this.list()).sort((a, b) => a.createdAt - b.createdAt)
+    const rows = (await this.list()).filter(input => onlyId === undefined || input.id === onlyId).sort((a, b) => a.createdAt - b.createdAt)
     for (const input of rows) {
       if (!this.current()) return
       if (input.sendQueue) continue

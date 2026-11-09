@@ -1,3 +1,4 @@
+import { SessionCreationFailedError } from '../stores/session-failure';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -136,7 +137,7 @@ describe('useCreateSessionCallback ordinary messaging', () => {
 
   beforeEach(async () => {
     for (const mock of Object.values(mocks)) mock.mockReset();
-    mocks.createSession.mockResolvedValue(undefined);
+    mocks.createSession.mockImplementation(async (_params: unknown, options?: { onOptimistic?: () => void }) => { options?.onOptimistic?.(); });
     mocks.localSendMessage.mockResolvedValue({ id: 'local-id', status: 'queued' });
     mocks.start.mockResolvedValue({ ok: true });
     mocks.installAgent.mockResolvedValue({ success: true });
@@ -217,6 +218,27 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     expect(mocks.stopInstallProgress).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the original machine when routing changes before a delayed creation error returns', async () => {
+    const machine = vi.spyOn(machineRegistry, 'machineOf').mockReturnValue('original-machine');
+    try {
+      await act(async () => root.render(React.createElement(Probe)));
+      let reject!: (error: Error) => void;
+      mocks.createSession.mockImplementation(() => new Promise((_resolve, fail) => { reject = fail; }));
+      await act(async () => latest!.handleCreateSession());
+      machine.mockReturnValue('new-machine');
+      await act(async () => { reject(new Error('local Codex app-server exited (code=1 signal=null)')); await Promise.resolve(); });
+      expect(latest!.deliveryError).toMatchObject({ target: { machineId: 'original-machine', leg: 'acp' } });
+    } finally { machine.mockRestore(); }
+  });
+
+  it('keeps a typed missing-engine failure with its target for the shared composer notice', async () => {
+    mocks.createSession.mockRejectedValue(new SessionCreationFailedError('harness-unavailable', { kind: 'harness-unavailable', reason: 'missing', providerId: 'codex', harnessName: 'Codex', detail: 'missing executable' }));
+    await act(async () => latest!.handleCreateSession());
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(latest!.deliveryError).toMatchObject({ kind: 'harness-unavailable', reason: 'missing', target: { leg: 'acp' } });
+    expect(mocks.toast).not.toHaveBeenCalled();
+  });
+
   it('a successful remote install continues through the existing create path', async () => {
     await act(async () => root.render(React.createElement(Probe, { remoteInstall: true })));
     act(() => latest?.handleCreateSession());
@@ -230,7 +252,8 @@ describe('useCreateSessionCallback ordinary messaging', () => {
   it.each([15, undefined])('keeps the file chip and draft without creating on remote attachment protocol %s', async protocol => {
     machineRegistry.register('remote-host', ['project-1']);
     devices.push({ device_id: 'remote-host', capabilities: { remote_protocol: protocol } });
-    mocks.assertProtocol.mockImplementationOnce(() => { throw new Error('Update the task host to send attachments'); });
+    const detail = 'task attachment protocol mismatch: received=15 required=17';
+    mocks.assertProtocol.mockImplementationOnce(() => { throw new Error(detail); });
     const { chip } = attachFirstFile();
     await act(async () => root.render(React.createElement(Probe)));
     await act(async () => latest?.handleCreateSession());
@@ -241,7 +264,8 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     expect(initialSession.dropAttachment).not.toHaveBeenCalled();
     expect(initialSession.attachments).toEqual([chip]);
     expect(initialSession.prompt).toBe('make one task');
-    expect(latest?.deliveryError).toEqual({ kind: 'raw', detail: 'Update the task host to send attachments' });
+    expect(latest?.deliveryError).toEqual({ kind: 'attachment-host-update-required', detail });
+    expect(mocks.logWarn).toHaveBeenCalledWith('Attachment protocol check failed', { machineId: 'remote-host', error: detail });
     expect(mocks.navigate).not.toHaveBeenCalled();
 
     initialSession.attachments = [];
@@ -514,7 +538,7 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     await act(async () => root.render(React.createElement(Probe)));
     try {
       await act(async () => latest?.handleCreateSession());
-      expect(mocks.createSession.mock.calls.at(-1)?.[1]).toEqual({ deferFirstTurn: true });
+      expect(mocks.createSession.mock.calls.at(-1)?.[1]).toEqual(expect.objectContaining({ deferFirstTurn: true, onOptimistic: expect.any(Function) }));
       const initial = mocks.createSession.mock.calls.at(-1)?.[0].sessionConfig.initialSession;
       expect(initial.initialQueue[0]).toMatchObject({ text: 'make one task', files: [ref] });
       expect(mocks.admit).not.toHaveBeenCalled();
@@ -530,7 +554,10 @@ describe('useCreateSessionCallback ordinary messaging', () => {
 
   it.each(['', '\nnewer draft'])('consumes only the submitted startup draft after creation succeeds (extra=%s)', async extra => {
     let complete!: () => void;
-    mocks.createSession.mockImplementationOnce(() => new Promise<void>(resolve => { complete = resolve; }));
+    mocks.createSession.mockImplementationOnce((_params: unknown, options?: { onOptimistic?: () => void }) => {
+      options?.onOptimistic?.();
+      return new Promise<void>(resolve => { complete = resolve; });
+    });
     initialSession.prompt = '  original draft  ';
     initialSession.promptCapability = { kind: 'none', startupDelivery: 'startup-prompt' };
     await act(async () => root.render(React.createElement(Probe)));

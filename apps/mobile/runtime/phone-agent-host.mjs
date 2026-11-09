@@ -9,6 +9,7 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { processPendingDeviceCommandsOnce, reportRuntimeInstanceHeartbeat, recoverOrphanedDeviceCommands } from '../../../packages/core/src/cloud/deviceCommands.ts'
 import { createAgentRuntimeStateReporter } from '../../../packages/core/src/cloud/agentRuntimeStateReporter.ts'
+import { createAgentRuntimeStatePublisher } from '../../../packages/core/src/cloud/deviceRuntimeSweep.ts'
 import { handleAgentCreateDeviceCommand, resolveGuguIds } from '../../../packages/core/src/local/agent/deviceCommandRuntime.ts'
 import { deliveryDisclosureMessage, pullAgentInbox, unreadRowFromRpc } from '../../../packages/core/src/local/agent/agentInboxReader.ts'
 import { agentFailureNeedsModelChoice, agentFailureReason } from '../../../packages/core/src/shared/agentQuotaReason.ts'
@@ -17,7 +18,7 @@ import { setCoreLoggerFactory } from '../../../packages/core/src/log.ts'
 import { REMOTE_PROTOCOL_VERSION, MIN_CLIENT_PROTOCOL } from '../../../packages/core/src/cloud/serverMachineHealth.ts'
 import { createPhoneAgentCloud } from './phone-agent-cloud.mjs'
 import { createPhoneModelAccess } from './phone-agent-model.mjs'
-import { openPhoneAgentStore, admitPhoneJob, stableId, uuid } from './phone-agent-store.mjs'
+import { openPhoneAgentStore, admitPhoneJob, phoneInboxJobId, stableId, uuid } from './phone-agent-store.mjs'
 import { stopPhoneSession } from './phone-session-stop.mjs'
 import { withSessionAttachments } from '../../../packages/core/src/cloud/sessionAttachments.ts'
 import { startPhoneAgentRpc } from './phone-agent-rpc.mjs'
@@ -127,7 +128,14 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
     return agent
   }
   const reporter = createAgentRuntimeStateReporter(cloud.identity, { onGoneAgent: async (id) => { delete store.state.agents[id]; inboxScans.delete(id); await store.save(); publish() } })
-  const report = (agent, online = true) => agent.removedIdentity ? Promise.resolve() : reporter({ agentUserId: agent.agentUserId, runtimeStatus: online ? 'online' : 'offline', activityStatus: agent.status === 'working' ? 'running' : 'idle', agentStatus: agent.status, agentStatusDetail: agent.status === 'working' ? 'running' : agent.status === 'needs_user' ? 'question' : agent.status === 'error' ? null : 'plain', runtimeKind: 'gugu', runtimeLabel: config.deviceRow?.label ?? config.deviceInfo?.model ?? 'Android', recentActions: agent.recentActions ?? null, lastActionAt: agent.lastActionAt ?? null })
+  const publishRuntimeState = createAgentRuntimeStatePublisher()
+  const report = (agent, online = true) => publishRuntimeState(() => agent.removedIdentity ? null : ({
+    agentUserId: agent.agentUserId, runtimeStatus: online ? 'online' : 'offline',
+    activityStatus: agent.status === 'working' ? 'running' : 'idle', agentStatus: agent.status,
+    agentStatusDetail: agent.status === 'working' ? 'running' : agent.status === 'needs_user' ? 'question' : agent.status === 'error' ? null : 'plain',
+    runtimeKind: 'gugu', runtimeLabel: config.deviceRow?.label ?? config.deviceInfo?.model ?? 'Android',
+    recentActions: agent.recentActions ?? [], lastActionAt: agent.lastActionAt ?? null,
+  }), reporter)
   const verifyAgent = async (agentUserId) => {
     const { data, error } = await cloud.identity.from('active_users').select('id,type,owner_user_id,device_id,display_name,gugu_number,desired_status').eq('id', uuid(agentUserId)).maybeSingle()
     if (error) throw new Error(error.message)
@@ -212,7 +220,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
         const row = rowsById.get(input.sourceMessageId)
         if (!row) throw new Error('inbox admission has no authoritative source row')
         const confirmation = actions?.confirmationForMessage(agent, row)
-        await admit({ id: input.sourceMessageId, agentUserId, prompt: input.text, ...(confirmation ? { kind: 'confirmation', ...confirmation } : {}), route: { kind: 'chat', chatId: row.chatId, sourceMessageId: row.id, senderUserId: row.senderUserId, threadRootId: row.threadRootId ?? (row.isThreadRoot ? row.id : null), whisper: row.isWhisper } })
+        await admit({ id: phoneInboxJobId(store, agentUserId, input.sourceMessageId), agentUserId, prompt: input.text, ...(confirmation ? { kind: 'confirmation', ...confirmation } : {}), route: { kind: 'chat', chatId: row.chatId, sourceMessageId: row.id, senderUserId: row.senderUserId, threadRootId: row.threadRootId ?? (row.isThreadRoot ? row.id : null), whisper: row.isWhisper } })
         return 'accepted'
       },
     })
@@ -282,7 +290,11 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
   }
   const handlers = {
     'agent.create': createFromCommand,
-    'agent.deliver': async (command) => ({ agent_user_id: command.payload.agent_user_id, delivered: (await inbox(command.payload.agent_user_id)).injected > 0 }),
+    'agent.deliver': async (command) => {
+      // From an App, not a chat (`source`): the chat inbox has nothing of it and App programs do not run here. Said, ❌ recorded as done.
+      if (command.payload.source) throw Object.assign(new Error(`App ${command.payload.source} cannot deliver to an agent on a phone`), { reason: 'appUnavailable' })
+      return { agent_user_id: command.payload.agent_user_id, delivered: (await inbox(command.payload.agent_user_id)).injected > 0 }
+    },
     'agent.stop': async (command) => { const agent = agents().find((row) => row.agentUserId === command.payload.agent_user_id); if (!agent) throw new Error('Agent 没有在这台手机上建立会话'); await cancel(agent); return { stopped: true } },
     // Retire hands the identity to its new device: archive here, keep the social identity.
     'agent.retire': async (command) => { const agent = agents().find((row) => row.agentUserId === command.payload.agent_user_id); if (agent) await archive(agent, false); return { retired: true } },

@@ -11,8 +11,12 @@ import { MIN_PANE_HEIGHT_PX, MIN_PANE_WIDTH_PX, type PaneLayoutStore } from '@re
 import { minExtent, paneExtent, removePane } from '@renderer/features/tabs/pane-layout-tree';
 import { auxWindows, type TabWindowHome } from './aux-windows';
 import { readChatSummaries, subscribeChatSummaries } from '@/lib/chatSummariesBridge';
+import { isScreenView } from './screen-views';
 import { MAX_SCREEN_BLOCKS, screenLayout, type ScreenBlockContent, type ScreenLayoutSnapshot, type ScreenSession, type WindowableContent } from './screen-layout';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
+import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
+
+export { isScreenView };
 
 /**
  * 这一屏(screen-layout)和导航之间的那两根线(spec session-page「一屏几块」):
@@ -227,12 +231,6 @@ export function returnToScreen(): void {
   if (!isScreenView(appState.navigation.currentViewId)) appState.navigation.navigate(screenLayout.layout ? 'screen' : 'home');
 }
 
-/** 这几个视图看的是这一屏:会话、项目、对话都是其中一块(gugu-dev#181)。⌘ 点「拼到旁边」也只在这些视图上才有「正看着那块」。 */
-const SCREEN_VIEWS: ReadonlySet<string> = new Set(['session', 'project', 'chat', 'screen']);
-export function isScreenView(viewId: string | null | undefined): boolean {
-  return !!viewId && SCREEN_VIEWS.has(viewId);
-}
-
 /** 在一块里按下 = 看这一块。 */
 export function focusScreenBlock(blockId: string): void {
   if (screenLayout.focusedBlockId === blockId) return;
@@ -294,12 +292,14 @@ export function showSessionBeside(target: ScreenSession): void {
 
 /** 把一样东西摆到这屏上(项目、对话;会话走导航):它在哪组就整组回来,否则单独一屏。 */
 export function showOnScreen(content: ScreenBlockContent): void {
+  tabFullscreen.exit();
   screenLayout.show(content);
   followFocus();
 }
 
 /** ⌘ 点左边一行(项目、对话、会话都一样):并排放在正看着那块右边;满了提示。 */
 export function showBesideOnScreen(content: ScreenBlockContent): void {
+  tabFullscreen.exit();
   if (content.kind === 'session') {
     showSessionBeside(content);
     return;
@@ -657,7 +657,7 @@ export function dropOnScreen(drop: BlockDrop, content: ScreenBlockContent): void
   }
   const paneLayout = paneLayoutOfBlock(drop.blockId);
   if (content.kind !== 'app' || !paneLayout) return;
-  paneLayout.open(content.tabKind, {}, { preview: false, target: { paneId: drop.paneId } });
+  paneLayout.open(content.tabKind, {}, { from: null, intent: 'newTab', target: { paneId: drop.paneId } });
   paneLayout.setActiveGroup(drop.paneId);
   const pane = paneLayout.groups.find((group) => group.paneId === drop.paneId)?.pane;
   if (drop.strip && pane) {

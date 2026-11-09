@@ -1,5 +1,10 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createAccountCatchupPriority } from '../../../../apps/desktop/src/lib/accountCatchupPriority'
+import { createAccountRevisionCoordinator } from '../../../../apps/desktop/src/lib/accountRevisionCoordinator'
+import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
+import { openImRepository } from '../../../../apps/desktop/src/lib/imRepository'
+import type { ChatItem } from '@gugu/core/shared/types/chat'
 
 type Row = Record<string, unknown>
 type Response = { data: Row[] | null; error: { message: string } | null }
@@ -18,16 +23,19 @@ let keysetStarted = deferred<void>()
 let releaseKeyset = deferred<void>()
 let pauseKeyset = false
 let failedKeyset = false
+let latency = 0
+let latestPreviews = false
 
-function builder(table: string) {
+function builder(table: string, args?: { p_chat_ids?: readonly string[] }) {
   let selection = ''
-  let requested: readonly string[] | undefined
+  let requested: readonly string[] | undefined = args?.p_chat_ids
   const chain: unknown = new Proxy({}, {
     get(_target, property) {
       if (property === 'then') {
         return (fulfilled: (value: Response) => unknown, rejected?: (reason: unknown) => unknown) => {
           const read = async (): Promise<Response> => {
             calls.push({ table, ids: requested })
+            if (latency) await new Promise(resolve => setTimeout(resolve, latency))
             if (table === 'active_members' && selection === 'chat_id') {
               if (pauseKeyset) {
                 pauseKeyset = false
@@ -56,7 +64,11 @@ function builder(table: string) {
                 last_message_preview: null, next_message_seq: 4,
               })), error: null,
             }
-            if (['messages_view', 'contact_overrides', 'rpc:list_unread_locators', 'rpc:get_agent_presence_batch'].includes(table)) {
+            if (table === 'rpc:list_chat_previews' && latestPreviews) return {
+              data: batch.map(chat_id => ({ id: `${chat_id}-latest`, chat_id, seq: 3000,
+                created_at: '2026-11-05T00:00:00Z', preview: `latest:${chat_id}`, content_type: 'text' })), error: null,
+            }
+            if (['rpc:list_chat_previews', 'contact_overrides', 'rpc:list_unread_locators_for_chats', 'rpc:get_agent_presence_batch'].includes(table)) {
               return { data: [], error: null }
             }
             throw new Error(`unexpected projection table ${table}`)
@@ -73,14 +85,14 @@ function builder(table: string) {
 }
 
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
-  chatDb: { from: (table: string) => builder(table), rpc: (name: string) => builder(`rpc:${name}`) },
+  chatDb: { from: (table: string) => builder(table), rpc: (name: string, args?: { p_chat_ids?: readonly string[] }) => builder(`rpc:${name}`, args) },
   identityDb: { from: (table: string) => builder(table), rpc: (name: string) => builder(`rpc:${name}`) },
 }))
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({
   readDisplayIdentities: async (keys: readonly string[]) => keys.map((id) => ({ id, display_name: id, type: 'human' })),
 }))
 
-const { createChatProjection } = await import('../../../../apps/desktop/src/lib/chatProjection')
+const { createChatProjection, readProjectionCursor } = await import('../../../../apps/desktop/src/lib/chatProjection')
 
 beforeEach(() => {
   members.clear()
@@ -90,6 +102,64 @@ beforeEach(() => {
   releaseKeyset = deferred<void>()
   pauseKeyset = false
   failedKeyset = false
+  latency = 0
+  latestPreviews = false
+})
+afterEach(() => vi.useRealTimers())
+
+async function firstScreenAt800ms(prioritize: boolean) {
+  vi.useFakeTimers()
+  vi.setSystemTime(0)
+  latency = 800
+  latestPreviews = true
+  members.clear()
+  for (const id of ids.slice(0, 7)) members.add(id)
+  calls.length = 0
+  const repository = await openImRepository(VIEWER, { adapter: createMemoryLocalSyncDb() })
+  await repository.transaction(tx => tx.putSyncState('account-revision-cursor', { revision: '0' }))
+  const priority = createAccountCatchupPriority()
+  const initialDone = prioritize ? priority.begin() : () => undefined
+  const projection = createChatProjection(VIEWER)
+  const signal = new AbortController()
+  const syncAt: number[] = []
+  const source = {
+    async syncSince(cursor: string, limit: number) {
+      syncAt.push(Date.now())
+      await new Promise(resolve => setTimeout(resolve, 800))
+      const after = Number(cursor), through = Math.min(after + limit, 9000)
+      return { operations: Array.from({ length: through - after }, (_, index) => ({
+        revision: String(after + index + 1), event: 'chat_changed', payload: { chat_id: ids[0], entity_id: ids[0] },
+      })), hasMore: through < 9000 }
+    },
+    subscribeWake: () => () => undefined,
+  }
+  const coordinator = createAccountRevisionCoordinator(VIEWER, repository, source, undefined, prioritize ? priority.scheduling : undefined)
+  let firstAt: number | null = null
+  const publish = async (rows: ChatItem[]) => {
+    if (firstAt === null && rows.length === 7 && rows.every(row => row.last_message_preview === `latest:${row.id}`)) firstAt = Date.now()
+  }
+  projection.attach({ subscribe: coordinator.subscribe, cursor: () => readProjectionCursor(repository),
+    signal: () => signal.signal, publish })
+  const first = projection.hydrate('0', signal.signal).then(publish).finally(initialDone)
+  coordinator.start()
+  try {
+    for (let step = 0; step < 100 && firstAt === null; step += 1) await vi.advanceTimersByTimeAsync(100)
+    expect(firstAt).not.toBeNull()
+    return { firstAt: firstAt!, syncBeforePaint: syncAt.filter(at => at < firstAt!).length,
+      previewRequests: calls.filter(call => call.table === 'rpc:list_chat_previews').length }
+  } finally {
+    coordinator.stop()
+    await vi.advanceTimersByTimeAsync(2000)
+    await first
+    repository.close()
+  }
+}
+
+it('gives seven latest previews a stable first screen before 9000 queued revisions at 800ms RTT', async () => {
+  const baseline = await firstScreenAt800ms(false)
+  const prioritized = await firstScreenAt800ms(true)
+  expect(baseline).toEqual({ firstAt: 3200, syncBeforePaint: 4, previewRequests: 2 })
+  expect(prioritized).toEqual({ firstAt: 2400, syncBeforePaint: 0, previewRequests: 1 })
 })
 
 async function overlap(failNewer = false) {

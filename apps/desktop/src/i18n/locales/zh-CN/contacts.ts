@@ -72,6 +72,7 @@ export default {
     "leaveGroup": "确认退出该群聊？"
   },
   "contextMenu": {
+    "more": "更多",
     "deleteAgent": "归档任务",
     "deleteContact": "删除联系人",
     "disableNotifications": "关闭通知",
@@ -367,6 +368,7 @@ export default {
     "shareUnavailable": "咕咕号未分配，暂无法分享",
     "source": "来源",
     "unconfigured": "未配置",
+    "findMessages": "查找 TA 的消息",
     "viewProfile": "查看 {{name}} 的资料",
     "whisper": "悄悄话"
   },

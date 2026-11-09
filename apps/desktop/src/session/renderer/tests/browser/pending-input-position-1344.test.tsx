@@ -35,6 +35,7 @@ const hostRpc = vi.hoisted(() => ({ invoke: vi.fn(), eventOn: vi.fn(), toast: vi
 vi.mock('@renderer/lib/machine-clients', () => ({
   machineClient: () => ({ api: { invoke: hostRpc.invoke, eventOn: hostRpc.eventOn, eventSend() {} } }),
   machineLinkState: () => 'open', machineLinkHandingOff: () => false,
+  reportMachineOutdated: () => {},
   onMachineReconnected: () => () => {}, subscribeMachineLink: () => () => {},
   onEachMachine: () => () => {}, closeMachineClient() {}, reconnectMachine() {}, machineLabel: () => 'fixture-remote',
   machineWireTransport: () => { throw new Error('Runtime replicas are controlled at the service boundary'); },
@@ -376,8 +377,24 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
         .find(button => button.getAttribute('aria-label')?.startsWith('编辑'))!;
       await userEvent.click(edit);
       await until('edit reserves the persistent entry', () => !!own.rows.find(row => row.id === q!.id)?.sendQueue?.edit);
-      await input.fill('edited queued input'); await userEvent.keyboard('{Enter}');
-      await until('the same queued identity has the saved text', () => own.rows.some(row => row.id === q!.id && row.text === 'edited queued input' && !row.sendQueue?.edit));
+      // The reservation can publish before the store clears pending, while the composer still drops edits.
+      // Wait for the rendered editor to accept input before selecting through its keymap.
+      await until('the composer has opened the entry for editing', () => {
+        const cancel = [...view.composerSlot!.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === t('common.cancel'));
+        const editor = input.element();
+        return !!cancel && !cancel.disabled && editor.getAttribute('aria-disabled') === 'false' && document.activeElement === editor
+          && editorApiRef.current?.getText() === q!.text && !store.queuedPromptEdit?.pending;
+      });
+      // fill() selects only the DOM; deferred focus reconciliation can restore the model's old caret.
+      // Mod-a updates ProseMirror's selection too, so subsequent focus work preserves the replacement.
+      await userEvent.keyboard('{ControlOrMeta>}a{/ControlOrMeta}');
+      await userEvent.keyboard('edited queued input');
+      await until('the queued editor and its controlled state contain the edit', () => editorApiRef.current?.getText() === 'edited queued input'
+        && store.queuedPromptEdit?.text === 'edited queued input' && !store.queuedPromptEdit.pending);
+      await userEvent.keyboard('{Enter}');
+      await until('the same queued identity has the saved text', () => ({
+        row: own.rows.find(row => row.id === q!.id), editor: editorApiRef.current?.getText(), edit: store.queuedPromptEdit,
+      }), ({ row }) => row?.text === 'edited queued input' && !row.sendQueue?.edit);
       expect(store.draftText).toBe('保留的草稿');
       q = own.rows.find(row => row.id === q!.id)!;
       await userEvent.dragAndDrop(queueRow(third.id).querySelector<HTMLButtonElement>('button[draggable]')!, queueRow(second.id));

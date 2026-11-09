@@ -1,3 +1,5 @@
+import { openFolderInTab } from '@renderer/features/sessions/file-view/file-view-kinds';
+import { findSessionAnywhere } from '@renderer/features/sessions/stores/session-selectors';
 import { composeChatDraft } from '@/lib/composeDraft';
 import { followLink, openLinkTarget } from '@/lib/guguLinks';
 import { toast } from '@renderer/lib/hooks/use-toast';
@@ -10,7 +12,6 @@ import type { BrowserWebviewElement } from '@renderer/features/browser/browser-w
 
 import { runInAction } from 'mobx';
 import type { RendererRpcHandlers } from '@/rpc-renderer/rendererRpc';
-import { getProjectManagerStore } from '@renderer/features/projects/stores/project-selectors';
 import type { WorkspaceViewModel } from '@renderer/features/sessions/stores/workspace-view-model';
 import {
   EXTENSION_HOST_ACTION_METHOD,
@@ -28,7 +29,6 @@ import {
   type ExtensionInstallConsentResult,
 } from '@shared/extensions/host-actions';
 import {
-  APP_FORUM_CONSENT_EVENT,
   APP_FORWARD_FILES_EVENT,
   APP_OPEN_WITH_EVENT,
 } from '@shared/extensions/app-runtime-protocol';
@@ -68,17 +68,9 @@ import { groupPageSlot } from '@renderer/features/chats/chat-tabs/chat-panel-ite
  * way to tell it one would hand extensions a fact they have no use for.
  */
 function findSessionView(sessionId: string): WorkspaceViewModel | undefined {
-  return findSession(sessionId)?.viewModel;
+  return findSessionAnywhere(sessionId)?.viewModel;
 }
 
-/** The session this window shows, on this computer or another, by its id alone: its project here and its view. */
-function findSession(sessionId: string): { projectId: string; viewModel: WorkspaceViewModel } | undefined {
-  for (const [projectId, project] of getProjectManagerStore().projects) {
-    const store = project.mountedProject?.sessionManager.sessions.get(sessionId);
-    if (store?.viewModel) return { projectId, viewModel: store.viewModel };
-  }
-  return undefined;
-}
 
 function requireSessionView(sessionId: string | null): WorkspaceViewModel {
   const view = sessionId === null ? null : findSessionView(sessionId);
@@ -96,7 +88,7 @@ export function applyExtensionHostAction(command: ExtensionHostActionCommand): E
   const { origin, action } = command;
   // A link's or a banner's click has no page behind it: only what names its own target is done for it.
   if (!origin) return runInAction(() => openForClick(action));
-  return runInAction(() => perform(origin.sessionId, origin.tabId, action));
+  return runInAction(() => perform(origin.sessionId, origin.tabId, action, origin.extensionId));
 }
 
 function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionHostActionResult | Promise<ExtensionHostActionResult> {
@@ -108,7 +100,8 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
       if (action.onlyIfOpen) return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ panelTabsOf, showChatTab }) => {
         const tabs = panelTabsOf(action.chatId);
         if (!tabs.some((entry) => entry.shown && !entry.inWindow && groupPageSlot(action.chatId, entry.tabId) === fromTab)) return;
-        const tab = tabs.find((entry) => !entry.inWindow && entry.item.itemId === action.itemId && entry.item.kind === action.onlyIfOpen);
+        if (action.intent && action.intent !== 'navigate') return;
+        const tab = tabs.find((entry) => !entry.inWindow && groupPageSlot(action.chatId, entry.tabId) === fromTab && entry.item.itemId === action.itemId && entry.item.kind === action.onlyIfOpen);
         if (!tab) return;
         showChatTab(action.chatId, tab.tabId);
         // The body is already there. The original metadata validation starts after presenting it.
@@ -133,15 +126,34 @@ function openForClick(action: ExtensionHostAction, fromTab?: string): ExtensionH
   }
 }
 
-function perform(sessionId: string | null, tabId: string, action: ExtensionHostAction): ExtensionHostActionResult | Promise<ExtensionHostActionResult> {
+function perform(sessionId: string | null, tabId: string, action: ExtensionHostAction, extensionId: string): ExtensionHostActionResult | Promise<ExtensionHostActionResult> {
   // What a page says about itself: a task's tab or a group's slot (sessionId null), kept by page (extensionSurfaceStore.say).
   switch (action.kind) {
     case 'taskMessage': {
-      const target = sessionId === null ? undefined : findSession(sessionId);
+      const target = sessionId === null ? undefined : findSessionAnywhere(sessionId);
       if (!target || !sessionId) throw new Error('This task is no longer open');
       return rpc.sessions.sendMessage({ projectId: target.projectId, sessionId, clientMessageId: crypto.randomUUID(), text: action.text })
         .then(result => { if (result.status === 'outcome-unknown') throw new Error('Task message delivery is unknown'); });
     }
+    case 'navigateTab':
+      if (action.delta !== -1 && action.delta !== 1) throw Object.assign(new Error('Navigation delta must be -1 or 1'), { code: 'invalid' });
+      return (async () => {
+        let sourceId = tabId;
+        let pane = sessionId ? [...(findSessionView(sessionId)?.paneLayout.groups ?? []), ...(findSessionView(sessionId)?.paneLayout.windowPanes.values() ?? [])].find(({ pane }) => pane.entries.has(sourceId))?.pane : undefined;
+        if (!sessionId) {
+          const { chatPageOrigin } = await import('@renderer/features/chats/chat-tabs/chat-layouts');
+          const source = chatPageOrigin(tabId);
+          if (source) { sourceId = source.tabId; pane = source.pane; }
+        }
+        const entry = pane?.entries.get(sourceId);
+        const kind = entry?.kind === 'chat-panel' ? (entry.state as { kind?: string })?.kind : entry?.kind;
+        if (!kind?.startsWith(`${extensionId}.`)) return { navigated: false };
+        const history = pane?.navigationOf(sourceId);
+        const opener = pane?.openerOf(sourceId);
+        const conversationBack = action.delta === -1 && !!opener && pane!.registry.has(opener.kind) && pane!.registry.get(opener.kind).conversation === true;
+        if (!history?.pages[history.index + action.delta] && !conversationBack) return { navigated: false };
+        return { navigated: await pane!.go(sourceId, action.delta) };
+      })();
     case 'openAppModal': {
       let guest: BrowserWebviewElement | null = null;
       let previous = document.activeElement;
@@ -207,15 +219,19 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
     case 'setTabBadge':
       extensionSurfaceStore.say(sessionId, tabId, { badge: action.badge });
       return;
+    case 'setTabDirty':
+      extensionSurfaceStore.reportDirty(sessionId, action.tabId, action.dirty, action.webContentsId);
+      return;
     case 'reportError':
       extensionSurfaceStore.say(sessionId, tabId, { error: action.message });
       return;
     case 'newDocument':
       extensionSurfaceStore.say(sessionId, tabId, { title: null, badge: null, error: null });
+      extensionSurfaceStore.clearDirtyOfPage(sessionId);
       return;
     case 'openBrowserTab': {
       const view = requireSessionView(sessionId);
-      view.showPage(action.url, { preview: false, reload: false });
+      view.showPage(action.url, { reload: false, from: tabId });
       view.setFocusedRegion('main');
       return;
     }
@@ -238,8 +254,11 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
         const detail = action.detail;
         updateFileNames([{ id: detail.itemId, filename: detail.name, content_type: detail.file.contentType }], installedExtensionsStore.manifests);
       });
-      window.dispatchEvent(new CustomEvent(APP_OPEN_WITH_EVENT, { detail: action.detail }));
-      return;
+      return import('@renderer/features/chats/chat-tabs/chat-layouts').then(({ panelTabsOf, chatPaneOf }) => {
+        const from = panelTabsOf(action.detail.chatId).find((tab) => groupPageSlot(action.detail.chatId, tab.tabId) === tabId)?.tabId;
+        if (from && action.detail.viewState) chatPaneOf(action.detail.chatId, from)?.setPageViewState(from, action.detail.viewState);
+        window.dispatchEvent(new CustomEvent(APP_OPEN_WITH_EVENT, { detail: { ...action.detail, from } }));
+      });
     // An App's 「用 X 打开」 on a session's working-copy file: in that session's pane, by the resolver a click there goes
     // through (`openFileInSessionEditor`) — the same for a session on this computer and one on another.
     case 'openSessionFile': {
@@ -249,18 +268,24 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
         const projectId = action.deviceId ? machineCodec(action.deviceId).inbound(action.projectId) : action.projectId;
         const { prepareSessionPane } = await import('@renderer/features/sessions/session-pane-ready');
         await prepareSessionPane(projectId, action.sessionId);
-        if (!findSession(action.sessionId)) throw new Error('This session has no prepared pane');
+        if (!findSessionAnywhere(action.sessionId)) throw new Error('This session has no prepared pane');
         const { openFileInSessionEditor } = await import('@renderer/features/sessions/stores/open-file-in-file-editor');
-        const opened = await openFileInSessionEditor(projectId, action.sessionId, action.path, { beside: true, ask: action.ask });
-        if (opened === undefined) throw new Error('The person did not pick an App to open it with');
+        if (sessionId === action.sessionId && action.viewState) {
+          const pane = findSessionView(sessionId)?.paneLayout.groups.find(({ pane }) => pane.entries.has(tabId))?.pane;
+          pane?.setPageViewState(tabId, action.viewState);
+        }
+        // The person cancelled 「用哪个打开」: nothing opens, and nothing went wrong.
+        await openFileInSessionEditor(projectId, action.sessionId, action.path, { ask: action.ask, intent: action.intent, byHost: true, ...(sessionId === action.sessionId ? { from: tabId } : {}) });
       })();
+    }
+    case 'openSessionFolder': {
+      const view = sessionId ? findSessionView(sessionId) : undefined;
+      if (!view) throw new Error('This session has no prepared pane');
+      openFolderInTab(view.paneLayout, tabId, action.folder);
+      return;
     }
     case 'forwardFiles':
       window.dispatchEvent(new CustomEvent(APP_FORWARD_FILES_EVENT, { detail: action.detail }));
-      return;
-    // The shell draws the forum's consent sheet (ForumConsent), as the phone's page gives it.
-    case 'forumConsent':
-      window.dispatchEvent(new CustomEvent(APP_FORUM_CONSENT_EVENT, { detail: action.detail }));
       return;
     // Beside the page that asked, in the slot it is drawn in: that slot draws it (AppPeekSlot). A session already in a
     // block on screen is not drawn twice: that block is looked at instead (one session, one place — ScreenArea).

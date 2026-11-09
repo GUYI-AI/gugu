@@ -12,29 +12,18 @@
  * 这里判的是渲染层**什么时候**、**拿什么值**去写。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { translateSessionMessage } from '@renderer/localization/locale-store';
+import { installAcpChatStoreHost } from './acp-chat-store.test-host';
 
 vi.mock('@renderer/lib/acp/runtime-client', () => ({
   getAcpRuntimeClient: async () => ({}),
 }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: () => {} }));
 
-// 桥必须在模块图加载之前就位 —— 理由见 acp-chat-store.session-absent.test.ts 抬头。
 const invokes: Array<{ channel: string; args: unknown[] }> = [];
-Object.defineProperty(document, 'fonts', {
-  configurable: true,
-  value: { load: vi.fn().mockResolvedValue([]) },
-});
-Object.defineProperty(window, 'electronAPI', {
-  configurable: true,
-  value: {
-    invoke: (channel: string, ...args: unknown[]) => {
-      invokes.push({ channel, args });
-      return Promise.resolve([]);
-    },
-    eventSend: () => {},
-    eventOn: () => () => {},
-    getPathForFile: () => '',
-  },
+installAcpChatStoreHost((channel: string, ...args: unknown[]) => {
+  invokes.push({ channel, args });
+  return Promise.resolve([]);
 });
 const { AcpChatStore } = await import('./acp-chat-store');
 
@@ -111,5 +100,63 @@ describe('活设置:provider 确认之后才写回会话记录', () => {
     );
     await store.setMode('default');
     expect(recorded()).toEqual([]);
+  });
+});
+
+describe('model setting recovery stays beside the model control', () => {
+  it('a model change refused because a turn is running leaves nothing on the picker', async () => {
+    const store = makeStore({
+      success: false,
+      error: { type: 'set_config_failed', cause: { name: 'LiveSettingBusy', message: 'Cannot change model while the current turn is in flight' } },
+    });
+    await expect(store.setModel('m2')).resolves.toBeNull();
+    expect(store.modelSettingError).toBeNull();
+    expect(recorded()).toEqual([]);
+  });
+
+  it('locks the model for a running turn on a harness that refuses mid-turn, not for a background agent', () => {
+    const store = makeStore({ success: false, error: {} });
+    const setState = (state: { lifecycle: string; isGenerating: boolean }) => {
+      store.session = { sessionState: { current: () => ({ pendingPermissions: [], ...state }) } } as never;
+    };
+    const reject = { busy: 'reject' };
+    setState({ lifecycle: 'working', isGenerating: true });
+    expect(store.modelLockedForTurn(reject)).toBe(true);
+    expect(store.modelLockedForTurn({ busy: 'queue-next-turn' })).toBe(false);
+    setState({ lifecycle: 'cancelling', isGenerating: true });
+    expect(store.modelLockedForTurn(reject)).toBe(true);
+    setState({ lifecycle: 'idle', isGenerating: true });
+    expect(store.modelLockedForTurn(reject)).toBe(false);
+    setState({ lifecycle: 'idle', isGenerating: false });
+    expect(store.modelLockedForTurn(reject)).toBe(false);
+  });
+
+  it('returns the adapter rejection as a recoverable model result', async () => {
+    const data = { kind: 'model-unavailable' as const, requestedValue: 'retired-model' };
+    const store = makeStore({ success: false, error: { type: 'set_config_failed', cause: { name: 'RequestError', message: 'unknown model: retired-model', data } } });
+    expect(await store.setModel('retired-model')).toEqual(data);
+    expect(store.modelSettingError).not.toContain('kind=');
+    expect(store.modelSettingError).toBe(translateSessionMessage('taskError.settingFailedRetry'));
+  });
+
+  it('preserves a specific model failure while saving an independent permission', async () => {
+    const store = makeStore({ success: false, error: { type: 'set_config_failed', cause: { name: 'Error', message: 'unknown model: retired-model; local Codex offers model-a' } } });
+    expect(await store.setModel('retired-model')).toBeNull();
+    expect(store.modelSettingError).toBe(translateSessionMessage('taskError.settingFailedRetry'));
+    const session = store.session!;
+    vi.mocked(session.setModeOption).mockResolvedValue({ success: true, data: { status: 'applied', effectiveValue: 'default', channel: 'acp-mode' } });
+    await store.setMode('default');
+    expect(recorded()).toEqual([[store.sessionId, { dimension: 'permission', modeId: 'default' }]]);
+    expect(store.modelSettingError).toBe(translateSessionMessage('taskError.settingFailedRetry'));
+    vi.mocked(session.setModelOption).mockResolvedValue({ success: true, data: { status: 'applied', effectiveValue: 'model-a', channel: 'acp-config-option' } });
+    expect(await store.setModel('model-a')).toEqual({ kind: 'applied', effectiveValue: 'model-a' });
+    expect(store.modelSettingError).toBeNull();
+  });
+
+  it('keeps a rejected transport request visible instead of losing its reason', async () => {
+    const store = makeStore({ success: false, error: new Error('unused') });
+    vi.mocked(store.session!.setModelOption).mockRejectedValue(new Error('Model catalog is unavailable on this device'));
+    await store.setModel('model-a');
+    expect(store.modelSettingError).toBe(translateSessionMessage('taskError.settingFailedRetry'));
   });
 });

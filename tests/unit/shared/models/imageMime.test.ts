@@ -5,7 +5,8 @@ import {
   mimeTypeFromName,
   resolveAttachmentMimeType,
 } from '../../../../packages/core/src/shared/imageMime.mjs'
-import { inferAttachmentKind } from '../../../../packages/core/src/shared/ui/attachmentModels'
+import { inferAttachmentKind, isMpegTsVideo, resolveFileMimeType, sniffFileMimeType } from '../../../../packages/core/src/shared/ui/attachmentModels'
+import { attachmentTypeKey } from '../../../../apps/desktop/src/components/chat/attachmentType'
 
 // 「PNG 有时渲染有时不渲染」:agent 发文件时 mime_type 可选、大小写随意,判据必须是 mime ∪ 扩展名。
 describe('image mime resolution', () => {
@@ -58,5 +59,40 @@ describe('image mime resolution', () => {
     expect(inferAttachmentKind({ name: 'report.html', type: '' })).toBe('file')
     // 声明的类型说了就算 —— 显式的 text/plain 不被后缀抢走。
     expect(resolveAttachmentMimeType('report.html', 'text/plain')).toBe('text/plain')
+  })
+  // 11-08:桌面发 `.ts` 卡片写「视频」—— file.type 是系统按后缀猜的(macOS/Electron 给 video/mp2t,Linux 给 Qt 的
+  // text/vnd.trolltech.linguist,.mts 给 video/mp2t,.cts 给空),不是声明。可 .ts / .mts / .m2ts 也真有视频,看文件头才分得清。
+  const packets = (size: number, offset: number) => {
+    const bytes = new Uint8Array(size * 2)
+    bytes[offset] = 0x47
+    bytes[offset + size] = 0x47
+    return bytes
+  }
+  it('tells a TypeScript file from an MPEG-TS video by its first bytes', async () => {
+    const source = new TextEncoder().encode('export const adam = (lr: number) => lr\n')
+    expect(await sniffFileMimeType(new File([source], 'adam.ts', { type: 'video/mp2t' }))).toBe('text/typescript')
+    expect(await sniffFileMimeType(new File([source], 'adam.ts', { type: 'text/vnd.trolltech.linguist' }))).toBe('text/typescript')
+    expect(await sniffFileMimeType(new File([source], 'mod.mts', { type: 'video/mp2t' }))).toBe('text/typescript')
+    expect(await sniffFileMimeType(new File([packets(188, 0)], 'screen.ts', { type: '' }))).toBe('video/mp2t')
+    // AVCHD: 192-byte packets, a 4-byte timestamp before each sync byte.
+    expect(await sniffFileMimeType(new File([packets(192, 4)], '00001.MTS', { type: '' }))).toBe('video/mp2t')
+    expect(await sniffFileMimeType(new File([packets(192, 4)], '00001.m2ts', { type: '' }))).toBe('video/mp2t')
+    // One packet is not enough: a text file can start with "G".
+    expect(await sniffFileMimeType(new File([new TextEncoder().encode('G'.repeat(10))], 'g.ts', { type: '' }))).toBe('text/typescript')
+    // Opening one reads the same bytes, whatever type it was stored with; other suffixes are never sniffed.
+    expect(await isMpegTsVideo('screen.ts', new Blob([packets(188, 0)]))).toBe(true)
+    expect(await isMpegTsVideo('adam.ts', new Blob([source]))).toBe(false)
+    expect(await isMpegTsVideo('notes.txt', new Blob([packets(188, 0)]))).toBe(false)
+    const sniffed = new File([source], 'adam.ts', { type: 'video/mp2t' })
+    await sniffFileMimeType(sniffed)
+    expect(resolveFileMimeType(sniffed)).toBe('text/typescript')
+  })
+  it('names other suffixes from the table, and an already-sent file by what it stored', () => {
+    expect(resolveFileMimeType({ name: 'mod.cts', type: '' })).toBe('text/typescript')
+    expect(resolveFileMimeType({ name: 'notes.md', type: 'application/x-whatever' })).toBe('text/markdown')
+    // Not looked at yet: the OS guess, as before.
+    expect(resolveFileMimeType({ name: 'adam.ts', type: 'video/mp2t' })).toBe('video/mp2t')
+    // A card has only the stored type, so an old .ts stays as it was sent.
+    expect(attachmentTypeKey({ fileName: 'adam.ts', mimeType: 'video/mp2t' })).toBe('video')
   })
 })

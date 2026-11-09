@@ -17,16 +17,17 @@ import { GroupAppsPicker } from './GroupAppsPicker'
 import { AddGroupMembers } from './AddGroupMembers'
 import { ChatDetailsMenuItems } from './ChatDetailsMenuItems'
 import { ChatHeaderSwitches } from './ChatHeaderSwitches'
-import { GroupTopicsRows, TopicUnreadChip } from './GroupTopicsRows'
+import { GroupTopicsRows, TopicCallChip, TopicUnreadChip } from './GroupTopicsRows'
 import { useChatTopicPins } from './useChatTopicPins'
-import { topicUnreadTotal } from './topicPinsModel'
+import { topicCallTotal, topicUnreadTotal } from './topicPinsModel'
 import { useStripNarrow } from '../../session/renderer/features/tabs/tab-strip-narrow'
+import type { ChatTopicState } from '../../session/renderer/features/chats/chat-tabs/chat-tab-providers'
 
 interface ChatHeaderActionsProps {
   isGroupChat: boolean
   isRoomChat: boolean
-  searchMode: boolean
-  folderShown: boolean
+  memberTopic?: ChatTopicState | null
+  memberTopicCount?: number
   infoShown: boolean
   showHeaderMenu: boolean
   mobile?: boolean
@@ -37,9 +38,8 @@ interface ChatHeaderActionsProps {
     onReload: () => Promise<void>
   }
   moreButtonRef: RefObject<HTMLButtonElement | null>
-  onEnterSearchMode: () => void
+  onSearch: () => void
   onOpenFolder: () => void
-  onCloseWorkspacePanel: () => void
   onOpenInfo: (page?: 'main' | 'members') => void
   onCloseInfo: () => void
   onToggleHeaderMenu: () => void
@@ -47,40 +47,39 @@ interface ChatHeaderActionsProps {
 }
 
 export const ChatHeaderActions = observer(function ChatHeaderActions({
-  isGroupChat, isRoomChat, folderShown, infoShown, showHeaderMenu, mobile, room, moreButtonRef,
-  onEnterSearchMode, onOpenFolder, onCloseWorkspacePanel, onOpenInfo, onCloseInfo, onToggleHeaderMenu, onCloseHeaderMenu,
+  isGroupChat, isRoomChat, memberTopic, memberTopicCount, infoShown, showHeaderMenu, mobile, room, moreButtonRef,
+  onSearch, onOpenFolder, onOpenInfo, onCloseInfo, onToggleHeaderMenu, onCloseHeaderMenu,
 }: ChatHeaderActionsProps) {
   const { t } = useTranslation('messaging')
   const { activeChatId } = useChatStore('activeChatId')
-  const folderName = useChatFolderName(activeChatId)
+  const folderName = useChatFolderName()
   const narrow = useHeaderNarrow(moreButtonRef, Boolean(mobile))
   const groupId = isGroupChat ? activeChatId : null
-  const topics = useChatTopicPins(groupId)
+  const topics = useChatTopicPins(mobile ? null : groupId)
   const invite = groupInviteAccess(activeChatId ?? '', isGroupChat ? 'group' : 'topic', room?.settings ?? null)
   const appsButton = useRef<HTMLButtonElement>(null)
   const [popup, setPopup] = useState<{ chatId: string | null; kind: 'apps' | 'invite' | null }>({ chatId: activeChatId, kind: null })
   if (popup.chatId !== activeChatId) setPopup({ chatId: activeChatId, kind: null })
   const openPopup = (kind: 'apps' | 'invite') => { onCloseHeaderMenu(); setPopup({ chatId: activeChatId, kind }) }
   const closePopup = () => setPopup({ chatId: activeChatId, kind: null })
-  const memberCount = room ? room.snapshot.humans.length + room.snapshot.agents.length : 0
+  const memberCount = memberTopic ? memberTopicCount : room ? room.snapshot.humans.length + room.snapshot.agents.length : 0
   const wideGroup = isGroupChat && !narrow
   return <Popover.Root open={popup.kind === 'apps' && !mobile} modal={false} onOpenChange={(open) => open ? openPopup('apps') : closePopup()}>
-    {isRoomChat ? <>
+    {isRoomChat || memberTopic ? <>
       <Button variant="ghost" size="md" className={mobile ? 'min-h-[var(--control-h-touch)]' : undefined} data-testid={AUTOMATION_TEST_IDS.chatHeaderMembersButton} aria-label={t('header.memberList')} title={t('header.memberList')} aria-pressed={infoShown}
         onClick={() => infoShown ? onCloseInfo() : onOpenInfo('members')}>
         <Users className="text-[var(--faint-fg)]" />{memberCount}
       </Button>
       {wideGroup && <span aria-hidden className="mx-1 h-4 border-s border-[var(--border)]" />}
-    </> : <IconButton on={folderShown || undefined} title={folderName} aria-label={folderName} aria-pressed={folderShown}
-      onClick={() => folderShown ? onCloseWorkspacePanel() : onOpenFolder()}><Folder /></IconButton>}
+    </> : null}
     {groupId && <>
-      <DropdownMenu.Root key={groupId} modal={false} onOpenChange={(open) => { if (open) { onCloseHeaderMenu(); closePopup() } }}>
+      {!mobile && <DropdownMenu.Root key={groupId} modal={false} onOpenChange={(open) => { if (open) { onCloseHeaderMenu(); closePopup() } }}>
         <DropdownMenu.Trigger data-testid={AUTOMATION_TEST_IDS.groupMenuTopics} aria-label={t('history.tabs.topics')}
-          render={<Button variant="ghost" size="md" title={narrow ? t('history.tabs.topics') : undefined}><MessageSquare />{!narrow && t('history.tabs.topics')}<TopicUnreadChip count={topicUnreadTotal(topics.topics)} /></Button>} />
+          render={<Button variant="ghost" size="md" title={narrow ? t('history.tabs.topics') : undefined}><MessageSquare />{!narrow && t('history.tabs.topics')}{topicCallTotal(topics.topics) > 0 ? <TopicCallChip count={topicCallTotal(topics.topics)} at /> : <TopicUnreadChip count={topicUnreadTotal(topics.topics)} />}</Button>} />
         <DropdownMenu.Content data-testid={AUTOMATION_TEST_IDS.groupTopicsPopup} style={{ width: 320, maxWidth: 'min(320px, var(--available-width))', maxHeight: 'min(360px, var(--available-height))', overflowY: 'auto', overscrollBehavior: 'contain' }} align="end">
           <GroupTopicsRows chatId={groupId} />
         </DropdownMenu.Content>
-      </DropdownMenu.Root>
+      </DropdownMenu.Root>}
       {wideGroup && <>
         {invite.showInvite && <Button variant="ghost" size="md" data-testid={AUTOMATION_TEST_IDS.chatHeaderInviteButton} aria-label={t('header.invite')} onClick={() => openPopup('invite')}><UserPlus />{t('header.invite')}</Button>}
         <Popover.Trigger ref={appsButton} data-testid={AUTOMATION_TEST_IDS.chatHeaderAppsButton} onClick={onCloseHeaderMenu}
@@ -97,10 +96,10 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
           <MenuItem onClick={() => openPopup('apps')} icon={<LayoutGrid size={16} />}>{t('header.groupApps')}</MenuItem>
           <MenuSeparator />
         </>}
-        <MenuItem data-testid={AUTOMATION_TEST_IDS.chatHeaderSearchButton} onClick={onEnterSearchMode} icon={<Search size={16} />} shortcut={isRoomChat ? '⌘F' : undefined}>
+        <MenuItem data-testid={AUTOMATION_TEST_IDS.chatHeaderSearchButton} onClick={onSearch} icon={<Search size={16} />} shortcut={isRoomChat ? '⌘F' : undefined}>
           {t(isRoomChat ? 'header.searchHistory' : 'header.searchChat')}
         </MenuItem>
-        {isRoomChat && <MenuItem onClick={onOpenFolder} icon={<Folder size={16} />}>{folderName}</MenuItem>}
+        <MenuItem onClick={onOpenFolder} icon={<Folder size={16} />}>{folderName}</MenuItem>
         <MenuSeparator />
         <ChatDetailsMenuItems isGroupChat={isGroupChat} onOpenInfo={() => isGroupChat ? onOpenInfo('main') : onOpenInfo()} />
         <MenuSeparator />

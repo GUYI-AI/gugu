@@ -1,3 +1,7 @@
+import { ensureProjectHostReady } from '@renderer/features/remote-hosts/ensure-cloud-host-ready';
+import { cloudWakeFailureText } from '@renderer/features/remote-hosts/connection-status';
+import { cloudComputerWakeFailureOf, findRemoteHostsBridge } from '@/session/shared/remote-hosts';
+import { machineRegistry } from '@renderer/lib/machine-routing';
 import { rendererLogger } from '@/lib/log';
 import { messageForUser } from '@/lib/userFacingError';
 import { withTimeout } from '@/lib/withTimeout';
@@ -5,6 +9,7 @@ import { getProjectManagerStore } from '@renderer/features/projects/stores/proje
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { rpc } from '@renderer/lib/ipc';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
+import { modalStore } from '@renderer/lib/modal/modal-store';
 import type { ProjectsTranslate } from '@renderer/localization/messages-projects';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { Automation } from '@shared/core/automations/automation';
@@ -45,9 +50,15 @@ function deleteProjectDescription(
 export function useConfirmDeleteProject() {
   const { translate } = useSessionMessages();
   const showConfirmDeleteProject = useShowModal('confirmActionModal');
-  const reportError = (error: unknown) => {
+  const reportError = (error: unknown, projectIdForError: string) => {
     rendererLogger('actions/delete-project').error({ error }, 'action failed');
-    toast({ tier: 'error', title: translate('projects.delete.failed'), description: messageForUser(error) });
+    const deviceId = machineRegistry.machineOf(projectIdForError);
+    const device = findRemoteHostsBridge()?.listDevices().find(row => row.id === deviceId);
+    const description = error && typeof error === 'object' && 'reason' in error
+      && (error.reason === 'refused' || error.reason === 'failed' || error.reason === 'timeout')
+      ? cloudWakeFailureText(cloudComputerWakeFailureOf(error), device?.label ?? '', translate)
+      : messageForUser(error);
+    toast({ tier: 'error', title: translate('projects.delete.failed'), description });
   };
 
   return async ({
@@ -59,26 +70,42 @@ export function useConfirmDeleteProject() {
     projectLabel: string;
     onDeleted?: () => void;
   }) => {
-    let automations: Automation[];
-    try {
-      automations = await listProjectAutomations(projectId, translate('projects.delete.checkTimeout'));
-    } catch (error) {
-      reportError(error);
-      return;
-    }
-
-    showConfirmDeleteProject({
+    let checked = false;
+    const args = {
       title: translate('projects.delete.title'),
-      description: deleteProjectDescription(projectLabel, automations, translate),
       confirmLabel: translate('projects.delete.confirm'),
       onSuccess: async () => {
+        if (!checked) return;
         try {
           await getProjectManagerStore().deleteProject(projectId);
           onDeleted?.();
         } catch (error) {
-          reportError(error);
+          reportError(error, projectId);
         }
       },
+    };
+    // Own a visible, cancellable dialog before any host/automation I/O. A late result may
+    // update only this request, never reopen a dismissed dialog or replace a newer one.
+    showConfirmDeleteProject({
+      ...args,
+      confirmDisabled: true,
+      description: <div className="space-y-3">
+        <p>{translate('projects.delete.description', { projectLabel })}</p>
+        <p role="status" className="text-foreground-muted">{translate('projects.delete.checking')}</p>
+      </div>,
     });
+    const pending = modalStore.activeModalArgs;
+    try {
+      await ensureProjectHostReady(projectId);
+      if (modalStore.activeModalArgs !== pending) return;
+      const automations = await listProjectAutomations(projectId, translate('projects.delete.checkTimeout'));
+      if (modalStore.activeModalArgs !== pending) return;
+      checked = true;
+      showConfirmDeleteProject({ ...args, description: deleteProjectDescription(projectLabel, automations, translate) });
+    } catch (error) {
+      if (modalStore.activeModalArgs !== pending) return;
+      pending?.onClose();
+      reportError(error, projectId);
+    }
   };
 }

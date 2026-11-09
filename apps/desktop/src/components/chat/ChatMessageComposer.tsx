@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next'
 import { formatAttachmentSize } from '@gugu/core/shared/ui/attachmentModels'
 import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
 import { ChatComposer, MessageProvider, type ComposerAttachment, type MentionItem, type PromptEditorRef } from '@gugu/session-ui/react/components'
-import { ThemeProvider } from '@gugu/session-ui/react/primitives'
+import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme'
 import { useLocale } from '@/i18n'
-import { registerComposerFocusTarget, scheduleComposerFocus } from '@/lib/focusComposer'
+import { focusComposer, registerComposerFocusTarget, scheduleComposerFocus } from '@/lib/focusComposer'
+import { useComposerEntryFocus } from '@/lib/composerEntryFocus'
 import { activeMentionPicks, MENTION_ALL_USER_ID, type MentionCandidate } from '@/lib/mention'
 import { isMentionQueryActive } from '@/lib/mentionMatch'
 import { rankMentionCandidates } from '@/lib/mentionRanking'
@@ -13,7 +14,7 @@ import { useProjectGroupMembers } from '@/lib/projectGroupChatsBridge'
 import { AUTOMATION_TEST_IDS } from '@/lib/automationDom'
 import { UI_EVENTS } from '@/lib/uiEvents'
 import { useContactsStore } from '../../store/contactsContext'
-import { useChatStore } from '../../store/chatContext'
+import { useChatStore, useChatStoreSelect } from '../../store/chatContext'
 import { useTheme } from '../../store/theme'
 import { useMobileShell } from '../../hooks/useMobileShell'
 import { Avatar } from '../Avatar'
@@ -26,6 +27,10 @@ import { translateSessionMessage } from '../../session/renderer/localization/loc
 import { useChatDraft, makePendingAttachment, revokeAttachmentPreviewUrls } from './useChatDraft'
 import { useChatMessageSend } from './useChatMessageSend'
 import { ComposerAttachButton } from './ComposerAttachButton'
+import { PhoneAttachPanel, type PhoneAttachEntry } from './PhoneAttachPanel'
+import { compressPhoto } from './compressPhoto'
+import { IconButton } from '../ui/IconButton'
+import { Camera, Image, Paperclip, Plus } from '@/lib/icons'
 import { ComposerVerbs } from './ComposerVerbs'
 import { useComposerVerbTakeover } from './useComposerVerbTakeover'
 import { parseGroupFileLink } from '@gugu/core/shared/ui/guguLink'
@@ -35,7 +40,10 @@ import { mentionOptionStatusProps } from './agentMentionStatusModels'
 import type { ChatMessageComposerProps } from './chatComposerModels'
 import { AgentConversationComposer } from '@renderer/lib/chat/agent-conversation-view'
 import { usePhoneNewTask } from '../../mobile/chat/PhoneNewTask'
+import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection'
 import { useGroupMentionHint } from './useGroupMentionHint'
+import { usePromptLibrary } from '@renderer/features/library/prompts/use-prompt-library'
+import { promptSlashItems } from '@renderer/features/library/prompts/prompt-slash-items'
 import './group-mention-hint.css'
 export type { ComposerAttachAction } from './ComposerAttachButton'
 export type { ChatMessageComposerProps } from './chatComposerModels'
@@ -51,14 +59,16 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
     messages = EMPTY_MESSAGES, participantIds, surface = 'main', hidden = false } = props
   const [publicQuote, setPublicQuote] = useState<typeof quoteContent>(null)
   const replySource = quoteContent?.source
+  const { draftWhispers, setDraftWhisper } = useChatStore('draftWhispers', 'setDraftWhisper')
+  const whisperTo = props.whisperTarget?.userId ?? (chatId ? draftWhispers[chatId] : undefined)
   const delivery = resolveReplyDelivery({ senderUserId: currentUserId, source: replySource,
-    toUserIds: props.whisperTarget ? [props.whisperTarget.userId] : [],
-    whisper: props.whisperTarget ? true : quoteContent && publicQuote === quoteContent ? false : undefined })
+    toUserIds: whisperTo ? [whisperTo] : [],
+    whisper: whisperTo ? true : quoteContent && publicQuote === quoteContent ? false : undefined })
   const privatePeer = delivery?.isWhisper ? delivery.toUserIds[0] : undefined
   const whisperTarget = useMemo(() => privatePeer ? { userId: privatePeer, displayName: groupMembers.find((member) => member.id === privatePeer)?.name
     ?? (props.whisperTarget?.userId === privatePeer ? props.whisperTarget.displayName : quoteContent?.senderName ?? privatePeer) } : null,
   [privatePeer, groupMembers, props.whisperTarget, quoteContent?.senderName])
-  const onExitWhisper = useCallback(() => { setPublicQuote(quoteContent); exitWhisper?.() }, [quoteContent, exitWhisper])
+  const onExitWhisper = useCallback(() => { setPublicQuote(quoteContent); if (chatId) setDraftWhisper(chatId, null); exitWhisper?.() }, [quoteContent, chatId, setDraftWhisper, exitWhisper])
   const deliveryProps = { ...props, whisperTarget, onExitWhisper }
   const { t } = useTranslation('messaging')
   const replyUnavailable = !delivery || (!!quoteContent?.messageId && !replySource)
@@ -69,19 +79,25 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
   const mobile = useMobileShell()
   const draft = useChatDraft(chatId)
   const { text, setText, mentionTargets, setMentionTargets, attachments, setAttachments } = draft
+  const fileSelection = useAttachmentFileSelection(attachments, chatId)
   const editorApiRef = useRef<PromptEditorRef | null>(null)
   const inputRef = useRef<HTMLElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  // 手机「+」面板开着没有。
+  const [attachOpen, setAttachOpen] = useState(false)
   const isMain = surface === 'main'
   const inChatSlot = useInChatSlot()
   const projectName = useChatSlotProjectName()
   const takenOver = useComposerVerbTakeover(chatId)
   const { contacts } = useContactsStore()
-  const { chats, identitiesById, writeDraft, registerDraftEditor } = useChatStore('chats', 'identitiesById', 'writeDraft', 'registerDraftEditor')
+  const { identitiesById, writeDraft, registerDraftEditor } = useChatStore('identitiesById', 'writeDraft', 'registerDraftEditor')
+  const sourceChatId = useChatStoreSelect((store) => store.chats.find((chat) => chat.id === chatId)?.source_chat_id ?? null)
   // 手机项目群的「新任务」(电脑上是 ComposerVerbs 换上会话页那一侧的框;手机就地换成新任务的框)。
   const phoneTask = usePhoneNewTask({ chatId, enabled: mobile && isMain && !!isGroupChat, clear: () => writeDraft(chatId, '') })
   const projectMembers = useProjectGroupMembers()
-  const projectMemberIds = projectMembers.get(chats.find((chat) => chat.id === chatId)?.source_chat_id ?? chatId ?? '')
+  const projectMemberIds = projectMembers.get(sourceChatId ?? chatId ?? '')
   const members = useMemo<MentionCandidate[]>(() => isGroupChat ? [
     { id: '__all__', name: t('composer.mentionAll'), type: 'all' },
     ...groupMembers.filter((member) => member.id !== currentUserId).map((member) => ({ ...member, alias: contacts.find((contact) => contact.id === member.id)?.alias })),
@@ -125,13 +141,34 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
       return item ? decorate(item) : null
     },
   }), [isGroupChat, whisperTarget, members, agentStatuses, decorate, localProvider, t, chatId, currentUserId, messages, participantIds, projectMemberIds, quoteContent?.messageId])
-  const { dataDropTypes, onDataDropped, invitation } = useChatTaskDrop({ chatId, isGroupChat: isGroupChat && !mobile, groupMembers, provider: mentionProvider, editorApiRef, enabled: !hidden && !disabled })
   const receiveInput = useCallback((element: HTMLElement | null) => { inputRef.current = element }, [])
   const enqueueFiles = useCallback((files: File[]) => {
-    if (files.length) setAttachments((pending) => [...pending, ...files.map(makePendingAttachment)])
-  }, [setAttachments])
+    const picked = fileSelection.choose(files)
+    if (picked.length) setAttachments((pending) => [...pending, ...picked.map(({ file, id }) => makePendingAttachment(file, id))])
+    return picked
+  }, [fileSelection, setAttachments])
+  const { dataDropTypes, onDataDropped, onDirectoriesDropped, invitation } = useChatTaskDrop({ chatId, isGroupChat: isGroupChat && !mobile, groupMembers, provider: mentionProvider, editorApiRef, enabled: !hidden && !disabled, attachFiles: enqueueFiles })
+  // 照片 / 拍摄先原样进附件区,压完按 id 换成压缩件:这期间发送、删除、切会话都找不到这个 id,换不到别处去。
+  const enqueuePhotos = useCallback((files: File[]) => {
+    for (const { file, id } of enqueueFiles(files)) {
+      void compressPhoto(file).then((compressed) => {
+        if (compressed !== file) setAttachments((pending) => pending.map((item) => item.id === id ? { ...item, file: compressed, photo: { original: file, compressed } } : item))
+      })
+    }
+  }, [enqueueFiles, setAttachments])
 
   useEffect(() => isMain ? registerComposerFocusTarget(() => inputRef.current) : undefined, [isMain])
+  useComposerEntryFocus(chatId ? 'chat:' + chatId : null, isMain && !hidden && props.entryActive === true, () => {
+    if (!disabled) focusComposer('chat-entry', { mobileShell: mobile, target: () => inputRef.current })
+  })
+  // 面板占的是键盘的位置:一点输入框(键盘要起来)就收起。
+  useEffect(() => {
+    const input = inputRef.current
+    if (!attachOpen || !input) return
+    const close = () => setAttachOpen(false)
+    input.addEventListener('focus', close)
+    return () => input.removeEventListener('focus', close)
+  }, [attachOpen])
   useLayoutEffect(() => registerDraftEditor(chatId ?? null, () => editorApiRef.current), [chatId, registerDraftEditor])
   useEffect(() => {
     if (!mentionToInsert) return
@@ -140,9 +177,8 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
     onMentionInserted?.()
   }, [mentionToInsert, onMentionInserted, members])
   useEffect(() => {
-    // Automatic selection quotes leave the browser's handles and Copy toolbar in charge of focus.
-    if (quoteContent && !(mobile && quoteContent.selectionId)) scheduleComposerFocus('quote-attached', { target: () => inputRef.current })
-  }, [quoteContent, mobile])
+    if (quoteContent) scheduleComposerFocus('quote-attached', { target: () => inputRef.current })
+  }, [quoteContent])
   useEffect(() => {
     if (!isMain) return
     const attach = (event: Event) => {
@@ -156,6 +192,7 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
   const composerAttachments: ComposerAttachment[] = attachments.map((attachment) => ({
     id: attachment.id, name: attachment.file.name, kind: attachment.kind === 'image' ? 'image' : 'file',
     previewUrl: attachment.previewUrl ?? undefined, mimeType: attachment.file.type, meta: formatAttachmentSize(attachment.file.size),
+    imageQuality: attachment.photo && (attachment.file === attachment.photo.compressed ? 'compressed' : 'original'),
   }))
   const onMentionInsert = (item: MentionItem) => {
     const member = members.find((candidate) => candidate.id === item.id || `aid:${candidate.id}` === item.label)
@@ -170,11 +207,19 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
     editor: editorApiRef, input: inputRef })
   const editorOptions = { inputTestId: surface === 'aside' ? AUTOMATION_TEST_IDS.chatComposerAside : AUTOMATION_TEST_IDS.chatComposer,
     inputRef: receiveInput, clearOnSubmit: false, enterBehavior: mobile ? 'newline' as const : 'submit' as const, emptyHint: hint }
+  // `/`: the person's prompts and their Apps' (prompt-slash-items.ts, the session composer's same list) — the chat's `/` had nothing.
+  const { value: prompts, overrides } = usePromptLibrary()
+  const queryPrompts = useCallback(async (query: string) => promptSlashItems(prompts, overrides, translateSessionMessage('chat.prompts'), query.trim().toLowerCase()), [prompts, overrides])
   const Composer = props.conversation ? AgentConversationComposer : ChatComposer
-  return <ThemeProvider theme={theme} target="documentElement">
+  return <SessionUiTheme theme={theme}>
     <MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
       <div {...hintEvents} title={disabledReason} data-chat-composer-host="" data-mobile-group={mobile && isGroupChat || undefined} data-phone-task={phoneTask.active || undefined} data-sending={sending} hidden={hidden || takenOver}>
         <input ref={fileInputRef} type="file" multiple hidden onChange={(event) => { enqueueFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} />
+        {mobile && <>
+          {/* 照片 = 系统相册(只写 image/*:写多个类型时 Android 壳退回成文件选择器);拍摄 = 直接开相机。 */}
+          <input ref={photoInputRef} type="file" accept="image/*" multiple hidden onChange={(event) => { enqueuePhotos(Array.from(event.target.files ?? [])); event.target.value = '' }} />
+          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" hidden onChange={(event) => { enqueuePhotos(Array.from(event.target.files ?? [])); event.target.value = '' }} />
+        </>}
         <ChatComposerContextBands {...deliveryProps} />
         <AgentMentionSelectionNotice members={members} mentionTargets={activeTargets} agentStatuses={agentStatuses} />
         {invitation}
@@ -184,12 +229,22 @@ export function ChatMessageComposer(props: ChatMessageComposerProps) {
           disabled={disabled} disabledPlaceholder={placeholder ?? disabledReason} canSubmit={!sending && (!!text.trim() || attachments.length > 0)}
           placeholder={props.conversation ? undefined : phoneTask.placeholder ?? (whisperTarget ? t('composer.whisperPlaceholder', { name: whisperTarget.displayName }) : placeholder ?? (mobile && isGroupChat ? t('composer.mobilePlaceholder') : projectName && !mobile ? t('composer.projectGroupPlaceholder', { name: projectName }) : t('composer.placeholder')))}
           onInputChange={setText} onSubmitWhileWorking={props.conversation ? handleSend : undefined} onSubmit={value => phoneTask.active ? phoneTask.send(value) : handleSend(value)} onMentionInsert={onMentionInsert}
-          mentionProvider={mentionProvider} renderMentionIcon={renderMentionIcon} dataDropTypes={dataDropTypes} onDataDropped={onDataDropped}
-          onFilesDropped={enqueueFiles} onImageFilesDropped={enqueueFiles}
+          mentionProvider={mentionProvider} renderMentionIcon={renderMentionIcon} queryCommands={queryPrompts} dataDropTypes={dataDropTypes} onDataDropped={onDataDropped}
+          onFilesDropped={enqueueFiles} onImageFilesDropped={enqueueFiles} onDirectoriesDropped={onDirectoriesDropped}
           attachments={composerAttachments} onAttachmentsChange={(next) => { const kept = attachments.filter((file) => next.some((item) => item.id === file.id)); revokeAttachmentPreviewUrls(attachments.filter((file) => !kept.includes(file))); setAttachments(kept) }}
-          toolbarExtra={<><ComposerAttachButton glyph={attachGlyph} actions={phoneTask.action ? [...(attachMenu ?? []), phoneTask.action] : attachMenu} disabled={disabled} mobile={mobile} onPickFile={() => fileInputRef.current?.click()} />{isMain && !mobile && !props.conversation && <ComposerVerbs chatId={chatId} isGroupChat={!!isGroupChat} draft={() => editorApiRef.current?.getText() ?? ''} onCarried={() => writeDraft(chatId, '')} />}</>}
+          onAttachmentQualityChange={(id) => setAttachments((pending) => pending.map((item) => item.id === id && item.photo ? { ...item, file: item.file === item.photo.compressed ? item.photo.original : item.photo.compressed } : item))}
+          toolbarExtra={<>{mobile
+            ? <IconButton shape="pill" size="md" title={t('composer.attach')} aria-label={t('composer.attach')} aria-expanded={attachOpen} disabled={disabled} data-testid="chat-composer-attach-menu"
+                onClick={() => { inputRef.current?.blur(); setAttachOpen((open) => !open) }}>{attachGlyph ?? <Plus />}</IconButton>
+            : <ComposerAttachButton glyph={attachGlyph} actions={attachMenu} disabled={disabled} mobile={mobile} onPickFile={() => fileInputRef.current?.click()} />}{isMain && !mobile && !props.conversation && <ComposerVerbs chatId={chatId} isGroupChat={!!isGroupChat} draft={() => editorApiRef.current?.getText() ?? ''} onCarried={() => writeDraft(chatId, '')} />}</>}
           className={inChatSlot ? sessionComposerDockedWidthClassName : undefined} />
+        {mobile && attachOpen && <PhoneAttachPanel onClose={() => setAttachOpen(false)} entries={[
+          { id: 'photos', label: t('composer.photos'), icon: <Image />, onSelect: () => photoInputRef.current?.click() },
+          { id: 'camera', label: t('composer.camera'), icon: <Camera />, onSelect: () => cameraInputRef.current?.click() },
+          { id: 'file', label: t('composer.file'), icon: <Paperclip />, onSelect: () => fileInputRef.current?.click() },
+          ...[...(attachMenu ?? []), ...(phoneTask.action ? [phoneTask.action] : [])].map((action): PhoneAttachEntry => ({ ...action, icon: action.icon ?? <Plus /> })),
+        ]} />}
       </div>
     </MessageProvider>
-  </ThemeProvider>
+  </SessionUiTheme>
 }

@@ -1,4 +1,6 @@
+import type { TabOpenIntent } from '@shared/view-state'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
+import type { FilePlace } from '@gugu/core/shared/ui/guguLink'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMobileShell } from '../../hooks/useMobileShell'
@@ -11,16 +13,18 @@ import { installedExtensionsStore, WORKSPACE_APP_ID } from '../../session/render
 import { APP_OPEN_WITH_EVENT, type AppOpenWithDetail } from '../../session/shared/extensions/app-runtime-protocol'
 import { displayNameOf } from '../../session/shared/extensions/file-openers'
 import { folderItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
-import { openPanelItem, shownPanelTab, takeChatAsk } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { openPanelItem, chatPaneOf, chatLayoutOf, takeChatAsk, type ChatFileOpenReceipt } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
 import { appsHere } from './appsHere'
+import { tellFilePlace } from '../preview/file-place'
 import { OpenWithPick } from './OpenWithPick'
 
 const log = rendererLogger('app-slot/group')
 
-/** How an open came: the tab whose page asked (its 上一页), and what closing it hands back (a link's message). */
-type OpenFrom = { message?: MessageItem; restore?: () => void; returnTo?: string }
+/** How an open came: the tab whose page asked (its 上一页), and what closing it hands back (a link's message). `at`: the
+ *  place a link named, for the host's preview (an App that opens the file is told by main, `groupFileOpener`). */
+type OpenFrom = { message?: MessageItem; restore?: () => void; from?: string; intent?: TabOpenIntent; receipt?: ChatFileOpenReceipt; at?: FilePlace }
 
 /**
  * A file the person opened beside a chat (every way in ends here: the folder's list, a link, a card, 「用 X 打开」), kept
@@ -41,10 +45,11 @@ function noteOpened(itemId: string): void {
  * claims the file, the one kept for its kind (「始终用它」), or the person picks — and it opens as a tab beside the chat
  * (`openPanelItem`). The pick, an App's several files and a file that cannot open are said over the chat (`overlay`).
  */
-export function useChatOpener(chatId: string | null, onShow?: (chatId: string, tabId: string) => void, canTake?: () => boolean): { overlay: ReactNode; openWith: (detail: AppOpenWithDetail, returnTo?: string) => void } {
+export function useChatOpener(chatId: string | null, onShow?: (chatId: string, tabId: string) => void | Promise<void>, canTake?: () => boolean): { overlay: ReactNode; openWith: (detail: AppOpenWithDetail, from?: string) => void } {
   const { t } = useTranslation('messaging')
   const mobile = useMobileShell()
   const asking = useRef(0)
+  const receipts = useRef(new Set<ChatFileOpenReceipt>())
   const canTakeRef = useRef(canTake)
   canTakeRef.current = canTake
   const [prompt, setPrompt] = useState<(AppOpenWithDetail & OpenFrom) | null>(null)
@@ -58,36 +63,39 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
     setUnopened(null)
   }, [chatId])
 
-  const show = useCallback((target: string, item: PanelItem, from: OpenFrom) => {
+  const show = useCallback(async (target: string, item: PanelItem, from: OpenFrom) => {
     const shown = { ...item, ...(from.message ? { message: from.message } : {}) }
     // A pending message is not tab state: neither JSON nor structured-clone snapshots carry it.
     if (item.takeOpening) Object.defineProperty(shown, 'takeOpening', { get: () => item.takeOpening, enumerable: false })
-    const tabId = openPanelItem(target, shown, { ...(from.returnTo ? { returnTo: from.returnTo } : {}), ...(from.restore ? { restore: from.restore } : {}) })
-    if (tabId) onShow?.(target, tabId)
+    if (mobile) chatLayoutOf(target).setNarrow(true)
+    const tabId = openPanelItem(target, shown, { intent: from.intent ?? 'navigate', ...(from.from ? { from: from.from } : {}), ...(from.restore ? { restore: from.restore } : {}) })
+    if (!tabId) throw new Error('The file panel could not be opened')
+    await onShow?.(target, tabId)
     if (item.itemId) noteOpened(item.itemId)
-  }, [onShow])
+  }, [onShow, mobile])
 
   // The file asked last is the one opened: a pill clicked, then another (or a file in an App's list), before the first's
   // answer is back — whichever answer comes last, the chat ends on the later ask (#7257). Each ask takes the next number.
   const openResolved = useCallback(
-    (detail: AppOpenWithDetail, from: OpenFrom = {}) => {
-      if (detail.chatId !== chatId) return
+    async (detail: AppOpenWithDetail, from: OpenFrom = {}) => {
+      if (detail.chatId !== chatId) throw new Error('The file belongs to a different conversation')
+      from = { ...from, from: detail.from ?? from.from, intent: detail.intent ?? from.intent }
+      if (from.from && detail.viewState) chatPaneOf(detail.chatId, from.from)?.setPageViewState(from.from, detail.viewState)
       if (detail.choice.kind === 'none') {
-        if (isRenderableImage(detail.name, detail.file.contentType)) {
-          openAttachmentImage({ kind: 'item', itemId: detail.itemId, version: detail.file.version }, detail.name, from.message ? { chatId: from.message.chat_id, messageId: from.message.id } : { chatId: detail.chatId })
+        if (!from.from && isRenderableImage(detail.name, detail.file.contentType)) {
+          await openAttachmentImage({ kind: 'item', itemId: detail.itemId, version: detail.file.version }, detail.name, from.message ? { chatId: from.message.chat_id, messageId: from.message.id } : { chatId: detail.chatId })
           noteOpened(detail.itemId)
           return
         }
-        show(detail.chatId, { kind: null, file: detail.file, itemId: detail.itemId, title: detail.name, typedName: detail.typedName }, from)
-        return
+        if (from.at) tellFilePlace(detail.itemId, from.at)
+        return show(detail.chatId, { kind: null, file: detail.file, itemId: detail.itemId, title: detail.name, typedName: detail.typedName }, from)
       }
       if (detail.choice.kind === 'one') {
         const { candidate } = detail.choice
         let opening = detail.opening
         delete detail.opening
         const takeOpening = () => { const taken = opening; opening = undefined; return taken }
-        show(detail.chatId, { kind: candidate.tabKind, itemId: detail.itemId, title: displayNameOf(detail.name, candidate.suffix), fileName: detail.name, typedName: detail.typedName, takeOpening }, from)
-        return
+        return show(detail.chatId, { kind: candidate.tabKind, itemId: detail.itemId, title: displayNameOf(detail.name, candidate.suffix), fileName: detail.name, typedName: detail.typedName, takeOpening }, from)
       }
       setPrompt({ ...detail, ...from })
     },
@@ -98,31 +106,43 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
    * the chat shell, which brings that chat up and hands it to that chat (MainLayout).
    */
   const openWith = useCallback(
-    (detail: AppOpenWithDetail, returnTo?: string) => {
+    (detail: AppOpenWithDetail, from?: string) => {
       if (detail.chatId !== chatId) {
         window.dispatchEvent(new CustomEvent<AppOpenWithDetail>(APP_OPEN_WITH_EVENT, { detail }))
         return
       }
       asking.current += 1
-      openResolved(detail, returnTo ? { returnTo } : {})
+      void Promise.resolve(openResolved(detail, from ? { from } : {})).catch(error => setUnopened(String(error)))
     },
     [chatId, openResolved],
   )
   const openGroupFile = useCallback(
     async (itemId: string, at?: Record<string, string>, from: OpenFrom = {}) => {
-      if (!appsHere || !chatId) return
-      const asked = ++asking.current
-      // `at`: the App that opens it gets the place as a `link` event, from the host that resolves who opens it.
-      const result = await appsHere.groupFileOpener({ chatId, itemId, ...(at ? { at } : {}) })
-      if (asked !== asking.current) return
-      if (!result.success || !result.data) {
-        // Never empty: an empty reason would read as "nothing to say" and the line would not show.
-        setUnopened(result.error || 'no answer')
+      if (!appsHere || !chatId) {
+        from.receipt?.reject(new Error('The file opener is unavailable'))
+        if (from.receipt) receipts.current.delete(from.receipt)
         return
       }
+      const asked = ++asking.current
       setUnopened(null)
-      setAppFiles(null)
-      openResolved(result.data, from)
+      try {
+        // `at`: the App that opens it gets the place as a `link` event, from the host that resolves who opens it.
+        const result = await appsHere.groupFileOpener({ chatId, itemId, ...(at ? { at } : {}) })
+        if (asked !== asking.current) throw new Error('The file opening was superseded')
+        if (!result.success || !result.data) throw new Error(result.error || 'no answer')
+        setUnopened(null)
+        setAppFiles(null)
+        await openResolved(result.data, at ? { ...from, at } : from)
+        if (asked !== asking.current) throw new Error('The file opening was superseded')
+        from.receipt?.resolve()
+      } catch (error) {
+        // Links report failure to their caller; direct folder clicks retain the
+        // inline failure surface without producing a second notice.
+        if (asked === asking.current && !from.receipt) setUnopened(String(error) || 'no answer')
+        from.receipt?.reject(error)
+      } finally {
+        if (from.receipt) receipts.current.delete(from.receipt)
+      }
     },
     [chatId, openResolved],
   )
@@ -130,21 +150,28 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
   useEffect(() => {
     if (!chatId || !appsHere) return undefined
     let live = true
+    const pendingReceipts = receipts.current
     const take = () => {
       if (canTakeRef.current && !canTakeRef.current()) return
       const ask = takeChatAsk(chatId)
       if (!ask) return
+      for (const receipt of receipts.current) receipt.reject(new Error('The file opening was superseded'))
+      receipts.current.clear()
       // A page beside the chat asked: the tab on screen is the 上一页 of what it opens (owner 10-24).
-      const returnTo = 'fromPage' in ask ? shownPanelTab(chatId)?.tabId : undefined
+      const source = 'from' in ask ? ask.from : undefined
       if ('itemId' in ask) {
-        const from: OpenFrom = { ...(ask.message ? { message: ask.message } : {}), ...(ask.restore ? { restore: ask.restore } : {}), ...(returnTo ? { returnTo } : {}) }
+        if (ask.receipt) receipts.current.add(ask.receipt)
+        const from: OpenFrom = { ...(ask.message ? { message: ask.message } : {}), ...(ask.restore ? { restore: ask.restore } : {}), ...(source ? { from: source } : {}), ...(ask.receipt ? { receipt: ask.receipt } : {}) }
         // 「用 X 打开」 its host resolved already (who opens it, or among which to ask): opened as it said — a file of another
         // chat goes to the chat shell, which brings that chat up (MainLayout).
         if (ask.opener && ask.opener.chatId !== chatId) {
-          window.dispatchEvent(new CustomEvent<AppOpenWithDetail>(APP_OPEN_WITH_EVENT, { detail: ask.opener }))
+          if (ask.receipt) {
+            ask.receipt.reject(new Error('The file belongs to a different conversation'))
+            receipts.current.delete(ask.receipt)
+          } else window.dispatchEvent(new CustomEvent<AppOpenWithDetail>(APP_OPEN_WITH_EVENT, { detail: ask.opener }))
         } else if (ask.opener) {
           asking.current += 1
-          openResolved(ask.opener, from)
+          void Promise.resolve(openResolved(ask.opener, from)).then(() => ask.receipt?.resolve(), error => { if (!ask.receipt) setUnopened(String(error)); ask.receipt?.reject(error) }).finally(() => { if (ask.receipt) receipts.current.delete(ask.receipt) })
         } else void openGroupFile(ask.itemId, ask.at, from)
         return
       }
@@ -155,20 +182,26 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
       setUnopened(null)
       setAppFiles(null)
       if (ask.app === WORKSPACE_APP_ID) {
-        show(chatId, folderItem(), {})
+        void Promise.resolve(show(chatId, folderItem(), {})).catch(error => setUnopened(String(error)))
         return
       }
       const page = ask.tab ? installedExtensionsStore.allTabContributions.find((entry) => entry.kind === `${ask.app}.${ask.tab}`) : installedExtensionsStore.mainTabOf(ask.app)
-      const namesFile = !ask.tab && installedExtensionsStore.isEnabled(ask.app) && installedExtensionsStore.manifestFor(ask.app)?.contributes.tabs.some((tab) => tab.chatFile)
+      // A link naming the App's own page asks the same as its card's 「打开」: the file already open here is the tab shown, not a second one.
+      if (ask.tab && !page) {
+        setUnopened(`${installedExtensionsStore.appName(ask.app) ?? ask.app} has no page named ${ask.tab}`)
+        return
+      }
+      const main = installedExtensionsStore.mainTabOf(ask.app)
+      const namesFile = (!ask.tab || page?.kind === main?.kind) && installedExtensionsStore.isEnabled(ask.app) && installedExtensionsStore.manifestFor(ask.app)?.contributes.tabs.some((tab) => tab.chatFile)
       if (page?.enabled && !namesFile) {
-        show(chatId, { kind: page.kind, title: page.title }, {})
+        void Promise.resolve(show(chatId, { kind: page.kind, title: page.title }, {})).catch(error => setUnopened(String(error)))
         return
       }
       if (namesFile) {
         void appsHere!.appChatFile({ chatId, extensionId: ask.app }).then((result) => {
           if (!live || asked !== asking.current) return
           if (!result.success || !result.data) setUnopened(result.error || 'no answer')
-          else openResolved(result.data)
+          else void Promise.resolve(openResolved(result.data)).catch(error => setUnopened(String(error)))
         })
       } else {
         void appsHere!.groupFilesOpenedBy({ chatId, extensionId: ask.app }).then((result) => {
@@ -183,6 +216,9 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
     window.addEventListener(UI_EVENTS.chatAsked, take)
     return () => {
       live = false
+      ++asking.current
+      for (const receipt of pendingReceipts) receipt.reject(new Error('The file opener was closed'))
+      pendingReceipts.clear()
       window.removeEventListener(UI_EVENTS.chatAsked, take)
     }
   }, [chatId, openGroupFile, openResolved, show])
@@ -213,7 +249,7 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
           onCancel={() => setPrompt(null)}
           onPick={(candidate) => {
             setPrompt(null)
-            show(prompt.chatId, { kind: candidate.tabKind, itemId: prompt.itemId, title: displayNameOf(prompt.name, candidate.suffix), fileName: prompt.name, typedName: prompt.typedName }, prompt)
+            void Promise.resolve(show(prompt.chatId, { kind: candidate.tabKind, itemId: prompt.itemId, title: displayNameOf(prompt.name, candidate.suffix), fileName: prompt.name, typedName: prompt.typedName }, prompt)).catch(error => setUnopened(String(error)))
           }}
         />
       ) : null}

@@ -35,6 +35,7 @@ import { ChatRoot } from './ChatRoot';
 import type { ComposerPlacement, ComposerPlacementOptions, EngineControls } from './ChatRoot';
 import type { ChatCommands, ScrollToItemOptions } from './commands';
 import { createChatFind, type ChatFindStatus } from './find';
+import { ViewShownContext } from './view-visibility';
 import type { TranscriptTurn } from './model';
 import type { ChatState, ScrollMode } from './state/chat-state';
 
@@ -47,6 +48,8 @@ export type ChatViewOptions = {
   state: ChatState;
   /** DOM element to render the Solid root into. */
   parent: HTMLElement;
+  /** False for an off-screen retained view; its model and reserved heights are kept. */
+  shown?: boolean;
   /**
    * Whether to render an internal composer slot.
    * - `'slot'`: sticky bottom slot; internal ResizeObserver drives padBottom.
@@ -107,7 +110,11 @@ export type ChatView = {
    */
   readonly contentOverlay: HTMLElement | null;
   /** Replace command callbacks without remounting. */
+  /** Resume measurement from the latest model before showing a retained view. */
+  setShown(shown: boolean): void;
   setCommands(commands: ChatCommands): void;
+  /** Change user-message pinning without remounting the transcript. */
+  setPinUserMessages(enabled: boolean): void;
   /** Settle a host compositor ownership change before the browser can paint it. */
   reconcileNow?(): void;
   /** Scroll to the top of the transcript. */
@@ -122,7 +129,7 @@ export type ChatView = {
   /** Reveal a loaded item by identity, opening its process and positioning its readable row. */
   revealItem(id: string): boolean;
   /** Open the folds a loaded item sits in, without moving the reader. */
-  openItem(id: string): boolean;
+  openItem(id: string, opts?: { preserveActivity?: boolean }): boolean;
   /**
    * Prepend older history items without losing scroll position.
    * Pair with `onReachStart` for infinite-scroll pagination.
@@ -161,7 +168,7 @@ export type ChatView = {
   clearFind(): void;
   /**
    * Replace the ChatState this view renders without tearing down the Solid root
-   * (Monaco/CodeMirror model-swap pattern). Snapshots the outgoing model's
+   * (CodeMirror setState model-swap pattern). Snapshots the outgoing model's
    * heightmap into the old state, then loads the incoming model's ScrollMode
    * intent and projects it. Safe to call while the outgoing state is streaming.
    *
@@ -176,9 +183,11 @@ export type ChatView = {
  * Mount a chat transcript view into `parent` and return a ChatView handle.
  */
 export function createChatView(opts: ChatViewOptions): ChatView {
+  const [shown, setShownSignal] = createSignal(opts.shown ?? true);
   const [padTop, setPadTop] = createSignal(opts.padTop ?? 0);
   const [padBottom, setPadBottom] = createSignal(opts.padBottom ?? 0);
   const [commands, setCommandsSignal] = createSignal<ChatCommands>(opts.commands ?? {});
+  const [pinUserMessages, setPinUserMessages] = createSignal(!!opts.pinUserMessages);
   // Hold the active ChatState in a signal so view.setModel() can swap models
   // reactively without tearing down the Solid root. Use a function form of
   // setCurrentModel to prevent Solid from treating the ChatState as a factory.
@@ -216,9 +225,13 @@ export function createChatView(opts: ChatViewOptions): ChatView {
     get contentOverlay() {
       return controls.contentOverlay ?? null;
     },
+    setShown(value) {
+      setShownSignal(value);
+    },
     setCommands(c) {
       setCommandsSignal(c);
     },
+    setPinUserMessages,
     reconcileNow() {
       controls.reconcileNow?.();
     },
@@ -229,10 +242,11 @@ export function createChatView(opts: ChatViewOptions): ChatView {
       controls.scrollToBottom(o);
     },
     scrollToItem(id, o) {
+      chatFind.openItem(id);
       controls.scrollToItem(id, o);
     },
     revealItem: id => chatFind.revealItem(id),
-    openItem: id => chatFind.openItem(id),
+    openItem: (id, o) => chatFind.openItem(id, o),
     loadOlder(items) {
       controls.loadOlder(items);
     },
@@ -269,25 +283,27 @@ export function createChatView(opts: ChatViewOptions): ChatView {
 
   solidDispose = render(
     () => (
-      <ChatRoot
-        context={opts.context}
-        state={currentModel}
-        stickToBottom={opts.stickToBottom}
-        class={opts.class}
-        contentClass={opts.contentClass}
-        padTop={padTop}
-        padBottom={padBottom}
-        commands={commands}
-        onReachStart={onReachStart}
-        onAtBottomChange={onAtBottomChange}
-        onActiveUserMessageVisibilityChange={onActiveUserMessageVisibilityChange}
-        controls={controls}
-        pinUserMessages={opts.pinUserMessages}
-        composer={opts.composer}
-        composerPlacement={opts.composerPlacement}
-        contentOverlay={opts.contentOverlay}
-        embedded={opts.embedded}
-      />
+      <ViewShownContext.Provider value={shown}>
+        <ChatRoot
+          context={opts.context}
+          state={currentModel}
+          stickToBottom={opts.stickToBottom}
+          class={opts.class}
+          contentClass={opts.contentClass}
+          padTop={padTop}
+          padBottom={padBottom}
+          commands={commands}
+          onReachStart={onReachStart}
+          onAtBottomChange={onAtBottomChange}
+          onActiveUserMessageVisibilityChange={onActiveUserMessageVisibilityChange}
+          controls={controls}
+          pinUserMessages={pinUserMessages()}
+          composer={opts.composer}
+          composerPlacement={opts.composerPlacement}
+          contentOverlay={opts.contentOverlay}
+          embedded={opts.embedded}
+        />
+      </ViewShownContext.Provider>
     ),
     opts.parent
   );

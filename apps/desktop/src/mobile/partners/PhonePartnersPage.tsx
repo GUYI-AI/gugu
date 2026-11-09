@@ -6,6 +6,7 @@ import { Avatar } from '@/components/Avatar'
 import { NewFriendsPanel } from '@/components/NewFriendsPanel'
 import { ContactDetail } from '@/components/contacts/ContactDetail'
 import { AgentContactRow } from '@/components/contacts/AgentContactRow'
+import { useAgentRowActions } from '@/hooks/useAgentRowActions'
 import { peopleContacts } from '@/components/contacts/contactSelectors'
 import { GroupInviteJoinModal } from '@/components/contacts/GroupInvite'
 import { rowKeyActivate } from '@/components/contacts/contactsPanelStyles'
@@ -170,6 +171,7 @@ export function PhonePartnersPage({
   const shownProjects = projects.filter((project) => matchesQuery(project.name, query))
   const shownFriends = friends.filter((friend) => matchesQuery(displayName(friend), query))
   const shownGroupAgents = groupAgents.filter(agent => matchesQuery(displayName(agent), query))
+  const groupAgentActions = useAgentRowActions({ onSelect: (agent) => push({ kind: 'friend', contactId: agent.id }) })
   const searching = query.trim() !== ''
 
   const projectPage = (page: Extract<PartnersPage, { kind: 'project' }>) => {
@@ -236,7 +238,7 @@ export function PhonePartnersPage({
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden" data-testid="phone-partners">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col" style={top ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
         <Pane paneRole="nav" mobile className="gg-partners" data-phone-root-list="contacts">
-          <HeaderSearch mobile externalTrigger="contacts" active={active && !top} value={query} onChange={setQuery} placeholder={t('partners.search')} testId="phone-partners-search">
+          <HeaderSearch mobile active={active && !top} value={query} onChange={setQuery} placeholder={t('partners.search')} testId="phone-partners-search">
             {(searchButton) => (
               <PaneHeader mobile titleLevel="page" title={<span data-first-run-hint="collaboration" data-first-run-device="phone">{t('shell.partnersMobile')}</span>} leading={<PhoneMeButton user={user} onOpen={onOpenMe} />} actions={searchButton} />
             )}
@@ -270,8 +272,7 @@ export function PhonePartnersPage({
               })}
               {shownGroupAgents.length ? <SectionLabel>{t('partners.groupAgents', { count: shownGroupAgents.length })}</SectionLabel> : null}
               {shownGroupAgents.map(agent => (
-                <AgentContactRow key={agent.id} contact={agent} mobile selected={false} testId="phone-partners-group-agent"
-                  onSelect={() => push({ kind: 'friend', contactId: agent.id })} />
+                <AgentContactRow key={agent.id} contact={agent} mobile selected={false} testId="phone-partners-group-agent" actions={groupAgentActions} />
               ))}
               {searching && !shownProjects.length && !shownFriends.length && !shownGroupAgents.length ? <div className="gg-partners-empty">{t('partners.noResults')}</div> : null}
             </div>

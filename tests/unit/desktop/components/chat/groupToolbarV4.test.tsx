@@ -8,16 +8,20 @@ import zhMessaging from '../../../../../apps/desktop/src/i18n/locales/zh-CN/mess
 import { UI_EVENTS } from '../../../../../apps/desktop/src/lib/uiEvents'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatItem, GroupChatSettings, GroupCollabSnapshot } from '@gugu/core/shared/types/chat'
-import { chat as topicFixture, clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
+import { chat, clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
 import type { groupAgentStatusIndicatorProps } from '../../../../../apps/desktop/src/lib/groupAgentStatus'
 import { ChatHeaderActions } from '../../../../../apps/desktop/src/components/chat/ChatHeaderActions'
+
+/** Topic chatter: unread, none of it addressed to you. */
+const topicFixture = (patch: Partial<ChatItem>) => chat({ ...patch, unread_locator: { stream_id: 'main', stream_kind: 'main', thread_root_id: null, message_id: 'first', message_seq: 1,
+  unread_count: patch.unread_count ?? 0, addressed_count: 0, cursor_seq: 0, version: 1, is_marked_unread: false } })
 
 let harness: ReturnType<typeof createReactHarness>
 const pinChat = vi.fn(async () => {})
 const setChatNotificationLevel = vi.fn(async () => {})
 const onOpenInfo = vi.fn()
 const onCloseInfo = vi.fn()
-const onEnterSearchMode = vi.fn()
+const onSearch = vi.fn()
 const onOpenFolder = vi.fn()
 let headerWidth: number
 const resizeCallbacks = new Set<ResizeObserverCallback>()
@@ -53,9 +57,9 @@ async function header(kind: 'group' | 'topic' | 'dm', options: { mobile?: boolea
   const chat = { id: 'chat', kind, is_pinned: options.pinned ?? false, notification_level: options.muted ? 'none' : 'all' }
   const props = {
     isGroupChat: kind === 'group', isRoomChat: kind !== 'dm', mobile: options.mobile,
-    searchMode: false, folderShown: false, infoShown: options.infoShown ?? false, showHeaderMenu: options.menu ?? false,
+    infoShown: options.infoShown ?? false, showHeaderMenu: options.menu ?? false,
     room, moreButtonRef: createRef<HTMLButtonElement>(),
-    onEnterSearchMode, onOpenFolder, onCloseWorkspacePanel: vi.fn(), onOpenInfo, onCloseInfo,
+    onSearch, onOpenFolder, onOpenInfo, onCloseInfo,
     onToggleHeaderMenu: vi.fn(), onCloseHeaderMenu: vi.fn(),
   }
   await renderWithAppProviders(harness, createNode('div', { 'data-chat-area-header': '' }, createNode(ChatHeaderActions, props)), {
@@ -112,15 +116,25 @@ describe('final group toolbar v4', () => {
     expect(button('邀请')).toBeDefined()
     expect(button('应用')).toBeDefined()
     expect(button('在对话中搜索')).toBeUndefined()
-    expect(button('群文件夹')).toBeUndefined()
+    expect(button('文件')).toBeUndefined()
     expect(menuItem('搜索聊天记录')).toBeDefined()
-    expect(menuItem('群文件夹')).toBeDefined()
+    expect(menuItem('文件')).toBeDefined()
     expect(harness.container.querySelector('[data-agent-display-status="working"]')).toBeNull()
   })
 
-  it.each(['mobile', 'strip', 'width'] as const)('%s: keeps topics but moves invitation and Apps into More', async (reason) => {
+  it('mobile: no topics button, invitation and Apps are in More', async () => {
+    headerWidth = 900
+    await header('group', { menu: true, mobile: true })
+    expect(button('话题')).toBeUndefined()
+    expect(button('邀请')).toBeUndefined()
+    expect(button('应用')).toBeUndefined()
+    expect(menuItem('邀请')).toBeDefined()
+    expect(menuItem('应用')).toBeDefined()
+  })
+
+  it.each(['strip', 'width'] as const)('%s: keeps topics but moves invitation and Apps into More', async (reason) => {
     headerWidth = reason === 'width' ? 560 : 900
-    await header('group', { menu: true, mobile: reason === 'mobile', stripNarrow: reason === 'strip' })
+    await header('group', { menu: true, stripNarrow: reason === 'strip' })
     expect(button('话题')).toBeDefined()
     expect(button('邀请')).toBeUndefined()
     expect(button('应用')).toBeUndefined()
@@ -136,7 +150,7 @@ describe('final group toolbar v4', () => {
     expect(button('应用')).toBeDefined()
   })
 
-  it.each(['wide', 'strip', 'width', 'mobile'] as const)('%s: keeps the topic unread total and dropdown row counts consistent', async (mode) => {
+  it.each(['wide', 'strip', 'width'] as const)('%s: keeps the topic unread total and dropdown row counts consistent', async (mode) => {
     headerWidth = mode === 'width' ? 560 : 900
     const topics = [
       topicFixture({ id: 'live', kind: 'topic', source_chat_id: 'chat', unread_count: 4 }),
@@ -144,7 +158,7 @@ describe('final group toolbar v4', () => {
       topicFixture({ id: 'archived', kind: 'topic', source_chat_id: 'chat', unread_count: 70, status: 'archived' }),
       topicFixture({ id: 'elsewhere', kind: 'topic', source_chat_id: 'another-group', unread_count: 90 }),
     ]
-    await header('group', { topics, stripNarrow: mode === 'strip', mobile: mode === 'mobile' })
+    await header('group', { topics, stripNarrow: mode === 'strip' })
     const trigger = button('话题')!
     expect(trigger.querySelector('.gg-chip')?.textContent).toBe('4')
     await clickElement(trigger)
@@ -189,7 +203,8 @@ describe('final group toolbar v4', () => {
     expect(setChatNotificationLevel).toHaveBeenCalledWith('chat', 'none')
     expect(document.querySelector('[data-testid="group-header-menu"]')).not.toBeNull()
     if (kind === 'dm') {
-      await clickElement(button('文件夹')!)
+      expect(button('文件'), 'a private chat has no header folder button, like a group').toBeUndefined()
+      await clickElement(menuItem('文件')!)
       expect(onOpenFolder).toHaveBeenCalledOnce()
     }
   })
@@ -200,7 +215,7 @@ describe('final group toolbar v4', () => {
     expect(search.getAttribute('role')).toBe('menuitem')
     expect(search.textContent).toContain('⌘F')
     await clickElement(search)
-    expect(onEnterSearchMode).toHaveBeenCalledOnce()
+    expect(onSearch).toHaveBeenCalledOnce()
   })
 
   it.each(['Enter', ' '])('keyboard %j exposes checked state and toggles existing pin/mute state off', async (key) => {

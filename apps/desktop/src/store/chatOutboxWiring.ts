@@ -4,6 +4,7 @@ import { commitAttachment, forwardAttachment, shareAttachment, type CommitArgs }
 import { messageItemFromRow } from '@gugu/core/cloud/messageItem'
 import { attachmentsEndpoint, prepareChatAttachment, type PreparedChatAttachment } from '../lib/attachmentsEndpoint'
 import { parseComposerCard } from '@gugu/core/shared/ui/taskCardModels'
+import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
 import { topicService, type CreateTopicInput, type CreatedTopic } from '../lib/topics'
 // @@@send-outbox (#1762 洞③/#1941) — outbox 与 chat store 的接线层(卫星,参照 chatRealtimeMutations
 // 的 mutators-bag 抽法):乐观行构造、状态迁移落 UI、送达连带动作(水位/预览/agent 运行态点亮)、
@@ -28,11 +29,13 @@ import {
   type OutboxRecord,
   type OutboxOperation,
 } from '../lib/imRepository'
-import { advanceReadWatermark, applyThreadSnapshot } from './chatRealtimeMutations'
+import { advanceReadWatermark, applyThreadSnapshot, type PatchChat } from './chatRealtimeMutations'
 import { createChatOutbox, type ChatOutbox } from './chatOutbox'
 import { i18n } from '@/i18n'
+import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
 import { rendererLogger } from '@/lib/log'
 import { chatSendTimings, finishChatSendTiming } from '../lib/chatSendTiming'
+import { messageFailureNotice } from '../lib/messageFailureNotice'
 
 export interface OutboxWiringIo {
   observeMessage?: (senderId: string, chatId: string) => ObserveAttachmentMessage
@@ -44,7 +47,7 @@ export interface OutboxWiringIo {
   activeThreadRootId(chatId?: string): string | null
   setMessagesAndCache(updater: (prev: MessageItem[]) => MessageItem[], chatId: string): void
   setThreadMessages: (updater: SetStateAction<MessageItem[]>, chatId: string) => void
-  patchChat(chatId: string, partial: Partial<ChatItem>): void
+  patchChat: PatchChat
   toast(message: string, type?: ToastType): void
   /** @@@4439 — store 的权威单行摄入 chokepoint(store/chat.tsx appendMessage):按 id 归并主线窗口,
    *  并在权威 seq 越过窗口旧尾时异步重验证被跳过的区间(交错入站行不得沉到增量游标下方)。 */
@@ -55,7 +58,7 @@ export interface OutboxWiring {
   outbox: ChatOutbox
   stageAttachment(message: MessageItem, dependsOn?: string): Promise<void>
   commitAttachment(message: MessageItem, prepared: PreparedChatAttachment, commit: Omit<CommitArgs, 'staging_key'>, timing?: AttachmentSendTiming, dependsOn?: string): Promise<void>
-  forward(source: MessageItem | AppForwardFilesDetail['files'][number], targetChatId: string, senderUserId: string): Promise<void>
+  forward(source: MessageItem | Extract<AppForwardFilesDetail, { files: unknown }>['files'][number], targetChatId: string, senderUserId: string): Promise<void>
   createTopic(input: CreateTopicInput, senderUserId: string): Promise<CreatedTopic | null>
   dispose(): void
   /** sendMessage 入队入口:建持久化记录并入队(乐观行由 chat.tsx 先行插入,二者同 id)。 */
@@ -98,6 +101,23 @@ export function bindOutboxActions(
     },
     retrySend: (id) => { ref.current?.retrySend(id) },
     discardSend: (id) => { ref.current?.discardSend(id) },
+  }
+}
+
+/** Every forward comes through here: a file kept on a machine has no cloud object to refer to, so what it holds goes instead. */
+export function forwardingDeviceFiles<Actions extends Pick<ChatContextValue, 'forwardMessage'>>(
+  actions: Actions, sendAttachments: (chatId: string, files: File[], opts?: { caption?: string }) => Promise<unknown>,
+): Actions {
+  return {
+    ...actions,
+    forwardMessage: async (source, targetChatId) => {
+      const { deviceFileCopy } = await import('../lib/forwardDeviceFile')
+      const copy = await deviceFileCopy(source)
+      if (!copy) return actions.forwardMessage(source, targetChatId)
+      // A message holds one file; its caption goes with the copy, as it does with a forward by reference.
+      const caption = 'itemId' in source ? undefined : parseAttachmentContent(source.content)?.caption
+      await sendAttachments(targetChatId, [copy], caption ? { caption } : undefined)
+    },
   }
 }
 
@@ -161,6 +181,19 @@ export async function resolveOutboxRecipients(
 
 export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
   let active = true
+  const failures = new Map<string, ReturnType<typeof messageFailureNotice>>()
+  function failureFor(record: OutboxRecord) {
+    let notice = failures.get(record.clientMessageId)
+    if (!notice) {
+      notice = messageFailureNotice(['im', record.senderUserId, record.chatId, record.clientMessageId])
+      failures.set(record.clientMessageId, notice)
+    }
+    return notice
+  }
+  function settleFailure(record: OutboxRecord) {
+    failures.get(record.clientMessageId)?.discard()
+    failures.delete(record.clientMessageId)
+  }
   // Bytes never enter persistence. An interrupted native publication requires a fresh selection.
   const attachmentTimings = new Map<string, AttachmentSendTiming>()
   const nativeCommits = new Map<string, () => Promise<MessageItem | undefined>>()
@@ -187,11 +220,17 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
       const onScreen = record.payload.threadRootId
         ? io.activeChatId() === record.chatId && io.activeThreadRootId() === record.payload.threadRootId
         : io.activeChatId() === record.chatId
-      if (!onScreen) io.toast(i18n.t('outbox.offscreenFailure', { ns: 'messaging' }), 'error')
+      if (!onScreen) {
+        const chat = io.chats().find((item) => item.id === record.chatId)
+        const name = chat && chatDisplayName(chat, chat.peer_user_id ? io.identity(chat.peer_user_id)?.display_name : null)
+        const chatName = name || i18n.t('outbox.chatById', { ns: 'messaging', id: record.chatId })
+        failureFor(record).begin().failed({ title: i18n.t('outbox.offscreenFailure', { ns: 'messaging', chatName }), tier: 'error' })
+      }
     }
   }
 
   function removeRow(record: OutboxRecord): void {
+    settleFailure(record)
     beforeDeliverHooks.delete(record.clientMessageId)
     nativeCommits.delete(record.clientMessageId)
     attachmentTimings.delete(record.clientMessageId)
@@ -208,6 +247,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
   // ❌ 这里不点亮 agent 运行态:「我发出去了」不是「它在跑」的证据(那是猜,而且猜早了 400ms);
   // 运行态只由跑这个 agent 的宿主宣布,见 spec agent-status。
   async function handleSent(record: OutboxRecord, persisted: MessageItem): Promise<void> {
+    settleFailure(record)
     beforeDeliverHooks.delete(record.clientMessageId)
     nativeCommits.delete(record.clientMessageId)
     if (record.operation?.kind !== 'nativeAttachment') attachmentTimings.get(record.clientMessageId)?.finish('success', 'outbox')
@@ -236,7 +276,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
     }
     io.patchChat(chatId, {
       last_message_preview: record.payload.content.slice(0, 100),
-      last_message_failure: null,
+      last_message_notice: null,
       last_message_at: new Date().toISOString(),
     })
   }
@@ -426,6 +466,8 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
     },
     dispose() {
       active = false
+      for (const failure of failures.values()) failure.discard()
+      failures.clear()
       beforeDeliverHooks.clear()
       nativeCommits.clear()
       attachmentTimings.clear()

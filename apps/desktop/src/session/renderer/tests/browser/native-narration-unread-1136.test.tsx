@@ -16,6 +16,30 @@ vi.mock('@/platform', () => ({ platform: { kind: 'electron' } }));
 
 let cleanup: (() => void) | undefined;
 afterEach(() => { cleanup?.(); removeDeviceSessions('host'); rpc.visible.mockReset(); });
+
+it('acknowledges a closed visible activity through its original ids without opening its bubbles or reading a hidden page', async () => {
+  const context = createChatContext({ locale: () => 'en-US',
+    actor: address => address === 'user:11111111-1111-4111-8111-111111111111' ? { id: address, name: 'Peer', type: 'agent' } : null });
+  const state = createChatState(context);
+  const incoming = (n: number): TranscriptTurn => ({ id: `a${n}`, seq: n, initiator: 'agent', outcome: { kind: 'done' }, items: [
+    { kind: 'message', id: `incoming${n}`, seq: 0, role: 'user', text: `<gugu_delivery route="chat" from="Peer" from_id="user:11111111-1111-4111-8111-111111111111" from_type="agent" chat="group" msg="msg:${n}"><![CDATA[Agent update ${n}]]></gugu_delivery>` },
+  ] });
+  state.transcript.history.seed([incoming(1), incoming(2)]);
+  const harness = createReactHarness();
+  harness.container.style.cssText = 'position:fixed;inset:0;width:390px;height:700px;display:flex';
+  cleanup = () => { harness.cleanup(); state.dispose(); context.dispose(); };
+  const visible = vi.fn();
+  const reader = (shown: boolean) => <AgentConversationView context={context} state={state} shown={shown}
+    style={{ position: 'absolute', inset: 0 }} onVisibleItems={visible} />;
+  await loadChatUi();
+  await harness.render(reader(false));
+  await until('closed semantic header mounts', () => !!harness.container.querySelector('[data-agent-activity]'));
+  expect(visible).not.toHaveBeenCalled();
+  await harness.render(reader(true));
+  await until('semantic row acknowledges its two original messages', () => visible.mock.calls.some(([ids]) => ids.includes('incoming1') && ids.includes('incoming2')));
+  expect(harness.container.querySelector('[data-agent-conversation-message="incoming1"]')).toBeNull();
+  expect(harness.container.querySelector('[data-agent-activity]')?.getAttribute('data-expanded')).toBe('false');
+});
 const id = (index: number) => `s:turn:s1:message:msg_reply_${index}`;
 function fixture(count = 1) {
   const context = createChatContext({ locale: () => 'en-US' });
@@ -61,10 +85,24 @@ it('does not report narration clipped by the process viewport until that row is 
   state.viewState.setCollapsed('t:process', true);
   const visible = new Set<string>();
   let view!: ChatView;
+  const onReady = (ready: ChatView) => { view = ready; };
+  const onVisibleItems = (ids: readonly string[]) => ids.forEach(id => visible.add(id));
+  const reader = (shown: boolean) => <AgentConversationView context={context} state={state} shown={shown} style={{ position: 'absolute', inset: 0 }} onReady={onReady} onVisibleItems={onVisibleItems} />;
   await loadChatUi();
-  await harness.render(<AgentConversationView context={context} state={state} shown style={{ position: 'absolute', inset: 0 }} onReady={ready => { view = ready; }} onVisibleItems={ids => ids.forEach(id => visible.add(id))} />);
+  // Position the retained reader before enabling acknowledgements: the initial
+  // page can genuinely expose row 0 while the fixture waits for mounting.
+  await harness.render(reader(false));
   await until('the process viewport mounts', () => !!view && !!harness.container.querySelector('[data-slot="conversation-process-steps"]'));
   await act(async () => { view.scrollToItem(id(23), { align: 'end' }); });
+  await until('the first narration is clipped and the last narration is readable', () => {
+    const process = harness.container.querySelector('[data-slot="conversation-process-steps"]')?.getBoundingClientRect();
+    const first = harness.container.querySelector(`[data-agent-conversation-message="${id(0)}"]`)?.getBoundingClientRect();
+    const last = harness.container.querySelector(`[data-agent-conversation-message="${id(23)}"]`)?.getBoundingClientRect();
+    return !!process && !!last && last.height > 0 && last.bottom <= process.bottom && last.top >= process.top
+      && (!first || first.bottom <= process.top);
+  });
+  expect(visible.size).toBe(0);
+  await harness.render(reader(true));
   await until('a visible narration confirms the observer ran', () => visible.has(id(23)));
   expect(visible.has(id(0))).toBe(false);
   await act(async () => { view.scrollToItem(id(0), { align: 'start' }); });

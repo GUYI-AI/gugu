@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@codemirror/autocomplete@6.20.3':
+    hash: 6b12381eb752177e9c2c9f925e46782992df6e2ef30c36897449b9ada8ddbe67
+    path: patches/@codemirror__autocomplete@6.20.3.patch
   '@codemirror/view@6.43.13':
     hash: dd3bfd9ff09b760f91afc5dcbaf687a698969fce559e284e8c4eddd68df6d2e3
     path: patches/@codemirror__view@6.43.13.patch
@@ -17,6 +20,9 @@ patchedDependencies:
   app-builder-lib@26.15.3:
     hash: 764d9752ffc06c13c1092d88c78d1cc3b73f0c6c65e2268a9b49c5f4f6d6216a
     path: patches/app-builder-lib@26.15.3.patch
+  prebuild-install@7.1.3:
+    hash: 847a4bada3fc563d19009fadc7593f2f96d61939faa2e7af5618b7e6993e33ed
+    path: patches/prebuild-install@7.1.3.patch
   ssh2@1.17.0:
     hash: 67782042fc6b5f59e858c08a51d65bc9834be54fd0a06dbfe7212c43159d5d82
     path: patches/ssh2@1.17.0.patch
@@ -151,7 +157,7 @@ importers:
         version: 8.3.1(@capacitor/core@8.3.3)
       '@codemirror/autocomplete':
         specifier: 6.20.3
-        version: 6.20.3
+        version: 6.20.3(patch_hash=6b12381eb752177e9c2c9f925e46782992df6e2ef30c36897449b9ada8ddbe67)
       '@codemirror/commands':
         specifier: 6.10.3
         version: 6.10.3
@@ -494,9 +500,6 @@ importers:
       mobx-react-lite:
         specifier: ^4.1.1
         version: 4.1.1(mobx@6.16.1)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      monaco-editor:
-        specifier: ^0.55.1
-        version: 0.55.1
       nbranch:
         specifier: ^0.1.1
         version: 0.1.1
@@ -7555,9 +7558,6 @@ packages:
     resolution: {integrity: sha512-cgwlv/1iFQiFnU96XXgROh8xTeetsnJiDsTc7TYCLFd9+/WNkIqPTxiM/8pSd8VIrhXGTf1Ny1q1hquVqDJB5w==}
     engines: {node: '>= 4'}
 
-  dompurify@3.2.7:
-    resolution: {integrity: sha512-WhL/YuveyGXJaerVlMYGWhvQswa7myDG17P7Vu65EWC05o8vfeNbvNf4d/BOvH99+ZW+LlQsc1GDKMa1vNK6dw==}
-
   dompurify@3.4.10:
     resolution: {integrity: sha512-0xzNv0e7oYC6yyuOGZIABPM4qtg3QxLFniDNPP4ZP90wR8Yq3zgwpRbrNiT4N3IKqDbbYFEJLV+JWEs19aZ//w==}
 
@@ -9486,11 +9486,6 @@ packages:
     peerDependencies:
       marked: '>=15.0.0'
 
-  marked@14.0.0:
-    resolution: {integrity: sha512-uIj4+faQ+MgHgwUW1l2PsPglZLOLOT1uErt06dAPtx2kjteLAkbsd/0FiYg/MGS+i7ZKLb7w2WClxHkzOOuryQ==}
-    engines: {node: '>= 18'}
-    hasBin: true
-
   marked@16.4.2:
     resolution: {integrity: sha512-TI3V8YYWvkVf3KJe1dRkpnjs68JUPyEa5vjKrp1XEEJUAOaQc+Qj+L1qWbPd0SJuAdQkFU0h73sXXqwDYxsiDA==}
     engines: {node: '>= 20'}
@@ -9870,9 +9865,6 @@ packages:
 
   modern-ahocorasick@1.1.0:
     resolution: {integrity: sha512-sEKPVl2rM+MNVkGQt3ChdmD8YsigmXdn5NifZn6jiwn9LRJpWm8F3guhaqrJT/JOat6pwpbXEk6kv+b9DMIjsQ==}
-
-  monaco-editor@0.55.1:
-    resolution: {integrity: sha512-jz4x+TJNFHwHtwuV9vA9rMujcZRb0CEilTEwG2rRSpe/A7Jdkuj8xPKttCgOh+v/lkHy7HsZ64oj+q3xoAFl9A==}
 
   motion-dom@12.43.0:
     resolution: {integrity: sha512-azKON4d9S65PEoFUiQTMTgPheEmzf2QngdRc50AKfJp9Q9mmcBVw22c8eMq9k8kxOFHdL7+WZY7N/5F/lwiDag==}
@@ -13203,7 +13195,7 @@ snapshots:
 
   '@chevrotain/types@11.1.2': {}
 
-  '@codemirror/autocomplete@6.20.3':
+  '@codemirror/autocomplete@6.20.3(patch_hash=6b12381eb752177e9c2c9f925e46782992df6e2ef30c36897449b9ada8ddbe67)':
     dependencies:
       '@codemirror/language': 6.12.3
       '@codemirror/state': 6.7.6
@@ -13219,7 +13211,7 @@ snapshots:
 
   '@codemirror/lang-css@6.3.1':
     dependencies:
-      '@codemirror/autocomplete': 6.20.3
+      '@codemirror/autocomplete': 6.20.3(patch_hash=6b12381eb752177e9c2c9f925e46782992df6e2ef30c36897449b9ada8ddbe67)
       '@codemirror/language': 6.12.3
       '@codemirror/state': 6.7.6
       '@lezer/common': 1.5.2
@@ -13227,7 +13219,7 @@ snapshots:
 
   '@codemirror/lang-html@6.4.12':
     dependencies:
-      '@codemirror/autocomplete': 6.20.3
+      '@codemirror/autocomplete': 6.20.3(patch_hash=6b12381eb752177e9c2c9f925e46782992df6e2ef30c36897449b9ada8ddbe67)
       '@codemirror/lang-css': 6.3.1
       '@codemirror/lang-javascript': 6.2.5
       '@codemirror/language': 6.12.3
@@ -13239,7 +13231,7 @@ snapshots:
 
   '@codemirror/lang-javascript@6.2.5':
     dependencies:
-      '@codemirror/autocomplete': 6.20.3
+      '@codemirror/autocomplete': 6.20.3(patch_hash=6b12381eb752177e9c2c9f925e46782992df6e2ef30c36897449b9ada8ddbe67)
       '@codemirror/language': 6.12.3
       '@codemirror/lint': 6.9.7
       '@codemirror/state': 6.7.6
@@ -13254,7 +13246,7 @@ snapshots:
 
   '@codemirror/lang-markdown@6.5.2':
     dependencies:
-      '@codemirror/autocomplete': 6.20.3
+      '@codemirror/autocomplete': 6.20.3(patch_hash=6b12381eb752177e9c2c9f925e46782992df6e2ef30c36897449b9ada8ddbe67)
       '@codemirror/lang-html': 6.4.12
       '@codemirror/language': 6.12.3
       '@codemirror/state': 6.7.6
@@ -13272,7 +13264,7 @@ snapshots:
 
   '@codemirror/lang-sql@6.10.0':
     dependencies:
-      '@codemirror/autocomplete': 6.20.3
+      '@codemirror/autocomplete': 6.20.3(patch_hash=6b12381eb752177e9c2c9f925e46782992df6e2ef30c36897449b9ada8ddbe67)
       '@codemirror/language': 6.12.3
       '@codemirror/state': 6.7.6
       '@lezer/common': 1.5.2
@@ -18465,7 +18457,7 @@ snapshots:
   better-sqlite3@12.11.1:
     dependencies:
       bindings: 1.5.0
-      prebuild-install: 7.1.3
+      prebuild-install: 7.1.3(patch_hash=847a4bada3fc563d19009fadc7593f2f96d61939faa2e7af5618b7e6993e33ed)
 
   bidi-js@1.0.3:
     dependencies:
@@ -18810,7 +18802,7 @@ snapshots:
 
   codemirror@6.0.2:
     dependencies:
-      '@codemirror/autocomplete': 6.20.3
+      '@codemirror/autocomplete': 6.20.3(patch_hash=6b12381eb752177e9c2c9f925e46782992df6e2ef30c36897449b9ada8ddbe67)
       '@codemirror/commands': 6.10.3
       '@codemirror/language': 6.12.3
       '@codemirror/lint': 6.9.7
@@ -19339,10 +19331,6 @@ snapshots:
   domhandler@5.0.3:
     dependencies:
       domelementtype: 2.3.0
-
-  dompurify@3.2.7:
-    optionalDependencies:
-      '@types/trusted-types': 2.0.7
 
   dompurify@3.4.10:
     optionalDependencies:
@@ -21676,8 +21664,6 @@ snapshots:
     dependencies:
       marked: 18.0.11
 
-  marked@14.0.0: {}
-
   marked@16.4.2: {}
 
   marked@18.0.11: {}
@@ -22283,11 +22269,6 @@ snapshots:
   mobx@6.16.1: {}
 
   modern-ahocorasick@1.1.0: {}
-
-  monaco-editor@0.55.1:
-    dependencies:
-      dompurify: 3.2.7
-      marked: 14.0.0
 
   motion-dom@12.43.0:
     dependencies:
@@ -22920,7 +22901,7 @@ snapshots:
     dependencies:
       xtend: 4.0.2
 
-  prebuild-install@7.1.3:
+  prebuild-install@7.1.3(patch_hash=847a4bada3fc563d19009fadc7593f2f96d61939faa2e7af5618b7e6993e33ed):
     dependencies:
       detect-libc: 2.1.2
       expand-template: 2.0.3

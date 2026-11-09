@@ -34,7 +34,6 @@ import type {
 } from '@shared/core/sessions/create-session';
 import type { SessionViewSnapshot } from '@shared/view-state';
 import { SessionCreationFailedError, type SessionFailure } from './session-failure';
-import { describeSessionFailure } from './session-failure-message';
 
 export { SessionCreationFailedError };
 import {
@@ -349,7 +348,7 @@ export class ProjectSessionsStore {
     return this._loadPromise;
   }
 
-  async createSession(params: CreateSessionParams, options?: { deferFirstTurn?: boolean }) {
+  async createSession(params: CreateSessionParams, options?: { deferFirstTurn?: boolean; onOptimistic?: () => void }) {
     const ic = params.sessionConfig.initialSession;
     if (!ic) throw new Error('createSession: a session is created together with its initial agent config');
     const id = ic.id;
@@ -393,8 +392,20 @@ export class ProjectSessionsStore {
       terminalRegistry.acquire(id, this.projectId);
     });
 
-    const result = await rpc.sessionCreate
-      .createSession(JSON.parse(JSON.stringify(toJS(params))) as typeof params)
+    const pending = this._completeCreateSession(params, optimistic, options);
+    this._provisionPromises.set(id, pending);
+    try {
+      options?.onOptimistic?.();
+      await pending;
+    } finally {
+      if (this._provisionPromises.get(id) === pending) this._provisionPromises.delete(id);
+    }
+  }
+
+  private async _completeCreateSession(params: CreateSessionParams, optimistic: Session, options?: { deferFirstTurn?: boolean }) {
+    const id = optimistic.id;
+    const outcome = await rpc.sessionCreate
+      .createAndProvisionSession(JSON.parse(JSON.stringify(toJS(params))) as typeof params, options?.deferFirstTurn ? { deferFirstTurn: true } : undefined)
       .catch((e: unknown) => {
         // 抛出来的是未知错误：原文逐字存进 store，渲染时原样呈现、永不翻译。
         const message = e instanceof Error ? e.message : String(e);
@@ -411,15 +422,15 @@ export class ProjectSessionsStore {
         throw e;
       });
 
-    if (!result.success) {
+    if (outcome.stage === 'create') {
+      const result = outcome.result;
       const failure = createSessionFailure(result.error);
       // @@@5173 引擎不可用 ⇒ 库里根本没建出这条会话(createSession 的前置检查在事务之前就返回了)。
       // 其余失败留一条 create-error 行,是为了让用户在侧栏看见原因;这一种**没有行可留** ——
       // 留下来的那条转不完的空行,恰恰就是本 issue 要消灭的「还得用户自己去删的东西」。
-      // 所以它改从右下角的瞬时通知说(owner 定),走的是「脚本失败」同一条 toast 通道:
-      // 这一轮什么都没落库,用户看完这句话就该接着用 composer 里那段还在的正文重试。
+      // The creation callback owns the shared notice and retained draft. The store only returns
+      // the typed failure; emitting another toast here duplicates the same catalog problem.
       if (result.error.type === 'harness-unavailable') {
-        toast.error(describeSessionFailure(failure, translateSessionMessage));
         this._removeSessionLocally(id);
         throw new SessionCreationFailedError(result.error.type, failure);
       }
@@ -446,10 +457,17 @@ export class ProjectSessionsStore {
 
     this._settingsStore.pageData.invalidate();
 
-    await this.provisionSession(id, options);
+    // The host already prepared the workspace in the same call; its answer goes through the one provision path.
+    await this._doProvision(id, options, async () => {
+      if (outcome.stage === 'provision-error') throw new Error(outcome.message);
+      return outcome.result;
+    });
   }
 
   async provisionSession(sessionId: string, options?: { deferFirstTurn?: boolean }): Promise<void> {
+    // An open of a task still being created or prepared joins that one host operation before any device read.
+    const inFlight = this._provisionPromises.get(sessionId);
+    if (inFlight) return inFlight;
     try {
       await getProjectManagerStore().mountProject(this.projectId);
       await this.loadSessions();
@@ -458,9 +476,6 @@ export class ProjectSessionsStore {
       this.markProvisionFailed(sessionId, error);
       throw error;
     }
-
-    const inFlight = this._provisionPromises.get(sessionId);
-    if (inFlight) return inFlight;
 
     const session = this.sessions.get(sessionId);
     if (!session || !isUnprovisioned(session)) return;
@@ -477,7 +492,8 @@ export class ProjectSessionsStore {
     return promise;
   }
 
-  private async _doProvision(sessionId: string, options?: { deferFirstTurn?: boolean }): Promise<void> {
+  private async _doProvision(sessionId: string, options?: { deferFirstTurn?: boolean },
+    provision = () => rpc.sessionCreate.provisionWorkspace(sessionId, options)): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session || !isUnprovisioned(session)) return;
 
@@ -487,7 +503,7 @@ export class ProjectSessionsStore {
     if (wsId) workspaceRegistry.setBootstrapState(this.projectId, wsId, { kind: 'resolving' });
     let result: Awaited<ReturnType<typeof rpc.sessionCreate.provisionWorkspace>>;
     try {
-      result = await rpc.sessionCreate.provisionWorkspace(sessionId, options);
+      result = await provision();
     } catch (error) {
       // #6264 这一问没答回来(别的机器上的会话:连接此刻断了 / 连不上)。❌ 停在「正在准备文件…」一直转:
       // 落成失败态,界面给「重试」,话是连接那一层给的人话(「此刻连不上 Linux 2」)。

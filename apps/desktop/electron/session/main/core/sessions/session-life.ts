@@ -4,12 +4,14 @@ import { isSqliteBusy } from '@gugu/core/shared/sqliteBusy';
 import { toSerializedError } from '@gugu/session-shared/result';
 import type {
   Attempt, AuthEpoch, Effect, Event, Gen, Hold, InterruptEvent, Life,
-  PendingView, RunStageEffect, Seq, SerializedError, StageResult,
+  PendingView, Receipt, RunStageEffect, Seq, SerializedError, StageResult,
 } from '@gugu/core/local/session-life/types';
+import type { Logger } from '@gugu/session-shared/logger';
 import type { LifeStatus, LifeView } from '@shared/core/sessions/session-life';
 import type { LegAdapter, PendingRow } from './session-life-adapter';
 import type { EnqueuePending } from './session-pending';
 import { LifeEvents, UncommittedLifeEvent } from './session-life-events';
+import type { NativeInputEvidence, NativeInputLookup } from '@gugu/core/local/agent/deliveryIdentity';
 
 export interface LifeStore {
   read(sessionId: string): { archived: boolean; hold: Hold | null };
@@ -38,13 +40,17 @@ export interface SessionLifePorts {
   /** Every open side chat, entered (sent to) or not. */
   allForks(): readonly string[];
   parentOf(sessionId: string): string | null;
-  /** Hydrate only: the session's canonical binding names exactly this account (unknown owner = false). */
+  /** Hydrate and receipt recovery require the canonical binding to name this account (unknown owner = false). */
   ownedBy(sessionId: string, userId: string): Promise<boolean>;
   markRead(row: PendingRow): Promise<void>;
   reportFailure(rows: readonly PendingRow[], cause: SerializedError): Promise<void>;
+  /** A bounded native-source lookup, shared across one reconciliation pass. It never starts an executor. */
+  nativeInputs?(sessionId: string): NativeInputLookup;
   publish(view: LifeView): void;
   removed(sessionId: string): void;
   failed(sessionId: string, error: unknown): void;
+  /** Row receipts and lifecycle transitions, one line each, so a message's fate can be read from the host log. */
+  logger: Pick<Logger, 'info'>;
   now(): number;
 }
 
@@ -58,10 +64,15 @@ interface Run {
 interface Entry {
   events: LifeEvents;
   life: Life;
-  /** The current attempt was started by a reconfigure (its LifeView reports preserved/replaced). */
+  /**
+   * The current attempt was started by a reconfigure and no turn has gone out on it yet: its LifeView reports
+   * preserved/replaced. It is news about the gap before the next turn; the next dispatch retires it.
+   */
   reconfigured: boolean;
   attempt: number;
   version: number;
+  /** Invalidates in-flight recovery intents even when an interrupt returns to the same state. */
+  recoveryEpoch: number;
   since: number;
   run: Run | null;
   /** IO ownership only. Life, not this promise, answers whether a session can accept a message. */
@@ -77,6 +88,13 @@ function terminal(life: Life): boolean { return life.kind === 'dormant' || life.
 function discardable(row: PendingRow): boolean {
   return row.kind === 'ordinary' && row.turn.kind === 'prompt';
 }
+/**
+ * A failed or unknown row is settled: nothing sends it again and its source already heard the outcome. A person may resend
+ * it or let it go. Inbox batches stay out (their sources were told it failed); a first turn stays out (the run needs it).
+ */
+function settledByHand(row: PendingRow): boolean {
+  return (row.state === 'failed' || row.state === 'unknown') && row.kind !== 'inbox-batch' && row.turn.kind === 'prompt';
+}
 
 /**
  * The sole session lifecycle owner. Decisions and receipt/hold commits are synchronous;
@@ -86,6 +104,8 @@ export class SessionLife {
   private readonly entries = new Map<string, Entry>();
   /** IO of a removed entry still running: a new entry of the same id starts behind it. */
   private readonly draining = new Map<string, Promise<void>>();
+  private readonly reconciling = new Map<string, Promise<void>>();
+  private readonly reconcileAgain = new Set<string>();
   private epoch = 0;
   private account: string | null = null;
   /** The last queued auth transition; null = idle. The only fact saying whether a transition is in progress. */
@@ -101,7 +121,7 @@ export class SessionLife {
     const entry: Entry = { events: new LifeEvents(event => this.apply(sessionId, entry, event),
       () => this.entries.get(sessionId) === entry, error => this.ports.failed(sessionId, error)),
       life: hydrateLife(this.ports.store(sessionId).read(sessionId)), reconfigured: false, attempt: 0,
-      version: 0, since: this.ports.now(), run: null, effects: this.draining.get(sessionId) ?? Promise.resolve() };
+      version: 0, recoveryEpoch: 0, since: this.ports.now(), run: null, effects: this.draining.get(sessionId) ?? Promise.resolve() };
     this.entries.set(sessionId, entry);
     return entry;
   }
@@ -181,6 +201,7 @@ export class SessionLife {
       // v3.1 #8: only boot hydrate filters by owner; old rows of unknown or foreign bindings stay put.
       if (!await this.ports.ownedBy(sessionId, userId)) continue;
       const unknown = this.ports.store(sessionId).claim(sessionId);
+      for (const seq of unknown) this.logReceipt(sessionId, seq, { state: 'unknown' });
       // Rows an earlier run left mid-dispatch: unknown outcome, reported to their sources once (like an exit's).
       if (unknown.length) void this.ports.reportFailure(unknown.map(seq => this.ports.store(sessionId).row(sessionId, seq)), OUTCOME_UNKNOWN)
         .catch(error => this.ports.failed(sessionId, error));
@@ -191,6 +212,7 @@ export class SessionLife {
         this.send(sessionId, { k: 'start', origin: 'retry' });
       } else this.publish(sessionId, entry);
       for (const seq of this.ports.store(sessionId).acceptedUnsettled(sessionId)) this.reconcileRead(sessionId, seq);
+      this.reconcileNativeInputs(sessionId);
     }
   }
 
@@ -200,7 +222,7 @@ export class SessionLife {
    * one re-delivers only into ready{free}, the one state where a head must be pumped (invariant 3).
    */
   enqueue(input: EnqueuePending): { seq: Seq; state: PendingRow['state'] } {
-    const result = this.ports.store(input.sessionId).enqueue(input);
+    const result = this.insert(input);
     const sessionId = input.sessionId;
     if (result.inserted) {
       const before = this.entries.get(sessionId)?.version;
@@ -220,8 +242,22 @@ export class SessionLife {
 
   /** A reader-rejected item stays visible as failed and never enters provider admission. */
   rejectInbox(input: Extract<EnqueuePending, { kind: 'inbox-batch' }>, cause: unknown): void {
-    this.ports.store(input.sessionId).enqueue({ ...input, failure: toSerializedError(cause) });
+    this.insert({ ...input, failure: toSerializedError(cause) });
     this.publish(input.sessionId, this.entry(input.sessionId));
+  }
+
+  private insert(input: Parameters<LifeStore['enqueue']>[0]): ReturnType<LifeStore['enqueue']> {
+    const result = this.ports.store(input.sessionId).enqueue(input);
+    if (result.inserted) {
+      const row = this.ports.store(input.sessionId).row(input.sessionId, result.seq);
+      this.logReceipt(input.sessionId, result.seq, row.failure ? { state: 'failed', cause: row.failure } : { state: 'queued' });
+    }
+    return result;
+  }
+
+  private logReceipt(sessionId: string, seq: Seq, receipt: Receipt): void {
+    const row = this.ports.store(sessionId).row(sessionId, seq);
+    this.ports.logger.info('session-life: receipt', { sessionId, seq, messageId: row.message.id, sourceMessageIds: row.sources.map(source => source.row.id), receipt });
   }
 
   private deliver(sessionId: string, seq: Seq): void {
@@ -247,12 +283,108 @@ export class SessionLife {
     return this.drain(entry); // the entry, not the id: a delete removes it from the map before its IO ends
   }
 
-  /** A person discards their own message they stopped before it went: it is gone, and nothing sends it later. */
+  /** A person discards their own message they stopped before it went, or a settled one: it is gone, and nothing sends it later. */
   discardRow(sessionId: string, messageId: string): void {
     const row = this.ports.store(sessionId).unaccepted(sessionId).find(item => item.message.id === messageId);
     if (!row) throw new Error(`Session ${sessionId} holds no pending row for ${messageId}`);
+    // Settled rows are outside the reducer's queue, so the owner removes them directly (as recoverUnknownRow settles them).
+    if (settledByHand(row)) {
+      this.ports.store(sessionId).commit(sessionId, [{ e: 'delete-row', seq: row.seq }]);
+      this.publish(sessionId, this.entry(sessionId));
+      return;
+    }
     if (!discardable(row)) throw new Error(`Pending ${row.seq} of session ${sessionId} cannot be discarded`);
     this.send(sessionId, { k: 'discard-row', seq: row.seq });
+  }
+
+  /** A person's explicit resend preserves the original row and frozen source membership.
+   * History lookup failure leaves custody unchanged; a positive echo settles it without dispatch.
+   * A failed row never reached the provider, so it is resent without a history lookup.
+   */
+  retryUnknownRow(sessionId: string, messageId: string,
+    findEcho: NativeInputLookup): Promise<void> {
+    return this.recoverUnknownRow(sessionId, messageId, findEcho, true);
+  }
+
+  /** Opening a session reconciles durable inputs beyond the renderer's bounded history window. Never resends. */
+  async reconcileUnknownRows(sessionId: string, findEcho: NativeInputLookup): Promise<void> {
+    for (const row of this.ports.store(sessionId).unaccepted(sessionId)) {
+      if (row.state === 'unknown') await this.recoverUnknownRow(sessionId, row.message.id, findEcho, false);
+    }
+  }
+
+  private async recoverUnknownRow(sessionId: string, messageId: string,
+    findEcho: NativeInputLookup, resend: boolean): Promise<void> {
+    const account = this.account, epoch = this.epoch;
+    const observed = this.entries.get(sessionId), recoveryEpoch = observed?.recoveryEpoch ?? 0;
+    if (!account || this.leaving || !await this.ports.ownedBy(sessionId, account)
+      || this.account !== account || this.epoch !== epoch || this.leaving) {
+      if (resend) throw new Error('This account cannot resend this input');
+      return;
+    }
+    const entry = this.entry(sessionId);
+    const allowed = () => (!observed || observed === entry) && this.account === account && this.epoch === epoch && !this.leaving
+      && this.entries.get(sessionId) === entry && entry.recoveryEpoch === recoveryEpoch && entry.life.kind !== 'archived' && entry.life.kind !== 'stopping'
+      && !((entry.life.kind === 'dormant' || entry.life.kind === 'failed') && entry.life.hold?.reason === 'sign-out');
+    if (!allowed()) {
+      if (resend) throw new Error('This session cannot resend an input now');
+      return;
+    }
+    const store = this.ports.store(sessionId);
+    const row = store.unaccepted(sessionId).find(item => item.message.id === messageId);
+    if (!row || !(row.state === 'unknown' || (resend && row.state === 'failed' && settledByHand(row)))) return;
+    let evidence: NativeInputEvidence;
+    let lookupFailed = false, lookupError: unknown;
+    try {
+      evidence = row.state === 'unknown' ? await findEcho(row.message) : { state: 'absent', reason: 'native_input_absent' };
+    } catch (error) {
+      lookupFailed = true; lookupError = error;
+      evidence = { state: 'incomplete', reason: 'native_lookup_failed', detail: String(error) };
+    }
+    if (!await this.ports.ownedBy(sessionId, account) || !allowed()) {
+      if (resend) throw new Error('The session changed while checking delivery');
+      return;
+    }
+    // Another click or a receipt may have consumed this exact row while history was read.
+    if (!store.unaccepted(sessionId).some(current => current.seq === row.seq && current.state === row.state)) return;
+    // Ownership may await while the native session is rebound. No await may separate this check from the receipt commit.
+    try {
+      if (row.state === 'unknown' && findEcho.isCurrent?.() === false) evidence = { state: 'incomplete', reason: 'native_session_changed' };
+    } catch (error) {
+      lookupFailed = true; lookupError = error;
+      evidence = { state: 'incomplete', reason: 'native_lookup_failed', detail: String(error) };
+    }
+    if (evidence.state !== 'received' && (!resend || evidence.state === 'incomplete')) {
+      const cause = { name: 'NativeInputUnresolved', code: evidence.reason,
+        message: evidence.state === 'incomplete' ? evidence.detail ?? evidence.reason : evidence.reason };
+      if (row.failure?.code !== cause.code) {
+        const receipt: Receipt = { state: 'unknown', cause };
+        store.commit(sessionId, [{ e: 'write-receipt', seq: row.seq, receipt }]);
+        this.logReceipt(sessionId, row.seq, receipt);
+        this.publish(sessionId, entry);
+      }
+      if (resend) throw lookupFailed ? lookupError : new Error(`Native delivery cannot be checked: ${evidence.reason}`);
+      return;
+    }
+    const receipt: Receipt = evidence.state === 'received' ? { state: 'accepted', nativeReceiptId: evidence.nativeReceiptId } : { state: 'queued' };
+    store.commit(sessionId, [{ e: 'write-receipt', seq: row.seq, receipt }]);
+    this.logReceipt(sessionId, row.seq, receipt);
+    this.publish(sessionId, entry);
+    if (evidence.state === 'received') { this.reconcileRead(sessionId, row.seq); return; }
+    this.start(sessionId, 'retry');
+    this.deliver(sessionId, row.seq);
+  }
+
+  private reconcileNativeInputs(sessionId: string): void {
+    if (!this.ports.nativeInputs || !this.ports.store(sessionId).unaccepted(sessionId).some(row => row.state === 'unknown')) return;
+    if (this.reconciling.has(sessionId)) { this.reconcileAgain.add(sessionId); return; }
+    const operation = this.reconcileUnknownRows(sessionId, this.ports.nativeInputs(sessionId))
+      .catch(error => this.ports.failed(sessionId, error))
+      .finally(() => {
+        if (this.reconciling.get(sessionId) === operation) this.reconciling.delete(sessionId);
+        if (this.reconcileAgain.delete(sessionId)) this.reconcileNativeInputs(sessionId);
+      });
+    this.reconciling.set(sessionId, operation);
   }
 
   restore(sessionId: string): void { this.send(sessionId, { k: 'restore' }); }
@@ -264,15 +396,15 @@ export class SessionLife {
 
   read(sessionId: string): LifeView { return this.view(sessionId, this.known(sessionId)); }
 
-  /** Kind and stage only (status feed, session_get): no pending rows read. */
+  /** Lifecycle facts only (status feed, session_get): no pending rows read. */
   status(sessionId: string): LifeStatus {
     const entry = this.known(sessionId);
-    return { kind: entry.life.kind, stage: stageOf(entry) };
+    return { kind: entry.life.kind, stage: stageOf(entry), processExited: entry.life.kind === 'dormant' && entry.life.lastExit?.processExited === true };
   }
 
   private known(sessionId: string): Omit<Entry, 'events'> {
     return this.entries.get(sessionId) ?? { life: hydrateLife(this.ports.store(sessionId).read(sessionId)), reconfigured: false, attempt: 0,
-      version: 0, since: this.ports.now(), run: null, effects: Promise.resolve() };
+      version: 0, recoveryEpoch: 0, since: this.ports.now(), run: null, effects: Promise.resolve() };
   }
 
   /** Entries whose run holds a process or is building one (starting, ready, stopping); a side chat names its parent. */
@@ -284,6 +416,22 @@ export class SessionLife {
   quiescent(sessionId: string): Promise<void> {
     const entry = this.entries.get(sessionId);
     return entry ? this.drain(entry) : Promise.resolve();
+  }
+
+  /** A stopped history read may not cross a start, even if it stops again before
+   * the first page arrives. Keep the entry identity as well as its published
+   * version so delete/recreate and account restarts cannot pass an ABA check.
+   * This deliberately does not read or serialize the pending input projection. */
+  async stoppedReadFence(sessionId: string): Promise<(() => boolean) | null> {
+    const entry = this.entry(sessionId);
+    if (entry.life.kind !== 'dormant' || this.leaving) return null;
+    const version = entry.version, epoch = this.epoch;
+    await this.drain(entry);
+    if (this.entries.get(sessionId) !== entry || entry.version !== version || this.epoch !== epoch
+      || entry.life.kind !== 'dormant' || this.leaving)
+      throw Object.assign(new Error('The stopped session changed while preparing history'), { code: 'scope_changed' });
+    return () => this.entries.get(sessionId) === entry && entry.version === version
+      && this.epoch === epoch && !this.leaving && entry.life.kind === 'dormant';
   }
 
   private async drain(entry: Entry): Promise<void> {
@@ -298,6 +446,7 @@ export class SessionLife {
   private send(sessionId: string, event: Event): void {
     if ('gen' in event && !this.entries.has(sessionId)) return;
     const entry = this.entry(sessionId);
+    if (event.k === 'interrupt') entry.recoveryEpoch++;
     entry.events.send(event);
   }
 
@@ -306,18 +455,25 @@ export class SessionLife {
     const oldRun = entry.run;
     const next: Gen = { auth: this.epoch as AuthEpoch, attempt: (entry.attempt + 1) as Attempt };
     const [life, effects] = step(previous, event, this.ports.store(sessionId).pending(sessionId), { next });
+    const committed = [...effects, ...effects.flatMap((effect): Effect[] => effect.e === 'dispatch'
+      ? [{ e: 'write-receipt', seq: effect.seq, receipt: { state: 'dispatching', attempt: effect.gen.attempt } }] : [])];
     try {
-      this.ports.store(sessionId).commit(sessionId, [...effects, ...effects.flatMap((effect): Effect[] => effect.e === 'dispatch'
-        ? [{ e: 'write-receipt', seq: effect.seq, receipt: { state: 'dispatching', attempt: effect.gen.attempt } }] : [])]);
+      this.ports.store(sessionId).commit(sessionId, committed);
     } catch (error) {
       if (isSqliteBusy(error)) throw new UncommittedLifeEvent(error);
       throw error;
     }
     entry.life = life;
+    // Logged only after the commit accepted them: a stale event's effects never reach the log.
+    for (const effect of committed) if (effect.e === 'write-receipt') this.logReceipt(sessionId, effect.seq, effect.receipt);
+    if (life.kind !== previous.kind) this.ports.logger.info('session-life: transition', { sessionId, event: event.k, before: previous.kind, after: life.kind,
+      ...(event.k === 'exit' ? { exit: event.exit } : {}), ...(life.kind === 'failed' ? { cause: life.hold.cause } : {}) });
     if (life.kind === 'starting' && (!oldRun || !same(life.gen, oldRun.gen))) {
       entry.reconfigured = event.k === 'start' && event.origin === 'reconfigure';
       entry.attempt += 1;
       entry.run = { gen: life.gen, abort: new AbortController(), adapter: this.ports.adapter(sessionId), unlisten: null };
+    } else if (effects.some(effect => effect.e === 'dispatch')) {
+      entry.reconfigured = false;
     }
     for (const effect of effects) if (effect.e === 'abort') oldRun?.abort.abort();
     if (life.kind !== previous.kind || (life.kind === 'starting' && previous.kind === 'starting' && life.progress.at !== previous.progress.at)) {
@@ -359,6 +515,9 @@ export class SessionLife {
         .catch(error => this.ports.failed(sessionId, error));
     }
     void current.then(() => {
+      if (this.entries.get(sessionId) === entry && committed.some(effect => effect.e === 'write-receipt' && effect.receipt.state === 'unknown')) {
+        this.reconcileNativeInputs(sessionId);
+      }
       if (this.entries.get(sessionId) === entry && entry.effects === current && entry.life.kind === 'stopping') {
         this.send(sessionId, { k: 'settled', gen: entry.life.gen });
       }
@@ -451,11 +610,12 @@ export class SessionLife {
     return { sessionId, version: entry.version, kind: life.kind,
       stage: stageOf(entry),
       pending: { count: rows.filter(row => row.state === 'queued' || row.state === 'dispatching').length,
-        items: rows.map(row => ({ seq: row.seq, messageId: row.message.id, preview: row.message.text.slice(0, 160), text: row.message.text, kind: row.kind, sentAt: row.sentAt, discardable: discardable(row),
-          state: row.state, failure: row.state === 'failed' ? row.failure?.message ?? null : null })) },
+        items: rows.map(row => ({ seq: row.seq, messageId: row.message.id, preview: row.message.text.slice(0, 160), text: row.message.text, kind: row.kind, sentAt: row.sentAt, discardable: discardable(row) || settledByHand(row),
+          resendable: (row.state === 'unknown' || (row.state === 'failed' && settledByHand(row))) && life.kind !== 'archived' && life.kind !== 'stopping', state: row.state, failure: row.state === 'failed' ? row.failure?.message ?? null : null })) },
       hold: hold?.reason ?? null,
       failure: life.kind === 'failed' ? { at: life.hold.reason === 'start-failed' ? life.hold.stage : null, message: life.hold.cause.message, cause: life.hold.cause } : null,
       lastExit: life.kind === 'dormant' ? life.lastExit?.cause.message ?? null : null,
+      processExited: life.kind === 'dormant' && life.lastExit?.processExited === true,
       nativeSession: life.kind === 'ready' && entry.reconfigured ? life.have.channel.nativeSession : null };
   }
 

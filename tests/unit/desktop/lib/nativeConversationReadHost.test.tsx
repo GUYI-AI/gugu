@@ -8,7 +8,13 @@ import { installOwnedAgentEntry } from '../../../../apps/desktop/src/lib/ownedAg
 import { publishNativeConversationVisibility } from '../../../../apps/desktop/src/lib/nativeConversationVisibility'
 import { updateDeviceSessions, removeDeviceSessions, publishDirectoryDevices } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 import { useChatStore } from '../../../../apps/desktop/src/store/chatContext'
-const scope = vi.hoisted(() => ({ mark: vi.fn(async (_chatId: string, _seq: number) => undefined), messages: [] as unknown[] }))
+const scope = vi.hoisted(() => ({ mark: vi.fn(async (_chatId: string, _seq: number) => undefined), messages: [] as unknown[], active: true, listener: null as null | ((active: boolean) => void) }))
+vi.mock('../../../../apps/desktop/src/platform', async original => {
+  const actual = await original<typeof import('../../../../apps/desktop/src/platform')>()
+  return { ...actual, platform: { ...actual.platform, subscribeAppActive: (listener: (active: boolean) => void) => {
+    scope.listener = listener; listener(scope.active); return () => { scope.listener = null }
+  } } }
+})
 // 云端主线读位经唯一写入口 writeRead;这里按 (chatId, seq) 记下它。
 vi.mock('../../../../apps/desktop/src/lib/readWriter', async (original) => ({
   ...await original<typeof import('../../../../apps/desktop/src/lib/readWriter')>(),
@@ -20,7 +26,7 @@ vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: {
   revalidateWindow: async (ids: string[]) => ({ overlays: new Map(), mutations: new Map(), presentIds: new Set(ids) }),
 } }))
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => { harness = createReactHarness() })
+beforeEach(() => { scope.active = true; harness = createReactHarness() })
 let release: (() => void) | undefined
 afterEach(() => { harness.cleanup(); release?.(); release = undefined; publishNativeConversationVisibility('native', null); removeDeviceSessions('host'); publishDirectoryDevices([]); scope.mark.mockReset() })
 it('writes visible MCP receipts through the real IM account cache without opening an old DM presenter', async () => {
@@ -107,12 +113,32 @@ it('acknowledges the captured DM tail when the native page reaches newer work in
   await vi.waitFor(() => expect(scope.mark).toHaveBeenCalledWith('dm', 20))
 })
 
-it('keeps the DM unread while a native page is reading an earlier position', async () => {
+it('reads the DM whole on opening although the native page is at an earlier position (owner 11-05)', async () => {
   const row = chat({ id: 'dm', peer_user_id: 'agent', kind: 'ai', last_read_seq: 0, next_message_seq: 3, unread_count: 2 })
   scope.messages = ['one', 'two'].map((id, i) => message({ id, chat_id: 'dm', seq: i + 1, sender_user_id: 'agent', is_mine: false }))
   release = installOwnedAgentEntry({ owns: id => id === 'agent', open: () => true })
   updateDeviceSessions('host', { cached: false, sessions: [{ conversationId: 'session', agent: { userId: 'agent' } } as never] })
   publishNativeConversationVisibility('native', { sessionId: 'session', visible: ['earlier-other-chat-reply'], dmIds: new Map(), atTail: false })
   await renderWithConversations(harness, <NativeConversationReadHost />, undefined, { chat: { chats: [row], identitiesById: { agent: displayIdentity('agent', { type: 'agent', owner_user_id: 'user-1' }) } } })
+  await vi.waitFor(() => expect(scope.mark).toHaveBeenCalledWith('dm', 2))
+})
+
+it('reads nothing in the background and the whole DM once foregrounded', async () => {
+  scope.active = false
+  const locator = { message_id: 'one', message_seq: 1, cursor_seq: 0, stream_kind: 'main' as const,
+    stream_id: 'main', thread_root_id: null, unread_count: 2, addressed_count: 2, version: 1, is_marked_unread: false }
+  const row = chat({ id: 'dm', peer_user_id: 'agent', kind: 'ai', last_read_seq: 0, next_message_seq: 3,
+    unread_count: 2, unread_locator: locator })
+  scope.messages = ['one', 'two'].map((id, index) => message({ id, chat_id: 'dm', seq: index + 1, sender_user_id: 'agent', is_mine: false }))
+  release = installOwnedAgentEntry({ owns: id => id === 'agent', open: () => true })
+  updateDeviceSessions('host', { cached: false, sessions: [{ conversationId: 'session', agent: { userId: 'agent' } } as never] })
+  const dmIds = new Map([['receipt-one', ['one']], ['receipt-two', ['two']]])
+  publishNativeConversationVisibility('native', { sessionId: 'session', visible: ['receipt-one'], dmIds, atTail: false })
+  await renderWithConversations(harness, <NativeConversationReadHost />, undefined, { chat: { chats: [row],
+    identitiesById: { agent: displayIdentity('agent', { type: 'agent', owner_user_id: 'user-1' }) } } })
+  await act(async () => { publishNativeConversationVisibility('native', { sessionId: 'session', visible: ['receipt-two'], dmIds, atTail: false }) })
   expect(scope.mark).not.toHaveBeenCalled()
+  await act(async () => { scope.listener?.(true) })
+  // Foreground is the opening: the DM is read to its tail whatever was measured while inactive.
+  await vi.waitFor(() => expect(scope.mark).toHaveBeenCalledWith('dm', 2))
 })

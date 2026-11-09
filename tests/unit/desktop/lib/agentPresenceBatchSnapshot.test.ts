@@ -59,6 +59,21 @@ beforeEach(() => {
 afterEach(() => {
   while (openSubscriptions.length) openSubscriptions.pop()?.()
 })
+it('only the bound lifecycle process-exit fact overrides an online device and stale activity', async () => {
+  rpcMock.mockImplementation(answerAll()); watch('exited'); await settle();
+  const local = { sessionId: 's', reading: { status: 'working', detail: 'running', running: true, background: null },
+    unseen: false, reviewGate: null, providerBlocker: null, statusSourceFault: null } as const;
+  setLocalAgentStatus('exited', { ...local, life: { kind: 'dormant', stage: null } });
+  expect(getAgentPresenceSnapshot('exited')?.presentation.tone).toBe('running');
+  setLocalAgentStatus('exited', { ...local, life: { kind: 'dormant', stage: null, processExited: true } });
+  expect(getAgentPresenceSnapshot('exited')?.presentation.tone).toBe('offline');
+  expect(getAgentPresenceSnapshot('exited')?.deviceOnline).toBe(true);
+  // The exit that killed a turn leaves the failure the writer recorded: the host shows it as the phone does.
+  setLocalAgentStatus('exited', { ...local, reading: { status: 'error', detail: null, running: false, background: null }, unseen: true, life: { kind: 'dormant', stage: null, processExited: true } });
+  expect(getAgentPresenceSnapshot('exited')?.presentation.tone).toBe('error');
+  setLocalAgentStatus('exited', { ...local, life: { kind: 'ready', stage: null, processExited: false } });
+  expect(getAgentPresenceSnapshot('exited')?.presentation.tone).toBe('running');
+})
 it('uses local holding for local contacts while leaving remote reachability and dormant sessions intact', async () => {
   host.enabled = true
   ipcMock.mockResolvedValue({ missing: 'unheld', dormant: 'held', sibling: 'held-elsewhere' })

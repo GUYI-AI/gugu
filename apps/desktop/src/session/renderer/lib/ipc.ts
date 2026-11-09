@@ -3,7 +3,7 @@ import { createEventEmitter, type EmitterAdapter } from '@shared/lib/ipc/events'
 import { createRPCClient } from '@shared/lib/ipc/rpc';
 import type { SessionHostBridgeApi } from '@shared/lib/ipc/session-host-client';
 import { findSessionHostBridge, type SessionHostBridge } from './electron-api';
-import { machineClient } from './machine-clients';
+import { machineClient, reportMachineOutdated } from './machine-clients';
 import { machineCodec as codecOf, machineOfChannel, machineRegistry } from './machine-routing';
 
 // @@@task-fusion (#2802) / @@@task-web-host — 桥的解析在 electron-api.ts(桌面 preload 或网页版
@@ -45,7 +45,7 @@ class MachineUnreachableError extends Error {
  */
 export class MachineOutdatedError extends Error {
   readonly code = 'server_outdated';
-  constructor(deviceId: string, channel: string) {
+  constructor(readonly deviceId: string, readonly channel: string) {
     super(`[machine] ${deviceId} runs an older 咕咕 without ${channel}: update it`);
     this.name = 'MachineOutdatedError';
   }
@@ -64,13 +64,25 @@ function receiveFrom(deviceId: string, value: unknown): unknown {
   return local;
 }
 
+declare const __APP_VERSION__: string | undefined;
+
+/** 那台机器开线时报的版本就是这台的版本(同一份构建)。 */
+function sameVersionAs(deviceId: string): boolean {
+  const theirs = machineClient(deviceId)?.hello()?.appVersion;
+  return !!theirs && typeof __APP_VERSION__ === 'string' && theirs === __APP_VERSION__;
+}
+
 async function invokeOn(deviceId: string, channel: string, args: unknown[]): Promise<unknown> {
   // 发过去的参数与拿回来的结果里出现的实体 id 都记到那台机器名下(新建的任务 / 会话从此认得出)。
   machineRegistry.absorb(deviceId, args);
   const result = await remoteApi(deviceId)
     .invoke(channel, ...codecOf(deviceId).outbound(args))
     .catch((error: unknown) => {
-      if (error instanceof Error && error.message.includes(`No handler registered for '${channel}'`)) throw new MachineOutdatedError(deviceId, channel);
+      // 同一个版本的咕咕答「没有这个方法」不是版本差:原样报出原话,❌ 标成太旧、请那台换版本。
+      if (error instanceof Error && error.message.includes(`No handler registered for '${channel}'`) && !sameVersionAs(deviceId)) {
+        reportMachineOutdated(deviceId);
+        throw new MachineOutdatedError(deviceId, channel);
+      }
       throw error;
     });
   return receiveFrom(deviceId, result);

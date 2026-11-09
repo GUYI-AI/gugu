@@ -1,118 +1,37 @@
+import { notifyCopied } from '@/lib/copyFeedback'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
-import { useMessageTextSelection } from '../../hooks/useMessageTextSelection'
 import { MESSAGE_BUBBLE_LAYOUT as layout } from '@gugu/core/shared/ui/messageBubbleLayout'
-import { MessageSelectionToolbar } from './MessageSelectionToolbar'
-import { messageSelectionActionItems } from './messageActionItems'
 import { memo, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useToast } from '../toastContext'; import { downloadAttachment } from '../../lib/attachmentBytes'
-import { motion, AnimatePresence } from 'framer-motion'; import { MediaAttachmentBubble } from './MediaAttachmentBubble'; import { GroupAvatarSlot } from './StickyGroupAvatar'
+import { motion, AnimatePresence } from 'framer-motion'; import { GroupAvatarSlot } from './StickyGroupAvatar'
 import { MessageSenderAvatar } from './MessageSenderAvatar'; import { platform } from '../../platform'
 import { useAuth } from '../../store/auth'; import { useLongPress } from '../../hooks/useLongPress'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { MessageMetaRow } from './MessageMetaRow'
 import { useMentionRender } from './useMentionRender'
-import { formatVoiceDuration, parseVoiceAttachmentContent } from '@gugu/core/shared/ui/voiceAttachmentModels'
+import { parseVoiceAttachmentContent } from '@gugu/core/shared/ui/voiceAttachmentModels'
 import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'; import { reactionLabel } from '@gugu/core/shared/ui/reactionCatalog'; import { i18n } from '../../i18n/runtime'; import type { MessageItem, MessageSendState, ReactionGroup } from '@gugu/core/shared/types/chat'
 import { MemberProfileAvatarButton } from '../MemberProfileAvatarButton'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
 import type { MemberProfileSide } from '../memberProfileModels'
 import { COLOR_MUTED, readReceiptLabel } from './chatPresentation'
 import { MessageSendStatus } from './MessageSendStatus'; import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'; import { keepAction } from './messageKeep'
-import { Markdown } from '../markdown/Markdown'; import { classifyFileLink } from '@gugu/core/shared/ui/guguLink'
 import { buildBubbleStyle } from './messageBubbleStyle'
-import { ComposerCardView } from './ComposerCardView'
-import { QuestionCardView } from './QuestionCardView'
-import { WidgetBubble } from './WidgetBubble'
-import { parseQuotedContent, partialQuotedContent, type QuoteSelection } from './messageQuoteContent'
+import { MessageBody } from './MessageBody'
+import { parseQuotedContent, type QuoteSelection } from './messageQuoteContent'
 import { DirectMessageQuote, MessageQuote } from './MessageQuote'
 import { parseComposerCard } from '@gugu/core/shared/ui/taskCardModels'
 import { parseWidgetMessage } from '@gugu/core/shared/ui/widgetModels'
 import { HoverActionBar, MessageHoverRegion, MessageHoverTrigger } from './HoverActionBar'
 import { DeferredEmojiQuickPicker } from './messageActionModules'
-import { MsgMoreMenu } from './MsgMoreMenu'
+import { MsgMoreMenu } from './MsgMoreMenu'; import { PhoneTextSelection } from './PhoneTextSelection'; import { bubbleMenuGestures, usePhoneMessageMenu } from './phoneMessageMenuState'
 import { canSourceTopic } from './topicSplitModels' // @@@5856 与顶栏那颗按钮共用同一个判据,❌ 不再写第二份
-import { highlightText } from './highlightText'
 import { SystemMessageNotice } from './SystemMessageNotice'
 import { BubbleSender, BubbleTime, ReadReceiptRing } from './MessageBubbleChrome'; import { fmtMsgTime } from './messageRowTime'
-
 // Sending/failed state and its retry/discard menu live in MessageSendStatus.
-
-function VoiceAttachmentBubble({
-  fileName,
-  durationMs,
-  transcript,
-  isMine,
-}: {
-  fileName: string
-  durationMs: number
-  transcript: string
-  isMine: boolean
-}) {
-  const { t } = useTranslation('messaging')
-  const accentColor = isMine ? 'var(--text-on-bubble-strong)' : 'var(--text-link)'
-  const barColor = isMine ? 'var(--text-on-bubble-muted)' : 'var(--text-quote-author)'
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: '148px', maxWidth: '220px' }}>
-      <div
-        aria-hidden="true"
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          gap: '3px',
-          height: '20px',
-          padding: '2px 0',
-        }}
-      >
-        {[8, 14, 11, 17].map((height, idx) => (
-          <span
-            key={idx}
-            style={{
-              width: '3px',
-              height: `${height}px`,
-              borderRadius: 'var(--radius-capsule)',
-              background: barColor,
-            }}
-          />
-        ))}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
-        <span style={{ fontSize: 'var(--font-body)', fontWeight: 600, color: accentColor }}>
-          {t('message.voice', { duration: formatVoiceDuration(durationMs) })}
-        </span>
-        <span
-          style={{
-            fontSize: 'var(--font-caption)',
-            opacity: 0.72,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            maxWidth: '160px',
-          }}
-        >
-          {fileName}
-        </span>
-        <span
-          style={{
-            fontSize: 'var(--font-caption)',
-            opacity: 0.82,
-            lineHeight: 1.4,
-            display: '-webkit-box',
-            WebkitBoxOrient: 'vertical',
-            WebkitLineClamp: 2,
-            overflow: 'hidden',
-            maxWidth: '160px',
-          }}
-        >
-          {transcript}
-        </span>
-      </div>
-    </div>
-  )
-}
 
 interface BubbleProps {
   msg: MessageItem
@@ -128,7 +47,6 @@ interface BubbleProps {
   readReceiptTotal?: number
   // @@@1313 点开已读名单（谁读谁没读）：稳定回调，父层（持 roster+profiles）弹名单，避免把 reader 列表作对象 prop 传进破 memo。
   onShowReadReceipt?: (messageId: string, anchor: HTMLElement) => void
-  highlight?: string
   onQuote: (msg: MessageItem, selection?: QuoteSelection) => void; onShowMessage?: (id: string) => void
   onForward: (msg: MessageItem) => void
   onDelete: (messageId: string) => void
@@ -145,7 +63,7 @@ interface BubbleProps {
   // @@@5856 提供则「开话题」菜单项可用 → 从本消息开一条话题(product spec:必须有来源)。
   // 话题里的消息不传(单层不嵌套守卫)。
   onOpenTopic?: (messageId: string) => void; onOpenTopicAnchor?: (topicChatId: string) => void
-  onOpenFile?: (meta: import('@gugu/core/shared/ui/attachmentModels').ParsedAttachment, message?: MessageItem) => void; onOpenLocalFileLink?: (path: string) => void
+  onOpenFile?: (meta: import('@gugu/core/shared/ui/attachmentModels').ParsedAttachment, message?: MessageItem) => void
   // @@@whisper (#820) — memberProfiles map 用于 whisper 标签显示收件人名字。
   memberProfiles?: Record<string, MemberProfileCardModel>
   // @@@multi-select (#988) — 提供则 More 菜单「多选」项可用 → 进入多选模式并预选本消息。
@@ -168,7 +86,6 @@ export const MessageBubble = memo(function MessageBubble({
   readReceiptRead,
   readReceiptTotal,
   onShowReadReceipt,
-  highlight,
   onQuote, onShowMessage,
   onForward,
   onDelete,
@@ -178,7 +95,7 @@ export const MessageBubble = memo(function MessageBubble({
   compactMobile = false,
   isGroup = false,
   onOpenTopic, onOpenTopicAnchor,
-  onOpenFile, onOpenLocalFileLink,
+  onOpenFile,
   memberProfiles,
   onEnterSelectMode,
   groupedWithPrev = false, groupedWithNext = false, showReplyQuote = true,
@@ -191,13 +108,14 @@ export const MessageBubble = memo(function MessageBubble({
   const handleCopyText = async (content = copyText) => {
     try {
       await platform.writeClipboardText(content)
-      toast(t('message.copied'), 'success')
+      notifyCopied(t('message.copied'))
     } catch (error) {
       toast(t('actions.copyFailed', { ns: 'common' }), 'error', safeFailureLine(String((error as Error)?.message ?? error)))
     }
   }
   const [showMenu, setShowMenu] = useState(false)
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 })
+  const phone = usePhoneMessageMenu(compactMobile && showMenu)
   const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const moreButtonRef = useRef<HTMLButtonElement>(null)
@@ -225,12 +143,13 @@ export const MessageBubble = memo(function MessageBubble({
       document.removeEventListener(UI_EVENTS.closeContextMenus, closeFromSharedEvent as EventListener)
     }
   }, [showMenu, showMoreMenu, showEmojiPicker])
-  const messageActions = (close: () => void, selectedText = menuSelection) => ({
-    isRetracted: !!msg.retracted_at, content: copyText, hasHoverBar: !compactMobile, hasSelection: !compactMobile && !!selectedText, onClose: close,
+  const messageActions = (close: () => void) => ({
+    isRetracted: !!msg.retracted_at, content: copyText, hasHoverBar: !compactMobile, hasSelection: !compactMobile && !!menuSelection, onClose: close,
     onReply: () => { onQuote(msg); close() },
     onReact: (emoji: string) => { onReaction(msg.id, emoji); close() },
-    onQuoteSelection: selectedText && msg.content_type === 'text' ? () => { onQuote({ ...msg, content: selectedText }, { originalContent: msg.content }); close() } : undefined,
-    onCopy: (content = selectedText || undefined) => { void handleCopyText(content); close() },
+    onQuoteSelection: menuSelection && msg.content_type === 'text' ? () => { onQuote({ ...msg, content: menuSelection }, { originalContent: msg.content }); close() } : undefined,
+    onCopy: (content = menuSelection || undefined) => { void handleCopyText(content); close() },
+    onSelectText: compactMobile && msg.content_type === 'text' ? () => { phone.setSelecting(true); close() } : undefined,
     onCopyLink: menuLink ? () => { void handleCopyText(menuLink.href); close() } : undefined, onOpenLink: menuLink ? () => { menuLink.click(); close() } : undefined,
     onForward: () => { onForward(msg); close() }, onKeep: keepAction({ id: msg.id, mine: msg.is_mine, live: !!mediaAttachment && mediaAttachment.source.kind !== 'gone' }, close, toast, t),
     onDownload: mediaAttachment && mediaAttachment.source.kind !== 'gone' ? () => { void downloadAttachment(mediaAttachment.source, mediaAttachment.fileName).catch((error) => toast(t('chatArea.downloadFailed'), 'error', safeFailureLine(String((error as Error)?.message ?? error)))); close() } : undefined,
@@ -265,15 +184,6 @@ export const MessageBubble = memo(function MessageBubble({
 
   // @@@mobile-message-menu - Android users need the same message menu without a desktop right-click.
   const longPress = useLongPress(({ x, y }) => openMenuAt(x, y))
-  const textSelection = useMessageTextSelection({
-    enabled: compactMobile && msg.content_type === 'text' && !msg.retracted_at,
-    onQuote: (content, selectionId) => onQuote({ ...msg, content }, { originalContent: msg.content, selectionId }),
-    onClearQuote: selectionId => onQuote(msg, { originalContent: msg.content, selectionId, clear: true }),
-    actions: text => messageSelectionActionItems({ ...messageActions(() => {}, text), onShowReactions: openEmojiPickerFromButton }, t),
-  })
-  const nativeTextTarget = (target: EventTarget | null) => compactMobile && target instanceof Node
-    && !!textSelection.root?.contains(target)
-    && !(target instanceof Element ? target : target.parentElement)?.closest('a[href]')
 
   const isRetracted = !!msg.retracted_at
 
@@ -403,7 +313,7 @@ export const MessageBubble = memo(function MessageBubble({
               showReadReceipt：每条本人消息各自挂环（#2098 owner 要逐条，撤 #1779 只挂末条的降噪）。
               read=0 的空环 = 「已发出、还没人读」(#5649 owner 拍板四态:发送中/已发出/已读/失败;发送中已改成虚线流动环,与空环可区分)。
               任务卡不挂环:它是交给一个 agent 的事件(gugu-dev#181),接没接、做到哪看卡行尾的状态,❌ 再问谁读了。 */}
-          {showReadReceipt && msg.is_mine && !card && !msg.retracted_at && sendState !== 'sending' && sendState !== 'queued' && sendState !== 'undelivered' && sendState !== 'failed' && readReceiptTotal != null && readReceiptTotal > 0 && readReceiptRead != null && (
+          {showReadReceipt && msg.is_mine && !card && !msg.retracted_at && sendState !== 'sending' && sendState !== 'undelivered' && sendState !== 'failed' && readReceiptTotal != null && readReceiptTotal > 0 && readReceiptRead != null && (
             <button
               type="button"
               data-testid="message-read-receipt"
@@ -427,16 +337,9 @@ export const MessageBubble = memo(function MessageBubble({
           <div
             ref={bubbleRef}
             data-testid={AUTOMATION_TEST_IDS.messageBubbleActionTarget}
-            style={bubbleStyle} data-message-reply-footer={!showSender && !!replyQuote && showReplyQuote || undefined} data-bubble-tail={!card && !msg.is_whisper && !groupedWithNext ? (msg.is_mine ? 'mine' : 'other') : undefined}
-            {...longPress}
-            onPointerDown={e => { if (!nativeTextTarget(e.target)) longPress.onPointerDown(e) }}
+            style={phone.selecting ? { ...bubbleStyle, userSelect: 'text', WebkitUserSelect: 'text', WebkitTouchCallout: 'default' } : bubbleStyle} data-message-reply-footer={!showSender && !!replyQuote && showReplyQuote || undefined} data-bubble-tail={!card && !msg.is_whisper && !groupedWithNext ? (msg.is_mine ? 'mine' : 'other') : undefined}
+            {...bubbleMenuGestures(longPress, openMenuAt, phone.selecting)}
             onPointerDownCapture={(e) => setMenuLink(e.target instanceof Element ? e.target.closest<HTMLAnchorElement>('a[href]') : null)}
-            onContextMenu={(e) => {
-              if (nativeTextTarget(e.target)) return
-              e.preventDefault()
-              e.stopPropagation()
-              openMenuAt(e.clientX, e.clientY)
-            }}
           >
             {/* 名字只在群里收到的、一组的第一条上(DM 头栏已经说了是谁);任务卡自己写着是谁发的。 */}
             {showSender && <BubbleSender member={memberProfile} displayName={avatarName} senderId={msg.sender_user_id} replyMark={replyQuote} />}
@@ -444,91 +347,33 @@ export const MessageBubble = memo(function MessageBubble({
               // #1323 模块3 — 撤回文字 --text-tertiary→--muted-fg(原偏淡)
               <span className="msg-time-room-inline" style={{ color: 'var(--muted-fg)', fontStyle: 'italic', '--msg-time-room': timeRoom } as React.CSSProperties}>{t('message.retracted')}</span>
             ) : (
-              <div data-message-find-content="" className={timeInline ? 'msg-time-room' : undefined} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', '--msg-time-room': timeRoom } as React.CSSProperties}>
-                {card?.type === 'question' ? (
-                  <QuestionCardView card={card} chatId={msg.chat_id} messageId={msg.id} agentUserId={msg.sender_user_id ?? ''} time={replyQuote ? <>{replyQuote}{fmtMsgTime(msg.created_at)}</> : fmtMsgTime(msg.created_at)} />
-                ) : card ? (
-                  <ComposerCardView card={card} isMine={msg.is_mine} isGroup={isGroup} chatId={msg.chat_id} senderName={avatarName} time={replyQuote ? <>{replyQuote}{fmtMsgTime(msg.created_at)}</> : fmtMsgTime(msg.created_at)} memberProfiles={memberProfiles} onOpenTopic={compactMobile && onOpenTopic && card.type === 'task' ? () => onOpenTopic(msg.id) : undefined} />
-                ) : msg.content_type === 'widget' ? (
-                  <WidgetBubble message={msg} />
-                ) : msg.content_type === 'attachment' ? (
-                  voiceAttachment ? (
-                    <VoiceAttachmentBubble
-                      fileName={voiceAttachment.fileName}
-                      durationMs={voiceAttachment.durationMs}
-                      transcript={voiceAttachment.transcript}
-                      isMine={msg.is_mine}
-                    />
-                  ) : mediaAttachment ? (
-                    <MediaAttachmentBubble meta={mediaAttachment} messageId={msg.id} isMine={msg.is_mine} onOpenFile={onOpenFile ? (file) => onOpenFile(file, msg) : undefined} senderName={avatarName} chatId={msg.chat_id} />
-                  ) : (
-                    <span style={{ color: 'var(--text-link)' }}>{t('message.attachment')}</span>
-                  )
-                ) : <div ref={textSelection.ref} data-message-text-selection={compactMobile ? msg.id : undefined} style={compactMobile ? { alignSelf: 'stretch', minWidth: 0, maxWidth: '100%', userSelect: 'text', WebkitUserSelect: 'text', WebkitTouchCallout: 'default' } : { display: 'contents' }}>{(() => {
-                  const partial = partialQuotedContent(msg)
-                  const raw = partial?.replyText ?? msg.content ?? ''
-                  if (highlight) return <span className="msg-time-room-inline">{highlightText(raw, highlight)}</span> // 包一层:外面是引用块那一列(flex 列),裸的文字段和 <mark> 会各占一行
-                  const quoted = partial ? null : parseQuotedContent(raw)
-                  if (quoted && quoted.replyText) {
-                    return (
-                      // flex column + alignItems:flex-start → each child shrinks to its own content width
-                      // quote block won't stretch the bubble beyond reply text width
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
-                        {quoted.replyText && (
-                          <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                            {quoted.replyText}
-                          </div>
-                        )}
-                        {/* overflow:hidden + maxWidth together cap max-content contribution to parent fit-content */}
-                        <div style={{
-                          display: 'inline-block',
-                          overflow: 'hidden',
-                          borderLeft: `3px solid ${msg.is_mine ? 'var(--bubble-quote-bar-mine)' : 'var(--bubble-quote-bar-other)'}`,
-                          paddingLeft: '7px',
-                          maxWidth: '160px',
-                        }}>
-                          {quoted.senderName && (
-                            <div style={{ fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', fontWeight: 600, opacity: 0.6, marginBottom: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {quoted.senderName}
-                            </div>
-                          )}
-                          <div style={{ fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)', opacity: 0.55, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {quoted.quoteText}
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  }
-                  // #1515 段内 Shift+Enter 软换行渲成 <br> 仅对人类手打消息;agent/LLM 内容保持 CommonMark(软换行=空格)。
-                  // @@@2017 群内定向消息:渲染注入 nonce marker 后的正文(mentionRender.content),并把本次 marker 传下 →
-                  // 只有被 to_user_ids 背书的 @Name 才渲成 mention;非群/whisper → content=undefined 用原始 raw、marker 空。
-                  return <Markdown trust="chat" content={partial ? raw : mentionRender.content ?? raw} onAccent={msg.is_mine} hardBreaks={!avatarIsAgent} mentionMarker={mentionRender.mentionMarker} onOpenLink={(href) => { const link = classifyFileLink(href); if (!isAgent || !onOpenLocalFileLink || link.kind !== 'workspace-file') return false; onOpenLocalFileLink(link.path); return true }} />
-                })()}</div>}
+              <div className={timeInline ? 'msg-time-room' : undefined} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', '--msg-time-room': timeRoom } as React.CSSProperties}>
+                <MessageBody message={msg} compact={compactMobile} isGroup={isGroup} senderName={avatarName} time={replyQuote ? <>{replyQuote}{fmtMsgTime(msg.created_at)}</> : fmtMsgTime(msg.created_at)} mention={mentionRender} memberProfiles={memberProfiles} onOpenTopic={onOpenTopic} onOpenFile={onOpenFile} />
               </div>
             )}
             {!card && (showTime || (!showSender && replyQuote)) && <BubbleTime iso={msg.created_at} isMine={msg.is_mine} inline={timeInline} replyMark={!showSender ? replyQuote : undefined} hideTime={!showTime} />}
           </div>
         </MessageHoverTrigger>
-        {textSelection.selection && textSelection.root && <MessageSelectionToolbar root={textSelection.root} actions={textSelection.actions} />}
 
         {/* 表情回应与气泡同侧(#6428):这一层是整列宽,我方气泡行靠 marginLeft:auto 贴右,回应条不跟着贴右就留在整列最左。 */}
-        {msg.reactions.length > 0 && (
+        {msg.reactions?.length ? (
           <ReactionBar
             reactions={msg.reactions}
             isMine={msg.is_mine}
             onToggle={(emoji) => onReaction(msg.id, emoji)}
           />
-        )}
+        ) : null}
         </div>{/* closes bubble + reactions block */}
       </div>
 
       {/* ── More menu (hover-bar "More" button) — design #msgmenu, portalled ── */}
       {showMoreMenu && <MsgMoreMenu anchor={moreButtonRef} {...messageActions(() => setShowMoreMenu(false))} />}
 
-      {/* ── 右键:指针处的同一份菜单。手机长按:贴着气泡弹出同一份菜单(返回键先关它;owner 10-26 ❌ 底部抽屉) ── */}
-      {showMenu && (compactMobile
-        ? <MsgMoreMenu anchor={bubbleRef} selectableText={msg.content_type === 'text' ? msg.content ?? undefined : undefined} {...messageActions(() => setShowMenu(false))} />
-        : <MsgMoreMenu x={menuPos.x} y={menuPos.y} {...messageActions(() => setShowMenu(false))} />)}
+      {/* ── 右键:指针处的同一份菜单。手机长按:同一份动作,气泡浮起、菜单贴在它上下(owner 11-05 方案 A;返回键先关它) ── */}
+      {compactMobile
+        ? phone.mounted && <MsgMoreMenu lift={{ open: showMenu, bubble: bubbleRef, touchY: menuPos.y, mine: msg.is_mine }} {...messageActions(() => setShowMenu(false))} />
+        : showMenu && <MsgMoreMenu x={menuPos.x} y={menuPos.y} {...messageActions(() => setShowMenu(false))} />}
+      {phone.selecting && <PhoneTextSelection bubble={bubbleRef} onCopy={(text) => { void handleCopyText(text || undefined); phone.setSelecting(false) }} onDone={() => phone.setSelecting(false)} />}
 
       {/* ── Emoji quick-picker (hover-bar "Add emoji" button) ── */}
       {showEmojiPicker && (

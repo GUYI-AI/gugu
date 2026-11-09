@@ -1,23 +1,28 @@
+import { bindPasswordBetaAgent } from './password-vault/beta-runtime-port'
+import { createPasswordBetaPolicyReader } from './password-vault/beta-policy-reader'
 import './browser-user-agent-bootstrap'
 import './page-navigation-bootstrap'
+import { attachTabHistorySwipe } from './tab-history-swipe'
 import { startServerUsageSync } from './server/usage-sync'
+import { createSelfGuguNumber } from './self-gugu-number'
 import { readStateFile, writeStateFile } from './app-state'
 import { noteExitReason } from './lib/exit-reason'
-import { killAllWorkersSync } from '@gugu/session-wire/worker'
-import { killServerDescendantsSync } from './server/server-processes'
 import {assistantWorkHistoryPosition} from './assistant-work-history-position'
 import { createDesktopWorkReportIds } from './assistant-work-report-ids'
 import { createAssistantWorkAvailabilityNotifier } from '@gugu/core/cloud/assistantWorkAvailability'
 import { registerFileViewerMenus } from './file-viewer-context-menu'
 import { registerContentContextMenus } from './content-context-menu'
 import { configuredEndpoint } from '@gugu/core/cloud/attachmentsApi'
+import type { AppInboxPort } from '@gugu/core/local/agent/appInbox'
 import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/firstTurnRender'
-import { createDesktopFileAccess } from './desktopFileAccess'
+import { createDesktopFileAccess, signedInFileRpc } from './desktopFileAccess'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
 import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
+import { fileStoreDirectory } from '@gugu/core/local/files/fileSnapshots'
 import { writeTaskCopy } from './projectFilePublication'
 import { resourceMonitorWindow } from './resource-monitor-window'
 import { linkProjectDevice } from './session/main/core/projects/project-device-link'
+import { killAllMiseProcessesSync } from './session/main/core/dependencies/mise-process'
 import {
   app,
   // @@@5747 Electron 自带的那个 autoUpdater(Squirrel 的直接封装),与 electron-updater 的同名导出
@@ -40,13 +45,18 @@ import {
   safeStorage,
   screen,
   desktopCapturer,
+  systemPreferences,
   webContents,
   type OpenDialogOptions
 } from 'electron'
 import { listAgents, listDevices, listReapedAgents, provisionSessionpageAgentOneTrip, resolveMachineHardwareId, type DeviceTableClient, type RuntimeAuthProvider } from '@gugu/core'
 import { claimDeviceFreeCredits, readDeviceClaimStatus } from './device-free-credits'
 import { createDeviceActionsRuntime, nativeComponentsDir, type DeviceActionsRuntime } from './device-actions/runtime'
+import { captureReading, currentReading, historyReading } from './session/main/core/resource-monitor/reading'
+import { setMacFootprintReader } from './session/main/core/resource-monitor/footprint'
+import { clearTraceLeftovers } from './session/main/core/resource-monitor/capture'
 import { sampleCuaImage } from './device-actions/native/cua-image-sample'
+import { createScreenCapture } from './device-actions/screen-capture'
 import { createComputerControlWindow } from './device-actions/computer-control-window'
 import { computerControlWindowReaders } from './device-actions/computer-control-foreground'
 import { installNativeAppearanceSync, installWindowMaterial, type WindowMaterialHost } from './window-material'
@@ -60,15 +70,15 @@ import {
   initLogging,
   installConsoleBridge,
   switchLogFileForOwner,
-  writeRendererLog,
   readLogTailForFeedback,
   RENDERER_LOG_CHANNEL,
 } from './lib/logger'
-import { autoApproveFromPermissionMode } from '@gugu/session-core/acp'
-import { signalProcessDescendantsSync } from '@gugu/session-core/acp/node'
+import { createRendererLogForwarder } from './local-renderer-diagnostics'
+import { registerErrorSummaryReporting } from './error-summary-reporting-host'
+import { autoApproveFromPermissionMode, type GuguPermissionMode } from '@gugu/session-core/acp'
 import { classifyFatal, recordFatalSync } from './lib/fatal-triage'
 import { pathToFileURL } from 'node:url'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { homedir, hostname, platform } from 'os'
 import { dirname, join, resolve, sep } from 'path'
 import { autoUpdater } from 'electron-updater'
@@ -104,7 +114,7 @@ import type { LocalSigning } from './macDmgUpdater'
 import { createSelectAccountHandler, webAuthnKeychainGroup } from './macWebAuthn'
 import { isOAuthCallback } from '../shared/oauth-callback'
 import { OAuthCallbackInbox } from './oauth-callback-inbox'
-import { googleAuthorizationUrl } from '../shared/google-authorization-url'
+import { googleAuthorizationUrl, googleIdentityLinkUrl } from '../shared/google-authorization-url'
 import { isOAuthAttemptRedirect } from '../shared/oauth-attempt'
 import {
   cleanupRemoteFileDirectory,
@@ -487,7 +497,7 @@ import {
   createReapDeps,
   describeReapSummary,
 } from './enginePidReap'
-import { createPushedRuntimeAuthProvider, type PushedRuntimeAuth } from './runtime-auth-provider'
+import { createHumanAuthSessionIpc, createPushedRuntimeAuthProvider, type PushedRuntimeAuth } from './runtime-auth-provider'
 import { createServerAuthProvider, type ServerAuthProvider } from './server/server-auth'
 import { ensureUtf8Locale } from './server/server-locale'
 import { killAccountTmuxServer, SESSION_FILE } from './server/server-layout'
@@ -536,8 +546,11 @@ import type {
 import { createRuntimeBeforeQuitHandler, runShutdownPhase, type ShutdownPhaseEvent } from './runtime-quit'
 import { createProjectionDeviceRuntime } from './projection-device-runtime'
 import { openProjectionDevicePipe } from './projection-device-transport'
-import { createUpdateQuit } from './update-quit'
+import { createSquirrelHandoff, createUpdateQuit } from './update-quit'
 import { createUpdateFlow } from './update-flow'
+import { createUpdateChecks } from './update-check'
+import { createSignalExit } from './signal-exit'
+import { createFatalExit, createNativeLegReap, stopOnLostLock } from './process-exit'
 import {
   hardenWebPreferences,
   installDevtoolsLock,
@@ -1036,9 +1049,20 @@ function createDeviceSessionpageBridge() {
       })
     },
   })
+  const appInboxPort = () => {
+    const emdash = loadEmdashBridge()
+    if (!emdash) throw new Error('session-page session runtime is unavailable')
+    return emdash.appInbox
+  }
   return {
     ...bridge,
     downloadAttachment: desktopFiles.download,
+    appInbox: {
+      refusal: (source: string) => appInboxPort().refusal(source),
+      pull: (agentUserId: string, required?: string) => appInboxPort().pull(agentUserId, required),
+      ack: (input: Parameters<AppInboxPort['ack']>[0]) => appInboxPort().ack(input),
+      recordFailure: (input: Parameters<AppInboxPort['recordFailure']>[0]) => appInboxPort().recordFailure(input),
+    },
     rejectAgentInbox: async (input: import('@gugu/core/local/agent/agentInboxReader').AgentInboxInjectionInput, cause: unknown) => {
       const local = (input.sources ?? []).filter(source => source.row.localSessionDirect);
       if (local.length) {
@@ -1170,6 +1194,7 @@ async function onLocalAgentRosterRemoved(
   if (reason === 'cloud-gone' || reason === 'cloud-removed') {
     const sessionId = cacheString(agent.cache, SESSION_CACHE_KEY) || cacheString(agent.cache, PARKED_SESSION_CACHE_KEY)
     if (reason === 'cloud-removed' && receipt?.userId !== agentUserId) throw new Error('Confirmed removal receipt does not match the Agent')
+    if (reason === 'cloud-removed') assistantPanelRuntime?.remove(agentUserId)
     await unregisterSessionpageDeliveryOwners(agentUserId)
     await revokeAgentCards(agentUserId)
     if (reason === 'cloud-removed') {
@@ -1353,6 +1378,19 @@ const hostPresentationListeners = new Set<() => void>()
 function tellHostPresentationChanged(): void {
   for (const listener of hostPresentationListeners) listener()
 }
+// App 页的 `operator.guguNumber`:登录账号自己的咕咕号,按信封同一张身份表查,一个账号查一次。
+const selfGuguNumber = createSelfGuguNumber({
+  userId: () => SERVER_MODE ? serverAuth?.signedInUserId() ?? null : humanAuthUserId(),
+  lookup: async (userId) => {
+    const auth = await (authProvider ?? desktopAuthProvider()).getAuth()
+    if (auth?.userId !== userId) throw new Error('the account changed while its 咕咕号 was looked up')
+    const identity = (await resolveGuguIdsForInbox([userId], auth.accessToken)).get(userId)
+    if (!identity) throw new Error(`no identity row for ${userId}`)
+    return identity.guguNumber
+  },
+  changed: tellHostPresentationChanged,
+  failed: (error) => createLogger('extensions/self').error({ error: String(error) }, 'Looking up the account\'s own 咕咕号 failed'),
+})
 
 // @@@close-to-tray-hint - close hides the window to the tray instead of quitting; without a signal users
 // think the app vanished. Notify the FIRST time only, persisting the flag in app-state.json under userData.
@@ -1379,6 +1417,8 @@ const writeAppState = (state: Record<string, unknown>): void => writeStateFile(a
  */
 const WINDOW_TONE_BG = { light: '#ffffff', dark: '#111114' } as const
 type WindowTone = keyof typeof WINDOW_TONE_BG
+
+let hostThemeColors: Record<string, string> | undefined
 
 function readWindowTone(): WindowTone {
   const saved = readAppState().windowTone
@@ -1601,6 +1641,7 @@ function createWindow(loadContents = true): void {
 
   // #7274 只在开窗那一次露面:Electron 在窗里的网页(会话浏览器页签,agent 在后台会话里打开 / 跳转网页时)画出第一帧
   // 时会再报一次 ready-to-show,`show()` 在 macOS 上会把整个咕咕拉到最前台 —— 人正在用的别的 App 就被抢走了(实测)。
+  attachTabHistorySwipe(mainWindow)
   mainWindow.once('ready-to-show', () => {
     if (!IS_TEST_MODE) {
       mainWindow?.show()
@@ -1994,6 +2035,19 @@ function selfAppForComputerControl(): { pids: ReadonlySet<number>; names: Readon
  */
 let computerUseOn: () => boolean = () => false
 
+// The resource monitor reads macOS phys_footprint through the same native helper (System.swift `process.footprint`);
+// without the helper (an uncompiled dev checkout) it keeps RSS and says so.
+if (process.platform === 'darwin') setMacFootprintReader(() => {
+  const helper = deviceActionsRuntimeInstance?.macHelper()
+  if (!helper) return null
+  return async (pids) => {
+    const { footprints } = await helper.call<{ footprints: Record<string, number> }>('process.footprint', { pids }, { timeoutMs: 5_000 })
+    return new Map(Object.entries(footprints).map(([pid, bytes]) => [Number(pid), bytes]))
+  }
+})
+// A raw resource trace left by a crash mid-recording (it can hold full URLs) does not outlive the next start.
+void app.whenReady().then(clearTraceLeftovers).catch((error: unknown) => createLogger('resource-monitor').warn({ error }, 'could not clear trace leftovers'))
+
 function deviceActionsRuntime(): DeviceActionsRuntime {
   if (deviceActionsRuntimeInstance) return deviceActionsRuntimeInstance
   const log = createLogger('device-actions')
@@ -2021,6 +2075,11 @@ function deviceActionsRuntime(): DeviceActionsRuntime {
       },
       openExternal: (url) => shell.openExternal(url),
       trashItem: (target) => shell.trashItem(target),
+      perf: {
+        snapshot: () => currentReading(),
+        history: (since, until) => historyReading(since, until),
+        capture: (seconds) => captureReading(seconds),
+      },
       sampleImage: data => sampleCuaImage(nativeImage.createFromBuffer, data),
       shrinkImage: async (image, { maxEdge, quality }) => {
         const source = nativeImage.createFromBuffer(Buffer.from(image.data, 'base64'))
@@ -2031,6 +2090,13 @@ function deviceActionsRuntime(): DeviceActionsRuntime {
         const out = resized.getSize()
         return { mimeType: 'image/jpeg', data: resized.toJPEG(quality).toString('base64'), width: out.width, height: out.height }
       },
+      captureScreenNative: createScreenCapture({
+        platform: process.platform,
+        primaryDisplay: () => screen.getPrimaryDisplay(),
+        displayCount: () => screen.getAllDisplays().length,
+        screenAccess: () => systemPreferences.getMediaAccessStatus('screen'),
+        sources: options => desktopCapturer.getSources(options),
+      }),
       // 截主屏一张,长边缩到 maxEdge(模型看图的甜区);macOS 上要「屏幕录制」权限,没有时系统只给桌面背景。
       captureScreen: async ({ maxEdge }) => {
         const primary = screen.getPrimaryDisplay()
@@ -2334,7 +2400,7 @@ ipcMain.on('window:menu-command', (event, command: unknown) => {
     windowMenuLogger.error({ command }, '标题栏菜单送来了清单外的命令,已拒收')
     return
   }
-  runWindowMenuCommand(command, { contents: event.sender, window })
+  void runWindowMenuCommand(command, { contents: event.sender, window }).catch(error => windowMenuLogger.error({ error }, 'Window menu command failed'))
 })
 ipcMain.on('window-chrome:get-labels', (event) => {
   event.returnValue = currentHostCatalog().windowChrome
@@ -2343,8 +2409,13 @@ ipcMain.handle('locale:sync-resolved', (_event, locale: unknown) => {
   syncResolvedHostLocale(locale)
 })
 // @@@window-tone — 渲染层是主题真值的唯一写入者,落属性时顺带告诉主进程,主进程只被告知。
-ipcMain.on('window:sync-tone', (_event, tone: unknown) => {
+ipcMain.on('window:sync-tone', (event, tone: unknown, colors: Record<string, string> | undefined) => {
+  // @@@app-theme-colors 主题的配色只听主窗的:别的窗口也发 tone,但它们的文档不带主题样式表。
+  const colorsChanged = event.sender === mainWindow?.webContents && JSON.stringify(colors) !== JSON.stringify(hostThemeColors)
+  if (colorsChanged) hostThemeColors = colors
+  const toneBefore = readWindowTone()
   syncWindowTone(tone)
+  if (colorsChanged && readWindowTone() === toneBefore) tellHostPresentationChanged()
 })
 // @@@host-system-languages — renderer 判定「跟随系统」的唯一真值源。**不能**让 renderer 自己读
 // navigator.languages:Electron 把 Chromium 界面语言排在那个列表首位(中文 macOS 实测 ['en-US',
@@ -2354,9 +2425,8 @@ ipcMain.on(HOST_SYSTEM_LANGUAGES_CHANNEL, (event) => {
 })
 // @@@logging (#2382) - renderer 的日志回传到主进程,和主进程日志同流、同脱敏、同落盘:
 // 渲染侧崩在用户机器上时,`console` 只活在 devtools 里,拿不回来。
-ipcMain.handle(RENDERER_LOG_CHANNEL, (_event, payload: unknown) => {
-  writeRendererLog(payload)
-})
+const forwardRendererLog = createRendererLogForwarder({ getMetrics: () => app.getAppMetrics() })
+ipcMain.handle(RENDERER_LOG_CHANNEL, (event, payload: unknown) => forwardRendererLog(event.sender, payload))
 
 // @@@4899 用户在反馈里勾了「附带日志」才走这条。读不到就让它抛到 renderer —— 界面当场取消
 // 勾选并说明,❌ 不许悄悄附一个空的(用户以为给了线索,排查方以为用户没日志)。
@@ -2364,7 +2434,7 @@ ipcMain.handle('feedback:log-tail', () => readLogTailForFeedback())
 // #7199 个人助理住在这台电脑上时,它的家在本机准备(工作目录、说明、禁用的工具、开通时主人留的那条记忆)。
 installAssistantHome()
 
-ipcMain.handle('updates:check', () => checkForUpdates())
+ipcMain.handle('updates:check', () => updateChecks.check())
 // @@@5837 界面随时可以来问「现在是什么状态」—— 横幅与「设置→关于」挂载时各问一次,所以
 // 整窗重载、用户关掉横幅、下好那一刻窗口不在,都不会让「包已下好、等你按一下」这条事实消失。
 // 渲染层那一侧是可选能力(AppPlatform.updateState):web/移动端没有更新这件事,答不上来就跳过。
@@ -2408,11 +2478,18 @@ ipcMain.handle('auth:open-browser', async (event, raw: unknown) => {
   if (!redirectTo || !isOAuthAttemptRedirect(redirectTo, `${GUGU_LINK_SCHEME}://auth/callback`)) throw new Error('Invalid OAuth attempt callback')
   await shell.openExternal(googleAuthorizationUrl(raw, getSupabaseUrl(), redirectTo))
 })
+ipcMain.handle('auth:open-link-browser', async (event, value: unknown) => {
+  if (event.sender !== mainWindow?.webContents || !value || typeof value !== 'object') throw new Error('Invalid identity linking browser request')
+  const { url, redirectTo } = value as { url?: unknown; redirectTo?: unknown }
+  if (typeof url !== 'string' || typeof redirectTo !== 'string'
+    || !isOAuthAttemptRedirect(redirectTo, `${GUGU_LINK_SCHEME}://auth/callback`)) throw new Error('Invalid identity linking callback')
+  await shell.openExternal(googleIdentityLinkUrl(url, getSupabaseUrl()))
+})
 const remoteFileTempRoot = join(app.getPath('userData'), 'cache', 'remote-files')
 const remoteFileOpenDirectories = new Set<string>()
 const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider().getAuth(), tempRoot: remoteFileTempRoot,
-  rpc: async (name, args) => { const auth = await desktopAuthProvider().getAuth(); if (!auth) throw new Error('File reader is not signed in'); const { data, error } = await makeChatClient(auth.accessToken).rpc(name, args); if (error) throw Object.assign(new Error(error.message, { cause: error }), { code: error.code, details: error.details, hint: error.hint }); return data },
-  downloads: join(resolveGuguHome(process.env), 'attachments'), fetch: electronFetch, links: () => sshLinks,
+  rpc: signedInFileRpc(() => desktopAuthProvider().getAuth(), makeChatClient),
+  downloads: fileStoreDirectory(resolveGuguHome(process.env)), fetch: electronFetch, links: () => sshLinks,
   root: async projectId => { const bridge = loadEmdashBridge(); if (!bridge) throw new Error('Project registry is unavailable'); return bridge.emdashProjectRoot(projectId) },
   deviceStore: join(resolveGuguHome(process.env), 'project-files'), identityDb: makeIdentityClient,
 })
@@ -2526,12 +2603,15 @@ handleShellChannel(SESSIONPAGE_SESSION_RELOAD_CHANNEL, async (_event, input: unk
     modelSource?: unknown
     effort?: unknown
     mcpDisabledServers?: unknown
+    permissionMode?: unknown
   }
   const reason = row.reason === 'mcp-toggle'
     ? 'mcp-toggle'
     : row.reason === 'manual'
       ? 'manual'
-      : 'model-switch'
+      : row.reason === 'permission-switch'
+        ? 'permission-switch'
+        : 'model-switch'
   const emdash = loadEmdashBridge()
   // 桥没装载 = 会话页模块根本没起来。❌ 不静默返回 ok:那会让确认框显示「重开完成」,
   // 而实际上一个字节都没发生。
@@ -2559,6 +2639,8 @@ handleShellChannel(SESSIONPAGE_SESSION_RELOAD_CHANNEL, async (_event, input: unk
       ...(Array.isArray(row.mcpDisabledServers)
         ? { mcpDisabledServers: row.mcpDisabledServers.filter((v): v is string => typeof v === 'string') }
         : {}),
+      // 档位原样递,认不得的值由 reloadEmdashSession 响亮拒(❌ 在这里猜成某一档)。
+      ...(row.permissionMode !== undefined ? { permissionMode: row.permissionMode as GuguPermissionMode } : {}),
     })
     // 从没起来过的会话只记下了选择(#7092):告诉渲染层接着正常首启,❌ 让它去重挂一条不存在的会话。
     return reloaded.nativeSession === 'not-started' ? { ok: true, notStarted: true } : { ok: true }
@@ -2654,30 +2736,22 @@ async function sessionLifeEnter(): Promise<void> {
   const userId = pushedUserId()
   if (sessionLifeBooted && userId) await bootedSessionLife().signIn(userId)
 }
-ipcMain.handle('human-auth-session:write', async (_event, session: unknown) => {
-  const mirror = session as Parameters<typeof writeHumanAuthSession>[0]
-  const next = runtimeAuthFromSupabaseTokens({ accessToken: mirror.access_token, refreshToken: mirror.refresh_token })
-  await sessionLifeLeaveIfChanging(next?.userId ?? null)
-  try {
-    pushedHumanAuth = undefined
-    pushedHumanAuth = next
-    projectionDeviceRuntime.invalidate() // Revoke the old identity before awaiting persistence.
-    return await writeHumanAuthSession(mirror)
-  } finally {
-    onHumanAuthSessionChanged()
-    await sessionLifeEnter()
-  }
+registerErrorSummaryReporting({
+  eligible: !SERVER_MODE && __GUGU_TIER__ === 'beta' && __GUGU_BUILD_DISTRIBUTION__ === 'published',
+  owner: () => pushedHumanAuth === undefined ? undefined : pushedUserId(),
 })
-ipcMain.handle('human-auth-session:clear', async (_event, reason: unknown) => {
-  await sessionLifeLeaveIfChanging(null)
-  try {
-    pushedHumanAuth = reason === 'lost' ? 'lost' : null
-    projectionDeviceRuntime.invalidate() // Disk deletion must not extend the old account's authority.
-    return await clearHumanAuthSession()
-  } finally {
-    onHumanAuthSessionChanged()
-  }
+const humanAuthSessionIpc = createHumanAuthSessionIpc({
+  toAuth: runtimeAuthFromSupabaseTokens,
+  set: (auth) => { pushedHumanAuth = auth },
+  revoke: () => projectionDeviceRuntime.invalidate(),
+  persist: (mirror: Parameters<typeof writeHumanAuthSession>[0]) => writeHumanAuthSession(mirror),
+  erase: () => clearHumanAuthSession(),
+  leaveIfChanging: sessionLifeLeaveIfChanging,
+  enter: sessionLifeEnter,
+  changed: onHumanAuthSessionChanged,
 })
+ipcMain.handle('human-auth-session:write', (_event, session: unknown) => humanAuthSessionIpc.write(session as Parameters<typeof writeHumanAuthSession>[0]))
+ipcMain.handle('human-auth-session:clear', (_event, reason: unknown) => humanAuthSessionIpc.clear(reason))
 // #5906 —— 渲染层刚把一条设备命令放回了 pending(失败条的「重试」)。那是 UPDATE,库那侧的 `command_created`
 // 广播只挂在 INSERT 上 ⇒ 没有任何事件会叫醒宿主;由发起方在这里说一声。
 ipcMain.on('device-runtime:commands-changed', () => {
@@ -3004,30 +3078,25 @@ function rejectPrereleaseTarget(updateInfo: unknown, where: string): boolean {
   return true
 }
 
-async function checkForUpdates(): Promise<VersionedUpdateState<UpdateCheckResult>> {
-  if (!updaterPolicy.enabled) {
+const updateChecks = createUpdateChecks({
+  policy: () => updaterPolicy,
+  blocked: (policy) => {
     updaterLogger.warn(
-      { reason: updaterPolicy.reason },
-      `check blocked (${updaterPolicy.reason}): ${updaterPolicy.messageKey}`,
+      { reason: policy.reason },
+      `check blocked (${policy.reason}): ${policy.messageKey}`,
     )
     return emitUpdateStatus({
       success: false,
-      status: updaterPolicy.status,
+      status: policy.status,
       updateInfo: null,
-      messageKey: updaterPolicy.messageKey,
+      messageKey: policy.messageKey,
     })
-  }
-  try {
-    // Updater events publish the result, including progress started by update-available.
-    // Queries return that same stamped state instead of inventing a second result.
-    await autoUpdater.checkForUpdates()
-    return updaterState.current
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.warn('[updater] check failed:', message)
-    throw err
-  }
-}
+  },
+  query: () => autoUpdater.checkForUpdates(),
+  current: () => updaterState.current,
+  warn: (message, detail) => console.warn(message, detail),
+  automatic: !IS_TEST_MODE,
+})
 
 // 下载进度/完成经状态值回流渲染层(update-flow.ts);两个入口:静默下载(@@@5576)与用户点「更新」(@@@1578)。
 // @@@663 mac 老包走 dmg 半自动:下载 dmg(按架构+sha512 校验)→ shell.openPath 打开,用户拖装+系统
@@ -3092,17 +3161,15 @@ async function downloadMacDmgUpdate(): Promise<void> {
 //   ② 有看门狗,库那条路若卡在「等一个不会再来的事件」上,到点我们自己走停机退出 ——
 //      ShipIt 已经备好包,退出即安装。宁可少一次自动重开,也不能让人对着「正在重启…」干等;
 //   ③ 退出时**不用硬杀**(见 before-quit 里的 exit 分支):硬杀会连 Squirrel 的「装完重开」一起跳过。
-// @@@5793 Squirrel 备好包了没。退出那一刻据此决定还要不要留交接余量 —— 备好了就没什么可等的。
-let squirrelStagedUpdate = false
-if (process.platform === 'darwin') {
-  try {
-    nativeAutoUpdater.on('update-downloaded', () => {
-      squirrelStagedUpdate = true
-    })
-  } catch (error) {
-    updaterLogger.warn({ error: String(error) }, '[updater] 订不上原生 update-downloaded,交接按兜底路径走')
-  }
-}
+// @@@5793 Squirrel 备好包了没、退出最后一步怎么交给它:见 ./update-quit 的 createSquirrelHandoff。
+const squirrelHandoff = createSquirrelHandoff({
+  platform: process.platform,
+  onStaged: (listener) => { nativeAutoUpdater.on('update-downloaded', listener) },
+  quitAndInstall: () => nativeAutoUpdater.quitAndInstall(),
+  logInfo: (detail, message) => updaterLogger.info(detail, message),
+  logWarn: (detail, message) => updaterLogger.warn(detail, message),
+  logError: (detail, message) => updaterLogger.error(detail, message),
+})
 
 // 顺序、看门狗、重复按下这三件事在 ./update-quit 里,连同 #5793 的根因一起写在那个文件的头注释。
 const updateQuit = createUpdateQuit({
@@ -3176,14 +3243,6 @@ function installUpdate(): Promise<void> {
 // @@@1560/#1578 自动检测（仅检测，不自动下载）：仅打包版(packaged 且非 test)自动 check —— 启动后延迟 10s
 // (避开冷启高峰) + 每 30min 定时。autoDownload=false → 命中只发 update-available(经 preload 推渲染层
 // banner「更新/稍后」)，用户点「更新」才 downloadUpdate()。dev / IS_TEST 不 check。check 失败仅告警、不阻断。
-const AUTO_UPDATE_INTERVAL_MS = 30 * 60 * 1000
-const AUTO_UPDATE_INITIAL_DELAY_MS = 10 * 1000
-function startAutoUpdateChecks(): void {
-  if (!updaterPolicy.enabled || IS_TEST_MODE) return
-  // checkForUpdates already warns; automatic checks have no caller to reject to.
-  setTimeout(() => { void checkForUpdates().catch(() => undefined) }, AUTO_UPDATE_INITIAL_DELAY_MS)
-  setInterval(() => { void checkForUpdates().catch(() => undefined) }, AUTO_UPDATE_INTERVAL_MS)
-}
 
 /**
  * @@@5301 等系统给出真的结论,而不是「我调用了 show() 就算弹了」。
@@ -3277,9 +3336,6 @@ app.setAboutPanelOptions({
   copyright: `© ${new Date().getFullYear()} 咕咕`
 })
 
-/** 兜底路径上给 Squirrel 写盘 + 起 ShipIt 的余量。正常路径不走这里(见 exit 里的判断)。 */
-const SQUIRREL_HANDOFF_GRACE_MS = 5_000
-
 const shutdownLogger = createLogger('shutdown')
 const reportShutdownPhase = (event: ShutdownPhaseEvent): void => {
   const error = event.error ? ` error=${JSON.stringify(event.error)}` : ''
@@ -3299,30 +3355,7 @@ app.on('before-quit', createRuntimeBeforeQuitHandler({
   exit: (code) => {
     const hardExit = (): never =>
       (process as NodeJS.Process & { reallyExit: (exitCode: number) => never }).reallyExit(code)
-    // @@@5747 为更新而退出时,最后一步**不能**一上来就硬杀:reallyExit 绕过 Electron 的退出流程,
-    // 而 Squirrel 的「装完并重新打开」正挂在那条被绕开的路上 —— 这就是「装完不会自己起来」的成因。
-    // 停机三段此刻已经跑完(agent、PTY 都收干净了),剩下的只是让 Squirrel 接手。
-    // 交给 Squirrel 只是 mac 的事。Windows / Linux 上 electron-updater 的 quitAndInstall 早在按下时
-    // 就已经起好了安装器(NSIS `Executing … --updated`),这里再调原生 autoUpdater 只会抛
-    // 「No update available, can't quit and install」再落到硬退(owner 的 Chole 上每次更新都是这样)。
-    if (!updateQuit.forUpdate || process.platform !== 'darwin') hardExit()
-    updaterLogger.info({ squirrelStagedUpdate }, '[updater] 停机完成,交给 Squirrel 安装并重新打开')
-    try {
-      nativeAutoUpdater.quitAndInstall()
-    } catch (error) {
-      updaterLogger.error({ error: String(error) }, '[updater] 交接失败,硬退 —— 包已备好,退出即安装')
-      hardExit()
-    }
-    // @@@5793 包已经备好时,这里**没有任何东西可等**:ShipIt 从收到安装请求起就在等我们退
-    // (owner 实测:我们一退,它 91 毫秒后就开装)。原先无条件等的那 5 秒,两次更新两次都是等到
-    // 超时才走 —— 纯粹的空等。只有在 Squirrel 还没备好包的兜底路径上,上面那一句才是真正在备包,
-    // 那时才需要给它写盘的余量。
-    if (squirrelStagedUpdate) hardExit()
-    const handoff = setTimeout(() => {
-      updaterLogger.error({}, '[updater] Squirrel 未在交接余量内接管,硬退兜底')
-      hardExit()
-    }, SQUIRREL_HANDOFF_GRACE_MS)
-    handoff.unref()
+    squirrelHandoff.exit(updateQuit.forUpdate, hardExit)
   },
   warn: (message) => console.warn(message),
   reportPhase: reportShutdownPhase,
@@ -3339,65 +3372,46 @@ app.on('before-quit', createRuntimeBeforeQuitHandler({
 // 各腿自己那条 `process.once('exit')` 挡不住这一格 —— 信号路径不保证走到它。
 // ⇒ 这个回收点按「Desktop 拥有的原生腿」逐条收,加一条腿就在这里加一行,
 //    ❌ 不要再让某条腿只靠自己的 exit 钩子。
-const killEnginesOnCrash = (label: string): void => {
-  const reap = (leg: string, run: () => void) => {
-    try {
-      run()
-    } catch (err) {
-      shutdownLogger.error({ err, label, leg }, 'native leg process-group reap failed')
-    }
-  }
-  // @@@5163 回收点必须留下一条**同步**痕迹。用 logger 记不行 —— 它是异步写,
-  // 而这里离进程真正死掉只剩几毫秒,那行日志永远 flush 不到盘(本仓在 #4965 上吃过同一个亏)。
-  // 所以这里 appendFileSync 一行:它在 kill(2) 之前落地,能回答「这个回收点有没有被调到」。
-  try {
-    appendFileSync(join(logDir, 'reap-probe.log'), `${new Date().toISOString()} reap-begin label=${label}\n`)
-  } catch { /* 探针不许反噬关停 */ }
-  shutdownLogger.info({ label }, 'native leg reap: begin')
-  reap('host-processes', () => killAllWorkersSync(pids => SERVER_MODE
-    ? killServerDescendantsSync(pids) : signalProcessDescendantsSync(pids, 'SIGKILL')))
-  reap('codex-app-server', killAllCodexAppServerProcessGroupsSync)
-  reap('opencode-serve-attach', () => opencodeServeAttachSessionDelivery.disposeSync())
-  reap('droid-daemon', () => droidDaemonSessionDelivery.disposeSync())
-  reap('extension-programs', () => emdashBridge?.emdashExtensionPrograms().killAllSync())
-  reap('remote-tunnel', () => {
-    closeTunnelMachines?.()
-    tunnelEndpoint?.stop()
-  })
-  shutdownLogger.info({ label }, 'native leg reap: done')
-  try {
-    appendFileSync(join(logDir, 'reap-probe.log'), `${new Date().toISOString()} reap-done  label=${label}\n`)
-  } catch { /* 同上 */ }
-}
+const killEnginesOnCrash = createNativeLegReap({
+  logDir,
+  serverMode: SERVER_MODE,
+  logger: shutdownLogger,
+  legs: () => [
+    ['codex-app-server', killAllCodexAppServerProcessGroupsSync],
+    ['opencode-serve-attach', () => opencodeServeAttachSessionDelivery.disposeSync()],
+    ['droid-daemon', () => droidDaemonSessionDelivery.disposeSync()],
+    ['extension-programs', () => emdashBridge?.emdashExtensionPrograms().killAllSync()],
+    ['mise', killAllMiseProcessesSync],
+    ['remote-tunnel', () => {
+      closeTunnelMachines?.()
+      tunnelEndpoint?.stop()
+    }],
+  ],
+})
 // #156 server 模式下这两个信号就是「停掉服务」(`gugu-server stop`、systemd、守护进程收账号进程):先停设备循环 ——
 // 它最后把设备行标成离线,名下别的设备当场看见,❌ 等两分钟租约过期、看起来和崩溃一样 —— 再同步收组退出。
 // 有上限(停不下来照样退);再来一个信号 = 不等了。桌面上信号仍是立即终止(正常退出走 before-quit)。
 const SERVER_SIGNAL_STOP_TIMEOUT_MS = 5_000
-let signalStopping = false
 let stopServerActivity = (): void => {}
 let startServerActivity = (): void => {}
-const exitOnSignal = (label: 'SIGINT' | 'SIGTERM' | 'SIGUSR2', code: number): void => {
-  stopServerActivity()
-  if (isSingleServerRun()) {
-    if (code === 143 && !existsSync(join(app.getPath('userData'), SESSION_FILE))) code = EXIT_SIGNED_OUT
-    if (code !== EXIT_RESTART && !['systemd', 'launchd'].includes(process.env.GUGU_SERVER_SUPERVISED ?? '')) markStopped(process.env.GUGU_SERVER_HOME!)
-  }
-  // 有人要它停(stop / systemd / 守护进程收账号进程):留一句,开机收残据此说「重启打断了这一轮」(守护进程换版时先写了 update,不改)。
-  noteExitReason(app.getPath('userData'), 'restart')
-  const finish = (): void => {
-    killEnginesOnCrash(label)
-    process.exit(code)
-  }
-  const host = deviceRuntimeHost
-  if (!SERVER_MODE || !host || signalStopping) return finish()
-  signalStopping = true
-  void stopRuntimeHostWithTimeout(host, SERVER_SIGNAL_STOP_TIMEOUT_MS)
-    .catch((error: unknown) => shutdownLogger.warn({ label, error: String(error) }, 'device runtime stop on signal failed'))
-    .finally(finish)
-}
-process.on('SIGINT', () => exitOnSignal('SIGINT', 130)) // 128 + SIGINT(2)
-process.on('SIGTERM', () => exitOnSignal('SIGTERM', 143)) // 128 + SIGTERM(15)
-if (SERVER_MODE) process.on('SIGUSR2', () => exitOnSignal('SIGUSR2', EXIT_RESTART))
+const signalExit = createSignalExit({
+  serverMode: SERVER_MODE,
+  exitRestart: EXIT_RESTART,
+  exitSignedOut: EXIT_SIGNED_OUT,
+  stopActivity: () => stopServerActivity(),
+  singleRun: isSingleServerRun,
+  sessionFileExists: () => existsSync(join(app.getPath('userData'), SESSION_FILE)),
+  supervisedBy: () => process.env.GUGU_SERVER_SUPERVISED,
+  markStopped: () => markStopped(process.env.GUGU_SERVER_HOME!),
+  noteExitReason: () => noteExitReason(app.getPath('userData'), 'restart'),
+  killEngines: (label) => killEnginesOnCrash(label),
+  exit: (code) => process.exit(code),
+  host: () => deviceRuntimeHost,
+  stopHost: (host) => stopRuntimeHostWithTimeout(host, SERVER_SIGNAL_STOP_TIMEOUT_MS),
+  warn: (detail, message) => shutdownLogger.warn(detail, message),
+})
+const exitOnSignal = signalExit.exitOnSignal
+signalExit.listen((signal, handler) => { process.on(signal, handler) })
 const serverVersionSwitchActivity = () => loadEmdashBridge()?.sessionpageVersionSwitchActivity?.()
 if (isSingleServerRun()) singleServerUpdater()?.bindRuntime({
   // A5 includes work pending hydration and authorization; do not sample activity.json.
@@ -3414,22 +3428,14 @@ process.on('SIGCONT', () => {
   // completion waiters must not consume that debt as a lost turn.
   resumeAllCodexAppServerTurnWaiters()
 })
-process.on('uncaughtException', (err) => {
-  // @@@logging(#2382)- 就地升级成结构化,❌ 不另起一对处理器(那会让每次崩溃出现两行两套措辞)。
-  // @@@4965 - 先同步落盘再决定去留:pino 是异步写,`process.exit(1)` 之后永远 flush 不到,
-  // 那正是 #4965 里堆栈丢失、根因查不动的原因。
-  const verdict = classifyFatal(err)
-  recordFatalSync({ dir: logDir, verdict, source: 'uncaughtException', err })
-  if (verdict === 'environment') {
-    // @@@4965 - 合盖睡眠/断网抛出的 net::ERR_* 与超时不是「程序坏了」,杀进程只会让用户
-    // 「合一下盖软件全退了」。fail loud 照旧(响亮记账 + 崩溃文件留痕),但❌ 不再拿进程陪葬。
-    createLogger('process').error({ err }, '未捕获异常判为环境故障(网络/电源)— 已记账,进程继续')
-    return
-  }
-  createLogger('process').error({ err }, '未捕获异常 — 收引擎进程组后退出')
-  killEnginesOnCrash('uncaughtException')
-  process.exit(1) // fail loud:非零退出,别把崩溃咽下装没事
-})
+// @@@logging(#2382)- 就地升级成结构化,❌ 不另起一对处理器(那会让每次崩溃出现两行两套措辞)。
+process.on('uncaughtException', createFatalExit({
+  classify: classifyFatal,
+  record: (entry) => recordFatalSync({ dir: logDir, ...entry }),
+  logger: createLogger('process'),
+  reap: killEnginesOnCrash,
+  exit: (code) => process.exit(code),
+}))
 process.on('unhandledRejection', (reason) => {
   // 不退出(未必致命),仅让原本静默的 rejection 可见(fail loud);引擎清扫留给真正的致命/信号路径。
   // 落盘同样走 crash 文件:退出登录会重启进程,主日志会被下次启动轮转掉,而这些拒绝是排障的第一现场。
@@ -3587,6 +3593,7 @@ function definedEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   return out
 }
 let emdashBridge: EmdashBridgeModule | null = null
+let assistantPanelRuntime: ReturnType<typeof createAssistantPanelRuntime> | null = null
 let reconcileSessionpagePlatformOnResume: (() => Promise<void>) | null = null
 let sessionpagePlatformRecovery: SessionpagePlatformRecoveryCoordinator | null = null
 let sessionpagePlatformRecoveryHooks: SessionpagePlatformHooks | null = null
@@ -3661,6 +3668,7 @@ function deviceActionCaller(): DeviceActionCaller {
           platform: d.platform,
           online: d.status === 'online',
           last_seen_at: d.last_seen_at,
+          host_kind: d.capabilities?.host_kind,
           actions: d.capabilities?.actions,
           this_machine: d.device_id === thisId,
         }))
@@ -4382,6 +4390,8 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
       onHostWindowFocusChange,
       hostLocale: currentHostLocale,
       hostTone: readWindowTone,
+      hostThemeColors: () => hostThemeColors,
+      selfGuguNumber,
       onHostPresentationChange: (listener) => {
         hostPresentationListeners.add(listener)
         return () => hostPresentationListeners.delete(listener)
@@ -4446,6 +4456,8 @@ async function stopDesktopOwnedResources(): Promise<void> {
       () => droidDaemonSessionDelivery.dispose(),
       reportShutdownPhase,
     ),
+    // 首启 / 设置里装 agent 的 `mise install`(自成一组、没有时限):不收就在实例停掉后接着跑,还占着继承来的调试端口。
+    runShutdownPhase('mise', killAllMiseProcessesSync, reportShutdownPhase),
     // #7199 / #7317 电脑控制的 cua-driver 守护进程与代理、Mac 小助手:同一条规矩,漏了它们每重启一次就留一个孤儿
     // (真机实测:旧实例退出后 `cua-driver serve` ppid 变成 1)。守护进程自己也认 stdin EOF(见 cua-client),这里是正路。
     runShutdownPhase(
@@ -5047,6 +5059,7 @@ app.whenReady().then(async () => {
       isThisDevice: (deviceId) => crossMachine().isThisDevice(deviceId),
       appSpawn: (app, deviceId, action) => crossMachine().appSpawn(app, deviceId, action),
       sessions: (since, options) => crossMachine().sessionsElsewhere(since, options),
+      sessionHome: (sessionId) => crossMachine().sessionHome(sessionId),
       archive: (deviceId, sessionId, removeSocialIdentity) => crossMachine().archiveOn(deviceId, sessionId, removeSocialIdentity),
       appMessage: (app, deviceId, sessionId, text, how) => crossMachine().appMessage(app, deviceId, sessionId, text, how),
       appCall: (app, deviceId, action) => crossMachine().appCall(app, deviceId, action),
@@ -5105,11 +5118,16 @@ app.whenReady().then(async () => {
         ? { accessToken: auth.accessToken, refreshToken: auth.refreshToken ?? '', userId: auth.userId }
         : null
     }
+    emdash.installPasswordBetaHost({ window: () => mainWindow, account: async () => (await getSessionpageAuth())?.userId ?? null, device: localDeviceId,
+      deliver: (sessionId, requestId, status) => emdash.deliverPasswordBetaDecision(sessionId, requestId, status),
+      readPolicy: createPasswordBetaPolicyReader(getSessionpageAuth) })
+    bindPasswordBetaAgent(emdash.passwordBetaAgent)
     app.once('will-quit', startSessionpageAgentArchivalSync({ getAuth: getSessionpageAuth, resolveDeviceId: localDeviceId,
       inventory: () => emdash.emdashSessionpageInventory(), subscribe: (listener) => emdash.onEmdashSessionpageReapTrigger(listener) }))
     // @@@task-shell-port (#5012) 「给会话开账号」的口与网页版无头宿主共用(sessionpage-identity-host.ts);
     // 这里只喂它桌面版的四样:登录态、设备 id、项目名、会话事实。
     const sessionpageIdentityHost = createSessionpageIdentityHost({
+      beforeIdentityRemoval: id => assistantPanelRuntime?.pauseRemoval(id) ?? (() => {}),
       getAuth: getSessionpageAuth,
       // #4320② 锁内解析:localDeviceId 不起 tick,不会派发要同一把锁的设备命令。
       resolveDeviceId: localDeviceId,
@@ -5153,7 +5171,7 @@ app.whenReady().then(async () => {
     app.once('will-quit', nativeInbox.dispose)
     // 项目的跨设备身份由宿主的群对照维护；每次写入后通知渲染层重读。
     emdash.setUserLibraryOwner(async () => (await getSessionpageAuth())?.userId ?? null)
-    const assistantPanel = createAssistantPanelRuntime({
+    const assistantPanel = assistantPanelRuntime = createAssistantPanelRuntime({
       locale: currentHostLocale,
       getAuth: getSessionpageAuth,
       instanceId: () => deviceRuntimeHost?.instanceId ?? null,
@@ -5479,6 +5497,7 @@ app.whenReady().then(async () => {
                 ? { additionalEnv: configuredMcp.env }
                 : {})),
             additionalMcpServers: configuredMcp.servers,
+            ...(info.sourceSessionId ? { libraryFrom: info.sourceSessionId } : {}),
             // 运行时分叉(侧边聊天)沿用启动输入解析出的同一权限档；ACP adapter 的进程参数
             // 与普通 app-server 由同一 session bundle 物化，不能在桥里另猜一档。
             autonomy: info.permissionMode
@@ -5506,6 +5525,7 @@ app.whenReady().then(async () => {
               publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
               // grant key 用**分叉自己**的会话 id:它必须是独立一格,否则会顶掉来源会话的 grant。
               grantKey: sessionpageSurfaceKey(info.sessionId),
+              nativeSessionId: info.sessionId,
               runHostAction: runAction,
               runSessionAction: runAction,
               forkOf: forkSource.forkOf,
@@ -5563,6 +5583,7 @@ app.whenReady().then(async () => {
           {
             host: primaryGuguMcpHost,
             grantKey: sessionpageSurfaceKey(info.sessionId),
+            nativeSessionId: info.sessionId,
             runSessionAction: runAction,
             // @@@2374 不带 auth:写文件与装扩展都不代表用户去调任何云端接口。桥没
             // 加载成功时这条腿就不接,gugu_session 的 app_* 动作于是在调用时报错 ——
@@ -5790,6 +5811,7 @@ app.whenReady().then(async () => {
             resolveFile: desktopFiles.resolve,
             publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
             grantKey: sessionpageSurfaceKey(info.sessionId),
+            nativeSessionId: info.sessionId,
             ...(assistantRole ? { personalAssistant: true as const, assistantWork: {
               ...assistantWorkBinding(persistedSessionId, info.cwd, SERVER_MODE ? 'cloud' : 'computer', provisioned.guguAgentUserId),
               currentInput: () => emdashBridge?.readCurrentActivityInput(persistedSessionId) ?? Promise.resolve(undefined),
@@ -5892,7 +5914,8 @@ app.whenReady().then(async () => {
 
     // @@@2503 平台额度注入器(Chat UI / ACP 侧)—— pty 钩子的孪生。结构刻意与它一致:先按契约判这一格
     // 能不能注入,再决定复用还是重签。Claude 走会话 `_meta`;Codex/OpenCode 走会话私有适配器的 spawn env。
-    emdash.setEmdashPlatformInjector((info) => sessionpagePlatformHooks.acpInjector(info))
+    emdash.setEmdashPlatformInjector((info) => sessionpagePlatformHooks.acpInjector(info),
+      async (info) => (await sessionpagePlatformHooks.acpPlatformModel(info)).accessSessionId)
     // @@@2503 会话结束 / ACP 运行时消失 → 结清令牌并删掉那份带令牌的 0600 settings 文档。
     // conversationId 为 null = 运行时整个没了,把 Chat UI 这一批全结清(终端会话那批的进程还活着,
     // 一起撤会把它们打成每轮 401)。
@@ -5949,6 +5972,7 @@ app.whenReady().then(async () => {
         return {
           host,
           grantKey: sessionpageSurfaceKey(info.sessionId),
+          nativeSessionId: info.sessionId,
           runHostAction: runAction,
           runSessionAction: runAction,
           // @@@2374 不带 auth:写文件与装扩展都不代表用户去调任何云端接口。桥没
@@ -6452,8 +6476,8 @@ app.whenReady().then(async () => {
         })
         // 资源库 → MCP:这条任务带上的那几台,经能力包送进去。包建好以后连同留在外面的(让给这一家自己的、
         // 这条腿收不到的、和咕咕自己的撞了的、资源库里已删的)记成这一次的事实,任务的 `/mcp` 面板读它。
-        setSessionLibraryMcpBridge(async (sessionId) => {
-          const picked = await emdash.emdashLibraryMcpForSession(sessionId)
+        setSessionLibraryMcpBridge(async (sessionId, selectionFrom) => {
+          const picked = await emdash.emdashLibraryMcpForSession(selectionFrom ?? sessionId)
           const servers = picked.servers.map((server) => ({
             name: server.name,
             transport: server.transport,
@@ -6470,6 +6494,8 @@ app.whenReady().then(async () => {
             settle: ({ delivered, collided }) => {
               const leftOut = [...picked.leftOut, ...collided.map((item) => ({ name: item.name, reason: 'collides' as const, with: item.with }))]
               if (leftOut.length > 0) createLogger('library-mcp').info({ sessionId, leftOut }, 'library MCP left out of the session')
+              // 分叉没有自己的行可记;来源任务那一份是来源自己那一次起进程的事实,❌ 拿分叉的盖掉它。
+              if (selectionFrom) return
               void emdash.emdashRecordLibraryMcp(sessionId, { delivered, leftOut }).catch((error: unknown) =>
                 createLogger('library-mcp').warn({ sessionId, error: String(error) }, 'could not record the library MCP delivery'))
             },
@@ -6486,6 +6512,7 @@ app.whenReady().then(async () => {
           client: (accessToken) => makeIdentityClient(accessToken) as unknown as DeviceProjectsRpcClient,
           records: () => emdash.listDeviceProjectRecords(),
           warn: (message, fields) => createLogger('device-projects').warn(fields, message),
+          onPublished: () => emdash.projectFoldersPublished(),
         })
         try {
           emdash.onDeviceProjectsMaybeChanged(() => deviceProjectsPublisher?.notify())
@@ -6556,7 +6583,7 @@ app.whenReady().then(async () => {
   // server 的升级另有一套(后台下好、没有 agent 在跑时切换),❌ 走桌面这套弹界面的更新器。
   if (!SERVER_MODE) {
     purgeUpdaterCacheOnce()
-    startAutoUpdateChecks()
+    updateChecks.startAutomatic()
   }
 
   // @@@2503 同一条理由的孪生:上一轮被硬杀的进程会把带中转令牌的 `--settings` 覆盖文件留在 tmpdir。
@@ -6607,12 +6634,15 @@ app.whenReady().then(async () => {
     const activityStartedAt = Date.now()
     let activityStopped = false
     const reportActivity = (): void => {
-      if (activityStopped || signalStopping) return
-      if (isSingleServerRun() && ownsHomeLock(process.env.GUGU_SERVER_HOME!) === false) {
-        createLogger('server').error('Installation lock ownership was lost; stopping this server.')
-        killEnginesOnCrash('lock-lost')
-        process.exit(EXIT_CONFIG)
-      }
+      if (activityStopped || signalExit.stopping()) return
+      stopOnLostLock({
+        singleRun: isSingleServerRun,
+        ownsHomeLock: () => ownsHomeLock(process.env.GUGU_SERVER_HOME!),
+        logger: createLogger('server'),
+        reap: killEnginesOnCrash,
+        exit: (code) => process.exit(code),
+        exitCode: EXIT_CONFIG,
+      })
       const activity = loadEmdashBridge()?.sessionpageVersionSwitchActivity?.()
       try {
         writeFileSync(activityFile, JSON.stringify({
@@ -6638,7 +6668,7 @@ app.whenReady().then(async () => {
       unsubscribeActivity?.(); unsubscribeActivity = undefined
     }
     startServerActivity = () => {
-      if (signalStopping || activityTimer) return
+      if (signalExit.stopping() || activityTimer) return
       activityStopped = false
       unsubscribeActivity = loadEmdashBridge()?.onSessionpageAuthorizationActivityChange?.(reportActivity)
       activityTimer = setInterval(reportActivity, 10_000)

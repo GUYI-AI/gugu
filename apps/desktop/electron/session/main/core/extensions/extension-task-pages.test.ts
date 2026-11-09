@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import type { BridgeCaller } from './extension-bridge';
 import { ExtensionTaskPages, type TaskPageNative } from './extension-task-pages';
 import { cancelExtensionSessionCalls, revokeExtensionProgramAccess } from './extension-program-access';
+import { log } from '@main/lib/logger';
 
 const instances: ExtensionTaskPages[] = [];
 afterEach(async () => { for (const pages of instances.splice(0)) await pages.closeProgram(-1); });
@@ -189,7 +190,7 @@ it('program exit observes failed late cleanup and still releases the other late 
   const first = native(), second = native();
   vi.mocked(first.value.release).mockImplementation(() => { throw new Error('late native release failed'); });
   let next = 0;
-  const report = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const report = vi.spyOn(log, 'error').mockImplementation(() => {});
   const { pages } = setup(() => next++ ? b.promise : a.promise);
   try {
     const pa = pages.acquire(caller().from, { watchId: 'a' }), pb = pages.acquire(caller().from, { watchId: 'b' });
@@ -199,6 +200,6 @@ it('program exit observes failed late cleanup and still releases the other late 
     await failedA; await failedB; await failedExit;
     expect(first.value.protocol.close).toHaveBeenCalledTimes(1);
     expect(second.value.release).toHaveBeenCalledTimes(1);
-    expect(report).toHaveBeenCalledWith(expect.objectContaining({ message: 'Late task page cleanup failed' }));
+    expect(report).toHaveBeenCalledWith('App task page cleanup failed', { error: 'Late task page cleanup failed' });
   } finally { report.mockRestore(); }
 });

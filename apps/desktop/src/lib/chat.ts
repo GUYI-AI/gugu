@@ -1,5 +1,7 @@
+import { ingestMessages } from './messageIngest'
+import { ingestFetchedMessagePage } from './chatMessagePages'
 import { dbPayload } from '@gugu/core/cloud/supabase'
-import { createGroupWithInvitations } from '@gugu/core/cloud/groupChat'
+import { createGroupWithInvitations, groupInvitationNote } from '@gugu/core/cloud/groupChat'
 import {
   getDeviceCommand as getCoreDeviceCommand,
   pollDeviceCommandUntilDone,
@@ -63,7 +65,6 @@ import type {
   NotificationLevel
 } from '@gugu/core/shared/types/chat'
 import {
-  applyMessageOverlays,
   loadMessageOverlays,
   revalidateMessageWindow,
   type MessageOverlay,
@@ -282,8 +283,8 @@ export type DeviceBoundAgent = { id: string; display_name: string; avatar: strin
 export type GroupCollabLoad = { snapshot: GroupCollabSnapshot; identities: DisplayIdentity[] }
 
 /**
- * 名册读到 0 行。@@@5856 这**不是**「没权限」:话题里它的正常含义是「你看得见这条话题,但还不是
- * 它的参与者」(spec:参与靠说话或被 @ 进来)。调用方据此给一句能照做的话,❌ 不是「关掉再打开一次」。
+ * 名册读到 0 行。@@@5856 这**不是**加载故障:来源会话成员读得到话题参与者,0 行只在话题里已经没有在册的
+ * 参与者,或读的人不在来源会话时出现。调用方如实说「暂时看不到成员」,❌ 不是「关掉再打开一次」。
  */
 export class GroupCollabEmptyError extends Error { constructor() { super('Group collab roster is empty for this viewer') } }
 
@@ -325,15 +326,7 @@ export const chatService = {
     const { data: msgs, error } = await query.order('seq', { ascending }).limit(limit)
     if (error) throw new Error(error.message)
 
-    if (!msgs?.length) return []
-
-    // messageItemFromRow is the shared mapping. Descending pages (initial/older) reverse to
-    // chronological; ascending newer pages are already chronological. The window owner publishes
-    // these bodies before its bounded overlay revalidation completes.
-    const items = (msgs as RawMessageRow[])
-      .map((row) => messageItemFromRow(row, userId))
-      .filter((m): m is MessageItem => m !== null)
-    return ascending ? items : items.reverse()
+    return ingestFetchedMessagePage((msgs ?? []) as RawMessageRow[], userId, { chatId, limit, beforeSeq, afterSeq })
   },
 
   /** @@@threads (#957/#2525) — 群话题 root + 回复，按 seq 正序；主线已过滤回复。 */
@@ -360,11 +353,7 @@ export const chatService = {
       .limit(limit)
     if (error) throw new Error(error.message)
     if (!msgs?.length) return []
-    const items = (msgs as RawMessageRow[])
-      .map((row) => messageItemFromRow(row, userId))
-      .filter((m): m is MessageItem => m !== null)
-    // 降序取最近 limit 条后翻回时间正序(与 getMessages initial 页一致)。
-    return applyMessageOverlays(items.reverse(), userId)
+    return ingestFetchedMessagePage(msgs as RawMessageRow[], userId, { chatId, limit, threadRootId: rootId })
   },
 
   /** @@@threads (#1196 Q2/#2525) — 幂等标记群话题 root；私聊由服务边界拒绝。 */
@@ -514,7 +503,9 @@ export const chatService = {
 
     if (error) throw new Error(error.message)
     if (!msg) return null
-    return messageItemFromRow(msg as RawMessageRow, userId)
+    const item = messageItemFromRow(msg as RawMessageRow, userId)
+    if (item) await ingestMessages(userId, { writes: [{ type: 'put', message: item }], revisions: [] })
+    return item
   },
 
   markUnread: markMemberUnread,
@@ -861,7 +852,7 @@ export const chatService = {
   async inviteGroupMember(chatId: string, userId: string) {
     const admin = await currentGroupAdmin()
     const group = await admin.info(chatId)
-    return admin.invite(chatId, userId, `邀请你加入群聊「${String(group.name)}」。`)
+    return admin.invite(chatId, userId, groupInvitationNote(String(group.name)))
   },
 
   // @@@remove-member - Generic remove (manager removing a member, or an owner taking their own agent out); for agents this also cleans up group_agent_states.

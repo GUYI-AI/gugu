@@ -31,6 +31,7 @@ import { COMMANDS, type CommandId } from '@shared/commands';
 import { getElectronTabNavigationDirection, resolveDefaultHotkey,  } from '@shared/shortcuts';
 import { isGoogleAuthUrl, userAgentForBrowserUrl } from './browser-user-agent';
 import { isSupportedBrowserNavigationUrl } from './browser-navigation';
+import { assertCredentialAgentContents, assertCredentialNativeAdoption } from './credential-isolation-registry';
 
 type RegisteredBrowserSession = {
   browserId: string;
@@ -78,7 +79,7 @@ export class BrowserWebContentsRegistry {
   private browserShortcuts = getBrowserShortcuts();
 
   registerSession(input: RegisteredBrowserSession): void {
-    this.sessionsByBrowserId.set(input.browserId, input);
+    this.sessionsByBrowserId.set(input.browserId, Object.freeze({ ...input }));
   }
 
   unregisterSession(browserId: string): void {
@@ -98,6 +99,16 @@ export class BrowserWebContentsRegistry {
     this.browserShortcuts = getBrowserShortcuts(keyboard);
   }
 
+  /** The existing native guest shortcut path, shared by browser and App surfaces. */
+  bindAppShortcuts(contents: WebContents, onCommand: (id: CommandId) => boolean, onTab?: (direction: 'next' | 'previous') => boolean): void {
+    contents.on('before-input-event', (event, input) => {
+      const direction = getElectronTabNavigationDirection(input);
+      if (direction && onTab?.(direction)) { event.preventDefault(); return; }
+      const command = getBrowserShortcutKey(input, this.browserShortcuts);
+      if (command && onCommand(command)) event.preventDefault();
+    });
+  }
+
   get registeredPartitions(): ReadonlySet<string> {
     const partitions = new Set<string>();
     for (const registered of this.sessionsByBrowserId.values()) {
@@ -111,6 +122,14 @@ export class BrowserWebContentsRegistry {
     return this.sessionsByBrowserId.get(browserId)?.partition === partition;
   }
 
+  isRegisteredForSession(browserId: string, sessionId: string, partition: string): boolean {
+    const registered = this.sessionsByBrowserId.get(browserId);
+    return registered?.partition === partition && registered.sessionId === sessionId;
+  }
+
+  /** Host-only lifetime identity. Closing/re-registering the same tab ID cannot revive an old login. */
+  registrationIdentity(browserId: string): object | undefined { return this.sessionsByBrowserId.get(browserId); }
+
   /**
    * #7274 页签的网页(主进程建的 WebContentsView,见 browser-page-views.ts)建好了:收紧它、认作这个页签的网页。
    * `origin`:网页左上角在窗口内容区里的位置 —— 右键菜单的坐标是网页自己的,弹到窗口上要加上它。
@@ -120,6 +139,7 @@ export class BrowserWebContentsRegistry {
     webContents: WebContents,
     placement: { window: () => BrowserWindow | null; origin: () => { x: number; y: number } }
   ): void {
+    assertCredentialNativeAdoption(webContents);
     const webContentsId = webContents.id;
     this.hardenBrowserWebContents(webContents, placement);
 
@@ -160,6 +180,7 @@ export class BrowserWebContentsRegistry {
       if (registered.sessionId !== sessionId) continue;
       const webContents = this.webContentsByBrowserId.get(browserId);
       if (!webContents || webContents.isDestroyed()) continue;
+      try { assertCredentialAgentContents(webContents); } catch { continue; }
       found.push({ browserId, webContents, at: this.lastActiveAt.get(browserId) ?? 0 });
     }
     return found.sort((a, b) => b.at - a.at).map(({ browserId, webContents }) => ({ browserId, webContents }));
@@ -195,6 +216,7 @@ export class BrowserWebContentsRegistry {
   openDevTools(browserId: string): boolean {
     const webContents = this.webContentsByBrowserId.get(browserId);
     if (!webContents || webContents.isDestroyed()) return false;
+    try { assertCredentialAgentContents(webContents); } catch { return false; }
     webContents.openDevTools({ mode: 'detach' });
     return true;
   }
@@ -202,7 +224,9 @@ export class BrowserWebContentsRegistry {
   async captureScreenshotToClipboard(browserId: string): Promise<boolean> {
     const webContents = this.webContentsByBrowserId.get(browserId);
     if (!webContents || webContents.isDestroyed()) throw new Error('Browser is no longer available');
+    assertCredentialAgentContents(webContents);
     const image = await webContents.capturePage();
+    assertCredentialAgentContents(webContents);
     if (image.isEmpty()) throw new Error('Browser screenshot is empty');
     // @@@electron44-clipboard (#4394) — electron 44 用 W3C ClipboardItem 取代了 clipboard.writeImage。
     // 必须 await:旧的同步 writeImage 一返回就保证系统剪贴板已写好,而新 API 的 promise 没落地前
@@ -256,6 +280,7 @@ export class BrowserWebContentsRegistry {
     placement: { window: () => BrowserWindow | null; origin: () => { x: number; y: number } }
   ): void {
     webContents.setWindowOpenHandler((details) => {
+      try { assertCredentialAgentContents(webContents); } catch { return { action: 'deny' }; }
       if (!isSupportedBrowserNavigationUrl(details.url)) {
         return { action: 'deny' };
       }
@@ -271,44 +296,29 @@ export class BrowserWebContentsRegistry {
       return { action: 'deny' };
     });
 
-    webContents.on('before-input-event', (event, input) => {
-      const tabNavigationDirection = getElectronTabNavigationDirection(input);
-      if (tabNavigationDirection) {
-        const browserId = this.browserIdByWebContentsId.get(webContents.id);
-        if (browserId) {
-          event.preventDefault();
-          events.emit(tabNavigationShortcutChannel, {
-            source: { kind: 'browser', browserId },
-            direction: tabNavigationDirection,
-          });
-          return;
-        }
-      }
-
-      const commandId = getBrowserShortcutKey(input, this.browserShortcuts);
-      if (commandId === null) return;
-
+    this.bindAppShortcuts(webContents, (commandId) => {
+      try { assertCredentialAgentContents(webContents); } catch { return false; }
       if (commandId !== 'session.browserCopyUrl') {
         const browserId = this.browserIdByWebContentsId.get(webContents.id);
-        if (!browserId) return;
-        event.preventDefault();
-        events.emit(browserAppShortcutChannel, {
-          source: { kind: 'browser', browserId },
-          commandId,
-        });
-        return;
+        if (!browserId) return false;
+        events.emit(browserAppShortcutChannel, { source: { kind: 'browser', browserId }, commandId });
+        return true;
       }
-
       const normalized = normalizeBrowserUrl(webContents.getURL(), { allowSearchQueries: false });
-      if (!normalized.ok || !isExternalHttpUrl(normalized.url)) return;
-      event.preventDefault();
-      copyTextThenNotify(normalized.url, () =>
-        events.emit(browserLinkCopiedChannel, { kind: 'url', url: normalized.url }),
-      );
+      if (!normalized.ok || !isExternalHttpUrl(normalized.url)) return false;
+      copyTextThenNotify(normalized.url, () => events.emit(browserLinkCopiedChannel, { kind: 'url', url: normalized.url }));
+      return true;
+    }, (direction) => {
+      try { assertCredentialAgentContents(webContents); } catch { return false; }
+      const browserId = this.browserIdByWebContentsId.get(webContents.id);
+      if (!browserId) return false;
+      events.emit(tabNavigationShortcutChannel, { source: { kind: 'browser', browserId }, direction });
+      return true;
     });
 
     webContents.on('context-menu', (event, params) => {
       event.preventDefault();
+      try { assertCredentialAgentContents(webContents); } catch { return; }
       const window = placement.window();
       const origin = placement.origin();
       const position = { window: window ?? undefined, x: origin.x + params.x, y: origin.y + params.y };

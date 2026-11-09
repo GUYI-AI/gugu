@@ -1,3 +1,4 @@
+import { base64ToBytes, bytesToBase64 } from '../base64'
 // @@@task-web-host — 会话页宿主的 WebSocket 线协议(浏览器侧与 node 侧共用,❌ 引 Buffer / electron)。
 //
 // 一条 WebSocket 连接 = 一个"渲染窗口":承载 preload 那五个方法里要过网的四个
@@ -71,25 +72,9 @@ const textDecoder = new TextDecoder()
 // byteLength 读不到 → 落盘抛错 → 粘贴静默失败(#4866 web 验收撞到)。文本帧里的字节一律按
 // 带标签的 base64 走,两侧对称;标签键名故意生僻,不与业务字段撞。Buffer 是 Uint8Array 子类,同样命中。
 const U8_TAG = '$gugu_u8'
-const B64_CHUNK = 0x8000
-
-function u8ToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  for (let i = 0; i < bytes.length; i += B64_CHUNK) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + B64_CHUNK) as unknown as number[])
-  }
-  return btoa(binary)
-}
-
-function base64ToU8(text: string): Uint8Array {
-  const binary = atob(text)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
-  return bytes
-}
 
 function u8Replacer(this: unknown, _key: string, value: unknown): unknown {
-  return value instanceof Uint8Array ? { [U8_TAG]: u8ToBase64(value) } : value
+  return value instanceof Uint8Array ? { [U8_TAG]: bytesToBase64(value) } : value
 }
 
 function u8Reviver(this: unknown, _key: string, value: unknown): unknown {
@@ -99,13 +84,27 @@ function u8Reviver(this: unknown, _key: string, value: unknown): unknown {
     typeof (value as Record<string, unknown>)[U8_TAG] === 'string' &&
     Object.keys(value).length === 1
   ) {
-    return base64ToU8((value as Record<string, string>)[U8_TAG]!)
+    return base64ToBytes((value as Record<string, string>)[U8_TAG]!)
   }
   return value
 }
 
+// invoke 的参数要和走 Electron IPC 时一样到达宿主。JSON 会把数组里的 undefined 写成 null:
+// `agents.install(id, 'mise', undefined)`(下载源「自动」)到了宿主就成了 registry=null,
+// 按「点名了 null 这个源」去挑装法,结果一条都挑不到(「这个平台上没有 codex 的安装命令」)。
+// 末尾的 undefined 不写进帧,于是任何版本的宿主读到的都是 undefined。
+// 中间位置的 undefined 仍然会变成 null:JSON 里没有哪个值能让旧宿主读回 undefined。
+function withoutTrailingUndefined(args: unknown[]): unknown[] {
+  let end = args.length
+  while (end > 0 && args[end - 1] === undefined) end -= 1
+  return end === args.length ? args : args.slice(0, end)
+}
+
 /** 编码一条信封:含 blob-chunk 的 pm 帧走二进制,其余走文本。 */
 export function encodeHostWsMessage(message: HostWsMessage): string | Uint8Array<ArrayBuffer> {
+  if (message.t === 'invoke') {
+    return JSON.stringify({ ...message, args: withoutTrailingUndefined(message.args) }, u8Replacer)
+  }
   if (message.t === 'pm' && isBlobChunk(message.msg)) {
     const { data, ...rest } = message.msg
     const header = textEncoder.encode(JSON.stringify({ ...message, msg: rest }, u8Replacer))
@@ -158,7 +157,7 @@ export const HOST_WS_TOKEN_QUERY = 'token'
 export type HostFrameCarrier = { f: string } | { b: string }
 
 export function frameToCarrier(frame: string | Uint8Array): HostFrameCarrier {
-  return typeof frame === 'string' ? { f: frame } : { b: u8ToBase64(frame) }
+  return typeof frame === 'string' ? { f: frame } : { b: bytesToBase64(frame) }
 }
 
 export function carrierToFrame(value: unknown): string | Uint8Array | null {
@@ -167,7 +166,7 @@ export function carrierToFrame(value: unknown): string | Uint8Array | null {
   if (typeof carrier.f === 'string') return carrier.f
   if (typeof carrier.b === 'string') {
     try {
-      return base64ToU8(carrier.b)
+      return base64ToBytes(carrier.b)
     } catch {
       return null
     }

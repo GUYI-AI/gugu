@@ -1,3 +1,4 @@
+import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
 import { agentSupportsConnectionManagement } from '@shared/core/agents/agent-payload';
 import { useConnectionPanel } from '@renderer/features/settings/subscriptions/use-connection-panel';
 import { DEFAULT_FREE_PLATFORM_MODEL, DEFAULT_PLATFORM_MODEL_BY_PROVIDER } from '@shared/core/sessions/new-session-defaults';
@@ -46,6 +47,7 @@ import { IntegrationIcon } from '@renderer/features/integrations/integration-ico
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { resolveLegLoginGate } from './vendor-login-prompt';
 import { usePromptLibrary } from '@renderer/features/library/prompts/use-prompt-library';
+import { promptSlashItems } from '@renderer/features/library/prompts/prompt-slash-items';
 import { AgentIcon } from '@renderer/lib/components/agent-icon';
 import {
   agentGroupLabel,
@@ -64,7 +66,8 @@ import type { SessionViewLockState } from './session-view-lock';
 import { SessionViewControl } from './session-view-control';
 import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
 import { DEFAULT_SESSION_VIEW } from '@shared/core/sessions/new-session-defaults';
-import { safeFailureLine } from '@renderer/features/sessions/gugu-reason';
+import { codexNeedsUpgrade } from '../session-input-failure-copy';
+import { useSessionInputNotice } from '../session-input-notice';
 import { log } from '@renderer/utils/logger';
 import {
   harnessCatalogNotice,
@@ -73,7 +76,7 @@ import {
 } from './harness-model-field';
 import { useHarnessModelOptions } from './use-harness-model-options';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
-import { HARNESS_MODEL_CATALOG_QUERY_KEY, useHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
+import { HARNESS_MODEL_CATALOG_QUERY_KEY, useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { queryClient } from '@renderer/lib/query-client';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { useHarnessModelCredential } from '@renderer/lib/stores/use-harness-model-credential';
@@ -82,7 +85,6 @@ import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import { Field } from '@renderer/lib/ui/field';
-import { cn } from '@renderer/utils/utils';
 import {
   agentOffersSessionView,
   agentReadingForLeg,
@@ -104,13 +106,11 @@ import {
 import type { LinkedIssue } from '@shared/core/linked-issue';
 import { DEFAULT_SESSION_AUTO_APPROVE } from '@shared/core/sessions/default-session-autonomy';
 import { buildIssueContextText } from '../context-bar/context-actions';
-import { appendInitialSessionText } from '../create-session-modal/initial-session-text';
-import { usePromptFileDrop } from '../create-session-modal/use-prompt-file-drop';
 import { rpcOn } from '@renderer/lib/ipc';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { asMounted, getProjectStore } from '@renderer/features/projects/stores/project-selectors';
 import { pushTaskDirectory, taskAttachmentUsesSsh } from '@/lib/taskAttachmentTarget';
-import { droppedDirectoryMention } from '@renderer/lib/drag-files';
+import { droppedDirectoryMention, pathMention } from '@renderer/lib/drag-files';
 import {
   createLocalSessionMentionProvider,
   localSessionMentionHiddenContext,
@@ -120,6 +120,7 @@ import { useSessionMentionDrop } from '@renderer/lib/chat/use-session-mention-dr
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { useComposerFileUploads, type TaskAttachmentTarget } from '@renderer/features/sessions/acp/use-composer-file-uploads';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
+import { guguReasonInText } from '@gugu/session-core/session-record/contract';
 import type { ComposerDraft, SubmittedComposerDraft } from '../composer-drafts';
 import {
   guguCatalogNotice,
@@ -195,7 +196,7 @@ export type InitialSessionState = {
   retryPlatformCatalog?: () => void;
   /** harness 模型目录拿不到时的那句话（没装 / 没登录 / 坏了）。 */
   harnessNotice: string | null;
-  /** 「坏了」那一态的原因(宿主原文,长度不可控);就地显示在输入框下面,❌ toast(#6692)。 */
+  /** Diagnostic reason, only passed to the local log. */
   harnessNoticeDetail: string | null;
   /**
    * 去登录的那条路；不是「该去登录」那一态、或开不了登录终端时为 null。
@@ -533,6 +534,7 @@ export function useInitialSessionState(
   // 把它移走,所以「屏幕上还剩什么」逐字等于「重试还要发什么」,不需要第二份快照。
   const [localAttachments, setLocalAttachments] = useState<ComposerAttachment[]>([]);
   const attachments = draft ? draft.attachments : localAttachments;
+  const fileSelection = useAttachmentFileSelection(attachments, draft);
   const setAttachmentsState: Dispatch<SetStateAction<ComposerAttachment[]>> = useCallback((next) => {
     if (!draft) { setLocalAttachments(next); return; }
     const chips = typeof next === 'function' ? next(draft.attachments) : next;
@@ -565,28 +567,35 @@ export function useInitialSessionState(
     [placements]
   );
   const enqueueAttachments = useCallback(async (files: File[]) => {
-    const queued = await Promise.all(
-      files.map(async (file) => {
-        const id = crypto.randomUUID();
-        if (!draft) pendingAttachmentFilesRef.current.set(id, file);
-        const image = file.type.toLowerCase().startsWith('image/');
-        // chip 点开看的内容,入列时就得在手上(#5269)。
-        const preview = image ? undefined : await readAttachmentPreviewText(file);
-        return {
-          id,
-          name: file.name,
-          kind: image ? ('image' as const) : ('file' as const),
-          mimeType: file.type,
-          previewUrl: image ? URL.createObjectURL(file) : undefined,
-          previewText: preview?.text,
-          previewTruncated: preview?.truncated,
-        };
-      })
-    );
-    if (draft) draft.setPending([...draft.pending, ...queued.map((chip, index) => ({ chip, file: files[index]! }))]);
-    else setAttachmentsState((current) => [...current, ...queued]);
-    setAttachmentEditSeq((seq) => seq + 1);
-  }, [draft, setAttachmentsState]);
+    const selected = fileSelection.choose(files);
+    if (!selected.length) return;
+    try {
+      const queued = await Promise.all(
+        selected.map(async ({ file, id }) => {
+          if (!draft) pendingAttachmentFilesRef.current.set(id, file);
+          const image = file.type.toLowerCase().startsWith('image/');
+          // chip 点开看的内容,入列时就得在手上(#5269)。
+          const preview = image ? undefined : await readAttachmentPreviewText(file);
+          return {
+            id,
+            name: file.name,
+            kind: image ? ('image' as const) : ('file' as const),
+            mimeType: file.type,
+            previewUrl: image ? URL.createObjectURL(file) : undefined,
+            previewText: preview?.text,
+            previewTruncated: preview?.truncated,
+          };
+        })
+      );
+      if (draft) draft.setPending([...draft.pending, ...queued.map((chip, index) => ({ chip, file: selected[index]!.file }))]);
+      else setAttachmentsState((current) => [...current, ...queued]);
+      setAttachmentEditSeq((seq) => seq + 1);
+    } catch (error) {
+      fileSelection.release(selected);
+      for (const { id } of selected) pendingAttachmentFilesRef.current.delete(id);
+      throw error;
+    }
+  }, [draft, fileSelection, setAttachmentsState]);
   const setAttachments = useCallback((next: ComposerAttachment[]) => {
     // ChatComposer 是从它手上那份(可能已经过期的)props 算出 next 的。发送中途点掉某个 chip 时,
     // 那份快照里可能还留着刚刚送达、已被 dropAttachment 移走的那一件 —— 原样写回去会把它**复活**成
@@ -1030,12 +1039,41 @@ export function useInitialSessionState(
   //    而那时咕咕的模型明明对 X 开着,是界面自己没去读。
   // 宿主报的是原因码,这里按界面语言说成人话;认不出的原文(老版本宿主)❌ 上屏。
   // 机器没连上时同理:咕咕模型的目录也是问那台机器要的,问不到是机器离线的结果,❌ 说成「模型列表尚未就绪」再给个「重试」。
-  const platformCatalogNotice = machineUnreachable ? null : guguCatalogNotice(platformCatalog.catalogError, translate);
+  // The sentence explains an empty picker. A harness with its own models and no Gugu group (Kiro, Antigravity) is not one.
+  const ownModelsOnly = guguReasonInText(platformCatalog.catalogError ?? '') === 'not-routable'
+    && harnessCatalogState.kind === 'ready' && harnessCatalogState.models.length > 0;
+  const platformCatalogNotice = machineUnreachable || ownModelsOnly ? null : guguCatalogNotice(platformCatalog.catalogError, translate);
   const platformNotice = platformCatalogNotice?.text ?? null;
-  // 失败细节 ❌ 不拼进上面那句内联文案:那是 composer 工具栏,而 reason 是长度不可控的外部串,拼进去会把
-  // 工具栏撑破、溢出到卡片外(真机上就是这么炸的)。工具栏留一句定性(「读取 X 的模型失败」),原因就地
-  // 显示在输入框下面一行(#6692);启动失败那条也是就地显示。
-  const harnessNoticeDetail = harnessNoticeMessage?.detail ?? null;
+  const harnessNoticeDetail = harnessCatalogState.kind === 'unavailable' ? harnessCatalogState.reason : null;
+  const upgradeCodex = !!harnessNoticeDetail && codexNeedsUpgrade(harnessNoticeDetail);
+  const openInstaller = () => {
+    if (!providerId) return;
+    (window as typeof window & { __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (id: string) => void })
+      .__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?.(providerId);
+    navigate('library', { tab: 'agents', agentId: providerId });
+  };
+  const harnessAction = upgradeCodex || harnessNoticeMessage?.action === 'install'
+    ? (!machine && providerId ? { label: translate('taskError.runtimeUpgradeOpenInstaller', { harnessName: agentDisplayName }), onClick: openInstaller } : undefined)
+    : harnessNoticeMessage?.action === 'login'
+      ? (harnessSignIn ? { label: translate('harnessLogin.signIn'), onClick: () => harnessSignIn() } : undefined)
+      : harnessNoticeMessage?.action === 'retry' && providerId
+        ? { label: translate('harnessCatalog.retry'), onClick: () => { void forceRefreshHarnessModelCatalog(queryClient, providerId, sessionpageSurface, machine).catch(error => log.error('Model catalog retry failed', { error })); } }
+        : undefined;
+  useSessionInputNotice(`session-catalog:${machine ?? 'local'}:${providerId ?? 'none'}:${sessionpageSurface}`, !harnessNoticeMessage
+    ? null
+    : harnessCatalogState.kind === 'unknown' ? undefined : {
+      title: upgradeCodex ? translate('taskError.codexUpgrade') : harnessNotice ?? undefined,
+      tier: 'error', action: harnessAction,
+      diagnostic: harnessNoticeDetail ?? undefined,
+    });
+  useSessionInputNotice(`session-platform-catalog:${machine ?? 'local'}:${providerId ?? 'none'}:${sessionpageSurface}`,
+    platformCatalogNotice?.retryable ? {
+      title: platformNotice ?? undefined, diagnostic: platformCatalog.catalogError,
+      action: { label: translate('harnessCatalog.retry'), onClick: () => platformCatalog.retry() },
+    } : null);
+  useSessionInputNotice(`session-provider:${machine ?? 'local'}:${providerId ?? 'none'}`, providerError ? {
+    title: providerError,
+  } : null);
 
   /**
    * ⚠️ **这里原来有一条右下角 toast:「{name} 未登录」。2026-08-28 去掉了(owner 定)。**
@@ -1278,12 +1316,6 @@ function useAgentCapabilities(providerId: AgentProviderId | null): AgentCapabili
   return agents?.find((agent) => agent.id === providerId)?.capabilities ?? null;
 }
 
-const SLASH_PROMPTS_SECTION = 'Prompts';
-
-function promptPreview(text: string): string {
-  return text.split(/\r?\n/, 1)[0] ?? '';
-}
-
 function toLinkedIssueMentionItem(issue: LinkedIssue): MentionItem {
   const token = issueMentionToken(issue.provider, issue.identifier);
   return {
@@ -1348,7 +1380,7 @@ export function InitialSessionField({
   const editorApiRef = useRef<PromptEditorRef | null>(null);
   const syncingEditorTextRef = useRef(false);
   const localMentionItemsRef = useRef<MentionItem[]>([]);
-  const { value: promptLibrary } = usePromptLibrary();
+  const { value: promptLibrary, overrides } = usePromptLibrary();
   const harnessModelOptions = useHarnessModelOptions(state.provider, sessionpageLegOfView(state.sessionView));
   const { data: agents, isLoading: agentsLoading } = useAgents();
   // #6264 名单要跨云问另一台机器时,那一格画「正在读取」,❌ 空着让人以为那台机器上什么都开不了。
@@ -1431,19 +1463,6 @@ export function InitialSessionField({
   const planModeSupported = agentSupportsPlanMode(capabilities, leg);
   const editModeOffered = agentOffersEditMode(capabilities, leg);
 
-  const { isDragOver, dropHandlers } = usePromptFileDrop({
-    // OS 文件拖拽**一律**交给 ChatComposer 自己的 drop(→ onFilesDropped → 附件 chip),
-    // 这一层只留「从任务的文件树里拖一行进来」那条(它走 workspace-file 通道,不受这个开关影响)。
-    // ⚠️ 这一层若也收,一次拖拽会被**两边都收**:
-    // composer 收成 chip,这一层同时把绝对路径写进正文 —— 屏幕上一个附件、正文里一段路径。
-    // composer 的 handleDrop 只 preventDefault、不 stopPropagation,所以事件照样冒泡到这里。
-    // (SSH 项目本来就不该收本地路径:远端不存在这个文件。那条理由现在被上面这条覆盖。)
-    disableLocalFiles: true,
-    workspaceId: state.projectId,
-    onDropText: (text) =>
-      state.setPrompt((current) => appendInitialSessionText(current, text)),
-  });
-
   useEffect(() => {
     const editor = editorApiRef.current;
     if (!editor || editor.getText() === state.prompt) return;
@@ -1500,6 +1519,12 @@ export function InitialSessionField({
   const { dataDropTypes, onDataDropped } = useSessionMentionDrop({
     provider: localSessionMentionProvider,
     editorApiRef,
+    // Defined below with the composer's other drop paths; called only when something is dropped.
+    attachFiles: enableAttachments ? (files) => handleFiles(files) : undefined,
+    dropFolder: (path) => {
+      if (remoteMachine) toast({ title: translate('chat.folderDropUnsupportedTitle'), variant: 'destructive' });
+      else editorApiRef.current?.insertMention(pathMention(path));
+    },
     onMentionResolved: useCallback((item: MentionItem) => {
       const known = new Map(localMentionItemsRef.current.map((entry) => [entry.label, entry]));
       known.set(item.label, item);
@@ -1532,25 +1557,9 @@ export function InitialSessionField({
 
   const querySlashItems = useCallback(
     async (query: string): Promise<CommandItem[]> => {
-      const normalized = query.trim().toLowerCase();
-      return promptLibrary
-        .filter((prompt) => {
-          if (!normalized) return true;
-          return [prompt.title, prompt.prompt].some((value) =>
-            value.toLowerCase().includes(normalized)
-          );
-        })
-        .map((prompt) => ({
-          id: `prompt:${prompt.id}`,
-          name: prompt.title,
-          label: prompt.title,
-          description: promptPreview(prompt.prompt),
-          behavior: 'insert-text' as const,
-          insertText: prompt.prompt,
-          section: SLASH_PROMPTS_SECTION,
-        }));
+      return promptSlashItems(promptLibrary, overrides, translate('chat.prompts'), query.trim().toLowerCase());
     },
-    [promptLibrary]
+    [promptLibrary, overrides, translate]
   );
 
   // @@@permission-independent-of-chat-ui — 权限选择与 Chat UI 开关是两件事,不该互相牵制。
@@ -1689,45 +1698,6 @@ export function InitialSessionField({
     [remoteMachine, state.projectId, translate]
   );
 
-  // 平台分组缺席的原因,贴在模型选择器同一排。ChatComposer 的模型列表是平铺的
-  // `DropdownMenu.RadioItem`,`ComposerModelOption` 没有 disabled/说明行的位置(组件在
-  // packages/session-ui),所以这句话只能落在工具栏里 —— 不可点、无边框、跟 Chat UI 标签同一档
-  // 字号与色阶,不额外造视觉层级。
-  // ⚠️ 这两条的长度不由这里决定（平台那句按主进程的原因码取、harness 那句是失败定性 + 插值名字）——
-  // 所以必须自己封顶：`min-w-0` 让 flex 子项允许被压缩（默认 `min-width:auto` 不缩），
-  // `max-w-*` + `truncate` 保证再长也只占一行、多出来的用省略号收掉。
-  // ❌ 别指望文案短就不会溢出：真机上一条主进程原样转达的英文错误就把这排撑破、溢出到卡片外。
-  // 全文不会因此丢失 —— `title` 悬浮可看，失败细节另有 toast。
-  const noticeClassName = 'min-w-0 max-w-[22rem] truncate px-1 text-xs text-foreground-muted';
-
-  const platformNotice = state.platformNotice ? (
-    <span role="status" title={state.platformNotice} className={noticeClassName}>
-      {state.platformNotice}
-    </span>
-  ) : undefined;
-  const platformRetry = state.platformNotice && state.retryPlatformCatalog ? (
-    <button
-      type="button"
-      onClick={() => state.retryPlatformCatalog?.()}
-      className="shrink-0 px-1 text-xs text-foreground-muted underline underline-offset-2 hover:text-foreground"
-    >
-      {translate('harnessCatalog.retry')}
-    </button>
-  ) : undefined;
-
-  // 与 platformNotice 同一档视觉：无边框、跟 Chat UI 标签同字号色阶。
-  //
-  // 这里**只留一句状态**（没装 / 没登录 / 读坏了），不可点：它长度不由前端决定，整句做成按钮
-  // 会把一条会被 truncate 的文字变成一个热区。
-  // ⚠️ 2026-09-05 删掉了曾并排在它后面的那枚「去登录」动作词 —— 去登录的路搬进了模型清单
-  // （`harnessModelUnlock`），理由写在 `harnessSignIn` 的 prop 文档里：那颗按钮在选了平台模型
-  // 时会退化成一个没有上下文的孤零零「去登录」。❌ 别再往这排加登录入口。
-  const harnessNotice = state.harnessNotice ? (
-    <span role="status" title={state.harnessNotice} className={noticeClassName}>
-      {state.harnessNotice}
-    </span>
-  ) : undefined;
-
   const grokPermissionNotice = state.provider === 'grok' ? (
     <span
       role="status"
@@ -1756,12 +1726,9 @@ export function InitialSessionField({
   ) : undefined;
 
   const toolbarExtra =
-    sessionViewControl || platformNotice || harnessNotice || grokPermissionNotice ? (
+    sessionViewControl || grokPermissionNotice ? (
       <>
         {sessionViewControl}
-        {harnessNotice}
-        {platformNotice}
-        {platformRetry}
         {grokPermissionNotice}
       </>
     ) : undefined;
@@ -1781,13 +1748,8 @@ export function InitialSessionField({
           `session.focusComposer` (⇧Esc) — a no-op on these pages until now — starts working too. */}
       <div
         data-region="composer"
-        className={cn(
-          nativeComposerAppearance,
-          'transition-colors',
-          isDragOver && 'rounded-lg bg-background-2 ring-2 ring-border-2 ring-inset'
-        )}
+        className={nativeComposerAppearance}
         onBlur={onPromptBlur}
-        {...dropHandlers}
       >
         <ChatComposer
           editorOptions={{ clearOnSubmit: false }}
@@ -1872,24 +1834,7 @@ export function InitialSessionField({
           text={attachmentViewer?.previewText}
           truncated={attachmentViewer?.previewTruncated}
         />
-        {state.providerError ? (
-          <p role="alert" className="mt-1 text-xs text-foreground-destructive">
-            {state.providerError}
-          </p>
-        ) : null}
-        {/* #6692 读不到模型目录的原因:工具栏那句定性的下文,就地一行。原文长度不可控 —— 只取第一行、遮掉路径与
-            令牌、封顶 280 字(与启动失败同一个 safeFailureLine)。这一行窄了会省略号收掉,title 里放的是同一份
-            处理过的那一行,悬停看得到被省略的部分;原文的其余部分不显示。 */}
-        {state.harnessNotice && state.harnessNoticeDetail ? (
-          <p
-            role="status"
-            data-testid="harness-catalog-failure-detail"
-            title={safeFailureLine(state.harnessNoticeDetail)}
-            className="mt-1 truncate px-1 text-xs text-foreground-muted"
-          >
-            {safeFailureLine(state.harnessNoticeDetail)}
-          </p>
-        ) : null}
+
       </div>
     </Field>
   );

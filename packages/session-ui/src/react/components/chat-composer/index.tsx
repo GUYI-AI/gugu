@@ -247,6 +247,11 @@ export interface ChatComposerProps {
   onModelChange?: (modelId: string) => void;
   /** 宿主要把模型面板打开:每变一次开一次(见 `ComposerModelMenu.openRequest`)。 */
   modelMenuOpenRequest?: number;
+  /** Failure/recovery copy stays inside the model setting; other settings remain usable. */
+  modelSettingNotice?: string | null;
+  /** A passing fact shown inside the open model menu only; unlike `modelSettingNotice` it does not replace the trigger. */
+  modelMenuNotice?: string;
+  onModelMenuOpen?: () => void;
   /**
    * 拿不到模型时「模型」那一行放什么。设了它,面板即使一个模型都没有也照常打开 ——
    * 否则触发器整颗消失,用户连「为什么没有模型」都无处可问。
@@ -426,6 +431,9 @@ export function ChatComposer({
   selectedModel,
   onModelChange,
   modelMenuOpenRequest,
+  modelSettingNotice,
+  modelMenuNotice,
+  onModelMenuOpen,
   modelUnlock,
   onModelUnlock,
   onManageModels,
@@ -554,7 +562,10 @@ export function ChatComposer({
 
   const hasContent = hasText || attachments.length > 0;
   const canSubmit = (hostCanSubmit ?? true) && (!phoneActions || (hasContent && !phoneSubmitting));
-  const showStop = isWorking && (!phoneActions || (!hasContent && !phoneSubmitting));
+  // A host that can queue while the agent runs (phone, or desktop's onSubmitWhileWorking) swaps Stop for Send once there is
+  // something to send; a host that cannot queue keeps Stop for the whole run.
+  const queuesWhileWorking = !!phoneActions || !!onSubmitWhileWorking;
+  const showStop = isWorking && (!queuesWhileWorking || (!hasContent && !phoneSubmitting));
   const handleSubmit = async (text: string) => {
     if (queueEdit) { finishQueueEdit(text); return; }
     if (phoneActions && (phoneSubmittingRef.current || disabled || !canSubmit)) return;
@@ -800,7 +811,7 @@ export function ChatComposer({
               styles.noticeAnimWrapper,
               notice ? styles.noticeAnimVisible : styles.noticeAnimHidden
             )}
-            aria-hidden={!notice}
+            aria-hidden={!notice} data-composer-top-band={notice ? "notice" : undefined}
           >
             <div className={styles.noticeOverflowClip}>
               {retainedNotice && <NoticeBand notice={retainedNotice} />}
@@ -985,6 +996,9 @@ export function ChatComposer({
                 selectedModel={selectedModel}
                 onModelChange={onModelChange}
                 openRequest={modelMenuOpenRequest}
+                settingNotice={modelSettingNotice}
+                menuNotice={modelMenuNotice}
+                onOpen={onModelMenuOpen}
                 modelUnlock={modelUnlock}
                 onModelUnlock={onModelUnlock}
                 onManageModels={onManageModels}

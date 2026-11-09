@@ -15,6 +15,7 @@ import {
 } from '../src/session/shared/extensions/bridge-protocol';
 import { SYNC_PORT_CHANNEL, SYNC_PORT_REQUEST, SYNC_PORT_WINDOW_MESSAGE } from '../src/session/shared/extensions/app-runtime-protocol';
 import { hostEventHub, hostMembers } from '../src/session/shared/extensions/host-calls';
+import { escapeIsFree } from '../src/session/shared/escape-is-free';
 
 installProcessMetricsResponder(ipcRenderer, process, 'app');
 
@@ -73,6 +74,10 @@ const relayWidgetWheel = (event: WheelEvent) => {
   const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? innerHeight : 1;
   ipcRenderer.sendToHost('gugu-widget-wheel', { x: event.deltaX * unit, y: event.deltaY * unit });
 };
+// Esc pressed in this page never reaches the host window. What the page or a field here used is not for the host.
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !event.defaultPrevented && !event.isComposing && escapeIsFree(event.target)) ipcRenderer.sendToHost('gugu-guest-escape');
+});
 ipcRenderer.on(EXTENSION_BRIDGE_EVENT_CHANNEL, (_event: unknown, payload: ExtensionHostEvent) => {
   if (payload.type === 'context') {
     const next = payload.context.widget !== undefined && !payload.context.modal;
@@ -96,7 +101,7 @@ const host = caller === 'background'
   : {
       apiVersion: EXTENSION_API_VERSION,
       ...members,
-      theme: readPageTheme(),
+      ...readPageTheme(),
       /** Only on the page `app_check` runs (摩擦单 F69): the runtime reports its counts here. */
       ...(process.argv.includes(CHECK_PAGE_ARG) ? { checkPage: { report: (counts: PageCounts): Promise<void> => call('checkCounts', counts) as Promise<void> } } : {}),
     };
@@ -130,10 +135,10 @@ window.addEventListener('message', (event) => {
  * `<html>` before the first paint. Main always answers; anything else is the wiring broken — loud, like the host's own
  * system languages (preload.ts), never a quiet fall back to the OS's colours (the very flash this is here to stop).
  */
-function readPageTheme(): 'light' | 'dark' {
-  const answer: unknown = ipcRenderer.sendSync(EXTENSION_THEME_CHANNEL);
-  if (answer !== 'light' && answer !== 'dark') throw new Error(`main did not answer ${EXTENSION_THEME_CHANNEL} (got ${String(answer)})`);
-  return answer;
+function readPageTheme(): { theme: 'light' | 'dark'; themeColors?: Record<string, string> } {
+  const answer = ipcRenderer.sendSync(EXTENSION_THEME_CHANNEL) as { theme?: unknown; themeColors?: Record<string, string> } | null;
+  if (answer?.theme !== 'light' && answer?.theme !== 'dark') throw new Error(`main did not answer ${EXTENSION_THEME_CHANNEL} (got ${JSON.stringify(answer)})`);
+  return { theme: answer.theme, ...(answer.themeColors ? { themeColors: answer.themeColors } : {}) };
 }
 
 contextBridge.exposeInMainWorld('__guguHost', host);

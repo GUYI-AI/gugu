@@ -1,26 +1,23 @@
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
 import { platform } from '@/platform';
-import { messageForUser } from '@/lib/userFacingError';
 import { safeFailureLine } from '../sessions/gugu-reason';
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import { dissolveScreenGroup, isScreenView, showSessionBeside, takeSessionOutOfGroup } from '@renderer/app/screen-layout-actions';
-import { AlertTriangle, Archive, Copy, LayoutGrid, Pencil, Pin, PinOff, Scissors, Sparkles, SquareMinus } from '@/lib/icons'
+import { AlertTriangle, Archive, Copy, LayoutGrid, MoreHorizontal, Pencil, Pin, PinOff, Scissors, Sparkles, SquareMinus } from '@/lib/icons'
 import { GitFork } from '@/lib/icons'
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
 import { spawnedByExtensionLabel as spawnedByExtensionLabelFor } from '@renderer/features/extensions/spawned-by-extension-label';
 import { useAssistantShell } from '@renderer/features/assistant/assistant-shell';
-import { when } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useRef } from 'react';
 import { requestArchiveSession } from '@renderer/features/sessions/archive-session-flow';
 import { moveSessionUnder } from '@renderer/features/sessions/set-session-parent-flow';
+import { forkTask } from '@renderer/features/sessions/fork-task';
 import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-session-in-session';
 import { focusedSessionId } from '@renderer/features/sessions/pane-selectors';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import {
-  asProvisioned,
-  getSessionPageStore,
   getSessionView,
 } from '@renderer/features/sessions/stores/session-selectors';
 import { toast } from '@renderer/lib/hooks/use-toast';
@@ -31,7 +28,7 @@ import {
   useWorkspaceSlots,
 } from '@renderer/lib/layout/navigation-provider';
 import { useAgents } from '@renderer/lib/stores/use-agents';
-import { ContextMenuItem, ContextMenuSeparator } from '@renderer/lib/ui/context-menu';
+import { MenuFold, MenuItem, MenuSeparator } from '@/components/ui/Menu';
 import { hasStatusSource } from '@shared/core/sessions/initial-agent-status';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -160,8 +157,8 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   // spec session-fork-share: fork 自谁 = 父会话此刻的名字,从父会话自己的 store 读(❌ 存一份副本);
   // 父会话没挂上就不写名字。名字可能很长 → tooltip 里截断,否则在窄侧栏竖成一条。
   const forkedFromLabel =
-    forkedFromTitle && forkedFromTitle.length > 20
-      ? `${forkedFromTitle.slice(0, 20)}…`
+    forkedFromTitle && [...forkedFromTitle].length > 20
+      ? `${[...forkedFromTitle].slice(0, 20).join('')}…`
       : forkedFromTitle;
 
   const launchedByAssistant = sidebarStore.launchedByAssistant(projectId, sessionId);
@@ -222,45 +219,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
     }
   };
 
-  const handleFork = () => {
-    // The fork's own task reuses the source task's workspace, which exists only once the source
-    // task is provisioned — navigate first, fork when ready, then open the fork in its own task.
-    navigate('session', { projectId, sessionId: sessionId });
-    when(
-      () =>
-        Boolean(asProvisioned(getSessionPageStore(projectId, sessionId)) && sessionRegistry.get(sessionId)),
-      () => {
-        void sessionRegistry
-          .get(sessionId)
-          ?.forkSession(sessionId)
-          .then((created) => {
-            // #6269 分叉住在自己的新任务里 —— 去那项任务打开,❌ 在来源任务里开。
-            navigate('session', { projectId, sessionId: created.id });
-            openSessionInSessionWhenReady({
-              projectId,
-              sessionId: created.id,
-            });
-          })
-          .catch((error: unknown) => {
-            toast({
-              title: translate('sidebar.forkFailed'),
-              description: messageForUser(error),
-              variant: 'destructive',
-            });
-          });
-      },
-      {
-        timeout: 15_000,
-        onError: () => {
-          toast({
-            title: translate('sidebar.forkFailed'),
-            description: translate('sidebar.workspaceNotReady'),
-            variant: 'destructive',
-          });
-        },
-      }
-    );
-  };
+  const handleFork = () => forkTask({ projectId, sessionId, navigate, translate });
 
 
   // 另一条会话拖到这一行上 = 挂到这一条下面(spec session-page「把会话拖成 child」)。挂不上的不给落点:
@@ -273,8 +232,9 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
     (child) => moveSessionUnder(child, { projectId, sessionId, title: row.title }, sidebarStore.parentOf(child.sessionId))
   );
 
-  // @@@done-unread 「做完未读」= idle + 未 seen —— 表达方式见 sidebar-session-row。
-  const doneUnread = agentUserId ? presentation?.emphasis === true : row.status === 'idle' && !row.seen;
+  // @@@done-unread 「做完未读」= idle + 未 seen —— 表达方式见 sidebar-session-row。agent 发给主人的通知没读,
+  // 也只是这一行加粗,❌ 出数字(owner 11-05);数字只在聊天页那一行。
+  const doneUnread = (agentUserId ? presentation?.emphasis === true : row.status === 'idle' && !row.seen) || notificationCount > 0;
 
   // owner 10-28:会话列表里不标机器(机器只在悬停卡里写)。只剩一样:挂在父会话下、与父会话不在同一个项目行的 child 标它的项目。
   const projectLabel =
@@ -290,7 +250,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
         <Tooltip>
           <TooltipTrigger
             render={
-              <span className="flex shrink-0 items-center text-[var(--warn)]" data-testid="sidebar-status-source-fault">
+              <span className="flex shrink-0 items-center text-[var(--warn-fg)]" data-testid="sidebar-status-source-fault">
                 <AlertTriangle className="size-3" />
               </span>
             }
@@ -368,7 +328,6 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
       lastInteractedAt={row.lastInteractedAt}
       schedule={row.schedule ?? null}
       doneUnread={doneUnread}
-      notificationCount={notificationCount}
       isActive={isActive}
       isCursor={isCursor}
       isPendingArchive={isPendingArchive}
@@ -412,56 +371,53 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
     {/* spec session-page「拼在一屏的几块是一组」:框里一行 = 拿它出来 / 整组拆开(照 Arc「Separate from Split View」)。 */}
     {grouped ? (
       <>
-        <ContextMenuItem onClick={() => takeSessionOutOfGroup(sessionId)}>
-          <SquareMinus className="size-4" />
+        <MenuItem onClick={() => takeSessionOutOfGroup(sessionId)} icon={<SquareMinus />}>
           {translate('sidebar.leaveGroup')}
-        </ContextMenuItem>
-        <ContextMenuItem onClick={() => dissolveScreenGroup(sessionId)}>
-          <Scissors className="size-4" />
-          {translate('sidebar.dissolveGroup')}
-        </ContextMenuItem>
-        <ContextMenuSeparator />
+        </MenuItem>
+        <MenuSeparator />
       </>
     ) : null}
     {isPinned ? (
-      <ContextMenuItem onClick={() => setPinned(false)}>
-        <PinOff className="size-4" />
+      <MenuItem onClick={() => setPinned(false)} icon={<PinOff />}>
         {translate('task.unpin')}
-      </ContextMenuItem>
+      </MenuItem>
     ) : (
-      <ContextMenuItem onClick={() => setPinned(true)}>
-        <Pin className="size-4" />
+      <MenuItem onClick={() => setPinned(true)} icon={<Pin />}>
         {translate('task.pin')}
-      </ContextMenuItem>
-    )}
-    {canFork && (
-      <ContextMenuItem onClick={handleFork}>
-        <GitFork className="size-4" />
-        {translate('sidebar.forkSession')}
-      </ContextMenuItem>
+      </MenuItem>
     )}
     {/* behavior session-page「键盘导航」: 键盘能做的、菜单也要能做 —— 只给快捷键等于让用鼠标的人
         看不见重命名。删除是这条规则的例外(owner 2026-09-05 把它从这份菜单里拿掉了):它在
         会话页 ⋯ 菜单里仍然可见可点,不是只剩快捷键。 */}
-    <ContextMenuItem
+    <MenuItem
       onClick={() => {
         commandRegistry.dispatch('session.rename', { projectId, sessionId });
       }}
+      icon={<Pencil />}
     >
-      <Pencil className="size-4" />
       {translate('task.renameSession')}
-    </ContextMenuItem>
-    <ContextMenuItem onClick={() => void copySessionId()}>
-      <Copy className="size-4" />
-      {translate('sidebar.copySessionId')}
-    </ContextMenuItem>
+    </MenuItem>
     {/* owner 2026-09-05:会话列表这一行不再提供删除 ——「正常我用 agent 也不删除会话」。
         右键这一格换成归档,与行尾 hover 浮出的归档按钮是同一个动作、同一条确认路径。
         删除仍在会话页 ⋯ 菜单与键盘两次删除上,只是不再摆在会话列表的手边。 */}
-    <ContextMenuItem onClick={requestArchive}>
-      <Archive className="size-4" />
+    <MenuItem onClick={requestArchive} icon={<Archive />}>
       {archiveLabel}
-    </ContextMenuItem>
+    </MenuItem>
+    <MenuFold icon={<MoreHorizontal />} label={translate('common.more')}>
+      {grouped && (
+        <MenuItem onClick={() => dissolveScreenGroup(sessionId)} icon={<Scissors />}>
+          {translate('sidebar.dissolveGroup')}
+        </MenuItem>
+      )}
+      {canFork && (
+        <MenuItem onClick={handleFork} icon={<GitFork />}>
+          {translate('sidebar.forkSession')}
+        </MenuItem>
+      )}
+      <MenuItem onClick={() => void copySessionId()} icon={<Copy />}>
+        {translate('sidebar.copySessionId')}
+      </MenuItem>
+    </MenuFold>
         </>
       }
     />

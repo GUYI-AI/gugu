@@ -19,6 +19,26 @@ import { createProjectFilePublisher } from './projectFilePublication'
 import type { makeIdentityClient } from './supabase'
 
 /** One composition root for native IPC, Apps, MCP and inbox. Identity lookup here never registers or refreshes. */
+type RpcReply = { data: unknown; error: { message: string; code: string; details: string; hint: string } | null }
+
+/**
+ * The database RPC the desktop file paths call, as the signed-in reader. A refusal becomes an Error carrying the
+ * database message and its structured diagnostics (code / details / hint), with the original as its cause, so the
+ * App sees the real reason a file was not changed; a network rejection passes through as it is.
+ */
+export function signedInFileRpc(
+  auth: () => Promise<{ accessToken: string } | null>,
+  client: (accessToken: string) => { rpc(name: string, args: Record<string, unknown>): PromiseLike<RpcReply> },
+): (name: string, args: Record<string, unknown>) => Promise<unknown> {
+  return async (name, args) => {
+    const session = await auth()
+    if (!session) throw new Error('File reader is not signed in')
+    const { data, error } = await client(session.accessToken).rpc(name, args)
+    if (error) throw Object.assign(new Error(error.message, { cause: error }), { code: error.code, details: error.details, hint: error.hint })
+    return data
+  }
+}
+
 export function createDesktopFileAccess(deps: {
   auth(): Promise<RuntimeAuth | null>; root(projectId: string): Promise<string | null>
   links(): HeldFileSshLinks | null; tempRoot: string; downloads: string; fetch: typeof fetch; env?: NodeJS.ProcessEnv
@@ -74,6 +94,7 @@ export function createDesktopFileAccess(deps: {
   }
   const sshHandlers: DeviceRpcHandlers = { [PROJECT_FILE_READ]: async (payload, ctx) => ({ result: await read(payload as Parameters<typeof read>[0], ctx.request.user_id) }) }
   const publish = createProjectFilePublisher({ identity, root, rpc: deps.rpc, env: deps.env,
+    requestCopy: async (itemId, version) => attachmentRequest(await endpoint(), 'file-request', { ref: { item_id: itemId, version }, as: (await identity()).accountId, request_id: crypto.randomUUID() }),
     async storage() { const { auth, db } = await identityDb(); return parseFileStorage(await readUserSettingsConfig(db as unknown as SettingsTableClient, auth.userId, 'user')) },
     async projectChat(chatId) {
       const { db } = await identityDb()
@@ -92,10 +113,10 @@ export function createDesktopFileAccess(deps: {
         if (resolved.status !== 'ready') throw new Error('File is no longer available')
         return resolved
       })
-      const saved = await step('save', () => saveFileHandle(file, deps.downloads, name))
+      const saved = await step('save', () => saveFileHandle(file, deps.downloads, name, true))
       const bytes = saved.content_type.startsWith('image/')
         ? await step('read-image', async () => new Uint8Array(await readFile(saved.file_path))) : new Uint8Array()
-      return { localPath: saved.file_path, bytes }
+      return { localPath: saved.file_path, bytes, readOnly: saved.read_only }
     },
   }
 }

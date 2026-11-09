@@ -5,6 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
+import { listedIn } from './folderList'
 import { until } from '../../../support/awaitCondition'
 
 const now = Date.parse('2026-10-28T12:00:00Z')
@@ -36,7 +37,7 @@ const gugu = {
     // Asked as a row's menu opens (a list carries no delete answer); the rig answers from its fixtures.
     canDelete: vi.fn(async (files: unknown) => [files].flat().map((file) => (file as { canDelete?: boolean }).canDelete === true)),
     viewPreferences: vi.fn(async () => ({ showAppData: false })),
-    list: vi.fn(async () => ENTRIES.map((e) => ({ ...e }))),
+    list: vi.fn(async (place?: { folder?: string }) => listedIn(ENTRIES, place)),
     onChanged: vi.fn(() => () => {}),
     openWith: vi.fn(async () => {}),
     download: vi.fn(async (files: unknown[]) => (Array.isArray(files) ? files.length : true)),
@@ -49,6 +50,11 @@ const $ = (id: string) => document.getElementById(id) as HTMLElement
 const ids = () => [...$('file-list').querySelectorAll<HTMLElement>('li.file')].map((li) => li.dataset.id)
 const row = (id: string) => document.querySelector(`[data-id="${id}"]`) as HTMLElement
 const open = (id: string, init: MouseEventInit = {}) => row(id).querySelector('.file-open')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ...init }))
+const select = (id: string) => {
+  if (!bar().hidden) return open(id)
+  row(id).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+  ;[...$('menu').querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) => button.textContent === '选择')!.click()
+}
 const picked = () => ids().filter((id) => row(id!).classList.contains('picked'))
 const bar = () => $('pick-bar')
 const barButton = (text: string) => [...bar().querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === text)!
@@ -79,9 +85,9 @@ beforeEach(() => {
 })
 
 describe('picking', () => {
-  test('modifier selection highlights the row; a later press toggles, and Escape lets go of all', () => {
+  test('Select highlights the row; a later press toggles, and Escape lets go of all', () => {
     expect(bar().hidden).toBe(true)
-    open('a', { ctrlKey: true })
+    select('a')
     expect(picked()).toEqual(['a'])
     expect(bar().querySelector('.pick-count')!.textContent).toBe('已选 1 项')
     expect(row('a').getAttribute('aria-selected')).toBe('true')
@@ -95,14 +101,14 @@ describe('picking', () => {
     expect(bar().hidden).toBe(true)
   })
 
-  test('Ctrl or ⌘ picks without opening; Shift picks the run from the one pressed last, in the order on screen', () => {
-    open('a', { ctrlKey: true })
+  test('Select picks without opening; Shift picks the run from the one pressed last, in the order on screen', () => {
+    select('a')
     expect(picked()).toEqual(['a'])
     open('d', { shiftKey: true })
     expect(picked()).toEqual(['a', 'b', 'c', 'd'])
     pressEscape()
-    open('b', { metaKey: true })
-    open('b', { metaKey: true })
+    select('b')
+    select('b')
     expect(picked()).toEqual([])
     expect(gugu.files.openWith).not.toHaveBeenCalled()
   })
@@ -130,7 +136,7 @@ describe('picking', () => {
 
   test('single click still opens; the desktop has no per-row overflow button', () => {
     open('a')
-    expect(gugu.files.openWith).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'a' }))
+    expect(gugu.files.openWith).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'a' }), expect.objectContaining({ intent: 'navigate' }))
     expect(picked()).toEqual([])
     expect(document.querySelector('.row-more')).toBe(null)
   })
@@ -163,7 +169,7 @@ describe('picking', () => {
     expect(picked()).toEqual([])
     expect($('select-files').getAttribute('aria-pressed')).toBe('false')
     open('a')
-    expect(gugu.files.openWith).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'a' }))
+    expect(gugu.files.openWith).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'a' }), expect.objectContaining({ intent: 'navigate' }))
   })
 
   test('the wide header selects all, reports a partial selection, and clears all', () => {
@@ -198,7 +204,7 @@ describe('picking', () => {
   })
 
   test('right-click during selection acts on the selected files, including when another row is under the pointer', async () => {
-    open('a', { ctrlKey: true })
+    select('a')
     open('c')
     row('b').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 90, clientY: 20 }))
     const actions = [...$('menu').querySelectorAll<HTMLButtonElement>('button')]
@@ -212,7 +218,7 @@ describe('picking', () => {
     const target = row('a').querySelector<HTMLButtonElement>('.file-open')!
     target.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true }))
     expect($('menu').hidden).toBe(false)
-    expect(document.activeElement?.textContent).toBe('打开')
+    expect(document.activeElement?.textContent).toBe('转发')
     pressEscape()
     expect(document.activeElement).toBe(target)
     target.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true, cancelable: true }))
@@ -246,11 +252,11 @@ describe('picking', () => {
     expect(options[0]!.title).toBe('只有上传这份文件的人能改它保留多久。')
     choose('‹ 保留方式')
     choose('‹ 更多')
-    expect($('menu').querySelector('button')!.textContent).toBe('打开')
+    expect($('menu').querySelector('button')!.textContent).toBe('转发')
   })
 
   test('another kind lets go of what was picked', () => {
-    open('a', { ctrlKey: true })
+    select('a')
     $('kinds').querySelector<HTMLButtonElement>('[data-kind="docs"]')!.click()
     expect(bar().hidden).toBe(true)
     $('kinds').querySelector<HTMLButtonElement>('[data-kind="all"]')!.click()
@@ -267,7 +273,7 @@ describe('转发 (API 23)', () => {
   test('a file\'s menu: Forward first in the use group (as a message\'s menu has it before Download); the host\'s page gets that file', async () => {
     const items = menuOf('a')
     const labels = items.map((item) => item.textContent)
-    expect(labels.slice(labels.indexOf('转发'), labels.indexOf('转发') + 3)).toEqual(['转发', '下载', '复制链接'])
+    expect(labels.slice(0, 4)).toEqual(['转发', '复制链接', '用别的 App 打开', '下载'])
     items.find((item) => item.textContent === '转发')!.click()
     await until('forward asked', () => gugu.files.forward!.mock.calls.length > 0)
     expect(gugu.files.forward).toHaveBeenLastCalledWith([expect.objectContaining({ id: 'a' })])
@@ -275,8 +281,8 @@ describe('转发 (API 23)', () => {
 
   test('picked files: one Forward for them all, in the order on screen; the selection is let go once the host\'s page is up', async () => {
     gugu.files.forward!.mockClear()
-    open('c', { ctrlKey: true })
-    open('a', { ctrlKey: true })
+    select('c')
+    select('a')
     barButton('转发').click()
     await until('forward asked', () => gugu.files.forward!.mock.calls.length > 0)
     expect(gugu.files.forward).toHaveBeenLastCalledWith([expect.objectContaining({ id: 'a' }), expect.objectContaining({ id: 'c' })])
@@ -289,7 +295,7 @@ describe('转发 (API 23)', () => {
     try {
       expect(menuOf('a').map((item) => item.textContent)).not.toContain('转发')
       pressEscape()
-      open('a', { ctrlKey: true })
+      select('a')
       expect([...bar().querySelectorAll('button')].map((item) => item.textContent)).not.toContain('转发')
     } finally {
       gugu.files.forward = forward
@@ -299,15 +305,15 @@ describe('转发 (API 23)', () => {
 
 describe('what is picked, at once', () => {
   test('downloaded together (one 「save to」 for them all), and said how many', async () => {
-    open('a', { ctrlKey: true })
-    open('c', { ctrlKey: true })
+    select('a')
+    select('c')
     barButton('下载').click()
     await until('saved', () => banner(), (text) => text === '已保存 2 个文件。')
     expect(gugu.files.download).toHaveBeenLastCalledWith([expect.objectContaining({ id: 'a' }), expect.objectContaining({ id: 'c' })])
   })
 
   test('made temporary: only my own cloud copies asked for; someone else\'s and one without a copy said apart', async () => {
-    for (const id of ['a', 'b', 'c', 'd']) open(id, { ctrlKey: true })
+    for (const id of ['a', 'b', 'c', 'd']) select(id)
     const reads = gugu.files.list.mock.calls.length
     barButton('设为临时').click()
     await until('the list read again', () => gugu.files.list.mock.calls.length > reads)
@@ -316,7 +322,7 @@ describe('what is picked, at once', () => {
   })
 
   test('found in the chat one message after another, oldest first: 1/3 ‹ ›', () => {
-    for (const id of ['a', 'b', 'c', 'd']) open(id, { ctrlKey: true })
+    for (const id of ['a', 'b', 'c', 'd']) select(id)
     barButton('在聊天中定位').click()
     expect(gugu.showMessage).toHaveBeenLastCalledWith('m-d')
     expect(bar().querySelector('.pick-at')!.textContent).toBe('1/3')
@@ -333,14 +339,14 @@ describe('what is picked, at once', () => {
 
   test('none from the chat: said so, nothing shown', () => {
     gugu.showMessage.mockClear()
-    open('c', { ctrlKey: true })
+    select('c')
     barButton('在聊天中定位').click()
     expect(gugu.showMessage).not.toHaveBeenCalled()
     expect(banner()).toBe('选中的文件都不是从聊天里来的。')
   })
 
   test('Ctrl+A clears the previous selection’s chat location', () => {
-    open('a', { ctrlKey: true })
+    select('a')
     barButton('在聊天中定位').click()
     expect(bar().querySelector('.pick-at')!.textContent).toBe('1/1')
     row('a').querySelector('.file-open')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true, cancelable: true }))

@@ -226,6 +226,8 @@ export type AcpSpawnSpec = {
   env: Record<string, string>;
   /** 探针那一条 `session/new` 的 `_meta`(插件的 `acp.catalogProbeSessionMeta`:不装用户 MCP)。 */
   sessionMeta?: Record<string, unknown>;
+  /** See `catalogModelsInConfigUpdate` on the plugin's ACP behavior. */
+  modelsInConfigUpdate?: boolean;
 };
 /** `null` = 这家插件不说 ACP（→ `unsupported`）；`'not-found'` = 没有这个插件（→ `not-installed`）。 */
 export type AcpSpawnResolver = (
@@ -246,6 +248,8 @@ export function setAcpSpawnResolver(resolver: AcpSpawnResolver): void {
 /** 第二遍探测要叠上去的东西(由宿主按这家的 Chat UI 注入信封生成,见 `harness-catalog-probe-env.ts`)。 */
 export type ProbePlatformCredentials = {
   env: Record<string, string>;
+  /** Explicit plugin policy: there is no platform route to probe, not a credential failure. */
+  skipReason?: 'platform-unsupported';
   sessionMeta?: Record<string, unknown>;
   platform?: AcpPlatformInjection;
 };
@@ -263,7 +267,7 @@ export type ProbePlatformCredentials = {
  * ⇒ 跨这条边界只走注入。
  *
  * `scratchDir` 是这一趟专用的临时目录:要落盘的文档写在这里,探完由这边整目录删掉。
- * 生成不出来就**抛**(写明哪一家、为什么);没装解析器同样抛 —— ❌ 当成「没有凭据」悄悄跳过。
+ * 声明支持却生成不出来就**抛**;没装解析器同样抛。只有明确的 platform-unsupported 读数可跳过。
  */
 export type ProbePlatformEnvResolver = (pluginId: string, scratchDir: string) => Promise<ProbePlatformCredentials>;
 
@@ -844,7 +848,7 @@ async function probeOnce(
       const watchdog = watchForInactivity(child, pluginId);
       try {
         const sessionMeta = mergeTrustedSessionMeta(spec.sessionMeta, probeCredentials?.sessionMeta);
-        const state = await Promise.race([rpc.readCatalog(cwd, sessionMeta, model), processFailed, watchdog.stalled]);
+        const state = await Promise.race([rpc.readCatalog(cwd, sessionMeta, model, spec.modelsInConfigUpdate), processFailed, watchdog.stalled]);
         log.info(`${pluginId}: 模型目录 ${describe(state)}`);
         return state;
       } finally {
@@ -908,13 +912,15 @@ export async function probeHarnessModelCatalog(
   if (first.kind !== 'auth-required') return first;
 
   // 占位凭据按这家真会话的 Chat UI 注入信封生成;需要落盘的文档只写进这一趟的临时目录,探完整目录删掉。
-  // 生成不出来就抛,写明哪一家、为什么 —— ❌ 当成「没有凭据」跳过,那正是这一趟从来没跑过的原因
+  // 支持平台模型却生成不出来就抛;只有插件明确不支持的读数才不适用第二趟。
+  // ❌ 把真实配置故障当成「没有凭据」跳过,那正是这一趟从来没跑过的原因
   // (#4069:第二趟从接上那天起静默失效到 10-17)。⚠️ 这条**不能**改成「退回第一趟」:那就是把
   // #4069 原样做回来。抛出去之后由 `ensureCatalog` 落成 `unavailable`(#7649),界面给原因与重试 ——
   // 响亮的落点是那里,不是让用户盯着一个转不完的圈。
   const scratchDir = await mkdtemp(join(tmpdir(), `gugu-probe-creds-${pluginId}-`));
   try {
     const probeCredentials = await resolveProbePlatformEnv(pluginId, scratchDir);
+    if (probeCredentials.skipReason === 'platform-unsupported') return first;
     const second = await probeOnce(pluginId, leg, probeCredentials, model);
     if (second.kind === 'ready') {
       log.info(`${pluginId}: 未登录,但占位凭据那趟读到 ${second.efforts.length} 档推理强度`);
@@ -961,6 +967,22 @@ class AcpProbeClient {
     child.stderr.resume();
   }
 
+  private updatedConfigOptions: RawConfigOption[] = [];
+  private modelOptionsArrived?: () => void;
+
+  private onConfigUpdate(options: RawConfigOption[]): void {
+    this.updatedConfigOptions = options;
+    if (options.some((option) => option.category === 'model')) this.modelOptionsArrived?.();
+  }
+
+  /** Never arriving is the probe's existing stall (`watchForInactivity`), not a timer of its own. */
+  private async modelOptionsFromUpdate(): Promise<RawConfigOption[]> {
+    if (!this.updatedConfigOptions.some((option) => option.category === 'model')) {
+      await new Promise<void>((resolve) => { this.modelOptionsArrived = resolve; });
+    }
+    return this.updatedConfigOptions;
+  }
+
   private onData(text: string): void {
     this.buffer += text;
     let index: number;
@@ -980,6 +1002,9 @@ class AcpProbeClient {
         this.pending.delete(id);
         if (msg.error) waiter?.reject(new AcpRpcError(msg.error));
         else waiter?.resolve(msg.result);
+      } else if (msg.method === 'session/update') {
+        const update = (msg.params as { update?: { sessionUpdate?: unknown; configOptions?: RawConfigOption[] } } | undefined)?.update;
+        if (update?.sessionUpdate === 'config_option_update') this.onConfigUpdate(update.configOptions ?? []);
       } else if (msg.method === '_auth/status_update') {
         const kind = (msg.params as { authStatus?: { kind?: unknown } } | undefined)
           ?.authStatus?.kind;
@@ -1003,7 +1028,7 @@ class AcpProbeClient {
     });
   }
 
-  async readCatalog(cwd: string, sessionMeta?: Record<string, unknown>, model?: string): Promise<HarnessCatalogState> {
+  async readCatalog(cwd: string, sessionMeta?: Record<string, unknown>, model?: string, modelsInConfigUpdate?: boolean): Promise<HarnessCatalogState> {
     const initialized = await this.request('initialize', {
       protocolVersion: 1,
       // 探针一律拒绝反向请求（它不该产生任何副作用），所以这里就得**如实声明 false** ——
@@ -1111,6 +1136,9 @@ class AcpProbeClient {
       configOptions?: RawConfigOption[];
       models?: { availableModels?: unknown[]; currentModelId?: unknown };
     } | null;
+    if (modelsInConfigUpdate && !response?.configOptions?.some((option) => option.category === 'model')) {
+      response = { ...response, configOptions: await this.modelOptionsFromUpdate() };
+    }
     // Read the requested model's axis in this disposable session, never the default model's axis.
     if (model) {
       const option = response?.configOptions?.find((o) => o.category === 'model');

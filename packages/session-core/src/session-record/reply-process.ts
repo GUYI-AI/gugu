@@ -202,7 +202,9 @@ export function replyProcess(turn: TranscriptTurn, before?: string): ReplyProces
 export function sentMessageId(item: McpToolCall): string | null {
   const parse = (raw: unknown): string | null => {
     if (typeof raw === 'string') {
-      const sent = /^(?:sent|replied) \(id=(?:msg:)?([a-f0-9-]{36})\)$/.exec(raw);
+      // The MCP server puts its successful receipt on the first line, then may
+      // append an advisory (floodNotice). That advice is not part of the ID.
+      const sent = /^(?:sent|replied) \(id=(?:msg:)?([a-f0-9-]{36})\)(?:\n|$)/.exec(raw);
       if (sent) return sent[1]!;
       try { return parse(JSON.parse(raw)); } catch { return null; }
     }

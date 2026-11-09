@@ -9,6 +9,7 @@ import { AgentOwnerLabel } from './AgentOwnerLabel'
 import { useAuth } from '../store/auth'
 import { OwnedAgentNameEditor } from './contacts/OwnedAgentNameEditor'
 import { SharePosterDialog } from './SharePosterDialog'
+import { PersonalSharePreview } from './referralPreview/ReferralPreview'
 import { GUGU_ANDROID_DOWNLOAD_URL } from '../lib/appLinks'
 import { useTranslation } from 'react-i18next'
 import { resolveMessagingValue } from '@/lib/localizedStoredValue'
@@ -17,7 +18,7 @@ import { useAgentDisplayStatus } from '../hooks/useAgentDisplayStatus'
 import { Button } from './ui/Button'
 import { FieldList } from './contactsDetailControls'
 import { cn } from '@/lib/cn'
-import { CommunityPointsTag } from './forum/CommunityPointsTag'
+import { Search } from '@/lib/icons'
 import { useAgentSession } from '@/lib/projectGroupChatsBridge'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { useAgentSessionRow } from '@/mobile/agent-watch/useAgentSessionRow'
@@ -31,7 +32,6 @@ const profileSingleClass = 'gg-pop--single'
 const profileHeaderClass = 'gg-pop-ph flex items-center gap-3.5 border-b border-[var(--border-color)] px-[22px] pb-4 pt-[22px]'
 const profileHeaderTextClass = 'gg-pop-ph-text flex min-w-0 flex-col'
 const profileNameClass = 'gg-pop-pn min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-base font-semibold text-[var(--text-primary)]'
-const profileTagClass = 'gg-pop-pt mt-[3px] overflow-hidden text-ellipsis whitespace-nowrap text-[length:var(--font-body)] text-[var(--text-tertiary)]'
 const profileActionsClass = 'gg-pop-pacts flex flex-wrap gap-2 px-[18px] pb-3 pt-3.5'
 const profileButtonClass = 'gg-pop-pbtn flex-[1_1_auto] text-[length:var(--font-body)] [&_svg]:shrink-0'
 const profileFieldsClass = 'gg-pop-fields gap-x-2 gap-y-1.5 px-[18px] pb-3.5'
@@ -142,6 +142,8 @@ export interface MemberProfileEditControls {
   onChangeListenMode?: (mode: ListenMode) => Promise<void> | void
   canRemove?: boolean
   removeLabel?: string
+  /** What the removal does, shown under the button (topics: the person can still read it). */
+  removeHint?: string
   onRemove?: () => Promise<void> | void
   busy?: boolean
   // @@@2247 - error text for the last manage-control mutation (remove / role / listen). The
@@ -210,6 +212,7 @@ export function MemberProfileCard({
   member,
   onOpenChat,
   onWhisper,
+  onFindMessages,
   editControls,
   aliasControls,
   fill = false,
@@ -218,6 +221,8 @@ export function MemberProfileCard({
   onOpenChat?: (target: MemberProfileChatTarget) => void
   // @@@whisper (#820) — 群聊模式下悄悄话入口；仅 isGroupProfile && onWhisper 时渲染。
   onWhisper?: (target: MemberProfileChatTarget) => void
+  /** 「查找 TA 的消息」:这个会话的全局搜索,带 in: 和 from: 两枚可删的标签。 */
+  onFindMessages?: () => void
   editControls?: MemberProfileEditControls
   aliasControls?: MemberProfileAliasControls
   fill?: boolean
@@ -266,6 +271,7 @@ export function MemberProfileCard({
       ? createGuguQrScanUrl(createContactQrPayload(member.guguNumber), { downloadUrl: GUGU_ANDROID_DOWNLOAD_URL })
       : null
   const canShare = shareQrValue !== null
+  const SelfOrContactShare = !isAgent && member.id === user?.id ? PersonalSharePreview : SharePosterDialog
 
   const handleOpenChat = () => {
     if (!onOpenChat) return
@@ -306,7 +312,7 @@ export function MemberProfileCard({
               {statusLabel ? <span>{statusLabel}</span> : null}
               <span data-profile-agent-owner><AgentOwnerLabel ownerUserId={member.ownerUserId} ownerDisplayName={member.ownerDisplayName} /></span>
             </div>
-          ) : <CommunityPointsTag userId={member.id} className={profileTagClass} />}
+          ) : null}
         </div>
       </div>
 
@@ -343,6 +349,13 @@ export function MemberProfileCard({
           >
             <IconWhisper />
             {t('profile.whisper')}
+          </Button>
+        ) : null}
+
+        {onFindMessages ? (
+          <Button size="sm" data-testid="member-profile-find-messages-button" className={profileButtonClass} onClick={onFindMessages}>
+            <Search size={14} />
+            {t('profile.findMessages')}
           </Button>
         ) : null}
 
@@ -447,6 +460,9 @@ export function MemberProfileCard({
               {editControls?.removeLabel ?? (isAgent && member.ownerUserId === user?.id ? t('profile.agentLeaveGroup') : t('profile.removeFromGroup'))}
             </button>
           ) : null}
+          {editControls?.canRemove && editControls.removeHint ? (
+            <div className="text-[length:var(--font-caption)] leading-[1.4] text-[var(--faint-fg)]" data-profile-remove-hint={member.id}>{editControls.removeHint}</div>
+          ) : null}
           {editControls?.editError ? (
             <div className={profileManageErrorClass} role="alert" data-profile-edit-error={member.id}>
               {editControls.editError}
@@ -456,7 +472,7 @@ export function MemberProfileCard({
       ) : null}
     </div>
     {showShare && shareQrValue ? (
-      <SharePosterDialog
+      <SelfOrContactShare
         title={member.displayName}
         subtitle={isAgent ? 'Agent · 咕咕' : '咕咕'}
         qrValue={shareQrValue}

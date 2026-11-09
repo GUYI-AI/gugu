@@ -1,13 +1,13 @@
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
-import { ChevronLeft, ChevronRight, Maximize2, MinusCircle, Plus } from '@/lib/icons'
-import { useEffect, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight } from '@/lib/icons'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask, TextLayer } from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
-import pdfViewerCss from 'pdfjs-dist/web/pdf_viewer.css?inline'
 import { useTranslation } from 'react-i18next'
 import { usePinchZoom } from '../../hooks/usePinchZoom'
 import { Button } from '../ui/Button'
 import type { DocumentPreviewKind } from './documentPreview'
+import type { FilePlace } from '@gugu/core/shared/ui/guguLink'
 import {
   DOCUMENT_MAX_ZOOM,
   DOCUMENT_MIN_ZOOM,
@@ -19,6 +19,7 @@ import { registerHtmlPreview } from '../preview/html-preview-registration'
 import type { HtmlPreviewRegistration } from '../preview/HtmlPreviewFrame'
 import { truncateSheetXml } from './xlsxPreviewLimits'
 import './documentPreview.css'
+import { useFileZoom } from '../preview/file-content-zoom'
 
 interface DocumentPreviewContentProps {
   kind: DocumentPreviewKind
@@ -30,6 +31,8 @@ interface DocumentPreviewContentProps {
   onOpenExternally?: () => void
   /** How an HTML document is given an address: with the files beside it in its chat's folder, or (absent) on its own. */
   registerHtml?: (documentHtml: string) => Promise<HtmlPreviewRegistration>
+  /** The place a link named: a PDF opens at `page=N`, an HTML page at the element a bare `#id` names. */
+  at?: FilePlace
 }
 
 type ZipLimits = { maxEntries: number; maxEntryUncompressedBytes: number; maxTotalUncompressedBytes: number }
@@ -90,12 +93,14 @@ function openHtmlLink(href: string) {
   if (externalUrl) window.open(externalUrl)
 }
 
-export function DocumentPreviewContent({ kind, content, title, onOpenExternally, registerHtml = registerHtmlPreview }: DocumentPreviewContentProps) {
-  if (kind === 'html' && typeof content === 'string') return <HtmlPreviewFrame fileName={title} rawContent={content} register={registerHtml} onLink={openHtmlLink} />
+export function DocumentPreviewContent({ kind, content, title, onOpenExternally, registerHtml = registerHtmlPreview, at }: DocumentPreviewContentProps) {
+  // A new object per link clicked, so the same anchor clicked again scrolls again.
+  const anchor = useMemo(() => { const id = at && Object.keys(at).find((key) => at[key] === ''); return id ? { id } : undefined }, [at])
+  if (kind === 'html' && typeof content === 'string') return <HtmlPreviewFrame fileName={title} rawContent={content} register={registerHtml} onLink={openHtmlLink} anchor={anchor} />
   if (typeof content === 'string') return null
   if (!content) return null
   if (kind === 'docx') return <DocxPreview data={content} onOpenExternally={onOpenExternally} />
-  if (kind === 'pdf') return <PdfPreview data={content} />
+  if (kind === 'pdf') return <PdfPreview data={content} at={at} />
   if (kind === 'pptx') return <PptxPreview data={content} onOpenExternally={onOpenExternally} />
   if (kind === 'xlsx') return <XlsxPreview data={content} onOpenExternally={onOpenExternally} />
   return null
@@ -118,9 +123,15 @@ function PreviewFailure({ message, onOpenExternally }: { message: string; onOpen
 
 function DocxPreview({ data, onOpenExternally }: { data: ArrayBuffer; onOpenExternally?: () => void }) {
   const { t } = useTranslation('messaging')
+  const rootRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const styleRef = useRef<HTMLDivElement>(null)
   const [error, setError] = useState<string>()
+  // Reading zoom, the same as every readable view: keys, the ⋯ menu, a pinch — remembered for Word documents.
+  const { zoom, setZoom } = useFileZoom('docx', rootRef)
+  usePinchZoom(rootRef, (deltaY) => setZoom((value) => pinchZoom(value, deltaY, DOCUMENT_MIN_ZOOM, DOCUMENT_MAX_ZOOM)))
+  // The body is docx-preview's own rendering target; its zoom is set where it is filled, not as a JSX style.
+  useEffect(() => { if (bodyRef.current) bodyRef.current.style.zoom = String(zoom) }, [zoom])
 
   useEffect(() => {
     let active = true
@@ -153,7 +164,7 @@ function DocxPreview({ data, onOpenExternally }: { data: ArrayBuffer; onOpenExte
   }, [data, t])
 
   return (
-    <div className="document-preview-office" data-testid="docx-preview">
+    <div ref={rootRef} className="document-preview-office" data-testid="docx-preview">
       <div ref={styleRef} />
       {error ? <PreviewFailure message={error} onOpenExternally={onOpenExternally} /> : null}
       <div ref={bodyRef} className="document-preview-docx-body" />
@@ -161,14 +172,15 @@ function DocxPreview({ data, onOpenExternally }: { data: ArrayBuffer; onOpenExte
   )
 }
 
-function PdfPreview({ data }: { data: ArrayBuffer }) {
+function PdfPreview({ data, at }: { data: ArrayBuffer; at?: FilePlace }) {
   const { t } = useTranslation('messaging')
+  const rootRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const textLayerRef = useRef<HTMLDivElement>(null)
   const [document, setDocument] = useState<PDFDocumentProxy>()
   const [pageNumber, setPageNumber] = useState(1)
-  const [zoom, setZoom] = useState(1)
+  const { zoom, setZoom } = useFileZoom('pdf', rootRef)
   const [availableWidth, setAvailableWidth] = useState(0)
   const [error, setError] = useState<string>()
 
@@ -182,7 +194,7 @@ function PdfPreview({ data }: { data: ArrayBuffer }) {
     return () => observer.disconnect()
   }, [])
 
-  // 双指捏合与 −/+ 按钮改的是同一个 zoom,上下限也是同一套(#6456)。
+  // 双指捏合、键盘与 ⋯ 菜单改的是同一个 zoom,上下限也是同一套(#6456;平时不摆缩放按钮,改的时候浮出比例:owner 11-05 选 B)。
   usePinchZoom(viewportRef, (deltaY) =>
     setZoom((value) => pinchZoom(value, deltaY, DOCUMENT_MIN_ZOOM, DOCUMENT_MAX_ZOOM))
   )
@@ -211,6 +223,12 @@ function PdfPreview({ data }: { data: ArrayBuffer }) {
       void loadingTask?.destroy()
     }
   }, [data, t])
+
+  // A link's `page=N`: that page once the document is read, the last one past its end.
+  useEffect(() => {
+    const page = Number(at?.page)
+    if (document && Number.isInteger(page) && page >= 1) setPageNumber(Math.min(page, document.numPages))
+  }, [document, at])
 
   useEffect(() => {
     if (!document || !availableWidth) return
@@ -258,21 +276,15 @@ function PdfPreview({ data }: { data: ArrayBuffer }) {
 
   const pageCount = document?.numPages ?? 0
   return (
-    <div className="document-preview-pdf">
+    <div ref={rootRef} className="document-preview-pdf">
       <div className="document-preview-toolbar" role="toolbar" aria-label={t('chatArea.filePreview.pdfControls')}>
         <Button variant="ghost" size="icon" aria-label={t('chatArea.filePreview.previousPage')} title={t('chatArea.filePreview.previousPage')} disabled={pageNumber <= 1} onClick={() => setPageNumber((page) => Math.max(1, page - 1))}><ChevronLeft size={17} /></Button>
         <span className="document-preview-page-count">{pageCount ? `${pageNumber} / ${pageCount}` : '–'}</span>
         <Button variant="ghost" size="icon" aria-label={t('chatArea.filePreview.nextPage')} title={t('chatArea.filePreview.nextPage')} disabled={!pageCount || pageNumber >= pageCount} onClick={() => setPageNumber((page) => Math.min(pageCount, page + 1))}><ChevronRight size={17} /></Button>
-        <span className="document-preview-toolbar-divider" />
-        <Button variant="ghost" size="icon" aria-label={t('chatArea.filePreview.zoomOut')} title={t('chatArea.filePreview.zoomOut')} disabled={zoom <= DOCUMENT_MIN_ZOOM} onClick={() => setZoom((value) => Math.max(DOCUMENT_MIN_ZOOM, value - 0.25))}><MinusCircle size={17} /></Button>
-        <span className="document-preview-zoom">{Math.round(zoom * 100)}%</span>
-        <Button variant="ghost" size="icon" aria-label={t('chatArea.filePreview.zoomIn')} title={t('chatArea.filePreview.zoomIn')} disabled={zoom >= DOCUMENT_MAX_ZOOM} onClick={() => setZoom((value) => Math.min(DOCUMENT_MAX_ZOOM, value + 0.25))}><Plus size={17} /></Button>
-        <Button variant="ghost" size="icon" aria-label={t('chatArea.filePreview.fitWidth')} title={t('chatArea.filePreview.fitWidth')} onClick={() => setZoom(1)}><Maximize2 size={17} /></Button>
       </div>
       <div ref={viewportRef} className="document-preview-pdf-viewport">
         {error ? <PreviewStatus error>{error}</PreviewStatus> : !document ? <PreviewStatus><LoadingIndicator size="inline" />{t('chatArea.filePreview.rendering')}</PreviewStatus> : null}
         <div className="document-preview-pdf-page">
-          <style>{`@scope (.document-preview-pdf-page) { ${pdfViewerCss} }`}</style>
           <canvas ref={canvasRef} aria-label={t('chatArea.filePreview.pdfPage', { page: pageNumber })} />
           <div ref={textLayerRef} className="textLayer" data-file-selection />
         </div>

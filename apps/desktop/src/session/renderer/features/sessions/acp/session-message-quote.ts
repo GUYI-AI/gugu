@@ -10,3 +10,9 @@ export function selectedMessageText(root: HTMLElement, selection: Selection | nu
   if (start && end) return selection.toString();
   return start || end || selection.getRangeAt(0).intersectsNode(root) ? null : undefined;
 }
+
+/** The simple quote: the text as a markdown block, on its own after whatever the composer already holds. */
+export const quotedIntoDraft = (draft: string, text: string): string => {
+  const quote = `${text.trim().split('\n').map(line => `> ${line}`).join('\n')}\n\n`;
+  return draft.trim() ? `${draft.trimEnd()}\n\n${quote}` : quote;
+};

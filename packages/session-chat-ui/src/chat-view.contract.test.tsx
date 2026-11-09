@@ -4,7 +4,7 @@
  *
  * These run in Chromium via @vitest/browser-playwright so they have real DOM
  * layout and Solid's reactive scheduler. They guard against regressions in the
- * Monaco-style model-swap introduced in the ChatView setModel refactor.
+ * Editor-style model-swap introduced in the ChatView setModel refactor.
  */
 
 import { DEFAULT_THEME } from '@session-chat/core/theme';
@@ -127,10 +127,10 @@ describe('createChatView', () => {
     await nextPaint();
 
     view.scrollToBottom();
-    // The stuck row is the user card drawn at the scroller's top edge.
+    // The stuck summary is the user bubble drawn at the scroller's top edge.
     const pinnedCardEl = () => {
       const top = host.querySelector<HTMLElement>('[data-chat-scroll]')!.getBoundingClientRect().top;
-      return [...host.querySelectorAll<HTMLElement>('[data-user-card]')].find((card) => {
+      return [...host.querySelectorAll<HTMLElement>('[data-pin-summary]')].find((card) => {
         const d = card.getBoundingClientRect().top - top;
         return d >= 0 && d < 24;
       });

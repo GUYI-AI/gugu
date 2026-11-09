@@ -5,8 +5,11 @@ import { detectHostOs } from '@shared/host-os'
 import './lib/errorCaptureBootstrap'
 // 网页形态按 http://<ip> 直开时浏览器不给 crypto.randomUUID,全仓裸用 → 会话页启动即白;import 即装垫片。
 import './lib/insecure-context-shims'
+// 没更新过的老 Android WebView(Chrome 91)没有 structuredClone,首屏渲染即抛;同样 import 即装。
+import './lib/legacy-webview-shims'
 import React from 'react'
 import App from './App'
+import { notifyHostTheme } from '@renderer/lib/theme/host-theme'
 import { renderEntryRoot } from './lib/renderer-entry-root'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { captureReferralFromUrl } from './lib/referral'
@@ -33,6 +36,8 @@ import './i18n/registerAgentsCatalog'
 import './i18n/registerAssistantCatalog'
 import './styles/sora.css'
 import './styles/tokens.css'
+import { StartupMotionBoundary } from './components/StartupMotionBoundary'
+import { AndroidStartupFrame } from './platform/AndroidStartupFrame'
 import '@gugu/session-shared/animation-visibility.css'
 import { isAnimationWindowVisible } from '@gugu/session-shared/animation-visibility'
 import { installPerfCounterResponder } from './lib/perfCounterResponder'
@@ -81,9 +86,7 @@ installWindowMaterialAttribute(document.documentElement, window.desktopWindow)
 // 但**开机那一次**属性是 index.html 的引导脚本直接落的,不经过它 —— 不补这一下,
 // 一个装完就选深色、之后再没切过的用户,主进程会一直按记住的浅色开窗。
 // 读属性而不是读偏好:属性就是真值(引导脚本已经把 `system` 解析完了)。
-window.electronAPI?.syncWindowTone?.(
-  document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
-)
+notifyHostTheme()
 // 安卓壳的系统栏同理(@@@mobile-shell-chrome),开机一次、之后跟属性走。
 startShellChromeTone()
 
@@ -94,13 +97,14 @@ renderEntryRoot(
   'desktop',
   document.getElementById('root') as HTMLElement,
   <React.StrictMode>
-    <>
+    <StartupMotionBoundary>
+      <AndroidStartupFrame />
       <AppErrorBoundary>
         <LocalizationProvider>
           <App />
           <BuildTagBadge />
         </LocalizationProvider>
       </AppErrorBoundary>
-    </>
+    </StartupMotionBoundary>
   </React.StrictMode>
 )

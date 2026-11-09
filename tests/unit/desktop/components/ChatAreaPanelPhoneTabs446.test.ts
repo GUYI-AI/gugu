@@ -8,6 +8,7 @@ import { openImRepository, type AccountImRepository } from '../../../../apps/des
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
 import { queryClient } from '../../../../apps/desktop/src/session/renderer/lib/query-client'
 import { requestTopicSplit } from '../../../../apps/desktop/src/lib/topicSplitRequest'
+import { pressBack } from '../../../../apps/desktop/src/components/ui/sheetStack'
 
 const { getImRepositoryMock, TOPICS, pinPrefs } = vi.hoisted(() => ({
   getImRepositoryMock: vi.fn(),
@@ -74,13 +75,14 @@ afterEach(() => {
   queryClient.clear()
 })
 
+let topicRows: Record<string, Partial<ReturnType<typeof chat>>> = {}
 async function render(chatId: string, mobile = true, kind: 'group' | 'dm' = 'group') {
   await renderWithAppProviders(harness, createNode(ChatAreaPanel, { activeTab: 'chats', mobile, hidden: false, openNonce: 0 }), {
     chat: {
       getImRepository: getImRepositoryMock,
       activeChatId: chatId,
       activeChat: chat({ id: chatId, kind, name: '登录改版' }),
-      chats: TOPICS.map((topic) => chat({ id: topic.chat_id, kind: 'topic', source_chat_id: 'g1', name: topic.name })),
+      chats: TOPICS.map((topic) => chat({ id: topic.chat_id, kind: 'topic', source_chat_id: 'g1', name: topic.name, ...topicRows[topic.chat_id] })),
     },
   })
   await act(async () => { await Promise.resolve() })
@@ -90,14 +92,31 @@ const q = (selector: string) => harness.container.querySelector<HTMLElement>(sel
 const tab = (id: string) => q(`[data-testid="phone-chat-tab-${id}"]`)
 
 describe('shared group topic tabs (#446, #837)', () => {
-  it('shows Group chat and only pinned topics, truncating long phone labels', async () => {
+  it('phone: Group chat and every topic are on the strip, and there is no topics button', async () => {
+    pinPrefs.ids = []
     await render('g1')
     await vi.waitFor(() => expect(tab('t1')).not.toBeNull())
-    expect(q('[data-testid="phone-chat-tabs"]')).not.toBeNull()
     expect(tab('main')?.getAttribute('aria-selected')).toBe('true')
     expect(tab('t1')?.textContent).toBe('把登录页的报错改成…')
-    expect(tab('t2')).toBeNull()
+    expect(tab('t2')).not.toBeNull()
+    expect(q('[data-testid="group-menu-topics"]')).toBeNull()
     expect(q('[data-testid="topic-split-pane"]')).toBeNull()
+  })
+
+  it('phone: a topic calling you shows red @N, comes right after Group chat, and plain unread stays a plain count', async () => {
+    pinPrefs.ids = []
+    const locator = (unread: number, addressed: number) => ({ stream_id: 'main', stream_kind: 'main' as const, thread_root_id: null, message_id: 'm', message_seq: 1, unread_count: unread, addressed_count: addressed, cursor_seq: 0, version: 1, is_marked_unread: false })
+    topicRows = { t1: { unread_count: 9, unread_locator: locator(9, 0) }, t2: { unread_count: 27, unread_locator: locator(27, 2) } }
+    try {
+      await render('g1')
+      await vi.waitFor(() => expect(tab('t2')).not.toBeNull())
+      expect(tab('t2')!.querySelector('[data-tab-call]')?.textContent).toBe('@2')
+      expect(tab('t2')!.getAttribute('aria-label')).toContain('周报')
+      expect(tab('t1')!.querySelector('[data-tab-call]')).toBeNull()
+      expect(tab('t1')!.textContent).toContain('9')
+      const order = [...document.querySelectorAll<HTMLElement>('[data-testid^="phone-chat-tab-"]')].map((node) => node.dataset.testid)
+      expect(order.slice(0, 3)).toEqual(['phone-chat-tab-main', 'phone-chat-tab-t2', 'phone-chat-tab-t1'])
+    } finally { topicRows = {} }
   })
 
   it('点话题那一枚:消息区换成它,没有自己的页头;点回「群聊」它就收起', async () => {
@@ -112,12 +131,22 @@ describe('shared group topic tabs (#446, #837)', () => {
     expect(tab('main')?.getAttribute('aria-selected')).toBe('true')
   })
 
+  it('phone: back closes the open topic and shows the group', async () => {
+    await render('g1')
+    await vi.waitFor(() => expect(tab('t2')).not.toBeNull())
+    await act(async () => { requestTopicSplit({ chatId: 't2', name: '周报', sourceChatId: 'g1' }) })
+    await vi.waitFor(() => expect(tab('t2')?.getAttribute('aria-selected')).toBe('true'))
+    await act(async () => { pressBack() })
+    expect(q('[data-testid="topic-split-pane"]')).toBeNull()
+    expect(tab('main')?.getAttribute('aria-selected')).toBe('true')
+  })
+
   it('没有话题的对话不露这一排', async () => {
     await render('g2')
     expect(q('[data-testid="phone-chat-tabs"]')).toBeNull()
   })
 
-  it('opens the existing right split from the same pinned strip on desktop', async () => {
+  it('opens the existing right split from the pinned strip on desktop', async () => {
     await render('g1', false)
     await vi.waitFor(() => expect(tab('t1')).not.toBeNull())
     expect(tab('t2')).toBeNull()
@@ -126,22 +155,22 @@ describe('shared group topic tabs (#446, #837)', () => {
     expect(q('[data-testid="topic-split-close"]')).not.toBeNull()
   })
 
-  it('does not select Group when the open topic is not pinned, while retaining a keyboard entry point', async () => {
+  it('selects the open topic on the phone strip, with Group still reachable', async () => {
     await render('g1')
     await vi.waitFor(() => expect(tab('t1')).not.toBeNull())
     await act(async () => { requestTopicSplit({ chatId: 't2', name: '周报', sourceChatId: 'g1' }) })
     await vi.waitFor(() => expect(q('[data-testid="topic-split-pane"]')?.dataset.topicId).toBe('t2'))
     expect(tab('main')?.getAttribute('aria-selected')).toBe('false')
     expect(tab('t1')?.getAttribute('aria-selected')).toBe('false')
-    expect(tab('main')?.getAttribute('tabindex')).toBe('0')
+    expect(tab('t2')?.getAttribute('aria-selected')).toBe('true')
     await act(async () => { tab('main')!.click() })
     expect(q('[data-testid="topic-split-pane"]')).toBeNull()
     expect(tab('main')?.getAttribute('aria-selected')).toBe('true')
   })
 
-  it.each([false, true])('hides the strip without pins even when topics exist (mobile=%s)', async (mobile) => {
+  it('desktop: hides the strip without pins even when topics exist', async () => {
     pinPrefs.ids = []
-    await render('g1', mobile)
+    await render('g1', false)
     await vi.waitFor(() => expect(queryClient.getQueryData(['chat-pins', 'user-1', 'g1'])).toEqual({ topicIds: [] }))
     expect(q('[data-testid="phone-chat-tabs"]')).toBeNull()
   })

@@ -13,6 +13,7 @@ import {
 import { publishActiveChatWillChange } from '../../../../apps/desktop/src/store/activeChatTransition'
 import { resetAuthSessionBoundary } from '../../../../apps/desktop/src/lib/authSessionLoss'
 
+const listRef = { current: null as import('../../../../apps/desktop/src/lib/flowList').FlowListHandle | null }
 beforeEach(() => resetAuthSessionBoundary())
 
 describe('conversation scroll memory', () => {
@@ -27,7 +28,7 @@ describe('conversation scroll memory', () => {
     const setFollowingTail = vi.fn()
     const isAtBottomRef = { current: true }
     function Harness() {
-      memory = useConversationScrollMemory({ viewportKey: 'test-slot', chatId: 'slot-chat', activationKey: 'slot-chat', enabled: true,
+      memory = useConversationScrollMemory({ listRef, viewportKey: 'test-slot', chatId: 'slot-chat', activationKey: 'slot-chat', enabled: true,
         messageIds: ['older', 'anchor', 'newer'], isAtBottomRef, setFollowingTail })
       return createPortal(createElement('div', { ref: memory.setScrollerRef },
         createElement('div', { 'data-msg-id': 'anchor' })), slot!)
@@ -44,7 +45,8 @@ describe('conversation scroll memory', () => {
       })
       vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue({ top: 100, bottom: 900 } as DOMRect)
       vi.spyOn(row, 'getBoundingClientRect').mockReturnValue({ top: 84, bottom: 160 } as DOMRect)
-      await act(async () => { scroller.dispatchEvent(new Event('scroll')) })
+      // The scroll is read after the frame is painted (lib/afterPaint); the slot goes away in a later frame.
+      await act(async () => { scroller.dispatchEvent(new Event('scroll')); await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))) })
       await act(async () => { slotRoot.render(null) })
       expect(scroller.isConnected).toBe(false)
       expect(scroller.scrollHeight, 'the slot root has already removed the live geometry').toBe(0)
@@ -114,7 +116,7 @@ describe('conversation scroll memory', () => {
       messageIds: string[]
       rowId: string
     }) {
-      memory = useConversationScrollMemory({ viewportKey: 'test-slot',
+      memory = useConversationScrollMemory({ listRef, viewportKey: 'test-slot',
         chatId,
         activationKey: chatId,
         enabled: true,
@@ -188,7 +190,7 @@ describe('conversation scroll memory', () => {
       const view = { memory: null as ReturnType<typeof useConversationScrollMemory> | null, rowTop: 84, scrollTop: 700, renders: 0 }
       function Harness({ chatId, messageIds, rows }: { chatId: string; messageIds: string[]; rows: string[] }) {
         view.renders += 1
-        view.memory = useConversationScrollMemory({ viewportKey, chatId, activationKey: chatId, enabled: true, messageIds, isAtBottomRef: { current: true }, setFollowingTail: vi.fn() })
+        view.memory = useConversationScrollMemory({ listRef, viewportKey, chatId, activationKey: chatId, enabled: true, messageIds, isAtBottomRef: { current: true }, setFollowingTail: vi.fn() })
         return createElement('div', { ref: view.memory.setScrollerRef },
           createElement('div', null, ...rows.map((id) => createElement('div', { key: id, 'data-msg-id': id }))))
       }
@@ -344,13 +346,15 @@ describe('conversation scroll memory', () => {
         const root = createRoot(container)
         const view = { memory: null as ReturnType<typeof useConversationScrollMemory> | null, renders: 0, scrollTop: 0 }
         const setFollowingTail = vi.fn()
-        function Harness({ messageIds }: { messageIds: string[] }) {
+        const handle = { scrollToIndex: vi.fn(), autoscrollToBottom: vi.fn() }
+        const listRef = { current: handle }
+        function Harness({ messageIds, shownIds }: { messageIds: string[]; shownIds: string[] }) {
           view.renders += 1
-          view.memory = useConversationScrollMemory({ viewportKey: 'test-slot', chatId: 'chat-a', activationKey: 'chat-a', enabled: true, messageIds, isAtBottomRef: { current: true }, setFollowingTail, loadMessageAnchor })
+          view.memory = useConversationScrollMemory({ listRef, viewportKey: 'test-slot', chatId: 'chat-a', activationKey: 'chat-a', enabled: true, messageIds, isAtBottomRef: { current: true }, setFollowingTail, loadMessageAnchor })
           return createElement('div', { ref: view.memory.setScrollerRef },
-            createElement('div', null, ...messageIds.map((id) => createElement('div', { key: id, 'data-msg-id': id }))))
+            createElement('div', null, ...shownIds.map((id) => createElement('div', { key: id, 'data-msg-id': id }))))
         }
-        const render = (messageIds: string[]) => act(async () => { root.render(createElement(Harness, { messageIds })) })
+        const render = (messageIds: string[], shownIds = messageIds) => act(async () => { root.render(createElement(Harness, { messageIds, shownIds })) })
         // 视口顶 100、高 800;要看的那一行 m1 的上沿随 scrollTop 走,落位点是视口 35% 处(offset 280)。
         const geometry = () => {
           const scroller = container.firstElementChild as HTMLElement
@@ -368,7 +372,7 @@ describe('conversation scroll memory', () => {
           }
         }
         const cleanup = async () => { await act(async () => root.unmount()); container.remove(); vi.restoreAllMocks() }
-        return { view, render, geometry, cleanup, setFollowingTail }
+        return { view, render, geometry, cleanup, setFollowingTail, handle }
       }
 
       it('loads the window around it, lands the remounted list on it, and resolves once it has settled', async () => {
@@ -391,6 +395,26 @@ describe('conversation scroll memory', () => {
           await act(async () => { await revealed })
           expect(settled).toBe(true)
           expect(rig.view.scrollTop).toBe(500)
+        } finally { await rig.cleanup() }
+      })
+
+      it('mounts an already loaded but omitted target through the existing list handle before settling', async () => {
+        const load = vi.fn(async () => {})
+        const rig = mountWithAnchor(load)
+        try {
+          await rig.render(['m0', 'm1', 'm2'], ['m2'])
+          rig.geometry()
+          let settled = false
+          let revealed: Promise<void> = Promise.resolve()
+          await act(async () => { revealed = rig.view.memory!.revealMessage('m1').then(() => { settled = true }) })
+          expect(load).not.toHaveBeenCalled()
+          expect(rig.handle.scrollToIndex).toHaveBeenCalledWith({ index: 1, align: 'start', offset: -280 })
+          expect(settled).toBe(false)
+          await rig.render(['m0', 'm1', 'm2'])
+          rig.geometry()
+          await frames(8)
+          await act(async () => { await revealed })
+          expect(settled).toBe(true)
         } finally { await rig.cleanup() }
       })
 

@@ -6,6 +6,8 @@ import { sessionLifeViewChannel } from '@shared/core/sessions/sessionEvents';
 import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { machineClient } from '@renderer/lib/machine-clients';
+import { toast } from '@renderer/lib/hooks/use-toast';
+import { translateSessionMessage } from '@renderer/localization/locale-store';
 
 const views = observable.map<string, LifeView>();
 const requested = new Set<string>();
@@ -15,6 +17,10 @@ function accept(view: LifeView): void {
   const current = views.get(view.sessionId);
   if (current && current.version >= view.version) return;
   runInAction(() => views.set(view.sessionId, view));
+  // A first snapshot may contain an old reload result. Only a new completion gets a transient notice.
+  if (current && view.kind === 'ready' && view.nativeSession && current.nativeSession !== view.nativeSession) {
+    toast({ title: translateSessionMessage(view.nativeSession === 'preserved' ? 'chat.reloadPreserved' : 'chat.reloadReplaced'), tier: 'info' });
+  }
 }
 
 /** False while that machine has no bridge yet: its page already says the link is down, and the next ask listens. */
@@ -57,6 +63,11 @@ export function stopSessionLife(sessionId: string): Promise<void> {
 /** The person discards their own message they stopped before it went. */
 export function discardSessionLifeRow(sessionId: string, messageId: string): Promise<void> {
   return rpcOn(machineRegistry.machineOf(sessionId)).sessions.lifeDiscard(sessionId, messageId);
+}
+
+/** Resend one host-owned unknown input only after an explicit click. */
+export function retryUnknownSessionInput(sessionId: string, messageId: string): Promise<void> {
+  return rpcOn(machineRegistry.machineOf(sessionId)).sessions.lifeRetryUnknown(sessionId, messageId);
 }
 
 /** The person opened or retried this session: its host's session-life starts it (a page never starts a runtime). */

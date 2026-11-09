@@ -818,9 +818,9 @@ if (args[0] === 'pr') {
     // #5354: 分片 2 -> 4(池是 16 个并行槽,两片各 ~195s 时 unit 排在关键路径第二)。这份清单是
     // check-verdict 判绿的依据,分片数改了不同步,PR 会一直等两个永远不会出现的检查。
     // #6270: 4 -> 2(worker 按余量分)。清单是判绿依据,分片数不同步会让 PR 一直等不存在的检查。
-    // Community CI: 2 macOS shards -> 4 ubuntu shards (unit was the longest test job at ~7 min a shard).
-    expect(names).toContain('Unit tests (1/4)')
-    expect(names).toContain('Unit tests (4/4)')
+    // Community CI: six Ubuntu shards; canonical must require every member of the new matrix.
+    expect(names.filter(name => name.startsWith('Unit tests (')).sort())
+      .toEqual(Array.from({ length: 6 }, (_, i) => `Unit tests (${i + 1}/6)`))
     expect(names).not.toContain('Unit tests (1/2)')
     expect(names).toContain('Web E2E (local)')
     // #5354: electron 目标从 renderer-build 拆出来后自带的新必过检查名。
@@ -887,7 +887,7 @@ if (args[0] === 'pr') {
         [ANDROID]: { decider: DECIDER, output: 'android' },
         ...Object.fromEntries([
           'Session database, chat UI browser and tooling / Session database, chat UI browser and tooling',
-          'Session browser project', 'Projection native media',
+          'Session browser project (1/3)', 'Session browser project (2/3)', 'Session browser project (3/3)', 'Projection native media',
           'Client and community database contracts',
         ].map(name => [name, { decider: DECIDER, output: 'tests' }]))
       })
@@ -936,8 +936,8 @@ if (args[0] === 'pr') {
       })
       // Test skips are rejected without the original docs-only decision.
       expect(
-        verdict({ [DECIDER]: { outputs: typicalSourcePr }, 'Unit tests (1/4)': skipped })
-      ).toMatchObject({ verdict: 'RED', failed: ['pull_request/Unit tests (1/4) (skipped)'] })
+        verdict({ [DECIDER]: { outputs: typicalSourcePr }, 'Unit tests (1/6)': skipped })
+      ).toMatchObject({ verdict: 'RED', failed: ['pull_request/Unit tests (1/6) (skipped)'] })
       // Decider still running: not decided yet.
       expect(
         verdict({ [DECIDER]: { status: 'in_progress', conclusion: null }, [MAC]: skipped })
@@ -970,6 +970,53 @@ if (args[0] === 'pr') {
       ).toBeUndefined()
       expect(parseJobOutputsAnnotations([{ title: JOB_OUTPUTS_MARKER, message: 'build true' }])).toBeUndefined()
     })
+
+    it('retains the original decision for a proven inherited decider after a single-job rerun', () => {
+      const profiles = realCiProfiles()
+      const runs = snapshot(profiles, {
+        [MAC]: skipped,
+        [ANDROID]: skipped,
+      })
+      const original = runs.find(run => run.name === DECIDER)!
+      const inherited = { ...original, id: original.id + 1000 }
+      runs.push(inherited)
+      const fetchAnnotations = vi.fn((id: number) => id === original.id
+        ? [{ title: JOB_OUTPUTS_MARKER, message: 'build=true desktop-mac=false android=false' }]
+        : [])
+
+      attachDeciderOutputs(runs, profiles, fetchAnnotations, id => id === inherited.id ? original.id : undefined)
+
+      expect(evaluateCheckSnapshots(profiles, [runs, runs])).toMatchObject({
+        verdict: 'GREEN', failed: [], missing: [], pending: [],
+        skippedNotDue: [`pull_request/${ANDROID}`, `pull_request/${MAC}`],
+      })
+    })
+
+    it.each(['unproven', 'failed-source', 'wrong-source', 'wrong-event', 'missing-source-marker',
+      'malformed-source', 'duplicate-source', 'malformed', 'duplicate'] as const)(
+      'does not replace missing or invalid current evidence with an unrelated decision: %s', (scenario) => {
+        const profiles = realCiProfiles()
+        const runs = snapshot(profiles, { [ANDROID]: skipped })
+        const original = runs.find(run => run.name === DECIDER)!
+        const inherited = { ...original, id: original.id + 1000 }
+        runs.push(inherited)
+        if (scenario === 'failed-source') original.conclusion = 'failure'
+        if (scenario === 'wrong-source') original.name = 'Another decider'
+        if (scenario === 'wrong-event') original.event = 'push'
+        const marker = { title: JOB_OUTPUTS_MARKER, message: 'build=true desktop-mac=true android=false' }
+        attachDeciderOutputs(runs, profiles, (id) => {
+          if (id === original.id) {
+            if (scenario === 'missing-source-marker') return []
+            if (scenario === 'malformed-source') return [{ ...marker, message: 'android false' }]
+            return scenario === 'duplicate-source' ? [marker, marker] : [marker]
+          }
+          if (scenario === 'malformed') return [{ ...marker, message: 'android false' }]
+          if (scenario === 'duplicate') return [marker, marker]
+          return []
+        }, id => id === inherited.id && scenario !== 'unproven' ? original.id : undefined)
+        expect(evaluateCheckSnapshots(profiles, [runs, runs]).verdict).toBe('RED')
+      },
+    )
   })
 
 

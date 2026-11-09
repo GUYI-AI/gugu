@@ -1,44 +1,31 @@
-import { detectPlatform, parseHotkey } from '@tanstack/react-hotkeys';
+import { detectPlatform, type Hotkey } from '@tanstack/react-hotkeys';
 import { observer } from 'mobx-react-lite';
 import { Fragment, type ReactNode } from 'react';
 import type { TabHost } from '@renderer/features/tabs/core/tab-host';
 import type { ResolvedTab, TabViewContext } from '@renderer/features/tabs/core/tab-provider';
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from '@renderer/lib/ui/context-menu';
+import { MoreHorizontal } from '@/lib/icons';
+import { ContextMenu, MenuFold, MenuItem, MenuSeparator } from '@/components/ui/Menu';
 import { toast } from '@renderer/lib/hooks/use-toast';
-import { BoundShortcut, Shortcut } from '@renderer/lib/ui/shortcut';
+import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format';
+import { getEffectiveHotkey } from '@renderer/lib/hooks/useKeyboardShortcuts';
+import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import type { CommandId } from '@shared/commands';
 import type { TabCommand } from './tab-commands';
 
 const _PLATFORM = detectPlatform();
 
-/** Renders a shortcut hint that works with both a settings key and a raw getter. */
-function CmdShortcut({
-  shortcut,
-}: {
-  shortcut?: CommandId | (() => string | undefined);
-}) {
-  if (!shortcut) return null;
-  if (typeof shortcut === 'function') {
-    const raw = shortcut();
-    const parsed = raw ? (parseHotkey(raw, _PLATFORM) as any) : null;
-    return parsed ? <Shortcut hotkey={parsed} className="ml-auto" /> : null;
-  }
-  return <BoundShortcut commandId={shortcut} className="ml-auto" />;
+/** A command's shortcut as menu text: a bound command's current hotkey, or a raw getter's hotkey. */
+function shortcutText(shortcut: TabCommand['shortcut'], keyboard: Parameters<typeof getEffectiveHotkey>[1]): string | undefined {
+  if (!shortcut) return undefined;
+  const hotkey = typeof shortcut === 'function' ? shortcut() : getEffectiveHotkey(shortcut, keyboard);
+  return hotkey ? formatHotkeyText(hotkey as Hotkey, _PLATFORM) : undefined;
 }
 
 /**
  * 任何一类页签的右键(spec session-page「一屏几块」,照原型):
- *   关闭页签 / 关闭其他页签 / 关闭右侧页签 / 关闭全部页签(照 VS Code、Chrome;暂时用不了的灰着,❌ 藏掉)
- *   ── 拆开(并排的一对才有)/ 向右分 / 向下分(在能分格的布局里一直摆着;这一格只有这一枚、或分满了,点了说为什么)/ 在新窗口打开 /
- *      移到另一栏(这条会话不止一格时)
- *   ── 这类页签自己的命令(`kindCommands`,比如会话那枚的置顶、重命名、归档)。
+ *   关闭页签 / 关闭多个页签 ▸ 其他、右侧、全部(照 VS Code、Chrome;暂时用不了的灰着,❌ 藏掉)
+ *   ── 拆开(并排的一对才有)/ 向右分(在能分屏的地方一直摆着;没有别的页、或太窄,点了说为什么)/ 在新窗口打开
+ *   ── 这类页签自己的命令(`kindCommands`,比如会话那枚的置顶、重命名、归档;标了 `fold` 的进「更多」)。
  * 一组里一项都没有就连分隔线一起不画。
  */
 export const TabContextMenu = observer(function TabContextMenu({
@@ -55,12 +42,10 @@ export const TabContextMenu = observer(function TabContextMenu({
   children: ReactNode;
 }) {
   const { translate } = useSessionMessages();
+  const { value: keyboard } = useAppSettingsKey('keyboard');
   const index = host.resolvedTabs.findIndex((t) => t.tabId === tab.tabId);
   const count = host.resolvedTabs.length;
   const engineCommands: TabCommand[] = [
-    ...(tab.isPreview
-      ? [{ id: 'engine:keep-open', label: translate('tabs.keepOpen'), group: 'close' as const, run: () => host.pin(tab.tabId) }]
-      : []),
     {
       id: 'engine:close',
       label: translate('tabs.close'),
@@ -70,6 +55,7 @@ export const TabContextMenu = observer(function TabContextMenu({
     },
     {
       id: 'engine:close-others',
+      fold: true,
       label: translate('tabs.closeOthers'),
       group: 'close' as const,
       isEnabled: () => count > 1,
@@ -77,6 +63,7 @@ export const TabContextMenu = observer(function TabContextMenu({
     },
     {
       id: 'engine:close-right',
+      fold: true,
       label: translate('tabs.closeRight'),
       group: 'close' as const,
       isEnabled: () => index >= 0 && index < count - 1,
@@ -84,77 +71,67 @@ export const TabContextMenu = observer(function TabContextMenu({
     },
     {
       id: 'engine:close-all',
+      fold: true,
       label: translate('tabs.closeAll'),
       group: 'close' as const,
       run: () => host.closeAll(),
     },
   ];
-  // 向右分 / 向下分 = 和屏上那页并排(spec session-page「并排」)。分不出去也摆着,点了说为什么:没有别的页可并排 / 太窄(太矮)放不下两页。
-  const split = (edge: 'right' | 'bottom') => {
-    const blocked = host.tabSplitBlocked(tab.tabId, edge);
+  // 向右分 = 和屏上那页并排(spec session-page「并排」)。分不出去也摆着,点了说为什么:没有别的页可并排 / 太窄放不下两页。
+  const split = () => {
+    const blocked = host.tabSplitBlocked(tab.tabId);
     if (blocked === null) {
-      host.splitTab(tab.tabId, edge);
+      host.splitTab(tab.tabId);
       return;
     }
-    const reason = blocked === 'only-tab' ? 'tabs.splitOnlyTab' : blocked === 'full' ? 'tabs.splitFull' : edge === 'right' ? 'tabs.splitTooNarrow' : 'tabs.splitTooShort';
-    toast({ title: translate(reason) });
+    toast({ title: translate(blocked === 'only-tab' ? 'tabs.splitOnlyTab' : 'tabs.splitTooNarrow') });
   };
   const splitCommands: TabCommand[] = [
     // 并排的一对:「拆开」= 两枚都变回普通页签,点着的那枚占满(spec session-page「并排」,照 Chrome「Separate views」)。
     ...(tab.pairRole
-      ? [{ id: 'engine:separate-pair', label: translate('tabs.separatePair'), group: 'split' as const, run: () => host.separatePair() }]
+      ? [{ id: 'engine:separate-pair', label: translate('tabs.separatePair'), group: 'split' as const, shortcut: 'session.splitPane' as const, run: () => host.separatePair() }]
       : []),
     {
       id: 'engine:split-right',
       label: translate('tabs.splitRight'),
       group: 'split' as const,
-      shortcut: 'session.splitPane' as const,
+      ...(tab.pairRole ? {} : { shortcut: 'session.splitPane' as const }),
       isEnabled: () => host.inSplitLayout,
-      run: () => split('right'),
-    },
-    {
-      id: 'engine:split-down',
-      label: translate('tabs.splitDown'),
-      group: 'split' as const,
-      isEnabled: () => host.inSplitLayout,
-      run: () => split('bottom'),
+      run: split,
     },
   ];
-  // 分隔线下面:向右分 / 向下分 / 在新窗口打开 / 移到另一栏(spec session-page「页签右键」)。
+  // 分隔线下面:拆开 / 向右分 / 在新窗口打开(spec session-page「页签右键」)。
   const openInWindow = host.tabWindowOpener(tab.tabId);
   if (openInWindow) {
     splitCommands.push({ id: 'engine:open-in-window', label: translate('tabs.openInWindow'), group: 'split' as const, run: openInWindow });
-  }
-  const moveToOtherPane = host.tabMoveToOtherPane(tab.tabId);
-  if (moveToOtherPane) {
-    splitCommands.push({ id: 'engine:move-to-other-pane', label: translate('tabs.moveToOtherPane'), group: 'split' as const, run: moveToOtherPane });
   }
 
   const groups = [engineCommands, splitCommands, kindCommands]
     .map((commands) => commands.filter((c) => c.isAvailable?.() !== false))
     .filter((commands) => commands.length > 0);
 
+  const row = (cmd: TabCommand) => (
+    <MenuItem key={cmd.id} icon={cmd.icon ? <cmd.icon /> : undefined} shortcut={shortcutText(cmd.shortcut, keyboard)} disabled={cmd.isEnabled?.() === false} onClick={() => void cmd.run()}>
+      {cmd.label}
+    </MenuItem>
+  );
+
   return (
-    <ContextMenu>
+    <ContextMenu.Root onOpenChange={(open) => { if (open) kindCommands.forEach((cmd) => cmd.onMenuOpen?.()); }}>
       {/* 这层 trigger 长在 .session-tab-slot **里面**(见 generic-tab-item.tsx 的说明),所以它必须
           把 slot 填满并允许自己被压缩:`w-full` 撑满分到的宽度,`min-w-0` 解除 flex 的自动最小尺寸
           —— 少了 min-w-0,页签标题的 min-content 会变成一道压不下去的地板,slot 缩了它也不缩,
           于是标题溢出到邻居身上。 */}
-      <ContextMenuTrigger className="flex h-full w-full min-w-0">{children}</ContextMenuTrigger>
-      <ContextMenuContent finalFocus={false}>
+      <ContextMenu.Trigger className="flex h-full w-full min-w-0">{children}</ContextMenu.Trigger>
+      <ContextMenu.Content finalFocus={false}>
         {groups.map((commands, groupIndex) => (
           <Fragment key={commands[0].id}>
-            {groupIndex > 0 && <ContextMenuSeparator />}
-            {commands.map((cmd) => (
-              <ContextMenuItem key={cmd.id} disabled={cmd.isEnabled?.() === false} onClick={() => void cmd.run()}>
-                {cmd.icon ? <cmd.icon className="size-4" /> : null}
-                {cmd.label}
-                <CmdShortcut shortcut={cmd.shortcut} />
-              </ContextMenuItem>
-            ))}
+            {groupIndex > 0 && <MenuSeparator />}
+            {commands.filter((cmd) => !cmd.fold).map(row)}
+            <MenuFold {...(commands[0].group === 'close' ? { label: translate('tabs.closeMany') } : { icon: <MoreHorizontal />, label: translate('common.more') })}>{commands.filter((cmd) => cmd.fold).map(row)}</MenuFold>
           </Fragment>
         ))}
-      </ContextMenuContent>
-    </ContextMenu>
+      </ContextMenu.Content>
+    </ContextMenu.Root>
   );
 });

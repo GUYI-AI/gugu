@@ -4,6 +4,7 @@ import { events } from '@main/lib/events';
 import { browserAppShortcutChannel, tabNavigationShortcutChannel } from '@shared/events/appEvents';
 import { browserFocusedChannel } from '@shared/events/browserEvents';
 import { BrowserWebContentsRegistry, isSamePreviewNavigation } from './browser-webcontents-registry';
+import { markCredentialHandoffCandidate, publishCredentialHandoffCandidate, restrictCredentialPartition } from './credential-isolation-registry';
 
 const sessionsByPartition = new Map<string, object>();
 
@@ -150,6 +151,39 @@ describe('BrowserWebContentsRegistry', () => {
     expect(registry.isRegistered('browser-1', PROFILE_PARTITION)).toBe(true);
     expect(registry.isRegistered('browser-1', 'persist:gugu-browser-profile-work')).toBe(false);
     expect(registry.isRegistered('missing', PROFILE_PARTITION)).toBe(false);
+  });
+
+  it('does not revive a credential destination identity when the same registration object is reused', () => {
+    const registry = new BrowserWebContentsRegistry();
+    const input = { browserId: 'browser-1', partition: PROFILE_PARTITION, sessionId: 'owner' };
+    registry.registerSession(input);
+    const original = registry.registrationIdentity(input.browserId);
+    input.sessionId = 'mutated';
+    expect(registry.isRegisteredForSession(input.browserId, 'owner', PROFILE_PARTITION)).toBe(true);
+    registry.unregisterSession(input.browserId);
+    input.sessionId = 'owner'; registry.registerSession(input);
+    expect(registry.registrationIdentity(input.browserId)).not.toBe(original);
+  });
+
+  it('permits native pending adoption while refusing Agent lists, DevTools, clipboard capture and popup events', async () => {
+    const registry = new BrowserWebContentsRegistry(), partition = 'persist:gugu-browser-pending-admission';
+    const contents = fakeWebContents(partition), capture = vi.fn();
+    Object.assign(contents, { capturePage: capture });
+    registry.registerSession({ browserId: 'pending', partition, sessionId: 'owner' });
+    const release = restrictCredentialPartition(partition, contents.session, { allowsPublication: candidate => candidate === contents });
+    markCredentialHandoffCandidate(contents);
+    try {
+      adopt(registry, 'pending', contents);
+      expect(registry.browsersOfSession('owner')).toEqual([]);
+      expect(registry.openDevTools('pending')).toBe(false);
+      await expect(registry.captureScreenshotToClipboard('pending')).rejects.toThrow();
+      expect(capture).not.toHaveBeenCalled();
+      expect(contents.openDevTools).not.toHaveBeenCalled();
+      expect(contents.windowOpenHandler!({ url: 'https://example.com/private', disposition: 'foreground-tab' } as never).action).toBe('deny');
+      expect(events.emit).not.toHaveBeenCalled();
+    } finally { publishCredentialHandoffCandidate(contents); release(); }
+    expect(registry.browsersOfSession('owner')).toHaveLength(1);
+    expect(registry.openDevTools('pending')).toBe(true);
   });
 
   it('#7274 同一份配置上的几张网页各归各的页签', () => {
@@ -342,6 +376,24 @@ describe('BrowserWebContentsRegistry', () => {
       source: { kind: 'browser', browserId: 'browser-1' },
       direction: 'previous',
     });
+  });
+
+  it('shares configured native shortcut forwarding with an App guest without consuming its other keys', () => {
+    const registry = withPlatform('darwin', () => new BrowserWebContentsRegistry());
+    const contents = fakeWebContents();
+    const ownTab = vi.fn((id: string) => id === 'app.navigateBack' || id === 'app.navigateForward');
+    registry.bindAppShortcuts(contents as never, ownTab);
+    const back = { preventDefault: vi.fn() };
+    contents.emitEvent('before-input-event', back, { type: 'keyDown', key: '[', meta: true });
+    expect(ownTab).toHaveBeenCalledWith('app.navigateBack');
+    expect(back.preventDefault).toHaveBeenCalledOnce();
+    registry.setKeyboardSettings({ 'app.navigateBack': null });
+    const disabled = { preventDefault: vi.fn() };
+    contents.emitEvent('before-input-event', disabled, { type: 'keyDown', key: '[', meta: true });
+    expect(disabled.preventDefault).not.toHaveBeenCalled();
+    const ordinary = { preventDefault: vi.fn() };
+    contents.emitEvent('before-input-event', ordinary, { type: 'keyDown', key: 'a' });
+    expect(ordinary.preventDefault).not.toHaveBeenCalled();
   });
 
   it('emits app shortcuts from focused browser webContents', () => {

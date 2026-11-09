@@ -1,6 +1,7 @@
 import { installAssistantWorkLedgerHost } from '../../../../sessionpage/assistant-work-ledger';
 import { formatDeliveryTimestamp } from '@gugu/core/local/agent/deliveryEnvelope';
 import { openFixture } from '@tooling/utils/db';
+import { HarnessNotInstalledError } from './impl/resolve-agent-executable';
 import { err, ok } from '@gugu/session-shared';
 import { setProjectGroupHost } from '../projects/project-group-host';
 import { IMPLICIT_SESSION_HOME_PROJECT_ID } from '@shared/core/projects/session-home-project';
@@ -10,6 +11,7 @@ import type { AppDb } from '@main/db/client';
 import { resumeHostUpdate } from '../agent-status/resume-host-update';
 import { sessionBootTasks } from '../boot-tasks';
 import { setSessionMessageRouter } from './session-message-router';
+import { setSessionHostLocale } from '../host-locale';
 
 const mocks = vi.hoisted(() => ({
   db: undefined as AppDb | undefined,
@@ -57,8 +59,11 @@ const mocks = vi.hoisted(() => ({
   listLocalModels: vi.fn(),
   listLocalPlatformModels: vi.fn(),
   assertLocalHarnessLaunchable: vi.fn(async (_pluginId: string, _transport: string) => {}),
+  /** This suite supplies its host catalogue; production discovery belongs to its own tests. */
+  listLocalHarnesses: vi.fn(),
   resolveProjectWorkspace: vi.fn(),
   resolveCreateEffort: vi.fn(),
+  createModels: vi.fn(),
   /** The new-session box's two reads (`useEffectiveProvider`): the listed agents and which are installed. */
   listAgents: vi.fn(),
   listInstalled: vi.fn(),
@@ -153,22 +158,27 @@ vi.mock('@main/core/sessionpage/sessionpage-session-agent', () => ({
   localAgentForSession: mocks.localAgentForSession,
 }));
 // 点名项目 → 项目根工作区那一步(登记 / 打开项目)由 create-session 自己的测试判;这里只看编排把谁交给它、落在哪。
-vi.mock('../session-timeline/create-session', () => ({ resolveProjectWorkspace: mocks.resolveProjectWorkspace, resolveCreateEffort: mocks.resolveCreateEffort }));
+vi.mock('../session-timeline/create-session', () => ({ resolveProjectWorkspace: mocks.resolveProjectWorkspace, resolveCreateEffort: mocks.resolveCreateEffort, createModels: mocks.createModels }));
 vi.mock('@main/core/session-timeline/preview-rpc', () => ({ readSessionPreview: mocks.readSessionPreview }));
 vi.mock('../extensions/extensions-root', () => ({
   extensionsService: () => ({
     list: () => ({ extensions: mocks.installedExtensions, invalid: [] }),
   }),
 }));
-vi.mock('../agents/session-discovery', async () => ({
-  ...(await vi.importActual('../agents/session-discovery')),
+vi.mock('../agents/session-discovery', async () => {
+  const actual = await vi.importActual<typeof import('../agents/session-discovery')>('../agents/session-discovery');
+  return {
+  ...actual,
+  listLocalHarnesses: () => mocks.listLocalHarnesses(),
   listLocalModels: (...args: unknown[]) => mocks.listLocalModels(...args),
   listLocalPlatformModels: (...args: unknown[]) => mocks.listLocalPlatformModels(...args),
   // 启动那道闸要起真的版本探针、解析真的可执行文件;这里只判编排在闸之后做什么。
   assertLocalHarnessLaunchable: (pluginId: string, transport: string) => mocks.assertLocalHarnessLaunchable(pluginId, transport),
-}));
+  };
+});
 
 import {
+  agentInstallationStatusUpdatedChannel,
   sessionOpenBrowserInPaneChannel,
   sessionOpenExtensionInPaneChannel,
   sessionOpenFileInPaneChannel,
@@ -282,6 +292,10 @@ describe('session orchestration', () => {
     mocks.localAgentForSession.mockResolvedValue(null);
     mocks.listLocalModels.mockReset();
     mocks.listLocalModels.mockResolvedValue({ models: [] });
+    mocks.listLocalHarnesses.mockReset();
+    mocks.listLocalHarnesses.mockResolvedValue(['codex', 'claude'].map((id) => ({
+      id, name: id, description: '', status: 'available', version: null, surfaces: ['acp', 'pty'], spawnable: true,
+    })));
     mocks.listLocalPlatformModels.mockReset();
     mocks.listLocalPlatformModels.mockResolvedValue({
       models: [],
@@ -298,6 +312,8 @@ describe('session orchestration', () => {
     mocks.mounted.clear();
     mocks.resolveProjectWorkspace.mockReset();
     mocks.resolveCreateEffort.mockReset();
+    mocks.createModels.mockReset();
+    mocks.createModels.mockResolvedValue({ ok: false, error: { code: 'create_models_failed', message: 'no catalog in this test' } });
     mocks.resolveProjectWorkspace.mockImplementation(async (input: unknown) => ({
       ok: false,
       error: { code: 'project_not_found', message: `unexpected project resolution ${JSON.stringify(input)}` },
@@ -616,7 +632,7 @@ describe('session orchestration', () => {
       setOtherMachines({
         devices: async () => [], isThisDevice: async () => false, appSpawn,
         sessions: async () => ({ sessions: [], unreached: [] }), archive: vi.fn(),
-        appMessage: vi.fn(), appCall: vi.fn(),
+        appMessage: vi.fn(), appCall: vi.fn(), sessionHome: vi.fn(),
       });
       try {
         expect(await spawnSessionForApp({ extensionId: 'context', extensionName: 'Context', envelope, prompt: 'inspect', device: 'device:remote', project: '/remote/project', harness: 'codex' })).toEqual({ agentId: 'user:remote-agent' });
@@ -714,8 +730,37 @@ describe('session orchestration', () => {
       expect(appRow(picked.id)).toMatchObject({ provider: 'codex' });
       fixture.sqlite.exec(`DELETE FROM sessions WHERE id = '${picked.id}'`);
       installed();
-      await expect(spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x' })).rejects.toThrow(/no agent on this computer can start a session/);
+      setSessionHostLocale('en-US');
+      await expect(spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x' })).rejects.toThrow('No agent is installed on this computer yet. Install one from New task, then try again.');
+      setSessionHostLocale('zh-CN');
+      await expect(spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x' })).rejects.toThrow('这台电脑上还没有装 agent。先在「新建任务」里装一个，再试一次。');
       expect(childRows()).toEqual([]);
+    });
+
+    // A person with no CLI sign-in: an App's first hand-off started on the engine's own model and stopped at its sign-in
+    // prompt, where the box would have started on its default Gugu model. Control (dev 489b70fbb): platform model null.
+    it('nothing remembered: the box\'s default for a new session (defaultCreateModel), a Gugu model', async () => {
+      project2Root();
+      installed('claude');
+      mocks.listLocalPlatformModels.mockResolvedValue({ models: [{ id: 'platform:deepseek-v4.1-flash' }], meta: { available: true, reason: null } });
+      mocks.createModels.mockResolvedValue({ ok: true, value: {
+        harness: 'claude', transport: 'acp', selected: null, harnessState: 'ready', selectedCredential: 'uncredentialed', harnessAuth: 'signed-out',
+        models: [{ id: 'sonnet', name: 'Sonnet', source: 'harness' }, { id: 'platform:deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', source: 'gugu' }],
+      } });
+      const row = await spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x' });
+      expect(mocks.createModels).toHaveBeenCalledWith({ harness: 'claude', sessionView: 'general' });
+      expect(await sessionPlatformModel(row.id)).toMatchObject({ modelId: 'deepseek-v4.1-flash' });
+    });
+
+    // Its identity is bound before the row exists, and binding needs the task's name: with no spawn.title it stopped at
+    // "reached provisioning without a name". Control (dev 489b70fbb): the provisioner was asked with no name.
+    it('no title: named by the one rule for a new task (the engine default), before its identity is bound', async () => {
+      project2Root();
+      const asked: Array<string | undefined> = [];
+      setEmdashIdentityProvisioner(async (request) => { asked.push(request.displayName); return { guguAgentUserId: 'app-agent', chatId: 'dm' }; });
+      const row = await spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x', harness: 'codex' });
+      expect(asked).toEqual([expect.stringMatching(/^codex \d+$/)]);
+      expect(fixture.sqlite.prepare('SELECT json_extract(config, \'$.agentDisplayName\') AS name FROM sessions WHERE id = ?').get(row.id)).toEqual({ name: asked[0] });
     });
   });
 
@@ -1559,6 +1604,19 @@ describe('session orchestration', () => {
     expect(childRows()).toEqual([]);
   });
 
+  it('refuses a harness this machine lacks with the installed ones to use instead and how to install it', async () => {
+    mocks.assertLocalHarnessLaunchable.mockRejectedValueOnce(new HarnessNotInstalledError('claude', 'claude', 'Could not resolve harness "claude" before spawn.'));
+    const row = (id: string, name: string, spawnable: boolean) =>
+      ({ id, name, description: '', status: spawnable ? 'available' : 'missing', version: null, surfaces: ['acp'], spawnable });
+    mocks.listLocalHarnesses.mockResolvedValueOnce([row('codex', 'Codex', true), row('claude', 'Claude Code', false), row('pi', 'Pi', false)]);
+    const refusal = runSessionAction(context, { action: 'spawn', prompt: 'This should fail.', harness: 'claude', transport: 'pty' });
+    await expect(refusal).rejects.toThrow('claude not installed: Could not resolve harness "claude" before spawn.\n'
+      + 'Installed here and spawnable instead: codex.\n'
+      + 'session_spawn does not install harnesses: a person installs Claude Code on this machine in Gugu → Library → Agents → Claude Code → Install'
+      + ' (a Gugu-managed download, usually a few minutes), then retries.');
+    expect(childRows()).toEqual([]);
+  });
+
   it('rejects an unknown harness before creating a child conversation', async () => {
     await expect(runSessionAction(context, {
       action: 'spawn',
@@ -2028,7 +2086,7 @@ describe('session orchestration', () => {
         sessions: [{ deviceId: 'device-c', label: 'Third computer', session: { conversationId: 'chosen-remote', projectId: 'remote-project', parentConversationId: 'unreachable-ancestor' } as SessionpageSessionSummary, listsAgents: true }],
         unreached: [{ deviceId: 'device-d', label: 'Offline computer', detail: 'no answer' }],
       }),
-      archive: vi.fn(), appMessage: vi.fn(), appCall: vi.fn(),
+      archive: vi.fn(), appMessage: vi.fn(), appCall: vi.fn(), sessionHome: vi.fn(),
     });
     const action = { action: 'spawn' as const, prompt: 'x', project_id: 'project-2', parent_session_id: 'chosen-remote' };
     const child = await (remoteCaller
@@ -2481,7 +2539,7 @@ describe('session_set_parent', () => {
 
   it('records a parent on another machine in config, and drops the older nested mark so it is read only once', async () => {
     seed('visitor', null, null, { version: '1', type: 'acp', spawnedByRemote: { deviceId: 'dev-old', sessionId: 'old-parent', nested: true } });
-    setOtherMachines({ devices: async () => [], isThisDevice: async () => false, appSpawn: vi.fn(),
+    setOtherMachines({ devices: async () => [], isThisDevice: async () => false, appSpawn: vi.fn(), sessionHome: vi.fn(),
       sessions: async () => ({
         sessions: [{ deviceId: 'dev-far', label: 'far box', session: { conversationId: 'far', projectId: 'p-far', parentConversationId: null } as SessionpageSessionSummary, listsAgents: true }],
         unreached: [],
@@ -2664,6 +2722,30 @@ describe('session_archive', () => {
         .resolves.toEqual({ opened: true, path: '/repo/ws-1/data/report.csv', intent: 'preview' });
       expect(open).toHaveBeenCalledWith('caller', { kind: 'file', path: '/repo/ws-1/data/report.csv' }, 'preview', undefined);
       expect(mocks.emit).not.toHaveBeenCalled();
+    });
+
+    it('keeps remote pane routing isolated from delayed host inventory broadcasts', async () => {
+      const discovery = await vi.importActual<typeof import('../agents/session-discovery')>('../agents/session-discovery');
+      let completeInventory = () => {};
+      const discoverHost = vi.spyOn(discovery, 'listLocalHarnesses').mockImplementation(async () => {
+        // A real inventory can finish its installation scans after list_harnesses has answered.
+        completeInventory = () => mocks.emit(agentInstallationStatusUpdatedChannel, { id: 'opencode', status: 'available' });
+        return [];
+      });
+      try {
+        await runSessionAction(context, { action: 'list_harnesses' });
+        open.mockImplementation(async () => {
+          completeInventory();
+          return { opened: true };
+        });
+        await expect(runSessionAction(context, { action: 'open_in_tab', path: 'data/report.csv', intent: 'preview' }))
+          .resolves.toEqual({ opened: true, path: '/repo/ws-1/data/report.csv', intent: 'preview' });
+        expect(open).toHaveBeenCalledWith('caller', { kind: 'file', path: '/repo/ws-1/data/report.csv' }, 'preview', undefined);
+        expect(mocks.emit).not.toHaveBeenCalled();
+        expect(discoverHost).not.toHaveBeenCalled();
+      } finally {
+        discoverHost.mockRestore();
+      }
     });
 
     it('answers at once with a queued result when no desktop has the session open', async () => {

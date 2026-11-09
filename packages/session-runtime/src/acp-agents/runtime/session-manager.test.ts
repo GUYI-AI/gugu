@@ -166,7 +166,7 @@ describe('AcpRuntime session manager', () => {
     const sessionId = `conv-load-capability-${String(loadSession)}`;
 
     await expect(rt.startSession(makeStartInput({ sessionId }))).resolves.toMatchObject({ success: true });
-    expect(rt.sessionsListLiveModel().states.list.snapshot().data[sessionId]?.canLoadSession).toBe(loadSession);
+    expect(rt.sessionsListLiveModel().states.list.snapshot().data[sessionId]?.canReattach).toBe(loadSession);
   });
 
   it('queuePrompt on a ready idle session starts the turn instead of parking it (#6762)', async () => {
@@ -1846,6 +1846,81 @@ describe('AcpRuntime session manager', () => {
     expect(rt.sessionLiveModels('conv-model-rejected')).not.toBeNull();
   });
 
+  it('applies the chosen model once a harness publishes its model option after session/new', async () => {
+    const h = makeAcpHarness();
+    const provider = h.deps.agentHost.resolveAcp('claude');
+    if (!provider) throw new Error('test provider missing');
+    provider.behavior.catalogModelsInConfigUpdate = true;
+    const rt = new AcpRuntime(h.deps);
+    h.agent.newSession.mockImplementationOnce(async () => {
+      setTimeout(() => h.agent.capturedClient!.sessionEvent({
+        sessionId: 'session-late-model',
+        event: decodeSessionUpdate({ sessionUpdate: 'config_option_update', configOptions: modelConfigOptions('default-model') } as never),
+      }), 150);
+      return { sessionId: 'session-late-model' };
+    });
+    h.agent.setSessionConfigOption.mockImplementation(async () => ({ configOptions: modelConfigOptions('gpt-5.5') }));
+    const result = await rt.startSession(makeStartInput({ sessionId: 'conv-late-model', model: 'gpt-5.5' }));
+    expect(isOk(result)).toBe(true);
+    expect(h.agent.setSessionConfigOption).toHaveBeenCalledWith(expect.objectContaining({ value: 'gpt-5.5' }));
+    expect(JSON.stringify(rt.getChatHistory('conv-late-model'))).not.toContain('model-unavailable');
+    await rt.dispose();
+  });
+
+  it('fails the start at once when the process dies while waiting for a late model option', async () => {
+    const h = makeAcpHarness();
+    const provider = h.deps.agentHost.resolveAcp('claude');
+    if (!provider) throw new Error('test provider missing');
+    provider.behavior.catalogModelsInConfigUpdate = true;
+    const rt = new AcpRuntime(h.deps);
+    h.agent.newSession.mockImplementationOnce(async () => {
+      setTimeout(() => h.children[0]?.emitExit(1), 150);
+      return { sessionId: 'session-late-dies' };
+    });
+    const result = await rt.startSession(makeStartInput({ sessionId: 'conv-late-dies', model: 'gpt-5.5' }));
+    expect(isOk(result)).toBe(false);
+    expect(JSON.stringify(result)).toContain('exited during startup (code 1)');
+    await rt.dispose();
+  });
+
+  it('opens the session when a harness never publishes its late model option', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const h = makeAcpHarness();
+      const provider = h.deps.agentHost.resolveAcp('claude');
+      if (!provider) throw new Error('test provider missing');
+      provider.behavior.catalogModelsInConfigUpdate = true;
+      const rt = new AcpRuntime(h.deps);
+      h.agent.newSession.mockResolvedValueOnce({ sessionId: 'session-late-never' });
+      let settled = false;
+      const start = rt.startSession(makeStartInput({ sessionId: 'conv-late-never' })).finally(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(29_000);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(isOk(await start)).toBe(true);
+      await rt.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('raises one notice for a session opening on a model its harness declares, and none for another', async () => {
+    const h = makeAcpHarness();
+    const provider = h.deps.agentHost.resolveAcp('claude');
+    if (!provider) throw new Error('test provider missing');
+    provider.behavior.modelsLeakingToolCallMarkers = ['default-model'];
+    const rt = new AcpRuntime(h.deps);
+    h.agent.newSession.mockResolvedValueOnce({ sessionId: 's-listed', configOptions: modelConfigOptions('default-model') });
+    expect(isOk(await rt.startSession(makeStartInput({ sessionId: 'conv-listed' })))).toBe(true);
+    const listed = JSON.stringify(rt.getChatHistory('conv-listed'));
+    expect(listed.match(/"code":"model-leaks-tool-markers"/g)).toHaveLength(1);
+    expect(listed).toContain('"effectiveValue":"default-model"');
+    h.agent.newSession.mockResolvedValueOnce({ sessionId: 's-other', configOptions: modelConfigOptions('gpt-5.5') });
+    expect(isOk(await rt.startSession(makeStartInput({ sessionId: 'conv-other' })))).toBe(true);
+    expect(JSON.stringify(rt.getChatHistory('conv-other'))).not.toContain('model-leaks-tool-markers');
+    await rt.dispose();
+  });
+
   it('explains when Claude user availableModels excludes the selected platform model', async () => {
     const h = makeAcpHarness();
     const provider = h.deps.agentHost.resolveAcp('claude');
@@ -1871,6 +1946,30 @@ describe('AcpRuntime session manager', () => {
     // 那句解释是这条行唯一能让用户自己修好问题的线索 —— 它必须跟着进 detail。
     expect(JSON.stringify(rt.getChatHistory('conv-claude-model-rejected')))
       .toContain('你的 ~/.claude/settings.json availableModels 排除了该模型');
+  });
+
+  // 会话内换平台模型、活会话没报那一条 ⇒ 渲染层走 reload(model-switch-plan)。启动注入若真漏了那条模型,
+  // 重开时这里的断言照样响亮:行上带 provider 原话,会话确认 provider 当前在跑的那条后继续,下一句照常发出、不挂。
+  it('keeps a reload onto a model the injection lacks loud: notice row, then the next input runs', async () => {
+    const h = makeAcpHarness();
+    const rt = new AcpRuntime(h.deps);
+    h.agent.loadSession.mockResolvedValueOnce({ configOptions: modelConfigOptions('gpt-6-luna') });
+    h.agent.setSessionConfigOption.mockRejectedValueOnce(
+      new Error('Invalid value for config option model: claude-haiku-5-5')
+    );
+
+    const result = await rt.resumeSession({
+      ...makeStartInput({ sessionId: 'conv-reload-uninjected', providerId: 'claude', model: 'claude-haiku-5-5' }),
+      providerSessionId: 'session-reload-uninjected',
+    });
+
+    expect(isOk(result)).toBe(true);
+    const history = JSON.stringify(rt.getChatHistory('conv-reload-uninjected'));
+    expect(history).toContain('model-unavailable');
+    expect(history).toContain('Invalid value for config option model: claude-haiku-5-5');
+    const sent = await rt.sendPrompt('conv-reload-uninjected', { text: 'after the reload', origin: 'typed' });
+    expect(sent).toMatchObject({ success: true });
+    expect(h.agent.prompt).toHaveBeenCalledOnce();
   });
 
   // 「维度缺席」在 provider 已经有的那条会话上**不是**失败读数:它带着自己创建时的模型,咕咕只是
@@ -2261,6 +2360,37 @@ describe('AcpRuntime session manager', () => {
 
     const edit = await answered('edit');
     expect(edit.pending).toHaveLength(1);
+  });
+
+  it.each([
+    ['read-only', 'unsupported'],
+    ['edit', 'unsupported'],
+    ['full-access', 'unsupported'],
+    ['read-only', 'reload-session'],
+    ['full-access', 'reload-session'],
+  ] as const)(
+    '档位不经 ACP、由会话包在 spawn 时兑现的家(dsh 形状):%s(通道 %s)照起,❌ 去设一个它不报的档',
+    async (permissionMode, channel) => {
+      const h = makeAcpHarness({
+        autoApprove: 'supported',
+        bundleAutonomy: 'native',
+        liveSettings: { permission: { channel, ack: 'none', busy: 'reject', reloadRequired: channel === 'reload-session', recovery: channel === 'reload-session' ? 'runtime-restart' : 'unsupported' } },
+      });
+      const rt = new AcpRuntime(h.deps);
+      h.agent.newSession.mockResolvedValueOnce({ sessionId: `session-dsh-${permissionMode}-${channel}` });
+      const started = await rt.startSession({ ...makeStartInput({ sessionId: `conv-dsh-${permissionMode}-${channel}` }), permissionMode });
+      expect(isOk(started)).toBe(true);
+      expect(h.agent.setSessionMode).not.toHaveBeenCalled();
+      expect(h.agent.setSessionConfigOption).not.toHaveBeenCalled();
+    },
+  );
+
+  it('阴控:档位由会话包兑现、但权限一维走 ACP 的家,更严的档仍要 ACP 报得出来', async () => {
+    const h = makeAcpHarness({ autoApprove: 'supported', bundleAutonomy: 'native' });
+    const rt = new AcpRuntime(h.deps);
+    h.agent.newSession.mockResolvedValueOnce({ sessionId: 'session-acp-tier' });
+    const started = await rt.startSession({ ...makeStartInput({ sessionId: 'conv-acp-tier' }), permissionMode: 'read-only' });
+    expect(isOk(started)).toBe(false);
   });
 
   it('grok 形状:整张档位表缺席 + per-surface 自治(仅 acp native)+ 完全访问 ⇒ 会话照起', async () => {
@@ -2804,6 +2934,41 @@ describe('AcpRuntime session manager', () => {
       (summary) => summary?.queuedPromptCount === 0);
     expect(rt.getSessionState('conv-abnormal-close').queuedPrompts).toEqual([]);
     expect(h.agent.prompt).toHaveBeenCalledTimes(3);
+  });
+
+  it('an ordinary stop of a lost session (the teardown after a crash) keeps it: the next start loads its provider session again', async () => {
+    const { h, rt } = await startHarness('conv-lost-teardown');
+    h.lastChild.emitExit(137);
+    await untilSessionSummary(rt, 'conv-lost-teardown', 'the session is lost', (summary) => summary?.lifecycle === 'lost');
+    // session-life tears every exited run down with an ordinary stop.
+    await expect(rt.stopSession('conv-lost-teardown')).resolves.toMatchObject({ success: true });
+
+    h.agent.loadSession = vi.fn().mockResolvedValue({});
+    await expect(rt.startSession(makeStartInput({ sessionId: 'conv-lost-teardown' })))
+      .resolves.toEqual({ success: true, data: { providerSessionId: 'session-1' } });
+    expect(h.agent.loadSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }));
+  });
+
+  it('forgetting only forgets: a live session is left running', async () => {
+    const { rt } = await startHarness('conv-forget-live');
+    await expect(rt.stopSession('conv-forget-live', false, true)).resolves.toMatchObject({ success: true });
+    expect(rt.getSessionState('conv-forget-live').lifecycle).toBe('ready');
+  });
+
+  it('forgetting a lost session (its engine session was replaced) makes the next start fresh, not a recovery of the lost one', async () => {
+    const { h, rt } = await startHarness('conv-lost-stopped');
+    h.lastChild.emitExit(137);
+    await untilSessionSummary(rt, 'conv-lost-stopped', 'the session is lost', (summary) => summary?.lifecycle === 'lost');
+
+    await expect(rt.stopSession('conv-lost-stopped', false, true)).resolves.toMatchObject({ success: true });
+    expect(rt.sessionLiveModels('conv-lost-stopped')).toBeNull();
+    // The lost summary (the error dot) goes with the record.
+    expect(rt.sessionsListLiveModel().states.list.snapshot().data['conv-lost-stopped']).toBeUndefined();
+
+    h.agent.newSession.mockResolvedValueOnce({ sessionId: 'session-2' });
+    await expect(rt.startSession(makeStartInput({ sessionId: 'conv-lost-stopped' })))
+      .resolves.toMatchObject({ success: true, data: { providerSessionId: 'session-2' } });
+    expect(h.agent.loadSession).not.toHaveBeenCalled();
   });
 
   /**

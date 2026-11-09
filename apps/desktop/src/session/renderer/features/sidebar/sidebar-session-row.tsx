@@ -3,11 +3,7 @@ import React from 'react';
 import { AgentIcon } from '@renderer/lib/components/agent-icon';
 import { AgentStatusGlyph } from '@renderer/lib/components/agent-status-indicator';
 import { presentationAttention, type AgentStatusPresentation } from '@gugu/core/shared/agentStatusPresentation';
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuTrigger,
-} from '@renderer/lib/ui/context-menu';
+import { ContextMenu } from '@/components/ui/Menu';
 import { RelativeTime } from '@renderer/lib/ui/relative-time';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -28,7 +24,6 @@ import { SidebarScheduleHoverMark, SidebarScheduleMark } from './sidebar-schedul
 import type { SessionpageScheduleDigest } from '@gugu/session-core/session-record/contract';
 import { SidebarSessionBranchCount } from './sidebar-session-branch-view';
 import type { SessionBranchSummary } from './sidebar-session-branch';
-import { SidebarUnreadCount } from './sidebar-list-switch';
 
 // 侧栏一行会话的**外观**。本机会话(sidebar-session-item)与别的机器上的会话
 // (#6264,sidebar-remote-conversation-item)共用这一份 —— 行长得一模一样,只有数据来源和动作落点不同。
@@ -71,7 +66,6 @@ export type SessionRowShellProps = {
    */
   schedule?: SessionpageScheduleDigest | null;
   doneUnread: boolean;
-  notificationCount?: number;
   isActive: boolean;
   isCursor: boolean;
   isPendingArchive: boolean;
@@ -122,7 +116,6 @@ export function SessionRowShell({
   lastInteractedAt,
   schedule = null,
   doneUnread,
-  notificationCount = 0,
   isActive,
   isCursor,
   isPendingArchive,
@@ -156,12 +149,12 @@ export function SessionRowShell({
   const titleClass = cn(
     'text-left',
     disabled ? 'text-foreground-passive' : 'text-foreground',
-    doneUnread && 'font-medium',
+    doneUnread && 'font-[var(--font-weight-semibold)]',
   );
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger>
+    <ContextMenu.Root>
+      <ContextMenu.Trigger>
         <SidebarMenuRow
           ref={rowRef}
           className={cn(
@@ -190,7 +183,7 @@ export function SessionRowShell({
           onKeyDown={(e) => {
             // Arrow keys are owned by the session navigation listener, which walks the whole chain.
             // The per-row nextElementSibling walk that used to live here could never work: the row
-            // is wrapped by ContextMenuTrigger (so it has no sibling) and the list is virtualised
+            // is wrapped by ContextMenu.Trigger (so it has no sibling) and the list is virtualised
             // (so off-screen rows have no node to focus).
             if (e.key === 'Enter') onOpen();
           }}
@@ -289,7 +282,7 @@ export function SessionRowShell({
                 </Tooltip>
               </span>
             ) : null}
-            <span className={cn(sidebarRowRestActionsClass, treeSummary && 'w-10 whitespace-nowrap')}>
+            <span className={sidebarRowRestActionsClass}>
               {/* 自己的「需要你」先于子树汇总:否则一条出错的会话只显示「树里有事」那颗黄点,红点永远轮不到。 */}
               {presentation && presentationAttention(presentation) ? (
                 <span className="flex size-5 items-center justify-center">
@@ -303,8 +296,6 @@ export function SessionRowShell({
                     title={translate('sidebar.sessionTreeNeedsAttention')}
                   />
                 </span>
-              ) : notificationCount > 0 ? (
-                <span className="flex size-5 items-center justify-center"><SidebarUnreadCount count={notificationCount} /></span>
               ) : statusUnavailable ? (
                 <span className="flex size-5 items-center justify-center">
                   <span
@@ -334,8 +325,8 @@ export function SessionRowShell({
           </span>
         </SidebarMenuRow>
         {after}
-      </ContextMenuTrigger>
-      {menu ? <ContextMenuContent>{menu}</ContextMenuContent> : null}
-    </ContextMenu>
+      </ContextMenu.Trigger>
+      {menu ? <ContextMenu.Content>{menu}</ContextMenu.Content> : null}
+    </ContextMenu.Root>
   );
 }

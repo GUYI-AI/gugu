@@ -17,6 +17,8 @@ import type {
   NewSessionResponse,
   PromptRequest,
   RequestPermissionResponse,
+  ResumeSessionRequest,
+  ResumeSessionResponse,
   SessionConfigOption,
   SetSessionConfigOptionRequest,
   SetSessionConfigOptionResponse,
@@ -206,6 +208,8 @@ export interface AcpAgentApi {
   newSession(params: NewSessionRequest): Promise<NewSessionResponse & { availableCommands?: Extract<NormalizedEvent, { kind: 'commands' }>['commands'] }>;
   /** Optional — only available when the agent advertises the `loadSession` capability. */
   loadSession?(params: LoadSessionRequest): Promise<LoadSessionResponse & { availableCommands?: Extract<NormalizedEvent, { kind: 'commands' }>['commands'] }>;
+  /** Optional — only available when the agent advertises `sessionCapabilities.resume`. Reattaches without replaying history. */
+  resumeSession?(params: ResumeSessionRequest): Promise<ResumeSessionResponse & { availableCommands?: Extract<NormalizedEvent, { kind: 'commands' }>['commands'] }>;
   /** Optional experimental ACP surface advertised through `sessionCapabilities.fork`. */
   unstable_forkSession?(params: ForkSessionRequest): Promise<ForkSessionResponse & { availableCommands?: Extract<NormalizedEvent, { kind: 'commands' }>['commands'] }>;
   /** Dispatch/acceptance only; completion is an event. An accepted receipt requires its user echo to have already arrived. */
@@ -459,6 +463,15 @@ export interface IAcpBehavior {
    * 连在项目里 `/mcp` 关掉的那台;探针的 cwd 是临时目录,项目里的关闭名单管不到它)。
    */
   catalogProbeSessionMeta?: Record<string, unknown>;
+
+  /**
+   * This harness answers `session/new` without a model option and publishes it right after in a
+   * `config_option_update` (Kiro V3, measured on 3.0.0). The model catalog probe then waits for that update.
+   */
+  catalogModelsInConfigUpdate?: boolean;
+
+  /** Model ids (as the catalog names them) whose raw tool-call markers show in replies here: a session opening on one gets one notice. */
+  modelsLeakingToolCallMarkers?: readonly string[];
 
   /**
    * Pure description of how to spawn the agent adapter process.

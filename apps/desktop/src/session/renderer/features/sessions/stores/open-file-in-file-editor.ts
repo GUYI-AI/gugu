@@ -1,6 +1,7 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { toast } from 'sonner';
 import type { SessionPaneTab } from '@gugu/session-core/session-record/contract';
+import type { TabOpenIntent } from '@shared/view-state';
 import { closeSessionPaneTab, sessionPaneTabs } from './session-pane-tabs';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { when } from 'mobx';
@@ -9,6 +10,7 @@ import {
   getSessionPageStore,
   getSessionView,
 } from '@renderer/features/sessions/stores/session-selectors';
+import { sessionConversationTabId } from '../view/session-pane-policy';
 import { sessionPaneReady } from '../session-pane-ready';
 import { rpc } from '@renderer/lib/ipc';
 import type { OpenedOutput } from '@gugu/session-chat-ui/opened-outputs';
@@ -18,6 +20,7 @@ import { workspaceRegistry } from './workspace-registry';
 import type { WorkspaceViewModel } from '@renderer/features/sessions/stores/workspace-view-model';
 import { pickSessionOpener } from '@renderer/features/extensions/open-with';
 import { attachmentOpenTarget } from './attachment-open-target';
+import { fileTabTarget, hostFileTabTarget } from '../file-view/file-view-kinds';
 import { workspaceRpc } from '@renderer/features/sessions/workspace-backend/workspace-backend';
 import type { BrowserTabResource } from '@renderer/features/browser/browser-tab-resource';
 import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
@@ -99,39 +102,32 @@ type FileOpenTarget = 'active' | 'beside';
  * `open_in_tab` 打开同一个 `.csv`,穿过的必须是这一个函数 —— ❌ 别在调用方各写一遍判断:
  * 两份判断今天一致,改一边就分岔,于是同一个产品对同一个文件给出两个答案。
  *
- * An extension that claimed this file type opens it instead of the built-in editor
- * (behavior tab-extensions:「认领某类文件的打开方式」). One claim opens straight away; when
- * several claim it the person picks in 「用哪个打开」 — once, if they tick 「始终用它」
- * (真源 §2.4, 主人 09-29; open-with.ts). The built-in editor is always one of the answers.
+ * The App that claimed this file type opens it (behavior tab-extensions:「认领某类文件的打开方式」). One claim opens
+ * straight away; when several claim it the person picks in 「用哪个打开」 — once, if they tick 「始终用它」 (真源 §2.4,
+ * 主人 09-29; open-with.ts). The folder App claims every text file and the file preview reads anything else, so no
+ * install can make a file unopenable.
  *
- * The built-in editor stays reachable: the claimed tab carries a host-provided
- *「改用内置编辑器打开」 entry (extension-tab-provider.tsx). Without that escape hatch,
- * installing an extension could make a file type unopenable — an ability no install
- * may have.
- *
- * Resolves to the extension tab kind that took the file, null when the built-in editor did,
+ * Resolves to the extension tab kind that took the file, null when the file preview did,
  * or undefined when the person cancelled 「用哪个打开」 — the caller reports that outcome
  * rather than predicting it.
  */
 async function openResolvedFileInPane(
   viewModel: WorkspaceViewModel,
   resolvedPath: string,
-  options: { preview: boolean; beside?: boolean; activate?: boolean; ask?: boolean; place?: { sessionId: string; at: FilePlace } }
+  options: { from: string | null; intent?: TabOpenIntent; activate?: boolean; ask?: boolean; place?: { sessionId: string; at: FilePlace } }
 ): Promise<string | null | undefined> {
   const opener = await pickSessionOpener(resolvedPath, options.ask === true);
   if ('cancelled' in opener) return undefined;
   const claim = 'tabKind' in opener ? opener : null;
   // A link's place (`path#k=v&…`): the App that opens it is told, as a chat file's pill tells its App — before the tab
-  // opens, so a page still opening finds it waiting. The built-in editor takes no place. Only plain ids cross: the
+  // opens, so a page still opening finds it waiting. The file preview takes no place. Only plain ids cross: the
   // candidate holds the App's manifest.
   if (claim?.candidate && options.place) {
     const { extensionId, tabKind } = claim.candidate;
     const told = await rpc.extensions.sessionFilePlace({ sessionId: options.place.sessionId, filePath: resolvedPath, extensionId, tabKind, at: { ...options.place.at } });
     if (!told.success) throw new Error(`The place in ${resolvedPath} could not be handed to the App that opens it: ${told.error}`);
   }
-  const config = options.beside
-    ? { preview: options.preview, beside: true, ...(options.activate === false ? { activate: false } : {}) }
-    : { preview: options.preview };
+  const config = { from: options.from, intent: options.intent ?? 'navigate', activate: options.activate };
 
   if (claim) {
     // Through `paneLayout`, not `activePane`: an extension tab kind is a runtime
@@ -142,11 +138,8 @@ async function openResolvedFileInPane(
     return claim.tabKind;
   }
 
-  if (options.beside) {
-    viewModel.paneLayout.open('file', { path: resolvedPath }, config);
-  } else {
-    viewModel.activePane.open('file', { path: resolvedPath }, { preview: options.preview });
-  }
+  const target = fileTabTarget(resolvedPath);
+  viewModel.paneLayout.open(target.kind, target.args, config);
   return null;
 }
 
@@ -156,16 +149,20 @@ async function openSessionFile(
   rawFilePath: string,
   target: FileOpenTarget,
   at?: FilePlace,
-  ask = false
+  ask = false,
+  options?: { intent?: TabOpenIntent; from?: string | null; byHost?: boolean }
 ): Promise<string | null | undefined> {
   const provisioned = asProvisioned(getSessionPageStore(projectId, sessionId));
   if (!provisioned) throw new Error('This session has no prepared workspace');
   const workspace = workspaceRegistry.get(projectId, provisioned.workspaceId);
   if (!workspace) throw new Error('This session has no workspace');
+  const viewModel = provisioned.viewModel;
+  const from = options?.from !== undefined ? options.from : target === 'beside' && viewModel ? sessionConversationTabId(viewModel.paneLayout, sessionId) : viewModel?.activePane.resolvedActiveTabId ?? null;
+  const intent = options?.intent ?? 'navigate';
   const filePath = await expandHomeTildePath(rawFilePath);
   const resolvedPath = resolveEditorFilePath(workspace.path, filePath);
   if (resolvedPath === null) {
-    await openExternalFilePath(projectId, sessionId, filePath, { beside: target === 'beside' });
+    await openExternalFilePath(projectId, sessionId, filePath, { from, intent, byHost: options?.byHost });
     return null;
   }
 
@@ -186,43 +183,23 @@ async function openSessionFile(
     return null;
   }
 
-  const viewModel = provisioned.viewModel;
   if (!viewModel) throw new Error('This session has no prepared pane');
 
   return openResolvedFileInPane(viewModel, resolvedPath, {
-    preview: false,
-    beside: target === 'beside',
+    from, intent,
     ...(at ? { place: { sessionId, at } } : {}),
     ...(ask ? { ask } : {}),
   });
-}
-
-/**
- * Opens a file in the BUILT-IN editor, ignoring any extension's claim on its type.
- *
- * The escape hatch behind「认领某类文件的打开方式」. It exists so that honouring a
- * claim can never make a file type unopenable: whatever an install contributes,
- * this route still reaches the editor. ❌ 不要改成走 openFileInSessionEditor —— 那条会
- * 再次问一遍认领,于是「改用内置编辑器打开」又回到扩展 tab,原地打转。
- */
-export function openFileInBuiltInEditor(
-  projectId: string,
-  sessionId: string,
-  resolvedPath: string
-): void {
-  const provisioned = asProvisioned(getSessionPageStore(projectId, sessionId));
-  const viewModel = provisioned?.viewModel ?? getSessionView(projectId, sessionId);
-  if (!viewModel) return;
-  viewModel.activePane.open('file', { path: resolvedPath }, { preview: false });
 }
 
 export async function openFileInSessionEditor(
   projectId: string,
   sessionId: string,
   filePath: string,
-  opts?: { beside?: boolean; at?: FilePlace; ask?: boolean }
+  /** `byHost`: an App asked for it (`files.openWith`), not the person's click (`@@@outside-file`). */
+  opts?: { beside?: boolean; at?: FilePlace; ask?: boolean; intent?: TabOpenIntent; from?: string | null; byHost?: boolean }
 ): Promise<string | null | undefined> {
-  return openSessionFile(projectId, sessionId, filePath, opts?.beside ? 'beside' : 'active', opts?.at, opts?.ask === true);
+  return openSessionFile(projectId, sessionId, filePath, opts?.beside ? 'beside' : 'active', opts?.at, opts?.ask === true, opts);
 }
 
 /**
@@ -241,12 +218,15 @@ export async function openExternalFilePath(
   projectId: string,
   sessionId: string,
   rawFilePath: string,
-  opts?: { beside?: boolean }
+  opts?: { beside?: boolean; from?: string | null; intent?: TabOpenIntent; byHost?: boolean }
 ): Promise<void> {
   // `~/` 展开在这条路同样要做:终端链接检测把 `~/` 前缀标成 external 走到这儿,
   // 不展开的话会拿字面 `~` 开外部页签,而 readExternalFile 只收绝对路径 —— 必然坏页签。
-  const filePath = await expandHomeTildePath(rawFilePath);
   const provisioned = asProvisioned(getSessionPageStore(projectId, sessionId));
+  const viewModel = provisioned?.viewModel ?? getSessionView(projectId, sessionId);
+  const from = opts?.from !== undefined ? opts.from : opts?.beside && viewModel ? sessionConversationTabId(viewModel.paneLayout, sessionId) : viewModel?.activePane.resolvedActiveTabId ?? null;
+  const intent = opts?.intent ?? 'navigate';
+  const filePath = await expandHomeTildePath(rawFilePath);
   // 工作区外的绝对路径先问一句「它是什么」:缺失 → 明确 toast(❌ 不是开出永远 Loading 的
   // 外部 tab);目录 → 系统文件管理器开它本身。stat 不可用(工作区已不在等)按原路由走,
   // ❌ 不因此静默吞掉点开动作。
@@ -269,12 +249,11 @@ export async function openExternalFilePath(
   // 画不出来的那几种才交给系统(见 `attachmentOpenTarget`)。
   const target = attachmentOpenTarget(filePath);
   if (target !== 'system') {
-    const viewModel = provisioned?.viewModel ?? getSessionView(projectId, sessionId);
     // 没有可用的面板就退到系统默认程序 —— ❌ 不许在这里静默 return。
     // 「未选择项目」建出来的任务没有工作区面板,而它照样附得了文件(#5269)。
     if (viewModel) {
-      if (opts?.beside) viewModel.paneLayout.open('file', { path: filePath, external: true }, { preview: false, beside: true });
-      else viewModel.activePane.open('file', { path: filePath, external: true }, { preview: false });
+      const tab = opts?.byHost ? hostFileTabTarget(filePath, true) : fileTabTarget(filePath, true);
+      viewModel.paneLayout.open(tab.kind, tab.args, { from, intent });
       return;
     }
   }
@@ -303,7 +282,7 @@ export function reopenSessionOutput(projectId: string, sessionId: string, output
 export function makeFileLinkHandlers(
   projectId: string,
   sessionId: string,
-  opts?: { beside?: boolean }
+  opts?: { beside?: boolean; from?: null }
 ): { onOpenFile: (filePath: string, at?: FilePlace) => Promise<void>; onOpenExternal: (filePath: string) => void } {
   return {
     onOpenFile: async (filePath, at) => {
@@ -344,7 +323,6 @@ export function openHostRequestedFileInSessionWhenReady({
   sessionId,
   path,
   external,
-  intent,
   tabKind,
   ask,
   onResult,
@@ -354,7 +332,7 @@ export function openHostRequestedFileInSessionWhenReady({
   sessionId: string;
   path: string;
   external: boolean;
-  intent: 'preview' | 'pinned';
+  intent: TabOpenIntent;
   tabKind?: string;
   /** Everyone who opens it, the person picks (an App's `files.openWith(file, { ask: true })`). */
   ask?: boolean;
@@ -373,22 +351,23 @@ export function openHostRequestedFileInSessionWhenReady({
         // click path draws the line.
         // 宿主替 agent(或 App)打开的:开在对话右边并排,❌ 盖住对话;用户正看着别的也 ❌ 切走(spec gugu-plugin「在工作区打开文件」)。
         if (external) {
+          const tab = hostFileTabTarget(path, true);
           session.viewModel.paneLayout.open(
-            'file',
-            { path, external: true },
-            { preview: intent === 'preview', beside: true, activate: false },
+            tab.kind,
+            tab.args,
+            { from: sessionConversationTabId(session.viewModel.paneLayout, sessionId), intent: 'beside', activate: false },
           );
           onResult({ success: true, openedWith: null });
         } else if (tabKind) {
           // 摩擦单 F122 «Open with X», named by the caller (main checked X claims it): what「用哪个打开」does once picked.
-          session.viewModel.paneLayout.open(tabKind, { filePath: path }, { preview: intent === 'preview', beside: true, activate: false });
+          session.viewModel.paneLayout.open(tabKind, { filePath: path, byHost: true }, { from: sessionConversationTabId(session.viewModel.paneLayout, sessionId), intent: 'beside', activate: false });
           onResult({ success: true, openedWith: tabKind });
         } else {
           // Reported, not predicted: the host says what actually opened because the
           // renderer is the one that opened it — after the person picked, when they had to.
           void openResolvedFileInPane(session.viewModel, path, {
-            preview: intent === 'preview',
-            beside: true,
+            from: sessionConversationTabId(session.viewModel.paneLayout, sessionId),
+            intent: 'beside',
             activate: false,
             ...(ask ? { ask } : {}),
           }).then(
@@ -441,7 +420,7 @@ export function openHostRequestedExtensionInSessionWhenReady({
   projectId: string;
   sessionId: string;
   tabKind: string;
-  intent: 'preview' | 'pinned';
+  intent: TabOpenIntent;
   reveal?: boolean;
   tabId?: string;
   ifAbsent?: boolean;
@@ -505,7 +484,7 @@ export function openHostRequestedExtensionInSessionWhenReady({
             tabKind,
             {},
             // `reveal` = 人点的(横幅、gugu://ext 链接):要看它,亮出来;agent 请上屏的不切走用户正看着的。
-            { preview: intent === 'preview', beside: true, activate: reveal },
+            { from: sessionConversationTabId(session.viewModel.paneLayout, sessionId), intent: reveal ? intent : 'beside', activate: reveal },
           );
           onResult({ success: true });
         } catch (error) {
@@ -546,7 +525,7 @@ export function openHostRequestedBrowserInSessionWhenReady({
   projectId: string;
   sessionId: string;
   url: string;
-  intent: 'preview' | 'pinned';
+  intent: TabOpenIntent;
   onResult: (result: { success: boolean; error?: string; browserId?: string; created?: boolean }) => void;
   timeout?: number;
   acquire?: { browserId?: string; createIfMissing: boolean; deadline: number };
@@ -565,7 +544,7 @@ export function openHostRequestedBrowserInSessionWhenReady({
           );
           return;
         }
-        session.viewModel.showPage(url, { preview: intent === 'preview', reload: true, beside: true, activate: false });
+        session.viewModel.showPage(url, { intent, reload: true, beside: true, activate: false });
         onResult({ success: true });
       } catch (error) {
         onResult({
@@ -615,7 +594,7 @@ async function acquireBrowserPage(
   const created = !chosen;
   if (!chosen) {
     if (!request.createIfMissing) throw new Error('This session has no browser tab. Use browser_navigate with a URL first.');
-    view.showPage(url, { preview: false, reload: false, beside: true, activate: false });
+    view.showPage(url, { reload: false, beside: true, activate: false });
     chosen = tabs()[0];
   }
   if (!chosen) throw new Error('the session pane could not create a browser tab');

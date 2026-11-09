@@ -58,7 +58,7 @@ afterEach(() => {
 function harness(id: string, declared: boolean): AgentPayload {
   return { id, name: id, status: 'available', reading: 'installed', command: id, capabilities: {
     acp: { kind: 'supported' }, autoApprove: { kind: 'none' }, models: { kind: 'none' }, effort: { kind: 'none' },
-    sessionpage: { acp: { identity: 'addressable', messageTransport: 'router' } },
+    sessions: {}, sessionpage: { acp: { identity: 'addressable', messageTransport: 'router' } },
     auth: { kind: 'supported', ...(declared ? { connections: { kind: 'managed' } } : {}), methods: [{ kind: 'cli-login', id: `${id}-login`, name: id, args: ['login'] }] },
   } } as unknown as AgentPayload
 }
@@ -119,4 +119,31 @@ it.each([{ provider: 'claude', declared: false }, { provider: 'claude', declared
   expect(host.textContent).toContain('Original task')
   expect(location.href).toBe(href)
   expect(submit).not.toHaveBeenCalled()
+})
+
+it('the condition row the panel writes into the long-lived store holds data only, no panel closures', async () => {
+  registerSessionLocaleResources()
+  setLocalePreference('en-US')
+  const id = 'condition-data-only'
+  active.provider = 'claude'
+  active.agents = [harness('claude', false)]
+  active.source = { sessions: new Map([[id, { status: 'idle', markSeen: async () => {}, data: { id, providerId: 'claude', firstUtterance: 'Original task', platformModel: null } }]]) }
+  store = new AcpChatStore(id, 'project')
+  active.store = store
+  const current = store
+  const internals = current as unknown as { _bootstrapped: boolean }
+  runInAction(() => {
+    internals._bootstrapped = true
+    current.historyLoading = false
+    current.loadError = { kind: 'auth_required', message: 'Configure the provider connection' }
+  })
+  host = document.createElement('div')
+  document.body.append(host)
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  root = createRoot(host)
+  root.render(<LocalizationProvider><QueryClientProvider client={client}><MessageProvider locale="en-US" translate={translateSessionMessage}><AcpChatPanel /></MessageProvider></QueryClientProvider></LocalizationProvider>)
+  await until('the panel wrote its condition row', () => (current.chatState.session.state.condition?.actions?.length ?? 0) > 0)
+  // The store outlives the panel; a closure kept here would retain the unmounted panel's whole DOM tree.
+  const values = (current.chatState.session.state.condition?.actions ?? []).flatMap(action => Object.values(action))
+  expect(values.filter(value => typeof value === 'function')).toEqual([])
 })

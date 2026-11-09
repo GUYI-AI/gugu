@@ -1,0 +1,34 @@
+/* 手机「+」面板:占键盘的位置,从下面升起。 */
+.gg-phone-attach {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  row-gap: 16px;
+  padding: 16px 12px max(16px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border-subtle);
+  animation: gg-phone-attach-rise var(--dur-med) var(--ease-pop) both;
+}
+.gg-phone-attach-tile.gg-phone-attach-tile {
+  height: auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  font-size: var(--font-caption);
+  color: var(--text-secondary);
+  background: transparent;
+}
+.gg-phone-attach-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--muted);
+  color: var(--text-primary);
+}
+.gg-phone-attach-icon > svg { width: 26px; height: 26px; }
+@keyframes gg-phone-attach-rise { from { transform: translateY(24px); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .gg-phone-attach { animation: none; }
+}

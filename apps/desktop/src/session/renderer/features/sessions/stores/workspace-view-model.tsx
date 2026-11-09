@@ -2,7 +2,7 @@ import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { messageForUser } from '@/lib/userFacingError';
 import type { ILifecycle } from '@gugu/session-shared';
-import { computed, makeAutoObservable, observable, reaction, runInAction } from 'mobx';
+import { makeAutoObservable, observable, reaction, runInAction, when } from 'mobx';
 import { DefaultSessionSeeder } from '@renderer/features/sessions/default-session-seeder';
 import { startAppPlacementSync } from '@renderer/features/extensions/app-placement-sync';
 import {
@@ -14,10 +14,7 @@ import type { BrowserTabResource } from '@renderer/features/browser/browser-tab-
 import type { SessionTabContext } from '@renderer/features/tabs/core/session-tab-context';
 import { getDiffTabManager } from '@renderer/features/sessions/diff-view/stores/diff-tab-manager';
 import { DiffViewStore } from '@renderer/features/sessions/diff-view/stores/diff-view-store';
-import { EditorViewStore } from '@renderer/features/sessions/editor/stores/editor-view-store';
-import type { FileTabResource } from '@renderer/features/sessions/editor/stores/file-tab-resource';
 import { PreviewServerStore } from '@renderer/features/sessions/stores/preview-server-store';
-import { TerminalTabViewStore } from '@renderer/features/sessions/terminals/terminal-tab-view-store';
 import { type SidebarTab } from '@renderer/features/sessions/types';
 import { sessionPageOnScreen } from '@renderer/app/sessions-on-screen';
 import { appState } from '@renderer/lib/stores/app-state';
@@ -30,14 +27,13 @@ import {
 } from '@shared/core/sessions/sessionEvents';
 import { sessionTabKind } from '@renderer/features/sessions/session-tab-kind';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
-import { closeTabsOfSession, findChatPaneId, findConversationAnchor } from '../view/session-pane-policy';
+import { closeTabsOfSession, findChatPaneId, sessionConversationTabId } from '../view/session-pane-policy';
 import type { OpenedOutput } from '@gugu/session-chat-ui/opened-outputs';
 import type { TerminalShellId } from '@shared/core/terminals/terminal-settings';
-import { browserAddressKey } from '@shared/browser';
 import type {
   DiffViewSnapshot,
   SessionViewSnapshot,
-  TerminalDrawerActiveItem,
+  TabOpenIntent,
 } from '@shared/view-state';
 import { sessionTabView } from '../session-tab-registry';
 import { PrStore } from './pr-store';
@@ -48,25 +44,12 @@ import { workspaceRegistry } from './workspace-registry';
 import { makeFileLinkHandlers } from './open-file-in-file-editor';
 import { workspaceReachLabel, type WorkspaceSurface, type WorkspaceSurfaceWorkspace } from '../workspace-backend/workspace-surface';
 
-export type RendererKind =
-  | 'monaco'
-  | 'markdown'
-  | 'diff'
-  | 'agents'
-  | 'browser'
-  | 'terminal'
-  | 'other-file';
-
 export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
   sidebarTab: SidebarTab;
   isSidebarCollapsed: boolean;
   focusedRegion: 'main' | 'bottom';
-  isTerminalDrawerOpen: boolean;
-  terminalDrawerActiveItem: TerminalDrawerActiveItem | undefined;
   /** Stable sub-stores — live for the full WorkspaceViewModel lifetime. */
   readonly paneLayout: ReturnType<typeof sessionTabView.createPaneLayoutStore>;
-  readonly terminalTabs: TerminalTabViewStore;
-  readonly editorView: EditorViewStore;
 
   /**
    * Returns the focused pane's PaneStore.
@@ -93,7 +76,6 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
   private _snapshotDisposer: (() => void) | null = null;
   /** Saved whenever suspend() is called, restored in next initialize(). */
   private _savedDiffViewSnapshot: DiffViewSnapshot | undefined;
-  private _isCreatingTerminal = false;
 
   private readonly _seeder: DefaultSessionSeeder;
 
@@ -107,8 +89,6 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
     this.sidebarTab = 'files';
     this.isSidebarCollapsed = true;
     this.focusedRegion = 'main';
-    this.isTerminalDrawerOpen = false;
-    this.terminalDrawerActiveItem = undefined;
 
     const workspaceId = sessionData.workspaceId ?? sessionData.id;
     const projectId = sessionData.projectId;
@@ -126,7 +106,6 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
     };
     this.paneLayout = sessionTabView.createPaneLayoutStore(sessionCtx, {
       // 一条会话一条页签条:分屏只有并排一种(spec session-page「并排」)。
-      singleStrip: true,
       onActiveTabChange: (tabId) => {
         if (!tabId) return;
         appState.history.push({
@@ -138,17 +117,11 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
       },
     });
     // agent 打开的、从对话里点开的开在这条会话自己的对话右边(spec session-page「并排」)。
-    this.paneLayout.setPairAnchor(() => findConversationAnchor(this.paneLayout, this.sessionId));
     this._seeder = new DefaultSessionSeeder(this.sessionId, this.paneLayout);
-    this.terminalTabs = new TerminalTabViewStore(() => terminalRegistry.get(this.sessionId) ?? null);
-    this.editorView = new EditorViewStore(this.paneLayout, sessionData.projectId, workspaceId);
 
     makeAutoObservable(this, {
       paneLayout: false,
-      terminalTabs: false,
-      editorView: false,
       diffView: observable.ref,
-      activeRenderer: computed,
     });
 
     // Tell the engine whether this task is visible so panes can
@@ -232,7 +205,7 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
       this.paneLayout.open(
         sessionTabKind(next.data.runtime),
         { sessionId: next.data.id },
-        { preview: false, target: { paneId: displayedInPaneId } }
+        { from: null, intent: 'newTab', target: { paneId: displayedInPaneId } }
       );
     });
   }
@@ -272,7 +245,7 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
       this.openFile(output.path, { beside: true });
       return;
     }
-    this.showPage(output.url, { preview: false, reload: false, beside: true });
+    this.showPage(output.url, { reload: false, beside: true });
   }
 
   /**
@@ -287,39 +260,26 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
   showPage(
     url: string,
     {
-      preview,
       reload,
+      intent = 'navigate',
       beside = false,
       activate = true,
+      from = beside ? sessionConversationTabId(this.paneLayout, this.sessionId) : this.activePane.resolvedActiveTabId ?? null,
     }: {
-      preview: boolean;
       reload: boolean;
+      intent?: TabOpenIntent;
       /** 开在对话右边并排(spec session-page「并排」)。 */
       beside?: boolean;
       /** 和 beside 一起:agent 打开的传 false —— 用户正看着别的就不切走,一对只在页签条上连好。 */
       activate?: boolean;
+      from?: string | null;
     }
   ): void {
-    const key = browserAddressKey(url);
-    for (const group of this.paneLayout.groups) {
-      const tab = group.pane.resolvedTabs.find(
-        (t) => t.kind === 'browser' && browserAddressKey((t.resource as BrowserTabResource).session?.currentUrl ?? '') === key
-      );
-      if (!tab) continue;
-      if (!preview) group.pane.pin(tab.tabId);
-      // `beside`:同一页已经开着 = 请到对话右边,❌ 新开一枚(spec session-page「并排」)。
-      if (!beside || !this.paneLayout.showBeside(tab.tabId, { reveal: activate })) {
-        this.paneLayout.setActiveGroup(group.paneId);
-        group.pane.setActiveTab(tab.tabId);
-      }
-      if (reload) browserControlsRegistry.get((tab.resource as BrowserTabResource).browserId)?.adapter?.reload();
-      return;
+    this.paneLayout.open('browser', { initialUrl: url }, { from, intent: beside ? 'beside' : intent, activate });
+    if (reload) {
+      const resource = this.activePane.activeResourceOfKind<BrowserTabResource>('browser');
+      if (resource) browserControlsRegistry.get(resource.browserId)?.adapter?.reload();
     }
-    if (beside) {
-      this.paneLayout.open('browser', { initialUrl: url }, { preview, beside: true, activate });
-      return;
-    }
-    this.activePane.open('browser', { initialUrl: url }, { preview });
   }
 
   get isViewActive(): boolean {
@@ -340,27 +300,11 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
   // Computed
   // -------------------------------------------------------------------------
 
-  get activeRenderer(): RendererKind {
-    const desc = this.activePane.activeEntry;
-    if (desc?.kind === 'diff') return 'diff';
-    if (desc?.kind === 'browser') return 'browser';
-    if (desc?.kind === 'terminal') return 'terminal';
-    const resource = this.activePane.activeResourceOfKind<FileTabResource>('file');
-    if (!resource) return 'agents';
-    if (resource.contentType === 'markdown' && resource.viewMode === 'preview') return 'markdown';
-    if (resource.contentType === 'text' || resource.viewMode === 'source') return 'monaco';
-    return 'other-file';
-  }
-
   get snapshot(): SessionViewSnapshot {
     return {
       sidebarTab: this.sidebarTab,
       isSidebarCollapsed: this.isSidebarCollapsed,
       focusedRegion: this.focusedRegion,
-      isTerminalDrawerOpen: this.isTerminalDrawerOpen,
-      terminalDrawerActiveItem: this.terminalDrawerActiveItem,
-      terminals: this.terminalTabs.snapshot,
-      editor: this.editorView.snapshot,
       diffView: this.diffView?.snapshot ?? this._savedDiffViewSnapshot,
     };
   }
@@ -379,20 +323,12 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
     // 'conversations' — coerce them instead of resurrecting the panel.
     this.sidebarTab = savedTab === 'changes' || savedTab === 'files' ? savedTab : 'files';
     this.isSidebarCollapsed = savedSnapshot.isSidebarCollapsed ?? true;
-    this.focusedRegion = savedSnapshot.focusedRegion === 'bottom' ? 'bottom' : 'main';
-    this.isTerminalDrawerOpen = savedSnapshot.isTerminalDrawerOpen ?? false;
-    this.terminalDrawerActiveItem = savedSnapshot.terminalDrawerActiveItem;
+    this.focusedRegion = 'main';
 
     // Pass the aggregate blob as fallback so the persistor can migrate legacy
     // tabGroups/tabManager/conversations fields when no dedicated key exists yet.
     this._seeder.markConsumed(this.paneLayout.hydrate(savedSnapshot));
 
-    if (savedSnapshot.terminals) {
-      this.terminalTabs.restoreSnapshot(savedSnapshot.terminals);
-    }
-    if (savedSnapshot.editor) {
-      this.editorView.restoreSnapshot(savedSnapshot.editor);
-    }
     if (savedSnapshot.diffView) {
       this._savedDiffViewSnapshot = savedSnapshot.diffView;
     }
@@ -457,37 +393,21 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
     // 存下来的布局复原出来,摆在别处的那几枚当场收掉。
     this._disposers.push(startAppPlacementSync(this.paneLayout, this.sessionId));
 
-    const closeEmptyTerminalDrawerDisposer = reaction(
+    // Terminals without a tab: nothing can reach them, and closing a tab used to leave them behind.
+    this._sessionDisposers.push(when(
+      () => terminalRegistry.get(this.sessionId)?.isLoaded === true,
       () => {
         const terminals = terminalRegistry.get(this.sessionId);
-        return {
-          isDrawerOpen: this.isTerminalDrawerOpen,
-          isCreatingTerminal: this._isCreatingTerminal,
-          isLoaded: terminals?.isLoaded ?? false,
-          terminalCount: terminals?.terminals.size ?? 0,
-        };
-      },
-      (state, previous) => {
-        if (
-          state.isDrawerOpen &&
-          !state.isCreatingTerminal &&
-          state.isLoaded &&
-          state.terminalCount === 0 &&
-          (previous === undefined || previous.terminalCount > 0 || !previous.isLoaded)
-        ) {
-          runInAction(() => {
-            this.setTerminalDrawerOpen(false);
-            this.terminalDrawerActiveItem = undefined;
-          });
+        const inTabs = new Set(terminalIdsInTabs(this.paneLayout));
+        for (const id of [...(terminals?.terminals.keys() ?? [])]) {
+          if (!inTabs.has(id)) void terminals?.deleteTerminal(id).catch((error: unknown) => log.warn('Failed to end a terminal without a tab', { id, error }));
         }
-      },
-      { fireImmediately: true }
-    );
-    this._sessionDisposers.push(closeEmptyTerminalDrawerDisposer);
+      }
+    ));
+
 
     // Open this view's file-tree projection now that the workspace is provisioned
     // (it keeps its registered scopes in step with the expanded folders itself).
-    this.editorView.startFiles(workspace.path);
   }
 
   /**
@@ -520,7 +440,6 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
     this._sessionDisposers = [];
 
     // Close this view's file-tree projection subscription.
-    this.editorView.disposeFiles();
   }
 
   /**
@@ -533,8 +452,6 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
     for (const d of this._disposers) d();
     this._seeder.dispose();
     this.paneLayout.dispose();
-    this.terminalTabs.dispose();
-    this.editorView.dispose();
   }
 
   // -------------------------------------------------------------------------
@@ -568,56 +485,34 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
     this.focusedRegion = region;
   }
 
-  setTerminalDrawerOpen(open: boolean): void {
-    this.isTerminalDrawerOpen = open;
-    this.setFocusedRegion(open ? 'bottom' : 'main');
-  }
-
-  setTerminalDrawerActiveItem(item: TerminalDrawerActiveItem): void {
-    this.terminalDrawerActiveItem = item;
-  }
-
   /**
    * @@@sessionpage layout — create a terminal and open it as a
    * workspace-panel tab (spec 会话页: terminals are named tabs, not a drawer).
    */
-  async openTerminalAsTab(shell?: TerminalShellId): Promise<void> {
-    const terminalId = await this._createDefaultTerminal(shell);
-    if (!terminalId) return;
-    this.paneLayout.open('terminal', { terminalId, preview: false });
+  openTerminalAsTab(shell?: TerminalShellId, askedIn?: string): Promise<void> {
+    const terminals = terminalRegistry.get(this.sessionId);
+    if (!terminals) return Promise.resolve();
+    const { id, created } = terminals.createDefaultTerminal(shell);
+    // This machine has no terminal cell: no tab to start a shell for.
+    if (!this.paneLayout.openBeside('terminal', { terminalId: id }, askedIn)) return terminals.deleteTerminal(id);
+    return created.then(
+      () => undefined,
+      (error: unknown) => {
+        log.error('Failed to create terminal:', error);
+        toast({ title: translateSessionMessage('terminal.createFailed'), description: messageForUser(error), tier: 'error' });
+      }
+    );
   }
+}
 
-  async openNewTerminal(shell?: TerminalShellId): Promise<string | undefined> {
-    this.isTerminalDrawerOpen = true;
-    this.setFocusedRegion('bottom');
-
-    const terminalId = await this._createDefaultTerminal(shell);
-    if (!terminalId) return undefined;
-    runInAction(() => {
-      this.terminalTabs.setActiveTab(terminalId);
-      this.terminalDrawerActiveItem = { kind: 'terminal', id: terminalId };
-    });
-    return terminalId;
-  }
-
-  private async _createDefaultTerminal(shell?: TerminalShellId): Promise<string | undefined> {
-    if (this._isCreatingTerminal) return undefined;
-
-    this._isCreatingTerminal = true;
-    try {
-      const terminal = await terminalRegistry.get(this.sessionId)?.createDefaultTerminal(shell);
-      if (!terminal) return undefined;
-      return terminal.id;
-    } catch (error) {
-      log.error('Failed to create terminal:', error);
-      toast({ title: translateSessionMessage('terminal.createFailed'), description: messageForUser(error), tier: 'error' });
-      return undefined;
-    } finally {
-      runInAction(() => {
-        this._isCreatingTerminal = false;
-      });
-    }
-  }
+function terminalIdsInTabs(paneLayout: WorkspaceViewModel['paneLayout']): string[] {
+  return [...paneLayout.groups, ...paneLayout.windowPanes.values()].flatMap(({ pane }) =>
+    [...pane.entries.values()].flatMap((entry) =>
+      [{ kind: entry.kind, state: entry.state }, ...(entry.history?.pages ?? [])].flatMap((page) =>
+        page.kind === 'terminal' ? [(page.state as { terminalId: string }).terminalId] : []
+      )
+    )
+  );
 }
 
 function normalizeDiffSnapshotPaths(

@@ -43,12 +43,13 @@ import {
   type GroupRulesLedger,
 } from './groupRulesDelivery'
 import { encodeTypedId } from '../../shared/typedId.mjs'
-import { ackForumViaRpc, recordForumFailureViaRpc, type ForumDeliveryFailure } from './forumInbox'
+import type { AppInboxFailure } from './appInbox'
 import { coreLogger } from '../../log'
 import { agentFailureNeedsModelChoice, agentFailureReason, type AgentFailureReason } from '../../shared/agentQuotaReason'
 import { turnFailureMarker } from '../../shared/ui/systemNotice'
 import { sessionArchiveRefusesMessage, type SessionArchivalState } from '../../shared/sessionArchival'
-import { beginInboxAttempt, clearInboxRetry, resetInboxRetries, retryInboxFailure } from './inboxRetry'
+import { beginInboxAttempt, clearInboxReceiptRetry, clearInboxRetry, resetInboxRetries, retryInboxFailure, retryInboxReceipt } from './inboxRetry'
+import { isTransientNetworkError } from '../../shared/networkError'
 import { attachmentFailureReason, attachmentStage } from '../files/attachmentDiagnostics'
 
 const log = coreLogger('agent-inbox-reader')
@@ -104,8 +105,8 @@ export interface AgentInboxUnreadRow {
   scanFence?: number
   /** Local session-direct rows are fed into this same reader without inventing a cloud chat. */
   localSessionDirect?: { sessionId: string; envelope: string }
-  /** 论坛来源的一行(forumInbox.ts):帖子上该交给它的一件事,信封已做好;受理后按帖子确认 seq。 */
-  forum?: { postId: string; seq: number; envelope: string }
+  /** App 来源的一行(appInbox.ts):信封已做好;受理后按 key 确认 seq。 */
+  app?: { source: string; key: string; seq: number; envelope: string }
 }
 
 /**
@@ -182,13 +183,10 @@ export interface AgentInboxReaderDeps {
    * whether the source is still open (queued / dispatching); a terminal failure is never an assistant read.
    */
   claimedSources?: (agentUserId: string, messageIds: readonly string[]) => ReadonlyMap<string, boolean> | Promise<ReadonlyMap<string, boolean>>
-  /**
-   * 论坛来源(forumInbox.ts):有它才拉论坛(宿主的装配 agentInboxDepsFromBridge 接上 forum_pull_agent_inbox);确认与失败记录
-   * 默认 forum_ack / forum_record_delivery_failure。
-   */
-  fetchForumUnread?: (agentUserId: string) => Promise<AgentInboxUnreadRow[]>
-  ackForum?: (input: { agentUserId: string; postId: string; seq: number }) => Promise<void>
-  recordForumFailure?: (input: { agentUserId: string; postId: string; state: ForumDeliveryFailure; error: string }) => Promise<void>
+  /** App 来源(appInbox.ts):有它才拉;确认与失败记录也归那个 App。 */
+  fetchAppUnread?: (agentUserId: string) => Promise<AgentInboxUnreadRow[]>
+  ackApp?: (input: { source: string; agentUserId: string; key: string; seq: number }) => Promise<void>
+  recordAppFailure?: (input: { source: string; agentUserId: string; key: string; state: AppInboxFailure; error: string }) => Promise<void>
   fetchThreadMessages?: (chatId: string, threadRootId: string) => Promise<ThreadMessageRow[]>
   resolveGuguIds?: (
     userIds: Array<string | undefined>,
@@ -353,7 +351,7 @@ function deliveryContextOf(raw: Record<string, unknown>): { groupRules: string |
 }
 
 type InlineImage = { data: string; mimeType: string; fileName: string; localPath: string }
-type SavedAttachment = { bytes: Uint8Array; localPath: string }
+type SavedAttachment = { bytes: Uint8Array; localPath: string; readOnly?: boolean }
 
 export type DisclosureRow = { agentUserId: string; chatId: string; threadRootId: string | null; key: string; reason: AgentFailureReason }
 
@@ -373,9 +371,10 @@ const FAILURE_CONTENT: Record<AgentFailureReason, string> = {
   timeout: 'The model service did not respond in time; this reply could not be completed.',
   generic: 'This reply could not be completed. Please try again later.',
   notAdmitted: '消息已保留，助理就绪后回复。',
-  deliveryRejected: 'This message was not delivered to the assistant. Resend to try again.',
-  outcomeUnknown: 'Delivery result unknown: the message may have reached the assistant, and it was not resent.',
+  deliveryRejected: 'This message did not reach the assistant and will not be resent automatically.',
+  outcomeUnknown: 'Failed to send this message.',
   undelivered: 'Not delivered yet: no running Gugu instance on this device holds this agent. The message stays unread until that instance is open.',
+  appUnavailable: 'Not delivered: this came from an App that cannot run where this agent lives.',
 }
 
 /**
@@ -609,14 +608,14 @@ async function pullOnce(agentUserId: string, deps: AgentInboxReaderDeps): Promis
     }
     scanAfter = { chatId: tail.chatId, seq: tail.seq }
   }
-  // 论坛来源:聊天这一轮受理完(或本来就没有)才拉 —— 会话不 live / 此刻不收时它也不收,等下一个触发。
-  if (deps.fetchForumUnread && (verdict === 'idle' || verdict === 'accepted' || verdict === 'enqueued')) {
-    const forumRows = await deps.fetchForumUnread(agentUserId)
-    pulled += forumRows.length
-    if (forumRows.length > 0) {
+  // App 来源:聊天这一轮受理完(或本来就没有)才拉 —— 会话不 live / 此刻不收时它也不收,等下一个触发。
+  if (deps.fetchAppUnread && (verdict === 'idle' || verdict === 'accepted' || verdict === 'enqueued')) {
+    const appRows = await deps.fetchAppUnread(agentUserId)
+    pulled += appRows.length
+    if (appRows.length > 0) {
       const archival = await deps.sessionArchival?.(agentUserId) ?? null
       if (archival?.archivedAt) return { pulled, injected: injectedTotal, verdict: 'not-now' }
-      const unclaimed = await unclaimedRows(agentUserId, await filterArchivedRows(agentUserId, forumRows, archival, deps), deps)
+      const unclaimed = await unclaimedRows(agentUserId, await filterArchivedRows(agentUserId, appRows, archival, deps), deps)
       const batchResult = await injectBatch(agentUserId, unclaimed, deps)
       injectedTotal += batchResult.injected
       verdict = batchResult.verdict
@@ -687,7 +686,7 @@ type PreparedUnit = {
  * recorded as failed independently; it cannot prevent later rows from reaching admission.
  */
 function undeliverableRowReason(row: AgentInboxUnreadRow): string | null {
-  if (row.localSessionDirect || row.forum) return null
+  if (row.localSessionDirect || row.app) return null
   try {
     encodeTypedId('msg', row.id)
     encodeTypedId('chat', row.chatId)
@@ -828,7 +827,7 @@ async function injectBatch(
           deps.onOutcome?.({ agentUserId, ok: false })
           // Admission already advanced the cursor. Report provider failure here, where the exact
           // source rows are still known, including pulls started without a device command.
-          throw new DisclosedFailure(error, await discloseBatchFailure(agentUserId, unit.members, deps, error))
+          throw new DisclosedFailure(error, await discloseBatchFailure(agentUserId, unit.members, deps, error, failureReason(error)))
         })
       }
     } catch (error) {
@@ -877,7 +876,7 @@ async function prepareMessage(
   if (row.localSessionDirect) {
     return { row, envelope: row.localSessionDirect.envelope }
   }
-  if (row.forum) return { row, envelope: row.forum.envelope }
+  if (row.app) return { row, envelope: row.app.envelope }
   const identities = new Map<string, GuguIdentity>()
   if (row.senderUserId) {
     identities.set(row.senderUserId, {
@@ -945,7 +944,7 @@ async function prepareMessage(
     try {
       const image = await download(attachment.fileName)
       attachments = [{ data: Buffer.from(image.bytes).toString('base64'), mimeType: attachment.mimeType, fileName: attachment.fileName, localPath: image.localPath }]
-      saved = { localPath: image.localPath }
+      saved = { localPath: image.localPath, readOnly: image.readOnly }
     } catch (error) {
       saved = { failure: attachmentFailureReason(error) }
     }
@@ -954,7 +953,8 @@ async function prepareMessage(
   // 下不下来(签不到、CDN 回错、超时)就照实说没存下和原因 —— 这一行和同一批的别的行照样交,不卡住收件。
   if (attachment?.kind === 'file' && attachment.source.kind !== 'gone' && attachment.source.kind !== 'url') {
     try {
-      saved = { localPath: (await download(attachment.fileName)).localPath }
+      const file = await download(attachment.fileName)
+      saved = { localPath: file.localPath, readOnly: file.readOnly }
     } catch (error) {
       saved = { failure: attachmentFailureReason(error) }
     }
@@ -1049,9 +1049,22 @@ async function settleAccepted(agentUserId: string, sources: readonly AgentInboxS
   }
 }
 
-/** An enqueuing host's agent accepted these rows: settle them exactly as an accepted injection does. */
-export function markInboxRowsRead(agentUserId: string, sources: readonly AgentInboxSource[], deps: AgentInboxReaderDeps): Promise<void> {
-  return settleAccepted(agentUserId, sources, deps)
+/**
+ * An enqueuing host's agent accepted these rows: settle them exactly as an accepted injection does. This runs outside
+ * any pull, so a receipt that failed on the network or a 5xx schedules its own bounded re-pull (`retryInboxReceipt`)
+ * — ❌ waiting for the next message to re-pull it. Any other refusal is not retried.
+ */
+export async function markInboxRowsRead(agentUserId: string, sources: readonly AgentInboxSource[], deps: AgentInboxReaderDeps): Promise<void> {
+  try {
+    await settleAccepted(agentUserId, sources, deps)
+    clearInboxReceiptRetry(agentUserId)
+  } catch (error) {
+    const status = (error as { status?: unknown } | null)?.status
+    if ((typeof status === 'number' && status >= 500) || isTransientNetworkError(error)) {
+      retryInboxReceipt(agentUserId, error, () => kickAgentInboxPull(agentUserId, deps, 'receipt-retry'))
+    }
+    throw error
+  }
 }
 
 /**
@@ -1063,12 +1076,18 @@ export async function discloseInboxRowsFailed(agentUserId: string, sources: read
   outcome: { kind: 'retained' } | { kind: 'failed'; cause: unknown } | { kind: 'unknown' }): Promise<Disclosure> {
   deps.onOutcome?.({ agentUserId, ok: false })
   // A start that failed keeps its rows queued for the retry: said as retained, left unread for that delivery.
-  if (outcome.kind === 'retained') return discloseBatchFailure(agentUserId, sources, deps)
-  // Handed over, never resent, outcome unknown: said truthfully, then settled like a final failure.
-  const said = outcome.kind === 'failed'
-    ? await discloseBatchFailure(agentUserId, sources, deps, outcome.cause)
-    : await discloseBatchFailure(agentUserId, sources, deps, undefined, 'outcomeUnknown')
-  await advanceCursor(agentUserId, sources.map((source) => ({ ...source, envelope: '' })), deps)
+  if (outcome.kind === 'retained') return discloseBatchFailure(agentUserId, sources, deps, undefined, 'notAdmitted')
+  // A failed row never reached the agent, so it is not an agent read: it stays unread, and the host's failed source membership
+  // keeps it from being resent. Said as not delivered, unless the cause names something the person can act on.
+  if (outcome.kind === 'failed') {
+    return discloseBatchFailure(agentUserId, sources, deps, outcome.cause, agentFailureReason(errorText(outcome.cause)) ?? 'deliveryRejected', true)
+  }
+  // Handed over, never resent, outcome unknown: said truthfully, then settled. A read marker that cannot land (an identity
+  // removed by the archive may not mark read) was logged and must not stop the unit from settling.
+  const said = await discloseBatchFailure(agentUserId, sources, deps, undefined, 'outcomeUnknown')
+  await advanceCursor(agentUserId, sources.map((source) => ({ ...source, envelope: '' })), deps).catch((error: unknown) => {
+    if (isSqliteBusy(error)) throw error
+  })
   return said
 }
 
@@ -1086,26 +1105,27 @@ async function advanceCursor(
   const markRead = deps.markRead
     ?? ((input: AgentDeliveredMessageRead) => markAgentDeliveredMessageRead(input, { accessToken: deps.accessToken }))
   const byChat = new Map<string, PreparedMessage[]>()
-  const forumSeqs = new Map<string, number>()
+  const appSeqs = new Map<string, number>()
+  const appKey = (app: NonNullable<AgentInboxUnreadRow['app']>) => `${app.source}\n${app.key}`
   for (const member of members) {
     const list = byChat.get(member.row.chatId) ?? []
     list.push(member)
     byChat.set(member.row.chatId, list)
-    if (member.row.forum) {
-      const { postId, seq } = member.row.forum
-      forumSeqs.set(postId, Math.max(forumSeqs.get(postId) ?? seq, seq))
+    if (member.row.app) {
+      const key = appKey(member.row.app)
+      appSeqs.set(key, Math.max(appSeqs.get(key) ?? member.row.app.seq, member.row.app.seq))
     }
   }
   for (const [chatId, chatMembers] of byChat) {
     const ordered = [...chatMembers].sort((a, b) => a.row.seq - b.row.seq)
     for (const member of ordered) {
       try {
-        if (member.row.forum) {
-          const seq = forumSeqs.get(member.row.forum.postId)
+        if (member.row.app) {
+          const seq = appSeqs.get(appKey(member.row.app))
           if (seq === undefined) continue
-          forumSeqs.delete(member.row.forum.postId)
-          const ack = deps.ackForum ?? ((input: { agentUserId: string; postId: string; seq: number }) => ackForumViaRpc(input, deps.accessToken))
-          await ack({ agentUserId, postId: member.row.forum.postId, seq })
+          appSeqs.delete(appKey(member.row.app))
+          if (!deps.ackApp) throw new Error('an App inbox row has no ackApp handler')
+          await deps.ackApp({ source: member.row.app.source, agentUserId, key: member.row.app.key, seq })
         } else if (member.row.localSessionDirect) {
           if (!deps.markLocalRead) throw new Error('local session-direct row has no markLocalRead handler')
           await deps.markLocalRead({
@@ -1125,11 +1145,9 @@ async function advanceCursor(
           { agentUserId, chatId, messageId: member.row.id, err: error instanceof Error ? error.message : String(error) },
           'cursor advance failed after accepted injection; the tail of this chat will be re-pulled (duplicates stay visible by stable id)',
         )
-        // An accepted delivery whose read receipt failed is a user-visible delivery failure, not a
-        // recoverable skip. Disclose the affected tail and rethrow so the kick caller observes failure;
-        // leaving the cursor untouched is deliberate and keeps the cloud row eligible for a later pull.
-        deps.onOutcome?.({ agentUserId, ok: false })
-        throw new DisclosedFailure(error, await discloseBatchFailure(agentUserId, chatMembers, deps))
+        // The agent has these rows: a read receipt that did not land is the host's own failure, never said in the chat.
+        // The cloud row stays unread, so a later pull settles it (an enqueuing host's duplicate retries its read marker).
+        throw error
       }
     }
   }
@@ -1145,16 +1163,17 @@ async function discloseBatchFailure(
   agentUserId: string,
   members: readonly Pick<PreparedMessage, 'row'>[],
   deps: AgentInboxReaderDeps,
-  completionError?: unknown,
-  reason: AgentFailureReason = failureReason(completionError),
+  completionError: unknown,
+  reason: AgentFailureReason,
   beforeAdmission = false,
 ): Promise<Disclosure> {
   const post = deps.postDisclosure ?? ((input: DisclosureRow) => postDeliveryDisclosureRow(input, deps.accessToken))
   const byChat = new Map<string, Pick<PreparedMessage, 'row'>[]>()
-  const byPost = new Set<string>()
+  const byApp = new Map<string, { source: string; key: string }>()
   for (const member of members) {
-    if (member.row.forum) {
-      byPost.add(member.row.forum.postId)
+    if (member.row.app) {
+      const { source, key } = member.row.app
+      byApp.set(`${source}\n${key}`, { source, key })
       continue
     }
     if (member.row.localSessionDirect) {
@@ -1170,20 +1189,19 @@ async function discloseBatchFailure(
     list.push(member)
     byChat.set(member.row.chatId, list)
   }
-  // Said only when every chat (and every post) got its row: a batch of local rows alone, or a post that failed, leaves it unsaid.
-  let said = byChat.size + byPost.size > 0
-  // 论坛来源:失败记在那条指派上(主人在帖子里看到),❌ 写成一条回复。没受理(游标没动、会重投)与受理了但那一轮失败分开记。
-  const recordForum = deps.recordForumFailure
-    ?? ((input: { agentUserId: string; postId: string; state: ForumDeliveryFailure; error: string }) => recordForumFailureViaRpc(input, deps.accessToken))
-  for (const postId of byPost) {
-    const state: ForumDeliveryFailure = completionError === undefined || beforeAdmission ? 'undelivered' : 'turn_failed'
+  // Said only when every chat (and every App's) got its row: a batch of local rows alone, or an App that failed, leaves it unsaid.
+  let said = byChat.size + byApp.size > 0
+  // App 来源:失败交给那个 App 记(它自己的界面上给主人看),❌ 写成一条回复。没受理(游标没动、会重投)与受理了但那一轮失败分开记。
+  for (const { source, key } of byApp.values()) {
+    const state: AppInboxFailure = completionError === undefined || beforeAdmission ? 'undelivered' : 'turn_failed'
     try {
-      await recordForum({ agentUserId, postId, state, error: reason })
+      if (!deps.recordAppFailure) throw new Error('an App inbox row has no recordAppFailure handler')
+      await deps.recordAppFailure({ source, agentUserId, key, state, error: reason })
     } catch (error) {
       said = false
       log.error(
-        { agentUserId, postId, state, err: error instanceof Error ? error.message : String(error) },
-        'forum delivery failure could not be recorded on the assignment; this failure remains undisclosed',
+        { agentUserId, source, key, state, err: error instanceof Error ? error.message : String(error) },
+        'an App could not record a delivery failure; the command row carries it',
       )
     }
   }
@@ -1249,9 +1267,8 @@ function errorText(error: unknown): string {
   return typeof message === 'string' ? message : String(error)
 }
 
-/** 失败的原因(聊天里的披露行与论坛指派上的投递状态同一个):没受理是咕咕这边的错;受理后那一轮失败按上游的原因说。 */
+/** 受理后那一轮失败的原因,按上游的错误说。没受理的(notAdmitted / deliveryRejected / outcomeUnknown)由调用处按阶段直接给。 */
 function failureReason(completionError: unknown): AgentFailureReason {
-  if (completionError === undefined) return 'notAdmitted'
   return agentFailureReason(errorText(completionError)) ?? 'generic'
 }
 

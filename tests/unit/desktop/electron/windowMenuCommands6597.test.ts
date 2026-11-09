@@ -7,6 +7,7 @@ import {
 } from '../../../../apps/desktop/electron/window-menu-commands'
 import {
   isWindowMenuCommand,
+  PREPARE_SELECT_ALL_EVENT,
   WINDOW_MENU_COMMANDS,
 } from '../../../../apps/desktop/shared/window-menu-commands'
 
@@ -20,6 +21,8 @@ function fakeTarget(zoomLevel = 0, fullScreen = false) {
     copy: vi.fn(),
     paste: vi.fn(),
     selectAll: vi.fn(),
+    getType: vi.fn(() => 'window'),
+    executeJavaScript: vi.fn(async () => false),
     getZoomLevel: vi.fn(() => level),
     setZoomLevel: vi.fn((next: number) => { level = next }),
   }
@@ -39,10 +42,10 @@ describe('window menu commands(#6597)', () => {
     }
   })
 
-  it('编辑类命令各自落到 webContents 上的同名编辑命令,且只落这一个', () => {
+  it('编辑类命令各自落到 webContents 上的同名编辑命令,且只落这一个', async () => {
     for (const command of ['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll'] as const) {
       const { target, contents } = fakeTarget()
-      runWindowMenuCommand(command, target)
+      await runWindowMenuCommand(command, target)
       for (const method of ['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll'] as const) {
         expect(contents[method]).toHaveBeenCalledTimes(method === command ? 1 : 0)
       }
@@ -50,15 +53,35 @@ describe('window menu commands(#6597)', () => {
     }
   })
 
-  it('缩放:与应用菜单 zoomIn / zoomOut role 同一步长 0.5,实际大小 = 0 级', () => {
+  it('lets the focused transcript finish mounting before native Select All', async () => {
+    const { target, contents } = fakeTarget()
+    let finish!: (value: boolean) => void
+    contents.executeJavaScript.mockReturnValue(new Promise(resolve => { finish = resolve }))
+    const command = runWindowMenuCommand('selectAll', target)
+    expect(contents.executeJavaScript).toHaveBeenCalledWith(expect.stringContaining(PREPARE_SELECT_ALL_EVENT))
+    expect(contents.selectAll).not.toHaveBeenCalled()
+    finish(true)
+    await command
+    expect(contents.selectAll).toHaveBeenCalledOnce()
+  })
+
+  it.each(['webview', 'browserView'])('selects %s content without dispatching product preparation events', async (type) => {
+    const { target, contents } = fakeTarget()
+    contents.getType.mockReturnValue(type)
+    await runWindowMenuCommand('selectAll', target)
+    expect(contents.executeJavaScript).not.toHaveBeenCalled()
+    expect(contents.selectAll).toHaveBeenCalledOnce()
+  })
+
+  it('缩放:与应用菜单 zoomIn / zoomOut role 同一步长 0.5,实际大小 = 0 级', async () => {
     expect(WINDOW_ZOOM_STEP).toBe(0.5)
     const f = fakeTarget(1)
-    runWindowMenuCommand('zoomIn', f.target)
+    await runWindowMenuCommand('zoomIn', f.target)
     expect(f.zoom()).toBe(1.5)
-    runWindowMenuCommand('zoomOut', f.target)
-    runWindowMenuCommand('zoomOut', f.target)
+    await runWindowMenuCommand('zoomOut', f.target)
+    await runWindowMenuCommand('zoomOut', f.target)
     expect(f.zoom()).toBe(0.5)
-    runWindowMenuCommand('resetZoom', f.target)
+    await runWindowMenuCommand('resetZoom', f.target)
     expect(f.zoom()).toBe(0)
   })
 
@@ -68,5 +91,21 @@ describe('window menu commands(#6597)', () => {
     expect(f.fullScreen()).toBe(true)
     runWindowMenuCommand('toggleFullScreen', f.target)
     expect(f.fullScreen()).toBe(false)
+  })
+})
+
+describe('file content zoom before window zoom (#1625)', () => {
+  it('a focused file viewer that takes the command keeps the window zoom', async () => {
+    const f = fakeTarget(1)
+    f.contents.executeJavaScript.mockResolvedValue(true)
+    await runWindowMenuCommand('zoomIn', f.target)
+    expect(f.zoom()).toBe(1)
+  })
+
+  it('a renderer that cannot run the probe (navigating, crashed) still zooms the window', async () => {
+    const f = fakeTarget(1)
+    f.contents.executeJavaScript.mockRejectedValue(new Error('Script failed to execute'))
+    await runWindowMenuCommand('zoomOut', f.target)
+    expect(f.zoom()).toBe(0.5)
   })
 })

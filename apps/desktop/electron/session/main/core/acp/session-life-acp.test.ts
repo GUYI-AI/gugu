@@ -8,8 +8,11 @@ const h = vi.hoisted(() => ({
   client: { tag: 'worker-client' },
   stopAndSettle: vi.fn(async (_client: unknown, _id: string) => undefined),
   inject: vi.fn(),
+  logError: vi.fn(),
   turnFiles: vi.fn(),
-  release: vi.fn(async (_id: string) => undefined),
+  release: vi.fn(async (_id: string, _generation?: string) => undefined),
+  preparePlatform: vi.fn(async (_info: unknown): Promise<string | null> => null),
+  platformModel: null as { modelId: string } | null,
   identity: null as unknown,
   parentAgent: null as { gugu_user_id?: string } | null,
   /** The in-memory registry: empty until something mounts the session (e.g. right after a restart). */
@@ -30,12 +33,13 @@ vi.mock('./runtime-process/host', () => ({
   persistSessionMcpServers: vi.fn(async () => undefined),
   acpWorkerLease: async () => ({ client: h.client, onGone: (cb: (cause: string) => void) => { h.gone = cb; return () => { h.gone = null; }; } }),
   stopAcpSessionAndSettle: h.stopAndSettle,
-  readSessionInjectionFacts: async () => ({ agentDisplayName: undefined }),
+  readSessionInjectionFacts: async () => ({ agentDisplayName: undefined, platformModel: h.platformModel }),
   provisionStartIdentity: async (input: { cwd: string }) => { h.identityCwd = input.cwd; return h.identity; },
 }));
 vi.mock('../session-timeline/turn-files', () => ({ turnFileText: h.turnFiles }));
 vi.mock('./inject-prompt', () => ({ injectEmdashPromptDetached: h.inject }));
-vi.mock('./emdash-platform-injector', () => ({ releaseEmdashPlatformSession: h.release }));
+vi.mock('@main/lib/logger', () => ({ log: { error: h.logError } }));
+vi.mock('./emdash-platform-injector', () => ({ releaseEmdashPlatformSession: h.release, prepareEmdashPlatformSession: h.preparePlatform }));
 vi.mock('@main/core/sessions/runtime-fork-ownership', () => ({ recordRuntimeForkOwnership: vi.fn() }));
 vi.mock('@main/core/sessionpage/sessionpage-session-agent', () => ({ localAgentForSession: async () => h.parentAgent }));
 vi.mock('@main/core/projects/utils', () => ({ resolveWorkspace: () => (h.registered ? { path: '/repo' } : null), persistedWorkspacePath: () => '/repo' }));
@@ -60,9 +64,56 @@ async function boundAdapter() {
   return adapter;
 }
 
-beforeEach(() => { h.watchers.clear(); h.gone = null; h.identity = null; h.parentAgent = null; vi.clearAllMocks(); });
+beforeEach(() => { h.watchers.clear(); h.gone = null; h.identity = null; h.parentAgent = null; h.platformModel = null; vi.clearAllMocks(); });
 
 describe('session-life ACP leg', () => {
+  it('starts platform preparation once identity is bound, before waiting for workspace or capability work', async () => {
+    h.platformModel = { modelId: 'platform-model' };
+    h.preparePlatform.mockReturnValueOnce(new Promise(() => {}));
+    await boundAdapter();
+    expect(h.preparePlatform).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 's', projectId: 'p', providerId: 'claude', cwd: '/repo', platformModel: h.platformModel,
+    }));
+  });
+
+  it('carries an early platform refusal into the existing startup failure path', async () => {
+    h.platformModel = { modelId: 'platform-model' };
+    h.preparePlatform.mockRejectedValueOnce(new Error('Platform access was refused'));
+    const adapter = await boundAdapter();
+    await expect(adapter.run('capabilities', {} as never, ctx())).rejects.toThrow('Platform access was refused');
+  });
+
+  it('settles a late platform preparation when the attempt stopped before capabilities', async () => {
+    h.platformModel = { modelId: 'platform-model' };
+    let finish!: (generation: string) => void;
+    h.preparePlatform.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const adapter = await boundAdapter();
+    await adapter.teardown({}, ctx());
+    finish('prepared-generation');
+    await vi.waitFor(() => expect(h.release).toHaveBeenCalledWith('s', 'prepared-generation'));
+  });
+
+  it.each(['CANCELLED', 'HANDLER_ERROR', 'DISCONNECTED'])('owns a completed %s request without another admission', async code => {
+    const adapter = await boundAdapter();
+    h.inject.mockResolvedValueOnce({ outcome: 'started', turnId: 'request-owned',
+      completion: Promise.resolve({ success: false, error: { name: 'WireError', code, message: 'request ended' } }) });
+    expect(await adapter.dispatch({} as StageOut, row, ctx())).toEqual({ result: 'accepted', nativeReceiptId: 'request-owned' });
+    await Promise.resolve();
+    if (code === 'CANCELLED') expect(h.logError).not.toHaveBeenCalled();
+    else expect(h.logError).toHaveBeenCalledExactlyOnceWith('ACP prompt completion failed',
+      expect.objectContaining({ sessionId: 's', requestId: 'request-owned', error: expect.objectContaining({ code }) }));
+  });
+
+  it('treats worker disconnection as cancellation only after this attempt began teardown', async () => {
+    const adapter = await boundAdapter();
+    let complete!: (result: unknown) => void;
+    h.inject.mockResolvedValueOnce({ outcome: 'started', completion: new Promise(resolve => { complete = resolve; }) });
+    await adapter.dispatch({} as StageOut, row, ctx());
+    await adapter.teardown({ process: await processLease() } as StageOut, { gen });
+    complete({ success: false, error: { name: 'WireError', code: 'DISCONNECTED', message: 'worker stopped' } });
+    await Promise.resolve();
+    expect(h.logError).not.toHaveBeenCalled();
+  });
 
   it('one exit per attempt, from whichever fact ends the session first', async () => {
     const process = await processLease();
@@ -98,23 +149,23 @@ describe('session-life ACP leg', () => {
     createAcpLegAdapter('s', null).onExit({ process: await processLease() }, exit => exits.push(exit));
     h.watchers.get('s')!({ lifecycle: 'starting' });
     h.watchers.get('s')!({ lifecycle: 'lost', failure: { kind: 'adapter-exit', message: 'claude exited: login required', exitCode: 1, signal: null } });
-    expect(exits).toEqual([{ cause: { name: 'adapter-exit', message: 'claude exited: login required' }, code: 1, signal: null }]);
+    expect(exits).toEqual([{ processExited: true, cause: { name: 'adapter-exit', message: 'claude exited: login required' }, code: 1, signal: null }]);
   });
 
   it('maps the worker admission: started/queued is accepted with its turn, declined is rejected, missing is a lost channel', async () => {
     const adapter = await boundAdapter();
-    h.inject.mockResolvedValueOnce({ outcome: 'queued', completion: Promise.resolve(), turnId: 't1' });
+    h.inject.mockResolvedValueOnce({ outcome: 'queued', completion: Promise.resolve({ success: true, data: undefined }), turnId: 't1' });
     expect(await adapter.dispatch({} as StageOut, row, ctx())).toEqual({ result: 'accepted', nativeReceiptId: 't1' });
-    h.inject.mockResolvedValueOnce({ outcome: 'declined', completion: Promise.resolve() });
+    h.inject.mockResolvedValueOnce({ outcome: 'declined', completion: Promise.resolve({ success: true, data: undefined }) });
     expect(await adapter.dispatch({} as StageOut, row, ctx())).toMatchObject({ result: 'rejected-before-admission' });
     // #552: the runtime no longer has the session (its executor ended before admission): no byte taken, channel lost.
-    h.inject.mockResolvedValueOnce({ outcome: 'missing', completion: Promise.resolve() });
+    h.inject.mockResolvedValueOnce({ outcome: 'missing', completion: Promise.resolve({ success: true, data: undefined }) });
     expect(await adapter.dispatch({} as StageOut, row, ctx())).toMatchObject({ result: 'channel-lost' });
   });
 
   it("a row's turn decides how it is sent: prompt as-is with its own origin; the first turn rendered from the landed context", async () => {
     const adapter = await boundAdapter();
-    h.inject.mockResolvedValue({ outcome: 'started', completion: Promise.resolve(), turnId: 't' });
+    h.inject.mockResolvedValue({ outcome: 'started', completion: Promise.resolve({ success: true, data: undefined }), turnId: 't' });
     const prompt = { ...(row as object), message: { id: 'm', text: 'hi', delivery: { queue: true } }, turn: { kind: 'prompt', origin: 'communication', hiddenContext: 'ctx' } } as never;
     await adapter.dispatch({} as StageOut, prompt, ctx());
     expect(h.inject).toHaveBeenLastCalledWith('s', 'hi', { clientMessageId: 'm', origin: 'communication', hiddenContext: 'ctx' });
@@ -159,7 +210,7 @@ describe('session-life ACP leg', () => {
     const lostDispatch = adapter.dispatch({} as StageOut, row, ctx());
     h.watchers.get('s')!({ lifecycle: 'ready' });
     h.watchers.get('s')!({ lifecycle: 'closed' });
-    answer({ outcome: 'missing', completion: Promise.resolve() });
+    answer({ outcome: 'missing', completion: Promise.resolve({ success: true, data: undefined }) });
     expect(await lostDispatch).toMatchObject({ result: 'channel-lost' });
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(exits).toEqual([]);
@@ -183,7 +234,7 @@ describe('session-life ACP leg', () => {
 
   it('a delivery into a next-tool-call harness steers its running turn unless the sender queued it (#4708)', async () => {
     const adapter = await boundAdapter();
-    h.inject.mockResolvedValue({ outcome: 'started', completion: Promise.resolve(), turnId: 't' });
+    h.inject.mockResolvedValue({ outcome: 'started', completion: Promise.resolve({ success: true, data: undefined }), turnId: 't' });
     await adapter.dispatch({} as StageOut, row, ctx());
     expect(h.inject).toHaveBeenLastCalledWith('s', 'hi', { clientMessageId: 'm', steerIfBusy: true });
     await adapter.dispatch({} as StageOut, { ...(row as object), message: { id: 'm', text: 'hi', delivery: { queue: true } } } as never, ctx());
@@ -200,7 +251,7 @@ describe('session-life ACP leg', () => {
     const have = { process, cli: { command: { input: { projectId: 'p', providerId: 'claude', cwd: '/repo' } } }, platform: { injected: false },
       capabilities: { injection: {}, facts: { mcpDisabledServers: [] } } } as never;
     await adapter.run('channel', have, ctx());
-    h.inject.mockResolvedValue({ outcome: 'started', completion: Promise.resolve(), turnId: 't' });
+    h.inject.mockResolvedValue({ outcome: 'started', completion: Promise.resolve({ success: true, data: undefined }), turnId: 't' });
     await adapter.dispatch({} as StageOut, { ...(row as object), seq: 2 } as never, ctx());
     expect(h.inject).toHaveBeenLastCalledWith('s', 'hi', { clientMessageId: 'm' });
     await adapter.dispatch({} as StageOut, { ...(row as object), seq: 3 } as never, ctx());
@@ -245,7 +296,7 @@ it('resolves a queued missing file only at admission, sends its not-saved contex
   const adapter = await boundAdapter();
   const files = [{ itemId: 'gone', version: 1, name: 'gone.txt', mimeType: 'text/plain', sizeBytes: 1 }];
   h.turnFiles.mockResolvedValue({ files: [{ ...files[0], promptText: '[File not saved: File is no longer available]' }], images: [] });
-  h.inject.mockResolvedValue({ outcome: 'queued', turnId: 't' });
+  h.inject.mockResolvedValue({ outcome: 'queued', turnId: 't', completion: Promise.resolve({ success: true, data: undefined }) });
   const pending = { ...(row as object), message: { id: 'm-file', text: 'original caption', delivery: { queue: true, origin: 'manual', files } }, turn: { kind: 'prompt' } } as never;
   await expect(adapter.dispatch({} as StageOut, pending, ctx())).resolves.toMatchObject({ result: 'accepted' });
   expect(h.inject).toHaveBeenLastCalledWith('s', 'original caption', expect.objectContaining({ files: [expect.objectContaining({ promptText: expect.stringContaining('not saved') })] }));

@@ -3,7 +3,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { observer } from 'mobx-react-lite'
 import { Avatar } from '@/components/Avatar'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
-import { FileText, Search, X } from '@/lib/icons'
+import { AtSign, Clock, FileText, History, Image, Link, Search, Users, X } from '@/lib/icons'
 import { useChatSummaries } from '@/lib/chatSummariesBridge'
 import { followLink } from '@/lib/guguLinks'
 import { UI_EVENTS } from '@/lib/uiEvents'
@@ -15,9 +15,10 @@ import { matchRanges } from '@shared/core/search'
 import { Shortcut } from '@renderer/lib/ui/shortcut'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { cn } from '@renderer/utils/utils'
-import { updateSearchSession, useSearchSession, type SearchChip, type SearchFacet } from './search-session'
-import { instant, SEARCH_LIMIT, useGlobalSearch, type SearchHit } from './use-global-search'
+import { EVERYWHERE, forgetSearches, recentSearches, rememberSearch, updateSearchSession, useSearchSession, type SearchChip, type SearchFacet, type SearchKind } from './search-session'
+import { firstMessageOn, instant, SEARCH_LIMIT, useGlobalSearch, type SearchHit } from './use-global-search'
 import { sessionAgentBindings } from '../sessions/stores/session-agent-bindings'
+import { openGroup, openPerson, useNameMatches } from '../command-palette/palette-chats'
 
 const ResultAvatar = observer(function ResultAvatar({ hit, name }: { hit: SearchHit; name: string }) {
   const system = hit.kind === 'message' && hit.sender === null
@@ -34,6 +35,18 @@ const ResultAvatar = observer(function ResultAvatar({ hit, name }: { hit: Search
   )
 })
 
+/** A group or person found by name (`userId`: a person). The phone has no quick switcher, so its panel answers names too. */
+const NameRow = observer(function NameRow({ id, userId, name, query, onOpen }: { id: string; userId: string; name: string; query: string; onOpen: () => void }) {
+  const identity = useAvatarIdentity(userId)
+  return (
+    <button type="button" data-testid="global-search-name" data-id={id} onClick={onOpen}
+      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left outline-none max-sm:min-h-11">
+      <Avatar name={identity?.display_name ?? name} avatarUrl={identity?.avatar} seed={id} size={20} isAgent={identity?.type === 'agent'} still />
+      <span className="min-w-0 flex-1 truncate text-sm text-foreground/85"><Highlighted text={name} query={query} /></span>
+    </button>
+  )
+})
+
 function Highlighted({ text, query }: { text: string; query: string }): ReactNode {
   const parts: ReactNode[] = []
   let at = 0
@@ -45,6 +58,8 @@ function Highlighted({ text, query }: { text: string; query: string }): ReactNod
   parts.push(text.slice(at))
   return parts
 }
+
+const NAMED_LIMIT = 5
 
 function formatWhen(iso: string): string {
   const date = new Date(instant(iso))
@@ -64,9 +79,11 @@ export function openHit(hit: SearchHit): void {
 /**
  * The global search panel (the desktop modal and the phone's full-screen page). One filter row, newest first, the
  * matched sentence leading each row; scope by typing in: / from:, or by a group's header. `tasks`: this device has
- * local tasks to search (the phone has none, so it has no task filter).
+ * local tasks to search (the phone has none, so it has no task filter). `onOpen` closes the panel because a result was
+ * opened (done, not dismissed: focus goes to the result, not back to the box that opened the panel). `names`: no quick
+ * switcher beside this panel (the phone), so unscoped words also list the groups and people they name, above the messages.
  */
-export function GlobalSearch({ tasks, onClose }: { tasks: boolean; onClose: () => void }) {
+export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks: boolean; names?: boolean; onClose: () => void; onOpen: () => void }) {
   const { translate } = useSessionMessages()
   const { text, chips, facet, selectedId } = useSearchSession()
   const summaries = useChatSummaries()
@@ -76,7 +93,7 @@ export function GlobalSearch({ tasks, onClose }: { tasks: boolean; onClose: () =
   const facets: readonly SearchFacet[] = tasks ? ['all', 'message', 'task', 'file'] : ['all', 'message', 'file']
 
   const chatName = (chatId: string) => summaries.get(chatId)?.alias || summaries.get(chatId)?.name || translate('globalSearch.unknownChat')
-  const chipLabel = (chip: SearchChip) => chip.kind === 'in' ? chatName(chip.chatId) : chip.kind === 'in-task' ? chip.title : chip.name
+  const chipLabel = (chip: SearchChip) => chip.kind === 'in' ? chatName(chip.chatId) : chip.kind === 'in-task' ? chip.title : chip.kind === 'type' ? translate(`globalSearch.kind.${chip.type}`) : chip.name
   const groups: { key: string; label: string; task: boolean; scope: SearchChip; hits: SearchHit[] }[] = []
   for (const hit of view.hits) {
     let group = groups.find((existing) => existing.key === hit.group)
@@ -89,13 +106,48 @@ export function GlobalSearch({ tasks, onClose }: { tasks: boolean; onClose: () =
     group.hits.push(hit)
   }
   const ordered = groups.flatMap((group) => group.hits)
+  const named = useNameMatches(view.query, NAMED_LIMIT, names && !!view.query && facet === 'all' && chips.length === 0)
+  const nameRows = [...named.groups.map(([id, chat]) => ({ id, userId: '', name: chat.name ?? '', open: () => openGroup(id) })),
+      ...named.people.map((person) => ({ id: person.id, userId: person.id, name: person.name, open: () => openPerson(person.id) }))]
   const selected = ordered.find((hit) => hit.id === selectedId) ?? ordered[0] ?? null
   const scoped = view.scopes.some((chip) => chip.kind === 'in' || chip.kind === 'in-task')
-  const hasQuery = !!text.trim()
+  // Words, a sender or a kind of message: any of them is a search; with none the panel shows the quick filters.
+  const hasQuery = !!text.trim() || chips.some((chip) => chip.kind === 'from' || chip.kind === 'type')
+  const inChat = chips.find((chip) => chip.kind === 'in')?.chatId ?? null
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [dateNote, setDateNote] = useState<string | null>(null)
 
   useEffect(() => { listRef.current?.querySelector('[data-selected="true"]')?.scrollIntoView({ block: 'nearest' }) }, [selected?.id])
 
-  const open = (hit: SearchHit) => { onClose(); openHit(hit) }
+  const open = (hit: SearchHit) => {
+    if (hit.kind === 'message') {
+      const hits = ordered.flatMap((one) => one.kind === 'message' ? [{ chatId: one.chatId, messageId: one.messageId }] : [])
+      updateSearchSession({ selectedId: hit.id, trail: { hits, index: hits.findIndex((one) => one.messageId === hit.messageId), query: view.query } })
+    }
+    if (view.query) rememberSearch(recentScope, view.query)
+    onOpen(); openHit(hit)
+  }
+  const addKind = (type: SearchKind) => { if (!chips.some((chip) => chip.kind === 'type' && chip.type === type)) setChips([...chips, { kind: 'type', type }]) }
+  // 「日期」 alone goes straight to that day's first message in this conversation.
+  const jumpToDay = async (day: string) => {
+    if (!inChat || !day) return
+    const messageId = await firstMessageOn(inChat, day)
+    if (!messageId) { setDateNote(translate('globalSearch.noMessageFrom', { date: day })); return }
+    onOpen(); followLink(conversationLink(inChat, messageId))
+  }
+  const quick: { key: string; icon: ReactNode; label: string; run: (target: HTMLElement) => void; scoped?: boolean }[] = [
+    { key: 'member', icon: <Users size={16} />, label: translate('globalSearch.quick.member'), scoped: true,
+      run: () => { updateSearchSession({ text: 'from:', selectedId: null }); inputRef.current?.focus() } },
+    { key: 'date', icon: <Clock size={16} />, label: translate('globalSearch.quick.date'), scoped: true,
+      run: (target) => target.parentElement?.querySelector<HTMLInputElement>('input[type=date]')?.showPicker() },
+    { key: 'media', icon: <Image size={16} />, label: translate('globalSearch.kind.media'), run: () => addKind('media') },
+    { key: 'file', icon: <FileText size={16} />, label: translate('globalSearch.kind.file'), run: () => addKind('file') },
+    { key: 'link', icon: <Link size={16} />, label: translate('globalSearch.kind.link'), run: () => addKind('link') },
+    { key: 'mention', icon: <AtSign size={16} />, label: translate('globalSearch.kind.mention'), run: () => addKind('mention') },
+  ]
+  const recentScope = inChat ?? EVERYWHERE
+  const [, setForgotten] = useState(0)
+  const recent = recentSearches(recentScope)
   const move = (direction: 1 | -1) => {
     if (!ordered.length) return
     const at = selected ? ordered.indexOf(selected) : -1
@@ -117,8 +169,8 @@ export function GlobalSearch({ tasks, onClose }: { tasks: boolean; onClose: () =
               className="grid h-5 w-5 place-items-center rounded text-foreground/40 hover:bg-foreground/10 hover:text-foreground"><X className="h-3 w-3" /></button>
           </span>
         ))}
-        <input autoFocus value={composition ?? text} data-testid="global-search-input" aria-label={translate('globalSearch.placeholder')}
-          placeholder={translate(chips.length ? 'globalSearch.placeholderScoped' : 'globalSearch.placeholder')}
+        <input ref={inputRef} autoFocus enterKeyHint="search" value={composition ?? text} data-testid="global-search-input" aria-label={translate(names ? 'globalSearch.placeholderNames' : 'globalSearch.placeholder')}
+          placeholder={translate(chips.length ? 'globalSearch.placeholderScoped' : names ? 'globalSearch.placeholderNames' : 'globalSearch.placeholder')}
           className="h-full min-w-24 flex-1 bg-transparent text-[length:var(--font-title)] outline-none placeholder:text-foreground/35"
           onCompositionStart={(event) => setComposition(event.currentTarget.value)}
           onCompositionEnd={(event) => { setComposition(null); updateSearchSession({ text: event.currentTarget.value, selectedId: null }) }}
@@ -130,7 +182,7 @@ export function GlobalSearch({ tasks, onClose }: { tasks: boolean; onClose: () =
             else if (event.key === 'Tab') { event.preventDefault(); cycleFacet(event.shiftKey ? -1 : 1) }
             else if (event.key === 'Backspace' && !event.currentTarget.value && chips.length) { event.preventDefault(); setChips(chips.slice(0, -1)) }
           }} />
-        <button type="button" onClick={onClose} className="shrink-0 text-sm text-foreground/60 sm:hidden">{translate('globalSearch.cancel')}</button>
+        <button type="button" onClick={onClose} className="-mr-2 min-h-11 shrink-0 px-2 text-sm text-foreground/60 sm:hidden">{translate('globalSearch.cancel')}</button>
       </div>
 
       {hasQuery && (
@@ -163,13 +215,49 @@ export function GlobalSearch({ tasks, onClose }: { tasks: boolean; onClose: () =
           <div role="alert" className="px-3 py-3 text-sm text-[var(--em-foreground-destructive)]">{translate('globalSearch.indexingTasksFailed')}</div>
         )}
         {!hasQuery && (
-          <div className="border-t border-foreground/[0.08] px-3 pb-4 pt-3 text-[length:var(--font-body)] leading-6 text-foreground/50">
+          <div className="grid grid-cols-3 gap-1 border-t border-foreground/[0.08] px-1 pt-2" data-testid="global-search-quick">
+            {quick.filter((item) => !item.scoped || inChat).map((item) => (
+              <span key={item.key} className="relative">
+                <button type="button" data-quick={item.key} onClick={(event) => item.run(event.currentTarget)}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[length:var(--font-body)] text-foreground/75 hover:bg-foreground/[0.06] max-sm:min-h-11">
+                  <span className="text-foreground/45">{item.icon}</span>{item.label}
+                </button>
+                {item.key === 'date' && <input type="date" aria-label={item.label} tabIndex={-1} className="pointer-events-none absolute inset-0 opacity-0"
+                  onChange={(event) => { setDateNote(null); jumpToDay(event.currentTarget.value).catch((error: unknown) => setDateNote(messageForUser(error))) }} />}
+              </span>
+            ))}
+          </div>
+        )}
+        {!hasQuery && dateNote && <div role="status" className="px-3 pt-2 text-sm text-foreground/50">{dateNote}</div>}
+        {!hasQuery && recent.length > 0 && (
+          <div className="px-1 pt-3" data-testid="global-search-recent">
+            <div className="flex items-center justify-between px-3 pb-1 text-xs text-foreground/40">
+              <span>{translate(inChat ? 'globalSearch.recentHere' : 'globalSearch.recent')}</span>
+              <button type="button" data-testid="global-search-recent-clear" className="-my-2 -mr-2 min-h-9 px-2 hover:text-foreground/70 max-sm:min-h-11"
+                onClick={() => { forgetSearches(recentScope); setForgotten((count) => count + 1) }}>{translate('globalSearch.clearRecent')}</button>
+            </div>
+            {recent.map((words) => (
+              <button type="button" key={words} onClick={() => updateSearchSession({ text: words, selectedId: null })}
+                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-foreground/75 hover:bg-foreground/[0.06] max-sm:min-h-11">
+                <History size={14} className="text-foreground/40" />{words}
+              </button>
+            ))}
+          </div>
+        )}
+        {!hasQuery && (
+          <div className="px-3 pb-4 pt-3 text-[length:var(--font-body)] leading-6 text-foreground/50 max-sm:hidden">
             <div>{translate(tasks ? 'globalSearch.introWhat' : 'globalSearch.introWhatChats')}</div>
             <div>{translate('globalSearch.introScope')} <code className="rounded bg-foreground/[0.06] px-1 font-mono text-xs text-foreground/70">in:</code> <code className="rounded bg-foreground/[0.06] px-1 font-mono text-xs text-foreground/70">from:</code></div>
           </div>
         )}
         {hasQuery && view.unresolved && <div className="px-3 py-8 text-center text-sm text-foreground/45">{translate('globalSearch.unresolved', { text: view.unresolved })}</div>}
-        {hasQuery && !view.unresolved && !view.loading && !view.error && ordered.length === 0 && (
+        {nameRows.length > 0 && (
+          <div data-testid="global-search-names">
+            <div className="px-3 pb-1 pt-3 text-xs font-medium text-foreground/45">{translate('globalSearch.names')}</div>
+            {nameRows.map((row) => <NameRow key={row.id} id={row.id} userId={row.userId} name={row.name} query={view.query} onOpen={() => { rememberSearch(recentScope, view.query); onOpen(); row.open() }} />)}
+          </div>
+        )}
+        {hasQuery && !view.unresolved && !view.loading && !view.error && ordered.length === 0 && nameRows.length === 0 && (
           <div className="flex flex-col items-center gap-2 px-3 py-10 text-center text-sm text-foreground/45">
             <span>{view.query ? translate('globalSearch.emptyFor', { text: view.query }) : translate('globalSearch.typeWords')}</span>
             {view.query && (facet !== 'all' || chips.length > 0) && (
@@ -188,7 +276,7 @@ export function GlobalSearch({ tasks, onClose }: { tasks: boolean; onClose: () =
             </button>}
             {group.hits.map((hit) => {
               const isSelected = hit.id === selected?.id
-              const sender = hit.kind === 'message' ? hit.sender ?? translate('globalSearch.system') : translate(hit.role === 'assistant' ? 'globalSearch.agent' : 'globalSearch.you')
+              const sender = hit.kind === 'message' ? hit.sender ?? translate('globalSearch.system') : translate(hit.role === 'assistant' || hit.activity ? 'globalSearch.agent' : 'globalSearch.you')
               return (
                 <button type="button" role="option" aria-selected={isSelected} data-selected={isSelected} key={hit.id}
                   onMouseMove={() => { if (!isSelected) updateSearchSession({ selectedId: hit.id }) }}
@@ -209,6 +297,13 @@ export function GlobalSearch({ tasks, onClose }: { tasks: boolean; onClose: () =
           </Fragment>
         ))}
       </div>
+
+      {hasQuery && view.elsewhere && chips.some((chip) => chip.kind === 'in') && (
+        <button type="button" data-testid="global-search-elsewhere" onClick={() => setChips(chips.filter((chip) => chip.kind !== 'in'))}
+          className="flex shrink-0 items-center border-t border-foreground/[0.08] px-4 py-2 text-left text-[length:var(--font-body)] text-foreground/60 hover:text-foreground">
+          {translate('globalSearch.elsewhere', { count: view.elsewhere.capped ? `${view.elsewhere.count}+` : String(view.elsewhere.count) })}
+        </button>
+      )}
 
       <div className="flex shrink-0 items-center gap-4 border-t border-foreground/[0.08] px-4 py-2 text-xs text-foreground/40 max-sm:hidden">
         <span className="flex items-center gap-1"><Shortcut hotkey="ArrowUp" variant="keycaps" /><Shortcut hotkey="ArrowDown" variant="keycaps" />{translate('globalSearch.hintSelect')}</span>

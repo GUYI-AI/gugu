@@ -1,21 +1,19 @@
 import type React from 'react';
 import type { CommandId } from '@shared/commands';
-import type { TabReturnTo } from '@shared/view-state';
+import type { TabHistorySnapshot } from '@shared/view-state';
 import type { TabBarItemProps, TabContentProps } from './tab-host';
 import type { TabOpenOptions } from './tab-provider-registry';
 
 /**
  * Plain-data identity for a single open tab.
- * The engine stores these and serializes them as { kind, tabId, isPreview, ...state }.
+ * The engine serializes provider state and this context's page history independently.
  * Live view-model state lives in the domain resource returned by initialize().
  */
 export interface TabEntry<S = unknown> {
   readonly kind: string;
   readonly tabId: string;
-  /** Mutable so the engine can promote a preview to a stable tab (handle.pin()). */
-  isPreview: boolean;
-  /** Engine navigation metadata, independent of the provider's state. */
-  returnTo?: TabReturnTo;
+  history?: TabHistorySnapshot;
+  openerTabId?: string;
   /**
    * Reactive, serializable domain state for this tab.
    * Mutated in-place; the snapshot serializer reads it directly (no per-kind hook).
@@ -29,6 +27,8 @@ export interface TabEntry<S = unknown> {
  * Domain managers ref-count their internal state inside initialize/dispose.
  */
 export interface TabResource {
+  /** Its content holds what would be lost if unmounted (unsaved edits): the pane keeps it mounted. */
+  readonly holdsUnsaved?: boolean;
   /** Called when the engine permanently removes the tab. Must be idempotent. */
   dispose(): void;
   /**
@@ -53,13 +53,11 @@ export type OpenTarget = 'active' | 'left' | 'right' | { paneId: string };
 
 /**
  * Capability handle given to resources at initialize time.
- * Resources use this to drive pin-on-edit, programmatic close, and new-tab
+ * Resources use this to drive programmatic close and source-aware page
  * opens — without holding a direct store reference.
  */
 export interface TabHandle {
   readonly tabId: string;
-  /** Flip isPreview = false. Call when the resource gains user-authored content. */
-  pin(): void;
   /**
    * Close this tab. By default runs the onBeforeClose veto (user-style close).
    * Pass { force: true } to skip the veto (programmatic/auto-close).
@@ -69,12 +67,12 @@ export interface TabHandle {
   /**
    * Open a tab in the view that owns this handle.
    * `kind` selects the provider; `args` are the domain open-args (the "searchParams");
-   * `config` carries engine routing flags (target pane, preview, overrideState).
+   * `config` carries the explicit navigation intent and optional host target pane.
    */
   open(
     kind: string,
     args: Record<string, unknown>,
-    config?: TabOpenOptions
+    config?: Omit<TabOpenOptions, 'from'>
   ): void;
 }
 
@@ -104,7 +102,7 @@ export interface CommandEntry<T> {
  * features/sessions and are accessed via a cast at the provider boundary.
  */
 /** How a close came about: the user closing just this tab, or anything else (a row of tabs, the tab itself). */
-export type TabCloseRequest = { alone: boolean };
+export type TabCloseRequest = { alone: boolean; navigation?: boolean };
 
 export interface TabViewContext {
   /** Stable identifier for the view that owns this pane (e.g. conversationId). */
@@ -122,12 +120,11 @@ export interface TabViewContext {
 export type ResolvedTab<T extends TabResource = TabResource> = {
   readonly tabId: string;
   readonly kind: string;
-  readonly isPreview: boolean;
   /** 此刻画在屏上。并排时一对两枚都是(spec session-page「并排」)—— 内容组件按「自己这种 + isActive」挑要画的那枚。 */
   readonly isActive: boolean;
   /** 拿着焦点的那一枚(并排时是点着的那一边;不并排时与 isActive 相同)。 */
   readonly isFocused?: boolean;
-  /** 在并排的一对里:对话那枚是 'start'(左),右边那页是 'end'。 */
+  /** 并排的一对里排左('start')/ 排右('end'):页签条上两枚连成一块(spec session-page「并排」)。 */
   readonly pairRole?: 'start' | 'end';
   readonly resource: T;
 };
@@ -152,30 +149,28 @@ export interface TabProvider<
   OpenArgs = S,
 > {
   readonly kind: K;
+  /** A conversation: what is opened from it goes side by side with it (spec session-page「并排」). */
+  conversation?: boolean;
 
   /**
-   * Stable identity for a tab, derived from its serializable state.
-   * Used by the engine for: in-pane dedup, single-mount cross-pane focus,
-   * and list-selection queries (isOpen / isActive).
+   * Stable resource identity, independent of the navigation context's tab id.
+   * Used for page equality and list-selection queries (isOpen / isActive).
    * Must be pure and stable across state mutations that do not change identity.
    */
   resourceKey(state: S): string;
 
-  /**
-   * 'single': at most one tab per resourceKey across ALL panes in a view.
-   *           The engine enforces this at the layout level.
-   * 'multi':  multiple tabs with the same resourceKey may coexist (default).
-   */
-  mount?: 'single' | 'multi';
+  /** What shares a remembered placement (separate / beside), when every open is a new resource. Default: `resourceKey`. */
+  placementKey?(state: S): string;
+
+  /** Closing ends the resource, so ⌘⇧T has nothing to bring back. Default: reopenable. */
+  reopenable?: false;
 
   /** Runtime-only tabs return false so neither snapshots nor closed-tab history can resurrect them. */
   isPersistent?(state: S): boolean;
 
-  /**
-   * 这种页签两页并排时由内容自己把两页摆到两边(读 PairPlacementContext),❌ 另一页单独再挂一份内容 ——
-   * 挪进另一份 = 重新挂一次,网页就重新加载了(spec session-page「并排」)。
-   */
-  placesPairItself?: boolean;
+  /** Its width beside another page, in px (`side-width.ts`); undefined: a peer, half each. */
+  sideWidth?(state: S): number | undefined;
+
 
   /**
    * 格里有这一枚,这一类的内容层就一直挂着(没上屏时照常藏起、不画)。对话那一类:群信息、群文件、话题的页和对话的名字、
@@ -184,19 +179,11 @@ export interface TabProvider<
   keepMounted?: boolean;
 
   /**
-   * How wide (px) this page wants to be beside another, as the narrow one of a pair (spec session-page「并排」: a group's
-   * info, its folder, an App's page beside its chat). None: the two are peers, half each. The pair keeps it until the
-   * divider is dragged; at most half the pane.
-   */
-  sideWidth?(state: S): number | undefined;
-
-  /**
    * Normalize/validate open args, perform synchronous side-effects
    * (e.g. create a browser session), and return the initial serializable state.
    * Return null to abort the open.
    *
-   * If absent, the engine strips `preview`, `overrideState`, and `target` from
-   * args and uses the rest as the initial state.
+   * If absent, the open args become the initial state; routing stays in the separate open options.
    */
   onBeforeOpen?(args: OpenArgs, ctx: TabViewContext): S | null;
 
@@ -221,6 +208,13 @@ export interface TabProvider<
    * Called when the engine permanently removes the tab from the view.
    */
   dispose(entry: TabEntry<S>, resource: T, ctx: TabViewContext): void;
+
+  /**
+   * The tab `tabId` is closed for good, and one of its pages (now or in its Back/Forward history) was of this kind.
+   * `dispose` also runs when a page leaves its tab through history navigation; this runs only on close.
+   * `states`: the state of each of the tab's pages of this kind.
+   */
+  closed?(tabId: string, ctx: TabViewContext, states: S[]): void;
 
   /** Named capabilities surfaced as context-menu items and keyboard commands. */
   commands?: Record<string, CommandEntry<T>>;

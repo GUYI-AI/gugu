@@ -3,17 +3,17 @@ import { act, type ReactNode } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReactHarness, device, renderWithAppProviders } from '../../support/testHarness'
 import { SessionTimelinePage } from '../../../apps/desktop/src/mobile/agent-watch/SessionTimelinePage'
-import { emptyAgentWatchTimeline } from '../../../apps/desktop/src/mobile/agent-watch/agent-watch-store'
+import { applySnapshot, applyTimelineResult, emptyAgentWatchTimeline } from '../../../apps/desktop/src/mobile/agent-watch/agent-watch-store'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 import type { SessionInput } from '../../../apps/desktop/src/lib/sessionInputOutbox'
 import { translateSessionMessage } from '../../../apps/desktop/src/session/renderer/localization/locale-store'
 const scope = vi.hoisted(() => ({ enqueue: vi.fn(async () => undefined), pending: [] as SessionInput[], timeline: null as ReturnType<typeof emptyAgentWatchTimeline> | null,
-  composer: null as null | { onBeforeSend?: () => void; onSend: (text: string) => Promise<void> },
-  nativeRecord: null as { turns: ReturnType<typeof emptyAgentWatchTimeline>['turns']; activeTurn: null; nextCursor: null } | null }))
+  composer: null as null | { timeline?: ReturnType<typeof emptyAgentWatchTimeline>; agentWorking?: boolean; onBeforeSend?: () => void; onSend: (text: string) => Promise<void> },
+  nativeRecord: null as { turns: ReturnType<typeof emptyAgentWatchTimeline>['turns']; activeTurn: ReturnType<typeof emptyAgentWatchTimeline>['turns'][number] | null; nextCursor: null } | null }))
 vi.mock('../../../apps/desktop/src/lib/sessionInputOutboxBridge', () => ({ enqueueSessionInput: scope.enqueue, retrySessionInputs: vi.fn(), useQueuedSessionInputs: (sessionId: string) => scope.pending.filter(input => input.sessionId === sessionId) }))
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/useAgentWatchSession', () => ({ useAgentWatchSession: () => ({ timeline: scope.timeline ?? emptyAgentWatchTimeline(), phase: 'error', error: 'Host unreachable', pendingSends: [], reload() {}, loadOlder: async () => undefined, cancel() {}, respond() {} }) }))
 vi.mock('../../../apps/desktop/src/mobile/agent-watch/useNativeSessionRecord', () => ({ useNativeSessionRecord: () => ({ record: scope.nativeRecord, error: null, followTail() {}, loadNewer() {}, loadOlder: async () => undefined }) }))
-vi.mock('../../../apps/desktop/src/mobile/agent-watch/SessionConversation', () => ({ SessionConversation: (props: { onBeforeSend?: () => void; onSend: (text: string) => Promise<void>; footerNotice?: ReactNode }) => { scope.composer = props; return <>{props.footerNotice}<button data-cold-native-composer="" onClick={() => { void props.onSend('Cold native input') }}>Send</button></> } }))
+vi.mock('../../../apps/desktop/src/mobile/agent-watch/SessionConversation', () => ({ SessionConversation: (props: { timeline: ReturnType<typeof emptyAgentWatchTimeline>; onBeforeSend?: () => void; onSend: (text: string) => Promise<void>; footerNotice?: ReactNode }) => { scope.composer = props; return <>{props.footerNotice}<button data-cold-native-composer="" onClick={() => { void props.onSend('Cold native input') }}>Send</button></> } }))
 vi.mock('../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: { enabledTabContributions: [] } }))
 vi.mock('../../../apps/desktop/src/components/ui/sheetStack', async original => ({ ...await original<object>(), useBackLayer() {} }))
 let harness: ReturnType<typeof createReactHarness>
@@ -70,6 +70,7 @@ it.each([
 ])('checks the phone queued handoff before enqueue: %j', async ({ mobile, busy, identity, blocked }) => {
   vi.stubGlobal('innerWidth', mobile ? 390 : 1200)
   scope.timeline = { ...emptyAgentWatchTimeline(), turns: busy ? [{ id: 'working', seq: 0, initiator: 'user', items: [] }] : [] }
+  scope.nativeRecord = { turns: [], activeTurn: busy ? scope.timeline.turns[0] : null, nextCursor: null }
   const session = { conversationId: 'session', projectId: 'project', title: 'Task', runtime: 'acp', nativeInputVersion: 2,
     ...(identity ? { nativeInputIdentity: true } : {}), agentStatus: busy ? 'working' : 'idle' } as SessionpageSessionSummary
   const render = () => renderWithAppProviders(harness, <SessionTimelinePage device={device('host', [], { is_online: true })} session={session} onBack={() => undefined} />)
@@ -84,4 +85,39 @@ it.each([
   expect(() => scope.composer!.onBeforeSend?.()).not.toThrow()
   await scope.composer!.onSend('keep the whole draft')
   expect(scope.enqueue).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ text: 'keep the whole draft', queued: busy }))
+})
+
+it.each([false, true])('uses the native foreground instead of the provider boundary (native busy=%s)', async busy => {
+  vi.stubGlobal('innerWidth', 390)
+  const done = { id: 'native', seq: 1, initiator: 'user' as const, items: [], outcome: { kind: 'done' as const } }
+  scope.timeline = { ...emptyAgentWatchTimeline(), turns: [{ ...done, id: 'provider', outcome: busy ? done.outcome : undefined }] }
+  scope.nativeRecord = { turns: busy ? [] : [done], activeTurn: busy ? { ...done, outcome: undefined } : null, nextCursor: null }
+  const session = { conversationId: 'session', projectId: 'project', title: 'Task', runtime: 'acp', nativeInputVersion: 2,
+    nativeInputIdentity: true, agentStatus: 'idle' } as SessionpageSessionSummary
+  await renderWithAppProviders(harness, <SessionTimelinePage device={device('host', [], { is_online: true })} session={session} onBack={() => undefined} />)
+  expect(scope.composer!.agentWorking).toBe(busy)
+  await scope.composer!.onSend('whole input')
+  expect(scope.enqueue).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ text: 'whole input', queued: busy }))
+})
+
+
+it.each(['epoch_changed', 'cursor_ahead', 'source_replaced', 'source_unreadable', 'gap', 'gap_too_large'] as const)('keeps a recovered %s timeline available without a persistent reload notice', async reason => {
+  vi.stubGlobal('innerWidth', 390)
+  const turns = [{ id: 'recovered-turn', seq: 1, initiator: 'user' as const, outcome: { kind: 'done' as const }, items: [
+    { kind: 'message' as const, id: 'retained-message', role: 'user' as const, seq: 0, text: 'Retained record content' },
+  ] }]
+  const old = applySnapshot(emptyAgentWatchTimeline(), { cursor: { epoch: 'before-restart', seq: 1 }, turns: [], settlements: [], hasOlder: false })
+  scope.timeline = applyTimelineResult(old, { ok: false, reset: reason, snapshot: { cursor: { epoch: 'after-restart', seq: 1 }, turns, settlements: [], hasOlder: false } })
+  scope.nativeRecord = { turns, activeTurn: null, nextCursor: null }
+  const session = { conversationId: 'session', projectId: 'project', title: 'Task', runtime: 'acp', nativeInputVersion: 2, nativeInputIdentity: true, agentStatus: 'idle' } as SessionpageSessionSummary
+  const toast = vi.fn()
+  const page = <SessionTimelinePage device={device('host', [], { is_online: true })} session={session} onBack={() => undefined} />
+  await renderWithAppProviders(harness, page, { toast })
+  await renderWithAppProviders(harness, page, { toast })
+  expect(toast).toHaveBeenCalledExactlyOnceWith('Host unreachable', 'error')
+  expect(harness.container.querySelector('[data-testid="agent-watch-reset-note"]')).toBeNull()
+  expect(harness.container.querySelector('[data-testid="agent-watch-timeline-error"]')).toBeNull()
+  expect(scope.composer?.timeline?.turns).toEqual(turns)
+  expect(scope.timeline.cursor).toEqual({ epoch: 'after-restart', seq: 1 })
+  expect(scope.timeline.needsSnapshot).toBeNull()
 })

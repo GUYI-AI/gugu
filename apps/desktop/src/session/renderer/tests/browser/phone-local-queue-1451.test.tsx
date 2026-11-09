@@ -157,7 +157,12 @@ it.each((['accepted', 'failed'] as const).flatMap(result => (['append', 'replace
   await page.getByRole('button', { name: translateSessionMessage('composer.sendMessage'), exact: true }).click()
   await until('durable custody has started', () => send.mock.calls.length === 1)
   expect(page.getByTestId('prompt-editor').element().textContent).toBe(submitted)
-  await page.getByTestId('prompt-editor').fill(live)
+  // Not fill(): on a contenteditable it selects through the DOM and presses Delete before ProseMirror has read
+  // that selection (selectionchange is async). Under load the Delete hit a caret and nothing was replaced.
+  // Replace the words the way a person does: select all through the editor's own keymap, then type.
+  await page.getByTestId('prompt-editor').click()
+  await userEvent.keyboard('{ControlOrMeta>}a{/ControlOrMeta}')
+  await userEvent.keyboard(live || '{Backspace}')
   await act(async () => { commit(); await send.mock.results[0].value.catch(() => {}) })
   const expected = result === 'accepted' && live === submitted ? '' : live
   const current = page.getByTestId('prompt-editor').element().textContent!
@@ -169,9 +174,9 @@ it.each((['accepted', 'failed'] as const).flatMap(result => (['append', 'replace
 it('shows and retries an online host refusal outside the normal locked queue', async () => {
   await page.viewport(390, 844)
   const own = state()
-  const flush = vi.fn(async () => {})
+  const retry = vi.fn(async () => {})
   own.accountId = 'owner'; own.valid = () => true
-  own.queue = Promise.resolve({ flush } as unknown as SessionInputOutbox)
+  own.queue = Promise.resolve({ retry } as unknown as SessionInputOutbox)
   const input = { id: 'refused-local', accountId: 'owner', deviceId: 'host', sessionId: 'session', text: 'local refused input', createdAt: 1,
     queued: true, failure: { code: 'send-failed' as const, message: 'Provider login expired' } }
   own.rows = [input]
@@ -186,7 +191,7 @@ it('shows and retries an online host refusal outside the normal locked queue', a
   expect(harness.container.querySelector('[data-queued-prompt-id="refused-local"]')).toBeNull()
   expect(own.rows).toEqual([input])
   await page.getByRole('button', { name: translateSessionMessage('transcript.retrySend'), exact: true }).click()
-  expect(flush).toHaveBeenCalledWith(true)
+  expect(retry).toHaveBeenCalledExactlyOnceWith(input.id)
 })
 
 it('applies viewport geometry through CSS without rerendering the retained page', async () => {

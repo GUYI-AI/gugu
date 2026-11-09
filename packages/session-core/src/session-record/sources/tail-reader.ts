@@ -79,6 +79,11 @@ export class TailReader {
     return this.path;
   }
 
+  /** Bytes delivered as complete lines, including a restored prefix; no I/O or string scan. */
+  get consumedBytes(): number {
+    return this.lineOffset;
+  }
+
   /** 换一份文件（claude 的分叉串联会把尾读交接到链条最后一份上）。 */
   retarget(path: string): void {
     if (path === this.path) return;
@@ -333,6 +338,8 @@ export class TailReader {
   }
 
   private acceptText(text: string, sink: LineSink): void {
+    // A line longer than a read arrives in many pieces; joining and splitting on each one is quadratic in its length.
+    if (!text.includes('\n')) { this.partial += text; return; }
     const parts = (this.partial + text).split('\n');
     this.partial = parts.pop() ?? '';
     const lines: string[] = [], offsets: number[] = [];

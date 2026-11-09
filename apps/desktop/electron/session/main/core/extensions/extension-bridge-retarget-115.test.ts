@@ -14,14 +14,15 @@ const PLAN = '0c000000-0000-4000-8000-000000000001';
 const CFG = '0c000000-0000-4000-8000-000000000002';
 const machine = vi.hoisted(() => ({ deviceId: 'actual-task-host' }));
 const resourceChat = vi.hoisted(() => vi.fn(async (chatId: string, _reader: { asAgent: string | null }) => chatId));
+const focus = vi.hoisted(() => ({ guest: false, host: vi.fn(), destroyed: false }));
 const sent: { id: number; event: { type: string; context?: { file?: { id: string }; layout?: { width: number; height: number } } } }[] = [];
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
   webContents: {
     fromId: (id: number) =>
-      id === PAGE
-        ? { id, isDestroyed: () => false, hostWebContents: { id: 42 }, session: {}, once: () => undefined, on: () => undefined, send: (_channel: string, event: never) => sent.push({ id, event }) }
+      id === 42 ? { id, isDestroyed: () => focus.destroyed, focus: focus.host } : id === PAGE
+        ? { id, isDestroyed: () => false, hostWebContents: { id: 42 }, isFocused: () => focus.guest, session: {}, once: () => undefined, on: () => undefined, send: (_channel: string, event: never) => sent.push({ id, event }) }
         : undefined,
   },
 }));
@@ -47,9 +48,10 @@ const contexts = () => sent.filter(({ event }) => event.type === 'context').map(
 
 beforeEach(async () => {
   machine.deviceId = 'actual-task-host';
+  focus.guest = false; focus.destroyed = false; focus.host.mockClear();
   setExtensionBridgeHost({
     deliver: () => Promise.resolve(),
-    presentation: () => ({ locale: 'en', themeMode: 'dark' as const, fullscreen: false, windowFocused: true }),
+    selfGuguNumber: () => undefined, presentation: () => ({ locale: 'en', themeMode: 'dark' as const, fullscreen: false, windowFocused: true }),
   });
   await bindExtensionSurface({ webContentsId: PAGE, extensionId: 'workspace', tabId: 'slot-1', tabKind: 'workspace.main', conversation: CHAT, itemId: PLAN });
   updateExtensionSurfaceLayout(PAGE, { visible: true, width: 440, height: 700 });
@@ -81,12 +83,18 @@ describe('a resident page moved to another file (摩擦单 F115)', () => {
     await expect(captureSessionpageProjectionViewer(PAGE)).rejects.toThrow(/unavailable/);
   });
 
-  it('restores the old task when resolving the target file fails, including the rebind path', async () => {
+  it('a file gone from the disk stays the file the tab names: the page says so when it reads it', async () => {
+    const { extensionSurfaceBindingForTests } = await import('./extension-bridge');
+    await retargetExtensionSurface({ webContentsId: PAGE, tabId: 'slot-2', workspace: sessionWorkspace('task-b'), filePath: '/elsewhere/absent-file' });
+    expect(extensionSurfaceBindingForTests(PAGE)).toMatchObject({ workspace: 'session:task-b', filePath: '/elsewhere/absent-file' });
+  });
+
+  it('restores the old task when the rebind path fails', async () => {
     const { extensionSurfaceBindingForTests } = await import('./extension-bridge');
     const binding = extensionSurfaceBindingForTests(PAGE)!; binding.workspace = 'session:task-a';
-    await expect(retargetExtensionSurface({ webContentsId: PAGE, tabId: 'slot-2', workspace: sessionWorkspace('task-b'), filePath: '/projection-fixture/absent-file' })).rejects.toThrow(/ENOENT/);
-    expect(binding.workspace).toBe('session:task-a');
-    await expect(bindExtensionSurface({ webContentsId: PAGE, extensionId: 'workspace', tabKind: 'workspace.main', tabId: 'slot-2', workspace: sessionWorkspace('task-b'), filePath: '/projection-fixture/absent-file' })).rejects.toThrow(/ENOENT/);
+    binding.operator = { kind: 'agent', id: 'user:0a000000-0000-4000-8000-000000000001' };
+    resourceChat.mockRejectedValueOnce(new Error('Membership lookup failed'));
+    await expect(bindExtensionSurface({ webContentsId: PAGE, extensionId: 'workspace', tabKind: 'workspace.main', tabId: 'slot-2', workspace: sessionWorkspace('task-b'), conversation: CHAT, operator: binding.operator })).rejects.toThrow('Membership lookup failed');
     expect(extensionSurfaceBindingForTests(PAGE)?.workspace).toBe('session:task-a');
   });
 
@@ -183,4 +191,20 @@ it('a changed task machine revokes the old media signer before another control p
   expect(captured.signal.aborted).toBe(true);
   const next = await captureSessionpageProjectionViewer(PAGE);
   expect(next.deviceId).toBe('replacement-task-host'); next.release();
+});
+
+// DOM blur is not a native focus handoff between Electron WebContents.
+it('returns native focus from a hidden bound guest to its actual embedder', () => {
+  focus.guest = true;
+  updateExtensionSurfaceLayout(PAGE, { visible: false, width: 440, height: 700 });
+  expect(focus.host).toHaveBeenCalledOnce();
+});
+it('does not steal focus for a shown guest, an unfocused hidden guest, or a destroyed host', () => {
+  focus.guest = true;
+  updateExtensionSurfaceLayout(PAGE, { visible: true, width: 441, height: 700 });
+  focus.guest = false;
+  updateExtensionSurfaceLayout(PAGE, { visible: false, width: 440, height: 700 });
+  focus.guest = true; focus.destroyed = true;
+  updateExtensionSurfaceLayout(PAGE, { visible: false, width: 441, height: 700 });
+  expect(focus.host).not.toHaveBeenCalled();
 });

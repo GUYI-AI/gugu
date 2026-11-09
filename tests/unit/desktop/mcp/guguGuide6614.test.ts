@@ -1,7 +1,6 @@
-import { readFileSync } from 'node:fs'
 import { HOST_CALLS, HOST_EVENTS } from '../../../../apps/desktop/src/session/shared/extensions/host-calls'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { createGugu } from '../../../../apps/desktop/src/session/app-runtime/create-gugu'
 import { EXTENSION_GUIDE_TOPICS } from '../../../../apps/desktop/src/session/shared/extensions/authoring-guide'
 import { BRIDGE_VERBS } from '../../../../apps/desktop/src/session/shared/extensions/bridge-protocol'
 import { EXTENSION_CAPABILITIES } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
@@ -63,16 +62,14 @@ function preloadVerbs(): string[] {
   // Every host's members come from one table (host-calls.ts): a page's own and the background page's own (`VerbFacts.only`) too.
   // `appFiles.*` and `clipboard.*` are host halves internal to the platform runtime: pages call `gugu.files.*` and
   // `gugu.clipboard.writeText`, which the runtime builds on them (checked below); so is `onFilesChanged`.
-  const hostHalves = ['onFilesChanged', 'onForumChanged', 'onModalFocus', 'onProjection', 'onProjectionSource', 'onTaskPage', 'onSurface']
+  const hostHalves = ['navigationGo', 'navigationClaimBack', 'onBack', 'onDownloadProgress', 'onFilesChanged', 'onCloudHeard', 'onModalFocus', 'onProjection', 'onProjectionSource', 'onTaskPage', 'onSurface']
   return [...Object.keys(HOST_CALLS), ...Object.keys(HOST_EVENTS)].filter((key) => !key.includes('.') && !hostHalves.includes(key))
 }
 
-/** What `gugu.files` offers, read from the runtime that builds it (app-runtime/create-gugu.ts). */
+/** What `gugu.files` offers, read off the object the runtime builds (app-runtime/create-gugu.ts). */
 function runtimeFileVerbs(): string[] {
-  const source = readFileSync(fileURLToPath(new URL('../../../../apps/desktop/src/session/app-runtime/create-gugu.ts', import.meta.url)), 'utf8')
-  const start = source.indexOf('const files = Object.freeze({')
-  const body = source.slice(start, source.indexOf('\n  });', start))
-  return [...body.matchAll(/^ {4}([A-Za-z]\w*)[:,]/gm)].map(([, key]) => key)
+  const gugu = createGugu({ appFiles: {}, reportError: () => {} } as never, { files: () => new Promise(() => {}) })
+  return Object.keys(gugu.files as object)
 }
 
 const truth: Truth = {
@@ -97,12 +94,12 @@ describe('扩展指南与源码对得上 (#6614)', () => {
     expect(verbs).toEqual(expect.arrayContaining(['open', 'list', 'create', 'rename', 'remove', 'onChanged']))
     // `gugu.messages.*` and `gugu.chats.*` are the host's own rows (host-calls.ts), as the page reaches them.
     const messageVerbs = Object.keys(HOST_CALLS).filter((key) => key.startsWith('messages.') || key.startsWith('chats.') || key.startsWith('projects.') || key.startsWith('sessions.'))
-    // `gugu.forum.*`: the page's own (create-gugu.ts); subscribe / unsubscribe are `forum.onChanged`'s host half.
-    const forumVerbs = Object.keys(HOST_CALLS).filter((key) => key.startsWith('forum.') && key !== 'forum.subscribe' && key !== 'forum.unsubscribe').concat('forum.onChanged')
+    // `gugu.cloud.*`: subscribe / unsubscribe are `cloud.on`'s host half, and a program's write is `cloud.write` (create-gugu.ts).
+    const cloudVerbs = ['cloud.read', 'cloud.write', 'cloud.on']
     const modalVerbs = Object.keys(HOST_CALLS).filter((key) => key.startsWith('modal.') && key !== 'modal.key')
     expect(messageVerbs).toEqual(['messages.history', 'messages.search', 'chats.list', 'chats.members', 'projects.list', 'sessions.index', 'sessions.read'])
     const all = EXTENSION_GUIDE_TOPICS.map(({ text }) => text).join('\n')
-    const missing = [...verbs.map((verb) => `gugu.files.${verb}(`), ...messageVerbs.map((key) => `gugu.${key}(`), ...forumVerbs.map((key) => `gugu.${key}(`), ...modalVerbs.map((key) => `gugu.${key}(`), 'gugu.bind.codemirror(', 'gugu.codemirror(', 'gugu.clipboard.writeText(']
+    const missing = [...verbs.map((verb) => `gugu.files.${verb}(`), ...messageVerbs.map((key) => `gugu.${key}(`), ...cloudVerbs.map((key) => `gugu.${key}(`), ...modalVerbs.map((key) => `gugu.${key}(`), 'gugu.bind.codemirror(', 'gugu.codemirror(', 'gugu.clipboard.writeText(', 'gugu.navigation.go(']
       .filter((call) => !all.includes(call))
     expect(missing).toEqual([])
   })

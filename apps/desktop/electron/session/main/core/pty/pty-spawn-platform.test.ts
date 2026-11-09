@@ -127,7 +127,7 @@ describe('Windows .cmd shim spawn', () => {
 describe('Windows .cmd shim resolves to its real executable', () => {
   const WIN_ENV = { ComSpec: 'C:\\Windows\\System32\\cmd.exe', PATH: '', PATHEXT: '.COM;.EXE;.BAT;.CMD' };
 
-  // 真文件:`resolveWindowsHandoffExecutable` 读的是壳脚本本身,所以这条判据得有一个真的壳。
+  // 真文件:`resolveWindowsHandoffLaunch` 读的是壳脚本本身,所以这条判据得有一个真的壳。
   let dir: string;
   let shim: string;
   let target: string;
@@ -165,6 +165,23 @@ describe('Windows .cmd shim resolves to its real executable', () => {
     });
     expect(resolved.command).toBe(target);
     expect(resolved.args).toEqual(['--model', 'sonnet']);
+  });
+
+  it('用户手写的 wrapper 先 set 再调 exe:照样直接起 exe,设的变量随 env 带上', () => {
+    const wrapper = join(dir, 'codex.cmd');
+    writeFileSync(wrapper, ['@echo off', 'set CODEX_HOME=D:\\codex 工作区', '"%~dp0node_modules\\bin\\claude.exe" %*', ''].join('\r\n'));
+    const resolved = resolveLocalPtySpawn({
+      platform: 'win32',
+      env: WIN_ENV,
+      fileExists: (candidate) => candidate === wrapper || candidate === target,
+      intent: {
+        kind: 'run-command',
+        cwd: 'C:\\repo',
+        command: { kind: 'argv', command: wrapper, args: ['x'.repeat(9000)] },
+      },
+    });
+    expect(resolved.command).toBe(target);
+    expect(resolved.env).toEqual({ CODEX_HOME: 'D:\\codex 工作区' });
   });
 
   /**

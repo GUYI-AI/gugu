@@ -24,7 +24,7 @@ vi.mock('../../../../apps/desktop/src/components/assistant/AssistantShellHost', 
   AssistantStatusGroups: ({ assistantName }: { assistantName: string }) => createElement('div', { 'data-testid': 'status-groups' }, assistantName),
   OnboardingSlot: () => createElement('div', { 'data-testid': 'onboarding-slot' }),
 }))
-// 搬家组和住电脑的几组是各自的组件测的(assistantMoveGroup7199 等);这里只认它们按「住哪」被画出来。
+// 搬家组和住电脑的几组是各自的组件测的(assistantMoveGroup 等);这里只认它们按「住哪」被画出来。
 vi.mock('../../../../apps/desktop/src/components/assistant/AssistantMoveGroup', () => ({
   AssistantMoveGroup: (props: { home: { kind: string } }) => createElement('div', { 'data-testid': 'move-group', 'data-home': props.home.kind }),
 }))
@@ -46,10 +46,6 @@ vi.mock('../../../../apps/desktop/src/components/sessionpage/SessionSettingsSect
     sessionSection.props = props
     return createElement('div', { 'data-testid': 'session-section' })
   },
-}))
-vi.mock('../../../../apps/desktop/src/components/devices/AssistantDeviceConnectors', () => ({
-  ThisDeviceConnectors: () => createElement('div', { 'data-testid': 'this-device' }),
-  OtherDeviceConnectors: () => createElement('div', { 'data-testid': 'other-devices' }),
 }))
 const wake = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('../../../../apps/desktop/src/lib/cloudComputerStore', async (importOriginal) => ({

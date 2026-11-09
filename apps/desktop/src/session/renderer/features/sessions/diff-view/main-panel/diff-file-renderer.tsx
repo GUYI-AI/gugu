@@ -1,6 +1,5 @@
 import { observer } from 'mobx-react-lite';
 import { useEffect } from 'react';
-import { usePaneContext } from '@renderer/features/tabs/pane-context';
 import { ImageDiffView } from '@renderer/features/sessions/diff-view/main-panel/image-diff-view';
 import { isMissingFileError } from '@renderer/features/sessions/diff-view/main-panel/missing-file-error';
 import type { DiffTabResource } from '@renderer/features/sessions/diff-view/stores/diff-tab-resource';
@@ -13,10 +12,10 @@ import {
 import { CodeMirrorDiffEditor } from '@renderer/lib/codemirror/diff-editor';
 import { HtmlContentRenderer } from '@renderer/lib/editor/html-renderer';
 import { resolveWorkspaceResourcePath } from '@renderer/lib/editor/workspace-resource-path';
-import { ModelStatusOverlay } from '@renderer/lib/monaco/model-status-overlay';
-import { modelRegistry } from '@renderer/lib/monaco/monaco-model-registry';
-import { buildMonacoModelPath } from '@renderer/lib/monaco/monacoModelPath';
-import { useModelStatus } from '@renderer/lib/monaco/use-model';
+import { ModelStatusOverlay } from '@renderer/lib/text-model/model-status-overlay';
+import { modelRegistry } from '@renderer/lib/text-model/model-registry';
+import { buildModelUri } from '@renderer/lib/text-model/model-uri';
+import { useModelStatus } from '@renderer/lib/text-model/use-model';
 import { MarkdownRenderer } from '@renderer/lib/ui/markdown-renderer';
 import { getLanguageFromPath } from '@renderer/utils/languageUtils';
 import { HEAD_REF, STAGED_REF } from '@shared/core/git/types';
@@ -67,7 +66,7 @@ const TextDiffRenderer = observer(function TextDiffRenderer({ tab }: DiffFileRen
   const diffView = useWorkspaceSurface().diffView;
 
   const root = `workspace:${workspaceId}`;
-  const uri = buildMonacoModelPath(root, tab.path);
+  const uri = buildModelUri(root, tab.path);
   const language = getLanguageFromPath(tab.path);
 
   const originalUri = (() => {
@@ -220,7 +219,7 @@ const DiffContentPreview = observer(function DiffContentPreview({
   const { projectId } = useSessionViewContext();
   const workspaceId = useWorkspaceId();
   const workspacePath = useWorkspace().path;
-  const { pane } = usePaneContext();
+  const surface = useWorkspaceSurface();
   const status = useModelStatus(contentUri);
   void modelRegistry.bufferVersions.get(contentUri);
 
@@ -264,7 +263,7 @@ const DiffContentPreview = observer(function DiffContentPreview({
       resourcePath: href,
     });
     if (!target) return false;
-    pane.open('file', { path: target }, { preview: false });
+    surface.openFile(target);
     return true;
   };
 

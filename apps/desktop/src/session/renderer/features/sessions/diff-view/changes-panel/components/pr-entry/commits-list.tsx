@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
 import { useMemo, useRef, useState } from 'react';
 import { usePrefetchDiffModels } from '@renderer/features/sessions/diff-view/changes-panel/hooks/use-prefetch-diff-models';
-import { activeDiffEntry } from '@renderer/features/sessions/diff-view/pane-selectors';
+import { activeDiffResource } from '@renderer/features/sessions/diff-view/pane-selectors';
 import {
   useSessionViewContext,
   useWorkspaceId,
@@ -230,7 +230,7 @@ const CommitFilesList = observer(function CommitFilesList({ commit }: { commit: 
     modifiedRef
   );
 
-  const _activeDiff = activeDiffEntry(sessionView.activePane);
+  const _activeDiff = activeDiffResource(sessionView.activePane);
   const activePath =
     _activeDiff?.diffGroup === 'git' &&
     refsEqual(_activeDiff.originalRef, originalRef) &&
@@ -253,7 +253,7 @@ const CommitFilesList = observer(function CommitFilesList({ commit }: { commit: 
         },
         status: change.status,
       },
-      { preview: true }
+      { intent: 'navigate' }
     );
   };
 
@@ -272,7 +272,7 @@ const CommitFilesList = observer(function CommitFilesList({ commit }: { commit: 
         },
         status: change.status,
       },
-      { preview: false }
+      { intent: 'newTab' }
     );
   };
 

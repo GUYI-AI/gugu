@@ -1,6 +1,7 @@
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { groupDisplayName } from '@gugu/core/shared/ui/chatModels'
 import { AgentContactRow } from './contacts/AgentContactRow'
+import { useAgentRowActions } from '@/hooks/useAgentRowActions'
 import { contactAgents, peopleContacts } from './contacts/contactSelectors'
 import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { AgentSettingsModal } from './agentsettings/AgentSettingsModal'
@@ -33,7 +34,7 @@ import {
 } from '@/lib/icons'
 import { OnContactsHidden } from './contacts/OnContactsHidden'
 import { useContactsStore } from '../store/contactsContext'
-import { useChatStore } from '../store/chatContext'
+import { useChatStore, useStoreValueBy } from '../store/chatContext'
 import { useAuth } from '../store/auth'
 import { NewFriendsPanel } from './NewFriendsPanel'
 import { AddFriendSearch } from './AddFriendSearch'
@@ -56,7 +57,7 @@ import { chatService } from '../lib/chat'
 import { persistableGroupRoster, replaceGroupRoster } from '../lib/imRepository'
 import { rendererLogger } from '../lib/log'
 import { closeIfMyAssistant } from '../lib/assistantClose'
-import { getGroupRoleLabel } from '@gugu/core/shared/enums/groupRoleModels'
+import { normalizeGroupRole } from '@gugu/core/shared/enums/groupRoleModels'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import type { GroupMemberItem } from '@gugu/core/shared/types/chat'
 import type { QrScanRoute } from '../lib/qrScanRoute'
@@ -399,6 +400,7 @@ function ContactsThreeSectionSidebar({
     [onGroupPin, onGroupToggleNotif, onGroupLeaveOrDissolve, groupPinned, groupNotifMuted]
   )
   const [personCollapsed, setPersonCollapsed] = useState(false)
+  const agentRowActions = useAgentRowActions({ onSelect: onSelectContact, onToggleSelection: onToggleContact, onStartChat, onPin, onMarkUnread, onToggleNotif, onRemove })
 
   // #2598 三分区此前完全无排序(置顶点了位置不动 = 假开关)。置顶前置走 contactsListSort,与移动端同一条链路。
   const isContactPinned = useCallback((c: ContactUser) => contactPinned?.get(c.id) ?? false, [contactPinned])
@@ -457,15 +459,13 @@ function ContactsThreeSectionSidebar({
           onCreateGroup={onCreateGroup}
           renderAgent={(c) => (
             <AgentContactRow
-              key={c.id}
-              contact={c}
+              key={c.id} contact={c}
               selected={c.id === selectedContactId}
               multiSelected={selectedContactIds.has(c.id)}
               selectionMode={selectionMode && c.owner_user_id === currentUserId}
               pinned={isContactPinned(c)}
-              onSelect={() => onSelectContact(c)}
-              onToggleSelection={() => onToggleContact(c)}
-              menu={c.owner_user_id === currentUserId ? buildRowMenu(c) : undefined}
+              notifMuted={contactNotifMuted?.get(c.id) ?? false} actions={agentRowActions}
+              removeLabel={c.owner_user_id === currentUserId && onPin && onMarkUnread && onToggleNotif && onRemove ? getContactRemoveLabel(c) : undefined}
             />
           )}
           renderGroup={(g) => (
@@ -860,7 +860,7 @@ function GroupChatDetailPane({
                     </div>
                     <div className="text-xs text-[var(--muted-fg)]">
                       {member.type === 'agent' ? 'Agent · ' : ''}
-                      {getGroupRoleLabel(member.role)}
+                      {ct(`profile.roles.${normalizeGroupRole(member.role)}`)}
                     </div>
                   </div>
                 </div>
@@ -1045,8 +1045,8 @@ export const ContactsPanel = memo(function ContactsPanel({
   } = useContactsStore()
   const { user } = useAuth()
   const { toast } = useToast()
-  const { chats: liveChats, pinChat, markUnread, setChatNotificationLevel, leaveGroup, deleteChat, refreshChats } = useChatStore('chats', 'pinChat', 'markUnread', 'setChatNotificationLevel', 'leaveGroup', 'deleteChat', 'refreshChats')
-  const chats = useMemo(() => liveChats, [JSON.stringify(liveChats.map((c) => [c.id, c.kind, c.peer_user_id, c.is_pinned, c.notification_level]))]) // eslint-disable-line react-hooks/exhaustive-deps -- 只读私聊对象、置顶、通知档:这几项没变就沿用上一份,不跟着每条消息把几百行联系人重渲染
+  const { pinChat, markUnread, setChatNotificationLevel, leaveGroup, deleteChat, refreshChats } = useChatStore('pinChat', 'markUnread', 'setChatNotificationLevel', 'leaveGroup', 'deleteChat', 'refreshChats')
+  const chats = useStoreValueBy((store) => store.chats, (store) => store.chats.map((c) => [c.id, c.kind, c.peer_user_id, c.is_pinned, c.notification_level]))
   const [selectedNav, setSelectedNav] = useState<LeftSel>('contacts')
   const [mobilePane, setMobilePane] = useState<MobileContactsPane>('nav')
   const [query, setQuery] = useState('')

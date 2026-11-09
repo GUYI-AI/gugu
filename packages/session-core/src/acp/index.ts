@@ -19,6 +19,8 @@ export {
   type RecentActionSummary,
 } from './recent-actions';
 export { runningBackgroundCommands, type RunningBackgroundCommand } from './background-commands';
-export { ACP_AUTH_REQUIRED_CODE, isSignInFailure } from './sign-in-failure';
+export { ACP_AUTH_REQUIRED_CODE, isAcpAuthRequired, isSignInFailure } from './sign-in-failure';
+export { upstreamSaid } from './upstream-said';
+export { isSessionContextText } from './session-context';
 export { createRequestActivity, type RequestActivityAgent } from './transport/request-activity';
 export { providerRejectedMissingSession } from './transport/missing-session';

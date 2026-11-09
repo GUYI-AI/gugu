@@ -1,5 +1,6 @@
 import type { TerminalState } from '@gugu/session-core/acp/client';
 import type { DeliveryMessagePresentation } from '../state/delivery-presentation';
+import type { AgentActivityEvent, AgentActivityGroup } from '../state/agent-activity';
 /**
  * Render-unit primitives — the flat virtualization model.
  *
@@ -89,6 +90,10 @@ export type RenderUnit<D = unknown> = {
   children?: readonly RenderUnit[];
   /** The fold toggles this unit is emitted behind, outermost first (set only under `revealAllFolds`). */
   folds?: readonly FoldGate[];
+  /** Flat children keep the original renderers/virtualization behind one activity header. */
+  activityFold?: string;
+  activityEvent?: AgentActivityEvent;
+  activityGroup?: AgentActivityGroup;
 };
 
 /** A ViewState toggle and the value that must be stored for what sits behind it to be emitted. */
@@ -127,6 +132,10 @@ export type SegmentItem = ChatItem | SyntheticItem;
  * cheap even if called on every tick.
  */
 export type SegmentCtx = {
+  actor?: import('../chat-context').ChatContext['actor'];
+  chatName?: import('../chat-context').ChatContext['chatName'];
+  chatKind?: import('../chat-context').ChatContext['chatKind'];
+  viewerId?: string;
   deliveredMessage?: (id: string) => DeliveryMessagePresentation | undefined;
   agentConversation?: boolean;
   caches: ChatCaches;
@@ -320,4 +329,40 @@ export function unitContainsItem(unit: RenderUnit | undefined, id: string): bool
 export function* unitItemIds(unit: RenderUnit): IterableIterator<string> {
   yield unit.itemId;
   for (const child of unit.children ?? []) yield* unitItemIds(child);
+}
+
+/**
+ * @@@stable-active-units — the running turn is segmented again on every update, so every unit comes out as a new object.
+ * Keyed lists (`<For>`) remount on identity, and an update would rebuild and re-measure every step of the turn: per
+ * update O(steps), per turn O(steps²) (a long live turn froze the renderer). A unit whose content did not change keeps
+ * the previous tick's object, so only the units that changed move. Nested `children` are kept first, in place (they
+ * are this tick's fresh arrays), so an unchanged step inside a growing step list keeps its object too.
+ */
+export function keepUnchangedUnits(previous: readonly RenderUnit[], next: RenderUnit[]): RenderUnit[] {
+  if (previous.length === 0) return next;
+  const before = new Map<string, RenderUnit>();
+  const index = (units: readonly RenderUnit[]) => {
+    for (const unit of units) {
+      before.set(unit.id, unit);
+      if (unit.children) index(unit.children);
+    }
+  };
+  index(previous);
+  const keep = (unit: RenderUnit): RenderUnit => {
+    if (unit.children) {
+      const children = unit.children as RenderUnit[];
+      for (let i = 0; i < children.length; i++) children[i] = keep(children[i]);
+    }
+    const old = before.get(unit.id);
+    return old && sameValue(old, unit) ? old : unit;
+  };
+  return next.map(keep);
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null || Array.isArray(a) !== Array.isArray(b)) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => Object.hasOwn(b, key) && sameValue((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]));
 }

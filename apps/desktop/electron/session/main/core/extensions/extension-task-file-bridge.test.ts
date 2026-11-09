@@ -27,6 +27,9 @@ vi.mock('./file-sync', () => ({ fileSync: { attachPort: (id: number, extensionId
 vi.mock('@gugu/core/cloud/supabase', async original => ({ ...await original<object>(), createGuguSupabaseClient: () => ({ rpc: rpcQuery(rpc) }) }));
 vi.mock('./task-page-host', () => ({ get extensionTaskPages() { return pages; } }));
 const { attachProgramSurface } = await import('./extension-program-surface');
+// The surface loads the bridge on its first call (it imports the surface back); load it with the module, as
+// extension-program-surface.test.ts does, so a cold import is not measured by the 1 s waits below.
+await import('./extension-bridge');
 
 let visible = true;
 let readText: () => Promise<string>;

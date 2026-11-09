@@ -68,6 +68,8 @@ export type Destination =
   | Readonly<{ kind: 'deleted' }>
 
 export interface ExitFact {
+  /** Observed adapter/worker process exit; a dispatch error or a missing summary does not prove it. */
+  readonly processExited?: true
   readonly cause: SerializedError
   readonly code: number | null
   readonly signal: string | null
@@ -92,7 +94,7 @@ export type Receipt =
   | Readonly<{ state: 'dispatching'; attempt: Attempt }>
   | Readonly<{ state: 'accepted'; nativeReceiptId: string | null }>
   | Readonly<{ state: 'failed'; cause: SerializedError }>
-  | Readonly<{ state: 'unknown' }>
+  | Readonly<{ state: 'unknown'; cause?: SerializedError }>
 
 export type Interrupt = 'user-stop' | 'archive' | 'delete' | 'sign-out' | 'version-switch' | 'idle-reap' | 'reconfigure'
 export type InterruptEvent =

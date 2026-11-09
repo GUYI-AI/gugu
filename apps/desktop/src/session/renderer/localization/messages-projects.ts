@@ -57,8 +57,6 @@ export const enUSProjectMessages = {
   'browser.newPage': 'New page',
   'browser.localServers': 'Local servers',
   'browser.serverPort': 'Port {port}',
-  'browser.diagnostics': 'Diagnostics',
-  'browser.clearDiagnostics': 'Clear',
 
   // ── browser: toolbar action feedback ───────────────────────────────────
   'browser.screenshotCopied': 'Screenshot copied to clipboard',
@@ -96,6 +94,8 @@ export const enUSProjectMessages = {
   'projects.sample.tag': 'Sample',
   'projects.sample.note': "This sample is read-only. You can't send messages here.",
   'projects.sample.newProject': 'New project',
+  'projects.sample.remove': 'Remove sample project',
+  'projects.sample.removeFailed': 'Could not remove sample project',
   'projects.sample.empty': 'Your projects will show up here.',
   'projects.sample.emptyWithSample': 'Your projects will show up here. Create one, or open the sample.',
   'projects.sample.taskDetail': 'Task',
@@ -138,6 +138,7 @@ export const enUSProjectMessages = {
   'projects.folders.hintClosed_other': 'Click the card to spread its {count} folders · pick one and the new task starts there',
   'projects.folders.hintOpen': 'Pick one and the new task starts there · click the card again to close',
   'projects.folders.hintFloating': 'Pick one and the new task starts there · press Esc to put it away',
+  'projects.folders.hintFloatingTouch': 'Tap a folder and the new task starts there',
   'projects.folders.attach': 'Attach a folder',
   'projects.folders.cardLabel': 'Folders of {projectName}',
   'projects.folders.dropHint': 'Drop to attach to {projectName}',
@@ -187,8 +188,6 @@ export const enUSProjectMessages = {
   'projects.pending.dismiss': 'Dismiss',
 
   // ── projects: directory browser ────────────────────────────────────────
-  'projects.remoteDir.empty': 'Empty directory',
-  'projects.remoteDir.listLabel': 'Directory contents',
   'projects.remoteDir.loading': 'Loading directory',
   'projects.remoteDir.useThis': 'Use this directory',
   'projects.remoteDir.selectDirectory': 'Select a directory',
@@ -235,6 +234,7 @@ export const enUSProjectMessages = {
   'projects.delete.title': 'Delete project',
   'projects.delete.confirm': 'Delete',
   'projects.delete.failed': 'Could not delete the project',
+  'projects.delete.checking': 'Checking project…',
   'projects.delete.checkTimeout': 'The device did not answer while checking the project. Try again once it is connected.',
   'projects.delete.description':
     '"{projectLabel}" will be removed from the project list. Its tasks will be archived and can be restored from Task history. Files and worktrees will be kept.',
@@ -300,8 +300,6 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'browser.newPage': '新建页面',
   'browser.localServers': '本地服务',
   'browser.serverPort': '端口 {port}',
-  'browser.diagnostics': '诊断',
-  'browser.clearDiagnostics': '清空',
 
   // ── browser: toolbar action feedback ───────────────────────────────────
   'browser.screenshotCopied': '截图已复制到剪贴板',
@@ -338,6 +336,8 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'projects.sample.tag': '示例',
   'projects.sample.note': '示例只能看，不能在这里发消息。',
   'projects.sample.newProject': '新建项目',
+  'projects.sample.remove': '移除示例项目',
+  'projects.sample.removeFailed': '未能移除示例项目',
   'projects.sample.empty': '这里会放你的项目。',
   'projects.sample.emptyWithSample': '这里会放你的项目。新建一个，或打开示例看看。',
   'projects.sample.taskDetail': '任务',
@@ -379,6 +379,7 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'projects.folders.hintClosed_other': '点卡片摊开这个项目挂的 {count} 个文件夹 · 点其中一张，新任务就从那儿开工',
   'projects.folders.hintOpen': '点其中一张，新任务就从那儿开工 · 再点卡片收起',
   'projects.folders.hintFloating': '点其中一张，新任务就从那儿开工 · 按 Esc 收起',
+  'projects.folders.hintFloatingTouch': '点一个文件夹，新任务就从那儿开工',
   'projects.folders.attach': '挂一个文件夹',
   'projects.folders.cardLabel': '「{projectName}」的文件夹',
   'projects.folders.dropHint': '松手 = 挂进「{projectName}」',
@@ -428,8 +429,6 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'projects.pending.dismiss': '关闭',
 
   // ── projects: directory browser ────────────────────────────────────────
-  'projects.remoteDir.empty': '空目录',
-  'projects.remoteDir.listLabel': '目录内容',
   'projects.remoteDir.loading': '正在读取目录',
   'projects.remoteDir.useThis': '使用此目录',
   'projects.remoteDir.selectDirectory': '选择目录',
@@ -472,6 +471,7 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'projects.delete.title': '删除项目',
   'projects.delete.confirm': '删除',
   'projects.delete.failed': '未能删除项目',
+  'projects.delete.checking': '正在检查项目…',
   'projects.delete.checkTimeout': '检查项目时那台设备没有应答。请等连接恢复后重试。',
   'projects.delete.description': '将从项目列表移除“{projectLabel}”，并归档其中的任务；可从任务历史恢复。文件夹和 worktree 会保留。',
   'projects.delete.detachWarning_one': '若该自动化属于归档任务，它会保留，并在任务恢复前隐藏；否则将从项目分离，在挂到其他项目之前不会运行：',

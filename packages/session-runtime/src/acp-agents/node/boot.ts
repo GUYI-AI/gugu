@@ -25,6 +25,7 @@ import { createPromptAttachmentResolver } from './resolve-prompt-attachment';
 import { LocalPromptQueueStore } from './local-prompt-queue-store';
 
 export type BootAcpRuntimeProcessOptions = {
+  projectConversationPreview: NonNullable<AcpRuntimeDeps['conversationPreview']>['project'];
   pluginRegistry: PluginRegistry<CLIAgentPluginProvider>;
   env?: NodeJS.ProcessEnv;
   port?: ProcessRuntimePort;
@@ -55,6 +56,7 @@ export function bootAcpRuntimeProcess(options: BootAcpRuntimeProcessOptions): vo
         acpRuntimeApiContract.platformSessionClosed
       );
       // #5381 会话历史落盘:回合提交推给主进程,由它决定落不落(只有它知道库里有没有)。
+      const conversationActivity = createEventStreamHost(acpRuntimeApiContract.conversationActivity);
       const turnCommitted = createEventStreamHost(acpRuntimeApiContract.turnCommitted);
       const promptSteered = createEventStreamHost(acpRuntimeApiContract.promptSteered);
       const forkHandshake = createEventStreamHost(acpRuntimeApiContract.forkHandshake);
@@ -95,6 +97,10 @@ export function bootAcpRuntimeProcess(options: BootAcpRuntimeProcessOptions): vo
             sessionId,
             ...(platformAccessSessionId ? { platformAccessSessionId } : {}),
           }),
+        conversationPreview: {
+          project: options.projectConversationPreview,
+          onChange: (event) => conversationActivity.emit(undefined, event),
+        },
         onTurnCommitted: (event) => turnCommitted.emit(undefined, event),
         onPromptSteered: (sessionId) => promptSteered.emit(undefined, { sessionId }),
         onForkHandshake: (providerId, fork) => forkHandshake.emit(undefined, { providerId, fork }),
@@ -102,13 +108,14 @@ export function bootAcpRuntimeProcess(options: BootAcpRuntimeProcessOptions): vo
 
       scope.add(() => platformSessionClosed.dispose());
       scope.add(() => turnCommitted.dispose());
+      scope.add(() => conversationActivity.dispose());
       scope.add(() => promptSteered.dispose());
       scope.add(() => forkHandshake.dispose());
       scope.add(() => { preparation.dispose(); preparationRequested.dispose(); preparationSettled.dispose(); });
       scope.add(() => acp.dispose());
       return withValidation(
         acpRuntimeApiContract,
-        createAcpRuntimeController(acp, platformSessionClosed, turnCommitted, promptSteered, forkHandshake, {
+        createAcpRuntimeController(acp, platformSessionClosed, turnCommitted, conversationActivity, promptSteered, forkHandshake, {
           requested: preparationRequested, settled: preparationSettled, bridge: preparation,
         }),
         workerValidatePolicy(env)

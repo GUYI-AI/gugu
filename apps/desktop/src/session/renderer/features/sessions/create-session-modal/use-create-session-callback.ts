@@ -1,3 +1,5 @@
+import { codexNeedsUpgrade } from '../session-input-failure-copy';
+import { sessionpageLegOfView } from '@shared/core/sessions/sessions';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useRef, useState } from 'react';
@@ -105,10 +107,18 @@ export function useCreateSessionCallback({
   // 投递失败必须说出来:未送出的正文与附件都还在 composer 里,用户看不到原因就只能猜(#4325 ③)。
   const [localDeliveryError, setLocalDeliveryError] = useState<SessionFailure | null>(null);
   const deliveryError = draft ? draft.deliveryError : localDeliveryError;
+  const deliveryMachine = selectedProjectId ? machineRegistry.machineOf(selectedProjectId) ?? null : null;
+  const deliveryLeg = sessionpageLegOfView(initialSession.sessionView);
   const setDeliveryError = useCallback((failure: SessionFailure | null) => {
+    if (failure?.kind === 'harness-unavailable' || failure?.kind === 'raw' && codexNeedsUpgrade(failure.detail)) {
+      failure = { ...failure, target: {
+        machineId: deliveryMachine,
+        leg: deliveryLeg,
+      } };
+    }
     if (draft) draft.setDeliveryError(failure);
     else setLocalDeliveryError(failure);
-  }, [draft]);
+  }, [draft, deliveryMachine, deliveryLeg]);
 
   const submittedText = initialSession.prompt.trim();
   // 首轮的投递通道:唯一定义在 firstTurnTransportOf。
@@ -278,7 +288,16 @@ export function useCreateSessionCallback({
 
     const deferFirstTurn = baseSession.type === 'acp' && files.length > 0;
     // #6264 别的机器上还没装所选的家:先在那台机器上装好再建(装不上就不建,原因说出来)。
-    void (beforeCreate ? beforeCreate() : Promise.resolve()).then(() => sessionManager.createSession(createInput, deferFirstTurn ? { deferFirstTurn: true } : undefined)).then(async () => {
+    let openedOptimistically = false;
+    void (beforeCreate ? beforeCreate() : Promise.resolve()).then(() => sessionManager.createSession(createInput, {
+      ...(deferFirstTurn ? { deferFirstTurn: true } : {}),
+      onOptimistic: () => {
+        if (!openAfterCreate) return;
+        openedOptimistically = true;
+        navigate('session', { projectId: selectedProjectId, sessionId });
+        onClose();
+      },
+    })).then(async () => {
       if (submission) submission.created = true;
       // The new-session memory never stands in the way (L11 复核 58): the session is made, its first line sent and the
       // box closed even when this computer cannot save what was picked — said in the log and in a light notice. Written
@@ -323,26 +342,25 @@ export function useCreateSessionCallback({
     }).then(() => {
       if (!submission) input.setPrompt((current) => retainNewerInput(submittedPrompt, current));
       finishSubmission(submission);
+      setDeliveryError(null);
       onCreated?.({ projectId: selectedProjectId, sessionId });
-      if (openAfterCreate) navigate('session', { projectId: selectedProjectId, sessionId: sessionId });
-      else {
+      if (!openAfterCreate) {
         void rpcOn(machineRegistry.machineOf(selectedProjectId) ?? null).sessionTimeline.sessionStart({ conversationId: sessionId }).then((started) => {
           if (!started.ok) log.warn('start a session nobody opens failed', { sessionId, error: started.error });
         });
       }
-      onClose();
+      if (!openedOptimistically) onClose();
     }, (error: unknown) => {
       // @@@5173 已知的建任务失败带着领域语义过来 ⇒ 成句在这里发生,给用户看的是产品文案。
       // ❌ 别再把 `createSession failed: <type>` 这种开发者诊断串铺给用户 —— 那条路上文案分岔
       // (「正在被替换,稍后重试」vs「没装,去装」)会被整个抹平成同一句看不懂的话。
       //
-      // ⚠️ 引擎不可用是唯一的例外:它已经由 project-sessions-store 用右下角的瞬时通知说过了(owner 定的形态)。
-      // 这里再挂一条常驻的红字就是同一件事说两遍 —— ❌ 别把它加回来。
       const failure: SessionFailure = error instanceof SessionCreationFailedError
         ? error.failure
         : { kind: 'raw', detail: error instanceof Error ? error.message : String(error) };
       finishSubmission(submission, true);
-      if (failure.kind !== 'harness-unavailable') setDeliveryError(failure);
+      if (openedOptimistically && !submission?.created) navigate('new-session');
+      setDeliveryError(failure);
       log.error(pendingMessage() ? 'send message to created session failed' : 'create session failed', error);
     }).catch((error: unknown) => {
       if (draft) log.error('finish created session failed', error);
@@ -350,7 +368,7 @@ export function useCreateSessionCallback({
         const failure: SessionFailure = error instanceof SessionCreationFailedError
           ? error.failure
           : { kind: 'raw', detail: error instanceof Error ? error.message : String(error) };
-        if (failure.kind !== 'harness-unavailable') setDeliveryError(failure);
+        setDeliveryError(failure);
         log.error(pendingMessage() ? 'send message to created session failed' : 'create session failed', error);
       }
     }).finally(() => {
@@ -385,14 +403,16 @@ export function useCreateSessionCallback({
       const deviceId = selectedProjectId ? machineRegistry.machineOf(selectedProjectId) : null;
       if (deviceId) {
         try { assertTaskAttachmentProtocol(readCachedDevices().find(device => device.device_id === deviceId)?.capabilities?.remote_protocol); }
-        catch {
-          setDeliveryError({ kind: 'raw', detail: translateSessionMessage('composer.attachmentHostUpdateRequired') });
+        catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          log.warn('Attachment protocol check failed', { machineId: deviceId, error: detail });
+          setDeliveryError({ kind: 'attachment-host-update-required', detail });
           return;
         }
       }
     }
     setIsCreating(true);
-    setDeliveryError(null);
+    // A retry is not recovery: retain this failure episode until the send succeeds.
     // A retry already owns its placed files. Keep the live draft for retainNewerInput on success.
     if (pendingMessage()) { createSessionNow([]); return; }
     let submission: Submission | undefined;

@@ -25,10 +25,21 @@ describe('resuming without replay (#980)', () => {
     const order: string[] = [];
     await resumeHistoryFacts(input(), {
       recordedDeliveryIds: async () => [],
-      fillFromRecord: async () => { order.push('fill'); },
+      fillFromRecord: async () => { order.push('fill'); return undefined; },
       turnIndexBase: async () => { order.push('base'); return 0; },
     });
     expect(order).toEqual(['fill', 'base']);
+  });
+
+  it('neither rereads nor replays a record too large for the heap', async () => {
+    const recordedDeliveryIds = vi.fn(async () => []);
+    const facts = await resumeHistoryFacts(input(), {
+      recordedDeliveryIds,
+      fillFromRecord: async () => ({ status: 'too_large' }),
+      turnIndexBase: async () => 7,
+    });
+    expect(facts).toEqual({ replayHistory: false, recordedDeliveryIds: null, turnIndexBase: 7 });
+    expect(recordedDeliveryIds).not.toHaveBeenCalled();
   });
 
   it('starts anyway when filling from the record fails', async () => {
@@ -66,6 +77,14 @@ describe('resuming without replay (#980)', () => {
   it.each([
     ['a provider whose record gugu cannot read', { providerId: 'gemini' }],
     ['a provider gugu reads but whose adapter still replays', { providerId: 'qwen' }],
+  ])('keeps the replay for %s but still says where turn numbers continue (a resume-only adapter replays nothing)', async (_label, patch) => {
+    const facts = await resumeHistoryFacts(input({ ...patch, replayHistory: false } as Partial<AcpRuntimeStartInput>), {
+      recordedDeliveryIds: async () => [], fillFromRecord: async () => undefined, turnIndexBase: async () => 3,
+    });
+    expect(facts).toEqual({ replayHistory: undefined, recordedDeliveryIds: undefined, turnIndexBase: 3 });
+  });
+
+  it.each([
     ['a session that never opened a provider session', { providerSessionId: null }],
     ['a runtime fork', { forkFromProviderSessionId: 'thread-0' }],
   ])('keeps the replay for %s and overwrites renderer-sent values', async (_label, patch) => {

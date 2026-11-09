@@ -15,6 +15,14 @@ export function isRoomChat(kind: ChatKind): boolean {
   return kind === 'group' || kind === 'topic'
 }
 
+/**
+ * 私聊(dm / ai)整条读:点开就读到最新,❌ 按「看到哪条算哪条」(owner 11-05)。群与话题照旧读到看见的那条。
+ * 这里只决定怎么读;聊天列表怎么画不归它管(行照旧出数字)。
+ */
+export function readsWholeChat(kind: ChatKind): boolean {
+  return kind === 'dm' || kind === 'ai'
+}
+
 /** 一行会话的未读读数。三个字段语义不同,❌ 强求相等,❌ 在别处另算(owner 10-28、10-30)。 */
 export type ChatAttention = {
   /** 这一行自己的全部未读:话题页签、行内原始数。 */
@@ -192,8 +200,8 @@ export function upsertChatRow(chats: ChatItem[], chat: ChatItem): ChatItem[] {
 }
 
 export function mergeFetchedChatsPreservingActiveLocal(
-  fetchedChats: ChatItem[],
-  currentChats: ChatItem[],
+  fetchedChats: readonly ChatItem[],
+  currentChats: readonly ChatItem[],
   activeChatId: string | null,
   options: { preserveMissingActive?: boolean } = {},
 ): ChatItem[] {
@@ -205,6 +213,7 @@ export function mergeFetchedChatsPreservingActiveLocal(
   const localById = new Map(currentChats.map((chat) => [chat.id, chat]))
   const merged = fetchedChats.map((fetched) => {
     const local = localById.get(fetched.id)
+    if (local === fetched) return fetched
     let next = fetched
     if ((fetched.kind === 'dm' || fetched.kind === 'ai') && !fetched.peer_user_id && local?.peer_user_id) {
       next = {
@@ -227,7 +236,8 @@ export function mergeFetchedChatsPreservingActiveLocal(
         unread_count: local.unread_count,
         unread_locator: local.unread_locator,
       }
-    } else if (fetched.id === activeChatId && local && fetched.last_read_seq < local.last_read_seq) {
+    } else if (fetchedReadStateVersion === 0 && localReadStateVersion === 0
+      && fetched.id === activeChatId && local && fetched.last_read_seq < local.last_read_seq) {
       // Compatibility for cached rows written before read_state_version existed.
       next = {
         ...next,

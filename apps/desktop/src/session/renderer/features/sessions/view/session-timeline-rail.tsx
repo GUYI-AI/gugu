@@ -30,8 +30,6 @@ function senderLabel(sender: TimelineSender | undefined, translate: Translate): 
       return `${sender.name} · ${translate('transcript.deliveryViaSession')}`;
     case 'extension':
       return `${sender.name} · ${translate('transcript.deliveryViaExtension')}`;
-    case 'forum':
-      return `${sender.name} · ${translate('transcript.deliveryViaForum')}`;
     case 'group':
       return `${sender.name} · ${((chat) => chat ? translate('transcript.deliveryViaGroup', { chat }) : translate('transcript.deliveryViaUnnamedGroup'))(sender.chatId ? chatDisplayName(sender.chatId) : null)}`;
     case 'chat':
@@ -105,8 +103,8 @@ export function SessionTimelineRail({
             ? 'bg-foreground/70 group-hover:bg-foreground group-focus-visible:bg-foreground'
             : 'bg-foreground-muted/40 group-hover:bg-foreground-muted group-focus-visible:bg-foreground-muted';
         const jumpLabel = tick.delivered
-          ? translate('task.jumpToDelivery', { sender: label, prompt: turn.prompt.slice(0, 50) })
-          : translate('task.jumpToTurn', { prompt: turn.prompt.slice(0, 50) });
+          ? translate('task.jumpToDelivery', { sender: label, prompt: [...turn.prompt].slice(0, 50).join('') })
+          : translate('task.jumpToTurn', { prompt: [...turn.prompt].slice(0, 50).join('') });
         return (
           <PreviewCard key={turn.id}>
             <PreviewCardTrigger

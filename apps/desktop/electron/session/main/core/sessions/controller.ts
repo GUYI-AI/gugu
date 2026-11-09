@@ -7,7 +7,7 @@ import { getSessionsForProject } from './getSessionsForProject';
 import { getUnarchivedSession } from './getUnarchivedSession';
 import { convertAutomationSession } from './convert-automation-session';
 import { forkSession } from './fork-session';
-import { getStoredHistory, getStoredToolImage } from './session-turn-store';
+import { getStoredHistory, getStoredToolImage, getStoredSettledTurn } from './session-turn-store';
 import { syncStoredHistoryFromRecord } from './record-backfill';
 import { hydrateSession } from './hydrateSession';
 import { markSessionSeen } from './markSessionSeen';
@@ -18,6 +18,7 @@ import { setSessionParent } from './session-family';
 import { switchSessionRuntime } from './switch-session-runtime';
 import { sendMessage } from './sendMessage';
 import { sessionLife } from './session-life';
+import { nativePendingInputLookup } from './session-pending-history';
 import { stopSessionByPerson } from './session-orchestration';
 import { ensurePlatformSessionReady } from './platform-recovery-gate';
 import { recordLiveSessionSetting } from './record-live-session-setting';
@@ -37,6 +38,7 @@ import { setSessionsOnScreen } from './sessions-on-screen';
 export const sessionController = createRPCController({
   getSessions,
   getStoredHistory,
+  getStoredSettledTurn,
   getStoredToolImage,
   // #980 打开一条没在跑的会话时:把 agent 自己的记录里有、库里还没有的那几轮补进库,回补进了几轮。
   syncStoredHistoryFromRecord: (sessionId: string) => syncStoredHistoryFromRecord(sessionId),
@@ -76,8 +78,12 @@ export const sessionController = createRPCController({
   },
   // session-life: the ACP lifecycle projection (later changes arrive on sessionLifeViewChannel) and the person's
   // explicit start — the only way a page brings an ACP session up.
-  lifeView: async (sessionId: string) => sessionLife().read(sessionId),
+  lifeView: async (sessionId: string) => {
+    await sessionLife().reconcileUnknownRows(sessionId, nativePendingInputLookup(sessionId));
+    return sessionLife().read(sessionId);
+  },
   lifeStart: async (sessionId: string) => { sessionLife().start(sessionId, 'user-open'); },
+  lifeRetryUnknown: (sessionId: string, messageId: string) => sessionLife().retryUnknownRow(sessionId, messageId, nativePendingInputLookup(sessionId)),
   lifeStop: (sessionId: string) => stopSessionByPerson(sessionId),
   lifeDiscard: async (sessionId: string, messageId: string) => { sessionLife().discardRow(sessionId, messageId); },
   // A side chat is a fork entry of Life: opened by its page, fed through the same custody send, ended when the

@@ -37,6 +37,55 @@ function makeCell() {
 }
 
 describe('setting recovery preserves the permission boundary and prompt delivery', () => {
+  it('saves permission independently without clearing a rejected model barrier', async () => {
+    const { cell, agent } = makeCell();
+    cell.applySessionMeta({ configOptions: [...modes('bypassPermissions'), ...modelOptions] });
+    agent.setSessionConfigOption.mockImplementation(async ({ configId, value }: { configId: string; value: string }) => {
+      if (configId === 'model' && value === 'retired-model') throw new Error('Model is no longer available');
+      return { configOptions: [...modes('default'), ...modelOptions] };
+    });
+    try {
+      expect((await cell.setConfigOption('model', 'retired-model')).success).toBe(false);
+      expect((await cell.setMode('default')).success).toBe(true);
+      expect(cell.config.modeOptions?.selected).toBe('default');
+      expect(cell.liveSettingBlock).toContain('Model is no longer available');
+      // A failed setting never releases on its own: the input is refused with the reason, not parked
+      // where nothing would ever send it (the UI would show the turn running forever).
+      const refused = cell.promptDetached({ text: 'sent while the model is rejected', origin: 'typed' });
+      expect(await refused.admission).toMatchObject({
+        success: false,
+        error: { type: 'invalid_state', message: expect.stringContaining('Model is no longer available') },
+      });
+      expect(cell.sessionState.queuedPrompts).toEqual([]);
+      expect(agent.prompt).not.toHaveBeenCalled();
+      expect((await cell.setConfigOption('model', 'model-a')).success).toBe(true);
+      void cell.prompt({ text: 'continue after choosing a model', origin: 'typed' });
+      await agent.called('prompt');
+      expect(agent.prompt).toHaveBeenCalledOnce();
+      expect(cell.liveSettingBlock).toBeNull();
+    } finally { cell.dispose(); }
+  });
+
+  it('keeps every failed dimension until that same dimension is confirmed', async () => {
+    const { cell, agent } = makeCell();
+    cell.applySessionMeta({ configOptions: [...modes('bypassPermissions'), ...modelOptions] });
+    agent.setSessionConfigOption.mockImplementation(async ({ configId }: { configId: string }) => {
+      throw new Error(configId === 'model' ? 'Model rejected' : 'Permission rejected');
+    });
+    try {
+      expect((await cell.setMode('default')).success).toBe(false);
+      expect((await cell.setConfigOption('model', 'model-b')).success).toBe(false);
+      expect(cell.liveSettingBlock).toContain('Model rejected');
+      expect(cell.liveSettingBlock).toContain('Permission rejected');
+      agent.setSessionConfigOption.mockResolvedValue({ configOptions: [...modes('default'), ...modelOptions] });
+      expect((await cell.setConfigOption('model', 'model-a')).success).toBe(true);
+      expect(cell.liveSettingBlock).toContain('Permission rejected');
+      expect(cell.liveSettingBlock).not.toContain('Model rejected');
+      expect((await cell.setMode('default')).success).toBe(true);
+      expect(cell.liveSettingBlock).toBeNull();
+    } finally { cell.dispose(); }
+  });
+
   it.each([null, 'existing-session'])('does not start a read-only session with full access (resume=%s)', async (providerSessionId) => {
     const h = makeAcpHarness({ autoApproveModes: {
       'read-only': { id: 'default' }, 'full-access': { id: 'bypassPermissions' },
@@ -64,12 +113,15 @@ describe('setting recovery preserves the permission boundary and prompt delivery
       agent.setSessionConfigOption.mockResolvedValue({ configOptions: modes('bypassPermissions') });
       const result = await cell.setMode('default', { startupOnly });
       expect(result).toMatchObject({ success: false, error: { type: 'set_mode_failed' } });
-      await cell.prompt({ text: 'must wait for read-only', origin: 'typed' });
+      // Nothing runs with the wider permission: the input is refused with the reason, not parked.
+      expect(await cell.prompt({ text: 'must not run with full access', origin: 'typed' }))
+        .toMatchObject({ success: false, error: { type: 'invalid_state' } });
       expect(agent.prompt).not.toHaveBeenCalled();
 
-      // A real confirmation releases the same pending prompt.
+      // A real confirmation lets the next input through.
       agent.setSessionConfigOption.mockResolvedValue({ configOptions: modes('default') });
       expect((await cell.setMode('default')).success).toBe(true);
+      void cell.prompt({ text: 'runs read-only', origin: 'typed' });
       await agent.called('prompt');
       expect(agent.prompt).toHaveBeenCalledOnce();
       expect(cell.config.modeOptions?.selected).toBe('default');

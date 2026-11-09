@@ -13,7 +13,6 @@ import type { GroupChatSettings, GroupAgentItem, GroupCollabSnapshot, GroupMembe
 import type { DisplayIdentity } from '../../../apps/desktop/src/lib/displayIdentity'
 import { createNode, createReactHarness, device, displayIdentity, renderWithAppProviders, typeInto, waitForCondition } from '../../support/testHarness'
 import { closeInfoTab, infoTabOf, openInfoTab } from '../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
-import { UI_EVENTS } from '../../../apps/desktop/src/lib/uiEvents'
 import { publishProjectGroupChats } from '../../../apps/desktop/src/session/renderer/features/projects/stores/project-group-chats-bridge'
 import type { MemberProfileChatTarget } from '../../../apps/desktop/src/components/MemberProfileCard'
 import { DevicesContext } from '../../../apps/desktop/src/store/devicesContext'
@@ -37,7 +36,6 @@ vi.mock('../../../apps/desktop/src/lib/chat', () => ({
 vi.mock('../../../apps/desktop/src/hooks/useAgentDisplayStatus', () => import('../../support/agentDisplayStatusTestDouble'))
 vi.mock('../../../apps/desktop/src/lib/identityReadAdapter', () => ({
   readRequiredDisplayIdentities: vi.fn(async (ids: string[]) => ids.map((id) => ({ id, type: 'human', display_name: `申请人-${id}` }))),
-  readCommunityPoints: vi.fn(async () => 0),
 }))
 
 const { chatService } = await import('../../../apps/desktop/src/lib/chat')
@@ -195,23 +193,10 @@ describe('#969 leaving the group info page', () => {
     expect(infoTabOf('other-group-navigation')).not.toBeNull()
   })
 
-  it('New Agent closes only the source info before asking the shell to open the group-bound creation page', async () => {
+  it('the phone members page has no New Agent of its own: the group composer New task is the one entry', async () => {
     shell.mobile = true
     await renderMembers()
-    const sourceAtNavigation: Array<ReturnType<typeof infoTabOf>> = []
-    const create = vi.fn((event: Event) => {
-      sourceAtNavigation.push(infoTabOf('group-navigation'))
-      expect((event as CustomEvent).detail).toEqual({ chatId: 'group-navigation' })
-    })
-    window.addEventListener(UI_EVENTS.createAgentInGroup, create)
-    try {
-      await click(q('[data-testid="member-list-create-agent"]'))
-      expect(create).toHaveBeenCalledOnce()
-      expect(sourceAtNavigation).toEqual([null])
-      expect(infoTabOf('other-group-navigation')).not.toBeNull()
-    } finally {
-      window.removeEventListener(UI_EVENTS.createAgentInGroup, create)
-    }
+    expect(document.querySelector('[data-testid="member-list-create-agent"]')).toBeNull()
   })
 })
 
@@ -347,6 +332,7 @@ describe('Agent owner and source-group listen-mode controls', () => {
     expect(setListenMode.mock.calls).toEqual([['chat-1', 'codex', 'active']])
     expect(q('[data-testid="group-member-profile-menu"] select')).not.toBeNull()
     expect(q('[data-profile-remove-button="codex"]')?.textContent).toBe('移出群聊')
+    expect(q('[data-profile-remove-hint="codex"]')).toBeNull()
     // 阳控:同一张卡、同一个分段,换成群主自己的 agent 就真的改了。
     await click(q('[data-member-row="claude"]'))
     await click(segment('主动') ?? null)
@@ -424,6 +410,7 @@ describe('topic participant controls project server authority', () => {
     expect(setListenMode).toHaveBeenCalledWith('topic-1', 'codex', 'active')
     await click(q('[data-member-row="codex"]'))
     await waitForCondition(() => q('[data-profile-remove-button="codex"]') !== null, 'owned topic Agent profile')
+    expect(q('[data-profile-remove-button="codex"]')?.textContent).toBe('移除 写代码的')
     expect(q('[data-profile-role-select="codex"]')).toBeNull()
     await click(q('[data-profile-remove-button="codex"]'))
     expect(removeMember).toHaveBeenCalledWith('topic-1', 'codex')
@@ -469,8 +456,26 @@ describe('topic participant controls project server authority', () => {
     await renderTopic('member-2', false)
     await click(q('[data-member-row="member-2"]'))
     const leave = q('[data-profile-remove-button="member-2"]')
-    expect(leave?.textContent).toBe('离开群组')
+    expect(leave?.textContent).toBe('退出话题')
+    expect(q('[data-profile-remove-hint="member-2"]')?.textContent).toBe('你仍可阅读，只是不再收到这个话题的通知')
     await click(leave)
+    expect(removeMember).toHaveBeenCalledWith('topic-1', 'member-2')
+  })
+  it.each(['profile', 'menu'])('topic removal uses a neutral label and the topic scope through %s', async (surface) => {
+    await renderTopic('owner-1', true)
+    const hint = '对方仍可阅读，只是不再收到这个话题的通知'
+    let remove: HTMLElement | null
+    if (surface === 'profile') {
+      await click(q('[data-member-row="member-2"]'))
+      remove = q('[data-profile-remove-button="member-2"]')
+      expect(remove?.textContent).toBe('移除 成员丙')
+      expect(q('[data-profile-remove-hint="member-2"]')?.textContent).toBe(hint)
+    } else {
+      await click(q('[data-member-row="member-2"] button[aria-label^="管理"]'))
+      remove = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent?.startsWith('移除 成员丙')) ?? null
+      expect(remove?.textContent).toBe(`移除 成员丙${hint}`)
+    }
+    await click(remove)
     expect(removeMember).toHaveBeenCalledWith('topic-1', 'member-2')
   })
 })

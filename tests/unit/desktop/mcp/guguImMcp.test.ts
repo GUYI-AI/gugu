@@ -567,7 +567,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     const client = await connect(harness().deps)
     const { tools } = await client.listTools()
     expect(tools.map((t) => t.name).sort()).toEqual([
-      'activity_chat_list', 'contact_friend', 'forum_read', 'forum_reply', 'group_add_agent', 'group_announcement_delete', 'group_announcement_post', 'group_announcement_update', 'group_avatar_set', 'group_create', 'group_flood_undo', 'group_info', 'group_join_decide', 'group_join_requests', 'group_leave', 'group_list', 'group_remove_member', 'group_set_role', 'group_update', 'message_conversations', 'message_download_file', 'message_history', 'message_invitations', 'message_invite', 'message_members',
+      'activity_chat_list', 'contact_friend', 'group_add_agent', 'group_announcement_delete', 'group_announcement_post', 'group_announcement_update', 'group_avatar_set', 'group_create', 'group_info', 'group_join_decide', 'group_join_requests', 'group_leave', 'group_list', 'group_remove_member', 'group_set_role', 'group_update', 'message_conversations', 'message_download_file', 'message_history', 'message_invitations', 'message_invite', 'message_members',
       'message_rules', 'message_search', 'message_send', 'message_send_as_owner', 'message_send_file', 'message_send_file_as_owner',
       'owner_friends_list', 'profile_lookup', 'profile_update', 'profile_whoami', 'session_peers',
       'topic_delete', 'topic_invite', 'topic_list', 'topic_members', 'topic_open',
@@ -1352,6 +1352,57 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(reconcileMentionExpression(members, '大家看下', ['*']).content).toBe('@all 大家看下')
     expect(reconcileMentionExpression(members, '@all 大家看下', ['*']).content).toBe('@all 大家看下')
     expect(reconcileMentionExpression(members, '联系 a@b.com 即可', []).mismatches).toEqual([])
+  })
+  describe('typed body mentions', () => {
+    const members = [childPeer.identity.users]
+    const addresses = [`user:${CHILD_USER_ID}`, 'gugu:1003', 'session:child-conversation']
+    test.each(addresses)('replaces @%s in place without adding a prefix', (address) => {
+      expect(reconcileMentionExpression(members, `Please @${address}, continue.`, [CHILD_USER_ID], [], [childPeer]))
+        .toEqual({ content: 'Please @观甲一, continue.', mismatches: [] })
+    })
+    test('preserves repeated and mixed body occurrences without an extra prefix', () => {
+      const body = addresses.map(address => `@${address}`).join(' / ') + ' / @观甲一'
+      expect(reconcileMentionExpression(members, body, [CHILD_USER_ID], [], [childPeer]))
+        .toEqual({ content: '@观甲一 / @观甲一 / @观甲一 / @观甲一', mismatches: [] })
+    })
+    test.each(['user:unknown', 'gugu:999999999', 'session:unknown'])('retains unresolved @%s and reports mismatch even with @all', (address) => {
+      expect(reconcileMentionExpression(members, `@all Please @${address}.`, ['*'], [], [childPeer]))
+        .toEqual({ content: `@all Please @${address}.`, mismatches: [address] })
+    })
+    test('known addresses still require recipient agreement or a reply exemption', () => {
+      expect(reconcileMentionExpression(members, '@gugu:1003 please', []))
+        .toEqual({ content: '@观甲一 please', mismatches: ['观甲一'] })
+      expect(reconcileMentionExpression(members, '@gugu:1003 please', [], [CHILD_USER_ID]))
+        .toEqual({ content: '@观甲一 please', mismatches: [] })
+    })
+    test('does not confuse address prefixes with similarly named members or partial tokens', () => {
+      const directory = [...members, { id: 'other', display_name: 'user' }]
+      expect(reconcileMentionExpression(directory, `@user:${CHILD_USER_ID} @gugu:10030`, [CHILD_USER_ID]))
+        .toEqual({ content: '@观甲一 @gugu:10030', mismatches: ['gugu:10030'] })
+    })
+    test.each(addresses)('message_send normalizes @%s when the recipient uses its canonical user address', async (address) => {
+      const h = peersHarness()
+      const client = await connect({ ...h.deps, callSessionHost: async () => [childPeer] })
+      const result = await client.callTool({ name: 'message_send', arguments: {
+        chat_id: '00000000-0000-4000-8000-000000000001', text: `Please @${address}, continue.`, to_user_ids: [`user:${CHILD_USER_ID}`],
+      } })
+      expect(result.isError).not.toBe(true)
+      expect((h.calls.inserts[0][1] as Record<string, unknown>).content).toBe('Please @观甲一, continue.')
+      expect((h.calls.inserts[0][1] as Record<string, unknown>).to_user_ids).toEqual([CHILD_USER_ID])
+      await client.close()
+    })
+    test('does not deliver a body session address whose local identity is not a chat member', async () => {
+      const h = peersHarness()
+      const foreignPeer = { ...childPeer, sessionId: 'foreign', identity: { users: { ...childPeer.identity.users, id: 'foreign-user' } } }
+      const client = await connect({ ...h.deps, callSessionHost: async () => [foreignPeer] })
+      const result = await client.callTool({ name: 'message_send', arguments: {
+        chat_id: '00000000-0000-4000-8000-000000000001', text: '@session:foreign please', to_user_ids: [`user:${CHILD_USER_ID}`],
+      } })
+      expect(result.isError).toBe(true)
+      expect(text(result)).toContain('session:foreign')
+      expect(h.calls.inserts).toHaveLength(0)
+      await client.close()
+    })
   })
   describe('#2437 unaddressed agent bare-name gate', () => {
     const directory = [
@@ -2770,7 +2821,7 @@ describe('write tools refuse unknown keys (#6840)', () => {
     const { tools } = await client.listTools()
     const writers = (TOOL_DEFS as Array<{ name: string; writer?: boolean }>).filter((def) => def.writer).map((def) => def.name)
     // Includes both delegated text and attachment writers; workspace writers live in the folder App.
-    expect(writers).toHaveLength(22)
+    expect(writers).toHaveLength(21)
     for (const name of writers) {
       expect(tools.find((tool) => tool.name === name)?.inputSchema, name).toMatchObject({ additionalProperties: false })
     }

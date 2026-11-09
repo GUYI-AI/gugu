@@ -1,12 +1,14 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { matchesKeyboardEvent } from '@tanstack/react-hotkeys'
 import { useTranslation } from 'react-i18next'
 import type PhotoSwipe from 'photoswipe'
 import type { Bounds, PhotoSwipeOptions, SlideData } from 'photoswipe'
 import 'photoswipe/style.css'
 import './imagePreview.css'
-import { X, Download, Copy, ChevronLeft, ChevronRight, Pencil } from '@/lib/icons'
+import { X, Download, Copy, Check, ChevronLeft, ChevronRight, Pencil } from '@/lib/icons'
+import { useCopyConfirmation } from '@/hooks/useCopyConfirmation'
 import { DUR_SLOW_MS, EASE } from '@/styles/motion'
 import { useToast } from './toastContext'
 import { useBackLayer } from './ui/sheetStack'
@@ -17,12 +19,13 @@ import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { fetchBlob, downloadBlob } from '../lib/download'
 import { canWriteImageToClipboard, writeImageBlobToClipboard } from '../lib/imageClipboard'
 import { rendererLogger } from '../lib/log'
-import { offlineHolder } from '../lib/fileHost'
+import { holderOfflineText, offlineHolder } from '../lib/fileHost'
 import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
 import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
 import { commandRegistry } from '@renderer/lib/commands/registry'
 import { useMobileShell } from '../hooks/useMobileShell'
 import { readRendererPlatform, windowTitlebarHeight } from '../lib/window-chrome'
+import { wireReadingZoom } from './preview/image-reading-zoom'
 import {
   decodedSizeOf,
   downloadNameFor,
@@ -47,7 +50,6 @@ const PRELOADER_DELAY_MS = 300
  * 指针与缩略图都按窗口坐标算。它的三处几何都要换成「根的盒子」:视口高度、指针偏移、起落位置。其余平台是 0。
  */
 const viewerTop = () => windowTitlebarHeight(readRendererPlatform())
-const DOUBLE_CLICK_MS = 300
 
 async function fetchImageAsPngBlob(url: string): Promise<Blob> {
   const blob = await fetchBlob(url)
@@ -133,6 +135,8 @@ function viewerOptions(request: ImageViewerRequest, mobile: boolean, errorMsg: s
     escKey: false,
     wheelToZoom: true,
     tapAction: 'close',
+    // 桌面单击图不做事,双击见 wireViewer(PhotoSwipe 默认单击就缩放,双击会放大又缩回)
+    imageClickAction: false,
     errorMsg,
     zoom: false,
     close: false,
@@ -149,8 +153,11 @@ function viewerOptions(request: ImageViewerRequest, mobile: boolean, errorMsg: s
 }
 
 function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: ImageViewerItem, error: unknown) => void): void {
+  wireReadingZoom(pswp)
   // 缩略图打开的那几张:翻到哪张,取哪张的原图,换上(取不到就留着缩略图;item.full 自己记着结果,不重复下)。
+  // 打开动画期间不换:它从缩略图的状态飞向这张幻灯片,换图会改掉它的起点和终点
   const upgrade = (index: number) => {
+    if (!pswp.opener.isOpen) return
     const slides = pswp.options.dataSource
     const data = (Array.isArray(slides) ? slides[index] : undefined) as ViewerSlide | undefined
     if (!data || data.loadingStarted || (!data.item.preview && !data.item.full)) return
@@ -185,16 +192,16 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
       }
     })
   }
-  pswp.on('afterInit', () => upgrade(pswp.currIndex))
+  pswp.on('openingAnimationEnd', () => upgrade(pswp.currIndex))
   pswp.on('change', () => upgrade(pswp.currIndex))
   pswp.on('loadComplete', ({ content, isError }) => {
     const data = content.data as ViewerSlide
     const img = content.element
-    if (isError || !(img instanceof HTMLImageElement) || !img.naturalWidth || !img.naturalHeight) return
+    if (pswp.isDestroying || isError || !(img instanceof HTMLImageElement) || !img.naturalWidth || !img.naturalHeight) return
     if (data.sizeKnown && data.width === img.naturalWidth && data.height === img.naturalHeight) return
     const wasKnown = data.sizeKnown
     const slide = content.slide
-    const zoom = slide ? slide.currZoomLevel * slide.width / img.naturalWidth : 0
+    const ratio = slide ? slide.currZoomLevel / slide.zoomLevels.initial : 0
     data.width = content.width = img.naturalWidth
     data.height = content.height = img.naturalHeight
     data.sizeKnown = true
@@ -203,9 +210,12 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
     slide.height = content.height
     slide.calculateSize()
     if (wasKnown) {
-      // A higher-resolution source has the same visible rectangle at a smaller pixel zoom.
+      // The ratio over the whole-image size survives a new source: the same rectangle, or a bigger one if the thumbnail was too small to fill it.
+      const zoom = ratio * slide.zoomLevels.initial
       slide.setZoomLevel(zoom)
       slide.currentResolution = zoom
+      slide.pan.x = slide.bounds.correctPan('x', slide.pan.x)
+      slide.pan.y = slide.bounds.correctPan('y', slide.pan.y)
     } else {
       slide.currentResolution = 0
       slide.zoomAndPanToInitial()
@@ -248,19 +258,19 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
     slide.panTo(slide.pan.x - wheel.deltaX, slide.pan.y - wheel.deltaY)
   })
 
-  // 桌面:单击图不做事,双击缩放到光标处(PhotoSwipe 默认单击就缩放,双击会放大又缩回)
-  let lastImageClick = -Infinity
-  pswp.on('imageClickAction', (event) => {
-    event.preventDefault()
-    const at = event.originalEvent.timeStamp
-    if (at - lastImageClick > DOUBLE_CLICK_MS) {
-      lastImageClick = at
-      return
-    }
-    lastImageClick = -Infinity
-    const { x, y } = event.point
-    if (x === undefined || y === undefined) throw new Error('PhotoSwipe reported an image click without a point')
-    pswp.currSlide?.toggleZoom({ x, y })
+  // 还没有像素的「图」(在下载的 img、空白占位)只是背景:PhotoSwipe 按 class 把它们算成点在图上,点了没反应
+  pswp.on('imageClickAction', ({ originalEvent: { target } }) => {
+    if (!(target instanceof HTMLImageElement && target.naturalWidth)) pswp.close()
+  })
+
+  // 鼠标双击缩放到光标处,连击归系统设置;手机的双击是 PhotoSwipe 自己的 doubleTap,这里不再算一次
+  pswp.on('bindEvents', () => {
+    if (!pswp.element) throw new Error('PhotoSwipe bound its events without a root element')
+    pswp.events.add(pswp.element, 'click', (event) => {
+      const { detail, pointerType, pageX, pageY, target } = event as PointerEvent
+      if (!pswp.opener.isOpen || detail !== 2 || pointerType !== 'mouse' || !(target instanceof Element && target.classList.contains('pswp__img'))) return
+      pswp.currSlide?.toggleZoom({ x: pageX - pswp.offset.x, y: pageY - pswp.offset.y })
+    })
   })
 
   pswp.on('keydown', ({ originalEvent }) => {
@@ -312,6 +322,7 @@ function ImageViewerChrome({ viewer, mobile, onEdit }: { viewer: OpenViewer; mob
   const [copying, setCopying] = useState(false)
   const { pswp, items, index } = viewer
   const current = items[index]
+  const { copied, confirm } = useCopyConfirmation(current)
 
   const handleDownload = useCallback(async () => {
     try {
@@ -333,13 +344,14 @@ function ImageViewerChrome({ viewer, mobile, onEdit }: { viewer: OpenViewer; mob
     try {
       // blob-first(#1892):先 await 拿到 Blob 再写剪贴板
       await writeImageBlobToClipboard(await fetchImageAsPngBlob(current.full ? await current.full() : current.url))
-      toast(t('shell.imagePreview.copied'), 'success')
+      if (mobile) confirm()
+      else toast(t('shell.imagePreview.copied'), 'success')
     } catch (error) {
       toast(t('shell.imagePreview.copyFailed'), 'error', safeFailureLine(String((error as Error)?.message ?? error)))
     } finally {
       setCopying(false)
     }
-  }, [copying, current, t, toast])
+  }, [copying, current, t, toast, mobile, confirm])
 
   // 手机的出口是左上返回箭头,桌面是右上 ✕;手机上滑动切图,不画箭头
   const close = (
@@ -353,9 +365,10 @@ function ImageViewerChrome({ viewer, mobile, onEdit }: { viewer: OpenViewer; mob
         {mobile ? close : null}
         <div className="gg-image-viewer__spacer" />
         <ViewerButton label={t('imageAnnotate.edit')} testId="image-preview-edit" onClick={onEdit}><Pencil /></ViewerButton>
-        <ViewerButton label={t('shell.imagePreview.copy')} testId={AUTOMATION_TEST_IDS.imagePreviewCopy} onClick={() => void handleCopy()}>
-          <Copy />
+        <ViewerButton label={t(mobile && copied ? 'shell.imagePreview.copied' : 'shell.imagePreview.copy')} testId={AUTOMATION_TEST_IDS.imagePreviewCopy} onClick={() => void handleCopy()}>
+          {mobile && copied ? <Check /> : <Copy />}
         </ViewerButton>
+        <output aria-live="polite" className="sr-only">{mobile && copied ? t('shell.imagePreview.copied') : ''}</output>
         <ViewerButton label={t('shell.imagePreview.download')} testId={AUTOMATION_TEST_IDS.imagePreviewDownload} onClick={() => void handleDownload()}>
           <Download />
         </ViewerButton>
@@ -395,21 +408,25 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active: PhotoSwipe | null = null
+    // @@@one-viewer - the viewer is modal, so a request that lands while one is loading or open is a repeat
+    // click (rapid clicks during the import / opening animation, where PhotoSwipe ignores destroy()) and is dropped.
+    let holding = false
     let disposed = false
     const unregister = registerImageViewerHost((request) => {
+      if (holding) return request.items.forEach(item => item.release?.())
+      holding = true
       import('photoswipe')
         .then(({ default: PhotoSwipeCtor }) => {
           if (disposed) return
           const { t: translate, mobile: isMobile } = latest.current
-          active?.destroy()
           const pswp = new PhotoSwipeCtor(viewerOptions(request, isMobile, translate('shell.imagePreview.loadFailed')))
           wireViewer(pswp, translate('shell.imagePreview.dialog'), (item, error) => {
             const target = item.resource?.target
             void (async () => {
               const offline = target?.kind === 'file' ? await offlineHolder(target.itemId, target.version) : null
               if (pswp.isDestroying || !pswp.isOpen) return
-              const { t, i18n, toast } = latest.current
-              toast(offline ? i18n.t('attachmentView.holderOffline', { ns: 'messaging', machine: offline.machine || i18n.t('attachmentView.holderMachine', { ns: 'messaging' }) }) : t('shell.imagePreview.loadFailed'), 'error', offline ? undefined : messageForUser(error))
+              const { t, toast } = latest.current
+              toast(offline ? holderOfflineText(offline) : t('shell.imagePreview.loadFailed'), 'error', offline ? undefined : messageForUser(error))
             })()
           })
           let unbindMenu: (() => void) | undefined
@@ -433,7 +450,8 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
           pswp.on('destroy', () => {
             unbindMenu?.()
             request.items.forEach(item => item.release?.())
-            if (active === pswp) active = null
+            active = null
+            holding = false
             setViewer((open) => (open?.pswp === pswp ? null : open))
             setEditing(null)
           })
@@ -444,6 +462,7 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
           setViewer({ pswp, root: pswp.element, items: request.items, index: pswp.currIndex })
         })
         .catch((error: unknown) => {
+          holding = active !== null
           log.error({ error: String(error), count: request.items.length }, 'failed to open image viewer')
           latest.current.toast(latest.current.t('shell.imagePreview.openFailed'), 'error', messageForUser(error))
         })
@@ -485,10 +504,11 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
   }, [viewer, editing, isTopLayer])
   useEffect(() => {
     if (!openPswp) return
-    // Esc:不在栈里的 Base UI 对话框在 document 上听 Esc。window 捕获阶段先于所有 document 监听,
-    // 在这里关查看器并截住这一下,压在下面的对话框才不会跟着关。
-    const onEscapeCapture = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || event.isComposing || !isTopLayer()) return
+    // window 捕获阶段先于 document 上的 Esc 和页签快捷键监听,
+    // 在这里沿同一条路径关闭并截住按键,避免关掉底下的对话框或页签。
+    const onCloseCapture = (event: KeyboardEvent) => {
+      const closeShortcut = matchesKeyboardEvent(event, 'Mod+W', readRendererPlatform() === 'mac' ? 'mac' : 'windows')
+      if ((event.key !== 'Escape' && !closeShortcut) || event.isComposing || !isTopLayer()) return
       event.stopPropagation()
       event.preventDefault()
       if (editing && event.target instanceof HTMLElement && event.target.closest('input,textarea,[contenteditable="true"]')) {
@@ -497,8 +517,8 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
       } else if (editing) setEditing(null)
       else openPswp.close()
     }
-    window.addEventListener('keydown', onEscapeCapture, { capture: true })
-    return () => window.removeEventListener('keydown', onEscapeCapture, { capture: true })
+    window.addEventListener('keydown', onCloseCapture, { capture: true })
+    return () => window.removeEventListener('keydown', onCloseCapture, { capture: true })
   }, [openPswp, editing, isTopLayer, viewer])
 
   return (

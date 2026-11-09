@@ -19,6 +19,7 @@ const deviceId = `phone-${installId}-${ownerId}`
 const agentId = '558fcc98-9d61-4054-8a18-900d969b1849'
 const chatId = 'a540c592-971b-4bcf-89c3-944484a14640'
 const groupId = '0c44ad9d-8fed-4285-ab8c-469c91101cf6'
+const inboxJob = (journal, messageId) => Object.values(journal.jobs).find(job => job.agentUserId === agentId && job.route?.kind === 'chat' && job.route.sourceMessageId === messageId)
 
 function fakeCloud() {
   const commands = []
@@ -178,6 +179,145 @@ test('a read phone failure stays an error and the next real failed turn becomes 
     }, fx.events)
     assert.equal((await summary()).unseen, true)
     assert.equal((await summary()).status.status, 'error')
+  } finally { await fx.close() }
+})
+
+test('phone presence budget does not rewrite an unchanged agent on a healthy heartbeat', async () => {
+  const fx = await fixture(async () => ({ status: 'done', text: '[NO_REPLY]' }))
+  try {
+    await fx.host.invoke('sessionTimeline.sessionCreate', [{ harness: 'pi', prompt: 'presence budget' }], randomUUID())
+    await until(() => fx.host.state().execution === null && fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events)
+    await fx.host.handle({ type: 'configure', config: fx.config })
+    assert.equal(fx.calls.filter(([name]) => name === 'set_agent_runtime_state').at(-1)?.[1].p_agent_status, 'idle')
+    assert.deepEqual(fx.calls.filter(([name]) => name === 'set_agent_runtime_state').at(-1)?.[1].p_recent_actions, [])
+    const before = fx.calls.filter(([name]) => name === 'set_agent_runtime_state').length
+    await fx.host.handle({ type: 'configure', config: fx.config })
+    assert.equal(fx.calls.filter(([name]) => name === 'set_agent_runtime_state').length, before)
+  } finally { await fx.close() }
+})
+
+test('phone presence budget closing an already idle host withdraws capability without a retired runtime-status write', async () => {
+  const fx = await fixture(async () => ({ status: 'done', text: '[NO_REPLY]' }))
+  const reports = () => fx.calls.filter(([name]) => name === 'set_agent_runtime_state')
+  try {
+    await fx.host.invoke('sessionTimeline.sessionCreate', [{ harness: 'pi', prompt: 'close after idle' }], randomUUID())
+    await until(() => fx.host.state().execution === null && fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events)
+    await fx.host.handle({ type: 'configure', config: fx.config })
+    assert.equal(reports().at(-1)[1].p_agent_status, 'idle')
+    const before = reports().length
+    const device = fx.devices.find(row => row.device_id === deviceId)
+    const status = device.status
+    await fx.host.close()
+    assert.equal(fx.host.state().status, 'stopped')
+    assert.equal(device.capabilities.host_runtime_capability, 0)
+    assert.deepEqual(device.capabilities.runtimes, [])
+    assert.equal(device.status, status)
+    for (const [, args] of reports()) assert.equal(Object.hasOwn(args, 'p_runtime_status'), false)
+    assert.equal(reports().length, before)
+  } finally { await fx.close() }
+})
+
+for (const fails of [false, true]) test(`phone presence budget joins an in-flight idle write and retries only after failure (fails=${fails})`, async () => {
+  let turns = 0, armed = false, held = false
+  let beginTurn, finishTurn, beginIdle, finishIdle
+  const running = new Promise(resolve => { beginTurn = resolve })
+  const turnGate = new Promise(resolve => { finishTurn = resolve })
+  const idleStarted = new Promise(resolve => { beginIdle = resolve })
+  const idleGate = new Promise(resolve => { finishIdle = resolve })
+  const fx = await fixture(async () => {
+    if (++turns > 1) { beginTurn(); await turnGate }
+    return { status: 'done', text: '[NO_REPLY]' }
+  }, { prepare: ({ cloud }) => {
+    const rpc = cloud.identity.rpc
+    cloud.identity.rpc = async (name, args) => {
+      const result = await rpc(name, args)
+      if (armed && !held && name === 'set_agent_runtime_state' && args.p_agent_status === 'idle') {
+        held = true; beginIdle(); await idleGate
+        if (fails) return { data: null, error: { message: 'presence fixture unavailable' } }
+      }
+      return result
+    }
+  } })
+  const idleWrites = () => fx.calls.filter(([name, args]) => name === 'set_agent_runtime_state' && args.p_agent_status === 'idle').length
+  let heartbeat
+  try {
+    const created = await fx.host.invoke('sessionTimeline.sessionCreate', [{ harness: 'pi', prompt: 'presence setup' }], randomUUID())
+    await until(() => fx.host.state().execution === null && fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events)
+    await fx.host.handle({ type: 'configure', config: fx.config })
+    await fx.host.invoke('sessionTimeline.sessionSend', [{ conversationId: created.conversationId, text: 'controlled presence turn', clientRequestId: randomUUID() }], randomUUID())
+    await running
+    const beforeIdle = idleWrites()
+    armed = true; finishTurn()
+    await idleStarted
+    const beforeHeartbeat = fx.calls.filter(([name]) => name === 'upsert_device').length
+    heartbeat = fx.host.handle({ type: 'configure', config: fx.config })
+    await until(() => fx.calls.filter(([name]) => name === 'upsert_device').length > beforeHeartbeat, fx.events)
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(idleWrites() - beforeIdle, 1)
+    finishIdle(); await heartbeat
+    await fx.host.handle({ type: 'configure', config: fx.config })
+    assert.equal(idleWrites() - beforeIdle, fails ? 2 : 1)
+  } finally { finishTurn(); finishIdle(); await heartbeat?.catch(() => undefined); await fx.close() }
+})
+
+test('phone presence budget coalesces a tool burst and publishes its final action at the next allowed heartbeat', async (t) => {
+  let at = Date.now()
+  let turns = 0
+  let release, began
+  const running = new Promise(resolve => { began = resolve })
+  const gate = new Promise(resolve => { release = resolve })
+  const fx = await fixture(async (_command, hooks) => {
+    if (++turns === 1) return { status: 'done', text: '[NO_REPLY]' }
+    for (let i = 0; i < 30; i += 1) hooks.emit({ type: 'tool_start', name: `budget_tool_${i}` })
+    await new Promise(resolve => setImmediate(resolve))
+    began()
+    await gate
+    return { status: 'done', text: '[NO_REPLY]' }
+  })
+  const reports = () => fx.calls.filter(([name]) => name === 'set_agent_runtime_state')
+  try {
+    const created = await fx.host.invoke('sessionTimeline.sessionCreate', [{ harness: 'pi', prompt: 'presence setup' }], randomUUID())
+    await until(() => fx.host.state().execution === null && fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events)
+    await fx.host.handle({ type: 'configure', config: fx.config })
+    const before = reports().length
+    t.mock.method(Date, 'now', () => at)
+    await fx.host.invoke('sessionTimeline.sessionSend', [{ conversationId: created.conversationId, text: 'presence burst', clientRequestId: randomUUID() }], randomUUID())
+    await running
+    assert.equal(reports().length - before, 1)
+    at += 30_000
+    await fx.host.handle({ type: 'configure', config: fx.config })
+    assert.equal(reports().length - before, 2)
+    assert.equal(reports().at(-1)[1].p_recent_actions[0], 'budget_tool_29')
+  } finally { release(); await fx.close() }
+})
+
+test('phone presence budget includes the last tool on idle after a short turn with only two writes', async (t) => {
+  let at = Date.now(), turns = 0
+  const fx = await fixture(async (_command, hooks) => {
+    if (++turns === 1) return { status: 'done', text: '[NO_REPLY]' }
+    for (let i = 0; i < 30; i += 1) hooks.emit({ type: 'tool_start', name: `budget_tool_${i}` })
+    await new Promise(resolve => setImmediate(resolve))
+    at += 9_000
+    return { status: 'done', text: '[NO_REPLY]' }
+  })
+  const reports = () => fx.calls.filter(([name]) => name === 'set_agent_runtime_state')
+  try {
+    const created = await fx.host.invoke('sessionTimeline.sessionCreate', [{ harness: 'pi', prompt: 'presence setup' }], randomUUID())
+    await until(() => fx.host.state().execution === null && fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events)
+    await fx.host.handle({ type: 'configure', config: fx.config })
+    const before = reports().length
+    t.mock.method(Date, 'now', () => at)
+    await fx.host.invoke('sessionTimeline.sessionSend', [{ conversationId: created.conversationId, text: 'short presence turn', clientRequestId: randomUUID() }], randomUUID())
+    await until(() => turns === 2 && fx.host.state().execution === null, fx.events)
+    await fx.host.handle({ type: 'configure', config: fx.config })
+    const turn = reports().slice(before)
+    assert.equal(turn.length, 2)
+    assert.deepEqual(turn.map(([, args]) => args.p_agent_status), ['working', 'idle'])
+    assert.equal(turn.at(-1)[1].p_recent_actions[0], 'budget_tool_29')
+    assert.equal(typeof turn.at(-1)[1].p_last_action_at, 'string')
+    at += 30_000
+    await fx.host.handle({ type: 'configure', config: fx.config })
+    assert.equal(reports().length - before, 2)
   } finally { await fx.close() }
 })
 
@@ -617,7 +757,7 @@ test('a local initial message enters the shared inbox envelope and replies with 
     assert.equal(replies[0].p_reply_to_message_id, messageId)
     assert.deepEqual(replies[0].p_to_user_ids, [ownerId])
     const journal = JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8'))
-    assert.equal(journal.jobs[messageId].prompt.includes('gugu_delivery'), true)
+    assert.equal(inboxJob(journal, messageId).prompt.includes('gugu_delivery'), true)
     assert.equal(JSON.stringify(journal).includes('private-turn-token'), false)
   } finally { await fx.close() }
 })
@@ -636,7 +776,7 @@ test('a failed chat turn is said in the chat as the desktop says it: one system 
     if (table !== 'messages') return query
     const insert = query.insert
     query.insert = async (row) => {
-      onDiskAtNotice.push(JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8')).jobs[messageId].status)
+      onDiskAtNotice.push(inboxJob(JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8')), messageId).status)
       return insert(row)
     }
     return query
@@ -656,8 +796,8 @@ test('a failed chat turn is said in the chat as the desktop says it: one system 
     assert.equal(fx.messages.some((message) => message.p_sender_user_id === agentId), false)
     // The raw error stays in the task: failed job, its error.
     const journal = JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8'))
-    assert.equal(journal.jobs[messageId].status, 'failed')
-    assert.match(journal.jobs[messageId].error, /simulated model failure/)
+    assert.equal(inboxJob(journal, messageId).status, 'failed')
+    assert.match(inboxJob(journal, messageId).error, /simulated model failure/)
   } finally { await fx.close() }
 })
 
@@ -697,7 +837,7 @@ test('a failed turn on a whispered message posts no public notice: it would tell
   fx.inboxRows.push({ chat_id: chatId, chat_kind: 'dm', chat_public_id: null, id: messageId, seq: 1, sender_user_id: ownerId, sender_type: 'human', sender_display_name: '主人', content: '悄悄话', content_type: 'text', to_user_ids: [agentId], is_whisper: true, file_item_id: null, file_version: null, file_blob_id: null, group_rules: null, named_identities: {}, created_at: new Date().toISOString() })
   try {
     await fx.host.invoke('sessionTimeline.sessionCreate', [{ harness: 'pi', model: 'platform:free', prompt: '悄悄话' }], 'failing-whisper-turn')
-    await until(async () => JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8')).jobs[messageId]?.status === 'failed', fx.events)
+    await until(async () => inboxJob(JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8')), messageId)?.status === 'failed', fx.events)
     assert.deepEqual(fx.notices, [])
     assert.equal(fx.messages.some((message) => message.p_sender_user_id === agentId), false)
   } finally { await fx.close() }
@@ -722,33 +862,57 @@ test('an image attachment is durably admitted as safe metadata and acknowledged 
     await until(() => fx.messages.some((message) => message.p_sender_user_id === agentId), fx.events)
     // In-memory completion precedes the journal's asynchronous save. Assert the admitted
     // message itself is durable, rather than racing a different/unsaved idle snapshot.
-    await until(async () => JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8')).jobs[messageId]?.status === 'done', fx.events)
+    await until(async () => inboxJob(JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8')), messageId)?.status === 'done', fx.events)
     assert.match(prompt, new RegExp(`msg:${messageId}`))
     assert.equal(fx.inboxRows.length, 0)
     const journal = JSON.parse(await readFile(join(fx.root, 'hosts', ownerId, 'host.json'), 'utf8'))
-    assert.equal(journal.jobs[messageId].status, 'done')
+    assert.equal(inboxJob(journal, messageId).status, 'done')
   } finally { await fx.close() }
 })
 
 test('revoking OS permission after a successful phone read prevents data from reaching the chat', async () => {
   const permissionChecks = []
+  let releaseActionReports
+  const actionReports = new Promise((resolve) => { releaseActionReports = resolve })
+  let pendingActionReports = 0
   const fx = await fixture(async (_command, hooks) => {
     hooks.emit({ type: 'tool_start', name: 'phone_calendar_list' })
     hooks.emit({ type: 'tool_end', name: 'phone_calendar_list', result: { details: { ok: true } } })
     await hooks.extraTools.find((tool) => tool.name === 'message_send').execute('reply-call', { chat_id: chatId, text: 'private-calendar-fixture-9123', to_user_ids: [`user:${ownerId}`] })
     return { status: 'done', text: 'must not be delivered' }
-  }, { nativeCall: async (name, args) => { permissionChecks.push([name, args]); return { ok: false, code: 'os_permission', message: '日历系统权限已撤销' } } })
+  }, {
+    nativeCall: async (name, args) => { permissionChecks.push([name, args]); return { ok: false, code: 'os_permission', message: '日历系统权限已撤销' } },
+    prepare: ({ cloud }) => {
+      const rpc = cloud.identity.rpc
+      cloud.identity.rpc = async (name, args) => {
+        if (name === 'set_agent_runtime_state' && args.p_last_action_at) {
+          pendingActionReports++
+          await actionReports
+        }
+        return rpc(name, args)
+      }
+    },
+  })
   const messageId = randomUUID()
   fx.inboxRows.push({ chat_id: chatId, chat_kind: 'dm', id: messageId, seq: 1, sender_user_id: ownerId, sender_type: 'human', content: '查询日历', content_type: 'text', to_user_ids: [agentId], file_item_id: null, file_version: null, file_blob_id: null, group_rules: null, named_identities: {}, created_at: new Date().toISOString() })
   try {
     await fx.host.invoke('sessionTimeline.sessionCreate', [{ harness: 'pi', prompt: '查询日历' }], 'revoke-in-flight')
     await until(() => fx.events.some((event) => event.type === 'turn_failed'), fx.events)
+    // Failure is emitted before runJob's finally block reports the settled state, and that
+    // block first awaits the timeline and journal saves, so the report starts later.
+    // Wait for that held job report instead of assuming it already started, then release it.
+    await until(() => pendingActionReports > 0, fx.events)
+    releaseActionReports()
+    await until(() => fx.calls.filter(([name]) => name === 'set_agent_runtime_state').at(-1)?.[1].p_agent_status === 'error', fx.events)
     assert.ok(permissionChecks.length > 0)
     for (const check of permissionChecks) assert.deepEqual(check, ['permissions.check', { groups: ['calendar'], requirements: [] }])
     assert.equal(fx.messages.some((message) => message.p_content.includes('private-calendar-fixture-9123')), false)
+    // turn_failed precedes the asynchronous status publication; inspect its settled error report.
+    await until(() => fx.calls.filter(([name]) => name === 'set_agent_runtime_state').at(-1)?.[1].p_agent_status === 'error', fx.events)
     const report = fx.calls.filter(([name]) => name === 'set_agent_runtime_state').at(-1)[1]
     assert.equal(typeof report.p_last_action_at, 'string')
-  } finally { await fx.close() }
+    assert.equal(report.p_agent_status, 'error')
+  } finally { releaseActionReports(); await fx.close() }
 })
 
 test('native hostCall creation reuses clientRequestId across transports and reports a real pending group approval', async () => {
@@ -1782,3 +1946,19 @@ test('resolves files at run time, warns without blocking later text, and persist
     } finally { await timeline.close(); }
   } finally { await fx.close(); }
 });
+
+test('a delivery from an App is recorded as failed with its reason, and reads no inbox', async () => {
+  let nudge
+  const fx = await fixture(async () => { throw new Error('no model turn expected') }, { prepare: seedInboxAgents, onRpcStart: ({ onCommand }) => { nudge = onCommand } })
+  try {
+    await until(() => inboxCalls(fx).length > 0)
+    const before = inboxCalls(fx).length
+    fx.commands.push({ id: randomUUID(), type: 'agent.deliver', status: 'pending', created_at: new Date().toISOString(), payload: { agent_user_id: agentId, source: 'notes' } })
+    await nudge()
+    await flushInbox()
+    const command = fx.commands.at(-1)
+    assert.equal(command.status, 'error')
+    assert.deepEqual(command.result, { reply_notice: 'context', reason: 'appUnavailable' })
+    assert.equal(inboxCalls(fx).length, before)
+  } finally { await fx.close() }
+})

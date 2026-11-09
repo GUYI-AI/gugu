@@ -15,7 +15,8 @@ import * as attachmentReader from '../../../apps/desktop/src/lib/attachmentBytes
 import { attachmentQueryClient } from '../../../apps/desktop/src/lib/attachmentQueryClient'
 
 import type { TopicSummary } from '@gugu/core/shared/types/chat'
-import { createNode, createReactHarness, clickElement, deferred, message, renderWithAppProviders, typeInto } from '../../support/testHarness'
+import { createNode, createReactHarness, clickElement, deferred, message, renderWithAppProviders } from '../../support/testHarness'
+import { NATIVE_BACK_EVENT } from '../../../apps/desktop/src/components/ui/sheetStack'
 
 const listTopicsOfChat = vi.fn<(sourceChatId: string) => Promise<TopicSummary[]>>()
 vi.mock('../../../apps/desktop/src/lib/topics', () => ({
@@ -30,6 +31,7 @@ const { TopicBreadcrumb } = await import('../../../apps/desktop/src/components/c
 const { TopicSplitPane } = await import('../../../apps/desktop/src/components/chat/TopicSplitPane')
 const { UI_EVENTS } = await import('../../../apps/desktop/src/lib/uiEvents')
 const { commandRegistry } = await import('../../../apps/desktop/src/session/renderer/lib/commands/registry')
+const { resetSearchSession, useSearchSession } = await import('../../../apps/desktop/src/session/renderer/features/global-search/search-session')
 const { quotePrefixOf, canSourceTopic, maxTopicSplitWidthForAvailableWidth, TOPIC_SPLIT_MIN_WIDTH, TOPIC_SPLIT_MAX_WIDTH } = await import('../../../apps/desktop/src/components/chat/topicSplitModels')
 const { chatDisplayName } = await import('@gugu/core/shared/ui/chatModels')
 const { withSourceLineCandidates } = await import('../../../apps/desktop/src/lib/mention')
@@ -296,44 +298,42 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
   }
 
   for (const layout of ['desktop', 'phone', 'tab'] as const) {
-    it(`${layout}: topic header only identifies the topic and its source`, async () => {
-      await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, mobile: layout === 'phone', embedded: layout === 'tab' }))
-      expect(harness.container.querySelector('[data-testid="topic-breadcrumb"]')).not.toBeNull()
+    it(`${layout}: topic header only identifies the topic and its source, and the phone tab has none`, async () => {
+      await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, sourceMessagePreview: '下载到 60% 就断', mobile: layout === 'phone', embedded: layout === 'tab' }))
+      expect(harness.container.querySelector('[data-testid="topic-breadcrumb"]') !== null).toBe(layout !== 'phone')
       for (const id of ['topic-split-more', 'topic-split-members-toggle', 'topic-split-files-toggle']) {
         expect(harness.container.querySelector(`[data-testid="${id}"]`)).toBeNull()
       }
     })
   }
 
-  it('opens focused topic find and preserves explicit filtering without a header search button', async () => {
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, {
-      ...baseProps, viewportKey: 'review-topic',
-      messages: [message({ id: 'topic-hit', content: 'topic needle' }), message({ id: 'topic-miss', content: 'other text' })],
-    }))
-    await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openChatSearch, { detail: { viewportKey: 'review-main' } })) })
-    expect(harness.container.querySelector('[data-testid="chat-header-search-input"]')).toBeNull()
+  // owner: on the phone topic page a line "hung" above the conversation (the source preview).
+  // With real messages, nothing may sit above the first message; restoring the old source line must turn this red.
+  it('phone: nothing renders above the first topic message, not even the source line', async () => {
+    const source = 'SOURCE-LINE-下载到 60% 就断'
+    const messages = [message({ id: 'first', seq: 1, content: 'FIRST-MESSAGE' }), message({ id: 'second', seq: 2, content: 'SECOND-MESSAGE' })]
+    await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, messages, sourceMessagePreview: source, mobile: true }))
+    const pane = harness.container.querySelector<HTMLElement>('[data-testid="topic-split-pane"]')!
+    expect(pane.textContent).toContain('FIRST-MESSAGE')
+    expect(pane.textContent).not.toContain('SOURCE-LINE')
+    expect(pane.firstElementChild?.getAttribute('data-testid')).toBe('topic-split-messages')
+  })
+
+  it('Mod+F in the topic opens the global search scoped to the topic, with no in-page search', async () => {
+    const openPanel = vi.fn()
+    const unregister = commandRegistry.register({ scopeId: 'app', getCommands: () => [{ id: 'app.globalSearch', execute: openPanel }] })
+    function SearchSnapshot() { return createElement('output', { 'data-search-session': true }, JSON.stringify(useSearchSession())) }
+    await renderWithAppProviders(harness, createElement('div', null, createNode(TopicSplitPane, { ...baseProps, viewportKey: 'review-topic' }), createElement(SearchSnapshot)))
     const composer = harness.container.querySelector<HTMLElement>('[data-testid="chat-composer-aside"]')!
     try {
       await act(async () => {
         commandRegistry.setContext(composer)
         expect(commandRegistry.dispatch('app.find')).toBe(true)
       })
-      const find = harness.container.querySelector<HTMLInputElement>('input[placeholder="Find..."], input[placeholder="查找…"]')!
-      expect(find).not.toBeNull()
-      expect(harness.container.querySelector('[data-testid="chat-header-search-input"]')).toBeNull()
-      await act(async () => { find.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
-      await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openChatSearch, { detail: { viewportKey: 'review-topic' } })) })
-      const input = harness.container.querySelector<HTMLInputElement>('[data-testid="chat-header-search-input"]')!
-      expect(input).not.toBeNull()
-      await typeInto(input, 'needle')
-      expect(harness.container.querySelector('[data-msg-id="topic-hit"]')).not.toBeNull()
-      expect(harness.container.querySelector('[data-msg-id="topic-miss"]')).toBeNull()
-      expect(harness.container.querySelector('mark')?.textContent).toBe('needle')
-      expect(harness.container.querySelector('[data-testid="topic-split-more"]')).toBeNull()
-      await act(async () => { input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
-      expect(harness.container.querySelector('[data-testid="chat-header-search-input"]')).toBeNull()
-      expect(harness.container.querySelector('[data-msg-id="topic-miss"]')).not.toBeNull()
-    } finally { commandRegistry.setContext(document.body) }
+      expect(openPanel).toHaveBeenCalledTimes(1)
+      expect(JSON.parse(harness.container.querySelector('[data-search-session]')!.textContent!).chips).toEqual([{ kind: 'in', chatId: baseProps.topic.chatId }])
+      expect(harness.container.querySelector('input[placeholder="Find..."], input[placeholder="查找…"]')).toBeNull()
+    } finally { commandRegistry.setContext(document.body); unregister(); resetSearchSession() }
   })
 
   // 2026-09-24 shuxue:「我在 topic 里面点不开你发的附件」。分栏复用 MessageList 却没接 onOpenFile ⇒
@@ -479,7 +479,7 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
 
       // 阴控:往上翻开之后内容再长高,不拽回来。
       scroller.scrollTop = 300
-      await act(async () => { scroller.dispatchEvent(new Event('scroll')) })
+      await act(async () => { scroller.dispatchEvent(new Event('scroll')); await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))) })
       geometry.scrollHeight = 1600
       await act(async () => { observers.forEach((cb) => cb()) })
       expect(scroller.scrollTop).toBe(300)
@@ -499,10 +499,10 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
   // 名单之外出现新的差异 = 红。
   const JUSTIFIED_OMISSIONS: Record<string, Record<string, string>> = {
     MessageList: {
-      topInset: '给 agent 单聊头栏里探出头栏的那只小鸟让位(滚到最上时第一条不被它的脚压住);分栏没有 agent 头栏,也就没有探出的部分',
       footer: '#7199 只有「助理」App 那个聊天面在消息流末尾接一个「它在处理」的打字气泡(取代运行条);分栏不传 = 运行条照旧,与对话页同形',
     },
     ChatMessageComposer: {
+      entryActive: '#1959 会话列表的具名进入意图只交给主输入框;分栏 surface=aside 沿既有规则不登记全局焦点落点,也不消费主线进入意图',
       beforeSend: 'agent 私聊专用(任务页会话恢复前置),话题是场所型会话',
       disabled: 'agent 私聊专用(引擎不可用时禁用输入)',
       disabledReason: '同上',
@@ -590,7 +590,7 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
     }))
     const scroller = harness.container.querySelector('[data-unread-stream-surface="aside"]') as HTMLElement
     Object.defineProperties(scroller, { scrollHeight: { configurable: true, value: 1000 }, clientHeight: { configurable: true, value: 300 }, scrollTop: { configurable: true, value: 0, writable: true } })
-    await act(async () => { scroller.dispatchEvent(new Event('scroll')) })
+    await act(async () => { scroller.dispatchEvent(new Event('scroll')); await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))) }) // read after paint (lib/afterPaint)
     expect(onRevealOlder).toHaveBeenCalledTimes(1)
   })
 
@@ -701,7 +701,7 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
     expect(handle?.getAttribute('aria-label')).toBe('拖动改变话题分栏的宽度')
   })
 
-  it('手机上放不下两栏:话题整页盖住来源线,出口只有左上返回,子视图开着先退回话题', async () => {
+  it('手机上放不下两栏:话题是来源页的一枚页签,没有自己的页头,返回键回到来源那一枚', async () => {
     const onClose = vi.fn()
     // currentUserId 置空:附件子视图不去拉文件,这一格只判导航。
     await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, onClose, currentUserId: null, mobile: true }))
@@ -709,14 +709,15 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
     expect(harness.container.querySelector('[data-testid="topic-split-resizable"]')).toBeNull()
     expect(harness.container.querySelector('[data-testid="topic-split-resize-handle"]')).toBeNull()
     expect(harness.container.querySelector('[data-testid="topic-split-close"]')).toBeNull()
-    const page = harness.container.querySelector('[data-testid="topic-split-pane"]')?.parentElement as HTMLElement
-    expect(page.style.position).toBe('fixed')
-    const back = () => harness.container.querySelector('[data-testid="topic-split-back"]') as HTMLElement
-    expect(back().getAttribute('aria-label')).toBe('返回')
-
-    expect(harness.container.querySelector('[data-testid="topic-split-more"]')).toBeNull()
-    await clickElement(back())
+    await act(async () => { window.dispatchEvent(new Event(NATIVE_BACK_EVENT)) })
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('手机上话题不在前面时不接返回键', async () => {
+    const onClose = vi.fn()
+    await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, onClose, currentUserId: null, mobile: true, visible: false }))
+    await act(async () => { window.dispatchEvent(new Event(NATIVE_BACK_EVENT)) })
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it('消息走 MessageRow + MessageBubble 渲染（接住 MessageBubble 的 props 漂移）', async () => {

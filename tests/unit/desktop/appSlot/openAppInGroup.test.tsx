@@ -23,6 +23,7 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
 const card = vi.hoisted(() => ({ manifest: null as unknown }))
 vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', () => ({
   summaryOf: async () => ({ ok: true, manifest: card.manifest }),
+  watchReading: () => () => {},
   packageKey: (card: { source: { kind: string; url?: string }; messageId: string }) => (card.source.kind === 'url' ? `url:${card.source.url}` : `msg:${card.messageId}`),
   installPackageOf: (card: { messageId: string }) => ({ messageId: card.messageId }),
   showPackage: () => () => {},
@@ -40,7 +41,7 @@ const { ChatStoreProvider } = await import('../../../../apps/desktop/src/store/c
 const { installedExtensionsStore } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store')
 const { UI_EVENTS } = await import('../../../../apps/desktop/src/lib/uiEvents')
 const { folderItem } = await import('../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item')
-const { askChat, openPanelItem, panelTabsOf, returnToOf, shownPanelTab } = await import('../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts')
+const { askChat, openPanelItem, panelTabsOf, chatPaneOf, shownPanelTab } = await import('../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts')
 const { grantableBy } = await import('../../../../apps/desktop/src/session/shared/extensions/attachment-install')
 const { PHONE_CAPABILITIES } = await import('../../../../apps/desktop/src/components/appSlot/phoneApps')
 
@@ -98,22 +99,60 @@ describe('the chat on screen answers 「在本群打开」 (useChatOpener)', () 
     askNow('source-1', { app: 'board' })
     const tab = shownPanelTab('source-1')
     expect(tab?.item).toMatchObject({ kind: 'board.main' })
-    expect(returnToOf('source-1', tab!.tabId), 'an App opened from the chat has no 上一页').toBeNull()
+    expect(chatPaneOf('source-1', tab!.tabId)?.navigationOf(tab!.tabId)?.index).toBe(0)
+  })
+
+  it('a link naming the App\'s own page opens the file it names here, as its card does: no second tab beside that one', async () => {
+    const { appsHere } = await import('../../../../apps/desktop/src/components/appSlot/appsHere')
+    const appChatFile = vi.fn(async () => ({ success: false, error: 'read the file it names' }))
+    Object.assign(appsHere!, { appChatFile })
+    const withChatFile = app([OWN_PAGE, { ...GROUP_FILES, name: 'file', chatFile: 'x.board.json' } as Tab])
+    install(withChatFile)
+    await harness.render(createElement(Chat, { id: 'link-1' }))
+    askNow('link-1', { app: 'board', tab: 'main' })
+    await act(async () => { await Promise.resolve() })
+    expect(appChatFile).toHaveBeenCalledWith({ chatId: 'link-1', extensionId: 'board' })
+    expect(panelTabsOf('link-1').map((tab) => tab.item.kind)).not.toContain('board.main')
+    // A tab the App does not have says so; it does not fall through to the file.
+    appChatFile.mockClear()
+    askNow('link-1', { app: 'board', tab: 'gone' })
+    await act(async () => { await Promise.resolve() })
+    expect(appChatFile).not.toHaveBeenCalled()
+    expect(panelTabsOf('link-1').map((tab) => tab.item.kind)).not.toContain('board.gone')
+    // Naming another tab still opens that one.
+    askNow('link-1', { app: 'board', tab: 'file' })
+    expect(shownPanelTab('link-1')?.item).toMatchObject({ kind: 'board.file' })
+  })
+
+  it('keeps an App page placement failure in the chat instead of rejecting without a handler', async () => {
+    install(app([OWN_PAGE]))
+    const refused = vi.fn().mockRejectedValue(new Error('native resource host unavailable'))
+    function RefusedPage() { return useChatOpener('refused-page', refused).overlay }
+    await harness.render(createElement(RefusedPage))
+    await act(async () => {
+      askChat('refused-page', { app: 'board' })
+      window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked))
+    })
+    expect(refused).toHaveBeenCalledOnce()
+    expect(harness.container.querySelector('[data-testid="group-app-slot-unopened"]')).not.toBeNull()
   })
 
   it('a page beside the chat asked: the tab on screen is the 上一页 of what it opens; an App asked there has none (owner 10-24)', async () => {
     install(app([OWN_PAGE]))
     await harness.render(createElement(Chat, { id: 'source-panel' }))
     const folder = openPanelItem('source-panel', folderItem())!
-    askNow('source-panel', { itemId: 'F1', opener: fileOpener('source-panel', 'F1'), fromPage: true })
+    askNow('source-panel', { itemId: 'F1', opener: fileOpener('source-panel', 'F1'), from: folder })
     const file = shownPanelTab('source-panel')
     expect(file?.item).toMatchObject({ itemId: 'F1' })
-    expect(returnToOf('source-panel', file!.tabId)).toBe(folder)
+    expect(file!.tabId).toBe(folder); expect(chatPaneOf('source-panel', folder)?.navigationOf(folder)?.index).toBe(1)
     askNow('source-panel', { app: 'board' })
     const board = shownPanelTab('source-panel')
     expect(board?.item).toMatchObject({ kind: 'board.main' })
     expect(board?.item.itemId).toBeUndefined()
-    expect(returnToOf('source-panel', board!.tabId)).toBeNull()
+    // An App asked from the chat is a tab of its own beside it (owner 11-05): the folder's tab keeps its file and history.
+    expect(board!.tabId).not.toBe(folder)
+    expect(chatPaneOf('source-panel', board!.tabId)?.navigationOf(board!.tabId)?.index).toBe(0)
+    expect(chatPaneOf('source-panel', folder)?.navigationOf(folder)?.index).toBe(1)
   })
 
   it('another chat than the one on screen is not answered here', async () => {

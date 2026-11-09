@@ -148,4 +148,14 @@ describe('session_pending store', () => {
     lifeStore.settleRead('s', a);
     expect(lifeStore.acceptedUnsettled('s')).toEqual([]);
   });
+  it('persists the native reconciliation reason without making an unknown row retryable', () => {
+    const seq = enqueuePending({ sessionId: 's', messageId: 'unknown', text: 'hello', kind: 'session-direct' }).seq;
+    const cause = { name: 'NativeInputUnresolved', code: 'native_source_changed', message: 'native_source_changed' };
+    lifeStore.commit('s', [{ e: 'write-receipt', seq, receipt: { state: 'unknown', cause } }]);
+    expect(lifeStore.row('s', seq)).toMatchObject({ state: 'unknown', failure: cause });
+    expect(lifeStore.pending('s')).toEqual({ queued: [], dispatching: [] });
+    lifeStore.claim('s');
+    expect(lifeStore.row('s', seq)).toMatchObject({ state: 'unknown', failure: cause });
+  });
+
 });

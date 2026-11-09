@@ -1,8 +1,8 @@
 /**
- * Map file extensions to Monaco Editor language IDs
- * Monaco uses different IDs than Prism in some cases
+ * Map file extensions to editor language IDs (the keys of lib/codemirror/languages.ts).
+ * They differ from Prism's in some cases
  */
-export function getMonacoLanguageId(filePath: string): string {
+export function getEditorLanguageId(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase() || '';
   const langMap: Record<string, string> = {
     js: 'javascript',
@@ -63,46 +63,4 @@ export function getMonacoLanguageId(filePath: string): string {
   if (filePath.toLowerCase().includes('makefile')) return 'makefile';
 
   return langMap[ext] || 'plaintext';
-}
-
-/**
- * Check if a file is likely binary based on extension
- */
-export function isBinaryFile(filePath: string): boolean {
-  const ext = filePath.split('.').pop()?.toLowerCase() || '';
-  const binaryExtensions = [
-    'png',
-    'jpg',
-    'jpeg',
-    'gif',
-    'svg',
-    'ico',
-    'webp',
-    'pdf',
-    'zip',
-    'tar',
-    'gz',
-    'bz2',
-    'xz',
-    '7z',
-    'exe',
-    'dll',
-    'so',
-    'dylib',
-    'bin',
-    'woff',
-    'woff2',
-    'ttf',
-    'otf',
-    'eot',
-    'mp3',
-    'mp4',
-    'avi',
-    'mov',
-    'wmv',
-    'flv',
-    'webm',
-    'ogg',
-  ];
-  return binaryExtensions.includes(ext);
 }

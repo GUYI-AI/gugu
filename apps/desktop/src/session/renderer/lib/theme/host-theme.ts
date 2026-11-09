@@ -5,7 +5,7 @@
  * 于是同一个 `<html>` 上挂着两套互不相干的标记:`data-theme="light"`(咕咕)和
  * `class="emdark"`(会话页)。CSS 层面碰巧不出事——`EmdashSessionFrame` 会把跟随咕咕的
  * emlight/emdark 打在**挂载元素**上,离得近所以赢了根上那个错的。但读 JS 的那批消费者
- * (plugin-icon 选明暗图标变体、monaco、sonner、代码高亮)拿的是会话页那份,全都拿到 emdark。
+ * (plugin-icon 选明暗图标变体、代码编辑器、sonner、代码高亮)拿的是会话页那份,全都拿到 emdark。
  * owner 实遇的症状:亮色主题下 Grok 的图标是**白的**,画在白底上,那一行看起来就是个洞
  * (实测 fill=#fff、data-theme=light)。
  *
@@ -17,6 +17,7 @@
  * `light` / `dark`,落在 `<html data-theme>` 上。选了 `system` 时真值随系统外观走,
  * 由 `startHostThemeSystemSync()` 一处负责改写属性 —— 两个 React 根都只是观察者。
  */
+import { appThemeColors } from './app-theme-colors';
 import { rendererLogger } from '@/lib/log';
 
 const themeLog = rendererLogger('theme/native-appearance');
@@ -107,7 +108,7 @@ function applyEffectiveTheme(theme: HostTheme, preference: ThemePreference): voi
   if (typeof document === 'undefined') return;
   document.documentElement.dataset.theme = theme;
   document.documentElement.dataset.themePreference = preference;
-  notifyWindowTone(theme);
+  notifyHostTheme();
 }
 
 /**
@@ -115,9 +116,9 @@ function applyEffectiveTheme(theme: HostTheme, preference: ThemePreference): voi
  * 主题真值只有这里一个写入者,所以也只有这里知道该告诉主进程什么;主进程只被告知
  * (见 electron/main.ts 同名注释)。web 构建没有这座桥,静默跳过即可 —— 那里根本没有无边框窗口。
  */
-function notifyWindowTone(theme: HostTheme): void {
+export function notifyHostTheme(): void {
   if (typeof window === 'undefined') return;
-  window.electronAPI?.syncWindowTone?.(theme);
+  window.electronAPI?.syncWindowTone?.(readEffectiveHostTheme(), appThemeColors());
 }
 
 /** 读真值。属性缺失时按浅色 —— 与 index.html 里那段引导脚本的默认一致。 */

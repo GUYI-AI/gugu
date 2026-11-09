@@ -331,9 +331,14 @@ describe('claude jsonl 记录源', () => {
     const later = new Date(Date.now() + 60_000);
     await utimes(forkPath, later, later);
 
-    const entries = await start(
-      createClaudeJsonlSource({ harness: 'claude', providerSessionId: SESSION_ID, roots: [root] })
-    );
+    const forkSource = createClaudeJsonlSource({ harness: 'claude', providerSessionId: SESSION_ID, roots: [root] });
+    const entries = await start(forkSource);
+    await forkSource.catchUp!();
+    const consumed = (await stat(file)).size + (await stat(forkPath)).size;
+    const budget = { remainingBytes: consumed };
+    expect(await forkSource.resumePoint!(budget)).not.toBeNull();
+    expect(budget.remainingBytes).toBe(0);
+    expect(await forkSource.resumePoint!({ remainingBytes: consumed - 1 })).toBeNull();
     const texts = entries
       .filter((entry) => (entry.event.kind === 'message' && entry.event.role === 'assistant'))
       .map((entry) => (entry.event as { text: string }).text);
@@ -601,12 +606,25 @@ describe('claude jsonl 记录源', () => {
           content: [{ type: 'text', text: 'API Error: 400 此 session 已绑定另外的ai账号，请执行/new 开启新 session' }]
         }, 'unknown'),
         ask('u-3', 5),
-        row('a-3', 6, { type: 'assistant', message: { id: 'msg_a3', role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: '写完了' }] } })
+        // claude 2.1.293 (mac1 2026-11-05): the HTTP body is kept in `errorDetails`; the text is claude's short form.
+        JSON.stringify({ ...JSON.parse(synthetic('a-4', 6, {
+          stop_reason: 'stop_sequence',
+          content: [{ type: 'text', text: 'Prompt is too long' }]
+        }, 'invalid_request')), apiErrorStatus: 400,
+        errorDetails: '400 {"error":{"type":"<nil>","message":"prompt is too long: 2160124 tokens > 1000000 maximum (request id: 2026110522)"},"type":"error"}' }),
+        ask('u-4', 7),
+        row('a-3', 8, { type: 'assistant', message: { id: 'msg_a3', role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: '写完了' }] } })
       ];
       const { timeline } = await build(lines);
+      // The rebuilt transcript keeps what the failing side said, as the live one does.
       expect(timeline.getSnapshot().turns.map((turn) => turn.outcome)).toEqual([
         { kind: 'done', reason: 'refusal' },
-        { kind: 'error', reason: 'prompt_failed' },
+        { kind: 'error', reason: 'prompt_failed',
+          detail: 'API Error: 400 此 session 已绑定另外的ai账号，请执行/new 开启新 session',
+          said: 'API Error: 400 此 session 已绑定另外的ai账号，请执行/new 开启新 session' },
+        { kind: 'error', reason: 'prompt_failed',
+          detail: '400 {"error":{"type":"<nil>","message":"prompt is too long: 2160124 tokens > 1000000 maximum (request id: 2026110522)"},"type":"error"}',
+          said: 'prompt is too long: 2160124 tokens > 1000000 maximum (request id: 2026110522)' },
         { kind: 'done', reason: 'end_turn' }
       ]);
     });

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { log } from '@main/lib/logger';
 import { anySignal } from '@gugu/core/shared/anySignal';
 import type { TaskPageEvent, TaskPagePresentation } from '@shared/extensions/task-page-protocol';
 import type { PageProtocol } from '../browser/page-protocol';
@@ -47,7 +48,7 @@ export class ExtensionTaskPages {
 
   constructor(private readonly authorize: (extensionId: string) => void,
     private readonly select: (input: { sessionId: string; url?: string; signal: AbortSignal; lifetime: AbortSignal }) => Promise<TaskPageNative>,
-    private readonly report: (error: unknown) => void = console.error,
+    private readonly report: (error: unknown) => void = error => log.error('App task page cleanup failed', { error: error instanceof Error ? error.message : String(error) }),
     private readonly files?: (caller: BridgeCaller, refs: unknown, signal: AbortSignal) => Promise<TaskPageFilePayload[]>) {}
 
   private caller(caller: BridgeCaller): { sessionId: string; signal: AbortSignal } {

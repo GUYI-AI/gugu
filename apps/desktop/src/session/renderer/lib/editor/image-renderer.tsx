@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
 import { usePinchZoom, type PinchPoint } from '@/hooks/usePinchZoom';
 import { ContainedImage } from '@renderer/lib/ui/contained-image';
+import { useFileZoom, zoomForCommand } from '@/components/preview/file-content-zoom';
 import {
   anchorScrollDelta,
   clampZoom,
@@ -12,6 +13,7 @@ import {
 
 interface ImageRendererProps {
   file: { path: string; content: string };
+  onError?: () => void;
 }
 
 type Size = { width: number; height: number };
@@ -29,13 +31,17 @@ const VIEWPORT_PADDING_PX = 16;
  * 放大之间切换(#6456)。放大后超出窗格的部分用原生滚动看 —— 普通双指滑动照常滚动,不被吞掉。
  * ❌ 缩放整个界面:只缩放这张图(#669)。
  */
-export function ImageRenderer({ file }: ImageRendererProps) {
+export function ImageRenderer({ file, onError }: ImageRendererProps) {
   const fileName = file.path.split('/').pop() ?? file.path;
   const viewportRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState<Size>({ width: 0, height: 0 });
   // 两样都按图片来源记:换了一张图,上一张的原始尺寸和缩放就不算数了。
   const [loaded, setLoaded] = useState<{ src: string; size: Size } | null>(null);
-  const [pinned, setPinned] = useState<{ src: string; scale: number } | null>(null);
+  const { zoom, setZoom } = useFileZoom('image', viewportRef, command => {
+    const viewport = viewportRef.current;
+    // From the ratio on screen, not the stored one: a preference above this image's cap would otherwise make zoom-out a no-op.
+    if (viewport) zoomTo(clampZoom(fitScale * zoomForCommand(scale / fitScale, command), fitScale, maxScale), { x: viewport.clientWidth / 2, y: viewport.clientHeight / 2 });
+  });
   const anchorRef = useRef<ZoomAnchor | null>(null);
 
   useEffect(() => {
@@ -57,7 +63,7 @@ export function ImageRenderer({ file }: ImageRendererProps) {
   const maxScale = imageMaxScale(fitScale);
   // 没捏过就一直是「适合窗格」,跟着窗格大小走;捏过就钉在那个比例上(仍落在当前的上下限里)。
   const scale =
-    pinned?.src === file.content ? clampZoom(pinned.scale, fitScale, maxScale) : fitScale;
+    clampZoom(fitScale * zoom, fitScale, maxScale);
 
   const zoomTo = (next: number, point: PinchPoint) => {
     const viewport = viewportRef.current;
@@ -75,7 +81,7 @@ export function ImageRenderer({ file }: ImageRendererProps) {
       fractionY: pointerFraction(clientY, imageRect.top, imageRect.height),
     };
     // 回到适合窗格就不再钉比例:之后拖动窗格,图照旧跟着窗格走。
-    setPinned(next === fitScale ? null : { src: file.content, scale: next });
+    setZoom(next / fitScale);
   };
 
   usePinchZoom(viewportRef, (deltaY, point) => {
@@ -117,6 +123,7 @@ export function ImageRenderer({ file }: ImageRendererProps) {
           src={file.content}
           alt={fileName}
           draggable={false}
+          onError={onError}
           onLoad={(event) =>
             setLoaded({
               src: file.content,

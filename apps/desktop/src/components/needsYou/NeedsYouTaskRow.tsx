@@ -1,4 +1,3 @@
-import { Zap } from '@/lib/icons'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { formatCalendarDay } from '@/i18n/format'
 import { useChatStore } from '@/store/chatContext'
@@ -6,18 +5,19 @@ import { sessionPresentation } from '@/mobile/agent-watch/watch-status'
 import { agentStatusText } from '@/lib/agentStatusText'
 import { displayStatusOf } from '@gugu/core/shared/ui/agentConversationStatusModels'
 import { observer } from 'mobx-react-lite'
-import type { Ref } from 'react'
 import { Avatar } from '../Avatar'
 import { AgentContactStatusMark } from '../AgentContactStatusMark'
 import { ListRow } from '../ui/ListRow'
+import { Chip } from '../ui/Chip'
 import { PhoneMessageAvatar } from '@/mobile/chat/PhoneMessageAvatar'
 import type { NeedsYouTask } from './useNeedsYouTasks'
 
 /** Attention tasks retain their canonical status without restoring standalone tasks to Chats. */
-export const NeedsYouTaskRow = observer(function NeedsYouTaskRow({ task, onClick, onKeyDown, mobile = true, ref }: {
+export const NeedsYouTaskRow = observer(function NeedsYouTaskRow({ task, onClick, onKeyDown, mobile = true, emphasis }: {
   task: NeedsYouTask
   mobile?: boolean
-  ref?: Ref<HTMLDivElement>
+  /** Unread (still counted): bold title and the chat list's unread count badge. A read row is muted, regular weight. */
+  emphasis?: boolean
   onClick: React.MouseEventHandler<HTMLElement>
   onKeyDown: React.KeyboardEventHandler<HTMLElement>
 }) {
@@ -32,20 +32,20 @@ export const NeedsYouTaskRow = observer(function NeedsYouTaskRow({ task, onClick
   ])
   const time = Date.parse(session.lastInteractedAt ?? '')
   return <ListRow
-    ref={ref}
     data-session-line={session.conversationId}
     mobile={mobile}
     tabIndex={0}
     role="option"
     aria-selected={false}
+    emphasis={emphasis}
     onClick={onClick}
     onKeyDown={onKeyDown}
     leading={<PhoneMessageAvatar badge={presentation && <span className="inline-flex" role="img" aria-label={agentStatusText(presentation.label)}><AgentContactStatusMark tone={displayStatusOf(presentation.tone)} /></span>}>
       <Avatar name={name!} avatarUrl={agent?.avatar ?? null} seed={agentId} size={mobile ? 48 : 'sm'} isAgent harnessBadge={false} />
     </PhoneMessageAvatar>}
-    title={name}
-    accessory={<Zap size={11} className="shrink-0 text-[var(--agent-bolt)]" />}
+    title={emphasis ? name : <span className="font-normal text-[var(--muted-fg)]">{name}</span>}
     meta={Number.isFinite(time) ? formatCalendarDay(new Date(time).toISOString()) : undefined}
-    subtitle={title}
+    subtitle={presentation && [agentStatusText(presentation.label), ...(title === name ? [] : [title])].join(' · ')}
+    trailing={emphasis ? <Chip tone="accent" shape="count">1</Chip> : undefined}
   />
 })

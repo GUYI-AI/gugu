@@ -1,4 +1,5 @@
 import { platform } from '@/platform'
+import { notifyCopied } from '@/lib/copyFeedback'
 import { messageForUser } from '@/lib/userFacingError';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -42,9 +43,11 @@ type Preview = {
  * 读到了图进看图器、文档在这页里画(App 现成的那张预览,与聊天里的附件同一份)。
  * 读不到就在这页里说为什么(那台机器给的原因),❌ 点了没反应。
  */
-export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileChunk }: {
+export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileChunk, readWorkingCopy }: {
   deviceId: string; sessionId: string; onQuote: (text: string) => void
   readFileChunk?: (input: import('@gugu/session-core/session-record/contract').SessionpageOpenedFileReadRequest) => Promise<import('@gugu/session-core/session-record/contract').SessionpageOpenedFileChunk>
+  /** A file the timeline names (a link, an edited file): its working copy's, not the opened-output ledger's. */
+  readWorkingCopy?: (input: import('@gugu/session-core/session-record/contract').SessionpageOpenedFileReadRequest) => Promise<import('@gugu/session-core/session-record/contract').SessionpageOpenedFileChunk>
 }): {
   handlers: OpenedOutputHandlers
   openFile: (path: string, source?: FileOpenSource) => void
@@ -112,10 +115,13 @@ export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileCh
         const file: AttachmentMeta = { kind: 'file', fileName: plan.name, mimeType: plan.mimeType, url: '', sizeBytes: 0 }
         setPreview({ path: plan.path, file, kind, blob: null, content: null, loading: true })
         void readWholeOpenedFile({
-          read: (chunk) => readFileChunk ? readFileChunk(chunk) : readOpenedFileChunk(deviceId, chunk),
+          read: (chunk) => readFileChunk ? readFileChunk(chunk)
+            : readWorkingCopy && (opts.source === 'diff' || opts.source === 'resource-link' || opts.source === 'prose-link') ? readWorkingCopy(chunk)
+              : readOpenedFileChunk(deviceId, chunk),
           conversationId: sessionId,
           path: plan.path,
           signal: request.signal,
+          retryTransient: opts.download === true,
           onProgress: (read, size) => {
             if (requestRef.current !== request) return
             setPreview((current) => (current && current.loading ? { ...current, progress: { read, size } } : current))
@@ -123,17 +129,19 @@ export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileCh
         })
           .then(async (bytes) => {
             if (requestRef.current !== request) return
-            requestRef.current = null
             const blob = new Blob([bytes], plan.mimeType ? { type: plan.mimeType } : {})
             if (opts.download) {
               // 读的时候那一页在转,读到就交给下载、页面让位。
               setPreview(null)
               await downloadBlob(blob, plan.name).catch((error: unknown) => {
+                if (request.signal.aborted || requestRef.current !== request) return
                 log.error({ error, path: plan.path }, 'opened file save failed')
                 toast(t('agentWatch.output.saveFailed'), 'error', messageForUser(error))
               })
+              if (requestRef.current === request) requestRef.current = null
               return
             }
+            requestRef.current = null
             const url = URL.createObjectURL(blob)
             blobUrlRef.current = { url, ...(plan.view === 'image' ? { image: { name: plan.name, path: plan.path } } : {}) }
             if (plan.view === 'image') {
@@ -153,16 +161,21 @@ export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileCh
             if (request.signal.aborted || requestRef.current !== request) return
             requestRef.current = null
             log.warn({ error, path: plan.path }, 'opened file read failed')
+            if (opts.download) {
+              setPreview(null)
+              toast(t('agentWatch.output.saveFailed'), 'error', describeFailure(error, opts.source))
+              return
+            }
             setPreview({ path: plan.path, file, kind, blob: null, content: null, loading: false, error: describeFailure(error, opts.source) })
           })
       },
-    [deviceId, sessionId, readFileChunk, releaseBlobUrl, describeFailure, t, toast],
+    [deviceId, sessionId, readFileChunk, readWorkingCopy, releaseBlobUrl, describeFailure, t, toast],
   )
 
   const copy = useCallback(
     (text: string) => {
       void platform.writeClipboardText(text).then(
-        () => toast(t('agentWatch.output.copied')),
+        () => notifyCopied(t('agentWatch.output.copied')),
         (error: unknown) => {
           log.error({ error }, 'opened-output copy failed')
           toast(t('agentWatch.output.copyFailed'), 'error', messageForUser(error))

@@ -32,7 +32,7 @@ import { canStartSideSession, startSideSession } from './start-side-session';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { useTerminalEnabled } from '@renderer/features/settings/use-terminal-enabled';
-import { folderItem } from '@renderer/features/chats/chat-tabs/chat-panel-item';
+import { folderItem, WORKSPACE_APP_KIND } from '@renderer/features/chats/chat-tabs/chat-panel-item';
 import { openPanelItem } from '@renderer/features/chats/chat-tabs/chat-layouts';
 import { useChatFolderName } from '@/components/chat/chatFolderName';
 import { openApp } from '@/components/appSlot/useOpenApp';
@@ -70,26 +70,27 @@ export const TabBarAddMenu = observer(function TabBarAddMenu({ chatId }: { chatI
     : <>{menu}<OpenAddMenuCommand onOpen={() => setOpen(true)} /></>;
 });
 
-/** 任务页一格的那几项:给这条会话加的(侧会话、审阅、终端、浏览器、端口、文件)、文件夹,和已装的 App。 */
+/** 任务页一格的那几项:文件夹(第一项,和对话的「+」同一个位置)、给这条会话加的(侧会话、审阅、终端、浏览器、端口),和已装的 App。 */
 const TaskAddItems = observer(function TaskAddItems() {
   const { translate } = useSessionMessages();
   const sessionView = useWorkspaceViewModel();
   const { projectId, sessionId } = useSessionViewContext();
-  const { pane, paneId } = usePaneContext();
   const { data: agents } = useAgents();
   const canSideSession = canStartSideSession(projectId, sessionId, agents);
   const terminalEnabled = useTerminalEnabled();
-  const openTab = (kind: string) => sessionView.paneLayout.open(kind, {}, { preview: false, target: { paneId } });
+  const openTab = (kind: string) => sessionView.paneLayout.openBeside(kind, {});
+  const folder = installedExtensionsStore.enabledTabContributions.find((entry) => entry.kind === WORKSPACE_APP_KIND);
   return (
     <>
+      {folder && <FolderMenuItem label={installedExtensionsStore.tabTitle(folder.kind) ?? folder.title} onOpen={() => openTab(folder.kind)} />}
       {getSessionWorkspaceActionOrder(projectId, terminalEnabled).map((actionId) =>
         renderWorkspaceActionMenuItem(actionId, translate, {
           blocked: sessionWorkspaceActionBlocked(projectId, actionId) !== null,
           blockedTitle: workspaceBlockedTitle(sessionWorkspaceActionBlocked(projectId, actionId), translate, projectId),
-          openBrowser: () => pane.open('browser', { preview: false }),
-          openReview: () => sessionView.paneLayout.open('review', {}),
+          openBrowser: () => openTab('browser'),
+          openReview: () => openTab('review'),
           openTerminal: () => void sessionView.openTerminalAsTab(),
-          openPorts: () => sessionView.paneLayout.open('remote-ports', {}, { preview: false }),
+          openPorts: () => openTab('remote-ports'),
           startSideSession: () => startSideSession(projectId, sessionId),
           canStartSideSession: canSideSession
         })
@@ -100,7 +101,7 @@ const TaskAddItems = observer(function TaskAddItems() {
           这一格(它原来在哪就从哪拿走,一个 App 只有一份,#7052)。只列启用的:停用的不出现(owner 10-20「灰掉也占位置」),
           启用在「App」页 —— 最后一行就去那里。 */}
       <AppsSection
-        apps={installedExtensionsStore.enabledTabContributions.map((contribution) => ({
+        apps={installedExtensionsStore.enabledTabContributions.filter((entry) => entry.kind !== WORKSPACE_APP_KIND).map((contribution) => ({
           key: contribution.kind,
           title: contribution.title,
           iconDataUrl: contribution.iconDataUrl,
@@ -123,12 +124,10 @@ function OpenAddMenuCommand({ onOpen }: { onOpen: () => void }) {
 
 /** 块里一个对话的那几项(gugu-dev#181 第 ⑥ 步):这个对话的文件夹(群文件夹 / 文件夹),和能在这里打开的 App。 */
 const ChatAddItems = observer(function ChatAddItems({ chatId }: { chatId: string }) {
-  const folderName = useChatFolderName(chatId);
+  const folderName = useChatFolderName();
   return (
     <>
-      <DropdownMenuItem onClick={() => openPanelItem(chatId, folderItem())}>
-        <Folder className="size-3.5" /> {folderName}
-      </DropdownMenuItem>
+      <FolderMenuItem label={folderName} onOpen={() => openPanelItem(chatId, folderItem())} />
       <AppsSection
         apps={installedExtensionsStore.openableApps.map((app) => ({
           key: app.extensionId,
@@ -140,6 +139,11 @@ const ChatAddItems = observer(function ChatAddItems({ chatId }: { chatId: string
     </>
   );
 });
+
+/** One built-in folder entry; its context supplies the name and the page to open. */
+function FolderMenuItem({ label, onOpen }: { label: string; onOpen: () => void }) {
+  return <DropdownMenuItem onClick={onOpen}><Folder className="size-3.5" /> {label}</DropdownMenuItem>;
+}
 
 /**
  * 「App」那一段,两处同一份:列能在这里打开的 App,最后一行去「App」页装更多。

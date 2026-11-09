@@ -6,6 +6,8 @@
  * `@gugu/session-core/session-record/contract` 那条出口 —— 从这里取会把 node 依赖拖进浏览器包。
  */
 export * from './contract';
+export { readNativeInputTail, type NativeInputTail } from './native-input-evidence';
+export { fitsTimelineArchiveSourceBudget } from './archive-budget';
 
 export {
   createSessionTimeline,
@@ -51,6 +53,7 @@ import { createHermesSqliteSource } from './sources/hermes-sqlite';
 import { createOpencodeSqliteSource } from './sources/opencode-sqlite';
 import { createQwenJsonlSource } from './sources/qwen-jsonl';
 import { createPiJsonlSource } from './sources/pi-jsonl';
+import { createCodebuddyJsonlSource } from './sources/codebuddy-jsonl';
 import type { SessionRecordSourceOptions } from './sources/shared';
 
 /**
@@ -79,6 +82,8 @@ export function createSessionRecordSource(
       return createQwenJsonlSource(locator, options);
     case 'pi':
       return createPiJsonlSource(locator, options);
+    case 'codebuddy':
+      return createCodebuddyJsonlSource(locator, options);
   }
 }
 

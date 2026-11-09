@@ -10,11 +10,13 @@
  * Collision handling is Base UI's alone (flip the side, shift along it); ❌ pre-flip by hand-estimated heights.
  */
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
-import { useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
+import { ContextMenu as ContextMenuPrimitive } from '@base-ui/react/context-menu'
+import { Children, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
 import { cn } from '@/lib/cn'
 import { ChevronRight } from '@/lib/icons'
 import { popupMotion } from './variants'
 import { useBackLayer } from './sheetStack'
+import { useMobileShell } from '../../hooks/useMobileShell'
 import { useUiPortalContainer } from '@gugu/session-ui/react/primitives'
 import { Switch } from './Switch'
 
@@ -88,6 +90,12 @@ export type MenuProps = MenuAnchorProps & {
   onClose?: () => void
   /** Accessible name for non-standard menu contents such as the quick reaction picker. */
   ariaLabel?: string
+  /** Default true. Keep the Menu mounted and flip this to false to let the popup play its exit animation. */
+  open?: boolean
+  /** Replaces the default menu surface: the caller draws its own popup (the phone long-press layer). */
+  popupClassName?: string
+  /** Renders a backdrop beneath the popup; a press on it is an outside press. */
+  backdropClassName?: string
 }
 
 // 按钮锚点离按钮 6px(与 DropdownMenu 同);指针锚点贴着指针。
@@ -103,6 +111,9 @@ export function Menu({
   children,
   onClose,
   ariaLabel,
+  open = true,
+  popupClassName,
+  backdropClassName,
 }: MenuProps) {
   const portalContainer = useUiPortalContainer()
   const pointAnchor = useMemo(() => (
@@ -111,17 +122,27 @@ export function Menu({
       : { getBoundingClientRect: () => new DOMRect(x, y, 0, 0) }
   ), [elementAnchor, x, y])
   // 开着的菜单也是盖在页面上的一层:安卓返回键先关它,❌ 让底下的页面退走、菜单浮在列表上。
-  useBackLayer(onClose)
+  useBackLayer(onClose, open)
+  // 用键盘关(Esc / 回车选中)⇒ 焦点回到打开前那个元素(输入框里右键 → Esc,光标还在输入框);隐藏 Trigger 接不住焦点。
+  // 指针关 ⇒ 不搬焦点:点到哪焦点就在哪,手机「选择文字」刚选中的文字也不会被抢走。
+  const [returnFocus] = useState(() => document.activeElement instanceof HTMLElement ? document.activeElement : null)
+  const finalFocus = (closeType: string) => closeType === 'keyboard' && returnFocus?.isConnected ? returnFocus : false
 
   return (
+    // @@@menu-root-node - only a Trigger (or a context-menu root) registers the menu's floating node; without one a
+    // MenuSubmenu opening reads as a sibling and closes the menu. The hidden Trigger is that registration.
+    // ❌ ContextMenu.Root here: opened through `open`, it never sees a contextmenu event, so it treats every open as a
+    // touch long press — modal, and outside presses ignored for 500ms (a quick click elsewhere left the menu open).
     <MenuPrimitive.Root
-      open
+      open={open}
       modal={false}
       onOpenChange={(open) => {
         if (!open) onClose?.()
       }}
     >
+      <MenuPrimitive.Trigger nativeButton={false} render={<span hidden />} />
       <MenuPrimitive.Portal container={portalContainer}>
+        {backdropClassName && <MenuPrimitive.Backdrop className={backdropClassName} />}
         <MenuPrimitive.Positioner
           className={cn('gg-menu-positioner window-no-drag-region', menuPositioner)}
           anchor={elementAnchor ?? pointAnchor}
@@ -137,10 +158,11 @@ export function Menu({
           style={{ zIndex }}
         >
           <MenuPrimitive.Popup
-            className={menuPopup}
+            finalFocus={finalFocus}
+            className={popupClassName ?? menuPopup}
             data-occludes-browser-page
             aria-label={ariaLabel}
-            style={{ minWidth: Math.max(minWidth, 0), padding: menuSurfacePadding, ...style }}
+            style={popupClassName ? style : { minWidth: Math.max(minWidth, 0), padding: menuSurfacePadding, ...style }}
           >
             {children}
           </MenuPrimitive.Popup>
@@ -170,7 +192,7 @@ export interface MenuItemProps {
    * 这一格只是文字,不注册任何按键。
    */
   shortcut?: string
-  /** false = 点了菜单不收(在原浮层里换一屏,如「选择文字」);默认点了就收。 */
+  /** false = 点了菜单不收(如话题行的置顶开关);默认点了就收。 */
   closeOnClick?: boolean
   onClick?: () => void
   children: ReactNode
@@ -245,11 +267,26 @@ export function MenuSubmenu({ icon, label, 'data-testid': testId, popupStyle, po
       </MenuPrimitive.SubmenuTrigger>
       <MenuPrimitive.Portal container={portalContainer}>
         <MenuPrimitive.Positioner className="gg-menu-positioner window-no-drag-region" positionMethod="fixed" collisionPadding={8} style={submenuPositionerStyle}>
-          <MenuPrimitive.Popup className={cn(menuPopup, popupClassName)} style={style}>{children}</MenuPrimitive.Popup>
+          <MenuPrimitive.Popup className={cn(menuPopup, popupClassName)} data-occludes-browser-page style={style}>{children}</MenuPrimitive.Popup>
         </MenuPrimitive.Positioner>
       </MenuPrimitive.Portal>
     </MenuPrimitive.SubmenuRoot>
   )
+}
+
+/**
+ * 把低频的几行收进一行,悬浮后在旁边展开(owner 11-07)。只剩一行就留在原地:折一行省不了地方,只多一步。
+ * 手机没有悬浮,窄屏也放不下第二层:照旧平铺。children 要直接是行 ——Fragment 或组件都只算一行。
+ */
+export function MenuFold({ icon, label, 'data-testid': testId, children }: {
+  icon?: ReactNode
+  label: ReactNode
+  'data-testid'?: string
+  children: ReactNode
+}) {
+  const mobile = useMobileShell()
+  if (mobile || Children.toArray(children).length < 2) return <>{children}</>
+  return <MenuSubmenu icon={icon} label={label} data-testid={testId}>{children}</MenuSubmenu>
 }
 
 /**
@@ -318,6 +355,7 @@ function DropdownMenuContent({
       >
         <MenuPrimitive.Popup
           className={cn(menuPopup, className)}
+          data-occludes-browser-page
           style={{ padding: menuSurfacePadding, ...style }}
           {...props}
         />
@@ -335,4 +373,37 @@ export const DropdownMenu = {
   /** 单选的一组(模式按钮 #7167):行照样用 `menuRowClassName`,选中那行由 `data-checked` 着色。 */
   RadioGroup: MenuPrimitive.RadioGroup,
   RadioItem: MenuPrimitive.RadioItem,
+}
+
+function ContextMenuRoot({ onOpenChange, ...props }: ContextMenuPrimitive.Root.Props) {
+  // Same as DropdownMenuRoot: while open, Android back closes it first.
+  const actions = useRef<ContextMenuPrimitive.Root.Actions>(null)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(Boolean(props.defaultOpen))
+  useBackLayer((props.open ?? uncontrolledOpen) ? () => actions.current?.close() : undefined)
+  return (
+    <ContextMenuPrimitive.Root
+      {...props}
+      actionsRef={actions}
+      onOpenChange={(open, details) => { setUncontrolledOpen(open); onOpenChange?.(open, details) }}
+    />
+  )
+}
+
+function ContextMenuTrigger({ className, ...props }: ContextMenuPrimitive.Trigger.Props) {
+  // A long press must open the menu, not start a text selection.
+  return <ContextMenuPrimitive.Trigger className={typeof className === 'function' ? className : cn('select-none', className)} {...props} />
+}
+
+/**
+ * Right click / long press on an area (a list row): the same surface and rows as `Menu`, anchored at the pointer.
+ * Rows are `MenuItem` / `MenuSeparator` / `MenuSubmenu`. ❌ A second menu look for lists.
+ */
+export const ContextMenu = {
+  Root: ContextMenuRoot,
+  Trigger: ContextMenuTrigger,
+  Content: ContextMenuContent,
+}
+
+function ContextMenuContent(props: DropdownMenuContentProps) {
+  return <DropdownMenuContent sideOffset={0} {...props} />
 }

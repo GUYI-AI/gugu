@@ -17,7 +17,7 @@ it('maintains a native-owned child session without attributing its initializatio
   const protocol = createPageProtocol(native.contents);
   try {
     await protocol.maintain!('Page.enable');
-    native.debuggerApi.emit('message', {}, 'Target.attachedToTarget', { sessionId: 'child-session' });
+    native.debuggerApi.emit('message', {}, 'Target.attachedToTarget', { sessionId: 'child-session', targetInfo: { type: 'iframe' } });
     const commands: [string, Record<string, unknown>?][] = [
       ['Page.enable'], ['Page.getFrameTree'], ['Log.enable', {}], ['Page.setLifecycleEventsEnabled', { enabled: true }],
       ['Runtime.enable', {}], ['Page.addScriptToEvaluateOnNewDocument', { source: '', worldName: 'app-utility-world' }],

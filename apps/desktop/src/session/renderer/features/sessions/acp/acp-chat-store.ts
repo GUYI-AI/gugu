@@ -1,4 +1,7 @@
+import { withTranscriptTurnIdentity } from '@shared/core/sessions/transcript-turn-identity';
 import { projectRejectedSessionInputs } from '@/lib/pendingSessionInput';
+import { messageFailureNotice, type MessageFailureAttempt } from '@/lib/messageFailureNotice';
+import { runNativeInputAction } from '@/lib/nativeInputFailureNotice';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import type {
   ChatContext,
@@ -39,16 +42,16 @@ import type { AgentState, LiveSettingResult, PermissionWaitKind } from '@gugu/se
 import { errorDetail, isDeepEqual } from '@gugu/session-shared';
 import { action, computed, makeObservable, observable, reaction, runInAction, when } from 'mobx';
 import { flushSync } from 'react-dom';
-import { discardSessionLifeRow, endSessionLife, forkSessionLife, readSessionLife, sessionLifeView, startSessionLife, stopSessionLife } from '../stores/session-life-views';
+import { discardSessionLifeRow, endSessionLife, forkSessionLife, readSessionLife, retryUnknownSessionInput, sessionLifeView, startSessionLife, stopSessionLife } from '../stores/session-life-views';
 import { ACP_START_FAILED, lifeHoldIsFailure, lifeIsStarting, type LifeView } from '@shared/core/sessions/session-life';
 import { sendThroughCustody } from './queue-native-input';
 import { sendHeldInputNow } from './send-held-input-now';
 import { sessionInputBubbles } from '@/lib/sessionInputOutbox';
-import { changeRejectedSessionInput, deleteQueuedSessionInput, editQueuedSessionInput, queuedSessionInputs, reorderQueuedSessionInputs, retrySessionInputs, subscribeSessionInputs } from '@/lib/sessionInputOutboxBridge';
+import { changeRejectedSessionInput, deleteQueuedSessionInput, editQueuedSessionInput, queuedSessionInputs, reorderQueuedSessionInputs, retrySessionInput, subscribeSessionInputs } from '@/lib/sessionInputOutboxBridge';
 import type { SessionInput } from '@/lib/sessionInputOutbox';
 import { sessionSendQueueOrder } from '@/lib/sessionSendQueueOrder';
 import { projectSessionPendingInput } from '@/lib/pendingSessionInput';
-import { isTranscriptDelivery, loadPendingDeliveryHistory, projectSessionPendingDeliveries } from '@/lib/pendingSessionDeliveries';
+import { isTranscriptDelivery, loadPendingDeliveryHistory, projectSessionPendingDeliveries, settledHostRow } from '@/lib/pendingSessionDeliveries';
 import { batch } from 'solid-js';
 import { AcpLiveSession, AcpStartError, asValueSource } from '@renderer/lib/acp/acp-live-session';
 import { attachAcpSessionWhenReady } from '@renderer/lib/acp/acp-session-attachment';
@@ -67,8 +70,11 @@ import { projectOwnerNotifications } from '@gugu/session-core/session-record/own
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import type { SessionMessageKey } from '@renderer/localization/messages';
-import { failureText } from '../gugu-reason';
-import { rpc } from '@renderer/lib/ipc';
+import { failureReason, failureText } from '../gugu-reason';
+import { modelSettingRejection, type ModelSettingRejection } from '../session-config/model-setting-rejection';
+import { rpc, rpcOn, onMachineEvent } from '@renderer/lib/ipc';
+import { sessionTurnSettledChannel, type StoredSettledTurn } from '@shared/core/sessions/sessionEvents';
+import { observeClosedTurnHistory } from './closed-turn-reconciliation';
 import { log } from '@renderer/utils/logger';
 import { sessionHasPriorContext } from '@shared/core/sessions/prior-context';
 import type { Session } from '@shared/core/sessions/sessions';
@@ -100,6 +106,7 @@ const HOST_NOT_SETTLED: ReadonlySet<string> = new Set(['closed', 'lost', 'starti
 export type LiveSettingOutcome =
   | { kind: 'applied'; effectiveValue: string }
   | { kind: 'restart-required'; requestedValue: string }
+  | ModelSettingRejection
   | null;
 
 export interface AgentAffordances {
@@ -151,6 +158,9 @@ export class AcpChatStore {
   historyLoading = true;
   /** A failure of opening / attaching this page; a failed session-life view says its own (`loadError`). */
   private _loadError: AcpLoadError | null = null;
+  private _draftSubmissionId = crypto.randomUUID();
+  get draftSubmissionId(): string { return this._draftSubmissionId; }
+  renewDraftSubmission(): void { this._draftSubmissionId = crypto.randomUUID(); }
   /** Life views up to this version answered an earlier attempt: a retry does not show them again. */
   private _lifeRetriedVersion = 0;
   private _unwatchLife: (() => void) | null = null;
@@ -212,6 +222,7 @@ export class AcpChatStore {
    * 停着,下一次发消息要把它起起来。只在「停着、还没挂上」这一段为真;任何一次重新开场(`_runBootstrap`)都把它清掉。
    */
   private _closedByHost = false;
+  private _closedHistory: ReturnType<typeof observeClosedTurnHistory> | null = null;
   /**
    * #980 一次「打开」在路上(`_open`):画库里那份 + 问一句它在不在跑。这段**不算在起**(`starting`):
    * 换模型 / 权限档照停着的会话记下,发一句照停着的会话起。
@@ -243,6 +254,9 @@ export class AcpChatStore {
     requestId: number;
   } | null = null;
   private _permissionModeRequestId = 0;
+  /** A model failure stays beside that setting until a model change is confirmed. */
+  modelSettingError: string | null = null;
+  private _modelSettingRecovery = false;
   private _draftTimer: number | null = null;
   private _lastQueuedPrompts: QueuedPrompt[] = [];
   /** The side chat's fork entry in session-life (`lifeFork`); ended when the page is disposed. */
@@ -341,6 +355,7 @@ export class AcpChatStore {
       liveSubagentIds: computed,
       session: observable.ref,
       pendingPermissionMode: observable.ref,
+      modelSettingError: observable,
       historyLoading: observable,
       _loadError: observable.ref,
       _lifeRetriedVersion: observable,
@@ -459,6 +474,16 @@ export class AcpChatStore {
     const record = this._sessionRecord();
     if (!record) return null;
     return resolveSessionPermissionMode(record);
+  }
+
+  /**
+   * 会话记录里那一档,不论会话在不在跑 —— 给权限一维走 `reload-session` 的家(dsh)摆下拉用:它的活会话也不报档位表,
+   * 档位在 spawn 那刻按记录进进程,所以记录就是这条会话此刻的那一档。侧边聊天借来源会话的记录,答 null。
+   */
+  get recordedPermissionTier(): GuguPermissionMode | null {
+    if (this.isTransient) return null;
+    const record = this._sessionRecord();
+    return record ? resolveSessionPermissionMode(record) : null;
   }
 
   get permissionModeChangeNotice(): ComposerNotice | null {
@@ -672,8 +697,15 @@ export class AcpChatStore {
     return queuedSessionInputs(this.runtimeSessionId).some(input => input.id === itemId && input.admission === 'rejected');
   }
 
+  /** A failed send, the sender's refusal or the host's settled row, can be let go. */
+  canDiscardSend(itemId: string): boolean {
+    return this.isRejectedInput(itemId) || settledHostRow(sessionLifeView(this.runtimeSessionId), itemId);
+  }
+
   discardRejectedInput(itemId: string): void {
-    void changeRejectedSessionInput(itemId, { kind: 'discard' }).catch(error => this._toastError('acpFailure.sendMessage', error));
+    void this._messageAction(itemId, () => this.isRejectedInput(itemId)
+      ? changeRejectedSessionInput(itemId, { kind: 'discard' })
+      : discardSessionLifeRow(this.runtimeSessionId, itemId));
   }
 
   beginMessageEdit(itemId: string): void {
@@ -697,11 +729,12 @@ export class AcpChatStore {
     if (edit?.itemId === itemId && edit.text.trim() && this.isRejectedInput(itemId) && !this.reverting) {
       this.reverting = true;
       try {
-        await changeRejectedSessionInput(itemId, { kind: 'edit', text: edit.text });
-        runInAction(() => { this.messageEdit = null; });
-        await changeRejectedSessionInput(itemId, { kind: 'retry' });
-      } catch (error) { this._toastError('acpFailure.sendMessage', error); }
-      finally { runInAction(() => { this.reverting = false; }); }
+        await this._messageAction(itemId, async () => {
+          await changeRejectedSessionInput(itemId, { kind: 'edit', text: edit.text });
+          runInAction(() => { this.messageEdit = null; });
+          await changeRejectedSessionInput(itemId, { kind: 'retry' });
+        });
+      } finally { runInAction(() => { this.reverting = false; }); }
       return;
     }
     const item = this.revertMessageItem(itemId);
@@ -769,6 +802,11 @@ export class AcpChatStore {
       this._syncMessageCount();
     }));
     return true;
+  }
+
+  /** A harness that refuses a model change mid-turn. A background agent is not a turn: the host accepts the change then. */
+  modelLockedForTurn(setting: { busy?: string } | undefined): boolean {
+    return setting?.busy === 'reject' && this.affordances.isWorking;
   }
 
   get affordances(): AgentAffordances {
@@ -1053,7 +1091,8 @@ export class AcpChatStore {
 
   /** 「继续」 on a message stopped before it went: the host starts and sends it, once, ❌ with a prompt about continuing. */
   continueStoppedRow(): void {
-    void startSessionLife(this.runtimeSessionId).catch((error: unknown) => this._toastError('acpFailure.sendMessage', error));
+    const id = this.stoppedRowId ?? this.chatState.session.state.pendingMessages.find(input => input.stopped)?.id;
+    if (id) void this._messageAction(id, () => startSessionLife(this.runtimeSessionId));
   }
 
   /** What the host says can be taken back (`discardable`): an older host says nothing, so it offers no discard. */
@@ -1071,14 +1110,17 @@ export class AcpChatStore {
     const id = incoming?.id ?? this.stoppedRowId;
     if (!id || (!incoming && turnId !== stoppedTurnId(id))) return;
     const row = sessionLifeView(this.runtimeSessionId)?.pending.items.find(item => item.messageId === id);
-    void discardSessionLifeRow(this.runtimeSessionId, id).then(() => runInAction(() => {
-      if (incoming) this.chatState.session.setPendingMessages(this.chatState.session.state.pendingMessages.filter(input => input.id !== id));
-      if (row) this.setDraftText([row.text, this.draftText.trim()].filter(Boolean).join('\n'));
-    })).catch((error: unknown) => {
+    void this._messageAction(id, async () => {
+      await discardSessionLifeRow(this.runtimeSessionId, id);
+      runInAction(() => {
+        if (incoming) this.chatState.session.setPendingMessages(this.chatState.session.state.pendingMessages.filter(input => input.id !== id));
+        if (row) this.setDraftText([row.text, this.draftText.trim()].filter(Boolean).join('\n'));
+      });
+    }).then(success => {
+      if (success) return;
       // The click already folded the turn away: it did not go, so it comes back into view.
       const folded = turnDiscardedId(turnId);
       if (this.chatState.viewState.isCollapsed(folded)) this.chatState.viewState.toggleCollapsed(folded);
-      this._toastError('acpFailure.sendMessage', error);
     });
   }
 
@@ -1108,16 +1150,20 @@ export class AcpChatStore {
     void this._open();
   }
 
-  retryPendingInput(itemId?: string): void {
-    if (itemId && this.isRejectedInput(itemId)) {
-      void changeRejectedSessionInput(itemId, { kind: 'retry' }).catch(error => this._toastError('acpFailure.sendMessage', error));
+  retryPendingInput(itemId: string): void {
+    if (sessionLifeView(this.runtimeSessionId)?.pending.items.some(row => row.messageId === itemId && row.resendable)) {
+      void this._messageAction(itemId, () => retryUnknownSessionInput(this.runtimeSessionId, itemId));
       return;
     }
-    void retrySessionInputs().then(() => {
-      if (sessionLifeView(this.runtimeSessionId)?.kind === 'failed') {
-        return startSessionLife(this.runtimeSessionId);
-      }
-    }).catch((error: unknown) => this._toastError('acpFailure.sendMessage', error));
+    if (this.chatState.session.state.pendingMessages.some(input => input.id === itemId && input.delivery?.state === 'unknown')) return;
+    if (this.isRejectedInput(itemId)) {
+      void this._messageAction(itemId, () => changeRejectedSessionInput(itemId, { kind: 'retry' }));
+      return;
+    }
+    void this._messageAction(itemId, async () => {
+      await retrySessionInput(itemId);
+      if (sessionLifeView(this.runtimeSessionId)?.kind === 'failed') await startSessionLife(this.runtimeSessionId);
+    });
   }
 
   /**
@@ -1221,6 +1267,7 @@ export class AcpChatStore {
    */
   reattachAfterHostReload(): void {
     if (this._disposed || !this._bootstrapped) return;
+    this._modelSettingRecovery = this.modelSettingError !== null;
     const keepStoredPage = this._storedPageReusable();
     this._unsubs.splice(0).forEach((unsub) => unsub());
     this.session?.dispose();
@@ -1375,18 +1422,22 @@ export class AcpChatStore {
    * Both sends take the one custody path (sender outbox → host session_pending), persisted session or side chat;
    * the host decides whether the input runs now or queues.
    */
-  async submitPrompt(text: string, attachments: AcpPromptAttachment[] = [], files: TurnFileRef[] = []): Promise<void> {
+  async submitPrompt(text: string, attachments: AcpPromptAttachment[] = [], files: TurnFileRef[] = [], submissionId: string = crypto.randomUUID()): Promise<void> {
+    const failure = messageFailureNotice(['acp', machineRegistry.machineOf(this.runtimeSessionId) ?? 'local', this.runtimeSessionId, submissionId]);
+    const attempt = failure.begin();
     try {
       if (this.reverting || this.messageEdit) throw new Error('A message is being edited; send or cancel the edit first');
       await sendThroughCustody(this, text, attachments, files);
+      attempt.succeeded();
     } catch (error) {
       // The one toast of a failed send; the caller keeps its words.
-      this._toastError('acpFailure.sendMessage', error);
+      this._toastError('acpFailure.sendMessage', error, undefined, attempt);
       throw error;
     }
   }
 
   setDraftText(text: string): void {
+    this.renewDraftSubmission();
     if (text === this.draftText) return;
     this.draftText = text;
     this._draftRev += 1;
@@ -1499,13 +1550,42 @@ export class AcpChatStore {
     const session = this.session;
     if (!session) return { kind: 'restart-required', requestedValue: model };
     try {
-      return this._settleLiveSetting(
-        'acpFailure.changeSetting',
-        await session.setModelOption('model', model),
-      );
+      this._modelSettingRecovery = false;
+      const result = await session.setModelOption('model', model);
+      // The menu locks during a turn; this is the turn that started while it was open. Nothing is wrong with the
+      // model or the session, so nothing stays on the picker.
+      if (!result.success && (result.error as { cause?: { name?: unknown } }).cause?.name === 'LiveSettingBusy') {
+        toast({ title: translateSessionMessage('composer.modelBusy') });
+        return null;
+      }
+      const rejection = result.success ? null : modelSettingRejection(result.error);
+      const reason = result.success ? undefined : describeFailureCause(result.error);
+      const displayReason = rejection ? reason?.split('\n')[0] : reason;
+      runInAction(() => {
+        if (!result.success) {
+          this.modelSettingError = failureReason(displayReason ?? '')
+            ? failureText(displayReason ?? '', translateSessionMessage)
+            : translateSessionMessage('taskError.settingFailedRetry');
+        } else if (result.data.status === 'applied') {
+          this.modelSettingError = null;
+        }
+      });
+      if (!result.success && rejection) {
+        this._toastError('acpFailure.changeModel', result.error, displayReason);
+        return rejection;
+      }
+      return this._settleLiveSetting('acpFailure.changeModel', result);
     } catch (error: unknown) {
-      this._toastError('acpFailure.changeSetting', error);
-      return null;
+      const rejection = modelSettingRejection(error);
+      const reason = describeFailureCause(error);
+      const displayReason = rejection ? reason?.split('\n')[0] : reason;
+      runInAction(() => {
+        this.modelSettingError = failureReason(displayReason ?? '')
+            ? failureText(displayReason ?? '', translateSessionMessage)
+            : translateSessionMessage('taskError.settingFailedRetry');
+      });
+      this._toastError('acpFailure.changeModel', error, displayReason);
+      return rejection;
     }
   }
 
@@ -1529,6 +1609,11 @@ export class AcpChatStore {
       const result = await session.setModeOption(modeId);
       if (!result.success) {
         if (this.pendingPermissionMode?.requestId === requestId) this.pendingPermissionMode = null;
+        // 这一家在回复进行中不收权限改动(`busy: 'reject'`):说人话,告诉他等这一轮结束 —— ❌ 弹运行时的英文原话。
+        if ((result.error as { cause?: { name?: unknown } }).cause?.name === 'LiveSettingBusy') {
+          toast({ title: translateSessionMessage('acpNotice.permissionBusy') });
+          return null;
+        }
         this._toastError('acpFailure.changeSetting', result.error);
         return null;
       }
@@ -1709,7 +1794,7 @@ export class AcpChatStore {
 
   /** `steers`:这家能插话(#6574)⇒ 交给运行时插进当前回合;否则挪到队首,在跑就取消当前回合。 */
   sendQueuedPromptNow(id: string, opts: { steers: boolean }): void {
-    void this._sendQueuedPromptNow(id, opts.steers).catch(error => this._toastError('acpFailure.sendMessage', error));
+    void this._messageAction(id, () => this._sendQueuedPromptNow(id, opts.steers));
   }
 
   exportTranscript(kind: 'parsed' | 'raw'): void {
@@ -2359,30 +2444,25 @@ export class AcpChatStore {
       await sendHeldInputNow(this, id, steers);
       return;
     }
-    const session = this._requireSession('acpFailure.sendMessage');
-    if (!session) return;
+    const session = this.session;
+    if (!session) throw new Error('ACP session is not connected');
     const current = session.sessionState.current().queuedPrompts;
     if (!current.some((prompt) => prompt.id === id)) return;
 
     if (steers) {
       // 在不在跑由运行时当场判:这里读到的「在跑」可能已经过时,插不进就留在队首。
       const steerResult = await session.steerQueuedPrompt(id);
-      if (!steerResult.success) this._toastError('acpFailure.sendMessage', steerResult.error);
+      if (!steerResult.success) throw steerResult.error;
       return;
     }
 
     const ids = [id, ...current.map((prompt) => prompt.id).filter((promptId) => promptId !== id)];
     const reorderResult = await session.changeQueuePromptOrder(ids);
-    if (!reorderResult.success) {
-      this._toastError('acpFailure.sendMessage', reorderResult.error);
-      return;
-    }
+    if (!reorderResult.success) throw reorderResult.error;
 
     if (!this.affordances.isWorking) return;
     const cancelResult = await session.cancelTurn();
-    if (!cancelResult.success) {
-      this._toastError('acpFailure.sendMessage', cancelResult.error);
-    }
+    if (!cancelResult.success) throw cancelResult.error;
   }
 
   private async _exportTranscript(kind: 'parsed' | 'raw'): Promise<void> {
@@ -2418,11 +2498,50 @@ export class AcpChatStore {
     }
   }
 
+  private _clearConfirmedModelSettingError(session: AcpLiveSession): void {
+    if (!this._modelSettingRecovery || this.session !== session
+      || HOST_NOT_SETTLED.has(session.sessionState.current().lifecycle)
+      || !session.config.current().modelOptions?.selected) return;
+    runInAction(() => {
+      this.modelSettingError = null;
+      this._modelSettingRecovery = false;
+    });
+  }
+
   private _subscribeLiveSession(session: AcpLiveSession): void {
     this._unsubs.splice(0).forEach((unsub) => unsub());
+    let lastTurn = session.activeTurn.current();
+    const machine = machineRegistry.machineOf(this.runtimeSessionId);
+    let historyFailure: AcpLoadError | null = null;
+    // Runtime-only forks have no durable record by contract; their original live-history path stays separate.
+    const finalHistory = this.isTransient ? null : observeClosedTurnHistory({
+      sessionId: this.runtimeSessionId,
+      turn: () => lastTurn,
+      subscribe: accept => onMachineEvent(machine, sessionTurnSettledChannel, accept),
+      read: (referenceId, originTurnId) => rpcOn(machine).sessions.getStoredSettledTurn({ sessionId: this.runtimeSessionId, referenceId, originTurnId }),
+      apply: row => {
+        if (historyFailure && this.loadError === historyFailure) runInAction(() => { this.loadError = null; this._reopenOnRetry = false; });
+        this._applyClosedSettledTurn(row, lastTurn!);
+      },
+      failed: error => {
+        runInAction(() => {
+          if (!this.loadError || this.loadError === historyFailure) {
+            this.loadError = { kind: 'history_unavailable', message: resultError(error).message };
+            historyFailure = this.loadError;
+            this._reopenOnRetry = true;
+          }
+        });
+        this._toastError('acpFailure.refreshHistory', error);
+      },
+    });
+    this._closedHistory = finalHistory;
+    if (finalHistory) this._unsubs.push(finalHistory.dispose);
+    this._unsubs.push(session.activeTurn.onChange(turn => { if (turn) lastTurn = turn; }));
     // 挂上了:停着时盯会话表的那一格交还 —— 之后它停没停由这条会话自己的状态说(`_onSessionClosedByHost`)。
     this._setParkWatch(null);
     const initialState = session.sessionState.current();
+    this._clearConfirmedModelSettingError(session);
+    this._unsubs.push(session.config.onChange(() => this._clearConfirmedModelSettingError(session)));
     let refreshingChildren = false;
     let childrenChanged = false;
     let unsubscribed = false;
@@ -2477,6 +2596,7 @@ export class AcpChatStore {
       session.sessionState.onChange(() =>
         runInAction(() => {
           const next = session.sessionState.current();
+          this._clearConfirmedModelSettingError(session);
           const startedNewTurn =
             next.activeTurnId !== null && next.activeTurnId !== this._lastActiveTurnId;
           const removedManual = this._lastQueuedPrompts.find(
@@ -2884,7 +3004,7 @@ export class AcpChatStore {
    * (而指令其实送达了,是引擎死了)。运行时那边是对的,缺的只是这一侧再问一次。
    *
    * ⇒ 「会话刚死」是一个**明确的事件**,不是轮询:它恰好就是最后一轮可能被改口的那一刻。
-   * ❌ 不用定时器、❌ 不做无条件轮询。判据见 `acp-chat-store.superseded-outcome-5858.test.ts`
+   * ❌ 不用定时器、❌ 不做无条件轮询。判据见 `acp-chat-store.superseded-outcome.test.ts`
    * (把下面那次 `_refreshHistory` 删掉,它会红)。
    */
   /**
@@ -2903,8 +3023,19 @@ export class AcpChatStore {
    */
   private _onSessionClosedByHost(closed: AcpLiveSession, loadError: AcpLoadError | null = null): void {
     if (this.session !== closed) return;
-    this._unsubs.splice(0).forEach((unsub) => unsub());
+    const finalHistory = this._closedHistory;
+    this._closedHistory = null;
+    this._unsubs.splice(0).forEach((unsub) => { if (unsub !== finalHistory?.dispose) unsub(); });
     this.session = null;
+    // Read only when the screen still has something unsettled: a live frame, or a last committed turn without an
+    // outcome (its commit-time history read can come back empty once the runtime record is removed). An idle close
+    // whose last turn already shows its outcome reads nothing (an older server cannot answer) and keeps history pages.
+    const shown = this.chatState.transcript.state;
+    const settled = shown.activeTurnSnapshot === null && shown.committedTurns.at(-1)?.outcome !== undefined;
+    const reconcile = finalHistory !== null && !settled;
+    if (finalHistory && !reconcile) finalHistory.dispose();
+    const generation = reconcile ? ++this._historyGeneration : this._historyGeneration;
+    if (reconcile && finalHistory) this._unsubs.push(finalHistory.dispose);
     this._unsubs.push(
       // 等它起完(重放过往回合)再挂:挂在 starting / replaying 上,读到的引擎历史缺一截,补上来的回合会再画一遍。
       closed.sessionState.onChange((state) => {
@@ -2917,6 +3048,36 @@ export class AcpChatStore {
     this._loadStoredQueue((error) => this._toastError('acpFailure.refreshHistory', error));
     this.historyLoading = false;
     this.loadError = loadError;
+    if (reconcile && finalHistory) finalHistory.close(() => !this._disposed && this._closedByHost && this.session === null
+      && generation === this._historyGeneration && !this._transcriptReleased);
+  }
+
+  private _applyClosedSettledTurn(row: StoredSettledTurn, origin: TranscriptTurn): void {
+    runInAction(() => batch(() => {
+      const active = this.chatState.transcript.state.activeTurnSnapshot;
+      // Keep the already visible slot. Promoting just this row to the stored prefix
+      // would move it before earlier runtime turns that have not joined that prefix.
+      const storedIndex = this._storedHistoryTurns.findIndex(turn => turn.referenceId === row.turn.referenceId);
+      const olderIndex = this._olderHistoryTurns.findIndex(turn => turn.referenceId === row.turn.referenceId);
+      if (storedIndex >= 0) {
+        this._storedHistoryTurns = this._storedHistoryTurns.map((turn, index) => index === storedIndex ? row.turn : turn);
+      } else if (olderIndex >= 0) {
+        this._olderHistoryTurns = this._olderHistoryTurns.map((turn, index) => index === olderIndex
+          ? withTranscriptTurnIdentity(row.turn, turn.id, turn.seq) : turn);
+      } else {
+        const settled = withTranscriptTurnIdentity(row.turn, origin.id, origin.seq);
+        // An older run can reuse this runtime id. Only an equal immutable reference
+        // owns this settlement; the older stored row must not hide the new run.
+        this._persistedRuntimeTurnIds = new Set([...this._persistedRuntimeTurnIds].filter(id => id !== origin.id));
+        const turns = new Map(this._runtimeTurns.map(turn => [turn.seq, turn]));
+        turns.set(origin.seq, settled);
+        this._runtimeTurns = [...turns.values()].sort((a, b) => a.seq - b.seq);
+        this._runtimeCount = Math.max(this._runtimeCount, origin.seq + 1);
+      }
+      this.chatState.transcript.history.seed(this._composedHistory());
+      if (active && active.referenceId !== row.turn.referenceId) this.chatState.transcript.activeTurn.set(active);
+      this._syncMessageCount();
+    }));
   }
 
   /** 停着时运行时替它存着的那份队列(只读、锁着显示);下一次起时运行时先发它们。只读存档,❌ 叫醒它。 */
@@ -3022,18 +3183,27 @@ export class AcpChatStore {
     this.transcriptRevision += 1;
   }
 
-  /** Keep the failure reason visible through the existing one-line sanitizer, and persist its full detail. */
-  private _toastError(title: AcpFailureTitle, error: unknown): void {
+  /** Every failed message action has the native row's identity, including a later retry from another view. */
+  private async _messageAction(id: string, action: () => Promise<unknown>): Promise<boolean> {
+    return runNativeInputAction(this.runtimeSessionId, id, machineRegistry.machineOf(this.runtimeSessionId), action,
+      (error, attempt) => this._toastError('acpFailure.sendMessage', error, undefined, attempt));
+  }
+
+  /** Input actions show repair copy; their complete causes stay in the existing diagnostic log. */
+  private _toastError(title: AcpFailureTitle, error: unknown, displayReason?: string, attempt?: MessageFailureAttempt): void {
     const cause = describeFailureCause(error);
     const errorType = error && typeof error === 'object' && 'type' in error ? error.type : undefined;
     log.error('ACP chat action failed', { sessionId: this.sessionId, title, errorType, error: cause });
-    toast({
-      title: translateSessionMessage(title),
-      description: errorType === 'conversation_not_found'
-        ? translateSessionMessage('acpFailure.sessionUnavailable')
-        : failureText(cause ?? '', translateSessionMessage),
-      variant: 'destructive',
-    });
+    // Export/history/revert feedback is outside this input-surface batch.
+    const inputAction = title !== 'acpFailure.exportTranscript' && title !== 'acpFailure.refreshHistory' && title !== 'acpFailure.revert';
+    const description = errorType === 'conversation_not_found'
+      ? translateSessionMessage('acpFailure.sessionUnavailable')
+      : !inputAction || failureReason(displayReason ?? cause ?? '')
+        ? failureText(displayReason ?? cause ?? '', translateSessionMessage)
+        : translateSessionMessage('taskError.settingFailedRetry');
+    const notice = { title: translateSessionMessage(title), description, variant: 'destructive' as const };
+    if (attempt) attempt.failed(notice);
+    else toast({ ...notice, key: inputAction ? `session-action:${this.sessionId}:${title}` : undefined });
   }
 }
 

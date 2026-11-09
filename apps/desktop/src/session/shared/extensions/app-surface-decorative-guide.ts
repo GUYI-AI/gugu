@@ -1,4 +1,4 @@
-export const APP_SURFACE_DECORATIVE_GUIDE = `# A non-interactive decoration surface (API 30)
+export const APP_SURFACE_DECORATIVE_GUIDE = `# A non-interactive decoration surface (API 36)
 
 Needs \`agents:tools\`
 - \`await gugu.surfaces.open({entry,bounds,decorative:true,data?,visible?,relativeTo?})\` creates a decoration.

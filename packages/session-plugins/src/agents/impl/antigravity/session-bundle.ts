@@ -286,6 +286,12 @@ export const antigravitySessionBundleDescriptor = {
     //    布局实测:owner MBP 2026-09-24,`~/.gemini` 67 MB,解引用软链后 212 MB(config/skills 165 条里
     //    157 条是软链,复制时按 copyTree 纪律解引用成实体)。
     carryExclusions: [
+      {
+        path: 'antigravity/brain',
+        evidence: 'Antigravity IDE project artifacts/scratch are workspace data, not CLI/ACP configuration (#1853). '
+          + 'The supported providers read antigravity-cli/settings.json, antigravity-acp/settings.json and config/{skills,hooks.json,mcp_config.json}; '
+          + 'their native conversations use antigravity-acp/{brain,conversations}, a separate path kept intact.',
+      },
       ...(['antigravity', 'antigravity-cli', 'antigravity-ide'] as const).map((product) => ({
         path: `${product}/bin`,
         evidence:
@@ -332,7 +338,7 @@ export const antigravitySessionBundleDescriptor = {
   /**
    * 关自更新(#6186)—— 终端腿的 `agy` 会自己检查并装新版(官方 docs/cli/troubleshooting.md
    * 「Opt-out/Disable auto-updates: Set the `AGY_CLI_DISABLE_AUTO_UPDATE` environment variable to `true`」)。
-   * 走 env:两条腿都拿得到(`selfUpdateEnv` 进同一份 run context),`agy_acp_server` 不认它、多带无害。
+   * 走 env:两条腿都拿得到(`pinnedEnv` 进同一份 run context),`agy_acp_server` 不认它、多带无害。
    * 不关的话它会把托管装好的那份换掉,「面板显示哪一份就启动哪一份」随之不成立。
    */
   selfUpdate: {

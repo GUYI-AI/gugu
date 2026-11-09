@@ -17,7 +17,7 @@ const HIDING_ATTRIBUTES = ['style', 'class', 'hidden', 'inert']
  * watches its own box and every ancestor's hiding attributes, and claims while it is visible,
  * releases while it is not — the same for the App's own page and a page opened for a file.
  */
-export const ClaimedPage = observer(function ClaimedPage({ slotId, chatId, resourceChat, kind, itemId, takeOpening }: { slotId: string; chatId: string; resourceChat?: string; kind: string; itemId?: string; takeOpening?: () => PreparedChatFile | undefined }) {
+export const ClaimedPage = observer(function ClaimedPage({ slotId, chatId, resourceChat, kind, itemId, takeOpening, viewState, navigation }: { slotId: string; chatId: string; resourceChat?: string; kind: string; itemId?: string; viewState?: Record<string, unknown>; navigation?: { canBack: boolean; canForward: boolean; backToConversation?: boolean }; takeOpening?: () => PreparedChatFile | undefined }) {
   const { t } = useTranslation('messaging')
   const boxRef = useRef<HTMLDivElement | null>(null)
   // A covered slot keeps its claim for the way back.
@@ -25,6 +25,9 @@ export const ClaimedPage = observer(function ClaimedPage({ slotId, chatId, resou
   coveredRef.current = useContext(PeekCovered)
   const openingRef = useRef(takeOpening)
   openingRef.current = takeOpening
+  // A parent draws this object anew every render: only a change in what it says makes another claim.
+  const navigationRef = useRef(navigation)
+  navigationRef.current = navigation
   // The resident layer draws a page only for an App it keeps (installed, switched on, listed in this window:
   // `residentTabContributions`): with none, the slot says so instead of staying blank (L4 09-29).
   const noPage = installedExtensionsStore.isLoaded && !installedExtensionsStore.residentTabContributions.some((entry) => entry.kind === kind)
@@ -42,7 +45,7 @@ export const ClaimedPage = observer(function ClaimedPage({ slotId, chatId, resou
       const want = visible()
       if (want === (token !== null) || (!want && coveredRef.current)) return
       if (want) {
-        token = extensionViewStore.claim(kind, { tabId: slotId, chatId, resourceChat, element, ...(itemId ? { itemId } : {}), takeOpening: () => openingRef.current?.() })
+        token = extensionViewStore.claim(kind, { tabId: slotId, chatId, resourceChat, viewState, navigation: navigationRef.current, element, ...(itemId ? { itemId } : {}), takeOpening: () => openingRef.current?.() })
       }
       else if (token !== null) {
         extensionViewStore.release(kind, token)
@@ -61,7 +64,7 @@ export const ClaimedPage = observer(function ClaimedPage({ slotId, chatId, resou
       restyled.disconnect()
       if (token !== null) extensionViewStore.release(kind, token)
     }
-  }, [chatId, resourceChat, kind, itemId, slotId])
+  }, [chatId, resourceChat, kind, itemId, slotId, viewState, navigation?.canBack, navigation?.canForward, navigation?.backToConversation])
   return (
     <div ref={boxRef} className="min-h-0 flex-1">
       {noPage ? (

@@ -3,7 +3,9 @@ import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
 import { chatService } from '../lib/chat'
 import { cloudReadTarget, writeRead } from '../lib/readWriter'
 import { mergeMemberReadSeqs } from '@gugu/core/shared/ui/messageState'
+import { readsWholeChat } from '@gugu/core/shared/ui/chatModels'
 import { i18n } from '@/i18n'
+import { shareRows } from '../lib/chatProjectionAlgebra'
 
 // @@@realtime-single-msg-mutations — 从 store/chat.tsx 抽出的「实时事件只改动单条消息」处理：全局删除
 // (#1729) 与表情回应变更 (#1873)。二者都对「当前打开会话窗口 + 话题视图 + L2」按 message_id 就地改一条，
@@ -94,11 +96,12 @@ export function patchChatRows(
   partial: Partial<ChatItem>,
   expectedReadStateVersion?: number,
 ): ChatItem[] {
-  return chats.map((chat) => {
+  // A patch often writes what the row already says: that must not count as a new list for everyone subscribed to it.
+  return shareRows(chats, chats.map((chat) => {
     if (chat.id !== chatId) return chat
     if (expectedReadStateVersion !== undefined && (chat.read_state_version ?? 0) !== expectedReadStateVersion) return chat
     return { ...chat, ...partial }
-  })
+  }))
 }
 
 export async function persistManualUnread(
@@ -122,6 +125,26 @@ export async function persistManualUnread(
   }
 }
 
+/** A DM on screen is read whole (readsWholeChat); groups and topics only up to what is visible at the tail. */
+export function chatReadsWhole(chats: readonly ChatItem[], chatId: string): boolean {
+  const kind = chats.find((c) => c.id === chatId)?.kind
+  return !!kind && readsWholeChat(kind)
+}
+
+/** How far a read fact reaches: a DM (readsWholeChat) is read to its tail, every other chat up to what was seen. */
+export function wholeReadSeq(chats: readonly ChatItem[], chatId: string, seenSeq: number): number {
+  const chat = chats.find((c) => c.id === chatId)
+  return chat && readsWholeChat(chat.kind) ? Math.max(seenSeq, chat.next_message_seq - 1) : seenSeq
+}
+
+/** A message seen on screen moves the watermark; a DM clears its counters, other chats keep theirs until the tail is confirmed. */
+export function advanceSeenReadWatermark(chats: ChatItem[], chatId: string, seenSeq: number, patchChat: PatchChat): void {
+  const chat = chats.find((c) => c.id === chatId)
+  const seq = wholeReadSeq(chats, chatId, seenSeq)
+  if (chat && seq > chat.last_read_seq)
+    advanceReadWatermark(chats, chatId, seq, patchChat, readsWholeChat(chat.kind) ? undefined : { unread_count: chat.unread_count, unread_locator: chat.unread_locator })
+}
+
 export function advanceReadWatermark(
   chats: ChatItem[],
   chatId: string,
@@ -131,8 +154,48 @@ export function advanceReadWatermark(
 ): void {
   if (seq < 0) return
   const current = chats.find((c) => c.id === chatId)
+  const next = projectedReadWatermark(current, seq, extraPatch)
+  if (!next) return
+  if (next.shouldPersist) {
+    markChatReadUpTo(chatId, seq, patchChat, next.optimisticVersion, next.previousReadState)
+  }
+  patchChat(chatId, next.partial)
+}
+
+/**
+ * 会话列表投影刚带回「当前正在看的群有新消息」时，先推进可见水位，确认到尾部才清红点；调用方落地后再写入，
+ * 失败回滚因此一定排在乐观状态之后，也不会盖掉之后更新的读状态。
+ */
+export function prepareProjectedReadWatermark(
+  chat: ChatItem,
+  seq: number,
+  patchChat: PatchChat,
+): { chat: ChatItem; persist: () => void } {
+  const next = projectedReadWatermark(chat, seq)
+  if (!next) return { chat, persist: () => undefined }
+  return {
+    chat: { ...chat, ...next.partial },
+    persist: () => {
+      if (next.shouldPersist) {
+        markChatReadUpTo(chat.id, seq, patchChat, next.optimisticVersion, next.previousReadState)
+      }
+    },
+  }
+}
+
+function projectedReadWatermark(
+  current: ChatItem | undefined,
+  seq: number,
+  extraPatch?: Partial<ChatItem>,
+): {
+  partial: Partial<ChatItem>
+  shouldPersist: boolean
+  optimisticVersion: number
+  previousReadState: Pick<ChatItem, 'unread_count' | 'unread_locator' | 'last_read_seq' | 'is_marked_unread' | 'read_state_version'>
+} | null {
+  if (seq < 0) return null
   const known = current?.last_read_seq ?? 0
-  if (seq < known) return
+  if (seq < known) return null
   const shouldPersist = seq > known || current?.is_marked_unread === true
   const previousReadState = {
     unread_count: current?.unread_count ?? 0,
@@ -143,19 +206,31 @@ export function advanceReadWatermark(
     read_state_version: current?.read_state_version ?? 0,
   }
   const optimisticVersion = previousReadState.read_state_version + (shouldPersist ? 1 : 0)
-  if (shouldPersist) {
-    markChatReadUpTo(chatId, seq, patchChat, optimisticVersion, previousReadState)
+  return {
+    shouldPersist,
+    optimisticVersion,
+    previousReadState,
+    partial: {
+      ...unreadAfterConfirm(current, seq),
+      last_read_seq: seq,
+      is_marked_unread: false,
+      read_state_version: optimisticVersion,
+      ...extraPatch,
+    },
   }
-  patchChat(chatId, {
-    // A thread can remain unread while the main stream advances. The next
-    // authoritative list refresh owns the aggregate; do not erase a locator
-    // for another stream optimistically.
-    ...(!current?.unread_locator || current.unread_locator.stream_kind === 'main' ? { unread_locator: null, unread_count: 0 } : {}),
-    last_read_seq: seq,
-    is_marked_unread: false,
-    read_state_version: optimisticVersion,
-    ...extraPatch,
-  })
+}
+
+/** Only a confirmed tail proves there are no main-stream messages left unread. */
+function unreadAfterConfirm(current: ChatItem | undefined, seq: number): Partial<ChatItem> {
+  // Another stream's unread state must survive a main-stream acknowledgement.
+  const locator = current?.unread_locator
+  if (locator && locator.stream_kind !== 'main') return {}
+  const tail = (current?.next_message_seq ?? seq + 1) - 1
+  if (seq >= tail) return { unread_locator: null, unread_count: 0 }
+  // Seq is an ordering key, not an unread count: own/deleted/hidden messages leave gaps.
+  // A partial window cannot identify the remaining unread set or its first message. Keep the
+  // authoritative list_unread_locators tuple until the read revision refreshes that projection.
+  return {}
 }
 
 // @@@1884 服务端水位推进（chat.mark_read,服务端单调只增）。模块私有:守卫在 advanceReadWatermark,

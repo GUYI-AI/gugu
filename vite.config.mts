@@ -16,7 +16,6 @@ import {
   type EntryReachability,
 } from './scripts/build/renderer-chunking.mjs'
 import { obfuscateOwnChunks, parseObfuscateFlag } from './scripts/build/obfuscate-own-chunks.mjs'
-import { monacoWorkerSingleBundlePlugin } from './scripts/build/monaco-worker-bundle.mjs'
 import { deterministicModuleSideEffects } from './scripts/build/deterministic-module-side-effects.mjs'
 import { devNodeExternals, type DependencyManifest } from './scripts/build/dev-node-externals.mjs'
 import { activateDbEnv, serverChannelForDb } from './scripts/build/build-env-preflight.mts'
@@ -30,6 +29,7 @@ import {
   webHostEntries,
   desktopPreloadEntry,
   extensionPreloadEntry,
+  vaultLoginPreloadEntry,
 } from './scripts/build/product-build-entries.mts'
 import {
   EMDASH_EXTERNAL,
@@ -40,6 +40,7 @@ import {
 } from './apps/desktop/electron/sessionpage/sessionpage-main-build.mjs'
 import { LAZY_LANG_MODULES } from './packages/session-chat-ui/src/core/highlight/lazy-langs'
 import { appPaletteCss } from './apps/desktop/src/session/app-runtime/ui/app-palette.mjs'
+import { startupFirstFrame } from './scripts/build/startup-first-frame.mts'
 
 const require = createRequire(import.meta.url)
 
@@ -146,6 +147,7 @@ const sessionMainVite: ElectronOptions['vite'] = {
     ...bakedSupabaseDefine,
     __GUGU_TIER__: JSON.stringify(guguTier),
     __GUGU_BUILD_DISTRIBUTION__: JSON.stringify(guguBuildDistribution),
+    __GUGU_ERROR_REPORTING_ENDPOINT__: JSON.stringify(process.env.GUGU_ERROR_REPORTING_ENDPOINT ?? ''),
     // 给别的机器装哪条通道的 server:跟这次构建连的库走(scripts/build/build-env-preflight.mts serverChannelForDb)。
     __GUGU_SERVER_CHANNEL__: JSON.stringify(serverChannelForDb(process.env.VITE_SUPABASE_URL || bakedSupabaseUrl || null)),
   },
@@ -401,6 +403,13 @@ export const electronBuildEntries: ElectronOptions[] = [
       options.reload()
     },
   },
+  {
+    // Keep the existing main/preload positions stable; the private login bridge is an additional entry.
+    // It gets no application/App bridge and exposes nothing to the page world.
+    entry: vaultLoginPreloadEntry,
+    vite: { plugins: [deterministicModuleSideEffects()] },
+    onstart(options) { if (viteOwnsElectronProcess) options.reload() },
+  },
 ]
 
 /** The version directory `/_gugu/<ver>/` maps to (app-runtime-protocol.ts reads the same file). */
@@ -411,6 +420,11 @@ function appRuntimeVersion(): string {
     ) as { version: string }
   ).version
 }
+
+// App pages run in the phone's System WebView too, and one that never updated stays on Chrome 91, which rejects
+// class static blocks (`SyntaxError`; files.js / codemirror.js fail to load). esbuild's table lists them for
+// chrome91 (V8 9.1 had them behind a flag), so the floor is written as chrome90 to make esbuild lower them.
+const APP_PAGE_TARGET = ['es2022', 'chrome90']
 
 /**
  * The App runtime's bytes into `outDir`: `gugu.js`, the classic script the host puts first in an
@@ -427,7 +441,7 @@ async function buildAppRuntime(outDir: string): Promise<void> {
   const common = {
     bundle: true,
     platform: 'browser',
-    target: 'es2022',
+    target: APP_PAGE_TARGET,
     minify: true,
     legalComments: 'none',
     // Served by the host, never bundled: the entry imports the modules by URL.
@@ -541,7 +555,7 @@ function phoneAppsPlugin(outDir: string) {
           outfile: resolve(runtimeDir, `${name}.js`),
           bundle: true,
           platform: 'browser',
-          target: 'es2022',
+          target: APP_PAGE_TARGET,
           minify: true,
           legalComments: 'none',
           format: 'iife',
@@ -581,7 +595,7 @@ export default defineConfig(({ command }) => ({
   // Electron sub-builds write here while the renderer server is live. Generated output must not
   // feed back into the renderer watcher; source changes are already handled by the Electron plugin.
   server: {
-    watch: { ignored: ['**/dist-electron/**'] },
+    watch: { ignored: ['**/dist-electron/**', '**/.ci-cache/**'] },
   },
   optimizeDeps: {
     // @@@4865 冷启第一次打开会话页必退出的根因(owner 2026-09-03 实机撞到,MBP 复现):vite 开门前
@@ -671,9 +685,9 @@ export default defineConfig(({ command }) => ({
     ),
   },
   plugins: [
+    startupFirstFrame(isElectronTarget),
     deterministicModuleSideEffects(),
     guguEntryReachabilityPlugin(reachability, isGuguEntry),
-    monacoWorkerSingleBundlePlugin(),
     // @@@task-fusion (#2802) — 会话页的 @gugu/session-ui / session-chat-ui 用 vanilla-extract 写样式。
     // 并入本体后它们不再各自 tsdown 出 dist,而是由这一次构建直接编 .css.ts —— 少一套构建。
     vanillaExtractPlugin(),

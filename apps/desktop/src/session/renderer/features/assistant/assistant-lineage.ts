@@ -2,12 +2,16 @@
 // 它自己的会话 = 那条会话的 agent 就是它(按身份认,❌ 按名字);子 agent = 沿「父会话 / 由谁派的」这条边往下找到的全部后代。
 // 这里只放纯判定(可单测):任务区藏起它自己那条、标出它派的;助理 App 的「任务」列它的子 agent。
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
-import { parseConversationLink } from '@gugu/core/shared/ui/guguLink';
 
 export type ListedSession = { deviceId: string; summary: SessionpageSessionSummary; live: boolean };
 
+/** Provisioned identity, shared by local bindings, remote summaries and navigation. */
+export function isAssistantAgent(agentId: string | null | undefined, assistantId: string | null | undefined): boolean {
+  return !!assistantId && agentId === assistantId;
+}
+
 export function isAssistantSession(summary: Pick<SessionpageSessionSummary, 'agent'>, assistantId: string | null | undefined): boolean {
-  return !!assistantId && summary.agent?.userId === assistantId;
+  return isAssistantAgent(summary.agent?.userId, assistantId);
 }
 
 /** 它派出来的全部会话(子、孙……),它自己的不算;每条只出现一次。 */
@@ -34,14 +38,6 @@ export function assistantDescendants<T extends { summary: Pick<SessionpageSessio
     }
   }
   return out;
-}
-
-/** Both shells include delegated descendants and tasks explicitly linked to this assistant chat. */
-export function assistantTasks<T extends { summary: SessionpageSessionSummary }>(listed: readonly T[], assistantId: string, chatId: string | null): T[] {
-  const descendants = new Set(assistantDescendants(listed, assistantId));
-  return listed.filter((item) => item.summary.agent?.userId !== assistantId && (
-    descendants.has(item) || (chatId !== null && item.summary.activitySourceLinks?.some((link) => parseConversationLink(link)?.chatId === chatId))
-  ));
 }
 
 /** 这条会话是不是它派的(任务区那一行要标「助理发起」):父会话链上有它自己的会话。 */

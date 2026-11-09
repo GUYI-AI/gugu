@@ -1,5 +1,8 @@
-import { Menu, type MenuItemConstructorOptions } from 'electron'
+import { BrowserWindow, Menu, webContents, type BaseWindow, type MenuItem, type MenuItemConstructorOptions } from 'electron'
 import { lockedMenuTemplate } from './devtools-lock'
+import type { FileZoomCommand } from '../src/session/shared/preview/file-zoom'
+import { runWindowMenuCommand } from './window-menu-commands'
+import { createLogger } from './lib/logger'
 
 /**
  * 应用菜单 —— 咕咕自己定一份,❌ 交给 Electron 的默认菜单。
@@ -45,7 +48,35 @@ export function applicationMenuTemplate(
   ]
 }
 
+type MenuTemplate = Array<MenuItemConstructorOptions | MenuItem>
+type RoutedMenuCommand = FileZoomCommand | 'selectAll'
+type MenuCommandClick = (command: RoutedMenuCommand, window: BaseWindow | undefined) => void
+const COMMAND_ACCELERATORS: Record<RoutedMenuCommand, string> = { zoomIn: 'CmdOrCtrl+Plus', zoomOut: 'CmdOrCtrl+-', resetZoom: 'CmdOrCtrl+0', selectAll: 'CmdOrCtrl+A' }
+const routedRoleOf = (role: string | undefined): RoutedMenuCommand | null =>
+  role?.toLowerCase() === 'selectall' ? 'selectAll' : role?.toLowerCase() === 'zoomin' ? 'zoomIn' : role?.toLowerCase() === 'zoomout' ? 'zoomOut' : role?.toLowerCase() === 'resetzoom' ? 'resetZoom' : null
+const hasRoutedRole = (menu: Menu): boolean => menu.items.some(item => routedRoleOf(item.role) !== null || (item.submenu ? hasRoutedRole(item.submenu) : false))
+
+/**
+ * Electron 先把 role 展开成带原生标签的菜单,再按那份菜单写一份新模板:缩放和全选接同一窗口命令入口,
+ * 装着它们的那几栏换成新模板项,其余 MenuItem 原样放回。❌ 改已建好的 MenuItem —— 它的 submenu 只读,赋值即抛。
+ */
+export function routeWindowCommandsTemplate(menu: Menu, onCommand: MenuCommandClick): MenuTemplate {
+  return menu.items.map((item): MenuItemConstructorOptions | MenuItem => {
+    const command = routedRoleOf(item.role)
+    if (command) return { label: item.label, accelerator: COMMAND_ACCELERATORS[command], click: (_item, window) => onCommand(command, window) }
+    if (!item.submenu || !hasRoutedRole(item.submenu)) return item
+    return { ...(item.role ? { role: item.role } : {}), label: item.label, submenu: Menu.buildFromTemplate(routeWindowCommandsTemplate(item.submenu, onCommand)) }
+  })
+}
+
 /** 装上(或换语言后重装)应用菜单。要在 app ready **之后**调 —— 菜单是原生资源,ready 前设在部分平台无效。 */
 export function applyApplicationMenu(options: Parameters<typeof applicationMenuTemplate>[1]): void {
-  Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate(process.platform, options)))
+  const log = createLogger('app-menu')
+  const native = Menu.buildFromTemplate(applicationMenuTemplate(process.platform, options))
+  Menu.setApplicationMenu(Menu.buildFromTemplate(routeWindowCommandsTemplate(native, (command, window) => {
+    if (window instanceof BrowserWindow) {
+      const contents = command === 'selectAll' ? webContents.getFocusedWebContents() ?? window.webContents : window.webContents
+      void runWindowMenuCommand(command, { contents, window }).catch(error => log.error({ error }, 'Window menu command failed'))
+    }
+  })))
 }

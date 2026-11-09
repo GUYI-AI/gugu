@@ -26,6 +26,8 @@ export interface PanelItem {
   file?: ChatPeekFile;
   /** The message it was opened from: the preview forwards it. */
   message?: MessageItem;
+  /** The topic it was opened from when no message says so: a group file's link clicked in that topic. */
+  topicChatId?: string;
 }
 
 export const folderItem = (): PanelItem => ({ kind: WORKSPACE_APP_KIND, title: '' });
@@ -34,8 +36,7 @@ export const isFolderItem = (item: PanelItem | null | undefined): boolean => ite
 const appOf = (kind: string | null) => (kind === null ? null : (parseExtensionTabKind(kind)?.extensionId ?? kind));
 
 /**
- * A tab's identity (owner 10-24): the same file in the same App, through any of its tabs, is one tab; an App's own page
- * (the folder, a group's member list) is one a chat. The engine dedupes on it (`resourceKey`, `mount: 'single'`).
+ * A page's resource identity. Multiple independent navigation contexts can show this same resource.
  */
 export const panelItemKey = (item: PanelItem): string =>
   item.itemId ? `file:${appOf(item.kind) ?? ''}:${item.itemId}` : `page:${item.kind ?? ''}`;

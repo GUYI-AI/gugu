@@ -11,13 +11,10 @@ import {
   getGitRepositoryStore,
   projectViewKind,
 } from '@renderer/features/projects/stores/project-selectors';
-import {
-  useNavigate,
-  useParams,
-  useWorkspaceSlots,
-} from '@renderer/lib/layout/navigation-provider';
+import { useNavigate, useWorkspaceSlots } from '@renderer/lib/layout/navigation-provider';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
-import { isScreenView, showBesideOnScreen } from '@renderer/app/screen-layout-actions';
+import { isScreenView, showBesideOnScreen, showOnScreen } from '@renderer/app/screen-layout-actions';
+import { screenLayout } from '@renderer/app/screen-layout';
 import { readComposerVerb, setComposerVerb } from '@/lib/composerVerbBridge';
 import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
 import { composerDrafts, projectDraftKey } from '@renderer/features/sessions/composer-drafts';
@@ -29,6 +26,7 @@ import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-s
 import { sessionKeyboardNav } from './session-keyboard-nav';
 import { ProjectNeedsYouDot, ProjectRowTitle } from './project-row-parts';
 import { SidebarUnreadCount } from './sidebar-list-switch';
+import { requestTopicSplit } from '@/lib/topicSplitRequest';
 import { useSidebarChatSignals } from '@/lib/sidebarChatsBridge';
 import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
 import {
@@ -37,6 +35,9 @@ import {
   SidebarMenuButton,
   SidebarMenuRow,
   sidebarDropTargetClass,
+  sidebarRowActionsSlotClass,
+  sidebarRowHoverActionsClass,
+  sidebarRowRestActionsClass,
 } from './sidebar-primitives';
 import { useSessionDropTarget } from './use-session-drop-target';
 import { moveSessionUnder } from '@renderer/features/sessions/set-session-parent-flow';
@@ -66,8 +67,6 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
 }) {
   const { navigate } = useNavigate();
   const { currentView } = useWorkspaceSlots();
-  const { params: projectParams } = useParams('project');
-  const { params: sessionParams } = useParams('session');
   const confirmDeleteProject = useConfirmDeleteProject();
   const { translate } = useSessionMessages();
 
@@ -79,15 +78,12 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
     void repo?.remoteData.load();
   }, [projectId]);
 
-  const currentProjectId =
-    currentView === 'session'
-      ? sessionParams.projectId
-      : currentView === 'project'
-        ? projectParams.projectId
-        : null;
-  const currentSessionId = currentView === 'session' ? sessionParams.sessionId : null;
-
-  const isProjectActive = currentProjectId === projectId && !currentSessionId;
+  // This row is the one being looked at when the screen's focused block is this project's block. Navigation follows the
+  // screen (followFocus) and can lag it; judging from navigation let a click on this row do nothing while a session
+  // block filled the screen.
+  const rowId = sidebarStore.rowProjectIdOf(projectId);
+  const focusedBlock = screenLayout.focusedBlockId ? screenLayout.blocks.get(screenLayout.focusedBlockId) : undefined;
+  const isProjectActive = isScreenView(currentView) && focusedBlock?.kind === 'project' && focusedBlock.projectId === rowId;
 
   useEffect(() => {
     if (isProjectActive) prefetchRepository();
@@ -102,6 +98,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
   const groupChatId = projectGroupsStore.chatIdOf(projectId);
   const chatSignals = useSidebarChatSignals();
   const groupUnread = chatSignals?.groupUnread.get(groupChatId ?? '') ?? 0;
+  const callingTopic = chatSignals?.groupCallingTopic.get(groupChatId ?? '');
   // 挂在别的会话下面的一条拖回它自己的项目行 = 回到根(spec session-page「把会话拖成 child」)。
   // 只有它不挂着时本来就显示在这一行的才收:换项目不是这个动作。
   const unnestDrop = useSessionDropTarget();
@@ -120,24 +117,24 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
   const disambiguationPath = hasNameTwin ? project.data?.path : undefined;
   // Opening a project never changes disclosure; only its arrow or the explicit keyboard action does.
   const openProject = (beside = false) => {
+    // 行尾的数里有话题叫到你:话题不是项目行的子行,这一下就是去读它的入口(owner 11-07「红点消不掉」)。
+    if (callingTopic && groupChatId) requestTopicSplit({ chatId: callingTopic.chatId, name: callingTopic.name, sourceChatId: groupChatId, focusComposer: true });
     // behavior session-page「键盘导航」: the project row is a station too, so a click moves the cursor
     // onto it — ↓ afterwards continues from here.
     sessionKeyboardNav.syncCursorFromPointer({ kind: 'project', projectId });
     // ⌘ 点 = 项目块拼到正看着那块右边(gugu-dev#181:项目是一块,和会话行同一个手势)。
     if (beside && isScreenView(appState.navigation.currentViewId)) {
-      showBesideOnScreen({ kind: 'project', projectId: sidebarStore.rowProjectIdOf(projectId) });
+      showBesideOnScreen({ kind: 'project', projectId: rowId });
       return;
     }
     if (isProjectActive) {
       // gugu-dev#181 正在开新任务时点这一行 = 回到群聊:还没打字,「新任务」一起撤掉;打了字就留着。
-      const chatId = projectGroupsStore.chatIdOf(sidebarStore.rowProjectIdOf(projectId));
-      if (chatId && readComposerVerb(chatId) === 'task') {
-        if (!composerDrafts.get(projectDraftKey(projectId)).trim()) setComposerVerb(chatId, null);
-        return;
-      }
+      const chatId = projectGroupsStore.chatIdOf(rowId);
+      if (chatId && readComposerVerb(chatId) === 'task' && !composerDrafts.get(projectDraftKey(projectId)).trim()) setComposerVerb(chatId, null);
       return;
     }
-    navigate('project', { projectId });
+    // The project's block (its group) goes on screen; navigation follows it.
+    showOnScreen({ kind: 'project', projectId: rowId });
   };
 
   // The project-row action opens the existing project-scoped composer. It must not eagerly
@@ -146,7 +143,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
     sessionKeyboardNav.syncCursorFromPointer({ kind: 'project', projectId });
     // gugu-dev#181 悬停的「+」= 在这个项目里开新任务。
     prepareProjectTask(projectId);
-    if (!isProjectActive) navigate('project', { projectId });
+    if (!isProjectActive) showOnScreen({ kind: 'project', projectId: rowId });
   };
 
   const projectCursor = sessionKeyboardNav.cursor;
@@ -268,30 +265,32 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({
             ) : null}
             {!isExpanded && <ProjectNeedsYouDot count={needsYouCount} />}
           </div>
-          <SidebarUnreadCount count={groupUnread} />
-            <Tooltip>
-              <TooltipTrigger
-                className="h-6"
-                render={
-                  <SidebarItemMiniButton
-                    type="button"
-                    aria-label={translate('sidebar.newSessionIn', { project: projectLabel })}
-                    className={
-                      'opacity-0 transition-opacity duration-[var(--dur-fast,120ms)] group-hover/row:opacity-100'
-                    }
-                    onPointerEnter={() => prefetchRepository()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openNewSession();
-                    }}
-                    disabled={project.state === 'unregistered'}
-                  >
-                    <Zap className="h-4 w-4" />
-                  </SidebarItemMiniButton>
-                }
-              />
-              <TooltipContent>{translate('sidebar.newSession')}</TooltipContent>
-            </Tooltip>
+          {/* 行尾同会话行一格:静止只占未读数的宽度,悬浮才换成「新建会话」(见 sidebarRowActionsSlotClass)。 */}
+          <span data-row-hover-actions className={sidebarRowActionsSlotClass}>
+            <span className={sidebarRowHoverActionsClass}>
+              <Tooltip>
+                <TooltipTrigger
+                  className="h-6"
+                  render={
+                    <SidebarItemMiniButton
+                      type="button"
+                      aria-label={translate('sidebar.newSessionIn', { project: projectLabel })}
+                      onPointerEnter={() => prefetchRepository()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openNewSession();
+                      }}
+                      disabled={project.state === 'unregistered'}
+                    >
+                      <Zap className="h-4 w-4" />
+                    </SidebarItemMiniButton>
+                  }
+                />
+                <TooltipContent>{translate('sidebar.newSession')}</TooltipContent>
+              </Tooltip>
+            </span>
+            <span className={sidebarRowRestActionsClass}><SidebarUnreadCount count={groupUnread} /></span>
+          </span>
         </SidebarMenuRow>
     </ProjectRowContextMenu>
   );

@@ -72,6 +72,7 @@ export default {
     "leaveGroup": "Leave this group chat?"
   },
   "contextMenu": {
+    "more": "More",
     "deleteAgent": "Archive task",
     "deleteContact": "Delete contact",
     "disableNotifications": "Mute notifications",
@@ -367,6 +368,7 @@ export default {
     "shareUnavailable": "A Gugu ID is required to share this profile",
     "source": "Source",
     "unconfigured": "Not configured",
+    "findMessages": "Find their messages",
     "viewProfile": "View {{name}} profile",
     "whisper": "Whisper"
   },

@@ -1,4 +1,4 @@
-import type { DeviceActionsCapability } from '../shared/deviceActions'
+import { DEVICE_ACTION_PROTOCOL_VERSION, type DeviceActionsCapability, type DeviceActionsReadFailure } from '../shared/deviceActions'
 import { createHash, randomUUID } from 'node:crypto'
 import { execFile } from '../local/childProcess'
 import { access, link, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
@@ -755,14 +755,16 @@ function resolveSessionDigest(source: DeviceSessionDigestSource | undefined): De
   }
 }
 
-/** 动作清单同样尽力而为:取不到就不登记这一格,❌ 让心跳失败(那会让整台机器在别人眼里下线)。 */
-function resolveDeviceActions(source: DeviceActionsSource | undefined): { actions?: DeviceActionsCapability } {
+/** 动作清单取不到:❌ 让心跳失败(那会让整台机器在别人眼里下线),也 ❌ 当成没有动作 —— 写进日志,行上标明读取失败。 */
+function resolveDeviceActions(source: DeviceActionsSource | undefined): { actions?: DeviceActionsCapability | DeviceActionsReadFailure } {
   if (!source) return {}
   try {
     const actions = source()
     return actions ? { actions } : {}
-  } catch {
-    return {}
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    log.error({ err: message }, 'device actions list read failed')
+    return { actions: { v: DEVICE_ACTION_PROTOCOL_VERSION, read_error: message } }
   }
 }
 
@@ -837,6 +839,11 @@ export async function syncDeviceHeartbeat(
   try {
     const register = publishedCapabilities?.get(identity.deviceId) !== content
     let result = await write(register)
+    // 诊断:一次心跳写「成功返回、却没碰到任何行」时说出来 —— 这正是「本机无失败、库里却没落」那一类(写被吞)。
+    // 只记日志,行为不变(UPDATE 0 行照旧走下面那次完整 upsert 补登记)。upsert 不带 select 时 data 为空,判不了,不报。
+    if (!result.error && Array.isArray(result.data) && result.data.length === 0) {
+      log.warn({ device: identity.deviceId.slice(-8), write: register ? 'upsert' : 'update' }, 'device heartbeat write affected 0 rows')
+    }
     if (!result.error && !register && result.data?.[0]?.runtimes == null) result = await write(true)
     if (result.error) throw new Error(result.error.message)
     publishedCapabilities?.set(identity.deviceId, content)

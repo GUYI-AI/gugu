@@ -5,8 +5,9 @@ import {
   type AccountRevisionOperation,
   type AccountRevisionRuntime,
   type AccountRevisionSource,
+  type AccountRevisionScheduling,
 } from './accountRevisionRuntime'
-import { ingestAccountMessage, imSelectors, type AccountImRepository, type ImRepositoryTransaction } from './imRepository'
+import { ingestAccountMessage, imSelectors, recordMessageDeletion, type AccountImRepository, type ImRepositoryTransaction } from './imRepository'
 import { rendererLogger } from './log'
 
 const coordinatorLog = rendererLogger('chat/account-revision')
@@ -111,6 +112,18 @@ export function readMemberRosterRevision(
   return { chatId: key.chatId, memberId: key.entityId, left: tombstone, own: kind === 'own' }
 }
 
+// agent_changed names whose account changed (agent_user_id: an agent's row to its owner; anyone's name, face or bio to the
+// people who share a chat or a friendship with them). It names no chat: the change is to the person, wherever they are.
+// Read in a subscriber, a batch at a time: one payload without agent_user_id is skipped and said, the rest still count.
+export function readRenamedMembers(payloads: readonly unknown[]): string[] {
+  return payloads.flatMap((payload) => {
+    const id = (payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}) as { agent_user_id?: unknown }
+    if (typeof id.agent_user_id === 'string' && id.agent_user_id) return [id.agent_user_id]
+    coordinatorLog.warn({ payload }, 'agent_changed revision skipped: it has no agent_user_id')
+    return []
+  })
+}
+
 // device_changed 的 resource_key 带 device_id 和 kind(迁移 20261027190000):'row' = 那一行变了(设备行触发器),
 // 'projects' = 那一台的项目变了(publish_device_projects)。没有 kind(之前落的行 / 还没部署那条迁移的库)= 两样都可能变了。
 // tombstone = 那一行被删。客户端据此只读变了的那一样、只读那一台。
@@ -167,6 +180,8 @@ export type AccountRevisionCoordinator = {
    */
   subscribe(events: AccountRevisionEvent | readonly AccountRevisionEvent[], listener: AccountRevisionListener): () => void
   retryPending(): void
+  /** A head-unknown wake: pull from the committed cursor once (the reconcile beat). */
+  wake(): void
   whenIdle(): Promise<void>
 }
 
@@ -183,8 +198,9 @@ export function createAccountRevisionCoordinator(
     recover: (messageId: string) => Promise<MessageItem | null>
     notify: (message: MessageItem) => Promise<void>
   },
+  scheduling?: AccountRevisionScheduling,
 ): AccountRevisionCoordinator {
-  const runtime: AccountRevisionRuntime = createAccountRevisionRuntime(accountId, repository, source)
+  const runtime: AccountRevisionRuntime = createAccountRevisionRuntime(accountId, repository, source, undefined, scheduling)
   // 一个 registration = 一个 consumer 认领的 event 集合。barrier 只问「这个 event 有人认领吗」,
   // 派发按 registration 而不是按 event 分组 —— 认领了 k 类 event 的 consumer 得到**一次**调用。
   // R3 — 每个 registration 各自记账:它已经成功消费了哪些 revision、连续失败几次、退避到什么时候。
@@ -210,13 +226,16 @@ export function createAccountRevisionCoordinator(
   const baseline = (imSelectors.syncState('account-revision-cursor')(repository.snapshot()) as { revision: string } | undefined)?.revision ?? '0'
 
   // Inline payloads and recovered bodies share this one commit-then-notify path.
-  const commitArrival = (operation: AccountRevisionOperation, message: MessageItem, transaction: ImRepositoryTransaction, live: boolean) => {
+  const commitArrival = (operation: AccountRevisionOperation, message: MessageItem, transaction: ImRepositoryTransaction, live: boolean,
+    arrived?: ReadonlySet<string>) => {
     const arrival = readMessageCreatedRevision(operation.payload)
     if (message.id !== arrival.messageId || message.chat_id !== arrival.chatId) throw new Error('message revision crossed chat boundary')
-    const { won } = ingestAccountMessage(repository, transaction, message, operation.revision)
+    const { won } = ingestAccountMessage(repository, transaction, message, operation.revision, arrived)
     return () => {
       // The claim is committed. Never retry the OS side effect: a crash may lose one alert, never duplicate it.
-      if (!active || !live || !won || !repository.snapshot().message.some(row => row.id === message.id)) return
+      // A later message_deleted in the same page marks the claim deleted.
+      if (!active || !live || !won
+        || (imSelectors.view(`message-revision:${message.id}`)(repository.snapshot()) as { deleted?: boolean } | undefined)?.deleted) return
       void messages!.notify(message).catch(error => coordinatorLog.error({ error, messageId: message.id }, 'message notification failed'))
     }
   }
@@ -234,13 +253,13 @@ export function createAccountRevisionCoordinator(
 
   for (const event of ACCOUNT_REVISION_EVENTS) {
     claimCounts.set(event, 0)
-    runtime.register(event, (operation, transaction, live) => {
+    runtime.register(event, (operation, transaction, live, arrived) => {
       let afterCommit: (() => void) | undefined
       let messageCommitted = false
       if (messages && event === 'message_created') {
         try {
           const message = decodeArrival(operation)
-          if (message) afterCommit = commitArrival(operation, message, transaction, live)
+          if (message) afterCommit = commitArrival(operation, message, transaction, live, arrived)
           messageCommitted = message !== undefined
         } catch (error) {
           // A bad/legacy payload belongs to the existing inbox consumer's
@@ -251,8 +270,7 @@ export function createAccountRevisionCoordinator(
       if (messages && event === 'message_deleted') {
         const key = readRevisionResourceKey(operation.payload, event)
         if (!key.entityId) throw new Error('message_deleted revision requires entity_id')
-        transaction.delete('message', [accountId, key.entityId])
-        transaction.putView(`message-revision:${key.entityId}`, { revision: operation.revision, deleted: true, chatId: key.chatId })
+        recordMessageDeletion(transaction, accountId, key.chatId, key.entityId, operation.revision)
       }
       transaction.putView(operationKey(operation.revision), messages && event === 'message_created'
         ? { ...operation, notify: live, messageCommitted } : operation)
@@ -450,6 +468,7 @@ export function createAccountRevisionCoordinator(
       }
     },
     retryPending: scheduleDispatch,
+    wake: () => runtime.wake(),
     async whenIdle() {
       await runtime.whenIdle()
       await dispatchPromise

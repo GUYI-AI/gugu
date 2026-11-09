@@ -7,6 +7,11 @@ import type {
   PluginFs,
   SubscriptionUsageReading,
 } from '@gugu/session-core/agents/plugins';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { NodeExecutionContext } from '@gugu/session-core/exec';
+import { HostDependencyManager, createReplicaLedger, type ReplicaHostDependencyLedger } from '@gugu/session-core/deps/runtime';
 import { AgentPluginHost, createPluginRegistry } from '@gugu/session-core/agents/plugins';
 import type { ExecContextOptions, IExecutionContext } from '@gugu/session-core/exec';
 import type { McpServer } from '@gugu/session-core/mcp';
@@ -40,14 +45,14 @@ const SELECTED_CLI: AgentRunContext = {
   cli: { kind: 'resolved', path: '/opt/selected/claude2' },
   env: HOST_ENV,
   configRootEnv: {},
-  selfUpdateEnv: {},
+  pinnedEnv: {},
   extraArgs: [],
 };
 const OTHER_CLI: AgentRunContext = {
   cli: { kind: 'resolved', path: '/opt/other/claude' },
   env: HOST_ENV,
   configRootEnv: {},
-  selfUpdateEnv: {},
+  pinnedEnv: {},
   extraArgs: [],
 };
 
@@ -786,8 +791,44 @@ describe('AgentConfigRuntime sign-in expiry (#6264)', () => {
   });
 });
 
+describe('MCP preparation failure containment', () => {
+  it('owns a rejected provider read, continues healthy providers, and permits a later refresh', async () => {
+    let broken = true;
+    const warn = vi.fn();
+    const { runtime, agentHost } = makeRuntime({
+      logger: { ...noopLogger, warn },
+      mcpRead: async () => { if (broken) throw new Error('home copy failed'); return []; },
+    });
+    try {
+      await vi.waitFor(() => expect(warn).toHaveBeenCalledWith('Failed to read MCP config for claude:', { error: 'home copy failed' }));
+      const provider = agentHost.get('claude')!;
+      vi.spyOn(agentHost, 'getAll').mockReturnValue([provider, { ...provider, metadata: { ...provider.metadata, id: 'healthy' } }]);
+      const read = vi.spyOn(agentHost, 'readMcpServers').mockImplementation(async id => {
+        if (id === 'claude' && broken) throw new Error('home copy failed');
+        return ok([]);
+      });
+      await expect(runtime.mcp.refresh()).resolves.toEqual([]);
+      expect(read.mock.calls.map(call => call[0])).toEqual(['claude', 'healthy']);
+      broken = false;
+      await expect(runtime.mcp.refresh()).resolves.toEqual([]);
+      expect(read.mock.calls.map(call => call[0])).toEqual(['claude', 'healthy', 'claude', 'healthy']);
+    } finally { await runtime.dispose(); }
+  });
+
+  it('handles an unexpected initialization rejection at the runtime owner', async () => {
+    const { AgentMcpConfigManager } = await import('./mcp');
+    const initialize = vi.spyOn(AgentMcpConfigManager.prototype, 'initialize').mockRejectedValueOnce(new Error('init failed'));
+    const warn = vi.fn();
+    const { runtime } = makeRuntime({ logger: { ...noopLogger, warn } });
+    try {
+      await vi.waitFor(() => expect(warn).toHaveBeenCalledWith('AgentConfigRuntime: MCP initialization failed', { error: 'Error: init failed' }));
+    } finally { initialize.mockRestore(); await runtime.dispose(); }
+  });
+});
+
 function makeRuntime(
   options: {
+    hostDependencyLedger?: ReplicaHostDependencyLedger;
     authCheckStatus?: (ctx: AgentAuthContext) => Promise<AgentAuthStatus>;
     logger?: Logger;
     ptySpawner?: PtySpawner;
@@ -799,6 +840,7 @@ function makeRuntime(
     subscriptionUsage?: () => Promise<SubscriptionUsageReading>;
     usageRefresh?: 'on-open' | 'on-demand';
     isolatedCredentialFs?: boolean;
+    mcpRead?: () => Promise<McpServerRegistration[]>;
     /** 伴随程序 `claude-tui`(认领 tui)自己的登录(#6335)。 */
     companionAuth?: {
       checkStatus: (ctx: AgentAuthContext) => Promise<AgentAuthStatus>;
@@ -887,7 +929,7 @@ function makeRuntime(
         ...(options.companionAuth ? { programs: { 'claude-tui': options.companionAuth } } : {}),
       },
       mcp: {
-        readServers: vi.fn(async () => [...mcpServers]),
+        readServers: vi.fn(async () => options.mcpRead ? options.mcpRead() : [...mcpServers]),
         writeServers: vi.fn(async (_pluginFs, servers) => {
           mcpServers.splice(0, mcpServers.length, ...servers);
         }),
@@ -915,6 +957,7 @@ function makeRuntime(
     runtime: new AgentConfigRuntime({
       scope,
       agentHost,
+      ...(options.hostDependencyLedger ? { hostDependencyLedger: options.hostDependencyLedger } : {}),
       ptySpawner: options.ptySpawner ?? new FakePtySpawner(),
       logger,
       ...(options.authExpiry ? { authExpiry: options.authExpiry } : {}),
@@ -1082,4 +1125,57 @@ it('cancelling a new isolated login preserves the original account, quota and lo
   expect(runtime.install.getAuth('claude').status).toMatchObject({ kind: 'authenticated', account: 'original@example.test' });
   expect(await runtime.readSubscriptionUsage('claude', original, false)).toMatchObject({ data: { kind: 'windows', readAt: 123 } });
   await runtime.dispose();
+});
+
+
+describe('host-owned startup inventory', () => {
+  it('uses the owner’s completed signal failure without initializing or re-probing in the worker', async () => {
+    const { runtime, exec } = makeRuntime({ hostDependencyLedger: createReplicaLedger() });
+    const failed = { id: 'claude', category: 'agent' as const, status: 'error' as const, version: null, path: '/opt/fake-agent', checkedAt: 123, error: 'Process terminated by SIGKILL' };
+    try {
+      await runtime.syncHostDependencyLedger({ ownedDirs: { ownedNpmRoots: [], ownedShimDirs: [], ownedMiseBinDirs: [] }, entries: [], readings: [failed] });
+      expect(runtime.agentsLiveHost().get(undefined)!.states.list.snapshot().data.claude.install).toEqual(failed);
+      expect(exec.exec).not.toHaveBeenCalled();
+    } finally { await runtime.dispose(); }
+  });
+
+  it('publishes a new owner reading after repair while preserving the worker’s independent auth state', async () => {
+    const { runtime, exec } = makeRuntime({ hostDependencyLedger: createReplicaLedger() });
+    const snapshot = (status: 'error' | 'available', version: string | null, checkedAt: number) => ({ ownedDirs: { ownedNpmRoots: [], ownedShimDirs: [], ownedMiseBinDirs: [] }, entries: [], readings: [{ id: 'claude', category: 'agent' as const, status, version, path: '/opt/fake-agent', checkedAt }] });
+    try {
+      runtime.install.updateAuth('claude', { status: { kind: 'authenticated' }, login: null });
+      await runtime.syncHostDependencyLedger(snapshot('error', null, 1));
+      await runtime.syncHostDependencyLedger(snapshot('available', '2.1.9', 2));
+      const row = runtime.agentsLiveHost().get(undefined)!.states.list.snapshot().data.claude;
+      expect(row.install).toEqual(snapshot('available', '2.1.9', 2).readings[0]);
+      expect(row.auth.status.kind).toBe('authenticated');
+      expect(exec.exec).not.toHaveBeenCalled();
+    } finally { await runtime.dispose(); }
+  });
+});
+
+
+describe('one startup probe across inventory and worker entrances', () => {
+  it.skipIf(process.platform === 'win32')('executes a signal-killed real CLI once and shares the same failure with both worker refreshes', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'gugu-startup-signal-'));
+    const counter = join(dir, 'calls');
+    const ctx = new NodeExecutionContext();
+    const owner = new HostDependencyManager(ctx, {
+      dependencies: [{ id: 'claude', name: 'Claude test', category: 'agent', commands: [process.execPath], versionArgs: ['-e', `require('fs').appendFileSync(${JSON.stringify(counter)}, 'probe\\n'); process.kill(process.pid, 'SIGKILL')`], installCommands: {}, updates: { kind: 'none' } }],
+      installMethodDetector: { detect: async () => ({ kind: 'unknown', confidence: 'inferred' }), invalidate: () => {} },
+      logger: noopLogger,
+    });
+    const { runtime, exec } = makeRuntime({ hostDependencyLedger: createReplicaLedger() });
+    try {
+      await owner.probeAll();
+      const reading = owner.get('claude')!;
+      expect(reading.status).toBe('error');
+      const snapshot = { ownedDirs: { ownedNpmRoots: [], ownedShimDirs: [], ownedMiseBinDirs: [] }, entries: [], readings: [reading] };
+      await runtime.syncHostDependencyLedger(snapshot);
+      await runtime.syncHostDependencyLedger(snapshot);
+      expect((await readFile(counter, 'utf8')).trim().split('\n')).toEqual(['probe']);
+      expect(runtime.agentsLiveHost().get(undefined)!.states.list.snapshot().data.claude.install).toEqual(reading);
+      expect(exec.exec).not.toHaveBeenCalled();
+    } finally { await runtime.dispose(); ctx.dispose(); await rm(dir, { recursive: true, force: true }); }
+  });
 });

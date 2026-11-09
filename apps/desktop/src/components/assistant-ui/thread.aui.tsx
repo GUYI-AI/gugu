@@ -1,7 +1,10 @@
+import { notify } from '@/lib/notices';
+import { messageForUser } from '@/lib/userFacingError';
+import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
 import { UserMessageAttachments } from "./attachment.aui";
 import { MAX_ATTACHMENT_BYTES } from "@gugu/session-core/session-record/contract";
 import { ChatComposer, MessageProvider, formatAttachmentSize, type ComposerAttachment, type PromptEditorRef } from "@gugu/session-ui/react/components";
-import { ThemeProvider } from "@gugu/session-ui/react/primitives";
+import { SessionUiTheme } from "@/components/sessionpage/SessionUiTheme";
 import { useLocale } from "@/i18n";
 import { useTheme } from "@/store/theme";
 import { useMobileShell } from "@/hooks/useMobileShell";
@@ -367,6 +370,7 @@ function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boole
   const mobile = useMobileShell();
   const composer = useAui().composer;
   const { text, attachments, isEmpty, canSend } = useAuiState((s) => s.composer);
+  const fileSelection = useAttachmentFileSelection(attachments, composer);
   const { isRunning, isDisabled, capabilities } = useAuiState((s) => s.thread);
   const hostStop = useComposerStop();
   const placeholder = useComposerPlaceholder() ?? c.placeholder;
@@ -375,7 +379,7 @@ function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boole
   const previews = useRef(new Map<File, string>());
   const { byEngine, renderMentionIcon } = useSessionAgentCreationTools();
   const mentionProvider = useMemo(() => createLocalSessionMentionProvider({ creationToolsByEngine: byEngine }), [byEngine]);
-  const { dataDropTypes, onDataDropped } = useSessionMentionDrop({ provider: mentionProvider, editorApiRef: editor });
+  const { dataDropTypes, onDataDropped } = useSessionMentionDrop({ provider: mentionProvider, editorApiRef: editor, attachFiles: capabilities.attachments ? (files) => addFiles(files) : undefined });
   useEffect(() => {
     if (editor.current?.getText() !== text) editor.current?.setText(text);
   }, [text]);
@@ -402,9 +406,16 @@ function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boole
       meta: failed ? status.message : progress !== undefined ? `${progress}%` : file ? formatAttachmentSize(file.size) : undefined,
       cancelable: true, retryable: failed && !!file && file.size <= MAX_ATTACHMENT_BYTES };
   });
-  const addFiles = (files: File[]) => { for (const file of files) void composer.addAttachment(file); };
+  const addFiles = (files: File[]) => {
+    for (const picked of fileSelection.choose(files)) {
+      void composer.addAttachment(picked.file).catch(error => {
+        fileSelection.release([picked]);
+        notify({ title: translateSessionMessage('composer.attachmentUploadFailed'), description: messageForUser(error), tier: 'error' });
+      });
+    }
+  };
   return (
-    <ThemeProvider theme={theme} target="documentElement">
+    <SessionUiTheme theme={theme}>
       <MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
         {capabilities.attachments && <input ref={picker} type="file" multiple hidden onChange={(event) => { addFiles(Array.from(event.target.files ?? [])); event.target.value = ''; }} />}
         <ChatComposer editorApiRef={editor} mobile={mobile} placeholder={placeholder}
@@ -419,7 +430,7 @@ function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boole
           toolbarExtra={<ComposerExtras />} mentionProvider={mentionProvider} renderMentionIcon={renderMentionIcon}
           dataDropTypes={dataDropTypes} onDataDropped={onDataDropped} />
       </MessageProvider>
-    </ThemeProvider>
+    </SessionUiTheme>
   );
 }
 const MessageError: FC = () => {

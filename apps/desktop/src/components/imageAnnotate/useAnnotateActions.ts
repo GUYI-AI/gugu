@@ -10,11 +10,15 @@ import { downloadBlob } from '@/lib/download'
 import { writeImageBlobToClipboard } from '@/lib/imageClipboard'
 import { messageForUser } from '@/lib/userFacingError'
 import { useToast } from '../toastContext'
+import { useMobileShell } from '@/hooks/useMobileShell'
+import { useCopyConfirmation } from '@/hooks/useCopyConfirmation'
 import { annotateCaption, type AnnotateDocument } from './annotateModel'
 
 export function useAnnotateActions(item: ImageViewerItem, doc: AnnotateDocument, output: () => Promise<Blob>, onDone: () => void) {
   const { t } = useTranslation('main', { keyPrefix: 'imageAnnotate' })
   const { toast } = useToast()
+  const mobile = useMobileShell()
+  const { copied, confirm } = useCopyConfirmation(doc)
   const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null)
   const running = useRef(false)
   const source = item.source
@@ -30,17 +34,20 @@ export function useAnnotateActions(item: ImageViewerItem, doc: AnnotateDocument,
     if (!source) throw new Error(t('noSource'))
     const session = getRendererSession()
     if (!session) throw new Error(t('notSignedIn'))
-    const quote = source.messageId ? await chatService.getMessageById(source.messageId, session.user.id) : undefined
-    if (source.messageId && (!quote || quote.chat_id !== source.chatId || !resolveReplyDelivery({ senderUserId: session.user.id, source: quote }))) throw new Error(t('originalUnavailable'))
+    // Not a quote, but the original's audience: a whisper's annotation goes back to the same pair.
+    const original = source.messageId ? await chatService.getMessageById(source.messageId, session.user.id) : undefined
+    const delivery = original?.chat_id === source.chatId ? resolveReplyDelivery({ senderUserId: session.user.id, source: original }) : null
+    if (source.messageId && !delivery) throw new Error(t('originalUnavailable'))
     const blob = await output()
     const detail = await composeInChat({ account: async () => ({ token: session.access_token, userId: session.user.id }) }, {
       chat: source.chatId, text: annotateCaption(doc, ''),
       images: [{ name: filename, type: 'image/png', bytes: await blob.arrayBuffer() }],
     })
-    composeChatDraft({ ...detail, ...(quote ? { quote } : {}) })
+    // The annotated image is the new content; the original is not quoted (owner 11-07).
+    composeChatDraft({ ...detail, ...(delivery?.isWhisper ? { whisperTo: delivery.toUserIds[0] } : {}) })
     onDone()
   })
-  const copy = () => run(async () => { await writeImageBlobToClipboard(await output()); toast(t('copied'), 'success') })
+  const copy = () => run(async () => { await writeImageBlobToClipboard(await output()); if (mobile) confirm(); else toast(t('copied'), 'success') })
   const save = () => run(async () => { if ((await downloadBlob(await output(), filename)).saved) toast(t('saved'), 'success') })
   const saveToFolder = () => run(async () => {
     if (!source) throw new Error(t('noSource'))
@@ -49,5 +56,5 @@ export function useAnnotateActions(item: ImageViewerItem, doc: AnnotateDocument,
     await saveFilesToChatFolder(source.chatId, [{ name: filename, bytes: await blob.arrayBuffer(), contentType: 'image/png' }], source.messageId ? [source.messageId] : undefined)
     toast(t('savedToFolder'), 'success')
   })
-  return { busy, error, putInComposer, copy, save, saveToFolder, canCompose: !!source?.chatId }
+  return { busy, error, putInComposer, copy, copied: mobile && copied, save, saveToFolder, canCompose: !!source?.chatId }
 }

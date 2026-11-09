@@ -65,9 +65,6 @@ export type ChatAttachment = {
   dataUrl?: string;
 };
 
-/** @deprecated 用 `ChatAttachment` —— 附件条不再只画图。 */
-export type ChatImageAttachment = ChatAttachment;
-
 export type ChatMessage = {
   kind: 'message';
   id: string;
@@ -95,6 +92,8 @@ export type ChatMessage = {
   at?: number;
   /** Parsed Gugu delivery metadata; populated by the message unit, never by ordinary transcript producers. */
   guguDelivery?: DeliveryReading;
+  /** Native input provenance survives presentation normalization, including non-owner steers. */
+  _meta?: import('@gugu/session-core/acp/client').TranscriptMessage['_meta'];
   /**
    * View-only reference to the message this one explicitly replies to. Only a real anchor counts
    * (the delivery's `reply_to`, or the `reply_to_message_id` the agent passed to message_send) —
@@ -118,8 +117,16 @@ export type ChatMessage = {
   conversationFull?: boolean;
   /** View-only: the closing reply of a finished turn — the only agent bubble with the time / copy row (design 0 `tail`). */
   conversationTail?: boolean;
+  /**
+   * View-only: the chat messages this bubble is (what the agent sent to people — a send into a chat, or a note to its
+   * owner). The host draws them with the chat's own MessageBody into a slot (`onMessageBodyMount`); this row keeps only
+   * its frame. Absent = drawn from `text` / `attachments` as before.
+   */
+  sentMessages?: import('@gugu/core/shared/types/chat').MessageItem[];
   /** Where this message_send output went (same reading as the session page's 「发到 …」 line, `agentSendOf`). */
   sentTo?: AgentSend['to'];
+  /** Original typed addresses, kept separate from transport display names. */
+  sentAddresses?: import('@gugu/session-core/session-record/send-addresses').SendAddresses;
   /** The `chat_id` that message_send went to — names the group when this row is itself quoted later. */
   sentChat?: string;
   /** View-only disclosure of the completed thinking/execution segment. */
@@ -129,7 +136,8 @@ export type ChatMessage = {
    * process line, each `body` only a bubble. The process steps go between them, so they never land
    * under the bubble; every output of the turn (message_send ones too) is its own bubble.
    */
-  conversationPart?: 'head' | 'body';
+  conversationPart?: 'head' | 'body' | 'group-reply';
+  groupReply?: import('./state/agent-activity').ActivityActor;
   /** A `body`'s head row — background tasks still hang on that process line. */
   conversationHead?: string;
   /**
@@ -586,6 +594,8 @@ export type ToolRunItem = {
   live?: boolean;
   /** 跑着的这一段此刻在做什么(`toolRunNow`):在跑的命令或在思考;只在活动层、只在有的时候写。 */
   now?: ToolRunNow;
+  /** Folded only: the last step that handed back pictures, so its strip shows without opening the line. */
+  pictureStep?: ToolNode;
 };
 
 /**
@@ -625,7 +635,11 @@ export type SessionConditionItem = {
    * 后者读作「我登好了，接着来」，❌ 不能用「重试」顶替。
    */
   /** `pending`: its call is in flight; the button is disabled until it settles (a second click would repeat it). */
-  actions?: readonly { label: string; run: (anchor?: HTMLElement) => void; pending?: boolean }[];
+  /**
+   * 只是数据:按下第几颗由 `ChatCommands.onConditionAction` 交给宿主。这一格住在比聊天面板长寿的 chat state 里,
+   * ❌ 放闭包 —— 闭包抓着写它的那块面板,面板卸下后整棵聊天树(DOM 加上 listener)都会被它留住。
+   */
+  actions?: readonly { label: string; pending?: boolean }[];
   /** 行文案里的占位值(按 code 取到的那句文案里要填的空)。 */
   labelValues?: Readonly<Record<string, string | number>>;
 };
@@ -678,6 +692,8 @@ export type AgentSendItem = {
   id: string;
   turnId: string;
   send: AgentSend;
+  /** The chat message that send put there, drawn by the host's MessageBody (see `ChatMessage.sentMessages`). */
+  sentMessages?: import('@gugu/core/shared/types/chat').MessageItem[];
   /** 还在发 / 已发出(那次调用的状态;发失败的不造这一项,照常是一行工具)。 */
   status: 'running' | 'done';
 };

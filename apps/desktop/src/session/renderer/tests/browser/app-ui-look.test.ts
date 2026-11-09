@@ -130,9 +130,9 @@ describe('an App page with gugu\'s look', () => {
       await until(`the theme is ${themeMode}`, () => document.documentElement.dataset.guguTheme === themeMode);
       // The label colour has a transition: if it were theme-bound (the ink's inverse), its old value would still read
       // white on the first frames after the switch. So wait for it to settle, then compare — a quick match proves nothing.
-      await untilStable(`danger label settles in ${themeMode}`, () => css(danger, 'color'));
+      await untilStable(`danger button settles in ${themeMode}`, () => `${css(danger, 'color')} ${css(danger, 'background-color')}`);
       expect(css(danger, 'color')).toBe(white);
-      expect(css(danger, 'background-color')).toBe(tokenColor('--em-foreground-destructive'));
+      expect(css(danger, 'background-color')).toBe(tokenColor('--em-danger-solid'));
     }
   });
 
@@ -165,12 +165,12 @@ describe('an App page with gugu\'s look', () => {
     row.remove();
   });
 
-  it('draws the host\'s elements: an icon, a member\'s face (an agent\'s with ⚡), a neutral figure for anyone else', () => {
+  it('draws the host\'s elements: an icon, a member\'s face (an agent\'s without ⚡), a neutral figure for anyone else', () => {
     expect(document.querySelector('gugu-icon')!.shadowRoot!.querySelector('svg')).not.toBeNull();
     const member = document.querySelector('#member gugu-avatar')!.shadowRoot!;
     expect(member.querySelector('img')!.getAttribute('src')).toBe(FACE);
     expect(member.querySelector('.name')!.textContent).toBe('周报助手');
-    expect(member.querySelector('.badge')).not.toBeNull();
+    expect(member.querySelector('.badge, .bolt')).toBeNull();
     const stranger = document.querySelector('#stranger gugu-avatar')!;
     expect(stranger.shadowRoot!.querySelector('img')).toBeNull();
     expect(stranger.shadowRoot!.querySelector('svg')).not.toBeNull();
@@ -370,7 +370,7 @@ describe('the App primitives\' interaction states, like the host\'s (#7333)', ()
       await setTheme(themeMode);
       for (const [id, label, fill] of [
         ['icon-primary', '--em-accent-contrast', '--em-accent-9'],
-        ['icon-danger', '--em-color-white', '--em-foreground-destructive'],
+        ['icon-danger', '--em-color-white', '--em-danger-solid'],
       ] as const) {
         const button = byId(id);
         const ink = { color: tokenColor(label, 'color'), background: tokenColor(fill) };
@@ -488,13 +488,16 @@ describe('the App primitives\' interaction states, like the host\'s (#7333)', ()
     expect(await settled('switch disabled', byId('switch-off'))).toMatchObject({ opacity: 0.5 });
   });
 
-  it('draws tabs as the host\'s pill: radius 8, the selected one a neutral fill; hover, press and a ring on the others', async () => {
+  it('draws tabs as the host\'s outlined segments: one hairline frame of radius 8, the selected one a neutral fill; hover, press and a ring on the others', async () => {
     await setTheme('dark');
     const selected = byId('tab-on');
     const other = byId('tab-off');
     await away();
     blur();
-    expect(getComputedStyle(selected).borderRadius).toBe('8px');
+    // owner 11-06: the host file toolbar's segments — the frame is the tablist, the segments sit in it unrounded.
+    expect(getComputedStyle(selected.parentElement!).borderRadius).toBe('8px');
+    expect(getComputedStyle(selected.parentElement!).borderTopWidth).toBe('1px');
+    expect(getComputedStyle(selected).borderRadius).toBe('0px');
     expect(await settled('selected tab', selected)).toMatchObject({ background: tokenColor('--em-background-3'), color: tokenColor('--em-foreground', 'color') });
     expect(await settled('other tab at rest', other)).toMatchObject({ background: transparent, color: tokenColor('--em-foreground-muted', 'color') });
     await userEvent.hover(other);

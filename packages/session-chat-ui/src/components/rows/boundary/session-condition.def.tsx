@@ -28,6 +28,7 @@ import type { MeasureCtx } from '@session-chat/core/define';
 import { readableLabel, rowTranslator } from '../readable-label';
 import { defineUnit } from '@session-chat/core/units';
 import { useChatTranslator } from '@session-chat/localization';
+import { useCommands } from '@session-chat/components/contexts/CommandsContext';
 import type { SessionConditionItem } from '@session-chat/model';
 import { boundaryAction, boundaryLabel, boundaryRow, boundaryRule } from './boundary.css';
 
@@ -71,6 +72,7 @@ export const sessionConditionUnitDef = defineUnit<SessionConditionItem, { rowH: 
 
   Render(props) {
     const translate = useChatTranslator();
+    const commands = useCommands();
     const layout = () => boundaryLayout(props.data, props.ctx.measureCtx!());
     const label = () => conditionLabel(props.data, translate);
 
@@ -81,9 +83,8 @@ export const sessionConditionUnitDef = defineUnit<SessionConditionItem, { rowH: 
         role="status"
         aria-label={label()}
         class={boundaryRow}
-        // 排查要的是运行时那句原文,给鼠标停留看得到,而不摊在正文里。
-        // 标签窄时会收成省略号(boundary.css.ts),所以把整句放在原文前面。
-        title={`${label()}\n${props.data.detail}`}
+        // Keep the readable condition and its actions; diagnostics belong to the host log.
+        title={label()}
         style={{ height: `${Math.max(props.vars.rowH, layout().height + 6)}px` }}
       >
         <span data-slot="session-condition-rule" aria-hidden="true" class={boundaryRule} />
@@ -91,13 +92,13 @@ export const sessionConditionUnitDef = defineUnit<SessionConditionItem, { rowH: 
           {layout().text}
         </span>
         <For each={props.data.actions ?? []}>
-          {(action) => (
+          {(action, index) => (
             <button
               type="button"
               data-slot="session-condition-action"
               class={boundaryAction}
               disabled={action.pending}
-              onClick={event => action.run(event.currentTarget)}
+              onClick={event => commands().onConditionAction?.({ index: index(), anchor: event.currentTarget })}
             >
               {action.label}
             </button>

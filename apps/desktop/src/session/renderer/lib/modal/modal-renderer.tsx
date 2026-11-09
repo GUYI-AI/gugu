@@ -1,7 +1,7 @@
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
 import { reaction } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   modalRegistry,
   type ModalPosition,
@@ -12,6 +12,7 @@ import { useUiPortalContainer } from '@gugu/session-ui/react/primitives';
 import { Dialog, DialogOverlay, DialogPortal } from '@renderer/lib/ui/dialog';
 import { cn } from '@renderer/utils/utils';
 import { modalStore } from './modal-store';
+import { noteOverlayRequest } from '@/lib/localRendererDiagnostics';
 
 const SIZE_CLASSES: Record<ModalSize, string> = {
   xs: 'sm:max-w-xs',
@@ -28,6 +29,13 @@ const POSITION_CLASSES: Record<ModalPosition, string> = {
 
 export const ModalRenderer = observer(function ModalRenderer() {
   const pageLayer = useUiPortalContainer();
+  const portalContainer = modalStore.portalContainer ?? pageLayer;
+  const [portal, setPortal] = useState({ container: portalContainer, revision: 0 });
+  if (portal.container !== portalContainer) {
+    // A portal move destroys its popup DOM. Reset the dialog's transition/focus owner too:
+    // an interrupted exit must not remount retained content with open=false in the new surface.
+    setPortal({ container: portalContainer, revision: portal.revision + 1 });
+  }
   const entry = (
     modalStore.activeModalId
       ? modalRegistry[modalStore.activeModalId as keyof typeof modalRegistry]
@@ -87,10 +95,10 @@ export const ModalRenderer = observer(function ModalRenderer() {
       }
 
       const isPassiveDismiss = isOutsidePress || eventDetails.reason === 'escape-key';
-      if (modalStore.closeGuardActive && isPassiveDismiss) return;
+      if (modalStore.closeGuardActive && isPassiveDismiss) { noteOverlayRequest(eventDetails, 'session-modal', false, 'blocked-close-guard'); return; }
       ignoreNextOutsidePressRef.current = false;
       // Esc / 点外面也是关掉,走这个弹窗自己的 onClose(每个 setModal 都带):等它结果的调用方才听得到。
-      modalStore.activeModalArgs?.onClose();
+      noteOverlayRequest(eventDetails, 'session-modal', false, 'close-requested'); modalStore.activeModalArgs?.onClose();
     }
   };
 
@@ -124,8 +132,8 @@ export const ModalRenderer = observer(function ModalRenderer() {
   }, []);
 
   return (
-    <Dialog open={modalStore.isOpen} onOpenChange={handleOpenChange}>
-      <DialogPortal container={modalStore.portalContainer ?? pageLayer}>
+    <Dialog key={portal.revision} open={modalStore.isOpen} onOpenChange={handleOpenChange}>
+      <DialogPortal container={portalContainer}>
         <DialogOverlay />
         <DialogPrimitive.Popup
           ref={popupRef}

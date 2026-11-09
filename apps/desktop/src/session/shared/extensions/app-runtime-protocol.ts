@@ -1,5 +1,5 @@
+import type { TabOpenIntent } from '@shared/view-state';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
-import type { MessageItem } from '@gugu/core/shared/types/chat';
 import type { FileOpenerCandidate } from './file-openers';
 import { extensionFromMimeType, mimeTypeFromName, normalizeMimeType } from '@gugu/core/shared/imageMime.mjs';
 /**
@@ -202,7 +202,7 @@ export interface AppWhere {
 }
 
 /** What a workspace id names: a session's working copy, or a project's root folder. */
-export type WorkspaceTarget = { session: string } | { project: string };
+export type WorkspaceTarget = { session: string } | { project: string } | { folder: { deviceId: string; workspaceId: string } };
 
 /**
  * A file, named so that where it lives is said: a working-copy file by its workspace and its path there (`id`, or `name`
@@ -227,16 +227,37 @@ export function placeKey(place: AppPlace): string {
   return 'chat' in place ? `chat:${place.chat}` : place.workspace;
 }
 
-const WORKSPACE_ID = /^(session|project):(.+)$/;
+const WORKSPACE_ID = /^(session|project|folder):(.+)$/;
 
 /** A session's working copy's workspace id; a project's root folder's. */
 export const sessionWorkspace = (sessionId: string): string => `session:${sessionId}`;
+
+/**
+ * The preinstalled workspace App (apps/desktop/preinstalled-apps/workspace; 文件 / Files to people). It stays an App in code, but it is
+ * the chat's own folder, not something one installs or removes, so the App lists leave it out (owner 10-10).
+ */
+export const WORKSPACE_APP_ID = 'workspace';
 export const projectWorkspace = (projectId: string): string => `project:${projectId}`;
+/** One folder of a project, on the machine that has it (`ctx.chat.folders`): a project may hold several, on several machines. */
+export const folderWorkspace = (deviceId: string, workspaceId: string): string => `folder:${deviceId}/${workspaceId}`;
+
+/** The project folder a workspace id names, and its machine; null for a session's or a project's. */
+export function workspaceFolder(place: { workspace?: string | null } | null | undefined): { deviceId: string; workspaceId: string } | null {
+  const match = place?.workspace ? WORKSPACE_ID.exec(place.workspace) : null;
+  if (match?.[1] !== 'folder') return null;
+  const at = match[2]!.indexOf('/');
+  return at > 0 && at < match[2]!.length - 1 ? { deviceId: match[2]!.slice(0, at), workspaceId: match[2]!.slice(at + 1) } : null;
+}
 
 /** What a workspace id names. What is not one throws `invalid`. */
 export function workspaceTarget(place: WorkspacePlace): WorkspaceTarget {
   const match = WORKSPACE_ID.exec(place.workspace);
   if (!match) throw invalidPlace(`workspace is a working copy's id, as ctx.workspace.id gives it — ${JSON.stringify(place.workspace)} is not one`);
+  if (match[1] === 'folder') {
+    const folder = workspaceFolder(place);
+    if (!folder) throw invalidPlace(`${JSON.stringify(place.workspace)} is not a project folder's id`);
+    return { folder };
+  }
   return match[1] === 'session' ? { session: match[2]! } : { project: match[2]! };
 }
 
@@ -254,6 +275,13 @@ export function openWithTabOf(options: Record<string, unknown>): string | undefi
   if (typeof options.tab !== 'string' || !options.tab.trim()) throw invalidPlace('openWith tab must be a non-empty tab name');
   if (options.ask === true) throw invalidPlace('openWith tab and ask cannot be combined');
   return options.tab;
+}
+
+/** The host validates page input; ordinary file clicks use the existing preview slot. */
+export function openWithIntentOf(options: Record<string, unknown>): TabOpenIntent {
+  if (!Object.hasOwn(options, 'intent')) return 'navigate';
+  if (options.intent !== 'navigate' && options.intent !== 'newTab' && options.intent !== 'beside') throw invalidPlace('openWith intent must be navigate, newTab or beside');
+  return options.intent;
 }
 
 /** A chat's id, as getContext() and every entry carry it (`send` takes the same, app-send-core.ts). */
@@ -393,6 +421,13 @@ export interface AppFileEntry {
   type: 'text' | 'json' | 'binary' | 'folder';
   /** The folder it is in (a `folder` entry's id); `null` at the top of the chat's folder, and for a working copy's file. */
   parentId: string | null;
+  /** A working copy's: its absolute path on the machine it is on. */
+  absolutePath?: string;
+  /** A working copy's: the project and workspace a host's own drags of it name. */
+  projectId?: string;
+  workspaceId?: string;
+  /** A working copy's: what git says of it, when it has changed. */
+  gitStatus?: string;
   /** Where it is from the top of the chat's folder (`合同/2026/甲方.pdf`); a working copy's file: its path there (its id). */
   path: string;
   /**
@@ -424,6 +459,8 @@ export interface AppFileEntry {
    * `null`: no cloud copy (a project file kept on its machine, a document, a folder). Absent where the read does not say.
    */
   keep?: { expiresAt: string | null; mine: boolean } | null;
+  /** A working copy's entry that is a symbolic link (`files.list`'s answer): it may point nowhere, or outside. */
+  symlink?: true;
   /** A chat file's version (G1: `files.replace` makes the next one); `null` for a working copy's file. */
   version: number | null;
   createdAt: string | null;
@@ -528,6 +565,10 @@ export type HostToFrame =
  */
 export const APP_OPEN_WITH_EVENT = 'gugu:app-open-with';
 export interface AppOpenWithDetail {
+  intent?: TabOpenIntent;
+  /** Host-owned source context, never accepted from the guest's arguments. */
+  from?: string;
+  viewState?: Record<string, unknown>;
   /** Refresh this already-open App tab after it was shown; never activate a late validation result. */
   background?: boolean;
   /** Host-only, one-shot authorization carried to the file's binding. Contains no document content. */
@@ -573,8 +614,8 @@ export const APP_COMPOSE_EVENT = 'gugu:app-compose';
 export interface AppComposeDetail {
   chatId: string;
   text: string;
-  /** The original reply context, placed with this chat's draft rather than broadcast to the visible panel. */
-  quote?: MessageItem;
+  /** The one peer this draft stays private to (a whisper's annotated image), without quoting anything. */
+  whisperTo?: string;
   /** G3 Images beside the text, as attachments of the draft: the person sends them, or not. */
   images?: AppComposeImage[];
   /** File references inserted as inline mention tokens in the draft text. */
@@ -607,14 +648,6 @@ export interface AppOpenInChatDetail {
   extensionId: string;
 }
 
-/**
- * 论坛 (9): a bounty's points move only behind a sheet the host draws (components/extensionBundle/ForumConsent): posting one, and
- * settling one. The page's call answers `{ confirming: true }` once the sheet is up; the sheet does it if the person confirms.
- */
-export const APP_FORUM_CONSENT_EVENT = 'gugu:app-forum-consent';
-export type AppForumConsentDetail =
-  | { type: 'bounty'; draft: import('./app-forum-core').BountyDraft }
-  | { type: 'award'; draft: import('./app-forum-core').AwardDraft };
 
 export interface AppShowMessageDetail {
   chatId: string;
@@ -626,11 +659,13 @@ export interface AppShowMessageDetail {
  * file card per file, sent by reference (attachments/share) — a stored file at the version the page named, a text
  * document as its text is now. Where the files are is the chat the page leaves out of the list, as a message's forward does.
  */
+/** What a forward holds in memory at once, with a File and a copy for the send on top of it. Past it: said, before it is read. */
+export const FORWARD_MAX_BYTES = 512 * 1024 * 1024;
 export const APP_FORWARD_FILES_EVENT = 'gugu:app-forward-files';
-export interface AppForwardFilesDetail {
-  chatId: string;
-  files: Array<{ itemId: string; version: number; name: string; document: boolean }>;
-}
+export type AppForwardFilesDetail =
+  | { chatId: string; files: Array<{ itemId: string; version: number; name: string; document: boolean }> }
+  /** A working copy's files, read from the machine that holds them: each chat picked gets them as attachments. */
+  | { copies: Array<{ name: string; bytes: Uint8Array<ArrayBuffer> }> };
 
 /** `gugu.showSession` on the phone: the task tab opens the session's row — the machine it is on, and the row as listed. */
 export const APP_SHOW_SESSION_EVENT = 'gugu:app-show-session';
@@ -642,6 +677,22 @@ export type AppFileChunk = { size: number; offset: number; data: Uint8Array<Arra
 /** The existing cross-machine workspace wire stays JSON/base64; decode only as it reaches the App bridge. */
 export function workspaceAppFileChunk(chunk: { size: number; offset: number; data: string }): AppFileChunk {
   return { size: chunk.size, offset: chunk.offset, data: new Uint8Array(fromBase64(chunk.data)) };
+}
+
+/** `files.readText` reads up to this unless it is told otherwise. */
+export const DEFAULT_TEXT_MAX_BYTES = 20 * 1024 * 1024;
+
+/**
+ * What `files.readText` answers: the text; `binary` when it is not; over the limit, `truncated` with only its size.
+ * `exact: false`: text in another encoding, which writing it back would change: show it read-only.
+ */
+export interface AppFileText {
+  entry: AppFileEntry;
+  content: string;
+  binary?: true;
+  exact?: boolean;
+  truncated: boolean;
+  totalSize: number;
 }
 
 /** What `files.open` / `files.reopen` answer. */

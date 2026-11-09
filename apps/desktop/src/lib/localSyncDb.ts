@@ -1,5 +1,9 @@
 import { displayIdentityFromRow } from './displayIdentity'
 import { createIndexedDbHandle, type IndexedDbHandle } from './indexedDbHandle'
+import { ACCOUNT_REVISION_CURSOR_KEY } from './accountRevisionRuntime'
+import { rendererLogger } from './log'
+
+const cacheLog = rendererLogger('im/local-cache')
 
 const DB_NAME = 'gugu.localSync.v1'
 // v4(#7290):消息行多了指向字节的列(file_item_id / file_version / file_blob_id)。老客户端存下的行没有这几列,
@@ -25,19 +29,18 @@ export const IM_STORE_NAMES = [
 export type ImStoreName = (typeof IM_STORE_NAMES)[number]
 export type LocalImRow = { accountId: string; [key: string]: unknown }
 
-/** Only server-derived cache validation can be recovered. Outbox/IO failures cannot. */
-export class LocalImCacheError extends Error {
-  constructor(cause: unknown, readonly outbox: LocalImRow[]) {
-    super(`Local IM cache requires a snapshot rebuild: ${cause instanceof Error ? cause.message : String(cause)}`, { cause })
-  }
-}
-
 export type LocalImDbOperation =
   | { type: 'put'; store: ImStoreName; value: LocalImRow }
   | { type: 'delete'; store: ImStoreName; key: IDBValidKey }
   | { type: 'clearAccount'; accountId: string }
 
+/** Desktop keeps message windows and arrival claims in the local message store (@@@arrival-claim). */
+const DESKTOP_DROPPED_VIEW_PREFIXES = ['message-window:', 'message-revision:']
+const DESKTOP_DROPPED_VIEWS = new RegExp(`^(${DESKTOP_DROPPED_VIEW_PREFIXES.join('|')})`)
+
 export interface LocalImDbAdapter {
+  /** Desktop keeps messages in the session SQLite store; any IndexedDB message rows are legacy and are dropped. */
+  prepareLocalMessages?(accountId: string): Promise<void>
   loadAccount(accountId: string): Promise<Record<ImStoreName, LocalImRow[]>>
   commit(operations: readonly LocalImDbOperation[]): Promise<void>
   close(): void
@@ -64,6 +67,12 @@ export async function openLocalSyncDb(indexedDb: IDBFactory = window.indexedDB):
 export function createMemoryLocalSyncDb(): LocalImDbAdapter {
   let stores = emptyMemoryStores()
   return {
+    async prepareLocalMessages(accountId) {
+      for (const name of ['message', 'stream', 'view'] as const) {
+        for (const [key, row] of stores[name]) if (row.accountId === accountId
+          && (name !== 'view' || DESKTOP_DROPPED_VIEWS.test(String(row.key)))) stores[name].delete(key)
+      }
+    },
     async loadAccount(accountId) {
       assertId(accountId, 'accountId')
       return Object.fromEntries(IM_STORE_NAMES.map((name) => [
@@ -334,6 +343,21 @@ function assertNoConflictingRows(rows: Record<ImStoreName, LocalImRow[]>): void 
 
 function createIndexedDbAdapter(handle: IndexedDbHandle): LocalImDbAdapter {
   return {
+    async prepareLocalMessages(accountId) {
+      assertId(accountId, 'accountId')
+      const db = await handle.get()
+      const transaction = db.transaction(['message', 'stream', 'view'], 'readwrite')
+      const done = transactionDone(transaction)
+      // @@@key-range-cleanup - this runs before the account's repository opens, on every desktop start. Key ranges drop the
+      // rows in one request per range instead of one cursor step per row; the first start after the upgrade used to walk
+      // every message and every view row here (38k steps on an owner-sized account) before the conversation list could show.
+      transaction.objectStore('message').delete(IDBKeyRange.bound([accountId], [accountId, []]))
+      transaction.objectStore('stream').delete(IDBKeyRange.bound([accountId], [accountId, []]))
+      for (const prefix of DESKTOP_DROPPED_VIEW_PREFIXES) {
+        transaction.objectStore('view').delete(IDBKeyRange.bound([accountId, prefix], [accountId, `${prefix}\uffff`]))
+      }
+      await done
+    },
     async loadAccount(accountId) {
       assertId(accountId, 'accountId')
       const db = await handle.get()
@@ -346,15 +370,17 @@ function createIndexedDbAdapter(handle: IndexedDbHandle): LocalImDbAdapter {
       const raw = Object.fromEntries(entries) as Record<ImStoreName, LocalImRow[]>
       // Validate user-authored data first; never discard an invalid unsent message.
       const outbox = raw.outbox.map((row) => validateCurrentRow('outbox', row, accountId))
-      try {
-        const rows = Object.fromEntries(IM_STORE_NAMES.map((name) => [name,
-          name === 'outbox' ? outbox : raw[name].map((row) => validateCurrentRow(name, row, accountId)),
-        ])) as Record<ImStoreName, LocalImRow[]>
-        validateCurrentRelations(rows)
-        return rows
-      } catch (error) {
-        throw new LocalImCacheError(error, outbox)
-      }
+      // @@@row-level-cache - server-derived rows are a cache: one row an older build wrote in a shape this build rejects
+      // drops that row only. Everything else stays the first frame; dropping the revision cursor makes the account snapshot
+      // rebuild the dropped rows behind it. (Discarding the whole cache emptied the list after updates until the snapshot.)
+      const dropped: DroppedRow[] = []
+      const rows = Object.fromEntries(IM_STORE_NAMES.map((name) => [name, name === 'outbox' ? outbox : raw[name].flatMap((row) => {
+        try { return [validateCurrentRow(name, row, accountId)] } catch (error) { dropped.push(droppedRow(name, row, error)); return [] }
+      })])) as Record<ImStoreName, LocalImRow[]>
+      dropUnrelatedRows(rows, dropped)
+      if (dropped.length === 0) return rows
+      cacheLog.error({ accountId, count: dropped.length, dropped: dropped.slice(0, 20) }, 'dropped local IM rows this build rejects; rebuilding them from the account snapshot')
+      return { ...rows, sync_state: rows.sync_state.filter((row) => row.key !== ACCOUNT_REVISION_CURSOR_KEY) }
     },
     async commit(operations) {
       if (operations.length === 0) return
@@ -500,7 +526,7 @@ function validateCurrentRow(store: ImStoreName, raw: unknown, accountId: string)
       if (!isRecord(raw.value)) throw new Error('value')
     } else if (store === 'chat') {
       const value = raw.value
-      if (!Number.isInteger(raw.order) || !isRecord(value) || value.id !== raw.id
+      if (!isRecord(value) || value.id !== raw.id
         || typeof value.kind !== 'string' || typeof value.name !== 'string' || typeof value.created_at !== 'string') throw new Error('chat')
       // 10-28 之前的客户端落的行没有 addressed_count:按无效缓存走快照重建,❌ 拿全部未读顶上。
       if (value.unread_locator != null && (!isRecord(value.unread_locator) || !Number.isInteger(value.unread_locator.addressed_count))) throw new Error('chat unread_locator')
@@ -540,7 +566,7 @@ function validateMessageValue(value: unknown, row: Record<string, unknown>): voi
     || (value.reply_to_message_id !== null && typeof value.reply_to_message_id !== 'string')
     || (value.retracted_at !== null && typeof value.retracted_at !== 'string')
     || typeof value.created_at !== 'string'
-    || !Array.isArray(value.reactions) || !value.reactions.every(isReaction)
+    || (value.reactions !== undefined && (!Array.isArray(value.reactions) || !value.reactions.every(isReaction)))
     || typeof value.is_mine !== 'boolean' || typeof value.delivered !== 'boolean'
     || (value.delivery_status !== null && !['delivered', 'read'].includes(String(value.delivery_status)))) throw new Error('message shape')
   const root = optionalString(value.thread_root_id, 'message.thread_root_id')
@@ -553,25 +579,38 @@ function isReaction(value: unknown): boolean {
     && (value.count as number) >= 0 && typeof value.my_reaction === 'boolean'
 }
 
-function validateCurrentRelations(rows: Record<ImStoreName, LocalImRow[]>): void {
+type DroppedRow = { store: ImStoreName; key: string; reason: string }
+
+function droppedRow(store: ImStoreName, row: unknown, error: unknown): DroppedRow {
+  const key = isRecord(row) ? String(row.id ?? row.key ?? row.identityId ?? '?') : '?'
+  const reasons: string[] = []
+  for (let cause = error; cause instanceof Error; cause = cause.cause) reasons.push(cause.message)
+  return { store, key, reason: reasons.join(' <- ') }
+}
+
+/** Rows whose partner was dropped (or never written) are dropped too: a message needs its stream, a window must cover its messages. */
+function dropUnrelatedRows(rows: Record<ImStoreName, LocalImRow[]>, dropped: DroppedRow[]): void {
   const streamIds = new Set(rows.stream.map((row) => row.id as string))
+  rows.message = rows.message.filter((message) => streamIds.has(message.streamId as string)
+    || (dropped.push({ store: 'message', key: String(message.id), reason: `stream ${String(message.streamId)} is missing` }), false))
+  const seqRange = new Map<string, { oldest: number; max: number }>()
   for (const message of rows.message) {
-    if (!streamIds.has(message.streamId as string)) throw new Error(`invalid current message stream ${String(message.id)}`)
+    const seq = message.seq as number
+    const range = seqRange.get(message.streamId as string)
+    if (!range) seqRange.set(message.streamId as string, { oldest: seq, max: seq })
+    else { range.oldest = Math.min(range.oldest, seq); range.max = Math.max(range.max, seq) }
   }
-  for (const view of rows.view) {
+  rows.view = rows.view.filter((view) => {
     const key = view.key as string
-    if (!key.startsWith('message-window:')) continue
+    if (!key.startsWith('message-window:')) return true
     const chatId = key.slice('message-window:'.length)
     const value = view.value
-    if (!chatId || !isRecord(value)) throw new Error('invalid current view row')
-    const oldestSeq = requiredNonNegativeInteger(value.oldestSeq, 'message-window.oldestSeq')
-    const maxSeq = requiredNonNegativeInteger(value.maxSeq, 'message-window.maxSeq')
-    if (typeof value.hasMoreOlder !== 'boolean') throw new Error('invalid current view row')
-    const seqs = rows.message.filter((row) => row.streamId === `main:${chatId}`).map((row) => row.seq as number)
-    const expectedOldest = seqs.length > 0 ? Math.min(...seqs) : 0
-    const expectedMax = seqs.length > 0 ? Math.max(...seqs) : 0
-    if (oldestSeq !== expectedOldest || maxSeq !== expectedMax) throw new Error(`invalid current message-window ${chatId}`)
-  }
+    const range = seqRange.get(`main:${chatId}`) ?? { oldest: 0, max: 0 }
+    const valid = !!chatId && isRecord(value) && typeof value.hasMoreOlder === 'boolean'
+      && value.oldestSeq === range.oldest && value.maxSeq === range.max
+    if (!valid) dropped.push({ store: 'view', key, reason: `message window does not cover stored messages ${range.oldest}..${range.max}` })
+    return valid
+  })
 }
 
 function isLegacyOutboxPayload(value: unknown): boolean {

@@ -19,14 +19,11 @@ async function renderHeader(props: { isGroupChat: boolean; mobile: boolean }, ex
   await renderWithAppProviders(harness, createNode(ChatHeaderActions, {
     ...props,
     isRoomChat: props.isGroupChat,
-    searchMode: false,
-    folderShown: false,
     infoShown: false,
     showHeaderMenu,
     moreButtonRef: createRef<HTMLButtonElement>(),
-    onEnterSearchMode: vi.fn(),
+    onSearch: vi.fn(),
     onOpenFolder: vi.fn(),
-    onCloseWorkspacePanel: vi.fn(),
     onOpenInfo,
     onCloseInfo: vi.fn(),
     onToggleHeaderMenu: vi.fn(),
@@ -57,8 +54,13 @@ describe('#6783 页头 = 这个聊天自己的信息', () => {
     })
   }
 
-  it.each([false, true])('group (mobile=%s): direct Topics opens the same live topic list', async (mobile) => {
-    await renderHeader({ isGroupChat: true, mobile }, [
+  it('phone group: no Topics button, the strip holds them', async () => {
+    await renderHeader({ isGroupChat: true, mobile: true }, [{ id: 't-new', kind: 'topic', source_chat_id: 'g', name: '新话题', last_message_at: '2026-10-27T00:00:00Z' }], false)
+    expect(document.querySelector('[data-testid="group-menu-topics"]')).toBeNull()
+  })
+
+  it('desktop group: direct Topics opens the same live topic list', async () => {
+    await renderHeader({ isGroupChat: true, mobile: false }, [
       { id: 't-old', kind: 'topic', source_chat_id: 'g', name: '旧话题', last_message_at: '2026-10-01T00:00:00Z' },
       { id: 't-new', kind: 'topic', source_chat_id: 'g', name: '新话题', last_message_at: '2026-10-27T00:00:00Z' },
       { id: 't-else', kind: 'topic', source_chat_id: 'other', name: '别的群', last_message_at: '2026-10-27T00:00:00Z' },

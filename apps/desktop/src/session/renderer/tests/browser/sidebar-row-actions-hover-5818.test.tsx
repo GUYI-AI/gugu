@@ -47,6 +47,7 @@ vi.mock('@renderer/features/sessions/stores/session-registry', () => ({
               ...data,
             },
             status: 'idle',
+            seen: data?.seen,
           }),
         },
       }
@@ -106,6 +107,7 @@ vi.mock('@renderer/lib/layout/navigation-provider', () => ({
 import { requestArchiveSession } from '@renderer/features/sessions/archive-session-flow'
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings'
 import { SidebarSessionItem } from '@renderer/features/sidebar/sidebar-session-item'
+import { removeDeviceSessions, updateDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import { sidebarIdentityCard } from '@renderer/features/sidebar/sidebar-identity-card'
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
@@ -435,8 +437,8 @@ it('#7334 右键「复制会话 ID」:复制完整的会话 ID', async () => {
   await mounted()
   const row = host.querySelector<HTMLElement>('[data-session-id="conv-1"]')!
   row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 40 }))
-  await until('context menu items render', () => document.querySelectorAll('[data-slot="context-menu-item"]').length > 0)
-  const items = Array.from(document.querySelectorAll<HTMLElement>('[data-slot="context-menu-item"]'))
+  await until('context menu items render', () => document.querySelectorAll('[role="menuitem"]').length > 0)
+  const items = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
   const item = items.find((el) => /复制会话 ID|Copy session ID/.test(el.textContent ?? ''))
   expect(item, `菜单里该有「复制会话 ID」这一格,实际:${items.map((i) => i.textContent).join(' | ')}`).toBeDefined()
   await userEvent.click(item!)
@@ -529,8 +531,8 @@ it('shows the sanitized clipboard refusal when copying the session ID', async ()
   await mounted()
   const row = host.querySelector<HTMLElement>('[data-session-id="conv-1"]')!
   row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, button: 2 }))
-  await until('context menu opens', () => document.querySelector('[data-slot="context-menu-item"]') !== null)
-  const item = Array.from(document.querySelectorAll<HTMLElement>('[data-slot="context-menu-item"]')).find(el => /复制会话 ID|Copy session ID/.test(el.textContent ?? ''))!
+  await until('context menu opens', () => document.querySelector('[role="menuitem"]') !== null)
+  const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(el => /复制会话 ID|Copy session ID/.test(el.textContent ?? ''))!
   await userEvent.click(item)
   await until('session id copy was attempted', () => clipboard.mock.calls.length > 0)
   expect(notice).toHaveBeenCalledWith({ title: expect.stringMatching(/复制失败|Copy failed/), description: 'Clipboard denied [path] [redacted token]', variant: 'destructive' })
@@ -559,4 +561,27 @@ it('fork 来源写父会话此刻的名字(从父会话自己的 store 读,❌ �
   await userEvent.hover(orphan!)
   await until('fork lineage tooltip renders', () => document.querySelector('[data-slot="tooltip-content"]') !== null)
   expect(document.querySelector('[data-slot="tooltip-content"]')!.textContent).not.toContain('母会话')
+})
+
+it('agent 发给主人的通知没读:Projects 这一行只加粗,不出数字(owner 11-05;数字只在聊天页那一行)', async () => {
+  registry.loaded.set('conv-1', { seen: true })
+  await userEvent.hover(park())
+  const titleWeight = () => Number(getComputedStyle(host.querySelector<HTMLElement>('[data-session-id="conv-1"] span.text-left')!).fontWeight)
+  mount()
+  await mounted()
+  const plain = titleWeight()
+  expect(plain, '阳性对照:没有通知时这一行不加粗').toBeLessThan(600)
+  root.unmount()
+  root = createRoot(host)
+  updateDeviceSessions('host', { cached: false, sessions: [{ conversationId: 'conv-1', nativeOwnerNotificationUnreadCount: 2 } as never] })
+  try {
+    mount()
+    await mounted()
+    await until('the row reads the unread notification', () => titleWeight() >= 600)
+    const row = host.querySelector<HTMLElement>('[data-session-id="conv-1"]')!
+    expect(row.querySelector('[aria-label*="2"]')).toBeNull()
+    expect(row.textContent).not.toMatch(/(^|\D)2(\D|$)/)
+  } finally {
+    removeDeviceSessions('host')
+  }
 })

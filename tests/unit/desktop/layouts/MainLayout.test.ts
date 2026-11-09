@@ -1,9 +1,10 @@
 vi.mock('../../../../apps/desktop/src/components/appSlot/OwnedAgentResourcesHost', () => ({ OwnedAgentResourcesHost: () => null }))
-const resourceHosts = vi.hoisted(() => ({ host: vi.fn(), suspend: vi.fn() }))
-vi.mock('../../../../apps/desktop/src/lib/ownedAgentResources', () => ({ hostOwnedAgentResources: resourceHosts.host, suspendOwnedAgentResources: resourceHosts.suspend }))
+const resourceHosts = vi.hoisted(() => ({ host: vi.fn(), suspend: vi.fn(), resume: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/lib/ownedAgentResources', () => ({ hostOwnedAgentResources: resourceHosts.host, suspendOwnedAgentResources: resourceHosts.suspend, resumeOwnedAgentResources: resourceHosts.resume }))
 vi.mock('../../../../apps/desktop/src/hooks/useSessionInputOutbox', () => ({ SessionInputOutboxHost: () => null }))
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs'
+import postcss from 'postcss'
 import { act, useEffect, type ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createDraftWriter } from '../../../../apps/desktop/src/store/chatDraftWrites'
@@ -15,7 +16,7 @@ import { conversationLink, parseGuguLink } from '@gugu/core/shared/ui/guguLink'
 import { ToastContext } from '../../../../apps/desktop/src/components/toastContext'
 import { clickElement, createNode, createReactHarness, message } from '../../../support/testHarness'
 import { chatOnScreen } from '../../../../apps/desktop/src/lib/onScreenChat'
-import { takeChatAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askChat, takeChatAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { drainTopicSplitRequest } from '../../../../apps/desktop/src/lib/topicSplitRequest'
 import { APP_OPEN_WITH_EVENT, APP_OPEN_IN_CHAT_EVENT, APP_COMPOSE_EVENT, APP_SHOW_SESSION_EVENT } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 import { sheetStack } from '../../../../apps/desktop/src/components/ui/sheetStack'
@@ -41,6 +42,21 @@ vi.mock('../../../../apps/desktop/src/hooks/useSourceMessageReveal', async (orig
   return { ...actual, askReveal: (chat: string, message: string, viewport?: string) => { revealRoute.asked(chat, message, viewport); actual.askReveal(chat, message, viewport) } }
 })
 const clickLink = (href: string) => openLinkTarget(parseGuguLink(href)!)
+// These routing tests replace ChatAreaPanel. Its controlled consumer accepts the
+// file, while keeping the exact request available for the source/routing assertions.
+function acceptMockFilePanel(event: Event) {
+  const chatId = (event as CustomEvent<{ chatId: string }>).detail?.chatId
+  if (!chatId) return
+  const ask = takeChatAsk(chatId)
+  if (!ask) return
+  if ('itemId' in ask && ask.receipt) {
+    const { receipt, ...shown } = ask
+    askChat(chatId, shown)
+    receipt.resolve()
+  } else askChat(chatId, ask)
+}
+beforeEach(() => window.addEventListener(UI_EVENTS.chatAsked, acceptMockFilePanel))
+afterEach(() => window.removeEventListener(UI_EVENTS.chatAsked, acceptMockFilePanel))
 const fileOwner = vi.hoisted(() => vi.fn())
 vi.mock('../../../../apps/desktop/src/lib/supabase', async (original) => {
   const actual = await original<typeof import('../../../../apps/desktop/src/lib/supabase')>()
@@ -267,7 +283,8 @@ vi.mock('../../../../apps/desktop/src/store/contactsContext', async () => {
   return {
     ...actual,
     ContactsProvider: ({ children }: { children: unknown }) => children,
-    useContactsStore: () => ({ contacts: taskRoute.contacts, pendingRequests: [] })
+    useContactsStore: () => ({ contacts: taskRoute.contacts, pendingRequests: [] }),
+    useContactsReader: () => () => ({ contacts: taskRoute.contacts, pendingRequests: [] }),
   }
 })
 // gugu-dev#181 桌面上打开一条对话 = 请会话页摆出它那块(会话页装的那座桥,这里装一份假的、只记下请求)。
@@ -294,6 +311,7 @@ const { platformMock, chatStoreMock, chatServiceMock, draftValues } = vi.hoisted
     draftAttachments: {},
     setDraftAttachments: vi.fn(),
     setDraftQuote: vi.fn(),
+    setDraftWhisper: vi.fn(),
     activeChatId: null as string | null,
     setActiveChatId: vi.fn(),
     refreshChats: vi.fn(),
@@ -310,7 +328,10 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', async (importOriginal)
   appendToDraft: (await importOriginal<typeof import('../../../../apps/desktop/src/store/chatContext')>()).appendToDraft,
   useChatStore: () => ({
     ...chatStoreMock,
-  })
+  }),
+  useChatStoreReader: () => () => chatStoreMock,
+  useChatStoreSelect: <T,>(select: (store: typeof chatStoreMock) => T) => select(chatStoreMock),
+  useStoreValueBy: <T,>(read: (store: typeof chatStoreMock) => T) => read(chatStoreMock),
 }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({
   chatService: chatServiceMock
@@ -352,6 +373,7 @@ beforeEach(() => {
   chatStoreMock.upsertChat.mockReset()
   chatStoreMock.writeDraft.mockReset()
   chatStoreMock.setDraftQuote.mockReset()
+  chatStoreMock.setDraftWhisper.mockReset()
   chatStoreMock.sendMessageToChat.mockReset()
   chatStoreMock.sendMessageToChat.mockResolvedValue(MESSAGE_ID)
   draftValues.clear()
@@ -432,7 +454,11 @@ describe('MainLayout', () => {
     const mainShell = appShell?.children[1] as HTMLElement | undefined
     // #7333 壳根读 --shell-bg:不透明时与导航材质同底,mac 原生材质可见时透明(tokens.css @@@window-material-css)。
     expect(appShell?.style.background).toBe('var(--shell-bg)')
-    expect(readFileSync('apps/desktop/src/styles/tokens.css', 'utf8')).toMatch(/:root \{\n {2}--shell-bg: var\(--nav-rail\);\n\}/)
+    const rootShellBg: string[] = []
+    postcss.parse(readFileSync('apps/desktop/src/styles/tokens.css', 'utf8')).each((node) => {
+      if (node.type === 'rule' && node.selector === ':root') node.walkDecls('--shell-bg', (decl) => { rootShellBg.push(decl.value) })
+    })
+    expect(rootShellBg, 'the opaque default of --shell-bg is the nav material').toEqual(['var(--nav-rail)'])
     // @@@mobile-safe-area-top (#1227) — desktop shell takes NO status-bar inset (mobile-gated).
     expect(appShell?.style.paddingTop).toBe('')
     expect(mainShell).toBeTruthy()
@@ -517,6 +543,29 @@ describe('MainLayout', () => {
     expect(harness.container.querySelector('[data-testid="mock-phone-partners"]')).toBeNull()
     expect(harness.container.querySelector('[data-testid="mock-chat-new-project"]'), 'no phone 新项目 entry on the desktop').toBeNull()
   })
+  it.each(['list', 'chat'] as const)('returns from an owned phone task to the unchanged %s opener in one step', async source => {
+    platformMock.kind = 'capacitor'
+    platformMock.capabilities.sessionHost = false
+    taskRoute.remote = true
+    taskRoute.contacts = [{ id: 'task-agent', type: 'agent', owner_user_id: 'user-1' }]
+    chatStoreMock.chats = [{ id: 'original-chat', kind: 'group' }, { id: 'task-dm', kind: 'dm', peer_user_id: 'task-agent' }] as never
+    chatStoreMock.activeChatId = 'original-chat'
+    chatStoreMock.setActiveChatId.mockImplementation(id => { chatStoreMock.activeChatId = id })
+    await renderMainLayoutWithToast()
+    if (source === 'chat') await clickElement(harness.container.querySelector('[data-testid="mock-chat-row"]') as HTMLElement)
+    const { openOwnedAgentEntry } = await import('../../../../apps/desktop/src/lib/ownedAgentConversation')
+    for (const method of ['header', 'native']) {
+      await act(async () => { expect(openOwnedAgentEntry('task-dm')).toBe(true) })
+      await renderMainLayoutWithToast()
+      expect(layerOpen('mobile-sessions-layer')).toBe(true)
+      if (method === 'header') await clickElement(harness.container.querySelector('[data-testid="mock-session-back"]') as HTMLElement)
+      else await nativeBack()
+      expect(layerOpen('mobile-sessions-layer')).toBe(false)
+      expect(chatStoreMock.activeChatId).toBe('original-chat')
+      expect(Boolean(harness.container.querySelector('[data-testid="mock-chat-row"]'))).toBe(source === 'list')
+      expect(harness.container.querySelector('[data-testid="mock-chat-area"]')?.getAttribute('data-hidden')).toBe(String(source !== 'chat'))
+    }
+  })
   it.each(['messages', 'contacts', 'project', 'notification'] as const)('adds one session layer from %s and returns to the retained source', async source => {
     platformMock.kind = 'capacitor'
     platformMock.capabilities.sessionHost = false
@@ -593,6 +642,37 @@ describe('MainLayout', () => {
     expect(harness.container.textContent).toContain('chat-list-panel')
     expect(chatArea?.parentElement?.parentElement?.style.display).toBe('none')
   })
+  it('leaves the mobile chat pane alone on Android back while a layer is open over it', async () => {
+    platformMock.kind = 'capacitor'
+    platformMock.capabilities.sessionHost = false
+    chatStoreMock.chats = [{ id: 'chat-1' }]
+    chatStoreMock.activeChatId = 'chat-1'
+    await harness.render(createNode(MainLayout, {
+      user: { id: 'user-1', email: 'user@example.com', nickname: 'User' }
+    }))
+    await act(async () => {
+      const row = harness.container.querySelector('[data-testid="mock-chat-row"]') as HTMLButtonElement | null
+      row?.click()
+      await Promise.resolve()
+    })
+    const chatArea = harness.container.querySelector('[data-testid="mock-chat-area"]') as HTMLElement | null
+    expect(chatArea?.parentElement?.parentElement?.style.display).toBe('flex')
+    // A layer opened after the page registered its handler: the page handler runs first on window and must
+    // ask the stack, not rely on listener order (Android WebView does not order capture before bubble).
+    const layer = Symbol('open-layer')
+    sheetStack.push(layer)
+    try {
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent('gugu:native-back'))
+        await Promise.resolve()
+      })
+      expect(harness.container.textContent).not.toContain('chat-list-panel')
+      expect(chatArea?.parentElement?.parentElement?.style.display).toBe('flex')
+    } finally {
+      sheetStack.splice(sheetStack.indexOf(layer), 1)
+    }
+  })
+
   it('keeps one mobile navigation landmark after visiting another tab', async () => {
     platformMock.kind = 'capacitor'
     platformMock.capabilities.sessionHost = false
@@ -809,7 +889,7 @@ describe('MainLayout', () => {
   it.each(['error', 'needs_user', null] as const)('keeps global notifications independent of the assistant without prepending attention rows (attention=%s)', async attention => {
     platformMock.kind = 'capacitor'
     platformMock.capabilities.sessionHost = false
-    const read = vi.spyOn(needsYouTasks, 'useNeedsYouTasks').mockReturnValue({ tasks: [], attention, error: null })
+    const read = vi.spyOn(needsYouTasks, 'useNeedsYouTasks').mockReturnValue({ tasks: [], count: 0, attention, error: null })
     try {
       await harness.render(createNode(MainLayout, { user: { id: 'user-1', email: 'user@example.com', nickname: 'User' } }))
       expect(read).toHaveBeenCalled()
@@ -983,7 +1063,7 @@ describe('MainLayout: files.openWith', () => {
     await act(async () => { window.dispatchEvent(new CustomEvent(APP_OPEN_WITH_EVENT, { detail })) })
     // 桌面上对话是会话页这屏的一块:请会话页把它摆出来。
     expect(sessionPageViewRequests.openChat).toHaveBeenCalledWith('g-open', false, 'resource')
-    expect(takeChatAsk('g-open'), 'a page asked: what it opens has that page as its 上一页').toEqual({ itemId: 'F1', opener: detail, fromPage: true })
+    expect(takeChatAsk('g-open'), 'a page asked: what it opens has that page as its 上一页').toEqual({ itemId: 'F1', opener: detail })
   })
 
   it('a message file request keeps its originating message for the native preview actions', async () => {
@@ -1103,9 +1183,8 @@ describe('MainLayout: personal assistant destinations', () => {
   })
 })
 
-it.each(['group', 'topic', 'owned', 'assistant'] as const)('places an image reply in its %s destination while another chat is active', async kind => {
+it.each(['group', 'topic', 'owned', 'assistant'] as const)('places an annotated image in its %s destination while another chat is active, without quoting anything', async kind => {
   const target = '0b1e7c1a-0000-4000-8000-000000000002', parent = '0b1e7c1a-0000-4000-8000-000000000001'
-  const original = message({ id: 'original-image', chat_id: target, sender_user_id: 'agent', is_whisper: true, to_user_ids: ['user-1'] })
   const dm = kind === 'owned' || kind === 'assistant'
   chatStoreMock.activeChatId = 'other-chat'
   chatStoreMock.chats = [{ id: parent, kind: 'group' }, { id: target, kind: dm ? 'dm' : kind, source_chat_id: kind === 'topic' ? parent : null, peer_user_id: dm ? 'agent' : null }] as never
@@ -1113,13 +1192,28 @@ it.each(['group', 'topic', 'owned', 'assistant'] as const)('places an image repl
   if (kind === 'assistant') { installAssistantShellBridge(); publishAssistantShell({ assistant: { id: 'agent' }, chatId: target } as never) }
   await renderMainLayoutWithToast()
   await act(async () => { window.dispatchEvent(new CustomEvent(APP_COMPOSE_EVENT, { detail: {
-    chatId: target, text: '① Check this', quote: original, images: [{ name: 'edited.png', type: 'image/png', bytes: new ArrayBuffer(3) }],
+    chatId: target, text: '① Check this', images: [{ name: 'edited.png', type: 'image/png', bytes: new ArrayBuffer(3) }],
   } })) })
-  expect(chatStoreMock.setDraftQuote).toHaveBeenCalledWith(target, kind === 'owned' ? null : expect.objectContaining({ messageId: original.id, source: original }))
+  // The owned agent's own composer takes the image; a quote left in that chat's draft is dropped, not sent with it.
+  if (kind === 'owned') expect(chatStoreMock.setDraftQuote).toHaveBeenCalledWith(target, null)
+  else expect(chatStoreMock.setDraftQuote).not.toHaveBeenCalled()
   expect(chatStoreMock.writeDraft).toHaveBeenCalledWith(target, kind === 'owned' ? '① Check this' : { at: 'end', text: '① Check this' })
   expect(chatStoreMock.setDraftAttachments).toHaveBeenCalledWith(target, [expect.objectContaining({ file: expect.objectContaining({ name: 'edited.png', type: 'image/png' }) })])
   if (kind === 'topic') expect(drainTopicSplitRequest(parent)).toMatchObject({ chatId: target })
   if (kind === 'assistant') await act(async () => publishAssistantShell({ assistant: null, chatId: null } as never))
+})
+
+it.each(['group', 'topic'] as const)('keeps a private annotated image private in its %s destination draft', async kind => {
+  const target = '0b1e7c1a-0000-4000-8000-000000000002', parent = '0b1e7c1a-0000-4000-8000-000000000001'
+  chatStoreMock.activeChatId = 'other-chat'
+  chatStoreMock.chats = [{ id: parent, kind: 'group' }, { id: target, kind, source_chat_id: kind === 'topic' ? parent : null }] as never
+  await renderMainLayoutWithToast()
+  await act(async () => { window.dispatchEvent(new CustomEvent(APP_COMPOSE_EVENT, { detail: {
+    chatId: target, text: '① Check this', whisperTo: 'agent', images: [{ name: 'edited.png', type: 'image/png', bytes: new ArrayBuffer(3) }],
+  } })) })
+  expect(chatStoreMock.setDraftWhisper).toHaveBeenCalledWith(target, 'agent')
+  expect(chatStoreMock.setDraftQuote).not.toHaveBeenCalled()
+  expect(chatStoreMock.setDraftAttachments).toHaveBeenCalledWith(target, [expect.objectContaining({ file: expect.objectContaining({ name: 'edited.png' }) })])
 })
 
 // Links and notifications retain the topic address. Files open the shared source slot.

@@ -6,6 +6,9 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
 import { onErrorEvent } from '@gugu/session-shared'
 import { createLogger } from './lib/logger'
 import { agentEndpointServer, listenStable, type EndpointLog, type EndpointPorts, type PersistedRecords } from './session/main/lib/stable-endpoint'
+import { defaultServicePermissionRuntime } from './permissions/default-runtime'
+import { permissionTransport } from './permissions/transport'
+import type { ServicePermissionRuntime } from './permissions/runtime'
 const MCP_PATH = '/mcp'
 const MCP_BODY_MAX_BYTES = 40 * 1024 * 1024
 const MCP_DRAIN_TIMEOUT_MS = 5_000
@@ -17,7 +20,7 @@ export interface GuguMcpGrantInvariant { ownerId: string; subjectId: string; too
  * Track each tool call. When supplied, `toolName` is also recorded with its elapsed time so slow IM
  * calls identify the actual tool instead of leaving the host log to guess.
  */
-export type GuguMcpRequestTracker = <T>(work: Promise<T>, toolName?: string) => Promise<T>
+export type GuguMcpRequestTracker = <T>(work: Promise<T>, toolName?: string, requestId?: string | number) => Promise<T>
 export type GuguMcpServerFactory<TContext> = (
   getContext: () => TContext,
   signal: AbortSignal,
@@ -25,15 +28,26 @@ export type GuguMcpServerFactory<TContext> = (
 ) => McpServer | Promise<McpServer>
 const SLOW_TOOL_CALL_MS = 10_000
 
-function trackToolCallDuration(work: Promise<unknown>, toolName: string): void {
+/** A failure named by type and numeric MCP code only: never its message, which may carry payload. */
+export function errorFields(error: unknown): { errorType: string; errorCode?: number } {
+  const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
+  return { errorType: error instanceof Error ? error.name : typeof error, errorCode: typeof code === 'number' ? code : undefined }
+}
+
+function trackToolCallDuration(work: Promise<unknown>, toolName: string,
+  attribution: { mcpSessionId?: string; toolScope: string; requestId?: string | number }): void {
   const startedAt = Date.now()
-  const settle = (outcome: 'success' | 'error') => {
+  const settle = (outcome: 'success' | 'error', value: unknown) => {
     const elapsedMs = Date.now() - startedAt
-    const fields = { tool: toolName, elapsedMs, outcome }
+    // Promise settlement and a native MCP error result are separate facts. Log no payload or raw error text.
+    const fields = { tool: toolName, elapsedMs, outcome, ...attribution,
+      ...(outcome === 'success'
+        ? { resultIsError: (value as { isError?: unknown } | null)?.isError === true }
+        : errorFields(value)) }
     if (elapsedMs > SLOW_TOOL_CALL_MS) log.warn(fields, 'gugu MCP tool call exceeded 10s')
     else log.info(fields, 'gugu MCP tool call completed')
   }
-  void work.then(() => settle('success'), () => settle('error'))
+  void work.then((value) => settle('success', value), (error) => settle('error', error))
 }
 interface ClientRuntime {
   server: McpServer
@@ -106,6 +120,7 @@ export class GuguMcpHost<TContext> {
     createMcpServer: GuguMcpServerFactory<TContext>,
     invariantOf: (context: TContext) => GuguMcpGrantInvariant,
     persistence?: GuguMcpHostPersistence,
+    private readonly permissions: ServicePermissionRuntime = defaultServicePermissionRuntime(),
   ) {
     this.createMcpServer = createMcpServer
     this.invariantOf = invariantOf
@@ -490,19 +505,23 @@ export class GuguMcpHost<TContext> {
     const server = await this.createMcpServer(() => {
       if (record.revoked) throw new Error('Gugu MCP grant is revoked')
       return record.context
-    }, record.abortController.signal, (work, toolName) => {
+    }, record.abortController.signal, (work, toolName, requestId) => {
       record.activeRequests.add(work)
       void work.then(
         () => record.activeRequests.delete(work),
         () => record.activeRequests.delete(work),
       )
-      if (toolName) trackToolCallDuration(work, toolName)
+      if (toolName) trackToolCallDuration(work, toolName, {
+        mcpSessionId: transport.sessionId, toolScope: record.invariant.toolScope, requestId,
+      })
       return work
     })
     const runtime: ClientRuntime = { server, transport, closing: null }
     try {
       if (record.revoked) throw new Error('Gugu MCP grant is revoked')
-      await server.connect(transport)
+      await server.connect(permissionTransport(transport, this.permissions, {
+        ...record.invariant, sessionId: record.key,
+      }, record.abortController.signal))
       // SDK 拒掉请求(400/406/…)时只把原因交给 onerror,响应体里的那句客户端未必会报出来;接到日志里,
       // 否则只看得到「没有 session id」(#6264 实测:codex 的 initialize 被 400,原因一个字都没有)。
       const onerror = transport.onerror

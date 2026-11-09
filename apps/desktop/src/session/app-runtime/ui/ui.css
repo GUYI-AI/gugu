@@ -125,10 +125,10 @@
 :where(button, input, a).primary { border-color: transparent; background-color: var(--em-accent-9); color: var(--em-accent-contrast); }
 /* 危险 = 咕咕唯一的那个红；字色与 ui/Button 的 danger 变体相同：红底白字（--em-color-white），明暗两侧一样。
    ❌ 用 --em-accent-contrast：那是墨色主按钮的反相字，暗色下是表面色 #181818，红底上就成了深灰字（#7333）。 */
-:where(button, input, a).danger { border-color: transparent; background-color: var(--em-foreground-destructive); color: var(--em-color-white); }
+:where(button, input, a).danger { border-color: transparent; background-color: var(--em-danger-solid); color: var(--em-color-white); }
 @media (hover: hover) {
   :where(button, input, a):is(.primary, .danger):hover:not(:disabled) { background-color: var(--em-accent-9); opacity: 0.88; }
-  :where(button, input, a).danger:hover:not(:disabled) { background-color: var(--em-foreground-destructive); }
+  :where(button, input, a).danger:hover:not(:disabled) { background-color: var(--em-danger-solid); }
 }
 :where(button, input, a):is(.primary, .danger):active:not(:disabled) { opacity: 0.78; }
 /* 其它元素上的 .danger 是「出事了」的字色，.primary 是墨色强调 */
@@ -300,16 +300,22 @@
 }
 :where(progress)::-webkit-progress-bar { background: var(--em-border); border-radius: var(--em-radius-capsule); }
 :where(progress)::-webkit-progress-value { background: var(--em-accent-9); border-radius: var(--em-radius-capsule); transition: width var(--em-dur-med) var(--em-ease); }
+/* No value: on its way, how far unknown — a short bar runs along the track. `hidden` holds over the display above. */
+:where(progress:not([value])) { background: linear-gradient(var(--em-accent-9), var(--em-accent-9)) -67% 0 / 40% 100% no-repeat var(--em-border); animation: em-progress-run 1.2s var(--em-ease) infinite; }
+:where(progress:not([value]))::-webkit-progress-bar { background: transparent; }
+:where(progress, meter)[hidden] { display: none; }
+@keyframes em-progress-run { to { background-position: 167% 0; } }
 :where(meter)::-webkit-meter-bar { height: 6px; border: 0; background: var(--em-border); border-radius: var(--em-radius-capsule); }
 :where(meter)::-webkit-meter-optimum-value { background: var(--em-accent-9); }
-:where(meter)::-webkit-meter-suboptimum-value { background: var(--em-foreground-warning); }
-:where(meter)::-webkit-meter-even-less-good-value { background: var(--em-foreground-destructive); }
+:where(meter)::-webkit-meter-suboptimum-value { background: var(--em-warn); }
+:where(meter)::-webkit-meter-even-less-good-value { background: var(--em-danger); }
 
-/* ── 分段标签：role="tablist" 里的 role="tab" = 咕咕 SegmentedTabs 的 pill（#7333）：控件圆角 8；选中 = 中性实底（muted）+ fg ── */
-:where([role='tablist']) { display: flex; flex-wrap: wrap; gap: var(--em-spacing-xs); margin: 0 0 var(--em-spacing-md); }
+/* ── 分段标签：role="tablist" 里的 role="tab" = 宿主文件顶栏那组描边分段（owner 11-06）：一圈 hairline 框、控件圆角，
+   段与段之间不留缝；选中 = 中性实底（muted）+ fg ── */
+:where([role='tablist']) { display: flex; flex-wrap: wrap; width: fit-content; gap: 0; margin: 0 0 var(--em-spacing-md); border: 1px solid var(--em-border); border-radius: var(--em-radius-control); background-color: var(--em-background); overflow: hidden; }
 :where([role='tablist']) > :where([role='tab']) {
-  padding: calc((var(--em-control-h-md) - 1lh) / 2) var(--em-spacing-lg);
-  border: 0; border-radius: var(--em-radius-control);
+  padding: calc((var(--em-control-h-md) - 2px - 1lh) / 2) var(--em-spacing-lg);
+  border: 0; border-radius: 0;
   background-color: transparent; color: var(--em-foreground-muted); font-weight: 500;
 }
 @media (hover: hover) { :where([role='tablist']) > :where([role='tab']):where(:hover:not([aria-selected='true'], :disabled)) { background-color: var(--em-hover); color: var(--em-foreground); } }

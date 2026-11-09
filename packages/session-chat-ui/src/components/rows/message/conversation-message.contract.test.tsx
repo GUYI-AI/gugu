@@ -123,22 +123,24 @@ describe('agent-centered conversation bubbles', () => {
         expect(row.dataset.side).toBe(role === 'assistant' ? 'left' : 'right');
         expect(Math.abs(row.getBoundingClientRect().height - messageUnitDef.measure(view.item, view.ctx, messageUnitDef.vars!))).toBeLessThanOrEqual(1);
         const bubble = row.querySelector<HTMLElement>('[data-user-card]')!;
-        const name = row.querySelector<HTMLElement>('span[title]')!;
-        // Explicit native and IM quotes share the existing header on either side.
+        const name = row.querySelector<HTMLElement>('span[title]');
+        // Explicit native and IM quotes keep one place on either side: the header, or below the bubble when there is no name.
         expect(row.querySelectorAll('[data-slot="conversation-quote"]')).toHaveLength(1);
         expect(row.textContent).not.toContain('你好↵');
-        expect(bubble.contains(name)).toBe(false);
-        // 时间、复制(、编辑)那一行在气泡下面占着位置,鼠标停上去才显出来(设计稿 `.acts{opacity:0}`,owner 10-28)。
         const actions = row.querySelector<HTMLElement>('[data-user-message-actions]')!;
         expect(actions.querySelectorAll('time')).toHaveLength(1);
-        expect(getComputedStyle(actions.querySelector('button')!).opacity).toBe('0');
         expect(actions.getBoundingClientRect().top).toBeGreaterThanOrEqual(bubble.getBoundingClientRect().bottom - 1);
         if (role === 'assistant') {
           expect(Math.abs(bubble.getBoundingClientRect().left - row.getBoundingClientRect().left)).toBeLessThanOrEqual(1);
-          expect(name.textContent).toBe('Codex 11');
+          expect(bubble.contains(name)).toBe(false);
+          expect(name!.textContent).toBe('Codex 11');
+          // 时间、复制那一行在气泡下面占着位置,鼠标停上去才显出来(设计稿 `.acts{opacity:0}`,owner 10-28)。
+          expect(getComputedStyle(actions.querySelector('button')!).opacity).toBe('0');
         } else {
           expect(Math.abs(bubble.getBoundingClientRect().right - row.getBoundingClientRect().right)).toBeLessThanOrEqual(1);
-          expect(name.textContent).toBe('刘威');
+          // What the reader typed here carries no name row (owner 2026-11-07); its quote sits below the bubble.
+          expect(name).toBeNull();
+          expect(actions.querySelector('[data-slot="conversation-quote"]')).not.toBeNull();
         }
       } finally { view.dispose(); }
     }

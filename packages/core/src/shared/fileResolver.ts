@@ -1,6 +1,5 @@
-import { sha256 } from '@noble/hashes/sha2.js'
 import { anySignal } from './anySignal'
-import { copyVerifiedFile, type FileSink } from './fileCipher'
+import { copyVerifiedFile, fileSha256, type FileSink } from './fileCipher'
 
 /** One read-only entry point. Providers own byte acquisition; callers never select URLs or transports. */
 export type FileRef = { item_id: string; version?: number } | { message_id: string } | { attachment_id: string }
@@ -53,11 +52,17 @@ export type FileMetadata = { status: 'ready'; revision: FileRevision } | { statu
 export class MissingFileObjectError extends Error {
   constructor() { super('missing') }
 }
+/** The read acknowledgement found access withdrawn, the file gone or expired, or the version moved on: bytes already shown must be taken down. */
+export class FileReadRevokedError extends Error {
+  constructor(readonly reason: 'access' | 'revision' | 'gone' | 'expired') { super(reason === 'gone' || reason === 'expired' ? reason : 'File access or revision changed during download') }
+}
 export interface FileBytes {
   /** An authorized immutable snapshot with exact length; stored digests are verified when present. */
   readonly size: number
   read(offset: number, length: number): Promise<Uint8Array>
   dispose(): Promise<void>
+  /** Bytes returned before the server acknowledged the read: this settles that acknowledgement. */
+  readonly acknowledged?: Promise<void>
 }
 export type ResolvedFile = Exclude<FileMetadata, { status: 'ready' }> | {
   status: 'ready'
@@ -66,10 +71,13 @@ export type ResolvedFile = Exclude<FileMetadata, { status: 'ready' }> | {
   revision: FileRevision
   read(offset: number, length: number): Promise<Uint8Array>
   stream(): AsyncIterable<Uint8Array>
+  /** Opened with `showFirst`: rejects (FileReadRevokedError) when what was read must be taken down. Otherwise already settled by the first read. */
+  acknowledgement?(): Promise<void>
   dispose(): Promise<void>
-  saveTo?(directory: string, name: string): Promise<SavedFile>
+  /** `store`: into the shared file store (`fileStoreDirectory`): read-only, one sha once. */
+  saveTo?(directory: string, name: string, store?: boolean): Promise<SavedFile>
 }
-export type SavedFile = { file_path: string; file_name: string; size_bytes: number; sha256: string; content_type: string }
+export type SavedFile = { file_path: string; file_name: string; size_bytes: number; sha256: string; content_type: string; read_only?: true }
 /** Display-only pixels/playback never confer a capability to download, open or re-upload the original. */
 export type FileHandle = Extract<ResolvedFile, { status: 'ready' }>
 export type FilePreviewContent = Blob | { url: string; expiresAt: number }
@@ -77,9 +85,10 @@ export type ResolvedPreview = Exclude<FileMetadata, { status: 'ready' }> | {
   status: 'ready'; purpose: 'preview'; revision: FileRevision
   content(): Promise<FilePreviewContent>; dispose(): Promise<void>
 }
-export type FileContext = { ref: FileRef; actor: FileActor; signal?: AbortSignal; download?: true }
+/** `progress`: the bytes arrived of the file being read, from the provider that carries them (a slow machine's line shows it). */
+export type FileContext = { ref: FileRef; actor: FileActor; signal?: AbortSignal; download?: true; progress?: (done: number, total: number) => void }
 export interface FileProviders {
-  saveTo?(revision: FileRevision, context: FileContext, directory: string, name: string): Promise<SavedFile>
+  saveTo?(revision: FileRevision, context: FileContext, directory: string, name: string, store?: boolean): Promise<SavedFile>
   download?(revision: FileRevision, context: FileContext, sink: import('./fileCipher').FileSink): Promise<FileBytes>
   /** Must check the current account, device and project binding locally, before any cloud lookup. */
   local(context: FileContext): Promise<{ revision: FileRevision; open(): Promise<FileBytes> } | null>
@@ -133,12 +142,16 @@ export async function openFileBytes(providers: FileProviders, revision: FileRevi
   local?: Awaited<ReturnType<FileProviders['local']>>, destination?: FileSink): Promise<FileBytes> {
   const consume = async (source: FileBytes) => {
     if (!destination) return source
-    try { return await copyVerifiedFile(revision, source, destination, context.signal) }
+    // A copy written to a sink cannot be taken back: it waits for the read acknowledgement.
+    try { await source.acknowledged; return await copyVerifiedFile(revision, source, destination, context.signal) }
     finally { await source.dispose() }
   }
   if (local) return consume(await local.open())
   if (revision.source !== 'managed-object' && context.actor.accountId === revision.host_account_id) {
-    const own = { ...context, actor: Object.freeze({ accountId: context.actor.accountId, actorId: context.actor.accountId }) }
+    // The file's own id, however it was asked for (a message, an attachment): this device keeps versions by item. Without it
+    // an agent's read of a file on this very disk would miss, and go up to the cloud and back as a temporary transfer.
+    const ref = revision.item_id ? Object.freeze({ item_id: revision.item_id, version: revision.version! }) : context.ref
+    const own = { ...context, ref, actor: Object.freeze({ accountId: context.actor.accountId, actorId: context.actor.accountId }) }
     const here = await providers.local(own)
     if (here && sameRevision(here.revision, revision)) return consume(await here.open())
     context.signal?.throwIfAborted()
@@ -153,12 +166,12 @@ export async function openFileBytes(providers: FileProviders, revision: FileRevi
 export function createFileResolver(providers: FileProviders) {
   function resolveFile(ref: FileRef, actor: FileActor, options: { localOnly: true; purpose?: 'file'; signal?: AbortSignal }): Promise<ResolvedFile | null>
   function resolveFile(ref: FileRef, actor: FileActor, options: { purpose: 'preview'; metadata?: FileMetadata; signal?: AbortSignal }): Promise<ResolvedPreview>
-  function resolveFile(ref: FileRef, actor: FileActor, options?: { purpose?: 'file'; signal?: AbortSignal }): Promise<ResolvedFile>
-  async function resolveFile(ref: FileRef, actor: FileActor, options: { purpose?: 'file' | 'preview'; metadata?: FileMetadata; localOnly?: boolean; signal?: AbortSignal } = {}): Promise<ResolvedFile | ResolvedPreview | null> {
+  function resolveFile(ref: FileRef, actor: FileActor, options?: { purpose?: 'file'; signal?: AbortSignal; progress?: FileContext['progress']; showFirst?: true }): Promise<ResolvedFile>
+  async function resolveFile(ref: FileRef, actor: FileActor, options: { purpose?: 'file' | 'preview'; metadata?: FileMetadata; localOnly?: boolean; signal?: AbortSignal; progress?: FileContext['progress']; showFirst?: true } = {}): Promise<ResolvedFile | ResolvedPreview | null> {
     if (!actor.accountId || !actor.actorId) throw new Error('File reader is not signed in')
     fileRefKey(ref)
     const cancellation = new AbortController()
-    const context = { ref: Object.freeze({ ...ref }), actor: Object.freeze({ ...actor }), signal: options.signal }
+    const context: FileContext = { ref: Object.freeze({ ...ref }), actor: Object.freeze({ ...actor }), signal: options.signal, ...(options.progress ? { progress: options.progress } : {}) }
     context.signal?.throwIfAborted()
     const local = await providers.local(context)
     if (options.localOnly && !local) return null
@@ -185,6 +198,8 @@ export function createFileResolver(providers: FileProviders) {
       try {
         check()
         if (file.size !== revision.size_bytes) throw new Error('File snapshot size changed')
+        // Only a reader that can take its display down reads before the acknowledgement.
+        if (!options.showFirst) { await file.acknowledged; check() }
         return file
       } catch (error) { await file.dispose(); throw error }
     })
@@ -213,10 +228,10 @@ export function createFileResolver(providers: FileProviders) {
         return revision.source === 'managed-object' && revision.content_type.startsWith('video/') ? load() : image ??= load()
       } }
     }
-    return { status: 'ready', purpose: 'file', reader: context.actor, revision, read, dispose,
-      ...(providers.saveTo ? { saveTo: async (directory: string, name: string) => {
+    return { status: 'ready', purpose: 'file', reader: context.actor, revision, read, dispose, acknowledgement: async () => { await (await get()).acknowledged },
+      ...(providers.saveTo ? { saveTo: async (directory: string, name: string, store?: boolean) => {
         check()
-        try { return await providers.saveTo!(revision, context, directory, name) }
+        try { return await providers.saveTo!(revision, context, directory, name, store) }
         finally { await dispose() }
       } } : {}),
       async *stream() {
@@ -232,15 +247,24 @@ export function createFileResolver(providers: FileProviders) {
   return resolveFile
 }
 
+const handleBlob = (file: FileHandle) => {
+  const chunks = file.stream()[Symbol.asyncIterator]()
+  return new Response(new ReadableStream({ async pull(controller) {
+    const next = await chunks.next()
+    if (next.done) controller.close(); else controller.enqueue(next.value)
+  }, async cancel() { await chunks.return?.(); } })).blob().then(blob => blob.slice(0, blob.size, file.revision.content_type))
+}
 /** A browser Blob consumes only the original capability; previews cannot be passed here. */
 export async function fileBlob(file: FileHandle): Promise<Blob> {
-  const chunks = file.stream()[Symbol.asyncIterator]()
-  try {
-    return await new Response(new ReadableStream({ async pull(controller) {
-      const next = await chunks.next()
-      if (next.done) controller.close(); else controller.enqueue(next.value)
-    }, async cancel() { await chunks.return?.(); } })).blob().then(blob => blob.slice(0, blob.size, file.revision.content_type))
-  } finally { await file.dispose() }
+  try { return await handleBlob(file) } finally { await file.dispose() }
+}
+/** A handle opened with `showFirst`: the Blob now, and the acknowledgement that may take it back. Disposes once settled. */
+export async function shownFileBlob(file: FileHandle): Promise<{ blob: Blob; acknowledged: Promise<void> }> {
+  let blob: Blob
+  try { blob = await handleBlob(file) } catch (error) { await file.dispose(); throw error }
+  const acknowledged = (file.acknowledgement?.() ?? Promise.resolve()).finally(() => file.dispose())
+  acknowledged.catch(() => undefined)
+  return { blob, acknowledged }
 }
 
 /** Only already-verified snapshots reach this display adapter. */
@@ -261,7 +285,7 @@ export async function stageFileHandle(file: FileHandle, name: string, send: (com
   if (file.revision.sha256 !== null) return stageFileSource(file, name, send)
   // A historical source has no server digest. Bind the native copy to the already-authorized
   // immutable snapshot with a local checksum; the historical revision itself stays unhashed.
-  const hash = sha256.create()
+  const hash = fileSha256.create()
   let observedSha: string
   try {
     requireFileRevision(file.revision)

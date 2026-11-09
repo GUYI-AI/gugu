@@ -4,6 +4,7 @@ import { IMPLICIT_SESSION_HOME_PROJECT_ID } from '@renderer/features/sessions/se
 import { sidebarStateGroup } from './session-groups';
 import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation';
 import { SidebarStore } from './sidebar-store';
+import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
 
 type SidebarProjectManager = ConstructorParameters<typeof SidebarStore>[0];
 
@@ -62,7 +63,8 @@ function session(
   id: string,
   projectId: string,
   agentStatus: string | null,
-  minute: string
+  minute: string,
+  agentStatusSeen = false
 ) {
   return {
     id,
@@ -72,6 +74,7 @@ function session(
     lastInteractedAt: `2026-01-01T00:${minute}:00.000Z`,
     runtime: 'pty',
     agentStatus,
+    agentStatusSeen,
   };
 }
 
@@ -87,13 +90,15 @@ describe('sidebar state groups toggle', () => {
     for (const online of [false, true]) {
       const projectId = 'remote-attention-project';
       const store = new SidebarStore(projectManagerWith(projectId, 'remote-host'));
+      const sessions = (['needs_user', 'error'] as const).map(status => ({
+        conversationId: status, projectId, title: status, runtime: 'acp', harness: 'codex',
+        agentStatus: status, status: { status, detail: null }, supported: true, lastInteractedAt: null, unseen: true,
+      }) as SessionpageSessionSummary);
       store.machines = {
         machineOf: () => 'remote-host', label: () => 'remote-host', homeDir: () => '/work',
         connected: () => online,
-        sessionsOf: () => ({ live: online, sessions: ['needs_user', 'error'].map(status => ({
-          conversationId: status, projectId, title: status, runtime: 'acp', harness: 'codex',
-          agentStatus: status, status: { status, detail: null }, supported: true, lastInteractedAt: null,
-        })) }),
+        sessionsOf: () => ({ live: online, sessions }),
+        session: (_deviceId, id) => sessions.find(session => session.conversationId === id) ?? null,
       };
       expect(store.needsYouCountForProject(projectId)).toBe(online ? 2 : 0);
       expect(store.placement.entries.get(projectId)?.map(entry => entry.group)).toEqual(['needs-you', 'needs-you']);
@@ -117,6 +122,18 @@ describe('sidebar state groups toggle', () => {
       expect(store.sidebarRows.filter((row) => row.kind === 'conversation').map((row) => row.sessionId))
         .toContain('attention-error');
     } finally { sessionRegistry.release('attention-task'); }
+  });
+
+  it('a read failure keeps its group and red row but leaves the count, so old failures do not pile up', () => {
+    sessionRegistry.acquire('read-task', 'read-project', [
+      ...Array.from({ length: 40 }, (_, i) => session(`old-failure-${i}`, 'read-project', 'error', '01', true)),
+      session('fresh-failure', 'read-project', 'error', '02'),
+    ] as never);
+    const store = new SidebarStore(projectManagerWith('read-project', 'read-task'));
+    try {
+      expect(store.needsYouCountForProject('read-project')).toBe(1);
+      expect(store.placement.entries.get('read-project')?.every((entry) => entry.group === 'needs-you')).toBe(true);
+    } finally { sessionRegistry.release('read-task'); }
   });
 
   it.each([false, true])('counts an error-only project even with grouping=%s', (grouping) => {

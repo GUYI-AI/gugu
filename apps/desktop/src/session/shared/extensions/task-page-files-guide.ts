@@ -1,4 +1,4 @@
-export const TASK_PAGE_FILES_GUIDE = `# File cards for a task page (API 30)
+export const TASK_PAGE_FILES_GUIDE = `# File cards for a task page (API 36)
 
 Needs \`agents:tools\`
 - In a live agent tool call, \`await lease.filePayloads([{file,expectedVersion?}])\` returns

@@ -1,9 +1,11 @@
+import { installLocalRendererDiagnostics } from '@/lib/localRendererDiagnostics';
 // gugu-embedded entry: mount the session-page <App/> into a host-provided container
 // (window.__EMDASH_MOUNT__) instead of light-DOM #root, so gugu can portal it into a
 // Shadow DOM at the 会话页 tab (one build / one process / CSS-isolated, NOT a webview).
 // The gugu host sets window.electronAPI (stub or real RPC bridge) BEFORE loading this bundle.
 // 会话页是独立文档,壳里装的垫片不跨文档:非安全上下文(http://<ip>)下 crypto.randomUUID 缺席会让这里启动即白。
 import '@/lib/insecure-context-shims';
+installLocalRendererDiagnostics();
 import { hasEntryRoot, renderEntryRoot } from '@/lib/renderer-entry-root';
 import { installRemoteHostSessionpageBridges } from './features/remote-hosts/install-sessionpage-bridges';
 import './lib/install-sessionpage-history-bridge';
@@ -42,6 +44,7 @@ import { wireRemoteExtensionResync } from '@renderer/features/extensions/wire-re
 import { wireMarketRefresh } from '@renderer/features/extensions/wire-market-refresh';
 import { wireProgramNotifications } from '@renderer/features/extensions/wire-program-notifications';
 import { wireAppQuit } from '@renderer/features/extensions/app-dock';
+import { wirePromptChanges } from '@renderer/features/library/prompts/prompt-changes';
 import { wireExtensionHostActions } from '@renderer/features/extensions/wire-extension-host-actions';
 import { setupAppCommandProvider } from '@renderer/lib/commands/app-commands';
 import { setupExtensionCommandProvider } from '@renderer/features/extensions/extension-command-provider';
@@ -50,9 +53,8 @@ import { wireCommitHistoryInvalidation } from '@renderer/lib/commit-history-inva
 import { wireExternalLinkRequests } from '@renderer/lib/external-link-requests';
 import { wireSessionsOnScreenReport } from '@renderer/app/sessions-on-screen';
 import { rpc, rpcOn } from '@renderer/lib/ipc';
-import { wireModelRegistryInvalidation } from '@renderer/lib/monaco/invalidation-bridges';
-import { monacoBootstrap } from '@renderer/lib/monaco/monaco-bootstrap';
-import { modelRegistry } from '@renderer/lib/monaco/monaco-model-registry';
+import { wireModelRegistryInvalidation } from '@renderer/lib/text-model/invalidation-bridges';
+import { modelRegistry } from '@renderer/lib/text-model/model-registry';
 import { wirePrCacheInvalidation } from '@renderer/lib/pr-cache-invalidation';
 import { wireAgentCapabilityInvalidation } from '@renderer/lib/stores/use-agents';
 import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
@@ -132,8 +134,7 @@ async function bootstrap() {
   isAnimationWindowVisible();
   // Portals (Base UI dialogs/popovers/tooltips + raw createPortal) must stay inside the shadow
   // root — document.body is outside it and has none of the session page's CSS (dialogs render as bare
-  // unstyled text there). Give them a dedicated layer next to the app mount. Must run before
-  // any init below: monacoBootstrap's theme probe already reads CSS vars via this container.
+  // unstyled text there). Give them a dedicated layer next to the app mount, before any init below.
   const mountEl = window.__EMDASH_MOUNT__;
 
   // 页签的界面那半由这里登记(@@@tab-views):provider 里只留按 kind 取内容的薄壳。登记幂等,热更新再跑一遍无妨。
@@ -217,13 +218,6 @@ async function bootstrap() {
   wireSessionsOnScreenReport();
 
 
-  // Monaco must NOT gate the mount: even vendored locally it is a multi-MB async chunk.
-  // Editors await monacoBootstrap.init() themselves when opened — boot it in the background
-  // and render the app immediately.
-  void monacoBootstrap.init().catch((error: unknown) => {
-    log.warn('[monaco-bootstrap] init failed:', error);
-  });
-
   // View-state/settings restoration is additive. Do not hold the only React mount behind a
   // non-critical RPC: a stale KV record, a first-run settings read, or a project mount failure
   // must leave the task surface usable and visible rather than an endless host skeleton.
@@ -246,6 +240,8 @@ async function bootstrap() {
   wireRemoteExtensionResync();
   // 左栏「开着」的小点:哪些 App 退出了、还没再打开,由主进程推过来(#7050)。
   wireAppQuit();
+  // 某个 App 的程序改了提示词(Prompt 管理):重读一遍,删的那条当场给撤销。
+  wirePromptChanges();
   // Synchronous on purpose: main refuses to deliver an extension's action until
   // this side has declared itself ready, so an extension that acts the instant
   // its surface loads must not race the bootstrap's awaits.

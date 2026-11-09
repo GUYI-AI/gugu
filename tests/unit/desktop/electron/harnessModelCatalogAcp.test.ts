@@ -167,6 +167,23 @@ function handle(msg) {
     expect(seen[0]).toMatchObject({ mcpServers: [], _meta: meta })
     expect(seen[1]).not.toHaveProperty('_meta')
   })
+  it('waits for the config_option_update of a harness that publishes its models after session/new', async () => {
+    const entry = await fakeAgent(`
+function handle(msg) {
+  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1 });
+  if (msg.method === 'session/new') {
+    reply(msg.id, { sessionId: 'late', configOptions: [{ id: 'mode', category: 'mode', type: 'select', currentValue: 'a', options: [{ value: 'a', name: 'A' }] }] });
+    const update = (configOptions) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'late', update: { sessionUpdate: 'config_option_update', configOptions } } }) + '\\n');
+    update([{ id: 'mode', category: 'mode', type: 'select', currentValue: 'a', options: [{ value: 'a', name: 'A' }] }]);
+    setTimeout(() => update([{ id: 'model', category: 'model', type: 'select', currentValue: 'm1', options: [{ value: 'm1', name: 'M1' }, { value: 'm2', name: 'M2' }] }]), 50);
+  }
+}
+`)
+    setAcpSpawnResolver(async () => ({ command: process.execPath, args: [entry], env: {}, modelsInConfigUpdate: true }))
+    const state = await probeHarnessModelCatalog('kiro', 'acp')
+    expect(state).toMatchObject({ kind: 'ready', selected: 'm1' })
+    if (state.kind === 'ready') expect(state.models.map((model) => model.id)).toEqual(['m1', 'm2'])
+  })
   it('从 session/new 的 configOptions[category=model] 读出清单与当前选中', async () => {
     await useAgent(SESSION_WITH_MODELS)
     const state = await probeHarnessModelCatalog('claude', 'acp')
@@ -782,6 +799,25 @@ function handle(msg) {
     })
     await expect(probeHarnessModelCatalog('qoder', 'acp')).rejects.toThrow(/qoder placeholder credentials unavailable/)
     expect(spawns).toBe(1)
+  })
+  it('preserves Antigravity sign-in methods when its declared platform route is unsupported', async () => {
+    const { buildProbePlatformCredentials } = await import('../../../../apps/desktop/electron/harness-catalog-probe-env')
+    await useForkingAgent()
+    let scratch = ''
+    setProbePlatformEnvResolver(async (id, dir) => {
+      scratch = dir
+      return buildProbePlatformCredentials(id, dir)
+    })
+    await expect(probeHarnessModelCatalog('antigravity', 'acp')).resolves.toEqual({
+      kind: 'auth-required', authMethods: [{ id: 'moonshot', name: 'Sign in to Moonshot', kind: 'agent' }], efforts: [], selectedEffort: null,
+    })
+    expect(spawns).toBe(1)
+    expect(scratch).not.toBe('')
+    expect(existsSync(scratch)).toBe(false)
+  })
+  it('still rejects an unknown engine rather than treating a missing contract as unsupported', async () => {
+    const { buildProbePlatformCredentials } = await import('../../../../apps/desktop/electron/harness-catalog-probe-env')
+    await expect(buildProbePlatformCredentials('unknown-catalog-engine', '/unused')).rejects.toThrow('no Chat UI injection contract')
   })
   /**
    * 文档载体那几家要把 settings 文档写进这一趟的临时目录 —— 探完必须整目录删掉,❌ 留在磁盘上。

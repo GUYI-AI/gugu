@@ -26,4 +26,6 @@ export interface TaskPageHost {
     unmount(args: { id: string }): Promise<void>;
   };
   onTaskPage?(handler: (event: TaskPageEvent) => void): () => void;
+  /** The App page's own error report (its console in 咕咕's diagnostics). */
+  reportError?(message: string): Promise<void>;
 }

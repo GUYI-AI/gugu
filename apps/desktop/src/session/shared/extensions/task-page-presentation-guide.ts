@@ -1,4 +1,4 @@
-export const TASK_PAGE_PRESENTATION_GUIDE = `# A task page's native placement (API 30)
+export const TASK_PAGE_PRESENTATION_GUIDE = `# A task page's native placement (API 36)
 
 Needs \`agents:tools\`
 - On the program's own opaque page lease, \`await lease.presentation()\` returns
