@@ -13,9 +13,10 @@ const store = vi.hoisted(() => ({
 }))
 
 vi.mock('../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'owner-1', nickname: null } }) }))
-vi.mock('../../../apps/desktop/src/store/contactsContext', () => ({ useContactsStore: () => ({ contacts: [] }) }))
-vi.mock('../../../apps/desktop/src/store/devicesContext', () => ({
-  useDevicesStore: () => ({ devices: [], loading: store.devices.loading, cloudComputer: store.devices.cloudComputer }),
+vi.mock('../../../apps/desktop/src/store/contactsContext', () => ({ useContactList: () => [] }))
+vi.mock('../../../apps/desktop/src/lib/cloudComputerStore', () => ({
+  getCloudComputerState: () => store.devices.cloudComputer,
+  subscribeCloudComputerState: () => () => {},
 }))
 vi.mock('../../../apps/desktop/src/lib/myAssistant', () => ({
   useMyAssistantContact: () => ({ loading: false, agentId: null, error: null, provisionDeviceId: null, contact: null, homeDeviceId: null }),

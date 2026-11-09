@@ -29,7 +29,7 @@ export function ownSshFileProvider(links: HeldFileSshLinks, tempRoot: string) {
         held = true
         return { ...source, async dispose() { try { await source.dispose() } finally { requester.closeAll() } } }
       }
-      return await snapshotProjectFile(revision, read, tempRoot, context.signal)
+      return await snapshotProjectFile(revision, read, tempRoot, context.signal, context.progress)
     } finally { if (!held) requester.closeAll() } // Detach listeners only; the window still owns the SSH link.
   }
 }

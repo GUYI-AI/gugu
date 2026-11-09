@@ -5,6 +5,7 @@ import { cloudReadTarget, writeRead } from '../lib/readWriter'
 import { mergeMemberReadSeqs } from '@gugu/core/shared/ui/messageState'
 import { readsWholeChat } from '@gugu/core/shared/ui/chatModels'
 import { i18n } from '@/i18n'
+import { shareRows } from '../lib/chatProjectionAlgebra'
 
 // @@@realtime-single-msg-mutations — 从 store/chat.tsx 抽出的「实时事件只改动单条消息」处理：全局删除
 // (#1729) 与表情回应变更 (#1873)。二者都对「当前打开会话窗口 + 话题视图 + L2」按 message_id 就地改一条，
@@ -95,11 +96,12 @@ export function patchChatRows(
   partial: Partial<ChatItem>,
   expectedReadStateVersion?: number,
 ): ChatItem[] {
-  return chats.map((chat) => {
+  // A patch often writes what the row already says: that must not count as a new list for everyone subscribed to it.
+  return shareRows(chats, chats.map((chat) => {
     if (chat.id !== chatId) return chat
     if (expectedReadStateVersion !== undefined && (chat.read_state_version ?? 0) !== expectedReadStateVersion) return chat
     return { ...chat, ...partial }
-  })
+  }))
 }
 
 export async function persistManualUnread(

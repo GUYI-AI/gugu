@@ -1,6 +1,6 @@
 import { style } from '@vanilla-extract/css';
 import { vars } from '@session-chat/styles/theme.css';
-import { MESSAGE_EDITOR_BUTTON_HEIGHT, MESSAGE_EDITOR_GAP, MESSAGE_EDITOR_PADDING } from './message-editor-metrics';
+import { MESSAGE_EDITOR_BUTTON_HEIGHT, MESSAGE_EDITOR_GAP, MESSAGE_EDITOR_NOTICE_RULE, MESSAGE_EDITOR_PADDING } from './message-editor-metrics';
 
 export const messageEditor = style({
   boxSizing: 'border-box', width: '100%', display: 'flex', flexDirection: 'column',
@@ -15,6 +15,13 @@ export const messageEditorText = style({
   whiteSpace: 'pre-wrap', overflowWrap: 'break-word',
 });
 export const messageEditorActions = style({ display: 'flex', justifyContent: 'flex-end', gap: 8, height: MESSAGE_EDITOR_BUTTON_HEIGHT, flexShrink: 0 });
+/** In the body font, because `messageEditorMetrics` measures its lines with that font. */
+export const messageEditorNotice = style({
+  flexShrink: 0, color: vars.fgBody, overflowWrap: 'break-word',
+  // A rule sets it apart from the text being edited: this line is the app talking, not a placeholder.
+  borderTop: `${MESSAGE_EDITOR_NOTICE_RULE}px solid ${vars.border}`, paddingTop: MESSAGE_EDITOR_GAP,
+  fontFamily: vars.typeBodyFontFamily, fontSize: vars.typeBodyFontSize, fontWeight: vars.typeBodyFontWeight, lineHeight: vars.typeBodyLineHeight,
+});
 export const messageEditorButton = style({
   height: MESSAGE_EDITOR_BUTTON_HEIGHT, padding: '0 14px', border: 'none', borderRadius: vars.radiusFull,
   background: vars.bg, color: vars.fg, fontFamily: vars.fontSans, fontSize: vars.typeChromeFontSize, cursor: 'pointer',

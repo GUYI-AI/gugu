@@ -25,6 +25,9 @@ export type IntegrationAccountRecord = {
   accountId: string;
   displayName?: string;
   credentials: IntegrationCredentials;
+  /** Opaque credential generation read together with `credentials`; a
+   * conditional replacement must still find it. Absent for platform-kept accounts. */
+  generation?: string;
 };
 
 /** 一个已存账号连同它什么时候连上的(资源库详情「连接时间」)。 */
@@ -40,7 +43,7 @@ type IntegrationAccountStore = Pick<
   | 'removeAccount'
   | 'removeAllAccounts'
   | 'isConfigured'
-> & Partial<Pick<ProviderAccountRegistry,'compareAndSwapSecret'>>;
+> & Partial<Pick<ProviderAccountRegistry,'compareAndSwapSecret'|'resolveSecretGeneration'>>;
 
 type LegacySecretStore = {
   getSecret(key: string): Promise<string | null>;
@@ -111,11 +114,15 @@ export class IntegrationCredentialStore {
     if (!account) return null;
     if (keptByPlatform(account)) return toIntegrationAccount(account, {});
 
-    const raw = await this.accounts.resolveSecret(integrationId, account.accountId);
+    const read = this.accounts.resolveSecretGeneration
+      ? await this.accounts.resolveSecretGeneration(integrationId, account.accountId)
+      : null;
+    const raw = this.accounts.resolveSecretGeneration ? read?.secret ?? null : await this.accounts.resolveSecret(integrationId, account.accountId);
     const credentials = raw ? parseJson(raw) : null;
     if (!credentials || typeof credentials !== 'object' || Array.isArray(credentials)) return null;
 
-    return toIntegrationAccount(account, credentials as IntegrationCredentials);
+    const record = toIntegrationAccount(account, credentials as IntegrationCredentials);
+    return read?.generation ? { ...record, generation: read.generation } : record;
   }
 
   /** #7240 这一家存着的每个账号(多账号:邮箱一个地址一个),按连上的先后。凭据读不出来的那一个跳过不给。 */
@@ -176,7 +183,10 @@ export class IntegrationCredentialStore {
 
   compareAndSwapAccount(integrationId: string, prior: IntegrationAccountRecord, credentials: IntegrationCredentials): Promise<boolean> {
     if(!this.accounts.compareAndSwapSecret)throw new Error('CONNECTION_ATOMIC_STORE_UNAVAILABLE');
-    return this.accounts.compareAndSwapSecret(integrationId,prior.accountId,JSON.stringify(prior.credentials),JSON.stringify(credentials));
+    // Only the generation read before the refresh may be replaced; a record
+    // without one (platform-kept) was never a local secret to replace.
+    if(!prior.generation)return Promise.resolve(false);
+    return this.accounts.compareAndSwapSecret(integrationId,prior.accountId,prior.generation,JSON.stringify(credentials));
   }
 
   /** Remove one account, or every account when no accountId is given. */

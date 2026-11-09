@@ -33,6 +33,7 @@ import { readAssistantShellBridge } from '../lib/assistantShellBridge'
 import { cn } from '@/lib/cn'
 import { Menu, MenuItem as DropdownMenuItem, MenuSeparator } from './ui/Menu'
 import { useRowContextMenu } from '../hooks/useRowContextMenu'
+import { followLink } from '../lib/guguLinks'
 import { Hint } from './ui/Tooltip'
 import { useTranslation } from 'react-i18next'
 import { useToast } from './toastContext'
@@ -239,6 +240,7 @@ const DockItem = observer(function DockItem({ app, active, onOpen, onOpenInWindo
             <DropdownMenuItem onClick={() => { onOpen(); closeMenu() }}>{t('shell.appOpen')}</DropdownMenuItem>
           )}
           <DropdownMenuItem onClick={() => { onOpenInWindow(); closeMenu() }}>{t('shell.appOpenInWindow')}</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => { void followLink({ kind: 'app-detail', extensionId: app.extensionId }); closeMenu() }} data-testid="rail-app-settings">{t('shell.appSettings')}</DropdownMenuItem>
           <DropdownMenuItem onClick={() => { onUnpin(); closeMenu() }}>{t('shell.appUnpin')}</DropdownMenuItem>
           {running && <MenuSeparator />}
           {running && (

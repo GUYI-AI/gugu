@@ -39,7 +39,7 @@ function leaves(items: readonly ChatItem[]): ChatItem[] {
  * the process after choosing a turn-wide reply: that moves pre-steer words below the input.
  * Successful send projections are inserted next to their calls by withSentReplies.
  */
-export function planConversationSegments(turn: TranscriptTurn, active: boolean, allPanelText = false): ConversationBlock[] {
+export function planConversationSegments(turn: TranscriptTurn, active: boolean): ConversationBlock[] {
   const blocks: ConversationBlock[] = [];
   let segment: ConversationSegment | undefined;
   let startedAt = turn.startedAt;
@@ -77,10 +77,7 @@ export function planConversationSegments(turn: TranscriptTurn, active: boolean, 
       segment = owner;
     }
   };
-  const entries = leaves(turn.items as readonly ChatItem[]);
-  const lastWork = allPanelText ? entries.findLastIndex(next =>
-    !(next.kind === 'message' && (!next.text.trim() || isGuguSilence(next.text))) && !processHookNotice(next)) : -1;
-  for (const [index, item] of entries.entries()) {
+  for (const item of leaves(turn.items as readonly ChatItem[])) {
     if ('parentToolCallId' in item && item.parentToolCallId) continue;
     const at = conversationEventAt(item);
     const hook = processHookNotice(item);
@@ -140,8 +137,7 @@ export function planConversationSegments(turn: TranscriptTurn, active: boolean, 
     current.endedAt = 'completedAt' in item ? item.completedAt ?? at : at;
     previousAt = at;
     pendingInput = false;
-    const laterWork = allPanelText && conversationSpoken(item) && index < lastWork;
-    if (item.kind === 'message' && (item.id.includes(':sent:') || item.ownerNotification || laterWork)) close(at, item.id);
+    if (item.kind === 'message' && (item.id.includes(':sent:') || item.ownerNotification)) close(at, item.id);
   }
   finishStop();
   if (segment) {

@@ -1,24 +1,37 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ChatWindowCache } from '../../../../apps/desktop/src/store/chatWindowCache'
 import { message } from '../../../support/testHarness'
+import { mergeMemberReadSeqs } from '@gugu/core/shared/ui/messageState'
 
 const row = (seq: number) => message({ id: `m-${seq}`, chat_id: 'chat', seq, is_mine: false })
 describe('cached scoped history ownership', () => {
-  it('slides the observed stream at 120 and releases its controller when closed', () => {
+  it('opens a conversation with the read positions it already holds, and the network read only moves them forward', () => {
+    const held: Record<string, Record<string, number>> = { chat: { 'u-b': 9, 'u-c': 2, 'u-left': 4 } }
+    const cache = new ChatWindowCache('me')
+    cache.readSeqsOf = (chatId) => held[chatId]
+    expect(cache.view('chat', {}).memberReadSeqs).toEqual({ 'u-b': 9, 'u-c': 2, 'u-left': 4 })
+    expect(cache.view('other').memberReadSeqs).toEqual({})
+    const stop = cache.subscribe('chat', () => undefined)
+    // The network snapshot is older for u-b (its read is in flight), newer for u-c, and no longer has u-left.
+    // The same-chat merge reconcileMemberReadSeqs applies when the network read lands.
+    cache.patchView('chat', { memberReadSeqs: mergeMemberReadSeqs(cache.view('chat').memberReadSeqs, { 'u-b': 5, 'u-c': 6 }) })
+    expect(cache.view('chat').memberReadSeqs).toEqual({ 'u-b': 9, 'u-c': 6 })
+    stop()
+  })
+  it('slides the observed stream at 40 and releases its controller when closed', () => {
     const cache = new ChatWindowCache(), history = cache.history('chat')
     const stop = cache.subscribe('chat', () => undefined)
     for (let seq = 1; seq <= 2000; seq++) cache.set('chat', [...(cache.get('chat') ?? []), row(seq)])
-    expect(cache.get('chat')?.map((item) => item.seq)).toEqual(Array.from({ length: 120 }, (_, index) => index + 1881))
+    expect(cache.get('chat')?.map((item) => item.seq)).toEqual(Array.from({ length: 40 }, (_, index) => index + 1961))
     expect(cache.get('chat')).toBe(history.getSnapshot().messages)
     stop()
     expect(cache.get('chat')).toHaveLength(40)
     expect(cache.history('chat')).not.toBe(history)
   })
-  it('publishes history state even when the row reference stays the same', () => {
+  it('publishes history state even when the row reference stays the same', async () => {
     const cache = new ChatWindowCache(), history = cache.history('chat'), observe = vi.fn()
     const stop = cache.subscribe('chat', observe)
-    cache.set('chat', Array.from({ length: 120 }, (_, index) => row(index + 1)))
-    history.setFollowingTail(false)
+    await history.restoreAnchor(async () => ({ messages: Array.from({ length: 120 }, (_, index) => row(index + 1)), hasNewer: false }))
     cache.set('chat', [...(cache.get('chat') ?? []), row(121)])
     expect(history.getSnapshot()).toMatchObject({ hasNewer: true, newMessageCount: 1 })
     expect(cache.get('chat')).toHaveLength(120)
@@ -50,7 +63,7 @@ describe('cached scoped history ownership', () => {
     expect(history.getSnapshot().hasNewer).toBe(true)
     expect(sending.getSnapshot().messages.at(-1)).toMatchObject({ id: ack.id, seq: 121, local_send_state: null })
     expect(sending.getSnapshot().messages.at(-1)).toEqual(cache.get('chat')?.at(-1))
-    expect(cache.get('chat')).toHaveLength(120)
+    expect(cache.get('chat')).toHaveLength(40)
     expect(start).toHaveBeenCalledTimes(1)
     stopSender(); stopReader()
   })
@@ -72,12 +85,12 @@ describe('cached scoped history ownership', () => {
     for (let seq = 321; seq <= 2000; seq++) cache.update('chat', (rows) => [...rows, row(seq)])
     expect(a.getSnapshot().messages.map((item) => item.seq)).toEqual(Array.from({ length: 120 }, (_, index) => index + 1))
     expect(a.getSnapshot().hasNewer).toBe(true)
-    expect(b.getSnapshot().messages).toHaveLength(120)
+    expect(b.getSnapshot().messages).toHaveLength(40)
     expect(b.getSnapshot().messages.at(-1)?.seq).toBe(2000)
-    expect(cache.get('chat')).toHaveLength(120)
-    expect(new Set(cache.get('chat')?.map((item) => item.id)).size).toBe(120)
+    expect(cache.get('chat')).toHaveLength(40)
+    expect(new Set(cache.get('chat')?.map((item) => item.id)).size).toBe(40)
     cache.establishTail('chat', Array.from({ length: 30 }, (_, index) => row(index + 1971)))
-    expect(b.getSnapshot().messages).toHaveLength(120)
+    expect(b.getSnapshot().messages).toHaveLength(40)
     expect(a.getSnapshot().messages.at(0)?.seq).toBe(1)
     stopLeft(); stopRight()
   })
@@ -90,7 +103,7 @@ describe('cached scoped history ownership', () => {
     for (let seq = 1; seq <= 180; seq++) cache.update('chat', (rows) => [...rows, row(seq)])
     expect(cache.isFollowingTail('chat')).toBe(false)
     expect(cache.history('chat', quick).getSnapshot()).toMatchObject({ hasNewer: false })
-    expect(cache.history('chat', quick).getSnapshot().messages).toHaveLength(120)
+    expect(cache.history('chat', quick).getSnapshot().messages).toHaveLength(40)
     expect(cache.history('chat', quick).getSnapshot().messages.at(-1)?.seq).toBe(180)
     cache.setFollowingTail('chat', quick, true)
     expect(cache.isFollowingTail('chat')).toBe(true)
@@ -104,7 +117,7 @@ describe('cached scoped history ownership', () => {
     cache.set('chat', Array.from({ length: 120 }, (_, index) => row(index + 201)))
     const pending = message({ id: 'pending', chat_id: 'chat', seq: -1, is_mine: true, local_send_state: 'sending' })
     cache.set('chat', [...(cache.get('chat') ?? []), pending])
-    expect(cache.get('chat')).toHaveLength(120)
+    expect(cache.get('chat')).toHaveLength(40)
     expect(cache.get('chat')?.at(-1)).toBe(pending)
     let resolve!: (rows: ReturnType<typeof row>[]) => void
     const read = history.load('older', () => new Promise((done) => { resolve = done }))

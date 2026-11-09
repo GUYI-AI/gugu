@@ -1,7 +1,7 @@
 import { renumberStoredTurn } from '../../../../apps/desktop/electron/session/main/core/sessions/session-turn-identity'
 import { describe, expect, it, vi } from 'vitest'
 import { renderDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope'
-import { loadPendingDeliveryHistory, projectSessionPendingDeliveries } from '@/lib/pendingSessionDeliveries'
+import { loadPendingDeliveryHistory, projectSessionPendingDeliveries, settledHostRow } from '@/lib/pendingSessionDeliveries'
 import { projectSessionPendingInput } from '@/lib/pendingSessionInput'
 import type { SessionInput } from '@/lib/sessionInputOutbox'
 import { activeTurnWithInputs, projectPendingMessages, type PendingMessageProjectionCache } from '@session-chat/state/pending-prompt'
@@ -203,6 +203,25 @@ describe('incoming delivery custody', () => {
     expect(failed[0]?.delivery).toMatchObject({ state: 'failed', retryable: true })
     const stillUnknown = projectSessionPendingDeliveries(unknown, { ...view([row('a', 1, 'unknown')]), hold: 'start-failed', kind: 'failed' }, [])
     expect(stillUnknown[0]?.delivery).toMatchObject({ state: 'unknown', retryable: false })
+  })
+
+  it('offers resend and discard on a failed host row the host marks resendable and discardable', () => {
+    const failed = { ...row('f', 1, 'failed'), failure: 'declined', resendable: true, discardable: true }
+    const life = view([failed, { ...row('g', 2, 'failed'), failure: 'declined', resendable: false, discardable: false }, { ...row('q', 3), discardable: true }])
+    const drawn = projectSessionPendingDeliveries([], life, [])
+    expect(drawn.map(input => [input.id, input.delivery])).toMatchObject([['f', { state: 'failed', retryable: true }], ['g', { state: 'failed', retryable: false }], ['q', { state: 'receiving' }]])
+    expect(['f', 'g', 'q', 'missing'].map(id => settledHostRow(life, id))).toEqual([true, false, false, false])
+    // Discarded: the row leaves the host and the bubble goes with it, instead of turning into "receiving".
+    expect(projectSessionPendingDeliveries(drawn, view([]), []).map(input => input.id)).toEqual(['q'])
+  })
+
+  it('keeps a typed input the host refused on screen, resendable, after sender custody ends', () => {
+    const failed = { ...row('typed', 1, 'failed'), text: 'typed words', failure: 'declined', resendable: true, discardable: true }
+    const sender: SessionInput = { id: 'typed', text: 'typed words', accountId: 'owner', sessionId: 's', deviceId: null, createdAt: 10000, queued: false, baseline: [] }
+    const own = projectSessionPendingInput(null, [sender], [failed], [])
+    expect(own?.delivery).toMatchObject({ state: 'failed', retryable: true })
+    expect(projectSessionPendingInput(own, [], [failed], [])?.delivery).toMatchObject({ state: 'failed', retryable: true })
+    expect(projectSessionPendingInput(own, [], [], [])).toBeNull()
   })
 
   it('reuses decorated committed turns while an unrelated active turn streams', () => {

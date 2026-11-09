@@ -1,0 +1,32 @@
+name: Set up pinned vendor Node
+description: Install the repository-pinned Node archive from immutable storage with official SHA256 validation
+inputs:
+  node-version-file:
+    description: File containing the exact Node version
+    required: false
+    default: .node-version
+  node-version:
+    description: Exact version for a caller without a client checkout
+    required: false
+    default: ''
+outputs:
+  node-version:
+    description: Exact verified Node version
+    value: ${{ steps.posix.outputs.node-version || steps.windows.outputs.node-version }}
+runs:
+  using: composite
+  steps:
+    - id: posix
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        VENDOR_NODE_VERSION_FILE: ${{ inputs.node-version-file }}
+        VENDOR_NODE_VERSION: ${{ inputs.node-version }}
+      run: bash "$GITHUB_ACTION_PATH/install.sh"
+    - id: windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        VENDOR_NODE_VERSION_FILE: ${{ inputs.node-version-file }}
+        VENDOR_NODE_VERSION: ${{ inputs.node-version }}
+      run: '& "$env:GITHUB_ACTION_PATH/install.ps1"'

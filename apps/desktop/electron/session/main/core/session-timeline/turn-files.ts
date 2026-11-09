@@ -1,18 +1,19 @@
-import { join } from 'node:path';
 import { log } from '@main/lib/logger';
 import { runtimeFork } from '../sessions/session-life-forks';
 import { attachmentMimeTypeSchema, type PromptAttachment } from '@gugu/session-core/acp/client';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import { turnAttachmentText } from '@gugu/core/shared/attachmentFolderLine';
 import { attachmentFailureReason } from '@gugu/core/local/files/attachmentDiagnostics';
-import { saveFileHandle } from '@gugu/core/local/files/fileSnapshots';
+import { saveToFileStore } from '@gugu/core/local/files/fileSnapshots';
 import { resolveGuguHome } from '@gugu/core/local/state/paths';
 import { resolveAccountFile } from '@main/core/extensions/account-token';
 import { guguAgentUserIdForSession } from '@main/core/sessionpage/sessionpage-session-agent';
 import { readCachedDeviceId } from '@gugu/core/cloud/deviceRuntime';
 import { stat } from 'node:fs/promises';
 
-const prefetched = new Map<string, string>();
+/** A stored file (shared, so another agent may have changed it) is remembered with its size and time, to be read again if they move. */
+type Prefetched = { localPath: string; readOnly?: boolean; size?: number; mtimeMs?: number };
+const prefetched = new Map<string, Prefetched>();
 const fileKey = (sessionId: string, file: TurnFileRef) => JSON.stringify([sessionId, file.itemId, file.version]);
 
 export async function prefetchFiles(input: { conversationId: string; files: TurnFileRef[] }) {
@@ -20,8 +21,7 @@ export async function prefetchFiles(input: { conversationId: string; files: Turn
   return Promise.all(input.files.map(async file => {
     try {
       if (!agent) throw new Error('This task has no agent identity to read its attachments as');
-      const path = await localPathOf(file, agent, input.conversationId);
-      prefetched.set(fileKey(input.conversationId, file), path);
+      prefetched.set(fileKey(input.conversationId, file), await localPathOf(file, agent, input.conversationId));
       return { itemId: file.itemId, ok: true as const };
     } catch (error) {
       return { itemId: file.itemId, ok: false as const, error: attachmentFailureReason(error), code: (error as { code?: string })?.code };
@@ -47,7 +47,7 @@ export async function turnFileText(sessionId: string, files: readonly TurnFileRe
     let saved: Parameters<typeof turnAttachmentText>[1];
     try {
       if (!agent) throw new Error('This task has no agent identity to read its attachments as');
-      saved = { localPath: await localPathOf(file, agent, sessionId) };
+      saved = await localPathOf(file, agent, sessionId);
     } catch (error) {
       saved = { failure: attachmentFailureReason(error) };
       log.warn('Task attachment could not be saved', { sessionId, itemId: file.itemId, reason: saved.failure });
@@ -63,9 +63,12 @@ export async function turnFileText(sessionId: string, files: readonly TurnFileRe
   return { text: parts.join('\n\n'), images, files: prepared };
 }
 
-async function localPathOf(file: TurnFileRef, agent: string, sessionId: string): Promise<string> {
+async function localPathOf(file: TurnFileRef, agent: string, sessionId: string): Promise<Prefetched> {
   const key = fileKey(sessionId, file), cached = prefetched.get(key);
-  if (cached && (await stat(cached).catch(() => null))?.isFile()) return cached;
+  if (cached) {
+    const info = await stat(cached.localPath).catch(() => null);
+    if (info?.isFile() && (!cached.readOnly || info.size === cached.size && info.mtimeMs === cached.mtimeMs)) return cached;
+  }
   prefetched.delete(key);
   if (file.workspacePath) {
     if (!file.workspacePath.startsWith('.gugu/attachments/')) throw new Error('The SSH attachment is outside its directory');
@@ -79,7 +82,7 @@ async function localPathOf(file: TurnFileRef, agent: string, sessionId: string):
     const path = await inWorkspace(row.workspace ?? row.project, file.workspacePath);
     const info = await stat(path);
     if (!info.isFile() || info.size !== file.sizeBytes) throw new Error('The SSH attachment changed');
-    return path;
+    return { localPath: path };
   }
   // Read as the agent, like any file it reads: the folder's membership says whether it may; the resolver says where the
   // bytes are (this device, its own SSH, or a temporary transfer).
@@ -89,9 +92,11 @@ async function localPathOf(file: TurnFileRef, agent: string, sessionId: string):
   if (file.path && revision.source === 'local' && revision.host_device_id === await readCachedDeviceId(process.env, reader.accountId)
     && (await stat(file.path).catch(() => null))?.isFile()) {
     await resolved.dispose();
-    return file.path;
+    return { localPath: file.path };
   }
-  const path = (await saveFileHandle(resolved, join(resolveGuguHome(process.env), 'attachments', sessionId), file.name)).file_path;
-  prefetched.set(key, path);
-  return path;
+  const saved = await saveToFileStore(resolved, resolveGuguHome(process.env), file.name);
+  const info = await stat(saved.file_path).catch(() => null);
+  const kept: Prefetched = { localPath: saved.file_path, readOnly: saved.read_only, size: info?.size, mtimeMs: info?.mtimeMs };
+  prefetched.set(key, kept);
+  return kept;
 }

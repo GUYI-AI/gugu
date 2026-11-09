@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
 import { listGroupInvitations, type GroupInvitation } from '../lib/groupInvitations'
 import { rendererLogger } from '../lib/log'
 import { contactsService } from '../lib/contacts'
@@ -7,7 +7,7 @@ import { isLifecycleCancellation } from '../lib/authBoundedFetch'
 import { useAuth } from './auth'
 import { useChatStore } from './chatContext'
 import { UI_EVENTS } from '../lib/uiEvents'
-import { ContactsContext, type ContactsLoadStatus } from './contactsContext'
+import { ContactsContext, ContactsHandleContext, type ContactsHandle, type ContactsLoadStatus } from './contactsContext'
 import type { ContactGroup, ContactUser, FriendRequest } from '@gugu/core/shared/types/contacts'
 import { platform } from '../platform'
 import { readRequiredDisplayIdentities } from '../lib/identityReadAdapter'
@@ -534,5 +534,10 @@ export function ContactsProvider({ children, active = true }: { children: React.
     deleteGroup, updateGroupMembers, updateContactAlias, setAgentPublic, setAgentDesiredStatus, renameAgent,
     updateAgentProfile, uploadAgentAvatar, setAgentLook, removeOwnedAgent, removeContact, getCommonGroupChats,
   ])
-  return <ContactsContext.Provider value={value}>{children}</ContactsContext.Provider>
+  const [listeners] = useState(() => new Set<() => void>())
+  const valueRef = useRef(value)
+  valueRef.current = value
+  const [handle] = useState<ContactsHandle>(() => ({ get: () => valueRef.current, subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } } }))
+  useLayoutEffect(() => { for (const listener of [...listeners]) listener() }, [listeners, value])
+  return <ContactsHandleContext.Provider value={handle}><ContactsContext.Provider value={value}>{children}</ContactsContext.Provider></ContactsHandleContext.Provider>
 }

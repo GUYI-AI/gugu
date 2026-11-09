@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowUp,
   Bell,
@@ -13,7 +13,6 @@ import {
   Moon,
   Pencil,
   Share2,
-  Shield,
   ShieldCheck,
   Terminal,
   Users,
@@ -25,13 +24,11 @@ import { Button } from '@renderer/lib/ui/button';
 import { InfoTooltip } from '@renderer/lib/ui/info-tooltip';
 import { MarkdownRenderer } from '@renderer/lib/ui/markdown-renderer';
 import { ExpandableImage } from '@renderer/lib/ui/expandable-image';
-import { Switch } from '@renderer/lib/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@renderer/lib/ui/toggle-group';
 import { rpc } from '@renderer/lib/ipc';
 import { confirmOpenExternalLink } from '@renderer/lib/open-external-link';
 import { log } from '@renderer/utils/logger';
 import { cn } from '@renderer/utils/utils';
-import type { ExtensionAgentStatus } from '@shared/extensions/agent-status';
 import { givesAgentTools } from '@shared/extensions/app-places';
 import {
   declaredPermissions,
@@ -42,62 +39,49 @@ import {
   permissionSide,
   type DeclaredPermission,
 } from '@shared/extensions/catalog';
-import { claimedSuffixes, compareExtensionVersions, type ExtensionCapability, type ExtensionManifest } from '@shared/extensions/manifest';
-import { pinsAutoUpdate, type MarketListing } from '@shared/extensions/market-entries';
+import { claimedSuffixes, type ExtensionCapability, type ExtensionManifest } from '@shared/extensions/manifest';
+import type { MarketListing } from '@shared/extensions/market-entries';
 import {
   marketSourceLabel,
   marketSourceUrl,
   type CloudMarketEntryMeta,
   type MarketSourceRef,
-  type MarketVersionHistoryEntry,
   marketCompatText,
 } from '@shared/extensions/market';
 import { describeCapability, programDetails, type SessionTranslate } from '../extension-consent';
 import type { ExtensionsApi } from '../extensions-host';
-import type { ExtensionDisclosureLevel } from '../installed-extensions-store';
-import { AppGivenSection } from './app-given-section';
 import { AppLifecycleButton, type AppLifecycle } from './app-lifecycle-button';
 import { ResourceMenu } from '@/components/ResourceMenu';
 import type { ResourceContext } from '@shared/resource-actions';
-import { AppMoreMenu } from './app-more-menu';
 import { AppShelfRow } from './app-shelf';
-import { AppVariantList, type AppVariantRow } from './app-variant-list';
+import { VersionHistorySection, shortDate, type Loadable } from './app-version-history';
+import type { MarketVersionHistoryEntry } from '@shared/extensions/market';
 import { ExtensionMonogram } from './extension-monogram';
 import type { ExtensionPendingAction } from './extension-pending';
-import { InstalledRowNoticeLine, programFailureText, type InstalledRowNotice } from './installed-extension-row';
 
 /**
- * What the page is about: a manifest, plus where it came from. `installRef` is
- * set when the market carries it and names the version an install from here
- * fetches (#5410); `installed` is the copy on disk, if any. `cloud` carries
- * everything only the market knows about *this* version (icon, compat,
- * deprecation, release notes, size, where its code is) — null for an App
- * installed from a folder or a chat with no market copy. Refs #5265, #5410.
+ * The market's page of an App: the version the market offers, whatever is installed. `installedVersion` only says what the
+ * button does and that another version is here; everything else about the installed copy is its settings page's
+ * (app-manage-page.tsx). Refs #5265, #5410.
  */
 export interface ExtensionDetailSubject {
   manifest: ExtensionManifest;
-  installed: ExtensionManifest | undefined;
-  installRef: MarketSourceRef | undefined;
-  cloud?: CloudMarketEntryMeta | null;
+  installRef: MarketSourceRef;
+  cloud: CloudMarketEntryMeta;
+  installedVersion?: string;
 }
 
-type Loadable<T> = { status: 'idle' } | { status: 'loading' } | { status: 'ready'; data: T } | { status: 'error' };
-
-export type ProductPageApi = Pick<typeof rpc.extensions, 'marketListing' | 'marketHistory'> &
-  Partial<Pick<ExtensionsApi, 'agentTools' | 'marketRead'>>;
+export type ProductPageApi = Pick<typeof rpc.extensions, 'marketListing' | 'marketHistory'> & Partial<Pick<ExtensionsApi, 'marketRead'>>;
 
 /**
- * 一个 App 的产品页(#7059,取代原来的居中详情框):在「App」那一栏里整页铺开,左上「‹ App」回到清单。
- * 版面照 Google Play 的应用页(owner 10-10「这个是我想要的」):头上大字名字、副标题、发布方、一排要点、大按钮,右边大图标;
- * 下面左栏(App 模型 v2)截图轮播 → 关于(页内,默认折叠到四行,点「展开」看全文)→ 新功能和版本历史 → 它带来了什么
- * (页签、给 agent 的工具和技能、它给 agent 的那一行原文、「对 agent 说」)→ 权限(它能看 / 它能做,每项能单独收回,照 Slack)
- * → 信息;右栏 审核那张卡、链接、类似 App。截图和关于是市场上这一版的 `store/`(`marketListing`),本机装的 App 没有。
- * 名字、副标题、关于、示例句跟界面语言走;它还写了别的语言,「关于」旁边给一个切换。装、开、更新在这一页头上那一颗。
+ * 一个 App 的市场页(#7059):在「App」那一栏里整页铺开,左上「‹ App」回到清单。只回答「要不要装」,所以页上没有开关;管装着的那一份在
+ * App 设置页(app-manage-page.tsx)。版面照 Google Play 的应用页(owner 10-10「这个是我想要的」):头上大字名字、副标题、发布方、一排
+ * 要点、大按钮,右边大图标;下面左栏截图轮播 → 关于 → 新功能和版本历史 → 它带来了什么 → 权限(它能看 / 它能做)→ 信息;右栏审核那张
+ * 卡、链接、类似 App。名字、副标题、关于、示例句跟界面语言走;它还写了别的语言,「关于」旁边给一个切换。
  */
 export function AppProductPage({
   subject,
   iconDataUrl,
-  enabled,
   lifecycle,
   pending,
   pendingPercent,
@@ -107,33 +91,22 @@ export function AppProductPage({
   api = rpc.extensions,
   readOnly = false,
   justInstalled = false,
-  notice,
-  variants,
-  onSwitchVariant,
-  revoked = [],
-  pendingPermissions = [],
-  agentStatus,
-  disclosure,
-  givenApi,
-  docked = false,
+  backLabel,
   onBack,
   onLifecycle,
   onInstallVersion,
-  onTogglePermission,
-  onDisclosureChange,
+  onManage,
+  onForward,
   onAsk,
-  onBrowseReplacement,
   onOpenExternal = confirmOpenExternalLink,
   backgroundSupported = true,
-  permissionRevocationSupported = true,
   phoneAgentCapabilities = [],
   similar = [],
-  menu,
+  resource,
 }: {
   subject: ExtensionDetailSubject;
   /** The installed copy's icon as main re-encoded it, drawn when the market has none. */
   iconDataUrl?: string;
-  enabled: boolean;
   lifecycle: AppLifecycle;
   pending?: ExtensionPendingAction;
   pendingPercent?: number;
@@ -147,54 +120,33 @@ export function AppProductPage({
   readOnly?: boolean;
   /** 刚在这一页装好:头下面一句「装好了」和去哪找它。 */
   justInstalled?: boolean;
-  /** 云端那口对装着这一版要说的话(有新版 / 撤回 / 停止维护)。 */
-  notice?: InstalledRowNotice;
-  variants?: { active: string; variants: readonly AppVariantRow[] };
-  onSwitchVariant?: (name: string) => void;
-  revoked?: readonly string[];
-  pendingPermissions?: readonly string[];
-  agentStatus?: ExtensionAgentStatus;
-  disclosure?: ExtensionDisclosureLevel;
-  givenApi?: Pick<ExtensionsApi, 'appPlaces' | 'changeAppPlaces'>;
-  docked?: boolean;
+  /** Where back goes, when not the market: the App's settings page. */
+  backLabel?: string;
   onBack: () => void;
   onLifecycle: () => void;
   onInstallVersion: (ref: MarketSourceRef) => void;
-  /** 装着的才给:每一项「收回 / 恢复」。 */
-  onTogglePermission?: (permission: string, granted: boolean) => void;
-  onDisclosureChange?: (level: ExtensionDisclosureLevel) => void;
+  /** Installed only: its settings page, where everything about this copy is managed. */
+  onManage?: () => void;
+  onForward?: () => void;
   /** 「对 agent 说」点一句 = 新建任务、这句已填好;不给(看的是别的机器)就只读。 */
   onAsk?: (text: string) => void;
   /** Opens a web link on the viewing device. Desktop retains its confirmation dialog. */
   onOpenExternal?: (url: string) => void;
   /** The phone has no persistent App background-page host. */
   backgroundSupported?: boolean;
-  /** Whether this host lets people take back individual permissions after installation. */
-  permissionRevocationSupported?: boolean;
   /** Agent capabilities declared by the App, before the phone removes them from its permission list. */
   phoneAgentCapabilities?: readonly ExtensionCapability[];
-  onBrowseReplacement?: (extensionId: string) => void;
   /** 右栏「类似 App」:市场里同一类的别的 App(照 Google Play),点一个 = 换到它的产品页。 */
   similar?: { id: string; name: string; publisher: string; line: string; iconUrl?: string | null; onOpen: () => void }[];
-  menu: {
-    resource?: ResourceContext;
-    onToggleDock?: () => void;
-    onOpenInWindow?: () => void;
-    onForward?: () => void;
-    onToggleEnabled?: (enabled: boolean) => void;
-    /** 市场装的才有:「自动更新」(owner 10-19)。 */
-    autoUpdate?: { on: boolean; onToggle: (on: boolean) => void };
-    onUninstall?: () => void;
-  };
+  resource?: ResourceContext;
 }) {
-  const { manifest, installed, cloud } = subject;
+  const { manifest, cloud, installedVersion } = subject;
   // 没点过切换就跟界面语言(界面语言换了也跟着换);点过的那一格还在就用它。
   const languages = manifestLanguages(manifest, locale);
   const [picked, setPicked] = useState<string | null>(null);
   const textLocale = languages.find((option) => option.locale === picked)?.locale ?? languages[0]!.locale;
   const text = localizedManifestText(manifest, textLocale);
-  const compat = cloud?.compat ?? null;
-  const deprecated = cloud?.deprecated ?? null;
+  const { compat, deprecated } = cloud;
   const [listing, setListing] = useState<Loadable<MarketListing> | { status: 'outdated' }>({ status: 'idle' });
   const [history, setHistory] = useState<Loadable<MarketVersionHistoryEntry[]>>({ status: 'idle' });
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -204,13 +156,9 @@ export function AppProductPage({
 
   // 懒加载,换了 App(id / 版本变了)才取一次;卸下时取消挂起的那次,免得旧数据落进新的一页。只有市场上的版本有产品页内容
   // (`store/` 不进安装包);读不到就照实说(那台机器的咕咕太旧 / 市场上这一版没有),❌ 改读别处。
-  const listedVersion = cloud?.version ?? null;
+  const listedVersion = cloud.version;
   useEffect(() => {
     setAboutOpen(false);
-    if (!listedVersion) {
-      setListing({ status: 'idle' });
-      return;
-    }
     let cancelled = false;
     setListing({ status: 'loading' });
     void api
@@ -250,42 +198,8 @@ export function AppProductPage({
     };
   }, [api, manifest.id]);
 
-  // 给 agent 的工具:装着、启用、没收回那一项的,问它的程序要清单(照 Claude 连接器目录列出来)。
-  const toolsOwner = installed && enabled && givesAgentTools(installed) && !revoked.includes('agents:tools') ? installed : null;
-  const [tools, setTools] = useState<Loadable<{ name: string; about: string | null }[] | null>>({ status: 'idle' });
-  // The tools switch's words are its <label> (`for` = the switch); the ⓘ sits beside them, outside, so the switch's
-  // name is the words alone and a click on the ⓘ is never a click on the switch.
-  const disclosureSwitchId = useId();
-  useEffect(() => {
-    if (!toolsOwner || !api.agentTools) {
-      setTools({ status: 'idle' });
-      return;
-    }
-    let cancelled = false;
-    setTools({ status: 'loading' });
-    void api
-      .agentTools({ extensionId: toolsOwner.id })
-      .then((result) => {
-        if (cancelled) return;
-        if (!result.success) throw new Error(result.error ?? 'tools unreadable');
-        setTools({ status: 'ready', data: result.data ?? null });
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        log.warn('App agent tools unreadable:', error);
-        setTools({ status: 'error' });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [api, toolsOwner?.id, toolsOwner?.version]);
-
-  const shownVersion = installed?.version ?? manifest.version;
-  const historyEntry = history.status === 'ready' ? history.data.find((entry) => entry.version === shownVersion) : undefined;
-  const cloudIsShown = cloud?.version === shownVersion;
-  const publishedAt = historyEntry?.publishedAt ?? (cloudIsShown ? cloud?.publishedAt : undefined);
-  const permissions = declaredPermissions(installed ?? manifest);
-  const withdrawn = permissions.filter((permission) => revoked.includes(permission.key)).length;
+  const publishedAt = cloud.publishedAt;
+  const permissions = declaredPermissions(manifest);
   const shots = listing.status === 'ready' ? listing.data.screenshots : [];
   const aboutText = listing.status === 'ready' ? listing.data.about[textLocale] : undefined;
   // 折叠到四行放不下才给「展开」:量的是画出来的高度,换语言、换 App 都重量。
@@ -293,12 +207,9 @@ export function AppProductPage({
     const box = aboutRef.current;
     setAboutClamped(Boolean(box && box.scrollHeight > box.clientHeight + 1));
   }, [aboutText]);
-  const official = Boolean(cloud);
-  const publisher = official ? translate('extensions.official') : (manifest.author ?? translate('extensions.publisherLocal'));
+  const publisher = translate('extensions.official');
   const category = marketCategoryOf(manifest);
-  // 装着的看装着的那一版:它和市场上那版带的程序可以不一样,开关、给哪些 agent 管的是装着的这一份。
-  const declaring = installed ?? manifest;
-  const programs = (declaring.contributes.mcpServers ?? []).map((server) => ('name' in server ? server.name : server.tools));
+  const programs = (manifest.contributes.mcpServers ?? []).map((server) => ('name' in server ? server.name : server.tools));
 
   // ── 截图轮播(照 Google Play:产品页头下面一排图,放不下就横着翻;不写图注)。截图是 defaultLocale 那种语言的界面:
   // 界面语言是别的,就照实说一句是哪种语言的,❌ 当成这种语言的 ──
@@ -341,7 +252,7 @@ export function AppProductPage({
     ) : null;
 
   // ── 关于:市场上这一版的 store/about*.md,页内直接画,默认折叠到四行(照 App Store 产品页的「more」)──
-  const about = listedVersion ? (
+  const about = (
     <section className="mk-dsec" key="about" data-testid="app-product-about">
       <div className="mk-sec-h">
         <h3>{translate('extensions.aboutApp')}</h3>
@@ -386,15 +297,15 @@ export function AppProductPage({
         </p>
       )}
     </section>
-  ) : null;
+  );
 
   // ── 新功能 + 版本历史 ──
   let news: ReactNode = null;
-  if (cloud?.releaseNotes || (history.status === 'ready' && history.data.length > 0)) {
+  if (cloud.releaseNotes || (history.status === 'ready' && history.data.length > 0)) {
     const latest = history.status === 'ready' ? history.data[0] : undefined;
-    const notes = cloud?.releaseNotes ?? latest?.releaseNotes ?? '';
-    const notesVersion = cloud?.version ?? latest?.version ?? manifest.version;
-    const notesDate = cloud?.publishedAt ?? latest?.publishedAt;
+    const notes = cloud.releaseNotes || latest?.releaseNotes || '';
+    const notesVersion = cloud.version;
+    const notesDate = cloud.publishedAt;
     news = (
       <section className="mk-dsec" key="news" data-testid="app-product-news">
         <div className="mk-sec-h">
@@ -403,16 +314,6 @@ export function AppProductPage({
             {translate(historyOpen ? 'extensions.collapse' : 'extensions.detailVersionHistory')}
           </button>
         </div>
-        {installed && menu.autoUpdate && !menu.autoUpdate.on ? (
-          // 停在人自己挑的那一版(装了旧版,或关了自动更新):说一句,和把它打开回来的那一下(VS Code 勾回「Auto Update」即解钉)。
-          <p className="mk-pinned" data-testid="app-product-pinned">
-            {translate('extensions.pinnedAt', { version: installed.version })}
-            {' · '}
-            <button type="button" className="mk-link" disabled={readOnly} onClick={() => menu.autoUpdate?.onToggle(true)}>
-              {translate('extensions.autoUpdateResume')}
-            </button>
-          </p>
-        ) : null}
         <div className="mk-new">
           {notes ? <MarkdownRenderer content={notes} onOpenLink={(url) => { onOpenExternal(url); return true; }} /> : null}
           <span>
@@ -422,18 +323,18 @@ export function AppProductPage({
           </span>
         </div>
         {historyOpen ? (
-          // 装某一版是动作:那台机器做不了事时跟头上那颗一起灰。
+          // 没装时可以挑一版装;装着的换版本在它的设置页,这里只读。那台机器做不了事时跟头上那颗一起灰。
           <fieldset disabled={readOnly} className="contents">
             <div className="mk-vers">
               <VersionHistorySection
                 state={history}
                 extensionId={manifest.id}
-                installedVersion={installed?.version}
-                offeredVersion={installed && menu.autoUpdate?.on ? (cloud?.version ?? null) : null}
+                installedVersion={installedVersion}
+                offeredVersion={null}
                 locale={locale}
                 translate={translate}
                 onOpenExternal={onOpenExternal}
-                onInstallVersion={(version) => onInstallVersion({ extensionId: manifest.id, version })}
+                onInstallVersion={installedVersion ? undefined : (version) => onInstallVersion({ extensionId: manifest.id, version })}
               />
             </div>
           </fieldset>
@@ -463,65 +364,18 @@ export function AppProductPage({
       ))}
     </AddsEntry>
   ));
-  // 给 agent 东西的(带程序,或只带技能说明)都有这一行:「给哪些 agent」和那个开关在这里,❌ 只带技能说明的就够不着。
-  if (givesAgentTools(declaring)) {
+  // 给 agent 东西的(带程序,或只带技能说明):工具名字要问装好的程序,这里只说它带什么;给谁用、开关在设置页。
+  if (givesAgentTools(manifest)) {
     adds.push(
       <AddsEntry key="tools" icon={<Wrench className="size-4" />} label={translate('extensions.addsTools')} testId="app-product-tools">
-          {tools.status === 'ready' && tools.data && tools.data.length > 0 ? (
-            <span className="mk-tools">
-              {tools.data.map((tool) => (
-                <span className="contents" key={tool.name}>
-                  <code title={tool.about ?? undefined}>{tool.name}</code>
-                  <i>{tool.about ?? ''}</i>
-                </span>
-              ))}
-            </span>
-          ) : (
-            <i>
-              {tools.status === 'loading'
-                ? translate('extensions.inspecting')
-                : programs.length === 0
-                  ? translate('extensions.addsToolsSkillsOnly')
-                  : translate(installed ? 'extensions.addsToolsWhenOn' : 'extensions.addsToolsAfterInstall', {
-                      programs: listOf(programs, locale),
-                    })}
-            </i>
-          )}
-          {/* 带程序又带技能说明的:说明那一句跟在工具后面,❌ 再单起一行「技能说明」。 */}
-          {programs.length > 0 && declaring.contributes.skills ? <i>{translate('extensions.addsSkillsText')}</i> : null}
-          {/* 它给每个 agent 的那一行(`<gugu_apps>` 里原样就是这句):人看得到 agent 读到的是什么。 */}
-          {declaring.contributes.instructions ? (
-            <span className="mk-instructions" data-testid="app-product-instructions">
-              <span>{translate('extensions.addsInstructions')}</span>
-              <q>{declaring.contributes.instructions}</q>
-            </span>
-          ) : null}
-          {agentStatus?.lastFailure ? (
-            // 程序在 stderr 上的原话可能是一整段栈,不进文案(仓规 copy-leaks-internal-detail),放在悬停里。
-            <i className="text-foreground-destructive" title={agentStatus.lastFailure.stderrTail || undefined}>
-              {programFailureText(agentStatus.lastFailure, translate)}
-            </i>
-          ) : null}
-          {installed && disclosure && onDisclosureChange ? (
-            <div className="mk-switch-line">
-              {/* owner 10-14:关着的 App 工具 agent 照样用得上(去工具目录里找),那一句放在 ⓘ 里。 */}
-              <span className="inline-flex items-center gap-1">
-                <label htmlFor={disclosureSwitchId}>{translate('extensions.fullDisclosureToggle')}</label>
-                <InfoTooltip label={translate('extensions.fullDisclosureInfoLabel')} content={translate('extensions.fullDisclosureInfo')} />
-              </span>
-              <Switch
-                id={disclosureSwitchId}
-                size="sm"
-                checked={disclosure === 'full'}
-                disabled={readOnly || pending !== undefined}
-                aria-label={translate('extensions.fullDisclosureToggle')}
-                onCheckedChange={(full) => onDisclosureChange(full ? 'full' : 'progressive')}
-              />
-            </div>
-          ) : null}
-          {installed && givenApi && givesAgentTools(installed)
-            ? <AppGivenSection extensionId={installed.id} api={givenApi} machineName={machine} blocked={!enabled ? 'off' : revoked.includes('agents:tools') ? 'revoked' : undefined} />
-            : null}
+        <i>{translate(programs.length === 0 ? 'extensions.addsToolsSkillsOnly' : 'extensions.addsToolsAfterInstall', { programs: listOf(programs, locale) })}</i>
+        {programs.length > 0 && manifest.contributes.skills ? <i>{translate('extensions.addsSkillsText')}</i> : null}
+        {manifest.contributes.instructions ? (
+          <span className="mk-instructions" data-testid="app-product-instructions">
+            <span>{translate('extensions.addsInstructions')}</span>
+            <q>{manifest.contributes.instructions}</q>
+          </span>
+        ) : null}
       </AddsEntry>
     );
   }
@@ -544,9 +398,7 @@ export function AppProductPage({
     <section className="mk-dsec" key="adds" data-testid="app-product-adds">
       <h3>{translate('extensions.whatItAdds')}</h3>
       {/* 一项一行,左边图标,右边名目和一句话;不套框 —— 整页唯一的框留给权限。 */}
-      <fieldset disabled={readOnly} className="contents">
-        <div className="mk-adds">{adds}</div>
-      </fieldset>
+      <div className="mk-adds">{adds}</div>
     </section>
   );
 
@@ -558,27 +410,16 @@ export function AppProductPage({
       <div key={side}>
         <span className="mk-perm-k">{translate(side === 'see' ? 'extensions.permissionsSee' : 'extensions.permissionsDo')}</span>
         {list.map((permission) => {
-          const off = revoked.includes(permission.key);
           const commands = permission.kind === 'capability' && permission.key === 'agents:tools' ? programDetails(manifest, translate) : undefined;
           return (
-            <div className={cn('mk-pl', off && 'is-revoked')} key={permission.key} data-testid={`app-permission-${permission.key}`}>
+            <div className="mk-pl" key={permission.key} data-testid={`app-permission-${permission.key}`}>
               <PermissionIcon permission={permission} side={side} />
               <span>
                 {permission.kind === 'network'
                   ? translate('extensions.permissionsNetwork', { hosts: permission.host })
-                  : describeCapability(permission.key, installed ?? manifest, translate, machine)}
+                  : describeCapability(permission.key, manifest, translate, machine)}
                 {commands ? <pre>{`${commands.caption}\n${commands.lines.join('\n')}`}</pre> : null}
               </span>
-              {installed && onTogglePermission ? (
-                <button
-                  type="button"
-                  className="mk-link"
-                  disabled={readOnly || pending !== undefined || pendingPermissions.includes(permission.key)}
-                  onClick={() => onTogglePermission(permission.key, off)}
-                >
-                  {translate(off ? 'extensions.restore' : 'extensions.revoke')}
-                </button>
-              ) : null}
             </div>
           );
         })}
@@ -591,15 +432,12 @@ export function AppProductPage({
         {translate('extensions.detailPermissions')}
         {phoneAgentCapabilities.length > 0 ? <InfoTooltip label={translate('extensions.phoneAgentCapabilitiesLabel')} content={<>
           <p>{translate('extensions.phoneAgentCapabilitiesInfo')}</p>
-          <ul className="list-disc pl-4">{phoneAgentCapabilities.map((capability) => <li key={capability}>{describeCapability(capability, declaring, translate, machine)}</li>)}</ul>
+          <ul className="list-disc pl-4">{phoneAgentCapabilities.map((capability) => <li key={capability}>{describeCapability(capability, manifest, translate, machine)}</li>)}</ul>
         </>} /> : null}
       </h3>
       <p className="mk-note">
-        {installed && withdrawn > 0
-          ? translate('extensions.permissionsWithdrawnNote', { count: permissions.length, revoked: withdrawn })
-          : translate(permissions.length === 0 ? 'extensions.permissionsNoteNone' : permissionRevocationSupported ? 'extensions.permissionsNoteAsked' : 'extensions.permissionsNoteInstall')}
+        {translate(permissions.length === 0 ? 'extensions.permissionsNoteNone' : 'extensions.permissionsNoteInstall')}
       </p>
-      <fieldset disabled={readOnly} className="contents">
         <div className="mk-card">
           {permissions.length === 0 ? (
             <div className="mk-pl">
@@ -613,7 +451,6 @@ export function AppProductPage({
             </>
           )}
         </div>
-      </fieldset>
     </section>
   );
 
@@ -623,7 +460,7 @@ export function AppProductPage({
     manifest.repository && { label: translate('extensions.linkRepository'), href: manifest.repository },
   ].filter((entry): entry is { label: string; href: string } => Boolean(entry));
   const sourceButton =
-    official && cloud?.source ? (
+    cloud.source ? (
       // 市场记下的出包来源(仓 @ 提交 @ 目录,App 市场方案 10-07):打出这份字节的那份代码。早于这条记录的版本没有。
       <button type="button" className="mk-ext" title={marketSourceLabel(cloud.source)} onClick={() => cloud.source && onOpenExternal(marketSourceUrl(cloud.source))}>
         {translate('extensions.viewSource')}
@@ -633,13 +470,13 @@ export function AppProductPage({
   const side = (
     <aside className="mk-dside">
       <div className="mk-card mk-review" data-testid="app-product-review">
-        {official && cloud ? <ShieldCheck className="size-6" /> : <Shield className="size-6" />}
+        <ShieldCheck className="size-6" />
         <div>
-          <b>{official && cloud ? translate('extensions.infoReviewed', { version: cloud.version }) : translate('extensions.notReviewed')}</b>
+          <b>{translate('extensions.infoReviewed', { version: cloud.version })}</b>
           <span className="mk-review-k">{sourceButton ?? publisher}</span>
         </div>
       </div>
-      {links.length > 0 || manifest.license ? (
+      {links.length > 0 ? (
         <section className="mk-dsec is-side">
           <h3>{translate('extensions.detailLinks')}</h3>
           <div className="mk-side-links">
@@ -649,11 +486,6 @@ export function AppProductPage({
                 <ExternalLink className="size-3" />
               </button>
             ))}
-            {manifest.license ? (
-              <span className="mk-note">
-                {translate('extensions.infoLicense')} {manifest.license}
-              </span>
-            ) : null}
           </div>
         </section>
       ) : null}
@@ -680,30 +512,30 @@ export function AppProductPage({
   );
 
   // ── 头上一排要点:数在上、名目在下,格子之间一根短竖线(照 Google Play)──
-  const size = cloudIsShown && cloud ? formatSize(cloud.bundleBytes) : null;
-  const minApp = (cloudIsShown ? cloud?.minAppVersion : undefined) ?? engineFloor(installed ?? manifest);
+  const size = formatSize(cloud.bundleBytes);
+  const minApp = cloud.minAppVersion ?? engineFloor(manifest);
   const permissionCount =
     permissions.length === 0
       ? translate('extensions.stripPermissionsNone')
       : translate('extensions.stripPermissionsCount', { count: permissions.length });
   const facts: { value: string; caption: string }[] = [
-    { value: `v${shownVersion}`, caption: translate('extensions.stripVersion') },
+    { value: `v${cloud.version}`, caption: translate('extensions.stripVersion') },
     ...(publishedAt ? [{ value: shortDate(publishedAt, locale), caption: translate('extensions.factUpdated') }] : []),
-    ...(size ? [{ value: size, caption: translate('extensions.stripSize') }] : []),
+    { value: size, caption: translate('extensions.stripSize') },
     { value: permissionCount, caption: translate('extensions.detailPermissions') },
     // App Store 产品页头上那一排同样有类别。
     { value: translate(`extensions.category.${category}`), caption: translate('extensions.infoCategory') },
   ];
   // 信息表:正文最后一节,平铺在页上(照 App Store 产品页的「信息」),❌ 收进弹框里。
   const info: [string, ReactNode][] = [
-    [translate('extensions.stripVersion'), `v${shownVersion}`],
-    ...(declaring.platforms?.length ? ([[translate('extensions.infoPlatforms'), listOf(declaring.platforms.map((platform) => translate(`extensions.platform.${platform}`)), locale)]] as [string, ReactNode][]) : []),
+    [translate('extensions.stripVersion'), `v${cloud.version}`],
+    ...(manifest.platforms?.length ? ([[translate('extensions.infoPlatforms'), listOf(manifest.platforms.map((platform) => translate(`extensions.platform.${platform}`)), locale)]] as [string, ReactNode][]) : []),
     ...(publishedAt ? ([[translate('extensions.updatedOn'), longDate(publishedAt, locale)]] as [string, ReactNode][]) : []),
     ...(minApp ? ([[translate('extensions.stripNeedsApp'), translate('extensions.stripAndUp', { version: minApp })]] as [string, ReactNode][]) : []),
-    ...(size ? ([[translate('extensions.stripSize'), size]] as [string, ReactNode][]) : []),
+    [translate('extensions.stripSize'), size],
     [translate('extensions.detailPermissions'), permissionCount],
     [translate('extensions.infoPublisher'), publisher],
-    ...(official && cloud ? ([[translate('extensions.infoReview'), translate('extensions.infoReviewed', { version: cloud.version })]] as [string, ReactNode][]) : []),
+    [translate('extensions.infoReview'), translate('extensions.infoReviewed', { version: cloud.version })],
     [translate('extensions.infoCategory'), translate(`extensions.category.${category}`)],
     ...(manifest.license ? ([[translate('extensions.infoLicense'), manifest.license]] as [string, ReactNode][]) : []),
   ];
@@ -713,9 +545,9 @@ export function AppProductPage({
       {/* 那台机器离线 / server 太旧(#6264):照旧能看(翻截图、看简介、点类似 App),装、卸、收回、装某一版一起灰。 */}
       <button type="button" className="mk-back" onClick={onBack} data-testid="app-product-back">
         <ChevronLeft className="size-3.5" />
-        {translate('extensions.title')}
+        {backLabel ?? translate('extensions.title')}
       </button>
-      <ResourceMenu resource={menu.resource ?? { kind: 'app', target: { kind: 'app-detail', extensionId: manifest.id } }}><header className="mk-dh">
+      <ResourceMenu resource={resource ?? { kind: 'app', target: { kind: 'app-detail', extensionId: manifest.id } }}><header className="mk-dh">
         <div className="mk-dh-main">
           <h2 className={cn('gg-type-display mk-dh-title', deprecated && 'is-deprecated')}>{text.name}</h2>
           {text.subtitle ? <p className="mk-dh-sub">{text.subtitle}</p> : null}
@@ -742,30 +574,22 @@ export function AppProductPage({
                 onClick={onLifecycle}
                 testId="app-product-action"
               />
-              {installed && menu.onForward ? (
-                <Button type="button" variant="ghost" size="lg" onClick={menu.onForward} data-testid="app-product-forward">
+              {onManage ? (
+                <Button type="button" variant="outline" size="lg" onClick={onManage} data-testid="app-product-manage">
+                  {translate('extensions.appSettings')}
+                </Button>
+              ) : null}
+              {onForward ? (
+                <Button type="button" variant="ghost" size="lg" onClick={onForward} data-testid="app-product-forward">
                   <Share2 className="size-4" />
                   {translate('extensions.forward')}
                 </Button>
-              ) : null}
-              {installed ? (
-                <AppMoreMenu
-                  name={text.name}
-                  enabled={enabled}
-                  docked={docked}
-                  disabled={readOnly || pending !== undefined}
-                  translate={translate}
-                  {...menu}
-                  // 「转发」已经在外面了(照 Google Play 的「分享」),菜单里不再放一遍。
-                  onForward={undefined}
-                  testId="app-product-more"
-                />
               ) : null}
             </div>
           </fieldset>
         </div>
         <span className="mk-icon is-hero">
-          <ExtensionMonogram name={text.name} iconDataUrl={cloud?.iconUrl ?? iconDataUrl} />
+          <ExtensionMonogram name={text.name} iconDataUrl={cloud.iconUrl ?? iconDataUrl} />
         </span>
       </header></ResourceMenu>
 
@@ -774,31 +598,24 @@ export function AppProductPage({
           <Check className="size-3.5" />
           {translate('extensions.justInstalled')}
         </div>
+      ) : installedVersion && installedVersion !== cloud.version ? (
+        // 这一页说的是市场上这一版;装着的是别的版本时说一句,❌ 把两边的东西混在一页上。
+        <div className="mk-banner" data-testid="app-product-installed-version">
+          {translate('extensions.installedVersionNote', { version: installedVersion })}
+        </div>
       ) : null}
-      {/* 装不上 / 停止维护 / 这一版被撤回:一句话,带它的下一步。 */}
+      {/* 装不上 / 停止维护:一句话,带它的下一步。 */}
       {compat ? (
         <div className="mk-banner is-warn">
           {marketCompatText(compat, translate)}
         </div>
-      ) : cloud?.newerNeedsApp ? (
+      ) : cloud.newerNeedsApp ? (
         // 给出的这一版装得了,只是还有更新的一版这台咕咕装不了:说出那一版,❌ 藏起来(market.ts `newerNeedsApp`)。
         <div className="mk-banner" data-testid="app-product-newer-needs-app">
           {translate('extensions.newerNeedsApp', { version: cloud.newerNeedsApp })}
         </div>
       ) : null}
-      {installed && notice && notice.kind !== 'update' ? (
-        <fieldset disabled={readOnly && notice.kind !== 'forkBehind'} className="contents">
-          <div className={cn('mk-banner', notice.kind !== 'forkBehind' && 'is-warn')}>
-            <InstalledRowNoticeLine
-              notice={notice}
-              installedVersion={installed.version}
-              translate={translate}
-              onInstallVersion={(version) => onInstallVersion({ extensionId: installed.id, version })}
-              onBrowseReplacement={() => onBrowseReplacement?.(installed.id)}
-            />
-          </div>
-        </fieldset>
-      ) : !installed && deprecated ? (
+      {deprecated ? (
         <div className="mk-banner is-warn">
           {deprecated.replacedBy
             ? translate('extensions.deprecatedRow', { name: deprecated.replacedBy })
@@ -808,16 +625,6 @@ export function AppProductPage({
 
       <div className="mk-dbody">
         <div className="mk-dmain">
-          {installed && variants && onSwitchVariant && (
-            <AppVariantList
-              resource={menu.resource}
-              active={variants.active}
-              variants={variants.variants}
-              disabled={readOnly || pending !== undefined}
-              translate={translate}
-              onSwitch={onSwitchVariant}
-            />
-          )}
           {screenshots}
           {about}
           {news}
@@ -842,7 +649,7 @@ export function AppProductPage({
   );
 }
 
-function PermissionIcon({ permission, side }: { permission: DeclaredPermission; side: 'see' | 'do' }) {
+export function PermissionIcon({ permission, side }: { permission: DeclaredPermission; side: 'see' | 'do' }) {
   // 照原型:看 = 眼睛;做按做的是什么(跑程序 / 替 agent 动手 / 通知 / 替人发话 / 联网),其余一支笔。
   if (side === 'see') return <Eye className="size-4" />;
   if (permission.kind === 'network') return <Globe className="size-4" />;
@@ -857,14 +664,6 @@ function PermissionIcon({ permission, side }: { permission: DeclaredPermission; 
 function longDate(iso: string, locale: string): string {
   try {
     return new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
-}
-
-function shortDate(iso: string, locale: string): string {
-  try {
-    return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(new Date(iso));
   } catch {
     return iso;
   }
@@ -891,7 +690,7 @@ function languageName(language: string): string {
 }
 
 /** 字节数 → 「640 KB」「2.1 MB」。 */
-function formatSize(bytes: number): string {
+export function formatSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
@@ -921,136 +720,4 @@ function AddsEntry({ icon, label, testId, children }: { icon: ReactNode; label: 
 /** manifest 自己写的 `engines.gugu` 下界(`>=0.2.40` / `^0.2.40` → `0.2.40`)。 */
 function engineFloor(manifest: ExtensionManifest): string | null {
   return manifest.engines?.gugu.replace(/^(>=|\^)/, '') ?? null;
-}
-
-function VersionHistorySection({
-  state,
-  extensionId,
-  installedVersion,
-  offeredVersion,
-  locale,
-  translate,
-  onInstallVersion,
-  onOpenExternal,
-}: {
-  state: Loadable<MarketVersionHistoryEntry[]>;
-  extensionId: string;
-  installedVersion: string | undefined;
-  /** 市场给这台机器的那一版,这个 App 还在自动更新时才给:比它旧的那几版一装上就不再自动更新,按钮上说一句。 */
-  offeredVersion: string | null;
-  locale: string;
-  translate: SessionTranslate;
-  onInstallVersion: (version: string) => void;
-  onOpenExternal: (url: string) => void;
-}) {
-  if (state.status === 'idle' || state.status === 'loading') {
-    return <p className="text-foreground-passive">{translate('extensions.loading')}</p>;
-  }
-  if (state.status === 'error') {
-    return <p className="text-foreground-muted">{translate('extensions.historyUnavailable')}</p>;
-  }
-  if (state.data.length === 0) {
-    return <p className="text-foreground-muted">{translate('extensions.historyNone')}</p>;
-  }
-  return (
-    <ul className="xp-history">
-      {state.data.map((entry) => (
-        <VersionHistoryRow
-          key={entry.version}
-          entry={entry}
-          extensionId={extensionId}
-          installedVersion={installedVersion}
-          pins={pinsAutoUpdate(entry.version, offeredVersion)}
-          locale={locale}
-          translate={translate}
-          onInstallVersion={onInstallVersion}
-          onOpenExternal={onOpenExternal}
-        />
-      ))}
-    </ul>
-  );
-}
-
-/**
- * 一版一行:版本 · 日期 · 这版第一句 · 右边一个词。右边那个词:装着的写「装着的这一版」;比装着的新 =「更新」,
- * 旧 =「改用 vX」(原型的版本历史);没装 =「安装」;装不了的写原因;撤回的那版把原因放在句子那一格、右边什么都不放。
- */
-function VersionHistoryRow({
-  entry,
-  extensionId,
-  installedVersion,
-  pins,
-  locale,
-  translate,
-  onInstallVersion,
-  onOpenExternal,
-}: {
-  entry: MarketVersionHistoryEntry;
-  extensionId: string;
-  installedVersion: string | undefined;
-  /** 装上它,这个 App 就不再自动更新(`pinsAutoUpdate`)。 */
-  pins: boolean;
-  locale: string;
-  translate: SessionTranslate;
-  onInstallVersion: (version: string) => void;
-  onOpenExternal: (url: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const isInstalled = entry.version === installedVersion;
-  const yankedReason = entry.yanked ? translate('extensions.historyYanked', { note: entry.yanked.reason }) : null;
-  const compatReason = entry.platformRefusal
-    ? translate('extensions.platformVersionUnavailable')
-    : entry.compat
-    ? marketCompatText(entry.compat, translate)
-    : null;
-  const firstLine = (entry.releaseNotes.split(/\r?\n/).find((line) => line.trim() !== '') ?? '')
-    .trim()
-    .replace(/^(?:[-*+]|\d+[.)]|#{1,6})\s+/, '');
-  const actionLabel = !installedVersion
-    ? translate('extensions.installAction')
-    : compareExtensionVersions(entry.version, installedVersion) > 0
-      ? translate('extensions.updateAction')
-      : translate('extensions.useVersion', { version: entry.version });
-
-  return (
-    <li data-testid={`extension-history-${extensionId}-${entry.version}`}>
-      <div className="xp-history-row">
-        <span className={cn('xp-history-version', entry.yanked && 'is-yanked')}>{entry.version}</span>
-        <span className="xp-history-date">{shortDate(entry.publishedAt, locale)}</span>
-        {yankedReason ? (
-          <span className="xp-history-note is-warn">{yankedReason}</span>
-        ) : (
-          <button
-            type="button"
-            className={cn('xp-history-note', expanded && 'is-open')}
-            aria-expanded={expanded}
-            onClick={() => setExpanded((value) => !value)}
-          >
-            {expanded ? '' : firstLine}
-          </button>
-        )}
-        <span className="xp-history-action">
-          {isInstalled ? (
-            <span className="xp-state">{translate('extensions.stripThisInstalled')}</span>
-          ) : yankedReason ? null : compatReason ? (
-            <span className="xp-state">{compatReason}</span>
-          ) : (
-            <button
-              type="button"
-              className="xp-link"
-              title={pins ? translate('extensions.pinHint') : undefined}
-              onClick={() => onInstallVersion(entry.version)}
-            >
-              {actionLabel}
-            </button>
-          )}
-        </span>
-      </div>
-      {expanded && !yankedReason ? (
-        <div className="xp-history-body">
-          <MarkdownRenderer content={entry.releaseNotes} onOpenLink={(url) => { onOpenExternal(url); return true; }} />
-        </div>
-      ) : null}
-    </li>
-  );
 }

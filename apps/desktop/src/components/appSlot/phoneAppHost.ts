@@ -13,15 +13,15 @@ import { platform } from '../../platform'
 import { getRendererAccessToken } from '../../lib/sessionPublication'
 import { AppFileError, contentTypeOf, createAppFiles, rosterMoved, tooLargeError, type ChatFileRef, type FileSurface, type MemberChange } from '../../session/shared/extensions/app-files-core'
 import { AppSendError, dispatchFromApp, type AppSendPlatform } from '../../session/shared/extensions/app-send-core'
+import { answerAgentPick, pickAgentAsk } from '../../session/shared/extensions/app-dispatch-core'
 import { pickDispatchTarget } from '../chat/dispatchAsk'
 import { chatOf, createAppMessages } from '../../session/shared/extensions/app-messages-core'
-import { createAppForum, type ForumChannel } from '../../session/shared/extensions/app-forum-core'
+import { createAppCloud, type CloudChannel } from '../../session/shared/extensions/app-cloud-core'
 import { dataClient } from '../../lib/supabase'
 import { subscribeAuthenticatedRealtimeChannel, unsubscribeAuthenticatedRealtimeChannel } from '../../lib/realtimeChannel'
 import { FileSyncRelay, webSocketUrl, type PageSync } from '../../session/shared/extensions/file-sync-core'
 import { userIdFromSupabaseAccessToken } from '@gugu/core/cloud/runtimeAuthProvider'
 import {
-  APP_FORUM_CONSENT_EVENT,
   APP_FILE_MAX_BYTES,
   APP_FRAME_MARKER,
   SYNC_PORT_WINDOW_MESSAGE,
@@ -31,11 +31,11 @@ import {
   fileSearchOf,
   isWorkspace,
   sessionWorkspace,
+  workspaceFolder,
   workspaceSession,
   workspaceAppFileChunk,
   placeOf,
   sessionIdOf,
-  type AppForumConsentDetail,
   type AppFileUpload,
   type AppOpenWithDetail,
   type AppShowMessageDetail,
@@ -44,6 +44,7 @@ import {
   type PeekTarget,
 } from '../../session/shared/extensions/app-runtime-protocol'
 import {
+  chatForCapabilities,
   bridgeFailure,
   callRefusal,
   EXTENSION_API_VERSION,
@@ -69,8 +70,9 @@ import { cachedPhoneAgents, phoneDispatch } from './phoneDispatch'
 import { onPhoneAppState, phoneAppState } from './phoneAppState'
 import { subscribeDeviceSessions } from '../../session/shared/remote-sessions/session-directory'
 import { callOnComputer } from './phoneProgramCall'
+import { isImplicitSessionHomeProjectId } from '../../session/shared/core/projects/session-home-project'
 import { openPhoneWorkingCopyFile, type ReadWorkingCopyChunk } from './phone-working-copy-file'
-import { appDeviceId, followsSessionMachine, notOnSessionMachine } from '../../session/shared/extensions/machine-call'
+import { appDeviceId, folderElsewhereRefusal, followsSessionMachine, notOnSessionMachine } from '../../session/shared/extensions/machine-call'
 import { HOSTED_PROGRAM_ELSEWHERE } from '../../session/shared/extensions/program-place'
 import { rendererFileServiceUrl } from '../../lib/chatFolder'
 import { AppModalSessions, type AppModalFocus } from '../../session/shared/extensions/app-modal'
@@ -119,6 +121,8 @@ export interface PhoneAppBinding {
   capabilities: readonly ExtensionCapability[]
   locale: string
   themeMode: 'light' | 'dark'
+  /** The signed-in person's own 咕咕号 (`operator.guguNumber`): absent before their profile is read. */
+  guguNumber?: number | null
 }
 
 interface HostedFrame {
@@ -180,26 +184,21 @@ const sendPlatform: AppSendPlatform = {
 }
 /** `gugu.messages`: the desktop's answer (`app-messages-core.ts`), as the person signed in to this page. */
 const messagesForApp = createAppMessages(sendPlatform)
-/** A forum channel on this page's realtime client (signed in as the person; re-subscribed when it drops). */
-const forumChannel: ForumChannel = (topic, event, onPayload, onSubscribed) => {
+/** A cloud channel on this page's realtime client (signed in as the person; re-subscribed when it drops). */
+const cloudChannel: CloudChannel = (topic, event, onPayload, onSubscribed) => {
   const channel = subscribeAuthenticatedRealtimeChannel(
     () => dataClient
       .channel(topic, { config: { private: true, broadcast: { self: false, ack: true } } })
       .on('broadcast', { event }, (message) => onPayload((message.payload ?? {}) as Record<string, unknown>)),
-    `forum:${topic}`,
+    `cloud:${topic}`,
     { onSubscribed, reconnectWhenIdle: false },
   )
   return () => {
     void unsubscribeAuthenticatedRealtimeChannel(channel)
   }
 }
-/** `gugu.forum`: the desktop's answer (`app-forum-core.ts`), as the person signed in to this page. */
-const forumForApp = createAppForum({ account: () => sendPlatform.account(), channel: forumChannel })
-/** The forum consent sheet (ForumConsent: points, assigning), drawn by this page's shell as the desktop window draws it. */
-const askForumConsent = (detail: AppForumConsentDetail) => {
-  window.dispatchEvent(new CustomEvent<AppForumConsentDetail>(APP_FORUM_CONSENT_EVENT, { detail }))
-  return { confirming: true }
-}
+/** `gugu.cloud`: the desktop's answer (`app-cloud-core.ts`), as the person signed in to this page. */
+const cloudForApp = createAppCloud({ account: () => sendPlatform.account(), channel: cloudChannel })
 
 const files = createAppFiles({
   async resolveFile(ref, actorId, options) {
@@ -297,7 +296,12 @@ const failure = (error: unknown): { success: false; error: string } => ({ succes
 const OPENING_LINK_TTL_MS = 30_000
 const openingLinks: { extensionId: string; chatId: string | null; itemId: string | null; sessionId?: string; event: ExtensionHostEvent; expiresAt: number }[] = []
 export function holdPlaceForOpeningPage(chatId: string, itemId: string, candidate: FileOpenerCandidate, at: Record<string, string>): void {
-  openingLinks.push({ extensionId: candidate.extensionId, chatId, itemId, event: placeLink(candidate, at, itemId), expiresAt: Date.now() + OPENING_LINK_TTL_MS })
+  const event = placeLink(candidate, at, itemId)
+  // A page of that file already open is told now: its tab is brought forward, not opened again.
+  const open = [...frames.values()].filter(({ binding }) => binding.extensionId === candidate.extensionId && binding.chatId === chatId
+    && binding.itemId === itemId && (event.type !== 'link' || event.tab === binding.tabName))
+  for (const hosted of open) hosted.deliver(event)
+  if (open.length === 0) openingLinks.push({ extensionId: candidate.extensionId, chatId, itemId, event, expiresAt: Date.now() + OPENING_LINK_TTL_MS })
 }
 function takeOpeningLinks(binding: PhoneAppBinding): ExtensionHostEvent[] {
   const now = Date.now()
@@ -372,13 +376,15 @@ export function hostAppFrame(
     /** 「用 X 打开」 resolved: the slot opens that App on the file, or asks when several claim it. */
     openWith(detail: AppOpenWithDetail): void
     navigate?(delta: -1 | 1): Promise<boolean>
+    /** `navigation.onBack`: the page holds a Back step of its own (a folder), or lets go of it. A host without it has no Back to give. */
+    claimBack?(claimed: boolean): void
     openWorkingCopy?(path: string, read: ReadWorkingCopyChunk): void
     /** G1 Beside the page, over its frame: the frame stays as it was, for the way back. A host without it refuses a peek. */
     peek?(target: PeekTarget): void
     /** `setTabTitle` / `setTabBadge`: drawn on the header of the slot the App is in (摩擦单 F13). */
     chrome(detail: { title?: string | null; badge?: string | number | null; error?: string | null }): void
   },
-): { pageId: number; update(binding: PhoneAppBinding): void; filesChanged(changes: readonly { chatId: string; itemIds: readonly string[] }[]): Promise<void>; membersChanged(changes: readonly MemberChange[]): void; command(commandId: string): void; programNotified(notification: { server: string; method: string; params?: unknown }): void; dispose(): void } {
+): { pageId: number; update(binding: PhoneAppBinding): void; filesChanged(changes: readonly { chatId: string; itemIds: readonly string[] }[]): Promise<void>; membersChanged(changes: readonly MemberChange[]): void; command(commandId: string): void; back(): void; programNotified(notification: { server: string; method: string; params?: unknown }): void; dispose(): void } {
   const pageId = nextPageId++
   const modalHosts = new Map<ReturnType<typeof hostAppFrame>, PhoneAppBinding>()
   // Only ever the App's own document, both ways (appOrigin.ts).
@@ -416,8 +422,9 @@ export function hostAppFrame(
   frames.set(pageId, hosted)
 
   const send = (message: HostToFrame) => channel.post(message)
-  /** This page's forum subscriptions (`gugu.forum.onChanged`), by post id or 'feed': gone with the page. */
-  const forumWatches = new Map<string, () => void>()
+  /** This page's cloud subscriptions (`gugu.cloud.on`), by topic and event: gone with the page. */
+  const cloudWatches = new Map<string, () => void>()
+  const cloudApp = () => ({ id: hosted.binding.extensionId, origin: installedExtensionsStore.origins[hosted.binding.extensionId] })
   const event = (hostEvent: ExtensionHostEvent) => send({ m: APP_FRAME_MARKER, t: 'event', event: hostEvent })
   /** The page, and the one chat file the host handed it (`ctx.file`): every call names its own target (真源原则 13). */
   const surface = (): FileSurface => ({
@@ -484,7 +491,7 @@ export function hostAppFrame(
     tabId: hosted.binding.tabId,
     ...(hosted.binding.modal ? { modal: { data: hosted.binding.modal.data } } : {}),
     ...(hosted.binding.widget ? { widget: { messageId: hosted.binding.widget.messageId, data: hosted.binding.widget.data, sender: hosted.binding.widget.senderId } } : {}),
-    ...(chat ? { chat: { ...chat, ...(contextHasMembers() ? { members: members ?? [] } : {}) } } : {}),
+    ...(chat ? { chat: { ...chatForCapabilities(chat, hosted.binding.capabilities), ...(contextHasMembers() ? { members: members ?? [] } : {}) } } : {}),
     ...(hosted.binding.itemId && hosted.binding.chatId ? { file: { chat: hosted.binding.chatId, id: hosted.binding.itemId } } : {}),
     ...(hosted.binding.session
       ? {
@@ -493,18 +500,23 @@ export function hostAppFrame(
             sessionId: hosted.binding.session.id,
             deviceId: hosted.binding.session.deviceId,
             ...(hosted.binding.session.deviceLabel ? { deviceLabel: hosted.binding.session.deviceLabel } : {}),
-            ...(hosted.binding.session.projectId ? { projectId: hosted.binding.session.projectId } : {}),
+            ...(hosted.binding.session.projectId ? { projectId: hosted.binding.session.projectId, ...(isImplicitSessionHomeProjectId(hosted.binding.session.projectId) ? { taskHome: true as const } : {}) } : {}),
           },
         }
       : {}),
     // A page on the phone is the person's to work: no agent opens one there (owner 10-14).
-    operator: { kind: 'person' },
+    operator: hosted.binding.guguNumber !== undefined ? { kind: 'person', guguNumber: hosted.binding.guguNumber } : { kind: 'person' },
     locale: hosted.binding.locale,
     themeMode: hosted.binding.themeMode,
     capabilities: hosted.binding.capabilities.filter((capability) => PHONE_CAPABILITIES.includes(capability)),
     layout: { visible: true, fullscreen: Boolean(hosted.binding.modal), width: frame.clientWidth, height: frame.clientHeight },
   })
 
+  /** A project folder's machine as the phone knows it: its name for what a refusal says, and whether it is there. */
+  const folderMachine = (deviceId: string) => {
+    const device = readCachedDevices().find((known) => known.device_id === deviceId)
+    return { deviceId, deviceLabel: device?.label || device?.hostname || null, online: device?.is_online }
+  }
   /** `gesture`: whether the person's input landed in this App (its gate's reading, or its command just tapped). */
   const answer = async (method: string, args: Record<string, unknown>, gesture: boolean): Promise<unknown> => {
     // Once, from the verb's row (BRIDGE_VERBS), in the words every host says it — a phone frame is a page.
@@ -526,6 +538,15 @@ export function hostAppFrame(
       if (session && followsSessionMachine(manifest, method, args)) {
         return callOnComputer({ extensionId: manifest.id, extensionName: manifest.name, version: manifest.version }, session, method, args).then(computerReply)
       }
+    }
+    // A project's folder names its own machine, wherever this page is.
+    const folder = verbFacts(method)?.machine === 'place' ? workspaceFolder((args.place ?? args.ref) as { workspace?: string } | null) : null
+    if (folder) {
+      const refusal = folderElsewhereRefusal(method, (capability) => hosted.binding.capabilities.includes(capability))
+      if (refusal) throw refusal
+      const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
+      if (!manifest) refused('not-installed', `${hosted.binding.extensionId} is not installed on this phone`)
+      return callOnComputer({ extensionId: manifest.id, extensionName: manifest.name, version: manifest.version }, folderMachine(folder.deviceId), method, args).then(computerReply)
     }
     switch (method) {
       case 'linkTo': {
@@ -559,6 +580,8 @@ export function hostAppFrame(
               const childBinding = { ...modal.binding, modal: { id: modal.id, data: modal.options.data } }
               const childHost = hostAppFrame(childFrame, childBinding, {
                 ...hooks,
+                // Its opener's Back is not the modal's to hold or let go (its hello would release the opener's claim).
+                claimBack: undefined,
                 // The content page's initial hello must not clear its opener's title, badge or error.
                 chrome(detail) { if (detail.error) hooks.chrome({ error: detail.error }) },
               })
@@ -588,6 +611,12 @@ export function hostAppFrame(
         if (args.delta !== -1 && args.delta !== 1) return refused('invalid', 'Navigation delta must be -1 or 1')
         if (!hosted.binding.navigation?.[args.delta === -1 ? 'canBack' : 'canForward']) return false
         return hooks.navigate?.(args.delta) ?? false
+      case 'navigationClaimBack':
+        // Only the page that is the slot's page holds Back: a modal's Back closes the modal (its sheet), a card in a
+        // message has no Back of its own.
+        if (!hooks.claimBack || hosted.binding.modal || hosted.binding.widget) return false
+        hooks.claimBack(args.claimed === true)
+        return true
       case 'getContext':
         // A pill's place waiting for this page goes first, whatever the answer: the frame holds it until `onLink`.
         for (const link of takeOpeningLinks(hosted.binding)) event(link)
@@ -607,6 +636,9 @@ export function hostAppFrame(
         return Promise.resolve(undefined)
       case 'setTabBadge':
         hooks.chrome({ badge: pageArgument('setTabBadge', args) })
+        return Promise.resolve(undefined)
+      // A page's unsaved edits, with no tab to mark here: nothing to draw.
+      case 'setTabDirty':
         return Promise.resolve(undefined)
       case 'openBrowserTab': {
         const url = String(args.url ?? '')
@@ -650,38 +682,26 @@ export function hostAppFrame(
         return files.chats().then((chats) => ({ chats }))
       case 'chatsMembers':
         return Promise.resolve().then(() => files.members(chatOf(args))).then((members) => ({ members }))
-      // 论坛 (9): as the person; a bounty's points move only behind the shell's own sheet.
-      case 'forumList':
-        return forumForApp.list(args)
-      case 'forumRead':
-        return forumForApp.read(args.postId)
-      case 'forumReply':
-        return forumForApp.reply(args.postId, args.text, { replyTo: args.replyTo })
-      case 'forumReact':
-        return forumForApp.react(args)
-      case 'forumRemove':
-        return forumForApp.remove(args)
-      case 'forumBlock':
-        return forumForApp.block(args.userId, args.on)
-      case 'forumAssign':
-        return forumForApp.assign(args.postId, args.agentId, pickDispatchTarget)
-      case 'forumPost':
-        return args.bounty === undefined || args.bounty === null
-          ? forumForApp.postPlain(args)
-          : Promise.resolve().then(() => askForumConsent({ type: 'bounty', draft: forumForApp.bountyDraft(args) }))
-      case 'forumAward':
-        return forumForApp.awardDraft(args.postId, args.awards).then((draft) => askForumConsent({ type: 'award', draft }))
-      case 'forumSubscribe':
+      // `gugu.cloud` (31), as the person.
+      case 'cloudRead':
+        return cloudForApp.read(cloudApp(), args.name, (args.args ?? {}) as Record<string, unknown>)
+      case 'cloudWrite':
+        return cloudForApp.write(cloudApp(), args.name, (args.args ?? {}) as Record<string, unknown>)
+      case 'cloudSubscribe':
         return Promise.resolve().then(() => {
-          const target = String(args.target ?? '')
-          if (!forumWatches.has(target)) forumWatches.set(target, forumForApp.watch(args.target, (change) => event({ type: 'forumChanged', target, change })))
+          const topic = String(args.topic ?? '')
+          const heardEvent = String(args.event ?? '')
+          const key = `${topic}\n${heardEvent}`
+          if (!cloudWatches.has(key)) cloudWatches.set(key, cloudForApp.watch(cloudApp(), args.topic, args.event, (heard) => event({ type: 'cloudHeard', topic, event: heardEvent, heard })))
         })
-      case 'forumUnsubscribe': {
-        const target = String(args.target ?? '')
-        forumWatches.get(target)?.()
-        forumWatches.delete(target)
+      case 'cloudUnsubscribe': {
+        const key = `${String(args.topic ?? '')}\n${String(args.event ?? '')}`
+        cloudWatches.get(key)?.()
+        cloudWatches.delete(key)
         return Promise.resolve(undefined)
       }
+      case 'pickAgent':
+        return Promise.resolve().then(() => pickDispatchTarget(pickAgentAsk(args))).then((picked) => answerAgentPick(args, picked, (name, given) => cloudForApp.write(cloudApp(), name, given)))
       case 'showMessage':
         return files.messageToShow(args as never).then((detail) => hooks.showMessage(detail))
       case 'showSession': {
@@ -703,6 +723,15 @@ export function hostAppFrame(
         if (isWorkspace(ref)) {
           if (tab !== undefined) refused('invalid', 'openWith tab is only available for chat files')
           if (!hooks.openWorkingCopy) refused('invalid', 'No file preview in this surface')
+          const folder = workspaceFolder(ref)
+          if (folder) {
+            // Read in pieces on its machine (`filesRead`, gated above) into the phone's own file preview.
+            const refusal = folderElsewhereRefusal('filesRead', (capability) => hosted.binding.capabilities.includes(capability))
+            if (refusal) throw refusal
+            const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
+            if (!manifest) refused('not-installed', 'This App is not installed')
+            return openPhoneWorkingCopyFile({ extensionId: manifest.id, extensionName: manifest.name, version: manifest.version }, folderMachine(folder.deviceId), ref, hooks.openWorkingCopy)
+          }
           const id = workspaceSession(ref)
           const listed = id ? listedSession(readCachedDevices(), liveDeviceSessions(), id) : null
           if (!listed || !('row' in listed)) refused('not-found', 'This session is not in your task list')
@@ -751,7 +780,10 @@ export function hostAppFrame(
       case 'showContextMenu': {
         const menu = appContextMenuOf(args)
         const rect = frame.getBoundingClientRect()
-        return showRendererContentMenu(menu.items, { x: rect.x + menu.x, y: rect.y + menu.y })
+        const picked = await showRendererContentMenu(menu.items, { x: rect.x + menu.x, y: rect.y + menu.y })
+        // A pick is the person's input in this App, as a tap on one of its commands is (@@@command-gesture).
+        if (picked !== null) commandGestureUntil = performance.now() + ACTIVATION_LIFETIME_MS
+        return picked
       }
       case 'filesViewPreferences':
         return files.viewPreferences(chatPlace(args.place), args.showAppData as boolean | undefined)
@@ -867,6 +899,7 @@ export function hostAppFrame(
       heldPort = null
       portWanted = false
       hooks.chrome({ title: null, badge: null, error: null })
+      hooks.claimBack?.(false)
       return
     }
     if (message.t === 'sync-port') {
@@ -917,7 +950,7 @@ export function hostAppFrame(
       previous = snapshot()
       stateChanged()
       // Reuse the parent's existing subscriptions and host events for its sandboxed modal pages too.
-      for (const [childHost, childBinding] of modalHosts) childHost.update({ ...childBinding, locale: binding.locale, themeMode: binding.themeMode, capabilities: binding.capabilities })
+      for (const [childHost, childBinding] of modalHosts) childHost.update({ ...childBinding, locale: binding.locale, themeMode: binding.themeMode, capabilities: binding.capabilities, guguNumber: binding.guguNumber })
       // Moved to a file a pill is waiting to open: its place is this page's now (after the context that names the file).
       const placed = () => { if (moved) for (const link of takeOpeningLinks(hosted.binding)) event(link) }
       // The theme is part of it: the page's ui.js picks its palette from context.themeMode.
@@ -946,6 +979,10 @@ export function hostAppFrame(
       commandGestureUntil = performance.now() + ACTIVATION_LIFETIME_MS
       event({ type: 'command', commandId })
     },
+    /** The host's Back, to the page holding a Back step of its own (`claimBack`). */
+    back() {
+      event({ type: 'back' })
+    },
     /** owner 10-16 The App's program on the session's computer sent a notification (`onProgramNotification`). */
     programNotified(notification) {
       for (const childHost of modalHosts.keys()) childHost.programNotified(notification)
@@ -957,8 +994,8 @@ export function hostAppFrame(
       void phoneModals.pageGone(pageId)
       for (const { source } of watched.values()) readFiles.forget(source)
       watched = new Map()
-      for (const stop of forumWatches.values()) stop()
-      forumWatches.clear()
+      for (const stop of cloudWatches.values()) stop()
+      cloudWatches.clear()
       window.removeEventListener('message', onMessage)
       relay.pageGone(pageId)
       frames.delete(pageId)

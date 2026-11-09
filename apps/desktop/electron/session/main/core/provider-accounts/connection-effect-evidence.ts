@@ -18,7 +18,7 @@ const attempts = new AsyncLocalStorage<ManagedConnectionAttempt>();
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value,(_key,item)=>item && typeof item==='object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a],[b])=>a<b?-1:a>b?1:0)) : item)).digest('hex');
 const key = (attempt: ManagedConnectionAttempt) => `connection-effect:${hash([attempt.ownerId,attempt.deviceId,attempt.operationId])}`;
 const revokedKey=(provider:string,account:string)=>`connection-revoked-account:${hash([provider,account])}`;
-export const isManagedConnectionRevoked=(db:AppDb,provider:string,account:string):boolean=>read(db,revokedKey(provider,account))!==undefined;
+export const isManagedConnectionRevoked=(db:AppDb|DrizzleTx,provider:string,account:string):boolean=>read(db,revokedKey(provider,account))!==undefined;
 const providerKey = (attempt: ManagedConnectionAttempt) => `connection-effect-provider:${hash([attempt.ownerId,attempt.deviceId,attempt.providerId])}`;
 function read(tx: AppDb | DrizzleTx, name: string): string | undefined {
   return tx.select({ value: kv.value }).from(kv).where(eq(kv.key,name)).get()?.value;
@@ -32,6 +32,8 @@ function write(tx: DrizzleTx, name: string, value: unknown): void {
 // authorization begun after revision N supersedes the remove at N, even when
 // that remove is admitted late and receives a larger attempt sequence number.
 const bindingKey=(provider:string,account:string)=>`connection-account-generation:${hash([provider,account])}`;
+/** The explicit authorization currently bound to an account; changes with every newer authorization. */
+export const managedConnectionBinding=(db:AppDb|DrizzleTx,provider:string,account:string):string|null=>read(db,bindingKey(provider,account))??null;
 function order(a: ManagedConnectionAttempt,b: ManagedConnectionAttempt): number {
   const epoch=BigInt(a.authorityEpoch)-BigInt(b.authorityEpoch);
   if(epoch!==0n)return epoch>0n?1:-1;

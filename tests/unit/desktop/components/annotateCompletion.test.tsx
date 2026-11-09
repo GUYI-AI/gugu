@@ -2,7 +2,6 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, message } from '../../../support/testHarness'
-import { resolveReplyDelivery } from '../../../../packages/core/src/shared/replyDelivery'
 import { addShape, newDocument } from '../../../../apps/desktop/src/components/imageAnnotate/annotateModel'
 import { useAnnotateActions } from '../../../../apps/desktop/src/components/imageAnnotate/useAnnotateActions'
 import { AnnotateDoneMenu } from '../../../../apps/desktop/src/components/imageAnnotate/AnnotateDoneMenu'
@@ -46,7 +45,9 @@ describe('annotation completion', () => {
       chat: 'group', text: '① Check this', images: [{ name: 'image-annotated.png', type: 'image/png', bytes: expect.any(ArrayBuffer) }],
     })
     await expect(calls.compose.mock.calls[0][0].account()).resolves.toEqual({ token: 'test-token', userId: 'me' })
-    expect(calls.draft).toHaveBeenCalledWith({ ...await calls.compose.mock.results[0].value, quote: await calls.original.mock.results[0].value })
+    // Only the annotated image and its notes: Done never quotes the original message (owner 11-07).
+    expect(calls.draft).toHaveBeenCalledWith(await calls.compose.mock.results[0].value)
+    expect(calls.draft.mock.calls[0][0]).not.toHaveProperty('quote')
     expect(calls.done).toHaveBeenCalledOnce()
   })
   it('keeps the editor open when PNG export or composer preparation fails', async () => {
@@ -78,23 +79,29 @@ describe('annotation completion', () => {
     expect(calls.compose).not.toHaveBeenCalled()
     expect(calls.done).not.toHaveBeenCalled()
   })
-  it.each([true, false])('keeps the original reply and audience in the composer (whisper=%s)', async whisper => {
-    const original = message({ id: 'agent-image', chat_id: 'group', sender_user_id: 'agent', to_user_ids: ['me'], is_whisper: whisper })
-    calls.original.mockResolvedValue(original)
+  it.each([
+    { sender_user_id: 'agent', to_user_ids: ['me'], peer: 'agent' },
+    { sender_user_id: 'me', to_user_ids: ['agent'], peer: 'agent' },
+  ])('keeps a whisper source private to the same pair without quoting it ($sender_user_id → $to_user_ids)', async ({ peer, ...pair }) => {
+    calls.original.mockResolvedValue(message({ id: 'original', chat_id: 'group', is_whisper: true, ...pair }))
     await harness.render(createNode(Probe))
     await act(async () => { await actions.putInComposer() })
-    const quote = calls.draft.mock.calls[0][0].quote
-    expect(quote).toEqual(original)
-    expect(resolveReplyDelivery({ senderUserId: 'me', source: quote })).toEqual({ toUserIds: whisper ? ['agent'] : [], isWhisper: whisper })
-    expect(quote.sender_user_id).toBe('agent')
+    expect(calls.draft).toHaveBeenCalledWith({ ...await calls.compose.mock.results[0].value, whisperTo: peer })
+    expect(calls.draft.mock.calls[0][0]).not.toHaveProperty('quote')
     expect(calls.done).toHaveBeenCalledOnce()
+  })
+  it('leaves a public source public: no audience, no quote', async () => {
+    calls.original.mockResolvedValue(message({ id: 'original', chat_id: 'group', to_user_ids: ['agent'], is_whisper: false }))
+    await harness.render(createNode(Probe))
+    await act(async () => { await actions.putInComposer() })
+    expect(calls.draft.mock.calls[0][0]).toEqual(await calls.compose.mock.results[0].value)
   })
   it('refuses a missing, wrong-chat or inaccessible private source before preparing the draft', async () => {
     await harness.render(createNode(Probe))
-    for (const original of [null, message({ chat_id: 'other' }), message({ chat_id: 'group', is_whisper: true, to_user_ids: ['someone-else'] })]) {
+    for (const original of [null, message({ chat_id: 'other' }), message({ chat_id: 'group', is_whisper: true, sender_user_id: 'a', to_user_ids: ['someone-else'] })]) {
       calls.original.mockResolvedValue(original)
       await act(async () => { await actions.putInComposer() })
-      expect(actions.error).toBeTruthy()
+      expect(actions.error).toBe(zh.imageAnnotate.originalUnavailable)
     }
     expect(calls.output).not.toHaveBeenCalled()
     expect(calls.draft).not.toHaveBeenCalled()

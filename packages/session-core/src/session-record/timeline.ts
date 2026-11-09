@@ -31,6 +31,7 @@ import type {
 import { TOOL_IMAGE_FETCH_LIMIT } from './contract';
 import { questionAnswered, readQuestion } from './sources/question-tools';
 import { findToolImage, findToolItem } from './tool-image';
+import { TIMELINE_ARCHIVE_MAX_SOURCE_BYTES } from './archive-budget';
 
 /**
  * 一条已经折算好的时间线的存档。
@@ -47,6 +48,8 @@ export const TIMELINE_ARCHIVE_VERSION = 7;
 
 export type TimelineArchive = {
   readonly version: number;
+  /** Total native transcript bytes consumed, including children; absent in legacy caches. */
+  readonly sourceBytes?: number;
   /** 记录源自己的续读点（含它的身份指纹）。 */
   readonly resume: SessionRecordResume;
   readonly epoch: string;
@@ -221,6 +224,8 @@ class RecordTimeline implements SessionTimeline {
   private imageOrigins = new Map<string, RecordImageRef>();
   /** 存档装回来、图只剩位置的那些工具条目:条目 id → 每一张图的位置(与条目的 `imageRefs` 对齐)。 */
   private archivedImages = new Map<string, readonly RecordImageRef[]>();
+  /** Snapshot reads: a picture's position by its tool call, as the fold assigns item ids later. */
+  private snapshotImages = new Map<string, readonly RecordImageRef[]>();
   /** 这一代是被什么换掉的。拿旧 epoch 游标来续的人要看到真原因，不是笼统的 epoch_changed。 */
   private lastResetReason: RecordResetReason | null = null;
   private needsPublish = false;
@@ -317,8 +322,11 @@ class RecordTimeline implements SessionTimeline {
    */
   async archive(): Promise<TimelineArchive | null> {
     if (this.disposed) return null;
-    const resume = await this.source.resumePoint?.();
-    if (!resume) return null;
+    // Each source debits its already-known byte offset before copying resume
+    // state. No JSON-value walk, entry limit, or native-source-count limit.
+    const budget = { remainingBytes: TIMELINE_ARCHIVE_MAX_SOURCE_BYTES };
+    const resume = await this.source.resumePoint?.(budget);
+    if (!resume || budget.remainingBytes < 0) return null;
     const { parser, images } = this.parserForArchive();
     const published: TurnPublishArchive[] = [];
     for (const [turnId, entry] of this.published) {
@@ -332,6 +340,7 @@ class RecordTimeline implements SessionTimeline {
     }
     return {
       version: TIMELINE_ARCHIVE_VERSION,
+      sourceBytes: TIMELINE_ARCHIVE_MAX_SOURCE_BYTES - budget.remainingBytes,
       resume,
       epoch: this.epochValue,
       seq: this.seq,
@@ -400,8 +409,9 @@ class RecordTimeline implements SessionTimeline {
     if (found.ok || found.code !== 'no_such_image') return found;
     // 存档装回来的条目:图只剩类型和字数,位置在 `archivedImages` 里。
     const node = findToolItem(turns, input.itemId)?.node;
-    const shown = node && node.kind !== 'tool-group' && !node.images ? node.imageRefs?.[input.index] : undefined;
-    const ref = shown ? this.archivedImages.get(input.itemId)?.[input.index] : undefined;
+    const tool = node && node.kind !== 'tool-group' ? node : undefined;
+    const shown = tool && !tool.images ? tool.imageRefs?.[input.index] : undefined;
+    const ref = tool && shown ? (this.archivedImages.get(input.itemId) ?? this.snapshotImages.get(tool.toolCallId))?.[input.index] : undefined;
     if (!shown || !ref) return found;
     if (ref.chars > maxChars) {
       return { ok: false, code: 'too_large', message: `picture #${input.index} is ${ref.chars} chars; over ${maxChars}` };
@@ -671,7 +681,9 @@ class RecordTimeline implements SessionTimeline {
         this.parser.settleTurn(outcomeOf(entry.boundary), at);
       } else {
         const origins = entry.imageOrigins;
-        if (origins && entry.event.kind === 'tool_update' && entry.event.images) {
+        if (origins && entry.event.kind === 'tool_update' && entry.event.imageRefs) {
+          this.snapshotImages.set(entry.event.toolCallId, origins as readonly RecordImageRef[]);
+        } else if (origins && entry.event.kind === 'tool_update' && entry.event.images) {
           entry.event.images.forEach((image, index) => {
             const origin = origins[index];
             if (origin) this.imageOrigins.set(image.data, origin);
@@ -785,6 +797,7 @@ class RecordTimeline implements SessionTimeline {
     this.recentActionEntries = new Map();
     this.imageOrigins = new Map();
     this.archivedImages = new Map();
+    this.snapshotImages = new Map();
     this.needsPublish = true;
     // 不当场发：源紧接着就会把重读的内容送进来，那时快照才是完整的。
     // 但也不能只等它 —— 一份被删掉的记录不会再有任何 onEntries，所以补一个兜底节拍。

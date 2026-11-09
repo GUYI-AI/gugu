@@ -22,7 +22,10 @@ vi.mock('@/components/assistant-ui/session-transcript-view.aui', () => ({
 
 // 附件放进 agent 私聊的文件夹(P3):`place` 是那一步,放好交回引用。
 const { place, sendFailure } = vi.hoisted(() => ({ place: vi.fn(), sendFailure: vi.fn() }))
-vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: sendFailure }))
+vi.mock('@/lib/notices', async original => {
+  const actual = await original<typeof import('@/lib/notices')>()
+  return { ...actual, notify: (notice: import('@/lib/notices').Notice) => { sendFailure(notice); return actual.notify(notice) } }
+})
 vi.mock('@/mobile/agent-watch/sessionpage-rpc', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/mobile/agent-watch/sessionpage-rpc')>(),
   SessionpageRpcError: class extends Error {},
@@ -237,7 +240,7 @@ it('retains the full draft and pending attachment when the old host cannot hand 
   expect(document.querySelector('[data-testid="prompt-editor"]')?.textContent).toBe('Keep this entire draft')
   expect(document.querySelector('[data-slot="composer-attachment"]')?.textContent).toContain('keep-pending.bin')
   expect(status()).toBeNull()
-  expect(sendFailure).toHaveBeenCalledWith(expect.objectContaining({ description: 'Please update the task host' }))
+  expect(sendFailure).toHaveBeenCalledWith(expect.objectContaining({ key: expect.stringContaining('message-failure:'), description: 'Please update the task host' }))
 })
 
 it('checks the latest host state again after uploads finish before clearing or submitting', async () => {

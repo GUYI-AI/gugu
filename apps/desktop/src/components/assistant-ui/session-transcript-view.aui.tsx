@@ -5,9 +5,11 @@ import { loadChatUi } from '@renderer/lib/chat/chat-transcript'
 import { useSessionChatLayout } from '@renderer/lib/chat/use-session-chat-layout'
 import { AgentConversationView } from '@renderer/lib/chat/agent-conversation-view'
 import { createSessionChatContext } from '@renderer/lib/chat/shared-chat-context'
-import { planHistorySync, splitActiveTurn } from './transcript-sync'
+import { applyTranscriptSnapshot, planHistorySync, splitActiveTurn } from './transcript-sync'
 import { QueryClientProvider } from '@tanstack/react-query'
+import { batch } from 'solid-js'
 import { queryClient } from '@renderer/lib/query-client'
+import { useMobileShell } from '@/hooks/useMobileShell'
 
 export type SessionBackgroundTasks = Parameters<ChatState['session']['setBackgroundTasks']>[0]
 
@@ -69,6 +71,7 @@ function SessionTranscriptContent({
   style?: CSSProperties
 }): ReactElement | null {
   const defaultLayout = useSessionChatLayout()
+  const mobileShell = useMobileShell()
   const [model, setModel] = useState<Model | null>(null)
   const written = useRef<readonly TranscriptTurn[]>([])
 
@@ -93,22 +96,26 @@ function SessionTranscriptContent({
   }, [uri])
 
   // 画之前写进去:❌ 先画一帧空转录、下一帧才长出正文。
+  // 转录、pendingPrompt、pendingMessages 是同一次写入(一个 Solid batch,#2296):分成三次的话,输入落地那一拍
+  // 转录里已经有了它、待发那一份还在(或反过来),逐行的转录先看到半更新的列表,把那条气泡的行卸掉再新挂一份 DOM。
+  const applied = useRef<{ model?: Model; turns?: readonly TranscriptTurn[]; activeTurnId?: string | null; pendingPrompt?: unknown; pendingMessages?: unknown }>({})
   useLayoutEffect(() => {
     if (!model) return
-    const { settled, active } = activeTurnId === undefined ? splitActiveTurn(turns)
-      : { settled: turns.filter(turn => turn.id !== activeTurnId), active: turns.find(turn => turn.id === activeTurnId) ?? null }
-    const plan = planHistorySync(written.current, settled)
-    const { history, activeTurn } = model.state.transcript
-    if (plan.op === 'seed') history.seed(plan.turns)
-    else if (plan.op === 'append') history.append(plan.turns)
-    else if (plan.op === 'prepend') history.prepend(plan.turns)
-    written.current = settled
-    // seed 会清掉进行中的那一轮,所以每次都重写它。
-    activeTurn.set(active, active ? 'generating' : undefined)
-  }, [model, turns, activeTurnId])
-
-  useLayoutEffect(() => { model?.state.session.setPendingPrompt(pendingPrompt ?? null) }, [model, pendingPrompt])
-  useLayoutEffect(() => { model?.state.session.setPendingMessages(pendingMessages ?? []) }, [model, pendingMessages])
+    const last = applied.current
+    const fresh = last.model !== model
+    batch(() => {
+      if (fresh || last.turns !== turns || last.activeTurnId !== activeTurnId) {
+        const { settled, active } = activeTurnId === undefined ? splitActiveTurn(turns)
+          : { settled: turns.filter(turn => turn.id !== activeTurnId), active: turns.find(turn => turn.id === activeTurnId) ?? null }
+        const plan = planHistorySync(written.current, settled)
+        applyTranscriptSnapshot(model.state.transcript, plan, active)
+        written.current = settled
+      }
+      if (fresh || last.pendingPrompt !== pendingPrompt) model.state.session.setPendingPrompt(pendingPrompt ?? null)
+      if (fresh || last.pendingMessages !== pendingMessages) model.state.session.setPendingMessages(pendingMessages ?? [])
+    })
+    applied.current = { model, turns, activeTurnId, pendingPrompt, pendingMessages }
+  }, [model, turns, activeTurnId, pendingPrompt, pendingMessages])
 
   useEffect(() => {
     model?.state.session.setBackgroundTasks(backgroundTasks ?? NO_BACKGROUND_TASKS)
@@ -119,6 +126,7 @@ function SessionTranscriptContent({
     <AgentConversationView
       context={model.context}
       state={model.state}
+      pinUserMessages={!mobileShell}
       commands={commands}
       composerContent={composerContent}
       shown={shown}

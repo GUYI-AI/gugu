@@ -9,7 +9,7 @@ type Deps = {
   recordedDeliveryIds?: (conversationId: string) => Promise<string[] | null>;
   turnIndexBase?: (conversationId: string) => Promise<number>;
   /** 起之前先把记录里有、库里还没有的那几轮补进库(编程模式里刚跑完的、咕咕外面跑的)。 */
-  fillFromRecord?: (conversationId: string) => Promise<unknown>;
+  fillFromRecord?: (conversationId: string) => Promise<{ status?: string } | undefined>;
 };
 
 /**
@@ -46,7 +46,12 @@ export async function resumeHistoryFacts(input: AcpRuntimeStartInput, deps: Deps
     ?? (async (id: string) => (await import('@main/core/sessions/record-backfill')).syncStoredHistoryFromRecord(id));
   try {
     // 补库在前:之后的轮从补完的库尾接着数。补不成只是少几轮历史,❌ 挡住这次启动。
-    await fill(input.sessionId).catch(() => undefined);
+    const filled = await fill(input.sessionId).catch(() => undefined);
+    // The record would not fit the host's heap, and neither would the agent replaying it: same history, same unknown.
+    if (filled?.status === 'too_large') {
+      log.warn('[acp-start] record too large to read; resuming without replay, history unknown', { sessionId: input.sessionId });
+      return { replayHistory: false, recordedDeliveryIds: null, turnIndexBase: await readTurnIndexBase(input.sessionId) };
+    }
     const [recordedDeliveryIds, turnIndexBase] = await Promise.all([
       readDeliveries(input.sessionId),
       readTurnIndexBase(input.sessionId),

@@ -54,14 +54,13 @@ export default {
         "retry": "重试",
         "retrying": "重试中…",
         "title": "任务启动失败"
-      },
-      "statusReadFailed": "无法读取任务状态：{{reason}}"
+      }
     },
     "turnFailure": {
       "card": {
         "appUnavailable": "App 用不了",
         "deliveryRejected": "消息未送达",
-        "outcomeUnknown": "投递结果未知",
+        "outcomeUnknown": "发送失败",
         "generic": "回复没有完成",
         "authentication": "模型服务拒绝了授权",
         "network": "连不上模型服务",
@@ -80,7 +79,6 @@ export default {
       "stateAction": "{{name}} {{state}}，点击切换模型",
       "authentication": "模型服务拒绝了本次请求的授权，回复未完成。",
       "network": "与模型服务的连接中断，本次回复未完成。",
-      "statusReadFailed": "回复状态暂时读不到，请重试。",
       "weeklyQuota": "周限额度不足，当前账号暂时无法回复。",
       "monthlyQuota": "月限额度不足，当前账号暂时无法回复。",
       "rateLimited": "请求过于频繁，请稍后重试。",
@@ -91,7 +89,7 @@ export default {
       "generic": "Agent 本次回复出错，未能完成",
       "deliveryRejected": "这条消息没有送到助理，也不会自动重投。",
       "notAdmitted": "消息已保留，助理就绪后回复。",
-      "outcomeUnknown": "投递结果未知：消息可能已经送到助理，没有重投。",
+      "outcomeUnknown": "消息发送失败。",
       "undelivered": "消息暂未送达：没有运行中的咕咕实例持有这个 Agent，打开那个实例后会由它读取。",
       "appUnavailable": "未送达：这条来自一个 App，它在这个 Agent 所在的设备上用不了（没有安装、已关闭、需要更新，或手机上不能运行）。",
       "retry": "重试",
@@ -189,7 +187,7 @@ export default {
     },
     "appEnable": {
       "devices": "装到哪几台电脑",
-      "devicesHint": "新装上的电脑，所有 agent 都能用；要改给谁，去「App」页。",
+      "devicesHint": "每台新装的电脑上，所有 agent 默认都能用；之后可以在 App 设置里改。",
       "addsChat": "这台电脑上已经装了、只给了部分 agent：这次只加上群「{{name}}」，别的不变。",
       "decline": "不装",
       "machine": "这台电脑",
@@ -215,7 +213,6 @@ export default {
       "done": "完成",
       "noPlaces": "你还没有 agent，也不在任何群里",
       "noMatch": "没有找到",
-      "used": "给了：",
       "hereAll": "本机所有 agent",
       "hereAllOn": "「{{machine}}」上所有 agent",
       "more": "{{names}} 等 {{count}} 处",
@@ -253,6 +250,7 @@ export default {
       "showRaw": "查看原始内容",
       "hideRaw": "收起原始内容",
       "install": "安装",
+      "goToApps": "去 App 页",
       "unavailable": "这个 App 现在打不开：没装上，或者已经停用。",
       "title": "用哪个打开「{{name}}」"
     },
@@ -292,8 +290,8 @@ export default {
     "markAllReadPartial_other": "有 {{count}} 个会话未能标为已读，请重试",
     "markUnreadFailed": "标记未读失败，请重试",
     "muted": "消息免打扰",
+    "newMessage": "收到一条新消息",
     "noResults": "未找到对话",
-    "searchMessages": "搜索消息「{{query}}」",
     "searchMessagesTitle": "搜索消息",
     "listLabel": "对话列表",
     "pin": "置顶",
@@ -350,6 +348,7 @@ export default {
     "send": "发送",
     "settings": "设置"
   },
+  "linkPill": {"unavailable": "不可用：已删除，或你无权查看", "message": "{{sender}}：{{words}}"},
   "attachmentView": {
     "types": {"pdf": "PDF 文档", "word": "Word 文档", "excel": "Excel 表格", "presentation": "演示文稿", "text": "文本", "markdown": "Markdown 文档", "csv": "CSV 表格", "html": "网页", "json": "JSON 文档", "archive": "压缩文件", "image": "图片", "audio": "音频", "video": "视频"},
     "fileGone": "文件已删除",
@@ -359,10 +358,13 @@ export default {
     "reupload": "重新上传",
     "selectOriginal": "选择原文件",
     "storageWarning": "群文件存储空间即将用尽（{{used}} / {{limit}}）。",
+    "manageFiles": "管理文件",
     "storageFull": "群文件存储空间已满（{{used}} / {{limit}}），暂时无法上传新文件。",
     "usageUnavailable": "文件用量暂不可用。",
 
     "fileUnavailable": "文件暂时打不开",
+    "fileNoAccess": "你已无权访问这个文件",
+    "fileUpdated": "文件已更新，请重新打开",
     "holderOffline": "{{machine}} 离线，上线后才能打开这个文件。",
     "holderMachine": "保存它的那台电脑",
     "besideOffline": "在「{machine}」上，未连接",
@@ -433,10 +435,6 @@ export default {
     "file": "文件",
     "photos": "照片",
     "camera": "拍摄",
-    "photoCaption": "添加说明",
-    "originalPhoto": "原图",
-    "cancelPhotos": "取消",
-    "sendPhotos_other": "发送({{count}})",
     "memberType": {
       "agent": "Agent",
       "all": "全员",
@@ -449,7 +447,20 @@ export default {
     "mobilePlaceholder": "消息",
     "projectGroupPlaceholder": "发消息给 {{name}}… @ 某个 agent 叫它",
     "removeAttachment": "移除 {{fileName}}",
-    "sendFailed": "发送失败：{{reason}}",
+    "sendFailed": "消息没发出去：{{guidance}}",
+    "failedFileLabel": "{{kind}} {{name}}",
+    "failedFileKind": { "image": "图片", "video": "视频", "audio": "音频", "file": "文件" },
+    "fileSendFailed": "{{file}} 没发出去：{{guidance}}",
+    "filesSendFailed": "{{count}} 个文件没发出去：{{guidance}}",
+    "failureReason": {
+      "tooLarge": "文件太大，请缩小后重新发送",
+      "signIn": "登录已失效，请重新登录后发送",
+      "denied": "没有发送权限，请确认对话权限后重新发送",
+      "busy": "发送过于频繁，请稍后重新发送",
+      "chatUnavailable": "对话已不可用，请返回消息列表确认",
+      "timeout": "发送超时，请稍后重新发送",
+      "unavailable": "发送未完成，请稍后重新发送"
+    },
     "verb": {
       "task": "新任务"
     },
@@ -465,6 +476,8 @@ export default {
   },
   "forward": {
     "fileFailed": "{{name}} 没能一起转发",
+    "fileGone": "{{name}} 已经不在了，没转发出去。",
+    "fileTooLarge": "{{name}} 太大，一次最多转发 512 MB。",
     "batchPreview": "转发 {{count}} 条消息",
     "batchPreview_one": "转发 {{count}} 条消息",
     "batchPreview_other": "转发 {{count}} 条消息",
@@ -512,10 +525,18 @@ export default {
       "mentionHint": "在输入框里 @{{name}}",
       "separator": "、"
     },
+    "notice": {
+      "agentFloodGroup": "这个群里 agent 较多，已把它们都转为被动模式，@ 它们才会回。",
+      "agentFloodTopic": "这条话题里 agent 较多，已把它们都转为被动模式，@ 它们才会回。",
+      "left": "{{actor}} 退出了群聊",
+      "madeAdmin": "{{actor}} 将 {{target}} 设为管理员",
+      "removed": "{{actor}} 将 {{target}} 移出了群聊",
+      "revokedAdmin": "{{actor}} 撤销了 {{target}} 的管理员身份",
+      "topicOpened": "{{actor}} 开了话题："
+    },
     "memberList": {
       "agentLeave": "让它退出群聊",
       "clearSearch": "清除搜索",
-      "createAgent": "新建 Agent 并加入本群",
       "invite": "邀请成员",
       "makeAdmin": "设为管理员",
       "manage": "管理 {{name}}",
@@ -525,7 +546,7 @@ export default {
       "setActive": "改为主动",
       "setPassive": "改为被动",
       "loadFailed": "成员名单没加载出来。关掉再打开一次 👥 试试。",
-      "notParticipant": "你还不是这条话题的参与者，所以看不到成员名单。在里面说一句就进来了。",
+      "notParticipant": "暂时看不到这条话题的成员",
       "sectionAgents": "Agent",
       "sectionPeople": "人",
       "myAgents": "我的 agent · {{count}}",
@@ -669,6 +690,7 @@ export default {
     }
   },
   "header": {
+    "openApp": "打开 App",
     "groupApps": "应用",
     "members": "{{count}} 位成员",
     "invite": "邀请",
@@ -684,8 +706,7 @@ export default {
     "more": "更多操作",
     "searchChat": "搜索对话",
     "searchConversation": "在对话中搜索",
-    "groupFolder": "群文件夹",
-    "folder": "文件夹"
+    "folder": "文件"
   },
   "history": {
     "searchTopics": "搜索话题",
@@ -751,6 +772,11 @@ export default {
       "react": "表情回应",
       "reply": "回复",
       "quoteSelection": "引用选中文字",
+      "quoteToComposer": "引用到输入框",
+      "quoteSelectionToComposer": "引用选中内容",
+      "openFile": "打开",
+      "editMessage": "编辑重发",
+      "forkTask": "分叉这个任务",
       "select": "多选"
     },
     "attachment": "[附件]",
@@ -770,16 +796,17 @@ export default {
     "retracted": "消息已撤回",
     "deliveredFrom": "来自 {{name}}",
     "sendStatus": {
+      "resend": "重发",
       "unknown": "状态待确认",
       "unknownHint": "正在等待发布结果，消息到达后会自动更新，无需重发。",
       "archived": "对方已归档、未送达",
-      "failed": "未送达",
-      "failedActions": "未送达消息操作",
-      "failedHint": "未送达，点击重试或丢弃",
+      "failed": "发送失败",
+      "failedActions": "发送失败消息操作",
+      "failedHint": "发送失败，点击查看消息操作",
       "undelivered": "所在实例未运行、未送达",
       "sending": "发送中",
       "stopped": "已停止，下一句发出时一起发送",
-      "unknownNotResent": "结果未知，没有重发",
+      "unknownNotResent": "发送失败",
       "failure": {
         "hostOffline": "这个任务所在的电脑现在不在线，它上线后会自动发出",
         "hostNotReady": "这个任务所在的电脑还没准备好接收消息，稍后点重试",
@@ -831,7 +858,8 @@ export default {
     "sourceDiscarded": "原消息未发出，已被丢弃",
     "deliveryTimeout": "投递超时 {{seconds}}s（网络挂起）",
     "discarded": "已丢弃",
-    "offscreenFailure": "有消息未送达，回到对应对话可重试或丢弃",
+    "offscreenFailure": "「{{chatName}}」中的消息未送达，回到该对话可重试或丢弃",
+    "chatById": "会话 {{id}}",
     "recipientMissing": "收件人已不可用，消息未发送。",
     "sendFailed": "发送失败"
   },
@@ -851,6 +879,10 @@ export default {
     "title": "发送到"
   },
   "topic": {
+    "leave": "退出话题",
+    "leaveHint": "你仍可阅读，只是不再收到这个话题的通知",
+    "removeHint": "对方仍可阅读，只是不再收到这个话题的通知",
+    "calledYou": "有人 @ 你",
     "pins": {
       "pin": "将“{{name}}”置顶到主群",
       "unpin": "取消置顶“{{name}}”",
@@ -886,45 +918,6 @@ export default {
       "composerPlaceholder": "在这条话题里说…",
       "empty": "还没有人在这条话题里说话",
       "resize": "拖动改变话题分栏的宽度"
-    }
-  },
-  "forum": {
-    "communityPoints": "社区积分 {{count}}", "communityPoints_one": "社区积分 {{count}}", "communityPoints_other": "社区积分 {{count}}",
-    "consent": {
-      "cancel": "取消",
-      "postTitle": "发布悬赏",
-      "postBody": "发布后从你的社区积分中扣除 {{count}} 积分。采纳后发给被采纳的回答者；截止时从未有人回答，全额退还；有过回答但未采纳，积分作废。",
-      "postBody_one": "发布后从你的社区积分中扣除 {{count}} 积分。采纳后发给被采纳的回答者；截止时从未有人回答，全额退还；有过回答但未采纳，积分作废。",
-      "postBody_other": "发布后从你的社区积分中扣除 {{count}} 积分。采纳后发给被采纳的回答者；截止时从未有人回答，全额退还；有过回答但未采纳，积分作废。",
-      "postConfirm": "发布",
-      "reward": "赏金 {{count}} 积分", "reward_one": "赏金 {{count}} 积分", "reward_other": "赏金 {{count}} 积分",
-      "days": "{{count}} 天后截止", "days_one": "{{count}} 天后截止", "days_other": "{{count}} 天后截止",
-      "visibility": { "public": "回答公开", "poster_only": "回答仅楼主可见，结束后公开" },
-      "acceptTitle": "采纳回答",
-      "acceptBody": "采纳后积分发给回答者，悬赏随即结束，仅楼主可见的回答会公开。采纳后不可撤销。",
-      "acceptConfirm": "采纳",
-      "awardLine": "{{name}} · {{count}} 积分", "awardLine_one": "{{name}} · {{count}} 积分", "awardLine_other": "{{name}} · {{count}} 积分",
-      "endTitle": "结束悬赏",
-      "endBody": "不采纳任何回答，直接结束悬赏。从未有人回答时，赏金全额退还；有过回答时，赏金作废。",
-      "endConfirm": "结束悬赏",
-      "assignTitle": "指派 agent",
-      "assignBody": "选一个你名下的 agent 来回答这个帖子。它会收到帖子正文，之后楼主和你在帖子里的交代也会送给它。",
-      "assignConfirm": "指派",
-      "searchAgents": "搜索 agent",
-      "noAgents": "你还没有 agent。",
-      "failed": "操作未完成，请重试。",
-      "error": {
-        "insufficient": "社区积分不足。",
-        "activeLimit": "进行中的悬赏最多 3 个。",
-        "tooEarly": "发布满 24 小时后才能采纳。",
-        "pastGrace": "已超过截止后 24 小时，无法采纳。",
-        "toSelf": "不能采纳自己或自己名下 agent 的回答。",
-        "splitMismatch": "各条采纳的积分之和须等于赏金。",
-        "settled": "这个悬赏已经结束。",
-        "accountTooNew": "注册满 3 天并在设备上登录后才能发帖、回复或指派。",
-        "blocked": "楼主已将你拉黑，你和你名下的 agent 都不能参与这个帖子。",
-        "identityLimit": "你和你名下的 agent 在同一个帖子里最多使用 3 个身份。"
-      }
     }
   },
   "resources": {

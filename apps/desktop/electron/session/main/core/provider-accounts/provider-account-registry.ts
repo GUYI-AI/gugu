@@ -4,7 +4,7 @@ import type { AppDb, DrizzleTx } from '@main/db/client';
 import { providerAccounts, type ProviderAccountRow } from '@main/db/schema';
 import type { ProviderAccountMeta } from '@shared/core/provider-accounts/provider-account-meta';
 import { log } from '@main/lib/logger';
-import { compareAndSwapProviderSecret } from './provider-secret-cas';
+import { compareAndSwapProviderSecret,nextProviderAccountUpdate,readProviderSecretGeneration } from './provider-secret-cas';
 import { currentManagedConnectionAttempt,isManagedConnectionRevoked, writeManagedProviderAccount } from './connection-effect-evidence';
 
 /** Meta payload without the schema version field, which the registry supplies. */
@@ -47,7 +47,8 @@ export type ProviderAccountSecretStore = {
   getSecret(key: string): Promise<string | null>;
   setSecret(key: string, value: string): Promise<void>;
   deleteSecret(key: string): Promise<void>;
-  atomicSecretCompareAndSwap?(db: AppDb, key: string, expected: string, replacement: string): Promise<((tx: DrizzleTx) => boolean) | null>;
+  atomicSecretSnapshot?(db: AppDb | DrizzleTx, key: string): { sealed: string; secret: string } | null;
+  atomicSecretCompareAndSwap?(db: AppDb, key: string, expectedSealed: string, replacement: string): Promise<((tx: DrizzleTx) => boolean) | null>;
   atomicSecretRemover?(db: AppDb): (tx: DrizzleTx, key: string) => void;
   atomicSecretWriter?(db: AppDb, key: string, secret: string): (tx: DrizzleTx, currentKey?: string) => void;
 };
@@ -131,11 +132,13 @@ export class ProviderAccountRegistry {
 
       atomicSecret?.(tx,current?.credentialRef ?? credentialRef);
       if (current) {
+        // Strictly increasing: part of the credential generation a delayed refresh must still find.
+        const updatedAt = nextProviderAccountUpdate(current.updatedAt, now);
         tx.update(providerAccounts)
-          .set({ updatedAt: now, ...(meta !== undefined ? { meta } : {}) })
+          .set({ updatedAt, ...(meta !== undefined ? { meta } : {}) })
           .where(eq(providerAccounts.id, current.id))
           .run();
-        return { ...current, updatedAt: now, meta: meta !== undefined ? meta : current.meta };
+        return { ...current, updatedAt, meta: meta !== undefined ? meta : current.meta };
       }
 
       const hasDefault = tx
@@ -231,8 +234,18 @@ export class ProviderAccountRegistry {
     return row ? toProviderAccount(row) : null;
   }
 
-  compareAndSwapSecret(providerId: string, accountId: string, expected: string, replacement: string): Promise<boolean> {
-    return compareAndSwapProviderSecret(this.db,this.secretStore,providerId,accountId,expected,replacement);
+  /** The secret and its generation from one read, for a later conditional replacement. */
+  async resolveSecretGeneration(providerId: string, accountId: string): Promise<{ secret: string; generation: string | null } | null> {
+    if (!this.secretStore.atomicSecretSnapshot) {
+      // A store without atomic reads can still be read; it just cannot be conditionally replaced.
+      const secret = await this.resolveSecret(providerId, accountId);
+      return secret === null ? null : { secret, generation: null };
+    }
+    return readProviderSecretGeneration(this.db,this.secretStore,providerId,accountId);
+  }
+
+  compareAndSwapSecret(providerId: string, accountId: string, generation: string, replacement: string): Promise<boolean> {
+    return compareAndSwapProviderSecret(this.db,this.secretStore,providerId,accountId,generation,replacement);
   }
 
   /** Read the secret stored at the account's credentialRef. */

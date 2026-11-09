@@ -31,7 +31,7 @@ function ProjectChatAvatar({ chat, children }: { chat: ChatItem; children: React
       hostOnline: listed.hostOnline,
     }))
   }))
-  return <PhoneMessageAvatar badge={needsYou > 0 ? <span className="gg-phone-project-attention bg-foreground-warning" data-testid="phone-project-waiting" aria-hidden /> : null}>
+  return <PhoneMessageAvatar badge={needsYou > 0 ? <span className="gg-phone-project-attention" data-testid="phone-project-waiting" aria-hidden /> : null}>
     <ProjectFolderAvatar coverId={project.coverId} running={running} size={48} />
   </PhoneMessageAvatar>
 }

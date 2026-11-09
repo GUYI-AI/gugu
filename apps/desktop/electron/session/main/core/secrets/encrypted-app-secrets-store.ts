@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { safeStorage } from 'electron';
 import { db as appDb, type AppDb, type DrizzleTx } from '@main/db/client';
 import { appSecrets } from '@main/db/schema';
+import { SecureStorageUnavailableError } from './secure-storage-unavailable';
 
 export class EncryptedAppSecretsStore {
   constructor(
@@ -64,15 +65,22 @@ export class EncryptedAppSecretsStore {
       .execute();
   }
 
-  async atomicSecretCompareAndSwap(db: AppDb, key: string, expected: string, replacement: string): Promise<((tx: DrizzleTx) => boolean) | null> {
-    if(db!==this.db)throw new Error('CONNECTION_ATOMIC_STORE_UNAVAILABLE');
-    const original=this.db.select({secret:appSecrets.secret}).from(appSecrets).where(eq(appSecrets.key,key)).get()?.secret;
-    if(!original)return null;
+  /** Sealed bytes and plaintext from one read; the sealed value is the
+   * generation a later conditional write must still find. */
+  atomicSecretSnapshot(db: AppDb | DrizzleTx, key: string): { sealed: string; secret: string } | null {
+    const sealed=db.select({secret:appSecrets.secret}).from(appSecrets).where(eq(appSecrets.key,key)).get()?.secret;
+    if(!sealed)return null;
     this.assertSecureStorageAvailable();
-    if(this.safeStorageApi.decryptString(Buffer.from(original,'base64'))!==expected)return null;
+    return {sealed,secret:this.safeStorageApi.decryptString(Buffer.from(sealed,'base64'))};
+  }
+
+  /** Replace only the exact sealed bytes captured at the original read. */
+  async atomicSecretCompareAndSwap(db: AppDb, key: string, expectedSealed: string, replacement: string): Promise<((tx: DrizzleTx) => boolean) | null> {
+    if(db!==this.db)throw new Error('CONNECTION_ATOMIC_STORE_UNAVAILABLE');
+    this.assertSecureStorageAvailable();
     const sealed=this.safeStorageApi.encryptString(replacement).toString('base64');
     return tx=>tx.update(appSecrets).set({secret:sealed})
-      .where(and(eq(appSecrets.key,key),eq(appSecrets.secret,original))).run().changes===1;
+      .where(and(eq(appSecrets.key,key),eq(appSecrets.secret,expectedSealed))).run().changes===1;
   }
 
   atomicSecretRemover(db: AppDb): (tx: DrizzleTx, key: string) => void {
@@ -86,7 +94,7 @@ export class EncryptedAppSecretsStore {
 
   private assertSecureStorageAvailable(): void {
     if (!this.safeStorageApi.isEncryptionAvailable()) {
-      throw new Error('Secure secret storage is unavailable on this system.');
+      throw new SecureStorageUnavailableError('Secure secret storage is unavailable on this system.');
     }
 
     if (this.platform !== 'linux') {
@@ -95,7 +103,7 @@ export class EncryptedAppSecretsStore {
 
     const backend = this.safeStorageApi.getSelectedStorageBackend?.();
     if (backend === 'basic_text') {
-      throw new Error(
+      throw new SecureStorageUnavailableError(
         'Secure secret storage is unavailable: Linux safeStorage backend is basic_text.'
       );
     }

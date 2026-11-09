@@ -18,9 +18,10 @@ function watch(userId: string, chatId: string) {
   let entry = watches.get(id)
   if (!entry) {
     const queryKey = keyOf(userId, chatId)
-    const stop = watchChatPinSettings(userId, chatId, () => {
-      void queryClient.cancelQueries({ queryKey }).then(() => queryClient.invalidateQueries({ queryKey }))
-    })
+    const refresh = () => { void queryClient.cancelQueries({ queryKey }).then(() => queryClient.invalidateQueries({ queryKey })) }
+    const stop = watchChatPinSettings(userId, chatId, refresh)
+    // The cached pins paint the first frame; changes made while nobody watched are read again now.
+    if (queryClient.getQueryData(queryKey)) refresh()
     entry = { users: 0, stop }
     watches.set(id, entry)
   }
@@ -39,7 +40,7 @@ export function useChatPinSettings(chatId: string | null, enabled = true) {
   const query = useQuery({
     queryKey: keyOf(userId, chatId), enabled,
     queryFn: userId && chatId ? () => readChatPinSettings(userId, chatId) : skipToken,
-    retry: false, networkMode: 'always', staleTime: Infinity, refetchOnMount: false,
+    retry: false, networkMode: 'always', staleTime: Infinity, gcTime: Infinity, refetchOnMount: false,
   }, queryClient)
   useEffect(() => {
     if (!userId || !chatId || !enabled) return

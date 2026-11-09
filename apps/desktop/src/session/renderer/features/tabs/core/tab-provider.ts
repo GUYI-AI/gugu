@@ -27,6 +27,8 @@ export interface TabEntry<S = unknown> {
  * Domain managers ref-count their internal state inside initialize/dispose.
  */
 export interface TabResource {
+  /** Its content holds what would be lost if unmounted (unsaved edits): the pane keeps it mounted. */
+  readonly holdsUnsaved?: boolean;
   /** Called when the engine permanently removes the tab. Must be idempotent. */
   dispose(): void;
   /**
@@ -157,8 +159,17 @@ export interface TabProvider<
    */
   resourceKey(state: S): string;
 
+  /** What shares a remembered placement (separate / beside), when every open is a new resource. Default: `resourceKey`. */
+  placementKey?(state: S): string;
+
+  /** Closing ends the resource, so ⌘⇧T has nothing to bring back. Default: reopenable. */
+  reopenable?: false;
+
   /** Runtime-only tabs return false so neither snapshots nor closed-tab history can resurrect them. */
   isPersistent?(state: S): boolean;
+
+  /** Its width beside another page, in px (`side-width.ts`); undefined: a peer, half each. */
+  sideWidth?(state: S): number | undefined;
 
 
   /**
@@ -201,8 +212,9 @@ export interface TabProvider<
   /**
    * The tab `tabId` is closed for good, and one of its pages (now or in its Back/Forward history) was of this kind.
    * `dispose` also runs when a page leaves its tab through history navigation; this runs only on close.
+   * `states`: the state of each of the tab's pages of this kind.
    */
-  closed?(tabId: string, ctx: TabViewContext): void;
+  closed?(tabId: string, ctx: TabViewContext, states: S[]): void;
 
   /** Named capabilities surfaced as context-menu items and keyboard commands. */
   commands?: Record<string, CommandEntry<T>>;

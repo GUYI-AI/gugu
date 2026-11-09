@@ -19,7 +19,6 @@ function makeWorkspace(id: string): {
       configPath: `/tmp/${id}/.emdash.json`,
       fileSystem: {} as Workspace['fileSystem'],
       fileTree: { dispose: fileTreeDispose } as unknown as Workspace['fileTree'],
-      fileTreeProjector: { dispose: vi.fn() } as unknown as Workspace['fileTreeProjector'],
       gitWorktree: { dispose: gitDispose } as unknown as Workspace['gitWorktree'],
       settings: {} as Workspace['settings'],
       lifecycleService: {
@@ -37,6 +36,23 @@ function makeWorkspace(id: string): {
 }
 
 describe('WorkspaceRegistry', () => {
+  it('shares cache restoration with acquiring sessions without retaining file-operation references', async () => {
+    const registry = new WorkspaceRegistry();
+    const { workspace } = makeWorkspace('ws');
+    const factory = vi.fn(async () => ({ workspace }));
+    const cached = registry.acquire('ws', 'project', factory, { retain: false });
+    const reading = registry.acquire('ws', 'project', factory, { retain: false });
+    const session = registry.acquire('ws', 'project', factory);
+    const results = await Promise.all([cached, reading, session]);
+    expect(results.every(result => result.workspace === workspace)).toBe(true);
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(registry.refCount('ws')).toBe(1);
+    await registry.acquire('ws', 'project', factory, { retain: false });
+    expect(registry.refCount('ws')).toBe(1);
+    await registry.teardown('ws', 'detach');
+    expect(registry.get('ws')).toBeUndefined();
+  });
+
   it('creates once and increments ref count on repeated acquire', async () => {
     const registry = new WorkspaceRegistry();
     const { workspace } = makeWorkspace('branch:main');

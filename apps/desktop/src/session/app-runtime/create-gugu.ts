@@ -2,6 +2,7 @@ import type { TabOpenIntent } from '@shared/view-state';
 import { folderOf, placeKey, placeOf, type AppPlace } from '@shared/extensions/app-runtime-protocol';
 import { DISPATCH_GONE } from '@shared/extensions/app-dispatch-core';
 import { BRIDGE_VERBS, type ExtensionFileChangeBatch } from '@shared/extensions/bridge-protocol';
+import { uploadInParts } from '@shared/extensions/working-copy-upload';
 import { coded, guguError, refOf, type GuguHost } from './host';
 import { createModalApi } from './modal';
 import { countsOf } from './check-counts';
@@ -47,14 +48,14 @@ export function createGugu(
   const watchers = new Map<string, (change: ExtensionFileChangeBatch) => void>();
   let nextWatch = 0;
   let hearing: (() => void) | null = null;
-  const watch = (watchId: string, place: AppPlace & { folder?: string }, on: boolean) =>
+  const watch = (watchId: string, place: AppPlace & { folder?: string; id?: string }, on: boolean) =>
     host.appFiles.watch({ watchId, place, on }).catch((error: unknown) => {
       if (on) void host.reportError(`gugu.files.onChanged(${placeKey(place)}): ${error instanceof Error ? error.message : String(error)}`).catch(() => undefined);
     });
   function onChanged(place: unknown, handler: (change: ExtensionFileChangeBatch) => void): () => void {
-    // A working copy may name a folder (`'.spec'`): what changes anywhere below it.
-    const folder = (place as { folder?: unknown } | null)?.folder;
-    const where = { ...placeOf(place), ...(typeof folder === 'string' && folder ? { folder } : {}) };
+    // A working copy may name a folder (`'.spec'`): what changes anywhere below it. Or one file (`id`, an entry or `ctx.file`).
+    const { folder, id } = (place ?? {}) as { folder?: unknown; id?: unknown };
+    const where = { ...placeOf(place), ...(typeof folder === 'string' && folder ? { folder } : {}), ...('workspace' in (place as object) && typeof id === 'string' && id ? { id } : {}) };
     const watchId = String(++nextWatch);
     if (typeof handler !== 'function') throw guguError('invalid', 'files.onChanged(place, fn) takes a function');
     hearing ??= host.onFilesChanged((id, change) => watchers.get(id)?.(change));
@@ -107,6 +108,20 @@ export function createGugu(
     onChanged,
     viewPreferences: (place: unknown, options?: { showAppData?: boolean }) => withPlace(place, (where) => host.appFiles.viewPreferences({ place: where, ...options })),
     replace,
+    /** A working copy's text whole, where the page holds it and no live document does; and whether it is there. */
+    readText: (file: unknown, options?: { maxBytes?: number; onProgress?: (done: number, total: number) => void }) => withRef(file, (ref) => {
+      const read = { ref, ...(options?.maxBytes === undefined ? {} : { maxBytes: options.maxBytes }) };
+      const hearing = options?.onProgress && (raw.onDownloadProgress as ((hear: (id: string, done: number, total: number) => void) => () => void) | undefined);
+      if (!hearing) return host.appFiles.readText(read);
+      const transferId = crypto.randomUUID();
+      const off = hearing((id, done, total) => { if (id === transferId) options!.onProgress!(done, total); });
+      return host.appFiles.readText({ ...read, transferId }).finally(off);
+    }),
+    exists: (file: unknown) => withRef(file, (ref) => host.appFiles.exists({ ref })),
+    /** A file's unsaved edits, kept on its machine for after a crash: read (no `text`), kept, dropped (`null`). */
+    draft: (file: unknown, text?: string | null) => withRef(file, (ref) => host.appFiles.draft({ ref, ...(text === undefined ? {} : { text }) })),
+    /** Saves over the version `readText` read: `content-changed` when the disk moved on since. */
+    writeText: (file: unknown, text: string) => withRef(file, (ref) => host.appFiles.writeText({ ref, text })),
     /** Whether whoever reads may delete each file (an entry, or a list of them), in order — ask as its menu opens. */
     canDelete: (files: unknown) => withRefs(files, (refs) => host.appFiles.canDelete({ refs })),
     /** G2 A chat file's kept versions, newest first; one's content: a text file's as text, a stored file's as a Blob. */
@@ -121,7 +136,9 @@ export function createGugu(
     // A4 `{ sourceMessageIds }`: the messages the files came from, as an entry gives them back.
     // 子文件夹 `{ chat, folder }`: the folder they go in (its path or id, made all the way down); not given, the top.
     // `{ keep }` 临时 / 保留: how long a stored copy stays ('temporary' | 'permanent'); not given, the chat's rule.
-    upload: (place: unknown, file?: unknown, options?: { sourceMessageIds?: string[]; keep?: string }) =>
+    // Into a working copy, `{ replace, onProgress, signal }`: bytes go in parts, a file of any size; one already there is
+    // `name-taken` until `replace` says so; progress is the bytes sent of them all; `signal` stops it, nothing arrives.
+    upload: (place: unknown, file?: unknown, options?: { sourceMessageIds?: string[]; keep?: string; replace?: boolean; onProgress?: (sent: number, total: number) => void; signal?: AbortSignal }) =>
       withPlace(place, (where) => {
         // Checked as list and create check it (folderOf): what is not a folder's path, id or entry is `invalid`.
         let folder: string | undefined;
@@ -129,6 +146,11 @@ export function createGugu(
           folder = folderOf((place as { folder?: unknown } | null)?.folder);
         } catch (error) {
           return Promise.reject(guguError('invalid', error instanceof Error ? error.message : String(error)));
+        }
+        if (file !== undefined && 'workspace' in where) {
+          const blobs = (Array.isArray(file) ? file : [file]) as (Blob & { name?: unknown })[];
+          if (blobs.length === 0 || blobs.some((blob) => !(blob instanceof Blob) || typeof blob.name !== 'string' || !blob.name)) return Promise.reject(guguError('invalid', 'gugu.files.upload takes a File, or a Blob with a name'));
+          return uploadInParts((part) => host.appFiles.writeChunk(part), where, blobs.map((blob) => ({ name: blob.name as string, blob })), folder, options);
         }
         const into = { ...(folder === undefined ? {} : { folder }), ...(options?.keep === undefined ? {} : { keep: options.keep }) };
         return file === undefined
@@ -138,30 +160,74 @@ export function createGugu(
     ...(download && openWith
       ? {
           // API 20: several files at once — one 「save to」 for them all (a folder on the desktop, the share sheet on the phone).
-          download: (files: unknown) => (Array.isArray(files) ? withRefs(files, (refs) => download({ refs })) : withRef(files, (ref) => download({ ref }))),
+          // A working copy's folder (`entry.type: 'folder'`): saved whole. `{ onProgress, signal }`, one file or folder of a
+          // working copy: the bytes saved of them all, and stopping it: nothing is left where it was going.
+          download: (files: unknown, options?: { onProgress?: (done: number, total: number) => void; signal?: AbortSignal }) => (Array.isArray(files)
+            ? withRefs(files, (refs) => download({ refs }))
+            : withRef(files, (ref) => {
+              const folder = (files as { type?: unknown } | null)?.type === 'folder' ? { folder: true } : {};
+              if (!options?.onProgress && !options?.signal) return download({ ref, ...folder });
+              const transferId = crypto.randomUUID();
+              const off = (raw.onDownloadProgress as ((hear: (id: string, done: number, total: number) => void) => () => void) | undefined)?.((id, done, total) => { if (id === transferId) options.onProgress?.(done, total); });
+              const stop = () => void host.appFiles.downloadStop?.({ transferId });
+              options.signal?.addEventListener('abort', stop);
+              return download({ ref, ...folder, transferId }).finally(() => {
+                off?.();
+                options.signal?.removeEventListener('abort', stop);
+              });
+            })),
           // `{ ask: true }`: 「用别的 App 打开」 — every App that opens it, the person picks. `{ at }`: the place in it (a pill's).
           // `{ peek: true }`: beside this page, which stays as it is (G1).
           openWith: (file: unknown, options?: { ask?: boolean; at?: Record<string, string>; peek?: boolean; tab?: string; intent?: TabOpenIntent; viewState?: Record<string, unknown> }) =>
-            withRef(file, (ref) =>
+            // A folder of the working copy, not a file: `{ workspace, folder }`, its list in this tab.
+            typeof (file as { folder?: unknown } | null)?.folder === 'string'
+              ? openWith({ ref: file as never })
+              : withRef(file, (ref) =>
               openWith({ ref, ...(options?.viewState ? { viewState: options.viewState } : {}), ...(options?.ask === true ? { ask: true } : {}), ...(options?.at ? { at: options.at } : {}), ...(options?.peek === true ? { peek: true } : {}), ...(Object.hasOwn(options ?? {}, 'tab') ? { tab: options?.tab } : {}), ...(Object.hasOwn(options ?? {}, 'intent') ? { intent: options?.intent } : {}) })),
         }
       : {}),
     // API 23: 「转发」 — one file or several, the host's forward page; resolves once it is up (what is sent is the person's).
-    ...(forward ? { forward: (files: unknown) => withRefs(files, (refs) => forward({ refs })) } : {}),
+    // `{ onProgress, signal }`: a working copy's file is read first, and that can be followed and stopped as a download can.
+    ...(forward ? { forward: (files: unknown, options?: { onProgress?: (done: number, total: number) => void; signal?: AbortSignal }) => withRefs(files, (refs) => {
+      if (!options?.onProgress && !options?.signal) return forward({ refs });
+      const transferId = crypto.randomUUID();
+      const off = (raw.onDownloadProgress as ((hear: (id: string, done: number, total: number) => void) => () => void) | undefined)?.((id, done, total) => { if (id === transferId) options.onProgress?.(done, total); });
+      const stop = () => void host.appFiles.downloadStop?.({ transferId });
+      options.signal?.addEventListener('abort', stop);
+      return forward({ refs, transferId } as never).finally(() => {
+        off?.();
+        options.signal?.removeEventListener('abort', stop);
+      });
+    }) } : {}),
+    ...(host.appFiles.reveal ? { reveal: (file: unknown) => withRef(file, (ref) => host.appFiles.reveal!({ ref })) } : {}),
+    ...(host.appFiles.openIn ? { openInApps: () => host.appFiles.openInApps!({}), openIn: (file: unknown, app: string) => withRef(file, (ref) => host.appFiles.openIn!({ ref, app })) } : {}),
   });
 
   // Every v1 member; `appFiles`, `chats`, `checkPage`, `clipboard`, `messages`, `projects`, `theme` and `onFilesChanged` (it is
   // `files.onChanged`) are host halves.
   const api: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw)) {
-    if (['navigationGo', 'appFiles', 'chats', 'checkPage', 'clipboard', 'messages', 'forum', 'framed', 'program', 'projects', 'sessions', 'theme', 'onFilesChanged', 'onForumChanged', 'modal', 'onModalFocus', 'projection', 'onProjection', 'onProjectionSource'].includes(key)) continue;
+    if (['navigationGo', 'navigationClaimBack', 'onBack', 'appFiles', 'chats', 'checkPage', 'clipboard', 'messages', 'prompts', 'cloud', 'framed', 'program', 'projects', 'sessions', 'theme', 'onFilesChanged', 'onDownloadProgress', 'onCloudHeard', 'modal', 'onModalFocus', 'projection', 'onProjection', 'onProjectionSource'].includes(key)) continue;
     api[key] = typeof value === 'function' && verbs.has(key) ? coded(value as (...args: never[]) => unknown) : value;
   }
   api.files = files;
-  if (raw.navigationGo) api.navigation = Object.freeze({ go: (delta: unknown): Promise<boolean> => {
-    if (delta !== -1 && delta !== 1) return Promise.reject(guguError('invalid', 'Navigation delta must be -1 or 1'));
-    return coded(raw.navigationGo!)({ delta });
-  } });
+  if (raw.navigationGo) api.navigation = Object.freeze({
+    go: (delta: unknown): Promise<boolean> => {
+      if (delta !== -1 && delta !== 1) return Promise.reject(guguError('invalid', 'Navigation delta must be -1 or 1'));
+      return coded(raw.navigationGo!)({ delta });
+    },
+    // @@@back-step - while held, the host's Back (the phone's back key / edge swipe) is the page's own step (a folder up), not
+    // leaving the page. Resolves to the release; a host with no Back of its own (a desktop tab) resolves, never calls it.
+    ...(raw.navigationClaimBack && raw.onBack ? {
+      onBack: async (handler: unknown): Promise<() => Promise<void>> => {
+        if (typeof handler !== 'function') throw guguError('invalid', 'gugu.navigation.onBack takes a function');
+        const off = raw.onBack!(() => handler());
+        try { await coded(raw.navigationClaimBack!)(true); }
+        catch (error) { off(); throw error; }
+        return async () => { off(); await coded(raw.navigationClaimBack!)(false); };
+      },
+    } : {}),
+  });
   if (host.program && host.projection && host.onProjectionSource) api.projection = projectionSources(host);
   else if (host.projection && host.onProjection) api.projection = {
     mount: (element: HTMLElement, id: string, options?: Parameters<typeof mountProjection>[3]) => mountProjection(host, element, id, options),
@@ -220,41 +286,51 @@ export function createGugu(
   if (raw.messages) api.messages = Object.freeze({ history: coded(raw.messages.history), search: coded(raw.messages.search) });
   // `gugu.chats` (`chat:read`): the chats whoever reads is in, and who is in one.
   if (raw.chats) api.chats = Object.freeze({ list: coded(raw.chats.list), members: coded(raw.chats.members) });
+  // `gugu.prompts` (34, `prompts`): the person's own prompts.
+  if (raw.prompts) api.prompts = Object.freeze({ list: coded(raw.prompts.list), save: coded(raw.prompts.save), delete: coded(raw.prompts.delete) });
   // `gugu.projects` (`files:read`): this computer's projects — a phone has none, and no member.
   if (raw.projects) api.projects = Object.freeze({ list: coded(raw.projects.list) });
   if (raw.sessions) api.sessions = Object.freeze({ index: coded(raw.sessions.index), read: coded(raw.sessions.read) });
-  // `gugu.forum` (9): a page's. `onChanged(target, fn)`: one subscription per post (or 'feed') with the host, however many
+  // `gugu.cloud` (31): `on(topic, event, fn)` is a page's: one subscription per topic and event with the host, however many
   // handlers, as `files.onChanged` watches a place; one the host refuses is reported as the App's error.
-  if (raw.forum && raw.onForumChanged) {
-    const forum = raw.forum;
-    const listeners = new Map<string, Set<(change: { kind: string; seq?: number; entityId?: string }) => void>>();
-    let hearing: (() => void) | null = null;
-    const onForumChanged = raw.onForumChanged;
-    const onChanged = (target: unknown, handler: (change: { kind: string; seq?: number; entityId?: string }) => void): (() => void) => {
-      if (typeof target !== 'string' || !target) throw guguError('invalid', "forum.onChanged(target, fn) takes a post's id or 'feed'");
-      if (typeof handler !== 'function') throw guguError('invalid', 'forum.onChanged(target, fn) takes a function');
-      hearing ??= onForumChanged((changed, change) => {
-        for (const fn of listeners.get(changed) ?? []) fn(change);
-      });
-      let handlers = listeners.get(target);
-      if (!handlers) {
-        handlers = new Set();
-        listeners.set(target, handlers);
-        forum.subscribe(target).catch((error: unknown) => {
-          void host.reportError(`gugu.forum.onChanged(${target}): ${error instanceof Error ? error.message : String(error)}`).catch(() => undefined);
+  if (raw.cloud) {
+    const cloud = raw.cloud;
+    const write = cloud.write ?? cloud.programWrite;
+    const on = cloud.subscribe && cloud.unsubscribe && raw.onCloudHeard ? (() => {
+      type Heard = { subscribed: true } | { payload: Record<string, unknown> };
+      const { subscribe, unsubscribe } = cloud as Required<typeof cloud>;
+      const onCloudHeard = raw.onCloudHeard!;
+      const listeners = new Map<string, Set<(heard: Heard) => void>>();
+      const keyOf = (topic: string, event: string) => `${topic}\n${event}`;
+      let hearing: (() => void) | null = null;
+      return (topic: unknown, event: unknown, handler: (heard: Heard) => void): (() => void) => {
+        if (typeof topic !== 'string' || !topic || typeof event !== 'string' || !event) throw guguError('invalid', 'cloud.on(topic, event, fn) names a topic and an event');
+        if (typeof handler !== 'function') throw guguError('invalid', 'cloud.on(topic, event, fn) takes a function');
+        hearing ??= onCloudHeard((heardTopic, heardEvent, heard) => {
+          for (const fn of listeners.get(keyOf(heardTopic, heardEvent)) ?? []) fn(heard);
         });
-      }
-      handlers.add(handler);
-      return () => {
-        const current = listeners.get(target);
-        if (!current?.delete(handler) || current.size > 0) return;
-        listeners.delete(target);
-        void forum.unsubscribe(target).catch(() => undefined);
+        const key = keyOf(topic, event);
+        let handlers = listeners.get(key);
+        if (!handlers) {
+          handlers = new Set();
+          listeners.set(key, handlers);
+          subscribe(topic, event).catch((error: unknown) => {
+            void host.reportError(`gugu.cloud.on(${topic}): ${error instanceof Error ? error.message : String(error)}`).catch(() => undefined);
+          });
+        }
+        handlers.add(handler);
+        return () => {
+          const current = listeners.get(key);
+          if (!current?.delete(handler) || current.size > 0) return;
+          listeners.delete(key);
+          void unsubscribe(topic, event).catch(() => undefined);
+        };
       };
-    };
-    api.forum = Object.freeze({
-      list: coded(forum.list), read: coded(forum.read), post: coded(forum.post), reply: coded(forum.reply), react: coded(forum.react),
-      remove: coded(forum.remove), block: coded(forum.block), assign: coded(forum.assign), award: coded(forum.award), onChanged,
+    })() : undefined;
+    api.cloud = Object.freeze({
+      read: coded(cloud.read),
+      ...(write ? { write: coded(write) } : {}),
+      ...(on ? { on } : {}),
     });
   }
   // The host's markdown rendering for a page (markdown-entry.ts): links in it go through this very `gugu`.

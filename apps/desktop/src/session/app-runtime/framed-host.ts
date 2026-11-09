@@ -36,17 +36,16 @@ export function framedHost(): GuguHost & Record<string, unknown> {
  * not there (an App tells the phone by `typeof gugu.callProgram`).
  */
 const PHONE: ReadonlySet<HostMember> = new Set<HostMember>([
-  'navigationGo', 'modal.open', 'modal.close', 'modal.key', 'onModalFocus',
+  'navigationGo', 'navigationClaimBack', 'onBack', 'modal.open', 'modal.close', 'modal.key', 'onModalFocus',
   'getContext', 'showContextMenu', 'getAppState', 'onAppStateChanged', 'onAgentsChanged', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', 'listAgents', 'messages.history', 'messages.search',
   'chats.list', 'chats.members', 'linkTo', 'openLink',
   'callProgram', 'sessions.index', 'sessions.read',
-  'forum.list', 'forum.read', 'forum.post', 'forum.reply', 'forum.react', 'forum.remove', 'forum.block', 'forum.assign', 'forum.award',
-  'forum.subscribe', 'forum.unsubscribe', 'onForumChanged',
-  'setTabTitle', 'setTabBadge', 'onCommand', 'onLink', 'showMessage', 'showSession', 'clipboard.writeText',
+  'cloud.read', 'cloud.write', 'cloud.subscribe', 'cloud.unsubscribe', 'onCloudHeard', 'pickAgent',
+  'setTabTitle', 'setTabBadge', 'setTabDirty', 'onCommand', 'onLink', 'showMessage', 'showSession', 'clipboard.writeText',
   'readData', 'writeData', 'listData',
-  'appFiles.open', 'appFiles.reopen', 'appFiles.close', 'appFiles.list', 'appFiles.read', 'appFiles.search', 'appFiles.recent', 'appFiles.create', 'appFiles.viewPreferences',
+  'appFiles.open', 'appFiles.reopen', 'appFiles.close', 'appFiles.list', 'appFiles.read', 'appFiles.readText', 'appFiles.exists', 'appFiles.draft', 'appFiles.writeText', 'appFiles.search', 'appFiles.recent', 'appFiles.create', 'appFiles.viewPreferences',
   'appFiles.keep', 'appFiles.remove', 'appFiles.canDelete', 'appFiles.rename', 'appFiles.mkdir', 'appFiles.move', 'appFiles.watch', 'appFiles.replace',
-  'appFiles.versions', 'appFiles.readVersion', 'appFiles.upload', 'appFiles.openWith', 'appFiles.download', 'appFiles.forward',
+  'appFiles.versions', 'appFiles.readVersion', 'appFiles.upload', 'appFiles.writeChunk', 'appFiles.openWith', 'appFiles.download', 'appFiles.forward',
 ]);
 const IN_SESSION: ReadonlySet<HostMember> = new Set<HostMember>(['callProgram', 'onProgramNotification']);
 /** What main answers an App's MCP program (F16): its files and messages, an agent's word — no page, no data folder of a page. */
@@ -54,10 +53,10 @@ const PROGRAM: ReadonlySet<HostMember> = new Set<HostMember>([
   'projection.create', 'projection.publish', 'projection.close', 'projection.closed', 'projection.inputResult', 'onProjectionSource',
   'getContext', 'onContextChanged', 'onFilesChanged', 'reportError', 'openBrowserTab', 'dispatch', 'messages.history', 'messages.search',
   'chats.list', 'chats.members', 'projects.list', 'linkTo',
-  'sessions.index', 'sessions.read',
-  'appFiles.open', 'appFiles.reopen', 'appFiles.close', 'appFiles.list', 'appFiles.read', 'appFiles.search', 'appFiles.recent', 'appFiles.create',
+  'sessions.index', 'sessions.read', 'cloud.read', 'cloud.programWrite', 'prompts.list', 'prompts.save', 'prompts.delete',
+  'appFiles.open', 'appFiles.reopen', 'appFiles.close', 'appFiles.list', 'appFiles.read', 'appFiles.readText', 'appFiles.exists', 'appFiles.draft', 'appFiles.writeText', 'appFiles.search', 'appFiles.recent', 'appFiles.create',
   'appFiles.remove', 'appFiles.canDelete', 'appFiles.rename', 'appFiles.mkdir', 'appFiles.move', 'appFiles.watch', 'appFiles.replace',
-  'appFiles.versions', 'appFiles.readVersion', 'appFiles.upload',
+  'appFiles.versions', 'appFiles.readVersion', 'appFiles.upload', 'appFiles.writeChunk',
 ]);
 
 /**

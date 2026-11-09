@@ -79,6 +79,9 @@ export type ExtensionHostWindowChannel = {
    */
   hostLocale: () => string;
   hostTone: () => 'light' | 'dark';
+  hostThemeColors: () => Readonly<Record<string, string>> | undefined;
+  /** The signed-in account's own 咕咕号 (`ExtensionBridgeHost.selfGuguNumber`); its arrival is a presentation change. */
+  selfGuguNumber: () => number | null | undefined;
   onHostPresentationChange: (listener: () => void) => () => void;
 };
 
@@ -157,9 +160,11 @@ export const extensionBridgeRelayHost: ExtensionBridgeHost = {
   presentation: () => ({
     locale: requireHostWindow().hostLocale(),
     themeMode: requireHostWindow().hostTone(),
+    themeColors: requireHostWindow().hostThemeColors(),
     fullscreen: requireHostWindow().isHostWindowFullScreen(),
     windowFocused: requireHostWindow().isHostWindowFocused(),
   }),
+  selfGuguNumber: () => requireHostWindow().selfGuguNumber(),
 };
 
 export function requestExtensionInstallConsent(

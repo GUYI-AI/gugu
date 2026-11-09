@@ -101,7 +101,7 @@ const host = caller === 'background'
   : {
       apiVersion: EXTENSION_API_VERSION,
       ...members,
-      theme: readPageTheme(),
+      ...readPageTheme(),
       /** Only on the page `app_check` runs (摩擦单 F69): the runtime reports its counts here. */
       ...(process.argv.includes(CHECK_PAGE_ARG) ? { checkPage: { report: (counts: PageCounts): Promise<void> => call('checkCounts', counts) as Promise<void> } } : {}),
     };
@@ -135,10 +135,10 @@ window.addEventListener('message', (event) => {
  * `<html>` before the first paint. Main always answers; anything else is the wiring broken — loud, like the host's own
  * system languages (preload.ts), never a quiet fall back to the OS's colours (the very flash this is here to stop).
  */
-function readPageTheme(): 'light' | 'dark' {
-  const answer: unknown = ipcRenderer.sendSync(EXTENSION_THEME_CHANNEL);
-  if (answer !== 'light' && answer !== 'dark') throw new Error(`main did not answer ${EXTENSION_THEME_CHANNEL} (got ${String(answer)})`);
-  return answer;
+function readPageTheme(): { theme: 'light' | 'dark'; themeColors?: Record<string, string> } {
+  const answer = ipcRenderer.sendSync(EXTENSION_THEME_CHANNEL) as { theme?: unknown; themeColors?: Record<string, string> } | null;
+  if (answer?.theme !== 'light' && answer?.theme !== 'dark') throw new Error(`main did not answer ${EXTENSION_THEME_CHANNEL} (got ${JSON.stringify(answer)})`);
+  return { theme: answer.theme, ...(answer.themeColors ? { themeColors: answer.themeColors } : {}) };
 }
 
 contextBridge.exposeInMainWorld('__guguHost', host);

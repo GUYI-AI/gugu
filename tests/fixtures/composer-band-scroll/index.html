@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'; object-src 'none'; form-action 'none'" />
+    <title>Controlled composer geometry fixture</title>
+  </head>
+  <body>
+    <h1>Controlled composer geometry fixture</h1>
+    <p>No task identity, scheduled job, account, or backend connection. This page is layout evidence only.</p>
+    <label>Band <select id="band"><option value="schedule">Scheduled tray</option><option value="none">No band</option><option value="queue">Queued input</option></select></label>
+    <label>Theme <select id="theme"><option>light</option><option>dark</option></select></label>
+    <label>Width <select id="width"><option>640</option><option>360</option></select></label>
+    <p id="result" role="status">Recovery button clicks: 0</p>
+    <main id="fixture" style="width:640px;max-width:100%;margin:0 auto"></main>
+    <script type="module" src="./entry.tsx"></script>
+  </body>
+</html>
