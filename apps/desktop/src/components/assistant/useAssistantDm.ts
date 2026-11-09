@@ -4,7 +4,7 @@ import { createOptimisticDmChat } from '@gugu/core/shared/ui/chatModels'
 import { chatService } from '../../lib/chat'
 import { rendererLogger } from '../../lib/log'
 import { useAuth } from '../../store/auth'
-import { useChatStore } from '../../store/chatContext'
+import { useChatStore, useChatStoreSelect } from '../../store/chatContext'
 
 const dmLog = rendererLogger('assistant/chat')
 
@@ -16,10 +16,11 @@ export type AssistantDm = { chatId: string | null; failed: { error: string } | n
  */
 export function useAssistantDm(assistantId: string | null): AssistantDm {
   const { user } = useAuth()
-  const { chats, upsertChat, refreshChats } = useChatStore('chats', 'upsertChat', 'refreshChats')
-  const existing = assistantId
-    ? chats.find((chat) => (chat.kind === 'dm' || chat.kind === 'ai') && chat.peer_user_id === assistantId)?.id ?? null
-    : null
+  const { upsertChat, refreshChats } = useChatStore('upsertChat', 'refreshChats')
+  // 只订阅这条私聊的 id:会话列表每来一条消息都换一份,❌ 订阅整份会让挂着它的壳(桌面外壳也调手机壳的 hook)跟着整棵重渲。
+  const existing = useChatStoreSelect((store) => assistantId
+    ? store.chats.find((chat) => (chat.kind === 'dm' || chat.kind === 'ai') && chat.peer_user_id === assistantId)?.id ?? null
+    : null)
   const [created, setCreated] = useState<{ agentId: string; chatId: string } | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [failedAttempt, setFailedAttempt] = useState<{ attempt: number; error: string } | null>(null)

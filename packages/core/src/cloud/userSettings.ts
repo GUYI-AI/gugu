@@ -19,17 +19,14 @@ type SettingsConditionalUpdate = {
   select(columns: string): { maybeSingle(): PromiseLike<SettingsQueryResult> }
 }
 
-export interface VersionedSettingsTableClient extends SettingsTableClient {
-  from(table: 'user_settings'): ReturnType<SettingsTableClient['from']> & {
+export type VersionedSettingsTableClient = SettingsTableClient
+
+export interface SettingsTableClient {
+  from(table: 'user_settings'): {
     update(values: Record<string, unknown>): SettingsConditionalUpdate
     insert(values: Record<string, unknown>): {
       select(columns: string): { maybeSingle(): PromiseLike<SettingsQueryResult> }
     }
-  }
-}
-
-export interface SettingsTableClient {
-  from(table: 'user_settings'): {
     select(columns: string): {
       eq(
         column: 'user_id',
@@ -111,6 +108,18 @@ export async function updateUserSettingsConfig(
   throw new Error('Settings changed on another device; try again')
 }
 
+/** Edit only one key; recompute its value from the latest row on every version retry. */
+export function updateUserSettingsKey(
+  client: SettingsTableClient,
+  userId: string,
+  scope: GuguSettingsScope,
+  key: string,
+  edit: (value: unknown) => unknown,
+): Promise<GuguSettingsRow> {
+  return updateUserSettingsConfig(client, userId, scope, (config) => ({ ...config, [key]: edit(config[key]) }))
+}
+
+/** Legacy whole-config replacement. Preference edits must use updateUserSettingsKey instead. */
 export async function writeUserSettingsConfig(
   client: SettingsTableClient,
   userId: string,

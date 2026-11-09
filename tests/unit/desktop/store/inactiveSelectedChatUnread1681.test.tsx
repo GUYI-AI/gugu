@@ -151,6 +151,7 @@ vi.mock('../../../../apps/desktop/src/lib/chatProjection', () => ({
     current: () => projectionStub.rows,
     identities: () => projectionStub.identityRows,
     isMembershipRevoked: (chatId: string) => projectionStub.revoked.has(chatId),
+    memberReadSeqs: () => undefined,
     isConversationDeleted: (chatId: string) => projectionStub.deleted.has(chatId),
     ledger: () => [],
     reset: () => undefined,
@@ -206,7 +207,7 @@ function Probe() {
     onReaction: noop, onShowReadReceipt: undefined, onQuote: noop, onForward: noop, onDelete: noop,
     onOpenMemberProfile: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
     agentFloodNoticeMessageId: null, onAgentFloodUndone: undefined, onOpenFile: undefined,
-    onOpenLocalFileLink: undefined, onMentionMember: undefined, selectMode: false,
+ onMentionMember: undefined, selectMode: false,
     selectedIds: new Set(), onToggleSelect: noop, onEnterSelectMode: undefined }
   return useRealList ? createNode(MessageList, { rows, rowProps }) : null
 }

@@ -16,8 +16,10 @@
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
+import { configureVendorDownloads } from './vendor-download-env.cjs'
 
 const require = createRequire(import.meta.url)
+configureVendorDownloads()
 
 try {
   // electron 的 index.js 就是官方解析口:path.txt 或 dist 缺失时它同步补下载,
@@ -48,7 +50,7 @@ function repairHint() {
       )
     }
   }
-  return '离线/内网环境可先设 ELECTRON_MIRROR 或 ELECTRON_OVERRIDE_DIST_PATH 再重试。'
+  return '检查固定 vendor 存储的连通性；离线环境可用 ELECTRON_OVERRIDE_DIST_PATH 指向已有 Electron。'
 }
 
 function unzipComponentLoads() {

@@ -40,6 +40,7 @@ export function sourceFile({ io, text, onChange, onError, onDocument }) {
   let draftTimer = null
   let refreshing = null
   let refreshAgain = false
+  let failedOver = null
   const self = { dirty: false, deleted: false, tooLarge: null }
 
   const value = () => editor.text().replaceAll('\n', eol)
@@ -161,6 +162,7 @@ export function sourceFile({ io, text, onChange, onError, onDocument }) {
           // Their change may be all there was left to write.
           return self.save(true)
         }
+        failedOver = disk
         onError(error)
         return false
       }
@@ -170,6 +172,18 @@ export function sourceFile({ io, text, onChange, onError, onDocument }) {
       report({ deleted: false, dirty: value() !== content })
       if (!self.dirty) void io.draft?.clear().catch(onError)
       return true
+    },
+
+    /**
+     * The file can be reached again after a save that could not reach it. Taken only if the file is as that save left it:
+     * else nothing is written (their change is merged in, for the person to look at), and `onError` says `content-changed`.
+     */
+    async retrySave() {
+      await refresh()
+      if (self.deleted) return false
+      if (disk === failedOver) return self.save(true)
+      if (self.dirty) onError(Object.assign(new Error('The file changed while it could not be reached'), { code: 'content-changed' }))
+      return false
     },
 
     /** The person chose not to keep the edits: the draft goes with them. */

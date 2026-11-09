@@ -41,6 +41,6 @@ it('decodes the existing remote workspace wire only at the App reply boundary', 
   expect(answer.data).toBeInstanceOf(Uint8Array);
   expect([...answer.data]).toEqual([0, 255, 128]);
   expect(answer.data.buffer.byteLength).toBe(3);
-  expect(f.remoteRead).toHaveBeenCalledWith(expect.anything(), '11111111-1111-4111-8111-111111111111', 'filesRead', { ref: workspace, offset: 0, length: 3 }, false);
+  expect(f.remoteRead).toHaveBeenCalledWith(expect.anything(), '11111111-1111-4111-8111-111111111111', 'filesRead', { ref: workspace, offset: 0, length: 3 }, false, undefined);
   expect(f.localRead).not.toHaveBeenCalled();
 });

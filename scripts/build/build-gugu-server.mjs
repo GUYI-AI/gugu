@@ -36,6 +36,7 @@ import {
 } from '../gugu-server/runtime-packages.mts'
 import { defaultMiseCacheDir, obtainMiseArchive } from './mise-archive-cache.mts'
 import { serverLauncher } from '../gugu-server/launcher.mjs'
+import { installVendorNodeDependencies } from './install-vendor-node-deps.mjs'
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const rootPackage = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
@@ -119,7 +120,7 @@ writeFileSync(
   JSON.stringify({ name: 'gugu-server', version, private: true, dependencies: externalVersions }, null, 2),
 )
 // 按 Node ABI 装原生模块:在包目录里对着上面那份 package.json 装一次,预编译件由各包自己的 install 脚本按本机平台取。
-run('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--no-package-lock'], { cwd: join(stage, 'app') })
+installVendorNodeDependencies(join(stage, 'app'), ['--omit=dev', '--no-audit', '--no-fund', '--no-package-lock'])
 
 // 桌面包里这些包由 pnpm 装、pnpm-workspace.yaml 的 patchedDependencies 自动打上补丁;npm 不认那一段,
 // 这里照同一份补丁文件打一遍 —— 同一个版本号,桌面和 server 跑的必须是同一份代码。
@@ -174,7 +175,7 @@ cpSync(join(root, 'mise-bundle', `${miseOs}-${arch}`), join(stage, 'app', 'mise-
   if (!pin) throw new Error(`tmux-release.json 里没有 ${osName}-${arch}`)
   const archive = obtainMiseArchive({
     cacheDir: defaultMiseCacheDir(),
-    downloadBase: 'https://github.com/tmux/tmux-builds/releases/download',
+    downloadBase: 'https://download.gugu.nextmind.space/releases/vendor/tmux',
     version: TMUX.version,
     asset: pin.asset,
     sha256: pin.sha256,
@@ -209,8 +210,11 @@ if (process.env.GUGU_SERVER_SKIP_NODE_DOWNLOAD === '1') {
   const nodeName = `node-v${nodeVersion}-${osName}-${arch}`
   const archive = join(releaseDir, `${nodeName}.tar.xz`)
   if (!existsSync(archive)) {
-    run('curl', ['-fsSL', '--retry', '3', '-o', archive, `https://nodejs.org/dist/v${nodeVersion}/${nodeName}.tar.xz`])
+    run('curl', ['-fsS', '--retry', '3', '-o', archive, `https://download.gugu.nextmind.space/releases/vendor/node-toolchain/v${nodeVersion}/${nodeName}.tar.xz`])
   }
+  const buildPins = JSON.parse(readFileSync(join(root, 'scripts/build/vendor-build-pins.json'), 'utf8'))
+  const nodePin = buildPins.artifacts.find(item => item.component === 'node-toolchain' && item.file === `${nodeName}.tar.xz`)
+  if (!nodePin || createHash('sha256').update(readFileSync(archive)).digest('hex') !== nodePin.sha256) throw new Error('Server Node archive SHA256 differs from the reviewed pin')
   mkdirSync(nodeDir, { recursive: true })
   run('tar', ['-xJf', archive, '-C', nodeDir, '--strip-components=1', `${nodeName}/bin/node`, `${nodeName}/LICENSE`])
 }

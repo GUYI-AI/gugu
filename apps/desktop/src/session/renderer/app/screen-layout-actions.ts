@@ -11,9 +11,12 @@ import { MIN_PANE_HEIGHT_PX, MIN_PANE_WIDTH_PX, type PaneLayoutStore } from '@re
 import { minExtent, paneExtent, removePane } from '@renderer/features/tabs/pane-layout-tree';
 import { auxWindows, type TabWindowHome } from './aux-windows';
 import { readChatSummaries, subscribeChatSummaries } from '@/lib/chatSummariesBridge';
+import { isScreenView } from './screen-views';
 import { MAX_SCREEN_BLOCKS, screenLayout, type ScreenBlockContent, type ScreenLayoutSnapshot, type ScreenSession, type WindowableContent } from './screen-layout';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
+
+export { isScreenView };
 
 /**
  * 这一屏(screen-layout)和导航之间的那两根线(spec session-page「一屏几块」):
@@ -226,12 +229,6 @@ export function returnToScreen(): void {
   followFocus();
   // 只剩 App 块、或 App 正有焦点而没有会话块:也还是这屏,无需重开一个旧任务来承载它。
   if (!isScreenView(appState.navigation.currentViewId)) appState.navigation.navigate(screenLayout.layout ? 'screen' : 'home');
-}
-
-/** 这几个视图看的是这一屏:会话、项目、对话都是其中一块(gugu-dev#181)。⌘ 点「拼到旁边」也只在这些视图上才有「正看着那块」。 */
-const SCREEN_VIEWS: ReadonlySet<string> = new Set(['session', 'project', 'chat', 'screen']);
-export function isScreenView(viewId: string | null | undefined): boolean {
-  return !!viewId && SCREEN_VIEWS.has(viewId);
 }
 
 /** 在一块里按下 = 看这一块。 */

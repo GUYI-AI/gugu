@@ -1,7 +1,7 @@
 import { createHmac, randomUUID } from 'node:crypto'
 import type { AuditInput, CredentialReference, CredentialSummary } from './contracts'
 import { VaultError } from './contracts'
-import type { VaultPayload } from './schema'
+import { maskedAccount, type VaultPayload } from './schema'
 
 type StoredCredential = VaultPayload['credentials'][number]
 export interface ManagementRuntime {
@@ -12,8 +12,8 @@ export interface ManagementRuntime {
   record(event: AuditInput): Promise<string>
   cleanup: Promise<boolean>
 }
-const result = (operation: VaultPayload['operations'][number], epoch: string): CredentialSummary => ({
-  reference: { id: operation.credentialId, version: operation.version, epoch }, origin: operation.origin, maskedAccount: '••••',
+const result = (operation: VaultPayload['operations'][number], epoch: string, account: string): CredentialSummary => ({
+  reference: { id: operation.credentialId, version: operation.version, epoch }, origin: operation.origin, maskedAccount: maskedAccount(account),
 })
 function receipt(operation: VaultPayload['operations'][number], action: 'add' | 'edit' | 'delete'): AuditInput {
   return { id: operation.auditId, action, source: 'local-person', outcome: 'completed',
@@ -29,7 +29,7 @@ export async function saveCredential(runtime: ManagementRuntime, operationId: st
   let operation = payload.operations.find(item => item.id === operationId)
   if (operation && (operation.kind !== 'save' || operation.digest !== digest)) throw new VaultError('INVALID_INPUT')
   const action = previous ? 'edit' : 'add'
-  if (operation?.status === 'committed') { await runtime.record(receipt(operation, action)); return result(operation, epoch) }
+  if (operation?.status === 'committed') { await runtime.record(receipt(operation, action)); return result(operation, epoch, input.account) }
   const old = previous ? runtime.check(previous) : undefined
   if (!await runtime.cleanup) throw new VaultError('UNAVAILABLE')
   runtime.current()
@@ -45,7 +45,7 @@ export async function saveCredential(runtime: ManagementRuntime, operationId: st
   operation.status = 'committed'
   await runtime.persist(payload)
   await runtime.record(receipt(operation, action))
-  return result(operation, epoch)
+  return result(operation, epoch, input.account)
 }
 export async function deleteCredential(runtime: ManagementRuntime, operationId: string, reference: CredentialReference): Promise<void> {
   const { key, payload } = runtime

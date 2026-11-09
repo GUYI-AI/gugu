@@ -15,6 +15,10 @@ codex, claude, grok, devin, qwen, droid, antigravity, cursor, copilot, amp, comm
 
 codex, claude, grok, devin, qwen, droid, cursor, copilot, gemini, opencode, hermes, auggie, kimi, kilocode, kiro, cline, mistral, junie, oh-my-pi, pi, qoder, mimocode, zcode, codebuddy, dsh
 
+## Vendor Data
+
+Kilo sends telemetry to PostHog and, when signed in to Kilo, uploads session transcripts to Kilo's cloud. Gugu turns both off for every Kilo process it starts (`vendorDataOff`). The variables win over the user's own Kilo config. Kilo's own model catalogue requests remain.
+
 ## Provider Metadata Includes
 
 - provider metadata and icon assets

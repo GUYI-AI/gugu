@@ -435,10 +435,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
               </div>
             </>
           ) : t('group.memberList.title'),
-          <>
-            {searchButton}
-            {group.headerActions}
-          </>,
+          searchButton,
         )}</HeaderSearch>
 
         {snapshot && (!mobile || chatKind === 'group') ? (

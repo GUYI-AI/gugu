@@ -48,11 +48,16 @@ export type ChatCommands = {
   /** Mount the host's tooltip or source popover without coupling Solid to the host UI framework. */
   onTooltipMount?: (target: { root: HTMLElement; text: string; onOpenOriginal?: () => void; originalLabel?: string }) => void | (() => void);
   /** Mount the host's existing failed-message menu in the measured status line. */
-  onInputSendFailureMount?: (target: { root: HTMLElement; itemId: string; error?: string; reason?: string }) => void | (() => void);
+  onInputSendFailureMount?: (target: { root: HTMLElement; itemId: string; error?: string; reason?: string; unknown?: boolean; retryable: boolean }) => void | (() => void);
   canDiscardSend?: (itemId: string) => boolean;
   onDiscardSend?: (itemId: string) => void;
   /** A recycled row supplies live getters; the host returns its DOM-listener cleanup. */
-  onMessageTextMount?: (target: { root: HTMLElement; menuRoot?: HTMLElement; itemId: string; message: () => ChatMessage; sender?: () => string | null }) => void | (() => void);
+  onMessageTextMount?: (target: { root: HTMLElement; menuRoot?: HTMLElement; itemId: string; message: () => ChatMessage; sender?: () => string | null; commands?: () => ChatCommands }) => void | (() => void);
+  /**
+   * A slot for one message the agent sent to people (`ChatMessage.sentMessages`): the host draws it with the chat's
+   * MessageBody inside `root` and reports the drawn size with `ChatState.session.setBodySize(message.id, …)`.
+   */
+  onMessageBodyMount?: (target: { root: HTMLElement; message: import('@gugu/core/shared/types/chat').MessageItem }) => void | (() => void);
   onOpenSender?: (target: import('./lib/sender-target').MessageSenderTarget) => void;
   conversationAgentSession?: () => string | null;
   /** External agents may expose only their public identity, with no readable session. */
@@ -77,6 +82,8 @@ export type ChatCommands = {
     text: string;
     pending: boolean;
     canSubmit: boolean;
+    /** What sending will do to the rest of the task, when it does anything. */
+    notice?: string;
     onChange: (text: string) => void;
     onCancel: () => void;
     onSubmit: () => void;

@@ -48,7 +48,7 @@ function inHoverCorridor(point: HoverPoint, elements?: HoverElements, nextTrigge
 // that moves onto a row enters at a new spot (Chromium sends the boundary events before that move's mousemove).
 let lastMove: HoverPoint | undefined
 if (typeof document !== 'undefined') document.addEventListener('mousemove', (event) => { lastMove = { x: event.clientX, y: event.clientY } }, true)
-export const enteredByMoving = (event: MouseEvent): boolean => lastMove?.x !== event.clientX || lastMove?.y !== event.clientY
+export const enteredByMoving = (event: MouseEvent): boolean => event.buttons === 0 && (lastMove?.x !== event.clientX || lastMove?.y !== event.clientY)
 
 /** Keep menu locks and travel to the current popup; elsewhere, hand over without a delay. */
 export function claimHoverOwner(id: symbol, locked = false, elements?: HoverElements, point?: HoverPoint): boolean {

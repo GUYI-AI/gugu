@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({ manager: null as WorkspaceTerminals | null, di
 vi.mock('../workspace-backend/workspace-backend', () => ({
   workspaceBackend: () => ({ terminal: { terminals: () => mocks.manager } }),
 }));
+vi.mock('@renderer/utils/logger', () => ({ log: { error: vi.fn() } }));
 vi.mock('@renderer/lib/ipc', () => ({ events: { on: () => () => {} } }));
 vi.mock('@renderer/lib/pty/pty', () => ({
   loadXterm: async () => {},
@@ -27,14 +28,13 @@ const entry = { kind: 'terminal', tabId: 'tab-1', isPreview: false, state: { ter
 const ctx = { viewId: 'task-1', projectId: 'project-1', workspaceId: 'workspace-1', modelRootPath: 'workspace:workspace-1' };
 
 describe('terminal tab view lifetime', () => {
-  it('releases a closed view while keeping the terminal record and session available to reopen', async () => {
+  it('releases a disposed view while keeping the terminal record and session, as a restart needs', async () => {
     const session = new PtySession('terminal-1');
     sessions.push(session);
     const manager = {
       isLoaded: true,
       terminals: new Map([['terminal-1', { data: { name: 'Terminal 1' } }]]),
       sessions: new Map([['terminal-1', session]]),
-      createDefaultTerminal: vi.fn(),
     };
     mocks.manager = manager;
     await session.connect();
@@ -54,6 +54,31 @@ describe('terminal tab view lifetime', () => {
     terminalTabProvider.dispose(entry, reopened, ctx);
   });
 
+  it('ends the shell when the tab closes for good, and never offers it back', () => {
+    const deleteTerminal = vi.fn().mockResolvedValue(undefined);
+    mocks.manager = {
+      isLoaded: true,
+      terminals: new Map(),
+      sessions: new Map(),
+      deleteTerminal,
+    };
+    terminalTabProvider.closed?.('tab-1', ctx, [{ terminalId: 'terminal-1' }]);
+    expect(deleteTerminal).toHaveBeenCalledExactlyOnceWith('terminal-1');
+    expect(terminalTabProvider.reopenable).toBe(false);
+  });
+
+  it('a clean exit ends a local terminal; a crash is left to the host, which restarts it', async () => {
+    const deleteTerminal = vi.fn().mockResolvedValue(undefined);
+    mocks.manager = { isLoaded: true, terminals: new Map([['terminal-1', { data: { name: 'Terminal 1' } }]]), sessions: new Map(), deleteTerminal };
+    const resource = terminalTabProvider.initialize(entry, {} as never, ctx);
+    resource.exited({ exitCode: 1 });
+    resource.exited({ exitCode: 0, signal: 15 });
+    expect(deleteTerminal).not.toHaveBeenCalled();
+    resource.exited({ exitCode: 0 });
+    expect(deleteTerminal).toHaveBeenCalledExactlyOnceWith('terminal-1');
+    terminalTabProvider.dispose(entry, resource, ctx);
+  });
+
   it('still delegates remote terminal shutdown to its backend when the tab closes', async () => {
     const session = new PtySession('terminal-1');
     sessions.push(session);
@@ -62,7 +87,6 @@ describe('terminal tab view lifetime', () => {
       isLoaded: true,
       terminals: new Map([['terminal-1', { data: { name: 'Terminal 1' } }]]),
       sessions: new Map([['terminal-1', session]]),
-      createDefaultTerminal: vi.fn(),
       closeTerminal,
     };
     await session.connect();

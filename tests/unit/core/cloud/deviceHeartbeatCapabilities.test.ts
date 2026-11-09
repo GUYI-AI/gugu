@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { syncDeviceHeartbeat, type DeviceHeartbeatOptions, type DeviceHeartbeatTableClient } from '@gugu/core'
+import { setCoreLoggerFactory, syncDeviceHeartbeat, type DeviceHeartbeatOptions, type DeviceHeartbeatTableClient } from '@gugu/core'
 
 function fixture() {
   let stored: Record<string, unknown> | null = null
@@ -102,6 +102,25 @@ describe('device heartbeat capability registration', () => {
     expect(f.rows[1]).not.toHaveProperty('capabilities')
     expect(f.rows[2]).toHaveProperty('capabilities')
     expect(f.stored()?.capabilities).toMatchObject({ runtimes: [] })
+  })
+
+  // 诊断:写「成功」但 0 行 = 写被吞;要在日志里看得见(只打 device_id 末 8 位),行为照旧(走完整 upsert 补登记)。
+  test('a heartbeat update that affects 0 rows warns with the device id tail; a matched update stays quiet', async () => {
+    const warnings: Array<{ fields: Record<string, unknown>; msg: string }> = []
+    const quiet = () => undefined
+    const restore = setCoreLoggerFactory(() => ({ debug: quiet, info: quiet, error: quiet, warn: (fields, msg) => warnings.push({ fields, msg }) }))
+    try {
+      const f = fixture()
+      await f.beat({ deviceId: 'device-0123456789abcdef' })
+      await f.beat({ deviceId: 'device-0123456789abcdef' })
+      expect(warnings).toEqual([])
+      f.replace(null)
+      await f.beat({ deviceId: 'device-0123456789abcdef' })
+      expect(warnings).toEqual([{ fields: { device: '89abcdef', write: 'update' }, msg: 'device heartbeat write affected 0 rows' }])
+      expect(f.methods).toEqual(['upsert', 'update', 'update', 'upsert'])
+    } finally {
+      restore()
+    }
   })
 
   test('unchanged heartbeats preserve another instance registration', async () => {

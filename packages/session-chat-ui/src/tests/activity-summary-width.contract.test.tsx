@@ -8,6 +8,7 @@ import { readableLabel } from '../components/rows/readable-label';
 import { ACTIVITY_LABEL_INSET } from '../components/rows/agent-activity/activity-metrics';
 import { activitySummary, activitySummaryText } from '../state/activity-summary';
 import { activityUnitDef } from '../components/rows/agent-activity/activity.def';
+import { activityLines } from '../components/rows/agent-activity/activity-lines';
 import type { AgentActivityGroup } from '../state/agent-activity';
 import { makeContractCtx, renderAndMeasureUnit } from './contract';
 import { defaultChatTranslator } from '../localization';
@@ -54,15 +55,29 @@ const chinese = (key: string, values?: Readonly<Record<string, string | number>>
  return template ? template.replace(/\{(\w+)\}/g, (_, k) => String(values?.[k] ?? '')) : defaultChatTranslator(key, values);
 };
 
+// The names are sized in the font this browser actually renders (CJK glyph widths differ between platforms and font
+// packages): each sits halfway between the first length that needs N lines and the first that needs N + 1, measured
+// on the untruncated text with the same layout the row uses. The DOM must then wrap exactly as computed.
+const summaryActor = (name: string) => ({ id: 'user:cloud', name, target: { kind: 'sender' as const, userId: 'cloud' } });
+const summaryGroup = (name: string): AgentActivityGroup => ({ id: 'summary', events: [{ id: 'event', direction: 'received', actors: [summaryActor(name)], count: 37, live: false }], messageIds: [] });
+const nameStem = Array.from('云端与计费主管（Claude，负责' + '所有云端账户、账本结算、服务部署、价格目录以及跨设备故障排查和维护'.repeat(8));
+const untruncatedLines = (name: string, ctx: ReturnType<typeof makeContractCtx>) =>
+ activityLines(activitySummary(summaryGroup(name), chinese).map(part => typeof part === 'string' ? part : { actor: part, label: part.name }), ctx).lines.length;
+function nameNeeding(lines: number, ctx: ReturnType<typeof makeContractCtx>): string {
+ const first = (target: number) => { for (let n = 1; n <= nameStem.length; n++) if (untruncatedLines(nameStem.slice(0, n).join(''), ctx) >= target) return n; throw new Error(`no name needs ${target} lines`); };
+ return nameStem.slice(0, Math.floor((first(lines) + first(lines + 1)) / 2)).join('');
+}
+
 describe.each([false, true])('three-line semantic summary (dark=%s)', dark => {
  it.each([
-  { name: '云端与计费主管（Claude，负责云端账户及账本结算）', lines: 2, shortened: false },
-  { name: '云端与计费主管（Claude，负责所有云端账户、账本结算、服务部署、价格目录以及跨设备故障排查和维护）', lines: 3, shortened: false },
-  { name: '云端与计费主管（Claude，负责所有云端账户、账本结算、服务部署、价格目录以及跨设备故障排查和维护）'.repeat(3), lines: 3, shortened: true },
- ])('wraps to $lines lines before truncating (shortened=$shortened)', async ({ name, lines, shortened }) => {
+  { naturalLines: 2, lines: 2, shortened: false },
+  { naturalLines: 3, lines: 3, shortened: false },
+  { naturalLines: 5, lines: 3, shortened: true },
+ ])('wraps to $lines lines before truncating (shortened=$shortened)', async ({ naturalLines, lines, shortened }) => {
   document.body.classList.toggle('emdark', dark);
-  const actor = { id: 'user:cloud', name, target: { kind: 'sender' as const, userId: 'cloud' } };
-  const group: AgentActivityGroup = { id: 'summary', events: [{ id: 'event', direction: 'received', actors: [actor], count: 37, live: false }], messageIds: [] };
+  const measure = makeContractCtx({ width: 390 }); measure.translate = chinese;
+  const name = nameNeeding(naturalLines, measure);
+  const group = summaryGroup(name);
   const ctx = makeContractCtx({ width: 390 }); ctx.translate = chinese;
   const reading = await renderAndMeasureUnit(activityUnitDef, group, ctx, host => {
    const row = host.querySelector<HTMLElement>('[data-agent-activity]')!;

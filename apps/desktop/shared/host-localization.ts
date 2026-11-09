@@ -120,9 +120,9 @@ const HOST_CATALOG = {
   },
   'en-US': {
     tray: {
-      tooltip: '咕咕',
-      show: 'Open 咕咕',
-      quit: 'Quit 咕咕',
+      tooltip: 'Gugu',
+      show: 'Open Gugu',
+      quit: 'Quit Gugu',
     },
     appMenu: {
       settings: 'Settings…',
@@ -133,12 +133,12 @@ const HOST_CATALOG = {
     },
     notifications: {
       closeToTray: {
-        title: '咕咕 is still running in the background',
-        body: 'Click the 咕咕 icon or reopen the app to restore it; to quit, choose Quit 咕咕 from the icon menu.',
+        title: 'Gugu is still running in the background',
+        body: 'Click the Gugu icon or reopen the app to restore it; to quit, choose Quit Gugu from the icon menu.',
       },
       authExpired: {
-        title: 'Your 咕咕 sign-in expired',
-        body: '咕咕 stopped running on this device. Sign in again to resume automatically.',
+        title: 'Your Gugu sign-in expired',
+        body: 'Gugu stopped running on this device. Sign in again to resume automatically.',
       },
     },
     windowChrome: {
@@ -176,15 +176,15 @@ const HOST_CATALOG = {
       touchIdReason: 'verify your identity on $1',
       chooseAccount: {
         message: 'Which account do you want to sign in to {site} with?',
-        detail: '咕咕 on this Mac has more than one passkey for {site}.',
+        detail: 'Gugu on this Mac has more than one passkey for {site}.',
         cancel: 'Cancel',
       },
     },
     rendererCrash: {
-      title: "咕咕's window keeps crashing",
+      title: "Gugu's window keeps crashing",
       detail: 'The window crashed {count} times within a few minutes, so it is no longer reloaded automatically.',
       reload: 'Reload',
-      quit: 'Quit 咕咕',
+      quit: 'Quit Gugu',
     },
     updateRestart: {
       title: 'Restart to update?',
@@ -196,11 +196,11 @@ const HOST_CATALOG = {
     },
     sessionPlatform: {
       credentialUnavailable: {
-        signedOut: '咕咕: you are signed out. Sign in again in 咕咕, then resend',
-        modelUnavailable: '咕咕: this model is unavailable now. Switch to another model, then resend',
-        membership: '咕咕: the Gugu model you are using needs a membership. Switch models, or get a membership, then resend',
-        unreachable: '咕咕: cannot reach the 咕咕 service. Resend in a moment',
-        serviceUnavailable: "咕咕: something went wrong on 咕咕's side. Resend in a moment",
+        signedOut: 'Gugu: you are signed out. Sign in again in Gugu, then resend',
+        modelUnavailable: 'Gugu: this model is unavailable now. Switch to another model, then resend',
+        membership: 'Gugu: the Gugu model you are using needs a membership. Switch models, or get a membership, then resend',
+        unreachable: 'Gugu: cannot reach the Gugu service. Resend in a moment',
+        serviceUnavailable: "Gugu: something went wrong on Gugu's side. Resend in a moment",
       },
     },
   },

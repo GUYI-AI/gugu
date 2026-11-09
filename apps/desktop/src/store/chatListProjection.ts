@@ -4,8 +4,10 @@ import { createChatNotificationPayload, shouldNotify } from '@gugu/core/shared/u
 import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
 import { publishChatSnapshot } from '../lib/chatSnapshotPublication'
 import { platform } from '../platform'
+import { i18n } from '@/i18n'
 import { isChatOnScreen } from '../lib/onScreenChat'
-import { chatPreviewText } from '../lib/agentTurnFailure'
+import { parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
+import { chatPreviewText } from '../lib/systemNoticeText'
 import { imSelectors, type AccountImRepository } from '../lib/imRepository'
 import type { PersonalConversationDeletion } from '../lib/deleteListedConversation'
 import { patchChatRows, prepareProjectedReadWatermark, type PatchChat } from './chatRealtimeMutations'
@@ -15,6 +17,7 @@ import {
   type ChatProjection, type ChatProjectionAttachment,
 } from '../lib/chatProjection'
 import { shareRows } from '../lib/chatProjectionAlgebra'
+import type { ChatWindowCache } from './chatWindowCache'
 
 // @@@selection-is-intent (#4314) — 一次刷新没提到某条会话，含义取决于这一发相对「最后一次看见它」有多新：
 // 刚 open_dm 出来的会话还没被任何一发投影过，对它的沉默是仪器还没读到、不是阴性读数。契约见 [[conversation-data]]。
@@ -95,7 +98,8 @@ export async function notifyForIngestedMessage(
   if (!shouldNotify({ kind: 'message', accountId, chat, message },
     { enabled: context.notificationsEnabled, onScreen: context.onScreen(chat.id) })) return
   await platform.showNotification({ ...createChatNotificationPayload({ ...chat,
-    last_message_preview: chatPreviewText({ last_message_preview: message.content, last_message_failure: null }) }), silent: !context.soundEnabled })
+    last_message_preview: chatPreviewText({ last_message_preview: message.content, last_message_notice: parseSystemNotice(message) })
+      || i18n.t('chatList.newMessage', { ns: 'messaging' }) }, i18n.t('brand.name', { ns: 'main' })), silent: !context.soundEnabled })
 }
 
 /** 屏上正打开的主时间线不产生未读红点；手工标未读与别的话题流仍保留。 */
@@ -157,6 +161,8 @@ export function useChatProjectionBinding(deps: {
   setChats: (rows: ChatItem[]) => void
   /** 当前选中被权威地撤销了 —— store 自己决定怎么清空那一侧的状态。 */
   onActiveRevoked: (chatId: string) => void
+  /** Conversations opened later start from the member read positions this projection already holds. */
+  conversations: Pick<ChatWindowCache, 'readSeqsOf'>
 }) {
   const { ledger, repositoryRef, getRepository, chatsRef, activeChatIdRef, requestSeqRef, setChats, onActiveRevoked, canAcknowledge, visibleSeqOf } = deps
   const ownerRef = useRef<{ accountId: string; owner: ChatProjection } | null>(null)
@@ -235,6 +241,7 @@ export function useChatProjectionBinding(deps: {
     chats.some(chat => ownerFor(accountId).isConversationDeleted(chat.id)), [ownerFor])
 
   const identities = useCallback((accountId: string) => ownerFor(accountId).identities(), [ownerFor])
+  deps.conversations.readSeqsOf = (chatId) => ownerRef.current?.owner.memberReadSeqs(chatId)
 
   const confirmPersonalDeletion = useCallback(async (accountId: string, receipt: PersonalConversationDeletion): Promise<boolean> => {
     const binding = ownerRef.current

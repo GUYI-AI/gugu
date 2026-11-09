@@ -42,12 +42,14 @@ it.each([
 
   const clearOfPin = () => {
     const head = header().getBoundingClientRect();
-    // The reading lane extends through the reply. Its sticky child is the painted
-    // question/backdrop; inspect that paint box rather than the invisible lane.
+    // The reading lane extends through the reply. The question scrolls as a row; its sticky child is the
+    // question's summary, painted only once the question has gone by. Inspect those boxes, not the lane.
     const containment = getComputedStyle(lane()).contain.split(' ');
     expect(containment.some(value => ['paint', 'content', 'strict'].includes(value))).toBe(true);
-    expect(getComputedStyle(lane().firstElementChild!).position).toBe('sticky');
-    expect(lane().firstElementChild!.getBoundingClientRect().bottom, 'the pin paint ends before the process header').toBeLessThanOrEqual(head.top + 0.5);
+    const pin = lane().lastElementChild as HTMLElement;
+    expect(getComputedStyle(pin).position).toBe('sticky');
+    expect(host.querySelector('[data-user-card="input"]')!.getBoundingClientRect().bottom, 'the question ends before the process header').toBeLessThanOrEqual(head.top + 0.5);
+    if (getComputedStyle(pin).opacity !== '0') expect(pin.getBoundingClientRect().bottom, 'the pin paint ends before the process header').toBeLessThanOrEqual(head.top + 0.5);
     expect(header().offsetHeight).toBe(28);
     for (let el: HTMLElement | null = header(); el && host.contains(el); el = el.parentElement) {
       expect(getComputedStyle(el).opacity).toBe('1');

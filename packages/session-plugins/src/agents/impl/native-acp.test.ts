@@ -45,7 +45,7 @@ const nativeAcpProviders: Array<{
   { id: 'junie', args: ['--acp=true'] },
   { id: 'kilocode', args: ['acp'] },
   { id: 'kimi', args: ['acp'] },
-  { id: 'kiro', args: ['acp'] },
+  { id: 'kiro', args: ['acp', '--agent-engine=v3'] },
   { id: 'mimocode', args: ['acp', '--print-logs', '--log-level', 'ERROR'] },
   { id: 'oh-my-pi', args: ['acp'] },
   {

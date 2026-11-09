@@ -213,6 +213,7 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
   onDropFolder,
   onAddMachine,
   floating = false,
+  touch = false,
 }: {
   /** 代表这个项目的那一行(侧栏那一行)的本地项目 id。 */
   projectId: string;
@@ -232,6 +233,8 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
   onDropFolder: (file: File) => void;
   /** 浮在群聊上面(项目块里开新任务,gugu-dev#181):一浮出来就摊开,提示换成「按 Esc 收起」;打字不收(owner 10-26)。 */
   floating?: boolean;
+  /** 触屏(手机):浮着时的提示不说键盘,收起靠任务标签上的 ×。 */
+  touch?: boolean;
 }) {
   const { translate } = useSessionMessages();
   useAvatarTick();
@@ -585,7 +588,7 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
           {state.folders === null
             ? translate('projects.folders.loading')
             : open
-              ? translate(floating ? 'projects.folders.hintFloating' : 'projects.folders.hintOpen')
+              ? translate(floating ? (touch ? 'projects.folders.hintFloatingTouch' : 'projects.folders.hintFloating') : 'projects.folders.hintOpen')
               : translate('projects.folders.hintClosed', { count: folders.length })}
         </p>
       ) : null}

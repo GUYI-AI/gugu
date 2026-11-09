@@ -21,6 +21,7 @@ import type { TerminalShellId } from '@shared/core/terminals/terminal-settings';
 import { workspaceConfig } from '@shared/core/workspaces/workspace-config';
 import { workspaceProviderData } from '@shared/core/workspaces/workspace-provider-data';
 import type { Hold } from '@gugu/core/local/session-life/types';
+import { windowCommitTables } from './window-commit-schema';
 
 /** Durable local IM rows. Their original body is never part of the disposable search schema. */
 export const imMessages = sqliteTable('im_messages', {
@@ -625,6 +626,7 @@ export const sessionTurns = sqliteTable(
 );
 
 export type SessionTurnRow = typeof sessionTurns.$inferSelect;
+export const { sessionWindowCommitReceipts, sessionWindowCommitPositions } = windowCommitTables({ sessionId: sessions.id, rowId: sessionTurns.id });
 
 /**
  * #6334 用量页:一条会话「在干活」(working / needs_user)的一段时间一行,时间是 epoch 毫秒。

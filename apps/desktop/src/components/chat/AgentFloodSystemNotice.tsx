@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { topicService, type AgentFloodAdjustment } from '../../lib/topics'
 import { rendererLogger } from '@/lib/log'
+import { systemNoticeText } from '@/lib/systemNoticeText'
 
 // @@@ui-ruler 结构性 style 提到模块作用域(同 ChatListPanel 的 *_STYLE 常量):
 // 既避免每次渲染重建对象,也让 JSX 里不再残留内联几何块这条债务痕迹。
@@ -39,6 +40,7 @@ const AGENT_FLOOD_ERROR_LINE_STYLE: React.CSSProperties = { marginTop: 4, color:
 export type AgentFloodSystemNoticeProps = {
   /** 那条 content_type='system' 的消息 */
   messageId: string
+  /** 服务端写的原文;按读者语言说(systemNoticeText),在这里算,换语言时跟着变 */
   content: string
   /** 撤回成功后让上层刷新成员档位 */
   onUndone?: () => void
@@ -91,7 +93,7 @@ export function AgentFloodSystemNotice({ messageId, content, onUndone }: AgentFl
       {/* 系统消息版式与 MessageBubble 的 content_type==='system' 同一套:居中、裸文字、非药丸。 */}
       <div style={AGENT_FLOOD_BODY_STYLE}>
         {/* 动作接在句子里,❌ 不另起一行摆一个方框控件。 */}
-        <span>{content}</span>
+        <span>{systemNoticeText({ kind: 'agent-flood' }, content)}</span>
         {adjustment && !undone ? (
           <>
             {' '}
