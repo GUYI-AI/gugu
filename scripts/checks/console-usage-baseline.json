@@ -187,7 +187,7 @@
   {
     "rule": "console-member",
     "file": "apps/desktop/src/store/chat.tsx",
-    "count": 9
+    "count": 8
   },
   {
     "rule": "console-member",

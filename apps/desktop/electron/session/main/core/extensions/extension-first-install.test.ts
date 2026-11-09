@@ -71,6 +71,20 @@ describe("an App's first install (App 插件体验)", () => {
     expect(service.dock()).toEqual(['board']);
   });
 
+  it('a page taken out of the menus is kept per App and forgotten with it; one gugu ships cannot have any taken out', () => {
+    const service = new ExtensionsService(path.join(work, 'installed-hidden'));
+    install(service, bundle({ tabs: [page] }, '1.0.0', 'notes'));
+    expect(service.setTabHidden('notes', page.name, true)).toEqual({ notes: [page.name] });
+    expect(() => service.setTabHidden('notes', 'gone', true)).toThrow(/no tab named gone/);
+    expect(service.setTabHidden('notes', page.name, false)).toEqual({});
+    service.setTabHidden('notes', page.name, true);
+    service.uninstall('notes');
+    expect(service.hiddenTabs()).toEqual({});
+    const dir = bundle({ tabs: [page] }, '1.0.0', 'shipped');
+    service.installFromDirectory(dir, service.inspectDirectory(dir).manifestDigest, 'preinstalled');
+    expect(() => service.setTabHidden('shipped', page.name, true)).toThrow(/comes with gugu/);
+  });
+
   it('an App that only opens files is not put on the rail', () => {
     const service = new ExtensionsService(path.join(work, 'installed-no-dock'));
     install(service, bundle({ tabs: [{ name: 'viewer', title: 'Viewer', opensFiles: { chat: ['.demo'] } }] }, '1.0.0', 'viewer'));

@@ -4,14 +4,15 @@ import android.content.Context;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import com.getcapacitor.JSObject;
+import org.json.JSONException;
 import org.json.JSONObject;
 import java.io.File;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.security.KeyStore;
 import javax.crypto.Cipher;
+import javax.crypto.AEADBadTagException;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
@@ -19,6 +20,7 @@ import javax.crypto.spec.GCMParameterSpec;
 /** Owner credentials never enter an Intent, public runtime state, logs, or Android backup. */
 final class GuguAgentHostStore {
     private static final String KEY = "gugu-phone-agent-host-v1";
+    private static final String UNREADABLE = "手机宿主凭据文件损坏，请在「这台手机」中重新启动手机 Agent";
 
     static synchronized JSObject configure(Context context, JSObject incoming) throws Exception {
         String owner = GuguAgentHostPolicy.owner(incoming.optString("ownerId"));
@@ -58,15 +60,22 @@ final class GuguAgentHostStore {
     static synchronized JSObject read(Context context, String owner) throws Exception {
         File target = file(context, owner);
         if (!target.exists()) return null;
-        ByteBuffer body = ByteBuffer.wrap(Files.readAllBytes(target.toPath()));
+        byte[] bytes = Files.readAllBytes(target.toPath());
+        if (bytes.length == 0) {
+            android.util.Log.w("GuguAgentHost", "Empty phone host credentials; awaiting configuration");
+            return null;
+        }
+        // The envelope contains a length byte, a 12-byte IV and a 16-byte GCM tag.
+        if (bytes.length < 29 || (bytes[0] & 0xff) != 12) throw new SecurityException(UNREADABLE);
+        ByteBuffer body = ByteBuffer.wrap(bytes);
         int length = body.get() & 0xff;
-        if (length != 12 || body.remaining() <= length) throw new SecurityException("手机宿主凭据文件损坏");
         byte[] iv = new byte[length]; body.get(iv);
         byte[] encrypted = new byte[body.remaining()]; body.get(encrypted);
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(128, iv));
         cipher.updateAAD(GuguAgentHostPolicy.owner(owner).getBytes(StandardCharsets.UTF_8));
-        return new JSObject(new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8));
+        try { return new JSObject(new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8)); }
+        catch (AEADBadTagException | JSONException error) { throw new SecurityException(UNREADABLE, error); }
     }
 
     static synchronized JSObject updateSession(Context context, String owner, JSONObject session) throws Exception {
@@ -111,9 +120,7 @@ final class GuguAgentHostStore {
         ByteBuffer body = ByteBuffer.allocate(1 + iv.length + encrypted.length).put((byte) iv.length).put(iv).put(encrypted);
         File target = file(context, owner);
         if (!target.getParentFile().isDirectory() && !target.getParentFile().mkdirs()) throw new IllegalStateException("无法创建手机宿主凭据目录");
-        File temp = new File(target.getPath() + ".tmp");
-        Files.write(temp.toPath(), body.array());
-        Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        DurableFile.write(target, body.array());
     }
 
     private static File file(Context context, String owner) { return new File(context.getNoBackupFilesDir(), "phone-agent-host/" + GuguAgentHostPolicy.owner(owner) + "/config.enc"); }

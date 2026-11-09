@@ -66,7 +66,7 @@ beforeEach(async () => {
     const ledger = useRef(createChatListProjectionLedger())
     const repositoryRef = useRef(repository), activeChatIdRef = useRef<string | null>('independent-recovery'), requestSeqRef = useRef(0)
     rootPatch = (id, partial, expected) => update(previous => patchChatRows(previous, id, partial, expected))
-    binding = useChatProjectionBinding({ ledger: ledger.current, repositoryRef, chatsRef, activeChatIdRef, requestSeqRef,
+    binding = useChatProjectionBinding({ ledger: ledger.current, conversations: { readSeqsOf: () => undefined }, repositoryRef, chatsRef, activeChatIdRef, requestSeqRef,
       getRepository: async () => { repositoryCalls++; if (gateFirst && repositoryCalls === 1) await gate.promise; return repository },
       setChats: update, onActiveRevoked: () => undefined, canAcknowledge: () => true, visibleSeqOf: () => 5,
       notifications: { chatMessages: false, sound: false } })

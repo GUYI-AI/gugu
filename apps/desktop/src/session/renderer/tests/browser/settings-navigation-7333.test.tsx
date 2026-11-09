@@ -66,7 +66,16 @@ describe('settings navigation hierarchy and interaction (#7333)', () => {
     const scroll = pane.querySelector<HTMLElement>('.gg-settings-nav-scroll')!;
     const rows = pane.querySelectorAll<HTMLElement>('[data-testid^="settings-nav-"]');
     expect(pane.getBoundingClientRect().width).toBe(216);
-    expect(rows).toHaveLength(15);
+    expect(rows).toHaveLength(16);
+    expect([...rows].map((row) => row.dataset.testid)).toEqual([
+      'settings-nav-account', 'settings-nav-subscriptions', 'settings-nav-usage',
+      'settings-nav-assistant', 'settings-nav-connectors',
+      'settings-nav-general', 'settings-nav-interface', 'settings-nav-model', 'settings-nav-permissions', 'settings-nav-passwords',
+      'settings-nav-sessions', 'settings-nav-devices', 'settings-nav-browser', 'settings-nav-files',
+      'settings-nav-resource-monitor', 'settings-nav-about',
+    ]);
+    expect(pane.querySelector('[data-testid="settings-nav-permissions"]')?.textContent).toBe('本机控制');
+    expect(pane.querySelector('[data-testid="settings-nav-passwords"]')?.textContent).toBe('密码');
     expect(pane.querySelector('[data-testid="settings-nav-activity"]')).toBeNull();
     expect(pane.querySelectorAll('[data-testid="settings-nav-usage"]')).toHaveLength(1);
     expect(pane.querySelector('[data-testid="settings-nav-resource-monitor"]')?.textContent).toBe('资源监视器');

@@ -3,7 +3,7 @@ import { TOUR_STEPS, type TourStepId } from '../../lib/productTour'
 import { readPanelToggle } from '../../lib/panelToggles'
 
 /**
- * 每一步指着的真实入口(规范 2.1)。「项目」那一步有示例项目时是要动手的一步:点开它才往下走(规范 4.2)。
+ * 每一步指着的真实入口。有示例项目时,也可以点开它继续;「下一步」始终可用。
  * 「项目」「对话」两格在「消息」里:页签不在屏上时先把「消息」打开,❌ 别的入口替人点。
  */
 type Target = { element: HTMLElement; action: boolean }
@@ -19,7 +19,10 @@ function findTarget(step: TourStepId): Target | null {
     const sample = document.querySelector('[data-tour="sample-project"]')
     if (visible(sample)) return { element: sample, action: true }
     const tab = document.querySelector('[data-testid="sidebar-list-page-projects"]')
-    return visible(tab) ? { element: tab, action: false } : null
+    if (visible(tab)) return { element: tab, action: false }
+    // Merged lists have no page tabs; their project heading survives sample removal.
+    const heading = document.querySelector('[data-first-run-hint="collaboration"][data-first-run-device="desktop"]')
+    return visible(heading) ? { element: heading, action: false } : null
   }
   if (step === 'chats') {
     const tab = document.querySelector('[data-testid="sidebar-list-page-chats"]')
@@ -45,9 +48,9 @@ function openMessagesIfNeeded(step: TourStepId) {
   }
 }
 
-export function useTourTarget(step: TourStepId): { target: Target | null; rect: DOMRect | null } {
-  const [target, setTarget] = useState<Target | null>(null)
-  const [rect, setRect] = useState<DOMRect | null>(null)
+type Measurement = { step: TourStepId; target: Target | null; rect: DOMRect | null }
+export function useTourTarget(step: TourStepId): { target: Target | null; rect: DOMRect | null; measured: boolean } {
+  const [measurement, setMeasurement] = useState<Measurement | null>(null)
   useLayoutEffect(() => {
     openMessagesIfNeeded(step)
     let frame = 0
@@ -65,16 +68,22 @@ export function useTourTarget(step: TourStepId): { target: Target | null; rect: 
           observed.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
         }
       }
-      setTarget((current) => current?.element === next?.element && current?.action === next?.action ? current : next)
       const box = next?.element.getBoundingClientRect() ?? null
-      setRect((current) => current && box && current.x === box.x && current.y === box.y && current.width === box.width && current.height === box.height ? current : box)
+      setMeasurement((current) => {
+        const sameTarget = current?.target?.element === next?.element && current?.target?.action === next?.action
+        const previous = current?.rect
+        const sameBox = previous === box || (previous && box && previous.x === box.x && previous.y === box.y && previous.width === box.width && previous.height === box.height)
+        return current?.step === step && sameTarget && sameBox ? current : { step, target: next, rect: box }
+      })
     }
     const schedule = () => { if (!frame) frame = requestAnimationFrame(measure) }
     const mutations = new MutationObserver(schedule)
     mutations.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden'] })
     window.addEventListener('resize', schedule)
     document.addEventListener('scroll', schedule, true)
-    measure()
+    // Allow the messages controller one render frame before settling an absent target.
+    if (findTarget(step)) measure()
+    else schedule()
     return () => {
       if (frame) cancelAnimationFrame(frame)
       resize.disconnect()
@@ -83,6 +92,7 @@ export function useTourTarget(step: TourStepId): { target: Target | null; rect: 
       document.removeEventListener('scroll', schedule, true)
     }
   }, [step])
-  return { target, rect }
+  return measurement?.step === step
+    ? { target: measurement.target, rect: measurement.rect, measured: true }
+    : { target: null, rect: null, measured: false }
 }
-

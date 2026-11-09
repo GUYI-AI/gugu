@@ -25,10 +25,21 @@ describe('resuming without replay (#980)', () => {
     const order: string[] = [];
     await resumeHistoryFacts(input(), {
       recordedDeliveryIds: async () => [],
-      fillFromRecord: async () => { order.push('fill'); },
+      fillFromRecord: async () => { order.push('fill'); return undefined; },
       turnIndexBase: async () => { order.push('base'); return 0; },
     });
     expect(order).toEqual(['fill', 'base']);
+  });
+
+  it('neither rereads nor replays a record too large for the heap', async () => {
+    const recordedDeliveryIds = vi.fn(async () => []);
+    const facts = await resumeHistoryFacts(input(), {
+      recordedDeliveryIds,
+      fillFromRecord: async () => ({ status: 'too_large' }),
+      turnIndexBase: async () => 7,
+    });
+    expect(facts).toEqual({ replayHistory: false, recordedDeliveryIds: null, turnIndexBase: 7 });
+    expect(recordedDeliveryIds).not.toHaveBeenCalled();
   });
 
   it('starts anyway when filling from the record fails', async () => {

@@ -1,4 +1,6 @@
-import { taskName } from './task-name';
+import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary';
+import { taskName, taskNameFor } from './task-name';
+import { sessionHostLocale } from '@main/core/host-locale';
 import { assistantWorkIntentSchema,type AssistantWorkIntent } from '@gugu/core/shared/assistantWorkIntent';
 import { SessionArchivedError } from '@gugu/core/shared/sessionArchival';
 import { assistantWorkLedgerContext } from '../../../../sessionpage/assistant-work-ledger';
@@ -1055,7 +1057,8 @@ async function createChildSession(input: {
   }
   const prompt = withActivitySource(input.prompt, input.sourceLink);
   const mark = (stage: string, extra?: Record<string, unknown>) => ledger.mark(stage, extra);
-  const title = input.title?.trim() || undefined;
+  // Binding the identity first binds the name the task carries, so it is named here, by the one rule (task-name.ts).
+  const title = input.bindIdentityFirst ? await taskNameFor(provider, input.title) : input.title?.trim() || undefined;
   // A gugu-spawned child is a chat member, not a session-page session with a person present to answer
   // permission prompts. Its autonomy is therefore decided here, once, before either transport sees it.
   // Keep the session-page composer's durable choice unchanged; only this delegated child is fully automatic.
@@ -1131,7 +1134,7 @@ async function createChildSession(input: {
   const created = input.bindIdentityFirst && transport === 'acp'
     ? bindIdentityThenCreate(
       async () => {
-        const cwd = resolveWorkspace(projectId, input.workspaceId)?.path;
+        const cwd = (await resolveWorkspace(projectId, input.workspaceId))?.path;
         if (!cwd) throw new Error(`workspace ${input.workspaceId} is unknown`);
         const identity = await provisionStartIdentity({ sessionId, providerId: provider, projectId, cwd }, 'fresh', { agentDisplayName: title || undefined });
         if (!identity) throw new Error(`session ${sessionId} could not be given an identity`);
@@ -1224,6 +1227,12 @@ async function newSessionMemory(): Promise<NewSessionMemory> {
  * agents listed here on the remembered shape's leg and which are installed. Nothing usable here: said, as the box's
  * empty state.
  */
+// Read by the person the App is working for, not an agent: what to do next, in the product's words and their language.
+const NO_AGENT_INSTALLED: Record<string, string> = {
+  'zh-CN': '这台电脑上还没有装 agent。先在「新建任务」里装一个，再试一次。',
+  'en-US': 'No agent is installed on this computer yet. Install one from New task, then try again.',
+};
+
 async function newSessionEngine(memory: NewSessionMemory): Promise<AgentProviderId> {
   const [{ agentsController }, { appSettingsService }] = await Promise.all([
     import('@main/core/agents/controller'),
@@ -1248,14 +1257,16 @@ async function newSessionEngine(memory: NewSessionMemory): Promise<AgentProvider
     availabilityKnown: true,
   });
   if (!selection.providerId || selection.createDisabled) {
-    throw new Error('no agent on this computer can start a session: install one, or pass harness (session_list_harnesses)');
+    throw new Error(NO_AGENT_INSTALLED[sessionHostLocale()] ?? NO_AGENT_INSTALLED['en-US']);
   }
   return selection.providerId;
 }
 
 /**
- * The model a spawn names, else — on the engine last started — the one it started with, as the box restores it; a
- * remembered model this computer no longer offers falls back to the engine's own default (the box drops it too).
+ * The model a spawn names, else — on the engine last started — the one it started with, as the box restores it; else the
+ * box's default for a new session (`defaultCreateModel`: the engine's factory Gugu model, so someone with no CLI sign-in
+ * is not sent to a sign-in wall). A remembered model this computer no longer offers falls back to the engine's own
+ * default (the box drops it too).
  */
 async function spawnModelSelection(
   provider: AgentProviderId,
@@ -1263,9 +1274,20 @@ async function spawnModelSelection(
   requestedModel: string | undefined,
   last: NewSessionMemory['lastStarted'],
 ): Promise<Awaited<ReturnType<typeof resolveSpawnModelSelection>>> {
-  const remembered = last ? (last.platformModel ? platformOptionId(last.platformModel) : last.model) : undefined;
-  if (requestedModel || !remembered) return await resolveSpawnModelSelection(provider, transport, requestedModel);
-  return await resolveSpawnModelSelection(provider, transport, remembered).catch(() => ({ kind: 'harness' as const, model: undefined }));
+  if (requestedModel) return await resolveSpawnModelSelection(provider, transport, requestedModel);
+  const fallback = last ? (last.platformModel ? platformOptionId(last.platformModel) : last.model) : await newSessionModel(provider, transport);
+  if (!fallback) return { kind: 'harness', model: undefined };
+  return await resolveSpawnModelSelection(provider, transport, fallback).catch(() => ({ kind: 'harness' as const, model: undefined }));
+}
+
+/** The new-session box's default model on this engine: the remote and phone create forms' one rule (`defaultCreateModel`). */
+async function newSessionModel(provider: AgentProviderId, transport: SessionRuntime): Promise<string | undefined> {
+  const [{ createModels }, { defaultCreateModel }] = await Promise.all([
+    import('../session-timeline/create-session'),
+    import('../../../../../src/lib/createModelDefault'),
+  ]);
+  const models = await createModels({ harness: provider, sessionView: transport === 'pty' ? 'code' : 'general' });
+  return (models.ok ? defaultCreateModel(models.value) : null) ?? undefined;
 }
 
 /**
@@ -1388,7 +1410,7 @@ async function requireCallerWorkspace(context: SessionCallerContext, signal?: Ab
   if (!caller.workspaceId || caller.workspaceId !== context.workspaceId) {
     throw new Error('current session workspace is not ready');
   }
-  const workspace = resolveWorkspace(context.projectId, caller.workspaceId);
+  const workspace = await resolveWorkspace(context.projectId, caller.workspaceId);
   if (!workspace) throw new Error('current session workspace is not mounted');
   return workspace;
 }
@@ -1465,6 +1487,7 @@ async function openFileInTab(
   const absolutePath = isAbsoluteMachinePath(requestedPath)
     ? requestedPath
     : joinMachinePath(workspace.path, requestedPath);
+  await requireAgentFileAccess(absolutePath);
   const stat = await workspace.fileSystem.stat(absolutePath);
   signal?.throwIfAborted();
   if (!stat.success) {
@@ -1627,7 +1650,7 @@ async function openBrowserInTab(
  * 目录外的 / 不存在的 / 不是文件的当场说清,❌ 推过去再开出一个打不开的页。
  */
 async function requireRemotePageFile(
-  workspace: NonNullable<ReturnType<typeof resolveWorkspace>>,
+  workspace: NonNullable<Awaited<ReturnType<typeof resolveWorkspace>>>,
   url: string,
   signal?: AbortSignal
 ): Promise<void> {

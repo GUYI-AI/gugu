@@ -9,7 +9,8 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { cn } from '@renderer/utils/utils';
 import type { LibraryMcpCheck, LibraryMcpServer } from '@shared/mcp-library';
 
-type RowServer = Omit<LibraryMcpServer, 'enabledByDefault' | 'check'>;
+/** 咕咕递的集成、App 那几台未必说得出传输方式(原生程序没有命令),所以这里 `transport` 可缺。 */
+type RowServer = Omit<LibraryMcpServer, 'enabledByDefault' | 'check' | 'transport'> & { transport?: LibraryMcpServer['transport'] };
 
 /** 命令行或 URL,给人看:stdio 拼回一行,http 去掉查询串(可能带凭据)。 */
 function targetOf(server: RowServer): string {
@@ -45,9 +46,13 @@ function CheckStatus({ check, checking, harnessName }: { check?: LibraryMcpCheck
         data-slot="mcp-check-status"
         data-status={status}
         aria-label={label}
-        className="flex size-8 shrink-0 items-center justify-center rounded-md hover:bg-background-2"
+        className="flex h-8 min-w-8 shrink-0 items-center justify-center gap-1 rounded-md px-1 hover:bg-background-2"
       >
         {icon}
+        {/* 拿到了工具列表就把数写在明面上;点开看工具名。 */}
+        {status === 'ok' && check && (
+          <span className="text-xs text-foreground-muted">{translate('mcpLibrary.tools', { count: check.tools.length })}</span>
+        )}
       </PopoverTrigger>
       <PopoverContent align="end" className="flex w-80 flex-col gap-3 p-4">
         <div className="flex flex-col gap-1">
@@ -95,8 +100,8 @@ function CheckStatus({ check, checking, harnessName }: { check?: LibraryMcpCheck
 }
 
 /**
- * 资源库 → MCP 的一行。咕咕自己的那几台:默认启用开关、检测、编辑、删除;各家自己的(`harnessName`):只读,
- * 只能检测 —— 由那一家自己加载,咕咕不改、不删、不关。
+ * 资源库 → MCP 的一行。我加的那几台:默认启用开关、检测、编辑、删除;各家自己的(`harnessName`)和集成、App 递的那几台:
+ * 只读,只能检测 —— 编辑、删除、开关只在给了对应回调时出现。`note`:这一台怎么进任务(每个任务都带 / 按需查找)。
  */
 export function McpLibraryRow({
   server,
@@ -104,6 +109,8 @@ export function McpLibraryRow({
   checking,
   disabled,
   harnessName,
+  note,
+  noteTitle,
   enabledByDefault,
   onCheck,
   onToggleDefault,
@@ -115,6 +122,8 @@ export function McpLibraryRow({
   checking: boolean;
   disabled: boolean;
   harnessName?: string;
+  note?: string;
+  noteTitle?: string;
   enabledByDefault?: boolean;
   onCheck: () => void;
   onToggleDefault?: (enabled: boolean) => void;
@@ -128,19 +137,27 @@ export function McpLibraryRow({
     <div
       data-slot="mcp-library-server"
       data-server-id={server.name}
-      data-source={harnessName ? 'harness' : 'gugu'}
+      data-source={harnessName ? 'harness' : onEdit ? 'gugu' : 'provided'}
       className="group flex min-h-12 items-center gap-3 px-3 py-2"
     >
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* 名字和命令行排成一行,放不下时省略命令行的尾部;名字不让(哪怕缩 0.1px 也会出省略号),只在超过七成宽时省略。悬停看全文。 */}
+      <div className="flex min-w-0 flex-1 items-baseline gap-2">
         {/* @@@raw server identity — 名字与命令行来自用户自己写的配置,原样显示。 */}
-        <span data-slot="mcp-server-name" className="truncate text-sm text-foreground">{server.name}</span>
-        <span className={cn(mono, 'truncate text-foreground-muted')} title={target}>{target}</span>
+        <span data-slot="mcp-server-name" className="max-w-[70%] shrink-0 truncate text-sm text-foreground" title={server.name}>{server.name}</span>
+        <span data-slot="mcp-server-target" className={cn(mono, 'min-w-0 truncate text-foreground-muted')} title={target}>{target}</span>
       </div>
-      <span className={cn(field, mono, 'inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-foreground-muted')}>
-        {server.transport === 'http' ? <Globe className="size-3" /> : <Terminal className="size-3" />}
-        {server.transport}
-      </span>
-      {!harnessName && (
+      {server.transport && (
+        <span className={cn(field, mono, 'inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-foreground-muted')}>
+          {server.transport === 'http' ? <Globe className="size-3" /> : <Terminal className="size-3" />}
+          {server.transport}
+        </span>
+      )}
+      {note && (
+        <span className="shrink-0 text-xs text-foreground-muted" {...(noteTitle ? { title: noteTitle } : {})}>
+          {note}
+        </span>
+      )}
+      {onEdit && onDelete && (
         <div className="flex shrink-0 items-center gap-1 opacity-100 sm:opacity-0 sm:transition-opacity sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">
           <Button variant="ghost" size="icon-xs" onClick={onEdit} disabled={disabled} aria-label={translate('mcpLibrary.edit', { name: server.name })}>
             <Pencil />
@@ -155,14 +172,14 @@ export function McpLibraryRow({
       </Button>
       <CheckStatus check={check} checking={checking} harnessName={harnessName} />
       {/* 新任务带不带这一台,只由这个开关决定 —— 所以它的意思写在明面上,❌ 只放在悬停里。 */}
-      {!harnessName && (
+      {onToggleDefault && (
         <span className="inline-flex shrink-0 items-center gap-2">
           <label htmlFor={defaultSwitchId} className="text-xs text-foreground-muted">{translate('mcpLibrary.enabledByDefault')}</label>
           <Switch
             id={defaultSwitchId}
             size="sm"
             checked={!!enabledByDefault}
-            onCheckedChange={(checked) => onToggleDefault?.(checked)}
+            onCheckedChange={(checked) => onToggleDefault(checked)}
             disabled={disabled}
             aria-label={translate('mcpLibrary.enabledByDefault')}
           />

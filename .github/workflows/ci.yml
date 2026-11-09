@@ -172,6 +172,9 @@ jobs:
       - if: needs.changes.outputs.tests == 'true'
         id: setup
         uses: ./.github/actions/setup-community
+      - name: Install real ripgrep for native file-boundary regressions
+        if: needs.changes.outputs.tests == 'true'
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ripgrep
       # Each shard restores its compatible dev module snapshot without writing a PR cache.
       - if: needs.changes.outputs.tests == 'true'
         uses: actions/cache/restore@v4
@@ -230,7 +233,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       GUGU_CLOUD_COMPUTER_ENABLED: 'false'
       VITE_GUGU_CLOUD_COMPUTER_ENABLED: 'false'
@@ -255,6 +258,21 @@ jobs:
       - run: pnpm android:build
       - name: Run Android JVM unit tests
         run: bash scripts/build/android-gradle-build.sh testDebugUnitTest
+      # Instrumented tests live only in the app module (app/src/androidTest) and need a real Android keystore, so they run on an emulator.
+      - name: Enable KVM for the Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run Android instrumented tests on an emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash scripts/build/android-gradle-build.sh :app:connectedDebugAndroidTest
   session-db:
     name: Session database, chat UI browser and tooling
     needs: changes
@@ -278,7 +296,7 @@ jobs:
         working-directory: apps/desktop/native/projection-media
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup-vendor-node
         with:
           node-version-file: .node-version
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6

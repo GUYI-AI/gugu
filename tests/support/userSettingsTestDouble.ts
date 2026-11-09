@@ -17,11 +17,45 @@ export function fakeSettingsClient(
   initial: Record<string, Record<string, unknown>> = {}
 ): FakeSettingsClient {
   const rows: Record<string, Record<string, unknown>> = { ...initial }
+  const versions: Record<string, string> = Object.fromEntries(Object.keys(initial).map((key) => [key, '2026-06-06T00:00:00.000Z']))
+  // Keep the existing receipt name so business assertions do not change when the write protocol does.
   const upserts: Array<Record<string, unknown>> = []
+  const keyOf = (values: Record<string, unknown>) => `${String(values.user_id)}::${String(values.scope)}`
+  const save = (values: Record<string, unknown>) => {
+    upserts.push(values)
+    const key = keyOf(values)
+    rows[key] = structuredClone(values.config) as Record<string, unknown>
+    versions[key] = String(values.updated_at)
+    return { data: { scope: values.scope, config: rows[key], updated_at: versions[key] }, error: null }
+  }
   const client: SettingsTableClient = {
     from(table) {
       expect(table).toBe('user_settings')
       return {
+        update(values: Record<string, unknown>) {
+          const filters: Record<string, string> = {}
+          const query = {
+            eq(column: 'user_id' | 'scope' | 'updated_at', value: string) { filters[column] = value; return query },
+            select(columns: string) {
+              expect(columns).toBe('scope, config, updated_at')
+              return { async maybeSingle() {
+                const key = keyOf(values)
+                if (!rows[key] || versions[key] !== filters.updated_at || values.user_id !== filters.user_id || values.scope !== filters.scope) return { data: null, error: null }
+                return save(values)
+              } }
+            },
+          }
+          return query
+        },
+        insert(values: Record<string, unknown>) {
+          return { select(columns: string) {
+            expect(columns).toBe('scope, config, updated_at')
+            return { async maybeSingle() {
+              if (rows[keyOf(values)]) return { data: null, error: { message: 'duplicate key', code: '23505' } }
+              return save(values)
+            } }
+          } }
+        },
         select(columns: string) {
           expect(columns).toBe('scope, config, updated_at')
           return {
@@ -36,7 +70,7 @@ export function fakeSettingsClient(
                       const config = rows[key]
                       return {
                         data: config
-                          ? { scope, config, updated_at: '2026-06-06T00:00:00.000Z' }
+                          ? { scope, config, updated_at: versions[key] }
                           : null,
                         error: null
                       }
@@ -52,6 +86,7 @@ export function fakeSettingsClient(
           upserts.push(values)
           const key = `${String(values.user_id)}::${String(values.scope)}`
           rows[key] = values.config as Record<string, unknown>
+          versions[key] = String(values.updated_at)
           return {
             select(columns: string) {
               expect(columns).toBe('scope, config, updated_at')

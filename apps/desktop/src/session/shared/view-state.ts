@@ -22,7 +22,7 @@ export type TabHistorySnapshot = {
 export type BuiltInTabDescriptor =
   | { kind: 'session'; tabId: string; sessionId: string }
   | { kind: 'acp-chat'; tabId: string; sessionId: string }
-  | { kind: 'file'; tabId: string; path: string; isExternal?: boolean }
+  | { kind: 'file-view'; tabId: string; path: string; isExternal?: boolean }
   | { kind: 'review'; tabId: string; sessionId: string }
   | {
       kind: 'browser';
@@ -61,7 +61,7 @@ export type TabDescriptor = (BuiltInTabDescriptor | ExtensionTabDescriptor) & {
 const BUILT_IN_TAB_KINDS = {
   session: true,
   'acp-chat': true,
-  file: true,
+  'file-view': true,
   review: true,
   browser: true,
   terminal: true,
@@ -92,6 +92,8 @@ export type TabGroupsSnapshot = {
   layout?: PaneLayoutSnapshotNode;
   /** The group holding the side of the pair (spec session-page「并排」); absent = not paired, or saved before pairs. */
   sideGroupId?: string;
+  /** Recorded pair, independent of the pages currently displayed. Absent = legacy save; null = explicitly unpaired. */
+  pair?: { pinnedTabId: string; sideTabId: string } | null;
   /** What each tab pushed out of the pair, by tab id: closing it brings that one back (spec session-page「并排」). */
   displaced?: Record<string, DisplacedTab>;
 };
@@ -119,10 +121,6 @@ export type DiffViewSnapshot = {
   commitAction: 'commit' | 'commit-push' | 'commit-pr' | null;
   prTab?: 'files' | 'commits' | 'checks';
 };
-
-export type TerminalDrawerActiveItem =
-  | { kind: 'terminal'; id: string }
-  | { kind: 'script'; id: string };
 
 export interface ActiveFile {
   path: string;
@@ -155,15 +153,12 @@ export type SessionViewSnapshot = {
   sidebarTab?: string;
   isSidebarCollapsed?: boolean;
   focusedRegion: 'main' | 'bottom';
-  isTerminalDrawerOpen?: boolean;
-  terminalDrawerActiveItem?: TerminalDrawerActiveItem;
   /** Takes precedence over tabManager when present. */
   tabGroups?: TabGroupsSnapshot;
   /** @deprecated Use tabGroups. Kept for migration from single-pane snapshots. */
   tabManager?: TabManagerSnapshot;
   /** @deprecated Legacy field from before the unified tab refactor. Used only for migration. */
   sessions?: TabViewSnapshot;
-  terminals?: TabViewSnapshot;
   editor?: EditorViewSnapshot;
   diffView?: DiffViewSnapshot;
 };

@@ -107,7 +107,7 @@ beforeEach(async () => {
   theWindow.cannot = null;
   setExtensionBridgeHost({
     deliver,
-    presentation: () => ({ locale: 'en', themeMode: 'light' as const, fullscreen: false, windowFocused: true }),
+    selfGuguNumber: () => undefined, presentation: () => ({ locale: 'en', themeMode: 'light' as const, fullscreen: false, windowFocused: true }),
   });
   await bindExtensionSurface({ webContentsId: GROUP_PAGE, extensionId: 'calendar', tabId: 'slot-1', tabKind: 'calendar.main', conversation: '0b000000-0000-4000-8000-0000000000a1' });
   await bindExtensionSurface({ webContentsId: SESSION_TAB, extensionId: 'calendar', workspace: sessionWorkspace('s-here'), tabId: 'tab-1', tabKind: 'calendar.main' });

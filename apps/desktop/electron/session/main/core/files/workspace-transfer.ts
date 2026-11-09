@@ -1,3 +1,4 @@
+import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary';
 /**
  * #6264 一套工作台:别的电脑打开这台机器上的会话时,工作区里那几件「字节要过线」的事 ——
  * 预览 / 下载按块读、上传按块写(带版本号防覆盖)。文件树、编辑器、git 走的是与本机同一套 `workspace.*` 动词;
@@ -6,7 +7,10 @@
  * 边界与本机工作区同一条:路径必须落在这个工作区里,符号链接逃出去也不行(按真实路径再核一次);
  * 写回按「打开时那一版」核对,agent 正在改同一个文件时拒绝,❌ 静默盖掉它的改动。
  */
-import { open, realpath, stat, writeFile } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { appendFile, open, realpath, rename, rm, stat } from 'node:fs/promises';
+import { pipeline } from 'node:stream/promises';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import {
   REMOTE_WORKSPACE_CHUNK_BYTES,
@@ -67,7 +71,7 @@ export function etagOf(info: { mtimeNs: bigint; size: bigint }): string {
 }
 
 /** 相对路径按工作区解析;字面在里面还不够,指向外面的符号链接也要挡住(目标还不存在就核它的父目录)。 */
-export async function inWorkspace(root: string, target: string): Promise<string> {
+export async function inWorkspace(root: string, target: string, canonical = false): Promise<string> {
   const resolved = path.resolve(root, target);
   if (!isInside(root, resolved)) {
     throw new WorkspaceTransferError('outside_workspace', `path is outside this workspace: ${target}`);
@@ -80,7 +84,8 @@ export async function inWorkspace(root: string, target: string): Promise<string>
   if (!isInside(realRoot, real)) {
     throw new WorkspaceTransferError('outside_workspace', `path leads outside this workspace: ${target}`);
   }
-  return resolved;
+  const checked = await requireAgentFileAccess(resolved);
+  return canonical ? checked : resolved;
 }
 
 async function currentEtag(file: string): Promise<string | null> {
@@ -97,7 +102,7 @@ export async function readWorkspaceChunk(
   root: string,
   request: { path: string; offset: number; length: number }
 ): Promise<WorkspaceChunk> {
-  const file = await inWorkspace(root, request.path);
+  const file = await inWorkspace(root, request.path, true);
   const offset = Math.max(0, Math.floor(request.offset));
   const length = Math.max(0, Math.min(Math.floor(request.length), REMOTE_WORKSPACE_CHUNK_BYTES));
   let handle;
@@ -132,7 +137,8 @@ type PendingUpload = {
   total: number;
   expectedEtag: string | null;
   received: number;
-  chunks: Buffer[];
+  /** 收到的字节先落在目标旁边这个文件里:一份文件多大,内存都只占一段。 */
+  temp: string;
   timer: ReturnType<typeof setTimeout>;
 };
 
@@ -144,14 +150,24 @@ export function createWorkspaceUploads(options: { idleMs?: number; maxBytes?: nu
   const uploads = new Map<string, PendingUpload>();
   const idleMs = options.idleMs ?? UPLOAD_IDLE_MS;
   const maxBytes = options.maxBytes ?? REMOTE_WORKSPACE_MAX_FILE_BYTES;
+  const drop = (uploadId: string, upload: PendingUpload) => {
+    uploads.delete(uploadId);
+    clearTimeout(upload.timer);
+    return rm(upload.temp, { force: true });
+  };
   const touch = (uploadId: string, upload: PendingUpload) => {
     clearTimeout(upload.timer);
-    upload.timer = setTimeout(() => uploads.delete(uploadId), idleMs);
+    upload.timer = setTimeout(() => void drop(uploadId, upload), idleMs);
     upload.timer.unref?.();
   };
   return {
+    /** The sender stopped: what it had sent goes now, not when the wait for its next part runs out. */
+    async abort(uploadId: string): Promise<void> {
+      const upload = uploads.get(uploadId);
+      if (upload) await drop(uploadId, upload);
+    },
     async write(root: string, request: WorkspaceWriteChunk): Promise<WorkspaceWriteResult> {
-      const file = await inWorkspace(root, request.path);
+      const file = await inWorkspace(root, request.path, true);
       if (!Number.isInteger(request.total) || request.total < 0 || request.total > maxBytes) {
         throw new WorkspaceTransferError('too_large', `file too large to save: ${request.total} bytes`);
       }
@@ -166,7 +182,7 @@ export function createWorkspaceUploads(options: { idleMs?: number; maxBytes?: nu
           total: request.total,
           expectedEtag: request.expectedEtag,
           received: 0,
-          chunks: [],
+          temp: path.join(path.dirname(file), `.${path.basename(file)}.${randomBytes(4).toString('hex')}.gugu-tmp`),
           timer: setTimeout(() => undefined, 0),
         };
         uploads.set(request.uploadId, upload);
@@ -181,24 +197,30 @@ export function createWorkspaceUploads(options: { idleMs?: number; maxBytes?: nu
         throw new WorkspaceTransferError('invalid_payload', 'more bytes than announced');
       }
       touch(request.uploadId, upload);
-      upload.chunks.push(bytes);
+      try {
+        await appendFile(upload.temp, bytes);
+      } catch (error) {
+        await drop(request.uploadId, upload);
+        throw fsError(error, file);
+      }
       upload.received += bytes.length;
       if (!request.final) return { received: upload.received };
 
-      uploads.delete(request.uploadId);
-      clearTimeout(upload.timer);
-      if (upload.received !== upload.total) {
-        throw new WorkspaceTransferError('upload_lost', `received ${upload.received} of ${upload.total} bytes`);
-      }
-      if (upload.expectedEtag !== WORKSPACE_WRITE_FORCE) {
-        const now = await currentEtag(file);
-        if (now !== upload.expectedEtag) throw new WorkspaceTransferError(WORKSPACE_CONFLICT_CODE, now ?? '');
-      }
       try {
-        // 就地写(跟随符号链接、保留权限与属主),与 VS Code 默认的保存方式一致。
-        await writeFile(file, Buffer.concat(upload.chunks));
+        if (upload.received !== upload.total) {
+          throw new WorkspaceTransferError('upload_lost', `received ${upload.received} of ${upload.total} bytes`);
+        }
+        const now = await currentEtag(file);
+        if (upload.expectedEtag !== WORKSPACE_WRITE_FORCE && now !== upload.expectedEtag) {
+          throw new WorkspaceTransferError(WORKSPACE_CONFLICT_CODE, now ?? '');
+        }
+        // 已有的文件就地写(跟随符号链接、保留权限与属主),与 VS Code 默认的保存方式一致;新文件搬过去就是。
+        if (now === null) await rename(upload.temp, file);
+        else await pipeline(createReadStream(upload.temp), createWriteStream(file));
       } catch (error) {
-        throw fsError(error, file);
+        throw error instanceof WorkspaceTransferError ? error : fsError(error, file);
+      } finally {
+        await drop(request.uploadId, upload);
       }
       const info = await stat(file, { bigint: true });
       return { received: upload.received, committed: { etag: etagOf(info), size: Number(info.size) } };

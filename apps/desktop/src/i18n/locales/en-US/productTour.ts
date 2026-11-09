@@ -27,7 +27,7 @@ export default {
     },
     "tasksSample": {
       "title": "Projects: one thing at a time",
-      "body": "Open the sample project to see how one moves along."
+      "body": "Open the sample project on the left, or choose Next to continue."
     },
     "chats": {
       "title": "Chats: people and agents",

@@ -1,3 +1,4 @@
+import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { inferDroppedBlobExtension, normalizeDroppedImageBytes } from './session/main/core/pty/persist-dropped-blob'
@@ -8,6 +9,7 @@ import { isInside, readWorkspaceChunk } from './session/main/core/files/workspac
 import { findProjectFileCopy, listProjectGroupIds, rememberProjectFile } from './sessionpage/sessionpage-project-groups'
 import { importProjectFile } from './projectFileImport'
 import { sanitizeRemoteFileName } from './remoteFileOpen'
+import { createLogger } from './lib/logger'
 import type { CommitArgs } from '@gugu/core/cloud/attachmentsApi'
 import type { FileStorage } from '@gugu/core/shared/fileStorage'
 import type { FilesPlatform } from '../src/session/shared/extensions/app-files-core'
@@ -39,6 +41,8 @@ export function createProjectFilePublisher(deps: {
   storage(): Promise<FileStorage>
   /** Whether a device of this account binds the chat to a project: what makes it a project chat here. */
   projectChat(chatId: string): Promise<boolean>
+  /** Ask for a version's temporary copy, as a reader's first open does. */
+  requestCopy?(itemId: string, version: number): Promise<unknown>
 }) {
   /** Null: not a project chat, so the ordinary upload decides. */
   const place = async (chatId: string, task = false) => {
@@ -82,6 +86,11 @@ export function createProjectFilePublisher(deps: {
       content_type: row.content_type, size_bytes: first.size, sha256, host_account_id: identity.accountId, host_device_id: identity.deviceId, host_project_id: projectId, relative_path: path,
       workspace: { path: row.path, parent_id: row.parent_id, created_at: row.created_at, updated_at: row.updated_at, created_by: row.created_by, source_message_ids: row.source_message_ids ?? [] } }
     await rememberProjectFile(revision, identity.accountId, deps.env)
+    // An image is read at a glance, often when this machine is off: its temporary copy goes up now instead of at the first read.
+    // Not when its owner turned copies off, nor for a read-once copy: the first reader would use it up, and the sender's own screen must not be that reader.
+    if (message && file.contentType.startsWith('image/') && here.storage?.temporary_transfer !== false && here.storage?.retention !== 'read-once') {
+      void deps.requestCopy?.(row.id, row.version).catch((error: unknown) => createLogger('project-file').warn({ item: row.id, error: String(error) }, 'image copy request failed'))
+    }
     const published = sent ? { ...row, message: sent } : row
     return task ? { ...published, path: handed } : published
   }
@@ -100,7 +109,7 @@ export function createProjectFilePublisher(deps: {
     const { data, ...selected } = file, bytes = new Uint8Array(data)
     const directory = await mkdtemp(join(tmpdir(), 'gugu-pasted-'))
     try {
-      const path = join(directory, sanitizeRemoteFileName(file.name))
+      const path = await requireAgentFileAccess(join(directory, sanitizeRemoteFileName(file.name)))
       await writeFile(path, bytes, { mode: 0o600 })
       // `temporary`: the temp copy is always imported, even when a bound root happens to contain the temp directory.
       return await publishFile(chatId, { ...selected, path }, parentId, actor, store, options, true)
@@ -119,9 +128,9 @@ export async function writeTaskCopy(directory: string, name: string, bytes: Uint
   const declared = inferDroppedBlobExtension(name, mimeType)
   const converted = !!normalized.ext && normalized.ext !== declared
   const named = converted ? `${name.replace(/\.[^.]+$/, '')}${normalized.ext}` : name
-  const target = join(directory, randomUUID())
+  const target = await requireAgentFileAccess(join(directory, randomUUID()))
   await mkdir(target, { recursive: true, mode: 0o700 })
-  const path = join(target, sanitizeRemoteFileName(named))
+  const path = await requireAgentFileAccess(join(target, sanitizeRemoteFileName(named)))
   await writeFile(path, normalized.bytes, { mode: 0o600 })
   return { path, name: named, size: normalized.bytes.byteLength, mimeType: converted ? 'image/png' : mimeType }
 }

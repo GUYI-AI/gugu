@@ -102,7 +102,7 @@ export default {
     "denied": "请在设置中授权麦克风权限",
     "permissions": "管理权限",
     "openSettings": "打开系统设置",
-    "deniedPhone": "麦克风未开启，到“我的 → 权限”管理。",
+    "deniedPhone": "麦克风未开启，到“我的 → 本机控制”管理。",
     "missing": "没找到麦克风，请连接后再试。",
     "failed": "录音没能开始，请重试。",
     "interrupted": "录音已中断，已录下的部分照常整理。",

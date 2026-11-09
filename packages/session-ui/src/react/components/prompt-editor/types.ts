@@ -122,6 +122,11 @@ export interface CommandItem {
   inputHint?: string;
   /** Optional visual grouping label in the slash command popup. */
   section?: string;
+  /**
+   * `prompt`: a saved prompt — plain text (`token`) shown in the editor as a folded block titled `name`; a click unfolds
+   * it into the text itself to edit. What is sent is the text either way (serialize.ts reads `token`).
+   */
+  kind?: 'prompt';
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────

@@ -26,6 +26,10 @@ import {
 } from './mcp-oauth-flow';
 import { platformCredentials } from './platform-credentials-instance';
 import { refreshIntegrationAccount } from './connection-credential-refresh';
+import { SecureStorageUnavailableError } from '@main/core/secrets/secure-storage-unavailable';
+
+/** 改了服务器 / 地址、授权码却留空:要重新填(界面按 `secret_required` 说,❌ 当成格式不对)。 */
+class SecretRequiredError extends Error {}
 
 type ConnectResult =
   | { success: true; accountId?: string; displayName?: string; displayDetail?: string }
@@ -427,7 +431,11 @@ export class IntegrationConnectionService {
       try {
         credentials = await this.withSavedSecrets(integrationId, input, editAccountId);
       } catch (error) {
-        return { success: false, error: (error as Error).message, errorType: 'invalid_input' };
+        return {
+          success: false,
+          error: (error as Error).message,
+          errorType: error instanceof SecretRequiredError ? 'secret_required' : 'invalid_input',
+        };
       }
     }
 
@@ -443,11 +451,17 @@ export class IntegrationConnectionService {
     const accountId = result.account
       ? `${result.account.host ?? integrationId}:${result.account.id}`
       : DEFAULT_INTEGRATION_ACCOUNT_ID;
-    await integrationCredentialStore.upsertAccount(integrationId, {
-      accountId,
-      ...(result.displayName ? { displayName: result.displayName } : {}),
-      credentials: result.credentials ?? credentials,
-    });
+    try {
+      await integrationCredentialStore.upsertAccount(integrationId, {
+        accountId,
+        ...(result.displayName ? { displayName: result.displayName } : {}),
+        credentials: result.credentials ?? credentials,
+      });
+    } catch (error) {
+      // 没有系统钥匙串:说成界面语言的一句话、告诉他怎么办,❌ 把 IPC 的英文原话甩给他。
+      if (!(error instanceof SecureStorageUnavailableError)) throw error;
+      return { success: false, error: error.message, errorType: 'secure_storage_unavailable' };
+    }
     // 编辑时改了服务器:新的那份已存好,旧的那份是同一个邮箱的过时记录,删掉 ——
     // ❌ 留着两条同一地址的账号(agent 点名用它时会挑到旧的那条)。
     if (editAccountId && editAccountId !== accountId) {
@@ -478,7 +492,7 @@ export class IntegrationConnectionService {
     );
     const blankSecret = fields.some((field) => field.secret && (typeof input[field.id] !== 'string' || !String(input[field.id]).trim()));
     if (changed.length > 0 && blankSecret) {
-      throw new Error(`${changed.map((field) => field.id).join(', ')} changed: enter the authorization code again.`);
+      throw new SecretRequiredError(`${changed.map((field) => field.id).join(', ')} changed: enter the authorization code again.`);
     }
     for (const field of fields) {
       const given = input[field.id];

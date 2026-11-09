@@ -115,7 +115,7 @@ const ROWS: Row[] = [
     en: ['0 files, 3 MB in all.', '1 file, 3 MB in all.', '2 files, 3 MB in all.'],
     zh: (n) => `共 ${n} 个文件，3 MB。`,
   },
-  { ns: 'assistant', key: 'move.doneAccounts', en: ['0 accounts moved.', '1 account moved.', '2 accounts moved.'], zh: (n) => `${n} 个账号已搬过去。` },
+  { ns: 'assistant', key: 'move.doneAccounts', en: ['0 accounts moved (the old home keeps its copy).', '1 account moved (the old home keeps its copy).', '2 accounts moved (the old home keeps its copy).'], zh: (n) => `${n} 个账号已带过去（旧家那份保留）。` },
   { ns: 'assistant', key: 'move.doneSchedules', en: ['0 schedules set again.', '1 schedule set again.', '2 schedules set again.'], zh: (n) => `${n} 个定时任务已重排。` },
   { ns: 'assistant', key: 'move.doneFiles', en: ['0 files copied.', '1 file copied.', '2 files copied.'], zh: (n) => `${n} 个文件已拷过去。` },
   { ns: 'assistant', key: 'chat.thoughtCount', en: ['0 thinking steps', '1 thinking step', '2 thinking steps'], zh: (n) => `思考 ${n} 次` },

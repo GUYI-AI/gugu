@@ -6,6 +6,8 @@ import { processButtonLayout, processRowHeight, backgroundPillLayout } from './p
 
 const speaker = (key: string | undefined, ctx: MeasureCtx) => key === '$owner' && ctx.selfIdentity?.userId ? `user:${ctx.selfIdentity.userId}` : key;
 export function conversationShowsName(item: ChatMessage, ctx: MeasureCtx): boolean {
+  // What the reader typed here is theirs without saying so; a delivered message keeps its sender (owner 2026-11-07).
+  if (conversationSpeaker(item) === '$owner') return false;
   const current = speaker(conversationSpeaker(item), ctx), previous = speaker(item.conversationPreviousSpeaker, ctx);
   return !current || !previous || current !== previous;
 }

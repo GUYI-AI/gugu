@@ -4,8 +4,10 @@ import { extensionsService } from '@main/core/extensions/extensions-root';
 import { currentAccountAccessToken } from '@main/core/extensions/account-token';
 import { AppSendError, dispatchFromApp, type DispatchHere } from '@shared/extensions/app-send-core';
 import { createAppMessages } from '@shared/extensions/app-messages-core';
-import { createAppForum, type ForumChannel } from '@shared/extensions/app-forum-core';
+import { createAppCloud, type CloudChannel } from '@shared/extensions/app-cloud-core';
 import { subscribeStatusName } from '@gugu/core/cloud/deviceRpcProtocol';
+import { stringifyMention } from '@gugu/session-shared/markdown';
+import { workspaceSession } from '@shared/extensions/app-runtime-protocol';
 import { log } from '@main/lib/logger';
 import { supabase } from '../../../../supabase';
 import { subscribeAuthenticatedElectronRealtimeChannel, type ElectronManagedRealtimeChannel } from '../../../../realtime-channel';
@@ -36,8 +38,8 @@ async function account(): Promise<{ token: string; userId: string }> {
 /** `gugu.messages`: a chat's messages, read with the same account (the shared answer, `app-messages-core.ts`, the phone's too). */
 export const messagesForApp = createAppMessages({ account });
 
-/** A forum channel on main's realtime client, as the person (the device command wake's way: re-subscribed when it drops). */
-const forumChannel: ForumChannel = (topic, event, onPayload, onSubscribed) => {
+/** A cloud channel on main's realtime client, as the person (the device command wake's way: re-subscribed when it drops). */
+const cloudChannel: CloudChannel = (topic, event, onPayload, onSubscribed) => {
   let stop: (() => Promise<void>) | null = null;
   let stopped = false;
   const create = () =>
@@ -50,7 +52,7 @@ const forumChannel: ForumChannel = (topic, event, onPayload, onSubscribed) => {
       { realtime: supabase.realtime, removeChannel: (channel) => supabase.removeChannel(channel as never) },
       create(),
       {
-        label: `forum:${topic}`,
+        label: `cloud:${topic}`,
         createChannel: create,
         onStatus: (status) => {
           const name = subscribeStatusName(status);
@@ -60,15 +62,15 @@ const forumChannel: ForumChannel = (topic, event, onPayload, onSubscribed) => {
     );
     if (stopped) await unsubscribe();
     else stop = unsubscribe;
-  })().catch((error: unknown) => log.error({ topic, err: error instanceof Error ? error.message : String(error) }, 'forum channel did not subscribe'));
+  })().catch((error: unknown) => log.error({ topic, err: error instanceof Error ? error.message : String(error) }, 'cloud channel did not subscribe'));
   return () => {
     stopped = true;
     void stop?.();
   };
 };
 
-/** `gugu.forum`: the forum, read and written with the same account (the shared answer, `app-forum-core.ts`, the phone's too). */
-export const forumForApp = createAppForum({ account, channel: forumChannel });
+/** `gugu.cloud`: an App's own part of the cloud, with the same account (the shared answer, `app-cloud-core.ts`, the phone's too). */
+export const cloudForApp = createAppCloud({ account, channel: cloudChannel });
 
 /** What the bridge brings to one call: the window's sheet, its composers, and the agent working the page (its session). */
 export interface DesktopDispatchEffects {
@@ -83,12 +85,41 @@ export interface DesktopDispatchEffects {
  * `:all` every one here, `:all-machines` also the person's other computers'); one the person picked in the sheet is any of
  * theirs, told here or on its computer. A draft goes into an agent's composer here: words only (pills go into a chat's).
  */
+/**
+ * A draft citing a session's working-copy files goes into that session's composer as @file mentions, as the host's own
+ * file preview quotes (`workspaceFileQuote`): a pill of a chat's file has no such file to point at.
+ */
+async function draftOfWorkingCopyRefs(args: Record<string, unknown>): Promise<{ session: { id: string; projectId: string }; text: string } | null> {
+  if (args.draft !== true || !Array.isArray(args.refs) || args.refs.length === 0) return null;
+  const refs = args.refs as { file?: { workspace?: unknown; id?: unknown; name?: unknown }; label?: unknown }[];
+  const workspace = refs[0]?.file?.workspace;
+  if (typeof workspace !== 'string' || refs.some(({ file }) => file?.workspace !== workspace || typeof file.id !== 'string')) return null;
+  const id = workspaceSession({ workspace });
+  if (!id) throw new AppSendError('invalid', 'A draft citing a project folder\'s file has no session to go to');
+  const { agentSessionContext } = await import('./extension-agent-context');
+  const { sessionMachine } = await import('./app-programs-elsewhere');
+  const projectId = (await agentSessionContext(id).catch(() => null))?.projectId ?? (await sessionMachine(id).catch(() => null))?.projectId;
+  if (!projectId) throw new AppSendError('not-found', 'The session of this file is in no project here');
+  const mentions = refs.map(({ file, label }) => {
+    const target = file!.id as string;
+    const name = target.replace(/\\/g, '/').split('/').pop() ?? target;
+    return stringifyMention({ label: typeof label === 'string' && label ? `${name} · ${label}` : name, target, kind: 'file' });
+  });
+  const text = typeof args.text === 'string' && args.text.trim() ? `${args.text.trim()}\n` : '';
+  return { session: { id, projectId }, text: `${text}${mentions.join(' ')}\n` };
+}
+
 export async function dispatchForApp(
   extensionId: string,
   args: Record<string, unknown>,
   page: Omit<DispatchHere, 'preselect' | 'local'> & { session: string | null },
   effects: DesktopDispatchEffects,
 ): Promise<{ to: unknown; id?: string; deferred?: true } | { cancelled: true }> {
+  const quoted = await draftOfWorkingCopyRefs(args);
+  if (quoted) {
+    await effects.draftInSession(quoted.session, quoted.text);
+    return { to: { session: quoted.session.id } };
+  }
   const app = { extensionId, extensionName: extensionsService().get(extensionId).manifest.name };
   const { visibleAgentsForExtension, spawnAgentForExtension } = await import('@main/core/extensions/extension-agents');
   // This computer's agents → their sessions: a draft's only composers, and for the sheet the page's own agent, ticked first.

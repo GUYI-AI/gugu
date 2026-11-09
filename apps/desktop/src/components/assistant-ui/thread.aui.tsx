@@ -4,7 +4,7 @@ import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
 import { UserMessageAttachments } from "./attachment.aui";
 import { MAX_ATTACHMENT_BYTES } from "@gugu/session-core/session-record/contract";
 import { ChatComposer, MessageProvider, formatAttachmentSize, type ComposerAttachment, type PromptEditorRef } from "@gugu/session-ui/react/components";
-import { ThemeProvider } from "@gugu/session-ui/react/primitives";
+import { SessionUiTheme } from "@/components/sessionpage/SessionUiTheme";
 import { useLocale } from "@/i18n";
 import { useTheme } from "@/store/theme";
 import { useMobileShell } from "@/hooks/useMobileShell";
@@ -379,7 +379,7 @@ function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boole
   const previews = useRef(new Map<File, string>());
   const { byEngine, renderMentionIcon } = useSessionAgentCreationTools();
   const mentionProvider = useMemo(() => createLocalSessionMentionProvider({ creationToolsByEngine: byEngine }), [byEngine]);
-  const { dataDropTypes, onDataDropped } = useSessionMentionDrop({ provider: mentionProvider, editorApiRef: editor });
+  const { dataDropTypes, onDataDropped } = useSessionMentionDrop({ provider: mentionProvider, editorApiRef: editor, attachFiles: capabilities.attachments ? (files) => addFiles(files) : undefined });
   useEffect(() => {
     if (editor.current?.getText() !== text) editor.current?.setText(text);
   }, [text]);
@@ -415,7 +415,7 @@ function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boole
     }
   };
   return (
-    <ThemeProvider theme={theme} target="documentElement">
+    <SessionUiTheme theme={theme}>
       <MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
         {capabilities.attachments && <input ref={picker} type="file" multiple hidden onChange={(event) => { addFiles(Array.from(event.target.files ?? [])); event.target.value = ''; }} />}
         <ChatComposer editorApiRef={editor} mobile={mobile} placeholder={placeholder}
@@ -430,7 +430,7 @@ function Composer({ autoFocus, submitOnEnter, sendDisabled }: { autoFocus: boole
           toolbarExtra={<ComposerExtras />} mentionProvider={mentionProvider} renderMentionIcon={renderMentionIcon}
           dataDropTypes={dataDropTypes} onDataDropped={onDataDropped} />
       </MessageProvider>
-    </ThemeProvider>
+    </SessionUiTheme>
   );
 }
 const MessageError: FC = () => {

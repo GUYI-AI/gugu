@@ -1,4 +1,7 @@
 import type { TurnFileRef } from '../acp/models/turn-files';
+import type { TimelineWindowFields, WindowBodyRef, WindowBodyResult, WindowCursor } from './window-cache/types';
+export type { TimelineWindowFields, WindowBodyRef, WindowBodyOwner, WindowBodyResult, WindowCursor, PendingLongRecord, BodyChunkDescriptor, SourceFragment } from './window-cache/types';
+export { BODY_CHUNK_BYTES, BODY_TEXT_BYTES } from './window-cache/types';
 import type { TerminalState } from '../acp/models/terminals';
 import type { PermissionSubject } from '../acp/models/permissions';
 /**
@@ -200,6 +203,9 @@ export type SessionRecordResume = {
   readonly fingerprint: string;
 };
 
+/** Shared across native descendants; checked before copying opaque source state. */
+export type RecordArchiveBudget = { remainingBytes: number };
+
 /** Native primary-file lineage, used only to prove a fork's inherited prefix; never persisted. */
 export type RecordLineageNode = { uuid: string; parentUuid: string | null };
 
@@ -217,7 +223,7 @@ export interface SessionRecordSource {
    * 此刻的续读点。返回 null = 这一家不支持续读（或此刻还不能安全地续），
    * 外面据此退回「每次整份重读」，那是慢，不是错。
    */
-  resumePoint?(): Promise<SessionRecordResume | null>;
+  resumePoint?(budget?: RecordArchiveBudget): Promise<SessionRecordResume | null>;
   /** 立刻把尾读追到文件尾,读完(行已交给 onEntries)才返回。不支持的源没有这个口。 */
   catchUp?(): Promise<void>;
   /** 按 `imageOrigins` 给的位置把一张图从记录里读回来;读不到或核对不上回 null。不支持的源没有这个口。 */
@@ -325,7 +331,7 @@ export function remoteSettlementGap(
 }
 
 /** 整份快照：从最新往回取 `limit` 轮。 */
-export type TimelineSnapshot = {
+export type TimelineSnapshot = TimelineWindowFields & {
   cursor: RecordCursor;
   turns: TranscriptTurn[];
   settlements: Settlement[];
@@ -367,7 +373,7 @@ export type TurnPatch = Omit<TranscriptTurn, 'items'> & {
  * 增量。以**条目**为单位替换（见 `TurnPatch`）：每一批带的是变过的条目，不是整轮。
  * `removedTurnIds` 给分叉/回滚用。
  */
-export type TimelineBatch = {
+export type TimelineBatch = TimelineWindowFields & {
   /**
    * 这一批是从哪个序号接上的（= 收批人应有的当前 seq）。
    *
@@ -401,7 +407,7 @@ export type TimelineAfterResult =
  * 带 `epoch`：翻页途中宿主换过代（记录被分叉、整份重读）时，这一批与手里那份不是同一条
  * 时间线，拼进去就是「少了中间的那一份」。❌ 不静默丢弃，也 ❌ 不静默合并 —— 交给客户端判。
  */
-export type TimelineOlderResult = {
+export type TimelineOlderResult = TimelineWindowFields & {
   epoch: string;
   turns: TranscriptTurn[];
   /** 这一批之前还有没有更早的。 */
@@ -576,6 +582,11 @@ export type AppCallAction = {
   version: string;
   method: string;
   args: Record<string, unknown>;
+  /**
+   * The file outside its working copy a person opened in the page, to read only: stamped by
+   * the host from the page's binding, never from the page's args. The machine the file is on checks it (`fileRootOf`).
+   */
+  handed?: { workspace: string; id: string };
 };
 
 /**
@@ -659,7 +670,7 @@ export type SessionpageSessionSummary = {
   /** Explicit insert-now intent is preserved through durable host custody. */
   nativeInputSteering?: true;
   /** Live native activity, not a second IM row. Offline heartbeat digests carry no message text. */
-  nativeLastMessage?: { text: string; at: string } | null;
+  nativeLastMessage?: ({ text: string; at: string } & import('./preview-activity').PreviewActivity) | null;
   /** Raw personal conversation replies. IM deliveries keep their existing unread counter. */
   nativeUnreadKeys?: string[];
   /** Only deliberate owner notifications contribute a numeric notification badge. */
@@ -1097,7 +1108,11 @@ export type SessionpageSessionsListResult = {
  */
 export type SessionpageSessionSnapshotRequest = { conversationId: string; limit?: number; trim?: boolean };
 export type SessionpageSessionAfterRequest = { conversationId: string; cursor: RecordCursor; trim?: boolean };
-export type SessionpageSessionOlderRequest = { conversationId: string; beforeTurnId: string; limit?: number; trim?: boolean };
+export type SessionpageSessionOlderRequest = { conversationId: string; limit?: number; trim?: boolean } &
+  ({ beforeTurnId: string; cursor?: WindowCursor } | { beforeTurnId?: never; cursor: WindowCursor });
+/** Offsets and lengths are decoded UTF-8 bytes, never raw JSON or JavaScript character offsets. */
+export type SessionpageSessionBodyReadRequest = { conversationId: string; bodyRef: WindowBodyRef; offset: number; maxBytes: number };
+export type SessionpageSessionBodyReadResult = WindowBodyResult;
 /**
  * 手机点开一张附件卡(#7193):agent 用 `session_open_in_tab` 打开给人看的那份文件,从那台机器上按块现读
  * (不经云,与时间线同一条线)。只读这条会话**真的打开过**的文件 —— 机器拿它自己的记录核对。
@@ -1196,6 +1211,16 @@ export type SessionpageSessionRespondResult = {
 export type SessionpageSessionEvent = {
   subscriptionId: string;
   result: TimelineAfterResult;
+};
+
+/** Terminal desktop-window read failure; emitted separately from timeline/reset pushes. */
+export type SessionpageSessionWindowStatusEvent = {
+  conversationId: string;
+  /** Fresh per subscription generation; clients also reject stale local generation callbacks. */
+  subscriptionId: string;
+  state: 'failed';
+  /** Same error fields as the window setup RPC; this status does not request recovery. */
+  error: { code: string; message: string };
 };
 
 /**

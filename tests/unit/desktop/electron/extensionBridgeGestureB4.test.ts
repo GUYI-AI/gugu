@@ -16,7 +16,7 @@ const electron = vi.hoisted(() => ({
 }))
 vi.mock('electron', () => ({
   contextBridge: { exposeInMainWorld: (name: string, api: unknown) => void (electron.exposed[name] = api) },
-  ipcRenderer: { invoke: electron.invoke, on: electron.on, removeListener: () => undefined, sendSync: () => 'light' },
+  ipcRenderer: { invoke: electron.invoke, on: electron.on, removeListener: () => undefined, sendSync: () => ({ theme: 'light' }) },
 }))
 
 const activation = { isActive: false }
@@ -34,7 +34,8 @@ type Host = {
   dispatch(text: string, options?: Record<string, unknown>): Promise<unknown>
   clipboard: { writeText(text: string): Promise<unknown> }
   appFiles: Record<'openWith' | 'upload' | 'download' | 'forward', (args: unknown) => Promise<unknown>>
-  forum: Record<'post' | 'reply' | 'react' | 'remove' | 'block' | 'assign' | 'award', (...args: unknown[]) => Promise<unknown>>
+  cloud: Record<'write', (...args: unknown[]) => Promise<unknown>>
+  pickAgent(ask: Record<string, unknown>): Promise<unknown>
 }
 const host = electron.exposed.__guguHost as Host
 
@@ -44,17 +45,13 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   filesUpload: () => host.appFiles.upload({}),
   filesDownload: () => host.appFiles.download({ ref: { chat: 'chat-1', name: 'a.md' } }),
   filesForward: () => host.appFiles.forward({ refs: [{ chat: 'chat-1', name: 'a.md' }] }),
+  filesOpenIn: () => (host.appFiles as unknown as Record<string, (args: unknown) => Promise<unknown>>).openIn!({ ref: { workspace: 'session:s-1', id: 'a.md' }, app: 'finder' }),
   showMessage: () => host.showMessage('msg-1'),
   showSession: () => host.showSession('s-1'),
   dispatch: () => host.dispatch('picked'),
   clipboardWriteText: () => host.clipboard.writeText('hi'),
-  forumPost: () => host.forum.post({ title: 't', body: 'b' }),
-  forumReply: () => host.forum.reply('0b000000-0000-4000-8000-000000000002', 'hi'),
-  forumReact: () => host.forum.react({ kind: 'post', id: '0b000000-0000-4000-8000-000000000002', emoji: '👍', on: true }),
-  forumRemove: () => host.forum.remove({ reply: '0d000000-0000-4000-8000-000000000004' }),
-  forumBlock: () => host.forum.block('user:0c000000-0000-4000-8000-000000000003', true),
-  forumAssign: () => host.forum.assign('0b000000-0000-4000-8000-000000000002'),
-  forumAward: () => host.forum.award('0b000000-0000-4000-8000-000000000002', []),
+  cloudWrite: () => host.cloud.write('radar_save', {}),
+  pickAgent: () => host.pickAgent({}),
   openLink: () => host.openLink('gugu://ext/radar/radar'),
 }
 

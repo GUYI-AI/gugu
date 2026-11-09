@@ -1,5 +1,7 @@
+import type { WorkingCopyPart } from '@shared/extensions/working-copy-upload';
 import type { TabOpenIntent } from '@shared/view-state';
-import { fileRefOf, type AppFileChunk, type AppFileEntry, type AppFileOpened, type AppFileSearch, type AppFileRef, type AppFileUpload, type AppFileVersion, type AppFileVersionContent, type AppPlace } from '@shared/extensions/app-runtime-protocol';
+import { fileRefOf, type AppFileChunk, type AppFileEntry, type AppFileOpened, type AppFileSearch, type AppFileRef,
+  type AppFileText, type AppFileUpload, type AppFileVersion, type AppFileVersionContent, type AppPlace } from '@shared/extensions/app-runtime-protocol';
 import type { BridgeErrorCode, ErrorDetail, ExtensionFileChangeBatch, PageCounts } from '@shared/extensions/bridge-protocol';
 import type { AppSessionIndexOptions, AppSessionIndex, AppSessionReadOptions, AppSessionRead } from '@shared/extensions/app-sessions';
 import type { ProjectionHost } from './projection-source';
@@ -22,6 +24,9 @@ export interface GuguHost extends ProjectionHost {
   };
   onModalFocus?(handler: (edge: 'first' | 'last') => void): () => void;
   navigationGo?(args: { delta: -1 | 1 }): Promise<boolean>;
+  /** The page holds a Back step of its own; the host says whether it has a Back to hand over (the phone does, a desktop tab not). */
+  navigationClaimBack?(claimed: boolean): Promise<boolean>;
+  onBack?(handler: () => void): () => void;
   readonly apiVersion: number;
   /** An iframe of the outer gugu page (the phone), not a desktop webview: `framed-host.ts`. */
   readonly framed?: boolean;
@@ -33,6 +38,8 @@ export interface GuguHost extends ProjectionHost {
    * the theme from its context. A phone frame has none: its host answers only by message, after the first paint.
    */
   readonly theme?: 'light' | 'dark';
+  /** With `theme`, the person's color theme for that first paint (`ExtensionHostContext.themeColors`). */
+  readonly themeColors?: Readonly<Record<string, string>>;
   /** The page `app_check` runs (摩擦单 F69, `CHECK_PAGE_ARG`): it says how often it wrote, set presence and opened files. */
   readonly checkPage?: { report(counts: PageCounts): Promise<void> };
   /** `level: 'hint'` (摩擦单 F62): for the App's author, not a sign it is broken — recorded, but no red dot. Default `error`. */
@@ -58,10 +65,20 @@ export interface GuguHost extends ProjectionHost {
     move(args: { ref: AppFileRef; folder?: string; name?: string }): Promise<AppFileEntry>;
     remove(args: { ref: AppFileRef }): Promise<void>;
     rename(args: { ref: AppFileRef; name: string }): Promise<AppFileEntry>;
+    /** One part of a file going into a working copy: `files.upload` with bytes. */
+    writeChunk(args: WorkingCopyPart): Promise<{ received: number; entry?: AppFileEntry }>;
+    /** A working copy's file or folder in this computer's file manager: a page's. */
+    reveal?(args: { ref: AppFileRef }): Promise<void>;
+    openInApps?(args: Record<string, never>): Promise<Array<{ id: string; label: string }>>;
+    openIn?(args: { ref: AppFileRef; app: string }): Promise<void>;
     /** 「设为临时 / 一直保留」: the cloud copy of a chat file this person uploaded, cleared after their temporary period or kept. */
     keep(args: { refs: AppFileRef[]; how: 'temporary' | 'permanent' }): Promise<{ changed: number }>;
-    watch(args: { watchId: string; place: AppPlace & { folder?: string }; on: boolean }): Promise<void>;
+    watch(args: { watchId: string; place: AppPlace & { folder?: string; id?: string }; on: boolean }): Promise<void>;
     replace(args: { ref: AppFileRef; file: AppFileUpload; expectedVersion?: number | null }): Promise<AppFileEntry>;
+    readText(args: { ref: AppFileRef; maxBytes?: number; transferId?: string }): Promise<AppFileText>;
+    exists(args: { ref: AppFileRef }): Promise<boolean>;
+    draft(args: { ref: AppFileRef; text?: string | null }): Promise<string | null>;
+    writeText(args: { ref: AppFileRef; text: string }): Promise<{ entry: AppFileEntry }>;
     /** Whether whoever reads may delete each file, in order: asked as a file's menu opens, never carried by a list. */
     canDelete(args: { refs: AppFileRef[] }): Promise<boolean[]>;
     versions(args: { ref: AppFileRef }): Promise<AppFileVersion[]>;
@@ -71,7 +88,8 @@ export interface GuguHost extends ProjectionHost {
     /** The gesture halves: a page's only (`VerbFacts.only`) — a background page and a program have none. */
     openWith?(args: { ref: AppFileRef; ask?: boolean; at?: Record<string, string>; peek?: boolean; tab?: string; intent?: TabOpenIntent; viewState?: Record<string, unknown> }): Promise<void>;
     /** One file (`true` saved), or several (API 20: how many were saved; `0` when the person cancelled). */
-    download?(args: { ref: AppFileRef } | { refs: AppFileRef[] }): Promise<boolean | number>;
+    download?(args: { ref: AppFileRef; folder?: boolean; transferId?: string } | { refs: AppFileRef[] }): Promise<boolean | number>;
+    downloadStop?(args: { transferId: string }): Promise<void>;
     forward?(args: { refs: AppFileRef[] }): Promise<void>;
   };
   readonly clipboard?: {
@@ -91,21 +109,22 @@ export interface GuguHost extends ProjectionHost {
     list(): Promise<unknown>;
     members(args: Record<string, unknown>): Promise<unknown>;
   };
-  /** `gugu.forum` (9, `app-forum-core.ts`): a page's; `onChanged` is composed of subscribe and `onForumChanged`. */
-  readonly forum?: {
-    list(query?: Record<string, unknown>): Promise<unknown>;
-    read(postId: string): Promise<unknown>;
-    post(draft: Record<string, unknown>): Promise<unknown>;
-    reply(postId: string, text: string, options?: Record<string, unknown>): Promise<unknown>;
-    react(reaction: Record<string, unknown>): Promise<unknown>;
-    remove(what: Record<string, unknown>): Promise<unknown>;
-    block(userId: string, on: boolean): Promise<unknown>;
-    assign(postId: string, agentId?: string): Promise<unknown>;
-    award(postId: string, awards: unknown): Promise<unknown>;
-    subscribe(target: string): Promise<unknown>;
-    unsubscribe(target: string): Promise<unknown>;
+  /** `gugu.prompts` (34, `prompts`): the person's own prompts (`prompt-library.ts`). */
+  readonly prompts?: {
+    list(args?: Record<string, unknown>): Promise<unknown>;
+    save(args: Record<string, unknown>): Promise<unknown>;
+    delete(id: string): Promise<unknown>;
   };
-  onForumChanged?(handler: (target: string, change: { kind: string; seq?: number; entityId?: string }) => void): () => void;
+  /** `gugu.cloud` (31, `app-cloud-core.ts`): `on` is composed of subscribe and `onCloudHeard`; a program writes with `programWrite`. */
+  readonly cloud?: {
+    read(name: string, args?: Record<string, unknown>): Promise<unknown>;
+    write?(name: string, args?: Record<string, unknown>): Promise<unknown>;
+    programWrite?(name: string, args?: Record<string, unknown>): Promise<unknown>;
+    subscribe?(topic: string, event: string): Promise<unknown>;
+    unsubscribe?(topic: string, event: string): Promise<unknown>;
+  };
+  onCloudHeard?(handler: (topic: string, event: string, heard: { subscribed: true } | { payload: Record<string, unknown> }) => void): () => void;
+  pickAgent?(ask: Record<string, unknown>): Promise<unknown>;
 }
 
 /**

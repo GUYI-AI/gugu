@@ -94,6 +94,7 @@ export function createDesktopFileAccess(deps: {
   }
   const sshHandlers: DeviceRpcHandlers = { [PROJECT_FILE_READ]: async (payload, ctx) => ({ result: await read(payload as Parameters<typeof read>[0], ctx.request.user_id) }) }
   const publish = createProjectFilePublisher({ identity, root, rpc: deps.rpc, env: deps.env,
+    requestCopy: async (itemId, version) => attachmentRequest(await endpoint(), 'file-request', { ref: { item_id: itemId, version }, as: (await identity()).accountId, request_id: crypto.randomUUID() }),
     async storage() { const { auth, db } = await identityDb(); return parseFileStorage(await readUserSettingsConfig(db as unknown as SettingsTableClient, auth.userId, 'user')) },
     async projectChat(chatId) {
       const { db } = await identityDb()
@@ -112,10 +113,10 @@ export function createDesktopFileAccess(deps: {
         if (resolved.status !== 'ready') throw new Error('File is no longer available')
         return resolved
       })
-      const saved = await step('save', () => saveFileHandle(file, deps.downloads, name))
+      const saved = await step('save', () => saveFileHandle(file, deps.downloads, name, true))
       const bytes = saved.content_type.startsWith('image/')
         ? await step('read-image', async () => new Uint8Array(await readFile(saved.file_path))) : new Uint8Array()
-      return { localPath: saved.file_path, bytes }
+      return { localPath: saved.file_path, bytes, readOnly: saved.read_only }
     },
   }
 }

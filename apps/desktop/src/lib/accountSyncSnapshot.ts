@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { turnFailureReason } from '@gugu/core/shared/ui/systemNotice'
+import { parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import { assemble, entityKey, membershipId, missingDependencies, type Cell, type EntityValue, type ProjectionCache } from './chatProjectionAlgebra'
 import { membershipValue, mergeUnreadRows } from './chatProjection'
 import { displayIdentityFromRow } from './displayIdentity'
@@ -43,7 +43,7 @@ export function decodeAccountSnapshot(value: unknown, accountId: string) {
   for (const preview of snapshot.previews) put('preview', preview.chat_id, {
     chat_id: preview.chat_id, created_at: preview.created_at,
     preview: typeof preview.preview === 'string' ? composerCardLine(preview.preview) : null,
-    failure: turnFailureReason(preview as Parameters<typeof turnFailureReason>[0]),
+    notice: parseSystemNotice(preview as Parameters<typeof parseSystemNotice>[0]),
   })
   const unread = mergeUnreadRows(snapshot.unread as Array<Record<string, unknown> & { chat_id: string }>)
   for (const chat of snapshot.chats) put('unread', chat.id, unread.get(String(chat.id)) ?? null)
@@ -69,7 +69,7 @@ export async function initializeAccountSync(repository: AccountImRepository): Pr
   const snapshot = decodeAccountSnapshot(data, repository.accountId)
   const chats = assemble(snapshot.cells, repository.accountId)
   await alignMessageStore(repository.accountId, snapshot.revision, createSupabaseAccountRevisionSource(), currentAuthSessionSignal())
-  await ingestMessages(repository.accountId, { writes: messageAccessWrites(snapshot.cells, repository.accountId), revisions: [] })
+  await ingestMessages(repository.accountId, { writes: messageAccessWrites(snapshot.cells, repository.accountId, snapshot.cells.keys()), revisions: [] })
   await prefetchMessages(repository.accountId, chats.map(chat => chat.id))
   const outbox = repository.snapshot().outbox
   await repository.transaction((transaction) => {

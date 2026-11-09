@@ -38,7 +38,7 @@ const TOPIC_BREADCRUMB_NAME_STYLE: React.CSSProperties = {
   overflow: 'hidden',
   textOverflow: 'ellipsis',
 }
-const TOPIC_BREADCRUMB_SOURCE_DELETED_STYLE: React.CSSProperties = { fontSize: 'var(--font-caption)', color: 'var(--warn)' }
+const TOPIC_BREADCRUMB_SOURCE_DELETED_STYLE: React.CSSProperties = { fontSize: 'var(--font-caption)', color: 'var(--warn-fg)' }
 const TOPIC_BREADCRUMB_SOURCE_PREVIEW_STYLE: React.CSSProperties = {
   minWidth: 0,
   flex: '1 1 0',

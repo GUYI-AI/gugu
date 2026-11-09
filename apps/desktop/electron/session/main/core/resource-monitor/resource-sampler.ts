@@ -11,6 +11,8 @@ import { collectAcpResourceRoots } from '../acp/runtime-process/resource-roots';
 import { accountProcessTrees, type ResourceProcessRoot } from './process-accounting';
 import { listResourceProcesses, collectLedgerResourceRoots } from './owned-processes';
 import { collectResourceContext } from './context';
+import { footprintReader } from './footprint';
+import { commitPageTotals, pageMetricsSince, readPageTotals, stopPageCounters, type PageTotals } from './page-metrics';
 import { resourceHistory } from './history';
 import { parsePtySessionId } from '@shared/core/pty/ptySessionId';
 import { resourceSnapshotChannel, type ResourceSamplingFailure } from '@shared/events/resourceEvents';
@@ -33,6 +35,11 @@ class ProcessListReadError extends Error {
 }
 
 const runId = randomUUID();
+/** Cumulative page totals behind each snapshot; only a recorded sample moves the page baseline. */
+const pageTotalsOf = new WeakMap<ResourceSnapshot, PageTotals>();
+let latest: ResourceSnapshot | null = null;
+/** The last recorded sample (with its last-minute page summary): what the settings page and the external reading show. */
+export function latestResourceSnapshot(): ResourceSnapshot | null { return latest; }
 let inFlight: Promise<ResourceSnapshot> | null = null;
 export function sampleOnce(): Promise<ResourceSnapshot> {
   inFlight ??= collectSample().finally(() => { inFlight = null; });
@@ -65,6 +72,7 @@ async function collectSample(): Promise<ResourceSnapshot> {
   roots.push(...acpRoots, ...await collectLedgerResourceRoots(processes));
   const candidates = accountProcessTrees(roots, processes, {}).pidsByRoot;
   const usage = await samplePidUsage([...new Set([...candidates.values()].flat())]);
+  const memory = await applyFootprints(usage);
   // Electron CPU uses its cumulative baseline; RSS uses the same OS sampler as child processes.
   for (const p of electronProcesses) {
     const sampled = usage[String(p.pid)];
@@ -102,7 +110,24 @@ async function collectSample(): Promise<ResourceSnapshot> {
     });
   }
 
-  return completeSnapshot(appUsage, appProcesses, entries, processGroups, 'owned-process-tree');
+  return completeSnapshot(appUsage, appProcesses, entries, processGroups, 'owned-process-tree', memory);
+}
+
+/** Replace RSS with footprint where this platform can read it; RSS stays for the processes it could not. */
+async function applyFootprints(usage: ProcessUsageMap): Promise<Pick<ResourceSnapshot, 'memoryMetric' | 'memoryFallbacks'>> {
+  const read = footprintReader();
+  const pids = Object.keys(usage).map(Number);
+  if (!read || !pids.length) return { memoryMetric: 'rss' };
+  let footprints: Map<number, number>;
+  try { footprints = await read(pids); }
+  catch (error) { log.warn('resource-sampler: footprint read failed', error); return { memoryMetric: 'rss' }; }
+  let fallbacks = 0;
+  for (const pid of pids) {
+    const value = footprints.get(pid);
+    if (value === undefined) fallbacks++;
+    else usage[String(pid)].memory = value;
+  }
+  return { memoryMetric: 'footprint', ...(fallbacks ? { memoryFallbacks: fallbacks } : {}) };
 }
 
 async function completeSnapshot(
@@ -111,8 +136,16 @@ async function completeSnapshot(
   entries: ResourcePtyEntry[],
   processGroups: ResourceSnapshot['processGroups'],
   processTreeScope: ResourceSnapshot['processTreeScope'],
+  memory: Pick<ResourceSnapshot, 'memoryMetric' | 'memoryFallbacks'> = { memoryMetric: 'rss' },
 ): Promise<ResourceSnapshot> {
-  return {
+  const [renderers, countersOn] = await Promise.all([
+    collectRendererMetrics(),
+    appSettingsService.get('resourceMonitor').then((settings) => settings.pageCounters, () => false),
+  ]);
+  // Checked after the awaits: a sample still running when monitoring stops must not attach to the window again.
+  const totals = await readPageTotals(renderers, countersOn && timer !== null);
+  const page = pageMetricsSince(totals);
+  const snapshot: ResourceSnapshot = {
     timestamp: Date.now(),
     runId,
     context: await collectResourceContext(),
@@ -122,10 +155,13 @@ async function completeSnapshot(
     appProcesses,
     entries,
     processGroups,
-    memoryMetric: 'rss',
+    ...memory,
+    ...(page ? { page } : {}),
     processTreeScope,
-    ...(hasResourceMonitorInternals() ? { internals: { renderers: await collectRendererMetrics() } } : {}),
+    ...(hasResourceMonitorInternals() ? { internals: { renderers } } : {}),
   };
+  pageTotalsOf.set(snapshot, totals);
+  return snapshot;
 }
 
 async function samplePidUsage(localPids: number[]): Promise<ProcessUsageMap> {
@@ -242,8 +278,11 @@ async function tick(): Promise<void> {
   if (!timer) return;
   if (timer !== current) return sampleSoon(openSubscriptions.size ? 0 : BACKGROUND_SAMPLE_INTERVAL_MS);
   if (snap) {
-    try { resourceHistory.append(snap); }
+    try { resourceHistory.append(snap); snap.recent = resourceHistory.recent(snap.timestamp); }
     catch (error) { snap.recordingError = 'write-failed'; log.warn('resource history write failed', error); }
+    const totals = pageTotalsOf.get(snap);
+    if (totals) commitPageTotals(totals);
+    latest = snap;
   }
   if (openSubscriptions.size) events.emit(resourceSnapshotChannel, samplingError ? { samplingError } : snap);
   // Keep the same complete process-tree metric in history, at a lower cost without a viewer.
@@ -256,6 +295,8 @@ export function stopResourceSampler(): void {
     clearTimeout(timer);
     timer = null;
     cpuBaseline = null;
+    latest = null;
+    stopPageCounters();
     try {
       pidusage.clear();
     } catch {

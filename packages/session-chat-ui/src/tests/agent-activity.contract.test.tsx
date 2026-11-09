@@ -2,16 +2,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cdp, page } from 'vitest/browser';
 import { batch } from 'solid-js';
+import { textFilePatch } from '@gugu/session-core/lib';
+import type { ChatItem } from '../model';
 import { createChatContext } from '../chat-context';
 import { createChatState } from '../state/chat-state';
 import { createChatView } from '../chat-view';
 import type { ChatMessage, TranscriptTurn } from '../model';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
-import { pinFade } from '../chat-root.css';
 
 const peer = 'user:11111111-1111-4111-8111-111111111111';
 const me = '22222222-2222-4222-8222-222222222222';
-const delivery = (id: string, body = 'Agent update', type = 'agent'): ChatMessage => ({ kind: 'message', id, seq: 0, role: 'user', text:
+const delivery = (id: string, body = 'Agent update', type = 'agent') => ({ kind: 'message' as const, id, seq: 0, role: 'user' as const, text:
   `<gugu_delivery route="chat" from="d3" from_id="${type === 'agent' ? peer : `user:${me}`}" from_type="${type}" chat="group" chat_kind="group" msg="msg:${id}"><![CDATA[${body}]]></gugu_delivery>` });
 const ordinary = (id: string, role: 'user' | 'assistant' = 'assistant'): ChatMessage => ({ kind: 'message', id, seq: 0, role, text: id });
 const turn = (id: string, items: ChatMessage[]): TranscriptTurn => ({ id, seq: 0, initiator: 'user', outcome: { kind: 'done' }, items: items as TranscriptTurn['items'] });
@@ -41,10 +42,93 @@ async function mount(width: number, records = [turn('in', [delivery('incoming')]
 }
 
 describe('approved A2A activity', () => {
+  it('folds the producing activity with its edited file and preview, then restores both on open', async () => {
+    const items: ChatItem[] = [delivery('with-file'),
+      { kind: 'diff', id: 'owned-edit', status: 'done', patches: [textFilePatch('/work/owned.md', null, 'ready')] },
+      { kind: 'mcp-tool-call', id: 'owned-preview', seq: 2, toolCallId: 'owned-preview', title: 'Open preview', server: 'gugu', tool: 'session_open_in_tab',
+        status: 'done', rawInput: '{"path":"/work/preview.html"}', outputText: '{"opened":true,"path":"/work/preview.html"}' }];
+    const records = [{ ...turn('with-file', []), items: items as TranscriptTurn['items'] }, turn('after-file', [delivery('after-file')])];
+    const t = await mount(390, records);
+    expect(t.host.querySelectorAll('[data-agent-activity]')).toHaveLength(1);
+    expect(t.host.querySelector('[data-slot="file-change-summary"]')).toBeNull();
+    expect(t.host.textContent).not.toContain('preview.html');
+    t.button().click();
+    await until('owned artifacts open inside the original activity', () => !!t.host.querySelector('[data-slot="file-change-summary"]') && !!t.host.textContent?.includes('preview.html'));
+    expect(t.host.querySelectorAll('[data-agent-activity]')).toHaveLength(1);
+    expect(t.host.textContent).toContain('owned.md');
+    t.button().click();
+    await until('owned artifacts collapse again', () => !t.host.querySelector('[data-slot="file-change-summary"]'));
+    expect(t.host.textContent).not.toContain('preview.html');
+    expect(t.head()!.textContent).toContain('Received 2 messages');
+  });
+  it('combines tool-only incoming turns while preserving their original process on open', async () => {
+    const records = ['one', 'two'].map((id, seq): TranscriptTurn => ({ ...turn(id, [delivery(`${id}-input`)]), seq, items: [delivery(`${id}-input`),
+      { kind: 'mcp-tool-call', id: `${id}-read`, toolCallId: `${id}-read`, seq: 1, title: 'Read history', server: 'gugu', tool: 'message_history', status: 'done', rawInput: '{"chat_id":"group"}', outputText: '[]' }] }));
+    const t = await mount(800, records);
+    expect(t.host.querySelectorAll('[data-agent-activity]')).toHaveLength(1);
+    expect(t.head()!.textContent).toContain('Received 2 messages');
+    const before = t.scroll().scrollHeight;
+    t.button().click();
+    await until('both original inputs are visible', () => !!t.host.querySelector('[data-user-card="one-input"]') && !!t.host.querySelector('[data-user-card="two-input"]'));
+    expect(t.host.querySelectorAll('[data-slot="turn-process"]')).toHaveLength(2);
+    t.button().click();
+    await untilStable('one activity shrinks back', () => t.scroll().scrollHeight);
+    expect(t.scroll().scrollHeight).toBe(before);
+  });
+
+  it('never pins an activity header that has not been expanded, or has been collapsed again', async () => {
+    const records = [turn('own', [ordinary('Owner question', 'user')]), turn('incoming', [delivery('incoming')]),
+      ...Array.from({ length: 15 }, (_, i) => turn(`later${i}`, [ordinary(`Visible answer ${i}. `.repeat(35))]))];
+    const t = await mount(800, records);
+    const sticky = () => getComputedStyle(t.head()!.closest('[data-index]')!.firstElementChild!).position;
+    expect(sticky()).not.toBe('sticky');
+    const lane = () => t.head()!.closest<HTMLElement>('[data-index]')!;
+    for (const scrollTop of [80, 130, 180]) {
+      t.scroll().scrollTop = scrollTop;
+      await untilStable('closed row scrolling near the top', () => t.head()?.getBoundingClientRect().top);
+      expect(lane().querySelector('[data-chat-pin-backdrop]'), 'closed activity never paints the sticky divider').toBeNull();
+    }
+    t.view.scrollToTop();
+    t.button().click();
+    await until('opened activity is sticky eligible', () => sticky() === 'sticky');
+    t.button().click();
+    await untilStable('reclosed activity settled', () => t.scroll().scrollHeight);
+    expect(sticky()).not.toBe('sticky');
+    expect(lane().querySelector('[data-chat-pin-backdrop]')).toBeNull();
+  });
+  it('keeps the owner pinned while reading ordinary reply content beside a closed activity', async () => {
+    const t = await mount(800, [turn('own', [ordinary('Owner question', 'user'), delivery('incoming'),
+      ordinary(Array.from({ length: 24 }, (_, i) => `Reply ${i}. `.repeat(45)).join('\n\n'))]),
+      turn('next', [ordinary('Next owner question', 'user'), ordinary('Next answer')])]);
+    expect(t.button().getAttribute('aria-expanded')).toBe('false');
+    t.host.querySelector<HTMLButtonElement>('[data-expand-user-card]')!.click();
+    await untilStable('the full final answer is measured', () => t.scroll().scrollHeight);
+    t.scroll().scrollTop = 850;
+    await untilStable('owner reading ordinary reply', () => t.host.querySelector('[data-pin-summary="Owner question"]')?.getBoundingClientRect().top);
+    const row = t.host.querySelector<HTMLElement>('[data-pin-summary="Owner question"]');
+    expect(row).not.toBeNull();
+    expect(row!.getBoundingClientRect().top).toBeCloseTo(t.scroll().getBoundingClientRect().top + 8, 0);
+  });
+  it('pins the viewer human delivery above its opened activity without treating other human deliveries as the viewer', async () => {
+    const own = delivery('Owner message', 'The question I sent from the phone', 'human');
+    const t = await mount(800, [turn('own', [own, ...Array.from({ length: 24 }, (_, i) => delivery(`a${i}`, `Update ${i}. `.repeat(45)))]),
+      turn('conclusion', [ordinary('Following conclusion')])]);
+    t.button().click();
+    await untilStable('human owner activity geometry', () => t.scroll().scrollHeight);
+    t.scroll().scrollTop = 850;
+    await untilStable('human owner sticky position', () => t.host.querySelector('[data-pin-summary="Owner message"]')?.getBoundingClientRect().top);
+    const row = t.host.querySelector<HTMLElement>('[data-pin-summary="Owner message"]');
+    expect(row, 'the viewer message must remain mounted while its activity is read').not.toBeNull();
+    expect(row!.getBoundingClientRect().top).toBeCloseTo(t.scroll().getBoundingClientRect().top + 8, 0);
+  });
+
   it.each([390, 1280])('defaults closed with centered 44px semantic action and original bubbles on manual open (%i)', async width => {
     const t = await mount(width);
     expect(t.head()!.textContent).toContain('Received 1 message from d3');
     expect(t.button().getAttribute('aria-expanded')).toBe('false');
+    // Includes title, aria-label, previews and copy controls in the closed subtree.
+    expect(t.host.innerHTML).not.toContain('Agent update');
+    expect(t.head()!.querySelector('[data-slot=message-copy]')).toBeNull();
     expect(t.host.querySelector('[data-agent-conversation-message="incoming"]')).toBeNull();
     const row = t.head()!.getBoundingClientRect();
     expect(row.height).toBe(44);
@@ -57,6 +141,7 @@ describe('approved A2A activity', () => {
     expect(t.host.querySelector('[data-user-card="incoming"]')?.textContent).toContain('Agent update');
     t.button().click();
     await until('original bubble removed after shrink', () => !t.host.querySelector('[data-agent-conversation-message="incoming"]'));
+    expect(t.host.innerHTML).not.toContain('Agent update');
     expect(t.host.querySelector('[data-agent-conversation-message="Panel answer"]')).not.toBeNull();
   });
   it('navigates an agent name independently of expanding the record', async () => {
@@ -96,9 +181,9 @@ describe('approved A2A activity', () => {
     expect(card.bottom).toBeLessThanOrEqual(viewport.bottom + 1);
     expect(card.top).toBeGreaterThanOrEqual(viewport.top - 1);
   });
-  it('keeps human deliveries and every panel reply visible between the A2A regions', async () => {
+  it('keeps human deliveries and the final panel reply visible between the A2A regions', async () => {
     const t = await mount(800, [turn('t', [delivery('a'), ordinary('First panel text'), ordinary('Second panel text'), delivery('human', 'Human group message', 'human'), delivery('b')])]);
-    expect(t.host.querySelector('[data-agent-conversation-message="First panel text"]')).not.toBeNull();
+    expect(t.host.querySelector('[data-user-card="First panel text"]')).toBeNull();
     expect(t.host.querySelector('[data-agent-conversation-message="Second panel text"]')).not.toBeNull();
     expect(t.host.querySelector('[data-user-card="human"]')?.textContent).toContain('Human group message');
     expect(t.host.querySelector('[data-user-card="a"]')).toBeNull();
@@ -122,20 +207,45 @@ describe('approved A2A activity', () => {
     await until('settled confirmed count', () => !!t.head()?.textContent?.includes('Exchanged 2 messages'));
     expect(t.head()).toBe(head);
     expect(t.head()!.getAttribute('data-live')).toBe('false');
+    expect(t.host.innerHTML).not.toContain('Real reply content');
     expect(t.button().getAttribute('aria-expanded')).toBe('false');
   });
-  it('shows the viewer group reply as one source-linked line without unfolding A2A or manufacturing a message', async () => {
+  it('folds a group reply to the viewer into the same activity row, with no text and an exact source link', async () => {
+    const base: ChatMessage = { ...ordinary('reply:sent:receipt'), text: 'I answered your question.',
+      sentAddresses: { target: { kind: 'chat', conversationId: 'group', whisper: false, threadRootId: null },
+        recipients: [`user:${me}`], confirmed: true, chatKind: 'group', replyTo: null } };
+    const question = ordinary('The owner asks in the panel.', 'user');
+    const t = await mount(800, [turn('ask', [question]), turn('reply', [base])]);
+    expect(t.host.querySelectorAll('[data-agent-activity]')).toHaveLength(1);
+    expect(t.head()!.textContent).toContain('Replied to you in gugu');
+    expect(t.button().getAttribute('aria-expanded')).toBe('false');
+    expect(t.host.innerHTML).not.toContain('I answered your question.');
+    expect(t.host.querySelector(`[data-user-card="${question.id}"]`)?.textContent).toContain(question.text);
+    t.head()!.querySelector<HTMLElement>('[data-activity-target="group"]')!.click();
+    expect(t.open).toHaveBeenCalledWith({ kind: 'chat', chatId: 'group', messageId: 'receipt' });
+    t.button().click();
+    await until('the original reply opens inside the activity', () => !!t.host.textContent?.includes('I answered your question.'));
+    expect(t.state.transcript.state.committedTurns[1].items).toHaveLength(1);
+  });
+  it('joins a group reply to the viewer with adjacent agent activity in one row', async () => {
     const base: ChatMessage = { ...ordinary('reply:sent:receipt'), text: 'I answered your question.',
       sentAddresses: { target: { kind: 'chat', conversationId: 'group', whisper: false, threadRootId: null },
         recipients: [`user:${me}`], confirmed: true, chatKind: 'group', replyTo: null } };
     const t = await mount(800, [turn('a', [delivery('incoming')]), turn('reply', [base])]);
-    const reply = t.host.querySelector<HTMLElement>('[data-group-reply]')!;
-    expect(reply.textContent).toContain('Replied to you in gugu');
-    expect(reply.getBoundingClientRect().height).toBe(32);
-    expect(t.host.querySelector('[data-user-card="reply:sent:receipt"]')).toBeNull();
-    reply.querySelector('button')!.click();
-    expect(t.open).toHaveBeenCalledWith({ kind: 'chat', chatId: 'group', messageId: 'receipt' });
-    expect(t.state.transcript.state.committedTurns[1].items).toHaveLength(1);
+    expect(t.host.querySelectorAll('[data-agent-activity]')).toHaveLength(1);
+    expect(t.head()!.textContent).toContain('Exchanged 2 messages');
+    expect(t.host.innerHTML).not.toContain('I answered your question.');
+  });
+  it('keeps the owner question and a direct send to the owner visible', async () => {
+    const target = { kind: 'chat' as const, conversationId: 'direct', whisper: false, threadRootId: null, recipientUserId: me };
+    const sent: ChatMessage = { ...ordinary('owner-send:sent:receipt'), text: 'The owner still sees this answer.', sentTo: target,
+      sentAddresses: { target, recipients: [`user:${me}`], confirmed: true, chatKind: 'ai', replyTo: null } };
+    const question = ordinary('The owner still sees this question.', 'user');
+    const t = await mount(800, [turn('activity', [delivery('incoming')]), turn('owner', [question, sent])]);
+    expect(t.host.querySelector(`[data-user-card="${question.id}"]`)?.textContent).toContain(question.text);
+    expect(t.host.querySelector(`[data-user-card="${sent.id}"]`)?.textContent).toContain(sent.text);
+    expect(t.host.querySelector('[data-agent-activity]')?.textContent ?? '').not.toContain('Replied to you');
+    expect(t.state.transcript.state.committedTurns[1].items).toEqual([question, sent]);
   });
   it('keeps an opened group and source identity when older adjacent messages are prepended', async () => {
     const t = await mount(800, [turn('a', [delivery('incoming')]), turn('p', [ordinary('Panel answer')])]);
@@ -193,8 +303,8 @@ describe('approved A2A activity', () => {
     t.button().click();
     await untilStable('open activity heights settled', () => t.scroll().scrollHeight);
     t.scroll().scrollTop = 850;
-    await untilStable('both sticky lanes settled', () => [t.head()?.getBoundingClientRect().top, t.host.querySelector('[data-user-card="Owner question"]')?.getBoundingClientRect().top]);
-    const own = t.host.querySelector('[data-agent-conversation-message="Owner question"]')!.getBoundingClientRect();
+    await untilStable('both sticky lanes settled', () => [t.head()?.getBoundingClientRect().top, t.host.querySelector('[data-pin-summary="Owner question"]')?.getBoundingClientRect().top]);
+    const own = t.host.querySelector('[data-pin-summary="Owner question"]')!.getBoundingClientRect();
     const activity = t.head()!.getBoundingClientRect();
     expect(Math.abs(own.top - t.scroll().getBoundingClientRect().top - 8)).toBeLessThan(2);
     expect(activity.top).toBeGreaterThanOrEqual(own.bottom + 6);
@@ -209,9 +319,11 @@ describe('approved A2A activity', () => {
     await untilStable('push-out rows measured', () => t.scroll().scrollHeight);
     t.scroll().scrollTop = 850;
     await untilStable('push-out lanes mounted', () => t.head()?.getBoundingClientRect().top);
-    const own = () => t.host.querySelector<HTMLElement>('[data-agent-conversation-message="Owner question"]')!;
+    const own = () => t.host.querySelector<HTMLElement>('[data-pin-summary="Owner question"]')!;
     const sample = () => ({ scroll: t.scroll().scrollTop, own: own()?.getBoundingClientRect().top,
       activity: t.head()?.getBoundingClientRect().top, opaque: t.head() && getComputedStyle(t.head()!.closest('[data-index]')!.querySelector('[data-chat-pin-backdrop]')!).opacity });
+    await untilStable('both pins settled', () => [sample().own, sample().activity]);
+    const pinned = sample();
     const row = t.head()!.closest<HTMLElement>('[data-index]')!;
     const end = Number.parseFloat(row.style.top) + Number.parseFloat(row.style.height);
     const samples = [];
@@ -235,7 +347,7 @@ describe('approved A2A activity', () => {
     t.scroll().scrollTop = 850;
     await untilStable('reverse scroll restores the same pins', () => [sample().own, sample().activity]);
     expect(sample().own).toBe(8);
-    expect(sample().activity).toBe(108);
+    expect(sample().activity).toBe(pinned.activity);
     expect(sample().opaque).toBe('1');
   });
   it.each([true, false])('returns pinned rows during the height collapse without skipping to the final anchor (following conclusion: %s)', async following => {
@@ -245,7 +357,7 @@ describe('approved A2A activity', () => {
     await untilStable('collapse source measured', () => t.scroll().scrollHeight);
     t.scroll().scrollTop = 850;
     await untilStable('collapse starts with two pinned rows', () => t.head()?.getBoundingClientRect().top);
-    const own = () => t.host.querySelector('[data-agent-conversation-message="Owner question"]')?.getBoundingClientRect();
+    const own = () => t.host.querySelector('[data-pin-summary="Owner question"]')?.getBoundingClientRect();
     const start = t.scroll().scrollTop;
     // Drive the real layout tween with a frame clock. A busy browser can deliver
     // its next animation frame after the entire 200ms duration has elapsed.
@@ -290,7 +402,7 @@ describe('approved A2A activity', () => {
     // Older Android WebViews do not implement scroll-state queries. Disable
     // those containers while exercising the real sticky layout and paint.
     for (const row of t.host.querySelectorAll<HTMLElement>('[data-index] > div')) row.style.containerType = 'normal';
-    const own = () => t.host.querySelector(`[data-agent-conversation-message="${question}"]`)!;
+    const own = () => t.host.querySelector(`[data-pin-summary="${question}"]`)!;
     const masks = () => [own(), t.head()!].map(row => row.closest('[data-index]')!.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!);
     t.scroll().scrollTop = 850;
     await untilStable('both opaque lanes stuck', () => [own().getBoundingClientRect().top, t.head()?.getBoundingClientRect().top]);
@@ -303,13 +415,33 @@ describe('approved A2A activity', () => {
     for (const mask of masks()) expect(getComputedStyle(mask).opacity).toBe('0');
   });
   it.each([
-    { width: 360, background: '#ffffff' }, { width: 1280, background: '#ffffff' },
-    { width: 360, background: '#212121' }, { width: 1280, background: '#212121' },
-  ])('keeps the pinned semantic line quiet and its page-colored strip inside the row ($width/$background)', async ({ width, background }) => {
+    ...[
+      { width: 360, background: '#ffffff', endInset: 0 }, { width: 1280, background: '#ffffff', endInset: 15 },
+      { width: 360, background: '#212121', endInset: 0 }, { width: 1280, background: '#212121', endInset: 15 },
+    ].map(value => ({ ...value, classic: false, frameWidth: value.width })),
+    ...['#ffffff', '#212121'].map(background => ({ width: 1280, background, endInset: 0, classic: true, frameWidth: 1280 })),
+    ...[false, true].map(classic => ({ width: 1280, background: '#ffffff', endInset: 0, classic, frameWidth: 960 })),
+  ])('keeps the pinned semantic line quiet and its page-colored strip inside the row ($width/$background/$endInset/classic=$classic/frame=$frameWidth)', async ({ width, background, endInset, classic, frameWidth }) => {
+    if (classic) {
+      // A custom Chromium scrollbar reserves real layout space, including on overlay-scrollbar Macs.
+      const scrollbar = document.head.appendChild(document.createElement('style'));
+      scrollbar.textContent = '[data-chat-scroll]::-webkit-scrollbar { width: 15px; height: 15px; }';
+      cleanup.push(() => scrollbar.remove());
+    }
     const question = 'A longer owner question above the agent exchange. '.repeat(3);
     const t = await mount(width, [turn('own', [ordinary(question, 'user'),
       ...Array.from({ length: 20 }, (_, i) => delivery(`quiet${i}`, `Long underlying message ${i}. `.repeat(45)))]),
       turn('conclusion', [ordinary('Following conclusion. '.repeat(60))])]);
+    if (frameWidth !== width) {
+      t.host.style.width = `${frameWidth}px`;
+      t.host.style.left = '120px';
+      await untilStable('split conversation geometry settles', () => t.host.querySelector('[data-chat-width-probe]')?.getBoundingClientRect().width);
+    }
+    if (classic) expect(t.scroll().offsetWidth - t.scroll().clientWidth, 'a real classic scrollbar reserves 15px').toBe(15);
+    // A non-overlay scrollbar consumes an asymmetric trailing gutter. Exercise
+    // the same column offset on overlay-scrollbar platforms as well.
+    t.scroll().style.paddingRight = `${16 + endInset}px`;
+    await untilStable('asymmetric content gutter settles', () => t.host.querySelector('[data-chat-width-probe]')?.getBoundingClientRect().width);
     if (background === '#212121') t.host.classList.add('emdark');
     t.host.style.setProperty('--chat-bg', background);
     const label = () => t.head()!.lastElementChild as HTMLElement;
@@ -329,21 +461,55 @@ describe('approved A2A activity', () => {
     const lane = t.head()!.closest<HTMLElement>('[data-index]')!;
     const backdrop = lane.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!;
     const paint = backdrop.getBoundingClientRect(), viewport = t.scroll().getBoundingClientRect();
+    console.info('ACTIVITY_PIN_FRAME', JSON.stringify({ width, background, endInset, classic, frameWidth,
+      offsetWidth: t.scroll().offsetWidth, clientWidth: t.scroll().clientWidth,
+      viewport: { left: viewport.left, right: viewport.right }, paint: { left: paint.left, right: paint.right } }));
     const style = getComputedStyle(backdrop);
     expect(style.opacity).toBe('1');
     expect(style.backgroundColor).toBe(background === '#ffffff' ? 'rgb(255, 255, 255)' : 'rgb(33, 33, 33)');
-    const own = t.host.querySelector('[data-agent-conversation-message]')!.getBoundingClientRect();
+    const own = t.host.querySelector('[data-pin-summary]')!.closest<HTMLElement>('[data-index] > div:last-child')!.getBoundingClientRect();
+    const ownPaint = t.host.querySelector('[data-pin-summary]')!.closest('[data-index]')!.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!.getBoundingClientRect();
+    expect(ownPaint.top, 'the reserved top gap above the owner pin must not expose an older body line').toBeLessThanOrEqual(viewport.top);
     expect(Math.abs(paint.top - own.bottom), 'the two page-colored pins meet without exposing half a body line in their seam').toBeLessThan(1);
     expect(Math.abs(paint.bottom - row.bottom), 'no opaque band below the semantic row').toBeLessThan(1);
     expect(paint.left).toBeLessThanOrEqual(viewport.left);
-    expect(paint.right).toBeGreaterThanOrEqual(viewport.right - 1);
+    // The strip must reach the right edge of what the scroller paints: its client box. A classic scrollbar (Linux,
+    // Windows) takes the last pixels of the border box and paints over anything beneath; overlay scrollbars take none.
+    const scroller = t.scroll();
+    expect(paint.right).toBeGreaterThanOrEqual(viewport.left + scroller.clientLeft + scroller.clientWidth - 1);
     expect(getComputedStyle(lane).contain.split(' ')).not.toContain('paint');
     expect(style.borderTopWidth).toBe('0px');
     expect(style.borderLeftWidth).toBe('0px');
     expect(style.borderRightWidth).toBe('0px');
     expect(style.borderBottomWidth).toBe('1px');
-    const fadeSelector = pinFade.split(/\s+/).map(name => `.${name}`).join('');
-    expect(t.host.querySelectorAll(fadeSelector), 'neither pin may paint a fade across the preceding message').toHaveLength(0);
+    if (frameWidth !== width) {
+      expect(paint.left).toBeGreaterThanOrEqual(viewport.left - 1);
+      expect(paint.right).toBeLessThanOrEqual(viewport.right + 1);
+      const column = t.host.querySelector('[data-chat-width-probe]')!.getBoundingClientRect().width;
+      t.host.style.width = '1040px';
+      await untilStable('split frame resizes while its content column remains capped', () => [t.scroll().offsetWidth, backdrop.getBoundingClientRect().width]);
+      expect(t.host.querySelector('[data-chat-width-probe]')!.getBoundingClientRect().width).toBe(column);
+      const resized = t.scroll().getBoundingClientRect(), resizedPaint = backdrop.getBoundingClientRect();
+      expect(Math.abs(resizedPaint.left - resized.left)).toBeLessThan(1);
+      expect(Math.abs(resizedPaint.right - resized.right)).toBeLessThan(1);
+    }
+  });
+  it.each(['#ffffff', '#212121'])('covers the reserved viewport gap above a standalone opened activity (%s)', async background => {
+    const t = await mount(390, [turn('incoming', Array.from({ length: 16 }, (_, i) => delivery(`standalone${i}`, `Underlying old message ${i}. `.repeat(45)))),
+      turn('after', [ordinary('Following conclusion. '.repeat(40))])]);
+    if (background === '#212121') t.host.classList.add('emdark');
+    t.host.style.setProperty('--chat-bg', background);
+    t.button().click();
+    await untilStable('standalone activity expanded', () => t.scroll().scrollHeight);
+    t.scroll().scrollTop = 650;
+    await untilStable('standalone activity stuck', () => t.head()?.getBoundingClientRect().top);
+    const mask = t.head()!.closest('[data-index]')!.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!;
+    expect(getComputedStyle(mask).opacity).toBe('1');
+    expect(getComputedStyle(mask).backgroundColor).toBe(background === '#ffffff' ? 'rgb(255, 255, 255)' : 'rgb(33, 33, 33)');
+    expect(mask.getBoundingClientRect().top, 'the unpaired activity must cover its reserved top gap').toBeLessThanOrEqual(t.scroll().getBoundingClientRect().top);
+    t.button().click();
+    await untilStable('standalone activity closed', () => t.scroll().scrollHeight);
+    expect(t.head()!.closest('[data-index]')!.querySelector('[data-chat-pin-backdrop]')).toBeNull();
   });
   it('snaps the pinned exit and manual collapse when reduced motion is enabled', async () => {
     await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });

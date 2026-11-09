@@ -100,6 +100,24 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
   );
 }
 
+/** Decode one already-budgeted window record with its real source-anchor key, without prefix ordinals/state. */
+export function decodeCodexWindowRecord(record: Record<string, unknown>, key: string, steering = false): RecordEntry[] {
+  const codex = readCodexRecord(record);
+  if (codex.item?.kind === 'subagent') {
+    const item = codex.item;
+    return [{ key, at: parseTimestamp(codex.timestamp), event: {
+      kind: 'subagent', toolCallId: item.threadId, subagentSessionId: item.threadId,
+      title: item.name, status: 'completed', parentToolCallId: null, canCancel: false,
+      background: true, agentToolUseId: item.id,
+    } }];
+  }
+  const entry = decode(codex, key);
+  if (entry && entry.event?.kind === 'message' && entry.event.role === 'user' && steering) {
+    return [{ key: entry.key, at: entry.at, event: { ...entry.event, steering: true } }];
+  }
+  return entry ? [entry] : [];
+}
+
 function decode(record: CodexRecord, key: string): RecordEntry | null {
   const at = parseTimestamp(record.timestamp);
   if (record.end) {
@@ -125,7 +143,7 @@ function decode(record: CodexRecord, key: string): RecordEntry | null {
  * 日期目录并发下钻的做法照抄 `packages/core/src/local/agent/transcriptInventory.ts`：
  * 串行递归光 readdir 就要几秒，那是"打开会话"这件事最大的一块墙钟。
  */
-async function resolveRolloutFile(locator: SessionRecordLocator, snapshot: boolean): Promise<string> {
+export async function resolveRolloutFile(locator: SessionRecordLocator, snapshot: boolean): Promise<string> {
   const suffix = `-${locator.providerSessionId}.jsonl`;
   // Prefer the live file across all roots. Only a historical read may open an archive.
   for (const extension of snapshot ? [suffix, `${suffix}.zst`] : [suffix]) {
@@ -214,4 +232,3 @@ function codexResultBlock(item: unknown): Array<{ type: 'text'; text: string } |
 
 /** codex 的工具名 → ACP ToolKind。名单外一律 'other'，理由同 claude 侧。 */
 const codexToolKind = toolKindTable({ execute: ['shell', 'local_shell', 'exec_command'], edit: ['apply_patch', 'write_file'], read: ['read_file'], fetch: ['web_search', 'web_fetch'] });
-

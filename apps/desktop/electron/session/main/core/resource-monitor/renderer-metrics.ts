@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { ipcMain, webContents, type IpcMainEvent, type WebContents } from 'electron';
 import {
   metricsRequestId, PERF_COUNTERS_REPLY, RENDERER_METRICS_REPLY, RENDERER_METRICS_REQUEST,
-  type PerfCounters, type RendererMemoryMetrics, type RendererMetrics,
+  type FrameCounters, type PerfCounters, type RendererMemoryMetrics, type RendererMetrics,
 } from '@shared/renderer-metrics';
 
 const RESPONSE_TIMEOUT_MS = 1000;
 const COUNTER_KEYS = ['imTransactions', 'presenceBatches', 'presenceIds', 'contactsProviderRenders'] as const;
+const FRAME_KEYS = ['longFrames', 'blockingMs', 'slowInteractions'] as const;
 let inFlight: Promise<RendererMetrics[]> | null = null;
 
 /** No periodic work: callers own the existing monitor's open/closed lifecycle. */
@@ -100,6 +101,10 @@ async function collectOnce(): Promise<RendererMetrics[]> {
       if (counters && COUNTER_KEYS.every((key) => Number.isSafeInteger(counters[key]) && counters[key] >= 0)) {
         entry.row.counters = Object.fromEntries(COUNTER_KEYS.map((key) => [key, counters[key]])) as unknown as PerfCounters;
       } else unavailable(entry, 'invalid renderer counters');
+      const frames = (value as { frames?: FrameCounters }).frames;
+      if (frames && FRAME_KEYS.every((key) => Number.isSafeInteger(frames[key]) && frames[key] >= 0)) {
+        entry.row.frames = Object.fromEntries(FRAME_KEYS.map((key) => [key, frames[key]])) as unknown as FrameCounters;
+      }
       entry.waiting.delete('counters');
       maybeFinish();
     };

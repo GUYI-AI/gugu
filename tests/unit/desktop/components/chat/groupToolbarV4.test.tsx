@@ -8,9 +8,13 @@ import zhMessaging from '../../../../../apps/desktop/src/i18n/locales/zh-CN/mess
 import { UI_EVENTS } from '../../../../../apps/desktop/src/lib/uiEvents'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatItem, GroupChatSettings, GroupCollabSnapshot } from '@gugu/core/shared/types/chat'
-import { chat as topicFixture, clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
+import { chat, clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
 import type { groupAgentStatusIndicatorProps } from '../../../../../apps/desktop/src/lib/groupAgentStatus'
 import { ChatHeaderActions } from '../../../../../apps/desktop/src/components/chat/ChatHeaderActions'
+
+/** Topic chatter: unread, none of it addressed to you. */
+const topicFixture = (patch: Partial<ChatItem>) => chat({ ...patch, unread_locator: { stream_id: 'main', stream_kind: 'main', thread_root_id: null, message_id: 'first', message_seq: 1,
+  unread_count: patch.unread_count ?? 0, addressed_count: 0, cursor_seq: 0, version: 1, is_marked_unread: false } })
 
 let harness: ReturnType<typeof createReactHarness>
 const pinChat = vi.fn(async () => {})
@@ -112,9 +116,9 @@ describe('final group toolbar v4', () => {
     expect(button('邀请')).toBeDefined()
     expect(button('应用')).toBeDefined()
     expect(button('在对话中搜索')).toBeUndefined()
-    expect(button('群文件夹')).toBeUndefined()
+    expect(button('文件')).toBeUndefined()
     expect(menuItem('搜索聊天记录')).toBeDefined()
-    expect(menuItem('群文件夹')).toBeDefined()
+    expect(menuItem('文件')).toBeDefined()
     expect(harness.container.querySelector('[data-agent-display-status="working"]')).toBeNull()
   })
 
@@ -199,8 +203,8 @@ describe('final group toolbar v4', () => {
     expect(setChatNotificationLevel).toHaveBeenCalledWith('chat', 'none')
     expect(document.querySelector('[data-testid="group-header-menu"]')).not.toBeNull()
     if (kind === 'dm') {
-      expect(button('文件夹'), 'a private chat has no header folder button, like a group').toBeUndefined()
-      await clickElement(menuItem('文件夹')!)
+      expect(button('文件'), 'a private chat has no header folder button, like a group').toBeUndefined()
+      await clickElement(menuItem('文件')!)
       expect(onOpenFolder).toHaveBeenCalledOnce()
     }
   })

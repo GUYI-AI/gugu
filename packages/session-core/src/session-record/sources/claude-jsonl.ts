@@ -9,6 +9,7 @@ import { readClaudeRecord, type ClaudeRecordItem } from '@gugu/core/local/agent/
 
 import {
   type RecordEntry,
+  type RecordArchiveBudget,
   type RecordLineageNode,
   type RecordImageRef,
   type SessionRecordLocator,
@@ -17,7 +18,7 @@ import {
   type SessionRecordSourceEvents
 } from '../contract';
 import { findUnder, isFile } from './find-file';
-import { locateImages, readRecordImage } from './record-images';
+import { locateImages, readRecordImage, snapshotRetainer } from './record-images';
 import {
   SessionRecordNotFoundError,
   SessionRecordForkDivergedError,
@@ -50,6 +51,8 @@ type ClaudeResumeData = {
   lastUuid: string | null;
   launches: Record<string, Launch>;
   childRoots: Record<string, string[]>;
+  /** Includes earlier files in a continuation chain, not just the live tail. */
+  consumedFiles?: Array<[string, number]>;
 };
 
 /** 分叉扫描的候选上限。超了就报出去 —— ❌ 不许静默截断后当作"没有分叉"。 */
@@ -98,6 +101,14 @@ class ClaudeJsonlSource implements SessionRecordSource {
   private lineageValid = true;
   private inherited = 0;
   private ownIncrement = false;
+  private consumedFiles = new Map<string, number>();
+  private consumedBytes = 0;
+  private readonly retain: ReturnType<typeof snapshotRetainer> | null;
+
+  private rememberConsumed(path: string, bytes: number): void {
+    this.consumedBytes += bytes - (this.consumedFiles.get(path) ?? 0);
+    this.consumedFiles.set(path, bytes);
+  }
 
   constructor(
     readonly locator: SessionRecordLocator,
@@ -105,6 +116,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
     private readonly nativeChild = false,
   ) {
     this.warn = warnOf(options);
+    this.retain = options?.readMode === 'snapshot' ? snapshotRetainer() : null;
   }
 
   async start(events: SessionRecordSourceEvents, resume?: SessionRecordResume): Promise<void> {
@@ -124,6 +136,8 @@ class ClaudeJsonlSource implements SessionRecordSource {
           this.seenUuids = new Set();
           this.lastUuid = null;
           this.anchors = new Set();
+          this.consumedFiles.clear();
+          this.consumedBytes = 0;
           events.onReset(reason);
         }
       },
@@ -153,6 +167,14 @@ class ClaudeJsonlSource implements SessionRecordSource {
     const data = resume?.data as ClaudeResumeData | undefined;
     if (!data || data.version !== CLAUDE_RESUME_VERSION) return false;
     if (data.primaryPath !== path) return false;
+    // Legacy single-file cursors already carry the consumed offset. A legacy
+    // fork cursor lacks the earlier file offsets, so rebuild it once.
+    if (!data.consumedFiles && data.tailPath !== path) return false;
+    this.consumedFiles.clear();
+    this.consumedBytes = 0;
+    for (const [file, bytes] of data.consumedFiles ?? [[path, data.tail.lineOffset]]) {
+      this.rememberConsumed(file, bytes);
+    }
     // 链末先自己走一遍：它要是变了，说明中间出现过新的分叉文件。
     const tailPath = await this.chainForks(path).catch(() => null);
     if (tailPath === null || tailPath !== data.tailPath) return false;
@@ -172,13 +194,18 @@ class ClaudeJsonlSource implements SessionRecordSource {
     return true;
   }
 
-  async resumePoint(): Promise<SessionRecordResume | null> {
+  async resumePoint(budget?: RecordArchiveBudget): Promise<SessionRecordResume | null> {
     if (this.options?.readMode === 'snapshot') return null;
     // 存档在拆除时取,紧接着同步 stop() 把 this.reader 置空 —— await 之后只认这一刻的 reader。
     const reader = this.reader;
     if (!reader || !this.primaryPath) return null;
+    this.rememberConsumed(reader.currentPath, Math.max(this.consumedFiles.get(reader.currentPath) ?? 0, reader.consumedBytes));
+    const consumedBytes = this.consumedBytes;
+    if (budget && (budget.remainingBytes -= consumedBytes) < 0) return null;
     const tail = await reader.resumePoint();
     if (!tail) return null;
+    this.rememberConsumed(reader.currentPath, Math.max(this.consumedFiles.get(reader.currentPath) ?? 0, tail.lineOffset));
+    if (budget && (budget.remainingBytes -= this.consumedBytes - consumedBytes) < 0) return null;
     const data: ClaudeResumeData = {
       version: CLAUDE_RESUME_VERSION,
       primaryPath: this.primaryPath,
@@ -188,6 +215,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
       lastUuid: this.lastUuid,
       launches: this.launches,
       childRoots: this.childRoots,
+      consumedFiles: [...this.consumedFiles],
     };
     return {
       data,
@@ -213,6 +241,8 @@ class ClaudeJsonlSource implements SessionRecordSource {
   }
 
   private async fullRead(path: string): Promise<void> {
+    this.consumedFiles.clear();
+    this.consumedBytes = 0;
     this.launches = {};
     this.backgroundTasks = new Set();
     this.childRoots = {};
@@ -224,6 +254,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
     this.inherited = 0;
     this.ownIncrement = false;
     await this.reader!.readFromStart((lines, offsets) => this.emitLines(lines, offsets));
+    this.rememberConsumed(path, this.reader!.consumedBytes);
     // A storage snapshot belongs to this task's primary record, not a descendant's continuation.
     if (this.options?.readMode === 'snapshot') return;
     // 分叉串联接在整份读之后：串上来的那份也是"已有内容"，尾读要交接到链条最后一份上。
@@ -234,10 +265,13 @@ class ClaudeJsonlSource implements SessionRecordSource {
   /** `offsets` 只有尾读器读的行才有(分叉文件整份读进来的没有):有它才给工具图记原文位置。 */
   private emitLines(lines: string[], offsets?: number[]): void {
     if (this.stopped || !this.events) return;
+    if (offsets && this.reader) this.rememberConsumed(this.reader.currentPath,
+      Math.max(this.consumedFiles.get(this.reader.currentPath) ?? 0, this.reader.consumedBytes));
     const events = this.events;
     const path = this.reader?.currentPath;
     emitJsonLines(lines, 'claude', this.warn, (entries) => events.onEntries(entries), (record) => this.decodeRecord(record),
-      offsets && path ? (entries, index) => locateImages(entries, lines[index], offsets[index], path) : undefined);
+      path && this.retain ? (entries, index) => this.retain!(entries, lines[index], offsets?.[index], path)
+        : offsets && path ? (entries, index) => locateImages(entries, lines[index], offsets[index], path) : undefined);
   }
 
   private decodeRecord(record: Record<string, unknown>): RecordEntry[] {
@@ -361,6 +395,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
       const next = await this.findContinuation(currentPath, leaf, visited);
       if (!next) return currentPath;
       visited.add(next.path);
+      this.rememberConsumed(next.path, next.bytes);
       this.emitLines(next.lines);
       const newLeaf = this.lastUuid;
       if (newLeaf === leaf) return currentPath; // 没带来新记录，别在原地打转
@@ -375,7 +410,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
     fromPath: string,
     leaf: string,
     visited: Set<string>
-  ): Promise<{ path: string; lines: string[] } | null> {
+  ): Promise<{ path: string; lines: string[]; bytes: number } | null> {
     const dir = dirname(fromPath);
     const fromInfo = await stat(fromPath).catch(() => null);
     if (!fromInfo) return null;
@@ -414,8 +449,11 @@ class ClaudeJsonlSource implements SessionRecordSource {
       const head = await readFirstMessageUuid(candidate.path);
       if (!head || !this.anchors.has(head)) continue;
       let text: string;
+      let bytes: number;
       try {
-        text = await readFile(candidate.path, 'utf8');
+        const buffer = await readFile(candidate.path);
+        bytes = buffer.length;
+        text = buffer.toString('utf8');
       } catch {
         continue;
       }
@@ -423,7 +461,7 @@ class ClaudeJsonlSource implements SessionRecordSource {
       if (!text.includes(leaf)) continue;
       const lines = text.split('\n').filter((line) => line.trim().length > 0);
       if (!lines.some((line) => parseJson(line)?.uuid === leaf)) continue;
-      return { path: candidate.path, lines };
+      return { path: candidate.path, lines, bytes };
     }
     return null;
   }
@@ -455,7 +493,7 @@ async function readFirstMessageUuid(path: string): Promise<string | null> {
  * 项目目录名是 cwd 的转义，locator 只给根 —— 与其在这里再造一套转义规则（它随 claude 版本变），
  * 不如把根下的目录列一遍去 stat：一次 readdir + 若干 stat，几十毫秒，而且转义规则怎么变都不会错。
  */
-async function resolveSessionFile(locator: SessionRecordLocator, nativeChild = false): Promise<string> {
+export async function resolveSessionFile(locator: SessionRecordLocator, nativeChild = false): Promise<string> {
   const name = `${nativeChild ? 'agent-' : ''}${locator.providerSessionId}.jsonl`;
   for (const root of locator.roots) {
     if (await isFile(join(root, name))) return join(root, name);

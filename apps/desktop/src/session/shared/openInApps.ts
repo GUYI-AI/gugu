@@ -27,7 +27,6 @@ type OpenInAppConfigShape = {
   /** 单色图标(svg 里填 currentColor):用遮罩画、颜色跟着文字走,深浅色都对(❌ 深色下 invert 一张写死颜色的图)。 */
   monochrome?: boolean;
   alwaysAvailable?: boolean;
-  hideIfUnavailable?: boolean;
   autoInstall?: boolean;
   platforms: Partial<Record<PlatformKey, PlatformConfig>>;
 };
@@ -92,7 +91,7 @@ const _OPEN_IN_APPS = {
     autoInstall: true,
     platforms: {
       darwin: {
-        openCommands: ['command -v cursor >/dev/null 2>&1 && cursor .', 'open -a "Cursor" .'],
+        openCommands: ['command -v cursor >/dev/null 2>&1 && cursor {{path}}', 'open -a "Cursor" {{path}}'],
         checkCommands: ['cursor'],
         appNames: ['Cursor'],
       },
@@ -527,7 +526,6 @@ const _OPEN_IN_APPS = {
     id: 'intellij-idea',
     label: 'IntelliJ IDEA',
     iconPath: ICON_PATHS['intellij-idea'],
-    hideIfUnavailable: true,
     platforms: {
       darwin: {
         openCommands: ['open -a "IntelliJ IDEA" {{path}}'],
@@ -548,7 +546,6 @@ const _OPEN_IN_APPS = {
     id: 'rider',
     label: 'Rider',
     iconPath: ICON_PATHS.rider,
-    hideIfUnavailable: true,
     platforms: {
       darwin: {
         openCommands: ['open -a "Rider" {{path}}', 'open -a "JetBrains Rider" {{path}}'],
@@ -569,7 +566,6 @@ const _OPEN_IN_APPS = {
     id: 'android-studio',
     label: 'Android Studio',
     iconPath: ICON_PATHS['android-studio'],
-    hideIfUnavailable: true,
     platforms: {
       darwin: {
         openCommands: ['open -a "Android Studio" {{path}}'],
@@ -590,7 +586,6 @@ const _OPEN_IN_APPS = {
     id: 'android-studio-canary',
     label: 'Android Studio Canary',
     iconPath: ICON_PATHS['android-studio-canary'],
-    hideIfUnavailable: true,
     platforms: {
       darwin: {
         // Canary shares bundle ID com.google.android.studio with stable, so we
@@ -618,7 +613,6 @@ const _OPEN_IN_APPS = {
     id: 'webstorm',
     label: 'WebStorm',
     iconPath: ICON_PATHS.webstorm,
-    hideIfUnavailable: true,
     platforms: {
       darwin: {
         openCommands: ['open -a "WebStorm" {{path}}'],
@@ -639,7 +633,6 @@ const _OPEN_IN_APPS = {
     id: 'pycharm',
     label: 'PyCharm',
     iconPath: ICON_PATHS.pycharm,
-    hideIfUnavailable: true,
     platforms: {
       darwin: {
         openCommands: ['open -a "PyCharm" {{path}}'],
@@ -660,7 +653,6 @@ const _OPEN_IN_APPS = {
     id: 'rubymine',
     label: 'RubyMine',
     iconPath: ICON_PATHS.rubymine,
-    hideIfUnavailable: true,
     platforms: {
       darwin: {
         openCommands: ['open -a "RubyMine" {{path}}'],
@@ -681,7 +673,6 @@ const _OPEN_IN_APPS = {
     id: 'rustrover',
     label: 'RustRover',
     iconPath: ICON_PATHS.rustrover,
-    hideIfUnavailable: true,
     platforms: {
       darwin: {
         openCommands: ['open -a "RustRover" {{path}}'],
@@ -702,7 +693,6 @@ const _OPEN_IN_APPS = {
     id: 'visual-studio',
     label: 'Visual Studio',
     iconPath: ICON_PATHS['visual-studio'],
-    hideIfUnavailable: true,
     platforms: {
       // Windows-only IDE. Detected and launched via vswhere (see winVswhere);
       // the `devenv {{path}}` fallback covers setups where devenv.exe is on PATH.
@@ -749,6 +739,19 @@ export function getAppById(id: string): OpenInAppConfig | undefined {
 
 export function isValidOpenInAppId(value: unknown): value is OpenInAppId {
   return typeof value === 'string' && value in OPEN_IN_APPS;
+}
+
+/** What 「Open in」 lists, the one rule of every menu that offers it: installed, not hidden in settings, the default first. */
+export function openInMenuApps(args: {
+  installed: Record<string, boolean>;
+  hidden?: readonly string[] | undefined;
+  terminalEnabled: boolean;
+  defaultApp?: string | null | undefined;
+}): OpenInAppConfig[] {
+  const apps = Object.values(OPEN_IN_APPS).filter(
+    (app) => args.installed[app.id] && !args.hidden?.includes(app.id) && (args.terminalEnabled || !TERMINAL_OPEN_IN_APP_IDS.has(app.id))
+  );
+  return [...apps.filter((app) => app.id === args.defaultApp), ...apps.filter((app) => app.id !== args.defaultApp)];
 }
 
 export function getResolvedLabel(app: OpenInAppConfigShape, platform: PlatformKey): string {
