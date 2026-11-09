@@ -1,4 +1,4 @@
-import { mkdtempSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, realpathSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -36,6 +36,6 @@ describe('canonical connection physical open binding', () => {
     const path = join(directory, 'canonical.sqlite');
     state.afterOpen = () => { writeFileSync(join(directory, 'Local State'), '{}'); utimesSync(directory, 1, 1); };
     const connection = openPhysicalDatabase(path);
-    try { expect(physicalDatabaseBinding(connection).path).toBe(path); } finally { connection.close(); }
+    try { expect(physicalDatabaseBinding(connection).path).toBe(realpathSync(path)); } finally { connection.close(); }
   });
 });
