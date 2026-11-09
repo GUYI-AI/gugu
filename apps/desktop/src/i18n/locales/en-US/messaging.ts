@@ -803,6 +803,7 @@ export default {
       "unknownHint": "Waiting for the publication result. This message will update automatically; no need to resend.",
       "archived": "Recipient is archived. Not delivered.",
       "removed": "Recipient was removed. Not delivered.",
+      "refused": "Not delivered.",
       "failed": "Failed to send",
       "failedActions": "Failed message actions",
       "failedHint": "Failed to send. View message actions.",

@@ -800,6 +800,7 @@ export default {
       "unknownHint": "正在等待发布结果，消息到达后会自动更新，无需重发。",
       "archived": "对方已归档、未送达",
       "removed": "对方已移除、未送达",
+      "refused": "未送达",
       "failed": "发送失败",
       "failedActions": "发送失败消息操作",
       "failedHint": "发送失败，点击查看消息操作",

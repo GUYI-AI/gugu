@@ -355,8 +355,10 @@ export function restWriteError(what, status, body) {
  * 发送者自己没权限仍是 RLS 的 42501,不会走到这里。把这种拒绝还原成给 agent 看得懂的一句,其余原样抛。
  */
 function recipientRefusal(error, chatId) {
-  if (error?.hint !== 'recipient_not_member') return error
-  const ids = String(error.details ?? '').split(',').map((id) => id.trim()).filter(Boolean)
+  // 悄悄话的收件人由 chat.enforce_whisper_rule 判,仍是 23514「A whisper goes to a member of this chat: <id> is not a member of <chat>」。
+  const whisper = error?.code === '23514' ? /A whisper goes to a member of this chat: (\S+) is not a member of/.exec(error.message) : null
+  if (error?.hint !== 'recipient_not_member' && !whisper) return error
+  const ids = whisper ? [whisper[1]] : String(error.details ?? '').split(',').map((id) => id.trim()).filter(Boolean)
   return new Error(`收件人不在本 chat（${chatId}）成员里：${ids.join(', ')}。用 message_members 查有效成员后重发。`)
 }
 async function restPatch(context, path, body, profile = 'chat', fetchImpl = fetch, returning = false) {

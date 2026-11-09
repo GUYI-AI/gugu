@@ -102,8 +102,12 @@ export interface TopicSummary {
   is_participant: boolean
 }
 
-/** Why the server kept a message but refused it to one addressed agent: its task was archived (it can be restored), or its identity was removed (it cannot). */
-export type MessageDeliveryRefusalReason = 'agent_archived' | 'identity_removed'
+/**
+ * Why the server kept a message but refused it to one addressed agent: its task was archived (it can be restored), or its
+ * identity was removed (it cannot). The server may add reasons before this client knows them: any other string is still a
+ * refusal of a message that IS in the chat, shown as plain "not delivered" — never a send failure (#2383).
+ */
+export type MessageDeliveryRefusalReason = 'agent_archived' | 'identity_removed' | (string & {})
 
 export interface MessageItem {
   id: string

@@ -998,6 +998,21 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(h.calls.inserts).toHaveLength(1)
     await client.close()
   })
+  test('#2383 message_send reports a refusal reason it does not know as not delivered, not as an error', async () => {
+    const h = harness(['agent-1', 'alice'])
+    const get = h.deps.restGet
+    h.deps.restGet = async (path: string) => path.startsWith('message_agent_delivery_blocks?')
+      ? [{ agent_user_id: 'alice', reason: 'a_reason_added_later' }] : get(path)
+    const client = await connect(h.deps)
+    const result = await client.callTool({ name: 'message_send', arguments: {
+      chat_id: '00000000-0000-4000-8000-000000000001', text: 'Later marker', to_user_ids: ['user:alice'],
+    } })
+    // 消息已经进了群:报错会让 agent 重发一遍。
+    expect(result.isError).not.toBe(true)
+    expect(text(result)).toContain('未送达 (user:alice; a_reason_added_later; retained in history')
+    expect(h.calls.inserts).toHaveLength(1)
+    await client.close()
+  })
   // #2383 客户端不再预判收件人:库说了算。三种收件人 —— 正常成员、身份已移除的归档 agent(库收下、记 refusal)、
   // 从来不是成员的 id(库拒、工具说清是谁)—— 各走一遍真实的发送路径。
   test.each([
@@ -2803,9 +2818,10 @@ describe('message_send whisper (#6835)', () => {
   // 普通发送的非成员拒绝(#849,#2383 起由库判)对悄悄话照样生效 —— 这是所有发送的规矩,不是悄悄话另加的。
   test('the ordinary non-member refusal still applies to a whisper', async () => {
     const h = harness(['agent-1', 'alice'])
-    h.deps.restInsert = async () => { throw recipientNotMember(['carol']) }
+    h.deps.restInsert = async () => { throw restWriteError('INSERT messages', 400, JSON.stringify({ code: '23514',
+      message: 'A whisper goes to a member of this chat: carol is not a member of 00000000-0000-4000-8000-000000000001' })) }
     const r = await send(h, { whisper: true, to_user_ids: ['user:carol'] })
-    expect(text(r)).toMatch(/收件人不在本 chat（00000000-0000-4000-8000-000000000001）成员里/)
+    expect(text(r)).toContain('收件人不在本 chat（00000000-0000-4000-8000-000000000001）成员里：carol。')
     expect(h.calls.inserts).toHaveLength(0)
   })
 

@@ -19,7 +19,7 @@ export function MessageSendStatus(props: Props) {
   return <>
     {props.blocks?.map((block) => <span key={block.agent_user_id} data-agent-delivery-block={block.reason} data-agent-id={block.agent_user_id}
       className="text-[length:var(--font-caption)] text-[var(--text-secondary)]">
-      {identitiesById[block.agent_user_id]?.display_name ? `${identitiesById[block.agent_user_id].display_name} · ` : ''}{t(block.reason === 'identity_removed' ? 'message.sendStatus.removed' : 'message.sendStatus.archived')}
+      {identitiesById[block.agent_user_id]?.display_name ? `${identitiesById[block.agent_user_id].display_name} · ` : ''}{t(block.reason === 'agent_archived' ? 'message.sendStatus.archived' : block.reason === 'identity_removed' ? 'message.sendStatus.removed' : 'message.sendStatus.refused')}
     </span>)}
     {/* 没有运行中的实例持有它叫醒的 agent:等不来,字直接写在气泡旁(手机没有悬停);写名字,因为群里的人是收到了的。 */}
     {props.undeliveredTo?.map((agentId) => <span key={agentId} data-send-state="undelivered" data-agent-id={agentId} title={t('agent.turnFailure.undelivered')}

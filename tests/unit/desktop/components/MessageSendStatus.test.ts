@@ -76,6 +76,16 @@ describe('MessageSendStatus', () => {
     expect(document.body.querySelector('[data-agent-id="archived"]')!.textContent).toContain('对方已归档、未送达')
     expect(document.body.querySelector('[data-testid="message-send-failed"]')).toBeNull()
   })
+  it('#2383 shows a refusal reason it does not know as plain not delivered, never as a failed send', async () => {
+    await renderWithAppProviders(harness, createNode(MessageSendStatus, { state: 'sent', messageId: 'm',
+      blocks: [{ agent_user_id: 'later', reason: 'a_reason_added_later' }] }),
+    { chat: { retrySend: vi.fn(), discardSend: vi.fn() } })
+    const notice = document.body.querySelector('[data-agent-id="later"]')!
+    expect(notice.getAttribute('data-agent-delivery-block')).toBe('a_reason_added_later')
+    expect(notice.textContent).toContain('未送达')
+    expect(notice.textContent).not.toContain('已归档')
+    expect(document.body.querySelector('[data-testid="message-send-failed"]')).toBeNull()
+  })
   it('uses the shared Base UI menu and wires retry/discard actions', async () => {
     const retrySend = vi.fn()
     const discardSend = vi.fn()
