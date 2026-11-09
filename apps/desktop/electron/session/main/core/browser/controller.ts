@@ -19,6 +19,7 @@ import {
   type BrowserPageCommand,
 } from '@main/core/browser/browser-page-views';
 import { browserWebContentsRegistry } from '@main/core/browser/browser-webcontents-registry';
+import { sendRemoteTaskPage, unwatchRemoteTaskPage, watchRemoteTaskPage } from '@main/core/browser/remote-task-page';
 import { isBrowserPartition } from '@main/core/browser/webview-security';
 import { appSettingsService } from '@main/core/settings/settings-service';
 import {
@@ -72,6 +73,13 @@ export const browserController = createRPCController({
   setPageZoom: (args: { browserId: string; factor: number }) => ({ success: setBrowserPageZoom(args.browserId, args.factor) }),
   measurePage: async (browserId: string) => ({ layout: await measureBrowserPage(browserId) }),
   snapshotPage: async (browserId: string) => ({ dataUrl: await snapshotBrowserPage(browserId) }),
+  /**
+   * #1607 node 5: a task's page on another of the person's computers, watched here as its live picture. The person's
+   * input goes to that page directly, as their click into a page on this computer does; no App is involved.
+   */
+  watchTaskPage: (args: { watchId: string; deviceId: string; sessionId: string }) => watchRemoteTaskPage(args),
+  sendTaskPage: (args: { watchId: string; packet: unknown }) => sendRemoteTaskPage(args),
+  unwatchTaskPage: (watchId: string) => ({ success: unwatchRemoteTaskPage(watchId) }),
   /** 界面要把焦点拿回自己身上(网页这个独立 view 拿着窗口焦点时,界面 JS 的 focus() 挪不动)。 */
   focusHost: (windowName: string) => ({ success: focusBrowserHost(windowName) }),
   /** 页签那边画不画 agent 的鼠标:画的时候盖在网页上的那层鼠标露出来,不画就收起(它盖着网页,人的点击会落在它上面)。 */

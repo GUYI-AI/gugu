@@ -437,7 +437,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   )
   // 每条新消息/每次会话行补丁都会重拼这张表;内容没变就沿用旧引用,否则每条可见气泡的 memo 都被打穿。
   const messageMemberProfiles = useStructurallyShared(useMemo((): Record<string, MemberProfileCardModel> => {
-    if (isRoomChatSurface) return buildMemberProfileMap(groupCollabSnapshot, identitiesById, shownAgent.statuses(groupAgentStatuses), messages.map((message) => message.sender_user_id)) // 退群成员的消息也要有名字 (#5610)
+    if (isRoomChatSurface) return buildMemberProfileMap(groupCollabSnapshot, identitiesById, shownAgent.statuses(groupAgentStatuses), messages) // 退群成员的消息、@ 过的已退群成员也要有名字 (#5610/#2383)
     if (!activeChat || !user) return {}
     const profiles: Record<string, MemberProfileCardModel> = {}
     const ownIdentity = identitiesById[user.id]

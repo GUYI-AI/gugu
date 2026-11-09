@@ -8,7 +8,7 @@ vi.hoisted(() => {
   process.env.GUGU_ACCESS_TOKEN = `x.${Buffer.from(JSON.stringify({ sub: 'owner-1' })).toString('base64url')}.x`
 })
 // @ts-expect-error -- the injectable MCP server is an untyped ESM module.
-import { callTool as callToolImpl, RpcHttpError, RpcTransportError } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
+import { callTool as callToolImpl, RpcHttpError, RpcTransportError, restWriteError } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
 
 const SESSION_CONTEXT = {
   supabaseUrl: '', anonKey: '', agentId: 'agent-1', chatId: '00000000-0000-4000-8000-000000000001', threadRootId: null,
@@ -33,6 +33,10 @@ function attachmentsFake(uploads: string[], commits: Array<Record<string, unknow
   }) as typeof globalThis.fetch
   return async () => ({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 'token', fetch })
 }
+// #2383 收件人合不合格由库判:从来不是成员的 id,库带 hint recipient_not_member 拒掉整条(gugu-supabase#240)。
+const recipientNotMember = (ids: string[]) => restWriteError('INSERT messages', 400,
+  JSON.stringify({ code: 'P0001', message: 'recipient_not_member', hint: 'recipient_not_member', details: ids.join(',') }))
+
 function makeDeps(overrides: Record<string, unknown> = {}) {
   const inserted: Array<Record<string, unknown>> = []
   const rpcs: Array<[string, Record<string, unknown>]> = []
@@ -94,6 +98,7 @@ describe('#2051 command-authored message delivery (S2b: spontaneous stable-id in
   test('business validation failure remains explicit and is not queued', async () => {
     const { deps, inserted } = makeDeps({
       restGet: async (path: string) => path.includes('chat_members') ? [{ user_id: 'agent-1' }] : [],
+      restInsert: async () => { throw recipientNotMember(['ghost']) },
     })
     await expect(
       callTool('message_send', { chat_id: '00000000-0000-4000-8000-000000000001', text: 'hi', to_user_ids: ['user:ghost'] }, deps),
@@ -121,6 +126,8 @@ describe('#2051 command-authored message delivery (S2b: spontaneous stable-id in
   ])('%s output rejects non-member authority before durable or storage writes', async (_label, tool, args) => {
     const { deps, inserted, uploads, commits } = makeDeps({
       restGet: async (path: string) => path.includes('chat_members') ? [{ user_id: 'agent-1' }] : [],
+      // message_send leaves the member check to the server (#2383); message_send_file still checks before uploading.
+      restInsert: async () => { throw recipientNotMember(['ghost']) },
     })
     await expect(callTool(tool, args, deps)).rejects.toThrow(/不在本 chat/)
     expect(inserted).toEqual([])

@@ -17,15 +17,15 @@ import { AgentFailureSlot } from '@/components/AgentFailureSlot'
 import { Button } from '@/components/ui/Button'
 import { useBackLayer } from '@/components/ui/sheetStack'
 import { IconButton } from '@/components/ui/IconButton'
-import { MoreHorizontal } from '@/lib/icons'
-import { AgentWatchNote, AgentWatchScreen } from './AgentWatchChrome'
+import { MoreHorizontal, RefreshCw } from '@/lib/icons'
+import { AgentWatchScreen } from './AgentWatchChrome'
 import { SessionConversation } from './SessionConversation'
 import { enqueueSessionInput, releaseQueuedSessionInput, queuedSessionInputs, useQueuedSessionInputs } from '@/lib/sessionInputOutboxBridge'
 import { sessionInputBaseline } from '@/lib/pendingSessionInput'
 import { SessionInputQueue } from '@/components/chat/SessionInputQueue'
 import { SessionAvatar } from './StatusGlyph'
-import { OfflineNote } from './OfflineNote'
-import { CloudComputerNote } from './CloudComputerNote'
+import { ConnectionStatus } from '@/components/connection/ConnectionStatus'
+import { connectionStateOf } from '@/components/connection/connectionState'
 import { useCloudComputerWake } from '../../hooks/useWakeCloudComputer'
 import { deriveAttention } from './agent-watch-store'
 import { useShownAgentStatus } from '@/components/chat/useAgentsOnCloudComputer'
@@ -82,6 +82,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   onBack: () => void
 }) {
   const { t } = useTranslation('main')
+  const { t: tc } = useTranslation('common')
   const mobile = useMobileShell()
   const { label: machineLabel } = useMachineLabel()
   const phoneHost = isPhoneDevice(device)
@@ -118,9 +119,19 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
     onReady: () => { reload(); return nativeRecord.reload() } })
   useTimelineFailureNotice(`${device.device_id}/${session.conversationId}`, error ?? nativeRecord.error, recovery)
   // The directory says a crashed / unplugged machine is online until its lease runs out (about two minutes): its not
-  // answering is the earlier fact. Same note as offline; the reads keep trying and the page comes back by itself.
+  // answering is the earlier fact: the header says 「连接中」 (❌ 「设备离线」); the reads keep trying and the page comes back by itself.
   const hostSilent = !local && online && ((link === 'lost' && (!error || remoteFailureKind(errorCode) === 'machine-unreachable')) || (native && nativeRecord.unreachable))
   const answering = online && !hostSilent
+  // Header state (owner 11-08: 「连接中」/「设备离线」 in the header, ❌ a banner, ❌ 「未连接」). The directory saying
+  // the machine is off and this page's link not answering are separate facts: only the first is 「设备离线」.
+  const wakeFailed = cloudAsleep && wakeIssue !== null
+  const connection = local ? 'online' as const : connectionStateOf({
+    answering,
+    deviceOnline: device.is_online && (!phoneHost || isAgentHostDevice(device)),
+    networkOnline,
+    cloudWaking: cloudAsleep,
+    cloudWakeFailed: wakeFailed,
+  })
   const conversation = native ? { ...timeline, turns: [...(nativeRecord.record?.turns ?? []), ...(nativeRecord.record?.activeTurn ? [nativeRecord.record.activeTurn] : [])], hasOlder: nativeRecord.record ? nativeRecord.record.nextCursor !== null : false } : timeline
   const drawnInputIds = mobile ? [...hostedInputIds(conversation.queuedPrompts, conversation.turns)] : undefined
 
@@ -140,8 +151,9 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   const agentUserId = session.agent?.userId
   const identity = useAvatarIdentity(agentUserId ?? '')
   const shownName = useShownAgentName({ name: session.title, createdAt: identity?.created_at ?? undefined })
-  // A machine that does not answer: offline — ❌ the agent's presence, which outlives it as long as its lease.
-  const presentation = !answering ? (agentUserId ? presentAgentStatus({ reading: null, reachability: 'offline' }) : null)
+  // A machine that does not answer: its agent's presence (which outlives it as long as its lease) is not shown. Offline
+  // only when the device is; while connecting the avatar claims nothing.
+  const presentation = !answering ? (agentUserId && connection === 'device_offline' ? presentAgentStatus({ reading: null, reachability: 'offline' }) : null)
     : shownStatus.presentation(agentUserId, sessionPresentation(session, true, agentUserId))
   const statusColor = presentation ? agentStatusColorVar(presentation.tone) : null
   const statusStyle: CSSProperties | undefined = statusColor ? { color: statusColor } : undefined
@@ -153,7 +165,14 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
         <SessionAvatar agentId={agentUserId} sessionId={session.conversationId} presentation={presentation} />
       </span>
     ),
-    subtitle: presentation ? (
+    subtitle: connection !== 'online' ? (
+      <ConnectionStatus
+        state={connection}
+        lastSeenAt={device.last_seen_at}
+        detail={wakeFailed && wakeIssue ? tc(`cloudComputer.reason.${wakeIssue.kind}`) : null}
+        testId="agent-watch-connection-status"
+      />
+    ) : presentation ? (
       <span className="gg-aw-head-status">
         <span className="gg-aw-head-state" data-testid="agent-watch-session-status" data-tone={presentation.tone} data-emphasis={presentation.emphasis ? 'true' : undefined} style={statusStyle}>
           {agentStatusText(presentation.label)}
@@ -162,10 +181,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
     ) : undefined,
     headerTestId: 'agent-watch-hero',
   }
-  const offlineNotice = !networkOnline
-    ? <AgentWatchNote title={translateSessionMessage('conversation.connectionUnavailable')} testId="agent-watch-local-offline" />
-    : cloudAsleep ? <CloudComputerNote device={device} issue={wakeIssue} dropped={wakeDropped} onRetry={retryWake} /> : <OfflineNote device={device} sendLater />
-
   // Keep the same task composer even before a cold offline phone has any timeline.
   // Its durable input queue waits for the host's stable acknowledgement contract.
   // 动作失败贴着**动作发生的地方**显示(输入框正上方),❌ 不跑到页顶去冒充「打不开时间线」——
@@ -198,6 +213,11 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   // 会话的管理动作与列表行尾「…」同一个面板;都要那台机器执行,离线不给。
   const headerActions = (
     <>
+      {cloudAsleep && (wakeIssue || wakeDropped) ? (
+        <IconButton size="md" aria-label={tc('connection.retry')} title={tc('connection.retry')} data-testid="agent-watch-cloud-computer-retry" onClick={retryWake}>
+          <RefreshCw />
+        </IconButton>
+      ) : null}
       {phoneHost ? <PhoneTaskSkills deviceId={device.device_id} sessionId={session.conversationId} online={online} busy={attention === 'running' || attention === 'waiting' || sending || pendingSends.length > 0 || cancelling} /> : null}
       {!phoneHost ? <SessionAppMenu
         appKind={appKind}
@@ -229,11 +249,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       actions={headerActions}
       bodyFill
     >
-      {!answering && queuedInputs.length === 0 ? (
-        /* 待发消息只带正常发送中状态;没有待发内容时才显示机器连接状态。 */
-        offlineNotice
-      ) : null}
-
       {recovery.canStartFresh ? <Button variant="secondary" onClick={() => { void recovery.startFresh() }} disabled={recovery.busy}>
         {translateSessionMessage('transcript.condition.startFresh')}
       </Button> : null}

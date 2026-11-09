@@ -18,6 +18,12 @@ export type SessionpageProjectContext = {
   projectPath?: string | null
   groupChatId?: string | null
   groupName?: string | null
+  /**
+   * #2347 — whether this session's agent is confirmed to sit in the project group. Joining happens when the
+   * cloud identity lands and can be refused (a full group), so only a landed identity whose roster records the
+   * group is `member`. Anything else, including an omitted value, is `unconfirmed`: the block never claims it.
+   */
+  membership?: 'member' | 'unconfirmed'
 }
 
 function escapeXml(value: string): string {
@@ -44,8 +50,11 @@ export function buildSessionpageProjectContextBlock(input?: SessionpageProjectCo
   return `<gugu_project_context>
 <project id="${escapeXml(projectId)}" name="${escapeXml(projectName)}"${path ? ` path="${escapeXml(path)}"` : ''} />
 <project_group chat_id="${escapeXml(groupChatId)}" name="${escapeXml(groupName)}" />
-This session belongs to the project and project group above. Every session born in this project is already a member of that group; nobody needs an invitation. When talking to another session here, default to that group: call message_send on the chat_id above, naming whoever should act in to_user_ids, so the collaboration is visible where the project lives. That covers the whole exchange, not just the hand-off.
+${input.membership === 'member' ? MEMBER_GROUP_TEXT : UNCONFIRMED_GROUP_TEXT}
 session_message reaches one session point-to-point and appears in no chat. Inside this project exactly two things belong there: a session outside this group — one born in another project or on another machine, even one you spawned or the one that spawned you — and content this group must not see, such as a credential.
 </gugu_project_context>
 `
 }
+
+const MEMBER_GROUP_TEXT = 'This session belongs to the project and project group above. Every session born in this project is already a member of that group; nobody needs an invitation. When talking to another session here, default to that group: call message_send on the chat_id above, naming whoever should act in to_user_ids, so the collaboration is visible where the project lives. That covers the whole exchange, not just the hand-off.'
+const UNCONFIRMED_GROUP_TEXT = 'This session belongs to the project above. Its project group is the chat above, but this session is not confirmed as a member: sessions born in this project join it when their identity is set up, and joining can be refused, for example when the group is full. You are a member only if profile_whoami lists this chat_id in your groups. If it does, default to that group with message_send, naming whoever should act in to_user_ids. If it does not, you are not in the group: say so plainly whenever it matters, never claim to be a member, and reach other sessions here with session_message.'

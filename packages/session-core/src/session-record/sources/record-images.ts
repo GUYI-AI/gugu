@@ -1,9 +1,11 @@
-import { open } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { open, type FileHandle } from 'node:fs/promises';
+import { Readable } from 'node:stream';
+import { createZstdDecompress } from 'node:zlib';
+import { zstdFrames } from './zstd-frames';
 
-import { payloadWithoutImages } from '../../acp/models/tool-payload';
 import type { NormalizedEvent } from '../../acp/reducer/normalized-event';
 import type { RecordEntry, RecordImageRef } from '../contract';
-import { SessionRecordTooLargeError } from './shared';
 
 /** 核对用的首尾各取多少个字。 */
 const PROBE_CHARS = 32;
@@ -45,45 +47,6 @@ export function locateImages(entries: RecordEntry[], line: string, lineStart: nu
   }
 }
 
-/** Text stays on the V8 heap about one for one (measured), and that heap ends at 4 GiB in Electron's main process. */
-const SNAPSHOT_MAX_KEPT_CHARS = 1024 * 1024 * 1024;
-/** Decompression is off-heap but every line still crosses the main thread; an archive past this is not read to its end. */
-const SNAPSHOT_MAX_SEEN_CHARS = 16 * 1024 * 1024 * 1024;
-/** An archive has no addressable bytes to read a picture back from, so these stay inline for canonical storage. */
-const ARCHIVE_MAX_INLINE_PICTURE_CHARS = 256 * 1024 * 1024;
-
-/**
- * One snapshot read's heap account. A located picture leaves the entry here, before the fold, so a record's size is
- * not its heap size; what stays counts against the cap and the read fails before V8 does. Fatal OOM cannot be caught.
- */
-export function snapshotRetainer(limits = { kept: SNAPSHOT_MAX_KEPT_CHARS, seen: SNAPSHOT_MAX_SEEN_CHARS, archivePictures: ARCHIVE_MAX_INLINE_PICTURE_CHARS }): (entries: RecordEntry[], line: string, lineStart: number | undefined, path: string) => void {
-  let kept = 0;
-  let seen = 0;
-  let archivePictures = limits.archivePictures;
-  return (entries, line, lineStart, path) => {
-    // A position in an archive would be in its decoded stream, which `readRecordImage` cannot address.
-    const archive = path.endsWith('.zst');
-    if (lineStart !== undefined && !archive) locateImages(entries, line, lineStart, path);
-    let released = 0;
-    for (const entry of entries) {
-      const event = entry.event;
-      if (event?.kind !== 'tool_update' || !event.images?.length) continue;
-      const images = event.images;
-      if (!archive && !entry.imageOrigins?.every(Boolean)) continue;
-      const chars = images.reduce((sum, { data }) => sum + data.length, 0);
-      if (archive && chars <= archivePictures) { archivePictures -= chars; continue; }
-      if (event.rawOutput) event.rawOutput = payloadWithoutImages(event.rawOutput, images);
-      if (event.outputText) event.outputText = payloadWithoutImages(event.outputText, images);
-      event.imageRefs = images.map(({ mimeType, data }) => ({ mimeType, chars: data.length }));
-      delete event.images;
-      released += chars;
-    }
-    kept += Math.max(0, line.length - released);
-    seen += line.length;
-    if (kept > limits.kept || seen > limits.seen) throw new SessionRecordTooLargeError(`Record snapshot over budget (${kept} kept, ${seen} read): ${path}`);
-  };
-}
-
 /**
  * 按位置把一张图从记录里读回来。读不到、长度不对、首尾对不上、读出来的不是 base64,一律回 null:
  * 记录只追加,位置一直有效;对不上只可能是文件被改写过,那时❌ 不许把别的字节当图交出去。
@@ -105,3 +68,76 @@ export async function readRecordImage(ref: RecordImageRef): Promise<string | nul
     await handle?.close().catch(() => {});
   }
 }
+
+/**
+ * A filled-in turn's picture (resume-tail), by its place in the session's record as the record is now (`path`): a
+ * `.jsonl`, or the `.zst` Codex archived it into, whose decoded offsets are the same. A `.zst` is decompressed as a
+ * stream up to the picture, holding one chunk at a time; frames that end before it are skipped when they say their size.
+ * Not found, a different length or a different head/tail = null, as a picture that was not kept.
+ */
+export async function readRecordPicture(path: string, place: { start: number; chars: number; head: string; tail: string }): Promise<string | null> {
+  if (!path.endsWith('.zst')) return readRecordImage({ path, ...place });
+  if (!Number.isSafeInteger(place.start) || place.start < 0 || !Number.isSafeInteger(place.chars) || place.chars <= 0
+    || place.chars > MAX_IMAGE_CHARS) return null;
+  let handle: FileHandle | null = null;
+  try {
+    handle = await open(path, 'r');
+    const { size } = await handle.stat();
+    const end = place.start + place.chars;
+    let decoded = 0, got = 0;
+    const parts: Buffer[] = [];
+    for await (const frame of zstdFrames(handle, size)) {
+      const frameSize = frame.contentSize === null ? null : Number(frame.contentSize);
+      if (frameSize !== null && decoded + frameSize <= place.start) { decoded += frameSize; continue; }
+      for await (const chunk of Readable.from(compressed(handle, frame.start, frame.end)).pipe(createZstdDecompress())) {
+        const bytes = chunk as Buffer;
+        const from = Math.max(place.start - decoded, 0);
+        const to = Math.min(end - decoded, bytes.length);
+        if (to > from) { parts.push(Buffer.from(bytes.subarray(from, to))); got += to - from; }
+        decoded += bytes.length;
+        if (got === place.chars) break;
+      }
+      if (got === place.chars) {
+        const data = Buffer.concat(parts).toString('latin1');
+        return data.startsWith(place.head) && data.endsWith(place.tail) && BASE64.test(data) ? data : null;
+      }
+      if (decoded >= end) return null;
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
+/** One frame's compressed bytes, a read at a time. */
+async function* compressed(handle: FileHandle, from: number, last: number): AsyncGenerator<Buffer> {
+  for (let at = from; at <= last;) {
+    const buffer = Buffer.allocUnsafe(Math.min(256 * 1024, last - at + 1));
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, at);
+    if (bytesRead === 0) return;
+    at += bytesRead;
+    yield buffer.subarray(0, bytesRead);
+  }
+}
+
+/** `SessionRecordSource.checkAt` for a plain JSONL record: its inode and the hash of the 4 KiB before `position`. */
+export async function jsonlCheckAt(path: string, position: number): Promise<string | null> {
+  if (path.endsWith('.zst') || !Number.isSafeInteger(position) || position < 0) return null;
+  let handle: FileHandle | null = null;
+  try {
+    handle = await open(path, 'r');
+    const info = await handle.stat();
+    if (info.size < position) return null;
+    const from = Math.max(0, position - CHECK_BYTES);
+    const buffer = Buffer.alloc(position - from);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, from);
+    return `${info.ino}:${createHash('sha256').update(buffer.subarray(0, bytesRead)).digest('hex')}`;
+  } catch {
+    return null;
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+const CHECK_BYTES = 4096;

@@ -1,3 +1,4 @@
+import { ColdSessionStrip } from './view/session-machine-status';
 import { OfflineSessionSlot } from '@renderer/lib/offline-session-slot';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 import { observer } from 'mobx-react-lite';
@@ -202,9 +203,13 @@ export const SessionContentGate = observer(function SessionContentGate({ childre
     );
   }
 
-  if (offlineInput) return <OfflineSessionSlot sessionId={sessionId} {...offlineInput} />;
+  if (offlineInput) return <ColdSessionStrip><OfflineSessionSlot sessionId={sessionId} {...offlineInput} /></ColdSessionStrip>;
   if (unreachable && needsWorkspace) {
-    return <div className="flex h-full w-full items-center justify-center text-sm text-foreground-muted">{unreachable}</div>;
+    return (
+      <ColdSessionStrip>
+        <div className="flex h-full w-full items-center justify-center text-sm text-foreground-muted">{unreachable}</div>
+      </ColdSessionStrip>
+    );
   }
 
   if (kind === 'project-mounting' || kind === 'provisioning') {
