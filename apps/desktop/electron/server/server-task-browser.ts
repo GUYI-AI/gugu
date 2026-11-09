@@ -1,6 +1,7 @@
 import { type ChildProcess } from 'node:child_process';
 import { spawn, execFile } from '@gugu/core/local/childProcess';
 import { EventEmitter } from 'node:events';
+import { onErrorEvents } from '@gugu/session-shared';
 import { mkdir } from 'node:fs/promises';
 import type { Readable, Writable } from 'node:stream';
 import { promisify } from 'node:util';
@@ -276,6 +277,11 @@ export function createServerTaskBrowser(options: {
     let stderr = '';
     child.stderr?.on('data', (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-2000); });
     const connection = new PipeConnection(child.stdio[3] as Writable, child.stdio[4] as Readable);
+    // A failed spawn or a broken pipe ends this browser, never the host process.
+    onErrorEvents([child, child.stderr, child.stdio[3] as Writable, child.stdio[4] as Readable], (error) => {
+      connection.fail(new Error(`the task browser failed: ${error.message}`));
+      options.log.warn('Task browser failed', { error: error.message });
+    });
     child.once('exit', (code, signal) => {
       connection.fail(new Error(`the task browser exited (${signal ?? code})`));
       options.log.warn('Task browser exited', { code, signal, stderr: stderr.trim().slice(-500) });
