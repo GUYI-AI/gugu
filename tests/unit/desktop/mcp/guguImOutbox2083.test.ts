@@ -114,26 +114,47 @@ describe('#2051 command-authored message delivery (S2b: spontaneous stable-id in
     return full
   })()
   // #4191:gugu_widget 已裁撤,widget 行随之删除;file 走 message_send_file。
-  test.each([
-    ['message', 'message_send', { chat_id: '00000000-0000-4000-8000-000000000001', text: 'message', to_user_ids: ['user:ghost'] }],
-    ['file', 'message_send_file', {
-      chat_id: '00000000-0000-4000-8000-000000000001',
-      file_name: 'proof.txt',
-      file_path: proofPath,
-      mime_type: 'text/plain',
-      to_user_ids: ['user:ghost'],
-    }],
-  ])('%s output rejects non-member authority before durable or storage writes', async (_label, tool, args) => {
+  test('message output to a non-member is refused by the server and said clearly, with nothing written', async () => {
     const { deps, inserted, uploads, commits } = makeDeps({
       restGet: async (path: string) => path.includes('chat_members') ? [{ user_id: 'agent-1' }] : [],
-      // message_send leaves the member check to the server (#2383); message_send_file still checks before uploading.
       restInsert: async () => { throw recipientNotMember(['ghost']) },
     })
-    await expect(callTool(tool, args, deps)).rejects.toThrow(/不在本 chat/)
+    await expect(callTool('message_send', { chat_id: '00000000-0000-4000-8000-000000000001', text: 'message', to_user_ids: ['user:ghost'] }, deps))
+      .rejects.toThrow('收件人不在本 chat（00000000-0000-4000-8000-000000000001）成员里：ghost。')
     expect(inserted).toEqual([])
     expect(uploads).toEqual([])
     expect(commits).toEqual([])
   })
+
+  // #2383 附件也由服务端判收件人(attachments 函数经 attachment_commit 插入 chat.messages,走 #240 的触发器)。
+  // 从来不是成员的 id:HTTP 400 { error: 'recipient_not_member', details } (gugu-supabase#242) —— 不是 5xx,不重试。
+  test.each([
+    { who: 'a current member', to: 'member-1', refuse: null, blocks: [], expected: '"status":"sent"' },
+    { who: 'a removed identity that once had a seat', to: 'removed-1', refuse: null,
+      blocks: [{ agent_user_id: 'removed-1', reason: 'identity_removed' }], expected: '对方已移除、未送达 (user:removed-1; identity_removed' },
+    { who: 'an id that was never a member', to: 'ghost', refuse: 'ghost', blocks: [], expected: null },
+  ])('#2383 file output to $who follows the server', async ({ to, refuse, blocks, expected }) => {
+    const { deps, uploads, commits } = makeDeps({
+      restGet: async (path: string) => path.startsWith('message_agent_delivery_blocks?') ? blocks : [],
+    })
+    const endpoint = await (deps.attachmentsEndpoint as () => Promise<{ fetch: typeof globalThis.fetch }>)()
+    deps.attachmentsEndpoint = async () => ({ ...endpoint, fetch: (async (url: string, init?: RequestInit) => {
+      if (refuse && url.endsWith('/attachments/commit')) {
+        commits.push(JSON.parse(String(init?.body)))
+        return new Response(JSON.stringify({ error: 'recipient_not_member', message: 'recipient_not_member', details: refuse }), { status: 400 })
+      }
+      return endpoint.fetch(url, init)
+    }) as typeof globalThis.fetch })
+    const send = callTool('message_send_file', {
+      chat_id: '00000000-0000-4000-8000-000000000001', file_name: 'proof.txt', file_path: proofPath, mime_type: 'text/plain', to_user_ids: [`user:${to}`],
+    }, deps)
+    if (refuse) await expect(send).rejects.toThrow(`收件人不在本 chat（00000000-0000-4000-8000-000000000001）成员里：${refuse}。用 message_members 查有效成员后重发。`)
+    else expect(await send).toContain(expected)
+    expect(uploads).toEqual(['proof.txt'])
+    expect(commits).toHaveLength(1)
+    expect(commits[0]).toMatchObject({ to_user_ids: [to] })
+  })
+
 
   test('member file output still uploads and posts exactly once (#7290: one commit, its stable message id)', async () => {
     const { deps, inserted, uploads, commits } = makeDeps({

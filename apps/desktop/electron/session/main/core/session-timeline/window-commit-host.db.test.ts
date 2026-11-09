@@ -102,6 +102,23 @@ describe('the main-process commit host and actual canonical writer', () => {
     expect(project).not.toHaveBeenCalled();
   });
 
+  it('reports a turn too large for one bounded projection as needs_location for that turn alone and keeps the subscription', async () => {
+    const tooLarge = () => Object.assign(new Error('Projection build exceeds its bounded pack proof'), { code: 'needs_location', reason: 'pack_capacity' });
+    bindWindowCommitProjection(async receipt => { if (receipt.referenceId === 'giant') throw tooLarge(); return { projectionId: `projection-${receipt.referenceId}` }; });
+    const failed = vi.fn(), owner = reserveWindowCommitHost('view', 'c', failed), after = await owner.prepare(); owner.authorize();
+    const events = source(); connected = await connectWindowCommitHost(stream(events), () => {}, connection);
+    const emit = (referenceId: string) => events.emit({ sessionId: 'c', source: 'live', turn: {
+      id: referenceId, seq: 0, referenceId, initiator: 'user', items: [], outcome: { kind: 'done' } } });
+    emit('giant'); emit('next');
+    await vi.waitFor(() => expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 2 }));
+    let page = await owner.read(after); const entries = [...page.entries];
+    if (entries.length < 2) { owner.ack(page.next); page = await owner.read(page.next); entries.push(...page.entries); }
+    expect(entries.map(entry => [entry.referenceId, entry.kind])).toEqual([['giant', 'needs_location'], ['next', 'insert']]);
+    expect(entries[0]).not.toHaveProperty('projectionId');
+    expect(entries[1]).toMatchObject({ projectionId: 'projection-next' });
+    owner.ack(page.next); expect(failed).not.toHaveBeenCalled(); owner.close();
+  });
+
   it('publishes an admitted, underfilled projection group as soon as the host closes while the canonical queue is busy', async () => {
     // Frozen timers: only the close itself may publish the group, never the busy ceiling.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
@@ -184,7 +201,7 @@ describe('the main-process commit host and actual canonical writer', () => {
     expect(page.entries).toHaveLength(1); expect(page.entries[0]).toMatchObject({ kind: 'insert', referenceId: 'gap-ref', storedSeq: 0 });
     const receipts = createWindowCommitReceipts(fixture.sqlite), receipt = receipts.byReference('c', 'gap-ref')!;
     const directory = join(state.root, 'session-window-cache', 'committed');
-    const entity = await readPublishedCommitEntity({ directory, receipts, receipt }, page.entries[0].projectionId, 0, createWindowBudget());
+    const entity = await readPublishedCommitEntity({ directory, receipts, receipt }, (page.entries[0] as { projectionId: string }).projectionId, 0, createWindowBudget());
     const body = openCommitBodySlot(directory, receipts, receipt, entity.facts, 'text', entity.bodyBuildId);
     expect(await readCommitBodySlot(body, 0, createWindowBudget())).toMatchObject({ kind: 'body', text: 'complete before live attaches', moreAfter: 'no' });
     owner.ack(page.next); const waiting = expect(owner.read(page.next)).rejects.toMatchObject({ code: 'unsubscribed' });
@@ -253,7 +270,7 @@ describe('the main-process commit host and actual canonical writer', () => {
     const b = reserveWindowCommitHost('two', 'c', failedB), after = await b.prepare(); b.authorize();
     releaseA(); emit('reference-B');
     const page = await b.read(after);
-    expect(page.entries.map(item => [item.referenceId, item.projectionId])).toEqual([['reference-B', 'producer-B']]);
+    expect(page.entries.map(item => [item.referenceId, 'projectionId' in item ? item.projectionId : null])).toEqual([['reference-B', 'producer-B']]);
     expect(projectA).toHaveBeenCalledTimes(1); expect(projectB).toHaveBeenCalledTimes(1);
     expect(failedA).toHaveBeenCalledTimes(1); expect(failedB).not.toHaveBeenCalled();
   });

@@ -21,6 +21,7 @@ import { openPathWithFailureToast } from '../stores/open-file-in-file-editor';
 import { fileBaseName } from '../stores/workspace-path';
 import { getSessionView } from '../stores/session-selectors';
 import { EDITOR_CONFIRM_FILE_BYTES } from '@renderer/lib/editor/file-size-limits';
+import { OPENED_FILE_MAX_BYTES } from '@gugu/session-core/session-record/contract';
 import { getFileKind } from '@renderer/lib/editor/fileKind';
 import { FOLDER_APP_FILE_TAB, openFolderInTab } from './file-view-kinds';
 import { OpenWithSystemButton } from './open-with-system-button';
@@ -37,8 +38,9 @@ async function readBytes(projectId: string, workspaceId: string, path: string, i
     if (result.data.truncated) throw new Error(`File too large: ${result.data.totalSize} bytes`);
     return new Blob([result.data.content], { type: 'text/plain' });
   }
-  // Inside the workspace: read in chunks, so a large PDF opens (the inline read below is one message, capped at 10 MB).
-  if (inWorkspace) return new Blob(await readWorkspaceBytes(projectId, workspaceId, path), { type: mimeTypeFromName(path) ?? 'application/octet-stream' });
+  // Inside the workspace: read in chunks, so a large PDF opens (the inline read below is one message, capped at 10 MB). The
+  // whole file lands in this window's memory, so it stops at the limit a preview of an opened file has on the phone too.
+  if (inWorkspace) return new Blob(await readWorkspaceBytes(projectId, workspaceId, path, OPENED_FILE_MAX_BYTES), { type: mimeTypeFromName(path) ?? 'application/octet-stream' });
   const result = await files.readInlineBinary(projectId, workspaceId, path);
   if (!result.success) throw new Error('message' in result.error ? result.error.message : String(result.error));
   if (!result.data.success) throw new Error(result.data.error);
@@ -98,7 +100,8 @@ export function WorkspaceFileView({ root, tabId, projectId, workspaceId, session
     const kind = getFileKind(path);
     const editable = !!sessionId && (kind === 'html' || kind === 'csv' || kind === 'svg');
     const download = () => {
-      if (elsewhere && sessionId) void downloadSessionFile(sessionId, inWorkspace ? path : absolutePath, fileName);
+      // A session's file is copied to disk by main, any size; only a project's own folder (no session) is read here.
+      if (sessionId) void downloadSessionFile(sessionId, inWorkspace ? path : absolutePath, fileName);
       else void readBytes(projectId, workspaceId, path, inWorkspace).then((blob) => downloadBlob(blob, fileName)).catch((error: unknown) => toast({ title: translate('remoteFiles.downloadFailed', { name: fileName }), description: messageForUser(error), variant: 'destructive' }));
     };
     return {

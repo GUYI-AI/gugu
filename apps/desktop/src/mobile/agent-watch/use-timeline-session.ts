@@ -29,6 +29,8 @@ import { hydrateCachedTimeline, readCachedTimeline, writeCachedTimeline } from '
 
 /** 读写**另一台机器**上一条会话所需的那几问(手机用 sessionpage-rpc.ts 那一组;单测换成假的)。 */
 export type SessionpageTimelineClient = {
+  /** Desktop bounded source windows never hydrate the legacy aggregate history cache. */
+  boundedWindow?: true
   fetchSnapshot(deviceId: string, sessionId: string, limit?: number): Promise<TimelineSnapshot>
   fetchAfter(deviceId: string, sessionId: string, cursor: RecordCursor): Promise<TimelineAfterResult>
   fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number, cursor?: WindowCursor): Promise<TimelineOlderResult>
@@ -159,7 +161,7 @@ export function useTimelineSession(
    * owner 10-12「进运行中的任务页,一进去就颤两下」。下面 effect 里那次读照旧,换会话时靠它。
    */
   const [timeline, setTimeline] = useState<AgentWatchTimeline>(() =>
-    (deviceId && sessionId ? readCachedTimeline({ deviceId, sessionId }) : null) ?? emptyAgentWatchTimeline())
+    (!client.boundedWindow && deviceId && sessionId ? readCachedTimeline({ deviceId, sessionId }) : null) ?? emptyAgentWatchTimeline())
   const [phase, setPhase] = useState<AgentWatchPhase>(() => (timeline.cursor ? 'ready' : 'loading'))
   const [error, setError] = useState<string | null>(null)
   const [link, setLink] = useState<TimelineLink>('connecting')
@@ -215,9 +217,9 @@ export function useTimelineSession(
       setError(null)
       setErrorCode(null)
       setLink('lost')
-      const cached = readCachedTimeline({ deviceId, sessionId })
+      const cached = client.boundedWindow ? null : readCachedTimeline({ deviceId, sessionId })
       setTimeline(cached ?? emptyAgentWatchTimeline())
-      if (!cached) void hydrateCachedTimeline({ deviceId, sessionId }).then((stored) => { if (!cancelled && stored) setTimeline(stored) })
+      if (!client.boundedWindow && !cached) void hydrateCachedTimeline({ deviceId, sessionId }).then((stored) => { if (!cancelled && stored) setTimeline(stored) })
       return () => { cancelled = true }
     }
     let cancelled = false
@@ -235,7 +237,7 @@ export function useTimelineSession(
      * owner 2026-09-08 拍板要这一层:以前每次进页都得等机器把整份快照送过来才有东西看,
      * 于是首屏永远是「正在读取时间线…」。底稿不是事实源 —— 它只活到下面第一次对账为止。
      */
-    const cached = readCachedTimeline(cacheKey)
+    const cached = client.boundedWindow ? null : readCachedTimeline(cacheKey)
     if (cached) {
       setTimeline(cached)
       cursorRef.current = cached.cursor
@@ -288,7 +290,7 @@ export function useTimelineSession(
      * ⚠️ 但也不能无限等：本地库卡住（配额、被禁、另一个标签页占着升级）不该把打开会话拖死，
      * 所以给它一个上限，超时就当没有存档，照旧整份拉。
      */
-    const hydrated: Promise<void> = cached
+    const hydrated: Promise<void> = cached || client.boundedWindow
       ? Promise.resolve()
       : Promise.race([
           hydrateCachedTimeline(cacheKey),
@@ -370,7 +372,8 @@ export function useTimelineSession(
          * owner 2026-09-08:「不应该是先报一个红色的报错、等我刷新之后才显示出来」。
          * 判据在 record-wait.ts(纯函数),三类各有一条会红的用例。
          */
-        const delay = readyRef.current ? LOAD_RETRY_DELAYS_MS[attempt - 1] ?? null
+        const delay = client.boundedWindow && code === 'source_locating' ? 2_000
+          : readyRef.current ? LOAD_RETRY_DELAYS_MS[attempt - 1] ?? null
           : loadRetryDelay({ code, attempt, elapsedMs: Date.now() - startedAt })
         if (delay !== null) {
           // That machine did not answer: still tried again, but the page can say so meanwhile (link), ❌ a silent spinner.
@@ -401,7 +404,7 @@ export function useTimelineSession(
       stopErrors?.()
       // 走之前把手里这份存下来:下次进来第一帧就有东西。
       const current = timelineRef.current
-      if (current.cursor && current.turns.length > 0) writeCachedTimeline(cacheKey, current)
+      if (!client.boundedWindow && current.cursor && current.turns.length > 0) writeCachedTimeline(cacheKey, current)
       // 退订是尽力而为:页面已经走了,退订失败只会让宿主多推一会儿给没人听的 subscriptionId。
       void client.unsubscribeSession(deviceId, subscriptionId).catch(() => undefined)
     }
@@ -418,13 +421,13 @@ export function useTimelineSession(
    * 页面走掉时的最后一次存在上面那个 cleanup 里(不依赖这个定时器还没烧完)。
    */
   useEffect(() => {
-    if (!deviceId || !sessionId) return
+    if (client.boundedWindow || !deviceId || !sessionId) return
     if (!timeline.cursor || timeline.turns.length === 0) return
     const timer = setTimeout(() => {
       writeCachedTimeline({ deviceId, sessionId }, timeline)
     }, 1_500)
     return () => clearTimeout(timer)
-  }, [deviceId, sessionId, timeline])
+  }, [client, deviceId, sessionId, timeline])
 
   /**
    * 懒加载更早的轮。基准是手里**最早那一轮的 id**（❌ 不是下标：两次请求之间那一轮可能

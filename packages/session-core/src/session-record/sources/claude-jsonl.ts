@@ -392,6 +392,9 @@ class ClaudeJsonlSource implements SessionRecordSource {
           ...(typeof input?.prompt === 'string' && input.prompt ? { rawInput: input.prompt } : {}),
         } },
         { ...entry, event: { kind: 'tool_update', toolCallId: id, status: event.status } },
+        // A foreground agent's result is its finish: the row saying it finished is this line, with its reply.
+        ...(result.isAsync !== true && result.status === 'completed' ? [{ ...entry, key: `${entry.key}#done`, event: {
+          kind: 'subagent_done', parentRecord: true, toolCallId: id, agentId: id, status: 'completed', ...replyOf(result.content) } } satisfies RecordEntry] : []),
       ];
     }), ...this.backgroundTaskEntries(record, message, uuid)];
   }
@@ -421,9 +424,15 @@ class ClaudeJsonlSource implements SessionRecordSource {
     if (!text?.includes('<task-notification>')) return [];
     const tag = (name: string) => new RegExp(`<${name}>([^<]*)</${name}>`).exec(text)?.[1]?.trim();
     const id = tag('task-id');
-    if (!id || !this.backgroundTasks.has(id)) return [];
     const status = tag('status');
     const state = status === 'failed' ? 'failed' : status === 'killed' || status === 'stopped' ? 'stopped' : 'completed';
+    // A background agent's notification is the row saying it finished, with its reply (`<result>`).
+    if (id && this.childRoots[id]) {
+      const result = /<result>([\s\S]*?)<\/result>/.exec(text)?.[1];
+      return [{ key: `claude:${uuid}#agent-done`, ...stamp, event: {
+        kind: 'subagent_done', parentRecord: true, toolCallId: id, agentId: id, status: state, ...(result !== undefined ? { outputText: result.trim() } : {}) } }];
+    }
+    if (!id || !this.backgroundTasks.has(id)) return [];
     const toolCallId = tag('tool-use-id');
     return [{ key: `claude:${uuid}#bg-done`, ...stamp,
       event: { kind: 'async_task_state', asyncTaskId: id, state, ...(toolCallId ? { toolCallId } : {}) } }];
@@ -650,3 +659,10 @@ function toolResultText(content: unknown): string | null {
  * 也❌不要为了让 UI 好看去塞一个语义不对的 kind：那会让子 agent 显示成一次文件读取。
  */
 const claudeToolKind = toolKindTable({ read: ['Read', 'NotebookRead'], edit: ['Edit', 'MultiEdit', 'Write', 'NotebookEdit'], execute: ['Bash', 'BashOutput', 'KillShell'], search: ['Grep', 'Glob'], fetch: ['WebFetch', 'WebSearch'] });
+
+/** The text a foreground agent's result hands back (`toolUseResult.content`). */
+function replyOf(content: unknown): { outputText?: string } {
+  if (!Array.isArray(content)) return {};
+  const text = content.map((part) => asRecord(part)?.text).filter((part): part is string => typeof part === 'string').join('\n');
+  return text ? { outputText: text } : {};
+}
