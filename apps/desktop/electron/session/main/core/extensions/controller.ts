@@ -508,9 +508,11 @@ export const extensionsController = createRPCController({
     x?: number;
     y?: number;
     clip?: { x: number; y: number; width: number; height: number };
+    occluded?: boolean;
   }) => {
     updateExtensionSurfaceLayout(args.webContentsId, {
       visible: args.visible,
+      occluded: args.occluded === true,
       width: args.width,
       height: args.height,
       x: args.x,

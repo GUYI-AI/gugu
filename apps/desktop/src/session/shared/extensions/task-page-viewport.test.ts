@@ -12,6 +12,7 @@ it('respects host clipping and guest zoom without drawing over other host conten
 it('unmounts while occluded or when the host has no measured position', () => {
   const rect = { x: 0, y: 0, width: 100, height: 100 };
   expect(taskPageViewport({ visible: false, x: 10, y: 20, width: 100, height: 100 }, rect, 1)).toBeNull();
+  expect(taskPageViewport({ visible: true, occluded: true, x: 10, y: 20, width: 100, height: 100 }, rect, 1)).toBeNull();
   expect(taskPageViewport({ visible: true, width: 100, height: 100 }, rect, 1)).toBeNull();
 });
 

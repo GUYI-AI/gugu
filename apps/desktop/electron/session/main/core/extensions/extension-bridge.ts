@@ -1085,6 +1085,7 @@ export function updateExtensionSurfaceLayout(
   }
   const unchanged =
     binding.metrics.visible === metrics.visible &&
+    binding.metrics.occluded === metrics.occluded &&
     binding.metrics.width === metrics.width &&
     binding.metrics.height === metrics.height &&
     binding.metrics.x === metrics.x && binding.metrics.y === metrics.y &&
@@ -1095,6 +1096,10 @@ export function updateExtensionSurfaceLayout(
   binding.metrics = metrics;
   layoutAppPageResources(webContentsId);
   pushContext(webContentsId);
+}
+
+function withoutOcclusion({ occluded: _occluded, ...metrics }: ExtensionSurfaceMetrics): ExtensionSurfaceMetrics {
+  return metrics;
 }
 
 /** Native embedding uses only the host's live binding and host-measured surface bounds. */
@@ -1419,7 +1424,8 @@ function contextFor(binding: SurfaceBinding, workspace: ExtensionWorkspace | und
     // A page shown in a theme of its own (`showAgentPageInTheme`) is a picture of that palette, not of the person's.
     ...(themeColors && !binding.themeMode ? { themeColors } : {}),
     capabilities,
-    layout: { ...binding.metrics, fullscreen },
+    // `occluded` only tells native views to step aside; to the App a page partly under a toast is still on screen.
+    layout: { ...withoutOcclusion(binding.metrics), fullscreen },
   };
 }
 

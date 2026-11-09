@@ -3,7 +3,7 @@ export type NativePageRect = { x: number; y: number; width: number; height: numb
 
 /** Intersect App-local CSS geometry with host-measured visible bounds, including App zoom and clipping. */
 export function taskPageViewport(metrics: ExtensionSurfaceMetrics, rect: NativePageRect, scale: number): NativePageRect | null {
-  if (!metrics.visible || !Number.isFinite(metrics.x) || !Number.isFinite(metrics.y) || !Number.isFinite(scale) || scale <= 0) return null;
+  if (!metrics.visible || metrics.occluded || !Number.isFinite(metrics.x) || !Number.isFinite(metrics.y) || !Number.isFinite(scale) || scale <= 0) return null;
   const x = metrics.x! + rect.x * scale, y = metrics.y! + rect.y * scale;
   const width = rect.width * scale, height = rect.height * scale;
   if (![x, y, width, height, x + width, y + height].every(Number.isFinite)) return null;

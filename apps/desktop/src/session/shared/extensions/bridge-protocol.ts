@@ -290,6 +290,11 @@ export interface ExtensionSurfaceMetrics {
   x?: number;
   y?: number;
   clip?: { x: number; y: number; width: number; height: number };
+  /**
+   * A menu, toast or drag layer of the host lies over part of the page. The page stays on screen (`visible`),
+   * but a native view drawn above the host would cover that layer, so native views hide while this is set.
+   */
+  occluded?: boolean;
 }
 
 /**

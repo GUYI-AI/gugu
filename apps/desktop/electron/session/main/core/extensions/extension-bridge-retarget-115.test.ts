@@ -150,6 +150,14 @@ describe('a resident page moved to another file (摩擦单 F115)', () => {
     await expect(retargetExtensionSurface({ webContentsId: PAGE, tabId: 'agent-slot', conversation: CHAT, itemId: CFG })).rejects.toThrow('This chat could not be read');
   });
 
+  it('a page partly under a host toast is still on screen to the App', async () => {
+    await retargetExtensionSurface({ webContentsId: PAGE, tabId: 'slot-2', conversation: CHAT, itemId: CFG });
+    updateExtensionSurfaceLayout(PAGE, { visible: true, occluded: true, width: 360, height: 640 });
+    const layout = contexts().at(-1)?.layout as Record<string, unknown> | undefined;
+    expect(layout).toMatchObject({ visible: true, width: 360 });
+    expect(layout).not.toHaveProperty('occluded');
+  });
+
   it('control: in a slot of another size, a second context says the new size', async () => {
     await retargetExtensionSurface({ webContentsId: PAGE, tabId: 'slot-2', conversation: CHAT, itemId: CFG });
     updateExtensionSurfaceLayout(PAGE, { visible: true, width: 360, height: 640 });

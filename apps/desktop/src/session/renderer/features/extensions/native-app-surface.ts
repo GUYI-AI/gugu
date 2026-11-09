@@ -9,8 +9,9 @@ export function nativeAppSurfaceMetrics(element: HTMLElement, clipElement: HTMLE
   const x = Math.max(0, clip.x, box.x), y = Math.max(0, clip.y, box.y);
   const clipped = { x, y, width: Math.max(0, Math.min(win.innerWidth, clip.right, box.right) - x),
     height: Math.max(0, Math.min(win.innerHeight, clip.bottom, box.bottom) - y) };
-  return { visible: visible && clipped.width > 0 && clipped.height > 0
-    && !isBrowserPageOccluded(element, { left: x, top: y, width: clipped.width, height: clipped.height }),
+  const shown = visible && clipped.width > 0 && clipped.height > 0;
+  return { visible: shown,
+    occluded: shown && isBrowserPageOccluded(element, { left: x, top: y, width: clipped.width, height: clipped.height }),
     width, height, x: box.x, y: box.y, clip: clipped };
 }
 
