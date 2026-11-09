@@ -42,7 +42,14 @@ export function createSessionpageSessionDeviceRpcHandlers(options?: {
   const sessionHost = createSessionHostDeviceRpcHandlers();
   const projection = options?.projection ? createSessionpageProjectionDeviceHost(options.projection) : null;
   // #1607 node 5: an App's projection watched from another of the person's computers, on cloud and SSH alike.
-  const appProjections = createProjectionRemoteHost(() => extensionProjections.remote);
+  const appProjections = createProjectionRemoteHost(() => ({
+    connect: extensionProjections.remote.connect,
+    page: async (session, send) => {
+      const [{ connectTaskPageScreen }, { taskPageForScreen }] = await Promise.all([
+        import('../browser/task-page-screen'), import('../extensions/task-page-host')]);
+      return connectTaskPageScreen(session, () => taskPageForScreen(session), send);
+    },
+  }));
 
   const handlers: DeviceRpcHandlers = {
     ...sessionHost.handlers,

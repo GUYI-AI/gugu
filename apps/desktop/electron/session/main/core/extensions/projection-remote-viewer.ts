@@ -39,7 +39,8 @@ async function ask(deviceId: string, type: string, payload: unknown, timeoutMs: 
 
 export async function watchRemoteProjection(
   deviceId: string,
-  input: { app: string; version: string; session: string; source: string },
+  /** An App's projection in that session, or `{ session, page: true }`: that task's own browser page. */
+  input: { app: string; version: string; session: string; source: string } | { session: string; page: true },
   deliver: (packet: ProjectionHostPacket) => void,
 ): Promise<{ receive(packet: unknown): Promise<void>; close(): void }> {
   const watch = randomUUID();

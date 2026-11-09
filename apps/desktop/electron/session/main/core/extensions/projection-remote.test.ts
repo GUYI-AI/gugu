@@ -23,6 +23,7 @@ function twoComputers(overrides: Partial<ProjectionSource> = {}, admit?: (input:
       const viewer = resources.connect({ extensionId: input.app, sessionId: input.session }, input.source, { transport: 'device', send, onClose: () => () => {} });
       return { receive: viewer.receive, close: viewer.close };
     },
+    page: async () => { throw Object.assign(new Error('This task has no browser page'), { code: 'not-found' }); },
   }));
   const detached = new Set<() => void>();
   const pushed: unknown[] = [];

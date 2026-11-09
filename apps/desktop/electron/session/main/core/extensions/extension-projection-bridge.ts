@@ -80,7 +80,7 @@ export class ExtensionProjectionBridge {
    * A page on another of the person's computers watches this App's projection in a session on this machine
    * (projection-remote-host.ts): this machine's install of the same App version, switched on, for a session here.
    */
-  readonly remote: ProjectionRemoteSources = {
+  readonly remote: Pick<ProjectionRemoteSources, 'connect'> = {
     connect: async (input, send) => {
       const [{ agentSessionContext }, { extensionsService }] = await Promise.all([
         import('./extension-agent-context'), import('./extensions-root')]);

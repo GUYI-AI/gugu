@@ -19,6 +19,9 @@ import { promisify } from 'node:util';
 
 type CdpMessage = { id?: number; method?: string; params?: Record<string, unknown>; result?: unknown; error?: { message: string }; sessionId?: string };
 
+/** One painted picture of a task page: JPEG, and the page's CSS pixel size it maps input to. */
+export type TaskPageScreenFrame = { data: string; width: number; height: number };
+
 /** The subset of Electron's `WebContents` / `Debugger` that `createPageProtocol` uses. */
 export interface TaskPageContents {
   readonly debugger: {
@@ -189,7 +192,40 @@ class PageTarget extends EventEmitter implements TaskPageContents {
       case 'Page.navigatedWithinDocument':
         if (main(params.frameId)) { this.url = String(params.url); void this.readHistory(); }
         break;
+      case 'Page.screencastFrame': {
+        // Paced by acknowledging: the next frame comes once this one was taken.
+        void this.connection.send('Page.screencastFrameAck', { sessionId: params.sessionId }, this.watchSession!).catch(() => {});
+        const metadata = params.metadata as { deviceWidth?: number; deviceHeight?: number } | undefined;
+        if (typeof params.data === 'string' && metadata?.deviceWidth && metadata.deviceHeight) {
+          this.screen?.({ data: params.data, width: Math.round(metadata.deviceWidth), height: Math.round(metadata.deviceHeight) });
+        }
+        break;
+      }
     }
+  }
+
+  private screen: ((frame: TaskPageScreenFrame) => void) | null = null;
+
+  /**
+   * The page as the person on another computer sees it (#1607 node 5): JPEG frames whenever it paints, in the page's CSS
+   * pixel space. Started again, it sends the current picture at once. On the host's own session, never a lease's.
+   */
+  async startScreen(onFrame: (frame: TaskPageScreenFrame) => void): Promise<void> {
+    if (!this.watchSession || this.destroyed) throw new Error('the task page was closed');
+    this.screen = onFrame;
+    await this.connection.send('Page.stopScreencast', {}, this.watchSession).catch(() => {});
+    await this.connection.send('Page.startScreencast', { format: 'jpeg', quality: 70, maxWidth: 1600, maxHeight: 1600, everyNthFrame: 1 }, this.watchSession);
+  }
+
+  async stopScreen(): Promise<void> {
+    this.screen = null;
+    if (this.watchSession && !this.destroyed) await this.connection.send('Page.stopScreencast', {}, this.watchSession).catch(() => {});
+  }
+
+  /** The person's own input on this page: they act on it directly, as on a page in their own window. */
+  input(method: 'Input.dispatchMouseEvent' | 'Input.dispatchKeyEvent' | 'Input.insertText', params: Record<string, unknown>): Promise<unknown> {
+    if (!this.watchSession || this.destroyed) return Promise.reject(new Error('the task page was closed'));
+    return this.connection.send(method, params, this.watchSession);
   }
 
   /** Watch from creation, before any lease can miss a navigation. */
@@ -249,9 +285,20 @@ export function taskBrowserArguments(profile: string, userAgent: string, root: b
   ];
 }
 
+/** A task page as another computer watches and drives it. */
+export interface TaskPageScreenTarget {
+  startScreen(onFrame: (frame: TaskPageScreenFrame) => void): Promise<void>;
+  stopScreen(): Promise<void>;
+  input(method: 'Input.dispatchMouseEvent' | 'Input.dispatchKeyEvent' | 'Input.insertText', params: Record<string, unknown>): Promise<unknown>;
+  isDestroyed(): boolean;
+  once(event: 'destroyed', listener: () => void): unknown;
+}
+
 export interface ServerTaskBrowser {
   /** This task's page (opened at `url` the first time), as the shared page protocol's contents. */
   pageFor(sessionId: string, url: string | undefined, signal: AbortSignal): Promise<TaskPageContents>;
+  /** The task's page if it has one already; watching never opens one. */
+  existingPage(sessionId: string): Promise<TaskPageScreenTarget | null>;
   /** The task ended: close its page. */
   closeTask(sessionId: string): Promise<void>;
   dispose(): Promise<void>;
@@ -329,6 +376,10 @@ export function createServerTaskBrowser(options: {
         return this.pageFor(sessionId, url, signal);
       }
       return target;
+    },
+    async existingPage(sessionId) {
+      const target = await pages.get(sessionId)?.catch(() => null);
+      return target && !target.isDestroyed() ? target : null;
     },
     async closeTask(sessionId) {
       const page = pages.get(sessionId);

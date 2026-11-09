@@ -1611,6 +1611,16 @@ export async function openTaskBrowserPane(
   return ack.browserId;
 }
 
+/**
+ * #1607 node 5: on a Gugu server, a task's page (its headless Chromium's) is shown on the desktop watching this task, in
+ * that session's browser cell, where the person can take it over. Not on a computer with windows: there the page is in
+ * its own tab already. A desktop that is not watching gets it when it opens the task (the relay queues it).
+ */
+export async function showTaskPageOnDesktop(sessionId: string, signal?: AbortSignal): Promise<void> {
+  if (!remotePaneOpener) return;
+  await remotePaneOpener.open(sessionId, { kind: 'task-page' }, 'pinned', signal);
+}
+
 async function openBrowserInTab(
   context: SessionCallerContext,
   action: Extract<SessionAction, { action: 'open_in_tab'; url: string }>,

@@ -21,13 +21,17 @@ export const PROJECTION_REMOTE_PACKET = 'appProjection.packet';
 /** Viewers held for other computers at once (each is one page watching one projection). */
 export const PROJECTION_REMOTE_VIEWERS = 32;
 
-export type ProjectionRemoteWatch = { watch: string; app: string; version: string; session: string; source: string };
+/** An App's projection in a session there, or (`page: true`) that task's own browser page, which is gugu's. */
+export type ProjectionRemoteAppWatch = { app: string; version: string; session: string; source: string };
+export type ProjectionRemoteWatch = { watch: string } & (ProjectionRemoteAppWatch | { session: string; page: true });
 export type ProjectionRemotePacketEvent = { type: typeof PROJECTION_REMOTE_PACKET; watch: string; packet: ProjectionHostPacket };
 
 type Viewer = { receive(packet: unknown): Promise<void>; close(): void };
 export interface ProjectionRemoteSources {
   /** Admit a viewer for this App's projection in this session, on this machine; throws a coded refusal. */
-  connect(input: Omit<ProjectionRemoteWatch, 'watch'>, send: (packet: ProjectionHostPacket) => void): Promise<Viewer>;
+  connect(input: ProjectionRemoteAppWatch, send: (packet: ProjectionHostPacket) => void): Promise<Viewer>;
+  /** The task's own browser page on this machine. */
+  page(session: string, send: (packet: ProjectionHostPacket) => void): Promise<Viewer>;
 }
 
 const ID = /^[A-Za-z0-9_-]{8,128}$/;
@@ -46,17 +50,20 @@ export function createProjectionRemoteHost(sources: () => ProjectionRemoteSource
 
   const handlers: DeviceRpcHandlers = {
     [PROJECTION_REMOTE_RPC.watch]: async (payload, ctx: DeviceRpcHandlerContext) => {
-      const body = (payload ?? {}) as Partial<ProjectionRemoteWatch>;
-      if (Object.keys(body).some(key => !['watch', 'app', 'version', 'session', 'source'].includes(key))
-        || !text(body.watch) || !ID.test(body.watch) || !text(body.app) || !text(body.version, 64) || !text(body.session) || !text(body.source)) {
-        return refuse('invalid_payload', 'watch, app, version, session and source are required');
+      const body = (payload ?? {}) as Partial<Record<'watch' | 'session' | 'page' | keyof ProjectionRemoteAppWatch, unknown>>;
+      const page = body.page === true;
+      const keys = page ? ['watch', 'session', 'page'] : ['watch', 'app', 'version', 'session', 'source'];
+      if (Object.keys(body).some(key => !keys.includes(key)) || !text(body.watch) || !ID.test(body.watch) || !text(body.session)
+        || !page && (!text(body.app) || !text(body.version, 64) || !text(body.source))) {
+        return refuse('invalid_payload', 'watch and session are required, with page, or with app, version and source');
       }
       const watch = body.watch;
+      const session = body.session;
       end(watch);
       if (viewers.size >= PROJECTION_REMOTE_VIEWERS) return refuse('busy', 'Too many projections are watched from other computers');
       let viewer: Viewer;
       try {
-        viewer = await sources().connect({ app: body.app, version: body.version, session: body.session, source: body.source }, (packet) => {
+        const send = (packet: ProjectionHostPacket) => {
           // A picture that cannot be pushed ends this viewer; the page reconnects instead of waiting for an ACK that never comes.
           void Promise.resolve(ctx.publishEvent({ type: PROJECTION_REMOTE_PACKET, watch, packet } satisfies ProjectionRemotePacketEvent))
             .catch((error: unknown) => { log.warn('[projection-remote] push failed', { error: String(error) }); end(watch); });
@@ -64,7 +71,9 @@ export function createProjectionRemoteHost(sources: () => ProjectionRemoteSource
             const entry = viewers.get(watch);
             if (entry?.viewer === viewer) { viewers.delete(watch); entry.stop(); }
           }
-        });
+        };
+        viewer = page ? await sources().page(session, send)
+          : await sources().connect({ app: body.app as string, version: body.version as string, session, source: body.source as string }, send);
       } catch (error) {
         const code = typeof (error as { code?: unknown } | null)?.code === 'string' ? (error as { code: string }).code : 'refused';
         return refuse(code, error instanceof Error ? error.message : String(error));
