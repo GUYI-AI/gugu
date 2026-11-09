@@ -23,6 +23,12 @@ type Group = { id: string; file?: FileHandle; bytes: number; writes: number; fra
 type Build = { sources: WindowCommitReceipt[]; group?: Group; packs: Map<string, PackLocation>; closed: boolean };
 /** A publication proves every pack of its build with one bounded stat each. */
 export const WINDOW_PACK_DEPENDENCIES = 128;
+/** A build that would need more packs than one bounded proof covers. The
+ * publisher splits merged builds on it; a single turn that still exceeds it is
+ * reported for that turn alone. */
+const capacity = () => Object.assign(fault('Projection build exceeds its bounded pack proof'), { reason: 'pack_capacity' as const });
+export const isWindowPackCapacityFault = (error: unknown) =>
+  (error as { code?: unknown; reason?: unknown } | null)?.code === 'needs_location' && (error as { reason?: unknown }).reason === 'pack_capacity';
 const proofs = new WeakMap<WindowFrameBackend, (name: string) => () => void>();
 /** Bounded proof for one committed frame of the pack store that owns `directory`.
  * Without an owning store there is no packed version to prove. */
@@ -36,7 +42,9 @@ export type WindowPackObserver = (phase: 'intent' | 'pack_synced' | 'directory_s
 /** One application gateway and a task-local private view. External readers only
  * see offsets published by the SQLite group transaction. Pack bodies never enter
  * a Map; it holds at most 128 scalar positions and one encoded frame at a time. */
-export function createWindowPackStore(directory: string, db: WindowReceiptDatabase, observed?: WindowPackObserver) {
+export function createWindowPackStore(directory: string, db: WindowReceiptDatabase, observed?: WindowPackObserver,
+  limits: { packs: number } = { packs: WINDOW_PACK_DEPENDENCIES }) {
+  if (!Number.isSafeInteger(limits.packs) || limits.packs < 2 || limits.packs > WINDOW_PACK_DEPENDENCIES) throw new Error('Invalid pack build capacity');
   const receipts = createWindowCommitReceipts(db), index = createWindowPackIndex(db, receipts.bySource);
   const local = new AsyncLocalStorage<Build>(), active = new Set<Build>(); let closed = false;
   const path = (id: string) => join(directory, `${id}.pack`);
@@ -47,7 +55,7 @@ export function createWindowPackStore(directory: string, db: WindowReceiptDataba
   }
   async function start(build: Build) {
     // A build whose packs no longer fit one bounded proof cannot be published.
-    if (build.packs.size >= WINDOW_PACK_DEPENDENCIES) throw fault('Projection build exceeds its bounded pack proof');
+    if (build.packs.size >= limits.packs) throw capacity();
     const id = randomUUID().replaceAll('-', ''); index.begin(id,build.sources);
     const group: Group = { id, bytes: 0, writes: 0, frames: new Map(), dependencies: new Map(build.packs) }; build.group = group;
     observed?.('intent',id);
@@ -109,7 +117,7 @@ export function createWindowPackStore(directory: string, db: WindowReceiptDataba
       if (build && !build.closed) {
         if (!build.group) await start(build);
         const dependencies = build.group!.dependencies, dependencyKey = location.groupId;
-        if (!dependencies.has(dependencyKey) && dependencies.size >= WINDOW_PACK_DEPENDENCIES) { await flush(build); await start(build); }
+        if (!dependencies.has(dependencyKey) && dependencies.size >= limits.packs) { await flush(build); await start(build); }
         build.group!.dependencies.set(dependencyKey,location);
       }
       return decodeWindowFrame(key,packet);
@@ -153,6 +161,9 @@ export function createWindowPackStore(directory: string, db: WindowReceiptDataba
   proofs.set(backend,proof);
   return {
     proof,
+    /** Packs the calling build has committed or depends on, plus its open one. */
+    used() { const build = selected(); return build.packs.size + (build.group ? 1 : 0); },
+    capacity: limits.packs,
     backend, // Keep the weak namespace registration alive for this owner.
     /** Invocations are independent. The dispatcher chooses at most eight same-
      * conversation receipts; a giant build emits bounded progress packs. */

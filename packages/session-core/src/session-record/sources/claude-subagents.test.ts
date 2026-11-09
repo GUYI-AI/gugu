@@ -72,9 +72,9 @@ describe('Claude native subagent records', () => {
       children: [expect.objectContaining({ toolCallId: 'child-step', status: 'running' }),
         expect.objectContaining({ kind: 'spawn-subagent-tool-call', agentStatus: 'completed', outputText: 'NESTED_RESULT' })],
     });
-    expect(items.filter((item) => item.kind === 'subagent-done-tool-call')).toEqual([
-      expect.objectContaining({ outputText: 'NESTED_RESULT' }),
-    ]);
+    // The nested child's finish is in the worker's record: it completes the nested card and adds no row.
+    expect(snapshot.turns).toHaveLength(1);
+    expect(JSON.stringify(snapshot.turns)).not.toContain('subagent-done-tool-call');
     const pendingArchive = timeline.archive!();
     timeline.dispose();
     const archive = await pendingArchive;
@@ -103,6 +103,41 @@ describe('Claude native subagent records', () => {
     disposers.push(() => rebuilt.dispose());
     expect(rebuilt.getSnapshot().turns.flatMap((turn) => turn.items).find((item) => item.kind === 'spawn-subagent-tool-call'))
       .toMatchObject({ agentStatus: 'completed', children: [expect.objectContaining({ toolCallId: 'child-step', status: 'done' }), expect.anything()] });
+  });
+
+  it('says a child finished where the root record notes it, with its reply, and only there', async () => {
+    const notification = (uuid: string, agentId: string, callId: string, reply: string) => JSON.stringify({
+      uuid, type: 'user', sessionId: 'parent', timestamp: '2026-10-26T11:41:00Z', origin: { kind: 'task-notification' },
+      message: { role: 'user', content: `<task-notification>\n<task-id>${agentId}</task-id>\n<tool-use-id>${callId}</tool-use-id>\n`
+        + `<status>completed</status>\n<summary>Agent "Audit" finished</summary>\n<result>${reply}</result>\n</task-notification>` },
+    });
+    const { locator } = await fixture([
+      line('user', 'user', [text('Inspect the repository')]),
+      line('launch', 'assistant', [launch('launch-worker', 'Audit')]),
+      launched('launched', 'launch-worker', 'worker'),
+      end('parent-end', 'WAITING'),
+      line('next-user', 'user', [text('Go on')]),
+      line('sync', 'assistant', [use('launch-sync', 'Agent', { description: 'Check', prompt: 'Check' })]),
+      line('sync-result', 'user', [result('launch-sync', 'hand-back')], { toolUseResult: { status: 'completed', agentId: 'helper',
+        content: [text('HELPER_RESULT')] } }),
+      notification('notified', 'worker', 'launch-worker', 'WORKER_RESULT'),
+      end('next-end', 'BOTH DONE'),
+    ], {
+      worker: [line('child-user', 'user', [text('Audit')], child), end('child-end', 'WORKER_RESULT', child)],
+      helper: [line('helper-user', 'user', [text('Check')], { isSidechain: true, agentId: 'helper' }),
+        end('helper-end', 'HELPER_RESULT', { isSidechain: true, agentId: 'helper' })],
+    });
+    for (let read = 0; read < 3; read++) {
+      const timeline = await createSessionTimeline(createClaudeJsonlSource(locator), { sessionId: 'native-parent' });
+      disposers.push(() => timeline.dispose());
+      const turns = timeline.getSnapshot().turns;
+      expect(turns.map((turn) => turn.initiator)).toEqual(['user', 'user']);
+      expect(turns[0].items.filter((item) => item.kind === 'subagent-done-tool-call')).toEqual([]);
+      expect(turns[1].items.filter((item) => item.kind === 'subagent-done-tool-call')).toEqual([
+        expect.objectContaining({ launchToolCallId: 'helper', outcome: 'completed', outputText: 'HELPER_RESULT' }),
+        expect.objectContaining({ launchToolCallId: 'worker', outcome: 'completed', outputText: 'WORKER_RESULT' }),
+      ]);
+    }
   });
 
   it('keeps a failed launch and ordinary completed tools without inventing a child identity', async () => {

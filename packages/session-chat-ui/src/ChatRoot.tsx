@@ -78,6 +78,7 @@ import { genericEstimate } from './core/layout/generic-estimate';
 import { SCROLL_END_EPSILON_PX } from './core/stick-to-bottom';
 import { keepUnchangedUnits, unitContainsItem, unitItemIds, unitReservedHeight } from './core/units';
 import { Virtualizer } from './core/virtualizer';
+import { collectViewportProtection, sameViewportProtection, type ViewportProtection } from './core/viewport-protection';
 import type { ChatItem, ChatMessage, TranscriptTurn } from './model';
 import type { ChatState, ScrollMode } from './state/chat-state';
 import { activeTurnWithInputs, latestVisibleTurnId, pendingPromptLanded, projectPendingMessages, type PendingMessageProjectionCache } from './state/pending-prompt';
@@ -1407,6 +1408,31 @@ export function ChatRoot(props: ChatRootProps) {
   // and after every model swap.
   let lastActiveUserVisible: boolean | undefined;
   let lastAtBottom: boolean | undefined;
+  let protectionDisposed = false;
+  let lastProtection: { model: ChatState; callback: NonNullable<ChatCommands['onViewportProtection']>; value: ViewportProtection } | undefined;
+  onCleanup(() => { protectionDisposed = true; lastProtection = undefined; });
+  const emitViewportProtection = (indices: readonly number[]): void => {
+    const callback = commands().onViewportProtection;
+    if (!callback) { lastProtection = undefined; return; }
+    if (!scrollEl || shadowViewHeight <= 0) return;
+    const model = state(), renderedUnits = units();
+    const value = collectViewportProtection(indices, index => renderedUnits.at(index), anchor());
+    if (lastProtection?.model === model && lastProtection.callback === callback
+      && sameViewportProtection(lastProtection.value, value)) return;
+    const report = lastProtection = { model, callback, value };
+    // Let a host trim its resident model after this geometry commit has finished.
+    queueMicrotask(() => {
+      if (protectionDisposed || lastProtection !== report) return;
+      if (skipped || !scrollEl || shadowViewHeight <= 0) { lastProtection = undefined; return; }
+      if (state() !== model || units() !== renderedUnits || commands().onViewportProtection !== callback
+        || !sameScrollMode(anchor(), value.anchor)) {
+        lastProtection = undefined;
+        scheduler.request();
+        return;
+      }
+      callback(value);
+    });
+  };
 
   // Smooth-scroll suppression: when a smooth-scroll animation is in flight,
   // intermediate scrollTop updates are browser-driven and must not be treated
@@ -1651,6 +1677,7 @@ export function ChatRoot(props: ChatRootProps) {
       canvasHeight: contentH(),
     };
     commit(next, nextVisible);
+    emitViewportProtection(nextVisible);
 
     emitAtBottom(anchor().kind === 'tail' && maxScrollTop() - shadowScrollTop <= SCROLL_END_EPSILON_PX);
     lastTopUnitIndex = virt.findIndex(Math.max(0, shadowScrollTop - pt));

@@ -5,6 +5,7 @@ import { inferDroppedBlobExtension, normalizeDroppedImageBytes } from './session
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { DEVICE_STORE, FILE_CHUNK_BYTES, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { imagePixelSize } from '@gugu/core/shared/imagePixelSize'
 import { isInside, readWorkspaceChunk } from './session/main/core/files/workspace-transfer'
 import { findProjectFileCopy, listProjectGroupIds, rememberProjectFile } from './sessionpage/sessionpage-project-groups'
 import { importProjectFile } from './projectFileImport'
@@ -67,15 +68,18 @@ export function createProjectFilePublisher(deps: {
     const path = relative(root, file.path).split(sep).join('/')
     const first = await readWorkspaceChunk(root, { path, offset: 0, length: 0 }), hash = createHash('sha256')
     if (first.size !== file.size) throw new Error('Selected file changed before it was sent')
+    let pixels: { width: number; height: number } | null = null
     for (let offset = 0; offset < first.size; offset += FILE_CHUNK_BYTES) {
       const length = Math.min(FILE_CHUNK_BYTES, first.size - offset), part = await readWorkspaceChunk(root, { path, offset, length })
       const bytes = Buffer.from(part.data, 'base64')
       if (part.etag !== first.etag || bytes.length !== length) throw new Error('Project file changed during publication')
+      if (offset === 0 && file.contentType.startsWith('image/')) pixels = imagePixelSize(bytes)
       hash.update(bytes)
     }
     const sha256 = hash.digest('hex')
     const receipt = await deps.rpc('file_device_publish', { p_item: next?.itemId ?? itemId ?? randomUUID(), p_chat: chatId, p_device: identity.deviceId,
       p_project: projectId, p_path: path, p_sha: sha256, p_size: first.size, p_filename: file.name.split('/').at(-1), p_type: file.contentType, p_parent: parentId,
+      ...(pixels ? { p_width: pixels.width, p_height: pixels.height } : {}),
       ...(next ? { p_expected: next.expectedVersion } : {}), ...(message ? { p_message: message } : {}) }) as { item_id: string; message?: Record<string, unknown> }
     const sent = receipt.message
     if (message && !sent) throw new Error('Project attachment was not committed')
