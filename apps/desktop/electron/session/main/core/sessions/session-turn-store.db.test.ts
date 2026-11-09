@@ -584,7 +584,7 @@ describe('reading a transport page a few rows at a time (resume-mem)', () => {
     let previous: TranscriptTurn | null = null;
     const insert = fixture.sqlite.prepare('INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES (?, ?, ?, ?, ?)');
     for (let seq = 0; seq < 60; seq += 1) {
-      const row = previous && seq % 7 === 3 ? replayed(previous, seq) : settled(seq, (seq * 997) % 9000);
+      const row: TranscriptTurn = previous && seq % 7 === 3 ? replayed(previous, seq) : settled(seq, (seq * 997) % 9000);
       if (row.outcome) previous = row;
       insert.run(`c1:${seq}`, 'c1', seq, `c1:turn:${seq}`, JSON.stringify(row));
     }
