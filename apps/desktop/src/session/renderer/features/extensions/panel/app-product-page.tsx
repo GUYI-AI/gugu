@@ -71,9 +71,7 @@ export interface ExtensionDetailSubject {
   installedVersion?: string;
 }
 
-import { AppUnreadBindingSection, type UnreadBindingApi } from './app-unread-binding-section';
-
-export type ProductPageApi = Partial<UnreadBindingApi> & Pick<typeof rpc.extensions, 'marketListing' | 'marketHistory'> & Partial<Pick<ExtensionsApi, 'marketRead'>>;
+export type ProductPageApi = Pick<typeof rpc.extensions, 'marketListing' | 'marketHistory'> & Partial<Pick<ExtensionsApi, 'marketRead'>>;
 
 /**
  * 一个 App 的市场页(#7059):在「App」那一栏里整页铺开,左上「‹ App」回到清单。只回答「要不要装」,所以页上没有开关;管装着的那一份在
@@ -420,10 +418,6 @@ export function AppProductPage({
                 {permission.kind === 'network'
                   ? translate('extensions.permissionsNetwork', { hosts: permission.host })
                   : describeCapability(permission.key, manifest, translate, machine)}
-                {permission.key === 'chat:unread' && installed?.permissions?.bindings?.[0] && api.unreadBindingChoices && api.setUnreadBinding ?
-                  <AppUnreadBindingSection extensionId={installed.id} name={installed.permissions.bindings[0].name}
-                    api={{ unreadBindingChoices: api.unreadBindingChoices, setUnreadBinding: api.setUnreadBinding }} translate={translate}
-                    disabled={readOnly || !enabled || off || pending !== undefined} /> : null}
                 {commands ? <pre>{`${commands.caption}\n${commands.lines.join('\n')}`}</pre> : null}
               </span>
             </div>
