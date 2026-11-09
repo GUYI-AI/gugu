@@ -11,6 +11,7 @@ import { appendToDraft } from '@/store/chatContext';
 import { registerNativeComposer } from '@/lib/nativeComposerHandoff';
 import { useSearchedTaskReveal, useSessionSourceMessage } from './use-session-source-message';
 import { canQueueNativeInput } from './queue-native-input';
+import { composerCanSubmit } from './composer-can-submit';
 import { sendComposerInput } from './send-composer-input';
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
 import { useNativeConversationRead } from '@/hooks/useNativeConversationRead';
@@ -1465,8 +1466,9 @@ const ComposerForStore = observer(function ComposerForStore({
         }
         // Store owns both live sending and pre-session queue admission.
         // 正在用的咕咕模型要会员了(#7056):下一轮之前停下,原因与去路在面板那一行。
-        canSubmit={(a.canSubmit || canQueueNativeInput(store)) && (store.draftText.trim().length > 0 || attachments.length > 0)
-          && sendHold !== 'waiting' && !membershipLockedModel}
+        canSubmit={composerCanSubmit({ promptReady: a.canSubmit, isWorking: a.isWorking, reverting: store.reverting, editingMessage: !!store.messageEdit,
+          queuesOffline: canQueueNativeInput(store), hasDraft: store.draftText.trim().length > 0 || attachments.length > 0,
+          attachmentWaiting: sendHold === 'waiting', membershipLocked: membershipLockedModel !== null })}
         placeholder={startupPlaceholderKeyValue ? translate(startupPlaceholderKeyValue) : undefined}
         onSubmit={handleSubmit}
         editorOptions={{ clearOnSubmit: false }}
