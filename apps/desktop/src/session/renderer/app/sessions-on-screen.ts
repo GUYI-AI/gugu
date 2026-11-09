@@ -5,12 +5,14 @@ import { log } from '@renderer/utils/logger';
 import type { SessionParams } from './recent-session-pages';
 import { auxWindows } from './aux-windows';
 import { screenLayout } from './screen-layout';
+import { isScreenView } from './screen-views';
 
 /**
  * 「这条会话在屏上」只在这里定义(spec session-page「一屏几块」)。两种问法:
  *
- *  · 它的**页**在屏上 —— 主窗正显示的那页、会话页上摆在某一块里的、整页开在单独窗里的。会话页据此判
- *    「我看得见」(workspace-view-model:页签的激活、可见)。
+ *  · 它的**页**在屏上 —— 主窗正显示的那页、摆在这一屏某一块里的、整页开在单独窗里的。会话页据此判
+ *    「我看得见」(workspace-view-model:页签的激活、可见)。这一屏不只在会话视图上:焦点在旁边的群或项目块时
+ *    也摆着这些块(isScreenView,与 workspace 画几块同一个判据)。
  *  · 它在屏上 —— 页在屏上,或它的某一枚页签开在单独的窗里(那一格自己就算看得见,见 pane-layout-store
  *    detachToWindow)。闲置回收据此判「人在看,不停」(spec idle-reclaim「不在屏上」):本机的会话报给本机主进程,
  *    别的机器上的会话由这台电脑向那台机器订着(machine-session-wiring.ts),那台机器的回收认订阅。
@@ -20,11 +22,10 @@ import { screenLayout } from './screen-layout';
  */
 export function sessionPageOnScreen(sessionId: string): boolean {
   const navigation = appState.navigation;
-  const onSessionView = navigation.currentViewId === 'session';
   const routed = (navigation.viewParamsStore['session'] as { sessionId?: string } | undefined)?.sessionId;
   return (
-    (onSessionView && routed === sessionId) ||
-    (onSessionView && screenLayout.blockOfSession(sessionId) !== undefined) ||
+    (navigation.currentViewId === 'session' && routed === sessionId) ||
+    (isScreenView(navigation.currentViewId) && screenLayout.blockOfSession(sessionId) !== undefined) ||
     auxWindows.windowOfSession(sessionId) !== undefined
   );
 }
@@ -39,6 +40,8 @@ export function sessionPagesOnScreen(): SessionParams[] {
   if (navigation.currentViewId === 'session') {
     const routed = navigation.viewParamsStore['session'] as { projectId?: string; sessionId?: string } | undefined;
     add(routed?.projectId, routed?.sessionId);
+  }
+  if (isScreenView(navigation.currentViewId)) {
     for (const session of screenLayout.sessions) add(session.projectId, session.sessionId);
   }
   for (const window of auxWindows.windows.values()) {

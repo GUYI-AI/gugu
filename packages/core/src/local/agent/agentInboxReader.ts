@@ -351,7 +351,7 @@ function deliveryContextOf(raw: Record<string, unknown>): { groupRules: string |
 }
 
 type InlineImage = { data: string; mimeType: string; fileName: string; localPath: string }
-type SavedAttachment = { bytes: Uint8Array; localPath: string }
+type SavedAttachment = { bytes: Uint8Array; localPath: string; readOnly?: boolean }
 
 export type DisclosureRow = { agentUserId: string; chatId: string; threadRootId: string | null; key: string; reason: AgentFailureReason }
 
@@ -944,7 +944,7 @@ async function prepareMessage(
     try {
       const image = await download(attachment.fileName)
       attachments = [{ data: Buffer.from(image.bytes).toString('base64'), mimeType: attachment.mimeType, fileName: attachment.fileName, localPath: image.localPath }]
-      saved = { localPath: image.localPath }
+      saved = { localPath: image.localPath, readOnly: image.readOnly }
     } catch (error) {
       saved = { failure: attachmentFailureReason(error) }
     }
@@ -953,7 +953,8 @@ async function prepareMessage(
   // 下不下来(签不到、CDN 回错、超时)就照实说没存下和原因 —— 这一行和同一批的别的行照样交,不卡住收件。
   if (attachment?.kind === 'file' && attachment.source.kind !== 'gone' && attachment.source.kind !== 'url') {
     try {
-      saved = { localPath: (await download(attachment.fileName)).localPath }
+      const file = await download(attachment.fileName)
+      saved = { localPath: file.localPath, readOnly: file.readOnly }
     } catch (error) {
       saved = { failure: attachmentFailureReason(error) }
     }

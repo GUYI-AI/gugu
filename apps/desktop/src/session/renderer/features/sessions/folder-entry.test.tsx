@@ -30,7 +30,7 @@ vi.mock('@renderer/app/screen-block-context', () => ({ useScreenBlock: () => ({ 
 vi.mock('@renderer/features/tabs/pane-context', () => ({ usePaneContext: () => ({ pane: { open: h.open }, paneId: 'pane', isFocusedPane: true }) }));
 vi.mock('@renderer/features/sessions/session-view-context', () => ({
   useSessionViewContext: () => ({ projectId: 'project', sessionId: 'task' }),
-  useWorkspaceViewModel: () => ({ paneLayout: { open: h.open }, openTerminalAsTab: vi.fn() }),
+  useWorkspaceViewModel: () => ({ paneLayout: { openBeside: h.open }, openTerminalAsTab: vi.fn() }),
 }));
 vi.mock('@renderer/features/sessions/start-side-session', () => ({ canStartSideSession: () => true, startSideSession: vi.fn() }));
 vi.mock('@renderer/features/sessions/pane-empty-state', () => ({
@@ -109,7 +109,7 @@ describe('folder entry E1-E3', () => {
     expect(items.filter((item) => !item.closest('[data-apps]')).map(text)).toEqual(['Folder', 'Side chat', 'Review', 'Terminal', 'Browser', 'Ports']);
     expect(glyph(items[0]!)).toBe(groupGlyph);
     await act(async () => items[0]!.click());
-    expect(h.open).toHaveBeenCalledWith('workspace.main', {}, { from: null, intent: 'newTab', target: { paneId: 'pane' } });
+    expect(h.open).toHaveBeenCalledWith('workspace.main', {});
   });
   it('E1: the task Apps section omits only the folder and keeps other Apps', async () => {
     await menu();
@@ -144,6 +144,6 @@ describe('folder entry E1-E3', () => {
   it('control: other task Apps keep their original opening route', async () => {
     const items = await menu();
     await act(async () => items.find((item) => text(item) === 'Notes')!.click());
-    expect(h.open).toHaveBeenCalledWith('notes.main', {}, { from: null, intent: 'newTab', target: { paneId: 'pane' } });
+    expect(h.open).toHaveBeenCalledWith('notes.main', {});
   });
 });

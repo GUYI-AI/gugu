@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readWindowFrame, writeWindowFrame } from '@gugu/session-core/session-record/window-cache/disk-frame';
+import { readWindowFrame, writeWindowFrame } from './window-commit-projection-disk';
 import type { WindowBudget } from '@gugu/session-core/session-record/window-cache/types';
 import { isIssuedCommitEntityFacts, type CommitEntityFacts } from './window-commit-entity';
 import { snapshotWindowCommitReceipt, type createWindowCommitReceipts, type WindowCommitReceipt } from './window-commit-receipt';

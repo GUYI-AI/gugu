@@ -1,4 +1,5 @@
 import {
+  AGENT_CREATE_DEFAULTS_KEY,
   mergeAgentCreateDeviceChoice,
   mergeAgentCreateProjectChoice,
   parseAgentCreateDefaults,
@@ -6,15 +7,14 @@ import {
 } from '../shared/ui/agentCreateDefaultsModels'
 import {
   readUserSettingsConfig,
-  writeUserSettingsConfig,
+  updateUserSettingsKey,
   type SettingsTableClient
 } from './userSettings'
 
 // @@@per-user-create-defaults (#2525) — 共享 Session Composer 的设备/项目默认值，per-user 持久化。
 // 载体是既有的 identity.user_settings（scope='user'，config.agent_create）：PK (user_id, scope)、
 // RLS user_settings_own、GRANT ALL TO authenticated 都已就位 → 本功能**零迁移**。
-// 读-改-写而不是服务端 patch 合并：'user' scope 下本功能是唯一的键，且「记住最近一次选择」本就
-// 是 last-write-wins 语义，多客户端并发写不需要更强的保证。
+// Only edit this preference on the latest row version: other account settings share the same scope.
 
 const USER_SCOPE = 'user' as const
 
@@ -30,10 +30,9 @@ export async function rememberAgentCreateDevice(
   userId: string,
   deviceId: string
 ): Promise<AgentCreateDefaults> {
-  const config = await readUserSettingsConfig(client, userId, USER_SCOPE)
-  const next = mergeAgentCreateDeviceChoice(config, deviceId)
-  await writeUserSettingsConfig(client, userId, USER_SCOPE, next)
-  return parseAgentCreateDefaults(next)
+  const saved = await updateUserSettingsKey(client, userId, USER_SCOPE, AGENT_CREATE_DEFAULTS_KEY,
+    (value) => mergeAgentCreateDeviceChoice({ [AGENT_CREATE_DEFAULTS_KEY]: value }, deviceId)[AGENT_CREATE_DEFAULTS_KEY])
+  return parseAgentCreateDefaults(saved.config)
 }
 
 export async function rememberAgentCreateProject(
@@ -43,8 +42,7 @@ export async function rememberAgentCreateProject(
   projectId: string | null,
   chatId?: string | null
 ): Promise<AgentCreateDefaults> {
-  const config = await readUserSettingsConfig(client, userId, USER_SCOPE)
-  const next = mergeAgentCreateProjectChoice(config, deviceId, projectId, chatId)
-  await writeUserSettingsConfig(client, userId, USER_SCOPE, next)
-  return parseAgentCreateDefaults(next)
+  const saved = await updateUserSettingsKey(client, userId, USER_SCOPE, AGENT_CREATE_DEFAULTS_KEY,
+    (value) => mergeAgentCreateProjectChoice({ [AGENT_CREATE_DEFAULTS_KEY]: value }, deviceId, projectId, chatId)[AGENT_CREATE_DEFAULTS_KEY])
+  return parseAgentCreateDefaults(saved.config)
 }

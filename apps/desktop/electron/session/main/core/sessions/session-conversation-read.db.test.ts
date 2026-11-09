@@ -60,7 +60,7 @@ describe('native personal conversation unread', () => {
       { kind: 'message', id: 'later-reply', seq: 5, role: 'assistant', text: 'Later background reply', at: 5000 },
     ] };
     noteNativeConversationReplies('s', record)?.();
-    expect(nativeConversationActivity('s')).toEqual({ text: 'Personal reply', at: new Date(3500).toISOString(), turnSeq: 4 });
+    expect(nativeConversationActivity('s')).toEqual({ text: 'Personal reply', at: new Date(3500).toISOString(), turnSeq: 4, activityVersion: 1, activity: { kind: 'sent', id: 'personal', addresses: null } });
     expect(nativeConversationUnread('s')).toEqual(['personal']);
   });
 
@@ -82,7 +82,7 @@ describe('native personal conversation unread', () => {
       { kind: 'message', id: 'reply', seq: 1, role: 'assistant', text: 'Native answer', at: at + 1000 },
     ] };
     noteNativeConversationReplies('s', record);
-    expect(nativeConversationActivity('s')).toEqual({ text: 'Native answer', at: new Date(at + 1000).toISOString(), turnSeq: 1 });
+    expect(nativeConversationActivity('s')).toEqual({ text: 'Native answer', at: new Date(at + 1000).toISOString(), turnSeq: 1, activityVersion: 1, activity: { kind: 'sent', id: 'reply', addresses: null } });
     noteNativeConversationReplies('s', { ...record, seq: 0, items: [{ kind: 'message', id: 'old', seq: 0, role: 'user', text: 'Older input', at: at - 1000 }] });
     expect(nativeConversationActivity('s')?.text).toBe('Native answer');
     truncateNativeConversationRead('s', 2)?.();

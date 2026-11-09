@@ -5,7 +5,7 @@ import { log } from '@main/lib/logger';
 import { quoteCshArg } from '@main/utils/shellEscape';
 import {
   diskWindowsShimReader,
-  resolveWindowsHandoffExecutable,
+  resolveWindowsHandoffLaunch,
   resolveWindowsNodeScriptLaunch,
 } from '@gugu/session-core/exec';
 import { getWindowsEnvValue } from '@main/utils/windows-env';
@@ -260,7 +260,8 @@ function powerShellFileArgs(suppressProfile: boolean): string[] {
 function resolveWindowsSpawn(
   intent: PtySpawnIntent,
   env: NodeJS.ProcessEnv,
-  fileExists: FileExists
+  fileExists: FileExists,
+  childEnv: NodeJS.ProcessEnv = env
 ): ResolvedLocalPtySpawn {
   const warnings = windowsWarnings(intent);
   const shell = intent.shellProfile?.executable ?? getWindowsShell(env);
@@ -338,8 +339,12 @@ function resolveWindowsSpawn(
     // 壳里跑的是 `node "<脚本>" %*`(npm / pnpm / aube 装的 JS 包,包括咕咕托管装的那些)时,直接起
     // `node.exe <脚本> <原参数…>`,同样走 32767:读壳的规矩与认不全就返回 null 的理由见 windows-node-entry.ts。
     // 两样都认不出来就照旧起壳:❌ 不猜一个。
-    const handoff = resolveWindowsHandoffExecutable(resolvedCommand, { platform: 'win32', exists: fileExists });
-    if (handoff) return { command: handoff, args, cwd: intent.cwd, warnings };
+    // 壳在调程序前设的变量(用户手写的 `set CODEX_HOME=…`)随 handoff.env 一起带上,见 resolveWindowsHandoffLaunch。
+    const handoff = resolveWindowsHandoffLaunch(resolvedCommand, { platform: 'win32', exists: fileExists, env: childEnv });
+    if (handoff) {
+      const shimEnv = Object.keys(handoff.env).length > 0 ? { env: handoff.env } : {};
+      return { command: handoff.program, args, cwd: intent.cwd, warnings, ...shimEnv };
+    }
     const script = resolveWindowsNodeScriptLaunch(resolvedCommand, {
       platform: 'win32',
       reader: { readShim: diskWindowsShimReader.readShim, exists: fileExists },
@@ -485,15 +490,21 @@ export function resolveLocalPtySpawn({
   intent,
   platform,
   env,
+  childEnv,
   fileExists = existsSync,
 }: {
   intent: PtySpawnIntent;
   platform: NodeJS.Platform;
   env: NodeJS.ProcessEnv;
+  /**
+   * 子进程真正拿到的那份环境(不含 `resolved.env` 那一层)。跳过的壳里 `%PATH%` 之类按它展开、键名沿用它的写法 ——
+   * 按 `env`(宿主进程的,Windows 上键叫 `Path`、没有咕咕前置的目录)展开,壳设的 PATH 会变成第二个键而被丢掉。
+   */
+  childEnv?: NodeJS.ProcessEnv;
   fileExists?: FileExists;
 }): ResolvedLocalPtySpawn {
   return isWindows(platform)
-    ? resolveWindowsSpawn(intent, env, fileExists)
+    ? resolveWindowsSpawn(intent, env, fileExists, childEnv ?? env)
     : resolvePosixSpawn(intent, env);
 }
 

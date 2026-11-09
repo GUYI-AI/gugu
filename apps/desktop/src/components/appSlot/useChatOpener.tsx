@@ -186,7 +186,13 @@ export function useChatOpener(chatId: string | null, onShow?: (chatId: string, t
         return
       }
       const page = ask.tab ? installedExtensionsStore.allTabContributions.find((entry) => entry.kind === `${ask.app}.${ask.tab}`) : installedExtensionsStore.mainTabOf(ask.app)
-      const namesFile = !ask.tab && installedExtensionsStore.isEnabled(ask.app) && installedExtensionsStore.manifestFor(ask.app)?.contributes.tabs.some((tab) => tab.chatFile)
+      // A link naming the App's own page asks the same as its card's 「打开」: the file already open here is the tab shown, not a second one.
+      if (ask.tab && !page) {
+        setUnopened(`${installedExtensionsStore.appName(ask.app) ?? ask.app} has no page named ${ask.tab}`)
+        return
+      }
+      const main = installedExtensionsStore.mainTabOf(ask.app)
+      const namesFile = (!ask.tab || page?.kind === main?.kind) && installedExtensionsStore.isEnabled(ask.app) && installedExtensionsStore.manifestFor(ask.app)?.contributes.tabs.some((tab) => tab.chatFile)
       if (page?.enabled && !namesFile) {
         void Promise.resolve(show(chatId, { kind: page.kind, title: page.title }, {})).catch(error => setUnopened(String(error)))
         return

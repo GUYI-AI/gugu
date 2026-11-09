@@ -73,7 +73,7 @@ function sessionView(projectId: string, sessionId: string) {
 function openInBrowserTab(projectId: string, sessionId: string, url: string): boolean {
   const view = sessionView(projectId, sessionId);
   if (!view) return false;
-  view.activePane.open('browser', { initialUrl: url }, { intent: 'newTab' });
+  view.paneLayout.openBeside('browser', { initialUrl: url });
   return true;
 }
 

@@ -9,11 +9,15 @@ import type { MessageItem } from '../types/chat'
 //  · member-joined(#6386,gugu-supabase 的 chat_members 触发器落,无发送者):载荷 = 入群者 id,逗号分隔。
 //  · turn-failure(宿主替失败的 agent 落,发送者 = 那个 agent):载荷 = AgentFailureReason。
 //  · topic-opened(服务端开话题时落):沿用它的 topic-opened:<话题 chat id>,不从文案猜话题身份。
+//  · agent-flood(服务端自动调档时落,无发送者):agent-flood:<本条消息 id>,没有载荷。
+//  · member-managed(服务端退群、移出、改管理员时落,无发送者):载荷 = 操作者与对象的 id。
 
 export type SystemNotice =
   | { kind: 'member-joined'; userIds: string[] }
   | { kind: 'turn-failure'; reason: AgentFailureReason }
   | { kind: 'topic-opened'; topicChatId: string }
+  | { kind: 'agent-flood' }
+  | { kind: 'member-managed' }
 
 type NoticeRow = Pick<MessageItem, 'id' | 'content_type' | 'sender_user_id' | 'client_message_id'>
 
@@ -29,7 +33,9 @@ export function parseSystemNotice(msg: NoticeRow): SystemNotice | null {
   }
   if (msg.sender_user_id === null) {
     const userIds = payload('member-joined')?.split(',').filter((id) => id.length > 0) ?? []
-    return userIds.length > 0 ? { kind: 'member-joined', userIds } : null
+    if (userIds.length > 0) return { kind: 'member-joined', userIds }
+    if (msg.client_message_id === `agent-flood:${msg.id}`) return { kind: 'agent-flood' }
+    return payload('member-managed') ? { kind: 'member-managed' } : null
   }
   const topicChatId = msg.client_message_id?.match(/^topic-opened:([^:]+)$/)?.[1]
   if (topicChatId) return { kind: 'topic-opened', topicChatId }

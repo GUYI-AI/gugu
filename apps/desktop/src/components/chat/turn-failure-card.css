@@ -3,8 +3,8 @@
 .tfc-line[data-placement='composer'] { padding: 6px 0; }
 .tfc { box-sizing: border-box; width: fit-content; max-width: min(560px, 70%); min-width: 0; display: grid; grid-template-columns: 16px minmax(0, auto) auto auto; column-gap: 8px; row-gap: 2px; align-items: start; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-surface); background: var(--bg-secondary); font-size: var(--font-body); line-height: var(--lh-body); color: var(--muted-fg); }
 .tfc-line[data-placement='composer'] > .tfc { max-width: min(560px, 100%); }
-.tfc-icon { grid-column: 1; grid-row: 1 / span 2; margin-top: 2px; color: var(--warn); }
-.tfc[data-tone='danger'] .tfc-icon { color: var(--danger); }
+.tfc-icon { grid-column: 1; grid-row: 1 / span 2; margin-top: 2px; color: var(--warn-fg); }
+.tfc[data-tone='danger'] .tfc-icon { color: var(--danger-fg); }
 .tfc-head { grid-column: 2; display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
 /* 一行放不下时:名字先缩(留 3em),再缩时间;标题不缩 —— 卡片说的就是标题,省略号会把它吃掉。 */
 .tfc-name { color: var(--muted-fg); flex: 0 1000000 auto; min-width: 3em; overflow: hidden; text-overflow: ellipsis; }

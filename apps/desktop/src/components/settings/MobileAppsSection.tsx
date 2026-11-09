@@ -30,7 +30,8 @@ import { SearchField } from '../ui/SearchField'
 import { Sheet } from '../ui/Sheet'
 import { SettingsNote } from './SettingsPrimitives'
 import { AppsSection } from './AppsSection'
-import { PHONE_HOST, keptPhoneMarketPage, phoneMarketRows, phoneProductApi, readPhoneMarketPage } from './phoneMarketPage'
+import { PhoneAppManage } from './PhoneAppManage'
+import { PHONE_HOST, keptPhoneMarketPage, phoneMarketRows, phoneProductApi, readPhoneMarketPage, useOfferedVersions } from './phoneMarketPage'
 import '@/session/renderer/index.css'
 import './mobile-app-market.css'
 
@@ -60,7 +61,17 @@ const MobileAppsContent = observer(function MobileAppsContent({ appDetail }: { a
     },
     gcTime: Infinity,
   })
-  const [tab, setTab] = useState<MarketBrowsePage | 'installed'>('market')
+  const [tab, setTab] = useState<'market' | 'installed'>('market')
+  const [view, setView] = useState<MarketBrowsePage>('market')
+  const [manage, setManage] = useState<string | null>(null)
+  // Asked for from an App's settings page: back from the market page returns there, as on the desktop.
+  const [marketFrom, setMarketFrom] = useState<string | null>(null)
+  const closeDetail = () => {
+    setDetail(null)
+    if (marketFrom) setManage(marketFrom)
+    setMarketFrom(null)
+  }
+  const offered = useOfferedVersions()
   const [query, setQuery] = useState('')
   const [chip, setChip] = useState<'all' | MarketCategory>('all')
   const [pages, setPages] = useState(1)
@@ -72,6 +83,10 @@ const MobileAppsContent = observer(function MobileAppsContent({ appDetail }: { a
   useEffect(() => {
     if (!appDetail || !catalog.data || openedLink.current === appDetail) return
     openedLink.current = appDetail
+    if (store.manifests.some((manifest) => manifest.id === appDetail.extensionId)) {
+      setManage(appDetail.extensionId)
+      return
+    }
     const item = phoneMarketRows(catalog.data.entries, '').find(item => item.manifest.id === appDetail.extensionId)
     if (item) setDetail(item)
     else setFailed({ title: translate('extensions.marketUnavailable'), cause: appDetail.extensionId })
@@ -105,7 +120,7 @@ const MobileAppsContent = observer(function MobileAppsContent({ appDetail }: { a
     })
     observer.observe(node)
     return () => observer.disconnect()
-  }, [hasMore, pages, rows.length, tab, query, chip])
+  }, [hasMore, pages, rows.length, tab, view, query, chip])
 
   const lifecycleOf = (id: string, item: MarketListItem): AppLifecycle => {
     // The existing phone host decides whether it has a page; desktop-only host pages cannot be installed here.
@@ -154,26 +169,29 @@ const MobileAppsContent = observer(function MobileAppsContent({ appDetail }: { a
   return (
     <>
       <div className="phone-app-market-tabs"><SegmentedTabs value={tab} onChange={setTab} ariaLabel={translate('extensions.title')} items={[
+        { value: 'market', label: translate('extensions.tabMarket'), testId: 'phone-apps-market-section' },
+        { value: 'installed', label: translate('extensions.tabInstalled'), testId: 'phone-apps-installed-tab' },
+      ]} /></div>
+      {tab === 'market' ? <div className="phone-app-market-tabs"><SegmentedTabs value={view} onChange={setView} ariaLabel={translate('extensions.tabMarket')} items={[
         { value: 'market', label: translate('extensions.recommended'), testId: 'phone-apps-market-tab' },
         { value: 'newest', label: translate('extensions.newest'), testId: 'phone-apps-newest-tab' },
         { value: 'popular', label: translate('extensions.popular'), testId: 'phone-apps-popular-tab' },
         { value: 'all', label: translate('extensions.allApps'), testId: 'phone-apps-all-tab' },
-        { value: 'installed', label: translate('extensions.tabInstalled'), testId: 'phone-apps-installed-tab' },
-      ]} /></div>
+      ]} /></div> : null}
       {unreadable ? (
         <SettingsNote tone="danger" role="alert" data-testid="phone-apps-unreadable">
           {translate('extensions.loadFailed')}
           <Button onClick={() => read(phoneApps.reload)}>{translate('extensions.retry')}</Button>
         </SettingsNote>
       ) : null}
-      {tab === 'installed' ? <AppsSection /> : (
+      {tab === 'installed' ? <AppsSection updates={offered.updates} gone={offered.gone} onManage={setManage} /> : (
         <div className={`${skin} mk phone-app-market`} data-testid="phone-app-market">
           <SearchField value={query} placeholder={translate('extensions.searchPlaceholder')} onChange={(event) => { setQuery(event.target.value); setPages(1) }} />
           {error}
           {/* 画着一份就一直画它:重读没读到(下载站连不上、精选底图取不到)不换成错误面板。 */}
           {catalog.data ? (
             <AppMarketContent
-              view={tab} onRetry={() => void catalog.refetch()}
+              view={view} onRetry={() => void catalog.refetch()}
               shelf={{ status: 'ready', query, errorKind: null, items: rows.slice(0, pages * MARKET_PAGE_SIZE), total: rows.length, page: pages - 1, hasMore, loadingMore: false, invalid: [], featured: catalog.data.featured, home: catalog.data.home }}
               chip={chip} onChipChange={setChip}
               query={query.trim()} hostKey={PHONE_HOST} api={phoneProductApi}
@@ -189,29 +207,41 @@ const MobileAppsContent = observer(function MobileAppsContent({ appDetail }: { a
         </div>
       )}
       {detail ? (
-        <Sheet fullScreenMobile onClose={() => setDetail(null)} testId="phone-app-product" ariaLabel={localizedManifestText(detail.manifest, locale).name}>
+        <Sheet fullScreenMobile onClose={closeDetail} testId="phone-app-product" ariaLabel={localizedManifestText(detail.manifest, locale).name}>
           <div className={`${skin} phone-app-product`}>
             <SessionUiTheme theme={theme} skin>
               {error}
               <AppProductPage
                 key={detail.manifest.id}
-                subject={{ manifest: grantableBy(detail.manifest, PHONE_CAPABILITIES), installed: installed ? grantableBy(installed, PHONE_CAPABILITIES) : undefined, cloud: detail.cloud, installRef: detail.ref }}
-                enabled={store.isEnabled(detail.manifest.id)} lifecycle={lifecycleOf(detail.manifest.id, detail)} pending={pending[detail.manifest.id]}
+                subject={{ manifest: grantableBy(detail.manifest, PHONE_CAPABILITIES), installedVersion: installed?.version, cloud: detail.cloud, installRef: detail.ref }}
+                lifecycle={lifecycleOf(detail.manifest.id, detail)} pending={pending[detail.manifest.id]}
                 locale={locale} translate={translate} api={phoneProductApi} onOpenExternal={(url) => { window.open(url, '_blank', 'noopener,noreferrer') }}
-                onBack={() => setDetail(null)} onLifecycle={() => act(detail)} onInstallVersion={install}
+                backLabel={marketFrom ? translate('extensions.appSettings') : undefined}
+                onBack={closeDetail} onLifecycle={() => act(detail)} onInstallVersion={install}
+                onManage={installed && !store.isPreinstalled(installed.id) ? () => { setMarketFrom(null); setManage(installed.id) } : undefined}
                 backgroundSupported={false}
-                permissionRevocationSupported={false}
-                phoneAgentCapabilities={(installed ?? detail.manifest).permissions?.capabilities?.filter((capability) => PHONE_CAPABILITY_SUPPORT[capability] === 'agent')}
-                menu={installed && !store.isPreinstalled(installed.id) ? {
-                  onToggleEnabled: (on) => void change(installed.id, undefined, () => phoneApps.setEnabled(installed.id, on)),
-                  ...(store.autoUpdates(installed.id) !== null ? { autoUpdate: { on: store.autoUpdates(installed.id)!, onToggle: (on: boolean) => void change(installed.id, undefined, () => phoneApps.setAutoUpdate(installed.id, on)) } } : {}),
-                } : {}}
+                phoneAgentCapabilities={detail.manifest.permissions?.capabilities?.filter((capability) => PHONE_CAPABILITY_SUPPORT[capability] === 'agent')}
               />
             </SessionUiTheme>
           </div>
         </Sheet>
       ) : null}
-
+      {manage ? (
+        <PhoneAppManage
+          extensionId={manage}
+          updateVersion={offered.updates[manage]}
+          gone={offered.gone.includes(manage)}
+          onClose={() => setManage(null)}
+          onViewInMarket={() => {
+            const item = phoneMarketRows(catalog.data?.entries ?? [], '').find((row) => row.manifest.id === manage)
+            if (item) {
+              setMarketFrom(manage)
+              setDetail(item)
+            } else setFailed({ title: translate('extensions.marketUnavailable'), cause: manage })
+            setManage(null)
+          }}
+        />
+      ) : null}
     </>
   )
 })

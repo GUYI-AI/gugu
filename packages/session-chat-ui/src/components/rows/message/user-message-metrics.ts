@@ -5,6 +5,7 @@ import { layoutBlockStack } from '@session-chat/core/layout/block-stack';
 import type { ChatMessage } from '@session-chat/model';
 import { isMessageEditing, messageEditorMetrics } from './message-editor-metrics';
 import { inputSendStatusHeight } from './InputSendStatus';
+import { sentBodiesLayout } from './SentMessageBodies';
 import {
   attachStripHeight, effectiveMessageVars, userAvailableWidth, userInnerWidth,
   userMessageActionsHeight, type MessageVars,
@@ -17,6 +18,12 @@ export function measureUserMessage(item: ChatMessage, ctx: MeasureCtx, baseVars:
   const attachments = attachStripHeight(item.attachments?.length ?? 0, available, vars) + inputSendStatusHeight(item);
   if (!item.guguDelivery && isMessageEditing(item.id, ctx)) {
     return attachments + messageEditorMetrics(ctx.editingMessage!.text, ctx).height;
+  }
+  if (item.sentMessages?.length) {
+    const inner = userInnerWidth(available, vars);
+    const fullHeight = sentBodiesLayout(item.sentMessages, ctx, inner).height + 2 * vars.userCardPadY + 2 * vars.cardBorder;
+    const cap = ctx.expandedId === item.id ? vars.expandedMaxH : vars.collapsedMaxH;
+    return attachments + Math.min(fullHeight, cap) + (conversationDestinationLayout(item, ctx, inner)?.height ?? 0) + userMessageActionsHeight(vars);
   }
   const blocks = item.streaming ? ctx.caches.parseBlocksStreaming(item.id, item.text) : ctx.caches.parseBlocks(item.id, item.text);
   // 没有正文就没有气泡(UserMessageCard);还在流、一个字没到的除外,那时先占一行。

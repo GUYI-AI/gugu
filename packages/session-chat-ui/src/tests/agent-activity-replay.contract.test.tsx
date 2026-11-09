@@ -8,6 +8,7 @@ import type { TranscriptTurn } from '../model';
 import { zhCNMessages } from '../../../../apps/desktop/src/session/renderer/localization/messages';
 import { defaultChatTranslator } from '../localization';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
+import { plainMessageBody } from './fixtures/plain-message-body';
 
 const peer = 'user:11111111-1111-4111-8111-111111111111';
 const cleanup: (() => void)[] = [];
@@ -58,7 +59,7 @@ it.each([
   host.className = appearance === 'dark' ? 'emdark' : 'emlight';
   host.style.cssText = `position:fixed;left:0;top:0;width:${width}px;height:800px;background:var(--chat-bg)`;
   const view = createChatView({ context, state, parent: host, pinUserMessages: width > 390,
-    commands: { conversationAgentName: () => '研发主管（Claude）' } });
+    commands: { conversationAgentName: () => '研发主管（Claude）', onMessageBodyMount: plainMessageBody } });
   cleanup.push(() => { view.dispose(); state.dispose(); context.dispose(); host.remove(); });
   view.scrollToTop();
   await until('owner message mounted', () => !!host.querySelector('[data-agent-conversation-message="owner-input"]'));

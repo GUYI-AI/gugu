@@ -40,6 +40,17 @@
 .mk-bar [data-slot='toggle-group-item'][data-pressed] {
   background-color: color-mix(in oklab, var(--foreground) 6%, transparent);
 }
+.mk-views {
+  margin-top: 8px;
+}
+/* 第二层选中用下划线:第一层(市场/已安装)和类别用底色,三层不长一个样。 */
+.mk-views [data-slot='toggle-group-item'][data-pressed] {
+  background: none;
+  color: var(--foreground);
+  font-weight: 500;
+  text-decoration: underline 2px;
+  text-underline-offset: 6px;
+}
 .mk-seg-count {
   color: var(--foreground-passive);
   font-variant-numeric: tabular-nums;
@@ -57,6 +68,8 @@
   flex: none;
   display: grid;
   border-radius: 20%;
+  /* 深色图标放在深色底上也有边。 */
+  box-shadow: 0 0 0 1px var(--border);
 }
 .mk-icon > img,
 .mk-icon > span {
@@ -926,6 +939,7 @@ button.mk-name:focus-visible {
 .mk-about.is-clamped {
   max-height: 80px;
   overflow: hidden;
+  mask-image: linear-gradient(to bottom, var(--foreground) 55%, transparent);
 }
 /* 它给 agent 的那一行:原文照引,人看得到 agent 读的是哪句。 */
 .mk-instructions {
@@ -1227,6 +1241,20 @@ button.mk-name:focus-visible {
   }
 }
 @container (max-width: 600px) {
+  /* 窄了一行放不下名字、版本、按钮和开关:版本和开关让路,都还在 App 设置页和 ⋯ 里。 */
+  .mk-row .mk-tx em,
+  .mk-row .mk-switch-slot {
+    display: none;
+  }
+  /* 版本历史:一版两行,说明另起一行。 */
+  .mk .xp-history-row {
+    flex-wrap: wrap;
+  }
+  .mk .xp-history-note {
+    order: 3;
+    flex: 0 0 100%;
+    min-height: 0;
+  }
   .mk-dh {
     gap: 20px;
   }

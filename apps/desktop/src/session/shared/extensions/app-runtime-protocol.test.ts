@@ -3,6 +3,8 @@ import * as encoding from 'lib0/encoding';
 import { describe, expect, it } from 'vitest';
 import * as syncProtocol from 'y-protocols/sync';
 import * as Y from 'yjs';
+import { chatForCapabilities } from './bridge-protocol';
+import { folderElsewhereRefusal, notOnSessionMachine } from './machine-call';
 import {
   APP_RUNTIME_ENTRY,
   APP_RUNTIME_VERSION,
@@ -22,6 +24,8 @@ import {
   splitRoutingKey,
   workspaceSession,
   workspaceTarget,
+  folderWorkspace,
+  workspaceFolder,
 } from './app-runtime-protocol';
 
 const TAG = `<script src="${APP_RUNTIME_ENTRY}"></script>`;
@@ -184,5 +188,42 @@ describe('places and file refs, as a call names them', () => {
     expect(placeOf({ chat: C1.toUpperCase() })).toEqual({ chat: C1 });
     expect(fileRefOf({ chat: C1.toUpperCase(), name: 'a.md' })).toEqual({ chat: C1, name: 'a.md' });
     expect(fileRefOf({ chat: C1.toUpperCase(), id: 'i-1' })).toEqual({ chat: C1, id: 'i-1' });
+  });
+});
+
+describe('a project folder as a place', () => {
+  it('names its machine and its folder, and nothing else parses as one', () => {
+    expect(workspaceFolder({ workspace: folderWorkspace('dev-a', 'w1') })).toEqual({ deviceId: 'dev-a', workspaceId: 'w1' });
+    expect(workspaceTarget({ workspace: 'folder:dev-a/w1' })).toEqual({ folder: { deviceId: 'dev-a', workspaceId: 'w1' } });
+    expect(workspaceFolder({ workspace: 'session:s1' })).toBeNull();
+    for (const bad of ['folder:', 'folder:a/', 'folder:/w', 'folder:a']) {
+      expect(workspaceFolder({ workspace: bad })).toBeNull();
+      expect(() => workspaceTarget({ workspace: bad })).toThrow();
+    }
+    // The rest is one key, looked up as it stands: it never becomes a path.
+    expect(workspaceFolder({ workspace: 'folder:a/b/c' })).toEqual({ deviceId: 'a', workspaceId: 'b/c' });
+    expect(workspaceFolder({ workspace: 'folder:a/..' })).toEqual({ deviceId: 'a', workspaceId: '..' });
+  });
+});
+
+describe('a project folder elsewhere', () => {
+  it('asks for all-machines, and is only read', () => {
+    expect(folderElsewhereRefusal('filesList', () => false)).toMatchObject({ code: 'denied', message: expect.stringContaining('files:read:all-machines') });
+    expect(folderElsewhereRefusal('filesRead', () => true)).toBeNull();
+    expect(folderElsewhereRefusal('filesList', () => true)).toBeNull();
+    for (const write of ['filesCreate', 'filesRename', 'filesMove', 'filesRemove', 'filesWriteChunk', 'filesMkdir']) {
+      expect(folderElsewhereRefusal(write, () => true), write).toMatchObject({ code: 'denied' });
+    }
+  });
+  it('goes to its machine as a place call, with no session to follow', () => {
+    const manifest = { contributes: {} } as never;
+    expect(notOnSessionMachine(manifest, 'filesList', { place: { workspace: 'folder:d/w' } })).toBeNull();
+    expect(notOnSessionMachine(manifest, 'filesRead', { ref: { workspace: 'folder:d/w', id: 'a' } })).toBeNull();
+    expect(notOnSessionMachine(manifest, 'filesList', { place: { chat: 'c' } })).not.toBeNull();
+  });
+  it('tells a page where a project keeps its folders only if it may read files', () => {
+    const chat = { id: 'c', name: 'P', kind: 'group' as const, groupId: 'c', folders: [{ workspace: 'folder:d/w', path: '/p', machine: 'M', online: true }] };
+    expect(chatForCapabilities(chat, ['chat:read'])).not.toHaveProperty('folders');
+    expect(chatForCapabilities(chat, ['files:read']).folders).toHaveLength(1);
   });
 });

@@ -941,6 +941,20 @@ describe('#6396 序号只增不减', () => {
         setCloudProvisionRetryDelaysForTests([2_000, 8_000])
       }
     })
+    // Restoring an archived task replaces its identity. Keeping the old card fails the first turn with
+    // "cannot change subject or tool scope under the same owner".
+    it('归档后恢复:铸新身份之前收掉被替换身份的卡', async () => {
+      const { setSessionpageAgentCardRevoker } = await import(SUT)
+      const revoked: string[] = []
+      setSessionpageAgentCardRevoker(async (agentUserId: string) => { revoked.push(agentUserId) })
+      try {
+        const restored = await provisionFresh('conv-restored', { replacesRemovedIdentity: 'removed-agent' }, oneTripDeps)
+        expect(restored.guguAgentUserId).not.toBe('removed-agent')
+        expect(revoked).toEqual(['removed-agent'])
+      } finally {
+        setSessionpageAgentCardRevoker(null)
+      }
+    })
     // 评审 r1 ②:终端会话「接回」时引擎没换,手里还是旧卡 ⇒ 身份被撤过就不铸、不收,当场说清;重新开才换新身份。
     it('身份被撤过的会话接回:不铸新身份、不收卡,说清要重新开;重新开时照常先收卡再铸', async () => {
       const { setSessionpageAgentCardRevoker, setCloudProvisionRetryDelaysForTests, assertSessionpageIdentityForReattach } = await import(SUT)
@@ -1300,8 +1314,14 @@ describe('#4526 A:owner 删除 ⇒ 释放本机足迹 + 墓碑挡住重新开户
     expect(tombstones[0]).toMatchObject({ gugu_user_id: original!.guguAgentUserId, conversation_id: info.sessionId })
     expect(await provisionSessionpageAgentForSession(info, deps)).toBeNull()
     const takeBirthGroup = vi.fn(async () => ({ chatId: 'old-social-group', asTask: true }))
+    const { setSessionpageAgentCardRevoker } = await import(SUT)
+    const revokedCards: string[] = []
+    setSessionpageAgentCardRevoker(async (agentUserId: string) => { revokedCards.push(agentUserId) })
     const replacement = await provisionSessionpageAgentForSession({ ...info, replacesRemovedIdentity: original!.guguAgentUserId }, { ...deps, takeBirthGroup })
     await settleCloud()
+    // The removed identity's Gugu MCP card must go first, or the restored session cannot get one.
+    expect(revokedCards).toEqual([original!.guguAgentUserId])
+    setSessionpageAgentCardRevoker(null)
     expect(replacement!.guguAgentUserId).not.toBe(original!.guguAgentUserId)
     expect(roster).toHaveLength(1)
     expect(roster[0]).toMatchObject({ gugu_user_id: replacement!.guguAgentUserId, cache: { emdash_session_id: info.sessionId, emdash_project_id: info.projectId } })

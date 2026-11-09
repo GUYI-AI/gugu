@@ -70,7 +70,7 @@
     "storybook:session-ui": "storybook dev -p 6006 -c packages/session-ui/.storybook",
     "session:db:fixtures": "vitest run --project session-fixtures",
     "session:db:snapshot": "tsx apps/desktop/session-tooling/generate-schema-snapshot.ts",
-    "session:db:setup": "cd apps/desktop/session-tooling/node-deps && npm install --workspaces=false",
+    "session:db:setup": "node scripts/build/install-vendor-node-deps.mjs",
     "session:test:db": "vitest run --project session-main-db",
     "session:test:migrations": "vitest run --project session-migrations",
     "test": "vitest run --project gugu-integration",
@@ -307,7 +307,8 @@
       "app-builder-lib@26.15.3": "patches/app-builder-lib@26.15.3.patch",
       "@steipete/sweet-cookie@0.4.4": "patches/@steipete__sweet-cookie@0.4.4.patch",
       "ssh2@1.17.0": "patches/ssh2@1.17.0.patch",
-      "@codemirror/autocomplete@6.20.3": "patches/@codemirror__autocomplete@6.20.3.patch"
+      "@codemirror/autocomplete@6.20.3": "patches/@codemirror__autocomplete@6.20.3.patch",
+      "prebuild-install@7.1.3": "patches/prebuild-install@7.1.3.patch"
     }
   },
   "optionalDependencies": {

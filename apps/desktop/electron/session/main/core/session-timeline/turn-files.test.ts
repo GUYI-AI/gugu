@@ -1,4 +1,3 @@
-import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import { openRuntimeFork, forkStore } from '../sessions/session-life-forks';
@@ -9,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@main/lib/logger', () => ({ log: { warn: mocks.warn } }));
 vi.mock('node:fs/promises', () => ({ stat: mocks.stat }));
 vi.mock('@main/core/extensions/account-token', () => ({ resolveAccountFile: mocks.resolveAccountFile }));
-vi.mock('@gugu/core/local/files/fileSnapshots', () => ({ saveFileHandle: mocks.saveFileHandle }));
+vi.mock('@gugu/core/local/files/fileSnapshots', () => ({ saveToFileStore: mocks.saveFileHandle }));
 vi.mock('@main/core/sessionpage/sessionpage-session-agent', () => ({ guguAgentUserIdForSession: mocks.agentOf }));
 vi.mock('@gugu/core/cloud/deviceRuntime', () => ({ readCachedDeviceId: mocks.deviceId }));
 
@@ -49,13 +48,24 @@ describe('turnFileText (P3 task turn attachments)', () => {
     expect(mocks.resolveAccountFile).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps remote working copies in distinct session directories', async () => {
+  it('says a stored file is read-only, and reads it again if it changed since the last turn', async () => {
+    mocks.resolveAccountFile.mockImplementation(async () => resolved('managed-object'));
+    mocks.saveFileHandle.mockResolvedValue({ file_path: '/home/agent/.gugu/file-store/sha/brief.txt', read_only: true });
+    mocks.stat.mockResolvedValue({ isFile: () => true, size: 3, mtimeMs: 1 });
+    const first = await turnFileText('stored-session', [doc], false);
+    expect(first.text).toContain('shared and read-only');
+    await turnFileText('stored-session', [doc], false);
+    expect(mocks.saveFileHandle).toHaveBeenCalledTimes(1);
+    mocks.stat.mockResolvedValue({ isFile: () => true, size: 3, mtimeMs: 2 });
+    await turnFileText('stored-session', [doc], false);
+    expect(mocks.saveFileHandle).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads a version from the one file store, whichever session asks', async () => {
     mocks.resolveAccountFile.mockImplementation(async () => resolved('managed-object'));
     await turnFileText('copy-session-a', [doc], false);
     await turnFileText('copy-session-b', [doc], false);
-    expect(mocks.saveFileHandle.mock.calls.map(call => call[1])).toEqual([
-      expect.stringContaining(join('attachments', 'copy-session-a')), expect.stringContaining(join('attachments', 'copy-session-b')),
-    ]);
+    expect(mocks.saveFileHandle).toHaveBeenCalledTimes(2);
   });
 
   it('refetches a deleted prefetched path and emits a failure line if the version is gone', async () => {
@@ -99,7 +109,7 @@ describe('turnFileText (P3 task turn attachments)', () => {
     mocks.resolveAccountFile.mockResolvedValue(elsewhere);
     const session = `kept-${_label}`;
     const { text } = await turnFileText(session, [doc], false);
-    expect(mocks.saveFileHandle).toHaveBeenCalledWith(elsewhere, expect.stringContaining(session), 'brief.txt');
+    expect(mocks.saveFileHandle).toHaveBeenCalledWith(elsewhere, expect.anything(), 'brief.txt');
     expect(text).toContain('[File saved at local path: /home/agent/.gugu/attachments/fetched]');
     expect(text).not.toContain('/Users/me/brief.txt');
   });
@@ -152,6 +162,6 @@ it('a side chat reads as its parent agent while keeping its own download directo
   try {
     await turnFileText('file-fork', [doc], false);
     expect(mocks.agentOf).toHaveBeenLastCalledWith('parent-task', expect.anything());
-    expect(mocks.saveFileHandle).toHaveBeenLastCalledWith(expect.anything(), expect.stringContaining(join('attachments', 'file-fork')), doc.name);
+    expect(mocks.saveFileHandle).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), doc.name);
   } finally { forkStore.remove('file-fork'); }
 });

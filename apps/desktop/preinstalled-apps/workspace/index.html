@@ -10,13 +10,12 @@
   <aside class="files" aria-label="files" tabindex="0">
     <header class="files-toolbar files-tools">
       <div id="place-switch" class="place-switch" role="group">
-        <button type="button" data-root="chat"><gugu-icon name="message-square"></gugu-icon><span></span></button>
-        <button type="button" data-root="workspace"><gugu-icon name="monitor"></gugu-icon><span></span></button>
+        <button type="button" data-root="chat"><gugu-icon name="message-square"></gugu-icon><span></span><span class="short"></span></button>
+        <button type="button" data-root="workspace"><gugu-icon name="monitor"></gugu-icon><span></span><span class="short"></span></button>
       </div>
-      <nav id="crumbs" class="crumbs" hidden></nav>
       <div id="kinds" class="kinds" role="group"></div>
-      <!-- 按名称筛选 (owner 11-07): the field takes the kinds' (or the crumbs') place, so 🔍 and what follows it stay put; on a
-           phone it covers the whole bar with 取消, as the host's own list search does there. -->
+      <!-- 按名称筛选 (owner 11-07): the field opens right before 🔍, in the kinds' room, so 🔍 and what follows it
+           stay put; on a phone it covers the whole bar with 取消, as the host's own list search does there. -->
       <div id="search" class="search" hidden>
         <label class="search-field"><gugu-icon name="search"></gugu-icon><input id="filter" type="search" autocomplete="off" /><button id="filter-clear" type="button" hidden><gugu-icon name="x"></gugu-icon></button></label>
         <button id="search-cancel" class="search-cancel" type="button"></button>
@@ -32,10 +31,11 @@
       <button id="new-doc" class="primary" type="button" aria-haspopup="menu" aria-expanded="false" hidden><gugu-icon name="plus"></gugu-icon><span id="new-label" class="sr-only"></span></button>
     </header>
     <div id="pick-bar" class="pick-bar" role="toolbar" hidden></div>
-    <!-- Where the list is (子文件夹): the way up, then each folder from the top. Hidden at the top. -->
+    <!-- Where the list is: the way up, then each folder from the top. A chat folder has nothing to say at its top; a computer's always says which folder. -->
+    <nav id="crumbs" class="crumbs" hidden></nav>
     <!-- What went wrong on the list (a name taken there, a failed move or upload): the file's own line is not drawn here. -->
     <div id="list-banner" class="banner" role="status" hidden></div>
-    <gugu-empty id="files-empty" icon="folder" hidden><strong id="files-empty-message"></strong><progress id="files-empty-progress" hidden></progress><button id="empty-upload" type="button" hidden></button></gugu-empty>
+    <gugu-empty id="files-empty" icon="folder" hidden><strong id="files-empty-message"></strong><span id="files-empty-detail"></span><progress id="files-empty-progress" hidden></progress><button id="empty-upload" type="button" hidden></button></gugu-empty>
     <ul id="file-list" class="file-list list" role="listbox" aria-multiselectable="true"></ul>
   </aside>
   <main class="doc">

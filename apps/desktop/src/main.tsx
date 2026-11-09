@@ -9,6 +9,7 @@ import './lib/insecure-context-shims'
 import './lib/legacy-webview-shims'
 import React from 'react'
 import App from './App'
+import { notifyHostTheme } from '@renderer/lib/theme/host-theme'
 import { renderEntryRoot } from './lib/renderer-entry-root'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { captureReferralFromUrl } from './lib/referral'
@@ -85,9 +86,7 @@ installWindowMaterialAttribute(document.documentElement, window.desktopWindow)
 // 但**开机那一次**属性是 index.html 的引导脚本直接落的,不经过它 —— 不补这一下,
 // 一个装完就选深色、之后再没切过的用户,主进程会一直按记住的浅色开窗。
 // 读属性而不是读偏好:属性就是真值(引导脚本已经把 `system` 解析完了)。
-window.electronAPI?.syncWindowTone?.(
-  document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
-)
+notifyHostTheme()
 // 安卓壳的系统栏同理(@@@mobile-shell-chrome),开机一次、之后跟属性走。
 startShellChromeTone()
 

@@ -1,4 +1,4 @@
-import { readUserSettingsConfig, writeUserSettingsConfig, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
+import { readUserSettingsConfig, updateUserSettingsKey, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
 import { completedFirstRunHarness, firstRunStage, parseOccupation, withOccupation, type FirstRunStage, type FirstRunHarness, type Occupation } from '@gugu/core/shared/firstRun'
 import { identityDb } from './supabase'
 import { readOwnOnboardedAt } from './identityReadAdapter'
@@ -36,18 +36,15 @@ export async function readOccupation(userId: string): Promise<Occupation | null>
 
 /** 读-改-写同一行:配置里别的键(建 agent 的默认值)原样留着。 */
 export async function writeOccupation(userId: string, occupation: Occupation): Promise<void> {
-  const config = await readUserSettingsConfig(settingsClient, userId, USER_SCOPE)
-  await writeUserSettingsConfig(settingsClient, userId, USER_SCOPE, withOccupation(config, occupation))
+  await updateUserSettingsKey(settingsClient, userId, USER_SCOPE, 'profile', (value) => withOccupation({ profile: value }, occupation).profile)
 }
 
 export async function writeFirstRunHarness(userId: string, harness: FirstRunHarness[]): Promise<void> {
-  const config = await readUserSettingsConfig(settingsClient, userId, USER_SCOPE)
-  await writeUserSettingsConfig(settingsClient, userId, USER_SCOPE, { ...config, firstRunHarness: harness })
+  await updateUserSettingsKey(settingsClient, userId, USER_SCOPE, 'firstRunHarness', () => harness)
 }
 
 export async function writeFirstRunTerminalSeen(userId: string): Promise<void> {
-  const config = await readUserSettingsConfig(settingsClient, userId, USER_SCOPE)
-  await writeUserSettingsConfig(settingsClient, userId, USER_SCOPE, { ...config, [TERMINAL_SEEN]: true })
+  await updateUserSettingsKey(settingsClient, userId, USER_SCOPE, TERMINAL_SEEN, () => true)
 }
 
 /**

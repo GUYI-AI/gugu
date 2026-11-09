@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next'
 import type { FlowListHandle } from '@/lib/flowList'
 import { ChevronLeft, MessageCircle } from '@/lib/icons'
 import { useImPageTab } from '../lib/shellTab'
-import { useChatStore } from '../store/chatContext'
+import { useActiveChatIdentity, useChatStore, useChatStoreReader, useChatsWhile } from '../store/chatContext'
 import { ChatLineScope } from '../store/chatLineScope'
 import { useAuth } from '../store/auth'
 import type { AgentConversationActivity, GroupCollabSnapshot, MessageItem } from '@gugu/core/shared/types/chat'
@@ -17,7 +17,7 @@ import { useChatHistoryPagination } from './chat/useChatHistoryPagination'
 import { useGroupCollabLoader, EMPTY_GROUP_COLLAB } from '../hooks/useGroupCollabLoader'
 import { useRoomAuthorityRevision } from '../hooks/useRoomAuthorityRevision'
 import { useTopicScopedMemberProfile } from '../hooks/useTopicScopedMemberProfile'
-import { ForwardMessageDialog } from './chat/ForwardMessageDialog'
+import { LiveForwardMessageDialog } from './chat/ForwardMessageDialog'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { drainTopicSplitRequest, requestTopicSplit } from '../lib/topicSplitRequest'
@@ -118,7 +118,9 @@ export function ChatAreaPanel({ chatId, ...surface }: ChatAreaPanelProps) {
 function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarget = false, hidden = false, mobile = false, openNonce, onBack, chrome, blockHost, onOpenUserChat }: Omit<ChatAreaPanelProps, 'chatId'>) {
   const { toast } = useToast()
   const { t } = useTranslation('messaging')
-  const { getImRepository, subscribeAccountRevision, identitiesById, chats, activeChat, activeChatId, messages, loadingMessages, messagesError, refreshMessages, sendMessage, forwardMessage, toggleReaction, memberReadSeqs, clearMessages, deleteMessage, sendAttachments, pinChat, deleteChat, leaveGroup, setChatNotificationLevel, loadOlderMessages, messageWindow, unreadEntry, jumpToUnreadEntry, loadNewerMessages, loadMessageAnchor, returnToLatestMessages, markMessageVisible, setFollowingTail, threadScope, setActiveChatId } = useChatStore('getImRepository', 'subscribeAccountRevision', 'identitiesById', 'chats', 'activeChat', 'activeChatId', 'messages', 'loadingMessages', 'messagesError', 'refreshMessages', 'sendMessage', 'forwardMessage', 'toggleReaction', 'memberReadSeqs', 'clearMessages', 'deleteMessage', 'sendAttachments', 'pinChat', 'deleteChat', 'leaveGroup', 'setChatNotificationLevel', 'loadOlderMessages', 'messageWindow', 'unreadEntry', 'jumpToUnreadEntry', 'loadNewerMessages', 'loadMessageAnchor', 'returnToLatestMessages', 'markMessageVisible', 'setFollowingTail', 'threadScope', 'setActiveChatId')
+  const readChatStore = useChatStoreReader()
+  const activeChat = useActiveChatIdentity()
+  const { getImRepository, subscribeAccountRevision, identitiesById, activeChatId, messages, loadingMessages, messagesError, refreshMessages, sendMessage, toggleReaction, memberReadSeqs, clearMessages, deleteMessage, sendAttachments, pinChat, deleteChat, leaveGroup, setChatNotificationLevel, loadOlderMessages, messageWindow, unreadEntry, jumpToUnreadEntry, loadNewerMessages, loadMessageAnchor, returnToLatestMessages, markMessageVisible, setFollowingTail, threadScope, setActiveChatId } = useChatStore('getImRepository', 'subscribeAccountRevision', 'identitiesById', 'activeChatId', 'messages', 'loadingMessages', 'messagesError', 'refreshMessages', 'sendMessage', 'toggleReaction', 'memberReadSeqs', 'clearMessages', 'deleteMessage', 'sendAttachments', 'pinChat', 'deleteChat', 'leaveGroup', 'setChatNotificationLevel', 'loadOlderMessages', 'messageWindow', 'unreadEntry', 'jumpToUnreadEntry', 'loadNewerMessages', 'loadMessageAnchor', 'returnToLatestMessages', 'markMessageVisible', 'setFollowingTail', 'threadScope', 'setActiveChatId')
   const { user } = useAuth()
   const surfaceTab = useImPageTab(imPage), surfaceVisible = surfaceTab === 'chats' && !hidden
   const surfaceElement = useRef<HTMLDivElement>(null)
@@ -356,11 +358,11 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     if (!user || forwardMessages.length === 0) return
     for (const msg of forwardMessages) {
       for (const targetChatId of targetChatIds) {
-        await forwardMessage(msg, targetChatId)
+        await readChatStore().forwardMessage(msg, targetChatId)
       }
     }
     if (selectMode) exitSelectMode()
-  }, [forwardMessages, user, selectMode, exitSelectMode, forwardMessage])
+  }, [forwardMessages, user, selectMode, exitSelectMode, readChatStore])
 
   // Listen for RPC-triggered quote
   useEffect(() => {
@@ -410,11 +412,9 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     () => buildGroupRosterCandidates(groupCollabSnapshot, identitiesById, chatNameScope.names),
     [groupCollabSnapshot, identitiesById, chatNameScope],
   )
+  const splitChats = useChatsWhile(Boolean(splitTopicChatId))
   // Topic addressing includes its source chat; display clashes use only actual topic members.
-  const splitTopicMemberIds = useMemo(
-    () => (splitTopicChatId ? chats.find((chat) => chat.id === splitTopicChatId)?.member_user_ids : undefined),
-    [chats, splitTopicChatId],
-  )
+  const splitTopicMemberIds = splitChats.find((chat) => chat.id === splitTopicChatId)?.member_user_ids
   const splitMentionMembers = useMemo(() => {
     if (!topicSplitOpen || !activeChat) return composerGroupMembers
     const candidates = topicMentionCandidates(composerGroupMembers.map(member => ({ ...member, name: identitiesById[member.id]?.display_name ?? member.name })), activeChat.member_user_ids ?? (activeChat.peer_user_id ? [activeChat.peer_user_id] : []), splitTopicMemberIds, identitiesById)
@@ -613,7 +613,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       messages={topicSurface.splitLine.messages} history={topicSurface.splitLine}
       loading={topicSurface.splitLine.loadingMessages}
       memberProfiles={messageMemberProfiles}
-      visibleChats={chats}
+      visibleChats={splitChats}
       sourceMessagePreview={topicSourceMessagePreview}
       focusComposerToken={splitFocusToken}
       memberReadSeqs={topicSurface.splitLine.memberReadSeqs}
@@ -901,9 +901,8 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         />
       ) : null}
       {forwardMessages.length > 0 && activeChatId ? (
-        <ForwardMessageDialog
+        <LiveForwardMessageDialog
           messages={forwardMessages}
-          chats={chats}
           // 被转发的消息知道自己从哪条 chat 来。写死 activeChatId 会在分栏转发时排掉「来源群」
           // (最自然的目的地),而话题自己反而留在列表里 —— 选中就是原地复制一份还挂「转发」。
           sourceChatId={forwardMessages[0]?.chat_id ?? activeChatId}

@@ -6,6 +6,7 @@ import { createChatState } from '@session-chat/state/chat-state';
 import type { TranscriptTurn } from '@session-chat/model';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
 import fixture from './fixtures/nonempty-process-967.json';
+import { plainMessageBody } from './fixtures/plain-message-body';
 
 // Only the reported native round: private text, identities and destinations were
 // replaced. Its event order, clocks, tool kinds and successful sends are retained.
@@ -21,7 +22,7 @@ function mount() {
   const host = document.createElement('div');
   host.style.cssText = 'position:fixed;inset:0;width:900px;height:1200px';
   document.body.append(host);
-  const view = createChatView({ context, state, parent: host });
+  const view = createChatView({ context, state, parent: host, commands: { onMessageBodyMount: plainMessageBody } });
   disposers.push(() => { view.dispose(); state.dispose(); context.dispose(); host.remove(); });
   const header = () => host.querySelector<HTMLButtonElement>(`[data-conversation-process="${processId}"]`)!;
   const steps = () => host.querySelector<HTMLElement>(`[data-process-id="${processId}:steps"]`);

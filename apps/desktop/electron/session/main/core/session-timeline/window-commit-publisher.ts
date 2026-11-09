@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { setImmediate } from 'node:timers/promises';
-import { readWindowFrame, writeWindowFrame } from '@gugu/session-core/session-record/window-cache/disk-frame';
+import { readWindowFrame, writeWindowFrame } from './window-commit-projection-disk';
 import { createWindowBudget } from '@gugu/session-core/session-record/window-cache/read-budget';
 import type { WindowBudget, WindowIoCounters } from '@gugu/session-core/session-record/window-cache/types';
 import { snapshotWindowCommitReceipt, type createWindowCommitReceipts, type WindowCommitReceipt } from './window-commit-receipt';

@@ -25,6 +25,3 @@ export const name = style({
 export const icon = style({ flex: '0 0 auto', width: metrics.icon, height: metrics.icon });
 export const chevron = style({ flex: '0 0 auto', width: metrics.chevron, height: metrics.chevron, transition: 'transform 200ms ease',
   '@media': { '(prefers-reduced-motion: reduce)': { transition: 'none' } } });
-export const groupReply = style({ display: 'flex', alignItems: 'center', height: 32, fontSize: 12, lineHeight: '18px', color: vars.fgMuted, minWidth: 0 });
-export const groupReplyButton = style({ all: 'unset', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-  ':hover': { color: vars.fg }, ':focus-visible': { outline: `2px solid ${vars.fgMuted}` } });

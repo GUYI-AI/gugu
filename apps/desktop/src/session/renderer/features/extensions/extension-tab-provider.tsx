@@ -26,6 +26,7 @@ import { installedExtensionsStore, WORKSPACE_APP_ID } from './installed-extensio
 import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { placeOnScreen } from '@renderer/app/screen-layout-actions';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
+import { followLink } from '@/lib/guguLinks';
 import { fileTabLabels } from '@renderer/features/tabs/file-tab-label';
 import { fileBaseName, filePathKey } from '@renderer/features/sessions/stores/workspace-path';
 import { showModal } from '@renderer/lib/modal/modal-provider';
@@ -275,6 +276,12 @@ export function createExtensionTabProvider(
               runExtensionCommand(sessionId, tab.tabId, command.id);
             },
           })),
+          {
+            id: `${kind}:app-settings`,
+            label: translateSessionMessage('extensions.appSettings'),
+            group: 'extension',
+            run: () => void followLink({ kind: 'app-detail', extensionId: parseExtensionTabKind(kind)!.extensionId, fromApp: true }),
+          },
         ],
         [blockId, claimedFile, perSession, place, sessionId, tab.tabId]
       );

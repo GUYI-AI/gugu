@@ -5,6 +5,8 @@ import { getLocaleSnapshot, subscribeLocale } from '@/i18n';
 import {
   declaredContexts,
   extensionTabKind,
+  isOwnPage,
+  parseExtensionTabKind,
   type ExtensionManifest,
   type ExtensionTabKind
 } from '@shared/extensions/manifest';
@@ -44,6 +46,10 @@ export interface ExtensionTabContributionEntry {
    * an uncaught error, in a tab nobody asked for; F3 for the group-only ones, whose session tab made a page at install).
    */
   forFiles: boolean;
+  /** It stands alone as a page (`isOwnPage`): not a file opener, not the App's card in a message. */
+  ownPage: boolean;
+  /** The person took this page out of the menus (`hiddenTabs`): nothing offers it, though a file or an agent can still open it. */
+  hidden: boolean;
   /** One page in each task (`perSession`): each task keeps its own, so it is never moved from one task to another. */
   perSession: boolean;
 }
@@ -78,6 +84,8 @@ export class InstalledExtensionsStore {
   appIcons: Record<string, string> = {};
   /** The Apps pinned to the far-left rail, in order (this machine's dock). */
   dock: string[] = [];
+  /** The pages the person took out of the menus, by App (this machine's). */
+  hiddenTabs: Record<string, string[]> = {};
   /** Ids the user has switched off — installed, listed, but not offered (#5265). */
   disabled: string[] = [];
   /** Market Apps not updated by themselves (owner 10-19): switched off, or an older version picked. Main's, mirrored. */
@@ -109,6 +117,18 @@ export class InstalledExtensionsStore {
   constructor(private readonly api: InstalledExtensionsApi = rpc.extensions) {
     makeAutoObservable<InstalledExtensionsStore, 'api'>(this, { api: false });
     subscribeLocale(() => runInAction(() => { this.locale = getLocaleSnapshot().resolvedLocale; }));
+  }
+
+  /**
+   * The file an App names for a chat (`chatFile`) is that App's own state, not a document of the person's: its tab goes by
+   * the App's name. `fileName` may also be the name shown for it, its claimed suffix dropped (a block keeps only that).
+   */
+  isChatFile(kind: string | null | undefined, fileName: string | undefined): boolean {
+    const tabName = kind ? parseExtensionTabKind(kind) : null;
+    const tab = tabName && this.manifestFor(tabName.extensionId)?.contributes.tabs.find((candidate) => candidate.name === tabName.tabName);
+    const chatFile = tab?.chatFile?.toLowerCase();
+    const name = fileName?.toLowerCase();
+    return !!chatFile && !!name && (chatFile === name || chatFile.startsWith(`${name}.`));
   }
 
   /** A default App page uses its localized name; specifically named subpages keep their contribution title. */
@@ -152,6 +172,8 @@ export class InstalledExtensionsStore {
         enabled: this.isEnabled(manifest.id),
         preinstalled: this.isPreinstalled(manifest.id),
         forFiles: declaredContexts(tab).length > 0,
+        ownPage: isOwnPage(manifest, tab),
+        hidden: this.hiddenTabs[manifest.id]?.includes(tab.name) === true,
         perSession: tab.perSession === true,
       }));
     });
@@ -160,12 +182,12 @@ export class InstalledExtensionsStore {
   /**
    * The tabs a task session can have of their own — one list for every way a task opens one (its「+」, its empty pane, the
    * phone's task page): the tabs that open no file, of the Apps that are on — the folder App's page among them (P4: a
-   * task's folder is that App, its conversation's folder and its working copy). Not a tab that opens files (`forFiles`). A
+   * task's folder is that App, its conversation's folder and its working copy). Not a tab that opens files, nor an App's card in a message (`ownPage`). A
    * switched-off App is left out, not greyed: the menus list what can be opened (owner 10-20); switching it on is the
    * 「App」page's.
    */
   get enabledTabContributions(): ExtensionTabContributionEntry[] {
-    return this.allTabContributions.filter((entry) => entry.enabled && !entry.forFiles);
+    return this.allTabContributions.filter((entry) => entry.enabled && entry.ownPage && !entry.hidden);
   }
 
   /** Every enabled App's resident page, preinstalled ones included: what the resident layer keeps alive. */
@@ -178,7 +200,10 @@ export class InstalledExtensionsStore {
    * it can be pinned. A page per task is in many places at once, so it has no one place for the rail to go to.
    */
   mainTabOf(extensionId: string): ExtensionTabContributionEntry | null {
-    return this.allTabContributions.find((entry) => entry.extensionId === extensionId && !entry.forFiles && !entry.perSession) ?? null;
+    const pages = this.allTabContributions.filter((entry) => entry.extensionId === extensionId && !entry.forFiles && !entry.perSession);
+    // A card is the main page only of an App with nothing else (Data Lens): hiding an App's page never makes its card the page.
+    const own = pages.filter((entry) => entry.ownPage);
+    return (own.length > 0 ? own : pages).find((entry) => !entry.hidden) ?? null;
   }
 
   /** What the rail shows: the pinned Apps that are installed, on, and have a page of their own, in the person's order. */
@@ -215,6 +240,10 @@ export class InstalledExtensionsStore {
     // the rail or a chat's App list besides — decided by origin, not manifest (统筹 09-29, L3).
     if (!main || !main.enabled || main.preinstalled) return null;
     return { extensionId, name: main.extensionName, kind: main.kind, iconDataUrl: this.appIcons[extensionId] ?? null };
+  }
+
+  applyHiddenTabs(hiddenTabs: Record<string, string[]>): void {
+    this.hiddenTabs = hiddenTabs;
   }
 
   applyDock(dock: readonly string[]): void {
@@ -350,6 +379,7 @@ export class InstalledExtensionsStore {
       this.icons = icons ?? {};
       this.appIcons = appIcons ?? {};
       this.dock = dock ?? [];
+      this.hiddenTabs = list.hiddenTabs ?? {};
       this.disabled = disabled ?? [];
       this.autoUpdateOff = autoUpdateOff ?? [];
       this.quit = quit ?? [];
