@@ -6,7 +6,7 @@ const OWNER = '11000000-0000-4000-8000-000000000001';
 const OTHER_OWNER = '22000000-0000-4000-8000-000000000002';
 const state = vi.hoisted(() => ({
   owner: '',
-  apps: [] as { id: string; source: boolean; enabled: boolean; allowed: boolean; binding: StoredUnreadBinding | null }[],
+  apps: [] as { id: string; source: boolean; enabled: boolean; allowed: boolean; binding: StoredUnreadBinding | null; publisherDenied?: boolean }[],
   active: [] as string[],
   error: false,
   afterRead: undefined as (() => void) | undefined,
@@ -23,7 +23,7 @@ vi.mock('./extensions-root', () => ({ extensionsService: () => ({
   hasCapability: (id: string, capability: string) => capability === 'chat:unread' && state.apps.find(app => app.id === id)?.allowed,
   conversationUnreadBinding: (_owner: string, id: string) => {
     const app = state.apps.find(app => app.id === id);
-    if (!app?.allowed || !app.enabled || !app.source) throw Object.assign(new Error('Denied'), { code: 'denied' });
+    if (!app?.allowed || !app.enabled || !app.source || app.publisherDenied) throw Object.assign(new Error('Denied'), { code: 'denied' });
     return app.binding;
   },
 }) }));
@@ -44,7 +44,7 @@ vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: () => ({
 const { grantedUnreadBindings } = await import('./app-unread-bindings');
 
 function add(id: string, chatId: string) {
-  const app = { id, source: true, enabled: true, allowed: true, binding: {
+  const app: (typeof state.apps)[number] = { id, source: true, enabled: true, allowed: true, binding: {
     ownerId: OWNER, name: 'main', chatId, handle: `${id}-handle`,
   } as StoredUnreadBinding | null };
   state.apps.push(app);
@@ -67,6 +67,14 @@ describe('host unread source authority', () => {
     state.active = ['active'];
     expect(await grantedUnreadBindings(OWNER)).toEqual({ first: first.binding, 'same-target': state.apps[1].binding });
     expect(membership).toHaveBeenCalledExactlyOnceWith('active_members', OWNER, 'chat_id', ['active', 'left']);
+  });
+
+  it('treats a grant denied on the first read (no verified publisher) as absent without hiding other Apps', async () => {
+    const kept = add('kept', 'active');
+    add('unverified', 'active').publisherDenied = true;
+    state.active = ['active'];
+    expect(await grantedUnreadBindings(OWNER)).toEqual({ kept: kept.binding });
+    expect(membership).toHaveBeenCalledExactlyOnceWith('active_members', OWNER, 'chat_id', ['active']);
   });
 
   it('bounds membership requests with the shared chunk budget', async () => {

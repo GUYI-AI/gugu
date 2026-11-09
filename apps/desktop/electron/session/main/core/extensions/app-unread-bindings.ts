@@ -72,8 +72,13 @@ export async function grantedUnreadBindings(expectedOwner: string): Promise<Reco
   for (const { manifest } of service.list().extensions) {
     const name = manifest.contributes.unreadSource?.binding;
     if (!name || !service.isEnabled(manifest.id) || !service.hasCapability(manifest.id, 'chat:unread')) continue;
-    const binding = service.conversationUnreadBinding(ownerId, manifest.id, name);
-    if (binding) candidates.push({ extensionId: manifest.id, binding });
+    try {
+      const binding = service.conversationUnreadBinding(ownerId, manifest.id, name);
+      if (binding) candidates.push({ extensionId: manifest.id, binding });
+    } catch (error) {
+      // Same rule as the re-check below: a denied grant (e.g. no verified publisher) is absence for this App only.
+      if ((error as { code?: string }).code !== 'denied') throw error;
+    }
   }
   const client = createGuguSupabaseClient({ schema: 'chat', headers: { Authorization: `Bearer ${token}` } });
   const memberships = await fetchInChunks([...new Set(candidates.map(({ binding }) => binding.chatId))], async ids => {
