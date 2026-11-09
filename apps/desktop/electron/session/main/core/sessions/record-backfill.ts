@@ -175,6 +175,7 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
     };
 
     let session: IngestSession | null = null;
+    const startedAt = Date.now();
     try {
       const { mkdir } = await import('node:fs/promises');
       await mkdir(dir, { recursive: true });
@@ -188,6 +189,8 @@ export async function syncStoredHistoryFromRecord(sessionId: string, options: { 
         if (status === 'retry_full' && mode !== 'cursor') throw new Error('record-ingest: retry_full without a checkpoint');
       }
       const { summary } = session!;
+      log.info('[record-backfill] record ingest', { sessionId, status: summary.status, resumed: summary.resumed,
+        revise: summary.revise, append: summary.append, ms: Date.now() - startedAt });
       if (summary.status === 'retry_full' || summary.status === 'need_store') throw new Error(`record-ingest: ${summary.status} after every mode`);
       if (summary.prunedDrops > 0) log.info('[record-backfill] dropped late events for settled turns', { sessionId, events: summary.prunedDrops });
       if (summary.status === 'unavailable') return result('unavailable');
