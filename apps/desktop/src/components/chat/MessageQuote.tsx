@@ -2,9 +2,8 @@ import type { MouseEvent, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
-import { composerCardPreview } from '@gugu/core/shared/ui/taskCardModels'
 import { widgetMessagePreview } from '@gugu/core/shared/ui/widgetModels'
-import { displayAgentReferences } from '@/lib/mentionMdast'
+import { quotedContentView } from './quotedContent'
 import { Reply } from '@/lib/icons'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
 import { ComposerCardHead } from './ComposerCardView'
@@ -26,8 +25,7 @@ export function MessageQuote({ msg, quoterIsAgent, memberProfiles, onShowMessage
   quoterIsAgent: boolean
   memberProfiles?: Record<string, MemberProfileCardModel>
 }) {
-  const quotedContent = partialQuotedContent(msg)?.quoteText ?? widgetMessagePreview(msg.reply_to_content) ?? msg.reply_to_content
-  const quotedCard = composerCardPreview(quotedContent)
+  const { card: quotedCard, text: quotedText } = quotedContentView(partialQuotedContent(msg)?.quoteText ?? widgetMessagePreview(msg.reply_to_content) ?? msg.reply_to_content)
   const showQuoted = (event: MouseEvent) => {
     event.stopPropagation()
     if (msg.reply_to_message_id) onShowMessage?.(msg.reply_to_message_id)
@@ -38,7 +36,7 @@ export function MessageQuote({ msg, quoterIsAgent, memberProfiles, onShowMessage
       onClick={onShowMessage ? showQuoted : undefined}
       head={quotedCard ? <ComposerCardHead type={quotedCard.type} agentUserId={quoterIsAgent ? msg.sender_user_id : null} />
         : resolveOrLoud(memberProfiles?.[msg.reply_to_sender_user_id ?? '']?.displayName, `reply sender ${msg.reply_to_message_id ?? msg.id}`)}
-      text={displayAgentReferences(quotedCard?.text ?? quotedContent ?? '', (_id, label) => `@${label}`)}
+      text={quotedText}
       preview={Boolean(disclosure)}
     />
   )
@@ -92,11 +90,10 @@ export function DirectMessageQuote({ msg, quoterIsAgent, memberProfiles, onShowM
   onShowMessage?: (id: string) => void
 }) {
   const { t } = useTranslation('messaging')
-  const quotedContent = partialQuotedContent(msg)?.quoteText ?? widgetMessagePreview(msg.reply_to_content) ?? msg.reply_to_content
-  const quotedCard = composerCardPreview(quotedContent)
+  const { card: quotedCard, text: quotedText } = quotedContentView(partialQuotedContent(msg)?.quoteText ?? widgetMessagePreview(msg.reply_to_content) ?? msg.reply_to_content)
   const sender = quotedCard ? <ComposerCardHead type={quotedCard.type} agentUserId={quoterIsAgent ? msg.sender_user_id : null} />
     : resolveOrLoud(memberProfiles?.[msg.reply_to_sender_user_id ?? '']?.displayName, `reply sender ${msg.reply_to_message_id ?? msg.id}`)
-  const source = displayAgentReferences(quotedCard?.text ?? quotedContent ?? '', (_id, label) => `@${label}`)
+  const source = quotedText
   const summary = quoteSummary(source)
   const showQuoted = (event: MouseEvent) => {
     event.stopPropagation()

@@ -1,4 +1,5 @@
 import { findEntityOwner } from './entity-owner';
+import { messageEntityId } from './ids';
 /** Stateful projection of domain events. Protocol decoding belongs to transport/history ingress. */
 
 import type { AgentState } from '../models/agents';
@@ -44,6 +45,36 @@ export class AcpTranscriptParser {
 
   pushEvent(event: NormalizedEvent, at = Date.now()): void {
     this.state = reduce(this.state, { kind: 'event', event, at }, this.deps);
+  }
+
+  /** Reserve the echo's native stream position without publishing a second user entity. */
+  reserveUserMessage(continueTurn: boolean): { turnId: string; afterItemId?: string } {
+    if (!continueTurn || !this.state.transcript.active) {
+      this.state = reduce(this.state, { kind: 'user_boundary', at: Date.now() }, this.deps);
+    }
+    const turn = this.state.transcript.active!;
+    return { turnId: turn.id, afterItemId: turn.items.at(-1)?.id };
+  }
+
+  /** The receipt may locate an existing client entity in a different native foreground cycle. */
+  placeUserMessage(event: Extract<NormalizedEvent, { kind: 'message' }>, position: { turnId: string; afterItemId?: string }): void {
+    if (!event.messageId) throw new Error('A submitted user entity requires a message ID');
+    const owner = this.entityOwner(event);
+    if (!owner || owner.id === position.turnId) return;
+    const id = messageEntityId(owner.id, { ...event, messageId: event.messageId });
+    const message = owner.items.find(item => item.kind === 'message' && item.id === id)!;
+    const update = (turn: TranscriptTurn): TranscriptTurn => {
+      if (turn.id === owner.id) {
+        const items = turn.items.filter(item => item !== message);
+        return { ...turn, items, initiator: items.some(item => item.kind === 'message' && item.role === 'user') ? 'user' : 'agent' };
+      }
+      if (turn.id !== position.turnId) return turn;
+      const offset = position.afterItemId ? turn.items.findIndex(item => item.id === position.afterItemId) + 1 : 0;
+      return { ...turn, initiator: 'user', items: [...turn.items.slice(0, offset), message, ...turn.items.slice(offset)]
+        .map((item, seq) => ({ ...item, seq })) };
+    };
+    this.state = { ...this.state, transcript: { committed: this.state.transcript.committed.map(update),
+      active: this.state.transcript.active ? update(this.state.transcript.active) : null } };
   }
 
   /**

@@ -4,7 +4,7 @@ import type { SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
 import { Button } from '@/components/ui/Button'
 import { MessageCircle, Search, Users } from '@/lib/icons'
 import { AUTOMATION_TEST_IDS } from '@/lib/automationDom'
-import { UI_EVENTS } from '@/lib/uiEvents'
+import { openGlobalSearch } from '@renderer/features/global-search/search-session'
 import { tabItemStyle } from './settledTab'
 import { PhoneViewportContext, type PhoneViewport } from './usePhoneViewport'
 
@@ -66,7 +66,7 @@ export function PhoneTabBar({ activeTab, onTabChange, pendingContactsCount, barR
           </Button>
         })}
       </div>
-      <Button variant="ghost" className="gg-phone-nav-search" data-testid="phone-list-search" aria-label={mt('chatList.search')} onPointerDown={(event) => event.preventDefault()} onClick={() => window.dispatchEvent(new CustomEvent(UI_EVENTS.openPhoneListSearch, { detail: activeTab }))}><Search /></Button>
+      <Button variant="ghost" className="gg-phone-nav-search" data-testid="phone-list-search" aria-label={mt('chatList.search')} onPointerDown={(event) => event.preventDefault()} onClick={() => openGlobalSearch()}><Search /></Button>
     </nav>
   )
 }

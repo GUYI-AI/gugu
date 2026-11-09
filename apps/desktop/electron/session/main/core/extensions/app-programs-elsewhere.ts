@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { AppCallAction, RemoteAppCaller } from '@gugu/session-core/session-record/contract';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
+import { workspaceFolder } from '@shared/extensions/app-runtime-protocol';
 import { appCallAction, notOnSessionMachine, overCallLimit } from '@shared/extensions/machine-call';
 import { machineVerbs } from '@main/core/extensions/machine-verbs';
 import { events } from '@main/lib/events';
@@ -32,19 +33,15 @@ export async function sessionMachine(sessionId: string): Promise<SessionMachine 
   if (await agentSessionContext(sessionId)) return null;
   const known = machines.get(sessionId);
   if (known) return known;
-  const { sessionsElsewhere } = await import('@main/core/extensions/extension-agents');
-  const { rows, unreached } = await sessionsElsewhere();
-  for (const { session, deviceId, deviceLabel } of rows) {
-    if (!deviceId) continue;
-    machines.set(session.conversationId, {
-      deviceId,
-      deviceLabel,
-      projectId: session.projectId || null,
-      agentId: session.agent ? `user:${session.agent.userId}` : null,
-    });
+  const { otherMachines } = await import('@main/core/sessions/session-family');
+  const { found, unreached } = await otherMachines().sessionHome(sessionId);
+  if (found?.listsAgents) {
+    const { deviceId, label, session } = found;
+    const machine = { deviceId, deviceLabel: label, projectId: session.projectId || null, agentId: session.agent ? `user:${session.agent.userId}` : null };
+    machines.set(sessionId, machine);
+    return machine;
   }
-  const found = machines.get(sessionId);
-  if (found) return found;
+  if (found) unreached.push({ deviceId: found.deviceId, label: found.label, detail: `"${found.label}" (device:${found.deviceId}) runs a gugu too old to list its agents; it updates itself when idle` });
   const tail = unreached.length ? ` (not asked: ${unreached.map((machine) => machine.label ?? machine.detail).join(', ')})` : '';
   throw Object.assign(new Error(`Session ${sessionId} is not on this computer or on your other online computers${tail}`), {
     code: unreached.length ? 'unavailable' : 'not-found',
@@ -77,6 +74,7 @@ export async function callOnSessionMachine(
   method: string,
   args: Record<string, unknown>,
   workedByAgent: boolean,
+  handed?: AppCallAction['handed'],
 ): Promise<{ there: false } | { there: true; value: unknown }> {
   const { otherMachines } = await import('@main/core/sessions/session-family');
   const machine = typeof sessionId === 'string' ? await sessionMachine(sessionId)
@@ -88,7 +86,7 @@ export async function callOnSessionMachine(
   if (workedByAgent && method === 'callProgram') {
     throw Object.assign(new Error('A page an agent works calls its program on this computer only; this session is on another machine'), { code: 'invalid' });
   }
-  const action = appCallAction(sessionId, app.manifest.version, method, args, randomUUID());
+  const action = appCallAction(sessionId, app.manifest.version, method, args, randomUUID(), handed);
   const tooLarge = overCallLimit('call', action, action);
   if (tooLarge) throw tooLarge;
   try {
@@ -127,7 +125,7 @@ export async function answerAppCall(caller: RemoteAppCaller, action: AppCallActi
   const result = (async () => {
     await admit(caller, action);
     reached = true;
-    const value = await machineVerbs[action.method as MachineVerb | PlaceVerb](caller.extensionId, action.args, action.session_id ? { sessionId: action.session_id } : {});
+    const value = await machineVerbs[action.method as MachineVerb | PlaceVerb](caller.extensionId, action.args, action.session_id ? { sessionId: action.session_id } : {}, action.handed ?? null);
     const tooLarge = overCallLimit('answer', action, value);
     if (tooLarge) throw tooLarge;
     log.info('[app-programs] a call done for a page on another machine', { device: caller.deviceId, app: caller.extensionId, session: action.session_id, method: action.method });
@@ -181,6 +179,9 @@ async function admit(caller: RemoteAppCaller, action: AppCallAction): Promise<vo
   const tooLarge = overCallLimit('call', action, action);
   if (tooLarge) throw tooLarge;
   if (verbFacts(action.method)?.machine !== 'place') admitAppCall(caller, action, service, extensionPrograms);
+  // A project folder is only read from elsewhere: this machine holds that line too, whatever the asker's host checked.
+  const folder = workspaceFolder((action.args.place ?? action.args.ref) as { workspace?: string } | null | undefined);
+  if (folder && verbFacts(action.method)?.reads !== true) throw Object.assign(new Error('A folder on this computer is read-only from another one'), { code: 'denied' });
   if (action.device_id) {
     const { otherMachines } = await import('@main/core/sessions/session-family');
     if (!(await otherMachines().isThisDevice(action.device_id))) throw Object.assign(new Error('App call targets another machine'), { code: 'invalid' });

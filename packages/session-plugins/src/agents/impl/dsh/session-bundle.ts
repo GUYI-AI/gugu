@@ -62,6 +62,10 @@ export const dshSessionBundleDescriptor = {
     userPath: '.dsh',
     evidence: '@deepseek-ai/dsh-home-paths 0.2.1-rc.5:`DSH_HOME_ENV = "DSH_HOME"`,默认 `~/.dsh`',
   } satisfies NativeHome,
+  vendorDataOff: {
+    env: { DSH_TELEMETRY_DISABLED: '1' },
+    evidence: 'https://www.npmjs.com/package/@deepseek-ai/dsh-base 0.2.1-rc.5: DSH_TELEMETRY_DISABLED, any non-empty value turns the OTel feedback export off',
+  },
   platform: harnessPlatform,
   credentialLifecycle: {
     'acp': {
@@ -152,7 +156,6 @@ export function materializeDshSessionBundle(
   const env = Object.fromEntries(
     Object.entries(bundle.env).filter((entry): entry is [string, string] => entry[1] !== undefined)
   );
-  env.DSH_TELEMETRY_DISABLED = '1';
   // 所选之档这一家没有(plan)⇒ 落到不比它更松的最近一档,一档都落不到就抛 —— 与注册表收档同一个判据。
   const wanted = bundle.autonomy?.permissionMode
     ?? (bundle.autonomy?.mode === 'full-access' ? 'full-access' : bundle.autonomy ? 'edit' : undefined);

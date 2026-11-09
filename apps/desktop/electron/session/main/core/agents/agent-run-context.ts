@@ -1,6 +1,6 @@
 import type { AgentRunContext } from '@gugu/session-core/agents/agent-run-context';
 import { composeAgentSpawnEnv } from '@gugu/session-core/agents/agent-run-context';
-import { harnessSelfUpdateLaunch } from '@gugu/session-core/agents/plugins';
+import { harnessPinnedEnv } from '@gugu/session-core/agents/plugins';
 import type { AgentProgramRole } from '@gugu/session-core/deps/runtime';
 import type { BridgeWait } from '@main/core/agents/acp-bridge';
 import { getPlugin } from '@main/core/agents/plugin-registry';
@@ -60,14 +60,14 @@ export async function resolveLocalAgentRunContext(
     // 模型探针全都读不到,于是「我明明在设置里配了 base URL」在一半的界面上不成立。
     providerVars: settings?.env ?? {},
   });
-  const selfUpdate = selfUpdateEnv(providerId);
+  const pinned = pinnedEnv(providerId);
   // 桥接按这份 CLI 的版本配(#6394)。探版本时带上关自更新的那格:别让 `--version` 顺手把它升了。
   const { resolveHostAcpAdapterEntry } = await import('@main/core/agents/acp-bridge');
   const acpAdapterEntry = await resolveHostAcpAdapterEntry(
     providerId,
     options.role,
     cli,
-    { ...env, ...selfUpdate },
+    { ...env, ...pinned },
     options.bridgeWait
   );
 
@@ -84,7 +84,7 @@ export async function resolveLocalAgentRunContext(
   return {
     cli,
     env,
-    selfUpdateEnv: selfUpdate,
+    pinnedEnv: pinned,
     // 这一家要不要另一个 node 跑(打包机上的 electron 不带 import attributes 时用它)。
     // worker 从前读自己那份 `process.env.GUGU_NODE_BIN` —— 快照,且模型探针那条路压根没读。
     runtimeExecutable: process.env.GUGU_NODE_BIN?.trim() || undefined,
@@ -122,7 +122,7 @@ export async function resolveLocalAgentSpawnEnv(
       configRootEnv,
       // 体检问的是「会话里跑起来的是哪一版」—— copilot 关了自更新就不再挑缓存里更新的那份,
       // 探针不带同一格就会报出一个会话根本不跑的版本。
-      selfUpdateEnv: selfUpdateEnv(providerId),
+      pinnedEnv: pinnedEnv(providerId),
       extraArgs: [],
     },
     {}
@@ -162,7 +162,7 @@ export function parseExtraArgs(value: string | undefined): string[] {
   return value.trim().split(/\s+/);
 }
 
-/** descriptor 声明的关自更新 env(#6186)。argv 那一种只到终端腿,由起终端的那几处读同一份声明。 */
-function selfUpdateEnv(providerId: string): Record<string, string> {
-  return { ...harnessSelfUpdateLaunch(getPlugin(providerId).capabilities.sessionBundle).env };
+/** Env the descriptor pins for this harness: self-update off (#6186), vendor data off. argv-only channels reach the terminal leg from the same declaration. */
+function pinnedEnv(providerId: string): Record<string, string> {
+  return { ...harnessPinnedEnv(getPlugin(providerId).capabilities.sessionBundle) };
 }

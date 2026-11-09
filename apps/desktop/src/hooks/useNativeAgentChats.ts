@@ -7,6 +7,8 @@ import { useMobileShell } from '@/hooks/useMobileShell'
 import { isOwnedAgentPeer, useOwnedAgentEntries } from '@/lib/ownedAgentConversation'
 import { directoryRows, useDirectoryDevices, useLiveDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
+import { useActivityPreviewText } from './useActivityPreviewText'
+import { hasPreviewActivity } from '@gugu/session-core/session-record/preview-activity'
 
 const EMPTY_SESSIONS: readonly SessionpageSessionSummary[] = []
 
@@ -16,6 +18,7 @@ export function useNativeAgentChats(chats: readonly ChatItem[]): ChatItem[] {
   const devices = useDirectoryDevices()
   useOwnedAgentEntries()
   const mobile = useMobileShell()
+  const activityText = useActivityPreviewText()
   const previousBuckets = useRef<Record<string, SessionpageSessionSummary[]>>({})
   // Group the directory once; unchanged buckets remain the same projection dependency.
   const sessionsByAgent = useMemo(() => {
@@ -35,7 +38,7 @@ export function useNativeAgentChats(chats: readonly ChatItem[]): ChatItem[] {
     // Several conversations can belong to the same agent; the latest reply can be in an older task.
     const last = sessions.reduce<SessionpageSessionSummary['nativeLastMessage']>((latest, session) => {
       const candidate = session.nativeLastMessage
-      return candidate && (!latest || Date.parse(candidate.at) > Date.parse(latest.at)) ? candidate : latest
+      return candidate && hasPreviewActivity(candidate) && (!latest || Date.parse(candidate.at) > Date.parse(latest.at)) ? candidate : latest
     }, undefined)
     const notifications = sessions[0]?.nativeOwnerNotificationUnreadCount ?? 0
     const withNotifications = notifications ? { ...chat, unread_count: chat.unread_count + notifications } : chat
@@ -44,8 +47,8 @@ export function useNativeAgentChats(chats: readonly ChatItem[]): ChatItem[] {
     // row stays, placed by when the task was last used: it is the way in, and that page says the machine is away.
     // ❌ On a computer: its session page waits for that machine without a word, so the row would do nothing when clicked.
     const seen = mobile && sessions[0] && last === undefined && !chat.last_message_at ? sessions[0].lastInteractedAt : undefined
-    return newer ? { ...withNotifications, last_message_preview: last.text, last_message_at: last.at, last_message_failure: null } : seen ? { ...withNotifications, last_message_at: seen } : withNotifications
-  }), [mobile])
+    return newer ? { ...withNotifications, last_message_preview: activityText(last.activity) ?? last.text, last_message_at: last.at, last_message_notice: null } : seen ? { ...withNotifications, last_message_at: seen } : withNotifications
+  }), [mobile, activityText])
   const shared = useRef<ChatItem[]>([])
   shared.current = shareRows(shared.current, chats.map(chat => project(chat,
     (chat.kind === 'dm' || chat.kind === 'ai') && isOwnedAgentPeer(chat.peer_user_id)

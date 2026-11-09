@@ -76,15 +76,13 @@ function describe(err: unknown): string {
 
 export function CreateSessionPage({
   device,
-  birthGroup = null,
-  onClearBirthGroup,
+  taskGroup = null,
   onBack,
   onCreated,
 }: {
   device: Device
-  /** 群成员里点的「新建 Agent」:建出来的 agent 一出生就进这个群(请求的 chatId)。null = 不进群。 */
-  birthGroup?: { chatId: string; name: string } | null
-  onClearBirthGroup?: () => void
+  /** 群输入框的「新任务」(非项目群,同桌面 TaskDispatchComposer):首句落成这个群里的任务卡,agent 进群(chatId + taskChatId)。 */
+  taskGroup?: { chatId: string; name: string } | null
   onBack?: () => void
   /** 建成了:带着攒好的摘要与那句话跳进时间线(那句由时间线页接着画)。 */
   onCreated: (session: SessionpageSessionSummary, firstPrompt: string, result?: SessionpageSessionCreateResult) => void
@@ -212,7 +210,7 @@ export function CreateSessionPage({
           ...(selection.model ? { model: selection.model } : {}),
           ...(selection.permissionMode ? { permissionMode: selection.permissionMode } : {}),
           ...(selection.effort ? { effort: selection.effort } : {}),
-          ...(birthGroup ? { chatId: birthGroup.chatId } : {}),
+          ...(taskGroup ? { chatId: taskGroup.chatId, taskChatId: taskGroup.chatId } : {}),
         }
         if (phone) {
           rememberPhoneSessionCreate(ownerId!, device.device_id, request)
@@ -326,17 +324,12 @@ export function CreateSessionPage({
     </div>
   ) : null
 
-  // 生在哪个群里:与上面同一种说明口气,带一个「不加入」。
-  const requestedGroup = phoneAttempt ? phoneAttempt.chatId : birthGroup?.chatId
-  const groupName = requestedGroup === birthGroup?.chatId ? birthGroup?.name : '上次的群聊'
-  const birthGroupNotice = requestedGroup ? (
-    <div className="gg-aw-create-blocker gg-aw-create-birth-group" data-testid="agent-watch-create-birth-group">
-      <span>{t('agentWatch.create.birthGroup', { name: groupName })}</span>
-      {onClearBirthGroup ? (
-        <Button variant="ghost" size="sm" onClick={onClearBirthGroup} disabled={creating || phoneAttempt !== null}>
-          {t('agentWatch.create.birthGroupSkip')}
-        </Button>
-      ) : null}
+  // 派到哪个群里:与上面同一种说明口气。
+  const requestedGroup = phoneAttempt ? phoneAttempt.chatId : taskGroup?.chatId
+  const groupName = requestedGroup === taskGroup?.chatId ? taskGroup?.name : '上次的群聊'
+  const taskGroupNotice = requestedGroup ? (
+    <div className="gg-aw-create-blocker gg-aw-create-birth-group" data-testid="agent-watch-create-task-group">
+      <span>{t('agentWatch.create.taskGroup', { name: groupName })}</span>
     </div>
   ) : null
 
@@ -403,14 +396,14 @@ export function CreateSessionPage({
                 ) : null
               }
               above={
-                errorNotice || optionsNotice || blockerNotice || pendingCreationNotice || lastUsedNotice || birthGroupNotice ? (
+                errorNotice || optionsNotice || blockerNotice || pendingCreationNotice || lastUsedNotice || taskGroupNotice ? (
                   <div className="gg-aw-thread-extras">
                     {errorNotice}
                     {optionsNotice}
                     {blockerNotice}
                     {pendingCreationNotice}
                     {lastUsedNotice}
-                    {birthGroupNotice}
+                    {taskGroupNotice}
                   </div>
                 ) : null
               }

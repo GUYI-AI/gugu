@@ -7,6 +7,7 @@ import { rpcQuery } from '../../../support/rpcQuery'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { hostAppFrame, type PhoneAppBinding } from '../../../../apps/desktop/src/components/appSlot/phoneAppHost'
 import { platform } from '../../../../apps/desktop/src/platform'
+import { finishRendererContentMenu, RENDERER_CONTENT_MENU_OPEN } from '../../../../apps/desktop/src/lib/contentContextMenu'
 import { PHONE_CAPABILITIES } from '../../../../apps/desktop/src/components/appSlot/phoneApps'
 import { grantableBy } from '../../../../apps/desktop/src/session/shared/extensions/attachment-install'
 import { APP_COMPOSE_EVENT, APP_FRAME_MARKER } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
@@ -200,6 +201,21 @@ describe('the phone refuses a verb outside the gesture it needs, in the same sen
     now.mockReturnValue(1_000 + 5_001)
     expect(await call('clipboardWriteText', { text: 'hi' })).toMatchObject({ ok: false, code: 'denied' })
     now.mockRestore()
+  })
+
+  // The App's block menu is the host's (showContextMenu): the tap on an item lands in the host, not the App, and the App
+  // writes the clipboard after the pick comes back (the Folder App's 「复制这一块的链接」).
+  it.each([['picked', 'copy-link', true], ['dismissed', undefined, false]] as const)('a %s menu of the App lends its gesture: %s', async (_, actionId, lends) => {
+    vi.spyOn(platform, 'writeClipboardText').mockResolvedValue(undefined)
+    activation.isActive = false
+    const opened = (event: Event) => finishRendererContentMenu((event as CustomEvent<{ requestId: string }>).detail.requestId, actionId)
+    window.addEventListener(RENDERER_CONTENT_MENU_OPEN, opened)
+    try {
+      expect(await call('showContextMenu', { x: 1, y: 1, items: [{ id: 'copy-link', label: 'Copy link' }] })).toMatchObject({ ok: true, value: actionId ?? null })
+    } finally {
+      window.removeEventListener(RENDERER_CONTENT_MENU_OPEN, opened)
+    }
+    expect(await call('clipboardWriteText', { text: 'gugu-file://x#lines=1-2' })).toMatchObject(lends ? { ok: true } : { ok: false, code: 'denied' })
   })
 
   it('control: inside a gesture the clipboard is written; outside one, a verb without the mark answers', async () => {

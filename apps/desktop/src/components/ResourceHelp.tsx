@@ -16,7 +16,7 @@ export function ResourceHelp({ title, description, frames }: ResourceHelpProps) 
     </Popover.Trigger>
     <Popover.Portal><Popover.Positioner sideOffset={6}><Popover.Popup className="w-72 rounded-surface border border-border bg-background p-3 text-foreground shadow-lift">
       <Popover.Title className="m-0 text-sm font-medium">{title}</Popover.Title>
-      <Popover.Description className="my-2 text-sm text-foreground-secondary">{description}</Popover.Description>
+      <Popover.Description className="my-2 text-sm text-[var(--text-secondary)]">{description}</Popover.Description>
       <ol className="resource-help-frames">
         {frames.map((frame, index) => <li key={index}>
           <span aria-hidden="true" className="resource-help-picture">{frame.picture}</span><span>{index + 1}. {frame.label}</span>

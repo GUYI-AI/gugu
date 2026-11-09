@@ -11,6 +11,7 @@ import { resolveNodeInterpreter, type NodeVersionRequirement } from '../../helpe
 import { ZCODE_PERMISSION_MODES } from './permission-modes';
 import { icon } from './icon';
 import { materializeZcodeSessionBundle, zcodeSessionBundleDescriptor } from './session-bundle';
+import { zcodeMcpAdapter } from './mcp';
 
 /**
  * 跑桥与 ZCode 后端的 Node:ZCode 仓根 `package.json` 的 `engines.node` 是 `>=24.0.0`(mise 钉 24.14.0),
@@ -123,6 +124,7 @@ export const plugin = definePlugin(
 );
 
 export const provider = registerPluginBehavior(plugin, {
+  mcp: zcodeMcpAdapter(),
   sessionBundle: { materialize: materializeZcodeSessionBundle, platformModel },
   acp: {
     // 咕咕维护的构建 @gugu-acp/zcode-acp(上游 william0wang/zcode-acp + 补丁,shuxueshuxue/gugu-acp

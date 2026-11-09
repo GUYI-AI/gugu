@@ -120,11 +120,11 @@ export function useGroupCollabLoader(params: UseGroupCollabLoaderParams): UseGro
       setGroupCollabSnapshot((prev) => reconcileGroupCollabSnapshot(prev, snapshot))
     } catch (err) {
       if (seq !== groupCollabLoadSeqRef.current) return
-      // @@@5856 找茵第九轮:「看得见但还不是参与者」是结论,不是故障 —— 不报错。
-      // (成员面板那一路已经把它画成「在里面说一句就进来了」。)
+      // @@@5856 话题名册读到 0 行是结论,不是故障 —— 不报错。list_member_ids 对来源会话成员照样返回话题参与者,
+      // 0 行只在两种情况:话题里已经没有在册的参与者(最后一个人退出或被移出、账号已注销),或读的人不在来源会话里。
       if (err instanceof GroupCollabEmptyError && chatKind === 'topic') {
         setFailure({ chatId: activeChatId, reason: 'not-participant' })
-        groupCollabLog.info({ chatId: activeChatId }, 'group collab empty roster (visible but not a participant)')
+        groupCollabLog.info({ chatId: activeChatId }, 'group collab empty topic roster')
         return
       }
       groupCollabLog.error({ chatId: activeChatId, error: err }, 'group collab load failed; keeping the cached roster')

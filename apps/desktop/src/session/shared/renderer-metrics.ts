@@ -6,6 +6,13 @@ export interface PerfCounters {
   contactsProviderRenders: number;
 }
 
+/** Main window only, cumulative since the page loaded (src/lib/frameCounters.ts). */
+export interface FrameCounters {
+  longFrames: number;
+  blockingMs: number;
+  slowInteractions: number;
+}
+
 export interface RendererMemoryMetrics {
   v8?: { usedBytes: number; totalBytes: number };
   oilpan?: { allocatedBytes: number; totalBytes: number };
@@ -17,6 +24,7 @@ export interface RendererMetrics extends RendererMemoryMetrics {
   pid: number;
   source: 'main-window' | 'app' | 'other';
   counters?: PerfCounters;
+  frames?: FrameCounters;
 }
 
 export const RENDERER_METRICS_REQUEST = 'resource-monitor:collect-renderer';

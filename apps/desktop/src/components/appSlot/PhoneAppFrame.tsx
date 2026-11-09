@@ -2,7 +2,7 @@ import { followLink, openLinkTarget } from '../../lib/guguLinks'
 import { reaction } from 'mobx'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { readMemberRosterRevision, readWorkspaceChanges } from '../../lib/accountRevisionCoordinator'
+import { readMemberRosterRevision, readRenamedMembers, readWorkspaceChanges } from '../../lib/accountRevisionCoordinator'
 import { extensionSurfaceStore } from '../../session/renderer/features/extensions/extension-surface-store'
 import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
 import {
@@ -16,11 +16,14 @@ import { listedSession, liveDeviceSessions } from '../../session/shared/remote-s
 import { useChatStore } from '../../store/chatContext'
 import { useDevicesStore } from '../../store/devicesContext'
 import { useTheme } from '../../store/theme'
+import { useAuth } from '../../store/auth'
 import { hostAppFrame, type PhoneAppBinding } from './phoneAppHost'
 import { phoneApps } from './phoneApps'
 import type { SessionpageOpenedFileChunk, SessionpageOpenedFileReadRequest } from '@gugu/session-core/session-record/contract'
 import { composeChatDraft } from '../../lib/composeDraft'
 import { peekStore } from '../../session/renderer/features/extensions/peek-store'
+import { Button } from '../ui/Button'
+import { useBackLayer } from '../ui/sheetStack'
 
 const OpenedFilePreview = lazy(() => import('../../mobile/agent-watch/opened-file-preview').then((m) => ({ default: m.OpenedFilePreview })))
 
@@ -91,7 +94,14 @@ export function PhoneAppFrame({
   devicesRef.current = devices
   const [app, setApp] = useState<FramedPage | null>(null)
   const [missing, setMissing] = useState(false)
+  // The App holds a Back step of its own (a folder it is in, `navigation.onBack`): the back key goes there first, as to a sheet
+  // over the page; let go (at its top), the page's own back takes it again. A page kept hidden under a later one holds
+  // nothing, nor one with a file open over it (the preview's own back closes that first).
+  const [backClaimed, setBackClaimed] = useState(false)
+  useBackLayer(() => hostRef.current?.back(), backClaimed && !hidden && !workingCopy)
   const { theme } = useTheme()
+  const { user } = useAuth()
+  const guguNumber = user ? user.gugu_number ?? null : undefined
   const { i18n } = useTranslation()
   const { t } = useTranslation('messaging')
   const { subscribeAccountRevision } = useChatStore('subscribeAccountRevision')
@@ -138,6 +148,7 @@ export function PhoneAppFrame({
     ...(widget ? { widget } : {}),
     locale: i18n.language,
     themeMode: theme === 'dark' ? 'dark' : 'light',
+    ...(guguNumber !== undefined ? { guguNumber } : {}),
   }
   const deviceId = session?.deviceId
 
@@ -155,6 +166,7 @@ export function PhoneAppFrame({
         return { shown: true }
       },
       navigate: (delta) => navigateRef.current?.(delta) ?? Promise.resolve(false),
+      claimBack: setBackClaimed,
       openWith: (detail) => onOpenWithRef.current(detail),
       openWorkingCopy: (path, read) => setWorkingCopy({ path, readFileChunk: ({ offset, length }) => read(offset, length) }),
       // The slot this frame is in draws it (AppPeekSlot), as main's peek on the desktop.
@@ -182,6 +194,7 @@ export function PhoneAppFrame({
       off()
       hostRef.current = null
       host.dispose()
+      setBackClaimed(false)
     }
   }, [app, deviceId, extensionId])
 
@@ -197,7 +210,7 @@ export function PhoneAppFrame({
 
   useEffect(() => {
     if (app) hostRef.current?.update({ ...bindingRef.current, capabilities: app.capabilities })
-  }, [app, chatId, itemId, theme, i18n.language, session?.online])
+  }, [app, chatId, itemId, theme, i18n.language, session?.online, guguNumber])
 
   // Chats' files changed (the account revision bus names them, #7257): the App hears about the ones it asked about
   // (files.onChanged) — the host reads them; not awaited here, as on the desktop (useExtensionWorkspaceRevisions).
@@ -218,6 +231,14 @@ export function PhoneAppFrame({
       if (changes.length > 0) hostRef.current?.membersChanged(changes)
     })
   }, [chatId, subscribeAccountRevision])
+  // A name or face is the person's, not a member row's: no chat_members_changed comes for it (`MemberChange.renamed`).
+  useEffect(() => {
+    if (!chatId) return undefined
+    return subscribeAccountRevision('agent_changed', (operations) => {
+      const renamed = readRenamedMembers(operations.map((operation) => operation.payload))
+      if (renamed.length > 0) hostRef.current?.membersChanged(renamed.map((memberId) => ({ memberId, left: false, renamed: true })))
+    })
+  }, [chatId, subscribeAccountRevision])
 
   // Uninstalled, or switched off (161 10-16: the phone has switches now) while its page was what was drawn here: said in
   // the sentence the desktop says it — not a blank page.
@@ -225,6 +246,9 @@ export function PhoneAppFrame({
     return (
       <div hidden={hidden} className="min-h-0 flex-1" data-testid={missingTestId}>
         <p className="!p-4 text-[length:var(--font-body)] text-[var(--text-secondary)]">{t('chatArea.openWith.unavailable')}</p>
+        <div className="!px-4">
+          <Button variant="secondary" data-testid="phone-app-missing-apps" onClick={() => void followLink({ kind: 'app-detail', extensionId })}>{t('chatArea.openWith.goToApps')}</Button>
+        </div>
       </div>
     )
   }

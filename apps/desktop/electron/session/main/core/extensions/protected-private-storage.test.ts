@@ -63,8 +63,9 @@ it.each(['open', 'create', 'mkdir', 'rename', 'move', 'replace', 'remove', 'open
 
 it('refuses App chunk reads and workspace transfers of private bytes and missing control files', async () => {
   const relative = path.relative(root, secret);
-  await expect(readWorkingCopy(surface.place, relative, 0, 100)).rejects.toThrow(PROTECTED);
+  await expect(readWorkingCopy(surface.place, relative, 0, 100, null)).rejects.toThrow(PROTECTED);
   await expect(readWorkspaceChunk(root, { path: relative, offset: 0, length: 100 })).rejects.toThrow(PROTECTED);
+  await expect(readWorkingCopy(surface.place, secret, 0, 100, { workspace: surface.place.workspace, id: secret })).rejects.toThrow(PROTECTED);
   const flag = path.join(privatePasswordVaultDirectory(), 'switch.json');
   const uploads = createWorkspaceUploads();
   await expect(uploads.write(root, { path: path.relative(root, flag), uploadId: 'private', offset: 0,

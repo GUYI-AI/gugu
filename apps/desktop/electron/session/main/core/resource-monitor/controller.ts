@@ -4,6 +4,7 @@ import { appSettingsService } from '@main/core/settings/settings-service';
 import { createRPCController } from '@shared/lib/ipc/rpc';
 import { captureDeepSample } from './deep-sample';
 import { resourceHistory } from './history';
+import { captureReading } from './reading';
 import { hasResourceMonitorInternals, sampleOnce, setResourceMonitorOpen } from './resource-sampler';
 
 export const resourceMonitorController = createRPCController({
@@ -22,6 +23,9 @@ export const resourceMonitorController = createRPCController({
     setResourceMonitorOpen(clientId, subscriptionId, open, sequence, internals);
     return ok();
   },
+
+  /** A few seconds of the main window's timeline, summarised into its long tasks (capture.ts). */
+  capture: async (seconds: number) => ok(await captureReading(seconds)),
 
   /** Record one memory dump of every process, then let the user save it as local JSON. Null when they cancel. */
   deepSample: async (dialogTitle: string) => {

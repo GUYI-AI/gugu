@@ -13,7 +13,7 @@ import { Button } from '../ui/Button'
 import { Sheet } from '../ui/Sheet'
 import { ConsentBody } from './ConsentDetails'
 import { MachineRow } from '../../session/renderer/features/remote-hosts/machine-picker'
-import { localMachineChoice, machineAcceptsWork, machineChoiceFromHost, machineMeta, type MachineChoice } from '../../session/renderer/features/remote-hosts/machine-choice'
+import { localMachineChoice, machineChoiceFromHost, machineMeta, machineTakesInstall, type MachineChoice } from '../../session/renderer/features/remote-hosts/machine-choice'
 import { remoteHostsStore } from '../../session/renderer/features/remote-hosts/remote-hosts-store'
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
 import { Check } from '../../lib/icons'
@@ -117,7 +117,7 @@ function InstallConsentSheet() {
               <legend className="pb-1 text-[length:var(--font-body)] font-semibold text-[var(--text-primary)]">{t('chatArea.appEnable.devices')}</legend>
               {[{ id: '', choice: targetChoice(ask.machine, t('chatArea.appEnable.machine')), disabledReason: undefined as string | undefined },
                 ...ask.alsoOn.map((machine) => ({ id: machine.id, choice: hostChoice(machine.id, machine.label), disabledReason: machine.disabledReason }))].map(({ id, choice, disabledReason }) => {
-                const blocked = !id || disabledReason !== undefined || !machineAcceptsWork(choice) || choice.cloudComputer !== undefined
+                const blocked = !id || disabledReason !== undefined || !machineTakesInstall(choice)
                 const ticked = !id || alsoOn.includes(id)
                 return (
                   <label

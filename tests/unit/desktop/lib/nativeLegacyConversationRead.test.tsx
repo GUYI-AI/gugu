@@ -7,7 +7,7 @@ import type { ChatView } from '@gugu/session-chat-ui'
 const scope = vi.hoisted(() => ({ first: null as string | null, aliases: new Map<string, string[]>(), version: undefined as number | undefined, nativeVisible: vi.fn(async () => ({ unreadKeys: [] })) }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { kind: 'electron' } }))
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => ({ rpcOn: () => ({ sessionTimeline: { sessionVisible: scope.nativeVisible } }) }))
-vi.mock('../../../../apps/desktop/src/lib/chatSummariesBridge', () => ({ useChatSummaries: () => new Map([['dm', { peerUserId: 'agent', firstUnreadMessageId: scope.first }]]) }))
+vi.mock('../../../../apps/desktop/src/lib/chatSummariesBridge', () => ({ useChatSummariesSelect: (select: (chats: Map<string, unknown>) => unknown) => select(new Map([['dm', { peerUserId: 'agent', firstUnreadMessageId: scope.first }]])) }))
 vi.mock('../../../../apps/desktop/src/components/chat/agent-dm-read', () => ({ dmMessageIdsByItem: () => scope.aliases }))
 vi.mock('../../../../apps/desktop/src/session/shared/remote-sessions/session-directory', () => ({ useDirectoryDevices: () => [], directoryRows: () => [], useLiveDeviceSessions: () => ({ host: { sessions: [{ conversationId: 'session', agent: { userId: 'agent' }, nativeUnreadKeys: ['native'], nativeInputVersion: scope.version }] } }) }))
 // The row the mocked IM alias `tool:sent:<id>` is derived from (dmMessageIdsByItem names a sent row after its tool call).

@@ -3,7 +3,7 @@ import { verifiedFileHandle } from '../../../../../../../tests/support/verifiedF
 import { EXTENSION_API_VERSION } from '@shared/extensions/manifest';
 import { extensionsInventoryChangedChannel, extensionsQuitChangedChannel } from '@shared/extensions/marketEvents';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -82,6 +82,8 @@ vi.mock('@main/core/extensions/extension-session', () => ({
   reloadExtensionSurfaces: (extensionId: string) => {
     reloaded.push(extensionId);
   },
+  clearExtensionStorage: vi.fn(async () => undefined),
+  extensionSessionBytes: vi.fn(async () => 2048),
   clearExtensionSessionData: vi.fn(async (extensionId: string) => {
     hardened.delete(extensionId);
   }),
@@ -141,7 +143,8 @@ import { EXTENSION_BRIDGE_CHANNEL } from '@shared/extensions/bridge-protocol';
 import { packExtensionArchive } from './extension-archive';
 import { extensionsService } from './extensions-root';
 import { forgetAccountGrants } from './app-given';
-import { clearExtensionSessionData } from './extension-session';
+import { clearExtensionSessionData, clearExtensionStorage } from './extension-session';
+import { EXTENSION_DATA_DIR_NAME } from './extension-data';
 import { cloudExtensionMarket } from './market-catalog-root';
 import { extensionPrograms, onExtensionProgramNotification, stopAllExtensionPrograms, type ExtensionProgram } from './extension-programs';
 import { installedComputerUseApps } from '../../../../computer-use-program';
@@ -503,6 +506,44 @@ process.stdin.on('end', () => process.exit(0));
   });
 
   // The far-left rail's dock (统筹 10-01): this machine's pinned Apps, in order — one write of the whole list.
+  it('clears what an App saved: it stops, its folder and storage empty, its settings stay, and it starts again when opened', async () => {
+    await installViaController([], { name: 'settings', title: 'Settings', hostPage: 'settings' });
+    const folder = join(userDataDir, EXTENSION_DATA_DIR_NAME, EXTENSION_ID);
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, 'notes.json'), 'x'.repeat(100));
+    expect((await extensionsController.appData({ extensionId: EXTENSION_ID })).data?.bytes).toBe(2148);
+    vi.mocked(clearExtensionStorage).mockClear();
+
+    const cleared = await extensionsController.clearAppData({ extensionId: EXTENSION_ID });
+    expect(cleared.success, cleared.error).toBe(true);
+    expect(clearExtensionStorage).toHaveBeenCalledWith(EXTENSION_ID);
+    expect(existsSync(folder)).toBe(false);
+    expect((await extensionsController.list()).data?.quit).toContain(EXTENSION_ID);
+    // Not uninstalled: it opens again, and is no longer quit.
+    expect((await extensionsController.openSettings({ extensionId: EXTENSION_ID })).success).toBe(true);
+    expect((await extensionsController.list()).data?.quit).not.toContain(EXTENSION_ID);
+  });
+
+  it('nothing manages an App gugu ships from outside: not its pages, data, permissions or disclosure', async () => {
+    const source = writeBundle([], { name: 'demo', title: 'Demo' }, ['notifications']);
+    extensionsService().installFromDirectory(source, extensionsService().inspectDirectory(source).manifestDigest, 'preinstalled');
+    vi.mocked(clearExtensionStorage).mockClear();
+    try {
+      for (const refused of [
+        await extensionsController.setTabHidden({ extensionId: EXTENSION_ID, tab: 'demo', hidden: true }),
+        await extensionsController.clearAppData({ extensionId: EXTENSION_ID }),
+        await extensionsController.setPermissionGranted({ extensionId: EXTENSION_ID, permission: 'notifications', granted: false }),
+        await extensionsController.setDisclosure({ extensionId: EXTENSION_ID, level: 'full' }),
+      ]) {
+        expect(refused.success).toBe(false);
+        expect(refused.error).toContain('comes with gugu');
+      }
+      expect(clearExtensionStorage).not.toHaveBeenCalled();
+    } finally {
+      extensionsService().releasePreinstalled(EXTENSION_ID);
+    }
+  });
+
   it('keeps the dock in the order given, refuses what cannot open from the rail, and forgets an uninstalled App', async () => {
     await installViaController([]);
     // A first install of an App with a page of its own goes on the rail (owner 10-06「装之后应该自动 pin 吧」).

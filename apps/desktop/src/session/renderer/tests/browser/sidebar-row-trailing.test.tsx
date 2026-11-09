@@ -41,7 +41,7 @@ vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
   remoteHostsStore: { machineOfProject: () => undefined, connectionState: () => 'connected', device: () => undefined },
 }));
 vi.mock('@renderer/features/sidebar/session-keyboard-nav', () => ({ sessionKeyboardNav: { cursor: null, syncCursorFromPointer: vi.fn() } }));
-vi.mock('@/lib/sidebarChatsBridge', () => ({ useSidebarChatSignals: () => ({ groupUnread: new Map([['proj-group', unread.count]]) }) }));
+vi.mock('@/lib/sidebarChatsBridge', () => ({ useSidebarChatSignals: () => ({ groupUnread: new Map([['proj-group', unread.count]]), groupCallingTopic: new Map() }) }));
 vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({ projectGroupsStore: { chatIdOf: () => 'proj-group' } }));
 vi.mock('@renderer/features/sidebar/use-session-drop-target', () => ({ useSessionDropTarget: () => ({ bind: () => ({}) }) }));
 vi.mock('@renderer/features/sessions/set-session-parent-flow', () => ({ moveSessionUnder: vi.fn() }));

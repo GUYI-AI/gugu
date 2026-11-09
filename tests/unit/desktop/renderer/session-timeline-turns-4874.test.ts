@@ -111,3 +111,25 @@ describe('hidden input boundaries', () => {
     }]);
   });
 });
+
+
+it('keeps folded A2G narration out of a human minimap preview while retaining the owner prompt', () => {
+  const send = { kind: 'mcp-tool-call' as const, id: 'send', toolCallId: 'send', seq: 2, title: 'Send', tool: 'message_send', server: 'gugu', status: 'done' as const,
+    rawInput: JSON.stringify({ chat_id: 'group', text: 'private outgoing body' }), outputText: 'sent (id=msg:6417511d-8f36-4cbc-8cbb-81ce9f97df73)' };
+  const ticks = timelineTurnsFromTranscript([turn('t', 'user', [msg('owner', 'user', 'Owner question'), msg('narration', 'assistant', 'private narration body'), send])], null, {},
+    { translate: () => '', chatName: () => 'Test group', chatKind: () => 'group' });
+  expect(ticks[0]!.prompt).toBe('Owner question');
+  expect(ticks[0]!.reply).toBe('');
+  expect(JSON.stringify(ticks)).not.toContain('private narration body');
+  expect(JSON.stringify(ticks)).not.toContain('private outgoing body');
+});
+
+it('keeps group-reply-to-owner narration out of the minimap preview', () => {
+  const owner = '22222222-2222-4222-8222-222222222222';
+  const send = { kind: 'mcp-tool-call' as const, id: 'send', toolCallId: 'send', seq: 2, title: 'Send', tool: 'message_send', server: 'gugu', status: 'done' as const,
+    rawInput: JSON.stringify({ chat_id: 'group', to_user_ids: [`user:${owner}`], text: 'private owner group reply' }), outputText: 'sent (id=msg:6417511d-8f36-4cbc-8cbb-81ce9f97df73)' };
+  const ticks = timelineTurnsFromTranscript([turn('t', 'user', [msg('owner', 'user', 'Owner question'), msg('narration', 'assistant', 'private group narration'), send])], null, {},
+    { translate: () => '', viewerId: owner, chatName: () => 'Test group', chatKind: () => 'group', actor: id => ({ id, type: 'human', name: 'Owner' }) });
+  expect(ticks[0]!.reply).toBe('');
+  expect(JSON.stringify(ticks)).not.toContain('private group narration');
+});

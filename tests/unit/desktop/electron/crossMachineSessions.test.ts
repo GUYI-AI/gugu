@@ -230,6 +230,37 @@ describe('reaching another machine', () => {
     expect(listDevices).toHaveBeenCalled()
   })
 
+  it('a page\'s call that changes something waits for the cloud computer\'s state, and is not sent to a paused one', async () => {
+    let answerState: (state: { state: string; deviceId: string; error: null; since: null } | null) => void = () => {}
+    const cloudComputerState = vi.fn(() => new Promise<{ state: string; deviceId: string; error: null; since: null } | null>((done) => { answerState = done }))
+    const { xm, call } = makeCrossMachine(undefined, { cloudComputerState: cloudComputerState as never })
+    const write = xm.appCall({ extensionId: 'app', extensionName: 'App' }, 'dev-b', {
+      action: 'app_call', call_id: 'w-1', session_id: 's', version: '1', method: 'filesWriteChunk', args: {},
+    })
+    await new Promise((done) => setTimeout(done, 0))
+    expect(call).not.toHaveBeenCalled()
+    answerState({ state: 'asleep', deviceId: 'dev-b', error: null, since: null })
+    await expect(write).rejects.toMatchObject({ code: 'SESSION_DEVICE_OFFLINE' })
+    expect(call).not.toHaveBeenCalled()
+  })
+
+  it('a page\'s call does not wait for the cloud computer\'s state; a paused cloud computer still refuses it', async () => {
+    let answerState: (state: { state: string; deviceId: string; error: null; since: null } | null) => void = () => {}
+    const cloudComputerState = vi.fn(() => new Promise<{ state: string; deviceId: string; error: null; since: null } | null>((done) => { answerState = done }))
+    // That machine answers c-1; c-2 never comes back (a paused machine hears nothing).
+    const { xm, call } = makeCrossMachine(async (_device, _channel, { action }) => (action as { call_id?: string }).call_id === 'c-2'
+      ? new Promise(() => {}) : { result: { ok: true } }, { cloudComputerState: cloudComputerState as never })
+    const appCall = (id: string) => xm.appCall({ extensionId: 'app', extensionName: 'App' }, 'dev-b', {
+      action: 'app_call', call_id: id, session_id: 's', version: '1', method: 'filesList', args: {},
+    })
+    // Parent: the call was sent only once the manager answered — this one would never have been.
+    await expect(appCall('c-1')).resolves.toEqual({ ok: true })
+    expect(call).toHaveBeenCalledOnce()
+    const paused = appCall('c-2')
+    answerState({ state: 'asleep', deviceId: 'dev-b', error: null, since: null })
+    await expect(paused).rejects.toMatchObject({ code: 'SESSION_DEVICE_OFFLINE' })
+  })
+
   it('asks that machine\'s task-page router: agentSession.<action>(caller, action), one call, no window', async () => {
     const { xm, call } = makeCrossMachine()
     await expect(xm.call('dev-b', CALLER, { action: 'get', session_id: 's' })).resolves.toEqual({ ok: true })
@@ -639,6 +670,23 @@ describe('the family across machines', () => {
         { action: 'message', session_ids: ['s-b'], text: 'hi', delivery: 'defer', key: 'k' },
       ],
     ]])
+  })
+
+  it('one session\'s machine: the first machine to list it settles it, a slow machine is not waited for', async () => {
+    const listDevices = async () => [device('dev-a', 'this box', true), device('dev-b', 'slow server', true), device('dev-d', 'desk', true)]
+    // dev-b never answers; dev-d lists the session. Parent: sessionMachine waited for every machine's list.
+    const { xm } = makeCrossMachine(async (deviceId, type) => type !== 'sessionTimeline.sessionsList' ? { result: {} }
+      : deviceId === 'dev-b' ? new Promise(() => {})
+        : { result: { projects: [], sessions: [{ conversationId: 's-d', projectId: 'pd', agent: { userId: 'agent-d' } }] } }, { listDevices })
+    expect(await xm.sessionHome('s-d')).toEqual({
+      found: { deviceId: 'dev-d', label: 'desk', session: { conversationId: 's-d', projectId: 'pd', agent: { userId: 'agent-d' } }, listsAgents: true },
+      unreached: [],
+    })
+  })
+
+  it('one session\'s machine: none lists it once every machine has answered', async () => {
+    const { xm } = makeCrossMachine(async (_deviceId, type) => type === 'sessionTimeline.sessionsList' ? { result: { projects: [], sessions: [] } } : { result: {} })
+    expect(await xm.sessionHome('s-x')).toEqual({ found: null, unreached: [{ deviceId: 'dev-c', label: 'laptop', detail: '"laptop" (device:dev-c) is offline (last seen 3 h ago)' }] })
   })
 })
 

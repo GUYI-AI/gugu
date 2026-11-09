@@ -269,7 +269,7 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
           pane?.setPageViewState(tabId, action.viewState);
         }
         // The person cancelled 「用哪个打开」: nothing opens, and nothing went wrong.
-        await openFileInSessionEditor(projectId, action.sessionId, action.path, { ask: action.ask, intent: action.intent, ...(sessionId === action.sessionId ? { from: tabId } : {}) });
+        await openFileInSessionEditor(projectId, action.sessionId, action.path, { ask: action.ask, intent: action.intent, byHost: true, ...(sessionId === action.sessionId ? { from: tabId } : {}) });
       })();
     }
     case 'openSessionFolder': {
