@@ -1,5 +1,5 @@
 import { setImmediate } from 'node:timers/promises';
-import { mkdir, open, opendir, readFile, rename, rm, rmdir } from 'node:fs/promises';
+import { mkdir, open, opendir, rename, rm, rmdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { syncWindowDirectory } from '@gugu/session-core/session-record/window-cache/disk-frame';
 import type { WindowReceiptDatabase } from './window-commit-receipt';
@@ -27,14 +27,28 @@ export const WINDOW_COMMIT_LAYOUT_TABLES = [
 
 type Proof = { assertHeld(): void };
 
+/** The marker is a few bytes; anything longer is not a marker this wrote. */
+const MARKER_BYTES = 64;
+
 async function current(directory: string): Promise<boolean> {
+  let source;
+  try { source = await open(join(directory, WINDOW_COMMIT_LAYOUT_MARKER), 'r'); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
   try {
-    const saved = JSON.parse(await readFile(join(directory, WINDOW_COMMIT_LAYOUT_MARKER), 'utf8')) as { version?: unknown };
+    const bytes = Buffer.alloc(MARKER_BYTES + 1);
+    let read = 0;
+    while (read < bytes.length) {
+      const { bytesRead } = await source.read(bytes, read, bytes.length - read, read);
+      if (!bytesRead) break;
+      read += bytesRead;
+    }
+    if (read > MARKER_BYTES) return false;
+    const saved = JSON.parse(bytes.subarray(0, read).toString('utf8')) as { version?: unknown };
     return saved?.version === WINDOW_COMMIT_LAYOUT_VERSION;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT' || error instanceof SyntaxError) return false;
+    if (error instanceof SyntaxError) return false;
     throw error;
-  }
+  } finally { await source.close(); }
 }
 
 /** Remove at most BATCH entries below `path`, depth first. At the root only
