@@ -49,7 +49,7 @@ const mocks = vi.hoisted(() => ({
   mounted: new Map<string, { sessionPath: string | undefined; sessions: { startSession: unknown; stopSession: unknown; sendMessage: unknown; ownsSession: (id: string) => boolean } }>(),
   ensureSessionMounted: vi.fn(),
   installedExtensions: [] as Array<{
-    manifest: { id: string; contributes: { tabs: Array<{ name: string; title?: string; opensFiles?: { session?: string[]; chat?: string[] } }> } };
+    manifest: { id: string; contributes: { tabs: Array<{ name: string; title?: string; opensFiles?: { session?: string[]; chat?: string[] }; perSession?: boolean }> } };
   }>,
   sessionpageProjectGroup: { kind: 'none', reason: 'no-project' } as
     | { kind: 'group'; projectId: string; groupChatId: string }
