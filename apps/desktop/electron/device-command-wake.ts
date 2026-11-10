@@ -4,7 +4,8 @@ import { subscribeAuthenticatedElectronRealtimeChannel } from './realtime-channe
 import { isSubscribeFailure, subscribeStatusName } from '@gugu/core/cloud/deviceRpcProtocol'
 
 type WakeChannel = {
-  on: (kind: 'broadcast', filter: { event: string }, callback: (message?: { payload?: { id?: unknown } }) => void) => WakeChannel
+  on: ((kind: 'broadcast', filter: { event: string }, callback: (message?: { payload?: { id?: unknown } }) => void) => WakeChannel)
+    & ((kind: 'system', filter: Record<string, never>, callback: (message?: { status?: unknown; message?: unknown }) => void) => WakeChannel)
   subscribe: (callback: (status: string, err?: Error) => void) => WakeChannel
 }
 
@@ -37,6 +38,11 @@ export function createDesktopDeviceCommandWakeSubscription<TChannel>({
         }
       })
       const wakeChannel = channel as TChannel & WakeChannel & ElectronManagedRealtimeChannel
+      // 诊断(#1760):服务端对这条频道说的话(令牌过期、授权失败等)。频道没有断、却不再收到广播时,线索只在这里。
+      wakeChannel.on('system', {}, (message) => {
+        if (!active || message?.status === 'ok') return
+        warn(`[device-runtime] command wake system message: ${String(message?.status)} ${String(message?.message ?? '')}`)
+      })
       wakeChannel.on('broadcast', { event: 'command_created' }, (message) => {
         if (!active) return
         // 广播负载点名了是哪一行(触发器写的 `id`);宿主据此分辨「这一行被通知过」与「别的行被通知过」。
