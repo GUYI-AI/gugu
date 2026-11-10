@@ -8,7 +8,7 @@ import { useAuth } from './auth'
 import { useChatStore } from './chatContext'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { ContactsContext, ContactsHandleContext, type ContactsHandle, type ContactsLoadStatus } from './contactsContext'
-import type { ContactGroup, ContactUser, FriendRequest } from '@gugu/core/shared/types/contacts'
+import type { ContactUser, FriendRequest } from '@gugu/core/shared/types/contacts'
 import { platform } from '../platform'
 import { readRequiredDisplayIdentities } from '../lib/identityReadAdapter'
 import type { DisplayIdentity } from '../lib/displayIdentity'
@@ -49,7 +49,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
   const chatListRemovalRef = useRef({ chats, deleteChat, patchChat })
   chatListRemovalRef.current = { chats, deleteChat, patchChat }
   const [contacts, setContacts] = useState<ContactRelation[]>([])
-  const [groups, setGroups] = useState<ContactGroup[]>([])
   // 「我在哪些群」只有一份:会话投影(chat store 的 chats)。从前这里另拉一张整表(探针 + 全部成员 + 分块 chats + 共享 agent),
   // 每来一条消息(chat_changed)、每次已读(chat_members_changed)都重拉一遍。
   // 每来一条消息 chats 就换一份,而群这几项(名字、成员、角色、免打扰)多半没变:签名没变就沿用上一份,
@@ -72,7 +71,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
   const groupJoinRequestsGenerationRef = useRef(0)
   const [sentRequests, setSentRequests] = useState<FriendRequest[]>([])
   const [loadingContacts, setLoadingContacts] = useState(false)
-  const [loadingGroups, setLoadingGroups] = useState(false)
   // #2118 — contacts / groupChats 各自的加载三态(见 ContactsLoadStatus)。空态 CTA 只在 ready 且为空时出现。
   const [contactsStatus, setContactsStatus] = useState<ContactsLoadStatus>('idle')
   // #2118 投影读失败 = error(旧行照常画,空着不冒充「没有群」);冷启还没有一行 = loading。
@@ -121,23 +119,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
     }
   }, [getImRepository, userId])
 
-  const loadGroups = useCallback(async (options: RevisionRefreshOptions = {}) => {
-    if (!userId) return
-    setLoadingGroups(true)
-    try {
-      const data = await contactsService.getContactGroups(userId)
-      setGroups(data)
-    } catch (err) {
-      if (isLifecycleCancellation(err)) {
-        if (options.throwOnError) throw err
-        return
-      }
-      console.error('[ContactsStore] loadGroups error', err)
-      if (options.throwOnError) throw err
-    } finally {
-      setLoadingGroups(false)
-    }
-  }, [userId])
 
   // ── Load requests ──────────────────────────────────────────────────────────
   const loadRequests = useCallback(async (options: RevisionRefreshOptions = {}) => {
@@ -204,11 +185,9 @@ export function ContactsProvider({ children, active = true }: { children: React.
     groupJoinRequestsGenerationRef.current += 1
     if (userId) {
       loadContacts()
-      loadGroups()
       loadRequests()
     } else {
       setContacts([])
-      setGroups([])
       setReceivedRequests([])
       setGroupInvitations([])
       setGroupJoinRequests([])
@@ -221,7 +200,7 @@ export function ContactsProvider({ children, active = true }: { children: React.
       setLoadingContacts(false)
       setContactsStatus('idle')
     }
-  }, [userId, loadContacts, loadGroups, loadRequests])
+  }, [userId, loadContacts, loadRequests])
 
   // ── Durable account revision consumers ─────────────────────────────────────
   useEffect(() => {
@@ -241,7 +220,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
 
     const refreshFriendshipSurfaces = () => Promise.all([
       loadContacts(strict),
-      loadGroups(strict),
       loadRequests(strict),
     ]).then(() => undefined)
 
@@ -263,7 +241,7 @@ export function ContactsProvider({ children, active = true }: { children: React.
       window.removeEventListener(UI_EVENTS.ownedAgentRenamed, handleOwnedAgentRenamed)
       for (const unsubscribe of unsubscribes) unsubscribe()
     }
-  }, [userId, loadContacts, loadGroups, loadRequests, loadGroupJoinRequests, subscribeAccountRevision])
+  }, [userId, loadContacts, loadRequests, loadGroupJoinRequests, subscribeAccountRevision])
 
   useIdentityLifecycle(userId, getImRepository, () => Promise.all([loadContacts({ throwOnError: true }), refreshChats({ preserveMissingActive: false, throwOnError: true })]))
 
@@ -321,30 +299,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
     },
     [loadRequests],
   )
-
-  const createGroup = useCallback(
-    async (name: string) => {
-      if (!userId) return null
-      const group = await contactsService.createContactGroup(userId, name)
-      setGroups((current) => [...current, group])
-      return group.id
-    },
-    [userId],
-  )
-
-  const renameGroup = useCallback(async (groupId: string, name: string) => {
-    await contactsService.renameContactGroup(groupId, name)
-    setGroups((current) => current.map((group) => (
-      group.id === groupId
-        ? { ...group, name: name.trim(), updated_at: new Date().toISOString() }
-        : group
-    )))
-  }, [])
-
-  const deleteGroup = useCallback(async (groupId: string) => {
-    await contactsService.deleteContactGroup(groupId)
-    setGroups((current) => current.filter((group) => group.id !== groupId))
-  }, [])
 
   const updateContactAlias = useCallback(
     async (contactId: string, alias: string) => {
@@ -416,18 +370,13 @@ export function ContactsProvider({ children, active = true }: { children: React.
   const dropContactAndReload = useCallback(
     async (contactId: string) => {
       setContacts((current) => current.filter((contact) => contact.id !== contactId))
-      setGroups((current) => current.map((group) => ({
-        ...group,
-        contactIds: group.contactIds.filter((id) => id !== contactId),
-      })))
       await Promise.all([
         loadContacts(),
-        loadGroups(),
         loadRequests(),
         refreshChats({ acceptEmpty: true, preserveMissingActive: false }),
       ])
     },
-    [loadContacts, loadGroups, loadRequests, refreshChats],
+    [loadContacts, loadRequests, refreshChats],
   )
 
   const removeContact = useCallback(
@@ -448,14 +397,13 @@ export function ContactsProvider({ children, active = true }: { children: React.
         window.dispatchEvent(new CustomEvent(UI_EVENTS.identityInvalidated, { detail: { id: agentId } }))
         await Promise.all([
           loadContacts({ throwOnError: true }),
-          loadGroups({ throwOnError: true }),
           refreshChats({ acceptEmpty: true, preserveMissingActive: false, throwOnError: true }),
         ])
       } catch (error) {
         rendererLogger('contacts/archive').error({ error, agentId }, 'Archived agent; refreshing contacts and chats failed')
       }
     },
-    [getImRepository, loadContacts, loadGroups, refreshChats],
+    [getImRepository, loadContacts, refreshChats],
   )
 
   const getCommonGroupChats = useCallback(
@@ -477,7 +425,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
     return {
       contacts: project(contacts),
       sharedGroupAgents,
-      groups,
       groupChats,
       friendRequests: friendRequestEntries(withPeers(receivedRequests), withPeers(sentRequests)),
       groupInvitations,
@@ -488,7 +435,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
       requestsError,
       sentRequests: withPeers(sentRequests.filter((request) => request.status === 'pending')),
       loadingContacts,
-      loadingGroups,
       contactsStatus,
       groupChatsStatus,
       searchResults: project(searchResults),
@@ -499,12 +445,8 @@ export function ContactsProvider({ children, active = true }: { children: React.
       acceptRequest,
       rejectRequest,
       refreshContacts: loadContacts,
-      refreshGroups: loadGroups,
       refreshRequests: refreshAllRequests,
       refreshGroupJoinRequests: loadGroupJoinRequests,
-      createGroup,
-      renameGroup,
-      deleteGroup,
       updateContactAlias,
       setAgentPublic,
       setAgentDesiredStatus,
@@ -517,11 +459,10 @@ export function ContactsProvider({ children, active = true }: { children: React.
       getCommonGroupChats,
     }
   }, [
-    contacts, searchResults, identitiesById, sharedGroupAgents, groups, groupChats, receivedRequests, sentRequests,
+    contacts, searchResults, identitiesById, sharedGroupAgents, groupChats, receivedRequests, sentRequests,
     groupInvitations, groupJoinRequests, groupJoinRequestsError, requestsStatus, requestsError, loadingContacts,
-    loadingGroups, contactsStatus, groupChatsStatus, isSearching, searchUsers, clearSearch, sendRequest, acceptRequest,
-    rejectRequest, loadContacts, loadGroups, refreshAllRequests, loadGroupJoinRequests, createGroup, renameGroup,
-    deleteGroup, updateContactAlias, setAgentPublic, setAgentDesiredStatus, renameAgent,
+    contactsStatus, groupChatsStatus, isSearching, searchUsers, clearSearch, sendRequest, acceptRequest,
+    rejectRequest, loadContacts, refreshAllRequests, loadGroupJoinRequests, updateContactAlias, setAgentPublic, setAgentDesiredStatus, renameAgent,
     updateAgentProfile, uploadAgentAvatar, setAgentLook, removeOwnedAgent, removeContact, getCommonGroupChats,
   ])
   const [listeners] = useState(() => new Set<() => void>())

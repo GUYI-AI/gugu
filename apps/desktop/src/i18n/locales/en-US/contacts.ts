@@ -390,20 +390,7 @@ export default {
     "qrFailed": "Could not generate the QR code",
     "scanToJoinGugu": "Scan to join Gugu"
   },
-  "tags": {
-    "countSummary": "{{count}} entries total",
-    "countSummary_one": "{{count}} entry total",
-    "countSummary_other": "{{count}} entries total",
-    "create": "Create tag",
-    "delete": "Delete {{name}}",
-    "deleteConfirm": "Delete tag “{{name}}”?",
-    "namePlaceholder": "Tag name",
-    "rename": "Rename {{name}}",
-    "title": "Tags",
-    "titleWithCount": "Tag · {{count}} entries",
-    "titleWithCount_one": "Tag · {{count}} entry",
-    "titleWithCount_other": "Tag · {{count}} entries"
-  },
+
   "toast": {
     "deleteAgentFailed": "Could not archive task",
     "deleteContactFailed": "Could not delete contact",

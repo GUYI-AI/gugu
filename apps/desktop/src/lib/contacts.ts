@@ -17,7 +17,6 @@ import { buildLookUrl, lookObjectPath, type AgentLook } from '@/components/agent
 import { DISPLAY_IDENTITY_SELECT, readAgentProfileTypes, readDisplayIdentities, readOwnedDisplayIdentities, readRequiredDisplayIdentities } from './identityReadAdapter'
 import type {
   AcceptFriendRequestResult,
-  ContactGroup,
   ContactGroupChat,
   ContactUser,
   FriendRequest,
@@ -74,33 +73,12 @@ type ContactOverrideRow = {
   alias: string | null
 }
 
-type ContactGroupRow = {
-  id: string
-  owner_user_id: string
-  name: string
-  sort_order: number
-  created_at: string
-  updated_at: string
-}
-
-type ContactGroupMemberRow = {
-  group_id: string
-  contact_user_id: string
-}
-
 type AgentProfileRow = {
   id: string
   agent_type: 'codex' | 'claude-code' | null
 }
 
 type ContactUserRow = ContactUser & { local_path?: string | null }
-
-type ContactGroupInsert = ContactGroupRow
-
-type ContactGroupPatch = {
-  name: string
-  updated_at: string
-}
 
 type ChatMemberMuteRow = {
   chat_id: string
@@ -630,74 +608,6 @@ export const contactsService = {
       }
       throw error
     }
-  },
-
-  async getContactGroups(userId: string): Promise<ContactGroup[]> {
-    const [{ data: groups, error: groupsError }, { data: members, error: membersError }] = await Promise.all([
-      identity()
-        .from('contact_groups')
-        .select('id, owner_user_id, name, sort_order, created_at, updated_at')
-        .eq('owner_user_id', userId)
-        .order('sort_order', { ascending: true })
-        .order('created_at', { ascending: true }),
-      identity()
-        .from('contact_group_members')
-        .select('group_id, contact_user_id'),
-    ])
-
-    if (groupsError) throw new Error(messageForUser(groupsError), { cause: groupsError })
-    if (membersError) throw new Error(messageForUser(membersError), { cause: membersError })
-
-    const memberMap = new Map<string, string[]>()
-    for (const row of (members ?? []) as ContactGroupMemberRow[]) {
-      const ids = memberMap.get(row.group_id) ?? []
-      ids.push(row.contact_user_id)
-      memberMap.set(row.group_id, ids)
-    }
-
-    return ((groups ?? []) as ContactGroupRow[]).map((group) => ({
-      ...group,
-      contactIds: memberMap.get(group.id) ?? [],
-    }))
-  },
-
-  async createContactGroup(userId: string, name: string): Promise<ContactGroup> {
-    const id = crypto.randomUUID()
-    const now = new Date().toISOString()
-    const { data, error } = await identity()
-      .from('contact_groups')
-      .insert(dbPayload<ContactGroupInsert>({
-        id,
-        owner_user_id: userId,
-        name: name.trim(),
-        sort_order: 0,
-        created_at: now,
-        updated_at: now,
-      }))
-      .select('id, owner_user_id, name, sort_order, created_at, updated_at')
-      .single()
-
-    if (error) throw new Error(messageForUser(error), { cause: error })
-    const row = data as ContactGroupRow
-    return { ...row, contactIds: [] }
-  },
-
-  async renameContactGroup(groupId: string, name: string): Promise<void> {
-    const { error } = await identity()
-      .from('contact_groups')
-      .update(dbPayload<ContactGroupPatch>({ name: name.trim(), updated_at: new Date().toISOString() }))
-      .eq('id', groupId)
-
-    if (error) throw new Error(messageForUser(error), { cause: error })
-  },
-
-  async deleteContactGroup(groupId: string): Promise<void> {
-    const { error } = await identity()
-      .from('contact_groups')
-      .delete()
-      .eq('id', groupId)
-
-    if (error) throw new Error(messageForUser(error), { cause: error })
   },
 
   async getCommonGroupChats(userId: string, contactUserId: string): Promise<ContactGroupChat[]> {

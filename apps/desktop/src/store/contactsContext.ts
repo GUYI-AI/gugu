@@ -2,7 +2,7 @@ import type { GroupInvitation } from '../lib/groupInvitations'
 import type { ManagedGroupJoinRequest } from '../lib/groupJoinRequests'
 import type { FriendRequestEntry } from '../lib/requestHistory'
 import { createContext, useContext, useSyncExternalStore } from 'react'
-import type { AcceptFriendRequestResult, ContactGroup, ContactGroupChat, ContactUser, FriendRequest } from '@gugu/core/shared/types/contacts'
+import type { AcceptFriendRequestResult, ContactGroupChat, ContactUser, FriendRequest } from '@gugu/core/shared/types/contacts'
 import type { AgentLook } from '../components/agentAvatar/look'
 
 // #2118 — 每个列表的加载态真值:空态 CTA 只能在成功的权威快照为空时出现;idle/loading 不能闪假空,
@@ -12,7 +12,6 @@ export type ContactsLoadStatus = 'idle' | 'loading' | 'ready' | 'error'
 export interface ContactsContextValue {
   contacts: ContactUser[]
   sharedGroupAgents: ContactUser[]
-  groups: ContactGroup[]
   groupChats: ContactGroupChat[]
   /** 「新的请求」的好友 / Agent 列表:收到的与我发出的,含已处理的。 */
   friendRequests: FriendRequestEntry[]
@@ -25,8 +24,7 @@ export interface ContactsContextValue {
   requestsError: string | null
   sentRequests: FriendRequest[]
   loadingContacts: boolean
-  loadingGroups: boolean
-  // #2118 — contacts / groupChats 各自的三态(注意 loadingGroups 是联系人标签 groups,≠ 群聊 groupChats)。
+  // #2118 — contacts / groupChats 各自的三态。
   contactsStatus: ContactsLoadStatus
   groupChatsStatus: ContactsLoadStatus
   searchResults: ContactUser[]
@@ -37,12 +35,8 @@ export interface ContactsContextValue {
   acceptRequest: (requestId: string) => Promise<AcceptFriendRequestResult>
   rejectRequest: (requestId: string) => Promise<void>
   refreshContacts: () => Promise<void>
-  refreshGroups: () => Promise<void>
   refreshRequests: () => Promise<void>
   refreshGroupJoinRequests: () => Promise<void>
-  createGroup: (name: string) => Promise<string | null>
-  renameGroup: (groupId: string, name: string) => Promise<void>
-  deleteGroup: (groupId: string) => Promise<void>
   updateContactAlias: (contactId: string, alias: string) => Promise<void>
   setAgentPublic: (agentId: string, agentPublic: boolean) => Promise<void>
   setAgentDesiredStatus: (agentId: string, desiredStatus: 'online' | 'offline') => Promise<void>
@@ -59,7 +53,6 @@ export interface ContactsContextValue {
 const EMPTY_CONTACTS: ContactsContextValue = {
   contacts: [],
   sharedGroupAgents: [],
-  groups: [],
   groupChats: [],
   friendRequests: [],
   groupInvitations: [],
@@ -70,7 +63,6 @@ const EMPTY_CONTACTS: ContactsContextValue = {
   requestsError: null,
   sentRequests: [],
   loadingContacts: false,
-  loadingGroups: false,
   contactsStatus: 'idle',
   groupChatsStatus: 'idle',
   searchResults: [],
@@ -81,12 +73,8 @@ const EMPTY_CONTACTS: ContactsContextValue = {
   acceptRequest: async () => ({ chatId: null, name: null, kind: null, created: false, member_count: null }),
   rejectRequest: async () => {},
   refreshContacts: async () => {},
-  refreshGroups: async () => {},
   refreshRequests: async () => {},
   refreshGroupJoinRequests: async () => {},
-  createGroup: async () => null,
-  renameGroup: async () => {},
-  deleteGroup: async () => {},
   updateContactAlias: async () => {},
   setAgentPublic: async () => {},
   setAgentDesiredStatus: async () => {},

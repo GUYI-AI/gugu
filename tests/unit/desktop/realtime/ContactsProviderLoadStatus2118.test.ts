@@ -18,7 +18,6 @@ const { authUser, contactsServiceMock, identitiesById, putIdentitiesMock, getImR
     getImRepositoryMock: vi.fn(async () => ({ putIdentities: putIdentitiesMock })),
     contactsServiceMock: {
       getContacts: vi.fn(),
-      getContactGroups: vi.fn(),
       getReceivedRequests: vi.fn(),
       getSentRequests: vi.fn(),
       updateContactAlias: vi.fn(),
@@ -80,7 +79,6 @@ beforeEach(() => {
   for (const fn of Object.values(contactsServiceMock)) (fn as ReturnType<typeof vi.fn>).mockReset()
   refreshChatsMock.mockReset().mockResolvedValue(undefined)
   contactsServiceMock.getContacts.mockResolvedValue([])
-  contactsServiceMock.getContactGroups.mockResolvedValue([])
   chatState.chatsLoadFailed = false
   contactsServiceMock.getReceivedRequests.mockResolvedValue([])
   contactsServiceMock.getSentRequests.mockResolvedValue([])
@@ -202,3 +200,11 @@ describe('#2118 ContactsProvider 加载三态转换', () => {
 })
 
 vi.mock('../../../../apps/desktop/src/lib/groupInvitations', () => ({ listGroupInvitations: vi.fn(async () => []) }))
+
+describe('contact tags were retired (no surface ever reached them)', () => {
+  it('the store neither loads nor offers tag groups', async () => {
+    const harness = await renderProvider()
+    for (const key of ['groups', 'loadingGroups', 'refreshGroups', 'createGroup', 'renameGroup', 'deleteGroup']) expect(store).not.toHaveProperty(key)
+    harness.cleanup()
+  })
+})

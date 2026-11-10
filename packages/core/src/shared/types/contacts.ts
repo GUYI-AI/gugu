@@ -47,16 +47,6 @@ export interface AcceptFriendRequestResult {
   member_count: number | null
 }
 
-export interface ContactGroup {
-  id: string
-  owner_user_id: string
-  name: string
-  sort_order: number
-  contactIds: string[]
-  created_at: string
-  updated_at: string
-}
-
 export interface ContactGroupChat {
   id: string
   public_id?: number | null

@@ -22,15 +22,9 @@ import { SectionLabel } from './ui/SectionLabel'
 import { Chip } from './ui/Chip'
 import {
   ChevronDown, ChevronRight,
-  Check,
   MessageCircle,
-  Pencil,
-  Plus,
-  Tag,
-  Trash2,
   UserPlus,
   Users,
-  X
 } from '@/lib/icons'
 import { OnContactsHidden } from './contacts/OnContactsHidden'
 import { useContactsStore } from '../store/contactsContext'
@@ -51,7 +45,7 @@ import { ContactGroupAvatar, ContactSearch, SelectionCheckbox } from './contacts
 import { ContactsListDock } from './contacts/ContactsListDock'
 import { Button } from './ui/Button'
 import { useToast } from './toastContext'
-import type { ContactGroup, ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
+import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
 import { isCloudAgentMarked } from '@gugu/core/shared/enums/agentTypeModels'
 import { chatService } from '../lib/chat'
 import { persistableGroupRoster, replaceGroupRoster } from '../lib/imRepository'
@@ -92,7 +86,7 @@ interface ContactsPanelProps {
   /** 开共享 Session Composer 创建草稿(#2549/#2558);缺省 = 拿不到 composer → 入口不渲染。 */
   onOpenAgentCreateDraft?: () => void
 }
-type LeftSel = 'contacts' | 'new_friends' | 'add_friend' | 'group_chats' | 'agent_library' | `group:${string}`
+type LeftSel = 'contacts' | 'new_friends' | 'add_friend' | 'group_chats' | 'agent_library'
 type MobileContactsPane = 'nav' | 'index' | 'detail'
 
 // @@@qr-share-as-image - save a data-URL image (e.g. the exported group-invite QR) as a downloaded
@@ -144,55 +138,6 @@ function NavButton({
   )
 }
 
-function GroupNameEditor({
-  value,
-  placeholder,
-  onSave,
-  onCancel
-}: {
-  value: string
-  placeholder: string
-  onSave: (name: string) => Promise<void> | void
-  onCancel: () => void
-}) {
-  const [draft, setDraft] = useState(value)
-  const [saving, setSaving] = useState(false)
-
-  const save = async () => {
-    const name = draft.trim()
-    if (!name || saving) return
-    setSaving(true)
-    try {
-      await onSave(name)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="flex items-center gap-1">
-      <input
-        autoFocus
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') save()
-          if (event.key === 'Escape') onCancel()
-        }}
-        placeholder={placeholder}
-        className={inlineInputClass}
-      />
-      <IconButton title={ct('profile.saveAlias')} onClick={save}>
-        <Check size={14} />
-      </IconButton>
-      <IconButton title={ct('common.cancel')} onClick={onCancel}>
-        <X size={14} />
-      </IconButton>
-    </div>
-  )
-}
-
-// ── PersonContactRow ──────────────────────────────────────────────────────────
 function PersonContactRow({
   contact,
   selected,
@@ -567,15 +512,11 @@ function ContactsNav({
   agents,
   groupChats,
   pendingCount,
-  groups,
   query,
   onQuery,
   onSelect,
   onOpenContact,
   onOpenGroupChat,
-  onCreateGroup,
-  onRenameGroup,
-  onDeleteGroup
 }: {
   selected: LeftSel
   mobile?: boolean
@@ -584,18 +525,12 @@ function ContactsNav({
   agents: ContactUser[]
   groupChats: ContactGroupChat[]
   pendingCount: number
-  groups: ContactGroup[]
   query: string
   onQuery: (value: string) => void
   onSelect: (value: LeftSel, seed?: string) => void
   onOpenContact: (contact: ContactUser) => void
   onOpenGroupChat?: (group: ContactGroupChat) => void
-  onCreateGroup: (name: string) => Promise<string | null>
-  onRenameGroup: (groupId: string, name: string) => Promise<void>
-  onDeleteGroup: (groupId: string) => Promise<void>
 }) {
-  const [creatingGroup, setCreatingGroup] = useState(false)
-  const [editingGroupId, setEditingGroupId] = useState<string | null>(null)
 
   return (
     <Pane paneRole="nav" mobile={mobile}>
@@ -655,69 +590,6 @@ function ContactsNav({
           onClick={() => onSelect('agent_library')}
         />
 
-        {/* 标签分区标签 —— 与三分区同一档(11/16 semibold muted)。新建入口在移动壳要 44 命中框(#4292)。 */}
-        <SectionLabel
-          className="!mt-3"
-          trailing={
-            <IconButton title={ct('tags.create')} touchTarget={mobile} onClick={() => setCreatingGroup(true)}>
-              <Plus size={mobile ? 16 : 14} />
-            </IconButton>
-          }
-        >
-          {ct('tags.title')}
-        </SectionLabel>
-
-        {creatingGroup ? (
-          <GroupNameEditor
-            value=""
-            placeholder={ct('tags.namePlaceholder')}
-            onCancel={() => setCreatingGroup(false)}
-            onSave={async (name) => {
-              const id = await onCreateGroup(name)
-              setCreatingGroup(false)
-              if (id) onSelect(`group:${id}`)
-            }}
-          />
-        ) : null}
-
-        {groups.map((group) =>
-          editingGroupId === group.id ? (
-            <GroupNameEditor
-              key={group.id}
-              value={group.name}
-              placeholder={ct('tags.namePlaceholder')}
-              onCancel={() => setEditingGroupId(null)}
-              onSave={async (name) => {
-                await onRenameGroup(group.id, name)
-                setEditingGroupId(null)
-              }}
-            />
-          ) : (
-            <div key={group.id} className="flex items-center gap-1">
-              <div className="min-w-0 flex-1">
-                <NavButton
-                  mobile={mobile}
-                  icon={<Tag size={mobile ? 18 : 14} />}
-                  label={group.name}
-                  count={group.contactIds.length}
-                  active={selected === `group:${group.id}`}
-                  onClick={() => onSelect(`group:${group.id}`)}
-                />
-              </div>
-              <IconButton title={ct('tags.rename', { name: group.name })} onClick={() => setEditingGroupId(group.id)}>
-                <Pencil size={13} />
-              </IconButton>
-              <IconButton
-                title={ct('tags.delete', { name: group.name })}
-                onClick={() => {
-                  if (window.confirm(ct('tags.deleteConfirm', { name: group.name }))) onDeleteGroup(group.id)
-                }}
-              >
-                <Trash2 size={13} />
-              </IconButton>
-            </div>
-          )
-        )}
       </div>
       </ContactSearch>
     </Pane>
@@ -1025,16 +897,11 @@ export const ContactsPanel = memo(function ContactsPanel({
   const {
     contacts,
     sharedGroupAgents,
-    groups,
     groupChats,
     pendingRequestCount,
     sentRequests,
     loadingContacts,
-    loadingGroups,
     sendRequest,
-    createGroup,
-    renameGroup,
-    deleteGroup,
     setAgentPublic,
     setAgentDesiredStatus,
     removeOwnedAgent,
@@ -1182,20 +1049,13 @@ export const ContactsPanel = memo(function ContactsPanel({
     [deleteChat, leaveGroup, toast]
   )
 
-  const selectedGroup = selectedNav.startsWith('group:')
-    ? groups.find((group) => selectedNav === `group:${group.id}`)
-    : undefined
-
   const scopedContacts = useMemo(() => {
     if (selectedNav === 'agent_library') return agentContacts
-    // @@@tag-metadata-filter - UI tags are a metadata view over all communication objects, not a human-only folder.
-    if (selectedGroup)
-      return contacts.filter((contact) => selectedGroup.contactIds.includes(contact.id))
     // @@@1944 new_friends 不再是联系人列表的一种 scope——它的请求列表（含已发出）由 NewFriendsPanel
     // 自渲染，桌面/移动都只在一个渲染点出现，无中间联系人行列表。
     if (selectedNav === 'group_chats' || selectedNav === 'new_friends') return []
     return humanContacts
-  }, [agentContacts, contacts, humanContacts, selectedGroup, selectedNav])
+  }, [agentContacts, humanContacts, selectedNav])
 
   const selectedContact = useMemo(
     () =>
@@ -1279,7 +1139,7 @@ export const ContactsPanel = memo(function ContactsPanel({
       ? ct('common.agent')
       : selectedNav === 'group_chats'
         ? ct('common.groups')
-        : (selectedGroup?.name ?? ct('panel.allContacts'))
+        : ct('panel.allContacts')
 
   const selectNav = (next: LeftSel, seed?: string) => navigateMobile(() => {
     setSelectedNav(next)
@@ -1531,18 +1391,11 @@ export const ContactsPanel = memo(function ContactsPanel({
           agents={agentContacts}
           groupChats={groupChats}
           pendingCount={pendingRequestCount}
-          groups={groups}
           query={query}
           onQuery={setQuery}
           onSelect={selectNav}
           onOpenContact={(c) => { setSelectedNav(c.type === 'agent' ? 'agent_library' : 'contacts'); selectContact(c) }}
           onOpenGroupChat={onOpenGroupChat}
-          onCreateGroup={createGroup}
-          onRenameGroup={renameGroup}
-          onDeleteGroup={async (groupId) => {
-            await deleteGroup(groupId)
-            if (selectedNav === `group:${groupId}`) setSelectedNav('contacts')
-          }}
         />
       )}
 
@@ -1590,7 +1443,7 @@ export const ContactsPanel = memo(function ContactsPanel({
               contacts={scopedContacts}
               currentUserId={user?.id}
               sectionBy={selectedNav === 'agent_library' ? 'device' : undefined}
-              loading={loadingContacts || loadingGroups}
+              loading={loadingContacts}
               selectedContactId={selectedContact?.id}
               selectionMode={contactSelectionMode}
               selectedContactIds={selectedContactIds}
@@ -1599,7 +1452,7 @@ export const ContactsPanel = memo(function ContactsPanel({
               onToggleContact={toggleContactSelection}
               onCreateGroupFromSelection={() => setShowGroupModal(true)}
               onBack={() => navigateMobile(() => setMobilePane('nav'), 'pop')}
-              onAddContact={selectedGroup ? undefined : () => selectNav('add_friend')}
+              onAddContact={() => selectNav('add_friend')}
               onCreateAgent={onOpenAgentCreateDraft}
               onSelect={selectContact}
               onRemoveContact={handleRemoveContact}
@@ -1610,30 +1463,10 @@ export const ContactsPanel = memo(function ContactsPanel({
               contactPinned={contactPinned}
               contactNotifMuted={contactNotifMuted}
               getContactRemoveLabel={getContactRemoveLabel}
-              subtitle={selectedGroup ? ct('tags.titleWithCount', { count: scopedContacts.length }) : undefined}
-              summaryLabel={selectedGroup ? ct('tags.countSummary', { count: scopedContacts.length }) : undefined}
             />
           )}
 
-          {showDetail && selectedGroup ? (
-            selectedContact ? (
-              <ContactDetail
-                contact={selectedContact}
-                humanContacts={humanContacts}
-                sentRequestIds={sentRequestIds}
-                requestingAgentId={requestingAgentId}
-                groupChats={groupChats}
-                mobile={mobile}
-                onBack={() => navigateMobile(() => setMobilePane('index'), 'pop')}
-                onSwitchToChat={onSwitchToChat}
-                onOpenGroupChat={onOpenGroupChat}
-                onRequestAgent={requestAgent}
-                onSetAgentPublic={setAgentPublic}
-                onSetAgentDesiredStatus={setAgentDesiredStatus}
-                getCommonGroupChats={getCommonGroupChats}
-              />
-            ) : null
-          ) : showDetail ? (
+          {showDetail ? (
             <ContactDetail
               contact={selectedContact}
               humanContacts={humanContacts}

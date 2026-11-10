@@ -18,7 +18,6 @@ const { authUser, contactsServiceMock, identitiesById, putIdentitiesMock, getImR
     getImRepositoryMock: vi.fn(async () => ({ putIdentities: putIdentitiesMock })),
     contactsServiceMock: {
       getContacts: vi.fn(),
-      getContactGroups: vi.fn(),
       getReceivedRequests: vi.fn(),
       getSentRequests: vi.fn(),
       updateContactAlias: vi.fn(),
@@ -103,7 +102,6 @@ beforeEach(() => {
   refreshChatsMock.mockReset().mockResolvedValue(undefined)
   chatState.chats.length = 0
   contactsServiceMock.getContacts.mockResolvedValue([])
-  contactsServiceMock.getContactGroups.mockResolvedValue([])
   contactsServiceMock.getReceivedRequests.mockResolvedValue([])
   contactsServiceMock.getSentRequests.mockResolvedValue([])
   contactsServiceMock.updateContactAlias.mockResolvedValue(undefined)

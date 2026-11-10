@@ -390,20 +390,7 @@ export default {
     "qrFailed": "二维码生成失败",
     "scanToJoinGugu": "扫码加入 咕咕"
   },
-  "tags": {
-    "countSummary": "共 {{count}} 个对象",
-    "countSummary_one": "共 {{count}} 个对象",
-    "countSummary_other": "共 {{count}} 个对象",
-    "create": "新建标签",
-    "delete": "删除{{name}}",
-    "deleteConfirm": "删除标签「{{name}}」？",
-    "namePlaceholder": "标签名称",
-    "rename": "重命名{{name}}",
-    "title": "标签",
-    "titleWithCount": "标签 · {{count}} 个对象",
-    "titleWithCount_one": "标签 · {{count}} 个对象",
-    "titleWithCount_other": "标签 · {{count}} 个对象"
-  },
+
   "toast": {
     "deleteAgentFailed": "归档任务失败",
     "deleteContactFailed": "删除联系人失败",

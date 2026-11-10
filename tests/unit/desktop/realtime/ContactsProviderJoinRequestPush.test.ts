@@ -17,7 +17,6 @@ const { authUser, authOverride, contactsServiceMock, revisionHandlers, listManag
     authOverride: { current: null as null | { id: string; email: string; nickname: string } },
     contactsServiceMock: {
       getContacts: vi.fn(),
-      getContactGroups: vi.fn(),
       getReceivedRequests: vi.fn(),
       getSentRequests: vi.fn(),
     },
