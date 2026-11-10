@@ -135,7 +135,7 @@ App 开源，审核后进市场。想要的 App 不存在，就在聊天里描�
 
 ## 交流
 
-<p><img src="docs/assets/gugu-group-qr.svg" width="240" alt="咕咕群二维码，在咕咕里加入或打开下载页">&nbsp;&nbsp;<img src="docs/assets/gugu-wechat-qr.svg" width="240" alt="咕咕微信群二维码，打开 gugu.nextmind.space"></p>
+<p><img src="docs/assets/gugu-wechat-qr.svg" width="240" alt="咕咕微信群二维码，打开 gugu.nextmind.space">&nbsp;&nbsp;<img src="docs/assets/gugu-group-qr.svg" width="240" alt="咕咕群二维码，在咕咕里加入或打开下载页"></p>
 
 ## 参与贡献
 
