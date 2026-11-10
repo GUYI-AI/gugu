@@ -20,10 +20,13 @@ function naturalBadgeWidth(badge: HTMLElement) {
 }
 
 describe('the turn outcome badge is measured from what it paints', () => {
-  for (const [name, data] of [['sign-in needed', signIn], ['upstream said', said]] as const) {
+  // The page picks the middle dot's glyph by language (zh-CN on a phone: a CJK font, 6px), while off-screen measurement
+  // sees a Latin one (about 3px). `monospace` stands in for such a fallback: a different, wider glyph for the same dot.
+  for (const glyph of ['inherit', 'monospace']) for (const [name, data] of [['sign-in needed', signIn], ['upstream said', said]] as const) {
     for (const width of [296, 640]) {
-      it(`gives "${name}" the width of its label, separator and reason at ${width}px`, async () => {
+      it(`gives "${name}" the width of its label, separator and reason at ${width}px (dot font: ${glyph})`, async () => {
         const reading = await renderAndMeasureUnit(turnOutcomeUnitDef, data, makeContractCtx({ width }), host => {
+          for (const dot of host.querySelectorAll<HTMLElement>('[data-slot="turn-outcome-badge"] > [aria-hidden="true"]')) dot.style.fontFamily = glyph
           const badge = host.querySelector<HTMLElement>('[data-slot="turn-outcome-badge"]')!
           const reason = host.querySelector<HTMLElement>('[data-slot="turn-outcome-reason"]')!
           const range = document.createRange()

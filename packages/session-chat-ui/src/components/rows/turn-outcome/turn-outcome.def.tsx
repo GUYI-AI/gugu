@@ -136,6 +136,7 @@ import {
   outcomeBadgeGlyph,
   outcomeBadgeLabel,
   outcomeBadgeSeparator,
+  BADGE_SEPARATOR_PX,
   outcomeReason,
   outcomeRow,
   outcomeRuleTrail,
@@ -250,9 +251,6 @@ function hasRestorablePrompt(data: TurnOutcomeItem): boolean {
     && !(data.outcome.kind === 'error' && data.outcome.reason === 'send_failed');
 }
 
-/** The badge's separator between label and reason; the DOM draws it and the measurement measures it. */
-const BADGE_SEPARATOR = '·';
-
 function outcomeLaneLayout(data: TurnOutcomeItem, ctx: import('@session-chat/core/define').MeasureCtx) {
   const t = rowTranslator(ctx), outcome = data.outcome, commands = ctx.commands;
   const refused = outcome.kind === 'error' && outcome.guguReason ? commands?.describeRefusal?.(outcome.guguReason) : null;
@@ -260,9 +258,8 @@ function outcomeLaneLayout(data: TurnOutcomeItem, ctx: import('@session-chat/cor
   const reason = refused?.text ?? parts.reason;
   const glyph = outcome.kind === 'cancelled' ? 16 : 0;
   const label = readableLabel(parts.label, ctx, ctx.width - 20 - glyph, 12, 18);
-  // Between label and reason: the badge's two 6px gaps around the separator, which is text in the badge's own font.
-  // A fixed allowance only fits fonts whose middle dot happens to be that wide (on a phone it is wider, and the reason wraps).
-  const separator = reason ? readableLabel(BADGE_SEPARATOR, ctx).width + 12 : 0;
+  // Between label and reason: the badge's two 6px gaps around the separator's fixed-width box.
+  const separator = reason ? BADGE_SEPARATOR_PX + 12 : 0;
   const natural = label.width + (reason ? readableLabel(reason, ctx).width + separator : 0) + 20 + glyph;
   const badgeWidth = Math.min(ctx.width, natural);
   const description = reason ? readableLabel(reason, ctx, badgeWidth - 20 - glyph - label.width - separator) : null;
@@ -424,7 +421,7 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
             <Show when={parts().reason}>
               {(text) => (
                 <>
-                  <span aria-hidden="true" class={outcomeBadgeSeparator}>{BADGE_SEPARATOR}</span>
+                  <span aria-hidden="true" class={outcomeBadgeSeparator}>·</span>
                   <span data-slot="turn-outcome-reason" class={outcomeReason}>
                     {lane().reason?.text ?? text()}
                   </span>
