@@ -7,6 +7,7 @@ import { TaskChatScope } from './assistant/TaskChatScope'
 import type { AssistantChatHandlers } from './assistant/AssistantChatSlot'
 import { useProjectGroupChats } from '../lib/projectGroupChatsBridge'
 import { useChatStore, useStoreValueBy } from '../store/chatContext'
+import { groupDisplayName } from '@gugu/core/shared/ui/chatModels'
 import { useTheme } from '../store/theme'
 import { SessionUiTheme } from './sessionpage/SessionUiTheme'
 
@@ -41,7 +42,7 @@ export const ChatSlotHost = memo(function ChatSlotHost(handlers: AssistantChatHa
   const slotChatIds = [...entries.keys()].filter(key => key.startsWith(CHAT_SLOT_PREFIX)).map(key => key.slice(CHAT_SLOT_PREFIX.length))
   const chats = useStoreValueBy(store => store.chats, store => slotChatIds.map(id => {
     const chat = store.chats.find(chat => chat.id === id)
-    return chat ? [id, chat.kind, chat.peer_user_id, chat.name] : null
+    return chat ? [id, chat.kind, chat.peer_user_id, chat.name, chat.alias] : null
   }))
   return (
     <>
@@ -61,7 +62,7 @@ export const ChatSlotHost = memo(function ChatSlotHost(handlers: AssistantChatHa
           // A block is session-page content the shell draws, in this React tree: its popups portal out of the mount, so they need
           // the session page's theme layer (the +, a file's ⋯, an App's menus).
           <SessionUiTheme theme={theme}>
-            <InChatSlot.Provider value={{ projectName: projectGroupChats.has(chatId) ? chats.find((chat) => chat.id === chatId)?.name ?? null : null }}>
+            <InChatSlot.Provider value={{ projectName: projectGroupChats.has(chatId) ? groupDisplayName(chat) : null }}>
               <TaskChatScope chatId={chatId}>
                 <ChatAreaPanel
                   viewportKey={key}

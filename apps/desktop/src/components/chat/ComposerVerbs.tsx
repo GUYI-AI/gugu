@@ -5,6 +5,7 @@ import { UI_EVENTS } from '../../lib/uiEvents'
 import { platform } from '../../platform'
 import { useInChatSlot } from '../../lib/shellSlots'
 import { useChatStore } from '../../store/chatContext'
+import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
 import { Button } from '../ui/Button'
 import { sessionComposerBox } from '../../session/renderer/features/sessions/session-composer-styles'
 
@@ -22,14 +23,14 @@ export function ComposerVerbs({ chatId, isGroupChat, draft, onCarried }: {
   onCarried: () => void
 }) {
   const { t } = useTranslation('messaging')
-  const { chats } = useChatStore('chats')
+  const { chats, identitiesById } = useChatStore('chats', 'identitiesById')
   const inSlot = useInChatSlot()
   if (!chatId || !platform.capabilities.sessionHost) return null
   const pick = (verb: ComposerVerb) => {
     if (inSlot) {
       const chat = chats.find((candidate) => candidate.id === chatId)
       const carry = draft()
-      setComposerVerb(chatId, verb, carry, { name: chat?.name ?? '', joinable: chat?.kind === 'group' })
+      setComposerVerb(chatId, verb, carry, { name: chat ? chatDisplayName(chat, identitiesById[chat.peer_user_id ?? '']?.display_name) : '', joinable: chat?.kind === 'group' })
       if (carry.trim()) onCarried()
       return
     }

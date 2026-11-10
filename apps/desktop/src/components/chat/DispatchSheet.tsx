@@ -83,13 +83,16 @@ export const DispatchSheet = observer(function DispatchSheet() {
       avatar: { name: agent.display_name, avatarUrl: agent.avatar, seed: agent.id, isAgent: true },
     }))
   const nameOf = (chat: (typeof chats)[number]) => chatDisplayName(chat, identitiesById[chat.peer_user_id ?? '']?.display_name)
+  // The asked chat is one this account lists: its shown name (alias first, a DM's peer), as the rows below.
+  const askedRow = asked.chat ? chats.find((chat) => chat.id === asked.chat!.id) : undefined
+  const askedName = askedRow ? nameOf(askedRow) : asked.chat?.name ?? ''
   const chatRows = !offers.has('chat') ? [] : chatPickRows(chats, '', query, nameOf, identitiesById, (id) => `chat:${id}`)
   const newRows: ChatPickRow[] = offers.has('new-agent') && found(t('dispatchPick.newAgent'))
     ? [{ id: NEW_AGENT, name: t('dispatchPick.newAgent'), avatar: { name: '+', seed: NEW_AGENT, isAgent: true } }]
     : []
   const sections: ChatPickSection[] = [
-    { id: 'chat-agents', title: t('dispatchPick.chatAgents', { chat: asked.chat?.name ?? '' }), rows: offers.has('agent-in-chat') ? memberRows('agent') : [] },
-    { id: 'chat-people', title: t('dispatchPick.chatPeople', { chat: asked.chat?.name ?? '' }), rows: offers.has('person-in-chat') ? memberRows('human') : [] },
+    { id: 'chat-agents', title: t('dispatchPick.chatAgents', { chat: askedName }), rows: offers.has('agent-in-chat') ? memberRows('agent') : [] },
+    { id: 'chat-people', title: t('dispatchPick.chatPeople', { chat: askedName }), rows: offers.has('person-in-chat') ? memberRows('human') : [] },
     { id: 'agents', title: t('dispatchPick.myAgents'), rows: agentRows },
     { id: 'new', title: t('dispatchPick.new'), rows: newRows },
     { id: 'chats', title: t('composePick.chats'), rows: chatRows },

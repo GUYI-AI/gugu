@@ -171,6 +171,19 @@ describe('DispatchSheet', () => {
     await expect(picked).resolves.toEqual({ to: { chat: 'c-group', member: 'user:a' }, visible: true, text: 'Host this round, hard mode' })
   })
 
+  it('names the asked chat as the chat list does: the person\'s alias, not the raw group name', async () => {
+    chats[0]!.alias = 'My readers'
+    try {
+      await act(async () => {
+        void ask({ draft: false, offers: ['agent-in-chat'], text: 'Host', pills: [],
+          chat: { id: 'c-group', name: 'Reading group', members: [{ id: 'user:a', name: 'Kip', kind: 'agent' }] } })
+      })
+      const section = document.body.querySelector('[data-pick-section="chat-agents"]')!.textContent
+      expect(section).toContain('My readers')
+      expect(section).not.toContain('Reading group')
+    } finally { chats[0]!.alias = null }
+  })
+
   it('a pick: the App\'s words, what it is about read only, the person\'s own agents; the pick is the agent', async () => {
     let picked: Promise<unknown> = Promise.resolve()
     await act(async () => { picked = ask({ draft: false, offers: ['my-agent'], text: '', pick: { title: '指派', subject: '并发问题', body: '选一个', action: '指派', search: '搜索', empty: '没有' }, preselect: 'user:a-sibling' }) })

@@ -59,8 +59,9 @@ describe('send destinations resolved from the signed-in chat list', () => {
     expect(agentSendLabel(agentSendOf(send('216012'))!.to, defaultChatTranslator, chatDisplayName)).toBe('Sent to Design review')
     publishChatSummaries([group({ alias: 'My alias' })])
     expect(chatDisplayName('216012')).toBe('My alias')
+    // Not in the chat list: no name, never a bound folder's project name.
     publishChatSummaries([])
-    expect(chatDisplayName(CHAT)).toBe('Another local folder')
+    expect(chatDisplayName(CHAT)).toBeNull()
   })
 
   it('notifies once when a public number appears, changes or disappears, and resolves renamed chats', () => {
