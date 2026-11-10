@@ -59,7 +59,11 @@ export function useSourceMessageReveal(input: {
     const token = ++tokenRef.current
     void revealMessage(messageId).then(
       () => { if (tokenRef.current === token) flash(messageId) },
-      () => { if (tokenRef.current === token) onMissingRef.current() },
+      (error: unknown) => {
+        // Left before it was shown (another conversation opened): nothing went missing.
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        if (tokenRef.current === token) onMissingRef.current()
+      },
     )
   }, [flash, revealMessage])
 
