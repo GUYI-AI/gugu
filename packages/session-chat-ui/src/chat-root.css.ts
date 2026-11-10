@@ -6,7 +6,7 @@
  * should now pass a VE class or a raw CSS class string.
  */
 
-import { globalStyle, style } from '@vanilla-extract/css';
+import { style } from '@vanilla-extract/css';
 import { vars } from './styles/theme.css';
 import {
   CHAT_CONTENT_GUTTER_PX,
@@ -104,14 +104,21 @@ export const unitRowWrapper = style({
 });
 
 /**
- * A user message row's lane (@@@sticky-user-lanes in ChatRoot): spans its turn, so the row inside it
- * sticks to the top while the turn is on screen and is pushed off by the next lane. Above the rows of
- * its turn; clicks pass through everywhere but the row itself.
+ * A pin lane (@@@sticky-user-lanes in ChatRoot): spans its turn, so its sticky element stays at the top
+ * while the turn is on screen and is pushed off by the next lane. Clicks pass through everywhere but
+ * the row itself and a shown summary.
+ *
+ * Every row wrapper is its own stacking context at z-index auto (contain: paint, will-change), so
+ * nothing inside a reply (KaTeX struts, code blocks, positioned spans) can rise above a lane. A user
+ * lane sits above activity lanes, whose sticky headers reserve room below the user's summary.
  */
 export const pinLane = style({
   zIndex: 1,
   pointerEvents: 'none',
 });
+export const pinMessageLane = style({ zIndex: 2 });
+/** Whatever the message positions or raises inside itself stays under its own summary. */
+export const pinMessageRow = style({ isolation: 'isolate', marginTop: 'calc(-1 * var(--pin-layer-h))' });
 
 /** The semantic strip reaches the scroller edges, outside the centered text column. */
 export const activityPinLane = style({ contain: 'layout style' });
@@ -126,9 +133,6 @@ export const pinSticky = style({
   } },
 });
 
-const PIN_SHADOW = { y: 8, blur: 12, spread: -10 };
-/** How far the pinned backdrop's shadow reaches below its box. */
-export const PIN_SHADOW_REACH = PIN_SHADOW.y + PIN_SHADOW.blur + PIN_SHADOW.spread;
 
 /** A normal bubble has no full-width card behind it. Protect the pinned row once it actually sticks. */
 export const pinBackdrop = style({
@@ -140,20 +144,25 @@ export const pinBackdrop = style({
     '[data-pin-stuck="true"] &': { opacity: 1 },
   },
   // A soft edge rather than a rule: says rows scroll beneath it without drawing a line across the page.
-  boxShadow: `0 ${PIN_SHADOW.y}px ${PIN_SHADOW.blur}px ${PIN_SHADOW.spread}px color-mix(in srgb, ${vars.fg} 22%, transparent)`,
+  boxShadow: `0 8px 12px -10px color-mix(in srgb, ${vars.fg} 22%, transparent)`,
 });
 
 /**
- * A user message's lane is a column: the message row, then the window its summary sticks in. The window
- * starts at the row's bottom and is clipped from its top by the pin line plus the summary's full height
- * (ChatRoot sets that inset), so the summary only shows once the row has left the viewport, in the same
- * frame, by layout alone (@@@pin-window in ChatRoot).
+ * A user message's summary sticks in front of its own message (@@@pin-cover in ChatRoot): resting, it lies
+ * exactly over the message's first two lines; stuck, the message slides on beneath it. It is drawn only
+ * while stuck, with its opaque backdrop, so the pinned strip never shows anything behind it.
  */
-export const pinMessageLane = style({ display: 'flex', flexDirection: 'column' });
-export const pinMessageRow = style({ flex: 'none' });
-export const pinWindow = style({ flex: '1 1 auto', minHeight: 0 });
-export const pinSummaryLayer = style({ paddingBottom: PIN_SUMMARY_GAP });
-globalStyle(`${pinSummaryLayer} > ${pinBackdrop}`, { opacity: 1 });
+export const pinSummaryLayer = style({
+  // Takes no room: the message row after it moves up by its height (pinMessageRow). A negative margin here
+  // would instead let the sticky box run past its lane's end by that much before it is pushed off.
+  height: 'var(--pin-layer-h)',
+  boxSizing: 'border-box',
+  paddingBottom: PIN_SUMMARY_GAP,
+  zIndex: 1,
+  visibility: 'hidden',
+  pointerEvents: 'none',
+  selectors: { '[data-pin-stuck="true"] > &': { visibility: 'visible', pointerEvents: 'auto' } },
+});
 
 /** Page-colored, square strip, including its seam so body text cannot peek between the two pins. */
 export const activityPinBackdrop = style({

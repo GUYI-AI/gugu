@@ -1,18 +1,17 @@
 .gg-topic-menu-row { position: relative; }
-/* 行 = ListRowContent:标题+时间 / 预览+未读数,数和时间同一条右边线。 */
+/* 行 = ListRowContent 单行:名字 + 贴右的数,和侧栏话题子行(TopicSubRow)同形;预览和时间留给打开的话题。 */
 .gg-topic-menu-open > .gg-menu-item-label { display: flex; align-items: center; gap: var(--row-gap); }
 .gg-topic-menu-open > .gg-menu-item-label::after { content: ""; display: none; flex: 0 0 var(--control-h-touch); }
 .gg-topic-menu-open[data-emphasis] .gg-list-row-title { font-weight: var(--font-weight-semibold); }
 .gg-topic-pin-mark { display: inline; vertical-align: -1px; margin-inline-end: 4px; color: var(--faint-fg); }
-.gg-topic-calling { color: var(--danger-solid); font-weight: var(--font-weight-semibold); }
 .gg-topic-menu-pin { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); opacity: 0; pointer-events: none; }
 .gg-topic-menu-row:is(:hover, :focus-within, :has([data-highlighted])) .gg-topic-menu-pin { opacity: 1; pointer-events: auto; }
-.gg-topic-menu-row:is(:hover, :focus-within, :has([data-highlighted])) .gg-list-row-trailing { display: none; }
+.gg-topic-menu-row:is(:hover, :focus-within, :has([data-highlighted])) .gg-list-row-meta { display: none; }
 .gg-topic-menu-row:is(:hover, :focus-within, :has([data-highlighted])) .gg-topic-menu-open > .gg-menu-item-label::after { display: block; }
-/* 还能往下滚时末端渐隐;滚到底渐隐消失(滚动驱动,不挂监听)。 */
+/* 上限露出十行半:半行压在渐隐里,提示还有。还能往下滚时末端渐隐;滚到底渐隐消失(滚动驱动,不挂监听)。 */
 @property --gg-topic-fade { syntax: '<length>'; inherits: false; initial-value: 0px; }
-@keyframes gg-topic-fade-end { from { --gg-topic-fade: 40px; } to { --gg-topic-fade: 0px; } }
-.gg-topic-list { max-height: calc(min(360px, var(--available-height)) - 2 * var(--gg-menu-padding, 4px)); overflow-y: auto; overscroll-behavior: contain; mask-image: linear-gradient(to bottom, var(--color-white) calc(100% - var(--gg-topic-fade)), transparent); animation: gg-topic-fade-end linear both; animation-timeline: scroll(self); }
+@keyframes gg-topic-fade-end { from { --gg-topic-fade: 32px; } to { --gg-topic-fade: 0px; } }
+.gg-topic-list { max-height: calc(min(400px, var(--available-height)) - 2 * var(--gg-menu-padding, 4px)); overflow-y: auto; overscroll-behavior: contain; mask-image: linear-gradient(to bottom, var(--color-white) calc(100% - var(--gg-topic-fade)), transparent); animation: gg-topic-fade-end linear both; animation-timeline: scroll(self); }
 .gg-topic-empty { display: flex; flex-direction: column; gap: 4px; }
 .gg-topic-empty small { color: var(--faint-fg); font-size: var(--font-caption); }
 .gg-topic-pins-error { padding: 6px 10px; color: var(--text-error); font-size: var(--font-caption); }

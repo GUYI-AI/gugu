@@ -346,15 +346,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
     setGroups((current) => current.filter((group) => group.id !== groupId))
   }, [])
 
-  const updateGroupMembers = useCallback(async (groupId: string, contactIds: string[]) => {
-    await contactsService.updateContactGroupMembers(groupId, contactIds)
-    setGroups((current) => current.map((group) => (
-      group.id === groupId
-        ? { ...group, contactIds: [...new Set(contactIds)], updated_at: new Date().toISOString() }
-        : group
-    )))
-  }, [])
-
   const updateContactAlias = useCallback(
     async (contactId: string, alias: string) => {
       if (!userId) return
@@ -514,7 +505,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
       createGroup,
       renameGroup,
       deleteGroup,
-      updateGroupMembers,
       updateContactAlias,
       setAgentPublic,
       setAgentDesiredStatus,
@@ -531,7 +521,7 @@ export function ContactsProvider({ children, active = true }: { children: React.
     groupInvitations, groupJoinRequests, groupJoinRequestsError, requestsStatus, requestsError, loadingContacts,
     loadingGroups, contactsStatus, groupChatsStatus, isSearching, searchUsers, clearSearch, sendRequest, acceptRequest,
     rejectRequest, loadContacts, loadGroups, refreshAllRequests, loadGroupJoinRequests, createGroup, renameGroup,
-    deleteGroup, updateGroupMembers, updateContactAlias, setAgentPublic, setAgentDesiredStatus, renameAgent,
+    deleteGroup, updateContactAlias, setAgentPublic, setAgentDesiredStatus, renameAgent,
     updateAgentProfile, uploadAgentAvatar, setAgentLook, removeOwnedAgent, removeContact, getCommonGroupChats,
   ])
   const [listeners] = useState(() => new Set<() => void>())

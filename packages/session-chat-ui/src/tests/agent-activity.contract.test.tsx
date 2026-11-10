@@ -414,9 +414,10 @@ describe('approved A2A activity', () => {
     t.scroll().scrollTop = 0;
     await untilStable('opaque lanes return to ordinary bubbles', () => t.head()?.getBoundingClientRect().top);
     const headMask = masks()[1];
-    // The activity mask turns transparent; the owner pin's mask stays opaque inside its window, which clips it away.
+    // Both masks turn transparent; the owner pin rests hidden over its own message.
     expect(getComputedStyle(headMask).opacity).toBe('0');
-    expect(pinnedSummaryShown(own() as HTMLElement), 'the owner pin is clipped away with its mask').toBe(false);
+    expect(getComputedStyle(masks()[0]).opacity).toBe('0');
+    expect(pinnedSummaryShown(own() as HTMLElement), 'the owner pin is put away').toBe(false);
   });
   it.each([
     ...[

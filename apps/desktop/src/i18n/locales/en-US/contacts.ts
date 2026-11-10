@@ -391,37 +391,18 @@ export default {
     "scanToJoinGugu": "Scan to join Gugu"
   },
   "tags": {
-    "back": "Back to tag",
-    "backToList": "Back to tag list",
-    "contactKind": "Contact",
     "countSummary": "{{count}} entries total",
     "countSummary_one": "{{count}} entry total",
     "countSummary_other": "{{count}} entries total",
     "create": "Create tag",
     "delete": "Delete {{name}}",
     "deleteConfirm": "Delete tag “{{name}}”?",
-    "editMembers": "Edit members",
-    "editTitle": "Edit tag members",
-    "emptyContacts": "No contacts or Agents",
-    "emptyDescription": "Tag contacts or Agents to show them in this list.",
-    "emptyTitle": "This tag has no entries",
-    "filters": {
-      "agent": "Agents",
-      "all": "All",
-      "contacts": "Contacts"
-    },
     "namePlaceholder": "Tag name",
-    "noResults": "No entries found",
-    "objectCount": "{{count}} entries",
-    "objectCount_one": "{{count}} entry",
-    "objectCount_other": "{{count}} entries",
     "rename": "Rename {{name}}",
-    "searchPlaceholder": "Search contacts or Agents",
     "title": "Tags",
     "titleWithCount": "Tag · {{count}} entries",
     "titleWithCount_one": "Tag · {{count}} entry",
-    "titleWithCount_other": "Tag · {{count}} entries",
-    "updateFailed": "Could not update tag members"
+    "titleWithCount_other": "Tag · {{count}} entries"
   },
   "toast": {
     "deleteAgentFailed": "Could not archive task",

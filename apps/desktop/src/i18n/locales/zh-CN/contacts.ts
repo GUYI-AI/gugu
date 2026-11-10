@@ -391,37 +391,18 @@ export default {
     "scanToJoinGugu": "扫码加入 咕咕"
   },
   "tags": {
-    "back": "返回标签",
-    "backToList": "返回标签列表",
-    "contactKind": "联系人",
     "countSummary": "共 {{count}} 个对象",
     "countSummary_one": "共 {{count}} 个对象",
     "countSummary_other": "共 {{count}} 个对象",
     "create": "新建标签",
     "delete": "删除{{name}}",
     "deleteConfirm": "删除标签「{{name}}」？",
-    "editMembers": "编辑成员",
-    "editTitle": "编辑标签成员",
-    "emptyContacts": "暂无联系人或 Agent",
-    "emptyDescription": "给联系人或 Agent 打上这个标签后，它们会出现在左侧列表。",
-    "emptyTitle": "这个标签还没有对象",
-    "filters": {
-      "agent": "Agent",
-      "all": "全部",
-      "contacts": "联系人"
-    },
     "namePlaceholder": "标签名称",
-    "noResults": "未找到对象",
-    "objectCount": "{{count}} 个对象",
-    "objectCount_one": "{{count}} 个对象",
-    "objectCount_other": "{{count}} 个对象",
     "rename": "重命名{{name}}",
-    "searchPlaceholder": "搜索联系人 / Agent",
     "title": "标签",
     "titleWithCount": "标签 · {{count}} 个对象",
     "titleWithCount_one": "标签 · {{count}} 个对象",
-    "titleWithCount_other": "标签 · {{count}} 个对象",
-    "updateFailed": "更新标签成员失败"
+    "titleWithCount_other": "标签 · {{count}} 个对象"
   },
   "toast": {
     "deleteAgentFailed": "归档任务失败",

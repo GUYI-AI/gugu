@@ -126,11 +126,11 @@ function removeWithShares(node: PaneLayoutNode, paneId: string): PaneLayoutNode 
   return { ...node, children: kept.map((entry) => entry.child), sizes: normalize(kept.map((entry) => entry.size)) };
 }
 
-/** Sizes that add up to 100, in the same proportions (all zero → even). */
+/** Sizes that add up to 100, in the same proportions (all zero → even). Not rounded: a width comes back as it was left. */
 export function normalize(sizes: readonly number[]): number[] {
   const total = sizes.reduce((sum, size) => sum + Math.max(0, size), 0);
   if (total <= 0) return evenSizes(sizes.length);
-  const result = sizes.map((size) => Math.floor((Math.max(0, size) / total) * 100));
+  const result = sizes.map((size) => (Math.max(0, size) / total) * 100);
   result[0] += 100 - result.reduce((sum, value) => sum + value, 0);
   return result;
 }

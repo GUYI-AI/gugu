@@ -18,7 +18,6 @@
   "apps/desktop/src/components/chat/WidgetCard.tsx",
   "apps/desktop/src/components/contacts/GroupInvite.tsx",
   "apps/desktop/src/components/contacts/ShareAgentModal.tsx",
-  "apps/desktop/src/components/contacts/TagDetail.tsx",
   "apps/desktop/src/components/contactsDetailControls.tsx",
   "apps/desktop/src/components/sessionpage/AgentSharePopover.tsx",
   "apps/desktop/src/pages/AgentJoinPage.tsx",

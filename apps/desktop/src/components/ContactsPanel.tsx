@@ -69,7 +69,6 @@ import {
 } from './contacts/ContactRowActions'
 import { useRowContextMenu } from '../hooks/useRowContextMenu'
 import { ShareAgentModal } from './contacts/ShareAgentModal'
-import { TagEmptyDetail, TagMemberEditorDetail } from './contacts/TagDetail'
 import { GroupInviteJoinModal, GroupInviteQrShare } from './contacts/GroupInvite'
 import { ContactsIndex } from './contacts/ContactsIndex'
 import { useTranslation } from 'react-i18next'
@@ -1036,7 +1035,6 @@ export const ContactsPanel = memo(function ContactsPanel({
     createGroup,
     renameGroup,
     deleteGroup,
-    updateGroupMembers,
     setAgentPublic,
     setAgentDesiredStatus,
     removeOwnedAgent,
@@ -1055,7 +1053,6 @@ export const ContactsPanel = memo(function ContactsPanel({
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set())
   const [requestingAgentId, setRequestingAgentId] = useState<string | null>(null)
   const [showGroupModal, setShowGroupModal] = useState(false) // #2118 — 空群组分区「创建群聊」CTA 开建群弹窗
-  const [editingTagId, setEditingTagId] = useState<string | null>(null)
   // @@@scan-seed (#537-A) - a contact scan routes the 咕咕号 into NewFriendsPanel's search; the token
   // forces a re-search even when the same code is scanned twice. Group scans use `query` directly.
   const [addFriendSeed, setAddFriendSeed] = useState<{ query: string; token: number } | null>(null)
@@ -1188,7 +1185,6 @@ export const ContactsPanel = memo(function ContactsPanel({
   const selectedGroup = selectedNav.startsWith('group:')
     ? groups.find((group) => selectedNav === `group:${group.id}`)
     : undefined
-  const editingTag = editingTagId ? groups.find((group) => group.id === editingTagId) : undefined
 
   const scopedContacts = useMemo(() => {
     if (selectedNav === 'agent_library') return agentContacts
@@ -1227,12 +1223,6 @@ export const ContactsPanel = memo(function ContactsPanel({
   }, [selectedContactId, selectedNav, scopedContacts])
 
   useEffect(() => {
-    if (!editingTagId) return
-    if (groups.some((group) => group.id === editingTagId)) return
-    setEditingTagId(null)
-  }, [editingTagId, groups])
-
-  useEffect(() => {
     if (selectedContactIds.size === 0) return
     const liveIds = new Set(contacts.map((contact) => contact.id))
     setSelectedContactIds((current) => {
@@ -1249,7 +1239,6 @@ export const ContactsPanel = memo(function ContactsPanel({
     // @@@1944 nav 高亮同源清理：new_friends 行按 selectedNav 高亮，群行按 selectedSidebarGroupId
     // 高亮——扫码路由切到 new_friends 时必须一并清群选中，否则双高亮。
     setSelectedSidebarGroupId(null)
-    setEditingTagId(null)
     if (route.nav === 'group_join') {
       // #1169 (b): a scanned/pasted group invite QR → token-gated join-confirm modal (bypasses the
       // removed 群号 search box). The route carries the unguessable join_token from the QR payload.
@@ -1297,7 +1286,6 @@ export const ContactsPanel = memo(function ContactsPanel({
     setSelectedContactId(null)
     setContactSelectionMode(false)
     setSelectedContactIds(new Set())
-    setEditingTagId(null)
     // @@@add-friend-unify 从 nav 点进 add_friend = 空态搜索；清掉扫码残留 seed（同 onSelectAddFriend）。
     if (next === 'add_friend') setAddFriendSeed(seed ? { query: seed, token: Date.now() } : null)
     if (mobile) setMobilePane('index')
@@ -1305,7 +1293,6 @@ export const ContactsPanel = memo(function ContactsPanel({
 
   const selectContact = (contact: ContactUser) => navigateMobile(() => {
     setSelectedContactId(contact.id)
-    setEditingTagId(null)
     if (mobile) setMobilePane('detail')
   }, 'push')
 
@@ -1323,7 +1310,6 @@ export const ContactsPanel = memo(function ContactsPanel({
     setSelectedNav('contacts')
     setSelectedContactId(null)
     setSelectedSidebarGroupId(null)
-    setEditingTagId(null)
     setContactSelectionMode(true)
     setSelectedContactIds(new Set())
   }
@@ -1349,11 +1335,6 @@ export const ContactsPanel = memo(function ContactsPanel({
       )
     }
   }
-
-  const editTagMembers = (group: ContactGroup) => navigateMobile(() => {
-    setEditingTagId(group.id)
-    if (mobile) setMobilePane('detail')
-  }, 'push')
 
   const groupModal = <Sheet open={showGroupModal} onClose={() => setShowGroupModal(false)} {...MEMBER_PICKER_SHEET} testId="create-group-modal" ariaLabel={ct('createGroup.title')}>
     {showGroupModal ? <CreateGroupChatForm initialSelectedIds={[...selectedContactIds]} onClose={() => setShowGroupModal(false)} onCreated={() => { setShowGroupModal(false); finishContactSelectionMode(); void refreshChats() }} /> : null}
@@ -1480,7 +1461,6 @@ export const ContactsPanel = memo(function ContactsPanel({
             setSelectedContactId(c.id)
             setSelectedSidebarGroupId(null)
             setSelectedNav(c.type === 'agent' ? 'agent_library' : 'contacts')
-            setEditingTagId(null)
           }}
           onToggleContact={toggleContactSelection}
           onEnterSelectionMode={enterContactSelectionMode}
@@ -1492,7 +1472,6 @@ export const ContactsPanel = memo(function ContactsPanel({
             setSelectedSidebarGroupId(g.id)
             setSelectedContactId(null)
             setSelectedNav('group_chats')
-            setEditingTagId(null)
           }}
           onSelectNewFriends={() => {
             setContactSelectionMode(false)
@@ -1633,28 +1612,10 @@ export const ContactsPanel = memo(function ContactsPanel({
               getContactRemoveLabel={getContactRemoveLabel}
               subtitle={selectedGroup ? ct('tags.titleWithCount', { count: scopedContacts.length }) : undefined}
               summaryLabel={selectedGroup ? ct('tags.countSummary', { count: scopedContacts.length }) : undefined}
-              headerActions={
-                selectedGroup ? (
-                  <IconButton title={ct('tags.editTitle')} onClick={() => editTagMembers(selectedGroup)}>
-                    <UserPlus size={14} />
-                  </IconButton>
-                ) : undefined
-              }
             />
           )}
 
-          {showDetail && editingTag ? (
-            <TagMemberEditorDetail
-              tag={editingTag}
-              mobile={mobile}
-              onBack={() => {
-                setEditingTagId(null)
-                setMobilePane('index')
-              }}
-              contacts={contacts}
-              onUpdateMembers={updateGroupMembers}
-            />
-          ) : showDetail && selectedGroup ? (
+          {showDetail && selectedGroup ? (
             selectedContact ? (
               <ContactDetail
                 contact={selectedContact}
@@ -1671,14 +1632,7 @@ export const ContactsPanel = memo(function ContactsPanel({
                 onSetAgentDesiredStatus={setAgentDesiredStatus}
                 getCommonGroupChats={getCommonGroupChats}
               />
-            ) : (
-              <TagEmptyDetail
-                tag={selectedGroup}
-                mobile={mobile}
-                onBack={() => navigateMobile(() => setMobilePane('index'), 'pop')}
-                onEditMembers={() => editTagMembers(selectedGroup)}
-              />
-            )
+            ) : null
           ) : showDetail ? (
             <ContactDetail
               contact={selectedContact}

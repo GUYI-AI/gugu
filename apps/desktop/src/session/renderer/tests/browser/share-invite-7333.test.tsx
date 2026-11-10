@@ -147,7 +147,7 @@ describe('share and invite surfaces use the approved roles without changing acti
     const invite = textElement(dialog, t('inviteAgent.invite')) as HTMLButtonElement;
     expect(invite.disabled).toBe(true);
     expect(tier(textElement(dialog, t('inviteAgent.title', { name: agent.display_name })))).toEqual([16, 24]);
-    expect(tier(textElement(dialog, alice.email!))).toEqual([12, 18]);
+    expect(tier(textElement(dialog, alice.email!))).toEqual([14, 20]); // ListRow subtitle: body size, muted colour
     // Avatar loading/failure changes the row's accessible-name prefix. Keep the
     // real browser click tied to its stable email instead of a captured full name.
     await page.getByRole('button', { name: /alice@example\.com/ }).click();

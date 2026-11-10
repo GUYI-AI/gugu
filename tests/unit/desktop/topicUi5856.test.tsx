@@ -34,6 +34,7 @@ const { commandRegistry } = await import('../../../apps/desktop/src/session/rend
 const { resetSearchSession, useSearchSession } = await import('../../../apps/desktop/src/session/renderer/features/global-search/search-session')
 const { quotePrefixOf, canSourceTopic, maxTopicSplitWidthForAvailableWidth, TOPIC_SPLIT_MIN_WIDTH, TOPIC_SPLIT_MAX_WIDTH } = await import('../../../apps/desktop/src/components/chat/topicSplitModels')
 const { chatDisplayName } = await import('@gugu/core/shared/ui/chatModels')
+const receiptHeads = () => [...document.querySelectorAll('[data-testid="message-read-receipt-panel"] [data-slot="section-label"]')].map((head) => head.textContent)
 const { withSourceLineCandidates } = await import('../../../apps/desktop/src/lib/mention')
 
 function topic(overrides: Partial<TopicSummary> = {}): TopicSummary {
@@ -357,14 +358,12 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
     expect(panel?.textContent).toContain('话题已读成员')
     expect(panel?.textContent).toContain('话题未读成员')
     expect(panel?.textContent).not.toContain('仅来源群成员')
-    expect(panel?.textContent).toContain('已读 1')
-    expect(panel?.textContent).toContain('未读 1')
+    expect(receiptHeads()).toEqual(['已读1', '未读1'])
 
     await renderWithAppProviders(harness, createNode(TopicSplitPane, {
       ...receiptProps, memberReadSeqs: { read: 0, unread: 10 },
     }))
-    expect(document.querySelector('[data-testid="message-read-receipt-panel"]')?.textContent).toContain('已读 2')
-    expect(document.querySelector('[data-testid="message-read-receipt-panel"]')?.textContent).toContain('未读 0')
+    expect(receiptHeads()).toEqual(['已读2', '未读0'])
   })
 
   it('换话题关闭回执名单，切回原话题也不恢复旧弹层', async () => {

@@ -44,9 +44,9 @@ function GroupInvitationRow({ invitation }: { invitation: GroupInvitation }) {
   }
 
   return (
-    <div className="mx-3 border-b border-[var(--border-subtle)] px-1 py-3" data-testid="group-invitation" data-invitation-id={invitation.id}>
+    <div className="mx-2 px-2 py-3" data-testid="group-invitation" data-invitation-id={invitation.id}>
       <div className="flex items-start gap-3">
-        <Avatar name={invitation.inviter_name} seed={invitation.inviter_user_id} isAgent={invitation.inviter_type === 'agent'} size="md" />
+        <Avatar name={invitation.inviter_name} seed={invitation.inviter_user_id} isAgent={invitation.inviter_type === 'agent'} size="sm" />
         <div className="min-w-0 flex-1 text-sm">
           <div className="font-medium text-[var(--text-primary)]">{t(invitation.inviter_type === 'agent' ? 'groupInvitations.invitedBy' : 'groupInvitations.invitedByHuman', { inviter: invitation.inviter_name, owner: invitation.inviter_owner_name, group: groupName })}</div>
           {invitation.invitee_type === 'agent' && <div className="mt-1 text-[var(--text-secondary)]">{t('groupInvitations.agent', { name: invitation.invitee_name })}</div>}
