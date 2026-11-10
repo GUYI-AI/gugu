@@ -26,9 +26,9 @@ const groups = [
   { id: 'g1', kind: 'group' as const, name: 'Alpha Team', public_id: 208864, avatar_url: null, member_count: 2, is_muted: false, member_user_ids: ['owner-1', 'zs'] },
 ]
 
-async function render(options: { mobile?: boolean; contacts?: Parameters<typeof contactsStore>[0] } = {}) {
+async function render(options: { contacts?: Parameters<typeof contactsStore>[0] } = {}) {
   const onOpenGroupChat = vi.fn()
-  await renderWithAppProviders(harness, createNode(ContactsPanel, { mobile: options.mobile ?? false, onOpenGroupChat }), { shellTab: 'contacts',
+  await renderWithAppProviders(harness, createNode(ContactsPanel, { onOpenGroupChat }), { shellTab: 'contacts',
     auth: { id: 'owner-1', email: 'owner@example.com', nickname: 'Owner' },
     contacts: { contacts: people, groupChats: groups, ...options.contacts },
     chat: { chats: [] },
@@ -142,52 +142,11 @@ describe('contacts search (desktop sidebar)', () => {
   })
 })
 
-describe('contacts search (phone home)', () => {
-  it('shows results in place of the menu, keeps them across a detail visit, and leaves sub-pages unfiltered', async () => {
-    const { onOpenGroupChat } = await render({ mobile: true })
-    const menuRow = (label: string) => Array.from(harness.container.querySelectorAll<HTMLElement>('button.gg-row')).find((button) => button.textContent?.startsWith(label))
 
-    // 手机上框收在页头:先点放大镜(ui/HeaderSearch)。
-    expect(input()).toBeNull()
-    await clickElement($('[data-header-search-open]')!)
-    await typeInto(input(), '张')
-    expect(browseHidden()).toBe(true)
-    expect(titles()).toEqual(['张三'])
-
-    await clickElement(rows()[0])
-    expect(detailTitle()).toBe('张三')
-    await clickElement($('[aria-label="返回联系人列表"]')!)
-    expect(input().value).toBe('张')
-    expect(titles()).toEqual(['张三'])
-
-    await typeInto(input(), 'alpha')
-    await clickElement(rows()[0])
-    expect(onOpenGroupChat).toHaveBeenCalledWith(groups[0])
-
-    await typeInto(input(), '')
-    await clickElement(menuRow('个人')!)
-    expect(Array.from(harness.container.querySelectorAll('[data-contact-id]')).map((row) => row.getAttribute('data-contact-id')).sort())
-      .toEqual(['alan', 'alba', 'ls', 'zs'])
-  })
-
-  // 软键盘上的「搜索 / 前往」就是回车:页头里的框接的是桌面那颗框同一份键盘处理。
-  it('opens the first hit on Enter from the header box', async () => {
-    await render({ mobile: true })
-    await clickElement($('[data-header-search-open]')!)
-    await typeInto(input(), '张')
-    expect(detailTitle()).not.toBe('张三')
-    await press('Enter')
-    expect(detailTitle()).toBe('张三')
-  })
-
-  it('looks a 咕咕号 up on Enter from the header box when it finds nobody', async () => {
-    const searchUsers = vi.fn(async () => {})
-    await render({ mobile: true, contacts: { searchUsers } })
-    await clickElement($('[data-header-search-open]')!)
-    await typeInto(input(), '109601')
-    expect(titles()).toEqual(['用咕咕号 109601 查找'])
-    expect(searchUsers).not.toHaveBeenCalled()
-    await press('Enter')
-    expect(searchUsers).toHaveBeenCalledWith('109601')
-  })
+it('has no phone layout: the phone shell renders PhonePartnersPage', () => {
+  const element = (
+    // @ts-expect-error ContactsPanel takes no `mobile` prop; giving it a phone layout again breaks this line.
+    <ContactsPanel mobile />
+  )
+  expect(element).toBeTruthy()
 })

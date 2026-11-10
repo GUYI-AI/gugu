@@ -2,10 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ExtPanel } from '../../../../apps/desktop/src/components/agentsettings/AgentSharePane'
 import { GroupInviteLinkBlock } from '../../../../apps/desktop/src/components/chat/groupSettingsUi'
-import { GroupInviteQrShare } from '../../../../apps/desktop/src/components/contacts/GroupInvite'
 import { MessageLoadFailure } from '../../../../apps/desktop/src/components/chat/MessageLoadFailure'
 import { platform } from '../../../../apps/desktop/src/platform'
-import { clickElement, contact, createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../../support/testHarness'
+import { clickElement, contact, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 
 vi.mock('qrcode', () => ({ toDataURL: async () => 'data:image/png;base64,cG5n', default: { toDataURL: async () => 'data:image/png;base64,cG5n' } }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { getGroupChatSettings: async () => ({ join_token: 'test-invite' }) } }))
@@ -34,13 +33,7 @@ describe('copy actions preserve the refusal', () => {
     await clickElement(harness.container.querySelector('button')!)
     expect(toast).toHaveBeenCalledWith('复制失败', 'error', reason)
   })
-  it('shows the cause when copying a group QR link', async () => {
-    const toast = vi.fn()
-    await renderWithAppProviders(harness, createNode(GroupInviteQrShare, { group: { id: 'group', public_id: 123, kind: 'group', name: 'Group', avatar_url: null, member_count: 1, is_muted: false } }), { toast })
-    await waitForCondition(() => harness.container.querySelector('[data-testid="group-invite-link-copy-button"]') !== null, 'invite link was never ready')
-    await clickElement(harness.container.querySelector('[data-testid="group-invite-link-copy-button"]')!)
-    expect(toast).toHaveBeenCalledWith('复制失败，请手动复制链接', 'error', reason)
-  })
+
   it('shows the clipboard refusal when copying message-load details', async () => {
     const toast = vi.fn()
     vi.spyOn(platform, 'writeClipboardText').mockRejectedValue(error)

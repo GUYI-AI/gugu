@@ -1090,7 +1090,7 @@ function InnerLayout({
                       }, 'push')}
                     />
                   ) : (
-                    <ContactsPanel externalContactId={externalContactId} mobile={mobile} scanSeed={scanSeed} onSwitchToChat={contactsSwitchToChat} onOpenGroupChat={contactsOpenGroupChat} onOpenAgentCreateDraft={openAgentCreateDraftFromContacts} />
+                    <ContactsPanel externalContactId={externalContactId} scanSeed={scanSeed} onSwitchToChat={contactsSwitchToChat} onOpenGroupChat={contactsOpenGroupChat} onOpenAgentCreateDraft={openAgentCreateDraftFromContacts} />
                   )}
                 </div>
               </div>

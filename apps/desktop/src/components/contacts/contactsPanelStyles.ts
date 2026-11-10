@@ -20,22 +20,15 @@ export const cpaneAvatarClass =
 export const cpaneNameClass = 'gg-c-cpane-name !mt-5 flex items-center gap-2 text-xl font-semibold text-[var(--fg)]'
 export const cpaneStatusClass = 'gg-c-cpane-status !mt-2 flex items-center gap-2 text-sm text-[var(--muted-fg)]'
 export const cpaneActionsClass = 'gg-c-cpane-acts !mt-6 flex gap-3'
-// 行内改名/备注输入:控件高与 Button/Field 同一把尺子(--control-h-md)。
-export const inlineInputClass =
-  'h-[var(--control-h-md)] min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border)] bg-[var(--input-bg)] !px-2 text-sm text-[var(--fg)] outline-none'
 // 详情面里的说明/分节标题(内容读文,--font-body)。
 export const detailCaptionClass = 'text-[length:var(--font-body)] text-[var(--muted-fg)]'
 export const detailBlockClass = '!mt-6 max-w-[620px]'
 // 详情面里的一行提示条(加载中/为空/出错):控件高一档,圆角与卡片同 --r。
 export const detailNoticeClass =
   'flex min-h-[var(--control-h-lg)] items-center rounded-[var(--radius-control)] border border-[var(--border)] bg-[var(--input-bg)] !px-3 text-[length:var(--font-body)] text-[var(--muted-fg)]'
-// 详情面里的卡片行(公开 Agent / 群成员):同一内距、同一圆角、同一边框。
-export const detailCardRowClass =
-  'flex min-h-[var(--control-h-touch)] min-w-0 items-center gap-3 rounded-[var(--radius-control)] border border-[var(--border)] bg-[var(--input-bg)] !p-2'
 // 详情面里的强调小标(Agent / 群密度):药丸小标,与 Chip 同一档。
 export const detailTitleClass = 'text-lg font-semibold text-[var(--fg)] [overflow-wrap:anywhere]'
 export const detailPlaceholderClass = 'flex flex-1 items-center justify-center text-sm text-[var(--muted-fg)]'
-export const detailSectionClass = (mobile?: boolean) => (mobile ? '!px-4 !py-5' : '!px-6 !py-6')
 export const detailBodyClass = (mobile?: boolean) =>
   cn(
     'flex-1 overflow-y-auto overflow-x-hidden',
@@ -76,16 +69,3 @@ export function getAgentProjectPath(contact: ContactUser): string | null {
   return match?.[1]?.trim() || null
 }
 
-// @@@1514 channel 概念已抹除(并入 group)：agent 分享会话即普通 group。
-// @@@1787 分组措辞统一用「群组」(桌面三段 sidebar: Agent/个人/群组)。
-export function groupChatListTitle(): string {
-  return ct('panel.groupSectionTitle')
-}
-
-export function groupChatListCountLabel(count: number): string {
-  return ct('panel.groupCount', { count })
-}
-
-export function groupChatSummaryLabel(count: number): string {
-  return ct('panel.groupCountSummary', { count })
-}

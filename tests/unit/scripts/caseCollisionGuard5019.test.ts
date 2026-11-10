@@ -18,7 +18,7 @@ describe('findCaseCollisions(#5019 大小写撞名闸)', () => {
   it.each([
     {
       label: 'real source collision across .ts/.tsx',
-      paths: [...REAL_COLLISION, 'apps/desktop/src/components/contacts/ContactsIndex.tsx'],
+      paths: [...REAL_COLLISION, 'apps/desktop/src/components/contacts/ContactsListDock.tsx'],
       kind: 'ambiguous-import',
       expectedPaths: [...REAL_COLLISION].sort(),
     },

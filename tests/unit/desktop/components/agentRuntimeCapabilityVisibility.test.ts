@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatAreaPanel } from '../../../../apps/desktop/src/components/ChatAreaPanel'
-import { ContactsPanel } from '../../../../apps/desktop/src/components/ContactsPanel'
+import { ContactDetail } from '../../../../apps/desktop/src/components/contacts/ContactDetail'
 import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
 import * as platformMock from '../../../support/capacitorPlatformTestDouble'
 import {
@@ -129,9 +129,12 @@ async function renderOwnedAgentChat() {
 async function renderOwnedAgentContact() {
   await renderWithAppProviders(
     harness,
-    createNode(ContactsPanel, {
-      externalContactId: 'agent-1',
-      mobile: true
+    // The agent card the phone pages show (ContactDetail); ContactsPanel itself has no phone layout.
+    createNode(ContactDetail, {
+      contact: contact({ id: 'agent-1', display_name: 'Deploy Bot', type: 'agent', owner_user_id: 'owner-1' }),
+      humanContacts: [], sentRequestIds: new Set<string>(), requestingAgentId: null, groupChats: [], mobile: true,
+      onRequestAgent: async () => {}, onSetAgentPublic: async () => {}, onSetAgentDesiredStatus: async () => {},
+      getCommonGroupChats: async () => [],
     }),
     {
       shellTab: 'contacts',

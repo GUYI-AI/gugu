@@ -11,10 +11,9 @@ vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<obj
 vi.mock('@/lib/agentShare', async (original) => ({ ...(await original<object>()), shareAgentWithFriends: vi.fn() }));
 
 const { GroupInviteCard } = await import('@/components/groups/GroupInviteCard');
-const { GroupInviteQrShare, GroupJoinConfirmDialog, GroupInviteJoinModal } = await import('@/components/contacts/GroupInvite');
+const { GroupJoinConfirmDialog, GroupInviteJoinModal } = await import('@/components/contacts/GroupInvite');
 const { ShareAgentModal } = await import('@/components/contacts/ShareAgentModal');
 const { shareAgentWithFriends } = await import('@/lib/agentShare');
-const { chatService } = await import('@/lib/chat');
 const { contactsService } = await import('@/lib/contacts');
 type ShareOutcomes = Awaited<ReturnType<typeof shareAgentWithFriends>>;
 const group = { id: 'group-7333', name: '设计讨论', public_id: 7333, member_count: 3, is_member: false, join_mode: 'approval', join_request_status: null } as const;
@@ -106,33 +105,7 @@ describe('share and invite surfaces use the approved roles without changing acti
     expect(onJoin).not.toHaveBeenCalled();
   });
 
-  it('the QR section waits for the token, renders the actual QR, and copies the same link', async () => {
-    const settings = deferred<Awaited<ReturnType<typeof chatService.getGroupChatSettings>>>();
-    const getSettings = vi.spyOn(chatService, 'getGroupChatSettings').mockReturnValue(settings.promise);
-    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
-    await render(createNode(GroupInviteQrShare, { group: { id: group.id, kind: 'group', name: group.name, public_id: 7333, member_count: 3, avatar_url: null, is_muted: false } }));
-    const copyQr = harness.container.querySelector<HTMLButtonElement>('[data-group-invite-qr-copy]')!;
-    expect(copyQr.disabled).toBe(true);
-    expect(copyQr.dataset.qrPayload).toBe('');
-    await act(async () => settings.resolve({
-      my_role: 'member', can_manage: false, can_dissolve: false, can_archive_topic: false,
-      id: group.id, public_id: 7333, creator_user_id: 'user-1', name: group.name, status: 'active', group_prompt: null, default_agent_type: null,
-      join_token: 'invite-fixture-token', description: null, max_members: 100, allow_member_invite: true, invite_link_enabled: true,
-      agent_join_approval: false, join_mode: 'approval', hide_history: false, avatar_url: null, is_discoverable: false,
-      agent_flood_threshold: null, agent_flood_threshold_effective: 5,
-    }));
-    await until('the actual QR image loaded', () => !!harness.container.querySelector<HTMLImageElement>('img')?.naturalWidth);
-    expect(getSettings).toHaveBeenCalledWith(group.id);
-    expect(copyQr.disabled).toBe(false);
-    expect(copyQr.getBoundingClientRect().height).toBe(32);
-    const image = harness.container.querySelector<HTMLImageElement>('img')!;
-    expect(image.naturalWidth).toBe(132);
-    expect(tier(textElement(harness.container, t('groupInvite.groupNumber', { number: 7333 })))).toEqual([12, 18]);
-    const payload = copyQr.dataset.qrPayload!;
-    expect(payload).toContain('gugu_qr=');
-    await page.getByRole('button', { name: t('groupInvite.copyLink'), exact: true }).click();
-    expect(writeText).toHaveBeenCalledExactlyOnceWith(payload);
-  });
+
 
   it('sharing keeps selection through search, disables submit while waiting, and retries only the failed friend', async () => {
     const alice = contact({ id: 'alice', display_name: '林知夏', email: 'alice@example.com' });

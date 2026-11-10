@@ -1,9 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { ContactsPanel } from '../../../../apps/desktop/src/components/ContactsPanel'
 import { ChatListPanel } from '../../../../apps/desktop/src/components/ChatListPanel'
-import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
 import { clickElement, contact, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 import { expectExit, frame, holdDialogExit } from '../../../support/dialogExit'
 
@@ -16,19 +14,6 @@ afterEach(() => { h.cleanup(); delete (HTMLElement.prototype as Partial<HTMLElem
 const q = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`)!
 const providers = () => ({ auth: { id: 'owner-1' }, contacts: { contacts: [contact({ id: 'alice', display_name: 'Alice' })], groupChats: [] }, chat: { chats: [] } })
 async function back() { await act(async () => { window.dispatchEvent(new CustomEvent('gugu:native-back')) }) }
-
-it('contacts group creation: the form survives dismissal and is fresh on reopening', async () => {
-  await renderWithAppProviders(h, createNode(ContactsPanel, { mobile: true }), { ...providers(), shellTab: 'contacts' })
-  await clickElement([...h.container.querySelectorAll('button')].find((b) => /^(群组|Groups)/.test(b.textContent ?? ''))!)
-  const open = () => clickElement(q(AUTOMATION_TEST_IDS.contactsGroupEmptyAction))
-  await open(); await frame()
-  const popup = q('create-group-modal')
-  expect(popup.textContent).toContain('Alice')
-  await back(); await expectExit(popup, exit)
-  await open(); await frame()
-  expect(q('create-group-modal')).not.toBe(popup)
-  expect(q('create-group-modal').querySelector('input')?.value).toBe('')
-})
 
 for (const kind of ['group', 'friend'] as const) it(`chat list ${kind}: the actual menu owner keeps the sheet through dismissal`, async () => {
   await renderWithAppProviders(h, createNode(ChatListPanel, { mobile: true }), providers())

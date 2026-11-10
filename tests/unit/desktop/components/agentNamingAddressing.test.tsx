@@ -4,7 +4,6 @@ import { ContactSearch } from '../../../../apps/desktop/src/components/contacts/
 import { ShareAgentModal } from '../../../../apps/desktop/src/components/contacts/ShareAgentModal'
 import { ChannelAgentPicker } from '../../../../apps/desktop/src/components/settings/channels/ChannelAgentPicker'
 import { MemberProfileCard } from '../../../../apps/desktop/src/components/MemberProfileCard'
-import { ContactsIndex } from '../../../../apps/desktop/src/components/contacts/ContactsIndex'
 import { SessionRow } from '../../../../apps/desktop/src/mobile/agent-watch/SessionsPage'
 import { installIdentityDirectoryBridge, publishIdentityDirectory } from '../../../../apps/desktop/src/lib/identityDirectoryBridge'
 import { clickElement, contact, createNode, createReactHarness, displayIdentity, renderWithAppProviders } from '../../../support/testHarness'
@@ -75,18 +74,6 @@ it('leaves a human with the same default-shaped name unchanged', async () => {
   expect(harness.container.textContent).not.toContain('正在起名…')
 })
 
-it.each([false, true])('formats a phone contact for browsing while preserving selection and callback values (select=%s)', async selectionMode => {
-  const selected = vi.fn()
-  await renderWithAppProviders(harness, createNode(ContactsIndex, {
-    title: 'Agents', mobile: true, contacts: [agent], currentUserId: 'user-1', loading: false, selectionMode,
-    selectedContactIds: new Set(), onEnterSelectionMode: vi.fn(), onFinishSelectionMode: vi.fn(), onToggleContact: selected,
-    onCreateGroupFromSelection: vi.fn(), onSelect: selected, getContactRemoveLabel: () => 'Remove',
-  }), providers)
-  const row = harness.container.querySelector<HTMLElement>('[data-contact-id="fresh-agent"]')!
-  expect(row.textContent).toContain(selectionMode ? 'Codex 5' : '正在起名…')
-  await clickElement(row)
-  expect(selected).toHaveBeenCalledExactlyOnceWith(agent)
-})
 
 it('formats a phone session row using identity creation while opening the raw session', async () => {
   const session = { conversationId: 'task', projectId: 'project', title: 'Codex 5', harness: 'codex', runtime: 'acp', agentStatus: null,
