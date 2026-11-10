@@ -16,7 +16,7 @@ const electron = vi.hoisted(() => ({
 }))
 vi.mock('electron', () => ({
   contextBridge: { exposeInMainWorld: (name: string, api: unknown) => void (electron.exposed[name] = api) },
-  ipcRenderer: { invoke: electron.invoke, on: electron.on, removeListener: () => undefined, sendSync: () => 'light' },
+  ipcRenderer: { invoke: electron.invoke, on: electron.on, removeListener: () => undefined, sendSync: () => ({ theme: 'light' }) },
 }))
 
 const activation = { isActive: false }
@@ -27,6 +27,7 @@ const initialWheelListeners = addedListeners.mock.calls.filter(([type]) => type 
 addedListeners.mockRestore()
 
 type Host = {
+  taskMessage(args: { intent: 'pause' | 'continue' }): Promise<unknown>
   getContext(): Promise<unknown>
   openLink(url: string): Promise<unknown>
   showMessage(id: string): Promise<unknown>
@@ -41,10 +42,12 @@ const host = electron.exposed.__guguHost as Host
 
 /** Each verb that needs a gesture, called the way `window.gugu` calls it. */
 const gestureCalls: Record<string, () => Promise<unknown>> = {
+  taskMessage: () => host.taskMessage({ intent: 'pause' }),
   filesOpenWith: () => host.appFiles.openWith({ ref: { chat: 'chat-1', name: 'a.md' } }),
   filesUpload: () => host.appFiles.upload({}),
   filesDownload: () => host.appFiles.download({ ref: { chat: 'chat-1', name: 'a.md' } }),
   filesForward: () => host.appFiles.forward({ refs: [{ chat: 'chat-1', name: 'a.md' }] }),
+  filesOpenIn: () => (host.appFiles as unknown as Record<string, (args: unknown) => Promise<unknown>>).openIn!({ ref: { workspace: 'session:s-1', id: 'a.md' }, app: 'finder' }),
   showMessage: () => host.showMessage('msg-1'),
   showSession: () => host.showSession('s-1'),
   dispatch: () => host.dispatch('picked'),
@@ -97,6 +100,9 @@ describe('a verb that needs a gesture is judged by one rule, on what the preload
     activation.isActive = false
     electron.invoke.mockClear()
     await host.dispatch('picked', { gesture: true })
+    expect(sent()[0]!.gesture).toBe(false)
+    electron.invoke.mockClear()
+    await host.taskMessage({ intent: 'pause', gesture: true } as never)
     expect(sent()[0]!.gesture).toBe(false)
   })
 

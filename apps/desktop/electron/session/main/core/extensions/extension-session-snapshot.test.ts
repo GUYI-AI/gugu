@@ -89,13 +89,13 @@ describe('an uninstalled App’s files: gone once its programs have exited (10-0
     return root;
   }
 
-  it('takes its data folder and every frozen copy of it, and nothing of another App', () => {
+  it('takes its data folder and every frozen copy of it, and nothing of another App', async () => {
     const userData = tmp();
     const root = dataRoot(userData);
     const v1 = ensureSessionSnapshot(bundle(userData, 'v1'), sessionSnapshotDir(userData, 'agent-notes', 'a'.repeat(64)));
     const v2 = ensureSessionSnapshot(bundle(userData, 'v2'), sessionSnapshotDir(userData, 'agent-notes', 'b'.repeat(64)));
     const other = ensureSessionSnapshot(bundle(userData, 'o'), sessionSnapshotDir(userData, 'other', 'c'.repeat(64)));
-    removeUninstalledLeftovers(userData, path.join(root, 'agent-notes'), 'agent-notes');
+    await removeUninstalledLeftovers(userData, path.join(root, 'agent-notes'), 'agent-notes');
     expect([v1, v2, path.join(root, 'agent-notes')].filter((dir) => fs.existsSync(dir))).toEqual([]);
     expect([other, path.join(root, 'other', 'notes.json')].every((dir) => fs.existsSync(dir))).toBe(true);
   });

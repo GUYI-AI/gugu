@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { PaneBackButton } from '@/components/contacts/ContactDetail'
 import { RemoteFolderPicker } from '@/components/RemoteFolderPicker'
 import { Button } from '@/components/ui/Button'
-import { Menu, MenuItem } from '@/components/ui/Menu'
+import { DropdownMenu, MenuItem } from '@/components/ui/Menu'
 import { Pane, PaneHeader } from '@/components/ui/Pane'
 import { ChevronRight, Folder, FolderPlus, Monitor } from '@/lib/icons'
 import { rendererLogger } from '@/lib/log'
@@ -51,12 +51,9 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
   const [pickedMachineId, setPickedMachineId] = useState<string | null>(readLastMachine)
   const [existingFolder, setExistingFolder] = useState<{ deviceId: string; path: string } | null>(null)
   const [directory, setDirectory] = useState<Directory | null>(null)
-  const [menu, setMenu] = useState<'machine' | 'folder' | null>(null)
   const [picking, setPicking] = useState(false)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const machineRow = useRef<HTMLButtonElement>(null)
-  const folderRow = useRef<HTMLButtonElement>(null)
   const nameInput = useRef<HTMLInputElement>(null)
 
   const device = machines.find((row) => row.device_id === pickedMachineId && row.is_online) ?? machines.find((row) => row.is_online) ?? null
@@ -173,38 +170,42 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
           />
         </div>
         <div className="gg-partners-navrows">
-          <Button ref={machineRow} variant="ghost" size="option" className="gg-partners-navrow" disabled={!machines.length} onClick={() => setMenu('machine')} data-testid="phone-new-project-machine">
-            <span className="gg-partners-navrow-icon"><Monitor size={20} /></span>
-            <span className="gg-partners-navrow-label">{t('partners.newProject.machine')}</span>
-            <span className="gg-partners-row-value">{device ? machineLabel(device) : t('partners.newProject.noMachine')}</span>
-            <ChevronRight size={16} aria-hidden className="gg-partners-navrow-chevron" />
-          </Button>
-          <Button ref={folderRow} variant="ghost" size="option" className="gg-partners-navrow" disabled={!device} onClick={() => setMenu('folder')} data-testid="phone-new-project-folder-row">
-            <span className="gg-partners-navrow-icon">{folderPath ? <Folder size={20} /> : <FolderPlus size={20} />}</span>
-            <span className="gg-partners-navrow-label">{t('partners.newProject.folder')}</span>
-            <span className="gg-partners-row-value" title={folderPath ?? undefined}>{folderValue}</span>
-            <ChevronRight size={16} aria-hidden className="gg-partners-navrow-chevron" />
-          </Button>
+          <DropdownMenu.Root modal={false}>
+            <DropdownMenu.Trigger render={
+              <Button variant="ghost" size="option" className="gg-partners-navrow" disabled={!machines.length} data-testid="phone-new-project-machine">
+                <span className="gg-partners-navrow-icon"><Monitor size={20} /></span>
+                <span className="gg-partners-navrow-label">{t('partners.newProject.machine')}</span>
+                <span className="gg-partners-row-value">{device ? machineLabel(device) : t('partners.newProject.noMachine')}</span>
+                <ChevronRight size={16} aria-hidden className="gg-partners-navrow-chevron" />
+              </Button>
+            } />
+            <DropdownMenu.Content className="min-w-[160px]">
+              {machines.map((row) => (
+                <MenuItem key={row.device_id} icon={<Monitor size={15} />} disabled={!row.is_online}
+                  onClick={() => { setPickedMachineId(row.device_id); setError(null) }}>
+                  {machineLabel(row)}
+                  {row.is_online ? null : <span className="gg-partners-menu-note">{t('partners.newProject.offline')}</span>}
+                </MenuItem>
+              ))}
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
+          <DropdownMenu.Root modal={false}>
+            <DropdownMenu.Trigger render={
+              <Button variant="ghost" size="option" className="gg-partners-navrow" disabled={!device} data-testid="phone-new-project-folder-row">
+                <span className="gg-partners-navrow-icon">{folderPath ? <Folder size={20} /> : <FolderPlus size={20} />}</span>
+                <span className="gg-partners-navrow-label">{t('partners.newProject.folder')}</span>
+                <span className="gg-partners-row-value" title={folderPath ?? undefined}>{folderValue}</span>
+                <ChevronRight size={16} aria-hidden className="gg-partners-navrow-chevron" />
+              </Button>
+            } />
+            <DropdownMenu.Content className="min-w-[160px]">
+              <MenuItem icon={<FolderPlus size={15} />} onClick={() => { setExistingFolder(null); setError(null) }}>{t('partners.newProject.newFolder')}</MenuItem>
+              <MenuItem icon={<Folder size={15} />} onClick={() => navigateMobile(() => setPicking(true), 'push')}>{t('partners.newProject.existingFolder')}</MenuItem>
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
         </div>
         {error ? <p className="gg-partners-error" role="alert">{error}</p> : null}
       </div>
-      {menu === 'machine' ? (
-        <Menu anchor={machineRow} onClose={() => setMenu(null)}>
-          {machines.map((row) => (
-            <MenuItem key={row.device_id} icon={<Monitor size={15} />} disabled={!row.is_online}
-              onClick={() => { setPickedMachineId(row.device_id); setError(null) }}>
-              {machineLabel(row)}
-              {row.is_online ? null : <span className="gg-partners-menu-note">{t('partners.newProject.offline')}</span>}
-            </MenuItem>
-          ))}
-        </Menu>
-      ) : null}
-      {menu === 'folder' ? (
-        <Menu anchor={folderRow} onClose={() => setMenu(null)}>
-          <MenuItem icon={<FolderPlus size={15} />} onClick={() => { setExistingFolder(null); setError(null) }}>{t('partners.newProject.newFolder')}</MenuItem>
-          <MenuItem icon={<Folder size={15} />} onClick={() => navigateMobile(() => setPicking(true), 'push')}>{t('partners.newProject.existingFolder')}</MenuItem>
-        </Menu>
-      ) : null}
     </Pane>
   )
 }

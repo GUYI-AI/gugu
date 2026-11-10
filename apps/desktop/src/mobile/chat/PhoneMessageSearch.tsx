@@ -20,7 +20,7 @@ export function PhoneMessageSearch() {
   const close = () => setOpen(false)
   return (
     <Sheet open={open} onClose={close} fullScreenMobile testId="phone-message-search" ariaLabel={t('chatList.searchMessagesTitle')}>
-      {open ? <div className={`${sessionSkinClassName(theme)} h-full`}><GlobalSearch tasks={false} onClose={close} onOpen={close} /></div> : null}
+      {open ? <div className={`${sessionSkinClassName(theme)} h-full`}><GlobalSearch tasks={false} names onClose={close} onOpen={close} /></div> : null}
     </Sheet>
   )
 }

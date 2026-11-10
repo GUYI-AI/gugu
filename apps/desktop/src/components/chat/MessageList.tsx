@@ -1,4 +1,5 @@
 import type { QuoteSelection } from './messageQuoteContent'
+import type { ReadReceiptHandle } from '@/hooks/useReadReceiptPanel'
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { CSSProperties, MouseEvent, ReactNode, Ref } from 'react'
 import type { MessageItem, MessageSendState, TopicSummary } from '@gugu/core/shared/types/chat'
@@ -11,7 +12,7 @@ import { OPEN_AT_LATEST, useRowAboveViewport } from '@/lib/listLanding'
 import { useFlowList, type FlowListHandle, type ListLanding } from '@/lib/flowList'
 import { formatCalendarDay } from '@/i18n/format'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
-import type { MemberProfileSide } from '../memberProfileModels'
+import type { MemberProfileOpener } from '../memberProfileModels'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { MessageRow } from './MessageRow'
@@ -95,18 +96,14 @@ export interface MessageListRowProps {
   threeParty: boolean | undefined
   memberProfiles: Record<string, MemberProfileCardModel>
   onReaction: (messageId: string, emoji: string) => void
-  // @@@1345 点击已读圆环 → 父层弹「谁已读/谁未读」名单(稳定回调，避免 reader 列表作对象 prop 破 memo)。
-  onShowReadReceipt: ((messageId: string, anchor: HTMLElement) => void) | undefined
+  // @@@1345 已读圆环是父层「谁已读/谁未读」名单的 Trigger(稳定 handle，避免 reader 列表作对象 prop 破 memo)。
+  readReceiptHandle: ReadReceiptHandle | undefined
   onShowMessage?: (id: string) => void
   onQuote: (msg: MessageItem, selection?: QuoteSelection) => void
   onForward: (msg: MessageItem) => void
   onDelete: (messageId: string) => void
   onVisible: (msg: MessageItem) => void
-  onOpenMemberProfile: ((
-    member: MemberProfileCardModel,
-    anchor: HTMLElement,
-    preferredSide: MemberProfileSide,
-  ) => void) | undefined
+  memberProfileOpener: MemberProfileOpener | undefined
   // @@@5856 开话题(从本消息长出一条线)+ 本消息底下已有的话题锚点卡。锚点是溯源不是父容器:
   // 卡片只是双向连接的一端,话题本身在会话列表里缩进挂在来源那条线底下。
   onOpenTopic: ((messageId: string) => void) | undefined
@@ -115,7 +112,7 @@ export interface MessageListRowProps {
   /** 这条线上「agent 超过 5 个已自动转 passive」的那条系统消息(每条线至多一条)。 */
   agentFloodNoticeMessageId: string | null | undefined
   onAgentFloodUndone: (() => void) | undefined
-  onOpenFile: ((meta: ParsedAttachment, message?: MessageItem) => void) | undefined; onOpenLocalFileLink: ((path: string) => void) | undefined
+  onOpenFile: ((meta: ParsedAttachment, message?: MessageItem) => void) | undefined
   onMentionMember: ((target: MentionTarget) => void) | undefined // @@@6386 入群灰字里点名字 → 输入框插 @
   // @@@multi-select (#988) — 多选态：行首勾选框 + 整行点击切换选中；onEnterSelectMode 透传给气泡「多选」菜单项。
   selectMode: boolean
@@ -168,14 +165,14 @@ const MessageListRow = memo(function MessageListRow({
   threeParty,
   memberProfiles, bubbleMemberProfiles,
   onReaction,
-  onShowReadReceipt,
+  readReceiptHandle,
   onQuote, onShowMessage,
   onForward,
   onDelete,
   onVisible,
-  onOpenMemberProfile,
+  memberProfileOpener,
   onOpenTopic, topicAnchors, onOpenTopicAnchor, agentFloodNoticeMessageId, onAgentFloodUndone,
-  onOpenFile, onOpenLocalFileLink, onMentionMember,
+  onOpenFile, onMentionMember,
   selectMode,
   selectedIds,
   onToggleSelect,
@@ -252,7 +249,7 @@ const MessageListRow = memo(function MessageListRow({
       showReadReceipt={msg.is_mine}
       groupedWithPrev={groupedWithPrev}
       groupedWithNext={groupedWithNext}
-      onShowReadReceipt={onShowReadReceipt}
+      readReceiptHandle={readReceiptHandle}
       onQuote={onQuote} onShowMessage={onShowMessage}
       onForward={onForward}
       onDelete={onDelete}
@@ -260,10 +257,10 @@ const MessageListRow = memo(function MessageListRow({
       isGroup={isGroupChat || threeParty}
       // 场所型会话里的 agent 消息保留发送者头像
       memberProfile={memberProfile}
-      onOpenMemberProfile={onOpenMemberProfile}
+      memberProfileOpener={memberProfileOpener}
       compactMobile={mobile}
       // 直接透传稳定 handler；话题里不传则不显示「开话题」菜单项(单层不嵌套)。
-      onOpenTopic={onOpenTopic} onOpenTopicAnchor={msg.content_type === 'system' ? onOpenTopicAnchor : undefined} onOpenFile={onOpenFile} onOpenLocalFileLink={onOpenLocalFileLink}
+      onOpenTopic={onOpenTopic} onOpenTopicAnchor={msg.content_type === 'system' ? onOpenTopicAnchor : undefined} onOpenFile={onOpenFile}
       memberProfiles={bubbleMemberProfiles}
       // @@@multi-select (#988) — More 菜单「多选」入口;多选态的勾选/底色在外层 MessageListRow 处理。
       onEnterSelectMode={onEnterSelectMode}
@@ -335,7 +332,6 @@ export function MessageList({
   onStartReached,
   onTotalListHeightChanged,
   style,
-  topInset = 0,
   surface = 'main',
   unreadAbove,
   footer,
@@ -351,8 +347,6 @@ export function MessageList({
   onStartReached?: () => void
   onTotalListHeightChanged?: () => void
   style?: CSSProperties
-  /** 顶部让出多少 px:头栏上的悬浮小鸟探出头栏时,滚到最上面的第一条 / 日期分隔落在它脚下面,不被盖住(agent 单聊的桌面形态传)。 */
-  topInset?: number
   /** 这条消息流在哪一栏。只决定布局与自动化选择器;未读定位确认使用本视口 ref。 */
   surface?: 'main' | 'aside'
   /** @@@6530 这次打开时的第一条未读:在视口上方时右上角出「↑ N 条新消息」,点了跳过去。 */
@@ -367,6 +361,11 @@ export function MessageList({
     scrollerRef?.(element)
   }, [scrollerRef])
   const rowIds = useMemo(() => rows.map((row) => row.message.id), [rows])
+  // A list hidden while it waits for its landing is not on screen, though its rows still intersect the scroller.
+  const landedRef = useRef(false)
+  landedRef.current = initialTopMostItemIndex !== null
+  const reportVisible = rowProps.onVisible
+  const onVisible = useCallback((message: MessageItem) => { if (landedRef.current) reportVisible(message) }, [reportVisible])
   // 气泡里的名字(@、引用、任务卡)只认名字 / 头像 / 是否在群;agent 的运行态每翻一次,整张表就是新的,
   // 递下去会打穿每一只可见气泡的 memo(连同正文的 markdown 重新解析)。发送者自己的状态照旧走 memberProfile。
   const bubbleMemberProfiles = useStructurallyShared(useMemo(() => withoutLiveStatus(rowProps.memberProfiles), [rowProps.memberProfiles]))
@@ -376,17 +375,16 @@ export function MessageList({
   const unreadIndex = unreadAbove ? rows.findIndex((row) => row.message.id === unreadAbove.messageId) : -1
   const unreadAt = !unreadAbove ? null : unreadIndex >= 0 ? unreadIndex : rows.length > 0 && rows[0].message.seq > unreadAbove.messageSeq ? -1 : null
   const showUnreadAbove = useRowAboveViewport(ownScrollerRef, unreadAbove?.messageId, unreadAt, initialTopMostItemIndex !== null, unreadAbove?.onSeen)
-  const scrollerStyle = useMemo<CSSProperties>(() => (topInset ? { ...LIST_SCROLLER_STYLE, paddingTop: topInset } : LIST_SCROLLER_STYLE), [topInset])
   const frameStyle = useMemo<CSSProperties>(() => ({ minHeight: 0, ...(style ?? { flex: 1 }), ...LIST_FRAME_STYLE, visibility: initialTopMostItemIndex === null ? 'hidden' : undefined }), [style, initialTopMostItemIndex])
   return (
     <div style={frameStyle}>
       {/* 每换一条线(resetKey)换一个滚动容器:落点、贴底电平、锚定都从这条线自己的第一帧开始。 */}
-      <div key={resetKey} ref={handleScrollerRef} data-testid={SCROLLER_TEST_ID[surface]} data-unread-stream-surface={surface} data-message-avatars="true" data-image-gallery="" style={scrollerStyle}>
+      <div key={resetKey} ref={handleScrollerRef} tabIndex={0} data-testid={SCROLLER_TEST_ID[surface]} data-unread-stream-surface={surface} data-chat-dock-reads="" data-message-avatars="true" data-image-gallery="" style={LIST_SCROLLER_STYLE}>
         <div ref={contentRef}>
-          {rows.slice(start, end).map((row, i) => <MessageListRow key={row.message.id} index={start + i} {...rowProps} bubbleMemberProfiles={bubbleMemberProfiles} showReplyQuote={quoteIds.has(row.message.id)} />)}
+          {rows.slice(start, end).map((row, i) => <MessageListRow key={row.message.id} index={start + i} {...rowProps} onVisible={onVisible} bubbleMemberProfiles={bubbleMemberProfiles} showReplyQuote={quoteIds.has(row.message.id)} />)}
           {end >= rows.length ? footer : null}
           {/* 会话底部那一摞浮在消息流上(ChatBottomDock 写的 --chat-dock-h),滚到底的最后一条落在它上面;没有它就是 0。 */}
-          <div aria-hidden className="h-[var(--chat-dock-h,0px)]" />
+          <div aria-hidden data-chat-dock-reads="" className="h-[var(--chat-dock-h,0px)]" />
         </div>
       </div>
       {unreadAbove && showUnreadAbove && <Button variant="primary" size="sm" data-unread-above="" style={UNREAD_ABOVE_STYLE} onClick={unreadAbove.onJump}>{unreadAbove.label}</Button>}

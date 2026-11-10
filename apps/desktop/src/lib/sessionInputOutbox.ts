@@ -17,6 +17,9 @@ export type SessionInput = {
   sendQueue?: { order: number; afterInputId?: string; edit?: { draftText: string; originalDraftText: string } }
   baseline?: string[]
   afterTurnId?: string
+  /** The send queue released this input after `afterTurnId`, read from the record its releaser checked.
+   * A page drawing an older record shows it as queued until that turn is on the page (#2367). */
+  releasedFromQueue?: true
   /** Explicit send-now insertion, never used by automatic queue release. */
   steerIfBusy?: true
 }
@@ -116,12 +119,26 @@ export class SessionInputOutbox {
   list(): Promise<SessionInput[]> { return this.storage.list(this.accountId) }
 
   /** A rejected input has never been handed over. Only this person's explicit action releases it. */
-  async retry(id: string): Promise<void> {
-    await this.changeRejected(id, input => {
-      const { failure: _failure, admission: _admission, ...body } = input
-      return body
+  retry(id: string): Promise<void> {
+    const run = async () => {
+      await this.write(async () => {
+        const input = (await this.list()).find(row => row.id === id)
+        if (!input) return // Another completed handoff or discard already settled this sender row.
+        const { failure: _failure, admission: _admission, ...body } = input
+        await this.storage.put(body)
+        await this.publish()
+      })
+      await this.drain(true, id)
+    }
+    // A previous bulk drain has its own caller; its failure cannot become this input's failure.
+    const own = this.flushing ? this.flushing.then(run, run) : Promise.resolve().then(run)
+    const lane = own.then(() => this.again ? this.drainUntilCurrent() : undefined).finally(() => {
+      if (this.flushing === lane) this.flushing = null
     })
-    await this.flush()
+    this.flushing = lane
+    // The caller receives `own`; background work requested during it still has a reported result.
+    void lane.catch(error => rendererLogger('session/input-outbox').warn({ error: String(error) }, 'Native input drain failed'))
+    return own
   }
 
   async edit(id: string, text: string): Promise<void> {
@@ -215,7 +232,7 @@ export class SessionInputOutbox {
       // Remaining entries wait for this exact input to finish, including across a shell restart.
       const following = queued.filter(row => row.id !== input.id).map(row => ({ ...row, sendQueue: { ...row.sendQueue!, afterInputId: input.id } }))
       const { sendQueue: _queue, ...released } = input
-      const sent: SessionInput = { ...released, ...baseline, queued: false, ...(steers ? { steerIfBusy: true } : {}) }
+      const sent: SessionInput = { ...released, ...baseline, queued: false, releasedFromQueue: true, ...(steers ? { steerIfBusy: true } : {}) }
       await this.persist([...following, sent])
       await this.publish()
       return sent
@@ -225,8 +242,9 @@ export class SessionInputOutbox {
   flush(retryFailures = false): Promise<void> {
     this.retryFailures ||= retryFailures
     if (this.flushing) { this.again = true; return this.flushing }
-    this.flushing = this.drainUntilCurrent().finally(() => { this.flushing = null })
-    return this.flushing
+    const running = this.drainUntilCurrent().finally(() => { if (this.flushing === running) this.flushing = null })
+    this.flushing = running
+    return running
   }
 
   private async drainUntilCurrent(): Promise<void> {
@@ -238,9 +256,9 @@ export class SessionInputOutbox {
     } while (this.again && this.current())
   }
 
-  private async drain(retryFailures: boolean): Promise<void> {
+  private async drain(retryFailures: boolean, onlyId?: string): Promise<void> {
     const blocked = new Set<string>()
-    const rows = (await this.list()).sort((a, b) => a.createdAt - b.createdAt)
+    const rows = (await this.list()).filter(input => onlyId === undefined || input.id === onlyId).sort((a, b) => a.createdAt - b.createdAt)
     for (const input of rows) {
       if (!this.current()) return
       if (input.sendQueue) continue

@@ -36,9 +36,9 @@ function props(profiles: Record<string, MemberProfileCardModel>) {
   const rows: ChatListRowItem[] = messages.map((msg) => ({ type: 'message', message: msg }))
   const rowProps: MessageListRowProps = {
     rows, messages, mobile: false, memberReadSeqs: {}, deliveryWaits: new Map(), isGroupChat: true, memberProfiles: profiles,
-    onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible: noop, onOpenMemberProfile: undefined, onMentionMember: undefined,
-    flashMessageId: undefined, threeParty: undefined, onShowReadReceipt: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
-    agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined, onOpenLocalFileLink: undefined,
+    onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible: noop, memberProfileOpener: undefined, onMentionMember: undefined,
+    flashMessageId: undefined, threeParty: undefined, readReceiptHandle: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
+    agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined,
     selectMode: false, selectedIds: new Set(), onToggleSelect: noop, onEnterSelectMode: noop,
   }
   return { rows, rowProps, resetKey: 'g#0#1' }

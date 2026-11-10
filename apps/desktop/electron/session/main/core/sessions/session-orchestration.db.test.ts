@@ -11,6 +11,7 @@ import type { AppDb } from '@main/db/client';
 import { resumeHostUpdate } from '../agent-status/resume-host-update';
 import { sessionBootTasks } from '../boot-tasks';
 import { setSessionMessageRouter } from './session-message-router';
+import { setSessionHostLocale } from '../host-locale';
 
 const mocks = vi.hoisted(() => ({
   db: undefined as AppDb | undefined,
@@ -62,6 +63,7 @@ const mocks = vi.hoisted(() => ({
   listLocalHarnesses: vi.fn(),
   resolveProjectWorkspace: vi.fn(),
   resolveCreateEffort: vi.fn(),
+  createModels: vi.fn(),
   /** The new-session box's two reads (`useEffectiveProvider`): the listed agents and which are installed. */
   listAgents: vi.fn(),
   listInstalled: vi.fn(),
@@ -156,7 +158,7 @@ vi.mock('@main/core/sessionpage/sessionpage-session-agent', () => ({
   localAgentForSession: mocks.localAgentForSession,
 }));
 // 点名项目 → 项目根工作区那一步(登记 / 打开项目)由 create-session 自己的测试判;这里只看编排把谁交给它、落在哪。
-vi.mock('../session-timeline/create-session', () => ({ resolveProjectWorkspace: mocks.resolveProjectWorkspace, resolveCreateEffort: mocks.resolveCreateEffort }));
+vi.mock('../session-timeline/create-session', () => ({ resolveProjectWorkspace: mocks.resolveProjectWorkspace, resolveCreateEffort: mocks.resolveCreateEffort, createModels: mocks.createModels }));
 vi.mock('@main/core/session-timeline/preview-rpc', () => ({ readSessionPreview: mocks.readSessionPreview }));
 vi.mock('../extensions/extensions-root', () => ({
   extensionsService: () => ({
@@ -210,7 +212,6 @@ import { setOtherMachines, type OtherMachines } from './session-family';
 import { setEmdashIdentityProvisioner } from '@main/core/acp/emdash-mcp-injector';
 import { setSessionIdentityHost } from './session-identity-host';
 import {
-  REMOTE_PANE_NO_EXTENSIONS,
   REMOTE_PANE_PAGE_NOT_FILE,
   REMOTE_PANE_QUEUED_NOTE,
   RemotePaneError,
@@ -310,6 +311,8 @@ describe('session orchestration', () => {
     mocks.mounted.clear();
     mocks.resolveProjectWorkspace.mockReset();
     mocks.resolveCreateEffort.mockReset();
+    mocks.createModels.mockReset();
+    mocks.createModels.mockResolvedValue({ ok: false, error: { code: 'create_models_failed', message: 'no catalog in this test' } });
     mocks.resolveProjectWorkspace.mockImplementation(async (input: unknown) => ({
       ok: false,
       error: { code: 'project_not_found', message: `unexpected project resolution ${JSON.stringify(input)}` },
@@ -628,7 +631,7 @@ describe('session orchestration', () => {
       setOtherMachines({
         devices: async () => [], isThisDevice: async () => false, appSpawn,
         sessions: async () => ({ sessions: [], unreached: [] }), archive: vi.fn(),
-        appMessage: vi.fn(), appCall: vi.fn(),
+        appMessage: vi.fn(), appCall: vi.fn(), sessionHome: vi.fn(),
       });
       try {
         expect(await spawnSessionForApp({ extensionId: 'context', extensionName: 'Context', envelope, prompt: 'inspect', device: 'device:remote', project: '/remote/project', harness: 'codex' })).toEqual({ agentId: 'user:remote-agent' });
@@ -726,8 +729,37 @@ describe('session orchestration', () => {
       expect(appRow(picked.id)).toMatchObject({ provider: 'codex' });
       fixture.sqlite.exec(`DELETE FROM sessions WHERE id = '${picked.id}'`);
       installed();
-      await expect(spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x' })).rejects.toThrow(/no agent on this computer can start a session/);
+      setSessionHostLocale('en-US');
+      await expect(spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x' })).rejects.toThrow('No agent is installed on this computer yet. Install one from New task, then try again.');
+      setSessionHostLocale('zh-CN');
+      await expect(spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x' })).rejects.toThrow('这台电脑上还没有装 agent。先在「新建任务」里装一个，再试一次。');
       expect(childRows()).toEqual([]);
+    });
+
+    // A person with no CLI sign-in: an App's first hand-off started on the engine's own model and stopped at its sign-in
+    // prompt, where the box would have started on its default Gugu model. Control (dev 489b70fbb): platform model null.
+    it('nothing remembered: the box\'s default for a new session (defaultCreateModel), a Gugu model', async () => {
+      project2Root();
+      installed('claude');
+      mocks.listLocalPlatformModels.mockResolvedValue({ models: [{ id: 'platform:deepseek-v4.1-flash' }], meta: { available: true, reason: null } });
+      mocks.createModels.mockResolvedValue({ ok: true, value: {
+        harness: 'claude', transport: 'acp', selected: null, harnessState: 'ready', selectedCredential: 'uncredentialed', harnessAuth: 'signed-out',
+        models: [{ id: 'sonnet', name: 'Sonnet', source: 'harness' }, { id: 'platform:deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', source: 'gugu' }],
+      } });
+      const row = await spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x' });
+      expect(mocks.createModels).toHaveBeenCalledWith({ harness: 'claude', sessionView: 'general' });
+      expect(await sessionPlatformModel(row.id)).toMatchObject({ modelId: 'deepseek-v4.1-flash' });
+    });
+
+    // Its identity is bound before the row exists, and binding needs the task's name: with no spawn.title it stopped at
+    // "reached provisioning without a name". Control (dev 489b70fbb): the provisioner was asked with no name.
+    it('no title: named by the one rule for a new task (the engine default), before its identity is bound', async () => {
+      project2Root();
+      const asked: Array<string | undefined> = [];
+      setEmdashIdentityProvisioner(async (request) => { asked.push(request.displayName); return { guguAgentUserId: 'app-agent', chatId: 'dm' }; });
+      const row = await spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x', harness: 'codex' });
+      expect(asked).toEqual([expect.stringMatching(/^codex \d+$/)]);
+      expect(fixture.sqlite.prepare('SELECT json_extract(config, \'$.agentDisplayName\') AS name FROM sessions WHERE id = ?').get(row.id)).toEqual({ name: asked[0] });
     });
   });
 
@@ -2053,7 +2085,7 @@ describe('session orchestration', () => {
         sessions: [{ deviceId: 'device-c', label: 'Third computer', session: { conversationId: 'chosen-remote', projectId: 'remote-project', parentConversationId: 'unreachable-ancestor' } as SessionpageSessionSummary, listsAgents: true }],
         unreached: [{ deviceId: 'device-d', label: 'Offline computer', detail: 'no answer' }],
       }),
-      archive: vi.fn(), appMessage: vi.fn(), appCall: vi.fn(),
+      archive: vi.fn(), appMessage: vi.fn(), appCall: vi.fn(), sessionHome: vi.fn(),
     });
     const action = { action: 'spawn' as const, prompt: 'x', project_id: 'project-2', parent_session_id: 'chosen-remote' };
     const child = await (remoteCaller
@@ -2506,7 +2538,7 @@ describe('session_set_parent', () => {
 
   it('records a parent on another machine in config, and drops the older nested mark so it is read only once', async () => {
     seed('visitor', null, null, { version: '1', type: 'acp', spawnedByRemote: { deviceId: 'dev-old', sessionId: 'old-parent', nested: true } });
-    setOtherMachines({ devices: async () => [], isThisDevice: async () => false, appSpawn: vi.fn(),
+    setOtherMachines({ devices: async () => [], isThisDevice: async () => false, appSpawn: vi.fn(), sessionHome: vi.fn(),
       sessions: async () => ({
         sessions: [{ deviceId: 'dev-far', label: 'far box', session: { conversationId: 'far', projectId: 'p-far', parentConversationId: null } as SessionpageSessionSummary, listsAgents: true }],
         unreached: [],
@@ -2751,8 +2783,9 @@ describe('session_archive', () => {
       mocks.stat.mockResolvedValueOnce({ success: false, error: { message: 'file does not exist' } });
       await expect(runSessionAction(context, { action: 'open_in_tab', url: 'file:///repo/ws-1/nope.html', intent: 'pinned' }))
         .rejects.toThrow(REMOTE_PANE_PAGE_NOT_FILE);
+      // #1607 An App tab is drawn by the desktop showing the task, but only one this machine really has installed.
       await expect(runSessionAction(context, { action: 'open_in_tab', app_tab: 'sheets.grid', intent: 'pinned' }))
-        .rejects.toThrow(REMOTE_PANE_NO_EXTENSIONS);
+        .rejects.toThrow('no installed App with id: sheets');
       expect(open).not.toHaveBeenCalled();
     });
 

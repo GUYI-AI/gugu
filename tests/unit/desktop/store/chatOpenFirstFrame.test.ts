@@ -394,7 +394,8 @@ describe('打开会话的第一帧', () => {
         scopedLines.get('chatA')!.setFollowingTail(false)
       })
       const before = scopedLines.get('chatA')!.messageWindow
-      expect(before.messages).toHaveLength(120)
+      // A window that followed the tail stays at the reset size; it is full at 40.
+      expect(before.messages).toHaveLength(40)
       vi.mocked(chatService.getMessages).mockClear()
       await act(async () => { await scopedLines.get('chatA')!.sendMessage('full-window-send') })
       const pending = scopedLines.get('chatA')!.messageWindow.messages.find((row) => row.content === 'full-window-send')!
@@ -555,7 +556,7 @@ describe('打开会话的第一帧', () => {
     } finally { network.resolve(); harness.cleanup() }
   })
 
-  it('bounds a visible secondary stream and does not crop it to forty on a fresh snapshot', async () => {
+  it('bounds a visible secondary stream to the tail window and keeps it on a fresh snapshot', async () => {
     network.resolve()
     const harness = await mount(createElement(ScopedProbe, { chatId: 'chatA' }))
     try {
@@ -569,16 +570,18 @@ describe('打开会话的第一帧', () => {
         } }])
       }
       await act(async () => { for (let seq = 2; seq <= 201; seq++) await emit(seq) })
-      const expected = Array.from({ length: 120 }, (_, index) => index + 82)
+      // The window stays at the tail size; the durable copy keeps the last 120 until a fresh snapshot replaces it with the window.
+      const expected = Array.from({ length: 40 }, (_, index) => index + 162)
+      const stored = Array.from({ length: 120 }, (_, index) => index + 82)
       expect(sharedAccess.read('chatA').messageWindow.messages.map((row) => row.seq)).toEqual(expected)
-      await vi.waitFor(() => expect(repository.snapshot().message.filter((row) => row.value.chat_id === 'chatA').map((row) => row.value.seq).sort((a, b) => a - b)).toEqual(expected), WAIT)
+      await vi.waitFor(() => expect(repository.snapshot().message.filter((row) => row.value.chat_id === 'chatA').map((row) => row.value.seq).sort((a, b) => a - b)).toEqual(stored), WAIT)
       messagesByChat.chatA = Array.from({ length: 40 }, (_, index) => message({ id: `stream-${index + 162}`, chat_id: 'chatA', seq: index + 162 }))
       await act(async () => { await sharedAccess.actions('chatA').refreshMessages() })
       expect(sharedAccess.read('chatA').messageWindow.messages.map((row) => row.seq)).toEqual(expected)
-      expect(scopedFrames.at(-1)?.ids).toHaveLength(120)
-      await vi.waitFor(() => expect(repository.snapshot().message.filter((row) => row.value.chat_id === 'chatA')).toHaveLength(120), WAIT)
+      expect(scopedFrames.at(-1)?.ids).toHaveLength(40)
+      await vi.waitFor(() => expect(repository.snapshot().message.filter((row) => row.value.chat_id === 'chatA')).toHaveLength(40), WAIT)
       await renderWithAppProviders(harness, createElement(ChatProvider, null, createElement(Probe)), { auth: { id: 'user1' } })
-      expect(repository.snapshot().message.filter((row) => row.value.chat_id === 'chatA')).toHaveLength(120)
+      expect(repository.snapshot().message.filter((row) => row.value.chat_id === 'chatA')).toHaveLength(40)
     } finally { harness.cleanup() }
   })
 

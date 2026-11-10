@@ -63,8 +63,10 @@ export function createAcpProcedures(runtime: AcpRuntime) {
     stopSession(input: {
       sessionId: string;
       onlyIfIdle?: boolean;
+      /** The engine session was replaced: drop a lost record instead of keeping it for reconnect. */
+      forgetLost?: boolean;
     }): Promise<Result<void, AcpStopSessionError>> {
-      return runtime.stopSession(input.sessionId, input.onlyIfIdle);
+      return runtime.stopSession(input.sessionId, input.onlyIfIdle, input.forgetLost);
     },
     sendPrompt(input: {
       sessionId: string;
@@ -77,7 +79,7 @@ export function createAcpProcedures(runtime: AcpRuntime) {
       sessionId: string;
       prompt: PromptInput;
       steerIfBusy?: boolean;
-    }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true }> {
+    }): Promise<{ requestId: string; queued: boolean; steered?: boolean; declined: boolean; missing?: true; reason?: string }> {
       const started = runtime.promptDetached(input.sessionId, input.prompt, input.steerIfBusy ? { steerIfBusy: true } : undefined);
       if (!started.success) {
         if (started.error.type === 'session_busy' || started.error.type === 'conversation_not_found') {
@@ -85,14 +87,7 @@ export function createAcpProcedures(runtime: AcpRuntime) {
         }
         throw promptError(started.error);
       }
-      const completion = started.data.completion.then(async result => {
-        if (!result.success && 'cause' in result.error && result.error.cause?.code === 'prompt_admission_timeout') {
-          // A silent request still owns its transport. Stop it before a later prompt can reuse it;
-          // stop_pending remains closing and can be retried, rather than claiming the process exited.
-          await runtime.stopSession(input.sessionId);
-        }
-        return result;
-      });
+      const completion = started.data.completion;
       void completion.catch(() => undefined);
       const admission = await started.data.admission;
       if (!admission.success) {
@@ -106,6 +101,10 @@ export function createAcpProcedures(runtime: AcpRuntime) {
         // 会话此刻不收(原位回退进行中,#7308):调用方留着消息,等它收的那一刻再投。
         if (admission.error.type === 'session_busy') {
           return { requestId: '', queued: false, declined: true };
+        }
+        // The cell refused it before any provider byte (a live setting failed): a definite refusal, with its reason.
+        if (admission.error.type === 'invalid_state') {
+          return { requestId: '', queued: false, declined: true, reason: admission.error.message ?? admission.error.type };
         }
         throw promptError(admission.error);
       }
@@ -183,6 +182,9 @@ export function createAcpProcedures(runtime: AcpRuntime) {
       sessionId: string;
     }): { connectionKey: string; pid: number | null; closing?: true } | null {
       return runtime.adapterProvenance(input.sessionId);
+    },
+    windowActiveReference(input: { sessionId: string; referenceId: string }): boolean {
+      return runtime.windowActiveReference(input.sessionId, input.referenceId);
     },
     announceSession(input: Parameters<AcpRuntime['announceSession']>[0]): { delivered: boolean } {
       return runtime.announceSession(input);

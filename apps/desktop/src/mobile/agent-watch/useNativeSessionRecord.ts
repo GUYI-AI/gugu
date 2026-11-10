@@ -3,6 +3,7 @@ import { isDeepEqual } from '@gugu/session-shared'
 import { remoteFailureKind, type NativeSessionRecord } from '@gugu/session-core/session-record/contract'
 import { machineRpc, onLinkChange } from './sessionpage-rpc'
 import { messageForUser } from '@/lib/userFacingError'
+import { useStructurallyShared } from '@/hooks/useStructurallyShared'
 import { hydrateCachedNativeRecord, readCachedNativeRecord, writeCachedNativeRecord } from './timeline-cache'
 import { recoverTimelineRead } from './timeline-read-recovery'
 import { mergeNativeRecordPage, projectNativeRecord } from './native-record-state'
@@ -10,7 +11,7 @@ import { mergeNativeRecordPage, projectNativeRecord } from './native-record-stat
 /** ACP records come from the task page archive, not a second parse of the provider's JSONL. */
 export function useNativeSessionRecord(deviceId: string, sessionId: string, enabled: boolean, online: boolean, local = false) {
   // What this phone read last time is drawn first, and is all there is while that machine is away.
-  const [record, setRecord] = useState<NativeSessionRecord | null>(() => readCachedNativeRecord({ deviceId, sessionId }))
+  const [record, setRecord] = useState<NativeSessionRecord | null>(() => enabled ? readCachedNativeRecord({ deviceId, sessionId }) : null)
   const [error, setError] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<string | null>(null)
   /** The last read failed because that machine did not answer (not because it refused): the page says it is away. */
@@ -33,9 +34,9 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
     connected.current = online; setConfirmed(null)
     // Reconcile the latest page first, even when the cache or host's first unread is far behind.
     requests.current = Promise.resolve(); tailRequested.current = true
-    const cached = readCachedNativeRecord({ deviceId, sessionId })
+    const cached = enabled ? readCachedNativeRecord({ deviceId, sessionId }) : null
     value.current = cached; setRecord(cached); setError(null); setErrorCode(null)
-    if (!cached) void hydrateCachedNativeRecord({ deviceId, sessionId }).then((stored) => {
+    if (enabled && !cached) void hydrateCachedNativeRecord({ deviceId, sessionId }).then((stored) => {
       if (!stored || epoch.current !== generation || value.current) return
       value.current = stored; setRecord(stored)
     })
@@ -51,8 +52,7 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
       const last = previous?.turns.at(-1)?.seq
       const tail = mode !== 'older' && (mode === 'tail' || tailRequested.current)
       const input = mode === 'older' ? { before: previous?.nextCursor ?? undefined }
-        : tail ? { tail: true } : mode === 'newer' && last !== undefined ? { after: last }
-        : previous?.hasNewer && last !== undefined ? { before: last + 1 }
+        : tail ? { tail: true } : (mode === 'newer' || previous?.hasNewer) && last !== undefined ? { after: last }
         : last !== undefined ? { after: Math.max(-1, last - 29) } : {}
       const page = await recoverTimelineRead(async () => {
         const result = await machineRpc(deviceId, local).sessionTimeline.sessionNativeRecord({ conversationId: sessionId, ...input })
@@ -100,7 +100,8 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
     return () => { active = false; clearTimeout(timer) }
   }, [enabled, online, read])
   const report = (error: unknown) => setError(messageForUser(error))
-  const shown = useMemo(() => projectNativeRecord(record), [record])
+  // Wire pages and notification projection recreate unchanged turns; the transcript syncs by identity.
+  const shown = useStructurallyShared(useMemo(() => projectNativeRecord(record), [record]))
   return { record: shown, error, errorCode, unreachable, ready: enabled && online && confirmed?.key === key && confirmed.epoch === epoch.current,
     reload: () => read('tail'),
     loadOlder: async () => { if (value.current?.nextCursor !== null && value.current?.nextCursor !== undefined) await read('older') },

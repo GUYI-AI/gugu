@@ -58,9 +58,9 @@ function listProps(onVisible: (msg: MessageItem) => void) {
   const rows: ChatListRowItem[] = messages.map((msg) => ({ type: 'message', message: msg }))
   const rowProps: MessageListRowProps = {
     rows, messages, mobile: true, memberReadSeqs: {}, deliveryWaits: new Map(), isGroupChat: false, memberProfiles: {},
-    onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible, onOpenMemberProfile: undefined, onMentionMember: undefined,
-    flashMessageId: undefined, threeParty: undefined, onShowReadReceipt: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
-    agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined, onOpenLocalFileLink: undefined,
+    onReaction: noop, onQuote: noop, onForward: noop, onDelete: noop, onVisible, memberProfileOpener: undefined, onMentionMember: undefined,
+    flashMessageId: undefined, threeParty: undefined, readReceiptHandle: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
+    agentFloodNoticeMessageId: undefined, onAgentFloodUndone: undefined, onOpenFile: undefined,
     selectMode: false, selectedIds: new Set(), onToggleSelect: noop, onEnterSelectMode: noop,
   }
   return { rows, rowProps, resetKey: 'dm-1#0#1' }

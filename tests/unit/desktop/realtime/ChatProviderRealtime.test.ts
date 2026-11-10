@@ -170,6 +170,7 @@ vi.mock('../../../../apps/desktop/src/lib/chatProjection', () => ({
     current: () => projectionStub.rows,
     identities: () => projectionStub.identityRows,
     isMembershipRevoked: (chatId: string) => projectionStub.revoked.has(chatId),
+    memberReadSeqs: () => undefined,
       isConversationDeleted: () => false,
     ledger: () => [],
     reset: () => undefined,
@@ -184,7 +185,7 @@ vi.mock('../../../../apps/desktop/src/lib/notificationSettings', () => ({
   useNotificationSettings: () => notificationSettings
 }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
-  platform: {
+  platform: { subscribeAppForeground: () => () => {},
     get localMessages() { return messageStorage.sqlite ? 'sqlite' : undefined },
     capabilities: { notifications: false, badge: false },
     showNotification: vi.fn(),

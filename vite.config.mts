@@ -29,6 +29,7 @@ import {
   webHostEntries,
   desktopPreloadEntry,
   extensionPreloadEntry,
+  vaultLoginPreloadEntry,
 } from './scripts/build/product-build-entries.mts'
 import {
   EMDASH_EXTERNAL,
@@ -402,6 +403,13 @@ export const electronBuildEntries: ElectronOptions[] = [
       options.reload()
     },
   },
+  {
+    // Keep the existing main/preload positions stable; the private login bridge is an additional entry.
+    // It gets no application/App bridge and exposes nothing to the page world.
+    entry: vaultLoginPreloadEntry,
+    vite: { plugins: [deterministicModuleSideEffects()] },
+    onstart(options) { if (viteOwnsElectronProcess) options.reload() },
+  },
 ]
 
 /** The version directory `/_gugu/<ver>/` maps to (app-runtime-protocol.ts reads the same file). */
@@ -412,6 +420,11 @@ function appRuntimeVersion(): string {
     ) as { version: string }
   ).version
 }
+
+// App pages run in the phone's System WebView too, and one that never updated stays on Chrome 91, which rejects
+// class static blocks (`SyntaxError`; files.js / codemirror.js fail to load). esbuild's table lists them for
+// chrome91 (V8 9.1 had them behind a flag), so the floor is written as chrome90 to make esbuild lower them.
+const APP_PAGE_TARGET = ['es2022', 'chrome90']
 
 /**
  * The App runtime's bytes into `outDir`: `gugu.js`, the classic script the host puts first in an
@@ -428,7 +441,7 @@ async function buildAppRuntime(outDir: string): Promise<void> {
   const common = {
     bundle: true,
     platform: 'browser',
-    target: 'es2022',
+    target: APP_PAGE_TARGET,
     minify: true,
     legalComments: 'none',
     // Served by the host, never bundled: the entry imports the modules by URL.
@@ -542,7 +555,7 @@ function phoneAppsPlugin(outDir: string) {
           outfile: resolve(runtimeDir, `${name}.js`),
           bundle: true,
           platform: 'browser',
-          target: 'es2022',
+          target: APP_PAGE_TARGET,
           minify: true,
           legalComments: 'none',
           format: 'iife',

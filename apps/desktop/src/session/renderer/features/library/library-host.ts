@@ -1,13 +1,13 @@
 // #6264 资源库问的是**哪一台机器**(owner:「整个资源库或者其他的都是分设备的」)。
 //
-// 默认本机:取数钩子照旧走本机的 `rpc.<格>.*`。资源库左栏顶上选了别的机器时,**每一格**(提示词、智能体、集成、
+// 默认本机:取数钩子照旧走本机的 `rpc.<格>.*`。资源库左栏顶上选了别的机器时,**每一格**(智能体、集成、
 // MCP、扩展)的钩子都换成这里给的那台机器的同名方法(经设备 RPC 转到那台机器上**同一个控制器**)——界面组件一个都
 // 不认它,照旧渲染同一套控件,只是数据与动作来自另一台机器(与新建框的 remote-create-source 同一种做法)。
+// 提示词不在这里:它是账号的(`@shared/prompt-library`,owner 11-07),哪台机器看都是同一份。
 import { createContext, useContext } from 'react';
 import type { AgentInstallProgress } from '@gugu/session-core/workspace-server';
 import { events, onMachineEvent, rpc, rpcOn } from '@renderer/lib/ipc';
 import { TOO_OLD_CODES } from '@renderer/features/remote-hosts/connection-status';
-import type { PromptLibraryPrompt } from '@shared/prompt-library';
 import {
   createRemoteExtensionsHost,
   LOCAL_EXTENSIONS_HOST,
@@ -25,6 +25,7 @@ import type {
 } from '@shared/core/agents/agent-payload';
 import type { ProviderCustomConfig } from '@shared/core/app-settings';
 import type { AssistantPanelFiles } from '@gugu/core/cloud/assistantPanelFiles';
+import type { ConnectionMetadataStore } from '@/components/connections/connection-metadata';
 
 /** 与本机 `rpc.agents.*` 同名同参的那几个(资源库「智能体」一页用到的全部)。 */
 export type LibraryAgentsRpc = {
@@ -45,12 +46,6 @@ export type LibraryAgentsRpc = {
   updateSettings(id: string, config: Partial<ProviderCustomConfig>): Promise<void>;
   /** 这台机器上安装的实时读数;返回退订。 */
   onInstallProgress(listener: (progress: AgentInstallProgress) => void): () => void;
-};
-
-/** 与本机 `rpc.promptLibrary.*` 同名同参。 */
-export type LibraryPromptsRpc = {
-  get(): Promise<PromptLibraryPrompt[]>;
-  update(prompts: PromptLibraryPrompt[]): Promise<void>;
 };
 
 /** 资源库 → MCP:咕咕自己管的那份列表与各家自己的那几台(本机 `rpc.mcpLibrary.*`,别的机器同一个控制器)。 */
@@ -75,6 +70,11 @@ export type LibraryIntegrationsRpc = Pick<
   | 'checkAllConnections'
   | 'checkConfiguredConnections'
 > & {
+  ownerAccounts?: IntegrationsApi['ownerAccounts'];
+  ownerAuthorizationBegin?: IntegrationsApi['ownerAuthorizationBegin'];
+  ownerAuthorizationComplete?: IntegrationsApi['ownerAuthorizationComplete'];
+  ownerAuthorizationCommit?: IntegrationsApi['ownerAuthorizationCommit'];
+  ownerAuthorizationCommitBatch?: IntegrationsApi['ownerAuthorizationCommitBatch'];
   /** Renderer-only cancellation; never serialized into the host RPC. */
   cliToolPrepare(id: string, signal?: AbortSignal): ReturnType<IntegrationsApi['cliToolPrepare']>;
 };
@@ -99,6 +99,9 @@ export type LibraryRemoteDevice = {
 };
 
 export type LibraryHost = {
+  connectionMetadata?: ConnectionMetadataStore;
+  connectionMetadataExpected?: boolean;
+  connectionMetadataError?: unknown;
   assistantPanel?: AssistantPanelFiles;
   assistantPanelExpected?: boolean;
   assistantPanelError?: unknown;
@@ -106,7 +109,6 @@ export type LibraryHost = {
   /** 缓存键里区分机器的那一段:本机 `local`,别的机器 `remote:<deviceId>`。 */
   key: string;
   agents: LibraryAgentsRpc;
-  prompts: LibraryPromptsRpc;
   mcpLibrary: LibraryMcpRpc;
   integrations: LibraryIntegrationsRpc;
   github: LibraryGithubRpc;
@@ -137,20 +139,20 @@ const localAgents: LibraryAgentsRpc = {
   onInstallProgress: (listener) => events.on(agentInstallProgressChannel, listener),
 };
 
-const localPrompts: LibraryPromptsRpc = {
-  get: () => rpc.promptLibrary.get(),
-  update: (prompts) => rpc.promptLibrary.update(prompts),
-};
-
 const localIntegrations: LibraryIntegrationsRpc = {
+  ownerAccounts: (...args) => rpc.integrations.ownerAccounts(...args),
+  ownerAuthorizationBegin: (...args) => rpc.integrations.ownerAuthorizationBegin(...args),
+  ownerAuthorizationComplete: (...args) => rpc.integrations.ownerAuthorizationComplete(...args),
+  ownerAuthorizationCommit: (...args) => rpc.integrations.ownerAuthorizationCommit(...args),
+  ownerAuthorizationCommitBatch: (...args) => rpc.integrations.ownerAuthorizationCommitBatch(...args),
   list: (locale) => rpc.integrations.list(locale),
-  connect: (id, input, editAccountId) => rpc.integrations.connect(id, input, editAccountId),
+  connect: (...args) => rpc.integrations.connect(...args),
   disconnect: (id, accountId) => rpc.integrations.disconnect(id, accountId),
   accounts: (id) => rpc.integrations.accounts(id),
   checkAccounts: (id) => rpc.integrations.checkAccounts(id),
-  authorize: (id) => rpc.integrations.authorize(id),
+  authorize: (...args) => rpc.integrations.authorize(...args),
   cancelAuthorization: (id) => rpc.integrations.cancelAuthorization(id),
-  cliLoginStart: (id) => rpc.integrations.cliLoginStart(id),
+  cliLoginStart: (...args) => rpc.integrations.cliLoginStart(...args),
   cliToolPrepare: (id) => rpc.integrations.cliToolPrepare(id),
   cliLoginWait: (id) => rpc.integrations.cliLoginWait(id),
   cliLoginProgress: (id) => rpc.integrations.cliLoginProgress(id),
@@ -168,7 +170,7 @@ const localGithub: LibraryGithubRpc = {
   importCliAccounts: () => rpc.github.importCliAccounts(),
   setDefaultAccount: (id) => rpc.github.setDefaultAccount(id),
   removeAccount: (id) => rpc.github.removeAccount(id),
-  auth: () => rpc.github.auth(),
+  auth: (...args) => rpc.github.auth(...args),
   authCancel: () => rpc.github.authCancel(),
   onEvent: (event, listener) => events.on(event as never, listener as never),
 };
@@ -176,7 +178,6 @@ const localGithub: LibraryGithubRpc = {
 export const LOCAL_LIBRARY_HOST: LibraryHost = {
   key: LOCAL_HOST_KEY,
   agents: localAgents,
-  prompts: localPrompts,
   mcpLibrary: rpc.mcpLibrary,
   integrations: localIntegrations,
   github: localGithub,
@@ -214,8 +215,13 @@ export function createRemoteLibraryHost(
     onInstallProgress: (listener) => onMachineEvent(deviceId, agentInstallProgressChannel, listener),
   };
   const integrations: LibraryIntegrationsRpc = {
+    ownerAccounts: (...args) => there.integrations.ownerAccounts(...args),
+    ownerAuthorizationBegin: (...args) => there.integrations.ownerAuthorizationBegin(...args),
+    ownerAuthorizationComplete: (...args) => there.integrations.ownerAuthorizationComplete(...args),
+    ownerAuthorizationCommit: (...args) => there.integrations.ownerAuthorizationCommit(...args),
+    ownerAuthorizationCommitBatch: (...args) => there.integrations.ownerAuthorizationCommitBatch(...args),
     list: (locale) => there.integrations.list(locale),
-    connect: (id, input, editAccountId) => there.integrations.connect(id, input, editAccountId),
+    connect: (...args) => there.integrations.connect(...args),
     disconnect: (id, accountId) => there.integrations.disconnect(id, accountId),
     accounts: (id) => there.integrations.accounts(id),
     checkAccounts: (id) => there.integrations.checkAccounts(id),
@@ -223,10 +229,12 @@ export function createRemoteLibraryHost(
      * 浏览器授权的回调只能落在**这台电脑**的 127.0.0.1 上(那台机器没有浏览器、也收不到回调):
      * 在这里授权拿到凭据,交给那台机器的 `connect` —— 它照本机那一步验证、存进它自己的库。
      */
-    authorize: async (id) => {
+    authorize: async (id, includeAccountId) => {
       const acquired = await rpc.integrations.acquireAuthorization(id);
       if (!acquired.success) return acquired;
-      return there.integrations.connect(id, acquired.credentials);
+      return includeAccountId
+        ? there.integrations.connect(id, acquired.credentials, undefined, true)
+        : there.integrations.connect(id, acquired.credentials);
     },
     /**
      * 浏览器授权的那一跳之外还要撤掉那台机器上的命令行登录(它在那台机器上跑)。本机这一跳照旧:
@@ -237,7 +245,7 @@ export function createRemoteLibraryHost(
       await there.integrations.cancelAuthorization(id);
     },
     /** 官方命令行在**那台**机器上装、在那台机器上登:登录态要落在用它的那台机器上。 */
-    cliLoginStart: (id) => there.integrations.cliLoginStart(id),
+    cliLoginStart: (...args) => there.integrations.cliLoginStart(...args),
     cliToolPrepare: (id) => there.integrations.cliToolPrepare(id),
     cliLoginWait: (id) => there.integrations.cliLoginWait(id),
     cliLoginProgress: (id) => there.integrations.cliLoginProgress(id),
@@ -247,7 +255,6 @@ export function createRemoteLibraryHost(
   return {
     key: `remote:${deviceId}`,
     agents,
-    prompts: { get: () => there.promptLibrary.get(), update: (prompts) => there.promptLibrary.update(prompts) },
     mcpLibrary: there.mcpLibrary,
     integrations,
     github: {
@@ -255,7 +262,7 @@ export function createRemoteLibraryHost(
       importCliAccounts: () => there.github.importCliAccounts(),
       setDefaultAccount: (id) => there.github.setDefaultAccount(id),
       removeAccount: (id) => there.github.removeAccount(id),
-      auth: () => there.github.auth(),
+      auth: (...args) => there.github.auth(...args),
       authCancel: () => there.github.authCancel(),
       onEvent: (event, listener) => onMachineEvent(deviceId, event, listener),
     },

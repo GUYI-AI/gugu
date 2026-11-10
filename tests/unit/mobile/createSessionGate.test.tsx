@@ -122,6 +122,27 @@ describe('phone first-send host readiness', () => {
     expect(rpc.create).toHaveBeenCalledExactlyOnceWith(remote.device_id, expect.objectContaining({ harness: 'codex', model: 'platform:available-model' }))
   })
 
+  it('gives the first prompt one client id: the create request carries it and the new page draws the first bubble under it (#2296)', async () => {
+    prepareCodex()
+    const onCreated = vi.fn()
+    await harness.render(createNode(CreateSessionPage, { device: remote, onCreated }))
+    await write('Keep one bubble')
+    await act(async () => { send().click() })
+    const request = rpc.create.mock.calls[0]![1] as { initialMessageId?: string }
+    expect(request.initialMessageId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(onCreated).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ conversationId: 'made' }),
+      { id: request.initialMessageId, text: 'Keep one bubble', sentAt: expect.any(Number) }, expect.anything())
+  })
+
+  it('a group New task lands its first sentence in that group as a task card (chatId + taskChatId)', async () => {
+    prepareCodex()
+    await harness.render(createNode(CreateSessionPage, { device: remote, taskGroup: { chatId: 'group-1', name: 'Group' }, onCreated: vi.fn() }))
+    await act(async () => { (harness.container.querySelector('[data-testid="pick-codex"]') as HTMLButtonElement).click() })
+    await write('Look at the build')
+    await act(async () => { send().click() })
+    expect(rpc.create).toHaveBeenCalledExactlyOnceWith(remote.device_id, expect.objectContaining({ chatId: 'group-1', taskChatId: 'group-1' }))
+  })
+
   it('does not replace an explicitly chosen own default when its catalogue returns', async () => {
     prepareCodex(true, 'platform:gpt-6-luna')
     await harness.render(createNode(CreateSessionPage, { device: remote, onCreated: vi.fn() }))
@@ -213,6 +234,6 @@ describe('phone first-send host readiness', () => {
     expect(readComposer(field)).toBe('稍后再发')
     expect(field.getAttribute('contenteditable')).toBe('true')
     expect(send().disabled).toBe(true)
-    expect(harness.container.querySelector('[data-testid="agent-watch-offline-why"]')).toBeTruthy()
+    expect(harness.container.querySelector('[data-testid="agent-watch-connection-status"]')?.getAttribute('data-state')).toBe('device_offline')
   })
 })

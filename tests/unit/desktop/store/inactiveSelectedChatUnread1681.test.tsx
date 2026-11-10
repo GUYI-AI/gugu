@@ -151,6 +151,7 @@ vi.mock('../../../../apps/desktop/src/lib/chatProjection', () => ({
     current: () => projectionStub.rows,
     identities: () => projectionStub.identityRows,
     isMembershipRevoked: (chatId: string) => projectionStub.revoked.has(chatId),
+    memberReadSeqs: () => undefined,
     isConversationDeleted: (chatId: string) => projectionStub.deleted.has(chatId),
     ledger: () => [],
     reset: () => undefined,
@@ -165,7 +166,7 @@ vi.mock('../../../../apps/desktop/src/lib/notificationSettings', () => ({
   useNotificationSettings: () => notificationSettings,
 }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
-  platform: {
+  platform: { subscribeAppForeground: () => () => {},
     subscribeAppActive: (listener: (active: boolean) => void) => { host.listener = listener; listener(host.active); return () => { host.listener = null } },
     capabilities: { notifications: false, badge: true },
     showNotification: vi.fn(),
@@ -203,10 +204,10 @@ function Probe() {
   const rowProps: MessageListRowProps = { rows, messages, mobile: false,
     flashMessageId: null, memberReadSeqs: {}, deliveryWaits: new Map(),
     isGroupChat: false, threeParty: undefined, memberProfiles: {}, onVisible: markMessageVisible,
-    onReaction: noop, onShowReadReceipt: undefined, onQuote: noop, onForward: noop, onDelete: noop,
-    onOpenMemberProfile: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
+    onReaction: noop, readReceiptHandle: undefined, onQuote: noop, onForward: noop, onDelete: noop,
+    memberProfileOpener: undefined, onOpenTopic: undefined, topicAnchors: undefined, onOpenTopicAnchor: undefined,
     agentFloodNoticeMessageId: null, onAgentFloodUndone: undefined, onOpenFile: undefined,
-    onOpenLocalFileLink: undefined, onMentionMember: undefined, selectMode: false,
+ onMentionMember: undefined, selectMode: false,
     selectedIds: new Set(), onToggleSelect: noop, onEnterSelectMode: undefined }
   return useRealList ? createNode(MessageList, { rows, rowProps }) : null
 }

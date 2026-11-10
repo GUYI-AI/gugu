@@ -911,6 +911,41 @@ describe('#6396 序号只增不减', () => {
       expect(calls).toEqual([group.chatId, group.chatId])
       expect(tombstones).toEqual([])
     })
+    // #2347:入群在身份落地时才发生,可能被拒(群满)。会话的项目说明只在确认进了群时说「已经是群成员」;
+    // 没确认就如实说没确认、怎么查,被拒之后重开也照样带上项目群,❌ 整段消失。
+    it('项目说明只在确认入群后才说已是成员;没进群时如实说明,重开也一样', async () => {
+      const { buildSessionpageProjectContextBlock } = await import('../../../../apps/desktop/src/session/shared/prompt-injection')
+      await provisionFresh('conv-seed-2347', { projectId: 'proj-alpha' })
+      const group = groups[0]!
+      const fullGroup = {
+        ...oneTripDeps,
+        provisionOneTrip: async (input: { agentId: string; displayName: string }) =>
+          ({ agentId: input.agentId, displayName: input.displayName, groupChatId: '', groupCreated: false, priorGroupState: 'join_failed:member_limit_reached' }),
+      }
+      const claimsMembership = /already a member of that group/
+      const born = await provisionFresh('conv-full-2347', { projectId: 'proj-alpha' }, fullGroup)
+      expect(born.projectContext).toMatchObject({ groupChatId: group.chatId, membership: 'unconfirmed' })
+      const bornBlock = buildSessionpageProjectContextBlock(born.projectContext)
+      expect(bornBlock).toContain(group.chatId)
+      expect(bornBlock).not.toMatch(claimsMembership)
+      expect(bornBlock).toMatch(/profile_whoami/)
+
+      const reopened = await provisionFresh('conv-full-2347', { projectId: 'proj-alpha' }, fullGroup)
+      expect(reopened.guguAgentUserId).toBe(born.guguAgentUserId)
+      expect(reopened.projectContext, '被拒后重开:项目群仍在说明里,但不说已是成员').toMatchObject({ groupChatId: group.chatId, membership: 'unconfirmed' })
+      expect(buildSessionpageProjectContextBlock(reopened.projectContext)).not.toMatch(claimsMembership)
+
+      const seated = {
+        ...oneTripDeps,
+        provisionOneTrip: async (input: { agentId: string; displayName: string }) =>
+          ({ agentId: input.agentId, displayName: input.displayName, groupChatId: group.chatId, groupCreated: false, priorGroupState: 'joined' }),
+      }
+      const joined = await provisionFresh('conv-seat-2347', { projectId: 'proj-alpha' }, seated)
+      expect(joined.projectContext?.membership, '刚起、还没落地:未确认').toBe('unconfirmed')
+      const back = await provisionFresh('conv-seat-2347', { projectId: 'proj-alpha' }, oneTripDeps)
+      expect(back.projectContext).toMatchObject({ groupChatId: group.chatId, membership: 'member' })
+      expect(buildSessionpageProjectContextBlock(back.projectContext)).toMatch(claimsMembership)
+    })
     // 第 19 条(10-12):开户本身失败,#5419 撤掉这次铸的身份;会话照跑,手里还是发给它的 gugu MCP 卡。
     // 这条会话再起来要铸新身份 —— 先收旧身份的卡,host 才肯给新身份发卡(同一条会话不许换主体)。撤行那一刻 ❌ 收:
     // 照跑的会话会当场没了 gugu MCP。别的会话不动;落了地的身份重开是复用,什么也不收。
@@ -939,6 +974,20 @@ describe('#6396 序号只增不减', () => {
       } finally {
         setSessionpageAgentCardRevoker(null)
         setCloudProvisionRetryDelaysForTests([2_000, 8_000])
+      }
+    })
+    // Restoring an archived task replaces its identity. Keeping the old card fails the first turn with
+    // "cannot change subject or tool scope under the same owner".
+    it('归档后恢复:铸新身份之前收掉被替换身份的卡', async () => {
+      const { setSessionpageAgentCardRevoker } = await import(SUT)
+      const revoked: string[] = []
+      setSessionpageAgentCardRevoker(async (agentUserId: string) => { revoked.push(agentUserId) })
+      try {
+        const restored = await provisionFresh('conv-restored', { replacesRemovedIdentity: 'removed-agent' }, oneTripDeps)
+        expect(restored.guguAgentUserId).not.toBe('removed-agent')
+        expect(revoked).toEqual(['removed-agent'])
+      } finally {
+        setSessionpageAgentCardRevoker(null)
       }
     })
     // 评审 r1 ②:终端会话「接回」时引擎没换,手里还是旧卡 ⇒ 身份被撤过就不铸、不收,当场说清;重新开才换新身份。
@@ -1300,8 +1349,14 @@ describe('#4526 A:owner 删除 ⇒ 释放本机足迹 + 墓碑挡住重新开户
     expect(tombstones[0]).toMatchObject({ gugu_user_id: original!.guguAgentUserId, conversation_id: info.sessionId })
     expect(await provisionSessionpageAgentForSession(info, deps)).toBeNull()
     const takeBirthGroup = vi.fn(async () => ({ chatId: 'old-social-group', asTask: true }))
+    const { setSessionpageAgentCardRevoker } = await import(SUT)
+    const revokedCards: string[] = []
+    setSessionpageAgentCardRevoker(async (agentUserId: string) => { revokedCards.push(agentUserId) })
     const replacement = await provisionSessionpageAgentForSession({ ...info, replacesRemovedIdentity: original!.guguAgentUserId }, { ...deps, takeBirthGroup })
     await settleCloud()
+    // The removed identity's Gugu MCP card must go first, or the restored session cannot get one.
+    expect(revokedCards).toEqual([original!.guguAgentUserId])
+    setSessionpageAgentCardRevoker(null)
     expect(replacement!.guguAgentUserId).not.toBe(original!.guguAgentUserId)
     expect(roster).toHaveLength(1)
     expect(roster[0]).toMatchObject({ gugu_user_id: replacement!.guguAgentUserId, cache: { emdash_session_id: info.sessionId, emdash_project_id: info.projectId } })

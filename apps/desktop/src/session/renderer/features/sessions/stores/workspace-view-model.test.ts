@@ -96,13 +96,14 @@ vi.mock('@renderer/lib/ipc', () => {
 
 type FakeTerminalManager = TerminalManagerStore & {
   isLoaded: boolean;
-  createDefaultTerminal: ReturnType<typeof vi.fn>;
+  deleteTerminal: ReturnType<typeof vi.fn>;
 };
 
 class FakeTerminalManagerStore {
   terminals = observable.map<string, TerminalStore>();
+  sessions = new Map<string, never>();
   isLoaded: boolean;
-  createDefaultTerminal = vi.fn().mockResolvedValue(undefined);
+  deleteTerminal = vi.fn().mockResolvedValue(undefined);
   dispose = vi.fn();
 
   constructor({ terminalIds, isLoaded }: { terminalIds: string[]; isLoaded: boolean }) {
@@ -264,104 +265,23 @@ describe('WorkspaceViewModel terminal drawer snapshot', () => {
     retire.mockRestore();
     viewModel.dispose();
   });
+});
 
-  it('persists and restores the active terminal drawer item', () => {
-    const source = makeViewModel();
-    source.setTerminalDrawerActiveItem({ kind: 'script', id: 'script-lifecycle-run' });
-
-    const restored = makeViewModel();
-    restored.restoreSnapshot(source.snapshot);
-
-    expect(restored.terminalDrawerActiveItem).toEqual({
-      kind: 'script',
-      id: 'script-lifecycle-run',
-    });
-
-    source.dispose();
-    restored.dispose();
-  });
-
-  it.each([
-    {
-      label: 'leaves a stale empty drawer open while terminal records load',
-      terminalIds: ['terminal-1'],
-      loaded: false,
-      restoredTabs: [],
-      loadAfterRestore: true,
-      removeAfterRestore: false,
-      closesDrawer: false,
-    },
-    {
-      label: 'closes a restored empty drawer after loaded state',
-      terminalIds: [],
-      loaded: true,
-      restoredTabs: [],
-      loadAfterRestore: false,
-      removeAfterRestore: false,
-      closesDrawer: true,
-    },
-    {
-      label: 'closes a restored empty drawer when loading finishes',
-      terminalIds: [],
-      loaded: false,
-      restoredTabs: [],
-      loadAfterRestore: true,
-      removeAfterRestore: false,
-      closesDrawer: true,
-    },
-    {
-      label: 'closes after the last terminal is removed',
-      terminalIds: ['terminal-1'],
-      loaded: true,
-      restoredTabs: ['terminal-1'],
-      loadAfterRestore: false,
-      removeAfterRestore: true,
-      closesDrawer: true,
-    },
-  ])('terminal drawer: $label', async ({
-    terminalIds,
-    loaded,
-    restoredTabs,
-    loadAfterRestore,
-    removeAfterRestore,
-    closesDrawer,
-  }) => {
-    const terminals = makeTerminalManager({ terminalIds, isLoaded: loaded });
+describe('WorkspaceViewModel terminals without a tab', () => {
+  it('ends them once the list has loaded, and keeps the ones a tab still shows', async () => {
+    const terminals = makeTerminalManager({ terminalIds: ['kept', 'orphan'], isLoaded: false });
     terminalRegistryEntries().set('conversation-1', terminals);
-    workspaceRegistry.acquire(
-      'project-1',
-      'workspace-1',
-      '/tmp/emdash-test-workspace',
-      { settings: {} } as never
-    );
-
+    workspaceRegistry.acquire('project-1', 'workspace-1', '/tmp/emdash-test-workspace', { settings: {} } as never);
     const viewModel = makeProvisionedViewModel();
-    viewModel.restoreSnapshot({
-      focusedRegion: 'bottom',
-      isTerminalDrawerOpen: true,
-      terminals: { tabOrder: restoredTabs, activeTabId: restoredTabs[0] },
-    });
+    viewModel.paneLayout.open('terminal', { terminalId: 'kept' }, { from: null, intent: 'newTab' });
     viewModel.initialize();
+    expect(terminals.deleteTerminal).not.toHaveBeenCalled();
 
-    if (loadAfterRestore) {
-      runInAction(() => {
-        terminals.isLoaded = true;
-      });
-    }
-    if (removeAfterRestore) {
-      runInAction(() => {
-        terminals.terminals.delete('terminal-1');
-      });
-    }
-    await Promise.resolve();
+    runInAction(() => {
+      terminals.isLoaded = true;
+    });
 
-    expect(terminals.createDefaultTerminal).not.toHaveBeenCalled();
-    expect(viewModel.isTerminalDrawerOpen).toBe(closesDrawer ? false : true);
-    if (closesDrawer) {
-      expect(viewModel.focusedRegion).toBe('main');
-      expect(viewModel.terminalDrawerActiveItem).toBeUndefined();
-    }
-
+    expect(terminals.deleteTerminal).toHaveBeenCalledExactlyOnceWith('orphan');
     viewModel.dispose();
   });
 });

@@ -25,7 +25,11 @@ import {
 import { wirePageDialogs, type PageDialogs } from './browser-page-dialogs';
 import { BrowserPageRuntime } from './browser-page-runtime';
 import { browserWebContentsRegistry } from './browser-webcontents-registry';
+import { assertCredentialAgentContents, assertCredentialNativeAdoption, credentialAgentPartitionBlocked } from './credential-isolation-registry';
+import type { CredentialUseBinding } from './credential-use-contract';
 import { isPreviewPageUrl, validateBrowserPageMount } from './webview-security';
+import { nativePagePresentation } from './page-presentation';
+import type { TaskPagePresentation } from '@shared/extensions/task-page-protocol';
 
 /**
  * #7274 会话页浏览器页签里的网页:主进程持有的 `WebContentsView`,盖在咕咕窗口里页签那一块上。
@@ -78,6 +82,9 @@ type BrowserPage = {
   /** 鼠标那层要不要露(agent 在操作、页签那边画着鼠标)。 */
   cursorShown: boolean;
   dialogs: PageDialogs | null;
+  /** An App's host-authorized presentation lease, independent of the browser tab's box. */
+  presentation?: { host: BrowserWindow; rect: Rect | null };
+  presentationListeners: Set<() => void>;
 };
 
 /** 占位卸下(页签挪去别的窗、分栏重排)后,网页留这么久等它在新位置挂回来 —— 挪动 ❌ 重新载入网页。 */
@@ -88,6 +95,7 @@ const hostsWired = new WeakSet<BrowserWindow>();
 
 function emitPageEvent(page: BrowserPage, type: BrowserPageEventType, detail: Record<string, unknown> = {}): void {
   if (page.webContents.isDestroyed() || page.runtime.initializing) return;
+  try { assertCredentialAgentContents(page.webContents); } catch { return; }
   events.emit(browserPageEventChannel, { browserId: page.browserId, type, detail, state: pageState(page.webContents) });
 }
 
@@ -115,6 +123,7 @@ function wireHost(host: BrowserWindow): void {
     for (const page of pages.values()) {
       if (page.runtime.host !== host) continue;
       page.dialogs?.pageShown();
+      notifyPresentation(page);
     }
   };
   host.on('move', reposition);
@@ -128,6 +137,7 @@ function wireHost(host: BrowserWindow): void {
     for (const page of [...pages.values()]) {
       if (page.runtime.host !== host) continue;
       page.runtime.moveTo(null);
+      notifyPresentation(page);
       page.dialogs?.hostChanged();
       releaseBrowserPage(page.browserId);
     }
@@ -145,6 +155,7 @@ function contentRect(host: BrowserWindow): Rect {
 }
 
 function pageIsShown(page: BrowserPage): boolean {
+  if (page.presentation) return !!page.presentation.rect && page.presentation.rect.width > 0 && page.presentation.rect.height > 0;
   const rect = page.rect;
   return page.fullscreen || (page.mode === 'shown' && !!rect && rect.width > 0 && rect.height > 0);
 }
@@ -152,14 +163,22 @@ function pageIsShown(page: BrowserPage): boolean {
 /** 页面始终留在所属宿主;只改变视口与显示状态。 */
 function applyLayout(page: BrowserPage): void {
   if (page.webContents.isDestroyed()) return;
+  if (page.presentation) {
+    const { host, rect } = page.presentation;
+    if (host.isDestroyed()) return;
+    page.runtime.moveTo(host); page.runtime.layout(rect, !!rect && rect.width > 0 && rect.height > 0);
+    page.dialogs?.pageShown(); notifyPresentation(page); return;
+  }
   const host = page.runtime.host;
   if (!host || host.isDestroyed()) return;
   const sized = page.rect !== null && page.rect.width > 0 && page.rect.height > 0;
-  const shown = pageIsShown(page);
+  let shown = pageIsShown(page);
+  try { assertCredentialAgentContents(page.webContents); } catch { shown = false; }
   // 先定大小再挂上去:挂上的那一帧就在新位置。
   page.runtime.layout(page.fullscreen ? contentRect(host) : sized ? page.rect : null, shown);
   placeAgentLayers(page);
   page.dialogs?.pageShown();
+  notifyPresentation(page);
 }
 
 /** 人此刻看得见这张网页:挂在窗口上、那扇窗露着。 */
@@ -181,6 +200,7 @@ export function mountBrowserPage(args: {
   url: string;
   windowName: string;
 }): MountBrowserPageResult {
+  if (credentialAgentPartitionBlocked(args.partition)) return { success: false, error: 'credential-partition-isolated' };
   const validation = validateBrowserPageMount(
     { partition: args.partition, src: args.url },
     browserWebContentsRegistry.registeredPartitions
@@ -203,6 +223,13 @@ export function mountBrowserPage(args: {
     return { success: true, reused: true, ready: page.ready, state: pageState(page.webContents) };
   }
 
+  page = createBrowserPage(args);
+  installBrowserPage(page);
+  navigatePage(page, validation.url);
+  return { success: true, reused: false, ready: false, state: pageState(page.webContents) };
+}
+
+function createBrowserPage(args: { browserId: string; partition: string; windowName: string }): BrowserPage {
   const view = new WebContentsView({
     // 锁定态(生产包)下 DevTools 一并关掉,同咕咕别的窗口(devtools-lock.ts)。
     webPreferences: hardenWebPreferences({
@@ -225,7 +252,7 @@ export function mountBrowserPage(args: {
     const current = pages.get(args.browserId);
     if (current?.runtime === runtime && current.releaseExpired) destroyBrowserPage(args.browserId);
   });
-  page = {
+  const page: BrowserPage = {
     browserId: args.browserId,
     partition: args.partition,
     view,
@@ -239,22 +266,76 @@ export function mountBrowserPage(args: {
     releaseTimer: null,
     releaseExpired: false,
     layers: [],
+    presentationListeners: new Set(),
     cursorShown: false,
     dialogs: null,
   };
-  pages.set(args.browserId, page);
-  const adopted = page;
-  browserWebContentsRegistry.adoptPageWebContents(args.browserId, webContents, {
-    window: () => (adopted.runtime.host && !adopted.runtime.host.isDestroyed() ? adopted.runtime.host : null),
-    origin: () => (adopted.fullscreen ? { x: 0, y: 0 } : { x: adopted.rect?.x ?? 0, y: adopted.rect?.y ?? 0 }),
+  return page;
+}
+
+function installBrowserPage(page: BrowserPage): void {
+  browserWebContentsRegistry.adoptPageWebContents(page.browserId, page.webContents, {
+    window: () => (page.runtime.host && !page.runtime.host.isDestroyed() ? page.runtime.host : null),
+    origin: () => (page.fullscreen ? { x: 0, y: 0 } : { x: page.rect?.x ?? 0, y: page.rect?.y ?? 0 }),
   });
+  // A synchronous host callback during adoption can revoke/retire this very candidate.
+  assertCredentialNativeAdoption(page.webContents);
+  pages.set(page.browserId, page);
   wirePage(page);
-  moveToHost(page, args.windowName);
-  navigatePage(page, validation.url);
-  return { success: true, reused: false, ready: false, state: pageState(webContents) };
+  moveToHost(page, page.windowName);
+}
+
+/** Capture presentation before retirement; never retain DOM, snapshots, URL/query or old observers.
+ * The returned native slot is private to the fixed host and is not an Agent tool or approval.
+ */
+export function captureCredentialBrowserSlot(binding: CredentialUseBinding) {
+  const original = livePage(binding.browserId);
+  if (!original || !browserWebContentsRegistry.isRegisteredForSession(binding.browserId, binding.sessionId, original.partition)) {
+    throw new Error('credential_handoff_target_unavailable');
+  }
+  const registration = browserWebContentsRegistry.registrationIdentity(binding.browserId);
+  const presentation = { browserId: original.browserId, partition: original.partition, windowName: original.windowName,
+    rect: original.rect ? { ...original.rect } : null, mode: original.mode };
+  let created: BrowserPage | undefined;
+  const assertCurrent = () => {
+    const current = pages.get(binding.browserId);
+    const host = resolveHost(presentation.windowName);
+    if (!registration || browserWebContentsRegistry.registrationIdentity(binding.browserId) !== registration
+      || !browserWebContentsRegistry.isRegisteredForSession(binding.browserId, binding.sessionId, presentation.partition)
+      || (current && current !== original && current !== created) || !host || host.isDestroyed()) {
+      throw new Error('credential_handoff_target_unavailable');
+    }
+  };
+  return Object.freeze({ source: original.webContents, assertCurrent,
+    create: () => {
+      assertCurrent();
+      if (created || !original.webContents.isDestroyed()) throw new Error('credential_handoff_target_unavailable');
+      const candidate = createBrowserPage(presentation);
+      created = candidate;
+      candidate.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+      candidate.rect = presentation.rect;
+      // Initial viewport exists, but the candidate is neither shown nor registered/observed.
+      candidate.runtime.moveTo(resolveHost(presentation.windowName));
+      candidate.runtime.layout(candidate.rect, false);
+      return Object.freeze({ webContents: candidate.webContents, runtime: candidate.runtime,
+        publish: () => {
+          assertCurrent();
+          if (pages.has(binding.browserId) || candidate.webContents.isDestroyed()) throw new Error('credential_handoff_target_unavailable');
+          candidate.mode = presentation.mode;
+          candidate.ready = true;
+          installBrowserPage(candidate);
+        },
+        dispose: () => {
+          if (pages.get(binding.browserId) === candidate) destroyBrowserPage(binding.browserId);
+          else candidate.runtime.close();
+        },
+      });
+    },
+  });
 }
 
 function moveToHost(page: BrowserPage, windowName: string): void {
+  if (page.presentation) { page.windowName = windowName; return; }
   const host = resolveHost(windowName);
   const moved = page.runtime.host !== host;
   if (moved) {
@@ -273,6 +354,7 @@ function moveToHost(page: BrowserPage, windowName: string): void {
 
 /** Browser Use can restore a saved tab without mounting its whole session UI or moving a live page to another window. */
 export function ensureAgentBrowserPage(args: { browserId: string; partition: string; url: string }): MountBrowserPageResult {
+  if (credentialAgentPartitionBlocked(args.partition)) return { success: false, error: 'credential-partition-isolated' };
   const page = livePage(args.browserId);
   if (page && page.partition === args.partition) {
     if (page.releaseTimer) clearTimeout(page.releaseTimer);
@@ -298,6 +380,7 @@ function wirePage(page: BrowserPage): void {
     host: () => (page.runtime.host && !page.runtime.host.isDestroyed() ? page.runtime.host : null),
   });
   webContents.on('dom-ready', () => {
+    notifyPresentation(page);
     if (page.runtime.initializing) return;
     page.ready = true;
     // 网页照 Chrome 那样能双指捏合放大(#6456)。Electron 默认关着;只开这一张网页的。每次 dom-ready 都设:换页可能换渲染进程。
@@ -329,6 +412,7 @@ function wirePage(page: BrowserPage): void {
   webContents.on('page-favicon-updated', (_event, favicons) => emitPageEvent(page, 'page-favicon-updated', { favicons }));
   webContents.on('focus', () => emitPageEvent(page, 'focus'));
   webContents.on('blur', () => emitPageEvent(page, 'blur'));
+  webContents.on('zoom-changed', () => notifyPresentation(page));
   // 网页要全屏(视频):view 铺满整个窗口内容区,退出时回到页签那一块。
   webContents.on('enter-html-full-screen', () => {
     page.fullscreen = true;
@@ -345,6 +429,8 @@ function wirePage(page: BrowserPage): void {
   });
   webContents.once('destroyed', () => {
     if (pages.get(page.browserId) === page) {
+      notifyPresentation(page);
+      page.presentationListeners.clear();
       pages.delete(page.browserId);
       if (page.releaseTimer) clearTimeout(page.releaseTimer);
       closeAgentLayers(page);
@@ -367,12 +453,35 @@ export function layoutBrowserPage(args: {
   const page = pages.get(args.browserId);
   if (!page || page.webContents.isDestroyed()) return false;
   if (args.windowName !== page.windowName) moveToHost(page, args.windowName);
-  const host = page.runtime.host;
+  const host = resolveHost(args.windowName);
   const zoom = host && !host.isDestroyed() ? host.webContents.getZoomFactor() : 1;
   page.rect = args.rect ? toDip(args.rect, zoom) : null;
   page.mode = args.mode;
   applyLayout(page);
   return true;
+}
+
+/** Main supplies the actual App embedder. Apps never choose native windows or browser partitions. */
+export function leaseBrowserPagePresentation(browserId: string, host: BrowserWindow) {
+  const page = pages.get(browserId);
+  if (!page || page.webContents.isDestroyed() || host.isDestroyed()) throw new Error('The task page cannot be mounted');
+  if (page.presentation) throw new Error('The task page is already mounted by an App');
+  const presentation = { host, rect: null as Rect | null };
+  page.presentation = presentation; wireHost(host);
+  let closed = false;
+  return {
+    layout(rect: Rect | null) {
+      if (closed || page.presentation !== presentation || page.webContents.isDestroyed() || host.isDestroyed()) throw new Error('The task page mount closed');
+      presentation.rect = rect ? toDip(rect, host.webContents.getZoomFactor()) : null;
+      applyLayout(page);
+    },
+    close() {
+      if (closed) return; closed = true;
+      if (page.presentation !== presentation) return;
+      delete page.presentation;
+      if (!page.webContents.isDestroyed()) { moveToHost(page, page.windowName); applyLayout(page); }
+    },
+  };
 }
 
 export function toDip(rect: Rect, zoom: number): Rect {
@@ -405,6 +514,7 @@ export function destroyBrowserPage(browserId: string): void {
   const page = pages.get(browserId);
   if (!page) return;
   pages.delete(browserId);
+  notifyPresentation(page); page.presentationListeners.clear();
   if (page.releaseTimer) clearTimeout(page.releaseTimer);
   closeAgentLayers(page);
   page.runtime.close();
@@ -412,7 +522,8 @@ export function destroyBrowserPage(browserId: string): void {
 
 function livePage(browserId: string): BrowserPage | null {
   const page = pages.get(browserId);
-  return page && !page.webContents.isDestroyed() ? page : null;
+  if (!page || page.webContents.isDestroyed()) return null;
+  try { assertCredentialAgentContents(page.webContents); return page; } catch { return null; }
 }
 
 export function navigateBrowserPage(browserId: string, url: string): boolean {
@@ -442,10 +553,10 @@ export function runBrowserPageCommand(browserId: string, command: BrowserPageCom
   const { webContents } = page;
   switch (command) {
     case 'goBack':
-      if (webContents.navigationHistory.canGoBack()) webContents.navigationHistory.goBack();
+      page.runtime.goBack();
       return true;
     case 'goForward':
-      if (webContents.navigationHistory.canGoForward()) webContents.navigationHistory.goForward();
+      page.runtime.goForward();
       return true;
     case 'reload':
       void page.runtime.reload().catch(error => navigationFailed(page, page.runtime.requestedUrl, error));
@@ -466,7 +577,30 @@ export function setBrowserPageZoom(browserId: string, factor: number): boolean {
   const page = livePage(browserId);
   if (!page) return false;
   page.webContents.setZoomFactor(normalizeBrowserZoomFactor(factor));
+  notifyPresentation(page);
   return true;
+}
+
+/** A host-only lookup captured by a task lease; the App never supplies a native contents/window ID. */
+export function browserPagePresentation(browserId: string): TaskPagePresentation | null {
+  const page = livePage(browserId);
+  try { return page && pageIsShown(page) ? nativePagePresentation(page.view, page.runtime.host) : null; }
+  catch (error) { log.warn('Could not measure page presentation', { error: String(error) }); return null; }
+}
+
+function notifyPresentation(page: BrowserPage): void {
+  for (const listener of page.presentationListeners) {
+    try { listener(); } catch (error) { log.warn('Could not report page presentation', { error: String(error) }); }
+  }
+}
+
+export function onBrowserPagePresentation(browserId: string, listener: (value: TaskPagePresentation | null) => void): () => void {
+  const page = livePage(browserId);
+  if (!page) throw new Error('The task page was closed');
+  const changed = () => listener(browserPagePresentation(browserId));
+  page.presentationListeners.add(changed);
+  try { changed(); } catch (error) { page.presentationListeners.delete(changed); throw error; }
+  return () => { page.presentationListeners.delete(changed); };
 }
 
 export async function measureBrowserPage(browserId: string): Promise<BrowserPageLayout | null> {

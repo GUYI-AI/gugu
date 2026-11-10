@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, createElement, Fragment, Profiler, useCallback, useMemo, useState, type SetStateAction } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatMessageComposer } from '../../../../apps/desktop/src/components/chat/ChatMessageComposer'
 import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
@@ -12,6 +13,9 @@ import { readComposer, writeComposer, selectComposer } from '../../../support/co
 import type { GroupRosterCandidate } from '../../../../apps/desktop/src/lib/mention'
 // Opt-in contract for the follow-up rollout; production defaults are covered separately.
 vi.mock('../../../../apps/desktop/src/lib/messageQuoteRollout', () => ({ SELECTED_MESSAGE_QUOTES_ENABLED: true }))
+vi.mock('../../../../apps/desktop/src/components/markdown/Markdown', () => ({ Markdown: ({ content }: { content: string }) => createElement('span', null, content) }))
+const { noticeMock } = vi.hoisted(() => ({ noticeMock: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/lib/notices', () => ({ notify: noticeMock, dismissNotice: vi.fn() }))
 const { toastMock } = vi.hoisted(() => ({
   toastMock: vi.fn(),
 }))
@@ -34,7 +38,7 @@ beforeEach(() => {
   publishProjectGroupChats([], new Map(), new Map())
   mobileShellState.enabled = false
   setLocalePreference('zh-CN')
-  toastMock.mockClear()
+  toastMock.mockClear(); noticeMock.mockClear()
   harness = createReactHarness()
   container = harness.container
   vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:gugu-preview')
@@ -206,7 +210,7 @@ describe('ChatMessageComposer', () => {
     expect(container.querySelectorAll('[data-slot="composer-attachment"]')).toHaveLength(1)
     expect(URL.createObjectURL).toHaveBeenCalledTimes(2)
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:gugu-preview')
-    expect(toastMock).toHaveBeenCalledWith('发送失败：upload denied [path] [redacted token]', 'error')
+    expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: '图片 avatar.png 没发出去：发送未完成，请稍后重新发送', tier: 'error', key: expect.any(String) }))
     expect(sendErrorLog).toHaveBeenCalledWith(expect.objectContaining({ error: 'upload denied /Users/test/private sk-synthetic-secret\nstack detail' }), 'message send failed')
   })
   it('#2188 restores only the text when every attachment committed before the text failed', async () => {
@@ -227,7 +231,7 @@ describe('ChatMessageComposer', () => {
     expect(onSend).toHaveBeenCalledTimes(1)
     expect(readComposer(container.querySelector('[contenteditable]'))).toBe('send this text after the file')
     expect(container.querySelectorAll('[data-slot="composer-attachment"]'), 'the committed attachment must not return to the draft').toHaveLength(0)
-    expect(toastMock).toHaveBeenCalledWith('发送失败：text denied', 'error')
+    expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: '消息没发出去：发送未完成，请稍后重新发送', tier: 'error', key: expect.any(String) }))
     await clickSend()
     expect(onSendAttachments, 'retry must not resend the committed attachment').toHaveBeenCalledTimes(1)
     expect(onSend).toHaveBeenCalledTimes(2)
@@ -253,6 +257,11 @@ describe('ChatMessageComposer', () => {
     expect(chips[1].textContent).toContain('never-attempted.txt')
     expect(readComposer(container.querySelector('[contenteditable]')), 'the unattempted text stays recoverable').toBe('text never attempted')
     expect(onSend, 'the text half never ran').toHaveBeenCalledTimes(0)
+    expect(noticeMock).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ title: '2 个文件没发出去：发送未完成，请稍后重新发送' }))
+    const failureFiles = renderToStaticMarkup(createElement(Fragment, null, noticeMock.mock.calls[0][0].description))
+    expect(failureFiles).toContain('failed-verification.txt')
+    expect(failureFiles).toContain('never-attempted.txt')
+    expect(failureFiles).not.toContain('already-sent.txt')
     onSendAttachments.mockImplementationOnce(async (files: File[], opts?: { onSent?: (f: File, index: number) => void }) => {
       files.forEach((f, index) => opts?.onSent?.(f, index))
     })
@@ -395,7 +404,7 @@ describe('ChatMessageComposer', () => {
     await act(async () => { rejectSend(new Error('upload denied')); await Promise.resolve() })
     await flush()
     expect(chips(), 'failed send must not leak into the now-active chat-b').toHaveLength(0)
-    expect(toastMock).toHaveBeenCalledWith('发送失败：upload denied', 'error')
+    expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: expect.stringContaining('没发出去：发送未完成，请稍后重新发送'), tier: 'error', key: expect.any(String) }))
     await harness.render(createElement(StatefulHost, { chatId: 'chat-a', onSend: vi.fn(async () => {}), onSendAttachments }))
     await flush()
     expect(chips(), 'failed send is recoverable in its original chat-a').toHaveLength(1)
@@ -555,6 +564,22 @@ describe('ChatMessageComposer', () => {
     expect(container.querySelector('[contenteditable]')?.getAttribute('contenteditable')).toBe('false')
     expect(onSend).not.toHaveBeenCalled()
   })
+  it('sends a draft kept private to a peer as a whisper without any reply, and drops that audience after sending', async () => {
+    const onSend = vi.fn(async () => {})
+    let draftWhispers: Record<string, string> = { 'group-1': 'ada' }
+    const setDraftWhisper = vi.fn((chatId: string, userId: string | null) => { draftWhispers = { ...draftWhispers }; if (userId) draftWhispers[chatId] = userId; else delete draftWhispers[chatId] })
+    const renderComposer = () => harness.render(createElement(ChatStoreProvider, { value: { ...chatStore(), draftWhispers, setDraftWhisper } },
+      createElement(ChatMessageComposer, { onSend, chatId: 'group-1', isGroupChat: true, currentUserId: 'me', groupMembers: [rosterMember('ada', 'Ada')] })))
+    await renderComposer()
+    expect(container.textContent).toContain('悄悄话给 Ada')
+    expect(container.querySelector('[data-testid="quote-thumb"]')).toBeNull()
+    await typeInComposer('annotated')
+    await clickSend()
+    expect(onSend).toHaveBeenCalledWith('annotated', expect.objectContaining({ toUserIds: ['ada'], isWhisper: true, replyToMessageId: null }))
+    expect(setDraftWhisper).toHaveBeenCalledWith('group-1', null)
+    await renderComposer()
+    expect(container.textContent).not.toContain('悄悄话给 Ada')
+  })
   it('preserves the reply id when whisper mode was selected manually', async () => {
     const onSend = vi.fn(async () => {})
     await harness.render(createElement(ChatMessageComposer, {
@@ -648,31 +673,39 @@ describe('ChatMessageComposer', () => {
     await flush()
     expect(document.body.textContent).toContain('新入群 Agent')
   })
-  it('#2166 warns only for an explicitly offline resolved agent status', async () => {
+  it.each([
+    ['offline', '当前不在线，可能无法及时回复'],
+    ['archived', '对方已归档'],
+  ] as const)('#1987 keeps the %s picker warning without a selected-Agent banner', async (status, warning) => {
     const offlineAgent = rosterMember('offline-agent', '设备离线 Agent', 'agent')
     const reachableAgent = rosterMember('reachable-agent', '可对话 Agent', 'agent')
+    const onSend = vi.fn(async () => {})
     await harness.render(createElement(ChatMessageComposer, {
-      onSend: vi.fn(async () => {}),
+      onSend,
       chatId: 'group-1',
       isGroupChat: true,
       groupMembers: [offlineAgent, reachableAgent],
-      agentStatuses: { 'offline-agent': 'offline', 'reachable-agent': 'idle' },
+      agentStatuses: { 'offline-agent': status, 'reachable-agent': 'idle' },
     }))
     await flush()
     await typeInComposer('@')
     const offlineOption = Array.from(document.body.querySelectorAll('[role="option"]')).find((el) => el.textContent?.includes('设备离线 Agent'))
     const reachableOption = Array.from(document.body.querySelectorAll('[role="option"]')).find((el) => el.textContent?.includes('可对话 Agent'))
-    expect(offlineOption?.textContent).toContain('当前不在线，可能无法及时回复')
-    expect(reachableOption?.textContent).not.toContain('当前不在线，可能无法及时回复')
-    expect(offlineOption?.querySelector('[data-agent-display-status]')?.getAttribute('data-agent-display-status')).toBe('offline')
+    expect(offlineOption?.textContent).toContain(warning)
+    expect(reachableOption?.textContent).not.toContain(warning)
+    expect(offlineOption?.querySelector('[data-agent-display-status]')?.getAttribute('data-agent-display-status')).toBe(status)
     expect(reachableOption?.querySelector('[data-agent-display-status]')?.getAttribute('data-agent-display-status')).toBe('idle')
     await act(async () => {
       offlineOption?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
     })
     await flush()
-    expect(container.querySelector('[data-agent-status-surface="mention-selection"][data-agent-id="offline-agent"]')?.textContent)
-      .toContain('当前不在线，可能无法及时回复')
-    expect(container.querySelector('[data-agent-status-surface="mention-selection"][data-agent-id="reachable-agent"]')).toBeNull()
+    expect(container.querySelector('[data-agent-status-surface="mention-selection"]')).toBeNull()
+    const mention = container.querySelector('[data-mention-id="offline-agent"]')
+    expect(mention?.textContent).toBe('@设备离线 Agent')
+    expect(mention?.getAttribute('title') ?? '').not.toContain(warning)
+    expect(container.textContent).not.toContain(warning)
+    await clickSend()
+    expect(onSend).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('@设备离线 Agent'), expect.objectContaining({ toUserIds: ['offline-agent'] }))
   })
   it('3a a name with a space stays pickable, and picking it closes the popup', async () => {
     const onSend = vi.fn(async (_content: string, _opts?: unknown) => {})

@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 import { useOwnedAgentConversationEntry } from '../../../../apps/desktop/src/hooks/useOwnedAgentConversationEntry'
-import { openOwnedAgentEntry, openOwnedAgentResource } from '../../../../apps/desktop/src/lib/ownedAgentConversation'
+import { openOwnedAgentEntry, openOwnedAgentFile, openOwnedAgentResource } from '../../../../apps/desktop/src/lib/ownedAgentConversation'
 import { canTakeOwnedAgentResource, clearOwnedAgentResources } from '../../../../apps/desktop/src/lib/ownedAgentResources'
 import { APP_SHOW_SESSION_EVENT } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
@@ -17,20 +17,26 @@ const scope = vi.hoisted(() => ({
 }))
 vi.mock('../../../../apps/desktop/src/store/chatContext', () => ({
   appendToDraft: (old: string, text: string) => [old, text].filter(Boolean).join('\n'),
-  useChatStore: () => ({ drafts: scope.drafts, draftAttachments: scope.attachments, writeDraft: scope.write, setDraftAttachments: scope.setFiles, identitiesById: scope.identities, setActiveChatId: scope.select }),
+  useChatStoreReader: () => () => ({ drafts: scope.drafts, draftAttachments: scope.attachments, writeDraft: scope.write, setDraftAttachments: scope.setFiles, identitiesById: scope.identities, setActiveChatId: scope.select }),
 }))
-vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: scope.devices, phones: [] }) }))
+vi.mock('../../../../apps/desktop/src/session/shared/remote-sessions/session-directory', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../../../apps/desktop/src/session/shared/remote-sessions/session-directory')>(),
+  directoryDevices: () => scope.devices,
+}))
 vi.mock('../../../../apps/desktop/src/platform/desktopIpc', () => ({ desktopIpc: () => scope.native ? ({ invoke: scope.lookup }) : null }))
 vi.mock('../../../../apps/desktop/src/lib/composeDraft', () => ({ composeTaskDraft: scope.compose }))
 vi.mock('../../../../apps/desktop/src/lib/guguLinks', () => ({ openTarget: scope.open }))
 vi.mock('../../../../apps/desktop/src/lib/composerEntryFocus', () => ({ requestComposerEntryFocus: scope.focus }))
 vi.mock('../../../../apps/desktop/src/lib/assistantShellBridge', () => ({ readAssistantShellBridge: () => ({ getSnapshot: () => ({ assistant: { id: scope.assistant } }) }) }))
 vi.mock('../../../../apps/desktop/src/lib/notices', () => ({ notify: scope.notify }))
+const opened = vi.hoisted(() => ({ handlers: vi.fn(), onOpenFile: vi.fn(async () => {}) }))
+vi.mock('@renderer/features/sessions/stores/open-file-in-file-editor', () => ({ makeFileLinkHandlers: (...args: unknown[]) => { opened.handlers(...args); return { onOpenFile: opened.onOpenFile } } }))
+vi.mock('@renderer/features/sessions/session-pane-ready', () => ({ prepareSessionPane: async () => {} }))
 let harness: ReturnType<typeof createReactHarness>
 const chats = [{ id: 'dm', kind: 'dm', peer_user_id: 'agent' }] as ChatItem[]
 const contacts = [{ id: 'agent', type: 'agent', owner_user_id: 'owner' }] as ContactUser[]
 let openEntry: ReturnType<typeof useOwnedAgentConversationEntry>
-function Fixture() { openEntry = useOwnedAgentConversationEntry({ ownerId: 'owner', chats, contacts: scope.contacts, mobile: scope.mobile, onOpen: scope.onOpen }); return null }
+function Fixture() { openEntry = useOwnedAgentConversationEntry({ ownerId: 'owner', chats: () => chats, contacts: () => scope.contacts, mobile: scope.mobile, onOpen: scope.onOpen }); return null }
 beforeEach(() => {
   harness = createReactHarness(); vi.clearAllMocks(); scope.drafts = {}; scope.attachments = {}; scope.assistant = null
   scope.identities = {}; scope.contacts = contacts; scope.mobile = false; scope.native = true; scope.devices = []
@@ -47,6 +53,20 @@ it('opens the same task from the conversation bridge and leaves the assistant Ap
   await vi.waitFor(() => expect(scope.focus).toHaveBeenCalledExactlyOnceWith('session:session'))
   scope.assistant = 'agent'
   expect(openOwnedAgentEntry('dm')).toBe(false)
+})
+it("a path in a group's message opens in the sender's task, in front of its conversation; elsewhere beside it", async () => {
+  const prepare = vi.fn(() => Object.assign(() => {}, { requestId: 'request' }))
+  installSessionViewRequestBridge(window, { openChat: vi.fn(), prepareGroupSession: prepare })
+  await harness.render(<Fixture />)
+  expect(openOwnedAgentFile('agent', 'group', { path: 'src/add.ts', at: { line: '3' } })).toBe(true)
+  await vi.waitFor(() => expect(opened.onOpenFile).toHaveBeenCalledWith('src/add.ts', { line: '3' }), { timeout: 10_000 })
+  expect(prepare).toHaveBeenCalledWith('group', expect.objectContaining({ sessionId: 'session' }))
+  expect(opened.handlers).toHaveBeenCalledWith('project', 'session', { from: null })
+  vi.clearAllMocks()
+  expect(openOwnedAgentFile('agent', undefined, { path: 'a.md' })).toBe(true)
+  await vi.waitFor(() => expect(opened.onOpenFile).toHaveBeenCalledWith('a.md', undefined))
+  expect(opened.handlers).toHaveBeenCalledWith('project', 'session', { beside: true })
+  expect(openOwnedAgentFile('not-mine', undefined, { path: 'a.md' })).toBe(false)
 })
 it('keeps the current page and selection when an owned agent has no session', async () => {
   let finishLookup!: (value: unknown) => void

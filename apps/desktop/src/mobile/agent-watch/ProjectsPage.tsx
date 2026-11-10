@@ -15,8 +15,9 @@ import { deviceSessionsOf, directoryRows, useLiveDeviceSessions } from '@/sessio
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
 import { usePhoneAssistantIdentity } from '../assistant/phoneAssistantIdentity'
 import { AgentWatchNote, AgentWatchScreen } from './AgentWatchChrome'
-import { OfflineNote } from './OfflineNote'
-import { SessionActions, SessionRow } from './SessionsPage'
+import { ConnectionStatus } from '@/components/connection/ConnectionStatus'
+import { DropdownMenu } from '@/components/ui/Menu'
+import { type SessionMenuTarget, SessionActions, SessionRow } from './SessionsPage'
 import { assistantGroupIds, locateSession, sessionSections, type SessionNode, type SessionSection } from './session-sections'
 import { useMachineLabel } from './useMachineLabel'
 import { directoryMachines, visibleMachines } from './machine-list'
@@ -61,18 +62,22 @@ function useStoredSet(key: string): [ReadonlySet<string>, (id: string) => void] 
 const ALL_OPEN = { has: () => true }
 
 /**
- * 一台离线的机器页顶原来那一行,现在跟在它名下每个分区的页头后面(只一行,收起的分区不画)。收回着 / 正在起来的云端宿主
- * ❌ 说(owner 10-17:Agent 没有休息这回事;点开它上面的会话就在连它,那一页自己说「正在连接」)。
+ * 一台机器连不上时,它名下每个分区的页头上说一句状态(owner 11-08:状态放页头,❌ 页头下另起一行 / 横幅,❌ 「未连接」)。
+ * 目录说它离线 = 「设备离线 · 最后在线 …」;目录说在线、此刻却读不到(读取在重试)= 「连接中」,下面画的是它上报过的那份。
+ * 收回着 / 正在起来的云端宿主 ❌ 说(owner 10-17:Agent 没有休息这回事;点开它上面的会话就在连它,那一页自己说)。
  */
-function MachineNote({ device, error }: { device: Device; error?: string | null }): ReactNode {
+function MachineState({ device, error }: { device: Device; error?: string | null }): ReactNode {
+  const { label } = useMachineLabel()
   if (device.cloud_computer === 'asleep' || device.cloud_computer === 'waking') return null
-  if (!device.is_online) return <OfflineNote device={device} />
-  // 在线却此刻读不到(那台机器一时连不上):下面画的是它上报过的那份,照实说一句,❌ 红框(红框留给一行都拿不出来)。
-  return error ? (
-    <div className="gg-aw-offline" data-testid="agent-watch-unreachable">
-      <div className="gg-aw-offline-line"><span className="gg-aw-offline-text">{error}</span></div>
-    </div>
-  ) : null
+  if (device.is_online && !error) return null
+  return (
+    <ConnectionStatus
+      state={device.is_online ? 'connecting' : 'device_offline'}
+      subject={label(device)}
+      lastSeenAt={device.last_seen_at}
+      testId="agent-watch-machine-state"
+    />
+  )
 }
 
 /**
@@ -133,8 +138,8 @@ export const ProjectsPage = observer(function ProjectsPage({
   const [collapsed, toggleCollapsed] = useStoredSet(COLLAPSED_KEY)
   /** 点了「展开显示」的分区(收起的闲置家族全露)。 */
   const [moreOpen, toggleMore] = useStoredSet(MORE_KEY)
-  /** 正在看管理动作的那条会话(行尾「…」打开的抽屉);null = 关着。 */
-  const [menuFor, setMenuFor] = useState<{ deviceId: string; session: SessionpageSessionSummary; anchor: Element } | null>(null)
+  /** 会话的管理菜单:一页一个,每行的 ⋯ 是它的 Trigger。 */
+  const [sessionMenu] = useState(() => DropdownMenu.createHandle<SessionMenuTarget>())
 
   // Read during every observer render: React's useMemo cannot track MobX presence dependencies.
   const sections = sessionSections(sectionMachines, rows, { assistantId, homeIds }, { expanded: moreOpen, online })
@@ -230,7 +235,7 @@ export const ProjectsPage = observer(function ProjectsPage({
           statusAvailable={phone ? hostAvailable : undefined}
           phoneHost={phone}
           onOpen={(session) => onOpenSession(deviceId, session)}
-          onMenu={(phone ? hostAvailable && cancellable : rowDevice?.is_online) ? (session, anchor) => setMenuFor({ deviceId, session, anchor }) : undefined}
+          menu={(phone ? hostAvailable && cancellable : rowDevice?.is_online) ? { handle: sessionMenu, target: { deviceId, session: node.item.session, phoneHost: phone } } : undefined}
         />,
         ...(open ? renderTree(section, node.children, depth + 1, { deviceId, projectId }) : []),
       ]
@@ -244,7 +249,7 @@ export const ProjectsPage = observer(function ProjectsPage({
   const errorOf = new Map(listed.map(({ device, here }) => [device.device_id, here.error]))
   const nothingYet = sections.length === 0
   const waitingForMachines = devicesLoading && machines.length === 0
-  // 助理那一组的页头下说宿主真的离线 —— 只在这一组里确有住在它上面的会话时说。收回着 / 正在起来的云端宿主 ❌ 说(MachineNote)。
+  // 助理那一组的页头上说宿主真的离线 —— 只在这一组里确有住在它上面的会话时说。收回着 / 正在起来的云端宿主 ❌ 说(MachineState)。
   const homeDevice = devices.find((device) => isHome(device) && device.cloud_computer !== 'asleep' && device.cloud_computer !== 'waking' && !device.is_online)
   const onHome = (nodes: readonly SessionNode[]): boolean =>
     nodes.some((node) => homeIds.has(node.item.deviceId) || onHome(node.children))
@@ -342,14 +347,14 @@ export const ProjectsPage = observer(function ProjectsPage({
               aria-expanded={!isCollapsed}
               data-testid="agent-watch-session-group-toggle"
               leading={isCollapsed ? <ChevronRight /> : <ChevronDown />}
-              trailing={isCollapsed ? <span className="gg-aw-group-count">{section.count}</span> : null}
+              trailing={isCollapsed ? <span className="gg-aw-group-count">{section.count}</span>
+                : noteDevice ? <MachineState device={noteDevice} error={errorOf.get(noteDevice.device_id)} /> : null}
               onClick={() => toggleCollapsed(key)}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCollapsed(key) } }}
             >
               {heading}
               {twinPath ? <span className="gg-aw-group-path" title={twinPath}>{` ${twinPath}`}</span> : null}
             </SectionLabel>
-            {!isCollapsed && noteDevice ? <MachineNote device={noteDevice} error={errorOf.get(noteDevice.device_id)} /> : null}
             {isCollapsed ? null : renderTree(section, section.roots)}
             {!isCollapsed && section.folded > 0 ? (
               <Button
@@ -367,13 +372,7 @@ export const ProjectsPage = observer(function ProjectsPage({
         )
       })}
 
-      <SessionActions
-          anchor={menuFor?.anchor ?? null}
-          session={menuFor?.session ?? null}
-          deviceId={menuFor?.deviceId ?? ''}
-          phoneHost={!!menuFor && !!deviceOf.get(menuFor.deviceId) && isPhoneDevice(deviceOf.get(menuFor.deviceId)!)}
-          onClose={() => setMenuFor(null)}
-        />
+      <SessionActions menu={sessionMenu} />
     </AgentWatchScreen>
   )
 })

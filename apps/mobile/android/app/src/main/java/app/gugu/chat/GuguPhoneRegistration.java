@@ -32,7 +32,7 @@ final class GuguPhoneRegistration {
             if (hosts.exists()) {
                 File[] owners = hosts.listFiles();
                 if (owners == null) throw new IOException("无法读取原有手机登记");
-                for (File other : owners) if (new File(other, "config.enc").exists()) throw new IOException("请先在原有手机账号下完成设备登记迁移");
+                for (File other : owners) if (new File(other, "config.enc").length() > 0) throw new IOException("请先在原有手机账号下完成设备登记迁移");
             }
             return null;
         }, (temporary, target) -> {

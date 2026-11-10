@@ -861,7 +861,7 @@ function codexBundledCatalog(
   const launch = resolveCodexAppServerSpawn(codexBin, ['debug', 'models', '--bundled'], platform, env)
   const read = new Promise<string>((resolve, reject) => {
     execFile(launch.command, launch.args, {
-      env,
+      env: launch.env ?? env,
       maxBuffer: 64 * 1024 * 1024,
       windowsVerbatimArguments: launch.windowsVerbatimArguments,
     }, (error, stdout, stderr) => {
@@ -1812,7 +1812,7 @@ export class CodexAppServerSession {
           endpoint: endpoint.address,
           command: launch.command,
           args: launch.args,
-          env: childEnv,
+          env: launch.env ?? childEnv,
           cwd,
         }, this.tmuxBackendDeps)
         this.backend = backend
@@ -1822,7 +1822,7 @@ export class CodexAppServerSession {
         const appServer = spawnOwnedChild(launch.command, launch.args, {
           cwd,
           stdio: ['ignore', 'ignore', 'pipe'],
-          env: childEnv,
+          env: launch.env ?? childEnv,
           windowsVerbatimArguments: launch.windowsVerbatimArguments,
           detached: true,
           onError: (error) => this.reportProcessError(error),

@@ -254,7 +254,7 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
     // missing: the runtime's typed refusal — its executor ended before admission (conversation_not_found), no byte was
     // taken (#552). Any other refusal throws: the prompt may have reached the worker, so it is the owner's exit (unknown).
     if (sent.outcome === 'missing') return { result: 'channel-lost', cause: { name: 'AcpSessionMissing', message: 'The ACP runtime has no such session' } };
-    if (sent.outcome === 'declined') return { result: 'rejected-before-admission', cause: { name: 'AdmissionDeclined', message: 'The ACP runtime declined the prompt' } };
+    if (sent.outcome === 'declined') return { result: 'rejected-before-admission', cause: { name: 'AdmissionDeclined', message: sent.reason ?? 'The ACP runtime declined the prompt' } };
     void sent.completion.then(result => {
       if (result.success || result.error.code === 'CANCELLED' || (stopping && result.error.code === 'DISCONNECTED')) return;
       log.error('ACP prompt completion failed', { sessionId, requestId: sent.turnId, error: result.error });

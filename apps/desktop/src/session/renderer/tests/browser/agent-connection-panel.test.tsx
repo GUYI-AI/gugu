@@ -279,6 +279,13 @@ it('a task overlays the same connection form and returns to its draft after API 
   await userEvent.fill(page.getByRole('textbox', { name: 'Task draft' }), 'Keep this draft')
   await userEvent.click(page.getByTestId('composer-model-trigger'))
   await userEvent.click(page.getByRole('button', { name: 'Go sign in', exact: true }))
+  // 「Go sign in」 leaves with the model list; the connection menu sits at the model trigger that stays, not at a
+  // detached element (the corner) and not closed.
+  await until('the connection menu sits at the model trigger', () => {
+    const menu = document.querySelector('.subscription-connection-menu')?.getBoundingClientRect()
+    const trigger = document.querySelector('[data-testid="composer-model-trigger"]')?.getBoundingClientRect()
+    return !!menu && !!trigger && menu.width > 0 && Math.min(Math.abs(menu.top - trigger.bottom), Math.abs(trigger.top - menu.bottom)) < 40
+  })
   await userEvent.click(page.getByRole('menuitem', { name: 'Add connection', exact: true }))
   await userEvent.click(page.getByRole('button', { name: 'API Key', exact: true }))
   await userEvent.fill(page.getByLabelText('API Key', { exact: true }), 'fixture-key')

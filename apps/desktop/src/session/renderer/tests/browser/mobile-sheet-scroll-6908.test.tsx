@@ -117,7 +117,7 @@ for (const [w, h] of [[360, 640], [360, 400]] as const) {
 it('member profile: with a 995-character bio the owner still reaches the role select and remove', async () => {
   const bio = Array.from({ length: 15 }, (_, i) => `${i + 1}. 你好，我是做独立游戏的程序员，平时写引擎和工具链，也喜欢拍照、骑车和做饭。最近在研究实时战略游戏里的寻路和编队，欢迎一起聊。`).join(' ');
   const member = { id: 'member-b', guguNumber: 110356, displayName: 'B', avatar: null, bio, email: null, type: 'human', role: 'member', profileScope: 'group' } as MemberProfileCardModel;
-  mount(<MemberProfilePopover profile={{ member, anchor: document.body }} onClose={() => {}} editControls={{ canChangeRole: true, onChangeRole: () => {}, canRemove: true, onRemove: () => {} }} />);
+  mount(<MemberProfilePopover profile={{ member }} onClose={() => {}} editControls={{ canChangeRole: true, onChangeRole: () => {}, canRemove: true, onRemove: () => {} }} />);
   await until('the card is in the sheet', () => sheet('group-member-profile-menu')?.querySelector('[data-profile-member-id] button') != null);
   const box = sheet('group-member-profile-menu')!;
   const card = box.querySelector<HTMLElement>('[data-profile-member-id]')!;

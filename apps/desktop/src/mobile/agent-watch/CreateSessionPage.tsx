@@ -1,3 +1,4 @@
+import type { FirstPrompt } from './use-timeline-session'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { rendererLogger } from '@/lib/log'
@@ -25,8 +26,10 @@ import { AgentWatchScreen } from './AgentWatchChrome'
 import { LiveGlyph } from './StatusGlyph'
 import { CreateOptionsPill } from './CreateOptionsPill'
 import { useMachineLabel } from './useMachineLabel'
-import { OfflineNote } from './OfflineNote'
-import { CloudComputerNote } from './CloudComputerNote'
+import { ConnectionStatus } from '@/components/connection/ConnectionStatus'
+import { connectionStateOf } from '@/components/connection/connectionState'
+import { IconButton } from '@/components/ui/IconButton'
+import { RefreshCw } from '@/lib/icons'
 import { useCloudComputerWake } from '../../hooks/useWakeCloudComputer'
 import { guguReasonInText, remoteFailureKind } from '@gugu/session-core/session-record/contract'
 import { guguReasonText } from '@renderer/features/sessions/gugu-reason'
@@ -76,21 +79,21 @@ function describe(err: unknown): string {
 
 export function CreateSessionPage({
   device,
-  birthGroup = null,
-  onClearBirthGroup,
+  taskGroup = null,
   onBack,
   onCreated,
 }: {
   device: Device
-  /** 群成员里点的「新建 Agent」:建出来的 agent 一出生就进这个群(请求的 chatId)。null = 不进群。 */
-  birthGroup?: { chatId: string; name: string } | null
-  onClearBirthGroup?: () => void
+  /** 群输入框的「新任务」(非项目群,同桌面 TaskDispatchComposer):首句落成这个群里的任务卡,agent 进群(chatId + taskChatId)。 */
+  taskGroup?: { chatId: string; name: string } | null
   onBack?: () => void
   /** 建成了:带着攒好的摘要与那句话跳进时间线(那句由时间线页接着画)。 */
-  onCreated: (session: SessionpageSessionSummary, firstPrompt: string, result?: SessionpageSessionCreateResult) => void
+  /** firstPrompt: absent only when retrying a stored phone attempt from before the first prompt carried its id. */
+  onCreated: (session: SessionpageSessionSummary, firstPrompt: FirstPrompt | undefined, result?: SessionpageSessionCreateResult) => void
 }) {
   const { t } = useTranslation('main')
   const { t: tFlow } = useTranslation('mobileTaskFlow')
+  const { t: tc } = useTranslation('common')
   const { label: machineLabel } = useMachineLabel()
   const ownerId = useAuth().user?.id ?? null
   const phone = isPhoneDevice(device)
@@ -200,6 +203,7 @@ export function CreateSessionPage({
       }
       setCreateError(null)
       setPendingText(text)
+      const sentAt = Date.now()
       let submittedPhoneRequest: SessionpageSessionCreateRequest | null = null
       try {
         if (phone && !ownerId) throw new Error('请先登录后创建 Agent')
@@ -209,10 +213,12 @@ export function CreateSessionPage({
           projectId: selection.projectId!,
           harness: selection.harness!,
           prompt: text,
+          // The host admits the first prompt under this id; the page's optimistic first bubble uses the same one.
+          initialMessageId: crypto.randomUUID(),
           ...(selection.model ? { model: selection.model } : {}),
           ...(selection.permissionMode ? { permissionMode: selection.permissionMode } : {}),
           ...(selection.effort ? { effort: selection.effort } : {}),
-          ...(birthGroup ? { chatId: birthGroup.chatId } : {}),
+          ...(taskGroup ? { chatId: taskGroup.chatId, taskChatId: taskGroup.chatId } : {}),
         }
         if (phone) {
           rememberPhoneSessionCreate(ownerId!, device.device_id, request)
@@ -226,7 +232,7 @@ export function CreateSessionPage({
           if (page.active) setPhoneAttempt(null)
         }
         submittedDraft?.accepted(text)
-        if (page.active) onCreated(result.session ?? toSessionSummary(result, selection.harness!, new Date().toISOString()), text, result)
+        if (page.active) onCreated(result.session ?? toSessionSummary(result, selection.harness!, new Date().toISOString()), request.initialMessageId ? { id: request.initialMessageId, text, sentAt } : undefined, result)
       } catch (err) {
         // 机器那边装 agent 没装成:原因进日志,人看到的是能照做的下一步(按本端语言,❌ 机器那边拼的双语原文)。
         // 其余原因同理:按原因码归类说人话(remoteFailureKind),原文只进日志。
@@ -326,17 +332,12 @@ export function CreateSessionPage({
     </div>
   ) : null
 
-  // 生在哪个群里:与上面同一种说明口气,带一个「不加入」。
-  const requestedGroup = phoneAttempt ? phoneAttempt.chatId : birthGroup?.chatId
-  const groupName = requestedGroup === birthGroup?.chatId ? birthGroup?.name : '上次的群聊'
-  const birthGroupNotice = requestedGroup ? (
-    <div className="gg-aw-create-blocker gg-aw-create-birth-group" data-testid="agent-watch-create-birth-group">
-      <span>{t('agentWatch.create.birthGroup', { name: groupName })}</span>
-      {onClearBirthGroup ? (
-        <Button variant="ghost" size="sm" onClick={onClearBirthGroup} disabled={creating || phoneAttempt !== null}>
-          {t('agentWatch.create.birthGroupSkip')}
-        </Button>
-      ) : null}
+  // 派到哪个群里:与上面同一种说明口气。
+  const requestedGroup = phoneAttempt ? phoneAttempt.chatId : taskGroup?.chatId
+  const groupName = requestedGroup === taskGroup?.chatId ? taskGroup?.name : '上次的群聊'
+  const taskGroupNotice = requestedGroup ? (
+    <div className="gg-aw-create-blocker gg-aw-create-birth-group" data-testid="agent-watch-create-task-group">
+      <span>{t('agentWatch.create.taskGroup', { name: groupName })}</span>
     </div>
   ) : null
 
@@ -361,7 +362,19 @@ export function CreateSessionPage({
     : online && !options && !optionsError
       ? t('agentWatch.create.loadingOptions')
       : null
-  const subtitle = busyLabel ? (
+  // Not reachable: the machine's state is the header subtitle (owner 11-08), ❌ a line under the header.
+  const cloudAsleep = device.cloud_computer === 'asleep' || device.cloud_computer === 'waking'
+  const wakeFailed = cloudAsleep && wakeIssue !== null
+  const connection = online ? 'online' as const : connectionStateOf({ deviceOnline: false, cloudWaking: cloudAsleep, cloudWakeFailed: wakeFailed })
+  const subtitle = connection !== 'online' ? (
+    <ConnectionStatus
+      state={connection}
+      subject={machineLabel(device)}
+      lastSeenAt={device.last_seen_at}
+      detail={wakeFailed && wakeIssue ? tc(`cloudComputer.reason.${wakeIssue.kind}`) : null}
+      testId="agent-watch-connection-status"
+    />
+  ) : busyLabel ? (
     <span className="gg-aw-head-status" role="status" data-testid="agent-watch-create-status">
       <LiveGlyph state="busy" />
       <span>{busyLabel}</span>
@@ -374,13 +387,15 @@ export function CreateSessionPage({
     <AgentWatchScreen
       title={t('agentWatch.create.title')}
       subtitle={subtitle}
+      actions={cloudAsleep && (wakeIssue || wakeDropped) ? (
+        <IconButton size="md" aria-label={tc('connection.retry')} title={tc('connection.retry')} data-testid="agent-watch-cloud-computer-retry" onClick={retryWake}>
+          <RefreshCw />
+        </IconButton>
+      ) : undefined}
       onBack={onBack}
       testId="agent-watch-create-page"
       bodyFill
     >
-      {!online ? device.cloud_computer === 'asleep' || device.cloud_computer === 'waking'
-        ? <CloudComputerNote device={device} issue={wakeIssue} dropped={wakeDropped} onRetry={retryWake} />
-        : <OfflineNote device={device} /> : null}
         <AssistantRuntimeProvider runtime={runtime}>
           <div className="gg-aw-thread-host" data-testid="agent-watch-create-thread">
             <ComposerExtrasProvider
@@ -403,14 +418,14 @@ export function CreateSessionPage({
                 ) : null
               }
               above={
-                errorNotice || optionsNotice || blockerNotice || pendingCreationNotice || lastUsedNotice || birthGroupNotice ? (
+                errorNotice || optionsNotice || blockerNotice || pendingCreationNotice || lastUsedNotice || taskGroupNotice ? (
                   <div className="gg-aw-thread-extras">
                     {errorNotice}
                     {optionsNotice}
                     {blockerNotice}
                     {pendingCreationNotice}
                     {lastUsedNotice}
-                    {birthGroupNotice}
+                    {taskGroupNotice}
                   </div>
                 ) : null
               }

@@ -1,0 +1,37 @@
+name: Restore shared Android Gradle cache
+description: Restore a toolchain-compatible dev snapshot without saving PR-scoped caches
+inputs:
+  java-version:
+    description: Exact JDK version returned by setup-java
+    required: true
+  lookup-only:
+    description: Check for an exact snapshot without downloading it in the dev producer
+    required: false
+    default: 'false'
+outputs:
+  cache-hit:
+    description: Whether the exact compatibility key exists
+    value: ${{ steps.restore.outputs.cache-hit }}
+  cache-key:
+    description: Identical primary key for the dev-only writer
+    value: ${{ steps.restore.outputs.cache-primary-key }}
+  cache-paths:
+    description: Dependency and Gradle caches, excluding live lock metadata
+    value: |
+      ~/.gradle/caches
+      ~/.gradle/wrapper
+      !~/.gradle/caches/**/*.lock
+      !~/.gradle/caches/**/gc.properties
+runs:
+  using: composite
+  steps:
+    - id: restore
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+          !~/.gradle/caches/**/*.lock
+          !~/.gradle/caches/**/gc.properties
+        key: community-gradle-v1-${{ runner.os }}-${{ runner.arch }}-temurin-${{ inputs.java-version }}-${{ hashFiles('pnpm-lock.yaml', '.node-version', 'apps/mobile/android/**/*.gradle*', 'apps/mobile/android/**/gradle-wrapper.properties', 'apps/mobile/android/**/gradle-wrapper.jar', 'apps/mobile/android/gradle.properties', 'apps/mobile/android/**/*.toml', '.github/actions/setup-gradle-cache/action.yml') }}
+        lookup-only: ${{ inputs.lookup-only }}

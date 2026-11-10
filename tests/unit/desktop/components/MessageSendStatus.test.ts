@@ -16,6 +16,12 @@ afterEach(() => {
   setAttachmentUploadProgress('progress-message')
 })
 describe('MessageSendStatus', () => {
+  it('replaces the failed disclosure on a retry and removes it after the same message is sent', async () => {
+    for (const state of ['failed', 'sending', 'sent'] as const) {
+      await renderWithAppProviders(harness, createNode(MessageSendStatus, { state, messageId: 'retried-message' }))
+      expect(document.body.querySelector('[data-testid="message-send-failed"]') !== null).toBe(state === 'failed')
+    }
+  })
   it('keeps zero-byte upload events indeterminate, including a retry reset', async () => {
     await renderWithAppProviders(harness, createNode(MessageSendStatus, { state: 'sending', messageId: 'progress-message' }),
       { chat: { retrySend: vi.fn(), discardSend: vi.fn() } })
@@ -60,6 +66,26 @@ describe('MessageSendStatus', () => {
     expect(notice.textContent).toContain('对方已归档、未送达')
     expect(document.body.querySelector('[data-testid="message-send-failed"]')).toBeNull()
   })
+  it('#2383 names a removed identity apart from an archived one, both beside the delivered message', async () => {
+    await renderWithAppProviders(harness, createNode(MessageSendStatus, { state: 'sent', messageId: 'm',
+      blocks: [{ agent_user_id: 'archived', reason: 'agent_archived' }, { agent_user_id: 'removed', reason: 'identity_removed' }] }),
+    { chat: { retrySend: vi.fn(), discardSend: vi.fn() } })
+    const removed = document.body.querySelector('[data-agent-id="removed"]')!
+    expect(removed.getAttribute('data-agent-delivery-block')).toBe('identity_removed')
+    expect(removed.textContent).toContain('对方已移除、未送达')
+    expect(document.body.querySelector('[data-agent-id="archived"]')!.textContent).toContain('对方已归档、未送达')
+    expect(document.body.querySelector('[data-testid="message-send-failed"]')).toBeNull()
+  })
+  it('#2383 shows a refusal reason it does not know as plain not delivered, never as a failed send', async () => {
+    await renderWithAppProviders(harness, createNode(MessageSendStatus, { state: 'sent', messageId: 'm',
+      blocks: [{ agent_user_id: 'later', reason: 'a_reason_added_later' }] }),
+    { chat: { retrySend: vi.fn(), discardSend: vi.fn() } })
+    const notice = document.body.querySelector('[data-agent-id="later"]')!
+    expect(notice.getAttribute('data-agent-delivery-block')).toBe('a_reason_added_later')
+    expect(notice.textContent).toContain('未送达')
+    expect(notice.textContent).not.toContain('已归档')
+    expect(document.body.querySelector('[data-testid="message-send-failed"]')).toBeNull()
+  })
   it('uses the shared Base UI menu and wires retry/discard actions', async () => {
     const retrySend = vi.fn()
     const discardSend = vi.fn()
@@ -71,7 +97,7 @@ describe('MessageSendStatus', () => {
     const trigger = document.body.querySelector('[data-testid="message-send-failed"]') as HTMLElement
     expect(trigger.title).toBe('Recipient left [path] [redacted token]')
     await clickElement(trigger)
-    expect(document.body.querySelector('[role="menu"][aria-label="未送达消息操作"]')).not.toBeNull()
+    expect(document.body.querySelector('[role="menu"][aria-label="发送失败消息操作"]')).not.toBeNull()
     expect(document.body.querySelector('[data-testid="message-send-failed-menu"]')?.textContent).toContain('Recipient left [path] [redacted token]')
     const retry = document.body.querySelector('[data-testid="message-send-retry"]') as HTMLElement
     await clickElement(retry)

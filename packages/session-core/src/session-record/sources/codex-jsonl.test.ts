@@ -255,6 +255,8 @@ describe('codex rollout 记录源', () => {
       line('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: 'spawn', kind: 'started', agent_thread_id: childId, agent_path: '/root/audit' } }),
       line('response_item', { type: 'function_call_output', call_id: 'spawn', output: '{"task_name":"/root/audit"}' }),
       line('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: 'done', kind: 'completed', agent_thread_id: childId, agent_path: '/root/audit' } }),
+      line('response_item', { type: 'agent_message', author: '/root/audit', recipient: '/root',
+        content: [{ type: 'input_text', text: 'Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/audit\nPayload:\nCHILD_RESULT' }] }),
       line('response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'PARENT_RESULT' }] }),
       line('event_msg', { type: 'task_complete' }),
     ]);
@@ -266,6 +268,9 @@ describe('codex rollout 记录源', () => {
       line('response_item', { type: 'function_call_output', call_id: 'child-step', output: 'CHILD_TOOL_RESULT' }),
       line('response_item', { type: 'function_call', namespace: 'collaboration', name: 'spawn_agent', call_id: 'nested-spawn', arguments: JSON.stringify({ message: 'Nested audit' }) }),
       line('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: 'nested-spawn', kind: 'started', agent_thread_id: nestedId, agent_path: '/root/audit/nested' } }),
+      line('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: 'nested-done', kind: 'completed', agent_thread_id: nestedId, agent_path: '/root/audit/nested' } }),
+      line('response_item', { type: 'agent_message', author: '/root/audit/nested', recipient: '/root/audit',
+        content: [{ type: 'input_text', text: 'Message Type: FINAL_ANSWER\nTask name: /root/audit\nSender: /root/audit/nested\nPayload:\nNESTED_RESULT' }] }),
       line('response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'CHILD_RESULT' }] }),
       line('event_msg', { type: 'task_complete' }),
     ].join('\n') + '\n');
@@ -285,11 +290,14 @@ describe('codex rollout 记录源', () => {
     expect(launch).toMatchObject({ agentStatus: 'completed', outputText: 'CHILD_RESULT', reasoningText: 'CHILD_THOUGHT',
       children: [expect.objectContaining({ toolCallId: 'child-step' }),
         expect.objectContaining({ kind: 'spawn-subagent-tool-call', agentStatus: 'completed', outputText: 'NESTED_RESULT' })] });
-    expect(all.filter((item) => item.kind === 'subagent-done-tool-call')).toHaveLength(2);
-    expect(all.filter((item) => item.kind === 'subagent-done-tool-call')).toEqual(expect.arrayContaining([
-      expect.objectContaining({ outputText: 'NESTED_RESULT' }),
-      expect.objectContaining({ outputText: 'CHILD_RESULT' }),
-    ]));
+    // The parent's own record says the child finished, in the parent's turn. The nested child's finish is a line in
+    // the child's record: it completes the nested card (above) and adds no row. Neither makes a turn of its own.
+    expect(snapshot.turns).toHaveLength(1);
+    // `completed` and the FINAL_ANSWER after it are two events for one child: one row, with the reply.
+    expect(all.filter((item) => item.kind === 'subagent-done-tool-call')).toEqual([
+      expect.objectContaining({ launchToolCallId: childId, outcome: 'completed', outputText: 'CHILD_RESULT' }),
+    ]);
+    expect(JSON.stringify(launch)).not.toContain('subagent-done-tool-call');
     const pendingArchive = timeline.archive!();
     timeline.dispose();
     const archive = await pendingArchive;
@@ -312,13 +320,49 @@ describe('codex rollout 记录源', () => {
     expect(afterFollowup.filter((item) => item.kind === 'spawn-subagent-tool-call')).toEqual([
       expect.objectContaining({ agentStatus: 'completed', outputText: 'FOLLOW_UP_RESULT' }),
     ]);
-    expect(afterFollowup.filter((item) => item.kind === 'subagent-done-tool-call')).toHaveLength(2);
-    expect(afterFollowup.filter((item) => item.kind === 'subagent-done-tool-call')).toEqual(expect.arrayContaining([
-      expect.objectContaining({ outputText: 'NESTED_RESULT' }),
-      expect.objectContaining({ outputText: 'FOLLOW_UP_RESULT' }),
-    ]));
+    // The child's record alone does not add a row to the parent's timeline.
+    expect(reopened.getSnapshot().turns).toHaveLength(1);
+    expect(afterFollowup.filter((item) => item.kind === 'subagent-done-tool-call')).toEqual([
+      expect.objectContaining({ launchToolCallId: childId, outputText: 'CHILD_RESULT' }),
+    ]);
     expect(afterFollowup.filter((item) => item.kind === 'message' && item.role === 'assistant')).toEqual([
       expect.objectContaining({ text: 'PARENT_RESULT' }),
+    ]);
+  });
+
+  it('a child ended in the parent\'s record: completed with its reply, interrupted as stopped; a reused path is the latest child', async () => {
+    const line = (type: string, payload: object) => JSON.stringify({ type, timestamp: '2026-06-18T07:03:21Z', payload });
+    const spawn = (id: string, thread: string, path: string) => [
+      line('response_item', { type: 'function_call', namespace: 'collaboration', name: 'spawn_agent', call_id: id, arguments: JSON.stringify({ message: `task ${thread}` }) }),
+      line('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id, kind: 'started', agent_thread_id: thread, agent_path: path } }),
+      line('response_item', { type: 'function_call_output', call_id: id, output: '{}' }),
+    ];
+    const ended = (thread: string, path: string, kind: string) =>
+      line('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: `end-${thread}`, kind, agent_thread_id: thread, agent_path: path } });
+    const answer = (path: string, text: string) => line('response_item', { type: 'agent_message', author: path, recipient: '/root',
+      content: [{ type: 'input_text', text: `Message Type: FINAL_ANSWER\nTask name: /root\nSender: ${path}\nPayload:\n${text}` }] });
+    const { root, file } = await stage([
+      line('event_msg', { type: 'task_started' }),
+      line('response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Run three' }] }),
+      ...spawn('s1', 'first', '/root/worker'), ended('first', '/root/worker', 'completed'), answer('/root/worker', 'FIRST_RESULT'),
+      ...spawn('s2', 'second', '/root/worker'), ended('second', '/root/worker', 'completed'), answer('/root/worker', 'SECOND_RESULT'),
+      ...spawn('s3', 'third', '/root/other'), ended('third', '/root/other', 'interrupted'),
+      line('response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'DONE' }] }),
+      line('event_msg', { type: 'task_complete' }),
+    ]);
+    for (const [thread, end] of [['first', {}], ['second', {}], ['third', null]] as const) await writeFile(file.replace(THREAD_ID, thread), [
+      line('event_msg', { type: 'task_started' }),
+      line('response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: `task ${thread}` }] }),
+      end ? line('event_msg', { type: 'task_complete' }) : line('event_msg', { type: 'turn_aborted' }),
+    ].join('\n') + '\n');
+    const timeline = await createSessionTimeline(createCodexJsonlSource({ harness: 'codex', providerSessionId: THREAD_ID, roots: [root] }), { sessionId: 'ended' });
+    disposers.push(() => timeline.dispose());
+    const turns = timeline.getSnapshot().turns;
+    expect(turns).toHaveLength(1);
+    expect(turns[0].items.filter((item) => item.kind === 'subagent-done-tool-call')).toEqual([
+      expect.objectContaining({ launchToolCallId: 'first', outcome: 'completed', outputText: 'FIRST_RESULT' }),
+      expect.objectContaining({ launchToolCallId: 'second', outcome: 'completed', outputText: 'SECOND_RESULT' }),
+      expect.objectContaining({ launchToolCallId: 'third', outcome: 'stopped' }),
     ]);
   });
 

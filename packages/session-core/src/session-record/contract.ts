@@ -1,4 +1,7 @@
 import type { TurnFileRef } from '../acp/models/turn-files';
+import type { TimelineWindowFields, WindowBodyRef, WindowBodyResult, WindowCursor } from './window-cache/types';
+export type { TimelineWindowFields, WindowBodyRef, WindowBodyOwner, WindowBodyResult, WindowCursor, PendingLongRecord, BodyChunkDescriptor, SourceFragment } from './window-cache/types';
+export { BODY_CHUNK_BYTES, BODY_TEXT_BYTES } from './window-cache/types';
 import type { TerminalState } from '../acp/models/terminals';
 import type { PermissionSubject } from '../acp/models/permissions';
 /**
@@ -156,8 +159,16 @@ export type RecordBoundary = { messageId?: string } & (
  * （不进时间线，只关掉当前这一轮）。❌ 不许一条同时是两者 —— 那样"这条要不要去重"没有答案。
  */
 export type RecordEntry =
-  | { key: string; at?: number; event: NormalizedEvent; boundary?: never; imageOrigins?: readonly (RecordImageRef | null)[] }
-  | { key: string; at?: number; boundary: RecordBoundary; event?: never; imageOrigins?: never };
+  | { key: string; at?: number; position?: number; state?: unknown; event: NormalizedEvent; boundary?: never; imageOrigins?: readonly (RecordImageRef | null)[] }
+  | { key: string; at?: number; position?: number; state?: unknown; boundary: RecordBoundary; event?: never; imageOrigins?: never };
+// `position`: where the record line (or row) that produced the entry starts, as `SessionRecordSource.startingAt` takes it.
+// `state` (a fill read only): the source's decoder state before that line, so a read started there decodes as this one.
+
+/**
+ * Where a turn starts in the record, the source's decoder state there (`RecordEntry.position` / `.state`), and the
+ * timeline's own state from before it that later turns can refer to (subagents, plan, config; no turns).
+ */
+export type TurnStart = { position: number; state?: unknown; timeline?: unknown };
 
 /**
  * 一张工具图在记录文件里的原文位置:那段 base64 正文从哪个字节起、多少个字。`imageOrigins` 与这条 `tool_update`
@@ -227,6 +238,23 @@ export interface SessionRecordSource {
   readImage?(ref: RecordImageRef): Promise<string | null>;
   getLineage?(): readonly RecordLineageNode[] | null;
   stop(): void;
+  /**
+   * A resume point that reads from `position` (a `RecordEntry.position`, where a turn started) with the decoder `state`
+   * that held there (`RecordEntry.state`); null = read from the start (also for a record that cannot start elsewhere,
+   * a `.zst` archive).
+   */
+  startingAt?(position: number, state?: unknown): Promise<SessionRecordResume | null>;
+  /** The native children a decoder `state` (`RecordEntry.state`) already knows: a read starting there reads them too. */
+  childIdsAt?(state: unknown): string[];
+  /** The record file as it is now (a snapshot source also finds a `.zst` archive); a filled-in picture is read back from it. */
+  recordPath?(): Promise<string | null>;
+  /**
+   * What the record holds just before `position`, to tell later whether a read from there would still continue the same
+   * record (not rewound, rewritten or replaced up to there); null = cannot tell (a `.zst` archive, a shorter record).
+   */
+  checkAt?(position: number): Promise<string | null>;
+  /** Changes whenever the record can have grown or been replaced; null = cannot tell (always read). */
+  stamp?(): Promise<string | null>;
 }
 
 // ─── 时间线 ───────────────────────────────────────────────────────────────
@@ -328,7 +356,7 @@ export function remoteSettlementGap(
 }
 
 /** 整份快照：从最新往回取 `limit` 轮。 */
-export type TimelineSnapshot = {
+export type TimelineSnapshot = TimelineWindowFields & {
   cursor: RecordCursor;
   turns: TranscriptTurn[];
   settlements: Settlement[];
@@ -370,7 +398,7 @@ export type TurnPatch = Omit<TranscriptTurn, 'items'> & {
  * 增量。以**条目**为单位替换（见 `TurnPatch`）：每一批带的是变过的条目，不是整轮。
  * `removedTurnIds` 给分叉/回滚用。
  */
-export type TimelineBatch = {
+export type TimelineBatch = TimelineWindowFields & {
   /**
    * 这一批是从哪个序号接上的（= 收批人应有的当前 seq）。
    *
@@ -404,7 +432,7 @@ export type TimelineAfterResult =
  * 带 `epoch`：翻页途中宿主换过代（记录被分叉、整份重读）时，这一批与手里那份不是同一条
  * 时间线，拼进去就是「少了中间的那一份」。❌ 不静默丢弃，也 ❌ 不静默合并 —— 交给客户端判。
  */
-export type TimelineOlderResult = {
+export type TimelineOlderResult = TimelineWindowFields & {
   epoch: string;
   turns: TranscriptTurn[];
   /** 这一批之前还有没有更早的。 */
@@ -495,6 +523,10 @@ export interface SessionTimeline {
    * 返回 null = 这条时间线存不了（记录源不支持续读）——那只是慢，不是错。
    */
   archive?(): Promise<TimelineArchive | null>;
+  /** A fill only: hand out settled turns as the record streams, so a long record never sits on one heap. */
+  drainSettled?(): { turns: TranscriptTurn[]; starts: Array<TurnStart | null>; prunedDrops: number; resets: number };
+  /** A fill only: where each turn still held (committed, then the active one) starts in the record, if the source says. */
+  heldStarts?(): ReadonlyArray<TurnStart | null>;
 }
 
 // ─── agent 的跨机器动作(机器 ↔ 机器)──────────────────────────────────────────────────────────────────
@@ -579,6 +611,11 @@ export type AppCallAction = {
   version: string;
   method: string;
   args: Record<string, unknown>;
+  /**
+   * The file outside its working copy a person opened in the page, to read only: stamped by
+   * the host from the page's binding, never from the page's args. The machine the file is on checks it (`fileRootOf`).
+   */
+  handed?: { workspace: string; id: string };
 };
 
 /**
@@ -662,7 +699,7 @@ export type SessionpageSessionSummary = {
   /** Explicit insert-now intent is preserved through durable host custody. */
   nativeInputSteering?: true;
   /** Live native activity, not a second IM row. Offline heartbeat digests carry no message text. */
-  nativeLastMessage?: { text: string; at: string } | null;
+  nativeLastMessage?: ({ text: string; at: string } & import('./preview-activity').PreviewActivity) | null;
   /** Raw personal conversation replies. IM deliveries keep their existing unread counter. */
   nativeUnreadKeys?: string[];
   /** Only deliberate owner notifications contribute a numeric notification badge. */
@@ -992,6 +1029,11 @@ export type SessionpageSessionCreateRequest = {
   model?: string;
   /** 第一句话。空的不建 —— 一条没有开场白的会话建出来就是个空壳。 */
   prompt: string;
+  /**
+   * 发起方给第一句铸的 client message id:宿主以它收下首句(待发行、原生消息都是这个身份),
+   * 发起方画的乐观首句与落地那条从头到尾是同一个实体(#2296,桌面新建任务同一做法)。老宿主不认这一格。
+   */
+  initialMessageId?: string;
   /** 展示;不给 = 那台电脑按自己的「终端」开关定(开 → 编程,关 → 通用),这家不给那种就取它给的第一种。给了须在 `sessionViews` 里。 */
   sessionView?: SessionpageSessionView;
   /** 咕咕权限档;不给 = 这家的默认。须在该 harness 的 `permissionModes` 里。 */
@@ -1100,7 +1142,11 @@ export type SessionpageSessionsListResult = {
  */
 export type SessionpageSessionSnapshotRequest = { conversationId: string; limit?: number; trim?: boolean };
 export type SessionpageSessionAfterRequest = { conversationId: string; cursor: RecordCursor; trim?: boolean };
-export type SessionpageSessionOlderRequest = { conversationId: string; beforeTurnId: string; limit?: number; trim?: boolean };
+export type SessionpageSessionOlderRequest = { conversationId: string; limit?: number; trim?: boolean } &
+  ({ beforeTurnId: string; cursor?: WindowCursor } | { beforeTurnId?: never; cursor: WindowCursor });
+/** Offsets and lengths are decoded UTF-8 bytes, never raw JSON or JavaScript character offsets. */
+export type SessionpageSessionBodyReadRequest = { conversationId: string; bodyRef: WindowBodyRef; offset: number; maxBytes: number };
+export type SessionpageSessionBodyReadResult = WindowBodyResult;
 /**
  * 手机点开一张附件卡(#7193):agent 用 `session_open_in_tab` 打开给人看的那份文件,从那台机器上按块现读
  * (不经云,与时间线同一条线)。只读这条会话**真的打开过**的文件 —— 机器拿它自己的记录核对。
@@ -1199,6 +1245,16 @@ export type SessionpageSessionRespondResult = {
 export type SessionpageSessionEvent = {
   subscriptionId: string;
   result: TimelineAfterResult;
+};
+
+/** Terminal desktop-window read failure; emitted separately from timeline/reset pushes. */
+export type SessionpageSessionWindowStatusEvent = {
+  conversationId: string;
+  /** Fresh per subscription generation; clients also reject stale local generation callbacks. */
+  subscriptionId: string;
+  state: 'failed';
+  /** Same error fields as the window setup RPC; this status does not request recovery. */
+  error: { code: string; message: string };
 };
 
 /**

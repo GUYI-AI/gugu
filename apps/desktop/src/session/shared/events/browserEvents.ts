@@ -1,3 +1,5 @@
+import type { ProjectionHostPacket } from '@shared/extensions/projection-protocol';
+import type { TaskPageState } from '@shared/browser-task-page';
 import { defineEvent } from '@shared/lib/ipc/events';
 
 export const browserOpenInNewTabChannel = defineEvent<{
@@ -59,6 +61,14 @@ export type BrowserPageEvent = {
   state: BrowserPageState;
 };
 export const browserPageEventChannel = defineEvent<BrowserPageEvent>('browser:page-event');
+
+/**
+ * #1607 node 5 — a task's page on another of the person's computers (a Gugu server's), shown in this tab as its live
+ * picture: the packets of one watch (`rpc.browser.watchTaskPage`), with the projection protocol's shapes.
+ */
+export const browserTaskPagePacketChannel = defineEvent<{ watchId: string; packet: ProjectionHostPacket }>('browser:task-page-packet');
+/** That page's toolbar state (address, title, loading, back / forward), whenever it changes there. */
+export const browserTaskPageStateChannel = defineEvent<{ watchId: string; state: TaskPageState }>('browser:task-page-state');
 
 /**
  * #7274 页签里网页那一块此刻的样子:`shown` 露在屏上;`occluded` 页签在屏上、但咕咕自己的浮层(菜单、弹窗、

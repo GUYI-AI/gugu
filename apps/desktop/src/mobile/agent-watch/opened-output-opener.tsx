@@ -13,6 +13,7 @@ import type { DocumentPreviewKind } from '@/components/chat/documentPreview'
 import type { ChatCommands, OpenedOutput } from '@gugu/session-chat-ui'
 import { useToast } from '@/components/toastContext'
 import { Menu, MenuItem, MenuSeparator } from '@/components/ui/Menu'
+import { useExternalMenuTrigger } from '@/components/ui/externalMenuTrigger'
 import { Sheet } from '@/components/ui/Sheet'
 import { downloadBlob } from '@/lib/download'
 import { messageActionItems } from '@/components/chat/messageActionItems'
@@ -43,9 +44,11 @@ type Preview = {
  * 读到了图进看图器、文档在这页里画(App 现成的那张预览,与聊天里的附件同一份)。
  * 读不到就在这页里说为什么(那台机器给的原因),❌ 点了没反应。
  */
-export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileChunk }: {
+export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileChunk, readWorkingCopy }: {
   deviceId: string; sessionId: string; onQuote: (text: string) => void
   readFileChunk?: (input: import('@gugu/session-core/session-record/contract').SessionpageOpenedFileReadRequest) => Promise<import('@gugu/session-core/session-record/contract').SessionpageOpenedFileChunk>
+  /** A file the timeline names (a link, an edited file): its working copy's, not the opened-output ledger's. */
+  readWorkingCopy?: (input: import('@gugu/session-core/session-record/contract').SessionpageOpenedFileReadRequest) => Promise<import('@gugu/session-core/session-record/contract').SessionpageOpenedFileChunk>
 }): {
   handlers: OpenedOutputHandlers
   openFile: (path: string, source?: FileOpenSource) => void
@@ -56,7 +59,10 @@ export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileCh
   const { toast } = useToast()
   const [preview, setPreview] = useState<Preview | null>(null)
   // 卡上「预览 ▾ / 浏览器 ▾」点开的那张打开方式菜单:锚在那枚按钮下面(❌ 底部抽屉)。
-  const [menu, setMenu] = useState<{ output: OpenedOutput; anchor: HTMLElement } | null>(null)
+  // 「▾」在 Solid 画的行里:按同一条 Trigger 规则(再点一次就关,按它不算点外面)。
+  const menuTrigger = useExternalMenuTrigger<OpenedOutput>()
+  const menu = menuTrigger.opened ? { output: menuTrigger.opened.value, anchor: menuTrigger.opened.anchor } : null
+  const { press } = menuTrigger
   const requestRef = useRef<AbortController | null>(null)
   const blobUrlRef = useRef<{ url: string; image?: { name: string; path: string } } | null>(null)
 
@@ -113,7 +119,9 @@ export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileCh
         const file: AttachmentMeta = { kind: 'file', fileName: plan.name, mimeType: plan.mimeType, url: '', sizeBytes: 0 }
         setPreview({ path: plan.path, file, kind, blob: null, content: null, loading: true })
         void readWholeOpenedFile({
-          read: (chunk) => readFileChunk ? readFileChunk(chunk) : readOpenedFileChunk(deviceId, chunk),
+          read: (chunk) => readFileChunk ? readFileChunk(chunk)
+            : readWorkingCopy && (opts.source === 'diff' || opts.source === 'resource-link' || opts.source === 'prose-link') ? readWorkingCopy(chunk)
+              : readOpenedFileChunk(deviceId, chunk),
           conversationId: sessionId,
           path: plan.path,
           signal: request.signal,
@@ -165,7 +173,7 @@ export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileCh
             setPreview({ path: plan.path, file, kind, blob: null, content: null, loading: false, error: describeFailure(error, opts.source) })
           })
       },
-    [deviceId, sessionId, readFileChunk, releaseBlobUrl, describeFailure, t, toast],
+    [deviceId, sessionId, readFileChunk, readWorkingCopy, releaseBlobUrl, describeFailure, t, toast],
   )
 
   const copy = useCallback(
@@ -190,15 +198,15 @@ export function useOpenedOutputOpener({ deviceId, sessionId, onQuote, readFileCh
         const kind = phoneOpenPlan(output).kind
         return kind === 'file' ? t('agentWatch.output.modePreview') : kind === 'browser' ? t('agentWatch.output.modeBrowser') : null
       },
-      onOutputMenu: ({ output, anchor }) => setMenu({ output, anchor }),
+      onOutputMenu: ({ output, anchor }) => press(anchor, output),
     }),
-    [t, openOutput],
+    [t, openOutput, press],
   )
 
   const menuPlan = menu ? phoneOpenPlan(menu.output) : null
   const menuNode =
     menu && menuPlan && menuPlan.kind !== 'machine-only' ? (
-      <Menu anchor={menu.anchor} onClose={() => setMenu(null)} minWidth={180}>
+      <Menu anchor={menu.anchor} onClose={(details) => menuTrigger.onOpenChange(false, details)} minWidth={180}>
         {menuPlan.kind === 'file' ? (
           <>
             <MenuItem shortcut={t('agentWatch.output.default')} onClick={() => openOutput(menu.output)}>

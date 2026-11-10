@@ -1,3 +1,4 @@
+import type { WindowCursor } from '@gugu/session-core/session-record/contract'
 import type { SessionpageTimelineClient } from '@/mobile/agent-watch/use-timeline-session'
 import * as remote from '@/mobile/agent-watch/sessionpage-rpc'
 import { rpcOn, events } from '@/session/renderer/lib/ipc'
@@ -16,7 +17,7 @@ function localClient(trim: boolean): SessionpageTimelineClient {
   return {
     fetchSnapshot: (_, sessionId, limit) => value(rpcOn(null).sessionTimeline.sessionSnapshot({ conversationId: sessionId, limit: limit ?? 30, trim })),
     fetchAfter: (_, sessionId, cursor) => value(rpcOn(null).sessionTimeline.sessionAfter({ conversationId: sessionId, cursor, trim })),
-    fetchOlder: (_, sessionId, beforeTurnId, limit) => value(rpcOn(null).sessionTimeline.sessionOlder({ conversationId: sessionId, beforeTurnId, limit, trim })),
+    fetchOlder: (_, sessionId, beforeTurnId, limit, cursor) => value(rpcOn(null).sessionTimeline.sessionOlder({ conversationId: sessionId, ...(cursor ? { cursor } : { beforeTurnId }), limit, trim })),
     fetchToolImage: (_, sessionId, itemId, index) => value(rpcOn(null).sessionTimeline.sessionToolImage({ conversationId: sessionId, itemId, index })),
     subscribeSession: (_, sessionId, subscriptionId, cursor) => value(rpcOn(null).sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor, trim })),
     unsubscribeSession: (_, subscriptionId) => rpcOn(null).sessionTimeline.sessionUnsubscribe({ subscriptionId }),
@@ -35,8 +36,26 @@ const localUntrimmed = localClient(false)
 
 const remoteClient: SessionpageTimelineClient = { ...remote, fetchSnapshot: (device, session, limit) => remote.fetchSnapshot(device, session, limit ?? 30) }
 
+/** Every read and subscription uses the same bounded source owner. */
+function windowClient(isLocal: boolean): SessionpageTimelineClient {
+  const target = (device: string) => isLocal ? rpcOn(null).sessionTimeline : remote.machineRpc(device).sessionTimeline
+  return { ...(isLocal ? local : remoteClient), boundedWindow: true,
+    fetchSnapshot: (device, sessionId, limit) => value(target(device).sessionWindowSnapshot({ conversationId: sessionId, limit: limit ?? 30 })),
+    fetchAfter: (device, sessionId, cursor) => value(target(device).sessionWindowAfter({ conversationId: sessionId, cursor })),
+    fetchOlder: (device, sessionId, beforeTurnId, limit, cursor?: WindowCursor) => {
+      if (cursor) return value(target(device).sessionWindowOlder({ conversationId: sessionId, cursor, limit }))
+      if (beforeTurnId) return value(target(device).sessionWindowOlder({ conversationId: sessionId, beforeTurnId, limit }))
+      return Promise.reject(new Error('invalid_cursor'))
+    },
+    subscribeSession: (device, sessionId, subscriptionId, cursor) => value(target(device).sessionWindowSubscribe({ conversationId: sessionId, subscriptionId, cursor })),
+  }
+}
+const localWindow = windowClient(true)
+const remoteWindow = windowClient(false)
+
 /** `trim: false` only changes the local client; another machine always trims what it sends over the wire. */
-export function assistantTimelineClient(isLocal: boolean, options?: { trim?: boolean }): SessionpageTimelineClient {
+export function assistantTimelineClient(isLocal: boolean, options?: { trim?: boolean; window?: boolean }): SessionpageTimelineClient {
+  if (options?.window) return isLocal ? localWindow : remoteWindow
   if (!isLocal) return remoteClient
   return options?.trim === false ? localUntrimmed : local
 }

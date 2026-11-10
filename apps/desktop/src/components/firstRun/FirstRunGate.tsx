@@ -30,6 +30,9 @@ import { startFirstRunHints } from '../../lib/firstRunHints'
 import { enrollSampleProject } from '../../lib/sampleProject'
 import { FirstRunHints } from './FirstRunHints'
 
+import { ReferralCodePreview } from '../referralPreview/ReferralPreview'
+import { HelpImproveCheck } from '../HelpImprove'
+
 const log = rendererLogger('first-run')
 
 // 全屏步骤的顺序(规范 4.1):每页顶上写「n / N」,N 只数这台设备真会走的页。
@@ -304,6 +307,7 @@ function FirstRunProfile({ user, initial, step, onDone }: { user: AuthUser; init
           />
         ) : null}
       </div>
+      <ReferralCodePreview userId={user.id} />
       {error ? <p className="ta-onb-error" role="alert">{error}</p> : null}
       <div className="ta-onb-actions ta-onb-actions-stack">
         <Button
@@ -316,6 +320,7 @@ function FirstRunProfile({ user, initial, step, onDone }: { user: AuthUser; init
         >
           {busy === 'save' ? t('firstRun.saving') : t('firstRun.continue')}
         </Button>
+        <HelpImproveCheck />
       </div>
     </>
   )

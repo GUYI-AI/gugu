@@ -56,6 +56,19 @@ describe('theme-color-check', () => {
     expect(out.out).toContain('hard-coded-color: baseline=0 actual=4')
   })
 
+  test('counts color(display-p3 …) and the other CSS color functions, not color-mix()', () => {
+    const directory = repo({
+      [TOKENS]: ':root { --fg: #dfdfdf; }',
+      'src/p3.css': '.a { color: color(display-p3 0.2 0.5 0.9); background: lab(50% 20 30); border-color: color-mix(in oklab, var(--fg) 8%, transparent); }',
+      'src/p3.css.ts': "export const b = { color: 'color(srgb 1 0 0)', outlineColor: 'hwb(0 0% 0%)' }",
+    })
+    const out = check(directory)
+    expect(out.out.match(/NEW .*/g)).toEqual([
+      'NEW hard-coded-color src/p3.css: baseline=0 actual=2',
+      'NEW hard-coded-color src/p3.css.ts: baseline=0 actual=2',
+    ])
+  })
+
   test('a new hard-coded color is NEW; --write refuses it; removing one is STALE until recorded', () => {
     const directory = repo({ [TOKENS]: ':root { --fg: #dfdfdf; }', 'src/a.css': '.a { color: var(--fg); }' })
     expect(check(directory).status).toBe(0)

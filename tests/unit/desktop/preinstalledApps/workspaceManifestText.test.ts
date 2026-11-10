@@ -11,24 +11,24 @@ import { declaredContexts, parseExtensionManifest } from '../../../../apps/deskt
 const manifest = parseExtensionManifest(
   JSON.parse(readFileSync(resolve(__dirname, '../../../../apps/desktop/preinstalled-apps/workspace/manifest.json'), 'utf8')),
 )
-const TOOLS_LINE = '- 文件夹 (workspace): Conversation folders: workspace__list(chat_id), create(chat_id,title,content), read/delete(item_id), edit(item_id,old,new). Edits merge live.'
+const TOOLS_LINE = '- 文件 (workspace): Chat files: workspace__list(chat_id), create(chat_id,title,content), read/delete(item_id), edit(item_id,old,new). Edits merge live.'
 
 describe('the folder App: people read its subtitle, agents read its instructions', () => {
   test('the product page and the installed list show people a line in both languages, never the tool signatures', () => {
-    expect(localizedManifestText(manifest, 'zh-CN').subtitle).toBe('共享文件：Markdown、JSON 预览与编辑')
-    expect(localizedManifestText(manifest, 'en-US').subtitle).toBe('Shared Markdown and JSON files')
+    expect(localizedManifestText(manifest, 'zh-CN').subtitle).toBe('聊天文件与电脑文件：Markdown、JSON 预览与编辑')
+    expect(localizedManifestText(manifest, 'en-US').subtitle).toBe('Chat and computer files')
     for (const locale of ['zh-CN', 'en-US']) expect(localizedManifestText(manifest, locale).subtitle).not.toContain('workspace__')
   })
 
   test('task menus and phone headers read localized titles for both folder tabs', () => {
     for (const tab of manifest.contributes.tabs) {
-      for (const locale of ['en', 'en-US', 'en-GB']) expect(localizedTabText(manifest, tab, locale).title).toBe('Folder')
-      for (const locale of ['zh', 'zh-CN']) expect(localizedTabText(manifest, tab, locale).title).toBe('文件夹')
+      for (const locale of ['en', 'en-US', 'en-GB']) expect(localizedTabText(manifest, tab, locale).title).toBe('Files')
+      for (const locale of ['zh', 'zh-CN']) expect(localizedTabText(manifest, tab, locale).title).toBe('文件')
     }
   })
 
   test('the installed list\'s search finds it by the words people read, in either language', () => {
-    for (const query of ['markdown', 'JSON', '预览', '文件夹', 'workspace__list']) expect(matchesExtensionQuery(manifest, query), query).toBe(true)
+    for (const query of ['markdown', 'JSON', '预览', '文件', 'workspace__list']) expect(matchesExtensionQuery(manifest, query), query).toBe(true)
     expect(matchesExtensionQuery(manifest, '演示稿')).toBe(false)
   })
 
@@ -44,8 +44,8 @@ describe('the folder App: people read its subtitle, agents read its instructions
 
   // P4: its own page is a task's folder too. A tab that claims files is one a task never keeps of its own
   // (app-placement-sync, F95/F3), so the page claims none; the files it opens open in its `file` tab.
-  test('its own page claims no files, so a task keeps it; the .md and .json it opens go to its file tab', () => {
+  test('its own page claims no files, so a task keeps it; the files it opens go to its file tab', () => {
     const tabs = Object.fromEntries(manifest.contributes.tabs.map((tab) => [tab.name, declaredContexts(tab)]))
-    expect(tabs).toEqual({ main: [], file: ['chat'] })
+    expect(tabs).toEqual({ main: [], file: ['session', 'chat'] })
   })
 })

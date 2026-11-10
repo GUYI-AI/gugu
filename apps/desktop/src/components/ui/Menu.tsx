@@ -3,10 +3,11 @@
 /**
  * Gugu menu composition: Base UI behavior + Gugu-owned tokens and styling.
  *
- * Two anchor shapes, one rule: a menu opened FROM AN ELEMENT (a button) anchors to that element, so
- * Base UI re-measures it on scroll/resize and the menu follows the button; only a pointer-opened
- * context menu (right click / long press) anchors to the pointer coordinate. ❌ Snapshotting
- * getBoundingClientRect() into x/y for a button — the list moves, the menu stays behind.
+ * A menu opened FROM A BUTTON is `DropdownMenu` with that button as its Trigger (see `DropdownMenu` below): Base UI then
+ * owns open, close, re-press and focus. `Menu` is for menus no button owns: a context menu at the pointer (`x/y`), or one
+ * pinned to the row that was long-pressed / right-clicked (`anchor`). ❌ `Menu anchor={button}`: the button sits outside
+ * the menu, so its pointerdown closes the menu and its click opens it again.
+ * Either way the menu follows its anchor on scroll/resize. ❌ Snapshotting getBoundingClientRect() into x/y for an element.
  * Collision handling is Base UI's alone (flip the side, shift along it); ❌ pre-flip by hand-estimated heights.
  */
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
@@ -78,7 +79,7 @@ const menuRowPadding = 'var(--gg-menu-item-padding, 6px 10px)'
 /** A pointer coordinate (context menu) or the element the menu was opened from. */
 export type MenuAnchorProps =
   | { /** Pointer x of a context-menu gesture. */ x: number; /** Pointer y. */ y: number; anchor?: never }
-  | { /** The trigger element (or its ref); Base UI keeps the menu attached to it. */ anchor: Element | RefObject<Element | null>; x?: never; y?: never }
+  | { /** The long-pressed / right-clicked row (or its ref); Base UI keeps the menu attached to it. Never a button: that is a `DropdownMenu.Trigger`. */ anchor: Element | RefObject<Element | null>; x?: never; y?: never }
 
 export type MenuProps = MenuAnchorProps & {
   minWidth?: number
@@ -87,7 +88,7 @@ export type MenuProps = MenuAnchorProps & {
   style?: CSSProperties
   children: ReactNode
   /** Called for outside press, Escape, item selection, or another Base UI close request. */
-  onClose?: () => void
+  onClose?: (details?: { reason: string; event: Event }) => void
   /** Accessible name for non-standard menu contents such as the quick reaction picker. */
   ariaLabel?: string
   /** Default true. Keep the Menu mounted and flip this to false to let the popup play its exit animation. */
@@ -123,16 +124,24 @@ export function Menu({
   ), [elementAnchor, x, y])
   // 开着的菜单也是盖在页面上的一层:安卓返回键先关它,❌ 让底下的页面退走、菜单浮在列表上。
   useBackLayer(onClose, open)
+  // 用键盘关(Esc / 回车选中)⇒ 焦点回到打开前那个元素(输入框里右键 → Esc,光标还在输入框);隐藏 Trigger 接不住焦点。
+  // 指针关 ⇒ 不搬焦点:点到哪焦点就在哪,手机「选择文字」刚选中的文字也不会被抢走。
+  const [returnFocus] = useState(() => document.activeElement instanceof HTMLElement ? document.activeElement : null)
+  const finalFocus = (closeType: string) => closeType === 'keyboard' && returnFocus?.isConnected ? returnFocus : false
 
   return (
-    // @@@menu-root-node - a menu without its own Trigger is Base UI's context-menu root: only that root (or a Trigger)
-    // registers the menu's floating node, and without it a MenuSubmenu opening reads as a sibling and closes the menu.
-    <ContextMenuPrimitive.Root
+    // @@@menu-root-node - only a Trigger (or a context-menu root) registers the menu's floating node; without one a
+    // MenuSubmenu opening reads as a sibling and closes the menu. The hidden Trigger is that registration.
+    // ❌ ContextMenu.Root here: opened through `open`, it never sees a contextmenu event, so it treats every open as a
+    // touch long press — modal, and outside presses ignored for 500ms (a quick click elsewhere left the menu open).
+    <MenuPrimitive.Root
       open={open}
-      onOpenChange={(open) => {
-        if (!open) onClose?.()
+      modal={false}
+      onOpenChange={(open, details) => {
+        if (!open) onClose?.(details)
       }}
     >
+      <MenuPrimitive.Trigger nativeButton={false} render={<span hidden />} />
       <MenuPrimitive.Portal container={portalContainer}>
         {backdropClassName && <MenuPrimitive.Backdrop className={backdropClassName} />}
         <MenuPrimitive.Positioner
@@ -150,6 +159,7 @@ export function Menu({
           style={{ zIndex }}
         >
           <MenuPrimitive.Popup
+            finalFocus={finalFocus}
             className={popupClassName ?? menuPopup}
             data-occludes-browser-page
             aria-label={ariaLabel}
@@ -159,7 +169,7 @@ export function Menu({
           </MenuPrimitive.Popup>
         </MenuPrimitive.Positioner>
       </MenuPrimitive.Portal>
-    </ContextMenuPrimitive.Root>
+    </MenuPrimitive.Root>
   )
 }
 
@@ -281,7 +291,8 @@ export function MenuFold({ icon, label, 'data-testid': testId, children }: {
 }
 
 /**
- * 分组线:把性质不同的动作隔开(例如「改名 / 复制地址」与「移除 / 卸载」这类不可轻易撤回的)。
+ * 分组线只隔开**性质不同**的几组:点了就去做 / 去打开的动作、原地切换的开关、不可轻易撤回的(移除 / 卸载 / 退出)。
+ * 同一性质的行之间不画线 —— 页头 ⋯ 的「搜索 / 文件 / 群信息与设置」都是「打开一样东西」,是一组(owner 11-09)。
  * 与会话页 dropdown-menu 的分隔线同一画法:贴满菜单宽度的一条细线。
  */
 export function MenuSeparator({ className }: { className?: string }) {
@@ -293,13 +304,13 @@ export function MenuSeparator({ className }: { className?: string }) {
   )
 }
 
-function DropdownMenuRoot({ onOpenChange, ...props }: MenuPrimitive.Root.Props) {
+function DropdownMenuRoot<Payload = unknown>({ onOpenChange, ...props }: MenuPrimitive.Root.Props<Payload>) {
   // 同 Menu:开着时安卓返回键先关它。受控看 `open`,非受控跟 onOpenChange。
   const actions = useRef<MenuPrimitive.Root.Actions>(null)
   const [uncontrolledOpen, setUncontrolledOpen] = useState(Boolean(props.defaultOpen))
   useBackLayer((props.open ?? uncontrolledOpen) ? () => actions.current?.close() : undefined)
   return (
-    <MenuPrimitive.Root
+    <MenuPrimitive.Root<Payload>
       {...props}
       actionsRef={actions}
       onOpenChange={(open, details) => { setUncontrolledOpen(open); onOpenChange?.(open, details) }}
@@ -307,8 +318,8 @@ function DropdownMenuRoot({ onOpenChange, ...props }: MenuPrimitive.Root.Props) 
   )
 }
 
-function DropdownMenuTrigger(props: MenuPrimitive.Trigger.Props) {
-  return <MenuPrimitive.Trigger {...props} />
+function DropdownMenuTrigger<Payload = unknown>(props: MenuPrimitive.Trigger.Props<Payload>) {
+  return <MenuPrimitive.Trigger<Payload> {...props} />
 }
 
 type DropdownMenuContentProps = Omit<MenuPrimitive.Popup.Props, 'className' | 'style'> & {
@@ -355,10 +366,18 @@ function DropdownMenuContent({
   )
 }
 
-/** Trigger-anchored menu composition for account/actions dropdowns. */
+/**
+ * A menu opened FROM A BUTTON. The button is the menu's Trigger, so Base UI owns the whole open/close cycle: pressing the
+ * button again closes it, a press outside closes it, Esc closes it and focus returns to the button.
+ * ❌ A button whose onClick sets "open" next to a menu that doesn't know it: the menu reads the button's pointerdown as an
+ * outside press and closes, then the click opens it again (member-row ⋯ "only ever opens", owner 11-09).
+ * Rows of a list share one menu through `createHandle()`: each row's ⋯ is a `Trigger handle={h} payload={row}`, the one
+ * `Root handle={h}` renders `({ payload }) => …`; another row's ⋯ moves the menu there.
+ */
 export const DropdownMenu = {
   Root: DropdownMenuRoot,
   Trigger: DropdownMenuTrigger,
+  createHandle: MenuPrimitive.createHandle,
   Content: DropdownMenuContent,
   Item: MenuPrimitive.Item,
   /** 单选的一组(模式按钮 #7167):行照样用 `menuRowClassName`,选中那行由 `data-checked` 着色。 */

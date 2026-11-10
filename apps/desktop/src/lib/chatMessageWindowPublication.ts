@@ -3,6 +3,7 @@ import { readDisplayIdentities } from './identityReadAdapter'
 import { imSelectors, replaceMessageWindow, type AccountImRepository } from './imRepository'
 import { installIdentityDirectoryBridge, publishIdentityDirectory, type IdentityDirectorySnapshot } from './identityDirectoryBridge'
 import { rendererLogger } from './log'
+import { messageReferencedUserIds } from './messageReferencedUserIds'
 
 const log = rendererLogger('chat/message-window')
 const directoryLog = rendererLogger('chat/identity-directory')
@@ -22,7 +23,7 @@ const absentUntil = new WeakMap<AccountImRepository, Map<string, number>>()
 const inFlight = new WeakMap<AccountImRepository, Set<string>>()
 
 /**
- * 消息窗口落本地库,并把窗口里**还没有身份**的发送者(含被回复者)身份一并提交。
+ * 消息窗口落本地库,并把窗口里**还没有身份**的发送者(含被回复者、@ 的收件人)身份一并提交。
  *
  * 会话列表投影只为**当前成员**索要身份;退群 / 被移出的成员没有成员行,投影闭包再不会为他索要 ——
  * 于是在任何没提交过他身份的设备上,他的历史消息永远空名字、资料卡点不开(#5610 §2.3)。
@@ -38,11 +39,7 @@ export async function publishMessageWindow(
   verifiedTailSeq: number | null = null,
 ): Promise<void> {
   await replaceMessageWindow(repository, chatId, messages, hasMoreOlder, verifiedTailSeq)
-  const ids: string[] = []
-  for (const message of messages) {
-    for (const id of [message.sender_user_id, message.reply_to_sender_user_id]) if (id) ids.push(id)
-  }
-  await ensureIdentities(repository, ids, { chatId })
+  await ensureIdentities(repository, messageReferencedUserIds(messages), { chatId })
 }
 
 /**

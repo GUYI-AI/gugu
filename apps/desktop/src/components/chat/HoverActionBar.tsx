@@ -3,6 +3,8 @@ import { PreviewCard } from '@base-ui/react/preview-card'
 import { useTranslation } from 'react-i18next'
 import { Ellipsis, Reply, Smile } from '@/lib/icons'
 import { IconButton } from '../ui/IconButton'
+import { DropdownMenu } from '../ui/Menu'
+import { Popover } from '../ui/Popover'
 import { popupMotion } from '../ui/variants'
 import { claimHoverOwner, enteredByMoving, readHoverOwner, releaseHoverOwner, setHoverOwner, subscribeHoverOwner, type HoverElements } from './hover-owner'
 
@@ -49,13 +51,16 @@ export function MessageHoverRegion({ enabled, forceOpen, style, children, action
     const leave = () => setHovered('closed')
     const move = (event: PointerEvent) => {
       if (!elements.trigger?.contains(event.target as Node)) { setHovered('closed'); return }
+      if (event.buttons !== 0) return
       point.current = { x: event.clientX, y: event.clientY }
       setHovered(claimHoverOwner(id, false, elements, point.current) ? 'open' : 'waiting')
     }
     document?.addEventListener('pointermove', move)
+    document?.addEventListener('pointerup', move)
     trigger?.addEventListener('pointerleave', leave)
     return () => {
       document?.removeEventListener('pointermove', move)
+      document?.removeEventListener('pointerup', move)
       trigger?.removeEventListener('pointerleave', leave)
     }
   }, [hovered, id, elements])
@@ -94,25 +99,31 @@ export function MessageHoverTrigger(props: ComponentProps<typeof PreviewCard.Tri
   }} render={<div />} delay={0} />
 }
 
-export function HoverActionBar({ isMine, isRetracted, anchorRef, reactButtonRef, moreButtonRef, onReact, onReply, onMore }: {
+/** 工具条上一颗钮弹出的浮层:钮就是它的 Trigger,开着时再点这颗钮就关(Base UI 管开关)。 */
+export interface HoverBarPopup {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  /** 浮层本体(Portal 那一层),画在这颗钮的 Root 里。 */
+  content: ReactNode
+}
+
+export function HoverActionBar({ isMine, isRetracted, anchorRef, react, more, onReply }: {
   isMine: boolean
   isRetracted: boolean
   anchorRef: RefObject<HTMLDivElement | null>
-  reactButtonRef: RefObject<HTMLButtonElement | null>
-  moreButtonRef: RefObject<HTMLButtonElement | null>
-  onReact: () => void
+  react: HoverBarPopup
+  more: HoverBarPopup
   onReply: () => void
-  onMore: () => void
 }) {
   const { t } = useTranslation('messaging')
   const elements = useContext(HoverElementsContext)
   const popupRef = useCallback((node: HTMLDivElement | null) => { if (elements) elements.popup = node }, [elements])
   if (isRetracted) return null
-  const actions = [
-    [t('message.actions.react'), Smile, onReact, reactButtonRef],
-    [t('message.actions.reply'), Reply, onReply, undefined],
-    [t('message.actions.more'), Ellipsis, onMore, moreButtonRef],
-  ] as const
+  const button = (title: string, Icon: typeof Smile, onClick?: () => void) => (
+    <IconButton size="md" shape="pill" aria-label={title} title={title} onClick={(event) => { event.stopPropagation(); onClick?.() }}>
+      <span className="pointer-events-none flex size-5 items-center justify-center"><Icon size={16} /></span>
+    </IconButton>
+  )
   const boundary = anchorRef.current?.closest('[data-testid="chat-message-list"]') ?? undefined
   return (
     <PreviewCard.Portal>
@@ -125,12 +136,15 @@ export function HoverActionBar({ isMine, isRetracted, anchorRef, reactButtonRef,
           collisionAvoidance={{ side: anchorRef.current?.querySelector('.gg-chat-reply-jump') ? 'flip' : 'shift', align: 'shift', fallbackAxisSide: 'none' }}
         >
           <PreviewCard.Popup ref={popupRef} data-slot="popover-popup" className={`box-border outline-none ${popupMotion}`} style={barStyle} data-testid="message-hover-actions">
-            {actions.map(([title, Icon, onClick, buttonRef]) => (
-              <IconButton key={title} ref={buttonRef} size="md" shape="pill" aria-label={title} title={title}
-                onClick={(event) => { event.stopPropagation(); onClick() }}>
-                <span className="pointer-events-none flex size-5 items-center justify-center"><Icon size={16} /></span>
-              </IconButton>
-            ))}
+            <Popover.Root open={react.open} onOpenChange={react.onOpenChange} modal={false}>
+              <Popover.Trigger render={button(t('message.actions.react'), Smile)} />
+              {react.content}
+            </Popover.Root>
+            {button(t('message.actions.reply'), Reply, onReply)}
+            <DropdownMenu.Root open={more.open} onOpenChange={more.onOpenChange} modal={false}>
+              <DropdownMenu.Trigger render={button(t('message.actions.more'), Ellipsis)} />
+              {more.content}
+            </DropdownMenu.Root>
           </PreviewCard.Popup>
         </PreviewCard.Positioner>
     </PreviewCard.Portal>

@@ -1,11 +1,11 @@
 /** @jsxImportSource solid-js */
 /**
- * @@@sticky-user-lanes (ChatRoot) — a user message sticks to the top while its turn is on screen,
- * and the browser does the sticking.
+ * @@@sticky-user-lanes (ChatRoot) — a user message stays at the top while its turn is on screen, as a
+ * two-line summary, and the browser does the sticking.
  *
  * The failure this guards against was a frame lag: the stuck copy used to be placed from the
  * scroll event in rAF, while the compositor had already scrolled. Reading geometry right after a
- * scrollTop write, before any rAF, is that same frame: the stuck row must already be in place.
+ * scrollTop write, before any rAF, is that same frame: the summary must already be in place.
  */
 
 import { createChatContext } from '@session-chat/chat-context';
@@ -17,8 +17,9 @@ import type { ChatItem, TranscriptTurn } from '@session-chat/model';
 import { createChatState } from '@session-chat/state/chat-state';
 import { afterEach, describe, expect, it } from 'vitest';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
+import { pinnedSummaryShown } from '../../../../tests/support/pinnedSummaryShown';
 
-/** Where a stuck card's top sits, below the scroller's top edge. */
+/** Where a stuck summary's top sits, below the scroller's top edge. */
 const PIN_LINE = UNIT_REGISTRY.message!.margin!.top!;
 
 const teardown: Array<() => void> = [];
@@ -68,6 +69,14 @@ async function mount(
     const el = card(id);
     return el ? el.getBoundingClientRect().top - edge() : null;
   };
+  const summary = (id: string) => host.querySelector<HTMLElement>(`[data-pin-summary="${id}"]`);
+  /** The summary's top below the scroller's top edge (PIN_LINE = stuck); null = not in the DOM. */
+  const pinTop = (id: string) => {
+    const el = summary(id);
+    return el ? el.getBoundingClientRect().top - edge() : null;
+  };
+  /** The stuck summary's bottom; null while it is not on the pin line. */
+  const pinBottom = (id: string) => Math.abs((pinTop(id) ?? -1) - PIN_LINE) < 1 ? summary(id)!.getBoundingClientRect().bottom : null;
   const mounted = (id: string) => host.querySelector(`[data-row-kind="message"][data-item-id="${id}"]`) != null;
   const scrollTo = async (st: number) => {
     scrollEl.scrollTop = st;
@@ -75,20 +84,34 @@ async function mount(
   };
   await until('transcript mounted', () => card('a-user') != null);
   await scrollTo(0);
-  return { host, scrollEl, card, cardTop, mounted, scrollTo, view };
+  return { host, scrollEl, card, cardTop, summary, pinTop, pinBottom, mounted, scrollTo, view };
 }
 
 describe('sticky user lanes', () => {
-  it('paints the full-width user backdrop only while the lane is stuck', async () => {
+  it('never shows the message and its summary together, in the same frame as any scroll write', async () => {
     const t = await mount();
-    const wrapper = t.card('a-user')!.closest('[data-index]')!.firstElementChild!;
-    expect(getComputedStyle(wrapper).backgroundColor).toBe('rgba(0, 0, 0, 0)');
-    const backdrop = () => wrapper.querySelector<HTMLElement>('[data-chat-pin-backdrop]');
-    expect(backdrop()).not.toBeNull();
-    expect(getComputedStyle(backdrop()!).opacity).toBe('0');
+    const lane = t.card('a-user')!.closest<HTMLElement>('[data-index]')!;
+    const top = () => t.scrollEl.getBoundingClientRect().top;
+    const rowBottom = () => lane.firstElementChild!.getBoundingClientRect().bottom - top();
+    const shown = () => pinnedSummaryShown(t.summary('a-user')!);
+    const messageShown = () => t.card('a-user')!.getBoundingClientRect().bottom > top();
+    expect(shown(), 'the message is on screen').toBe(false);
+    const handOver = Math.round(t.scrollEl.scrollTop + rowBottom());
+    // Settle with the summary stuck, then sweep back over the hand-over and forth, pixel by pixel, reading right after
+    // each write: no frame runs in between, so nothing but this frame's layout can decide what shows.
+    await t.scrollTo(handOver + 150);
+    expect(shown(), 'stuck before the sweep').toBe(true);
+    const down = Array.from({ length: 91 }, (_, i) => handOver - 120 + 3 * i);
+    for (const st of [...[...down].reverse(), ...down]) {
+      t.scrollEl.scrollTop = st;
+      expect(shown() && messageShown(), `scrollTop=${st}, row bottom ${rowBottom()}`).toBe(false);
+      if (rowBottom() > 0) expect(shown(), `row still on screen at scrollTop=${st}`).toBe(false);
+    }
     await t.scrollTo(900);
-    await until('the stuck card is backed by the opaque lane', () => getComputedStyle(backdrop()!).opacity === '1');
-    expect(t.cardTop('a-user')).toBeCloseTo(PIN_LINE, 0);
+    expect(shown()).toBe(true);
+    expect(getComputedStyle(lane.querySelector('[data-chat-pin-backdrop]')!).opacity).toBe('1');
+    expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 0);
+    expect(t.cardTop('a-user')!, 'the message itself scrolled away').toBeLessThan(0);
   });
   it('sticks the user row in the same frame as the scroll, deep inside a long turn', async () => {
     const t = await mount();
@@ -96,7 +119,7 @@ describe('sticky user lanes', () => {
       t.scrollEl.scrollTop = st;
       // Same frame: no rAF has run since the write.
       expect(t.scrollEl.scrollTop, 'the driver moved the scroller').toBe(st);
-      expect(t.cardTop('a-user'), `stuck at scrollTop=${st}`).toBeCloseTo(PIN_LINE, 0);
+      expect(t.pinTop('a-user'), `stuck at scrollTop=${st}`).toBeCloseTo(PIN_LINE, 0);
     }
   });
 
@@ -106,8 +129,8 @@ describe('sticky user lanes', () => {
     // Precondition: the turn's first replies are recycled, so the user row is far outside the range.
     expect(t.mounted('a-r0'), 'the first reply of the turn was recycled').toBe(false);
     expect(t.mounted('a-r149'), 'still inside turn a').toBe(false);
-    expect(t.cardTop('a-user')).toBeCloseTo(PIN_LINE, 0);
-    expect(t.host.querySelectorAll('[data-user-card="a-user"]')).toHaveLength(1);
+    expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 0);
+    expect(t.host.querySelectorAll('[data-pin-summary="a-user"]')).toHaveLength(1);
   });
 
   it('is pushed off by the next user message, which then sticks inside its own turn', async () => {
@@ -119,16 +142,15 @@ describe('sticky user lanes', () => {
       expect(st, 'b-user came into view').toBeLessThan(20_000);
       await t.scrollTo(st);
     }
-    // Through the handoff, frame by frame: a is stuck or pushed up by b, the two never overlap.
+    // Through the handoff, frame by frame: a's summary is stuck or pushed up by b, the two never overlap.
     for (let i = 0; i < 40; i++) {
       t.scrollEl.scrollTop = st + i * 6;
-      const a = t.card('a-user');
-      const b = t.card('b-user')!;
-      if (a) expect(a.getBoundingClientRect().bottom, `step ${i}`).toBeLessThanOrEqual(b.getBoundingClientRect().top + 1);
+      const a = t.pinBottom('a-user');
+      if (a !== null) expect(a, `step ${i}`).toBeLessThanOrEqual(t.card('b-user')!.getBoundingClientRect().top + 1);
     }
     await t.scrollTo(st + 1500);
-    expect(t.cardTop('b-user'), 'b is the stuck one inside its own turn').toBeCloseTo(PIN_LINE, 0);
-    const aTop = t.cardTop('a-user');
+    expect(t.pinTop('b-user'), 'b is the stuck one inside its own turn').toBeCloseTo(PIN_LINE, 0);
+    const aTop = t.pinTop('a-user');
     expect(aTop === null || aTop < 0, 'a left with its turn').toBe(true);
   });
 
@@ -143,12 +165,12 @@ describe('sticky user lanes', () => {
     const t = await mount([first, longTurn('b', 1, 150)], undefined, theme);
     await until('inserted bubble is rendered', () => t.card('inserted') != null);
     const insertedTop = t.cardTop('inserted')!;
-    expect(t.card('inserted')!.getBoundingClientRect().height).toBeGreaterThan(200);
+    expect(t.card('inserted')!.getBoundingClientRect().height, 'folded, but still several lines').toBeGreaterThan(120);
     for (let step = 0; step < 45; step++) {
       t.scrollEl.scrollTop = Math.max(0, insertedTop - 100 + step * 6);
-      const previous = t.card('a-user');
+      const previous = t.pinBottom('a-user');
       const inserted = t.card('inserted');
-      if (previous && inserted) expect(previous.getBoundingClientRect().bottom, `handoff step ${step}`).toBeLessThanOrEqual(inserted.getBoundingClientRect().top + 1);
+      if (previous !== null && inserted) expect(previous, `handoff step ${step}`).toBeLessThanOrEqual(inserted.getBoundingClientRect().top + 1);
     }
   });
 
@@ -166,11 +188,11 @@ describe('sticky user lanes', () => {
       await t.scrollTo(st + 1500);
     };
     await stuckAfter('b-user');
-    expect(t.cardTop('b-user'), 'b is stuck inside its part of the running turn').toBeCloseTo(PIN_LINE, 0);
-    const aTop = t.cardTop('a-user');
+    expect(t.pinTop('b-user'), 'b is stuck inside its part of the running turn').toBeCloseTo(PIN_LINE, 0);
+    const aTop = t.pinTop('a-user');
     expect(aTop === null || aTop < 0, 'a left with its turn').toBe(true);
     await stuckAfter('c-user');
-    expect(t.cardTop('c-user'), 'the inserted c takes over').toBeCloseTo(PIN_LINE, 0);
+    expect(t.pinTop('c-user'), 'the inserted c takes over').toBeCloseTo(PIN_LINE, 0);
   });
   it('in the agent conversation, a delivered bubble ends the lane before it instead of sliding under its stuck copy', async () => {
     const delivered = longTurn('b', 1, 150);
@@ -189,9 +211,45 @@ describe('sticky user lanes', () => {
     // MBP 验收 10-28:前一条打字消息的钉顶副本一直盖着投进来的那条。
     for (let i = 0; i < 40; i++) {
       t.scrollEl.scrollTop = st + i * 6;
-      const a = t.card('a-user');
-      const b = deliveredRow()!;
-      if (a) expect(a.getBoundingClientRect().bottom, `step ${i}`).toBeLessThanOrEqual(b.getBoundingClientRect().top + 1);
+      const a = t.pinBottom('a-user');
+      if (a !== null) expect(a, `step ${i}`).toBeLessThanOrEqual(deliveredRow()!.getBoundingClientRect().top + 1);
     }
+  });
+
+  it('pins a long message as the same two lines whether it is folded or expanded', async () => {
+    const long: TranscriptTurn = { id: 'a', seq: 0, initiator: 'user', items: [
+      { kind: 'message', id: 'a-user', seq: 0, role: 'user', text: 'A long question that folds. '.repeat(60) },
+      // The agent conversation folds a turn's commentary into its process: one full final answer fills the turn.
+      { kind: 'message', id: 'a-final', seq: 1, role: 'assistant',
+        text: Array.from({ length: 150 }, (_, i) => `a reply ${i}. Lorem ipsum dolor sit amet.`).join('\n\n') },
+    ] as TranscriptTurn['items'] };
+    const theme = buildChatTheme(DEFAULT_CONFIG, { preset: 'double', userGutter: 72, agentConversation: true });
+    const t = await mount([long, longTurn('b', 1, 150)], undefined, theme);
+    t.host.querySelector<HTMLButtonElement>('[data-expand-user-card="a-final"]')!.click();
+    await untilStable('the full final answer is measured', () => t.scrollEl.scrollHeight);
+    const lineHeight = theme.fonts.body.lineHeight;
+    const pinned = async () => {
+      await t.scrollTo(t.scrollEl.scrollTop + 1200);
+      await until('a is pinned', () => t.pinTop('a-user'), top => top !== null && Math.abs(top - PIN_LINE) < 1);
+      return t.host.querySelector<HTMLElement>('[data-pin-summary="a-user"]')!.getBoundingClientRect().height;
+    };
+    const folded = await pinned();
+    expect(folded, 'two lines and the bubble padding, not a screenful').toBeLessThan(3 * lineHeight + 32);
+    const fade = (id: string) => getComputedStyle(t.host.querySelector(`[data-pin-summary="${id}"] > span`)!).maskImage;
+    expect(fade('a-user'), 'a cut-off question fades out').toContain('gradient');
+    expect(fade('b-user'), 'a question that fits does not').toBe('none');
+    await t.scrollTo(0);
+    t.card('a-user')!.click();
+    await until('a expanded', () => t.card('a-user')!.getBoundingClientRect().height, h => h > 400);
+    expect(await pinned(), 'expanding does not unpin or grow it').toBeCloseTo(folded, 0);
+  });
+
+  it('takes the reader back to the message when the summary is clicked', async () => {
+    const t = await mount();
+    await t.scrollTo(2600);
+    expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 0);
+    t.host.querySelector<HTMLElement>('[data-pin-summary="a-user"]')!.click();
+    await until('the message is back on screen', () => t.cardTop('a-user'), top => top !== null && top >= 0 && top < 120);
+    expect(t.pinTop('a-user')!, 'with the message on screen its summary is not stuck').toBeGreaterThan(PIN_LINE + 1);
   });
 });

@@ -8,7 +8,7 @@ describe('connection launch credentials', () => {
   it('keeps platform billing credentials above the selected local API connection', () => {
     const context = { cli: { kind: 'resolved' as const, path: 'claude' },
       env: { ANTHROPIC_API_KEY: 'inherited' }, unsetEnv: [...CLAUDE_CONNECTION_UNSET_ENV],
-      credentialEnv: claudeApiKeyEnv('local-key', 'https://local.example'), configRootEnv: {}, selfUpdateEnv: {}, extraArgs: [] };
+      credentialEnv: claudeApiKeyEnv('local-key', 'https://local.example'), configRootEnv: {}, pinnedEnv: {}, extraArgs: [] };
     expect(composeAgentSpawnEnv(context).ANTHROPIC_AUTH_TOKEN).toBe('local-key');
     const platform = composeAgentSpawnEnv(context, { providerEnv: { ANTHROPIC_API_KEY: '', ANTHROPIC_AUTH_TOKEN: '', ANTHROPIC_BASE_URL: 'http://platform-proxy' } });
     expect(platform).toMatchObject({ ANTHROPIC_API_KEY: '', ANTHROPIC_AUTH_TOKEN: '', ANTHROPIC_BASE_URL: 'http://platform-proxy' });
@@ -31,7 +31,7 @@ describe('connection launch credentials', () => {
       },
       unsetEnv: [...CLAUDE_CONNECTION_UNSET_ENV],
       configRootEnv: {},
-      selfUpdateEnv: {},
+      pinnedEnv: {},
       extraArgs: [],
     };
     expect(composeAgentSpawnEnv(context)).toEqual({ PATH: '/bin' });

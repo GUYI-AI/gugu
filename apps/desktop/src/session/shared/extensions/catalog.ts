@@ -33,6 +33,7 @@ export const CAPABILITY_RISK = {
   'chat:relay': 'high',
   // What was said in any chat the person is in.
   'chat:read': 'high',
+  'chat:unread': 'medium',
   'agents:read': 'medium',
   // Every `:all` widens past the agents the App started — that widening is the whole point of
   // reading it as high, even for the ability that is medium in its narrow form.
@@ -46,6 +47,8 @@ export const CAPABILITY_RISK = {
   'agents:control:all-machines': 'high',
   // Runs a program of the extension's choosing on this machine, with the person's rights.
   'agents:tools': 'high',
+  // Reads and rewrites the person's own prompts; a delete can be undone.
+  'prompts': 'medium',
   // A banner under the extension's own name: noise at worst, bounded per minute.
   'notifications': 'medium',
 } as const satisfies Record<ExtensionCapability, PermissionRisk>;
@@ -81,7 +84,7 @@ export function declaredPermissions(manifest: ExtensionManifest): DeclaredPermis
  */
 export function permissionSide(permission: DeclaredPermission): 'see' | 'do' {
   if (permission.kind === 'network') return 'do';
-  return permission.key.startsWith('files:read') || permission.key.startsWith('agents:read') || permission.key.startsWith('agents:history') || permission.key === 'chat:read'
+  return permission.key.startsWith('files:read') || permission.key.startsWith('agents:read') || permission.key.startsWith('agents:history') || (permission.key === 'chat:read' || permission.key === 'chat:unread')
     ? 'see'
     : 'do';
 }
@@ -213,6 +216,16 @@ export function localizedTabText(
     title: text?.title ?? tab.title,
     toolbar: (tab.toolbar ?? []).map((command) => ({ id: command.id, title: text?.toolbar?.[command.id] ?? command.title })),
   };
+}
+
+/** An App prompt's title and text as a reader in `locale` sees them (`localized.<tag>.prompts`); the base where none. */
+export function localizedPromptText(
+  manifest: Pick<ExtensionManifest, 'defaultLocale' | 'localized'>,
+  prompt: Pick<NonNullable<ExtensionManifest['contributes']['prompts']>[number], 'name' | 'title' | 'prompt'>,
+  locale: string
+): { title: string; prompt: string } {
+  const text = localizedEntry(manifest, locale)?.prompts?.[prompt.name];
+  return { title: text?.title ?? prompt.title, prompt: text?.prompt ?? prompt.prompt };
 }
 
 /**

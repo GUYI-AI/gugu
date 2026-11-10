@@ -14,7 +14,7 @@ import type {
   TranscriptTurn,
 } from '../models/turns';
 import { deriveConfigGroups } from './config-derive';
-import { makeMessageId, makeThinkingId, makeTurnId } from './ids';
+import { makeMessageId, messageEntityId, makeThinkingId, makeTurnId } from './ids';
 import { foldItem, finalizeItems, type FoldEvent } from './item-fold';
 import { projectSubagentProgress } from './subagent-progress';
 import type { NormalizedEvent } from './normalized-event';
@@ -57,6 +57,7 @@ export interface ParserState {
 }
 
 export type ReducerInput =
+  | { kind: 'user_boundary'; at: number }
   | { kind: 'event'; event: NormalizedEvent; at: number }
   | { kind: 'replay_start'; at: number }
   | { kind: 'replay_end'; at: number; outcome?: TranscriptTurnOutcome }
@@ -123,8 +124,9 @@ function nextTurnIndex(t: TranscriptSlice, base = 0): number {
   return base + t.committed.length + (t.active ? 1 : 0);
 }
 
-function nextTurnSeq(t: TranscriptSlice): number {
-  return t.committed.at(-1)?.seq !== undefined ? t.committed.at(-1)!.seq + 1 : 0;
+/** After the last committed turn; with none held, at the index base (a read that starts at a later turn of a record). */
+function nextTurnSeq(t: TranscriptSlice, base = 0): number {
+  return t.committed.at(-1)?.seq !== undefined ? t.committed.at(-1)!.seq + 1 : base;
 }
 
 /**
@@ -147,7 +149,7 @@ function openTurn(
   const turn: TranscriptTurn = {
     id,
     ...(deps.newTurnReference ? { referenceId: deps.newTurnReference() } : {}),
-    seq: nextTurnSeq(t),
+    seq: nextTurnSeq(t, deps.turnIndexBase),
     initiator,
     ...(trigger ? { trigger } : {}),
     ...(startedAt !== undefined ? { startedAt } : {}),
@@ -192,7 +194,7 @@ export function isNewUserMessage(
     if (segment.open === 'message:user') return false;
     return active.items.some((it) => it.kind !== 'message' || it.role !== 'user');
   }
-  const id = makeMessageId(active.id, event.messageId, 'user');
+  const id = messageEntityId(active.id, { ...event, messageId: event.messageId });
   return !active.items.some((it) => it.kind === 'message' && it.id === id);
 }
 
@@ -667,6 +669,7 @@ function updateAgentSlice(
 ): AgentState[] {
   // 「它跑完了」现在是转录里的又一次工具调用(见 claude/acp-transform.ts),登记册照样要跟上 ——
   // 会话忙不忙那一路读的是登记册,不是转录。
+  if (event.kind === 'subagent_done' && event.parentRecord) return agents;
   const notified = event.kind === 'subagent_done' ? event : undefined;
   if (notified === undefined && event.kind !== 'subagent' && event.kind !== 'subagent_update') {
     return agents;
@@ -877,6 +880,9 @@ export function reduce(s: ParserState, input: ReducerInput, deps: ReducerDeps): 
 }
 
 function reduceState(s: ParserState, input: ReducerInput, deps: ReducerDeps): ParserState {
+  if (input.kind === 'user_boundary') {
+    return { ...s, transcript: openTurn(closeActive(s.transcript, input.at), deps, 'user', input.at), segment: initialSegment() };
+  }
   if (input.kind === 'replay_start') {
     return { ...initialState(), replaying: true };
   }

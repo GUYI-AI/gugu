@@ -139,25 +139,24 @@ describe('workspace App in a narrow pane (F32)', () => {
     changed({ ...context })
     await vi.waitFor(() => expect(shown()).toBe(null))
     expect(document.body.classList.contains('show-doc')).toBe(false)
-    expect(gugu.setTabTitle).toHaveBeenLastCalledWith('Group folder')
+    expect(gugu.setTabTitle).toHaveBeenLastCalledWith('Files')
   })
 
   test('the list is the only pane until a file is shown: no "pick a file" beside it, the empty note at the top', () => {
     expect(document.body.classList.contains('show-doc')).toBe(false)
     expect($('doc-message').textContent).not.toMatch(/pick a file/i)
     const files = document.querySelector('.files')!
-    // The kinds, the order and the view under the search, then the filters; 子文件夹: the crumbs between them and the list (hidden at the top), then the
-    // list's own line for what went wrong.
-    expect([...files.children].map((e) => e.id || e.classList[0]).slice(0, 8)).toEqual(['files-toolbar', 'pick-bar', 'list-banner', 'files-empty', 'file-list'])
+    // The toolbar (the picks take its place), the path on its own line (hidden at a chat folder's top), then the list's own line for what went wrong.
+    expect([...files.children].map((e) => e.id || e.classList[0]).slice(0, 8)).toEqual(['files-toolbar', 'pick-bar', 'crumbs', 'list-banner', 'files-empty', 'file-list'])
+    expect($('crumbs').hidden).toBe(true)
     expect($('pick-bar').hidden).toBe(true)
   })
 
-  // owner 10-11「私聊就叫做文件夹吧，群里面是群文件夹」: a topic goes by the chat it grew out of, which ctx.chat.groupId says.
-  // Control (55ffebac2): every chat's slot said Group folder.
+  // Files has the same name in groups, private chats and topics.
   test.each([
-    [{ id: 'dm-1', name: 'B', kind: 'dm', groupId: null }, 'en-US', 'Folder'],
-    [{ id: 'topic-dm', name: 'T', kind: 'topic', groupId: null }, 'zh-CN', '文件夹'],
-    [{ id: 'topic-g', name: 'T', kind: 'topic', groupId: 'chat-1' }, 'zh-CN', '群文件夹'],
+    [{ id: 'dm-1', name: 'B', kind: 'dm', groupId: null }, 'en-US', 'Files'],
+    [{ id: 'topic-dm', name: 'T', kind: 'topic', groupId: null }, 'zh-CN', '文件'],
+    [{ id: 'topic-g', name: 'T', kind: 'topic', groupId: 'chat-1' }, 'zh-CN', '文件'],
   ])('the slot\'s title follows the chat: %o in %s → %s', async (chat, locale, title) => {
     const changed = (gugu.onContextChanged.mock.calls[0] as unknown as [(ctx: unknown) => void])[0]
     changed({ ...context, chat, locale })

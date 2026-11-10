@@ -92,7 +92,9 @@ export const AgentSourceList = observer(function AgentSourceList({
     });
   };
   let description: ReactNode = translate(
-    available ? 'agentsPage.installed' : 'agentsPage.notInstalled'
+    available ? 'agentsPage.installed'
+      : !canInstall && installDocs ? 'agentsPage.installYourselfHint'
+      : 'agentsPage.notInstalled'
   );
   if (active)
     description = (

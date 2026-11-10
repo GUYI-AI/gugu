@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 // #6836 手机上成员资料卡是底部面板(共用 Sheet,同长按面板、请求详情、改备注):贴在锚点旁边的 284 宽弹层,
 // 在整行宽的成员页上左右都放不下,整张落在屏外。安卓返回键先关卡片,不关下面的成员页。桌面仍贴着锚点。
-import { createElement } from 'react'
+import { act, createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MemberProfileCardModel } from '../../../../apps/desktop/src/components/MemberProfileCard'
 import { createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
+import { pressProfileOpener, profileCardWithOpener } from '../../../support/memberProfileCard'
 
 const shell = vi.hoisted(() => ({ mobile: true }))
 vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ useMobileShell: () => shell.mobile }))
@@ -37,7 +38,7 @@ afterEach(() => {
 async function openOnMemberPage(onClosePage: () => void, onCloseCard: () => void) {
   const page = (child: ReturnType<typeof createNode> | null) => createElement(RightPanel, { testId: 'member-page', onClose: onClosePage, children: child })
   await renderWithAppProviders(harness, page(null), { chat: {}, contacts: {} })
-  await renderWithAppProviders(harness, page(createNode(MemberProfilePopover, { profile: { member, anchor, preferredSide: 'left', openedFrom: 'aside' }, onClose: onCloseCard })), { chat: {}, contacts: {} })
+  await renderWithAppProviders(harness, page(createNode(MemberProfilePopover, { profile: { member, preferredSide: 'left', openedFrom: 'aside' }, onClose: onCloseCard })), { chat: {}, contacts: {} })
 }
 
 describe('#6836 member profile card on the phone', () => {
@@ -60,9 +61,35 @@ describe('#6836 member profile card on the phone', () => {
     expect(onClosePage).not.toHaveBeenCalled()
   })
 
+  it('opened from its avatar (the Trigger), the sheet goes away when the card closes', async () => {
+    shell.mobile = true
+    const onCloseCard = vi.fn()
+    await renderWithAppProviders(harness, profileCardWithOpener({ member, preferredSide: 'left' }, { onClose: onCloseCard }), { chat: {}, contacts: {} })
+    await pressProfileOpener()
+    expect(card()?.getAttribute('data-sheet-mobile')).toBe('true')
+    expect(nativeBack()).toBe(true)
+    await act(async () => { await Promise.resolve() })
+    expect(onCloseCard).toHaveBeenCalledOnce()
+    expect(card(), 'Base UI keeps the payload after closing; the sheet must not stay up').toBeNull()
+  })
+
+  it('a press inside the sheet (the alias field, a button) is not an outside press: the card stays', async () => {
+    shell.mobile = true
+    await renderWithAppProviders(harness, profileCardWithOpener({ member, preferredSide: 'left' }, { onClose: vi.fn() }), { chat: {}, contacts: {} })
+    await pressProfileOpener()
+    const inside = card()!.querySelector<HTMLElement>('[data-profile-member-id] *')!
+    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'] as const) {
+      await act(async () => { inside.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true })) })
+    }
+    await act(async () => { inside.focus(); await Promise.resolve() })
+    expect(card(), 'pressing inside the sheet keeps the card').not.toBeNull()
+  })
+
   it('desktop: still the popover beside the element that opened it', async () => {
     shell.mobile = false
-    await openOnMemberPage(vi.fn(), vi.fn())
+    const page = (child: ReturnType<typeof createNode> | null) => createElement(RightPanel, { testId: 'member-page', onClose: vi.fn(), children: child })
+    await renderWithAppProviders(harness, page(profileCardWithOpener({ member, preferredSide: 'left', openedFrom: 'aside' }, { onClose: vi.fn() })), { chat: {}, contacts: {} })
+    await pressProfileOpener()
     expect(document.body.querySelector('[data-slot="popover-positioner"]')).not.toBeNull()
     expect(card()?.getAttribute('data-sheet-mobile')).toBeNull()
     expect(card()?.querySelector('.gg-pop')?.className).toContain('w-[284px]')

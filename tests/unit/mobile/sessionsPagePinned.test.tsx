@@ -263,7 +263,13 @@ describe('ProjectsPage — 所有机器一页、个人助理一组', () => {
   const write = (deviceId: string, sessions: SessionpageSessionSummary[], projects = [repo]) =>
     updateDeviceSessions(deviceId, { projects, sessions, cached: false, loading: false, error: null })
   const groups = () => [...harness.container.querySelectorAll('[data-testid="agent-watch-session-group"]')]
-  const heading = (el: Element) => el.querySelector('[data-testid="agent-watch-session-group-toggle"]')?.textContent
+  // The section's name, without the machine's connection state that the same heading carries (owner 11-08).
+  const heading = (el: Element) => {
+    const toggle = el.querySelector('[data-testid="agent-watch-session-group-toggle"]')?.cloneNode(true) as Element | undefined
+    toggle?.querySelector('[data-testid="agent-watch-machine-state"]')?.remove()
+    return toggle?.textContent
+  }
+  const machineState = (root: ParentNode) => root.querySelector('[data-testid="agent-watch-machine-state"]')
   const metaOf = (id: string) => harness.container.querySelector(`[data-session-id="${id}"]`)?.querySelector('.gg-aw-item-meta')?.textContent ?? ''
 
   it('手机与电脑会话都打开任务时间线，手机不需要私聊绑定', async () => {
@@ -408,7 +414,7 @@ describe('ProjectsPage — 所有机器一页、个人助理一组', () => {
     expect(row(groups().find((g) => heading(g) === 'Repo') ?? null, 'dispatched')).not.toBeNull()
   })
 
-  it('离线的机器:说明跟在它名下分区的页头后面(一行),别的分区没有;收起的分区不画', async () => {
+  it('离线的机器:「设备离线」在它名下分区的页头上(❌ 页头下另起一行),别的分区没有;收起的分区不画', async () => {
     const offline = device({
       device_id: 'thinkpad',
       label: 'ThinkPad',
@@ -423,12 +429,15 @@ describe('ProjectsPage — 所有机器一页、个人助理一组', () => {
     await renderPage([mac, offline])
     const [offlineGroup, macGroup] = groups()
     expect(heading(offlineGroup)).toBe('Repo')
-    expect(offlineGroup.querySelector('[data-testid="agent-watch-offline-why"]')).not.toBeNull()
-    expect(macGroup.querySelector('[data-testid="agent-watch-offline-why"]')).toBeNull()
-    // 页上只有分区里这一份,没有顶上一整块「机器离线」。
-    expect(harness.container.querySelectorAll('[data-testid="agent-watch-offline-why"]')).toHaveLength(1)
-    await act(async () => (offlineGroup.querySelector('[data-testid="agent-watch-session-group-toggle"]') as HTMLElement).click())
-    expect(groups()[0].querySelector('[data-testid="agent-watch-offline-why"]')).toBeNull()
+    const toggle = offlineGroup.querySelector('[data-testid="agent-watch-session-group-toggle"]')!
+    expect(machineState(toggle)?.getAttribute('data-state')).toBe('device_offline')
+    expect(machineState(toggle)?.textContent).toContain('ThinkPad')
+    expect(machineState(macGroup)).toBeNull()
+    // 页上只有分区页头里这一份,没有顶上一整块「机器离线」,也没有页头下的一行。
+    expect(harness.container.querySelectorAll('[data-testid="agent-watch-machine-state"]')).toHaveLength(1)
+    expect(harness.container.textContent).not.toContain('未连接')
+    await act(async () => (toggle as HTMLElement).click())
+    expect(machineState(groups()[0])).toBeNull()
   })
 
   describe('在线却此刻读不到那台机器(它一时连不上):画它自己上报过的那份', () => {
@@ -441,27 +450,28 @@ describe('ProjectsPage — 所有机器一页、个人助理一组', () => {
         agentStatus: null, lastInteractedAt: '2026-09-27T10:09:00.000Z', supported: true,
       }],
     })
-    const note = (root: ParentNode) => root.querySelector('[data-testid="agent-watch-unreachable"]')
+    // Directory says online, the read does not answer (and keeps retrying): 「连接中」 in the heading, ❌ 「设备离线」, ❌ a line.
+    const note = (root: ParentNode) => root.querySelector('[data-testid="agent-watch-machine-state"]')
     const red = () => harness.container.querySelector('[data-testid="agent-watch-sessions-error"]')
 
-    it('冷开、从没读到过:照摘要列出、点得开;分区下一行灰字说连不上,❌ 红框、❌「正在读取」', async () => {
+    it('冷开、从没读到过:照摘要列出、点得开;分区页头说「连接中」,❌ 红框、❌「正在读取」', async () => {
       updateDeviceSessions('thinkpad', { loading: false, error: unreachable })
       await renderPage([reported])
       const dug = harness.container.querySelector<HTMLButtonElement>('[data-session-id="dig-1"]')
       expect(dug).not.toBeNull()
       expect(dug!.disabled).toBe(false)
       expect(red()).toBeNull()
-      expect(note(groups()[0])?.textContent).toBe(unreachable)
+      expect(note(groups()[0])?.getAttribute('data-state')).toBe('connecting')
       expect(harness.container.querySelector('[data-testid="agent-watch-projects-refreshing"]')).toBeNull()
     })
 
-    it('读到过之后连不上(回前台重订失败):读到的那份留着,同样只有灰字', async () => {
+    it('读到过之后连不上(回前台重订失败):读到的那份留着,同样只在页头说「连接中」', async () => {
       write('thinkpad', [summary('live-1', 1)])
       updateDeviceSessions('thinkpad', { loading: false, error: unreachable })
       await renderPage([reported])
       expect(row(groups()[0], 'live-1')).not.toBeNull()
       expect(red()).toBeNull()
-      expect(note(groups()[0])?.textContent).toBe(unreachable)
+      expect(note(groups()[0])?.getAttribute('data-state')).toBe('connecting')
     })
 
     it('阳控:一行都拿不出来(它也没报过摘要)才画红框', async () => {
@@ -488,8 +498,7 @@ describe('ProjectsPage — 所有机器一页、个人助理一组', () => {
     await renderPage([mac, asleep])
     const group = groups().find((g) => g.getAttribute('data-assistant') === 'true')!
     expect(heading(group)).toBe('小咕')
-    expect(harness.container.querySelector('[data-testid="agent-watch-cloud-computer-note"]')).toBeNull()
-    expect(group.querySelector('[data-testid="agent-watch-offline-why"]')).toBeNull()
+    expect(machineState(group)).toBeNull()
     expect(group.textContent).not.toMatch(/休息|叫醒/)
   })
 
@@ -509,7 +518,7 @@ describe('ProjectsPage — 所有机器一页、个人助理一组', () => {
     publishPhoneAssistant({ id: ASSISTANT, name: '小咕' })
     await renderPage([mac, offlineHome])
     const group = groups().find((g) => g.getAttribute('data-assistant') === 'true')!
-    expect(group.querySelector('[data-testid="agent-watch-offline-why"]')).not.toBeNull()
+    expect(machineState(group)?.getAttribute('data-state')).toBe('device_offline')
   })
 
   it('一台机器都没有 / 机器上还没有会话:各说各的空态,不画空分区', async () => {

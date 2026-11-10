@@ -1,20 +1,18 @@
 .gg-topic-menu-row { position: relative; }
-.gg-topic-menu-open { height: 48px; }
-.gg-topic-menu-open > .gg-menu-item-label { display: flex; align-items: center; gap: 8px; }
-.gg-topic-menu-body { flex: 1; min-width: 0; }
-.gg-topic-menu-unread { flex-shrink: 0; }
+/* 行 = ListRowContent:标题+时间 / 预览+未读数,数和时间同一条右边线。 */
+.gg-topic-menu-open > .gg-menu-item-label { display: flex; align-items: center; gap: var(--row-gap); }
 .gg-topic-menu-open > .gg-menu-item-label::after { content: ""; display: none; flex: 0 0 var(--control-h-touch); }
-.gg-topic-menu-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; line-height: var(--lh-caption); }
-.gg-topic-name { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gg-topic-name[data-unread] { font-weight: var(--font-weight-semibold); }
-.gg-topic-name > svg { flex-shrink: 0; color: var(--faint-fg); }
-.gg-topic-time { flex-shrink: 0; color: var(--faint-fg); font-size: var(--font-caption); }
-.gg-topic-preview { color: var(--muted-fg); font-size: var(--font-caption); }
-.gg-topic-preview[data-calling] { color: var(--danger-solid); font-weight: var(--font-weight-semibold); }
+.gg-topic-menu-open[data-emphasis] .gg-list-row-title { font-weight: var(--font-weight-semibold); }
+.gg-topic-pin-mark { display: inline; vertical-align: -1px; margin-inline-end: 4px; color: var(--faint-fg); }
+.gg-topic-calling { color: var(--danger-solid); font-weight: var(--font-weight-semibold); }
 .gg-topic-menu-pin { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); opacity: 0; pointer-events: none; }
 .gg-topic-menu-row:is(:hover, :focus-within, :has([data-highlighted])) .gg-topic-menu-pin { opacity: 1; pointer-events: auto; }
-.gg-topic-menu-row:is(:hover, :focus-within, :has([data-highlighted])) .gg-topic-menu-unread { display: none; }
+.gg-topic-menu-row:is(:hover, :focus-within, :has([data-highlighted])) .gg-list-row-trailing { display: none; }
 .gg-topic-menu-row:is(:hover, :focus-within, :has([data-highlighted])) .gg-topic-menu-open > .gg-menu-item-label::after { display: block; }
+/* 还能往下滚时末端渐隐;滚到底渐隐消失(滚动驱动,不挂监听)。 */
+@property --gg-topic-fade { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@keyframes gg-topic-fade-end { from { --gg-topic-fade: 40px; } to { --gg-topic-fade: 0px; } }
+.gg-topic-list { max-height: calc(min(360px, var(--available-height)) - 2 * var(--gg-menu-padding, 4px)); overflow-y: auto; overscroll-behavior: contain; mask-image: linear-gradient(to bottom, var(--color-white) calc(100% - var(--gg-topic-fade)), transparent); animation: gg-topic-fade-end linear both; animation-timeline: scroll(self); }
 .gg-topic-empty { display: flex; flex-direction: column; gap: 4px; }
 .gg-topic-empty small { color: var(--faint-fg); font-size: var(--font-caption); }
 .gg-topic-pins-error { padding: 6px 10px; color: var(--text-error); font-size: var(--font-caption); }

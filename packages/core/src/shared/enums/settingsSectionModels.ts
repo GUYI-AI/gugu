@@ -15,6 +15,7 @@ export type ActiveSection =
   | 'subscriptions'
   | 'about'
   | 'permissions'
+  | 'passwords'
   // The phone's own App store (L9): the Apps installed on it from chats, to uninstall. The desktop manages its Apps on
   // the far-left rail's 「App」 page.
   | 'apps'
@@ -49,7 +50,7 @@ export const SETTINGS_GROUPS: readonly { readonly id: SettingsGroupId; readonly 
   // 它读的是这台电脑上装着的 Harness,由会话页那一侧画 ⇒ 只在有会话页的地方出现。
   { id: 'account', sections: ['account', 'usage', 'files', 'subscriptions'] },
   // product spec:桌面与手机同一页;这台机器读不读得到真值由 SettingsPanel 那道过滤决定。
-  { id: 'preferences', sections: ['general', 'interface', 'permissions', 'model', 'resource-monitor'] },
+  { id: 'preferences', sections: ['general', 'interface', 'permissions', 'passwords', 'model', 'resource-monitor'] },
   // agent 跑起来的那几样(会话的默认行为、仓库、浏览器)挨着「设备」。App 只在手机壳上:那里的 App 由
   // 这一页自己的 App 仓管(L9)。
   { id: 'work', sections: ['sessions', 'browser', 'devices', 'apps', 'phone'] },

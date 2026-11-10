@@ -44,6 +44,7 @@ import { wireRemoteExtensionResync } from '@renderer/features/extensions/wire-re
 import { wireMarketRefresh } from '@renderer/features/extensions/wire-market-refresh';
 import { wireProgramNotifications } from '@renderer/features/extensions/wire-program-notifications';
 import { wireAppQuit } from '@renderer/features/extensions/app-dock';
+import { wirePromptChanges } from '@renderer/features/library/prompts/prompt-changes';
 import { wireExtensionHostActions } from '@renderer/features/extensions/wire-extension-host-actions';
 import { setupAppCommandProvider } from '@renderer/lib/commands/app-commands';
 import { setupExtensionCommandProvider } from '@renderer/features/extensions/extension-command-provider';
@@ -239,6 +240,8 @@ async function bootstrap() {
   wireRemoteExtensionResync();
   // 左栏「开着」的小点:哪些 App 退出了、还没再打开,由主进程推过来(#7050)。
   wireAppQuit();
+  // 某个 App 的程序改了提示词(Prompt 管理):重读一遍,删的那条当场给撤销。
+  wirePromptChanges();
   // Synchronous on purpose: main refuses to deliver an extension's action until
   // this side has declared itself ready, so an extension that acts the instant
   // its surface loads must not race the bootstrap's awaits.

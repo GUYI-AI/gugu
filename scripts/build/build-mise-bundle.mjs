@@ -27,7 +27,7 @@ if (existsSync(executable) && existsSync(join(destination, 'release.json')) && r
     // 归档来自按 sha256 内容寻址的缓存(#6258,见 mise-archive-cache.mts);未命中才下载,拿不到就响亮失败。
     const archive = obtainMiseArchive({
       cacheDir: defaultMiseCacheDir(),
-      downloadBase: process.env.GUGU_MISE_DOWNLOAD_BASE || DEFAULT_MISE_DOWNLOAD_BASE,
+      downloadBase: DEFAULT_MISE_DOWNLOAD_BASE,
       version: release.version,
       asset: target.asset,
       sha256: target.sha256,

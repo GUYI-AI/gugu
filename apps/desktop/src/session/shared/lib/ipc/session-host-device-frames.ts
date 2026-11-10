@@ -38,6 +38,8 @@ export type SessionHostPaneSubscribe = {
   external: boolean;
   /** Live tab enumeration and user-style close acknowledgements. */
   tabs?: boolean;
+  /** Opens a task's App tabs that a program on that machine asks for (#1607). */
+  apps?: boolean;
 };
 
 /** 一条推送 / 一次请求里的一片。 */

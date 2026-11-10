@@ -6,9 +6,6 @@ permissions:
   contents: read
   actions: read
 cache-mode: read
-concurrency:
-  group: community-ci-dev-linux
-  cancel-in-progress: true
 env:
   CI: true
   GUGU_SUPABASE_URL: http://127.0.0.1:54321

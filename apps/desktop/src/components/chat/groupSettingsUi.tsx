@@ -23,11 +23,14 @@ import { isProjectGroupChat } from '../../lib/groupMemberPermissions'
 // @@@6418 群设置抽屉各页共用的小件(页头 / 导航行 / 开关行 / 邀请链接)。几何在 groupSettingsStyles.ts。
 
 const headStyle: CSSProperties = {
-  height: 'var(--pane-header-h)', padding: '0 24px', fontSize: 'var(--font-heading)', fontWeight: 600, borderBottom: '1px solid var(--border)',
+  height: 'var(--pane-header-h)', padding: '0 16px', fontSize: 'var(--font-title)', lineHeight: 'var(--lh-title)', fontWeight: 600,
   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, flexShrink: 0, color: 'var(--text-primary)',
 }
-const subpageHeadStyle: CSSProperties = { ...headStyle, padding: '0 24px 0 14px' }
+const subpageHeadStyle: CSSProperties = { ...headStyle, padding: '0 16px 0 8px' }
 // Mobile keeps its natural height and 44px back target; desktop uses the shared pane-header height.
+// @@@panel-chrome The bottom rule stays on the phone only: a pushed phone page (back arrow) separates its fixed
+// head from the scrolling page with a rule, like the conversation head and the other pushed pages; root pages have
+// none. On desktop the head sits under the tab strip, where the only line is the pane seam, so it has no rule.
 const mobileHeadStyle: CSSProperties = { ...headStyle, height: 'auto', padding: '6px 12px 6px 4px', gap: 2, borderBottom: '1px solid var(--border)' }
 // 标题区撑满返回与动作之间:成员页的话题改名框(flex:1)要住得下。
 const headTitleStyle: CSSProperties = { display: 'flex', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 }

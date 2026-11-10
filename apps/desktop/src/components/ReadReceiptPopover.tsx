@@ -2,6 +2,7 @@ import { Avatar } from './Avatar'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
 import { Popover } from './ui/Popover'
+import type { ReadReceiptHandle } from '@/hooks/useReadReceiptPanel'
 import { useTranslation } from 'react-i18next'
 
 // @@@1345 已读回执弹层：点击消息气泡的进度圆环 → 弹「X 已读 | Y 未读」+ 左右两列头像名单。
@@ -59,41 +60,44 @@ function MemberColumn({ title, count, members, emptyText }: {
 }
 
 export function ReadReceiptPopover({
-  anchor,
-  readers,
-  unreaders,
+  handle,
+  receiptOf,
   testId,
-  onClose,
 }: {
-  /** 已读圆环按钮本身;Base UI 随列表滚动重量它。 */
-  anchor: Element
+  /** 已读圆环们(`Popover.Trigger handle payload=消息 id`)共用的浮层;Base UI 随列表滚动重量那颗环。 */
+  handle: ReadReceiptHandle
+  receiptOf: (messageId: string) => { readers: ReadReceiptMember[]; unreaders: ReadReceiptMember[] } | null
+  testId?: string
+}) {
+  return (
+    <Popover.Root handle={handle} modal={false}>
+      {({ payload }) => {
+        const receipt = payload ? receiptOf(payload) : null
+        return receipt ? <ReadReceiptLists readers={receipt.readers} unreaders={receipt.unreaders} testId={testId} /> : null
+      }}
+    </Popover.Root>
+  )
+}
+
+function ReadReceiptLists({ readers, unreaders, testId }: {
   readers: ReadReceiptMember[]
   unreaders: ReadReceiptMember[]
   testId?: string
-  onClose?: () => void
 }) {
   const { t } = useTranslation('messaging')
   const width = 280
   const gap = 8
   // 锚在已读圆环按钮上（本人气泡下沿）→ Base UI 负责视口碰撞与 Escape/outside press。
-
   return (
-    <Popover.Root
-      open
-      modal={false}
-      onOpenChange={(open) => {
-        if (!open) onClose?.()
-      }}
-    >
       <Popover.Portal>
         <Popover.Positioner
-          anchor={anchor}
           positionMethod="fixed"
           side="bottom"
           align="start"
           sideOffset={gap}
           collisionPadding={8}
-          collisionAvoidance={{ side: 'shift', align: 'shift', fallbackAxisSide: 'none' }}
+          // 放不下就翻到环的另一侧(同 ui/Menu),❌ 平移着盖住环:盖住了,再点一次环就点在名单上,关不掉(手机,11-09)。
+          collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}
         >
           <Popover.Popup
             role="dialog"
@@ -117,6 +121,5 @@ export function ReadReceiptPopover({
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>
-    </Popover.Root>
   )
 }

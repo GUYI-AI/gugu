@@ -9,7 +9,7 @@ import {
 import type { ProjectsTranslate } from '@renderer/localization/messages-projects';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { BrowserSessionSnapshot } from '@shared/browser';
-import { fileTabLabels } from '@renderer/features/sessions/editor/file-tab-label';
+import { fileTabLabels } from '@renderer/features/tabs/file-tab-label';
 import { fileBaseName } from '@renderer/features/sessions/stores/workspace-path';
 import type { BrowserTabResource } from './browser-tab-resource';
 
@@ -25,7 +25,7 @@ function pagePath(url: string | undefined): string {
 
 // The page title and host are raw page data; only the "no page yet" stand-in
 // is localized.
-function browserTabLabel(
+export function browserTabLabel(
   session: BrowserSessionSnapshot | undefined,
   translate: ProjectsTranslate
 ): string {

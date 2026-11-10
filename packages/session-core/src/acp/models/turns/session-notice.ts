@@ -49,6 +49,11 @@ export const sessionNoticeCodeSchema = z.enum([
    */
   'agent-renamed',
   /**
+   * The session opened on a model whose raw tool-call markers its harness passes through as reply text (`effectiveValue`
+   * is the model). The output is left alone: the person reads why a reply looks odd, and can switch model.
+   */
+  'model-leaks-tool-markers',
+  /**
    * 供应商自己发来的提示(ACP `notice`)。行上画 `title` 原文,`detail` 是 description(没有就是 title)。
    * 每来一次是一件事 ⇒ 一行,❌ 按 code 并成一行。
    */

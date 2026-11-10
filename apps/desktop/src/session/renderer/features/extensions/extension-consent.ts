@@ -38,6 +38,7 @@ const CAPABILITY_MESSAGE = {
   'files:write': 'extensions.permissionsFilesWrite',
   'chat:relay': 'extensions.permissionsChatRelay',
   'chat:read': 'extensions.permissionsChatRead',
+  'chat:unread': 'extensions.permissionsChatUnread',
   'agents:read': 'extensions.permissionsAgentsRead',
   'agents:read:all': 'extensions.permissionsAgentsReadAll',
   'agents:read:all-machines': 'extensions.permissionsAgentsReadAllMachines',
@@ -47,6 +48,7 @@ const CAPABILITY_MESSAGE = {
   'agents:control:all': 'extensions.permissionsAgentsControlAll',
   'agents:control:all-machines': 'extensions.permissionsAgentsControlAllMachines',
   'agents:tools': 'extensions.permissionsAgentsTools',
+  'prompts': 'extensions.permissionsPrompts',
   'notifications': 'extensions.permissionsNotifications',
 } as const satisfies Record<ExtensionCapability, string>;
 

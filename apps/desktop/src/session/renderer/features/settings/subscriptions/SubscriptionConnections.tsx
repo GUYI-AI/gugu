@@ -103,7 +103,7 @@ export function SubscriptionConnections({
   trigger?: ReactElement | null
   label?: ReactNode
   open?: boolean
-  onOpenChange?: (open: boolean) => void
+  onOpenChange?: (open: boolean, details?: { reason?: string; event?: Event }) => void
   anchor?: { getBoundingClientRect(): DOMRect }
   agent: AgentPayload
   machine: string | null
@@ -113,16 +113,16 @@ export function SubscriptionConnections({
   const [localOpen, setLocalOpen] = useState(false)
   const open = requestedOpen ?? localOpen
   const setOpen = useCallback(
-    (value: boolean) => {
+    (value: boolean, details?: { reason?: string; event?: Event }) => {
       setLocalOpen(value)
-      onOpenChange?.(value)
+      onOpenChange?.(value, details)
     },
     [onOpenChange]
   )
   const [adding, setAdding] = useState(false)
-  const changeOpen = (next: boolean) => {
+  const changeOpen = (next: boolean, details?: { reason?: string; event?: Event }) => {
     if (next && addDirectly) setAdding(true)
-    else setOpen(next)
+    else setOpen(next, details)
   }
   const queryClient = useQueryClient()
   const showSignIn = useShowModal('agentSignInModal')

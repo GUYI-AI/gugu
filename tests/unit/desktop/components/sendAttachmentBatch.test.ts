@@ -4,6 +4,8 @@ import { sendAttachmentBatch } from '../../../../apps/desktop/src/components/cha
 import { AttachmentsError } from '@gugu/core/cloud/attachmentsApi'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 const upload = vi.hoisted(() => vi.fn())
+const keep = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', () => ({ keepSentAttachment: keep }))
 vi.mock('../../../../apps/desktop/src/lib/attachmentsEndpoint', async original => ({
   ...await original<typeof import('../../../../apps/desktop/src/lib/attachmentsEndpoint')>(),
   attachmentsEndpoint: async () => ({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 'token' }),
@@ -26,6 +28,7 @@ beforeEach(() => {
   vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:preview')
   vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
   upload.mockReset().mockImplementation(async (_endpoint, file) => `staging/${file.name}`)
+  keep.mockClear()
 })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
@@ -58,6 +61,15 @@ describe('attachment ownership transfers to the durable chat outbox', () => {
     finish('staging/photo')
     await done
     expect(f.commitAttachment).toHaveBeenCalledOnce()
+  })
+  it('keeps a local copy of an image only once its upload succeeded', async () => {
+    const f = fixture()
+    upload.mockRejectedValueOnce(new AttachmentsError('upload', 403, 'denied', 'quota denied'))
+    await expect(sendAttachmentBatch(f.args)).rejects.toThrow('quota denied')
+    expect(keep).not.toHaveBeenCalled()
+    await sendAttachmentBatch(f.args)
+    expect(keep).toHaveBeenCalledWith(f.args.files[0])
+    expect(keep.mock.invocationCallOrder[0]).toBeLessThan(f.commitAttachment.mock.invocationCallOrder[0])
   })
   it('returns uncommitted files to composer on upload failure and removes their markers', async () => {
     const f = fixture()

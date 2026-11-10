@@ -91,7 +91,7 @@ export function startRemotePaneViewer(deps: RemotePaneViewerDeps): RemotePaneVie
     const id = subscriptionId;
     void link
       // pages:这台电脑的浏览器格渲染得了那台机器上的 `file:` 网页;external:接得住那台机器上的程序「打开网页」。
-      .invoke(SESSION_HOST_PANE.subscribe, { subscriptionId: id, sessionId, browser, pages: browser, external: true, tabs: true } satisfies SessionHostPaneSubscribe)
+      .invoke(SESSION_HOST_PANE.subscribe, { subscriptionId: id, sessionId, browser, pages: browser, external: true, tabs: true, apps: true } satisfies SessionHostPaneSubscribe)
       .then((result) => {
         if (stopped) return;
         const pending = (result as { pending?: SessionpagePaneOpenRequest[] } | null)?.pending ?? [];

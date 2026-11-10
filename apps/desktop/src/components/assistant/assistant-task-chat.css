@@ -35,6 +35,22 @@
   padding: var(--spacing-xs) var(--spacing-md);
 }
 
+/* Header subtitle: work state · connection state · what could not be read — one line, the detail truncates first. */
+.task-chat-subtitle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  max-width: 100%;
+}
+.task-chat-subtitle__state { flex: none; }
+.task-chat-subtitle__detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .assistant-task-chat-window {
   display: flex;
   flex: 1;
@@ -47,11 +63,15 @@
   border-radius: inherit;
   --bubble-mine: var(--ta-bubble-mine);
   --conversation-bubble-mine: var(--ta-bubble-mine);
-  --conversation-bubble-mine-fg: var(--foreground);
-  --conversation-bubble-mine-color-scheme: var(--chat-color-scheme);
+  --conversation-bubble-mine-fg: var(--text-primary);
+  --conversation-bubble-mine-color-scheme: dark;
   --bubble-other: var(--ta-bubble-other);
   --bubble-own: var(--ta-bubble-mine);
   --bubble-agent: var(--ta-bubble-other);
+}
+
+[data-theme='light'] .assistant-task-chat-window {
+  --conversation-bubble-mine-color-scheme: light;
 }
 
 .assistant-task-chat-window [data-chat-surface],

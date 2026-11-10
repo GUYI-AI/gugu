@@ -16,7 +16,7 @@ vi.mock('@renderer/features/sessions/session-view-context', () => ({
 }));
 vi.mock('@renderer/features/projects/stores/project-selectors', () => ({ getProjectManagerStore: () => ({ ensureMounted: vi.fn().mockResolvedValue(undefined) }) }));
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
-vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({ remoteHostsStore: { device: () => ({ label: 'Lab Mac' }), cloudScope: () => state.cloud ? { state: 'asleep' } : null, findListedSession: () => { throw new Error('Input eligibility must not read the directory'); } } }));
+vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({ remoteHostsStore: { device: () => ({ label: 'Lab Mac', lastSeenAt: null }), connectionState: () => 'offline', cloudScope: () => state.cloud ? { state: 'asleep' } : null, findListedSession: () => { throw new Error('Input eligibility must not read the directory'); } } }));
 vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => state.deviceId } }));
 vi.mock('@renderer/lib/machine-clients', () => ({ machineLinkState: () => state.link }));
 vi.mock('./workspace-backend/workspace-surface', () => ({ workspaceReachLabel: () => state.reach }));
@@ -40,12 +40,14 @@ beforeEach(() => {
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); });
 const render = () => act(() => root.render(<SessionContentGate><span>Task workspace</span></SessionContentGate>));
+/** What the block says, without its strip (the cold strip carries the machine's connection state, #2301 Q3). */
+const body = () => [...container.querySelectorAll('[data-slot="cold-session-strip"]')].reduce((text, strip) => text.replace(strip.textContent ?? '', ''), container.textContent ?? '');
 
 describe('task preparation while its machine is unavailable', () => {
   it.each(['project-error', 'provision-error'])('names the unavailable machine instead of a generic Retry screen: %s', kind => {
     state.kind = kind;
     render();
-    expect(container.textContent).toBe('Lab Mac is offline');
+    expect(body()).toBe('Lab Mac is offline');
     expect(container.querySelector('button')).toBeNull();
     state.reach = null; state.kind = 'ready'; state.link = 'open';
     render();
@@ -55,7 +57,8 @@ describe('task preparation while its machine is unavailable', () => {
   it('still names the offline machine before the workspace reach resolver has a status', () => {
     state.reach = null;
     render();
-    expect(container.textContent).toBe('Lab Mac is offline');
+    expect(body()).toBe('Lab Mac is offline');
+    expect(container.querySelector('[data-slot="cold-session-strip"] [data-testid="session-machine-status"]')?.getAttribute('data-state')).toBe('device_offline');
     expect(container.querySelector('button')).toBeNull();
   });
 
@@ -75,7 +78,7 @@ describe('task preparation while its machine is unavailable', () => {
   it.each(['project-mounting', 'idle', 'provisioning', 'project-error', 'provision-error'])('keeps input available without a directory version: %s', kind => {
     state.kind = kind;
     render();
-    expect(container.textContent).toBe('Lab Mac is offline');
+    expect(body()).toBe('Lab Mac is offline');
     expect(container.querySelector('textarea')).not.toBeNull();
     expect(container.querySelector('[data-offline-session]')).not.toBeNull();
   });
@@ -117,5 +120,5 @@ it('does not create an input target when the machine id is unavailable', () => {
   state.deviceId = null;
   render();
   expect(container.querySelector('[data-offline-session]')).toBeNull();
-  expect(container.textContent).toBe('Lab Mac is offline');
+  expect(body()).toBe('Lab Mac is offline');
 });

@@ -1,9 +1,10 @@
 import { createRPCController } from '@shared/lib/ipc/rpc';
-import { type PromptLibraryPrompt } from '@shared/prompt-library';
+import { type PromptLibrary, type PromptLibraryPrompt, type PromptOverride } from '@shared/prompt-library';
 import { promptLibraryService } from './service';
 
 export const promptLibraryController = createRPCController({
-  get: (): Promise<PromptLibraryPrompt[]> => promptLibraryService.getPrompts(),
-  update: (prompts: PromptLibraryPrompt[]): Promise<void> =>
-    promptLibraryService.updatePrompts(prompts),
+  get: (): Promise<PromptLibrary> => promptLibraryService.getPrompts(),
+  save: (prompt: PromptLibraryPrompt): Promise<PromptLibrary> => promptLibraryService.savePrompt(prompt),
+  delete: (id: string): Promise<PromptLibrary> => promptLibraryService.deletePrompt(id),
+  override: (key: string, override: PromptOverride | null): Promise<PromptLibrary> => promptLibraryService.overridePrompt(key, override),
 });

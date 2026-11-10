@@ -140,7 +140,7 @@ export function AnnouncementDrawer({
       )}
 
       {/* Body (.d-body) */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px 24px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--spacing-lg) var(--spacing-lg) var(--spacing-2xl)' }}>
 
         {/* 发布公告 button — admin only */}
         {isAdmin ? (

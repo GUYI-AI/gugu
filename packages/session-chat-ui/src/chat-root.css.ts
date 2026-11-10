@@ -6,15 +6,14 @@
  * should now pass a VE class or a raw CSS class string.
  */
 
-import { style } from '@vanilla-extract/css';
-import { fadeOverlayTop } from './styles/effects.css';
+import { globalStyle, style } from '@vanilla-extract/css';
 import { vars } from './styles/theme.css';
 import {
   CHAT_CONTENT_GUTTER_PX,
   CHAT_CONTENT_MAX_WIDTH_REM,
   CHAT_CONTENT_MAX_WIDTH_WIDE_REM,
   CHAT_CONTENT_WIDE_BREAKPOINT_REM,
-  CHAT_PIN_FADE_HEIGHT_PX,
+  PIN_SUMMARY_GAP,
 } from './layout-geometry';
 
 /** Max-width of the centered content column — matches user message cards. */
@@ -117,7 +116,7 @@ export const pinLane = style({
 /** The semantic strip reaches the scroller edges, outside the centered text column. */
 export const activityPinLane = style({ contain: 'layout style' });
 
-/** The user row inside its lane; its backdrop is opaque only while stuck. */
+/** The sticking element inside a lane; its backdrop is opaque only while stuck. */
 export const pinSticky = style({
   // `top` is per row (ChatRoot): the card lands on the pin line whatever the row's collapsed top gap.
   position: 'sticky',
@@ -127,35 +126,40 @@ export const pinSticky = style({
   } },
 });
 
+const PIN_SHADOW = { y: 8, blur: 12, spread: -10 };
+/** How far the pinned backdrop's shadow reaches below its box. */
+export const PIN_SHADOW_REACH = PIN_SHADOW.y + PIN_SHADOW.blur + PIN_SHADOW.spread;
+
 /** A normal bubble has no full-width card behind it. Protect the pinned row once it actually sticks. */
 export const pinBackdrop = style({
   position: 'absolute', inset: 0, zIndex: -1, pointerEvents: 'none',
   background: vars.bg, opacity: 0,
   // The frame scheduler supplies this state from existing lane geometry. Older
   // Android WebViews cannot evaluate scroll-state container queries.
-  selectors: { '[data-pin-stuck="true"] &': { opacity: 1 } },
+  selectors: {
+    '[data-pin-stuck="true"] &': { opacity: 1 },
+  },
+  // A soft edge rather than a rule: says rows scroll beneath it without drawing a line across the page.
+  boxShadow: `0 ${PIN_SHADOW.y}px ${PIN_SHADOW.blur}px ${PIN_SHADOW.spread}px color-mix(in srgb, ${vars.fg} 22%, transparent)`,
 });
+
+/**
+ * A user message's lane is a column: the message row, then the window its summary sticks in. The window
+ * starts at the row's bottom and is clipped from its top by the pin line plus the summary's full height
+ * (ChatRoot sets that inset), so the summary only shows once the row has left the viewport, in the same
+ * frame, by layout alone (@@@pin-window in ChatRoot).
+ */
+export const pinMessageLane = style({ display: 'flex', flexDirection: 'column' });
+export const pinMessageRow = style({ flex: 'none' });
+export const pinWindow = style({ flex: '1 1 auto', minHeight: 0 });
+export const pinSummaryLayer = style({ paddingBottom: PIN_SUMMARY_GAP });
+globalStyle(`${pinSummaryLayer} > ${pinBackdrop}`, { opacity: 1 });
 
 /** Page-colored, square strip, including its seam so body text cannot peek between the two pins. */
 export const activityPinBackdrop = style({
-  left: 'calc(50% - 50vw)', right: 'auto', width: '100vw',
+  right: 'auto', boxShadow: 'none',
   borderBottom: `1px solid color-mix(in srgb, ${vars.fgMuted} 16%, transparent)`,
 });
-
-/** 16px fade under the stuck row: signals that rows scroll beneath it. Not drawn at rest. */
-export const pinFade = style([
-  fadeOverlayTop,
-  {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    height: `${CHAT_PIN_FADE_HEIGHT_PX}px`,
-    pointerEvents: 'none',
-    opacity: 0,
-    selectors: { '[data-pin-stuck="true"] &': { opacity: 1 } },
-  },
-]);
 
 /**
  * Default content centering class.

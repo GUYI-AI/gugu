@@ -95,6 +95,7 @@ it.each([2000, 5100])('the real model menu can be hit and selected above Sheet %
   const box = popup.getBoundingClientRect();
   expect(popup.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))).toBe(true);
   expect(getComputedStyle(popup.parentElement!).zIndex).toBe(String(zIndex + 1));
+  expect(popup.closest('.emlight, .emdark'), 'its colors only exist under the session theme').not.toBeNull();
   await userEvent.click(page.getByRole('option', { name: 'Second model', exact: true }));
   expect(select).toHaveBeenCalledWith('second');
 });

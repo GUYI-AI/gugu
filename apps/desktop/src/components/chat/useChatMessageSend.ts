@@ -6,12 +6,13 @@ import { firstMentionedUserId, resolveMentionUserIds, type MentionCandidate } fr
 import { rememberGroupMention } from '@/lib/groupMentionRecall'
 import { scheduleComposerFocus } from '@/lib/focusComposer'
 import { rendererLogger } from '@/lib/log'
-import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
+import { chatSendFailureNotice } from './chatSendFailureNotice'
 import { useToast } from '../toastContext'
-import { revokeAttachmentPreviewUrls, withPreviewUrl, type ChatDraft, type MentionTarget, type PendingAttachment } from './useChatDraft'
+import { revokeAttachmentPreviewUrls, withPreviewUrl, type ChatDraft, type MentionTarget } from './useChatDraft'
 import { contentWithQuote } from './messageQuoteContent'
 import type { ChatMessageComposerProps } from './chatComposerModels'
 import { useChatStore } from '../../store/chatContext'
+import { messageFailureNotice } from '@/lib/messageFailureNotice'
 
 /** Chat delivery owns recipients and rollback; the shared editor only submits its document. */
 export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatDraft, members: MentionCandidate[], activeMentionTargets: MentionTarget[], inputRef: RefObject<HTMLElement | null>, mobile = false) {
@@ -22,17 +23,16 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
   const { toast } = useToast()
   const [sending, setSending] = useState(false)
   const sendingRef = useRef(false)
+  const submissions = useRef(new Map<string, { id: string; revision: object; destination: string; failure: ReturnType<typeof messageFailureNotice> }>())
   const activeChatIdRef = useRef(chatId ?? null)
   activeChatIdRef.current = chatId ?? null
   const rosterNameIndex = useMemo(() => buildRosterNameIndex(props.groupMembers ?? []), [props.groupMembers])
-  // `picked`: files sent straight from a picker page (phone photos) together with the draft's own attachments.
-  const handleSend = useCallback(async (value?: string, picked: PendingAttachment[] = []) => {
+  const handleSend = useCallback(async (value?: string) => {
     // 回车走 handleKeyDown 直达这里、不看按钮的 disabled:在途时再进就会把同一批附件重发一遍。
     if (sendingRef.current) return
     const submittedAt = performance.now()
     const typed = (value ?? text).trim()
-    const batch = picked.length ? [...attachments, ...picked] : attachments
-    const pendingFiles = batch.map((a) => a.file)
+    const pendingFiles = attachments.map((a) => a.file)
     const multimodalImage = pendingFiles.some((file) => inferAttachmentKind(file) === 'image')
     if (disabled) {
       toast(disabledReason || t('composer.disabled'), 'info')
@@ -68,8 +68,20 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
           replyToMessageId,
         }
 
+    const scope = JSON.stringify([currentUserId, chatId])
+    const revision = draft.revisionOf(chatId ?? null)
+    const destination = JSON.stringify([!!sendOptions.isWhisper, sendOptions.replyToMessageId, [...sendOptions.toUserIds].sort()])
+    let submission = submissions.current.get(scope)
+    if (!submission || submission.revision !== revision || submission.destination !== destination) {
+      const id = crypto.randomUUID()
+      submission = { id, revision, destination, failure: messageFailureNotice(['im', currentUserId ?? 'signed-out', chatId ?? 'composer', id]) }
+      submissions.current.set(scope, submission)
+    }
+    const attempt = submission.failure.begin()
+    let clearedRevision = revision
+
     // Snapshot current attachments so we can roll back on failure
-    const snapshotAttachments = batch
+    const snapshotAttachments = attachments
     // 按批内序号认领已提交件(同一个 File 对象可能被排进队两次,按对象认领会把两件都算成已发)。
     const committed = new Set<number>()
     // 带引用回复时文字单独走 onSend(它带 replyToMessageId),不挂成图片说明——否则引用关系丢失。
@@ -81,6 +93,7 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       // 文字消息把它交给 outbox 在投递前 await,失败时气泡变「未送达」可重试,❌ 退回输入框。
       clear()
       flush()
+      clearedRevision = draft.revisionOf(chatId ?? null)
       onQuoteConsumed?.()
       scheduleComposerFocus('message-sent', { target: () => inputRef.current, mobileShell: mobile })
       if (pendingFiles.length > 0 && onSendAttachments) await beforeSend?.()
@@ -89,8 +102,9 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
         await onSendAttachments(pendingFiles, { toUserIds: sendOptions.toUserIds, replyToMessageId: !typed && replyToMessageId ? replyToMessageId : undefined, isWhisper: !!whisperTarget, caption: captionOnImage ? content || undefined : undefined, onSent: (_file, index) => { committed.add(index) } })
       }
       if (typed && (!captionOnImage || !onSendAttachments)) {
-        await onSend(content, { ...sendOptions, beforeDeliver: beforeSend, submittedAt })
+        await onSend(content, { ...sendOptions, clientMessageId: submission.id, beforeDeliver: beforeSend, submittedAt })
       }
+      if (attempt.succeeded() && submissions.current.get(scope) === submission) submissions.current.delete(scope)
       // Successful send → object URLs are no longer needed
       revokeAttachmentPreviewUrls(snapshotAttachments)
       if (!mobile && isGroupChat && currentUserId && chatId && !whisperTarget) {
@@ -100,6 +114,7 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       // @@@whisper (#820) — clear whisper mode after a successful send.
       if (whisperTarget) onExitWhisper?.()
     } catch (err) {
+      const unchanged = draft.revisionOf(chatId ?? null) === clearedRevision
       const reason = String((err as Error)?.message ?? err)
       rendererLogger('chat/send').error({ chatId, error: reason }, 'message send failed')
       // Rollback restores only UNSENT intent. @@@2188 - the send is phased (attachments commit one by
@@ -124,12 +139,13 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       }
       // Drop the now-stale snapshot URLs (replaced by fresh ones above, or unused when persisting to store).
       revokeAttachmentPreviewUrls(snapshotAttachments)
-      toast(t('composer.sendFailed', { reason: safeFailureLine(reason) }), 'error')
+      if (unchanged) submission.revision = draft.revisionOf(chatId ?? null)
+      attempt.failed(chatSendFailureNotice(unsentAttachments.map((attachment) => attachment.file), err, t))
     } finally {
       sendingRef.current = false
       setSending(false)
     }
-  }, [beforeSend, chatId, currentUserId, text, attachments, activeMentionTargets, members, rosterNameIndex, isGroupChat, onSend, onSendAttachments, quoteContent, onQuoteConsumed, t, toast, disabled, disabledReason, whisperTarget, onExitWhisper, writeDraft, setMentionTargets, setAttachments, clear, persistTo, flush, inputRef, mobile])
+  }, [draft, beforeSend, chatId, currentUserId, text, attachments, activeMentionTargets, members, rosterNameIndex, isGroupChat, onSend, onSendAttachments, quoteContent, onQuoteConsumed, t, toast, disabled, disabledReason, whisperTarget, onExitWhisper, writeDraft, setMentionTargets, setAttachments, clear, persistTo, flush, inputRef, mobile])
 
   return { sending, handleSend }
 }

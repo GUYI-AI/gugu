@@ -6,30 +6,44 @@ import type { AgentDisplayStatus, ChatItem, GroupCollabSnapshot, MessageItem, No
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import type { MemberProfileCardModel, MemberProfileChatTarget } from '../MemberProfileCard'
 import { MemberProfileAvatarButton } from '../MemberProfileAvatarButton'
-import { MemberProfilePopover } from '../MemberProfilePopover'
+import { MemberProfilePopover, MemberProfileRoot } from '../MemberProfilePopover'
+import { Popover } from '../ui/Popover'
 import type { ActiveMemberProfile } from '../memberProfileModels'
-import type { GroupChatSettingsState } from './useGroupChatSettings'
+import { groupRoleRevision, useGroupChatSettings, type GroupChatSettingsState } from './useGroupChatSettings'
 import { GroupMembersSection } from './GroupMembersSection'
-import type { MemberListPanelProps } from './MemberListPanel'
+import { MemberListPanel, type MemberListPanelProps } from './MemberListPanel'
 import { GroupAgentFloodSettings } from './GroupAgentFloodSettings'
 import { ChatManagementActions } from './ChatManagementActions'
 import { SettingsPageHead } from './groupSettingsUi'
 import { COLOR_MUTED } from './chatPresentation'
+import { useRoomCollab } from '../../hooks/useRoomCollab'
+import type { ChatTopicState } from '../../session/renderer/features/chats/chat-tabs/chat-tab-providers'
 
 // 从 ChatAreaPanel 拆出来的(那份文件行数冻结,#7199 给它加「吃一个会话 id」时腾的位置)。
 // 群信息 / 会话信息(owner 10-26):成员、公告、设置合成一枚页签(chat-info),桌面在对话旁边、手机是整页。
 // 页签本身就是标题和 ×:桌面上一级页不画页头,手机左上返回 = 关掉这一页。
-export type ChatSettingsPanelProps = ChatRightPanelBodyProps & { mobile?: boolean }
+export type ChatSettingsPanelProps = ChatRightPanelBodyProps & { mobile?: boolean; topic?: ChatTopicState }
 
-export function ChatSettingsPanel({ mobile = false, ...body }: ChatSettingsPanelProps) {
+export function ChatSettingsPanel({ mobile = false, topic, ...body }: ChatSettingsPanelProps) {
   const { activeChat, onClose } = body
   const { t } = useTranslation('messaging')
+  if (topic) return <TopicMembers key={topic.topicChatId} topic={topic} sourceChatId={activeChat.id} onClose={onClose} mobile={mobile} />
   return (
     <div data-testid="chat-settings-panel" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {activeChat.kind === 'group' || !mobile ? null : <SettingsPageHead title={t('chatArea.settings.conversation')} onClose={onClose} mobile />}
       <ChatRightPanelBody {...body} />
     </div>
   )
+}
+
+function TopicMembers({ topic, sourceChatId, onClose, mobile }: { topic: ChatTopicState; sourceChatId: string; onClose: () => void; mobile: boolean }) {
+  const { snapshot, error, reload, authorityRevision } = useRoomCollab(topic.topicChatId, 'topic', sourceChatId)
+  const settings = useGroupChatSettings(topic.topicChatId, snapshot ? groupRoleRevision(snapshot) : undefined, authorityRevision)
+  return <div data-testid="chat-settings-panel" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <MemberListPanel chatId={topic.topicChatId} chatKind="topic" chatName={topic.name}
+      snapshot={snapshot} error={error} onReload={reload} settingsState={settings}
+      head={(title, action) => <SettingsPageHead title={title} action={action} mobile={mobile} onClose={mobile ? onClose : undefined} />} />
+  </div>
 }
 
 interface ChatRightPanelBodyProps {
@@ -61,12 +75,12 @@ interface ChatRightPanelBodyProps {
 // kind (group gets the rich role-switching list, DM keeps the simple peer card), then ChatManagementActions.
 function ChatRightPanelBody({ activeChat, initialPage, onClose, onClearMessages, onOpenSearch, onSetNotificationLevel, onTogglePinned, memberProfiles, currentUserId, onOpenUserChat, onWhisper, groupSettings, groupCollabSnapshot, groupCollabError, onReloadGroupCollab, onLeaveGroup, onDissolveGroup }: ChatRightPanelBodyProps) {
   const { t } = useTranslation('messaging')
-  const [activeProfile, setActiveProfile] = useState<ActiveMemberProfile | null>(null)
+  const [profileCard] = useState(() => Popover.createHandle<ActiveMemberProfile>())
   const isGroupChat = activeChat.kind === 'group'
 
   useEffect(() => {
-    setActiveProfile(null)
-  }, [activeChat.id])
+    profileCard.close()
+  }, [activeChat.id, profileCard])
 
   const drawerProfiles = memberProfiles
 
@@ -99,7 +113,7 @@ function ChatRightPanelBody({ activeChat, initialPage, onClose, onClearMessages,
         />
       ) : (
         <>
-          <div style={{ fontSize: 'var(--font-caption)', color: 'var(--text-tertiary)', padding: '12px 14px 6px', userSelect: 'none' }}>{t('chatArea.settings.members')}</div>
+          <div style={{ fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', fontWeight: 'var(--font-weight-medium)', color: 'var(--muted-fg)', padding: '12px 14px 6px', userSelect: 'none' }}>{t('chatArea.settings.members')}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '0 14px 10px' }}>
             {shownMembers.map((m, index) => (
               <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
@@ -108,14 +122,7 @@ function ChatRightPanelBody({ activeChat, initialPage, onClose, onClearMessages,
                   testId={AUTOMATION_TEST_IDS.chatDrawerProfileButton}
                   avatarSize="sm"
                   buttonSize={38}
-                  active={activeProfile?.member.id === m.id}
-                  onOpen={(event) => {
-                    setActiveProfile({
-                      member: m,
-                      anchor: event.currentTarget,
-                      preferredSide: 'left',
-                    })
-                  }}
+                  profile={{ handle: profileCard, payload: { member: m, preferredSide: 'left' } }}
                 />
                 <span style={{ fontSize: '10px', color: COLOR_MUTED, maxWidth: '36px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {names[index]}
@@ -154,22 +161,24 @@ function ChatRightPanelBody({ activeChat, initialPage, onClose, onClearMessages,
           />
         </>
       )}
-      {activeProfile ? (
-        <MemberProfilePopover
-          profile={activeProfile}
-          onClose={() => setActiveProfile(null)}
-          onOpenChat={activeProfile.member.id !== currentUserId && onOpenUserChat ? (target) => {
-            setActiveProfile(null)
-            onOpenUserChat(target)
-          } : undefined}
-          onWhisper={onWhisper ? (target) => {
-            setActiveProfile(null)
-            onWhisper(target)
-          } : undefined}
-          searchChatId={activeChat.id}
-          testId={AUTOMATION_TEST_IDS.chatDrawerProfileMenu}
-        />
-      ) : null}
+      <MemberProfileRoot handle={profileCard}>
+        {(profile) => (
+          <MemberProfilePopover
+            profile={profile}
+            onClose={() => profileCard.close()}
+            onOpenChat={profile.member.id !== currentUserId && onOpenUserChat ? (target) => {
+              profileCard.close()
+              onOpenUserChat(target)
+            } : undefined}
+            onWhisper={onWhisper ? (target) => {
+              profileCard.close()
+              onWhisper(target)
+            } : undefined}
+            searchChatId={activeChat.id}
+            testId={AUTOMATION_TEST_IDS.chatDrawerProfileMenu}
+          />
+        )}
+      </MemberProfileRoot>
     </>
   )
 }
