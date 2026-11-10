@@ -1,6 +1,9 @@
 import { nullableText, nullableTextArray, numberOrSentinel, text } from './payload'
 import type { MessageContentType, MessageItem } from '../shared/types/chat'
 import { parseFileMetadata, type FileMetadata } from '../shared/fileResolver'
+import { coreLogger } from '../log'
+
+const log = coreLogger('message-item')
 
 // @@@ message-item-builder — see git history for full context.
 // @@@threads (#957) thread_root_id：thread 回复指向其 root；主时间线据此过滤、thread 视图据此聚合。
@@ -65,7 +68,11 @@ export function messageItemFromRow(raw: RawMessageRow, currentUserId: string): M
   const senderUserId: string | null = rawSender === null ? null : text(rawSender)
   let fileMetadata: FileMetadata | null = null
   if (raw.file_metadata != null) {
-    try { fileMetadata = parseFileMetadata(raw.file_metadata, { message_id: id }) } catch { return null }
+    // The message stays: an attachment whose projected metadata this build cannot read is resolved again when its card is
+    // drawn, and that card says it cannot be opened. Dropping the row would hide a message the server counts as unread.
+    try { fileMetadata = parseFileMetadata(raw.file_metadata, { message_id: id }) } catch (error) {
+      log.error({ messageId: id, chatId, error }, 'unreadable attachment metadata; the message is kept without it')
+    }
   }
   return {
     id,

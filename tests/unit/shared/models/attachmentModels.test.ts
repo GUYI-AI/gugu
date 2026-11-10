@@ -89,6 +89,14 @@ describe('attachment models', () => {
     expect(parseAttachmentContent(row.content, row)?.fileMetadata).toEqual({ status, sha256: 'a'.repeat(64) })
   })
 
+  it('keeps a message whose attachment metadata this build cannot read, without that metadata', () => {
+    const row = messageItemFromRow({ id: 'message-1', chat_id: 'chat-1', sender_user_id: 'sender-1', seq: 4,
+      content: '[附件] notes.pdf (application/pdf)\n[Size] 2048\n[Kind] file', content_type: 'attachment',
+      file_item_id: 'item-1', file_version: 3, file_metadata: { status: 'ready', source: 'a-new-source' } }, 'viewer-1')
+    expect(row).toMatchObject({ id: 'message-1', seq: 4, content_type: 'attachment', file_metadata: null })
+    expect(parseAttachmentContent(row!.content, row!)?.source).toEqual({ kind: 'item', itemId: 'item-1', version: 3 })
+  })
+
   it.each([
     ['formatAttachmentSize', () => formatAttachmentSize(512), '512 B'],
     ['formatAttachmentSize', () => formatAttachmentSize(1536), '1.5 KB'],
