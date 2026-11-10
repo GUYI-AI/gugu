@@ -192,6 +192,7 @@ import {
   runSessionAction,
   sessionCallerFacts,
   setRemotePaneOpener,
+  setRemoteTaskViewers,
   stopExactSessionpageSession,
   type SessionAction,
   type SessionCallerContext,
@@ -431,6 +432,8 @@ const HEADLESS_SERVER = process.env.GUGU_SERVER_MODE === '1'
 export async function bootEmdashModule(ipcMain: IpcMain, discovery?: Pick<SessionHostBootOptions, 'scheduleDiscovery'>): Promise<void> {
   // #6264 没有窗口:会话里的 open_in_tab 送到正看着这条会话的桌面,❌ 问一个不存在的渲染层干等超时(remote-pane.ts)。
   if (HEADLESS_SERVER) setRemotePaneOpener(sharedRemotePaneRoute())
+  // #1607 桌面:别的电脑正看着这台机器上的任务时,App 的任务页签也推给它们(本机面板照开)。
+  else setRemoteTaskViewers(sharedRemotePaneRoute())
   const electronIpc = createElectronHostIpc({ ipcMain, BrowserWindow, MessageChannelMain })
   // @@@task-web-host 方案 A:桌面 app 额外对浏览器开一个 WebSocket 口。owner 09-03 硬约束——这个口等于
   // 「操纵本机 agent 与 shell」,**对安装用户必须不可用**:打包版永远不起;dev 也要显式开关。

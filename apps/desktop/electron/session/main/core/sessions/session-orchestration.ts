@@ -1430,6 +1430,18 @@ export function setRemotePaneOpener(opener: RemotePaneOpener | null): void {
   remotePaneOpener = opener;
 }
 
+/**
+ * #1607 On a desktop: the other computers showing a task that runs here (a task started on another computer to run on
+ * this one). Every machine records them (embedded-boot, device-pane-relay); an App's task page goes to them as well as to
+ * this window, so the person sees it where they are looking.
+ */
+type RemoteTaskViewers = Pick<RemotePaneRoute, 'open' | 'watching'>;
+let remoteTaskViewers: RemoteTaskViewers | null = null;
+
+export function setRemoteTaskViewers(viewers: RemoteTaskViewers | null): void {
+  remoteTaskViewers = viewers;
+}
+
 type OpenInTabIntent = 'preview' | 'pinned';
 /** 没人看着、已攒下:tab 下次有人打开这条会话时出现。 */
 type QueuedOpen = { opened: false; queued: true; intent: OpenInTabIntent; note: string };
@@ -1753,9 +1765,20 @@ export async function openTaskPagesOfApp(
       await remotePaneOpener.open(target.sessionId, { kind: 'app-tab', tabKind, ifAbsent: true }, 'pinned');
       continue;
     }
-    await requestPaneOpen(sessionOpenExtensionInPaneResultChannel, 'App tab', (requestId) => {
+    const here = requestPaneOpen(sessionOpenExtensionInPaneResultChannel, 'App tab', (requestId) => {
       events.emit(sessionOpenExtensionInPaneChannel, { requestId, ...target, tabKind, intent: 'pinned', ifAbsent: true });
     }, signal);
+    // A desktop task watched from another computer: that computer draws it too (the same hand-over as a server's).
+    const elsewhere = remoteTaskViewers?.watching(target.sessionId)
+      ? remoteTaskViewers.open(target.sessionId, { kind: 'app-tab', tabKind, ifAbsent: true }, 'pinned')
+      : null;
+    if (!elsewhere) {
+      await here;
+      continue;
+    }
+    const opened = await Promise.allSettled([here, elsewhere]);
+    const failed = opened.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failed.length === opened.length) throw failed[0]!.reason;
   }
   return kinds;
 }
