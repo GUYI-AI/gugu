@@ -601,7 +601,7 @@ describe('AgentConfigRuntime', () => {
     await runtime.dispose();
   });
 
-  it('does not merge refreshes on different CLIs, and the newer one owns the published status', async () => {
+  it('does not merge refreshes on different CLIs; they run one after the other and the newer one owns the published status', async () => {
     let resolveSelected!: () => void;
     const selectedGate = new Promise<void>((resolve) => {
       resolveSelected = resolve;
@@ -618,14 +618,72 @@ describe('AgentConfigRuntime', () => {
     const stale = runtime.refreshAuthStatus('claude', SELECTED_CLI);
     await until('the stale refresh starts its auth check', () => authCheckStatus.mock.calls.length, (n) => n >= 1);
     expect(authCheckStatus).toHaveBeenCalledTimes(1);
-    const newer = await runtime.refreshAuthStatus('claude', OTHER_CLI);
+    const newer = runtime.refreshAuthStatus('claude', OTHER_CLI);
+    // 探测排队:前一个 CLI 还没答完,后一个不起(同一时刻只有一个 CLI 在被问)。
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(authCheckStatus).toHaveBeenCalledTimes(1);
     resolveSelected();
 
+    await expect(newer).resolves.toEqual(ok({ kind: 'unauthenticated' }));
     expect(authCheckStatus).toHaveBeenCalledTimes(2);
-    expect(newer).toEqual(ok({ kind: 'unauthenticated' }));
     await expect(stale).resolves.toEqual(ok({ kind: 'authenticated' }));
     // 慢的那次读数晚到,❌ 不许盖掉较新的那次发布出去的状态。
     expect(runtime.install.getAuth('claude').status).toEqual({ kind: 'unauthenticated' });
+    await runtime.dispose();
+  });
+
+  it('never has two CLIs being asked at the same time', async () => {
+    let running = 0;
+    let peak = 0;
+    const authCheckStatus = vi.fn(async (_ctx: AgentAuthContext): Promise<AgentAuthStatus> => {
+      running += 1;
+      peak = Math.max(peak, running);
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      running -= 1;
+      return { kind: 'unauthenticated' };
+    });
+    const { runtime } = makeRuntime({ authCheckStatus });
+    await Promise.all([
+      runtime.refreshAuthStatus('claude', SELECTED_CLI),
+      runtime.refreshAuthStatus('claude', OTHER_CLI),
+      runtime.refreshAuthStatus('claude', SELECTED_CLI, 'claude-tui'),
+    ]);
+    expect(authCheckStatus.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(peak).toBe(1);
+    await runtime.dispose();
+  });
+
+  it('reuses a signed-in reading for five minutes, but asks again once the sign-in changed or when it was not signed in', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const authCheckStatus = vi.fn(async (_ctx: AgentAuthContext): Promise<AgentAuthStatus> => ({ kind: 'authenticated' }));
+      const { runtime } = makeRuntime({ authCheckStatus });
+      await runtime.refreshAuthStatus('claude', SELECTED_CLI);
+      await runtime.refreshAuthStatus('claude', SELECTED_CLI);
+      expect(authCheckStatus).toHaveBeenCalledTimes(1);
+      // 另一份 CLI 是另一格读数
+      await runtime.refreshAuthStatus('claude', OTHER_CLI);
+      expect(authCheckStatus).toHaveBeenCalledTimes(2);
+      // 过了五分钟:再问一次
+      vi.setSystemTime(Date.now() + 5 * 60_000 + 1);
+      await runtime.refreshAuthStatus('claude', SELECTED_CLI);
+      expect(authCheckStatus).toHaveBeenCalledTimes(3);
+      // 被会话报的鉴权失败作废:立刻重问,且读到「已失效」
+      await runtime.markAuthExpired('claude');
+      await runtime.refreshAuthStatus('claude', SELECTED_CLI);
+      expect(authCheckStatus).toHaveBeenCalledTimes(4);
+      await runtime.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not reuse a reading that was not "signed in"', async () => {
+    const authCheckStatus = vi.fn(async (_ctx: AgentAuthContext): Promise<AgentAuthStatus> => ({ kind: 'unauthenticated' }));
+    const { runtime } = makeRuntime({ authCheckStatus });
+    await runtime.refreshAuthStatus('claude', SELECTED_CLI);
+    await runtime.refreshAuthStatus('claude', SELECTED_CLI);
+    expect(authCheckStatus).toHaveBeenCalledTimes(2);
     await runtime.dispose();
   });
 });

@@ -79,6 +79,17 @@ type StatusProbe = {
   runContext: AgentRunContext;
 };
 
+/**
+ * 登录读数的两条节流(设置页「模型」「订阅」一打开,每家装着的 Agent CLI 都要被问一遍登没登):
+ *  · 同一时刻只跑**一个**探测。每次探测都是在本机起一个 CLI(`mimo auth list` 实测单个就占满一个核,`claude auth status`
+ *    约 35%),几家并行 = 资源监视器上一个几核的波峰(2026-11-10 MBP:打开「订阅」「模型」两页,最高 950%)。排队后
+ *    峰值就是一个进程的量;代价是最后一家的读数晚几秒出来,界面本来就按「读数还没来」显示。
+ *  · 探到**已登录**之后 5 分钟内,再被问同一家同一份 CLI 就直接用那次读数,❌ 每打开一次页面重起一个 CLI。
+ *    只复用「已登录」:没登录 / 判不出 / 已失效这几种要尽快翻,每次照问。登录、登出、被鉴权拒、标记失效与撤销都先把
+ *    这家的复用读数作废,所以换了账号、重新登录之后的第一次读数一定是新探的。
+ */
+export const AUTH_PROBE_REUSE_MS = 5 * 60_000;
+
 export class AgentAuthManager {
   private readonly scope: Scope;
   private readonly statusGenerations = new Map<string, number>();
@@ -90,6 +101,11 @@ export class AgentAuthManager {
   readonly expiry: AuthExpiryMarks;
   /** 每家上一次读登录态用的那份 CLI —— 撤掉「登录已失效」后重读时量同一份。 */
   private readonly lastRunContext = new Map<string, AgentRunContext>();
+  /** 探到「已登录」的读数(键同在途去重那一把),`AUTH_PROBE_REUSE_MS` 内被问到就直接用它。 */
+  private readonly recentLoggedIn = new Map<string, { at: number; providerId: string; status: AgentAuthStatus }>();
+  /** 探测排成一条队:同一时刻只有一个 CLI 在被问。 */
+  private probeTail: Promise<unknown> = Promise.resolve();
+  private invalidations = 0;
   private readonly currentConnection = new Map<string, string>();
 
   constructor(
@@ -124,8 +140,7 @@ export class AgentAuthManager {
       (input: StatusProbe) =>
         this.probeAndUpdate(input.providerId, input.program, input.runContext, input.connectionId),
       {
-        key: (input) =>
-          `${authKey(input.providerId, input.program, input.connectionId)}\u0000${agentRunContextKey(input.runContext)}`,
+        key: (input) => this.probeKey(input),
       }
     );
     this.scope.add(() => {
@@ -133,6 +148,7 @@ export class AgentAuthManager {
       this.statusGenerations.clear();
       this.lastRunContext.clear();
       this.currentConnection.clear();
+      this.recentLoggedIn.clear();
     });
   }
 
@@ -148,7 +164,26 @@ export class AgentAuthManager {
       this.lastRunContext.set(authExpiryKey(providerId, runContext.connectionId), runContext);
       if (!connectionId) this.currentConnection.set(providerId, runContext.connectionId ?? 'native');
     }
+    const recent = this.recentLoggedIn.get(this.probeKey({ providerId, program, connectionId, runContext }));
+    if (recent && Date.now() - recent.at < AUTH_PROBE_REUSE_MS) return ok(recent.status);
     return ok(await this.probeStatus({ providerId, program, connectionId, runContext }));
+  }
+
+  private probeKey(input: StatusProbe): string {
+    return `${authKey(input.providerId, input.program, input.connectionId)}\u0000${agentRunContextKey(input.runContext)}`;
+  }
+
+  /** 作废这家的复用读数;已经在途的探测(开始在作废之前)探完也不许再存。 */
+  private forgetRecentReadings(providerId: string): void {
+    this.invalidations += 1;
+    for (const [key, entry] of this.recentLoggedIn) if (entry.providerId === providerId) this.recentLoggedIn.delete(key);
+  }
+
+  /** 排队跑一个探测:前一个(不论成败)结束后才轮到它。 */
+  private inProbeLane<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.probeTail.then(task, task);
+    this.probeTail = run.catch(() => undefined);
+    return run;
   }
 
   /**
@@ -157,6 +192,7 @@ export class AgentAuthManager {
   async markExpired(providerId: string, connectionId?: string): Promise<Result<void, AgentConfigAuthError>> {
     if (!this.hasProvider(providerId)) return err({ type: 'unknown-provider', providerId });
     await this.expiry.ready;
+    this.forgetRecentReadings(providerId);
     if (this.expiry.mark(authExpiryKey(providerId, connectionId), Date.now())) {
       this.deps.logger.info('AgentAuthManager: marked sign-in expired after an auth failure', { providerId });
     }
@@ -172,6 +208,7 @@ export class AgentAuthManager {
     if (!this.hasProvider(providerId)) return err({ type: 'unknown-provider', providerId });
     await this.expiry.ready;
     if (!this.expiry.clear(authExpiryKey(providerId, connectionId))) return ok();
+    this.forgetRecentReadings(providerId);
     this.deps.logger.info('AgentAuthManager: sign-in works again, expiry cleared', { providerId });
     const runContext = this.lastRunContext.get(authExpiryKey(providerId, connectionId));
     if (runContext) {
@@ -199,6 +236,7 @@ export class AgentAuthManager {
   ): Promise<Result<void, AgentConfigAuthError>> {
     if (!this.hasProvider(providerId)) return err({ type: 'unknown-provider', providerId });
     const key = authKey(providerId, program, connectionId);
+    this.forgetRecentReadings(providerId);
     await this.releaseLogin(key, undefined, { force: true });
     const generation = randomUUID();
     const lease = this.loginSource.acquire(key, {
@@ -525,7 +563,15 @@ export class AgentAuthManager {
   ): Promise<AgentAuthStatus> {
     const key = authKey(providerId, program, connectionId);
     const generation = this.nextStatusGeneration(key);
+    const epoch = this.invalidations;
     const status = await this.probe(providerId, program, runContext);
+    const reuseKey = this.probeKey({ providerId, program, connectionId, runContext });
+    // 探测期间有人登录 / 登出 / 标记失效(`invalidations` 翻了页),这次读数就不留作复用。
+    if (status.kind === 'authenticated' && this.statusGenerations.get(key) === generation && this.invalidations === epoch) {
+      this.recentLoggedIn.set(reuseKey, { at: Date.now(), providerId, status });
+    } else {
+      this.recentLoggedIn.delete(reuseKey);
+    }
     const selected =
       !runContext.connectionId ||
       connectionId !== undefined ||
@@ -542,7 +588,7 @@ export class AgentAuthManager {
     runContext: AgentRunContext
   ): Promise<AgentAuthStatus> {
     try {
-      const status = await this.deps.agentHost.checkAuthStatus(providerId, runContext, program);
+      const status = await this.inProbeLane(() => this.deps.agentHost.checkAuthStatus(providerId, runContext, program));
       if (!status.success) {
         this.deps.logger.warn('AgentAuthManager: spawn context resolution failed', {
           providerId,
