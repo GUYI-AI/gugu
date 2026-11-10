@@ -250,6 +250,9 @@ function hasRestorablePrompt(data: TurnOutcomeItem): boolean {
     && !(data.outcome.kind === 'error' && data.outcome.reason === 'send_failed');
 }
 
+/** The badge's separator between label and reason; the DOM draws it and the measurement measures it. */
+const BADGE_SEPARATOR = '·';
+
 function outcomeLaneLayout(data: TurnOutcomeItem, ctx: import('@session-chat/core/define').MeasureCtx) {
   const t = rowTranslator(ctx), outcome = data.outcome, commands = ctx.commands;
   const refused = outcome.kind === 'error' && outcome.guguReason ? commands?.describeRefusal?.(outcome.guguReason) : null;
@@ -257,9 +260,12 @@ function outcomeLaneLayout(data: TurnOutcomeItem, ctx: import('@session-chat/cor
   const reason = refused?.text ?? parts.reason;
   const glyph = outcome.kind === 'cancelled' ? 16 : 0;
   const label = readableLabel(parts.label, ctx, ctx.width - 20 - glyph, 12, 18);
-  const natural = label.width + (reason ? readableLabel(reason, ctx).width + 16 : 0) + 20 + glyph;
+  // Between label and reason: the badge's two 6px gaps around the separator, which is text in the badge's own font.
+  // A fixed allowance only fits fonts whose middle dot happens to be that wide (on a phone it is wider, and the reason wraps).
+  const separator = reason ? readableLabel(BADGE_SEPARATOR, ctx).width + 12 : 0;
+  const natural = label.width + (reason ? readableLabel(reason, ctx).width + separator : 0) + 20 + glyph;
   const badgeWidth = Math.min(ctx.width, natural);
-  const description = reason ? readableLabel(reason, ctx, badgeWidth - 20 - glyph - label.width - 16) : null;
+  const description = reason ? readableLabel(reason, ctx, badgeWidth - 20 - glyph - label.width - separator) : null;
   const badgeHeight = Math.max(24, label.height + 6, (description?.height ?? 0) + 6);
   const actions: number[] = [];
   const actionWidth = (text: string, icon = false) => readableLabel(text, ctx, ctx.width, 14, 20, 500).width + 20 + (icon ? 18 : 0);
@@ -418,9 +424,7 @@ export const turnOutcomeUnitDef = defineUnit<TurnOutcomeItem, { rowH: number }>(
             <Show when={parts().reason}>
               {(text) => (
                 <>
-                  <span aria-hidden="true" class={outcomeBadgeSeparator}>
-                    ·
-                  </span>
+                  <span aria-hidden="true" class={outcomeBadgeSeparator}>{BADGE_SEPARATOR}</span>
                   <span data-slot="turn-outcome-reason" class={outcomeReason}>
                     {lane().reason?.text ?? text()}
                   </span>
