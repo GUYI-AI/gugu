@@ -11,7 +11,9 @@ export function createPhoneModelAccess(cloud, store, warn) {
     const models = await catalog(true)
     if (requested && !requested.startsWith('platform:')) throw new Error('手机宿主当前只支持咕咕平台模型，请传 session_list_models 返回的 platform: 模型编号')
     const id = requested?.slice('platform:'.length)
-    const found = id ? models.find((item) => item.id === id) : models.find((item) => !item.requires_membership)
+    // No model asked for: the create menu's rule (offered in the picker: not members-only, not hidden by the person).
+    const found = id ? models.find((item) => item.id === id)
+      : models.find((item) => offeredInModelPicker({ requiresMembership: item.requires_membership, hidden: item.hidden }))
     if (!found) throw new Error(id ? `手机 Agent 不支持平台模型 ${id}` : '没有可供手机 Agent 使用的平台模型')
     return found.id
   }
@@ -76,3 +78,4 @@ export function createPhoneModelAccess(cloud, store, warn) {
   }
 }
 import { platformModelAccessEnv } from '../../../packages/core/src/local/agent/modelAccess.ts'
+import { offeredInModelPicker } from '../../desktop/src/session/shared/core/agents/platform-model.ts'

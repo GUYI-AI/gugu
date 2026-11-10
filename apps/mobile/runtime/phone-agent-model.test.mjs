@@ -36,3 +36,10 @@ test('issued token is scoped to the real agent/session and every finished turn c
   assert.deepEqual(requests.map((item) => item.action), ['issue', 'checkpoint', 'revoke'])
   assert.deepEqual(store.state.leases, {})
 })
+
+test('without a requested model the default is the create menu\'s: never a model the person hid', async () => {
+  const models = [{ id: 'hidden', enabled: true, hidden: true, protocols: ['openai-chat-completions'] }, { id: 'member', enabled: true, requires_membership: true, protocols: ['openai-chat-completions'] }, { id: 'free', enabled: true, protocols: ['openai-chat-completions'] }]
+  const access = createPhoneModelAccess({ modelAccess: async () => ({ models }) }, { state: { leases: {} }, save: async () => undefined }, () => undefined)
+  assert.equal(await access.resolve(), 'free')
+  assert.equal(await access.resolve('platform:hidden'), 'hidden')
+})
