@@ -3,8 +3,8 @@ import '../../../../../page-navigation-bootstrap';
 import http from 'node:http';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { createPaneTransport } from '../agent-browser';
 import { stripEmbeddedBrowserTokens } from '../browser-user-agent';
+import { pageProtocolCdpTransport } from './page-protocol-cdp';
 
 async function run(): Promise<void> {
   if (process.env.UA_PROBE_BOOTSTRAP === '1') {
@@ -58,7 +58,7 @@ async function run(): Promise<void> {
   const requireHere = createRequire(path.join(process.env.UA_PROBE_REPO!, 'package.json'));
   const requireFromMcp = createRequire(requireHere.resolve('@playwright/mcp'));
   const { chromium } = requireFromMcp('playwright-core') as typeof import('playwright-core');
-  const transport = createPaneTransport('ua-race', 'ua-race', contents);
+  const transport = pageProtocolCdpTransport(contents);
   const browser = await chromium.connectOverCDP(transport);
   process.stderr.write('UA_PROBE_STAGE=cdp-connected\n');
   try {

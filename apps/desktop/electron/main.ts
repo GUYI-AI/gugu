@@ -55,13 +55,8 @@ import { createDeviceActionsRuntime, nativeComponentsDir, type DeviceActionsRunt
 import { captureReading, currentReading, historyReading } from './session/main/core/resource-monitor/reading'
 import { setMacFootprintReader } from './session/main/core/resource-monitor/footprint'
 import { clearTraceLeftovers } from './session/main/core/resource-monitor/capture'
-import { sampleCuaImage } from './device-actions/native/cua-image-sample'
 import { createScreenCapture } from './device-actions/screen-capture'
-import { createComputerControlWindow } from './device-actions/computer-control-window'
-import { computerControlWindowReaders } from './device-actions/computer-control-foreground'
 import { installNativeAppearanceSync, installWindowMaterial, type WindowMaterialHost } from './window-material'
-import enDeviceStrings from '@/i18n/locales/en-US/settings'
-import zhDeviceStrings from '@/i18n/locales/zh-CN/settings'
 import { createDeviceActionCaller, type DeviceActionCaller } from '@gugu/core/cloud/deviceActionCaller'
 import type { DeviceActionResult } from '@gugu/core/shared/deviceActions'
 import {
@@ -391,6 +386,7 @@ import {
   providerUsesSessionProcessConfig,
   setSessionIntegrationBridge,
   setSessionIntegrationSkillBridge,
+  browserUseAppInstalled,
   setBrowserUseApp,
   setSessionWebSearchBridge,
   setSessionExtensionBridge,
@@ -406,13 +402,6 @@ import {
   createIntegrationMcpHost,
   type IntegrationMcpHost,
 } from './integration-mcp-bridge'
-import {
-  browserUseAppInstalled,
-  closeSessionBrowserTools,
-  createBrowserAppProgram,
-} from './browser-agent-mcp'
-import { createComputerUsePreview, installedComputerUseApps, type ComputerUsePreview } from './computer-use-program'
-import { sessionOf as computerSessionOf } from './device-actions/families/computer'
 import { connectedSessionIntegrations } from './session/main/core/integrations/session-integrations'
 import { providerAccountRegistry } from './session/main/core/provider-accounts/provider-account-registry-instance'
 import { platformCredentials } from './session/main/core/integrations/platform-credentials-instance'
@@ -2007,36 +1996,6 @@ async function startServerTunnelEndpoint(): Promise<void> {
  * 授权一变就立刻跑一轮心跳,把新的动作清单登记上去(❌ 等下一个 30 秒)。
  */
 let deviceActionsRuntimeInstance: DeviceActionsRuntime | null = null
-/** 咕咕自己的 bundle id(Mac 打包后读 Contents/Info.plist);读不到回 null。 */
-let selfBundleIdCache: string | null | undefined
-function selfBundleId(): string | null {
-  if (selfBundleIdCache !== undefined) return selfBundleIdCache
-  selfBundleIdCache = null
-  if (process.platform === 'darwin') {
-    try {
-      const plist = readFileSync(join(dirname(process.execPath), '..', 'Info.plist'), 'utf8')
-      selfBundleIdCache = /<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/.exec(plist)?.[1] ?? null
-    } catch {
-      selfBundleIdCache = null
-    }
-  }
-  return selfBundleIdCache
-}
-
-/** 电脑控制认得出的「咕咕自己」:主进程(窗口都归它)、bundle id、App 名、可执行文件名。 */
-function selfAppForComputerControl(): { pids: ReadonlySet<number>; names: ReadonlySet<string> } {
-  const exe = (process.execPath.split(/[\\/]/).pop() ?? '').replace(/\.exe$/i, '')
-  const names = [app.getName(), exe, selfBundleId()].filter((n): n is string => !!n).map((n) => n.trim().toLowerCase())
-  return { pids: new Set([process.pid]), names: new Set(names) }
-}
-
-/**
- * #7317 Computer Use 装着、启用着(它的程序能跑)没有。会话主进程起来之前、server 模式下都是「没有」:那时这台电脑没有
- * 电脑控制。起来以后由那边接上(见注册 `computer-use` 原生程序处),App 每变一次就 `switchChanged()`。
- */
-let computerUseOn: () => boolean = () => false
-let computerUseOwnTools: () => boolean = () => false
-
 // The resource monitor reads macOS phys_footprint through the same native helper (System.swift `process.footprint`);
 // without the helper (an uncompiled dev checkout) it keeps RSS and says so.
 if (process.platform === 'darwin') setMacFootprintReader(() => {
@@ -2082,7 +2041,6 @@ function deviceActionsRuntime(): DeviceActionsRuntime {
         history: (since, until) => historyReading(since, until),
         capture: (seconds) => captureReading(seconds),
       },
-      sampleImage: data => sampleCuaImage(nativeImage.createFromBuffer, data),
       shrinkImage: async (image, { maxEdge, quality }) => {
         const source = nativeImage.createFromBuffer(Buffer.from(image.data, 'base64'))
         if (source.isEmpty()) throw new Error(`读不懂这张图(${image.mimeType})`)
@@ -2103,35 +2061,8 @@ function deviceActionsRuntime(): DeviceActionsRuntime {
     },
     nativeDir: nativeComponentsDir({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() }),
     isPackaged: app.isPackaged,
-    appVersion: app.getVersion(),
     serverMode: SERVER_MODE,
     openSystemSettings: (url) => shell.openExternal(url),
-    // 电脑控制:agent 不许操作咕咕自己;提示跟随实际目标窗口。
-    selfApp: () => selfAppForComputerControl(),
-    // #7317 电脑控制的开关是 Computer Use 这个 App(behavior tab-extensions):它开着这台电脑才有电脑控制。
-    appSwitch: { group: 'computer', app: 'Computer Use', on: () => computerUseOn(), ownTools: () => computerUseOwnTools() },
-    ...(selfBundleId() ? { hostBundleId: selfBundleId()! } : {}),
-    ...(SERVER_MODE
-      ? {}
-      : {
-          computerControlView: (cua) => createComputerControlWindow({
-            ...computerControlWindowReaders(cua),
-            strings: () => {
-              const bar = (hostLocaleStore?.current() === 'en-US' ? enDeviceStrings : zhDeviceStrings).devices.deviceActions.computerBar
-              const fill = (template: string, name: string) => template.replace('{{name}}', name)
-              return {
-                driving: (name) => fill(bar.drivingApp, name),
-                paused: (name) => fill(bar.pausedApp, name),
-                stop: bar.stop,
-                resume: bar.resume,
-                someone: bar.someone,
-              }
-            },
-            onStop: () => deviceActionsRuntime().computerControl?.stop(),
-            onResume: () => deviceActionsRuntime().computerControl?.resume(),
-            log,
-          }),
-        }),
     log,
   })
   runtime.onGrantsChanged(() => deviceRuntimeHost?.notifyDeviceActionsChanged())
@@ -3607,26 +3538,6 @@ let localSessionActionDispatcher: ((
 let crossMachineSessions: CrossMachineSessions | null = null
 let crossMachineRequester: ReturnType<typeof createDeviceRpcRequester> | null = null
 let deviceActionCallerInstance: DeviceActionCaller | null = null
-/** #7317 每个任务的 agent 用电脑的画面与每一步,给 Computer Use 的「电脑」页签(咕咕 server 上没有:那里没有窗口)。 */
-let computerUsePreviewInstance: ComputerUsePreview | null = null
-
-/**
- * #7317 agent 的一步电脑控制(`device_call computer.*`)开始了:记给这个任务的「电脑」页签,返回「它怎么结束的」那一下。
- * 预览出了什么事都只记一笔(step 两头都不抛),❌ 挡 agent 这一步、❌ 让它多等:那台设备是不是这台电脑,查到再补。
- */
-function computerStepStarted(
-  context: { projectId: string; sessionId: string; cursorSession?: string },
-  call: { device: string; name: string; args: Record<string, unknown> },
-): ((ended: DeviceActionResult | Error) => void) | null {
-  const preview = computerUsePreviewInstance
-  if (!preview || !call.name.startsWith('computer.')) return null
-  const local = crossMachine().isThisDevice(call.device).catch((error: unknown) => {
-    createLogger('computer-use').warn({ err: String(error) }, 'could not tell whether a computer step is on this computer; no live picture for it')
-    return false
-  })
-  return preview.step({ ...context, device: call.device, local, tool: call.name.slice('computer.'.length), args: call.args })
-}
-
 /**
  * 设备动作结果里的图(截图、剪贴板里的图)在 data.pictures:提到顶层 `pictures`,交给 MCP 那层变成图片块给 agent 看
  * (withPictures),❌ 让 base64 以文字进上下文。
@@ -4464,8 +4375,7 @@ async function stopDesktopOwnedResources(): Promise<void> {
     ),
     // 首启 / 设置里装 agent 的 `mise install`(自成一组、没有时限):不收就在实例停掉后接着跑,还占着继承来的调试端口。
     runShutdownPhase('mise', killAllMiseProcessesSync, reportShutdownPhase),
-    // #7199 / #7317 电脑控制的 cua-driver 守护进程与代理、Mac 小助手:同一条规矩,漏了它们每重启一次就留一个孤儿
-    // (真机实测:旧实例退出后 `cua-driver serve` ppid 变成 1)。守护进程自己也认 stdin EOF(见 cua-client),这里是正路。
+    // #7199 Mac 小助手:同一条规矩,漏了它每重启一次就留一个孤儿。
     runShutdownPhase(
       'device-actions',
       () => deviceActionsRuntimeInstance?.dispose(),
@@ -4947,35 +4857,15 @@ app.whenReady().then(async () => {
           name: String(record.name ?? ''),
           args: { ...(record.args && typeof record.args === 'object' ? record.args as Record<string, unknown> : {}), ...((record.name === 'recordings.read' || record.name === 'photos.read') ? { _phone_file_transport: 1 } : {}) },
         }
-        const taskTitle = call.name.startsWith('computer.')
-          ? await emdash.emdashSessionpageSessionFacts().then(
-            (rows) => rows.find((row) => row.sessionId === (context.sourceSessionId ?? context.sessionId))?.title,
-            (error: unknown) => {
-              createLogger('device-actions').warn({ err: String(error) }, 'device_call task title unavailable')
-              return undefined
-            },
-          ) : undefined
-        const caller = who ? { ...(who.agentUserId ? { agent_user_id: who.agentUserId } : {}), ...(who.name ? { name: who.name } : {}), ...(taskTitle ? { task_title: taskTitle } : {}) } : undefined
-        // A side chat's steps are its task's: the task's 「电脑」 tab shows them (the side chat is a view of it).
-        const ended = computerStepStarted({ projectId: context.projectId, sessionId: context.sourceSessionId ?? context.sessionId,
-          cursorSession: computerSessionOf({ caller }),
-        }, call)
-        let result: DeviceActionResult
-        try {
-          result = await deviceActionCaller().call({
-            deviceId: call.device,
-            action: call.name,
-            args: call.args,
-            ...(typeof record.timeout_ms === 'number' ? { timeoutMs: record.timeout_ms } : {}),
-            ...(caller ? { caller } : {}),
-            signal,
-          })
-        } catch (error) {
-          ended?.(error instanceof Error ? error : new Error(String(error)))
-          throw error
-        }
-        // After the call, outside its try: what the preview does with the result never turns a step that ran into an error.
-        ended?.(result)
+        const caller = who ? { ...(who.agentUserId ? { agent_user_id: who.agentUserId } : {}), ...(who.name ? { name: who.name } : {}) } : undefined
+        const result = await deviceActionCaller().call({
+          deviceId: call.device,
+          action: call.name,
+          args: call.args,
+          ...(typeof record.timeout_ms === 'number' ? { timeoutMs: record.timeout_ms } : {}),
+          ...(caller ? { caller } : {}),
+          signal,
+        })
         if (record.name === 'recordings.read' || record.name === 'photos.read') {
           const args = record.args && typeof record.args === 'object' ? record.args as Record<string, unknown> : {}
           const transfer = await receivePhoneDeviceFile({
@@ -5408,7 +5298,6 @@ app.whenReady().then(async () => {
         disposeSession: async (sessionId) => {
           await teardownSessionpageSessionRuntimes(sessionId)
           await primaryGuguMcpHost?.revoke(sessionpageSurfaceKey(sessionId))
-          await closeSessionBrowserTools(sessionId)
           forgetSessionAppScope(sessionpageSurfaceKey(sessionId))
         },
         env: process.env,
@@ -6377,42 +6266,6 @@ app.whenReady().then(async () => {
         // #6387 扩展服务就绪之后,会话开场才读得到扩展带来的 MCP 程序与 skill;程序经扩展网关给会话(#6615)。
         const onProblem = (message: string) => createLogger('extension-session').error({ message }, 'extension contribution left out of the session')
         const programHost = { nodeExecutable: process.execPath, toolsRuntime: toolsRuntimePath(), linkPrefix: `${GUGU_LINK_SCHEME}://ext`, onProblem }
-        if (!SERVER_MODE) {
-          emdash.emdashExtensionPrograms().registerNative('browser-use', createBrowserAppProgram(() => emdash.emdashAgentBrowser()))
-          // #7317 Computer Use 的「电脑」页签:看的是 agent 经设备动作做的每一步电脑控制;App 的程序只给它的页面 preview_state。
-          const programs = emdash.emdashExtensionPrograms()
-          const computerUseApps = installedComputerUseApps(programs, emdash.emdashOnInstalledAppsChanged)
-          computerUsePreviewInstance = createComputerUsePreview({
-            nativeCursor: process.platform === 'darwin',
-            peek: (target, options) => deviceActionsRuntime().peekWindow(target, options),
-            programs: computerUseApps,
-            notify: (program, method) => emdash.emdashNotifyFromNativeProgram(program, { method }),
-            showIn: (program, target) => emdash.emdashOpenTaskPagesOfApp(target, program.extensionId),
-          })
-          programs.registerNative('computer-use', computerUsePreviewInstance.program)
-          // Computer Use is the switch of this computer's computer control: installed and on = it has it. Each change
-          // re-registers this computer's actions at once (other machines' agents read them), stops cua-driver when off,
-          // and forgets what the 「电脑」 pages recorded (an App installed later never sees what came before).
-          computerUseOn = () => computerUseApps().length > 0
-          // The Computer Use App from API 36 runs its own program: installed, it is how agents operate this computer,
-          // so the device group must send them there instead of saying Computer Use is missing.
-          computerUseOwnTools = () => programs.installed().some((program) => program.extensionId === 'computer-use'
-            && program.native !== 'computer-use' && !programs.agentToolsRefusal(program.extensionId))
-          let computerUseWas = false
-          let ownToolsWere = false
-          const computerUseSwitched = () => {
-            const on = computerUseOn(), ownTools = computerUseOwnTools()
-            if (on === computerUseWas && ownTools === ownToolsWere) return
-            const flipped = on !== computerUseWas
-            computerUseWas = on; ownToolsWere = ownTools
-            if (flipped && !on) computerUsePreviewInstance?.forget()
-            deviceActionsRuntime().switchChanged()
-          }
-          emdash.emdashOnInstalledAppsChanged(computerUseSwitched)
-          // Until now this computer had no computer control. The installed programs are known only once their source is
-          // set just below: look then, and if Computer Use is on, say so.
-          setImmediate(computerUseSwitched)
-        }
         // The programs installed now, read at every call by the catalog, the gateway and the extension's own pages (#6635):
         // the very descriptors sessions get, and those of extensions that may not give tools too — every reader asks
         // agentToolsRefusal first. A broken skill was already reported when the session opened; only programs here.
@@ -6472,8 +6325,7 @@ app.whenReady().then(async () => {
           // skills — now or never, like a skill, so their scope is waited for too.
           const agentApps = agentAppsOf(contributions, installed)
           const appsKept = await Promise.all(agentApps.map((app) => inScope(app.extensionId)))
-          // Computer Use is this computer's, not a place's (#7317).
-          const apps = agentApps.filter((app, index) => app.computerUse || appsKept[index])
+          const apps = agentApps.filter((_, index) => appsKept[index])
           // 网关起不来只让扩展工具缺席,❌ 把会话拖死 —— 会话永远要能开。
           const gateway = programs.length === 0 || !authProvider
             ? { servers: [], origins: [] }

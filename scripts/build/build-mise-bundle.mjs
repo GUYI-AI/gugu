@@ -4,9 +4,18 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSy
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defaultMiseCacheDir, DEFAULT_MISE_DOWNLOAD_BASE, obtainMiseArchive } from './mise-archive-cache.mts'
-import { assertPeMachine } from './cua-driver-release.mts'
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
+
+/** The PE header's Machine field: x64 = 0x8664, arm64 = 0xAA64. */
+function assertPeMachine(file, arch) {
+  const want = { x64: 0x8664, arm64: 0xaa64 }[arch]
+  const buf = readFileSync(file)
+  const pe = buf.length >= 0x40 ? buf.readUInt32LE(0x3c) : -1
+  const ok = pe > 0 && buf.length >= pe + 6 && buf.toString('latin1', pe, pe + 4) === 'PE\0\0'
+  const machine = ok ? buf.readUInt16LE(pe + 4) : -1
+  if (machine !== want) throw new Error(`[mise] ${file} has PE Machine 0x${machine.toString(16)}, not ${arch} (0x${want.toString(16)})`)
+}
 const release = JSON.parse(readFileSync(join(root, 'apps/desktop/src/session/shared/core/agents/mise-release.json'), 'utf8'))
 const value = (flag, fallback) => process.argv.includes(flag) ? process.argv[process.argv.indexOf(flag) + 1] : fallback
 const platform = value('--platform', process.platform)

@@ -29,13 +29,9 @@ describe.skipIf(!electron)('browser UA during native-to-CDP navigation handoff',
       name: 'gugu-beta', productName: '咕咕 Beta', version: '0.2.58', main: 'main.cjs',
     }));
     // Only unrelated application services are stubbed. Electron, Chromium,
-    // the application bootstrap, pane transport and Playwright are real.
+    // the application bootstrap, page protocol and Playwright are real.
     const stubs: Record<string, string> = {
-      '@main/lib/events': 'export const events = { emit() {} }',
       '@main/lib/logger': 'export const log = { info() {}, warn() {}, error() {}, debug() {} }',
-      '@main/core/extensions/extension-agent-context': 'export async function agentSessionContext() { return null }',
-      '@main/core/sessions/session-orchestration': 'export async function openTaskBrowserPane() {}',
-      './browser-webcontents-registry': 'export const browserWebContentsRegistry = { setMouseDownObserver() {}, browsersOfSession() { return [] } }',
     };
     await build({
       entryPoints: [path.join(repo, 'apps/desktop/electron/session/main/core/browser/test-support/user-agent-race.ts')],

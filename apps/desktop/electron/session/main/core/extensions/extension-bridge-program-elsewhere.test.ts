@@ -111,17 +111,11 @@ describe('a page calls its program where its session is (owner 10-16)', () => {
     expect(elsewhere.callOnSessionMachine.mock.calls.map(([, sessionId]) => sessionId)).toEqual(['s-there', 's-here']);
   });
 
-  it('a program gugu hosts (Browser Use) runs here even for a page whose session is elsewhere — it drives this screen (161 10-17)', async () => {
+  it('an outdated version\'s program (a `host` gugu no longer has) follows its session like any other program', async () => {
     mcp.servers = [{ name: 'browser', host: 'browser-use' }];
-    expect(await call(THERE, 'callProgram', { name: 'open', arguments: { url: 'https://x.test' } })).toMatchObject({ ok: true, value: { content: [{ text: 'here' }] } });
-    expect(elsewhere.callOnSessionMachine).not.toHaveBeenCalled();
-    expect(programs.callFromPage).toHaveBeenCalledWith('spexcode', expect.objectContaining({ name: 'open', from: { sessionId: 's-there' } }));
-    // No such host on this computer: refused as the other machine would refuse it.
-    programs.callFromPage.mockRejectedValueOnce(new Error('Host capability is unavailable: browser-use'));
-    expect(await call(THERE, 'callProgram', { name: 'open' })).toMatchObject({ ok: false, code: 'invalid' });
-    // Any other failure of the hosted program here is that failure, not "it runs elsewhere" (追记 4).
-    programs.callFromPage.mockRejectedValueOnce(new Error('browserType.launch: Executable doesn\'t exist'));
-    expect(await call(HERE, 'callProgram', { name: 'open' })).toMatchObject({ ok: false, code: 'failed', message: expect.stringContaining('browserType.launch') });
+    expect(await call(THERE, 'callProgram', { name: 'open' })).toMatchObject({ ok: true, value: { content: [{ text: 'there' }] } });
+    expect(elsewhere.callOnSessionMachine).toHaveBeenCalledWith(expect.objectContaining({ extensionId: 'spexcode' }), 's-there', 'callProgram', { name: 'open' }, false);
+    expect(programs.callFromPage).not.toHaveBeenCalled();
   });
 
   it('a refusal there reaches the page with its code', async () => {

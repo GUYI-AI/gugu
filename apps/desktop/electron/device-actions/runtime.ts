@@ -21,20 +21,17 @@ import {
   type DeviceActionsConnectResult,
   type DeviceActionsState,
 } from '../../src/lib/deviceActionsIpc'
-import type { ActionFamily, FamilyDeps, Outcome, SelfApp } from './catalog'
-import { createComputerControl, type ComputerControl, type ComputerControlView } from './computer-control'
+import type { ActionFamily, FamilyDeps, Outcome } from './catalog'
 import { createAllFamilies } from './families'
-import { peekWindow } from './families/computer'
 import { createDeviceActionGrantsStore, defaultDeviceActionGrantsFile } from './grants-store'
 import { execFileAsync, runJxa } from './mac-scripts'
-import { createCuaClient, type CuaClient } from './native/cua-client'
 import { createMacHelperClient, type MacHelperClient } from './native/mac-helper-client'
 import { createDeviceActionsProvider } from './provider'
 
 type Log = { info(fields: Record<string, unknown>, msg: string): void; warn(fields: Record<string, unknown>, msg: string): void }
 
 /** 主进程注入的、只有 Electron 才有的能力。 */
-export type ElectronDeviceDeps = Pick<FamilyDeps, 'clipboardRead' | 'clipboardWrite' | 'clipboardReadImage' | 'notify' | 'openExternal' | 'trashItem' | 'captureScreen' | 'shrinkImage' | 'sampleImage' | 'perf'>
+export type ElectronDeviceDeps = Pick<FamilyDeps, 'clipboardRead' | 'clipboardWrite' | 'clipboardReadImage' | 'notify' | 'openExternal' | 'trashItem' | 'captureScreen' | 'shrinkImage' | 'perf'>
 
 export interface DeviceActionsRuntime {
   capability(): DeviceActionsCapability | null
@@ -49,17 +46,11 @@ export interface DeviceActionsRuntime {
    * 不经命令频道、不进「最近调用」(那是给人看 agent 动过什么的)。只给只读的动作用。
    */
   readLocal(action: string, args: Record<string, unknown>): Promise<Outcome>
-  /** #7317 一张窗口的只读画面,给「电脑」页签(见 families/computer 的 peekWindow)。 */
-  peekWindow(target: { pid: number; window_id: number }, options: { maxDimension: number; signal?: AbortSignal; viewer?: string; cursorSession?: string }): Promise<Outcome>
   registerIpc(ipcMain: IpcMain, getWindows: () => Array<{ isDestroyed(): boolean; webContents: { send(channel: string): void } }>): void
   /** 原生助手(只 Mac;没编进来时 null):资源监视器借它读进程 footprint,❌ 另起一个。 */
   macHelper(): MacHelperClient | null
-  /** 授权变了,或开关在 App 上的那一组随 App 开关了(之后要重新登记这台电脑的动作)。 */
+  /** 授权变了(之后要重新登记这台电脑的动作)。 */
   onGrantsChanged(listener: () => void): () => void
-  /** 那个 App 装上 / 卸掉 / 启用 / 停用了(`appSwitch`):重新登记、刷新设置页;关了就停掉它的原生程序。 */
-  switchChanged(): void
-  /** 电脑控制小条上的「停止」「让它继续」(没传 computerControlView 时为 null)。 */
-  computerControl: ComputerControl | null
   dispose(): void
 }
 
@@ -75,14 +66,12 @@ function groupTitle(id: string): string {
 }
 
 /**
- * 原生组件在哪:Mac 打包后在 Resources/mac-native、开发时在仓库根的 mac-native/<arch>(scripts/build/build-mac-native.mjs);
- * Windows 是 win-native(scripts/build/build-win-native.mjs)。别的平台没有。
+ * 原生组件在哪:Mac 打包后在 Resources/mac-native、开发时在仓库根的 mac-native/<arch>(scripts/build/build-mac-native.mjs)。
+ * 别的平台没有。
  */
 export function nativeComponentsDir(input: { platform?: NodeJS.Platform; isPackaged: boolean; resourcesPath: string; appPath: string }): string | null {
-  const platform = input.platform ?? process.platform
-  const dir = platform === 'darwin' ? 'mac-native' : platform === 'win32' ? 'win-native' : null
-  if (!dir) return null
-  return input.isPackaged ? path.join(input.resourcesPath, dir) : path.join(input.appPath, dir, process.arch)
+  if ((input.platform ?? process.platform) !== 'darwin') return null
+  return input.isPackaged ? path.join(input.resourcesPath, 'mac-native') : path.join(input.appPath, 'mac-native', process.arch)
 }
 
 export function createDeviceActionsRuntime(input: {
@@ -92,27 +81,9 @@ export function createDeviceActionsRuntime(input: {
   /** 原生组件目录(见 nativeComponentsDir);没有时为 null。 */
   nativeDir: string | null
   isPackaged: boolean
-  appVersion: string
   /** 咕咕 server(无界面,云电脑):不登记任何动作 —— 它不是谁的电脑,没有人能在它上面点「连接」。 */
   serverMode: boolean
   openSystemSettings(url: string): Promise<void>
-  /** 咕咕自己(电脑控制不许 agent 操作它)。 */
-  selfApp?(): SelfApp
-  /** 电脑控制的「正在操作 · 停止」小条(main 里的置顶小窗);没有就不显示、也就没有接管。 */
-  computerControlView?: (cua: () => CuaClient) => ComputerControlView
-  /** 告诉 cua-driver 宿主是谁(只是它日志里的一个标签)。 */
-  hostBundleId?: string
-  /**
-   * 开关在一个 App 上的那一组(#7317:电脑控制 ↔ Computer Use,behavior tab-extensions「Computer Use 是电脑控制的开关」):
-   * App 开着这一组就连上了;关着这台电脑就没有它。设置页不再列它(❌ 两个开关),由那个 App 的页面办系统授权。
-   */
-  appSwitch?: {
-    group: string
-    app: string
-    on(): boolean
-    /** That App is installed but runs as its own tools (API 36): agents reach it through the catalog, not this group. */
-    ownTools?(): boolean
-  }
   log: Log
   /** 测试注入。 */
   families?: ActionFamily[]
@@ -121,25 +92,12 @@ export function createDeviceActionsRuntime(input: {
   const store = createDeviceActionGrantsStore(defaultDeviceActionGrantsFile(input.userData))
   const missing = input.isPackaged
     ? '这台电脑上的咕咕缺原生组件（安装包不完整），请重新安装咕咕'
-    : `开发环境还没编原生组件:在仓库根运行 node scripts/build/${(input.platform ?? process.platform) === 'win32' ? 'build-win-native' : 'build-mac-native'}.mjs`
+    : '开发环境还没编原生组件:在仓库根运行 node scripts/build/build-mac-native.mjs'
   const platform = input.platform ?? process.platform
   let helper: MacHelperClient | null = null
-  let cua: CuaClient | null = null
-  const nativeBinary = (name: string) => (input.nativeDir ? path.join(input.nativeDir, name) : null)
-  const makeHelper = () => (helper ??= createMacHelperClient({ binary: nativeBinary('gugu-mac-helper'), missingMessage: missing, log: input.log }))
-  const makeCua = () => (cua ??= createCuaClient({
-    binary: nativeBinary(platform === 'win32' ? 'cua-driver.exe' : 'cua-driver'),
-    missingMessage: missing,
-    clientVersion: input.appVersion,
-    home: path.join(input.userData, 'cua-driver'),
-    platform,
-    sampleImage: input.deps.sampleImage,
-    ...(input.hostBundleId ? { hostBundleId: input.hostBundleId } : {}),
-    log: input.log,
+  const makeHelper = () => (helper ??= createMacHelperClient({
+    binary: input.nativeDir ? path.join(input.nativeDir, 'gugu-mac-helper') : null, missingMessage: missing, log: input.log,
   }))
-  const computerControl: ComputerControl | null = input.computerControlView
-    ? createComputerControl({ view: input.computerControlView(makeCua) })
-    : null
   const deps: FamilyDeps = {
     ...input.deps,
     platform,
@@ -149,23 +107,9 @@ export function createDeviceActionsRuntime(input: {
     jxa: runJxa,
     exec: execFileAsync,
     macHelper: makeHelper,
-    cua: makeCua,
-    ...(input.selfApp ? { selfApp: input.selfApp } : {}),
-    ...(computerControl ? { computerControl } : {}),
   }
-  const families = input.serverMode ? [] : (input.families ?? createAllFamilies(input.nativeDir))
-  const appSwitch = input.appSwitch ?? null
-  const offMessage = () => !appSwitch
-    ? ''
-    : appSwitch.ownTools?.()
-      ? `${appSwitch.app} on that computer runs as its own App tools, not as device actions. Find them with catalog_list (query "${appSwitch.app}") and call them with catalog_call.`
-      : `${appSwitch.app} is not installed or is switched off on this computer, so no agent can operate its apps. To use it, install and switch on ${appSwitch.app} in 咕咕 → Apps on that computer.`
-  const actions = createDeviceActionsProvider({
-    store, families, deps, groupTitle,
-    ...(appSwitch ? { managedBy: (group: string) => (group === appSwitch.group ? { on: appSwitch.on(), offMessage: offMessage() } : null) } : {}),
-  })
-  /** The App switch flipped: whoever re-registers this computer's actions, and the settings pages, hear it. */
-  const switchListeners = new Set<() => void>()
+  const families = input.serverMode ? [] : (input.families ?? createAllFamilies())
+  const actions = createDeviceActionsProvider({ store, families, deps, groupTitle })
 
   let localSink: ((payload: unknown) => void) | null = null
   const host: DeviceActionHost = createDeviceActionHost({
@@ -206,7 +150,7 @@ export function createDeviceActionsRuntime(input: {
     const view = (g: ReturnType<typeof actions.groups>[number]) => ({
       id: g.id,
       ...(g.section ? { section: g.section } : {}),
-      connected: g.id === appSwitch?.group ? appSwitch.on() : grants.groups[g.id] === true,
+      connected: grants.groups[g.id] === true,
       ...(grants.connectedAt[g.id] ? { connectedAt: grants.connectedAt[g.id] } : {}),
       blocked: actions.blocked(g.id),
       ...(g.settingsUrl ? { settingsUrl: g.settingsUrl } : {}),
@@ -222,14 +166,11 @@ export function createDeviceActionsRuntime(input: {
         ...(actions.unsupportedReason(a.name) ? { unsupported: actions.unsupportedReason(a.name)! } : {}),
       })),
     })
-    const switched = appSwitch ? actions.groups().find((g) => g.id === appSwitch.group) : undefined
     return {
       supported: actions.groups().length > 0,
       platform: deps.platform,
       denyAll: grants.denyAll,
-      // The group switched by an App is that App's page's to show: one switch, ❌ a second 「连接」 here.
-      groups: actions.groups().filter((g) => g !== switched).map(view),
-      ...(switched && appSwitch ? { managed: [{ ...view(switched), app: appSwitch.app }] } : {}),
+      groups: actions.groups().map(view),
       recent: store.recent().map((r) => ({
         callId: r.callId,
         action: r.action,
@@ -245,7 +186,6 @@ export function createDeviceActionsRuntime(input: {
   }
 
   return {
-    computerControl,
     capability: () => actions.capability(),
     rpcHandlers: () => ({
       // Remote requests never reach the provider, confirmation or action-result cache.
@@ -270,12 +210,6 @@ export function createDeviceActionsRuntime(input: {
       } finally {
         clearTimeout(timer)
       }
-    },
-    peekWindow(target, options) {
-      return peekWindow((action) => actions.provider.permit(action), makeCua(), target, options, {
-        ...(input.selfApp ? { self: input.selfApp } : {}),
-        ...(computerControl ? { stoppedFor: (pid: number) => computerControl.stoppedFor(pid) } : {}),
-      })
     },
     macHelper() {
       if (platform !== 'darwin') return null
@@ -333,38 +267,11 @@ export function createDeviceActionsRuntime(input: {
         }
       }
       store.onChange(changed)
-      switchListeners.add(changed)
     },
-    onGrantsChanged: (listener) => {
-      const off = store.onChange((kind) => { if (kind === 'grants') listener() })
-      switchListeners.add(listener)
-      return () => {
-        off()
-        switchListeners.delete(listener)
-      }
-    },
-    switchChanged() {
-      if (!appSwitch) return
-      const on = appSwitch.on()
-      input.log.info({ group: appSwitch.group, app: appSwitch.app, on }, 'device action group switched by its App')
-      // Off: nothing of it keeps running — cua-driver stops now, ❌ waits out its idle time.
-      if (!on) {
-        computerControl?.dispose()
-        cua?.stop(`${appSwitch.app} 停用了,电脑控制已关闭`)
-      }
-      for (const listener of [...switchListeners]) {
-        try {
-          listener()
-        } catch (error) {
-          input.log.warn({ err: String(error) }, 'device actions: a listener of the App switch failed')
-        }
-      }
-    },
+    onGrantsChanged: (listener) => store.onChange((kind) => { if (kind === 'grants') listener() }),
     dispose() {
       host.dispose()
       helper?.dispose()
-      computerControl?.dispose()
-      cua?.dispose()
     },
   }
 }

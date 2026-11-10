@@ -1050,13 +1050,8 @@ including startup), closes program IPC authority and stops its process tree. Oth
 Single-call cancellation does not stop other sessions sharing the program. Upgrades/settings drain already-running
 stdio calls; calls still starting may be interrupted.
 A program's real failures reach the agent in its tool result and the person on the App's page; installed does not mean running.
-Native host resources use \`contributes.mcpServers:[{"name":"browser-use","host":"browser-use"}]\`
-(API 5, desktop GUI). They use the same App permissions, Agent scope, catalog and disclosure as stdio
-programs; \`browser-use\` operates only the calling local session's browser tab; it is not available on Gugu server. Optional \`startUrl\` in
-\`settings\` supplies the initial URL when that session has no tab; an explicit navigation wins.
-\`"host":"computer-use"\` gives agents no tools: they control the computer with gugu's \`device_call\` (\`computer.*\`).
-It gives the App's own pages \`preview_state\`: the page's session's latest frame (a real screenshot) and its recent
-computer actions; \`notifications/computer-use/changed\` says there is a newer one.
+\`{"name","host"}\` programs (\`browser-use\`, \`computer-use\`) only mark outdated versions of gugu's own Apps: Gugu no longer
+hosts them, so such a version runs nothing and tells the person to update it from the App market. Write a stdio program instead.
 A tab with \`"widget": { "height": 240 }\` (API26; integer ${WIDGET_HEIGHT_MIN}–${WIDGET_HEIGHT_MAX}) can also be sent with \`widget_send\`: read \`guide_read widgets\`.
 Settings go in \`settings\`, which the host draws. If they need a page of their own, name its tab in \`contributes.settingsTab\` (API35): the App's settings page links to it.
 If the App has other tabs, a task's + and the command list do not offer this one as a page.
@@ -1071,8 +1066,7 @@ and binds its original input. Steps are real operations as the calling agent; sh
 while draft/display handoffs return in \`shown\` without touching the human composer. Deduplicate votes by
 \`ctx.operator.id\`, and label agent votes as such. See guide \`widgets\` for sizes, unavailable cards and continued pages.
 A tab with \`"perSession": true\` has one page in each session, never moved between them — two sessions side by side
-each show their own (not with \`opensFiles\` or \`"hostPage":"settings"\`). A computer-use App's per-session tabs come up beside a
-session's conversation at that session's first computer action, once.
+each show their own (not with \`opensFiles\` or \`"hostPage":"settings"\`).
 Use the existing \`agents:tools\` capability for programs/skills (see \`apps-programs\`).
 Tool Apps run and are configured on Gugu Desktop. Phone package installs refuse host pages explicitly.
 \`app_check\` drives custom HTML pages; open a host page with the \`tab_kind\` returned by \`app_install\`

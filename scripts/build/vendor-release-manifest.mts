@@ -2,7 +2,6 @@
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { CUA_DRIVER_MAC_REVISION, CUA_DRIVER_VERSION, cuaDriverArchiveInfo } from './cua-driver-release.mts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 const base = 'https://download.gugu.nextmind.space/'
@@ -17,12 +16,6 @@ export function vendorReleaseManifest() {
   const sha256 = /const expectedSha256 = '([a-f0-9]{64})'/.exec(psmux)?.[1]
   if (!version || !sha256) throw new Error('Cannot read the psmux pin')
   add('psmux', version, 'windows-x64', `psmux-${version}-windows-x64.zip`, sha256, null, 'psmux/psmux', version)
-  for (const platform of ['darwin-universal', 'win32-x64', 'win32-arm64']) {
-    const pin = cuaDriverArchiveInfo(platform)
-    const mac = platform === 'darwin-universal'
-    add('cua-driver', mac ? CUA_DRIVER_MAC_REVISION : CUA_DRIVER_VERSION, platform, pin.asset, pin.sha256, null, mac ? 'GUYI-AI/gugu' : 'trycua/cua', mac ? 'assets' : `cua-driver-rs-v${CUA_DRIVER_VERSION}`)
-    if (artifacts.at(-1)?.url !== pin.url) throw new Error('Cua consumer and vendor manifest disagree')
-  }
   const mobile = JSON.parse(readFileSync(resolve(root, 'apps/mobile/runtime/android-node.lock.json'), 'utf8'))
   for (const pkg of mobile.packages) {
     const file = `${pkg.sha256}.deb`

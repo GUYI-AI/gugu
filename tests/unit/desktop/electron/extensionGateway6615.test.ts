@@ -51,7 +51,6 @@ const visibleTo = new Map<string, Map<string, string>>()
 const memberOf = new Map<string, Set<string>>()
 const publicIds = new Map<string, string>()
 const programs: ExtensionPrograms = {
-  registerNative: () => undefined,
   agentToolsRefusal: () => refusal,
   tools: async (program) => {
     const failure = listFailures.get(program.server)

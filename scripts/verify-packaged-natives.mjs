@@ -159,7 +159,7 @@ async function probeAnchor(label, req) {
   const resourcesReal = fs.realpathSync(resourcesDir)
   for (const spec of [
     '@agentclientprotocol/claude-agent-acp/dist/index.js',
-    // #7191 浏览器工具:browser-agent-mcp.ts 运行时 require('@playwright/mcp'),再从它的位置 require('playwright-core')。
+    // server 上 App 的后台页:extension-background.ts 运行时 resolve('@playwright/mcp'),再从它的位置 require('playwright-core')。
     '@playwright/mcp',
   ]) {
     let resolved

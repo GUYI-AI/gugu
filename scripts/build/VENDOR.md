@@ -1,6 +1,6 @@
 # Pinned build archives
 
-The pinned build inventory contains 67 archives: psmux, Cua driver, the Android Node closure, mise, frp, Gradle, tmux, Electron, SQLite Node prebuilds, current electron-builder tools and Node toolchains. They use immutable versioned objects below `https://download.gugu.nextmind.space/releases/vendor/`. Dependency versions and existing pins remain unchanged. A failed download or hash check does not fall back to an upstream archive.
+The pinned build inventory contains 64 archives: psmux, the Android Node closure, mise, frp, Gradle, tmux, Electron, SQLite Node prebuilds, current electron-builder tools and Node toolchains. They use immutable versioned objects below `https://download.gugu.nextmind.space/releases/vendor/`. Dependency versions and existing pins remain unchanged. A failed download or hash check does not fall back to an upstream archive.
 
 After changing a pin, regenerate the data-only mirror inventory:
 

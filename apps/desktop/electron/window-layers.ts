@@ -2,19 +2,18 @@ import { WebContentsView, type BrowserWindow, type BrowserWindowConstructorOptio
 import { hardenWebPreferences } from './devtools-lock'
 
 /**
- * #77 浮在网页之上的那几块(agent 的鼠标、快捷消息、构建角标)是咕咕窗口里叠在最上面的几层 view,❌ 另开子窗。
+ * #77 浮在网页之上的那几块(构建角标)是咕咕窗口里叠在最上面的几层 view,❌ 另开子窗。
  *
  * 子窗要露出来只有 show / showInactive,macOS 上那会把咕咕连同子窗提到别的 App 前面(electron#49393;mac1 实测:
  * 别的 App 的窗盖着咕咕时,showInactive 一扇子窗,咕咕就跑到它上面)。不那样露、只 moveAbove 摆上去,又挂不上原生父子关系,
  * 窗口一被点到前面子窗就沉到下面(#77)。窗口里的层和窗口是一体的:窗口看得见它就看得见(分屏也一样),不多一扇窗、
  * 不动窗口的层级、露出来不拿焦点(mac1 实测)。
  *
- * 代价是点不穿:层盖着的那块,人的点击落在层上。所以快捷消息、角标的层只有它们自己那么大;铺满网页的那层(agent 的鼠标)
- * 只在 agent 操作时露出。层只接点击、不留键盘焦点:被点到时焦点当场交回窗口界面(或用它的人指定的那份内容)——
+ * 代价是点不穿:层盖着的那块,人的点击落在层上。所以角标的层只有它自己那么大。层只接点击、不留键盘焦点:被点到时焦点当场交回窗口界面(或用它的人指定的那份内容)——
  * 层是另一份内容,界面的按键处理收不到它里面的按键,留在层里就成了打字没反应、快捷键失灵。
  *
  * 层是界面开出来、界面画的:界面整页重载、渲染进程没了、窗口关了,这扇窗的层一并关掉 —— ❌ 留着上一页画的东西
- * (铺满网页的那层还会一直挡着点击)。
+ * (还会一直挡着点击)。
  *
  * 界面照旧 `window.open('about:blank', 名字)` 开一份同源空白页、直接画进去(同一个渲染进程,createPortal);
  * 主进程在 setWindowOpenHandler 的 createWindow 里把这份内容装进一层。网页 view 后挂上去会压在层上 ⇒ 挂网页的地方
@@ -29,7 +28,7 @@ import { hardenWebPreferences } from './devtools-lock'
 export type WindowLayerContent = { webContents: WebContents; webPreferences?: WebPreferences }
 
 /** 层之间谁在上:数大的在上。 */
-export const WINDOW_LAYER_RANK = { agentCursor: 0, agentBadge: 1, buildTag: 2 } as const
+export const WINDOW_LAYER_RANK = { buildTag: 0 } as const
 
 type Layer = { view: WebContentsView; rank: number }
 

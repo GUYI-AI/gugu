@@ -150,7 +150,10 @@ export const mcpServerContributionSchema = z.union([
     }),
     env: mcpServerEnv,
   }),
-  /** Native resources stay in the host; the App owns their install, consent and agent scope. */
+  /**
+   * Outdated versions of gugu's own Browser Use and Computer Use Apps: a program gugu once hosted itself. Kept so such an
+   * installed manifest still parses; its program runs nothing and says the App needs an update (extension-programs).
+   */
   z.strictObject({ name: mcpServerName, host: z.enum(['browser-use', 'computer-use']) }),
   // L11 R9: two strict shapes fail as one "Invalid input" — say both, and why a tools module has no name.
 ], { error: 'a program is {"tools":"tools.js"} (no name: it is the App\'s) or {"name","command","args"?}' });
@@ -814,7 +817,7 @@ export function programName(server: { name: string } | { tools: string }, appId:
   return 'tools' in server ? appId : server.name;
 }
 
-/** A host program as the install sheet names it: gugu's own capability, not a command. */
+/** An outdated version's host program as the install sheet names it: not a command. */
 export function hostProgramLine(host: 'browser-use' | 'computer-use'): string {
   return host === 'browser-use' ? 'Gugu Browser Use' : 'Gugu Computer Use';
 }

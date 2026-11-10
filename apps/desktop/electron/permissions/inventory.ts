@@ -28,13 +28,11 @@ export const CORE_TOOL_RISKS: Readonly<Record<string, ToolRisk>> = {
 
 export const DEVICE_ACTION_RISKS: Readonly<Record<string, ToolRisk>> = {
   ...entries('read', 'medium', `battery.get calendar.calendars.get calendar.events.get calendar.events.list calendar.list
-    calendar.sources.list calendar.status clipboard.read computer.get_accessibility_tree computer.get_cursor_position
-    computer.get_desktop_state computer.get_screen_size computer.get_window_state computer.list_apps computer.list_windows
-    computer.verify_state computer.zoom contacts.get contacts.list contacts.me fs.find fs.grep fs.list fs.ocr fs.read fs.stat
+    calendar.sources.list calendar.status clipboard.read contacts.get contacts.list contacts.me fs.find fs.grep fs.list fs.ocr fs.read fs.stat
     fs.volumes.list imessage.chats.list imessage.conversation.get imessage.search imessage.unread location.get
     mail.accounts.list mail.mailboxes.list mail.messages.find mail.messages.get mail.messages.contentPreview.get mail.messages.list
     notes.folders.list notes.get notes.list perf.capture perf.history perf.snapshot reminders.get reminders.list reminders.lists.get reminders.sources.list
-    reminders.status screen.elements.find screen.get sdef.get shortcuts.list system.apps.list system.get system.shell.get
+    reminders.status screen.get sdef.get shortcuts.list system.apps.list system.get system.shell.get
     system.user.get system.users.list`),
   ...entries('write', 'medium', `calendar.calendars.create calendar.calendars.delete calendar.calendars.update
     calendar.events.create calendar.events.delete calendar.events.update clipboard.write contacts.delete contacts.update
@@ -45,7 +43,5 @@ export const DEVICE_ACTION_RISKS: Readonly<Record<string, ToolRisk>> = {
   ...entries('send', 'medium', 'calendar.events.export contacts.export location.geocode'),
   ...entries('owner', 'high', 'imessage.send imessage.send_file mail.forward mail.reply mail.send'),
   ...entries('social', 'high', 'contacts.create'),
-  ...entries('execute', 'high', `script.jxa script.shell shortcuts.run computer.bring_to_front computer.click computer.double_click
-    computer.drag computer.hotkey computer.invoke_menu computer.kill_app computer.launch_app computer.move_cursor
-    computer.press_key computer.right_click computer.run_steps computer.scroll computer.set_value computer.set_window_frame computer.type_text`),
+  ...entries('execute', 'high', 'script.jxa script.shell shortcuts.run'),
 }

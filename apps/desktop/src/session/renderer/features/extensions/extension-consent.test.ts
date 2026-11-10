@@ -139,18 +139,6 @@ describe('agents:tools: the plain sentence, then what runs word for word', () =>
     expect(prompt.description).not.toContain('board-mcp');
   });
 
-  it('#7317 Computer Use says what it is: a view of gugu\'s computer control, giving agents nothing — on the computer it installs on', () => {
-    const where = ((key: string, params?: Record<string, string>) => `${key}[${params?.computer ?? ''}]`) as unknown as SessionTranslate;
-    const view = board({ mcpServers: [{ name: 'computer-use', host: 'computer-use' }] });
-    expect(describeCapability('agents:tools', view, where)).toBe('extensions.permissionsComputerUseView[extensions.permissionsThisComputer[]]');
-    expect(describeCapability('agents:tools', view, where, 'mac1')).toBe('extensions.permissionsComputerUseView[extensions.permissionsOnMachine[]]');
-    // Control: an App with a program of its own beside it still says that its program runs.
-    expect(describeCapability('agents:tools', board({ mcpServers: [{ name: 'computer-use', host: 'computer-use' }, ...programs] }), said))
-      .toBe('extensions.permissionsAgentsTools()');
-    // Both languages say it.
-    expect([enUSMessages['extensions.permissionsComputerUseView'], zhCNMessages['extensions.permissionsComputerUseView']].every((text) => text.includes('{computer}'))).toBe(true);
-  });
-
   it('skills ride along in the sentence; skills alone run nothing and have no details', () => {
     expect(describeCapability('agents:tools', board({ mcpServers: programs, skills: 'skills' }), said))
       .toBe('extensions.permissionsAgentsTools(extensions.permissionsAgentsToolsSkills)');

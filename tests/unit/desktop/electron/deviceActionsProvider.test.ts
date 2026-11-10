@@ -39,7 +39,6 @@ function deps(over: Partial<FamilyDeps> = {}): FamilyDeps {
     jxa: vi.fn(async () => ({})),
     exec: vi.fn(async () => ({ stdout: '', stderr: '', code: 0 })),
     macHelper: () => ({ available: () => ({ ok: true as const }), call: vi.fn(async () => ({})) as never, dispose: () => undefined }),
-    cua: () => ({ available: () => ({ ok: true as const }), callTool: vi.fn(async () => ({ content: [] })), stop: () => undefined, dispose: () => undefined }),
     ...over,
   }
 }

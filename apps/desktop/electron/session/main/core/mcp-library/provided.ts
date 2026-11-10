@@ -39,14 +39,14 @@ export async function libraryMcpProvided(): Promise<LibraryMcpProvided> {
   for (const program of extensionPrograms.installed()) {
     const refusal = extensionPrograms.agentToolsRefusal(program.extensionId);
     const { manifest } = extensions.get(program.extensionId);
-    // 命令照 App 清单里写的(`node launch.mjs`、工具模块 `tools.js`;原生能力没有命令),
+    // 命令照 App 清单里写的(`node launch.mjs`、工具模块 `tools.js`;过时版本的宿主程序没有命令),
     // ❌ 咕咕解析后的那一串(本机的 Electron 路径、快照目录)。
     const declared = (manifest.contributes.mcpServers ?? []).find((entry) => programName(entry, program.extensionId) === program.server);
     servers.push({
       key: `app:${program.extensionId}/${program.server}`,
       group: 'apps',
       name: extensionServerName(program.extensionId, program.server),
-      ...(program.native ? {} : { transport: 'stdio' as const }),
+      ...(program.outdated ? {} : { transport: 'stdio' as const }),
       ...(declared && 'command' in declared ? { command: declared.command, ...(declared.args?.length ? { args: declared.args } : {}) } : {}),
       ...(declared && 'tools' in declared ? { command: declared.tools } : {}),
       from: [localizedManifestText(manifest, locale).name],

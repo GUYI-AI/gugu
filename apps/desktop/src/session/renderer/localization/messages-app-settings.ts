@@ -7,11 +7,6 @@ export const enUSAppSettingsMessages = {
   'appSettings.saved': 'Saved. New calls use these settings.',
   'appSettings.readFailed': 'Could not read this App.',
   'appSettings.saveFailed': 'Could not save these settings.',
-  'appSettings.computerAccess.title': 'System permissions',
-  'appSettings.computerAccess.needs': 'For agents to operate apps on this Mac, macOS has to allow 咕咕 Accessibility and Screen Recording.',
-  'appSettings.computerAccess.allow': 'Allow',
-  'appSettings.computerAccess.granted': 'Allowed. Agents can now operate apps on this computer.',
-  'appSettings.computerAccess.restart': 'Restart 咕咕',
 } as const;
 
 export const zhCNAppSettingsMessages: Record<keyof typeof enUSAppSettingsMessages, string> = {
@@ -23,9 +18,4 @@ export const zhCNAppSettingsMessages: Record<keyof typeof enUSAppSettingsMessage
   'appSettings.saved': '已保存，之后的调用使用新设置。',
   'appSettings.readFailed': '读不到这个 App。',
   'appSettings.saveFailed': '设置没能保存。',
-  'appSettings.computerAccess.title': '系统授权',
-  'appSettings.computerAccess.needs': 'agent 要操作这台 Mac 上的 App，系统得允许咕咕使用「辅助功能」和「屏幕录制」。',
-  'appSettings.computerAccess.allow': '授权',
-  'appSettings.computerAccess.granted': '已授权，agent 现在可以操作这台电脑上的 App。',
-  'appSettings.computerAccess.restart': '重启咕咕',
 };

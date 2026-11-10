@@ -15,45 +15,6 @@
       "url": "https://download.gugu.nextmind.space/releases/vendor/psmux/v3.3.5/psmux-v3.3.5-windows-x64.zip"
     },
     {
-      "component": "cua-driver",
-      "version": "0.36.0-gugu.1",
-      "platform": "darwin-universal",
-      "file": "cua-driver-rs-0.36.0-gugu.1-darwin-universal-binary.tar.gz",
-      "sha256": "3a9e5ddfc3078bdc09ab1eb708d8bc49964a306b31f0251689fda8da69fae9c6",
-      "size": null,
-      "repository": "GUYI-AI/gugu",
-      "tag": "assets",
-      "asset": "cua-driver-rs-0.36.0-gugu.1-darwin-universal-binary.tar.gz",
-      "key": "releases/vendor/cua-driver/0.36.0-gugu.1/cua-driver-rs-0.36.0-gugu.1-darwin-universal-binary.tar.gz",
-      "url": "https://download.gugu.nextmind.space/releases/vendor/cua-driver/0.36.0-gugu.1/cua-driver-rs-0.36.0-gugu.1-darwin-universal-binary.tar.gz"
-    },
-    {
-      "component": "cua-driver",
-      "version": "0.36.0",
-      "platform": "win32-x64",
-      "file": "cua-driver-rs-0.36.0-windows-x86_64-binary.zip",
-      "sha256": "f8c47024b626f4e0e70f8428d2998df39e4879110c5722a29d5fd03e367353ad",
-      "size": null,
-      "repository": "trycua/cua",
-      "tag": "cua-driver-rs-v0.36.0",
-      "asset": "cua-driver-rs-0.36.0-windows-x86_64-binary.zip",
-      "key": "releases/vendor/cua-driver/0.36.0/cua-driver-rs-0.36.0-windows-x86_64-binary.zip",
-      "url": "https://download.gugu.nextmind.space/releases/vendor/cua-driver/0.36.0/cua-driver-rs-0.36.0-windows-x86_64-binary.zip"
-    },
-    {
-      "component": "cua-driver",
-      "version": "0.36.0",
-      "platform": "win32-arm64",
-      "file": "cua-driver-rs-0.36.0-windows-arm64-binary.zip",
-      "sha256": "520ea584cf11c074bccc4fd2328e8f2b34ec43de9328d97afb7fd03f761b55ee",
-      "size": null,
-      "repository": "trycua/cua",
-      "tag": "cua-driver-rs-v0.36.0",
-      "asset": "cua-driver-rs-0.36.0-windows-arm64-binary.zip",
-      "key": "releases/vendor/cua-driver/0.36.0/cua-driver-rs-0.36.0-windows-arm64-binary.zip",
-      "url": "https://download.gugu.nextmind.space/releases/vendor/cua-driver/0.36.0/cua-driver-rs-0.36.0-windows-arm64-binary.zip"
-    },
-    {
       "component": "termux",
       "version": "nodejs-lts/24.18.0-2",
       "platform": "arm64-v8a",

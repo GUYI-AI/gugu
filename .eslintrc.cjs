@@ -78,9 +78,6 @@ module.exports = {
     'storybook-static',
     'storybook-static-chat',
     '.eslintrc.cjs',
-    // #7191 agent 鼠标的轨迹与画法:trycua/cua 的 @trycua/cursor-motion(MIT,不发 npm,官方用法就是拷 src/),原样拷进来;
-    // 上游改了重拷一遍,所以不按咕咕的规矩改它。出处与版本见该目录 README.md。
-    'apps/desktop/src/session/renderer/lib/vendor/cua-cursor-motion/**',
   ],
   parser: '@typescript-eslint/parser',
   plugins: ['react-refresh'],

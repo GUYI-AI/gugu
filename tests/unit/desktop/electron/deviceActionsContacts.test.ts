@@ -45,7 +45,6 @@ function setup(call: Call = async () => ({ ok: 1 }), available = true) {
       call: helperCall as never,
       dispose: () => undefined,
     }),
-    cua: () => ({ available: () => ({ ok: true as const }), callTool: vi.fn(async () => ({ content: [] })), stop: () => undefined, dispose: () => undefined }),
   }
   const store = createDeviceActionGrantsStore(path.join(dir, `grants-${++stores}.json`))
   const p = createDeviceActionsProvider({ store, families: [createContactsFamily()], deps })

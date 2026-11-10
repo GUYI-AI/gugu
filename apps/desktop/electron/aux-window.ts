@@ -1,5 +1,5 @@
 import { BrowserWindow, shell, type BrowserWindowConstructorOptions } from 'electron'
-import { BUILD_TAG_WINDOW_NAME, isAgentOverlayWindowRequest, isAuxWindowRequest, isBuildTagWindowName } from '@shared/aux-window'
+import { BUILD_TAG_WINDOW_NAME, isAuxWindowRequest, isBuildTagWindowName } from '@shared/aux-window'
 import { TRAFFIC_LIGHT_POSITION } from '@shared/window-chrome-native'
 import { hardenWebPreferences } from './devtools-lock'
 import { openBuildTagLayer } from './build-tag-window'
@@ -82,8 +82,6 @@ export function attachAuxWindows(main: BrowserWindow, backgroundColor: () => str
       const own = ownWindows.find((entry) => entry.name === frameName)
       return { action: 'allow', overrideBrowserWindowOptions: own ? own.options(backgroundColor()) : auxWindowOptions(backgroundColor()) }
     }
-    // agent 浮层由会话页主进程那边接;它还没加载时 ❌ 把 about:blank 交给系统浏览器。
-    if (isAgentOverlayWindowRequest(url, frameName)) return { action: 'deny' }
     void shell.openExternal(url)
     return { action: 'deny' }
   })
@@ -107,11 +105,10 @@ export function attachAuxWindows(main: BrowserWindow, backgroundColor: () => str
     // 「File Edit View Window」(2026-10-10 win-dev 实拍)。这扇窗不要菜单(Electron 文档:win.removeMenu 去掉单扇窗的菜单);
     // 顺带去掉它的快捷键 —— 「重新加载」会把这扇窗换成空白页,画在里面的那块跟着没了。
     if (process.platform !== 'darwin') child.removeMenu()
-    // 子窗里点到的外链同主窗:交给系统浏览器。挪进这扇窗的浏览器页签,agent 的鼠标 / 小条是这扇窗里的层。
+    // 子窗里点到的外链同主窗:交给系统浏览器。
     child.webContents.setWindowOpenHandler(({ url, frameName }) => {
       const layer = windowLayerResponse(child, url, frameName)
       if (layer) return layer
-      if (isAgentOverlayWindowRequest(url, frameName)) return { action: 'deny' }
       void shell.openExternal(url)
       return { action: 'deny' }
     })

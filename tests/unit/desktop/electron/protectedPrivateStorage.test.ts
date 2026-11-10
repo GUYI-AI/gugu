@@ -41,7 +41,7 @@ beforeEach(async () => {
     openExternal: async () => undefined,
     trashItem: vi.fn(async () => { throw new Error('must not trash protected material') }),
     jxa: vi.fn(), macHelper: () => ({ available: () => ({ ok: true }), call: vi.fn(), dispose: () => undefined }),
-    cua: vi.fn(), exec: async (file: string, args: readonly string[]) => {
+    exec: async (file: string, args: readonly string[]) => {
       const result = await execFileAsync(file, args, { timeoutMs: 10_000 })
       outputs.push(result.stdout)
       return result

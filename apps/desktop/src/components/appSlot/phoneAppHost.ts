@@ -74,7 +74,6 @@ import { callOnComputer } from './phoneProgramCall'
 import { isImplicitSessionHomeProjectId } from '../../session/shared/core/projects/session-home-project'
 import { openPhoneWorkingCopyFile, type ReadWorkingCopyChunk } from './phone-working-copy-file'
 import { appDeviceId, folderElsewhereRefusal, followsSessionMachine, notOnSessionMachine } from '../../session/shared/extensions/machine-call'
-import { HOSTED_PROGRAM_ELSEWHERE } from '../../session/shared/extensions/program-place'
 import { rendererFileServiceUrl } from '../../lib/chatFolder'
 import { AppModalSessions, type AppModalFocus } from '../../session/shared/extensions/app-modal'
 import { closeAppModal, focusAppModalClose, showAppModal } from '../appModal/appModal'
@@ -533,12 +532,12 @@ export function hostAppFrame(
       const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
       if (!manifest) refused('not-installed', `${hosted.binding.extensionId} is not installed on this phone`)
       if (args.device !== undefined) {
-        const invalid = notOnSessionMachine(manifest, method, args)
+        const invalid = notOnSessionMachine(method, args)
         if (invalid) throw invalid
         const { device, ...callArgs } = args
         return callOnComputer({ extensionId: manifest.id, extensionName: manifest.name, version: manifest.version }, { deviceId: appDeviceId(device), deviceLabel: null }, method, callArgs).then(computerReply)
       }
-      if (session && followsSessionMachine(manifest, method, args)) {
+      if (session && followsSessionMachine(method, args)) {
         return callOnComputer({ extensionId: manifest.id, extensionName: manifest.name, version: manifest.version }, session, method, args).then(computerReply)
       }
     }
@@ -862,8 +861,7 @@ export function hostAppFrame(
       // The App's own data folder and program: in a session they are its computer's (owner 10-16「程序跟着数据」), done
       // THERE; in a chat the data folder is the phone's own, and a phone runs no program.
       case 'callProgram':
-        // In a session only a program gugu hosts gets here: it drives the screen the page is on, and a phone hosts none (161 10-17).
-        return refused('invalid', session ? HOSTED_PROGRAM_ELSEWHERE : 'Not available on the phone: callProgram (a phone runs no program; a page in a session calls its computer\'s)')
+        return refused('invalid', 'Not available on the phone: callProgram (a phone runs no program; a page in a session calls its computer\'s)')
       case 'readData':
         return phoneApps.data.read(hosted.binding.extensionId, typeof args.path === 'string' ? args.path : '')
       case 'listData':

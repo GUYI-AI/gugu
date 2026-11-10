@@ -138,18 +138,14 @@ vi.mock('./extension-icon', () => ({
 }));
 
 import { extensionsController } from './controller';
-import { extensionSurfaceBindingForTests, onInstalledAppsChanged, registerExtensionBridge } from './extension-bridge';
+import { extensionSurfaceBindingForTests, registerExtensionBridge } from './extension-bridge';
 import { EXTENSION_BRIDGE_CHANNEL } from '@shared/extensions/bridge-protocol';
 import { packExtensionArchive } from './extension-archive';
 import { extensionsService } from './extensions-root';
-import { forgetAccountGrants } from './app-given';
-import { clearExtensionSessionData, clearExtensionStorage } from './extension-session';
+import { clearExtensionStorage } from './extension-session';
 import { EXTENSION_DATA_DIR_NAME } from './extension-data';
 import { cloudExtensionMarket } from './market-catalog-root';
 import { extensionPrograms, onExtensionProgramNotification, stopAllExtensionPrograms, type ExtensionProgram } from './extension-programs';
-import { installedComputerUseApps } from '../../../../computer-use-program';
-import { syncDeviceHeartbeat } from '@gugu/core/cloud/deviceRuntime';
-import { MemoryHeartbeatClient } from '../../../../../../../tests/support/deviceRuntimeHarness';
 
 const EXTENSION_ID = 'demo-ext';
 
@@ -241,90 +237,6 @@ describe('extensions controller', () => {
     }
   });
 
-  it('an uninstall still clears state and publishes inventory when native retirement rejects', async () => {
-    await installViaController([]);
-    const identity = { publisher: 'gugu', id: EXTENSION_ID };
-    const identityOf = vi.spyOn(extensionsService(), 'identityOf').mockReturnValue(identity);
-    vi.mocked(clearExtensionSessionData).mockClear();
-    vi.mocked(forgetAccountGrants).mockClear();
-    emitted.length = 0;
-    extensionPrograms.registerNative('computer-use', {
-      tools: async () => [], call: async () => ({ content: [] }), status: () => ({ running: 0 }),
-      retire: async () => { throw new Error('native cleanup failed'); },
-    });
-    try {
-      expect(await extensionsController.uninstall({ extensionId: EXTENSION_ID, lastAnywhere: true })).toEqual({ success: true });
-      expect(clearExtensionSessionData).toHaveBeenCalledWith(EXTENSION_ID);
-      expect(forgetAccountGrants).toHaveBeenCalledWith(identity);
-      expect(emitted).toContainEqual({ name: extensionsInventoryChangedChannel.name, data: { extensionId: EXTENSION_ID } });
-    } finally {
-      identityOf.mockRestore();
-      extensionPrograms.registerNative('computer-use', {
-        tools: async () => [], call: async () => ({ content: [] }), status: () => ({ running: 0 }), retire: async () => {},
-      });
-    }
-  });
-
-  it('uninstall waits for native cleanup before deleting App storage', async () => {
-    await installViaController([]);
-    const cleanup = Promise.withResolvers<void>();
-    const entered = Promise.withResolvers<void>();
-    extensionPrograms.registerNative('computer-use', {
-      tools: async () => [], call: async () => ({ content: [] }), status: () => ({ running: 0 }),
-      retire: async () => { entered.resolve(); await cleanup.promise; },
-    });
-    vi.mocked(clearExtensionSessionData).mockClear();
-    let outcome = 'pending';
-    const uninstalled = extensionsController.uninstall({ extensionId: EXTENSION_ID }).then(result => { outcome = 'answered'; return result; });
-    try {
-      await entered.promise;
-      await new Promise(resolve => setImmediate(resolve));
-      expect(outcome).toBe('pending');
-      expect(clearExtensionSessionData).not.toHaveBeenCalled();
-      cleanup.resolve();
-      expect(await uninstalled).toEqual({ success: true });
-      expect(clearExtensionSessionData).toHaveBeenCalledWith(EXTENSION_ID);
-    } finally {
-      cleanup.resolve();
-      await uninstalled;
-      extensionPrograms.registerNative('computer-use', {
-        tools: async () => [], call: async () => ({ content: [] }), status: () => ({ running: 0 }), retire: async () => {},
-      });
-    }
-  });
-
-  it('a quick reinstall retains its grants and storage when old native cleanup finishes', async () => {
-    await installViaController([]);
-    const identityOf = vi.spyOn(extensionsService(), 'identityOf').mockReturnValue({ publisher: 'gugu', id: EXTENSION_ID });
-    const cleanup = Promise.withResolvers<void>();
-    const entered = Promise.withResolvers<void>();
-    let retiring = false;
-    extensionPrograms.registerNative('computer-use', {
-      tools: async () => [], call: async () => ({ content: [] }), status: () => ({ running: 0 }),
-      retire: async () => { if (retiring) return; retiring = true; entered.resolve(); await cleanup.promise; },
-    });
-    vi.mocked(clearExtensionSessionData).mockClear();
-    vi.mocked(forgetAccountGrants).mockClear();
-    const uninstalled = extensionsController.uninstall({ extensionId: EXTENSION_ID, lastAnywhere: true });
-    try {
-      await entered.promise;
-      await installViaController([]);
-      vi.mocked(clearExtensionSessionData).mockClear();
-      cleanup.resolve();
-      expect(await uninstalled).toEqual({ success: true });
-      expect(extensionsService().isInstalled(EXTENSION_ID)).toBe(true);
-      expect(forgetAccountGrants).not.toHaveBeenCalled();
-      expect(clearExtensionSessionData).not.toHaveBeenCalled();
-    } finally {
-      cleanup.resolve();
-      await uninstalled;
-      identityOf.mockRestore();
-      extensionPrograms.registerNative('computer-use', {
-        tools: async () => [], call: async () => ({ content: [] }), status: () => ({ running: 0 }), retire: async () => {},
-      });
-    }
-  });
-
   it.each(['disable', 'permission', 'uninstall'] as const)('%s interrupts an already running App program', async (action) => {
     const root = mkdtempSync(join(tmpdir(), 'gugu-app-revoke-'));
     const release = join(root, 'release');
@@ -405,72 +317,6 @@ process.stdin.on('end', () => process.exit(0));
       failing.mockRestore();
     }
     expect((await extensionsController.list()).data?.variants?.[EXTENSION_ID]).toEqual({ active: 'upstream', variants: [] });
-  });
-
-  it('publishes current Computer Use capability after App changes without rescanning between heartbeats', async () => {
-    const service = extensionsService();
-    const installed = vi.fn(() => service.list().extensions.flatMap(({ manifest }) =>
-      (manifest.contributes.mcpServers ?? []).flatMap((server) => 'host' in server ? [{
-        extensionId: manifest.id, server: server.name, native: server.host,
-      } as ExtensionProgram] : [])));
-    let off: (() => void) | undefined;
-    const apps = installedComputerUseApps({ installed, agentToolsRefusal: extensionPrograms.agentToolsRefusal }, (listener) => {
-      off = onInstalledAppsChanged(listener);
-    });
-    const clock = vi.spyOn(Date, 'now');
-    const client = new MemoryHeartbeatClient();
-    let beatNumber = 0;
-    const heartbeat = () => {
-      clock.mockReturnValue(++beatNumber * 30_000);
-      return syncDeviceHeartbeat(client, {
-        userId: 'owner', deviceId: 'device', capabilities: { terminals: [], runtimes: [] },
-        deviceActions: () => ({ v: 1, actions: [], ...(apps().length ? {} : { switched_off: [{ group: 'computer', detail: 'Computer Use is off' }] }) }),
-      }, {});
-    };
-    const beat = async (on: boolean) => {
-      await heartbeat();
-      expect((client.upserts.at(-1)?.row.capabilities as { actions: { switched_off?: unknown } }).actions.switched_off === undefined).toBe(on);
-      const reads = installed.mock.calls.length;
-      apps(); // The preview reads the same list as the heartbeat.
-      await heartbeat();
-      expect(installed).toHaveBeenCalledTimes(reads);
-    };
-    const install = async (host: 'computer-use' | 'browser-use') => {
-      const source = writeBundle([], undefined, ['agents:tools']);
-      const file = join(source, 'manifest.json');
-      const manifest = JSON.parse(readFileSync(file, 'utf8'));
-      manifest.contributes.mcpServers = [{ name: 'control', host }]; manifest.contributes.instructions = 'Test tools.';
-      writeFileSync(file, JSON.stringify(manifest));
-      const inspected = await folderAsk(source);
-      const result = await folderGiven(source, inspected.ask.manifestDigest);
-      expect(result.success, result.error).toBe(true);
-    };
-    try {
-      await beat(false);
-      await install('computer-use');
-      await beat(true);
-      await extensionsController.setEnabled({ extensionId: EXTENSION_ID, enabled: false });
-      await beat(false);
-      await extensionsController.setEnabled({ extensionId: EXTENSION_ID, enabled: true });
-      await beat(true);
-      await install('browser-use'); // Replacing the same id can remove its native capability.
-      await beat(false);
-      await install('computer-use');
-      await beat(true);
-      for (const granted of [false, true]) {
-        await extensionsController.setPermissionGranted({ extensionId: EXTENSION_ID, permission: 'agents:tools', granted });
-        await beat(granted);
-      }
-      const reads = installed.mock.calls.length;
-      await extensionsController.setSettings({ extensionId: EXTENSION_ID, settings: {} });
-      await beat(true);
-      expect(installed.mock.calls.length).toBeGreaterThan(reads);
-      await extensionsController.uninstall({ extensionId: EXTENSION_ID });
-      await beat(false);
-    } finally {
-      off?.();
-      clock.mockRestore();
-    }
   });
 
   it('refuses a folder with no platform declaration or only a phone interface before asking for consent', async () => {

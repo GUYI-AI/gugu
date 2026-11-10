@@ -80,7 +80,7 @@ export async function callOnSessionMachine(
   const machine = typeof sessionId === 'string' ? await sessionMachine(sessionId)
     : await otherMachines().isThisDevice(sessionId.deviceId) ? null : sessionId;
   if (!machine) return { there: false };
-  const invalid = notOnSessionMachine(app.manifest, method, args);
+  const invalid = notOnSessionMachine(method, args);
   if (invalid) throw invalid;
   const fileCall = verbFacts(method)?.machine === 'place';
   if (workedByAgent && method === 'callProgram') {
@@ -197,7 +197,7 @@ function admitAppCall(caller: RemoteAppCaller, action: AppCallAction, service: R
   } catch {
     throw Object.assign(new Error(`${caller.extensionName} is not installed on this machine`), { code: 'not-installed' });
   }
-  const elsewhere = notOnSessionMachine(manifest, action.method, action.args);
+  const elsewhere = notOnSessionMachine(action.method, action.args);
   if (elsewhere) throw elsewhere;
   if (manifest.version !== action.version) {
     throw Object.assign(new Error(`${caller.extensionName} is ${manifest.version} on this machine and ${action.version} where its page is; install the same version on both`), { code: 'version-mismatch' });

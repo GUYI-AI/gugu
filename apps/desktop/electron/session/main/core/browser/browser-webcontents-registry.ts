@@ -74,8 +74,6 @@ export class BrowserWebContentsRegistry {
   private activeBrowserId: string | null = null;
   /** #7191 每个页签最近一次被看着的时刻:会话有好几个页签时,agent 拿人最近看的那个。 */
   private readonly lastActiveAt = new Map<string, number>();
-  /** 返回 true = 这一下是 agent 自己合成的点击。 */
-  private mouseDownObserver: ((browserId: string, webContents: WebContents) => boolean) | null = null;
   private browserShortcuts = getBrowserShortcuts();
 
   registerSession(input: RegisteredBrowserSession): void {
@@ -148,8 +146,6 @@ export class BrowserWebContentsRegistry {
       if (mouse.type !== 'mouseDown') return;
       const boundBrowserId = this.browserIdByWebContentsId.get(webContentsId);
       if (!boundBrowserId) return;
-      // agent 自己合成的点击(#7274)不算人点进了这一页:页签焦点不跟过去,❌ 把人正看着的页签换掉。
-      if (this.mouseDownObserver?.(boundBrowserId, webContents) === true) return;
       events.emit(browserFocusedChannel, { browserId: boundBrowserId });
     });
 
@@ -191,11 +187,6 @@ export class BrowserWebContentsRegistry {
     return [...this.sessionsByBrowserId.values()]
       .filter((entry) => entry.sessionId === sessionId)
       .sort((a, b) => (this.lastActiveAt.get(b.browserId) ?? 0) - (this.lastActiveAt.get(a.browserId) ?? 0))[0]?.browserId;
-  }
-
-  /** #7191 某个页签里按下了鼠标(agent 据此知道人接管了;它认出是自己合成的点击就回 true)。只有一个观察者:agent-browser。 */
-  setMouseDownObserver(observer: ((browserId: string, webContents: WebContents) => boolean) | null): void {
-    this.mouseDownObserver = observer;
   }
 
   /** #6264 这个 webContents 是哪个浏览器页签(远端页签的 localhost 请求据此认出是哪台机器)。 */

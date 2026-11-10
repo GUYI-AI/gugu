@@ -335,25 +335,6 @@ describe('BrowserWebContentsRegistry', () => {
     expect(events.emit).toHaveBeenCalledWith(browserFocusedChannel, { browserId: 'browser-1' });
   });
 
-  it('#7274 agent 自己合成的点击不让页签焦点跟过去(❌ 把人正看着的页签换掉)', () => {
-    const registry = new BrowserWebContentsRegistry();
-    registry.registerSession({ browserId: 'browser-1', partition: PROFILE_PARTITION });
-    const webContents = fakeWebContents();
-    adopt(registry, 'browser-1', webContents);
-    let agentsOwn = true;
-    const observer = vi.fn(() => agentsOwn);
-    registry.setMouseDownObserver(observer);
-
-    webContents.emitEvent('before-mouse-event', {}, { type: 'mouseDown', x: 1, y: 1 });
-    expect(observer).toHaveBeenCalledWith('browser-1', webContents);
-    expect(events.emit).not.toHaveBeenCalledWith(browserFocusedChannel, expect.anything());
-
-    agentsOwn = false;
-    webContents.emitEvent('before-mouse-event', {}, { type: 'mouseDown', x: 1, y: 1 });
-    expect(events.emit).toHaveBeenCalledWith(browserFocusedChannel, { browserId: 'browser-1' });
-    registry.setMouseDownObserver(null);
-  });
-
   it('emits tab navigation shortcuts from focused browser webContents', () => {
     const registry = new BrowserWebContentsRegistry();
     registry.registerSession({ browserId: 'browser-1', partition: PROFILE_PARTITION });

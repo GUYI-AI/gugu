@@ -9,7 +9,6 @@ import type {
   DeviceActionRisk,
 } from '@gugu/core/shared/deviceActions'
 import type { DeviceActionOutcome, DeviceActionRunContext } from '@gugu/core/cloud/deviceActionHost'
-import type { CuaClient } from './native/cua-client'
 import type { MacHelperClient } from './native/mac-helper-client'
 import type { ExecResult, runJxa } from './mac-scripts'
 
@@ -29,8 +28,8 @@ export interface ActionGroupDef {
   settingsUrl?: string
   /** 系统权限没给时给人看的一句「去哪打开」。 */
   osPermission?: string
-  /** 要靠咕咕带的原生程序(原生助手 / cua-driver);它不在(开发环境没编译)时这一组整组不可用、并说清为什么。 */
-  needs?: 'macHelper' | 'cua'
+  /** 要靠咕咕带的原生助手;它不在(开发环境没编译)时这一组整组不可用、并说清为什么。 */
+  needs?: 'macHelper'
   /**
    * 「连接」时先真碰一下这一组要的系统能力 —— 第一次会弹系统的授权框 —— 碰通了才记成连上。
    * 没有 probe 的组(剪贴板、系统信息……)一点就连上。
@@ -84,7 +83,7 @@ export interface ActionFamily {
 /** 动作族能用的外部能力:真实现由 runtime 注入,单测替换。 */
 export interface FamilyDeps {
   platform: NodeJS.Platform
-  /** 咕咕带的原生组件目录(Mac:gugu-mac-helper、cua-driver、cua-tools.json;Windows:cua-driver.exe、cua-tools.json);没有时为 null。 */
+  /** 咕咕带的原生组件目录(Mac:gugu-mac-helper);没有时为 null。 */
   nativeDir: string | null
   now(): Date
   homedir(): string
@@ -98,17 +97,11 @@ export interface FamilyDeps {
   trashItem(path: string): Promise<void>
   /** 把一张图缩到长边 maxEdge、转 JPEG(Electron nativeImage);结果里的大图过设备频道前用它压。 */
   shrinkImage?(image: { mimeType: string; data: string }, options: { maxEdge: number; quality: number }): Promise<{ mimeType: string; data: string; width: number; height: number }>
-  sampleImage?(base64: string): Uint8Array
   /** 截主屏(Electron desktopCapturer,screen-capture.ts;macOS 要「屏幕录制」权限)。screen.get 用,不经过 Computer Use。 */
   captureScreen?(options: { maxEdge: number }): Promise<{ mimeType: string; data: string; width: number; height: number; displays: number }>
   jxa: typeof runJxa
   exec(file: string, args: readonly string[], options?: { signal?: AbortSignal; timeoutMs?: number; input?: string; cwd?: string; env?: Record<string, string>; maxBuffer?: number }): Promise<ExecResult>
   macHelper(): MacHelperClient
-  cua(): CuaClient
-  /** 咕咕自己(电脑控制不许 agent 操作它):主进程 pid、bundle id 与 App 名。 */
-  selfApp?(): SelfApp
-  /** 电脑控制的「正在操作 · 停止」小条与人接管(computer-control.ts)。 */
-  computerControl?: ComputerControlHooks
   /** 咕咕自己的资源监视器读数(perf.*):和设置页同一份记录、同一层投影;监视器关着时抛 ResourceMonitorOffError。 */
   perf?: PerfReadings
 }
@@ -117,25 +110,6 @@ export interface PerfReadings {
   snapshot(): unknown
   history(since: number, until: number): unknown
   capture(seconds: number): Promise<unknown>
-}
-
-/** 咕咕自己:电脑控制不许 agent 操作它。 */
-export interface SelfApp {
-  /** 咕咕自己的进程(窗口都归主进程)。 */
-  pids: ReadonlySet<number>
-  /** 咕咕的 bundle id 与 App 名(小写)。 */
-  names: ReadonlySet<string>
-}
-
-/** 电脑控制每个动作开始前调一次(computer-control.ts)。 */
-export interface ComputerControlHooks {
-  /** Read the existing user Stop state without selecting an indicator window. */
-  stoppedFor?(pid: number | undefined): string | null
-  /**
-   * 人停了这个 App(pid),或停了整个电脑控制 → 回 { refused: 给 agent 的话 };
-   * 否则登记「正在操作」,回这一下的中止信号(人按停止时触发,reason 是给 agent 的话)和收尾 end()(成败都调)。
-   */
-  begin(call: { callerName?: string; taskTitle?: string; pid?: number; windowId?: number; appName?: string; deferAttachment?: boolean; targetPids?: readonly number[] }): { refused: string } | { signal: AbortSignal; ready?: Promise<boolean>; end(): void }
 }
 
 export interface FamilyContext {

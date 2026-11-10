@@ -29,7 +29,3 @@
   .tool-app-header { align-items: flex-start; gap: 14px; }
   .tool-app-icon { width: 48px; height: 48px; }
 }
-/* #7317 Computer Use: the system permissions computer control needs, given once here. */
-.tool-app-access { display: flex; flex-direction: column; gap: 8px; margin-bottom: 28px; }
-.tool-app-access > p { color: var(--foreground-muted); text-wrap: pretty; }
-.tool-app-access-actions { display: flex; gap: 8px; }

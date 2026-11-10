@@ -293,6 +293,20 @@ describe('上下文工程第二批 P3: <gugu_apps> names the Apps that give a se
     ])
   })
 
+  it('an outdated version (a program gugu once hosted) gives a program that only says it needs an update, and is not named', () => {
+    const rootDir = extensionFolder({})
+    const contribution = { extensionId: 'browser-use', name: 'Browser Use', instructions: 'browser_* tools.', rootDir, dataDir: '/data/browser-use',
+      digest: 'd1', disclosure: 'progressive' as const, servers: [{ name: 'browser-use', host: 'browser-use' as const }], skillsDir: null }
+    const onProblem = vi.fn()
+    const { programs } = extensionAgentPrograms([contribution], {
+      nodeExecutable: '/node', toolsRuntime: '/gugu-tools.mjs', linkPrefix: 'gugu-dev://ext', onProblem,
+    })
+    expect(programs).toEqual([{ extensionId: 'browser-use', server: 'browser-use', digest: 'd1', outdated: true,
+      command: 'Gugu Browser Use', args: [], env: {}, cwd: rootDir, dataDir: '/data/browser-use' }])
+    expect(agentAppsOf([contribution], programs)).toEqual([])
+    expect(onProblem).not.toHaveBeenCalled()
+  })
+
   it('Apps and skills share the one block', () => {
     const block = guguAppsBlock([omnisearch], skills)
     expect(block.match(/<gugu_apps>/g)).toHaveLength(1)

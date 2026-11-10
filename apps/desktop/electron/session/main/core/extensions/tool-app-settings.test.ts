@@ -22,7 +22,7 @@ afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: tru
 const work = () => { const dir = mkdtempSync(join(tmpdir(), 'gugu-tool-app-')); dirs.push(dir); return dir; };
 
 describe('tool App host pages and settings', () => {
-  it('accepts a native host program without inventing HTML or an executable file', () => {
+  it('still parses an outdated version\'s host program (it says it needs an update) without inventing HTML or an executable file', () => {
     const manifest = parseExtensionManifest({ ...raw, contributes: { mcpServers: [{ name: 'browser-use', host: 'browser-use' }], instructions: 'Test tools.' } });
     expect(manifest.contributes.mcpServers).toEqual([{ name: 'browser-use', host: 'browser-use' }]);
     expect(manifest.contributes.tabs[0]?.hostPage).toBe('settings');

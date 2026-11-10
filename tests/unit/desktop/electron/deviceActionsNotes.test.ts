@@ -9,7 +9,6 @@ import type { FamilyDeps } from '../../../../apps/desktop/electron/device-action
 import { createNotesFamily, noteSnippet, NOTES_JXA_LIB, NOTES_SCRIPTS } from '../../../../apps/desktop/electron/device-actions/families/notes'
 import { createDeviceActionGrantsStore } from '../../../../apps/desktop/electron/device-actions/grants-store'
 import { MacScriptPermissionError, type ExecResult } from '../../../../apps/desktop/electron/device-actions/mac-scripts'
-import type { CuaClient } from '../../../../apps/desktop/electron/device-actions/native/cua-client'
 import type { MacHelperClient } from '../../../../apps/desktop/electron/device-actions/native/mac-helper-client'
 import { createDeviceActionsProvider } from '../../../../apps/desktop/electron/device-actions/provider'
 
@@ -42,7 +41,6 @@ function setup(jxaImpl: Jxa) {
     jxa: jxa as unknown as FamilyDeps['jxa'],
     exec,
     macHelper: () => ({ available: () => ({ ok: true }), call: vi.fn(), dispose: () => undefined }) as unknown as MacHelperClient,
-    cua: () => ({ available: () => ({ ok: true }), callTool: vi.fn(), stop: () => undefined, dispose: () => undefined }) as unknown as CuaClient,
   }
   const da = createDeviceActionsProvider({ store, families: [createNotesFamily()], deps })
   store.setGroup('notes', true)

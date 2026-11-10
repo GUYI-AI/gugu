@@ -4,7 +4,8 @@
  */
 
 export interface ExtensionProgramFailure {
-  kind?: 'tool';
+  /** `tool`: a call failed; `outdated`: the installed version of the App needs an update before its program can run. */
+  kind?: 'tool' | 'outdated';
   server: string;
   at: string;
   /** The program's own last line on stderr, when it said anything — usually the actual reason. */
@@ -20,7 +21,6 @@ export interface ExtensionProgramFailure {
 }
 
 export interface ExtensionAgentStatus {
-  sessions?: { sessionId: string; browserId: string; title: string; url: string; state: 'idle' | 'driving' | 'paused' }[];
   /** Programs of this extension running at this moment, each shared by every agent session. */
   running: number;
   /** The latest program that failed in this run of gugu, if any. */

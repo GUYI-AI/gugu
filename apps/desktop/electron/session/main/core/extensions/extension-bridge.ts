@@ -1053,30 +1053,12 @@ function tellGroupFiles(chatId: string, reader: string | null, change: { entries
   }
 }
 
-const installedAppsListeners = new Set<() => void>();
-
-/**
- * #7317 Main hears the same change: an App can be the switch of something this computer does (Computer Use ↔ its
- * computer control), which must follow the App at once, ❌ at the next heartbeat.
- */
-export function onInstalledAppsChanged(listener: () => void): () => void {
-  installedAppsListeners.add(listener);
-  return () => installedAppsListeners.delete(listener);
-}
-
 /**
  * 摩擦单 F87: the Apps installed here changed — installed, upgraded, uninstalled, switched on or off — and with them who
  * opens which group file (`claimedBy`, the name a list shows). Every open group page hears every file of its chat again,
  * so a list shows the new claims at once, not at the next change of a file (S24: ~2 min of a raw name and a generic icon).
  */
 export function notifyInstalledAppsChanged(): Promise<void> {
-  for (const listener of [...installedAppsListeners]) {
-    try {
-      listener();
-    } catch (error) {
-      log.warn('extensions: a listener of the installed Apps failed', { error: String(error) });
-    }
-  }
   return notifyWatchedChatsChanged();
 }
 
@@ -1780,7 +1762,7 @@ async function machineCall(caller: BridgeCaller, method: MachineVerb, args: Reco
       const { device, ...callArgs } = args;
       const done = await callOnSessionMachine({ extensionId, manifest }, { deviceId: appDeviceId(device) }, method, callArgs, binding?.operator.kind === 'agent');
       if (done.there) return done.value;
-    } else if (binding && sessionId && followsSessionMachine(manifest, method, args)) {
+    } else if (binding && sessionId && followsSessionMachine(method, args)) {
       const { callOnSessionMachine } = await import('./app-programs-elsewhere');
       const done = await callOnSessionMachine({ extensionId, manifest }, sessionId, method, args, binding.operator.kind === 'agent');
       if (done.there) return done.value;

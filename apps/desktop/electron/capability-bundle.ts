@@ -447,6 +447,18 @@ export function setBrowserUseApp(probe: { installed: () => boolean; server: bool
   browserUseApp = probe
 }
 
+/** The Browser Use App's id in the App market. */
+export const BROWSER_USE_APP_ID = 'browser-use'
+
+/**
+ * Whether this machine has the Browser Use App: installed, switched on and still allowed to give agents tools, whatever
+ * kind of program it runs. An outdated version (a program gugu itself once hosted) does not count: it runs nothing.
+ */
+export function browserUseAppInstalled(programs: { installed(): readonly { extensionId: string; outdated?: true }[]; agentToolsRefusal(extensionId: string): string | null }): boolean {
+  return programs.installed().some((program) => program.extensionId === BROWSER_USE_APP_ID && !program.outdated
+    && !programs.agentToolsRefusal(program.extensionId))
+}
+
 /**
  * #1607 / #2401 The same on a Gugu server as on a desktop: the installed Browser Use App is this machine's browser (on a
  * server it drives the server's own headless Chromium). A server never offers the agent's built-in browser plugin — it
@@ -1124,9 +1136,6 @@ function withSurfaceSelfDescription(
   }
 }
 
-/** #7317 What `<gugu_apps>` says while Computer Use is on (off: nothing, no token). */
-export const COMPUTER_USE_LINE = 'Computer Use is on: use browser_* tools for webpages in this session\'s own browser tabs. Use device_actions with group computer, then device_call, only for the person\'s other desktop apps.'
-
 /**
  * 上下文工程第二批 P3 (D-27, owner 10-07 chose (c); owner 10-31 raised it from 300): the App lines together are at most
  * this many `estimatePromptTokens` units. Each line is an App's `instructions` in full (≤ INSTRUCTIONS_MAX_CHARS, app-listing.ts),
@@ -1183,11 +1192,8 @@ export const GUGU_APPS_SEARCH_LINE = [
 export function guguAppsBlock(apps: readonly ExtensionAgentApp[], skills: readonly ExtensionSkill[], off: readonly string[] = []): string {
   if (apps.length === 0 && skills.length === 0) return ''
   const parts: string[] = []
-  // Computer Use stays on the device API path, independently of App tool disclosure.
-  if (apps.some((app) => app.computerUse) && !off.includes('devices')) parts.push(COMPUTER_USE_LINE)
-  const catalogApps = apps.filter((app) => !app.computerUse)
-  if (catalogApps.length > 0) {
-    parts.push(['Apps available in this session:', ...appLines(catalogApps)].join('\n'))
+  if (apps.length > 0) {
+    parts.push(['Apps available in this session:', ...appLines(apps)].join('\n'))
   }
   if (skills.length > 0) {
     const lines = skills.map(skillLine)

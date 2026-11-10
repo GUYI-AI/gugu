@@ -42,7 +42,7 @@ vi.mock('@main/core/extensions/app-files', () => ({
     wanted.all ? { entries: [{ id: `${chatId}-board`, chat: chatId, name: 'x.board.json', claimedBy: { app: { id: 'board' } } }], gone: [] } : { entries: [], gone: [] },
 }));
 
-const { bindExtensionSurface, notifyInstalledAppsChanged, onInstalledAppsChanged, registerExtensionBridge, stopPageWatches } = await import('./extension-bridge');
+const { bindExtensionSurface, notifyInstalledAppsChanged, registerExtensionBridge, stopPageWatches } = await import('./extension-bridge');
 const { EXTENSION_BRIDGE_CHANNEL } = await import('@shared/extensions/bridge-protocol');
 registerExtensionBridge();
 const watch = (id: number, place: unknown) =>
@@ -71,20 +71,5 @@ describe('the Apps installed here changed (摩擦单 F87)', () => {
       type: 'filesChanged', place: { chat: CHAT_TWO }, change: { kind: 'entries', entries: [{ chat: CHAT_TWO, claimedBy: { app: { id: 'board' } } }], gone: [] },
     });
     expect(sent.some(({ id }) => id === SESSION_TAB)).toBe(false);
-  });
-
-  it('#7317 main hears it too, and one listener that throws stops neither the others nor the pages', async () => {
-    // Computer Use is the switch of this computer's computer control: it must follow the App at once.
-    const heard: string[] = [];
-    const offBroken = onInstalledAppsChanged(() => { throw new Error('broken listener'); });
-    const off = onInstalledAppsChanged(() => heard.push('switch'));
-    await notifyInstalledAppsChanged();
-    expect(heard).toEqual(['switch']);
-    expect(sent.some(({ id }) => id === GROUP_ONE)).toBe(true);
-    // Control: once it stops listening it hears nothing more.
-    off();
-    offBroken();
-    await notifyInstalledAppsChanged();
-    expect(heard).toEqual(['switch']);
   });
 });
