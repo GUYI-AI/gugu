@@ -7,7 +7,8 @@ import type { ModelSource, SourceSpans } from './model-source';
 /**
  * 用量页把 Token 分成「咕咕模型」与「自己账号」两份的底账。
  *
- * 写:会话每次启动、计费路定下来的那一刻(sessionpage-platform-model 的 platformModelForSession)
+ * 写:会话每次启动、计费路定下来的那一刻(sessionpage-platform-model 的 platformModelForSession;
+ * Chat UI 信封注入器不上平台就不走它,在 sessionpage-platform-hooks `acpInjector` 记「自己账号」)
  * 记一笔;与这条会话的上一笔相同就不记 —— 同一来源的反复重启不产生新行。
  * 读:给 token 扫描一张「会话 → 时间段 → 来源」的表(见 model-source.ts 的归属规则)。
  * 也读:换计费路重开时,原生会话此刻挂在哪条路上(`lastStartedModelSource`,embedded-boot reload)。

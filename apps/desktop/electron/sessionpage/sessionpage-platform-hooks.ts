@@ -64,6 +64,7 @@ import { sessionpagePlatformCatalog } from './sessionpage-platform-catalog'
 import type { SessionpageSessionSurface } from '@gugu/session-core/agents/plugins'
 import type { PlatformCredentialRuntimeObservation } from './sessionpage-platform-recovery'
 import { sessionPlatformModel } from '../session/main/core/sessions/platform-model-selection'
+import { recordModelSource } from '../session/main/core/usage/model-source-recorder'
 
 /**
  * 后台小模型那两档是**子进程独有**的钉扎:只有 claude 自己会用,适配器拿了没有读者,所以不进 adapterEnv。
@@ -344,7 +345,12 @@ export function createSessionpagePlatformHooks(deps: SessionpagePlatformHooksDep
       // ❌ 这里**不**回退 agent 级 model_access,pty 路那条回退不适用:那条回退的意义是「保住这些会话
       // 一直以来的行为」,而 Chat UI 会话一直以来的行为是**从来上不了平台**(创建期那道墙拦着)。在这里
       // 回退不是保住行为,是改变行为。选了 harness 自家模型(显式 null)同样不注入。
-      if (!info.platformModel) return null
+      // 这次启动的计费路就此定下(自家模型),与上平台那一支(`platformModelForSession`)一样记进底账:
+      // 换计费路重开时按它判原生会话挂在哪条路上(`reloadRouteChange`),用量页也按它分「自己账号」。
+      if (!info.platformModel) {
+        recordModelSource(info.sessionId, 'byok')
+        return null
+      }
       const contract = requireInjectionContract(info.providerId, 'cui')
       const platform = await acpPlatformModel(info)
       // 解析下来不上平台(这个 agent 没有平台额度)→ 不注入,会话照常按它自己的配置跑。
