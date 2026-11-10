@@ -189,6 +189,15 @@ it.each(['claude', 'codex'])('opens the existing %s connection panel and accessi
   expect(f.continued).not.toHaveBeenCalled();
 });
 
+// 2026-11-10: not signed in no longer blocks setup (it starts on the engine's Gugu model); configuring stays an optional entry.
+it.each(['claude', 'codex'])('continues without %s\'s own sign-in and keeps configuring it optional', async id => {
+  f.states[id] = 'unauthenticated'; render();
+  await userEvent.click(page.getByTestId(`assistant-engine-${id}`));
+  await expect.element(page.getByRole('button', { name: `Configure ${id === 'codex' ? 'Codex' : 'Claude'}`, exact: true })).toBeVisible();
+  await userEvent.click(page.getByRole('button', { name: 'Continue', exact: true }));
+  expect(f.continued).toHaveBeenCalledExactlyOnceWith(id);
+});
+
 it('shows retry while unknown and completes a fresh check before allowing setup', async () => {
   f.states.claude = 'unknown'; render();
   await userEvent.click(page.getByRole('button', { name: 'Check again', exact: true }));

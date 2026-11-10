@@ -22,6 +22,24 @@ const ipc = vi.hoisted(() => ({ invoke: vi.fn(async () => ({ workdir: '/home/ass
 vi.mock('../../../../apps/desktop/src/platform/desktopIpc', () => ({ desktopIpc: () => ipc }))
 vi.mock('../../../../apps/desktop/src/lib/assistantSetupPreparation', () => ({ prepareLocalAssistantSetup: async () => ({ workdir: '/home/assistant', home: '/home' }) }))
 vi.mock('../../../../apps/desktop/src/lib/cloudComputerStore', () => ({ provisionCloudComputer: vi.fn() }))
+// The engine's catalog and sign-in as the host reads them on this computer (sessionCreateModels). Default: signed in.
+const harnessModels = vi.hoisted(() => ({ signedIn: true, gugu: true }))
+vi.mock('../../../../apps/desktop/src/lib/agentModelSelection', () => ({
+  fetchAgentHarnessModels: vi.fn(async (_deviceId: string, harness: string) => ({
+    harness, transport: 'acp', selected: null, efforts: [], selectedEffort: null, harnessReason: null, guguReason: null,
+    harnessState: harnessModels.signedIn ? 'ready' : 'auth-required',
+    selectedCredential: harnessModels.signedIn ? 'credentialed' : 'uncredentialed',
+    harnessAuth: harnessModels.signedIn ? 'signed-in' : 'signed-out',
+    models: [
+      { id: 'gpt-6', name: 'GPT-6', source: 'harness' },
+      ...(harnessModels.gugu ? [
+        { id: 'platform:glm-5.3-flash', name: 'GLM 5.3 Flash', source: 'gugu' },
+        { id: 'platform:gpt-6-luna', name: 'GPT-6 Luna', source: 'gugu' },
+        { id: 'platform:deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', source: 'gugu' },
+      ] : []),
+    ],
+  })),
+}))
 vi.mock('../../../../apps/desktop/src/lib/contacts', async () => {
   const { buildLookUrl, lookObjectPath } = await import('../../../../apps/desktop/src/components/agentAvatar/look')
   return { contactsService: { agentLookAvatarUrl: (look: import('../../../../apps/desktop/src/components/agentAvatar/look').AgentLook) =>
@@ -43,6 +61,8 @@ function deferred<T>() {
 }
 
 afterEach(() => {
+  harnessModels.signedIn = true
+  harnessModels.gugu = true
   identity.platform.getLocalDeviceSelfSnapshot = undefined
   identity.platform.subscribeLocalDeviceIdentified = undefined
   vi.clearAllMocks()
@@ -66,6 +86,29 @@ describe('local assistant setup runs once at a time on this computer (#7348)', (
     expect(ipc.invoke).toHaveBeenCalledWith('assistant-home:prepare', { engine: 'codex' })
     expect(provision.resumeSingleAgent).toHaveBeenCalledWith(expect.anything(),
       expect.objectContaining({ model: null, assistant: expect.objectContaining({ childHarness: 'codex' }) }))
+  })
+  // 2026-11-10: an engine not signed in to its own account no longer blocks setup — the assistant starts on that engine's
+  // factory Gugu model, the create box's rule (defaultCreateModel); signing the engine in stays an optional entry.
+  it('starts an assistant whose engine is not signed in on that engine\'s factory Gugu model, including on recovery', async () => {
+    harnessModels.signedIn = false
+    provision.provisionSingleAgent.mockResolvedValueOnce(completed('codex-assistant'))
+    await setUpAssistantOnThisComputer(draft as never, 'device-1', { engine: 'codex' })
+    expect(provision.provisionSingleAgent).toHaveBeenCalledWith('device-1', expect.objectContaining({ agentType: 'codex' }),
+      expect.objectContaining({ model: 'platform:gpt-6-luna' }))
+    provision.provisionSingleAgent.mockResolvedValueOnce(completed('claude-assistant'))
+    await setUpAssistantOnThisComputer(draft as never, 'device-1', { engine: 'claude' })
+    expect(provision.provisionSingleAgent).toHaveBeenLastCalledWith('device-1', expect.objectContaining({ agentType: 'claude-code' }),
+      expect.objectContaining({ model: 'platform:deepseek-v4.1-flash' }))
+    provision.resumeSingleAgent.mockResolvedValueOnce(completed('codex-assistant'))
+    await resumeLocalAssistant({ operationId: 'recover', ownerUserId: 'owner', deviceId: 'device-1',
+      members: [{ provisionId: 'member' }], blueprint: { members: [{ agent_type: 'codex' }] } } as never)
+    expect(provision.resumeSingleAgent).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ model: 'platform:gpt-6-luna' }))
+  })
+  it('fails setup loudly when the engine is not signed in and no Gugu model is available', async () => {
+    harnessModels.signedIn = false
+    harnessModels.gugu = false
+    await expect(setUpAssistantOnThisComputer(draft as never, 'device-1', { engine: 'codex' })).rejects.toMatchObject({ kind: 'failed' })
+    expect(provision.provisionSingleAgent).not.toHaveBeenCalled()
   })
   it('keeps the existing Claude model connection for new local setup even when platform models are enabled', async () => {
     vi.stubEnv('GUGU_PLATFORM_MODELS_ENABLED', 'true')

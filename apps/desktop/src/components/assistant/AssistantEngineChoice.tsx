@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { RadioGroup } from '@base-ui/react/radio-group'
 import { Radio } from '@base-ui/react/radio'
 import { ArrowLeft, Check, Monitor } from '@/lib/icons'
@@ -40,10 +41,17 @@ export function AssistantEngineChoice({ engine, onEngineChange, draft, onContinu
   const selected = readings[engine]
   const connections = useConnectionPanel()
   const checking = selected.state === 'checking'
+  // 没登这家自己的账号(unusable)也能开通:助理起在这家的咕咕模型上(assistantSetup `assistantStartModel`);
+  // 「配置 {name}」留作可选的入口,❌ 必经的门。
+  const ready = selected.state === 'usable' || selected.state === 'unusable'
+  // 按这家**最近一次读定**的结果挂:配置面板保存后会重读(checking),入口要是跟着卸掉,面板就丢了锚点,
+  // 「改用刚存的连接」那一步出不来。
+  const settled = useRef<Partial<Record<AssistantEngine, string>>>({})
+  if (!checking) settled.current[engine] = selected.state
+  const configurable = settled.current[engine] === 'unusable' ? selected.agent : undefined
   const action = checking ? t('setup.engineChecking')
     : selected.state === 'failed' ? t('setup.engineRetry')
-    : selected.state === 'usable' ? t(setupFailed ? 'setup.retry' : 'setup.continue')
-    : t('setup.engineConfigure', { name: names[engine] })
+    : t(setupFailed ? 'setup.retry' : 'setup.continue')
 
   return <>
     <header className="ta-engine-header">
@@ -64,13 +72,17 @@ export function AssistantEngineChoice({ engine, onEngineChange, draft, onContinu
         </Button>} />)}
     </RadioGroup>
     <div className="ta-engine-actions">
-      {setupFailed && selected.state === 'usable' && <p className="ta-engine-feedback" role="alert">{t('setup.failed')}</p>}
+      {setupFailed && ready && <p className="ta-engine-feedback" role="alert">{t('setup.failed')}</p>}
       {selected.state === 'failed' && <p className="ta-engine-feedback" role="status">{t('setup.engineReadFailed')}</p>}
+      {configurable && <Button variant="ghost" size="lg" className="ta-engine-configure"
+        data-testid="assistant-engine-configure" disabled={checking}
+        onClick={event => connections.show(configurable, null, event.currentTarget)}>
+        {t('setup.engineConfigure', { name: names[engine] })}
+      </Button>}
       <Button variant="primary" size="xl" className="ta-engine-primary" disabled={checking}
-        data-testid="assistant-engine-continue" onClick={event => {
-          if (selected.state === 'usable') onContinue()
-          else if (selected.state === 'failed') void selected.refresh()
-          else if (selected.agent) connections.show(selected.agent, null, event.currentTarget)
+        data-testid="assistant-engine-continue" onClick={() => {
+          if (ready) onContinue()
+          else void selected.refresh()
         }}>{action}</Button>
     </div>
     <Button variant="ghost" size="lg" className="ta-engine-back" disabled={checking} onClick={onBack}>

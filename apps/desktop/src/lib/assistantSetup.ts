@@ -31,6 +31,8 @@ import { provisionCloudComputer } from './cloudComputerStore'
 import { contactsService } from './contacts'
 import { getCurrentAuthUserId } from './supabase'
 import { cancelTeamProvision } from './teamProvisionSaga'
+import { fetchAgentHarnessModels } from './agentModelSelection'
+import { canUseOwnCreateModels, defaultCreateModel } from './createModelDefault'
 import { LocalDeviceUnidentifiedError, readOnceLocalDeviceIdentified } from './localDeviceIdentity'
 
 /** 起名、称呼、自我介绍的长短(名字 30 字、称呼 80 字;介绍是交给管家的那段,管家收 4000)。 */
@@ -97,12 +99,26 @@ export function completedAssistantSetup(result: Awaited<ReturnType<typeof provis
   return completedSingleProvisionSession(result)
 }
 
-async function startDeps(engine: AssistantEngine = 'claude'): Promise<SingleProvisionDeps> {
+async function startDeps(engine: AssistantEngine, deviceId: string): Promise<SingleProvisionDeps> {
   return {
     resumeStore: assistantResumeStore,
-    model: null,
+    model: await assistantStartModel(engine, deviceId),
     assistant: { childHarness: engine === 'codex' ? 'codex' : ASSISTANT_CHILD_HARNESS, firstTask: ASSISTANT_FIRST_TASK },
   }
+}
+
+/**
+ * 助理起在哪个模型上:引擎在这台电脑上登着自己的账号 ⇒ 用它自己的模型(null,助理一直如此);
+ * 没登 ⇒ 与创建框同一条规则(`defaultCreateModel`):这家的咕咕出厂模型。登录引擎自己的账号是可选的入口,❌ 必经的门 ——
+ * 咕咕模型不需要它,开通页曾因此把没有 OpenAI 账号的人挡在 Codex 外面。
+ * 两样都没有(咕咕模型一个都选不了)⇒ 响亮失败,❌ 起一个一跑就 401 的助理。
+ */
+async function assistantStartModel(engine: AssistantEngine, deviceId: string): Promise<string | null> {
+  const models = await fetchAgentHarnessModels(deviceId, engine, true)
+  if (canUseOwnCreateModels(models)) return null
+  const model = defaultCreateModel(models)
+  if (!model) throw new AssistantSetupError('failed', `${engine} has no own sign-in on this computer and no Gugu model is available`)
+  return model
 }
 
 // 同一时刻只推这台电脑上的一次开通:开通页还在等它起来时,它的身份就已经有了,咕咕那一格(壳)也会想接着做 ——
@@ -142,7 +158,7 @@ async function setUpHere(draft: AssistantSetupDraft, localDeviceId: string, opti
       inheritMemory: false,
       historyImportRequired: false,
     },
-    await startDeps(engine),
+    await startDeps(engine, localDeviceId),
   )
   return completedAssistantSetup(result)
 }
@@ -184,7 +200,7 @@ export function resumeLocalAssistant(record: ProvisionResumeRecord): Promise<Cre
     }
     const engine = record.blueprint?.members[0]?.agent_type === 'codex' ? 'codex' : 'claude'
     await ipc.invoke(ASSISTANT_HOME_CHANNELS.prepare, engine === 'codex' ? { engine } : {})
-    return completedAssistantSetup(await resumeSingleAgent(record, await startDeps(engine)))
+    return completedAssistantSetup(await resumeSingleAgent(record, await startDeps(engine, record.deviceId)))
   })
 }
 

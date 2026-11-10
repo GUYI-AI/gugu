@@ -14,6 +14,11 @@ vi.mock('../../../../apps/desktop/src/lib/cloudComputerStore', () => ({ provisio
 vi.mock('../../../../apps/desktop/src/lib/contacts', () => ({ contactsService: { agentLookAvatarUrl: () => 'avatar' } }))
 vi.mock('../../../../apps/desktop/src/platform/desktopIpc', () => ({ desktopIpc: () => ({ invoke: async () => ({ workdir: '/assistant' }) }) }))
 vi.mock('../../../../apps/desktop/src/lib/assistantSetupPreparation', () => ({ prepareLocalAssistantSetup: async () => ({ workdir: '/assistant' }) }))
+// The engine's own sign-in as the host reads it on this computer: signed in, so the assistant keeps its own model (null).
+vi.mock('../../../../apps/desktop/src/lib/agentModelSelection', () => ({ fetchAgentHarnessModels: async (_device: string, harness: string) => ({
+  harness, transport: 'acp', selected: null, efforts: [], selectedEffort: null, harnessReason: null, guguReason: null,
+  harnessState: 'ready', selectedCredential: 'credentialed', harnessAuth: 'signed-in', models: [{ id: 'own', name: 'Own', source: 'harness' }],
+}) }))
 
 import { buildSingleBlueprint, type ProvisionResumeRecord } from '../../../../apps/desktop/src/lib/agentProvision'
 import { assistantResumeStore, pendingLocalAssistant, resumeLocalAssistant, setUpAssistantOnThisComputer } from '../../../../apps/desktop/src/lib/assistantSetup'
