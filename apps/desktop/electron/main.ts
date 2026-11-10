@@ -2035,6 +2035,7 @@ function selfAppForComputerControl(): { pids: ReadonlySet<number>; names: Readon
  * 电脑控制。起来以后由那边接上(见注册 `computer-use` 原生程序处),App 每变一次就 `switchChanged()`。
  */
 let computerUseOn: () => boolean = () => false
+let computerUseOwnTools: () => boolean = () => false
 
 // The resource monitor reads macOS phys_footprint through the same native helper (System.swift `process.footprint`);
 // without the helper (an uncompiled dev checkout) it keeps RSS and says so.
@@ -2108,7 +2109,7 @@ function deviceActionsRuntime(): DeviceActionsRuntime {
     // 电脑控制:agent 不许操作咕咕自己;提示跟随实际目标窗口。
     selfApp: () => selfAppForComputerControl(),
     // #7317 电脑控制的开关是 Computer Use 这个 App(behavior tab-extensions):它开着这台电脑才有电脑控制。
-    appSwitch: { group: 'computer', app: 'Computer Use', on: () => computerUseOn() },
+    appSwitch: { group: 'computer', app: 'Computer Use', on: () => computerUseOn(), ownTools: () => computerUseOwnTools() },
     ...(selfBundleId() ? { hostBundleId: selfBundleId()! } : {}),
     ...(SERVER_MODE
       ? {}
@@ -6393,12 +6394,18 @@ app.whenReady().then(async () => {
           // re-registers this computer's actions at once (other machines' agents read them), stops cua-driver when off,
           // and forgets what the 「电脑」 pages recorded (an App installed later never sees what came before).
           computerUseOn = () => computerUseApps().length > 0
+          // The Computer Use App from API 36 runs its own program: installed, it is how agents operate this computer,
+          // so the device group must send them there instead of saying Computer Use is missing.
+          computerUseOwnTools = () => programs.installed().some((program) => program.extensionId === 'computer-use'
+            && program.native !== 'computer-use' && !programs.agentToolsRefusal(program.extensionId))
           let computerUseWas = false
+          let ownToolsWere = false
           const computerUseSwitched = () => {
-            const on = computerUseOn()
-            if (on === computerUseWas) return
-            computerUseWas = on
-            if (!on) computerUsePreviewInstance?.forget()
+            const on = computerUseOn(), ownTools = computerUseOwnTools()
+            if (on === computerUseWas && ownTools === ownToolsWere) return
+            const flipped = on !== computerUseWas
+            computerUseWas = on; ownToolsWere = ownTools
+            if (flipped && !on) computerUsePreviewInstance?.forget()
             deviceActionsRuntime().switchChanged()
           }
           emdash.emdashOnInstalledAppsChanged(computerUseSwitched)

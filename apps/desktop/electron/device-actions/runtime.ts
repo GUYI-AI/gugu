@@ -106,7 +106,13 @@ export function createDeviceActionsRuntime(input: {
    * 开关在一个 App 上的那一组(#7317:电脑控制 ↔ Computer Use,behavior tab-extensions「Computer Use 是电脑控制的开关」):
    * App 开着这一组就连上了;关着这台电脑就没有它。设置页不再列它(❌ 两个开关),由那个 App 的页面办系统授权。
    */
-  appSwitch?: { group: string; app: string; on(): boolean }
+  appSwitch?: {
+    group: string
+    app: string
+    on(): boolean
+    /** That App is installed but runs as its own tools (API 36): agents reach it through the catalog, not this group. */
+    ownTools?(): boolean
+  }
   log: Log
   /** 测试注入。 */
   families?: ActionFamily[]
@@ -149,12 +155,14 @@ export function createDeviceActionsRuntime(input: {
   }
   const families = input.serverMode ? [] : (input.families ?? createAllFamilies(input.nativeDir))
   const appSwitch = input.appSwitch ?? null
-  const offMessage = appSwitch
-    ? `${appSwitch.app} is not installed or is switched off on this computer, so no agent can operate its apps. To use it, install and switch on ${appSwitch.app} in 咕咕 → Apps on that computer.`
-    : ''
+  const offMessage = () => !appSwitch
+    ? ''
+    : appSwitch.ownTools?.()
+      ? `${appSwitch.app} on that computer runs as its own App tools, not as device actions. Find them with catalog_list (query "${appSwitch.app}") and call them with catalog_call.`
+      : `${appSwitch.app} is not installed or is switched off on this computer, so no agent can operate its apps. To use it, install and switch on ${appSwitch.app} in 咕咕 → Apps on that computer.`
   const actions = createDeviceActionsProvider({
     store, families, deps, groupTitle,
-    ...(appSwitch ? { managedBy: (group: string) => (group === appSwitch.group ? { on: appSwitch.on(), offMessage } : null) } : {}),
+    ...(appSwitch ? { managedBy: (group: string) => (group === appSwitch.group ? { on: appSwitch.on(), offMessage: offMessage() } : null) } : {}),
   })
   /** The App switch flipped: whoever re-registers this computer's actions, and the settings pages, hear it. */
   const switchListeners = new Set<() => void>()

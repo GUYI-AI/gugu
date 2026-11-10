@@ -27,6 +27,7 @@ const action = (name: string, group: string): ActionDef => ({
 
 function setup() {
   let on = false
+  let ownTools = false
   const probed: string[] = []
   const family: ActionFamily = {
     groups: [
@@ -47,7 +48,7 @@ function setup() {
     log: { info: () => undefined, warn: () => undefined },
     families: [family],
     platform: 'darwin',
-    appSwitch: { group: 'computer', app: 'Computer Use', on: () => on },
+    appSwitch: { group: 'computer', app: 'Computer Use', on: () => on, ownTools: () => ownTools },
   })
   const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
   const sent: string[] = []
@@ -55,7 +56,7 @@ function setup() {
   runtime.registerIpc({ handle: (channel: string, handler: (event: unknown, ...args: unknown[]) => unknown) => { handlers.set(channel, handler) } } as never, () => [window])
   const call = (channel: string, ...args: unknown[]) => handlers.get(`device-actions:${channel}`)!({}, ...args)
   const listed = () => (runtime.capability()?.actions ?? []).map((entry) => entry.name)
-  return { runtime, call, listed, probed, sent, turn: (next: boolean) => { on = next } }
+  return { runtime, call, listed, probed, sent, turn: (next: boolean) => { on = next }, appTools: (next: boolean) => { ownTools = next } }
 }
 
 describe('#7317 Computer Use is the switch of computer control', () => {
@@ -68,6 +69,18 @@ describe('#7317 Computer Use is the switch of computer control', () => {
     expect(!refused.ok && refused.message).toMatch(/Computer Use is not installed or is switched off/)
     expect(await call('connect', 'computer')).toMatchObject({ ok: false, code: 'unsupported' })
     expect(probed).toEqual([])
+    runtime.dispose()
+  })
+
+  it('the App runs as its own tools: the group sends the agent to them instead of saying Computer Use is missing', async () => {
+    const { runtime, listed, appTools } = setup()
+    appTools(true)
+    // Still not a device action: listing stays as off, the refusal names where Computer Use is.
+    expect(listed()).toEqual(['clipboard.read'])
+    const refused = await runtime.readLocal('computer.click', {})
+    expect(refused).toMatchObject({ ok: false, code: 'not_granted' })
+    expect(!refused.ok && refused.message).toMatch(/runs as its own App tools.*catalog_list.*catalog_call/)
+    expect(!refused.ok && refused.message).not.toMatch(/not installed/)
     runtime.dispose()
   })
 
