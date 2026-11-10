@@ -42,10 +42,10 @@ export function pieceSender(piece: Extract<ForwardPiece, { kind: 'text' }>, name
 }
 
 /**
- * One forward into each picked chat. Words (text messages and plain text) go as one message: the note, then each piece
- * quoted under who said it, one piece too (a line forwarded alone is the one that most needs its speaker). Files, widgets
- * and cards go as themselves, after the words; with nothing to quote, the note follows them. The message carrying the note
- * addresses whom the note @-ed, the way a message typed in that chat would.
+ * One forward into each picked chat. Several pieces of words (text messages and plain text) go as one message: the note,
+ * then each piece quoted under who said it. A single piece goes as its own words. Files, widgets and cards go as themselves,
+ * after the words; a note not written into a quote follows everything. The message carrying the note addresses whom the
+ * note @-ed, the way a message typed in that chat would.
  *
  * Chats are written to one after another; `sent` hears each one done, so a failure part-way (the outbox refusing a write)
  * can tell which chats already have their copy.
@@ -68,7 +68,7 @@ export async function forwardToChats(pieces: readonly ForwardPiece[], targetChat
       replyTo: message.reply_to_content ? { sender: message.reply_to_sender_user_id ? nameOf(message.reply_to_sender_user_id, io) : io.unknownName, text: markdownPlainText(message.reply_to_content) } : null,
     } })
   }
-  const quoted = words.length > 0
+  const quoted = words.length > 1
   const body = quoted ? forwardQuote(words.map(word => word.quote), note.text) : null
   const addressed = { toUserIds: note.toUserIds }
   // A chat message among the words keeps the link to where they came from (read rights, the forwarded badge).
@@ -78,6 +78,9 @@ export async function forwardToChats(pieces: readonly ForwardPiece[], targetChat
       if (source) await io.forwardMessage({ ...source, content: body, reply_to_message_id: null, reply_to_content: null, reply_to_sender_user_id: null }, chatId, addressed)
       else await io.sendMessageToChat(chatId, body, addressed)
     }
+    const single = !quoted ? words[0] : undefined
+    if (single?.message) await io.forwardMessage(single.message, chatId)
+    else if (single) await io.sendMessageToChat(chatId, single.quote.text)
     for (const message of own) await io.forwardMessage(message, chatId)
     if (!quoted && note.text.trim()) await io.sendMessageToChat(chatId, note.text.trim(), addressed)
     sent(chatId)

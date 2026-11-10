@@ -80,12 +80,12 @@ describe('forwardToChats, speakers no name is known for', () => {
 })
 
 describe('forwardToChats, a single piece', () => {
-  it('is quoted under its speaker too, with the line it answered, the note first', async () => {
+  it('goes as its own words, the note after it', async () => {
     const send = io()
     const agreed = message({ id: 'b', content: 'Agreed.', reply_to_message_id: 'a', reply_to_content: 'Friday?', reply_to_sender_user_id: 'u-mei' })
     await forwardToChats([{ kind: 'message', message: agreed }], ['g1'], note('for you'), send)
-    expect((send.forwardMessage.mock.calls[0] as unknown as [MessageItem])[0].content).toBe('for you\n\n> **Han**\n>\n> > **Mei**：Friday?\n>\n> Agreed.')
-    expect(send.sendMessageToChat).not.toHaveBeenCalled()
+    expect(send.forwardMessage).toHaveBeenCalledWith(agreed, 'g1')
+    expect(send.sendMessageToChat).toHaveBeenCalledWith('g1', 'for you', { toUserIds: [] })
   })
 })
 
