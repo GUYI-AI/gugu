@@ -152,7 +152,7 @@ describe('an App program as a caller of its App (F16)', () => {
         if (!('id' in ref)) throw new Error('The fixture expects a file id');
         return {
           status: 'ready', purpose: 'file', reader: { accountId: 'person', actorId: actor ?? 'person' },
-          revision: { source: 'local', item_id: ref.id, version: options.version, chat_id: BOARD_CHAT, size_bytes: 2, file_name: 'data.bin', content_type: 'application/octet-stream', sha256: null },
+          revision: { source: 'local', item_id: ref.id, version: options.version, chat_id: BOARD_CHAT, size_bytes: 2, file_name: 'data.bin', content_type: 'application/octet-stream', sha256: 'ab'.repeat(32) },
           read: async () => { if (ref.id === y) { started.resolve(); return finish.promise; } return new Uint8Array([1, 2]); },
           stream: async function* () { yield new Uint8Array([1, 2]); },
           dispose: async () => { disposed.push(ref.id); },

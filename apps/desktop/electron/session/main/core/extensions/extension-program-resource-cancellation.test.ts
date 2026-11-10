@@ -132,7 +132,7 @@ describe('resource lookup preserves a dispatched program call', () => {
     const resolve = vi.fn<NonNullable<FilesPlatform['resolveFile']>>(async (_ref, actor, options) => ({
       status: 'ready', purpose: 'file', reader: { accountId: 'owner', actorId: actor ?? 'owner' },
       revision: { source: 'local', item_id: ITEM, version: options.version, chat_id: CHAT, size_bytes: 2,
-        file_name: 'data.bin', content_type: 'application/octet-stream', sha256: null },
+        file_name: 'data.bin', content_type: 'application/octet-stream', sha256: 'ab'.repeat(32) },
       read: byteRead, stream: async function* () { yield new Uint8Array([3, 4]); }, dispose: async () => {},
     } satisfies FileHandle));
     resolveFile = resolve;

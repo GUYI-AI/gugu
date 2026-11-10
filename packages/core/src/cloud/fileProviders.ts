@@ -11,13 +11,11 @@ import { isTransientFileReadError, retryFileDownload } from './fileDownloadRetry
 const ACKNOWLEDGEMENT_MS = 15_000
 
 export type { FileChunkCache } from '../shared/fileCache'
-type Download = { status: string; code?: string; url: string; expires_at?: string; origin_available?: boolean; thumb_url?: string | null; download_id: string; key?: string; codec?: string; sha256: string | null; size_bytes: number; ciphertext_bytes?: number; ciphertext_sha256?: string; bucket_id?: string; object_name?: string; message_id?: string }
+type Download = { status: string; code?: string; url: string; expires_at?: string; origin_available?: boolean; thumb_url?: string | null; download_id: string; key?: string; codec?: string; sha256: string | null; size_bytes: number; ciphertext_bytes?: number; ciphertext_sha256?: string; bucket_id?: string }
 const missingObject = (row: { status: string; code?: string }) => row.status === 'missing' && row.code === 'object_not_found'
 const hex = (bytes: Uint8Array) => Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
 const cacheKey = (context: FileContext, digest: string) => hex(sha256(new TextEncoder().encode(JSON.stringify([context.actor, fileRefKey(context.ref), digest]))))
-const sameLegacyObject = (revision: FileRevision, row: { bucket_id?: string; object_name?: string; message_id?: string }) =>
-  !revision.legacy_object || row.bucket_id === revision.legacy_object.bucket_id && row.object_name === revision.legacy_object.object_name && row.message_id === revision.legacy_object.message_id
-// An unhashed historical object cannot authenticate persistent cached chunks between opens.
+// A download written straight to its destination keeps no chunks.
 const uncached: FileChunkCache = { get: async () => null, put: async () => {}, clear: async () => {} }
 
 /** Retain verified chunks; reconnect only the incomplete chunk, with the signer's authorized origin fallback. */
@@ -127,7 +125,7 @@ export function cloudFileProviders(deps: {
     })
     function accept(row: Download) {
       if (missingObject(row)) throw new MissingFileObjectError()
-      if (row.status !== 'ready' || typeof row.url !== 'string' || row.size_bytes !== (encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes) || row.sha256 !== revision.sha256 || !sameLegacyObject(revision, row) ||
+      if (row.status !== 'ready' || typeof row.url !== 'string' || row.size_bytes !== (encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes) || row.sha256 !== revision.sha256 ||
         row.origin_available !== undefined && typeof row.origin_available !== 'boolean' ||
         encrypted && (row.ciphertext_bytes !== row.size_bytes || row.codec !== 'secretstream-v1' || !row.key || !/^[0-9a-f]{64}$/.test(row.ciphertext_sha256 ?? '') ||
           lease && (row.ciphertext_sha256 !== lease.ciphertext_sha256 || row.key !== lease.key))) throw new Error('File download commitment changed')
@@ -138,7 +136,7 @@ export function cloudFileProviders(deps: {
     // A key still requires the current download ACL, even if every ciphertext chunk is cached.
     if (encrypted && !lease) await sign()
     const digest = encrypted ? lease!.ciphertext_sha256! : revision.sha256, key = cacheKey(context, digest ?? crypto.randomUUID())
-    const source = remoteSource(encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes, key, destination || revision.legacy_object ? uncached : deps.cache, async (renew, origin) => renew || origin ? sign(renew, origin) : lease ?? await sign(), (url, init) => objectFetch(context, url, init), context.signal, context.progress)
+    const source = remoteSource(encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes, key, destination ? uncached : deps.cache, async (renew, origin) => renew || origin ? sign(renew, origin) : lease ?? await sign(), (url, init) => objectFetch(context, url, init), context.signal, context.progress)
     let dataKey: Uint8Array | undefined
     let sink: FileSink | undefined
     try {
@@ -154,7 +152,7 @@ export function cloudFileProviders(deps: {
       const changed = (current: Download) => {
         if (missingObject(current)) throw new MissingFileObjectError()
         if (current.status !== 'ready') throw new FileReadRevokedError(current.status === 'gone' || current.status === 'expired' ? current.status : 'access')
-        if (current.sha256 !== revision.sha256 || current.size_bytes !== revision.size_bytes || !sameLegacyObject(revision, current)) throw new FileReadRevokedError('revision')
+        if (current.sha256 !== revision.sha256 || current.size_bytes !== revision.size_bytes) throw new FileReadRevokedError('revision')
       }
       if (encrypted && combined) {
         const downloadId = lease!.download_id
@@ -204,7 +202,7 @@ export function cloudFileProviders(deps: {
       context.signal?.throwIfAborted()
       const result = await metadata(context)
       context.signal?.throwIfAborted()
-      return parseFileMetadata(result, context.ref)
+      return parseFileMetadata(result)
     },
     managed: (revision, context) => read(revision, context, false),
     temporary: (revision, context) => read(revision, context, true),
@@ -212,13 +210,13 @@ export function cloudFileProviders(deps: {
       const video = revision.content_type.startsWith('video/')
       if (!video && !revision.content_type.startsWith('image/')) throw new Error('File has no media preview')
       if (revision.source === 'managed-object') {
-        const key = revision.sha256 === null ? null : `https://attachments.gugu.invalid/preview/${cacheKey(context, revision.sha256)}`
-        const hit = key ? await deps.imageCache?.match(key) : null
+        const key = `https://attachments.gugu.invalid/preview/${cacheKey(context, revision.sha256)}`
+        const hit = await deps.imageCache?.match(key)
         if (!video && hit) return hit.blob()
         const ref = 'item_id' in context.ref ? { ...context.ref, version: revision.version } : context.ref
         const lease = await request(context, 'file-download', { ref, as: context.actor.actorId, request_id: crypto.randomUUID() }) as Download
         if (missingObject(lease)) throw new MissingFileObjectError()
-        if (lease.status !== 'ready' || lease.sha256 !== revision.sha256 || lease.size_bytes !== revision.size_bytes || !sameLegacyObject(revision, lease)) throw new Error('File preview commitment changed')
+        if (lease.status !== 'ready' || lease.sha256 !== revision.sha256 || lease.size_bytes !== revision.size_bytes) throw new Error('File preview commitment changed')
         if (video) {
           const expiresAt = Date.parse(lease.expires_at ?? '')
           if (typeof lease.url !== 'string' || !lease.url || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error('Invalid video preview lease')
@@ -235,7 +233,7 @@ export function cloudFileProviders(deps: {
             if (!preview.type.startsWith('image/')) throw new Error('Invalid file preview image')
             return preview
           }, context.signal)
-          if (key) await deps.imageCache?.put(key, new Response(blob)); return blob
+          await deps.imageCache?.put(key, new Response(blob)); return blob
         }
         // The signer owns thumbnail eligibility; formats without one are safe image sources as original blobs.
         return snapshotBlob(await full(), revision.content_type)

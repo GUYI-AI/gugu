@@ -60,7 +60,7 @@ test('turn prefetch registers the canonical artifact path and sends the same ver
 })
 
 test('inbox attachment metadata retains the authoritative message reference without image bytes, URLs or unregistered paths', () => {
-  const row = { id: '4f6dac4f-a3f2-48da-9876-d3a4567d8b64', contentType: 'attachment', content: '[附件] calendar.png (image/png)\n[URL] https://files.invalid/storage/v1/object/public/chat-media/calendar.png\n[Size] 42\n[Kind] image\n[Caption]\n请把这个图片转发给我', fileItemId: null, fileVersion: null, fileBlobId: null }
+  const row = { id: '4f6dac4f-a3f2-48da-9876-d3a4567d8b64', contentType: 'attachment', content: '[附件] calendar.png (image/png)\n[Size] 42\n[Kind] image\n[Caption]\n请把这个图片转发给我', fileItemId: null, fileVersion: null, fileBlobId: 'b1' }
   const prepared = phoneInboxAttachmentRow(row)
   assert.match(prepared.content, /message_download_file/)
   assert.match(prepared.content, new RegExp(`msg:${row.id}`))
@@ -69,7 +69,7 @@ test('inbox attachment metadata retains the authoritative message reference with
   assert.equal(prepared.content.includes('https://'), false)
   assert.equal(prepared.content.startsWith('[附件]'), false)
   assert.equal(row.content.startsWith('[附件]'), true)
-  const gone = phoneInboxAttachmentRow({ ...row, content: '[附件] deleted.png (image/png)\n[Size] 42\n[Kind] image' })
+  const gone = phoneInboxAttachmentRow({ ...row, fileBlobId: null, content: '[附件] deleted.png (image/png)\n[Size] 42\n[Kind] image' })
   assert.match(gone.content, /"available":false/)
 })
 
@@ -142,11 +142,11 @@ test('unregistered paths, changed bytes and permission revocation before commit 
   } finally { await fx.close() }
 })
 
-test('attachment download ignores an untrusted body URL and requires message ACL before requesting any object bytes', async () => {
+test('attachment download requires message ACL before requesting any object bytes', async () => {
   const fx = await fixture()
   try {
     fx.cloud.rpc = async (_schema, name) => { assert.equal(name, 'can_read_message'); return true }
-    fx.cloud.chat = { from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: { id: '4f6dac4f-a3f2-48da-9876-d3a4567d8b64', content_type: 'attachment', content: '[附件] secret.txt (text/plain)\n[URL] http://127.0.0.1/secret\n[Size] 42\n[Kind] file' }, error: null }) }) }) }) }
+    fx.cloud.chat = { from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: { id: '4f6dac4f-a3f2-48da-9876-d3a4567d8b64', content_type: 'attachment', content: '[附件] secret.txt (text/plain)\n[Size] 42\n[Kind] file', file_blob_id: 'b1' }, error: null }) }) }) }) }
     const endpoint = await fx.cloud.attachmentEndpoint()
     fx.cloud.attachmentEndpoint = async () => ({ ...endpoint, fetch: async (url, init) => { fx.requests.push([String(url), init]); return json({ status: 'gone', sha256: null }) } })
     const tool = phoneFileTools({ agent, job: fx.job, cloud: fx.cloud, store: fx.store, env: {}, authorize: async () => undefined, emit: () => undefined }).find((item) => item.name === 'message_download_file')
@@ -156,12 +156,12 @@ test('attachment download ignores an untrusted body URL and requires message ACL
   } finally { await fx.close() }
 })
 
-test('the message authority downloads the verified original even when its body contains a local-network URL', async () => {
+test('the message authority downloads the verified original', async () => {
   const fx = await fixture()
   const id = '4f6dac4f-a3f2-48da-9876-d3a4567d8b64'
   try {
     fx.cloud.rpc = async (_schema, name) => { assert.equal(name, 'can_read_message'); return true }
-    fx.cloud.chat = { from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: { id, content_type: 'attachment', content: '[附件] private.bin (application/octet-stream)\n[URL] http://127.0.0.1/secret\n[Size] 42\n[Kind] file' }, error: null }) }) }) }) }
+    fx.cloud.chat = { from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: { id, content_type: 'attachment', content: '[附件] private.bin (application/octet-stream)\n[Size] 42\n[Kind] file', file_blob_id: 'b1' }, error: null }) }) }) }) }
     const endpoint = await fx.cloud.attachmentEndpoint()
     const revision = { status: 'ready', source: 'managed-object', file_name: 'private.bin', content_type: 'application/octet-stream', size_bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }
     fx.cloud.attachmentEndpoint = async () => ({ ...endpoint, fetch: async (url, init) => {

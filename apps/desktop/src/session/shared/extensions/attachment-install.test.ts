@@ -6,10 +6,8 @@ import { EXTENSION_API_VERSION, parseExtensionManifest, type ExtensionManifest }
 // The one answer the desktop (main) and the phone (L9) install a chat package by. main's own suite
 // (extension-attachment-install.test.ts) runs the same rules end to end, unchanged, before and after they moved here.
 
-const SUPABASE = 'https://db.example.test';
 const ALICE = '11111111-2222-4333-8444-555555555555';
 const MALLORY = '99999999-8888-4777-8666-555555555555';
-const url = (uploader: string) => `${SUPABASE}/storage/v1/object/public/chat-media/${uploader}/notes.guguext`;
 
 function manifest(version: string, capabilities: string[] = []): ExtensionManifest {
   return parseExtensionManifest({
@@ -143,10 +141,6 @@ describe('#7290 a card by its message: the publisher is its sender, never the ma
     expect(messagePackageSource(card({ file_item_id: null, file_version: null, file_blob_id: BLOB }))).toEqual({ publisher: ALICE, source: { kind: 'message', messageId: 'm1' } });
   });
 
-  it('an old card by its message: published by its sender (whoever uploaded the bytes its text names), its bytes signed for the message — never the URL its text carries', () => {
-    const old = card({ content: `[附件] notes.guguext (application/vnd.gugu.extension+zip)\n[URL] ${url(ALICE)}\n[Size] 9\n[Kind] file`, file_item_id: null, file_version: null, sender_user_id: MALLORY });
-    expect(messagePackageSource(old)).toEqual({ publisher: MALLORY, source: { kind: 'message', messageId: 'm1' } });
-  });
 
 
   it('refused, said why: its sender deleted their account, the file deleted from the folder, not a package', () => {

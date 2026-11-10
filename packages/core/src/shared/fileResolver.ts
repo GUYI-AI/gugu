@@ -30,9 +30,7 @@ export interface FileRevision {
   file_name: string
   content_type: string
   size_bytes: number
-  sha256: string | null
-  /** Only server-identified historical chat-media messages lack a stored digest. */
-  legacy_object?: { bucket_id: 'chat-media'; object_name: string; message_id: string }
+  sha256: string
   width?: number | null
   height?: number | null
   /** The device that keeps this version: the one that sent it. */
@@ -107,10 +105,7 @@ export function requireFileRange(size: number, offset: number, length: number): 
 
 export function requireFileRevision(revision: FileRevision): void {
   requireFileRange(revision.size_bytes, 0, 0)
-  const legacy = revision.sha256 === null && revision.source === 'managed-object' && !revision.item_id && revision.version == null &&
-    revision.legacy_object?.bucket_id === 'chat-media' && typeof revision.legacy_object.object_name === 'string' && !!revision.legacy_object.object_name &&
-    typeof revision.legacy_object.message_id === 'string' && !!revision.legacy_object.message_id
-  if (!(typeof revision.sha256 === 'string' && /^[0-9a-f]{64}$/.test(revision.sha256) || legacy) || revision.legacy_object && !legacy || typeof revision.file_name !== 'string' || !revision.file_name || typeof revision.content_type !== 'string' || !revision.content_type ||
+  if (!(typeof revision.sha256 === 'string' && /^[0-9a-f]{64}$/.test(revision.sha256)) || typeof revision.file_name !== 'string' || !revision.file_name || typeof revision.content_type !== 'string' || !revision.content_type ||
     !['local', 'managed-object'].includes(revision.source)) throw new Error('Invalid file revision')
   if (revision.source === 'local' && (!revision.item_id || !Number.isSafeInteger(revision.version) || revision.version! < 1 ||
     !revision.host_device_id || !revision.host_project_id || !revision.host_account_id || typeof revision.relative_path !== 'string' || !revision.relative_path ||
@@ -118,18 +113,14 @@ export function requireFileRevision(revision: FileRevision): void {
 }
 
 /** The resolver response and an authorized message projection carry the same display metadata. */
-export function parseFileMetadata(value: unknown, ref?: FileRef): FileMetadata {
+export function parseFileMetadata(value: unknown): FileMetadata {
   if (!value || typeof value !== 'object') throw new Error('Invalid file metadata')
-  const row = value as FileRevision & { status: string; code?: string; bucket_id?: string; object_name?: string; message_id?: string }
+  const row = value as FileRevision & { status: string; code?: string }
   if (row.status === 'missing' && row.code === 'object_not_found') return { status: 'missing', sha256: row.sha256 ?? null }
   if (row.status === 'gone' || row.status === 'expired') return { status: row.status, sha256: row.sha256 ?? null }
   if (row.status !== 'ready') throw new Error('Invalid file metadata')
   const { source, item_id, version, chat_id, file_name, content_type, size_bytes, sha256, width, height, host_device_id, host_project_id, host_account_id, host_label, host_online, relative_path, temporary_transfer } = row
   const revision = { source, item_id, version, chat_id, file_name, content_type, size_bytes, sha256, width, height, host_device_id, host_project_id, host_account_id, host_label, host_online, relative_path, temporary_transfer }
-  if (source === 'managed-object' && sha256 === null && row.bucket_id === 'chat-media' && typeof row.object_name === 'string' && row.object_name &&
-    ref && 'message_id' in ref && row.message_id === ref.message_id) {
-    Object.assign(revision, { legacy_object: Object.freeze({ bucket_id: 'chat-media', object_name: row.object_name, message_id: row.message_id }) })
-  }
   requireFileRevision(revision)
   return { status: 'ready', revision }
 }
@@ -185,7 +176,6 @@ export function createFileResolver(providers: FileProviders) {
     if (metadata.status !== 'ready') return metadata
     const revision = Object.freeze({ ...metadata.revision })
     requireFileRevision(revision)
-    if (revision.legacy_object && (!('message_id' in context.ref) || context.ref.message_id !== revision.legacy_object.message_id)) throw new Error('Historical file reference changed')
     context.signal = anySignal([options.signal, cancellation.signal])
     let disposed = false
     let opened: Promise<FileBytes> | undefined

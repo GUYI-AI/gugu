@@ -42,7 +42,7 @@ export function ciphertextSize(size: number): number {
 /** All authenticated frames bind to the immutable revision, including its expected plaintext digest. */
 function associatedData(revision: FileRevision): Uint8Array {
   requireFileRevision(revision)
-  if (revision.sha256 === null || !revision.item_id || !Number.isSafeInteger(revision.version)) throw new Error('Missing immutable file revision')
+  if (!revision.item_id || !Number.isSafeInteger(revision.version)) throw new Error('Missing immutable file revision')
   return new TextEncoder().encode(JSON.stringify(['GGFILE01', revision.item_id, revision.version, revision.sha256, revision.size_bytes]))
 }
 async function exact(source: FileBytes, offset: number, length: number): Promise<Uint8Array> {

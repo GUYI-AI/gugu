@@ -75,15 +75,15 @@ async function readAttachmentBytes(source: AttachmentSource, variant: Attachment
   const file = await resolveAttachment(source, { ...(variant === 'shown' ? { showFirst: true as const } : {}), ...(progress ? { progress } : {}) })
   if (file.status !== 'ready') return file
   onLink?.(file.revision)
-  const key = file.revision.sha256 === null ? null : fullKey(file.reader.accountId, file.revision.sha256)
-  const keep = async (blob: Blob) => { if (key) await putAttachment(key, blob) }
+  const key = fullKey(file.reader.accountId, file.revision.sha256)
+  const keep = async (blob: Blob) => { await putAttachment(key, blob) }
   if (variant !== 'shown') { const blob = await fileBlob(file); await keep(blob); return { status: 'ready', blob, link: file.revision } }
   // A preview that can take itself down shows the bytes before the server's read acknowledgement. The plaintext is kept
   // only once acknowledged; a revoked read also removes the copy an earlier open kept.
   const { blob, acknowledged } = await shownFileBlob(file)
   // The kept copy only saves a later download: failing to write it never takes down an acknowledged read.
   return { status: 'ready', blob, link: file.revision, acknowledged: acknowledged.then(() => keep(blob).catch((error) => log.warn({ error }, 'acknowledged copy not kept')), async (error) => {
-    if (key && (error instanceof FileReadRevokedError || error instanceof MissingFileObjectError)) await (await attachmentCache()).delete(key)
+    if (error instanceof FileReadRevokedError || error instanceof MissingFileObjectError) await (await attachmentCache()).delete(key)
     throw error
   }) }
 }

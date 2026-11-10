@@ -8,10 +8,10 @@ const AGENT = '11111111-1111-4111-8111-111111111111'
 const BOB = '22222222-2222-4222-8222-222222222222'
 const CHAT = '33333333-3333-4333-8333-333333333333'
 const URL = 'https://db.test/storage/v1/object/public/chat-media/u/share-1.0.0.guguext'
-const attachment = (fileName: string, mime: string) => `[附件] ${fileName} (${mime})\n[URL] ${URL}\n[Size] 409\n[Kind] file`
+const attachment = (fileName: string, mime: string) => `[附件] ${fileName} (${mime})\n[Size] 409\n[Kind] file`
 const context = { agentId: AGENT, supabaseUrl: '', anonKey: '', getAccessToken: async () => 'token' }
 
-function injected(members: string[], content = attachment('share-1.0.0.guguext', 'application/vnd.gugu.extension+zip'), agentSees = true, fileRef: Record<string, unknown> = {}) {
+function injected(members: string[], content = attachment('share-1.0.0.guguext', 'application/vnd.gugu.extension+zip'), agentSees = true, fileRef: Record<string, unknown> = { file_item_id: 'i1', file_version: 1, file_blob_id: null }) {
   return {
     restGet: async (path: string) => {
       if (path.startsWith('messages?')) return path.includes('id=eq.m1') ? [{ id: 'm1', chat_id: CHAT, content, ...fileRef }] : []
@@ -30,7 +30,7 @@ function injected(members: string[], content = attachment('share-1.0.0.guguext',
 }
 
 describe('app_install from a chat message (#6646)', () => {
-  test('hands on the card\'s message, an old card too (#7290) — never its URL', async () => {
+  test('hands on the card\'s message (#7290), never a URL', async () => {
     await expect(extensionAttachmentOf(context, 'm1', injected([AGENT, BOB]))).resolves.toEqual({ message_id: 'm1' })
   })
 
@@ -56,7 +56,7 @@ describe('app_install from a chat message (#6646)', () => {
     await expect(extensionAttachmentOf(context, 'm1', injected([AGENT], 'hello'))).rejects.toThrow('message m1 has no .guguext attachment')
     // #7290 群文件夹里的包,条目已经删了(file_item_id 随删除置空):说清楚、不装。
     const inFolder = '[附件] share-1.0.0.guguext (application/vnd.gugu.extension+zip)\n[Size] 409\n[Kind] file'
-    await expect(extensionAttachmentOf(context, 'm1', injected([AGENT], inFolder)))
+    await expect(extensionAttachmentOf(context, 'm1', injected([AGENT], inFolder, true, {})))
       .rejects.toThrow('app_install: the package of message m1 was deleted from the group folder')
   })
 
@@ -66,7 +66,8 @@ describe('app_install from a chat message (#6646)', () => {
       .toEqual({ message_id: 'm1' })
     expect(await extensionAttachmentOf(context, 'm1', injected([AGENT], inFolder, true, { file_item_id: null, file_version: null, file_blob_id: 'b1' })))
       .toEqual({ message_id: 'm1' })
-    // An old card: its message too.
-    expect(await extensionAttachmentOf(context, 'm1', injected([AGENT]))).toEqual({ message_id: 'm1' })
+    // The retired chat-media card (its body names a public URL) is not a package any more: every one was adopted into the folder.
+    await expect(extensionAttachmentOf(context, 'm1', injected([AGENT], `[附件] share-1.0.0.guguext (application/vnd.gugu.extension+zip)\n[URL] ${URL}\n[Size] 409\n[Kind] file`, true, {})))
+      .rejects.toThrow('message m1 has no .guguext attachment')
   })
 })

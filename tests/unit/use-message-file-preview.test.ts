@@ -110,7 +110,7 @@ describe('useMessageFilePreview', () => {
 
   it.each([
     ['a group item', { kind: 'item', itemId: 'item-1', version: 2 }, true],
-    ['an old URL attachment', { kind: 'url', url: 'https://files.test/deck.pptx' }, false],
+    ['a sending row\'s local preview', { kind: 'url', url: 'blob:https://app.invalid/deck' }, false],
   ] as const)('%s: uses the shared group opener = %s', async (_label, source, toApp) => {
     appMocks.openResource.mockResolvedValue(undefined)
     bytesMocks.attachmentBytes.mockResolvedValue(bytesOf(async () => ''))

@@ -66,7 +66,8 @@ it('pages original messages by sequence and retains their IDs, timestamps and fi
 });
 it('does not use a legacy body URL as authority for an attachment or restore a retracted body', () => {
   const message = messageItemFromRow({ ...raw(), content_type: 'attachment', content: formatAttachmentMetadata({ fileName: 'old.html', mimeType: 'text/html', kind: 'file', url: 'https://invalid.example/not-authority', sizeBytes: 12 }) }, 'owner')!;
-  expect(legacyMessageBody(message, 'Retracted').files[0].source).toEqual({ kind: 'message', messageId: message.id });
+  // A [URL] body from the server is the retired chat-media shape (all adopted into the folder): shown as unreadable, never fetched.
+  expect(legacyMessageBody(message, 'Retracted')).toEqual({ text: '', files: [], invalidAttachments: true });
   expect(legacyMessageBody({ ...message, retracted_at: '2026-10-02T00:00:00Z' }, 'Retracted')).toEqual({ text: 'Retracted', files: [], invalidAttachments: false });
 });
 it('refuses a stale account before issuing any query', async () => {

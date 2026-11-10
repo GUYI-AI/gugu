@@ -70,7 +70,7 @@ export function messageItemFromRow(raw: RawMessageRow, currentUserId: string): M
   if (raw.file_metadata != null) {
     // The message stays: an attachment whose projected metadata this build cannot read is resolved again when its card is
     // drawn, and that card says it cannot be opened. Dropping the row would hide a message the server counts as unread.
-    try { fileMetadata = parseFileMetadata(raw.file_metadata, { message_id: id }) } catch (error) {
+    try { fileMetadata = parseFileMetadata(raw.file_metadata) } catch (error) {
       log.error({ messageId: id, chatId, error }, 'unreadable attachment metadata; the message is kept without it')
     }
   }

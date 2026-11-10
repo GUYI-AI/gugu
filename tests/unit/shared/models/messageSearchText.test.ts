@@ -9,9 +9,9 @@ import { parseVoiceAttachmentContent } from '@gugu/core/shared/ui/voiceAttachmen
 import { message } from '../../../support/testHarness'
 
 const mediaFixtures = [
-  ['legacy', formatAttachmentMetadata({
+  ['sending', formatAttachmentMetadata({
     fileName: 'invoice-zebra.pdf', mimeType: 'application/x-metadataonly',
-    kind: 'file', url: 'https://example.invalid/urlforbidden999', sizeBytes: 918273645,
+    kind: 'file', url: 'blob:https://app.invalid/urlforbidden999', sizeBytes: 918273645,
     caption: '附件说明 coralcaption\n第二行 multilinecaption',
   })],
   ['canonical', '[附件] nebula.txt (text/plain)\n[Size] 512\n[Kind] file\n[Caption]\n无URL说明 localcaption'],

@@ -1,5 +1,5 @@
 // #7290 message_download_file { source_message_id }:host 读那条消息、按 agent 本人判看不看得见,字节从哪来由消息说 ——
-// 老消息正文里的公开 URL,新消息指向群文件夹的那一版(attachments/urls 以 agent 的身份签)。存到本机,文件名按内容。
+// 悄悄话的附件按消息签,群文件夹里的指向那一版(attachments/urls 以 agent 的身份签)。存到本机,文件名按内容。
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
@@ -12,8 +12,8 @@ import { attachmentDownloadName } from '../../../../packages/core/src/shared/att
 
 const AGENT = '11111111-1111-4111-8111-111111111111'
 const CHAT = '33333333-3333-4333-8333-333333333333'
-const LEGACY_URL = 'https://db.test/storage/v1/object/public/chat-media/u/notes.pdf'
-const legacy = `[附件] notes.pdf (application/pdf)\n[URL] ${LEGACY_URL}\n[Size] 5\n[Kind] file`
+// A whisper's attachment: no folder item, its bytes named by the message (file_blob_id).
+const byMessage = '[附件] notes.pdf (application/pdf)\n[Size] 5\n[Kind] file'
 const envelope = '[附件] deck.pdf (application/pdf)\n[Size] 5\n[Kind] file'
 const homes: string[] = []
 afterEach(async () => { await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true }))) })
@@ -63,8 +63,8 @@ describe('message_download_file by source_message_id (#7290)', () => {
     expect(name).toMatch(/^(?:核对🍵)*(?:核对|核)?\.html$/u)
   })
 
-  test('old message: resolves the message through the same private provider; preserves the original filename', async () => {
-    const { call, fetched, asked, home } = await setup({ id: 'm1', chat_id: CHAT, content: legacy, content_type: 'attachment', file_item_id: null, file_version: null })
+  test('a message-backed attachment: resolves the message through the private provider; preserves the original filename', async () => {
+    const { call, fetched, asked, home } = await setup({ id: 'm1', chat_id: CHAT, content: byMessage, content_type: 'attachment', file_item_id: null, file_version: null, file_blob_id: 'b1' })
     const text = JSON.stringify(await call())
     expect(fetched).toEqual(['verified original'])
     expect(asked).toEqual([[{ message_id: 'm1' }]])
@@ -76,7 +76,7 @@ describe('message_download_file by source_message_id (#7290)', () => {
 
   test('preserves a Chinese filename inside its hash directory, so default sending keeps the original name', async () => {
     const fileName = '费用核对报告（最终版）😀.html'
-    const { call } = await setup({ id: 'm1', chat_id: CHAT, content: legacy.replace('notes.pdf', fileName), content_type: 'attachment', file_item_id: null, file_version: null })
+    const { call } = await setup({ id: 'm1', chat_id: CHAT, content: byMessage.replace('notes.pdf', fileName), content_type: 'attachment', file_item_id: null, file_version: null, file_blob_id: 'b1' })
     const receipt = JSON.parse(await call())
     expect(basename(receipt.file_path)).toBe(fileName)
     expect(basename(dirname(receipt.file_path))).toBe(receipt.sha256)
@@ -87,8 +87,8 @@ describe('message_download_file by source_message_id (#7290)', () => {
 
   test('returns full SHA-256 and actual byte count for the original bytes, including binary and Unicode data', async () => {
     const bytes = Buffer.concat([Buffer.from('原文件😀\n'), Buffer.from([0, 255, 13, 10, 128])])
-    const content = legacy.replace('[Size] 5', `[Size] ${bytes.length}`)
-    const { call } = await setup({ id: 'm1', chat_id: CHAT, content, content_type: 'attachment', file_item_id: null, file_version: null }, { bytes })
+    const content = byMessage.replace('[Size] 5', `[Size] ${bytes.length}`)
+    const { call } = await setup({ id: 'm1', chat_id: CHAT, content, content_type: 'attachment', file_item_id: null, file_version: null, file_blob_id: 'b1' }, { bytes })
     const receipt = JSON.parse(await call())
     expect(receipt).toMatchObject({ file_name: 'notes.pdf', size_bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') })
     expect(receipt.sha256).toHaveLength(64)
@@ -152,7 +152,7 @@ describe('message_download_file by source_message_id (#7290)', () => {
   })
 
   test('refuses: a message the agent cannot see, one without an attachment, a deleted file, one it may no longer read', async () => {
-    const hidden = await setup({ id: 'm1', chat_id: CHAT, content: legacy, content_type: 'attachment', file_item_id: null, file_version: null }, { agentSees: false })
+    const hidden = await setup({ id: 'm1', chat_id: CHAT, content: byMessage, content_type: 'attachment', file_item_id: null, file_version: null, file_blob_id: 'b1' }, { agentSees: false })
     await expect(hidden.call()).rejects.toThrow('there is no message m1 you can read')
     const text = await setup({ id: 'm1', chat_id: CHAT, content: 'hi', content_type: 'text', file_item_id: null, file_version: null })
     await expect(text.call()).rejects.toThrow('has no attachment')

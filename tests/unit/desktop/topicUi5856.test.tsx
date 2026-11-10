@@ -341,14 +341,14 @@ describe('TopicSplitPane 是分栏，不是话题的开关', () => {
   // 文件卡的按钮点了什么都不发生(主线那边是接了的)。反例:不接时确实点不出任何调用 —— 证明这一格判得出缺失。
   // 用 pdf:png 按扩展名一律内联成图(不看 [Kind]),不画文件卡。
   it('分栏里的文件卡点得开,走的是传进来的 onOpenAttachment', async () => {
-    const content = ['[附件] 报告.pdf', '[URL] https://example.test/chat-media/a.pdf', '[Size] 94567', '[Kind] file'].join('\n')
-    const attachmentProps = { ...baseProps, messages: [message({ id: 'att-1', content, content_type: 'attachment' })] }
+    const content = ['[附件] 报告.pdf', '[Size] 94567', '[Kind] file'].join('\n')
+    const attachmentProps = { ...baseProps, messages: [message({ id: 'att-1', content, content_type: 'attachment', file_item_id: 'item-report', file_version: 1 })] }
     const onOpenAttachment = vi.fn()
     await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...attachmentProps, onOpenAttachment }))
     const card = harness.container.querySelector('[data-testid="topic-split-pane"] button[aria-label="报告.pdf"]') as HTMLElement
     expect(card, '分栏里没画出文件卡').toBeTruthy()
     await clickElement(card)
-    expect(onOpenAttachment).toHaveBeenCalledWith(expect.objectContaining({ source: { kind: 'message', messageId: 'att-1' }, fileName: '报告.pdf' }), attachmentProps.messages[0])
+    expect(onOpenAttachment).toHaveBeenCalledWith(expect.objectContaining({ source: { kind: 'item', itemId: 'item-report', version: 1 }, fileName: '报告.pdf' }), attachmentProps.messages[0])
   })
 
   it('点击话题已读环显示该消息的已读/未读名单，排除只在来源群里的成员', async () => {

@@ -25,8 +25,8 @@ vi.mock('@/lib/attachmentBytes', async (original) => ({
 const { MessageBubble } = await import('@/components/chat/MessageBubble');
 
 const lin: MemberProfileCardModel = { id: 'sender-1', displayName: '林知夏', avatar: null, email: null, type: 'human', role: 'member' } as MemberProfileCardModel;
-const FILE_CONTENT = '[附件] 项目群并入项目页-原型.html (text/html)\n[URL] https://files.test.local/prototype.html\n[Size] 169267\n[Kind] file';
-const IMAGE_CONTENT = '[附件] screenshot.png (image/png)\n[URL] https://files.test.local/screenshot.png\n[Size] 169267\n[Kind] image';
+const FILE_CONTENT = '[附件] 项目群并入项目页-原型.html (text/html)\n[Size] 169267\n[Kind] file';
+const IMAGE_CONTENT = '[附件] screenshot.png (image/png)\n[Size] 169267\n[Kind] image';
 const IMAGE_LINK = { url: 'https://files.test.local/screenshot.png', width: 1000, height: 500 };
 
 let harness: ReturnType<typeof createReactHarness>;
@@ -44,7 +44,7 @@ async function renderAttachment(content: string, selector: string, listWidth: nu
   await renderWithAppProviders(
     harness,
     createNode(MessageBubble, {
-      msg: message({ id: `msg-${++messageSeq}`, sender_user_id: 'sender-1', created_at: '2026-10-16T09:41:00.000Z', content_type: 'attachment', content, is_mine: isMine }),
+      msg: message({ id: `msg-${++messageSeq}`, sender_user_id: 'sender-1', created_at: '2026-10-16T09:41:00.000Z', content_type: 'attachment', content, is_mine: isMine, file_item_id: `item-${messageSeq}`, file_version: 1 }),
       onReaction: vi.fn(),
       memberReadSeqs: {},
       onQuote: vi.fn(),

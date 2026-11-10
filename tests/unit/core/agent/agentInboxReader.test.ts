@@ -1030,7 +1030,7 @@ describe('P-E4 离线追赶:未读行逐条受理,由队列 drain 合批', () =>
     cloud.post({ chatId: '00000000-0000-4000-8000-000000000005', id: '10000000-0000-4000-8000-000000000017', seq: 1, senderUserId: HUMAN, senderType: 'human', content: '10000000-0000-4000-8000-000000000017' })
     cloud.post({
       chatId: '00000000-0000-4000-8000-000000000005', id: '10000000-0000-4000-8000-000000000008', seq: 2, senderUserId: HUMAN, senderType: 'human',
-      content: '[附件] one.png (image/png)\n[URL] https://example.test/one.png\n[Size] 3\n[Kind] image',
+      content: '[附件] one.png (image/png)\n[Size] 3\n[Kind] image', fileItemId: 'item-1', fileVersion: 1,
     })
     cloud.post({ chatId: '00000000-0000-4000-8000-000000000005', id: '10000000-0000-4000-8000-000000000018', seq: 3, senderUserId: HUMAN, senderType: 'human', content: '10000000-0000-4000-8000-000000000018' })
     const batches: Array<{ agentUserId: string; rows: number; units: number }> = []
@@ -1073,26 +1073,24 @@ describe('P-E4 离线追赶:未读行逐条受理,由队列 drain 合批', () =>
   })
 
   // 新式附件的文件(不是图,比如 App 包):正文里没有链接,字节和图片一样下到本机、正文后面交本地路径;
-  // Legacy pointers use the same signed resolver; without verified private metadata they fail closed. Deleted items stay text-only.
-  it('saves the current file, refuses an unverified legacy pointer without fetching its public URL, and keeps deleted files text-only', async () => {
+  // Deleted items stay text-only.
+  it('saves the current file and keeps deleted files text-only', async () => {
     const cloud = new FakeCloud()
     cloud.addChat('00000000-0000-4000-8000-000000000008', 'group')
     cloud.join('00000000-0000-4000-8000-000000000008', AGENT, { listenMode: 'active' })
     cloud.join('00000000-0000-4000-8000-000000000008', HUMAN)
     const pkg = '[附件] poll-0.1.0.guguext (application/vnd.gugu.extension+zip)\n[Size] 1200\n[Kind] file'
     cloud.post({ chatId: '00000000-0000-4000-8000-000000000008', id: '10000000-0000-4000-8000-000000000005', seq: 1, senderUserId: HUMAN, senderType: 'human', content: pkg, fileItemId: 'item-7', fileVersion: 1 })
-    cloud.post({ chatId: '00000000-0000-4000-8000-000000000008', id: '10000000-0000-4000-8000-000000000006', seq: 2, senderUserId: HUMAN, senderType: 'human', content: '[附件] a.pdf (application/pdf)\n[URL] https://example.test/a.pdf\n[Size] 3\n[Kind] file' })
-    cloud.post({ chatId: '00000000-0000-4000-8000-000000000008', id: '10000000-0000-4000-8000-000000000004', seq: 3, senderUserId: HUMAN, senderType: 'human', content: pkg, fileItemId: null, fileVersion: 1 })
+    cloud.post({ chatId: '00000000-0000-4000-8000-000000000008', id: '10000000-0000-4000-8000-000000000004', seq: 2, senderUserId: HUMAN, senderType: 'human', content: pkg, fileItemId: null, fileVersion: 1 })
     const asked: unknown[] = []
     const { deps, injections } = makeDeps(cloud, {
       downloadAttachment: async (source) => {
         asked.push(source)
-        if ('message_id' in source && source.message_id === '10000000-0000-4000-8000-000000000006') throw new Error('Legacy file requires verified private metadata')
         return { bytes: Uint8Array.from([1, 2]), localPath: '/tmp/gugu-home/chat-media/abc-poll-0.1.0.guguext' }
       },
     })
-    await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ pulled: 3 })
-    expect(asked).toEqual([{ message_id: '10000000-0000-4000-8000-000000000005' }, { message_id: '10000000-0000-4000-8000-000000000006' }])
+    await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ pulled: 2 })
+    expect(asked).toEqual([{ message_id: '10000000-0000-4000-8000-000000000005' }])
     const text = injections.map((entry) => entry.text).join('\n')
     expect(text).toContain('[附件] poll-0.1.0.guguext (application/vnd.gugu.extension+zip)')
     expect(text).toContain('[File saved at local path: /tmp/gugu-home/chat-media/abc-poll-0.1.0.guguext]')
@@ -1100,8 +1098,6 @@ describe('P-E4 离线追赶:未读行逐条受理,由队列 drain 合批', () =>
     // 它是群文件夹里的哪个文件、哪一版,怎么再发、怎么把改过的发成下一版:只在指着条目的那一条上。
     expect(text).toContain('[Folder file gugu-file://item-7?v=1 — show it again: message_send_file {file: "gugu-file://item-7?v=1"}')
     expect(text.match(/\[Folder file /g)).toHaveLength(1)
-    expect(text).toContain('[URL] https://example.test/a.pdf')
-    expect(text).toContain('[File not saved: Legacy file requires verified private metadata]')
     expect(injections.every((entry) => !entry.attachments)).toBe(true)
   })
 

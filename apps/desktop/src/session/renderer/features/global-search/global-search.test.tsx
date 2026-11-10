@@ -586,12 +586,12 @@ describe('names on the phone (no quick switcher beside the panel)', () => {
 describe('quick-filter kinds', () => {
   const kinds = (row: { content_type: string; content: string | null; file_item_id: string | null }) => [...messageKinds(row, 'me-1')].sort()
   it('tells pictures and videos from other files, links from attachments, and finds an @ of me in either mention form', () => {
-    const picture = ['[附件] 海报.png', '[URL] https://db.example/a.png', '[Size] 100', '[Kind] image'].join('\n')
-    const video = ['[附件] 展览.mp4', '[URL] https://db.example/a.mp4', '[Size] 100', '[Kind] file'].join('\n')
-    const sheet = ['[附件] 预算.xlsx', '[URL] https://db.example/a.xlsx', '[Size] 100', '[Kind] file'].join('\n')
-    expect(kinds({ content_type: 'attachment', content: picture, file_item_id: null })).toEqual(['media'])
-    expect(kinds({ content_type: 'attachment', content: video, file_item_id: null })).toEqual(['media'])
-    expect(kinds({ content_type: 'attachment', content: sheet, file_item_id: null })).toEqual(['file'])
+    const picture = ['[附件] 海报.png', '[Size] 100', '[Kind] image'].join('\n')
+    const video = ['[附件] 展览.mp4', '[Size] 100', '[Kind] file'].join('\n')
+    const sheet = ['[附件] 预算.xlsx', '[Size] 100', '[Kind] file'].join('\n')
+    expect(kinds({ content_type: 'attachment', content: picture, file_item_id: 'item-a' })).toEqual(['media'])
+    expect(kinds({ content_type: 'attachment', content: video, file_item_id: 'item-b' })).toEqual(['media'])
+    expect(kinds({ content_type: 'attachment', content: sheet, file_item_id: 'item-c' })).toEqual(['file'])
     expect(kinds({ content_type: 'text', content: '看这个 https://example.com/x', file_item_id: null })).toEqual(['link'])
     expect(kinds({ content_type: 'text', content: '@[小明](user:me-1) 你看下', file_item_id: null })).toEqual(['mention'])
     expect(kinds({ content_type: 'text', content: '@user:me-1 在吗', file_item_id: null })).toEqual(['mention'])

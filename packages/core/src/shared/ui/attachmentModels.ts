@@ -3,7 +3,7 @@ import type { FileMetadata, FileRef } from '../fileResolver'
 
 export type AttachmentKind = 'image' | 'file'
 
-/** 写进正文的那份(老式发送:字节在 chat-media,正文里带公开 URL)。 */
+/** 发送中那一行的正文:字节还在本机,`[URL]` 是本机预览的 blob: 链接(服务端的行从不带 `[URL]`)。 */
 export interface AttachmentMeta {
   kind: AttachmentKind
   fileName: string
@@ -15,7 +15,7 @@ export interface AttachmentMeta {
 
 /**
  * 字节从哪来(附件进群文件夹 ③):
- * - url:老消息,正文里的 `[URL]`(chat-media 公开链接);
+ * - url:正在发送的那一行,正文里的 `[URL]` 是本机预览(blob:);服务端的消息没有这种(老 chat-media 附件已全部收编进文件夹);
  * - item:新消息,指向群文件夹里一个条目的某一版(消息行的 file_item_id / file_version),链接经 attachments/urls 现签;
  * - message:悄悄话的附件,不进群文件夹(owner 10-17 定),消息直接指字节(file_blob_id);能读这条消息的人才签得到链接;
  * - attachment:Agent 之间交付的文件引用,通过同一文件读取器按当前账号核权取原件;
@@ -106,7 +106,7 @@ export function formatAttachmentMetadata(meta: AttachmentMeta): string {
 }
 
 /**
- * 两种正文:老的 `[附件] / [URL] / [Size] / [Kind]`;新的(经 attachments/commit 发的)没有 `[URL]` 那一行,字节由消息行上的
+ * 两种正文:发送中那一行的 `[附件] / [URL] / [Size] / [Kind]`(本机预览);服务端的(经 attachments/commit 发的)没有 `[URL]` 那一行,字节由消息行上的
  * file_item_id / file_version(群文件夹里的条目)或 file_blob_id(悄悄话,直接指字节)指着。新正文配不上指针 ⇒ 条目删了(gone)。
  */
 export function parseAttachmentContent(content: string | null, ref?: MessageFileRef | null): ParsedAttachment | null {
@@ -125,9 +125,10 @@ export function parseAttachmentContent(content: string | null, ref?: MessageFile
 
   let source: AttachmentSource
   if (legacy) {
+    // Only a row this device is sending carries a [URL] line: its local preview. A server row with one is not an attachment.
     const url = urlLine.slice(URL_PREFIX.length).trim()
-    if (!url) return null
-    source = ref?.id && !(ref.local_send_state === 'sending' && url.startsWith('blob:')) ? { kind: 'message', messageId: ref.id } : { kind: 'url', url }
+    if (!url.startsWith('blob:')) return null
+    source = { kind: 'url', url }
   } else if (ref?.file_item_id && Number.isInteger(ref.file_version) && (ref.file_version as number) >= 1) {
     source = { kind: 'item', itemId: ref.file_item_id, version: ref.file_version as number }
   } else if (ref?.file_blob_id && ref.id) {

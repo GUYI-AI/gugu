@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatItem } from '../../../packages/core/src/shared/types/chat'
-import { formatAttachmentMetadata } from '../../../packages/core/src/shared/ui/attachmentModels'
+import { attachmentEnvelope } from '../../../packages/core/src/shared/ui/attachmentModels'
 import { formatVoiceAttachmentMetadata } from '../../../packages/core/src/shared/ui/voiceAttachmentModels'
 import { resolveSharePlan, sharePayloadForMessage, sharePayloadForMessages } from '../../../apps/desktop/src/lib/shareToApps'
 import { mergeShareIntoDraft, shareTargetChats } from '../../../apps/desktop/src/mobile/share-intake/shareTargets'
@@ -43,22 +43,23 @@ vi.mock('@capacitor/core', () => ({
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 describe('一条消息交给系统分享面板的是什么', () => {
-  const image = formatAttachmentMetadata({ kind: 'image', fileName: 'cat.png', mimeType: 'image/png', url: 'https://storage.example/chat-media/cat.png', sizeBytes: 10 })
+  const image = attachmentEnvelope('cat.png', 10, 'image/png')
+  const cat = { file_item_id: 'item-cat', file_version: 1 }
 
   it('文字消息发文字', () => {
     expect(sharePayloadForMessage({ content_type: 'text', content: '晚上七点见' })).toEqual({ text: '晚上七点见' })
   })
 
   it('图片发图片本身(地址交给宿主去取),不是链接文字', () => {
-    expect(sharePayloadForMessage({ content_type: 'attachment', content: image })).toEqual({
-      files: [{ source: { kind: 'url', url: 'https://storage.example/chat-media/cat.png' }, name: 'cat.png', mimeType: 'image/png' }],
+    expect(sharePayloadForMessage({ content_type: 'attachment', content: image, ...cat })).toEqual({
+      files: [{ source: { kind: 'item', itemId: 'item-cat', version: 1 }, name: 'cat.png', mimeType: 'image/png' }],
     })
   })
 
   it('附件带附言时附言随行', () => {
-    const file = formatAttachmentMetadata({ kind: 'file', fileName: '周报.pdf', mimeType: 'application/pdf', url: 'https://storage.example/r.pdf', sizeBytes: 99, caption: '请看第三页' })
-    expect(sharePayloadForMessage({ content_type: 'attachment', content: file })).toEqual({
-      files: [{ source: { kind: 'url', url: 'https://storage.example/r.pdf' }, name: '周报.pdf', mimeType: 'application/pdf' }],
+    const file = `${attachmentEnvelope('周报.pdf', 99, 'application/pdf')}\n[Caption]\n请看第三页`
+    expect(sharePayloadForMessage({ content_type: 'attachment', content: file, file_item_id: 'item-r', file_version: 1 })).toEqual({
+      files: [{ source: { kind: 'item', itemId: 'item-r', version: 1 }, name: '周报.pdf', mimeType: 'application/pdf' }],
       text: '请看第三页',
     })
   })
@@ -88,16 +89,16 @@ describe('一条消息交给系统分享面板的是什么', () => {
 })
 
 describe('多选转发时一起交出去的是什么', () => {
-  const image = formatAttachmentMetadata({ kind: 'image', fileName: 'a.png', mimeType: 'image/png', url: 'https://storage.example/a.png', sizeBytes: 1 })
+  const image = attachmentEnvelope('a.png', 1, 'image/png')
 
   it('文字按顺序空一行接起来,附件依次排开', () => {
     expect(sharePayloadForMessages([
       { content_type: 'text', content: '第一句' },
-      { content_type: 'attachment', content: image },
+      { content_type: 'attachment', content: image, file_item_id: 'item-a', file_version: 1 },
       { content_type: 'text', content: '第二句' },
     ])).toEqual({
       text: '第一句\n\n第二句',
-      files: [{ source: { kind: 'url', url: 'https://storage.example/a.png' }, name: 'a.png', mimeType: 'image/png' }],
+      files: [{ source: { kind: 'item', itemId: 'item-a', version: 1 }, name: 'a.png', mimeType: 'image/png' }],
     })
   })
 

@@ -33,15 +33,14 @@ describe('the former URL resolver protections now belong to the canonical metada
     }
     expect(d).toEqual({ status: 'gone', sha256: null }); expect(f.bytes).not.toHaveBeenCalled()
     const body = '[附件] image.png (image/png)\n[URL] http://127.0.0.1/private\n[Size] 16\n[Kind] image'
-    expect(attachmentFileRef(parseAttachmentContent(body, { id: 'legacy-message' })!.source)).toEqual({ message_id: 'legacy-message' })
-    expect(attachmentFileRef(parseAttachmentContent(body)!.source)).toBeNull()
+    expect(parseAttachmentContent(body, { id: 'legacy-message' })).toBeNull()
     expect(attachmentFileRef({ kind: 'gone' })).toBeNull()
   })
-  it('only a sending blob preview avoids message lookup; persisted or remote addresses keep message authority', () => {
+  it('a [URL] line is only a sending row\'s local preview; it never names bytes to fetch', () => {
     const body = '[附件] image.png (image/png)\n[URL] blob:https://fixture.invalid/selected-file\n[Size] 16\n[Kind] image'
     expect(parseAttachmentContent(body, { id: 'pending', local_send_state: 'sending' })?.source).toEqual({ kind: 'url', url: 'blob:https://fixture.invalid/selected-file' })
-    expect(attachmentFileRef(parseAttachmentContent(body, { id: 'persisted' })!.source)).toEqual({ message_id: 'persisted' })
-    expect(attachmentFileRef(parseAttachmentContent(body.replace('blob:https://fixture.invalid/selected-file', 'https://fixture.invalid/private'), { id: 'remote', local_send_state: 'sending' })!.source)).toEqual({ message_id: 'remote' })
+    expect(attachmentFileRef(parseAttachmentContent(body, { id: 'pending' })!.source)).toBeNull()
+    expect(parseAttachmentContent(body.replace('blob:https://fixture.invalid/selected-file', 'https://fixture.invalid/private'), { id: 'remote', local_send_state: 'sending' })).toBeNull()
   })
   it('private message bytes still use the exact message authority and invisible references stay gone', async () => {
     const f = fixture(); f.hidden.add('m2')

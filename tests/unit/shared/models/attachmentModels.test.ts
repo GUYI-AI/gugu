@@ -14,17 +14,17 @@ describe('attachment models', () => {
       kind: 'image',
       fileName: ' photo.png ',
       mimeType: 'image/png',
-      url: ' https://example.com/photo.png ',
+      url: ' blob:https://app.invalid/photo ',
       sizeBytes: 42.4,
     })
 
-    expect(content).toBe('[附件] photo.png (image/png)\n[URL] https://example.com/photo.png\n[Size] 42\n[Kind] image')
+    expect(content).toBe('[附件] photo.png (image/png)\n[URL] blob:https://app.invalid/photo\n[Size] 42\n[Kind] image')
     expect(parseAttachmentContent(content)).toEqual({
       kind: 'image',
       fileName: 'photo.png',
       mimeType: 'image/png',
       sizeBytes: 42,
-      source: { kind: 'url', url: 'https://example.com/photo.png' },
+      source: { kind: 'url', url: 'blob:https://app.invalid/photo' },
     })
   })
 
@@ -39,8 +39,8 @@ describe('attachment models', () => {
     // 悄悄话的附件:消息直接指字节 ⇒ 按这条消息签;没有消息 id 认不出是哪条,算不上来源。
     expect(parseAttachmentContent(envelope, { id: 'msg-1', file_blob_id: 'blob-1' })?.source).toEqual({ kind: 'message', messageId: 'msg-1' })
     expect(parseAttachmentContent(envelope, { file_blob_id: 'blob-1' })?.source).toEqual({ kind: 'gone' })
-    // 老正文不看指针;既没有 [URL] 也没有 [Size] / [Kind] 的不是附件。
-    expect(parseAttachmentContent('[附件] a.png (image/png)\n[URL] https://x/a.png\n[Size] 1\n[Kind] image', { file_item_id: 'item-1', file_version: 1 })?.source).toEqual({ kind: 'url', url: 'https://x/a.png' })
+    // 只有发送中那一行(本机预览 blob:)带 [URL];服务端带 [URL] 的老正文已全部收编,不再是附件。没有 [Size] / [Kind] 的也不是。
+    expect(parseAttachmentContent('[附件] a.png (image/png)\n[URL] https://x/a.png\n[Size] 1\n[Kind] image', { file_item_id: 'item-1', file_version: 1 })).toBeNull()
     expect(parseAttachmentContent('[附件] notes.txt\nhello there', { file_item_id: 'item-1', file_version: 1 })).toBeNull()
     expect(parseAttachmentContent('[附件] 语音.webm (audio/webm)\n[语音] durationMs=1200\n[转写] 你好')).toBeNull()
   })
@@ -48,7 +48,7 @@ describe('attachment models', () => {
   it('keeps an image caption in the same canonical attachment message', () => {
     const content = formatAttachmentMetadata({
       kind: 'image', fileName: 'photo.jpg', mimeType: 'image/jpeg',
-      url: 'http://127.0.0.1:55321/photo.jpg', sizeBytes: 10, caption: 'hello\nworld',
+      url: 'blob:https://app.invalid/photo', sizeBytes: 10, caption: 'hello\nworld',
     })
     expect(content).toContain('[Kind] image\n[Caption]\nhello\nworld')
     expect(parseAttachmentContent(content)?.caption).toBe('hello\nworld')
