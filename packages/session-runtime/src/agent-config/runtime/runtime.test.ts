@@ -22,7 +22,7 @@ import { noopLogger } from '@gugu/session-shared/logger';
 import { createScope } from '@gugu/session-wire/util';
 import { describe, expect, it, vi, type Mock } from 'vitest';
 import { until } from '../../../../../tests/support/awaitCondition';
-import { AgentConfigRuntime } from './runtime';
+import { AgentConfigRuntime, USAGE_REUSE_MS } from './runtime';
 import { AuthExpiryMarks, type AuthExpiryPersistence } from './auth-expiry';
 
 /**
@@ -1062,13 +1062,49 @@ it('opening a subscription reads automatically and merges concurrent reads of th
   await runtime.dispose();
 });
 
+/** 把时钟推过 5 分钟的复用窗口,下一次打开才会真去问厂商(#2438)。 */
+function pastUsageReuseWindow() {
+  const later = Date.now() + USAGE_REUSE_MS + 1;
+  return vi.spyOn(Date, 'now').mockReturnValue(later);
+}
+
+it('reopening within five minutes answers the last reading without asking the vendor again; after that the next open asks', async () => {
+  const start = 1_000_000;
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(start);
+  const usage = vi.fn(async (): Promise<SubscriptionUsageReading> => ({ kind: 'windows', readAt: Date.now(), windows: [{ usedPercent: 42, windowMinutes: 300 }] }));
+  const { runtime } = makeRuntime({ subscriptionUsage: usage, usageRefresh: 'on-open' });
+  await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false);
+  clock.mockReturnValue(start + USAGE_REUSE_MS - 1);
+  expect(await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false)).toMatchObject({ data: { kind: 'windows', readAt: start } });
+  expect(usage).toHaveBeenCalledTimes(1);
+  // 另一个账号的缓存分开记:它没读过,照样去问。
+  await runtime.readSubscriptionUsage('claude', { ...SELECTED_CLI, connectionId: 'different' }, false);
+  expect(usage).toHaveBeenCalledTimes(2);
+  clock.mockReturnValue(start + USAGE_REUSE_MS);
+  expect(await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false)).toMatchObject({ data: { kind: 'windows', readAt: start + USAGE_REUSE_MS } });
+  expect(usage).toHaveBeenCalledTimes(3);
+  clock.mockRestore();
+  await runtime.dispose();
+});
+
+it('a failed read is not reused: the next open asks again', async () => {
+  const usage = vi.fn(async (): Promise<SubscriptionUsageReading> => ({ kind: 'unavailable', reason: 'error', readAt: 1, message: 'rate limited' }));
+  const { runtime } = makeRuntime({ subscriptionUsage: usage, usageRefresh: 'on-open' });
+  await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false);
+  await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false);
+  expect(usage).toHaveBeenCalledTimes(2);
+  await runtime.dispose();
+});
+
 it('a failed refresh preserves the last successful figures and timestamp without leaking them to another connection', async () => {
   const usage = vi.fn(async (): Promise<SubscriptionUsageReading> => ({ kind: 'windows', readAt: 123, windows: [{ usedPercent: 42, windowMinutes: 300 }] }));
   const { runtime } = makeRuntime({ subscriptionUsage: usage, usageRefresh: 'on-open' });
   await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false);
+  const later = pastUsageReuseWindow();
   usage.mockResolvedValue({ kind: 'unavailable', reason: 'error', readAt: 456, message: 'rate limited' });
   expect(await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false)).toMatchObject({ data: { kind: 'windows', readAt: 123, refreshError: 'rate limited', windows: [{ usedPercent: 42 }] } });
   expect(await runtime.readSubscriptionUsage('claude', { ...SELECTED_CLI, connectionId: 'different' }, false)).toMatchObject({ data: { kind: 'unavailable', readAt: 456 } });
+  later.mockRestore();
   await runtime.dispose();
 });
 
@@ -1076,11 +1112,13 @@ it('a failed host refresh also preserves successful quota in its original connec
   const usage = vi.fn(async (): Promise<SubscriptionUsageReading> => ({ kind: 'windows', readAt: 123, windows: [{ usedPercent: 42, windowMinutes: 300 }] }));
   const { runtime } = makeRuntime({ subscriptionUsage: usage, usageRefresh: 'on-open' });
   await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false);
+  const later = pastUsageReuseWindow();
   usage.mockRejectedValue(new Error('host offline'));
   expect(await runtime.readSubscriptionUsage('claude', SELECTED_CLI, false)).toMatchObject({ data: {
     kind: 'windows', readAt: 123, refreshError: expect.stringContaining('host offline'), windows: [{ usedPercent: 42 }],
   } });
   expect(await runtime.readSubscriptionUsage('claude', { ...SELECTED_CLI, connectionId: 'different' }, false)).toMatchObject({ data: { kind: 'unavailable', reason: 'error' } });
+  later.mockRestore();
   await runtime.dispose();
 });
 
