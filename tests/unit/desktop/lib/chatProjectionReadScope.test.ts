@@ -93,7 +93,7 @@ describe('chat projection read scope', () => {
     const rows = await projection.hydrate('0', new AbortController().signal)
     const row = rows.find(row => row.id === 'c-1')!
     expect(chatPreviewText(row)).toBe('[引用] Build results')
-    expect(createChatNotificationPayload({ ...row, last_message_preview: chatPreviewText(row) }, 'Gugu').body).toBe('[引用] Build results')
+    expect(createChatNotificationPayload({ ...row, last_message_preview: chatPreviewText(row) }, null, 'Gugu').body).toBe('[引用] Build results')
     expect(projection.ledger().at(-1)?.requestsByFamily.reference).toBe(1)
     expect(calls.filter(call => call.key === 'widgets')).toHaveLength(1)
     expect(projection.ledger().at(-1)?.requests).toBe(calls.length)

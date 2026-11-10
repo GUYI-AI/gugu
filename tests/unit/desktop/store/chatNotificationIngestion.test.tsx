@@ -114,7 +114,7 @@ beforeEach(async () => {
     recover: async () => { throw new Error('complete message fixture must not need recovery') },
     notify: async message => notifications.notifyForIngestedMessage(ACCOUNT,
       repository.snapshot().chat.find(row => row.id === GROUP)!.value, message,
-      { onScreen: () => false, notificationsEnabled: enabled, soundEnabled: false }),
+      { onScreen: () => false, notificationsEnabled: enabled, soundEnabled: false, identity: () => undefined }),
   })
   coordinator.start()
   await coordinator.whenIdle() // Initial catchup is a silent baseline, not a live arrival.

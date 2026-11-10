@@ -303,8 +303,8 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
       chat = repository.snapshot().chat.find(row => row.id === message.chat_id)?.value
     }
     if (!chat || imRepositoryScope.disposed || repository.accountId !== userId) return
-    await notifyForIngestedMessage(userId, chat, message, { onScreen: isChatOnScreen,
-      notificationsEnabled: notificationSettings.chatMessages, soundEnabled: notificationSettings.sound })
+    await notifyForIngestedMessage(userId, chat, message, { onScreen: isChatOnScreen, notificationsEnabled: notificationSettings.chatMessages,
+      soundEnabled: notificationSettings.sound, identity: (id) => imSelectors.identitiesById(repository.snapshot())[id] })
   }
 
   const patchChat: PatchChat = useCallback((chatId, partial, expectedReadStateVersion) => {

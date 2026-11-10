@@ -57,10 +57,14 @@ function sameAsk(previous: AgentStatusView | null, next: AgentStatusView): boole
   return asksYou(previous) && previous.detail === next.detail
 }
 
-/** appName: the title when the chat has no name, in the reader's language. */
-export function createChatNotificationPayload(chat: ChatItem, appName: string): ChatNotificationPayload {
+/** peerDisplayName: the other person's name for a direct chat; appName: the title when the chat has no name. */
+export function createChatNotificationPayload(
+  chat: ChatItem,
+  peerDisplayName: string | null | undefined,
+  appName: string,
+): ChatNotificationPayload {
   return {
-    title: chatDisplayName(chat, chat.name) || appName,
+    title: chatDisplayName(chat, peerDisplayName) || appName,
     body: chat.last_message_preview ?? '',
     chatId: chat.id,
   }

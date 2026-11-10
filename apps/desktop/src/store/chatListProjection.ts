@@ -10,6 +10,7 @@ import { parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import { chatPreviewText } from '../lib/systemNoticeText'
 import { imSelectors, type AccountImRepository } from '../lib/imRepository'
 import type { PersonalConversationDeletion } from '../lib/deleteListedConversation'
+import type { DisplayIdentity } from '../lib/displayIdentity'
 import { patchChatRows, prepareProjectedReadWatermark, type PatchChat } from './chatRealtimeMutations'
 import { currentAuthSessionSignal } from '../lib/authSessionLoss'
 import {
@@ -92,14 +93,20 @@ export async function notifyForIngestedMessage(
   accountId: string,
   chat: ChatItem,
   message: MessageItem,
-  context: { onScreen: (chatId: string) => boolean; notificationsEnabled: boolean; soundEnabled: boolean },
+  context: {
+    onScreen: (chatId: string) => boolean
+    notificationsEnabled: boolean
+    soundEnabled: boolean
+    identity: (userId: string) => Pick<DisplayIdentity, 'display_name'> | undefined
+  },
 ): Promise<void> {
   if (!platform.capabilities.notifications) return
   if (!shouldNotify({ kind: 'message', accountId, chat, message },
     { enabled: context.notificationsEnabled, onScreen: context.onScreen(chat.id) })) return
   await platform.showNotification({ ...createChatNotificationPayload({ ...chat,
     last_message_preview: chatPreviewText({ last_message_preview: message.content, last_message_notice: parseSystemNotice(message) })
-      || i18n.t('chatList.newMessage', { ns: 'messaging' }) }, i18n.t('brand.name', { ns: 'main' })), silent: !context.soundEnabled })
+      || i18n.t('chatList.newMessage', { ns: 'messaging' }) },
+  chat.peer_user_id ? context.identity(chat.peer_user_id)?.display_name : null, i18n.t('brand.name', { ns: 'main' })), silent: !context.soundEnabled })
 }
 
 /** 屏上正打开的主时间线不产生未读红点；手工标未读与别的话题流仍保留。 */

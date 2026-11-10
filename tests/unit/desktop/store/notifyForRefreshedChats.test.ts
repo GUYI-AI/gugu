@@ -4,7 +4,7 @@ import type { ChatItem, ChatKind } from '@gugu/core/shared/types/chat'
 import { notifyForIngestedMessage } from '../../../../apps/desktop/src/store/chatListProjection'
 import { chat, message } from '../../../support/testHarness'
 
-const showNotification = vi.hoisted(() => vi.fn(async (_payload: { chatId: string | null }) => ({ success: true, displayed: true })))
+const showNotification = vi.hoisted(() => vi.fn(async (_payload: { chatId: string | null; title: string }) => ({ success: true, displayed: true })))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: { capabilities: { notifications: true }, showNotification },
 }))
@@ -12,7 +12,7 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({
 const row = (id: string, kind: ChatKind, unread: number, addressed: number): ChatItem => chat({ id, kind, unread_count: unread,
   unread_locator: unread === 0 ? null : { stream_id: `main:${id}`, stream_kind: 'main', thread_root_id: null, message_id: 'first', message_seq: 1,
     unread_count: unread, addressed_count: addressed, cursor_seq: 0, version: 1, is_marked_unread: false } })
-const context = { onScreen: () => false, notificationsEnabled: true, soundEnabled: true }
+const context = { onScreen: () => false, notificationsEnabled: true, soundEnabled: true, identity: () => undefined }
 
 beforeEach(() => { showNotification.mockClear() })
 
@@ -31,5 +31,12 @@ describe('the chat notification call site, shared by phone and desktop', () => {
       message({ chat_id: 'group-at', sender_user_id: 'peer', to_user_ids: ['viewer'] }),
       { ...context, onScreen: (id) => id === 'group-at' })
     expect(showNotification).not.toHaveBeenCalled()
+  })
+
+  it('titles a direct-message banner with the sender, not the app name', async () => {
+    const dm = { ...row('dm', 'dm', 1, 0), name: '', peer_user_id: 'peer', peer_alias: null }
+    await notifyForIngestedMessage('viewer', dm, message({ chat_id: 'dm', sender_user_id: 'peer', seq: 1 }),
+      { ...context, identity: (id) => id === 'peer' ? { display_name: 'Ada' } : undefined })
+    expect(showNotification.mock.calls.map(([payload]) => payload.title)).toEqual(['Ada'])
   })
 })
