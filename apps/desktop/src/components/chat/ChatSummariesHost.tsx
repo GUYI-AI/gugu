@@ -2,13 +2,11 @@ import { useEffect } from 'react'
 import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
 import { useChatStore } from '@/store/chatContext'
 import { useContactsStore } from '@/store/contactsContext'
-import { useNativeAgentChats } from '@/hooks/useNativeAgentChats'
 import { publishChatSummaries, publishContactSummaries } from '@/lib/chatSummariesBridge'
 
 /** One account writer in both shells, even when no desktop chat slot exists. */
 export function ChatSummariesHost() {
-  const { chats: imChats, chatsRead, identitiesById } = useChatStore('chats', 'chatsRead', 'identitiesById')
-  const chats = useNativeAgentChats(imChats)
+  const { chats, chatsRead, identitiesById } = useChatStore('chats', 'chatsRead', 'identitiesById')
   const { contacts } = useContactsStore()
   useEffect(() => {
     if (!chatsRead) return

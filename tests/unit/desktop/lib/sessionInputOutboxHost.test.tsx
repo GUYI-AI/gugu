@@ -221,7 +221,9 @@ describe('native input shell lifecycle', () => {
     })
     scope.devices = [{ device_id: 'host-a', is_online: true, capabilities: { remote_protocol: REMOTE_PROTOCOL_VERSION } }]
     updateDeviceSessions('host-a', { cached: false, sessions: [{ conversationId: 'expired-task', nativeInputVersion: 2 } as never] })
-    await act(async () => { await harness.render(<SessionInputOutboxHost accountId={scope.owner} />); await (await state().queue)!.flush() })
+    // The re-render must commit (online host) before the flush reads it.
+    await act(async () => { await harness.render(<SessionInputOutboxHost accountId={scope.owner} />) })
+    await act(async () => { await (await state().queue)!.flush() })
     expect(scope.send.mock.calls.map(([request]) => request.text)).toEqual(['original caption', 'following text'])
     expect(await (await state().queue)!.list()).toEqual([])
     expect(toast).not.toHaveBeenCalled()

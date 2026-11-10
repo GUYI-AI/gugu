@@ -1,5 +1,4 @@
 import { useShownAgentName } from '@/hooks/useShownAgentName'
-import { useNativeAgentChats } from '@/hooks/useNativeAgentChats'
 import { createChatMembershipProjection } from '@/lib/chatRowDerivations'
 import { memoizeByReference } from '@/lib/memoizeByReference'
 import { memo, useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, type KeyboardEventHandler, type ReactNode } from 'react'
@@ -542,8 +541,7 @@ export function ChatListPanel({
   const { t } = useTranslation('messaging')
   const { t: tMain } = useTranslation('main')
   const assistantShell = useAssistantShell()
-  const { chats: imChats, identitiesById, activeChatId, setActiveChatId, openUnreadChat, loadingChats, pinChat, deleteChat, setChatNotificationLevel, drafts } = useChatStore('chats', 'identitiesById', 'activeChatId', 'setActiveChatId', 'openUnreadChat', 'loadingChats', 'pinChat', 'deleteChat', 'setChatNotificationLevel', 'drafts')
-  const chats = useNativeAgentChats(imChats)
+  const { chats, identitiesById, activeChatId, setActiveChatId, openUnreadChat, loadingChats, pinChat, deleteChat, setChatNotificationLevel, drafts } = useChatStore('chats', 'identitiesById', 'activeChatId', 'setActiveChatId', 'openUnreadChat', 'loadingChats', 'pinChat', 'deleteChat', 'setChatNotificationLevel', 'drafts')
   useOwnedAgentEntries()
   const projectGroupChats = useProjectGroupChats()
   const membershipProjection = useMemo(createChatMembershipProjection, [])
@@ -673,15 +671,15 @@ export function ChatListPanel({
 
   useEffect(() => {
     if (!mobile || inSidebar) return
-    const visible = new Set(visibleChatIds), source = new Map(imChats.map(chat => [chat.id, chat]))
+    const visible = new Set(visibleChatIds)
     mobileListDiagnostics.rows(chats.map(chat => ({ id: chat.id, facts: {
       kind: chat.kind, listed: isListed(chat), rendered: visible.has(chat.id), searchMatch: matchesSearch(chat),
-      owned: isOwnedAgentPeer(chat.peer_user_id), imActivity: !!source.get(chat.id)?.last_message_at,
+      owned: isOwnedAgentPeer(chat.peer_user_id),
       projectedActivity: !!chat.last_message_at, selected: chat.id === selectedChatId, draft: !!drafts[chat.id]?.trim(),
     } })), loadingChats)
     // Read the exact render predicates; the diagnostic never changes their decisions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mobile, inSidebar, imChats, chats, visibleChatIds, loadingChats, selectedChatId, drafts, listQuery, assistantShell, workrooms, shownAsLead, projectGroupChats])
+  }, [mobile, inSidebar, chats, visibleChatIds, loadingChats, selectedChatId, drafts, listQuery, assistantShell, workrooms, shownAsLead, projectGroupChats])
 
   useEffect(() => {
     if (focusedChatId && visibleChatIds.includes(focusedChatId)) return

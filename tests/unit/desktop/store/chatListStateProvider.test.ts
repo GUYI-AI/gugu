@@ -178,6 +178,10 @@ import { ChatProvider } from '../../../../apps/desktop/src/store/chat'
 import { useChatStore } from '../../../../apps/desktop/src/store/chatContext'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
 import type { AccountImRepository } from '../../../../apps/desktop/src/lib/imRepository'
+import { platform } from '../../../../apps/desktop/src/platform'
+import { installOwnedAgentEntry } from '../../../../apps/desktop/src/lib/ownedAgentConversation'
+import { publishDirectoryDevices, removeDeviceSessions, updateDeviceSessions } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
+import type { Device } from '@gugu/core/shared/types/chat'
 const AGENT_ID = 'agent-new'
 let latestStore: import('../../../../apps/desktop/src/store/chatContext').ChatContextValue | null = null
 let harness: ReturnType<typeof createReactHarness> | null = null
@@ -443,4 +447,17 @@ it('an outbound read failure cannot roll back a newer Provider tuple through the
   await act(async () => { read.reject(new Error('offline')); await Promise.resolve() })
   expect(latestStore!.chats[0]).toMatchObject(newer)
   quiet.mockRestore()
+})
+
+it('publishes one list: an owned agent\'s owner notification reaches the store rows and the Dock badge alike', async () => {
+  const remove = installOwnedAgentEntry({ open: () => true, owns: id => id === 'peer-1' })
+  publishDirectoryDevices([{ device_id: 'host', is_online: true, capabilities: {} } as Device])
+  updateDeviceSessions('host', { cached: false, sessions: [{ conversationId: 's', agent: { userId: 'peer-1' }, nativeOwnerNotificationUnreadCount: 1 } as never] })
+  try {
+    await renderStore()
+    expect(latestStore!.chats.find(row => row.id === 'chat-1')?.unread_count).toBe(1)
+    expect(vi.mocked(platform.setBadge).mock.calls.at(-1)).toEqual([1])
+  } finally {
+    remove(); removeDeviceSessions('host'); publishDirectoryDevices([])
+  }
 })

@@ -24,7 +24,7 @@ import {
 } from '../lib/imRepository'
 import { closeImRepository, publishMessageWindow } from '../lib/chatMessageWindowPublication'
 import { messageWindow } from '../lib/messageWindows'
-import { paintLocalChats, publishLocalFirstFrame } from '../lib/chatSnapshotPublication'
+import { paintLocalChats, publishLocalFirstFrame } from '../lib/chatSnapshotPublication'; import { useNativeAgentChats } from '../hooks/useNativeAgentChats'
 import { createChatListProjectionLedger, useChatProjectionBinding, notifyForIngestedMessage } from './chatListProjection'
 import { adoptOptimisticChatRow } from '../lib/optimisticChatIdentity'
 import { bindRepositoryMessageCache } from './chatDiskWindow'
@@ -825,11 +825,11 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     }
   }, [chatsRef, setChats, userId])
 
-  // ── Dock / 托盘角标:与通知同一把尺 —— 群与话题只算叫到你的；列表内仍安静显示全部未读 ──────
+  const listedChats = useNativeAgentChats(chats) // 唯一发布的列表(自有 agent 带上通知主人);Dock / 托盘角标与通知同一把尺:群与话题只算叫到你的,列表仍显示全部未读
   useEffect(() => {
     if (!platform.capabilities.badge) return
-    platform.setBadge(chats.reduce((sum, c) => sum + chatAttention(c).askingYou, 0))
-  }, [chats])
+    platform.setBadge(listedChats.reduce((sum, c) => sum + chatAttention(c).askingYou, 0))
+  }, [listedChats])
 
   const conversationActions = useCallback<ChatConversationAccess['actions']>((chatId, viewport = {}) => ({
     sendAttachments: (files, options) => {
@@ -875,7 +875,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
         getImRepository,
         subscribeAccountRevision, conversations,
         identitiesById,
-        chats,
+        chats: listedChats,
         activeChatId,
         activeChat,
         ...line,

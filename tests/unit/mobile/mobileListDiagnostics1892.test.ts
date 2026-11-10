@@ -6,7 +6,7 @@ beforeEach(() => vi.stubGlobal('crypto', webcrypto))
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 const facts: ListRowFacts = { kind: 'dm', listed: true, rendered: true, searchMatch: true, owned: true,
-  imActivity: false, projectedActivity: true, selected: false, draft: false }
+  projectedActivity: true, selected: false, draft: false }
 const state: ShellListState = { activeTab: 'chats', pagerTab: 'chats', mobilePane: 'list', phoneLayerOpen: false, chatListHidden: false, tabBarVisible: true }
 const geometry: ShellListGeometry = { online: true, foreground: true, viewport: [360, 766],
   shell: null, pager: null, listPane: null, list: null, me: null, scrollLeft: 0, scrollWidth: 720 }

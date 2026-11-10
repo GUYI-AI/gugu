@@ -19,7 +19,7 @@ export type ShellListGeometry = {
 }
 export type ListRowFacts = {
   kind: ChatKind | 'unknown'; listed: boolean; rendered: boolean; searchMatch: boolean; owned: boolean
-  imActivity: boolean; projectedActivity: boolean; selected: boolean; draft: boolean
+  projectedActivity: boolean; selected: boolean; draft: boolean
 }
 type ShellSampleReason = 'commit' | 'viewport' | 'visibility'
 type RowChange = ListRowFacts & { row: string | null; change: 'added' | 'changed' | 'removed' }
@@ -86,7 +86,7 @@ export function createMobileListDiagnostics(output: (entry: Diagnostic) => void 
       const next = new Map<string, ListRowFacts>(rows.map(({ id, facts: f }) => [id, {
         kind: f.kind === 'dm' || f.kind === 'ai' || f.kind === 'group' || f.kind === 'topic' ? f.kind : 'unknown',
         listed: !!f.listed, rendered: !!f.rendered, searchMatch: !!f.searchMatch, owned: !!f.owned,
-        imActivity: !!f.imActivity, projectedActivity: !!f.projectedActivity, selected: !!f.selected, draft: !!f.draft,
+        projectedActivity: !!f.projectedActivity, selected: !!f.selected, draft: !!f.draft,
       }]))
       const changes: Array<ListRowFacts & { id: string; change: RowChange['change'] }> = []
       // Losses precede additions so a missing row survives truncation of a large refresh.

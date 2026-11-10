@@ -30,7 +30,7 @@ const leaves: Record<string, (value: unknown) => boolean> = {
   'entries[].changes[].row': digest, 'entries[].changes[].change': code('added', 'changed', 'removed'),
   'entries[].changes[].kind': code('dm', 'ai', 'group', 'topic', 'unknown'),
   'entries[].changes[].listed': flag, 'entries[].changes[].rendered': flag, 'entries[].changes[].searchMatch': flag,
-  'entries[].changes[].owned': flag, 'entries[].changes[].imActivity': flag, 'entries[].changes[].projectedActivity': flag,
+  'entries[].changes[].owned': flag, 'entries[].changes[].projectedActivity': flag,
   'entries[].changes[].selected': flag, 'entries[].changes[].draft': flag,
   'entries[].row': digest,
 }
@@ -74,7 +74,7 @@ it('locks every exported JSON leaf to the reviewed field and fixed-code whitelis
   const root = document.querySelector('main')!
   await record.shell('commit', state, readMobileListGeometry(root))
   const facts: ListRowFacts = { kind: 'dm', listed: true, rendered: true, searchMatch: true, owned: true,
-    imActivity: false, projectedActivity: true, selected: false, draft: false }
+    projectedActivity: true, selected: false, draft: false }
   await record.rows([{ id: 'private-chat-id', facts: { ...facts, error: fakeError } as ListRowFacts }], true)
   await record.rows([{ id: 'private-chat-id', facts: { ...facts, listed: false, rendered: false } }], false)
   await record.rows([], false)
