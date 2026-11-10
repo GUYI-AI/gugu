@@ -33,7 +33,7 @@ describe('the turn outcome badge is measured from what it paints', () => {
           range.selectNodeContents(reason)
           return { set: badge.getBoundingClientRect().width, natural: naturalBadgeWidth(badge), reasonLines: new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size }
         }, { onRestorePrompt: () => {} })
-        // The separator between label and reason is text in the row's font; its width is not a constant.
+        // The separator sits in a fixed-width box, so the badge's reserved width holds whatever glyph the page picks for the dot.
         expect(Math.abs(reading.inspected.set - reading.inspected.natural)).toBeLessThan(0.1)
         expect(reading.inspected.reasonLines).toBe(1)
         expect(reading.dom).toBe(reading.computed)
