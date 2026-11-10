@@ -1,4 +1,6 @@
 import { OpenedLinkInbox } from '../../shared/opened-link-inbox'
+import { isOAuthCallback } from '../../shared/oauth-callback'
+import { rememberReferrerFromLink } from '../lib/referral'
 import { unavailableCapability } from './errors'
 import type { AppPlatform } from './types'
 
@@ -17,7 +19,12 @@ function startSource(): Promise<void> {
   const take = async () => {
     const urls = await api.invoke('auth:take-callbacks')
     if (!Array.isArray(urls) || !urls.every((url) => typeof url === 'string')) throw new Error('Invalid OAuth callback delivery')
-    for (const url of urls) inbox.push(url as string)
+    // Main shows this window every link the OS opened (Android: capacitorOpenedLinks). Login takes the OAuth
+    // callbacks; an invite's referrer is remembered before sign-up; the rest is main's to open.
+    for (const url of urls as string[]) {
+      rememberReferrerFromLink(url)
+      if (isOAuthCallback(url)) inbox.push(url)
+    }
   }
   // Kept for this renderer's lifetime, so a StrictMode remount never discards a drained URL.
   if (!listening) {
