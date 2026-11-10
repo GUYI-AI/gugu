@@ -92,6 +92,13 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
    * a chain unwinds one step per close. The user rearranging the pair (拆开, 向右分, a drag) clears its records.
    */
   private readonly _displaced = observable.map<string, DisplacedTab>({}, { deep: false });
+  /**
+   * @@@side-width - the pair's cut belongs to the page on the side, not to the cut: each page that has been dragged
+   * there keeps its own share, by tab id, for as long as the tab lives (and across restarts). A page never dragged
+   * comes at its declared width (`side-width.ts`) or as a peer, half each. Whichever page arrives on the side — opened,
+   * pushing another out, coming back when what pushed it out closes, its tab clicked — brings its own width.
+   */
+  private readonly _sideShares = observable.map<string, number>({}, { deep: false });
 
   setNarrow(narrow: boolean): void { this.narrow = narrow; }
   /** How the panes are cut. Replaced whole on every change (pane-layout-tree.ts is pure). */
@@ -384,7 +391,6 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     const before = this.pair;
     const extent = this._pairExtent();
     const main = this.mainGroup;
-    const shownBefore = this._shownPair;
     const focusedBefore = this.focusedPane.resolvedActiveTabId;
     const focusedPaneBefore = this.activePaneId;
     const activate = opts.activate ?? true;
@@ -399,20 +405,13 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       }
       if (this._groupOf(side) !== sideGroup) this._move(side, sideGroup);
       if (opts.edge || this.layout.type === 'pane') {
-        const sizes = this.layout.type === 'split' ? this.layout.sizes : null;
         this.layout = insertBeside(paneLeaf(main.paneId), main.paneId, sideGroup.paneId, opts.edge ?? 'right');
-        if (sizes && this.layout.type === 'split') this.layout = setSplitSizes(this.layout, this.layout.id, sizes);
         this._syncGroupOrder();
       }
       main.pane.activeTabId = pinned;
       sideGroup.pane.activeTabId = side;
-      // A new pair, or a new page on the side, starts at the declared width (`side-width.ts`). Between two peers the
-      // dragged shares stay; a side that declared its width hands back half and half.
-      if (!shownBefore || shownBefore.side !== side) {
-        const declared = this._declaredSizes(pinned, side, extent);
-        if (this.layout.type === 'split' && declared) this.layout = { ...this.layout, sizes: declared };
-        else if (this.layout.type === 'split' && shownBefore && this._sideWidthOf(shownBefore.side) !== undefined) this.layout = equalizeSplit(this.layout, this.layout.id);
-      }
+      const own = this._ownSizes(pinned, side, extent);
+      if (own && this.layout.type === 'split') this.layout = { ...this.layout, sizes: own };
       if (opts.focus ?? true) this.activePaneId = sideGroup.paneId;
       else if (focusedBefore === pinned) this.activePaneId = main.paneId;
       else if (focusedBefore === side) this.activePaneId = sideGroup.paneId;
@@ -440,6 +439,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       ? tabId === pair.side && this.mainGroup.pane.resolvedActiveTabId === pair.pinned
       : tabId === pair.pinned && this.sideGroup?.pane.resolvedActiveTabId === pair.side);
     if (member) this._pair = null;
+    this._sideShares.delete(tabId);
     const record = this._displaced.get(tabId);
     this._displaced.delete(tabId);
     for (const [other, pointed] of [...this._displaced]) {
@@ -584,16 +584,20 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     if (this.layout.type === 'split') this.setSplitSizes(this.layout.id, sizes);
   }
 
-  /** A divider dragged: that cut's new shares (kept, so the layout comes back as it was left). */
+  /** A divider dragged: that cut's new shares; on the pair's cut, the side page's own from now on. */
   setSplitSizes(splitId: string, sizes: readonly number[]): void {
     this.layout = setSplitSizes(this.layout, splitId, sizes);
+    const side = this._shownPair?.side;
+    const at = this.layout.type === 'split' && this.layout.id === splitId ? this.layout.children.findIndex((child) => child.type === 'pane' && child.paneId === this.sidePaneId) : -1;
+    if (side && at >= 0 && this.layout.type === 'split') this._sideShares.set(side, this.layout.sizes[at]);
   }
 
-  /** A divider double-clicked: that cut back to the declared width (`side-width.ts`), or even shares. */
+  /** A divider double-clicked: the side page forgets its dragged width and comes back to its own (`side-width.ts`). */
   equalizeSplit(splitId: string): void {
     const pair = this._shownPair;
-    const declared = pair && this.layout.type === 'split' && this.layout.id === splitId ? this._declaredSizes(pair.pinned, pair.side, this._pairExtent()) : null;
-    this.layout = declared && this.layout.type === 'split' ? { ...this.layout, sizes: declared } : equalizeSplit(this.layout, splitId);
+    if (pair && this.layout.type === 'split' && this.layout.id === splitId) this._sideShares.delete(pair.side);
+    const own = pair && this.layout.type === 'split' && this.layout.id === splitId ? this._ownSizes(pair.pinned, pair.side, this._pairExtent()) : null;
+    this.layout = own && this.layout.type === 'split' ? { ...this.layout, sizes: own } : equalizeSplit(this.layout, splitId);
   }
 
   /** How wide the pair's panes are together, as measured (null until each one has been). */
@@ -608,16 +612,17 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   }
 
   /**
-   * The pair's cut (the outermost, two panes across) with the page that declares its width (the side first) at that width,
-   * in exact shares (`setSplitSizes` rounds to whole percent: 14px off at 1920); null: peers.
+   * The pair's cut (the outermost, two panes across) at the side page's own width (@@@side-width): its dragged share,
+   * else the page that declares its width (the side first) at that width, else half each. Not measured yet, a declared
+   * width cannot be a share: half each.
    */
-  private _declaredSizes(pinned: string, side: string, extent: number | null): number[] | null {
+  private _ownSizes(pinned: string, side: string, extent: number | null): number[] | null {
     const layout = this.layout;
-    if (!extent || layout.type !== 'split' || layout.orientation !== 'horizontal' || layout.children.length !== 2) return null;
-    const declared = [side, pinned].map((tabId) => ({ tabId, px: this._sideWidthOf(tabId) })).find(({ px }) => px !== undefined);
-    if (!declared) return null;
-    const share = declaredShare(declared.px!, extent);
-    const paneId = this._groupOf(declared.tabId)?.paneId;
+    if (layout.type !== 'split' || layout.orientation !== 'horizontal' || layout.children.length !== 2) return null;
+    const dragged = this._sideShares.get(side);
+    const declared = dragged === undefined && extent ? [side, pinned].map((tabId) => ({ tabId, px: this._sideWidthOf(tabId) })).find(({ px }) => px !== undefined) : undefined;
+    const share = dragged ?? (declared ? declaredShare(declared.px!, extent!) : 50);
+    const paneId = this._groupOf(declared?.tabId ?? side)?.paneId;
     return layout.children.map((child) => (child.type === 'pane' && child.paneId === paneId ? share : 100 - share));
   }
 
@@ -783,6 +788,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       ...(this.sidePaneId !== null && retainedIds.includes(this.sidePaneId) ? { sideGroupId: this.sidePaneId } : {}),
       pair: pair && retainedTabs.has(pair.pinnedTabId) && retainedTabs.has(pair.sideTabId) ? pair : null,
       ...(this._displaced.size > 0 ? { displaced: Object.fromEntries(this._displaced) } : {}),
+      ...(this._sideShares.size > 0 ? { sideShares: Object.fromEntries([...this._sideShares].filter(([tabId]) => retainedTabs.has(tabId))) } : {}),
     };
   }
 
@@ -822,6 +828,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     }
     const open = new Set(this.groups.flatMap(({ pane }) => pane.tabOrder));
     this._displaced.replace(Object.entries(snapshot.displaced ?? {}).filter(([tabId, record]) => open.has(tabId) && open.has(record.tabId)));
+    this._sideShares.replace(Object.entries(snapshot.sideShares ?? {}).filter(([tabId, share]) => open.has(tabId) && Number.isFinite(share)));
   }
 
   /**

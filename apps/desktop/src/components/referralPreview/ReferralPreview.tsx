@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { createContactQrPayload, createGuguQrScanUrl } from '@gugu/core/shared/qrPayload'
+import { createContactQrPayload, createGuguQrUrl } from '@gugu/core/shared/qrPayload'
 import { useAuth } from '../../store/auth'
-import { GUGU_ANDROID_DOWNLOAD_URL } from '../../lib/appLinks'
 import { SharePosterDialog, type SharePosterDialogProps } from '../SharePosterDialog'
 import { Button } from '../ui/Button'
 import { SegmentedTabs } from '../ui/SegmentedTabs'
@@ -110,9 +109,7 @@ export function ReferralSharePreview({ onClose, zIndex }: { onClose: () => void;
   // The actual contact QR is optional; never invent an identity for the review.
   const qrValue =
     typeof number === 'number' && Number.isInteger(number) && number > 0
-      ? createGuguQrScanUrl(createContactQrPayload(number), {
-          downloadUrl: GUGU_ANDROID_DOWNLOAD_URL
-        })
+      ? createGuguQrUrl(createContactQrPayload(number))
       : ''
   return (
     <PersonalSharePreview

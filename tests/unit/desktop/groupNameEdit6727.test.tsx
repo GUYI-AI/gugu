@@ -32,7 +32,7 @@ function settingsRow(overrides: Partial<GroupChatSettings> = {}): GroupChatSetti
   return {
     my_role: 'owner', can_manage: true, can_dissolve: true, can_archive_topic: false,
     id: 'chat-1', public_id: 7, creator_user_id: 'owner-1', name: '产品组', status: 'active',
-    group_prompt: null, default_agent_type: null, join_token: 'token', description: null,
+    group_prompt: null, default_agent_type: null, join_token: '0123456789abcdef0123456789abcdef', description: null,
     max_members: 100, allow_member_invite: false, invite_link_enabled: false, agent_join_approval: false,
     join_mode: 'approval', hide_history: false, avatar_url: null, is_discoverable: false,
     agent_flood_threshold: null, agent_flood_threshold_effective: 5,

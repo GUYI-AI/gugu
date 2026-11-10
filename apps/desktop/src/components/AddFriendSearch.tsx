@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-
-import type { CSSProperties } from 'react'
 import { useContactsStore } from '../store/contactsContext'
 import { parseGuguQrPayload } from '@gugu/core/shared/qrPayload'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { Avatar } from './Avatar'
+import { Button } from './ui/Button'
+import { ListRowContent } from './ui/ListRow'
 import { Sheet } from './ui/Sheet'
 import { useToast } from './toastContext'
 import { useTranslation } from 'react-i18next'
@@ -21,17 +21,6 @@ import { InviteFriendsPreview } from './referralPreview/ReferralPreview'
 // ── header frame (panel mode) — 与 NewFriendsPanel 头部同款 ────────────────────
 const headClass = 'afs-head window-drag-region flex shrink-0 items-center gap-[9px] px-4 pb-3 pt-4 text-[length:var(--font-title)] font-semibold [-webkit-app-region:no-drag]'
 const backButtonClass = 'afs-back-btn gg-pressable -my-2.5 -ml-2.5 inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-control)] border-none bg-transparent p-0 text-[var(--text-primary)]'
-
-// ── shared inline styles ──────────────────────────────────────────────────────
-const styleFlexOverflow: CSSProperties = { flex: 1, overflow: 'hidden' }
-const styleNameText: CSSProperties = {
-  fontSize: 'var(--font-body)',
-  color: 'var(--text-primary)',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-}
-const styleStatusLabel: CSSProperties = { fontSize: 'var(--font-body)', color: 'var(--text-secondary)' }
 
 function BackChevron() {
   return (
@@ -86,47 +75,20 @@ function SearchResultItem({
   onSend: () => void
 }) {
   const { t } = useTranslation('contacts')
+  const status = alreadyFriend ? t('friendSearch.alreadyFriend') : alreadySent ? t('friendSearch.sent') : null
   return (
-    // @@@2322 P2.5 — 行 hover 收口 gg-row(--chat-row-hover 即 --hover 别名;100ms→--dur-fast 最近档)
-    <div
-      className="gg-row"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        padding: '10px 16px',
-      }}
-    >
-      <Avatar name={user.display_name} avatarUrl={user.avatar} seed={user.id} size="md" />
-      <div style={styleFlexOverflow}>
-        <div style={styleNameText}>
-          {user.display_name}
-          {user.type === 'agent' ? (
-            <span style={{ marginLeft: 6, fontSize: 'var(--font-caption)', color: 'var(--accent)' }}>{t('common.agent')}</span>
-          ) : null}
-        </div>
-        <div style={{ fontSize: 'var(--font-body)', color: 'var(--text-secondary)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {user.gugu_number == null ? t('friendSearch.guguNumberUnassigned') : t('friendSearch.guguNumberValue', { number: user.gugu_number })}
-        </div>
-      </div>
-      {alreadyFriend && <span style={styleStatusLabel}>{t('friendSearch.alreadyFriend')}</span>}
-      {!alreadyFriend && alreadySent && <span style={styleStatusLabel}>{t('friendSearch.sent')}</span>}
-      {!alreadyFriend && !alreadySent && (
-        <button
-          onClick={onSend}
-          style={{
-            background: 'var(--accent)',
-            color: 'var(--text-on-accent)',
-            border: 'none',
-            borderRadius: 'var(--radius-document)',
-            fontSize: 'var(--font-body)',
-            padding: '4px 12px',
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-        >
+    <div className="gg-list-row gg-row">
+      <ListRowContent
+        leading={<Avatar name={user.display_name} avatarUrl={user.avatar} seed={user.id} size="sm" />}
+        title={user.display_name}
+        accessory={user.type === 'agent' ? <span className="text-[length:var(--font-caption)] text-[var(--accent)]">{t('common.agent')}</span> : undefined}
+        meta={status ?? undefined}
+        subtitle={user.gugu_number == null ? t('friendSearch.guguNumberUnassigned') : t('friendSearch.guguNumberValue', { number: user.gugu_number })}
+      />
+      {status ? null : (
+        <Button variant="primary" size="sm" onClick={onSend}>
           {user.type === 'agent' ? t('friendSearch.requestToJoin') : t('friendSearch.add')}
-        </button>
+        </Button>
       )}
     </div>
   )
@@ -269,7 +231,7 @@ export function AddFriendSearch({
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px' }}>
         {hasQuery && isSearching && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
             <div

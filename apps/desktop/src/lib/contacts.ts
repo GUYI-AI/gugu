@@ -102,8 +102,6 @@ type ContactGroupPatch = {
   updated_at: string
 }
 
-type ContactGroupMemberInsert = ContactGroupMemberRow
-
 type ChatMemberMuteRow = {
   chat_id: string
   notification_level: unknown
@@ -700,44 +698,6 @@ export const contactsService = {
       .eq('id', groupId)
 
     if (error) throw new Error(messageForUser(error), { cause: error })
-  },
-
-  async updateContactGroupMembers(groupId: string, contactIds: string[]): Promise<void> {
-    const nextIds = new Set(contactIds)
-    const { data: existingRows, error: existingError } = await identity()
-      .from('contact_group_members')
-      .select('contact_user_id')
-      .eq('group_id', groupId)
-
-    if (existingError) throw new Error(messageForUser(existingError), { cause: existingError })
-
-    const existingIds = new Set(
-      ((existingRows ?? []) as { contact_user_id: string }[]).map((row) => row.contact_user_id),
-    )
-    const removedIds = [...existingIds].filter((id) => !nextIds.has(id))
-    const addedIds = [...nextIds].filter((id) => !existingIds.has(id))
-
-    if (removedIds.length > 0) {
-      const { error: deleteError } = await identity()
-        .from('contact_group_members')
-        .delete()
-        .eq('group_id', groupId)
-        .in('contact_user_id', removedIds)
-
-      if (deleteError) throw new Error(messageForUser(deleteError), { cause: deleteError })
-    }
-
-    if (addedIds.length === 0) return
-
-    const rows = addedIds.map((contactUserId) => ({
-      group_id: groupId,
-      contact_user_id: contactUserId,
-    }))
-    const { error: insertError } = await identity()
-      .from('contact_group_members')
-      .insert(dbPayload<ContactGroupMemberInsert[]>(rows))
-
-    if (insertError) throw new Error(messageForUser(insertError), { cause: insertError })
   },
 
   async getCommonGroupChats(userId: string, contactUserId: string): Promise<ContactGroupChat[]> {

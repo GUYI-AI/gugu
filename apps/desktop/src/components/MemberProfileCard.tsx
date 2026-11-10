@@ -3,14 +3,13 @@ import { useAvatarIdentity } from '@/lib/avatarIdentity'
 import { useEffect, useState, type ReactNode } from 'react'
 import type { AgentDisplayStatus, GroupMemberRole, GroupMemberType, ListenMode } from '@gugu/core/shared/types/chat'
 import { LISTEN_MODES } from '@gugu/core/shared/types/chat'
-import { createContactQrPayload, createGuguQrScanUrl } from '@gugu/core/shared/qrPayload'
+import { createContactQrPayload, createGuguQrUrl } from '@gugu/core/shared/qrPayload'
 import { Avatar } from './Avatar'
 import { AgentOwnerLabel } from './AgentOwnerLabel'
 import { useAuth } from '../store/auth'
 import { OwnedAgentNameEditor } from './contacts/OwnedAgentNameEditor'
 import { SharePosterDialog } from './SharePosterDialog'
 import { PersonalSharePreview } from './referralPreview/ReferralPreview'
-import { GUGU_ANDROID_DOWNLOAD_URL } from '../lib/appLinks'
 import { useTranslation } from 'react-i18next'
 import { resolveMessagingValue } from '@/lib/localizedStoredValue'
 import { useAgentContactStatusLabel } from './contactAgentTone'
@@ -269,7 +268,7 @@ export function MemberProfileCard({
   const [showShare, setShowShare] = useState(false)
   const shareQrValue =
     typeof member.guguNumber === 'number' && Number.isInteger(member.guguNumber) && member.guguNumber > 0
-      ? createGuguQrScanUrl(createContactQrPayload(member.guguNumber), { downloadUrl: GUGU_ANDROID_DOWNLOAD_URL })
+      ? createGuguQrUrl(createContactQrPayload(member.guguNumber))
       : null
   const canShare = shareQrValue !== null
   const SelfOrContactShare = !isAgent && member.id === user?.id ? PersonalSharePreview : SharePosterDialog

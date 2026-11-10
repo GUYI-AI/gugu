@@ -1,9 +1,7 @@
 import { Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
-import { chatActivityAt, chatAttention } from '@gugu/core/shared/ui/chatModels'
+import { chatAttention } from '@gugu/core/shared/ui/chatModels'
 import { Pin, PinOff } from '@/lib/icons'
-import { chatPreviewText } from '@/lib/systemNoticeText'
-import { formatCalendarDay } from '@/i18n/format'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { IconButton } from '../ui/IconButton'
@@ -60,9 +58,8 @@ function TopicMenuRow({ topic, pinned, pins }: { topic: SourceTopic; pinned: boo
       state={{ kind: 'topic', hasUnread: hasUnreadInRows([topic]), hasAnyUnread: hasUnreadInRows(pins.topics) }}
       onAction={(action) => markRead(action === 'mark-all-read' ? pins.topics.map((row) => row.id) : topic.id)} />}
     <MenuItem data-testid="group-menu-topic" className="gg-topic-menu-open" style={topicRowStyle} render={<div data-emphasis={topic.unread_count > 0 || undefined} />} onClick={() => openPinnedTopic(topic)}>
-      <ListRowContent title={<>{pinned && <Pin size={12} aria-hidden className="gg-topic-pin-mark" />}{topic.name}</>} meta={formatCalendarDay(chatActivityAt(topic))}
-        subtitle={calls > 0 ? <span className="gg-topic-calling">{t('topic.calledYou')}</span> : chatPreviewText(topic)}
-        trailing={topic.unread_count > 0 ? (calls > 0 ? <TopicCallChip count={calls} /> : <TopicUnreadChip count={topic.unread_count} muted={topic.is_muted} />) : undefined} />
+      <ListRowContent title={<>{pinned && <Pin size={12} aria-hidden className="gg-topic-pin-mark" />}{topic.name}</>}
+        meta={topic.unread_count > 0 ? (calls > 0 ? <TopicCallChip count={calls} at /> : <TopicUnreadChip count={topic.unread_count} muted={topic.is_muted} />) : undefined} />
     </MenuItem>
     <MenuItem render={<IconButton size="sm" aria-label={pinLabel}>{pinned ? <PinOff size={14} /> : <Pin size={14} />}</IconButton>} nativeButton title={pinLabel} data-testid="group-topic-pin" className="gg-topic-menu-pin"
       style={topicPinStyle} closeOnClick={false} disabled={!pins.ready || pins.saving} onClick={() => pins.set(topic.id, !pinned)}>

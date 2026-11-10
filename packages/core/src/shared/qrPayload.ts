@@ -1,7 +1,5 @@
 export type GuguQrPayload = GuguGroupInviteQrPayload | GuguContactQrPayload
 
-export const GUGU_QR_PAYLOAD_QUERY_PARAM = 'gugu_qr'
-
 export type GuguGroupInviteQrPayload = {
   version: 1
   kind: 'group_invite'
@@ -18,9 +16,22 @@ export type GuguContactQrPayload = {
   gugu_number: number
 }
 
-export type GuguQrScanUrlOptions = {
-  downloadUrl: string
-}
+/**
+ * @@@short-qr - every QR / share link the app makes is `https://gugu.nextmind.space/j/?<code>`:
+ *   group invite  `<public_id>.<join_token as base64url>`  (16-byte hex token → 22 chars; ≤ 60 chars in all)
+ *   contact       `<gugu_number>`
+ * The official site serves `j/index.html` (GUYI-AI/gugu-website): it sends a phone camera / WeChat scan to the
+ * App (`gugu://…/j/?<code>`) or to the download for that platform. The site is static, so the code rides in the
+ * query, not the path. The in-app scanner reads the code directly and never opens the page.
+ */
+export const GUGU_SHORT_LINK_BASE = 'https://gugu.nextmind.space/j/'
+
+// Codes printed before the short link (posters, README) were `<any url>?gugu_qr=<JSON>`. Read-only.
+const LEGACY_QR_PARAM = 'gugu_qr'
+
+const GROUP_CODE = /^(\d+)\.([A-Za-z0-9_-]{22})$/
+const CONTACT_CODE = /^(\d+)$/
+const HEX_TOKEN = /^[0-9a-f]{32}$/i
 
 export function createGroupInviteQrPayload(groupPublicId: number, joinToken?: string): GuguGroupInviteQrPayload {
   if (!isPositiveInteger(groupPublicId)) {
@@ -46,22 +57,20 @@ export function createContactQrPayload(guguNumber: number): GuguContactQrPayload
   }
 }
 
-export function serializeGuguQrPayload(payload: unknown): string {
-  const parsed = parseGuguQrPayload(payload)
-  if (!parsed) {
-    throw new Error('Invalid Gugu QR payload')
-  }
-  return JSON.stringify(parsed)
-}
-
-export function createGuguQrScanUrl(payload: unknown, options: GuguQrScanUrlOptions): string {
-  const serializedPayload = serializeGuguQrPayload(payload)
-  const url = new URL(options.downloadUrl)
-  url.searchParams.set(GUGU_QR_PAYLOAD_QUERY_PARAM, serializedPayload)
-  return url.toString()
+/** The one encoder for every QR and share link. */
+export function createGuguQrUrl(payload: GuguQrPayload): string {
+  if (payload.kind === 'contact') return `${GUGU_SHORT_LINK_BASE}?${payload.gugu_number}`
+  const token = payload.join_token ?? ''
+  // join_token is encode(gen_random_bytes(16), 'hex') in the database; anything else is a bug upstream.
+  if (!HEX_TOKEN.test(token)) throw new Error('Group invite link requires a 32-hex join_token')
+  return `${GUGU_SHORT_LINK_BASE}?${payload.group_public_id}.${hexToBase64Url(token)}`
 }
 
 export function parseGuguQrPayload(value: unknown): GuguQrPayload | null {
+  if (typeof value === 'string') {
+    const short = parseShortCode(value)
+    if (short !== undefined) return short
+  }
   const payload = unwrapQrPayload(value)
   if (!payload) return null
   if (payload.version !== 1) return null
@@ -77,9 +86,28 @@ export function parseGuguQrPayload(value: unknown): GuguQrPayload | null {
   return null
 }
 
+/** A `…/j/?<code>` URL on any origin or scheme (the site hands `gugu://…` to the App). undefined = not a short link. */
+function parseShortCode(value: string): GuguQrPayload | null | undefined {
+  let url: URL
+  try { url = new URL(value.trim()) } catch { return undefined }
+  if (!/\/j\/?$/.test(url.pathname)) return undefined
+  const code = url.search.slice(1)
+  const group = GROUP_CODE.exec(code)
+  if (group) {
+    const id = Number(group[1])
+    return isPositiveInteger(id) ? createGroupInviteQrPayload(id, base64UrlToHex(group[2]!)) : null
+  }
+  const contact = CONTACT_CODE.exec(code)
+  if (contact) {
+    const n = Number(contact[1])
+    return isPositiveInteger(n) ? createContactQrPayload(n) : null
+  }
+  return null
+}
+
 function unwrapQrPayload(value: unknown): Record<string, unknown> | null {
   if (typeof value === 'string') {
-    const urlPayload = parseQrPayloadFromUrl(value)
+    const urlPayload = parseLegacyQrUrl(value)
     if (urlPayload) return urlPayload
     try {
       const parsed = JSON.parse(value) as unknown
@@ -96,15 +124,25 @@ function unwrapQrPayload(value: unknown): Record<string, unknown> | null {
   return record
 }
 
-function parseQrPayloadFromUrl(value: string): Record<string, unknown> | null {
+function parseLegacyQrUrl(value: string): Record<string, unknown> | null {
   try {
     const url = new URL(value)
-    const payload = url.searchParams.get(GUGU_QR_PAYLOAD_QUERY_PARAM)
+    const payload = url.searchParams.get(LEGACY_QR_PARAM)
     if (!payload) return null
     return unwrapQrPayload(JSON.parse(payload) as unknown)
   } catch {
     return null
   }
+}
+
+function hexToBase64Url(hex: string): string {
+  const binary = String.fromCharCode(...hex.match(/../g)!.map((h) => parseInt(h, 16)))
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function base64UrlToHex(text: string): string {
+  const binary = atob(text.replace(/-/g, '+').replace(/_/g, '/'))
+  return Array.from(binary, (ch) => ch.charCodeAt(0).toString(16).padStart(2, '0')).join('')
 }
 
 function isPositiveInteger(value: unknown): value is number {

@@ -2,6 +2,8 @@ import { IdentityPlaceholder } from '@/components/IdentityPlaceholder'
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { observer } from 'mobx-react-lite'
 import { Avatar } from '@/components/Avatar'
+import { ListRowContent } from '@/components/ui/ListRow'
+import { SectionLabel } from '@/components/ui/SectionLabel'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
 import { AtSign, Clock, FileText, History, Image, Link, Search, Users, X } from '@/lib/icons'
 import { useChatSummaries } from '@/lib/chatSummariesBridge'
@@ -39,10 +41,9 @@ const ResultAvatar = observer(function ResultAvatar({ hit, name }: { hit: Search
 const NameRow = observer(function NameRow({ id, userId, name, query, onOpen }: { id: string; userId: string; name: string; query: string; onOpen: () => void }) {
   const identity = useAvatarIdentity(userId)
   return (
-    <button type="button" data-testid="global-search-name" data-id={id} onClick={onOpen}
-      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left outline-none max-sm:min-h-11">
-      <Avatar name={identity?.display_name ?? name} avatarUrl={identity?.avatar} seed={id} size={20} isAgent={identity?.type === 'agent'} still />
-      <span className="min-w-0 flex-1 truncate text-sm text-foreground/85"><Highlighted text={name} query={query} /></span>
+    <button type="button" data-testid="global-search-name" data-id={id} onClick={onOpen} className="gg-list-row gg-row max-sm:min-h-11">
+      <ListRowContent leading={<Avatar name={identity?.display_name ?? name} avatarUrl={identity?.avatar} seed={id} size={20} isAgent={identity?.type === 'agent'} still />}
+        title={<Highlighted text={name} query={query} />} />
     </button>
   )
 })
@@ -253,7 +254,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
         {hasQuery && view.unresolved && <div className="px-3 py-8 text-center text-sm text-foreground/45">{translate('globalSearch.unresolved', { text: view.unresolved })}</div>}
         {nameRows.length > 0 && (
           <div data-testid="global-search-names">
-            <div className="px-3 pb-1 pt-3 text-xs font-medium text-foreground/45">{translate('globalSearch.names')}</div>
+            <SectionLabel>{translate('globalSearch.names')}</SectionLabel>
             {nameRows.map((row) => <NameRow key={row.id} id={row.id} userId={row.userId} name={row.name} query={view.query} onOpen={() => { rememberSearch(recentScope, view.query); onOpen(); row.open() }} />)}
           </div>
         )}
@@ -269,7 +270,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
         {groups.map((group) => (
           <Fragment key={group.key}>
             {!scoped && <button type="button" title={translate('globalSearch.scopeTo')}
-              className="flex w-full items-center gap-2 px-3 pb-1 pt-3 text-left text-xs text-foreground/45 hover:text-foreground/70"
+              className="flex w-full items-center gap-2 px-2 pb-1 pt-3 text-left text-xs text-foreground/45 hover:text-foreground/70"
               onClick={() => setChips([...chips, group.scope])}>
               <span className="truncate font-medium">{group.label}</span>
               {group.task && <span className="shrink-0 text-foreground/35">· {translate('globalSearch.task')}</span>}
@@ -281,7 +282,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
                 <button type="button" role="option" aria-selected={isSelected} data-selected={isSelected} key={hit.id}
                   onMouseMove={() => { if (!isSelected) updateSearchSession({ selectedId: hit.id }) }}
                   onClick={() => open(hit)}
-                  className={cn('flex w-full items-start gap-3 rounded-lg px-3 py-2 text-left outline-none', isSelected && 'bg-foreground/[0.06]')}>
+                  className={cn('flex w-full items-start gap-[var(--row-gap)] rounded-lg px-2 py-2 text-left outline-none', isSelected && 'bg-foreground/[0.06]')}>
                   <ResultAvatar hit={hit} name={sender} />
                   <span className="min-w-0 flex-1">
                     <span className="line-clamp-2 text-sm leading-5 text-foreground/85"><Highlighted text={hit.text} query={view.query} /></span>

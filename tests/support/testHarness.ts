@@ -355,7 +355,6 @@ export function contactsStore(overrides: Partial<ContactsContextValue> = {}): Co
     createGroup: vi.fn(async () => null),
     renameGroup: vi.fn(async () => {}),
     deleteGroup: vi.fn(async () => {}),
-    updateGroupMembers: vi.fn(async () => {}),
     updateContactAlias: vi.fn(async () => {}),
     setAgentPublic: vi.fn(async () => {}),
     setAgentDesiredStatus: vi.fn(async () => {}),

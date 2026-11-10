@@ -96,6 +96,8 @@ export type TabGroupsSnapshot = {
   pair?: { pinnedTabId: string; sideTabId: string } | null;
   /** What each tab pushed out of the pair, by tab id: closing it brings that one back (spec session-page「并排」). */
   displaced?: Record<string, DisplacedTab>;
+  /** Each page's own share of the pair's cut, by tab id, once dragged there: it comes back with the page. */
+  sideShares?: Record<string, number>;
 };
 
 /** A tab pushed out of the pair, and which side it was on. */

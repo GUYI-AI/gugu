@@ -7,7 +7,7 @@ import { isDoubleColumnLayout } from '@session-chat/core/layout/preset';
 import type { ChatMessage } from '@session-chat/model';
 import { conversationContext } from './ConversationMessage';
 import { conversationRoot } from './conversation-message.css';
-import { effectiveMessageVars, userAvailableWidth, userInnerWidth, type MessageVars } from './metrics';
+import { attachStripHeight, effectiveMessageVars, userAvailableWidth, userInnerWidth, type MessageVars } from './metrics';
 import { card } from './user-message.css';
 
 /**
@@ -20,13 +20,16 @@ export function pinSummary(item: ChatMessage, ctx: MeasureCtx, baseVars: Message
   const layout = (conversation ? conversationContext(ctx) : ctx).theme.layout;
   const vars = effectiveMessageVars(baseVars, layout);
   const parse = item.streaming ? ctx.caches.parseBlocksStreaming : ctx.caches.parseBlocks;
-  const text = parse(item.id, item.text).map(blockPlainText).join(' ').replace(/\s+/g, ' ').trim()
-    || (item.attachments ?? []).map(attachment => attachment.name).join(', ');
-  const inner = userInnerWidth(userAvailableWidth(ctx.width, layout), vars);
+  const body = parse(item.id, item.text).map(blockPlainText).join(' ').replace(/\s+/g, ' ').trim();
+  const text = body || (item.attachments ?? []).map(attachment => attachment.name).join(', ');
+  const available = userAvailableWidth(ctx.width, layout);
+  const inner = userInnerWidth(available, vars);
   const lineHeight = ctx.theme.fonts.body.lineHeight;
   const lines = layoutText(prepareWithSegments(text, ctx.theme.fonts.body.font, { whiteSpace: 'pre-wrap' }), inner, lineHeight).lineCount;
   const height = Math.min(Math.max(lines, 1), 2) * lineHeight + 2 * vars.userCardPadY + 2 * vars.cardBorder;
-  return { text, vars, conversation, hug: isDoubleColumnLayout(layout), height, clipped: lines > 2 };
+  // Where the message's bubble starts inside its row: below its attachments, which sit above the bubble.
+  const bubbleTop = body ? attachStripHeight(item.attachments?.length ?? 0, available, vars) : 0;
+  return { text, vars, conversation, hug: isDoubleColumnLayout(layout), height, clipped: lines > 2, bubbleTop, available };
 }
 
 /** Clicking it scrolls back to the message (ChatRoot reads `data-pin-summary`). */
@@ -35,7 +38,8 @@ export function PinnedUserSummary(props: { item: ChatMessage; ctx: MeasureCtx; v
   return (
     <div class={s().conversation ? conversationRoot : undefined} data-side="right">
       <div role="button" tabIndex={0} data-pin-summary={props.item.id} class={card({ state: 'static' })} style={{
-        width: s().hug ? 'fit-content' : '100%', 'max-width': '100%', height: `${s().height}px`, 'margin-left': 'auto',
+        // As wide as the message's own bubble, so its two lines break where the message's first two do.
+        width: s().hug ? 'fit-content' : `${s().available}px`, 'max-width': `${s().available}px`, height: `${s().height}px`, 'margin-left': 'auto',
         padding: `${s().vars.userCardPadY}px ${s().vars.userCardPadX}px`, 'border-width': `${s().vars.cardBorder}px`,
         font: props.ctx.theme.fonts.body.font, 'line-height': `${props.ctx.theme.fonts.body.lineHeight}px`, cursor: 'pointer',
       }}>

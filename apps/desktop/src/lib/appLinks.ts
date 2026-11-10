@@ -1,4 +1,4 @@
-// @@@app-links - shared deploy-time links. The Android download page doubles as the QR landing URL:
+// @@@app-links - shared deploy-time download links. QR codes and share links point at the official site instead (qrPayload.ts @@@short-qr).
 export const GUGU_ANDROID_DOWNLOAD_URL =
   'https://download.gugu.nextmind.space/releases/android/latest/gugu-android.apk'
 

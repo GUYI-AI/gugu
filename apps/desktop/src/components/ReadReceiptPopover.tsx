@@ -2,6 +2,8 @@ import { Avatar } from './Avatar'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
 import { Popover } from './ui/Popover'
+import { ListRowContent } from './ui/ListRow'
+import { SectionLabel } from './ui/SectionLabel'
 import type { ReadReceiptHandle } from '@/hooks/useReadReceiptPanel'
 import { useTranslation } from 'react-i18next'
 
@@ -18,19 +20,8 @@ function MemberRow({ member }: { member: ReadReceiptMember }) {
   const identity = useAvatarIdentity(member.isAgent ? member.id : '')
   const name = useShownAgentName({ name: member.displayName, createdAt: member.isAgent ? identity?.created_at ?? undefined : undefined })
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 4px', minWidth: 0 }}>
-      <Avatar name={name} avatarUrl={member.avatar} seed={member.id} isAgent={member.isAgent} size="sm" />
-      <span
-        style={{
-          fontSize: 'var(--font-body)',
-          color: 'var(--text-primary)',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}
-      >
-        {name}
-      </span>
+    <div className="gg-list-row">
+      <ListRowContent leading={<Avatar name={name} avatarUrl={member.avatar} seed={member.id} isAgent={member.isAgent} size="sm" />} title={name} />
     </div>
   )
 }
@@ -43,11 +34,9 @@ function MemberColumn({ title, count, members, emptyText }: {
 }) {
   return (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ fontSize: 'var(--font-caption)', fontWeight: 600, color: 'var(--text-secondary)', padding: '0 4px 6px' }}>
-        {title} {count}
-      </div>
+      <SectionLabel trailing={<span className="tabular-nums">{count}</span>}>{title}</SectionLabel>
       {members.length === 0 ? (
-        <div style={{ fontSize: 'var(--font-body)', color: 'var(--text-tertiary)', padding: '5px 4px' }}>{emptyText}</div>
+        <div style={{ fontSize: 'var(--font-body)', color: 'var(--text-tertiary)', padding: 'var(--row-pad)' }}>{emptyText}</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 240, overflowY: 'auto' }}>
           {members.map((m) => (
@@ -110,7 +99,7 @@ function ReadReceiptLists({ readers, unreaders, testId }: {
               borderRadius: 'var(--radius-xl)',
               boxShadow: 'var(--shadow-popover-strong)',
               color: 'var(--text-primary)',
-              padding: 12,
+              padding: 8,
             }}
           >
             <div style={{ display: 'flex', gap: 12 }}>

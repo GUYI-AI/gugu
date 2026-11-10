@@ -39,6 +39,9 @@ import { LibraryHostProvider, machineLibraryHost } from '@renderer/features/libr
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { runInAction } from 'mobx';
 import { queryClient } from '@renderer/lib/query-client';
+import { notifyManager } from '@tanstack/react-query';
+// Deliver query results in the same task they resolve in, so a test's flush sees them.
+notifyManager.setScheduler((callback) => callback());
 import {
   InitialSessionField,
   resolvePlatformModel,
@@ -800,6 +803,7 @@ describe('useInitialSessionState', () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    queryClient.clear();
     latestState = undefined;
     mocks.droppedPath = '';
     harnessCatalog(READY_CATALOG);
@@ -1576,6 +1580,7 @@ describe('InitialSessionField', () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    queryClient.clear();
     latestState = undefined;
     // ⚠️ 这一句原来**没有**,于是本 describe 的每个用例都继承上一个用例留下的目录状态 ——
     // 一直没出事,只因为在此之前没人在这里改过它,值恒是上一个 describe 的 beforeEach 留下的
@@ -1622,7 +1627,17 @@ describe('InitialSessionField', () => {
     await act(async () => {
       root.render(React.createElement(FieldProbe, props));
     });
-    await act(async () => {});
+    // The shared catalog query notifies on the next macrotask.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  }
+
+  /**
+   * The Gugu catalog's answer is the second one after an empty first (auth race retry), so an
+   * empty or failing fixture answers after the retry delay. The harness notice waits for it: the
+   * catalog decides whether the session goes through the harness login at all.
+   */
+  async function guguCatalogAnswers() {
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 400)); });
   }
 
   it('lets task creation consume the draft after success instead of clearing on Enter', async () => {
@@ -2025,6 +2040,7 @@ describe('InitialSessionField', () => {
     platformCatalog({ models: [], agentDefault: null, catalogError: 'gugu-models:runtime-not-connected' });
 
     await renderField();
+    await guguCatalogAnswers();
 
     expect(latestState?.platformNotice).toBe('guguCatalog.reason.runtime-not-connected');
     expect(toolbarText()).not.toContain('guguCatalog.reason.runtime-not-connected');
@@ -2040,6 +2056,7 @@ describe('InitialSessionField', () => {
     platformCatalog({ models: [], agentDefault: null, catalogError: 'gugu-models:unreachable' });
 
     await renderField();
+    await guguCatalogAnswers();
 
     expect(latestState?.platformNotice).toBe('guguCatalog.reason.unreachable');
     const text = toolbarText();
@@ -2066,6 +2083,7 @@ describe('InitialSessionField', () => {
       await act(async () => {});
     };
     await renderOn(true);
+    await guguCatalogAnswers();
     expect(latestState?.platformNotice).toBe('guguCatalog.reason.host-not-ready');
     // 这边知道它没连上了:那句是机器离线的结果,不再说
     await renderOn(false);
@@ -2082,6 +2100,7 @@ describe('InitialSessionField', () => {
     platformCatalog({ models: [], agentDefault: null, catalogError: 'model access server is not configured' });
 
     await renderField();
+    await guguCatalogAnswers();
 
     expect(latestState?.platformNotice).toBe('guguCatalog.reason.unknown');
     expect(toolbarText()).not.toContain('not configured');
@@ -2125,6 +2144,7 @@ describe('InitialSessionField', () => {
     harnessCatalog({ kind: 'not-installed' });
 
     await renderField();
+    await guguCatalogAnswers();
 
     expect(chatComposerProps().modelOptions ?? {}).toEqual({});
     // 断的是「取了哪条 key、插了哪个 agent 名」—— 文案本体在词表里，两语由 messages 元测试守。
@@ -2145,6 +2165,25 @@ describe('InitialSessionField', () => {
     expect(toolbarText()).not.toContain('harnessCatalog.loading');
   });
 
+  it('does not judge the harness login before the Gugu catalog says which route the session takes', async () => {
+    // Each New task mount starts from an empty Gugu catalog. Judging the harness then raised
+    // "Claude Code requires sign-in" and retracted it once the Gugu model arrived (owner 11-10).
+    harnessCatalog({
+      kind: 'auth-required',
+      authMethods: [{ id: 'oauth', name: 'OAuth', kind: 'agent' }],
+      efforts: [],
+      selectedEffort: null,
+    });
+    let answer: (response: PlatformModelCatalogResponse) => void = () => {};
+    mocks.invoke.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+
+    await renderField();
+    expect(mocks.notify).not.toHaveBeenCalled();
+
+    await act(async () => answer({ models: [GLM], agentDefault: null }));
+    expect(mocks.notify).not.toHaveBeenCalled();
+  });
+
   it('tells apart not-installed from needs-login', async () => {
     // ⚠️ 下面这些 authMethods fixture 只喂给 notice / 弹窗那一层，而那一层只读 `id` / `name`。
     // `kind` 取的是 schema 的**缺省值** `agent`（「无 `type` 即 agent」），
@@ -2159,6 +2198,7 @@ describe('InitialSessionField', () => {
     });
 
     await renderField();
+    await guguCatalogAnswers();
 
     expect(latestState?.harnessNotice).toBe('harnessCatalog.authRequiredWith|Claude Code|OAuth');
     expect(noticeText()).toContain('harnessCatalog.authRequiredWith');
@@ -2381,6 +2421,7 @@ describe('InitialSessionField', () => {
     });
 
     await renderField({ provider: 'kimi' });
+    await guguCatalogAnswers();
 
     // 阳性对照：那句状态确实还在这一排里 —— 否则下面「这一排点不出登录」平凡为真。
     expect(noticeText()).toContain('harnessCatalog.authRequiredWith');
@@ -2410,6 +2451,7 @@ describe('InitialSessionField', () => {
     });
 
     await renderField({ provider: 'nologin' });
+    await guguCatalogAnswers();
 
     // 阳性对照：那句状态照说 —— 「没有下一步」不等于「什么都不说」。
     expect(noticeText()).toContain('harnessCatalog.authRequiredWith');
@@ -2432,6 +2474,7 @@ describe('InitialSessionField', () => {
     const raw = 'local Codex app-server exited (code=1 signal=null)';
     harnessCatalog({ kind: 'unavailable', reason: raw });
     await renderField({ provider: 'codex' });
+    await guguCatalogAnswers();
     expect(container.querySelector('[data-testid="harness-catalog-failure-detail"]')).toBeNull();
     expect(container.textContent).not.toContain(raw);
     expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({

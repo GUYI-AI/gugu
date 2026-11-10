@@ -1,7 +1,6 @@
 /**
- * Whether any point of a pinned user-message summary is on screen. The summary sticks inside a window whose
- * clip-path hides it until its message has left the viewport (@@@pin-window); clip-path clips hit-testing the
- * same way it clips paint, so a hit anywhere on the card means it shows.
+ * Whether any point of a pinned user-message summary is on screen. Resting, the summary is hidden over its own
+ * message (@@@pin-cover); hidden elements are not hit, so a hit anywhere on the card means it shows.
  */
 export function pinnedSummaryShown(summary: HTMLElement): boolean {
   const r = summary.getBoundingClientRect();

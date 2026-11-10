@@ -856,6 +856,12 @@ function InnerLayout({
     }
   }, [t, sessionHostAvailable, toast])
 
+  // 相机扫到的码,和系统交给 App 的同一条短链(官网 /j/ 页拉起 App),走同一条路。
+  const openScanRoute = useCallback((route: QrScanRoute) => {
+    setActiveTab('contacts')
+    setScanSeed({ route, token: Date.now() })
+  }, [setActiveTab])
+
   const handleScan = async () => {
     let raw: string | null
     try {
@@ -882,8 +888,7 @@ function InnerLayout({
       toast(t('shell.toast.qrUnrecognized'), 'error')
       return
     }
-    setActiveTab('contacts')
-    setScanSeed({ route, token: Date.now() })
+    openScanRoute(route)
   }
 
   useEffect(() => {
@@ -1173,6 +1178,8 @@ function InnerLayout({
         )}
 
         <SentMessageBodyHost />{effectsActive && <SessionInputOutboxHost accountId={user.id} />}{mobile && <AgentWatchRoot />}
+        {/* 批准页的机器移除与设置共用 DevicesProvider 那份设备数据;系统交给 App 的邀请短链与相机扫码同一条路。 */}
+        <ServerLoginApproveHost active={effectsActive} onScanRoute={openScanRoute} />
         {mobile && platform.kind === 'capacitor' && <PhoneDeviceRoot />}
 
         {/* The mobile navigation is shell chrome, not state owned by a retained tab subtree. */}
@@ -1276,8 +1283,6 @@ export function MainLayout({
     <ShellTabContext.Provider value={shellTab}>
     <ContactsProvider active={effectsActive}>
       <DevicesProvider active={effectsActive}>
-        {/* 批准页的机器移除与设置共用这份设备数据。 */}
-        <ServerLoginApproveHost active={effectsActive} />
         {/* The search panel's host where the task workspace's modal is not on screen: the phone shell, or no workspace at all. */}
         {(mobile || !platform.capabilities.sessionHost) && <PhoneMessageSearch />}
         <InnerLayout

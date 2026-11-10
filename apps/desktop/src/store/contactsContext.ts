@@ -43,7 +43,6 @@ export interface ContactsContextValue {
   createGroup: (name: string) => Promise<string | null>
   renameGroup: (groupId: string, name: string) => Promise<void>
   deleteGroup: (groupId: string) => Promise<void>
-  updateGroupMembers: (groupId: string, contactIds: string[]) => Promise<void>
   updateContactAlias: (contactId: string, alias: string) => Promise<void>
   setAgentPublic: (agentId: string, agentPublic: boolean) => Promise<void>
   setAgentDesiredStatus: (agentId: string, desiredStatus: 'online' | 'offline') => Promise<void>
@@ -88,7 +87,6 @@ const EMPTY_CONTACTS: ContactsContextValue = {
   createGroup: async () => null,
   renameGroup: async () => {},
   deleteGroup: async () => {},
-  updateGroupMembers: async () => {},
   updateContactAlias: async () => {},
   setAgentPublic: async () => {},
   setAgentDesiredStatus: async () => {},

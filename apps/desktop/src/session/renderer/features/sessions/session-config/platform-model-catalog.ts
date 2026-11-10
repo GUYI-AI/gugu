@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { queryClient } from '@renderer/lib/query-client';
+import { getRendererSession, observeRendererSession } from '@/lib/sessionPublication';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { invokeOnMachine } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
@@ -61,6 +64,8 @@ const CATALOG_TIMEOUT_MS = 8_000;
 const CATALOG_AUTH_RETRY_DELAY_MS = 250;
 /** 回到前台时重取目录的最短间隔:focus 与 visibilitychange 常常一前一后同时到,别为一次切窗取两遍。 */
 const FOREGROUND_REFRESH_MIN_MS = 5_000;
+/** A session's catalog entry (its preselection) is dropped this long after its last reader leaves. */
+export const SESSION_CATALOG_GC_MS = 5 * 60_000;
 /** 这一侧问宿主没问到(IPC 失败 / 超时)。 */
 export const PLATFORM_CATALOG_RETRY_ERROR = guguCatalogReasonCode('host-not-ready');
 
@@ -183,120 +188,123 @@ export async function fetchPlatformModelCatalog(
   return parsePlatformModelCatalog(response);
 }
 
+export const PLATFORM_MODEL_CATALOG_QUERY_KEY = ['gugu', 'platformModelCatalog'] as const;
+
+/**
+ * One load, with one retry: the main process may receive the first request before its
+ * renderer-backed auth provider has observed the freshly injected session, so an empty answer
+ * or a transport failure is asked again once. The second answer is authoritative; a second
+ * failure throws (error state, the list on hand stays).
+ */
+async function loadPlatformModelCatalog(
+  providerId: string,
+  surface: SessionpageSessionSurface,
+  sessionId: string | null,
+  machine: string | null
+): Promise<PlatformModelCatalog> {
+  const ask = () => fetchPlatformModelCatalog(providerId, surface, sessionId, machine);
+  try {
+    const first = await ask();
+    if (first.models.length > 0) return first;
+  } catch {
+    // asked again below
+  }
+  await new Promise((resolve) => setTimeout(resolve, CATALOG_AUTH_RETRY_DELAY_MS));
+  return ask();
+}
+
 /**
  * 当前 provider 的平台模型目录。providerId 为 null(未选 agent,或调用方关掉了平台分组)
  * 时不发请求。
+ *
+ * Account-level shared data (one query per account + provider + surface + machine + session):
+ * every composer, settings row and session view reading the same catalog shares one load, and a
+ * remount reads it from the cache instead of starting empty. That empty start used to present
+ * the harness route (its default model, its sign-in notice) on every New task until the answer
+ * arrived. Refreshed on demand: a models-changed signal, returning to the foreground, the
+ * machine coming back, retry.
  */
 export function usePlatformModelCatalog(
   providerId: string | null,
   surface: SessionpageSessionSurface,
   sessionId?: string | null
 ): PlatformModelCatalogState {
-  const [catalog, setCatalog] = useState<PlatformModelCatalog>(NO_PLATFORM_CATALOG);
-  const [retryNonce, setRetryNonce] = useState(0);
-  const [settled, setSettled] = useState(false);
-  const keepCurrent = useRef(false);
-  const retry = () => setRetryNonce((value) => value + 1);
   // #6264 会话 / 新建框在别的机器上:平台模型也问那台机器(它用自己的登录态与额度)。
   const host = useLibraryHost().remote;
   const hostMachine = host?.deviceId ?? null;
   const machine = sessionId ? machineRegistry.machineOf(sessionId) : hostMachine;
   // 那台机器此刻连没连上(只有这个框所在的那台知道;会话落在别处的照旧去问)。
   const online = machine === null || machine !== hostMachine || host?.online !== false;
+  const account = useSyncExternalStore(observeRendererSession, () => getRendererSession()?.user.id ?? null);
+  // The model list belongs to account + provider + surface + machine; only the preselection belongs to the session.
+  const list = [account, providerId, surface, machine] as const;
+  const queryKey = [...PLATFORM_MODEL_CATALOG_QUERY_KEY, ...list, sessionId ?? null];
+  const query = useQuery<PlatformModelCatalog>({
+    queryKey,
+    queryFn: () => loadPlatformModelCatalog(providerId!, surface, sessionId ?? null, machine),
+    // 机器没连上就不问:问不到只会落一个「模型列表尚未就绪」,而原因是机器离线(那由机器的提示说)。
+    enabled: online && providerId !== null,
+    // The account-level entry (no session: New task, settings) is loaded once and kept, or the next
+    // New task would start empty again. A session's entry carries only that session's preselection:
+    // dropped once nobody has read it for a while, so viewing sessions does not grow the cache forever.
+    staleTime: Infinity,
+    gcTime: sessionId ? SESSION_CATALOG_GC_MS : Infinity,
+    retry: false,
+    // Switching sessions keeps the list on screen and drops just the previous session's
+    // preselection until this one's arrives. Another provider / surface / machine starts empty:
+    // ❌ 把上一台 / 上一家的模型留在下拉里。
+    placeholderData: (previous, previousQuery) =>
+      previous && list.every((part, index) => previousQuery?.queryKey[PLATFORM_MODEL_CATALOG_QUERY_KEY.length + index] === part)
+        ? { ...previous, agentDefault: null, sessionSelection: undefined }
+        : undefined,
+  }, queryClient);
+  const refetch = query.refetch;
+  // A fresh request, never the one already in flight: after a hot switch the record just changed (#6182).
+  const refresh = () => { void refetch(); };
+
   const wasOnline = useRef(online);
-  const refresh = () => {
-    keepCurrent.current = true;
-    setRetryNonce((value) => value + 1);
-  };
-  // The model list belongs to provider + surface + machine; only the preselection belongs to the session.
-  // Switching sessions keeps the list on screen (it was emptied and refilled on every switch) and drops
-  // just the previous session's preselection until this one's arrives.
-  const catalogOf = `${providerId}\u0000${surface}\u0000${machine}`;
-  const lastCatalogOf = useRef(catalogOf);
-  // 设置「模型」页开关了一条(#7056):列着的这几个下拉一起重取,不等下次换 agent / 换会话。
   useEffect(() => {
-    const onChanged = () => {
-      keepCurrent.current = true;
-      setRetryNonce((value) => value + 1);
+    // 机器断开 / 连上本身不换目录:列着的留着,别先清空再填。断开时问到一半的那一趟作废(它是机器那头没应答);
+    // 连上时重取 —— 机器回来,列表自己续上,❌ 停在「尚未就绪」等人点重试。
+    if (!online && wasOnline.current) void queryClient.cancelQueries({ queryKey, exact: true });
+    if (online && !wasOnline.current && query.status !== 'pending') void refetch();
+    wasOnline.current = online;
+  }, [online]);
+
+  useEffect(() => {
+    const refreshAll = () => {
+      void queryClient.invalidateQueries({ queryKey: PLATFORM_MODEL_CATALOG_QUERY_KEY });
     };
-    window.addEventListener(PLATFORM_MODELS_CHANGED_EVENT, onChanged);
-    return () => window.removeEventListener(PLATFORM_MODELS_CHANGED_EVENT, onChanged);
-  }, []);
-  // 回到前台就重取(#7056):人可能刚在网页上开通、续费会员 —— 点「升级解锁更多模型」去付完钱回来,
-  // 下拉里就该是会员的模型。开会员只写会员表(bind_subscription),没有任何推送会到这里;
-  // 与 useSpendingPower 的 refreshWhenVisible 同一条规矩、同一个理由。
-  // owner 2026-10-10 实测:升级后回到窗口,下拉仍是三个免费模型 + 「升级解锁」。
-  useEffect(() => {
+    // 回到前台就重取(#7056):人可能刚在网页上开通、续费会员 —— 点「升级解锁更多模型」去付完钱回来,
+    // 下拉里就该是会员的模型。开会员只写会员表(bind_subscription),没有任何推送会到这里;
+    // 与 useSpendingPower 的 refreshWhenVisible 同一条规矩、同一个理由。
     let lastAt = Date.now();
     const onForeground = () => {
       if (document.visibilityState === 'hidden') return;
       const now = Date.now();
       if (now - lastAt < FOREGROUND_REFRESH_MIN_MS) return;
       lastAt = now;
-      keepCurrent.current = true;
-      setRetryNonce((value) => value + 1);
+      refreshAll();
     };
+    // 设置「模型」页开关了一条(#7056):所有读者一起重取,不等下次换 agent / 换会话。
+    window.addEventListener(PLATFORM_MODELS_CHANGED_EVENT, refreshAll);
     window.addEventListener('focus', onForeground);
     document.addEventListener('visibilitychange', onForeground);
     return () => {
+      window.removeEventListener(PLATFORM_MODELS_CHANGED_EVENT, refreshAll);
       window.removeEventListener('focus', onForeground);
       document.removeEventListener('visibilitychange', onForeground);
     };
   }, []);
 
-  useEffect(() => {
-    // 机器断开 / 连上本身不换目录也不换会话:列着的留着,别先清空再填。
-    if (online !== wasOnline.current) keepCurrent.current = true;
-    // 回来了:断开前那次没问到的失败作废(它是机器那头没应答),❌ 重取回来之前再亮一下「尚未就绪」。
-    if (online && !wasOnline.current) setCatalog((prev) => (prev.catalogError ? { ...prev, catalogError: null } : prev));
-    wasOnline.current = online;
-    // 列着的是哪一份(提供方 + 界面 + 机器)与连没连上无关:换了就清,❌ 离线时把上一台 / 上一家的模型留在下拉里。
-    const sameCatalog = lastCatalogOf.current === catalogOf;
-    lastCatalogOf.current = catalogOf;
-    if (!sameCatalog) {
-      setCatalog(NO_PLATFORM_CATALOG);
-      setSettled(false);
-    } else if (!keepCurrent.current) {
-      setCatalog((prev) => ({ ...prev, agentDefault: null, sessionSelection: undefined }));
-      setSettled(false);
-    }
-    keepCurrent.current = false;
-    // 机器没连上就不问:问不到只会落一个「模型列表尚未就绪」,而原因是机器离线(那由机器的提示说)。
-    // 连上时 online 变回 true、这里重跑 —— 机器回来,列表自己续上,❌ 停在「尚未就绪」等人点重试。
-    if (!online || !providerId) { setSettled(false); return; }
-    let live = true;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    const load = (retry: boolean) => {
-      void fetchPlatformModelCatalog(providerId, surface, sessionId, machine)
-        .then((next) => {
-          if (!live) return;
-          // The main process may receive the first request before its renderer-backed auth
-          // provider has observed the freshly injected session. Retry one empty response;
-          // transport failures remain single-shot and the second response is authoritative.
-          if (retry && next.models.length === 0) {
-            setCatalog(next);
-            setSettled(false);
-            retryTimer = setTimeout(() => load(false), CATALOG_AUTH_RETRY_DELAY_MS);
-            return;
-          }
-          setCatalog(next);
-          setSettled(next.catalogError === null);
-        })
-        .catch(() => {
-          if (retry) {
-            retryTimer = setTimeout(() => load(false), CATALOG_AUTH_RETRY_DELAY_MS);
-            return;
-          }
-          setCatalog({ ...NO_PLATFORM_CATALOG, catalogError: PLATFORM_CATALOG_RETRY_ERROR });
-          setSettled(false);
-        });
-    };
-    load(true);
-    return () => {
-      live = false;
-      if (retryTimer) clearTimeout(retryTimer);
-    };
-  }, [providerId, surface, sessionId, retryNonce, machine, online]);
-
-  return { ...catalog, settled, retry, refresh };
+  const data = query.data ?? NO_PLATFORM_CATALOG;
+  // A refetch in flight supersedes the failure it is answering; a failure keeps the list on hand.
+  const failed = query.isError && query.fetchStatus !== 'fetching';
+  return {
+    ...data,
+    catalogError: failed ? PLATFORM_CATALOG_RETRY_ERROR : data.catalogError,
+    settled: online && query.isSuccess && !query.isPlaceholderData && data.catalogError === null,
+    retry: refresh,
+    refresh,
+  };
 }

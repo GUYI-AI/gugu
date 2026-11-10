@@ -862,7 +862,16 @@ export function useInitialSessionState(
   // 选的是别的机器、此刻没连上:为什么连不上由右下角那台机器的提示说(重连中 / 离线 / 要先登录 / 版本太旧,
   // 见 remote-hosts/machine-notice.ts),❌ 这里再报一句「读取 X 的模型失败」—— 那不是 X 的问题,是机器的。
   const machineUnreachable = Boolean(remoteHost && !remoteHost.online);
-  const harnessNoticeMessage = !providerId || providerError || platformModel || byokLoginOptional || machineUnreachable
+  /**
+   * Whether this session runs on a Gugu model at all is answered by the Gugu catalog
+   * (`platformModel`, `byokLoginOptional`). Until it answers, the harness's own install/login
+   * state says nothing about this session: each mount starts from an empty catalog, so judging
+   * it then raised the harness sign-in notice and retracted it when the catalog arrived (owner
+   * 11-10: on every New task with Claude + a Gugu model).
+   */
+  const guguRouteUnknown = Boolean(providerId) && !machineUnreachable
+    && !platformCatalog.settled && platformCatalog.catalogError === null;
+  const harnessNoticeMessage = !providerId || providerError || platformModel || byokLoginOptional || machineUnreachable || guguRouteUnknown
     ? null
     : harnessCatalogNotice(harnessCatalogState, agentDisplayName, translate);
 
@@ -1059,8 +1068,9 @@ export function useInitialSessionState(
       : harnessNoticeMessage?.action === 'retry' && providerId
         ? { label: translate('harnessCatalog.retry'), onClick: () => { void forceRefreshHarnessModelCatalog(queryClient, providerId, sessionpageSurface, machine).catch(error => log.error('Model catalog retry failed', { error })); } }
         : undefined;
-  useSessionInputNotice(`session-catalog:${machine ?? 'local'}:${providerId ?? 'none'}:${sessionpageSurface}`, !harnessNoticeMessage
-    ? null
+  useSessionInputNotice(`session-catalog:${machine ?? 'local'}:${providerId ?? 'none'}:${sessionpageSurface}`, guguRouteUnknown
+    ? undefined
+    : !harnessNoticeMessage ? null
     : harnessCatalogState.kind === 'unknown' ? undefined : {
       title: upgradeCodex ? translate('taskError.codexUpgrade') : harnessNotice ?? undefined,
       tier: 'error', action: harnessAction,

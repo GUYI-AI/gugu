@@ -4,13 +4,15 @@
  * 除了 Sheet/Avatar 不依赖通讯录其余部分。
  */
 import { useCallback, useMemo, useState } from 'react'
-import { Check, X } from '@/lib/icons'
+import { X } from '@/lib/icons'
 import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
 import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
 import { describeAgentShare, shareAgentWithFriends } from '../../lib/agentShare'
 import { displayName } from '../../lib/contactsListSort'
 import { useAuth } from '../../store/auth'
 import { Avatar } from '../Avatar'
+import { SelectionCheckbox } from './ContactSearch'
+import { ListRowContent } from '../ui/ListRow'
 import { useToast } from '../toastContext'
 import { Sheet } from '../ui/Sheet'
 import { useTranslation } from 'react-i18next'
@@ -153,7 +155,7 @@ export function ShareAgentModal({
           />
         </div>
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '8px 0' }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 8 }}>
           {contacts.length === 0 ? (
             <div
               style={{
@@ -186,70 +188,15 @@ export function ShareAgentModal({
                   key={contact.id}
                   data-share-contact={contact.id}
                   aria-pressed={checked}
-                  data-selected={checked || undefined}
-                  className="gg-row"
+                  className="gg-list-row gg-row"
                   type="button"
                   onClick={() => toggle(contact.id)}
-                  style={{
-                    width: '100%',
-                    minHeight: 52,
-                    border: 0,
-                    color: 'var(--text-primary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 12,
-                    padding: '8px 16px',
-                    textAlign: 'left',
-                    cursor: 'pointer'
-                  }}
                 >
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      width: 18,
-                      height: 18,
-                      borderRadius: 'var(--radius-xs)',
-                      border: `1px solid ${checked ? 'var(--primary)' : 'var(--border-color)'}`,
-                      background: checked ? 'var(--primary)' : 'transparent',
-                      color: 'var(--primary-fg)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0
-                    }}
-                  >
-                    {checked ? <Check size={12} /> : null}
-                  </span>
-                  <Avatar name={contact.display_name} avatarUrl={contact.avatar} seed={contact.id} size="sm" />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: 'var(--font-body)',
-                        lineHeight: 'var(--lh-body)',
-                        fontWeight: 550,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}
-                    >
-                      {displayName(contact)}
-                    </div>
-                    {contact.email ? (
-                      <div
-                        style={{
-                          marginTop: 2,
-                          fontSize: 'var(--font-caption)',
-                          lineHeight: 'var(--lh-caption)',
-                          color: 'var(--text-secondary)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        {contact.email}
-                      </div>
-                    ) : null}
-                  </div>
+                  <ListRowContent
+                    leading={<><SelectionCheckbox checked={checked} /><Avatar name={contact.display_name} avatarUrl={contact.avatar} seed={contact.id} size="sm" /></>}
+                    title={displayName(contact)}
+                    subtitle={contact.email || undefined}
+                  />
                 </button>
               )
             })

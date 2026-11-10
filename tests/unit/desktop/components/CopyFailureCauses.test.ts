@@ -8,7 +8,7 @@ import { platform } from '../../../../apps/desktop/src/platform'
 import { clickElement, contact, createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../../support/testHarness'
 
 vi.mock('qrcode', () => ({ toDataURL: async () => 'data:image/png;base64,cG5n', default: { toDataURL: async () => 'data:image/png;base64,cG5n' } }))
-vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { getGroupChatSettings: async () => ({ join_token: 'test-invite' }) } }))
+vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { getGroupChatSettings: async () => ({ join_token: '0123456789abcdef0123456789abcdef' }) } }))
 let harness: ReturnType<typeof createReactHarness>
 const error = new Error('Clipboard denied /Users/test/private sk-synthetic-secret\nstack detail')
 const reason = 'Clipboard denied [path] [redacted token]'

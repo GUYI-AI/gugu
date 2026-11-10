@@ -64,9 +64,11 @@ describe('rich Topics menu', () => {
     await vi.waitFor(() => expect(document.querySelectorAll('[data-testid="group-menu-topic"]')).toHaveLength(3))
     expect([...document.querySelectorAll<HTMLElement>('[data-topic-id]')].map(row => row.dataset.topicId), 'older than the rest and not pinned, still first').toEqual(['calling', 'old', 'new'])
     const row = document.querySelector<HTMLElement>('[data-topic-id="calling"]')!
-    expect(row.querySelector('.gg-list-row-subtitle')?.textContent).not.toContain('Not this')
-    expect(row.querySelector('.gg-list-row-subtitle .gg-topic-calling')).not.toBeNull()
-    expect(row.querySelector('.gg-list-row-trailing .gg-chip')?.textContent, 'one call, not 27 unread').toBe('1')
+    expect(row.textContent, 'title only: no preview line').not.toContain('Not this')
+    expect(row.querySelector('.gg-list-row-subtitle')).toBeNull()
+    const rowChip = row.querySelector<HTMLElement>('.gg-list-row-meta .gg-chip')!
+    expect(rowChip.textContent, 'one call, not 27 unread').toBe('@1')
+    expect(rowChip.dataset.tone).toBe('danger')
     await clickElement(row.querySelector<HTMLElement>('[data-testid="group-menu-topic"]')!)
     expect(drainTopicSplitRequest('g')?.chatId).toBe('calling')
   })
@@ -125,7 +127,7 @@ describe('rich Topics menu', () => {
     expect(iconBody('old')).not.toBe(iconBody('new'))
   })
 
-  it('shows activity, preview and muted unread counts, and pins without closing or opening a topic', async () => {
+  it('shows title-only rows with muted unread counts, and pins without closing or opening a topic', async () => {
     save(['old'])
     await renderWithAppProviders(harness, topicMenu(), options())
     const submenu = document.querySelector<HTMLElement>('[data-testid="group-menu-topics"]')!
@@ -137,8 +139,7 @@ describe('rich Topics menu', () => {
     expect(rows.map((row) => row.querySelector('.gg-list-row-title')?.textContent)).toEqual(['Older topic', 'Recent topic'])
     expect(rows[0]?.closest('[data-topic-id]')?.querySelector('.gg-chip')?.textContent).toBe('99+')
     expect(rows[0]?.closest('[data-topic-id]')?.querySelector('.gg-chip')?.getAttribute('data-tone')).toBeNull()
-    expect(rows[1]?.querySelector('.gg-list-row-subtitle')?.textContent).toContain('Alex: Latest update')
-    expect(rows[1]?.querySelector('.gg-list-row-meta')?.textContent).toBeTruthy()
+    expect(rows[1]?.textContent, 'no preview, no time: the name and its count').toBe('Recent topic4')
     const popup = document.querySelector<HTMLElement>('[data-testid="group-topics-popup"]')!
     expect(popup.classList.contains('gg-topics-menu')).toBe(false)
     expect(popup.style.width).toBe('320px')
