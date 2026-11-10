@@ -5099,9 +5099,10 @@ app.whenReady().then(async () => {
         await settleSessionLifeSources([row], markInboxRowsRead)
       },
       // By the row's state: failed and unknown are final (Life never redelivers them) and fail the unit's delivery with what
-      // was disclosed, so its command records it; a start failure's rows stay queued and their units wait for the retry.
+      // was disclosed, so its command records it; a start failure is said from its cause too, while its rows stay queued and
+      // their units wait for the retry.
       reportFailure: async (rows, cause) => {
-        for (const [state, outcome] of [['failed', { kind: 'failed', cause }], ['unknown', { kind: 'unknown' }], ['queued', { kind: 'retained' }]] as const) {
+        for (const [state, outcome] of [['failed', { kind: 'failed', cause }], ['unknown', { kind: 'unknown' }], ['queued', { kind: 'retained', cause }]] as const) {
           const settled = rows.filter(row => row.state === state)
           await settleSessionLifeSources(settled, async (agent, sources, deps) => {
             const disclosure = await discloseInboxRowsFailed(agent, sources, deps, outcome)

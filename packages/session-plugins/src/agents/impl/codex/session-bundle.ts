@@ -173,6 +173,9 @@ export const codexSessionBundleDescriptor = {
   // ❌ `CODEX_ACCESS_TOKEN`:凭据的出处是咕咕给这一家的独立配置根,同名 export 会让「面板上的账号」与「实际在用的账号」分家且不报错。
   // ❌ 这里也没有 `GUGU_CODEX_BIN`(#5702):咕咕起适配器时自己填(./index.ts),透传就是让 shell 顶掉面板上的选择。
   shellEnv: { passThrough: ['CODEX_HOME', 'GUGU_CODEX_ACP_TEST_AUDIT_PATH'], denied: ['CODEX_ACCESS_TOKEN'] },
+  // `replace`:codex 的线程记着建它的 model_provider(rollout `session_meta.model_provider`),换了 provider 再续,
+  // 0.167 的 app-server 拒:「This chat uses openai, but your current provider is gugu_platform」(modelProviderMismatch)。
+  // 两条腿都走 app-server 线程,所以都换新;历史仍在咕咕的会话记录里。
   credentialLifecycle: {
     'acp': {
       delivery: 'credential-proxy',
@@ -180,7 +183,7 @@ export const codexSessionBundleDescriptor = {
       recovery: 'reopen',
       inferenceOwner: 'app-server-process-thread',
       reopenEntry: 'host-session-reload',
-      sourceChangeSession: 'preserve',
+      sourceChangeSession: 'replace',
     },
     'app-server': {
       delivery: 'credential-proxy',
@@ -188,7 +191,7 @@ export const codexSessionBundleDescriptor = {
       recovery: 'reopen',
       inferenceOwner: 'app-server-process-thread',
       reopenEntry: 'host-session-reload',
-      sourceChangeSession: 'preserve',
+      sourceChangeSession: 'replace',
     },
   },
   /**

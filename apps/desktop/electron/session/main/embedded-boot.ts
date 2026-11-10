@@ -166,6 +166,7 @@ import {
   forgetSessionPlatformModel,
   recordSessionPlatformModel,
 } from '@main/core/sessions/platform-model-selection'
+import { reloadRouteChange } from '@main/core/sessions/reload-native-session'
 import { recordUnstartedSessionChoice } from '@main/core/sessions/record-unstarted-session-choice'
 import { projectEvents } from '@main/core/projects/project-events'
 import { installClearDataPolyfill } from '@main/app/session-clear-data-polyfill'
@@ -1266,8 +1267,6 @@ export async function reloadEmdashSession(input: {
   const workspace = await resolveWorkspace(session.projectId, mounted.workspaceId)
   if (!workspace) throw new Error(`session ${sessionId} workspace is not mounted`)
   const reloadSurface = session.runtime === 'acp' ? 'acp' : 'tui'
-  const sourceChangeSession = getPlugin(session.providerId).capabilities.sessionBundle
-    .credentialLifecycle?.[reloadSurface]?.sourceChangeSession ?? 'preserve'
 
   // Both session-page legs use this host-owned stop/start boundary. PTY has no ACP store to
   // reattach, so the renderer reconnects its existing terminal resource after this returns.
@@ -1291,8 +1290,10 @@ export async function reloadEmdashSession(input: {
     const nextEffort = typeof input.effort === 'string' && input.effort.trim() ? input.effort.trim() : null
     let configBeforePatch: typeof sessions.$inferSelect.config | null = null
     const platformBefore = nextModel || input.resetModel ? await sessionPlatformModel(sessionId) : undefined
-    const sourceChanged = crossesBillingSource(platformBefore, reloadTargetSource(nextModel, input))
-    const replaceProviderSession = sourceChanged && sourceChangeSession === 'replace'
+    const replaceProviderSession = reloadRouteChange({
+      sessionId, providerId: session.providerId, surface: reloadSurface, platformBefore,
+      target: reloadTargetSource(nextModel, input),
+    }) === 'replace'
     let platformWritten = false
     if (input.resetModel) {
       // 与 ACP 腿同一个决定:两半一起清。
@@ -1465,8 +1466,13 @@ export async function reloadEmdashSession(input: {
    * 「配置不整齐」,是**跑错端点**:见 `modelSource` 字段的注释。
    */
   const platformBefore = nextModel || input.resetModel ? await sessionPlatformModel(sessionId) : undefined
-  // 原生会话续接还是换新,由 descriptor 的 `sourceChangeSession` 按腿回答。
-  const sourceChanged = crossesBillingSource(platformBefore, reloadTargetSource(nextModel, input))
+  // 换没换计费路、原生会话续接还是换新,见 `reloadRouteChange`。
+  const routeChange = reloadRouteChange({
+    sessionId, providerId: session.providerId, surface: reloadSurface, platformBefore,
+    target: reloadTargetSource(nextModel, input),
+  })
+  const sourceChanged = routeChange !== 'none'
+  const replacedProviderSessionId = routeChange === 'replace' ? providerSessionIdBeforeReload : undefined
   let platformWritten = false
   if (nextModel) {
     await recordSessionPlatformModel(
@@ -1565,8 +1571,8 @@ export async function reloadEmdashSession(input: {
       // 改动广播出去。跟着 config 一起裸写的话,记录里已经没有可续的会话,渲染端却还以为有 ——
       // 两边都不报错,只是下一次它会拿一个作废的 id 去续。
       // `preserve` 那一支本来就是把原值写回去,等于没改,所以只有「换掉」这一支要动。
-      if (sourceChangeSession !== 'preserve' && providerSessionIdBeforeReload) {
-        await clearProviderSessionId(sessionId, providerSessionIdBeforeReload)
+      if (replacedProviderSessionId) {
+        await clearProviderSessionId(sessionId, replacedProviderSessionId)
       }
     }
   }
@@ -1608,7 +1614,9 @@ export async function reloadEmdashSession(input: {
     await db.update(sessions).set({ config: cleanConfig }).where(eq(sessions.id, sessionId))
   }
   if (input.resetModel) await recordReportedDefaultModel(sessionId, platformBefore ?? null)
-  return { nativeSession: 'issued' }
+  // 换掉原生会话是这里定的(上面已清掉旧 id、起的是一条新的):如实说「另起了一条」,设置页据此告诉人 Agent 不带之前的上下文。
+  // 续接那一支的 preserved / replaced 仍由通道起来后的 LifeView 说。
+  return { nativeSession: replacedProviderSessionId ? 'replaced' : 'issued' }
 }
 
 /**
@@ -1643,14 +1651,6 @@ function reloadTargetSource(
 ): 'platform' | 'own' | null {
   if (nextModel) return input.modelSource ?? null
   return input.resetModel ? 'own' : null
-}
-
-/** `undefined` = 存量会话没有平台记录,说不出换没换路 —— 按没换处理(与改动前一致)。 */
-function crossesBillingSource(
-  platformBefore: SessionPlatformModel | null | undefined,
-  target: 'platform' | 'own' | null,
-): boolean {
-  return target !== null && platformBefore !== undefined && (platformBefore !== null) !== (target === 'platform')
 }
 
 /**

@@ -420,7 +420,9 @@ describe('an enqueuing host (session-life)', () => {
     expect(held.get(`msg:${row(3).id}`)).toBe(false)
   })
 
-  it('an unknown outcome is said truthfully, then settled; a retained one is said and stays unread', async () => {
+  // A start that fails keeps its rows queued, but nothing retries it until the next message: said as the failure it is
+  // (2026-11-10: a codex start refused every time was said as the undrawn notAdmitted, the chat showed nothing).
+  it('an unknown outcome is said truthfully, then settled; a failed start is said from its cause and stays unread', async () => {
     const cloud = cloudWith(1, 2)
     const said: Array<{ reason: string }> = []
     const marked: string[] = []
@@ -429,8 +431,10 @@ describe('an enqueuing host (session-life)', () => {
       notificationLevel: 'all', lastReadSeq: 0, senderType: 'human', senderDisplayName: null, senderGuguNumber: null, contentType: 'text', toUserIds: null,
       isWhisper: false, replyToMessageId: null, replyToSenderUserId: null, replyToContent: null, threadRootId: null, isThreadRoot: false } as AgentInboxUnreadRow })
     await discloseInboxRowsFailed(AGENT, [source(1)], deps, { kind: 'unknown' })
-    await discloseInboxRowsFailed(AGENT, [source(2)], deps, { kind: 'retained' })
-    expect(said.map((entry) => entry.reason)).toEqual(['outcomeUnknown', 'notAdmitted'])
+    await discloseInboxRowsFailed(AGENT, [source(2)], deps, { kind: 'retained', cause: { name: 'Error', message:
+      'ACP session s did not start: This chat uses openai, but your current provider is gugu_platform. Switch to openai to continue.' } })
+    await discloseInboxRowsFailed(AGENT, [source(3)], deps, { kind: 'retained', cause: { name: 'TypeError', message: 'fetch failed' } })
+    expect(said.map((entry) => entry.reason)).toEqual(['outcomeUnknown', 'generic', 'network'])
     expect(marked).toEqual([row(1).id])
   })
 

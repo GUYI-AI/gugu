@@ -10,23 +10,33 @@ import type { ModelSource, SourceSpans } from './model-source';
  * 写:会话每次启动、计费路定下来的那一刻(sessionpage-platform-model 的 platformModelForSession)
  * 记一笔;与这条会话的上一笔相同就不记 —— 同一来源的反复重启不产生新行。
  * 读:给 token 扫描一张「会话 → 时间段 → 来源」的表(见 model-source.ts 的归属规则)。
+ * 也读:换计费路重开时,原生会话此刻挂在哪条路上(`lastStartedModelSource`,embedded-boot reload)。
  *
  * 任何失败只记日志,❌ 不抛:这是统计,不能让会话因此起不来。
  */
 export function recordModelSource(sessionId: string, source: ModelSource, at: number = Date.now()): void {
   try {
-    const last = db
-      .select({ source: sessionModelSources.source })
-      .from(sessionModelSources)
-      .where(eq(sessionModelSources.sessionId, sessionId))
-      .orderBy(desc(sessionModelSources.startedAt))
-      .limit(1)
-      .get();
-    if (last?.source === source) return;
+    if (lastStartedModelSource(sessionId) === source) return;
     db.insert(sessionModelSources).values({ sessionId, source, startedAt: at }).run();
   } catch (error) {
     log.warn('usage: failed to record a session model source', { sessionId, source, error: String(error) });
   }
+}
+
+/**
+ * The billing route this session last actually started on — the newest row above; null = no start recorded yet.
+ * Every start writes it, record-less sessions too (an assistant created on its engine's own model has no per-session
+ * choice, its route came from the agent): so it, not the per-session choice, says what the native session lives on.
+ */
+export function lastStartedModelSource(sessionId: string): ModelSource | null {
+  const last = db
+    .select({ source: sessionModelSources.source })
+    .from(sessionModelSources)
+    .where(eq(sessionModelSources.sessionId, sessionId))
+    .orderBy(desc(sessionModelSources.startedAt))
+    .limit(1)
+    .get();
+  return last?.source === 'gugu' || last?.source === 'byok' ? last.source : null;
 }
 
 const PLATFORM_MODEL_KEY_PREFIX = 'sessionpage-platform-model:';

@@ -1078,10 +1078,13 @@ export async function markInboxRowsRead(agentUserId: string, sources: readonly A
  * after admission is; otherwise (a start that failed, retried later) they stay unread for that delivery.
  */
 export async function discloseInboxRowsFailed(agentUserId: string, sources: readonly AgentInboxSource[], deps: AgentInboxReaderDeps,
-  outcome: { kind: 'retained' } | { kind: 'failed'; cause: unknown } | { kind: 'unknown' }): Promise<Disclosure> {
+  outcome: { kind: 'retained'; cause: unknown } | { kind: 'failed'; cause: unknown } | { kind: 'unknown' }): Promise<Disclosure> {
   deps.onOutcome?.({ agentUserId, ok: false })
-  // A start that failed keeps its rows queued for the retry: said as retained, left unread for that delivery.
-  if (outcome.kind === 'retained') return discloseBatchFailure(agentUserId, sources, deps, undefined, 'notAdmitted')
+  // A start that failed keeps its rows queued, left unread for the retry — but nothing retries it until the next message
+  // or the person's own move, so it is said as the failure it is, from its cause. ❌ notAdmitted: that row is not drawn
+  // (an agent that has not taken the rows yet), and a start that fails every time (a resumed thread its engine refuses)
+  // then left the chat with the person's message and nothing under it.
+  if (outcome.kind === 'retained') return discloseBatchFailure(agentUserId, sources, deps, undefined, failureReason(outcome.cause))
   // A failed row never reached the agent, so it is not an agent read: it stays unread, and the host's failed source membership
   // keeps it from being resent. Said as not delivered, unless the cause names something the person can act on.
   if (outcome.kind === 'failed') {

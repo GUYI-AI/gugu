@@ -473,9 +473,11 @@ export {
 async function codexAuthStatus(ctx: AgentAuthContext): Promise<AgentAuthStatus> {
   const envStatus = authenticatedFromEnv(ctx, ['OPENAI_API_KEY']);
   if (envStatus.kind === 'authenticated') return { ...envStatus, credentialKind: 'api-key' };
+  // `codex login status`(codex-rs/cli/src/login.rs `run_login_status`):存着凭据 ⇔ 退出码 0,没有 ⇔「Not logged in」+ 1,
+  // 读不了 ⇔「Error checking login status」+ 1。措辞随版本变(0.160「Logged in using an API key - …」,0.167 改成
+  // 「API key configured - …」+「Authentication is checked when you send a request.」),退出码这一条没变 ⇒ 认退出码。
   const status = await commandAuthStatus({ ...ctx, cli: codexBinaryForSpawn(ctx) }, ['login', 'status'], {
-    authenticatedPattern: /authenticated|logged in|signed in/i,
-    unauthenticatedPattern: /not authenticated|not logged in|not signed in|login required/i,
+    unauthenticatedPattern: /not logged in/i,
   });
   if (status.kind !== 'authenticated') return status;
   const credential = await codexCredentialInfo(ctx);
