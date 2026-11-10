@@ -1,21 +1,21 @@
-import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
-import type { AuditInput, AuditReceipt, AuditRecord, CredentialReference, CredentialSummary, CredentialUseResult, VaultUseBinding, VaultUseCapability, LockReason, VaultDependencies, VaultState, VaultInstallationIdentity } from './contracts'
+import { randomBytes, randomUUID } from 'node:crypto'
+import type { AuditInput, AuditReceipt, AuditRecord, CredentialGrant, CredentialInput, CredentialReference, CredentialSecrets, CredentialSummary, CredentialUseResult, VaultUseBinding, VaultUseCapability, LockReason, VaultDependencies, VaultState, VaultInstallationIdentity } from './contracts'
 import { VaultError } from './contracts'
 import { EncryptedVaultAudit } from './audit'
 import { sealedJson } from './crypto'
-import { auditInput, binding, credentialInputSchema, uuid, identity, httpsOrigin, maskedAccount, type VaultDocument, type VaultPayload } from './schema'
+import { auditInput, binding, credentialInputSchema, grantSchema, uuid, identity, httpsOrigin, type VaultDocument, type VaultPayload } from './schema'
 import { VaultFile } from './vault-file'
 import { captureBrowserSink, performCredentialUse } from './browser-use'
 import { OutcomeAuditIssuer } from './outcome-audit'
-import { saveCredential, deleteCredential, type ManagementRuntime } from './management'
+import { saveCredential, deleteCredential, updateGrants, summary, type ManagementRuntime } from './management'
 import { VaultFeatureOperation } from './feature-guard'
 import { anySignal } from '@gugu/core/shared/anySignal'
 
 const activeRoots = new Map<string, object>()
 const safe = (error: unknown): VaultError => error instanceof VaultError ? error : new VaultError('STORAGE_FAILED')
-type PendingSetup = { id: string; vaultId: string; key: Buffer; recovery: Buffer; epoch: string; feature: VaultFeatureOperation }
 
-/** Dormant main-process service. No IPC, MCP, device action, server or diagnostic reader is registered. */
+/** Main-process service. The vault opens on first use with the Keychain-wrapped key; there is no person setup/unlock step.
+ * Lock only drops in-memory keys and secrets; the next operation reopens. Local verification is required only to reveal plaintext. */
 export class LocalPasswordVault {
   readonly #file: VaultFile
   readonly #audit: EncryptedVaultAudit
@@ -27,7 +27,6 @@ export class LocalPasswordVault {
   #epoch = randomUUID()
   #key?: Buffer
   #document?: VaultDocument
-  #pending?: PendingSetup
   readonly #activeSecrets = new Set<{ credentialId: string; clear(): void }>()
   readonly #transientKeys = new Set<Buffer>()
   readonly #revocations = new Map<string, number>()
@@ -71,22 +70,6 @@ export class LocalPasswordVault {
     assertCurrent()
     return Object.freeze({ value, generation: epoch, signal, assertCurrent })
   }
-  /** Trusted local settings only. An installation manifest alone does not initialize this account's vault. */
-  isInitialized(context: object): Promise<boolean> {
-    this.person(context)
-    return this.run(async () => {
-      const epoch = this.#epoch
-      const current = () => { this.person(context); this.current(epoch); if (this.#failure) throw new VaultError(this.#failure) }
-      current(); await this.gates()
-      // Validate an absent installation's empty root too; unrelated/corrupt data is never a fresh vault.
-      await this.#file.prepareInstallationIdentity(); current()
-      let initialized = true
-      try { await this.#file.load() }
-      catch (error) { if (!(error instanceof VaultError) || error.code !== 'NOT_INITIALIZED') throw error; initialized = false }
-      current()
-      return initialized
-    })
-  }
   state(): VaultState { return { status: this.#failure ? 'unavailable' : this.#key ? 'unlocked' : 'locked', epoch: this.#epoch, ...(this.#failure ? { reason: this.#failure } : {}) } }
   private run<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.#queue.then(async () => { if (this.#disposed) throw new VaultError('UNAVAILABLE'); try { return await operation() } catch (error) { throw safe(error) } })
@@ -115,7 +98,6 @@ export class LocalPasswordVault {
     return VaultFeatureOperation.acquire(this.#acquireFeatureGuard, operation, signal ? anySignal([signal, this.#epochAbort.signal]) : this.#epochAbort.signal)
   }
   private wipe(): void {
-    const pending = this.#pending; this.#pending = undefined
     this.#epochAbort.abort(); this.#epochAbort = new AbortController()
     this.#outcomes.clear()
     for (const secret of this.#activeSecrets) secret.clear()
@@ -123,7 +105,6 @@ export class LocalPasswordVault {
     for (const key of this.#transientKeys) key.fill(0)
     this.#transientKeys.clear()
     this.#key?.fill(0); this.#key = undefined; this.#document = undefined
-    pending?.feature.release(); pending?.key.fill(0); pending?.recovery.fill(0)
   }
   private async record(input: AuditInput): Promise<string> {
     const { key, document, epoch } = this.unlocked()
@@ -141,83 +122,38 @@ export class LocalPasswordVault {
       await this.fail(); throw new VaultError('AUDIT_FAILED')
     }
   }
-  beginSetup(context: object): Promise<{ setupId: string; recoveryMaterial: string }> {
-    this.person(context)
-    return this.run(async () => {
-      const epoch = this.#epoch, feature = await this.feature('save')
-      try {
-        return await this.#file.disk.withFeature(feature, async () => {
-          await feature.wait(() => this.gates()); await feature.wait(() => this.#file.assertEmpty())
-          await feature.wait(() => this.#dependencies.keys.verifyPerson()); this.current(epoch)
-          const previous = this.#pending; this.#pending = undefined
-          previous?.feature.release(); previous?.key.fill(0); previous?.recovery.fill(0)
-          const pending: PendingSetup = { id: randomUUID(), vaultId: randomUUID(), key: randomBytes(32), recovery: randomBytes(32), epoch, feature }
-          this.#pending = pending
-          feature.onInvalidate(() => { if (this.#pending === pending) { pending.key.fill(0); pending.recovery.fill(0); this.#pending = undefined } })
-          feature.assertCurrent()
-          return { setupId: pending.id, recoveryMaterial: `gugu-vault-v1.${pending.vaultId}.${pending.recovery.toString('base64url')}` }
-        })
-      } catch (error) { feature.release(); throw error }
-    })
-  }
-  confirmRecovery(context: object, setupId: string, material: string): Promise<void> {
-    this.person(context)
-    return this.run(async () => {
-      const pending = this.#pending
-      if (!pending || pending.id !== setupId) throw new VaultError('RECOVERY_INVALID')
-      try { this.current(pending.epoch); pending.feature.assertCurrent() }
-      catch (error) { pending.feature.release(); throw error }
-      const expected = Buffer.from(`gugu-vault-v1.${pending.vaultId}.${pending.recovery.toString('base64url')}`), actual = Buffer.from(material)
-      try { if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) throw new VaultError('RECOVERY_INVALID') }
-      finally { expected.fill(0); actual.fill(0) }
-      try {
-        await this.#file.disk.withFeature(pending.feature, async () => {
-          await pending.feature.wait(() => this.gates())
-          const document = await pending.feature.wait(() => this.#file.make(pending.key, pending.recovery, pending.vaultId, { credentials: [], operations: [] }))
-          this.current(pending.epoch)
-          await pending.feature.wait(() => this.#file.create(document)); this.current(pending.epoch)
-          this.#key = pending.key; this.#document = document; this.#pending = undefined; pending.recovery.fill(0); this.#failure = undefined
-          await this.record({ id: randomUUID(), action: 'setup', source: 'local-person', outcome: 'completed' }); pending.feature.assertCurrent()
-        })
-      } catch (error) { this.wipe(); this.#failure = safe(error).code; throw safe(error) }
-      finally { pending.feature.release() }
-    })
-  }
-  unlock(context: object): Promise<void> {
-    this.person(context)
-    return this.run(async () => {
-      if (this.#key) throw new VaultError('INVALID_INPUT')
-      const epoch = this.#epoch
+  /** Opens (or on first use creates) this account's vault. Runs inside the writer queue; no person step. */
+  private async open(held?: VaultFeatureOperation, person = false): Promise<void> {
+    // A storage/audit failure latches for Agent paths; a local person operation may retry a clean reopen.
+    if (this.#failure && !person) throw new VaultError(this.#failure)
+    if (this.#key && this.#document && !this.#failure) return
+    const epoch = this.#epoch
+    let document: VaultDocument | undefined
+    try { document = await this.#file.load() }
+    catch (error) { if (!(error instanceof VaultError) || error.code !== 'NOT_INITIALIZED') throw error }
+    if (document) {
       let key: Buffer | undefined
       try {
-        await this.gates(); const document = await this.#file.load()
-        await this.#dependencies.keys.verifyPerson(); this.current(epoch)
         key = await this.#dependencies.keys.unwrap(document.localKey, binding(document, 'local')); this.#transientKeys.add(key); this.current(epoch)
         this.#file.payload(document, key)
         this.#key = key; this.#document = document; this.#failure = undefined
-        await this.record({ id: randomUUID(), action: 'unlock', source: 'local-person', outcome: 'completed' })
-      } catch (error) { key?.fill(0); this.wipe(); throw safe(error) }
+      } catch (error) { key?.fill(0); throw safe(error) }
       finally { if (key) this.#transientKeys.delete(key) }
-    })
-  }
-  recover(context: object, material: string): Promise<void> {
-    this.person(context)
-    return this.run(async () => {
-      if (this.#key) throw new VaultError('INVALID_INPUT')
-      const epoch = this.#epoch
-      let key: Buffer | undefined
-      try {
-        await this.gates(); const document = await this.#file.load()
-        await this.#dependencies.keys.verifyPerson(); this.current(epoch)
-        key = this.#file.recover(document, material); this.#transientKeys.add(key)
-        this.#file.payload(document, key)
-        const localKey = await this.#dependencies.keys.wrap(key, binding(document, 'local')); this.current(epoch)
-        await this.#file.persist({ ...document, localKey }); this.current(epoch)
-        this.#key = key; this.#document = { ...document, localKey }; this.#failure = undefined
-        await this.record({ id: randomUUID(), action: 'recovery', source: 'local-person', outcome: 'completed' })
-      } catch (error) { key?.fill(0); this.wipe(); throw safe(error) }
-      finally { if (key) this.#transientKeys.delete(key) }
-    })
+      return
+    }
+    const feature = held ?? await this.feature('save')
+    const key = randomBytes(32)
+    try {
+      await this.#file.disk.withFeature(feature, async () => {
+        await feature.wait(() => this.#file.assertEmpty())
+        const created = await feature.wait(() => this.#file.make(key, randomUUID(), { credentials: [], operations: [] }))
+        this.current(epoch)
+        await feature.wait(() => this.#file.create(created)); this.current(epoch)
+        this.#key = key; this.#document = created
+        await this.record({ id: randomUUID(), action: 'setup', source: 'lifecycle', outcome: 'completed' })
+      })
+    } catch (error) { if (this.#key !== key) key.fill(0); throw safe(error) }
+    finally { if (!held) feature.release() }
   }
   /** Revocation and zeroing happen synchronously, before any I/O or queued cleanup. */
   lock(reason: LockReason = 'explicit'): Promise<void> {
@@ -237,8 +173,10 @@ export class LocalPasswordVault {
   list(context: object): Promise<CredentialSummary[]> {
     this.person(context)
     return this.run(async () => {
-      await this.gates(); const { key, document, epoch } = this.unlocked()
-      return this.#file.payload(document, key).credentials.map(value => ({ reference: { id: value.id, version: value.version, epoch }, origin: value.origin, maskedAccount: maskedAccount(value.account) }))
+      await this.gates(); await this.open(undefined, true); const { key, document, epoch } = this.unlocked()
+      const payload = this.#file.payload(document, key)
+      try { return payload.credentials.map(value => summary(value, epoch)) }
+      finally { for (const item of payload.credentials) { item.account = ''; item.password = ''; for (const field of item.fields) field.value = '' } }
     })
   }
   private check(reference: CredentialReference, payload: VaultPayload, managing = false) {
@@ -250,7 +188,7 @@ export class LocalPasswordVault {
     try { if (!this.#dependencies.assertOwnedLocalAgent) throw new Error(); this.#dependencies.assertOwnedLocalAgent(actor) }
     catch { return Promise.resolve({ status: 'unavailable' }) }
     return this.run(async () => {
-      try { await this.gates(); const { key, document } = this.unlocked(); this.check(reference, this.#file.payload(document, key)); return { status: 'valid', installationId: document.installationId } }
+      try { await this.gates(); await this.open(); const { key, document } = this.unlocked(); this.check(reference, this.#file.payload(document, key)); return { status: 'valid', installationId: document.installationId } }
       catch (error) { return { status: safe(error).code === 'LOCKED' ? 'locked' : safe(error).code === 'STALE_REFERENCE' ? 'invalidated' : 'unavailable' } }
     })
   }
@@ -266,26 +204,29 @@ export class LocalPasswordVault {
   }
   private management(cleanup: Promise<boolean>, feature?: VaultFeatureOperation): ManagementRuntime & { release(): void } {
     const { key, document, epoch } = this.unlocked(), payload = this.#file.payload(document, key)
-    const sensitive = { credentialId: '', clear() { for (const item of payload.credentials) { item.account = ''; item.password = '' } } }
+    const sensitive = { credentialId: '', clear() { for (const item of payload.credentials) { item.account = ''; item.password = ''; for (const field of item.fields) field.value = '' } } }
     this.#activeSecrets.add(sensitive)
     const detach = feature?.onInvalidate(() => sensitive.clear()), current = () => { this.current(epoch); feature?.assertCurrent() }
     return { key, epoch, payload, cleanup, release: () => { detach?.(); sensitive.clear(); this.#activeSecrets.delete(sensitive) }, check: reference => this.check(reference, payload, true), current, record: event => this.record(event),
       persist: async value => { current(); const next = { ...document, payload: sealedJson(key, value, binding(document, 'data')) }; await this.#file.persist(next); current(); this.#document = next } }
   }
-  save(context: object, operationId: string, input: { origin: string; account: string; password: string }, previous?: CredentialReference): Promise<CredentialSummary> {
+  save(context: object, operationId: string, input: CredentialInput, previous?: CredentialReference, creator?: CredentialGrant): Promise<CredentialSummary> {
     this.person(context)
     if (!uuid.safeParse(operationId).success) return Promise.reject(new VaultError('INVALID_INPUT'))
     const validated = credentialInputSchema.safeParse(input)
-    if (!validated.success) return Promise.reject(new VaultError('INVALID_INPUT'))
-    const normalized = { ...validated.data, origin: httpsOrigin(input.origin) }, revocation = this.revoke(previous, 'edit')
-    const sensitive = { credentialId: '', clear() { normalized.account = ''; normalized.password = '' } }; this.#activeSecrets.add(sensitive)
+    if (!validated.success || creator && !grantSchema.safeParse(creator).success) return Promise.reject(new VaultError('INVALID_INPUT'))
+    if (!previous && (!validated.data.account || !validated.data.password)) return Promise.reject(new VaultError('INVALID_INPUT'))
+    let origin: string
+    try { origin = httpsOrigin(input.origin) } catch (error) { return Promise.reject(safe(error)) }
+    const normalized = { ...validated.data, origin }, revocation = this.revoke(previous, 'edit')
+    const sensitive = { credentialId: '', clear() { normalized.account = ''; normalized.password = ''; for (const field of normalized.fields) field.value = '' } }; this.#activeSecrets.add(sensitive)
     return this.run(async () => {
       let runtime: ReturnType<LocalPasswordVault['management']> | undefined, feature: VaultFeatureOperation | undefined
       try {
         const held = feature = await this.feature('save'); held.onInvalidate(() => sensitive.clear())
         return await this.#file.disk.withFeature(held, async () => {
-          await held.wait(() => this.gates()); runtime = this.management(revocation.cleanup, held)
-          const result = await saveCredential(runtime, operationId, normalized, previous); held.assertCurrent(); return result
+          await held.wait(() => this.gates()); await held.wait(() => this.open(held, true)); runtime = this.management(revocation.cleanup, held)
+          const result = await saveCredential(runtime, operationId, normalized, previous, creator); held.assertCurrent(); return result
         })
       } catch (error) {
         if (safe(error).code === 'UNAVAILABLE' && feature?.writeStarted) { await this.fail('STORAGE_FAILED'); throw new VaultError('STORAGE_FAILED') }
@@ -300,17 +241,44 @@ export class LocalPasswordVault {
     const revocation = this.revoke(reference, 'delete')
     return this.run(async () => {
       let runtime: ReturnType<LocalPasswordVault['management']> | undefined
-      try { await this.gates(); runtime = this.management(revocation.cleanup); await deleteCredential(runtime, operationId, reference) }
+      try { await this.gates(); await this.open(undefined, true); runtime = this.management(revocation.cleanup); await deleteCredential(runtime, operationId, reference) }
       catch (error) { if (['STORAGE_FAILED', 'DATA_DAMAGED', 'AUDIT_FAILED'].includes(safe(error).code)) await this.fail(); throw safe(error) }
       finally { runtime?.release() }
     }).finally(revocation.release)
+  }
+  /** Person-only: replace who may use/maintain one credential. */
+  setGrants(context: object, reference: CredentialReference, grants: CredentialGrant[]): Promise<CredentialSummary> {
+    this.person(context)
+    if (!Array.isArray(grants) || grants.some(grant => !grantSchema.safeParse(grant).success)) return Promise.reject(new VaultError('INVALID_INPUT'))
+    const copy = grants.map(grant => ({ subject: grant.subject, level: grant.level }))
+    return this.run(async () => {
+      let runtime: ReturnType<LocalPasswordVault['management']> | undefined
+      try { await this.gates(); await this.open(undefined, true); runtime = this.management(Promise.resolve(true)); return await updateGrants(runtime, reference, copy) }
+      catch (error) { if (['STORAGE_FAILED', 'DATA_DAMAGED', 'AUDIT_FAILED'].includes(safe(error).code)) await this.fail(); throw safe(error) }
+      finally { runtime?.release() }
+    })
+  }
+  /** Person-only plaintext for the settings eye button, after local system verification (Touch ID or login password). */
+  reveal(context: object, reference: CredentialReference): Promise<CredentialSecrets> {
+    this.person(context)
+    return this.run(async () => {
+      await this.gates(); await this.open(undefined, true)
+      const epoch = this.#epoch
+      await this.#dependencies.keys.verifyPerson(); this.current(epoch)
+      const { key, document } = this.unlocked(), payload = this.#file.payload(document, key)
+      try {
+        const value = this.check(reference, payload, true)
+        await this.record({ id: randomUUID(), action: 'reveal', source: 'local-person', outcome: 'completed', credential: { id: value.id, version: value.version }, origin: value.origin })
+        return { account: value.account, password: value.password, fields: value.fields.map(field => ({ ...field })) }
+      } finally { for (const item of payload.credentials) { item.account = ''; item.password = ''; for (const field of item.fields) field.value = '' } }
+    })
   }
   /** For the trusted approval/browser coordinator only. This method never accepts passwords or raw errors. */
   appendAudit(input: AuditInput, { effectPossible }: { effectPossible: boolean }): Promise<AuditReceipt> {
     let validated: AuditInput
     try { validated = auditInput(input) } catch { return Promise.resolve({ status: effectPossible ? 'uncertain' : 'unavailable', code: 'AUDIT_FAILED', retry: false, retainIsolatedLogin: true }) }
     return this.run(async () => {
-      try { await this.gates(); return { status: 'recorded', recordId: await this.record(validated) } }
+      try { await this.gates(); await this.open(); return { status: 'recorded', recordId: await this.record(validated) } }
       catch { await this.fail(); return { status: effectPossible ? 'uncertain' : 'unavailable', code: 'AUDIT_FAILED', retry: false, retainIsolatedLogin: true } }
     })
   }
@@ -326,7 +294,7 @@ export class LocalPasswordVault {
       if (!(revoked instanceof AbortSignal) || revoked.aborted) throw new VaultError('UNAVAILABLE')
       const held = feature = await this.feature('use', revoked)
       return this.#file.disk.withFeature(held, async () => {
-        await held.wait(() => this.gates())
+        await held.wait(() => this.gates()); await held.wait(() => this.open(held))
         const { key, document, epoch } = this.unlocked(), payload = this.#file.payload(document, key)
         try {
           const value = this.check({ id: bound.credentialId, version: Number(bound.credentialVersion), epoch: bound.lockEpoch }, payload)
@@ -345,29 +313,17 @@ export class LocalPasswordVault {
   }
   readAudit(context: object): Promise<AuditRecord[]> {
     this.person(context)
-    return this.run(async () => { await this.gates(); const { document, key, epoch } = this.unlocked(); const records = await this.#audit.read(document, key, this.#dependencies.accountId); this.current(epoch); return records })
+    return this.run(async () => { await this.gates(); await this.open(undefined, true); const { document, key, epoch } = this.unlocked(); const records = await this.#audit.read(document, key, this.#dependencies.accountId); this.current(epoch); return records })
   }
   clearAudit(context: object): Promise<void> {
     this.person(context)
     return this.run(async () => {
       const epoch = this.#epoch
-      let temporary: Buffer | undefined
       try {
-        await this.gates()
-        if (!this.#key) {
-          const document = await this.#file.load()
-          await this.#dependencies.keys.verifyPerson(); this.current(epoch)
-          temporary = await this.#dependencies.keys.unwrap(document.localKey, binding(document, 'local')); this.#transientKeys.add(temporary); this.current(epoch)
-          this.#file.payload(document, temporary)
-          await this.#audit.clear(); this.#outcomes.clear(); this.current(epoch)
-          await this.#audit.persist(this.#audit.prepare(document, temporary, this.#dependencies.accountId, { id: randomUUID(), action: 'clear', source: 'local-person', outcome: 'completed' }))
-          this.current(epoch); this.#failure = undefined
-        } else {
-          this.unlocked(); await this.#audit.clear(); this.#outcomes.clear(); this.current(epoch)
-          await this.record({ id: randomUUID(), action: 'clear', source: 'local-person', outcome: 'completed' })
-        }
+        await this.gates(); await this.open(undefined, true)
+        this.unlocked(); await this.#audit.clear(); this.#outcomes.clear(); this.current(epoch)
+        await this.record({ id: randomUUID(), action: 'clear', source: 'local-person', outcome: 'completed' })
       } catch { await this.fail(); throw new VaultError('AUDIT_FAILED') }
-      finally { temporary?.fill(0); if (temporary) this.#transientKeys.delete(temporary) }
     })
   }
   private async fail(reason: VaultState['reason'] = 'AUDIT_FAILED'): Promise<void> {

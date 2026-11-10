@@ -5016,7 +5016,12 @@ app.whenReady().then(async () => {
     }
     emdash.installPasswordBetaHost({ window: () => mainWindow, account: async () => (await getSessionpageAuth())?.userId ?? null, device: localDeviceId,
       deliver: (sessionId, requestId, status) => emdash.deliverPasswordBetaDecision(sessionId, requestId, status),
-      readPolicy: createPasswordBetaPolicyReader(getSessionpageAuth) })
+      readPolicy: createPasswordBetaPolicyReader(getSessionpageAuth),
+      verifyOwner: async (reason) => {
+        const helper = deviceActionsRuntime().macHelper()
+        if (!helper) throw new Error('mac helper unavailable')
+        await helper.call('owner.verify', { reason }, { timeoutMs: 120_000 })
+      } })
     bindPasswordBetaAgent(emdash.passwordBetaAgent)
     app.once('will-quit', startSessionpageAgentArchivalSync({ getAuth: getSessionpageAuth, resolveDeviceId: localDeviceId,
       inventory: () => emdash.emdashSessionpageInventory(), subscribe: (listener) => emdash.onEmdashSessionpageReapTrigger(listener) }))

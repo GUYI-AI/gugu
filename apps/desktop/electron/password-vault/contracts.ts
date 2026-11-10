@@ -6,13 +6,17 @@ export class VaultError extends Error {
   constructor(readonly code: VaultCode) { super(code); this.name = 'VaultError' }
 }
 export interface CredentialReference { id: string; version: number; epoch: string }
-export interface CredentialSummary { reference: CredentialReference; origin: string; maskedAccount: string }
+export interface CredentialGrant { subject: string; level: 'read' | 'write' }
+export interface CredentialSummary { reference: CredentialReference; origin: string; maskedAccount: string; fields: { id: string; name: string }[]; grants: CredentialGrant[] }
+/** Person-only plaintext, returned after local system verification. Never an Agent result. */
+export interface CredentialSecrets { account: string; password: string; fields: { id: string; name: string; value: string }[] }
+export interface CredentialInput { origin: string; account: string; password: string; fields?: { id: string; name: string; value: string }[] }
 export type LockReason = 'explicit' | 'os-lock' | 'suspend' | 'logout' | 'account-switch' | 'app-exit' | 'failure'
 export interface Invalidation { epoch: string; reason: LockReason | 'edit' | 'delete' | 'recovery'; credentialId?: string }
 export interface VaultState { status: 'locked' | 'unlocked' | 'unavailable'; epoch: string; reason?: VaultCode }
 export interface AuditInput {
   id: string
-  action: 'pre-submit' | 'setup' | 'recovery' | 'unlock' | 'lock' | 'add' | 'edit' | 'delete' | 'request' | 'decision' | 'use' | 'invalidate' | 'clear'
+  action: 'pre-submit' | 'setup' | 'recovery' | 'unlock' | 'lock' | 'add' | 'edit' | 'delete' | 'request' | 'decision' | 'use' | 'invalidate' | 'clear' | 'grant' | 'reveal'
   loginSurfaceId?: string; agentId?: string; sessionId?: string; requestId?: string; useId?: string
   credential?: { id: string; version: number }; origin?: string
   decision?: 'allow-once' | 'reject' | 'cancel' | 'expire'

@@ -51,7 +51,7 @@ async function scenario() {
   }
   const { browser, acquireFeatureGuard, ...host } = dependencies
   const ports = createVaultStorage(host, browser!, acquireFeatureGuard!), vault = ports.vault; vaults.push(vault)
-  const material = await vault.beginSetup(person); await vault.confirmRecovery(person, material.setupId, material.recoveryMaterial)
+  await vault.list(person)
   const saved = await vault.save(person, randomUUID(), { origin: 'https://login.example.test', account: randomUUID(), password: randomBytes(32).toString('base64url') })
   const checked = await vault.checkReference(actor, saved.reference)
   if (checked.status !== 'valid') throw new Error('synthetic fixture unavailable')

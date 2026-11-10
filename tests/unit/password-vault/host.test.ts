@@ -36,34 +36,24 @@ async function fixture() {
 }
 
 describe('fixed host construction of vault storage', () => {
-  it.each(['person-cancelled', 'recovery-unconfirmed'] as const)('keeps account setup available after %s despite a persisted installation manifest', async mode => {
+  it('creates the vault on first use without person verification', async () => {
     const f = await fixture(), vault = f.construct().vault
-    expect(await vault.isInitialized(f.person)).toBe(false)
-    expect((await readdir(f.root)).length).toBe(0); expect(f.verify).not.toHaveBeenCalled()
-    if (mode === 'person-cancelled') {
-      f.verify.mockRejectedValueOnce(new VaultError('CANNOT_UNLOCK'))
-      await expect(vault.beginSetup(f.person)).rejects.toMatchObject({ code: 'CANNOT_UNLOCK' })
-    } else await vault.beginSetup(f.person)
+    expect((await readdir(f.root)).length).toBe(0)
+    expect(await vault.list(f.person)).toEqual([])
+    expect(f.verify).not.toHaveBeenCalled()
     expect((await vault.prepareInstallationIdentity()).value.status).toBe('persisted')
-    expect(await vault.isInitialized(f.person)).toBe(false)
-    await vault.dispose()
-    const next = f.construct().vault
-    expect(await next.isInitialized(f.person)).toBe(false)
-    const setup = await next.beginSetup(f.person)
-    await next.confirmRecovery(f.person, setup.setupId, setup.recoveryMaterial)
-    expect(await next.isInitialized(f.person)).toBe(true)
-    await next.lock()
-    expect(await next.isInitialized(f.person)).toBe(true)
+    await vault.lock()
+    expect(await vault.list(f.person)).toEqual([])
+    expect(f.verify).not.toHaveBeenCalled()
   })
-  it.each(['missing', 'damaged'] as const)('does not report a %s account document as an uninitialized empty vault', async mode => {
+  it.each(['missing', 'damaged'] as const)('does not treat a %s account document as an empty vault', async mode => {
     const f = await fixture(), vault = f.construct().vault
-    const setup = await vault.beginSetup(f.person)
-    await vault.confirmRecovery(f.person, setup.setupId, setup.recoveryMaterial)
+    await vault.list(f.person); await vault.lock()
     const manifest = JSON.parse(await readFile(join(f.host.root, 'installation.json'), 'utf8'))
     const path = join(f.host.root, manifest.owners[0], 'vault.json')
     if (mode === 'missing') await rm(path)
     else await writeFile(path, '{}')
-    await expect(vault.isInitialized(f.person)).rejects.toMatchObject({ code: mode === 'missing' ? 'DATA_MISSING' : 'DATA_DAMAGED' })
+    await expect(vault.list(f.person)).rejects.toMatchObject({ code: mode === 'missing' ? 'DATA_MISSING' : 'DATA_DAMAGED' })
   })
   it('refuses the non-Beta build even with a supplied ready callback and creates nothing', async () => {
     const f = await fixture(); build.beta = false
@@ -90,8 +80,7 @@ describe('fixed host construction of vault storage', () => {
     const [first, concurrent] = await Promise.all([vault.prepareInstallationIdentity(), vault.prepareInstallationIdentity()])
     expect(first.value.status).toBe('pending_setup'); expect(first.value.installationId === concurrent.value.installationId).toBe(true)
     expect((await readdir(f.root)).length).toBe(0); expect(f.verify).not.toHaveBeenCalled()
-    const material = await vault.beginSetup(f.person)
-    await vault.confirmRecovery(f.person, material.setupId, material.recoveryMaterial)
+    await vault.list(f.person)
     const persisted = await vault.prepareInstallationIdentity()
     expect(persisted.value.status).toBe('persisted'); expect(persisted.value.installationId === first.value.installationId).toBe(true)
     // A pending save fact stays conservative across its own commit, never upgrades itself into use evidence.
@@ -102,7 +91,7 @@ describe('fixed host construction of vault storage', () => {
   })
   it('revokes old installation facts on lock and returns the persisted identity with the new lifecycle generation', async () => {
     const f = await fixture(), { vault } = f.construct(), before = await vault.prepareInstallationIdentity()
-    const material = await vault.beginSetup(f.person); await vault.confirmRecovery(f.person, material.setupId, material.recoveryMaterial)
+    await vault.list(f.person)
     await vault.lock()
     expect(before.signal.aborted).toBe(true); expect(() => before.assertCurrent()).toThrow(VaultError)
     const next = await vault.prepareInstallationIdentity()
@@ -111,7 +100,7 @@ describe('fixed host construction of vault storage', () => {
   })
   it('latches a replaced manifest UUID instead of silently substituting a new installation', async () => {
     const f = await fixture(), { vault } = f.construct()
-    const material = await vault.beginSetup(f.person); await vault.confirmRecovery(f.person, material.setupId, material.recoveryMaterial)
+    await vault.list(f.person)
     const identity = await vault.prepareInstallationIdentity(), path = join(f.host.root, 'installation.json')
     const value = JSON.parse(await readFile(path, 'utf8')); value.id = randomUUID(); await writeFile(path, JSON.stringify(value))
     await expect(vault.prepareInstallationIdentity()).rejects.toMatchObject({ code: 'WRONG_INSTALLATION' })
@@ -124,10 +113,9 @@ describe('fixed host construction of vault storage', () => {
     f.host.keys.verifyPerson = async () => { throw new Error('replaced person verification') }
     f.host.keys.wrap = async () => { throw new Error('replaced protector') }
     expect(Object.isFrozen(ports)).toBe(true); expect(ports.outcomeAudit).toBe(ports.vault.outcomeAudit)
-    expect(() => ports.vault.beginSetup({})).toThrow(VaultError)
-    const material = await ports.vault.beginSetup(f.person)
-    await ports.vault.confirmRecovery(f.person, material.setupId, material.recoveryMaterial)
-    expect(ports.vault.state().status).toBe('unlocked'); expect(f.verify).toHaveBeenCalledOnce()
+    expect(() => ports.vault.list({})).toThrow(VaultError)
+    await ports.vault.list(f.person)
+    expect(ports.vault.state().status).toBe('unlocked'); expect(f.verify).not.toHaveBeenCalled()
     expect(f.ready).toHaveBeenCalled()
   })
   it.each(['guard', 'keys', 'person', 'private-files', 'invalidate', 'browser', 'owned-agent', 'clock'] as const)(

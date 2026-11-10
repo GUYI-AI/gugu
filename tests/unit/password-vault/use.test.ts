@@ -33,7 +33,7 @@ async function scenario(withSettlement = true) {
       } },
   }
   const vault = new LocalPasswordVault(dependencies); disposals.push(vault)
-  const recovery = await vault.beginSetup(person); await vault.confirmRecovery(person, recovery.setupId, recovery.recoveryMaterial)
+  await vault.list(person)
   const input = { origin: 'https://login.example.test:8443', account: randomBytes(24).toString('base64url'), password: randomBytes(48).toString('base64url') }
   const saved = await vault.save(person, randomUUID(), input)
   const checked = await vault.checkReference(actor, saved.reference)
@@ -80,7 +80,7 @@ describe('trusted internal browser sink with synthetic authority', () => {
     expect((await vault.checkReference({}, saved.reference)).status).toBe('unavailable')
     await vault.save(person, randomUUID(), { origin: 'https://login.example.test:8443', account: randomUUID(), password: randomUUID() }, saved.reference)
     expect((await vault.checkReference(actor, saved.reference)).status).toBe('invalidated')
-    await vault.lock(); expect((await vault.checkReference(actor, saved.reference)).status).toBe('locked')
+    await vault.lock(); expect((await vault.checkReference(actor, saved.reference)).status).toBe('invalidated')
   })
   it('does not call the sink when the pre-use audit fails and retains the isolated login surface', async () => {
     const { vault, binding, issue, fill, cleanup } = await scenario(), original = VaultDisk.prototype.write
@@ -204,7 +204,7 @@ describe('trusted internal browser sink with synthetic authority', () => {
     await vault.useCredential(issue(), binding)
     const { postUseAudit, ...context } = settle.mock.calls[0][0]
     if (postUseAudit.status !== 'recorded') throw new Error('synthetic receipt missing')
-    if (operation === 'lock') { await vault.lock(); await vault.unlock(person) }
+    if (operation === 'lock') { await vault.lock(); await vault.list(person) }
     else if (operation === 'edit') await vault.save(person, randomUUID(), { origin: binding.origin, account: randomUUID(), password: randomUUID() }, saved.reference)
     else await vault.clearAudit(person)
     expect(vault.outcomeAudit.matches(postUseAudit, context)).toBe(false)

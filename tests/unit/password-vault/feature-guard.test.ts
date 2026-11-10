@@ -58,7 +58,7 @@ async function fixture(provider = true, revokedSignal?: () => unknown) {
   } satisfies VaultDependencies
   const vault = new LocalPasswordVault(dependencies); vaults.push(vault)
   const invalidate = (kind: 'closed' | 'revoked') => { state.live = false; if (kind === 'revoked') abort.abort() }
-  const setup = async () => { const material = await vault.beginSetup(person); await vault.confirmRecovery(person, material.setupId, material.recoveryMaterial) }
+  const setup = async () => { await vault.list(person) }
   const use = async () => {
     const saved = await vault.save(person, randomUUID(), { origin: 'https://login.example.test', account: randomUUID(), password: randomBytes(32).toString('base64url') })
     const checked = await vault.checkReference(actor, saved.reference)
@@ -73,7 +73,7 @@ async function fixture(provider = true, revokedSignal?: () => unknown) {
 const observeWrites = () => { writes.count = 0; writes.enabled = true }
 
 describe('live password feature guard held by storage', () => {
-  it('holds one live save qualification across both setup steps and captures its provider once', async () => {
+  it('holds one live save qualification while creating the vault on first use and captures its provider once', async () => {
     const f = await fixture(), replacement = vi.fn(async () => { throw new Error('replaced dependency') })
     f.dependencies.acquireFeatureGuard = replacement
     await f.setup()
@@ -86,30 +86,8 @@ describe('live password feature guard held by storage', () => {
   })
   it('denies a missing new adapter even when the legacy void callback resolves', async () => {
     const f = await fixture(false); observeWrites()
-    const delivered = await f.vault.beginSetup(f.person).then(() => true, () => false)
+    const delivered = await f.vault.list(f.person).then(() => true, () => false)
     expect(delivered).toBe(false); expect(writes.count).toBe(0)
-  })
-  it.each(['closed', 'revoked'] as const)('rechecks after person verification when %s without delivering recovery material', async kind => {
-    const f = await fixture(), entered = deferred(), release = deferred()
-    f.dependencies.keys.verifyPerson.mockImplementationOnce(async () => { entered.resolve(); await release.promise })
-    const pending = f.vault.beginSetup(f.person).then(() => true, () => false)
-    await entered.promise; observeWrites(); f.invalidate(kind); release.resolve()
-    expect(await pending).toBe(false); expect(writes.count).toBe(0)
-  })
-  it.each(['closed', 'revoked'] as const)('reuses the setup guard across recovery confirmation and refuses post-wrap writes when %s', async kind => {
-    const f = await fixture(), material = await f.vault.beginSetup(f.person), entered = deferred(), release = deferred()
-    const wrap = f.dependencies.keys.wrap.getMockImplementation()!
-    f.dependencies.keys.wrap.mockImplementationOnce(async (key, binding) => { entered.resolve(); await release.promise; return wrap(key, binding) })
-    const pending = f.vault.confirmRecovery(f.person, material.setupId, material.recoveryMaterial).then(() => true, () => false)
-    await entered.promise; observeWrites(); f.invalidate(kind); release.resolve()
-    expect(await pending).toBe(false); expect(writes.count).toBe(0)
-  })
-  it('cannot replace an invalidated pending setup with a fresh guard at confirmation', async () => {
-    const f = await fixture(), material = await f.vault.beginSetup(f.person)
-    f.invalidate('revoked'); f.state.live = true; observeWrites()
-    const result = await f.vault.confirmRecovery(f.person, material.setupId, material.recoveryMaterial).then(() => true, () => false)
-    expect(result).toBe(false); expect(f.acquireFeatureGuard).toHaveBeenCalledOnce()
-    expect(f.dependencies.keys.wrap).not.toHaveBeenCalled(); expect(writes.count).toBe(0)
   })
   it.each(['closed', 'revoked'] as const)('rechecks at the actual data write after an awaited gate when %s', async kind => {
     const f = await fixture(); await f.setup()
@@ -180,7 +158,7 @@ describe('live password feature guard held by storage', () => {
     let signal: AbortSignal | undefined
     const provider = f.acquireFeatureGuard.getMockImplementation()!
     f.acquireFeatureGuard.mockImplementationOnce(async (operation, current) => { signal = current; entered.resolve(); await release.promise; return provider(operation, current) })
-    const pending = f.vault.beginSetup(f.person).then(() => true, () => false)
+    const pending = f.vault.list(f.person).then(() => true, () => false)
     await entered.promise; observeWrites(); const locking = f.vault.lock()
     const cancelled = signal?.aborted
     const delivered = await pending
@@ -195,7 +173,7 @@ describe('live password feature guard held by storage', () => {
         assertCurrent: kind === 'boolean-assert' ? () => true : kind === 'async-assert' ? async () => undefined : () => undefined }
     f.acquireFeatureGuard.mockResolvedValueOnce(candidate as Awaited<ReturnType<NonNullable<VaultDependencies['acquireFeatureGuard']>>>)
     observeWrites()
-    const result = await f.vault.beginSetup(f.person).then(() => 'delivered', error => error.code as string)
+    const result = await f.vault.list(f.person).then(() => 'delivered', error => error.code as string)
     expect(result).toBe('UNAVAILABLE'); expect(writes.count).toBe(0)
   })
   it('keeps the real permission readiness guard live across a private-file wait', async () => {
@@ -211,7 +189,7 @@ describe('live password feature guard held by storage', () => {
     })
     const entered = deferred(), release = deferred()
     f.dependencies.assertPrivateStorageReady.mockImplementationOnce(async () => { entered.resolve(); await release.promise })
-    const pending = f.vault.beginSetup(f.person).then(() => true, () => false)
+    const pending = f.vault.list(f.person).then(() => true, () => false)
     await entered.promise; observeWrites(); modeFact.value = 'disabled'; release.resolve()
     expect(await pending).toBe(false); expect(writes.count).toBe(0)
   })
@@ -224,7 +202,7 @@ describe('live password feature guard held by storage', () => {
     await entered.promise; f.invalidate('closed'); release.resolve()
     expect(await pending).toBe('STORAGE_FAILED'); expect(renamed).toBe(2); expect(f.vault.state().status).toBe('unavailable')
     writes.afterRename = undefined
-    await f.vault.unlock(f.person)
+    await f.vault.list(f.person)
     expect((await f.vault.list(f.person)).length).toBe(1)
   })
 })

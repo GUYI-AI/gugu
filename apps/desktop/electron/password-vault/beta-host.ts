@@ -1,7 +1,6 @@
 import { app, ipcMain, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import type { PasswordUiCommand, PasswordUiReply, PasswordSnapshot } from '@gugu/core/shared/passwordBetaProtocol'
 import { privatePasswordVaultDirectory, PASSWORD_VAULT_STORAGE } from '@gugu/core/local/state/protectedPrivateStorage'
@@ -13,14 +12,16 @@ import type { GuguMcpContext } from '../acp-engine-utils'
 import { createVaultStorage } from './host'
 import { macVaultKeyProtector } from './mac'
 import { VaultError } from './contracts'
-import { passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
+import { passwordGrantCandidates, passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
 import { BetaPasswordLogin } from './beta-login'
 
 export const PASSWORD_UI_CHANNEL = 'gugu:password-beta-ui'
 export const PASSWORD_CHANGED_CHANNEL = 'gugu:password-beta-changed'
 interface NativeHost { window(): BrowserWindow | null; account(): Promise<string | null>; device(): string | null | Promise<string | null>;
   deliver(sessionId: string, requestId: string, status: string): Promise<void>;
-  readPolicy(ownerId: string, signal: AbortSignal): Promise<PermissionPolicy> }
+  readPolicy(ownerId: string, signal: AbortSignal): Promise<PermissionPolicy>
+  /** System owner verification (Touch ID or login password) through the native helper. */
+  verifyOwner(reason: string): Promise<void> }
 type Account = Awaited<ReturnType<typeof createAccount>>
 let native: NativeHost | undefined
 let current: Account | undefined
@@ -33,33 +34,23 @@ const changed = () => {
 }
 async function createAccount(ownerId: string, host: NativeHost) {
   const controller = new AbortController(), root = join(privatePasswordVaultDirectory(), ownerId)
-  const preferences = join(privatePasswordVaultDirectory(), 'beta-preferences', `${ownerId}.json`)
-  let denied = false
   const assertCurrent = () => { controller.signal.throwIfAborted(); if (current && current.ownerId !== ownerId) throw unavailable() }
   const protection = async () => { if ((await protectedPrivateStorageStatus(PASSWORD_VAULT_STORAGE)).status !== 'ready') throw unavailable() }
   await protection()
-  try {
-    const value: unknown = JSON.parse(await readFile(preferences, 'utf8'))
-    if (!value || typeof value !== 'object' || !('denied' in value) || typeof value.denied !== 'boolean') throw unavailable()
-    denied = value.denied
-  } catch (error) {
-    // An absent preference defaults to asking. Unreadable/corrupt saved denials never become permission.
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw unavailable()
-  }
   const access = createBetaPasswordAccess({ signal: controller.signal, toolScope: guguMcpToolScope,
     readPolicy: async (owner, signal) => {
-      if (await host.account() !== ownerId || owner !== ownerId || denied) throw unavailable()
+      if (await host.account() !== ownerId || owner !== ownerId) throw unavailable()
       assertCurrent()
       return host.readPolicy(owner, signal)
     } })
   const deviceId = await host.device()
   if (!deviceId) throw unavailable()
   const login = new BetaPasswordLogin({ ownerId, deviceId, signal: controller.signal,
-    access, assertCurrent, changed, describe: (agentId, sessionId) => passwordRequestPresentation(ownerId, agentId, sessionId), denied: () => denied, deliver: host.deliver })
+    access, assertCurrent, changed, describe: (agentId, sessionId) => passwordRequestPresentation(ownerId, agentId, sessionId), denied: () => false, deliver: host.deliver })
   const { vault } = createVaultStorage({ root, accountId: ownerId, installationBinding: app.getPath('userData'),
     assertLocalPerson: value => { assertCurrent(); if (value !== person) throw unavailable() },
     assertOwnedLocalAgent: value => { assertCurrent(); if (value !== person) throw unavailable() },
-    assertPrivateStorageReady: protection, keys: macVaultKeyProtector(),
+    assertPrivateStorageReady: protection, keys: macVaultKeyProtector(reason => host.verifyOwner(reason)),
     invalidate: async () => { login.invalidate() },
   }, login.sink, async (operation, signal) => {
     if (!PASSWORD_BETA_ENABLED || await host.account() !== ownerId) throw unavailable()
@@ -68,16 +59,7 @@ async function createAccount(ownerId: string, host: NativeHost) {
     return result
   })
   login.bindVault(vault)
-  return { ownerId, vault, login, controller, assertCurrent,
-    denied: () => denied,
-    setDenied: async (value: boolean) => {
-      await protection(); assertCurrent()
-      await mkdir(join(privatePasswordVaultDirectory(), 'beta-preferences'), { recursive: true, mode: 0o700 })
-      await writeFile(preferences, JSON.stringify({ denied: value }), { mode: 0o600 })
-      denied = value
-      if (value) login.invalidate()
-    },
-  }
+  return { ownerId, vault, login, controller, assertCurrent }
 }
 async function account(): Promise<Account> {
   if (!PASSWORD_BETA_ENABLED || !native) throw unavailable()
@@ -96,9 +78,9 @@ async function account(): Promise<Account> {
   finally { creating = undefined }
 }
 async function snapshot(value: Account): Promise<PasswordSnapshot> {
-  const state = value.vault.state()
-  return { status: state.status, initialized: await value.vault.isInitialized(person), denied: value.denied(),
-    items: state.status === 'unlocked' ? await value.vault.list(person) : [], approvals: value.login.pending() }
+  let candidates: PasswordSnapshot['candidates'] = []
+  try { candidates = passwordGrantCandidates(value.ownerId) } catch { candidates = [] }
+  return { items: await value.vault.list(person), approvals: value.login.pending(), candidates }
 }
 /** A dedicated native renderer IPC. Never uses generic action logging, transcript or device RPC. */
 export function installPasswordBetaHost(host: NativeHost): void {
@@ -111,13 +93,10 @@ export function installPasswordBetaHost(host: NativeHost): void {
       const value = await account()
       switch (command?.type) {
         case 'snapshot': break
-        case 'unlock': await value.vault.unlock(person); break
-        case 'lock': await value.vault.lock(); break
-        case 'begin-setup': return { ok: true, snapshot: await snapshot(value), setup: await value.vault.beginSetup(person) }
-        case 'confirm-setup': await value.vault.confirmRecovery(person, command.setupId, command.material); break
-        case 'save': await value.vault.save(person, randomUUID(), { origin: command.origin, account: command.account, password: command.password }); break
+        case 'save': await value.vault.save(person, randomUUID(), { origin: command.origin, account: command.account, password: command.password, fields: command.fields ?? [] }, command.reference); break
         case 'delete': await value.vault.delete(person, randomUUID(), command.reference); break
-        case 'deny': if (typeof command.value !== 'boolean') throw unavailable(); await value.setDenied(command.value); break
+        case 'reveal': return { ok: true, snapshot: await snapshot(value), secrets: await value.vault.reveal(person, command.reference) }
+        case 'grants': await value.vault.setGrants(person, command.reference, command.grants); break
         case 'decide': value.login.decide(command.requestId, command.decision); break
         default: throw unavailable()
       }
@@ -136,7 +115,7 @@ export const passwordBetaAgent = Object.freeze({
   async start(context: GuguMcpContext, requestId: string) { return (await account()).login.start(context, requestId) },
   async list(context: GuguMcpContext) {
     const value = await account(), identity = passwordNativeMcpIdentity(context)
-    if (!identity || identity.ownerId !== value.ownerId || value.denied()) throw unavailable()
+    if (!identity || identity.ownerId !== value.ownerId) throw unavailable()
     return value.vault.list(person)
   },
   async request(context: GuguMcpContext, signal: AbortSignal, input: {
