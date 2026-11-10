@@ -5,7 +5,7 @@ import { taskChatRows, taskChatWindow } from '../../../../apps/desktop/src/compo
 import type { AssistantTaskChat } from '../../../../apps/desktop/src/lib/assistantTaskChat'
 import type { TaskExchange } from '../../../../apps/desktop/src/session/shared/core/sessions/task-collaboration'
 
-const task: AssistantTaskChat = { assistantId: 'assistant-id', taskAgentId: 'task-id', task: { deviceId: 'worker', sessionId: 'task-session' }, assistants: [{ deviceId: 'home', sessionId: 'assistant-session' }] }
+const task: AssistantTaskChat = { workId: 'work-id', assistantId: 'assistant-id', taskAgentId: 'task-id', task: { deviceId: 'worker', sessionId: 'task-session' }, assistants: [{ deviceId: 'home', sessionId: 'assistant-session' }] }
 const exchange = (id: string, fromSessionId: string, toSessionId: string, second: number): TaskExchange => ({ id, position: second, fromSessionId, toSessionId, content: `report ${id}`, createdAt: `2026-10-16T12:00:0${second}Z` })
 const human = { id: 'human-message', chat_id: 'dm', sender_user_id: 'owner', content: 'please continue', created_at: '2026-10-16T12:00:02Z', seq: 1 } as MessageItem
 

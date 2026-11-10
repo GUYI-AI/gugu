@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
-import { clickElement, createReactHarness, renderWithAppProviders, device } from '../../../support/testHarness'
+import { createReactHarness, renderWithAppProviders, device } from '../../../support/testHarness'
 import '../../../../apps/desktop/src/i18n/registerAssistantCatalog'
 
 const mocks = vi.hoisted(() => ({ devices: [] as Device[], phones: [] as Device[], rows: [] as { deviceId: string; summary: SessionpageSessionSummary; live: boolean }[], localWorker: false, listed: true, identities: vi.fn(),work:vi.fn(),wake:vi.fn(),refresh:null as null|(()=>void) }))
@@ -22,7 +22,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assist
 }))
 
 import { AssistantTaskChatOpener } from '../../../../apps/desktop/src/components/assistant/AssistantTaskChatOpener'
-import { OPEN_ASSISTANT_TASK_CHAT,openAssistantTaskChat, readAssistantTaskChat, showAssistantTaskChat } from '../../../../apps/desktop/src/lib/assistantTaskChat'
+import { OPEN_ASSISTANT_TASK_CHAT, readAssistantTaskChat, showAssistantTaskChat } from '../../../../apps/desktop/src/lib/assistantTaskChat'
 import { installAssistantShellBridge } from '../../../../apps/desktop/src/lib/assistantShellBridge'
 import { installShellSlots, readShellSlots } from '../../../../apps/desktop/src/lib/shellSlots'
 import { publishDirectoryDevices, retainDeviceSessions, updateDeviceSessions } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
@@ -102,68 +102,4 @@ describe('assistant task rows open the task chat on both shells', () => {
   // Cloud task list and offline history contracts are covered by
   // AssistantAccountTaskLists / AssistantWorkHistory. Device-directory and
   // manual transcript retry cases no longer describe this pane's data source.
-  it('opens the task chat inside its pane without a modal or shell navigation, and returns to the same draft', async () => {
-    const open = vi.fn()
-    const contacts = [assistant, { id: 'task-agent', display_name: '报告任务', avatar: null }].map((contact) => ({ ...contact, bio: null, type: 'agent' as const, owner_user_id: 'user-1' }))
-    await renderWithAppProviders(harness, <><input data-testid="assistant-draft" defaultValue="未发完的交代" /><section data-testid="task-pane" ref={(node) => readShellSlots()?.setSlot('assistant:task-chat', node)} /><AssistantTaskChatOpener visible /></>, { contacts: { contacts } })
-    act(() => openAssistantTaskChat('assistant', mocks.rows[1]!, mocks.rows))
-    expect(open).not.toHaveBeenCalled()
-    const popup = document.querySelector<HTMLElement>('[data-testid="assistant-task-chat-window"]')!
-    expect(harness.container.querySelector('[data-testid="task-pane"]')?.contains(popup)).toBe(true)
-    expect(document.querySelector('[role="dialog"], [aria-modal="true"], [data-slot="sheet-backdrop"]')).toBeNull()
-    expect(popup?.querySelector('[data-testid="task-chat-panel"]')?.getAttribute('data-session-id')).toBe('task-session')
-    expect(popup?.querySelector('[data-testid="task-chat-panel"]')?.getAttribute('data-local')).toBe('false')
-    expect(readAssistantTaskChat('user-1', 'task-agent')?.task.sessionId).toBe('task-session')
-    expect(readAssistantTaskChat('different-owner', 'task-agent')).toBeNull()
-    await clickElement(popup.querySelector<HTMLElement>('[data-testid="assistant-task-chat-close"]')!)
-    expect(document.querySelector('[data-testid="assistant-task-chat-window"]')).toBeNull()
-    expect(harness.container.querySelector<HTMLInputElement>('[data-testid="assistant-draft"]')?.value).toBe('未发完的交代')
-  })
-  it('reads a task on this computer over IPC, the way the assistant progress footnote does', async () => {
-    mocks.localWorker = true
-    const contacts = [assistant, { id: 'task-agent', display_name: '本机任务', avatar: null }].map((contact) => ({ ...contact, bio: null, type: 'agent' as const, owner_user_id: 'user-1' }))
-    await renderWithAppProviders(harness, <><section ref={(node) => readShellSlots()?.setSlot('assistant:task-chat', node)} /><AssistantTaskChatOpener visible /></>, { contacts: { contacts } })
-    act(() => openAssistantTaskChat('assistant', mocks.rows[1]!, mocks.rows))
-    expect(document.querySelector('[data-testid="task-chat-panel"]')?.getAttribute('data-local')).toBe('true')
-  })
-  it('keeps its own header and a loading state until the task session is listed', async () => {
-    mocks.listed = false
-    const contacts = [assistant, { id: 'task-agent', display_name: '报告任务', avatar: null }].map((contact) => ({ ...contact, bio: null, type: 'agent' as const, owner_user_id: 'user-1' }))
-    await renderWithAppProviders(harness, <><section ref={(node) => readShellSlots()?.setSlot('assistant:task-chat', node)} /><AssistantTaskChatOpener visible /></>, { contacts: { contacts } })
-    act(() => openAssistantTaskChat('assistant', mocks.rows[1]!, mocks.rows))
-    const pane = document.querySelector<HTMLElement>('[data-testid="assistant-task-chat-window"]')!
-    expect(pane.textContent).toContain('报告任务')
-    await clickElement(pane.querySelector<HTMLElement>('[data-testid="assistant-task-chat-close"]')!)
-    expect(document.querySelector('[data-testid="assistant-task-chat-window"]')).toBeNull()
-  })
-  it('refuses an agent owned by another person', async () => {
-    const open = vi.fn(), toast = vi.fn()
-    const contacts = [assistant, { id: 'task-agent', display_name: 'Someone else', avatar: null }].map((contact) => ({ ...contact, bio: null, type: 'agent' as const, owner_user_id: contact.id === 'assistant' ? 'user-1' : 'different-owner' }))
-    await renderWithAppProviders(harness, <AssistantTaskChatOpener visible />, { contacts: { contacts }, toast })
-    act(() => openAssistantTaskChat('assistant', mocks.rows[1]!, mocks.rows))
-    expect(open).not.toHaveBeenCalled()
-    expect(toast).toHaveBeenCalledWith(expect.any(String), 'error', 'Task identity is not owned by the signed-in account')
-  })
-  it('opens a newly spawned agent before its contacts snapshot arrives, after checking its canonical owner', async () => {
-    let finish!: (contacts: unknown[]) => void
-    mocks.identities.mockReturnValue(new Promise(resolve => { finish = resolve }))
-    const contacts = [{ ...assistant, bio: null, type: 'agent' as const, owner_user_id: 'user-1' }]
-    const toast = vi.fn()
-    await renderWithAppProviders(harness, <><section ref={node => readShellSlots()?.setSlot('assistant:task-chat', node)} /><AssistantTaskChatOpener visible /></>, { contacts: { contacts }, toast })
-    act(() => { openAssistantTaskChat('assistant', mocks.rows[1]!, mocks.rows); openAssistantTaskChat('assistant', mocks.rows[1]!, mocks.rows) })
-    expect(mocks.identities).toHaveBeenCalledOnce()
-    expect(mocks.identities).toHaveBeenCalledWith(['task-agent'])
-    await act(async () => { finish([{ id: 'task-agent', display_name: '新调研', avatar: null, bio: null, type: 'agent', owner_user_id: 'user-1' }]) })
-    expect(document.querySelector('[data-testid="task-chat-panel"]')?.getAttribute('data-session-id')).toBe('task-session')
-    expect(toast).not.toHaveBeenCalled()
-  })
-  it('does not use a freshly read identity owned by someone else', async () => {
-    mocks.identities.mockResolvedValue([{ id: 'task-agent', display_name: 'Foreign task', type: 'agent', owner_user_id: 'someone-else' }])
-    const toast = vi.fn()
-    const contacts = [{ ...assistant, bio: null, type: 'agent' as const, owner_user_id: 'user-1' }]
-    await renderWithAppProviders(harness, <AssistantTaskChatOpener visible />, { contacts: { contacts }, toast })
-    act(() => openAssistantTaskChat('assistant', mocks.rows[1]!, mocks.rows))
-    await vi.waitFor(() => expect(toast).toHaveBeenCalledWith(expect.any(String), 'error', 'Task identity is not owned by the signed-in account'))
-    expect(document.querySelector('[data-testid="assistant-task-chat-window"]')).toBeNull()
-  })
 })

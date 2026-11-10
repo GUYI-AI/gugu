@@ -1350,7 +1350,7 @@ describe('MainLayout: message link presentation identity', () => {
     phoneAssistantMock.state.available = true; phoneAssistantMock.state.assistant = assistant; phoneAssistantMock.state.chatId = 'own-dm'
     installAssistantShellBridge(); publishAssistantShell({ assistant, chatId: 'own-dm' } as never)
     taskRoute.contacts = [{ id: 'task-agent', type: 'agent', owner_user_id: 'user-1' }]
-    rememberAssistantTaskChat('user-1', { assistantId: assistant.id, taskAgentId: 'task-agent', task: { deviceId: 'd', sessionId: 's' }, assistants: [] })
+    rememberAssistantTaskChat('user-1', { workId: 'work', assistantId: assistant.id, taskAgentId: 'task-agent', task: { deviceId: 'd', sessionId: 's' }, assistants: [] })
     chatStoreMock.chats = [{ id: taskChat, kind: 'dm', peer_user_id: 'task-agent' }] as never
     chatServiceMock.getMessageById.mockResolvedValue({ id: MESSAGE_ID, chat_id: taskChat })
     await renderMainLayoutWithToast()

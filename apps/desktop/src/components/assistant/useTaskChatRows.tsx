@@ -30,13 +30,9 @@ export function useTaskChatRows(messages: readonly MessageItem[], ownerId: strin
     const pending = assistantWorkRefresh(async () => {
       clearTimeout(retry)
       try {
-        const workIds=task.workId ? [task.workId] : (await assistantWorkCloud.listAll(task.assistantId))
-          .filter(work=>work.executors.some(target=>target.session_id===task.task.sessionId && target.device_id===task.task.deviceId)
-            && task.assistants.some(home=>home.sessionId===work.coordinator_session_id && home.deviceId===work.coordinator_device_id)).map(work=>work.work_id)
-        const pages=await Promise.all(workIds.map(async workId=>assistantWorkExchanges(await assistantWorkCloud.historyAll(task.assistantId,workId),workId)))
+        const entries=assistantWorkExchanges(await assistantWorkCloud.historyAll(task.assistantId,task.workId),task.workId)
         if (!alive) return
         // Replace, rather than merge, so deleted original sources disappear after revalidation.
-        const entries=pages.flat()
         failures = 0
         cache.set(key,entries)
         setProjection({ key,entries })
@@ -52,7 +48,7 @@ export function useTaskChatRows(messages: readonly MessageItem[], ownerId: strin
     void pending.refresh()
     return () => { alive = false; pending.close(); clearTimeout(retry); stop() }
   },[key,visible,ownerId,task])
-  const known=task?.workId&&ownerId?readCachedAssistantWorkDetail(ownerId,task.assistantId,task.workId,task.task.sessionId):null
+  const known=task&&ownerId?readCachedAssistantWorkDetail(ownerId,task.assistantId,task.workId,task.task.sessionId):null
   const knownExchanges=useMemo(()=>known?assistantWorkExchanges(known.events,known.work.work_id):null,[known])
   const exchanges = projection?.key === key ? projection.entries : knownExchanges??cache.get(key)??EMPTY
   const allRows = useMemo(() => taskChatRows(messages, exchanges, task), [messages, exchanges, task])

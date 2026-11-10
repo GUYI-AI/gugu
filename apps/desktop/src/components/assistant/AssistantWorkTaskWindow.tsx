@@ -24,7 +24,7 @@ import {ConnectionStatus} from '../connection/ConnectionStatus'
 export function AssistantWorkTaskWindow({ownerId,request}:{ownerId:string;request:AssistantTaskChat}){
  const {t}=useTranslation('assistant'),mobile=useMobileShell()
  const {contacts}=useContactsStore(),opened=useOpenedAssistantTaskChat()
- const read=useAssistantWorkDetail(ownerId,request.assistantId,request.workId!,request.task.sessionId)
+ const read=useAssistantWorkDetail(ownerId,request.assistantId,request.workId,request.task.sessionId)
  const detail=read.detail
  const canonical=detail?assistantWorkTarget(detail.work,request.task.sessionId):null
  const runtime=useAssistantWorkRuntime(canonical?.task.deviceId??null)
@@ -85,6 +85,6 @@ export function AssistantWorkTaskWindow({ownerId,request}:{ownerId:string;reques
 function CloudTaskTranscript({mobile,request,events}:{mobile:boolean;request:AssistantTaskChat;events:Parameters<typeof assistantWorkExchanges>[0]}){
  const {toast}=useToast()
  const preview=useMessageFilePreview({mobile,visible:true,closeRightSurfaces:()=>{},toast,onForward:()=>{}})
- const rows=taskChatRows([],assistantWorkExchanges(events,request.workId!),request)
+ const rows=taskChatRows([],assistantWorkExchanges(events,request.workId),request)
  return <><div className="assistant-task-cloud-history" data-testid="task-cloud-history">{rows.map(row=>row.type==='task-exchange'?<TaskExchangeBubble key={row.message.id} message={row.message} recipientUserId={row.recipientUserId} mobile={mobile} onOpenFile={file=>preview.open(file)}/>:null)}</div>{preview.panel}</>
 }

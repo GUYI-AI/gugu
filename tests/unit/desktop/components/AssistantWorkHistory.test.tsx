@@ -65,15 +65,3 @@ it('coalesces changes during a history read into one following refresh',async()=
   expect(cloud.history).toHaveBeenCalledTimes(2)
 })
 
-it('resolves a pre-ledger task link from account assignments without contacting its old device',async()=>{
-  cloud.list.mockResolvedValue([{work_id:'legacy-work',coordinator_session_id:'home',coordinator_device_id:'offline-home',executors:[{session_id:'worker',device_id:'offline'}]},
-    {work_id:'other-work',coordinator_session_id:'other-home',coordinator_device_id:'offline-home',executors:[{session_id:'worker',device_id:'offline'}]}])
-  cloud.history.mockResolvedValue([event('legacy-work','Original phone collaboration')])
-  const legacy={...request('unused'),workId:undefined}
-  rememberAssistantTaskChat('owner',legacy);showAssistantTaskChat({ownerId:'owner',request:legacy,name:'worker'})
-  await renderWithAppProviders(harness,<View />)
-  await vi.waitFor(()=>expect(harness.container.textContent).toContain('Original phone collaboration'))
-  expect(cloud.list).toHaveBeenCalledWith('assistant')
-  expect(cloud.history).toHaveBeenCalledWith('assistant','legacy-work')
-  expect(cloud.history).not.toHaveBeenCalledWith('assistant','other-work')
-})
