@@ -90,10 +90,6 @@ export interface DeviceHeartbeatTableClient {
       }
     }
   }
-  rpc(
-    fn: 'cleanup_legacy_gugu_devices',
-    args: { p_keep_device_id: string; p_hostname: string }
-  ): PromiseLike<DeviceHeartbeatResult>
 }
 
 export interface DeviceCapabilityProbe {
@@ -870,28 +866,6 @@ export async function markDeviceOffline(
     () => client.from('gugu_devices').update({ status: 'offline', updated_at: (options.nowIso ?? nowIso)() }).eq('device_id', deviceId),
   )
   if (error) throw new Error(error.message)
-}
-
-// @@@5912 legacy 行清理**不是心跳的一部分** —— 它此前挂在每一拍上,每 30 秒一个请求,
-// 而它要处理的事实(同 hostname 的老行、30 天没上线的行)在一次运行期内根本不会变。
-// 宿主每个 owner 跑一次即可(见 deviceRuntimeHost 的 legacyCleanupDoneForOwner)。
-// ⚠️ 它是 owner-scoped(函数体里 auth.uid()),所以「一次」的单位是**每个 owner**,不是每个进程。
-export async function cleanupLegacyDeviceRows(
-  client: DeviceHeartbeatTableClient,
-  deviceId: string,
-  options: { hostname?: () => string; operationTimeouts?: DeviceOperationTimeoutOverrides } = {},
-): Promise<void> {
-  const timeouts = resolveDeviceOperationTimeouts(options.operationTimeouts)
-  const deviceHostname = (options.hostname ?? hostname)()
-  const cleanup = await runDeviceRequest(
-    'legacy device cleanup',
-    timeouts.heartbeatCleanupMs,
-    () => client.rpc('cleanup_legacy_gugu_devices', {
-      p_keep_device_id: deviceId,
-      p_hostname: deviceHostname,
-    }),
-  )
-  if (cleanup.error) throw new Error(cleanup.error.message)
 }
 
 export async function runDeviceRuntimeTick(

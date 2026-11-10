@@ -184,7 +184,6 @@ export class MemoryHeartbeatClient implements DeviceHeartbeatTableClient {
   upserts: Array<{ row: Record<string, unknown>; options?: { onConflict: string } }> = []
   /** #156 退出时标成离线的那几次:设备 id + 写进去的值。 */
   offlineUpdates: Array<{ deviceId: string; value: { status: 'offline'; updated_at: string } }> = []
-  cleanupCalls: Record<string, unknown>[] = []
   rows: Array<{ device_id: string; user_id: string; hostname: string; machine_id?: string | null; tier?: string | null }> = []
 
   constructor(private errorMessage: string | null = null) {}
@@ -230,12 +229,6 @@ export class MemoryHeartbeatClient implements DeviceHeartbeatTableClient {
         }),
       }),
     }
-  }
-
-  async rpc(fn: 'cleanup_legacy_gugu_devices', args: Record<string, unknown>) {
-    expect(fn).toBe('cleanup_legacy_gugu_devices')
-    this.cleanupCalls.push(args)
-    return { error: null }
   }
 }
 
@@ -405,7 +398,6 @@ export class MemoryRuntimeIdentityClient
   upserts: Array<{ row: Record<string, unknown>; options?: { onConflict: string } }> = []
   /** #156 退出时标成离线的那几次:设备 id + 写进去的值。 */
   offlineUpdates: Array<{ deviceId: string; value: { status: 'offline'; updated_at: string } }> = []
-  cleanupCalls: Record<string, unknown>[] = []
   runtimeStateCalls: Record<string, unknown>[] = []
   markReadCalls: Record<string, unknown>[] = []
   /** `get_agent_presence_batch` 的次数与云端那一行:没登记的 id 回一行「在、空闲、没有读数」。 */
@@ -467,8 +459,6 @@ export class MemoryRuntimeIdentityClient
   async rpc(fn: string, args: Record<string, unknown>) {
     if (fn === 'fetch_fair_pending_device_commands') {
       return simulateFairPendingFetch(this.rows, args)
-    } else if (fn === 'cleanup_legacy_gugu_devices') {
-      this.cleanupCalls.push(args)
     } else if (fn === 'mark_read_on_deliver') {
       this.markReadCalls.push(args)
     } else if (fn === 'runtime_instance_heartbeat') {

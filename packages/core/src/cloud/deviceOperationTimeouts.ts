@@ -9,7 +9,6 @@ export interface DeviceOperationTimeouts {
   deviceLookupMs: number
   deviceCacheWriteMs: number
   heartbeatUpsertMs: number
-  heartbeatCleanupMs: number
   runtimeStateWriteMs: number
   runtimeInstanceHeartbeatMs: number
   orphanRecoveryMs: number
@@ -25,7 +24,6 @@ export const DEVICE_OPERATION_TIMEOUTS: Readonly<DeviceOperationTimeouts> = {
   deviceLookupMs: 10_000,
   deviceCacheWriteMs: 5_000,
   heartbeatUpsertMs: 10_000,
-  heartbeatCleanupMs: 30_000,
   runtimeStateWriteMs: 10_000,
   runtimeInstanceHeartbeatMs: 5_000,
   orphanRecoveryMs: 30_000,

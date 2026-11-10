@@ -8,7 +8,6 @@ import {
   runDeviceRuntimeTick,
   markDeviceOffline,
   syncDeviceHeartbeat,
-  cleanupLegacyDeviceRows,
   type AgentRuntimeStateRpcClient,
   type DeviceCapabilitiesSource,
   type DeviceSessionDigestSource,
@@ -121,8 +120,6 @@ export interface DeviceRuntimeHostOptions {
   orphanRecoveryIntervalMs?: number
   /** activity 周期对账间隔(@@@activity-reconcile);缺省 ACTIVITY_RECONCILE_INTERVAL_MS。 */
   activityReconcileIntervalMs?: number
-  /** @@@5912 legacy / 陈旧设备行清理的周期;缺省 LEGACY_DEVICE_CLEANUP_INTERVAL_MS。 */
-  legacyCleanupIntervalMs?: number
   /** @@@safety-cadence wake 订着时对账 tick 与定时任务重排的间隔;缺省 DEVICE_SAFETY_INTERVAL_MS。 */
   safetyIntervalMs?: number
   nowMs?: () => number
@@ -252,10 +249,6 @@ export const ACTIVITY_RECONCILE_INTERVAL_MS = 120_000
 // @@@safety-cadence — wake 订着时,新命令由事件送来,对账 tick(取命令 + 孤儿恢复)与定时任务重排只是兜底:5 分钟一次。
 // 没订着(从没订上 / 掉线在重连)照旧每个监督节拍一次 —— 那时它们是唯一的来源。
 export const DEVICE_SAFETY_INTERVAL_MS = 5 * 60_000
-// @@@5912 legacy / 陈旧设备行清理的周期。它此前挂在每一拍心跳上(空闲时每 30 秒一个请求),
-// 而它清的是历史垃圾:一行多留半小时没有任何人会注意到。但也**不能只跑一次** —— 判据带时间,
-// 同一个 owner 下答案会改口(见使用处)。
-export const LEGACY_DEVICE_CLEANUP_INTERVAL_MS = 30 * 60_000
 
 function deviceRuntimeOwnerFile(env: NodeJS.ProcessEnv): string {
   return join(stateDir(env), 'device-runtime-owner.json')
@@ -314,7 +307,6 @@ export function createDeviceRuntimeHostLoop(
   // 周期化后单次写丢失的伤害从「永久」降到「一个对账周期」。
   const activityReconcileIntervalMs = options.activityReconcileIntervalMs ?? ACTIVITY_RECONCILE_INTERVAL_MS
   const safetyIntervalMs = options.safetyIntervalMs ?? DEVICE_SAFETY_INTERVAL_MS
-  const legacyCleanupIntervalMs = options.legacyCleanupIntervalMs ?? LEGACY_DEVICE_CLEANUP_INTERVAL_MS
   const nowMs = options.nowMs ?? (() => Date.now())
   // @@@gate-slack — 孤儿恢复(60 s)与 activity 对账(120 s)两个闸恰是对账节拍的整数倍,「距上次 59 998 ms」这种抖动
   // 会让闸整整滑到下一拍。⇒ 留十分之一拍的余量(生产 3 s)。2 秒一轮时这点量化误差可以忽略,现在不行。
@@ -373,8 +365,6 @@ export function createDeviceRuntimeHostLoop(
   let heartbeatTimerDueAt: number | null = null
   // @@@5912 上一次实例租约续成功的时刻(**不分是哪条腿续的**)。tick 据此跳过自己那一次续租。
   let lastLeaseRenewAt: number | null = null
-  // @@@5912 上一次跑 legacy / 陈旧行清理的时刻。换 owner 要重来 —— 那是另一批行。
-  let lastLegacyCleanupAt: number | null = null
   let commandWake: { deviceId: string; unsubscribe: () => void } | null = null
   let commandWakeEpoch = 0
   let deviceRpc: { deviceId: string; unsubscribe: () => void } | null = null
@@ -505,7 +495,6 @@ export function createDeviceRuntimeHostLoop(
       lastHeartbeatAt = null
       lastHeartbeatLandedAt = null
       lastLeaseRenewAt = null
-      lastLegacyCleanupAt = null
       lastDeviceId = null
       publishedCapabilities.clear()
       // #3961 —— 上一个身份「已发布过什么」不属于下一个人:留着会让新 owner 的第一轮对账把旧账当成现状
@@ -887,22 +876,6 @@ export function createDeviceRuntimeHostLoop(
       if (!leaseRenewalFresh) {
         lastLeaseRenewAt = Math.max(lastLeaseRenewAt ?? 0, currentTime)
         options.onRuntimeLeaseRenewed?.()
-      }
-      // @@@5912 legacy / 陈旧行清理从「每拍一次」降成一个**周期闸**,与孤儿恢复、activity 对账同一种形状。
-      // ⚠️ 它**不是**「一次就够」:清理的判据本身带时间(同 hostname 的 legacy 行要租约过期 2 分钟、
-      // 陈旧行要 30 天没上线),所以同一个 owner 下答案会随时间改口 —— 一台还活着的兄弟实例在本宿主
-      // 第一轮时不够格,两分钟后它退出就够格了。锁死成「每个 owner 一次」会让那一行一直留在设备列表上
-      // 直到 app 重启。⇒ 给它自己的节律,而不是取消它。
-      // best-effort:它清的是历史垃圾,清不掉不该让这一轮 tick 失败;失败不推进闸,下一轮重试。
-      if (gateOpen(lastLegacyCleanupAt, legacyCleanupIntervalMs, currentTime)) {
-        try {
-          await cleanupLegacyDeviceRows(client, result.deviceId, {
-            operationTimeouts: options.operationTimeouts,
-          })
-          lastLegacyCleanupAt = currentTime
-        } catch (error) {
-          options.warn?.(`[device-runtime] legacy device cleanup: ${(error as Error).message}`)
-        }
       }
       workFailureStreak = 0
       // @@@not-mine (#5041) — `held-elsewhere` 的行归那台活着的兄弟实例(它有自己的跟进):本实例不为它续跑(否则兄弟的

@@ -216,7 +216,6 @@ export {
   resolveTier,
   runDeviceRuntimeTick,
   syncDeviceHeartbeat,
-  cleanupLegacyDeviceRows,
   writeDeviceIdCache,
   type DeviceCapabilities,
   type DeviceCapabilityProbe,
