@@ -115,7 +115,7 @@ async function seedAgent(env: NodeJS.ProcessEnv) {
   await createTestLocalAgent(
     env,
     { gugu_user_id: FENCED_AGENT_ID },
-    { cache: { acp_engine_id: 'claude' }, dm_chat_id: FENCED_CHAT_ID },
+    { cache: { acp_engine_id: 'claude', sessionpage_owner_user_id: 'owner-1' }, dm_chat_id: FENCED_CHAT_ID },
   )
   await writeAgentRuntimeSession({ agentUserId: FENCED_AGENT_ID, accessToken: 'owner-token', refreshToken: '' }, env)
 }

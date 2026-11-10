@@ -51,7 +51,7 @@ import {
   type SessionpageSessionSurface,
 } from '@gugu/session-plugins/agents'
 import { electronFetch, makeChatClient } from '../supabase'
-import { agentsForOwner } from '@gugu/core/local/state/agentOwner'
+import { agentsForOwner, type AgentOwnerScope } from '@gugu/core/local/state/agentOwner'
 import { AGENT_CLOUD_IDENTITY_STATE_CACHE_KEY } from '@gugu/core/local/state/agentCloudIdentity'
 import { emdashAgentRegistry, registerEmdashAgent, unregisterEmdashAgent } from './emdash-agent-registry'
 // #5419 撤回一行没落地的本机身份 = 释放它的本机足迹,与「owner 删 agent」「回收器收 agent」
@@ -636,7 +636,7 @@ export function cacheString(cache: Record<string, unknown> | null | undefined, k
 
 /** Replay a create against its durable roster binding, never the process-local registry. */
 export async function sessionpageAgentSessionForStart(agentUserId: string, ownerUserId: string): Promise<string | undefined> {
-  const agent = agentsForOwner(await listAgents(), null, { includeArchived: true }).find((row) => row.gugu_user_id === agentUserId)
+  const agent = agentsForOwner(await listAgents(), { all: true }, { includeArchived: true }).find((row) => row.gugu_user_id === agentUserId)
   if (!agent) return undefined
   if (!agentsForOwner([agent], ownerUserId, { includeArchived: true }).length) throw new Error('agent.create roster owner mismatch')
   return cacheString(agent.cache, SESSION_CACHE_KEY) || cacheString(agent.cache, PARKED_SESSION_CACHE_KEY) || undefined
@@ -1420,7 +1420,7 @@ async function resolveOwnedBindingForSession(
     return deps.isAgentOwnedByCurrentUser(agent.gugu_user_id)
   }
 
-  roster = agentsForOwner(roster, null, { includeArchived: true })
+  roster = agentsForOwner(roster, { all: true }, { includeArchived: true })
   const active = roster.find(
     (agent) => agent.gugu_user_id && cacheString(agent.cache, SESSION_CACHE_KEY) === sessionId,
   )
@@ -1746,12 +1746,12 @@ export function resolveProvisionedProjectGroup(
  */
 export async function registerExistingSessionpageAgents(
   env: NodeJS.ProcessEnv = process.env,
-  options: { ownerUserId?: string | null; bootTasks?: SessionBootTasks } = {},
+  options: { owner: AgentOwnerScope; bootTasks?: SessionBootTasks },
 ): Promise<number> {
   const log = createLogger('sessionpage/boot')
   const startedAt = Date.now()
   log.info({}, 'persisted binding roster read started')
-  const roster = agentsForOwner(await listAgents(env, { includeGuests: true }), options.ownerUserId)
+  const roster = agentsForOwner(await listAgents(env, { includeGuests: true }), options.owner)
   const readMs = Date.now() - startedAt
   log.info({ readMs, rows: roster.length }, 'persisted binding roster read finished')
   let count = 0
@@ -1810,7 +1810,7 @@ export async function registerExistingSessionpageAgents(
  * 原生引擎去 spawn 一个进程(严重);多注册别家的行,只是内存路由表里一条死记录加收件扫描几行 400(轻微)。
  * 让路由多等 2.7s 去换那点轻微收益,是拿严重风险换轻微风险。
  *
- * 只摘 owner **明确不等于**当前账号的行:没记 owner 的老行归属未知,照旧留着(与 agentMayBelongTo 同口径)。
+ * 摘掉不归当前账号的行(没记 owner 的老行也不归,登录后由 adoptRosterOwners 回填)。
  * 摘别家的行不会制造「无主空窗」—— 这个进程本来就投不动它们。
  *
  * @returns 处理过的别家账号行数。⚠️ 不等于「真的从路由表里摘下来几条」:多数别家的行本就不满足注册
@@ -1823,7 +1823,7 @@ export async function unregisterForeignSessionpageAgents(
 ): Promise<number> {
   if (!ownerUserId) return 0
   let released = 0
-  for (const agent of agentsForOwner(await listAgents(env, { includeGuests: true }), null, { includeArchived: true })) {
+  for (const agent of agentsForOwner(await listAgents(env, { includeGuests: true }), { all: true }, { includeArchived: true })) {
     if (!agent.gugu_user_id) continue
     if (agentsForOwner([agent], ownerUserId, { includeArchived: true }).length) continue
     const release = () => {

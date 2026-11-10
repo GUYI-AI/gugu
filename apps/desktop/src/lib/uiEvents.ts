@@ -47,6 +47,7 @@ export const UI_EVENTS = {
   openAssistantConnectors: '__open_assistant_connectors',
   openContact: '__open_contact',
   sessionpageShareAgentUnavailable: '__sessionpage_share_agent_unavailable',
+  agentOwnersUnreadable: '__agent_owners_unreadable',
   // #6646 会话页要人当场决定一件事(装扩展的同意框就画在它里面):不在任务 tab 上就切过去。
   sessionpageReveal: '__sessionpage_reveal',
   // 「在本群打开」(app-redesign §5): an App was opened from a chat (detail = { extensionId, chatId? }) — `useOpenApp`.

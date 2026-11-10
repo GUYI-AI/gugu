@@ -424,6 +424,7 @@ export default {
     "sendFailed": "Could not send the code. Try again.",
     "verifyFailed": "Could not verify the code. Try again."
   },
+  "agentOwnersUnreadable": "Couldn't confirm which account owns some agents on this computer. They stay unavailable until it can.",
   "brand": {
     "name": "Gugu"
   },

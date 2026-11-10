@@ -157,7 +157,7 @@ async function reconcileLocked(deps: SessionpageReapDeps): Promise<SessionpageRe
   // Only records this module provisioned (they carry the conversation binding) are ours to reap. A gugu
   // agent the user made themselves has no binding and must never be touched here.
   // #4277 停放行(别的账号正在驱动这条会话时挪到 parked 格的绑定)同样跟着会话走:会话没了一起收。
-  const bound = agentsForOwner(roster, null)
+  const bound = agentsForOwner(roster, { all: true })
     .map((agent) => ({
       guguUserId: agent.gugu_user_id,
       name: agent.name,

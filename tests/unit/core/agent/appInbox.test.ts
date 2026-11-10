@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { appInboxUnreadRow } from '@gugu/core/local/agent/appInbox'
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope'
 import { AppUnavailableForDeliveryError, handleAgentDeliverDeviceCommand } from '@gugu/core/local/agent/deviceCommandRuntime'
-import { createAgent } from '@gugu/core/local/state/agents'
+import { createAgent, updateAgent } from '@gugu/core/local/state/agents'
 
 const KEY = '63000000-0000-4000-8000-000000000001'
 const ACTOR = '11111111-1111-4111-8111-111111111111'
@@ -35,9 +35,10 @@ describe('an App as an inbox source', () => {
     try {
       const env = { ...process.env, GUGU_HOME: home, HOME: home }
       await createAgent({ name: 'A', agent_type: 'claude-code', path: '/p', gugu_user_id: 'agent' }, env)
+      await updateAgent({ guguUserId: 'agent' }, { cache: { sessionpage_owner_user_id: 'owner' } }, env)
       const pull = vi.fn(async () => [])
       const failure = await handleAgentDeliverDeviceCommand({ agent_user_id: 'agent', source: 'notes' }, {
-        accessToken: 'token',
+        accessToken: 'token', ownerUserId: 'owner',
         runtimeBridge: { injectAgentInbox: vi.fn(), appInbox: { refusal: async () => 'Extension notes is turned off', pull, ack: vi.fn(), recordFailure: vi.fn() } } as never,
       }, env).catch((error: unknown) => error)
       expect(failure).toBeInstanceOf(AppUnavailableForDeliveryError)

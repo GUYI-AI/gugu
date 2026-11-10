@@ -67,7 +67,7 @@ const authProvider = {
 } as never
 
 function launch(callableRoutes: Record<string, string[]> | undefined, relayUrl = 'https://relay.example') {
-  listAgents.mockResolvedValue([{ gugu_user_id: 'agent-1', cache: { emdash_session_id: SESSION } }])
+  listAgents.mockResolvedValue([{ gugu_user_id: 'agent-1', cache: { emdash_session_id: SESSION, sessionpage_owner_user_id: 'owner-1' } }])
   loadEngine.mockResolvedValue({ id: 'codex', modelConfigInjection: 'codex-config-flags' })
   resolveAgentModelLaunch.mockResolvedValue({
     selection: { source: 'platform', modelId: 'gpt-6-astra', protocol: 'openai-responses' },

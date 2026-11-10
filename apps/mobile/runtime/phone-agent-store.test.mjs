@@ -82,3 +82,14 @@ test('a duplicate admission cannot acknowledge an unsaved job until the real jou
     assert.equal(cold.state.jobs[previous.id].status, 'done')
   } finally { await rm(root, { recursive: true }) }
 })
+
+test('an agent row written before rows carried their owner is the journal owner\'s', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'gugu-phone-owner-'))
+  try {
+    const store = await openPhoneAgentStore(root, owner)
+    store.state.agents[agent] = { agentUserId: agent, status: 'idle' }
+    await store.save()
+    const cold = await openPhoneAgentStore(root, owner)
+    assert.equal(cold.state.agents[agent].ownerId, owner)
+  } finally { await rm(root, { recursive: true }) }
+})

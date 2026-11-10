@@ -137,7 +137,7 @@ describe('#6264 平台转发口活过宿主进程重启', () => {
     vi.clearAllMocks()
     dataDir = await mkdtemp(join(tmpdir(), 'gugu-relay-data-'))
     getSessions.mockResolvedValue([])
-    listAgents.mockResolvedValue([{ gugu_user_id: 'agent-1', cache: { emdash_session_id: CONV } }])
+    listAgents.mockResolvedValue([{ gugu_user_id: 'agent-1', cache: { emdash_session_id: CONV, sessionpage_owner_user_id: 'owner-1' } }])
     revokePlatformModelAccess.mockResolvedValue(undefined)
     renewPlatformModelAccess.mockResolvedValue({ expiresAt: new Date(Date.now() + TTL_MS).toISOString(), membershipLocked: [] })
     lookupHarnessModelCatalog.mockResolvedValue({ state: { kind: 'ready', models: [], selected: null, efforts: [], selectedEffort: null }, refreshing: false })

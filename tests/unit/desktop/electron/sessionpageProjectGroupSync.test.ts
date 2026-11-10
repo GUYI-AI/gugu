@@ -617,7 +617,7 @@ describe('spec ⑨ 创建侧:项目=群 / 无项目=私聊 / 序号命名', () =
     const { registerExistingSessionpageAgents } = await import(SUT)
     await provisionCreated({ sessionId: 'archived-boot', providerId: 'codex', surface: 'tui', cwd: '/w/a', projectId: '' }, deps)
     archiveAgentRecord(roster[0])
-    expect(await registerExistingSessionpageAgents({ GUGU_HOME: home }, { ownerUserId: 'owner-1' })).toBe(0)
+    expect(await registerExistingSessionpageAgents({ GUGU_HOME: home }, { owner: 'owner-1' })).toBe(0)
     expect(roster[0].cache?.emdash_session_id).toBe('archived-boot')
   })
 
@@ -632,7 +632,7 @@ describe('spec ⑨ 创建侧:项目=群 / 无项目=私聊 / 序号命名', () =
         },
       },
     )
-    await expect(registerExistingSessionpageAgents({ GUGU_HOME: home })).resolves.toBe(1)
+    await expect(registerExistingSessionpageAgents({ GUGU_HOME: home }, { owner: { all: true } })).resolves.toBe(1)
     expect(registered).toEqual([{ guguAgentUserId: 'agent-acp', sessionId: 'conv-acp' }])
   })
   it('boot keeps a legacy taskpage binding owned until reopen stamps the exact capability cell', async () => {
@@ -645,7 +645,7 @@ describe('spec ⑨ 创建侧:项目=群 / 无项目=私聊 / 序号命名', () =
         sessionpage_group_chat_id: 'group-legacy',
       },
     })
-    await expect(registerExistingSessionpageAgents({ GUGU_HOME: home })).resolves.toBe(1)
+    await expect(registerExistingSessionpageAgents({ GUGU_HOME: home }, { owner: { all: true } })).resolves.toBe(1)
     expect(registered).toEqual([])
   })
   it('isolates an invalid binding and registers the remaining boot roster', async () => {
@@ -655,7 +655,7 @@ describe('spec ⑨ 创建侧:项目=群 / 无项目=私聊 / 序号命名', () =
       { id: 'bad', name: 'Bad', agent_type: 'codex', gugu_user_id: 'bad-agent', cache: { emdash_session_id: 'bad-task', sessionpage_provider_id: 'codex' } },
       { id: 'good', name: 'Good', agent_type: 'codex', gugu_user_id: 'good-agent', cache: { emdash_session_id: 'good-task' } },
     )
-    await expect(registerExistingSessionpageAgents({ GUGU_HOME: home }, { bootTasks })).resolves.toBe(2)
+    await expect(registerExistingSessionpageAgents({ GUGU_HOME: home }, { owner: { all: true }, bootTasks })).resolves.toBe(2)
     expect(bootTasks.snapshot()).toEqual([{ operation: 'roster-rehydrate', taskId: 'bad-task', message: 'Persisted task capability is incomplete' }])
   })
   it('boot maps a partially stamped capability row before failing loud', async () => {
@@ -667,7 +667,7 @@ describe('spec ⑨ 创建侧:项目=群 / 无项目=私聊 / 序号命名', () =
         sessionpage_provider_id: 'codex',
       },
     })
-    await expect(registerExistingSessionpageAgents({ GUGU_HOME: home })).rejects.toThrow(
+    await expect(registerExistingSessionpageAgents({ GUGU_HOME: home }, { owner: { all: true } })).rejects.toThrow(
       'session-page capability cache is incomplete or invalid for agent record(s): agent-partial',
     )
     expect(registered).toEqual([])
@@ -682,7 +682,7 @@ describe('spec ⑨ 创建侧:项目=群 / 无项目=私聊 / 序号命名', () =
         sessionpage_session_surface: 'garbage',
       },
     })
-    await expect(registerExistingSessionpageAgents({ GUGU_HOME: home })).rejects.toThrow(
+    await expect(registerExistingSessionpageAgents({ GUGU_HOME: home }, { owner: { all: true } })).rejects.toThrow(
       'session-page capability cache is incomplete or invalid for agent record(s): agent-invalid',
     )
     expect(registered).toEqual([])
@@ -701,7 +701,7 @@ describe('spec ⑨ 创建侧:项目=群 / 无项目=私聊 / 序号命名', () =
         sessionpage_session_surface: surface,
       },
     })
-    await expect(registerExistingSessionpageAgents({ GUGU_HOME: home })).rejects.toThrow(
+    await expect(registerExistingSessionpageAgents({ GUGU_HOME: home }, { owner: { all: true } })).rejects.toThrow(
       'session-page capability cache is incomplete or invalid for agent record(s): agent-unresolved',
     )
     expect(registered).toEqual([])
@@ -1095,7 +1095,7 @@ describe('spec ⑨ 删除侧:删除必同步,且只摘该摘的', () => {
     const asBReap = await reconcileSessionpageAgents({ ...reapDeps(inventory), getAuth: asB.getAuth })
     expect(asBReap.reapedAgents).toBe(1)
     expect(rpcCalls.filter(call => call.name === 'remove_owned_agent' || call.name === 'cleanup_removed_group_agent')).toEqual([])
-    expect(agentsForOwner(roster, null).map((r) => r.gugu_user_id)).toEqual([a!.guguAgentUserId])
+    expect(agentsForOwner(roster, { all: true }).map((r) => r.gugu_user_id)).toEqual([a!.guguAgentUserId])
     expect(roster).toHaveLength(2)
   })
   it('会话没了(归档/删除)→ 摘掉它的 agent;其它 agent 不受牵连', async () => {
@@ -1117,7 +1117,7 @@ describe('spec ⑨ 删除侧:删除必同步,且只摘该摘的', () => {
     )
     expect(res.reapedAgents).toBe(1)
     expect(rpcCalls.filter(call => call.name === 'remove_owned_agent' || call.name === 'cleanup_removed_group_agent')).toEqual([])
-    expect(agentsForOwner(roster, null).map((r) => r.gugu_user_id)).toEqual([b!.guguAgentUserId])
+    expect(agentsForOwner(roster, { all: true }).map((r) => r.gugu_user_id)).toEqual([b!.guguAgentUserId])
     expect(roster).toHaveLength(2)
     expect(res.archivedGroups, '项目还在 → 群不动').toBe(0)
     expect(localSessionDeliveryTarget.liveSessionIdByAgent(a!.guguAgentUserId)).toBeNull()
@@ -1155,7 +1155,7 @@ describe('spec ⑨ 删除侧:删除必同步,且只摘该摘的', () => {
     expect(res.archivedGroups).toBe(1)
     expect(chatUpdates, '群被置为 archived(咕咕没有群硬删能力)').toEqual(
       expect.arrayContaining([{ table: 'chats', patch: { status: 'archived' }, id: groupId }]))
-    expect(agentsForOwner(roster, null)).toHaveLength(0)
+    expect(agentsForOwner(roster, { all: true })).toHaveLength(0)
     expect(roster).toHaveLength(1)
   })
   it('什么都没少 → 一个都不摘(不会误删)', async () => {
@@ -1189,7 +1189,7 @@ describe('spec ⑨ 删除侧:删除必同步,且只摘该摘的', () => {
     })
     expect(res.reapedAgents, '缺失任务只归档它自己的名册').toBe(1)
     expect(rpcCalls.filter(call => call.name === 'remove_owned_agent' || call.name === 'cleanup_removed_group_agent')).toEqual([])
-    expect(agentsForOwner(roster, null).map((r) => r.name), '同项目里活着的 agent 不受牵连').toEqual(['Codex 2'])
+    expect(agentsForOwner(roster, { all: true }).map((r) => r.name), '同项目里活着的 agent 不受牵连').toEqual(['Codex 2'])
   })
   it('detach 不点名任何会话 → 一个都不摘(会话还活着)', async () => {
     const { reconcileSessionpageAgents } = await import(REAPER)
@@ -1209,7 +1209,7 @@ describe('spec ⑨ 删除侧:删除必同步,且只摘该摘的', () => {
     await reconcileSessionpageAgents(reapDeps({ sessionIds: ['conv-a'], projectIds: ['proj-alpha'] }))
     const res = await reconcileSessionpageAgents(reapDeps({ sessionIds: [], projectIds: ['proj-alpha'] }))
     expect(res.reapedAgents).toBe(1)
-    expect(agentsForOwner(roster, null)).toHaveLength(0)
+    expect(agentsForOwner(roster, { all: true })).toHaveLength(0)
     expect(roster).toHaveLength(1)
     await provisionCreated(
       { sessionId: 'conv-c', providerId: 'codex', surface: 'tui', cwd: '/w/c', projectId: 'proj-alpha' }, deps)

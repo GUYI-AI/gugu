@@ -27,6 +27,8 @@ export async function openPhoneAgentStore(root, ownerId) {
   if (state.version !== 1 || state.ownerId !== ownerId) throw new Error('phone host journal owner or version mismatch')
   state.artifacts ??= {}
   state.fileOutbox ??= {}
+  // The journal is this owner's (checked above): a row written before rows carried their owner is this owner's.
+  for (const agent of Object.values(state.agents)) agent.ownerId ??= ownerId
   let writing = Promise.resolve()
   const save = () => {
     const serialized = JSON.stringify(state)

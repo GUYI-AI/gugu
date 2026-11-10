@@ -170,6 +170,8 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
       auth.set(next)
       await setTaskNameOwner(next?.userId ?? null)
       // The browser pushes auth when it reconnects: names renamed meanwhile are published now.
+      // A failed owner read rejects this call: the browser that pushed the sign-in hears it.
+      if (next) await identity.adoptRosterOwners()
       if (next) await identity.publishPendingNames()
       if (next) await identity.adoptCloudNames()
       // Once, after the cloud names: a legacy task's old title names its default-named identity (0043).

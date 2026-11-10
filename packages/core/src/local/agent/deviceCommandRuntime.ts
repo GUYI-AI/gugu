@@ -1054,7 +1054,7 @@ export function createDeviceCommandHoldingResolver(
   const nowMs = input.nowMs ?? (() => Date.now())
   let roster: Promise<Set<string>> | null = null
   let rosterRefreshed = false
-  const loadRoster = () => listAgents(env).then((rows) => new Set(agentsForOwner(rows, null).map((agent) => agent.gugu_user_id)))
+  const loadRoster = () => listAgents(env).then((rows) => new Set(agentsForOwner(rows, { all: true }).map((agent) => agent.gugu_user_id)))
   const rosterHas = async (agentUserId: string): Promise<boolean> => {
     roster ??= loadRoster()
     if ((await roster).has(agentUserId)) return true
@@ -1138,7 +1138,7 @@ async function findLocalAgentByGuguUserId(
   env: NodeJS.ProcessEnv
 ): Promise<LocalAgentRecord> {
   const agent = await getAgent({ guguUserId }, env)
-  if (!agent || !agentsForOwner([agent], null).length) throw new Error(`Local agent not found for ${guguUserId}`)
+  if (!agent || !agentsForOwner([agent], { all: true }).length) throw new Error(`Local agent not found for ${guguUserId}`)
   return agent
 }
 

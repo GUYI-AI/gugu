@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { SharePosterDialog } from './SharePosterDialog'
 import { AgentSharePopover } from './sessionpage/AgentSharePopover'
 import { useToast } from './toastContext'
+import { notify } from '../lib/notices'
 import { SESSIONPAGE_SHARE_ANCHOR_SELECTOR } from '../lib/sessionpageShareAnchor'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { GUGU_ANDROID_DOWNLOAD_URL } from '../lib/appLinks'
@@ -57,7 +58,13 @@ export function AgentShareHost() {
     }
     window.addEventListener(UI_EVENTS.sessionpageShareAgent, handleSessionpageShareAgent)
     window.addEventListener(UI_EVENTS.sessionpageShareAgentUnavailable, handleUnavailable)
+    // #4277 main could not read whose this computer's older agents are: they stay unavailable, and the person is told.
+    // Keyed: the read retries with every adoption round, the person sees one notice.
+    // The cause goes to main's log; the notice only says what the person sees.
+    const ownersUnreadable = () => notify({ key: 'agent-owners-unreadable', tier: 'error', title: t('agentOwnersUnreadable') })
+    window.addEventListener(UI_EVENTS.agentOwnersUnreadable, ownersUnreadable)
     return () => {
+      window.removeEventListener(UI_EVENTS.agentOwnersUnreadable, ownersUnreadable)
       window.removeEventListener(UI_EVENTS.sessionpageShareAgent, handleSessionpageShareAgent)
       window.removeEventListener(UI_EVENTS.sessionpageShareAgentUnavailable, handleUnavailable)
     }

@@ -5167,7 +5167,9 @@ app.whenReady().then(async () => {
     // Cloud names first (a rename on another device is a person's), then the one-time legacy names (0043).
     // Both need the projected roster, so they become available once the session host booted (below).
     const adoptTaskNames = createCloudTaskNameAdopter({
-      adopt: () => sessionpageIdentityHost.adoptCloudNames().then(() => emdash.adoptLegacyTaskNames()).then(() => undefined),
+      adopt: () => sessionpageIdentityHost.adoptRosterOwners() // owners first; a failed read is shown, not only logged
+        .catch((error: unknown) => { sendUiEvent(MAIN_UI_EVENTS.agentOwnersUnreadable); throw error })
+        .then(() => sessionpageIdentityHost.adoptCloudNames()).then(() => emdash.adoptLegacyTaskNames()).then(() => undefined),
       failed: (error) => createLogger('sessionpage/task-names').error({ error: String(error) }, 'Adopting cloud task names failed'),
     })
     const nativeInbox = emdash.startNativeConversationInboxHost({
@@ -6270,9 +6272,10 @@ app.whenReady().then(async () => {
     // 路由等的就是这份 promise(waitUntilReady),它在 boot 开始的这一刻就换上,boot 期间的投递等着,
     // ❌ 掉到原生引擎去 spawn。
     // #4277/#5025 重注册**不等**归属:真问一次归属要等渲染进程就绪(真机实测约 2.7s),让路由多等那 2.7s
-    // 不值。所以先按老行为全注册,再在归属定下来之后把别家的行摘掉(见下)。
+    // 不值。所以 owner 未定时有意整张名册全注册({ all: true }:漏注册自己的行,投递会掉到原生引擎去 spawn;
+    // 多注册别家的行只是一条死路由),归属定下来之后再把别家的行摘掉(见下)。
     sessionpageAgentRehydration = emdashBoot.then(() =>
-      registerExistingSessionpageAgents(process.env, { ownerUserId: null, bootTasks: emdash.sessionBootTasks })
+      registerExistingSessionpageAgents(process.env, { owner: { all: true }, bootTasks: emdash.sessionBootTasks })
         .then((n) => {
           if (n > 0) console.log(`[sessionpage] re-registered ${n} persisted session-page agent binding(s)`)
         })
@@ -6306,8 +6309,8 @@ app.whenReady().then(async () => {
       .then(async () => {
         const { listAgents } = await import('@gugu/core/local/state/agents')
         const { agentsForOwner } = await import('@gugu/core/local/state/agentOwner')
-        // #4277 只扫当前账号(与老行)的 agent —— 别家的行这个账号拉不到,只会扫出一行 400。
-        const roster = agentsForOwner(await listAgents(process.env), await bootOwnerWithin(60_000))
+        // #4277 只扫当前账号的 agent(别家的只会扫出 400);owner 60 秒内仍未定:与上面的重注册同一取舍,整张名册都扫。
+        const roster = agentsForOwner(await listAgents(process.env), (await bootOwnerWithin(60_000)) ?? { all: true })
         for (const agent of roster) {
           const taskId = cacheString(agent.cache, SESSION_CACHE_KEY) ?? ''
           if (agent.gugu_user_id) emdash.sessionBootTasks.runSync('inbox-wake', taskId, () => kickInboxForAgent(agent.gugu_user_id, 'boot-scan', taskId))

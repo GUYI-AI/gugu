@@ -23,7 +23,7 @@ vi.mock('../../../../apps/desktop/electron/lib/logger', async (importOriginal) =
 vi.mock('@gugu/core', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   // The session's agent (as #6264's test finds it): without one the session is not on the platform and gets no relay.
-  listAgents: async () => [{ gugu_user_id: 'agent-1', cache: { emdash_session_id: 'conv-relay-cut' } }],
+  listAgents: async () => [{ gugu_user_id: 'agent-1', cache: { emdash_session_id: 'conv-relay-cut', sessionpage_owner_user_id: 'owner-1' } }],
 }))
 vi.mock('../../../../apps/desktop/electron/acp-engine-utils', () => ({ loadEngine: (...args: unknown[]) => loadEngine(...args) }))
 vi.mock('../../../../apps/desktop/electron/model-access', () => ({

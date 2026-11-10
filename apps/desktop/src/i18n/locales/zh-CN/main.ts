@@ -418,6 +418,7 @@ export default {
     "sendFailed": "发送失败，请重试",
     "verifyFailed": "验证失败，请重试"
   },
+  "agentOwnersUnreadable": "没能确认这台电脑上部分 agent 属于哪个账号，确认之前它们暂不可用。",
   "brand": {
     "name": "咕咕"
   },

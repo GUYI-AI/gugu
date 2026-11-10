@@ -107,7 +107,7 @@ const authProvider = {
 } as never
 function agentOnThisSession() {
   listAgents.mockResolvedValue([
-    { gugu_user_id: 'agent-1', cache: { emdash_session_id: SESSION } },
+    { gugu_user_id: 'agent-1', cache: { emdash_session_id: SESSION, sessionpage_owner_user_id: 'owner-1' } },
   ])
 }
 /** `expiresInMs` 默认 60s;续期用例传生产量级的 TTL(MODEL_SESSION_TTL_SECONDS 默认 900s)。 */
@@ -490,7 +490,7 @@ describe('#2503 session-page sessions carry the designated model', () => {
   })
   // #6938 签发失败说的是那个身份。会话换了身份(云端删了旧的、名册给同一条会话铸了新的):旧身份的拒签 ❌ 替新身份作答。
   it('换了身份的会话不吃旧身份的退避:同一个身份照旧重放,新身份照常去签', async () => {
-    listAgents.mockResolvedValue([{ gugu_user_id: 'agent-x', cache: { emdash_session_id: SESSION } }])
+    listAgents.mockResolvedValue([{ gugu_user_id: 'agent-x', cache: { emdash_session_id: SESSION, sessionpage_owner_user_id: 'owner-1' } }])
     loadEngine.mockResolvedValue({ id: 'codex', modelConfigInjection: 'codex-config-flags' })
     resolveAgentModelLaunch.mockRejectedValueOnce(new ModelAccessHttpError('agent is not owned by caller', 403, 'agent_not_owned'))
     const start = () => platformModelForSession({ surface: 'cui', sessionId: SESSION, providerId: 'codex', authProvider })
@@ -498,7 +498,7 @@ describe('#2503 session-page sessions carry the designated model', () => {
     await expect(start()).rejects.toThrow('gugu-models:service-unavailable')
     await expect(start()).rejects.toThrow('gugu-models:service-unavailable')
     expect(resolveAgentModelLaunch).toHaveBeenCalledTimes(1)
-    listAgents.mockResolvedValue([{ gugu_user_id: 'agent-y', cache: { emdash_session_id: SESSION } }])
+    listAgents.mockResolvedValue([{ gugu_user_id: 'agent-y', cache: { emdash_session_id: SESSION, sessionpage_owner_user_id: 'owner-1' } }])
     platformLaunch('glm-5.2-codex', 60_000, 1_000_000)
     try {
       await expect(start()).resolves.toMatchObject({ model: 'glm-5.2-codex' })
@@ -1045,8 +1045,8 @@ describe('#4467 宿主退出只留 tmux 里仍在跑、凭据不经宿主供给�
     markPlatformAccessDetached.mockResolvedValue(undefined)
     getSessions.mockResolvedValue([])
     listAgents.mockResolvedValue([
-      { gugu_user_id: 'agent-env', cache: { emdash_session_id: 'conv-env' } },
-      { gugu_user_id: 'agent-proxy', cache: { emdash_session_id: 'conv-proxy' } },
+      { gugu_user_id: 'agent-env', cache: { emdash_session_id: 'conv-env', sessionpage_owner_user_id: 'owner-1' } },
+      { gugu_user_id: 'agent-proxy', cache: { emdash_session_id: 'conv-proxy', sessionpage_owner_user_id: 'owner-1' } },
     ])
   })
   afterEach(async () => {

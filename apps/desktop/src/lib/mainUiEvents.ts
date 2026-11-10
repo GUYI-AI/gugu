@@ -14,4 +14,6 @@ export const MAIN_UI_EVENTS = {
   // #6091 会话页改了自有 agent 的名字:通讯录缓存着 display_name,叫它刷新。
   ownedAgentRenamed: defineEvent<{ agentUserId: string; displayName: string }>('owned-agent-renamed'),
   sessionpageOpenFeedback: defineEvent<void>('sessionpage-open-feedback'),
+  // #4277 本机老名册行的归属没读到:那些 agent 暂不归任何账号,界面要说出来(❌ 只写日志)。
+  agentOwnersUnreadable: defineEvent<void>('agent-owners-unreadable'),
 } as const satisfies { readonly [K in keyof typeof UI_EVENTS]?: EventDefinition<unknown> }

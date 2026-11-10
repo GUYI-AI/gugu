@@ -16,8 +16,8 @@ import type {
   SessionShellPeer,
 } from '../../src/session/shared/lib/ipc/shell-port'
 import { localAgentForSession } from './sessionpage-session-agent'
-import { listAgents, provisionSessionpageAgentOneTrip, writeAgentName } from '@gugu/core'
-import { agentsForOwner } from '@gugu/core/local/state/agentOwner'
+import { listAgents, provisionSessionpageAgentOneTrip, updateAgent, writeAgentName } from '@gugu/core'
+import { AGENT_OWNER_CACHE_KEY, agentOwnerUserId, agentsForOwner } from '@gugu/core/local/state/agentOwner'
 import { createLogger } from '../lib/logger'
 
 const log = createLogger('sessionpage/task-names')
@@ -88,6 +88,12 @@ export interface SessionpageIdentityHost extends SessionIdentityHost {
   publishPendingNames(): Promise<void>
   /** Take the cloud names of the owner's bound agents (renamed on another device); pending local names win. */
   adoptCloudNames(): Promise<void>
+  /**
+   * Record the signed-in owner on roster rows written before rows carried one (#4277): one identity read for all of them.
+   * Rows the cloud says are this account's get its id; the rest stay ownerless, which belongs to no account. A failed
+   * read throws: it is never taken as "not mine" or "mine".
+   */
+  adoptRosterOwners(): Promise<void>
   agentCard(sessionId: string): Promise<SessionShellAgentCard | null>
   /** 侧栏身份卡要的那张表:本机名册(session_peers)的投影。 */
   agentNames(): Promise<SessionShellAgentName[]>
@@ -250,6 +256,24 @@ export function createSessionpageIdentityHost(deps: SessionpageIdentityHostDeps)
       return peersForAuth(auth, sessionId)
     },
     renameBound: (_sessionId, agentUserId, name) => renameBound(agentUserId, name),
+    async adoptRosterOwners() {
+      const auth = await deps.getAuth()
+      if (!auth) return
+      const ownerless = (await listAgents(env, { includeGuests: true })).filter((agent) => agent.gugu_user_id && !agentOwnerUserId(agent))
+      if (ownerless.length === 0) return
+      const { data, error } = await makeIdentityClient(auth.accessToken)
+        .from('users')
+        .select('id')
+        .in('id', ownerless.map((agent) => agent.gugu_user_id))
+        .eq('owner_user_id', auth.userId)
+      if (error) throw new Error(`owner read failed for ${ownerless.length} ownerless roster row(s): ${error.message}`)
+      const mine = new Set((data ?? []).map((row: { id: string }) => row.id))
+      for (const agent of ownerless) {
+        if (!mine.has(agent.gugu_user_id)) continue
+        await updateAgent({ guguUserId: agent.gugu_user_id }, { cache: { ...(agent.cache ?? {}), [AGENT_OWNER_CACHE_KEY]: auth.userId } }, env)
+      }
+      log.info({ adopted: mine.size, foreign: ownerless.length - mine.size }, 'roster owners backfilled')
+    },
     async adoptCloudNames() {
       const auth = await deps.getAuth()
       if (!auth) return

@@ -1,5 +1,5 @@
 import { listAgents, updateAgent, type LocalAgentRecord } from '@gugu/core'
-import { AGENT_OWNER_CACHE_KEY, agentOwnerUserId, agentsForOwner } from '@gugu/core/local/state/agentOwner'
+import { AGENT_OWNER_CACHE_KEY, agentOwnerUserId, agentsForOwner, type AgentOwnerScope } from '@gugu/core/local/state/agentOwner'
 
 /** Roster cache keys written by the host's session-page provisioning flow. */
 export const SESSIONPAGE_SESSION_CACHE_KEY = 'emdash_session_id'
@@ -27,10 +27,10 @@ function cached(record: LocalAgentRecord | null, key: string): string {
 export async function localAgentForSession(
   sessionId: string,
   env: NodeJS.ProcessEnv,
-  ownerUserId?: string | null,
+  owner: AgentOwnerScope = { all: true },
   includeParked = false,
 ): Promise<LocalAgentRecord | null> {
-  const owned = agentsForOwner(await listAgents(env, { includeGuests: true }), ownerUserId, { includeArchived: true })
+  const owned = agentsForOwner(await listAgents(env, { includeGuests: true }), owner, { includeArchived: true })
     .filter((agent) => agent.cache?.[SESSIONPAGE_SESSION_CACHE_KEY] === sessionId
       || (includeParked && agent.cache?.[SESSIONPAGE_PARKED_SESSION_CACHE_KEY] === sessionId))
   if (owned.length > 1) {
@@ -49,7 +49,7 @@ export async function localAgentForSession(
  */
 export async function sessionAgents(env: NodeJS.ProcessEnv): Promise<Map<string, { agentId: string; chatId: string | null }>> {
   const agents = new Map<string, { agentId: string; chatId: string | null }>()
-  for (const agent of agentsForOwner(await listAgents(env, { includeGuests: true }), null, { includeArchived: true })) {
+  for (const agent of agentsForOwner(await listAgents(env, { includeGuests: true }), { all: true }, { includeArchived: true })) {
     const sessionId = cached(agent, SESSIONPAGE_SESSION_CACHE_KEY)
     if (sessionId && agent.gugu_user_id) agents.set(sessionId, { agentId: `user:${agent.gugu_user_id}`, chatId: cached(agent, SESSIONPAGE_DIRECT_CHAT_CACHE_KEY) || null })
   }
@@ -63,7 +63,7 @@ export async function agentIdsBySession(env: NodeJS.ProcessEnv): Promise<Map<str
 
 /**
  * Exact canonical owner (session-life hydrate): the session's active binding names exactly this account.
- * Unknown owner is not "possibly this account" here — that wide reading stays with agentsForOwner.
+ * Unknown owner is not this account here, as everywhere (agentsForOwner).
  */
 export async function sessionOwnedBy(sessionId: string, env: NodeJS.ProcessEnv, userId: string): Promise<boolean> {
   const active = (await listAgents(env, { includeGuests: true })).filter((agent) => cached(agent, SESSIONPAGE_SESSION_CACHE_KEY) === sessionId)
