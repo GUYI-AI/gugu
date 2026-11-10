@@ -18,6 +18,8 @@ export type SystemNotice =
   | { kind: 'topic-opened'; topicChatId: string }
   | { kind: 'agent-flood' }
   | { kind: 'member-managed' }
+  /** The chat list's last message was recalled (not a system row): the list says who recalled it, never what it said. */
+  | { kind: 'recalled'; mine: boolean }
 
 type NoticeRow = Pick<MessageItem, 'id' | 'content_type' | 'sender_user_id' | 'client_message_id'>
 

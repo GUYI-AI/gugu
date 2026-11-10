@@ -291,6 +291,8 @@ export default {
     "markUnreadFailed": "标记未读失败，请重试",
     "muted": "消息免打扰",
     "newMessage": "收到一条新消息",
+    "recalled": "{{name}} 撤回了一条消息",
+    "recalledByMe": "你撤回了一条消息",
     "noResults": "未找到对话",
     "searchMessagesTitle": "搜索消息",
     "listLabel": "对话列表",

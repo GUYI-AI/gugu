@@ -292,6 +292,8 @@ export default {
     "markUnreadFailed": "Could not mark this chat unread. Try again.",
     "muted": "Notifications muted",
     "newMessage": "New message",
+    "recalled": "{{name}} recalled a message",
+    "recalledByMe": "You recalled a message",
     "noResults": "No chats found",
     "searchMessagesTitle": "Search messages",
     "listLabel": "Chats",

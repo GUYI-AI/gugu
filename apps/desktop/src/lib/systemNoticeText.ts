@@ -49,6 +49,8 @@ export function systemNoticeText(notice: SystemNotice | null, content: string): 
     }
     case 'member-managed':
       return memberManagedText(content)
+    case 'recalled':
+      return notice.mine ? say('chatList.recalledByMe') : content ? say('chatList.recalled', { name: content }) : say('message.retracted')
     default:
       return content
   }

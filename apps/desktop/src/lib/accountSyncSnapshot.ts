@@ -44,6 +44,7 @@ export function decodeAccountSnapshot(value: unknown, accountId: string) {
     chat_id: preview.chat_id, created_at: preview.created_at,
     preview: typeof preview.preview === 'string' ? composerCardLine(preview.preview) : null,
     notice: parseSystemNotice(preview as Parameters<typeof parseSystemNotice>[0]),
+    recalled: preview.retracted_at ? { by: typeof preview.sender_user_id === 'string' ? preview.sender_user_id : null } : null,
   })
   const unread = mergeUnreadRows(snapshot.unread as Array<Record<string, unknown> & { chat_id: string }>)
   for (const chat of snapshot.chats) put('unread', chat.id, unread.get(String(chat.id)) ?? null)

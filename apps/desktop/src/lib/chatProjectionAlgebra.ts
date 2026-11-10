@@ -125,7 +125,8 @@ export type IdentityValue = { id: string } & Record<string, unknown>
 export type UnreadValue = ChatUnreadLocator & { chat_id: string }
 export type PresenceValue = { id: string; online: boolean }
 /** viewer-scoped 最后一条可见消息:gated 成员看到的活动可能与 chat 行不同。 */
-export type PreviewValue = { chat_id: string; created_at: string | null; preview: string | null; notice: SystemNotice | null }
+/** `recalled`: the latest message was recalled (list_chat_previews.retracted_at), by `by` (its sender; null once that account is gone). */
+export type PreviewValue = { chat_id: string; created_at: string | null; preview: string | null; notice: SystemNotice | null; recalled: { by: string | null } | null }
 export type OverrideValue = { alias: string | null }
 
 export type EntityValue =
@@ -501,6 +502,9 @@ export function assembleChat(source: AssembleSource, viewerId: string, chatId: s
   // 身份引用只存稳定 id;peer 身份缺行时不把 name='' 当成功投影 ⇒ 该行不发布。
   if (isPeerChat && (!peerUserId || !source.value('identity', peerUserId))) return null
   const preview = source.value<PreviewValue>('preview', chat.id)
+  // A recalled message's preview line carries who recalled it (shown name: alias first), as a member-joined notice carries names.
+  const recalledBy = (by: string | null) => by === null ? '' : source.value<OverrideValue>('override', by)?.alias
+    || String(source.value<IdentityValue>('identity', by)?.display_name ?? '')
   const locator = source.value<UnreadValue>('unread', chat.id) ?? null
   const notificationLevel = own.notification_level
   return {
@@ -520,8 +524,8 @@ export function assembleChat(source: AssembleSource, viewerId: string, chatId: s
     name: isRoomChat(chat.kind) ? (chat.name ?? fallbackChatName(chat.kind)) : '',
     created_at: chat.created_at,
     last_message_at: preview ? preview.created_at : chat.last_message_at,
-    last_message_preview: preview ? preview.preview : chat.last_message_preview,
-    last_message_notice: preview?.notice ?? null,
+    last_message_preview: preview?.recalled ? recalledBy(preview.recalled.by) : preview ? preview.preview : chat.last_message_preview,
+    last_message_notice: preview?.recalled ? { kind: 'recalled', mine: preview.recalled.by === viewerId } : preview?.notice ?? null,
     unread_count: locator?.unread_count ?? 0,
     unread_locator: locator,
     pinned_message_id: chat.pinned_message_id,

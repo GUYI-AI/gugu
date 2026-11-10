@@ -323,6 +323,7 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
           preview: previews[index] == null ? null : composerCardLine(previews[index]),
           // 最后一条是系统行:列表按看的人的语言说(systemNotice.ts),❌ 显示那句写进库里的原文。
           notice: parseSystemNotice(row),
+          recalled: row.retracted_at ? { by: typeof row.sender_user_id === 'string' ? row.sender_user_id : null } : null,
         })
       }
       return indexExact(ids, byChat)
