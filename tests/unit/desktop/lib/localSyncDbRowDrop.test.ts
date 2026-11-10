@@ -32,4 +32,14 @@ describe('a stored row this build rejects drops alone', () => {
     expect((await adapter.loadAccount('a')).sync_state.map((row) => row.key)).toEqual(['account-revision-cursor'])
     adapter.close()
   })
+
+  it('drops a membership row that is not a group roster row (no member type), so the roster never reads it as a human', async () => {
+    const adapter = await openLocalSyncDb(new IDBFactory())
+    await adapter.commit([
+      { type: 'put', store: 'membership', value: { accountId: 'a', chatId: 'g', identityId: 'agent-1', value: { role: 'member', last_read_seq: 4 } } },
+      { type: 'put', store: 'membership', value: { accountId: 'a', chatId: 'g', identityId: 'human-1', value: { role: 'member', type: 'human' } } },
+    ])
+    expect((await adapter.loadAccount('a')).membership.map((row) => row.identityId)).toEqual(['human-1'])
+    adapter.close()
+  })
 })

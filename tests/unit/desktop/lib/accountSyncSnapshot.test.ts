@@ -124,7 +124,8 @@ describe('account snapshot bootstrap and repair', () => {
     expect(repaired.snapshot().chat[0]!.value).toMatchObject({ id: 'chat-1', name: 'Remote group',
       last_read_seq: 1, unread_count: 2, last_message_preview: 'Remote text', member_user_ids: ['account-a', 'peer'] })
     expect(repaired.snapshot().identity.find((row) => row.id === 'peer')!.value.display_name).toBe('Remote peer')
-    expect(repaired.snapshot().membership.map((row) => row.identityId).sort()).toEqual(['account-a', 'peer'])
+    // Membership rows are group rosters written when a group is opened; the cold snapshot writes none (no second shape).
+    expect(repaired.snapshot().membership).toEqual([])
     const durable = await adapter.loadAccount('account-a')
     expect(durable.identity[0]!.id).toBe('account-a')
     expect(durable.outbox[0]!.value).toEqual(pending)

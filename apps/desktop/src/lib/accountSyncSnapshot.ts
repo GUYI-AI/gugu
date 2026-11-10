@@ -78,10 +78,6 @@ export async function initializeAccountSync(repository: AccountImRepository): Pr
     writeChatRows(repository, transaction, chats)
     for (const [key, cell] of snapshot.cells) {
       if (key.startsWith('identity:') && cell.value) transaction.putIdentity(cell.value)
-      if (key.startsWith('membership:') && cell.value) {
-        const member = cell.value as unknown as { chat_id: string; user_id: string } & Record<string, unknown>
-        transaction.putMembership(member.chat_id, member.user_id, member)
-      }
     }
     for (const [id, payload] of Object.entries(snapshot.presence)) transaction.putPresence(id, payload.presence)
     transaction.putSyncState(ACCOUNT_REVISION_CURSOR_KEY, { revision: snapshot.revision })

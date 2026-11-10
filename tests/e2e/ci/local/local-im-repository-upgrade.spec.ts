@@ -78,7 +78,7 @@ test('real repository API commits, selects, subscribes, recovers outbox, and iso
         local_path: null, created_at: null, updated_at: '2026-08-09T00:00:00.000Z',
       })
       transaction.putChat('chat-1', { id: 'chat-1', kind: 'group', name: 'A', created_at: '2026-08-09T00:00:00.000Z' })
-      transaction.putMembership('chat-1', 'identity-1', { role: 'member' })
+      transaction.putMembership('chat-1', 'identity-1', { role: 'member', type: 'human' })
       transaction.putMessage(message)
       transaction.putStream('thread:chat-1:root-1', 'chat-1', 'thread', 'root-1')
       transaction.putPresence('identity-1', { state: 'online' })

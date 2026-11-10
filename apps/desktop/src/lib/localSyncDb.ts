@@ -531,7 +531,8 @@ function validateCurrentRow(store: ImStoreName, raw: unknown, accountId: string)
       // 10-28 之前的客户端落的行没有 addressed_count:按无效缓存走快照重建,❌ 拿全部未读顶上。
       if (value.unread_locator != null && (!isRecord(value.unread_locator) || !Number.isInteger(value.unread_locator.addressed_count))) throw new Error('chat unread_locator')
     } else if (store === 'membership') {
-      if (!isRecord(raw.value) || typeof raw.value.role !== 'string') throw new Error('membership')
+      // The membership store holds group roster rows only (replaceGroupRoster); a row without a member type is not one.
+      if (!isRecord(raw.value) || typeof raw.value.role !== 'string' || !['human', 'agent'].includes(String(raw.value.type))) throw new Error('membership')
     } else if (store === 'message') {
       const value = raw.value
       validateMessageValue(value, raw)

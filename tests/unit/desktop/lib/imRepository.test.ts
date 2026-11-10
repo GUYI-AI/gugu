@@ -107,7 +107,7 @@ describe('account-scoped normalized IM repository', () => {
     await repository.transaction((transaction) => {
       transaction.putIdentity(identity('identity-1', { display_name: 'One' }))
       transaction.putChat('chat-1', chat('chat-1'))
-      transaction.putMembership('chat-1', 'identity-1', { role: 'member' })
+      transaction.putMembership('chat-1', 'identity-1', { role: 'member', type: 'human' })
       transaction.putMessage(message('message-1'))
       transaction.putStream('thread:chat-1:root-1', 'chat-1', 'thread', 'root-1')
       transaction.putPresence('identity-1', { state: 'online' })
