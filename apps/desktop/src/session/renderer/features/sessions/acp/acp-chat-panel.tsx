@@ -2086,8 +2086,10 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     onEdit: (itemId) => store?.beginMessageEdit(itemId),
     ...(canForkTask ? { onForkTask: () => forkTask({ projectId: store.projectId, sessionId: store.sessionId, navigate, translate }) } : {}),
   });
+  const sourceWindow = store?.sourceWindow;
   const transcriptCommands = useMemo<ChatCommands>(
     () => ({
+      sourceWindow,
       ...outputMenu.commands,
       onConversationReply: sourceMessage.reveal,
       onMessageTextMount: quotes.onMessageTextMount,
@@ -2236,7 +2238,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         if (store) dismissSubagent(store.sessionId, entryId);
       },
     }),
-    [store, translate, quotes.onMessageTextMount, quotes.restorePrompt, sourceMessage.reveal, sourceMessage.flashMessageId, conversationAgentName, historyActionsEnabled, messageEdit, messageEditPending, handleViewerOpen, translate, membershipLock?.modelName, outputMenu.commands]
+    [store, sourceWindow, translate, quotes.onMessageTextMount, quotes.restorePrompt, sourceMessage.reveal, sourceMessage.flashMessageId, conversationAgentName, historyActionsEnabled, messageEdit, messageEditPending, handleViewerOpen, translate, membershipLock?.modelName, outputMenu.commands]
   );
 
   // A freshly-created task can publish its tab before the resource manager has finished attaching
