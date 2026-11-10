@@ -45,6 +45,7 @@ import {
   type PlannerState,
   type ProjectionBatch,
   type ProjectionOperation,
+  type ProjectionCache,
 } from './chatProjectionAlgebra'
 import { ACCOUNT_REVISION_CURSOR_KEY, type AccountRevisionOperation } from './accountRevisionRuntime'
 import {
@@ -161,6 +162,13 @@ export function toProjectionOperations(operations: readonly AccountRevisionOpera
     const field = ENTITY_ID_FIELDS.find((name) => typeof raw[name] === 'string' && raw[name])
     return { revision, event, chatId: null, entityId: field ? String(raw[field]) : null }
   })
+}
+
+// @@@snapshot-seed — the cold account snapshot (sync_snapshot) already read every list family at its revision; the owner takes
+// those cells once instead of reading the same cursor a second time. One slot per account; a seed for another revision is dropped.
+const snapshotSeeds = new Map<string, { revision: string; cells: ProjectionCache }>()
+export function seedChatProjection(accountId: string, revision: string, cells: ProjectionCache): void {
+  snapshotSeeds.set(accountId, { revision, cells })
 }
 
 /** 已提交的 journal 游标 —— 取数结果的戳(spec I1)。还没同步过时是 0。 */
@@ -558,6 +566,14 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       if (snapshotAt === cursor) {
         log.info({ trigger: ['hydrate'], head: cursor }, 'chat projection snapshot covered')
         return rows
+      }
+      const seed = snapshotSeeds.get(viewerId)
+      snapshotSeeds.delete(viewerId)
+      if (snapshotAt === null && seed?.revision === cursor) {
+        merge(seed.cells)
+        snapshotAt = cursor
+        record({ trigger: ['hydrate', 'snapshot-seed'], revisions: [cursor, cursor], keysDirty: 0, requestsByFamily: {}, requests: 0, waves: 0, ms: 0, ok: true })
+        return republish(true)
       }
       let next = await schedule({ head: cursor, from: cursor, trigger: ['hydrate'] }, true, signal)
       // Reuse the queued revision work; do not return a partial cold list or start a retry.

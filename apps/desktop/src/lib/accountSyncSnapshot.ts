@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import { assemble, entityKey, membershipId, missingDependencies, type Cell, type EntityValue, type ProjectionCache } from './chatProjectionAlgebra'
-import { membershipValue, mergeUnreadRows } from './chatProjection'
+import { membershipValue, mergeUnreadRows, seedChatProjection } from './chatProjection'
 import { displayIdentityFromRow } from './displayIdentity'
 import { ACCOUNT_REVISION_CURSOR_KEY } from './accountRevisionRuntime'
 import { imSelectors, writeChatRows, type AccountImRepository } from './imRepository'
@@ -83,6 +83,7 @@ export async function initializeAccountSync(repository: AccountImRepository): Pr
     for (const [id, payload] of Object.entries(snapshot.presence)) transaction.putPresence(id, payload.presence)
     transaction.putSyncState(ACCOUNT_REVISION_CURSOR_KEY, { revision: snapshot.revision })
   })
+  seedChatProjection(repository.accountId, snapshot.revision, snapshot.cells)
   log.info({ revision: snapshot.revision, bytes: new TextEncoder().encode(JSON.stringify(data)).byteLength,
     ms: Math.round(performance.now() - startedAt), chats: chats.length }, 'account snapshot committed')
 }

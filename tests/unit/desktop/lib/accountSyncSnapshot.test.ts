@@ -6,6 +6,7 @@ import { createChatOutbox } from '../../../../apps/desktop/src/store/chatOutbox'
 import { ACCOUNT_REVISION_CURSOR_KEY, createAccountRevisionRuntime } from '../../../../apps/desktop/src/lib/accountRevisionRuntime'
 import { assemble } from '../../../../apps/desktop/src/lib/chatProjectionAlgebra'
 import { decodeAccountSnapshot, initializeAccountSync } from '../../../../apps/desktop/src/lib/accountSyncSnapshot'
+import { createChatProjection } from '../../../../apps/desktop/src/lib/chatProjection'
 import { message } from '../../../support/testHarness'
 
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }))
@@ -130,6 +131,17 @@ describe('account snapshot bootstrap and repair', () => {
     expect(durable.identity[0]!.id).toBe('account-a')
     expect(durable.outbox[0]!.value).toEqual(pending)
     expect(durable.sync_state[0]!.value).toEqual({ revision: '422010' })
+  })
+
+  it('hands the cold snapshot to the chat projection: the list at that revision is not read a second time', async () => {
+    rpc.mockReturnValue({ abortSignal: vi.fn().mockResolvedValue({ data: populatedSnapshot(), error: null }) })
+    await openImRepository('account-a', { adapter, initialize: initializeAccountSync })
+    rpc.mockClear()
+    const projection = createChatProjection('account-a')
+    const rows = await projection.hydrate('422010', new AbortController().signal)
+    expect(rows.map((row) => [row.id, row.last_message_preview, row.unread_count])).toEqual([['chat-1', 'Remote text', 2]])
+    expect(rpc).not.toHaveBeenCalled()
+    expect(projection.ledger().at(-1)).toMatchObject({ trigger: ['hydrate', 'snapshot-seed'], requests: 0, ok: true })
   })
 
   it('rebuilds a malformed cursor, while a valid warm cursor performs no snapshot RPC', async () => {
