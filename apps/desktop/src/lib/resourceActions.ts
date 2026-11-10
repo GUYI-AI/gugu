@@ -1,8 +1,7 @@
 import { guguLink } from '@gugu/core/shared/ui/guguLink'
 import { platform } from '@/platform'
 import { i18n } from '@/i18n/runtime'
-import { readCachedDevices } from '@/store/devicesCache'
-import { directoryRows, liveDeviceSessions, rowOpens } from '@/session/shared/remote-sessions/session-directory'
+import { directoryDevices, directoryRows, liveDeviceSessions, rowOpens } from '@/session/shared/remote-sessions/session-directory'
 import { RESOURCE_ACTIONS, type ResourceContext } from '@/session/shared/resource-actions'
 import { composeChatDraft, composeTaskDraft } from './composeDraft'
 import { pickDispatchTarget } from '@/components/chat/dispatchAsk'
@@ -24,9 +23,8 @@ export async function runResourceAction(id: (typeof RESOURCE_ACTIONS)[number]['i
       notifyCopied(i18n.t('message.copied', { ns: 'messaging' }))
       return
     }
-    const rows = platform.kind === 'electron'
-      ? (await (await import('@/session/renderer/lib/ipc')).rpc.sessionTimeline.sessionsList()).sessions.filter(rowOpens).map(session => ({ session }))
-      : directoryRows(readCachedDevices(), liveDeviceSessions()).filter(row => rowOpens(row.session))
+    // Every machine's tasks, on every shell: this computer publishes its own sessions into the same directory.
+    const rows = directoryRows(directoryDevices(), liveDeviceSessions()).filter(row => rowOpens(row.session))
     const picked = await pickDispatchTarget({ draft: true, offers: ['chat', 'my-agent'], text: url, pills: [], chat: null, preselect: null, visible: false,
       local: rows.flatMap(row => row.session.agent ? [`user:${row.session.agent.userId}`] : []), resource })
     if (!picked) return

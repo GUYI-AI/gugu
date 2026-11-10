@@ -2,14 +2,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  link: vi.fn(), open: vi.fn(async () => true), list: vi.fn(), pick: vi.fn(), compose: vi.fn(), navigate: vi.fn(), reveal: vi.fn(), notice: vi.fn(),
+  link: vi.fn(), open: vi.fn(async () => true), pick: vi.fn(), compose: vi.fn(), navigate: vi.fn(), reveal: vi.fn(), notice: vi.fn(),
   view: { id: 'view' }, clipboard: vi.fn(),
 }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { kind: 'electron', writeClipboardText: mocks.clipboard } }))
 vi.mock('../../../../apps/desktop/src/hooks/useMobileShell', () => ({ readMobileShell: () => false }))
-vi.mock('../../../../apps/desktop/src/store/devicesCache', () => ({ readCachedDevices: () => [] }))
 vi.mock('../../../../apps/desktop/src/components/chat/dispatchAsk', () => ({ pickDispatchTarget: mocks.pick }))
-vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => ({ rpc: { extensions: { resourceLink: mocks.link }, sessionTimeline: { sessionsList: mocks.list } } }))
+vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => ({ rpc: { extensions: { resourceLink: mocks.link } } }))
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/stores/app-state', () => ({ appState: { navigation: { navigate: mocks.navigate } } }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/projects/stores/project-selectors', () => ({ getProjectManagerStore: () => ({ projects: new Map([['project', { mountedProject: { sessionManager: { sessions: new Map([['task', { viewModel: mocks.view }]]) } } }]]) }) }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/compose-in-session', () => ({ composeWhenOpen: mocks.compose }))
@@ -18,28 +17,33 @@ vi.mock('../../../../apps/desktop/src/lib/notices', () => ({ notify: mocks.notic
 vi.mock('../../../../apps/desktop/src/lib/guguLinks', async (original) => ({ ...await original<object>(), openLink: mocks.open }))
 
 const { runResourceAction } = await import('../../../../apps/desktop/src/lib/resourceActions')
+const { publishDirectoryDevices, removeDeviceSessions, updateDeviceSessions } = await import('../../../../apps/desktop/src/session/shared/remote-sessions/session-directory')
+const task = { conversationId: 'task', projectId: 'project', supported: true, agent: { userId: 'agent' } }
 const app = { kind: 'app-variant', target: { kind: 'app-detail', extensionId: 'radar', deviceId: 'device', variant: 'ui-smoke' }, facts: ['fork'] } as const
 const url = 'gugu-dev://app/radar?device=device&variant=ui-smoke'
 beforeEach(() => {
   vi.clearAllMocks()
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: mocks.clipboard } })
   mocks.link.mockResolvedValue(url)
-  mocks.list.mockResolvedValue({ sessions: [{ conversationId: 'task', projectId: 'project', supported: true, agent: { userId: 'agent' } }] })
+  publishDirectoryDevices([{ device_id: 'this-computer', is_online: true, capabilities: {} } as never])
+  updateDeviceSessions('this-computer', { cached: false, sessions: [task as never] })
   mocks.pick.mockResolvedValue(null)
 })
 
 describe('resource drafts', () => {
-  it('offers the local host task even when the remote directory has no devices', async () => {
+  it('offers every machine\'s tasks from the one session directory, the same on desktop and phone', async () => {
+    publishDirectoryDevices([{ device_id: 'this-computer', is_online: true, capabilities: {} } as never, { device_id: 'server', is_online: true, capabilities: {} } as never])
+    updateDeviceSessions('server', { cached: false, sessions: [{ ...task, conversationId: 'remote-task', agent: { userId: 'remote-agent' } } as never] })
     await runResourceAction('send-resource-url', app)
-    expect(mocks.list).toHaveBeenCalledExactlyOnceWith()
-    expect(mocks.pick).toHaveBeenCalledWith(expect.objectContaining({ draft: true, text: url, local: ['user:agent'], resource: app }))
+    removeDeviceSessions('server')
+    expect(mocks.pick).toHaveBeenCalledWith(expect.objectContaining({ draft: true, text: url, local: ['user:agent', 'user:remote-agent'], resource: app }))
     expect(mocks.clipboard).toHaveBeenCalledWith(url)
     expect(mocks.compose).not.toHaveBeenCalled()
   })
   it('opens the selected task and appends the edited text through the existing composer', async () => {
     mocks.pick.mockResolvedValue({ to: { agent: 'user:agent' }, text: `${url}\nKeep my changes`, visible: false })
     await runResourceAction('send-resource-url', app)
-    expect(mocks.open).toHaveBeenCalledWith({ kind: 'session', sessionId: 'task', projectId: 'project' })
+    expect(mocks.open).toHaveBeenCalledWith({ kind: 'session', sessionId: 'task', projectId: 'project', deviceId: 'this-computer' })
     expect(mocks.compose).toHaveBeenCalledWith(expect.any(Function), `${url}\nKeep my changes`)
     expect(mocks.compose.mock.calls[0]![0]()).toBe(mocks.view)
     expect(mocks.notice).not.toHaveBeenCalled()
@@ -55,6 +59,5 @@ describe('resource drafts', () => {
     await runResourceAction('copy-resource-url', { kind: 'file', target: { kind: 'file', itemId: '00000000-0000-4000-8000-000000000001', version: 3 } })
     expect(mocks.clipboard).toHaveBeenCalledWith('gugu-file://00000000-0000-4000-8000-000000000001?v=3')
     expect(mocks.link).not.toHaveBeenCalled()
-    expect(mocks.list).not.toHaveBeenCalled()
   })
 })
