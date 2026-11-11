@@ -815,6 +815,8 @@ export class ExtensionsService {
     // A binding's other grants (#1927) change what a pending selection authorizes: a chooser drawn before must ask again.
     // The selection itself stays: it is `chat:unread`'s, and each of these is checked again on every call.
     if (permission === 'chat:files' || permission === 'chat:draft') this.unreadAuthorities.delete(extensionId);
+    // #1925 The assistant's grants likewise.
+    if (permission === 'assistant:status' || permission === 'assistant:open') this.unreadAuthorities.delete(extensionId);
     this.revocationsFile.write(revocations);
   }
 

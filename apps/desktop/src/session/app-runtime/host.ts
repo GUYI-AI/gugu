@@ -20,6 +20,13 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     list?(name: string, options?: { folder?: string }): Promise<import('@shared/extensions/unread-binding').AppBoundList>;
     read?(name: string, path: string): Promise<import('@shared/extensions/unread-binding').AppBoundRead>;
   };
+  /** #1925 (44) The bound conversation's assistant, when it is the person's own (`assistant-binding.ts`): a page's. */
+  readonly assistant?: {
+    status(name: string): Promise<import('@shared/extensions/assistant-binding').AppAssistantRead>;
+    open(name: string, screen: string): Promise<void>;
+    advanceSetup(name: string, next: string): Promise<void>;
+  };
+  onAssistantChanged?(handler: (read: Extract<import('@shared/extensions/assistant-binding').AppAssistantRead, { state: 'ready' }>) => void): () => void;
   taskMessage?(args: { intent: 'pause' | 'continue' }): Promise<void>;
   readonly sessions?: {
     index(options?: AppSessionIndexOptions): Promise<AppSessionIndex>;

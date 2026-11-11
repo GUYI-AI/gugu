@@ -278,6 +278,9 @@ const enUSCoreMessages = {
   // #1927: the same conversation as `chat:unread`'s, never another.
   'extensions.permissionsChatFiles': 'Read only the files of the conversation you select, without changing them',
   'extensions.permissionsChatDraft': 'Put a draft into the conversation you select; only you can send it',
+  // #1925: that conversation's assistant, only when it is the person's own.
+  'extensions.permissionsAssistantStatus': 'See the name, look, home and setup progress of your assistant in the conversation you select',
+  'extensions.permissionsAssistantOpen': 'When you click, open the setup, move, close and settings pages of your assistant in the conversation you select, or move its setup on',
   'extensions.unreadBindingChoose': 'Choose conversation',
   'extensions.unreadBindingSearch': 'Search conversations',
   'extensions.unreadBindingEmpty': 'No available conversations',
@@ -1455,6 +1458,8 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'extensions.permissionsChatUnread': '只获知你选定的一条会话是否有未读消息',
   'extensions.permissionsChatFiles': '只读取你选定的那条会话里的文件，不改动',
   'extensions.permissionsChatDraft': '只往你选定的那条会话的输入框里放草稿，发不发由你',
+  'extensions.permissionsAssistantStatus': '只获知你选定的那条会话里你的助理的名字、形象、住处和开通进度',
+  'extensions.permissionsAssistantOpen': '你点按时，为你选定会话里的助理打开开通、搬家、关闭和设置页面，或推进开通步骤',
   'extensions.unreadBindingChoose': '选择会话',
   'extensions.unreadBindingSearch': '搜索会话',
   'extensions.unreadBindingEmpty': '暂无可选会话',

@@ -66,6 +66,10 @@ export const HOST_CALLS = {
   // #1927 (40, `chat:files`): the bound conversation's files, named by the binding and a path there, never by a chat.
   'bindings.list': { verb: 'bindingsList', pack: (name: string, options?: Record<string, unknown>) => ({ ...options, name }) },
   'bindings.read': { verb: 'bindingsRead', pack: (name: string, path: string) => ({ name, path }) },
+  // #1925 (44, `assistant:status` / `assistant:open`): the bound conversation's assistant, named by the binding alone.
+  'assistant.status': { verb: 'assistantStatus', pack: (name: string) => ({ name }) },
+  'assistant.open': { verb: 'assistantOpen', pack: (name: string, screen: string) => ({ name, screen }) },
+  'assistant.advanceSetup': { verb: 'assistantAdvanceSetup', pack: (name: string, next: string) => ({ name, next }) },
   'messages.history': { verb: 'messagesHistory' },
   'messages.search': { verb: 'messagesSearch' },
   // The chats whoever reads is in, and one's members (`chat:read`): `{ chat }` names it.
@@ -171,6 +175,8 @@ export const HOST_EVENTS = {
   onDownloadProgress: { event: 'downloadProgress', only: 'page', pick: (event: Event<'downloadProgress'>) => [event.transferId, event.done, event.total] },
   onAppStateChanged: { event: 'appState', pick: (event: Event<'appState'>) => [event.state] },
   onAgentsChanged: { event: 'agentsChanged', pick: (event: Event<'agentsChanged'>) => [event.agentIds] },
+  /** `gugu.assistant.onChanged(fn)` rides on it (#1925): the answer `status` gives, to a page the person works. */
+  onAssistantChanged: { event: 'assistantChanged', only: 'page', pick: (event: Event<'assistantChanged'>) => [{ name: event.name, state: event.state, status: event.status }] },
   onCloudHeard: { event: 'cloudHeard', only: 'page', pick: (event: Event<'cloudHeard'>) => [event.topic, event.event, event.heard] },
   onProgramNotification: {
     event: 'programNotification',

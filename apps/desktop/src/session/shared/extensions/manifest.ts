@@ -6,6 +6,7 @@ import { APP_PLATFORMS } from './app-platforms';
 import { claimTakes } from './file-openers';
 import { INSTRUCTIONS_MAX_CHARS, SUBTITLE_MAX_CHARS } from './app-listing';
 import { BINDING_ACTION_CAPABILITY, BINDING_ACTIONS_API_VERSION, BINDING_NAME, CONVERSATION_BINDING_ACTIONS } from './unread-binding';
+import { ASSISTANT_BINDING_ACTIONS, ASSISTANT_BINDING_API_VERSION } from './assistant-binding';
 
 /**
  * Extension (App) manifest — the `manifest.json` at the root of an
@@ -348,6 +349,11 @@ export const EXTENSION_CAPABILITIES = [
   // `{ binding }`). Each needs its binding action declared, and `chat:unread`, the binding itself.
   'chat:files',
   'chat:draft',
+  // #1925 (API 44) That same selected conversation's assistant, when it is the person's own: a snapshot of it and its
+  // changes (`gugu.assistant.status` / `onChanged`) — and, in the person's click, one of the host's own screens for it
+  // opened, or its setup moved on a step (`gugu.assistant.open` / `advanceSetup`). Each with its binding action.
+  'assistant:status',
+  'assistant:open',
   /*
    * Seeing the agents at work (behavior tab-extensions:「agent 的可见与可控」).
    *
@@ -744,6 +750,16 @@ export const extensionManifestSchema = z
       }
       if (unreadBinding?.actions.includes(action) && manifest.apiVersion < BINDING_ACTIONS_API_VERSION) {
         ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: `the conversation binding's "${action}" action requires apiVersion ${BINDING_ACTIONS_API_VERSION}` });
+      }
+    }
+    // #1925: the binding's assistant actions, each with its own capability, from API 44.
+    for (const action of ASSISTANT_BINDING_ACTIONS) {
+      const capability = BINDING_ACTION_CAPABILITY[action];
+      if ((unreadBinding?.actions.includes(action) ?? false) !== declared.includes(capability)) {
+        ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings'], message: `${capability} requires the conversation binding's "${action}" action, and the action requires ${capability}` });
+      }
+      if (unreadBinding?.actions.includes(action) && manifest.apiVersion < ASSISTANT_BINDING_API_VERSION) {
+        ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: `the conversation binding's "${action}" action requires apiVersion ${ASSISTANT_BINDING_API_VERSION}` });
       }
     }
     const byFamily = new Map<string, string>();

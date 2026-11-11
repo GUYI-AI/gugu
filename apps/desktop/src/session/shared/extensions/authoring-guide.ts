@@ -886,6 +886,15 @@ API 40, the same conversation only: add \`"files"\` (with \`chat:files\`) and/or
   \`unprepared\` (there, its content not stored yet), \`unavailable\` (cannot be read now: try again later). Read only: no
   write, rename or delete, no other chat; a topic is refused. Paths are names from the top; \`..\`, absolute paths, ids: \`invalid\`.
 - \`gugu.dispatch(text, { draft: true, to: { binding: "main" } })\` in a click: the text into that conversation's composer. Nothing is sent.
+API 44, only when that conversation is the person's private chat with their own assistant (else \`denied\`): add
+\`"assistant-status"\` (with \`assistant:status\`) and/or \`"assistant-open"\` (with \`assistant:open\`). Setup, move and close stay gugu's screens.
+- \`gugu.assistant.status("main")\` → \`{ state: "ready", status }\` | \`{ state: "unbound" | "unavailable" }\`; \`gugu.assistant.onChanged(fn)\`
+  hears each new \`{ state: "ready", status }\`. \`status\`: \`{ assistant: "found"|"loading"|"none"|"unreadable", name, avatar (data: image),
+  home: { kind: "cloud"|"this-computer"|"other-computer"|"server", online } | null, setup: "shell"|"connect"|"ready"|null, preparing,
+  cloudAvailable, member: boolean|null, loadError }\` — no chat, device or account id.
+- In a click: \`gugu.assistant.open("main", screen)\`, screen one of \`setup\`, \`move\`, \`close\`, \`look\`, \`model\`, \`devices\`,
+  \`connected-apps\`: gugu opens that screen; the person acts there. \`gugu.assistant.advanceSetup("main", "ready" | "done")\`: the
+  steps you draw, from \`connect\` (to ready or done) or \`ready\` (to done); any other is \`invalid\`. Both resolve or are refused, nothing more.
 
 Which chats the reader is in and who is in one — for a page that is in no chat (an App's own tab, full screen) to
 offer one — and what people and agents said in a chat: a stretch of its timeline, one thread, or the messages that
