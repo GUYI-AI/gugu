@@ -21,6 +21,11 @@ export const ASSISTANT_HOME_CHANNELS = {
    * Claude Code 认的那一夹记忆只在它是链到这个家的链接时拆掉。路径由主进程算,❌ 渲染层传路径。
    */
   wipe: 'assistant-home:wipe',
+  /**
+   * #1931 The assistant's product rules for setting it up (invoke, no arguments → AssistantProductRules): the trusted
+   * assistant App's, the last good copy of them, or the built-in copy — whichever the main process resolves now.
+   */
+  rules: 'assistant-home:rules',
 } as const
 
 export type AssistantEngine = 'claude' | 'codex'

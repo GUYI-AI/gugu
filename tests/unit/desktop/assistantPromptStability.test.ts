@@ -43,7 +43,7 @@ async function renderPrefix(kind: 'computer' | 'cloud', clock: string, seed: num
     expect(options.systemPrompt).toMatchObject({ type: 'custom', snapshot: false })
     const originalOptions = (normal.sessionNewPatch!.meta!.claudeCode as { options: Record<string, unknown> }).options
     expect(originalOptions.systemPrompt).toBeUndefined()
-    const executor = assistantHomeTaskContext(normal, '/prefix-stability/assistant', '/prefix-stability')
+    const executor = await assistantHomeTaskContext(normal, '/prefix-stability/assistant', '/prefix-stability')
     expect(typeof (executor.sessionNewPatch!.meta!.claudeCode as { options: Record<string, unknown> }).options.systemPrompt).toBe('string')
     const server = bundle.mcpServers.find(entry => entry.name === 'gugu')!
     if (server.transport === 'stdio') throw Error('Expected HTTP Gugu capabilities')

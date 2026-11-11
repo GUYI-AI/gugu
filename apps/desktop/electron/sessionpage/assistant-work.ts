@@ -6,7 +6,8 @@ import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { z } from 'zod'
 import { assistantHomePaths, type AssistantHomeKind } from '@gugu/core/shared/assistantPolicy'
-import { BUILT_IN_ASSISTANT_RULES } from '@gugu/core/shared/assistantProductRules/builtIn'
+import type { AssistantProductRules } from '@gugu/core/shared/assistantRulesFormat'
+import { assistantRules } from '../assistant-rules-resolver'
 import { resolveGuguHome } from '@gugu/core/local/state/paths'
 
 export { workReportSchema } from '../../src/session/shared/assistant-work'
@@ -222,17 +223,19 @@ export function registerAssistantQuestion(sessionId: string, questionId: string,
   store.confirm(id, [], [], questionId)
 }
 
-/** How an executor reports back (product words, #1931): the built-in rules until the host reads them from the App. */
-const EXECUTOR_REPORT = BUILT_IN_ASSISTANT_RULES.texts['executor-report']
-
-/** Wrap only an explicitly identified assistant's dispatcher, before either local or remote routing. */
+/**
+ * Wrap only an explicitly identified assistant's dispatcher, before either local or remote routing. The executor report
+ * is product wording (#1931): `rules` is the snapshot the caller rendered the rest of this dispatch with; none — the one
+ * in use now (assistant-rules-resolver.ts).
+ */
 export async function coordinateAssistantAction(binding: AssistantWorkBinding, action: unknown,
-  run: (action: unknown) => Promise<unknown>): Promise<unknown> {
+  run: (action: unknown) => Promise<unknown>, rules?: AssistantProductRules): Promise<unknown> {
   if (!action || typeof action !== 'object' || Array.isArray(action)) return run(action)
   const record = action as Record<string, unknown>
   if (record.work_result || record.client_message_id) return run(action)
   const field = record.action === 'spawn' ? 'prompt' : record.action === 'message' ? 'text' : null
   if (!field) return run(action)
+  const executorReport = (rules ?? (await assistantRules().current()).rules).texts['executor-report']
   const store = new AssistantWorkStore(binding.memoryDir)
   const source = await binding.currentInput?.()
   const dispatchKey = binding.agentId ? createHash('sha256').update(JSON.stringify([binding.sessionId,record,source])).digest('hex') : undefined
@@ -254,7 +257,7 @@ export async function coordinateAssistantAction(binding: AssistantWorkBinding, a
   // `purpose` is this host's classification, stored on the work; executors and older hosts never see the field.
   const forwarded={...record};delete forwarded.purpose
   const dispatched = field ? { ...forwarded,...(intent ? {assistant_work:intent} : {}), [field]: `${record[field]}\n\n<gugu_work>\n${JSON.stringify({ work_id: id,
-    coordinator: `session:${binding.sessionId}`,...(intent?{assistant_id:intent.assistant_id,purpose}:{}), report: EXECUTOR_REPORT })}\n</gugu_work>` } : action
+    coordinator: `session:${binding.sessionId}`,...(intent?{assistant_id:intent.assistant_id,purpose}:{}), report: executorReport })}\n</gugu_work>` } : action
   try {
     let result = await run(dispatched)
     if(intent && record.action==='spawn') {

@@ -5747,7 +5747,7 @@ app.whenReady().then(async () => {
             },
           }, undefined, info.providerId === 'codex' ? 'codex' : 'claude',
         ) : info.providerId === 'claude' && !SERVER_MODE
-          ? assistantHomeTaskContext(loaded, info.cwd, resolveGuguHome(process.env)) : loaded
+          ? await assistantHomeTaskContext(loaded, info.cwd, resolveGuguHome(process.env)) : loaded
         injectMark('capabilities-loaded')
         await applySessionMaterialization({
           cwd: info.cwd,
