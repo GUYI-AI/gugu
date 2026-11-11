@@ -57,7 +57,7 @@ describe('declaring an agent\'s resources (manifest)', () => {
     expect(() => parseExtensionManifest(manifest({ actions: ['unread', 'resources'], capabilities: ['chat:unread'], domains: { resources: ['memory'] } }))).toThrow(/chat:resources/);
     expect(() => parseExtensionManifest(manifest({ actions: ['unread'], capabilities: ['chat:unread', 'chat:resources'], domains: null }))).toThrow(/chat:resources/);
     expect(() => parseExtensionManifest(manifest({ actions: ['resources'], capabilities: ['chat:resources'], domains: { resources: ['memory'] } }))).toThrow();
-    expect(() => parseExtensionManifest({ ...manifest(), platforms: ['desktop', 'phone'] })).toThrow(/desktop-only/);
+    expect(() => parseExtensionManifest({ ...manifest(), platforms: ['desktop', 'phone'] })).toThrow(/on a phone requires apiVersion 48/);
   });
 
   it('domains come with their action, from the closed list, each once; a writer writes only what it reads, never voice notes', () => {

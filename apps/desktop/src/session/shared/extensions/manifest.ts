@@ -6,6 +6,7 @@ import { APP_PLATFORMS } from './app-platforms';
 import { claimTakes } from './file-openers';
 import { INSTRUCTIONS_MAX_CHARS, SUBTITLE_MAX_CHARS } from './app-listing';
 import { BINDING_ACTION_API_VERSION, BINDING_ACTION_CAPABILITY, BINDING_NAME, CONVERSATION_BINDING_ACTIONS, CONVERSATION_SURFACE_PLACEMENTS } from './unread-binding';
+import { PHONE_BINDING_API_VERSION } from './phone-binding';
 import { RESOURCE_BINDING_ACTIONS, resourceDomainProblem } from './agent-resources';
 
 /**
@@ -755,8 +756,9 @@ export const extensionManifestSchema = z
     if (Boolean(unreadBinding) !== declared.includes('chat:unread')) {
       ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings'], message: 'chat:unread requires exactly one conversation binding with the unread action, and the binding requires chat:unread' });
     }
-    if (unreadBinding && manifest.platforms?.includes('phone')) {
-      ctx.addIssue({ code: 'custom', path: ['platforms'], message: 'conversation unread bindings currently require a desktop-only App' });
+    // API 48 (phone-binding.ts): a phone answers the binding from 48; an App listing the phone with a binding says so.
+    if (unreadBinding && manifest.platforms?.includes('phone') && manifest.apiVersion < PHONE_BINDING_API_VERSION) {
+      ctx.addIssue({ code: 'custom', path: ['platforms'], message: `a conversation binding on a phone requires apiVersion ${PHONE_BINDING_API_VERSION}` });
     }
     if (unreadBinding && manifest.apiVersion < 37) {
       ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: 'conversation unread bindings require apiVersion 37' });

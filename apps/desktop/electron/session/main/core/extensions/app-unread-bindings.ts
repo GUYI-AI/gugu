@@ -202,7 +202,7 @@ export async function appBindingSurface(extensionId: string, page: { tabName: st
   const bound = await boundConversation(extensionId, name, 'surface').catch(() => null);
   const shown = shownHere();
   if (!bound || !shown || shown.chatId !== bound.chatId) return unbound;
-  return { name, state: 'bound', panel: { collapsed: shown.collapsed, inset: { ...CONVERSATION_SURFACE_PANEL_INSET } } };
+  return { name, state: 'bound', layout: 'side-panel', panel: { collapsed: shown.collapsed, inset: { ...CONVERSATION_SURFACE_PANEL_INSET } } };
 }
 
 /**
@@ -219,7 +219,7 @@ export async function setBindingSurfacePanel(
   const surface = await appBindingSurface(extensionId, page, { name });
   if (surface.state !== 'bound') return surface;
   if (surface.panel.collapsed !== collapsed) await ask(collapsed);
-  return { name, state: 'bound', panel: { collapsed, inset: { ...CONVERSATION_SURFACE_PANEL_INSET } } };
+  return { name, state: 'bound', layout: 'side-panel', panel: { collapsed, inset: { ...CONVERSATION_SURFACE_PANEL_INSET } } };
 }
 
 /** Trusted App permissions UI only. This is not an App bridge verb. */

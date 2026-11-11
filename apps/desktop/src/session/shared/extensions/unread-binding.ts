@@ -47,13 +47,16 @@ export const CONVERSATION_SURFACE_PLACEMENTS = ['side-panel'] as const;
 export const CONVERSATION_SURFACE_PANEL_INSET: Readonly<{ top: number; right: number }> = Object.freeze({ top: 52, right: 48 });
 
 /**
- * `gugu.bindings.surface(name)` (41, `chat:surface`): whether the bound conversation is drawn beside this page now, whether
- * this page's panel is collapsed, and the corner of the page the host's control covers (`panel.inset`). `unbound` says only
- * that it is not: no chosen conversation, the grant withdrawn, the account switched or out of it, or the page shown
- * elsewhere. Never the chat, its messages or its people.
+ * `gugu.bindings.surface(name)` (41, `chat:surface`): whether the bound conversation is drawn beside this page now, and in
+ * which layout (48): `side-panel` on a computer — whether this page's panel is collapsed, and the corner of the page the
+ * host's control covers (`panel.inset`); `phone` on a phone — the conversation is the layer's first section, the host's, and
+ * this page fills the section the person is on (`section`, phone-binding.ts), full screen, with no tab row of its own.
+ * `unbound` says only that it is not: no chosen conversation, the grant withdrawn, the account switched or out of it, or
+ * the page shown elsewhere. Never the chat, its messages or its people.
  */
 export type AppBindingSurface = { name: string; state: 'unbound' }
-  | { name: string; state: 'bound'; panel: { collapsed: boolean; inset: { top: number; right: number } } };
+  | { name: string; state: 'bound'; layout: 'side-panel'; panel: { collapsed: boolean; inset: { top: number; right: number } } }
+  | { name: string; state: 'bound'; layout: 'phone'; section: import('./phone-binding').PhoneSurfaceSection };
 
 /** A stored target is host data and never part of the App's answer. */
 export const storedUnreadBindingSchema = z.strictObject({

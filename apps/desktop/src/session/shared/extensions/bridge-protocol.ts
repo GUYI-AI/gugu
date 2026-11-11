@@ -112,7 +112,12 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // 44 (#1925): when that conversation is the person's private chat with their own assistant, the binding may also declare
 // `assistant-status` (`assistant:status`: `gugu.assistant.status` / `onChanged`) and `assistant-open` (`assistant:open`:
 // `gugu.assistant.open(name, screen)` — one of the host's own screens for it, a closed list — and `advanceSetup`).
-export const EXTENSION_API_VERSION = 44;
+// 45–47: reserved (#1931 rules, the work list, the voice-note recorder), merged in as they land.
+// 48 (phone-binding.ts): the conversation binding on a phone. An App listing `phone` may declare it from 48; the phone binds
+// only the product's assistant App, to the account's private chat with its own assistant. `bindings.surface` says the
+// layout: `side-panel` (a computer, `panel`) or `phone` (`section`: the layer's section the page fills). What has no phone
+// meaning answers `{ state: "unsupported" }`: `setPanel` with `collapsed`, `assistant.open(…, "move")`, `advanceSetup`.
+export const EXTENSION_API_VERSION = 48;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and

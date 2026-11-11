@@ -150,7 +150,7 @@ describe('the bound conversation\'s files and draft (#1927, API 40)', () => {
     for (const actions of [['files'], ['unread', 'files', 'files'], ['unread', 'write'], ['unread', 'files', 'draft', 'read']]) {
       expect(() => parseExtensionManifest(boundManifest(actions, ['chat:unread', 'chat:files']))).toThrow();
     }
-    expect(() => parseExtensionManifest({ ...boundManifest(), platforms: ['desktop', 'phone'] })).toThrow(/desktop-only/);
+    expect(() => parseExtensionManifest({ ...boundManifest(), platforms: ['desktop', 'phone'] })).toThrow(/on a phone requires apiVersion 48/);
   });
 
   it('reaches the one selected conversation only with the action declared and its capability granted', () => {
@@ -275,7 +275,7 @@ describe('the bound conversation beside the App\'s page (#1925, API 41)', () => 
     // Without any binding at all: a surface has no conversation to be beside.
     const unbound = { ...manifest(), permissions: { capabilities: ['chat:surface'] }, contributes: { ...manifest().contributes, conversationSurface: { binding: 'main', placement: 'side-panel' } } };
     expect(() => parseExtensionManifest(unbound)).toThrow();
-    expect(() => parseExtensionManifest({ ...surfaceManifest(), platforms: ['desktop', 'phone'] })).toThrow(/desktop-only/);
+    expect(() => parseExtensionManifest({ ...surfaceManifest(), platforms: ['desktop', 'phone'] })).toThrow(/on a phone requires apiVersion 48/);
   });
 
   it('reaches the selected conversation only with the action declared and chat:surface granted; withdrawn, only surface stops', () => {

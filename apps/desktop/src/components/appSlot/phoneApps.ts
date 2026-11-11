@@ -87,6 +87,11 @@ interface InstalledRecord {
   origin?: 'attachment' | 'market'
   /** Who published it, as the server vouched when it was installed (摩擦单 F66). */
   publisher: Publisher
+  /**
+   * Where in the market its code was, as the market recorded it when this version was installed from there (none: from a
+   * chat, or installed before it was kept). What the assistant's place trusts (assistant-entry.ts), as the desktop's record.
+   */
+  marketSource?: MarketCodeSource
   sha256: string
   manifestDigest: string
   installedAt: string
@@ -663,12 +668,12 @@ async function installFromMarket(args: {
       // from there), and never over an App here — its update asks as any update does.
       if (!isGuguOwnApp(pkg.source)) throw new Error(`${manifest.id} is not gugu's own App (its code is at ${pkg.source.repo}); only gugu's own go in without asking`)
       if (installed) throw new Error(`${manifest.id} is installed here already; it is not put in again without asking`)
-      await store(manifest, pkg.files, { publisher: { id: GUGU_PUBLISHER }, sha256: pkg.sha256, manifestDigest: pkg.manifestDigest, origin: 'market' })
+      await store(manifest, pkg.files, { publisher: { id: GUGU_PUBLISHER }, sha256: pkg.sha256, manifestDigest: pkg.manifestDigest, origin: 'market', marketSource: pkg.source })
       return { success: true, data: { installed: true, outcome: 'confirmed', ...summary } }
     }
     const got = pkg
     const done = await agreeThenInstall(request, asks, args.consent ?? { kind: 'here' }, () => askHere(request, grantable), () =>
-      store(manifest, got.files, { publisher: { id: GUGU_PUBLISHER }, sha256: got.sha256, manifestDigest: got.manifestDigest, origin: 'market' }))
+      store(manifest, got.files, { publisher: { id: GUGU_PUBLISHER }, sha256: got.sha256, manifestDigest: got.manifestDigest, origin: 'market', marketSource: got.source }))
     if (done.outcome === 'ask') {
       held.set(key(manifest.version), pkg)
       return { success: true, data: { installed: false, outcome: 'ask', ...summary, ask: request, asks } }
@@ -690,7 +695,7 @@ async function installFromMarket(args: {
 async function store(
   manifest: ExtensionManifest,
   files: ReadonlyMap<string, Uint8Array>,
-  meta: { publisher: Publisher; sha256: string; manifestDigest: string; origin: 'attachment' | 'market' },
+  meta: { publisher: Publisher; sha256: string; manifestDigest: string; origin: 'attachment' | 'market'; marketSource?: MarketCodeSource },
 ): Promise<void> {
   const dir = `${manifest.id}@${manifest.version}`
   const stage = `stage-${hex(crypto.getRandomValues(new Uint8Array(8)).buffer)}`
@@ -716,6 +721,7 @@ async function store(
     sha256: meta.sha256,
     manifestDigest: meta.manifestDigest,
     origin: meta.origin,
+    ...(meta.marketSource ? { marketSource: { repo: meta.marketSource.repo, path: meta.marketSource.path, commit: meta.marketSource.commit } } : {}),
     installedAt: new Date().toISOString(),
     runtimeTag: appRuntimeScriptTag(manifest.apiVersion),
     pages,
@@ -973,6 +979,14 @@ export const phoneApps = {
   installFromMarket,
   market,
   marketUpdates,
+  /**
+   * The record of an App installed here (null: not installed, or shipped): where it came from, where in the market its code
+   * was, and the digest of its manifest — what the assistant's place and the binding on this phone check (phoneAppBindings).
+   */
+  installRecord: (id: string): { origin: 'attachment' | 'market'; marketSource: MarketCodeSource | null; manifestDigest: string } | null => {
+    const record = index.installed[id]
+    return record ? { origin: record.origin ?? 'attachment', marketSource: record.marketSource ?? null, manifestDigest: record.manifestDigest } : null
+  },
   /** Where an App installed here came from: from the market, or from a chat (null: not installed here). */
   originOf: (id: string): 'attachment' | 'market' | null => {
     const record = index.installed[id]
