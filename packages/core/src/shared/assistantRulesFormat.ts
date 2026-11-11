@@ -1,10 +1,10 @@
 /**
  * The personal assistant's product rules as data (#1931): what the host reads, never runs.
  *
- * The host owns this format and every read point; the product owns the words and defaults. Today the only source is the
- * built-in copy in `./assistantProductRules`; an installed App may later supply the same shape as text/data files
- * (`contributes.assistantRules`, read by the desktop host's loader), honoured only for the App the host trusts as the
- * product's rules provider. Strings and pure functions only: the cloud host and both desktop processes import this.
+ * The host owns this format and every read point; the product owns the words and defaults. They are not in this
+ * repository: the product's assistant App supplies them as text/data files (`contributes.assistantRules`, validated by
+ * @shared/extensions/assistant-rules-parse), honoured only for the App the host trusts as the product's rules provider.
+ * Strings and pure functions only: the cloud host and both desktop processes import this.
  */
 
 /** The data format this host reads. A rules folder declaring any other number is refused, never guessed at. */

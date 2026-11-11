@@ -4,18 +4,12 @@
  * 来源:管家 services/cloud-computer(gugu-supabase)里的 ASSISTANT_GUIDE / ASSISTANT_FIRST_TASK / ASSISTANT_CHILD_HARNESS,
  * owner 10-16「不强制用户使用云电脑」之后搬到这里两边共用；管家那边的副本从这里生成，不再手抄另一份说明。
  *
- * #1931 这里只留宿主的机制(标记、写回、路径、拼装);说明的文字与产品默认值在 ./assistantProductRules(一类规则一处),
- * 格式与槽位在 ./assistantRulesFormat。每个拼装函数收一份 rules,默认是内置那一份 —— 今天只有它。
+ * #1931 这里只有宿主的机制(标记、写回、路径、拼装)。说明的文字与产品默认值是产品的:由助理 App 提供(经桌面宿主的解析器读到),
+ * 不在这个仓里;格式与槽位在 ./assistantRulesFormat。每个拼装函数都要显式收一份 rules,没有内置默认。
  *
  * 只放字符串与纯函数(管家跑在 Deno / Node,客户端主进程与渲染层都会 import),❌ 碰 node / electron。
  */
-import { BUILT_IN_ASSISTANT_RULES } from './assistantProductRules/builtIn'
 import { renderAssistantRule, type AssistantProductRules } from './assistantRulesFormat'
-
-export { ASSISTANT_CHILD_HARNESS, ASSISTANT_DEFAULT_MODEL, ASSISTANT_DENIED_TOOLS } from './assistantProductRules/defaults'
-export { ASSISTANT_FIRST_TASK } from './assistantProductRules/firstTask'
-export { OWNER_PROFILE_MEMORY_NAME } from './assistantProductRules/ownerProfile'
-import { ASSISTANT_DENIED_TOOLS } from './assistantProductRules/defaults'
 
 /** 宿主维护段的头尾:标记外自定义文字照留,标记内每次开通 / 恢复连接(本机:每次启动)整段覆盖。 */
 export const ASSISTANT_GUIDE_BEGIN = '<!-- 咕咕管家维护这一段,改了会被覆盖;写在这段外面的会保留 -->'
@@ -33,12 +27,12 @@ function homeSlots(memoryDir: string): Record<string, string> {
 }
 
 /** Rehydrate pointers after native context reconstruction; task state and personal text stay at their source. */
-export function assistantRecoveryContext(memoryDir: string, rules: AssistantProductRules = BUILT_IN_ASSISTANT_RULES): string {
+export function assistantRecoveryContext(memoryDir: string, rules: AssistantProductRules): string {
   return ['<gugu_assistant_recovery>', renderAssistantRule(rules.texts.recovery, homeSlots(memoryDir)), '</gugu_assistant_recovery>'].join('\n')
 }
 
 /** The resident brief in the managed block: the product's words, the host's markers and paths. */
-export function assistantBrief(kind: AssistantHomeKind, reference: string, memoryDir: string, rules: AssistantProductRules = BUILT_IN_ASSISTANT_RULES): string {
+export function assistantBrief(kind: AssistantHomeKind, reference: string, memoryDir: string, rules: AssistantProductRules): string {
   return [
     ASSISTANT_GUIDE_BEGIN,
     renderAssistantRule(rules.texts[`brief-${kind}`], { ...homeSlots(memoryDir), reference }),
@@ -47,7 +41,7 @@ export function assistantBrief(kind: AssistantHomeKind, reference: string, memor
 }
 
 /** 一份完整的说明(连头尾标记)。 */
-export function assistantGuide(kind: AssistantHomeKind, rules: AssistantProductRules = BUILT_IN_ASSISTANT_RULES): string {
+export function assistantGuide(kind: AssistantHomeKind, rules: AssistantProductRules): string {
   return [
     ASSISTANT_GUIDE_BEGIN,
     renderAssistantRule(rules.texts[`guide-${kind}`], { profileRulesVersion: String(rules.defaults.profileRulesVersion) }),
@@ -78,17 +72,16 @@ export function upsertAssistantGuide(old: string, guide: string): string {
 /** 引导中填写的「称呼和基本信息」保存为记忆(Claude Code frontmatter + 正文),与管家写的同名同格式。 */
 export const OWNER_PROFILE_MEMORY_FILE = 'owner-profile.md'
 /** MEMORY.md 里指向它的那一行。 */
-export function ownerProfileIndexLine(rules: AssistantProductRules = BUILT_IN_ASSISTANT_RULES): string {
+export function ownerProfileIndexLine(rules: AssistantProductRules): string {
   return `- [${rules.labels.ownerProfileMemoryName}](${OWNER_PROFILE_MEMORY_FILE}) — ${rules.labels.ownerProfileIndexDescription}`
 }
-export const OWNER_PROFILE_INDEX_LINE = ownerProfileIndexLine()
 
 /** 引导中填写的称呼与自我介绍(可空)。 */
 export type OwnerProfileInput = { preferredName: string; about: string }
 
 /** 交给管家 / 写进记忆的那一段 markdown(只有正文,不带 frontmatter)。 */
 /** language = 开通时的界面语言:对话开始前,问候与起名跟它;开始后跟对方在用的语言。 */
-export function ownerProfileMarkdown(input: OwnerProfileInput & { language: string }, rules: AssistantProductRules = BUILT_IN_ASSISTANT_RULES): string {
+export function ownerProfileMarkdown(input: OwnerProfileInput & { language: string }, rules: AssistantProductRules): string {
   const name = input.preferredName.trim()
   const about = input.about.trim()
   return [...(about ? [about, ''] : []), renderAssistantRule(rules.labels.ownerProfileNameLine, { preferredName: name }),
@@ -96,7 +89,7 @@ export function ownerProfileMarkdown(input: OwnerProfileInput & { language: stri
 }
 
 /** 记忆夹里那一条的全文。 */
-export function ownerProfileMemoryFile(markdown: string, rules: AssistantProductRules = BUILT_IN_ASSISTANT_RULES): string {
+export function ownerProfileMemoryFile(markdown: string, rules: AssistantProductRules): string {
   return [
     '---',
     `name: ${rules.labels.ownerProfileMemoryName}`,
@@ -110,7 +103,7 @@ export function ownerProfileMemoryFile(markdown: string, rules: AssistantProduct
 }
 
 /** MEMORY.md 补上那一行(已有就不重复;没有索引就新建)。 */
-export function withOwnerProfileIndex(index: string | null, rules: AssistantProductRules = BUILT_IN_ASSISTANT_RULES): string {
+export function withOwnerProfileIndex(index: string | null, rules: AssistantProductRules): string {
   const current = index ?? ''
   if (current.includes(`](${OWNER_PROFILE_MEMORY_FILE})`)) return current
   return (current.trim() ? `${current.replace(/\n+$/, '')}\n` : '') + `${ownerProfileIndexLine(rules)}\n`
@@ -173,7 +166,7 @@ export function assistantHomePaths(home: string, workdir: string, kind: Assistan
 }
 
 /** settings.json 补上禁用的工具(已有的设置、已有的禁用项照留)。读不懂原文 = 抛(❌ 盖掉人写的设置)。 */
-export function withDeniedTools(raw: string | null, deniedTools: readonly string[] = ASSISTANT_DENIED_TOOLS): string {
+export function withDeniedTools(raw: string | null, deniedTools: readonly string[]): string {
   const settings = raw?.trim() ? (JSON.parse(raw) as Record<string, unknown>) : {}
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('settings.json is not a JSON object')
   const permissions = (settings.permissions && typeof settings.permissions === 'object' ? settings.permissions : {}) as Record<string, unknown>

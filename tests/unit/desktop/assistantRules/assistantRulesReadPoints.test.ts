@@ -10,7 +10,7 @@ import { assistantHomeTaskContext, preparePersonalAssistantContext } from '../..
 import { refreshAssistantContext } from '../../../../apps/desktop/electron/sessionpage/assistant-instructions'
 import { prepareAssistantProfileReview } from '../../../../apps/desktop/electron/sessionpage/assistant-profile-review'
 import { coordinateAssistantAction } from '../../../../apps/desktop/electron/sessionpage/assistant-work'
-import { markedRules } from './fixtureApp'
+import { fixtureBundle, fixtureHost, installBundle, markedRules, OFFICIAL_SOURCE } from './fixtureApp'
 
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'assistant-rules-read-points-')) })
@@ -25,7 +25,7 @@ it('each read point asks once per render, so a swap during it cannot mix two ver
   const B = Object.freeze({ source: 'app', rules: markedRules('BBBMARK', '2.0.0'), appVersion: '2.0.0' }) as ResolvedAssistantRules
   let asked = 0
   const next = async () => (asked++ % 2 === 0 ? A : B)
-  installAssistantRulesResolver({ refresh: next, current: next })
+  installAssistantRulesResolver({ refresh: next, current: next, available: next, subscribe: () => () => {} })
   const renders: Record<string, string> = {}
 
   const home = join(root, 'home'), guguHome = join(root, 'gugu'), cwd = join(guguHome, 'assistant')
@@ -81,4 +81,34 @@ it('each read point asks once per render, so a swap during it cannot mix two ver
     expect(text, name).toContain('AAAMARK')
     expect(text, name).not.toContain('BBBMARK')
   }
+})
+
+// #1931 R7 No rules here at all (no trusted App, no kept copy, none packaged): nothing the assistant is told is made up.
+it('with no rules here, a session start waits until the App brings them, and a host refresh leaves the files as they are', async () => {
+  const host = fixtureHost(root, join(root, 'last-good'))
+  installAssistantRulesResolver(host.resolver)
+  const home = join(root, 'home'), guguHome = join(root, 'gugu'), cwd = join(guguHome, 'assistant')
+  await mkdir(cwd, { recursive: true })
+  await writeFile(join(cwd, 'CLAUDE.md'), 'Owner text\n<!-- left as it was -->\n')
+
+  await refreshAssistantContext(cwd, guguHome, 'computer', home, 'claude')
+  expect(await readFile(join(cwd, 'CLAUDE.md'), 'utf8')).toBe('Owner text\n<!-- left as it was -->\n')
+  await expect(readFile(join(cwd, '.gugu-assistant-reference.md'))).rejects.toMatchObject({ code: 'ENOENT' })
+
+  let started = false
+  const start = preparePersonalAssistantContext({ report: {} as never, sessionPrompt: 'platform', sessionNewPatch: { meta: {} } },
+    cwd, guguHome, 'computer', { accountId: async () => 'owner', run: async (action: { action: string }) =>
+      action.action === 'devices' || action.action === 'project_list' ? [] : action.action === 'device_actions' ? { devices: [] } : { items: [] } }, home, 'codex')
+    .then(context => { started = true; return context })
+  await new Promise(resolve => setTimeout(resolve, 50))
+  expect(started).toBe(false)
+  expect(await readFile(join(cwd, 'CLAUDE.md'), 'utf8')).toBe('Owner text\n<!-- left as it was -->\n')
+
+  // The ensure step puts the App in and reads the rules again: the start goes on, with them.
+  installBundle(host.service, await fixtureBundle(join(root, 'bundle'), { version: '1.0.0' }), 'market', OFFICIAL_SOURCE('1.0.0'))
+  await host.resolver.refresh()
+  const context = await start
+  expect(context.sessionPrompt).toContain(join(cwd, 'CLAUDE.md'))
+  expect(await readFile(join(cwd, 'CLAUDE.md'), 'utf8')).toMatch(/^Owner text[\s\S]*# Brief \(computer\)/)
+  expect(await readFile(join(cwd, '.gugu-assistant-reference.md'), 'utf8')).toContain('# Guide (computer)')
 })

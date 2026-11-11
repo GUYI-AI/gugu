@@ -35,6 +35,11 @@ export interface PhoneMarket {
   updatesFor(installed: readonly { id: string; version: string; fromMarket?: boolean }[]): Promise<MarketUpdatesSummary>
   /** One version — this phone's when none is named — fetched and checked; what cannot be installed says why. */
   fetch(extensionId: string, version?: string): Promise<MarketPackage>
+  /**
+   * #1931 The version this build would take of an App on any platform, fetched and checked as `fetch` checks: for the data
+   * it carries (the assistant App's rules), never to install or run here.
+   */
+  fetchData(extensionId: string): Promise<MarketPackage>
   /** Ask the download site for the index once, and say what came of it (changed / unchanged / failed): the 「App」 page's. */
   refresh(): Promise<MarketRefreshed>
   /** Every time the index was asked for, by whoever (the page, an install). Returns the unsubscribe. */
@@ -50,6 +55,16 @@ export function phoneMarket(
 ): PhoneMarket {
   const snapshot = marketSnapshotSource({ readIndex: async () => new TextDecoder().decode(await read('index.json')), store, onFailure: onRefreshFailure })
   const index = async (fresh: boolean): Promise<MarketIndex> => (await (fresh ? snapshot.fresh() : snapshot.current())).index
+  const download = async (extensionId: string, row: MarketIndexVersion): Promise<MarketPackage> => {
+    // No more than the row says it is: the shell stops a bigger one while it comes (it is held in memory whole, twice).
+    const bytes = await read(row.bundle, row.bytes)
+    if (bytes.byteLength !== row.bytes) throw new Error(`${extensionId}@${row.version}: got ${bytes.byteLength} bytes, the market recorded ${row.bytes}`)
+    const sha256 = hex(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>))
+    // Consent binds a manifest, not code: anyone able to swap the file on the download site could put other code under
+    // a list of permissions already agreed to. This is what stops that.
+    if (sha256 !== row.sha256) throw new Error(`${extensionId}@${row.version}: the file does not match what was published`)
+    return { bytes, version: row.version, sha256, source: row.source, releaseNotes: row.releaseNotes }
+  }
   return {
     entries: async (fresh = false) => {
       const snapshot = await index(fresh)
@@ -82,14 +97,14 @@ export function phoneMarket(
       if (compat) {
         throw new Error(`${extensionId}@${row.version} ${marketCompatText(compat)}`)
       }
-      // No more than the row says it is: the shell stops a bigger one while it comes (it is held in memory whole, twice).
-      const bytes = await read(row.bundle, row.bytes)
-      if (bytes.byteLength !== row.bytes) throw new Error(`${extensionId}@${row.version}: got ${bytes.byteLength} bytes, the market recorded ${row.bytes}`)
-      const sha256 = hex(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>))
-      // Consent binds a manifest, not code: anyone able to swap the file on the download site could put other code under
-      // a list of permissions already agreed to. This is what stops that.
-      if (sha256 !== row.sha256) throw new Error(`${extensionId}@${row.version}: the file does not match what was published`)
-      return { bytes, version: row.version, sha256, source: row.source, releaseNotes: row.releaseNotes }
+      return download(extensionId, row)
+    },
+    fetchData: async (extensionId) => {
+      const snapshot = await index(true)
+      const app = snapshot.apps.find((entry) => entry.id === extensionId)
+      const row = app ? pickForHost(app.versions, host(), snapshot.hostApi).chosen : null
+      if (!row) throw new Error(`The market has no App "${extensionId}"`)
+      return download(extensionId, row)
     },
   }
 }

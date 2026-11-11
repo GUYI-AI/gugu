@@ -4,12 +4,12 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import * as policy from '@gugu/core/shared/assistantPolicy'
 import { assistantExecutionAction } from '@gugu/core/shared/assistantWorkflow'
-import { BUILT_IN_ASSISTANT_RULES } from '@gugu/core/shared/assistantProductRules/builtIn'
+import { NEUTRAL_ASSISTANT_RULES } from './neutralRules'
 import { ASSISTANT_RULES_TEXT_SLOTS, assistantRulesFiles, type AssistantProductRules } from '@gugu/core/shared/assistantRulesFormat'
 import { readAssistantProductRules, readDeclaredAssistantRules } from '../../../../apps/desktop/electron/assistant-product-rules'
 import { assistantProfileReviewText } from '../../../../apps/desktop/electron/sessionpage/assistant-profile-review'
 import { safeParseExtensionManifest } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
-import { fingerprint, readBaseline } from './capture'
+import { fingerprint, readNeutralDigests } from './capture'
 
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'assistant-rules-app-')) })
@@ -20,8 +20,8 @@ const MANIFEST = {
   platforms: ['desktop'], entry: 'index.html', contributes: { assistantRules: 'rules' },
 }
 
-/** A fixture App whose rules folder is generated from the built-in rules (no copy of the product text is kept in the repo). */
-async function fixtureApp(files = assistantRulesFiles(BUILT_IN_ASSISTANT_RULES)): Promise<string> {
+/** A fixture App whose rules folder is generated from the neutral test rules (the product's words are not in this repository). */
+async function fixtureApp(files = assistantRulesFiles(NEUTRAL_ASSISTANT_RULES)): Promise<string> {
   await writeFile(join(root, 'manifest.json'), JSON.stringify(MANIFEST))
   await writeFile(join(root, 'index.html'), '<!doctype html><title>Assistant</title>')
   await mkdir(join(root, 'rules'))
@@ -40,7 +40,7 @@ const OWNERS = [
   { preferredName: 'Ann', about: '   ', language: 'en-US' },
 ]
 
-/** Every render the host's typed accessors produce from a set of rules, keyed as in baseline.json where the key exists there. */
+/** Every render the host's typed accessors produce from a set of rules, keyed as in the recorded digests where the key exists there. */
 function renderThrough(rules: AssistantProductRules): Record<string, string> {
   const out: Record<string, string> = {}
   out['defaults/childHarness'] = rules.defaults.childHarness
@@ -85,7 +85,7 @@ function renderThrough(rules: AssistantProductRules): Record<string, string> {
   return out
 }
 
-describe('a fixture App generated from the built-in rules', () => {
+describe('a fixture App generated from the neutral test rules', () => {
   it('is a valid App manifest declaring its rules folder', async () => {
     await fixtureApp()
     const parsed = safeParseExtensionManifest(MANIFEST)
@@ -93,17 +93,16 @@ describe('a fixture App generated from the built-in rules', () => {
     if (parsed.ok) expect(parsed.manifest.contributes.assistantRules).toBe('rules')
   })
 
-  it('loads to exactly the built-in rules and renders every accessor byte-for-byte as before the split', async () => {
+  it('loads to exactly those rules and renders every accessor byte for byte as recorded', async () => {
     await fixtureApp()
     const loaded = await readDeclaredAssistantRules(root, MANIFEST as never)!
-    expect(loaded).toEqual(BUILT_IN_ASSISTANT_RULES)
+    expect(loaded).toEqual(NEUTRAL_ASSISTANT_RULES)
     expect(Object.isFrozen(loaded) && Object.isFrozen(loaded.texts)).toBe(true)
 
     const throughLoader = renderThrough(loaded)
-    const builtIn = renderThrough(BUILT_IN_ASSISTANT_RULES)
-    expect(throughLoader).toEqual(builtIn)
-    // And against origin/dev itself: every render that baseline.json also captured has the same bytes.
-    const baseline = readBaseline()
+    expect(throughLoader).toEqual(renderThrough(NEUTRAL_ASSISTANT_RULES))
+    // And against the recorded renders of these rules (neutral-digests.json, written by the byte-identity test).
+    const baseline = readNeutralDigests()
     const compared = Object.keys(throughLoader).filter(key => key in baseline)
     expect(compared.filter(key => fingerprint(throughLoader[key]!).sha256 !== baseline[key]!.sha256)).toEqual([])
     expect(compared).toHaveLength(Object.keys(throughLoader).length - 1)
@@ -116,7 +115,7 @@ describe('a fixture App generated from the built-in rules', () => {
 })
 
 describe('the rules folder is refused unless it is exactly the format', () => {
-  const built = () => assistantRulesFiles(BUILT_IN_ASSISTANT_RULES)
+  const built = () => assistantRulesFiles(NEUTRAL_ASSISTANT_RULES)
   const data = () => JSON.parse(built()['rules.json']!) as Record<string, unknown>
   const refuse = async (files: Record<string, string | Uint8Array>, code: string, message: RegExp) => {
     await writeFile(join(root, 'index.html'), '')

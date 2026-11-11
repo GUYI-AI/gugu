@@ -5,7 +5,8 @@ import { notifyManager } from '@tanstack/react-query'
 import { withSessionAttachments } from '@gugu/core/cloud/sessionAttachments'
 import { attachmentFileRef } from '@gugu/core/shared/ui/attachmentModels'
 import { taskExchangeContent } from '../../../../apps/desktop/src/components/assistant/taskExchangeContent'
-import { assistantExecutionAction, ASSISTANT_TASK_EXECUTION } from '@gugu/core/shared/assistantWorkflow'
+import { assistantExecutionAction } from '@gugu/core/shared/assistantWorkflow'
+import { NEUTRAL_ASSISTANT_RULES } from '../assistantRules/neutralRules'
 import { TaskExchangeBubble } from '../../../../apps/desktop/src/components/assistant/TaskExchangeBubble'
 import { FileAttachmentCard } from '../../../../apps/desktop/src/components/chat/FileAttachmentCard'
 import { attachmentQueryClient } from '../../../../apps/desktop/src/lib/attachmentQueryClient'
@@ -35,8 +36,8 @@ afterEach(() => { notifyManager.setScheduler(callback => setTimeout(callback, 0)
 
 describe('task collaboration presentation', () => {
   it.each([false, true])('keeps the actual host contract in agent input but out of the visible task on mobile=%s', async mobile => {
-    const action = assistantExecutionAction({ action: 'spawn', prompt: '整理读书会支出。' }) as { prompt: string }
-    expect(action.prompt).toContain(ASSISTANT_TASK_EXECUTION)
+    const action = assistantExecutionAction({ action: 'spawn', prompt: '整理读书会支出。' }, NEUTRAL_ASSISTANT_RULES) as { prompt: string }
+    expect(action.prompt).toContain(NEUTRAL_ASSISTANT_RULES.texts['task-execution'])
     expect(taskExchangeContent(action.prompt).text).toBe('整理读书会支出。')
     await renderWithAppProviders(ui, <TaskExchangeBubble message={message({ content: action.prompt, sender_user_id: 'assistant', is_mine: false })} recipientUserId="assistant" mobile={mobile} />, { contacts: { contacts: [] } })
     expect(ui.container.textContent).toContain('整理读书会支出。')
