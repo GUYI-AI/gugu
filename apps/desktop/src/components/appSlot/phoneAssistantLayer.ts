@@ -1,5 +1,6 @@
 import type { AppAssistantStatus } from '../../session/shared/extensions/assistant-binding'
 import type { PhoneAssistantScreen, PhoneSurfaceSection } from '../../session/shared/extensions/phone-binding'
+import type { AppSurfaceIntent } from '../../session/shared/extensions/unread-binding'
 import type { PushedWorkLedger } from '../../session/shared/extensions/work-binding'
 
 /**
@@ -18,6 +19,8 @@ export type PhoneLayerActions = {
   rename(agentId: string, name: string): Promise<void>
   /** The task's own conversation, drawn by the layer over the 任务 section (its back closes it); null closes it. */
   openWork(work: { workId: string; sessionId: string } | null): void
+  /** API 50 `removeVoiceNote`: the layer's own question before a voice note goes (删除“…”？); true = the person said yes. */
+  confirmRemoval(question: { kind: 'voice-note'; title: string | null }): Promise<boolean>
 }
 export type PhoneLayerStatus = { ownerId: string; status: AppAssistantStatus }
 
@@ -30,6 +33,7 @@ let openWork: { ownerId: string; workId: string; sessionId: string } | null = nu
 const workListeners = new Set<() => void>()
 const shownListeners = new Set<() => void>()
 const statusListeners = new Set<() => void>()
+const intentListeners = new Set<(intent: AppSurfaceIntent) => void>()
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
@@ -61,6 +65,17 @@ export const phoneAssistantLayer = {
     statusListeners.add(listener)
     return () => { statusListeners.delete(listener) }
   },
+  /**
+   * What the person asked of the App's page through the layer (`AppSurfaceIntent`): the recording bar's note opened
+   * (`voice-note`), the assistant's 自定义 card (`profile`). Told once, after the layer moved to the section that shows it.
+   */
+  tell(intent: AppSurfaceIntent): void {
+    for (const listener of intentListeners) listener(intent)
+  },
+  onIntent(listener: (intent: AppSurfaceIntent) => void): () => void {
+    intentListeners.add(listener)
+    return () => { intentListeners.delete(listener) }
+  },
   work: (): PushedWorkLedger | null => work,
   openWork: (): { ownerId: string; workId: string; sessionId: string } | null => openWork,
   publishWork(next: PushedWorkLedger | null, open: { ownerId: string; workId: string; sessionId: string } | null): void {
@@ -85,4 +100,5 @@ export function resetPhoneAssistantLayerForTest(): void {
   shownListeners.clear()
   statusListeners.clear()
   workListeners.clear()
+  intentListeners.clear()
 }

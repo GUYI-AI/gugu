@@ -34,6 +34,8 @@ import { phoneAssistantLayer } from '@/components/appSlot/phoneAssistantLayer'
 import { requestAssistantClose } from '@/lib/assistantClose'
 import type { AssistantLayerEntry } from '@/session/shared/extensions/assistant-entry'
 import type { PhoneAssistantScreen, PhoneSurfaceSection } from '@/session/shared/extensions/phone-binding'
+import type { AppSurfaceIntent } from '@/session/shared/extensions/unread-binding'
+import { PhoneConfirmDialog } from './PhoneConfirmDialog'
 import { PHONE_ASSISTANT_LAYER_TAB, usePhoneAssistantEntry } from './phoneAssistantEntry'
 import { PhoneAssistantWorkLedger } from './PhoneAssistantWorkLedger'
 import { phoneWorkChats } from './phoneWorkChats'
@@ -157,7 +159,13 @@ function MobileAssistantAppContent({
   const { user: signedIn } = useAuth()
   const ownerId = signedIn?.id ?? null
   const hostScreen = Boolean(app && sub)
-  useLayerForApp(app, ownerId, visible, appSection.current, hostScreen, open, assistant.id)
+  // API 50 `removeVoiceNote`: the layer's own question (the built-in note page's), answered yes or no.
+  const [removal, setRemoval] = useState<{ title: string | null; answer: (yes: boolean) => void } | null>(null)
+  const confirmRemoval = useCallback((question: { kind: 'voice-note'; title: string | null }) =>
+    new Promise<boolean>((resolve) => setRemoval({ title: question.title, answer: resolve })), [])
+  // What the person asked of the App's page here (the recording bar's note, the 自定义 card): told once the layer shows it.
+  const [intent, setIntent] = useState<AppSurfaceIntent | null>(null)
+  useLayerForApp(app, ownerId, visible, appSection.current, hostScreen, open, assistant.id, confirmRemoval, intent, () => setIntent(null))
   const pageBody = useRef<HTMLElement | null>(null)
   const pageScroll = useRef(new Map<string, number>())
   const pageKey = `${tab}:${sub ?? ''}`
@@ -204,8 +212,20 @@ function MobileAssistantAppContent({
   const typing = useAssistantTyping(chatId, assistant.id, name)
   const { user } = useAuth()
   const customizeOffered = useCustomizeCardOffered(user?.id)
+  // With the App: 自定义 is its 资料 (name, look, character), told `profile` as a computer's header click tells it.
+  const openCustomize = () => {
+    if (!app) return open({ tab: 'profile', sub: 'customize' })
+    open({ tab: 'profile' })
+    setIntent({ kind: 'profile' })
+  }
   const composerEntries = <AssistantComposerEntries assistantId={assistant.id} busy={false} onOpen={() => setIdeasOpen(true)}
-    customize={customizeOffered && user?.id ? { ownerUserId: user.id, name, onOpen: () => open({ tab: 'profile', sub: 'customize' }) } : undefined} />
+    customize={customizeOffered && user?.id ? { ownerUserId: user.id, name, onOpen: openCustomize } : undefined} />
+  // The recording bar's 「查看」: with the App, its 记忆 told `voice-note` (it reads the note through `voice-notes`).
+  const openFromBar = (route: PhoneRoute) => {
+    if (!app || route.tab !== 'memory') return open(route)
+    open({ tab: 'memory' })
+    setIntent({ kind: 'voice-note' })
+  }
   const reportInput = useRef<HTMLInputElement>(null)
   // 「+」里的:获取灵感(胶囊隐藏了也一直在)、录制语音笔记(正在录时置灰,录音条在聊天上面)、
   // 分析健康报告(选一份 PDF / 图片连同那句话排进输入框)。
@@ -274,7 +294,17 @@ function MobileAssistantAppContent({
         /></FilePreviewHost.Provider>
       </div>
       {/* 录音条:在 App 根上而不是聊天那一段里 —— 切到别的格也看得到「还在录」。 */}
-      <PhoneVoiceBar voice={voice} name={name} column={chatColumn} onChat={tab === 'chat'} open={open} />
+      <PhoneVoiceBar voice={voice} name={name} column={chatColumn} onChat={tab === 'chat'} open={openFromBar} />
+      <PhoneConfirmDialog
+        open={removal !== null}
+        title={tVoice('deleteTitle', { name: removal?.title || tVoice('untitled') })}
+        body={tVoice('deleteBody')}
+        confirmLabel={tVoice('delete')}
+        failedText={tVoice('deleteFailed')}
+        testId="mobile-assistant-voice-delete-dialog"
+        onConfirm={async () => removal?.answer(true)}
+        onClose={() => { removal?.answer(false); setRemoval(null) }}
+      />
       <input
         ref={reportInput}
         type="file"
@@ -316,17 +346,27 @@ function MobileAssistantAppContent({
  * assistant (PHONE_ASSISTANT_SCREENS), draw a task's conversation over 任务.
  */
 function useLayerForApp(app: Extract<AssistantLayerEntry, { entry: 'app' }> | null, ownerId: string | null, visible: boolean,
-  section: PhoneSurfaceSection, hostPage: boolean, open: (route: PhoneRoute) => void, assistantId: string) {
+  section: PhoneSurfaceSection, hostPage: boolean, open: (route: PhoneRoute) => void, assistantId: string,
+  confirmRemoval: (question: { kind: 'voice-note'; title: string | null }) => Promise<boolean>,
+  intent: AppSurfaceIntent | null, told: () => void) {
   const extensionId = app?.extensionId ?? null
   useEffect(() => {
     phoneAssistantLayer.report(extensionId && ownerId && visible ? { ownerId, extensionId, tabId: PHONE_ASSISTANT_LAYER_TAB, section, hostPage } : null)
   }, [extensionId, ownerId, visible, section, hostPage])
+  // After the report above (effects run in order): the page hears the intent in the section it is now shown in.
+  useEffect(() => {
+    if (!intent || !extensionId || !ownerId || !visible || hostPage) return
+    phoneAssistantLayer.tell(intent)
+    told()
+  }, [intent, extensionId, ownerId, visible, section, hostPage, told])
   useEffect(() => () => phoneAssistantLayer.report(null), [])
   const openRef = useRef(open)
   openRef.current = open
   const { updateAgentProfile } = useContactsStore()
   const renameRef = useRef(updateAgentProfile)
   renameRef.current = updateAgentProfile
+  const confirmRef = useRef(confirmRemoval)
+  confirmRef.current = confirmRemoval
   useEffect(() => {
     if (!extensionId) return undefined
     return phoneAssistantLayer.provide({
@@ -341,6 +381,7 @@ function useLayerForApp(app: Extract<AssistantLayerEntry, { entry: 'app' }> | nu
         else openRef.current({ tab: screen.section, sub: screen.page })
       },
       openWork: (work) => { phoneWorkChats.open(assistantId, work) },
+      confirmRemoval: (question) => confirmRef.current(question),
     })
   }, [extensionId, assistantId])
 }

@@ -102,6 +102,25 @@ export function phoneBindingPorts(files: ReturnType<typeof createAppFiles>): Pho
       if (!actions) throw failed('The assistant is not open on this phone now: try again in a moment')
       await actions.rename(agentId, name)
     },
+    // The phone's own picker inside the person's gesture, as `appFiles` uploads pick (phoneAppHost.ts). Cancelled: null.
+    pickFiles: () => new Promise((resolve) => {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.multiple = true
+      input.addEventListener('cancel', () => resolve(null), { once: true })
+      input.addEventListener('change', () => {
+        const picked = [...(input.files ?? [])]
+        resolve(picked.length === 0 ? null : picked.map((file) => ({
+          name: file.name, size: file.size, contentType: file.type, read: async () => new Uint8Array(await file.arrayBuffer()),
+        })))
+      }, { once: true })
+      input.click()
+    }),
+    async confirmRemoval(question) {
+      const actions = phoneAssistantLayer.actions()
+      if (!actions) throw failed('The assistant is not open on this phone now: try again in a moment')
+      return actions.confirmRemoval(question)
+    },
     panel: {
       client: lazyPanelClient,
       snapshot: (_ownerId, agentId) => withAssistantPanelReadDeadline(() => lazyPanelClient.snapshot(agentId)),

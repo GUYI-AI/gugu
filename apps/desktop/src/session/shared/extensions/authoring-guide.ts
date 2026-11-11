@@ -1038,7 +1038,9 @@ person signed in on that phone, checked again after every wait.
 - \`{ state: "unsupported" }\` — closed, not an error, the same if asked again: hide that control on a phone. It answers
   \`gugu.bindings.setPanel("main", { collapsed })\`, \`gugu.assistant.open("main", "move")\` (a phone is never its home), \`advanceSetup\`,
   \`gugu.assistant.figure\` (the layer's header draws the face) and every \`gugu.voiceNote.*\` (聊天 records with the phone's own
-  recorder). Composer entries (\`composerActions\`) and \`unreadSource\` draw nothing there.
+  recorder). Composer entries (\`composerActions\`) and \`unreadSource\` draw nothing there: 聊天 keeps the phone's own 「+」.
+- \`onSurface\` also brings \`intent\` there, once: \`{ kind: "voice-note" }\` when the person opens the note the recording bar shows
+  (the layer is on \`memory\`; read it through \`voice-notes\`), \`{ kind: "profile" }\` from the assistant's 自定义 card (on \`profile\`).
 - \`gugu.assistant.open\` opens the phone's own screens: \`setup\` and \`settings\` its settings page, \`look\` its 换形象 page,
   \`model\`, \`devices\`, \`connected-apps\`, \`projects\`, \`capabilities\` theirs under 资料, \`health\` its 健康 page under 记忆,
   \`close\` the one confirmation. \`gugu.assistant.rename\` works as on a computer. \`gugu.bindings.openWork\` draws the task's
@@ -1046,9 +1048,9 @@ person signed in on that phone, checked again after every wait.
 - Health: read on the phone and never handed to you. Draw a 健康 row or card with no figures; on a click,
   \`gugu.assistant.open("main", "health")\`. A computer answers \`unsupported\`: hide it there.
 - Files: \`gugu.bindings.list\` / \`read\` (the chat's own folder, by path), the \`files\` / \`memory\` / \`voice-notes\` resources and
-  \`save\` / \`remove\` work. API 50's \`upload\`, \`createFolder\`, \`rename\`, \`removeFolder\`, \`transcribeVoiceNote\`,
-  \`removeVoiceNote\`, \`exportVoiceNote\` and a draft's \`attach\` answer \`unsupported\` on a phone (a draft with \`attach\` places
-  nothing): hide those controls there.
+  \`save\` / \`remove\` work. API 50's \`upload\` (the phone's picker) and \`removeVoiceNote\` (the phone asks first) work;
+  \`createFolder\`, \`rename\`, \`removeFolder\`, \`transcribeVoiceNote\`, \`exportVoiceNote\` and a draft's \`attach\` answer
+  \`unsupported\` on a phone (a draft with \`attach\` places nothing): hide those controls there.
 - Schedules: the assistant always lives elsewhere seen from a phone; pause, resume and remove go through its panel (\`pending\`
   until its home applies them); adding or retiming one is asked of the assistant (\`invalid\`).
 `;
