@@ -186,7 +186,7 @@ describe('an App opened from the far-left rail', () => {
     mocks.main = { kind: 'today.main', enabled: true, extensionName: 'Today', extensionId: 'today' };
     mocks.manifest = { contributes: { conversationSurface: { binding: 'main', placement: 'side-panel' } } };
     renderToStaticMarkup(<appView.MainPanel />);
-    expect(mocks.frames).toEqual([{ extensionId: 'today', tabKind: 'today.main' }]);
+    expect(mocks.frames).toEqual([{ extensionId: 'today', tabKind: 'today.main', windowHandle: false }]);
     expect(mocks.claims).toEqual([]);
     // Another of its tabs, opened by name, is not the main page: it is drawn alone, as before.
     mocks.frames.length = 0;
@@ -218,7 +218,8 @@ describe('an App opened from the far-left rail', () => {
     const page = renderToStaticMarkup(<appView.MainPanel />);
     expect(page).not.toContain('padding-top');
     expect(page).toContain('data-assistant-page=""');
-    expect(mocks.frames.at(-1)).toEqual({ extensionId: 'gugu-assistant', tabKind: 'gugu-assistant.main' });
+    // Its page starts at the window's top: the column carries the window's handle, not a band over the App's panel (owner 11-12).
+    expect(mocks.frames.at(-1)).toEqual({ extensionId: 'gugu-assistant', tabKind: 'gugu-assistant.main', windowHandle: true });
     // A reported error still has its mark on the band, and nothing else of the App's.
     mocks.said = { title: null, badge: null, error: 'Could not read today.json' };
     expect(renderToStaticMarkup(<appView.TitlebarSlot />)).toMatch(/^<button[^>]*data-testid="app-page-error"[^>]*title="Could not read today.json"[^>]*><\/button>$/);

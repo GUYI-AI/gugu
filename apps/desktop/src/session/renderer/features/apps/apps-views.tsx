@@ -102,9 +102,11 @@ const AppTitlebar = observer(function AppTitlebar() {
   const heading = main ? extensionTabTitle(extensionSurfaceStore.said(null, 'dock'), main.extensionName) : null;
   const openInWindowLabel = translate('tabs.openInWindow');
   const assistantPage = useShownAsAssistant(params.appId, params.tab);
-  // The assistant's page: the band stays the window's handle, with nothing of the App's on it but a reported error's mark.
+  // The assistant's page: nothing of the App's on the band but a reported error's mark. Its page starts at the top, under
+  // this band, so the band is not the window's handle while the page is drawn (a drag band over the App's webview takes
+  // real clicks on its tabs, owner 11-12): the conversation's column carries the handle (AppConversationFrame `windowHandle`).
   if (assistantPage) {
-    return <ShellTitlebar leftSlot={main && error ? <AppErrorMark error={error} onToggle={() => toggleErrorDetails(main.kind)} testId="app-page-error" /> : null} />;
+    return <ShellTitlebar dragRegion={!main?.enabled} leftSlot={main && error ? <AppErrorMark error={error} onToggle={() => toggleErrorDetails(main.kind)} testId="app-page-error" /> : null} />;
   }
   return (
     <ShellTitlebar
@@ -174,7 +176,7 @@ const AppMainPanel = observer(function AppMainPanel() {
           {error && errorDetailsShown.has(main.kind) ? <AppErrorDetails error={error} testId="app-page-error-details" /> : null}
           {/* #1925 Its main page placed beside its bound conversation: the conversation's frame, while the host may draw it. */}
           {/* #1925 (44, 46) Elsewhere its page stands alone; a host page over it (a task, the assistant's own pages) in its place. */}
-          {placedBesideConversation(main) ? <AppConversationFrame extensionId={main.extensionId} tabKind={main.kind} /> : <AppHostLayerFrame extensionId={main.extensionId} tabKind={main.kind} />}
+          {placedBesideConversation(main) ? <AppConversationFrame extensionId={main.extensionId} tabKind={main.kind} windowHandle={assistantPage} /> : <AppHostLayerFrame extensionId={main.extensionId} tabKind={main.kind} />}
         </>
       )}
     </div>

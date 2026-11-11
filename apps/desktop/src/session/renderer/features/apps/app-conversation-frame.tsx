@@ -9,6 +9,7 @@ import { readAppHostLayerBridge } from '@/lib/appHostLayerBridge';
 import type { AssistantShellSnapshot } from '@/lib/assistantShellBridge';
 import { AssistantChatTop, type AssistantChatTopIdentity } from '@renderer/features/assistant/assistant-chat-top';
 import { useAssistantShell } from '@renderer/features/assistant/assistant-shell';
+import { ShellTitlebarDragRegion } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { rpc } from '@renderer/lib/ipc';
 import { log } from '@renderer/utils/logger';
 import { CONVERSATION_SURFACE_PANEL_INSET } from '@shared/extensions/unread-binding';
@@ -67,7 +68,15 @@ function headerIdentity(shell: AssistantShellSnapshot | null, ownerId: string, c
  * expanded, any host page closed), its settings gear (the host's settings page over the panel). A host page over the panel
  * (app-host-layer.tsx) sets the App's page aside until it closes.
  */
-export function AppConversationFrame({ extensionId, tabKind }: { extensionId: string; tabKind: string }) {
+export function AppConversationFrame({ extensionId, tabKind, windowHandle = false }: {
+  extensionId: string;
+  tabKind: string;
+  /**
+   * The page starts at the window's top (the assistant's page, apps-views.tsx): the window's handle is the column's top band,
+   * never a band across the panel — the App's page there is a webview, and no host drag region may lie over it.
+   */
+  windowHandle?: boolean;
+}) {
   const { t } = useTranslation('assistant');
   const bridge = readAppConversationSurfaceBridge();
   const chatId = useSyncExternalStore(
@@ -111,6 +120,8 @@ export function AppConversationFrame({ extensionId, tabKind }: { extensionId: st
     <div className="ta-app" data-panel={collapsed ? 'closed' : 'open'} data-testid="app-conversation-surface">
       <AppHostLayerSources extensionId={extensionId} />
       <div ref={setChatColumn} className="ta-chat-col" data-testid="app-conversation-column">
+        {/* First in the column: the row's buttons after it take their no-drag out of it. */}
+        {windowHandle ? <ShellTitlebarDragRegion /> : null}
         <AssistantChatTop testIdPrefix="app-conversation" identity={identity} chatId={chatId} onSettings={openSettings} panelOpen={!collapsed} onExpand={() => setCollapsed(false)} />
         <div ref={column} className="ta-chat" data-app-conversation-slot={extensionId} />
         <Suspense fallback={null}><AppConversationVoiceBar extensionId={extensionId} chatId={chatId} column={chatColumn} /></Suspense>
