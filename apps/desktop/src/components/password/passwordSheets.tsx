@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { platform } from '@/platform'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { Sheet } from '../ui/Sheet'
@@ -35,7 +36,7 @@ export function RecoveryCodeSheet({ code, fresh, onClose }: { code: string; fres
         别存进邮箱或网盘：有人同时拿到它和你的邮箱，就能读到你所有密码。关掉后不能再查看。
       </div>
       <div className="flex justify-end gap-2">
-        <Button size="sm" onClick={() => { void navigator.clipboard?.writeText(code).then(() => setCopied(true)) }}>{copied ? '已复制' : '复制'}</Button>
+        <Button size="sm" onClick={() => { void platform.writeClipboardText(code).then(() => setCopied(true), () => {}) }}>{copied ? '已复制' : '复制'}</Button>
         <Button size="sm" variant="primary" onClick={onClose}>我已保存</Button>
       </div>
     </div>
