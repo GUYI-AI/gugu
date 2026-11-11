@@ -30,17 +30,12 @@ import { extensionsService } from './extensions-root';
 export const ASSISTANT_APP_ID = ASSISTANT_RULES_PROVIDER_ID;
 
 // ── Trust ────────────────────────────────────────────────────────────────────────────────────────────────────────────
-// The one definition is #1931's (assistant-rules-trust.ts): the App whose product rules the host believes is the App this
-// entry trusts — its id, installed from the market, its code in gugu's market repository as its signed release (the proof
-// verifying again, the files still the signed bytes), not a fork.
-
-/** Why the installed App is not the trusted assistant App — the first condition that fails — or null when it is. */
-export async function assistantAppDistrust(
-  service: AssistantRulesInstallRecord, conditions?: readonly AssistantRulesTrustCondition[],
-): Promise<string | null> {
+// No definition here: #1931's own check (assistant-rules-trust.ts), on the App installed now — the App whose product rules the
+// host believes is the App this entry trusts.
+const notTrusted = (service: AssistantRulesInstallRecord, trust?: readonly AssistantRulesTrustCondition[]): Promise<string | null> => {
   const provider = installedAssistantRulesProvider(service);
-  return provider ? assistantRulesDistrust(provider, conditions) : 'it is not installed';
-}
+  return provider ? assistantRulesDistrust(provider, trust) : Promise.resolve('it is not installed');
+};
 
 // ── The binding ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -66,7 +61,8 @@ const syncSchema = z.strictObject({ ownerId: z.string().uuid(), chatId: z.string
 const codeOf = (error: unknown) => (error as { code?: unknown } | null)?.code;
 
 export interface AssistantAppEntryDeps {
-  distrust?: (service: AssistantRulesInstallRecord) => Promise<string | null>;
+  /** Tests only: #1931's conditions with release keys made in the test (default: the shipped ones). */
+  trust?: readonly AssistantRulesTrustCondition[];
   ownAssistantChat?: (token: string, ownerId: string, chatId: string) => Promise<boolean>;
 }
 
@@ -82,7 +78,7 @@ export async function syncAssistantAppEntry(input: unknown, deps: AssistantAppEn
   const state = (trusted: boolean, outcome: AssistantAppEntryOutcome, changed = false): AssistantAppEntryState =>
     ({ ownerId, extensionId: ASSISTANT_APP_ID, trusted, outcome, changed });
   if (!service.isInstalled(ASSISTANT_APP_ID)) return state(false, 'absent');
-  const distrust = await (deps.distrust ?? assistantAppDistrust)(service);
+  const distrust = await notTrusted(service, deps.trust);
   if (distrust) {
     log.info('assistant App entry: not the trusted App', { reason: distrust });
     return state(false, 'distrusted');
@@ -119,7 +115,7 @@ export async function syncAssistantAppEntry(input: unknown, deps: AssistantAppEn
   }
   // Everything again after the waits: the account, the App and its trust, the person's choice, the same binding.
   await current(ownerId);
-  if (await (deps.distrust ?? assistantAppDistrust)(service)) return state(false, 'distrusted');
+  if (await notTrusted(service, deps.trust)) return state(false, 'distrusted');
   const now = read();
   if (!now) return state(true, service.isEnabled(ASSISTANT_APP_ID) ? 'withdrawn' : 'off');
   if (now.byPerson) return state(true, 'chosen');

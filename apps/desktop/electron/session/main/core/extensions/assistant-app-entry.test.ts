@@ -63,11 +63,10 @@ vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: ({ schem
   };
   return query;
 } }) }));
-const { syncAssistantAppEntry, assistantAppDistrust } = await import('./assistant-app-entry');
-const { assistantRulesTrust } = await import('../../../../assistant-rules-trust');
+const { syncAssistantAppEntry } = await import('./assistant-app-entry');
+const { assistantRulesDistrust, assistantRulesTrust, installedAssistantRulesProvider } = await import('../../../../assistant-rules-trust');
 const KEY = testKey('gugu-assistant-entry-test');
 const TRUST = assistantRulesTrust(testTrust(KEY, [ID]));
-const distrust = (service: Parameters<typeof assistantAppDistrust>[0]) => assistantAppDistrust(service, TRUST);
 
 const roots: string[] = [];
 afterEach(() => { roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })); });
@@ -100,7 +99,7 @@ function host() {
   const bound = (owner = OWNER, id = ID) => service.conversationUnreadBinding(owner, id, 'main')?.chatId ?? null;
   return { service, install, bound };
 }
-const sync = (chatId: string | null, ownerId = OWNER) => syncAssistantAppEntry({ ownerId, chatId }, { distrust });
+const sync = (chatId: string | null, ownerId = OWNER) => syncAssistantAppEntry({ ownerId, chatId }, { trust: TRUST });
 
 beforeEach(() => {
   db.signedIn = OWNER;
@@ -148,7 +147,7 @@ describe('the trusted App: granted and bound by the host, nothing asked', () => 
     h.install();
     h.install(manifest('other-app'));
     const forked = new Proxy(h.service, { get: (target, key) => key === 'variants' ? () => ({ active: 'mine', variants: [] }) : Reflect.get(target, key, target) });
-    expect(await distrust(forked)).toMatch(/fork "mine" is in use/);
+    expect(await assistantRulesDistrust(installedAssistantRulesProvider(forked)!, TRUST)).toMatch(/fork "mine" is in use/);
     db.service = forked;
     expect(await sync(DM)).toMatchObject({ trusted: false, outcome: 'distrusted' });
     db.service = h.service;
