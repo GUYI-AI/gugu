@@ -1542,15 +1542,15 @@ export async function pushBindingSurfaces(extensionId: string, intent?: AppSurfa
 
 /**
  * #1927 (48) The page drawn beside the bound conversation is told `intent` once (`gugu.bindings.onSurface`), its panel
- * expanded first if it was collapsed — the host's run of a `page-intent` composer entry, or of its recording bar's open.
+ * expanded and uncovered first — the host's run of a `page-intent` composer entry, or of its recording bar's open.
  * Only that page, only while it is drawn there for the person (`appBindingSurface` answers `bound`). False: no page heard it.
  */
-export async function deliverSurfaceIntent(extensionId: string, intent: string): Promise<boolean> {
+export async function deliverSurfaceIntent(extensionId: string, intent: AppSurfaceIntent): Promise<boolean> {
   const { tellSurfaceIntent } = await import('./app-unread-bindings');
   if (!extensionsService().isInstalled(extensionId)) return false;
   const pages = [...bindings].filter(([, binding]) => binding.extensionId === extensionId).map(([webContentsId, binding]) => ({
     tabName: binding.tabName, tabId: binding.tabId, person: binding.operator.kind === 'person',
-    expand: () => deliver(binding, { kind: 'conversationPanel', collapsed: false }),
+    uncover: () => deliver(binding, { kind: 'conversationPanel', collapsed: false, uncover: true }),
     tell: (surface: import('@shared/extensions/unread-binding').AppBindingSurface) => {
       const contents = webContents.fromId(webContentsId);
       if (bindings.get(webContentsId) !== binding || !contents || contents.isDestroyed()) return false;

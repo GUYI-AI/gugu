@@ -60,7 +60,6 @@ describe('composer actions in the manifest', () => {
       { ...ideas, run: { kind: 'script', code: 'alert(1)' } },
       { ...ideas, run: { kind: 'page-intent', intent: 'ideas', data: { chat: 'x' } } },
       { ...ideas, run: { kind: 'page-intent', intent: 'open ideas' } },
-      { ...ideas, run: { kind: 'page-intent', intent: 'voice-note' } },
       { ...draft, run: { kind: 'draft', text: { zh: 'x'.repeat(2001), en: 'x' } } },
       { ...draft, run: { kind: 'draft', text: '帮我看看' } },
       { ...draft, run: { kind: 'draft', text: { zh: '帮我看看' } } },

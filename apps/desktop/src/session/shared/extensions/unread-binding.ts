@@ -53,7 +53,7 @@ export const CONVERSATION_SURFACE_PLACEMENTS = ['side-panel'] as const;
 /**
  * #1925 (API 46) The top row the host draws above the conversation column (`contributes.conversationSurface.header`).
  * `assistant`: the built-in assistant page's own row — the assistant's face and name (a click: the App hears
- * `intent: "profile"`), search, its settings gear (the host's settings page over the App's panel), expand. Drawn
+ * `intent: { kind: "profile" }`), search, its settings gear (the host's settings page over the App's panel), expand. Drawn
  * only while the bound conversation is the person's private chat with their own assistant, from the host's own data.
  */
 export const CONVERSATION_SURFACE_HEADERS = ['assistant'] as const;
@@ -69,13 +69,15 @@ export const CONVERSATION_SURFACE_HEADER_API_VERSION = 46;
 export const CONVERSATION_SURFACE_PANEL_INSET: Readonly<{ top: number; right: number }> = Object.freeze({ top: 52, right: 48 });
 
 /**
- * What the person asked of the App's page from the host's own row (46, `contributes.conversationSurface.header`), told once in
- * the `onSurface` event that follows the click and never in an answer: `profile` = the assistant's face and name were clicked,
- * show its profile. The panel is expanded (and any host page over it closed) before it is told. Nothing else comes with it.
+ * What the person asked of the App's page through the host, told once in the `onSurface` event that follows the click and
+ * never in an answer. From the host's own row (46, `contributes.conversationSurface.header`): `profile` = the assistant's
+ * face and name were clicked, show its profile. #1927 (48): `page-intent` = the person clicked the App's composer entry that
+ * declares it (`run: { kind: "page-intent", intent }`, composer-actions.ts); `voice-note` = the person opened the note the
+ * host's recording bar shows. The panel is expanded (and any host page over it closed) before it is told. Nothing else
+ * comes with it. `APP_SURFACE_INTENTS`: the ones the window may report from its own row.
  */
+export type AppSurfaceIntent = { kind: 'profile' } | { kind: 'voice-note' } | { kind: 'page-intent'; intent: string };
 export const APP_SURFACE_INTENTS = ['profile'] as const;
-/** The host row's intents (46), told as the same string `intent` a composer entry's `page-intent` is (48). */
-export type AppSurfaceIntent = (typeof APP_SURFACE_INTENTS)[number];
 
 /**
  * `gugu.bindings.surface(name)` (41, `chat:surface`): whether the bound conversation is drawn beside this page now, whether
@@ -86,15 +88,7 @@ export type AppSurfaceIntent = (typeof APP_SURFACE_INTENTS)[number];
  * shows; `intent`, in an `onSurface` event only (`AppSurfaceIntent`).
  */
 export type AppBindingSurface = { name: string; state: 'unbound' }
-  | {
-    name: string; state: 'bound'; panel: { collapsed: boolean; inset: { top: number; right: number }; hostPage: boolean };
-    /**
-     * Only on the one `onSurface` event that carries it: `"profile"` (#1925, 46) — the person clicked the assistant's face and
-     * name in the host's row; `"voice-note"` (#1927, 48) — they opened the note the host's recording bar shows; else the
-     * `page-intent` of a composer entry they clicked (composer-actions.ts). No data.
-     */
-    intent?: string;
-  };
+  | { name: string; state: 'bound'; panel: { collapsed: boolean; inset: { top: number; right: number }; hostPage: boolean }; intent?: AppSurfaceIntent };
 
 /** A stored target is host data and never part of the App's answer. */
 export const storedUnreadBindingSchema = z.strictObject({

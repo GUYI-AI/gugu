@@ -31,7 +31,7 @@ const state = vi.hoisted(() => ({
   asked: [] as Record<string, unknown>[], answer: null as null | ((request: Record<string, unknown>) => unknown),
   /** Runs while the store is asked (the wait every call has): what changes meanwhile. */
   during: undefined as (() => void) | undefined,
-  told: [] as [string, string][],
+  told: [] as [string, unknown][],
 }));
 const denied = (message: string) => Object.assign(new Error(message), { code: 'denied' });
 vi.mock('@gugu/core', () => ({ userIdFromSupabaseAccessToken: (token: string) => token || null }));
@@ -79,7 +79,7 @@ vi.mock('@gugu/core/cloud/supabase', () => ({
 
 const { composerActionsFor, runComposerAction, voiceNoteOpenedBeside } = await import('./app-composer-actions');
 const column = { ownerId: OWNER, extensionId: 'assistant', authority: STAMP };
-const tellPage = async (extensionId: string, intent: string) => { state.told.push([extensionId, intent]); return true; };
+const tellPage = async (extensionId: string, intent: unknown) => { state.told.push([extensionId, intent]); return true; };
 const run = (actionId: string, extra: Record<string, unknown> = {}) => runComposerAction({ ...column, actionId, ...extra }, tellPage);
 const list = async () => (await composerActionsFor(column)).actions.map((entry) => entry.id);
 
@@ -131,7 +131,7 @@ describe('the host runs the one clicked', () => {
 
   it('a page intent: the page drawn beside is told it, after every check', async () => {
     expect(await run('ideas')).toEqual({ kind: 'page-intent', delivered: true });
-    expect(state.told).toEqual([['assistant', 'ideas']]);
+    expect(state.told).toEqual([['assistant', { kind: 'page-intent', intent: 'ideas' }]]);
     expect(state.asked).toEqual([]);
   });
 
@@ -222,11 +222,11 @@ describe('refusals', () => {
 describe('the host\'s recording bar beside it', () => {
   it('opening the note it shows tells the page `voice-note`, for this account and an App that is on', async () => {
     expect(await voiceNoteOpenedBeside({ ownerId: OWNER, extensionId: 'assistant' }, tellPage)).toBe(true);
-    expect(state.told).toEqual([['assistant', 'voice-note']]);
+    expect(state.told).toEqual([['assistant', { kind: 'voice-note' }]]);
     await expect(voiceNoteOpenedBeside({ ownerId: OTHER, extensionId: 'assistant' }, tellPage)).rejects.toMatchObject({ code: 'denied' });
     state.enabled = false;
     expect(await voiceNoteOpenedBeside({ ownerId: OWNER, extensionId: 'assistant' }, tellPage)).toBe(false);
     await expect(voiceNoteOpenedBeside({ ownerId: OWNER, extensionId: 'assistant', intent: 'settings' }, tellPage)).rejects.toThrow();
-    expect(state.told).toEqual([['assistant', 'voice-note']]);
+    expect(state.told).toEqual([['assistant', { kind: 'voice-note' }]]);
   });
 });

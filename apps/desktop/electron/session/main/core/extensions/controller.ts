@@ -842,7 +842,7 @@ export const extensionsController = createRPCController({
       const { reportConversationSurface } = await import('./app-unread-bindings');
       // 46 `intent`: the person's click in the host's row above the conversation — told once, whatever else changed.
       if (reportConversationSurface(args) || args.intent) {
-        void pushBindingSurfaces(args.extensionId, args.intent)
+        void pushBindingSurfaces(args.extensionId, args.intent ? { kind: args.intent } : undefined)
           .catch((error: unknown) => log.warn('App conversation surface could not be told to its pages:', error));
       }
       return { success: true as const };
