@@ -24,8 +24,6 @@ vi.mock('../../../apps/desktop/src/mobile/assistant/phoneMachine', () => ({ useP
 vi.mock('../../../apps/desktop/src/mobile/assistant/phoneVoiceRuntime', () => ({ usePhoneVoiceNotes: () => ({ disabled: true, start: vi.fn() }) }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneVoiceBar', () => ({ PhoneVoiceBar: () => null }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneIdeas', () => ({ PhoneIdeas: () => null }))
-vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneToday', () => ({ PhoneToday: () => <div>today content</div> }))
-vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneTasks', () => ({ PhoneTasks: () => <div>tasks content</div> }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneMemory', () => ({ PhoneMemory: () => <div>memory content</div> }))
 function ProfileFixture({ go, sub }: { go: (sub: string) => void; sub: string | null }) {
   const [detail, setDetail] = useState(false)
@@ -46,7 +44,7 @@ vi.mock('../../../apps/desktop/src/session/renderer/features/global-search/searc
 import { act } from 'react'
 import { MobileAssistantApp } from '../../../apps/desktop/src/mobile/assistant/MobileAssistantApp'
 import { phoneAssistantLayer } from '../../../apps/desktop/src/components/appSlot/phoneAssistantLayer'
-const appOpens = (page: string) => act(async () => { phoneAssistantLayer.actions()!.open({ section: 'profile', page }) })
+const appOpens = (page: 'devices' | 'library:capabilities') => act(async () => { phoneAssistantLayer.actions()!.open({ section: 'profile', page }) })
 
 let h: ReturnType<typeof createReactHarness>
 const find = (id: string) => h.container.querySelector<HTMLElement>(`[data-testid="${id}"]`)!

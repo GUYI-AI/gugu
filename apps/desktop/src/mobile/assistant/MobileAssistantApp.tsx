@@ -47,9 +47,7 @@ import { useContactsStore } from '@/store/contactsContext'
 import { PhoneIdeas } from './PhoneIdeas'
 import { PhoneMemory } from './PhoneMemory'
 import { PhoneProfile } from './PhoneProfile'
-import { PhoneTasks } from './PhoneTasks'
 import { phoneNextRoute, phoneParentRoute, type PhoneParentRoute } from './phoneRoutes'
-import { PhoneToday } from './PhoneToday'
 import { PhoneVoiceBar } from './PhoneVoiceBar'
 import { usePhoneVoiceNotes } from './phoneVoiceRuntime'
 import { usePhoneMachine, type PhoneMachineState } from './phoneMachine'
@@ -146,8 +144,7 @@ function MobileAssistantAppContent({
     setRoute(next)
   }, [route])
   const tab = route.tab
-  // API 49 The assistant's place (assistant-entry.ts): the product's assistant App fills every section but the conversation;
-  // without it (or with one not trusted) the built-in pages, exactly as before.
+  // API 49 The assistant's place (assistant-entry.ts): the product's assistant App fills every section but the conversation.
   const entry = usePhoneAssistantEntry()
   const app = entry.entry === 'app' ? entry : null
   // #1931 Until the App is in (phoneAssistantAppEnsure.ts puts it in by itself), 动态 / 任务 / 记忆 / 资料 say it is being
@@ -162,7 +159,7 @@ function MobileAssistantAppContent({
   const taskChat = tab === 'tasks' && opened?.request.assistantId === assistant.id
   const sub = route.sub ?? null
   // The App's page shows the section the person is on; on 聊天 it stays where it was, hidden. A screen of the phone's own
-  // (`sub`, opened for it: settings, customize, devices…) is drawn over it, as the built-in drills down.
+  // (`sub`, opened for it: settings, look, devices…) is drawn over it.
   const appSection = useRef<PhoneSurfaceSection>('today')
   if (tab !== 'chat') appSection.current = tab
   const { user: signedIn } = useAuth()
@@ -336,9 +333,8 @@ function MobileAssistantAppContent({
       {app ? <PhoneAssistantWorkLedger ownerId={ownerId} assistantId={assistant.id} /> : null}
       {tab === 'chat' || (app && !hostScreen) ? null : (
         <main id={`assistant-${assistant.id}-${tab}`} role="tabpanel" aria-label={labels[tab]} className="ta-phone-body" ref={pageBody} onScroll={(event) => pageScroll.current.set(pageKey, event.currentTarget.scrollTop)} data-testid={`mobile-assistant-${tab}`} hidden={taskChat}>
+          {/* The App's page fills each section; under it only the phone's own screens it opens (PHONE_ASSISTANT_SCREENS). */}
           {!app && !sub ? <AppPreparing stuck={ensureStuck || appHeldElsewise} /> : <>
-            {tab === 'today' ? <PhoneToday {...page} /> : null}
-            {tab === 'tasks' ? <PhoneTasks {...page} /> : null}
             {tab === 'memory' ? <PhoneMemory {...page} /> : null}
             {tab === 'profile' ? <PhoneProfile {...page} /> : null}
           </>}

@@ -538,7 +538,6 @@ export default {
     "active": "进行中",
     "inactive": "已停用",
     "next": "下次 {{time}}",
-    "nextUnavailable": "暂时读不到下次执行时间",
     "ended": "已结束",
     "enabled": "开启",
     "everyDay": "每天 {{time}}",
@@ -547,7 +546,6 @@ export default {
     "schedule": "执行时间",
     "instructions": "指令",
     "editPrompt": "请帮我调整“{{name}}”的执行时间。",
-    "changeTime": "改时间",
     "delete": "删除",
     "deleteTitle": "删除定时任务",
     "deleteBody": "将删除“{{name}}”。此操作无法撤销。",
@@ -571,8 +569,6 @@ export default {
     "fasterPrompt": "请帮我更快地设置记忆。",
     "all": "全部",
     "voiceNotes": "语音笔记",
-    "voiceNotesEmptyTitle": "还没有语音笔记",
-    "voiceLoadFailed": "语音笔记没读到",
     "items_one": "{{count}} 项",
     "items_other": "{{count}} 项",
     "createdBy": "由{{name}}记下",
@@ -719,7 +715,6 @@ export default {
     "uploading": "正在上传 {{name}}…",
     "uploaded_one": "上传成功：{{count}} 个文件",
     "uploaded_other": "上传成功：{{count}} 个文件",
-    "uploadFailed": "{{name}} 上传失败：{{message}}",
     "uploadedBanner": "已上传 {{files}}",
     "analyze": "让{{name}}去看",
     "analyzePrompt": "我在你的「{{path}}」里放了 {{files}}，请看一下，把对了解我有用的记进记忆。",
@@ -743,12 +738,7 @@ export default {
     "folderDeleted": "文件夹已删除",
     "deleteFailed": "删除失败，请重试。",
     "folderEmpty": "这个文件夹是空的",
-    "empty": "还没有文件。上传你的文件，帮助{{name}}更了解你。",
-    "loadFailed": "资料没读到",
-    "goneTitle": "这一项不在了",
-    "gone": "它可能已经被删掉或改了名字。",
-    "notText": "这个文件不是文本，手机上看不了。",
-    "tooBigToView": "这个文件有 {{size}}，手机上只看 1 MB 以内的。"
+    "empty": "还没有文件。上传你的文件，帮助{{name}}更了解你。"
   },
   "customize": {
     "title": "自定义",
@@ -768,8 +758,7 @@ export default {
     },
     "saved": "更改已保存",
     "saveFailed": "没保存上：{{message}}",
-    "shellMissing": "咕咕主界面还没准备好，稍后再试。",
-    "loadFailed": "没读到性格"
+    "shellMissing": "咕咕主界面还没准备好，稍后再试。"
   },
   "diary": {
     "title": "日记",

@@ -9,8 +9,7 @@ import { forgetWorkTasks, rememberWorkTasks } from './phoneWorkChats'
 const noop = () => () => undefined
 
 /**
- * API 46 on a phone: the assistant's work list read the layer's own 任务 way (`useAssistantWorkTasks`, as PhoneTasks reads
- * it), each row as the desktop hands it to Apps (`pushedRowsOf`, the ids kept on this page), and the task whose conversation
+ * API 46 on a phone: the assistant's work list read the way the desktop's 任务 reads it (`useAssistantWorkTasks`), each row as the desktop hands it to Apps (`pushedRowsOf`, the ids kept on this page), and the task whose conversation
  * the layer draws now — published for the binding host (phoneAppBindings `work`), which gives the App opaque handles only.
  */
 export function PhoneAssistantWorkLedger({ ownerId, assistantId }: { ownerId: string | null; assistantId: string }) {

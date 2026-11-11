@@ -1,9 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { PhoneMemory } from '../../../apps/desktop/src/mobile/assistant/PhoneMemory'
-import { PhoneFiles } from '../../../apps/desktop/src/mobile/assistant/PhoneFiles'
-import { PhoneVoiceNotes } from '../../../apps/desktop/src/mobile/assistant/PhoneVoiceNotes'
-import { PhoneRoutineDetail } from '../../../apps/desktop/src/mobile/assistant/PhoneRoutineDetail'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../support/testHarness'
 import { expectExit, frame, holdDialogExit } from '../../support/dialogExit'
 
@@ -36,8 +33,6 @@ beforeEach(() => {
   h = createReactHarness(); exit = holdDialogExit(); vi.clearAllMocks()
   m.data = {
     memory: { notes: [{ file: 'note.md', title: 'Memory', body: 'Remember', kind: 'user', path: '/memory/note.md' }] },
-    files: { kind: 'file', entry: { path: '/resources/file.txt', name: 'file.txt', size: 12 }, content: { kind: 'text', text: 'File contents' } },
-    'voice-note': { item: { id: 'voice-1', title: 'Voice', meta: null, view: { kind: 'queued' } }, summary: '', lines: [] },
   }
 })
 afterEach(() => { h.cleanup(); delete (HTMLElement.prototype as Partial<HTMLElement>).getAnimations })
@@ -45,9 +40,6 @@ afterEach(() => { h.cleanup(); delete (HTMLElement.prototype as Partial<HTMLElem
 const machine = { deviceId: 'device-1', projectId: 'project-1', workspaceId: 'workspace-1', home: '/home/test', paths: { memoryDir: '/memory' } }
 const cases = [
   { label: 'memory', component: PhoneMemory, props: { sub: 'note:note.md' }, open: 'assistant-memory-delete', dialog: 'assistant-memory-delete-dialog' },
-  { label: 'file', component: PhoneFiles, props: { sub: 'files:file.txt', trail: ['file.txt'] }, open: 'assistant-file-delete', dialog: 'assistant-file-delete-dialog' },
-  { label: 'voice note', component: PhoneVoiceNotes, props: { sub: 'voice:voice-1' }, open: 'assistant-voice-delete', dialog: 'assistant-voice-delete-dialog' },
-  { label: 'routine', component: PhoneRoutineDetail, props: { id: 'routine-1' }, open: 'assistant-routine-delete', dialog: 'assistant-routine-delete-dialog' },
 ]
 for (const c of cases) it(`${c.label}: the actual page stays mounted until confirmation exit, then navigates`, async () => {
   const go = vi.fn()

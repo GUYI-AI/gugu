@@ -109,10 +109,6 @@
 
 /* ── 各格里手机才有的几样(间距只用 4/8/16/24) ── */
 
-.ta-phone-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.ta-phone-actions .ta-seg-wide { flex: 1 1 200px; min-width: 0; }
-.ta-phone-hero { padding: 8px 0 16px; }
-
 .ta-phone .ta-page { gap: 24px; }
 .ta-phone .ta-page-head { align-items: flex-start; flex-wrap: wrap; gap: 8px; padding-inline: 0; }
 .ta-phone .ta-page-head > button { max-width: 100%; }
@@ -158,7 +154,6 @@
 .ta-phone .ta-day-more,
 .ta-phone .ta-day-btn { min-height: var(--control-h-touch); }
 .ta-phone .ta-day-divider::after { content: none; }
-.ta-phone-empty-body { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 16px; }
 .ta-phone .ta-prose,
 .ta-phone .ta-intro-body { font-size: var(--font-prose); line-height: var(--lh-prose); }
 

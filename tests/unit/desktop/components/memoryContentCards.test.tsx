@@ -22,8 +22,6 @@ vi.mock('../../../../apps/desktop/src/components/assistant/AssistantLibraryVolum
 vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/voice-notes/voice-notes-data', () => ({ useVoiceNotes: () => ({ data: [] }) }))
 vi.mock('../../../../apps/desktop/src/mobile/assistant/usePhoneRead', () => ({ machineKey: () => 'memory', usePhoneRead: (key: string) => ({ state: 'ok', reload: vi.fn(), data: key?.startsWith('memory-counts') ? { voice: 0, files: 0 } : { notes: reads.notes } }) }))
 vi.mock('../../../../apps/desktop/src/mobile/assistant/PhoneMachineView', () => ({ PhoneMachineView: ({ children }: { children: () => ReactNode }) => children(), ReadView: ({ read, children }: { read: { data: unknown }; children: (data: unknown) => ReactNode }) => children(read.data) }))
-vi.mock('../../../../apps/desktop/src/mobile/assistant/PhoneFiles', () => ({ PhoneFiles: () => null }))
-vi.mock('../../../../apps/desktop/src/mobile/assistant/PhoneVoiceNotes', () => ({ PhoneVoiceNotes: () => null }))
 vi.mock('../../../../apps/desktop/src/mobile/assistant/PhoneHealth', () => ({ PhoneHealth: () => null }))
 import { AssistantMemoryPage } from '../../../../apps/desktop/src/session/renderer/features/assistant/assistant-memory-page'
 import { PhoneMemory } from '../../../../apps/desktop/src/mobile/assistant/PhoneMemory'
@@ -41,7 +39,8 @@ for (const phone of [false, true]) describe(phone ? 'phone memory content cards'
     if (phone) await renderWithAppProviders(harness, <PhoneMemory {...{ ...common, sub: sub ?? null, machine: { state: 'ready', machine } } as unknown as PhonePageProps} />)
     else await renderWithAppProviders(harness, <AssistantMemoryPage context={{ ...common, route: { tab: 'memory', sub }, machine, machineLoading: false } as unknown as AssistantContext} />)
   }
-  it('shows actual body facts in user and sibling cards and keeps their navigation', async () => {
+  // The phone's 记忆 cards are the assistant App's page; the phone keeps only the note its 健康 page opens.
+  if (!phone) it('shows actual body facts in user and sibling cards and keeps their navigation', async () => {
     await render()
     expect([...harness.container.querySelectorAll('h2')].map(heading => heading.textContent)).toEqual(['长期了解与约定'])
     for (const id of ['assistant-memory-health', 'assistant-memory-voice', 'assistant-library-workspace']) {
@@ -55,7 +54,7 @@ for (const phone of [false, true]) describe(phone ? 'phone memory content cards'
     await clickElement(harness.container.querySelector('[data-testid="assistant-memory-project.md"]')!)
     expect(reads.go).toHaveBeenLastCalledWith(phone ? 'note:project.md' : { tab: 'memory', sub: 'note:project.md' })
   })
-  it('falls back to the modification date for a heading-only body', async () => {
+  if (!phone) it('falls back to the modification date for a heading-only body', async () => {
     reads.notes = [note('owner-profile.md', '# No facts\n\n## Heading only', 'user')]
     await render()
     const excerpt = harness.container.querySelector('[data-testid="assistant-memory-about"] .ta-row-sub')?.textContent
