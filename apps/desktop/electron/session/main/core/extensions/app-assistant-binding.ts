@@ -267,22 +267,33 @@ export async function appAssistantRename(extensionId: string, input: unknown, ac
 export async function appAssistantFigure(extensionId: string, input: unknown, act: (action: ExtensionHostAction) => Promise<unknown>): Promise<void> {
   const { name, figure } = argsOf(z.strictObject({ name: z.string(), figure: assistantFigureSchema.nullable() }), input,
     'gugu.assistant.figure takes the binding\'s name and { x, y, size } (CSS pixels of the page), or null');
+  // The last call wins. A place is checked (reads) before it is drawn, null is not: a page that asks for a place and then
+  // takes it away (its face unmounted: another tab, the intro giving way to the panel) must not have the place drawn after
+  // the null, with the figure left floating over whatever is there now (owner 11-12「怎么这里多了个鸟?」).
+  const call = (figureCalls.get(extensionId) ?? 0) + 1;
+  figureCalls.set(extensionId, call);
+  const latest = () => figureCalls.get(extensionId) === call;
   if (!figure) {
     await act({ kind: 'assistantFigure', figure: null, ownerId: null, who: 'assistant' });
     return;
   }
   const none = await noAssistantShown(extensionId, name, 'assistant-status');
+  if (!latest()) return;
   if (none) {
     await act({ kind: 'assistantFigure', figure, ownerId: none.ownerId, who: 'draft' });
     return;
   }
   const bound = await boundAssistant(extensionId, name, 'assistant-status');
+  if (!latest()) return;
   if (!bound) throw coded('not-found', `No conversation is chosen for "${name}" yet: the person chooses it in the App's permissions`);
   // As `status` would answer now: the window may not have shown it yet, or no longer shows one.
   const status = statusFor(bound.ownerId);
   if (!status) throw coded('failed', 'This window has not shown the assistant yet: try again in a moment');
   await act({ kind: 'assistantFigure', figure, ownerId: bound.ownerId, who: status.assistant === 'found' ? 'assistant' : 'draft' });
 }
+
+/** Each App's figure calls, counted: a place still being checked when a later call came is dropped. */
+const figureCalls = new Map<string, number>();
 
 /** The Apps whose last word was this account's snapshot without an assistant: each hears `unbound` once when one appears. */
 const heardWithout = new Set<string>();

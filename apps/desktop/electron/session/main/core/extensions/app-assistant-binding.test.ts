@@ -743,6 +743,37 @@ describe('gugu.assistant.figure: the assistant moving, drawn by the host over th
     expect(state.reads).toBe(0);
   });
 
+  // Owner 11-12「怎么这里多了个鸟?」: the intro asked for its face's place as setup finished, then gave way to the panel and took
+  // it away. The place was still being checked when the null (checked by nothing) was drawn, and was drawn after it: the bird
+  // floated over the 任务 tab for good. The last call wins: a place still being checked when a later call comes is dropped.
+  it('a place still being checked when the page takes the figure away is dropped: the null is the last word', async () => {
+    await show();
+    const acts: ExtensionHostAction[] = [];
+    const act = vi.fn(async (action: ExtensionHostAction) => { acts.push(action); return undefined; });
+    let away: Promise<void> | null = null;
+    state.afterRead = () => {
+      state.afterRead = undefined;
+      away = figure(null, act);
+    };
+    await figure(WHERE, act);
+    await away;
+    expect(acts).toEqual([{ kind: 'assistantFigure', figure: null, ownerId: null, who: 'assistant' }]);
+    // A place asked after the null is drawn as before; and of two places, the later one.
+    acts.length = 0;
+    await figure(WHERE, act);
+    expect(acts).toEqual([{ kind: 'assistantFigure', figure: WHERE, ownerId: OWNER, who: 'assistant' }]);
+    acts.length = 0;
+    const MOVED = { x: 200, y: 300, size: 96 };
+    let moved: Promise<void> | null = null;
+    state.afterRead = () => {
+      state.afterRead = undefined;
+      moved = figure(MOVED, act);
+    };
+    await figure(WHERE, act);
+    await moved;
+    expect(acts).toEqual([{ kind: 'assistantFigure', figure: MOVED, ownerId: OWNER, who: 'assistant' }]);
+  });
+
   it('refused unbound, not the assistant chat, without assistant:status, disabled, or changed mid-request; failed before the window showed it', async () => {
     const act = vi.fn(async () => undefined);
     await expect(figure(WHERE, act)).rejects.toMatchObject({ code: 'failed' });
