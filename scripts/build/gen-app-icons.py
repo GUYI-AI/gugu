@@ -9,11 +9,13 @@
 
 图形是「网点鸽」(owner 2026-11-11 定):墨底上一只向右飞的鸽子,头、身子、近翅是实心白,
 远翅和尾巴散成 16 颗点(翅膀 6、尾巴 10,点径 55/43/30 三档,往翼尖、尾尖渐小),和登录页鸟群同一种网点画法。
-所有尺寸都用同一张画面(owner 2026-11-11:一只鸟只有一个画法,❌ 为小尺寸另画一版):
+只有这一只鸟、这一个画法(owner 2026-11-11:❌ 为小尺寸另造一个形状):
   · build-resources/icon-sources/app-icon-source-1024.png   由同目录矢量母版渲染:
     `rsvg-convert -w 1024 -h 1024 app-icon-dots.svg -o app-icon-source-1024.png`。要改图形就改母版再重渲,❌ 直接改 PNG。
   · tray-mark-source.png 是同一张画面换成白底黑形(托盘 / 菜单栏 / 安卓状态栏与主题图标用)。
-小尺寸(16–32 像素)里最小的几颗点会缩成灰点,这是这个画法本身的样子,不另做替身。
+  · build-resources/icon-sources/small/app-{16,20,24,32,40,48,64}.png   64 像素及以下逐档画好的同一只鸟:
+    从 1024 缩下来点会糊成灰,所以这几档按像素格重排了点(格距取整像素、放不下就按同一个排法减颗数),
+    由 scripts/build/draw-small-app-icons.py 画出。下面凡是边长正好有这张图的产物都直接用它,没有的才从 1024 缩。
 
 产物:
 
@@ -33,7 +35,7 @@
   · Linux   public/assets/app/gugu-icon-512.png —— AppImage 主图;同一张也是设置页/关于页
            显示的应用图标与默认头像(有 supabase 迁移与 e2e 钉着路径,❌ 别改文件名)。
   · 界面   public/assets/app/gugu-icon-small.png —— 同一张画面 128 像素,给界面里显示边长 ≤ 32 的地方
-           (标签页图标、订阅行、出错页)用。
+           (标签页图标、订阅行、出错页)用。这张是浏览器按显示尺寸现缩的,用不上逐档画好的那几张。
   · Android apps/mobile/android/app/src/main/res/ —— 自适应图标三层 × 五档密度:
            ic_launcher_foreground(彩色)、**ic_launcher_monochrome(Android 13+ 主题图标,
            系统只取 alpha 自己着色)**、以及 Android 7 及更早认的 ic_launcher / _round 方圆图。
@@ -49,6 +51,7 @@ from PIL import Image, ImageDraw, ImageOps
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / 'build-resources' / 'icon-sources' / 'app-icon-source-1024.png'
+SMALL = ROOT / 'build-resources' / 'icon-sources' / 'small'
 MONO_SRC = ROOT / 'build-resources' / 'icon-sources' / 'tray-mark-source.png'
 PACKAGING = ROOT / 'build-resources'
 PUBLIC = ROOT / 'public'
@@ -99,11 +102,18 @@ _art: dict[str, Image.Image] = {}
 
 
 def art(size: int) -> Image.Image:
-    return _art['full']
+    """size 像素的满幅画面:有逐档画好的就用那张,没有才从 1024 缩。"""
+    drawn = SMALL / f'app-{size}.png'
+    if drawn.exists():
+        im = Image.open(drawn).convert('RGB')
+        if im.size != (size, size):
+            raise SystemExit(f'{drawn} 应该是 {size}×{size},实际 {im.size}')
+        return im
+    return _art['full'].resize((size, size), Image.LANCZOS)
 
 
 def rounded(size: int) -> Image.Image:
-    im = art(size).resize((size, size), Image.LANCZOS).convert('RGBA')
+    im = art(size).convert('RGBA')
     im.putalpha(squircle(size))
     return im
 
@@ -211,7 +221,7 @@ def build() -> None:
         emit_image(d / 'ic_launcher_foreground.png', adaptive_layer(fg, canvas, ADAPTIVE_FG_DP))
         emit_image(d / 'ic_launcher_monochrome.png', adaptive_layer(mono, canvas, ADAPTIVE_SAFE_DP))
         px = int(round(LEGACY_DP * mult))
-        base = art(px).resize((px, px), Image.LANCZOS).convert('RGBA')
+        base = art(px).convert('RGBA')
         sq = base.copy(); sq.putalpha(squircle(px))
         emit_image(d / 'ic_launcher.png', sq)
         ci = base.copy(); ci.putalpha(circle(px))
