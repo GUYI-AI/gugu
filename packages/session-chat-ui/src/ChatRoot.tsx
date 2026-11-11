@@ -125,7 +125,7 @@ import {
 } from './chat-root.css';
 import './chat-fonts.css';
 import { vars } from './styles/theme.css';
-import { planSpinner } from './styles/effects.css';
+import { ShimmerText } from './components/primitives/ShimmerText';
 import { syncContentColumnGeometry } from './lib/content-column-geometry';
 
 // Centered content column. The scroll container stays full width (so the
@@ -692,20 +692,22 @@ export function ChatRoot(props: ChatRootProps) {
   }));
   // ── Older page in flight ───────────────────────────────────────────────────
   // The host's page request, as returned by onReachStart. A request that settles within OLDER_PAGE_LOADING_DELAY_MS
-  // (a local read) shows nothing: a ring that flashes for a frame or two is noise.
-  const [olderPageLoadingShown, setOlderPageLoadingShown] = createSignal(false);
+  // (a local read) shows nothing: a line that flashes for a frame or two is noise.
+  // Holds the model the request was made for: a view that swaps to another conversation does not show the line there.
+  const [olderPageLoadingFor, setOlderPageLoadingFor] = createSignal<ChatState | null>(null);
   let olderPageRequest: Promise<unknown> | null = null;
   let olderPageTimer: ReturnType<typeof setTimeout> | undefined;
   const showOlderPageLoading = (request: void | Promise<unknown>) => {
     if (!(request instanceof Promise)) return;
+    const model = state();
     olderPageRequest = request;
     clearTimeout(olderPageTimer);
-    olderPageTimer = setTimeout(() => { if (olderPageRequest === request) setOlderPageLoadingShown(true); }, OLDER_PAGE_LOADING_DELAY_MS);
+    olderPageTimer = setTimeout(() => { if (olderPageRequest === request) setOlderPageLoadingFor(model); }, OLDER_PAGE_LOADING_DELAY_MS);
     const settle = () => {
       if (olderPageRequest !== request) return;
       olderPageRequest = null;
       clearTimeout(olderPageTimer);
-      setOlderPageLoadingShown(false);
+      setOlderPageLoadingFor(null);
     };
     request.then(settle, settle);
   };
@@ -2387,21 +2389,10 @@ export function ChatRoot(props: ChatRootProps) {
                     data-chat-canvas
                     class={`${canvas} ${contentClass()}`}
                   >
-                    <Show when={olderPageLoadingShown()}>
-                      <svg
-                        data-older-page-loading
-                        role="status"
-                        aria-label={props.context.translate('transcript.loadingOlder')}
-                        class={olderPageLoading}
-                        style={{ top: `${Math.max(0, padTop() - 22)}px` }}
-                        viewBox="0 0 14 14"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.5"
-                      >
-                        <circle cx="7" cy="7" r="6" opacity="0.3" />
-                        <circle class={planSpinner} cx="7" cy="7" r="6" stroke-linecap="round" stroke-dasharray="9.42 28.28" />
-                      </svg>
+                    <Show when={olderPageLoadingFor() === state()}>
+                      <div data-older-page-loading role="status" class={olderPageLoading} style={{ top: `${Math.max(0, padTop() - 24)}px` }}>
+                        <ShimmerText active>{props.context.translate('transcript.loadingOlder')}</ShimmerText>
+                      </div>
                     </Show>
                     <For each={visible()}>
                       {(unitIndex) => {

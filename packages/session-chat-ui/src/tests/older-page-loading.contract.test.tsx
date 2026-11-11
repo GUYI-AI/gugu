@@ -6,7 +6,7 @@ import { createChatState } from '../state/chat-state';
 import type { TranscriptTurn } from '../model';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
 
-// While the host's older-page request is running, the list shows a small ring above its first row. It takes no
+// While the host's older-page request is running, the list shows one quiet line above its first row. It takes no
 // layout space, and a request that settles at once shows nothing.
 const cleanups: Array<() => void> = [];
 afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()); });
@@ -43,26 +43,27 @@ async function mount(request: () => Promise<TranscriptTurn[]>) {
     }
     expect(asked).toBe(1);
   };
-  const ring = () => host.querySelector<SVGElement>('[data-older-page-loading]');
+  const ring = () => host.querySelector<HTMLElement>('[data-older-page-loading]');
   const firstRowTop = () => host.querySelector<HTMLElement>('[data-item-id="message-1020"]')!.getBoundingClientRect().top;
   return { scroller, toTop, ring, firstRowTop, turns: () => state.transcript.history.get().length };
 }
 
-it('shows a ring above the first row while an older page is on its way, without moving any row', async () => {
+it('shows a loading line above the first row while an older page is on its way, without moving any row', async () => {
   const page = Promise.withResolvers<TranscriptTurn[]>();
   const view = await mount(() => page.promise);
   await view.toTop();
   const before = view.firstRowTop();
-  await until('the ring is shown', () => view.ring() !== null);
+  await until('the loading line is shown', () => view.ring() !== null);
   const ring = view.ring()!.getBoundingClientRect(), box = view.scroller.getBoundingClientRect();
   // In the padding above the first row, inside the viewport, centred on the content column.
   expect(ring.top).toBeGreaterThanOrEqual(box.top);
   expect(ring.bottom).toBeLessThanOrEqual(before);
   expect(view.ring()!.getAttribute('role')).toBe('status');
+  expect(view.ring()!.textContent).toBe('Loading…');
   expect(view.firstRowTop()).toBe(before);
   page.resolve(range(1000, 1020));
   await until('the page is in history', () => view.turns() === 40);
-  await until('the ring is gone', () => view.ring() === null);
+  await until('the loading line is gone', () => view.ring() === null);
 });
 
 it('shows nothing for a request that settles at once', async () => {
@@ -74,11 +75,11 @@ it('shows nothing for a request that settles at once', async () => {
   expect(view.ring()).toBeNull();
 });
 
-it('hides the ring when the request fails', async () => {
+it('hides the loading line when the request fails', async () => {
   const page = Promise.withResolvers<TranscriptTurn[]>();
   const view = await mount(() => page.promise);
   await view.toTop();
-  await until('the ring is shown', () => view.ring() !== null);
+  await until('the loading line is shown', () => view.ring() !== null);
   page.reject(new Error('host away'));
-  await until('the ring is gone', () => view.ring() === null);
+  await until('the loading line is gone', () => view.ring() === null);
 });

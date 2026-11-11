@@ -81,16 +81,21 @@ export const canvas = style({
 });
 
 /**
- * An older page is on its way: a small ring in the padding above the first row. It takes no layout space, so showing
- * and hiding it never moves a row.
+ * An older page is on its way: one quiet line in the padding above the first row, set like the day line under it and
+ * lit by the same sweep a running step has. It takes no layout space, so showing and hiding it never moves a row.
  */
 export const olderPageLoading = style({
   position: 'absolute',
-  left: '50%',
-  width: 14,
-  height: 14,
-  marginLeft: -7,
-  color: vars.fgPassive,
+  left: 0,
+  right: 0,
+  textAlign: 'center',
+  fontFamily: vars.fontSans,
+  fontSize: '12px',
+  lineHeight: '18px',
+  letterSpacing: '0.02em',
+  color: vars.fgMuted,
+  whiteSpace: 'nowrap',
+  userSelect: 'none',
   pointerEvents: 'none',
 });
 
