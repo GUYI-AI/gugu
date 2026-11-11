@@ -6,6 +6,7 @@ import { APP_PLATFORMS } from './app-platforms';
 import { claimTakes } from './file-openers';
 import { INSTRUCTIONS_MAX_CHARS, SUBTITLE_MAX_CHARS } from './app-listing';
 import { BINDING_ACTION_CAPABILITY, BINDING_ACTIONS_API_VERSION, BINDING_NAME, CONVERSATION_BINDING_ACTIONS } from './unread-binding';
+import { EXTENSION_ASSISTANT_RULES_API_VERSION } from './bridge-protocol';
 
 /**
  * Extension (App) manifest — the `manifest.json` at the root of an
@@ -641,6 +642,12 @@ export const extensionManifestSchema = z
        * agents, versions and uninstalling stay the host's. Fields the host can draw belong in `settings`.
        */
       settingsTab: z.string().regex(TAB_NAME_PATTERN).optional(),
+      /**
+       * API 45 (#1931): bundle-relative folder of the personal assistant's product rules — `rules.json` and one `<key>.md`
+       * per text (@gugu/core/shared/assistantRulesFormat). Text and data the host reads at its own read points; nothing in
+       * it runs. Honoured only for the App the host trusts as the product's rules provider: any other App's folder is never read.
+       */
+      assistantRules: bundlePathSchema.optional(),
     }),
   })
   .superRefine((manifest, ctx) => {
@@ -715,6 +722,9 @@ export const extensionManifestSchema = z
     }
     const prompts = manifest.contributes.prompts ?? [];
     if (prompts.length > 0 && manifest.apiVersion < 34) ctx.addIssue({ code: 'custom', path: ['contributes', 'prompts'], message: 'prompts require apiVersion 34' });
+    if (manifest.contributes.assistantRules !== undefined && manifest.apiVersion < EXTENSION_ASSISTANT_RULES_API_VERSION) {
+      ctx.addIssue({ code: 'custom', path: ['contributes', 'assistantRules'], message: `assistantRules requires apiVersion ${EXTENSION_ASSISTANT_RULES_API_VERSION}` });
+    }
     if (new Set(prompts.map((prompt) => prompt.name)).size !== prompts.length) ctx.addIssue({ code: 'custom', path: ['contributes', 'prompts'], message: 'duplicate prompt name' });
     if ((manifest.permissions?.capabilities ?? []).includes('prompts') && manifest.apiVersion < 34) ctx.addIssue({ code: 'custom', path: ['permissions', 'capabilities'], message: '"prompts" requires apiVersion 34' });
     if (manifest.contributes.tabs.filter((tab) => tab.chatFile !== undefined).length > 1) {

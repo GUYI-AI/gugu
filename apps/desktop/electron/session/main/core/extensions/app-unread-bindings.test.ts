@@ -133,7 +133,7 @@ function boundFixture(value = boundManifest()) {
 
 describe('the bound conversation\'s files and draft (#1927, API 40)', () => {
   it('needs API 40 and each action declared with its own capability; an unread-only App parses as before', () => {
-    expect(EXTENSION_API_VERSION).toBe(40);
+    expect(EXTENSION_API_VERSION).toBeGreaterThanOrEqual(40);
     expect(() => parseExtensionManifest(boundManifest())).not.toThrow();
     expect(() => parseExtensionManifest(boundManifest(['unread', 'files']))).not.toThrow();
     expect(() => parseExtensionManifest(boundManifest(['unread', 'draft']))).not.toThrow();

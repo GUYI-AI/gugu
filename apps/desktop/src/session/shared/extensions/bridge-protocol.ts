@@ -102,7 +102,11 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // 40 (#1927): the one conversation binding may also declare `files` (`chat:files`: `gugu.bindings.list` / `read`, that
 // conversation's chat-folder files, read only) and `draft` (`chat:draft`: `dispatch(text, { draft: true, to: { binding } })`).
 // Still no chat id, title, member or message reaches the App.
-export const EXTENSION_API_VERSION = 40;
+// 45 (#1931): `contributes.assistantRules`, the personal assistant's product rules as text/data files the host reads at its
+// own read points (assistantRulesFormat.ts); never run, and honoured only for the App the host trusts as their provider.
+// 41–44 are allocated to parallel changes.
+export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
+export const EXTENSION_API_VERSION = 45;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
