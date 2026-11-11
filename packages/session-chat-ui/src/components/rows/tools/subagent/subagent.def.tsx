@@ -52,8 +52,9 @@ export function subagentFromItem(
   const task = item.inputSummary || item.title || undefined;
   // While it runs, its text is in the registry and reaches here through the roster; the card holds it once settled.
   const live = item.agentStatus === 'running' ? ctx.liveSubagent?.(item.toolCallId) : undefined;
-  const reasoning = live?.reasoning ?? item.reasoningText;
-  const result = live?.output ?? item.outputText ?? item.rawOutput;
+  // A subagent that was started again begins with no text; what the card still holds is from its previous run.
+  const reasoning = live ? live.reasoning : item.reasoningText;
+  const result = live ? live.output : item.outputText ?? item.rawOutput;
   return {
     kind: 'subagent',
     id: item.id,
