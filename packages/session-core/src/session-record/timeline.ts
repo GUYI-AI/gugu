@@ -1002,6 +1002,10 @@ class RecordTimeline implements SessionTimeline {
           if (step.kind === 'tool-group') continue;
           const was = prior?.steps.get(step.toolCallId);
           steps.set(step.toolCallId, was && was.step === step ? was : { step, seq: nextSeq });
+          // A subagent's call is an action of this session, as it was when it sat inside the launching turn.
+          if (!was && (step.at ?? this.lastAt) !== null && (step.at ?? this.lastAt) !== undefined) {
+            this.recordRecentActions([step], (step.at ?? this.lastAt)!);
+          }
         }
       }
       const textSeq = prior && prior.output === agent.output && prior.reasoning === agent.reasoning ? prior.textSeq : nextSeq;

@@ -59,7 +59,8 @@ export function collectBackgroundCommands(sessionId: string | undefined, fallbac
     transcript.activeTurnSnapshot,
     fallbackName,
     // 库里读出来的旧轮可能是上一个进程起的命令,随进程没了、永远等不来终态 —— 只留运行时说还在跑的(#6582)。
-    store.runningBackgroundTaskIds
+    store.runningBackgroundTaskIds,
+    store.liveSubagents.flatMap((agent) => agent.steps ?? [])
     // 「我不看它了」与子智能体共用同一张收起表(键里带条目 id)。
   ).filter((entry) => !isSubagentDismissed(sessionId, entry.id));
 }

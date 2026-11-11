@@ -209,7 +209,7 @@ export class AcpChatStore {
    * 库里读出来的旧轮可能是上一个进程派的,随进程没了、永远等不来完成通知 —— 后台列表只留这里有的(与后台命令同一条,#6582)。
    */
   private _runtimeLiveSubagentIds: readonly string[] = [];
-  /** Running subagents as the runtime's registry has them, each with the calls it has made so far (#2500). */
+  /** Subagents as the runtime's registry has them, each with the calls it has made so far (#2500). */
   private _runtimeLiveSubagents: readonly AgentState[] = [];
 
   private _view: ChatView | null = null;
@@ -669,7 +669,8 @@ export class AcpChatStore {
   }
 
   private _syncLiveSubagentIds(agents: readonly AgentState[]): void {
-    const running = agents.filter((agent) => agent.status === 'running');
+    // Settled ones stay: a command a subagent started in the background can outlive it, and hangs on its step.
+    const running = agents.filter((agent) => agent.status === 'running' || (agent.steps?.length ?? 0) > 0);
     const shown = this._runtimeLiveSubagents;
     if (running.length !== shown.length || running.some((agent, index) => agent !== shown[index])) this._runtimeLiveSubagents = running;
     const next = agents

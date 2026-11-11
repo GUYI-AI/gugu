@@ -41,7 +41,8 @@ export function backgroundTaskRosters(
   const committed = active ? turns.slice(0, -1) : turns
   const shown = <T extends { id: string }>(rows: T[]) => rows.filter((row) => !isSubagentDismissed(sessionId, row.id))
   return {
-    commands: shown(collectBackgroundCommandRoster(committed, active, translateSessionMessage('transcript.backgroundCommand'), runningCommandTaskIds)),
+    commands: shown(collectBackgroundCommandRoster(committed, active, translateSessionMessage('transcript.backgroundCommand'), runningCommandTaskIds,
+      subagentSteps.flatMap((entry) => entry.steps ?? []))),
     subagents: shown(collectSubagentRoster(committed, active, translateSessionMessage('transcript.subagent'), Date.now(), subagentSteps)),
   }
 }
