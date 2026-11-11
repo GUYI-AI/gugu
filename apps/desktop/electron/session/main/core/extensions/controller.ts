@@ -927,6 +927,23 @@ export const extensionsController = createRPCController({
     }
   },
 
+  /**
+   * Entry switch: the window's assistant changed (or the assistant App did): the trusted assistant App's binding is brought to
+   * the account's own assistant chat by the host (assistant-app-entry.ts). Answers whether that App is the trusted one and
+   * whether #1931's ensure step is putting it in; a binding written is told as a choice in the App's permissions is.
+   */
+  syncAssistantAppEntry: async (args: { ownerId: string; chatId: string | null }) => {
+    try {
+      const { syncAssistantAppEntry } = await import('./assistant-app-entry');
+      const state = await syncAssistantAppEntry(args);
+      if (state.changed) {
+        events.emit(extensionsInventoryChangedChannel, { extensionId: state.extensionId });
+        void notifyInstalledAppsChanged();
+      }
+      return { success: true as const, data: state };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
   /** #1925 (44) The assistant panel's numbers as the session page read them (`useAssistantAppCounts`), for Apps to see. */
   assistantCountsChanged: async (args: { ownerId: string; counts: unknown }) => {
     try {
