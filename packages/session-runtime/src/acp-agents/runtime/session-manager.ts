@@ -1836,8 +1836,10 @@ export class SessionManager implements InboundRouter {
   /**
    * 一页已提交的回合(由旧到新),或者 `changedSince` 给了时:那个游标之后新增或改过的全部回合(不分页 —— 它们就是
    * 这段时间里新产生的内容)。只克隆交出去的那几轮,❌ 为了取一页把整份历史克隆一遍。
+   * `contentFrom`(只配 `changedSince`):seq 在它之前的改动轮只交身份(`items: []`、不带 terminals)—— 读者按 id 回库里
+   * 重读那一行,内容用不上;后台子智能体每走一步都改派它的那一轮,那一轮能有几 MB(#2493),❌ 每步克隆一遍再丢掉。
    */
-  getHistory(sessionId: string, before?: number, limit = 50, changedSince?: HistoryCursor): HistoryPage {
+  getHistory(sessionId: string, before?: number, limit = 50, changedSince?: HistoryCursor, contentFrom?: number): HistoryPage {
     const live = this.cells.get(sessionId);
     const turns: readonly TranscriptTurn[] = live ? live.cell.transcript.history : (this.closedSessionHistories.get(sessionId) ?? []);
     let tracker = this.historyRevs.get(sessionId);
@@ -1849,7 +1851,16 @@ export class SessionManager implements InboundRouter {
       if (changedSince.epoch !== tracker.epoch || changedSince.seq > tracker.rev) {
         return { turns: [], nextCursor: null, ...head, reset: true };
       }
-      return { turns: structuredClone(turns.filter((turn) => marks.get(turn)! > changedSince.seq)), nextCursor: null, ...head };
+      const changed = turns.filter((turn) => marks.get(turn)! > changedSince.seq);
+      return {
+        turns: changed.map((turn) => {
+          if (contentFrom === undefined || turn.seq >= contentFrom) return structuredClone(turn);
+          const { items: _items, terminals: _terminals, ...identity } = turn;
+          return { ...structuredClone(identity), items: [] };
+        }),
+        nextCursor: null,
+        ...head,
+      };
     }
     const filtered = before === undefined ? turns : turns.filter((turn) => turn.seq < before);
     const page = [...filtered].sort((a, b) => b.seq - a.seq).slice(0, limit);

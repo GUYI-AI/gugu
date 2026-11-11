@@ -49,23 +49,26 @@ function fakeRuntime(count: number) {
   const revs = committed.map((_, index) => index + 1);
   let rev = count;
   let epoch = 'runtime';
-  const calls: Array<{ before?: number; changedSince?: HistoryCursor }> = [];
+  let oversized = false;
+  const calls: Array<{ before?: number; changedSince?: HistoryCursor; contentFrom?: number }> = [];
   return {
     calls,
     committed,
     restart() { epoch = 'restarted-runtime'; },
+    /** Same epoch, but the changes no longer fit one page: the runtime answers a delta with `reset` (#2493). */
+    oversize() { oversized = true; },
     append(next: TranscriptTurn) { committed.push(next); revs.push(++rev); },
     revise(index: number, next: TranscriptTurn) { committed[index] = next; revs[index] = ++rev; },
     session: {
-      agents: replica([]), config: replica({}), plan: replica(null), terminals: replica([]), draft: replica(null),
+      agents: replica([]), config: replica<Record<string, unknown>>({}), plan: replica(null), terminals: replica([]), draft: replica(null),
       activeTurn: replica(null),
       sessionState: replica({ lifecycle: 'ready', isGenerating: false, queuedPrompts: [], pendingPermissions: [] }),
       dispose() {},
-      getHistory: (before: number | undefined, limit = 50, changedSince?: HistoryCursor) => {
-        calls.push({ before, changedSince });
+      getHistory: (before: number | undefined, limit = 50, changedSince?: HistoryCursor, contentFrom?: number) => {
+        calls.push({ before, changedSince, contentFrom });
         const head = { cursor: { epoch, seq: rev }, reset: false, count: committed.length };
         if (changedSince !== undefined) {
-          if (changedSince.epoch !== epoch) return Promise.resolve({ success: true as const, data: { turns: [], nextCursor: null, ...head, reset: true } });
+          if (changedSince.epoch !== epoch || oversized) return Promise.resolve({ success: true as const, data: { turns: [], nextCursor: null, ...head, reset: true } });
           return Promise.resolve({ success: true as const, data: { turns: committed.filter((_, i) => revs[i]! > changedSince.seq), nextCursor: null, ...head } });
         }
         const filtered = before === undefined ? committed : committed.filter((t) => t.seq < before);
@@ -290,7 +293,7 @@ describe('@@@history-change-cursor:每提交一轮只取改动游标之后的那
     } finally {
       (window as unknown as { electronAPI: { invoke: (c: string) => Promise<unknown> } }).electronAPI.invoke = invoke;
     }
-    expect(runtime.calls).toEqual([{ before: undefined, changedSince: { epoch: 'runtime', seq: 250 } }]);
+    expect(runtime.calls).toEqual([{ before: undefined, changedSince: { epoch: 'runtime', seq: 250 }, contentFrom: 250 }]);
     expect(storedReads).toBe(0);
     expect(committedIds(store)).toEqual(['s0', 'r250']);
     expect(internals._runtimeCursor).toEqual({ epoch: 'runtime', seq: 251 });
@@ -352,6 +355,73 @@ describe('@@@history-change-cursor:每提交一轮只取改动游标之后的那
     expect(committedIds(store)).toEqual(['s0', 'r1', 'r2']);
     expect(internals._runtimeCursor).toEqual({ epoch: 'runtime', seq: 3 });
     store.dispose();
+  });
+});
+
+describe('#2493 a reset change cursor does not take the live session away', () => {
+  /** A live session whose page is drawn from the stored record, with one runtime turn after the boundary. */
+  function live() {
+    const { store, internals } = makeStore();
+    const runtime = fakeRuntime(5);
+    runtime.session.config.push({
+      modeOptions: { selected: 'full-access', available: [{ id: 'full-access', name: 'Full access', description: null }] },
+    });
+    internals.session = runtime.session;
+    internals._storedHistoryTurns = [turn('s0', 0)];
+    internals._storedOrigins = ['r0'];
+    internals._storedBaseSeq = 0;
+    internals._storedBootstrapMaxSeq = 0;
+    internals._runtimeReplayEndSeq = 5;
+    internals._runtimeCursor = { epoch: 'runtime', seq: 5 };
+    internals._runtimeCount = 5;
+    return { store, internals, runtime };
+  }
+
+  it('an oversized change set re-reads history in place: same session, composer controls stay, no re-attach', async () => {
+    const { store, internals, runtime } = live();
+    runtime.append(turn('r5', 5));
+    runtime.oversize();
+    // The record has the revised older row (the turn a subagent keeps revising) and the turn committed since.
+    storedPage = { turns: [{ ...turn('s0', 0), endedAt: 7 } as TranscriptTurn, turn('s1', 1)], originTurnIds: ['r0', 'r5'], nextCursor: null };
+    const reattach = vi.spyOn(store, 'reattachAfterHostReload');
+
+    await internals._refreshHistory();
+
+    expect(reattach).not.toHaveBeenCalled();
+    expect(internals.session).toBe(runtime.session);
+    expect(store.starting).toBe(false);
+    expect(store.permissionModeOptions).not.toBeNull();
+    expect(committedIds(store)).toEqual(['s0', 's1']);
+    expect(internals._storedHistoryTurns[0]).toMatchObject({ id: 's0', endedAt: 7 });
+    expect(internals._runtimeCursor).toEqual({ epoch: 'runtime', seq: 6 });
+    expect(internals._runtimeReplayEndSeq).toBe(6);
+    store.dispose();
+  });
+
+  it('a restarted runtime (another epoch) still re-attaches', async () => {
+    const { store, internals, runtime } = live();
+    runtime.restart();
+    const reattach = vi.spyOn(store, 'reattachAfterHostReload').mockImplementation(() => {});
+
+    await internals._refreshHistory();
+
+    expect(reattach).toHaveBeenCalledTimes(1);
+    store.dispose();
+  });
+
+  it('names its content floor when the record draws the older turns, and not when the runtime is the only source', async () => {
+    const stored = live();
+    stored.runtime.append(turn('r5', 5));
+    await stored.internals._refreshHistory();
+    expect(stored.runtime.calls.at(-1)).toMatchObject({ changedSince: { epoch: 'runtime', seq: 5 }, contentFrom: 5 });
+    stored.store.dispose();
+
+    const runtimeOnly = live();
+    runtimeOnly.internals._storedBaseSeq = null;
+    runtimeOnly.runtime.append(turn('r5', 5));
+    await runtimeOnly.internals._refreshHistory();
+    expect(runtimeOnly.runtime.calls.at(-1)?.contentFrom).toBeUndefined();
+    runtimeOnly.store.dispose();
   });
 });
 

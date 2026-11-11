@@ -740,7 +740,8 @@ textarea.ta-input { min-height: 80px; resize: vertical; line-height: 1.5; }
 .ta-day-note { display: flex; flex-direction: column; gap: 8px; padding: 4px 2px 2px; font-size: var(--ta-fs-sub); line-height: var(--ta-lh-sub); color: var(--ta-muted); }
 .ta-day-note-title { font-size: var(--ta-fs-title); line-height: var(--ta-lh-title); font-weight: 600; color: var(--ta-fg); }
 .ta-day-list { display: flex; flex-direction: column; gap: 2px; }
-.ta-day-row { border-radius: var(--ta-radius-control); }
+/* Agenda rows are at least two lines tall, so they are blocks, not pills: nest their corners inside the card (card radius minus card padding). */
+.ta-day-row { border-radius: calc(var(--ta-radius-card) - var(--spacing-md)); }
 .ta-day-row[data-open] { background: var(--ta-glass); }
 .ta-day-row-line { display: flex; align-items: center; gap: 8px; }
 .ta-day-row-main {
@@ -750,7 +751,7 @@ textarea.ta-input { min-height: 80px; resize: vertical; line-height: 1.5; }
   align-items: stretch;
   gap: 8px;
   border: 0;
-  border-radius: var(--ta-radius-control);
+  border-radius: calc(var(--ta-radius-card) - var(--spacing-md));
   background: transparent;
   padding: 6px 8px;
   text-align: left;
@@ -794,7 +795,7 @@ textarea.ta-input { min-height: 80px; resize: vertical; line-height: 1.5; }
 .ta-day-more svg { width: 14px; height: 14px; }
 .ta-day-pop { display: flex; width: min(380px, calc(100vw - 32px)); flex-direction: column; gap: 12px; padding: var(--spacing-lg); box-shadow: var(--shadow-lift); }
 .ta-day-kinds { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.ta-day-kinds li { display: flex; flex-direction: column; gap: 2px; border-radius: var(--ta-radius-control); background: var(--ta-glass); padding: var(--spacing-md) var(--ta-pad-card); }
+.ta-day-kinds li { display: flex; flex-direction: column; gap: 2px; border-radius: calc(var(--ta-radius-card) - var(--spacing-md)); background: var(--ta-glass); padding: var(--spacing-md) var(--ta-pad-card); }
 .ta-day-kinds .ta-tile-title { font-size: var(--ta-fs-title); }
 .ta-day-kind-from { font-size: var(--font-caption); color: var(--ta-faint); }
 
