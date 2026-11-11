@@ -66,7 +66,7 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
         {error && <p role="alert">{error}</p>}
         {readError && <p role="alert">{readError}</p>}
         {passwords.map(request => <Button key={request.requestId} variant="ghost" className="w-full justify-start" data-password-notification={request.requestId}
-          onClick={() => { openPasswordRequest(request); setSidebarNotificationsOpen(false) }}>请求使用密码 · {request.origin}</Button>)}
+          onClick={() => { openPasswordRequest(request); setSidebarNotificationsOpen(false) }}>{request.kind === 'save' ? '请求保存密码' : '请求使用密码'} · {request.origin}</Button>)}
         {tasks.map(task => {
           const openTask = () => followLink({ kind: 'session', sessionId: task.session.conversationId, deviceId: task.deviceId })
           return <NeedsYouTaskRow key={`${task.deviceId}/${task.session.conversationId}`} task={task} mobile={mobile} emphasis={unread(task)} onClick={openTask} onKeyDown={rowKeyActivate(openTask)} />

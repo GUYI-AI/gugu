@@ -7,7 +7,7 @@ let port: Port | undefined
 export function bindPasswordBetaAgent(value: Port): void {
   if (!PASSWORD_BETA_ENABLED || port) return
   port = Object.freeze({ list: value.list.bind(value), request: value.request.bind(value),
-    start: value.start.bind(value), status: value.status.bind(value) })
+    start: value.start.bind(value), status: value.status.bind(value), save: value.save.bind(value), saveStatus: value.saveStatus.bind(value) })
 }
 export function passwordBetaAgentPort(): Port {
   if (!PASSWORD_BETA_ENABLED || !port) throw new Error('password_beta_unavailable')

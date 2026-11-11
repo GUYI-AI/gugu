@@ -378,6 +378,9 @@ export const electronBuildEntries: ElectronOptions[] = [
       resolve: {
         alias: workspaceAliases,
       },
+      // The preload decides which trusted bridges exist (e.g. Settings → 密码 in Beta). Without the tier it reads
+      // `typeof __GUGU_TIER__` at runtime, gets undefined, and silently withholds every Beta-only bridge.
+      define: { __GUGU_TIER__: JSON.stringify(guguTier) },
       plugins: [deterministicModuleSideEffects()],
     },
     onstart(options) {
@@ -396,6 +399,7 @@ export const electronBuildEntries: ElectronOptions[] = [
       resolve: {
         alias: workspaceAliases,
       },
+      define: { __GUGU_TIER__: JSON.stringify(guguTier) },
       plugins: [deterministicModuleSideEffects()],
     },
     onstart(options) {
@@ -407,7 +411,7 @@ export const electronBuildEntries: ElectronOptions[] = [
     // Keep the existing main/preload positions stable; the private login bridge is an additional entry.
     // It gets no application/App bridge and exposes nothing to the page world.
     entry: vaultLoginPreloadEntry,
-    vite: { plugins: [deterministicModuleSideEffects()] },
+    vite: { define: { __GUGU_TIER__: JSON.stringify(guguTier) }, plugins: [deterministicModuleSideEffects()] },
     onstart(options) { if (viteOwnsElectronProcess) options.reload() },
   },
 ]

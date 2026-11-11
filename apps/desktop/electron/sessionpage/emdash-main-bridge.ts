@@ -10,7 +10,7 @@ export { setSessionIdentityHost } from '../session/main/core/sessions/session-id
 export { recordConfirmedDeviceSleep } from '../session/main/core/activity/collector'
 export { readAssistantWorkOwnerReceipts } from '../session/main/core/sessions/assistant-work-owner-receipts'
 export { commitOwnerNotification } from '../session/main/core/sessions/owner-notifications'
-export { deliverPasswordBetaDecision } from '../session/main/core/sessions/password-beta-delivery'
+export { deliverPasswordBetaDecision, deliverPasswordBetaSaveResult } from '../session/main/core/sessions/password-beta-delivery'
 export { installPasswordBetaHost, passwordBetaAgent } from '../password-vault/beta-host'
 export { archiveSession } from '../session/main/core/sessions/archiveSession'
 export { appInbox } from '../session/main/core/extensions/app-inbox'

@@ -20,6 +20,15 @@ export function passwordRequestPresentation(ownerId: string, agentId: string, se
   }
 }
 
+/** Grant subjects that identify this caller: its bound Agent and the project its session belongs to. */
+export function passwordGrantSubjects(ownerId: string, agentId: string, sessionId: string): string[] {
+  const row = db.select().from(sessions).where(eq(sessions.id, sessionId)).get()
+  if (!row || row.archivedAt || row.runtime !== 'acp') return []
+  const bound = boundTaskName(sessionId)
+  if (bound && (bound.ownerUserId !== ownerId || bound.agentUserId !== agentId)) return []
+  return [`agent:${agentId}`, ...(row.projectId ? [`project:${row.projectId}`] : [])]
+}
+
 export interface PasswordGrantCandidate { subject: string; name: string; kind: 'agent' | 'project'; project?: string }
 /** Who the person can authorize on a credential: their bound task Agents and their projects. Presentation only. */
 export function passwordGrantCandidates(ownerId: string): PasswordGrantCandidate[] {

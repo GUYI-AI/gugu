@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { anySignal } from '@gugu/core/shared/anySignal'
-import type { PasswordApproval, PasswordItem } from '@gugu/core/shared/passwordBetaProtocol'
+import { passwordGrantLevel, type PasswordApproval, type PasswordItem } from '@gugu/core/shared/passwordBetaProtocol'
 import type { GuguMcpContext } from '../acp-engine-utils'
 import { passwordNativeMcpIdentity } from '../mcp/password-native-identity'
 import type { createBetaPasswordAccess } from '../permissions/password-beta-access'
@@ -29,6 +29,8 @@ export interface BetaLoginHost {
   assertCurrent(): void
   changed(): void
   describe(agentId: string, sessionId: string): { agentName: string; sessionTitle: string }
+  /** Grant subjects that identify the caller (its Agent, its project). */
+  subjects(agentId: string, sessionId: string): string[]
   denied(): boolean
   deliver(sessionId: string, requestId: string, status: string): Promise<void>
 }
@@ -140,7 +142,9 @@ export class BetaPasswordLogin {
         deviceId: this.host.deviceId, maskedAccount: item.maskedAccount, expiresAt: view.requestExpiresAt } }
       this.attempts.set(view.requestId, attempt)
       registered = attempt
-      await postPasswordRequest(context, attempt.view)
+      // A credential that lists this Agent (or its project) as 可读/可写 is used without asking; everyone else asks each time.
+      const granted = !!passwordGrantLevel(item.grants, this.host.subjects(identity.subjectId, identity.sessionId))
+      if (!granted) await postPasswordRequest(context, attempt.view)
       assertCurrent()
       const expired = setTimeout(() => {
         if (attempt?.execution.status().status === 'expired') {
@@ -151,6 +155,7 @@ export class BetaPasswordLogin {
       }, Math.max(1, view.requestExpiresAt - Date.now() + 1))
       expired.unref?.()
       signal.addEventListener('abort', () => { execution.cancel(); void this.retire(attempt!).catch(() => {}) }, { once: true })
+      if (granted) { this.conclude(attempt, 'allow_once', false); return { requestId: view.requestId, status: attempt.result } }
       this.host.changed()
       return { requestId: view.requestId, status: 'pending' }
     } catch {
@@ -169,6 +174,11 @@ export class BetaPasswordLogin {
   decide(requestId: string, decision: 'allow_once' | 'reject'): void {
     const use = this.attempts.get(requestId)
     if (!use) throw unavailable()
+    this.conclude(use, decision, true)
+  }
+  /** The person's decision, or a standing grant on the credential (then the Agent reads the result from its own request). */
+  private conclude(use: Attempt, decision: 'allow_once' | 'reject', deliver: boolean): void {
+    const requestId = use.binding.requestId
     if (use.execution.status().status !== 'pending') throw unavailable()
     const view = use.execution.decide(decision, this)
     if (view.status === 'approved') {
@@ -185,7 +195,7 @@ export class BetaPasswordLogin {
       use.result = view.status
       void use.surface.disposeUnused().catch(() => {})
     }
-    void this.host.deliver(use.binding.sessionId, requestId, view.status).catch(() => {})
+    if (deliver) void this.host.deliver(use.binding.sessionId, requestId, view.status).catch(() => {})
     this.host.changed()
   }
   async start(context: GuguMcpContext, requestId: string): Promise<{ status: string }> {

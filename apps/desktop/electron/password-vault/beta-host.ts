@@ -2,7 +2,7 @@ import { app, ipcMain, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
-import type { PasswordUiCommand, PasswordUiReply, PasswordSnapshot } from '@gugu/core/shared/passwordBetaProtocol'
+import { passwordGrantLevel, type PasswordItem, type PasswordUiCommand, type PasswordUiReply, type PasswordSnapshot } from '@gugu/core/shared/passwordBetaProtocol'
 import { privatePasswordVaultDirectory, PASSWORD_VAULT_STORAGE } from '@gugu/core/local/state/protectedPrivateStorage'
 import { protectedPrivateStorageStatus } from '@gugu/core/local/state/agentFileBoundary'
 import { createBetaPasswordAccess } from '../permissions/password-beta-access'
@@ -11,14 +11,17 @@ import { guguMcpToolScope, passwordNativeMcpIdentity } from '../mcp/password-nat
 import type { GuguMcpContext } from '../acp-engine-utils'
 import { createVaultStorage } from './host'
 import { macVaultKeyProtector } from './mac'
-import { VaultError } from './contracts'
-import { passwordGrantCandidates, passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
+import { VaultError, type CredentialGrant } from './contracts'
+import { httpsOrigin } from './schema'
+import { passwordGrantCandidates, passwordGrantSubjects, passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
 import { BetaPasswordLogin } from './beta-login'
+import { BetaPasswordSaves, type SaveProposal, type SaveResult } from './beta-save'
 
 export const PASSWORD_UI_CHANNEL = 'gugu:password-beta-ui'
 export const PASSWORD_CHANGED_CHANNEL = 'gugu:password-beta-changed'
 interface NativeHost { window(): BrowserWindow | null; account(): Promise<string | null>; device(): string | null | Promise<string | null>;
   deliver(sessionId: string, requestId: string, status: string): Promise<void>;
+  deliverSave(sessionId: string, requestId: string, status: SaveResult, credentialId?: string): Promise<void>;
   readPolicy(ownerId: string, signal: AbortSignal): Promise<PermissionPolicy>
   /** System owner verification (Touch ID or login password) through the native helper. */
   verifyOwner(reason: string): Promise<void> }
@@ -45,8 +48,10 @@ async function createAccount(ownerId: string, host: NativeHost) {
     } })
   const deviceId = await host.device()
   if (!deviceId) throw unavailable()
-  const login = new BetaPasswordLogin({ ownerId, deviceId, signal: controller.signal,
-    access, assertCurrent, changed, describe: (agentId, sessionId) => passwordRequestPresentation(ownerId, agentId, sessionId), denied: () => false, deliver: host.deliver })
+  const describe = (agentId: string, sessionId: string) => passwordRequestPresentation(ownerId, agentId, sessionId)
+  const login = new BetaPasswordLogin({ ownerId, deviceId, signal: controller.signal, access, assertCurrent, changed, describe,
+    subjects: (agentId, sessionId) => passwordGrantSubjects(ownerId, agentId, sessionId), denied: () => false, deliver: host.deliver })
+  const saves = new BetaPasswordSaves({ deviceId, changed, describe, deliver: host.deliverSave })
   const { vault } = createVaultStorage({ root, accountId: ownerId, installationBinding: app.getPath('userData'),
     assertLocalPerson: value => { assertCurrent(); if (value !== person) throw unavailable() },
     assertOwnedLocalAgent: value => { assertCurrent(); if (value !== person) throw unavailable() },
@@ -59,14 +64,14 @@ async function createAccount(ownerId: string, host: NativeHost) {
     return result
   })
   login.bindVault(vault)
-  return { ownerId, vault, login, controller, assertCurrent }
+  return { ownerId, vault, login, saves, controller, assertCurrent }
 }
 async function account(): Promise<Account> {
   if (!PASSWORD_BETA_ENABLED || !native) throw unavailable()
   const ownerId = await native.account()
   if (!ownerId || !/^[a-f0-9-]{36}$/i.test(ownerId)) throw unavailable()
   if (current && current.ownerId !== ownerId) {
-    const old = current; current = undefined; old.controller.abort(); old.login.invalidate(); await old.vault.dispose()
+    const old = current; current = undefined; old.controller.abort(); old.login.invalidate(); old.saves.invalidate(); await old.vault.dispose()
   }
   if (current) return current
   creating ??= createAccount(ownerId, native)
@@ -80,7 +85,7 @@ async function account(): Promise<Account> {
 async function snapshot(value: Account): Promise<PasswordSnapshot> {
   let candidates: PasswordSnapshot['candidates'] = []
   try { candidates = passwordGrantCandidates(value.ownerId) } catch { candidates = [] }
-  return { items: await value.vault.list(person), approvals: value.login.pending(), candidates }
+  return { items: await value.vault.list(person), approvals: value.login.pending(), saves: value.saves.pending(), candidates }
 }
 /** A dedicated native renderer IPC. Never uses generic action logging, transcript or device RPC. */
 export function installPasswordBetaHost(host: NativeHost): void {
@@ -93,7 +98,17 @@ export function installPasswordBetaHost(host: NativeHost): void {
       const value = await account()
       switch (command?.type) {
         case 'snapshot': break
-        case 'save': await value.vault.save(person, randomUUID(), { origin: command.origin, account: command.account, password: command.password, fields: command.fields ?? [] }, command.reference); break
+        case 'save': {
+          // Completing an Agent's request: a new credential stays writable by that Agent, nobody else gains access.
+          const request = command.requestId ? value.saves.open(command.requestId).view : undefined
+          if (request && request.credentialId !== command.reference?.id) throw unavailable()
+          const creator: CredentialGrant | undefined = request && !command.reference ? { subject: `agent:${request.agent}`, level: 'write' } : undefined
+          const saved = await value.vault.save(person, randomUUID(), { origin: command.origin, account: command.account, password: command.password, fields: command.fields ?? [] }, command.reference, creator)
+          if (request) value.saves.complete(request.requestId, saved.reference.id)
+          break
+        }
+        case 'save-draft': return { ok: true, snapshot: await snapshot(value), draft: value.saves.draft(command.requestId) }
+        case 'reject-save': value.saves.reject(command.requestId); break
         case 'delete': await value.vault.delete(person, randomUUID(), command.reference); break
         case 'reveal': return { ok: true, snapshot: await snapshot(value), secrets: await value.vault.reveal(person, command.reference) }
         case 'grants': await value.vault.setGrants(person, command.reference, command.grants); break
@@ -108,28 +123,57 @@ export function installPasswordBetaHost(host: NativeHost): void {
       return { ok: false, code: error instanceof VaultError ? error.code : 'UNAVAILABLE' }
     }
   })
-  app.once('before-quit', () => { current?.controller.abort(); current?.login.invalidate(); void current?.vault.dispose().catch(() => {}) })
+  app.once('before-quit', () => { current?.controller.abort(); current?.login.invalidate(); current?.saves.invalidate(); void current?.vault.dispose().catch(() => {}) })
+}
+/** What an Agent sees of one credential: never a value, and only its own access level. */
+function agentView(item: PasswordItem, subjects: string[]) {
+  return { credentialId: item.reference.id, origin: item.origin, maskedAccount: item.maskedAccount, fields: item.fields.map(field => field.name),
+    access: passwordGrantLevel(item.grants, subjects) ?? 'ask' }
+}
+async function caller(context: GuguMcpContext) {
+  const value = await account(), identity = passwordNativeMcpIdentity(context)
+  if (!identity || identity.ownerId !== value.ownerId) throw unavailable()
+  return { value, identity, subjects: passwordGrantSubjects(value.ownerId, identity.subjectId, identity.sessionId) }
 }
 /** Agent surface returns metadata/status only. No person evidence or secret-bearing command exists. */
 export const passwordBetaAgent = Object.freeze({
   async start(context: GuguMcpContext, requestId: string) { return (await account()).login.start(context, requestId) },
   async list(context: GuguMcpContext) {
-    const value = await account(), identity = passwordNativeMcpIdentity(context)
-    if (!identity || identity.ownerId !== value.ownerId) throw unavailable()
-    return value.vault.list(person)
+    const { value, subjects } = await caller(context)
+    return (await value.vault.list(person)).map(item => agentView(item, subjects))
   },
   async request(context: GuguMcpContext, signal: AbortSignal, input: {
     credentialId: string; browserId: string; loginUrl: string; selection: { form: string; account: string; password: string; submitter?: string }
   }) {
-    const value = await account(), identity = passwordNativeMcpIdentity(context)
-    if (!identity || identity.ownerId !== value.ownerId) throw unavailable()
+    const { value } = await caller(context)
     const item = (await value.vault.list(person)).find(item => item.reference.id === input.credentialId)
     if (!item) throw unavailable()
     return value.login.request(context, signal, item, input)
   },
   async status(context: GuguMcpContext, requestId: string) {
-    const value = await account(), identity = passwordNativeMcpIdentity(context)
-    if (!identity || identity.ownerId !== value.ownerId) throw unavailable()
+    const { value, identity } = await caller(context)
     return { status: value.login.status(requestId, identity.sessionId) }
+  },
+  /** 可写 on that credential: saved at once (blank keeps the stored value). Otherwise the person fills it in from a private message. */
+  async save(context: GuguMcpContext, input: SaveProposal & { origin: string; credentialId?: string }) {
+    const { value, identity, subjects } = await caller(context)
+    let origin: string
+    try { origin = httpsOrigin(input.origin) } catch { throw unavailable() }
+    const item = input.credentialId ? (await value.vault.list(person)).find(entry => entry.reference.id === input.credentialId) : undefined
+    if (input.credentialId && (!item || item.origin !== origin)) throw unavailable()
+    if (item && passwordGrantLevel(item.grants, subjects) === 'write') {
+      const named = new Map((input.fields ?? []).map(field => [field.name, field.value]))
+      // Fields the Agent did not mention keep their stored value (blank); new names become new fields.
+      const fields = [...item.fields.map(field => ({ id: field.id, name: field.name, value: named.get(field.name) ?? '' })),
+        ...[...named].filter(([name]) => !item.fields.some(field => field.name === name)).map(([name, text]) => ({ id: randomUUID(), name, value: text }))]
+      const saved = await value.vault.save(person, randomUUID(), { origin, account: input.account ?? '', password: input.password ?? '', fields }, item.reference)
+      changed()
+      return { status: 'saved', credentialId: saved.reference.id }
+    }
+    return value.saves.request(context, { agentId: identity.subjectId, sessionId: identity.sessionId }, origin, item, input)
+  },
+  async saveStatus(context: GuguMcpContext, requestId: string) {
+    const { value, identity } = await caller(context)
+    return value.saves.status(requestId, identity.sessionId)
   },
 })

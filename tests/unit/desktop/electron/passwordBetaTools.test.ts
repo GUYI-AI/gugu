@@ -3,7 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { GuguMcpContext } from '../../../../apps/desktop/electron/acp-engine-utils'
 
 const handlers = vi.hoisted(() => new Map<string, (input: unknown, signal: AbortSignal) => Promise<unknown>>())
-const ports = vi.hoisted(() => ({ list: vi.fn(), request: vi.fn(), start: vi.fn(), status: vi.fn() }))
+const ports = vi.hoisted(() => ({ list: vi.fn(), request: vi.fn(), start: vi.fn(), status: vi.fn(), save: vi.fn(), saveStatus: vi.fn() }))
 vi.mock('../../../../apps/desktop/electron/mcp/register-gugu-tool.mjs', () => ({
   registerGuguTool: (_server: unknown, def: { name: string }, run: (input: unknown, signal: AbortSignal) => Promise<unknown>) => handlers.set(def.name, run),
 }))
@@ -51,5 +51,23 @@ describe('Beta password MCP boundary', () => {
     await handlers.get('password_login')!({ action: 'status', requestId }, new AbortController().signal)
     expect(ports.status).toHaveBeenCalledWith(context(), requestId)
     expect(ports.start).not.toHaveBeenCalled()
+  })
+  it('routes password_save requests without the action field and status by requestId', async () => {
+    await register('beta')
+    ports.save.mockResolvedValue({ status: 'pending', requestId })
+    const input = { action: 'request', origin: 'https://github.com', account: 'dev@example.com', fields: [{ name: 'API Key', value: 'k' }] }
+    const reply = await handlers.get('password_save')!(input, new AbortController().signal)
+    expect(ports.save).toHaveBeenCalledWith(context(), { origin: 'https://github.com', account: 'dev@example.com', fields: [{ name: 'API Key', value: 'k' }] })
+    expect(JSON.stringify(reply)).toContain('pending')
+    ports.saveStatus.mockResolvedValue({ status: 'saved', credentialId })
+    await handlers.get('password_save')!({ action: 'status', requestId }, new AbortController().signal)
+    expect(ports.saveStatus).toHaveBeenCalledWith(context(), requestId)
+  })
+  it('rejects mixed password_save arguments before reaching the vault', async () => {
+    await register('beta')
+    const reply = await handlers.get('password_save')!({ action: 'status', requestId, origin: 'https://github.com' }, new AbortController().signal) as { isError?: boolean }
+    expect(reply.isError).toBe(true)
+    expect(ports.save).not.toHaveBeenCalled()
+    expect(ports.saveStatus).not.toHaveBeenCalled()
   })
 })

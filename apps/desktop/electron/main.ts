@@ -5016,6 +5016,7 @@ app.whenReady().then(async () => {
     }
     emdash.installPasswordBetaHost({ window: () => mainWindow, account: async () => (await getSessionpageAuth())?.userId ?? null, device: localDeviceId,
       deliver: (sessionId, requestId, status) => emdash.deliverPasswordBetaDecision(sessionId, requestId, status),
+      deliverSave: (sessionId, requestId, status, credentialId) => emdash.deliverPasswordBetaSaveResult(sessionId, requestId, status, credentialId),
       readPolicy: createPasswordBetaPolicyReader(getSessionpageAuth),
       verifyOwner: async (reason) => {
         const helper = deviceActionsRuntime().macHelper()

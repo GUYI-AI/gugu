@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
-import type { PasswordApproval } from '@gugu/core/shared/passwordBetaProtocol'
+import type { PasswordRequestView } from '@gugu/core/shared/passwordBetaProtocol'
 import { followLink } from './guguLinks'
 
 const listeners = new Set<() => void>()
 let reveal: { sessionId: string; requestId: string } | undefined
 export function usePasswordNotifications() {
-  const [pending, setPending] = useState<PasswordApproval[]>([])
+  const [pending, setPending] = useState<PasswordRequestView[]>([])
   useEffect(() => {
     if (!PASSWORD_BETA_ENABLED) return
     let live = true
     const refresh = async () => {
-      try { const reply = await window.passwordVaultBeta?.invoke({ type: 'snapshot' }); if (live) setPending(reply?.ok ? reply.snapshot.approvals : []) }
+      try { const reply = await window.passwordVaultBeta?.invoke({ type: 'snapshot' }); if (live) setPending(reply?.ok ? [...reply.snapshot.approvals, ...reply.snapshot.saves] : []) }
       catch { if (live) setPending([]) }
     }
     void refresh()
@@ -20,7 +20,7 @@ export function usePasswordNotifications() {
   }, [])
   return pending
 }
-export function openPasswordRequest(request: PasswordApproval): void {
+export function openPasswordRequest(request: PasswordRequestView): void {
   reveal = { sessionId: request.sessionId, requestId: request.requestId }
   followLink({ kind: 'session', sessionId: request.sessionId, deviceId: request.deviceId })
   for (const listener of listeners) listener()
