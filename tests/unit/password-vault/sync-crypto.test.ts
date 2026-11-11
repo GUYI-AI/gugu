@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aad, boxed, commitment, createDeviceKeyPair, openSealed, openVaultKey, randomKey, randomNonce, sealTo, sealVaultKey, shortCode, unboxed, verifyCommitment } from '../../../apps/desktop/electron/password-vault/sync-crypto'
+import { aad, boxed, commitment, createDeviceKeyPair, normalizeRecoveryCode, openSealed, openVaultKey, randomKey, randomNonce, recoveryCode, recoveryKeys, sealTo, sealVaultKey, shortCode, unboxed, verifyCommitment } from '../../../apps/desktop/electron/password-vault/sync-crypto'
 
 describe('vault sync crypto', () => {
   it('a sealed share opens only with the matching device key', async () => {
@@ -39,5 +39,21 @@ describe('vault sync crypto', () => {
     expect(() => unboxed(key, box, aad('item', 'owner', 'id', 3))).toThrow('DATA_DAMAGED')
     expect(() => unboxed(randomKey(), box, binding)).toThrow('DATA_DAMAGED')
     expect(aad('a|b', 'c')).not.toBe(aad('a', 'b|c'))
+  })
+  it('a recovery code is long and random, tolerant to how it is typed, and derives a key pair and an unrelated proof', async () => {
+    const code = recoveryCode()
+    expect(code).toMatch(/^[0-9A-HJKMNP-TV-Z]{5}(-[0-9A-HJKMNP-TV-Z]{5}){4}$/)
+    expect(new Set(Array.from({ length: 50 }, recoveryCode)).size).toBe(50)
+    expect(normalizeRecoveryCode(` ${code.toLowerCase().replaceAll('-', ' ')} `)).toBe(code.replaceAll('-', ''))
+    expect(normalizeRecoveryCode('OIL' + code.replaceAll('-', '').slice(3))).toBe('011' + code.replaceAll('-', '').slice(3))
+    expect(normalizeRecoveryCode(code.slice(0, -1))).toBeUndefined()
+    const keys = await recoveryKeys(code), again = await recoveryKeys(code.toLowerCase())
+    expect(again.pair.publicKey).toBe(keys.pair.publicKey)
+    expect(again.verifier).toBe(keys.verifier)
+    expect(keys.verifier).not.toContain(Buffer.from(keys.proof, 'base64').toString('hex'))
+    const vaultKey = randomKey(), sealed = await sealVaultKey(keys.pair.publicKey, 1, vaultKey)
+    expect((await openVaultKey(again.pair, 1, sealed)).equals(vaultKey)).toBe(true)
+    await expect(recoveryKeys(recoveryCode()).then(other => openVaultKey(other.pair, 1, sealed))).rejects.toThrow('DATA_DAMAGED')
+    await expect(recoveryKeys('too-short')).rejects.toThrow('RECOVERY_INVALID')
   })
 })

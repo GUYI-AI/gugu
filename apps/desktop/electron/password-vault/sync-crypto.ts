@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto'
 import { VaultError } from './contracts'
 import { decode, seal, unseal } from './crypto'
 
@@ -89,3 +89,30 @@ export async function openVaultKey(pair: DeviceKeyPair, epoch: number, sealed: s
     return Buffer.from(message.subarray(prefix.length))
   } finally { message.fill(0) }
 }
+
+/** Recovery code: 25 symbols of Crockford base32 (no I, L, O, U), about 125 bits, shown as 5 groups of 5. */
+const RECOVERY_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
+const RECOVERY_LENGTH = 25
+export function recoveryCode(): string {
+  const symbols = Array.from({ length: RECOVERY_LENGTH }, () => RECOVERY_ALPHABET[randomInt(RECOVERY_ALPHABET.length)])
+  return Array.from({ length: RECOVERY_LENGTH / 5 }, (_, group) => symbols.slice(group * 5, group * 5 + 5).join('')).join('-')
+}
+/** Accepts what a person types: any case, spaces or dashes, and O/I/L for 0/1. Undefined when it cannot be a code. */
+export function normalizeRecoveryCode(input: string): string | undefined {
+  const value = input.toUpperCase().replace(/[\s-]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1')
+  return value.length === RECOVERY_LENGTH && [...value].every(symbol => RECOVERY_ALPHABET.includes(symbol)) ? value : undefined
+}
+/** The code is a device on paper: a key pair the vault key is sealed to, and a separate proof whose SHA-256 the cloud
+ * keeps to recognise the code. Neither reveals the other. */
+export async function recoveryKeys(code: string): Promise<{ pair: DeviceKeyPair; proof: string; verifier: string }> {
+  const normalized = normalizeRecoveryCode(code)
+  if (!normalized) throw new VaultError('RECOVERY_INVALID')
+  const seed = plain(digest('recovery-seed', normalized)), proof = digest('recovery-proof', normalized)
+  try {
+    const pair = (await loadSodium()).crypto_box_seed_keypair(seed)
+    try { return { pair: { publicKey: b64(pair.publicKey), secretKey: Buffer.from(pair.privateKey) }, proof: proof.toString('base64'),
+      verifier: createHash('sha256').update(proof).digest('hex') } }
+    finally { pair.privateKey.fill(0) }
+  } finally { seed.fill(0); proof.fill(0) }
+}
+

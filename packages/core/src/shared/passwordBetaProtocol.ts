@@ -17,8 +17,8 @@ export interface PasswordGrantCandidate { subject: string; name: string; kind: '
  * ready · blocked: this device joined before with a key it no longer has · ready: the account's devices and requests. */
 export interface PasswordSyncDevice { deviceId: string; label: string; platform: string; current: boolean }
 export interface PasswordSyncRequest extends PasswordSyncDevice { stage: 'new' | 'elsewhere' | 'waiting' | 'compare' | 'mismatch'; code?: string }
-export type PasswordSyncView = { state: 'off' } | { state: 'joining'; code?: string } | { state: 'blocked' }
-  | { state: 'ready'; devices: PasswordSyncDevice[]; requests: PasswordSyncRequest[] }
+export type PasswordSyncView = { state: 'off' } | { state: 'joining'; code?: string; recovery?: boolean } | { state: 'blocked'; recovery?: boolean }
+  | { state: 'ready'; devices: PasswordSyncDevice[]; requests: PasswordSyncRequest[]; recovery: 'set' | 'unset' | 'ask' }
 export interface PasswordSnapshot { items: PasswordItem[]; approvals: PasswordApproval[]; saves: PasswordSaveRequest[]; candidates: PasswordGrantCandidate[]; sync?: PasswordSyncView }
 export type PasswordUiCommand =
   | { type: 'snapshot' }
@@ -37,7 +37,13 @@ export type PasswordUiCommand =
   | { type: 'sync-reject'; deviceId: string }
   /** Stop this device from receiving passwords; the key changes so it cannot read later edits. */
   | { type: 'sync-remove'; deviceId: string }
-export type PasswordUiReply = { ok: true; snapshot: PasswordSnapshot; secrets?: PasswordSecrets; draft?: PasswordSaveDraft }
+  /** Recovery code (a device on paper): generate or replace it, drop it, decline the offer, or join with it. Generating
+   * and recovering answer with `recoveryCode`, shown once. */
+  | { type: 'sync-recovery-create' }
+  | { type: 'sync-recovery-remove' }
+  | { type: 'sync-recovery-skip' }
+  | { type: 'sync-recover'; code: string }
+export type PasswordUiReply = { ok: true; snapshot: PasswordSnapshot; secrets?: PasswordSecrets; draft?: PasswordSaveDraft; recoveryCode?: string }
   | { ok: false; code: string }
 export interface PasswordBetaUi { invoke(command: PasswordUiCommand): Promise<PasswordUiReply>; subscribe(listener: () => void): () => void }
 

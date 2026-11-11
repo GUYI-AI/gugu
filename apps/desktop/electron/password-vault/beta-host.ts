@@ -149,6 +149,15 @@ export function installPasswordBetaHost(host: NativeHost): void {
         case 'sync-approve': await value.sync.approve(command.deviceId); break
         case 'sync-reject': await value.sync.reject(command.deviceId); break
         case 'sync-remove': await value.sync.remove(command.deviceId); break
+        case 'sync-recovery-create': { const { code } = await value.sync.createRecovery(); changed(); return { ok: true, snapshot: await snapshot(value), recoveryCode: code } }
+        case 'sync-recovery-remove': await value.sync.removeRecovery(); break
+        case 'sync-recovery-skip': await value.sync.skipRecovery(); break
+        case 'sync-recover': {
+          let code: string
+          try { ({ code } = await value.sync.recover(command.code)) }
+          catch (error) { throw error instanceof SyncError && (error.code === 'INVALID' || error.code === 'NOT_MEMBER') ? new VaultError('RECOVERY_INVALID') : error }
+          changed(); return { ok: true, snapshot: await snapshot(value), recoveryCode: code }
+        }
         default: throw unavailable()
       }
       // Snapshot subscribers read here; broadcasting a read would recursively request another snapshot.

@@ -21,14 +21,17 @@ const rpc = {
   password_vault_dismiss: [['p_caller_device_id', 'text'], ['p_device_id', 'text']],
   password_vault_save: [['p_device_id', 'text'], ['p_item_id', 'uuid'], ['p_expected_version', 'bigint'], ['p_epoch', 'integer'], ['p_wrapped_key', 'text'], ['p_ciphertext', 'text'], ['p_shares', 'jsonb']],
   password_vault_delete: [['p_device_id', 'text'], ['p_item_id', 'uuid'], ['p_expected_version', 'bigint']],
-  password_vault_rotate: [['p_device_id', 'text'], ['p_epoch', 'integer'], ['p_remove_device_ids', 'text[]'], ['p_items', 'jsonb'], ['p_shares', 'jsonb']],
+  password_vault_rotate: [['p_device_id', 'text'], ['p_epoch', 'integer'], ['p_remove_device_ids', 'text[]'], ['p_items', 'jsonb'], ['p_shares', 'jsonb'], ['p_recovery', 'jsonb']],
+  password_vault_set_recovery: [['p_device_id', 'text'], ['p_epoch', 'integer'], ['p_public_key', 'text'], ['p_verifier', 'text'], ['p_sealed', 'text']],
+  password_vault_recovery_begin: [['p_device_id', 'text'], ['p_proof', 'text']],
+  password_vault_recover: [['p_device_id', 'text'], ['p_proof', 'text'], ['p_public_key', 'text'], ['p_epoch', 'integer'], ['p_sealed_key', 'text']],
 } as const
 
 function rpcAs(db: Database, owner: string): SyncRpc {
   return async (name, args) => {
     const parameters = rpc[name as keyof typeof rpc]
     if (!parameters || Object.keys(args).sort().join() !== parameters.map(([key]) => key).sort().join()) throw new Error(`Unexpected vault RPC ${name}`)
-    const values = parameters.map(([key, type]) => type === 'jsonb' ? JSON.stringify(args[key]) : args[key])
+    const values = parameters.map(([key, type]) => type === 'jsonb' && args[key] !== null ? JSON.stringify(args[key]) : args[key])
     await db.query('SAVEPOINT vault_call')
     try {
       await db.query("SELECT set_config('request.jwt.claims',$1,true)", [JSON.stringify({ sub: owner, role: 'authenticated' })])
@@ -93,7 +96,7 @@ describe('password vault sync between two devices of one account', () => {
       expect(stored.map(row => Buffer.from(row.ciphertext, 'base64').toString('latin1')).join()).not.toMatch(/canary|github|example/)
 
       // The second device asks; the person opens it on the Mac; both screens show the same 6 digits.
-      expect(await laptop.refresh()).toEqual({ state: 'joining' })
+      expect(await laptop.refresh()).toMatchObject({ state: 'joining' })
       expect(ready(await mac.refresh()).requests).toEqual([expect.objectContaining({ deviceId: laptopId, label: 'Laptop', stage: 'new' })])
       expect(ready(await mac.challenge(laptopId)).requests[0].stage).toBe('waiting')
       const shown = await laptop.refresh() as Extract<SyncView, { state: 'joining' }>
@@ -122,14 +125,36 @@ describe('password vault sync between two devices of one account', () => {
       expect(ready(await mac.remove(laptopId)).devices.map(device => device.deviceId)).toEqual([macId])
       expect((await db.query<{ key_epoch: number }>('SELECT key_epoch FROM identity.password_vault_heads WHERE owner_user_id=$1', [owner])).rows[0]!.key_epoch).toBe(2)
       await macVault.save(github, credential('https://github.com', 'me@example.com', 'canary-after-removal'))
-      expect(await laptop.refresh()).toEqual({ state: 'joining' })
+      expect(await laptop.refresh()).toMatchObject({ state: 'joining' })
       expect(laptopVault.items.get(github)?.password).toBe('canary-rotated-password')
       await laptopVault.save(laptopOnly, credential('https://laptop.example.com', 'me', 'canary-local-only'))
       await mac.refresh()
       expect(macVault.items.get(laptopOnly)?.password).toBe('canary-laptop')
       // The Mac's request list now shows the laptop asking again; ignoring it leaves the vault as it is.
       expect(ready(await mac.refresh()).requests).toEqual([expect.objectContaining({ deviceId: laptopId, stage: 'new' })])
-      mac.dispose(); laptop.dispose()
+
+      // The recovery code: the Mac makes one; a third device that no device approves joins with the account and the code.
+      const { code } = await mac.createRecovery()
+      expect(code).toMatch(/^[0-9A-HJKMNP-TV-Z]{5}(-[0-9A-HJKMNP-TV-Z]{5}){4}$/)
+      expect(ready(await mac.refresh()).recovery).toBe('set')
+      const phoneId = randomUUID(), phoneVault = new MemoryVault()
+      await db.query(`INSERT INTO identity.gugu_devices(device_id,user_id,label,hostname,platform,machine_id) VALUES($1,$2,'Spare','h','darwin',$3)`, [phoneId, owner, `machine-${phoneId}`])
+      const spare = engine(phoneId, phoneVault)
+      expect(await spare.refresh()).toMatchObject({ state: 'joining', recovery: true })
+      await expect(spare.recover(code.replace('0', 'O').toLowerCase().replaceAll('-', ' '))).resolves.toBeTruthy()
+      expect(phoneVault.items.get(github)?.password).toBe('canary-after-removal')
+      // Used up: the same code opens nothing any more, and the spare device holds a fresh one.
+      const other = new MemoryVault(), otherId = randomUUID()
+      await db.query(`INSERT INTO identity.gugu_devices(device_id,user_id,label,hostname,platform,machine_id) VALUES($1,$2,'Other','h','darwin',$3)`, [otherId, owner, `machine-${otherId}`])
+      const third = engine(otherId, other)
+      await third.refresh()
+      await expect(third.recover(code)).rejects.toMatchObject({ code: 'NOT_MEMBER' })
+      expect(ready(await spare.refresh()).recovery).toBe('set')
+      // Removing a device keeps the current code working (re-sealed); dropping the code makes it open nothing.
+      expect(ready(await mac.remove(phoneId)).recovery).toBe('set')
+      await mac.removeRecovery()
+      expect(ready(await mac.refresh()).recovery).toBe('unset')
+      mac.dispose(); laptop.dispose(); spare.dispose(); third.dispose()
     } finally { await db.query('ROLLBACK') }
   }))
 })

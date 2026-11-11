@@ -25,6 +25,7 @@ const host = (origin: string) => { try { return new URL(origin).host } catch { r
 const errorText = (code: string) => code === 'CANNOT_UNLOCK' ? '没有通过本人验证。'
   : code === 'INVALID_INPUT' ? '请填写 https 网址、账号和密码；字段名不能重复。'
     : code === 'STALE_REFERENCE' ? '这条密码刚被改过，请返回后重试。'
+    : code === 'RECOVERY_INVALID' ? '恢复码不对，请核对后重输。'
       : '暂时无法完成，请稍后重试。'
 const LEVEL = { read: '可读', write: '可写' } as const
 /** Every value column ends in the same trailing slot (eye, remove, or nothing), so inputs and values line up. */
@@ -81,13 +82,13 @@ export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLEleme
       <SettingsNote>安全存储密码以供你的智能体使用。</SettingsNote>
       {slot ? createPortal(add, slot) : add}
     </div>
-    {snapshot?.sync && <SyncStatus sync={snapshot.sync} busy={busy} run={run} />}
+    {snapshot?.sync && <SyncStatus sync={snapshot.sync} busy={busy} run={run} error={error} />}
     <SettingsGroup title="密码管理" presentation="navigation">
       {snapshot?.items.map(value => <SettingsRow key={value.reference.id} leading={<Globe size={18} aria-hidden="true" />} title={host(value.origin)}
         control={<ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" />} onClick={() => go({ kind: 'detail', id: value.reference.id })} />)}
       {snapshot && !snapshot.items.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">还没有保存密码</span>} />}
     </SettingsGroup>
-    {snapshot?.sync?.state === 'ready' && <SyncDevices devices={snapshot.sync.devices} busy={busy} run={run} />}
+    {snapshot?.sync?.state === 'ready' && <SyncDevices devices={snapshot.sync.devices} recovery={snapshot.sync.recovery} busy={busy} run={run} error={error} />}
     {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
   </SettingsPage>
 }
@@ -95,21 +96,41 @@ export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLEleme
 /** The 6 digits both devices show, grouped 3 + 3 so they are easy to compare aloud. */
 const Code = ({ value }: { value: string }) => <span className="font-mono text-[length:var(--font-title)] font-semibold tracking-[0.2em] text-[var(--fg)]" aria-label={`验证码 ${value.split('').join(' ')}`}>
   {value.slice(0, 3)} {value.slice(3)}</span>
-type SyncProps = { busy: boolean; run: ScreenProps['run'] }
+type SyncProps = { busy: boolean; run: ScreenProps['run']; error: string }
 /** Cross-device sync (#2481): what this device is waiting for, or what another device asks of it. */
-function SyncStatus({ sync, busy, run }: SyncProps & { sync: PasswordSyncView }) {
-  if (sync.state === 'joining') return <SettingsGroup title="同步到这台设备">
+function SyncStatus({ sync, busy, run, error }: SyncProps & { sync: PasswordSyncView }) {
+  const [entering, setEntering] = useState(false)
+  const [shown, setShown] = useState<string>()
+  const recover = sync.state !== 'ready' && sync.state !== 'off' && sync.recovery
+    && <SettingsRow title="用恢复码恢复" description="另一台设备都不在了，就在这里输入恢复码。"
+      control={<Button size="sm" disabled={busy} onClick={() => setEntering(true)}>输入恢复码</Button>} />
+  const create = async () => { const reply = await run({ type: 'sync-recovery-create' }); if (reply?.recoveryCode) setShown(reply.recoveryCode) }
+  const body = sync.state === 'joining' ? <SettingsGroup title="同步到这台设备">
     {sync.code
       ? <SettingsRow title="核对验证码" description="和另一台设备上的数字一样，再在那台设备上点「允许」。" control={<Code value={sync.code} />} />
       : <SettingsRow title="等待另一台设备允许" description="在已经能用这些密码的设备上，打开 设置 → 密码，允许这台设备。" />}
+    {recover}
   </SettingsGroup>
-  if (sync.state === 'blocked') return <SettingsGroup title="同步到这台设备">
-    <SettingsRow title="这台设备的同步钥匙已丢失" description="在另一台设备的 设置 → 密码 里移除这台设备，这里会重新申请。" />
-  </SettingsGroup>
-  if (sync.state !== 'ready' || !sync.requests.length) return null
-  return <SettingsGroup title="新设备请求使用你的密码">
-    {sync.requests.map(request => <SyncRequestRow key={request.deviceId} request={request} busy={busy} run={run} />)}
-  </SettingsGroup>
+    : sync.state === 'blocked' ? <SettingsGroup title="同步到这台设备">
+      <SettingsRow title="这台设备的同步钥匙已丢失" description="在另一台设备的 设置 → 密码 里移除这台设备，这里会重新申请。" />
+      {recover}
+    </SettingsGroup>
+      : sync.state === 'ready' ? <>
+        {sync.recovery === 'ask' && <SettingsGroup title="设置恢复码">
+          <SettingsRow title="生成恢复码" description="所有设备都丢了时，在新设备上登录并输入它，就能找回这些密码。"
+            control={<div className="flex gap-2"><Button size="sm" disabled={busy} onClick={() => { void run({ type: 'sync-recovery-skip' }) }}>跳过</Button>
+              <Button size="sm" variant="primary" disabled={busy} onClick={() => { void create() }}>生成</Button></div>} />
+        </SettingsGroup>}
+        {!!sync.requests.length && <SettingsGroup title="新设备请求使用你的密码">
+          {sync.requests.map(request => <SyncRequestRow key={request.deviceId} request={request} busy={busy} run={run} error={error} />)}
+        </SettingsGroup>}
+      </> : null
+  return <>
+    {body}
+    {entering && <RecoverSheet busy={busy} error={error} onClose={() => setEntering(false)}
+      onSubmit={async code => { const reply = await run({ type: 'sync-recover', code }); if (reply?.recoveryCode) { setEntering(false); setShown(reply.recoveryCode) } }} />}
+    {shown && <RecoveryCodeSheet code={shown} fresh onClose={() => setShown(undefined)} />}
+  </>
 }
 function SyncRequestRow({ request, busy, run }: SyncProps & { request: PasswordSyncRequest }) {
   const reject = <Button size="sm" disabled={busy} onClick={() => { void run({ type: 'sync-reject', deviceId: request.deviceId }) }}>拒绝</Button>
@@ -124,30 +145,86 @@ function SyncRequestRow({ request, busy, run }: SyncProps & { request: PasswordS
       : '已在别处打开。拒绝后那台设备会重新申请。'
   return <SettingsRow title={name} description={description} control={reject} />
 }
-function SyncDevices({ devices, busy, run }: SyncProps & { devices: PasswordSyncDevice[] }) {
+/** A small confirm sheet in the same shape as the credential delete confirm. */
+function Confirm({ title, body, action, busy, onConfirm, onClose, testId }: { title: string; body: string; action: string; busy: boolean; onConfirm(): void; onClose(): void; testId: string }) {
+  return <Sheet onClose={onClose} desktopWidth="400px" mobileFitContent ariaLabel={title} testId={testId} zIndex="var(--z-settings-modal)">
+    <div className="flex flex-col gap-3 p-[18px]">
+      <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">{title}</div>
+      <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">{body}</div>
+      <div className="flex justify-end gap-2">
+        <Button size="sm" onClick={onClose}>取消</Button>
+        <Button size="sm" variant="danger" disabled={busy} onClick={onConfirm}>{action}</Button>
+      </div>
+    </div>
+  </Sheet>
+}
+/** Shown once, right after the code is made. Where to keep it is said here, the only place it matters. */
+function RecoveryCodeSheet({ code, fresh, onClose }: { code: string; fresh?: boolean; onClose(): void }) {
+  const [copied, setCopied] = useState(false)
+  return <Sheet onClose={onClose} desktopWidth="440px" mobileFitContent ariaLabel="恢复码" testId="password-recovery-code" zIndex="var(--z-settings-modal)">
+    <div className="flex flex-col gap-3 p-[18px]">
+      <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">{fresh ? '新的恢复码' : '恢复码'}</div>
+      <div className="select-text rounded-[var(--radius-control)] bg-[var(--muted)] px-4 py-3 text-center font-mono text-[length:var(--font-title)] font-semibold tracking-[0.08em] text-[var(--fg)]">{code}</div>
+      <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">
+        抄在纸上或打印出来，放在只有你拿得到的地方。所有设备都丢了时，在新设备上登录并输入它，就能找回密码。{fresh ? '之前的恢复码已经失效。' : ''}
+      </div>
+      <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">
+        别存进邮箱或网盘：有人同时拿到它和你的邮箱，就能读到你所有密码。关掉后不能再查看。
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button size="sm" onClick={() => { void navigator.clipboard?.writeText(code).then(() => setCopied(true)) }}>{copied ? '已复制' : '复制'}</Button>
+        <Button size="sm" variant="primary" onClick={onClose}>我已保存</Button>
+      </div>
+    </div>
+  </Sheet>
+}
+function RecoverSheet({ busy, error, onSubmit, onClose }: { busy: boolean; error: string; onSubmit(code: string): Promise<void>; onClose(): void }) {
+  const [code, setCode] = useState('')
+  useEffect(() => () => setCode(''), [])
+  return <Sheet onClose={onClose} desktopWidth="440px" mobileFitContent ariaLabel="用恢复码恢复" testId="password-recover" zIndex="var(--z-settings-modal)">
+    <form className="flex flex-col gap-3 p-[18px]" onSubmit={event => { event.preventDefault(); void onSubmit(code) }}>
+      <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">用恢复码恢复</div>
+      <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">恢复后这台设备就能用你的密码。这个恢复码随即失效，会给你一个新的。</div>
+      <Field.Root><Field.Input required aria-label="恢复码" autoComplete="off" spellCheck={false} className="font-mono" value={code}
+        placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" onChange={event => setCode(event.target.value)} /></Field.Root>
+      {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
+      <div className="flex justify-end gap-2">
+        <Button size="sm" onClick={onClose}>取消</Button>
+        <Button size="sm" variant="primary" type="submit" disabled={busy || !code.trim()}>恢复</Button>
+      </div>
+    </form>
+  </Sheet>
+}
+function SyncDevices({ devices, recovery, busy, run }: SyncProps & { devices: PasswordSyncDevice[]; recovery: 'set' | 'unset' | 'ask' }) {
   const [removing, setRemoving] = useState<PasswordSyncDevice>()
+  const [asking, setAsking] = useState<'regenerate' | 'drop'>()
+  const [shown, setShown] = useState<{ code: string; fresh: boolean }>()
+  const create = async (fresh: boolean) => { const reply = await run({ type: 'sync-recovery-create' }); setAsking(undefined); if (reply?.recoveryCode) setShown({ code: reply.recoveryCode, fresh }) }
   return <>
     <SettingsGroup title="同步的设备" note="这些设备都能用上面的密码。">
       {devices.map(device => <SettingsRow key={device.deviceId} title={device.label || '未命名设备'} description={device.current ? '本机' : undefined}
         control={device.current ? undefined : <Button variant="ghost" size="sm" disabled={busy} onClick={() => setRemoving(device)}>移除</Button>} />)}
+      <SettingsRow title="恢复码" description={recovery === 'set' ? '所有设备都丢了时，用它找回密码。' : '未设置'}
+        control={recovery === 'set'
+          ? <div className="flex gap-1"><Button variant="ghost" size="sm" disabled={busy} onClick={() => setAsking('regenerate')}>重新生成</Button>
+            <Button variant="ghost" size="sm" disabled={busy} onClick={() => setAsking('drop')}>移除</Button></div>
+          : <Button variant="ghost" size="sm" disabled={busy} onClick={() => { void create(false) }}>生成</Button>} />
     </SettingsGroup>
-    {removing && <Sheet onClose={() => setRemoving(undefined)} desktopWidth="400px" mobileFitContent ariaLabel={`移除 ${removing.label}`}
-      testId="password-sync-remove-dialog" zIndex="var(--z-settings-modal)">
-      <div className="flex flex-col gap-3 p-[18px]">
-        <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">不再同步到 {removing.label || '这台设备'}？</div>
-        <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">它收不到之后新增和修改的密码。它已经存下的密码不会被删掉，需要的话去网站上改密码。</div>
-        <div className="flex justify-end gap-2">
-          <Button size="sm" onClick={() => setRemoving(undefined)}>取消</Button>
-          <Button size="sm" variant="danger" disabled={busy} onClick={() => { void run({ type: 'sync-remove', deviceId: removing.deviceId }).then(() => setRemoving(undefined)) }}>移除</Button>
-        </div>
-      </div>
-    </Sheet>}
+    {removing && <Confirm title={`不再同步到 ${removing.label || '这台设备'}？`} action="移除" busy={busy} testId="password-sync-remove-dialog"
+      body="它收不到之后新增和修改的密码。它已经存下的密码不会被删掉，需要的话去网站上改密码。"
+      onClose={() => setRemoving(undefined)} onConfirm={() => { void run({ type: 'sync-remove', deviceId: removing.deviceId }).then(() => setRemoving(undefined)) }} />}
+    {asking === 'regenerate' && <Confirm title="重新生成恢复码？" action="重新生成" busy={busy} testId="password-recovery-regenerate"
+      body="旧的恢复码会立刻失效，手上那份要换成新的。" onClose={() => setAsking(undefined)} onConfirm={() => { void create(true) }} />}
+    {asking === 'drop' && <Confirm title="移除恢复码？" action="移除" busy={busy} testId="password-recovery-remove"
+      body="移除后，所有设备都丢了就找不回这些密码。" onClose={() => setAsking(undefined)}
+      onConfirm={() => { void run({ type: 'sync-recovery-remove' }).then(() => setAsking(undefined)) }} />}
+    {shown && <RecoveryCodeSheet code={shown.code} fresh={shown.fresh} onClose={() => setShown(undefined)} />}
   </>
 }
 
 interface ScreenProps {
   snapshot?: PasswordSnapshot; busy: boolean; error: string
-  run(command: PasswordUiCommand): Promise<{ ok: true; snapshot: PasswordSnapshot; secrets?: PasswordSecrets } | undefined>
+  run(command: PasswordUiCommand): Promise<{ ok: true; snapshot: PasswordSnapshot; secrets?: PasswordSecrets; recoveryCode?: string } | undefined>
   go(view: View): void
 }
 

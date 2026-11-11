@@ -1,7 +1,8 @@
 # Password vault sync (end-to-end encrypted) — #2481
 
 Decided 2026-11-11: the cloud holds only ciphertext; a new device is approved once on a device that already has the
-key; removing a device rotates the key; losing every approved device loses the vault (no recovery).
+key; removing a device rotates the key. Afternoon revision: an optional recovery code; it works only with the account
+signed in **and** the code typed in.
 
 ## Keys
 
@@ -42,6 +43,14 @@ The existing local vault stays the working copy that Agents use (offline reads a
 the cloud first and are applied locally only after the RPC succeeds; offline devices cannot edit. A pull applies remote
 items through the same revocation path as a local edit, so in-flight uses of a changed credential are invalidated.
 First sync on a device with an existing local vault uploads it (same origin + account merge into one item).
+
+## Recovery code
+
+A device on paper: 25 Crockford base32 symbols (~125 bits, not chosen by the person). `seed = H("recovery-seed", code)`
+gives an X25519 pair the vault key is sealed to; `proof = H("recovery-proof", code)`, and the cloud keeps only
+`SHA-256(proof)`. A device with the account and the proof receives the sealed key, joins as a full member, and the code
+is used up; a new one is issued and shown once. Re-keying re-seals to it; replacing or removing it re-keys, so an old
+code opens nothing. Reset is refused while a code exists. Settings offers it once after the first sync (skippable).
 
 ## Removing a device
 

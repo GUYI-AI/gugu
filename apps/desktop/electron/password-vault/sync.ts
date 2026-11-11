@@ -26,13 +26,16 @@ export interface SyncDevice { deviceId: string; label: string; platform: string;
 export interface SyncRequest extends SyncDevice { stage: 'new' | 'elsewhere' | 'waiting' | 'compare' | 'mismatch'; code?: string }
 export type SyncView =
   | { state: 'off' }
-  | { state: 'joining'; code?: string }
-  | { state: 'blocked' }
-  | { state: 'ready'; devices: SyncDevice[]; requests: SyncRequest[] }
+  /** recovery: a recovery code exists, so this device can join with it instead of another device's approval. */
+  | { state: 'joining'; code?: string; recovery?: boolean }
+  | { state: 'blocked'; recovery?: boolean }
+  /** recovery: set · unset · ask (unset, and this device has not offered it yet) */
+  | { state: 'ready'; devices: SyncDevice[]; requests: SyncRequest[]; recovery: 'set' | 'unset' | 'ask' }
 
 const b64 = z.string().regex(/^[A-Za-z0-9+/]{43}=$/)
 const fileSchema = z.strictObject({ schema: z.literal(1), deviceId: z.string().min(1), publicKey: b64, secret: z.string(),
-  nonce: b64.optional(), revision: z.string().regex(/^\d+$/), versions: z.record(z.string(), z.string().regex(/^\d+$/)), merged: z.boolean() })
+  nonce: b64.optional(), revision: z.string().regex(/^\d+$/), versions: z.record(z.string(), z.string().regex(/^\d+$/)), merged: z.boolean(),
+  recoveryAsked: z.boolean().optional() })
 type DeviceFile = z.infer<typeof fileSchema>
 const remoteDevice = z.object({ deviceId: z.string(), label: z.string().nullable(), platform: z.string().nullable(), hostKind: z.string().nullable(),
   status: z.enum(['pending', 'approved']), scope: z.enum(['full', 'granted']).nullable(), publicKey: b64, commitment: z.string().nullable(),
@@ -40,7 +43,7 @@ const remoteDevice = z.object({ deviceId: z.string(), label: z.string().nullable
 const remoteItem = z.object({ itemId: z.string(), version: z.string(), epoch: z.number(), wrappedKey: z.string().nullable(),
   ciphertext: z.string().nullable(), deleted: z.boolean(), revision: z.string() })
 const remoteState = z.union([z.object({ initialized: z.literal(false) }), z.object({ initialized: z.literal(true), epoch: z.number().int(),
-  revision: z.string(), rotationRequired: z.boolean(), devices: z.array(remoteDevice),
+  revision: z.string(), rotationRequired: z.boolean(), recovery: z.boolean(), recoveryPublicKey: b64.nullable(), devices: z.array(remoteDevice),
   shares: z.array(z.object({ itemId: z.string().nullable(), epoch: z.number(), sealed: z.string() })), items: z.array(remoteItem) })])
 type RemoteState = Extract<z.infer<typeof remoteState>, { initialized: true }>
 type RemoteItem = z.infer<typeof remoteItem>
@@ -172,11 +175,11 @@ export class VaultSync {
       if (!state.initialized) throw new SyncError('STATE')
     }
     const me = state.devices.find(device => device.deviceId === file.deviceId)
-    if (me?.status === 'approved' && me.publicKey !== file.publicKey) return { state: 'blocked' }
+    if (me?.status === 'approved' && me.publicKey !== file.publicKey) return { state: 'blocked', recovery: state.recovery }
     if (me?.status !== 'approved') {
       // Removed elsewhere (or never joined): edits stay local and merge when this device joins again.
       if (file.merged) { Object.assign(file, { merged: false, revision: '0', versions: {} }); this.#state = undefined; await this.save() }
-      return this.join(file, me)
+      return { ...await this.join(file, me), recovery: state.recovery }
     }
     const vaultKey = await this.openVaultKey(state, file)
     if (!vaultKey) return { state: 'joining' }
@@ -188,7 +191,7 @@ export class VaultSync {
     if (state.rotationRequired && me.scope === 'full') { await this.rotate([]); this.#state = state = await this.fetch(file, file.revision) as RemoteState }
     return this.ready(file, state)
   }
-  private async join(file: DeviceFile, me: z.infer<typeof remoteDevice> | undefined): Promise<SyncView> {
+  private async join(file: DeviceFile, me: z.infer<typeof remoteDevice> | undefined): Promise<Extract<SyncView, { state: 'joining' | 'blocked' }>> {
     if (!me || me.publicKey !== file.publicKey) {
       file.nonce = c.randomNonce(); await this.save()
       try { await this.call('password_vault_request', { p_device_id: file.deviceId, p_public_key: file.publicKey, p_commitment: c.commitment(file.publicKey, file.nonce) }) }
@@ -242,7 +245,8 @@ export class VaultSync {
       if (!c.verifyCommitment(device.publicKey, device.deviceNonce, device.commitment)) return { ...view(device), stage: 'mismatch' }
       return { ...view(device), stage: 'compare', code: c.shortCode(device.publicKey, device.deviceNonce, mine) }
     })
-    return { state: 'ready', devices: state.devices.filter(device => device.status === 'approved').map(view), requests }
+    const recovery = state.recovery ? 'set' : file.recoveryAsked ? 'unset' : 'ask'
+    return { state: 'ready', devices: state.devices.filter(device => device.status === 'approved').map(view), requests, recovery }
   }
 
   /** The person opened a request on this device: post our nonce so both screens can show the code. */
@@ -281,7 +285,50 @@ export class VaultSync {
   remove(deviceId: string): Promise<SyncView> {
     return this.serial(() => this.rotate([deviceId])).then(() => this.refresh())
   }
-  private async rotate(remove: string[]) {
+  /** Generate the recovery code (or replace it: the old one stops opening anything). Returns the code, shown once. */
+  createRecovery(): Promise<{ view: SyncView; code: string }> {
+    let code = ''
+    return this.serial(async () => {
+      const file = await this.load(), state = await this.fetch(file, file.revision)
+      if (!state.initialized) throw new SyncError('STATE')
+      const vaultKey = await this.openVaultKey(state, file)
+      if (!vaultKey) throw new SyncError('NOT_MEMBER')
+      const next = c.recoveryCode(), keys = await c.recoveryKeys(next)
+      try {
+        if (state.recovery) await this.rotate([], { publicKey: keys.pair.publicKey, verifier: keys.verifier })
+        else await this.call('password_vault_set_recovery', { p_device_id: file.deviceId, p_epoch: state.epoch, p_public_key: keys.pair.publicKey,
+          p_verifier: keys.verifier, p_sealed: await c.sealVaultKey(keys.pair.publicKey, state.epoch, vaultKey) })
+      } finally { keys.pair.secretKey.fill(0) }
+      file.recoveryAsked = true; await this.save()
+      code = next
+    }).then(async () => ({ view: await this.refresh(), code }))
+  }
+  /** Drop the recovery code; re-keying makes sure it opens nothing written before or after. */
+  removeRecovery(): Promise<SyncView> {
+    return this.serial(() => this.rotate([], 'drop')).then(() => this.refresh())
+  }
+  /** The person chose not to set a code now; it stays available under the device list. */
+  skipRecovery(): Promise<SyncView> {
+    return this.serial(async () => { const file = await this.load(); file.recoveryAsked = true; await this.save() }).then(() => this.refresh())
+  }
+  /** Every other device is gone: join with the account and the code. The code is used up, and a new one is issued. */
+  recover(code: string): Promise<{ view: SyncView; code: string }> {
+    return this.serial(async () => {
+      const file = await this.load()
+      let keys: Awaited<ReturnType<typeof c.recoveryKeys>>
+      try { keys = await c.recoveryKeys(code) } catch { throw new SyncError('INVALID') }
+      try {
+        const begun = await this.call<{ epoch: number; sealed: string }>('password_vault_recovery_begin', { p_device_id: file.deviceId, p_proof: keys.proof })
+        const vaultKey = await c.openVaultKey(keys.pair, begun.epoch, begun.sealed)
+        await this.call('password_vault_recover', { p_device_id: file.deviceId, p_proof: keys.proof, p_public_key: file.publicKey, p_epoch: begun.epoch,
+          p_sealed_key: await c.sealVaultKey(file.publicKey, begun.epoch, vaultKey) })
+        this.#vaultKey?.key.fill(0); this.#vaultKey = { epoch: begun.epoch, key: vaultKey }
+        // Pull everything and merge this device's own entries, as for any device that joins.
+        Object.assign(file, { merged: false, revision: '0', versions: {}, recoveryAsked: true }); delete file.nonce; await this.save()
+      } finally { keys.pair.secretKey.fill(0) }
+    }).then(() => this.createRecovery())
+  }
+  private async rotate(remove: string[], recovery: 'keep' | 'drop' | { publicKey: string; verifier: string } = 'keep') {
     const file = await this.load(), state = await this.fetch(file, '0')
     if (!state.initialized) throw new SyncError('STATE')
     const oldKey = await this.openVaultKey(state, file)
@@ -294,7 +341,11 @@ export class VaultSync {
       })
       const keep = state.devices.filter(device => device.status === 'approved' && device.scope === 'full' && !remove.includes(device.deviceId))
       const shares = await Promise.all(keep.map(async device => ({ deviceId: device.deviceId, sealed: await c.sealVaultKey(device.publicKey, epoch, nextKey) })))
-      const result = await this.call<{ revision: string }>('password_vault_rotate', { p_device_id: file.deviceId, p_epoch: state.epoch, p_remove_device_ids: remove, p_items: items, p_shares: shares })
+      // The recovery code is one more holder of the key: re-sealed to it, replaced by a new one, or dropped.
+      const p_recovery = recovery === 'drop' ? null
+        : recovery === 'keep' ? state.recovery && state.recoveryPublicKey ? { sealed: await c.sealVaultKey(state.recoveryPublicKey, epoch, nextKey) } : null
+          : { ...recovery, sealed: await c.sealVaultKey(recovery.publicKey, epoch, nextKey) }
+      const result = await this.call<{ revision: string }>('password_vault_rotate', { p_device_id: file.deviceId, p_epoch: state.epoch, p_remove_device_ids: remove, p_items: items, p_shares: shares, p_recovery })
       this.#vaultKey?.key.fill(0); this.#vaultKey = { epoch, key: Buffer.from(nextKey) }
       // Re-keying changes no value: the local vault keeps these items as they are.
       for (const item of items) file.versions[item.itemId] = String(item.expectedVersion + 1)
