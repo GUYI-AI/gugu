@@ -130,6 +130,15 @@ const PUBLISHERS_FILENAME = '.extension-publishers.json';
 const MARKET_SOURCES_FILENAME = '.extension-market-sources.json';
 const isReleaseProof = (value: unknown) => !!value && typeof value === 'object'
   && ['keyId', 'manifest', 'signature'].every((key) => typeof (value as Record<string, unknown>)[key] === 'string');
+/**
+ * Who made each conversation binding (#1927), as `{ [<owner>/<publisher>/<id>]: 'person' | { host: handle | null } }`: the
+ * person in the App's permissions (their chooser, a pick or a removal), or the host itself for the trusted assistant App
+ * (assistant-app-entry.ts), with the handle it wrote. A binding the host did not write — the person's, or one from before
+ * this record — is the person's choice, and the host never writes over it (owner: automation never overrides an explicit
+ * choice). Pruned on uninstall and when another publisher's App replaces it, like the bindings.
+ */
+const BINDING_AUTHORS_FILENAME = '.conversation-binding-authors.json';
+type BindingAuthor = 'person' | { host: string | null };
 
 /** Who published an App installed from a chat or a folder (`PUBLISHERS_FILENAME`). */
 export interface ExtensionPublisher {
@@ -205,6 +214,7 @@ export class ExtensionsService {
   private readonly marketSourcesFile: JsonFile<Record<string, MarketInstallRecord>>;
   private readonly openWithFile: JsonFile<Record<string, string>>;
   private readonly unreadBindingsFile: JsonFile<Record<string, import('@shared/extensions/unread-binding').StoredUnreadBinding>>;
+  private readonly bindingAuthorsFile: JsonFile<Record<string, BindingAuthor>>;
   private readonly unreadAuthorities = new Map<string, { scope: string; value: string }>();
   private readonly surfaceAuthorities = new Map<string, { scope: string; value: string }>();
   /** #1927 (42): who holds a binding's authority past one call (resource subscriptions), told when it may have changed. */
@@ -213,6 +223,9 @@ export class ExtensionsService {
 
   constructor(private readonly rootDir: string) {
     this.unreadBindingsFile = jsonFile(rootDir, '.conversation-unread-bindings.json', '{}', readUnreadBindings, 0o600);
+    this.bindingAuthorsFile = jsonFile(rootDir, BINDING_AUTHORS_FILENAME, '{}', mapOf<BindingAuthor>(BINDING_AUTHORS_FILENAME, 'binding authors',
+      (value) => value === 'person' || (!!value && typeof value === 'object' && Object.keys(value).length === 1
+        && (typeof (value as { host?: unknown }).host === 'string' || (value as { host?: unknown }).host === null))), 0o600);
     this.variantsFile = jsonFile(rootDir, '.variants.json', '{}', (value) => Object.assign(Object.create(null) as Record<string, AppVariants>, z.record(z.string(), appVariantsSchema).parse(value)));
     this.grantsFile = jsonFile(rootDir, '.granted-permissions.json', '{}', (value) => z.record(z.string(), z.object({ capabilities: z.array(z.string()), network: z.array(z.string()) })).parse(value) as Record<string, NonNullable<ExtensionManifest['permissions']>>);
     this.settingsFile = jsonFile(rootDir, SETTINGS_FILENAME, '{}', (value) => {
@@ -323,16 +336,41 @@ export class ExtensionsService {
     this.surfaceAuthorities.delete(extensionId);
   }
 
-  /** Only the host's common permission UI calls this, after validating current membership. */
-  setConversationUnreadBinding(ownerId: string, extensionId: string, name: string, chatId: string | null): void {
+  /**
+   * Only the host's common permission UI calls this (`by` person: the person's own pick or removal), after validating
+   * current membership — or the host's binding of the trusted assistant App (`by` host, assistant-app-entry.ts), which is
+   * refused over a binding the person chose (`conversationBindingChosenByPerson`).
+   */
+  setConversationUnreadBinding(ownerId: string, extensionId: string, name: string, chatId: string | null, by: 'person' | 'host' = 'person'): void {
     this.conversationUnreadBinding(ownerId, extensionId, name);
+    if (by === 'host' && this.conversationBindingChosenByPerson(ownerId, extensionId, name)) {
+      throw Object.assign(new Error('The person chose this App\'s conversation; the host does not change it'), { code: 'denied' });
+    }
     const key = unreadBindingKey(ownerId, appKey(this.identityOf(extensionId)!));
     const stored = this.unreadBindingsFile.read();
+    const handle = chatId === null ? null : randomUUID();
     if (chatId === null) delete stored[key];
-    else stored[key] = { ownerId, name, chatId: z.string().uuid().parse(chatId), handle: randomUUID() };
+    else stored[key] = { ownerId, name, chatId: z.string().uuid().parse(chatId), handle: handle! };
     this.unreadBindingsFile.write(readUnreadBindings(stored));
+    const authors = this.bindingAuthorsFile.read();
+    authors[key] = by === 'person' ? 'person' : { host: handle };
+    this.bindingAuthorsFile.write(authors);
     this.forgetAuthorities(extensionId);
     this.bindingAuthorityChanged(extensionId);
+  }
+
+  /**
+   * Whether this account's binding of this App is the person's choice: they picked or removed it in the App's permissions,
+   * or a binding is there that the host did not write (one from before the record was kept counts as theirs). No binding
+   * and no pick: nobody chose — the host may bind the trusted assistant App (assistant-app-entry.ts).
+   */
+  conversationBindingChosenByPerson(ownerId: string, extensionId: string, name: string): boolean {
+    const binding = this.conversationUnreadBinding(ownerId, extensionId, name);
+    const key = unreadBindingKey(ownerId, appKey(this.identityOf(extensionId)!));
+    const authors = this.bindingAuthorsFile.read();
+    const author = Object.hasOwn(authors, key) ? authors[key]! : undefined;
+    if (author === 'person') return true;
+    return binding !== null && author?.host !== binding.handle;
   }
 
   private forgetConversationUnreadBindings(extensionId: string): void {
@@ -342,6 +380,15 @@ export class ExtensionsService {
     const stored = this.unreadBindingsFile.read();
     for (const key of Object.keys(stored)) if (key.endsWith(suffix)) delete stored[key];
     this.unreadBindingsFile.write(stored);
+  }
+
+  /** Who chose this App's bindings: forgotten with the App itself, or when another publisher's App takes its id. */
+  private forgetBindingAuthors(extensionId: string): void {
+    const suffix = `/${extensionId}`;
+    const authors = this.bindingAuthorsFile.read();
+    const kept = Object.keys(authors).filter((key) => !key.endsWith(suffix));
+    if (kept.length === Object.keys(authors).length) return;
+    this.bindingAuthorsFile.write(Object.fromEntries(kept.map((key) => [key, authors[key]!])));
   }
 
   settings(extensionId: string): AppSettings {
@@ -540,6 +587,7 @@ export class ExtensionsService {
     if (previousIdentity && identity && appKey(previousIdentity) !== appKey(identity)) {
       delete grants[appKey(previousIdentity)];
       this.setGivenHere(previousIdentity, null);
+      this.forgetBindingAuthors(manifest.id);
     }
     if (identity) grants[appKey(identity)] = approved;
     if (identity || previousIdentity) this.grantsFile.write(grants);
@@ -914,7 +962,7 @@ export class ExtensionsService {
     if (permission === 'chat:surface') this.forgetAuthorities(extensionId);
     // #1925 / #1927 The assistant's and the agent resources' grants likewise.
     if (permission === 'assistant:status' || permission === 'assistant:open' || permission === 'assistant:rename') this.unreadAuthorities.delete(extensionId);
-    if (permission === 'chat:resources' || permission === 'chat:resources:write') this.unreadAuthorities.delete(extensionId);
+    if (permission === 'chat:resources' || permission === 'chat:resources:write' || permission === 'chat:voice-notes:record') this.unreadAuthorities.delete(extensionId);
     if (permission === 'chat:schedules' || permission === 'chat:schedules:control') this.unreadAuthorities.delete(extensionId);
     this.revocationsFile.write(revocations);
     this.bindingAuthorityChanged(extensionId);
@@ -940,6 +988,7 @@ export class ExtensionsService {
     // can fail has succeeded.
     this.forgetAuthorities(extensionId);
     this.forgetConversationUnreadBindings(extensionId);
+    this.forgetBindingAuthors(extensionId);
     this.bindingAuthorityChanged(extensionId);
     this.forgetRevocations(extensionId);
     const settings = this.settingsFile.read();

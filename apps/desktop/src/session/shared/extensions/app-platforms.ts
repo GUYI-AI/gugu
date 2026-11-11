@@ -16,7 +16,8 @@ export const PHONE_CAPABILITY_SUPPORT = {
   'files:write': 'available',
   'chat:relay': 'available',
   'chat:read': 'available',
-  // The conversation binding (API 49, phone-binding.ts): the phone answers it, as the host binds it there.
+  // The conversation binding (API 49, phone-binding.ts): the phone answers it, as the host binds it there — the voice-note
+  // recorder's verbs there with the closed `unsupported` state (its own 聊天 records), never a refused manifest.
   'chat:unread': 'available',
   'chat:files': 'available',
   'chat:draft': 'available',
@@ -29,6 +30,7 @@ export const PHONE_CAPABILITY_SUPPORT = {
   'assistant:open': 'available',
   'assistant:rename': 'available',
   'chat:work': 'available',
+  'chat:voice-notes:record': 'available',
   'agents:read': 'available',
   'agents:read:all': 'agent',
   'agents:read:all-machines': 'available',

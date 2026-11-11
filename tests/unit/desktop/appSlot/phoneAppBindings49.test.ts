@@ -282,9 +282,13 @@ describe('the binding on a phone: who is asked, every refusal', () => {
 describe('the layout signal and the unsupported-here states', () => {
   it('tells the page the phone layout and the section it fills, only while the layer shows it', async () => {
     const bindings = createPhoneBindings(ports())
-    expect(await bindings.surface(PAGE, { name: 'main' })).toEqual({ name: 'main', state: 'bound', layout: 'phone', section: 'today' })
+    expect(await bindings.surface(PAGE, { name: 'main' })).toEqual({ name: 'main', state: 'bound', layout: 'phone', section: 'today', hostPage: false })
     world.shown = { ...world.shown!, section: 'tasks' }
-    expect(await bindings.surface(PAGE, { name: 'main' })).toEqual({ name: 'main', state: 'bound', layout: 'phone', section: 'tasks' })
+    expect(await bindings.surface(PAGE, { name: 'main' })).toEqual({ name: 'main', state: 'bound', layout: 'phone', section: 'tasks', hostPage: false })
+    // One of the phone's own screens over the page (46's hostPage, top-level on a phone: there is no panel).
+    world.shown = { ...world.shown!, hostPage: true }
+    expect(await bindings.surface(PAGE, { name: 'main' })).toEqual({ name: 'main', state: 'bound', layout: 'phone', section: 'tasks', hostPage: true })
+    world.shown = { ...world.shown!, hostPage: false }
     expect(await bindings.surface({ ...PAGE, tabId: 'elsewhere' }, { name: 'main' })).toEqual({ name: 'main', state: 'unbound' })
     world.shown = { ...world.shown!, ownerId: OTHER }
     expect(await bindings.surface(PAGE, { name: 'main' })).toEqual({ name: 'main', state: 'unbound' })
@@ -298,7 +302,11 @@ describe('the layout signal and the unsupported-here states', () => {
   })
   it('moves the layer to one of the page\'s sections; collapsing a panel is unsupported here', async () => {
     const bindings = createPhoneBindings(ports())
-    expect(await bindings.setPanel(PAGE, { name: 'main', section: 'memory' })).toEqual({ name: 'main', state: 'bound', layout: 'phone', section: 'memory' })
+    world.shown = { ...world.shown!, hostPage: true }
+    // Moving to another section leaves the phone's own screen behind; staying keeps it.
+    expect(await bindings.setPanel(PAGE, { name: 'main', section: 'today' })).toEqual({ name: 'main', state: 'bound', layout: 'phone', section: 'today', hostPage: true })
+    expect(actions.move).not.toHaveBeenCalled()
+    expect(await bindings.setPanel(PAGE, { name: 'main', section: 'memory' })).toEqual({ name: 'main', state: 'bound', layout: 'phone', section: 'memory', hostPage: false })
     expect(actions.move).toHaveBeenCalledWith('memory')
     expect(await bindings.setPanel(PAGE, { name: 'main', collapsed: true })).toEqual({ name: 'main', state: 'unsupported' })
     expect(await codeOf(bindings.setPanel(PAGE, { name: 'main', section: 'chat' }))).toBe('invalid')
@@ -365,6 +373,24 @@ describe('the layout signal and the unsupported-here states', () => {
     expect(await bindings.assistantFigure(ASSISTANT_APP_ID, { name: 'main', figure: null })).toEqual({ name: 'main', state: 'unsupported' })
     expect(await codeOf(bindings.assistantFigure(ASSISTANT_APP_ID, { name: 'other', figure: null }))).toBe('denied')
     expect(await codeOf(bindings.assistantFigure(ASSISTANT_APP_ID, { name: 'main', figure: { x: 0, y: 0, size: 2 } }))).toBe('invalid')
+  })
+  it.each([
+    ['voiceNoteStatus', { name: 'main' }], ['voiceNoteStart', { name: 'main' }], ['voiceNotePause', { name: 'main' }],
+    ['voiceNoteResume', { name: 'main' }], ['voiceNoteStop', { name: 'main' }], ['voiceNoteOpenMicSettings', { name: 'main' }],
+    ['voiceNoteRetry', { name: 'main', job: WORK }], ['voiceNoteWatch', { watchId: 'w1', name: 'main', on: true }],
+  ] as const)('answers %s unsupported on a phone (its own 聊天 records), only to an App granted the recorder', async (method, args) => {
+    // The manifest holds 12 capabilities at most and the binding now has 13: the recorder's in place of rename here.
+    const base = assistantManifest()
+    const binding = base.permissions!.bindings![0]!
+    world.app = install({ manifest: assistantManifest({ permissions: { ...base.permissions,
+      capabilities: [...base.permissions!.capabilities!.filter((c) => c !== 'assistant:rename'), 'chat:voice-notes:record'],
+      bindings: [{ ...binding, actions: [...binding.actions.filter((a) => a !== 'assistant-rename'), 'voice-notes:record'] }] } }) })
+    const bindings = createPhoneBindings(ports())
+    expect(await answerPhoneBinding(bindings, method, PAGE, { ...args }, () => undefined)).toEqual({ name: 'main', state: 'unsupported' })
+    expect(await codeOf(answerPhoneBinding(bindings, method, PAGE, { ...args, name: 'other' }, () => undefined)!)).toBe('denied')
+    expect(await codeOf(answerPhoneBinding(bindings, method, PAGE, { ...args, extra: 1 }, () => undefined)!)).toBe('invalid')
+    world.app = install()
+    expect(await codeOf(answerPhoneBinding(bindings, method, PAGE, { ...args }, () => undefined)!)).toBe('denied')
   })
   it('says a phone screen is drawn over the page (hostPage) only for this App and account', async () => {
     const bindings = createPhoneBindings(ports())

@@ -63,7 +63,11 @@ vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: ({ schem
   };
   return query;
 } }) }));
-const { appBindingWork, appBindingWorkHeard, appCloseWork, appOpenWork, appsReadingWork, forgetWorkLedgerForTest, reportWorkChat, workLedgerChanged } = await import('./app-work-binding');
+const { appBindingWork, appBindingWorkHeard, appCloseWork, appOpenWork, appsReadingWork, forgetWorkLedgerForTest, workLedgerChanged } = await import('./app-work-binding');
+const { forgetHostLayersForTest, reportHostLayer } = await import('./app-host-layers');
+/** The window's word on the host page over an App's panel (app-host-layers.ts): a task (`open`), or another page, or none. */
+const reportWorkChat = ({ extensionId, ownerId, open }: { extensionId: string; ownerId: string; open: { workId: string; sessionId: string; deviceId?: string } | null }) =>
+  reportHostLayer({ extensionId, layer: open ? { kind: 'work', ownerId, ...open } : null });
 
 const provision = (agent: string, removed: string | null = null) => ({
   agent_user_id: agent, device_id: DEVICE, member_key: 'assistant', phase: 'ready', created_at: '2026-11-01T00:00:00Z', agent: { removed_at: removed },
@@ -90,6 +94,7 @@ const leaks = (said: unknown) => IDS.filter((id) => JSON.stringify(said).include
 
 beforeEach(() => {
   forgetWorkLedgerForTest();
+  forgetHostLayersForTest();
   Object.assign(state, {
     owner: OWNER, selectedBy: OWNER, handle: SELECTION_1, installed: true, enabled: true, granted: true, declared: ['unread', 'surface', 'work'],
     provisions: [provision(ASSISTANT)], provisionError: false, chatKind: 'dm', members: [OWNER, ASSISTANT], chatError: false,
@@ -352,17 +357,15 @@ describe('gugu.bindings.openWork / closeWork: one task drawn in the App\'s panel
     expect(reportWorkChat({ extensionId: APP, ownerId: OWNER, open: null })).toBe(true);
     expect((await ready()).open).toBeNull();
     expect(reportWorkChat({ extensionId: APP, ownerId: OWNER, open: null })).toBe(false);
-    // Another account: the window's reading for it closes what was open for the one before, at once.
-    reportWorkChat({ extensionId: APP, ownerId: OWNER, open: { workId: WORK_A, sessionId: SESSION_A } });
-    state.owner = OTHER;
-    expect(await workLedgerChanged({ ownerId: null, assistantId: null, state: 'none', rows: [] })).toEqual([APP, OTHER_APP]);
-    state.owner = OWNER;
-    await push();
-    expect((await ready()).open).toBeNull();
-    // A report of another account's task is never this account's open row.
+    // A report of another account's task is never this account's open row: the window took it away on the switch.
     reportWorkChat({ extensionId: APP, ownerId: OTHER, open: { workId: WORK_A, sessionId: SESSION_A } });
     expect((await ready()).open).toBeNull();
+    // Another host page over the panel (the assistant's settings) is no row of the App's.
+    expect(reportHostLayer({ extensionId: APP, layer: { kind: 'assistant-settings', ownerId: OWNER } })).toBe(true);
+    expect((await ready()).open).toBeNull();
     expect(() => reportWorkChat({ extensionId: APP, ownerId: OWNER, open: { workId: WORK_A, sessionId: SESSION_A, deviceId: DEVICE } })).toThrow();
+    expect(() => reportHostLayer({ extensionId: APP, layer: { kind: 'assistant-settings', ownerId: OWNER, chatId: CHAT } })).toThrow();
+    expect(() => reportHostLayer({ extensionId: APP, layer: { kind: 'somewhere', ownerId: OWNER } })).toThrow();
   });
 
   it('every answer of a ready App is free of ids, open or not', async () => {

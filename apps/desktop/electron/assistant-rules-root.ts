@@ -18,6 +18,7 @@ import { assistantRulesLastGoodStore, type LastGoodAssistantRules } from './assi
 import { assistantRules, createAssistantRulesResolver, installAssistantRulesResolver } from './assistant-rules-resolver'
 import { ASSISTANT_RULES_PROVIDER_ID, installedAssistantRulesProvider } from './assistant-rules-trust'
 import { extensionsService } from './session/main/core/extensions/extensions-root'
+import { noteAssistantAppEnsuring } from './session/main/core/extensions/assistant-app-ensuring'
 
 export const ASSISTANT_RULES_DIR_NAME = 'assistant-rules'
 /** Where a release carries the assistant App's rules (scripts/build/assistant-rules-seed.ts writes it at build time). */
@@ -77,6 +78,8 @@ export function ensureAssistantApp(reason: 'start' | 'setup'): Promise<Assistant
     installed: () => extensionsService().isInstalled(ASSISTANT_RULES_PROVIDER_ID),
     needed: () => assistantLivesHere(),
     install: async () => {
+      // The entry on the rail shows「准备中」while this goes on (assistant-app-ensuring.ts).
+      if (!stuck) noteAssistantAppEnsuring(true)
       const { installExtensionFromMarket } = await import('./session/main/core/extensions/extension-market-install')
       const outcome = await installExtensionFromMarket({ ref: { extensionId: ASSISTANT_RULES_PROVIDER_ID }, consent: { kind: 'gugu' } })
       if (!outcome.installed) throw new Error(`${ASSISTANT_RULES_PROVIDER_ID} did not go in (${outcome.outcome})`)
@@ -88,10 +91,13 @@ export function ensureAssistantApp(reason: 'start' | 'setup'): Promise<Assistant
     stuck: (error) => {
       log.error({ error }, 'assistant App: still not in after the whole backoff window')
       stuck = true
+      // A stuck install is not shown as preparing on the rail (assistant-app-ensuring.ts).
+      noteAssistantAppEnsuring(false)
       publishState()
     },
   })
   const going = ensurer.ensure(reason)
+  void going.finally(() => noteAssistantAppEnsuring(false)).catch(() => {})
   publishState()
   void going.then(async (outcome) => {
     // The id is taken by an App gugu does not put over (switched off, a folder, a fork) and no rules came of it.

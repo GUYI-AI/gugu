@@ -67,10 +67,10 @@ describe('what the App is told of the conversation beside its page', () => {
     expect(await surface()).toEqual({ name: 'main', state: 'unbound' });
     expect(show()).toBe(true);
     const bound = await surface();
-    expect(bound).toEqual({ name: 'main', state: 'bound', layout: 'side-panel', panel: { collapsed: false, inset: INSET } });
+    expect(bound).toEqual({ name: 'main', state: 'bound', layout: 'side-panel', panel: { collapsed: false, inset: INSET, hostPage: false } });
     for (const secret of [CHAT, OWNER, 'h1']) expect(JSON.stringify(bound)).not.toContain(secret);
     expect(show(true)).toBe(true);
-    expect(await surface()).toEqual({ name: 'main', state: 'bound', layout: 'side-panel', panel: { collapsed: true, inset: INSET } });
+    expect(await surface()).toEqual({ name: 'main', state: 'bound', layout: 'side-panel', panel: { collapsed: true, inset: INSET, hostPage: false } });
     // The same report again changes nothing anyone hears.
     expect(show(true)).toBe(false);
     expect(hide()).toBe(true);
@@ -138,11 +138,11 @@ describe('what the App is told of the conversation beside its page', () => {
     expect(await setBindingSurfacePanel('today', MAIN, { name: 'main', collapsed: true }, ask)).toEqual({ name: 'main', state: 'unbound' });
     expect(ask).not.toHaveBeenCalled();
     show();
-    expect(await setBindingSurfacePanel('today', MAIN, { name: 'main', collapsed: true }, ask)).toEqual({ name: 'main', state: 'bound', layout: 'side-panel', panel: { collapsed: true, inset: INSET } });
+    expect(await setBindingSurfacePanel('today', MAIN, { name: 'main', collapsed: true }, ask)).toEqual({ name: 'main', state: 'bound', layout: 'side-panel', panel: { collapsed: true, inset: INSET, hostPage: false } });
     expect(ask).toHaveBeenCalledExactlyOnceWith(true);
     show(true);
     ask.mockClear();
-    expect(await setBindingSurfacePanel('today', MAIN, { name: 'main', collapsed: true }, ask)).toEqual({ name: 'main', state: 'bound', layout: 'side-panel', panel: { collapsed: true, inset: INSET } });
+    expect(await setBindingSurfacePanel('today', MAIN, { name: 'main', collapsed: true }, ask)).toEqual({ name: 'main', state: 'bound', layout: 'side-panel', panel: { collapsed: true, inset: INSET, hostPage: false } });
     expect(ask).not.toHaveBeenCalled();
     state.granted = false;
     expect(await setBindingSurfacePanel('today', MAIN, { name: 'main', collapsed: false }, ask)).toEqual({ name: 'main', state: 'unbound' });
@@ -157,7 +157,7 @@ describe('what the App is told of the conversation beside its page', () => {
     const draftInChat = vi.fn(async () => undefined);
     const answer = await draftIntoBoundConversation('today', { text: 'What is first today?', draft: true, to: { binding: 'main' } }, draftInChat);
     expect(draftInChat).toHaveBeenCalledExactlyOnceWith({ chatId: CHAT, text: 'What is first today?\n' });
-    expect(await surface()).toEqual({ name: 'main', state: 'bound', layout: 'side-panel', panel: { collapsed: false, inset: INSET } });
+    expect(await surface()).toEqual({ name: 'main', state: 'bound', layout: 'side-panel', panel: { collapsed: false, inset: INSET, hostPage: false } });
     expect(JSON.stringify(answer)).not.toContain(CHAT);
   });
 
@@ -173,7 +173,7 @@ describe('what the App is told of the conversation beside its page', () => {
 describe('which conversation the window may draw (host projection)', () => {
   it('the Apps placing their page beside a binding, granted, enabled, of a conversation the account is still in', async () => {
     // With the stamp of that authority, read in the same step as the last check (the service keeps it: app-unread-bindings.test.ts).
-    expect(await grantedSurfaceBindings(OWNER)).toEqual({ today: { ownerId: OWNER, name: 'main', chatId: CHAT, handle: 'h1', authority: `stamp-${OWNER}-h1` } });
+    expect(await grantedSurfaceBindings(OWNER)).toEqual({ today: { ownerId: OWNER, name: 'main', chatId: CHAT, handle: 'h1', authority: `stamp-${OWNER}-h1`, header: null } });
     for (const set of [() => { state.granted = false; }, () => { state.enabled = false; }, () => { state.placed = false; }, () => { state.member = false; }, () => { state.selectedBy = ''; }, () => { state.installed = false; }]) {
       Object.assign(state, { selectedBy: OWNER, installed: true, enabled: true, member: true, granted: true, placed: true });
       set();

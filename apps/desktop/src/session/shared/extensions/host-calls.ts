@@ -90,6 +90,16 @@ export const HOST_CALLS = {
   'bindings.work': { verb: 'bindingsWork', pack: (name: string) => ({ name }) },
   'bindings.openWork': { verb: 'bindingsOpenWork', pack: (name: string, handle: string) => ({ name, handle }) },
   'bindings.closeWork': { verb: 'bindingsCloseWork', pack: (name: string) => ({ name }) },
+  // #1927 (47, `chat:voice-notes:record`): the host's voice-note recorder, named by the binding; `onChanged` rides on `watch`
+  // and `onVoiceNote` (create-gugu.ts).
+  'voiceNote.start': { verb: 'voiceNoteStart', pack: (name: string, options?: Record<string, unknown>) => ({ ...options, name }) },
+  'voiceNote.pause': { verb: 'voiceNotePause', pack: (name: string) => ({ name }) },
+  'voiceNote.resume': { verb: 'voiceNoteResume', pack: (name: string) => ({ name }) },
+  'voiceNote.stop': { verb: 'voiceNoteStop', pack: (name: string) => ({ name }) },
+  'voiceNote.retry': { verb: 'voiceNoteRetry', pack: (name: string, job: string) => ({ name, job }) },
+  'voiceNote.openMicSettings': { verb: 'voiceNoteOpenMicSettings', pack: (name: string) => ({ name }) },
+  'voiceNote.status': { verb: 'voiceNoteStatus', pack: (name: string) => ({ name }) },
+  'voiceNote.watch': { verb: 'voiceNoteWatch', pack: (watchId: string, name: string, on: boolean) => ({ watchId, name, on }) },
   'messages.history': { verb: 'messagesHistory' },
   'messages.search': { verb: 'messagesSearch' },
   // The chats whoever reads is in, and one's members (`chat:read`): `{ chat }` names it.
@@ -212,6 +222,7 @@ export const HOST_EVENTS = {
   onBindingResources: { event: 'bindingResources', only: 'page', pick: (event: Event<'bindingResources'>) => [event.watchId, event.event] },
   /** `gugu.bindings.onSchedulesChanged(name, fn)` rides on it (#1928): which binding's agent's schedules changed. */
   onSchedulesChanged: { event: 'schedulesChanged', only: 'page', pick: (event: Event<'schedulesChanged'>) => [event.binding] },
+  onVoiceNote: { event: 'voiceNote', only: 'page', pick: (event: Event<'voiceNote'>) => [event.watchId, event.event] },
   onProgramNotification: {
     event: 'programNotification',
     pick: (event: Event<'programNotification'>) => [{ server: event.server, method: event.method, ...(event.params === undefined ? {} : { params: event.params }) }],

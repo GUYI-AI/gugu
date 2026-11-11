@@ -87,11 +87,3 @@ export const pushedWorkLedgerSchema = z.strictObject({
   rows: z.array(pushedWorkRowSchema).max(5000),
 });
 export type PushedWorkLedger = z.infer<typeof pushedWorkLedgerSchema>;
-
-/** The window's word on which task's conversation it draws in an App's panel now (null: none). */
-export const workChatReportSchema = z.strictObject({
-  extensionId: z.string().min(1),
-  ownerId: z.string().uuid().nullable(),
-  open: z.strictObject({ workId: z.string().uuid(), sessionId: z.string().min(1).max(200) }).nullable(),
-});
-export type WorkChatReport = z.infer<typeof workChatReportSchema>;

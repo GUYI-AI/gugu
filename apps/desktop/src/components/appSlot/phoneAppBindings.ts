@@ -13,6 +13,7 @@ import { assistantLayerEntry, type AssistantAppInstall } from '../../session/sha
 import { domainState, refusedOrUnavailable, savedData, writeOutcome } from '../../session/shared/extensions/bound-resources-core'
 import type { ExtensionHostEvent } from '../../session/shared/extensions/bridge-protocol'
 import type { ExtensionManifest } from '../../session/shared/extensions/manifest'
+import { VOICE_NOTE_RECORD_ACTION, voiceNoteNameSchema, voiceNoteRetrySchema, voiceNoteStartSchema, voiceNoteWatchSchema } from '../../session/shared/extensions/voice-note-session'
 import { PHONE_ASSISTANT_SCREENS, PHONE_SURFACE_SECTIONS, unsupportedHere, type AppBindingUnsupported, type PhoneSurfaceSection } from '../../session/shared/extensions/phone-binding'
 import {
   BINDING_ACTION_CAPABILITY, boundEntryOf, boundPathOf,
@@ -266,7 +267,7 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     } catch {
       return unbound
     }
-    return { name, state: 'bound', layout: 'phone', section: shown.section }
+    return { name, state: 'bound', layout: 'phone', section: shown.section, hostPage: shown.hostPage }
   }
   /**
    * `setPanel(name, { section })` moves the layer to one of the page's sections, while it shows this page; `{ collapsed }`
@@ -282,8 +283,10 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     if (now.state !== 'bound') return now
     const actions = ports.layer.actions()
     if (!actions) return { name: args.name, state: 'unbound' }
-    if (now.layout === 'phone' && now.section !== args.section) actions.move(args.section as PhoneSurfaceSection)
-    return { name: args.name, state: 'bound', layout: 'phone', section: args.section }
+    const moved = now.layout === 'phone' && now.section !== args.section
+    if (moved) actions.move(args.section as PhoneSurfaceSection)
+    // Moving to another section leaves any of the phone's own screens behind (the layer opens that section's page).
+    return { name: args.name, state: 'bound', layout: 'phone', section: args.section, hostPage: !moved && now.layout === 'phone' && now.hostPage }
   }
 
   // ── 42: the assistant's resources ───────────────────────────────────────────────────────────────────────────────
@@ -682,6 +685,18 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     return 'renamed'
   }
   /**
+   * `gugu.voiceNote.*` (47, `voice-notes:record`): on a phone the assistant's 聊天 records with the phone's own recorder
+   * (PhoneVoiceBar); an App does not drive it there — every verb answers `unsupported`, once the App may ask, and a watch
+   * never fires. The arguments are checked as a computer checks them (voice-note-session.ts).
+   */
+  async function voiceNote(extensionId: string, method: (typeof VOICE_NOTE_VERBS)[number], input: unknown): Promise<AppBindingUnsupported> {
+    const schema = method === 'voiceNoteStart' ? voiceNoteStartSchema : method === 'voiceNoteRetry' ? voiceNoteRetrySchema
+      : method === 'voiceNoteWatch' ? voiceNoteWatchSchema : voiceNoteNameSchema
+    const { name } = argsOf(schema, input, `gugu.voiceNote takes the binding's name${method === 'voiceNoteRetry' ? ' and a job handle' : ''}`)
+    declared(installed(extensionId), name, VOICE_NOTE_RECORD_ACTION)
+    return unsupportedHere(name)
+  }
+  /**
    * `assistant.figure(name, figure)` (44): on a phone the layer's own header already draws the assistant's face; nothing is
    * laid over the App's page there — `unsupported`, once the App may ask.
    */
@@ -759,17 +774,20 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
   return {
     get, list, read, draft, surface, setPanel, resources, resource, save, remove, watch, pageGone,
     schedules, controlSchedule, watchSchedules, work, openWork, closeWork,
-    assistantStatus, assistantOpen, assistantAdvanceSetup, assistantRename, assistantFigure, attach,
+    assistantStatus, assistantOpen, assistantAdvanceSetup, assistantRename, assistantFigure, voiceNote, attach,
   }
 }
 export type PhoneBindings = ReturnType<typeof createPhoneBindings>
+
+/** The voice-note recorder's verbs (47): answered `unsupported` on a phone. */
+const VOICE_NOTE_VERBS = ['voiceNoteStart', 'voiceNotePause', 'voiceNoteResume', 'voiceNoteStop', 'voiceNoteRetry', 'voiceNoteOpenMicSettings', 'voiceNoteStatus', 'voiceNoteWatch'] as const
 
 /** The verbs the binding host answers on a phone (the rest of phoneAppHost's switch is not this). */
 export const PHONE_BINDING_VERBS = [
   'bindingsGet', 'bindingsList', 'bindingsRead', 'bindingsSurface', 'bindingsSurfacePanel',
   'bindingsResources', 'bindingsResource', 'bindingsWatch', 'bindingsSave', 'bindingsRemove',
   'bindingsSchedules', 'bindingsSchedulesWatch', 'bindingsScheduleControl', 'bindingsWork', 'bindingsOpenWork', 'bindingsCloseWork',
-  'assistantStatus', 'assistantOpen', 'assistantAdvanceSetup', 'assistantRename', 'assistantFigure',
+  'assistantStatus', 'assistantOpen', 'assistantAdvanceSetup', 'assistantRename', 'assistantFigure', ...VOICE_NOTE_VERBS,
 ] as const
 
 /** One call of those, answered; `hear` carries a resource watch's events to the page. */
@@ -803,6 +821,9 @@ export function answerPhoneBinding(
     case 'assistantAdvanceSetup': return bindings.assistantAdvanceSetup(page.extensionId, args)
     case 'assistantRename': return bindings.assistantRename(page.extensionId, args)
     case 'assistantFigure': return bindings.assistantFigure(page.extensionId, args)
+    case 'voiceNoteStart': case 'voiceNotePause': case 'voiceNoteResume': case 'voiceNoteStop': case 'voiceNoteRetry':
+    case 'voiceNoteOpenMicSettings': case 'voiceNoteStatus': case 'voiceNoteWatch':
+      return bindings.voiceNote(page.extensionId, method, args)
     default: return null
   }
 }

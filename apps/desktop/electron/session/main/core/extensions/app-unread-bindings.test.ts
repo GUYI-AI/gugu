@@ -283,6 +283,18 @@ describe('the bound conversation beside the App\'s page (#1925, API 41)', () => 
     expect(() => parseExtensionManifest({ ...surfaceManifest(), apiVersion: 49, platforms: ['desktop', 'phone'] })).not.toThrow();
   });
 
+  it('46: the host\'s row above the conversation (`header: "assistant"`), from 46 on, a row the host knows, desktop only', () => {
+    const header = { binding: 'main', placement: 'side-panel', header: 'assistant' };
+    expect(() => parseExtensionManifest(surfaceManifest({ surface: header, apiVersion: 46 }))).not.toThrow();
+    for (const apiVersion of [41, 44, 45]) expect(() => parseExtensionManifest(surfaceManifest({ surface: header, apiVersion }))).toThrow(/apiVersion 46/);
+    for (const other of ['profile', 'Assistant', '', true, { kind: 'assistant' }]) {
+      expect(() => parseExtensionManifest(surfaceManifest({ surface: { ...header, header: other }, apiVersion: 46 }))).toThrow();
+    }
+    // On a phone the binding needs 49 (phone-binding.ts); there the layer's own header is the row, whatever is declared.
+    expect(() => parseExtensionManifest({ ...surfaceManifest({ surface: header, apiVersion: 46 }), platforms: ['desktop', 'phone'] })).toThrow(/on a phone requires apiVersion 49/);
+    expect(() => parseExtensionManifest({ ...surfaceManifest({ surface: header, apiVersion: 49 }), platforms: ['desktop', 'phone'] })).not.toThrow();
+  });
+
   it('reaches the selected conversation only with the action declared and chat:surface granted; withdrawn, only surface stops', () => {
     const { service } = fixture(); service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
     expect(() => service.conversationBinding(OWNER, ID, 'main', 'surface')).toThrow(expect.objectContaining({ code: 'denied' }));

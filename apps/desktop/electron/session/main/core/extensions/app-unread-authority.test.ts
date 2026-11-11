@@ -56,7 +56,8 @@ describe('host authorization around asynchronous membership reads', () => {
     const choices = await unreadBindingChoices('reader', 'main');
     expect(choices.authority).toBe(AUTHORITY);
     await setUnreadBinding({ extensionId: 'reader', name: 'main', ownerId: state.owner, authority: choices.authority, chatId: CHAT });
-    expect(set).toHaveBeenCalledExactlyOnceWith(state.owner, 'reader', 'main', CHAT);
+    // Written as the person's own choice: the host's binding of the trusted assistant App never changes it.
+    expect(set).toHaveBeenCalledExactlyOnceWith(state.owner, 'reader', 'main', CHAT, 'person');
   });
   it('refuses a stale selection before saving and an authority replacement during the membership read', async () => {
     const input = { extensionId: 'reader', name: 'main', ownerId: state.owner, authority: AUTHORITY, chatId: CHAT };
