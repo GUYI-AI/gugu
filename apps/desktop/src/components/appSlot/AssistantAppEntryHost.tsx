@@ -7,7 +7,7 @@ import { rendererLogger } from '../../lib/log'
 import { useAuth } from '../../store/auth'
 import { events, rpc } from '@/session/renderer/lib/ipc'
 import { appState } from '@/session/renderer/lib/stores/app-state'
-import { assistantHandedOver, builtInAssistantLastTab, carryBuiltInPanelOnce, markAssistantHandedOver } from '@/session/renderer/features/apps/app-conversation-panel'
+import { assistantHandedOver, carryBuiltInPanelOnce, keepBuiltInAssistantLastTab, keptBuiltInAssistantLastTab, markAssistantHandedOver } from '@/session/renderer/features/apps/app-conversation-panel'
 import { homeTarget } from '@/session/renderer/features/assistant/assistant-home-sessions'
 import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
 import { extensionsInventoryChangedChannel } from '@/session/shared/extensions/marketEvents'
@@ -18,10 +18,11 @@ const log = rendererLogger('assistant/app-entry')
 const noop = () => () => undefined
 /** A sync main could not verify (the database did not answer): asked again after these waits, then left to the next change. */
 const ENTRY_SYNC_RETRY_MS: readonly number[] = [5_000, 30_000, 120_000]
+const handingOver = new Set<string>()
 
-/** What the navigation snapshot holds for the built-in assistant page's view (its last tab). */
+/** What the navigation snapshot held for the built-in assistant page's view, a view this build no longer has (its last tab). */
 const retiredAssistantParams = (): { tab?: unknown } | undefined =>
-  (appState.navigation.viewParamsStore as Record<string, { tab?: unknown } | undefined>).assistant
+  appState.navigation.retiredViewParams.assistant as { tab?: unknown } | undefined
 
 /**
  * Entry switch, the shell's half (lib/assistantEntry.ts holds the one decision). Whenever the window's assistant changes —
@@ -79,27 +80,30 @@ export const AssistantAppEntryHost = observer(function AssistantAppEntryHost() {
 
   const target = useAssistantEntryTarget()
   // The built-in page's panel, carried over the first time the App is where the entry goes.
-  const carryTo = target.kind === 'app' ? target.extensionId : null
+  // Carried at the first bind: the App drawn beside the account's own assistant chat.
+  const carryTo = target.kind === 'app' && target.chatId ? target.extensionId : null
   useEffect(() => {
     if (carryTo && carryBuiltInPanelOnce(carryTo)) log.info({}, 'carried the built-in assistant panel state over to the assistant App')
   }, [carryTo])
   // G6: the tab the person last had open on the built-in page, handed to the App once for this account here; main holds it
   // until the App's page reads its surface (the first read or event). Not held (not the trusted App, main not reached): asked
   // again the next time the App becomes where the entry goes; nothing is said.
+  useEffect(() => { keepBuiltInAssistantLastTab(retiredAssistantParams()) }, [])
   useEffect(() => {
     if (!carryTo || !ownerId || assistantHandedOver(ownerId)) return
-    const tab = builtInAssistantLastTab(retiredAssistantParams())
+    const tab = keptBuiltInAssistantLastTab()
     if (!tab) {
       markAssistantHandedOver(ownerId)
       return
     }
-    let live = true
+    // One ask at a time per account (the entry may flip while the answer is on its way); its answer stands either way.
+    if (handingOver.has(ownerId)) return
+    handingOver.add(ownerId)
     Promise.resolve().then(() => rpc.extensions.handOverAssistantPage({ ownerId, tab })).then((result) => {
-      if (!live) return
       if (!result.success) throw new Error(result.error)
       if (result.data.held) markAssistantHandedOver(ownerId)
     }).catch((error: unknown) => log.warn({ error: String(error) }, 'the built-in assistant page\'s last tab was not handed to the App now'))
-    return () => { live = false }
+      .finally(() => handingOver.delete(ownerId))
   }, [carryTo, ownerId])
 
   // The App's page is up: the assistant's home on this computer refreshed to this version, as opening the built-in page did.

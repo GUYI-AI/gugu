@@ -1,11 +1,9 @@
 // #7199 「灵感」入口:输入框上方那颗「灵感」胶囊能隐藏,隐藏后「+」里的「获取灵感」照样在。
-// 隐藏与否记在这台设备上(按设备 + 账号记、不同步);壳(「+」菜单)与会话页(胶囊、灵感面板)是同一个 document,
-// localStorage 两边共读一份,改了发一个 window 事件。「+」里点「获取灵感」= 发一个打开面板的 window 事件,面板那一侧听。
+// 隐藏与否记在这台设备上(按设备 + 账号记、不同步);localStorage 共读一份,改了发一个 window 事件。
 import { useSyncExternalStore } from 'react'
 
 const KEY_PREFIX = 'gugu.assistant.ideasEntry:'
 const PREF_EVENT = 'gugu:assistant-ideas-pref'
-const OPEN_EVENT = 'gugu:assistant-ideas-open'
 
 export function ideasEntryHidden(assistantId: string): boolean {
   try {
@@ -36,14 +34,4 @@ function subscribePref(listener: () => void): () => void {
 
 export function useIdeasEntryHidden(assistantId: string): boolean {
   return useSyncExternalStore(subscribePref, () => ideasEntryHidden(assistantId))
-}
-
-/** 「+」→「获取灵感」:请面板那一侧打开。 */
-export function requestIdeas(): void {
-  window.dispatchEvent(new Event(OPEN_EVENT))
-}
-
-export function subscribeIdeasRequest(listener: () => void): () => void {
-  window.addEventListener(OPEN_EVENT, listener)
-  return () => window.removeEventListener(OPEN_EVENT, listener)
 }

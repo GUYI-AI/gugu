@@ -5,30 +5,36 @@ import { NavigationStore } from '@renderer/lib/stores/navigation-store';
 vi.mock('@renderer/lib/modal/modal-store', () => ({ modalStore: { closeModal: vi.fn() } }));
 vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { history: { push: vi.fn() }, sidebar: { revealActiveSession: vi.fn() } } }));
 
-const state = vi.hoisted(() => ({ agentId: 'assistant', assistantId: 'assistant', archived: false, listed: true, listState: 'read' as 'reading' | 'read' | 'failed' }));
+const state = vi.hoisted(() => ({ agentId: 'assistant', assistantId: 'assistant', archived: false, listed: true, listState: 'read' as 'reading' | 'read' | 'failed', onApp: true }));
+// Where the assistant entry goes (lib/assistantEntry.ts): its App, or (not usable here) nowhere on this page.
+vi.mock('@/lib/assistantEntry', () => ({ ASSISTANT_APP_ID: 'gugu-assistant', readAssistantEntryTarget: () => (state.onApp ? { kind: 'app', extensionId: 'gugu-assistant', chatId: 'dm' } : { kind: 'chat', chatId: 'dm' }) }));
 vi.mock('@/lib/assistantShellBridge', () => ({ readAssistantShellBridge: () => ({ getSnapshot: () => ({ assistant: { id: state.assistantId } }) }) }));
 vi.mock('@renderer/features/sessions/stores/session-agent-bindings', () => ({ sessionAgentBindings: { bindingFor: () => state.agentId ? { agentUserId: state.agentId } : undefined } }));
 vi.mock('@renderer/features/projects/project-presence', () => ({ projectPresence: () => 'present' }));
 vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({ getSessionManagerStore: () => ({ listState: state.listState, sessions: state.listed ? new Map([['task', { data: { archivedAt: state.archived ? '2026-10-27' : null } }]]) : new Map() }) }));
 vi.mock('@renderer/features/sessions/leave-session-view', () => ({ sessionLeaveDestination: () => ({ viewId: 'new-session' }) }));
-beforeEach(() => { state.agentId = state.assistantId = 'assistant'; state.archived = false; state.listed = true; state.listState = 'read'; });
+beforeEach(() => { state.agentId = state.assistantId = 'assistant'; state.archived = false; state.listed = true; state.listState = 'read'; state.onApp = true; });
 describe('assistant identity owns its destination', () => {
-  it('redirects a stale assistant task link to the assistant surface', () => {
-    expect(sessionViewCanActivate({ projectId: 'project', sessionId: 'task' })).toEqual({ ok: false, redirect: 'assistant' });
+  it('redirects a stale assistant task link to the assistant\'s page (its App), or home while the App is not usable here', () => {
+    expect(sessionViewCanActivate({ projectId: 'project', sessionId: 'task' })).toEqual({ ok: false, redirect: 'app', params: { appId: 'gugu-assistant' } });
+    state.onApp = false;
+    expect(sessionViewCanActivate({ projectId: 'project', sessionId: 'task' })).toEqual({ ok: false, redirect: 'home' });
   });
   it('keeps an ordinary task on the task view', () => {
     state.agentId = 'ordinary-agent';
     expect(sessionViewCanActivate({ projectId: 'project', sessionId: 'task' })).toEqual({ ok: true });
   });
-  it('restores an old assistant task layout to the separately remembered assistant page', () => {
+  it('restores an old assistant task layout to the assistant\'s page; the retired built-in page\'s params are kept aside, not restored', () => {
     const store = new NavigationStore();
     store.registerView('session');
-    store.registerView('assistant');
+    store.registerView('app');
     store.registerGuard('session', sessionViewCanActivate);
-    const assistant = { tab: 'today' };
+    const assistant = { tab: 'memory' };
     store.restoreSnapshot({ currentViewId: 'session', viewParams: { session: { projectId: 'project', sessionId: 'task' }, assistant } });
-    expect(store.currentViewId).toBe('assistant');
-    expect(store.viewParamsStore.assistant).toEqual(assistant);
+    expect(store.currentViewId).toBe('app');
+    expect(store.viewParamsStore.app).toEqual({ appId: 'gugu-assistant' });
+    expect((store.viewParamsStore as Record<string, unknown>).assistant).toBeUndefined();
+    expect(store.retiredViewParams.assistant).toEqual(assistant);
     state.agentId = 'ordinary-agent';
     store.restoreSnapshot({ currentViewId: 'session', viewParams: { session: { projectId: 'project', sessionId: 'task' } } });
     expect(store.currentViewId).toBe('session');
@@ -47,7 +53,8 @@ describe('assistant identity owns its destination', () => {
     expect(store.currentViewId).toBe('session');
     state.agentId = 'assistant';
     store.revalidate();
-    expect(store.currentViewId).toBe('assistant');
+    expect(store.currentViewId).toBe('app');
+    expect(store.viewParamsStore.app).toEqual({ appId: 'gugu-assistant' });
   });
   it.each(['assistant', 'ordinary-agent'])('keeps an archived %s task out of the task view', agentId => {
     state.agentId = agentId;

@@ -29,6 +29,8 @@ import { sheetStack } from '../../../../apps/desktop/src/components/ui/sheetStac
 import { rememberAssistantTaskChat } from '../../../../apps/desktop/src/lib/assistantTaskChat'
 import { installAssistantShellBridge, publishAssistantShell } from '../../../../apps/desktop/src/lib/assistantShellBridge'
 import { ASSISTANT_APP_ID, installAssistantAppEntryBridge, publishAssistantAppWord } from '../../../../apps/desktop/src/lib/assistantEntry'
+import { installedExtensionsStore } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
+import { EXTENSION_API_VERSION } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
 import { publishAppConversationSurfaces } from '../../../../apps/desktop/src/lib/appConversationSurfaceBridge'
 import { appState } from '../../../../apps/desktop/src/session/renderer/lib/stores/app-state'
 import { MOBILE_TABS } from '@gugu/core/shared/enums/sidebarTabModels'
@@ -1173,7 +1175,7 @@ describe('MainLayout: personal assistant destinations', () => {
     [APP_OPEN_WITH_EVENT, { chatId: 'personal-dm', itemId: 'personal-file', name: 'budget.md', typedName: 'budget.md', choice: { kind: 'none' } }],
     [APP_COMPOSE_EVENT, { chatId: 'personal-dm', text: 'follow-up' }],
     [UI_EVENTS.notificationClicked, { chatId: 'personal-dm' }],
-  ])('opens %s in the desktop Gugu page and preserves the requested action', async (name, detail) => {
+  ])('opens %s as any chat while the assistant App is not usable here, and preserves the requested action', async (name, detail) => {
     chatStoreMock.chats = [{ id: 'personal-dm', kind: 'dm', peer_user_id: 'personal-agent' } as never]
     const navigate = vi.spyOn(appState.navigation, 'navigate').mockImplementation(() => undefined)
     try {
@@ -1183,9 +1185,9 @@ describe('MainLayout: personal assistant destinations', () => {
         if (name === 'resource-file' && 'itemId' in detail) await openLinkTarget({ kind: 'file', itemId: detail.itemId })
         else window.dispatchEvent(new CustomEvent(name, { detail }))
       })
-      expect(navigate).toHaveBeenCalledWith('assistant')
-      expect(sessionPageViewRequests.openChat).not.toHaveBeenCalled()
-      expect(chatStoreMock.setActiveChatId).not.toHaveBeenCalled()
+      // The built-in assistant page is gone; not the App's page either (main has not said it is the trusted one).
+      expect(navigate).not.toHaveBeenCalledWith('app', { appId: ASSISTANT_APP_ID })
+      expect(sessionPageViewRequests.openChat.mock.calls[0]?.[0]).toBe('personal-dm')
       if ('itemId' in detail) expect((takeChatAsk('personal-dm') as { itemId?: string } | null)?.itemId).toBe('personal-file')
       if ('text' in detail) expect(chatStoreMock.writeDraft).toHaveBeenCalledWith('personal-dm', { at: 'end', text: 'follow-up' })
     } finally { navigate.mockRestore() }
@@ -1207,6 +1209,7 @@ describe('MainLayout: personal assistant destinations', () => {
       await renderMainLayoutWithToast()
       await act(async () => {
         installAssistantAppEntryBridge()
+        installedExtensionsStore.applyList({ extensions: [{ id: ASSISTANT_APP_ID, name: 'A', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'today', title: 'A' }] } }], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
         publishAssistantShell({ ...shell, ownerId: 'user-1', chatId: PERSONAL_DM })
         publishAssistantAppWord({ ownerId: 'user-1', trusted: true })
         publishAppConversationSurfaces({ [ASSISTANT_APP_ID]: PERSONAL_DM })
@@ -1217,7 +1220,6 @@ describe('MainLayout: personal assistant destinations', () => {
         else window.dispatchEvent(new CustomEvent(name, { detail }))
       })
       expect(navigate).toHaveBeenCalledWith('app', { appId: ASSISTANT_APP_ID })
-      expect(navigate).not.toHaveBeenCalledWith('assistant')
       expect(sessionPageViewRequests.openChat).not.toHaveBeenCalled()
       expect(chatStoreMock.setActiveChatId).not.toHaveBeenCalled()
       // Opening it marks nothing read: only the conversation column on screen does (AppConversationSurfaceHost).
@@ -1228,6 +1230,7 @@ describe('MainLayout: personal assistant destinations', () => {
       navigate.mockRestore()
       publishAssistantAppWord(null)
       publishAppConversationSurfaces({})
+      installedExtensionsStore.applyList({ extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
     }
   })
 

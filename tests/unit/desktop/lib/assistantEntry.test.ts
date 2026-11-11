@@ -31,10 +31,17 @@ const shell = (over: Partial<AssistantShellSnapshot> = {}): AssistantShellSnapsh
 const word = { ownerId: OWNER, trusted: true }
 const bound = { [ASSISTANT_APP_ID]: DM }
 const APP = { kind: 'app', extensionId: ASSISTANT_APP_ID, chatId: DM }
+const decide = (over: Partial<Parameters<typeof decideAssistantEntry>[0]> = {}) =>
+  decideAssistantEntry({ shell: shell(), word, surfaces: bound, appEnabled: true, ...over })
+const appManifest = (actions: string[] = ['unread', 'surface']) => ({ id: ASSISTANT_APP_ID, name: 'A', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html',
+  permissions: { capabilities: ['chat:unread'], bindings: [{ name: 'main', kind: 'conversation', actions }] }, contributes: { tabs: [{ name: 'today', title: 'A' }] } })
+const installApp = (actions?: string[], disabled: string[] = []) =>
+  installedExtensionsStore.applyList({ extensions: [appManifest(actions)], invalid: [], icons: {}, disabled, disclosure: {}, dock: [] } as never)
+const noApps = () => installedExtensionsStore.applyList({ extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
 
 describe('decideAssistantEntry', () => {
-  it('goes to the App when it is the trusted one for this account and drawn beside the account\'s own assistant chat', () => {
-    expect(decideAssistantEntry({ shell: shell(), word, surfaces: bound })).toEqual(APP)
+  it('goes to the App when it is the trusted one for this account and on, its conversation the one beside it', () => {
+    expect(decide()).toEqual(APP)
   })
 
   // The App is the assistant's page on every machine the person opens it from, wherever the assistant lives.
@@ -46,116 +53,136 @@ describe('decideAssistantEntry', () => {
     ['in the cloud', { kind: 'cloud', deviceId: 'cloud-1' }],
     ['somewhere not read yet', null],
   ] as const)('goes to the App with the assistant living %s', (_where, home) => {
-    expect(decideAssistantEntry({ shell: shell({ home: home as AssistantShellSnapshot['home'] }), word, surfaces: bound })).toEqual(APP)
+    expect(decide({ shell: shell({ home: home as AssistantShellSnapshot['home'] }) })).toEqual(APP)
     installAssistantShellBridge(); installAppConversationSurfaceBridge(); installAssistantAppEntryBridge()
+    installApp()
     publishAssistantShell(shell({ home: home as AssistantShellSnapshot['home'] }))
     publishAssistantAppWord(word)
     publishAppConversationSurfaces(bound)
-    expect(readAssistantEntryTarget()).toEqual(APP)
-    publishAssistantAppWord(null)
-    publishAppConversationSurfaces({})
+    try { expect(readAssistantEntryTarget()).toEqual(APP) } finally {
+      publishAssistantAppWord(null)
+      publishAppConversationSurfaces({})
+      noApps()
+    }
   })
 
   it.each([
+    ['its conversation is not bound / drawable yet (the first bind, a grant withdrawn)', { surfaces: {} }],
+    ['the person picked another conversation for it', { surfaces: { [ASSISTANT_APP_ID]: OTHER } }],
+    ['there is no assistant (closed, or never set up): its own no-assistant pages', { shell: shell({ assistant: null, assistantState: 'none', chatId: null }) }],
+    ['the assistant is still being read', { shell: shell({ assistantState: 'loading', chatId: null }) }],
+  ])('goes to the App\'s own page, nothing drawn beside it, when %s', (_name, over) => {
+    expect(decide(over)).toEqual({ ...APP, chatId: null })
+  })
+
+  // The App not usable here: the assistant's chat as any chat; no assistant: Settings' 「咕咕」 (setup).
+  it.each([
     ['main does not trust it (a spoofed id, a fork, another market source)', { word: { ...word, trusted: false } }],
     ['main\'s word is about another account', { word: { ...word, ownerId: OTHER } }],
-    ['main has not answered yet', { word: null }],
-    ['it is not bound / not drawable (the person picked another chat, withdrew a grant, switched it off)', { surfaces: {} }],
-    ['it is drawn beside another chat', { surfaces: { [ASSISTANT_APP_ID]: OTHER } }],
-    ['another App is drawn beside the assistant chat', { surfaces: { 'other-app': DM } }],
-    ['there is no assistant (closed, or never set up)', { shell: shell({ assistant: null, assistantState: 'none', chatId: null }) }],
-    ['the assistant is still being read', { shell: shell({ assistantState: 'loading' }) }],
-    ['the window\'s assistant is another account\'s', { shell: shell({ ownerId: OTHER }) }],
-    ['the assistant has no chat yet', { shell: shell({ chatId: null }) }],
-    ['the assistant is unknown', { shell: null }],
-  ])('stays on the built-in page when %s', (_name, over) => {
-    expect(decideAssistantEntry({ shell: shell(), word, surfaces: bound, ...over } as Parameters<typeof decideAssistantEntry>[0])).toEqual({ kind: 'built-in' })
+    ['main has not answered yet (the App still going in)', { word: null }],
+    ['the person switched it off', { appEnabled: false }],
+  ])('opens the assistant\'s chat as any chat when %s', (_name, over) => {
+    expect(decide(over)).toEqual({ kind: 'chat', chatId: DM })
+    expect(decide({ ...over, shell: shell({ assistant: null, assistantState: 'none', chatId: null }) })).toEqual({ kind: 'setup' })
+    expect(decide({ ...over, shell: shell({ assistantState: 'loading', chatId: null }) })).toEqual({ kind: 'wait' })
   })
 
-  it('opens a task\'s conversation in the App only when the App reads the assistant\'s work (API 46)', () => {
-    expect(decideAssistantEntry({ shell: shell(), word, surfaces: bound, purpose: 'task-chat', appReadsWork: true })).toEqual(APP)
-    expect(decideAssistantEntry({ shell: shell(), word, surfaces: bound, purpose: 'task-chat', appReadsWork: false })).toEqual({ kind: 'built-in' })
-  })
-
-  it('keeps recording a meeting host-owned (the built-in recorder)', () => {
-    expect(decideAssistantEntry({ shell: shell(), word, surfaces: bound, purpose: 'record-meeting', appReadsWork: true })).toEqual({ kind: 'built-in' })
+  it('waits while it does not know whose window this is', () => {
+    expect(decide({ shell: null })).toEqual({ kind: 'wait' })
+    expect(decide({ shell: shell({ ownerId: null }) })).toEqual({ kind: 'wait' })
+    // The window's assistant is another account's than main's word.
+    expect(decide({ shell: shell({ ownerId: OTHER }) })).toEqual({ kind: 'chat', chatId: DM })
   })
 })
 
 describe('openAssistantEntry', () => {
+  const opened: unknown[] = []
+  const settings: unknown[] = []
+  const onLink = (event: Event) => { event.preventDefault(); opened.push((event as CustomEvent<{ target: unknown }>).detail.target) }
+  const onSettings = (event: Event) => settings.push((event as CustomEvent).detail)
   beforeEach(() => {
     installAssistantShellBridge(); installAppConversationSurfaceBridge(); installAssistantAppEntryBridge()
+    installApp()
     publishAssistantShell(shell())
     publishAssistantAppWord(word)
     publishAppConversationSurfaces(bound)
     appState.navigation.navigate('home')
+    opened.length = 0; settings.length = 0
+    window.addEventListener('gugu:open-link-target', onLink)
+    window.addEventListener('__open_settings', onSettings)
   })
   afterEach(() => {
+    window.removeEventListener('gugu:open-link-target', onLink)
+    window.removeEventListener('__open_settings', onSettings)
     publishAssistantAppWord(null)
     publishAppConversationSurfaces({})
     publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null, ownerId: null }))
+    noApps()
     vi.restoreAllMocks()
   })
 
-  it('opens the App\'s own page (its conversation beside it) and answers that conversation\'s cell; the built-in page is not touched', () => {
-    const builtIn = vi.fn(() => 'assistant:chat')
+  it('opens the App\'s own page (its conversation beside it) and answers that conversation\'s cell', () => {
     expect(readAssistantEntryTarget()).toEqual(APP)
-    expect(openAssistantEntry(builtIn)).toBe(appConversationSlotKey(ASSISTANT_APP_ID))
-    expect(builtIn).not.toHaveBeenCalled()
+    expect(openAssistantEntry()).toBe(appConversationSlotKey(ASSISTANT_APP_ID))
     expect(appState.navigation.currentViewId).toBe('app')
     expect(appState.navigation.viewParamsStore.app?.appId).toBe(ASSISTANT_APP_ID)
     // Already there: left as it is.
     const navigate = vi.spyOn(appState.navigation, 'navigate')
-    openAssistantEntry(builtIn)
+    openAssistantEntry()
     expect(navigate).not.toHaveBeenCalled()
+    expect(opened).toEqual([])
   })
 
-  it('runs the entry\'s own built-in way, unchanged, whenever the decision is the built-in page', () => {
-    publishAssistantAppWord({ ...word, trusted: false })
-    const builtIn = vi.fn(() => 'assistant:chat')
-    expect(openAssistantEntry(builtIn)).toBe('assistant:chat')
-    expect(builtIn).toHaveBeenCalledOnce()
+  it('opens the App\'s page with nothing to answer while its conversation is not beside it', () => {
+    publishAppConversationSurfaces({})
+    expect(openAssistantEntry()).toBeNull()
+    expect(appState.navigation.viewParamsStore.app?.appId).toBe(ASSISTANT_APP_ID)
+  })
+
+  it('the App not usable here: opens the assistant\'s chat as any chat, or setup when there is no assistant; a link caller does it itself', () => {
+    installApp(undefined, [ASSISTANT_APP_ID])
+    expect(openAssistantEntry()).toBeNull()
+    expect(opened).toEqual([{ kind: 'chat', chatId: DM }])
     expect(appState.navigation.currentViewId).toBe('home')
-    publishAssistantAppWord(word)
-    expect(openAssistantEntry(builtIn, 'task-chat')).toBe('assistant:chat')
-    expect(builtIn).toHaveBeenCalledTimes(2)
+    opened.length = 0
+    expect(openAssistantEntry('open', false)).toBeNull()
+    expect(opened).toEqual([])
+    publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null }))
+    openAssistantEntry()
+    expect(settings).toEqual([{ section: 'assistant' }])
   })
 
   it('opens a task the shell found in the App: its own page, the task over its panel, for this account only', () => {
     const request = { workId: 'w1', title: 'T', assistantId: 'assistant', taskAgentId: 'agent-1', task: { deviceId: 'd', sessionId: 's1' }, assistants: [] }
-    const manifest = (actions: string[]) => ({ id: ASSISTANT_APP_ID, name: 'A', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html',
-      permissions: { capabilities: ['chat:unread'], bindings: [{ name: 'main', kind: 'conversation', actions }] }, contributes: { tabs: [{ name: 'today', title: 'A' }] } })
-    const apply = (actions: string[]) => installedExtensionsStore.applyList({ extensions: [manifest(actions)], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
     installAppHostLayerBridge()
     setAppHostLayerAccount(OWNER)
     try {
-      apply(['unread', 'surface'])
-      expect(openAssistantTaskInApp(OWNER, request)).toBeNull()
+      // An App that does not read the assistant's work has no place for it: said, nothing opened.
+      expect(() => openAssistantTaskInApp(OWNER, request)).toThrow()
       expect(readAppHostLayerBridge()?.getSnapshot()).toEqual({})
-      apply(['unread', 'surface', 'work'])
+      installApp(['unread', 'surface', 'work'])
       expect(openAssistantTaskInApp(OWNER, request)).toBe(appHostLayerSlotKey(ASSISTANT_APP_ID))
       expect(appState.navigation.viewParamsStore.app?.appId).toBe(ASSISTANT_APP_ID)
       expect(readAppHostLayerBridge()?.getSnapshot()[ASSISTANT_APP_ID]).toEqual({ kind: 'work', ownerId: OWNER, request })
       // The task link itself lands in that cell.
-      expect(openAssistantEntry(() => 'assistant:task-chat', 'task-chat')).toBe(appHostLayerSlotKey(ASSISTANT_APP_ID))
+      expect(openAssistantEntry('task-chat', false)).toBe(appHostLayerSlotKey(ASSISTANT_APP_ID))
       setAppHostLayerAccount(OTHER)
       expect(() => openAssistantTaskInApp(OWNER, request)).toThrow()
+      // The App not usable here: nothing to open it in.
+      setAppHostLayerAccount(OWNER)
+      publishAssistantAppWord(null)
+      expect(openAssistantTaskInApp(OWNER, request)).toBeNull()
     } finally {
       resetAppHostLayersForTest()
       setAppHostLayerAccount(null)
-      installedExtensionsStore.applyList({ extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
     }
   })
 
-  it('follows each change of the three answers', () => {
+  it('follows each change of the answers', () => {
     expect(readAssistantEntryTarget().kind).toBe('app')
-    publishAppConversationSurfaces({})
-    expect(readAssistantEntryTarget().kind).toBe('built-in')
-    publishAppConversationSurfaces(bound)
     publishAssistantShell(shell({ ownerId: OTHER }))
-    expect(readAssistantEntryTarget().kind).toBe('built-in')
+    expect(readAssistantEntryTarget().kind).toBe('chat')
     publishAssistantAppWord({ ...word, ownerId: OTHER })
-    publishAssistantShell(shell({ ownerId: OTHER }))
     expect(readAssistantEntryTarget().kind).toBe('app')
   })
 })

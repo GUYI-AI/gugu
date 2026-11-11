@@ -17,6 +17,11 @@ function isLibraryView(viewId: ViewId): viewId is LibraryViewId {
 export class NavigationStore implements Snapshottable<NavigationSnapshot> {
   currentViewId: ViewId = 'home';
   viewParamsStore: ViewParamsStore = {};
+  /**
+   * What the restored snapshot held for views this build no longer has (not restored, not saved again): read once by what
+   * replaced them — the built-in assistant page's last tab, handed to the assistant App (AssistantAppEntryHost).
+   */
+  retiredViewParams: Readonly<Record<string, unknown>> = {};
   isNavigating: boolean = false;
   lastNonLibraryView: NonLibraryViewId = 'home';
 
@@ -166,6 +171,8 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
       for (const [key, value] of Object.entries(snapshot.viewParams)) {
         if (this.isRegisteredViewId(key)) {
           (filtered as Record<ViewId, unknown>)[key] = value;
+        } else {
+          this.retiredViewParams = { ...this.retiredViewParams, [key]: value };
         }
       }
       // 一次到访不跨重启:快照里残留的转瞬参数不恢复,否则上次没关的抽屉会跟着开机弹出来

@@ -19,11 +19,11 @@
   },
   "offLadderFontSizeLiterals": {
     "mainRenderer": 0,
-    "sessionRenderer": 9,
+    "sessionRenderer": 5,
     "sessionUi": 0,
     "sessionChatUi": 1,
     "assistantUi": 0
   },
-  "offLadderFontSizeLiteralsNote": "#7333 字阶换成 12/14/16/20/24 后,旧字阶 11/13/15/17 的写死字号按范围记账,只减不增。剩下的:session 10 = 代码编辑器/终端的默认等宽字号 3(用户可调,等宽一面)+ 快捷键速查表键帽 1 + 助理「今天」/语音笔记 6(#7199 区域,待它的候选 diff 对齐);session-chat-ui 1 = primitives/icons.css.ts 的字体图标字形尺寸 11(图标几何不是文字,母版补页 05 明确不按标注档改;要核的是字形、基线与盒子)。",
+  "offLadderFontSizeLiteralsNote": "#7333 字阶换成 12/14/16/20/24 后,旧字阶 11/13/15/17 的写死字号按范围记账,只减不增。剩下的:session 5 = 代码编辑器/终端的默认等宽字号 2(用户可调,等宽一面)+ 快捷键速查表键帽 1 + assistant-today.css 2(助理内置页随入口切到助理 App 删掉后,语音笔记列表那 4 处不在了);session-chat-ui 1 = primitives/icons.css.ts 的字体图标字形尺寸 11(图标几何不是文字,母版补页 05 明确不按标注档改;要核的是字形、基线与盒子)。",
   "handRotatedSpinners": {}
 }

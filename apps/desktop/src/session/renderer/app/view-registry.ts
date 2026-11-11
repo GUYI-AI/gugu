@@ -1,7 +1,6 @@
 import type { ComponentType, ReactNode } from 'react';
 import { homeView } from '@renderer/app/home-view';
 import { appsView, appView } from '@renderer/features/apps/apps-views';
-import { assistantView } from '@renderer/features/assistant/assistant-view';
 import { automationsView } from '@renderer/features/automations/automations-view';
 import { chatView } from '@renderer/features/chats/view';
 import { libraryView } from '@renderer/features/library/library-view';
@@ -19,8 +18,6 @@ export const views = {
   home: homeView,
   automations: automationsView,
   library: libraryView,
-  // #7199 个人助理的一页(最左栏「助理」)。
-  assistant: assistantView,
   project: projectView,
   // gugu-dev#181 对话也是一块。
   chat: chatView,
