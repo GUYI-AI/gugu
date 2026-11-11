@@ -86,7 +86,6 @@ export const enUSSubscriptionMessages = {
     'Not checked yet. The vendor limits how often this can be checked, so it’s only checked when you click “Check now”.',
   'subscriptions.unavailable.error': 'Couldn’t read it: {message}',
   'subscriptions.openConsole': 'Open vendor console',
-  'subscriptions.signInHint': 'Sign in from Library → Agents',
   'subscriptions.loadFailed': 'Couldn’t read the harnesses here: {message}',
 } as const;
 
@@ -174,6 +173,5 @@ export const zhCNSubscriptionMessages: Record<keyof typeof enUSSubscriptionMessa
   'subscriptions.unavailable.notReadYet': '尚未查询。厂商限制查询频率，请点击「立即查询」',
   'subscriptions.unavailable.error': '读取失败：{message}',
   'subscriptions.openConsole': '前往厂商后台',
-  'subscriptions.signInHint': '去「资源库 → 智能体」里登录',
   'subscriptions.loadFailed': '无法加载 Harness 列表：{message}',
 };

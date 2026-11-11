@@ -8,6 +8,7 @@ import { LibraryHostProvider, machineLibraryHost } from '@renderer/features/libr
 import { useSelectedRemoteDevice } from '@renderer/features/remote-hosts/device-scope-picker';
 import { settingsDeviceStore } from '@renderer/features/remote-hosts/device-scope-store';
 import { useAgentAuthStatus } from '@renderer/lib/stores/use-agent-auth-status';
+import { useAgentSignIn } from '@renderer/features/settings/agents-page/use-agent-sign-in';
 import { refreshSpendingPower } from '@/lib/billing';
 import { GuguSubscriptionRow } from './GuguSubscriptionRow';
 import { SubscriptionServiceRow } from './SubscriptionServiceRow';
@@ -135,7 +136,24 @@ function SubscriptionRow({ agent, machine }: { agent: AgentPayload; machine: str
     : plan.error
       ? translate('subscriptions.unavailable.error', { message: errorText(plan.error) })
       : translate('subscriptions.checking');
-  const notes = plan.data ? planNotes(plan.data, translate, (at) => formatDate(at, locale)).filter(note => !manageable || note !== translate('subscriptions.signInHint')) : [];
+  const notes = plan.data ? planNotes(plan.data, translate, (at) => formatDate(at, locale)) : [];
+  /**
+   * 没登录 ⇒ 这一行右侧就是「登录」,点了打开与资源库同一个登录窗口(#2507)。
+   * 读数由上面那一探给(`useAgentAuthStatus`),这里只订阅、❌ 再起一次探测。
+   * 没有可登录方法的家不给入口(`signIn.row` 为 null),❌ 指向一个登不了的地方(subscriptions.md)。
+   */
+  const signIn = useAgentSignIn(agent, { probe: false });
+  const signInAction = !manageable && plan.data?.payer === 'not-signed-in' && signIn.row ? (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={!signIn.row.canSignIn}
+      onClick={signIn.openSignIn}
+      data-testid={`subscription-sign-in-${agent.id}`}
+    >
+      {translate('agentsPage.accountSignIn')}
+    </Button>
+  ) : undefined;
   const reading = quotaReading(plan.data, usage.data);
 
   return (
@@ -159,7 +177,7 @@ function SubscriptionRow({ agent, machine }: { agent: AgentPayload; machine: str
       action={manageable ? <SubscriptionConnections agent={agent} machine={machine} onError={setSwitchNotice}
         addDirectly={hasNoConnections}
         label={hasNoConnections ? translate('subscriptions.connections.add') : undefined}
-      /> : undefined}
+      /> : signInAction}
       notice={switchNotice ? <SwitchNoticeLine notice={switchNotice} /> : undefined}
     >
       <UsageBlock
