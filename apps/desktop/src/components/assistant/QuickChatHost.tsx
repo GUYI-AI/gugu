@@ -14,6 +14,51 @@ const log = rendererLogger('assistant/quick-chat')
 
 type Mounted = { win: Window; root: HTMLElement }
 
+/** The small window this renderer opened last; the one to use again while it is not really closed. */
+let keptWindow: Window | null = null
+
+/**
+ * Opening is idempotent: the window opened before is used again while it is open (the main process turns 「close」 into
+ * 「hide」, so a hidden one is still open), and `window.open` is asked only when there is none. ❌ `window.open('about:blank',
+ * name)` for a name that already has a window: Chromium hands that window back and navigates it, and the navigation lands
+ * after what was drawn into it and empties it (the second run of this effect under StrictMode, sign-out then sign-in, a new
+ * `generation`). The address stays empty so that a window that exists is handed back as it is; a name without one gets
+ * the same blank window (the main process adopts either, `isAuxWindowRequest`).
+ */
+function openQuickChatWindow(): Window | null {
+  if (keptWindow && !keptWindow.closed) return keptWindow
+  keptWindow = window.open('', QUICK_CHAT_WINDOW_NAME, 'width=520,height=680')
+  return keptWindow
+}
+
+type QuickChatFrame = { root: HTMLElement; stopMirror: () => void; erase: () => void }
+
+/**
+ * Draws the frame the quick chat is portaled into: the opener's styles mirrored, an empty root. All or nothing: a step that
+ * fails takes back what the steps before it wrote, so the window is never left half drawn (and the page goes on).
+ */
+function drawQuickChatFrame(win: Window): QuickChatFrame {
+  const doc = win.document
+  const erase = () => {
+    doc.head.replaceChildren()
+    doc.body.replaceChildren()
+  }
+  // The same window is used again: clear what the last run left.
+  erase()
+  let stopMirror = () => {}
+  try {
+    stopMirror = mirrorDocument(document, doc)
+    Object.assign(doc.body.style, { margin: '0', height: '100vh', overflow: 'hidden' })
+    const root = doc.createElement('div')
+    doc.body.append(root)
+    return { root, stopMirror, erase }
+  } catch (error) {
+    stopMirror()
+    erase()
+    throw error
+  }
+}
+
 /**
  * #7199「快速聊天」在主窗这一侧的那一半:登录着就预先开好那扇小窗(同源子窗,主进程照 quick-chat-window.ts 配外观、藏着),
  * 按快捷键时主进程直接把它摆出来 —— 不等加载。界面由这里画进去(同一份登录、数据、实时)。
@@ -59,29 +104,28 @@ export function QuickChatHost({
 
   useLayoutEffect(() => {
     if (!ipc) return
-    const win = window.open('about:blank', QUICK_CHAT_WINDOW_NAME, 'width=520,height=680')
+    const win = openQuickChatWindow()
     if (!win) {
       log.warn({}, '快速聊天的小窗没开出来')
       return
     }
-    const doc = win.document
-    // 同一个名字再开一次拿到的是同一扇(登出再登入):先清掉上一次留下的。
-    doc.head.replaceChildren()
-    doc.body.replaceChildren()
-    const stopMirror = mirrorDocument(document, doc)
-    Object.assign(doc.body.style, { margin: '0', height: '100vh', overflow: 'hidden' })
-    const root = doc.createElement('div')
-    doc.body.append(root)
+    let frame: QuickChatFrame
+    try {
+      frame = drawQuickChatFrame(win)
+    } catch (error) {
+      log.warn({ error: String(error) }, 'The quick chat window could not be drawn into')
+      return
+    }
+    const { root } = frame
     const onGone = () => setMounted((current) => (current?.win === win ? null : current))
     win.addEventListener('pagehide', onGone)
     setMounted({ win, root })
     return () => {
       win.removeEventListener('pagehide', onGone)
-      stopMirror()
+      frame.stopMirror()
       setMounted(null)
       if (!win.closed) {
-        doc.head.replaceChildren()
-        doc.body.replaceChildren()
+        frame.erase()
         // 主进程把「关」当「收起」:这扇留着(藏着),下次登录再用同一扇。
         win.close()
       }
