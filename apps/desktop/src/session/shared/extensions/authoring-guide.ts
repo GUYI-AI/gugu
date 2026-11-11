@@ -896,7 +896,8 @@ streaming, voice, attachments, read state) as the main column; your main page is
   \`top\` px, within \`right\` px of the edge. Make your top row (name, tabs) \`top\` px high and keep \`right\` px clear.
 - You get no chat, message, person or DOM of it. Opening your page marks nothing read; a \`{ binding }\` draft lands in that composer.
 API 42 to 46, when that conversation is the person's private one with their own agent or assistant (its resources,
-schedules, the assistant itself, the work it handed out): \`guide_read apps-bindings-agent\`.
+schedules, the assistant itself, the work it handed out): \`guide_read apps-bindings-agent\`; 47 and 48 (its voice-note
+recorder, your composer "+" entries): \`guide_read apps-bindings-assistant\`.
 `;
 
 export const EXTENSION_GUIDE_BINDINGS_AGENT = `# gugu.bindings, gugu.assistant — the agent behind the chosen conversation
@@ -962,13 +963,25 @@ wherever the assistant lives (this computer, another, the cloud).
 - \`gugu.bindings.openWork("main", handle)\` in a click: the host draws that task's conversation in your panel, over your
   page, with its own back control; \`gugu.bindings.closeWork("main")\` takes it away. \`open\` is that row's handle while it is
   drawn, else null — hide your list then. You cannot see it. Another account, a withdrawn grant, a new choice: it closes.
-
 - \`contributes.conversationSurface.header: "assistant"\` (46), over that same assistant chat: the host draws the built-in
   assistant page's top row above the conversation — its face and name, search, settings gear, expand — from its own data.
   A click on the face and name: \`onSurface\` hears \`intent: "profile"\` once, the panel expanded; show its
   profile. The gear opens the host's settings page over your page. \`panel.hostPage\` is true while a host page (that, or a
   task) is over your page. Another conversation: no row.
-API 47, the same assistant: \`"voice-notes:record"\` (\`chat:voice-notes:record\`) drives the host's voice-note recorder. The host
+
+Free (API 44, desktop page): \`toast(text)\` → one line in gugu's own toast, as its "Changes saved": ≤ 80 characters,
+text only, while your page is on screen and focused (else \`denied\`), one every 2 s (else \`rate-limited\`).
+
+API 47 and 48, the same assistant: its voice-note recorder (\`gugu.voiceNote\`) and your entries in that conversation's
+composer "+" (\`composerActions\`): \`guide_read apps-bindings-assistant\`.
+`;
+
+export const EXTENSION_GUIDE_BINDINGS_ASSISTANT = `# gugu.voiceNote, composer actions — the person's own assistant chat
+
+The binding of \`apps-bindings\` when its conversation is the person's private chat with their own assistant (as
+\`apps-bindings-agent\`): the host's voice-note recorder, and entries in that conversation's composer "+".
+
+API 47: \`"voice-notes:record"\` (\`chat:voice-notes:record\`) drives the host's voice-note recorder. The host
 records from the microphone, uploads, transcribes and hands the note to the assistant; your page never gets the audio.
 - In a click: \`gugu.voiceNote.start("main", { meeting? })\` → \`{ state: "started", job }\` or \`busy\`, \`no_assistant\`, \`cancelled\`,
   \`mic_denied\` (offer \`gugu.voiceNote.openMicSettings("main")\`, also in a click), \`mic_missing\`, \`capture_failed\`, \`unbound\`.
@@ -981,7 +994,8 @@ records from the microphone, uploads, transcribes and hands the note to the assi
 - \`gugu.voiceNote.onChanged("main", fn)\` → unsubscribe; \`fn\` hears \`{ state: "changed", recorder, jobs }\` (about 10 a second
   while recording) or \`{ state: "ended" }\`. A recording goes on when your page closes. Disabled or uninstalled mid-recording:
   the host stops it and keeps the note, and takes no further call from your App; another account: it stops.
-API 48, the same assistant: \`contributes.conversationSurface.composerActions\` adds entries to that conversation's composer
+
+API 48: \`contributes.conversationSurface.composerActions\` adds entries to that conversation's composer
 "+", drawn and run by the host on the person's click (no code of yours runs then). Not drawn beside any other conversation.
 \`[{ id, label: { zh, en } (one line, ≤ 40), icon, run }]\`, at most 6; \`icon\` one of sparkles, mic, upload, lightbulb, pencil,
 heart, checklist, document, book, image, message. \`run\`, each needing that binding action (and its capability):
@@ -990,9 +1004,6 @@ heart, checklist, document, book, image, message. \`run\`, each needing that bin
 - \`{ kind: "page-intent", intent }\` (\`surface\`): your panel is expanded and \`gugu.bindings.onSurface\` hears
   \`{ state: "bound", panel, intent }\` once. No data comes with it; show that view. The host's recording bar beside that
   conversation sends \`intent: "voice-note"\` when the person opens the note it shows (yours may use neither that name nor \`profile\`).
-
-Free (API 44, desktop page): \`toast(text)\` → one line in gugu's own toast, as its "Changes saved": ≤ 80 characters,
-text only, while your page is on screen and focused (else \`denied\`), one every 2 s (else \`rate-limited\`).
 `;
 
 export const EXTENSION_GUIDE_MESSAGES = `# gugu.chats, gugu.messages — the chats you are in, and what was said
@@ -1379,6 +1390,11 @@ export const EXTENSION_GUIDE_TOPICS: readonly { topic: string; about: string; te
     topic: 'apps-bindings-agent',
     about: 'The same binding when its conversation is the person\'s private one with their own agent or assistant: the agent\'s resources (42) and schedules (43), gugu.assistant (44), the work the assistant handed out (46).',
     text: EXTENSION_GUIDE_BINDINGS_AGENT,
+  },
+  {
+    topic: 'apps-bindings-assistant',
+    about: 'The same binding on the person\'s own assistant chat: the host\'s voice-note recorder driven from your page (gugu.voiceNote, 47) and your entries in that conversation\'s composer "+", run by the host (composerActions, 48).',
+    text: EXTENSION_GUIDE_BINDINGS_ASSISTANT,
   },
   {
     topic: 'apps-messages',
