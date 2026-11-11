@@ -63,6 +63,7 @@ import { rosterMoved, type MemberChange } from '@shared/extensions/app-files-cor
 import { coalescedReads } from '@shared/extensions/coalesced-reads';
 import { agentReport } from '@shared/extensions/agent-view';
 import { stopResourceWatches } from './app-resource-watches';
+import { stopVoiceWatches } from './app-voice-note-watches';
 import { changedGroupFiles, resourceChatOf, type DesktopFilePage } from '@main/core/extensions/app-files';
 
 /**
@@ -483,6 +484,8 @@ export function stopPageWatches(pageId: number): void {
   for (const stop of cloudWatches.get(pageId)?.values() ?? []) stop();
   cloudWatches.delete(pageId);
   stopResourceWatches(pageId);
+  // #1927 (47) Its hearing of the recorder goes with the page; a recording it started does not.
+  stopVoiceWatches(pageId);
   const watching = pageWatches.get(pageId);
   for (const watch of watching?.values() ?? []) watch.disk?.stop();
   pageWatches.delete(pageId);
@@ -2054,6 +2057,24 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       if (method === 'bindingsWatch') return await resources.appResourceWatch(caller.extensionId, caller.pageId, args, (watchId, event) => caller.hear({ type: 'bindingResources', watchId, event }));
       const verb = { bindingsResources: resources.appResourceList, bindingsResource: resources.appResourceRead, bindingsSave: resources.appResourceSave, bindingsRemove: resources.appResourceRemove }[method];
       return await verb(caller.extensionId, args);
+    }
+    case 'voiceNoteStart':
+    case 'voiceNotePause':
+    case 'voiceNoteResume':
+    case 'voiceNoteStop':
+    case 'voiceNoteRetry':
+    case 'voiceNoteOpenMicSettings':
+    case 'voiceNoteStatus':
+    case 'voiceNoteWatch': {
+      // #1927 (47) The person's recorder, as the binding's resources are the person's: a page an agent works drives none of it.
+      if (thePage(caller).operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works does not record'), { code: 'denied' });
+      const voice = await import('./app-voice-notes');
+      if (method === 'voiceNoteWatch') return await voice.appVoiceNoteWatch(caller.extensionId, caller.pageId, args, (watchId, event) => caller.hear({ type: 'voiceNote', watchId, event }));
+      if (method === 'voiceNoteStart') return await voice.appVoiceNoteStart(caller.extensionId, args);
+      if (method === 'voiceNoteRetry') return await voice.appVoiceNoteRetry(caller.extensionId, args);
+      if (method === 'voiceNoteOpenMicSettings') return await voice.appVoiceNoteOpenMicSettings(caller.extensionId, args);
+      const verb = ({ voiceNotePause: 'pause', voiceNoteResume: 'resume', voiceNoteStop: 'stop', voiceNoteStatus: 'status' } as const)[method];
+      return await voice.appVoiceNote(verb, caller.extensionId, args);
     }
     case 'messagesHistory':
     case 'messagesSearch': {

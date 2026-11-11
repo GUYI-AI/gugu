@@ -112,7 +112,11 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // 44 (#1925): when that conversation is the person's private chat with their own assistant, the binding may also declare
 // `assistant-status` (`assistant:status`: `gugu.assistant.status` / `onChanged`) and `assistant-open` (`assistant:open`:
 // `gugu.assistant.open(name, screen)` — one of the host's own screens for it, a closed list — and `advanceSetup`).
-export const EXTENSION_API_VERSION = 44;
+// 45, 46: reserved (other slices), merged in as they land.
+// 47 (#1927): `voice-notes:record` (`chat:voice-notes:record`): `gugu.voiceNote.*` drives the host's voice-note recorder for
+// that personal assistant — the host records, uploads and transcribes; the App hears phases and opaque job handles only
+// (voice-note-session.ts).
+export const EXTENSION_API_VERSION = 47;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
@@ -664,6 +668,8 @@ export type ExtensionHostEvent =
   | { type: 'cloudHeard'; topic: string; event: string; heard: { subscribed: true } | { payload: Record<string, unknown> } }
   /** #1927 (42) What a page hears of its binding's agent resources (`gugu.bindings.onResourcesChanged`): read again, or ended. */
   | { type: 'bindingResources'; watchId: string; event: import('./agent-resources').AppResourceEvent }
+  /** #1927 (47) What a page hears of the voice-note recorder (`gugu.voiceNote.onChanged`): its state whole, or ended. */
+  | { type: 'voiceNote'; watchId: string; event: import('./voice-note-session').AppVoiceNoteEvent }
   /**
    * The person clicked a banner this extension posted. Delivered to the background
    * page and to this extension's tabs in the session the banner opened; `tag` and
@@ -877,6 +883,18 @@ export const BRIDGE_VERBS = {
   assistantStatus: { needs: 'assistant:status', only: 'page' },
   assistantOpen: { needs: 'assistant:open', only: 'page', gesture: true },
   assistantAdvanceSetup: { needs: 'assistant:open', only: 'page', gesture: true },
+   * #1927 (47): the host's voice-note recorder, for the personal assistant the bound conversation is with. Starting,
+   * resuming and retrying (which records, or spends on transcription) and opening the system's microphone settings take
+   * the person's click; pausing, stopping and hearing it do not. The host records; the page never gets the audio.
+   */
+  voiceNoteStart: { needs: 'chat:voice-notes:record', only: 'page', gesture: true },
+  voiceNotePause: { needs: 'chat:voice-notes:record', only: 'page' },
+  voiceNoteResume: { needs: 'chat:voice-notes:record', only: 'page', gesture: true },
+  voiceNoteStop: { needs: 'chat:voice-notes:record', only: 'page' },
+  voiceNoteRetry: { needs: 'chat:voice-notes:record', only: 'page', gesture: true },
+  voiceNoteOpenMicSettings: { needs: 'chat:voice-notes:record', only: 'page', gesture: true },
+  voiceNoteStatus: { needs: 'chat:voice-notes:record', only: 'page' },
+  voiceNoteWatch: { needs: 'chat:voice-notes:record', only: 'page' },
   messagesHistory: { needs: 'chat:read' },
   messagesSearch: { needs: 'chat:read' },
   /**

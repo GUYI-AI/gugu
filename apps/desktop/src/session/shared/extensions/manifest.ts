@@ -362,6 +362,9 @@ export const EXTENSION_CAPABILITIES = [
   // opened, or its setup moved on a step (`gugu.assistant.open` / `advanceSetup`). Each with its binding action.
   'assistant:status',
   'assistant:open',
+  // That same personal assistant's voice-note recorder (#1927, API 47): the host records from the microphone when the
+  // person clicks in the App; the App drives it and hears its state, never the audio (`gugu.voiceNote`).
+  'chat:voice-notes:record',
   /*
    * Seeing the agents at work (behavior tab-extensions:「agent 的可见与可控」).
    *
@@ -762,7 +765,7 @@ export const extensionManifestSchema = z
       ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: 'conversation unread bindings require apiVersion 37' });
     }
     // #1927: an extra action of the binding and its capability come together, as `unread` and `chat:unread` do, from the
-    // API version the action came in (#1925: `surface` 41, the assistant's 44).
+    // API version the action came in (#1925: `surface` 41, the assistant's 44; #1927: the voice-note recorder 47).
     for (const action of Object.keys(BINDING_ACTION_API_VERSION) as (keyof typeof BINDING_ACTION_API_VERSION)[]) {
       const capability = BINDING_ACTION_CAPABILITY[action];
       if ((unreadBinding?.actions.includes(action) ?? false) !== declared.includes(capability)) {

@@ -15,6 +15,7 @@ import {
   READABLE_RESOURCE_DOMAINS, WRITABLE_RESOURCE_DOMAINS, appResourceOf, resourceChangeSchema, resourceDomainOf, resourceKeyOf,
   type AppResourceEvent, type AppResourceList, type AppResourceRead, type AppResourceWrite, type ReadableResourceDomain, type ResourceBindingAction,
 } from '@shared/extensions/agent-resources';
+import type { VOICE_NOTE_RECORD_ACTION } from '@shared/extensions/voice-note-session';
 import { account, current, member } from './app-unread-bindings';
 import { extensionsService } from './extensions-root';
 import { addResourceWatch, stopResourceWatch } from './app-resource-watches';
@@ -73,7 +74,7 @@ async function personalAssistantOf(token: string, ownerId: string, chatId: strin
   return pick.agentId;
 }
 
-type Bound = { ownerId: string; token: string; chatId: string; handle: string; agentId: string; recheck(): Promise<void> };
+export type Bound = { ownerId: string; token: string; chatId: string; handle: string; agentId: string; recheck(): Promise<void> };
 
 /**
  * The authority one call works under: the current account's own selection for this installed App, with the action granted
@@ -81,13 +82,16 @@ type Bound = { ownerId: string; token: string; chatId: string; handle: string; a
  * its personal assistant (asked beside membership). `recheck`: account, installed App, grant and the same selection, still —
  * called after every wait. Null: nobody has chosen the conversation yet.
  */
-async function boundAgent(extensionId: string, name: string, needs: readonly ResourceBindingAction[], domain: string | null): Promise<Bound | null> {
+export async function boundAgent(
+  extensionId: string, name: string, needs: readonly (ResourceBindingAction | typeof VOICE_NOTE_RECORD_ACTION)[], domain: string | null,
+): Promise<Bound | null> {
   const { token, ownerId } = await account();
   const service = extensionsService();
   // Every action the call needs, each granted (a change needs reading the domain too): one binding behind them all.
   const grant = () => needs.map((action) => domain === null
     ? service.conversationBinding(ownerId, extensionId, name, action)
-    : service.conversationResourceBinding(ownerId, extensionId, name, action, domain)).at(-1) ?? null;
+    // A domain is only ever named with the resource actions.
+    : service.conversationResourceBinding(ownerId, extensionId, name, action as ResourceBindingAction, domain)).at(-1) ?? null;
   const before = grant();
   if (!before) return null;
   const recheck = async () => {

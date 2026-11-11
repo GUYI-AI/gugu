@@ -21,6 +21,7 @@ import {
   EXTENSION_LISTED_SESSION_METHOD,
   EXTENSION_MEMBER_FACES_METHOD,
   EXTENSION_PICK_DISPATCH_TARGET_METHOD,
+  EXTENSION_VOICE_NOTE_METHOD,
   INSTALL_CONSENT_HUMAN_WINDOW_MS,
   type ExtensionHostAction,
   type ExtensionHostActionResult,
@@ -351,6 +352,16 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
     return remoteHostsStore.reachProject(sessionId, deviceId, typeof projectId === 'string' ? projectId : undefined);
   },
   /** `gugu.dispatch` naming no target: the person picks one in the shell's sheet (DispatchSheet). */
+  /**
+   * #1927 (47) `gugu.voiceNote`: main has checked the App's grant; the recorder here checks its own account and assistant
+   * (app-voice-note-host.ts). Imported when asked, as above: until an App asks, the recorder's App half is not loaded.
+   */
+  [EXTENSION_VOICE_NOTE_METHOD]: async (params: unknown) => {
+    const request = params as import('@shared/extensions/voice-note-session').VoiceNoteWindowRequest | null;
+    if (!request || typeof request !== 'object' || typeof request.op !== 'string') throw new Error('Invalid voice note request');
+    const { appVoiceNoteRequest } = await import('@renderer/features/assistant/voice-notes/app-voice-note-host');
+    return appVoiceNoteRequest(request);
+  },
   [EXTENSION_PICK_DISPATCH_TARGET_METHOD]: async (params: unknown) => {
     const { pickDispatchTarget } = await import('@/components/chat/dispatchAsk');
     return pickDispatchTarget(params as DispatchAsk);

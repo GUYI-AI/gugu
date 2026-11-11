@@ -46,6 +46,8 @@ export const CAPABILITY_RISK = {
   // That conversation's assistant, when it is the person's own (#1925): a snapshot of it; its host screens opened in a click.
   'assistant:status': 'medium',
   'assistant:open': 'medium',
+  // The microphone, recording when the person clicks in the App (the host records; the App never gets the audio).
+  'chat:voice-notes:record': 'high',
   'agents:read': 'medium',
   // Every `:all` widens past the agents the App started — that widening is the whole point of
   // reading it as high, even for the ability that is medium in its narrow form.

@@ -60,16 +60,42 @@ export function useStartVoiceNote(): (meeting?: VoiceNoteMeta['meeting']) => Pro
  * 助理 App 挂上时:告诉录音机与进度此刻是哪位助理、它家是哪台;把「+ → 录制语音笔记」登记到桥上(壳那侧的聊天框)。
  * App 卸下时 ❌ 清掉上下文 —— 录到一半离开 App 也要接着传、接着转写;桥上的登记没在录就跟着卸下,在录就留着。
  */
-export function useVoiceNotesHost(input: {
+export function useVoiceNotesHost(input: VoiceNotesHostInput) {
+  const start = useStartVoiceNote();
+  const startRef = useRef(start);
+  startRef.current = start;
+  const { home, assistantId } = input;
+  const deviceId = home?.deviceId ?? null;
+  useVoiceNotesContext(input);
+  useEffect(() => {
+    const bridge = readAssistantShellBridge();
+    if (!bridge || !deviceId || !assistantId) return;
+    const handler: AssistantVoiceNoteHandler = {
+      start: (meeting) => startRef.current(meeting ?? null),
+      busy: () => voiceRecorder.busy,
+      subscribe: voiceRecorder.subscribe,
+    };
+    bridge.setVoiceNoteHandler(handler);
+    return () => {
+      // 录着离开 App:登记留着 —— 壳那侧(栏上的红点、会议提醒)据此知道还在录;回到 App 时换成新的这一份。
+      if (bridge.getVoiceNoteHandler() === handler && !voiceRecorder.busy) bridge.setVoiceNoteHandler(null);
+    };
+  }, [deviceId, assistantId]);
+}
+
+export type VoiceNotesHostInput = {
   home: AssistantHomePlace | null;
   assistantId: string | null;
   ownerName: string | null;
   machine: AssistantMachine | undefined;
-}) {
+};
+
+/**
+ * 只告诉录音机与进度此刻是哪位助理、它家是哪台(❌ 不登记到桥上):助理 App 挂着时由 useVoiceNotesHost 做,
+ * #1927 (47) 一个 App 经 `gugu.voiceNote` 要录时由 app-voice-notes-context.tsx 照同一份壳里的数据做。
+ */
+export function useVoiceNotesContext(input: VoiceNotesHostInput) {
   const client = useQueryClient();
-  const start = useStartVoiceNote();
-  const startRef = useRef(start);
-  startRef.current = start;
   const { home, assistantId, ownerName, machine } = input;
   const deviceId = home?.deviceId ?? null;
   const homeKey = home ? JSON.stringify(home) : null;
@@ -93,20 +119,6 @@ export function useVoiceNotesHost(input: {
     });
     // homeKey 代表 home 的内容(对象每次渲染是新的)。
   }, [homeKey, deviceId, assistantId, ownerName, machine, client]);
-  useEffect(() => {
-    const bridge = readAssistantShellBridge();
-    if (!bridge || !deviceId || !assistantId) return;
-    const handler: AssistantVoiceNoteHandler = {
-      start: (meeting) => startRef.current(meeting ?? null),
-      busy: () => voiceRecorder.busy,
-      subscribe: voiceRecorder.subscribe,
-    };
-    bridge.setVoiceNoteHandler(handler);
-    return () => {
-      // 录着离开 App:登记留着 —— 壳那侧(栏上的红点、会议提醒)据此知道还在录;回到 App 时换成新的这一份。
-      if (bridge.getVoiceNoteHandler() === handler && !voiceRecorder.busy) bridge.setVoiceNoteHandler(null);
-    };
-  }, [deviceId, assistantId]);
 }
 
 /** 录音条该跟着的那一条:最近开始的、没被关掉的;「好了」的只挂一会儿。 */

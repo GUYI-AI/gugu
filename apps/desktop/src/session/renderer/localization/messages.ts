@@ -288,6 +288,8 @@ const enUSCoreMessages = {
   // #1925: that conversation's assistant, only when it is the person's own.
   'extensions.permissionsAssistantStatus': 'See your setup progress while you have no assistant, and the name, look, home and setup progress of your assistant in the conversation you select',
   'extensions.permissionsAssistantOpen': 'When you click, open setup while you have no assistant, and the setup, move, close and settings pages of your assistant in the conversation you select, or move its setup on',
+  // #1927 (47): the host records; the App starts and stops it and draws the bar.
+  'extensions.permissionsChatVoiceNotesRecord': 'Record voice notes from your microphone when you click, for your agent in the conversation you select; the App never gets the audio',
   'extensions.unreadBindingChoose': 'Choose conversation',
   'extensions.unreadBindingSearch': 'Search conversations',
   'extensions.unreadBindingEmpty': 'No available conversations',
@@ -1471,6 +1473,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'extensions.permissionsChatResourcesWrite': '改动你选定的那条会话里 agent 记着的{kinds}，由 agent 照改',
   'extensions.permissionsAssistantStatus': '还没有助理时获知开通进度；有了之后只获知你选定的那条会话里你的助理的名字、形象、住处和开通进度',
   'extensions.permissionsAssistantOpen': '你点按时，还没有助理就打开开通页；有了之后为你选定会话里的助理打开开通、搬家、关闭和设置页面，或推进开通步骤',
+  'extensions.permissionsChatVoiceNotesRecord': '你点了才用麦克风录语音笔记，交给你选定的那条会话里的 agent；App 拿不到录音',
   'extensions.unreadBindingChoose': '选择会话',
   'extensions.unreadBindingSearch': '搜索会话',
   'extensions.unreadBindingEmpty': '暂无可选会话',

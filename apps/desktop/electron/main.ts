@@ -98,6 +98,7 @@ import {
   EXTENSION_INSTALLED_CHANGED_METHOD,
   EXTENSION_LISTED_SESSION_METHOD,
   EXTENSION_MEMBER_FACES_METHOD,
+  EXTENSION_VOICE_NOTE_METHOD,
   type ExtensionInstallConsentResult,
 } from '@shared/extensions/host-actions'
 import { givesAgentTools } from '@shared/extensions/app-places'
@@ -4295,6 +4296,11 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
       listedSession: (sessionId, hint) => {
         if (!mainWindow || mainWindow.isDestroyed()) return Promise.reject(new Error('Renderer not ready'))
         return invokeRendererExtensions(EXTENSION_LISTED_SESSION_METHOD, { sessionId, ...hint }, mainWindow.webContents.id) as Promise<string | null>
+      },
+      // #1927 (47) `gugu.voiceNote`: the recorder lives in this window, whichever window drew the App's page.
+      voiceNote: (request) => {
+        if (!mainWindow || mainWindow.isDestroyed()) return Promise.reject(Object.assign(new Error('Renderer not ready'), { code: 'unavailable' }))
+        return invokeRendererExtensions(EXTENSION_VOICE_NOTE_METHOD, request, mainWindow.webContents.id) as Promise<import('../src/session/shared/extensions/voice-note-session').VoiceNoteWindowAnswer>
       },
       act: async (command) => {
         if (!mainWindow || mainWindow.isDestroyed()) throw new Error('Renderer not ready')
