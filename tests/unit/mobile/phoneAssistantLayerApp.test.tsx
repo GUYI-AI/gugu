@@ -35,6 +35,7 @@ vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneVoiceBar', () => ({
 }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneIdeas', () => ({ PhoneIdeas: () => null }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneAssistantWorkLedger', () => ({ PhoneAssistantWorkLedger: () => null }))
+vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneAssistantCounts', () => ({ PhoneAssistantCountsSource: () => null }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneProfile', () => ({ PhoneProfile: () => <div>host screen</div> }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneMemory', () => ({ PhoneMemory: () => <div>host screen</div> }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneConfirmDialog', () => ({

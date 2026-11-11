@@ -1,4 +1,4 @@
-import type { AppAssistantStatus } from '../../session/shared/extensions/assistant-binding'
+import type { AppAssistantCounts, AppAssistantStatus } from '../../session/shared/extensions/assistant-binding'
 import type { PhoneAssistantScreen, PhoneSurfaceSection } from '../../session/shared/extensions/phone-binding'
 import type { AppSurfaceIntent } from '../../session/shared/extensions/unread-binding'
 import type { PushedWorkLedger } from '../../session/shared/extensions/work-binding'
@@ -27,6 +27,8 @@ export type PhoneLayerStatus = { ownerId: string; status: AppAssistantStatus }
 let shown: PhoneLayerShown | null = null
 let actions: PhoneLayerActions | null = null
 let status: PhoneLayerStatus | null = null
+/** The 资料 rows' numbers, read by the layer (PhoneAssistantCounts.tsx) while the App is its page. */
+let counts: { ownerId: string; counts: AppAssistantCounts } | null = null
 /** The assistant's work list as the layer's own 任务 list reads it (API 46), and the task whose conversation it draws now. */
 let work: PushedWorkLedger | null = null
 let openWork: { ownerId: string; workId: string; sessionId: string } | null = null
@@ -55,10 +57,17 @@ export const phoneAssistantLayer = {
     actions = next
     return () => { if (actions === next) actions = null }
   },
-  status: (): PhoneLayerStatus | null => status,
+  /** The assistant as the layer knows it, with the 资料 numbers once the layer read them for that account (else null). */
+  status: (): PhoneLayerStatus | null => (status && status.status.assistant === 'found' && counts?.ownerId === status.ownerId
+    ? { ownerId: status.ownerId, status: { ...status.status, counts: counts.counts } } : status),
   publishStatus(next: PhoneLayerStatus | null): void {
     if (same(status, next)) return
     status = next
+    for (const listener of statusListeners) listener()
+  },
+  publishCounts(next: { ownerId: string; counts: AppAssistantCounts } | null): void {
+    if (same(counts, next)) return
+    counts = next
     for (const listener of statusListeners) listener()
   },
   onStatus(listener: () => void): () => void {
@@ -95,6 +104,7 @@ export function resetPhoneAssistantLayerForTest(): void {
   shown = null
   actions = null
   status = null
+  counts = null
   work = null
   openWork = null
   shownListeners.clear()

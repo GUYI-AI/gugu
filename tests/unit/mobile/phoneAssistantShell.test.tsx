@@ -37,6 +37,8 @@ vi.mock('../../../apps/desktop/src/mobile/assistant/phoneAssistantEntry', () => 
   usePhoneAssistantEntry: () => ({ entry: 'app', extensionId: 'gugu-assistant', tabKind: 'gugu-assistant.panel', binding: 'main' }) }))
 vi.mock('../../../apps/desktop/src/components/appSlot/PhoneAppFrame', () => ({ PhoneAppFrame: () => <div data-testid="app-frame" /> }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneAssistantWorkLedger', () => ({ PhoneAssistantWorkLedger: () => null }))
+vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneAssistantCounts', () => ({ PhoneAssistantCountsSource: () => null }))
+
 vi.mock('../../../apps/desktop/src/session/renderer/features/assistant/assistant-shell', () => ({ ShellSlot: () => null }))
 const { searchInChat } = vi.hoisted(() => ({ searchInChat: vi.fn() }))
 vi.mock('../../../apps/desktop/src/session/renderer/features/global-search/search-session', () => ({ searchInChat }))
