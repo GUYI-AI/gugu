@@ -39,6 +39,10 @@ export const CAPABILITY_RISK = {
   'chat:draft': 'medium',
   // #1925 That conversation drawn by the host beside the App's page: the App sees none of it, only whether it is shown.
   'chat:surface': 'medium',
+  // The agent's records the person keeps with it (memory, files, profile, skills, voice notes) in that one conversation:
+  // reading is what the person told it; changing them changes what it knows of them.
+  'chat:resources': 'medium',
+  'chat:resources:write': 'high',
   // That conversation's assistant, when it is the person's own (#1925): a snapshot of it; its host screens opened in a click.
   'assistant:status': 'medium',
   'assistant:open': 'medium',
@@ -92,7 +96,7 @@ export function declaredPermissions(manifest: ExtensionManifest): DeclaredPermis
  */
 export function permissionSide(permission: DeclaredPermission): 'see' | 'do' {
   if (permission.kind === 'network') return 'do';
-  return permission.key.startsWith('files:read') || permission.key.startsWith('agents:read') || permission.key.startsWith('agents:history') || (permission.key === 'chat:read' || permission.key === 'chat:unread' || permission.key === 'chat:files' || permission.key === 'assistant:status')
+  return permission.key.startsWith('files:read') || permission.key.startsWith('agents:read') || permission.key.startsWith('agents:history') || (permission.key === 'chat:read' || permission.key === 'chat:unread' || permission.key === 'chat:files' || permission.key === 'chat:resources' || permission.key === 'assistant:status')
     ? 'see'
     : 'do';
 }

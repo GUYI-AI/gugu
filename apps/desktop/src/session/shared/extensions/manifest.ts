@@ -6,6 +6,7 @@ import { APP_PLATFORMS } from './app-platforms';
 import { claimTakes } from './file-openers';
 import { INSTRUCTIONS_MAX_CHARS, SUBTITLE_MAX_CHARS } from './app-listing';
 import { BINDING_ACTION_API_VERSION, BINDING_ACTION_CAPABILITY, BINDING_NAME, CONVERSATION_BINDING_ACTIONS, CONVERSATION_SURFACE_PLACEMENTS } from './unread-binding';
+import { RESOURCE_BINDING_ACTIONS, resourceDomainProblem } from './agent-resources';
 
 /**
  * Extension (App) manifest — the `manifest.json` at the root of an
@@ -351,6 +352,11 @@ export const EXTENSION_CAPABILITIES = [
   // The App's main page drawn beside that same conversation (#1925, API 41), the host's own native conversation in the main
   // column (`contributes.conversationSurface`): the App sees none of it, only whether it is shown (`gugu.bindings.surface`).
   'chat:surface',
+  // When that conversation is the person's private one with an agent of theirs (#1927, API 42): that agent's panel
+  // resources, in the domains the binding lists — read (`gugu.bindings.resources` / `resource` / `onResourcesChanged`),
+  // and changed through the resource store (`save` / `remove`). Each needs its binding action declared.
+  'chat:resources',
+  'chat:resources:write',
   // #1925 (API 44) That same selected conversation's assistant, when it is the person's own: a snapshot of it and its
   // changes (`gugu.assistant.status` / `onChanged`) — and, in the person's click, one of the host's own screens for it
   // opened, or its setup moved on a step (`gugu.assistant.open` / `advanceSetup`). Each with its binding action.
@@ -468,6 +474,11 @@ const permissionsSchema = z.strictObject({
       .refine((actions) => actions.includes('unread') && new Set(actions).size === actions.length, {
         message: 'a conversation binding has the unread action, and each action once',
       }),
+    /** #1927 (42): the resource domains each resource action asks for, from a closed list (agent-resources.ts). */
+    domains: z.strictObject({
+      resources: z.array(z.string()).min(1).max(8).optional(),
+      'resources:write': z.array(z.string()).min(1).max(8).optional(),
+    }).optional(),
   })).length(1).optional(),
   /** Hostnames its pages and host-confined tools may reach. Anything else is blocked. */
   network: z
@@ -768,6 +779,26 @@ export const extensionManifestSchema = z
     }
     if (Boolean(surface) !== (unreadBinding?.actions.includes('surface') ?? false)) {
       ctx.addIssue({ code: 'custom', path: ['contributes', 'conversationSurface'], message: 'contributes.conversationSurface requires the conversation binding\'s "surface" action, and the action requires conversationSurface' });
+    }
+    // #1927 (42): an agent's resources, as `files` is (the action and its capability, and the API, are the loop above's):
+    // each action names the domains it wants from the closed list; a writer writes only domains it also reads.
+    for (const action of RESOURCE_BINDING_ACTIONS) {
+      const has = unreadBinding?.actions.includes(action) ?? false;
+      const domains = unreadBinding?.domains?.[action];
+      if (has !== (domains !== undefined)) {
+        ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings', 0, 'domains'], message: `the "${action}" action and its domains come together: domains: { "${action}": [...] }` });
+      }
+      for (const domain of domains ?? []) {
+        const problem = resourceDomainProblem(action, domain);
+        if (problem) ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings', 0, 'domains', action], message: problem });
+      }
+      if (domains && new Set(domains).size !== domains.length) {
+        ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings', 0, 'domains', action], message: 'each domain once' });
+      }
+    }
+    const writes = unreadBinding?.domains?.['resources:write'] ?? [];
+    if (writes.length > 0 && !(unreadBinding?.actions.includes('resources') && writes.every((domain) => unreadBinding.domains?.resources?.includes(domain)))) {
+      ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings', 0, 'domains', 'resources:write'], message: '"resources:write" changes only domains the binding also reads ("resources")' });
     }
     const byFamily = new Map<string, string>();
     for (const word of declared) {

@@ -868,7 +868,7 @@ tools by their full name. Not installed, off or without \`agents:tools\` on that
 only (no chat to say it in), and retries once it is there.
 `;
 
-export const EXTENSION_GUIDE_MESSAGES = `# gugu.chats, gugu.messages — the chats you are in, and what was said
+export const EXTENSION_GUIDE_BINDINGS = `# gugu.bindings — one conversation the person chooses for your App
 
 Needs \`chat:unread\` (desktop, API 37): declare \`permissions.bindings: [{name: "main", kind: "conversation", actions: ["unread"]}]\`
 and \`chat:unread\`. The person chooses one conversation in the App's common permission section.
@@ -895,6 +895,20 @@ streaming, voice, attachments, read state) as the main column; your main page is
 - \`panel.inset\` \`{ top, right }\` (px): the host's collapse button covers your page's top-right corner, centred in the top
   \`top\` px, within \`right\` px of the edge. Make your top row (name, tabs) \`top\` px high and keep \`right\` px clear.
 - You get no chat, message, person or DOM of it. Opening your page marks nothing read; a \`{ binding }\` draft lands in that composer.
+API 42, when that conversation is the person's private one with their personal assistant: \`"resources"\` (\`chat:resources\`)
+and \`"resources:write"\` (\`chat:resources:write\`) reach its resources, each with its domains:
+\`domains: { "resources": ["memory", "files", "personality", "skills", "voice-notes"], "resources:write": ["memory"] }\`
+(write: only domains also read, never voice-notes). Any other conversation is \`denied\`. An update listing more domains asks again.
+- \`gugu.bindings.resources("main", "memory")\` → \`{ state: "ready", revision, resources: [{ key, revision, updatedAt, data }] }\`.
+  \`gugu.bindings.resource("main", "memory", key)\` → \`{ state: "ready", resource, content, truncated, totalSize, binary? }\`.
+  Otherwise \`unbound\`, \`unprepared\` (not published yet), \`unavailable\` (try later), or \`missing\` with the \`revision\` a
+  save expects (\`"0"\`; a deleted one's tombstone, \`deleted: true\`).
+- \`gugu.bindings.save("main", { domain, key, operationId, expectedRevision, content })\` /
+  \`gugu.bindings.remove("main", { domain, key, operationId, expectedRevision })\` → \`{ state: "committed", receipt: { operationId,
+  revision, status } }\` (\`pending\` until the agent's machine applies it), or \`conflict\` (read again), \`deleted\`,
+  \`unavailable\`, \`unbound\`. \`operationId\` is your UUID: the same call again answers the same receipt, status now.
+- \`gugu.bindings.onResourcesChanged("main", fn)\` → unsubscribe; \`fn\` hears \`{ state: "changed" }\`: read again, or
+  \`{ state: "ended" }\`: the grant, account or chosen conversation changed — call \`get\` again.
 API 44, only when that conversation is the person's private chat with their own assistant (else \`denied\`): add
 \`"assistant-status"\` (with \`assistant:status\`) and/or \`"assistant-open"\` (with \`assistant:open\`). Setup, move and close stay gugu's screens.
 - \`gugu.assistant.status("main")\` → \`{ state: "ready", status }\` | \`{ state: "unbound" | "unavailable" }\`; \`gugu.assistant.onChanged(fn)\`
@@ -907,6 +921,9 @@ API 44, only when that conversation is the person's private chat with their own 
 - In a click: \`gugu.assistant.open("main", screen)\`, screen one of \`setup\`, \`move\`, \`close\`, \`look\`, \`model\`, \`devices\`,
   \`connected-apps\`: gugu opens that screen; the person acts there. \`gugu.assistant.advanceSetup("main", "ready" | "done")\`: the
   steps you draw, from \`connect\` (to ready or done) or \`ready\` (to done); any other is \`invalid\`. Both resolve or are refused, nothing more.
+`;
+
+export const EXTENSION_GUIDE_MESSAGES = `# gugu.chats, gugu.messages — the chats you are in, and what was said
 
 Which chats the reader is in and who is in one — for a page that is in no chat (an App's own tab, full screen) to
 offer one — and what people and agents said in a chat: a stretch of its timeline, one thread, or the messages that
@@ -1268,6 +1285,11 @@ export const EXTENSION_GUIDE_TOPICS: readonly { topic: string; about: string; te
     topic: 'apps-together',
     about: 'Several people in one App at once: presence (cursors, game frames), a game loop, and where a secret may and may not go.',
     text: EXTENSION_GUIDE_TOGETHER,
+  },
+  {
+    topic: 'apps-bindings',
+    about: 'gugu.bindings (chat:unread, API 37+): the one conversation the person chooses for your App — its unread dot, its files (40), a draft into it (40), your main page beside it (41), its agent\'s resources (42), its assistant (44).',
+    text: EXTENSION_GUIDE_BINDINGS,
   },
   {
     topic: 'apps-messages',

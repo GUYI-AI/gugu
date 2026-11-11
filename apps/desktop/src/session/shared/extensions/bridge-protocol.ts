@@ -105,7 +105,10 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // 41 (#1925): the binding may also declare `surface` (`chat:surface`) with `contributes.conversationSurface`: the App's main
 // page is drawn as the panel beside that conversation, which the host draws natively. `gugu.bindings.surface` /
 // `setPanel` / `onSurface` say only whether it is shown, whether the panel is collapsed and the corner the host covers.
-// 42, 43: reserved (#1927 the bound agent's resources, #1928 its schedules), merged in as they land.
+// 42 (#1927): when that conversation is the person's private one with an agent of theirs, `resources` (`chat:resources`:
+// `gugu.bindings.resources` / `resource` / `onResourcesChanged`) and `resources:write` (`chat:resources:write`:
+// `gugu.bindings.save` / `remove`) reach that agent's panel resources, in the domains the binding lists (agent-resources.ts).
+// 43: reserved (#1928 the bound agent's schedules), merged in as it lands.
 // 44 (#1925): when that conversation is the person's private chat with their own assistant, the binding may also declare
 // `assistant-status` (`assistant:status`: `gugu.assistant.status` / `onChanged`) and `assistant-open` (`assistant:open`:
 // `gugu.assistant.open(name, screen)` — one of the host's own screens for it, a closed list — and `advanceSetup`).
@@ -659,6 +662,8 @@ export type ExtensionHostEvent =
   | { type: 'assistantChanged'; name: string; state: 'unbound' }
   /** What this page hears of its own topic (`gugu.cloud.on`): a broadcast's payload, or that it is (re)subscribed: read again then. */
   | { type: 'cloudHeard'; topic: string; event: string; heard: { subscribed: true } | { payload: Record<string, unknown> } }
+  /** #1927 (42) What a page hears of its binding's agent resources (`gugu.bindings.onResourcesChanged`): read again, or ended. */
+  | { type: 'bindingResources'; watchId: string; event: import('./agent-resources').AppResourceEvent }
   /**
    * The person clicked a banner this extension posted. Delivered to the background
    * page and to this extension's tabs in the session the banner opened; `tag` and
@@ -854,6 +859,16 @@ export const BRIDGE_VERBS = {
    */
   bindingsSurface: { needs: 'chat:surface', only: 'page' },
   bindingsSurfacePanel: { needs: 'chat:surface', only: 'page' },
+  /**
+   * #1927 (42): the panel resources of the agent the bound conversation is with — a domain whole, one resource and its
+   * content, hearing that they changed; and, with `chat:resources:write`, a change through the resource store. The host
+   * finds the agent from the binding; the call names a domain and a key, never an owner, agent, chat or path on disk.
+   */
+  bindingsResources: { needs: 'chat:resources', only: 'page' },
+  bindingsResource: { needs: 'chat:resources', only: 'page' },
+  bindingsWatch: { needs: 'chat:resources', only: 'page' },
+  bindingsSave: { needs: 'chat:resources:write', only: 'page' },
+  bindingsRemove: { needs: 'chat:resources:write', only: 'page' },
   /**
    * #1925 (44): the bound conversation's assistant, when it is the person's own — its snapshot, read; one of the host's
    * screens for it opened, and the setup steps the App draws moved on, both in the person's click. The page names the

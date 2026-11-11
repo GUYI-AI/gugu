@@ -62,6 +62,7 @@ import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
 import { rosterMoved, type MemberChange } from '@shared/extensions/app-files-core';
 import { coalescedReads } from '@shared/extensions/coalesced-reads';
 import { agentReport } from '@shared/extensions/agent-view';
+import { stopResourceWatches } from './app-resource-watches';
 import { changedGroupFiles, resourceChatOf, type DesktopFilePage } from '@main/core/extensions/app-files';
 
 /**
@@ -481,6 +482,7 @@ const workingCopyPages = new Set<number>();
 export function stopPageWatches(pageId: number): void {
   for (const stop of cloudWatches.get(pageId)?.values() ?? []) stop();
   cloudWatches.delete(pageId);
+  stopResourceWatches(pageId);
   const watching = pageWatches.get(pageId);
   for (const watch of watching?.values() ?? []) watch.disk?.stop();
   pageWatches.delete(pageId);
@@ -2040,6 +2042,18 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       const act = (action: ExtensionHostAction) => deliver(page, action);
       if (method === 'assistantOpen') return await assistant.appAssistantOpen(caller.extensionId, args, act);
       return await assistant.appAssistantAdvanceSetup(caller.extensionId, args, act);
+    }
+    case 'bindingsResources':
+    case 'bindingsResource':
+    case 'bindingsWatch':
+    case 'bindingsSave':
+    case 'bindingsRemove': {
+      // #1927 (42) The person's grant, as for the binding's files: a page an agent works (`app_check`) reaches none of it.
+      if (thePage(caller).operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reaches none of its agent\'s resources'), { code: 'denied' });
+      const resources = await import('./app-bound-resources');
+      if (method === 'bindingsWatch') return await resources.appResourceWatch(caller.extensionId, caller.pageId, args, (watchId, event) => caller.hear({ type: 'bindingResources', watchId, event }));
+      const verb = { bindingsResources: resources.appResourceList, bindingsResource: resources.appResourceRead, bindingsSave: resources.appResourceSave, bindingsRemove: resources.appResourceRemove }[method];
+      return await verb(caller.extensionId, args);
     }
     case 'messagesHistory':
     case 'messagesSearch': {

@@ -69,6 +69,13 @@ export const HOST_CALLS = {
   // #1925 (41, `chat:surface`): the conversation drawn beside this page — shown or not, the panel collapsed or not.
   'bindings.surface': { verb: 'bindingsSurface', pack: (name: string) => ({ name }) },
   'bindings.setPanel': { verb: 'bindingsSurfacePanel', pack: (name: string, options?: Record<string, unknown>) => ({ ...options, name }) },
+  // #1927 (42, `chat:resources` / `chat:resources:write`): the bound conversation's agent's resources, named by the binding, a
+  // domain and a key; `onResourcesChanged` rides on `watch` and `onBindingResources` (create-gugu.ts).
+  'bindings.resources': { verb: 'bindingsResources', pack: (name: string, domain: string) => ({ name, domain }) },
+  'bindings.resource': { verb: 'bindingsResource', pack: (name: string, domain: string, key: string) => ({ name, domain, key }) },
+  'bindings.watch': { verb: 'bindingsWatch', pack: (watchId: string, name: string, on: boolean) => ({ watchId, name, on }) },
+  'bindings.save': { verb: 'bindingsSave', pack: (name: string, change: Record<string, unknown>) => ({ ...change, name }) },
+  'bindings.remove': { verb: 'bindingsRemove', pack: (name: string, change: Record<string, unknown>) => ({ ...change, name }) },
   // #1925 (44, `assistant:status` / `assistant:open`): the bound conversation's assistant, named by the binding alone.
   'assistant.status': { verb: 'assistantStatus', pack: (name: string) => ({ name }) },
   'assistant.open': { verb: 'assistantOpen', pack: (name: string, screen: string) => ({ name, screen }) },
@@ -186,6 +193,7 @@ export const HOST_EVENTS = {
     pick: (event: Event<'assistantChanged'>) => [event.state === 'ready' ? { name: event.name, state: event.state, status: event.status } : { name: event.name, state: event.state }],
   },
   onCloudHeard: { event: 'cloudHeard', only: 'page', pick: (event: Event<'cloudHeard'>) => [event.topic, event.event, event.heard] },
+  onBindingResources: { event: 'bindingResources', only: 'page', pick: (event: Event<'bindingResources'>) => [event.watchId, event.event] },
   onProgramNotification: {
     event: 'programNotification',
     pick: (event: Event<'programNotification'>) => [{ server: event.server, method: event.method, ...(event.params === undefined ? {} : { params: event.params }) }],
