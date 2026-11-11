@@ -265,6 +265,8 @@ export async function appVoiceNoteRemove(extensionId: string, embedderId: number
 export async function appVoiceNoteExport(extensionId: string, embedderId: number | null, input: unknown): Promise<AppExportAnswer> {
   const args = argsOf(voiceNoteArgsSchema, input);
   const key = noteKeyOf(args.key);
+  // The save itself failing is the person's disk's, not the store's: said as a failure, past `under`'s read classes.
+  let notSaved = false;
   const answer = await under(extensionId, args.name, MANAGE_VOICE, 'voice-notes', async (bound, panel): Promise<AppExportAnswer> => {
     const metaText = await noteText(panel, key, VOICE_NOTE_META_FILE);
     if (metaText === null) return { name: args.name, key, state: 'missing' };
@@ -275,8 +277,9 @@ export async function appVoiceNoteExport(extensionId: string, embedderId: number
     await bound.recheck();
     const outcome = await manageHost.exportNote(embedderId, { ownerId: bound.ownerId, title: parseVoiceNoteMeta(metaText)?.title ?? null, summary: summary?.trim() ? summary : null, transcript });
     if (outcome === 'denied') throw denied('This window is signed in to another account');
-    if (outcome === 'failed') throw Object.assign(new Error('The file could not be saved there'), { code: 'failed' });
-    return { name: args.name, key, state: outcome };
+    if (outcome === 'failed') notSaved = true;
+    return { name: args.name, key, state: outcome === 'failed' ? 'cancelled' : outcome };
   });
+  if (notSaved) throw Object.assign(new Error('The file could not be saved there'), { code: 'failed' });
   return 'key' in answer ? answer : { ...answer, key };
 }
