@@ -3,8 +3,9 @@
 
     uv run --with pillow python scripts/build/gen-tray-icons.py
 
-源图 build-resources/icon-sources/tray-mark-source.png:白底黑标(owner 2026-09-05 选定 E01 的 16px 简化版,
-gpt-image-2 按吉祥物原图转的单色标志)。产物全部落在 build-resources/,规格按 Electron Tray 文档:
+源图 build-resources/icon-sources/tray-mark-source.png:白底黑标,应用图标「网点鸽」的实心版剪影
+(同目录 app-icon-solid.svg 换成白底黑形渲染;图形来历见 scripts/build/gen-app-icons.py)。
+产物全部落在 build-resources/,规格按 Electron Tray 文档:
   · macOS  tray-iconTemplate.png 16×16 + tray-iconTemplate@2x.png 32×32 —— 模板图(黑 + 透明),
            文件名以 Template 结尾,系统按亮/暗/毛玻璃自己着色;别让打包把文件名 hash 掉。
   · Windows tray-icon-light.ico / tray-icon-dark.ico —— 多尺寸 ICO;light=黑字形(浅色任务栏),
@@ -16,7 +17,7 @@ gpt-image-2 按吉祥物原图转的单色标志)。产物全部落在 build-res
 from pathlib import Path
 from PIL import Image, ImageOps
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / 'build-resources' / 'icon-sources' / 'tray-mark-source.png'
 OUT = ROOT / 'build-resources'
 ICO_SIZES = [16, 20, 24, 32, 48]

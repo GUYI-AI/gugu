@@ -3,7 +3,7 @@ import { publicAssetPath } from '@gugu/core/shared/ui/publicAssets'
 import { i18n } from '../i18n/runtime'
 
 // @@@packaged-file-assets - Packaged Electron loads dist/index.html via file://, so public assets must not start at filesystem root.
-const APP_LOGO_URL = publicAssetPath('/assets/app/gugu-icon-512.png')
+const APP_LOGO_URL = publicAssetPath('/assets/app/gugu-icon-small.png')
 
 interface AppErrorBoundaryState {
   error: Error | null
