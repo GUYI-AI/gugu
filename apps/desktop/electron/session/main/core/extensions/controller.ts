@@ -26,6 +26,7 @@ import {
   unbindExtensionSurfaces,
   updateExtensionSurfaceLayout,
   pushBindingSurfaces,
+  deliverSurfaceIntent,
 } from '@main/core/extensions/extension-bridge';
 import {
   extensionDataRoot,
@@ -842,6 +843,32 @@ export const extensionsController = createRPCController({
         void pushBindingSurfaces(args.extensionId).catch((error: unknown) => log.warn('App conversation surface could not be told to its pages:', error));
       }
       return { success: true as const };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
+  /**
+   * #1927 (48) The composer 「+」 entries of an App placed beside the person's own assistant chat, for the column the shell
+   * drew under `authority`; and one the person clicked, run by the host (app-composer-actions.ts). Trusted window only.
+   */
+  conversationComposerActions: async (args: { ownerId: string; extensionId: string; authority: string }) => {
+    try {
+      const { composerActionsFor } = await import('./app-composer-actions');
+      return { success: true as const, data: await composerActionsFor(args) };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+  runConversationComposerAction: async (args: { ownerId: string; extensionId: string; authority: string; actionId: string }) => {
+    try {
+      const { runComposerAction } = await import('./app-composer-actions');
+      return { success: true as const, data: await runComposerAction(args, deliverSurfaceIntent) };
+    } catch (error) {
+      return { success: false as const, error: error instanceof Error ? error.message : String(error), code: String((error as { code?: unknown } | null)?.code ?? 'failed') };
+    }
+  },
+  /** #1927 (48) The host's recording bar beside that conversation: the person opened the note it shows. */
+  conversationVoiceNoteOpened: async (args: { ownerId: string; extensionId: string }) => {
+    try {
+      const { voiceNoteOpenedBeside } = await import('./app-composer-actions');
+      return { success: true as const, data: { told: await voiceNoteOpenedBeside(args, deliverSurfaceIntent) } };
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
 

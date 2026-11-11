@@ -77,13 +77,16 @@ const statusOf = (name: string, answer: Awaited<ReturnType<typeof ask>>): AppVoi
 
 // ── The calls ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** `gugu.voiceNote.start(name, { meeting? })` (in a click): `started` with the note's handle, or why not. */
-export async function appVoiceNoteStart(extensionId: string, input: unknown): Promise<AppVoiceNoteStart> {
+/**
+ * `gugu.voiceNote.start(name, { meeting? })` (in a click): `started` with the note's handle, or why not. `present` is the
+ * host's own (#1927, 48: a composer entry the person clicked): the window then says why it did not start, as the built-in does.
+ */
+export async function appVoiceNoteStart(extensionId: string, input: unknown, options: { present?: true } = {}): Promise<AppVoiceNoteStart> {
   const { name, meeting } = argsOf(voiceNoteStartSchema, input);
   const grant = await bound(extensionId, name);
   if (grant === null) return { name, state: 'unbound' };
   if (grant === 'unavailable') return { name, state: 'unavailable' };
-  const answer = await ask({ op: 'start', ownerId: grant.ownerId, assistantId: grant.agentId, ...(meeting ? { meeting } : {}) });
+  const answer = await ask({ op: 'start', ownerId: grant.ownerId, assistantId: grant.agentId, ...(meeting ? { meeting } : {}), ...(options.present ? { present: true as const } : {}) });
   const started = answer === 'unavailable' ? undefined : answer.started;
   if (started?.outcome === 'started') {
     const mine: AppRecording = { extensionId, name, ownerId: grant.ownerId, handle: grant.handle, job: started.job };

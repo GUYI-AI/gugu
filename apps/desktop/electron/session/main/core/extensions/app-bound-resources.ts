@@ -15,7 +15,7 @@ import {
   READABLE_RESOURCE_DOMAINS, WRITABLE_RESOURCE_DOMAINS, appResourceOf, resourceChangeSchema, resourceDomainOf, resourceKeyOf,
   type AppResourceEvent, type AppResourceList, type AppResourceRead, type AppResourceWrite, type ReadableResourceDomain, type ResourceBindingAction,
 } from '@shared/extensions/agent-resources';
-import type { VOICE_NOTE_RECORD_ACTION } from '@shared/extensions/voice-note-session';
+import type { ConversationBindingAction } from '@shared/extensions/unread-binding';
 import { account, current, member } from './app-unread-bindings';
 import { extensionsService } from './extensions-root';
 import { addResourceWatch, stopResourceWatch } from './app-resource-watches';
@@ -83,7 +83,7 @@ export type Bound = { ownerId: string; token: string; chatId: string; handle: st
  * called after every wait. Null: nobody has chosen the conversation yet.
  */
 export async function boundAgent(
-  extensionId: string, name: string, needs: readonly (ResourceBindingAction | typeof VOICE_NOTE_RECORD_ACTION)[], domain: string | null,
+  extensionId: string, name: string, needs: readonly Exclude<ConversationBindingAction, 'unread'>[], domain: string | null,
 ): Promise<Bound | null> {
   const { token, ownerId } = await account();
   const service = extensionsService();
