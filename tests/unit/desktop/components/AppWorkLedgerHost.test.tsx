@@ -214,6 +214,60 @@ describe('the ledger, read as the built-in list reads it', () => {
     expect(lastPushed()).toMatchObject({ state: 'stale', rows: [expect.objectContaining({ workId: WORK_A })] });
   });
 
+  // Owner 11-12 (fresh account): the list was read while setup was finishing, the cloud said the assistant is not available
+  // to this account yet (42501: its provision not ready), and the list said 「任务列表没读到 · 系统会自动再读」 for good.
+  it('during setup the cloud has no list yet: an empty list, not a failure; read again as the assistant\'s setup moves on', async () => {
+    ledger.list.mockRejectedValue(Object.assign(new Error('Assistant is not available to this account'), { code: '42501' }));
+    await act(async () => showAssistant(OWNER, null));
+    await render();
+    await settle();
+    expect(lastPushed()).toMatchObject({ ownerId: OWNER, assistantId, state: 'ready', rows: [] });
+    // Setup done (where it lives known): read again at once, and the rows come.
+    ledger.list.mockImplementation(async () => [work({ assistant_user_id: assistantId })]);
+    const before = ledger.list.mock.calls.length;
+    await act(async () => showAssistant(OWNER, home));
+    await render();
+    await settle();
+    expect(ledger.list.mock.calls.length).toBeGreaterThan(before);
+    expect(lastPushed()).toMatchObject({ state: 'ready', rows: [expect.objectContaining({ workId: WORK_A })] });
+  });
+
+  it('a failed read is read again by itself, sooner first, while the list is shown: 「系统会自动再读」 is true', async () => {
+    const { WORK_RETRY_MS } = await import('../../../../apps/desktop/src/components/assistant/assistant-work-records');
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      ledger.list.mockRejectedValue(new Error('offline'));
+      await render();
+      await settle();
+      expect(lastPushed()).toMatchObject({ state: 'failed' });
+      const reads = ledger.list.mock.calls.length;
+      await act(async () => { vi.advanceTimersByTime(WORK_RETRY_MS[0] - 1); });
+      expect(ledger.list.mock.calls.length).toBe(reads);
+      await act(async () => { vi.advanceTimersByTime(1); });
+      await settle();
+      expect(ledger.list.mock.calls.length).toBe(reads + 1);
+      // Then a longer wait; once it reads, the rows come and no more is asked.
+      ledger.list.mockImplementation(async () => [work({ assistant_user_id: assistantId })]);
+      await act(async () => { vi.advanceTimersByTime(WORK_RETRY_MS[1]); });
+      await settle();
+      expect(lastPushed()).toMatchObject({ state: 'ready', rows: [expect.objectContaining({ workId: WORK_A })] });
+      const done = ledger.list.mock.calls.length;
+      await act(async () => { vi.advanceTimersByTime(WORK_RETRY_MS.at(-1)! * 3); });
+      expect(ledger.list.mock.calls.length).toBe(done);
+      // Nobody shows the list: no read is left waiting.
+      ledger.list.mockRejectedValue(new Error('offline'));
+      await act(async () => { for (const refresh of ledger.refresh) refresh(); });
+      await settle();
+      await act(async () => root.unmount());
+      root = createRoot(host);
+      const after = ledger.list.mock.calls.length;
+      await act(async () => { vi.advanceTimersByTime(WORK_RETRY_MS.at(-1)! * 3); });
+      expect(ledger.list.mock.calls.length).toBe(after);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('reads nothing, and tells main nothing, while no enabled App declares work; and says so when the last one goes', async () => {
     state.inventory = [plain('notes')];
     await render();

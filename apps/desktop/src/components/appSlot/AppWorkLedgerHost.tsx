@@ -28,8 +28,12 @@ export const AppWorkLedgerHost = observer(function AppWorkLedgerHost() {
   const snapshot = useSyncExternalStore(shell?.subscribe ?? noop, () => shell?.getSnapshot() ?? null)
   const assistantId = ownerId && snapshot?.ownerId === ownerId && snapshot.assistant ? snapshot.assistant.id : null
   const reading = installedExtensionsStore.manifests.some((manifest) => readsWork(manifest) && installedExtensionsStore.isEnabled(manifest.id))
+  // What the window knows of the assistant beyond its id: its setup finishing changes it (where it lives, its step, its chat,
+  // its rules arriving). The cloud has no list for it until then; each change reads the list again (owner 11-12: the list
+  // read during setup stayed 「没读到」 after it).
+  const readiness = snapshot ? JSON.stringify([snapshot.assistantState, snapshot.preparing, snapshot.rulesPending ?? false, snapshot.setup, snapshot.home, snapshot.chatId]) : ''
   return ownerId && assistantId && reading
-    ? <WorkLedgerReader key={`${ownerId}\n${assistantId}`} ownerId={ownerId} assistantId={assistantId} />
+    ? <WorkLedgerReader key={`${ownerId}\n${assistantId}`} ownerId={ownerId} assistantId={assistantId} readiness={readiness} />
     : <NoLedger />
 })
 
@@ -42,8 +46,15 @@ function NoLedger() {
 }
 
 /** The account's ledger, read as the built-in list reads it, handed to main and kept for `openWork`. */
-function WorkLedgerReader({ ownerId, assistantId }: { ownerId: string; assistantId: string }) {
+function WorkLedgerReader({ ownerId, assistantId, readiness }: { ownerId: string; assistantId: string; readiness: string }) {
   const read = useAssistantWorkTasks(ownerId, assistantId)
+  const { reload } = read
+  const readinessSeen = useRef(readiness)
+  useEffect(() => {
+    if (readinessSeen.current === readiness) return
+    readinessSeen.current = readiness
+    reload()
+  }, [readiness, reload])
   const directory = readIdentityDirectoryBridge()
   const identities = useSyncExternalStore(directory?.subscribe ?? noop, () => directory?.getSnapshot() ?? null)
   const [now, setNow] = useState(() => Date.now())
