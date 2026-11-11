@@ -287,7 +287,7 @@ function InnerLayout({
     else sessionPage.openChat(chatId, false)
     if (focus) focusComposerForUserEntry(focus, chatId)
     return chatSlotKey(chatId)
-  }, [setActiveTab, chatsAreBlocks, focusComposerForUserEntry, mobile, openAssistantChat, openOwnedAgent, t])
+  }, [setActiveTab, chatsAreBlocks, focusComposerForUserEntry, openAssistantChat, openOwnedAgent, t])
   const openChatTarget = useCallback((chatId: string, purpose?: 'resource'): string => {
     setOpenedPhoneApp(null)
     const chat = readChats().chats.find((candidate) => candidate.id === chatId)

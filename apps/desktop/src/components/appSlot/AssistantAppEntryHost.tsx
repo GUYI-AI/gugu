@@ -75,9 +75,10 @@ export const AssistantAppEntryHost = observer(function AssistantAppEntryHost() {
 
   const target = useAssistantEntryTarget()
   // The built-in page's panel, carried over the first time the App is where the entry goes.
+  const carryTo = target.kind === 'app' ? target.extensionId : null
   useEffect(() => {
-    if (target.kind === 'app' && carryBuiltInPanelOnce(target.extensionId)) log.info({}, 'carried the built-in assistant panel state over to the assistant App')
-  }, [target.kind])
+    if (carryTo && carryBuiltInPanelOnce(carryTo)) log.info({}, 'carried the built-in assistant panel state over to the assistant App')
+  }, [carryTo])
 
   // The App's page is up: the assistant's home on this computer refreshed to this version, as opening the built-in page did.
   const onAppPage = target.kind === 'app' && appState.navigation.currentViewId === 'app' && appState.navigation.viewParamsStore.app?.appId === ASSISTANT_APP_ID
