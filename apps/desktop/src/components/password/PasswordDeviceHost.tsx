@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import type { PasswordSyncRequest } from '@gugu/core/shared/passwordBetaProtocol'
 import { usePasswordSnapshot, useOpenPasswordDevicePrompt } from '@/lib/passwordBetaNotifications'
@@ -31,7 +32,7 @@ export function PasswordDeviceHost() {
   if (!PASSWORD_BETA_ENABLED) return null
   const sync = snapshot?.sync
   const request = promptedRequests(sync).find(entry => !aside.has(entry.deviceId))
-  const joining = sync?.state === 'joining' || sync?.state === 'blocked' ? sync : undefined
+  const joining = sync?.state === 'joining' || sync?.state === 'blocked' || sync?.state === 'refused' ? sync : undefined
   const putAside = (deviceId: string) => { clear(); setAside(previous => new Set([...previous, deviceId])) }
   return <>
     {request && <Sheet onClose={() => putAside(request.deviceId)} desktopWidth="380px" mobileFitContent ariaLabel="新设备请求使用密码" testId="password-device-prompt" zIndex="var(--z-settings-modal)">
@@ -52,17 +53,23 @@ export function PasswordDeviceHost() {
           onClick={() => { void run({ type: 'sync-reject', deviceId: request.deviceId }) }}>{request.stage === 'mismatch' ? '拒绝' : '不是我'}</Button>
       </div>
     </Sheet>}
-    {joining && !cardClosed && <div role="status" data-testid="password-join-card"
+    {/* At the document root, like the sheets: a freshly signed-in device is usually still in the first-run guide,
+        which keeps the app mounted but not rendered. */}
+    {joining && !cardClosed && createPortal(<div role="status" data-testid="password-join-card"
       className="fixed right-4 top-12 z-[var(--z-banner)] flex w-[340px] max-w-[calc(100vw-32px)] flex-col gap-2 rounded-[var(--radius-surface)] bg-[var(--menu-bg)] p-4 text-[var(--menu-fg)] shadow-[var(--shadow-lift)]">
       <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1 text-[length:var(--font-body)] font-semibold">在另一台设备上允许这台电脑用你的密码</div>
+        <div className="min-w-0 flex-1 text-[length:var(--font-body)] font-semibold">{joining.state === 'refused' ? '另一台设备拒绝了这台电脑用你的密码' : '在另一台设备上允许这台电脑用你的密码'}</div>
         <IconButton size="sm" aria-label="关闭" onClick={() => setCardClosed(true)}><X size={14} /></IconButton>
       </div>
-      {joining.state === 'joining' && joining.code
-        ? <><Code value={joining.code} /><div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">另一台设备上显示的也是这串数字，再在那里点允许。</div></>
-        : <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">打开你另一台设备上的咕咕，那里会弹出提示。</div>}
+      {joining.state === 'refused'
+        ? <><div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">点错了的话，可以重新申请。</div>
+          {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
+          <Button size="sm" className="self-start" disabled={busy} data-testid="password-join-again" onClick={() => { void run({ type: 'sync-ask-again' }) }}>重新申请</Button></>
+        : joining.state === 'joining' && joining.code
+          ? <><Code value={joining.code} /><div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">两边数字一致，就在那台设备上点允许。</div></>
+          : <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">打开你另一台设备上的咕咕，那里会弹出提示。</div>}
       {joining.recovery && <Button variant="ghost" size="sm" className="self-start" onClick={() => { clear(); setRecovering(true) }}>另一台设备都不在了？用恢复码</Button>}
-    </div>}
+    </div>, document.body)}
     {recovering && <RecoverSheet busy={busy} error={error} onClose={() => setRecovering(false)}
       onSubmit={async code => { const reply = await run({ type: 'sync-recover', code }); if (reply?.recoveryCode) { setRecovering(false); setNewCode(reply.recoveryCode) } }} />}
     {newCode && <RecoveryCodeSheet code={newCode} fresh onClose={() => setNewCode(undefined)} />}

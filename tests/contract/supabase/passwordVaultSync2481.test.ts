@@ -21,6 +21,7 @@ const rpc = {
   password_vault_reveal: [['p_device_id', 'text'], ['p_device_nonce', 'text']],
   password_vault_approve: [['p_approver_device_id', 'text'], ['p_device_id', 'text'], ['p_public_key', 'text'], ['p_scope', 'text'], ['p_epoch', 'integer'], ['p_shares', 'jsonb']],
   password_vault_dismiss: [['p_caller_device_id', 'text'], ['p_device_id', 'text']],
+  password_vault_refuse: [['p_caller_device_id', 'text'], ['p_device_id', 'text']],
   password_vault_save: [['p_device_id', 'text'], ['p_item_id', 'uuid'], ['p_expected_version', 'bigint'], ['p_epoch', 'integer'], ['p_wrapped_key', 'text'], ['p_ciphertext', 'text'], ['p_shares', 'jsonb']],
   password_vault_delete: [['p_device_id', 'text'], ['p_item_id', 'uuid'], ['p_expected_version', 'bigint']],
   password_vault_rotate: [['p_device_id', 'text'], ['p_epoch', 'integer'], ['p_remove_device_ids', 'text[]'], ['p_items', 'jsonb'], ['p_shares', 'jsonb'], ['p_recovery', 'jsonb']],
@@ -209,12 +210,12 @@ describe('password vault sync between two devices of one account', () => {
       expect(await laptop.refresh()).toMatchObject({ state: 'joining' })
       expect((await row())!.public_key).not.toBe(fake.publicKey)
 
-      // Opened before a restart (or on another device): the request shows as elsewhere; opening it here drops it, the
-      // laptop asks again at once, and this device takes the new round.
+      // Opened before a restart: the nonce is gone, but the request is still this device's to open (another device's
+      // would show as elsewhere). Opening it drops the old round, the laptop asks again at once, and this device takes it.
       await mac.challenge(laptopId)
       mac.dispose()
       const restarted = engine(macId, macVault)
-      expect(ready(await restarted.refresh()).requests[0]!.stage).toBe('elsewhere')
+      expect(ready(await restarted.refresh()).requests[0]!.stage).toBe('new')
       await restarted.challenge(laptopId)
       expect(await row()).toBeUndefined()
       expect(await laptop.refresh()).toMatchObject({ state: 'joining' })
@@ -230,6 +231,13 @@ describe('password vault sync between two devices of one account', () => {
       expect(await reinstalled.refresh()).toMatchObject({ state: 'joining' })
       expect(ready(await restarted.refresh()).requests).toEqual([expect.objectContaining({ deviceId: laptopId, stage: 'new' })])
       expect((await db.query<{ key_epoch: number }>('SELECT key_epoch FROM identity.password_vault_heads WHERE owner_user_id=$1', [owner])).rows[0]!.key_epoch).toBe(2)
+      // 「不是我」 sticks: the device stays refused and asks nothing by itself; asked again on purpose, it is a new request.
+      await restarted.reject(laptopId)
+      expect(await reinstalled.refresh()).toEqual({ state: 'refused', recovery: false })
+      expect(await reinstalled.refresh()).toEqual({ state: 'refused', recovery: false })
+      expect(ready(await restarted.refresh()).requests).toEqual([])
+      expect(await reinstalled.askAgain()).toMatchObject({ state: 'joining' })
+      expect(ready(await restarted.refresh()).requests).toEqual([expect.objectContaining({ deviceId: laptopId, stage: 'new' })])
       restarted.dispose(); reinstalled.dispose()
     } finally { await db.query('ROLLBACK') }
   }))

@@ -110,7 +110,9 @@ function pulling(sync: VaultSync, host: Pick<NativeHost, 'presence' | 'notify'>,
     try {
       const full = forced || Date.now() - last > 60_000
       forced = false
-      if (full || await sync.poll()) { last = Date.now(); await sync.refresh(); await claim() }
+      if (full || await sync.poll()) { last = Date.now(); await sync.refresh() }
+      // Every round, not only after a pull: a request waits out its pause on a merely unlocked machine without any write.
+      await claim()
     } catch { /* offline or not signed in: the next round retries */ }
     finally { running = false; schedule(urgent() ? 3_000 : 5_000) }
   }
@@ -177,6 +179,7 @@ export function installPasswordBetaHost(host: NativeHost): void {
         case 'decide': value.login.decide(command.requestId, command.decision); break
         case 'sync-approve': await value.sync.approve(command.deviceId); break
         case 'sync-reject': await value.sync.reject(command.deviceId); break
+        case 'sync-ask-again': await value.sync.askAgain(); break
         case 'sync-recovery-create': { const { code } = await value.sync.createRecovery(); changed(); return { ok: true, snapshot: await snapshot(value), recoveryCode: code } }
         case 'sync-recovery-remove': await value.sync.removeRecovery(); break
         case 'sync-recovery-skip': await value.sync.skipRecovery(); break

@@ -11,7 +11,7 @@ import { Field } from '../ui/Field'
 import { IconButton } from '../ui/IconButton'
 import { SearchField } from '../ui/SearchField'
 import { RecoveryOffer } from '../password/PasswordRecovery'
-import { passwordErrorText } from '../password/passwordModel'
+import { passwordErrorText, waitingToJoin } from '../password/passwordModel'
 
 declare global { interface Window { passwordVaultBeta?: PasswordBetaUi } }
 
@@ -70,9 +70,11 @@ export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLEleme
   if (!PASSWORD_BETA_ENABLED) return null
 
   const props = { snapshot, busy, run, go, error }
-  if (view.kind === 'form') return <CredentialForm key={view.request?.id ?? view.id ?? 'new'} item={item} request={view.request} {...props} />
-  if (view.kind === 'detail' && item) return <CredentialDetail key={item.reference.id} item={item} {...props} />
-  if (view.kind === 'grants' && item) return <GrantsPage item={item} {...props} />
+  // Asked once, right after the first password is kept (the detail page that follows the save, or any page here).
+  const offer = <RecoveryOffer snapshot={snapshot} />
+  if (view.kind === 'form') return <><CredentialForm key={view.request?.id ?? view.id ?? 'new'} item={item} request={view.request} {...props} />{offer}</>
+  if (view.kind === 'detail' && item) return <><CredentialDetail key={item.reference.id} item={item} {...props} />{offer}</>
+  if (view.kind === 'grants' && item) return <><GrantsPage item={item} {...props} />{offer}</>
   const add = <Button variant="primary" disabled={busy} onClick={() => go({ kind: 'form' })}>添加</Button>
   const slot = actionsHost?.()
   return <SettingsPage data-testid="password-settings">
@@ -83,10 +85,10 @@ export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLEleme
     <SettingsGroup title="密码管理" presentation="navigation">
       {snapshot?.items.map(value => <SettingsRow key={value.reference.id} leading={<Globe size={18} aria-hidden="true" />} title={host(value.origin)}
         control={<ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" />} onClick={() => go({ kind: 'detail', id: value.reference.id })} />)}
-      {snapshot && !snapshot.items.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">还没有保存密码</span>} />}
+      {snapshot && !snapshot.items.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">{waitingToJoin(snapshot.sync) ? '在另一台设备上允许这台电脑后，你的密码会出现在这里' : '还没有保存密码'}</span>} />}
     </SettingsGroup>
     {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
-    <RecoveryOffer snapshot={snapshot} />
+    {offer}
   </SettingsPage>
 }
 

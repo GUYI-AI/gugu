@@ -18,6 +18,7 @@ export interface PasswordGrantCandidate { subject: string; name: string; kind: '
 export interface PasswordSyncDevice { deviceId: string; label: string; platform: string; current: boolean }
 export interface PasswordSyncRequest extends PasswordSyncDevice { stage: 'new' | 'elsewhere' | 'waiting' | 'compare' | 'mismatch'; code?: string }
 export type PasswordSyncView = { state: 'off' } | { state: 'joining'; code?: string; recovery?: boolean } | { state: 'blocked'; recovery?: boolean }
+  | { state: 'refused'; recovery?: boolean }
   | { state: 'ready'; devices: PasswordSyncDevice[]; requests: PasswordSyncRequest[]; recovery: 'set' | 'unset' | 'ask' }
 export interface PasswordSnapshot { items: PasswordItem[]; approvals: PasswordApproval[]; saves: PasswordSaveRequest[]; candidates: PasswordGrantCandidate[]; sync?: PasswordSyncView }
 export type PasswordUiCommand =
@@ -35,6 +36,8 @@ export type PasswordUiCommand =
    * digits, or refuse. Removing a device is Settings → 设备, which re-keys. */
   | { type: 'sync-approve'; deviceId: string }
   | { type: 'sync-reject'; deviceId: string }
+  /** This device was refused, and the person asks again (with a new device key). */
+  | { type: 'sync-ask-again' }
   /** Recovery code (a device on paper): generate or replace it, drop it, decline the offer, or join with it. Generating
    * and recovering answer with `recoveryCode`, shown once. */
   | { type: 'sync-recovery-create' }

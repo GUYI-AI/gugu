@@ -29,6 +29,8 @@ export type SyncView =
   /** recovery: a recovery code exists, so this device can join with it instead of another device's approval. */
   | { state: 'joining'; code?: string; recovery?: boolean }
   | { state: 'blocked'; recovery?: boolean }
+  /** A device that has the passwords answered 「不是我」 for this device's key; it asks again only when the person says so. */
+  | { state: 'refused'; recovery?: boolean }
   /** recovery: set · unset · ask (unset, and this device has not offered it yet) */
   | { state: 'ready'; devices: SyncDevice[]; requests: SyncRequest[]; recovery: 'set' | 'unset' | 'ask' }
 
@@ -38,7 +40,7 @@ const fileSchema = z.strictObject({ schema: z.literal(1), deviceId: z.string().m
   recoveryAsked: z.boolean().optional() })
 type DeviceFile = z.infer<typeof fileSchema>
 const remoteDevice = z.object({ deviceId: z.string(), label: z.string().nullable(), platform: z.string().nullable(), hostKind: z.string().nullable(),
-  status: z.enum(['pending', 'approved']), scope: z.enum(['full', 'granted']).nullable(), publicKey: b64, commitment: z.string().nullable(),
+  status: z.enum(['pending', 'approved', 'refused']), scope: z.enum(['full', 'granted']).nullable(), publicKey: b64, commitment: z.string().nullable(),
   approverDeviceId: z.string().nullable(), approverNonce: b64.nullable(), deviceNonce: b64.nullable() })
 const remoteItem = z.object({ itemId: z.string(), version: z.string(), epoch: z.number(), wrappedKey: z.string().nullable(),
   ciphertext: z.string().nullable(), deleted: z.boolean(), revision: z.string() })
@@ -190,7 +192,8 @@ export class VaultSync {
       // Removed elsewhere, never joined, or approved under a key this device no longer has (reinstalled): edits stay
       // local and merge when this device joins again; a lost key simply asks again.
       if (file.merged) { Object.assign(file, { merged: false, revision: '0', versions: {} }); this.#state = undefined; await this.save() }
-      return { ...await this.join(file, me?.status === 'approved' ? undefined : me), recovery: state.recovery }
+      if (me?.status === 'refused' && me.publicKey === file.publicKey) return { state: 'refused', recovery: state.recovery }
+      return { ...await this.join(file, me?.status === 'pending' ? me : undefined), recovery: state.recovery }
     }
     const vaultKey = await this.openVaultKey(state, file)
     if (!vaultKey) return { state: 'joining' }
@@ -256,7 +259,8 @@ export class VaultSync {
     const requests = state.devices.filter(device => device.status === 'pending').map((device): SyncRequest => {
       const mine = this.#challenges.get(device.deviceId)
       if (!device.approverNonce) return { ...view(device), stage: 'new' }
-      if (!mine || device.approverNonce !== mine.nonce) return { ...view(device), stage: 'elsewhere' }
+      // Opened by this device before a restart (its nonce is gone): still ours to open again, not another device's.
+      if (!mine || device.approverNonce !== mine.nonce) return { ...view(device), stage: device.approverDeviceId === file.deviceId ? 'new' : 'elsewhere' }
       if (!this.kept(device, mine)) return { ...view(device), stage: 'mismatch' }
       if (!device.deviceNonce) return { ...view(device), stage: 'waiting' }
       return { ...view(device), stage: 'compare', code: c.shortCode(device.publicKey, device.deviceNonce, mine.nonce) }
@@ -306,11 +310,24 @@ export class VaultSync {
       this.#challenges.delete(deviceId)
     }).then(() => this.refresh())
   }
+  /** 「不是我」: the request stays refused for its key, so it does not come back by itself. */
   reject(deviceId: string): Promise<SyncView> {
     return this.serial(async () => {
       const file = await this.load()
-      await this.call('password_vault_dismiss', { p_caller_device_id: file.deviceId, p_device_id: deviceId })
+      await this.call('password_vault_refuse', { p_caller_device_id: file.deviceId, p_device_id: deviceId })
       this.#challenges.delete(deviceId)
+    }).then(() => this.refresh())
+  }
+  /** Refused, and the person asks again on purpose: a new device key makes a new request. */
+  askAgain(): Promise<SyncView> {
+    return this.serial(async () => {
+      const file = await this.load(), pair = await c.createDeviceKeyPair()
+      try {
+        Object.assign(file, { publicKey: pair.publicKey, secret: await this.#o.keys.wrap(pair.secretKey, this.binding(file.deviceId)), merged: false, revision: '0', versions: {} })
+        delete file.nonce; delete file.pinned
+        this.#secret?.fill(0); this.#secret = Buffer.from(pair.secretKey)
+        await this.save()
+      } finally { pair.secretKey.fill(0) }
     }).then(() => this.refresh())
   }
   /** Remove a device and re-key, so it cannot read anything written afterwards. */

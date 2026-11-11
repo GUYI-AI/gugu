@@ -14,6 +14,8 @@ not on a settings page; the recovery code lives in 设置 → 账户.
 - The code is opened on the machine the person is at: at once where they used it in the last 30 s, after 8 s where the
   screen is merely unlocked, never where it is locked. An active machine takes over a request opened elsewhere (it drops
   it; the device asks again with a fresh round).
+- 不是我 sticks: the request stays refused for that device key and does not come back by itself; the refused device
+  offers 重新申请 (a new key, a new request) in case it was a slip.
 - Removing a device is 设置 → 设备; the deleted row marks the vault for re-keying, and the next full device re-keys.
 - A reinstalled device (its key gone) simply asks again; the vault is re-keyed because the old key may still exist.
 
