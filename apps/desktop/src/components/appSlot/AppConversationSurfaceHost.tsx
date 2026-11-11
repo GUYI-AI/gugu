@@ -67,7 +67,7 @@ export const AppConversationSurfaceHost = observer(function AppConversationSurfa
   const present = useStoreValueBy((store) => store.chats.filter((chat) => wantedChats.includes(chat.id)).map((chat) => chat.id),
     (store) => store.chats.filter((chat) => wantedChats.includes(chat.id)).map((chat) => chat.id))
   const signature = JSON.stringify(candidates.filter(([, chatId]) => present.includes(chatId)))
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- the signature is the dependency
+  // The signature is the dependency: a new object only when what may be drawn changed.
   const surfaces = useMemo(() => Object.fromEntries(JSON.parse(signature) as [string, string][]), [signature])
   useEffect(() => { publishAppConversationSurfaces(surfaces) }, [surfaces])
   useEffect(() => () => publishAppConversationSurfaces({}), [])
