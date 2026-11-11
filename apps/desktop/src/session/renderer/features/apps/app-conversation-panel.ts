@@ -73,3 +73,31 @@ function subscribe(listener: () => void): () => void {
 export function useAppConversationPanelCollapsed(extensionId: string): boolean {
   return useSyncExternalStore(subscribe, () => appConversationPanelCollapsed(extensionId));
 }
+
+/**
+ * Entry switch (G6): the tab the person last had open on the built-in assistant page (its view's `tab`, kept in the
+ * navigation snapshot; once that view is gone, what the snapshot still held for it), to hand to the App once. Null: 动态 (the
+ * default, nothing to hand) or nothing stored.
+ */
+const RESUME_TABS: readonly string[] = ['tasks', 'memory', 'profile'];
+export function builtInAssistantLastTab(params: { tab?: unknown } | null | undefined): 'tasks' | 'memory' | 'profile' | null {
+  const tab = params?.tab;
+  return typeof tab === 'string' && RESUME_TABS.includes(tab) ? (tab as 'tasks' | 'memory' | 'profile') : null;
+}
+
+const handedOverKey = (ownerId: string) => `gugu.assistant.handedOver:${ownerId}`;
+/** Whether the hand-over to the App was done for this account on this computer (then never again). */
+export function assistantHandedOver(ownerId: string): boolean {
+  try {
+    return localStorage.getItem(handedOverKey(ownerId)) === '1';
+  } catch {
+    return false;
+  }
+}
+export function markAssistantHandedOver(ownerId: string): void {
+  try {
+    localStorage.setItem(handedOverKey(ownerId), '1');
+  } catch {
+    // 记不住:下次再交一回,App 只是再从那一页开一次。
+  }
+}

@@ -10,6 +10,7 @@ import {
 import { isOwnAssistantChat } from './app-assistant-binding';
 import { account, current } from './app-unread-bindings';
 import { extensionsService } from './extensions-root';
+import { ASSISTANT_RESUME_TABS, type AppBindingSurface, type AssistantResumeTab } from '@shared/extensions/unread-binding';
 
 /**
  * The entry switch (assistant App P5): the product's own assistant App replaces the built-in assistant page the person already
@@ -136,4 +137,44 @@ export async function syncAssistantAppEntry(input: unknown, deps: AssistantAppEn
   service.setConversationUnreadBinding(ownerId, ASSISTANT_APP_ID, name, target, 'host');
   log.info('assistant App entry: binding written by the host', { bound: target !== null });
   return state(true, target === null ? 'unbound' : 'bound', true);
+}
+
+// ── Hand-over (G6) ─────────────────────────────────────────────────────────────────────────────────────────────────────
+// The tab the person last had open on the built-in page, handed to the trusted App once (the window decides when: the first
+// time the App is where the entry goes for that account here). Held here until the App's page reads its surface bound for
+// that account — its first read or event, whichever comes first — then gone (`ASSISTANT_RESUME_TABS`, unread-binding.ts).
+let pendingResume: { ownerId: string; tab: AssistantResumeTab } | null = null;
+
+const handOverSchema = z.strictObject({ ownerId: z.string().uuid(), tab: z.enum(ASSISTANT_RESUME_TABS) });
+
+/** Trusted window only (controller `handOverAssistantPage`). Answers whether it is held for the App (the trusted App is in). */
+export async function handOverAssistantPage(
+  input: unknown, deps: Pick<AssistantAppEntryDeps, 'trust'> & { push?: () => Promise<void> } = {},
+): Promise<boolean> {
+  const { ownerId, tab } = handOverSchema.parse(input);
+  await current(ownerId);
+  const service = extensionsService();
+  if (!service.isInstalled(ASSISTANT_APP_ID) || await notTrusted(service, deps.trust)) return false;
+  pendingResume = { ownerId, tab };
+  // A page already up hears it now.
+  await (deps.push ?? (async () => (await import('./extension-bridge')).pushBindingSurfaces(ASSISTANT_APP_ID)))();
+  return true;
+}
+
+/** What a page of `extensionId` reads or hears: with the held tab, once, if it is the trusted App bound for that account. */
+export async function withAssistantPageResume(extensionId: string, surface: AppBindingSurface): Promise<AppBindingSurface> {
+  const held = pendingResume;
+  if (!held || extensionId !== ASSISTANT_APP_ID || surface.state !== 'bound' || surface.intent) return surface;
+  try {
+    if ((await account()).ownerId !== held.ownerId) return surface;
+  } catch {
+    return surface;
+  }
+  if (pendingResume !== held) return surface;
+  pendingResume = null;
+  return { ...surface, intent: { kind: 'resume', tab: held.tab } };
+}
+
+export function forgetAssistantPageResumeForTest(): void {
+  pendingResume = null;
 }

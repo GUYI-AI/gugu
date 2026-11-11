@@ -7,7 +7,7 @@ import { rendererLogger } from '../../lib/log'
 import { useAuth } from '../../store/auth'
 import { events, rpc } from '@/session/renderer/lib/ipc'
 import { appState } from '@/session/renderer/lib/stores/app-state'
-import { carryBuiltInPanelOnce } from '@/session/renderer/features/apps/app-conversation-panel'
+import { assistantHandedOver, builtInAssistantLastTab, carryBuiltInPanelOnce, markAssistantHandedOver } from '@/session/renderer/features/apps/app-conversation-panel'
 import { homeTarget } from '@/session/renderer/features/assistant/assistant-home-sessions'
 import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
 import { extensionsInventoryChangedChannel } from '@/session/shared/extensions/marketEvents'
@@ -18,6 +18,10 @@ const log = rendererLogger('assistant/app-entry')
 const noop = () => () => undefined
 /** A sync main could not verify (the database did not answer): asked again after these waits, then left to the next change. */
 const ENTRY_SYNC_RETRY_MS: readonly number[] = [5_000, 30_000, 120_000]
+
+/** What the navigation snapshot holds for the built-in assistant page's view (its last tab). */
+const retiredAssistantParams = (): { tab?: unknown } | undefined =>
+  (appState.navigation.viewParamsStore as Record<string, { tab?: unknown } | undefined>).assistant
 
 /**
  * Entry switch, the shell's half (lib/assistantEntry.ts holds the one decision). Whenever the window's assistant changes —
@@ -79,6 +83,24 @@ export const AssistantAppEntryHost = observer(function AssistantAppEntryHost() {
   useEffect(() => {
     if (carryTo && carryBuiltInPanelOnce(carryTo)) log.info({}, 'carried the built-in assistant panel state over to the assistant App')
   }, [carryTo])
+  // G6: the tab the person last had open on the built-in page, handed to the App once for this account here; main holds it
+  // until the App's page reads its surface (the first read or event). Not held (not the trusted App, main not reached): asked
+  // again the next time the App becomes where the entry goes; nothing is said.
+  useEffect(() => {
+    if (!carryTo || !ownerId || assistantHandedOver(ownerId)) return
+    const tab = builtInAssistantLastTab(retiredAssistantParams())
+    if (!tab) {
+      markAssistantHandedOver(ownerId)
+      return
+    }
+    let live = true
+    Promise.resolve().then(() => rpc.extensions.handOverAssistantPage({ ownerId, tab })).then((result) => {
+      if (!live) return
+      if (!result.success) throw new Error(result.error)
+      if (result.data.held) markAssistantHandedOver(ownerId)
+    }).catch((error: unknown) => log.warn({ error: String(error) }, 'the built-in assistant page\'s last tab was not handed to the App now'))
+    return () => { live = false }
+  }, [carryTo, ownerId])
 
   // The App's page is up: the assistant's home on this computer refreshed to this version, as opening the built-in page did.
   const onAppPage = target.kind === 'app' && appState.navigation.currentViewId === 'app' && appState.navigation.viewParamsStore.app?.appId === ASSISTANT_APP_ID

@@ -932,6 +932,17 @@ export const extensionsController = createRPCController({
    * the account's own assistant chat by the host (assistant-app-entry.ts). Answers whether that App is the trusted one; a
    * binding written is told as a choice in the App's permissions is.
    */
+  /**
+   * Entry switch (G6): the tab the person last had open on the built-in assistant page, handed to the trusted assistant App
+   * once (assistant-app-entry.ts `handOverAssistantPage`). True: held for its page.
+   */
+  handOverAssistantPage: async (args: { ownerId: string; tab: string }) => {
+    try {
+      const { handOverAssistantPage } = await import('./assistant-app-entry');
+      return { success: true as const, data: { held: await handOverAssistantPage(args) } };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
   syncAssistantAppEntry: async (args: { ownerId: string; chatId: string | null }) => {
     try {
       const { syncAssistantAppEntry } = await import('./assistant-app-entry');

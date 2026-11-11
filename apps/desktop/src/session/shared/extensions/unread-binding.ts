@@ -79,8 +79,16 @@ export const CONVERSATION_SURFACE_PANEL_INSET: Readonly<{ top: number; right: nu
  * `id` (its own manifest's id, whose run is `{ kind: "page-intent" }`: composer-actions.ts); `voice-note` = the person opened
  * the note the host's recording bar shows. The panel is expanded (and any host page over it closed) before it is told. Nothing else
  * comes with it. `APP_SURFACE_INTENTS`: the ones the window may report from its own row.
+ *
+ * Entry switch, the product's own trusted assistant App only: `resume` = the tab the person last had open on the built-in
+ * assistant page this App replaces (`ASSISTANT_RESUME_TABS`; 动态 is the default and never told). Handed over once per
+ * account on this computer, when the App first becomes where the assistant entry goes; told once, in the first `bound`
+ * answer to `surface(name)` or `onSurface` event that follows (whichever comes first), then gone. Open that tab first.
  */
-export type AppSurfaceIntent = { kind: 'profile' } | { kind: 'voice-note' } | { kind: 'composer-action'; id: string };
+export const ASSISTANT_RESUME_TABS = ['tasks', 'memory', 'profile'] as const;
+export type AssistantResumeTab = (typeof ASSISTANT_RESUME_TABS)[number];
+export type AppSurfaceIntent = { kind: 'profile' } | { kind: 'voice-note' } | { kind: 'composer-action'; id: string }
+  | { kind: 'resume'; tab: AssistantResumeTab };
 export const APP_SURFACE_INTENTS = ['profile'] as const;
 
 /**
