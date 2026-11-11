@@ -3,6 +3,8 @@
 // baseline.json was written by this module against the rules files as they were on origin/dev 4205711b66, before the
 // product text was split out of them. The byte-identity test renders the same inputs through the current code and compares.
 // Only the public entry points the host already calls are used here, so the same module ran unchanged on both sides.
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -149,3 +151,14 @@ export async function captureAssistantRenders(): Promise<Record<string, string>>
   }
   return out
 }
+
+export type Fingerprint = { bytes: number; sha256: string }
+
+/** UTF-8 byte length and SHA-256 of a render: what baseline.json keeps for each capture. */
+export function fingerprint(value: string): Fingerprint {
+  const bytes = Buffer.from(value, 'utf8')
+  return { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }
+}
+
+export const BASELINE_URL = new URL('./baseline.json', import.meta.url)
+export const readBaseline = () => JSON.parse(readFileSync(BASELINE_URL, 'utf8')) as Record<string, Fingerprint>

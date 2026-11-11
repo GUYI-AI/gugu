@@ -5,6 +5,7 @@ import { personalAssistantPlatformPrompt } from '../product-platform-prompt'
 import {
   ASSISTANT_COMPUTER_WORKDIR_NAME, assistantBrief, assistantHomePaths, assistantRecoveryContext, type AssistantHomeKind,
 } from '@gugu/core/shared/assistantPolicy'
+import { BUILT_IN_ASSISTANT_RULES } from '@gugu/core/shared/assistantProductRules/builtIn'
 import { ASSISTANT_INDEX_LIMIT } from './assistant-index-format'
 import { refreshAssistantContext } from './assistant-instructions'
 export { refreshAssistantContext } from './assistant-instructions'
@@ -31,7 +32,7 @@ export function assistantHomeTaskContext(capabilities: Materialization, cwd: str
   delete env.ENABLE_TOOL_SEARCH
   if (original?.options?.env?.ENABLE_TOOL_SEARCH !== undefined) env.ENABLE_TOOL_SEARCH = original.options.env.ENABLE_TOOL_SEARCH
   claude.options = { ...claude.options,
-    systemPrompt: ['你是个人助理委派的 Task Agent，只承接当前交代及其来源。个人助理的身份、全部个人记忆与主动日程不属于本任务。', capabilities.sessionPrompt].filter(Boolean).join('\n\n'),
+    systemPrompt: [BUILT_IN_ASSISTANT_RULES.texts['task-agent-identity'], capabilities.sessionPrompt].filter(Boolean).join('\n\n'),
     settingSources: [],
     // Skill loads the connected CLI applications' skills the assistant delegated this task for.
     tools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'WebSearch', 'WebFetch', 'Skill'],

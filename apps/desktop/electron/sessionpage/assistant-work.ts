@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { z } from 'zod'
 import { assistantHomePaths, type AssistantHomeKind } from '@gugu/core/shared/assistantPolicy'
+import { BUILT_IN_ASSISTANT_RULES } from '@gugu/core/shared/assistantProductRules/builtIn'
 import { resolveGuguHome } from '@gugu/core/local/state/paths'
 
 export { workReportSchema } from '../../src/session/shared/assistant-work'
@@ -221,11 +222,8 @@ export function registerAssistantQuestion(sessionId: string, questionId: string,
   store.confirm(id, [], [], questionId)
 }
 
-const EXECUTOR_REPORT = [
-  'session_message to=[coordinator] text=summary work_result={work_id,status:progress|question|completed|cancelled}; verify result before completed; a failed delivery is progress, never completed.',
-  'If Gugu messaging/upload/reporting fails, immediately report progress: work done or partial, failed step, observed cause category (permission/network/validation/unknown); if done say "做好了但交不回"; do not infer causes.',
-  'If reporting also fails, preserve this notice in the task reply and stop; retain artifacts. Never read Gugu program directories or debug/repair the platform to resolve these tool failures.',
-].join(' ')
+/** How an executor reports back (product words, #1931): the built-in rules until the host reads them from the App. */
+const EXECUTOR_REPORT = BUILT_IN_ASSISTANT_RULES.texts['executor-report']
 
 /** Wrap only an explicitly identified assistant's dispatcher, before either local or remote routing. */
 export async function coordinateAssistantAction(binding: AssistantWorkBinding, action: unknown,
