@@ -11,6 +11,12 @@ export const historyPageInputSchema = z.object({
   limit: z.number().int(),
   /** 给了就改成「这个改动游标之后新增或改过的全部回合」(不分页,忽略 before / limit;@@@history-change-cursor)。 */
   changedSince: historyCursorSchema.optional(),
+  /**
+   * With `changedSince`: changed turns before this seq come back as their identity only (`items: []`, no terminals).
+   * The reader redraws those from its own stored rows by id, so their content is dead weight — a background subagent
+   * revises the turn that launched it at every step, and that turn can be megabytes (#2493). Older runtimes ignore it.
+   */
+  contentFrom: z.number().int().optional(),
 });
 
 export const historyPageSchema = z.object({

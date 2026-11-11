@@ -2926,15 +2926,78 @@ export class AcpChatStore {
   }
 
   /**
+   * #2493 引擎还是同一代、只是这段改动一包装不下(子智能体每走一步都改派它的那一轮,那一轮裁完仍有几 MB,
+   * 超过单包上限),它回了 `reset`。作废的只是改动游标,❌ 不是会话:活会话照挂着 —— 权限档位、强度、
+   * 上下文读数、后台任务那一行都读它。从前这里整条重挂(`reattachAfterHostReload` 先把 `session` 置空),
+   * 子智能体每走一步,输入框和后台那一行就跟着闪一下(owner 11-11 实拍,0.3~0.6 秒一次)。
+   *
+   * 这里只把历史对回来,与开场沿用库里那页时同一个做法:向这个活会话要新的分界和游标,再把库里从分界起的行
+   * 整段重读一遍。被改过的旧轮次在库里已是新的,开场之后新落库的那几轮也由库里那份出。
+   * 读到的是旧状态(另一次对账已经走到更新的游标、会话换了、转录放掉了)就什么都不改。
+   *
+   * @returns `unsupported`:库里没有这条会话的行(历史只在引擎那侧)或者是侧边聊天,只能照旧重挂。
+   */
+  private async _resyncHistoryInPlace(session: AcpLiveSession): Promise<'applied' | 'unsupported' | 'stale'> {
+    const base = this._storedBaseSeq;
+    if (base === null || this.isTransient) return 'unsupported';
+    const generation = this._historyGeneration;
+    const stale = () => this._disposed || generation !== this._historyGeneration
+      || this.session !== session || this._transcriptReleased;
+    // 先定分界再读库(同开场):分界那一刻已经提交的轮,读库时一定已经在库里。
+    const head = await session.getHistory(undefined, 1);
+    if (!head.success) throw resultError(head.error);
+    if (stale()) return 'stale';
+    let stored: Awaited<ReturnType<typeof rpc.sessions.getStoredHistory>> | null = null;
+    try {
+      stored = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, fromSeq: base });
+    } catch (error) {
+      log.warn('stored session history reread after a cursor reset failed; keeping the previous read', {
+        sessionId: this.sessionId,
+        error,
+      });
+    }
+    if (stale()) return 'stale';
+    // 另一次对账已经走到这个分界之后:它手里的更新。
+    const current = this._runtimeCursor;
+    if (current && current.epoch === head.data.cursor.epoch && current.seq > head.data.cursor.seq) return 'stale';
+    runInAction(() => {
+      if (stored && stored.turns.length > 0) {
+        this._storedHistoryTurns = stored.turns;
+        this._storedOrigins = stored.originTurnIds;
+        this._storedBootstrapMaxSeq = stored.turns.at(-1)!.seq;
+        this._persistedRuntimeTurnIds = new Set([...this._persistedRuntimeTurnIds, ...stored.originTurnIds]);
+      }
+      this._resetRuntimeHistoryState();
+      const lastRuntimeSeq = head.data.turns.at(-1)?.seq;
+      this._runtimeReplayEndSeq = lastRuntimeSeq === undefined ? 0 : lastRuntimeSeq + 1;
+      this._runtimeCursor = head.data.cursor;
+      this._runtimeCount = head.data.count;
+    });
+    return 'applied';
+  }
+
+  /**
    * 按改动游标并进引擎那侧新增 / 改过的回合(@@@history-change-cursor)。分界之后的直接并进手里那份;更早的那一轮
    * 被改了(后台命令的终态、子智能体的进展改的是起它的那一轮),它画的是库里那一行 —— 只重读那一行。
    * @returns 读失败时的那个结果(调用方弹错),成功为 null。
    */
-  private async _mergeRuntimeChanges(session: AcpLiveSession, generation: number): Promise<{ error: unknown } | { reset: true } | null> {
-    const changes = await session.getHistory(undefined, 100, this._runtimeCursor ?? undefined);
+  private async _mergeRuntimeChanges(
+    session: AcpLiveSession,
+    generation: number,
+  ): Promise<{ error: unknown } | { reset: true; sameRun: boolean } | null> {
+    const asked = this._runtimeCursor;
+    // 库里有这条会话:分界之前改过的轮按 id 回库里重读(下面的 `olderRevised`),引擎那侧只交身份就够(#2493)。
+    // 库里没有时那几轮的内容要拿来换掉往上翻出来的引擎页,照旧整轮要。
+    const contentFrom = this._storedBaseSeq !== null ? this._runtimeReplayEndSeq : undefined;
+    const changes = await session.getHistory(undefined, 100, asked ?? undefined, contentFrom);
     if (!changes.success) return { error: changes.error };
     if (generation !== this._historyGeneration) return null;
-    if (changes.data.reset) return { reset: true };
+    // `sameRun`: the runtime kept its epoch and is not behind the cursor, so the reset only means the
+    // changes did not fit one page (#2493). A different epoch is a restarted runtime.
+    if (changes.data.reset) {
+      const head = changes.data.cursor;
+      return { reset: true, sameRun: asked !== null && asked.epoch === head.epoch && asked.seq <= head.seq };
+    }
     const floor = this._storedBaseSeq !== null ? this._runtimeReplayEndSeq : this._runtimeWindowStartSeq;
     const bySeq = new Map(this._runtimeTurns.map((turn) => [turn.seq, turn]));
     const olderRevised: TranscriptTurn[] = [];
@@ -3124,8 +3187,12 @@ export class AcpChatStore {
       try {
         const failed = await this._mergeRuntimeChanges(session, refreshGeneration);
         if (failed && 'reset' in failed) {
-          this._runtimeCursor = null;
-          this.reattachAfterHostReload();
+          const resynced = failed.sameRun ? await this._resyncHistoryInPlace(session) : 'unsupported';
+          if (resynced === 'applied') merged = true;
+          else if (resynced === 'unsupported') {
+            this._runtimeCursor = null;
+            this.reattachAfterHostReload();
+          }
         } else if (failed) this._toastError('acpFailure.refreshHistory', failed.error);
         else merged = true;
       } catch (error) {
