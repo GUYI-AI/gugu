@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TimelineBatch, TimelineSnapshot } from '@gugu/session-core/session-record/contract'
-import { applyBatch, applySnapshot, emptyAgentWatchTimeline } from './agent-watch-store'
+import { applyBatch, applySnapshot, emptyAgentWatchTimeline } from '../../../../../src/mobile/agent-watch/agent-watch-store'
 
 const step = (toolCallId: string, status: 'running' | 'done') =>
   ({ kind: 'read-tool-call' as const, id: toolCallId, seq: 0, toolCallId, title: toolCallId, status })
