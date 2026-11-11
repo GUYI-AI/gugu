@@ -75,6 +75,9 @@ function isSubagent(item: ToolNode): item is Extract<ToolNode, { kind: 'spawn-su
  * ⚠️ 数的是**有 `toolCallId` 的那些**,也就是叶子:连续的文件读取会被 `read-batch`
  * 收成一个 `tool-group`,那层壳是排版不是调用,它没有 `toolCallId`,自然不计数。
  */
+/** What the roster reads from one entry of the runtime's subagent registry. */
+export type SubagentRegistryEntry = { toolCallId: string; steps?: readonly ToolNode[] };
+
 export type SubagentCall = {
   toolCallId: string;
   /** 供应商给这次调用起的名字。拿不到就是空串 —— ❌ 不编。 */
@@ -153,7 +156,13 @@ export function collectSubagentRoster(
   activeTurn: TranscriptTurn | null,
   fallbackName: string,
   /** 现在几点 —— 显式传进来,判据才好钉住时间那一路(❌ 别在函数里读墙钟)。 */
-  now: number = Date.now()
+  now: number = Date.now(),
+  /**
+   * The runtime's subagent registry (#2500). A subagent's own calls are kept there, on its entry, and no longer
+   * in the turn that launched it. Turns stored before that change still hold them as nested children, and those
+   * are read as before.
+   */
+  registry: readonly SubagentRegistryEntry[] = []
 ): SubagentRosterEntry[] {
   const found: ToolNode[] = [];
   const callsByParent = new Map<string, Map<string, SubagentCall>>();
@@ -182,6 +191,22 @@ export function collectSubagentRoster(
   };
   for (const turn of turns) scan(turn.items, turn.startedAt === undefined);
   if (activeTurn) scan(activeTurn.items, activeTurn.startedAt === undefined);
+  for (const agent of registry) {
+    if (!agent.steps?.length) continue;
+    const byId = callsByParent.get(agent.toolCallId) ?? new Map<string, SubagentCall>();
+    for (const step of agent.steps) {
+      if (step.kind === 'tool-group') continue;
+      byId.set(step.toolCallId, {
+        toolCallId: step.toolCallId,
+        title: step.title ?? '',
+        category: toolRunCategory(step, true) ?? 'tool',
+        detail: toolStepDetail(step) ?? step.title,
+        status: step.status,
+        seq: step.seq,
+      });
+    }
+    callsByParent.set(agent.toolCallId, byId);
+  }
 
   const byCallId = new Map<string, SubagentRosterEntry>();
   for (const item of found) {

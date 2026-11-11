@@ -209,6 +209,8 @@ export class AcpChatStore {
    * 库里读出来的旧轮可能是上一个进程派的,随进程没了、永远等不来完成通知 —— 后台列表只留这里有的(与后台命令同一条,#6582)。
    */
   private _runtimeLiveSubagentIds: readonly string[] = [];
+  /** Running subagents as the runtime's registry has them, each with the calls it has made so far (#2500). */
+  private _runtimeLiveSubagents: readonly AgentState[] = [];
 
   private _view: ChatView | null = null;
   private _bootstrapped = false;
@@ -345,14 +347,16 @@ export class AcpChatStore {
       this.commands.map((command) => command.name)
     );
 
-    makeObservable<this, '_bootstrapped' | '_bootstrapsInFlight' | '_runtimeBackgroundTaskIds' | '_runtimeLiveSubagentIds' | '_storedQueue' | '_loadError' | '_lifeRetriedVersion' | '_senderInputs'>(this, {
+    makeObservable<this, '_bootstrapped' | '_bootstrapsInFlight' | '_runtimeBackgroundTaskIds' | '_runtimeLiveSubagentIds' | '_runtimeLiveSubagents' | '_storedQueue' | '_loadError' | '_lifeRetriedVersion' | '_senderInputs'>(this, {
       _senderInputs: observable.ref,
       _bootstrapped: observable,
       _storedQueue: observable.ref,
       _runtimeBackgroundTaskIds: observable.ref,
       runningBackgroundTaskIds: computed,
       _runtimeLiveSubagentIds: observable.ref,
+      _runtimeLiveSubagents: observable.ref,
       liveSubagentIds: computed,
+      liveSubagents: computed,
       session: observable.ref,
       pendingPermissionMode: observable.ref,
       modelSettingError: observable,
@@ -659,7 +663,15 @@ export class AcpChatStore {
     return this.session ? this._runtimeLiveSubagentIds : [];
   }
 
+  /** The panel draws a running subagent's calls from here; they are not in the transcript (#2500). */
+  get liveSubagents(): readonly AgentState[] {
+    return this.session ? this._runtimeLiveSubagents : [];
+  }
+
   private _syncLiveSubagentIds(agents: readonly AgentState[]): void {
+    const running = agents.filter((agent) => agent.status === 'running');
+    const shown = this._runtimeLiveSubagents;
+    if (running.length !== shown.length || running.some((agent, index) => agent !== shown[index])) this._runtimeLiveSubagents = running;
     const next = agents
       .filter((agent) => agent.status === 'running')
       .flatMap((agent) => (agent.agentToolUseId ? [agent.toolCallId, agent.agentToolUseId] : [agent.toolCallId]));
@@ -2553,11 +2565,18 @@ export class AcpChatStore {
         while (childrenChanged && !unsubscribed) { childrenChanged = false; await this._refreshHistory({ preserveLiveTurn: true }); }
       } finally { refreshingChildren = false; }
     };
+    // A subagent's calls and its running text stay in the registry (#2500). The turn that launched it is revised
+    // only when what its card shows changes, so that is the only time its history is read again.
+    const cardFacts = (agents: readonly AgentState[]): string => agents
+      .filter((agent) => agent.subagentSessionId && agent.launchTurnId !== session.activeTurn.current()?.id)
+      .map((agent) => [agent.agentId, agent.status, agent.startedAt, agent.canCancel === true, agent.model ?? ''].join('\u0001')).join('\u0002');
+    let shownCardFacts = cardFacts(session.agents.current());
     this._unsubs.push(() => { unsubscribed = true; }, session.agents.onChange((agents) => {
       runInAction(() => this._syncLiveSubagentIds(agents));
-      if (agents.some((agent) => agent.subagentSessionId && agent.launchTurnId !== session.activeTurn.current()?.id)) {
-        void refreshChildHistory();
-      }
+      const facts = cardFacts(agents);
+      if (facts === shownCardFacts) return;
+      shownCardFacts = facts;
+      void refreshChildHistory();
     }));
     this._lastQueuedPrompts = [...initialState.queuedPrompts];
     this._lastActiveTurnId = initialState.activeTurnId;
