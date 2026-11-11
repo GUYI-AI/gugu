@@ -1036,7 +1036,7 @@ person signed in on that phone, checked again after every wait.
   no header of your own. \`hostPage\`: one of the phone's own screens covers your page now. \`gugu.bindings.onSurface(fn)\` hears
   each move; \`gugu.bindings.setPanel("main", { section })\` moves the layer; \`gugu.navigation.onBack(fn)\` holds Back for your steps.
 - \`{ state: "unsupported" }\` — closed, not an error, the same if asked again: hide that control on a phone. It answers
-  \`setPanel("main", { collapsed })\`, \`gugu.assistant.open("main", "move")\` (a phone is never its home), \`advanceSetup\`,
+  \`gugu.bindings.setPanel("main", { collapsed })\`, \`gugu.assistant.open("main", "move")\` (a phone is never its home), \`advanceSetup\`,
   \`gugu.assistant.figure\` (the layer's header draws the face) and every \`gugu.voiceNote.*\` (聊天 records with the phone's own
   recorder). Composer entries (\`composerActions\`) and \`unreadSource\` draw nothing there.
 - \`gugu.assistant.open\` opens the phone's own screens: \`setup\` and \`settings\` its settings page, \`look\` its 换形象 page,
@@ -1045,8 +1045,10 @@ person signed in on that phone, checked again after every wait.
   conversation over 任务, with its own back. A \`{ binding }\` draft lands in 聊天 and the layer goes there.
 - Health: read on the phone and never handed to you. Draw a 健康 row or card with no figures; on a click,
   \`gugu.assistant.open("main", "health")\`. A computer answers \`unsupported\`: hide it there.
-- Files: \`gugu.bindings.list\` / \`read\` (the chat's own folder, by path) and the \`files\` / \`memory\` / \`voice-notes\` resources
-  work; adding, renaming or moving files from your page is not on a phone yet (send the person to 聊天's attach).
+- Files: \`gugu.bindings.list\` / \`read\` (the chat's own folder, by path), the \`files\` / \`memory\` / \`voice-notes\` resources and
+  \`save\` / \`remove\` work. API 50's \`upload\`, \`createFolder\`, \`rename\`, \`removeFolder\`, \`transcribeVoiceNote\`,
+  \`removeVoiceNote\`, \`exportVoiceNote\` and a draft's \`attach\` answer \`unsupported\` on a phone (a draft with \`attach\` places
+  nothing): hide those controls there.
 - Schedules: the assistant always lives elsewhere seen from a phone; pause, resume and remove go through its panel (\`pending\`
   until its home applies them); adding or retiming one is asked of the assistant (\`invalid\`).
 `;
