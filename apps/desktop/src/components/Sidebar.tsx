@@ -31,6 +31,8 @@ import { resumableStep, TOUR_STEPS, useProductTourState, type ProductTourRequest
 import { useAuth } from '../store/auth'
 import '../components/productTour/catalog'
 import { readAssistantShellBridge } from '../lib/assistantShellBridge'
+import { ASSISTANT_APP_ID, assistantEntryUnread, openAssistantEntry, useAssistantEntryTarget } from '../lib/assistantEntry'
+import { useChatStore } from '../store/chatContext'
 import { cn } from '@/lib/cn'
 import { DropdownMenu, Menu, MenuItem as DropdownMenuItem, MenuSeparator } from './ui/Menu'
 import { OpenableAppRows } from './chat/OpenAppMenuItems'
@@ -205,6 +207,11 @@ function sessionPagePlace(): 'tasks' | 'apps' | 'library' | 'assistant' | { app:
   return 'tasks'
 }
 
+/** The assistant's place on the session page: the built-in page, or the assistant App's page while the entry goes there. */
+function assistantPlace(place: ReturnType<typeof sessionPagePlace>, onApp: boolean): boolean {
+  return place === 'assistant' || (onApp && typeof place === 'object' && place.app === ASSISTANT_APP_ID)
+}
+
 const DockItem = observer(function DockItem({ app, active, onOpen, onOpenInWindow, onUnpin, onQuit }: { app: RailApp; active: boolean; onOpen: () => void; onOpenInWindow: () => void; onUnpin: () => void; onQuit: () => void }) {
   const { t } = useTranslation('main')
   // Dragged to reorder; a click (the pointer moved less than 4px) still opens it. A right click never drags (dnd-kit's
@@ -257,7 +264,9 @@ const AppsOnRail = observer(function AppsOnRail({ sessionsShown, showSessions }:
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
   const { menuPos, onContextMenu, closeMenu } = useRowContextMenu()
   const place = sessionsShown ? sessionPagePlace() : null
-  const apps = installedExtensionsStore.dockedApps
+  // The assistant App the top cell opens (entry switch): its place is that cell, not a second icon in the dock.
+  const entryOnTop = useAssistantEntryTarget().kind === 'app'
+  const apps = installedExtensionsStore.dockedApps.filter((app) => !(entryOnTop && app.extensionId === ASSISTANT_APP_ID))
   // A right click on 「App」 lists every App it can open, pinned or not: a click opens it, as its icon on the rail would.
   const openable = installedExtensionsStore.openableApps
   const open = (appId?: string) => {
@@ -353,6 +362,12 @@ function useAssistantShell(): { member: boolean | null; preparing: boolean; rule
 
 function AssistantRailTop({ active, onOpen }: { active: boolean; onOpen: () => void }) {
   const { t } = useTranslation('assistant')
+  const { user } = useAuth()
+  // Entry switch: where a click goes (lib/assistantEntry.ts). On the assistant App, its conversation's unread is a dot here,
+  // read from the chat itself as the dock reads an App's (#1930); opening the App reads nothing by itself.
+  const target = useAssistantEntryTarget()
+  const { chats } = useChatStore('chats')
+  const unread = target.kind === 'app' && assistantEntryUnread(chats, target.chatId) === true
   const { contacts } = useContactsStore()
   const mine = useMyAssistantContact(contacts)
   const assistant = mine.contact
@@ -401,7 +416,7 @@ function AssistantRailTop({ active, onOpen }: { active: boolean; onOpen: () => v
       testId={AUTOMATION_TEST_IDS.sidebarAssistantNav}
       rail="assistant"
       entry={entry}
-      badge={recording ? 1 : 0}
+      badge={recording || unread ? 1 : 0}
     />
   )
 }
@@ -411,6 +426,7 @@ function AssistantRailTop({ active, onOpen }: { active: boolean; onOpen: () => v
 export const Sidebar = observer(function Sidebar({ activeTab, onTabChange, settingsOpen = false, pendingContactsCount = 0, sessionAttention = null }: SidebarProps) {
   const { t } = useTranslation('main')
   const messagesActive = activeTab === 'chats' || (activeTab === 'tasks' && sessionPagePlace() === 'tasks')
+  const entryOnApp = useAssistantEntryTarget().kind === 'app'
   // 手机版 — 移动端交接后端(#1534)就绪后再提供入口
 
   return (
@@ -418,9 +434,9 @@ export const Sidebar = observer(function Sidebar({ activeTab, onTabChange, setti
       <div className="gg-sidebar-primary">
         {/* 顶格 = 咕咕(见上面 AssistantRailTop);栏底只留设置。 */}
         <div className="gg-sidebar-profile-slot">
-          <AssistantRailTop active={activeTab === 'tasks' && sessionPagePlace() === 'assistant'} onOpen={() => {
+          <AssistantRailTop active={activeTab === 'tasks' && assistantPlace(sessionPagePlace(), entryOnApp)} onOpen={() => {
             onTabChange('tasks')
-            appState.navigation.navigate('assistant')
+            openAssistantEntry(() => appState.navigation.navigate('assistant'))
           }} />
         </div>
 

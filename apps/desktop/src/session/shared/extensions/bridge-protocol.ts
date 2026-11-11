@@ -126,7 +126,7 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // task's own conversation in the App's panel. No work, session, chat or device id, path, URL or message reaches the App.
 // Also 46: `contributes.conversationSurface.header: "assistant"` — over that same assistant chat, the host draws the built-in
 // assistant page's top row above the conversation (face and name, search, settings gear, expand) from its own data. A click
-// on the face and name is told once as `onSurface` → `intent: { kind: "profile" }`; the gear opens the assistant's settings
+// on the face and name is told once as `onSurface` → `intent: "profile"`; the gear opens the assistant's settings
 // as a host page over the App's panel. One host page at a time there (`app-host-layer.ts`): `panel.hostPage` says one is open.
 // 47 (#1927): `voice-notes:record` (`chat:voice-notes:record`): `gugu.voiceNote.*` drives the host's voice-note recorder for
 // that personal assistant — the host records, uploads and transcribes; the App hears phases and opaque job handles only

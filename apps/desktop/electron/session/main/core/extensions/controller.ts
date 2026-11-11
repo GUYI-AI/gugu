@@ -842,7 +842,7 @@ export const extensionsController = createRPCController({
       const { reportConversationSurface } = await import('./app-unread-bindings');
       // 46 `intent`: the person's click in the host's row above the conversation — told once, whatever else changed.
       if (reportConversationSurface(args) || args.intent) {
-        void pushBindingSurfaces(args.extensionId, args.intent ? { kind: args.intent } : undefined)
+        void pushBindingSurfaces(args.extensionId, args.intent)
           .catch((error: unknown) => log.warn('App conversation surface could not be told to its pages:', error));
       }
       return { success: true as const };
@@ -925,6 +925,23 @@ export const extensionsController = createRPCController({
       log.warn('Failed to take the assistant snapshot for Apps:', error);
       return { success: false as const, error: error instanceof Error ? error.message : String(error) };
     }
+  },
+
+  /**
+   * Entry switch: the window's assistant changed (or the assistant App did): the trusted assistant App's binding is brought to
+   * the account's own assistant chat by the host (assistant-app-entry.ts). Answers whether that App is the trusted one and
+   * whether #1931's ensure step is putting it in; a binding written is told as a choice in the App's permissions is.
+   */
+  syncAssistantAppEntry: async (args: { ownerId: string; chatId: string | null }) => {
+    try {
+      const { syncAssistantAppEntry } = await import('./assistant-app-entry');
+      const state = await syncAssistantAppEntry(args);
+      if (state.changed) {
+        events.emit(extensionsInventoryChangedChannel, { extensionId: state.extensionId });
+        void notifyInstalledAppsChanged();
+      }
+      return { success: true as const, data: state };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
 
   /** #1925 (44) The assistant panel's numbers as the session page read them (`useAssistantAppCounts`), for Apps to see. */

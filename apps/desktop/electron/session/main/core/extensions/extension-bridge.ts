@@ -1545,7 +1545,7 @@ export async function pushBindingSurfaces(extensionId: string, intent?: AppSurfa
  * expanded and uncovered first — the host's run of a `page-intent` composer entry, or of its recording bar's open.
  * Only that page, only while it is drawn there for the person (`appBindingSurface` answers `bound`). False: no page heard it.
  */
-export async function deliverSurfaceIntent(extensionId: string, intent: AppSurfaceIntent): Promise<boolean> {
+export async function deliverSurfaceIntent(extensionId: string, intent: string): Promise<boolean> {
   const { tellSurfaceIntent } = await import('./app-unread-bindings');
   if (!extensionsService().isInstalled(extensionId)) return false;
   const pages = [...bindings].filter(([, binding]) => binding.extensionId === extensionId).map(([webContentsId, binding]) => ({

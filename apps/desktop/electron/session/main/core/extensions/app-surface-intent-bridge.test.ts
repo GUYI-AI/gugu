@@ -63,8 +63,8 @@ beforeEach(async () => {
 
 describe('the click on the assistant, told to the App once', () => {
   it('to the page beside the conversation, with its answer now; elsewhere the answer alone; an agent\'s page nothing', async () => {
-    await pushBindingSurfaces('today', { kind: 'profile' });
-    expect(surfaceEvents(BESIDE)).toEqual([{ type: 'bindingSurface', surface: { ...BOUND, intent: { kind: 'profile' } } }]);
+    await pushBindingSurfaces('today', 'profile');
+    expect(surfaceEvents(BESIDE)).toEqual([{ type: 'bindingSurface', surface: { ...BOUND, intent: 'profile' } }]);
     expect(surfaceEvents(ELSEWHERE)).toEqual([{ type: 'bindingSurface', surface: { name: 'main', state: 'unbound' } }]);
     expect(surfaceEvents(AGENT_PAGE)).toEqual([]);
     // The next change is told without it: once is once.
@@ -75,14 +75,14 @@ describe('the click on the assistant, told to the App once', () => {
 
   it('while the row may not be drawn (not the assistant chat, not declared, changed): the answer alone', async () => {
     verdict.holds = false;
-    await pushBindingSurfaces('today', { kind: 'profile' });
+    await pushBindingSurfaces('today', 'profile');
     expect(surfaceEvents(BESIDE)).toEqual([{ type: 'bindingSurface', surface: BOUND }]);
     expect(JSON.stringify(sent.get(BESIDE))).not.toContain('intent');
   });
 
   it('an App removed meanwhile is told nothing', async () => {
     installed.value = false;
-    await pushBindingSurfaces('today', { kind: 'profile' });
+    await pushBindingSurfaces('today', 'profile');
     expect(sent.size).toBe(0);
     expect(surfaceIntentHolds).not.toHaveBeenCalled();
   });

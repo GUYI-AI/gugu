@@ -28,6 +28,7 @@ import { IconButton } from './ui/IconButton'
 import { useBackLayer } from './ui/sheetStack'
 import { platform } from '../platform'
 import { UI_EVENTS } from '../lib/uiEvents'
+import { openAssistantEntry } from '../lib/assistantEntry'
 import { connectionBridge,useConnectionAuthority } from '@/lib/connectionBridge'
 import { appState } from '../session/renderer/lib/stores/app-state'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
@@ -151,7 +152,8 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
     ? (tab: AssistantPageTab) => {
         onClose()
         window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal))
-        appState.navigation.navigate('assistant', { tab })
+        // The assistant App, when the entry goes there (its own page: the App keeps its tabs to itself).
+        openAssistantEntry(() => appState.navigation.navigate('assistant', { tab }))
       }
     : undefined
 

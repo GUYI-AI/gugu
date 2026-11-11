@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * #1927 (API 48) A `page-intent` (a composer entry the person clicked, or the host's recording bar) told to the page drawn
- * beside the bound conversation: once, its panel expanded and any host page over it closed first — only that page, only for
- * the person, only while `appBindingSurface` says it is drawn there (the fakes are app-conversation-surface.test.ts's).
+ * beside the bound conversation: once, its panel expanded and any host page over it closed first — only that page, only
+ * for the person, only while `appBindingSurface` says it is drawn there (the fakes are app-conversation-surface.test.ts's).
  */
 const OWNER = '11000000-0000-4000-8000-000000000001';
 const OTHER = '22000000-0000-4000-8000-000000000002';
@@ -48,7 +48,6 @@ vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: () => ({
 } }) }));
 const { reportConversationSurface, tellSurfaceIntent } = await import('./app-unread-bindings');
 const { forgetHostLayersForTest, reportHostLayer } = await import('./app-host-layers');
-const IDEAS = { kind: 'page-intent', intent: 'ideas' } as const;
 
 // The corner the host's collapse control covers, the built-in panel's top row: the same answer at every width.
 const INSET = { top: 52, right: 48 };
@@ -75,23 +74,23 @@ describe('a page intent', () => {
     const elsewhere = page('main', 'session-tab-7');
     const other = page('other', 'dock');
     show(true);
-    expect(await tellSurfaceIntent('today', IDEAS, [main.it, elsewhere.it, other.it])).toBe(true);
+    expect(await tellSurfaceIntent('today', 'ideas', [main.it, elsewhere.it, other.it])).toBe(true);
     expect(main.expanded).toEqual([true]);
-    expect(main.heard).toEqual([{ name: 'main', state: 'bound', panel: { collapsed: false, inset: INSET, hostPage: false }, intent: IDEAS }]);
+    expect(main.heard).toEqual([{ name: 'main', state: 'bound', panel: { collapsed: false, inset: INSET, hostPage: false }, intent: 'ideas' }]);
     for (const secret of [CHAT, OWNER, 'h1']) expect(JSON.stringify(main.heard)).not.toContain(secret);
     expect([elsewhere.heard, other.heard, elsewhere.expanded, other.expanded]).toEqual([[], [], [], []]);
     // Open already: told, nothing to expand.
     show(false);
     const open = page('main', 'dock');
-    await tellSurfaceIntent('today', IDEAS, [open.it]);
+    await tellSurfaceIntent('today', 'ideas', [open.it]);
     expect(open.expanded).toEqual([]);
     expect(open.heard).toHaveLength(1);
     // Open, with a host page over it (the assistant's settings): that page is closed first, as for the row's profile.
     reportHostLayer({ extensionId: 'today', layer: { kind: 'assistant-settings', ownerId: OWNER } });
     const covered = page('main', 'dock');
-    await tellSurfaceIntent('today', { kind: 'voice-note' }, [covered.it]);
+    await tellSurfaceIntent('today', 'voice-note', [covered.it]);
     expect(covered.expanded).toEqual([true]);
-    expect(covered.heard).toEqual([{ name: 'main', state: 'bound', panel: { collapsed: false, inset: INSET, hostPage: false }, intent: { kind: 'voice-note' } }]);
+    expect(covered.heard).toEqual([{ name: 'main', state: 'bound', panel: { collapsed: false, inset: INSET, hostPage: false }, intent: 'voice-note' }]);
   });
 
   it('nobody hears it while nothing is drawn there, for another account, an agent\'s page, the grant gone or the App not placed', async () => {
@@ -107,17 +106,17 @@ describe('a page intent', () => {
       show(true);
       set();
       const main = page('main', 'dock');
-      expect(await tellSurfaceIntent('today', IDEAS, [main.it])).toBe(false);
+      expect(await tellSurfaceIntent('today', 'ideas', [main.it])).toBe(false);
       expect([main.heard, main.expanded]).toEqual([[], []]);
     }
     Object.assign(state, { owner: OWNER, member: true, granted: true, enabled: true });
     show(true);
     const agentPage = page('main', 'dock', false);
-    expect(await tellSurfaceIntent('today', IDEAS, [agentPage.it])).toBe(false);
+    expect(await tellSurfaceIntent('today', 'ideas', [agentPage.it])).toBe(false);
     expect([agentPage.heard, agentPage.expanded]).toEqual([[], []]);
     state.placed = false;
     const unplaced = page('main', 'dock');
-    expect(await tellSurfaceIntent('today', IDEAS, [unplaced.it])).toBe(false);
+    expect(await tellSurfaceIntent('today', 'ideas', [unplaced.it])).toBe(false);
     expect(unplaced.heard).toEqual([]);
   });
 });
