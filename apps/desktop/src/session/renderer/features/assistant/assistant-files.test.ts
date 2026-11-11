@@ -3,6 +3,7 @@ import {
   assistantPaths,
   claudeProjectDirName,
   composeInstructions,
+  folderNameProblem,
   parseMemoryNote,
   memoryIndexHints,
   parseSkill,
@@ -140,6 +141,12 @@ describe('上传与命名规矩', () => {
     expect(resourceRejection({ name: 'clip.MP4', size: 10 })).toBe('unsupported');
     expect(resourceRejection({ name: 'voice', size: 10, type: 'audio/mpeg' })).toBe('unsupported');
     expect(resourceRejection({ name: 'x.zip', size: 10 })).toBe('unsupported');
+  });
+
+  it('文件夹名不能空、不能带 /', () => {
+    expect(folderNameProblem('  ')).toBe('required');
+    expect(folderNameProblem('a/b')).toBe('slash');
+    expect(folderNameProblem('工作')).toBeNull();
   });
 });
 
