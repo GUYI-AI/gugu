@@ -33,10 +33,15 @@ const db = vi.hoisted(() => ({
   /** owner → their assistant (the provision marker), or none. */
   assistants: {} as Record<string, string | null>,
   chats: {} as Record<string, { kind: string; members: string[] }>,
+  /** The assistant's provision phase (ready: its resources are served; before it: its setup is under way). */
+  phase: 'ready',
+  /** The chat the provision names as the assistant's private one: undefined = the dm of the owner and the assistant, null = none yet. */
+  provisionChat: undefined as string | null | undefined,
   down: false,
   afterRead: undefined as (() => void) | undefined,
   service: null as unknown,
 }));
+vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 vi.mock('@gugu/core', () => ({ userIdFromSupabaseAccessToken: (token: string) => token }));
 vi.mock('./account-token', () => ({ currentAccountAccessToken: async () => db.signedIn }));
 vi.mock('./extensions-root', () => ({ extensionsService: () => db.service }));
@@ -47,8 +52,10 @@ vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: ({ schem
     db.afterRead?.();
     if (db.down) return { data: null, error: { message: 'down' } };
     if (schema === 'identity') {
-      const agent = db.assistants[filters.owner_user_id ?? ''];
-      return { data: agent ? [{ agent_user_id: agent, device_id: DEVICE, member_key: 'assistant', phase: 'ready', created_at: '2026-11-01T00:00:00Z', agent: { removed_at: null } }] : [], error: null };
+      const owner = filters.owner_user_id ?? '';
+      const agent = db.assistants[owner];
+      const dm = Object.entries(db.chats).find(([, one]) => one.kind === 'dm' && one.members.length === 2 && one.members.includes(owner) && !!agent && one.members.includes(agent))?.[0] ?? null;
+      return { data: agent ? [{ agent_user_id: agent, device_id: DEVICE, member_key: 'assistant', phase: db.phase, created_at: '2026-11-01T00:00:00Z', dm_chat_id: db.provisionChat === undefined ? dm : db.provisionChat, agent: { owner_user_id: owner, removed_at: null } }] : [], error: null };
     }
     const chat = db.chats[filters.id ?? filters.chat_id ?? ''];
     if (table === 'chats') return { data: chat ? { kind: chat.kind } : null, error: null };
@@ -58,6 +65,8 @@ vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: ({ schem
     select: () => query,
     eq: (column: string, value: string) => { filters[column] = value; return query; },
     in: () => query,
+    limit: () => query,
+    abortSignal: () => query,
     maybeSingle: async () => answer(),
     then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve().then(answer).then(resolve, reject),
   };
@@ -100,7 +109,8 @@ function host() {
   return { service, install, bound };
 }
 const ensureApp = vi.fn();
-const sync = (chatId: string | null, ownerId = OWNER) => syncAssistantAppEntry({ ownerId, chatId }, { trust: TRUST, ensureApp });
+const push = vi.fn(async () => undefined);
+const sync = (chatId: string | null, ownerId = OWNER) => syncAssistantAppEntry({ ownerId, chatId }, { trust: TRUST, ensureApp, push });
 
 beforeEach(() => {
   db.signedIn = OWNER;
@@ -110,7 +120,7 @@ beforeEach(() => {
     [GROUP]: { kind: 'group', members: [OWNER, ASSISTANT, STRANGER] },
     [OTHER_DM]: { kind: 'dm', members: [OTHER_OWNER, OTHER_ASSISTANT] },
   } satisfies Record<string, Chat>;
-  db.down = false; db.afterRead = undefined;
+  db.down = false; db.afterRead = undefined; db.phase = 'ready'; db.provisionChat = undefined; push.mockClear();
 });
 
 describe('the trusted App: granted and bound by the host, nothing asked', () => {
@@ -191,6 +201,64 @@ describe('the trusted App: granted and bound by the host, nothing asked', () => 
     db.down = true;
     expect(await sync(DM)).toMatchObject({ outcome: 'unverified', changed: false });
     expect(bound()).toBeNull();
+  });
+});
+
+// verify-pass1 D4: the assistant's private chat exists, with the assistant in it, before the assistant is ready. The App's own calls
+// over a binding (resources, ...) are served only once its provision is ready (or completed) and names that chat; a binding
+// written before is one every call is refused over — and the App does not ask again. So the host binds when the chat passes
+// the same check, and not before; the window asks again as the setup moves on.
+describe('the binding waits for the assistant to be ready for that chat', () => {
+  it.each(['queued', 'preparing', 'awaiting_terminal'])('binds nothing while the assistant is %s, tells nobody, and binds the moment it is ready', async (phase) => {
+    const { install, bound } = host();
+    install();
+    db.phase = phase;
+    expect(await sync(DM)).toMatchObject({ trusted: true, outcome: 'pending', changed: false });
+    expect(bound()).toBeNull();
+    expect(push).not.toHaveBeenCalled();
+    // The setup moved on: the same chat now passes — and the App's pages are told what the binding is.
+    db.phase = 'ready';
+    expect(await sync(DM)).toMatchObject({ outcome: 'bound', changed: true });
+    expect(bound()).toBe(DM);
+    expect(push).toHaveBeenCalledOnce();
+    db.phase = 'completed';
+    expect(await sync(DM)).toMatchObject({ outcome: 'kept', changed: false });
+    expect(push).toHaveBeenCalledOnce();
+  });
+
+  it('is pending, not refused, while the provision does not name its chat yet; refused for a chat it names as another', async () => {
+    const { install, bound } = host();
+    install();
+    db.phase = 'preparing';
+    db.provisionChat = null;
+    expect(await sync(DM)).toMatchObject({ outcome: 'pending', changed: false });
+    db.provisionChat = OTHER_DM;
+    expect(await sync(DM)).toMatchObject({ outcome: 'refused', changed: false });
+    db.provisionChat = null;
+    db.phase = 'ready';
+    expect(await sync(DM)).toMatchObject({ outcome: 'refused', changed: false });
+    expect(bound()).toBeNull();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('keeps a binding already written while the setup is pending again (a move under way), and takes it off only on close', async () => {
+    const { install, bound } = host();
+    install();
+    expect(await sync(DM)).toMatchObject({ outcome: 'bound' });
+    db.phase = 'preparing';
+    expect(await sync(null)).toMatchObject({ outcome: 'kept', changed: false });
+    expect(bound()).toBe(DM);
+    db.assistants[OWNER] = null;
+    expect(await sync(null)).toMatchObject({ outcome: 'unbound', changed: true });
+    expect(push).toHaveBeenCalledTimes(2);
+  });
+
+  it('a push that fails does not undo the binding', async () => {
+    const { install, bound } = host();
+    install();
+    push.mockRejectedValueOnce(new Error('no page'));
+    expect(await sync(DM)).toMatchObject({ outcome: 'bound', changed: true });
+    expect(bound()).toBe(DM);
   });
 });
 

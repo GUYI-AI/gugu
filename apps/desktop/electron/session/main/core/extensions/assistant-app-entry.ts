@@ -53,9 +53,11 @@ const notTrusted = (service: AssistantRulesInstallRecord, trust?: readonly Assis
  * - chosen: the person chose (or removed) its conversation themselves — left as they chose.
  * - bound / unbound: written now. kept: already as it should be, or changed meanwhile (the next sync decides).
  * - refused: the chat named is not the account's private chat with its own assistant. unverified: it could not be checked now.
+ * - pending: it is that chat, but the assistant's setup has not finished (its resources are not served for it yet): nothing is
+ *   bound — a binding written now is one every call of the App is refused over — and the window asks again.
  */
 export type AssistantAppEntryOutcome = 'absent' | 'distrusted' | 'off' | 'withdrawn' | 'undeclared' | 'chosen'
-  | 'bound' | 'unbound' | 'kept' | 'refused' | 'unverified';
+  | 'bound' | 'unbound' | 'kept' | 'refused' | 'pending' | 'unverified';
 export interface AssistantAppEntryState {
   ownerId: string;
   extensionId: typeof ASSISTANT_APP_ID;
@@ -70,7 +72,9 @@ const codeOf = (error: unknown) => (error as { code?: unknown } | null)?.code;
 export interface AssistantAppEntryDeps {
   /** Tests only: #1931's conditions with release keys made in the test (default: the shipped ones). */
   trust?: readonly AssistantRulesTrustCondition[];
-  ownAssistantChat?: (token: string, ownerId: string, chatId: string) => Promise<boolean>;
+  ownAssistantChat?: (token: string, ownerId: string, chatId: string) => Promise<boolean | 'pending'>;
+  /** Tells the App's pages what its binding is now (default: `pushBindingSurfaces`, the one way a page hears `onSurface`). */
+  push?: () => Promise<void>;
   /** Asks the ensure step to put the App in (assistant-rules-root.ts `ensureAssistantApp('assistant')`); it decides if needed. */
   ensureApp?: () => void;
 }
@@ -123,7 +127,9 @@ export async function syncAssistantAppEntry(input: unknown, deps: AssistantAppEn
       target = null;
     } else {
       if (before.binding?.chatId === chatId) return state(true, 'kept');
-      if (!await ownChat(token, ownerId, chatId)) return state(true, 'refused');
+      const own = await ownChat(token, ownerId, chatId);
+      if (own === 'pending') return state(true, 'pending');
+      if (!own) return state(true, 'refused');
       target = chatId;
     }
   } catch (error) {
@@ -139,6 +145,11 @@ export async function syncAssistantAppEntry(input: unknown, deps: AssistantAppEn
   if (now.binding?.handle !== before.binding?.handle) return state(true, 'kept');
   service.setConversationUnreadBinding(ownerId, ASSISTANT_APP_ID, name, target, 'host');
   log.info('assistant App entry: binding written by the host', { bound: target !== null });
+  // The App's pages hear what the binding is now (`onSurface`), the one way they are told — a page that read before it was
+  // there reads again. `bound` itself reaches them once the window draws the conversation beside the page, which it does on
+  // the inventory change the caller announces; this tells the pages the binding changed in the meantime.
+  await (deps.push ?? (async () => (await import('./extension-bridge')).pushBindingSurfaces(ASSISTANT_APP_ID)))()
+    .catch((error: unknown) => log.warn('assistant App entry: the App\'s pages could not be told the binding', { error: String(error) }));
   return state(true, target === null ? 'unbound' : 'bound', true);
 }
 

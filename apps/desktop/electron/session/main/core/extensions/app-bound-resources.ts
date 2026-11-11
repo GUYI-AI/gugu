@@ -4,19 +4,19 @@ import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
 import { AssistantPanelError, createAssistantPanelClient, type AssistantPanelDomain } from '@gugu/core/cloud/assistantPanel';
 import { readAssistantPanelBody, uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies';
 import { withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead';
-import { pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision';
 import { splitInstructions } from '@gugu/core/shared/assistantInstructions';
 import { DEFAULT_TEXT_MAX_BYTES } from '@shared/extensions/app-runtime-protocol';
 import {
   READABLE_RESOURCE_DOMAINS, WRITABLE_RESOURCE_DOMAINS, appResourceOf, resourceChangeSchema, resourceDomainOf, resourceKeyOf,
   type AppResourceEvent, type AppResourceList, type AppResourceRead, type AppResourceWrite, type ReadableResourceDomain, type ResourceBindingAction,
 } from '@shared/extensions/agent-resources';
-import type { ReadFailureReason, Unavailable } from '@shared/extensions/resources-management';
+import type { Unavailable } from '@shared/extensions/resources-management';
 import type { ConversationBindingAction } from '@shared/extensions/unread-binding';
 import { domainState, reasonOf, refusedOrUnavailable, savedData, unavailable, writeOutcome } from '@shared/extensions/bound-resources-core';
 // The rules both hosts answer by (bound-resources-core.ts); the names this module gave them stay importable from here.
 export { domainState, reasonOf, refusedOrUnavailable, savedData, unavailable };
 import { account, current, member } from './app-unread-bindings';
+import { assistantServingChat } from './app-assistant-serving';
 import { extensionsService } from './extensions-root';
 import { addResourceWatch, stopResourceWatch } from './app-resource-watches';
 
@@ -31,7 +31,6 @@ import { addResourceWatch, stopResourceWatch } from './app-resource-watches';
 
 const denied = (message: string) => Object.assign(new Error(message), { code: 'denied' });
 const invalid = (message: string) => Object.assign(new Error(message), { code: 'invalid' });
-const failed = (message: string, reason: ReadFailureReason = 'unreadable') => Object.assign(new Error(message), { code: 'failed', reason });
 const codeOf = (error: unknown) => (error as { code?: unknown } | null)?.code;
 function argsOf<T extends z.ZodType>(schema: T, input: unknown): z.infer<T> {
   const parsed = schema.safeParse(input);
@@ -39,38 +38,17 @@ function argsOf<T extends z.ZodType>(schema: T, input: unknown): z.infer<T> {
   return parsed.data;
 }
 
-// What `pickAssistant` reads (ASSISTANT_PROVISION_SELECT), plus the private conversation and the identity's owner.
-const PERSONAL_ASSISTANT_SELECT = 'agent_user_id,device_id,member_key,phase,created_at,dm_chat_id,agent:users!agent_provisions_agent_user_id_fkey(owner_user_id,removed_at)';
-
 /**
- * The agent the bound conversation is with, which must be the signed-in person's personal assistant — the one the
- * assistant's own pages show (`pickAssistant`, as `personalAssistant` picks it), in a phase the store serves (ready or
- * completed, as `assistant_panel_is_owner` asks), owned and not removed, whose provision names this very conversation as
- * its private one. Only it has panel resources: anything else — another of the person's agents, someone else's, a group,
- * a person — is refused here, before the store is asked.
+ * The agent the bound conversation is with, which must be the signed-in person's personal assistant, serving that very
+ * conversation (`assistantServingChat`): anything else — another of the person's agents, someone else's, a group, a person —
+ * is refused here, before the store is asked. While its setup is still under way (`pending`) the refusal says so
+ * (`notYet`): the binding is not valid yet, not wrong (`boundAgent`).
  */
 async function personalAssistantOf(token: string, ownerId: string, chatId: string): Promise<{ agentId: string; deviceId: string }> {
-  const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
-  const { data, error } = await client.from('agent_provisions').select(PERSONAL_ASSISTANT_SELECT)
-    .eq('owner_user_id', ownerId).eq('member_key', 'assistant').limit(32).abortSignal(AbortSignal.timeout(5000));
-  if (error) throw failed('Could not verify the agent of the chosen conversation', 'owner-unknown');
-  type Identity = { owner_user_id?: unknown; removed_at?: unknown };
-  type Row = Omit<AssistantProvisionRow, 'agent'> & { dm_chat_id?: unknown; agent: Identity | Identity[] | null };
-  const rows = (data ?? []) as Row[];
-  let pick: ReturnType<typeof pickAssistant>;
-  try {
-    // Its own check of each identity: exactly one, its removal said (null or a time), else it throws.
-    pick = pickAssistant(rows as AssistantProvisionRow[]);
-  } catch {
-    throw failed('Could not verify the agent of the chosen conversation', 'owner-unknown');
-  }
-  const served = pick && rows.some((row) => {
-    const agent = Array.isArray(row.agent) ? row.agent.length === 1 ? row.agent[0] : null : row.agent;
-    return row.agent_user_id === pick.agentId && row.member_key === 'assistant' && row.dm_chat_id === chatId
-      && ['ready', 'completed'].includes(String(row.phase)) && agent?.owner_user_id === ownerId && agent.removed_at === null;
-  });
-  if (!pick || !served) throw denied('The chosen conversation is not your private conversation with your personal assistant');
-  return pick;
+  const serving = await assistantServingChat(token, ownerId, chatId);
+  if (serving.state === 'served') return { agentId: serving.agentId, deviceId: serving.deviceId };
+  if (serving.state === 'pending') throw Object.assign(denied('Your personal assistant is not ready for the chosen conversation yet'), { notYet: true });
+  throw denied('The chosen conversation is not your private conversation with your personal assistant');
 }
 
 /** The authority of one call, and the assistant's home device (what its own pages name in a change, 50). */
@@ -82,7 +60,7 @@ export type ResourceCallAction = Exclude<ConversationBindingAction, 'unread'>;
  * The authority one call works under: the current account's own selection for this installed App, with the action granted
  * (and, for a domain, that domain listed for it), of a conversation the account is still in, which is its private one with
  * its personal assistant (asked beside membership). `recheck`: account, installed App, grant and the same selection, still —
- * called after every wait. Null: nobody has chosen the conversation yet.
+ * called after every wait. Null: nobody has chosen the conversation yet, or the assistant it is with is not ready for it yet.
  */
 export async function boundAgent(
   extensionId: string, name: string, needs: readonly ResourceCallAction[], domain: string | null,
@@ -106,6 +84,10 @@ export async function boundAgent(
     throw error;
   });
   const [membership, agent] = await Promise.allSettled([membershipOf, personalAssistantOf(token, ownerId, before.chatId)]);
+  // The conversation is the person's and the assistant's, whose setup is not finished: the binding is not valid yet. That is
+  // not a refusal and not an error the App should report (it would sit on the page for good): nothing is bound for it yet,
+  // as before anyone chose a conversation — it is told again when the binding is valid (the surface and the assistant status).
+  if (membership.status === 'fulfilled' && agent.status === 'rejected' && (agent.reason as { notYet?: unknown } | null)?.notYet === true) return null;
   // A refusal outweighs a check that could not be made: the call is refused, not to be tried again.
   const rejected = [membership, agent].filter((check): check is PromiseRejectedResult => check.status === 'rejected');
   const refusal = rejected.find((check) => codeOf(check.reason) === 'denied') ?? rejected[0];

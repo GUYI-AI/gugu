@@ -153,6 +153,40 @@ describe('asking main to bind the trusted App', () => {
     expect(sync).toHaveBeenCalledTimes(4);
   });
 
+  // verify-pass1 D4: the assistant's chat is known before the assistant is ready; main binds the App only once it is ready for that
+  // chat (`pending` before). The window asks again at once when the setup moves on (its step, or no longer being made), and,
+  // like what main could not verify, a few times by itself.
+  it('asks again, a few times, while main says the assistant is not ready for its chat yet', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    sync.mockImplementation(async (args: { ownerId: string }) => ({ success: true, data: { ownerId: args.ownerId, extensionId: ASSISTANT_APP_ID, trusted: true, outcome: 'pending', changed: false } }));
+    await mount();
+    expect(sync).toHaveBeenCalledTimes(1);
+    for (const wait of [5_000, 30_000, 120_000]) {
+      await act(async () => { vi.advanceTimersByTime(wait); });
+      await flush();
+    }
+    expect(sync).toHaveBeenCalledTimes(4);
+    await act(async () => { vi.advanceTimersByTime(600_000); });
+    await flush();
+    expect(sync).toHaveBeenCalledTimes(4);
+  });
+
+  it.each([
+    ['its step moves on', { setup: 'shell', preparing: true }, { setup: 'connect', preparing: true }],
+    ['it is no longer being made', { setup: 'shell', preparing: true }, { setup: 'shell', preparing: false }],
+  ])('asks again at once when the setup moves on: %s; not for what changes nothing', async (_what, before, after) => {
+    publishAssistantShell(shell(before))
+    await mount();
+    sync.mockClear();
+    await act(async () => publishAssistantShell(shell({ ...before, ownerName: 'Another name' })));
+    await flush();
+    expect(sync).not.toHaveBeenCalled();
+    await act(async () => publishAssistantShell(shell(after)));
+    await flush();
+    expect(sync).toHaveBeenCalledOnce();
+    expect(sync).toHaveBeenLastCalledWith({ ownerId: OWNER, chatId: DM });
+  });
+
   it('a window without its host bridge: logged, nothing thrown', async () => {
     sync.mockImplementation(() => { throw new Error('electronAPI.invoke is unavailable'); });
     await mount();
