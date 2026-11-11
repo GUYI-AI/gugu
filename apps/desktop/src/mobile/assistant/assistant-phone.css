@@ -147,12 +147,6 @@
 .ta-phone .ta-tile-title { white-space: normal; overflow-wrap: anywhere; }
 .ta-phone .ta-tile-icon { border-radius: 0; background: transparent; box-shadow: none; }
 .ta-phone .ta-empty { padding: 24px 16px; font-size: var(--font-prose); line-height: var(--lh-prose); overflow-wrap: anywhere; }
-.ta-phone .ta-today-hello { background: transparent; padding: 0; }
-.ta-phone .ta-day { padding: 16px; }
-.ta-phone .ta-day-source-btn,
-.ta-phone .ta-day-more,
-.ta-phone .ta-day-btn { min-height: var(--control-h-touch); }
-.ta-phone .ta-day-divider::after { content: none; }
 .ta-phone .ta-prose,
 .ta-phone .ta-intro-body { font-size: var(--font-prose); line-height: var(--lh-prose); }
 

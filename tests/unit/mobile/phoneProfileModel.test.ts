@@ -1,23 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { composeInstructions, joinPersona, splitInstructions, splitPersona } from '../../../apps/desktop/src/session/renderer/features/assistant/assistant-files'
 import {
   connectorDetail,
   connectorGroups,
   thisDeviceView,
 } from '../../../apps/desktop/src/mobile/assistant/phoneProfileModel'
 
-// #7199 手机「资料」下连接应用那几页:与桌面同一套说法;性格写回与桌面同一套拼装。
-describe('性格写回(手机与桌面同一套拼装)', () => {
-  it('宿主维护那段原样留着,人写的接在后面;清空 = 只剩维护那段', () => {
-    const managed = '<!-- 咕咕管家 -->\n你是谁\n<!-- /咕咕管家 -->'
-    const current = `${managed}\n\n性格：温暖\n旧描述\n`
-    const next = composeInstructions(current, joinPersona('direct', '少说废话'))
-    expect(next.startsWith(managed)).toBe(true)
-    expect(splitPersona(splitInstructions(next).user)).toEqual({ preset: 'direct', rest: '少说废话' })
-    expect(composeInstructions(current, joinPersona(null, ''))).toBe(`${managed}\n`)
-  })
-})
-
+// #7199 手机「资料」下连接应用那几页:与桌面同一套说法。
 describe('connectorGroups', () => {
   const items = [
     { id: 'github', description: 'Code' },

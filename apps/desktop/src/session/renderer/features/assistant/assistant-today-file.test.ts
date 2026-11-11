@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dayOf, feedOrder, ideaGroups, parseTodayFile, type TodayBatch, type TodayIdea } from './assistant-today-file';
+import { ideaGroups, parseTodayFile, type TodayBatch, type TodayIdea } from './assistant-today-file';
 
 const batch = (over: Partial<TodayBatch> & Pick<TodayBatch, 'id'>): Record<string, unknown> => ({
   kind: 'morning',
@@ -116,22 +116,6 @@ describe('日程进展 / 灵感:各读各的', () => {
       state: 'ok',
       value: { updatedAt: null, items: [{ id: 'i1', title: '整理本周开销', description: '', prompt: '帮我把这周的开销整理成表', emoji: '💰', category: '生活' }] },
     });
-  });
-});
-
-describe('feedOrder / dayOf', () => {
-  it('新的一天在上,同一天里日记 > 晚报 > 早报', () => {
-    const b = (id: string, kind: TodayBatch['kind'], localDate: string): TodayBatch => ({ id, kind, localDate, pushedAt: null, messageId: null, cards: [] });
-    const order = feedOrder([b('m14', 'morning', '2026-10-14'), b('m15', 'morning', '2026-10-15'), b('d15', 'diary', '2026-10-15'), b('e15', 'evening', '2026-10-15')]);
-    expect(order.map((x) => x.id)).toEqual(['d15', 'e15', 'm15', 'm14']);
-  });
-
-  it('按本地日历日认今天 / 昨天', () => {
-    const now = new Date(2026, 9, 15, 0, 30);
-    expect(dayOf('2026-10-15', now)).toBe('today');
-    expect(dayOf('2026-10-14', now)).toBe('yesterday');
-    expect(dayOf('2026-10-13', now)).toBe('other');
-    expect(dayOf('2026-10-01', new Date(2026, 9, 2, 8))).toBe('yesterday');
   });
 });
 

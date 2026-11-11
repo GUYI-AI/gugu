@@ -3,8 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { setIdeasEntryHidden, useIdeasEntryHidden } from '@/lib/assistantIdeas';
 import { Eye, EyeOff, Lightbulb, Sparkles, X } from '@/lib/icons';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
-import { ideaGroups, type TodayIdea } from './assistant-today-file';
-import type { TodayFeedView } from './assistant-today-feed';
+import { ideaGroups, type TodayFeedView, type TodayIdea } from './assistant-today-file';
 import { AssistantEmpty } from './assistant-ui-parts';
 
 /**

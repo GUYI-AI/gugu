@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { parseVoiceNoteMeta, VOICE_NOTE_MIN_SEGMENT_VOICED_MS, VOICE_NOTE_MIN_TOTAL_VOICED_MS, voiceNoteView } from '@gugu/core/shared/voiceNotes'
+import { parseVoiceNoteMeta, VOICE_NOTE_MIN_SEGMENT_VOICED_MS, VOICE_NOTE_MIN_TOTAL_VOICED_MS } from '@gugu/core/shared/voiceNotes'
 import { assistantPaths } from '../../../apps/desktop/src/session/renderer/features/assistant/assistant-files'
 import type { AssistantMachine, MachineRpc } from '../../../apps/desktop/src/session/renderer/features/assistant/assistant-machine-core'
 import type { BacklogJob, VoiceBacklog } from '../../../apps/desktop/src/mobile/assistant/phoneVoiceBacklog'
@@ -174,9 +174,6 @@ describe('录 → 传 → 停在「已传上去、待转写」', () => {
       { file: 'audio/000.wav', transcribed: false, voicedMs: 5_000 },
       { file: 'audio/001.wav', transcribed: false, voicedMs: 5_000 },
     ])
-    // 列表 / 详情看到的是「等转写」,❌ 处理中、❌ 15 分钟后判失败。
-    expect(voiceNoteView(meta, undefined, Date.parse(meta.updatedAt))).toEqual({ kind: 'queued' })
-    expect(voiceNoteView(meta, undefined, Date.parse(meta.updatedAt) + 24 * 3_600_000)).toEqual({ kind: 'queued' })
     // 手机上的备份清掉;它家里没有转写、没有总结(那是桌面接着做的事)。
     await until(() => expect(t.store.jobs.size).toBe(0))
     expect(t.store.segments.size).toBe(0)

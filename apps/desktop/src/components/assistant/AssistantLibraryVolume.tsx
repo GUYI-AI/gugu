@@ -12,7 +12,7 @@ import { platform } from '../../platform'
 import { libraryHost } from './assistant-library-client'
 import { ShellSlot } from '../../session/renderer/features/assistant/assistant-shell'
 import { AssistantDevicesPage } from '../devices/AssistantDevicesPage'
-import { AssistantProjectsCard, AssistantProjectsLibrary } from './AssistantProjectsLibrary'
+import { AssistantProjectsLibrary } from './AssistantProjectsLibrary'
 import { AssistantLibraryEditor } from './AssistantLibraryEditor'
 import { assistantAppClient } from './assistant-app-client'
 import { ASSISTANT_PANEL_APP } from '../../session/shared/extensions/assistant-app'
@@ -65,21 +65,6 @@ export function AssistantLibraryCount({ machine, kind, assistantId, onCount }: {
   const count: LibraryCountRead = read.state === 'ok' ? read.data.items.length : read.state === 'error' && !assistantReadWaiting(read.error) ? 'failed' : 'loading'
   useEffect(() => onCount(count), [count, onCount])
   return null
-}
-
-type CardProps = Omit<LibraryProps, 'askInChat'> & { onOpen: () => void }
-export function AssistantLibraryCard(props: CardProps) {
-  return props.kind === 'workspace' ? <AssistantProjectsCard machine={props.machine} onOpen={props.onOpen} /> : <FileLibraryCard {...props} kind={props.kind} />
-}
-function FileLibraryCard({ machine, assistantId, kind, onOpen }: Omit<CardProps, 'kind'> & { kind: UserLibraryKind }) {
-  const { t } = useTranslation('assistant')
-  const read = usePhoneRead(sourceKey(machine, kind, assistantId), () => readVolume(machine, kind), 'read Gugu library',undefined,
-    () => machine?.panel ? assistantPanelLibrary(machine.panel).peekVolume(kind) : undefined)
-  useLibraryNotifications(machine, kind, read.refresh)
-  const detail = kind === 'devices' ? t('library.deviceAccess') : read.state === 'loading' ? undefined
-    : read.state === 'error' ? t('library.failed') : read.data.items.length ? t('library.items', { count: read.data.items.length }) : undefined
-  return <AssistantRow leading={kind === 'devices' ? <Monitor /> : <Sparkles />} title={t(`library.${kind}`)} detail={detail}
-    onClick={onOpen} testId={`assistant-library-${kind}`} />
 }
 
 export function AssistantLibraryVolume(props: LibraryProps) {

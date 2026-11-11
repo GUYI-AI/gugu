@@ -51,36 +51,3 @@ export function parseSkill(dir: string, text: string): SkillInfo {
 export { RESOURCE_MAX_BYTES, resourceRejection, folderNameProblem } from '@gugu/core/shared/assistantResourceRules';
 export type { ResourceRejection } from '@gugu/core/shared/assistantResourceRules';
 
-/**
- * 性格(`character`:balanced / warm / direct / concise / playful / sassy 六选一 + 一段自由描述)。
- * 写进说明里人写的那部分,第一行 `性格：<词>`(给它读的是中文词,不随界面语言变),其余是描述。
- */
-export const PERSONA_PRESETS = ['balanced', 'warm', 'direct', 'concise', 'playful', 'sassy'] as const;
-export type PersonaPreset = (typeof PERSONA_PRESETS)[number];
-const PERSONA_WORDS: Record<PersonaPreset, string> = {
-  balanced: '均衡',
-  warm: '温暖',
-  direct: '直接',
-  concise: '简洁',
-  playful: '活泼',
-  sassy: '毒舌',
-};
-const PERSONA_PREFIX = '性格：';
-
-export function splitPersona(user: string): { preset: PersonaPreset | null; rest: string } {
-  const text = user.replace(/\r\n/g, '\n');
-  const newline = text.indexOf('\n');
-  const first = (newline < 0 ? text : text.slice(0, newline)).trim();
-  if (!first.startsWith(PERSONA_PREFIX)) return { preset: null, rest: text.trim() };
-  const word = first.slice(PERSONA_PREFIX.length).trim();
-  const preset = PERSONA_PRESETS.find((key) => PERSONA_WORDS[key] === word) ?? null;
-  if (!preset) return { preset: null, rest: text.trim() };
-  return { preset, rest: newline < 0 ? '' : text.slice(newline + 1).trim() };
-}
-
-export function joinPersona(preset: PersonaPreset | null, rest: string): string {
-  const body = rest.trim();
-  if (!preset) return body;
-  const line = `${PERSONA_PREFIX}${PERSONA_WORDS[preset]}`;
-  return body ? `${line}\n${body}` : line;
-}
