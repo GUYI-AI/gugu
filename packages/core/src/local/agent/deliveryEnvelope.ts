@@ -322,6 +322,45 @@ export type DeliveryReading = { body: string; segments: DeliverySegment[] }
  * 两行头、外框之前的方括号批。认不出 = `null`,调用方把原文当普通文字。
  */
 export function readDeliveryEnvelope(text: string): DeliveryReading | null {
+  // Ordinary text is most of what gets asked about; it is told apart by its first characters, without a lookup.
+  if (!MAY_BE_DELIVERY.test(text)) return null
+  const kept = readings.get(text)
+  if (kept !== undefined) {
+    // Asked again: move it to the young end.
+    readings.delete(text)
+    readings.set(text, kept)
+    return kept
+  }
+  const reading = deepFreeze(parseDeliveryEnvelope(text))
+  readings.set(text, reading)
+  readingChars += text.length
+  for (const oldest of readings.keys()) {
+    if (readingChars <= READINGS_KEPT_CHARS) break
+    readings.delete(oldest)
+    readingChars -= oldest.length
+  }
+  return reading
+}
+
+// @@@read-once — a transcript list is rebuilt from its messages again and again (an older page lands, a name
+// arrives), and every rebuild asked for every message's envelope: parsing them was the largest part of a rebuild,
+// and it grew with everything loaded. A reading depends on the text alone, so the texts read most recently keep
+// theirs. The readings are shared and frozen: a caller that wants to change one copies it.
+const READINGS_KEPT_CHARS = 24 * 1024 * 1024
+const readings = new Map<string, DeliveryReading | null>()
+let readingChars = 0
+/** Same texts as below can read as a delivery: what `trim` strips is what `\s` matches. */
+const MAY_BE_DELIVERY = /^\s*(?:<gugu_deliver(?:y|ies)[\s>]|\[)/
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value)
+    for (const child of Object.values(value)) deepFreeze(child)
+  }
+  return value
+}
+
+function parseDeliveryEnvelope(text: string): DeliveryReading | null {
   const source = text.trim()
   const segments = DELIVERY_ROOT.test(source)
     ? readXmlSegments(source)

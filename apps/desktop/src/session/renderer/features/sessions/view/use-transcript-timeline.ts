@@ -51,17 +51,38 @@ export function useTranscriptTimeline<T>(
       };
       const activityContext = { get viewerId() { return selfIdentity()?.userId; }, actor: chatActor, chatName: chatDisplayName, translate: translateSessionMessage,
         chatKind: (id: string) => readChatSummary(resolveChatId(id) ?? id)?.kind ?? null };
+      // The same lookups, noting when one came back empty: only a turn that met an unknown name can read differently
+      // after a name update.
+      let unknown = false;
+      const noting = <A extends unknown[], R>(lookup: (...args: A) => R) => (...args: A): R => {
+        const found = lookup(...args);
+        if (found === undefined || found === null) unknown = true;
+        return found;
+      };
+      const notingOptions: TimelineRailOptions = {
+        resolveSenderType: (fromId) => {
+          const type = options.resolveSenderType!(fromId);
+          if (type === undefined) unknown = true;
+          return type;
+        },
+      };
+      const notingContext = { get viewerId() { return activityContext.viewerId; }, actor: noting(activityContext.actor), chatName: noting(activityContext.chatName),
+        translate: activityContext.translate, chatKind: noting(activityContext.chatKind) };
       // Streaming only reprojects the active turn, not the entire history.
       // A committed turn is replaced, never edited, and the projection reads one turn at a time: keep each turn's
-      // result until the names it was drawn with change. A landed page then costs its own turns, not every loaded one.
-      let projected = new WeakMap<TranscriptTurn, TimelineTurn[]>();
-      let projectedFor: readonly unknown[] = [];
+      // result. A landed page then costs its own turns, and a name update costs the turns that were waiting for a
+      // name, not every loaded one.
+      let projected = new WeakMap<TranscriptTurn, { turns: TimelineTurn[]; waitingAt: number | null }>();
+      let projectedSelf: SelfIdentity | null | undefined;
       const committed = createMemo(() => {
         const revision = identityRevision(), self = selfIdentity();
-        if (projectedFor[0] !== revision || projectedFor[1] !== self) { projected = new WeakMap(); projectedFor = [revision, self]; }
+        if (projectedSelf !== self) { projected = new WeakMap(); projectedSelf = self; }
         return transcript.state.committedTurns.flatMap((turn) => {
-          let turns = projected.get(turn);
-          if (!turns) projected.set(turn, turns = timelineTurnsFromTranscript([turn], self, options, activityContext));
+          const kept = projected.get(turn);
+          if (kept && (kept.waitingAt === null || kept.waitingAt === revision)) return kept.turns;
+          unknown = false;
+          const turns = timelineTurnsFromTranscript([turn], self, notingOptions, notingContext);
+          projected.set(turn, { turns, waitingAt: unknown ? revision : null });
           return turns;
         });
       });

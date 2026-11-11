@@ -39,15 +39,31 @@ function isRootGuguTool(item: ToolCallItem, tool: string): item is McpToolCall {
   return item.kind === 'mcp-tool-call' && (item.tool === tool || item.tool.endsWith(`__${tool}`)) && isGuguServer(item.server) && !item.parentToolCallId;
 }
 
+// @@@send-read-once — whether a call is a send, and what it was sent with, are read off the call's JSON input and
+// output. A transcript list asks both of every call each time it is rebuilt, from several places; parsed anew each
+// time, that grew with everything loaded. The answer is kept on the call and is good for as long as the strings it
+// was read from are the same (a running call's are still arriving).
+const rootSends = new WeakMap<object, { tool: string; input: string | undefined; output: string | undefined; root: boolean }>();
+const sentArgs = new WeakMap<object, { tool: string; input: string | undefined; args: Record<string, unknown> }>();
+
 function isRootSend(item: ToolCallItem): item is McpToolCall {
   if (item.kind !== 'mcp-tool-call' || !isGuguServer(item.server) || item.parentToolCallId) return false;
-  if (sendReceipt(item.rawOutput || item.outputText)?.delivery === 'owner-native') return false;
-  const tool = catalogCall(item.tool, item.rawInput)?.tool ?? item.tool;
-  return tool === 'message_send' || tool === 'widget_send';
+  const output = item.rawOutput || item.outputText;
+  const kept = rootSends.get(item);
+  if (kept && kept.tool === item.tool && kept.input === item.rawInput && kept.output === output) return kept.root;
+  const root = sendReceipt(output)?.delivery !== 'owner-native'
+    && ['message_send', 'widget_send'].includes(catalogCall(item.tool, item.rawInput)?.tool ?? item.tool);
+  rootSends.set(item, { tool: item.tool, input: item.rawInput, output, root });
+  return root;
 }
 
+/** The parsed input is shared between askers: read it, never change it. */
 function sendArgs(item: McpToolCall): Record<string, unknown> {
-  return (catalogCall(item.tool, item.rawInput)?.args ?? JSON.parse(item.rawInput ?? '')) as Record<string, unknown>;
+  const kept = sentArgs.get(item);
+  if (kept && kept.tool === item.tool && kept.input === item.rawInput) return kept.args;
+  const args = (catalogCall(item.tool, item.rawInput)?.args ?? JSON.parse(item.rawInput ?? '')) as Record<string, unknown>;
+  sentArgs.set(item, { tool: item.tool, input: item.rawInput, args });
+  return args;
 }
 
 /** Where an agent's own send went, as the session timeline names it. */
