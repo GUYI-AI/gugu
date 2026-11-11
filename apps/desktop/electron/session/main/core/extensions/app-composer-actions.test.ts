@@ -26,7 +26,7 @@ const ENTRIES = [
 const CAPABILITY: Record<string, string> = { surface: 'chat:surface', draft: 'chat:draft', 'voice-notes:record': 'chat:voice-notes:record' };
 
 const state = vi.hoisted(() => ({
-  owner: '', selectedBy: '', handle: 'h1', installed: true, enabled: true, revoked: [] as string[], member: true, stamp: '',
+  owner: '', selectedBy: '', handle: 'h1', installed: true, enabled: true, revoked: [] as string[], member: true, stamp: '', header: undefined as string | undefined,
   provisions: [] as Record<string, unknown>[], entries: [] as unknown[],
   asked: [] as Record<string, unknown>[], answer: null as null | ((request: Record<string, unknown>) => unknown),
   /** Runs while the store is asked (the wait every call has): what changes meanwhile. */
@@ -44,7 +44,8 @@ vi.mock('./extensions-root', () => ({
     return {
       isInstalled: () => state.installed,
       isEnabled: () => state.enabled,
-      get: () => ({ manifest: { id: 'assistant', contributes: { conversationSurface: { binding: 'main', placement: 'side-panel', composerActions: state.entries } } } }),
+      get: () => ({ manifest: { id: 'assistant', contributes: { conversationSurface: { binding: 'main', placement: 'side-panel', composerActions: state.entries,
+        ...(state.header ? { header: state.header } : {}) } } } }),
       hasCapability: (_app: string, capability: string) => has(capability),
       conversationBinding: (owner: string, _app: string, name: string, action: string) => {
         if (!on() || name !== 'main' || !has(CAPABILITY[action] ?? '-')) throw denied('no grant');
@@ -77,7 +78,7 @@ vi.mock('@gugu/core/cloud/supabase', () => ({
   }),
 }));
 
-const { composerActionsFor, runComposerAction, voiceNoteOpenedBeside } = await import('./app-composer-actions');
+const { composerActionsFor, customizeOpenedBeside, runComposerAction, voiceNoteOpenedBeside } = await import('./app-composer-actions');
 const column = { ownerId: OWNER, extensionId: 'assistant', authority: STAMP };
 const tellPage = async (extensionId: string, intent: unknown) => { state.told.push([extensionId, intent]); return true; };
 const run = (actionId: string, extra: Record<string, unknown> = {}) => runComposerAction({ ...column, actionId, ...extra }, tellPage);
@@ -85,7 +86,7 @@ const list = async () => (await composerActionsFor(column)).actions.map((entry) 
 
 beforeEach(() => {
   Object.assign(state, { owner: OWNER, selectedBy: OWNER, handle: 'h1', installed: true, enabled: true, revoked: [], member: true, stamp: STAMP,
-    provisions: [ASSISTANT], entries: ENTRIES, asked: [], answer: null, during: undefined, told: [] });
+    provisions: [ASSISTANT], entries: ENTRIES, asked: [], answer: null, during: undefined, told: [], header: undefined });
 });
 
 describe('the entries the window draws', () => {
@@ -96,6 +97,12 @@ describe('the entries the window draws', () => {
       { id: 'ask', label: { zh: '问问它', en: 'Ask it' }, icon: 'message', kind: 'draft' },
     ] });
     expect(JSON.stringify(await composerActionsFor(column))).not.toMatch(/帮我看看|Look at my day|"intent"|"text"/);
+  });
+
+  it('an entry the App marks `chip` says so, with that label: the window draws it above the composer too', async () => {
+    state.entries = [{ ...ENTRIES[0], chip: { zh: '灵感', en: 'Ideas' } }, ENTRIES[1]];
+    expect((await composerActionsFor(column)).actions.map((entry) => [entry.id, entry.chip ?? null]))
+      .toEqual([['ideas', { zh: '灵感', en: 'Ideas' }], ['voice-note', null]]);
   });
 
   it('none beside any other conversation; a run not granted is not drawn', async () => {
@@ -228,5 +235,23 @@ describe('the host\'s recording bar beside it', () => {
     expect(await voiceNoteOpenedBeside({ ownerId: OWNER, extensionId: 'assistant' }, tellPage)).toBe(false);
     await expect(voiceNoteOpenedBeside({ ownerId: OWNER, extensionId: 'assistant', intent: 'settings' }, tellPage)).rejects.toThrow();
     expect(state.told).toEqual([['assistant', { kind: 'voice-note' }]]);
+  });
+});
+
+// Real window (verify-pass1 11-b): the built-in's 「自定义<name>」 hint above its composer was gone beside the App. The host
+// draws it again; opened, the App's page is told to open its 自定义. Control (the parent commit): no such path.
+describe('the host\'s 自定义 hint beside it', () => {
+  it('opening it tells the page `customize`, for this account and an App on that declared the host\'s row over that chat', async () => {
+    state.header = 'assistant';
+    expect(await customizeOpenedBeside({ ownerId: OWNER, extensionId: 'assistant' }, tellPage)).toBe(true);
+    expect(state.told).toEqual([['assistant', { kind: 'customize' }]]);
+    await expect(customizeOpenedBeside({ ownerId: OTHER, extensionId: 'assistant' }, tellPage)).rejects.toMatchObject({ code: 'denied' });
+    await expect(customizeOpenedBeside({ ownerId: OWNER, extensionId: 'assistant', intent: 'profile' }, tellPage)).rejects.toThrow();
+    state.header = undefined;
+    expect(await customizeOpenedBeside({ ownerId: OWNER, extensionId: 'assistant' }, tellPage)).toBe(false);
+    state.header = 'assistant';
+    state.enabled = false;
+    expect(await customizeOpenedBeside({ ownerId: OWNER, extensionId: 'assistant' }, tellPage)).toBe(false);
+    expect(state.told).toEqual([['assistant', { kind: 'customize' }]]);
   });
 });

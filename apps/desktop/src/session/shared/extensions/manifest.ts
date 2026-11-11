@@ -834,6 +834,10 @@ export const extensionManifestSchema = z
     if (new Set(entries.map((entry) => entry.id)).size !== entries.length) {
       ctx.addIssue({ code: 'custom', path: ['contributes', 'conversationSurface', 'composerActions'], message: 'each composer action id once' });
     }
+    // The row above the composer has one capsule at its end (the built-in 「灵感」's place).
+    if (entries.filter((entry) => entry.chip).length > 1) {
+      ctx.addIssue({ code: 'custom', path: ['contributes', 'conversationSurface', 'composerActions'], message: 'one composer action at most is a chip' });
+    }
     entries.forEach((entry, at) => {
       const needs = COMPOSER_RUN_ACTION[entry.run.kind];
       if (!unreadBinding?.actions.includes(needs)) {

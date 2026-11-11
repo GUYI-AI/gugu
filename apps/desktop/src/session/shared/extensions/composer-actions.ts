@@ -14,6 +14,10 @@ import { z } from 'zod';
  *   action the placement already has). Nothing else comes with it.
  *
  * Only for the person's own assistant chat: on any other conversation the entries are not drawn and a run is refused.
+ *
+ * `chip` (one entry at most): the entry is also drawn as a capsule at the right end of the row above that composer, with
+ * this shorter label, as the built-in 「灵感」 capsule over its 「获取灵感」 entry. A click runs the entry. The capsule gives
+ * way to the recording bar while a voice note records, and stays hidden where the person hid the built-in's on this computer.
  */
 export const COMPOSER_ACTIONS_API_VERSION = 48;
 export const COMPOSER_ACTION_MAX = 6;
@@ -42,6 +46,7 @@ export const composerActionSchema = z.strictObject({
   id: z.string().regex(NAME),
   label: z.strictObject({ zh: label, en: label }),
   icon: z.enum(COMPOSER_ACTION_ICONS),
+  chip: z.strictObject({ zh: label, en: label }).optional(),
   run: z.discriminatedUnion('kind', [
     z.strictObject({ kind: z.literal('voice-note') }),
     z.strictObject({ kind: z.literal('draft'), text: z.strictObject({ zh: draftText, en: draftText }) }),
@@ -52,7 +57,7 @@ export const composerActionSchema = z.strictObject({
 export type ComposerAction = z.infer<typeof composerActionSchema>;
 
 /** What the window drawing the composer is told of an entry: enough to draw it, nothing to run it with. */
-export type ComposerActionView = { id: string; label: { zh: string; en: string }; icon: ComposerActionIcon; kind: ComposerRunKind };
+export type ComposerActionView = { id: string; label: { zh: string; en: string }; icon: ComposerActionIcon; kind: ComposerRunKind; chip?: { zh: string; en: string } };
 
 /** Trusted window → main: the entries for the column it drew under `authority`, and one of them clicked. */
 export const composerActionsAskSchema = z.strictObject({ ownerId: z.string().uuid(), extensionId: z.string().min(1), authority: z.string().uuid() });

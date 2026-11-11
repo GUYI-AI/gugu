@@ -72,4 +72,17 @@ describe('composer actions in the manifest', () => {
     // A draft keeps its lines.
     expect(() => parseExtensionManifest(manifest([{ ...draft, run: { kind: 'draft', text: { zh: '第一行\n第二行', en: 'one\ntwo' } } }]))).not.toThrow();
   });
+
+  // Real window (verify-pass1 11-b): the built-in assistant's 「灵感」 capsule above its composer was gone beside the App. An
+  // entry may be drawn there too, with a shorter label (`chip`), as 「灵感」 is over 「获取灵感」. Control (the parent commit):
+  // `chip` was not a field of an entry (refused as unknown).
+  it('`chip`: one entry may also be the capsule above the composer, with a shorter plain label in both languages', () => {
+    const chipped = { ...ideas, chip: { zh: '灵感', en: 'Ideas' } };
+    const parsed = parseExtensionManifest(manifest([chipped, voice]));
+    expect(parsed.contributes.conversationSurface?.composerActions?.map((entry) => entry.chip ?? null)).toEqual([{ zh: '灵感', en: 'Ideas' }, null]);
+    refused(manifest([chipped, { ...voice, chip: { zh: '录音', en: 'Record' } }]), /one composer action at most is a chip/);
+    for (const chip of [{ zh: '灵感' }, { zh: '灵\n感', en: 'Ideas' }, { zh: '', en: 'Ideas' }, { zh: '灵感', en: 'x'.repeat(41) }, '灵感', { zh: '灵感', en: 'Ideas', icon: 'mic' }]) {
+      refused(manifest([{ ...ideas, chip }]), /./);
+    }
+  });
 });

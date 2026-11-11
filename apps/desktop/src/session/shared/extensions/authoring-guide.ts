@@ -1014,14 +1014,18 @@ records from the microphone, uploads, transcribes and hands the note to the assi
 
 API 48: \`contributes.conversationSurface.composerActions\` adds entries to that conversation's composer
 "+", drawn and run by the host on the person's click (no code of yours runs then). Not drawn beside any other conversation.
-\`[{ id, label: { zh, en } (one line, ≤ 40), icon, run }]\`, at most 6; \`icon\` one of sparkles, mic, upload, lightbulb, pencil,
-heart, checklist, document, book, image, message. \`run\`, each needing that binding action (and its capability):
+\`[{ id, label: { zh, en } (one line, ≤ 40), icon, chip?, run }]\`, at most 6; \`icon\` one of sparkles, mic, upload, lightbulb, pencil,
+heart, checklist, document, book, image, message. \`chip: { zh, en }\` (one entry at most): also a capsule with that shorter label
+at the right end of the row above that composer (the built-in 「灵感」); a click runs the entry; hidden while a note records.
+\`run\`, each needing that binding action (and its capability):
 - \`{ kind: "voice-note" }\` (\`voice-notes:record\`): the host starts a voice note and says why if it cannot, as its own entry does.
 - \`{ kind: "draft", text: { zh, en } }\` (\`draft\`): the person's language (≤ 2000) goes after what is in that composer. Nothing is sent.
 - \`{ kind: "page-intent" }\` (\`surface\`): your page hears \`intent: { kind: "composer-action", id }\`, that entry's \`id\`;
   show that view.
 The host's recording bar sits above that composer while a note for this assistant records (whoever started it); when the
 person opens the note it shows, your page hears \`intent: { kind: "voice-note" }\` (read it through \`voice-notes\`).
+With \`header\`, the host's 「自定义<name>」 hint starts that row once after the assistant is set up (gone once opened or
+dismissed); opened, your page hears \`intent: { kind: "customize" }\`: open what customizes it (name, look, character).
 `;
 
 export const EXTENSION_GUIDE_BINDINGS_PHONE = `# gugu.bindings on a phone (API 49)

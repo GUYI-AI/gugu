@@ -874,6 +874,13 @@ export const extensionsController = createRPCController({
       return { success: true as const, data: { told: await voiceNoteOpenedBeside(args, deliverSurfaceIntent) } };
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
+  /** The host's 自定义 hint above that conversation's composer: the person opened it (app-composer-actions.ts). */
+  conversationCustomizeOpened: async (args: { ownerId: string; extensionId: string }) => {
+    try {
+      const { customizeOpenedBeside } = await import('./app-composer-actions');
+      return { success: true as const, data: { told: await customizeOpenedBeside(args, deliverSurfaceIntent) } };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
 
   /**
    * #1925 (46) The window's reading of the account's work ledger, as the built-in list reads it (AppWorkLedgerHost): kept

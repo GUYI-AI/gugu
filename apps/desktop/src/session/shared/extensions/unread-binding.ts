@@ -77,7 +77,9 @@ export const CONVERSATION_SURFACE_PANEL_INSET: Readonly<{ top: number; right: nu
  * never in an answer. From the host's own row (46, `contributes.conversationSurface.header`): `profile` = the assistant's
  * face and name were clicked, show its profile. #1927 (48): `composer-action` = the person clicked the App's composer entry
  * `id` (its own manifest's id, whose run is `{ kind: "page-intent" }`: composer-actions.ts); `voice-note` = the person opened
- * the note the host's recording bar shows. The panel is expanded (and any host page over it closed) before it is told. Nothing else
+ * the note the host's recording bar shows; `customize` = the person opened the host's 「自定义<name>」 hint above the composer of
+ * the account's own assistant chat (46 `header: "assistant"` only; offered once after the assistant is set up): open what
+ * customizes the assistant (name, look, character). The panel is expanded (and any host page over it closed) before it is told. Nothing else
  * comes with it. `APP_SURFACE_INTENTS`: the ones the window may report from its own row.
  *
  * Entry switch, the product's own trusted assistant App only: `resume` = the tab the person last had open on the built-in
@@ -88,7 +90,7 @@ export const CONVERSATION_SURFACE_PANEL_INSET: Readonly<{ top: number; right: nu
 export const ASSISTANT_RESUME_TABS = ['tasks', 'memory', 'profile'] as const;
 export type AssistantResumeTab = (typeof ASSISTANT_RESUME_TABS)[number];
 export type AppSurfaceIntent = { kind: 'profile' } | { kind: 'voice-note' } | { kind: 'composer-action'; id: string }
-  | { kind: 'resume'; tab: AssistantResumeTab };
+  | { kind: 'customize' } | { kind: 'resume'; tab: AssistantResumeTab };
 export const APP_SURFACE_INTENTS = ['profile'] as const;
 
 /**

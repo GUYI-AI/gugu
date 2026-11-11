@@ -12,7 +12,8 @@ import { installShellSlots, readShellSlots } from '../../lib/shellSlots'
 import { APP_CONVERSATION_SLOT_PREFIX, installAppConversationSurfaceBridge, noteAppConversationDrawn, publishAppConversationSurfaces } from '../../lib/appConversationSurfaceBridge'
 import { readAssistantShellBridge, type AssistantShellAssistant } from '../../lib/assistantShellBridge'
 import { useAuth } from '../../store/auth'
-import { useAppComposerActions } from './appComposerActions'
+import { useAppComposerEntries } from './appComposerActions'
+import { AppComposerRow } from './AppComposerRow'
 import { useStoreValueBy } from '../../store/chatContext'
 import { events, rpc } from '@/session/renderer/lib/ipc'
 import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
@@ -27,7 +28,8 @@ const log = rendererLogger('app-conversation-surface')
 const EMPTY: ReadonlyMap<string, HTMLElement> = new Map()
 // The built-in assistant's chat face (AssistantChatSlot), without its typing line. The 「+」 holds what the App declares for
 // the person's own assistant chat (API 48, appComposerActions.tsx), run by the host. Over that chat (46's `header`, main's
-// word) the composer says what the built-in's did, 「和<its name>聊天」, the name read as the host's row reads it.
+// word) the composer says what the built-in's did, 「和<its name>聊天」, the name read as the host's row reads it, and the row
+// above it has the built-in's 「自定义<name>」 hint and the App's capsule (AppComposerRow).
 const noop = () => () => undefined
 
 /** What one read answered for one account: each App's binding, and each App as installed when it was read. */
@@ -157,9 +159,16 @@ const AppConversationColumn = memo(function AppConversationColumn({ chatId, view
   useReportChatOnScreen(visible ? chatId : null)
   // A draft for this chat (`gugu.dispatch`) lands in this composer while it is drawn: the chat need not come up (MainLayout).
   useEffect(() => noteAppConversationDrawn(chatId), [chatId])
-  const attachMenu = useAppComposerActions({ ownerId, extensionId, authority, chatId })
-  const name = useOwnAssistant(ownerId, chatId, ownAssistant)?.display_name ?? null
-  const placeholder = name ? t('chat.placeholder', { name }) : undefined
-  const chrome = useMemo(() => ({ attachGlyph: <Plus />, attachMenu, ...(placeholder ? { placeholder } : {}) }), [attachMenu, placeholder])
+  const { menu: attachMenu, chip } = useAppComposerEntries({ ownerId, extensionId, authority, chatId })
+  const own = useOwnAssistant(ownerId, chatId, ownAssistant)
+  const assistantId = own?.id ?? null
+  const name = own?.display_name ?? null
+  const chrome = useMemo(() => ({
+    attachGlyph: <Plus />, attachMenu,
+    ...(assistantId && name ? {
+      placeholder: t('chat.placeholder', { name }),
+      composerHeader: <AppComposerRow ownerId={ownerId} extensionId={extensionId} assistant={{ id: assistantId, name }} chip={chip} />,
+    } : {}),
+  }), [attachMenu, assistantId, name, t, ownerId, extensionId, chip])
   return <ChatAreaPanel chatId={chatId} viewportKey={viewportKey} hidden={!visible} chrome={chrome} {...handlers} />
 })

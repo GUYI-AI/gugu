@@ -303,9 +303,13 @@ describe('46: the host\'s row above it (`conversationSurface.header`)', () => {
     await render();
     // The built-in's own wording (assistant catalog `chat.placeholder`), in the test's language.
     expect(placeholder()).toBe('和咕咕聊天');
+    // And the row above the composer (AppComposerRow: the 自定义 hint, the App's capsule), only over that chat.
+    const header = () => (state.panels.at(-1)?.chrome as { composerHeader?: unknown } | undefined)?.composerHeader;
+    expect(header()).toBeTruthy();
     // The shell's assistant is another chat's, or another account's: the ordinary placeholder.
     await act(async () => shell(OTHER_CHAT));
     expect(placeholder()).toBeUndefined();
+    expect(header()).toBeUndefined();
     await act(async () => shell(CHAT, 'owner-b'));
     expect(placeholder()).toBeUndefined();
     // Main did not verify it as that chat: the ordinary placeholder too.

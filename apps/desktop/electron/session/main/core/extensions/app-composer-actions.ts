@@ -43,7 +43,8 @@ function declared(ownerId: string, extensionId: string, authority: string): { na
 const granted = (extensionId: string, action: ComposerAction) =>
   extensionsService().hasCapability(extensionId, BINDING_ACTION_CAPABILITY[COMPOSER_RUN_ACTION[action.run.kind]]);
 
-const viewOf = (action: ComposerAction): ComposerActionView => ({ id: action.id, label: { ...action.label }, icon: action.icon, kind: action.run.kind });
+const viewOf = (action: ComposerAction): ComposerActionView => ({ id: action.id, label: { ...action.label }, icon: action.icon, kind: action.run.kind,
+  ...(action.chip ? { chip: { ...action.chip } } : {}) });
 
 /**
  * The entries to draw in that column's 「+」, in the App's order: those whose run is granted now. None at all unless the
@@ -102,4 +103,22 @@ export async function voiceNoteOpenedBeside(
   await signedIn(ownerId);
   if (!extensionsService().isInstalled(extensionId) || !extensionsService().isEnabled(extensionId)) return false;
   return tellPage(extensionId, { kind: 'voice-note' });
+}
+
+/**
+ * The host's 「自定义<name>」 hint above that conversation's composer (offered once after the assistant is set up, as the
+ * built-in's): the person opened it. The App's page drawn there is told `customize` (no data), its panel expanded — only an
+ * App that declared the host's row over the person's own assistant chat (46 `header: "assistant"`), only while it is drawn
+ * there for this account.
+ */
+export async function customizeOpenedBeside(
+  input: unknown,
+  tellPage: (extensionId: string, intent: AppSurfaceIntent) => Promise<boolean>,
+): Promise<boolean> {
+  const { ownerId, extensionId } = composerActionsAskSchema.pick({ ownerId: true, extensionId: true }).strict().parse(input);
+  await signedIn(ownerId);
+  const service = extensionsService();
+  if (!service.isInstalled(extensionId) || !service.isEnabled(extensionId)) return false;
+  if (service.get(extensionId).manifest.contributes.conversationSurface?.header !== 'assistant') return false;
+  return tellPage(extensionId, { kind: 'customize' });
 }

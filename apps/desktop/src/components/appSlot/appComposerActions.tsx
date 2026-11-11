@@ -34,6 +34,16 @@ export function composerMenu(
   }))
 }
 
+/** The entry an App marks `chip`, as the capsule above the composer draws it: its shorter label, the entry's icon. */
+export type ComposerChip = { id: string; label: string; icon: ReactNode; onSelect: () => void }
+export function composerChip(views: readonly ComposerActionView[], { zh, run }: { zh: boolean; run: (id: string) => void }): ComposerChip | null {
+  const view = views.find((entry) => entry.chip)
+  if (!view?.chip) return null
+  return { id: `app-${view.id}`, label: zh ? view.chip.zh : view.chip.en, icon: ICONS[view.icon], onSelect: () => run(view.id) }
+}
+
+type Column = { ownerId: string; extensionId: string; authority: string; chatId: string }
+
 /**
  * #1927 (API 48) The 「+」 entries an App placed beside the person's own assistant chat declares, for this column
  * (AppConversationSurfaceHost): main says which to draw — none unless this is that chat — and runs the one the person
@@ -41,7 +51,12 @@ export function composerMenu(
  * composer, in the person's language, put after what they already wrote, as the built-in's 「分析健康报告」 does
  * (AssistantChatSlot).
  */
-export function useAppComposerActions({ ownerId, extensionId, authority, chatId }: { ownerId: string; extensionId: string; authority: string; chatId: string }) {
+export function useAppComposerActions(column: Column) {
+  return useAppComposerEntries(column).menu
+}
+
+/** The same entries, and the one also drawn as the capsule above the composer (`chip`), run the same way. */
+export function useAppComposerEntries({ ownerId, extensionId, authority, chatId }: Column) {
   const { i18n } = useTranslation()
   const { writeDraft } = useChatStore('writeDraft')
   const { recording } = useVoiceNoteHandler()
@@ -80,5 +95,7 @@ export function useAppComposerActions({ ownerId, extensionId, authority, chatId 
   }, [ownerId, extensionId, authority, chatId, writeDraft, zhNow])
   const views = read?.asked === asked ? read.views : NO_VIEWS
   const zh = i18n.language.startsWith('zh')
-  return useMemo(() => composerMenu(views, { zh, recording, run }), [views, zh, recording, run])
+  const menu = useMemo(() => composerMenu(views, { zh, recording, run }), [views, zh, recording, run])
+  const chip = useMemo(() => composerChip(views, { zh, run }), [views, zh, run])
+  return { menu, chip }
 }
