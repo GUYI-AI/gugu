@@ -17,6 +17,12 @@ export type ReadStoredPage = (before: number) => Promise<StoredPage | null>;
 
 /** How many turns after the target the first page reaches for, so the target is not the last thing on screen. */
 const TURNS_BELOW_TARGET = 8;
+/**
+ * A first page with fewer turns than this may not fill the viewport. A list that cannot be scrolled never reaches its
+ * end, so nothing would ask for the turns below: they are read as the window opens. A fuller page waits for the reader
+ * to reach its end, as every later page does (appending eighty turns is a frame of layout the landing does not need).
+ */
+const SHORT_FIRST_PAGE_TURNS = 30;
 /** How far past the newest held turn one read for newer turns reaches. */
 const NEWER_STEP_TURNS = 80;
 
@@ -42,10 +48,8 @@ export class HistoryWindow {
     if (!page || !holds(page)) { window.dispose(); return null; }
     window.olderCursor = page.nextCursor;
     window.state.transcript.history.seed(page.turns);
-    // The turns below are read at once, not when the reader reaches the window's end: a first page that does not fill
-    // the viewport (one large turn is a page of its own over a device link) cannot be scrolled, so the end would
-    // never be reached and the window would stay at that one turn.
-    void window.loadNewer();
+    // Over a device link one large turn is a page of its own: see SHORT_FIRST_PAGE_TURNS.
+    if (page.turns.length < SHORT_FIRST_PAGE_TURNS) void window.loadNewer();
     return window;
   }
 

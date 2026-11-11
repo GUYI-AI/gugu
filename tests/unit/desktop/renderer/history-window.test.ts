@@ -22,7 +22,7 @@ function stored(count: number, fits: number) {
 
 const context = createChatContext({ locale: () => 'en-US' });
 const opened: HistoryWindow[] = [];
-/** Opened, and with the turns below its first page read (the window reads them at once). */
+/** Opened, and with whatever it read on opening in place (a short first page reads the turns below at once). */
 const open = async (source: ReturnType<typeof stored>, seq: number) => {
   const window = await HistoryWindow.open({ context, uri: 's', seq, ...source });
   if (window) opened.push(window);
@@ -44,11 +44,16 @@ describe('a history window', () => {
   });
 
   // A first page that does not fill the viewport cannot be scrolled, so reaching its end would never ask for more.
-  it('reads the turns below its first page at once, without being asked', async () => {
-    const source = stored(3000, 100);
-    const window = (await open(source, 1200))!;
-    expect(source.read.mock.calls.map(([before]) => before)).toEqual([1209, 1289]);
-    expect(seqs(window)).toEqual(Array.from({ length: 180 }, (_unused, index) => 1109 + index));
+  it('reads the turns below a short first page at once, and leaves a full one to the reader reaching its end', async () => {
+    const short = stored(3000, 12);
+    const window = (await open(short, 1200))!;
+    expect(short.read.mock.calls[0]).toEqual([1209]);
+    expect(seqs(window)).toEqual(Array.from({ length: 92 }, (_unused, index) => 1197 + index));
+
+    const full = stored(3000, 100);
+    const other = (await open(full, 1200))!;
+    expect(full.read).toHaveBeenCalledExactlyOnceWith(1209);
+    expect(seqs(other)).toEqual(Array.from({ length: 100 }, (_unused, index) => 1109 + index));
   });
 
   it('reads the page that ends at the turn when reaching below it cut the turn out', async () => {
@@ -89,15 +94,11 @@ describe('a history window', () => {
   });
 
   it('stops at the newest stored turn', async () => {
-    const source = stored(1250, 100);
-    const window = (await HistoryWindow.open({ context, uri: 's', seq: 1200, ...source }))!;
-    opened.push(window);
-    await window.settled();
-    expect(seqs(window).slice(-41)).toEqual(Array.from({ length: 41 }, (_unused, index) => 1209 + index));
+    const window = (await open(stored(1250, 100), 1200))!;
+    expect(seqs(window).at(-1)).toBe(1208);
+    expect((await window.loadNewer()).map(one => one.seq)).toEqual(Array.from({ length: 41 }, (_unused, index) => 1209 + index));
     expect(window.hasNewer).toBe(false);
-    source.read.mockClear();
     expect(await window.loadNewer()).toEqual([]);
-    expect(source.read).not.toHaveBeenCalled();
   });
 
   it('appends nothing when a page on the way cannot be read', async () => {
