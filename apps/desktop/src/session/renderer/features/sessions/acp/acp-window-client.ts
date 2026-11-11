@@ -7,9 +7,15 @@ import { windowLiveCursorSchema, type WindowCommitPage, type WindowLiveCursor } 
 import { createAcpWindowLiveReadClient } from './acp-window-live-client';
 import { startAcpWindowCommitReader } from './acp-window-commit-reader';
 
-/** This metadata-only decision must finish before any legacy history I/O. */
-export async function prepareAcpWindowHistory(conversationId: string, subscriptionId: string) {
-  const result = await rpcOn(null).sessionTimeline.sessionWindowPrepare({ conversationId, subscriptionId });
+/** The host route that prepares a window opening: this computer's (default), or another machine's same route. */
+type WindowPrepareRoute = Pick<ReturnType<typeof rpcOn>['sessionTimeline'], 'sessionWindowPrepare'>;
+
+/**
+ * This metadata-only decision must finish before any legacy history I/O. The host keeps a window subscription only for an
+ * opening it prepared under that subscription id (window-opening.ts `take`): every window subscriber asks here first.
+ */
+export async function prepareAcpWindowHistory(conversationId: string, subscriptionId: string, route: WindowPrepareRoute = rpcOn(null).sessionTimeline) {
+  const result = await route.sessionWindowPrepare({ conversationId, subscriptionId });
   if (!result.ok) throw Object.assign(new Error(result.error.message), { code: result.error.code });
   return result.value.source === 'legacy' ? Object.freeze({ source: 'legacy' as const })
     : Object.freeze({ source: 'window' as const, liveCursor: Object.freeze(windowLiveCursorSchema.parse(result.value.liveCursor)) });
