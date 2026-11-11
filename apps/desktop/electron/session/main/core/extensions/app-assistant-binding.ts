@@ -17,7 +17,8 @@ import {
   type PushedAssistantCounts,
   type PushedAssistantStatus,
 } from '@shared/extensions/assistant-binding';
-import { appHostLayerReportSchema, type AppHostLayer } from '@shared/extensions/app-host-layer';
+import { appHostLayerReportSchema } from '@shared/extensions/app-host-layer';
+import { forgetHostLayersForTest, hostLayerOf, reportHostLayer } from './app-host-layers';
 import type { ExtensionHostEvent } from '@shared/extensions/bridge-protocol';
 import type { ExtensionHostAction } from '@shared/extensions/host-actions';
 import { currentAccountAccessToken } from './account-token';
@@ -75,6 +76,18 @@ async function conversationOf(token: string, chatId: string): Promise<{ kind: st
 }
 
 /**
+ * Whether this conversation is the account's private chat with its own assistant and no one else — the one check every
+ * assistant action makes (`boundAssistant`), also asked by the host's own binding of the trusted assistant App
+ * (assistant-app-entry.ts). `failed`: it could not be verified now (never read as "no").
+ */
+export async function isOwnAssistantChat(token: string, ownerId: string, chatId: string): Promise<boolean> {
+  const [assistant, conversation] = await Promise.all([personalAssistant(token, ownerId), conversationOf(token, chatId)]);
+  if (!assistant) return false;
+  const members = new Set(conversation.members);
+  return conversation.kind === 'dm' && members.size === 2 && members.has(ownerId) && members.has(assistant);
+}
+
+/**
  * The account the binding of this action stands for, once it is so: the binding chosen by this account for this installed
  * App, with the action declared and granted (`conversationBinding` refuses otherwise), and its conversation the account's
  * private chat with its own assistant and no one else. `recheck` asks the account and the binding again. Null: no
@@ -107,9 +120,9 @@ const statusFor = (ownerId: string) => (shown?.ownerId === ownerId ? shown.statu
 /** The panel's numbers as the session page last read them (`useAssistantAppCounts`), whose they are kept here too. */
 let counted: PushedAssistantCounts | null = null;
 const countsFor = (ownerId: string) => (counted?.ownerId === ownerId ? counted.counts : null);
-/** The host layer over each App's panel (`app-host-layer.ts`), as the window reported it, and for which account. */
-const layers = new Map<string, AppHostLayer>();
-const hostPageFor = (extensionId: string, ownerId: string) => layers.get(extensionId)?.ownerId === ownerId;
+/** The host layer over each App's panel (`app-host-layer.ts`), as the window reported it, for which account: one record for
+ * every host page (app-host-layers.ts) — the work binding's task conversations (46) as these panel pages. */
+const hostPageFor = (extensionId: string, ownerId: string) => hostLayerOf(extensionId, ownerId) !== null;
 
 /**
  * While this window shows the account no assistant (`none`, `loading`, `unreadable`), an App granted the action may start
@@ -290,24 +303,24 @@ export async function assistantCountsChanged(input: unknown, hear: (extensionId:
 }
 
 /**
- * The window opened or closed the host layer over an App's panel (controller `appHostLayerChanged`): kept, and that App
+ * The window opened or closed the host layer over an App's panel (controller `reportHostLayer`): kept, and that App
  * told (`hostPage`) if it may read the assistant now. Only an installed App's; the layer is for the account it names.
  */
-export async function appHostLayerChanged(input: unknown, hear: (extensionId: string, event: ExtensionHostEvent) => void): Promise<void> {
+export async function appHostLayerChanged(input: unknown, hear: (extensionId: string, event: ExtensionHostEvent) => void): Promise<boolean> {
   const parsed = appHostLayerReportSchema.safeParse(input);
   if (!parsed.success) throw coded('invalid', 'Not a host layer report');
-  const { extensionId, layer } = parsed.data;
+  const { extensionId } = parsed.data;
   if (!extensionsService().isInstalled(extensionId)) throw coded('denied', 'This App is not installed');
-  const before = layers.get(extensionId);
-  if (layer) layers.set(extensionId, layer);
-  else layers.delete(extensionId);
-  if (before?.ownerId !== layer?.ownerId || before?.kind !== layer?.kind) await tell(hear, extensionId);
+  // True: what the App's pages hear may have changed — its assistant status here; its surface and work (controller).
+  const changed = reportHostLayer(parsed.data);
+  if (changed) await tell(hear, extensionId);
+  return changed;
 }
 
 /** Tests only: a window that has shown nothing. */
 export function forgetShownAssistantForTest(): void {
   shown = null;
   counted = null;
-  layers.clear();
+  forgetHostLayersForTest();
   heardWithout.clear();
 }

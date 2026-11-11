@@ -74,7 +74,7 @@ describe('a page intent', () => {
     show(true);
     expect(await tellSurfaceIntent('today', 'ideas', [main.it, elsewhere.it, other.it])).toBe(true);
     expect(main.expanded).toEqual([true]);
-    expect(main.heard).toEqual([{ name: 'main', state: 'bound', panel: { collapsed: false, inset: INSET }, intent: 'ideas' }]);
+    expect(main.heard).toEqual([{ name: 'main', state: 'bound', panel: { collapsed: false, inset: INSET, hostPage: false }, intent: 'ideas' }]);
     for (const secret of [CHAT, OWNER, 'h1']) expect(JSON.stringify(main.heard)).not.toContain(secret);
     expect([elsewhere.heard, other.heard, elsewhere.expanded, other.expanded]).toEqual([[], [], [], []]);
     // Open already: told, nothing to expand.

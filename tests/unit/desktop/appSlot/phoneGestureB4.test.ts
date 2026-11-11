@@ -91,9 +91,10 @@ beforeEach(() => {
   document.body.appendChild(frame)
   posted = vi.fn()
   Object.defineProperty(frame.contentWindow!, 'postMessage', { value: posted, configurable: true })
-  // `assistant:open` / `assistant:rename` (#1925, 44), `chat:work` (#1925, 46) the 47 recorder and 50 managing words are the desktop's
-  // alone: held here only so their verbs reach the gesture door, which refuses them in the same sentence.
-  start(['files:read', 'files:write', 'agents:tools', 'assistant:open', 'assistant:rename', 'chat:work', 'chat:resources:write', 'chat:voice-notes:manage', 'chat:voice-notes:record'])
+  // `assistant:open`, `assistant:rename` (#1925, 44), `chat:work` (#1925, 46), `chat:voice-notes:record` (#1927, 47) and the
+  // 50 managing words are the desktop's alone: held here only so their verbs reach the gesture door, which refuses them
+  // in the same sentence.
+  start(['files:read', 'files:write', 'agents:tools', 'assistant:open', 'assistant:rename', 'chat:work', 'chat:voice-notes:record', 'chat:resources:write', 'chat:voice-notes:manage'])
 })
 afterEach(() => {
   host?.dispose()
@@ -139,6 +140,10 @@ const gestureCalls: Record<string, Record<string, unknown>> = {
   voiceNoteRetry: { name: 'main', job: 'job-1' },
   voiceNoteOpenMicSettings: { name: 'main' },
   bindingsOpenWork: { name: 'main', handle: 'wAAAAAAAAAAAAAAAAAAAAAA' },
+  voiceNoteStart: { name: 'main' },
+  voiceNoteResume: { name: 'main' },
+  voiceNoteRetry: { name: 'main', job: 'job-1' },
+  voiceNoteOpenMicSettings: { name: 'main' },
 }
 
 describe('the phone refuses a verb outside the gesture it needs, in the same sentence as the desktop (L11 B4)', () => {

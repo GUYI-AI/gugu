@@ -1,5 +1,6 @@
 // The setup read points (#1931), through the resolver: what main writes into a new home on this computer, and what the
-// window sends when it creates the assistant (the rules reach it over IPC). Byte-for-byte as origin/dev for both sources.
+// window sends when it creates the assistant (the rules reach it over IPC). Byte for byte the recorded renders of the
+// neutral test rules (neutral-digests.json, as the byte-identity test), from the App and from its last good copy.
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -37,7 +38,7 @@ const { claimCloudAssistant, setUpAssistantOnThisComputer } = await import('../.
 const { provisionCloudComputer } = await import('../../../../apps/desktop/src/lib/cloudComputerStore')
 const policy = await import('@gugu/core/shared/assistantPolicy')
 const { claudeProjectDirName } = policy
-const { fingerprint, readBaseline } = await import('./capture')
+const { fingerprint, readNeutralDigests } = await import('./capture')
 const { fixtureBundle, fixtureHost, installBundle, OFFICIAL_SOURCE } = await import('./fixtureApp')
 
 let root: string
@@ -54,28 +55,31 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
-async function useSource(source: 'built-in' | 'app') {
-  if (source === 'app') {
-    const host = fixtureHost(join(root, 'host'), join(root, 'last-good'))
-    installBundle(host.service, await fixtureBundle(join(root, 'bundle')), 'market', OFFICIAL_SOURCE('0.0.1'))
-    installAssistantRulesResolver(host.resolver)
+async function useSource(source: 'last-good' | 'app') {
+  const host = fixtureHost(join(root, 'host'), join(root, 'last-good'))
+  installBundle(host.service, await fixtureBundle(join(root, 'bundle')), 'market', OFFICIAL_SOURCE('0.0.1'))
+  installAssistantRulesResolver(host.resolver)
+  if (source === 'last-good') {
+    await host.resolver.refresh()
+    host.service.uninstall('gugu-assistant')
+    installAssistantRulesResolver(fixtureHost(join(root, 'host'), join(root, 'last-good')).resolver)
   }
   expect((await assistantRules().refresh()).source).toBe(source)
 }
 
-/** Each render against baseline.json: the keys whose bytes differ. */
+/** Each render against the recorded digests: the keys whose bytes differ. */
 function differing(renders: Record<string, string>): string[] {
-  const baseline = readBaseline()
+  const baseline = readNeutralDigests()
   return Object.entries(renders).filter(([key, value]) => fingerprint(value).sha256 !== baseline[key]!.sha256).map(([key]) => key)
 }
 
-describe.each(['built-in', 'app'] as const)('setup through the resolver, source %s', source => {
-  it('main writes the home and the profile memory as origin/dev did', async () => {
+describe.each(['app', 'last-good'] as const)('setup through the resolver, source %s', source => {
+  it('main writes the home and the profile memory as recorded', async () => {
     await useSource(source)
     // The layout the capture used for `refresh/computer-claude/*`, so the same keys compare.
     const base = join(root, 'computer-claude'), home = join(base, 'home'), guguHome = join(base, 'gugu')
     await mkdir(home, { recursive: true })
-    const markdown = policy.ownerProfileMarkdown({ preferredName: ' 小明 ', about: '  研究员，正在做细胞实验。\n早上 9 点开工。 ', language: 'zh-CN' })
+    const markdown = policy.ownerProfileMarkdown({ preferredName: ' 小明 ', about: '  研究员，正在做细胞实验。\n早上 9 点开工。 ', language: 'zh-CN' }, (await assistantRules().available()).rules)
     const { workdir } = await prepareLocalAssistantHome({ ownerProfile: markdown }, { home, guguHome })
     const paths = policy.assistantHomePaths(home, workdir, 'computer')
     const scrub = (text: string) => text.split(root).join('<ROOT>').split(claudeProjectDirName(root)).join('<ROOT-DIR>')
@@ -89,7 +93,7 @@ describe.each(['built-in', 'app'] as const)('setup through the resolver, source 
     })).toEqual([])
   })
 
-  it('the window creates the assistant with the first task, child harness and profile wording as origin/dev did', async () => {
+  it('the window creates the assistant with the first task, child harness and profile wording as recorded', async () => {
     await useSource(source)
     const draft = { name: 'Gugu', color: 0, rest: 'curious', owner: { preferredName: ' 小明 ', about: '  研究员，正在做细胞实验。\n早上 9 点开工。 ' } } as never
     await setUpAssistantOnThisComputer(draft, 'device-1')

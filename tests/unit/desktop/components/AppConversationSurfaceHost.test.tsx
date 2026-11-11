@@ -258,3 +258,50 @@ describe('the native conversation beside an App\'s page', () => {
     expect(appConversationSurfaceShows(CHAT)).toBe(false);
   });
 });
+
+describe('46: the host\'s row above it (`conversationSurface.header`)', () => {
+  const headed = (id: string, version = '1.0.0') => ({ id, version, contributes: { conversationSurface: { binding: 'main', placement: 'side-panel', header: 'assistant' } } });
+  const answer = (header: 'assistant' | null, ownerId = 'owner-a') => ({ success: true, data: { ownerId,
+    bindings: { today: { ownerId, name: 'main', chatId: CHAT, handle: 'handle-today', authority: 'first-today', header } } } });
+  const headers = () => readAppConversationSurfaceBridge()?.getHeaders();
+
+  it('published with the conversation only as main verified it (the account\'s own assistant chat) and the App declares it', async () => {
+    state.inventory = [headed('today')];
+    query.mockResolvedValue(answer('assistant'));
+    await render();
+    expect(published()).toEqual({ today: CHAT });
+    expect(headers()).toEqual({ today: { kind: 'assistant', ownerId: 'owner-a' } });
+  });
+
+  it('main found it is not that chat: the conversation without the row; an App that never declared it: no row, whatever main says', async () => {
+    state.inventory = [headed('today')];
+    query.mockResolvedValue(answer(null));
+    await render();
+    expect(published()).toEqual({ today: CHAT });
+    expect(headers()).toEqual({});
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    state.inventory = [placing('today')];
+    query.mockResolvedValue(answer('assistant'));
+    await render();
+    expect(published()).toEqual({ today: CHAT });
+    expect(headers()).toEqual({});
+  });
+
+  it('goes at once with the conversation: an account switch, a withdrawn grant or choice (main names it), the App switched off', async () => {
+    for (const leave of [
+      async () => { state.owner = 'owner-b'; query.mockResolvedValue(answer(null, 'owner-b')); await render(); },
+      async () => { waiting(); await note('today'); },
+      async () => { state.disabled = ['today']; await render(); },
+    ]) {
+      await act(async () => root.unmount());
+      root = createRoot(host);
+      Object.assign(state, { owner: 'owner-a', inventory: [headed('today')], disabled: [] });
+      query.mockReset().mockResolvedValue(answer('assistant'));
+      await render();
+      expect(headers()).toEqual({ today: { kind: 'assistant', ownerId: 'owner-a' } });
+      await leave();
+      expect(headers()).toEqual({});
+    }
+  });
+});

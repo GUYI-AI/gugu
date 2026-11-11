@@ -8,6 +8,7 @@ import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { Mic, X } from '../../lib/icons'
 import { UI_EVENTS } from '../../lib/uiEvents'
+import { openAssistantEntry } from '../../lib/assistantEntry'
 import { invokeOnMachine } from '../../session/renderer/lib/ipc'
 import { appState } from '../../session/renderer/lib/stores/app-state'
 import { VOICE_NOTE_MEETINGS_CHANNEL, type VoiceNoteMeetingsResult } from '../../session/shared/core/voice-notes'
@@ -116,7 +117,8 @@ export function MeetingReminder({ enabled }: { enabled: boolean }) {
     setStarting(true)
     setFailed(false)
     window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal))
-    appState.navigation.navigate('assistant')
+    // The recorder is the built-in page's (lib/assistantEntry.ts `record-meeting`): it goes there until an App can host it.
+    openAssistantEntry(() => appState.navigation.navigate('assistant'), 'record-meeting')
     const ready = await waitForHandler(15_000)
     const ok = ready ? await ready.start({ title: meeting.title, start: meeting.start, end: meeting.end }) : false
     setStarting(false)

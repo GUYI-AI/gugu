@@ -11,10 +11,8 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } fro
 import { useAssistantPanelPage } from '@/lib/assistantPanelPage';
 import { usePanelScroll } from './use-panel-scroll';
 import { useTranslation } from 'react-i18next';
-import { Avatar } from '@/components/Avatar';
-import { ChevronLeft, Search, Settings } from '@/lib/icons';
+import { ChevronLeft } from '@/lib/icons';
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge';
-import { searchInChat } from '@renderer/features/global-search/search-session';
 import { OPEN_ASSISTANT_TASK_CHAT, showAssistantTaskChat, useOpenedAssistantTaskChat } from '@/lib/assistantTaskChat';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
@@ -29,6 +27,7 @@ import {
 } from './assistant-context';
 import { useAssistantMachine } from './assistant-data';
 import { AssistantSetupFinish } from './assistant-setup-finish';
+import { AssistantChatTop } from './assistant-chat-top';
 import { assistantTintHue, assistantTintStyle } from '@/lib/assistantTint';
 import { ASSISTANT_PAGES } from './assistant-pages';
 import { ShellSlot, useAssistantShell } from './assistant-shell';
@@ -198,53 +197,14 @@ export const AssistantMainPanel = observer(function AssistantMainPanel() {
     <AssistantCtx.Provider value={context}>
       <div className="ta-app" style={tint} data-panel={panelOpen || filePreviewOpen ? 'open' : 'closed'} data-testid="assistant-app">
         <div className="ta-chat-col" data-testid="assistant-chat-col" ref={setChatColumn}>
-          <div className="ta-chat-top">
-            <button
-              type="button"
-              className="ta-identity"
-              onClick={() => go({ tab: 'profile' })}
-              aria-label={t('top.profile', { name: assistant.display_name })}
-              data-testid="assistant-identity"
-            >
-              <Avatar name={assistant.display_name} avatarUrl={assistant.avatar} seed={assistant.id} size={48} isAgent harnessBadge={false} />
-              <span className="ta-identity-name">{assistant.display_name}</span>
-            </button>
-            <div className="ta-chat-actions">
-              <button
-                type="button"
-                className="ta-circle"
-                aria-label={t('top.search')}
-                title={t('top.search')}
-                disabled={!context.chatId}
-                onClick={() => { if (context.chatId) searchInChat(context.chatId) }}
-                data-testid="assistant-search"
-              >
-                <Search />
-              </button>
-              <button
-                type="button"
-                className="ta-circle"
-                aria-label={t('top.settings')}
-                title={t('top.settings')}
-                onClick={() => { setPanelOpen(true); go({ tab: 'profile', sub: 'settings' }); }}
-                data-testid="assistant-gear"
-              >
-                <Settings />
-              </button>
-              {panelOpen ? null : (
-                <button
-                  type="button"
-                  className="ta-circle"
-                  aria-label={t('top.expand')}
-                  title={t('top.expand')}
-                  onClick={() => setPanelOpen(true)}
-                  data-testid="assistant-panel-expand"
-                >
-                  <PanelRight />
-                </button>
-              )}
-            </div>
-          </div>
+          <AssistantChatTop
+            testIdPrefix="assistant"
+            identity={{ kind: 'assistant', assistant, onOpen: () => go({ tab: 'profile' }) }}
+            chatId={context.chatId}
+            onSettings={() => { setPanelOpen(true); go({ tab: 'profile', sub: 'settings' }); }}
+            panelOpen={panelOpen}
+            onExpand={() => setPanelOpen(true)}
+          />
           <ShellSlot name="chat" className="ta-chat" />
           <VoiceRecordingBar context={context} column={chatColumn} />
           <AssistantIdeasLayer context={context} />

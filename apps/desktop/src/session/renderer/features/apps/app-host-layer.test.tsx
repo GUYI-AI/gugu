@@ -9,7 +9,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
  * #1925 (API 46) The session page's half of one of the assistant's tasks opened in an App's panel: the host action main sends
  * (`openWork` / `closeWork`, after its checks) goes to the shell's bridge, which refuses an account or a row it has not read;
  * while it holds one for this App, the panel leaves the cell the shell draws the built-in task window into — in place of the
- * App's page, as the built-in panel's task view does (the host's corner control gone, its own collapse) — and gives the page back after.
+ * App's page, as the built-in panel's task view does (the page's corner control gone, its own collapse) — and gives the page back after.
  */
 const CHAT = '33000000-0000-4000-8000-000000000003';
 const OWNER = '11000000-0000-4000-8000-000000000001';
@@ -19,24 +19,26 @@ const state = vi.hoisted(() => ({ pages: [] as Record<string, unknown>[] }));
 vi.mock('@renderer/features/extensions/extension-shared-slot', () => ({
   ExtensionSharedSlot: (props: Record<string, unknown>) => { state.pages.push(props); return <div data-testid="app-page" />; },
 }));
-// #1925 (44) The page stands in its host layer frame (app-host-layer, tested in appHostLayer1925): with no layer open,
-// that is the page's shared slot.
-vi.mock('./app-host-layer', () => ({
-  AppHostLayerFrame: ({ tabKind }: { tabKind: string }) => { state.pages.push({ tabKind, tabId: 'dock' }); return <div data-testid="app-page" />; },
-}));
 vi.mock('@renderer/features/global-search/search-session', () => ({ searchInChat: vi.fn() }));
 vi.mock('@renderer/lib/ipc', () => ({ rpc: { extensions: { reportConversationSurface: async () => ({ success: true }) } } }));
 vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { navigation: { navigate: vi.fn() } } }));
 
+// The panel's own pages and their reads (app-host-layer.tsx): not this test's; their modules read the cloud on import.
+vi.mock('@renderer/features/assistant/assistant-data', () => ({ useAssistantMachine: () => ({ data: undefined }) }));
+vi.mock('@/components/assistant/AssistantProjectsLibrary', () => ({ AssistantProjectsLibrary: () => null }));
+vi.mock('@/components/assistant/AssistantLibraryVolume', () => ({ AssistantLibraryVolume: () => null }));
+vi.mock('@renderer/features/apps/assistant-app-counts', () => ({ AssistantAppCountsSource: () => null }));
 const { AppConversationFrame } = await import('./app-conversation-frame');
-const { AppDockPage } = await import('./app-work-slot');
+const { AppHostLayerFrame: AppDockPage, resetMountedAppPagesForTest } = await import('./app-host-layer');
 const { applyExtensionHostAction } = await import('@renderer/features/extensions/host-action-handlers');
 const { installShellSlots, readShellSlots } = await import('@/lib/shellSlots');
 const { installAppConversationSurfaceBridge, publishAppConversationSurfaces } = await import('@/lib/appConversationSurfaceBridge');
-const { installAppWorkChatBridge, readAppWorkChatBridge, resetAppWorkChatsForTest, setAppWorkRows } = await import('@/lib/appWorkChatBridge');
+const { installAppHostLayerBridge, readAppHostLayerBridge, resetAppHostLayersForTest, setAppHostLayerAccount, setAppWorkRows } = await import('@/lib/appHostLayerBridge');
+const { installAssistantShellBridge, publishAssistantShell } = await import('@/lib/assistantShellBridge');
 installShellSlots();
+installAssistantShellBridge();
 installAppConversationSurfaceBridge();
-installAppWorkChatBridge();
+installAppHostLayerBridge();
 
 let root: Root;
 let element: HTMLDivElement;
@@ -48,9 +50,14 @@ const open = (extensionId = 'today', ownerId = OWNER) => workAction(extensionId,
 beforeEach(() => {
   state.pages.length = 0;
   localStorage.clear();
-  resetAppWorkChatsForTest();
+  resetAppHostLayersForTest();
+  resetMountedAppPagesForTest();
+  setAppHostLayerAccount(OWNER);
+  // The window shows this account's assistant (a panel page is drawn only then).
+  publishAssistantShell({ cloudAvailable: true, canHostHere: true, cloud: null, loadError: null, ownerName: 'Me', ownerId: OWNER, chatId: CHAT, chatReadFailed: false,
+    assistant: { id: 'assistant-1', display_name: 'Dot', avatar: null, created_at: null }, assistantState: 'found', home: null, setup: null, member: true, preparing: false, deviceCount: 1, ownerAvatar: null } as never);
   // What the shell read: this account's rows, of which this one.
-  setAppWorkRows({ ownerId: OWNER, assistantId: 'assistant-1', open: (workId, sessionId) => (workId === WORK && sessionId === 'exec-a'
+  setAppWorkRows({ ownerId: OWNER, assistantId: 'assistant-1', open: (workId: string, sessionId: string) => (workId === WORK && sessionId === 'exec-a'
     ? { workId, title: 'Compare three flights', outcome: 'active', assistantId: 'assistant-1', taskAgentId: 'agent-a', task: { deviceId: 'device-a', sessionId }, assistants: [] }
     : null) });
   element = document.createElement('div'); document.body.append(element); root = createRoot(element);
@@ -67,17 +74,17 @@ describe('a task of the assistant in an App\'s panel', () => {
     await act(async () => root.render(<AppConversationFrame extensionId="today" tabKind="today.main" />));
     expect(find('app-work-chat')).toBeNull();
     await open();
-    const cell = readShellSlots()!.getSlots().get('app-work:today');
+    const cell = readShellSlots()!.getSlots().get('app-host-layer:today');
     expect(cell?.className).toBe('ta-task-chat-slot');
     expect(find('app-conversation-panel')!.contains(cell!)).toBe(true);
     expect(find('app-page')).toBeNull();
-    // The corner control over the page goes with the page: the task window has its own collapse.
+    // The page's corner control goes with the page; the task view has its own collapse.
     expect(find('app-conversation-panel-corner')).toBeNull();
     // The conversation's column stays as it was.
     expect(readShellSlots()!.getSlots().has('app-conversation:today')).toBe(true);
     await act(async () => (find('app-work-panel-collapse') as HTMLButtonElement).click());
     expect(find('app-conversation-panel')).toBeNull();
-    expect(readShellSlots()!.getSlots().has('app-work:today')).toBe(false);
+    expect(readShellSlots()!.getSlots().has('app-host-layer:today')).toBe(false);
     // Still open: expanded again, the task is where it was left.
     await act(async () => (find('app-conversation-panel-expand') as HTMLButtonElement).click());
     expect(find('app-work-chat')).not.toBeNull();
@@ -85,7 +92,7 @@ describe('a task of the assistant in an App\'s panel', () => {
     expect(find('app-work-chat')).toBeNull();
     expect(find('app-page')).not.toBeNull();
     expect(find('app-conversation-panel-corner')).not.toBeNull();
-    expect(readShellSlots()!.getSlots().has('app-work:today')).toBe(false);
+    expect(readShellSlots()!.getSlots().has('app-host-layer:today')).toBe(false);
   });
 
   it('a page standing alone (no conversation beside it, or none declared): the cell takes the page\'s place, then gives it back', async () => {
@@ -94,7 +101,7 @@ describe('a task of the assistant in an App\'s panel', () => {
       expect(find('app-page')).not.toBeNull();
       await open();
       expect(find('app-page')).toBeNull();
-      expect(readShellSlots()!.getSlots().get('app-work:today')?.className).toBe('ta-task-chat-slot');
+      expect(readShellSlots()!.getSlots().get('app-host-layer:today')?.className).toBe('ta-task-chat-slot');
       await workAction('today', { kind: 'closeWork' });
       expect(find('app-page')).not.toBeNull();
       expect(state.pages.at(-1)).toEqual({ tabKind: 'today.main', tabId: 'dock' });
@@ -105,7 +112,7 @@ describe('a task of the assistant in an App\'s panel', () => {
     await act(async () => root.render(<AppDockPage extensionId="today" tabKind="today.main" />));
     await open('other');
     expect(find('app-page')).not.toBeNull();
-    expect(Object.keys(readAppWorkChatBridge()!.getSnapshot())).toEqual(['other']);
+    expect(Object.keys(readAppHostLayerBridge()!.getSnapshot())).toEqual(['other']);
     await open();
     await workAction('other', { kind: 'closeWork' });
     expect(find('app-work-chat')).not.toBeNull();
@@ -117,7 +124,49 @@ describe('a task of the assistant in an App\'s panel', () => {
     await expect(workAction('today', { kind: 'openWork', ownerId: OWNER, workId: WORK, sessionId: 'exec-b' })).rejects.toThrow(/not in the work list/);
     setAppWorkRows(null);
     await expect(open()).rejects.toThrow();
+    // Not signed in, or another account signed in: no page of the host's opens at all.
+    setAppHostLayerAccount(null);
+    expect(() => readAppHostLayerBridge()!.open('today', { kind: 'assistant-settings', ownerId: OWNER })).toThrow(/account/);
+    setAppHostLayerAccount(OTHER);
+    expect(() => readAppHostLayerBridge()!.open('today', { kind: 'assistant-settings', ownerId: OWNER })).toThrow(/account/);
     expect(find('app-page')).not.toBeNull();
-    expect(readAppWorkChatBridge()!.getSnapshot()).toEqual({});
+    expect(readAppHostLayerBridge()!.getSnapshot()).toEqual({});
+  });
+
+  it('one host page at a time: the settings page replaces a task and a task the settings; closeWork takes a task only', async () => {
+    await act(async () => publishAppConversationSurfaces({ today: CHAT }));
+    await act(async () => root.render(<AppConversationFrame extensionId="today" tabKind="today.main" />));
+    await open();
+    expect(find('app-work-chat')).not.toBeNull();
+    await act(async () => readAppHostLayerBridge()!.open('today', { kind: 'assistant-settings', ownerId: OWNER }));
+    expect(find('app-work-chat')).toBeNull();
+    expect(find('app-host-layer-assistant-settings')).not.toBeNull();
+    expect(readAppHostLayerBridge()!.getSnapshot().today).toEqual({ kind: 'assistant-settings', ownerId: OWNER });
+    // The App's closeWork never takes away a page the person opened.
+    await workAction('today', { kind: 'closeWork' });
+    expect(find('app-host-layer-assistant-settings')).not.toBeNull();
+    // A task opened over it: the settings go.
+    await open();
+    expect(find('app-host-layer-assistant-settings')).toBeNull();
+    expect(find('app-work-chat')).not.toBeNull();
+    expect(Object.keys(readAppHostLayerBridge()!.getSnapshot())).toEqual(['today']);
+  });
+
+  it('the settings page as the built-in panel draws it: its top row (back, collapse), its title, the cell; back closes it', async () => {
+    await act(async () => publishAppConversationSurfaces({ today: CHAT }));
+    await act(async () => root.render(<AppConversationFrame extensionId="today" tabKind="today.main" />));
+    await act(async () => readAppHostLayerBridge()!.open('today', { kind: 'assistant-settings', ownerId: OWNER }));
+    const page = find('app-host-layer-assistant-settings')!;
+    expect(page.className).toBe('ta-page');
+    expect(page.querySelector('.ta-page-title')?.textContent).toBeTruthy();
+    expect(readShellSlots()!.getSlots().get('app-host-layer:today')).toBe(find('app-host-layer-cell'));
+    expect(find('app-page')).toBeNull();
+    expect(find('app-conversation-panel-corner')).toBeNull();
+    await act(async () => (find('app-host-layer-collapse') as HTMLButtonElement).click());
+    expect(find('app-conversation-panel')).toBeNull();
+    await act(async () => (find('app-conversation-panel-expand') as HTMLButtonElement).click());
+    await act(async () => (find('app-host-layer-back') as HTMLButtonElement).click());
+    expect(readAppHostLayerBridge()!.getSnapshot()).toEqual({});
+    expect(find('app-page')).not.toBeNull();
   });
 });

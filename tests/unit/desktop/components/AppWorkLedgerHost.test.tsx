@@ -9,8 +9,10 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
  * #1925 (API 46) The shell's half of the assistant's 任务 list moved into an App. It reads the account ledger the built-in
  * list's way — the same store, the same agent presence, wherever the assistant lives — only while an enabled App declares
  * `work`, and hands main exactly what each row draws (plus the two ids main keeps). A task main let an App open is drawn with
- * the built-in task window in the cell the App's panel leaves, for the account it was opened for; another account, leaving
- * the session page, the App switched off or removed, or main naming its grant or choice as changed take it away at once.
+ * the built-in task window in the cell the App's panel leaves (AppHostLayerHost), for the account it was opened for; another
+ * account, leaving the session page, the App switched off or removed, or main naming its grant or choice as changed take it
+ * away at once. The same layer draws the assistant's settings page (44 `gugu.assistant.open`, 46 the gear of the host's
+ * row): one page at a time.
  */
 const OWNER = '11000000-0000-4000-8000-000000000001';
 const OTHER = '22000000-0000-4000-8000-000000000002';
@@ -43,7 +45,7 @@ vi.mock('@/store/auth', () => ({ useAuth: () => {
 } }));
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn: vi.fn(), error: vi.fn(), info: vi.fn() }) }));
 vi.mock('@/session/renderer/lib/ipc', () => ({
-  rpc: { extensions: { workLedgerChanged: pushed, reportWorkChat: reported } },
+  rpc: { extensions: { workLedgerChanged: pushed, reportHostLayer: reported } },
   events: { on: (_channel: unknown, listener: (note: { extensionId?: string }) => void) => {
     state.inventoryNotes.add(listener);
     return () => { state.inventoryNotes.delete(listener); };
@@ -58,11 +60,18 @@ vi.mock('@/components/assistant/AssistantWorkTaskWindow', () => ({ AssistantWork
   state.windows.push({ ...props, signedIn: state.owner } as never);
   return <section data-testid="task-window" data-owner={props.ownerId} data-work={String(props.request.workId)}><button type="button" data-testid="back" onClick={props.onClose}>back</button></section>;
 } }));
+// The built-in settings page: that it is the one drawn, as the built-in panel draws it.
+vi.mock('@/components/assistant/AssistantSettingsPage', () => ({ AssistantSettingsPage: (props: { panelNavigation?: boolean }) => {
+  state.windows.push({ settings: true, ...props, signedIn: state.owner } as never);
+  return <section data-testid="settings-page" data-panel-navigation={String(props.panelNavigation)} />;
+} }));
 
 const { AppWorkLedgerHost } = await import('../../../../apps/desktop/src/components/appSlot/AppWorkLedgerHost');
+const { AppHostLayerHost } = await import('../../../../apps/desktop/src/components/appSlot/AppHostLayerHost');
 const { forgetPushedWorkForTest, pushedRowsOf } = await import('../../../../apps/desktop/src/components/appSlot/appWorkLedger');
+const { forgetReportedHostLayersForTest } = await import('../../../../apps/desktop/src/components/appSlot/appHostLayer');
 const { readShellSlots } = await import('../../../../apps/desktop/src/lib/shellSlots');
-const { appWorkSlotKey, readAppWorkChatBridge, resetAppWorkChatsForTest } = await import('../../../../apps/desktop/src/lib/appWorkChatBridge');
+const { appHostLayerSlotKey, readAppHostLayerBridge, resetAppHostLayersForTest } = await import('../../../../apps/desktop/src/lib/appHostLayerBridge');
 const { installAssistantShellBridge, publishAssistantShell } = await import('../../../../apps/desktop/src/lib/assistantShellBridge');
 const { installIdentityDirectoryBridge, publishIdentityDirectory } = await import('../../../../apps/desktop/src/lib/identityDirectoryBridge');
 const { assistantPanelTaskChat } = await import('../../../../apps/desktop/src/components/assistant/assistant-panel-tasks');
@@ -91,18 +100,19 @@ let cell: HTMLDivElement;
 const render = async (visible = true) => act(async () => {
   state.tick += 1;
   for (const listener of state.ticks) listener();
-  root.render(<AppWorkLedgerHost visible={visible} />);
+  root.render(<><AppWorkLedgerHost /><AppHostLayerHost visible={visible} /></>);
 });
 const settle = () => act(async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve(); });
 const lastPushed = () => pushed.mock.calls.at(-1)?.[0] as { ownerId: string | null; assistantId: string | null; state: string; rows: Record<string, unknown>[] } | undefined;
-const chats = () => readAppWorkChatBridge()!.getSnapshot();
+const chats = () => readAppHostLayerBridge()!.getSnapshot();
 const openTask = (target: { ownerId?: string; workId?: string; sessionId?: string } = {}) =>
-  act(async () => readAppWorkChatBridge()!.open(APP, { ownerId: OWNER, workId: WORK_A, sessionId: 'exec-a', ...target }));
+  act(async () => readAppHostLayerBridge()!.open(APP, { kind: 'work', ownerId: OWNER, workId: WORK_A, sessionId: 'exec-a', ...target }));
 const note = (extensionId?: string) => act(async () => { for (const listener of state.inventoryNotes) listener({ extensionId }); });
 
 beforeEach(async () => {
-  resetAppWorkChatsForTest();
+  resetAppHostLayersForTest();
   forgetPushedWorkForTest();
+  forgetReportedHostLayersForTest();
   assistantId = `44000000-0000-4000-8000-${String(++assistantSerial).padStart(12, '0')}`;
   Object.assign(state, { owner: OWNER, inventory: [reading(APP), plain('notes')], disabled: [], windows: [] });
   pushed.mockClear();
@@ -133,7 +143,7 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   await act(async () => root.unmount());
-  readShellSlots()?.setSlot(appWorkSlotKey(APP), null);
+  readShellSlots()?.setSlot(appHostLayerSlotKey(APP), null);
   host.remove();
   cell.remove();
 });
@@ -233,7 +243,7 @@ describe('a task drawn in the App\'s panel', () => {
   const ready = async () => {
     await render();
     await settle();
-    readShellSlots()!.setSlot(appWorkSlotKey(APP), cell);
+    readShellSlots()!.setSlot(appHostLayerSlotKey(APP), cell);
     await settle();
   };
 
@@ -248,20 +258,20 @@ describe('a task drawn in the App\'s panel', () => {
       workId: WORK_A, id: 'exec-a', title: 'Compare three flights', outcome: 'active' as never, agentId: AGENT_A, deviceId: DEVICE_THERE,
       assistants: [{ deviceId: DEVICE_HERE, sessionId: COORDINATOR }], key: `${WORK_A}:exec-a`, lastInteractedAt: '2026-11-11T08:00:00.000Z',
     }), workId: WORK_A });
-    expect(reported).toHaveBeenLastCalledWith({ extensionId: APP, ownerId: OWNER, open: { workId: WORK_A, sessionId: 'exec-a' } });
+    expect(reported).toHaveBeenLastCalledWith({ extensionId: APP, layer: { kind: 'work', ownerId: OWNER, workId: WORK_A, sessionId: 'exec-a' } });
     await act(async () => (cell.querySelector('[data-testid="back"]') as HTMLButtonElement).click());
     await settle();
     expect(cell.querySelector('[data-testid="task-window"]')).toBeNull();
     expect(chats()).toEqual({});
-    expect(reported).toHaveBeenLastCalledWith({ extensionId: APP, ownerId: null, open: null });
+    expect(reported).toHaveBeenLastCalledWith({ extensionId: APP, layer: null });
   });
 
   it('refuses another account, a row it has not read, and any open before it read the ledger', async () => {
-    readShellSlots()!.setSlot(appWorkSlotKey(APP), cell);
-    expect(() => readAppWorkChatBridge()!.open(APP, { ownerId: OWNER, workId: WORK_A, sessionId: 'exec-a' })).toThrow();
+    readShellSlots()!.setSlot(appHostLayerSlotKey(APP), cell);
+    expect(() => readAppHostLayerBridge()!.open(APP, { kind: 'work', ownerId: OWNER, workId: WORK_A, sessionId: 'exec-a' })).toThrow();
     await ready();
-    expect(() => readAppWorkChatBridge()!.open(APP, { ownerId: OTHER, workId: WORK_A, sessionId: 'exec-a' })).toThrow(/account/);
-    expect(() => readAppWorkChatBridge()!.open(APP, { ownerId: OWNER, workId: WORK_A, sessionId: 'exec-b' })).toThrow(/not in the work list/);
+    expect(() => readAppHostLayerBridge()!.open(APP, { kind: 'work', ownerId: OTHER, workId: WORK_A, sessionId: 'exec-a' })).toThrow(/account/);
+    expect(() => readAppHostLayerBridge()!.open(APP, { kind: 'work', ownerId: OWNER, workId: WORK_A, sessionId: 'exec-b' })).toThrow(/not in the work list/);
     expect(chats()).toEqual({});
     expect(cell.childElementCount).toBe(0);
   });
@@ -276,7 +286,7 @@ describe('a task drawn in the App\'s panel', () => {
     expect(cell.querySelector('[data-testid="task-window"]')).toBeNull();
     expect(state.windows.filter((window) => window.signedIn !== OWNER)).toEqual([]);
     expect(chats()).toEqual({});
-    expect(reported).toHaveBeenLastCalledWith({ extensionId: APP, ownerId: null, open: null });
+    expect(reported).toHaveBeenLastCalledWith({ extensionId: APP, layer: null });
   });
 
   it('leaving the session page, the App switched off, removed or no longer reading work, or main naming it changed: closed', async () => {
@@ -304,10 +314,80 @@ describe('a task drawn in the App\'s panel', () => {
     await openTask();
     await note('notes');
     expect(Object.keys(chats())).toEqual([APP]);
-    await act(async () => readAppWorkChatBridge()!.close(APP));
+    await act(async () => readAppHostLayerBridge()!.close(APP, 'work'));
     expect(chats()).toEqual({});
     const before = chats();
-    await act(async () => readAppWorkChatBridge()!.close(APP));
+    await act(async () => readAppHostLayerBridge()!.close(APP, 'work'));
     expect(chats()).toBe(before);
+  });
+});
+
+describe('the assistant\'s settings page over the App\'s panel (gugu.assistant.open, or the gear of the host\'s row)', () => {
+  const openSettings = (owner = OWNER) => act(async () => readAppHostLayerBridge()!.open(APP, { kind: 'assistant-settings', ownerId: owner }));
+  const ready = async () => {
+    await render();
+    await settle();
+    readShellSlots()!.setSlot(appHostLayerSlotKey(APP), cell);
+    await settle();
+  };
+
+  it('is the built-in settings page with the panel\'s own navigation, in the App\'s cell; reported as that page, never more', async () => {
+    await ready();
+    await openSettings();
+    await settle();
+    expect(cell.querySelector('[data-testid="settings-page"]')?.getAttribute('data-panel-navigation')).toBe('true');
+    expect(reported).toHaveBeenLastCalledWith({ extensionId: APP, layer: { kind: 'assistant-settings', ownerId: OWNER } });
+    // One page at a time: a task opened over it takes its place, and the settings go.
+    await openTask();
+    await settle();
+    expect(cell.querySelector('[data-testid="settings-page"]')).toBeNull();
+    expect(cell.querySelector('[data-testid="task-window"]')).not.toBeNull();
+    expect(reported).toHaveBeenLastCalledWith({ extensionId: APP, layer: { kind: 'work', ownerId: OWNER, workId: WORK_A, sessionId: 'exec-a' } });
+    await openSettings();
+    await settle();
+    expect(cell.querySelector('[data-testid="task-window"]')).toBeNull();
+    expect(cell.querySelector('[data-testid="settings-page"]')).not.toBeNull();
+  });
+
+  it('only for the account it was opened for: another account, or none signed in, opens nothing', async () => {
+    await ready();
+    expect(() => readAppHostLayerBridge()!.open(APP, { kind: 'assistant-settings', ownerId: OTHER })).toThrow(/account/);
+    expect(chats()).toEqual({});
+  });
+
+  it('closed at once on another account, the App switched off or removed, or main naming it changed', async () => {
+    for (const leave of [
+      async () => { state.owner = OTHER; await render(); },
+      async () => { state.disabled = [APP]; await render(); },
+      async () => { state.inventory = [plain('notes')]; await render(); },
+      () => note(APP),
+      () => note(undefined),
+    ]) {
+      Object.assign(state, { owner: OWNER, inventory: [reading(APP), plain('notes')], disabled: [] });
+      await ready();
+      await openSettings();
+      await settle();
+      expect(Object.keys(chats())).toEqual([APP]);
+      await leave();
+      await settle();
+      expect(chats()).toEqual({});
+      expect(cell.querySelector('[data-testid="settings-page"]')).toBeNull();
+      expect(reported).toHaveBeenLastCalledWith({ extensionId: APP, layer: null });
+    }
+  });
+
+  it('the App no longer reading work, another App\'s change, or the session page set aside leave it; the closeWork path never takes it away', async () => {
+    await ready();
+    await openSettings();
+    state.inventory = [{ ...reading(APP), permissions: { bindings: [{ name: 'main', kind: 'conversation', actions: ['unread'] }] } }, plain('notes')];
+    await render();
+    await note('notes');
+    // Unlike a task: the panel's page stays while the session page is set aside (the session page closes it when its App
+    // page goes, or its assistant: app-host-layer.tsx).
+    await render(false);
+    await settle();
+    expect(Object.keys(chats())).toEqual([APP]);
+    await act(async () => readAppHostLayerBridge()!.close(APP, 'work'));
+    expect(Object.keys(chats())).toEqual([APP]);
   });
 });

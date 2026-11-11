@@ -24,6 +24,7 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { releaseTrustGate } from './release-trust-keys.mts'
 export type DbTarget = 'prod' | 'shared-test' | 'local'
 export const DB_TARGETS: readonly DbTarget[] = Object.freeze(['prod', 'shared-test', 'local'] as const)
 const isDbTarget = (value: unknown): value is DbTarget => DB_TARGETS.includes(value as DbTarget)
@@ -733,9 +734,12 @@ function main(argv: string[]): void {
   )
   // 选套本身就失败时，后续「缺 URL / 缺 anon key」全是它的下游症状 —— 一起报只会淹掉根因。
   const checked = selection.errors.length ? { errors: [], warnings: [] } : checkBuildEnv({ ...resolved, target })
+  // #1931 连生产库的包就是要发出去的正式版:它带的编译版发布信任表里,❌ 留着空的钥匙位(release-trust-keys.mts)。
+  const production = [resolved.renderer.url.value, resolved.baked.url.value].some((url) => serverChannelForDb(url) === 'stable')
+  const releaseTrust = production ? releaseTrustGate(rootDir) : []
   report(
     {
-      errors: [...selection.errors, ...checked.errors],
+      errors: [...selection.errors, ...checked.errors, ...releaseTrust],
       warnings: [...selection.warnings, ...checked.warnings],
     },
     '打包前核对：'

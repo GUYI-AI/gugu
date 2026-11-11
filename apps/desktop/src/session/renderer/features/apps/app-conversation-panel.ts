@@ -37,6 +37,32 @@ export function setAppConversationPanelCollapsed(extensionId: string, collapsed:
   for (const listener of listeners) listener();
 }
 
+/**
+ * Entry switch (G6): the built-in assistant page's own panel state (`gugu.assistant.panel`, 'open' | 'closed') becomes this
+ * App's, once — only while this App has none of its own yet; from then on the App's own state is the one kept. Nothing is
+ * read or written when the built-in page never stored one (both open by default). Answers whether it carried.
+ */
+export const BUILT_IN_ASSISTANT_PANEL_KEY = 'gugu.assistant.panel';
+export function carryBuiltInPanelOnce(extensionId: string): boolean {
+  let builtIn: string | null;
+  try {
+    if (localStorage.getItem(panelKey(extensionId)) !== null) return false;
+    builtIn = localStorage.getItem(BUILT_IN_ASSISTANT_PANEL_KEY);
+  } catch {
+    return false;
+  }
+  if (builtIn !== 'open' && builtIn !== 'closed') return false;
+  // Written even when equal to what is cached, so it is the App's own from now on.
+  collapsedNow.delete(extensionId);
+  setAppConversationPanelCollapsed(extensionId, builtIn === 'closed');
+  try {
+    localStorage.setItem(panelKey(extensionId), builtIn);
+  } catch {
+    // 记不住:这一次照样按内置页的摆法。
+  }
+  return true;
+}
+
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   return () => {

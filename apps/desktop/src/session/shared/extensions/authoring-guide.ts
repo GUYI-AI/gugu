@@ -963,6 +963,12 @@ wherever the assistant lives (this computer, another, the cloud).
 - \`gugu.bindings.openWork("main", handle)\` in a click: the host draws that task's conversation in your panel, over your
   page, with its own back control; \`gugu.bindings.closeWork("main")\` takes it away. \`open\` is that row's handle while it is
   drawn, else null — hide your list then. You cannot see it. Another account, a withdrawn grant, a new choice: it closes.
+
+- \`contributes.conversationSurface.header: "assistant"\` (46), over that same assistant chat: the host draws the built-in
+  assistant page's top row above the conversation — its face and name, search, settings gear, expand — from its own data.
+  A click on the face and name: \`onSurface\` hears \`intent: "profile"\` once, the panel expanded; show its
+  profile. The gear opens the host's settings page over your page. \`panel.hostPage\` is true while a host page (that, or a
+  task) is over your page. Another conversation: no row.
 API 47, the same assistant: \`"voice-notes:record"\` (\`chat:voice-notes:record\`) drives the host's voice-note recorder. The host
 records from the microphone, uploads, transcribes and hands the note to the assistant; your page never gets the audio.
 - In a click: \`gugu.voiceNote.start("main", { meeting? })\` → \`{ state: "started", job }\` or \`busy\`, \`no_assistant\`, \`cancelled\`,
@@ -984,7 +990,8 @@ heart, checklist, document, book, image, message. \`run\`, each needing that bin
 - \`{ kind: "draft", text: { zh, en } }\` (\`draft\`): the person's language (≤ 2000) goes after what is in that composer. Nothing is sent.
 - \`{ kind: "page-intent", intent }\` (\`surface\`): your panel is expanded and \`gugu.bindings.onSurface\` hears
   \`{ state: "bound", panel, intent }\` once. No data comes with it; show that view. The host's recording bar beside that
-  conversation sends \`intent: "voice-note"\` when the person opens the note it shows (yours may not use that name).
+  conversation sends \`intent: "voice-note"\` when the person opens the note it shows (yours may use neither that name nor \`profile\`).
+
 Free (API 44, desktop page): \`toast(text)\` → one line in gugu's own toast, as its "Changes saved": ≤ 80 characters,
 text only, while your page is on screen and focused (else \`denied\`), one every 2 s (else \`rate-limited\`).
 `;

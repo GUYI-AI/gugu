@@ -9,6 +9,7 @@ import { Button } from '../ui/Button'
 import { ChevronLeft } from '@/lib/icons'
 import { useAssistantHome } from '../../lib/useAssistantHome'
 import { appState } from '../../session/renderer/lib/stores/app-state'
+import { openAssistantEntry } from '../../lib/assistantEntry'
 import { useAssistantPanelBack } from '../../lib/assistantPanelPage'
 
 const SECTIONS: readonly ActiveSection[] = ['connectors', 'devices', 'channels']
@@ -36,7 +37,7 @@ export function AssistantSettingsPage({ onOpenPage, onOpenSection, panelNavigati
         : section === 'devices' ? <AssistantDevicesPage cloudDeviceId={cloudDeviceId} panelNavigation={panelNavigation} />
         : section === 'channels' ? <ConnectorsSection panelNavigation={panelNavigation} />
         : <AssistantSection available={SECTIONS} onOpenSection={onOpenSection ?? setSection} onOpenModel={() => setSection('aimodel')}
-            onOpenAssistantPage={onOpenPage ?? ((tab) => appState.navigation.navigate('assistant', { tab }))} />}
+            onOpenAssistantPage={onOpenPage ?? ((tab) => openAssistantEntry(() => appState.navigation.navigate('assistant', { tab })))} />}
     </div>
   )
 }

@@ -124,6 +124,10 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // `work` (`chat:work`): `gugu.bindings.work` / `onWorkChanged` read the work the assistant handed out, each row as the
 // built-in list draws it with an opaque handle; `openWork(name, handle)` (in a click) / `closeWork` have the host draw that
 // task's own conversation in the App's panel. No work, session, chat or device id, path, URL or message reaches the App.
+// Also 46: `contributes.conversationSurface.header: "assistant"` — over that same assistant chat, the host draws the built-in
+// assistant page's top row above the conversation (face and name, search, settings gear, expand) from its own data. A click
+// on the face and name is told once as `onSurface` → `intent: "profile"`; the gear opens the assistant's settings
+// as a host page over the App's panel. One host page at a time there (`app-host-layer.ts`): `panel.hostPage` says one is open.
 // 47 (#1927): `voice-notes:record` (`chat:voice-notes:record`): `gugu.voiceNote.*` drives the host's voice-note recorder for
 // that personal assistant — the host records, uploads and transcribes; the App hears phases and opaque job handles only
 // (voice-note-session.ts).
@@ -597,7 +601,11 @@ export type ExtensionHostEvent =
   | { type: 'projection'; watchId: string; packet: import('./projection-protocol').ProjectionHostPacket }
   | { type: 'projectionSource'; event: import('./projection-protocol').ProjectionSourceEvent }
   | { type: 'context'; context: ExtensionHostContext }
-  /** #1925 What `gugu.bindings.surface(name)` would answer now, after the conversation beside the page came or went. */
+  /**
+   * #1925 What `gugu.bindings.surface(name)` would answer now, after the conversation beside the page came or went, its panel
+   * was collapsed or expanded, or a host page opened or closed over it (46). 46: once, with `intent`, after the person clicked
+   * the assistant's face and name in the host's row.
+   */
   | { type: 'bindingSurface'; surface: import('./unread-binding').AppBindingSurface }
   /**
    * #1925 (46) What `gugu.bindings.work(name)` would answer now, after the work, its rows or the task drawn in the App's panel

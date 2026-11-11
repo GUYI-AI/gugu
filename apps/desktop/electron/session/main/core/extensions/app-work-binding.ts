@@ -1,19 +1,18 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { userIdFromSupabaseAccessToken } from '@gugu/core';
-import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
-import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
 import type { ExtensionHostAction } from '@shared/extensions/host-actions';
 import {
   WORK_HANDLE,
   pushedWorkLedgerSchema,
-  workChatReportSchema,
   type AppBindingWork,
   type AppWorkItem,
   type PushedWorkLedger,
 } from '@shared/extensions/work-binding';
 import { currentAccountAccessToken } from './account-token';
+import { hostLayerOf } from './app-host-layers';
+import { ownAssistantOfChat } from './app-own-assistant-chat';
 import { extensionsService } from './extensions-root';
 
 /**
@@ -47,32 +46,6 @@ function argsOf<T extends z.ZodType>(schema: T, input: unknown, what: string): z
   return parsed.data;
 }
 
-/** The account's own assistant, by its provision marker; null: it has none. A marker that cannot be read is not "none". */
-async function personalAssistant(token: string, ownerId: string): Promise<string | null> {
-  const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
-  const { data, error } = await client.from('agent_provisions').select(ASSISTANT_PROVISION_SELECT).eq('owner_user_id', ownerId).eq('member_key', 'assistant');
-  if (error) throw coded('failed', 'Could not verify the personal assistant');
-  try {
-    return pickAssistant((data ?? []) as AssistantProvisionRow[])?.agentId ?? null;
-  } catch {
-    throw coded('failed', 'Could not verify the personal assistant');
-  }
-}
-
-/** What the chosen conversation is, and who is in it now. */
-async function conversationOf(token: string, chatId: string): Promise<{ kind: string | null; members: string[] }> {
-  const client = createGuguSupabaseClient({ schema: 'chat', headers: { Authorization: `Bearer ${token}` } });
-  const [chat, members] = await Promise.all([
-    client.from('chats').select('kind').eq('id', chatId).maybeSingle(),
-    client.from('active_members').select('user_id').eq('chat_id', chatId),
-  ]);
-  if (chat.error || members.error) throw coded('failed', 'Could not verify the chosen conversation');
-  return {
-    kind: (chat.data as { kind?: string } | null)?.kind ?? null,
-    members: ((members.data ?? []) as { user_id: string }[]).map((row) => row.user_id),
-  };
-}
-
 /**
  * Who the binding's `work` stands for, once it is so: the binding chosen by this account for this installed App, the action
  * declared and granted (`conversationBinding` refuses otherwise), and its conversation the account's private chat with its
@@ -87,12 +60,7 @@ async function boundWork(extensionId: string, name: string) {
     await current(ownerId);
     if (extensionsService().conversationBinding(ownerId, extensionId, name, 'work')?.handle !== before.handle) throw coded('denied', 'Conversation binding changed');
   };
-  const [assistant, conversation] = await Promise.all([personalAssistant(token, ownerId), conversationOf(token, before.chatId)]);
-  if (!assistant) throw coded('denied', 'This account has no assistant of its own');
-  const members = new Set(conversation.members);
-  if (conversation.kind !== 'dm' || members.size !== 2 || !members.has(ownerId) || !members.has(assistant)) {
-    throw coded('denied', 'The chosen conversation is not your private chat with your own assistant');
-  }
+  const assistant = await ownAssistantOfChat(token, ownerId, before.chatId);
   await recheck();
   return { ownerId, assistantId: assistant, selection: before.handle };
 }
@@ -112,16 +80,15 @@ function handleOf(extensionId: string, bound: Pick<Bound, 'ownerId' | 'selection
 const NO_LEDGER: PushedWorkLedger = { ownerId: null, assistantId: null, state: 'none', rows: [] };
 let ledger: PushedWorkLedger = NO_LEDGER;
 let pushes = 0;
-/** The task each App's panel shows now, as the window says it draws it (`reportWorkChat`), with whose it was. */
-const opened = new Map<string, { ownerId: string; workId: string; sessionId: string }>();
 
 const readable = (bound: Bound) => ledger.ownerId === bound.ownerId && ledger.assistantId === bound.assistantId
   && (ledger.state === 'ready' || ledger.state === 'stale');
 
 /** What an App is told, once `bound` is verified: the rows with its own handles, and the row its panel shows. */
 function answerFor(extensionId: string, name: string, bound: Bound): AppBindingWork {
-  const shown = opened.get(extensionId);
-  const open = shown && shown.ownerId === bound.ownerId ? handleOf(extensionId, bound, shown) : null;
+  // The task drawn over its panel (app-host-layers.ts), for this account: another host page there is no row of its own.
+  const shown = hostLayerOf(extensionId, bound.ownerId);
+  const open = shown?.kind === 'work' ? handleOf(extensionId, bound, shown) : null;
   if (!readable(bound)) return { name, state: 'unavailable', open };
   // Newest first, as the built-in list orders them (assistant-lineage.ts `groupByDay`). Only the allowed fields, by name.
   const items: AppWorkItem[] = [...ledger.rows].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((row) => ({
@@ -200,8 +167,8 @@ export function appsReadingWork(): string[] {
 
 /**
  * The window's new reading of the ledger (controller `workLedgerChanged`, the trusted renderer). Kept only as the signed-in
- * account's — a reading for any other is refused — and only the newest: one that resolves after a later push is dropped. A
- * reading for another account (or none) closes what was open for the one before. Answers the Apps to tell (none: no change).
+ * account's — a reading for any other is refused — and only the newest: one that resolves after a later push is dropped.
+ * Answers the Apps to tell (none: no change). What is drawn over an App's panel is the window's own word (`reportHostLayer`).
  */
 export async function workLedgerChanged(input: unknown): Promise<string[]> {
   const parsed = pushedWorkLedgerSchema.safeParse(input);
@@ -214,30 +181,10 @@ export async function workLedgerChanged(input: unknown): Promise<string[]> {
   if (mine !== pushes) return [];
   const before = JSON.stringify(ledger);
   ledger = parsed.data.ownerId === null ? NO_LEDGER : parsed.data;
-  const closed = [...opened].filter(([, shown]) => shown.ownerId !== ledger.ownerId).map(([extensionId]) => extensionId);
-  for (const extensionId of closed) opened.delete(extensionId);
-  return before === JSON.stringify(ledger) ? closed : appsReadingWork();
+  return before === JSON.stringify(ledger) ? [] : appsReadingWork();
 }
 
-/** The window's word on which task an App's panel shows (controller `reportWorkChat`). True when what its pages hear changed. */
-export function reportWorkChat(input: unknown): boolean {
-  const parsed = workChatReportSchema.safeParse(input);
-  if (!parsed.success) throw coded('invalid', 'Not a report of a task conversation');
-  const { extensionId, ownerId, open } = parsed.data;
-  const before = opened.get(extensionId);
-  if (!open || !ownerId) {
-    if (!before) return false;
-    opened.delete(extensionId);
-    return true;
-  }
-  const next = { ownerId, workId: open.workId, sessionId: open.sessionId };
-  if (before && JSON.stringify(before) === JSON.stringify(next)) return false;
-  opened.set(extensionId, next);
-  return true;
-}
-
-/** Tests only: a window that has read nothing and draws nothing. */
+/** Tests only: a window that has read nothing. */
 export function forgetWorkLedgerForTest(): void {
   ledger = NO_LEDGER;
-  opened.clear();
 }

@@ -24,7 +24,7 @@ import { assertConfinedProgramBundle } from './extension-validate';
 import { z } from 'zod';
 import { BINDING_ACTION_CAPABILITY, readUnreadBindings, unreadBindingKey, type ConversationBindingAction, type StoredUnreadBinding } from '@shared/extensions/unread-binding';
 import type { ResourceBindingAction } from '@shared/extensions/agent-resources';
-import { BUNDLE_SKIP_NAMES, type MarketCodeSource } from '@shared/extensions/market';
+import { BUNDLE_SKIP_NAMES, type MarketInstallRecord } from '@shared/extensions/market';
 import { appVariantsSchema, type AppVariants, type ExtensionVariant } from '@shared/extensions/variants';
 import { removeTreeSync } from '@main/core/utils/remove-tree';
 
@@ -124,9 +124,21 @@ const PUBLISHERS_FILENAME = '.extension-publishers.json';
  * `{ [extensionId]: source }` — what the index said for the version installed, kept from the install on. The installed
  * record otherwise says only `market`. Written by every market install (an upstream switch carries it in its variant),
  * dropped when the App is installed from anywhere else or uninstalled; an App installed from the market before this was
- * kept has none.
+ * kept has none. A compiled release's entry also keeps its verified proof (`release`: signed manifest, signature, key), so the
+ * host can check it again later (market-release.ts); entries without one read as they always did.
  */
 const MARKET_SOURCES_FILENAME = '.extension-market-sources.json';
+const isReleaseProof = (value: unknown) => !!value && typeof value === 'object'
+  && ['keyId', 'manifest', 'signature'].every((key) => typeof (value as Record<string, unknown>)[key] === 'string');
+/**
+ * Who made each conversation binding (#1927), as `{ [<owner>/<publisher>/<id>]: 'person' | { host: handle | null } }`: the
+ * person in the App's permissions (their chooser, a pick or a removal), or the host itself for the trusted assistant App
+ * (assistant-app-entry.ts), with the handle it wrote. A binding the host did not write — the person's, or one from before
+ * this record — is the person's choice, and the host never writes over it (owner: automation never overrides an explicit
+ * choice). Pruned on uninstall and when another publisher's App replaces it, like the bindings.
+ */
+const BINDING_AUTHORS_FILENAME = '.conversation-binding-authors.json';
+type BindingAuthor = 'person' | { host: string | null };
 
 /** Who published an App installed from a chat or a folder (`PUBLISHERS_FILENAME`). */
 export interface ExtensionPublisher {
@@ -199,9 +211,10 @@ export class ExtensionsService {
   private readonly givenHereFile: JsonFile<Record<string, string[]>>;
   private readonly originsFile: JsonFile<Record<string, ExtensionOrigin>>;
   private readonly publishersFile: JsonFile<Record<string, ExtensionPublisher>>;
-  private readonly marketSourcesFile: JsonFile<Record<string, MarketCodeSource>>;
+  private readonly marketSourcesFile: JsonFile<Record<string, MarketInstallRecord>>;
   private readonly openWithFile: JsonFile<Record<string, string>>;
   private readonly unreadBindingsFile: JsonFile<Record<string, import('@shared/extensions/unread-binding').StoredUnreadBinding>>;
+  private readonly bindingAuthorsFile: JsonFile<Record<string, BindingAuthor>>;
   private readonly unreadAuthorities = new Map<string, { scope: string; value: string }>();
   private readonly surfaceAuthorities = new Map<string, { scope: string; value: string }>();
   /** #1927 (42): who holds a binding's authority past one call (resource subscriptions), told when it may have changed. */
@@ -210,6 +223,9 @@ export class ExtensionsService {
 
   constructor(private readonly rootDir: string) {
     this.unreadBindingsFile = jsonFile(rootDir, '.conversation-unread-bindings.json', '{}', readUnreadBindings, 0o600);
+    this.bindingAuthorsFile = jsonFile(rootDir, BINDING_AUTHORS_FILENAME, '{}', mapOf<BindingAuthor>(BINDING_AUTHORS_FILENAME, 'binding authors',
+      (value) => value === 'person' || (!!value && typeof value === 'object' && Object.keys(value).length === 1
+        && (typeof (value as { host?: unknown }).host === 'string' || (value as { host?: unknown }).host === null))), 0o600);
     this.variantsFile = jsonFile(rootDir, '.variants.json', '{}', (value) => Object.assign(Object.create(null) as Record<string, AppVariants>, z.record(z.string(), appVariantsSchema).parse(value)));
     this.grantsFile = jsonFile(rootDir, '.granted-permissions.json', '{}', (value) => z.record(z.string(), z.object({ capabilities: z.array(z.string()), network: z.array(z.string()) })).parse(value) as Record<string, NonNullable<ExtensionManifest['permissions']>>);
     this.settingsFile = jsonFile(rootDir, SETTINGS_FILENAME, '{}', (value) => {
@@ -231,8 +247,9 @@ export class ExtensionsService {
         ['string', 'undefined'].includes(typeof (value as ExtensionPublisher).name)));
     this.openWithFile = jsonFile(rootDir, OPEN_WITH_FILENAME, '{}', mapOf<string>(OPEN_WITH_FILENAME, 'file kinds to tabs',
       (tabKind) => typeof tabKind === 'string'));
-    this.marketSourcesFile = jsonFile(rootDir, MARKET_SOURCES_FILENAME, '{}', mapOf<MarketCodeSource>(MARKET_SOURCES_FILENAME, 'market sources',
-      (value) => !!value && typeof value === 'object' && ['repo', 'path', 'commit'].every((key) => typeof (value as Record<string, unknown>)[key] === 'string')));
+    this.marketSourcesFile = jsonFile(rootDir, MARKET_SOURCES_FILENAME, '{}', mapOf<MarketInstallRecord>(MARKET_SOURCES_FILENAME, 'market sources',
+      (value) => !!value && typeof value === 'object' && ['repo', 'path', 'commit'].every((key) => typeof (value as Record<string, unknown>)[key] === 'string')
+        && ((value as MarketInstallRecord).release === undefined || isReleaseProof((value as MarketInstallRecord).release))));
   }
 
   /** Host-only scope. A handle is a reference, never a bearer credential. */
@@ -319,16 +336,41 @@ export class ExtensionsService {
     this.surfaceAuthorities.delete(extensionId);
   }
 
-  /** Only the host's common permission UI calls this, after validating current membership. */
-  setConversationUnreadBinding(ownerId: string, extensionId: string, name: string, chatId: string | null): void {
+  /**
+   * Only the host's common permission UI calls this (`by` person: the person's own pick or removal), after validating
+   * current membership — or the host's binding of the trusted assistant App (`by` host, assistant-app-entry.ts), which is
+   * refused over a binding the person chose (`conversationBindingChosenByPerson`).
+   */
+  setConversationUnreadBinding(ownerId: string, extensionId: string, name: string, chatId: string | null, by: 'person' | 'host' = 'person'): void {
     this.conversationUnreadBinding(ownerId, extensionId, name);
+    if (by === 'host' && this.conversationBindingChosenByPerson(ownerId, extensionId, name)) {
+      throw Object.assign(new Error('The person chose this App\'s conversation; the host does not change it'), { code: 'denied' });
+    }
     const key = unreadBindingKey(ownerId, appKey(this.identityOf(extensionId)!));
     const stored = this.unreadBindingsFile.read();
+    const handle = chatId === null ? null : randomUUID();
     if (chatId === null) delete stored[key];
-    else stored[key] = { ownerId, name, chatId: z.string().uuid().parse(chatId), handle: randomUUID() };
+    else stored[key] = { ownerId, name, chatId: z.string().uuid().parse(chatId), handle: handle! };
     this.unreadBindingsFile.write(readUnreadBindings(stored));
+    const authors = this.bindingAuthorsFile.read();
+    authors[key] = by === 'person' ? 'person' : { host: handle };
+    this.bindingAuthorsFile.write(authors);
     this.forgetAuthorities(extensionId);
     this.bindingAuthorityChanged(extensionId);
+  }
+
+  /**
+   * Whether this account's binding of this App is the person's choice: they picked or removed it in the App's permissions,
+   * or a binding is there that the host did not write (one from before the record was kept counts as theirs). No binding
+   * and no pick: nobody chose — the host may bind the trusted assistant App (assistant-app-entry.ts).
+   */
+  conversationBindingChosenByPerson(ownerId: string, extensionId: string, name: string): boolean {
+    const binding = this.conversationUnreadBinding(ownerId, extensionId, name);
+    const key = unreadBindingKey(ownerId, appKey(this.identityOf(extensionId)!));
+    const authors = this.bindingAuthorsFile.read();
+    const author = Object.hasOwn(authors, key) ? authors[key]! : undefined;
+    if (author === 'person') return true;
+    return binding !== null && author?.host !== binding.handle;
   }
 
   private forgetConversationUnreadBindings(extensionId: string): void {
@@ -338,6 +380,15 @@ export class ExtensionsService {
     const stored = this.unreadBindingsFile.read();
     for (const key of Object.keys(stored)) if (key.endsWith(suffix)) delete stored[key];
     this.unreadBindingsFile.write(stored);
+  }
+
+  /** Who chose this App's bindings: forgotten with the App itself, or when another publisher's App takes its id. */
+  private forgetBindingAuthors(extensionId: string): void {
+    const suffix = `/${extensionId}`;
+    const authors = this.bindingAuthorsFile.read();
+    const kept = Object.keys(authors).filter((key) => !key.endsWith(suffix));
+    if (kept.length === Object.keys(authors).length) return;
+    this.bindingAuthorsFile.write(Object.fromEntries(kept.map((key) => [key, authors[key]!])));
   }
 
   settings(extensionId: string): AppSettings {
@@ -410,7 +461,7 @@ export class ExtensionsService {
    * permission list the user agreed to. It is required rather than optional: the
    * check is only worth anything if no caller can install without it.
    */
-  installFromDirectory(sourceDir: string, consentedDigest: string, origin: ExtensionOrigin, publisher?: ExtensionPublisher, variant?: ExtensionVariant, marketSource?: MarketCodeSource): InstalledExtension {
+  installFromDirectory(sourceDir: string, consentedDigest: string, origin: ExtensionOrigin, publisher?: ExtensionPublisher, variant?: ExtensionVariant, marketSource?: MarketInstallRecord): InstalledExtension {
     const { source, manifest, manifestDigest } = this.validateSource(sourceDir);
     requireAppPlatform(manifest, 'desktop');
     // Read the withdrawal record up front. It is written after the bundle lands,
@@ -517,9 +568,13 @@ export class ExtensionsService {
     origins[manifest.id] = origin;
     this.originsFile.write(origins);
     // The upstream of an App with forks carries where its code is in its variant record.
-    const fromMarket = origin === 'market' ? marketSource ?? (variant?.name === 'upstream' && variant.repo ? { repo: variant.repo, path: variant.path, commit: variant.commit } : undefined) : undefined;
+    const fromMarket: MarketInstallRecord | undefined = origin === 'market' ? marketSource ?? (variant?.name === 'upstream' && variant.repo ? { repo: variant.repo, path: variant.path, commit: variant.commit } : undefined) : undefined;
     if (fromMarket || Object.hasOwn(marketSources, manifest.id)) {
-      if (fromMarket) marketSources[manifest.id] = { repo: fromMarket.repo, path: fromMarket.path, commit: fromMarket.commit };
+      if (fromMarket) {
+        const { keyId, manifest: signedManifest, signature } = fromMarket.release ?? {};
+        marketSources[manifest.id] = { repo: fromMarket.repo, path: fromMarket.path, commit: fromMarket.commit,
+          ...(keyId && signedManifest && signature ? { release: { keyId, manifest: signedManifest, signature } } : {}) };
+      }
       else delete marketSources[manifest.id];
       this.marketSourcesFile.write(marketSources);
     }
@@ -532,6 +587,7 @@ export class ExtensionsService {
     if (previousIdentity && identity && appKey(previousIdentity) !== appKey(identity)) {
       delete grants[appKey(previousIdentity)];
       this.setGivenHere(previousIdentity, null);
+      this.forgetBindingAuthors(manifest.id);
     }
     if (identity) grants[appKey(identity)] = approved;
     if (identity || previousIdentity) this.grantsFile.write(grants);
@@ -679,8 +735,8 @@ export class ExtensionsService {
     return this.originsFile.read();
   }
 
-  /** #1931 Where in the market an App installed from it had its code (`MARKET_SOURCES_FILENAME`); null when none was kept. */
-  marketSource(extensionId: string): MarketCodeSource | null {
+  /** #1931 Where in the market an App installed from it had its code, and its verified release (`MARKET_SOURCES_FILENAME`); null when none was kept. */
+  marketSource(extensionId: string): MarketInstallRecord | null {
     return this.marketSourcesFile.read()[extensionId] ?? null;
   }
 
@@ -932,6 +988,7 @@ export class ExtensionsService {
     // can fail has succeeded.
     this.forgetAuthorities(extensionId);
     this.forgetConversationUnreadBindings(extensionId);
+    this.forgetBindingAuthors(extensionId);
     this.bindingAuthorityChanged(extensionId);
     this.forgetRevocations(extensionId);
     const settings = this.settingsFile.read();

@@ -1,7 +1,12 @@
 import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, expect, it, vi } from 'vitest'
+import { installAssistantRulesResolver } from '../../../apps/desktop/electron/assistant-rules-resolver'
+import { fixedAssistantRules } from './assistantRules/fixtureApp'
+
+// #1931 The words are the assistant App's: the host's mechanics run here on the neutral test rules.
+beforeAll(() => installAssistantRulesResolver(fixedAssistantRules()))
 import { assistantHomePaths } from '@gugu/core/shared/assistantPolicy'
 import { AssistantFileError, assistantFileFailure } from '@gugu/core/shared/assistantFileError'
 import { refreshAssistantContext } from '../../../apps/desktop/electron/sessionpage/assistant-instructions'
