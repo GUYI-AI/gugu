@@ -477,6 +477,7 @@ export function trimCursorPageForTransport<T extends {
   turns: TranscriptTurn[];
   nextCursor: number | null;
   originTurnIds?: readonly string[];
+  turnRevisions?: readonly number[];
 }>(
   page: T,
   limit = TRANSPORT_TEXT_LIMIT,
@@ -493,6 +494,7 @@ export function trimCursorPageForTransport<T extends {
     turns: trimmed.turns,
     nextCursor: trimmed.hasOlder ? (trimmed.turns[0]?.seq ?? null) : null,
     ...(page.originTurnIds ? { originTurnIds: page.originTurnIds.slice(skipped) } : {}),
+    ...(page.turnRevisions ? { turnRevisions: page.turnRevisions.slice(skipped) } : {}),
   };
 }
 

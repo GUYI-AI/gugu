@@ -45,7 +45,7 @@ export function filterReadableStoredRows<T extends StoredReplayRow>(parsed: (T &
 }
 
 /** View repair only: leave archived rows, sequence numbers and message contents unchanged. */
-export async function readableStoredRows(sessionId: string, rows: StoredReplayRow[]) {
+export async function readableStoredRows<T extends StoredReplayRow>(sessionId: string, rows: T[]) {
   return readableParsedRows(sessionId, rows.map(row => ({ ...row, turn: JSON.parse(row.data) as TranscriptTurn })));
 }
 
