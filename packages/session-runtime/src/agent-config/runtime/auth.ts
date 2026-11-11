@@ -15,9 +15,14 @@ import { applyAuthExpiry, AuthExpiryMarks } from './auth-expiry';
 import type { AgentInstallManager } from './install';
 import type { AgentConfigRuntimeDeps } from './types';
 import { runAcpAuthenticate, type AcpAuthenticateOptions } from './acp-authenticate';
+import { LoginOutputReader } from './login-prompt';
 
-const DEFAULT_COLS = 120;
-const DEFAULT_ROWS = 30;
+/**
+ * 登录终端的尺寸。登录窗口不再摆终端(#2507),宽度放到足够大:Ink 一类的 CLI 按终端宽度给长链接**硬折行**,
+ * 折开的授权链接拼不回来。老版本的客户端仍会按自己的终端尺寸 resize,不受影响。
+ */
+const DEFAULT_COLS = 1000;
+const DEFAULT_ROWS = 40;
 const URL_PATTERN = /https?:\/\/[^\s"'<>]+/gi;
 /**
  * 终端颜色控制序列(CSI / OSC)。登录命令给链接上色(codex `--device-auth` 印的是
@@ -65,6 +70,8 @@ type LoginSession = {
   pty: PtySession | null;
   acp: { abort: AbortController } | null;
   seenUrls: Set<string>;
+  /** 终端登录的输出读取器(#2507):设备码、「要码」提示、失败原话。协议登录没有终端,恒 null。 */
+  output: LoginOutputReader | null;
 };
 
 type LoginLease = {
@@ -292,6 +299,8 @@ export class AgentAuthManager {
     const session = this.currentLogin(authKey(providerId, program, connectionId));
     if (!session?.pty) return noLogin(providerId);
     session.pty.write(data);
+    // 交了码 ⇒ 提示收起,直到 CLI 再要一次(#2507)。
+    if (session.output?.noteInput()) this.publishLoginOutput(providerId, program, connectionId, session.output);
     return ok();
   }
 
@@ -362,6 +371,7 @@ export class AgentAuthManager {
     }
     const startedAt = Date.now();
     const seenUrls = new Set<string>();
+    const reader = new LoginOutputReader();
     this.publish(
       providerId,
       program,
@@ -372,6 +382,10 @@ export class AgentAuthManager {
           startedAt,
           transport: 'terminal',
           pendingUrl: null,
+          userCode: null,
+          awaitingInput: false,
+          inputPromptCount: 0,
+          inputKind: 'code',
           exit: null,
         },
       }),
@@ -394,6 +408,9 @@ export class AgentAuthManager {
       {
         replaceExisting: false,
         onData: (chunk) => {
+          if (reader.push(chunk) && this.isCurrentLogin(key, context.generation)) {
+            this.publishLoginOutput(providerId, program, connectionId, reader);
+          }
           outputLine += chunk;
           const end = Math.max(outputLine.lastIndexOf('\n'), outputLine.lastIndexOf('\r'));
           if (end < 0) return;
@@ -401,14 +418,14 @@ export class AgentAuthManager {
           outputLine = outputLine.slice(end + 1);
         },
         onExit: (info) => {
-          void this.handleLoginExit(context, info);
+          void this.handleLoginExit(context, { ...info, tail: reader.tail() });
         },
       }
     );
     scope.add(() => {
       if (this.ptys.get(key) === pty) this.ptys.dispose(key);
     });
-    return { providerId, program, connectionId, generation: context.generation, pty, acp: null, seenUrls };
+    return { providerId, program, connectionId, generation: context.generation, pty, acp: null, seenUrls, output: reader };
   }
 
   /** 这家这个程序的这个方法若是协议登录,返回厂商自报的 `methodId`;否则 null(走终端那条)。 */
@@ -488,6 +505,7 @@ export class AgentAuthManager {
       pty: null,
       acp: { abort },
       seenUrls,
+      output: null,
     };
   }
 
@@ -520,7 +538,7 @@ export class AgentAuthManager {
     );
   }
 
-  private async handleLoginExit(context: LoginContext, info: PtyExitInfo): Promise<void> {
+  private async handleLoginExit(context: LoginContext, info: PtyExitInfo & { tail?: string }): Promise<void> {
     const { providerId, program, generation, connectionId } = context;
     const key = authKey(providerId, program, connectionId);
     if (!this.isCurrentLogin(key, generation)) return;
@@ -654,7 +672,26 @@ export class AgentAuthManager {
     );
   }
 
-  private publishLoginExit(context: LoginContext, exit: PtyExitInfo): void {
+  /** 设备码 / 「要码」提示变了才发(#2507);转圈重绘不发。 */
+  private publishLoginOutput(
+    providerId: string,
+    program: string | undefined,
+    connectionId: string | undefined,
+    reader: LoginOutputReader
+  ): void {
+    const reading = reader.reading();
+    this.publish(
+      providerId,
+      program,
+      (current) => {
+        if (!current.login) return current;
+        return { ...current, login: { ...current.login, ...reading } };
+      },
+      connectionId
+    );
+  }
+
+  private publishLoginExit(context: LoginContext, exit: PtyExitInfo & { tail?: string }): void {
     const { providerId, program, generation, connectionId } = context;
     if (!this.isCurrentLogin(authKey(providerId, program, connectionId), generation)) return;
     this.publish(

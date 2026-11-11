@@ -20,13 +20,11 @@ vi.mock('./AcpAuthenticateSignIn', () => ({
     return null;
   },
 }));
-vi.mock('@xterm/xterm', () => ({ Terminal: class {} }));
 // 这一家声明了几种登录方法,弹窗靠它决定要不要先让人挑。
 vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgent: (id: string) => ({ data: mocks.agents[id] ?? null }) }));
 // 远端登录(#6264)那一支用到的设置页零件会在导入时读 `window`(平台适配层);这里只验本机几步怎么接。
 vi.mock('@/components/settings/addServer/CommandBlock', () => ({ CommandBlock: () => null }));
 vi.mock('@/i18n/registerSettingsCatalog', () => ({}));
-vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }));
 // 弹窗外壳(Base UI 的 Dialog 根)不在这里挂:选择那一屏的标题与按钮区换成直通的容器。
 vi.mock('@renderer/lib/ui/dialog', () => {
   const pass = ({ children }: { children?: React.ReactNode }) => React.createElement('div', null, children);

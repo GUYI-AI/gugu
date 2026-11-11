@@ -3,7 +3,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { app } from 'electron';
 import { eq } from 'drizzle-orm';
-import { requireNativeHome } from '@gugu/session-plugins/agents';
+import { pluginRegistry, requireNativeHome } from '@gugu/session-plugins/agents';
+import { apiKeyConnectionInputError, type ApiKeyConnectionFields } from '@gugu/session-core/agents/plugins';
 import type { AgentRunContext } from '@gugu/session-core/agents/agent-run-context';
 import type {
   CreateHarnessConnection,
@@ -48,10 +49,35 @@ type Provider = 'claude' | 'codex';
 
 const namespace = (providerId: string) => `harness:${providerId}`;
 
-function supported(providerId: string): asserts providerId is Provider {
-  if (providerId !== 'claude' && providerId !== 'codex')
-    throw new Error('Connection management is unavailable for this harness');
+/** Claude / Codex:账号连接 + API 连接,换凭据的代码逐家写(下面那一整套)。 */
+function isAccountProvider(providerId: string): providerId is Provider {
+  return providerId === 'claude' || providerId === 'codex';
 }
+
+/**
+ * 其余家(#2507):声明了 `apiKeyConnection` 的才有连接,而且只有 API Key 连接 —— 账号仍是这家 CLI 自己的登录。
+ * 判据只认插件注册表,renderer 送来的 id 不作数。
+ */
+function apiKeyConnectionOf(providerId: string) {
+  if (isAccountProvider(providerId)) return undefined;
+  const plugin = pluginRegistry.get(providerId);
+  const descriptor = plugin?.capabilities.apiKeyConnection;
+  const behavior = plugin?.behavior.apiKeyConnection;
+  if (descriptor?.kind !== 'supported' || !behavior) return undefined;
+  return { name: plugin!.metadata.name, fields: descriptor, launch: behavior.launch };
+}
+
+/** 这一家能不能有连接 —— 只有主进程这一处判。 */
+export function harnessHasConnections(providerId: string): boolean {
+  return isAccountProvider(providerId) || apiKeyConnectionOf(providerId) !== undefined;
+}
+
+function supported(providerId: string): void {
+  if (!harnessHasConnections(providerId)) throw new Error('Connection management is unavailable for this harness');
+}
+
+/** Claude / Codex 的 API 连接表单一直是:地址可选、没有模型格。 */
+const ACCOUNT_PROVIDER_API_FIELDS: Pick<ApiKeyConnectionFields, 'endpoint' | 'model'> = { endpoint: 'optional', model: 'none' };
 
 async function ensureNative(providerId: string): Promise<void> {
   if (await registry.getAccount(namespace(providerId), 'native')) return;
@@ -72,21 +98,30 @@ export async function listHarnessConnections(providerId: string): Promise<Harnes
       kind: row.meta?.harnessConnection?.kind ?? 'native',
       name: row.meta?.displayName ?? '',
       endpoint: row.meta?.harnessConnection?.endpoint,
+      ...(row.meta?.harnessConnection?.model ? { model: row.meta.harnessConnection.model } : {}),
       current: row.isDefault,
     }));
 }
 
 export async function createHarnessConnection(input: CreateHarnessConnection): Promise<HarnessConnection> {
   supported(input.providerId);
+  const generic = apiKeyConnectionOf(input.providerId);
+  // 账号连接只有 Claude / Codex;其余家的账号就是它 CLI 自己的那份登录(「现有 CLI 配置」上的「登录」)。
+  if (generic && input.kind !== 'api-key') throw new Error('This harness signs in through its own CLI; add an API key connection instead');
+  if (input.kind === 'api-key') {
+    const problem = apiKeyConnectionInputError(generic?.fields ?? ACCOUNT_PROVIDER_API_FIELDS, input);
+    if (problem) throw new Error(problem);
+  }
   await ensureNative(input.providerId);
   const id = randomUUID();
   const endpoint = input.endpoint?.replace(/\/+$/, '');
+  const model = input.model?.trim() || undefined;
   const rows = await listHarnessConnections(input.providerId);
   const name =
     input.name ||
     (endpoint
       ? new URL(endpoint).host
-      : `${input.providerId === 'claude' ? 'Claude' : 'Codex'} ${rows.length}`);
+      : `${generic ? generic.name : input.providerId === 'claude' ? 'Claude' : 'Codex'} ${rows.length}`);
   // 账号连接只需要一个保管凭据、能独立登录的目录;API 连接什么目录都不要。
   if (input.kind === 'account') {
     if (input.providerId === 'codex') await ensureCodexVault(vaultRoot('codex', id));
@@ -96,9 +131,12 @@ export async function createHarnessConnection(input: CreateHarnessConnection): P
     providerId: namespace(input.providerId),
     accountId: id,
     ...(input.apiKey ? { secret: input.apiKey } : {}),
-    meta: { displayName: name, harnessConnection: { kind: input.kind, ...(endpoint ? { endpoint } : {}) } },
+    meta: {
+      displayName: name,
+      harnessConnection: { kind: input.kind, ...(endpoint ? { endpoint } : {}), ...(model ? { model } : {}) },
+    },
   });
-  return { id, name, kind: input.kind, endpoint, current: false };
+  return { id, name, kind: input.kind, endpoint, ...(model ? { model } : {}), current: false };
 }
 
 export async function selectHarnessConnection(
@@ -112,7 +150,7 @@ export async function selectHarnessConnection(
   if (!target || target.meta?.harnessConnection?.removed) throw new Error('Connection no longer exists');
   // 已有会话跟着默认订阅走。账号连接把凭据换进用户根;API 连接靠环境变量起,
   // 用户根里的账号原样留着(换回那个账号时它就是最新的那份)。
-  if ((target.meta?.harnessConnection?.kind ?? 'native') !== 'api-key') {
+  if (isAccountProvider(providerId) && (target.meta?.harnessConnection?.kind ?? 'native') !== 'api-key') {
     const current = await defaultConnectionId(providerId);
     const ids = await accountConnectionIds(providerId);
     if (providerId === 'codex') await activateCodexAccount(codexSlotPaths(options.nativeEnv), ids, connectionId, current);
@@ -135,6 +173,8 @@ export async function assertHarnessConnectionSelectable(
   const target = await registry.getAccount(namespace(providerId), connectionId);
   if (!target || target.meta?.harnessConnection?.removed) throw new Error('Connection no longer exists');
   if ((target.meta?.harnessConnection?.kind ?? 'native') === 'api-key') return;
+  // 其余家只有原生与 API Key 连接:原生就是这家 CLI 自己的那份,没有凭据要换。
+  if (!isAccountProvider(providerId)) return;
   if (providerId === 'codex') await assertCodexFileCredentialStore(nativeConfigRoot('codex', options.nativeEnv));
   if ((await credentialRoot(providerId, connectionId, options.nativeEnv)) === 'native') return;
   const saved =
@@ -245,7 +285,7 @@ export async function resolveHarnessConnection(
     nativeEnv?: Record<string, string | undefined>;
   } = {}
 ): Promise<Partial<AgentRunContext>> {
-  if (providerId !== 'claude' && providerId !== 'codex') return {};
+  if (!isAccountProvider(providerId)) return resolveApiKeyConnection(providerId, input);
   await ensureNative(providerId);
   // 会话(不论哪条、什么时候建的)和不指名的读取跟默认连接走;只有按连接问的(登录、登录状态、用量)才指名。
   const forSession = Boolean(input.sessionId) || !input.connectionId;
@@ -273,6 +313,40 @@ export async function resolveHarnessConnection(
     credentialHome: connectionHome(providerId, id),
     configRootEnv: { [requireNativeHome(providerId).envVar]: vaultRoot(providerId, id) },
     ...unset,
+  };
+}
+
+/**
+ * 其余家(#2507):选中的是 API Key 连接 ⇒ 按这家的声明把 key 落成环境变量 / 参数,删掉同族的继承变量,
+ * 并标上「这是一把 API Key 连接」(登录态与付费方照它答)。原生连接一个字都不加 —— 与没有连接的时候逐字节一样。
+ */
+async function resolveApiKeyConnection(
+  providerId: string,
+  input: { connectionId?: string; sessionId?: string }
+): Promise<Partial<AgentRunContext>> {
+  const generic = apiKeyConnectionOf(providerId);
+  if (!generic) return {};
+  await ensureNative(providerId);
+  const forSession = Boolean(input.sessionId) || !input.connectionId;
+  const id = forSession ? (await registry.getDefaultAccountId(namespace(providerId))) ?? 'native' : input.connectionId!;
+  if (id === 'native') return {};
+  const account = await registry.getAccount(namespace(providerId), id);
+  if (!account) throw new Error('The session’s subscription connection is unavailable');
+  const details = account.meta?.harnessConnection;
+  if (details?.kind !== 'api-key') return {};
+  const secret = await registry.resolveSecret(namespace(providerId), id);
+  if (!secret) throw new Error('The connection’s API key is unavailable');
+  const launch = generic.launch({
+    apiKey: secret,
+    ...(details.endpoint ? { endpoint: details.endpoint } : {}),
+    ...(details.model ? { model: details.model } : {}),
+  });
+  return {
+    connectionId: id,
+    credentialEnv: { ...launch.env },
+    unsetEnv: [...launch.unsetEnv],
+    ...(launch.args?.length ? { extraArgs: [...launch.args] } : {}),
+    apiKeyConnection: details.endpoint ? { endpoint: details.endpoint } : {},
   };
 }
 
@@ -337,5 +411,10 @@ export async function sessionHarnessConnectionId(sessionId: string | undefined):
   if (!row) return undefined;
   // 两家的会话都跟默认订阅走:跑的就是此刻用户根里的账号 = 当前默认连接(#26)。
   if (row.provider === 'codex' || row.provider === 'claude') return defaultConnectionId(row.provider);
+  // 有 API Key 连接的家(#2507)同一条:跑的是起进程那一刻的默认连接。
+  const provider = row.provider;
+  if (provider && apiKeyConnectionOf(provider)) {
+    return (await registry.getDefaultAccountId(namespace(provider))) ?? 'native';
+  }
   return 'native';
 }

@@ -92,6 +92,11 @@ export interface BaseToolCallItem {
    * The source record stays complete; this metadata lets the tool card disclose the cropped preview.
    */
   trimmedChars?: number;
+  /**
+   * Set on an item a page sent as its folded form (transport-trim `folded-form`): what a fold shows when opened was
+   * left out. Never stored. The reader reads the item's turn again, whole, when a row drawn from it comes on screen.
+   */
+  held?: true;
 }
 
 export interface ExecuteToolCall extends BaseToolCallItem {
@@ -333,6 +338,8 @@ export const baseToolCallItemSchema = z.object({
   backgroundTaskDone: z.literal(true).optional(),
   /** 发给手机时被裁掉的字数(传输层痕迹,桌面侧恒缺;见 session-record/transport-trim.ts)。 */
   trimmedChars: z.number().int().positive().optional(),
+  /** Transport trace: sent as its folded form, see BaseToolCallItem. */
+  held: z.literal(true).optional(),
   /** Raw provider parent id used to rebuild the tree; not a render link. */
   parentToolCallId: z.string().optional(),
   /** Nested provider or reducer-derived tool nodes owned by this call. */

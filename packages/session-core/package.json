@@ -31,6 +31,8 @@
     "./session-record/picture-elider": "./src/session-record/sources/picture-elider.ts",
     "./session-record/owner-notifications": "./src/session-record/owner-notifications.ts",
     "./session-record/tool-image": "./src/session-record/tool-image.ts",
+    "./session-record/held-turn": "./src/session-record/held-turn.ts",
+    "./session-record/tool-input-summary": "./src/session-record/tool-input-summary.ts",
     "./session-record/message-preview": "./src/session-record/message-preview.ts",
     "./session-record/live-requests": "./src/session-record/live-requests.ts",
     "./session-record/reply-process": "./src/session-record/reply-process.ts",

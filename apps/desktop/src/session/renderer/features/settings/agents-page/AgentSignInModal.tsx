@@ -1,6 +1,4 @@
-import { WebLinksAddon } from '@xterm/addon-web-links';
-import { Terminal } from '@xterm/xterm';
-import { Copy } from '@/lib/icons'
+import { ExternalLink } from '@/lib/icons'
 // 「复制去那台机器上敲」的一行命令:与设置 → 设备里那几处同一个 CommandBlock,❌ 另写一份孪生体。
 import { CommandBlock } from '@/components/settings/addServer/CommandBlock';
 import '@/i18n/registerSettingsCatalog';
@@ -9,22 +7,13 @@ import { useEffect, useRef, useState } from 'react';
 import { AcpAuthLoginBinding } from '@renderer/lib/acp/auth-login-binding';
 import type { AuthStatusModelState } from '@gugu/session-core/workspace-server/agent-config';
 import type { BaseModalProps } from '@renderer/lib/modal/modal-provider';
-import { copyExternalLink, openExternalLinkInBrowser } from '@renderer/lib/open-external-link';
+import { openExternalLinkInBrowser } from '@renderer/lib/open-external-link';
 import { cancelsLoginOnClose, loginAttemptSucceeded, pendingUrlToOpen, rereadOnReturn } from './login-success';
+import { SignInLinkBody, type SignInCodeEntry, type SignInLinkPhase } from './SignInLinkBody';
 import { AcpAuthenticateSignIn } from './AcpAuthenticateSignIn';
 import { resolveSignInMethods } from './agent-account';
 import { useAgent } from '@renderer/lib/stores/use-agents';
 import { SignInTitle } from './SignInTitle';
-import { isPrimaryMouseButton } from '@renderer/lib/pty/file-link-provider';
-import {
-  buildTheme,
-  TERMINAL_LETTER_SPACING,
-  TERMINAL_LINE_HEIGHT,
-  TERMINAL_MINIMUM_CONTRAST_RATIO,
-  TERMINAL_PADDING_PX,
-} from '@renderer/lib/pty/pty';
-import { computeGridDimensions, measureTerminalCell } from '@renderer/lib/pty/pty-dimensions';
-import { buildTerminalFontFamily } from '@renderer/lib/pty/terminal-font';
 import { Button } from '@renderer/lib/ui/button';
 import {
   DialogContentArea,
@@ -33,8 +22,7 @@ import {
   DialogTitle,
 } from '@renderer/lib/ui/dialog';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { TERMINAL_FONT_SIZE_DEFAULT } from '@shared/core/terminals/terminal-settings';
-import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
+import { rendererLogger } from '@/lib/log';
 
 /**
  * #6264 登录发生在**别的机器上**(会话 / 新建框在那台机器上)。窗口还是这一个、绑定也是同一个
@@ -182,11 +170,25 @@ export function AgentSignInModal({ providerId, providerName, steps, remote, conn
   return step.transport === 'acp-authenticate' && !remote ? (
     <AcpAuthenticateSignIn key={index} {...props} />
   ) : (
-    <TerminalSignIn key={index} {...props} />
+    <LinkSignIn key={index} {...props} />
   );
 }
 
-function TerminalSignIn({
+/**
+ * 登录进程没有可见的终端了,把它的宽度放到足够大:Ink 一类的 CLI 会按终端宽度给长链接**硬折行**,
+ * 折开的链接主进程拼不回来(主进程也把登录终端起得一样宽,这一下是给老版本的机器补的)。
+ */
+const LOGIN_COLS = 1000;
+const LOGIN_ROWS = 40;
+/** 登录命令正常退出、但读数还没翻成「已登录」:等这么久再说没登上(退出后主进程要重探一次登录态)。 */
+const EXIT_GRACE_MS = 10_000;
+
+/**
+ * 终端登录(`cli-login`)的窗口 —— 跑的仍是厂商自己的 `<cli> login`,只是**不再把终端摆给人**(#2507):
+ * 链接 + 等待;CLI 要把码贴回去时给一个输入框;设备码单独摆出来;失败时把 CLI 最后几行原话摆出来。
+ * 读数全来自主进程那份登录态(`pendingUrl` / `userCode` / `awaitingInput` / `exit.tail`)。
+ */
+function LinkSignIn({
   connectionId,
   providerId,
   methodId,
@@ -197,52 +199,51 @@ function TerminalSignIn({
   onSuccess,
   onClose,
 }: StepProps) {
-  const [error, setError] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
-  const [attempt] = useState(0);
   const { translate } = useSessionMessages();
-  const terminalHostRef = useRef<HTMLDivElement | null>(null);
-  const bindingRef = useRef<LoginBinding | null>(null);
-  const handledUrlsRef = useRef(new Set<string>());
-  /**
-   * 这次登录印出来的链接,摆在终端上方那一条里:「在系统浏览器中打开」「复制链接」。
-   * ❌ 不再弹「打开链接?」:那个确认用的是全局唯一的弹窗位,一弹就把这个登录窗口顶掉(#6264 走查实撞:
-   * 在确认上点「取消」,登录窗口跟着没了,那台机器上的登录命令却还在跑)。人自己点「打开」就是确认。
-   */
+  const [attempt, setAttempt] = useState(0);
+  const [startFailed, setStartFailed] = useState(false);
+  const [state, setState] = useState<AuthStatusModelState | null>(null);
+  /** 这次登录印出来的链接;主进程那格被标成已处理后就清空了,这里留着。 */
   const [link, setLink] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState(false);
+  /** 交码那一刻 CLI 已经要过几次码;之后它再要一次(计数变大)= 刚交的码没被接受。 */
+  const [submittedAt, setSubmittedAt] = useState<number | null>(null);
+  /** 人从浏览器回到过这个窗口:这时还没登上,才给「网页给了授权码?」的手动入口。 */
+  const [returned, setReturned] = useState(false);
+  const [exitGraceOver, setExitGraceOver] = useState(false);
+  const bindingRef = useRef<LoginBinding | null>(null);
+  const onSuccessRef = useRef(onSuccess);
+  onSuccessRef.current = onSuccess;
   const remoteDeviceId = remote?.deviceId ?? null;
 
   useEffect(() => {
-    const host = terminalHostRef.current;
-    if (!host) return;
-
     let disposed = false;
-    let animationFrame: number | null = null;
-    const terminal = createLoginTerminal((url) => setLink(url));
-    terminal.open(host);
-    styleLoginTerminal(terminal);
-    terminal.focus();
-
-    const inputDisposable = terminal.onData((data) => {
-      bindingRef.current?.sendInput(data);
-    });
-    const resize = () => {
-      if (disposed) return;
-      resizeLoginTerminal(terminal, host, bindingRef.current);
+    let stop: (() => void) | null = null;
+    let startedSignedOut: boolean | null = null;
+    const handled = new Set<string>();
+    setStartFailed(false);
+    setState(null);
+    setLink(null);
+    setRevealed(false);
+    setSubmittedAt(null);
+    setReturned(false);
+    setExitGraceOver(false);
+    /**
+     * 人从浏览器回到这个窗口(`focus`)那一下再问一次登录态:有的家登完不退出(Antigravity 的 `agy`,#6335),
+     * 退出是它从前唯一会触发重读的事件。只挂事件,❌ 轮询。从「已登录」开始的那一趟(换账号)不挂 ——
+     * 那时重读只会读到旧凭据,把窗口在他还没换完时关掉(`loginAttemptSucceeded` 抬头那条同一个坑)。
+     */
+    const onFocus = () => {
+      if (!startedSignedOut) return;
+      setReturned(true);
+      bindingRef.current?.refreshStatus?.();
     };
-    const observer = new ResizeObserver(() => {
-      if (animationFrame !== null) cancelAnimationFrame(animationFrame);
-      animationFrame = requestAnimationFrame(resize);
-    });
-    observer.observe(host);
-    resize();
-
+    window.addEventListener('focus', onFocus);
     void AcpAuthLoginBinding.create({
       connectionId,
       providerId,
       methodId,
       program,
-      terminal,
       // #6264 别的机器:在那台机器上跑这家不靠回跳的那种登录。
       ...(remoteDeviceId ? { machine: remoteDeviceId, headless: true } : {}),
     }).then(
@@ -252,88 +253,86 @@ function TerminalSignIn({
           return;
         }
         bindingRef.current = binding;
-        setReady(true);
-        resize();
+        binding.resize(LOGIN_COLS, LOGIN_ROWS);
+        // 挂载这一刻的登录态是**登录前**的读数,❌ 当成本次的结果(判据与为什么见 `login-success.ts`)。
+        const progress = { sawInitialReading: false };
+        stop = reaction(
+          () => binding.status.current(),
+          (current) => {
+            startedSignedOut ??= rereadOnReturn(current);
+            if (loginAttemptSucceeded(current, progress)) {
+              // 凭据已落地 ⇒ 这一趟的进程可以收掉(登完不退出的家不收就一直挂着)。
+              binding.dispose(true);
+              bindingRef.current = null;
+              onSuccessRef.current();
+              return;
+            }
+            progress.sawInitialReading = true;
+            const pending = pendingUrlToOpen(current, handled);
+            if (pending) {
+              handled.add(pending.id);
+              setLink(pending.url);
+              binding.markUrlHandled(pending.id);
+            }
+            setState(current);
+          },
+          { fireImmediately: true }
+        );
       },
-      (err: unknown) => {
-        if (!disposed) setError(err instanceof Error ? err.message : String(err));
+      (error: unknown) => {
+        // 起不来是宿主那头的故障,原文进日志;界面只说「没有登录成功」并给「重试」。
+        rendererLogger('settings/agent-sign-in').warn({ error, providerId }, 'login start failed');
+        if (!disposed) setStartFailed(true);
       }
     );
-
     return () => {
       disposed = true;
-      if (animationFrame !== null) cancelAnimationFrame(animationFrame);
-      observer.disconnect();
-      inputDisposable.dispose();
-      // 关窗(任何路径:关闭、Esc、点外面、切走、整个面板卸掉)取消不取消,判据在 `cancelsLoginOnClose`:
-      //  · 本机 —— #4900 ❌ 不取消。设备码流程要人**离开这个窗口**去浏览器授权,厂商的 `<cli> login`
-      //    必须活着才收得到那次授权(kimi owner 2026-09-04 实测);要中止走底部显式的「取消登录」。
-      //  · 别的机器 —— 取消(已经登上的除外,绑定自己认)。窗口没了就再没人盯着那台机器上的登录命令,
-      //    留着它只是一个挂在别人机器上的进程(#6264 走查:关窗 38 秒后它还在跑)。
+      stop?.();
+      window.removeEventListener('focus', onFocus);
+      // 关窗取消不取消,判据在 `cancelsLoginOnClose`:本机 ❌ 取消(设备码流程要人离开窗口去授权,
+      // 厂商的 `<cli> login` 得活着才收得到);别的机器取消(窗口没了就再没人盯着那台机器上的登录命令)。
       bindingRef.current?.dispose(cancelsLoginOnClose({ remote: !!remoteDeviceId }));
       bindingRef.current = null;
-      terminal.dispose();
     };
-  }, [methodId, program, providerId, remoteDeviceId, attempt, connectionId]);
+  }, [attempt, connectionId, methodId, program, providerId, remoteDeviceId]);
 
+  const login = state?.login ?? null;
+  const exit = login?.exit ?? null;
+  const exitedCleanly = exit?.exitCode === 0 && !exit.signal;
   useEffect(() => {
-    const binding = bindingRef.current;
-    if (!binding || !ready) return;
-    // 挂载这一刻的登录态是**登录前**的读数(`startLogin` 早已跑过),❌ 不能当成本次的结果。
-    // 判据抽在 `login-success.ts`,那里记着为什么 —— 简版:拿它判成功,凭据过期的人和想换账号的人
-    // 会看到弹窗开一帧就自己关了,他们永远登不上(#5705)。
-    const progress = { sawInitialReading: false };
-    /**
-     * 这一趟是从「没登上」开始的吗 —— 是的话,用户从浏览器**回到这个窗口**那一下(`focus` 事件)再问一次
-     * 登录态:登上了就按上面同一条判据收尾(多步时接着下一步)。
-     *
-     * 为什么要这一下:有的家登完不退出(Antigravity 的 `agy` 登完就停在自己的输入框里,#6335),
-     * 而退出正是终端登录从前唯一会触发重读的事件 —— 没有它,用户得自己找「完成」去点。
-     * 只挂在窗口获得焦点这个**事件**上,一次回来一次读数,❌ 不轮询(owner:不许密集轮询)。
-     * 从「已登录」开始的那一趟(想换账号的重新登录)不挂:那时重读只会读到旧凭据,把弹窗在他还没
-     * 换完的时候关掉(与 `loginAttemptSucceeded` 抬头那条同一个坑);它仍由「完成」或进程退出收尾。
-     */
-    let startedSignedOut: boolean | null = null;
-    const onFocus = () => {
-      if (startedSignedOut) binding.refreshStatus?.();
-    };
-    window.addEventListener('focus', onFocus);
-    const stop = reaction(
-      () => binding.status.current(),
-      (state) => {
-        startedSignedOut ??= rereadOnReturn(state);
-      },
-      { fireImmediately: true }
-    );
-    const stopMain = reaction(
-      () => binding.status.current(),
-      (state) => {
-        if (loginAttemptSucceeded(state, progress)) {
-          // 已经读到「登上了」⇒ 凭据落地了,本机这一趟的进程可以收掉(`dispose(true)`)。多数家此刻进程
-          // 早已自己退出、收尾是空操作;登完不退出的家(`agy` 停在自己的输入框里)不收就会一直挂在后台。
-          // ⚠️ 与关窗那条「❌ 不取消」不矛盾:那条防的是**还没**授权完就把进程杀了。
-          binding.dispose(true);
-          bindingRef.current = null;
-          onSuccess();
-          return;
-        }
-        progress.sawInitialReading = true;
+    if (!exitedCleanly) return;
+    const timer = window.setTimeout(() => setExitGraceOver(true), EXIT_GRACE_MS);
+    return () => window.clearTimeout(timer);
+  }, [exitedCleanly]);
 
-        // ⚠️ `fireImmediately` 要留着:设备码流程的授权链接可能在首帧就已经在状态里(#4900)。
-        const pendingUrl = pendingUrlToOpen(state, handledUrlsRef.current);
-        if (!pendingUrl) return;
-        handledUrlsRef.current.add(pendingUrl.id);
-        setLink(pendingUrl.url);
-        binding.markUrlHandled(pendingUrl.id);
-      },
-      { fireImmediately: true }
-    );
-    return () => {
-      window.removeEventListener('focus', onFocus);
-      stop();
-      stopMain();
-    };
-  }, [onSuccess, ready, attempt, remoteDeviceId]);
+  const prompts = login?.inputPromptCount ?? 0;
+  const askingAgain = submittedAt !== null && login?.awaitingInput === true && prompts > submittedAt;
+  const failed = startFailed || (exit !== null && (!exitedCleanly || exitGraceOver));
+  // 登录命令自己打出来的最后几行是给人看的原话(厂商写给用户的),不是我们的内部异常。
+  const failure = !startFailed && failed ? exit?.tail || null : null;
+  const phase: SignInLinkPhase = failed
+    ? 'failed'
+    : exit !== null || (submittedAt !== null && !askingAgain)
+      ? 'verifying'
+      : !login || (!link && !login.userCode)
+        ? 'starting'
+        : 'waiting';
+  // 宿主读得出「在不在要码」(新版本)⇒ 只在它要的时候开;读不出(老版本的机器)⇒ 留手动入口。
+  const hostReadsPrompt = login?.awaitingInput !== undefined;
+  const codeEntry: SignInCodeEntry | null = login && !failed
+    ? {
+        open: login.awaitingInput === true || revealed,
+        rejected: askingAgain,
+        canReveal: !hostReadsPrompt || returned,
+        kind: login.inputKind ?? 'code',
+        onReveal: () => setRevealed(true),
+        onSubmit: (code) => {
+          bindingRef.current?.sendInput(`${code}\r`);
+          setSubmittedAt(prompts);
+          setRevealed(false);
+        },
+      }
+    : null;
 
   const remoteValues = remote ? { provider: providerName, device: remote.deviceLabel } : null;
 
@@ -347,136 +346,49 @@ function TerminalSignIn({
           stepLabel={stepLabel}
         />
       </DialogHeader>
-      <DialogContentArea className="flex h-[520px] flex-col gap-2 p-0">
-        {link && (
-          <div
-            // 机器给出的原文 = 印在页上的东西:密度面板 + --radius-document,❌ 在对话框里再画一圈框。
-            className="flex items-center gap-2 rounded-[var(--radius-document)] bg-foreground/[0.025] px-3 py-2 dark:bg-foreground/[0.04]"
-            data-testid="agent-sign-in-link"
-          >
-            <span className="shrink-0 text-xs text-foreground-muted">{translate('agentsPage.signInLink')}</span>
-            <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground" title={link}>
-              {link}
-            </span>
-            <Button variant="outline" size="sm" onClick={() => void copyExternalLink(link)}>
-              <Copy className="h-4 w-4" />
-              {translate('externalLink.copyLink')}
-            </Button>
-            <Button variant="default" size="sm" onClick={() => openExternalLinkInBrowser(link)}>
-              {translate('preview.openInSystemBrowser')}
-            </Button>
-          </div>
-        )}
-        <div className="relative min-h-0 flex-1">
-          <div
-            ref={terminalHostRef}
-            className="h-full rounded-md border border-border bg-(--xterm-bg)"
-          />
-          {!ready && !error && (
-            <div className="absolute inset-0 flex items-center justify-center bg-background/60 text-foreground-muted">
-              <LoadingIndicator
-                ariaLabel={translate('agentsPage.signInStarting')}
-                label={translate('agentsPage.signInStarting')}
-              />
-            </div>
-          )}
-          {error && (
-            <div className="text-foreground-destructive absolute inset-0 bg-background p-4 text-sm">
-              {error}
-            </div>
-          )}
-        </div>
+      <DialogContentArea className="pt-1" data-testid="agent-sign-in-link-body">
+        <SignInLinkBody
+          phase={phase}
+          link={link}
+          userCode={login?.userCode ?? null}
+          codeEntry={codeEntry}
+          failure={failure}
+        />
       </DialogContentArea>
-      <DialogFooter className="flex-wrap items-center gap-2">
-        <span className="mr-auto flex items-center gap-2 text-xs text-foreground-muted" data-testid="agent-sign-in-status">
-          {translate('agentsPage.signInKeepsRunning')}
-        </span>
-        <Button
-          variant="ghost"
-          onClick={() => {
-            bindingRef.current?.dispose(true);
-            bindingRef.current = null;
-            onClose();
-          }}
-        >
-          {translate('agentsPage.signInCancel')}
-        </Button>
-        <Button variant="outline" onClick={onClose}>
-          {translate('common.close')}
-        </Button>
-        {/* 登录成不成只有 harness 自己知道,所以这一下不宣称成功,只是**再问一次**:
-            onSuccess 那侧会重跑 bootstrap / 重读目录,没登上就照旧退回登录闸。 */}
-        <Button variant="default" onClick={() => onSuccess()}>
-          {translate('agentsPage.signInDone')}
-        </Button>
+      <DialogFooter>
+        {failed ? (
+          <>
+            <Button variant="outline" onClick={onClose}>
+              {translate('common.close')}
+            </Button>
+            <Button variant="default" onClick={() => setAttempt((n) => n + 1)}>
+              {translate('agentsPage.signInRetry')}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              variant="outline"
+              onClick={() => {
+                bindingRef.current?.dispose(true);
+                bindingRef.current = null;
+                onClose();
+              }}
+            >
+              {translate('agentsPage.signInCancel')}
+            </Button>
+            <Button
+              variant="default"
+              disabled={!link}
+              onClick={() => link && openExternalLinkInBrowser(link)}
+              data-testid="agent-sign-in-open-page"
+            >
+              <ExternalLink className="h-4 w-4" />
+              {translate('agentsPage.signInOpenPage')}
+            </Button>
+          </>
+        )}
       </DialogFooter>
     </>
   );
-}
-
-/** 终端里点到的链接也只是摆到上方那一条里,由人点「打开」—— 同一个理由,见 `link` 抬头。 */
-function createLoginTerminal(onLink: (url: string) => void): Terminal {
-  const terminal = new Terminal({
-    cols: 120,
-    rows: 32,
-    scrollback: 100_000,
-    fontFamily: buildTerminalFontFamily(),
-    fontSize: TERMINAL_FONT_SIZE_DEFAULT,
-    lineHeight: TERMINAL_LINE_HEIGHT,
-    letterSpacing: TERMINAL_LETTER_SPACING,
-    allowProposedApi: true,
-    scrollOnUserInput: false,
-    linkHandler: {
-      activate: (event, text) => {
-        if (!isPrimaryMouseButton(event)) return;
-        onLink(text);
-      },
-    },
-    theme: buildTheme(),
-    minimumContrastRatio: TERMINAL_MINIMUM_CONTRAST_RATIO,
-  });
-  terminal.loadAddon(
-    new WebLinksAddon((event, uri) => {
-      if (!isPrimaryMouseButton(event)) return;
-      event.preventDefault();
-      onLink(uri);
-    })
-  );
-  return terminal;
-}
-
-function styleLoginTerminal(terminal: Terminal): void {
-  const element = (terminal as unknown as { element?: HTMLElement }).element;
-  if (!element) return;
-  element.style.width = '100%';
-  element.style.height = '100%';
-  element.style.boxSizing = 'border-box';
-  element.style.padding = `${TERMINAL_PADDING_PX}px`;
-  element.style.backgroundColor = 'var(--xterm-bg)';
-}
-
-function resizeLoginTerminal(
-  terminal: Terminal,
-  host: HTMLElement,
-  binding: LoginBinding | null
-): void {
-  const cell = measureTerminalCell(
-    buildTerminalFontFamily(),
-    TERMINAL_FONT_SIZE_DEFAULT,
-    TERMINAL_LINE_HEIGHT,
-    TERMINAL_LETTER_SPACING
-  );
-  if (!cell) return;
-  const dims = computeGridDimensions({
-    widthPx: host.clientWidth,
-    heightPx: host.clientHeight,
-    cellWidth: cell.width,
-    cellHeight: cell.height,
-    paddingPx: TERMINAL_PADDING_PX,
-  });
-  if (!dims) return;
-  if (terminal.cols !== dims.cols || terminal.rows !== dims.rows) {
-    terminal.resize(dims.cols, dims.rows);
-  }
-  binding?.resize(dims.cols, dims.rows);
 }

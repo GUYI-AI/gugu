@@ -26,13 +26,32 @@ export function pinSummary(item: ChatMessage, ctx: MeasureCtx, baseVars: Message
   const available = userAvailableWidth(ctx.width, layout);
   const inner = userInnerWidth(available, vars);
   const lineHeight = ctx.theme.fonts.body.lineHeight;
-  const lines = layoutText(prepareWithSegments(text, ctx.theme.fonts.body.font, { whiteSpace: 'pre-wrap' }), inner, lineHeight).lineCount;
+  const lines = summaryLineCount(text, ctx.theme.fonts.body.font, inner, lineHeight, ctx.measureEpoch ?? 0);
   const height = Math.min(Math.max(lines, 1), 2) * lineHeight + 2 * vars.userCardPadY + 2 * vars.cardBorder;
   // Where the message's bubble starts inside its row: below its attachments, which sit above the bubble.
   const bubbleTop = body ? attachStripHeight(item.attachments?.length ?? 0, available, vars) : 0;
   // A message the transcript folds is too tall to push along: it pins only once it has gone (ChatRoot placeRow).
   const folds = conversation ? userMessageFolds(item, conversationContext(ctx, item), conversationVars(item, baseVars)) : userMessageFolds(item, ctx, baseVars);
   return { text, vars, conversation, hug: isDoubleColumnLayout(layout), height, clipped: lines > 2, bubbleTop, available, folds };
+}
+
+// @@@summary-lines-once — the list asks for every anchor's summary each time it is rebuilt (an older page lands, a
+// name arrives), and laying the text out is nearly all of a summary's cost: with a few hundred typed messages loaded
+// it was a fifth of a landing. The count depends on these five values alone, so the most recently asked keep theirs.
+const SUMMARY_LINES_KEPT = 4096;
+const summaryLines = new Map<string, number>();
+function summaryLineCount(text: string, font: string, width: number, lineHeight: number, epoch: number): number {
+  const key = `${epoch}\n${width}\n${lineHeight}\n${font}\n${text}`;
+  const kept = summaryLines.get(key);
+  if (kept !== undefined) {
+    summaryLines.delete(key);
+    summaryLines.set(key, kept);
+    return kept;
+  }
+  const lines = layoutText(prepareWithSegments(text, font, { whiteSpace: 'pre-wrap' }), width, lineHeight).lineCount;
+  if (summaryLines.size >= SUMMARY_LINES_KEPT) summaryLines.delete(summaryLines.keys().next().value!);
+  summaryLines.set(key, lines);
+  return lines;
 }
 
 /** Clicking it scrolls back to the message (ChatRoot reads `data-pin-summary`). */

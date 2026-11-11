@@ -322,6 +322,45 @@ export type DeliveryReading = { body: string; segments: DeliverySegment[] }
  * 两行头、外框之前的方括号批。认不出 = `null`,调用方把原文当普通文字。
  */
 export function readDeliveryEnvelope(text: string): DeliveryReading | null {
+  // Ordinary text is most of what gets asked about; it is told apart by its first characters, without a lookup.
+  if (!MAY_BE_DELIVERY.test(text)) return null
+  const kept = readings.get(text)
+  if (kept !== undefined) {
+    // Asked again: move it to the young end.
+    readings.delete(text)
+    readings.set(text, kept)
+    return kept
+  }
+  const reading = deepFreeze(parseDeliveryEnvelope(text))
+  readings.set(text, reading)
+  readingChars += text.length
+  for (const oldest of readings.keys()) {
+    if (readingChars <= READINGS_KEPT_CHARS) break
+    readings.delete(oldest)
+    readingChars -= oldest.length
+  }
+  return reading
+}
+
+// @@@read-once — a transcript list is rebuilt from its messages again and again (an older page lands, a name
+// arrives), and every rebuild asked for every message's envelope: parsing them was the largest part of a rebuild,
+// and it grew with everything loaded. A reading depends on the text alone, so the texts read most recently keep
+// theirs. The readings are shared and frozen: a caller that wants to change one copies it.
+const READINGS_KEPT_CHARS = 24 * 1024 * 1024
+const readings = new Map<string, DeliveryReading | null>()
+let readingChars = 0
+/** Same texts as below can read as a delivery: what `trim` strips is what `\s` matches. */
+const MAY_BE_DELIVERY = /^\s*(?:<gugu_deliver(?:y|ies)[\s>]|\[)/
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value)
+    for (const child of Object.values(value)) deepFreeze(child)
+  }
+  return value
+}
+
+function parseDeliveryEnvelope(text: string): DeliveryReading | null {
   const source = text.trim()
   const segments = DELIVERY_ROOT.test(source)
     ? readXmlSegments(source)
@@ -362,6 +401,40 @@ export function recoverDeliveryEnvelopes(
       + ' possibly_received="true">\n  <redelivery>This message may already have been received.</redelivery>'
       + envelope.source.slice(envelope.openingEnd)
   }))
+}
+
+/**
+ * A delivery as a folded exchange carries it: every fact of its opening tag and which message it answered
+ * (`reply_to`, without the preview), with the body cut to `bodyChars` and without the contexts beside it (thread,
+ * message, group rules) or the arrival hint. Read back, the facts are the original's except `threadContext`,
+ * `messageContext` and `replyTo.preview`, and the body is the original's opening. For a reader that reads the
+ * message again, whole, when the exchange is opened.
+ * `null` for anything but the current envelope syntax (retired forms, text that only looks like one): those stay whole.
+ */
+export function foldDeliveryEnvelope(text: string, bodyChars: number): string | null {
+  const source = text.trim()
+  if (!DELIVERY_ROOT.test(source)) return null
+  let envelopes: XmlElement[] | null
+  try {
+    envelopes = envelopesOf(parseXml(source))
+  } catch (error) {
+    if (error !== NOT_ENVELOPE) throw error
+    return null
+  }
+  if (!envelopes?.length) return null
+  const folded: string[] = []
+  for (const envelope of envelopes) {
+    const segment = envelope.name === 'gugu_delivery' ? readSegment(envelope) : null
+    if (!segment?.facts) return null
+    const reply = childElement(envelope, 'reply_to')
+    folded.push([
+      envelope.source.slice(0, envelope.openingEnd),
+      ...(reply ? [`  ${reply.children.length ? `${reply.source.slice(0, reply.openingEnd - 1)}/>` : reply.source}`] : []),
+      `<![CDATA[${toCdata(segment.body.slice(0, bodyChars))}]]>`,
+      '</gugu_delivery>',
+    ].join('\n'))
+  }
+  return folded.length === 1 ? folded[0]! : [`<gugu_deliveries count="${folded.length}">`, ...folded, '</gugu_deliveries>'].join('\n')
 }
 
 /**

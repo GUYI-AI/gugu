@@ -59,15 +59,19 @@
 ) { grid-row: 3; }
 
 /* A locked harness shares the metadata row with its model. The middle three
-   tracks still occupy exactly the input's original middle column. */
+   tracks still occupy exactly the input's original middle column.
+   When the row is short, the model name is the one that gives way: the
+   permission name is a few characters and is shown whole, the model name
+   ends in an ellipsis. With the model track `auto`, a long model name took its
+   full width first and cut the permission name (「完全访问」 lost half of 「问」). */
 [data-phone-shell] [data-agent-conversation] [data-slot='composer'][data-mobile]:has([data-composer-locked-agent]) [data-slot='composer-bar'] {
-  grid-template-columns: var(--control-h-touch) minmax(0, 1fr) var(--control-h-touch) auto var(--control-h-touch);
+  grid-template-columns: var(--control-h-touch) minmax(min-content, 1fr) var(--control-h-touch) minmax(0, auto) var(--control-h-touch);
 }
 [data-phone-shell] [data-agent-conversation] [data-slot='composer'][data-mobile]:has([data-composer-locked-agent]) [data-slot='composer-input'] { grid-column: 2 / 5; }
 [data-phone-shell] [data-agent-conversation] [data-slot='composer'][data-mobile]:has([data-composer-locked-agent]) [data-slot='composer-actions-end'] > button:not([data-composer-locked-agent]) { grid-column: 5; }
 [data-phone-shell] [data-agent-conversation] [data-slot='composer'][data-mobile] [data-composer-locked-agent] { grid-column: 3; grid-row: 1; }
 [data-phone-shell] [data-agent-conversation] [data-slot='composer'][data-mobile]:has([data-composer-locked-agent]) [data-slot='composer-model'] > button { grid-column: 4 / -1; max-width: 100%; }
-[data-phone-shell] [data-agent-conversation] [data-slot='composer'][data-mobile]:has([data-composer-locked-agent]) [data-slot='composer-actions-start'] > button:has([data-slot='composer-permission-mode']) { grid-column: 1 / 3; max-width: 100%; }
+[data-phone-shell] [data-agent-conversation] [data-slot='composer'][data-mobile]:has([data-composer-locked-agent]) [data-slot='composer-actions-start'] > button:has([data-slot='composer-permission-mode']) { grid-column: 1 / 3; max-width: 100%; min-width: max-content; }
 
 [data-phone-shell] {
   --phone-font-caption: calc((var(--font-caption) + var(--font-body)) / 2);

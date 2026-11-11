@@ -1,9 +1,10 @@
 import { activityPreviewLabel, activityPreviewSources } from '@gugu/session-chat-ui/activity-preview';
 import { messageReferenceId } from '@gugu/session-core/acp/client';
 import { isAppRoute, readDeliveryEnvelope, type DeliveryReadFacts } from '@gugu/core/local/agent/deliveryEnvelope';
-import { timelineRailMessages, timelineRailPreviewText, type TimelineRailOptions } from '@gugu/core/shared/timelineRail';
+import { timelineRailAdmits, timelineRailMessages, timelineRailPreviewText, type TimelineRailOptions } from '@gugu/core/shared/timelineRail';
 import { shownSender, type SelfIdentity, type TranscriptTurn } from '@gugu/session-chat-ui';
 import { parseConversationLink } from '@gugu/core/shared/ui/guguLink';
+import type { StoredOutlineTurn } from '@shared/core/sessions/session-outline';
 
 /**
  * Who a delivered turn came from. The rail paints these ticks differently from
@@ -34,7 +35,12 @@ export interface TimelineTurn {
   reply: string;
   /** Absent for the user's own turns. */
   sender?: TimelineSender;
+  /** Set while the turn is not loaded: the message's durable reference, which a jump asks the transcript to reveal. */
+  reference?: string;
 }
+
+/** What the machine that keeps the conversation says about one turn this window has not loaded (`getStoredOutline`). */
+export type TimelineOutlineTurn = StoredOutlineTurn;
 
 function senderOf(facts: DeliveryReadFacts, self: SelfIdentity | null): TimelineSender {
   // #5048 the signed-in user's own delivered turn is named from the local profile, like the card.
@@ -95,6 +101,39 @@ export function timelineTurnsFromTranscript(
         const folded = activitySources && activityPreviewLabel(activitySources.get(messageReferenceId(turn, item.id) ?? item.id), activityContext!) !== null;
         if (!folded) current.reply = timelineRailPreviewText(item.text);
       }
+    }
+  }
+  return turns;
+}
+
+/**
+ * The same entries for turns that are not loaded, from their outline. The machine listed every input some reader
+ * could show; this reader's directory decides, as it does for loaded turns, and the ids are the ones the entries
+ * will have once their turns load.
+ */
+export function timelineTurnsFromOutline(
+  outline: readonly TimelineOutlineTurn[],
+  self: SelfIdentity | null = null,
+  options: TimelineRailOptions = {},
+): TimelineTurn[] {
+  const admit = { ...options, selfUserId: self?.userId ?? options.selfUserId };
+  const turns: TimelineTurn[] = [];
+  for (const turn of outline) for (const input of turn.inputs) {
+    const humans = input.candidates.filter((candidate) => timelineRailAdmits({ sender: candidate.sender as DeliveryReadFacts | null }, admit));
+    // A reply to a mixed batch cannot be attributed to any one human.
+    const attributed = input.segments === null || input.segments === humans.length;
+    for (const [index, human] of humans.entries()) {
+      const isFirst = input.first && index === 0;
+      turns.push({
+        id: isFirst ? turn.id : `${turn.id}:${input.itemId}${index ? `:${index}` : ''}`,
+        ...(isFirst ? {} : { sourceTurnId: turn.id }),
+        anchorItemId: input.itemId,
+        itemIds: [input.itemId],
+        prompt: human.text,
+        reply: attributed && index === humans.length - 1 ? input.reply : '',
+        ...(human.sender ? { sender: senderOf(human.sender as DeliveryReadFacts, self) } : {}),
+        reference: input.reference,
+      });
     }
   }
   return turns;

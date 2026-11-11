@@ -221,3 +221,24 @@ describe('filterTurnsForChat: the turns of one chat with the agent', () => {
     expect(filterTurnsForChat([batch], 'other')).toEqual([]);
   });
 });
+
+// A running call is one object whose input and output are still arriving; what was read off it earlier must not stick.
+describe('agentSendOf reads a call again when its input or output changed', () => {
+  it('follows the input of the same call object', () => {
+    const tool = send({ text: 'First part' });
+    expect(agentSendOf(tool)?.text).toBe('First part');
+    expect(agentSendOf(tool)?.text).toBe('First part');
+    tool.rawInput = JSON.stringify({ chat_id: 'dm', text: 'First part, and the rest' });
+    expect(agentSendOf(tool)?.text).toBe('First part, and the rest');
+    tool.tool = 'message_history';
+    expect(agentSendOf(tool)).toBeNull();
+  });
+
+  it('follows the output of the same call object', () => {
+    const tool: McpToolCall = { ...send(), status: 'done' };
+    expect(agentSendOf(tool)).not.toBeNull();
+    // Delivered to the owner's own session: not something the agent said in a chat.
+    tool.rawOutput = JSON.stringify({ message_id: messageId, recipients: [], delivery: 'owner-native' });
+    expect(agentSendOf(tool)).toBeNull();
+  });
+});

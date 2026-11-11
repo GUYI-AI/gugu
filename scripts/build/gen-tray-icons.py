@@ -3,8 +3,11 @@
 
     uv run --with pillow python scripts/build/gen-tray-icons.py
 
-源图 build-resources/icon-sources/tray-mark-source.png:白底黑标(owner 2026-09-05 选定 E01 的 16px 简化版,
-gpt-image-2 按吉祥物原图转的单色标志)。产物全部落在 build-resources/,规格按 Electron Tray 文档:
+源图 build-resources/icon-sources/tray-mark-source.png:白底黑标,就是应用图标「网点鸽」那一张画面
+(同目录 app-icon-dots.svg 换成白底黑形渲染;图形来历见 scripts/build/gen-app-icons.py)。
+48 像素及以下用 build-resources/icon-sources/small/mark-{16,20,24,32,36,48}.png:同一只鸟按像素格逐档画好的版本
+(灰度 = 不透明度,由 scripts/build/draw-small-app-icons.py 画出;从大图缩下来点会糊成灰)。没有对应边长的才从源图缩。
+产物全部落在 build-resources/,规格按 Electron Tray 文档:
   · macOS  tray-iconTemplate.png 16×16 + tray-iconTemplate@2x.png 32×32 —— 模板图(黑 + 透明),
            文件名以 Template 结尾,系统按亮/暗/毛玻璃自己着色;别让打包把文件名 hash 掉。
   · Windows tray-icon-light.ico / tray-icon-dark.ico —— 多尺寸 ICO;light=黑字形(浅色任务栏),
@@ -16,8 +19,9 @@ gpt-image-2 按吉祥物原图转的单色标志)。产物全部落在 build-res
 from pathlib import Path
 from PIL import Image, ImageOps
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / 'build-resources' / 'icon-sources' / 'tray-mark-source.png'
+SMALL = ROOT / 'build-resources' / 'icon-sources' / 'small'
 OUT = ROOT / 'build-resources'
 ICO_SIZES = [16, 20, 24, 32, 48]
 ANDROID_RES = ROOT / 'apps' / 'mobile' / 'android' / 'app' / 'src' / 'main' / 'res'
@@ -43,7 +47,13 @@ def load_alpha_mark() -> Image.Image:
 
 
 def tinted(alpha: Image.Image, size: int, rgb: tuple[int, int, int]) -> Image.Image:
-    a = alpha.resize((size, size), Image.LANCZOS)
+    drawn = SMALL / f'mark-{size}.png'
+    if drawn.exists():
+        a = Image.open(drawn).convert('L')
+        if a.size != (size, size):
+            raise SystemExit(f'{drawn} should be {size}x{size}, got {a.size}')
+    else:
+        a = alpha.resize((size, size), Image.LANCZOS)
     im = Image.new('RGBA', (size, size), rgb + (0,))
     im.putalpha(a)
     return im

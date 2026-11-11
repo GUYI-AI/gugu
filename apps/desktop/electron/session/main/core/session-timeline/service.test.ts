@@ -537,7 +537,8 @@ describe('session timeline service', () => {
         running: false, ended: cancelled.outcome, entries: [{ kind: 'prompt', messageId: 'msg:new' }],
       } });
     }
-    expect(state.storedHistory).toHaveBeenCalledWith({ sessionId: 'conv-1', before: undefined, limit: 4 });
+    // A preview is not a page the reader went back for: it reads at the first-screen size.
+    expect(state.storedHistory).toHaveBeenCalledWith({ sessionId: 'conv-1', before: undefined, limit: 4 }, { older: false });
     expect(state.wake).not.toHaveBeenCalled();
   });
 

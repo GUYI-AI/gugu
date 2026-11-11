@@ -42,15 +42,26 @@ export type SessionHostPaneSubscribe = {
   apps?: boolean;
 };
 
+/**
+ * A text frame sent packed: `z` is the base64 of its gzip. A device link carries JSON and neither line packs it (the
+ * cloud channel's server takes no WebSocket compression; the SSH lines are opened without it), so a page of history
+ * travels as it is written. Only a reader that said it reads packed frames (`taskhost.open {pack: ['gzip']}`) is sent
+ * one: an older reader is sent what it always was, and an older machine ignores the word.
+ */
+export type PackedFrameCarrier = { z: string };
+export const SESSION_HOST_PACK = 'gzip';
+/** A text frame shorter than this goes as it is: packing it saves little. */
+export const PACK_MIN_CHARS = 4_000;
+
 /** 一条推送 / 一次请求里的一片。 */
-export type SessionHostPiece = HostFrameCarrier & { p?: number; n?: number };
+export type SessionHostPiece = (HostFrameCarrier | PackedFrameCarrier) & { p?: number; n?: number };
 export type SessionHostFrameBatch = { client: string; seq: number; frames: SessionHostPiece[] };
 
 /** 单片上限(字符):咕咕云一条广播放得下,SSH 一行也不嫌长。 */
 export const PIECE_CHARS = 200_000;
 
 /** 把一批帧切成信封里的片(大帧拆成 p/n 几片,接收端 joinPieces 拼回)。 */
-export function toPieces(frames: readonly (string | Uint8Array)[]): SessionHostPiece[][] {
+export function toPieces(frames: readonly (string | Uint8Array)[], pack?: (frame: string) => string | null): SessionHostPiece[][] {
   const batches: SessionHostPiece[][] = [];
   let current: SessionHostPiece[] = [];
   let size = 0;
@@ -64,8 +75,10 @@ export function toPieces(frames: readonly (string | Uint8Array)[]): SessionHostP
     size += length;
   };
   for (const frame of frames) {
-    const carrier = frameToCarrier(frame);
-    const text = 'f' in carrier ? carrier.f : carrier.b;
+    // `pack` says which frames it packs (null = not this one); a frame that does not get shorter goes as it is.
+    const packed = pack && typeof frame === 'string' && frame.length >= PACK_MIN_CHARS ? pack(frame) : null;
+    const carrier: HostFrameCarrier | PackedFrameCarrier = packed !== null && packed.length < (frame as string).length ? { z: packed } : frameToCarrier(frame);
+    const text = 'f' in carrier ? carrier.f : 'z' in carrier ? carrier.z : carrier.b;
     if (text.length <= PIECE_CHARS) {
       push(carrier, text.length);
       continue;
@@ -73,31 +86,56 @@ export function toPieces(frames: readonly (string | Uint8Array)[]): SessionHostP
     const n = Math.ceil(text.length / PIECE_CHARS);
     for (let p = 0; p < n; p += 1) {
       const slice = text.slice(p * PIECE_CHARS, (p + 1) * PIECE_CHARS);
-      push('f' in carrier ? { f: slice, p, n } : { b: slice, p, n }, slice.length);
+      push('f' in carrier ? { f: slice, p, n } : 'z' in carrier ? { z: slice, p, n } : { b: slice, p, n }, slice.length);
     }
   }
   if (current.length > 0) batches.push(current);
   return batches;
 }
 
-/** 收片的一侧:按到达顺序拼(调用方已按 seq 排好),拼齐一帧交出去。 */
-export function createPieceJoiner(onFrame: (frame: string | Uint8Array) => void): (pieces: readonly SessionHostPiece[]) => void {
+/**
+ * 收片的一侧:按到达顺序拼(调用方已按 seq 排好),拼齐一帧交出去。
+ *
+ * `unpack` reads a packed frame (`z`), which takes a moment: frames are still handed over in the order they came, so
+ * one being unpacked holds back those behind it. `failed` is told when a packed frame cannot be read, or arrives at a
+ * reader that never asked for one; the frame is lost, and the window it came on is the caller's to close.
+ */
+export function createPieceJoiner(
+  onFrame: (frame: string | Uint8Array) => void,
+  unpack?: { read: (packed: string) => Promise<string>; failed: (error: unknown) => void },
+): (pieces: readonly SessionHostPiece[]) => void {
   let parts: string[] = [];
-  let binary = false;
+  let kind: 'f' | 'b' | 'z' = 'f';
+  let waiting: Promise<void> | null = null;
+  const after = (step: () => void | Promise<void>): void => {
+    const job: Promise<void> = (waiting ?? Promise.resolve()).then(step).catch((error: unknown) => unpack?.failed(error)).then(() => {
+      if (waiting === job) waiting = null;
+    });
+    waiting = job;
+  };
+  const hand = (carrier: HostFrameCarrier | PackedFrameCarrier): void => {
+    if ('z' in carrier) {
+      if (!unpack) throw new Error('a packed frame came to a reader that did not ask for one');
+      after(async () => onFrame(await unpack.read(carrier.z)));
+      return;
+    }
+    const frame = carrierToFrame(carrier);
+    if (frame === null) return;
+    if (waiting) after(() => onFrame(frame));
+    else onFrame(frame);
+  };
   return (pieces) => {
     for (const piece of pieces) {
       if (piece.n === undefined) {
-        const frame = carrierToFrame(piece);
-        if (frame !== null) onFrame(frame);
+        hand(piece);
         continue;
       }
-      binary = 'b' in piece;
-      parts.push('f' in piece ? piece.f : piece.b);
+      kind = 'z' in piece ? 'z' : 'b' in piece ? 'b' : 'f';
+      parts.push('f' in piece ? piece.f : 'z' in piece ? piece.z : piece.b);
       if (parts.length === piece.n) {
         const joined = parts.join('');
         parts = [];
-        const frame = carrierToFrame(binary ? { b: joined } : { f: joined });
-        if (frame !== null) onFrame(frame);
+        hand(kind === 'z' ? { z: joined } : kind === 'b' ? { b: joined } : { f: joined });
       }
     }
   };

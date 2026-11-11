@@ -32,6 +32,8 @@ export const enUSSubscriptionMessages = {
   "subscriptions.connections.method": "Connection method",
   "subscriptions.connections.thirdParty": "Use a third-party API",
   "subscriptions.connections.endpoint": "API address",
+  "subscriptions.connections.model": "Model",
+  "subscriptions.connections.protocolHint": "This address must support the {protocol} API",
   "subscriptions.connections.remark": "Remark (optional)",
   "subscriptions.connections.remarkPlaceholder": "A name is generated automatically",
   "subscriptions.connections.accountHint": "Continue to the provider’s sign-in flow. Each account has its own credentials.",
@@ -86,7 +88,6 @@ export const enUSSubscriptionMessages = {
     'Not checked yet. The vendor limits how often this can be checked, so it’s only checked when you click “Check now”.',
   'subscriptions.unavailable.error': 'Couldn’t read it: {message}',
   'subscriptions.openConsole': 'Open vendor console',
-  'subscriptions.signInHint': 'Sign in from Library → Agents',
   'subscriptions.loadFailed': 'Couldn’t read the harnesses here: {message}',
 } as const;
 
@@ -121,6 +122,8 @@ export const zhCNSubscriptionMessages: Record<keyof typeof enUSSubscriptionMessa
   "subscriptions.connections.method": "连接方式",
   "subscriptions.connections.thirdParty": "使用第三方 API",
   "subscriptions.connections.endpoint": "API 地址",
+  "subscriptions.connections.model": "模型",
+  "subscriptions.connections.protocolHint": "这个地址要支持 {protocol} 接口",
   "subscriptions.connections.remark": "备注（选填）",
   "subscriptions.connections.remarkPlaceholder": "留空自动命名",
   "subscriptions.connections.accountHint": "继续后进入厂商登录流程，每个账号独立保存凭据。",
@@ -174,6 +177,5 @@ export const zhCNSubscriptionMessages: Record<keyof typeof enUSSubscriptionMessa
   'subscriptions.unavailable.notReadYet': '尚未查询。厂商限制查询频率，请点击「立即查询」',
   'subscriptions.unavailable.error': '读取失败：{message}',
   'subscriptions.openConsole': '前往厂商后台',
-  'subscriptions.signInHint': '去「资源库 → 智能体」里登录',
   'subscriptions.loadFailed': '无法加载 Harness 列表：{message}',
 };

@@ -38,7 +38,7 @@ export const modalRegistry = {
   renameSessionModal: createModal(RenameSessionModal, { size: 'xs' }),
   integrationSetupModal: createModal(IntegrationSetupModal, { size: 'md' }),
   githubConnectModal: createModal(GithubConnectModal, { size: 'md' }),
-  agentSignInModal: createModal(AgentSignInModal, { size: 'lg' }),
+  agentSignInModal: createModal(AgentSignInModal, { size: 'md' }),
   addRemoteModal: createModal(AddRemoteModal),
   harnessLoginRequiredModal: createModal(HarnessLoginRequiredModal, { size: 'sm' }),
   keyboardShortcutsModal: createModal(KeyboardShortcutsCheatSheet, { size: 'lg' }),

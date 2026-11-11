@@ -246,8 +246,8 @@ describe('AgentConfigRuntime', () => {
       command: SELECTED_CLI_PATH,
       args: [],
       cwd: '/home/ada',
-      cols: 120,
-      rows: 30,
+      cols: 1000,
+      rows: 40,
     });
 
     ptySpawner.processes[0]?.emitData('Open https://example.com/login\n');
@@ -257,6 +257,33 @@ describe('AgentConfigRuntime', () => {
 
     expect(runtime.sendLoginInput('claude', 'code\n')).toEqual(ok(undefined));
     expect(ptySpawner.processes[0]?.writes).toEqual(['code\n']);
+    await runtime.dispose();
+  });
+
+  it('#2507 the login state carries the device code, the paste-back prompt and the failure lines (no terminal needed)', async () => {
+    const ptySpawner = new FakePtySpawner();
+    const { runtime } = makeRuntime({ ptySpawner });
+    await runtime.startLogin('claude', 'login', SELECTED_CLI);
+    const process = ptySpawner.processes[0]!;
+    expect(runtime.install.getAuth('claude').login).toMatchObject({ userCode: null, awaitingInput: false });
+
+    process.emitData('Enter this one-time code\n  ABCD-EFGH\nPaste code here if prompted > ');
+    expect(runtime.install.getAuth('claude').login).toMatchObject({
+      userCode: 'ABCD-EFGH',
+      awaitingInput: true,
+      inputPromptCount: 1,
+    });
+
+    expect(runtime.sendLoginInput('claude', 'xyz\r')).toEqual(ok(undefined));
+    expect(process.writes).toEqual(['xyz\r']);
+    expect(runtime.install.getAuth('claude').login?.awaitingInput).toBe(false);
+
+    process.emitData('\r\nOAuth error: invalid code\r\n');
+    process.emitExit({ exitCode: 1, signal: null });
+    expect(runtime.install.getAuth('claude').login?.exit).toMatchObject({
+      exitCode: 1,
+      tail: expect.stringContaining('OAuth error: invalid code'),
+    });
     await runtime.dispose();
   });
 

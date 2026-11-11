@@ -1,4 +1,4 @@
-import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
+import { ExternalLink } from '@/lib/icons';
 import { reaction } from 'mobx';
 import { useEffect, useRef, useState } from 'react';
 import { AcpAuthLoginBinding } from '@renderer/lib/acp/auth-login-binding';
@@ -12,6 +12,7 @@ import {
 } from '@renderer/lib/ui/dialog';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { acpLoginAttemptSucceeded, acpLoginView, type AcpLoginView } from './login-success';
+import { SignInLinkBody } from './SignInLinkBody';
 import { SignInTitle } from './SignInTitle';
 
 type Props = BaseModalProps<void> & {
@@ -95,7 +96,10 @@ export function AcpAuthenticateSignIn({
   }, [attempt, methodId, program, providerId]);
 
   const failure = startError ?? (view.phase === 'failed' ? view.message : null);
+  const link = view.phase === 'waiting' ? view.fallbackUrl : null;
 
+  // 与终端登录同一个样子(#2507):一句等待说明 + 复制链接,底部「打开授权页」。厂商已经自己开过浏览器,
+  // 这颗按钮就是从前那句「如果浏览器没打开,点这里」—— ❌ 自动再开一次。
   return (
     <>
       <DialogHeader>
@@ -104,33 +108,16 @@ export function AcpAuthenticateSignIn({
           stepLabel={stepLabel}
         />
       </DialogHeader>
-      <DialogContentArea className="flex min-h-[160px] flex-col items-center justify-center gap-3 text-sm">
-        {failure ? (
-          <p className="text-foreground-destructive" data-testid="acp-sign-in-error">
-            {translate('agentsPage.signInBrowserFailed', { message: failure })}
-          </p>
-        ) : (
-          <div className="flex items-center gap-2 text-foreground-muted" data-testid="acp-sign-in-waiting">
-            <LoadingIndicator size="inline" />
-            {translate(
-              view.phase === 'starting'
-                ? 'agentsPage.signInBrowserStarting'
-                : 'agentsPage.signInBrowserOpened'
-            )}
-          </div>
-        )}
-        {!failure && view.fallbackUrl && (
-          <Button
-            variant="link"
-            size="sm"
-            data-testid="acp-sign-in-fallback"
-            onClick={() => openExternalLinkInBrowser(view.fallbackUrl!)}
-          >
-            {translate('agentsPage.signInBrowserFallback')}
-          </Button>
-        )}
+      <DialogContentArea className="pt-1" data-testid={failure ? 'acp-sign-in-error' : 'acp-sign-in-waiting'}>
+        <SignInLinkBody
+          phase={failure ? 'failed' : view.phase === 'starting' ? 'starting' : 'waiting'}
+          link={link}
+          userCode={null}
+          codeEntry={null}
+          failure={failure}
+        />
       </DialogContentArea>
-      <DialogFooter className="flex-wrap items-center gap-2">
+      <DialogFooter>
         {failure ? (
           <>
             <Button variant="outline" onClick={onClose}>
@@ -141,16 +128,27 @@ export function AcpAuthenticateSignIn({
             </Button>
           </>
         ) : (
-          <Button
-            variant="ghost"
-            onClick={() => {
-              bindingRef.current?.dispose(true);
-              bindingRef.current = null;
-              onClose();
-            }}
-          >
-            {translate('agentsPage.signInCancel')}
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              onClick={() => {
+                bindingRef.current?.dispose(true);
+                bindingRef.current = null;
+                onClose();
+              }}
+            >
+              {translate('agentsPage.signInCancel')}
+            </Button>
+            <Button
+              variant="default"
+              disabled={!link}
+              data-testid="acp-sign-in-fallback"
+              onClick={() => link && openExternalLinkInBrowser(link)}
+            >
+              <ExternalLink className="h-4 w-4" />
+              {translate('agentsPage.signInOpenPage')}
+            </Button>
+          </>
         )}
       </DialogFooter>
     </>

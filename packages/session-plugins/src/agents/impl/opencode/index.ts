@@ -142,10 +142,12 @@ export const plugin = definePlugin(
           kind: 'cli-login',
           id: 'opencode-login',
           name: 'Sign in with OpenCode',
-          args: ['auth', 'login'],
-          // 别的机器上照样是它:终端里挑提供方,各家走贴码 / 设备码 / 填 key(anomalyco/opencode#8274:
-          // VPS 上 TUI 的 /connect 回跳 localhost 失败,而 `opencode auth login` 能完成)。
-          headlessArgs: ['auth', 'login'],
+          // #2507 登录窗口不再摆终端:不指定提供方,`auth login` 停在一个要上下键挑的菜单上,没法往下走。
+          // `-p opencode`(opencode 1.18.28 `--help`「provider id or name to log in to (skips provider selection)」)
+          // 直接印「Create an api key at https://opencode.ai/auth」再要 key —— 链接 + 一个输入框(2026-11-12 实录)。
+          // 别的机器上同一条(anomalyco/opencode#8274:VPS 上 TUI 的 /connect 回跳 localhost 失败,`auth login` 能完成)。
+          args: ['auth', 'login', '-p', 'opencode'],
+          headlessArgs: ['auth', 'login', '-p', 'opencode'],
           description: 'Open the OpenCode CLI sign-in flow in a terminal.',
         },
         {
