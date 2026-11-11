@@ -21,7 +21,7 @@ const releaseKey = vi.hoisted(() => {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');
   return { id: 'gugu-assistant-test', privateKey, publicKey: publicKey.export({ type: 'spki', format: 'pem' }).toString() };
 });
-vi.mock('./release/release-keys.json', () => ({
+vi.mock('@shared/extensions/release/release-keys.json', () => ({
   default: { schemaVersion: 1, keys: [{ id: releaseKey.id, appId: 'gugu-assistant', sourceRepo: 'GUYI-AI/gugu-assistant', publicKey: releaseKey.publicKey }] },
 }));
 
