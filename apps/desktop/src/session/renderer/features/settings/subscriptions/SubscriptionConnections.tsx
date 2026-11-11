@@ -323,28 +323,31 @@ export function SubscriptionConnections({
         </ConnectionSettingsRows>
       ) : (
         <DropdownMenu open={open} onOpenChange={changeOpen}>
-          {trigger === undefined && currentSignIn}
-          {trigger !== null && (
-            <DropdownMenuTrigger
-              render={
-                trigger ?? (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    disabled={action.isPending}
-                    data-testid={`subscription-switch-${agent.id}`}
-                  />
-                )
-              }
-            >
-              {label ?? (
-                <>
-                  {translate('subscriptions.connections.switch')}
-                  <ChevronDown className="ml-1 size-3" />
-                </>
-              )}
-            </DropdownMenuTrigger>
-          )}
+          {/* 「重新登录」与「切换连接」并排一行;操作列本身是竖排的,❌ 让它俩上下叠。 */}
+          <div className="flex items-center gap-1">
+            {trigger === undefined && currentSignIn}
+            {trigger !== null && (
+              <DropdownMenuTrigger
+                render={
+                  trigger ?? (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      disabled={action.isPending}
+                      data-testid={`subscription-switch-${agent.id}`}
+                    />
+                  )
+                }
+              >
+                {label ?? (
+                  <>
+                    {translate('subscriptions.connections.switch')}
+                    <ChevronDown className="ml-1 size-3" />
+                  </>
+                )}
+              </DropdownMenuTrigger>
+            )}
+          </div>
           <DropdownMenuContent align="end" anchor={anchor} className="subscription-connection-menu">
             {!onError && failure && (
               <p
