@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { usePhoneAssistantAppEnsure } from '@/components/appSlot/phoneAssistantAppEnsure'
+import { usePhoneAssistantEntry } from './phoneAssistantEntry'
 import { useAssistantDm } from '@/components/assistant/useAssistantDm'
 import { assistantHomePlace, type AssistantHomePlace } from '@/lib/assistantHome'
 import { readSetupStep, writeSetupStep } from '@/lib/assistantSetupState'
@@ -53,6 +55,9 @@ export function usePhoneAssistant(enabled: boolean): PhoneAssistantState {
   const id = contact?.id ?? null
   const name = contact?.display_name ?? null
   useEffect(() => publishPhoneAssistant(id && name ? { id, name } : null), [id, name])
+  // #1931 The assistant App is its 动态 / 任务 / 记忆 / 资料 on this phone: put in by itself once the account's assistant is known.
+  const appEntry = usePhoneAssistantEntry()
+  usePhoneAssistantAppEnsure(enabled ? id : null, JSON.stringify(appEntry))
   const home = useMemo(() => (contact ? assistantHomePlace(mine.homeDeviceId, devices, cloudDeviceId) : null), [contact, mine.homeDeviceId, devices, cloudDeviceId])
   // 引导在手机上走到「安家」就够了(之后的「连应用 → 一切就绪」是桌面会话页画的):认出它了就把这一步的记录清掉,❌ 留着下次还停在引导里。
   const ownerUserId = user?.id ?? null

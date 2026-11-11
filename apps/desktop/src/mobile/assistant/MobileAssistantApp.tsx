@@ -32,10 +32,14 @@ import { PhoneHomeContext } from './phoneHome'
 import { PhoneAppFrame } from '@/components/appSlot/PhoneAppFrame'
 import { phoneAssistantLayer } from '@/components/appSlot/phoneAssistantLayer'
 import { requestAssistantClose } from '@/lib/assistantClose'
-import type { AssistantLayerEntry } from '@/session/shared/extensions/assistant-entry'
+import { ASSISTANT_APP_ID, type AssistantLayerEntry } from '@/session/shared/extensions/assistant-entry'
 import type { PhoneAssistantScreen, PhoneSurfaceSection } from '@/session/shared/extensions/phone-binding'
 import type { AppSurfaceIntent } from '@/session/shared/extensions/unread-binding'
 import { PhoneConfirmDialog } from './PhoneConfirmDialog'
+import { usePhoneAssistantAppStuck } from '@/components/appSlot/phoneAssistantAppEnsure'
+import { phoneInstalledApp } from '@/components/appSlot/phoneBindingPorts'
+import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
+import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { PHONE_ASSISTANT_LAYER_TAB, usePhoneAssistantEntry } from './phoneAssistantEntry'
 import { PhoneAssistantWorkLedger } from './PhoneAssistantWorkLedger'
 import { phoneWorkChats } from './phoneWorkChats'
@@ -146,6 +150,11 @@ function MobileAssistantAppContent({
   // without it (or with one not trusted) the built-in pages, exactly as before.
   const entry = usePhoneAssistantEntry()
   const app = entry.entry === 'app' ? entry : null
+  // #1931 Until the App is in (phoneAssistantAppEnsure.ts puts it in by itself), 动态 / 任务 / 记忆 / 资料 say it is being
+  // prepared — 聊天 works meanwhile; said stuck only once every try of the backoff window failed.
+  const ensureStuck = usePhoneAssistantAppStuck()
+  // An App with its id that is not the trusted one in use (switched off, from elsewhere): gugu does not put over it — stuck.
+  const appHeldElsewise = !app && installedExtensionsStore.isLoaded && phoneInstalledApp(ASSISTANT_APP_ID) !== null
   const opened = useOpenedAssistantTaskChat()
   useEffect(() => {
     if (opened?.request.assistantId === assistant.id) setRoute({ tab: 'tasks' })
@@ -212,19 +221,18 @@ function MobileAssistantAppContent({
   const typing = useAssistantTyping(chatId, assistant.id, name)
   const { user } = useAuth()
   const customizeOffered = useCustomizeCardOffered(user?.id)
-  // With the App: 自定义 is its 资料 (name, look, character), told `profile` as a computer's header click tells it.
+  // 自定义 is the App's 资料 (name, look, character), told `profile` as a computer's header click tells it.
   const openCustomize = () => {
-    if (!app) return open({ tab: 'profile', sub: 'customize' })
     open({ tab: 'profile' })
-    setIntent({ kind: 'profile' })
+    if (app) setIntent({ kind: 'profile' })
   }
   const composerEntries = <AssistantComposerEntries assistantId={assistant.id} busy={false} onOpen={() => setIdeasOpen(true)}
     customize={customizeOffered && user?.id ? { ownerUserId: user.id, name, onOpen: openCustomize } : undefined} />
-  // The recording bar's 「查看」: with the App, its 记忆 told `voice-note` (it reads the note through `voice-notes`).
+  // The recording bar's 「查看」: the App's 记忆, told `voice-note` (it reads the note through `voice-notes`).
   const openFromBar = (route: PhoneRoute) => {
-    if (!app || route.tab !== 'memory') return open(route)
+    if (route.tab !== 'memory') return open(route)
     open({ tab: 'memory' })
-    setIntent({ kind: 'voice-note' })
+    if (app) setIntent({ kind: 'voice-note' })
   }
   const reportInput = useRef<HTMLInputElement>(null)
   // 「+」里的:获取灵感(胶囊隐藏了也一直在)、录制语音笔记(正在录时置灰,录音条在聊天上面)、
@@ -328,15 +336,42 @@ function MobileAssistantAppContent({
       {app ? <PhoneAssistantWorkLedger ownerId={ownerId} assistantId={assistant.id} /> : null}
       {tab === 'chat' || (app && !hostScreen) ? null : (
         <main id={`assistant-${assistant.id}-${tab}`} role="tabpanel" aria-label={labels[tab]} className="ta-phone-body" ref={pageBody} onScroll={(event) => pageScroll.current.set(pageKey, event.currentTarget.scrollTop)} data-testid={`mobile-assistant-${tab}`} hidden={taskChat}>
-          {tab === 'today' ? <PhoneToday {...page} /> : null}
-          {tab === 'tasks' ? <PhoneTasks {...page} /> : null}
-          {tab === 'memory' ? <PhoneMemory {...page} /> : null}
-          {tab === 'profile' ? <PhoneProfile {...page} /> : null}
+          {!app && !sub ? <AppPreparing stuck={ensureStuck || appHeldElsewise} /> : <>
+            {tab === 'today' ? <PhoneToday {...page} /> : null}
+            {tab === 'tasks' ? <PhoneTasks {...page} /> : null}
+            {tab === 'memory' ? <PhoneMemory {...page} /> : null}
+            {tab === 'profile' ? <PhoneProfile {...page} /> : null}
+          </>}
         </main>
       )}
       {taskChat ? <ShellSlot name="task-chat" className="ta-task-chat-slot" /> : null}
     </div>
     </PhoneHomeContext.Provider>
+  )
+}
+
+/**
+ * A section before the assistant App is in: the gate's own waiting line (正在准备你的咕咕…); once every try failed, the one
+ * statement of why (an App with its id that gugu does not put over, switched off, or the market out of reach) — in place, no
+ * toast, no button: it goes on by itself.
+ */
+function AppPreparing({ stuck }: { stuck: boolean }) {
+  const { t } = useTranslation('assistant')
+  const main = useTranslation('main').t
+  return (
+    <div className="ta-phone-gate" data-testid="mobile-assistant-app-preparing" data-stuck={stuck || undefined}>
+      <div className="ta-intro">
+        {stuck ? <>
+          <h1 className="ta-intro-title">{main('assistantRules.stuckTitle')}</h1>
+          <p className="ta-intro-body">{main('assistantRules.stuckBody')}</p>
+        </> : (
+          <p className="ta-intro-body inline-flex items-center gap-2" role="status">
+            <LoadingIndicator size="inline" />
+            {t('railEntry.preparing')}
+          </p>
+        )}
+      </div>
+    </div>
   )
 }
 

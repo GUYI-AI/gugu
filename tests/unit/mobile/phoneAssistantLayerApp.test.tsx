@@ -10,7 +10,7 @@ import type { PhoneRoute } from '../../../apps/desktop/src/mobile/assistant/Mobi
  * with the layer's own question.
  */
 
-const state = vi.hoisted(() => ({ entry: { entry: 'app', extensionId: 'gugu-assistant', tabKind: 'gugu-assistant.panel', binding: 'main' } as Record<string, unknown> }))
+const state = vi.hoisted(() => ({ stuck: false, entry: { entry: 'app', extensionId: 'gugu-assistant', tabKind: 'gugu-assistant.panel', binding: 'main' } as Record<string, unknown> }))
 vi.mock('react-i18next', async original => ({ ...await original<object>(), useTranslation: () => ({ t: (key: string, values?: Record<string, unknown>) => values?.name ? `${key}:${String(values.name)}` : key }) }))
 vi.mock('../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'owner', nickname: 'Ann' } }) }))
 vi.mock('../../../apps/desktop/src/store/chatContext', () => ({ useChatStore: () => ({ writeDraft: vi.fn(), draftAttachments: {}, setDraftAttachments: vi.fn() }) }))
@@ -47,6 +47,7 @@ vi.mock('../../../apps/desktop/src/components/appSlot/PhoneAppFrame', () => ({ P
 vi.mock('../../../apps/desktop/src/mobile/assistant/phoneAssistantEntry', () => ({ PHONE_ASSISTANT_LAYER_TAB: 'assistant-layer', usePhoneAssistantEntry: () => state.entry }))
 vi.mock('../../../apps/desktop/src/session/renderer/features/assistant/assistant-shell', () => ({ ShellSlot: () => null }))
 vi.mock('../../../apps/desktop/src/session/renderer/features/global-search/search-session', () => ({ searchInChat: vi.fn() }))
+vi.mock('../../../apps/desktop/src/components/appSlot/phoneAssistantAppEnsure', () => ({ usePhoneAssistantAppStuck: () => state.stuck }))
 
 import { MobileAssistantApp } from '../../../apps/desktop/src/mobile/assistant/MobileAssistantApp'
 import { phoneAssistantLayer, resetPhoneAssistantLayerForTest } from '../../../apps/desktop/src/components/appSlot/phoneAssistantLayer'
@@ -101,14 +102,28 @@ it('tells nothing while the layer is not on screen', async () => {
   expect(told).toEqual([])
 })
 
-it('without the App, the bar and the card keep the built-in routes and tell nothing', async () => {
-  state.entry = { entry: 'built-in', reason: 'none' }
+it('before the App is in: 聊天 as ever, the sections say it is being prepared; the bar opens 记忆 and tells nothing', async () => {
+  state.entry = { entry: 'built-in', reason: 'the Apps on this phone are not read yet' }
   try {
     await h.render(<MobileAssistantApp {...props} />)
+    expect(find('retained-chat')).not.toBeNull()
+    await clickElement(find('mobile-assistant-tab-today')!)
+    expect(find('mobile-assistant-app-preparing')!.textContent).toContain('railEntry.preparing')
+    expect(find('app-frame')).toBeNull()
     await clickElement(find('bar-open')!)
-    expect(find('mobile-assistant-app')!.dataset.sub).toBe('voice:n1')
+    expect(find('mobile-assistant-app')!.dataset.tab).toBe('memory')
+    expect(find('mobile-assistant-app')!.dataset.sub).toBe('')
+    expect(find('mobile-assistant-app-preparing')).not.toBeNull()
     expect(told).toEqual([])
+    expect(phoneAssistantLayer.shown()).toBeNull()
+    // Every try of the window failed: said once, in place of the waiting line (no toast, no button).
+    state.stuck = true
+    await h.render(<MobileAssistantApp {...props} />)
+    await clickElement(find('mobile-assistant-tab-tasks')!)
+    expect(find('mobile-assistant-app-preparing')!.dataset.stuck).toBe('true')
+    expect(find('mobile-assistant-app-preparing')!.textContent).toContain('assistantRules.stuckBody')
   } finally {
+    state.stuck = false
     state.entry = { entry: 'app', extensionId: 'gugu-assistant', tabKind: 'gugu-assistant.panel', binding: 'main' }
   }
 })
