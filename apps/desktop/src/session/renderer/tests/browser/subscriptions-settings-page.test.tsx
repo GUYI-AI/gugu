@@ -191,6 +191,29 @@ it.each(['claude', 'codex'])('an unsigned native %s connection preserves selecti
   expect(thrown).toEqual([]);
 });
 
+it.each(['claude', 'codex'])('an expired current %s account offers "Sign in again" on the row itself, without opening any menu', async provider => {
+  control.codex = true;
+  control.signedOut = true;
+  control.expired = true;
+  control.connections = [{ id: 'expired-account', kind: 'account', name: 'Saved account', current: true }];
+  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  await until('the sign-in action is on the row', () => !!host.querySelector(`[data-testid="subscription-sign-in-${provider}"]`));
+  const button = host.querySelector(`[data-testid="subscription-sign-in-${provider}"]`) as HTMLButtonElement;
+  expect(button.textContent).toBe('Sign in again');
+  button.click();
+  expect(modalStore.activeModalId).toBe('agentSignInModal');
+  expect(modalStore.activeModalArgs).toMatchObject({ providerId: provider, connectionId: 'expired-account' });
+  expect(thrown).toEqual([]);
+});
+
+it('a signed-in account and the native CLI configuration get no sign-in button on the row', async () => {
+  control.connections = [{ id: 'account', kind: 'account', name: 'Saved account', current: true }];
+  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  await until('the harness connection action is ready', () => !!host.querySelector('[data-testid="subscription-switch-claude"]'));
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  expect(host.querySelector('[data-testid="subscription-sign-in-claude"]')).toBeNull();
+});
+
 it.each(['claude', 'codex'])('an expired saved %s account preserves its sign-in menu', async provider => {
   control.codex = true;
   control.signedOut = true;

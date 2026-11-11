@@ -258,7 +258,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   const readWorkingCopy = useMemo(() => sessionWorkingCopyReader({ id: sessionId, deviceId }), [sessionId, deviceId])
   const outputs = useOpenedOutputOpener({ deviceId, sessionId, onQuote: quoteOutput, readFileChunk: local ? readOutput : undefined, readWorkingCopy })
   const { openFile, handlers: outputHandlers } = outputs
-  const background = usePhoneBackgroundTasks(deviceId, sessionId, timeline.turns, dismissals, !phoneHost, localClient?.fetchBackgroundTasks)
+  const background = usePhoneBackgroundTasks(deviceId, sessionId, timeline.turns, dismissals, !phoneHost, timeline.subagents, localClient?.fetchBackgroundTasks)
   const nativeTurns = timeline.turns
   const pendingInput = useRef<{ sessionId: string; prompts: readonly PendingPrompt[] }>({ sessionId, prompts: [] })
   // Kept across renders like `pendingInput`: an input judged placeable is never held later (see `phoneRecordWait`).
@@ -367,7 +367,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   </>
   return <SessionUiTheme theme={theme}><MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
     <div ref={visibility.ref} className="relative flex min-h-0 flex-1 flex-col"><SessionTranscriptView uri={sessionId} sourceWindow={boundedWindowReady(timeline) ? timeline : undefined} turns={turns} pendingPrompt={pendingPrompt ?? startupPrompt ?? pendingSends[0] ?? null} pendingMessages={pendingMessages} mobile commands={commands} backgroundTasks={background}
-      onReachStart={() => { void quotes.loadOlder() }} composerContent={composer} shown={visibility.shown} onAtBottomChange={atBottom => { reading.onAtBottomChange(atBottom); if (atBottom) onAtBottom?.() }} onVisibleItems={reading.onVisibleItems} onReady={ready => { view.current = ready; reading.onReady(ready) }} className="relative min-h-0 flex-1" />
+      onReachStart={quotes.loadOlder} composerContent={composer} shown={visibility.shown} onAtBottomChange={atBottom => { reading.onAtBottomChange(atBottom); if (atBottom) onAtBottom?.() }} onVisibleItems={reading.onVisibleItems} onReady={ready => { view.current = ready; reading.onReady(ready) }} className="relative min-h-0 flex-1" />
     {hasPendingWindow(timeline) ? <div className="gg-aw-placeholder" role="status">{t('agentWatch.timeline.loadingWindow')}</div> : turns.length === 0 ? emptyNote : null}</div>{outputs.panel}{options.confirmation}
   </MessageProvider></SessionUiTheme>
 }

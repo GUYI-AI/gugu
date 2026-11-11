@@ -1194,6 +1194,17 @@ it('refuses to start login over an authenticated account without clearing its st
   await runtime.dispose();
 });
 
+it('lets an account connection sign in again once its login is marked expired, though the CLI still reads the stale credentials as signed in', async () => {
+  const ptySpawner = new FakePtySpawner();
+  const { runtime } = makeRuntime({ ptySpawner, authCheckStatus: async () => ({ kind: 'authenticated', account: 'existing@example.test' }) });
+  const existing = { ...SELECTED_CLI, connectionId: 'existing' };
+  await runtime.refreshAuthStatus('claude', existing);
+  await runtime.markAuthExpired('claude', 'existing');
+  expect(await runtime.startLogin('claude', 'login', existing, undefined, {}, 'existing')).toEqual(ok(undefined));
+  expect(ptySpawner.processes).toHaveLength(1);
+  await runtime.dispose();
+});
+
 it('refuses an explicit native connection login even if a stale UI claims it is signed out', async () => {
   const ptySpawner = new FakePtySpawner();
   const check = vi.fn(async (): Promise<AgentAuthStatus> => ({ kind: 'unauthenticated' }));

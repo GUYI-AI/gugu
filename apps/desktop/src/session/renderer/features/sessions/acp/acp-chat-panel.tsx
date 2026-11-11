@@ -1669,9 +1669,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
    * ⚠️ 到顶会**反复**触发,并发由 store 那侧的 `_loadingOlder` 挡住;翻不动时返回空数组,
    * 这里就什么都不做 —— 到顶是常态,❌ 不是错误,不弹任何东西。
    */
-  const handleReachStart = useCallback(() => {
-    void sourceMessage.loadOlder();
-  }, [sourceMessage.loadOlder]);
+  const handleReachStart = useCallback(() => sourceMessage.loadOlder(), [sourceMessage.loadOlder]);
 
   const isSessionEmpty = useObserver(() => store?.isEmpty ?? false);
   const activeSessionId = store?.sessionId ?? null;

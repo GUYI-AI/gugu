@@ -68,7 +68,7 @@ function SessionTranscriptContent({
   /** 此刻还在跑的后台任务(宿主算好的两份名单);不给 = 没有。 */
   backgroundTasks?: SessionBackgroundTasks
   /** 滚到顶了:往前翻更早的轮。 */
-  onReachStart?: () => void
+  onReachStart?: () => void | Promise<unknown>
   mobile?: boolean
   className?: string
   style?: CSSProperties

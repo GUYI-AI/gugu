@@ -6,6 +6,7 @@ import type {
   TimelineBatch,
   TimelineOlderResult,
   TimelineSnapshot,
+  TimelineSubagent,
   SessionLiveReply,
   TurnPatch,
 } from '@gugu/session-core/session-record/contract'
@@ -42,6 +43,8 @@ export type AgentWatchTimeline = TimelineWindowState & {
   queuedPrompts: NonNullable<TimelineSnapshot['queuedPrompts']>
   liveReply: SessionLiveReply | null
   terminals: NonNullable<TimelineSnapshot['terminals']>
+  /** Running subagents with the calls each has made (#2500): beside the turns, not inside the launching turn. */
+  subagents: readonly TimelineSubagent[]
   /** 最近一次整份重载的原因;null = 没重载过。 */
   lastReset: RecordResetReason | null
   /**
@@ -61,6 +64,7 @@ export function emptyAgentWatchTimeline(): AgentWatchTimeline {
     lastActionAt: null,
     queuedPrompts: [],
     liveReply: null,
+    subagents: [],
     terminals: [],
     lastReset: null,
     needsSnapshot: null,
@@ -166,6 +170,7 @@ export function applySnapshot(
     queuedPrompts: snapshot.queuedPrompts ?? [],
     liveReply: snapshot.liveReply ?? null,
     terminals: snapshot.terminals ?? [],
+    subagents: snapshot.subagents ?? [],
     lastReset: reset ?? state.lastReset,
     needsSnapshot: null,
   }
@@ -271,6 +276,7 @@ export function applyBatch(state: AgentWatchTimeline, batch: TimelineBatch): Age
     queuedPrompts: batch.queuedPrompts !== undefined && current ? batch.queuedPrompts : state.queuedPrompts,
     liveReply: current && batch.liveReply !== undefined ? batch.liveReply : state.liveReply,
     terminals: current && batch.terminals !== undefined ? batch.terminals : state.terminals,
+    subagents: current && batch.subagents !== undefined ? mergeSubagents(state.subagents, batch.subagents) : state.subagents,
     // 一条正常增量到了 = 重载后的那份已经接上了,「时间线已整份重载」的横幅到此为止。
     // 以前这里原样保留 ⇒ 横幅一旦出现就挂到离开这一页(#3566 审计)。
     lastReset: null,
@@ -360,4 +366,27 @@ export function deriveAttention(state: AgentWatchTimeline): AgentWatchAttention 
   const last = state.turns.at(-1)
   if (!last) return 'idle'
   return last.outcome ? 'done' : 'running'
+}
+
+/**
+ * A batch names every subagent that is still running and carries only the calls that changed. A call replaces the
+ * one held under the same id and keeps its place; a subagent the batch does not name has settled and is dropped.
+ */
+function mergeSubagents(held: readonly TimelineSubagent[], batch: readonly TimelineSubagent[]): TimelineSubagent[] {
+  return batch.map((next) => {
+    const previous = held.find((entry) => entry.toolCallId === next.toolCallId)
+    if (!previous) return next
+    // Absent text means unchanged since the batch's `from`.
+    const text = {
+      ...(next.output ?? previous.output) !== undefined ? { output: next.output ?? previous.output } : {},
+      ...(next.reasoning ?? previous.reasoning) !== undefined ? { reasoning: next.reasoning ?? previous.reasoning } : {},
+    }
+    if (next.steps.length === 0) return { ...previous, completedSteps: next.completedSteps, ...text }
+    const id = (step: TimelineSubagent['steps'][number]) => 'toolCallId' in step ? step.toolCallId : step.id
+    const changed = new Map(next.steps.map((step) => [id(step), step]))
+    const steps = previous.steps.map((step) => changed.get(id(step)) ?? step)
+    const known = new Set(previous.steps.map(id))
+    for (const step of next.steps) if (!known.has(id(step))) steps.push(step)
+    return { toolCallId: next.toolCallId, completedSteps: next.completedSteps, steps, ...text }
+  })
 }

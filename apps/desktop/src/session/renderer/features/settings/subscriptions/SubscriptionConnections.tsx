@@ -237,10 +237,33 @@ export function SubscriptionConnections({
       onClose: finished
     })
   }
+  // 正在用的连接登不上了(失效 / 没登录):「登录」直接摆在外面,❌ 藏进「切换连接 → ⋯」两层菜单里。
+  const current = connections.data?.find((c) => c.current)
+  const currentStatus = useConnectionDetails(
+    machine,
+    agent.id,
+    current?.kind === 'account' ? current.id : undefined
+  ).data?.status
+  const currentSignIn = canSignIn && current && currentStatus?.kind === 'unauthenticated' && (
+    <Button
+      size={settingsRows ? 'sm' : 'xs'}
+      variant="outline"
+      disabled={action.isPending}
+      data-testid={`subscription-sign-in-${agent.id}`}
+      onClick={() => signIn(current.id)}
+    >
+      {translate(
+        currentStatus.reason === 'expired'
+          ? 'subscriptions.connections.signInAgain'
+          : 'subscriptions.connections.signIn'
+      )}
+    </Button>
+  )
   return (
     <>
       {settingsRows ? (
         <ConnectionSettingsRows
+          signIn={currentSignIn || undefined}
           connections={connections.data}
           open={open}
           onOpenChange={setOpen}
@@ -300,27 +323,31 @@ export function SubscriptionConnections({
         </ConnectionSettingsRows>
       ) : (
         <DropdownMenu open={open} onOpenChange={changeOpen}>
-          {trigger !== null && (
-            <DropdownMenuTrigger
-              render={
-                trigger ?? (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    disabled={action.isPending}
-                    data-testid={`subscription-switch-${agent.id}`}
-                  />
-                )
-              }
-            >
-              {label ?? (
-                <>
-                  {translate('subscriptions.connections.switch')}
-                  <ChevronDown className="ml-1 size-3" />
-                </>
-              )}
-            </DropdownMenuTrigger>
-          )}
+          {/* 「重新登录」与「切换连接」并排一行;操作列本身是竖排的,❌ 让它俩上下叠。 */}
+          <div className="flex items-center gap-1">
+            {trigger === undefined && currentSignIn}
+            {trigger !== null && (
+              <DropdownMenuTrigger
+                render={
+                  trigger ?? (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      disabled={action.isPending}
+                      data-testid={`subscription-switch-${agent.id}`}
+                    />
+                  )
+                }
+              >
+                {label ?? (
+                  <>
+                    {translate('subscriptions.connections.switch')}
+                    <ChevronDown className="ml-1 size-3" />
+                  </>
+                )}
+              </DropdownMenuTrigger>
+            )}
+          </div>
           <DropdownMenuContent align="end" anchor={anchor} className="subscription-connection-menu">
             {!onError && failure && (
               <p
@@ -395,6 +422,30 @@ export function SubscriptionConnections({
   )
 }
 
+/** 一个连接的登录读数与套餐。菜单里的行和菜单外的「重新登录」读同一份(同一把键)。 */
+function useConnectionDetails(
+  machine: string | null,
+  providerId: string,
+  connectionId: string | undefined
+) {
+  return useQuery({
+    queryKey: [...connectionsKey(machine, providerId), connectionId],
+    queryFn: async () => {
+      const client = await getAgentConfigRuntimeClient(machine)
+      const input = { providerId, connectionId: connectionId! }
+      const [status, plan] = await Promise.all([
+        client.refreshAuthStatus(input),
+        client.readSubscription(input)
+      ])
+      if (!status.success) throw new Error(errorText(status.error))
+      return { status: status.data, plan: plan.success ? plan.data : null }
+    },
+    enabled: connectionId !== undefined,
+    staleTime: 30_000,
+    retry: false
+  })
+}
+
 function ConnectionOption({
   connection,
   agent,
@@ -413,21 +464,7 @@ function ConnectionOption({
   onSignIn?: () => void
 }) {
   const { translate } = useSessionMessages()
-  const details = useQuery({
-    queryKey: [...connectionsKey(machine, agent.id), connection.id],
-    queryFn: async () => {
-      const client = await getAgentConfigRuntimeClient(machine)
-      const input = { providerId: agent.id, connectionId: connection.id }
-      const [status, plan] = await Promise.all([
-        client.refreshAuthStatus(input),
-        client.readSubscription(input)
-      ])
-      if (!status.success) throw new Error(errorText(status.error))
-      return { status: status.data, plan: plan.success ? plan.data : null }
-    },
-    staleTime: 30_000,
-    retry: false
-  })
+  const details = useConnectionDetails(machine, agent.id, connection.id)
   // 不切过去也看得到这个号还剩多少(10-30 owner):按连接读，与「订阅」行同一把键、同一份读数。
   const usage = useQuery({
     queryKey: subscriptionKey(machine, agent.id, 'usage', connection.id),
