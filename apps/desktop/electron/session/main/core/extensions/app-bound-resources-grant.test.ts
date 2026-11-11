@@ -203,4 +203,38 @@ describe('the installed App\'s resource grant', () => {
   });
 });
 
+describe('#48 managing voice notes (voice-notes:manage)', () => {
+  const manager = (patch: { apiVersion?: number; reads?: string[]; capabilities?: string[] } = {}) => manifest({
+    actions: ['unread', 'resources', 'voice-notes:manage'], apiVersion: patch.apiVersion,
+    ...(patch.capabilities ? { capabilities: patch.capabilities } : {}),
+    domains: { resources: patch.reads ?? ['memory', 'voice-notes'] } });
+
+  it('needs API 48, its capability, and voice-notes read by the same binding; desktop only', () => {
+    expect(() => parseExtensionManifest(manager())).not.toThrow();
+    expect(() => parseExtensionManifest(manager({ apiVersion: 47 }))).toThrow(/apiVersion 48/);
+    expect(() => parseExtensionManifest(manager({ reads: ['memory'] }))).toThrow(/voice-notes/);
+    expect(() => parseExtensionManifest(manager({ capabilities: ['chat:unread', 'chat:resources'] }))).toThrow(/chat:voice-notes:manage/);
+    expect(() => parseExtensionManifest({ ...manager(), platforms: ['desktop', 'phone'] })).toThrow(/desktop-only/);
+  });
+
+  it('is its own grant: withdrawn on its own, not opened by reading voice notes, refused at the door without it', () => {
+    const { service } = fixture(manager());
+    expect(service.conversationBinding(OWNER, ID, 'main', 'voice-notes:manage')?.chatId).toBe(CHAT);
+    expect(service.conversationBindingActions(ID)).toEqual(['unread', 'resources', 'voice-notes:manage']);
+    const has = (word: Parameters<ExtensionsService['hasCapability']>[1]) => service.hasCapability(ID, word);
+    const key = { name: 'main', key: 'n1' };
+    expect(callRefusal('bindingsRemoveVoiceNote', key, { kind: 'page', gesture: true, widget: false, has })).toBeNull();
+    expect(callRefusal('bindingsRemoveVoiceNote', key, { kind: 'page', gesture: false, widget: false, has })).not.toBeNull();
+    service.setPermissionGranted(ID, 'chat:voice-notes:manage', false);
+    expect(() => service.conversationBinding(OWNER, ID, 'main', 'voice-notes:manage')).toThrow(expect.objectContaining(refused));
+    expect(service.conversationResourceBinding(OWNER, ID, 'main', 'resources', 'voice-notes')?.chatId).toBe(CHAT);
+    for (const verb of ['bindingsTranscribeVoiceNote', 'bindingsRemoveVoiceNote', 'bindingsExportVoiceNote']) {
+      expect(callRefusal(verb, key, { kind: 'page', gesture: true, widget: false, has })?.code).toBe('denied');
+    }
+    // A reader of voice notes alone manages none.
+    const reader = fixture(manifest({ actions: ['unread', 'resources'], domains: { resources: ['voice-notes'] } }));
+    expect(() => reader.service.conversationBinding(OWNER, ID, 'main', 'voice-notes:manage')).toThrow(expect.objectContaining(refused));
+  });
+});
+
 vi.setConfig({ testTimeout: 20_000 });
