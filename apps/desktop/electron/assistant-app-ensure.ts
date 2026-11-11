@@ -8,15 +8,67 @@
 // cloud, a server), the assistant lives on this machine (its home is here, or this is a cloud machine hosting it), or its
 // setup started in this run. An App the person uninstalled stays out while they have no assistant here or anywhere; while
 // they have one, it needs its page, so the App goes back in.
-// An App installed here in any other way (a folder, a fork, switched off) is the person's: it is left as it is.
+//
+// "In" means a copy the host trusts is in, not that something holds its id (`assistantAppHere`). Two kinds of untrusted
+// copy are told apart by what the person did, never by what the copy is:
+// - the person's own: installed from anywhere but the market (a folder, a chat, a fork's source), a fork of it switched
+//   on, or switched off. Left as it is — never put over, nothing said; the assistant keeps the last good copy of its rules;
+// - gugu's market copy the host does not believe (an old unsigned build, its signed release not recorded, its files
+//   changed): put over with the market's signed release, the way a missing App is put in. Once: a copy this step put in
+//   that is still not believed is what the market gives, left until the next start.
+
+/** A copy of the App installed here, as this step names it: the market install goes over that copy only. */
+export interface AssistantAppCopy {
+  version: string
+  manifestDigest: string
+}
+
+/** What tells whose copy it is (origin undefined: an install a start cut off before its record — gugu's, put in again). */
+export interface AssistantAppCopyHere extends AssistantAppCopy {
+  origin: string | undefined
+  activeVariant: string
+  enabled: boolean
+}
+
+/**
+ * The App with the assistant App's id here, to this step: `absent`; `trusted` (nothing to do); `own` — the person's, or one
+ * gugu cannot read: never put over; `untrusted` — gugu's market copy the host does not believe: put over.
+ */
+export type AssistantAppHere =
+  | { state: 'absent' }
+  | { state: 'trusted' }
+  | { state: 'own'; reason: string }
+  | { state: 'untrusted'; reason: string; copy: AssistantAppCopy }
+
+/** Why the copy here is the person's own choice, or null for gugu's market copy. */
+export function personsOwnAssistantApp(copy: Pick<AssistantAppCopyHere, 'origin' | 'activeVariant' | 'enabled'>): string | null {
+  if (copy.origin !== undefined && copy.origin !== 'market') return `it was installed from ${copy.origin}, not the market`
+  if (copy.activeVariant !== 'upstream') return `its fork "${copy.activeVariant}" is switched on`
+  if (!copy.enabled) return 'it is switched off'
+  return null
+}
+
+/** The copy here to this step; `distrust` (the host's trust check, why it is not believed) is asked of gugu's copies only. */
+export async function assistantAppHere(
+  copy: AssistantAppCopyHere | null, distrust: () => string | null | Promise<string | null>,
+): Promise<AssistantAppHere> {
+  if (!copy) return { state: 'absent' }
+  const own = personsOwnAssistantApp(copy)
+  if (own) return { state: 'own', reason: own }
+  const reason = await distrust()
+  return reason ? { state: 'untrusted', reason, copy: { version: copy.version, manifestDigest: copy.manifestDigest } } : { state: 'trusted' }
+}
 
 export interface AssistantAppEnsureDeps {
-  /** Whether an App with the assistant App's id is installed here at all, whatever its origin. */
-  installed(): boolean
+  /** The App with the assistant App's id here (`assistantAppHere`). */
+  installed(): AssistantAppHere | Promise<AssistantAppHere>
   /** Whether this machine needs it now (see above). */
   needed(): boolean | Promise<boolean>
-  /** Puts it in from the market as gugu's own (the market install with gugu's consent); throws what failed. */
-  install(): Promise<void>
+  /**
+   * Puts it in from the market as gugu's own (the market install with gugu's consent) — over `over`, gugu's untrusted
+   * copy named as it was looked at, when there is one; throws what failed.
+   */
+  install(over: AssistantAppCopy | null): Promise<void>
   /** After it went in: the rules are read again. */
   afterInstall(): Promise<unknown>
   /** Waits between attempts; injected so tests do not wait. */
@@ -30,13 +82,17 @@ export interface AssistantAppEnsureDeps {
 /** The waits between attempts: about 20 minutes of trying before it counts as stuck, then every 10 minutes for good. */
 export const ASSISTANT_APP_ENSURE_BACKOFF_MS: readonly number[] = [15_000, 30_000, 60_000, 120_000, 300_000, 600_000, 600_000]
 
-export type AssistantAppEnsureOutcome = 'present' | 'not-needed' | 'installed'
+/**
+ * `present`: a trusted copy is in. `own`: the person's copy, left. `untrusted`: gugu's copy this step put in, still not
+ * believed, left. `not-needed`. `installed`: put in now (or over gugu's untrusted copy).
+ */
+export type AssistantAppEnsureOutcome = 'present' | 'own' | 'untrusted' | 'not-needed' | 'installed'
 export type AssistantAppEnsureReason = 'start' | 'setup' | 'assistant'
 
 export interface AssistantAppEnsurer {
   /**
    * One go, joined by any call while it runs. `setup`: the assistant's setup started, so it is needed from now on.
-   * `assistant`: a window found the account's assistant (anywhere) while the App is not in: is it needed now?
+   * `assistant`: a window found the account's assistant (anywhere) while no trusted App is in: is it needed now?
    */
   ensure(reason: AssistantAppEnsureReason): Promise<AssistantAppEnsureOutcome>
   /** Whether a setup asked for it in this run. */
@@ -48,13 +104,26 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 export function assistantAppEnsurer(deps: AssistantAppEnsureDeps, backoff: readonly number[] = ASSISTANT_APP_ENSURE_BACKOFF_MS): AssistantAppEnsurer {
   let running: Promise<AssistantAppEnsureOutcome> | null = null
   let setup = false
+  /** The manifest digest of a copy this step put in that the host still did not believe: not put over again in this run. */
+  let putInUntrusted: string | null = null
 
   async function run(): Promise<AssistantAppEnsureOutcome> {
     for (let attempt = 0; ; attempt++) {
       try {
-        if (deps.installed()) return 'present'
+        const here = await deps.installed()
+        if (here.state === 'trusted') return 'present'
+        if (here.state === 'own') return 'own'
+        if (here.state === 'untrusted' && here.copy.manifestDigest === putInUntrusted) return 'untrusted'
         if (!setup && !(await deps.needed())) return 'not-needed'
-        await deps.install()
+        if (here.state === 'untrusted') {
+          deps.info('assistant App: the copy here is not trusted; the market\'s release goes over it', { attempt, version: here.copy.version, reason: here.reason })
+        }
+        await deps.install(here.state === 'untrusted' ? here.copy : null)
+        const after = await deps.installed()
+        if (after.state === 'untrusted') {
+          putInUntrusted = after.copy.manifestDigest
+          deps.warn('assistant App: in, and still not trusted; it is not put in again in this run', { attempt, version: after.copy.version, error: after.reason })
+        }
         deps.info('assistant App: in', { attempt })
         await deps.afterInstall()
         return 'installed'

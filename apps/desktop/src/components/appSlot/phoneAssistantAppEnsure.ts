@@ -1,26 +1,47 @@
 import { useEffect, useSyncExternalStore } from 'react'
-import { assistantAppEnsurer, type AssistantAppEnsureOutcome, type AssistantAppEnsurer } from '../../../electron/assistant-app-ensure'
+import {
+  assistantAppEnsurer, assistantAppHere, type AssistantAppCopy, type AssistantAppEnsureOutcome, type AssistantAppEnsurer, type AssistantAppHere,
+} from '../../../electron/assistant-app-ensure'
 import { rendererLogger } from '../../lib/log'
 import { platform } from '../../platform'
-import { ASSISTANT_APP_ID } from '../../session/shared/extensions/assistant-entry'
+import { ASSISTANT_APP_ID, ASSISTANT_APP_TRUST } from '../../session/shared/extensions/assistant-entry'
+import type { PhoneInstallRecord } from './phoneApps'
 
 /**
  * #1931 The assistant App on every phone whose account has an assistant, as on a computer (electron/assistant-app-ensure.ts,
  * the same ensurer, the same backoff): the layer's 动态 / 任务 / 记忆 / 资料 are the App's page, so the phone puts it in by
  * itself — from the market as gugu's own (`installFromMarket`, consent `gugu`: only an App whose code is in gugu's own
  * repository, its signed release verified before the package is fetched, phoneMarket.ts), in the background, retried, never a
- * prompt, a toast or a button. Needed = the account signed in on this phone has its assistant. An App with its id installed
- * in any other way (from a chat card, switched off) is the person's: left as it is. Bound by the shared rule: the phone binds
+ * prompt, a toast or a button. Needed = the account signed in on this phone has its assistant. "In" = a copy the phone
+ * trusts (assistant-entry.ts `ASSISTANT_APP_TRUST`) is in: an App with its id installed in any other way (from a chat card,
+ * switched off) is the person's — left as it is; gugu's own market copy the phone does not trust (an old build outside its
+ * release folder) gets the market's signed release over it, as on a computer. Bound by the shared rule: the phone binds
  * the trusted App to the account's private chat with its own assistant on every call (phoneAppBindings.ts `bound`).
  */
 
 const log = rendererLogger('assistant/app-ensure')
 
+/**
+ * The App with the assistant App's id on this phone, to the ensure step (assistant-app-ensure.ts `assistantAppHere`): a phone
+ * has no forks and keeps no release record, so it is the shared conditions (id, market, gugu's repository, release folder).
+ */
+export function phoneAssistantAppHere(record: PhoneInstallRecord | null): Promise<AssistantAppHere> {
+  if (!record) return assistantAppHere(null, () => null)
+  const provenance = { manifest: { id: ASSISTANT_APP_ID, version: record.version }, origin: record.origin, marketSource: record.marketSource, activeVariant: 'upstream' }
+  return assistantAppHere({ ...record, activeVariant: 'upstream' }, () => {
+    for (const condition of ASSISTANT_APP_TRUST) {
+      const reason = condition(provenance)
+      if (reason) return reason
+    }
+    return null
+  })
+}
+
 export interface PhoneAssistantAppEnsureDeps {
-  /** Whether an App with the assistant App's id is installed on this phone at all, whatever its origin. */
-  installed(): boolean
-  /** Puts it in from the market as gugu's own; throws what failed. */
-  install(): Promise<void>
+  /** The App with the assistant App's id on this phone (`phoneAssistantAppHere`). */
+  installed(): AssistantAppHere | Promise<AssistantAppHere>
+  /** Puts it in from the market as gugu's own — over `over`, gugu's untrusted copy, when there is one; throws what failed. */
+  install(over: AssistantAppCopy | null): Promise<void>
   /** The phone's App store read (before `installed` is believed). */
   ready(): Promise<unknown>
   sleep(ms: number): Promise<void>
@@ -55,7 +76,7 @@ export function createPhoneAssistantAppEnsure(deps: PhoneAssistantAppEnsureDeps,
       if (!found) return 'not-needed'
       await deps.ready()
       const outcome = await ensurer.ensure('assistant')
-      if (outcome === 'installed') setStuck(false)
+      if (outcome === 'installed' || outcome === 'present') setStuck(false)
       return outcome
     },
     /** Every try of the backoff window failed (it goes on trying): the one place a real failure may be said, in place. */
@@ -73,9 +94,9 @@ let apps: typeof import('./phoneApps').phoneApps | null = null
 const loadApps = async () => (apps ??= (await import('./phoneApps')).phoneApps)
 function phoneEnsure() {
   shared ??= createPhoneAssistantAppEnsure({
-    installed: () => apps?.installRecord(ASSISTANT_APP_ID) != null,
-    install: async () => {
-      const done = await (await loadApps()).installFromMarket({ ref: { extensionId: ASSISTANT_APP_ID }, consent: { kind: 'gugu' } })
+    installed: () => phoneAssistantAppHere(apps?.installRecord(ASSISTANT_APP_ID) ?? null),
+    install: async (over) => {
+      const done = await (await loadApps()).installFromMarket({ ref: { extensionId: ASSISTANT_APP_ID }, consent: { kind: 'gugu', ...(over ? { over } : {}) } })
       if (!done.success) throw new Error(done.error)
       if (!done.data.installed) throw new Error(`${ASSISTANT_APP_ID} did not go in (${done.data.outcome})`)
     },

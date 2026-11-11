@@ -5,6 +5,7 @@ import type { ExtensionManifest } from '@shared/extensions/manifest'
 import type { MarketInstallRecord } from '@shared/extensions/market'
 import { ASSISTANT_APP_ID, ASSISTANT_APP_TRUST } from '@shared/extensions/assistant-entry'
 import type { ExtensionOrigin } from '@shared/extensions/upgrade'
+import { assistantAppHere, type AssistantAppHere } from './assistant-app-ensure'
 import type { InstalledExtension } from './session/main/core/extensions/extensions-service'
 import { firstProblem, releaseFileProblems, SHIPPED_RELEASE_TRUST, verifyReleaseProof, type ReleaseTrustTable } from './session/main/core/extensions/release/market-release'
 
@@ -70,6 +71,38 @@ export interface AssistantRulesInstallRecord {
   marketSource(extensionId: string): MarketInstallRecord | null
   variants(extensionId: string): { active: string }
   isEnabled(extensionId: string): boolean
+}
+
+/**
+ * The installed assistant App to the ensure step (assistant-app-ensure.ts `assistantAppHere`): none, the person's own copy,
+ * or gugu's market copy — believed by these conditions or not. One whose record cannot be read is left as it is: gugu does
+ * not put over what it cannot read.
+ */
+export async function installedAssistantAppHere(
+  service: AssistantRulesInstallRecord, conditions: readonly AssistantRulesTrustCondition[] = ASSISTANT_RULES_TRUST,
+): Promise<AssistantAppHere> {
+  let provider: AssistantRulesProvider | null
+  try { provider = installedAssistantRulesProvider(service) }
+  catch (error) { return { state: 'own', reason: `it could not be read (${error instanceof Error ? error.message : String(error)})` } }
+  const found = provider
+  if (!found) return { state: 'absent' }
+  const { origin, activeVariant, enabled, manifestDigest, manifest: { version } } = found
+  return assistantAppHere({ origin, activeVariant, enabled, version, manifestDigest }, () => assistantRulesDistrust(found, conditions))
+}
+
+/**
+ * The resolver told each time the assistant App changes here — installed, updated, a fork switched, switched on or off,
+ * removed: the service says so once each is written, whoever did it (the Apps page, an update, the ensure step, an agent) —
+ * so trust is decided again then, not only at the next start. Main hears it from its first look at the App on (the service
+ * is made lazily: user data is repointed during boot); a change before that look is seen by the look itself.
+ */
+export function hearAssistantAppChanges(
+  service: { onBindingAuthorityChanged(listener: (extensionId: string) => void): () => void },
+  resolver: { appChanged(): Promise<unknown> },
+): () => void {
+  return service.onBindingAuthorityChanged((extensionId) => {
+    if (extensionId === ASSISTANT_RULES_PROVIDER_ID) void resolver.appChanged()
+  })
 }
 
 /** The installed assistant App as the trust check sees it; null when none is installed. Throws what reading the record throws. */

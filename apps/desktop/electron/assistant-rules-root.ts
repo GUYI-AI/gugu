@@ -16,7 +16,7 @@ import { assistantAppEnsurer, type AssistantAppEnsureOutcome, type AssistantAppE
 import { readAssistantProductRules } from './assistant-product-rules'
 import { assistantRulesLastGoodStore, type LastGoodAssistantRules } from './assistant-rules-last-good'
 import { assistantRules, createAssistantRulesResolver, installAssistantRulesResolver } from './assistant-rules-resolver'
-import { ASSISTANT_RULES_PROVIDER_ID, installedAssistantRulesProvider } from './assistant-rules-trust'
+import { ASSISTANT_RULES_PROVIDER_ID, hearAssistantAppChanges, installedAssistantAppHere, installedAssistantRulesProvider } from './assistant-rules-trust'
 import { extensionsService } from './session/main/core/extensions/extensions-root'
 
 export const ASSISTANT_RULES_DIR_NAME = 'assistant-rules'
@@ -49,8 +49,13 @@ function seedDir(): string {
 
 /** Called once at start. Nothing is read here: user data is repointed during boot, so every path is resolved when used. */
 export function installProcessAssistantRules(): void {
+  let hearing: (() => void) | null = null
   const resolver = createAssistantRulesResolver({
-    provider: () => installedAssistantRulesProvider(extensionsService()),
+    provider: () => {
+      const service = extensionsService()
+      hearing ??= hearAssistantAppChanges(service, resolver)
+      return installedAssistantRulesProvider(service)
+    },
     lastGood: assistantRulesLastGoodStore(() => path.join(app.getPath('userData'), ASSISTANT_RULES_DIR_NAME)),
     seed: () => readAssistantRulesSeed(seedDir()),
     warn: (message, detail) => log.warn(detail, message),
@@ -108,15 +113,15 @@ let stuck = false
 
 /**
  * Puts the assistant App in where it is needed (assistant-app-ensure.ts): at start, when the assistant's setup starts, and
- * when a window found the account's assistant while the App is not in (assistant-app-entry.ts).
+ * when a window found the account's assistant while no trusted App is in (assistant-app-entry.ts).
  */
 export function ensureAssistantApp(reason: AssistantAppEnsureReason): Promise<AssistantAppEnsureOutcome> {
   ensurer ??= assistantAppEnsurer({
-    installed: () => extensionsService().isInstalled(ASSISTANT_RULES_PROVIDER_ID),
+    installed: () => installedAssistantAppHere(extensionsService()),
     needed: appNeededHere,
-    install: async () => {
+    install: async (over) => {
       const { installExtensionFromMarket } = await import('./session/main/core/extensions/extension-market-install')
-      const outcome = await installExtensionFromMarket({ ref: { extensionId: ASSISTANT_RULES_PROVIDER_ID }, consent: { kind: 'gugu' } })
+      const outcome = await installExtensionFromMarket({ ref: { extensionId: ASSISTANT_RULES_PROVIDER_ID }, consent: { kind: 'gugu', ...(over ? { over } : {}) } })
       if (!outcome.installed) throw new Error(`${ASSISTANT_RULES_PROVIDER_ID} did not go in (${outcome.outcome})`)
     },
     afterInstall: () => assistantRules().refresh(),
@@ -132,8 +137,9 @@ export function ensureAssistantApp(reason: AssistantAppEnsureReason): Promise<As
   const going = ensurer.ensure(reason)
   publishState()
   void going.then(async (outcome) => {
-    // The id is taken by an App gugu does not put over (switched off, a folder, a fork) and no rules came of it.
-    if (outcome === 'present' && !(await assistantRules().refresh()).rules) stuck = true
+    // Rules here: nothing is stuck. None, while an App holds the id that brings none and that this step will not put over
+    // (the person's own copy, or gugu's that is still not trusted): truly stuck. With the kept copy nothing is said.
+    if (outcome !== 'not-needed') stuck = !(await assistantRules().refresh()).rules
     publishState()
   }, () => {})
   return going

@@ -80,7 +80,7 @@ export interface FixtureHost {
 /** A resolver that always answers with these rules (as from an App): for tests of what a read point does with them. */
 export function fixedAssistantRules(rules: AssistantProductRules = NEUTRAL_ASSISTANT_RULES): AssistantRulesResolver {
   const answer: ResolvedAssistantRules = Object.freeze({ source: 'app', rules, appVersion: '0.0.1' })
-  return { refresh: async () => answer, current: async () => answer, available: async () => answer, subscribe: () => () => {} }
+  return { refresh: async () => answer, current: async () => answer, available: async () => answer, subscribe: () => () => {}, appChanged: async () => answer }
 }
 
 /** A resolver over a real extensions service rooted in `root`, keeping its last good copy in `lastGoodDir`, trusting the test release key. */

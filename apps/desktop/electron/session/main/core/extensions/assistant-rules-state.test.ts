@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { assistantRulesFiles } from '@gugu/core/shared/assistantRulesFormat';
+import type { MarketInstallRecord } from '@shared/extensions/market';
 import { ExtensionsService } from './extensions-service';
 import { fixtureBundle, installBundle, OFFICIAL_SOURCE } from '../../../../../../../tests/unit/desktop/assistantRules/fixtureApp';
 import { NEUTRAL_ASSISTANT_RULES } from '../../../../../../../tests/unit/desktop/assistantRules/neutralRules';
@@ -21,8 +22,9 @@ const signedIn = () => {
 };
 vi.mock('./app-assistant-binding', () => ({ signedInAccountAssistant: async () => ({ ownerId: signedIn(), assistantId: state.assistants[signedIn()] ?? null }) }));
 vi.mock('./app-unread-bindings', () => ({ account: async () => ({ token: 't', ownerId: signedIn() }) }));
-// A market install never finishes here (no network in tests): the App stays not in while it goes.
-vi.mock('./extension-market-install', () => ({ installExtensionFromMarket: () => new Promise(() => undefined) }));
+// A market install never finishes here (no network in tests): the App stays not in while it goes. What it was asked is kept.
+const marketInstalls = vi.hoisted(() => [] as unknown[]);
+vi.mock('./extension-market-install', () => ({ installExtensionFromMarket: (install: unknown) => { marketInstalls.push(install); return new Promise(() => undefined); } }));
 vi.mock('../../../../lib/logger', () => ({ createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) }));
 // The process resolver trusts the release keys the build ships (#1931); here the build ships a key made in this test.
 const releaseKey = vi.hoisted(() => {
@@ -50,6 +52,7 @@ beforeEach(() => {
   delete process.env.GUGU_ASSISTANT_RULES_SEED_DIR;
   state.signedIn = null;
   state.assistants = {};
+  marketInstalls.length = 0;
 });
 afterEach(() => {
   process.env = { ...env };
@@ -113,11 +116,48 @@ describe('whether the assistant here waits for its rules', () => {
     process.env.GUGU_CLOUD_COMPUTER = '1';
     installBundle(service, await fixtureBundle(path.join(work, 'mine')), 'folder');
     const { assistantRulesState, ensureAssistantApp, told } = await root();
-    expect(await ensureAssistantApp('start')).toBe('present');
+    expect(await ensureAssistantApp('start')).toBe('own');
     await settle();
     expect(await assistantRulesState()).toEqual({ pending: true, stuck: true });
     // The windows are told after a refresh that reads the disk; under a loaded run that can outlast a fixed pause.
     await vi.waitFor(() => expect(told).toContainEqual({ pending: true, stuck: true }));
+    expect(marketInstalls).toEqual([]);
+    // The person puts the signed release in themselves: rules, so nothing waits and nothing is stuck — the windows told at
+    // once, with no restart and no session start.
+    service.uninstall('gugu-assistant');
+    installBundle(service, ...await signedBundle('1.0.0'));
+    await vi.waitFor(() => expect(told.at(-1)).toEqual({ pending: false, stuck: false }));
+  });
+});
+
+/** The assistant App's `version` from its release folder, signed with this test's key: installBundle's arguments. */
+async function signedBundle(version: string): Promise<[string, 'market', MarketInstallRecord]> {
+  const bundle = await fixtureBundle(path.join(work, `signed-${version}`), { version });
+  const { proof } = signTestRelease({ appDir: bundle, appId: 'gugu-assistant', version, zip: new Uint8Array(), key: releaseKey });
+  return [bundle, 'market', { ...OFFICIAL_SOURCE(version), release: proof }];
+}
+
+// D2 (verify pass 1) in main's own wiring: an old unsigned build of the App from the market held the id, so nothing put the
+// signed release in; and a release put in by hand was used only after a restart.
+describe('gugu\'s untrusted copy of the App here', () => {
+  const oldUnsigned = async () => installBundle(service, await fixtureBundle(path.join(work, 'old'), { version: '0.1.0' }), 'market', OFFICIAL_SOURCE('0.1.0'), { unsigned: true });
+
+  it('the ensure step asks the market for the release over that very copy', async () => {
+    process.env.GUGU_CLOUD_COMPUTER = '1';
+    await oldUnsigned();
+    const { ensureAssistantApp } = await root();
+    void ensureAssistantApp('start');
+    await vi.waitFor(() => expect(marketInstalls).toHaveLength(1));
+    expect(marketInstalls[0]).toEqual({ ref: { extensionId: 'gugu-assistant' },
+      consent: { kind: 'gugu', over: { version: '0.1.0', manifestDigest: service.get('gugu-assistant').manifestDigest } } });
+  });
+
+  it('updated to the signed release, its rules are what every read answers from then on, with no restart', async () => {
+    await oldUnsigned();
+    const { assistantRules } = await root();
+    expect((await assistantRules().refresh()).source).toBe('none');
+    installBundle(service, ...await signedBundle('1.0.0'));
+    await vi.waitFor(async () => expect(await assistantRules().current()).toMatchObject({ source: 'app', appVersion: '1.0.0' }));
   });
 });
 

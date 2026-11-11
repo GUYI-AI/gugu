@@ -4,8 +4,9 @@
 // start waits for them (`available`), a host refresh leaves the assistant's files as they are.
 //
 // Cheap to read: an App version's folder is read and validated once (keyed by version, manifest digest and folder), not
-// per turn. `refresh` looks at the installed App again — at each assistant session start and at setup — and `current`
-// answers from memory once anything was resolved in this process. Each answer is one frozen snapshot that the next
+// per turn. `refresh` looks at the installed App again — at each assistant session start, at setup, and whenever the
+// installed App changes (`appChanged`: installed, updated, switched on or off, removed) — and `current` answers from memory
+// while nothing changed since that look. Each answer is one frozen snapshot that the next
 // refresh replaces whole: a render that took it keeps it to the end, so a new version takes effect between renders,
 // never inside one.
 import type { AssistantProductRules } from '@gugu/core/shared/assistantRulesFormat'
@@ -53,13 +54,22 @@ export interface AssistantRulesResolver {
   available(): Promise<ResolvedAssistantRules>
   /** Told each time the answer changes (none → rules, one version → another). */
   subscribe(listener: (answer: AssistantRulesAnswer) => void): () => void
+  /**
+   * The installed App changed — installed, updated, a fork switched, switched on or off, removed: no answer from before is
+   * given again (a look that started before it is not joined), and it is looked at now, so trust is decided again and the
+   * kept copy and the windows follow without a restart. A running session keeps the snapshot it started with.
+   */
+  appChanged(): Promise<AssistantRulesAnswer>
 }
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 export function createAssistantRulesResolver(deps: AssistantRulesResolverDeps): AssistantRulesResolver {
   let snapshot: AssistantRulesAnswer | null = null
-  let running: Promise<AssistantRulesAnswer> | null = null
+  /** Each change of the installed App starts a new look; an answer counts only for the look it was resolved in. */
+  let look = 0
+  let snapshotLook = -1
+  let running: { look: number; answer: Promise<AssistantRulesAnswer> } | null = null
   const waiting: ((answer: ResolvedAssistantRules) => void)[] = []
   const listeners = new Set<(answer: AssistantRulesAnswer) => void>()
   /** The App version read last, and its rules — null when its folder was not valid (not read again until it changes). */
@@ -133,19 +143,29 @@ export function createAssistantRulesResolver(deps: AssistantRulesResolverDeps): 
 
   const resolver: AssistantRulesResolver = {
     refresh() {
-      running ??= resolve().then(next => {
+      if (running?.look === look) return running.answer
+      const at = look
+      // One at a time: a look begun before the App changed finishes first (it may keep a copy), then this one looks again.
+      const before = running?.answer.then(() => undefined, () => undefined) ?? Promise.resolve()
+      const answer: Promise<AssistantRulesAnswer> = before.then(resolve).then(next => {
         // The same rules from the same place keep the same snapshot.
         if (!snapshot || snapshot.source !== next.source || snapshot.rules !== next.rules || snapshot.appVersion !== next.appVersion) {
           snapshot = next
           for (const listener of listeners) listener(next)
         }
+        snapshotLook = at
         if (next.rules) for (const resolve of waiting.splice(0)) resolve(next)
         return snapshot
-      }).finally(() => { running = null })
-      return running
+      }).finally(() => { if (running?.answer === answer) running = null })
+      running = { look: at, answer }
+      return answer
     },
     current() {
-      return snapshot ? Promise.resolve(snapshot) : resolver.refresh()
+      return snapshot && snapshotLook === look ? Promise.resolve(snapshot) : resolver.refresh()
+    },
+    appChanged() {
+      look += 1
+      return resolver.refresh()
     },
     async available() {
       const answer = await resolver.current()
@@ -165,6 +185,7 @@ const noResolver: AssistantRulesResolver = {
   current: () => Promise.resolve(NO_ASSISTANT_RULES),
   available: () => Promise.reject(new Error('no assistant rules resolver is installed in this process')),
   subscribe: () => () => {},
+  appChanged: () => Promise.resolve(NO_ASSISTANT_RULES),
 }
 let installed: AssistantRulesResolver | null = null
 
