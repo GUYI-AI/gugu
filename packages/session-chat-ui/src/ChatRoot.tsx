@@ -2241,13 +2241,18 @@ export function ChatRoot(props: ChatRootProps) {
         if (activity && viewState().isCollapsed(id)) {
           const next = units().at(activity.end);
           if (scrollEl) {
-            const targetIndex = next ? activity.end : activity.index;
-            const itemId = next?.itemId ?? id;
-            const fromOffset = scrollEl.scrollTop - virt.top(targetIndex) - padTop();
             const height = virt.top(activity.end) - virt.top(activity.index + 1);
-            // A conclusion already on screen keeps its reading position. Otherwise it
-            // arrives at the top only as the 200ms height collapse finishes.
-            const offset = next && -fromOffset >= userTopGap && -fromOffset < viewHeight() - padBottom() ? fromOffset : -userTopGap;
+            const following = next ? scrollEl.scrollTop - virt.top(activity.end) - padTop() : null;
+            // A conclusion already on screen keeps its reading position (behavior agent-activity-folding).
+            // Otherwise the line the reader clicked stays where they see it: in the text, or on the pin line it was
+            // stuck to, the content closing up under it. ❌ bringing an off-screen conclusion up to the top: that is
+            // the jump the spec forbids (owner 2026-11-12, opened and closed an exchange: 11:51 -> 11:53).
+            const header = units().at(activity.index);
+            const headerOffset = scrollEl.scrollTop - virt.top(activity.index) - padTop();
+            const pinLine = userTopGap + activityPinOffset(activity.index) - (header?.gapBefore ?? 0);
+            const [itemId, fromOffset, offset] = following !== null && -following >= userTopGap && -following < viewHeight() - padBottom()
+              ? [next!.itemId, following, following]
+              : [header?.itemId ?? id, headerOffset, Math.min(headerOffset, -pinLine)];
             abortSmoothScroll();
             setAnchor({ kind: 'anchor', itemId, edge: 'top', offset });
             if (height > 0 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
