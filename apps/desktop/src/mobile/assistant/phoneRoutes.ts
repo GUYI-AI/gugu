@@ -1,8 +1,8 @@
 /**
  * 手机咕咕格里往下钻的页(`sub`)的上一层 —— 手机自己的一张表(❌ 借桌面面板那张:桌面的连接应用页已搬进全局设置,
  * 手机没有会话页宿主,那一组设置不画,连接应用留在这一格的「资料」里)。
- * 名字:`connectors`(列表)、`connector:<id>`(详情)、`connector:<id>:connect`(连接页)、`voice` / `voice:<id>`、
- * `files` / `files:<相对路径>`、`note:<文件名>`、`routine:<id>`、`devices`、`channels`、`customize`、`diaries` / `diary:<id>`。
+ * 名字(助理 App 打开的手机自己的页,PHONE_ASSISTANT_SCREENS):`connectors`(列表)、`connector:<id>`(详情)、
+ * `connector:<id>:connect`(连接页)、`note:<文件名>`、`devices` / `devices:<id>`、`channels`、`settings` / `settings:<段>`、`library:<卷>`。
  */
 export type PhoneParentRoute<T extends string = string> = { tab: T; sub?: string; returnTo?: { tab: T; sub?: string } }
 
@@ -29,11 +29,5 @@ export function phoneParentRoute<T extends string>(route: PhoneParentRoute<T>): 
     return { tab: route.tab, sub: cut > 0 ? `connector:${id.slice(0, cut)}` : 'connectors' }
   }
   if (sub.startsWith('devices:')) return { tab: route.tab, sub: 'devices' }
-  if (sub.startsWith('voice:')) return { tab: route.tab, sub: 'voice' }
-  if (sub.startsWith('files:')) {
-    const rest = sub.slice('files:'.length)
-    const cut = rest.lastIndexOf('/')
-    return { tab: route.tab, sub: cut > 0 ? `files:${rest.slice(0, cut)}` : 'files' }
-  }
   return { tab: route.tab }
 }

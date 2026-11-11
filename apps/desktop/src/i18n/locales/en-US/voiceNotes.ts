@@ -19,8 +19,7 @@ export default {
   },
   "queued": {
     "start": "Start transcribing",
-    "bodyDesktop": "The recording is already on {{name}}'s computer. Choose \"Start transcribing\" to transcribe it and turn it into a voice note.",
-    "bodyPhone": "The recording is already on {{name}}'s computer. Open this voice note in Gugu on your computer and choose \"Start transcribing\"."
+    "bodyDesktop": "The recording is already on {{name}}'s computer. Choose \"Start transcribing\" to transcribe it and turn it into a voice note."
   },
   "recordedAt": "Recorded {{time}}",
   "minutes": "{{n}} min",

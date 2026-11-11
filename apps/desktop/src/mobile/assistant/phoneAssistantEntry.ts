@@ -66,7 +66,8 @@ export function phoneAssistantStatusOf(state: PhoneAssistantState, face: string 
     member: null,
     loadError: cloud.loadError ? (isFailureClass(String(cloud.loadError)) ? String(cloud.loadError) : 'failed') : null,
     ownerName: textOrNull(ownerName),
-    // The 资料 rows' numbers and the connect list are read by those pages, never reach this layer: not known (null), never 0.
+    // The 资料 rows' numbers come from the layer's own read (PhoneAssistantCounts.tsx, merged by phoneAssistantLayer); the
+    // connect list is a computer's setup step: not known here (null), never empty.
     counts: null,
     connectors: null,
     nameMax: ASSISTANT_NAME_MAX,

@@ -1,5 +1,6 @@
-import type { AppAssistantStatus } from '../../session/shared/extensions/assistant-binding'
+import type { AppAssistantCounts, AppAssistantStatus } from '../../session/shared/extensions/assistant-binding'
 import type { PhoneAssistantScreen, PhoneSurfaceSection } from '../../session/shared/extensions/phone-binding'
+import type { AppSurfaceIntent } from '../../session/shared/extensions/unread-binding'
 import type { PushedWorkLedger } from '../../session/shared/extensions/work-binding'
 
 /**
@@ -18,18 +19,23 @@ export type PhoneLayerActions = {
   rename(agentId: string, name: string): Promise<void>
   /** The task's own conversation, drawn by the layer over the 任务 section (its back closes it); null closes it. */
   openWork(work: { workId: string; sessionId: string } | null): void
+  /** API 50 `removeVoiceNote`: the layer's own question before a voice note goes (删除“…”？); true = the person said yes. */
+  confirmRemoval(question: { kind: 'voice-note'; title: string | null }): Promise<boolean>
 }
 export type PhoneLayerStatus = { ownerId: string; status: AppAssistantStatus }
 
 let shown: PhoneLayerShown | null = null
 let actions: PhoneLayerActions | null = null
 let status: PhoneLayerStatus | null = null
+/** The 资料 rows' numbers, read by the layer (PhoneAssistantCounts.tsx) while the App is its page. */
+let counts: { ownerId: string; counts: AppAssistantCounts } | null = null
 /** The assistant's work list as the layer's own 任务 list reads it (API 46), and the task whose conversation it draws now. */
 let work: PushedWorkLedger | null = null
 let openWork: { ownerId: string; workId: string; sessionId: string } | null = null
 const workListeners = new Set<() => void>()
 const shownListeners = new Set<() => void>()
 const statusListeners = new Set<() => void>()
+const intentListeners = new Set<(intent: AppSurfaceIntent) => void>()
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
@@ -51,15 +57,33 @@ export const phoneAssistantLayer = {
     actions = next
     return () => { if (actions === next) actions = null }
   },
-  status: (): PhoneLayerStatus | null => status,
+  /** The assistant as the layer knows it, with the 资料 numbers once the layer read them for that account (else null). */
+  status: (): PhoneLayerStatus | null => (status && status.status.assistant === 'found' && counts?.ownerId === status.ownerId
+    ? { ownerId: status.ownerId, status: { ...status.status, counts: counts.counts } } : status),
   publishStatus(next: PhoneLayerStatus | null): void {
     if (same(status, next)) return
     status = next
     for (const listener of statusListeners) listener()
   },
+  publishCounts(next: { ownerId: string; counts: AppAssistantCounts } | null): void {
+    if (same(counts, next)) return
+    counts = next
+    for (const listener of statusListeners) listener()
+  },
   onStatus(listener: () => void): () => void {
     statusListeners.add(listener)
     return () => { statusListeners.delete(listener) }
+  },
+  /**
+   * What the person asked of the App's page through the layer (`AppSurfaceIntent`): the recording bar's note opened
+   * (`voice-note`), the assistant's 自定义 card (`profile`). Told once, after the layer moved to the section that shows it.
+   */
+  tell(intent: AppSurfaceIntent): void {
+    for (const listener of intentListeners) listener(intent)
+  },
+  onIntent(listener: (intent: AppSurfaceIntent) => void): () => void {
+    intentListeners.add(listener)
+    return () => { intentListeners.delete(listener) }
   },
   work: (): PushedWorkLedger | null => work,
   openWork: (): { ownerId: string; workId: string; sessionId: string } | null => openWork,
@@ -80,9 +104,11 @@ export function resetPhoneAssistantLayerForTest(): void {
   shown = null
   actions = null
   status = null
+  counts = null
   work = null
   openWork = null
   shownListeners.clear()
   statusListeners.clear()
   workListeners.clear()
+  intentListeners.clear()
 }

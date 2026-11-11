@@ -1,5 +1,8 @@
 import { z } from 'zod'
 import type { AssistantPanelClient, AssistantPanelCommit, AssistantPanelDomain, AssistantPanelItem, AssistantPanelReceipt, AssistantPanelSnapshot } from '@gugu/core/cloud/assistantPanel'
+import { ASSISTANT_PANEL_PATHS, createAssistantPanelFiles } from '@gugu/core/cloud/assistantPanelFiles'
+import { resourceRejection } from '@gugu/core/shared/assistantResourceRules'
+import { VOICE_NOTE_META_FILE, VOICE_NOTES_DIR, parseVoiceNoteMeta } from '@gugu/core/shared/voiceNotes'
 import { splitInstructions } from '@gugu/core/shared/assistantInstructions'
 import {
   READABLE_RESOURCE_DOMAINS, WRITABLE_RESOURCE_DOMAINS, appResourceOf, resourceChangeSchema, resourceDomainOf, resourceKeyOf,
@@ -11,14 +14,17 @@ import { dispatchCallOf } from '../../session/shared/extensions/app-dispatch-cor
 import { ASSISTANT_SCREENS, assistantFigureSchema, renameCheck, withoutAssistant, type AppAssistantRead, type AppAssistantStatus, type AssistantRenameResult } from '../../session/shared/extensions/assistant-binding'
 import { assistantLayerEntry, type AssistantAppInstall } from '../../session/shared/extensions/assistant-entry'
 import { domainState, reasonOf, refusedOrUnavailable, savedData, unavailable, writeOutcome } from '../../session/shared/extensions/bound-resources-core'
-import { folderArgsSchema, renameArgsSchema, uploadArgsSchema, VOICE_NOTES_MANAGE_ACTION, voiceNoteArgsSchema, type Unavailable } from '../../session/shared/extensions/resources-management'
+import {
+  RESOURCES_MANAGEMENT_API_VERSION, folderArgsSchema, renameArgsSchema, uploadArgsSchema, VOICE_NOTES_MANAGE_ACTION, voiceNoteArgsSchema,
+  type AppRemoveAllAnswer, type AppUploadAnswer, type Unavailable,
+} from '../../session/shared/extensions/resources-management'
 import type { ExtensionHostEvent } from '../../session/shared/extensions/bridge-protocol'
 import type { ExtensionManifest } from '../../session/shared/extensions/manifest'
 import { VOICE_NOTE_RECORD_ACTION, voiceNoteNameSchema, voiceNoteRetrySchema, voiceNoteStartSchema, voiceNoteWatchSchema } from '../../session/shared/extensions/voice-note-session'
 import { PHONE_ASSISTANT_SCREENS, PHONE_SURFACE_SECTIONS, unsupportedHere, type AppBindingUnsupported, type PhoneSurfaceSection } from '../../session/shared/extensions/phone-binding'
 import {
   BINDING_ACTION_CAPABILITY, boundEntryOf, boundPathOf,
-  type AppBindingSurface, type AppBoundList, type AppBoundRead, type AppUnreadBinding, type ConversationBindingAction,
+  type AppBindingSurface, type AppBoundList, type AppBoundRead, type AppSurfaceIntent, type AppUnreadBinding, type ConversationBindingAction,
 } from '../../session/shared/extensions/unread-binding'
 import { scheduleControlSchema, type AppBoundSchedules, type AppScheduleReceipt } from '../../session/shared/extensions/bound-schedules'
 import { commitPanelRequest, listPanelSchedules, panelSchedulesPrint, planPanelChange, type PanelHome, type PanelOutcome, type PanelRequest } from '../../session/shared/extensions/bound-schedules-panel'
@@ -59,6 +65,10 @@ export interface PhoneBindingPorts {
   draft(chatId: string, text: string): Promise<void>
   /** The assistant renamed the way 自定义 renames it (its identity in the cloud and this phone's contacts). */
   renameAssistant(agentId: string, name: string): Promise<void>
+  /** API 50 `upload`: the phone's own picker, inside the person's gesture; null: cancelled. */
+  pickFiles(): Promise<PhonePickedFile[] | null>
+  /** API 50 `removeVoiceNote`: the layer's own question first (删除“…”？); true = yes. */
+  confirmRemoval(question: { kind: 'voice-note'; title: string | null }): Promise<boolean>
   panel: {
     /** The assistant panel's client as the person (its schedules are read and changed through it, #1928). */
     client: AssistantPanelClient
@@ -80,10 +90,15 @@ export interface PhoneBindingPorts {
     work(): PushedWorkLedger | null
     openWork(): { ownerId: string; workId: string; sessionId: string } | null
     onWork(listener: () => void): () => void
+    /** What the person asked of the App's page through the layer (`AppSurfaceIntent`), told once. */
+    onIntent(listener: (intent: AppSurfaceIntent) => void): () => void
   }
   randomUUID(): string
   sha256(bytes: Uint8Array): Promise<string>
 }
+
+/** A file the person picked on the phone: its name, size and type, its bytes read when written. */
+export type PhonePickedFile = { name: string; size: number; contentType: string; read(): Promise<Uint8Array> }
 
 /** The page asking: which App, which of its tabs (`tabId`), and whether the person works it (a phone page always is). */
 export type PhoneBindingPage = { extensionId: string; tabId: string }
@@ -705,16 +720,126 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     }
     return 'renamed'
   }
+  // ── 50: managing 给助理的资料 and voice notes ─────────────────────────────────────────────────────────────────────
+  const FILES_ROOT = ASSISTANT_PANEL_PATHS.resourcesDir
+  const VOICE_ROOT = `${ASSISTANT_PANEL_PATHS.memoryDir}/${VOICE_NOTES_DIR}`
+  const MANAGE_ARGS = 'gugu.bindings takes the binding\'s name and the key, folder or new name it changes, never an owner, agent, chat or path on disk'
+  const receiptOf = ({ operationId, revision, status, terminal }: AssistantPanelReceipt) =>
+    ({ operationId, revision, status, ...(terminal === undefined ? {} : { terminal }) })
+  type Panel = { files: ReturnType<typeof createAssistantPanelFiles>; receipts: AssistantPanelReceipt[] }
+  /** The assistant pages' own store view (the built-in pages' `write` / `remove`), as this person, every commit's receipt kept. */
+  function panelOf(at: Bound): Panel {
+    const receipts: AssistantPanelReceipt[] = []
+    const client = ports.panel.client
+    const cloud: AssistantPanelClient = {
+      ...client,
+      commit: async (assistant, change) => {
+        const receipt = await client.commit(assistant, change)
+        receipts.push(receipt)
+        return receipt
+      },
+    }
+    const files = createAssistantPanelFiles({
+      assistantId: at.agentId, deviceId: at.deviceId, ownerId: at.ownerId, cloud,
+      assertCurrent: at.recheck,
+      readBody: (item) => ports.panel.readBody(item, { token: at.token, ownerId: at.ownerId, chatId: at.chatId, maxBytes: DEFAULT_TEXT_MAX_BYTES }),
+      upload: (label, bytes) => ports.panel.uploadBody({ token: at.token, ownerId: at.ownerId, chatId: at.chatId, label, bytes }),
+      discard: (itemId) => ports.panel.discard(at.token, at.ownerId, itemId),
+      changed: () => undefined,
+    })
+    return { files, receipts }
+  }
+  /** One managing call under the binding's authority (an App of API 50 only): `unbound`, `unavailable` with its class, a refusal thrown. */
+  async function under<T extends object>(extensionId: string, name: string, needs: readonly ConversationBindingAction[], domain: 'files' | 'voice-notes',
+    use: (at: Bound, panel: Panel) => Promise<T>): Promise<T | { name: string; state: 'unbound' } | ({ name: string } & Unavailable)> {
+    if (installed(extensionId).manifest.apiVersion < RESOURCES_MANAGEMENT_API_VERSION) throw coded('denied', `This call needs apiVersion ${RESOURCES_MANAGEMENT_API_VERSION}`)
+    const at = await bound(extensionId, name, needs, domain).catch((error: unknown) => {
+      if (codeOf(error) === 'failed') return unavailable(reasonOf(error))
+      throw error
+    })
+    if (!at) return { name, state: 'unbound' }
+    if ('state' in at) return { name, ...at }
+    try {
+      const value = await use(at, panelOf(at))
+      at.recheck()
+      return value
+    } catch (error) {
+      if (codeOf(error) === 'invalid-path' || codeOf(error) === '22023') throw coded('invalid', 'The resource store does not take this name')
+      const outcome = refusedOrUnavailable(error)
+      at.recheck()
+      return { name, ...outcome }
+    }
+  }
   /**
-   * API 50 (resources-management.ts) on a phone: 给助理的资料's upload / createFolder / rename / removeFolder (`resources:write`
-   * listing `files`) and a voice note's transcribe / remove / export (`voice-notes:manage`) are not managed from an App's page
-   * on a phone — each answers `unsupported` once its arguments and grant are checked; nothing is asked or changed.
+   * `gugu.bindings.upload(name, { folder? })` (50, `resources:write` listing `files`, in a click): the phone's own picker, each
+   * file the built-in page's rules take (50 MB, no video, audio or archive) written as that page wrote it, the others named back.
    */
-  async function manage(extensionId: string, method: (typeof MANAGE_VERBS)[number], input: unknown): Promise<AppBindingUnsupported> {
-    const files = method === 'bindingsUpload' || method === 'bindingsCreateFolder' || method === 'bindingsRename' || method === 'bindingsRemoveFolder'
-    const schema = method === 'bindingsUpload' ? uploadArgsSchema : method === 'bindingsRename' ? renameArgsSchema
-      : files ? folderArgsSchema : voiceNoteArgsSchema
-    const { name } = argsOf(schema, input, 'gugu.bindings takes the binding\'s name and the key, folder or new name it changes')
+  async function upload(extensionId: string, input: unknown): Promise<AppUploadAnswer> {
+    const args = argsOf(uploadArgsSchema, input, MANAGE_ARGS)
+    const folder = args.folder ? resourceKeyOf('files', args.folder) : ''
+    return under(extensionId, args.name, ['resources', 'resources:write'], 'files', async (at, panel): Promise<AppUploadAnswer> => {
+      const picked = await ports.pickFiles()
+      at.recheck()
+      if (!picked) return { name: args.name, state: 'cancelled' }
+      const uploaded: Extract<AppUploadAnswer, { state: 'done' }>['uploaded'] = []
+      const refused: Extract<AppUploadAnswer, { state: 'done' }>['refused'] = []
+      for (const file of picked) {
+        const rule = resourceRejection({ name: file.name, size: file.size, type: file.contentType })
+        if (rule) { refused.push({ name: file.name, why: rule === 'too_large' ? 'too-large' : 'unsupported' }); continue }
+        const key = folder ? `${folder}/${file.name}` : file.name
+        try {
+          resourceKeyOf('files', key)
+        } catch {
+          refused.push({ name: file.name, why: 'not-saved' })
+          continue
+        }
+        const before = panel.receipts.length
+        try {
+          await panel.files.write(`${FILES_ROOT}/${key}`, await file.read(), file.contentType || 'application/octet-stream')
+          const receipt = panel.receipts.slice(before).at(-1)
+          if (receipt) uploaded.push({ key, name: file.name, receipt: receiptOf(receipt) })
+          else refused.push({ name: file.name, why: 'not-saved' })
+        } catch (error) {
+          if (codeOf(error) === 'denied') throw error
+          refusedOrUnavailable(error)
+          refused.push({ name: file.name, why: 'not-saved' })
+        }
+        at.recheck()
+      }
+      return { name: args.name, state: 'done', uploaded, refused }
+    })
+  }
+  /** `gugu.bindings.removeVoiceNote(name, key)` (50, `voice-notes:manage`, in a click): the note and all of it, once the person said yes. */
+  async function removeVoiceNote(extensionId: string, input: unknown): Promise<AppRemoveAllAnswer> {
+    const args = argsOf(voiceNoteArgsSchema, input, MANAGE_ARGS)
+    const key = resourceKeyOf('voice-notes', args.key)
+    if (key.includes('/')) throw coded('invalid', 'key is a voice note\'s id (its noteId), without "/"')
+    const answer = await under(extensionId, args.name, ['resources', VOICE_NOTES_MANAGE_ACTION], 'voice-notes', async (at, panel): Promise<AppRemoveAllAnswer> => {
+      const snapshot = await panel.files.snapshot()
+      at.recheck()
+      const rows = snapshot.items.filter((item) => item.domain === 'voice-notes' && !item.deleted_at && (item.resource_key === key || item.resource_key.startsWith(`${key}/`)))
+      if (rows.length === 0) return { name: args.name, key, state: 'missing' }
+      const meta = await panel.files.text(`${VOICE_ROOT}/${key}/${VOICE_NOTE_META_FILE}`).catch(() => null)
+      at.recheck()
+      const yes = await ports.confirmRemoval({ kind: 'voice-note', title: parseVoiceNoteMeta(meta ?? '')?.title ?? null })
+      at.recheck()
+      if (!yes) return { name: args.name, key, state: 'cancelled' }
+      await panel.files.remove(`${VOICE_ROOT}/${key}`, true)
+      return { name: args.name, key, state: 'committed', receipts: panel.receipts.map(receiptOf) }
+    })
+    return 'key' in answer ? answer : { ...answer, key }
+  }
+  /**
+   * The rest of API 50 on a phone — 给助理的资料's createFolder / rename / removeFolder and a voice note's transcribe / export —
+   * is not done from a phone (its own pages never had them: 新建 and 改名 are a computer's, transcription runs on a computer,
+   * a phone has no save dialog): each answers `unsupported` once its arguments and grant are checked; nothing changes.
+   */
+  async function manage(extensionId: string, method: (typeof MANAGE_VERBS)[number], input: unknown): Promise<AppUploadAnswer | AppRemoveAllAnswer | AppBindingUnsupported> {
+    if (method === 'bindingsUpload') return upload(extensionId, input)
+    if (method === 'bindingsRemoveVoiceNote') return removeVoiceNote(extensionId, input)
+    const files = method === 'bindingsCreateFolder' || method === 'bindingsRename' || method === 'bindingsRemoveFolder'
+    const schema = method === 'bindingsRename' ? renameArgsSchema : files ? folderArgsSchema : voiceNoteArgsSchema
+    const { name } = argsOf(schema, input, MANAGE_ARGS)
     const app = installed(extensionId)
     if (files) declared(app, name, 'resources:write', 'files')
     else declared(app, name, VOICE_NOTES_MANAGE_ACTION)
@@ -769,6 +894,16 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
         deliver({ type: 'bindingSurface', surface: now as Extract<ExtensionHostEvent, { type: 'bindingSurface' }>['surface'] })
       })
     }
+    // What the person asked of this page through the layer (the recording bar's note, the 自定义 card): told once, with the
+    // surface as it is then, only while the page is bound there; never in an answer.
+    const tellIntent = (intent: AppSurfaceIntent) => {
+      if (!surfaceName || !binding?.actions.includes('surface')) return
+      void surfaceOf(page, surfaceName).catch(() => null).then((now) => {
+        if (disposed || !now || now.state !== 'bound') return
+        lastSurface = JSON.stringify(now)
+        deliver({ type: 'bindingSurface', surface: { ...now, intent } as Extract<ExtensionHostEvent, { type: 'bindingSurface' }>['surface'] })
+      })
+    }
     let lastStatus = ''
     const tellStatus = () => {
       if (!binding?.actions.includes('assistant-status')) return
@@ -797,8 +932,10 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     const offShown = ports.layer.onShown(() => { tellSurface(); tellStatus() })
     const offStatus = ports.layer.onStatus(tellStatus)
     const offWork = ports.layer.onWork(tellWork)
+    const offIntent = ports.layer.onIntent(tellIntent)
     return () => {
       disposed = true
+      offIntent()
       offShown()
       offStatus()
       offWork()
@@ -815,7 +952,7 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
 }
 export type PhoneBindings = ReturnType<typeof createPhoneBindings>
 
-/** API 50's managing verbs: answered `unsupported` on a phone. */
+/** API 50's managing verbs: upload and removeVoiceNote done on a phone, the rest answered `unsupported`. */
 const MANAGE_VERBS = ['bindingsUpload', 'bindingsCreateFolder', 'bindingsRename', 'bindingsRemoveFolder', 'bindingsTranscribeVoiceNote', 'bindingsRemoveVoiceNote', 'bindingsExportVoiceNote'] as const
 
 /** The voice-note recorder's verbs (47): answered `unsupported` on a phone. */

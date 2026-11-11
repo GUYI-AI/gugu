@@ -19,8 +19,7 @@ export default {
   },
   "queued": {
     "start": "开始转写",
-    "bodyDesktop": "录音已经传到{{name}}家里了，点「开始转写」就会转写，并整理成语音笔记。",
-    "bodyPhone": "录音已经在{{name}}家里了。回到电脑上的咕咕，打开这条语音笔记，点「开始转写」。"
+    "bodyDesktop": "录音已经传到{{name}}家里了，点「开始转写」就会转写，并整理成语音笔记。"
   },
   "recordedAt": "录制于 {{time}}",
   "minutes": "{{n}} 分钟",

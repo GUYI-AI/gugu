@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AssistantPanelItem, AssistantPanelSnapshot } from '@gugu/core/cloud/assistantPanel'
-import { answerPhoneBinding, createPhoneBindings, type PhoneBindingPorts, type PhoneInstalledApp } from '../../../../apps/desktop/src/components/appSlot/phoneAppBindings'
+import { answerPhoneBinding, createPhoneBindings, type PhoneBindingPorts, type PhoneInstalledApp, type PhonePickedFile } from '../../../../apps/desktop/src/components/appSlot/phoneAppBindings'
+import type { AppSurfaceIntent } from '../../../../apps/desktop/src/session/shared/extensions/unread-binding'
 import { ASSISTANT_APP_ID, assistantLayerEntry, type AssistantAppInstall } from '../../../../apps/desktop/src/session/shared/extensions/assistant-entry'
 import { PHONE_ASSISTANT_SCREENS, PHONE_BINDING_API_VERSION } from '../../../../apps/desktop/src/session/shared/extensions/phone-binding'
 import { APP_PLATFORMS_API_VERSION, appPlatformProblems } from '../../../../apps/desktop/src/session/shared/extensions/app-platforms'
@@ -67,9 +68,13 @@ type World = {
   snapshot: AssistantPanelSnapshot
   /** Runs inside the next wait: the world changing under a call. */
   during: (() => void) | null
+  /** What the phone's picker gives (null: cancelled). */
+  picked: PhonePickedFile[] | null
 }
 let world: World
-const actions = { move: vi.fn(), open: vi.fn(), openWork: vi.fn(), rename: vi.fn(async (_agentId: string, _name: string) => undefined) } satisfies PhoneLayerActions
+const actions = { move: vi.fn(), open: vi.fn(), openWork: vi.fn(), rename: vi.fn(async (_agentId: string, _name: string) => undefined),
+  confirmRemoval: vi.fn(async (_question: { kind: 'voice-note'; title: string | null }) => true) } satisfies PhoneLayerActions
+const intentListeners = new Set<(intent: AppSurfaceIntent) => void>()
 const drafted: { chatId: string; text: string }[] = []
 const commits: unknown[] = []
 
@@ -96,9 +101,12 @@ function ports(): PhoneBindingPorts {
     },
     draft: async (chatId, text) => { drafted.push({ chatId, text }) },
     renameAssistant: (agentId, name) => actions.rename(agentId, name),
+    pickFiles: () => wait(() => world.picked),
+    confirmRemoval: (question) => actions.confirmRemoval(question),
     panel: {
       client: {
         snapshot: async () => world.snapshot,
+        resource: async () => null,
         commit: async (_agent: string, change: { operationId: string; expectedRevision: string }) => {
           commits.push(change)
           return { operationId: change.operationId, revision: '4', status: 'pending' as const }
@@ -124,6 +132,10 @@ function ports(): PhoneBindingPorts {
       work: () => world.work,
       openWork: () => world.openWork,
       onWork: () => () => undefined,
+      onIntent: (listener) => {
+        intentListeners.add(listener)
+        return () => { intentListeners.delete(listener) }
+      },
     },
     randomUUID: () => crypto.randomUUID(),
     sha256: async () => 'b'.repeat(64),
@@ -142,7 +154,11 @@ beforeEach(() => {
     status: { ownerId: OWNER, status: FOUND }, work: null, openWork: null,
     snapshot: { version: 1, revision: '9', items: [panelItem('memory', '__collection__', { state: 'ready' }), panelItem('memory', 'notes/a.md', { title: 'A', relativePath: 'notes/a.md', secret: 'x' })], application: [] },
     during: null,
+    picked: null,
   }
+  intentListeners.clear()
+  actions.confirmRemoval.mockReset()
+  actions.confirmRemoval.mockImplementation(async () => true)
   actions.move.mockReset()
   actions.open.mockReset()
   actions.openWork.mockReset()
@@ -284,20 +300,25 @@ describe('the binding on a phone: who is asked, every refusal', () => {
   })
 })
 
-describe('API 50 on a phone: managing files and voice notes answers unsupported', () => {
+describe('API 50 on a phone: what the built-in pages did is done there, the rest answers unsupported', () => {
+  const base = assistantManifest()
+  const binding = base.permissions!.bindings![0]!
+  // At most the catalog's capabilities: voice-note managing in place of rename here.
+  const withManage = () => install({ manifest: assistantManifest({ apiVersion: 50, permissions: { ...base.permissions,
+    capabilities: [...base.permissions!.capabilities!.filter((c) => c !== 'assistant:rename'), 'chat:voice-notes:manage'],
+    bindings: [{ ...binding, actions: [...binding.actions.filter((a) => a !== 'assistant-rename'), 'voice-notes:manage'],
+      domains: { resources: ['memory', 'files', 'voice-notes'], 'resources:write': ['memory', 'files'] } }] } }) })
+  const picked = (name: string, size = 3, contentType = 'text/plain'): PhonePickedFile => ({ name, size, contentType, read: async () => new TextEncoder().encode('abc') })
+  const withVoiceNote = () => {
+    world.snapshot = { ...world.snapshot, items: [...world.snapshot.items, panelItem('voice-notes', '__collection__', { state: 'ready' }),
+      panelItem('voice-notes', 'n1', { noteId: 'n1', kind: 'directory' }), panelItem('voice-notes', 'n1/note.json', { noteId: 'n1', kind: 'note.json' })] }
+  }
+
   it.each([
-    ['bindingsUpload', { name: 'main' }, 'resources'], ['bindingsCreateFolder', { name: 'main', key: 'docs' }, 'resources'],
+    ['bindingsCreateFolder', { name: 'main', key: 'docs' }, 'resources'],
     ['bindingsRename', { name: 'main', key: 'a.md', to: 'b.md' }, 'resources'], ['bindingsRemoveFolder', { name: 'main', key: 'docs' }, 'resources'],
-    ['bindingsTranscribeVoiceNote', { name: 'main', key: 'n1' }, 'voice'], ['bindingsRemoveVoiceNote', { name: 'main', key: 'n1' }, 'voice'],
-    ['bindingsExportVoiceNote', { name: 'main', key: 'n1' }, 'voice'],
-  ] as const)('%s: unsupported once its arguments and grant hold; nothing asked or changed', async (method, args, needs) => {
-    const base = assistantManifest()
-    const binding = base.permissions!.bindings![0]!
-    // At most 12 capabilities: voice-note managing in place of rename here.
-    const withManage = () => install({ manifest: assistantManifest({ apiVersion: 50, permissions: { ...base.permissions,
-      capabilities: [...base.permissions!.capabilities!.filter((c) => c !== 'assistant:rename'), 'chat:voice-notes:manage'],
-      bindings: [{ ...binding, actions: [...binding.actions.filter((a) => a !== 'assistant-rename'), 'voice-notes:manage'],
-        domains: { ...binding.domains, 'resources:write': ['memory', 'files'] } }] } }) })
+    ['bindingsTranscribeVoiceNote', { name: 'main', key: 'n1' }, 'voice'], ['bindingsExportVoiceNote', { name: 'main', key: 'n1' }, 'voice'],
+  ] as const)('%s (the built-in phone pages never had it): unsupported once its arguments and grant hold; nothing asked or changed', async (method, args, needs) => {
     world.app = withManage()
     const bindings = createPhoneBindings(ports())
     expect(await answerPhoneBinding(bindings, method, PAGE, { ...args }, () => undefined)).toEqual({ name: 'main', state: 'unsupported' })
@@ -307,10 +328,89 @@ describe('API 50 on a phone: managing files and voice notes answers unsupported'
     world.app = needs === 'resources' ? install() : install({ manifest: assistantManifest() })
     expect(await codeOf(answerPhoneBinding(bindings, method, PAGE, { ...args }, () => undefined)!)).toBe('denied')
     expect(commits).toEqual([])
+    expect(actions.confirmRemoval).not.toHaveBeenCalled()
+  })
+
+  it('upload: the phone\'s picker, the built-in page\'s rules, each file written into 给助理的资料 as that page wrote it', async () => {
+    world.app = withManage()
+    world.picked = [picked('a.md'), picked('film.mp4', 3, 'video/mp4'), picked('big.pdf', 60 * 1024 * 1024, 'application/pdf')]
+    const answer = await answerPhoneBinding(createPhoneBindings(ports()), 'bindingsUpload', PAGE, { name: 'main', folder: 'docs' }, () => undefined)
+    expect(answer).toEqual({ name: 'main', state: 'done',
+      uploaded: [{ key: 'docs/a.md', name: 'a.md', receipt: { operationId: expect.any(String), revision: '4', status: 'pending' } }],
+      refused: [{ name: 'film.mp4', why: 'unsupported' }, { name: 'big.pdf', why: 'too-large' }] })
+    expect(commits).toEqual([expect.objectContaining({ domain: 'files', key: 'docs/a.md', operation: 'save', data: expect.objectContaining({ path: 'docs/a.md', kind: 'file' }) })])
+  })
+
+  it('upload: cancelled picks nothing; refused at API 49, without files writable, for another binding, an account switched while picking', async () => {
+    world.app = withManage()
+    const bindings = createPhoneBindings(ports())
+    expect(await bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main' })).toEqual({ name: 'main', state: 'cancelled' })
+    expect(await codeOf(bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main', folder: '../x' }))).toBe('invalid')
+    expect(await codeOf(bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'other' }))).toBe('denied')
+    // The account switched while the picker was up: refused before a picked file is even read.
+    const read = vi.fn(async () => new Uint8Array())
+    // The picker answers as the account switches (only once it is up: the binding was checked before).
+    Object.defineProperty(world, 'picked', { configurable: true, get: () => { world.account = { token: 't', ownerId: OTHER }; return [{ ...picked('a.md'), read }] } })
+    expect(await codeOf(bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main' }))).toBe('denied')
+    expect(read).not.toHaveBeenCalled()
+    Object.defineProperty(world, 'picked', { configurable: true, writable: true, value: null })
+    world.account = { token: 't', ownerId: OWNER }
+    // Files writable at API 49 (no voice-note managing there): upload is an App's of API 50 only.
+    world.app = install({ manifest: assistantManifest({ permissions: { ...base.permissions,
+      bindings: [{ ...binding, domains: { ...binding.domains, 'resources:write': ['memory', 'files'] } }] } }) })
+    expect(await codeOf(bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main' }))).toBe('denied')
+    world.app = install()
+    expect(await codeOf(bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main' }))).toBe('denied')
+    world.app = withManage()
+    world.assistant = null
+    expect(await bindings.manage(ASSISTANT_APP_ID, 'bindingsUpload', { name: 'main' })).toEqual({ name: 'main', state: 'unbound' })
+    expect(commits).toEqual([])
+  })
+
+  it('removeVoiceNote: the layer asks first, as the built-in note page did; yes removes the note and all of it', async () => {
+    world.app = withManage()
+    withVoiceNote()
+    const bindings = createPhoneBindings(ports())
+    actions.confirmRemoval.mockImplementationOnce(async () => false)
+    expect(await bindings.manage(ASSISTANT_APP_ID, 'bindingsRemoveVoiceNote', { name: 'main', key: 'n1' })).toEqual({ name: 'main', key: 'n1', state: 'cancelled' })
+    expect(commits).toEqual([])
+    const answer = await bindings.manage(ASSISTANT_APP_ID, 'bindingsRemoveVoiceNote', { name: 'main', key: 'n1' })
+    expect(actions.confirmRemoval).toHaveBeenLastCalledWith({ kind: 'voice-note', title: null })
+    expect(answer).toMatchObject({ name: 'main', key: 'n1', state: 'committed' })
+    expect(commits.map((change) => [(change as { key: string }).key, (change as { operation: string }).operation])).toEqual([['n1/note.json', 'remove'], ['n1', 'remove']])
+    expect(await bindings.manage(ASSISTANT_APP_ID, 'bindingsRemoveVoiceNote', { name: 'main', key: 'gone' })).toEqual({ name: 'main', key: 'gone', state: 'missing' })
+  })
+
+  it('removeVoiceNote: refused without voice-note managing, for a path, an account switched at the question; nothing removed', async () => {
+    world.app = withManage()
+    withVoiceNote()
+    const bindings = createPhoneBindings(ports())
+    expect(await codeOf(bindings.manage(ASSISTANT_APP_ID, 'bindingsRemoveVoiceNote', { name: 'main', key: 'n1/note.json' }))).toBe('invalid')
+    actions.confirmRemoval.mockImplementationOnce(async () => { world.account = { token: 't', ownerId: OTHER }; return true })
+    expect(await codeOf(bindings.manage(ASSISTANT_APP_ID, 'bindingsRemoveVoiceNote', { name: 'main', key: 'n1' }))).toBe('denied')
+    world.account = { token: 't', ownerId: OWNER }
+    world.app = install({ manifest: assistantManifest() })
+    expect(await codeOf(bindings.manage(ASSISTANT_APP_ID, 'bindingsRemoveVoiceNote', { name: 'main', key: 'n1' }))).toBe('denied')
+    expect(commits).toEqual([])
   })
 })
 
 describe('the layout signal and the unsupported-here states', () => {
+  it('tells the page what the person asked through the layer (the recording bar\'s note, 自定义) once, with its surface, only while bound', async () => {
+    const heard: unknown[] = []
+    const stop = createPhoneBindings(ports()).attach(PAGE, (event) => heard.push(event))
+    world.shown = { ...world.shown!, section: 'memory' }
+    for (const listener of intentListeners) listener({ kind: 'voice-note' })
+    await vi.waitFor(() => expect(heard).toContainEqual({ type: 'bindingSurface', surface: { name: 'main', state: 'bound', layout: 'phone', section: 'memory', hostPage: false, intent: { kind: 'voice-note' } } }))
+    // Another account's layer, or the page not shown: nothing told.
+    heard.length = 0
+    world.shown = { ...world.shown!, ownerId: OTHER }
+    for (const listener of intentListeners) listener({ kind: 'profile' })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(heard.filter((event) => JSON.stringify(event).includes('intent'))).toEqual([])
+    stop()
+    expect(intentListeners.size).toBe(0)
+  })
   it('tells the page the phone layout and the section it fills, only while the layer shows it', async () => {
     const bindings = createPhoneBindings(ports())
     expect(await bindings.surface(PAGE, { name: 'main' })).toEqual({ name: 'main', state: 'bound', layout: 'phone', section: 'today', hostPage: false })
