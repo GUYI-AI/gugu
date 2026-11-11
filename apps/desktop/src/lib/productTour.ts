@@ -3,11 +3,13 @@ import { readUserSettingsConfig, updateUserSettingsKey, type SettingsTableClient
 import { identityDb } from './supabase'
 
 /**
- * 功能栏导览(规范 4.1 第 6 步):七个功能,按功能栏的顺序。每一步指着一个真实存在的入口;
- * 当前界面上找不到的那一步跳过,总步数跟着少(规范 2.3)。
+ * 功能栏导览(规范 4.1 第 6 步):七个功能,按功能栏从上到下的顺序。每一步指着一个真实存在的入口;
+ * 当前界面上找不到的那一步跳过,总步数跟着少(规范 2.3)。咕咕是 App 那一组的第一个(owner 11-12),紧跟「App」。
  */
-export const TOUR_STEPS = ['assistant', 'tasks', 'chats', 'contacts', 'library', 'apps', 'settings'] as const
+export const TOUR_STEPS = ['tasks', 'chats', 'contacts', 'library', 'apps', 'assistant', 'settings'] as const
 export type TourStepId = (typeof TOUR_STEPS)[number]
+/** The order the first version's progress counted its bubbles in (`index`). */
+const V1_STEPS: readonly TourStepId[] = ['assistant', 'tasks', 'chats', 'contacts', 'library', 'apps', 'settings']
 
 /** 功能短片:「通用 / 编程」那一段随 #634 去掉的切换一起下线,剩三段。只从「帮助与导览」里看。 */
 export const TOUR_FILMS = ['split', 'contacts', 'report'] as const
@@ -34,10 +36,11 @@ export function parseProductTourState(config: Record<string, unknown>): ProductT
     return { step: step as TourStepId, status }
   }
   // 第 1 版(七个气泡 + 四段短片,点「下一步」走):停在气泡上的按跳过算,能从那一步接着看;到了短片阶段的算看完。
+  // 它记的是气泡的序号,按当时的顺序(咕咕在最前)读。
   if (record.version === 1) {
     const { phase, index } = record
     if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) throw new Error('Invalid product tour progress')
-    if (phase === 'modules' && index < TOUR_STEPS.length) return { step: TOUR_STEPS[index], status: 'skipped' }
+    if (phase === 'modules' && index < V1_STEPS.length) return { step: V1_STEPS[index], status: 'skipped' }
     if (phase === 'features' && index < 4) return { step: TOUR_STEPS[TOUR_STEPS.length - 1], status: 'done' }
   }
   throw new Error('Invalid product tour progress')
