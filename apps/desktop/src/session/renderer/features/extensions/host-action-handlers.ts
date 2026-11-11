@@ -21,7 +21,13 @@ import {
   EXTENSION_LISTED_SESSION_METHOD,
   EXTENSION_MEMBER_FACES_METHOD,
   EXTENSION_PICK_DISPATCH_TARGET_METHOD,
+  EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD,
+  EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD,
+  EXTENSION_EXPORT_VOICE_NOTE_METHOD,
   INSTALL_CONSENT_HUMAN_WINDOW_MS,
+  type ResourceRemovalAsk,
+  type VoiceNoteExportAsk,
+  type VoiceNoteTranscribeAsk,
   type ExtensionHostAction,
   type ExtensionHostActionResult,
   type ExtensionHostActionCommand,
@@ -354,6 +360,19 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
   [EXTENSION_PICK_DISPATCH_TARGET_METHOD]: async (params: unknown) => {
     const { pickDispatchTarget } = await import('@/components/chat/dispatchAsk');
     return pickDispatchTarget(params as DispatchAsk);
+  },
+  /** #48 An App's managing calls: the assistant page's own question, 开始转写 and 导出 Markdown, in this window. */
+  [EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD]: async (params: unknown) => {
+    const { resourceWindow } = await import('@renderer/features/assistant/voice-notes/app-resource-window');
+    return resourceWindow().confirmRemoval(params as ResourceRemovalAsk);
+  },
+  [EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD]: async (params: unknown) => {
+    const { resourceWindow } = await import('@renderer/features/assistant/voice-notes/app-resource-window');
+    return resourceWindow().transcribe(params as VoiceNoteTranscribeAsk);
+  },
+  [EXTENSION_EXPORT_VOICE_NOTE_METHOD]: async (params: unknown) => {
+    const { resourceWindow } = await import('@renderer/features/assistant/voice-notes/app-resource-window');
+    return resourceWindow().exportNote(params as VoiceNoteExportAsk);
   },
   [EXTENSION_INSTALL_CONSENT_METHOD]: (params: unknown): Promise<ExtensionInstallConsentResult> => {
     if (!params || typeof params !== 'object') throw new Error('Invalid extension consent request');

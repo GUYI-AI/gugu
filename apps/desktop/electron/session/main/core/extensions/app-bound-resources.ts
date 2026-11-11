@@ -34,7 +34,7 @@ const invalid = (message: string) => Object.assign(new Error(message), { code: '
 const failed = (message: string, reason: ReadFailureReason = 'unreadable') => Object.assign(new Error(message), { code: 'failed', reason });
 /** A read that could not be made now, and why (48): the class the assistant's own pages tell the person. */
 export const unavailable = (reason: ReadFailureReason): Unavailable => ({ state: 'unavailable', reason });
-const reasonOf = (error: unknown): ReadFailureReason => {
+export const reasonOf = (error: unknown): ReadFailureReason => {
   const given = (error as { reason?: unknown } | null)?.reason;
   return typeof given === 'string' ? given as ReadFailureReason : 'unreadable';
 };
@@ -56,7 +56,7 @@ const PERSONAL_ASSISTANT_SELECT = 'agent_user_id,device_id,member_key,phase,crea
  * its private one. Only it has panel resources: anything else — another of the person's agents, someone else's, a group,
  * a person — is refused here, before the store is asked.
  */
-async function personalAssistantOf(token: string, ownerId: string, chatId: string): Promise<string> {
+async function personalAssistantOf(token: string, ownerId: string, chatId: string): Promise<{ agentId: string; deviceId: string }> {
   const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
   const { data, error } = await client.from('agent_provisions').select(PERSONAL_ASSISTANT_SELECT)
     .eq('owner_user_id', ownerId).eq('member_key', 'assistant').limit(32).abortSignal(AbortSignal.timeout(5000));
@@ -77,10 +77,13 @@ async function personalAssistantOf(token: string, ownerId: string, chatId: strin
       && ['ready', 'completed'].includes(String(row.phase)) && agent?.owner_user_id === ownerId && agent.removed_at === null;
   });
   if (!pick || !served) throw denied('The chosen conversation is not your private conversation with your personal assistant');
-  return pick.agentId;
+  return pick;
 }
 
-type Bound = { ownerId: string; token: string; chatId: string; handle: string; agentId: string; recheck(): Promise<void> };
+/** The authority of one call, and the assistant's home device (what its own pages name in a change, 48). */
+export type Bound = { ownerId: string; token: string; chatId: string; handle: string; agentId: string; deviceId: string; recheck(): Promise<void> };
+/** The binding actions a call may need: the resource actions (by domain) and the voice-note one (48, no domains). */
+export type ResourceCallAction = ResourceBindingAction | 'voice-notes:manage';
 
 /**
  * The authority one call works under: the current account's own selection for this installed App, with the action granted
@@ -88,11 +91,11 @@ type Bound = { ownerId: string; token: string; chatId: string; handle: string; a
  * its personal assistant (asked beside membership). `recheck`: account, installed App, grant and the same selection, still —
  * called after every wait. Null: nobody has chosen the conversation yet.
  */
-async function boundAgent(extensionId: string, name: string, needs: readonly ResourceBindingAction[], domain: string | null): Promise<Bound | null> {
+export async function boundAgent(extensionId: string, name: string, needs: readonly ResourceCallAction[], domain: string | null): Promise<Bound | null> {
   const { token, ownerId } = await account();
   const service = extensionsService();
   // Every action the call needs, each granted (a change needs reading the domain too): one binding behind them all.
-  const grant = () => needs.map((action) => domain === null
+  const grant = () => needs.map((action) => domain === null || action === 'voice-notes:manage'
     ? service.conversationBinding(ownerId, extensionId, name, action)
     : service.conversationResourceBinding(ownerId, extensionId, name, action, domain)).at(-1) ?? null;
   const before = grant();
@@ -112,11 +115,12 @@ async function boundAgent(extensionId: string, name: string, needs: readonly Res
   const refusal = rejected.find((check) => codeOf(check.reason) === 'denied') ?? rejected[0];
   if (refusal) throw refusal.reason;
   await recheck();
-  return { ownerId, token, chatId: before.chatId, handle: before.handle, agentId: (agent as PromiseFulfilledResult<string>).value, recheck };
+  const { agentId, deviceId } = (agent as PromiseFulfilledResult<{ agentId: string; deviceId: string }>).value;
+  return { ownerId, token, chatId: before.chatId, handle: before.handle, agentId, deviceId, recheck };
 }
 
 /** The store, as the signed-in person; a call made after the account changed is refused before it is sent. */
-function storeOf(ownerId: string) {
+export function storeOf(ownerId: string) {
   return createAssistantPanelClient(async (rpc, args) => {
     const { token, ownerId: now } = await account().catch(() => ({ token: '', ownerId: null }));
     if (now !== ownerId) throw new AssistantPanelError('account-changed', 'Assistant panel account changed');
@@ -283,7 +287,7 @@ function writeOutcome(error: unknown): { state: 'conflict' | 'deleted' } | Unava
 }
 
 /** Removes a body this call uploaded that no change took. The store refuses removing one a change refers to. */
-async function discard(bound: Bound, itemId: string): Promise<void> {
+export async function discard(bound: Bound, itemId: string): Promise<void> {
   const client = createGuguSupabaseClient({ schema: 'chat', headers: { Authorization: `Bearer ${bound.token}` } });
   await Promise.resolve(client.rpc('workspace_delete_as', { p_item_id: itemId, p_as_user_id: bound.ownerId })).catch(() => undefined);
 }

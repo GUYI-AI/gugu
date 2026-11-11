@@ -82,7 +82,7 @@ export type AppTranscribeAnswer = Named & { key: string } & (
 );
 
 /** `gugu.bindings.exportVoiceNote(name, key)`: its summary and transcript as Markdown, where the person saves it. */
-export type AppExportAnswer = Named & { key: string } & ({ state: 'unbound' | 'missing' | 'unprepared' | 'cancelled' | 'saved' } | Unavailable);
+export type AppExportAnswer = Named & { key: string } & ({ state: 'unbound' | 'missing' | 'cancelled' | 'saved' } | Unavailable);
 
 /** A file a draft into the bound conversation carries: one of its folder's (`bindings.list`) or of the agent's resources. */
 export type DraftAttachment = { file: string } | { domain: 'memory' | 'files' | 'personality' | 'skills' | 'voice-notes'; key: string };

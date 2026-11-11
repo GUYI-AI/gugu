@@ -110,6 +110,23 @@ export const EXTENSION_LISTED_SESSION_METHOD = 'extensions.listedSession';
 export const EXTENSION_PICK_DISPATCH_TARGET_METHOD = 'extensions.pickDispatchTarget';
 
 /**
+ * #48 (resources-management.ts) What an App's managing calls ask of the window that draws its page: the question the
+ * assistant's page asks before a delete (with its words), its voice-note pipeline's 开始转写, and its 导出 Markdown.
+ * The window checks the account and the assistant itself; the page sees only the outcome.
+ */
+export const EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD = 'extensions.confirmResourceRemoval';
+export const EXTENSION_TRANSCRIBE_VOICE_NOTE_METHOD = 'extensions.transcribeVoiceNote';
+export const EXTENSION_EXPORT_VOICE_NOTE_METHOD = 'extensions.exportVoiceNote';
+/** `folder`: its last name; `voice-note`: its title (null: untitled). For a voice note, its id, to stop this window's job first. */
+export type ResourceRemovalAsk =
+  | { kind: 'folder'; name: string }
+  | { kind: 'voice-note'; title: string | null; ownerId: string; assistantId: string; noteId: string };
+export type VoiceNoteTranscribeAsk = { ownerId: string; assistantId: string; noteId: string };
+export type VoiceNoteTranscribeOutcome = 'started' | 'busy' | 'not-ready' | 'denied';
+export type VoiceNoteExportAsk = { ownerId: string; title: string | null; summary: string | null; transcript: string | null };
+export type VoiceNoteExportOutcome = 'saved' | 'cancelled' | 'denied' | 'failed';
+
+/**
  * 留给**人**读完权限再决定的时间,谁发起的安装都是这一个。
  *
  * 产品决定:owner 定约 5 分钟(原先 30 秒,「30 秒太短了」)。取 280 秒是要比 harness 自己的工具调用上限

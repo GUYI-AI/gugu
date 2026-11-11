@@ -500,3 +500,8 @@ async function run(job: Job) {
     }
   }
 }
+
+/** #48 Which assistant this window's voice notes go to now (null: none yet): an App's managing calls check it is theirs. */
+export function voiceNotesContextAssistant(): string | null {
+  return context?.assistantId ?? null;
+}
