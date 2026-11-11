@@ -617,6 +617,12 @@ export const sessionTurns = sqliteTable(
     createdAt: text('created_at')
       .notNull()
       .default(sql`CURRENT_TIMESTAMP`),
+    /**
+     * How many times `data` was rewritten in place (a late tail, a changed outcome, a record fill). A reader that keeps
+     * turns (the phone) compares it with the one it holds and reads again only the turns that changed. Counted by a
+     * trigger (migration 0050), so no writer can forget it.
+     */
+    revision: integer('revision').notNull().default(0),
   },
   (table) => ({
     sessionSeqIdx: index('idx_session_turns_session_seq').on(
