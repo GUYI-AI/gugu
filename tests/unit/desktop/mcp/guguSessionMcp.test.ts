@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { installAssistantRulesResolver } from '../../../../apps/desktop/electron/assistant-rules-resolver'
+import { fixedAssistantRules } from '../assistantRules/fixtureApp'
 import {
   createDesktopGuguMcpHost,
   type DesktopGuguMcpHost,
@@ -52,6 +54,8 @@ async function reachableTools(client: Client): Promise<Array<{ name: string; inp
 }
 
 // F14: these are desktop hosts, which run app_check; the one test of a host that cannot says so itself.
+// A personal assistant's dispatch renders the App's rules (#1931): a fixed set here.
+beforeAll(() => installAssistantRulesResolver(fixedAssistantRules()))
 beforeEach(() => setExtensionCheckAvailable(true))
 afterEach(async () => {
   setExtensionCheckAvailable(false)
