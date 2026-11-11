@@ -488,6 +488,8 @@
   --z-overlay-local: 50;   /* 面板内浮层：emoji picker、斜杠命令、@ 提及 */
   /* Workspace surfaces share a stacking context; only the fullscreen guest rises above its opaque pane. */
   --z-pane-resident: 10;
+  /* Host controls drawn over a resident App page's corner (#1925: the collapse control beside a conversation). */
+  --z-pane-resident-chrome: 15;
   --z-pane-divider: 20;
   --z-pane-fullscreen: 30;
   --z-pane-fullscreen-resident: 40;

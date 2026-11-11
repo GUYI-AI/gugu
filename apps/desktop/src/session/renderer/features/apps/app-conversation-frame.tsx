@@ -1,6 +1,6 @@
 import '@/i18n/registerAssistantCatalog';
 import '../assistant/assistant-today.css';
-import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useSyncExternalStore, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PanelRight, Search } from '@/lib/icons';
 import { readShellSlots } from '@/lib/shellSlots';
@@ -9,10 +9,20 @@ import { ExtensionSharedSlot } from '@renderer/features/extensions/extension-sha
 import { searchInChat } from '@renderer/features/global-search/search-session';
 import { rpc } from '@renderer/lib/ipc';
 import { log } from '@renderer/utils/logger';
+import { CONVERSATION_SURFACE_PANEL_INSET } from '@shared/extensions/unread-binding';
 import { setAppConversationPanelCollapsed, useAppConversationPanelCollapsed } from './app-conversation-panel';
 
 /** The App's main page has this tab id here, as on its page of its own (`AppMainPanel`). */
 const DOCK = 'dock';
+/**
+ * The corner the collapse control sits in, over the App's page: the very box `panel.inset` tells the App, so what it is told
+ * is what is covered at every width. The control is centred in its height and 16px in from the right, as on the built-in
+ * panel's top row. Above the page (a resident page is drawn in the root layer), clicks outside the control reach the page.
+ */
+const CORNER: CSSProperties = {
+  position: 'absolute', top: 0, right: 0, width: CONVERSATION_SURFACE_PANEL_INSET.right, height: CONVERSATION_SURFACE_PANEL_INSET.top,
+  display: 'flex', alignItems: 'center', justifyContent: 'flex-start', zIndex: 'var(--z-pane-resident-chrome)', pointerEvents: 'none',
+};
 
 function report(extensionId: string, tabKind: string, shown: { chatId: string; collapsed: boolean } | null): void {
   void rpc.extensions.reportConversationSurface({ extensionId, tabKind, tabId: DOCK, shown }).then((result) => {
@@ -27,8 +37,10 @@ function report(extensionId: string, tabKind: string, shown: { chatId: string; c
  * (AppConversationSurfaceHost); only while the shell says it may be drawn (account, installed App, grant, membership) is
  * there a frame at all — otherwise the page opens alone, exactly as an App's page does.
  *
- * Kept from the built-in frame: search and「展开面板」in the column's top row, 「收起面板」in the panel's, the panel's state
- * remembered on this computer. Not kept, being the assistant's own: its name and avatar, its settings gear, its tabs.
+ * Kept from the built-in frame: search and「展开面板」in the column's top row, 「收起面板」over the top-right corner of the
+ * panel as on the built-in's top row, the panel's state remembered on this computer. The App's page fills the panel, so a
+ * page drawing its own top row (name, tabs) lines up with the built-in's; `panel.inset` tells it which corner to keep clear.
+ * Not kept, being the assistant's own: its name and avatar, its settings gear, its tabs.
  */
 export function AppConversationFrame({ extensionId, tabKind }: { extensionId: string; tabKind: string }) {
   const { t } = useTranslation('assistant');
@@ -67,13 +79,13 @@ export function AppConversationFrame({ extensionId, tabKind }: { extensionId: st
       </div>
       {collapsed ? null : (
         <section className="ta-panel" data-testid="app-conversation-panel">
-          <div className="ta-panel-top">
-            <button type="button" className="ta-circle ta-panel-collapse" aria-label={t('panel.collapse')} title={t('panel.collapse')} onClick={() => setCollapsed(true)} data-testid="app-conversation-panel-collapse">
-              <PanelRight />
-            </button>
-          </div>
           <div className="flex min-h-0 flex-1 flex-col">
             <ExtensionSharedSlot tabKind={tabKind} tabId={DOCK} />
+          </div>
+          <div style={CORNER} data-testid="app-conversation-panel-corner">
+            <button type="button" className="ta-circle ta-panel-collapse" style={{ pointerEvents: 'auto' }} aria-label={t('panel.collapse')} title={t('panel.collapse')} onClick={() => setCollapsed(true)} data-testid="app-conversation-panel-collapse">
+              <PanelRight />
+            </button>
           </div>
         </section>
       )}
