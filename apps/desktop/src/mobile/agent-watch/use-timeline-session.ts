@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { olderTimelineTarget } from './timeline-older-window'
+import { olderTimelineTarget, sameOlderTarget } from './timeline-older-window'
 import { rendererLogger } from '@/lib/log'
 import { messageForUser } from '@/lib/userFacingError'
 import { recoverTimelineRead } from './timeline-read-recovery'
@@ -449,8 +449,10 @@ export function useTimelineSession(
         if (generation !== olderGeneration.current || identity !== olderIdentityRef.current) return
         setTimeline(current => {
           if (generation !== olderGeneration.current || identity !== olderIdentityRef.current) return current
-          // An After/reset that overtook this request owns the newer window facts.
-          if (current.cursor?.epoch !== pinned.cursor?.epoch || current.cursor?.seq !== pinned.cursor?.seq
+          // A reset, or an After that moved the window's older end, owns the newer window facts (resolutions already
+          // advanced the generation). An After that only moved the tail does not: every delta of a streaming reply is
+          // one, and held to the same `seq` no older page could land while an agent was working.
+          if (current.cursor?.epoch !== pinned.cursor?.epoch || !sameOlderTarget(olderTimelineTarget(current), target)
             || current.sourceLineage !== pinned.sourceLineage || current.snapshotRevision !== pinned.snapshotRevision) return current
           return prependOlder(current, older)
         })

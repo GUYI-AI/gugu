@@ -268,3 +268,79 @@ it('keeps the displayed archive but withdraws release authority after a read fai
   expect((cause as Error).message).toBe('Connection lost')
   expect(state.ready).toBe(false)
 })
+
+/** A page above the newest one, read while turn 999 is still the newest stored. */
+const older = (start: number): NativeSessionRecord => ({ ...record(start, 60), latestStoredSeq: 999 })
+// A reader pages up through the history, and the phone's link to that machine drops for a moment (it does, on a
+// phone). The connection coming back reads the newest page; it must not take away the pages the reader is in.
+it.each(['link', 'presence'] as const)('keeps the pages the reader loaded when the %s comes back and the newest page reaches them', async change => {
+  scope.read.mockResolvedValueOnce({ ok: true, value: record(940, 60) })
+  let state!: ReturnType<typeof useNativeSessionRecord>
+  function Fixture({ online = true }: { online?: boolean }) { state = useNativeSessionRecord(`resume-${change}-host`, 'resume', true, online); return null }
+  await harness.render(<Fixture />)
+  await vi.waitFor(() => expect(state.ready).toBe(true))
+  scope.read.mockResolvedValueOnce({ ok: true, value: older(880) }).mockResolvedValueOnce({ ok: true, value: older(820) })
+  await act(async () => { await state.loadOlder() })
+  await act(async () => { await state.loadOlder() })
+  expect(state.record?.turns).toHaveLength(180)
+  const held = state.record!.turns.slice(0, 120)
+
+  // Three more turns were written while it was away.
+  scope.read.mockResolvedValue({ ok: true, value: record(943, 60) })
+  if (change === 'link') await act(async () => { scope.link(false); scope.link(true) })
+  else { await harness.render(<Fixture online={false} />); expect(state.record?.turns).toHaveLength(180); await harness.render(<Fixture />) }
+  await vi.waitFor(() => expect(state.ready).toBe(true))
+
+  expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 'resume', tail: true })
+  expect(state.record?.turns.map(turn => turn.seq)).toEqual(Array.from({ length: 183 }, (_, i) => 820 + i))
+  // The same rows, not copies of them: the list above the reader is not rebuilt.
+  expect(state.record!.turns.slice(0, 120).every((turn, index) => turn === held[index])).toBe(true)
+  expect(state.record?.nextCursor).toBe(820)
+  expect(state.record?.hasNewer).toBe(false)
+  // And the reader can go on paging from where the held pages end.
+  scope.read.mockResolvedValueOnce({ ok: true, value: older(760) })
+  await act(async () => { await state.loadOlder() })
+  expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 'resume', before: 820 })
+})
+
+it('starts over at the newest page when a reconnect finds more written than one page reaches', async () => {
+  scope.read.mockResolvedValueOnce({ ok: true, value: record(940, 60) })
+  let state!: ReturnType<typeof useNativeSessionRecord>
+  function Fixture() { state = useNativeSessionRecord('resume-gap-host', 'gap', true, true); return null }
+  await harness.render(<Fixture />)
+  await vi.waitFor(() => expect(state.ready).toBe(true))
+  scope.read.mockResolvedValue({ ok: true, value: record(1100, 60) })
+  await act(async () => { scope.link(false); scope.link(true) })
+  await vi.waitFor(() => expect(state.ready).toBe(true))
+  // Turns 1000–1099 are in neither: held and read side by side would show a history with a hole in it.
+  expect(state.record?.turns.map(turn => turn.seq)).toEqual(Array.from({ length: 60 }, (_, i) => 1100 + i))
+})
+
+it('drops reverted turns when a reconnect reads the newest page', async () => {
+  scope.read.mockResolvedValueOnce({ ok: true, value: record(940, 60) })
+  let state!: ReturnType<typeof useNativeSessionRecord>
+  function Fixture() { state = useNativeSessionRecord('resume-revert-host', 'revert', true, true); return null }
+  await harness.render(<Fixture />)
+  await vi.waitFor(() => expect(state.ready).toBe(true))
+  scope.read.mockResolvedValueOnce({ ok: true, value: older(880) })
+  await act(async () => { await state.loadOlder() })
+  // The conversation was reverted to turn 969 while the phone was away.
+  scope.read.mockResolvedValue({ ok: true, value: record(910, 60) })
+  await act(async () => { scope.link(false); scope.link(true) })
+  await vi.waitFor(() => expect(state.ready).toBe(true))
+  expect(state.record?.turns.map(turn => turn.seq)).toEqual(Array.from({ length: 90 }, (_, i) => 880 + i))
+})
+
+it('still replaces what is held when the reader asks for the newest page', async () => {
+  scope.read.mockResolvedValueOnce({ ok: true, value: record(940, 60) })
+  let state!: ReturnType<typeof useNativeSessionRecord>
+  function Fixture() { state = useNativeSessionRecord('release-host', 'release', true, true); return null }
+  await harness.render(<Fixture />)
+  await vi.waitFor(() => expect(state.ready).toBe(true))
+  scope.read.mockResolvedValueOnce({ ok: true, value: older(880) })
+  await act(async () => { await state.loadOlder() })
+  scope.read.mockResolvedValue({ ok: true, value: record(943, 60) })
+  await act(async () => { state.followTail() })
+  await vi.waitFor(() => expect(state.record?.turns[0]?.seq).toBe(943))
+  expect(state.record?.turns).toHaveLength(60)
+})

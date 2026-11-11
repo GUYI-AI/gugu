@@ -26,22 +26,31 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
   const value = useRef(record)
   value.current = record
   const requests = useRef<Promise<void>>(Promise.resolve())
-  const tailRequested = useRef(true)
+  // What the next read of the newest page is for: `true` replaces what is held, `'resume'` (the connection came back
+  // under a reader who may be pages up) keeps it when the newest page reaches it (`mergeNativeRecordPage`).
+  const tailRequested = useRef<boolean | 'resume'>(true)
+  const shownKey = useRef<string | null>(null)
   useEffect(() => {
     const connectionEpoch = epoch
     const generation = ++connectionEpoch.current
     recoveryAbort.current.abort(); recoveryAbort.current = new AbortController()
     connected.current = online; setConfirmed(null)
     // Reconcile the latest page first, even when the cache or host's first unread is far behind.
-    requests.current = Promise.resolve(); tailRequested.current = true
-    const cached = enabled ? readCachedNativeRecord({ deviceId, sessionId }) : null
-    value.current = cached; setRecord(cached); setError(null); setErrorCode(null)
+    requests.current = Promise.resolve()
+    // The same conversation coming back online is not a new opening: what the reader has loaded stays in hand (the
+    // cache keeps at most 4MB of it), and the newest page is merged into it.
+    const resumed = enabled && shownKey.current === key && !!value.current
+    shownKey.current = enabled ? key : null
+    if (resumed) { if (tailRequested.current !== true) tailRequested.current = 'resume'; setError(null); setErrorCode(null) }
+    else tailRequested.current = true
+    const cached = resumed ? value.current : enabled ? readCachedNativeRecord({ deviceId, sessionId }) : null
+    if (!resumed) { value.current = cached; setRecord(cached); setError(null); setErrorCode(null) }
     if (enabled && !cached) void hydrateCachedNativeRecord({ deviceId, sessionId }).then((stored) => {
       if (!stored || epoch.current !== generation || value.current) return
       value.current = stored; setRecord(stored)
     })
     return () => { connectionEpoch.current++; recoveryAbort.current.abort() }
-  }, [deviceId, sessionId, enabled, online])
+  }, [deviceId, sessionId, key, enabled, online])
   const read = useCallback((mode: 'poll' | 'older' | 'newer' | 'tail' = 'poll') => {
     const ownEpoch = epoch.current
     const signal = recoveryAbort.current.signal
@@ -50,7 +59,8 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
       const requested = current.current
       const previous = value.current
       const last = previous?.turns.at(-1)?.seq
-      const tail = mode !== 'older' && (mode === 'tail' || tailRequested.current)
+      const intent = tailRequested.current
+      const tail = mode !== 'older' && (mode === 'tail' || intent !== false) ? (intent === 'resume' ? 'resume' : true) : false
       const input = mode === 'older' ? { before: previous?.nextCursor ?? undefined }
         : tail ? { tail: true } : (mode === 'newer' || previous?.hasNewer) && last !== undefined ? { after: last }
         : last !== undefined ? { after: Math.max(-1, last - 29) } : {}
@@ -78,7 +88,8 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
     if (!enabled || !online || local) return
     return onLinkChange(deviceId, open => {
       recoveryAbort.current.abort(); recoveryAbort.current = new AbortController()
-      epoch.current++; connected.current = open; requests.current = Promise.resolve(); tailRequested.current = true; setConfirmed(null)
+      epoch.current++; connected.current = open; requests.current = Promise.resolve(); setConfirmed(null)
+      if (tailRequested.current !== true) tailRequested.current = 'resume'
       if (open) { const ownEpoch = epoch.current; void read('tail').catch(error => { if (epoch.current === ownEpoch) setError(messageForUser(error)) }) }
     })
   }, [deviceId, enabled, online, local, read])
