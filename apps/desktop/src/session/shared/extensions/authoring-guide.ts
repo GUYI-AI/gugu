@@ -923,9 +923,9 @@ API 44, only when that conversation is the person's private chat with their own 
   steps you draw, from \`connect\` (to ready or done) or \`ready\` (to done); any other is \`invalid\`. Both resolve or are refused, nothing more.
 API 48 (desktop): \`unavailable\` carries \`reason\`: \`stale\`, \`not-applied\`, \`timed-out\`, \`unreadable\`, \`access-unverified\`,
 \`owner-unknown\`, \`too-large\`. Each call below, in a click, your page only; \`key\` as \`resources\` gives it:
-- \`"resources:write"\` with \`"files"\`: \`upload("main", { folder? })\` opens gugu's file picker (50 MB, no video, audio or archive)
-  → \`{ state: "done", uploaded: [{ key, name, receipt }], refused: [{ name, why }] }\` | \`cancelled\`; \`createFolder("main", key)\` →
-  \`committed\` | \`exists\`; \`rename("main", key, to)\` → \`{ renamedTo, receipts }\` | \`missing\` | \`exists\`; \`removeFolder("main", key)\`
+- \`"resources:write"\` with \`"files"\`: \`bindings.upload("main", { folder? })\` opens gugu's file picker (50 MB, no video, audio or archive)
+  → \`{ state: "done", uploaded: [{ key, name, receipt }], refused: [{ name, why }] }\` | \`cancelled\`; \`bindings.createFolder("main", key)\` →
+  \`committed\` | \`exists\`; \`bindings.rename("main", key, to)\` → \`{ renamedTo, receipts }\` | \`missing\` | \`exists\`; \`bindings.removeFolder("main", key)\`
   → gugu asks the person first: \`committed\` | \`cancelled\`.
 - \`"voice-notes:manage"\` (\`chat:voice-notes:manage\`, needs \`"voice-notes"\` read), \`key\` the note's id:
   \`transcribeVoiceNote\` → \`started\` | \`not-waiting\` | \`busy\` | \`not-ready\` (open the assistant once, try again);

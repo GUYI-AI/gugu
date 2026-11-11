@@ -23,7 +23,9 @@ const PROMPTS = ['prompts.list', 'prompts.save', 'prompts.delete']
 const CLOUD_PAGE = ['cloud.write', 'cloud.subscribe', 'cloud.unsubscribe', 'onCloudHeard', 'pickAgent']
 const EVERYONE = ['cloud.read', 'getContext', 'onContextChanged', 'onFilesChanged', 'getAppState', 'onAppStateChanged', 'onAgentsChanged', 'openBrowserTab', 'reportError', 'listAgents', 'readAgentHistory', 'stopAgent', 'dispatch', ...MESSAGES, ...PROJECTS, ...SESSIONS, ...PROMPTS, 'readData', 'writeData', 'listData', 'callProgram', 'onProgramNotification', 'notify', 'onNotificationClicked', 'linkTo', 'onLink', ...FILES, 'appFiles.canDelete']
 // #1927 (42) The bound conversation's agent resources: a page's, on the desktop only; a phone and a program have none.
-const BINDING_RESOURCES = ['bindings.resources', 'bindings.resource', 'bindings.watch', 'bindings.save', 'bindings.remove', 'onBindingResources']
+const BINDING_RESOURCES = ['bindings.resources', 'bindings.resource', 'bindings.watch', 'bindings.save', 'bindings.remove', 'onBindingResources',
+  // 48: managing them, as the assistant's own pages do.
+  'bindings.upload', 'bindings.createFolder', 'bindings.rename', 'bindings.removeFolder', 'bindings.transcribeVoiceNote', 'bindings.removeVoiceNote', 'bindings.exportVoiceNote']
 const MODAL = ['modal.open', 'modal.close', 'modal.key', 'onModalFocus']
 const PROJECTION_VIEWER = ['projection.watch', 'projection.unwatch', 'projection.send', 'onProjection']
 const PROJECTION_SOURCE = ['projection.create', 'projection.publish', 'projection.close', 'projection.closed', 'projection.inputResult', 'onProjectionSource']

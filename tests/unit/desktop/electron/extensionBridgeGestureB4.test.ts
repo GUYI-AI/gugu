@@ -59,6 +59,12 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   // #1925 (44): one of the assistant's host screens, and the setup steps an App draws.
   assistantOpen: () => host.assistant.open('main', 'move'),
   assistantAdvanceSetup: () => host.assistant.advanceSetup('main', 'ready'),
+  // 48: the host's picker, the question before a delete, the voice-note pipeline, the save dialog.
+  bindingsUpload: () => host.bindings.upload!('main'),
+  bindingsRemoveFolder: () => host.bindings.removeFolder!('main', 'docs'),
+  bindingsTranscribeVoiceNote: () => host.bindings.transcribeVoiceNote!('main', 'n1'),
+  bindingsRemoveVoiceNote: () => host.bindings.removeVoiceNote!('main', 'n1'),
+  bindingsExportVoiceNote: () => host.bindings.exportVoiceNote!('main', 'n1'),
 }
 
 const sent = () => electron.invoke.mock.calls.map(([, request]) => request as { method: string; gesture: unknown })
