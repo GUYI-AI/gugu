@@ -82,13 +82,17 @@ const resolved = (value: string) => {
 };
 const dot = (status: HTMLElement) => getComputedStyle(status, '::before');
 
-// The dot beside 「状态 · 本机 · 引擎」 reads the same tone as the words: 出错了 is never green (it was, for every agent).
+// The dot beside 「状态 · 本机 · 引擎」: 出错了 / 需要你 / 在跑 take the shared tone colours (出错了 was green, for every agent);
+// every other state keeps its dot exactly as before — green, offline / removed grey — and no dot disappears.
 it.each([
   ['error', 'var(--agent-tone-error)'],
   ['needs_user', 'var(--agent-tone-needs-user)'],
   ['working', 'var(--agent-tone-running)'],
-  ['idle', 'var(--agent-tone-online)'],
-  ['offline', 'var(--agent-tone-muted)'],
+  ['parked', 'var(--agent-tone-running)'],
+  ['idle', 'var(--green)'],
+  ['starting', 'var(--green)'],
+  ['pending', 'var(--green)'],
+  ['offline', 'var(--faint-fg)'],
 ] as const)('the header dot for %s is that tone\'s colour', async (status, token) => {
   for (const agent of [fixture.assistant, fixture.other]) {
     setAgentDisplayStatusOverride(agent.id, status);
@@ -96,7 +100,7 @@ it.each([
     const shown = modal.querySelector<HTMLElement>('[data-testid="agent-settings-header-status"]')!;
     expect(dot(shown).display).not.toBe('none');
     expect(dot(shown).backgroundColor).toBe(resolved(token));
-    if (status !== 'idle') expect(dot(shown).backgroundColor).not.toBe(resolved('var(--green)'));
+    if (status === 'error' || status === 'needs_user' || status === 'working' || status === 'parked') expect(dot(shown).backgroundColor).not.toBe(resolved('var(--green)'));
     harness.cleanup();
     harness = createReactHarness();
   }

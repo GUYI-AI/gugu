@@ -20,8 +20,10 @@ import { AgentTasksPane } from './AgentTasksPane'
 import { AgentAiModelPane } from './AgentAiModelPane'
 import { useAgentDisplayStatus } from '../../hooks/useAgentDisplayStatus'
 import { useAgentHeaderStatus } from '../../hooks/useAgentHeaderStatusText'
-import { agentStatusColorVar } from '@gugu/core/shared/agentStatusPresentation'
+import { agentStatusColorVar, type AgentStatusTone } from '@gugu/core/shared/agentStatusPresentation'
 import { useContactsStore } from '../../store/contactsContext'
+
+const ALERT_DOT_TONES: ReadonlySet<AgentStatusTone> = new Set(['error', 'needs_user', 'running', 'parked'])
 
 export interface AgentSettingsModalProps {
   agent: ContactUser
@@ -42,9 +44,10 @@ export function AgentSettingsModal({ agent: openedAgent, onClose, initialTab = '
   const assistant = useIsAssistantAvatar(agent.id)
   const { presence } = useAgentDisplayStatus(agent.id)
   const headerStatus = useAgentHeaderStatus(agent.id)
-  // 点的颜色与那一句状态同一个来源、同一张色表(agentStatusColorVar):出错红、需要你黄、在跑橙、在线绿、不在线灰;
-  // 不上色的(空闲、做完、没有状态源)不画点。❌ 一律画绿(出错了也绿)。
-  const dotColor = headerStatus.tone ? agentStatusColorVar(headerStatus.tone) : null
+  // 点与那一句状态读同一格:出错、需要你、在跑(含后台在跑)取共用色表(agentStatusColorVar)的红 / 黄 / 橙 ——
+  // ❌ 出错了还画绿点。其余照旧:不在线 / 已移除灰,别的绿。
+  const dotColor = headerStatus.tone && ALERT_DOT_TONES.has(headerStatus.tone) ? agentStatusColorVar(headerStatus.tone) : null
+  const headerOffline = headerStatus.tone === 'offline' || headerStatus.tone === 'removed'
   const accountStatus = presence.payload?.accountStatus ?? null
   const closeRequestedRef = useRef(false)
   const requestClose = useCallback(() => {
@@ -139,7 +142,7 @@ export function AgentSettingsModal({ agent: openedAgent, onClose, initialTab = '
               className={asClass.status}
               data-testid="agent-settings-header-status"
               data-tone={headerStatus.tone ?? undefined}
-              data-dotless={dotColor ? undefined : ''}
+              data-offline={headerOffline || undefined}
               style={dotColor ? ({ '--gg-as-status-dot': dotColor } as CSSProperties) : undefined}
             >{headerStatus.text}</span>
           </div>
