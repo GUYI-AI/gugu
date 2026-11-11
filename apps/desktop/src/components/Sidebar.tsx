@@ -31,7 +31,7 @@ import { resumableStep, TOUR_STEPS, useProductTourState, type ProductTourRequest
 import { useAuth } from '../store/auth'
 import '../components/productTour/catalog'
 import { readAssistantShellBridge } from '../lib/assistantShellBridge'
-import { ASSISTANT_APP_ID, assistantEntryUnread, openAssistantEntry, useAssistantAppEnsuring, useAssistantEntryTarget } from '../lib/assistantEntry'
+import { ASSISTANT_APP_ID, assistantEntryUnread, openAssistantEntry, useAssistantEntryTarget } from '../lib/assistantEntry'
 import { useChatStore } from '../store/chatContext'
 import { cn } from '@/lib/cn'
 import { DropdownMenu, Menu, MenuItem as DropdownMenuItem, MenuSeparator } from './ui/Menu'
@@ -335,28 +335,29 @@ type AssistantEntry = 'found' | 'none' | 'preparing' | 'loading' | 'unreadable'
 function assistantEntryState(opts: {
   found: boolean
   preparing: boolean
-  /** The assistant App is being put in (#1931's ensure step): the cell it opens is not there yet. */
-  appPending?: boolean
+  /** #1931 It waits for its rules (the assistant App is being put in): preparing, even once it is found. */
+  rulesPending?: boolean
   cloudPending: boolean
   identityLoading: boolean
   identityError: boolean
 }): AssistantEntry {
-  if (opts.found && !opts.appPending) return 'found'
-  if (opts.preparing || opts.appPending) return 'preparing'
+  if (opts.rulesPending) return 'preparing'
+  if (opts.found) return 'found'
+  if (opts.preparing) return 'preparing'
   if (opts.cloudPending || opts.identityLoading) return 'loading'
   if (opts.identityError) return 'unreadable'
   return 'none'
 }
 
 /** 壳发布在 snapshot 上的两项(助理安家那一半):是不是会员(没读到 = null,提示里就先不写会员相关)、是不是正在安家。 */
-function useAssistantShell(): { member: boolean | null; preparing: boolean } {
+function useAssistantShell(): { member: boolean | null; preparing: boolean; rulesPending: boolean } {
   const bridge = readAssistantShellBridge()
   const snapshot = useSyncExternalStore(
     (listener) => bridge?.subscribe(listener) ?? (() => undefined),
     () => bridge?.getSnapshot() ?? null,
   )
-  const view = snapshot as { member?: boolean | null; preparing?: boolean } | null
-  return { member: typeof view?.member === 'boolean' ? view.member : null, preparing: view?.preparing === true }
+  const view = snapshot as { member?: boolean | null; preparing?: boolean; rulesPending?: boolean } | null
+  return { member: typeof view?.member === 'boolean' ? view.member : null, preparing: view?.preparing === true, rulesPending: view?.rulesPending === true }
 }
 
 function AssistantRailTop({ active, onOpen }: { active: boolean; onOpen: () => void }) {
@@ -365,7 +366,6 @@ function AssistantRailTop({ active, onOpen }: { active: boolean; onOpen: () => v
   // Entry switch: where a click goes (lib/assistantEntry.ts). On the assistant App, its conversation's unread is a dot here,
   // read from the chat itself as the dock reads an App's (#1930); opening the App reads nothing by itself.
   const target = useAssistantEntryTarget()
-  const appPending = useAssistantAppEnsuring(user?.id ?? null)
   const { chats } = useChatStore('chats')
   const unread = target.kind === 'app' && assistantEntryUnread(chats, target.chatId) === true
   const { contacts } = useContactsStore()
@@ -380,7 +380,7 @@ function AssistantRailTop({ active, onOpen }: { active: boolean; onOpen: () => v
     found: !!assistant,
     // 正在给它安家:云上在开,或本机正在建(壳那一半发布;读不到这一项 = 没在准备)。
     preparing: shell.preparing,
-    appPending,
+    rulesPending: shell.rulesPending,
     // 管家那一读还没回来:云上是不是在开还不知道,先转圈,❌ 先说「没有」再闪成「准备中」。
     cloudPending: !!cloudComputer?.available && !cloudComputer.snapshot && !cloudComputer.loadError,
     identityLoading: mine.loading || (!!mine.agentId && !assistant),

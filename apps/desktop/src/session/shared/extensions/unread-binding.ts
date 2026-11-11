@@ -23,7 +23,7 @@ export const BINDING_ACTION_CAPABILITY = {
   unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft', surface: 'chat:surface',
   resources: 'chat:resources', 'resources:write': 'chat:resources:write',
   schedules: 'chat:schedules', 'schedules:control': 'chat:schedules:control',
-  'assistant-status': 'assistant:status', 'assistant-open': 'assistant:open',
+  'assistant-status': 'assistant:status', 'assistant-open': 'assistant:open', 'assistant-rename': 'assistant:rename',
   work: 'chat:work',
 } as const;
 /** The first App API that lets a binding declare more than `unread`. */
@@ -35,7 +35,7 @@ export const BINDING_ACTION_API_VERSION = {
   resources: RESOURCE_ACTIONS_API_VERSION, 'resources:write': RESOURCE_ACTIONS_API_VERSION,
   // bound-schedules.ts's BOUND_SCHEDULES_API_VERSION (it imports BINDING_NAME from here, so not imported back).
   schedules: 43, 'schedules:control': 43,
-  'assistant-status': ASSISTANT_BINDING_API_VERSION, 'assistant-open': ASSISTANT_BINDING_API_VERSION,
+  'assistant-status': ASSISTANT_BINDING_API_VERSION, 'assistant-open': ASSISTANT_BINDING_API_VERSION, 'assistant-rename': ASSISTANT_BINDING_API_VERSION,
   work: 46,
 } as const satisfies Record<Exclude<ConversationBindingAction, 'unread'>, number>;
 export const BINDING_NAME = /^[a-z][a-z0-9-]{0,47}$/;

@@ -24,7 +24,7 @@ import { assertConfinedProgramBundle } from './extension-validate';
 import { z } from 'zod';
 import { BINDING_ACTION_CAPABILITY, readUnreadBindings, unreadBindingKey, type ConversationBindingAction, type StoredUnreadBinding } from '@shared/extensions/unread-binding';
 import type { ResourceBindingAction } from '@shared/extensions/agent-resources';
-import { BUNDLE_SKIP_NAMES, type MarketCodeSource } from '@shared/extensions/market';
+import { BUNDLE_SKIP_NAMES, type MarketInstallRecord } from '@shared/extensions/market';
 import { appVariantsSchema, type AppVariants, type ExtensionVariant } from '@shared/extensions/variants';
 import { removeTreeSync } from '@main/core/utils/remove-tree';
 
@@ -124,9 +124,12 @@ const PUBLISHERS_FILENAME = '.extension-publishers.json';
  * `{ [extensionId]: source }` — what the index said for the version installed, kept from the install on. The installed
  * record otherwise says only `market`. Written by every market install (an upstream switch carries it in its variant),
  * dropped when the App is installed from anywhere else or uninstalled; an App installed from the market before this was
- * kept has none.
+ * kept has none. A compiled release's entry also keeps its verified proof (`release`: signed manifest, signature, key), so the
+ * host can check it again later (market-release.ts); entries without one read as they always did.
  */
 const MARKET_SOURCES_FILENAME = '.extension-market-sources.json';
+const isReleaseProof = (value: unknown) => !!value && typeof value === 'object'
+  && ['keyId', 'manifest', 'signature'].every((key) => typeof (value as Record<string, unknown>)[key] === 'string');
 /**
  * Who made each conversation binding (#1927), as `{ [<owner>/<publisher>/<id>]: 'person' | { host: handle | null } }`: the
  * person in the App's permissions (their chooser, a pick or a removal), or the host itself for the trusted assistant App
@@ -208,7 +211,7 @@ export class ExtensionsService {
   private readonly givenHereFile: JsonFile<Record<string, string[]>>;
   private readonly originsFile: JsonFile<Record<string, ExtensionOrigin>>;
   private readonly publishersFile: JsonFile<Record<string, ExtensionPublisher>>;
-  private readonly marketSourcesFile: JsonFile<Record<string, MarketCodeSource>>;
+  private readonly marketSourcesFile: JsonFile<Record<string, MarketInstallRecord>>;
   private readonly openWithFile: JsonFile<Record<string, string>>;
   private readonly unreadBindingsFile: JsonFile<Record<string, import('@shared/extensions/unread-binding').StoredUnreadBinding>>;
   private readonly bindingAuthorsFile: JsonFile<Record<string, BindingAuthor>>;
@@ -244,8 +247,9 @@ export class ExtensionsService {
         ['string', 'undefined'].includes(typeof (value as ExtensionPublisher).name)));
     this.openWithFile = jsonFile(rootDir, OPEN_WITH_FILENAME, '{}', mapOf<string>(OPEN_WITH_FILENAME, 'file kinds to tabs',
       (tabKind) => typeof tabKind === 'string'));
-    this.marketSourcesFile = jsonFile(rootDir, MARKET_SOURCES_FILENAME, '{}', mapOf<MarketCodeSource>(MARKET_SOURCES_FILENAME, 'market sources',
-      (value) => !!value && typeof value === 'object' && ['repo', 'path', 'commit'].every((key) => typeof (value as Record<string, unknown>)[key] === 'string')));
+    this.marketSourcesFile = jsonFile(rootDir, MARKET_SOURCES_FILENAME, '{}', mapOf<MarketInstallRecord>(MARKET_SOURCES_FILENAME, 'market sources',
+      (value) => !!value && typeof value === 'object' && ['repo', 'path', 'commit'].every((key) => typeof (value as Record<string, unknown>)[key] === 'string')
+        && ((value as MarketInstallRecord).release === undefined || isReleaseProof((value as MarketInstallRecord).release))));
   }
 
   /** Host-only scope. A handle is a reference, never a bearer credential. */
@@ -457,7 +461,7 @@ export class ExtensionsService {
    * permission list the user agreed to. It is required rather than optional: the
    * check is only worth anything if no caller can install without it.
    */
-  installFromDirectory(sourceDir: string, consentedDigest: string, origin: ExtensionOrigin, publisher?: ExtensionPublisher, variant?: ExtensionVariant, marketSource?: MarketCodeSource): InstalledExtension {
+  installFromDirectory(sourceDir: string, consentedDigest: string, origin: ExtensionOrigin, publisher?: ExtensionPublisher, variant?: ExtensionVariant, marketSource?: MarketInstallRecord): InstalledExtension {
     const { source, manifest, manifestDigest } = this.validateSource(sourceDir);
     requireAppPlatform(manifest, 'desktop');
     // Read the withdrawal record up front. It is written after the bundle lands,
@@ -564,9 +568,13 @@ export class ExtensionsService {
     origins[manifest.id] = origin;
     this.originsFile.write(origins);
     // The upstream of an App with forks carries where its code is in its variant record.
-    const fromMarket = origin === 'market' ? marketSource ?? (variant?.name === 'upstream' && variant.repo ? { repo: variant.repo, path: variant.path, commit: variant.commit } : undefined) : undefined;
+    const fromMarket: MarketInstallRecord | undefined = origin === 'market' ? marketSource ?? (variant?.name === 'upstream' && variant.repo ? { repo: variant.repo, path: variant.path, commit: variant.commit } : undefined) : undefined;
     if (fromMarket || Object.hasOwn(marketSources, manifest.id)) {
-      if (fromMarket) marketSources[manifest.id] = { repo: fromMarket.repo, path: fromMarket.path, commit: fromMarket.commit };
+      if (fromMarket) {
+        const { keyId, manifest: signedManifest, signature } = fromMarket.release ?? {};
+        marketSources[manifest.id] = { repo: fromMarket.repo, path: fromMarket.path, commit: fromMarket.commit,
+          ...(keyId && signedManifest && signature ? { release: { keyId, manifest: signedManifest, signature } } : {}) };
+      }
       else delete marketSources[manifest.id];
       this.marketSourcesFile.write(marketSources);
     }
@@ -727,8 +735,8 @@ export class ExtensionsService {
     return this.originsFile.read();
   }
 
-  /** #1931 Where in the market an App installed from it had its code (`MARKET_SOURCES_FILENAME`); null when none was kept. */
-  marketSource(extensionId: string): MarketCodeSource | null {
+  /** #1931 Where in the market an App installed from it had its code, and its verified release (`MARKET_SOURCES_FILENAME`); null when none was kept. */
+  marketSource(extensionId: string): MarketInstallRecord | null {
     return this.marketSourcesFile.read()[extensionId] ?? null;
   }
 
@@ -953,7 +961,7 @@ export class ExtensionsService {
     if (permission === 'chat:files' || permission === 'chat:draft' || permission === 'chat:work') this.unreadAuthorities.delete(extensionId);
     if (permission === 'chat:surface') this.forgetAuthorities(extensionId);
     // #1925 / #1927 The assistant's and the agent resources' grants likewise.
-    if (permission === 'assistant:status' || permission === 'assistant:open') this.unreadAuthorities.delete(extensionId);
+    if (permission === 'assistant:status' || permission === 'assistant:open' || permission === 'assistant:rename') this.unreadAuthorities.delete(extensionId);
     if (permission === 'chat:resources' || permission === 'chat:resources:write') this.unreadAuthorities.delete(extensionId);
     if (permission === 'chat:schedules' || permission === 'chat:schedules:control') this.unreadAuthorities.delete(extensionId);
     this.revocationsFile.write(revocations);

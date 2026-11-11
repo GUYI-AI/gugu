@@ -363,9 +363,11 @@ export const EXTENSION_CAPABILITIES = [
   'chat:schedules:control',
   // #1925 (API 44) That same selected conversation's assistant, when it is the person's own: a snapshot of it and its
   // changes (`gugu.assistant.status` / `onChanged`) — and, in the person's click, one of the host's own screens for it
-  // opened, or its setup moved on a step (`gugu.assistant.open` / `advanceSetup`). Each with its binding action.
+  // opened, or its setup moved on a step (`gugu.assistant.open` / `advanceSetup`) — or it renamed (`gugu.assistant.rename`).
+  // Each with its binding action.
   'assistant:status',
   'assistant:open',
+  'assistant:rename',
   // #1925 (API 46) When that same conversation is the person's private chat with their own assistant: the work it handed out
   // (`gugu.bindings.work` / `onWorkChanged`, each row as the built-in list draws it) and, in a click, one task's conversation
   // drawn by the host in the App's panel (`openWork` / `closeWork`): the App sees none of that conversation.

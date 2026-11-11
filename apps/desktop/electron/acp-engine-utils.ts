@@ -280,7 +280,8 @@ function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSigna
           const dispatch = (input: unknown) => run(input, anySignal([grantSignal, requestSignal]))
           if (!initial.personalAssistant) return dispatch(action)
           // One snapshot of the assistant's product rules for the whole dispatch (#1931): the task context and the report.
-          const { rules } = await assistantRules().current()
+          // A running assistant started with them, so they are there; nothing is dispatched without them.
+          const { rules } = await assistantRules().available()
           const work = assistantExecutionAction(action, rules)
           return initial.assistantWork ? coordinateAssistantAction(initial.assistantWork, work, dispatch, rules) : dispatch(work)
         }

@@ -430,6 +430,10 @@ export default {
     "sendFailed": "Could not send the code. Try again.",
     "verifyFailed": "Could not verify the code. Try again."
   },
+  "assistantRules": {
+    "stuckTitle": "Gugu can’t start yet",
+    "stuckBody": "It needs the Gugu Assistant App, which couldn’t be installed or is switched off. It continues on its own once you’re online or the App is on again."
+  },
   "brand": {
     "name": "Gugu"
   },

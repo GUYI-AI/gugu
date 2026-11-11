@@ -6,7 +6,9 @@ import { GUGU_APPS_REPO, type MarketCodeSource, type MarketIndexVersion } from '
 import { ExtensionsService } from './extensions-service';
 import { packExtensionArchive } from './extension-archive';
 import { CloudExtensionMarket, type BundleDownloadOptions, type MarketBackend } from './market-catalog';
-import { fixtureBundle, installBundle } from '../../../../../../../tests/unit/desktop/assistantRules/fixtureApp';
+import type { ReleaseTrustTable } from './release/market-release';
+import { signTestRelease, testTrust } from './test-support/signed-release';
+import { FIXTURE_RELEASE_KEY, FIXTURE_TRUST, fixtureBundle, installBundle } from '../../../../../../../tests/unit/desktop/assistantRules/fixtureApp';
 
 // #1931 The product's assistant App goes in where the assistant needs it, without the person doing anything: a profile
 // the first-run set no longer runs for gets it at start, from a local market fixture here (the App is not on the live
@@ -46,16 +48,23 @@ class Site implements MarketBackend {
   }
 }
 
-/** The assistant App on a local market, its code recorded at `source`. */
-async function market(source: MarketCodeSource = OFFICIAL) {
+/**
+ * The assistant App on a local market as its signed release (#1931, signed with the tests' key), its code recorded at
+ * `source`; the market trusts the tests' key, or with `trust: null` the shipped table (its slot still empty).
+ */
+async function market(source: MarketCodeSource = OFFICIAL, trust: ReleaseTrustTable | null = testTrust(FIXTURE_RELEASE_KEY, ['gugu-assistant'])) {
   const dir = await fixtureBundle(path.join(work, 'src', 'gugu-assistant'), { version: '1.0.0' });
   const { bytes, sha256 } = await packExtensionArchive(service, dir);
   const manifest = JSON.parse(await (await import('node:fs/promises')).readFile(path.join(dir, 'manifest.json'), 'utf8')) as { apiVersion: number };
+  const signed = signTestRelease({ appDir: dir, appId: 'gugu-assistant', version: '1.0.0', zip: new Uint8Array(bytes), key: FIXTURE_RELEASE_KEY });
   const row: MarketIndexVersion = {
     version: '1.0.0', manifest, apiVersion: manifest.apiVersion, minAppVersion: '0.1.0', releaseNotes: 'The assistant.',
     publishedAt: '2026-11-11T00:00:00Z', sha256, bytes: bytes.byteLength, bundle: 'bundles/gugu-assistant/1.0.0.zip', icon: null, source, yanked: null,
+    release: { keyId: FIXTURE_RELEASE_KEY.id, manifest: 'releases/gugu-assistant/1.0.0/release.json', signature: 'releases/gugu-assistant/1.0.0/release.sig' },
   };
-  const site = new Site({ apps: [{ id: 'gugu-assistant', deprecated: null, versions: [row] }] }, { [row.bundle]: new Uint8Array(bytes) });
+  const site = new Site({ apps: [{ id: 'gugu-assistant', deprecated: null, versions: [row] }] }, {
+    [row.bundle]: new Uint8Array(bytes), [row.release!.manifest]: signed.raw, [row.release!.signature]: signed.signature,
+  });
   return {
     site,
     market: new CloudExtensionMarket(site, {
@@ -63,7 +72,9 @@ async function market(source: MarketCodeSource = OFFICIAL) {
       heldRoot: path.join(state.userData, 'extension-market', 'held'),
       resolveHost: async () => ({ platform: 'desktop' as const, appVersion: '0.3.3', apiVersionMin: manifest.apiVersion, apiVersionMax: manifest.apiVersion }),
       snapshotStore: { read: async () => null, write: async () => undefined },
+      ...(trust ? { releaseTrust: trust } : {}),
     }),
+    signed,
   };
 }
 
@@ -72,6 +83,7 @@ function machine(market: CloudExtensionMarket, home: () => boolean, waited: (cou
   const resolver = createAssistantRulesResolver({
     provider: () => installedAssistantRulesProvider(service),
     lastGood: assistantRulesLastGoodStore(() => path.join(work, 'last-good')),
+    trust: FIXTURE_TRUST,
     warn: () => {},
   });
   const waits: number[] = [];
@@ -104,11 +116,11 @@ afterEach(() => rmSync(work, { recursive: true, force: true }));
 
 describe('the assistant App goes in where the assistant needs it', () => {
   it('an existing profile whose assistant lives here gets it at start, asking nobody, and its rules are read from it', async () => {
-    const { market: m } = await market();
+    const { market: m, signed } = await market();
     const { ensurer, resolver } = machine(m, () => true);
     expect(await ensurer.ensure('start')).toBe('installed');
     expect(service.origins()['gugu-assistant']).toBe('market');
-    expect(service.marketSource('gugu-assistant')).toEqual(OFFICIAL);
+    expect(service.marketSource('gugu-assistant')).toEqual({ ...OFFICIAL, release: signed.proof });
     expect(await resolver.current()).toMatchObject({ source: 'app', appVersion: '1.0.0' });
   });
 
@@ -162,5 +174,17 @@ describe('the assistant App goes in where the assistant needs it', () => {
     expect(warnings).toHaveLength(3);
     expect(service.origins()['gugu-assistant']).toBe('folder');
     expect(warnings[0]).toMatch(/is not gugu's own App \(its code is at someone\/gugu-apps\)/);
+  });
+
+  it('while this build trusts no key for it (the shipped slot is empty), it never goes in: retried with backoff, and no rules come from it', async () => {
+    const { market: m } = await market(OFFICIAL, null);
+    const { ensurer, resolver, warnings } = machine(m, () => true, async (count) => {
+      if (count === 3) installBundle(service, await fixtureBundle(path.join(work, 'mine')), 'folder');
+    });
+    expect(await ensurer.ensure('start')).toBe('present');
+    expect(warnings).toHaveLength(3);
+    expect(warnings[0]).toMatch(/gugu-assistant@1\.0\.0 failed the release check: its signed release does not verify \(Release: untrusted release identity or signing key\)\. Nothing was unpacked\./);
+    expect(service.origins()['gugu-assistant']).toBe('folder');
+    expect((await resolver.current()).source).toBe('none');
   });
 });

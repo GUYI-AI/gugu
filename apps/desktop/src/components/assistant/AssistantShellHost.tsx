@@ -32,6 +32,7 @@ import { membershipSettingsSection } from '../../lib/billing/settingsDestination
 import { rendererLogger } from '../../lib/log'
 import { installShellSlots, readShellSlots } from '../../lib/shellSlots'
 import { platform } from '../../platform'
+import { useAssistantRulesState, useAssistantRulesStuckNotice } from '../../lib/assistantRulesState'
 import { AssistantOnboarding } from './AssistantOnboarding'
 import { QuickChatSettingsGroup } from './ComputerHomeSettings'
 import { AssistantMoveGroup, type AssistantMoveGroupProps } from './AssistantMoveGroup'
@@ -212,6 +213,8 @@ export function AssistantShellHost({ visible, ...chatHandlers }: { /** 会话页
     return () => window.clearInterval(timer)
   }, [contact, ownerUserId])
   const preparing = !contact && (snapshot?.state === 'provisioning' || localPreparing)
+  const rules = useAssistantRulesState()
+  useAssistantRulesStuckNotice(rules.stuck)
   // 它已经有了、这台电脑上那一次开通却没走完(开通页没等到它起来):接着推完,让它先开口(见 lib/assistantSetupFinish)。
   const contactId = contact?.id ?? null
   useEffect(() => {
@@ -255,8 +258,9 @@ export function AssistantShellHost({ visible, ...chatHandlers }: { /** 会话页
       setup,
       member,
       preparing,
+      rulesPending: rules.pending,
     })
-  }, [deviceCount, cloudComputer?.available, cloudComputer?.loadError, localDeviceId, snapshot, contact, assistantState, user?.nickname, user?.id, user?.avatarUrl, dm.chatId, dm.failed, home, setup, member, preparing])
+  }, [deviceCount, cloudComputer?.available, cloudComputer?.loadError, localDeviceId, snapshot, contact, assistantState, user?.nickname, user?.id, user?.avatarUrl, dm.chatId, dm.failed, home, setup, member, preparing, rules.pending])
 
   const shellSlots = readShellSlots()
   const slots = useSyncExternalStore(

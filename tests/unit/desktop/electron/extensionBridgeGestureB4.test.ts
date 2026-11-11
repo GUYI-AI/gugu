@@ -37,7 +37,7 @@ type Host = {
   appFiles: Record<'openWith' | 'upload' | 'download' | 'forward', (args: unknown) => Promise<unknown>>
   cloud: Record<'write', (...args: unknown[]) => Promise<unknown>>
   pickAgent(ask: Record<string, unknown>): Promise<unknown>
-  assistant: Record<'open' | 'advanceSetup', (name: string, value: string) => Promise<unknown>>
+  assistant: Record<'open' | 'advanceSetup' | 'rename', (name: string, value: string) => Promise<unknown>>
   bindings: { openWork(name: string, handle: string): Promise<unknown> }
 }
 const host = electron.exposed.__guguHost as Host
@@ -60,6 +60,7 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   // #1925 (44): one of the assistant's host screens, and the setup steps an App draws.
   assistantOpen: () => host.assistant.open('main', 'move'),
   assistantAdvanceSetup: () => host.assistant.advanceSetup('main', 'ready'),
+  assistantRename: () => host.assistant.rename('main', 'Pip'),
   // #1925 (46): one of the assistant's tasks drawn in the App's panel.
   bindingsOpenWork: () => host.bindings.openWork('main', 'wAAAAAAAAAAAAAAAAAAAAAA'),
 }

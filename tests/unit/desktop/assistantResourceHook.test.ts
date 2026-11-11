@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process'
 import { createDesktopGuguMcpHost } from '../../../apps/desktop/electron/acp-engine-utils'
 import { assistantRecoveryHook, assistantResourceHook } from '../../../apps/desktop/electron/sessionpage/assistant-resource-hook'
 import { assistantRecoveryContext } from '@gugu/core/shared/assistantPolicy'
+import { NEUTRAL_ASSISTANT_RULES } from './assistantRules/neutralRules'
 
 const cleanup: Array<() => Promise<unknown>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
@@ -27,7 +28,7 @@ async function recoveryFixture() {
   cleanup.push(() => rm(root, { recursive: true, force: true }))
   const path = join(root, 'working-context.md')
   const script = join(root, 'recovery.cjs')
-  await writeFile(script, assistantRecoveryHook(assistantRecoveryContext(root), path))
+  await writeFile(script, assistantRecoveryHook(assistantRecoveryContext(root, NEUTRAL_ASSISTANT_RULES), path))
   await writeFile(join(root, 'MEMORY.md'), 'OTHER-MEMORY-MUST-STAY-ON-DEMAND')
   const hook = async (event = 'SessionStart', source = 'compact') => {
     const result = await runHook(script, event, source)

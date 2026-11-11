@@ -132,6 +132,10 @@ export const FEATURED_COUNT = 3;
 /** 下载站上 `market/` 根里的一个文件:相对路径,❌ `..`、❌ 绝对地址 —— 只能落在 market 根下面。 */
 const marketPath = z.string().regex(/^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]*$/);
 
+/** A version's signed release on the download site (`market/releases/<id>/<version>-<sha>/`), as the index names it. */
+const marketReleaseRefSchema = z.object({ keyId: z.string(), manifest: marketPath, signature: marketPath });
+export type MarketReleaseRef = z.infer<typeof marketReleaseRefSchema>;
+
 /**
  * 下载站上的 `market/index.json`:市场的全部内容,一个文件(App 市场 10-08,owner:市场不放数据库)。
  *
@@ -163,6 +167,12 @@ export const marketIndexSchema = z.object({
           bundle: marketPath,
           icon: marketPath.nullable(),
           source: z.object({ repo: z.string(), path: z.string(), commit: z.string() }),
+          /**
+           * A compiled release (#1931): where the download site keeps its signed manifest and signature, and the key it is
+           * signed with. Only versions published from the index repository's `releases/<id>/<version>/` have it; the client
+           * checks it for the Apps its trust table names (market-release.ts) and leaves it unread for the others.
+           */
+          release: marketReleaseRefSchema.optional(),
           yanked: z.object({ reason: z.string() }).nullable(),
         })
       ),
@@ -224,6 +234,22 @@ export interface MarketCodeSource {
   path: string;
   commit: string;
 }
+
+/**
+ * #1931 A compiled release's proof as an install keeps it: the signed manifest and its Ed25519 signature exactly as they were
+ * verified (base64), and the key they were verified with. Read again (market-release.ts) whenever the host decides whether to
+ * believe the installed App.
+ */
+export interface MarketReleaseProof {
+  keyId: string;
+  /** The raw `release.json` bytes, base64. */
+  manifest: string;
+  /** The 64-byte signature over them, base64. */
+  signature: string;
+}
+
+/** What a market install records about where its bytes came from: the index row's source, and its verified release if it had one. */
+export type MarketInstallRecord = MarketCodeSource & { release?: MarketReleaseProof };
 
 /** The market's own repository, where gugu's own Apps' code lives. It moved here from `shuxueshuxue/gugu-apps`. */
 export const GUGU_APPS_REPO = 'GUYI-AI/gugu-apps';

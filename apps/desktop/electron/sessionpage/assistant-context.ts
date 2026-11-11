@@ -5,7 +5,7 @@ import { personalAssistantPlatformPrompt } from '../product-platform-prompt'
 import {
   ASSISTANT_COMPUTER_WORKDIR_NAME, assistantBrief, assistantHomePaths, assistantRecoveryContext, type AssistantHomeKind,
 } from '@gugu/core/shared/assistantPolicy'
-import { assistantRules } from '../assistant-rules-resolver'
+import { assistantRules, refreshedAssistantRules } from '../assistant-rules-resolver'
 import { ASSISTANT_INDEX_LIMIT } from './assistant-index-format'
 import { refreshAssistantContext } from './assistant-instructions'
 export { refreshAssistantContext } from './assistant-instructions'
@@ -23,7 +23,7 @@ const ASSISTANT_SYSTEM_PROMPT = `Follow the owner’s instructions, the managed 
 /** One-off executors share the assistant's workspace, not its identity or personal memory. */
 export async function assistantHomeTaskContext(capabilities: Materialization, cwd: string, guguHome: string): Promise<Materialization> {
   if (resolve(cwd) !== resolve(guguHome, ASSISTANT_COMPUTER_WORKDIR_NAME)) return capabilities
-  const { rules } = await assistantRules().current()
+  const { rules } = await assistantRules().available()
   const materialized = personalAssistantContext(capabilities)
   delete materialized.sessionNewPatch!.meta!.guguAssistant
   const claude = materialized.sessionNewPatch!.meta!.claudeCode as { options: Record<string, unknown> }
@@ -47,8 +47,9 @@ export async function preparePersonalAssistantContext(
   capabilities: Materialization, cwd: string, guguHome: string, kind: AssistantHomeKind,
   deps: AssistantStartupIndexDeps & { panelStatePath?: string }, home = homedir(), engine: AssistantEngine = 'claude',
 ): Promise<Materialization> {
-  // A session start looks at the assistant App again; everything this start renders comes from this one snapshot.
-  const { rules } = await assistantRules().refresh()
+  // A session start looks at the assistant App again; everything this start renders comes from this one snapshot. The
+  // assistant does not start without its rules: with none here the start waits until the ensure step brings them.
+  const { rules } = await refreshedAssistantRules()
   const [, opening] = await Promise.all([
     refreshAssistantContext(cwd, guguHome, kind, home, engine, rules),
     openingAssistantIndex(guguHome, cwd, kind, deps),

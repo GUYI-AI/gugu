@@ -14,16 +14,20 @@ const refreshes = new Map<string, Promise<void>>()
 
 /**
  * Role was checked by the caller. Only managed instructions change; memory and custom text stay. `rules`: the snapshot the
- * caller renders the rest of this start with; none — the one in use now (assistant-rules-resolver.ts), taken once.
+ * caller renders the rest of this start with; none — the one in use now (assistant-rules-resolver.ts), taken once. With no
+ * rules here at all, nothing is written: the managed block and its reference stay exactly as they are (never an empty or
+ * made-up one), until a refresh with the product's rules.
  */
 export async function refreshAssistantContext(cwd: string, guguHome: string, kind: AssistantHomeKind, home = homedir(), engine: AssistantEngine = 'claude', rules?: AssistantProductRules): Promise<void> {
   if (kind === 'computer' && resolve(cwd) !== resolve(guguHome, ASSISTANT_COMPUTER_WORKDIR_NAME)) return
+  const using = rules ?? (await assistantRules().current()).rules
+  if (!using) return
   const key = assistantHomePaths(home, cwd, kind).instructions
   const previous = refreshes.get(key)
   const gate = Promise.withResolvers<void>()
   refreshes.set(key, gate.promise)
   if (previous) await previous
-  try { await writeAssistantContext(cwd, kind, home, engine, rules ?? (await assistantRules().current()).rules) }
+  try { await writeAssistantContext(cwd, kind, home, engine, using) }
   finally {
     gate.resolve()
     if (refreshes.get(key) === gate.promise) refreshes.delete(key)

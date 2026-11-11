@@ -1,7 +1,8 @@
-// Every string the assistant's built-in product rules render, for representative inputs.
+// Every string the assistant's product rules render, for representative inputs.
 //
 // baseline.json was written by this module against the rules files as they were on origin/dev 4205711b66, before the
-// product text was split out of them. The byte-identity test renders the same inputs through the current code and compares.
+// product text was split out of them (#1931). The byte-identity test renders the same inputs through the current code —
+// with the neutral test rules, their last good copy, or the product's own folder when given — and compares.
 // Only the host's entry points are used. Since the read points were switched (#1931) the rules come from the process's
 // resolver, as in the host: the pure renderers get the snapshot it answers with, the host's own entry points (the handbook
 // refresh, the profile review, the dispatch wrapper, the executor's context) ask it themselves.
@@ -46,15 +47,13 @@ const claudeOptions = (materialization: Materialization) =>
   JSON.stringify((materialization.sessionNewPatch!.meta!.claudeCode as { options: unknown }).options)
 
 /**
- * Where each capture is read in the host: one of the four read points of the assistant's product rules; `host`, the host's
- * own mechanics, the same whatever the rules; `cloud-constant`, built-in text the client exports for the cloud's
- * generator and never reads itself.
+ * Where each capture is read in the host: one of the four read points of the assistant's product rules, or `host`, the
+ * host's own mechanics, the same whatever the rules.
  */
-export type ReadPoint = 'session-start' | 'per-turn' | 'dispatch' | 'setup' | 'host' | 'cloud-constant'
+export type ReadPoint = 'session-start' | 'per-turn' | 'dispatch' | 'setup' | 'host'
 
 export function readPointOf(key: string): ReadPoint {
   if (/^(host\/|homePaths\/|platform\/|session\/claudeOptions\/)/.test(key)) return 'host'
-  if (/^text\/(contextCore|workflow|ownerProfileWritingRules)$/.test(key)) return 'cloud-constant'
   if (/^(profileReview\/|defaults\/profileRulesVersion$)/.test(key)) return 'per-turn'
   if (/^(executionAction\/|dispatch\/|session\/taskAgentOptions$|text\/taskExecution$)/.test(key)) return 'dispatch'
   if (/^(ownerProfile\/|text\/(firstTask|ownerProfileMemoryName|ownerProfileIndexLine)$|defaults\/(childHarness|defaultModel)$)/.test(key)) return 'setup'
@@ -65,7 +64,7 @@ export function readPointOf(key: string): ReadPoint {
 export async function captureAssistantRenders(): Promise<Record<string, string>> {
   const out: Record<string, string> = {}
   const put = (key: string, value: unknown) => { out[key] = typeof value === 'string' ? value : JSON.stringify(value) }
-  const { rules } = await assistantRules().current()
+  const { rules } = await assistantRules().available()
 
   // Product text and defaults, as their consumers read them.
   put('defaults/childHarness', rules.defaults.childHarness)
@@ -74,9 +73,6 @@ export async function captureAssistantRenders(): Promise<Record<string, string>>
   put('defaults/profileRulesVersion', rules.defaults.profileRulesVersion)
   put('text/firstTask', rules.texts['first-task'])
   put('text/taskExecution', rules.texts['task-execution'])
-  put('text/contextCore', workflow.ASSISTANT_CONTEXT_CORE)
-  put('text/workflow', workflow.ASSISTANT_WORKFLOW)
-  put('text/ownerProfileWritingRules', workflow.OWNER_PROFILE_WRITING_RULES)
   put('text/ownerProfileMemoryName', rules.labels.ownerProfileMemoryName)
   put('text/ownerProfileIndexLine', policy.ownerProfileIndexLine(rules))
   put('host/markers', [policy.ASSISTANT_GUIDE_BEGIN, policy.ASSISTANT_GUIDE_END, policy.LEGACY_ASSISTANT_GUIDE_BEGIN, policy.LEGACY_ASSISTANT_GUIDE_END])
@@ -182,4 +178,7 @@ export function fingerprint(value: string): Fingerprint {
 }
 
 export const BASELINE_URL = new URL('./baseline.json', import.meta.url)
+/** The renders of the neutral test rules (neutralRules.ts), recorded by the byte-identity test. */
+export const NEUTRAL_DIGESTS_URL = new URL('./neutral-digests.json', import.meta.url)
+export const readNeutralDigests = () => JSON.parse(readFileSync(NEUTRAL_DIGESTS_URL, 'utf8')) as Record<string, Fingerprint>
 export const readBaseline = () => JSON.parse(readFileSync(BASELINE_URL, 'utf8')) as Record<string, Fingerprint>
