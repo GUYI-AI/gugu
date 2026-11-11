@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { fetchInChunks } from '@gugu/core/shared/inChunks';
 import { userIdFromSupabaseAccessToken } from '@gugu/core';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
-import { boundEntryOf, boundPathOf, type AppBindingSurface, type AppBoundList, type AppBoundRead, type AppUnreadBinding, type StoredUnreadBinding } from '@shared/extensions/unread-binding';
+import { boundEntryOf, boundPathOf, type AppBindingSurface, type AppBoundList, type AppBoundRead, type AppUnreadBinding, type GrantedSurfaceBinding, type StoredUnreadBinding } from '@shared/extensions/unread-binding';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
 import { DEFAULT_TEXT_MAX_BYTES, type AppComposeDetail } from '@shared/extensions/app-runtime-protocol';
 import { dispatchCallOf } from '@shared/extensions/app-dispatch-core';
@@ -251,7 +251,7 @@ export async function setUnreadBinding(input: unknown): Promise<void> {
 /** Host projection reads a validated, current account association, never a page-supplied chat. */
 export async function grantedUnreadBindings(expectedOwner: string): Promise<Record<string, StoredUnreadBinding>> {
   return grantedBindings(expectedOwner, 'chat:unread', (manifest) => manifest.contributes.unreadSource?.binding,
-    (service, ownerId, extensionId, name) => service.conversationUnreadBinding(ownerId, extensionId, name));
+    (service, ownerId, extensionId, name) => service.conversationUnreadBinding(ownerId, extensionId, name), (_service, _ownerId, _extensionId, binding) => binding);
 }
 
 /**
@@ -259,18 +259,21 @@ export async function grantedUnreadBindings(expectedOwner: string): Promise<Reco
  * placing their page there (`contributes.conversationSurface`), with the `surface` action granted, of a conversation the
  * current account is still in.
  */
-export async function grantedSurfaceBindings(expectedOwner: string): Promise<Record<string, StoredUnreadBinding>> {
+export async function grantedSurfaceBindings(expectedOwner: string): Promise<Record<string, GrantedSurfaceBinding>> {
   return grantedBindings(expectedOwner, 'chat:surface', conversationSurfaceBinding,
-    (service, ownerId, extensionId, name) => service.conversationBinding(ownerId, extensionId, name, 'surface'));
+    (service, ownerId, extensionId, name) => service.conversationBinding(ownerId, extensionId, name, 'surface'),
+    (service, ownerId, extensionId, binding) => ({ ...binding, authority: service.conversationSurfaceAuthority(ownerId, extensionId, binding.name) }));
 }
 
 type Service = ReturnType<typeof extensionsService>;
-async function grantedBindings(
+async function grantedBindings<T extends StoredUnreadBinding>(
   expectedOwner: string,
   capability: 'chat:unread' | 'chat:surface',
   nameOf: (manifest: ExtensionManifest) => string | null | undefined,
   selection: (service: Service, ownerId: string, extensionId: string, name: string) => StoredUnreadBinding | null,
-): Promise<Record<string, StoredUnreadBinding>> {
+  // What the answer carries for one App, read in the same step as its last check.
+  answer: (service: Service, ownerId: string, extensionId: string, binding: StoredUnreadBinding) => T,
+): Promise<Record<string, T>> {
   const { token, ownerId } = await account();
   if (ownerId !== expectedOwner) throw denied('Account changed');
   const service = extensionsService();
@@ -294,11 +297,11 @@ async function grantedBindings(
   });
   await current(ownerId);
   const active = new Set(memberships.map(row => row.chat_id));
-  const result: Record<string, StoredUnreadBinding> = {};
+  const result: Record<string, T> = {};
   for (const { extensionId, binding } of candidates) {
     if (!active.has(binding.chatId)) continue;
     try {
-      if (selection(service, ownerId, extensionId, binding.name)?.handle === binding.handle) result[extensionId] = binding;
+      if (selection(service, ownerId, extensionId, binding.name)?.handle === binding.handle) result[extensionId] = answer(service, ownerId, extensionId, binding);
     } catch (error) {
       // Confirmed withdrawal is absence of authority, not a failed/empty unread read.
       if ((error as { code?: string }).code !== 'denied') throw error;

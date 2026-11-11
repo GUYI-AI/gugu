@@ -30,6 +30,10 @@ vi.mock('./extensions-root', () => ({ extensionsService: () => ({
     if (!state.installed || !state.enabled || !state.granted || !['surface', 'draft'].includes(action) || name !== 'main') throw denied('no grant');
     return owner === state.selectedBy ? { ownerId: owner, name, chatId: CHAT, handle: state.handle } : null;
   },
+  conversationSurfaceAuthority: (owner: string, _app: string, name: string) => {
+    if (!state.installed || !state.enabled || !state.granted || name !== 'main') throw denied('no grant');
+    return `stamp-${owner}-${state.handle}`;
+  },
 }) }));
 vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: () => ({ from: (table: string) => {
   state.asked.push(table);
@@ -166,7 +170,8 @@ describe('what the App is told of the conversation beside its page', () => {
 
 describe('which conversation the window may draw (host projection)', () => {
   it('the Apps placing their page beside a binding, granted, enabled, of a conversation the account is still in', async () => {
-    expect(await grantedSurfaceBindings(OWNER)).toEqual({ today: { ownerId: OWNER, name: 'main', chatId: CHAT, handle: 'h1' } });
+    // With the stamp of that authority, read in the same step as the last check (the service keeps it: app-unread-bindings.test.ts).
+    expect(await grantedSurfaceBindings(OWNER)).toEqual({ today: { ownerId: OWNER, name: 'main', chatId: CHAT, handle: 'h1', authority: `stamp-${OWNER}-h1` } });
     for (const set of [() => { state.granted = false; }, () => { state.enabled = false; }, () => { state.placed = false; }, () => { state.member = false; }, () => { state.selectedBy = ''; }, () => { state.installed = false; }]) {
       Object.assign(state, { selectedBy: OWNER, installed: true, enabled: true, member: true, granted: true, placed: true });
       set();

@@ -300,6 +300,45 @@ describe('the bound conversation beside the App\'s page (#1925, API 41)', () => 
     expect(() => surfaced.service.conversationBinding(OWNER, ID, 'main', 'surface')).toThrow(expect.objectContaining({ code: 'denied' }));
   });
 
+  it('its authority stamp: kept through another App\'s install, update, grants and removal; new on any change of this App\'s', () => {
+    const { service, install } = fixture(); install(surfaceManifest({ actions: ['unread', 'files', 'draft', 'surface'] }));
+    service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
+    const stamp = () => service.conversationSurfaceAuthority(OWNER, ID, 'main');
+    // Another account's is another stamp, and replaces this one: switched back, it is new again.
+    const first = stamp();
+    expect(service.conversationSurfaceAuthority(OTHER, ID, 'main')).not.toBe(first);
+    let before = stamp();
+    expect(before).not.toBe(first);
+    expect(stamp()).toBe(before);
+    // Another App: installed, updated, its grant withdrawn and given back, switched off and on, uninstalled.
+    const other = { ...surfaceManifest(), id: 'other-app' };
+    install(other); install({ ...other, version: '2.0.0' });
+    service.setPermissionGranted('other-app', 'chat:surface', false); service.setPermissionGranted('other-app', 'chat:surface', true);
+    service.setPermissionGranted('other-app', 'chat:unread', false);
+    service.setEnabled('other-app', false); service.setEnabled('other-app', true);
+    service.uninstall('other-app');
+    // This App's grants that are not the surface's.
+    service.setPermissionGranted(ID, 'chat:files', false); service.setPermissionGranted(ID, 'chat:draft', false);
+    expect(stamp()).toBe(before);
+    // This App's: its surface grant withdrawn and given back, its switch, its choice (even the same chat), a reinstall.
+    for (const change of [
+      () => { service.setPermissionGranted(ID, 'chat:surface', false); service.setPermissionGranted(ID, 'chat:surface', true); },
+      () => { service.setEnabled(ID, false); service.setEnabled(ID, true); },
+      () => service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT),
+      () => install(surfaceManifest({ actions: ['unread', 'files', 'draft', 'surface'] })),
+    ]) {
+      change();
+      expect(stamp()).not.toBe(before);
+      before = stamp();
+    }
+    // Withdrawn, cleared or gone: there is no authority to stamp.
+    service.setPermissionGranted(ID, 'chat:surface', false);
+    expect(() => stamp()).toThrow(expect.objectContaining({ code: 'denied' }));
+    service.setPermissionGranted(ID, 'chat:surface', true);
+    service.setPermissionGranted(ID, 'chat:unread', false);
+    expect(() => stamp()).toThrow(expect.objectContaining({ code: 'denied' }));
+  });
+
   it('at the shared door: surface and setPanel need chat:surface, are a page\'s, and open nothing else', () => {
     const { service, install } = fixture(); install(surfaceManifest());
     const has = (word: Parameters<ExtensionsService['hasCapability']>[1]) => service.hasCapability(ID, word);

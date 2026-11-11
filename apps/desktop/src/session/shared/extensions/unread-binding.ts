@@ -39,6 +39,11 @@ export const storedUnreadBindingSchema = z.strictObject({
   handle: z.string().uuid(),
 });
 export type StoredUnreadBinding = z.infer<typeof storedUnreadBindingSchema>;
+/**
+ * #1925 A binding the trusted window may draw beside the App's page, with `authority`: host data that stays the same while
+ * this App's installation, switch, grants, selection and the account do, and is new once any of them changed.
+ */
+export type GrantedSurfaceBinding = StoredUnreadBinding & { authority: string };
 export type AppUnreadBinding = { name: string; state: 'unbound'; actions: readonly ConversationBindingAction[] }
   | { name: string; state: 'bound'; handle: string; actions: readonly ConversationBindingAction[] };
 

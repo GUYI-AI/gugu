@@ -161,6 +161,13 @@ export interface InvalidExtensionDir {
 }
 
 /** A binding declaration as a selection depends on it: its actions in any order are the same declaration (#1927). */
+/** The stamp kept for `scope`, or a new one when the scope moved or the stamp was forgotten. */
+function stampOf(stamps: Map<string, { scope: string; value: string }>, extensionId: string, scope: string): string {
+  let stamp = stamps.get(extensionId);
+  if (stamp?.scope !== scope) { stamp = { scope, value: randomUUID() }; stamps.set(extensionId, stamp); }
+  return stamp.value;
+}
+
 function bindingDeclaration(bindings: NonNullable<ExtensionManifest['permissions']>['bindings']): string {
   return JSON.stringify(bindings?.map((binding) => ({ ...binding, actions: [...binding.actions].sort() })) ?? null);
 }
@@ -181,6 +188,7 @@ export class ExtensionsService {
   private readonly openWithFile: JsonFile<Record<string, string>>;
   private readonly unreadBindingsFile: JsonFile<Record<string, import('@shared/extensions/unread-binding').StoredUnreadBinding>>;
   private readonly unreadAuthorities = new Map<string, { scope: string; value: string }>();
+  private readonly surfaceAuthorities = new Map<string, { scope: string; value: string }>();
   private readonly readings = new Map<string, { stamps: { file: string; stamp: FileStamp | null }[]; installed: InstalledExtension }>();
 
   constructor(private readonly rootDir: string) {
@@ -246,9 +254,24 @@ export class ExtensionsService {
   conversationUnreadAuthority(ownerId: string, extensionId: string, name: string): string {
     const binding = this.conversationUnreadBinding(ownerId, extensionId, name);
     const scope = JSON.stringify([ownerId, appKey(this.identityOf(extensionId)!), this.get(extensionId).manifestDigest, name, binding?.handle ?? null]);
-    let authority = this.unreadAuthorities.get(extensionId);
-    if (authority?.scope !== scope) { authority = { scope, value: randomUUID() }; this.unreadAuthorities.set(extensionId, authority); }
-    return authority.value;
+    return stampOf(this.unreadAuthorities, extensionId, scope);
+  }
+
+  /**
+   * Host-only stamp (#1925) of what lets the window draw the conversation beside this App's page: the account, this
+   * installation, its switch, its `chat:unread` and `chat:surface` grants, the selection. A new one when any of them changes
+   * for this App, and only then: another App installed, updated, granted or removed leaves it as it is, and so does this
+   * App's `chat:files` / `chat:draft`.
+   */
+  conversationSurfaceAuthority(ownerId: string, extensionId: string, name: string): string {
+    const binding = this.conversationBinding(ownerId, extensionId, name, 'surface');
+    const scope = JSON.stringify([ownerId, appKey(this.identityOf(extensionId)!), this.get(extensionId).manifestDigest, name, binding?.handle ?? null]);
+    return stampOf(this.surfaceAuthorities, extensionId, scope);
+  }
+
+  private forgetAuthorities(extensionId: string): void {
+    this.unreadAuthorities.delete(extensionId);
+    this.surfaceAuthorities.delete(extensionId);
   }
 
   /** Only the host's common permission UI calls this, after validating current membership. */
@@ -259,7 +282,7 @@ export class ExtensionsService {
     if (chatId === null) delete stored[key];
     else stored[key] = { ownerId, name, chatId: z.string().uuid().parse(chatId), handle: randomUUID() };
     this.unreadBindingsFile.write(readUnreadBindings(stored));
-    this.unreadAuthorities.delete(extensionId);
+    this.forgetAuthorities(extensionId);
   }
 
   private forgetConversationUnreadBindings(extensionId: string): void {
@@ -475,7 +498,7 @@ export class ExtensionsService {
       }
     }
     const installed = this.get(manifest.id);
-    this.unreadAuthorities.delete(manifest.id);
+    this.forgetAuthorities(manifest.id);
     if (resetUnreadBinding) this.forgetConversationUnreadBindings(manifest.id);
     if (origin !== 'preinstalled') activitySignal({ event_id: randomUUID(), kind: firstInstall ? 'app.installed' : 'app.replaced',
       object_id: manifest.id, app_version: manifest.version, occurred_at: Date.now() });
@@ -693,7 +716,7 @@ export class ExtensionsService {
    * silently switched off.
    */
   setEnabled(extensionId: string, enabled: boolean): void {
-    this.unreadAuthorities.delete(extensionId);
+    this.forgetAuthorities(extensionId);
     this.get(extensionId);
     if (!enabled && this.origins()[extensionId] === 'preinstalled') {
       throw new Error(`"${extensionId}" is a preinstalled App and cannot be switched off.`);
@@ -810,12 +833,13 @@ export class ExtensionsService {
     if (current.size === 0) delete revocations[extensionId];
     else revocations[extensionId] = [...current];
     if (permission === 'chat:unread') {
-      this.unreadAuthorities.delete(extensionId);
+      this.forgetAuthorities(extensionId);
       if (!granted) this.forgetConversationUnreadBindings(extensionId);
     }
     // A binding's other grants (#1927) change what a pending selection authorizes: a chooser drawn before must ask again.
     // The selection itself stays: it is `chat:unread`'s, and each of these is checked again on every call.
-    if (permission === 'chat:files' || permission === 'chat:draft' || permission === 'chat:surface') this.unreadAuthorities.delete(extensionId);
+    if (permission === 'chat:files' || permission === 'chat:draft') this.unreadAuthorities.delete(extensionId);
+    if (permission === 'chat:surface') this.forgetAuthorities(extensionId);
     this.revocationsFile.write(revocations);
   }
 
@@ -837,7 +861,7 @@ export class ExtensionsService {
     // caller sees a failure and skips the rest of its teardown — its cookies and
     // localStorage would outlive it. Nothing is destroyed until every step that
     // can fail has succeeded.
-    this.unreadAuthorities.delete(extensionId);
+    this.forgetAuthorities(extensionId);
     this.forgetConversationUnreadBindings(extensionId);
     this.forgetRevocations(extensionId);
     const settings = this.settingsFile.read();

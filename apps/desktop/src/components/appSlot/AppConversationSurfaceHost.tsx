@@ -10,9 +10,11 @@ import { installShellSlots, readShellSlots } from '../../lib/shellSlots'
 import { APP_CONVERSATION_SLOT_PREFIX, installAppConversationSurfaceBridge, noteAppConversationDrawn, publishAppConversationSurfaces } from '../../lib/appConversationSurfaceBridge'
 import { useAuth } from '../../store/auth'
 import { useStoreValueBy } from '../../store/chatContext'
-import { rpc } from '@/session/renderer/lib/ipc'
+import { events, rpc } from '@/session/renderer/lib/ipc'
 import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
-import type { StoredUnreadBinding } from '@/session/shared/extensions/unread-binding'
+import type { ExtensionManifest } from '@/session/shared/extensions/manifest'
+import { extensionsInventoryChangedChannel } from '@/session/shared/extensions/marketEvents'
+import type { GrantedSurfaceBinding } from '@/session/shared/extensions/unread-binding'
 
 installShellSlots()
 installAppConversationSurfaceBridge()
@@ -23,15 +25,27 @@ const EMPTY: ReadonlyMap<string, HTMLElement> = new Map()
 // health report in the「+」, its typing line, its composer entries. The composer keeps its ordinary placeholder.
 const CHROME = { attachGlyph: <Plus /> }
 
-type Scope = { ownerId: string; inventory: object; bindings: Record<string, StoredUnreadBinding> }
+/** What one read answered for one account: each App's binding, and each App as installed when it was read. */
+type Verified = { ownerId: string; bindings: Record<string, GrantedSurfaceBinding>; installed: Record<string, string> }
+/** Apps main said changed (`extensionsInventoryChangedChannel`) since the last read, and how many such notes there were. */
+type Changed = { apps: ReadonlySet<string>; serial: number }
+
+/** One App as installed here: what its update, or a reinstall from another publisher, changes. Another App's never does. */
+function installedAs(manifest: ExtensionManifest): string {
+  return JSON.stringify([manifest, installedExtensionsStore.origins[manifest.id] ?? null, installedExtensionsStore.publishers[manifest.id] ?? null])
+}
 
 /**
  * #1925 An App's main page beside the conversation its binding is bound to: the shell's half. Which conversation may be
  * drawn is the host's — the signed-in account's own selection for that installed App, `chat:surface` granted, still a member
- * (main's `grantedSurfaceBindings`) — read again on an account switch and on any change of what is installed or granted, and
- * dropped at once: the old read is not reused across either, and a conversation that left the chat list is not drawn.
- * Published to the session page (lib/appConversationSurfaceBridge.ts), which lays out the frame and leaves the column's slot;
- * the conversation itself is the ordinary native one (ChatAreaPanel), in this tree. Nothing of it reaches the App.
+ * (main's `grantedSurfaceBindings`), with a stamp of that authority. Each App's column is kept or dropped by its own
+ * authority alone: when another App is installed, updated, switched or removed, a column stays mounted with all it holds
+ * (scroll, draft, voice input, a reply streaming in). It is dropped at once when its own authority changes — the account
+ * switched; this App switched off, uninstalled or updated; main naming this App's grant, choice or switch as changed — and
+ * drawn again only when a new read says so; a read whose stamp for it is new draws it anew. A conversation that left the
+ * chat list is not drawn. Published to the session page (lib/appConversationSurfaceBridge.ts), which lays out the frame and
+ * leaves the column's slot; the conversation itself is the ordinary native one (ChatAreaPanel), in this tree. Nothing of it
+ * reaches the App.
  */
 export const AppConversationSurfaceHost = observer(function AppConversationSurfaceHost({ visible, ...handlers }: {
   /** 会话页那一屏此刻摆在眼前(MainLayout 的 tab 在「任务」):与「助理」App 的聊天同一条判据。 */
@@ -42,34 +56,53 @@ export const AppConversationSurfaceHost = observer(function AppConversationSurfa
   const inventory = installedExtensionsStore.manifests
   const placing = inventory.filter((manifest) => manifest.contributes.conversationSurface && installedExtensionsStore.isEnabled(manifest.id))
   const wanted = placing.length > 0
-  const [scope, setScope] = useState<Scope | null>(null)
+  const [verified, setVerified] = useState<Verified | null>(null)
+  const [changed, setChanged] = useState<Changed>({ apps: new Set(), serial: 0 })
+  useEffect(() => events.on(extensionsInventoryChangedChannel, (note) => {
+    const extensionId = note?.extensionId
+    setChanged((before) => ({ apps: extensionId ? new Set([...before.apps, extensionId]) : before.apps, serial: before.serial + 1 }))
+  }), [])
+  // Another account's read is never used again, not even on switching back.
+  useEffect(() => { setVerified((before) => (before && before.ownerId !== ownerId ? null : before)) }, [ownerId])
   useEffect(() => {
     if (!ownerId || !wanted) return
     let disposed = false
+    const asked = changed.serial
+    const installed = Object.fromEntries(inventory.map((manifest) => [manifest.id, installedAs(manifest)]))
     void rpc.extensions.conversationSurfaceBindings({ ownerId }).then((result) => {
       if (disposed) return
       if (!result.success || result.data.ownerId !== ownerId) throw new Error('App conversation surface authority unavailable')
-      setScope({ ownerId, inventory, bindings: result.data.bindings })
+      setVerified({ ownerId, bindings: result.data.bindings, installed })
+      setChanged((now) => (now.serial === asked && now.apps.size > 0 ? { apps: new Set(), serial: asked } : now))
     }).catch((error: unknown) => {
-      if (disposed) return
-      setScope(null)
-      log.warn({ error }, 'Could not verify App conversation surfaces')
+      // A read that failed takes nothing back that it could not check: what was verified stays, an App changed stays undrawn.
+      if (!disposed) log.warn({ error }, 'Could not verify App conversation surfaces')
     })
     return () => { disposed = true }
-  }, [ownerId, inventory, wanted])
-  const current = scope && scope.ownerId === ownerId && scope.inventory === inventory ? scope : null
+  }, [ownerId, inventory, wanted, changed.serial])
+  const current = verified && verified.ownerId === ownerId ? verified : null
+  // An App switched off, uninstalled, or not as it was installed when read: not drawn, and forgotten — only a new read
+  // brings it back, never this one.
+  const lapsed = current ? Object.keys(current.bindings).filter((id) => !placing.some((manifest) => manifest.id === id && current.installed[id] === installedAs(manifest))) : []
+  const lapsedKey = lapsed.join('\n')
+  useEffect(() => {
+    if (!lapsedKey) return
+    const gone = new Set(lapsedKey.split('\n'))
+    setVerified((before) => before && { ...before, bindings: Object.fromEntries(Object.entries(before.bindings).filter(([id]) => !gone.has(id))) })
+  }, [lapsedKey])
   const candidates = placing.flatMap((manifest) => {
     const binding = current?.bindings[manifest.id]
-    return binding && binding.ownerId === ownerId && binding.name === manifest.contributes.conversationSurface?.binding ? [[manifest.id, binding.chatId] as const] : []
+    if (!binding || changed.apps.has(manifest.id) || lapsed.includes(manifest.id)) return []
+    return binding.ownerId === ownerId && binding.name === manifest.contributes.conversationSurface?.binding ? [[manifest.id, binding.chatId, binding.authority] as const] : []
   })
   // Still in it: the chat list is the account's own membership, as the rail's unread source reads it.
   const wantedChats = candidates.map(([, chatId]) => chatId)
   const present = useStoreValueBy((store) => store.chats.filter((chat) => wantedChats.includes(chat.id)).map((chat) => chat.id),
     (store) => store.chats.filter((chat) => wantedChats.includes(chat.id)).map((chat) => chat.id))
   const signature = JSON.stringify(candidates.filter(([, chatId]) => present.includes(chatId)))
-  // The signature is the dependency: a new object only when what may be drawn changed.
-  const surfaces = useMemo(() => Object.fromEntries(JSON.parse(signature) as [string, string][]), [signature])
-  useEffect(() => { publishAppConversationSurfaces(surfaces) }, [surfaces])
+  // The signature is the dependency: a new object only when what may be drawn, or its authority, changed.
+  const drawable = useMemo(() => new Map((JSON.parse(signature) as [string, string, string][]).map(([id, chatId, authority]) => [id, { chatId, authority }])), [signature])
+  useEffect(() => { publishAppConversationSurfaces(Object.fromEntries([...drawable].map(([id, { chatId }]) => [id, chatId]))) }, [drawable])
   useEffect(() => () => publishAppConversationSurfaces({}), [])
 
   const slots = readShellSlots()
@@ -81,8 +114,9 @@ export const AppConversationSurfaceHost = observer(function AppConversationSurfa
     <>
       {[...entries].flatMap(([key, element]) => {
         if (!key.startsWith(APP_CONVERSATION_SLOT_PREFIX)) return []
-        const chatId = surfaces[key.slice(APP_CONVERSATION_SLOT_PREFIX.length)]
-        return chatId ? [createPortal(<AppConversationColumn chatId={chatId} viewportKey={key} visible={visible} {...handlers} />, element, key)] : []
+        const surface = drawable.get(key.slice(APP_CONVERSATION_SLOT_PREFIX.length))
+        // Keyed by its authority too: the same conversation under a new grant, choice or installation is drawn anew.
+        return surface ? [createPortal(<AppConversationColumn chatId={surface.chatId} viewportKey={key} visible={visible} {...handlers} />, element, `${key}#${surface.authority}`)] : []
       })}
     </>
   )
