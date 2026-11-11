@@ -9,7 +9,7 @@ const unavailable = () => new Error('password_save_unavailable')
 const SAVE_REQUEST_TTL_MS = 30 * 60_000
 export interface SaveProposal { account?: string; password?: string; fields?: { name: string; value: string }[] }
 export type SaveResult = 'saved' | 'rejected' | 'expired' | 'invalidated'
-type Pending = { view: PasswordSaveRequest; draft: PasswordSaveDraft; result: 'pending' | SaveResult; credentialId?: string; timer: ReturnType<typeof setTimeout> }
+type Pending = { view: PasswordSaveRequest; draft: PasswordSaveDraft; result: 'pending' | SaveResult; credentialId?: string; timer: ReturnType<typeof setTimeout>; remote?: string }
 export interface BetaSaveHost {
   deviceId: string
   changed(): void
@@ -22,11 +22,12 @@ export class BetaPasswordSaves {
   private readonly requests = new Map<string, Pending>()
   constructor(private readonly host: BetaSaveHost) {}
   pending(): PasswordSaveRequest[] { return [...this.requests.values()].filter(value => value.result === 'pending').map(value => value.view) }
-  async request(context: GuguMcpContext, caller: { agentId: string; sessionId: string }, origin: string, item: PasswordItem | undefined,
-    proposal: SaveProposal): Promise<{ requestId: string; status: 'pending' }> {
+  /** context null: an Agent on one of the account's servers (「本机送」). That server posts the card and polls the outcome. */
+  async request(context: GuguMcpContext | null, caller: { agentId: string; sessionId: string }, origin: string, item: PasswordItem | undefined,
+    proposal: SaveProposal, remote?: { agentName: string; sessionTitle: string; remote: string }): Promise<{ requestId: string; status: 'pending'; view: PasswordSaveRequest }> {
     // One open request per session: a looping Agent cannot flood the person's private chat.
     if ([...this.requests.values()].some(value => value.result === 'pending' && value.view.sessionId === caller.sessionId)) throw unavailable()
-    const requestId = randomUUID(), presentation = this.host.describe(caller.agentId, caller.sessionId)
+    const requestId = randomUUID(), presentation = remote ? { agentName: remote.agentName, sessionTitle: remote.sessionTitle } : this.host.describe(caller.agentId, caller.sessionId)
     // The card shows the account the Agent proposed (masked like every stored one), else the stored one.
     const shown = proposal.account ? maskedAccount(proposal.account) : item?.maskedAccount
     const view: PasswordSaveRequest = { kind: 'save', requestId, origin, ...(item ? { credentialId: item.reference.id } : {}), ...(shown ? { maskedAccount: shown } : {}),
@@ -36,11 +37,13 @@ export class BetaPasswordSaves {
       ...(item ? { credentialId: item.reference.id } : {}) }
     const timer = setTimeout(() => this.finish(requestId, 'expired'), SAVE_REQUEST_TTL_MS)
     timer.unref?.()
-    this.requests.set(requestId, { view, draft, result: 'pending', timer })
-    try { await postPasswordRequest(context, view) }
-    catch { this.drop(requestId); throw unavailable() }
+    this.requests.set(requestId, { view, draft, result: 'pending', timer, ...(remote ? { remote: remote.remote } : {}) })
+    if (context) {
+      try { await postPasswordRequest(context, view) }
+      catch { this.drop(requestId); throw unavailable() }
+    }
     this.host.changed()
-    return { requestId, status: 'pending' }
+    return { requestId, status: 'pending', view }
   }
   /** Person-only: the values the Agent proposed, for the person's own form. */
   draft(requestId: string): PasswordSaveDraft {
@@ -68,7 +71,8 @@ export class BetaPasswordSaves {
     value.result = result
     if (credentialId) value.credentialId = credentialId
     this.wipe(value)
-    void this.host.deliver(value.view.sessionId, requestId, result, credentialId).catch(() => {})
+    // A server's request: that server polls the outcome and tells its own session.
+    if (!value.remote) void this.host.deliver(value.view.sessionId, requestId, result, credentialId).catch(() => {})
     this.host.changed()
   }
   private drop(requestId: string): void {

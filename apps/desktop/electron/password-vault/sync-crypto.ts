@@ -27,6 +27,8 @@ async function pairFromSeed(seed: Buffer): Promise<DeviceKeyPair> {
   try { return { publicKey: b64(pair.publicKey), secretKey: Buffer.from(input) } }
   finally { pair.privateKey.fill(0); input.fill(0) }
 }
+/** A stored seed back into its pair (a server's delivery key). */
+export const keyPairFromSeed = (seed: Buffer): Promise<DeviceKeyPair> => pairFromSeed(seed)
 export async function createDeviceKeyPair(): Promise<DeviceKeyPair> {
   const seed = randomBytes(KEY_BYTES)
   try { return await pairFromSeed(seed) } finally { seed.fill(0) }

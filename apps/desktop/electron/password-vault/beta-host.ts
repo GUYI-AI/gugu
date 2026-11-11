@@ -17,6 +17,9 @@ import { passwordGrantCandidates, passwordGrantSubjects, passwordRequestPresenta
 import { BetaPasswordLogin } from './beta-login'
 import { BetaPasswordSaves, type SaveProposal, type SaveResult } from './beta-save'
 import { SyncError, VaultSync, syncDirectory } from './sync'
+import { sealTo } from './sync-crypto'
+import { BetaRemoteLogins } from './beta-remote'
+import { PASSWORD_AGENT_RPC, remoteOpSchema, type RemoteCaller } from './server-delivery'
 
 export const PASSWORD_UI_CHANNEL = 'gugu:password-beta-ui'
 export const PASSWORD_CHANGED_CHANNEL = 'gugu:password-beta-changed'
@@ -59,6 +62,7 @@ async function createAccount(ownerId: string, host: NativeHost) {
   const login = new BetaPasswordLogin({ ownerId, deviceId, signal: controller.signal, access, assertCurrent, changed, describe,
     subjects: (agentId, sessionId) => passwordGrantSubjects(ownerId, agentId, sessionId), denied: () => false, deliver: host.deliver })
   const saves = new BetaPasswordSaves({ deviceId, changed, describe, deliver: host.deliverSave })
+  const remote = new BetaRemoteLogins({ deviceId, changed })
   const keys = macVaultKeyProtector(reason => host.verifyOwner(reason))
   // The vault publishes through this port before each local commit; the engine exists once the vault does.
   const port: { sync?: VaultSync } = {}
@@ -67,7 +71,7 @@ async function createAccount(ownerId: string, host: NativeHost) {
     assertLocalPerson: value => { assertCurrent(); if (value !== person) throw unavailable() },
     assertOwnedLocalAgent: value => { assertCurrent(); if (value !== person) throw unavailable() },
     assertPrivateStorageReady: protection, keys,
-    invalidate: async () => { login.invalidate() },
+    invalidate: async () => { login.invalidate(); remote.invalidate() },
   }, login.sink, async (operation, signal) => {
     if (!PASSWORD_BETA_ENABLED || await host.account() !== ownerId) throw unavailable()
     const result = await access.acquireFeatureGuard(operation, signal)
@@ -78,7 +82,7 @@ async function createAccount(ownerId: string, host: NativeHost) {
   const sync = port.sync = new VaultSync({ root: syncDirectory(privatePasswordVaultDirectory(), ownerId), ownerId, deviceId, keys, changed,
     rpc: async (name, args) => { assertCurrent(); if (await host.account() !== ownerId) throw unavailable(); return host.rpc(name, args) },
     vault: { syncExport: () => vault.syncExport(person), syncApply: changes => vault.syncApply(person, changes) } })
-  return { ownerId, vault, login, saves, controller, assertCurrent, sync, pull: pulling(sync, host, controller.signal) }
+  return { ownerId, vault, login, saves, remote, controller, assertCurrent, sync, pull: pulling(sync, host, controller.signal) }
 }
 /** Polls the head revision every 5 seconds (3 while a code is on screen) and pulls when something was written, and every
  * minute regardless. Every step of joining writes, so both devices see the other's step at the next poll. Failures wait
@@ -134,7 +138,7 @@ async function account(): Promise<Account> {
   const ownerId = await native.account()
   if (!ownerId || !/^[a-f0-9-]{36}$/i.test(ownerId)) throw unavailable()
   if (current && current.ownerId !== ownerId) {
-    const old = current; current = undefined; old.controller.abort(); old.login.invalidate(); old.saves.invalidate(); await old.vault.dispose()
+    const old = current; current = undefined; old.controller.abort(); old.login.invalidate(); old.saves.invalidate(); old.remote.invalidate(); await old.vault.dispose()
   }
   if (current) return current
   creating ??= createAccount(ownerId, native)
@@ -148,7 +152,7 @@ async function account(): Promise<Account> {
 async function snapshot(value: Account): Promise<PasswordSnapshot> {
   let candidates: PasswordSnapshot['candidates'] = []
   try { candidates = passwordGrantCandidates(value.ownerId) } catch { candidates = [] }
-  return { items: await value.vault.list(person), approvals: value.login.pending(), saves: value.saves.pending(), candidates, sync: value.sync.view() }
+  return { items: await value.vault.list(person), approvals: [...value.login.pending(), ...value.remote.pending()], saves: value.saves.pending(), candidates, sync: value.sync.view() }
 }
 /** A dedicated native renderer IPC. Never uses generic action logging, transcript or device RPC. */
 export function installPasswordBetaHost(host: NativeHost): void {
@@ -176,7 +180,7 @@ export function installPasswordBetaHost(host: NativeHost): void {
         case 'delete': await value.vault.delete(person, randomUUID(), command.reference); break
         case 'reveal': return { ok: true, snapshot: await snapshot(value), secrets: await value.vault.reveal(person, command.reference) }
         case 'grants': await value.vault.setGrants(person, command.reference, command.grants); break
-        case 'decide': value.login.decide(command.requestId, command.decision); break
+        case 'decide': if (value.remote.has(command.requestId)) value.remote.decide(command.requestId, command.decision); else value.login.decide(command.requestId, command.decision); break
         case 'sync-approve': await value.sync.approve(command.deviceId); break
         case 'sync-reject': await value.sync.reject(command.deviceId); break
         case 'sync-ask-again': await value.sync.askAgain(); break
@@ -199,7 +203,7 @@ export function installPasswordBetaHost(host: NativeHost): void {
       return { ok: false, code: error instanceof VaultError ? error.code : error instanceof SyncError && error.code === 'STALE' ? 'STALE_REFERENCE' : 'UNAVAILABLE' }
     }
   })
-  app.once('before-quit', () => { current?.controller.abort(); current?.login.invalidate(); current?.saves.invalidate(); void current?.vault.dispose().catch(() => {}) })
+  app.once('before-quit', () => { current?.controller.abort(); current?.login.invalidate(); current?.saves.invalidate(); current?.remote.invalidate(); void current?.vault.dispose().catch(() => {}) })
 }
 /** What an Agent sees of one credential: never a value, and only its own access level. */
 function agentView(item: PasswordItem, subjects: string[]) {
@@ -246,10 +250,60 @@ export const passwordBetaAgent = Object.freeze({
       changed()
       return { status: 'saved', credentialId: saved.reference.id }
     }
-    return value.saves.request(context, { agentId: identity.subjectId, sessionId: identity.sessionId }, origin, item, input)
+    const { requestId, status } = await value.saves.request(context, { agentId: identity.subjectId, sessionId: identity.sessionId }, origin, item, input)
+    return { requestId, status }
   },
   async saveStatus(context: GuguMcpContext, requestId: string) {
     const { value, identity } = await caller(context)
     return value.saves.status(requestId, identity.sessionId)
   },
 })
+
+/**
+ * 「本机送」(server-delivery.ts): the account's servers ask this desktop. Same account only (the device RPC carries the
+ * asker's user id); grants name the Agent (`agent:<id>`), the same id on every machine. Project grants name projects of
+ * this computer and do not reach a server's sessions. Errors are one fixed code, never a lower-layer message.
+ */
+export function passwordBetaRemoteHandlers() {
+  const fail = () => ({ error: { code: 'PASSWORD_UNAVAILABLE', message: 'Password vault unavailable' } })
+  return {
+    [PASSWORD_AGENT_RPC]: async (payload: unknown, ctx: { request: { user_id: string } }) => {
+      try {
+        if (!PASSWORD_BETA_ENABLED) return fail()
+        const op = remoteOpSchema.parse(payload), value = await account()
+        if (ctx.request.user_id !== value.ownerId) return fail()
+        const caller: RemoteCaller = op.caller, subjects = [`agent:${caller.agentId}`]
+        const items = () => value.vault.list(person)
+        switch (op.op) {
+          case 'list': return { result: (await items()).map(item => agentView(item, subjects)) }
+          case 'request': {
+            const item = (await items()).find(entry => entry.reference.id === op.credentialId)
+            if (!item || item.origin !== httpsOrigin(op.origin)) return fail()
+            return { result: value.remote.request(caller, item, !!passwordGrantLevel(item.grants, subjects)) }
+          }
+          case 'status': return { result: { status: value.remote.status(op.requestId, caller) } }
+          case 'release': return { result: { sealed: await value.remote.release(op.requestId, caller, item =>
+            value.vault.releaseToServer(item.reference, plain => sealTo(op.serverKey, plain), { agentId: caller.agentId, sessionId: caller.sessionId, requestId: op.requestId })) } }
+          case 'save': {
+            const origin = httpsOrigin(op.origin)
+            const item = op.credentialId ? (await items()).find(entry => entry.reference.id === op.credentialId) : undefined
+            if (op.credentialId && (!item || item.origin !== origin)) return fail()
+            const proposal: SaveProposal = { account: op.account, password: op.password, fields: op.fields }
+            if (item && passwordGrantLevel(item.grants, subjects) === 'write') {
+              const named = new Map((op.fields ?? []).map(field => [field.name, field.value]))
+              const fields = [...item.fields.map(field => ({ id: field.id, name: field.name, value: named.get(field.name) ?? '' })),
+                ...[...named].filter(([name]) => !item.fields.some(field => field.name === name)).map(([name, text]) => ({ id: randomUUID(), name, value: text }))]
+              const saved = await value.vault.save(person, randomUUID(), { origin, account: op.account ?? '', password: op.password ?? '', fields }, item.reference)
+              changed()
+              return { result: { status: 'saved', credentialId: saved.reference.id } }
+            }
+            // The server posts the card from its own session; this desktop keeps the proposal for the person's form.
+            return { result: await value.saves.request(null, { agentId: caller.agentId, sessionId: caller.sessionId }, origin, item, proposal,
+              { agentName: caller.agentName, sessionTitle: caller.sessionTitle, remote: caller.deviceId }) }
+          }
+          case 'saveStatus': return { result: value.saves.status(op.requestId, caller.sessionId) }
+        }
+      } catch { return fail() }
+    },
+  }
+}

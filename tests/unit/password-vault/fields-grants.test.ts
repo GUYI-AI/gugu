@@ -68,6 +68,21 @@ describe('key-value credentials, grants and person-only reveal', () => {
     expect(keys.verifyPerson).toHaveBeenCalledTimes(2)
     expect(() => vault.reveal({}, saved.reference)).toThrow(VaultError)
   })
+  it('releases only account and password to a server, sealed to its key, without the person step, and audits it', async () => {
+    const { vault, keys } = await fixture()
+    const { createDeviceKeyPair, openSealed, sealTo } = await import('../../../apps/desktop/electron/password-vault/sync-crypto')
+    const server = await createDeviceKeyPair(), apiKey = 'key-' + randomUUID()
+    const saved = await vault.save(person, randomUUID(), { origin: 'https://a.example.test', account: 'a@example.test', password: 'secret', fields: [field('API Key', apiKey)] })
+    const requestId = randomUUID(), sessionId = randomUUID()
+    const sealed = await vault.releaseToServer(saved.reference, plain => sealTo(server.publicKey, plain), { agentId: randomUUID(), sessionId, requestId })
+    expect(sealed.includes('secret')).toBe(false)
+    expect(JSON.parse((await openSealed(server, sealed)).toString())).toEqual({ account: 'a@example.test', password: 'secret' })
+    expect(keys.verifyPerson).not.toHaveBeenCalled()
+    expect((await vault.readAudit(person)).some(record => record.action === 'use' && record.requestId === requestId && record.sessionId === sessionId)).toBe(true)
+    // A stale reference releases nothing.
+    await vault.save(person, randomUUID(), { origin: 'https://a.example.test', account: '', password: 'changed' }, saved.reference)
+    await expect(vault.releaseToServer(saved.reference, plain => sealTo(server.publicKey, plain), { agentId: randomUUID(), sessionId, requestId: randomUUID() })).rejects.toBeInstanceOf(VaultError)
+  })
   it('grants per credential, dedupes subjects and keeps them across edits', async () => {
     const { vault } = await fixture(), agent = `agent:${randomUUID()}`, project = `project:${randomUUID()}`
     const saved = await vault.save(person, randomUUID(), { origin: 'https://a.example.test', account: 'a', password: 'p' })

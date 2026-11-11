@@ -316,6 +316,32 @@ export class LocalPasswordVault {
       } finally { for (const item of payload.credentials) { item.account = ''; item.password = ''; for (const field of item.fields) field.value = '' } }
     })
   }
+  /** 「本机送」(server-delivery.ts), for the trusted coordinator only, after a grant or the person's approval: this
+   * credential's account and password, sealed by `seal` to the requesting server; the plaintext never leaves here. */
+  releaseToServer(reference: CredentialReference, seal: (plain: Buffer) => Promise<string>,
+    audit: { agentId: string; sessionId: string; requestId: string }): Promise<string> {
+    let feature: VaultFeatureOperation | undefined
+    return this.run(async () => {
+      const held = feature = await this.feature('use')
+      return this.#file.disk.withFeature(held, async () => {
+        await held.wait(() => this.gates()); await held.wait(() => this.open(held))
+        const { key, document, epoch } = this.unlocked(), payload = this.#file.payload(document, key)
+        let plain: Buffer | undefined
+        try {
+          const value = this.check(reference, payload)
+          held.assertCurrent(); this.current(epoch)
+          plain = Buffer.from(JSON.stringify({ account: value.account, password: value.password }))
+          const sealed = await seal(plain)
+          await this.record({ id: randomUUID(), action: 'use', source: 'policy', outcome: 'completed', agentId: audit.agentId, sessionId: audit.sessionId,
+            requestId: audit.requestId, credential: { id: value.id, version: value.version }, origin: value.origin })
+          return sealed
+        } finally {
+          plain?.fill(0)
+          for (const item of payload.credentials) { item.account = ''; item.password = ''; for (const field of item.fields) field.value = '' }
+        }
+      })
+    }).finally(() => feature?.release())
+  }
   /** For the trusted approval/browser coordinator only. This method never accepts passwords or raw errors. */
   appendAudit(input: AuditInput, { effectPossible }: { effectPossible: boolean }): Promise<AuditReceipt> {
     let validated: AuditInput

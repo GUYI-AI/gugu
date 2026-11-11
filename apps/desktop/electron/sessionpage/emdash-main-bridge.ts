@@ -11,7 +11,10 @@ export { recordConfirmedDeviceSleep } from '../session/main/core/activity/collec
 export { readAssistantWorkOwnerReceipts } from '../session/main/core/sessions/assistant-work-owner-receipts'
 export { commitOwnerNotification } from '../session/main/core/sessions/owner-notifications'
 export { deliverPasswordBetaDecision, deliverPasswordBetaSaveResult } from '../session/main/core/sessions/password-beta-delivery'
-export { installPasswordBetaHost, passwordBetaAgent } from '../password-vault/beta-host'
+export { installPasswordBetaHost, passwordBetaAgent, passwordBetaRemoteHandlers } from '../password-vault/beta-host'
+export { createServerPasswordAgent } from '../password-vault/server-agent'
+export { passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
+export { serverTaskPrivateLogin } from '../session/main/core/extensions/task-page-host'
 export { archiveSession } from '../session/main/core/sessions/archiveSession'
 export { appInbox } from '../session/main/core/extensions/app-inbox'
 // #1607 node 5: pushes from another computer for an App projection watched from here; the host's requester hands them over.
