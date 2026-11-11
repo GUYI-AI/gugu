@@ -29,7 +29,17 @@ import type { TurnStart,
   TimelineSubagent,
   TurnPatch
 } from './contract';
-import { TIMELINE_SUBAGENT_STEPS, TOOL_IMAGE_FETCH_LIMIT } from './contract';
+import { TIMELINE_SUBAGENT_STEPS, TIMELINE_SUBAGENT_TEXT, TOOL_IMAGE_FETCH_LIMIT } from './contract';
+
+type PublishedSubagent = {
+  source: readonly ToolNode[];
+  steps: Map<string, { step: ToolNode; seq: number }>;
+  output: string | undefined;
+  reasoning: string | undefined;
+  /** The publish in which its text last changed. */
+  textSeq: number;
+};
+const NO_STEPS: readonly ToolNode[] = [];
 import { questionAnswered, readQuestion } from './sources/question-tools';
 import { findToolImage, findToolItem } from './tool-image';
 import { TIMELINE_ARCHIVE_MAX_SOURCE_BYTES } from './archive-budget';
@@ -205,7 +215,7 @@ class RecordTimeline implements SessionTimeline {
    * entry was built from: the reducer keeps the list and each untouched step by identity, so an unchanged subagent
    * costs one comparison and a changed one marks only the steps that are new objects.
    */
-  private publishedSteps = new Map<string, { source: readonly ToolNode[]; steps: Map<string, { step: ToolNode; seq: number }> }>();
+  private publishedSteps = new Map<string, PublishedSubagent>();
   private removed = new Map<string, number>();
   private settlements = new Map<string, Settlement>();
   /**
@@ -487,7 +497,15 @@ class RecordTimeline implements SessionTimeline {
     return [...this.publishedSteps].map(([toolCallId, entry]) => {
       const all = [...entry.steps.values()];
       const steps = after === null ? all.slice(-TIMELINE_SUBAGENT_STEPS) : all.filter((step) => step.seq > after);
-      return { toolCallId, completedSteps: all.filter(({ step }) => step.status === 'done').length, steps: steps.map(({ step }) => step) };
+      const text = after === null || entry.textSeq > after;
+      const newest = (value: string | undefined) => value === undefined ? undefined : value.slice(-TIMELINE_SUBAGENT_TEXT);
+      return {
+        toolCallId,
+        completedSteps: all.filter(({ step }) => step.status === 'done').length,
+        steps: steps.map(({ step }) => step),
+        ...(text && entry.output !== undefined ? { output: newest(entry.output) } : {}),
+        ...(text && entry.reasoning !== undefined ? { reasoning: newest(entry.reasoning) } : {}),
+      };
     });
   }
 
@@ -969,20 +987,25 @@ class RecordTimeline implements SessionTimeline {
       });
       changed = true;
     }
-    const stagedSteps = new Map<string, { source: readonly ToolNode[]; steps: Map<string, { step: ToolNode; seq: number }> }>();
+    const stagedSteps = new Map<string, PublishedSubagent>();
     const running = new Set<string>();
     for (const agent of this.parser.agents) {
-      if (agent.status !== 'running' || !agent.steps?.length) continue;
+      if (agent.status !== 'running' || !agent.subagentSessionId) continue;
       running.add(agent.toolCallId);
+      const source = agent.steps ?? NO_STEPS;
       const prior = this.publishedSteps.get(agent.toolCallId);
-      if (prior && prior.source === agent.steps) continue;
-      const steps = new Map<string, { step: ToolNode; seq: number }>();
-      for (const step of agent.steps) {
-        if (step.kind === 'tool-group') continue;
-        const was = prior?.steps.get(step.toolCallId);
-        steps.set(step.toolCallId, was && was.step === step ? was : { step, seq: nextSeq });
+      if (prior && prior.source === source && prior.output === agent.output && prior.reasoning === agent.reasoning) continue;
+      let steps = prior?.steps;
+      if (!prior || prior.source !== source) {
+        steps = new Map<string, { step: ToolNode; seq: number }>();
+        for (const step of source) {
+          if (step.kind === 'tool-group') continue;
+          const was = prior?.steps.get(step.toolCallId);
+          steps.set(step.toolCallId, was && was.step === step ? was : { step, seq: nextSeq });
+        }
       }
-      stagedSteps.set(agent.toolCallId, { source: agent.steps, steps });
+      const textSeq = prior && prior.output === agent.output && prior.reasoning === agent.reasoning ? prior.textSeq : nextSeq;
+      stagedSteps.set(agent.toolCallId, { source, steps: steps!, output: agent.output, reasoning: agent.reasoning, textSeq });
       changed = true;
     }
     const settledSubagents = [...this.publishedSteps.keys()].filter((id) => !running.has(id));

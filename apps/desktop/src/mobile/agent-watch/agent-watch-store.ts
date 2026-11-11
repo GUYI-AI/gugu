@@ -376,12 +376,17 @@ function mergeSubagents(held: readonly TimelineSubagent[], batch: readonly Timel
   return batch.map((next) => {
     const previous = held.find((entry) => entry.toolCallId === next.toolCallId)
     if (!previous) return next
-    if (next.steps.length === 0) return previous.completedSteps === next.completedSteps ? previous : { ...previous, completedSteps: next.completedSteps }
+    // Absent text means unchanged since the batch's `from`.
+    const text = {
+      ...(next.output ?? previous.output) !== undefined ? { output: next.output ?? previous.output } : {},
+      ...(next.reasoning ?? previous.reasoning) !== undefined ? { reasoning: next.reasoning ?? previous.reasoning } : {},
+    }
+    if (next.steps.length === 0) return { ...previous, completedSteps: next.completedSteps, ...text }
     const id = (step: TimelineSubagent['steps'][number]) => 'toolCallId' in step ? step.toolCallId : step.id
     const changed = new Map(next.steps.map((step) => [id(step), step]))
     const steps = previous.steps.map((step) => changed.get(id(step)) ?? step)
     const known = new Set(previous.steps.map(id))
     for (const step of next.steps) if (!known.has(id(step))) steps.push(step)
-    return { toolCallId: next.toolCallId, completedSteps: next.completedSteps, steps }
+    return { toolCallId: next.toolCallId, completedSteps: next.completedSteps, steps, ...text }
   })
 }

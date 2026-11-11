@@ -365,7 +365,18 @@ export function remoteSettlementGap(
  * from the list is no longer running, and the reader drops what it held for it. `completedSteps` counts every
  * finished call, including the ones not sent.
  */
-export type TimelineSubagent = { toolCallId: string; completedSteps: number; steps: ToolNode[] };
+export type TimelineSubagent = {
+  toolCallId: string;
+  completedSteps: number;
+  steps: ToolNode[];
+  /**
+   * What it has written and thought so far, the newest `TIMELINE_SUBAGENT_TEXT` characters. A batch carries them only
+   * when they changed since `from`; absent means unchanged.
+   */
+  output?: string;
+  reasoning?: string;
+};
+export const TIMELINE_SUBAGENT_TEXT = 8192;
 export const TIMELINE_SUBAGENT_STEPS = 200;
 
 /** 整份快照：从最新往回取 `limit` 轮。 */

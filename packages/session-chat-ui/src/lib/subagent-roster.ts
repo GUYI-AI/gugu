@@ -58,6 +58,9 @@ export type SubagentRosterEntry = {
   /** 派出去的那一刻(毫秒);拿不到就没有。转录末尾那一行自己按它走秒,❌ 等花名册重算。 */
   startedAt?: number;
   canCancel?: boolean;
+  /** Its text so far, from the registry (#2500): the opened launch card shows it while the subagent runs. */
+  output?: string;
+  reasoning?: string;
 };
 
 function isSubagent(item: ToolNode): item is Extract<ToolNode, { kind: 'spawn-subagent-tool-call' }> {
@@ -81,6 +84,9 @@ export type SubagentRegistryEntry = {
   steps?: readonly ToolNode[];
   /** Every finished call, when `steps` is only the newest part of them (the phone's timeline). */
   completedSteps?: number;
+  /** What it has written and thought so far. The launch card gets these only when the subagent settles. */
+  output?: string;
+  reasoning?: string;
 };
 
 export type SubagentCall = {
@@ -197,7 +203,12 @@ export function collectSubagentRoster(
   for (const turn of turns) scan(turn.items, turn.startedAt === undefined);
   if (activeTurn) scan(activeTurn.items, activeTurn.startedAt === undefined);
   const completedByParent = new Map<string, number>();
+  const textByParent = new Map<string, { output?: string; reasoning?: string }>();
   for (const agent of registry) {
+    if (agent.output !== undefined || agent.reasoning !== undefined) textByParent.set(agent.toolCallId, {
+      ...(agent.output !== undefined ? { output: agent.output } : {}),
+      ...(agent.reasoning !== undefined ? { reasoning: agent.reasoning } : {}),
+    });
     if (agent.completedSteps !== undefined) completedByParent.set(agent.toolCallId, agent.completedSteps);
     if (!agent.steps?.length) continue;
     const byId = callsByParent.get(agent.toolCallId) ?? new Map<string, SubagentCall>();
@@ -248,6 +259,7 @@ export function collectSubagentRoster(
       elapsedMs,
       ...(startedAt !== undefined ? { startedAt } : {}),
       canCancel: item.canCancel === true,
+      ...textByParent.get(item.toolCallId),
     });
   }
   return [...byCallId.values()];

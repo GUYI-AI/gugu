@@ -50,6 +50,10 @@ export function subagentFromItem(
   // 派活时给的那句描述。少了它,并行的几个子任务在行上无法区分(#4981)。
   // `title` 兜底是为了不丢信息:有的供应商只填 ACP title 不填 rawInput。
   const task = item.inputSummary || item.title || undefined;
+  // While it runs, its text is in the registry and reaches here through the roster; the card holds it once settled.
+  const live = item.agentStatus === 'running' ? ctx.liveSubagent?.(item.toolCallId) : undefined;
+  const reasoning = live?.reasoning ?? item.reasoningText;
+  const result = live?.output ?? item.outputText ?? item.rawOutput;
   return {
     kind: 'subagent',
     id: item.id,
@@ -58,10 +62,9 @@ export function subagentFromItem(
     status,
     phase: subagentPhase({ status, agentId }),
     agentId,
-    ...(item.reasoningText ? { reasoning: item.reasoningText } : {}),
+    ...(reasoning ? { reasoning } : {}),
     ...(item.rawInput !== undefined ? { request: item.rawInput } : {}),
-    ...((item.outputText ?? item.rawOutput) !== undefined
-      ? { result: item.outputText ?? item.rawOutput } : {}),
+    ...(result !== undefined ? { result } : {}),
     ...(task !== undefined ? { task } : {}),
     background: item.background,
     awaitingPermission: ctx.pendingToolCallIds().has(item.toolCallId),

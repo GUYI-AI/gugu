@@ -67,11 +67,16 @@ describe('Claude native subagent records', () => {
       expect.objectContaining({ role: 'assistant', text: 'PARENT_RESULT' }),
     ]);
     expect(items.filter((item) => item.kind === 'unknown-tool-call')).toEqual([]);
-    expect(items.find((item) => item.kind === 'spawn-subagent-tool-call')).toMatchObject({
-      status: 'done', agentStatus: 'running', reasoningText: 'CHILD_THOUGHT',
-      children: [expect.objectContaining({ toolCallId: 'child-step', status: 'running' }),
-        expect.objectContaining({ kind: 'spawn-subagent-tool-call', agentStatus: 'completed', outputText: 'NESTED_RESULT' })],
-    });
+    const launch = items.find((item) => item.kind === 'spawn-subagent-tool-call');
+    expect(launch).toMatchObject({ status: 'done', agentStatus: 'running' });
+    // The worker is still running: its calls and its text so far are beside the turns, not inside the turn that
+    // launched it (#2500). The nested launch is one of its calls.
+    expect(launch && 'children' in launch ? launch.children ?? [] : []).toEqual([]);
+    expect(snapshot.subagents).toEqual([expect.objectContaining({
+      toolCallId: launch && 'toolCallId' in launch ? launch.toolCallId : '', reasoning: 'CHILD_THOUGHT', completedSteps: expect.any(Number),
+      steps: [expect.objectContaining({ toolCallId: 'child-step', status: 'running' }),
+        expect.objectContaining({ kind: 'spawn-subagent-tool-call' })],
+    })]);
     // The nested child's finish is in the worker's record: it completes the nested card and adds no row.
     expect(snapshot.turns).toHaveLength(1);
     expect(JSON.stringify(snapshot.turns)).not.toContain('subagent-done-tool-call');
