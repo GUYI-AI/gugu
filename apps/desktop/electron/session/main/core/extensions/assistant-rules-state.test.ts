@@ -82,7 +82,8 @@ describe('whether the assistant here waits for its rules', () => {
     expect(await ensureAssistantApp('start')).toBe('present');
     await settle();
     expect(await assistantRulesState()).toEqual({ pending: true, stuck: true });
-    expect(told).toContainEqual({ pending: true, stuck: true });
+    // The windows are told after a refresh that reads the disk; under a loaded run that can outlast a fixed pause.
+    await vi.waitFor(() => expect(told).toContainEqual({ pending: true, stuck: true }));
   });
 });
 
