@@ -1,9 +1,22 @@
 import type { NativeSessionRecord } from '@gugu/session-core/session-record/contract';
 import { projectOwnerNotifications } from '@gugu/session-core/session-record/owner-notifications';
 
-/** Keep the page cache raw: projecting individual pages would retain a detached notice after its source arrives. */
-export function mergeNativeRecordPage(previous: NativeSessionRecord | null, page: NativeSessionRecord, mode: 'poll' | 'older' | 'newer' | 'tail', tail: boolean): NativeSessionRecord {
-  if (!previous || tail || (previous.nativeOwnerNotificationEpoch ?? 0) !== (page.nativeOwnerNotificationEpoch ?? 0)) return page;
+/**
+ * Keep the page cache raw: projecting individual pages would retain a detached notice after its source arrives.
+ *
+ * `tail`: the page is the newest one. Asked for by the reader (opening the conversation, sending, returning to the
+ * bottom) it replaces what is held. Asked for only because the connection came back (`'resume'`), it is merged when it
+ * reaches what is held: the reader may be pages up in the history, and a link that dropped for a second must not take
+ * those pages away. When the newest page no longer reaches them (more was written meanwhile than one page holds), a
+ * merge would leave a hole, so it replaces as before.
+ */
+export function mergeNativeRecordPage(previous: NativeSessionRecord | null, page: NativeSessionRecord, mode: 'poll' | 'older' | 'newer' | 'tail', tail: boolean | 'resume'): NativeSessionRecord {
+  if (!previous || (previous.nativeOwnerNotificationEpoch ?? 0) !== (page.nativeOwnerNotificationEpoch ?? 0)) return page;
+  if (tail) {
+    const newestHeld = previous.turns.findLast(turn => turn.seq <= page.latestStoredSeq)?.seq;
+    const oldestRead = page.turns[0]?.seq;
+    if (tail !== 'resume' || newestHeld === undefined || oldestRead === undefined || oldestRead > newestHeld + 1) return page;
+  }
   const merged = new Map(previous.turns.filter(turn => turn.seq <= page.latestStoredSeq).map(turn => [turn.id, turn]));
   for (const turn of page.turns) merged.set(turn.id, turn);
   const next = { ...page, turns: [...merged.values()].sort((a, b) => a.seq - b.seq),
