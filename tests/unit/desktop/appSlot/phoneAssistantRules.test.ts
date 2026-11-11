@@ -210,6 +210,8 @@ describe('the phone reads the assistant\'s rules from the market\'s signed assis
     const edits: Array<(kept: { appVersion: string; folder: string; release: unknown; files: Record<string, string> }) => void> = [
       (kept) => { const [name] = Object.keys(kept.files).filter((path) => path.startsWith('rules/')); kept.files[name!] = btoa('changed\n') },
       (kept) => { kept.files['rules/extra.md'] = btoa('x\n') },
+      // Valid rules, but not the signed bytes.
+      (kept) => { for (const [name, text] of Object.entries(assistantRulesFiles(markedRules('EDITED')))) kept.files[`rules/${name}`] = Buffer.from(text).toString('base64') },
       (kept) => { delete kept.files['manifest.json'] },
       (kept) => { kept.folder = 'other' },
       (kept) => { delete (kept as { release?: unknown }).release },

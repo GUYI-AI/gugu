@@ -1,4 +1,5 @@
-import { generateKeyPairSync, randomBytes, sign, verify as nodeVerify } from 'node:crypto';
+import { createHash as nodeHash, createPublicKey as nodePublicKey, generateKeyPairSync, randomBytes, sign, verify as nodeVerify } from 'node:crypto';
+import { ed25519 } from '@noble/curves/ed25519.js';
 import { describe, expect, it } from 'vitest';
 import { createHash, createPublicKey, verify } from './release-crypto-web';
 
@@ -49,6 +50,22 @@ describe('the page bundle\'s node:crypto for the release contract', () => {
       expect(verify(null, message, key, signature)).toBe(true);
       expect(verify(null, message, key, nonCanonical)).toBe(false);
     }
+  });
+
+  it('answers as Node does where the cofactored equation would not: a small-order R is refused', () => {
+    // R = the order-4 point (y = 0), S = k·a: [8]SB = [8]R + [8]kA holds (ZIP-215), SB = R + kA does not (RFC 8032).
+    const secret = randomBytes(32);
+    const { scalar, pointBytes } = ed25519.utils.getExtendedPublicKey(secret);
+    const message = randomBytes(48);
+    const R = new Uint8Array(32);
+    const k = valueOf(nodeHash('sha512').update(R).update(pointBytes).update(message).digest()) % L;
+    const signature = Uint8Array.from([...R, ...littleEndian((k * scalar) % L)]);
+    expect(ed25519.verify(signature, message, pointBytes, { zip215: true })).toBe(true);
+    // noble's strict mode alone takes it too (it checks the cofactored equation): the stand-in adds what OpenSSL means.
+    expect(ed25519.verify(signature, message, pointBytes, { zip215: false })).toBe(true);
+    const pem = nodePublicKey({ key: Buffer.concat([Buffer.from('302a300506032b6570032100', 'hex'), pointBytes]), format: 'der', type: 'spki' });
+    expect(nodeVerify(null, message, pem, signature)).toBe(false);
+    expect(verify(null, message, createPublicKey(pem.export({ type: 'spki', format: 'pem' }).toString()), signature)).toBe(false);
   });
 
   it('verifies nothing but Ed25519: another algorithm throws, another key type or length is false; no hashing here', () => {

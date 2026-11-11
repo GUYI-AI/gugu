@@ -3,9 +3,11 @@
 // `verify(null, raw, key, signature)` for one Ed25519 signature, synchronously; nothing else here is used by it
 // (`createHash` backs only its `digest`, which the client never calls).
 //
-// WebCrypto cannot stand in: its Ed25519 is recent (a WebView that never updated has none) and asynchronous. The
-// verification is @noble/curves' Ed25519 (audited pure JS, no dependency but @noble/hashes), in its strict RFC 8032 /
-// FIPS 186-5 mode — the rules Node's OpenSSL applies, not the more permissive ZIP-215 default.
+// WebCrypto cannot stand in: its Ed25519 is recent (Chrome and Android WebView 137; a WebView that never updated has none)
+// and asynchronous. The verification is @noble/curves' Ed25519 (audited pure JS, no dependency but @noble/hashes) in its
+// strict RFC 8032 mode (canonical encodings, S < L), plus what makes it answer as Node's OpenSSL does: noble checks the
+// cofactored equation [8]SB = [8]R + [8]kA, OpenSSL the cofactorless SB = R + kA; with R and A both free of small-order
+// parts (decoded canonically) the two are the same equation.
 // scripts/build/release-contract-browser-crypto.mts serves this module to the contract in place of `node:crypto`.
 import { ed25519 } from '@noble/curves/ed25519.js'
 
@@ -30,11 +32,18 @@ export function createPublicKey(pem: unknown): WebPublicKey {
   return ed25519Key ? { asymmetricKeyType: 'ed25519', raw: der.slice(ED25519_SPKI_PREFIX.length) } : { asymmetricKeyType: 'unsupported', raw: null }
 }
 
+/** Whether 32 bytes are the canonical encoding of a point with no small-order part. */
+function torsionFree(bytes: Uint8Array): boolean {
+  try { return ed25519.Point.fromBytes(bytes, false).isTorsionFree() }
+  catch { return false }
+}
+
 /** Node's one-shot `verify(null, data, key, signature)` for an Ed25519 key; anything else does not verify. */
 export function verify(algorithm: unknown, data: Uint8Array, key: WebPublicKey, signature: Uint8Array): boolean {
   if (algorithm !== null && algorithm !== undefined) throw new Error('only Ed25519 (algorithm null) is supported here')
   if (key.asymmetricKeyType !== 'ed25519' || !key.raw || signature.length !== 64) return false
-  try { return ed25519.verify(Uint8Array.from(signature), Uint8Array.from(data), key.raw, { zip215: false }) }
+  const sig = Uint8Array.from(signature)
+  try { return ed25519.verify(sig, Uint8Array.from(data), key.raw, { zip215: false }) && torsionFree(sig.subarray(0, 32)) && torsionFree(key.raw) }
   catch { return false }
 }
 
