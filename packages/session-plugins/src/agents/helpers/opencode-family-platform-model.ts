@@ -5,7 +5,7 @@ import {
   type PlatformModelLoad,
   type SessionModelCapability,
 } from '@gugu/session-core/agents/plugins';
-import { openCodeFamilyReasoningEntry } from './opencode-family-model-config';
+import { openCodeFamilyProvider, openCodeFamilyReasoningEntry } from './opencode-family-model-config';
 
 /** The id Gugu gives the provider block it injects into an opencode session. */
 export const OPENCODE_PLATFORM_PROVIDER_ID = 'gugu-platform'
@@ -86,11 +86,13 @@ export function openCodeFamilyConfigContent(
   if (!models[selectedModel]) models[selectedModel] = modelEntry(contextWindow)
   // 模型的寻址方式是 `provider/model`,所以平台模型只有在同一份文档里连 provider 一起声明
   // 之后才选得中。两半都是会话级的,随进程消亡。
+  // 一把 API Key 连接:块叫连接的名字(这一家界面上显示的那一格),❌「Gugu 平台额度」;平台会话原样。
+  const provider = openCodeFamilyProvider(model, { id: OPENCODE_PLATFORM_PROVIDER_ID, name: PLATFORM_PROVIDER_NAME })
   return {
     spawnEnv: {
       [envKey]: JSON.stringify({
         provider: {
-          [OPENCODE_PLATFORM_PROVIDER_ID]: {
+          [provider.id]: {
             // ⚠️ 这一个字段就是 opencode 系的**协议旋钮**。它自己的文档原话:
             //   「对其它 OpenAI 兼容供货商用 `@ai-sdk/openai-compatible`(用于 `/v1/chat/completions`);
             //     如果模型走 `/v1/responses`,用 `@ai-sdk/openai`」。
@@ -100,12 +102,12 @@ export function openCodeFamilyConfigContent(
             // 实测同一份配置只换这一个字段:compatible → chat/completions;openai → responses。
             // ⇒ 值由那一家 platform.ts 的 wireProtocol 查出(`OPENCODE_FAMILY_SDK_PACKAGE`),只有一处可改。
             npm: OPENCODE_FAMILY_SDK_PACKAGE[protocol],
-            name: PLATFORM_PROVIDER_NAME,
+            name: provider.name,
             options: { baseURL: platform.baseUrl, apiKey: platform.apiKey },
             models,
           },
         },
-        model: `${OPENCODE_PLATFORM_PROVIDER_ID}/${selectedModel}`,
+        model: `${provider.id}/${selectedModel}`,
       }),
     },
   }

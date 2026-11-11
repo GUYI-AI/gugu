@@ -1309,6 +1309,56 @@ function handle(msg) {
     expect(state.kind === 'ready' && state.models.map((m) => m.id)).toEqual(['user-model', 'vendor-default'])
   })
 
+  /** 像 pi / opencode 那样报「提供方/模型」的假 agent:连接那条按构造是当前选中;`NO_CURRENT` 在 ⇒ 不报选中。 */
+  async function useProviderPrefixedAgent(): Promise<void> {
+    const entry = await fakeAgent(`
+function handle(msg) {
+  if (msg.method === 'initialize') return reply(msg.id, { protocolVersion: 1, authMethods: [] });
+  if (msg.method === 'session/new') {
+    return reply(msg.id, { sessionId: 's', configOptions: [
+      { id: 'model', category: 'model', type: 'select',
+        ...(process.env.NO_CURRENT ? {} : { currentValue: 'api-key-connection/user-model' }),
+        options: [
+          { value: 'opencode/big-pickle', name: 'OpenCode Zen/Big Pickle' },
+          { value: 'api-key-connection/user-model', name: '我的 Key/user-model' },
+        ] },
+    ] });
+  }
+}
+`)
+    setAcpSpawnResolver(async () => ({ command: process.execPath, args: [entry], env: {} }))
+  }
+
+  it('the composer calls the connection model by its model name: the entry this harness starts on, recorded by id', async () => {
+    await useProviderPrefixedAgent()
+    setProbeConnectionModelResolver(async () => ({ env: {}, modelName: 'user-model' }))
+    expect(await probeHarnessModelCatalog('opencode', 'acp')).toEqual({
+      kind: 'ready',
+      models: [
+        { id: 'opencode/big-pickle', name: 'OpenCode Zen/Big Pickle' },
+        { id: 'api-key-connection/user-model', name: 'user-model' },
+      ],
+      selected: 'api-key-connection/user-model',
+      efforts: [],
+      selectedEffort: null,
+      connectionModel: 'api-key-connection/user-model',
+    })
+  })
+
+  it('no model name, or no entry the harness says it starts on: the catalog exactly as the harness reported it', async () => {
+    await useProviderPrefixedAgent()
+    setProbeConnectionModelResolver(async () => ({ env: {} }))
+    const plain = await probeHarnessModelCatalog('opencode', 'acp')
+    expect(plain).not.toHaveProperty('connectionModel')
+    expect(plain.kind === 'ready' && plain.models.map((m) => m.name)).toEqual(['OpenCode Zen/Big Pickle', '我的 Key/user-model'])
+
+    setProbeConnectionModelResolver(async () => ({ env: { NO_CURRENT: '1' }, modelName: 'user-model' }))
+    const unselected = await probeHarnessModelCatalog('opencode', 'acp')
+    expect(unselected).toMatchObject({ kind: 'ready', selected: null })
+    expect(unselected).not.toHaveProperty('connectionModel')
+    expect(unselected.kind === 'ready' && unselected.models.map((m) => m.name)).toEqual(['OpenCode Zen/Big Pickle', '我的 Key/user-model'])
+  })
+
   it('a connection that cannot be built fails loud instead of reading some other catalog', async () => {
     await useConnectionAwareAgent()
     setProbeConnectionModelResolver(async () => { throw new Error('The connection’s API key is unavailable') })

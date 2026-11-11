@@ -49,7 +49,7 @@ export function ownModelTierOptions(input: {
   /** 主进程那趟 BYOK 探针的状态(六态)。 */
   catalog: HarnessCatalogState;
 }): Record<string, ComposerModelOption> | null {
-  if (input.route === 'own') return input.live;
+  if (input.route === 'own') return withConnectionModelName(input.live, input.catalog);
   // 六态里只有 `ready` 产出行,其余一律 null —— 与新建页逐字同一条规则
   // (`harnessCatalogToOptions`:读不到清单时**没有模型可选**,❌ 不退回插件静态表:
   //  列一张用户跑不了的模型正是咕咕红线里的 fake)。
@@ -58,4 +58,23 @@ export function ownModelTierOptions(input: {
   //   (gugu#5816);少的是入口,不是把一份错的清单顶上来。
   // ⚠️ `unsupported`(不说 ACP 的 agent)在 ACP 会话面上不可达 ⇒ 不喂静态表兜底。
   return harnessCatalogToOptions(input.catalog);
+}
+
+/**
+ * 活会话报的清单里,一把 API Key 连接的模型照目录那份名字叫(#2507):只叫模型名。
+ *
+ * pi / opencode 的活清单把它叫成「提供方/模型」,而提供方就是这把连接;主进程那趟探针照这把连接读过,
+ * 认出了是哪一条(`connectionModel`,这家自己报的 id)并改叫模型名。同一个 id 就是同一条 —— ❌ 按前缀猜。
+ * 目录不是照连接读的、或活清单里没有这条 ⇒ 活清单原样(同一个对象,其余会话一个字不变)。
+ */
+function withConnectionModelName(
+  live: Record<string, ComposerModelOption> | null,
+  catalog: HarnessCatalogState
+): Record<string, ComposerModelOption> | null {
+  if (!live || catalog.kind !== 'ready' || !catalog.connectionModel) return live;
+  const id = catalog.connectionModel;
+  const option = live[id];
+  const name = catalog.models.find((model) => model.id === id)?.name;
+  if (!option || !name || option.name === name) return live;
+  return { ...live, [id]: { ...option, name } };
 }

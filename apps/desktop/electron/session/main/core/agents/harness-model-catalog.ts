@@ -178,6 +178,11 @@ export type HarnessCatalogState =
     selected: string | null;
     efforts: HarnessModelChoice[];
     selectedEffort: string | null;
+    /**
+     * 这份目录照一把 API Key 连接读(#2507)时:连接的模型在这家目录里的 id(这家自己的写法)。它在 `models` 里的
+     * 名字已经是裸模型名;活会话报的清单里同一个 id 就是同一条,输入框照这里叫它。不是连接的目录 = 缺席。
+     */
+    connectionModel?: string;
   }
   /** harness 没装（起不来）。界面引导安装。 */
   | { kind: 'not-installed' }
@@ -259,6 +264,8 @@ export type ProbePlatformCredentials = {
    * `only` = 这家把任何模型的请求都送到连接地址,别的名字选了也是错的 ⇒ 清单只留它。
    */
   sessionModel?: { id: string; only: boolean };
+  /** 只有连接那一趟给(#2507):连接的模型在输入框里叫什么 —— 只叫模型名(见 `withConnectionModelName`)。 */
+  modelName?: string;
 };
 
 /**
@@ -940,7 +947,10 @@ export async function probeHarnessModelCatalog(
   const connectionScratch = await mkdtemp(join(tmpdir(), `gugu-probe-connection-${pluginId}-`));
   try {
     const connection = await resolveProbeConnectionModel(pluginId, connectionScratch);
-    if (connection) return withSessionModel(await probeOnce(pluginId, leg, connection, model), connection.sessionModel);
+    if (connection) {
+      const read = withSessionModel(await probeOnce(pluginId, leg, connection, model), connection.sessionModel);
+      return withConnectionModelName(read, connection.modelName);
+    }
   } finally {
     await rm(connectionScratch, { recursive: true, force: true });
   }
@@ -975,6 +985,25 @@ function withSessionModel(state: HarnessCatalogState, sessionModel: ProbePlatfor
   const listed = state.models.find((choice) => choice.id === sessionModel.id) ?? { id: sessionModel.id, name: sessionModel.id };
   const others = sessionModel.only ? [] : state.models.filter((choice) => choice.id !== sessionModel.id);
   return { ...state, models: [listed, ...others], selected: sessionModel.id };
+}
+
+/**
+ * 连接那一趟:连接的模型在输入框里只叫模型名(#2507)。pi / opencode 报的名字带提供方(`<provider>/<model>`),
+ * 提供方是这把连接 —— 用户在连接那一格已经选过它,❌ 在每条模型上再念一遍(更 ❌ 念成「Gugu 平台额度」)。
+ *
+ * 认哪一条:这家**自己报的当前选中**。连接那份配置在同一份文档里声明这个模型、并把它设成启动模型,按构造选中的就是它;
+ * ❌ 按前缀 / 名字的字符串去猜哪条是它。这家没报选中(或选中的不在清单里)⇒ 不改名,原样。
+ * 记下这条的 id(`connectionModel`):活会话报的清单里同一个 id 就是同一条,输入框照这里的名字叫它(`ownModelTierOptions`)。
+ */
+function withConnectionModelName(state: HarnessCatalogState, modelName: string | undefined): HarnessCatalogState {
+  if (!modelName || state.kind !== 'ready' || state.selected === null) return state;
+  const id = state.selected;
+  if (!state.models.some((choice) => choice.id === id)) return state;
+  return {
+    ...state,
+    models: state.models.map((choice) => (choice.id === id ? { ...choice, name: modelName } : choice)),
+    connectionModel: id,
+  };
 }
 
 function describe(state: HarnessCatalogState): string {

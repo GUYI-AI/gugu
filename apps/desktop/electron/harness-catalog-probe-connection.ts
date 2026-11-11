@@ -33,20 +33,23 @@ export function createProbeConnectionCredentials(
     const launch = connectionModelLaunch({
       providerId: pluginId,
       surface: 'cui',
+      name: connection.name,
       endpoint: connection.endpoint,
       apiKey: connection.apiKey,
       model: connection.model,
     })
     const capability = launch.modelCapability
     if (!capability) throw new Error(`model catalog probe: ${pluginId} API key connection produced no model declaration`)
+    // 输入框里连接的模型只叫模型名(pi / opencode 报的是「提供方/模型」)。
+    const modelName = connection.model
     // opencode:配置文档就在 spawnEnv 里(`OPENCODE_CONFIG_CONTENT`),与会话同路。
-    if (providerUsesSessionProcessConfig(pluginId)) return { env: { ...launch.spawnEnv } }
+    if (providerUsesSessionProcessConfig(pluginId)) return { env: { ...launch.spawnEnv }, modelName }
     if (providerDeliversModelViaConfigFile(pluginId, 'acp')) {
       // pi:models.json / settings.json 与会话同源,只写这一趟的临时目录;key 只在进程环境里(`GUGU_PI_API_KEY`)。
       if (capability.dialect === 'pi-models-json') {
         const config = materializePiModelConfig('acp', { model: capability, env: { GUGU_HOME: scratchDir } })
         await applySessionMaterialization({ cwd: scratchDir, guguHome: scratchDir, materialization: config })
-        return { env: { ...config.env } }
+        return { env: { ...config.env }, modelName }
       }
       // CodeBuddy:会话里那份 `--settings` 文档的 env 块,探针放进进程环境(平台探针同一载体)。
       // 它的 `session/new` 只报自家目录(2.183.0 实测:带着会话那份 --settings 也一样,21 个、当前 default-model),
@@ -60,7 +63,7 @@ export function createProbeConnectionCredentials(
       if (Object.keys(spawnEnv).length === 0) {
         throw new Error(`model catalog probe: ${pluginId} API key connection materialized no environment for the probe`)
       }
-      return { env: spawnEnv, sessionModel: { id: connection.model, only: true } }
+      return { env: spawnEnv, sessionModel: { id: connection.model, only: true }, modelName }
     }
     throw new Error(`model catalog probe: ${pluginId} API key connection has no channel the probe can reach`)
   }

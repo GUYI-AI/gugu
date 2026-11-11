@@ -1146,6 +1146,15 @@ export interface SessionModelCapability {
    */
   platformProvider?: { baseUrl: string; apiKey: string }
   /**
+   * Who provides the model, in the name the harness's own UI shows for the provider block Gugu writes.
+   *
+   * Set only for an API key connection (#2507): the connection's name — the user's note, or the generated
+   * one ("Pi 1"). The endpoint and key there are the user's, so the harness must not call that provider
+   * "Gugu 平台额度" / `gugu-platform`. Absent = a Gugu-model session: each writer keeps its platform id and
+   * name byte-for-byte. Each writer decides where the name goes (pi shows the provider id, opencode its name).
+   */
+  providerName?: string
+  /**
    * Every Gugu model this session may run on, for harnesses whose own model picker we
    * populate.
    *

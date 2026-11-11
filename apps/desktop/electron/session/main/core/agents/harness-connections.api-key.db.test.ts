@@ -157,8 +157,10 @@ it('a model-injection agent (pi): the key stays out of the spawn env and out of 
     connectionId: connection.id,
     apiKeyConnection: { endpoint: 'https://gateway.example/v1' },
   });
+  // 名字跟着它走:pi 的界面里提供方就叫它(没写备注 ⇒ 建连接时生成的那个)。
   expect(await resolveConnectionModel('pi')).toEqual({
     connectionId: connection.id,
+    name: connection.name,
     endpoint: 'https://gateway.example/v1',
     apiKey: 'pi-secret',
     model: 'gpt-5.5',
@@ -169,4 +171,18 @@ it('a model-injection agent (pi): the key stays out of the spawn env and out of 
 
   await selectHarnessConnection('pi', 'native');
   expect(await resolveConnectionModel('pi')).toBeNull();
+});
+
+it('the host model resolver names the connection by the user’s note when there is one', async () => {
+  const connection = await createHarnessConnection({
+    providerId: 'opencode',
+    kind: 'api-key',
+    name: '我的 DeepSeek',
+    apiKey: 'oc-secret',
+    endpoint: 'https://api.deepseek.example/v1',
+    model: 'deepseek-chat',
+  });
+  await selectHarnessConnection('opencode', connection.id);
+  expect(await resolveConnectionModel('opencode')).toMatchObject({ name: '我的 DeepSeek', model: 'deepseek-chat' });
+  await selectHarnessConnection('opencode', 'native');
 });

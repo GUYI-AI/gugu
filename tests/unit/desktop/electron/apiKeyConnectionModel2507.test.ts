@@ -53,6 +53,8 @@ const { createProbeConnectionCredentials } = await import('../../../../apps/desk
 const SESSION = 'conv-2507'
 const ENDPOINT = 'https://gateway.example/api/v1'
 const KEY = 'sk-user-connection'
+/** 连接的名字(用户没写备注时建连接生成的那种)。 */
+const NAME = 'Pi 1'
 const authProvider = {
   getAuth: async () => ({ accessToken: 't', refreshToken: null, userId: 'owner-1' }),
 } as never
@@ -93,11 +95,12 @@ afterAll(() => resetPlatformRelayPersistenceForTest())
 describe('connectionModelLaunch: a connection in the platform launch shape, never a platform session', () => {
   it.each(['pi', 'opencode', 'codebuddy'])('%s: the connection address/key/model, no token, no relay env, address verbatim', (providerId) => {
     for (const surface of ['cui', 'tui'] as const) {
-      const launch = connectionModelLaunch({ providerId, surface, endpoint: ENDPOINT, apiKey: KEY, model: 'user-model' })
+      const launch = connectionModelLaunch({ providerId, surface, name: NAME, endpoint: ENDPOINT, apiKey: KEY, model: 'user-model' })
       expect(launch).toMatchObject({ accessSessionId: null, expiresAt: null, env: {}, model: null, clientArgs: [], settingsDocumentPath: null })
       // 平台中转补 `/v1`;一把连接的地址就是用户填的那个,❌ 补。
       expect(launch.platformProvider).toEqual({ baseUrl: ENDPOINT, apiKey: KEY })
-      expect(launch.modelCapability).toMatchObject({ model: 'user-model', platformProvider: { baseUrl: ENDPOINT, apiKey: KEY } })
+      // 提供方叫连接的名字:地址和 key 都是用户的,这一家的界面上 ❌「Gugu 平台额度」/ `gugu-platform`。
+      expect(launch.modelCapability).toMatchObject({ model: 'user-model', providerName: NAME, platformProvider: { baseUrl: ENDPOINT, apiKey: KEY } })
       expect(launch.modelCapability?.contextWindow).toBeUndefined()
       expect(notOnPlatform(launch)).toBe(false)
     }
@@ -106,28 +109,29 @@ describe('connectionModelLaunch: a connection in the platform launch shape, neve
   it('reaches each agent through the same channel its platform model uses', () => {
     // pi / CodeBuddy:模型走这一家自己的配置文件 ⇒ 宿主一个键都不发,声明整份进会话包。
     for (const providerId of ['pi', 'codebuddy']) {
-      const launch = connectionModelLaunch({ providerId, surface: 'cui', endpoint: ENDPOINT, apiKey: KEY, model: 'user-model' })
+      const launch = connectionModelLaunch({ providerId, surface: 'cui', name: NAME, endpoint: ENDPOINT, apiKey: KEY, model: 'user-model' })
       expect(launch.spawnEnv, providerId).toEqual({})
       expect(sessionBundleModelFor(providerId, 'acp', launch), providerId).toBe(launch.modelCapability)
       expect(sessionBundleModelFor(providerId, 'tui', launch), providerId).toBe(launch.modelCapability)
     }
     // opencode:模型走它的进程配置文档 ⇒ 那份文档在 spawnEnv 里,会话包里不再放一份。
-    const opencode = connectionModelLaunch({ providerId: 'opencode', surface: 'cui', endpoint: ENDPOINT, apiKey: KEY, model: 'user-model' })
+    const opencode = connectionModelLaunch({ providerId: 'opencode', surface: 'cui', name: NAME, endpoint: ENDPOINT, apiKey: KEY, model: 'user-model' })
     const document = JSON.parse(opencode.spawnEnv.OPENCODE_CONFIG_CONTENT!)
-    expect(document.provider['gugu-platform'].options).toEqual({ baseURL: ENDPOINT, apiKey: KEY })
-    expect(document.model).toBe('gugu-platform/user-model')
+    expect(document.provider['api-key-connection']).toMatchObject({ name: NAME, options: { baseURL: ENDPOINT, apiKey: KEY } })
+    expect(document.model).toBe('api-key-connection/user-model')
+    expect(opencode.spawnEnv.OPENCODE_CONFIG_CONTENT).not.toMatch(/gugu-platform|Gugu 平台额度/)
     expect(sessionBundleModelFor('opencode', 'acp', opencode)).toBeNull()
   })
 
   it('refuses an agent with no platform model writer', () => {
-    expect(() => connectionModelLaunch({ providerId: 'kiro', surface: 'cui', endpoint: ENDPOINT, apiKey: KEY, model: 'm' }))
+    expect(() => connectionModelLaunch({ providerId: 'kiro', surface: 'cui', name: NAME, endpoint: ENDPOINT, apiKey: KEY, model: 'm' }))
       .toThrow(/platform model writer/)
   })
 })
 
 describe('platform hooks: the connection only where the session is not on platform', () => {
   const connection = (providerId: string, surface: 'cui' | 'tui') =>
-    connectionModelLaunch({ providerId, surface, endpoint: ENDPOINT, apiKey: KEY, model: 'user-model' })
+    connectionModelLaunch({ providerId, surface, name: NAME, endpoint: ENDPOINT, apiKey: KEY, model: 'user-model' })
 
   function hooks(connectionModel?: (input: { providerId: string; surface: 'cui' | 'tui' }) => Promise<ReturnType<typeof connectionModelLaunch> | null>) {
     return createSessionpagePlatformHooks({
@@ -202,7 +206,7 @@ describe('platform hooks: the connection only where the session is not on platfo
 
 describe('model catalog probe sees the selected model-injection connection (what the composer lists and preselects)', () => {
   const connectionFor = (providerId: string) => async (id: string) =>
-    id === providerId ? { connectionId: 'conn-1', endpoint: ENDPOINT, apiKey: KEY, model: 'user-model' } : null
+    id === providerId ? { connectionId: 'conn-1', name: NAME, endpoint: ENDPOINT, apiKey: KEY, model: 'user-model' } : null
 
   it('no model-injection connection selected: nothing, so the probe reads as before', async () => {
     const build = createProbeConnectionCredentials(async () => null)
@@ -220,15 +224,22 @@ describe('model catalog probe sees the selected model-injection connection (what
     expect(models).toContain(ENDPOINT)
     expect(models).toContain('user-model')
     expect(models).not.toContain(KEY)
+    // pi 的界面显示提供方 id ⇒ id 就是连接的名字;启动模型钉在它下面。
+    expect(Object.keys(JSON.parse(models).providers)).toEqual([NAME])
+    expect(models).not.toMatch(/gugu-platform|Gugu platform quota/)
+    expect(JSON.parse(readFileSync(join(agentDir, 'settings.json'), 'utf8'))).toMatchObject({ defaultProvider: NAME, defaultModel: 'user-model' })
+    // 输入框里只叫模型名。
+    expect(credentials?.modelName).toBe('user-model')
   })
 
   it('opencode: the process config document carries the connection provider and model', async () => {
     const credentials = await createProbeConnectionCredentials(connectionFor('opencode'))('opencode', mkdtempSync(join(tmpdir(), 'gugu-2507-probe-')))
-    // 它自己的目录就报得出连接的模型(`gugu-platform/<模型>`) ⇒ 不替它说。
+    // 它自己的目录就报得出连接的模型(`api-key-connection/<模型>`) ⇒ 不替它说;只把名字改成模型名。
     expect(credentials?.sessionModel).toBeUndefined()
+    expect(credentials?.modelName).toBe('user-model')
     const document = JSON.parse(credentials!.env.OPENCODE_CONFIG_CONTENT!)
-    expect(document.provider['gugu-platform'].options).toEqual({ baseURL: ENDPOINT, apiKey: KEY })
-    expect(document.model).toBe('gugu-platform/user-model')
+    expect(document.provider['api-key-connection']).toMatchObject({ name: NAME, options: { baseURL: ENDPOINT, apiKey: KEY } })
+    expect(document.model).toBe('api-key-connection/user-model')
   })
 
   it('codebuddy: the settings env block, in the process env', async () => {
@@ -236,5 +247,6 @@ describe('model catalog probe sees the selected model-injection connection (what
     expect(credentials?.env).toMatchObject({ CODEBUDDY_BASE_URL: ENDPOINT, CODEBUDDY_API_KEY: KEY, CODEBUDDY_MODEL: 'user-model' })
     // 它的目录只报自家模型,而任何模型的请求都去连接地址 ⇒ 会话跑的模型由这里说,清单只留它。
     expect(credentials?.sessionModel).toEqual({ id: 'user-model', only: true })
+    expect(credentials?.modelName).toBe('user-model')
   })
 })

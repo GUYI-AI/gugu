@@ -15,10 +15,13 @@ import type { SessionpagePlatformModel } from './sessionpage-platform-model'
  *  · `env` = {} —— 那一格是平台中转的通用环境;宿主拿「它非空」判平台会话(`platformConfigured`、信封注入器);
  *  · `model` = null —— 「这份额度指定的平台模型」;连接的模型在 `modelCapability.model` 里。
  * ⚠️ 地址原样用:用户填的就是这家要的根(OpenAI 面带不带 `/v1` 由那台服务定),❌ 像平台中转那样补 `/v1`。
+ * 提供方叫**连接的名字**(`providerName`):地址和 key 都是用户的,这一家的界面上 ❌ 出现「Gugu 平台额度」/ `gugu-platform`。
  */
 export function connectionModelLaunch(input: {
   providerId: string
   surface: 'cui' | 'tui'
+  /** 连接的名字(用户的备注,或建连接时生成的「Pi 1」这类)。 */
+  name: string
   endpoint: string
   apiKey: string
   model: string
@@ -29,7 +32,7 @@ export function connectionModelLaunch(input: {
     throw new Error(`${input.providerId}: an API key connection injected as a model needs this agent's platform model writer`)
   }
   const platformProvider = { baseUrl: input.endpoint, apiKey: input.apiKey }
-  const modelCapability: SessionModelCapability = platformModel.declare({
+  const declared = platformModel.declare({
     explicitModel: input.model,
     requestedEffort: undefined,
     // 调试开关只给平台会话:一把连接点名的模型就是它的模型。
@@ -44,6 +47,7 @@ export function connectionModelLaunch(input: {
       throw new Error(`${input.providerId}: an API key connection carries no platform protocol environment`)
     },
   })
+  const modelCapability: SessionModelCapability = { ...declared, providerName: input.name }
   const viaConfigFile = providerDeliversModelViaConfigFile(input.providerId, input.surface === 'tui' ? 'tui' : 'acp')
   const materialized = viaConfigFile ? {} : materializeModelCapability(modelCapability)
   if (materialized.settingsOverride) {

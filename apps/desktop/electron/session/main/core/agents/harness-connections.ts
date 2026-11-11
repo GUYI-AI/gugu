@@ -363,8 +363,11 @@ async function resolveApiKeyConnection(
   };
 }
 
-/** 一把要经模型注入进进程的 API Key 连接:解密后的 key 与它的地址、模型。只在主进程、起会话那一刻有。 */
-export type ConnectionModel = { connectionId: string; endpoint: string; apiKey: string; model: string };
+/**
+ * 一把要经模型注入进进程的 API Key 连接:解密后的 key 与它的地址、模型。只在主进程、起会话那一刻有。
+ * `name` = 连接的名字(用户的备注,没写就是建连接时生成的那个):这一家自己的界面里,提供方就叫它。
+ */
+export type ConnectionModel = { connectionId: string; name: string; endpoint: string; apiKey: string; model: string };
 
 /**
  * 声明了 `delivery: 'model-injection'` 的家(#2507):会话此刻该跑的那把 API Key —— 默认连接是它就给,
@@ -383,7 +386,9 @@ export async function resolveConnectionModel(providerId: string): Promise<Connec
   if (!details.endpoint || !details.model) throw new Error('The connection has no API address or model');
   const secret = await registry.resolveSecret(namespace(providerId), id);
   if (!secret) throw new Error('The connection’s API key is unavailable');
-  return { connectionId: id, endpoint: details.endpoint, apiKey: secret, model: details.model };
+  // 名字在建连接时就落定了(`createHarnessConnection`);缺了(手改过的库)就叫这一家的名字,❌ 落回平台的叫法。
+  const name = account.meta?.displayName?.trim() || generic.name;
+  return { connectionId: id, name, endpoint: details.endpoint, apiKey: secret, model: details.model };
 }
 
 /**
