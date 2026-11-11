@@ -34,6 +34,9 @@ async function mountMessage() {
   harness = createReactHarness();
   await harness.render(<Harness />);
   await until('real conversation bubble is mounted', () => !!harness.container.querySelector('[data-user-card="source"]'));
+  // A hold is cancelled by any scroll. The list settles its scroll position in the frame the bubble mounts, and the
+  // browser reports that scroll on the next frame: a finger cannot land inside that frame, so the hold starts after it.
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   const bubble = harness.container.querySelector<HTMLElement>('[data-user-card="source"]')!;
   const text = bubble.querySelector<HTMLElement>('[data-conversation-text]')!;
   return { store, bubble, text };

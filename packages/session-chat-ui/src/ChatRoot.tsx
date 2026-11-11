@@ -1117,6 +1117,14 @@ export function ChatRoot(props: ChatRootProps) {
    * Computes the list of unit indices that should be rendered, using the
    * direction-aware asymmetric overscan and the current shadow scroll geometry.
    */
+  /** `next` plus the rows mounted now that still name a sized unit — a set that mounts without unmounting. */
+  function keepMounted(current: readonly number[], next: readonly number[]): number[] {
+    const n = units().length;
+    const all = new Set(next);
+    for (const i of current) if (i < n && virt.size(i) > 0) all.add(i);
+    return [...all].sort((a, b) => a - b);
+  }
+
   function computeVisible(): number[] {
     const st = shadowScrollTop;
     const vh = shadowViewHeight;
@@ -1780,11 +1788,32 @@ export function ChatRoot(props: ChatRootProps) {
         scheduler.request();
       }
     }
-    const nextVisible = computeVisible();
+    let nextVisible = computeVisible();
+    // @@@tail-settles-before-paint — a reader following the tail sees the bottom in the frame the rows mount.
+    // Rows mounting below measure themselves (heights kept from a previous visit, or estimates, fall short of what
+    // grew since), but the total and the tail projection above used the old sizes. Left to the next frame, this
+    // one draws the rows at their real offsets inside the old canvas, the view a few hundred px above the latest
+    // reply (reopening a conversation on a phone: one frame 448 px up, then a jump down). So when following the
+    // tail, the rows are mounted first without unmounting any (a row unmounted and mounted again in one flush
+    // loses its node, #2296), the total and the tail are settled, and only then the set is trimmed.
+    // An anchor needs none of this: rows above it are settled by the above-compensation, its own row does not move.
+    const followingTail = anchor().kind === 'tail' && performance.now() - lastUserScrollAt > SCROLL_SETTLE_MS;
     // Rows mounting here measure synchronously; settle their deltas before any
     // row position is computed from the new geometry.
-    setVisible(nextVisible);
+    setVisible(followingTail ? keepMounted(untrack(visible), nextVisible) : nextVisible);
     applyAboveCompensation();
+    if (followingTail) {
+      if (totalDirty && needsProject) {
+        totalDirty = false;
+        setTotalHeight(virt.total());
+        needsProject = false;
+        projectAnchor(anchor());
+        if (scrollEl) shadowScrollTop = scrollEl.scrollTop;
+        nextVisible = computeVisible();
+      }
+      setVisible(nextVisible);
+      applyAboveCompensation();
+    }
     const pt = padTop();
     const next: LayoutSnapshot = {
       start: nextVisible[0] ?? 0,
@@ -2159,9 +2188,18 @@ export function ChatRoot(props: ChatRootProps) {
     // scrollbar drift (e.g. when switching conversation tabs).
     onCleanup(() => snapshotInto(state()));
 
+    // @@@tail-settles-before-paint, resize side — ResizeObserver deliveries land after this frame's write phase
+    // and before its paint. The effect @@@project-on-every-layout-input re-projects on the next frame, so the frame
+    // in between is drawn short of the bottom by the change (the phone composer arriving under a conversation that
+    // is reopened: one frame 90 px short, then a jump). A reader following the tail is settled here, in this frame.
+    const settleTailNow = () => {
+      if (skipped || anchor().kind !== 'tail' || props.stickToBottom === false) return;
+      if (smoothScrolling || performance.now() - lastUserScrollAt <= SCROLL_SETTLE_MS) return;
+      writeScrollTop(maxScrollTop());
+    };
     // @@@view-height-at-mount (#6578) — read now: the RO's first delivery lands after rAF, i.e. after attach() below projected against the 600 seed.
     const syncViewHeight = () => { if (el.clientHeight > 0) setViewHeight(el.clientHeight); };
-    const roHeight = new ResizeObserver(syncViewHeight);
+    const roHeight = new ResizeObserver(() => { syncViewHeight(); settleTailNow(); });
     roHeight.observe(el);
     onCleanup(() => roHeight.disconnect());
     syncViewHeight();
@@ -2185,7 +2223,7 @@ export function ChatRoot(props: ChatRootProps) {
     // amounts for the same strip and the transcript stepped 8px on every
     // placement change.
     if (props.composer === 'slot' && composerSlotEl) {
-      const roSlot = new ResizeObserver(() => updateSlotPadBottom());
+      const roSlot = new ResizeObserver(() => { updateSlotPadBottom(); settleTailNow(); });
       roSlot.observe(composerSlotEl);
       onCleanup(() => roSlot.disconnect());
     }
