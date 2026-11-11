@@ -149,6 +149,8 @@ export {
   withEmdashPlatformSessionRestart,
   // 模型目录第二遍探测的占位凭据注入口(实现在宿主的 harness-catalog-probe-env.ts)。
   setProbePlatformEnvResolver,
+  // #2507 同一个探针看得见选中的模型注入 API Key 连接(实现在宿主的 harness-catalog-probe-connection.ts)。
+  setProbeConnectionModelResolver,
   // @@@4972 会话发现工具的「咕咕提供的模型」读取口 —— 宿主装的就是 composer 那条 IPC 调的
   // 同一个 sessionpagePlatformCatalog,于是 agent 查到的和用户看到的是同一次计算。
   setPlatformModelCatalogResolver,

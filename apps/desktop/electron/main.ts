@@ -102,6 +102,7 @@ import {
 } from '@shared/extensions/host-actions'
 import { givesAgentTools } from '@shared/extensions/app-places'
 import { buildProbePlatformCredentials } from './harness-catalog-probe-env'
+import { createProbeConnectionCredentials } from './harness-catalog-probe-connection'
 import { runWindowMenuCommand } from './window-menu-commands'
 import { isWindowMenuCommand } from '../shared/window-menu-commands'
 import { purgeStaleUpdaterCache, updaterCacheBaseDir } from './updaterCache'
@@ -4331,6 +4332,11 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
     // 模型目录的第二遍探测:没登录这家 harness 的用户也要看得到推理强度(owner 08-26:每家都得有档位)。
     // 占位凭据由宿主算(要用 engine-injection-contract 与 capability-bundle),注进会话页那侧的探针。
     emdashBridge.setProbePlatformEnvResolver(buildProbePlatformCredentials)
+    // #2507 选中走模型注入的 API Key 连接(pi / opencode / CodeBuddy)时,目录照那把连接读:输入框列出并默认选中它的模型。
+    emdashBridge.setProbeConnectionModelResolver(createProbeConnectionCredentials(async (providerId) => {
+      const { resolveConnectionModel } = await import('./session/main/core/agents/harness-connections')
+      return resolveConnectionModel(providerId)
+    }))
     return emdashBridge
   } catch (err) {
     console.error('[sessionpage] FAILED to load session page module — session page backend disabled:', err)

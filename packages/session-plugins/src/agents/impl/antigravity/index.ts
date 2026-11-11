@@ -28,6 +28,7 @@ import { antigravitySubscriptionBehavior } from './subscription';
 import { buildAntigravityHookConfig } from './hooks';
 import { icon } from './icon';
 import {
+  ANTIGRAVITY_GATEWAY_AUTH,
   antigravityApiKeyConnection,
   antigravityApiKeyConnectionBehavior,
   withGatewayAuthentication,
@@ -422,6 +423,8 @@ export const provider = registerPluginBehavior(plugin, {
     ...antigravityAcp,
     // 连接会话(带着网关上线开关起的进程)在开第一条会话前选网关;别的会话原样过(见 ./api-key-connection.ts)。
     connect: (io, toClient) => withGatewayAuthentication(antigravityAcp.connect(io, toClient)),
+    // 模型目录探针照同一份声明认证,否则连接会话的目录读成「需要登录」,输入框列不出连接的模型。
+    authenticateWhenAdvertised: ANTIGRAVITY_GATEWAY_AUTH,
     // 用户 skill 它读进了系统提示却不经 ACP 报 ⇒ 咕咕按它认的四处目录补进「/」面板(见 ./skills.ts)。
     discoverCommands: discoverAntigravitySkills,
     // `session/fork` 回 `{}` ⇒ 复制存档并改写 id,运行时再 `session/load`(见 ./fork.ts)。

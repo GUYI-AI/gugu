@@ -1,4 +1,4 @@
-import type { AcpAgentApi, ApiKeyConnectionDescriptor, IApiKeyConnectionBehavior } from '@gugu/session-core/agents/plugins';
+import type { AcpAgentApi, ApiKeyConnectionDescriptor, IAcpBehavior, IApiKeyConnectionBehavior } from '@gugu/session-core/agents/plugins';
 
 /**
  * Antigravity(#2507):`agy_acp_server` 的「自定义 AI API 网关」认证方式 —— **按进程**选、**从不落盘**。
@@ -18,6 +18,12 @@ import type { AcpAgentApi, ApiKeyConnectionDescriptor, IApiKeyConnectionBehavior
  * 它的占位值 `dummy_api_key`,真 key 只在 Bearer 里。
  */
 export const ANTIGRAVITY_GATEWAY_METHOD = 'gateway';
+
+/** 「报了才认」的那份声明(`acp.authenticateWhenAdvertised`):会话的 `connect` 与模型目录探针读同一份。 */
+export const ANTIGRAVITY_GATEWAY_AUTH = {
+  methodId: ANTIGRAVITY_GATEWAY_METHOD,
+  clientAuthMeta: { gateway: true },
+} as const satisfies NonNullable<IAcpBehavior['authenticateWhenAdvertised']>;
 
 export const antigravityApiKeyConnection = {
   kind: 'supported',
@@ -76,7 +82,7 @@ export function withGatewayAuthentication(api: AcpAgentApi): AcpAgentApi {
     signedIn ??= (async () => {
       const authenticate = (api as AcpAgentApi & Authenticating).authenticate;
       if (!authenticate) throw new Error('Antigravity advertised the gateway auth method but this ACP connection cannot authenticate');
-      return authenticate.call(api, { methodId: ANTIGRAVITY_GATEWAY_METHOD });
+      return authenticate.call(api, { methodId: ANTIGRAVITY_GATEWAY_AUTH.methodId });
     })();
     return signedIn;
   };
@@ -89,10 +95,10 @@ export function withGatewayAuthentication(api: AcpAgentApi): AcpAgentApi {
             ...params,
             clientCapabilities: {
               ...capabilities,
-              auth: { ...capabilities?.auth, _meta: { ...capabilities?.auth?._meta, gateway: true } },
+              auth: { ...capabilities?.auth, _meta: { ...capabilities?.auth?._meta, ...ANTIGRAVITY_GATEWAY_AUTH.clientAuthMeta } },
             },
           });
-          advertised = (response.authMethods ?? []).some((method) => method.id === ANTIGRAVITY_GATEWAY_METHOD);
+          advertised = (response.authMethods ?? []).some((method) => method.id === ANTIGRAVITY_GATEWAY_AUTH.methodId);
           return response;
         };
       }
