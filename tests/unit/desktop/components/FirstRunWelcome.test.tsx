@@ -1,15 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness } from '../../../support/testHarness'
-import { BUILT_IN_ASSISTANT_RULES } from '../../../../packages/core/src/shared/assistantProductRules/builtIn'
 
 const { FirstRunWelcome } = await import('../../../../apps/desktop/src/components/firstRun/FirstRunWelcome')
 const { AssistantIntro } = await import('../../../../apps/desktop/src/components/assistant/AssistantIntro')
 const { i18n } = await import('../../../../apps/desktop/src/i18n/runtime')
 
 // #1931 F1 The first run's introduction is the host's page; the words about the assistant come from its rules (`intro`).
-// With the rules' words it renders exactly what the assistant's own introduction rendered before (the baseline here is
-// that component, still used by the assistant's setup), for both languages, both screens and both layouts.
+// Given the words the assistant's own introduction shows (that component, still used by its setup, is the baseline here),
+// it renders exactly what that component renders, for both languages, both screens and both layouts.
 const cleanup: (() => void)[] = []
 afterEach(() => { while (cleanup.length) cleanup.pop()!() })
 
@@ -31,7 +30,8 @@ describe('the first run introduction', () => {
     it(`${locale} ${device}: with the rules' words it is the page it was, element for element`, async () => {
       await i18n.changeLanguage(locale)
       setDevice(device)
-      const copy = BUILT_IN_ASSISTANT_RULES.intro![locale]!
+      const words = i18n.getFixedT(locale, 'assistant')
+      const copy = { title: words('intro.title'), summary: 'One sentence about the assistant.', desktopBody: words('intro.desktop.guguBody'), phoneBody: words('intro.phone.guguBody') }
       const before = await html(createNode(AssistantIntro, actions))
       const after = await html(createNode(FirstRunWelcome, { ...actions, copy, summaryOnly: false }))
       expect(after.innerHTML).toBe(before.innerHTML)

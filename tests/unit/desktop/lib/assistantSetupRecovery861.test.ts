@@ -5,8 +5,8 @@ import type { AgentProvision, AgentProvisionOperation } from '@gugu/core/shared/
 const db = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn(), owner: 'owner', readError: false }))
 // The rules main answers the window with (#1931): the built-in copy here.
 vi.mock('../../../../apps/desktop/src/lib/assistantSetupRules', async () => {
-  const { BUILT_IN_ASSISTANT_RULES } = await import('@gugu/core/shared/assistantProductRules/builtIn')
-  return { assistantSetupRules: async () => BUILT_IN_ASSISTANT_RULES }
+  const { NEUTRAL_ASSISTANT_RULES } = await import('../assistantRules/neutralRules')
+  return { assistantSetupRules: async () => NEUTRAL_ASSISTANT_RULES, assistantIntroCopy: async () => NEUTRAL_ASSISTANT_RULES.intro ?? null }
 })
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {} }))
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ identityDb: db, getCurrentAuthUserId: async () => db.owner }))

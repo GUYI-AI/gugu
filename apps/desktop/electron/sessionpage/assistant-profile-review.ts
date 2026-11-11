@@ -18,7 +18,7 @@ export async function prepareAssistantProfileReview(admission: PanelPreparedAdmi
     const lines = text.split(/\r?\n/).filter(line => /\]\((?:\.\/)?owner-profile\.md\)/.test(line))
     if (lines.length === 1) current = lines[0]!.match(/\bprofile_rules:\s*(\d+)\b/)?.[1]
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') unavailable = true }
-  const { rules } = await assistantRules().current()
+  const { rules } = await assistantRules().available()
   if (!unavailable && current === String(rules.defaults.profileRulesVersion)) return admission
   const review = assistantProfileReviewText(unavailable, rules)
   return { ...admission, beforeText: [admission.beforeText, review].filter(Boolean).join('\n\n') }

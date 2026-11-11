@@ -7,7 +7,7 @@ import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { insideRoot } from './paths'
 import { refreshAssistantContext, personalAssistantContext } from '../../apps/desktop/electron/sessionpage/assistant-context'
 import type { Materialization } from '../../apps/desktop/electron/capability-bundle'
@@ -16,6 +16,7 @@ import { SESSION_TOOL_DEFS } from '../../apps/desktop/electron/mcp/gugu-session-
 import { LIBRARY_TOOL_DEFS } from '../../apps/desktop/electron/mcp/gugu-library-tool'
 import { PROJECT_TOOL_DEFS } from '../../apps/desktop/electron/mcp/gugu-project-tool'
 import { assistantHomePaths, assistantRecoveryContext } from '../../packages/core/src/shared/assistantPolicy'
+import { readAssistantProductRules } from '../../apps/desktop/electron/assistant-product-rules'
 import { assistantCases, type AssistantCase } from './cases'
 import { fixtureArtifacts } from './artifacts'
 import { fixtureInputs } from './inputs'
@@ -33,6 +34,11 @@ const configPath = argument('model-config')
 // Explicit private handoff only; never print the credential-bearing configuration.
 const modelConfig = configPath ? z.object({ model: z.string().min(1).optional(), expiresAt: z.string().datetime().optional(), env: z.record(z.string(), z.string()).optional() })
   .parse(JSON.parse(readFileSync(resolve(configPath), 'utf8'))) : {}
+// #1931 The assistant's product rules are the assistant App's, not this repository's: pass the App's rules folder (its
+// `contributes.assistantRules`), read and validated as the desktop reads an installed App's.
+const rulesArg = argument('rules')
+if (!rulesArg) throw new Error('Pass --rules=/path/to/the/assistant/App/rules (the folder its manifest names in contributes.assistantRules)')
+const rules = await readAssistantProductRules(dirname(resolve(rulesArg)), basename(resolve(rulesArg)))
 
 
 async function run(test: AssistantCase) {
@@ -50,7 +56,7 @@ async function run(test: AssistantCase) {
     await mkdir(resolve(path, '..'), { recursive: true })
     await writeFile(path, content)
   }
-  await refreshAssistantContext(cwd, root, 'computer', root)
+  await refreshAssistantContext(cwd, root, 'computer', root, 'claude', rules)
   if (argument('handbook')) {
     await writeFile(join(cwd, '.gugu-assistant-reference.md'), await readFile(resolve(argument('handbook')!), 'utf8'))
   }
@@ -199,7 +205,7 @@ async function run(test: AssistantCase) {
   }
   const materialization = argument('materialization')
     ? (buildContext as (...args: unknown[]) => Materialization)(base, 'computer', { index: fixtureIndex, guguHome: root,
-      recoveryContext: process.argv.includes('--without-recovery') ? undefined : assistantRecoveryContext(paths.memoryDir),
+      recoveryContext: process.argv.includes('--without-recovery') ? undefined : assistantRecoveryContext(paths.memoryDir, rules),
       workingContextPath: join(paths.memoryDir, 'working-context.md') })
     : buildContext(base)
   const nativePlugins = ((materialization.sessionNewPatch!.meta!.claudeCode as { options: { plugins?: Array<{ type: 'local'; path: string }> } }).options.plugins ?? [])
@@ -223,7 +229,7 @@ async function run(test: AssistantCase) {
       persistSession: Boolean(test.compact), env, abortController: controller, plugins: nativePlugins,
       ...(argument('materialization') ? {} : { hooks: { SessionStart: [ { hooks: [async () => ({ hookSpecificOutput: { hookEventName: 'SessionStart',
         additionalContext: fixtureIndex } })] },
-        ...(process.argv.includes('--without-recovery') ? [] : [{ matcher: 'resume|compact|clear|fork', hooks: [async () => ({ hookSpecificOutput: { hookEventName: 'SessionStart' as const, additionalContext: assistantRecoveryContext(paths.memoryDir) } })] }]) ] } }),
+        ...(process.argv.includes('--without-recovery') ? [] : [{ matcher: 'resume|compact|clear|fork', hooks: [async () => ({ hookSpecificOutput: { hookEventName: 'SessionStart' as const, additionalContext: assistantRecoveryContext(paths.memoryDir, rules) } })] }]) ] } }),
       canUseTool: async (name, input) => {
         if (name.startsWith('mcp__gugu__')) return { behavior: 'allow', updatedInput: input }
         if (['Read', 'Write'].includes(name) && typeof input.file_path === 'string' && inside(input.file_path)) return { behavior: 'allow', updatedInput: input }

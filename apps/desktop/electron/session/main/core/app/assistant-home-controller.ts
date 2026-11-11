@@ -10,7 +10,7 @@ import { createRPCController } from '@shared/lib/ipc/rpc'
 import { currentAccountAccessToken } from '../extensions/account-token'
 import { createLogger } from '../../../../lib/logger'
 import { prepareLocalAssistantHome, wipeLocalAssistantHome } from '../../../../assistant-home-prepare'
-import { assistantRules } from '../../../../assistant-rules-resolver'
+import { refreshedAssistantRules } from '../../../../assistant-rules-resolver'
 import { ensureAssistantApp } from '../../../../assistant-rules-root'
 import { createAssistantServerPreparation, type ServerPreparationRecord } from '../../../../assistant-server-preparation'
 import {
@@ -130,8 +130,8 @@ export const assistantHomeController = createRPCController({
     await validate(parsed, true)
     // A setup of the assistant on this server starts here: from now on it needs the assistant App (#1931).
     void ensureAssistantApp('setup')
-    // The default model is the product's (#1931): setup looks at the assistant App again.
-    const defaultModel = platformModelsEnabled() ? (await assistantRules().refresh()).rules.defaults.defaultModel : null
+    // The default model is the product's (#1931): setup looks at the assistant App again, and waits for its rules.
+    const defaultModel = platformModelsEnabled() ? (await refreshedAssistantRules()).rules.defaults.defaultModel : null
     return { version: 1, deviceId: parsed.deviceId, modelSource: platformModelsEnabled() ? 'platform' : 'target', defaultModel }
   }),
   start: (input: z.infer<typeof start>) => reply(() => preparation().start(start.parse(input))),

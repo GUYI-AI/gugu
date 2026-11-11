@@ -1,15 +1,16 @@
-// A fixture assistant App whose rules folder is generated from a set of rules (by default the built-in ones: no copy of the
-// product text is kept in the repo), installed into a real extensions service in a temporary folder, and a resolver over it.
+// A fixture assistant App whose rules folder is generated from a set of rules (by default the neutral test rules: the
+// product's own words are the assistant App's and not in this repository), installed into a real extensions service in a
+// temporary folder, and a resolver over it.
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { BUILT_IN_ASSISTANT_RULES } from '@gugu/core/shared/assistantProductRules/builtIn'
 import { assistantRulesFiles, type AssistantProductRules } from '@gugu/core/shared/assistantRulesFormat'
 import { GUGU_APPS_REPO, type MarketCodeSource } from '@shared/extensions/market'
 import type { ExtensionOrigin } from '@shared/extensions/upgrade'
 import { assistantRulesLastGoodStore } from '../../../../apps/desktop/electron/assistant-rules-last-good'
-import { createAssistantRulesResolver, type AssistantRulesResolver } from '../../../../apps/desktop/electron/assistant-rules-resolver'
+import { createAssistantRulesResolver, type AssistantRulesResolver, type ResolvedAssistantRules } from '../../../../apps/desktop/electron/assistant-rules-resolver'
 import { installedAssistantRulesProvider } from '../../../../apps/desktop/electron/assistant-rules-trust'
 import { ExtensionsService } from '../../../../apps/desktop/electron/session/main/core/extensions/extensions-service'
+import { NEUTRAL_ASSISTANT_RULES } from './neutralRules'
 
 export const OFFICIAL_SOURCE = (version: string): MarketCodeSource => ({ repo: GUGU_APPS_REPO, path: `releases/gugu-assistant/${version}`, commit: 'a'.repeat(40) })
 
@@ -27,7 +28,7 @@ export async function fixtureBundle(dir: string, app: FixtureApp = {}): Promise<
     platforms: ['desktop'], entry: 'index.html', contributes: { assistantRules: 'rules' },
   }))
   await writeFile(join(dir, 'index.html'), '<!doctype html><title>Assistant</title>')
-  for (const [name, content] of Object.entries(app.files ?? assistantRulesFiles(BUILT_IN_ASSISTANT_RULES))) await writeFile(join(dir, 'rules', name), content)
+  for (const [name, content] of Object.entries(app.files ?? assistantRulesFiles(NEUTRAL_ASSISTANT_RULES))) await writeFile(join(dir, 'rules', name), content)
   return dir
 }
 
@@ -38,7 +39,7 @@ export function installBundle(service: ExtensionsService, bundle: string, origin
 
 /** The rules with every text, label and default changed, so a render from them differs wherever the rules reach it. */
 export function markedRules(marker: string, rulesVersion = '9.9.9'): AssistantProductRules {
-  const rules = BUILT_IN_ASSISTANT_RULES
+  const rules = NEUTRAL_ASSISTANT_RULES
   return {
     format: rules.format,
     rulesVersion,
@@ -54,6 +55,12 @@ export interface FixtureHost {
   warnings: Array<{ message: string; detail: Record<string, unknown> }>
   /** How many times the resolver looked at the installed App. */
   providerReads(): number
+}
+
+/** A resolver that always answers with these rules (as from an App): for tests of what a read point does with them. */
+export function fixedAssistantRules(rules: AssistantProductRules = NEUTRAL_ASSISTANT_RULES): AssistantRulesResolver {
+  const answer: ResolvedAssistantRules = Object.freeze({ source: 'app', rules, appVersion: '0.0.1' })
+  return { refresh: async () => answer, current: async () => answer, available: async () => answer, subscribe: () => () => {} }
 }
 
 /** A resolver over a real extensions service rooted in `root`, keeping its last good copy in `lastGoodDir`. */

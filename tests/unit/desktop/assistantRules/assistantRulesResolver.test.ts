@@ -2,11 +2,11 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { BUILT_IN_ASSISTANT_RULES } from '@gugu/core/shared/assistantProductRules/builtIn'
+import { NEUTRAL_ASSISTANT_RULES } from './neutralRules'
 import { assistantRulesFiles } from '@gugu/core/shared/assistantRulesFormat'
 import { GUGU_APPS_REPO_FORMER_NAME } from '@shared/extensions/market'
 import { assistantRulesLastGoodStore } from '../../../../apps/desktop/electron/assistant-rules-last-good'
-import { assistantRules, createAssistantRulesResolver, installAssistantRulesResolver } from '../../../../apps/desktop/electron/assistant-rules-resolver'
+import { assistantRules, createAssistantRulesResolver, installAssistantRulesResolver, NO_ASSISTANT_RULES } from '../../../../apps/desktop/electron/assistant-rules-resolver'
 import { assistantRulesDistrust, type AssistantRulesProvider } from '../../../../apps/desktop/electron/assistant-rules-trust'
 import { fixtureBundle, fixtureHost, installBundle, markedRules, OFFICIAL_SOURCE } from './fixtureApp'
 
@@ -30,7 +30,7 @@ describe('whom the host believes', () => {
     ] as const) {
       const host = fixtureHost(join(root, origin + (source?.repo ?? 'none')), lastGoodDir())
       installBundle(host.service, await bundle(`${origin}-${source?.repo ?? 'none'}`), origin, source)
-      expect(await host.resolver.refresh()).toMatchObject({ source: 'built-in' })
+      expect(await host.resolver.refresh()).toMatchObject({ source: 'none', rules: null })
       await host.resolver.refresh()
       expect(host.warnings).toHaveLength(1)
       expect(host.warnings[0]!.detail.reason).toMatch(reason)
@@ -40,7 +40,7 @@ describe('whom the host believes', () => {
   it('ignores an App with another id even from the official source, and a switched-on fork', async () => {
     const host = fixtureHost(root, lastGoodDir())
     installBundle(host.service, await bundle('other', { id: 'not-the-assistant' }), 'market', OFFICIAL_SOURCE('0.0.1'))
-    expect(await host.resolver.refresh()).toMatchObject({ source: 'built-in' })
+    expect(await host.resolver.refresh()).toMatchObject({ source: 'none', rules: null })
     const provider = (overrides: Partial<AssistantRulesProvider>): AssistantRulesProvider => ({
       manifest: { id: 'gugu-assistant', version: '0.0.1', contributes: { assistantRules: 'rules' } as never }, rootDir: root, manifestDigest: 'x',
       origin: 'market', marketSource: OFFICIAL_SOURCE('0.0.1'), activeVariant: 'upstream', enabled: true, ...overrides,
@@ -52,10 +52,10 @@ describe('whom the host believes', () => {
     expect(await assistantRulesDistrust(provider({}), [async () => 'the signature does not verify'])).toBe('the signature does not verify')
   })
 
-  it('takes the trusted App\'s rules over the kept copy and the built-in copy, from either name of the market repository', async () => {
+  it('takes the trusted App\'s rules over the kept copy, from either name of the market repository', async () => {
     for (const repo of [OFFICIAL_SOURCE('0.0.1').repo, GUGU_APPS_REPO_FORMER_NAME]) {
       const host = fixtureHost(join(root, repo), join(root, repo, 'last-good'))
-      await assistantRulesLastGoodStore(() => join(root, repo, 'last-good')).write({ rules: BUILT_IN_ASSISTANT_RULES, appVersion: '0.0.0' })
+      await assistantRulesLastGoodStore(() => join(root, repo, 'last-good')).write({ rules: NEUTRAL_ASSISTANT_RULES, appVersion: '0.0.0' })
       installBundle(host.service, await bundle(repo, { version: '2.0.0', files: assistantRulesFiles(MARKED) }), 'market', { ...OFFICIAL_SOURCE('2.0.0'), repo })
       const resolved = await host.resolver.refresh()
       expect(resolved).toMatchObject({ source: 'app', appVersion: '2.0.0' })
@@ -74,7 +74,7 @@ describe('the last good copy', () => {
     for (let turn = 0; turn < 3; turn++) {
       const resolved = await host.resolver.refresh()
       expect(resolved).toMatchObject({ source: 'last-good', appVersion: '0.0.1' })
-      expect(resolved.rules).toEqual(BUILT_IN_ASSISTANT_RULES)
+      expect(resolved.rules).toEqual(NEUTRAL_ASSISTANT_RULES)
     }
     expect(host.warnings.map(warning => warning.message)).toEqual(['the assistant App\'s rules are not valid; they are ignored'])
     expect(String(host.warnings[0]!.detail.error)).toMatch(/recovery\.md: has a carriage return/)
@@ -98,13 +98,13 @@ describe('the last good copy', () => {
     expect(restarted.rules).toEqual(MARKED)
   })
 
-  it('is not used when it no longer validates: logged once, then the built-in copy', async () => {
+  it('is not used when it no longer validates: logged once, then none', async () => {
     const store = assistantRulesLastGoodStore(lastGoodDir)
     await store.write({ rules: MARKED, appVersion: '2.0.0' })
     const file = join(lastGoodDir(), '2.0.0', 'first-task.md')
     await writeFile(file, `${await readFile(file, 'utf8')}{{memoryIndex}}\n`)
     const host = fixtureHost(root, lastGoodDir())
-    expect(await host.resolver.refresh()).toMatchObject({ source: 'built-in' })
+    expect(await host.resolver.refresh()).toMatchObject({ source: 'none', rules: null })
     await host.resolver.refresh()
     expect(host.warnings).toHaveLength(1)
     expect(String(host.warnings[0]!.detail.error)).toMatch(/first-task\.md/)
@@ -112,7 +112,7 @@ describe('the last good copy', () => {
 
   it('keeps one folder, named by the rules version', async () => {
     const store = assistantRulesLastGoodStore(lastGoodDir)
-    await store.write({ rules: BUILT_IN_ASSISTANT_RULES, appVersion: '0.0.1' })
+    await store.write({ rules: NEUTRAL_ASSISTANT_RULES, appVersion: '0.0.1' })
     await store.write({ rules: MARKED, appVersion: '2.0.0' })
     const { readdir } = await import('node:fs/promises')
     expect((await readdir(lastGoodDir())).sort()).toEqual(['2.0.0', 'last-good.json'])
@@ -152,7 +152,8 @@ describe('a new version swaps in between renders, never inside one', () => {
     installBundle(host.service, await bundle('v2', { version: '2.0.0', files: assistantRulesFiles(MARKED) }), 'market', OFFICIAL_SOURCE('2.0.0'))
     const after = await host.resolver.refresh()
     expect(after).toMatchObject({ source: 'app', appVersion: '2.0.0' })
-    expect(before.rules).toEqual(BUILT_IN_ASSISTANT_RULES)
+    expect(before.rules).toEqual(NEUTRAL_ASSISTANT_RULES)
+    if (!before.rules) throw new Error('no rules')
     expect(Object.isFrozen(before) && Object.isFrozen(before.rules) && Object.isFrozen(before.rules.texts)).toBe(true)
     expect(await host.resolver.current()).toBe(after)
   })
@@ -173,9 +174,52 @@ describe('the installed record keeps where in the market an App\'s code was', ()
   })
 })
 
+describe('no rules anywhere (#1931: the open repository carries no words of its own)', () => {
+  it('answers none, and a wait for rules ends at the refresh that finds them — once the App is in', async () => {
+    const host = fixtureHost(root, lastGoodDir())
+    expect(await host.resolver.refresh()).toBe(NO_ASSISTANT_RULES)
+    const changes: string[] = []
+    host.resolver.subscribe(answer => changes.push(answer.source))
+    let arrived: unknown = null
+    const waiting = host.resolver.available().then(answer => { arrived = answer; return answer })
+    await host.resolver.refresh()
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(arrived).toBeNull()
+    installBundle(host.service, await bundle('v1'), 'market', OFFICIAL_SOURCE('0.0.1'))
+    await host.resolver.refresh()
+    expect(await waiting).toMatchObject({ source: 'app', appVersion: '0.0.1' })
+    expect((await waiting).rules).toEqual(NEUTRAL_ASSISTANT_RULES)
+    expect(changes).toEqual(['app'])
+  })
+
+  it('starts the kept copy from the one packaged with the release, which an installed App then overrides', async () => {
+    const seed = async () => ({ rules: MARKED, appVersion: '2.0.0' })
+    const resolver = (service = fixtureHost(join(root, 'h'), lastGoodDir()).service) => ({ service, resolver: createAssistantRulesResolver({
+      provider: async () => (await import('../../../../apps/desktop/electron/assistant-rules-trust')).installedAssistantRulesProvider(service),
+      lastGood: assistantRulesLastGoodStore(lastGoodDir), seed, warn: () => {},
+    }) })
+    const first = resolver()
+    expect(await first.resolver.refresh()).toMatchObject({ source: 'last-good', appVersion: '2.0.0' })
+    // Kept: a later start finds it on disk even without the packaged copy.
+    expect(await assistantRulesLastGoodStore(lastGoodDir).read()).toEqual({ rules: MARKED, appVersion: '2.0.0' })
+    installBundle(first.service, await bundle('v3', { version: '3.0.0' }), 'market', OFFICIAL_SOURCE('3.0.0'))
+    expect(await resolver(first.service).resolver.refresh()).toMatchObject({ source: 'app', appVersion: '3.0.0' })
+  })
+
+  it('a packaged copy that does not validate is said once and not used', async () => {
+    const warnings: string[] = []
+    const resolver = createAssistantRulesResolver({ provider: () => null, lastGood: assistantRulesLastGoodStore(lastGoodDir),
+      seed: async () => { throw new Error('rules.json: is not JSON') }, warn: message => warnings.push(message) })
+    expect(await resolver.refresh()).toBe(NO_ASSISTANT_RULES)
+    expect(await resolver.refresh()).toBe(NO_ASSISTANT_RULES)
+    expect(warnings).toEqual(['the assistant rules packaged with this release are not valid; they are not used'])
+  })
+})
+
 describe('the process resolver', () => {
-  it('is the built-in copy until main installs one', async () => {
-    expect(await assistantRules().current()).toMatchObject({ source: 'built-in', appVersion: null })
+  it('has no rules until main installs one, and a wait on it is an error, never a hang', async () => {
+    expect(await assistantRules().current()).toBe(NO_ASSISTANT_RULES)
+    await expect(assistantRules().available()).rejects.toThrow(/no assistant rules resolver/)
     const resolver = createAssistantRulesResolver({ provider: () => null, lastGood: assistantRulesLastGoodStore(lastGoodDir), warn: () => {} })
     installAssistantRulesResolver(resolver)
     expect(assistantRules()).toBe(resolver)
