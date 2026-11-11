@@ -1,5 +1,6 @@
 import type { AppAssistantStatus } from '../../session/shared/extensions/assistant-binding'
 import type { PhoneAssistantScreen, PhoneSurfaceSection } from '../../session/shared/extensions/phone-binding'
+import type { PushedWorkLedger } from '../../session/shared/extensions/work-binding'
 
 /**
  * The phone's assistant layer as the App host sees it (API 48): which App page it shows now and in which section, what the
@@ -9,12 +10,21 @@ import type { PhoneAssistantScreen, PhoneSurfaceSection } from '../../session/sh
  * Nothing here is an App's to write.
  */
 export type PhoneLayerShown = { ownerId: string; extensionId: string; tabId: string; section: PhoneSurfaceSection }
-export type PhoneLayerActions = { move(section: PhoneSurfaceSection): void; open(screen: PhoneAssistantScreen): void }
+export type PhoneLayerActions = {
+  move(section: PhoneSurfaceSection): void
+  open(screen: PhoneAssistantScreen): void
+  /** The task's own conversation, drawn by the layer over the 任务 section (its back closes it); null closes it. */
+  openWork(work: { workId: string; sessionId: string } | null): void
+}
 export type PhoneLayerStatus = { ownerId: string; status: AppAssistantStatus }
 
 let shown: PhoneLayerShown | null = null
 let actions: PhoneLayerActions | null = null
 let status: PhoneLayerStatus | null = null
+/** The assistant's work list as the layer's own 任务 list reads it (API 46), and the task whose conversation it draws now. */
+let work: PushedWorkLedger | null = null
+let openWork: { ownerId: string; workId: string; sessionId: string } | null = null
+const workListeners = new Set<() => void>()
 const shownListeners = new Set<() => void>()
 const statusListeners = new Set<() => void>()
 
@@ -48,6 +58,18 @@ export const phoneAssistantLayer = {
     statusListeners.add(listener)
     return () => { statusListeners.delete(listener) }
   },
+  work: (): PushedWorkLedger | null => work,
+  openWork: (): { ownerId: string; workId: string; sessionId: string } | null => openWork,
+  publishWork(next: PushedWorkLedger | null, open: { ownerId: string; workId: string; sessionId: string } | null): void {
+    if (same([work, openWork], [next, open])) return
+    work = next
+    openWork = open
+    for (const listener of workListeners) listener()
+  },
+  onWork(listener: () => void): () => void {
+    workListeners.add(listener)
+    return () => { workListeners.delete(listener) }
+  },
 }
 
 /** Tests only. */
@@ -55,6 +77,9 @@ export function resetPhoneAssistantLayerForTest(): void {
   shown = null
   actions = null
   status = null
+  work = null
+  openWork = null
   shownListeners.clear()
   statusListeners.clear()
+  workListeners.clear()
 }

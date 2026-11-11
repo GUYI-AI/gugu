@@ -217,7 +217,7 @@ export async function setBindingSurfacePanel(
 ): Promise<AppBindingSurface> {
   const { name, collapsed } = argsOf(z.strictObject({ name: z.string(), collapsed: z.boolean() }), input);
   const surface = await appBindingSurface(extensionId, page, { name });
-  if (surface.state !== 'bound') return surface;
+  if (surface.state !== 'bound' || surface.layout !== 'side-panel') return surface;
   if (surface.panel.collapsed !== collapsed) await ask(collapsed);
   return { name, state: 'bound', layout: 'side-panel', panel: { collapsed, inset: { ...CONVERSATION_SURFACE_PANEL_INSET } } };
 }

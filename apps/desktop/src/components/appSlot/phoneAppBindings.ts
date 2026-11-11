@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { AssistantPanelCommit, AssistantPanelDomain, AssistantPanelItem, AssistantPanelReceipt, AssistantPanelSnapshot } from '@gugu/core/cloud/assistantPanel'
+import type { AssistantPanelClient, AssistantPanelCommit, AssistantPanelDomain, AssistantPanelItem, AssistantPanelReceipt, AssistantPanelSnapshot } from '@gugu/core/cloud/assistantPanel'
 import { splitInstructions } from '@gugu/core/shared/assistantInstructions'
 import {
   READABLE_RESOURCE_DOMAINS, WRITABLE_RESOURCE_DOMAINS, appResourceOf, resourceChangeSchema, resourceDomainOf, resourceKeyOf,
@@ -18,6 +18,9 @@ import {
   BINDING_ACTION_CAPABILITY, boundEntryOf, boundPathOf,
   type AppBindingSurface, type AppBoundList, type AppBoundRead, type AppUnreadBinding, type ConversationBindingAction,
 } from '../../session/shared/extensions/unread-binding'
+import { scheduleControlSchema, type AppBoundSchedules, type AppScheduleReceipt } from '../../session/shared/extensions/bound-schedules'
+import { commitPanelRequest, listPanelSchedules, panelSchedulesPrint, planPanelChange, type PanelHome, type PanelOutcome, type PanelRequest } from '../../session/shared/extensions/bound-schedules-panel'
+import type { AppBindingWork, AppWorkItem, PushedWorkLedger } from '../../session/shared/extensions/work-binding'
 import type { PhoneLayerActions, PhoneLayerShown, PhoneLayerStatus } from './phoneAssistantLayer'
 
 /**
@@ -42,7 +45,7 @@ export interface PhoneBindingPorts {
   /** The App as installed on this phone now; null: not installed. */
   installed(extensionId: string): PhoneInstalledApp | null
   /** The account's own assistant and its private chat, by the provision marker; null: it has none ready. `failed`: unknown. */
-  personalAssistant(token: string, ownerId: string): Promise<{ agentId: string; chatId: string } | null>
+  personalAssistant(token: string, ownerId: string): Promise<{ agentId: string; chatId: string; deviceId: string } | null>
   /** What the chat is and who is in it now. `failed`: unknown. */
   conversation(token: string, chatId: string): Promise<{ kind: string | null; members: string[] }>
   files: {
@@ -53,6 +56,8 @@ export interface PhoneBindingPorts {
   /** Words into that chat's composer (the layer's conversation comes up); nothing is sent. */
   draft(chatId: string, text: string): Promise<void>
   panel: {
+    /** The assistant panel's client as the person (its schedules are read and changed through it, #1928). */
+    client: AssistantPanelClient
     snapshot(ownerId: string, agentId: string): Promise<AssistantPanelSnapshot>
     resource(ownerId: string, agentId: string, domain: AssistantPanelDomain, key: string): Promise<AssistantPanelItem | null>
     commit(ownerId: string, agentId: string, change: AssistantPanelCommit): Promise<AssistantPanelReceipt>
@@ -68,6 +73,9 @@ export interface PhoneBindingPorts {
     actions(): PhoneLayerActions | null
     status(): PhoneLayerStatus | null
     onStatus(listener: () => void): () => void
+    work(): PushedWorkLedger | null
+    openWork(): { ownerId: string; workId: string; sessionId: string } | null
+    onWork(listener: () => void): () => void
   }
   randomUUID(): string
   sha256(bytes: Uint8Array): Promise<string>
@@ -106,7 +114,7 @@ function stampOf(app: PhoneInstalledApp | null): string {
   return app ? JSON.stringify([app.manifest.id, app.manifest.version, app.manifestDigest, app.origin ?? null, app.marketSource?.repo ?? null, app.enabled, app.activeVariant]) : 'none'
 }
 
-type Bound = { ownerId: string; token: string; chatId: string; agentId: string; handle: string; recheck(): void }
+type Bound = { ownerId: string; token: string; chatId: string; agentId: string; deviceId: string; handle: string; recheck(): void }
 
 export function createPhoneBindings(ports: PhoneBindingPorts) {
   const handles = new Map<string, string>()
@@ -156,7 +164,7 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     if (conversation.kind !== 'dm' || members.size !== 2 || !members.has(ownerId) || !members.has(assistant.agentId)) {
       throw coded('denied', 'The bound conversation is not your private chat with your own assistant')
     }
-    return { ownerId, token, chatId: assistant.chatId, agentId: assistant.agentId, handle: handleOf(JSON.stringify([ownerId, stamp, assistant.chatId])), recheck }
+    return { ownerId, token, chatId: assistant.chatId, agentId: assistant.agentId, deviceId: assistant.deviceId, handle: handleOf(JSON.stringify([ownerId, stamp, assistant.chatId])), recheck }
   }
   /** As `bound`, a check that could not be made said apart (`unavailable`) from a refusal (thrown). */
   const boundOrUnavailable = (extensionId: string, name: string, actions: readonly ConversationBindingAction[], domain?: string) =>
@@ -455,6 +463,149 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     for (const [key, held] of [...watches]) if (key.startsWith(`${pageId}/`)) held.stop()
   }
 
+  // ── 43: the assistant's schedules (#1928), through its panel — on a phone it always lives elsewhere ───────────────
+  const homeOf = (at: Bound): PanelHome => ({ ownerId: at.ownerId, assistantId: at.agentId, deviceId: at.deviceId, cloud: ports.panel.client })
+  const asyncRecheck = (at: Bound) => async () => at.recheck()
+  async function schedules(extensionId: string, input: unknown): Promise<AppBoundSchedules> {
+    const { name } = argsOf(z.strictObject({ name: z.string() }), input, 'gugu.bindings.schedules takes the binding\'s name alone')
+    const at = await boundOrUnavailable(extensionId, name, ['schedules'])
+    if (at === 'unavailable') return { name, state: 'unavailable' }
+    if (!at) return { name, state: 'unbound' }
+    try {
+      const list = await listPanelSchedules(homeOf(at), asyncRecheck(at))
+      at.recheck()
+      return { name, state: 'ready', schedules: list }
+    } catch (error) {
+      if (codeOf(error) === 'denied') throw error
+      at.recheck()
+      return { name, state: 'unavailable' }
+    }
+  }
+  /** Each operation id's record on this phone (by account and App): the same id again answers it, never a second change. */
+  const kept = new Map<string, { digest: string; receipt?: AppScheduleReceipt; panel?: PanelRequest }>()
+  async function controlSchedule(extensionId: string, input: unknown): Promise<AppScheduleReceipt> {
+    const parsed = scheduleControlSchema.safeParse(input)
+    if (!parsed.success) throw coded('invalid', `controlSchedule takes the binding's name, an operationId and one change — never an agent, chat or account (${parsed.error.issues.map((issue) => issue.path.join('.') || issue.message).join(', ')})`)
+    const change = parsed.data
+    const at = await bound(extensionId, change.name, ['schedules', 'schedules:control'])
+    if (!at) throw coded('not-found', `No conversation is bound for "${change.name}" on this phone`)
+    const key = JSON.stringify([at.ownerId, extensionId, change.operationId])
+    const digest = JSON.stringify(Object.entries(change).filter(([, value]) => value !== undefined).sort(([a], [b]) => a.localeCompare(b)))
+    const before = kept.get(key)
+    if (before && before.digest !== digest) throw coded('invalid', 'This operationId was already used for another change: use a new one')
+    const scheduleId = 'scheduleId' in change ? change.scheduleId : ''
+    const answer = (outcome: PanelOutcome, panel?: PanelRequest): AppScheduleReceipt => {
+      const receipt = { name: change.name, operationId: change.operationId, op: change.op, at: before?.receipt?.at ?? new Date().toISOString(), ...outcome } as AppScheduleReceipt
+      kept.set(key, { digest, receipt, ...(panel ? { panel } : {}) })
+      at.recheck()
+      return receipt
+    }
+    if (before?.receipt && ['applied', 'conflict', 'missing', 'failed', 'superseded'].includes(before.receipt.status)) {
+      at.recheck()
+      return before.receipt
+    }
+    const home = homeOf(at)
+    try {
+      if (before?.panel) {
+        if (before.panel.assistantId !== at.agentId) throw coded('denied', 'The bound conversation is not your private chat with your own assistant')
+        return answer(await commitPanelRequest(home, before.panel, scheduleId, asyncRecheck(at)), before.panel)
+      }
+      const plan = await planPanelChange(home, change, asyncRecheck(at))
+      at.recheck()
+      if ('outcome' in plan) return answer(plan.outcome)
+      kept.set(key, { digest, panel: plan.request })
+      return answer(await commitPanelRequest(home, plan.request, scheduleId, asyncRecheck(at)), plan.request)
+    } catch (error) {
+      // Adding or retiming one is asked of the assistant, as in the person's own list: said so, as a computer says it.
+      if (codeOf(error) === 'elsewhere') throw coded('invalid', (error as Error).message)
+      throw error
+    }
+  }
+  /** `onSchedulesChanged(name, fn)`'s host half: the panel's change word, heard only when the schedules differ. */
+  const scheduleWatches = new Map<string, () => void>()
+  async function watchSchedules(page: PhoneBindingPage & { pageId: number }, input: unknown, hear: (binding: string) => void) {
+    const { name, on } = argsOf(z.strictObject({ name: z.string(), on: z.boolean() }), input, 'gugu.bindings.watchSchedules takes the binding\'s name and on')
+    const key = `${page.pageId}/${name}`
+    scheduleWatches.get(key)?.()
+    scheduleWatches.delete(key)
+    if (!on) return { name, state: 'stopped' as const }
+    const at = await bound(page.extensionId, name, ['schedules'])
+    if (!at) throw coded('not-found', `No conversation is bound for "${name}" on this phone`)
+    const home = homeOf(at)
+    let last = await panelSchedulesPrint(home).catch(() => null)
+    at.recheck()
+    let stopped = false
+    const off = ports.panel.subscribe(at.ownerId, () => {
+      void (async () => {
+        if (stopped) return
+        at.recheck()
+        const now = await panelSchedulesPrint(home).catch(() => null)
+        at.recheck()
+        if (now === last || stopped) return
+        last = now
+        hear(name)
+      })().catch(() => { stop() })
+    })
+    const stop = () => {
+      if (stopped) return
+      stopped = true
+      off()
+      scheduleWatches.delete(key)
+    }
+    scheduleWatches.set(key, stop)
+    return { name, state: 'watching' as const }
+  }
+
+  // ── 46: the assistant's work list (任务) and a task's own conversation ──────────────────────────────────────────
+  /** Opaque, per App, account, installation and conversation: a new one of any of them is another handle. */
+  const workHandles = new Map<string, string>()
+  const workHandleOf = (at: Bound, workId: string) => {
+    const key = JSON.stringify([at.handle, workId])
+    let handle = workHandles.get(key)
+    if (!handle) workHandles.set(key, (handle = `w${ports.randomUUID().replace(/-/g, '').slice(0, 22)}`))
+    return handle
+  }
+  function ledgerFor(at: Bound): PushedWorkLedger | null {
+    const ledger = ports.layer.work()
+    return ledger && ledger.ownerId === at.ownerId && ledger.assistantId === at.agentId ? ledger : null
+  }
+  function openHandle(at: Bound): string | null {
+    const open = ports.layer.openWork()
+    return open && open.ownerId === at.ownerId ? workHandleOf(at, open.workId) : null
+  }
+  async function work(extensionId: string, input: unknown): Promise<AppBindingWork> {
+    const { name } = argsOf(z.strictObject({ name: z.string() }), input, 'gugu.bindings.work takes the binding\'s name alone')
+    const at = await boundOrUnavailable(extensionId, name, ['work'])
+    if (at === 'unavailable') return { name, state: 'unavailable', open: null }
+    if (!at) return { name, state: 'unbound' }
+    at.recheck()
+    const ledger = ledgerFor(at)
+    const open = openHandle(at)
+    if (!ledger || ledger.state === 'none' || ledger.state === 'loading' || ledger.state === 'failed') return { name, state: 'unavailable', open }
+    const items: AppWorkItem[] = ledger.rows.map((row) => ({
+      handle: workHandleOf(at, row.workId), title: row.title, naming: row.naming, status: row.status, unseen: row.unseen, updatedAt: row.updatedAt,
+    }))
+    return { name, state: 'ready', items, stale: ledger.state === 'stale', open }
+  }
+  async function openWork(extensionId: string, input: unknown): Promise<void> {
+    const { name, handle } = argsOf(z.strictObject({ name: z.string(), handle: z.string() }), input, 'gugu.bindings.openWork takes the binding\'s name and a handle')
+    const at = await bound(extensionId, name, ['work'])
+    if (!at) throw coded('not-found', `No conversation is bound for "${name}" on this phone`)
+    at.recheck()
+    const ledger = ledgerFor(at)
+    if (!ledger) throw coded('failed', 'The work list has not been read on this phone yet: try again in a moment')
+    const row = ledger.rows.find((candidate) => workHandleOf(at, candidate.workId) === handle)
+    if (!row) throw coded('not-found', 'No such task in the work list')
+    const actions = ports.layer.actions()
+    if (!actions) throw coded('failed', 'The assistant is not open on this phone now: try again in a moment')
+    actions.openWork({ workId: row.workId, sessionId: row.sessionId })
+  }
+  async function closeWork(extensionId: string, input: unknown): Promise<void> {
+    const { name } = argsOf(z.strictObject({ name: z.string() }), input, 'gugu.bindings.closeWork takes the binding\'s name alone')
+    declared(installed(extensionId), name, 'work')
+    if (ports.layer.openWork()?.ownerId === signedIn().ownerId) ports.layer.actions()?.openWork(null)
+  }
+
   // ── 44: the assistant ───────────────────────────────────────────────────────────────────────────────────────────
   /** While the account has no assistant, an App granted the action sees the snapshot without one (none bound yet). */
   function noAssistant(extensionId: string, name: string, action: 'assistant-status' | 'assistant-open') {
@@ -534,18 +685,33 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
           : { type: 'assistantChanged', name: now.name, state: 'unbound' })
       })
     }
+    let lastWork = ''
+    const tellWork = () => {
+      if (!binding?.actions.includes('work')) return
+      void work(page.extensionId, { name: binding.name }).catch(() => null).then((now) => {
+        if (disposed || !now) return
+        const key = JSON.stringify(now)
+        if (key === lastWork) return
+        lastWork = key
+        deliver({ type: 'bindingWork', work: now })
+      })
+    }
     const offShown = ports.layer.onShown(tellSurface)
     const offStatus = ports.layer.onStatus(tellStatus)
+    const offWork = ports.layer.onWork(tellWork)
     return () => {
       disposed = true
       offShown()
       offStatus()
+      offWork()
       pageGone(page.pageId)
+      for (const [key, stop] of [...scheduleWatches]) if (key.startsWith(`${page.pageId}/`)) stop()
     }
   }
 
   return {
     get, list, read, draft, surface, setPanel, resources, resource, save, remove, watch, pageGone,
+    schedules, controlSchedule, watchSchedules, work, openWork, closeWork,
     assistantStatus, assistantOpen, assistantAdvanceSetup, attach,
   }
 }
@@ -555,6 +721,7 @@ export type PhoneBindings = ReturnType<typeof createPhoneBindings>
 export const PHONE_BINDING_VERBS = [
   'bindingsGet', 'bindingsList', 'bindingsRead', 'bindingsSurface', 'bindingsSurfacePanel',
   'bindingsResources', 'bindingsResource', 'bindingsWatch', 'bindingsSave', 'bindingsRemove',
+  'bindingsSchedules', 'bindingsSchedulesWatch', 'bindingsScheduleControl', 'bindingsWork', 'bindingsOpenWork', 'bindingsCloseWork',
   'assistantStatus', 'assistantOpen', 'assistantAdvanceSetup',
 ] as const
 
@@ -565,6 +732,7 @@ export function answerPhoneBinding(
   page: PhoneBindingPage & { pageId: number },
   args: Record<string, unknown>,
   hear: (watchId: string, event: AppResourceEvent) => void,
+  heardSchedules: (binding: string) => void = () => undefined,
 ): Promise<unknown> | null {
   switch (method) {
     case 'bindingsGet': return bindings.get(page.extensionId, args)
@@ -577,6 +745,12 @@ export function answerPhoneBinding(
     case 'bindingsWatch': return bindings.watch(page, args, hear)
     case 'bindingsSave': return bindings.save(page.extensionId, args)
     case 'bindingsRemove': return bindings.remove(page.extensionId, args)
+    case 'bindingsSchedules': return bindings.schedules(page.extensionId, args)
+    case 'bindingsSchedulesWatch': return bindings.watchSchedules(page, args, heardSchedules)
+    case 'bindingsScheduleControl': return bindings.controlSchedule(page.extensionId, args)
+    case 'bindingsWork': return bindings.work(page.extensionId, args)
+    case 'bindingsOpenWork': return bindings.openWork(page.extensionId, args)
+    case 'bindingsCloseWork': return bindings.closeWork(page.extensionId, args)
     case 'assistantStatus': return bindings.assistantStatus(page.extensionId, args)
     case 'assistantOpen': return bindings.assistantOpen(page.extensionId, args)
     case 'assistantAdvanceSetup': return bindings.assistantAdvanceSetup(page.extensionId, args)

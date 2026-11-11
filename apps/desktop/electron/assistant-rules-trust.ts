@@ -2,12 +2,13 @@
 // from the official market source. Each condition names why an installed App is not believed. A release signature check
 // is one more entry in ASSISTANT_RULES_TRUST; nothing that asks changes.
 import type { ExtensionManifest } from '@shared/extensions/manifest'
-import { isOfficialMarketSource, type MarketCodeSource } from '@shared/extensions/market'
+import type { MarketCodeSource } from '@shared/extensions/market'
+import { ASSISTANT_APP_ID, ASSISTANT_APP_TRUST } from '@shared/extensions/assistant-entry'
 import type { ExtensionOrigin } from '@shared/extensions/upgrade'
 import type { InstalledExtension } from './session/main/core/extensions/extensions-service'
 
 /** The product's assistant App (GUYI-AI/gugu-assistant), published to the market as a compiled release. */
-export const ASSISTANT_RULES_PROVIDER_ID = 'gugu-assistant'
+export const ASSISTANT_RULES_PROVIDER_ID = ASSISTANT_APP_ID
 
 /** What the host knows of the installed App that may provide the rules. */
 export interface AssistantRulesProvider {
@@ -25,13 +26,8 @@ export interface AssistantRulesProvider {
 /** One reason not to believe a provider, or null. It may look at the bundle (a signature), so it may be async. */
 export type AssistantRulesTrustCondition = (provider: AssistantRulesProvider) => string | null | Promise<string | null>
 
-export const ASSISTANT_RULES_TRUST: readonly AssistantRulesTrustCondition[] = Object.freeze([
-  provider => provider.manifest.id === ASSISTANT_RULES_PROVIDER_ID ? null : `it is ${provider.manifest.id}, not ${ASSISTANT_RULES_PROVIDER_ID}`,
-  provider => provider.origin === 'market' ? null : `it was installed from ${provider.origin ?? 'an unrecorded place'}, not the market`,
-  provider => !provider.marketSource ? 'there is no record of where in the market its code was'
-    : isOfficialMarketSource(provider.marketSource) ? null : `its code is at ${provider.marketSource.repo}, not in gugu's market repository`,
-  provider => provider.activeVariant === 'upstream' ? null : `its fork "${provider.activeVariant}" is in use`,
-])
+// The conditions themselves are the shared list (assistant-entry.ts), which the assistant's place on both hosts also reads.
+export const ASSISTANT_RULES_TRUST: readonly AssistantRulesTrustCondition[] = ASSISTANT_APP_TRUST
 
 /** Why the provider is not believed — the first condition that fails — or null when every one holds. */
 export async function assistantRulesDistrust(

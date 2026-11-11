@@ -1,7 +1,6 @@
 import type { AppPlatform } from './app-platforms';
-import { isGuguOwnApp } from './first-run';
 import type { ExtensionManifest } from './manifest';
-import type { MarketCodeSource } from './market';
+import { isOfficialMarketSource, type MarketCodeSource } from './market';
 import { PHONE_BINDING_API_VERSION } from './phone-binding';
 import { BINDING_ACTION_CAPABILITY } from './unread-binding';
 
@@ -35,15 +34,33 @@ export type AssistantLayerEntry =
   | { entry: 'app'; extensionId: string; tabKind: string; binding: string }
   | { entry: 'built-in'; reason: string };
 
-/** Why the installed App is not the product's assistant App to trust, or null. */
+/** What the trust conditions look at: the installed App's id, where it came from, where its code was, the variant in use. */
+export interface AssistantAppProvenance {
+  manifest: Pick<ExtensionManifest, 'id'>;
+  origin: string | undefined;
+  marketSource: Pick<MarketCodeSource, 'repo'> | null;
+  activeVariant: string;
+}
+
+/**
+ * The one list of conditions for trusting the installed App as the product's assistant App (#1931): each names why it is
+ * not. The desktop's rules provider (electron `assistant-rules-trust.ts`) and the assistant's place on both hosts read it.
+ */
+export const ASSISTANT_APP_TRUST: readonly ((install: AssistantAppProvenance) => string | null)[] = Object.freeze([
+  (install: AssistantAppProvenance) => install.manifest.id === ASSISTANT_APP_ID ? null : `it is ${install.manifest.id}, not ${ASSISTANT_APP_ID}`,
+  (install: AssistantAppProvenance) => install.origin === 'market' ? null : `it was installed from ${install.origin ?? 'an unrecorded place'}, not the market`,
+  (install: AssistantAppProvenance) => !install.marketSource ? 'there is no record of where in the market its code was'
+    : isOfficialMarketSource(install.marketSource) ? null : `its code is at ${install.marketSource.repo}, not in gugu's market repository`,
+  (install: AssistantAppProvenance) => install.activeVariant === 'upstream' ? null : `its fork "${install.activeVariant}" is in use`,
+]);
+
+/** Why the installed App is not the product's assistant App to trust (or is switched off), or null. */
 export function assistantAppDistrust(install: AssistantAppInstall): string | null {
-  if (install.manifest.id !== ASSISTANT_APP_ID) return `it is ${install.manifest.id}, not ${ASSISTANT_APP_ID}`;
-  if (install.origin !== 'market') return `it was installed from ${install.origin ?? 'an unrecorded place'}, not the market`;
-  if (!install.marketSource) return 'there is no record of where in the market its code was';
-  if (!isGuguOwnApp(install.marketSource)) return `its code is at ${install.marketSource.repo}, not in gugu's market repository`;
-  if (install.activeVariant !== 'upstream') return `its fork "${install.activeVariant}" is in use`;
-  if (!install.enabled) return 'it is switched off';
-  return null;
+  for (const condition of ASSISTANT_APP_TRUST) {
+    const reason = condition(install);
+    if (reason) return reason;
+  }
+  return install.enabled ? null : 'it is switched off';
 }
 
 /** The assistant's place on `platform`: the App's main page (with the binding it is placed beside), or built-in and why. */
