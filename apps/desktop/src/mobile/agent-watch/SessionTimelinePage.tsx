@@ -72,6 +72,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   initialAppKind,
   local = false,
   cleanedRecord = false,
+  appPanel = false,
   onBack,
 }: {
   device: Device
@@ -84,6 +85,11 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   local?: boolean
   /** Read what the left column reads, never the bounded source window (useSessionHistorySource): the assistant/App layer. */
   cleanedRecord?: boolean
+  /**
+   * owner 11-12 Over an App's panel (AssistantTaskChatWindow): the panel's top row and the assistant chat's composer. The
+   * view switcher is not offered there — the panel is the task's conversation, nothing else.
+   */
+  appPanel?: boolean
   onBack: () => void
 }) {
   const { t } = useTranslation('main')
@@ -231,7 +237,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
         </IconButton>
       ) : null}
       {phoneHost ? <PhoneTaskSkills deviceId={device.device_id} sessionId={session.conversationId} online={online} busy={attention === 'running' || attention === 'waiting' || sending || pendingSends.length > 0 || cancelling} /> : null}
-      {!phoneHost ? <SessionAppMenu
+      {!phoneHost && !appPanel ? <SessionAppMenu
         appKind={appKind}
         onConversation={() => setAppKind(null)}
         apps={apps}
@@ -258,6 +264,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       testId="agent-watch-timeline-page"
       actions={headerActions}
       bodyFill
+      panelLayer={appPanel}
     >
       {recovery.canStartFresh ? <Button variant="secondary" onClick={() => { void recovery.startFresh() }} disabled={recovery.busy}>
         {translateSessionMessage('transcript.condition.startFresh')}
@@ -275,7 +282,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           sessionId={session.conversationId}
           draft={draft === appliedDraft ? undefined : draft}
           onDraftApplied={() => setAppliedDraft(draft)}
-          phoneHost={phoneHost} local={local} nativeRecord={native} hostReachable={answering}
+          phoneHost={phoneHost} local={local} nativeRecord={native} hostReachable={answering} appPanel={appPanel}
           unseen={session.unseen === true}
           queueReady={queueReady}
           machineLabel={machineLabel(device)}

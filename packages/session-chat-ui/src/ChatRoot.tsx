@@ -448,11 +448,11 @@ export function ChatRoot(props: ChatRootProps) {
   const updateContentColumnGeometry = () => syncContentColumnGeometry(widthProbeEl, scrollEl, setColumnWidth, setPinFrame);
 
   const updateSlotPadBottom = () => {
-    if (props.composer !== 'slot' || effectiveComposerPlacement() === 'center') {
-      setSlotPadBottom(0);
-      return;
-    }
-    setSlotPadBottom(composerSlotEl?.getBoundingClientRect().height ?? 0);
+    const height = props.composer !== 'slot' || effectiveComposerPlacement() === 'center' ? 0 : composerSlotEl?.getBoundingClientRect().height ?? 0;
+    setSlotPadBottom(height);
+    // The composer layer's height for a host's CSS: a host whose surface shows through (no painted fades) masks the
+    // scroller off where the layer begins.
+    outerEl?.style.setProperty('--chat-composer-slot-h', `${height}px`);
   };
 
   const setComposerPlacement = (

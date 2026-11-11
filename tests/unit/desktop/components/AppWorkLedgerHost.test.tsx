@@ -56,7 +56,7 @@ vi.mock('@/session/renderer/features/extensions/installed-extensions-store', () 
   isEnabled: (id: string) => !state.disabled.includes(id),
 } }));
 // The built-in task window, as far as this test needs it: which task, for whom, and its back control.
-vi.mock('@/components/assistant/AssistantWorkTaskWindow', () => ({ AssistantWorkTaskWindow: (props: { ownerId: string; request: Record<string, unknown>; onClose?: () => void }) => {
+vi.mock('@/components/assistant/AssistantWorkTaskWindow', () => ({ AssistantWorkTaskWindow: (props: { ownerId: string; request: Record<string, unknown>; onClose?: () => void; appPanel?: boolean }) => {
   state.windows.push({ ...props, signedIn: state.owner } as never);
   return <section data-testid="task-window" data-owner={props.ownerId} data-work={String(props.request.workId)}><button type="button" data-testid="back" onClick={props.onClose}>back</button></section>;
 } }));
@@ -308,6 +308,8 @@ describe('a task drawn in the App\'s panel', () => {
     const drawn = cell.querySelector('[data-testid="task-window"]')!;
     expect(drawn.getAttribute('data-owner')).toBe(OWNER);
     const opened = state.windows.at(-1)!;
+    // owner 11-12: drawn as a layer of the App's panel — its surface, its top row, the chat composer (AssistantTaskChatWindow).
+    expect((opened as { appPanel?: boolean }).appPanel).toBe(true);
     expect(opened.request).toEqual({ ...assistantPanelTaskChat({ assistantId }, {
       workId: WORK_A, id: 'exec-a', title: 'Compare three flights', outcome: 'active' as never, agentId: AGENT_A, deviceId: DEVICE_THERE,
       assistants: [{ deviceId: DEVICE_HERE, sessionId: COORDINATOR }], key: `${WORK_A}:exec-a`, lastInteractedAt: '2026-11-11T08:00:00.000Z',

@@ -21,8 +21,11 @@ import {useMessageFilePreview} from '../chat/useMessageFilePreview'
 import {useAssistantWorkRuntime} from './useAssistantWorkRuntime'
 import {ConnectionStatus} from '../connection/ConnectionStatus'
 
-/** `onClose`: what its back control does — the assistant's own panel by default; an App's panel takes its own (#1925). */
-export function AssistantWorkTaskWindow({ownerId,request,onClose}:{ownerId:string;request:AssistantTaskChat;onClose?:()=>void}){
+/**
+ * `onClose`: what its back control does — the assistant's own panel by default; an App's panel takes its own (#1925).
+ * `appPanel`: drawn over an App's panel, read as part of it (AssistantTaskChatWindow).
+ */
+export function AssistantWorkTaskWindow({ownerId,request,onClose,appPanel=false}:{ownerId:string;request:AssistantTaskChat;onClose?:()=>void;appPanel?:boolean}){
  const {t}=useTranslation('assistant'),mobile=useMobileShell()
  const {contacts}=useContactsStore(),opened=useOpenedAssistantTaskChat()
  const read=useAssistantWorkDetail(ownerId,request.assistantId,request.workId!,request.task.sessionId)
@@ -74,8 +77,8 @@ export function AssistantWorkTaskWindow({ownerId,request,onClose}:{ownerId:strin
  </span>
  const close=onClose??(()=>showAssistantTaskChat(null))
  const transcript=<CloudTaskTranscript mobile={mobile} request={canonical??request} events={detail?.events??[]}/>
- if(agent)return <AssistantTaskChatWindow agent={{...agent,display_name:title}} task={(canonical??request).task} onClose={close} status={status} pendingContent={transcript}/>
- return <section className="assistant-task-chat-window ta-skin" data-testid="assistant-task-chat-window" aria-label={title}>
+ if(agent)return <AssistantTaskChatWindow agent={{...agent,display_name:title}} task={(canonical??request).task} onClose={close} status={status} pendingContent={transcript} appPanel={appPanel}/>
+ return <section className="assistant-task-chat-window ta-skin" data-testid="assistant-task-chat-window" data-app-panel={appPanel||undefined} aria-label={title}>
   <TaskChatFilePreviewHost mobile={mobile}>
    <PaneHeader title={title} subtitle={status} mobile={mobile} divider leading={<IconButton aria-label={t('panel.back')} onClick={close} data-testid="assistant-task-chat-close"><ChevronLeft/></IconButton>}/>
    {transcript}

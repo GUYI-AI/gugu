@@ -44,6 +44,7 @@ import { followConversationLink } from '@/lib/followConversationLink'
 import { openMessageSender } from '@/lib/openMessageSender'
 import { classifyFileLink } from '@gugu/core/shared/ui/guguLink'
 import { ComposerAttachButton } from '@/components/chat/ComposerAttachButton'
+import { Plus } from '@/lib/icons'
 import { messageForUser } from '@/lib/userFacingError'
 import { messageFailureNotice, type MessageFailureAttempt } from '@/lib/messageFailureNotice'
 import { runNativeInputAction } from '@/lib/nativeInputFailureNotice'
@@ -68,7 +69,7 @@ import { markNeedsYouTaskSeen } from '@/components/needsYou/useNeedsYouTasks'
 import { rendererLogger } from '@/lib/log'
 
 /** The phone supplies session data and RPC actions to the same project conversation UI. */
-export function SessionConversation({ timeline, deviceId, sessionId, agentName, agentUserId, harness, draft, onDraftApplied, startupPrompt, phoneHost = false, local = false, nativeRecord = false, hostReachable = true,
+export function SessionConversation({ timeline, deviceId, sessionId, agentName, agentUserId, harness, draft, onDraftApplied, startupPrompt, phoneHost = false, local = false, nativeRecord = false, hostReachable = true, appPanel = false,
   machineLabel, sessionRuntime, respondingItemId, onRespond, onSend, pendingSends, sending, agentWorking,
   onStop, stopping, footerNotice, onLoadOlder, onAtBottom, emptyNote, onBeforeSend,
   historyReady = true, historyCursor, queueReady = false, unseen = false,
@@ -81,6 +82,8 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   unseen?: boolean
   /** The session is on this computer: read it over IPC (see `machineRpc`). */
   local?: boolean; nativeRecord?: boolean; hostReachable?: boolean; machineLabel?: string
+  /** owner 11-12 Over an App's panel: the assistant chat's composer — its placeholder and 「+」, no model, effort or permission. */
+  appPanel?: boolean
   startupPrompt?: import('@gugu/session-chat-ui').PendingPrompt | null
   sessionRuntime: SessionpageSessionSummary['runtime']; respondingItemId: string | null
   onRespond: (input: SettlementResponse) => Promise<SessionpageSessionRespondResult>; onSend: (text: string, files?: TurnFileRef[]) => Promise<void>
@@ -95,6 +98,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
 }) {
   const { resolvedLocale } = useLocale()
   const { t } = useTranslation('main')
+  const { t: ta } = useTranslation('assistant')
   const { theme } = useTheme()
   const visibility = useConversationVisibility(true)
   const localClient = local ? assistantTimelineClient(true) : null
@@ -355,7 +359,8 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     {phoneHost ? <PhoneTaskDraftRecovery deviceId={deviceId} sessionId={sessionId} composer={recoveryComposer} sending={sending} /> : null}
     {queue.error ? <div role="alert">{queue.error}</div> : null}
     <input ref={input} type="file" hidden multiple onChange={event => { addFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} />
-    <AgentConversationComposer {...options.props} {...queue.props} {...lockedHarness(harness)} queuedPrompts={[...queue.props.queuedPrompts, ...localInputs.filter(input => !input.failure).map(input => ({ id: input.id, text: input.text, origin: 'manual' as const, locked: true })),
+    <AgentConversationComposer {...(appPanel ? panelComposerOptions(options.props) : options.props)} {...queue.props} {...(appPanel ? {} : lockedHarness(harness))}
+      placeholder={appPanel ? ta('chat.placeholder', { name: agentName }) : undefined} queuedPrompts={[...queue.props.queuedPrompts, ...localInputs.filter(input => !input.failure).map(input => ({ id: input.id, text: input.text, origin: 'manual' as const, locked: true })),
       ...[...waitingInputs].filter(([id]) => !queue.props.queuedPrompts.some(prompt => prompt.id === id) && !localInputs.some(input => input.id === id)).map(([id, input]) => ({ id, text: input.text, origin: 'manual' as const, locked: true }))]} mobile phoneActions={mobile} isWorking={agentWorking} canSubmit={!sending && !stopping && (!!composerDraft.text.trim() || attachments.length > 0)}
       onStop={agentWorking ? onStop : undefined} editorApiRef={receiveEditor} editorOptions={{ clearOnSubmit: false, enterBehavior: 'newline' }}
       queuedPromptEdit={quotes.composer.queuedPromptEdit} onChangeQueuedPromptEdit={quotes.composer.changeQueuedPromptEdit} onFinishQueuedPromptEdit={quotes.composer.finishQueuedPromptEdit} renderQueuedPromptText={quotes.composer.renderQueuedPromptText}
@@ -363,7 +368,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       attachmentStatus={attachmentWaiting ? translateSessionMessage('composer.attachmentWaiting') : undefined}
       attachments={attachments} onAttachmentsChange={changeAttachments}
       onRetryAttachment={uploads.retry} onFilesDropped={addFiles} onImageFilesDropped={addFiles}
-      toolbarExtra={<><ComposerAttachButton disabled={sending} mobile onPickFile={() => input.current?.click()} /></>} />
+      toolbarExtra={<><ComposerAttachButton disabled={sending} mobile glyph={appPanel ? <Plus /> : undefined} onPickFile={() => input.current?.click()} /></>} />
   </>
   return <SessionUiTheme theme={theme}><MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
     <div ref={visibility.ref} className="relative flex min-h-0 flex-1 flex-col"><SessionTranscriptView uri={sessionId} sourceWindow={boundedWindowReady(timeline) ? timeline : undefined} turns={turns} pendingPrompt={pendingPrompt ?? startupPrompt ?? pendingSends[0] ?? null} pendingMessages={pendingMessages} mobile commands={commands} backgroundTasks={background}
@@ -377,6 +382,11 @@ function withoutWaiting(view: LifeView | null, waiting: ReadonlyMap<string, unkn
   if (!view || !waiting.size || !view.pending.items.some(item => waiting.has(item.messageId))) return view
   const items = view.pending.items.filter(item => !waiting.has(item.messageId))
   return { ...view, pending: { ...view.pending, count: items.length, items } }
+}
+
+/** The assistant chat's composer over an App's panel keeps only the line above it (a failed read); model, effort, permission go. */
+function panelComposerOptions(props: ReturnType<typeof useConversationOptions>['props']) {
+  return props.notice ? { notice: props.notice } : {}
 }
 
 /** 模型左边那颗锁着的 harness 标(桌面会话页同一颗);不知道 harness 时照旧不画。 */

@@ -76,7 +76,7 @@ function AppHostLayerPortals({ ownerId, layers }: { ownerId: string | null; laye
         if (layer.kind === 'work') {
           const close = () => readAppHostLayerBridge()?.close(extensionId, 'work')
           return [createPortal(
-            <AssistantWorkTaskWindow ownerId={layer.ownerId} request={layer.request} onClose={close} />,
+            <AssistantWorkTaskWindow ownerId={layer.ownerId} request={layer.request} onClose={close} appPanel />,
             element,
             `${extensionId}#work#${layer.request.workId}#${layer.request.task.sessionId}`,
           )]
