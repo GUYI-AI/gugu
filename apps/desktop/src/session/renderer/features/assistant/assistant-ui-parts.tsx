@@ -20,28 +20,6 @@ export function PageHead({ title, sub, action }: { title: string; sub?: ReactNod
   );
 }
 
-/** 页里的一整条分段(任务页的「任务 | 定时任务」)。 */
-export function WideSegments<K extends string>({
-  items,
-  value,
-  onChange,
-}: {
-  items: readonly { id: K; label: string; icon?: ReactNode }[];
-  value: K;
-  onChange: (id: K) => void;
-}) {
-  return (
-    <div className="ta-seg-wide" role="tablist">
-      {items.map((item) => (
-        <button key={item.id} type="button" role="tab" aria-selected={item.id === value} onClick={() => onChange(item.id)} data-testid={`assistant-seg-${item.id}`}>
-          {item.icon}
-          {item.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /** 一段:标题在卡外面(「今天 / 更早 / 进行中」),下面一张卡装行;`bare` = 内容自己排(网格、大卡)。 */
 export function AssistantSection({
   title,

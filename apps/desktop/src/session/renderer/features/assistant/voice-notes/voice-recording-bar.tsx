@@ -2,16 +2,15 @@ import { messageForUser } from '@/lib/userFacingError';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import '@/i18n/registerVoiceNotesCatalog';
 import './voice-notes.css';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { formatClock, type VoiceNoteMeta } from '@gugu/core/shared/voiceNotes';
 import { ChevronRight, Pause, Play, RefreshCw, Square, X } from '@/lib/icons'
 import { useQueryClient } from '@tanstack/react-query';
-import { readAssistantShellBridge, type AssistantVoiceNoteHandler } from '@/lib/assistantShellBridge';
 import { invokeOnMachine } from '@renderer/lib/ipc';
 import { useToast, toast as notify } from '@renderer/lib/hooks/use-toast';
 import { VOICE_NOTE_MICROPHONE_CHANNEL } from '@shared/core/voice-notes';
-import type { AssistantContext } from '../assistant-context';
 import type { AssistantHomePlace } from '@/lib/assistantHome';
 import { assistantQueryKey } from '../assistant-data';
 import type { AssistantMachine } from '../assistant-machine';
@@ -31,20 +30,13 @@ export function useRecorder(): RecorderSnapshot {
   return useSyncExternalStore(voiceRecorder.subscribe, voiceRecorder.getSnapshot);
 }
 
-/** 开始录一条;拿不到麦克风就照实说(没授权的给「打开系统设置」)。 */
-export function useStartVoiceNote(): (meeting?: VoiceNoteMeta['meeting']) => Promise<boolean> {
-  const { t } = useTranslation('voiceNotes');
-  const { toast } = useToast();
-  return useCallback(async (meeting) => (await startVoiceNoteAndSay(meeting, t, toast)) === 'started', [t, toast]);
-}
-
 /**
- * 同上,不经 React:#1927 (48) App 旁那条会话「+」里由宿主执行的「录制语音笔记」也这样说(app-voice-note-host.ts)。
- * 返回开始的结果,没开成的已经照实说过。
+ * 开始录一条;拿不到麦克风就照实说(没授权的给「打开系统设置」)。宿主自己的点击走这里:#1927 (48) App 旁那条会话「+」里的
+ * 「录制语音笔记」、会议提醒(app-voice-note-host.ts)。返回开始的结果,没开成的已经照实说过。
  */
 export async function startVoiceNoteAndSay(
   meeting: VoiceNoteMeta['meeting'] | undefined,
-  t: (key: string) => string,
+  t: TFunction<'voiceNotes'>,
   toast: typeof notify,
 ): Promise<Awaited<ReturnType<typeof startVoiceNote>>> {
   const outcome = await startVoiceNote(meeting);
@@ -63,33 +55,6 @@ export async function startVoiceNoteAndSay(
   return outcome;
 }
 
-/**
- * 助理 App 挂上时:告诉录音机与进度此刻是哪位助理、它家是哪台;把「+ → 录制语音笔记」登记到桥上(壳那侧的聊天框)。
- * App 卸下时 ❌ 清掉上下文 —— 录到一半离开 App 也要接着传、接着转写;桥上的登记没在录就跟着卸下,在录就留着。
- */
-export function useVoiceNotesHost(input: VoiceNotesHostInput) {
-  const start = useStartVoiceNote();
-  const startRef = useRef(start);
-  startRef.current = start;
-  const { home, assistantId } = input;
-  const deviceId = home?.deviceId ?? null;
-  useVoiceNotesContext(input);
-  useEffect(() => {
-    const bridge = readAssistantShellBridge();
-    if (!bridge || !deviceId || !assistantId) return;
-    const handler: AssistantVoiceNoteHandler = {
-      start: (meeting) => startRef.current(meeting ?? null),
-      busy: () => voiceRecorder.busy,
-      subscribe: voiceRecorder.subscribe,
-    };
-    bridge.setVoiceNoteHandler(handler);
-    return () => {
-      // 录着离开 App:登记留着 —— 壳那侧(栏上的红点、会议提醒)据此知道还在录;回到 App 时换成新的这一份。
-      if (bridge.getVoiceNoteHandler() === handler && !voiceRecorder.busy) bridge.setVoiceNoteHandler(null);
-    };
-  }, [deviceId, assistantId]);
-}
-
 export type VoiceNotesHostInput = {
   home: AssistantHomePlace | null;
   assistantId: string | null;
@@ -98,8 +63,8 @@ export type VoiceNotesHostInput = {
 };
 
 /**
- * 只告诉录音机与进度此刻是哪位助理、它家是哪台(❌ 不登记到桥上):助理 App 挂着时由 useVoiceNotesHost 做,
- * #1927 (47) 一个 App 经 `gugu.voiceNote` 要录时由 app-voice-notes-context.tsx 照同一份壳里的数据做。
+ * 只告诉录音机与进度此刻是哪位助理、它家是哪台(❌ 不登记到桥上;桥上那份由 app-voice-note-core.ts 在录时登记):
+ * #1927 (47) 一个 App 经 `gugu.voiceNote` 要录时由 app-voice-notes-context.tsx 照壳里的数据做。
  */
 export function useVoiceNotesContext(input: VoiceNotesHostInput) {
   const client = useQueryClient();
@@ -167,14 +132,6 @@ function useAboveComposer(column: HTMLElement | null): number {
     };
   }, [column]);
   return bottom;
-}
-
-/**
- * 录音条:录着 = 暂停 / 波形 / 计时 / 结束;暂停 = 继续 / 「已暂停」/ 计时 / 结束;
- * 录完 = 「正在处理音频… / 正在转写音频… / 正在生成语音笔记…」,点了去那一条;好了 = 「整理好了 · 查看」;失败 = 重试 / 关闭。
- */
-export function VoiceRecordingBar({ context, column }: { context: AssistantContext; column: HTMLElement | null }) {
-  return <VoiceBar assistantName={context.assistant.display_name} onOpen={(id) => context.go({ tab: 'memory', sub: `voice:${id}` })} column={column} />;
 }
 
 /**

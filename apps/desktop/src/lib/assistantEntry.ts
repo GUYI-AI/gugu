@@ -1,20 +1,20 @@
 // 入口切换(助理 App P5):人碰到个人助理的每一个入口 —— 最左栏顶上那一格、通知、聊天里的链接、通讯录 / 资料页打开它的私聊、
-// 设置里那几条链接、快速聊天的「去主窗」、首次引导的「开通我的咕咕」—— 都问这里**一个**判断:去装好的「咕咕助理」App
-// (它的页面摆在原生会话旁边,API 41 的那一框),还是内置的助理页。
+// 设置里那几条链接、快速聊天的「去主窗」、首次引导的「开通我的咕咕」、任务的链接、会议提醒 —— 都问这里**一个**判断。
+// 助理的页面就是装好的「咕咕助理」App(它的页面摆在原生会话旁边,API 41 的那一框);内置的助理页已经没有了。
 //
-// 判据:登录的这个账号,主进程认过它装的是那个受信的官方 App(gugu-assistant:从市场装、代码在 gugu 的市场仓、没用分叉;
-// electron/.../assistant-app-entry.ts),而且那个 App 的会话绑定此刻画在旁边的,正是和自己助理的那条私聊
-// (壳的 AppConversationSurfaceHost 认过:账号、启用、授权、仍在会话里)。差一样 = 内置页,照旧。
-// 两条路都留着、都能测;内置页整页删掉是之后单独一个提交的事。
+// 判据:登录的这个账号,主进程认过它装的是那个受信的官方 App(gugu-assistant:从市场装、签名的发行版、在 gugu 的市场仓、没用分叉;
+// electron/.../assistant-app-entry.ts),并且开着 = 去 App。还用不了(正在装 = 栏顶那一格画「准备中」;装不上 = 统一报错出口说过一次;
+// 人自己关掉了它):有助理 = 打开和它的私聊(同任何一条对话);还没有助理 = 设置里「咕咕」那一页(开通)。
 //
-// 主进程那一句话(受不受信、市场那一步是不是正在装)由壳的 AssistantAppEntryHost 问来,挂在 window 上(形制同
-// assistantShellBridge:两棵树一份)。
+// 主进程那一句话(受不受信)由壳的 AssistantAppEntryHost 问来,挂在 window 上(形制同 assistantShellBridge:两棵树一份)。
 import { useSyncExternalStore } from 'react'
 import { appState } from '../session/renderer/lib/stores/app-state'
 import { readAssistantShellBridge, type AssistantShellSnapshot } from './assistantShellBridge'
 import { appConversationSlotKey, readAppConversationSurfaceBridge, type AppConversationSurfaces } from './appConversationSurfaceBridge'
 import { appHostLayerSlotKey, readAppHostLayerBridge } from './appHostLayerBridge'
 import type { AssistantTaskChat } from './assistantTaskChat'
+import { openLinkTarget } from './guguLinks'
+import { UI_EVENTS } from './uiEvents'
 import { installedExtensionsStore } from '../session/renderer/features/extensions/installed-extensions-store'
 import { readsWork } from '../components/appSlot/appWorkLedger'
 
@@ -62,31 +62,40 @@ export function readAssistantAppEntryBridge(w: Window | undefined = typeof windo
   return w ? (w as BridgeWindow)[ASSISTANT_APP_ENTRY_BRIDGE_KEY] ?? null : null
 }
 
-/**
- * 为什么要去它:`open` 打开它(栏顶那一格、通知、链接、设置、快速聊天、引导)。`task-chat` 打开它派出的某个任务的对话
- * (任务的链接、来源角标、通知):App 读得到它的活(API 46 `chat:work`)就去 App,壳自己把那个任务的对话开在 App 面板上的
- * 宿主层里(与内置任务窗同一个窗);读不到 = 内置页。`record-meeting` 会议提醒里「开始录音」:录音机由内置页挂上,照旧去内置页。
- */
-export type AssistantEntryPurpose = 'open' | 'task-chat' | 'record-meeting'
+/** 为什么要去它:`open` 打开它;`task-chat` 打开它派出的某个任务的对话(任务的链接、来源角标、通知),开在 App 面板上的宿主层里。 */
+export type AssistantEntryPurpose = 'open' | 'task-chat'
 
-export type AssistantEntryTarget = { kind: 'app'; extensionId: typeof ASSISTANT_APP_ID; chatId: string } | { kind: 'built-in' }
-const BUILT_IN: AssistantEntryTarget = Object.freeze({ kind: 'built-in' })
+/**
+ * - `app`:去 App 自己那一页;`chatId` = 旁边此刻画着的就是和自己助理的那条私聊(null:没画,比如人在 App 的权限里选了别的)。
+ * - `chat`:App 此刻用不了,和自己助理的那条私聊照任何一条对话打开。
+ * - `setup`:还没有助理、也没有 App:设置里「咕咕」那一页(开通)。
+ * - `wait`:还在读它是谁 / 读不到:不动。
+ */
+export type AssistantEntryTarget =
+  | { kind: 'app'; extensionId: typeof ASSISTANT_APP_ID; chatId: string | null }
+  | { kind: 'chat'; chatId: string }
+  | { kind: 'setup' }
+  | { kind: 'wait' }
+const WAIT: AssistantEntryTarget = Object.freeze({ kind: 'wait' })
+const SETUP: AssistantEntryTarget = Object.freeze({ kind: 'setup' })
 
 /** 唯一的判断。 */
 export function decideAssistantEntry(input: {
   shell: Pick<AssistantShellSnapshot, 'assistantState' | 'chatId' | 'ownerId'> | null
   word: AssistantAppWord | null
   surfaces: AppConversationSurfaces
-  purpose?: AssistantEntryPurpose
-  /** 装着的那个 App 读不读得到它的活(API 46 的 `work`):任务的对话只开在读得到的 App 上。 */
-  appReadsWork?: boolean
+  /** 人有没有把那个 App 关掉(关掉 = 它的页不画,当它此刻用不了)。 */
+  appEnabled: boolean
 }): AssistantEntryTarget {
-  const { shell, word, surfaces, purpose = 'open' } = input
-  if (purpose === 'record-meeting' || (purpose === 'task-chat' && !input.appReadsWork)) return BUILT_IN
+  const { shell, word, surfaces } = input
   const ownerId = shell?.ownerId ?? null
-  if (!ownerId || !word || word.ownerId !== ownerId || !word.trusted) return BUILT_IN
-  if (shell?.assistantState !== 'found' || !shell.chatId) return BUILT_IN
-  return surfaces[ASSISTANT_APP_ID] === shell.chatId ? { kind: 'app', extensionId: ASSISTANT_APP_ID, chatId: shell.chatId } : BUILT_IN
+  if (!ownerId) return WAIT
+  const chatId = shell?.assistantState === 'found' ? shell.chatId : null
+  if (word && word.ownerId === ownerId && word.trusted && input.appEnabled) {
+    return { kind: 'app', extensionId: ASSISTANT_APP_ID, chatId: chatId && surfaces[ASSISTANT_APP_ID] === chatId ? chatId : null }
+  }
+  if (chatId) return { kind: 'chat', chatId }
+  return shell?.assistantState === 'none' ? SETUP : WAIT
 }
 
 const NO_SURFACES: AppConversationSurfaces = Object.freeze({})
@@ -96,14 +105,13 @@ function appReadsWork(): boolean {
   return !!manifest && readsWork(manifest)
 }
 
-/** 此刻的判断(读三座桥:壳的助理快照、旁边画着哪条会话、主进程那一句)。 */
-export function readAssistantEntryTarget(purpose: AssistantEntryPurpose = 'open'): AssistantEntryTarget {
+/** 此刻的判断(读三座桥:壳的助理快照、旁边画着哪条会话、主进程那一句;再加上人有没有关掉那个 App)。 */
+export function readAssistantEntryTarget(): AssistantEntryTarget {
   return decideAssistantEntry({
     shell: readAssistantShellBridge()?.getSnapshot() ?? null,
     word: readAssistantAppEntryBridge()?.getSnapshot() ?? null,
     surfaces: readAppConversationSurfaceBridge()?.getSnapshot() ?? NO_SURFACES,
-    purpose,
-    appReadsWork: purpose === 'task-chat' && appReadsWork(),
+    appEnabled: !!installedExtensionsStore.manifestFor(ASSISTANT_APP_ID) && installedExtensionsStore.isEnabled(ASSISTANT_APP_ID),
   })
 }
 
@@ -115,11 +123,8 @@ function subscribeAll(listener: () => void): () => void {
 
 /** 同一个判断,跟着三座桥变(左栏那一格画哪种、亮不亮)。 */
 export function useAssistantEntryTarget(): AssistantEntryTarget {
-  const key = useSyncExternalStore(subscribeAll, () => {
-    const target = readAssistantEntryTarget()
-    return target.kind === 'app' ? target.chatId : ''
-  })
-  return key ? { kind: 'app', extensionId: ASSISTANT_APP_ID, chatId: key } : BUILT_IN
+  const key = useSyncExternalStore(subscribeAll, () => JSON.stringify(readAssistantEntryTarget()))
+  return JSON.parse(key) as AssistantEntryTarget
 }
 
 /**
@@ -145,25 +150,31 @@ export function openAssistantApp(target: Extract<AssistantEntryTarget, { kind: '
 }
 
 /**
- * 每个入口都走这一下:判断去 App,就去 App;否则照它原来那样去内置页(`builtIn`,每处原样不动)。去 App 打开任务的对话 =
- * 答它画在哪一格(App 面板上的宿主层);那个任务由壳认出后开进去(`openAssistantTaskInApp`)。
+ * 每个入口都走这一下。去 App:答那条会话(或任务的对话)画在哪一格。App 此刻用不了:`fallback` 时打开和自己助理的私聊
+ * (照任何一条对话,经链接那条路)或设置里「咕咕」那一页(开通);答 null。`fallback: false` = 调用处自己打开那条对话(链接、通知)。
  */
-export function openAssistantEntry<T>(builtIn: () => T, purpose: AssistantEntryPurpose = 'open'): T | string {
-  const target = readAssistantEntryTarget(purpose)
-  if (target.kind !== 'app') return builtIn()
-  const conversation = openAssistantApp(target)
-  return purpose === 'task-chat' ? appHostLayerSlotKey(target.extensionId) : conversation
+export function openAssistantEntry(purpose: AssistantEntryPurpose = 'open', fallback = true): string | null {
+  const target = readAssistantEntryTarget()
+  if (target.kind === 'app') {
+    const conversation = openAssistantApp(target)
+    return purpose === 'task-chat' ? appHostLayerSlotKey(target.extensionId) : target.chatId ? conversation : null
+  }
+  if (!fallback) return null
+  if (target.kind === 'chat') void openLinkTarget({ kind: 'chat', chatId: target.chatId }).catch(() => undefined)
+  else if (target.kind === 'setup') window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'assistant' } }))
+  return null
 }
 
 /**
- * 壳认出的一个任务(带它在活里的 id),去 App:App 自己那一页,任务的对话开在它面板上的宿主层(同内置任务窗)。不去 App = null
- * (调用处照内置的走)。壳此刻显示的不是这个账号 = 抛(调用处走统一的报错出口)。
+ * 壳认出的一个任务(带它在活里的 id),去 App:App 自己那一页,任务的对话开在它面板上的宿主层(同原来的任务窗)。App 此刻用不了 =
+ * null。壳此刻显示的不是这个账号、App 读不到它的活 = 抛(调用处走统一的报错出口)。
  */
 export function openAssistantTaskInApp(ownerId: string, request: AssistantTaskChat & { workId: string }): string | null {
-  const target = readAssistantEntryTarget('task-chat')
+  const target = readAssistantEntryTarget()
   if (target.kind !== 'app') return null
   const bridge = readAppHostLayerBridge()
   if (!bridge) return null
+  if (!appReadsWork()) throw new Error('The assistant App does not read its work')
   openAssistantApp(target)
   bridge.openTask(target.extensionId, ownerId, request)
   return appHostLayerSlotKey(target.extensionId)

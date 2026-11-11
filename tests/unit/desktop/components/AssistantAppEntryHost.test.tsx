@@ -179,9 +179,11 @@ describe('what opening the built-in page did', () => {
     expect(localStorage.getItem(`gugu.app.${ASSISTANT_APP_ID}.panel`)).toBe('open');
   });
 
+  // The built-in page's view is gone: a restored snapshot still holds its last tab, kept until handed over.
+  const retired = (tab: string) => appState.navigation.restoreSnapshot({ viewParams: { assistant: { tab } } as never });
+
   it('hands the built-in page\'s last tab to the App once for this account, when the App becomes where the entry goes', async () => {
-    appState.navigation.navigate('assistant', { tab: 'memory' });
-    appState.navigation.navigate('home');
+    retired('memory');
     await mount();
     expect(handOver).not.toHaveBeenCalled();
     await act(async () => publishAppConversationSurfaces({ [ASSISTANT_APP_ID]: DM }));
@@ -195,19 +197,27 @@ describe('what opening the built-in page did', () => {
     expect(handOver).toHaveBeenCalledOnce();
   });
 
-  it('asks again later when main did not hold it, and hands nothing for 动态 (the default)', async () => {
+  it('keeps the tab and asks again on a later run when main did not hold it (the App still going in)', async () => {
     handOver.mockResolvedValue({ success: true, data: { held: false } });
-    appState.navigation.navigate('assistant', { tab: 'tasks' });
-    appState.navigation.navigate('home');
+    retired('tasks');
     await mount();
     await act(async () => publishAppConversationSurfaces({ [ASSISTANT_APP_ID]: DM }));
     await flush();
     expect(handOver).toHaveBeenCalledOnce();
     expect(localStorage.getItem(`gugu.assistant.handedOver:${OWNER}`)).toBeNull();
-    handOver.mockClear();
-    appState.navigation.navigate('assistant', { tab: 'today' });
-    appState.navigation.navigate('home');
-    await act(async () => publishAppConversationSurfaces({}));
+    // A later run: the snapshot no longer holds the retired view; the kept tab is handed over.
+    await act(async () => root.unmount());
+    handOver.mockReset().mockResolvedValue({ success: true, data: { held: true } });
+    appState.navigation.restoreSnapshot({ viewParams: {} });
+    await mount();
+    await flush();
+    expect(handOver).toHaveBeenCalledExactlyOnceWith({ ownerId: OWNER, tab: 'tasks' });
+    expect(localStorage.getItem(`gugu.assistant.handedOver:${OWNER}`)).toBe('1');
+  });
+
+  it('hands nothing for 动态 (the default) or when nothing was stored, and does not ask again', async () => {
+    retired('today');
+    await mount();
     await act(async () => publishAppConversationSurfaces({ [ASSISTANT_APP_ID]: DM }));
     await flush();
     expect(handOver).not.toHaveBeenCalled();

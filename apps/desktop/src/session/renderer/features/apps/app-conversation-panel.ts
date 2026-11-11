@@ -85,6 +85,28 @@ export function builtInAssistantLastTab(params: { tab?: unknown } | null | undef
   return typeof tab === 'string' && RESUME_TABS.includes(tab) ? (tab as 'tasks' | 'memory' | 'profile') : null;
 }
 
+/**
+ * The navigation snapshot keeps the built-in page's view only for the run that restores it (the view is gone): its last tab
+ * is kept here on this computer until it is handed over (an App still being put in hands it over on a later run).
+ */
+const KEPT_LAST_TAB_KEY = 'gugu.assistant.lastTab';
+export function keepBuiltInAssistantLastTab(params: { tab?: unknown } | null | undefined): void {
+  const tab = builtInAssistantLastTab(params);
+  if (!tab) return;
+  try {
+    localStorage.setItem(KEPT_LAST_TAB_KEY, tab);
+  } catch {
+    // 记不住:App 从动态开。
+  }
+}
+export function keptBuiltInAssistantLastTab(): 'tasks' | 'memory' | 'profile' | null {
+  try {
+    return builtInAssistantLastTab({ tab: localStorage.getItem(KEPT_LAST_TAB_KEY) });
+  } catch {
+    return null;
+  }
+}
+
 const handedOverKey = (ownerId: string) => `gugu.assistant.handedOver:${ownerId}`;
 /** Whether the hand-over to the App was done for this account on this computer (then never again). */
 export function assistantHandedOver(ownerId: string): boolean {
