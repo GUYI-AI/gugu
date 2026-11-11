@@ -5,8 +5,8 @@
       "id": "gugu-assistant-release-1",
       "appId": "gugu-assistant",
       "sourceRepo": "GUYI-AI/gugu-assistant",
-      "publicKey": null,
-      "note": "SLOT: put the SPKI PEM public key of gugu-assistant-release-1 here before a release. While it is null, nothing of gugu-assistant installs from the market and a production build stops (scripts/build/release-trust-keys.mts)."
+      "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAZCxoiWip7MXhYrpML6ORB9KkBqoDw2SIjF2x5r/eOuw=\n-----END PUBLIC KEY-----\n",
+      "note": "Ed25519 public key that verifies gugu-assistant market releases signed in GUYI-AI/gugu-assistant CI (secret ASSISTANT_SIGNING_KEY)."
     }
   ]
 }
