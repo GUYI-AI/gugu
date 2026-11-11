@@ -123,11 +123,14 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // built-in list draws it with an opaque handle; `openWork(name, handle)` (in a click) / `closeWork` have the host draw that
 // task's own conversation in the App's panel. No work, session, chat or device id, path, URL or message reaches the App.
 // 47: reserved (the voice-note recorder), merged in as it lands.
-// 48 (phone-binding.ts): the conversation binding on a phone. An App listing `phone` may declare it from 48; the phone binds
+// 48: reserved (resources management: files upload, folders, rename; voice-note transcribe / delete / export; draft
+// attachments; failure reasons), merged in as it lands.
+// 49 (phone-binding.ts): the conversation binding on a phone. An App listing `phone` may declare it from 49; the phone binds
 // only the product's assistant App, to the account's private chat with its own assistant. `bindings.surface` says the
 // layout: `side-panel` (a computer, `panel`) or `phone` (`section`: the layer's section the page fills). What has no phone
-// meaning answers `{ state: "unsupported" }`: `setPanel` with `collapsed`, `assistant.open(…, "move")`, `advanceSetup`.
-export const EXTENSION_API_VERSION = 48;
+// meaning answers `{ state: "unsupported" }`: `setPanel` with `collapsed`, `assistant.open(…, "move")`, `advanceSetup`; and
+// `assistant.open(…, "health")` on a computer (the phone's own 健康 page; its data never reaches the App).
+export const EXTENSION_API_VERSION = 49;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and

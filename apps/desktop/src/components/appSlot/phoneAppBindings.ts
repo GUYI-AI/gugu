@@ -24,7 +24,7 @@ import type { AppBindingWork, AppWorkItem, PushedWorkLedger } from '../../sessio
 import type { PhoneLayerActions, PhoneLayerShown, PhoneLayerStatus } from './phoneAssistantLayer'
 
 /**
- * The conversation binding on a phone (API 48, phone-binding.ts): the desktop main process's verbs (electron
+ * The conversation binding on a phone (API 49, phone-binding.ts): the desktop main process's verbs (electron
  * `app-unread-bindings.ts`, `app-bound-resources.ts`, `app-assistant-binding.ts`), answered by the phone's own App host,
  * this page, under the same authority, failing closed:
  * - the account: the one signed in on this page now (`account`), the same after every wait;

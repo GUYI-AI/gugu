@@ -12,7 +12,7 @@ import { BINDING_ACTION_CAPABILITY } from './unread-binding';
  * Trust is the #1931 rule for the product's assistant App (electron `assistant-rules-trust.ts` on its branch): its id, from
  * the market, its code in gugu's own market repository, no fork in use, switched on. Then what the place needs of it: the
  * platform declared, its main page placed beside the conversation (`contributes.conversationSurface`) with the binding's
- * `surface` action granted, and on a phone the binding's phone API (48). The desktop entry switch is to call this same
+ * `surface` action granted, and on a phone the binding's phone API (49). The desktop entry switch is to call this same
  * function (or move its trust list here); it must not keep a second copy of the rule.
  */
 export const ASSISTANT_APP_ID = 'gugu-assistant';

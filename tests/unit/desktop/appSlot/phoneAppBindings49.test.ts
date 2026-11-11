@@ -5,12 +5,12 @@ import { ASSISTANT_APP_ID, assistantLayerEntry, type AssistantAppInstall } from 
 import { PHONE_ASSISTANT_SCREENS, PHONE_BINDING_API_VERSION } from '../../../../apps/desktop/src/session/shared/extensions/phone-binding'
 import { APP_PLATFORMS_API_VERSION, appPlatformProblems } from '../../../../apps/desktop/src/session/shared/extensions/app-platforms'
 import { EXTENSION_API_VERSION, parseExtensionManifest, safeParseExtensionManifest, type ExtensionManifest } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
-import type { AppAssistantStatus } from '../../../../apps/desktop/src/session/shared/extensions/assistant-binding'
+import { ASSISTANT_SCREENS, type AppAssistantStatus } from '../../../../apps/desktop/src/session/shared/extensions/assistant-binding'
 import type { PushedWorkLedger } from '../../../../apps/desktop/src/session/shared/extensions/work-binding'
 import type { PhoneLayerActions, PhoneLayerShown, PhoneLayerStatus } from '../../../../apps/desktop/src/components/appSlot/phoneAssistantLayer'
 
 /**
- * API 48: the conversation binding on a phone. The host binds only the product's assistant App to the account's private chat
+ * API 49: the conversation binding on a phone. The host binds only the product's assistant App to the account's private chat
  * with its own assistant; every refusal fails closed; what has no phone meaning answers `unsupported`; the page is told the
  * phone layout and the section it fills.
  */
@@ -182,13 +182,13 @@ describe('the assistant\'s place: App or built-in (assistantLayerEntry)', () => 
   })
 })
 
-describe('the manifest and the phone (API 48)', () => {
-  it('takes a binding on a phone from apiVersion 48 and refuses it before', () => {
+describe('the manifest and the phone (API 49)', () => {
+  it('takes a binding on a phone from apiVersion 49 and refuses it before', () => {
     expect(EXTENSION_API_VERSION).toBeGreaterThanOrEqual(PHONE_BINDING_API_VERSION)
     expect(safeParseExtensionManifest(assistantManifest()).ok).toBe(true)
-    const older = safeParseExtensionManifest({ ...assistantManifest(), apiVersion: 46 })
+    const older = safeParseExtensionManifest({ ...assistantManifest(), apiVersion: 48 })
     expect(older.ok).toBe(false)
-    expect(JSON.stringify(older)).toMatch(/on a phone requires apiVersion 48/)
+    expect(JSON.stringify(older)).toMatch(/on a phone requires apiVersion 49/)
   })
   it('lets a phone App declare every binding capability (publication and install check)', () => {
     expect(appPlatformProblems(assistantManifest())).toEqual([])
@@ -300,7 +300,8 @@ describe('the layout signal and the unsupported-here states', () => {
     expect(await codeOf(bindings.setPanel(PAGE, { name: 'main', section: 'chat' }))).toBe('invalid')
     expect(actions.move).toHaveBeenCalledTimes(1)
   })
-  it.each(Object.entries(PHONE_ASSISTANT_SCREENS))('opens %s as the phone\'s own screen, or says it is unsupported here', async (screen, target) => {
+  // The screens `gugu.assistant.open` takes today; the panel's own pages (#1925) are mapped ahead and checked below.
+  it.each(Object.entries(PHONE_ASSISTANT_SCREENS).filter(([screen]) => (ASSISTANT_SCREENS as readonly string[]).includes(screen)))('opens %s as the phone\'s own screen, or says it is unsupported here', async (screen, target) => {
     const answer = await createPhoneBindings(ports()).assistantOpen(ASSISTANT_APP_ID, { name: 'main', screen })
     if (target) {
       expect(answer).toBeUndefined()
@@ -312,9 +313,16 @@ describe('the layout signal and the unsupported-here states', () => {
   })
   it('maps every screen as the phone has it', () => {
     expect(PHONE_ASSISTANT_SCREENS).toEqual({
-      setup: { section: 'profile', page: 'settings' }, move: null, close: { confirm: 'close' }, look: { section: 'profile', page: 'customize' },
+      setup: { section: 'profile', page: 'settings' }, move: null, close: { confirm: 'close' },
+      // 换形象 is the look workshop itself, never 自定义 (the App draws its own customize page).
+      look: { section: 'profile', page: 'look' },
       model: { section: 'profile', page: 'settings:aimodel' }, devices: { section: 'profile', page: 'devices' }, 'connected-apps': { connectors: true },
+      health: { section: 'memory', page: 'health' },
+      settings: { section: 'profile', page: 'settings' }, projects: { section: 'profile', page: 'library:workspace' },
+      capabilities: { section: 'profile', page: 'library:capabilities' },
     })
+    // Every screen the contract takes has a phone answer: a page of its own, or the closed unsupported state — never a dead tap.
+    for (const screen of ASSISTANT_SCREENS) expect(PHONE_ASSISTANT_SCREENS).toHaveProperty([screen])
   })
   it('refuses to open a screen for an App not bound here, and answers advanceSetup unsupported', async () => {
     world.app = install({ origin: 'attachment' })
@@ -322,6 +330,11 @@ describe('the layout signal and the unsupported-here states', () => {
     expect(actions.open).not.toHaveBeenCalled()
     world.app = install()
     expect(await createPhoneBindings(ports()).assistantAdvanceSetup(ASSISTANT_APP_ID, { name: 'main', next: 'done' })).toEqual({ name: 'main', state: 'unsupported' })
+    // Unsupported only to an App that may ask: another binding's name, or no assistant:open grant, is refused.
+    expect(await codeOf(createPhoneBindings(ports()).assistantAdvanceSetup(ASSISTANT_APP_ID, { name: 'other', next: 'done' }))).toBe('denied')
+    const base = assistantManifest()
+    world.app = install({ manifest: { ...base, permissions: { ...base.permissions, capabilities: base.permissions!.capabilities!.filter((c) => c !== 'assistant:open') } } as ExtensionManifest })
+    expect(await codeOf(createPhoneBindings(ports()).assistantAdvanceSetup(ASSISTANT_APP_ID, { name: 'main', next: 'done' }))).toBe('denied')
   })
   it('answers the assistant\'s status from the layer, for this account only', async () => {
     const bindings = createPhoneBindings(ports())

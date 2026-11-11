@@ -150,9 +150,9 @@ describe('the bound conversation\'s files and draft (#1927, API 40)', () => {
     for (const actions of [['files'], ['unread', 'files', 'files'], ['unread', 'write'], ['unread', 'files', 'draft', 'read']]) {
       expect(() => parseExtensionManifest(boundManifest(actions, ['chat:unread', 'chat:files']))).toThrow();
     }
-    // API 48: a phone takes the binding from 48 (phone-binding.ts), and refuses it before.
-    expect(() => parseExtensionManifest({ ...boundManifest(), apiVersion: 47, platforms: ['desktop', 'phone'] })).toThrow(/on a phone requires apiVersion 48/);
-    expect(() => parseExtensionManifest({ ...boundManifest(), apiVersion: 48, platforms: ['desktop', 'phone'] })).not.toThrow();
+    // API 49: a phone takes the binding from 49 (phone-binding.ts), and refuses it before.
+    expect(() => parseExtensionManifest({ ...boundManifest(), apiVersion: 48, platforms: ['desktop', 'phone'] })).toThrow(/on a phone requires apiVersion 49/);
+    expect(() => parseExtensionManifest({ ...boundManifest(), apiVersion: 49, platforms: ['desktop', 'phone'] })).not.toThrow();
   });
 
   it('reaches the one selected conversation only with the action declared and its capability granted', () => {
@@ -278,9 +278,9 @@ describe('the bound conversation beside the App\'s page (#1925, API 41)', () => 
     // Without any binding at all: a surface has no conversation to be beside.
     const unbound = { ...manifest(), permissions: { capabilities: ['chat:surface'] }, contributes: { ...manifest().contributes, conversationSurface: { binding: 'main', placement: 'side-panel' } } };
     expect(() => parseExtensionManifest(unbound)).toThrow();
-    // API 48: a phone takes the binding from 48 (phone-binding.ts), and refuses it before.
-    expect(() => parseExtensionManifest({ ...surfaceManifest(), apiVersion: 47, platforms: ['desktop', 'phone'] })).toThrow(/on a phone requires apiVersion 48/);
-    expect(() => parseExtensionManifest({ ...surfaceManifest(), apiVersion: 48, platforms: ['desktop', 'phone'] })).not.toThrow();
+    // API 49: a phone takes the binding from 49 (phone-binding.ts), and refuses it before.
+    expect(() => parseExtensionManifest({ ...surfaceManifest(), apiVersion: 48, platforms: ['desktop', 'phone'] })).toThrow(/on a phone requires apiVersion 49/);
+    expect(() => parseExtensionManifest({ ...surfaceManifest(), apiVersion: 49, platforms: ['desktop', 'phone'] })).not.toThrow();
   });
 
   it('reaches the selected conversation only with the action declared and chat:surface granted; withdrawn, only surface stops', () => {
@@ -376,9 +376,9 @@ describe('the assistant\'s work on the binding (#1925, API 46)', () => {
     expect(() => parseExtensionManifest(workManifest({ actions: ['unread'], capabilities: ['chat:unread', 'chat:work'] }))).toThrow(/chat:work/);
     // No binding at all: there is no conversation to be the assistant's.
     expect(() => parseExtensionManifest({ ...manifest(), permissions: { capabilities: ['chat:work'] } })).toThrow();
-    // API 48: a phone takes the binding from 48 (phone-binding.ts), and refuses it before.
-    expect(() => parseExtensionManifest({ ...workManifest(), apiVersion: 47, platforms: ['desktop', 'phone'] })).toThrow(/on a phone requires apiVersion 48/);
-    expect(() => parseExtensionManifest({ ...workManifest(), apiVersion: 48, platforms: ['desktop', 'phone'] })).not.toThrow();
+    // API 49: a phone takes the binding from 49 (phone-binding.ts), and refuses it before.
+    expect(() => parseExtensionManifest({ ...workManifest(), apiVersion: 48, platforms: ['desktop', 'phone'] })).toThrow(/on a phone requires apiVersion 49/);
+    expect(() => parseExtensionManifest({ ...workManifest(), apiVersion: 49, platforms: ['desktop', 'phone'] })).not.toThrow();
     // An App of before parses as it did.
     expect(() => parseExtensionManifest(boundManifest())).not.toThrow();
   });

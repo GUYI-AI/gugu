@@ -53,13 +53,19 @@ describe('each screen opens by its existing entry, and nothing else', () => {
     devices: 'settings:devices', 'connected-apps': 'settings:connectors',
   } as const
 
-  it.each(ASSISTANT_SCREENS)('%s', (screen) => {
+  // `health` (49) is a phone's own page: main answers `unsupported` on a computer and never asks the window.
+  const COMPUTER_SCREENS = ASSISTANT_SCREENS.filter((screen) => screen !== 'health')
+
+  it.each(COMPUTER_SCREENS)('%s', (screen) => {
     openAssistantScreen(screen, OWNER)
     expect(entries()).toEqual([ENTRY[screen]])
   })
 
-  it('the list is exactly these seven', () => {
-    expect([...ASSISTANT_SCREENS].sort()).toEqual(Object.keys(ENTRY).sort())
+  it('the list is exactly these seven, and health, which a computer does not open', () => {
+    expect([...COMPUTER_SCREENS].sort()).toEqual(Object.keys(ENTRY).sort())
+    expect(ASSISTANT_SCREENS).toContain('health')
+    expect(() => openAssistantScreen('health', OWNER)).toThrow()
+    expect(entries()).toEqual([])
   })
 
   it('an unknown value opens nothing', () => {

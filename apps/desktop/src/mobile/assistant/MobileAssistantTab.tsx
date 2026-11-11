@@ -44,7 +44,7 @@ export function MobileAssistantTab({ state, visible, chatRequest, navigationTarg
 }
 
 /**
- * API 48 The assistant as an App may see it (`gugu.assistant.status`), from what this layer knows, for the account signed in:
+ * API 49 The assistant as an App may see it (`gugu.assistant.status`), from what this layer knows, for the account signed in:
  * handed to the phone's binding host (phoneAssistantLayer) each time it changes; nothing while nobody is signed in.
  */
 function usePhoneAssistantStatusForApps(state: PhoneAssistantState) {

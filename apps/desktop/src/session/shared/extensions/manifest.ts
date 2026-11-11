@@ -773,7 +773,7 @@ export const extensionManifestSchema = z
     if (Boolean(unreadBinding) !== declared.includes('chat:unread')) {
       ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings'], message: 'chat:unread requires exactly one conversation binding with the unread action, and the binding requires chat:unread' });
     }
-    // API 48 (phone-binding.ts): a phone answers the binding from 48; an App listing the phone with a binding says so.
+    // API 49 (phone-binding.ts): a phone answers the binding from 49; an App listing the phone with a binding says so.
     if (unreadBinding && manifest.platforms?.includes('phone') && manifest.apiVersion < PHONE_BINDING_API_VERSION) {
       ctx.addIssue({ code: 'custom', path: ['platforms'], message: `a conversation binding on a phone requires apiVersion ${PHONE_BINDING_API_VERSION}` });
     }

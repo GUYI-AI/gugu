@@ -51,7 +51,7 @@ const PHONE: ReadonlySet<HostMember> = new Set<HostMember>([
   'cloud.read', 'cloud.write', 'cloud.subscribe', 'cloud.unsubscribe', 'onCloudHeard', 'pickAgent',
   'setTabTitle', 'setTabBadge', 'setTabDirty', 'onCommand', 'onLink', 'showMessage', 'showSession', 'clipboard.writeText',
   'readData', 'writeData', 'listData',
-  // API 48 The conversation binding, as the phone's binding host answers it (phoneAppBindings.ts).
+  // API 49 The conversation binding, as the phone's binding host answers it (phoneAppBindings.ts).
   'bindings.get', 'bindings.list', 'bindings.read', 'bindings.surface', 'bindings.setPanel', 'bindings.onSurface',
   'bindings.resources', 'bindings.resource', 'bindings.watch', 'bindings.save', 'bindings.remove', 'onBindingResources',
   'bindings.schedules', 'bindings.watchSchedules', 'bindings.controlSchedule', 'onSchedulesChanged',

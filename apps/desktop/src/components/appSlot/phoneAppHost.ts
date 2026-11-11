@@ -247,7 +247,7 @@ const files = createAppFiles({
 })
 
 /**
- * API 48 The conversation binding on this phone (phoneAppBindings.ts): the host's own binding of the assistant App to the
+ * API 49 The conversation binding on this phone (phoneAppBindings.ts): the host's own binding of the assistant App to the
  * account's private chat with its assistant, answered here as main answers it on a computer.
  */
 const phoneBindings = createPhoneBindings(phoneBindingPorts(files))
@@ -558,7 +558,7 @@ export function hostAppFrame(
       if (!manifest) refused('not-installed', `${hosted.binding.extensionId} is not installed on this phone`)
       return callOnComputer({ extensionId: manifest.id, extensionName: manifest.name, version: manifest.version }, folderMachine(folder.deviceId), method, args).then(computerReply)
     }
-    // API 48 The binding's verbs, and a draft into the binding's conversation: the phone's binding host answers them.
+    // API 49 The binding's verbs, and a draft into the binding's conversation: the phone's binding host answers them.
     const page = { extensionId: hosted.binding.extensionId, tabId: hosted.binding.tabId, pageId }
     const bound = answerPhoneBinding(phoneBindings, method, page, args, (watchId, heard) => event({ type: 'bindingResources', watchId, event: heard }),
       (binding) => event({ type: 'schedulesChanged', binding }))
@@ -951,7 +951,7 @@ export function hostAppFrame(
   const snapshot = () => new Map(cachedPhoneAgents(hosted.binding.extensionId, hosted.binding.capabilities).map((agent) => [agent.agentId, JSON.stringify(agent)]))
   let previous = snapshot()
   const stopState = onPhoneAppState(stateChanged)
-  // API 48 Where the assistant's layer shows this page, and the assistant as it knows it: heard while the page is up.
+  // API 49 Where the assistant's layer shows this page, and the assistant as it knows it: heard while the page is up.
   const stopBindings = phoneBindings.attach({ extensionId: hosted.binding.extensionId, tabId: hosted.binding.tabId, pageId }, event)
   const stopAgents = subscribeDeviceSessions(() => {
     stateChanged()

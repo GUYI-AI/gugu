@@ -11,7 +11,10 @@ import { Button } from '@/components/ui/Button'
 import { Avatar } from '@/components/Avatar'
 import { Markdown } from '@/components/markdown/Markdown'
 import { AssistantSettingsPage } from '@/components/assistant/AssistantSettingsPage'
+import type { ComponentType } from 'react'
 import { AgentAiModelPane } from '@/components/agentsettings/AgentAiModelPane'
+import { AgentLookPane } from '@/components/agentsettings/AgentLookPane'
+import type { AgentSettingsPaneProps } from '@/components/agentsettings/types'
 import { useAssistantHome } from '@/lib/useAssistantHome'
 import { AssistantDevicesPage } from '@/components/devices/AssistantDevicesPage'
 import { DeviceRenameField } from '@/components/devices/DeviceRenameField'
@@ -59,8 +62,10 @@ export function PhoneProfile(input: PhonePageProps) {
     <AssistantSettingsPage panelNavigation onOpenPage={(tab) => props.open({ tab })} onOpenSection={(section) => go(`settings:${section}`)} />
   </div></div>
 
-  // API 48 `gugu.assistant.open(…, "model")`: the model page its settings open (AssistantSettingsPage `aimodel`), as a page of its own.
-  if (sub === 'aimodel') return <PhoneAssistantModel title={t('settingsPage.model')} />
+  // API 49 `gugu.assistant.open(…, "model" | "look")`: the model page its settings open (AssistantSettingsPage `aimodel`) and the
+  // look workshop 自定义's 换形象 opens (AgentLookPane), each as a page of its own — never 自定义 again over the App's own.
+  if (sub === 'aimodel') return <PhoneAssistantPane title={t('settingsPage.model')} testId="assistant-model-page" Pane={AgentAiModelPane} />
+  if (sub === 'look') return <PhoneAssistantPane title={t('customize.look')} testId="assistant-look-page" Pane={AgentLookPane} />
 
   if (sub === 'files' || sub?.startsWith('files:')) return <PhoneFiles key={sub} {...props} trail={filesTrail(sub)} />
   if (sub === 'customize') return <PhoneCustomize {...props} persona={persona} />
@@ -162,9 +167,9 @@ function ProfileHome({
 }
 
 /** The assistant's model page, the one its settings open (`AssistantSettingsPage` → `AgentAiModelPane`). */
-function PhoneAssistantModel({ title }: { title: string }) {
+function PhoneAssistantPane({ title, testId, Pane }: { title: string; testId: string; Pane: ComponentType<AgentSettingsPaneProps> }) {
   const { contact } = useAssistantHome()
-  return <div className="ta-page ta-phone-profile" data-testid="assistant-model-page"><PageHead title={title} /><div className="ta-skin">
-    {contact ? <AgentAiModelPane agent={contact} /> : null}
+  return <div className="ta-page ta-phone-profile" data-testid={testId}><PageHead title={title} /><div className="ta-skin">
+    {contact ? <Pane agent={contact} /> : null}
   </div></div>
 }

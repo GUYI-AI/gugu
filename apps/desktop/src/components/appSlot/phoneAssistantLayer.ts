@@ -3,7 +3,7 @@ import type { PhoneAssistantScreen, PhoneSurfaceSection } from '../../session/sh
 import type { PushedWorkLedger } from '../../session/shared/extensions/work-binding'
 
 /**
- * The phone's assistant layer as the App host sees it (API 48): which App page it shows now and in which section, what the
+ * The phone's assistant layer as the App host sees it (API 49): which App page it shows now and in which section, what the
  * layer does when that page asks (move to a section, open one of the phone's own screens), and the assistant as the layer
  * knows it. Written only by the layer (MobileAssistantApp / MobileAssistantTab), the trusted shell; read by the binding host
  * (phoneAppBindings.ts), which believes it only for the conversation the binding reaches, checked again on every answer.

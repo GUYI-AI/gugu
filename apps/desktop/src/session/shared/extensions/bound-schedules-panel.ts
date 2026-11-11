@@ -6,7 +6,7 @@ import { encodeTypedId } from '@gugu/core/shared/typedId.mjs';
 import type { AppBoundSchedule, AppScheduleControl } from './bound-schedules';
 
 /**
- * #1928 (shared since API 48: the desktop's main and the phone's binding host read and change it the same way)
+ * #1928 (shared since API 49: the desktop's main and the phone's binding host read and change it the same way)
  * The bound agent's schedules when it is the person's assistant living on another computer or in the cloud — the
  * source and the path the built-in 已安排 panel takes there (`assistant-panel-routines.ts`). Read: the panel's `schedules`
  * collection the assistant's home publishes, through the built-in panel's own reader (`createAssistantPanelFiles`,

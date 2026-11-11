@@ -56,7 +56,7 @@ export const CONVERSATION_SURFACE_PANEL_INSET: Readonly<{ top: number; right: nu
 
 /**
  * `gugu.bindings.surface(name)` (41, `chat:surface`): whether the bound conversation is drawn beside this page now, and in
- * which layout (48): `side-panel` on a computer — whether this page's panel is collapsed, and the corner of the page the
+ * which layout (49): `side-panel` on a computer — whether this page's panel is collapsed, and the corner of the page the
  * host's control covers (`panel.inset`); `phone` on a phone — the conversation is the layer's first section, the host's, and
  * this page fills the section the person is on (`section`, phone-binding.ts), full screen, with no tab row of its own.
  * `unbound` says only that it is not: no chosen conversation, the grant withdrawn, the account switched or out of it, or

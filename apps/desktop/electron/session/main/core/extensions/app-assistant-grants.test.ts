@@ -59,7 +59,7 @@ describe('the manifest: assistant actions on the conversation binding, from API 
     for (const actions of [['unread', 'assistant-status', 'assistant-status'], ['unread', 'assistant'], ['unread', 'assistant-close'], ['unread', 'assistant-settings']]) {
       expect(() => parseExtensionManifest(manifest(actions, ['chat:unread', 'assistant:status']))).toThrow();
     }
-    expect(() => parseExtensionManifest({ ...manifest(), platforms: ['desktop', 'phone'] })).toThrow(/on a phone requires apiVersion 48/);
+    expect(() => parseExtensionManifest({ ...manifest(), platforms: ['desktop', 'phone'] })).toThrow(/on a phone requires apiVersion 49/);
   });
 
   it('an App of API 40 with files and draft parses as before', () => {

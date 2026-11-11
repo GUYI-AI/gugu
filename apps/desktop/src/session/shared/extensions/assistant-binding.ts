@@ -18,10 +18,11 @@ export const ASSISTANT_BINDING_API_VERSION = 44;
 /**
  * The host screens `gugu.assistant.open` opens, each by its existing entry (`lib/assistantAppHost.ts`): the assistant
  * section of Settings (setup — the onboarding, when there is no assistant — and the move group are both drawn there), the
- * one close confirmation, its look and model tabs, the devices and connected-apps sections. A closed list: no other
- * value, and nothing more than the value, is taken.
+ * one close confirmation, its look and model tabs, the devices and connected-apps sections; `health` (API 49) the phone's
+ * own health page (its data read on the phone, never handed to the App; a computer answers `unsupported`). A closed list: no
+ * other value, and nothing more than the value, is taken.
  */
-export const ASSISTANT_SCREENS = ['setup', 'move', 'close', 'look', 'model', 'devices', 'connected-apps'] as const;
+export const ASSISTANT_SCREENS = ['setup', 'move', 'close', 'look', 'model', 'devices', 'connected-apps', 'health'] as const;
 export type AssistantScreen = (typeof ASSISTANT_SCREENS)[number];
 
 /**

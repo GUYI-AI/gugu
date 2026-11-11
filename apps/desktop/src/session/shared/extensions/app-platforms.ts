@@ -16,7 +16,7 @@ export const PHONE_CAPABILITY_SUPPORT = {
   'files:write': 'available',
   'chat:relay': 'available',
   'chat:read': 'available',
-  // The conversation binding (API 48, phone-binding.ts): the phone answers it, as the host binds it there.
+  // The conversation binding (API 49, phone-binding.ts): the phone answers it, as the host binds it there.
   'chat:unread': 'available',
   'chat:files': 'available',
   'chat:draft': 'available',

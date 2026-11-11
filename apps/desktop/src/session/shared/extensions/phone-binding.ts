@@ -1,15 +1,15 @@
 import type { AssistantScreen } from './assistant-binding';
 
 /**
- * API 48: the conversation binding (#1927) on a phone. Until 47 a binding of any action made the App desktop-only
- * (#1995: the binding store and its picker were the desktop main process's). From 48 an App listing `phone` may declare it;
+ * API 49: the conversation binding (#1927) on a phone. Until 48 a binding of any action made the App desktop-only
+ * (#1995: the binding store and its picker were the desktop main process's). From 49 an App listing `phone` may declare it;
  * the phone answers the same calls with the same authority — the signed-in account, the App as installed on this phone,
  * the conversation, all asked again after every wait — and says, in a closed answer, what has no meaning on a phone.
  *
  * A phone has no picker. The one binding a phone makes is the host's own: the product's assistant App (assistant-entry.ts),
  * bound to the account's private chat with its own assistant. Any other App's binding is `unbound` on a phone.
  */
-export const PHONE_BINDING_API_VERSION = 48;
+export const PHONE_BINDING_API_VERSION = 49;
 
 /**
  * The phone's assistant layer (`MobileAssistantApp`): the host draws its tabs — 聊天 (the conversation, the host's own), then
@@ -28,21 +28,33 @@ export type AppBindingUnsupported = { name: string; state: 'unsupported' };
 export const unsupportedHere = (name: string): AppBindingUnsupported => ({ name, state: 'unsupported' });
 
 /**
+ * The built-in panel's own pages an App may open (#1925's API 44 extension: its gear, 项目, 能力), named here ahead of that
+ * extension landing so a phone answers them the moment `gugu.assistant.open` takes them. Once `ASSISTANT_SCREENS` lists
+ * them this is the same set.
+ */
+type PanelPageScreen = 'settings' | 'projects' | 'capabilities';
+
+/**
  * `gugu.assistant.open(name, screen)` on a phone: each screen opens the phone's own existing screen for it — or, `null`,
- * there is none (`unsupported`). Setup is the assistant's settings page (a phone sets an assistant up only in the cloud,
- * from the layer itself); look is its customize page; model the model page of its settings; devices and connected apps
- * their pages under 资料; close the one close confirmation. A phone cannot be the assistant's home: moving it is a
- * computer's.
+ * there is none (`unsupported`). Setup and settings are the assistant's settings page (a phone sets an assistant up only in
+ * the cloud, from the layer itself); look is the look workshop (换形象, the page 自定义's button opens — never 自定义 itself,
+ * the App draws its own); model the model page of its settings; devices, connected apps, projects (项目) and capabilities
+ * (能力) their pages under 资料; health the phone's own 健康 page under 记忆 (Health Connect, read on the phone, never handed to
+ * the App); close the one close confirmation. A phone cannot be the assistant's home: moving it is a computer's.
  */
 export const PHONE_ASSISTANT_SCREENS = {
   setup: { section: 'profile', page: 'settings' },
   move: null,
   close: { confirm: 'close' },
-  look: { section: 'profile', page: 'customize' },
+  look: { section: 'profile', page: 'look' },
   model: { section: 'profile', page: 'settings:aimodel' },
   devices: { section: 'profile', page: 'devices' },
   'connected-apps': { connectors: true },
-} as const satisfies Record<AssistantScreen, { section: 'profile'; page: string } | { confirm: 'close' } | { connectors: true } | null>;
+  health: { section: 'memory', page: 'health' },
+  settings: { section: 'profile', page: 'settings' },
+  projects: { section: 'profile', page: 'library:workspace' },
+  capabilities: { section: 'profile', page: 'library:capabilities' },
+} as const satisfies Record<AssistantScreen | PanelPageScreen, { section: PhoneSurfaceSection; page: string } | { confirm: 'close' } | { connectors: true } | null>;
 export type PhoneAssistantScreen = Exclude<(typeof PHONE_ASSISTANT_SCREENS)[AssistantScreen], null>;
 
 /** Which calls have no phone meaning, said once: the authoring guide and the phone host read this. */

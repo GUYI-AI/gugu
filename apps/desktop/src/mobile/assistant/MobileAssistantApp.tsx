@@ -139,7 +139,7 @@ function MobileAssistantAppContent({
     setRoute(next)
   }, [route])
   const tab = route.tab
-  // API 48 The assistant's place (assistant-entry.ts): the product's assistant App fills every section but the conversation;
+  // API 49 The assistant's place (assistant-entry.ts): the product's assistant App fills every section but the conversation;
   // without it (or with one not trusted) the built-in pages, exactly as before.
   const entry = usePhoneAssistantEntry()
   const app = entry.entry === 'app' ? entry : null
