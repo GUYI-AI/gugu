@@ -16,6 +16,7 @@ export function ConnectionSettingsRows({
   busy,
   description,
   notice,
+  signIn,
   children,
   form
 }: {
@@ -27,6 +28,8 @@ export function ConnectionSettingsRows({
   busy: boolean
   description: ReactNode
   notice: ReactNode
+  /** 正在用的连接登不上时的「登录」按钮,摆在选择框左边。 */
+  signIn?: ReactNode
   children: ReactNode
   form: ReactNode
 }) {
@@ -43,29 +46,33 @@ export function ConnectionSettingsRows({
         title={translate('agentsPage.currentConnection')}
         description={description}
         control={
-          <Select
-            items={connections?.map((c) => ({
-              value: c.id,
-              label: c.kind === 'native' ? translate('subscriptions.connections.existing') : c.name
-            }))}
-            value={current?.id ?? null}
-            open={open}
-            onOpenChange={onOpenChange}
-            onValueChange={(value) => {
-              if (value !== null) onSelect(String(value))
-            }}
-            disabled={busy || !current}
-          >
-            <SelectTrigger
-              className="w-[156px]"
-              aria-label={translate('agentsPage.currentConnection')}
+          <div className="flex items-center gap-2">
+            {signIn}
+            <Select
+              items={connections?.map((c) => ({
+                value: c.id,
+                label:
+                  c.kind === 'native' ? translate('subscriptions.connections.existing') : c.name
+              }))}
+              value={current?.id ?? null}
+              open={open}
+              onOpenChange={onOpenChange}
+              onValueChange={(value) => {
+                if (value !== null) onSelect(String(value))
+              }}
+              disabled={busy || !current}
             >
-              <SelectValue>{name ?? translate('subscriptions.checking')}</SelectValue>
-            </SelectTrigger>
-            <SelectContent align="end" className="min-w-[300px]">
-              {children}
-            </SelectContent>
-          </Select>
+              <SelectTrigger
+                className="w-[156px]"
+                aria-label={translate('agentsPage.currentConnection')}
+              >
+                <SelectValue>{name ?? translate('subscriptions.checking')}</SelectValue>
+              </SelectTrigger>
+              <SelectContent align="end" className="min-w-[300px]">
+                {children}
+              </SelectContent>
+            </Select>
+          </div>
         }
       >
         {notice}

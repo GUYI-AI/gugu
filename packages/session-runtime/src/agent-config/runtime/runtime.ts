@@ -29,7 +29,7 @@ import {
 } from '../state/live-models';
 import { AgentAuthManager } from './auth';
 import { authExpiryKey } from './auth';
-import { applyCredentialExpiry } from './auth-expiry';
+import { applyAuthExpiry, applyCredentialExpiry } from './auth-expiry';
 import { AgentInstallManager } from './install';
 import { AgentMcpConfigManager } from './mcp';
 import type { AgentConfigRuntimeDeps } from './types';
@@ -258,7 +258,9 @@ export class AgentConfigRuntime {
       }
       const status = await this.deps.agentHost.checkAuthStatus(providerId, runContext, program);
       if (!status.success) return err({ type: 'invalid-state', message: hostErrorMessage(status.error) });
-      if (status.data.kind === 'authenticated') {
+      // CLI 只照盘上的凭据答「已登录」;被标着「登录已失效」的连接正是要重新登录的那一个,❌ 拿这句读数把它挡回去。
+      const current = applyAuthExpiry(status.data, await this.auth.isMarkedExpired(providerId, targetConnection));
+      if (current.kind === 'authenticated') {
         return err({ type: 'invalid-state', message: '这个连接已经登录。请添加独立账号连接，原登录会保留。' });
       }
     }

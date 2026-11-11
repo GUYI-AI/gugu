@@ -200,6 +200,12 @@ export class AgentAuthManager {
     return ok();
   }
 
+  /** 这个连接此刻是不是标着「登录已失效」(凭据还在盘上、真用时被拒)。 */
+  async isMarkedExpired(providerId: string, connectionId?: string): Promise<boolean> {
+    await this.expiry.ready;
+    return this.expiry.has(authExpiryKey(providerId, connectionId));
+  }
+
   /**
    * 这家之后有一次会话成功了:撤掉标记,再按上一次读数用的那份 CLI 读一次真读数。本来没标 = 什么都不做。
    * 从没读过(没有那份 CLI 可量)就落回「还没读」—— 下一个来问的面会自己探。
