@@ -469,6 +469,13 @@ export function grantedReach(granted: readonly string[], family: string): AgentR
  * 曾经有过一个 `isExtensionCapability`,导出了、谁也没调用。
  */
 
+/**
+ * How many capabilities one manifest may list: a sanity bound on the manifest, not a permission (each is still consented
+ * to and withdrawn on its own, from the closed list above). It was 12 when no binding had actions; the conversation
+ * binding's actions each bring a capability of their own (15 today), so the assistant App alone lists 14.
+ */
+export const EXTENSION_CAPABILITIES_MAX = 24;
+
 const permissionsSchema = z.strictObject({
   /**
    * Abilities this extension asks for. Each is consented to and revoked on its
@@ -480,7 +487,7 @@ const permissionsSchema = z.strictObject({
    */
   capabilities: z
     .array(z.enum(EXTENSION_CAPABILITIES))
-    .max(12)
+    .max(EXTENSION_CAPABILITIES_MAX)
     .optional(),
   /** Object declarations are permission requests, never caller-selected account or chat IDs. */
   bindings: z.array(z.strictObject({
