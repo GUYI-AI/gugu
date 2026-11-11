@@ -11,7 +11,7 @@ const repoRoot = join(__dirname, '../../..')
  * the password page with no way to reach the vault.
  */
 describe('vite.config.mts bakes the build tier into every Electron entry', () => {
-  it('main, both preloads and the vault login preload define the same tier', () => {
+  it('main and both preloads define the same tier', () => {
     const code = `
       process.env.GUGU_TIER = 'beta'
       const m = await import(${JSON.stringify(pathToFileURL(join(repoRoot, 'vite.config.mts')).href)})
@@ -20,7 +20,7 @@ describe('vite.config.mts bakes the build tier into every Electron entry', () =>
     const line = run.stdout.split(/\r?\n/).find((l) => l.startsWith('READING '))
     expect(line, `${run.stdout}${run.stderr}`).toBeTruthy()
     const tiers = JSON.parse(line!.slice('READING '.length)) as (string | null)[]
-    expect(tiers.length).toBeGreaterThanOrEqual(4)
+    expect(tiers.length).toBeGreaterThanOrEqual(3)
     expect(tiers).toEqual(tiers.map(() => JSON.stringify('beta')))
   })
 })

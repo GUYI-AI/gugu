@@ -42,7 +42,7 @@ const LEVEL = { read: '可读', write: '可写' } as const
 /** A row is the field: the value is typed straight into it, and what you can do to it shows when you point at or edit it. */
 const ROW = 'group/row'
 const actions = (...nodes: ReactNode[]) => <span className="flex shrink-0 items-center opacity-0 transition-opacity duration-[var(--dur-fast)] group-focus-within/row:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-100">{nodes}</span>
-const INLINE = 'rounded-[6px] !px-2 !py-1 hover:bg-[var(--hover)] focus:bg-[var(--hover)]'
+const INLINE = 'rounded-[var(--radius-control)] !px-2 !py-1 hover:bg-[var(--hover)] focus:bg-[var(--hover)]'
 const control = (input: ReactNode, ...end: ReactNode[]) => <div className="flex w-[400px] items-center gap-1"><div className="min-w-0 flex-1">{input}</div>{actions(...end)}</div>
 /** Locked: an Agent sees the name only and 咕咕 fills the value. Unlocked: Agents with access may read it. */
 const secretMark = (label: string, secret: boolean, change: (value: boolean) => void) =>
@@ -167,10 +167,10 @@ function CredentialForm({ item, request, busy, run, go, error }: ScreenProps & {
       <SettingsGroup>
         <SettingsRow className={ROW} title="名称" control={control(<Field.Input variant="bare" className={INLINE} aria-label="名称" value={name} placeholder="可选，如「公司 GitHub」" onChange={event => setName(event.target.value)} />)} />
         <SettingsRow className={ROW} title="网址" control={control(<Field.Input variant="bare" className={INLINE} required type="url" aria-label="网址" value={origin} readOnly={!!draft} placeholder="https://example.com" onChange={event => setOrigin(event.target.value)} />)} />
-        {!!sites.length && <SettingsRow title="也可填到" control={<div className="flex w-[400px] flex-wrap gap-1.5 pl-2">
-          {sites.map(site => <span key={site} className="group/site flex h-6 items-center rounded-full bg-[var(--hover)] pl-2.5 pr-1 text-[length:var(--font-caption)]">{host(site)}
-            <button type="button" aria-label={`不再填到 ${host(site)}`} className="ml-0.5 flex size-4 items-center justify-center rounded-full text-[var(--text-secondary)] opacity-0 hover:text-[var(--fg)] focus-visible:opacity-100 group-hover/site:opacity-100 [@media(hover:none)]:opacity-100"
-              onClick={() => setSites(list => list.filter(value => value !== site))}><X size={11} aria-hidden="true" /></button></span>)}
+        {!!sites.length && <SettingsRow title="也可填到" control={<div className="flex w-[400px] flex-wrap gap-1 pl-2">
+          {sites.map(site => <span key={site} className="group/site flex h-6 items-center rounded-full bg-[var(--hover)] pl-2 pr-1 text-[length:var(--font-caption)]">{host(site)}
+            <IconButton size="sm" aria-label={`不再填到 ${host(site)}`} className="!size-4 text-[var(--text-secondary)] opacity-0 hover:text-[var(--fg)] focus-visible:opacity-100 group-hover/site:opacity-100 [@media(hover:none)]:opacity-100"
+              onClick={() => setSites(list => list.filter(value => value !== site))}><X size={11} aria-hidden="true" /></IconButton></span>)}
         </div>} />}
       </SettingsGroup>
       <SettingsGroup>
@@ -221,7 +221,7 @@ function CredentialDetail({ item, busy, run, go, error }: ScreenProps & { item: 
     <span className="select-text">{text ?? hidden}</span></div>
   /** A secret value's name carries a lock; what the lock means is said where it is set (the edit form). */
   const named = (name: string, secret: boolean) => secret
-    ? <span className="flex items-center gap-1.5">{name}<Lock size={13} aria-label="保密" className="text-[var(--text-secondary)]" /></span> : name
+    ? <span className="flex items-center gap-1">{name}<Lock size={13} aria-label="保密" className="text-[var(--text-secondary)]" /></span> : name
   const authorized = item.grants.length
   return <SettingsPage data-testid="password-detail">
     <SettingsGroup>

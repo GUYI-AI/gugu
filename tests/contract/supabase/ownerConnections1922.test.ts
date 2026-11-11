@@ -50,8 +50,9 @@ async function fixture(body: (value: {
     try {
       for (const [name,parameters] of Object.entries(rpc)) {
         const signature = `identity.${name}(${parameters.map(([,type]) => type).join(',')})`
-        // Missing application RPCs are a dependency failure, never a skipped test.
-        expect((await db.query<{ allowed: boolean }>("SELECT has_function_privilege('authenticated',$1,'EXECUTE') AS allowed",[signature])).rows[0]!.allowed).toBe(name === 'connection_authority')
+        // Missing application RPCs are a dependency failure, never a skipped test. Since gugu-supabase #252 every owner
+        // RPC is granted to authenticated in the same release; each refuses accounts without owner authority itself.
+        expect((await db.query<{ allowed: boolean }>("SELECT has_function_privilege('authenticated',$1,'EXECUTE') AS allowed",[signature])).rows[0]!.allowed).toBe(true)
         if (name !== 'connection_authority') await db.query(`GRANT EXECUTE ON FUNCTION ${signature} TO authenticated`)
       }
       const owner = randomUUID(),other = randomUUID(),device = randomUUID(),foreignDevice = randomUUID(),instance = randomUUID()

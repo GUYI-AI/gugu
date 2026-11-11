@@ -55,7 +55,7 @@ it('validates every password_fill action before dispatch and preserves successfu
   await withBetaClient(async client => {
     const requestId = '11111111-1111-4111-8111-111111111111'
     const credentialId = '22222222-2222-4222-8222-222222222222'
-    const request = { action: 'request', credentialId, browserId: 'browser', url: 'https://example.com/login', form: 'form',
+    const request = { action: 'request', credentialId, browserId: 'browser', url: 'https://example.com/login',
       fill: [{ field: '账号', into: '#account' }, { field: '密码', into: '#password' }] }
     const badArguments = [
       { action: 'request' }, { action: 'start' }, { action: 'status' },
