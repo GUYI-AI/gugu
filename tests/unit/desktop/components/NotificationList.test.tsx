@@ -10,6 +10,7 @@ import { ChatBottomDock } from '../../../../apps/desktop/src/components/chat/Cha
 import { LeftSidebar } from '@renderer/features/sidebar/left-sidebar'
 import { ShellSidebarToggle } from '@renderer/lib/components/titlebar/shell-titlebar'
 import { installShellSlots } from '../../../../apps/desktop/src/lib/shellSlots'
+import { installAssistantShellBridge, publishAssistantShell } from '../../../../apps/desktop/src/lib/assistantShellBridge'
 import { chat, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 
 const state = vi.hoisted(() => ({ sessions: [] as SessionpageSessionSummary[], mobile: false, readError: null as Error | null, sidebar: undefined as unknown as {
@@ -181,6 +182,32 @@ it.each([false, true])('clicking a global item opens its exact host task (phone=
   await mount(mobile); await open()
   await act(async () => rows()[1].click())
   expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'agent-b', deviceId: 'server' })
+})
+// The assistant's own session is the assistant, not a task of its: its row opens the assistant's chat — the link the one decision
+// routes (to the App, or, when the App is not usable here, as any chat; chat link tests in MainLayout.test.ts) — and reads it.
+// Opened as a session it landed on the blank new-task page with its unread left on (verify-pass1 D10).
+it.each([false, true])('clicking the assistant\'s own row opens its chat and reads it, not the task view (phone=%s)', async mobile => {
+  installAssistantShellBridge()
+  publishAssistantShell({ cloudAvailable: false, canHostHere: true, cloud: null, loadError: null, assistant: { id: 'agent-a', display_name: '咕咕', avatar: null, created_at: null },
+    assistantState: 'found', ownerName: 'U', ownerId: 'user-1', chatId: 'assistant-dm', home: null, setup: null, member: false, preparing: false })
+  try {
+    await mount(mobile); await open()
+    await act(async () => rows()[0].click())
+    expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'chat', chatId: 'assistant-dm' })
+    expect(markSeen.mock.calls.map(([id]) => id)).toEqual(['agent-a'])
+    followLink.mockClear(); markSeen.mockClear()
+    await act(async () => rows()[1].click())
+    expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'agent-b', deviceId: 'server' })
+    expect(markSeen).not.toHaveBeenCalled()
+    // Its chat not known yet: the session link, as before — nothing is guessed.
+    followLink.mockClear()
+    publishAssistantShell({ cloudAvailable: false, canHostHere: true, cloud: null, loadError: null, assistant: { id: 'agent-a', display_name: '咕咕', avatar: null, created_at: null },
+      assistantState: 'loading', ownerName: 'U', ownerId: 'user-1', chatId: null, home: null, setup: null, member: false, preparing: false })
+    await act(async () => rows()[0].click())
+    expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'agent-a', deviceId: 'server' })
+  } finally {
+    publishAssistantShell({ cloudAvailable: false, canHostHere: true, cloud: null, loadError: null, assistant: null, assistantState: 'none', ownerName: null, ownerId: null, chatId: null, home: null, setup: null, member: false, preparing: false })
+  }
 })
 it('phone and desktop show the same notifications for the same tasks: old read failures listed but uncounted, no ⚡, nothing above Messages', async () => {
   const at = (day: number) => new Date(Date.UTC(2026, 9, day)).toISOString()

@@ -27,6 +27,7 @@ import { drainTopicSplitRequest } from '../../../../apps/desktop/src/lib/topicSp
 import { APP_OPEN_WITH_EVENT, APP_OPEN_IN_CHAT_EVENT, APP_COMPOSE_EVENT, APP_SHOW_SESSION_EVENT } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 import { sheetStack } from '../../../../apps/desktop/src/components/ui/sheetStack'
 import { rememberAssistantTaskChat } from '../../../../apps/desktop/src/lib/assistantTaskChat'
+import { UNAVAILABLE_APP_STATES, clearAssistantAppState, setAssistantAppState } from '../../../support/assistantAppStates'
 import { installAssistantShellBridge, publishAssistantShell } from '../../../../apps/desktop/src/lib/assistantShellBridge'
 import { ASSISTANT_APP_ID, installAssistantAppEntryBridge, publishAssistantAppWord } from '../../../../apps/desktop/src/lib/assistantEntry'
 import { installedExtensionsStore } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
@@ -1170,30 +1171,41 @@ describe('MainLayout: personal assistant destinations', () => {
   beforeEach(() => { installAssistantShellBridge(); publishAssistantShell(shell) })
   afterEach(() => { publishAssistantShell({ ...shell, assistant: null, assistantState: 'none', chatId: null }) })
 
-  it.each([
-    ['resource-file', { chatId: 'personal-dm', itemId: 'personal-file' }],
-    [APP_OPEN_WITH_EVENT, { chatId: 'personal-dm', itemId: 'personal-file', name: 'budget.md', typedName: 'budget.md', choice: { kind: 'none' } }],
-    [APP_COMPOSE_EVENT, { chatId: 'personal-dm', text: 'follow-up' }],
-    [UI_EVENTS.notificationClicked, { chatId: 'personal-dm' }],
-  ])('opens %s as any chat while the assistant App is not usable here, and preserves the requested action', async (name, detail) => {
-    chatStoreMock.chats = [{ id: 'personal-dm', kind: 'dm', peer_user_id: 'personal-agent' } as never]
-    const navigate = vi.spyOn(appState.navigation, 'navigate').mockImplementation(() => undefined)
-    try {
-      await renderMainLayoutWithToast()
-      await act(async () => {
-        publishAssistantShell(shell)
-        if (name === 'resource-file' && 'itemId' in detail) await openLinkTarget({ kind: 'file', itemId: detail.itemId })
-        else window.dispatchEvent(new CustomEvent(name, { detail }))
-      })
-      // The built-in assistant page is gone; not the App's page either (main has not said it is the trusted one).
-      expect(navigate).not.toHaveBeenCalledWith('app', { appId: ASSISTANT_APP_ID })
-      expect(sessionPageViewRequests.openChat.mock.calls[0]?.[0]).toBe('personal-dm')
-      if ('itemId' in detail) expect((takeChatAsk('personal-dm') as { itemId?: string } | null)?.itemId).toBe('personal-file')
-      if ('text' in detail) expect(chatStoreMock.writeDraft).toHaveBeenCalledWith('personal-dm', { at: 'end', text: 'follow-up' })
-    } finally { navigate.mockRestore() }
+  // The App not usable here — switched off by the person, still being put in, failing to go in — every route into the assistant's
+  // chat is that chat as any chat, with the requested action kept: file, draft, notification, chat link (verify-pass1 D10).
+  const PERSONAL_DM = '0b1e7c1a-0000-4000-8000-0000000000aa'
+  describe.each(UNAVAILABLE_APP_STATES)('the assistant App %s', (state) => {
+    afterEach(() => clearAssistantAppState())
+    it.each([
+      ['resource-file', { chatId: PERSONAL_DM, itemId: 'personal-file' }],
+      [APP_OPEN_WITH_EVENT, { chatId: PERSONAL_DM, itemId: 'personal-file', name: 'budget.md', typedName: 'budget.md', choice: { kind: 'none' } }],
+      [APP_COMPOSE_EVENT, { chatId: PERSONAL_DM, text: 'follow-up' }],
+      [UI_EVENTS.notificationClicked, { chatId: PERSONAL_DM }],
+      ['chat-link', { chatId: PERSONAL_DM }],
+    ])('opens %s as any chat, and preserves the requested action', async (name, detail) => {
+      chatStoreMock.chats = [{ id: PERSONAL_DM, kind: 'dm', peer_user_id: 'personal-agent' } as never]
+      fileOwner.mockResolvedValue({ data: { chat_id: PERSONAL_DM }, error: null })
+      const navigate = vi.spyOn(appState.navigation, 'navigate').mockImplementation(() => undefined)
+      try {
+        await renderMainLayoutWithToast()
+        await act(async () => {
+          publishAssistantShell({ ...shell, ownerId: 'user-1', chatId: PERSONAL_DM })
+          setAssistantAppState(state, 'user-1')
+        })
+        await act(async () => {
+          if (name === 'resource-file' && 'itemId' in detail) await openLinkTarget({ kind: 'file', itemId: detail.itemId })
+          else if (name === 'chat-link') await clickLink(conversationLink(PERSONAL_DM))
+          else window.dispatchEvent(new CustomEvent(name, { detail }))
+        })
+        // The built-in assistant page is gone; not the App's page either (it is not usable here).
+        expect(navigate).not.toHaveBeenCalledWith('app', { appId: ASSISTANT_APP_ID })
+        expect(sessionPageViewRequests.openChat.mock.calls[0]?.[0]).toBe(PERSONAL_DM)
+        if ('itemId' in detail) expect((takeChatAsk(PERSONAL_DM) as { itemId?: string } | null)?.itemId).toBe('personal-file')
+        if ('text' in detail) expect(chatStoreMock.writeDraft).toHaveBeenCalledWith(PERSONAL_DM, { at: 'end', text: 'follow-up' })
+      } finally { navigate.mockRestore() }
+    })
   })
 
-  const PERSONAL_DM = '0b1e7c1a-0000-4000-8000-0000000000aa'
   // Entry switch: once main trusts the installed assistant App for this account and its conversation beside the App's page
   // is the assistant chat, every one of these lands on the App's page instead — the requested action kept, nothing read.
   it.each([

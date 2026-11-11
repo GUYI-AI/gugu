@@ -115,6 +115,14 @@ export function readAssistantEntryTarget(): AssistantEntryTarget {
   })
 }
 
+/**
+ * Whether the App is where the entry goes right now. False = it is not usable here (switched off by the person, still being put
+ * in, failing to go in): every route to the assistant is then its chat as any chat, and a task it started is an ordinary task.
+ */
+export function assistantAppUsable(): boolean {
+  return readAssistantEntryTarget().kind === 'app'
+}
+
 function subscribeAll(listener: () => void): () => void {
   const offs = [readAssistantShellBridge(), readAppConversationSurfaceBridge(), readAssistantAppEntryBridge()]
     .map((source) => source?.subscribe(listener) ?? (() => undefined))

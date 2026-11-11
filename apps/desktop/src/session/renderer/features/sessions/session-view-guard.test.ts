@@ -5,20 +5,37 @@ import { NavigationStore } from '@renderer/lib/stores/navigation-store';
 vi.mock('@renderer/lib/modal/modal-store', () => ({ modalStore: { closeModal: vi.fn() } }));
 vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { history: { push: vi.fn() }, sidebar: { revealActiveSession: vi.fn() } } }));
 
-const state = vi.hoisted(() => ({ agentId: 'assistant', assistantId: 'assistant', archived: false, listed: true, listState: 'read' as 'reading' | 'read' | 'failed', onApp: true }));
-// Where the assistant entry goes (lib/assistantEntry.ts): its App, or (not usable here) nowhere on this page.
-vi.mock('@/lib/assistantEntry', () => ({ ASSISTANT_APP_ID: 'gugu-assistant', readAssistantEntryTarget: () => (state.onApp ? { kind: 'app', extensionId: 'gugu-assistant', chatId: 'dm' } : { kind: 'chat', chatId: 'dm' }) }));
+const state = vi.hoisted(() => ({ agentId: 'assistant', assistantId: 'assistant', archived: false, listed: true, listState: 'read' as 'reading' | 'read' | 'failed', target: 'app' as 'app' | 'chat' | 'wait', opened: [] as string[] }));
+// Where the assistant entry goes (lib/assistantEntry.ts): its App, its chat as any chat (the App not usable here), or nowhere yet.
+vi.mock('@/lib/assistantEntry', () => ({
+  ASSISTANT_APP_ID: 'gugu-assistant',
+  readAssistantEntryTarget: () => (state.target === 'app' ? { kind: 'app', extensionId: 'gugu-assistant', chatId: 'dm' } : state.target === 'chat' ? { kind: 'chat', chatId: 'dm' } : { kind: 'wait' }),
+  openAssistantEntry: () => { state.opened.push('opened'); },
+}));
 vi.mock('@/lib/assistantShellBridge', () => ({ readAssistantShellBridge: () => ({ getSnapshot: () => ({ assistant: { id: state.assistantId } }) }) }));
 vi.mock('@renderer/features/sessions/stores/session-agent-bindings', () => ({ sessionAgentBindings: { bindingFor: () => state.agentId ? { agentUserId: state.agentId } : undefined } }));
 vi.mock('@renderer/features/projects/project-presence', () => ({ projectPresence: () => 'present' }));
 vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({ getSessionManagerStore: () => ({ listState: state.listState, sessions: state.listed ? new Map([['task', { data: { archivedAt: state.archived ? '2026-10-27' : null } }]]) : new Map() }) }));
 vi.mock('@renderer/features/sessions/leave-session-view', () => ({ sessionLeaveDestination: () => ({ viewId: 'new-session' }) }));
-beforeEach(() => { state.agentId = state.assistantId = 'assistant'; state.archived = false; state.listed = true; state.listState = 'read'; state.onApp = true; });
+beforeEach(() => { state.agentId = state.assistantId = 'assistant'; state.archived = false; state.listed = true; state.listState = 'read'; state.target = 'app'; state.opened.length = 0; });
 describe('assistant identity owns its destination', () => {
-  it('redirects a stale assistant task link to the assistant\'s page (its App), or home while the App is not usable here', () => {
+  it('redirects a stale assistant task link to the assistant\'s page (its App)', () => {
     expect(sessionViewCanActivate({ projectId: 'project', sessionId: 'task' })).toEqual({ ok: false, redirect: 'app', params: { appId: 'gugu-assistant' } });
-    state.onApp = false;
+    expect(state.opened).toEqual([]);
+  });
+  // The App not usable here (switched off, going in, failing): the blank new-task page is no destination for the assistant's own session
+  // (verify-pass1 D10). Its chat opens as any chat, once this navigation has settled; while it is not known which chat, nothing is made up.
+  it('while the App is not usable here, sends it home and opens the assistant\'s chat as any chat once the navigation settled', async () => {
+    state.target = 'chat';
     expect(sessionViewCanActivate({ projectId: 'project', sessionId: 'task' })).toEqual({ ok: false, redirect: 'home' });
+    expect(state.opened).toEqual([]);
+    await Promise.resolve();
+    expect(state.opened).toEqual(['opened']);
+    state.opened.length = 0;
+    state.target = 'wait';
+    expect(sessionViewCanActivate({ projectId: 'project', sessionId: 'task' })).toEqual({ ok: false, redirect: 'home' });
+    await Promise.resolve();
+    expect(state.opened).toEqual([]);
   });
   it('keeps an ordinary task on the task view', () => {
     state.agentId = 'ordinary-agent';
