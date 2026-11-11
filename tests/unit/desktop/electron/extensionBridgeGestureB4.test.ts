@@ -60,13 +60,17 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   assistantOpen: () => host.assistant.open('main', 'move'),
   assistantAdvanceSetup: () => host.assistant.advanceSetup('main', 'ready'),
   // 48: the host's picker, the question before a delete, the voice-note pipeline, the save dialog.
-  bindingsUpload: () => host.bindings.upload!('main'),
-  bindingsRemoveFolder: () => host.bindings.removeFolder!('main', 'docs'),
-  bindingsTranscribeVoiceNote: () => host.bindings.transcribeVoiceNote!('main', 'n1'),
-  bindingsRemoveVoiceNote: () => host.bindings.removeVoiceNote!('main', 'n1'),
-  bindingsExportVoiceNote: () => host.bindings.exportVoiceNote!('main', 'n1'),
+  bindingsUpload: () => bound().upload!('main'),
+  bindingsRemoveFolder: () => bound().removeFolder!('main', 'docs'),
+  bindingsTranscribeVoiceNote: () => bound().transcribeVoiceNote!('main', 'n1'),
+  bindingsRemoveVoiceNote: () => bound().removeVoiceNote!('main', 'n1'),
+  bindingsExportVoiceNote: () => bound().exportVoiceNote!('main', 'n1'),
 }
 
+// The page's `gugu.bindings` (48): its managing members, as the runtime exposes them.
+function bound() {
+  return (host as unknown as { bindings: Record<string, ((...args: unknown[]) => Promise<unknown>) | undefined> }).bindings;
+}
 const sent = () => electron.invoke.mock.calls.map(([, request]) => request as { method: string; gesture: unknown })
 
 describe('a verb that needs a gesture is judged by one rule, on what the preload read (L11 B4)', () => {

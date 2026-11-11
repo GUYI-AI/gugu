@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { CONTEXT_WAIT_MS, createResourceWindow, type ResourceWindowDeps } from './app-resource-window-core';
 
 /**
@@ -8,7 +8,8 @@ import { CONTEXT_WAIT_MS, createResourceWindow, type ResourceWindowDeps } from '
  */
 const OWNER = 'owner-1';
 const AGENT = 'agent-1';
-let deps: ResourceWindowDeps & { [K in 'retry' | 'forget' | 'confirm' | 'saveTextFile' | 'wait']: ReturnType<typeof vi.fn> };
+type Spied = 'retry' | 'forget' | 'confirm' | 'saveTextFile' | 'wait';
+let deps: Omit<ResourceWindowDeps, Spied> & { [K in Spied]: Mock<ResourceWindowDeps[K]> };
 let account: string | null;
 let context: string | null;
 let phase: string | null;
@@ -19,12 +20,12 @@ beforeEach(() => {
     account: () => account,
     contextAssistant: () => context,
     jobPhase: () => phase,
-    retry: vi.fn(async () => undefined),
-    forget: vi.fn(),
-    confirm: vi.fn(async () => true),
+    retry: vi.fn<ResourceWindowDeps['retry']>(async () => undefined),
+    forget: vi.fn<ResourceWindowDeps['forget']>(),
+    confirm: vi.fn<ResourceWindowDeps['confirm']>(async () => true),
     t: (key, ns, values) => `${ns}:${key}${values ? JSON.stringify(values) : ''}`,
-    saveTextFile: vi.fn(async () => ({ success: true, path: '/chosen/Standup.md' })),
-    wait: vi.fn(async () => undefined),
+    saveTextFile: vi.fn<ResourceWindowDeps['saveTextFile']>(async () => ({ success: true, path: '/chosen/Standup.md' })),
+    wait: vi.fn<ResourceWindowDeps['wait']>(async () => undefined),
   };
 });
 

@@ -17,7 +17,7 @@ const BODY_ID = '88000000-0000-4000-8000-000000000008';
 const state = vi.hoisted(() => ({
   owner: '', selectedBy: '', handle: 'h1', member: true,
   grants: {} as Record<string, boolean>, domains: [] as string[],
-  bodyChat: '', filesChat: '', storeError: null as null | Record<string, unknown>, afterList: undefined as (() => void) | undefined,
+  bodyChat: '', filesChat: '', storeError: null as unknown, afterList: undefined as (() => void) | undefined,
 }));
 const files = vi.hoisted(() => ({ list: vi.fn(), read: vi.fn(), resourceChat: vi.fn() }));
 const groupFile = vi.hoisted(() => vi.fn());
