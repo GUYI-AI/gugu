@@ -17,7 +17,7 @@ const BODY_ID = '88000000-0000-4000-8000-000000000008';
 const state = vi.hoisted(() => ({
   owner: '', selectedBy: '', handle: 'h1', member: true,
   grants: {} as Record<string, boolean>, domains: [] as string[],
-  bodyChat: '', storeError: null as null | Record<string, unknown>, afterList: undefined as (() => void) | undefined,
+  bodyChat: '', filesChat: '', storeError: null as null | Record<string, unknown>, afterList: undefined as (() => void) | undefined,
 }));
 const files = vi.hoisted(() => ({ list: vi.fn(), read: vi.fn(), resourceChat: vi.fn() }));
 const groupFile = vi.hoisted(() => vi.fn());
@@ -29,7 +29,7 @@ vi.mock('./app-files', () => ({ unreadBindingChatChoices: async () => [], boundC
 vi.mock('./extensions-root', () => ({ extensionsService: () => ({
   conversationBinding: (owner: string, _app: string, name: string, action: string) => {
     if (!state.grants[action] || name !== 'main') throw denied('no grant');
-    return owner === state.selectedBy ? { ownerId: owner, name, chatId: CHAT, handle: state.handle } : null;
+    return owner === state.selectedBy ? { ownerId: owner, name, chatId: action === 'files' && state.filesChat ? state.filesChat : CHAT, handle: state.handle } : null;
   },
 }) }));
 vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: () => ({ from: () => {
@@ -79,7 +79,7 @@ const draft = (attach: unknown, text = 'Look at these') => draftIntoBoundConvers
 
 beforeEach(() => {
   Object.assign(state, { owner: OWNER, selectedBy: OWNER, handle: 'h1', member: true, grants: { draft: true, files: true, resources: true },
-    domains: ['memory', 'files', 'voice-notes'], bodyChat: CHAT, storeError: null, afterList: undefined });
+    domains: ['memory', 'files', 'voice-notes'], bodyChat: CHAT, filesChat: '', storeError: null, afterList: undefined });
   drafted = [];
   items.clear();
   files.list.mockReset().mockImplementation(async (_chat: string, folder: string) => {
@@ -173,6 +173,10 @@ describe('what a draft may not carry', () => {
     state.handle = 'h1'; state.afterList = undefined;
     groupFile.mockImplementationOnce(async () => { state.handle = 'h3'; return { chatId: CHAT, itemId: BODY_ID, name: 'x.bin', file: { version: 2 } }; });
     await expect(draft([{ domain: 'files', key: 'reports/q3.pdf' }])).rejects.toMatchObject({ code: 'denied' });
+    // Files found for another conversation than the one the draft goes to are not its files.
+    state.handle = 'h1'; state.filesChat = ELSEWHERE;
+    files.resourceChat.mockResolvedValue(ELSEWHERE);
+    await expect(draft([{ file: 'today.md' }])).rejects.toMatchObject({ code: 'denied' });
     expect(drafted).toEqual([]);
   });
 
