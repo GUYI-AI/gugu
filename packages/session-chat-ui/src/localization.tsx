@@ -271,6 +271,7 @@ const fallbackMessages = {
   'transcript.today': 'Today',
   'transcript.yesterday': 'Yesterday',
   'transcript.dayStart': 'Start of {day}',
+  'transcript.loadingOlder': 'Loading earlier messages',
   // 上下文压缩的界线（spec session-history-replay）。措辞要说清**后果**，不是说清机制：
   // 用户要判断的是「上面那些话它还记不记得原文」，❌ 不是「压缩算法跑过了」。
   'transcript.compacting': 'Compacting context…',
