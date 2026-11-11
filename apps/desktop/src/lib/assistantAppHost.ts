@@ -17,6 +17,7 @@ import {
   type ShownAssistant,
 } from '@shared/extensions/assistant-binding'
 import { requestAssistantClose } from './assistantClose'
+import { requestAssistantSetupAfterIntro } from './firstRun'
 import { assistantTintHue } from './assistantTint'
 import { readAssistantShellBridge, type AssistantShellActions, type AssistantShellBridge, type AssistantShellSnapshot } from './assistantShellBridge'
 import { UI_EVENTS } from './uiEvents'
@@ -46,6 +47,10 @@ export function openAssistantScreen(screen: AssistantScreen, ownerId: string): v
   const bridge = shellOf(ownerId)
   switch (screen) {
     case 'setup':
+      // The App's own intro is the one the person just clicked through: Settings' setup starts at the next real step (the name),
+      // not at a second copy of the same intro. Only while there is no assistant yet: that is when the setup is what Settings draws.
+      if (bridge.getSnapshot()?.assistantState === 'none') requestAssistantSetupAfterIntro(ownerId)
+      return openSettings('assistant')
     case 'move':
       return openSettings('assistant')
     case 'close':

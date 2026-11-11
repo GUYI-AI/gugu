@@ -70,6 +70,14 @@ export function requestAssistantSetupHandoff(userId: string): void {
   sessionStorage.setItem(HANDOFF_STEP(userId), '1')
 }
 
+/**
+ * 介绍已经在别处看过(助理 App 自己画的那一屏就是介绍)→ 只挂「从起名开始」这一格,不要求打开咕咕那一格(设置那一页
+ * 由调用方自己打开)。同一条一次性交接条,开通流程挂载时取走;❌ 再看一遍同样的介绍。
+ */
+export function requestAssistantSetupAfterIntro(userId: string): void {
+  sessionStorage.setItem(HANDOFF_STEP(userId), '1')
+}
+
 function take(key: string): boolean {
   const asked = sessionStorage.getItem(key) === '1'
   if (asked) sessionStorage.removeItem(key)
