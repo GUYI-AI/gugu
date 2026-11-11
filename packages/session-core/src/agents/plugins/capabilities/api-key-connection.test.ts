@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { agentRunContextSchema } from '../../agent-run-context';
 import { createHarnessConnectionSchema, harnessConnectionTargetSchema } from '../../../workspace-server/agent-config/connections';
 import {
+  apiKeyConnectionCapability,
   apiKeyConnectionDescriptorSchema,
+  apiKeyConnectionInjectsModel,
   apiKeyConnectionInputError,
   apiKeyConnectionPlan,
   apiKeyConnectionUsage,
@@ -16,6 +18,18 @@ describe('API key connection declaration (#2507)', () => {
     ).toBe(true);
     expect(apiKeyConnectionDescriptorSchema.safeParse({ kind: 'supported', endpoint: 'none', model: 'none', evidence: 'x' }).success).toBe(true);
     expect(apiKeyConnectionDescriptorSchema.safeParse({ kind: 'supported', endpoint: 'none', model: 'none', evidence: '' }).success).toBe(false);
+  });
+
+  it('a model-injection connection names its own address and model; it needs no launch behavior', () => {
+    const injected = { kind: 'supported', delivery: 'model-injection', endpoint: 'required', model: 'required', protocol: 'openai-responses', evidence: 'x' } as const;
+    expect(apiKeyConnectionDescriptorSchema.safeParse(injected).success).toBe(true);
+    expect(apiKeyConnectionDescriptorSchema.safeParse({ ...injected, endpoint: 'optional' }).success).toBe(false);
+    expect(apiKeyConnectionDescriptorSchema.safeParse({ ...injected, model: 'none' }).success).toBe(false);
+    expect(apiKeyConnectionInjectsModel(injected)).toBe(true);
+    expect(apiKeyConnectionInjectsModel({ ...injected, delivery: 'env' })).toBe(false);
+    expect(apiKeyConnectionInjectsModel({ kind: 'none' })).toBe(false);
+    expect(apiKeyConnectionCapability.requiresBehavior?.(injected)).toBe(false);
+    expect(apiKeyConnectionCapability.requiresBehavior?.({ ...injected, delivery: undefined })).toBe(true);
   });
 
   it('enforces the declared fields: required ones present, absent ones not sent', () => {

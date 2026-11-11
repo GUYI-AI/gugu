@@ -4,7 +4,11 @@ import { join } from 'node:path';
 import { app } from 'electron';
 import { eq } from 'drizzle-orm';
 import { pluginRegistry, requireNativeHome } from '@gugu/session-plugins/agents';
-import { apiKeyConnectionInputError, type ApiKeyConnectionFields } from '@gugu/session-core/agents/plugins';
+import {
+  apiKeyConnectionInjectsModel,
+  apiKeyConnectionInputError,
+  type ApiKeyConnectionFields,
+} from '@gugu/session-core/agents/plugins';
 import type { AgentRunContext } from '@gugu/session-core/agents/agent-run-context';
 import type {
   CreateHarnessConnection,
@@ -62,9 +66,14 @@ function apiKeyConnectionOf(providerId: string) {
   if (isAccountProvider(providerId)) return undefined;
   const plugin = pluginRegistry.get(providerId);
   const descriptor = plugin?.capabilities.apiKeyConnection;
+  if (descriptor?.kind !== 'supported') return undefined;
+  // 走模型注入的家:写法是它的平台模型写法(注册时核过平台 supported),没有自己的 `launch`。
+  if (apiKeyConnectionInjectsModel(descriptor)) {
+    return { name: plugin!.metadata.name, fields: descriptor, injectsModel: true as const };
+  }
   const behavior = plugin?.behavior.apiKeyConnection;
-  if (descriptor?.kind !== 'supported' || !behavior) return undefined;
-  return { name: plugin!.metadata.name, fields: descriptor, launch: behavior.launch };
+  if (!behavior) return undefined;
+  return { name: plugin!.metadata.name, fields: descriptor, injectsModel: false as const, launch: behavior.launch };
 }
 
 /** 这一家能不能有连接 —— 只有主进程这一处判。 */
@@ -334,6 +343,10 @@ async function resolveApiKeyConnection(
   if (!account) throw new Error('The session’s subscription connection is unavailable');
   const details = account.meta?.harnessConnection;
   if (details?.kind !== 'api-key') return {};
+  const marker = details.endpoint ? { endpoint: details.endpoint } : {};
+  // 走模型注入的家:key 不进这份环境 —— 它随宿主造的模型声明进这家自己的配置(见 `resolveConnectionModel`)。
+  // 这里只标「选中的是一把 API Key」,登录态与付费方照它答。
+  if (generic.injectsModel) return { connectionId: id, apiKeyConnection: marker };
   const secret = await registry.resolveSecret(namespace(providerId), id);
   if (!secret) throw new Error('The connection’s API key is unavailable');
   const launch = generic.launch({
@@ -346,8 +359,31 @@ async function resolveApiKeyConnection(
     credentialEnv: { ...launch.env },
     unsetEnv: [...launch.unsetEnv],
     ...(launch.args?.length ? { extraArgs: [...launch.args] } : {}),
-    apiKeyConnection: details.endpoint ? { endpoint: details.endpoint } : {},
+    apiKeyConnection: marker,
   };
+}
+
+/** 一把要经模型注入进进程的 API Key 连接:解密后的 key 与它的地址、模型。只在主进程、起会话那一刻有。 */
+export type ConnectionModel = { connectionId: string; endpoint: string; apiKey: string; model: string };
+
+/**
+ * 声明了 `delivery: 'model-injection'` 的家(#2507):会话此刻该跑的那把 API Key —— 默认连接是它就给,
+ * 原生连接 / 没声明的家给 null(宿主照旧,与没有连接时逐字节一样)。会话跟着默认连接走,与上面同一条。
+ */
+export async function resolveConnectionModel(providerId: string): Promise<ConnectionModel | null> {
+  const generic = apiKeyConnectionOf(providerId);
+  if (!generic?.injectsModel) return null;
+  await ensureNative(providerId);
+  const id = (await registry.getDefaultAccountId(namespace(providerId))) ?? 'native';
+  if (id === 'native') return null;
+  const account = await registry.getAccount(namespace(providerId), id);
+  if (!account) throw new Error('The session’s subscription connection is unavailable');
+  const details = account.meta?.harnessConnection;
+  if (details?.kind !== 'api-key') return null;
+  if (!details.endpoint || !details.model) throw new Error('The connection has no API address or model');
+  const secret = await registry.resolveSecret(namespace(providerId), id);
+  if (!secret) throw new Error('The connection’s API key is unavailable');
+  return { connectionId: id, endpoint: details.endpoint, apiKey: secret, model: details.model };
 }
 
 /**

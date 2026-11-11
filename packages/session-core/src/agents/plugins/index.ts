@@ -158,6 +158,7 @@ export type {
 } from './capabilities/api-key-connection';
 export {
   apiKeyConnectionDescriptorSchema,
+  apiKeyConnectionInjectsModel,
   apiKeyConnectionInputError,
   apiKeyConnectionPlan,
   apiKeyConnectionUsage,

@@ -53,11 +53,11 @@ export function openCodeFamilyConfigContent(
   const contextWindow = model.contextWindow
   // 自定义 provider 下的模型在 catalog 里没有条目,不声明窗口它就没有窗口。
   // `limit.context` 就是那个字段,和模型 id 写在同一条上。
+  // ⚠️ 窗口未知(一把 API Key 连接说不出窗口,#2507)就**整个不写 `limit`**:opencode 1.18.28 的 schema 里
+  //    `limit` 一出现就要 `context`(实测「Missing key provider.gugu-platform.models.<m>.limit.context」,
+  //    session/new 起不来);不写 `limit` 它用自己的默认、照常起会话。平台会话的窗口恒已知(平台那条路缺窗口先抛),不受影响。
   const modelEntry = (window: number | null | undefined) => ({
-    limit: {
-      output: OPENCODE_PLATFORM_OUTPUT_LIMIT,
-      ...(positiveWindow(window) ? { context: window } : {}),
-    },
+    ...(positiveWindow(window) ? { limit: { output: OPENCODE_PLATFORM_OUTPUT_LIMIT, context: window } } : {}),
     // 推理档 —— `variants`(整张表)+ `options`(这次会话选中的那一档)。与插件物化那条路
     // **共用同一个函数**,理由同 `npm` / `limit`:两边漂移时,漂了的那家会静默走它自己的默认。
     ...openCodeFamilyReasoningEntry(reasoning, model.reasoningEffort),

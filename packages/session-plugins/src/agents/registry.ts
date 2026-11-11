@@ -252,6 +252,18 @@ export function createAgentPluginRegistry(entries: readonly CLIAgentPluginProvid
           : `Agent plugin '${id}' implements platformModel but declares sessionBundle.platform unsupported`
       );
     }
+    // API Key 走模型注入的家(#2507):它借的是这家的平台模型写法 ⇒ 平台得是 supported,地址要讲的协议就是平台那一种。
+    const apiKey = provider.capabilities.apiKeyConnection;
+    if (apiKey?.kind === 'supported' && apiKey.delivery === 'model-injection') {
+      if (descriptor.platform.kind !== 'supported') {
+        throw new Error(`Agent plugin '${id}' injects its API key connection as a model but declares no platform model`);
+      }
+      if (apiKey.protocol !== descriptor.platform.wireProtocol) {
+        throw new Error(
+          `Agent plugin '${id}' API key connection speaks ${apiKey.protocol}, its platform model speaks ${descriptor.platform.wireProtocol}`
+        );
+      }
+    }
     registry.register(withDeclaredPermissionModes(provider));
   }
 

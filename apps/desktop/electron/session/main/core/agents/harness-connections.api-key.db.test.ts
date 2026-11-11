@@ -27,6 +27,7 @@ const {
   harnessHasConnections,
   listHarnessConnections,
   removeHarnessConnection,
+  resolveConnectionModel,
   resolveHarnessConnection,
   selectHarnessConnection,
   sessionHarnessConnectionId,
@@ -47,8 +48,10 @@ afterEach(async () => {
 });
 
 it('only Claude, Codex and the agents that declare an API key mapping have connections', async () => {
-  for (const id of ['claude', 'codex', 'qwen', 'dsh', 'copilot', 'mimocode', 'kilocode', 'zcode']) expect(harnessHasConnections(id), id).toBe(true);
-  for (const id of ['kiro', 'hermes', 'opencode', 'pi', 'no-such-agent']) expect(harnessHasConnections(id), id).toBe(false);
+  for (const id of ['claude', 'codex', 'qwen', 'dsh', 'copilot', 'mimocode', 'kilocode', 'zcode', 'hermes', 'pi', 'opencode', 'codebuddy']) {
+    expect(harnessHasConnections(id), id).toBe(true);
+  }
+  for (const id of ['kiro', 'antigravity', 'no-such-agent']) expect(harnessHasConnections(id), id).toBe(false);
   await expect(listHarnessConnections('kiro')).rejects.toThrow('unavailable');
   await expect(createHarnessConnection({ providerId: 'kiro', kind: 'api-key', apiKey: 'k' })).rejects.toThrow('unavailable');
   await expect(createHarnessConnection({ providerId: 'no-such-agent', kind: 'api-key', apiKey: 'k' })).rejects.toThrow('unavailable');
@@ -125,4 +128,45 @@ it('an official key connection needs no address and still reads as the selected 
     unsetEnv: ['KILO_API_KEY'],
     apiKeyConnection: {},
   });
+});
+
+it('a model-injection agent (pi): the key stays out of the spawn env and out of the metadata; the host model resolver gets it', async () => {
+  await expect(createHarnessConnection({ providerId: 'pi', kind: 'account' })).rejects.toThrow('own CLI');
+  await expect(createHarnessConnection({ providerId: 'pi', kind: 'api-key', apiKey: 'k', model: 'm' })).rejects.toThrow('address is required');
+  await expect(createHarnessConnection({ providerId: 'pi', kind: 'api-key', apiKey: 'k', endpoint: 'https://g.example/v1' })).rejects.toThrow('model is required');
+  // 原生连接:宿主不造模型声明,起进程一个字都不加。
+  expect(await resolveConnectionModel('pi')).toBeNull();
+  expect(await resolveHarnessConnection('pi', { sessionId: 'pi-session' })).toEqual({});
+
+  const connection = await createHarnessConnection({
+    providerId: 'pi',
+    kind: 'api-key',
+    apiKey: 'pi-secret',
+    endpoint: 'https://gateway.example/v1',
+    model: 'gpt-5.5',
+  });
+  expect(
+    state.fixture!.sqlite.prepare('SELECT meta FROM provider_accounts').all().map((row) => JSON.stringify(row)).join('')
+  ).not.toContain('pi-secret');
+  // 没选之前,会话还在原生上。
+  expect(await resolveConnectionModel('pi')).toBeNull();
+
+  await selectHarnessConnection('pi', connection.id);
+  // 起进程的那份环境里没有 key(它随模型声明进 pi 自己的配置),只标「选中的是一把 API Key」。
+  expect(await resolveHarnessConnection('pi', { sessionId: 'pi-session' })).toEqual({
+    connectionId: connection.id,
+    apiKeyConnection: { endpoint: 'https://gateway.example/v1' },
+  });
+  expect(await resolveConnectionModel('pi')).toEqual({
+    connectionId: connection.id,
+    endpoint: 'https://gateway.example/v1',
+    apiKey: 'pi-secret',
+    model: 'gpt-5.5',
+  });
+  // 只有走模型注入的家才有这一口:qwen 的 key 走它自己的 `launch`。
+  expect(await resolveConnectionModel('qwen')).toBeNull();
+  expect(await resolveConnectionModel('kiro')).toBeNull();
+
+  await selectHarnessConnection('pi', 'native');
+  expect(await resolveConnectionModel('pi')).toBeNull();
 });

@@ -27,12 +27,29 @@ export const apiKeyConnectionDescriptorSchema = z.discriminatedUnion('kind', [
       protocol: z
         .enum(['anthropic-messages', 'openai-responses', 'openai-chat-completions', 'gemini-generate-content'])
         .optional(),
+      /**
+       * 这把 key 怎么进进程:
+       * - `env`(缺省):behavior 的 `launch` 把它落成环境变量 / 参数,叠在平台注入之下。
+       * - `model-injection`:这家只能经**配置文件 / 配置文档**认一个自定义地址(pi 的 `models.json`、opencode 的
+       *   `OPENCODE_CONFIG_CONTENT`、CodeBuddy 的 `--settings`),环境变量够不着。宿主像平台会话那样造一份模型声明,
+       *   只是地址、key、模型都来自连接,再交给这家已有的平台模型写法(`sessionBundle.platformModel`)落盘 ——
+       *   同一条测过的注入,❌ 另写一套。⚠️ 它**不是**平台会话:不签咕咕令牌、不扣积分、不进账本。
+       *   所以地址与模型必填,协议 = 这家平台声明的 `wireProtocol`(注册时核);不要 behavior。
+       */
+      delivery: z.enum(['env', 'model-injection']).optional(),
       /** 实测 / 源码出处,一句话。 */
       evidence: z.string().min(1),
     })
     .superRefine((value, ctx) => {
       if (value.endpoint !== 'none' && !value.protocol) {
         ctx.addIssue({ code: 'custom', path: ['protocol'], message: 'An endpoint needs the protocol it must speak' });
+      }
+      if (value.delivery === 'model-injection' && (value.endpoint !== 'required' || value.model !== 'required')) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['delivery'],
+          message: 'A model-injection connection names its own endpoint and model: both must be required',
+        });
       }
     }),
 ]);
@@ -61,11 +78,17 @@ export type IApiKeyConnectionBehavior = {
   launch(input: ApiKeyConnectionInput): ApiKeyConnectionLaunch;
 };
 
+/** 这一家的 API Key 经宿主造的模型声明进进程(见 `delivery`)。 */
+export function apiKeyConnectionInjectsModel(descriptor: ApiKeyConnectionDescriptor | undefined): boolean {
+  return descriptor?.kind === 'supported' && descriptor.delivery === 'model-injection';
+}
+
 export const apiKeyConnectionCapability = definePluginCapability<IApiKeyConnectionBehavior>()(
   'apiKeyConnection',
   apiKeyConnectionDescriptorSchema,
   { kind: 'none' },
-  { requiresBehavior: (descriptor) => descriptor.kind === 'supported' }
+  // 走模型注入的家没有自己的 `launch`:那条路的写法就是它的平台模型写法。
+  { requiresBehavior: (descriptor) => descriptor.kind === 'supported' && descriptor.delivery !== 'model-injection' }
 );
 
 /**

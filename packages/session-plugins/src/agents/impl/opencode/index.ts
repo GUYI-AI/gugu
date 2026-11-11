@@ -1,3 +1,4 @@
+import { opencodeApiKeyConnection } from './api-key-connection';
 import { platformModel } from './platform-model';
 import { resolveSessionPermissionMode } from '@gugu/session-core/acp';
 import {
@@ -42,6 +43,7 @@ export const plugin = definePlugin(
   },
   {
     sessionBundle: opencodeSessionBundleDescriptor,
+    apiKeyConnection: opencodeApiKeyConnection,
     /**
      * 厂商账号是不是硬门槛 —— 判据与陷阱见 `capabilities/vendor-account.ts` 抬头。
      * 这一格是**实测**出来的，❌ 不收「文档写着」。

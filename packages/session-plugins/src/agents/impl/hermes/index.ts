@@ -1,3 +1,4 @@
+import { hermesApiKeyConnection, hermesApiKeyConnectionBehavior } from './api-key-connection';
 import { platformModel } from './platform-model';
 import { hermesPromptMeta } from '@gugu/session-core/acp/hermes-prompt';
 import {
@@ -75,6 +76,7 @@ export const plugin = definePlugin(
         },
       ],
     },
+    apiKeyConnection: hermesApiKeyConnection,
     vendorAccount: {
       kind: 'not-required',
       evidence:
@@ -190,6 +192,7 @@ export const plugin = definePlugin(
 );
 
 export const provider = registerPluginBehavior(plugin, {
+  apiKeyConnection: hermesApiKeyConnectionBehavior,
   auth: { checkStatus: hermesAuthStatus },
   sessionBundle: { materialize: materializeHermesSessionBundle, platformModel },
   subscription: hermesSubscription,

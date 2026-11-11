@@ -17,8 +17,11 @@ import { createLocalPluginFs } from '@gugu/session-core/agents/plugins/helpers';
 import { NodeExecutionContext } from '@gugu/session-core/exec';
 import { noopLogger } from '@gugu/session-shared/logger';
 import { createScope } from '@gugu/session-wire/util';
-import { listUserExposedPlugins, pluginRegistry } from '../registry';
+import { createAgentPluginRegistry, listUserExposedPlugins, pluginRegistry, PRODUCT_CAPABILITY_PACKAGES } from '../registry';
 import { platformModel as copilotPlatformModel } from './copilot/platform-model';
+import { platformModel as hermesPlatformModel } from './hermes/platform-model';
+import { hermesPlatformEnv } from './hermes/session-bundle';
+import { materializePiModelConfig } from './pi/session-bundle';
 import { materializeQwenSessionBundle } from './qwen/session-bundle';
 import { zcodePlatformEnv } from './zcode/session-bundle';
 
@@ -39,10 +42,21 @@ describe('which agents take an API key connection', () => {
       .filter((provider) => provider.capabilities.apiKeyConnection.kind === 'supported')
       .map((provider) => provider.metadata.id)
       .sort();
-    expect(withKeys).toEqual(['copilot', 'dsh', 'kilocode', 'mimocode', 'qwen', 'zcode']);
-    // 声明了就必须有行为:没有行为的声明在表单里摆出一个存了也用不上的格子。
-    for (const id of withKeys) expect(pluginRegistry.get(id)!.behavior.apiKeyConnection?.launch).toBeTypeOf('function');
-    for (const id of ['claude', 'codex', 'kiro', 'hermes', 'opencode', 'antigravity', 'codebuddy', 'pi']) {
+    expect(withKeys).toEqual(['codebuddy', 'copilot', 'dsh', 'hermes', 'kilocode', 'mimocode', 'opencode', 'pi', 'qwen', 'zcode']);
+    // 声明了就必须说得出 key 怎么进进程:要么自己的 `launch`,要么走模型注入(借这家的平台模型写法)。
+    // 没有行为的声明在表单里摆出一个存了也用不上的格子。
+    for (const id of withKeys) {
+      const plugin = pluginRegistry.get(id)!;
+      const descriptor = plugin.capabilities.apiKeyConnection;
+      if (descriptor.kind === 'supported' && descriptor.delivery === 'model-injection') {
+        expect(plugin.behavior.sessionBundle?.platformModel, id).toBeDefined();
+      } else {
+        expect(plugin.behavior.apiKeyConnection?.launch, id).toBeTypeOf('function');
+      }
+    }
+    // Kiro:厂商账号是硬门槛(`vendorAccount: required`,没有一把 key 换得掉);Antigravity:选 API Key 只能改
+    // 它配置根里那份 settings.json 的 `auth.type`(与 Google 登录共用一处),没有按进程选的路(见第 3 步报告)。
+    for (const id of ['claude', 'codex', 'kiro', 'antigravity']) {
       expect(declared(id)).toEqual({ kind: 'none' });
     }
     // 阳控:这几家确实是开放给用户的那一批里的(名单变了这里要跟着看)。
@@ -57,6 +71,43 @@ describe('which agents take an API key connection', () => {
     expect(declared('dsh')).toMatchObject({ endpoint: 'optional', model: 'none', protocol: 'anthropic-messages' });
     expect(declared('mimocode')).toMatchObject({ endpoint: 'none', model: 'none' });
     expect(declared('kilocode')).toMatchObject({ endpoint: 'none', model: 'none' });
+    expect(declared('hermes')).toMatchObject({ endpoint: 'required', model: 'required', protocol: 'openai-responses' });
+  });
+
+  it('the model-injection agents name an address and a model, in exactly the protocol their platform model speaks', () => {
+    for (const id of ['pi', 'opencode', 'codebuddy']) {
+      const plugin = pluginRegistry.get(id)!;
+      const platform = plugin.capabilities.sessionBundle.platform;
+      if (platform.kind !== 'supported') throw new Error(`${id} has no platform model`);
+      expect(declared(id), id).toMatchObject({ delivery: 'model-injection', endpoint: 'required', model: 'required', protocol: platform.wireProtocol });
+      // 没有自己的 `launch`:一把 key 的写法就是平台模型那一份。
+      expect(plugin.behavior.apiKeyConnection, id).toBeUndefined();
+    }
+    expect(declared('pi')).toMatchObject({ protocol: 'openai-responses' });
+    expect(declared('opencode')).toMatchObject({ protocol: 'openai-responses' });
+    expect(declared('codebuddy')).toMatchObject({ protocol: 'openai-chat-completions' });
+  });
+
+  it('refuses to register a model-injection connection whose protocol differs from the platform model, or that has none', () => {
+    const pi = pluginRegistry.get('pi')!;
+    const otherProtocol = {
+      ...pi,
+      capabilities: { ...pi.capabilities, apiKeyConnection: { ...pi.capabilities.apiKeyConnection, protocol: 'openai-chat-completions' } },
+    } as typeof pi;
+    expect(() => createAgentPluginRegistry([otherProtocol])).toThrow(
+      "Agent plugin 'pi' API key connection speaks openai-chat-completions, its platform model speaks openai-responses"
+    );
+    const kiro = pluginRegistry.get('kiro')!;
+    const noPlatform = {
+      ...kiro,
+      capabilities: {
+        ...kiro.capabilities,
+        apiKeyConnection: { kind: 'supported', delivery: 'model-injection', endpoint: 'required', model: 'required', protocol: 'openai-responses', evidence: 'x' },
+      },
+    } as typeof kiro;
+    expect(() => createAgentPluginRegistry([noPlatform])).toThrow(
+      "Agent plugin 'kiro' injects its API key connection as a model but declares no platform model"
+    );
   });
 });
 
@@ -116,8 +167,23 @@ describe('how each key reaches the process', () => {
     expect(result.unsetEnv).toEqual(['ZCODE_PERSONAL_PROVIDER_CONFIG_CONTENT', 'ZCODE_PROVIDER']);
   });
 
+  it('hermes: the four bridge inputs the platform path gives hermes-serve-acp, from the same writer', () => {
+    const result = launch('hermes', { apiKey: key, endpoint, model: 'gpt-5.5' });
+    expect(result.env).toEqual(
+      hermesPlatformEnv({ dialect: 'hermes-serve-env', model: 'gpt-5.5', platformProvider: { baseUrl: endpoint, apiKey: key } })
+    );
+    expect(result.env).toMatchObject({
+      GUGU_HERMES_PLATFORM_BASE_URL: endpoint,
+      GUGU_HERMES_PLATFORM_KEY: key,
+      GUGU_HERMES_PLATFORM_MODEL: 'gpt-5.5',
+    });
+    expect(JSON.parse(result.env.GUGU_PLATFORM_MODELS!)).toEqual([{ id: 'gpt-5.5', displayName: 'gpt-5.5', contextWindow: null, efforts: [] }]);
+    expect(() => launch('hermes', { apiKey: key, endpoint })).toThrow(/model/);
+  });
+
   it('every variable a connection writes is also unset first, so a shell export of it cannot win', () => {
     const samples: Record<string, { apiKey: string; endpoint?: string; model?: string }> = {
+      hermes: { apiKey: key, endpoint, model: 'm' },
       qwen: { apiKey: key, endpoint, model: 'm' },
       dsh: { apiKey: key, endpoint },
       copilot: { apiKey: key, endpoint, model: 'm' },
@@ -217,6 +283,111 @@ describe('a platform session and a connection never mix in one process', () => {
     expect(Object.keys(zcodePlatform).sort()).toEqual(Object.keys(zcode.env).sort());
     const zcodeMixed = composeAgentSpawnEnv(context(zcode.env, zcode.unsetEnv), { hostInjections: [zcodePlatform] });
     expect(JSON.stringify(zcodeMixed)).not.toMatch(/user-key|user\.example|user-model/);
+
+    // hermes:平台信封把同样这四个桥输入整份压在上面。
+    const hermes = launch('hermes', { apiKey: 'user-key', endpoint: 'https://user.example/v1', model: 'user-model' });
+    const hermesPlatform = hermesPlatformModel.load({
+      dialect: 'hermes-serve-env',
+      model: 'glm-5.3',
+      platformProvider: { baseUrl: 'https://relay.example/v1', apiKey: 'platform-token' },
+    }).spawnEnv!;
+    expect(Object.keys(hermesPlatform).sort()).toEqual(Object.keys(hermes.env).sort());
+    const hermesMixed = composeAgentSpawnEnv(context(hermes.env, hermes.unsetEnv), { hostInjections: [hermesPlatform] });
+    expect(JSON.stringify(hermesMixed)).not.toMatch(/user-key|user\.example|user-model/);
+  });
+});
+
+/**
+ * 走模型注入的家(pi / opencode / CodeBuddy):宿主照平台会话造的那份模型声明 —— 地址、key、模型来自连接 ——
+ * 经这家**已有的**物化器落进它自己的配置。这里从声明一路走到物化器的产物,看连接的三样都到了该到的地方、
+ * key 只在该在的那一处。
+ */
+describe('model-injection agents: the connection rides their own platform model writer', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'gugu-api-key-injection-'));
+  afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+  const endpoint = 'https://gateway.example/api/v1';
+  const apiKey = 'sk-user-connection';
+
+  function declare(providerId: string) {
+    return pluginRegistry.get(providerId)!.behavior.sessionBundle!.platformModel!.declare({
+      explicitModel: 'user-model',
+      requestedEffort: undefined,
+      envOverride: () => undefined,
+      platformProvider: { baseUrl: endpoint, apiKey },
+      platformAccess: null,
+      platformModels: undefined,
+      contextWindow: undefined,
+      callableRoutes: {},
+      protocolEnv: () => {
+        throw new Error('not for a connection');
+      },
+    });
+  }
+
+  function bundle(model: SessionCapabilityBundle['model'], env: Record<string, string> = {}): SessionCapabilityBundle {
+    return {
+      sessionKey: 'conn-1',
+      mcpServers: [],
+      env: { GUGU_HOME: join(tmp, 'gugu-home'), HOME: join(tmp, 'home'), ...env },
+      model,
+      autonomy: null,
+      promptBlocks: {},
+      packages: PRODUCT_CAPABILITY_PACKAGES,
+    } as unknown as SessionCapabilityBundle;
+  }
+
+  it('pi: models.json names the connection address and model; the key is only `${GUGU_PI_API_KEY}` there, its value in the env', () => {
+    const model = declare('pi');
+    for (const surface of ['acp', 'tui'] as const) {
+      const config = materializePiModelConfig(surface, bundle(model));
+      expect(config.env.GUGU_PI_API_KEY).toBe(apiKey);
+      const models = config.artifacts.find((artifact) => artifact.path.endsWith('models.json'))!;
+      const provider = JSON.parse(models.content).providers['gugu-platform'];
+      expect(provider).toMatchObject({ baseUrl: endpoint, api: 'openai-responses', apiKey: '${GUGU_PI_API_KEY}' });
+      expect(provider.models.map((entry: { id: string }) => entry.id)).toEqual(['user-model']);
+      expect(models.content).not.toContain(apiKey);
+      if (surface === 'acp') {
+        const settings = config.artifacts.find((artifact) => artifact.path.endsWith('settings.json'))!;
+        expect(JSON.parse(settings.content)).toMatchObject({ defaultProvider: 'gugu-platform', defaultModel: 'user-model' });
+      }
+    }
+  });
+
+  it('opencode: one config document with the connection as a provider block; no context window guessed', () => {
+    const load = pluginRegistry.get('opencode')!.behavior.sessionBundle!.platformModel!.load(declare('opencode'));
+    const config = JSON.parse(load.spawnEnv!.OPENCODE_CONFIG_CONTENT!);
+    expect(config.model).toBe('gugu-platform/user-model');
+    expect(config.provider['gugu-platform']).toMatchObject({ npm: '@ai-sdk/openai', options: { baseURL: endpoint, apiKey } });
+    // opencode 1.18.28:`limit` 一出现就要 `context` —— 窗口说不出就整个不写(实测缺它 session/new 起不来)。
+    expect(config.provider['gugu-platform'].models['user-model']).not.toHaveProperty('limit');
+    // 与咕咕自己的 MCP / 提示合成一份:物化器收它进会话包的环境,整份不丢。
+    const materialized = pluginRegistry.get('opencode')!.behavior.sessionBundle!.materialize(
+      { surface: 'acp', lifecycle: 'fresh', cwd: tmp },
+      bundle(null, load.spawnEnv as Record<string, string>)
+    );
+    const merged = JSON.parse(String(materialized.env.OPENCODE_CONFIG_CONTENT));
+    expect(merged.model).toBe('gugu-platform/user-model');
+    expect(merged.provider['gugu-platform'].options).toEqual({ baseURL: endpoint, apiKey });
+  });
+
+  it('codebuddy: address and model in the --settings document, the key only in the process env', () => {
+    for (const surface of ['acp', 'tui'] as const) {
+      const materialized = pluginRegistry.get('codebuddy')!.behavior.sessionBundle!.materialize(
+        { surface, lifecycle: 'fresh', cwd: tmp },
+        bundle(declare('codebuddy'))
+      );
+      expect(materialized.env.CODEBUDDY_API_KEY).toBe(apiKey);
+      const settingsPath = materialized.argsAppend[materialized.argsAppend.indexOf('--settings') + 1];
+      const document = materialized.artifacts.find((artifact) => artifact.path === settingsPath)!;
+      expect(JSON.parse(document.content).env).toEqual({
+        CODEBUDDY_BASE_URL: endpoint,
+        CODEBUDDY_MODEL: 'user-model',
+        CODEBUDDY_SMALL_FAST_MODEL: 'user-model',
+        CODEBUDDY_BIG_SLOW_MODEL: 'user-model',
+        CODEBUDDY_CODE_SUBAGENT_MODEL: 'user-model',
+      });
+      expect(document.content).not.toContain(apiKey);
+    }
   });
 });
 

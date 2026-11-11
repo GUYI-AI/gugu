@@ -5131,6 +5131,19 @@ app.whenReady().then(async () => {
       },
       onPlatformSessionEnded: (sessionId) => sessionpagePlatformRecovery?.forget(sessionId),
       onHostResume: resumeAllCodexAppServerTurnWaiters,
+      // #2507 不上平台时,这一家选中的那把「走模型注入」的 API Key 连接(pi / opencode / CodeBuddy)。
+      // 动态 import:连接那一层在加载时读库,与 agent-run-context 里同一个理由。
+      connectionModel: async ({ providerId, surface }) => {
+        const { resolveConnectionModel } = await import('./session/main/core/agents/harness-connections')
+        const connection = await resolveConnectionModel(providerId)
+        if (!connection) return null
+        const { connectionModelLaunch } = await import('./sessionpage/connection-model-launch')
+        createLogger('sessionpage/platform').info(
+          { providerId, surface, connectionId: connection.connectionId },
+          '2507: API key connection injected as the session model',
+        )
+        return connectionModelLaunch({ providerId, surface, ...connection })
+      },
       env: process.env,
     })
     sessionpagePlatformRecoveryHooks = sessionpagePlatformHooks
