@@ -553,7 +553,7 @@ describe('device-link frame timeout recovery', () => {
 describe('packed frames from the machine', () => {
   const opened = () => fakeDevice(() => ({ result: { opened: true, protocol: REMOTE_PROTOCOL_VERSION } }))
   const packed = (frame: string) => gzipSync(frame).toString('base64')
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 150))
 
   it('asks for them, reads them, and keeps the frames in the order they came', async () => {
     const device = opened()
@@ -563,8 +563,17 @@ describe('packed frames from the machine', () => {
     const page = JSON.stringify({ t: 'result', id: 1, ok: true, value: '第 3 页 '.repeat(2_000) })
     const z = packed(page)
     device.push({ type: SESSION_HOST_FRAME_EVENT, client: 'client00000001', seq: 0, frames: [{ z: z.slice(0, 100), p: 0, n: 2 }, { z: z.slice(100), p: 1, n: 2 }, { f: 'after' }] })
+    await vi.waitFor(() => expect(frames).toEqual([page, 'after']))
+  })
+
+  it('does not hand over a frame still being unpacked when the window closes', async () => {
+    const device = opened()
+    const frames: unknown[] = []
+    const pipe = await openRemoteSessionHostPipe('dev', device.deps)({ onFrame: (f) => frames.push(f), onClose: () => undefined })
+    device.push({ type: SESSION_HOST_FRAME_EVENT, client: 'client00000001', seq: 0, frames: [{ z: packed('{"t":"result","id":1,"ok":true,"value":null}') }] })
+    pipe.close()
     await settle()
-    expect(frames).toEqual([page, 'after'])
+    expect(frames).toEqual([])
   })
 
   it('closes the window on one it cannot read, and opens the next without asking for them', async () => {
@@ -573,9 +582,8 @@ describe('packed frames from the machine', () => {
     const closed: string[] = []
     await openRemoteSessionHostPipe('dev', device.deps)({ onFrame: (f) => frames.push(f), onClose: (reason) => closed.push(reason) })
     device.push({ type: SESSION_HOST_FRAME_EVENT, client: 'client00000001', seq: 0, frames: [{ z: 'bm90IGd6aXA=' }] })
-    await settle()
+    await vi.waitFor(() => expect(closed).toEqual(['packed frame unreadable']))
     expect(frames).toEqual([])
-    expect(closed).toEqual(['packed frame unreadable'])
     const next = opened()
     await openRemoteSessionHostPipe('dev', next.deps)({ onFrame: () => undefined, onClose: () => undefined })
     expect(next.calls[0]!.payload).toEqual({ client: 'client00000001', protocol: REMOTE_PROTOCOL_VERSION })

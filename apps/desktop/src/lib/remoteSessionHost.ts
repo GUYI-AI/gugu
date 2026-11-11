@@ -151,7 +151,8 @@ export function openRemoteSessionHostPipe(
     let live = false
     /** 开线那一问还在路上时频道重接上了:那一问多半随断开的那段丢了,当场放弃,❌ 干等它超时。 */
     let abandonOpen: ((error: Error) => void) | null = null
-    const joiner = createPieceJoiner(onFrame, {
+    // A frame still being unpacked when the window closes is not handed over: whoever asked has already been told.
+    const joiner = createPieceJoiner((frame) => { if (!closed) onFrame(frame) }, {
       read: unpackFrame,
       failed: (error) => {
         packUnreadable = true
