@@ -46,8 +46,12 @@ export function filterReadableStoredRows<T extends StoredReplayRow>(parsed: (T &
 
 /** View repair only: leave archived rows, sequence numbers and message contents unchanged. */
 export async function readableStoredRows(sessionId: string, rows: StoredReplayRow[]) {
+  return readableParsedRows(sessionId, rows.map(row => ({ ...row, turn: JSON.parse(row.data) as TranscriptTurn })));
+}
+
+/** The same projection for rows a caller has already parsed, oldest first. */
+export async function readableParsedRows<T extends StoredReplayRow>(sessionId: string, parsed: (T & { turn: TranscriptTurn })[]) {
   let previous: TranscriptTurn | null = null;
-  const parsed = rows.map(row => ({ ...row, turn: JSON.parse(row.data) as TranscriptTurn }));
   const first = parsed[0];
   // Carry the same preceding settled context across any page boundary, including a leading unfinished row.
   if (first && !(first.turn.outcome && first.turn.startedAt !== undefined)) {

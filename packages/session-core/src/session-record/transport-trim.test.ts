@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { ToolNode, TranscriptItem, TranscriptTurn } from '../acp/client';
 import type { TimelineSnapshot, TurnPatch } from './contract';
 import {
+  REMOTE_OLDER_PAGE_BUDGET,
   TRANSPORT_PAYLOAD_BUDGET,
   TRANSPORT_TEXT_LIMIT,
   trimAfterResultForTransport,
@@ -217,12 +218,21 @@ describe('首屏总量预算', () => {
   });
 
   it('往前翻的那一页同样受预算约束,且丢过就说还有更早的', () => {
-    const turns = Array.from({ length: 20 }, (_, i) => fatTurn(`o${i}`, 40));
+    const turns = Array.from({ length: 60 }, (_, i) => fatTurn(`o${i}`, 40));
     const older = trimOlderForTransport({ epoch: 'e1', turns, hasOlder: false });
-    expect(JSON.stringify(older.turns).length).toBeLessThanOrEqual(TRANSPORT_PAYLOAD_BUDGET);
+    expect(JSON.stringify(older.turns).length).toBeLessThanOrEqual(REMOTE_OLDER_PAGE_BUDGET);
     expect(older.hasOlder).toBe(true);
     // 接口语义:返回的这一段必须紧挨着手机手里那份的左边,所以丢的是更旧的那头。
-    expect(older.turns.at(-1)!.id).toBe('o19');
+    expect(older.turns.at(-1)!.id).toBe('o59');
+  });
+
+  it('往前翻的那一页比首屏大:首屏要开得快,往前翻是人开口要的', () => {
+    const turns = Array.from({ length: 60 }, (_, i) => fatTurn(`o${i}`, 40));
+    const first = trimSnapshotForTransport(snapshotOf(turns));
+    const older = trimOlderForTransport({ epoch: 'e1', turns, hasOlder: false });
+    expect(JSON.stringify(first.turns).length).toBeLessThanOrEqual(TRANSPORT_PAYLOAD_BUDGET);
+    expect(JSON.stringify(older.turns).length).toBeGreaterThan(TRANSPORT_PAYLOAD_BUDGET);
+    expect(older.turns.length).toBeGreaterThan(3 * first.turns.length);
   });
 });
 
@@ -323,5 +333,52 @@ describe('desktop cursor pages share the phone transport budget', () => {
     expect(page.turns.map(t => t.seq)).toEqual([3, 4]);
     expect(page.nextCursor).toBe(3);
     expect((page.turns[0].items[0] as { text: string }).text).toBe(text);
+  });
+});
+
+
+// `text` is the projection of `content` (message-fold), and a message without `content` reads as one text block of
+// its `text`: a page that carries both carries every message twice.
+describe('a page sends each message\'s text once', () => {
+  const message = (fields: Record<string, unknown>): TranscriptItem =>
+    ({ kind: 'message', id: 'm', seq: 0, role: 'assistant', text: 'Hello, world', ...fields }) as TranscriptItem;
+  const paged = (item: TranscriptItem) =>
+    trimCursorPageForTransport({ turns: [turn('t', [item])], nextCursor: null }).turns[0]!.items[0] as Record<string, unknown>;
+
+  it('drops canonical blocks that are nothing but the text, in however many pieces', () => {
+    expect(paged(message({ content: [{ type: 'text', text: 'Hello, world' }] }))).not.toHaveProperty('content');
+    expect(paged(message({ content: [{ type: 'text', text: 'Hello, ' }, { type: 'text', text: 'world' }] }))).not.toHaveProperty('content');
+    expect(paged(message({ text: '', content: [] }))).not.toHaveProperty('content');
+    const thinking = { kind: 'thinking', id: 'th', seq: 0, segmentId: 's', text: 'reason', status: 'done', startedAt: 1,
+      content: [{ type: 'text', text: 'reason' }] } as TranscriptItem;
+    expect(paged(thinking)).not.toHaveProperty('content');
+    expect(paged(thinking).text).toBe('reason');
+  });
+
+  it('keeps blocks that hold anything the text does not', () => {
+    const picture = [{ type: 'text', text: 'Hello, world' }, { type: 'image', mimeType: 'image/png', data: 'AAAA' }];
+    expect(paged(message({ content: picture })).content).toEqual(picture);
+    const annotated = [{ type: 'text', text: 'Hello, world', annotations: { audience: ['user'] } }];
+    expect(paged(message({ content: annotated })).content).toEqual(annotated);
+    const other = [{ type: 'text', text: 'Hello' }];
+    expect(paged(message({ content: other })).content).toEqual(other);
+  });
+
+  it('leaves a message without blocks, and a patch of the running turn, as they are', () => {
+    const plain = message({});
+    const page = { turns: [turn('t', [plain])], nextCursor: null };
+    expect(trimCursorPageForTransport(page)).toBe(page);
+    const streaming = message({ content: [{ type: 'text', text: 'Hello, world' }] });
+    const batch = { epoch: 'e1', fromSeq: 0, toSeq: 1, turns: [{ turnId: 't', items: [streaming] } as unknown as TurnPatch] };
+    expect(trimBatchForTransport(batch as never)).toBe(batch);
+  });
+
+  it('counts the page by what is sent', () => {
+    const text = 'x'.repeat(60_000);
+    const turns = Array.from({ length: 4 }, (_, i) => ({ ...turn(`t${i}`, [message({ id: `m${i}`, text, content: [{ type: 'text', text }] })]), seq: i }));
+    // Sent twice, two of these fill 128K; sent once, all four fit under 256K.
+    const page = trimCursorPageForTransport({ turns, nextCursor: null }, TRANSPORT_TEXT_LIMIT, 256 * 1024);
+    expect(page.turns).toHaveLength(4);
+    expect(page.nextCursor).toBeNull();
   });
 });
