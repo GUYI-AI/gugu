@@ -12,13 +12,12 @@ import { resolveGuguHome } from '@gugu/core/local/state/paths'
 import { ASSISTANT_COMPUTER_WORKDIR_NAME } from '@gugu/core/shared/assistantPolicy'
 import type { AssistantRulesState } from '../src/lib/assistantHomeIpc'
 import { createLogger } from './lib/logger'
-import { assistantAppEnsurer, type AssistantAppEnsureOutcome, type AssistantAppEnsurer } from './assistant-app-ensure'
+import { assistantAppEnsurer, type AssistantAppEnsureOutcome, type AssistantAppEnsureReason, type AssistantAppEnsurer } from './assistant-app-ensure'
 import { readAssistantProductRules } from './assistant-product-rules'
 import { assistantRulesLastGoodStore, type LastGoodAssistantRules } from './assistant-rules-last-good'
 import { assistantRules, createAssistantRulesResolver, installAssistantRulesResolver } from './assistant-rules-resolver'
 import { ASSISTANT_RULES_PROVIDER_ID, installedAssistantRulesProvider } from './assistant-rules-trust'
 import { extensionsService } from './session/main/core/extensions/extensions-root'
-import { noteAssistantAppEnsuring } from './session/main/core/extensions/assistant-app-ensuring'
 
 export const ASSISTANT_RULES_DIR_NAME = 'assistant-rules'
 /** Where a release carries the assistant App's rules (scripts/build/assistant-rules-seed.ts writes it at build time). */
@@ -68,18 +67,54 @@ export function assistantLivesHere(env: NodeJS.ProcessEnv = process.env): boolea
   return env.GUGU_CLOUD_COMPUTER === '1' || existsSync(path.join(resolveGuguHome(env), ASSISTANT_COMPUTER_WORKDIR_NAME))
 }
 
+/**
+ * Whether the signed-in account has an assistant of its own, wherever it lives (its provision marker, read in main): the App
+ * is that assistant's page here. Unreadable or no one signed in: no (the window's next sync asks again).
+ */
+async function accountHasAssistant(): Promise<boolean> {
+  try {
+    const { signedInAccountAssistant } = await import('./session/main/core/extensions/app-assistant-binding')
+    const { ownerId, assistantId } = await signedInAccountAssistant()
+    accountAssistant = { ownerId, has: assistantId !== null }
+    // Told now, not after the install: the entry shows it preparing while the App goes in.
+    publishState()
+    return assistantId !== null
+  } catch (error) {
+    log.info({ error: String(error) }, 'assistant App: whether this account has an assistant is not known now')
+    return false
+  }
+}
+/** The last answer of `accountHasAssistant`, for the account it was about. */
+let accountAssistant: { ownerId: string; has: boolean } | null = null
+/** Whether the last answer says the account signed in now has an assistant (the account is read again: a switch is not it). */
+async function knownAccountAssistant(): Promise<boolean> {
+  if (!accountAssistant?.has) return false
+  try {
+    const { account } = await import('./session/main/core/extensions/app-unread-bindings')
+    return (await account()).ownerId === accountAssistant.ownerId
+  } catch {
+    return false
+  }
+}
+
+/** Whether this machine needs the App now: as the rules of an assistant living here, or as the page of the account's assistant. */
+async function appNeededHere(): Promise<boolean> {
+  return assistantLivesHere() || accountHasAssistant()
+}
+
 let ensurer: AssistantAppEnsurer | null = null
 /** Whether getting the App in is truly stuck: every try of the backoff window failed, or an App here holds its id unusably. */
 let stuck = false
 
-/** Puts the assistant App in where it is needed (assistant-app-ensure.ts): at start, and when the assistant's setup starts. */
-export function ensureAssistantApp(reason: 'start' | 'setup'): Promise<AssistantAppEnsureOutcome> {
+/**
+ * Puts the assistant App in where it is needed (assistant-app-ensure.ts): at start, when the assistant's setup starts, and
+ * when a window found the account's assistant while the App is not in (assistant-app-entry.ts).
+ */
+export function ensureAssistantApp(reason: AssistantAppEnsureReason): Promise<AssistantAppEnsureOutcome> {
   ensurer ??= assistantAppEnsurer({
     installed: () => extensionsService().isInstalled(ASSISTANT_RULES_PROVIDER_ID),
-    needed: () => assistantLivesHere(),
+    needed: appNeededHere,
     install: async () => {
-      // The entry on the rail shows「准备中」while this goes on (assistant-app-ensuring.ts).
-      if (!stuck) noteAssistantAppEnsuring(true)
       const { installExtensionFromMarket } = await import('./session/main/core/extensions/extension-market-install')
       const outcome = await installExtensionFromMarket({ ref: { extensionId: ASSISTANT_RULES_PROVIDER_ID }, consent: { kind: 'gugu' } })
       if (!outcome.installed) throw new Error(`${ASSISTANT_RULES_PROVIDER_ID} did not go in (${outcome.outcome})`)
@@ -91,13 +126,10 @@ export function ensureAssistantApp(reason: 'start' | 'setup'): Promise<Assistant
     stuck: (error) => {
       log.error({ error }, 'assistant App: still not in after the whole backoff window')
       stuck = true
-      // A stuck install is not shown as preparing on the rail (assistant-app-ensuring.ts).
-      noteAssistantAppEnsuring(false)
       publishState()
     },
   })
   const going = ensurer.ensure(reason)
-  void going.finally(() => noteAssistantAppEnsuring(false)).catch(() => {})
   publishState()
   void going.then(async (outcome) => {
     // The id is taken by an App gugu does not put over (switched off, a folder, a fork) and no rules came of it.
@@ -113,7 +145,9 @@ let published: AssistantRulesState = { pending: false, stuck: false }
 /** Waiting for rules: this machine needs the assistant (it lives here, or its setup started) and has none of its rules. */
 export async function assistantRulesState(): Promise<AssistantRulesState> {
   const answer = await assistantRules().current()
-  const pending = !answer.rules && (ensurer?.setupStarted() === true || assistantLivesHere())
+  // Waiting = no App to give rules or the page, where one is needed: the assistant lives here, its setup started, or the
+  // account signed in has one elsewhere (the App is its page here).
+  const pending = !answer.rules && (ensurer?.setupStarted() === true || assistantLivesHere() || await knownAccountAssistant())
   return { pending, stuck: pending && stuck }
 }
 

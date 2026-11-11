@@ -50,7 +50,7 @@ beforeEach(() => {
   installAssistantShellBridge(); installAppConversationSurfaceBridge(); installAssistantAppEntryBridge()
   mine.value = { contact: assistant, agentId: assistant.id, loading: false, error: null }
   publishAssistantShell(shell())
-  publishAssistantAppWord({ ownerId: OWNER, trusted: true, ensuring: false })
+  publishAssistantAppWord({ ownerId: OWNER, trusted: true })
   publishAppConversationSurfaces({ [ASSISTANT_APP_ID]: DM })
   installedExtensionsStore.applyList({ extensions: [app(ASSISTANT_APP_ID), app('notes')], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [ASSISTANT_APP_ID, 'notes'] } as never)
   appState.navigation.navigate('home')
@@ -86,7 +86,7 @@ describe('the top cell opens the assistant App once the host bound it', () => {
   })
 
   it('opens the built-in page for an App main does not trust (same id from elsewhere, a fork), whatever is drawn', async () => {
-    publishAssistantAppWord({ ownerId: OWNER, trusted: false, ensuring: false })
+    publishAssistantAppWord({ ownerId: OWNER, trusted: false })
     const harness = await renderRail()
     try {
       await clickElement(top(harness.container))
@@ -106,16 +106,18 @@ describe('the top cell opens the assistant App once the host bound it', () => {
     } finally { harness.cleanup() }
   })
 
-  it('shows its existing preparing state while the ensure step puts the App in', async () => {
+  it('shows its existing preparing state while the ensure step puts the App in (the assistant waits for its rules)', async () => {
     publishAppConversationSurfaces({})
-    publishAssistantAppWord({ ownerId: OWNER, trusted: false, ensuring: true })
+    publishAssistantAppWord({ ownerId: OWNER, trusted: false })
+    publishAssistantShell(shell({ rulesPending: true }))
     const harness = await renderRail()
     try {
       expect(top(harness.container).getAttribute('data-entry')).toBe('preparing')
-      await act(async () => publishAssistantAppWord({ ownerId: OWNER, trusted: true, ensuring: false }))
-      expect(top(harness.container).getAttribute('data-entry')).toBe('found')
-      // Another account's word says nothing about this one.
-      await act(async () => publishAssistantAppWord({ ownerId: 'u2', trusted: false, ensuring: true }))
+      await act(async () => {
+        publishAssistantShell(shell({ rulesPending: false }))
+        publishAssistantAppWord({ ownerId: OWNER, trusted: true })
+        publishAppConversationSurfaces({ [ASSISTANT_APP_ID]: DM })
+      })
       expect(top(harness.container).getAttribute('data-entry')).toBe('found')
     } finally { harness.cleanup() }
   })

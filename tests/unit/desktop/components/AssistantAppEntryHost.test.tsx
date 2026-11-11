@@ -18,7 +18,7 @@ const state = vi.hoisted(() => ({
   owner: '',
   notes: new Set<(note: { extensionId?: string }) => void>(),
   manifest: null as null | { id: string; version: string },
-  answer: (args: { ownerId: string; chatId: string | null }) => ({ success: true, data: { ownerId: args.ownerId, extensionId: 'gugu-assistant', trusted: true, ensuring: false, outcome: 'bound', changed: true } }) as unknown,
+  answer: (args: { ownerId: string; chatId: string | null }) => ({ success: true, data: { ownerId: args.ownerId, extensionId: 'gugu-assistant', trusted: true, outcome: 'bound', changed: true } }) as unknown,
 }));
 const sync = vi.hoisted(() => vi.fn());
 const refresh = vi.hoisted(() => vi.fn(async () => undefined));
@@ -91,7 +91,7 @@ describe('asking main to bind the trusted App', () => {
   it('asks with the window\'s assistant chat, publishes main\'s answer for this account', async () => {
     await mount();
     expect(sync).toHaveBeenLastCalledWith({ ownerId: OWNER, chatId: DM });
-    expect(word()).toEqual({ ownerId: OWNER, trusted: true, ensuring: false });
+    expect(word()).toEqual({ ownerId: OWNER, trusted: true });
   });
 
   it('asks again when the assistant goes (closed: no chat) and comes back, and not while it is still being read', async () => {
@@ -109,7 +109,7 @@ describe('asking main to bind the trusted App', () => {
     expect(sync).toHaveBeenLastCalledWith({ ownerId: OWNER, chatId: '44000000-0000-4000-8000-000000000004' });
   });
 
-  it('asks again when that App changes (installed, its grant or choice, the ensure step), not when another does', async () => {
+  it('asks again when that App changes (installed, its grant or choice), not when another does', async () => {
     await mount();
     sync.mockClear();
     await act(async () => { for (const note of state.notes) note({ extensionId: 'other-app' }); });
@@ -138,7 +138,7 @@ describe('asking main to bind the trusted App', () => {
 
   it('asks again, a few times, what main could not verify; never says anything', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    sync.mockImplementation(async (args: { ownerId: string }) => ({ success: true, data: { ownerId: args.ownerId, extensionId: ASSISTANT_APP_ID, trusted: true, ensuring: false, outcome: 'unverified', changed: false } }));
+    sync.mockImplementation(async (args: { ownerId: string }) => ({ success: true, data: { ownerId: args.ownerId, extensionId: ASSISTANT_APP_ID, trusted: true, outcome: 'unverified', changed: false } }));
     await mount();
     expect(sync).toHaveBeenCalledTimes(1);
     for (const wait of [5_000, 30_000, 120_000]) {
