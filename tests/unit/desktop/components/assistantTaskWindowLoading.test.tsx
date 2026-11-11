@@ -2,14 +2,16 @@
 // A task shown in the assistant App's host layer (and in the built-in assistant pane) is the task page
 // (SessionTimelinePage, through AssistantTaskChatWindow → PeekSessionTimeline). D12: it drew the bounded source window,
 // the provider's raw records — `<gugu_delivery …>`, `<system-reminder>`, `<![CDATA[`, the task context, thinking — as
-// fragments nothing resolves to cleaned turns, while the same task opened from the left column was clean. It reads the
-// task page archive, the left column's cleaned record, and never reads the raw window. D11: no 「Loading…」 is left.
+// fragments nothing resolves to cleaned turns, while the same task opened from the left column was clean. The task layer
+// reads the task page archive, the left column's cleaned record, and never the raw window; other desktop task pages keep
+// the format routing (#2135). D11: no 「Loading…」 is left.
 import { act, type ReactNode } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { SessionpageSessionSummary, TimelineSnapshot } from '@gugu/session-core/session-record/contract'
 import { createReactHarness, device, renderWithAppProviders } from '../../../support/testHarness'
 import { createWindowOpenings } from '../../../../apps/desktop/electron/session/main/core/session-timeline/window-opening'
 import { SessionTimelinePage } from '../../../../apps/desktop/src/mobile/agent-watch/SessionTimelinePage'
+import { AssistantTaskChatWindow } from '../../../../apps/desktop/src/components/assistant/AssistantTaskChatWindow'
 import { hasPendingWindow } from '../../../../apps/desktop/src/mobile/agent-watch/timeline-window-fields'
 import type { AgentWatchTimeline } from '../../../../apps/desktop/src/mobile/agent-watch/agent-watch-store'
 
@@ -40,6 +42,12 @@ vi.mock('../../../../apps/desktop/src/mobile/agent-watch/SessionConversation', (
     {hasPendingWindow(timeline) ? <div role="status" data-testid="loading-window">Loading…</div> : null}
   </div> as ReactNode,
 }))
+// The task layer finds the session's row as the task tab does; here this computer lists the one task.
+const directory = vi.hoisted(() => ({ device: null as unknown, session: null as unknown }))
+vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [directory.device], phones: [] }) }))
+vi.mock('../../../../apps/desktop/src/session/shared/remote-sessions/session-directory', async original => ({ ...await original<object>(),
+  useLiveDeviceSessions: () => ({}),
+  listedSession: () => ({ row: { deviceId: (directory.device as { device_id: string }).device_id, session: directory.session } }) }))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: { enabledTabContributions: [] } }))
 vi.mock('../../../../apps/desktop/src/components/ui/sheetStack', async original => ({ ...await original<object>(), useBackLayer() {} }))
 
@@ -81,11 +89,19 @@ function host() {
 
 const session = { conversationId: 'task-session', projectId: 'project', title: 'Weekly report checklist', harness: 'claude', runtime: 'acp', nativeInputVersion: 1,
   agentStatus: 'idle', status: { status: 'idle', detail: null } } as unknown as SessionpageSessionSummary
+const thisComputer = device('this-computer', [], { is_online: true, is_current_device: true })
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => { harness = createReactHarness(); bus.listeners.clear(); vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true) })
+beforeEach(() => {
+  harness = createReactHarness(); bus.listeners.clear(); vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+  directory.device = thisComputer; directory.session = session
+})
 afterEach(() => { harness.cleanup(); vi.unstubAllGlobals() })
 
-const openTask = () => renderWithAppProviders(harness, <SessionTimelinePage device={device('this-computer', [], { is_online: true, is_current_device: true })} session={session} local onBack={() => undefined} />)
+/** The assistant/App task layer, as the App panel and the built-in assistant pane open a task. */
+const openTask = () => renderWithAppProviders(harness, <AssistantTaskChatWindow agent={{ id: 'task-agent', display_name: 'Weekly report checklist', avatar: null }}
+  task={{ sessionId: session.conversationId, deviceId: thisComputer.device_id }} onClose={() => undefined} />)
+/** Any other desktop task page on the same session. */
+const openOtherTaskPage = () => renderWithAppProviders(harness, <SessionTimelinePage device={thisComputer} session={session} local onBack={() => undefined} />)
 const conversation = () => harness.container.querySelector('[data-testid="conversation"]')
 const loadingLine = () => harness.container.querySelector('[data-testid="loading-window"]')
 /** Waits for what the host has been asked, then for its answers to be drawn. */
@@ -106,4 +122,12 @@ it('a task shown over the App panel is drawn from the task page archive, never f
   expect(side.calls.filter(call => call.startsWith('window.'))).toEqual([])
   expect(side.calls).toContain('archive.read')
   expect(loadingLine()).toBeNull()
+})
+
+it('another desktop task page keeps the format routing to the bounded source window', async () => {
+  const side = host()
+  await openOtherTaskPage()
+  await settle(() => side.calls.includes('window.snapshot'))
+  expect(side.calls).toContain('window.snapshot')
+  expect(side.calls).not.toContain('archive.read')
 })

@@ -32,10 +32,11 @@ export function AssistantTaskChatWindow({ agent, task, onClose, status, pendingC
   const name = useShownAgentName({ name: agent.display_name, createdAt: identity?.created_at ?? undefined })
   // The same test as the assistant's progress footnote (AssistantConversationProgress): this computer reads over IPC.
   const local = devices.some(device => device.device_id === task.deviceId && device.is_current_device)
+  // D12: the task as the left column shows it (cleanedRecord), not the provider's raw record from the bounded window.
   return (
     <section className="assistant-task-chat-window ta-skin" aria-label={name} data-testid="assistant-task-chat-window">
       <TaskChatFilePreviewHost mobile={mobile}>
-        <PeekSessionTimeline sessionId={task.sessionId} deviceId={task.deviceId} local={local} onBack={onClose} fallback={<>
+        <PeekSessionTimeline sessionId={task.sessionId} deviceId={task.deviceId} local={local} cleanedRecord onBack={onClose} fallback={<>
           <PaneHeader title={name} subtitle={status} mobile={mobile} divider
             leading={<><IconButton aria-label={t('panel.back')} onClick={onClose} data-testid="assistant-task-chat-close"><ChevronLeft /></IconButton><Avatar name={name} seed={agent.id} avatarUrl={agent.avatar} size="sm" isAgent still harnessBadge={false} /></>} />
           {pendingContent ?? <div className="assistant-task-chat-window__pending"><LoadingIndicator size="panel" ariaLabel={t('chat.opening', { name })} /></div>}

@@ -71,6 +71,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   draft,
   initialAppKind,
   local = false,
+  cleanedRecord = false,
   onBack,
 }: {
   device: Device
@@ -81,6 +82,8 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   initialAppKind?: string
   /** The session is on this computer (desktop assistant task pane): read it over IPC, also without a network. */
   local?: boolean
+  /** Read what the left column reads, never the bounded source window (useSessionHistorySource): the assistant/App layer. */
+  cleanedRecord?: boolean
   onBack: () => void
 }) {
   const { t } = useTranslation('main')
@@ -110,7 +113,8 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   const apps = useSessionApps()
   const native = !phoneHost && session.runtime === 'acp' && (session.nativeInputVersion === 1 || session.nativeInputVersion === 2)
   const { boundedHistory, nativeHistory, nativeRecord } = useSessionHistorySource({
-    deviceId: device.device_id, sessionId: session.conversationId, native, online, local,
+    deviceId: device.device_id, sessionId: session.conversationId, mobile, phoneHost,
+    sourceFormat: session.harness, native, online, local, cleanedRecord,
   })
   const {
     timeline, phase, error, actionError, dismissActionError, waitingForRecord,
