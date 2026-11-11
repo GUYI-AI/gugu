@@ -166,7 +166,9 @@ describe('what a draft may not carry', () => {
 
   it('the account or the selection changing while files are found: refused, nothing drafted', async () => {
     state.afterList = () => { state.owner = OTHER; };
-    await expect(draft([{ file: 'today.md' }])).rejects.toMatchObject({ code: 'denied' });
+    await expect(draft([{ file: 'today.md' }, { file: 'notes/plan.md' }])).rejects.toMatchObject({ code: 'denied' });
+    // Refused before the next folder is asked for.
+    expect(files.list).toHaveBeenCalledTimes(1);
     state.owner = OWNER;
     state.afterList = () => { state.handle = 'h2'; };
     await expect(draft([{ file: 'today.md' }])).rejects.toMatchObject({ code: 'denied' });

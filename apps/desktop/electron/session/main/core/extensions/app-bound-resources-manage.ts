@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { type AssistantPanelClient, type AssistantPanelItem, type AssistantPanelReceipt } from '@gugu/core/cloud/assistantPanel';
 import { readAssistantPanelBody, uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies';
 import { ASSISTANT_PANEL_PATHS, createAssistantPanelFiles } from '@gugu/core/cloud/assistantPanelFiles';
-import { folderNameProblem, resourceRejection } from '@gugu/core/shared/assistantResourceRules';
+import { resourceRejection } from '@gugu/core/shared/assistantResourceRules';
 import { VOICE_NOTE_META_FILE, VOICE_NOTE_SUMMARY_FILE, VOICE_NOTE_TRANSCRIPT_FILE, VOICE_NOTES_DIR, parseVoiceNoteMeta } from '@gugu/core/shared/voiceNotes';
 import { resourceKeyOf, type AppResourceReceipt } from '@shared/extensions/agent-resources';
 import {
@@ -100,11 +100,9 @@ const WRITE_FILES: readonly ResourceCallAction[] = ['resources', 'resources:writ
 const MANAGE_VOICE: readonly ResourceCallAction[] = ['resources', 'voice-notes:manage'];
 const pathOf = (item: AssistantPanelItem) => (typeof item.data.path === 'string' ? item.data.path : item.resource_key);
 
-/** A key of 给助理的资料: a relative path of names, each one name the page's name field takes. */
+/** A key of 给助理的资料: a relative path of names (no empty or untrimmed one: what the page's name field takes). */
 function filesKeyOf(value: unknown): string {
-  const key = resourceKeyOf('files', value);
-  if (key.split('/').some((part) => folderNameProblem(part) !== null)) throw invalid('key is a relative path of names');
-  return key;
+  return resourceKeyOf('files', value);
 }
 /** A voice note's key: its id, one name (`resources(name, "voice-notes")` lists it as `noteId`). */
 function noteKeyOf(value: unknown): string {
@@ -173,8 +171,8 @@ export async function appResourceCreateFolder(extensionId: string, input: unknow
 export async function appResourceRename(extensionId: string, input: unknown): Promise<AppRenameAnswer> {
   const args = argsOf(renameArgsSchema, input);
   const key = filesKeyOf(args.key);
-  const to = args.to.trim();
-  if (folderNameProblem(to)) throw invalid('to is one name, without "/"');
+  // One name, as the page's name field takes it (`entryNameSchema`: trimmed, not empty, no "/").
+  const to = args.to;
   const renamedTo = [...key.split('/').slice(0, -1), to].join('/');
   filesKeyOf(renamedTo);
   const answer = await under(extensionId, args.name, WRITE_FILES, 'files', async (_bound, panel): Promise<AppRenameAnswer> => {

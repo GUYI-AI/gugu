@@ -335,8 +335,11 @@ describe('refusals', () => {
 
   it('the account or the selection changing while the person picks or answers: refused, nothing written or removed', async () => {
     folder('docs'); file('docs/one.md'); note(NOTE, 'ready');
-    host.pickFiles.mockImplementation(async () => { state.owner = OTHER; return [picked('brief.pdf', 'pdf')]; });
+    const bytes = vi.fn(async () => new TextEncoder().encode('pdf'));
+    host.pickFiles.mockImplementation(async () => { state.owner = OTHER; return [{ ...picked('brief.pdf', 'pdf'), read: bytes }]; });
     await expect(upload()).rejects.toMatchObject({ code: 'denied' });
+    // Not a byte of what was picked is read for the account that is gone.
+    expect(bytes).not.toHaveBeenCalled();
     expect(store.uploads).toHaveLength(0);
     reset('home-device'); folder('docs'); file('docs/one.md'); note(NOTE, 'ready');
     host.confirmRemoval.mockImplementation(async () => { state.handle = 'h2'; return true; });
