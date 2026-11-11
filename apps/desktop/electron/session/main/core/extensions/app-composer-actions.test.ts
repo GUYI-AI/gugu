@@ -19,7 +19,7 @@ const ASSISTANT = { agent_user_id: AGENT, member_key: 'assistant', device_id: 'h
   dm_chat_id: CHAT, agent: { owner_user_id: OWNER, removed_at: null } };
 const IDLE = { recorder: { phase: 'idle', elapsedMs: 0, level: 0, silentMs: 0, error: null }, jobs: [] };
 const ENTRIES = [
-  { id: 'ideas', label: { zh: '获取灵感', en: 'Get ideas' }, icon: 'sparkles', run: { kind: 'page-intent', intent: 'ideas' } },
+  { id: 'ideas', label: { zh: '获取灵感', en: 'Get ideas' }, icon: 'sparkles', run: { kind: 'page-intent' } },
   { id: 'voice-note', label: { zh: '录制语音笔记', en: 'Record a voice note' }, icon: 'mic', run: { kind: 'voice-note' } },
   { id: 'ask', label: { zh: '问问它', en: 'Ask it' }, icon: 'message', run: { kind: 'draft', text: { zh: '帮我看看今天的安排。', en: 'Look at my day with me.' } } },
 ];
@@ -131,7 +131,7 @@ describe('the host runs the one clicked', () => {
 
   it('a page intent: the page drawn beside is told it, after every check', async () => {
     expect(await run('ideas')).toEqual({ kind: 'page-intent', delivered: true });
-    expect(state.told).toEqual([['assistant', { kind: 'page-intent', intent: 'ideas' }]]);
+    expect(state.told).toEqual([['assistant', { kind: 'composer-action', id: 'ideas' }]]);
     expect(state.asked).toEqual([]);
   });
 

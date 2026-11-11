@@ -48,7 +48,7 @@ vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: () => ({
 } }) }));
 const { reportConversationSurface, tellSurfaceIntent } = await import('./app-unread-bindings');
 const { forgetHostLayersForTest, reportHostLayer } = await import('./app-host-layers');
-const IDEAS = { kind: 'page-intent', intent: 'ideas' } as const;
+const IDEAS = { kind: 'composer-action', id: 'ideas' } as const;
 
 // The corner the host's collapse control covers, the built-in panel's top row: the same answer at every width.
 const INSET = { top: 52, right: 48 };

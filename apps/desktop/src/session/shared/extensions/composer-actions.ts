@@ -9,8 +9,9 @@ import { z } from 'zod';
  * - `voice-note`: the host starts a voice note for that assistant, as the built-in entry does (needs `voice-notes:record`).
  * - `draft`: the host puts `text` (in the person's language) at the end of that composer; the person sends it, or not
  *   (needs `draft`).
- * - `page-intent`: the host expands the App's panel if it is collapsed and tells the App's page `intent`, once, on
- *   `gugu.bindings.onSurface` (the `surface` action the placement already has). No data comes with it.
+ * - `page-intent`: the host expands the App's panel (closing any host page over it) and tells the App's page
+ *   `intent: { kind: "composer-action", id }` — the entry's own id — once, on `gugu.bindings.onSurface` (the `surface`
+ *   action the placement already has). Nothing else comes with it.
  *
  * Only for the person's own assistant chat: on any other conversation the entries are not drawn and a run is refused.
  */
@@ -44,8 +45,8 @@ export const composerActionSchema = z.strictObject({
   run: z.discriminatedUnion('kind', [
     z.strictObject({ kind: z.literal('voice-note') }),
     z.strictObject({ kind: z.literal('draft'), text: z.strictObject({ zh: draftText, en: draftText }) }),
-    // Told as `intent: { kind: "page-intent", intent }` (unread-binding.ts `AppSurfaceIntent`): never mistaken for the host's own.
-    z.strictObject({ kind: z.literal('page-intent'), intent: z.string().regex(NAME) }),
+    // Told as `intent: { kind: "composer-action", id }` (unread-binding.ts `AppSurfaceIntent`): the entry's id, nothing else.
+    z.strictObject({ kind: z.literal('page-intent') }),
   ]),
 });
 export type ComposerAction = z.infer<typeof composerActionSchema>;

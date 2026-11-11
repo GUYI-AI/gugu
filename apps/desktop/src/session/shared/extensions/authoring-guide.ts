@@ -896,11 +896,12 @@ streaming, voice, attachments, read state) as the main column; your main page is
   \`top\` px, within \`right\` px of the edge. Make your top row (name, tabs) \`top\` px high and keep \`right\` px clear.
 - You get no chat, message, person or DOM of it. Opening your page marks nothing read; a \`{ binding }\` draft lands in that composer.
 API 42 to 46, when that conversation is the person's private one with their own agent or assistant (its resources,
-schedules, the assistant itself, the work it handed out): \`guide_read apps-bindings-agent\`; the host's top row over it,
-its voice-note recorder, your composer "+" entries (46 to 48): \`guide_read apps-bindings-assistant\`.
+schedules, the work it handed out): \`guide_read apps-bindings-agent\`; the assistant itself (\`gugu.assistant\`, 44) and
+\`toast\`: \`guide_read apps-assistant\`; the host's top row over it, its voice-note recorder, your composer "+" entries
+(46 to 48): \`guide_read apps-bindings-assistant\`.
 `;
 
-export const EXTENSION_GUIDE_BINDINGS_AGENT = `# gugu.bindings, gugu.assistant — the agent behind the chosen conversation
+export const EXTENSION_GUIDE_BINDINGS_AGENT = `# gugu.bindings — the agent behind the chosen conversation
 
 The binding of \`apps-bindings\` (\`chat:unread\`, the one conversation the person chooses), when that conversation is the
 person's private one with an agent of theirs or their own assistant: more actions on it, each with its own capability,
@@ -935,6 +936,30 @@ chat, or someone else's agent: \`denied\`.
   disabling or uninstalling your App leaves the schedules as they are. The assistant living elsewhere: \`pause\`, \`resume\`,
   \`remove\` only (else \`elsewhere\`), first \`pending\` until its computer applies it — the same \`operationId\` again tells
   \`applied\`, \`failed\` or \`superseded\` (a later change replaced it).
+API 44, the assistant itself (\`gugu.assistant\`: its status, gugu's screens over your page, setup, rename, its moving
+figure): \`guide_read apps-assistant\`.
+API 46, the assistant's 任务 list: add \`"work"\` (with \`chat:work\`). Only while the chosen conversation is the person's private
+chat with their own assistant; any other is refused (\`denied\`). The host keeps the ledger; it reads it as its own list does,
+wherever the assistant lives (this computer, another, the cloud).
+- \`gugu.bindings.work("main")\` → \`{ state: "ready", items, stale, open }\`, items newest first, each
+  \`{ handle, title, naming, status, unseen, updatedAt }\`: \`naming\` = draw "naming…" for the title; \`status\` =
+  \`{ status, detail }\` as an agent's state is drawn, or null; \`unseen\` = idle with news; \`stale\` = the last refresh failed,
+  these are the last rows read. Else \`{ state: "unavailable", open }\` (not read yet / cannot be: wait for the event) or
+  \`{ state: "unbound" }\`. \`gugu.bindings.onWorkChanged("main", fn)\` hears every new answer.
+- \`handle\` is opaque: this App, this account, this choice of conversation; read again after a restart. No work, session,
+  chat or device id, path, URL or message.
+- \`gugu.bindings.openWork("main", handle)\` in a click: the host draws that task's conversation in your panel, over your
+  page, with its own back control; \`gugu.bindings.closeWork("main")\` takes it away. \`open\` is that row's handle while it is
+  drawn, else null — hide your list then. You cannot see it. Another account, a withdrawn grant, a new choice: it closes.
+
+The same assistant chat, drawn by the host: its top row (\`header\`, 46), its voice-note recorder (\`gugu.voiceNote\`, 47),
+your entries in its composer "+" (\`composerActions\`, 48): \`guide_read apps-bindings-assistant\`.
+`;
+
+export const EXTENSION_GUIDE_ASSISTANT = `# gugu.assistant, toast — the person's own assistant, and gugu's toast
+
+Through the binding of \`apps-bindings\` (\`chat:unread\`, the one conversation the person chooses), when that
+conversation is the person's private chat with their own assistant (\`apps-bindings-agent\`): the assistant itself.
 API 44, only when that conversation is the person's private chat with their own assistant (else \`denied\`): add
 \`"assistant-status"\` (\`assistant:status\`), \`"assistant-open"\` (\`assistant:open\`), \`"assistant-rename"\` (\`assistant:rename\`).
 - \`gugu.assistant.status("main")\` → \`{ state: "ready", status, hostPage }\` | \`{ state: "unbound" | "unavailable" }\`;
@@ -953,24 +978,9 @@ API 44, only when that conversation is the person's private chat with their own 
   \`gugu.assistant.connect("main", id)\`: that row's connect dialog, as gugu's connect step (\`id\` from \`connectors\`, else \`not-found\`).
 - \`gugu.assistant.figure("main", { x, y, size } | null)\`: gugu draws the assistant moving (none yet: the setup bird) over your
   page at x, y (CSS px), size 16–512, clipped, clicks pass through; say it again when your layout moves, null removes it.
-API 46, the assistant's 任务 list: add \`"work"\` (with \`chat:work\`). Only while the chosen conversation is the person's private
-chat with their own assistant; any other is refused (\`denied\`). The host keeps the ledger; it reads it as its own list does,
-wherever the assistant lives (this computer, another, the cloud).
-- \`gugu.bindings.work("main")\` → \`{ state: "ready", items, stale, open }\`, items newest first, each
-  \`{ handle, title, naming, status, unseen, updatedAt }\`: \`naming\` = draw "naming…" for the title; \`status\` =
-  \`{ status, detail }\` as an agent's state is drawn, or null; \`unseen\` = idle with news; \`stale\` = the last refresh failed,
-  these are the last rows read. Else \`{ state: "unavailable", open }\` (not read yet / cannot be: wait for the event) or
-  \`{ state: "unbound" }\`. \`gugu.bindings.onWorkChanged("main", fn)\` hears every new answer.
-- \`handle\` is opaque: this App, this account, this choice of conversation; read again after a restart. No work, session,
-  chat or device id, path, URL or message.
-- \`gugu.bindings.openWork("main", handle)\` in a click: the host draws that task's conversation in your panel, over your
-  page, with its own back control; \`gugu.bindings.closeWork("main")\` takes it away. \`open\` is that row's handle while it is
-  drawn, else null — hide your list then. You cannot see it. Another account, a withdrawn grant, a new choice: it closes.
 
 Free (API 44, desktop page): \`toast(text)\` → one line in gugu's own toast, as its "Changes saved": ≤ 80 characters,
 text only, while your page is on screen and focused (else \`denied\`), one every 2 s (else \`rate-limited\`).
-The same assistant chat, drawn by the host: its top row (\`header\`, 46), its voice-note recorder (\`gugu.voiceNote\`, 47),
-your entries in its composer "+" (\`composerActions\`, 48): \`guide_read apps-bindings-assistant\`.
 `;
 
 export const EXTENSION_GUIDE_BINDINGS_ASSISTANT = `# Header row, gugu.voiceNote, composer actions — the person's own assistant chat
@@ -1005,7 +1015,8 @@ API 48: \`contributes.conversationSurface.composerActions\` adds entries to that
 heart, checklist, document, book, image, message. \`run\`, each needing that binding action (and its capability):
 - \`{ kind: "voice-note" }\` (\`voice-notes:record\`): the host starts a voice note and says why if it cannot, as its own entry does.
 - \`{ kind: "draft", text: { zh, en } }\` (\`draft\`): the person's language (≤ 2000) goes after what is in that composer. Nothing is sent.
-- \`{ kind: "page-intent", intent }\` (\`surface\`): your page hears \`intent: { kind: "page-intent", intent }\`; show that view.
+- \`{ kind: "page-intent" }\` (\`surface\`): your page hears \`intent: { kind: "composer-action", id }\`, that entry's \`id\`;
+  show that view.
 The host's recording bar sits above that composer while a note for this assistant records (whoever started it); when the
 person opens the note it shows, your page hears \`intent: { kind: "voice-note" }\` (read it through \`voice-notes\`).
 `;
@@ -1392,8 +1403,13 @@ export const EXTENSION_GUIDE_TOPICS: readonly { topic: string; about: string; te
   },
   {
     topic: 'apps-bindings-agent',
-    about: 'The same binding when its conversation is the person\'s private one with their own agent or assistant: the agent\'s resources (42) and schedules (43), gugu.assistant (44), the work the assistant handed out (46).',
+    about: 'The same binding when its conversation is the person\'s private one with their own agent or assistant: the agent\'s resources (42) and schedules (43), the work the assistant handed out (46).',
     text: EXTENSION_GUIDE_BINDINGS_AGENT,
+  },
+  {
+    topic: 'apps-assistant',
+    about: 'gugu.assistant on the person\'s own assistant chat (44): its status and counts, gugu\'s screens over your page, setup, rename, its moving figure; and toast, gugu\'s own one-line notice for a desktop page.',
+    text: EXTENSION_GUIDE_ASSISTANT,
   },
   {
     topic: 'apps-bindings-assistant',
