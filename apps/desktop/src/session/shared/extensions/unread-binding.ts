@@ -27,7 +27,7 @@ export const BINDING_ACTION_CAPABILITY = {
   unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft', surface: 'chat:surface',
   resources: 'chat:resources', 'resources:write': 'chat:resources:write',
   schedules: 'chat:schedules', 'schedules:control': 'chat:schedules:control',
-  'assistant-status': 'assistant:status', 'assistant-open': 'assistant:open',
+  'assistant-status': 'assistant:status', 'assistant-open': 'assistant:open', 'assistant-rename': 'assistant:rename',
   'voice-notes:manage': 'chat:voice-notes:manage',
   work: 'chat:work',
   [VOICE_NOTE_RECORD_ACTION]: 'chat:voice-notes:record',
@@ -41,7 +41,7 @@ export const BINDING_ACTION_API_VERSION = {
   resources: RESOURCE_ACTIONS_API_VERSION, 'resources:write': RESOURCE_ACTIONS_API_VERSION,
   // bound-schedules.ts's BOUND_SCHEDULES_API_VERSION (it imports BINDING_NAME from here, so not imported back).
   schedules: 43, 'schedules:control': 43,
-  'assistant-status': ASSISTANT_BINDING_API_VERSION, 'assistant-open': ASSISTANT_BINDING_API_VERSION,
+  'assistant-status': ASSISTANT_BINDING_API_VERSION, 'assistant-open': ASSISTANT_BINDING_API_VERSION, 'assistant-rename': ASSISTANT_BINDING_API_VERSION,
   'voice-notes:manage': RESOURCES_MANAGEMENT_API_VERSION,
   work: 46,
   [VOICE_NOTE_RECORD_ACTION]: VOICE_NOTE_API_VERSION,

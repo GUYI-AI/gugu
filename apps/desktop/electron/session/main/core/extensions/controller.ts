@@ -920,6 +920,30 @@ export const extensionsController = createRPCController({
     }
   },
 
+  /** #1925 (44) The assistant panel's numbers as the session page read them (`useAssistantAppCounts`), for Apps to see. */
+  assistantCountsChanged: async (args: { ownerId: string; counts: unknown }) => {
+    try {
+      const [{ assistantCountsChanged }, { deliverToPersonPages }] = await Promise.all([import('./app-assistant-binding'), import('./extension-bridge')]);
+      await assistantCountsChanged(args, deliverToPersonPages);
+      return { success: true as const };
+    } catch (error) {
+      log.warn('Failed to take the assistant counts for Apps:', error);
+      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
+  /** #1925 (44) The host layer over an App's panel opened or closed (`app-host-layer.tsx`): that App hears `hostPage`. */
+  appHostLayerChanged: async (args: { extensionId: string; layer: unknown }) => {
+    try {
+      const [{ appHostLayerChanged }, { deliverToPersonPages }] = await Promise.all([import('./app-assistant-binding'), import('./extension-bridge')]);
+      await appHostLayerChanged(args, deliverToPersonPages);
+      return { success: true as const };
+    } catch (error) {
+      log.warn('Failed to take the host layer of an App:', error);
+      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
   setUnreadBinding: async (args: { extensionId: string; name: string; ownerId: string; authority: string; chatId: string | null }) => {
     try {
       const { setUnreadBinding } = await import('./app-unread-bindings');

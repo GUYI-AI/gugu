@@ -49,6 +49,7 @@ const CAPABILITY_MESSAGE = {
   'chat:schedules:control': 'extensions.permissionsChatSchedulesControl',
   'assistant:status': 'extensions.permissionsAssistantStatus',
   'assistant:open': 'extensions.permissionsAssistantOpen',
+  'assistant:rename': 'extensions.permissionsAssistantRename',
   'chat:work': 'extensions.permissionsChatWork',
   'chat:voice-notes:record': 'extensions.permissionsChatVoiceNotesRecord',
   'agents:read': 'extensions.permissionsAgentsRead',

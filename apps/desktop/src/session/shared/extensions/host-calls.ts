@@ -92,6 +92,8 @@ export const HOST_CALLS = {
   'assistant.status': { verb: 'assistantStatus', pack: (name: string) => ({ name }) },
   'assistant.open': { verb: 'assistantOpen', pack: (name: string, screen: string) => ({ name, screen }) },
   'assistant.advanceSetup': { verb: 'assistantAdvanceSetup', pack: (name: string, next: string) => ({ name, next }) },
+  'assistant.rename': { verb: 'assistantRename', pack: (name: string, text: string) => ({ name, text }) },
+  'assistant.figure': { verb: 'assistantFigure', pack: (name: string, figure: unknown = null) => ({ name, figure }) },
   // #1925 (46, `chat:work`): the assistant's work, by the binding's name, and one row's conversation by the handle it came with.
   'bindings.work': { verb: 'bindingsWork', pack: (name: string) => ({ name }) },
   'bindings.openWork': { verb: 'bindingsOpenWork', pack: (name: string, handle: string) => ({ name, handle }) },
@@ -134,6 +136,8 @@ export const HOST_CALLS = {
   'sessions.index': { verb: 'sessionsIndex', pack: (options?: Record<string, unknown>) => ({ ...options }) },
   'sessions.read': { verb: 'sessionsRead' },
   notify: { verb: 'notify' },
+  // #1925 (44) The host's own toast, a short line while the page is on screen and focused.
+  toast: { verb: 'toast', pack: (text: string) => ({ text }) },
   openLink: { verb: 'openLink', pack: (url: string) => ({ url }) },
   linkTo: { verb: 'linkTo', pack: (options: Record<string, unknown> = {}) => options },
   setTabTitle: { verb: 'setTabTitle', pack: (title: string) => ({ title }) },
@@ -218,7 +222,9 @@ export const HOST_EVENTS = {
   /** `gugu.assistant.onChanged(fn)` rides on it (#1925): the answer `status` gives, to a page the person works. */
   onAssistantChanged: {
     event: 'assistantChanged', only: 'page',
-    pick: (event: Event<'assistantChanged'>) => [event.state === 'ready' ? { name: event.name, state: event.state, status: event.status } : { name: event.name, state: event.state }],
+    pick: (event: Event<'assistantChanged'>) => [event.state === 'ready'
+      ? { name: event.name, state: event.state, status: event.status, hostPage: event.hostPage }
+      : { name: event.name, state: event.state }],
   },
   onCloudHeard: { event: 'cloudHeard', only: 'page', pick: (event: Event<'cloudHeard'>) => [event.topic, event.event, event.heard] },
   onBindingResources: { event: 'bindingResources', only: 'page', pick: (event: Event<'bindingResources'>) => [event.watchId, event.event] },

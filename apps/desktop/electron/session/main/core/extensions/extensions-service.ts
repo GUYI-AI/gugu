@@ -905,7 +905,7 @@ export class ExtensionsService {
     if (permission === 'chat:files' || permission === 'chat:draft' || permission === 'chat:work') this.unreadAuthorities.delete(extensionId);
     if (permission === 'chat:surface') this.forgetAuthorities(extensionId);
     // #1925 / #1927 The assistant's and the agent resources' grants likewise.
-    if (permission === 'assistant:status' || permission === 'assistant:open') this.unreadAuthorities.delete(extensionId);
+    if (permission === 'assistant:status' || permission === 'assistant:open' || permission === 'assistant:rename') this.unreadAuthorities.delete(extensionId);
     if (permission === 'chat:resources' || permission === 'chat:resources:write' || permission === 'chat:voice-notes:record' || permission === 'chat:voice-notes:manage') this.unreadAuthorities.delete(extensionId);
     if (permission === 'chat:schedules' || permission === 'chat:schedules:control') this.unreadAuthorities.delete(extensionId);
     this.revocationsFile.write(revocations);

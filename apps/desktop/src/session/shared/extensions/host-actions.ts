@@ -83,7 +83,16 @@ export type ExtensionHostAction =
    * account it checked, which the window must still show.
    */
   | { kind: 'openAssistantScreen'; screen: AssistantScreen; ownerId: string }
-  | { kind: 'advanceAssistantSetup'; next: AssistantSetupAdvance; ownerId: string };
+  | { kind: 'advanceAssistantSetup'; next: AssistantSetupAdvance; ownerId: string }
+  /** #1925 (44) Renamed through the shell's own `renameAssistant`, the built-in field's rule checked again (`renameCheck`). */
+  | { kind: 'renameAssistant'; text: string; ownerId: string }
+  /** #1925 (44) `gugu.toast(text)`: the host's own toast, the text alone (main checked the page, its focus and the rate). */
+  | { kind: 'toast'; text: string }
+  /**
+   * #1925 (44) The assistant's moving figure over this App's page at `figure` (null: taken away): the bound assistant's,
+   * or — `draft` — the setup guide's bird while the account has none. `ownerId` is main's checked account.
+   */
+  | { kind: 'assistantFigure'; figure: import('./assistant-binding').AssistantFigure | null; ownerId: string | null; who: 'assistant' | 'draft' };
 
 export interface ExtensionHostActionCommand {
   /** The page that asked; null for a link's or a banner's click, which no page made. */

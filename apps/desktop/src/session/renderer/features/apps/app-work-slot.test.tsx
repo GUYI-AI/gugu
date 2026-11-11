@@ -19,6 +19,11 @@ const state = vi.hoisted(() => ({ pages: [] as Record<string, unknown>[] }));
 vi.mock('@renderer/features/extensions/extension-shared-slot', () => ({
   ExtensionSharedSlot: (props: Record<string, unknown>) => { state.pages.push(props); return <div data-testid="app-page" />; },
 }));
+// #1925 (44) The page stands in its host layer frame (app-host-layer, tested in appHostLayer1925): with no layer open,
+// that is the page's shared slot.
+vi.mock('./app-host-layer', () => ({
+  AppHostLayerFrame: ({ tabKind }: { tabKind: string }) => { state.pages.push({ tabKind, tabId: 'dock' }); return <div data-testid="app-page" />; },
+}));
 vi.mock('@renderer/features/global-search/search-session', () => ({ searchInChat: vi.fn() }));
 vi.mock('@renderer/lib/ipc', () => ({ rpc: { extensions: { reportConversationSurface: async () => ({ success: true }) } } }));
 vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { navigation: { navigate: vi.fn() } } }));

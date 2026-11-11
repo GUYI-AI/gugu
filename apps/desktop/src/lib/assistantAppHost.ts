@@ -9,11 +9,12 @@ import {
   NAME_MAX,
   isAssistantFace,
   isFailureClass,
+  renameCheck,
   setupAdvanceAllowed,
-  type AppAssistantStatus,
   type AssistantScreen,
   type AssistantSetupAdvance,
   type PushedAssistantStatus,
+  type ShownAssistant,
 } from '@shared/extensions/assistant-binding'
 import { requestAssistantClose } from './assistantClose'
 import { readAssistantShellBridge, type AssistantShellActions, type AssistantShellBridge, type AssistantShellSnapshot } from './assistantShellBridge'
@@ -57,7 +58,24 @@ export function openAssistantScreen(screen: AssistantScreen, ownerId: string): v
     case 'connected-apps':
       return openSettings('connectors')
   }
-  throw new Error(`Not one of the assistant's screens: ${String(screen)}`)
+  // settings / projects / capabilities are the panel's own pages: drawn over the App's panel (app-host-layer.tsx), not here.
+  throw new Error(`Not one of the shell's assistant screens: ${String(screen)}`)
+}
+
+/**
+ * App 给它改名:内置名字栏同一条规矩(去首尾空白、不能空、≤ 30 字,同名不存)在这扇窗再验一遍,走壳同一个 renameAssistant
+ * (内置资料页的名字栏就调它)。这扇窗此刻没认到它 = 抛(主进程答 `failed`)。
+ */
+export async function renameAssistantFor(text: string, ownerId: string): Promise<void> {
+  const bridge = shellOf(ownerId)
+  const snapshot = bridge.getSnapshot()
+  if (snapshot?.assistantState !== 'found' || !snapshot.assistant) throw new Error('This window does not show the assistant now')
+  const check = renameCheck(text, snapshot.assistant.display_name)
+  if ('result' in check) {
+    if (check.result === 'unchanged') return
+    throw new Error(`Not a name the assistant can take: ${check.result}`)
+  }
+  await actionsOf(bridge).renameAssistant(check.name)
 }
 
 /** App 画的那两步往下走:按这扇窗记着的那一步再验一遍(与主进程同一条规矩),走内置视图同一个 advanceSetup。 */
@@ -76,7 +94,7 @@ const CLOUD_ANSWERS = new Set(['awake', 'asleep', 'waking'])
  * data: 图,❌ 存储地址)、住哪一类与在不在、开通到哪一步、是不是正在安家、能不能住云上、会员(读不到 = null,❌ 当成不是)、
  * 读云电脑失败的那一类。❌ 私聊、设备、账号的 id,❌ 路径。
  */
-export function appAssistantStatusOf(snapshot: AssistantShellSnapshot, face: string | null): AppAssistantStatus {
+export function appAssistantStatusOf(snapshot: AssistantShellSnapshot, face: string | null): ShownAssistant {
   const found = snapshot.assistantState === 'found' && snapshot.assistant ? snapshot.assistant : null
   const home = snapshot.home
   return {

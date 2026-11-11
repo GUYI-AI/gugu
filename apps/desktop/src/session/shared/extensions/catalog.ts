@@ -51,6 +51,7 @@ export const CAPABILITY_RISK = {
   // That conversation's assistant, when it is the person's own (#1925): a snapshot of it; its host screens opened in a click.
   'assistant:status': 'medium',
   'assistant:open': 'medium',
+  'assistant:rename': 'medium',
   // #1925 The work the person's own assistant handed out, and one task's conversation drawn by the host: the App sees titles
   // and progress, never that conversation.
   'chat:work': 'medium',

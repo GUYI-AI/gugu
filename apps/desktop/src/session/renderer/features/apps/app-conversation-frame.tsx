@@ -5,12 +5,12 @@ import { useTranslation } from 'react-i18next';
 import { PanelRight, Search } from '@/lib/icons';
 import { readShellSlots } from '@/lib/shellSlots';
 import { appConversationSlotKey, readAppConversationSurfaceBridge } from '@/lib/appConversationSurfaceBridge';
-import { ExtensionSharedSlot } from '@renderer/features/extensions/extension-shared-slot';
 import { searchInChat } from '@renderer/features/global-search/search-session';
 import { rpc } from '@renderer/lib/ipc';
 import { log } from '@renderer/utils/logger';
 import { CONVERSATION_SURFACE_PANEL_INSET } from '@shared/extensions/unread-binding';
 import { setAppConversationPanelCollapsed, useAppConversationPanelCollapsed } from './app-conversation-panel';
+import { AppHostLayerFrame } from './app-host-layer';
 import { AppDockPage, AppWorkChatSlot, useAppWorkChatOpen } from './app-work-slot';
 
 /** The App's main page has this tab id here, as on its page of its own (`AppMainPanel`). */
@@ -97,9 +97,8 @@ export function AppConversationFrame({ extensionId, tabKind }: { extensionId: st
             </>
           ) : (
             <>
-              <div className="flex min-h-0 flex-1 flex-col">
-                <ExtensionSharedSlot tabKind={tabKind} tabId={DOCK} />
-              </div>
+              {/* #1925 (44) The page, or one of the host's own pages over it with the host's back control (the App's host layer). */}
+              <AppHostLayerFrame extensionId={extensionId} tabKind={tabKind} />
               <div style={CORNER} data-testid="app-conversation-panel-corner">
                 <button type="button" className="ta-circle ta-panel-collapse" style={{ pointerEvents: 'auto' }} aria-label={t('panel.collapse')} title={t('panel.collapse')} onClick={() => setCollapsed(true)} data-testid="app-conversation-panel-collapse">
                   <PanelRight />
