@@ -764,12 +764,7 @@ export default {
     "desktopOnly": "Chat apps are kept connected by the Gugu cloud, so {{name}} gets them even with your computer off."
   },
   "railEntry": {
-    "claim": "Claim your Gugu",
-    "create": "Create your Gugu",
-    "set": "Set up your Gugu",
-    "preparing": "Getting your Gugu ready…",
-    "loading": "Reading your Gugu…",
-    "unreadable": "Can't read your Gugu right now; open it to look"
+    "preparing": "Getting your Gugu ready…"
   },
   "settingsPage": {
     "editName": "Edit {{name}}’s name",

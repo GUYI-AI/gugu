@@ -764,12 +764,7 @@ export default {
     "desktopOnly": "聊天工具由咕咕云端替你挂着：电脑关着，{{name}}也照样收得到。"
   },
   "railEntry": {
-    "claim": "领取你的咕咕",
-    "create": "创建你的咕咕",
-    "set": "开通你的咕咕",
-    "preparing": "正在准备你的咕咕…",
-    "loading": "正在读取咕咕…",
-    "unreadable": "读不到你的咕咕，点开看看"
+    "preparing": "正在准备你的咕咕…"
   },
   "settingsPage": {
     "editName": "编辑{{name}}的名字",
