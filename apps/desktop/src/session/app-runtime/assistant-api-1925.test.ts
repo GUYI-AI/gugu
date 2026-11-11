@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { HOST_EVENTS } from '@shared/extensions/host-calls';
 import { createGugu } from './create-gugu';
 
 /**
@@ -32,6 +33,13 @@ describe('gugu.assistant', () => {
     off();
     expect(hear).toBeUndefined();
     expect(() => gugu.assistant.onChanged('not a function')).toThrow(expect.objectContaining({ code: 'invalid' }));
+  });
+
+  it('onChanged gets what status answers — the snapshot, or unbound alone — and nothing of the event itself', () => {
+    const { pick } = HOST_EVENTS.onAssistantChanged;
+    const status = { assistant: 'none', name: null, avatar: null, home: null, setup: 'shell', preparing: true, cloudAvailable: true, member: null, loadError: null } as const;
+    expect(pick({ type: 'assistantChanged', name: 'main', state: 'ready', status })).toEqual([{ name: 'main', state: 'ready', status }]);
+    expect(pick({ type: 'assistantChanged', name: 'main', state: 'unbound' })).toEqual([{ name: 'main', state: 'unbound' }]);
   });
 
   it('a host without it has none', () => {

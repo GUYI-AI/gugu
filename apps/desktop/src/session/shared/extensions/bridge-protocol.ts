@@ -645,10 +645,12 @@ export type ExtensionHostEvent =
    */
   | { type: 'agentsChanged'; agentIds: readonly string[] }
   /**
-   * #1925 (44) The bound assistant's snapshot changed (`gugu.assistant.onChanged`): the same answer `status` gives. Only to
-   * the pages the person works of an App with `assistant:status`, each time checked as a read is.
+   * #1925 (44) The assistant's snapshot changed (`gugu.assistant.onChanged`): the same `ready` answer `status` gives — or,
+   * once, `unbound` when an assistant appears for an App that heard the snapshot without one. Only to the pages the person
+   * works of an App with `assistant:status`, each time checked as a read is.
    */
   | { type: 'assistantChanged'; name: string; state: 'ready'; status: import('./assistant-binding').AppAssistantStatus }
+  | { type: 'assistantChanged'; name: string; state: 'unbound' }
   /** What this page hears of its own topic (`gugu.cloud.on`): a broadcast's payload, or that it is (re)subscribed: read again then. */
   | { type: 'cloudHeard'; topic: string; event: string; heard: { subscribed: true } | { payload: Record<string, unknown> } }
   /**

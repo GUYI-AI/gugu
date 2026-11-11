@@ -892,6 +892,9 @@ API 44, only when that conversation is the person's private chat with their own 
   hears each new \`{ state: "ready", status }\`. \`status\`: \`{ assistant: "found"|"loading"|"none"|"unreadable", name, avatar (data: image),
   home: { kind: "cloud"|"this-computer"|"other-computer"|"server", online } | null, setup: "shell"|"connect"|"ready"|null, preparing,
   cloudAvailable, member: boolean|null, loadError }\` — no chat, device or account id.
+- While the account has no assistant (\`none\`, \`loading\`, \`unreadable\`), \`ready\` comes whatever conversation is chosen, or none,
+  with \`name\`, \`avatar\`, \`home\` null, and \`gugu.assistant.open("main", "setup")\` works: the first setup can start from your page. When one
+  appears and that conversation is not chosen, \`onChanged\` hears \`{ state: "unbound" }\` once: ask the person to choose it.
 - In a click: \`gugu.assistant.open("main", screen)\`, screen one of \`setup\`, \`move\`, \`close\`, \`look\`, \`model\`, \`devices\`,
   \`connected-apps\`: gugu opens that screen; the person acts there. \`gugu.assistant.advanceSetup("main", "ready" | "done")\`: the
   steps you draw, from \`connect\` (to ready or done) or \`ready\` (to done); any other is \`invalid\`. Both resolve or are refused, nothing more.

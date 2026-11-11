@@ -176,7 +176,10 @@ export const HOST_EVENTS = {
   onAppStateChanged: { event: 'appState', pick: (event: Event<'appState'>) => [event.state] },
   onAgentsChanged: { event: 'agentsChanged', pick: (event: Event<'agentsChanged'>) => [event.agentIds] },
   /** `gugu.assistant.onChanged(fn)` rides on it (#1925): the answer `status` gives, to a page the person works. */
-  onAssistantChanged: { event: 'assistantChanged', only: 'page', pick: (event: Event<'assistantChanged'>) => [{ name: event.name, state: event.state, status: event.status }] },
+  onAssistantChanged: {
+    event: 'assistantChanged', only: 'page',
+    pick: (event: Event<'assistantChanged'>) => [event.state === 'ready' ? { name: event.name, state: event.state, status: event.status } : { name: event.name, state: event.state }],
+  },
   onCloudHeard: { event: 'cloudHeard', only: 'page', pick: (event: Event<'cloudHeard'>) => [event.topic, event.event, event.heard] },
   onProgramNotification: {
     event: 'programNotification',

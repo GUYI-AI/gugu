@@ -7,6 +7,7 @@ import {
   ASSISTANT_SETUP_ADVANCES,
   pushedAssistantStatusSchema,
   setupAdvanceAllowed,
+  withoutAssistant,
   type AppAssistantRead,
   type AssistantBindingAction,
   type PushedAssistantStatus,
@@ -98,9 +99,23 @@ async function boundAssistant(extensionId: string, name: string, action: Assista
 let shown: PushedAssistantStatus | null = null;
 const statusFor = (ownerId: string) => (shown?.ownerId === ownerId ? shown.status : null);
 
-/** `gugu.assistant.status(name)` (44, `assistant:status`): the snapshot, or why there is none. */
-export async function appAssistantStatus(extensionId: string, input: unknown): Promise<AppAssistantRead> {
-  const { name } = argsOf(z.strictObject({ name: z.string() }), input, 'gugu.assistant.status takes the binding\'s name alone');
+/**
+ * While this window shows the account no assistant (`none`, `loading`, `unreadable`), an App granted the action may start
+ * the first setup whatever conversation is chosen, or none: it sees the snapshot without one (`withoutAssistant`), and may
+ * open setup. Installed, enabled, declared and granted, as for its binding (`conversationBinding` refuses otherwise); the
+ * snapshot is read after the last wait. Null: the window shows an assistant, or nothing yet — the binding decides.
+ */
+async function noAssistantShown(extensionId: string, name: string, action: AssistantBindingAction) {
+  const { ownerId } = await account();
+  extensionsService().conversationBinding(ownerId, extensionId, name, action);
+  const status = statusFor(ownerId);
+  return status && status.assistant !== 'found' ? { ownerId, status: withoutAssistant(status) } : null;
+}
+
+/** The answer of `status`. */
+async function readStatus(extensionId: string, name: string): Promise<AppAssistantRead> {
+  const none = await noAssistantShown(extensionId, name, 'assistant-status');
+  if (none) return { name, state: 'ready', status: none.status };
   const bound = await boundAssistant(extensionId, name, 'assistant-status').catch((error: unknown) => {
     if (codeOf(error) === 'failed') return 'unavailable' as const;
     throw error;
@@ -108,16 +123,29 @@ export async function appAssistantStatus(extensionId: string, input: unknown): P
   if (bound === 'unavailable') return { name, state: 'unavailable' };
   if (!bound) return { name, state: 'unbound' };
   const status = statusFor(bound.ownerId);
-  return status ? { name, state: 'ready', status } : { name, state: 'unavailable' };
+  if (!status) return { name, state: 'unavailable' };
+  return { name, state: 'ready', status: status.assistant === 'found' ? status : withoutAssistant(status) };
+}
+
+/** `gugu.assistant.status(name)` (44, `assistant:status`): the snapshot, or why there is none. */
+export async function appAssistantStatus(extensionId: string, input: unknown): Promise<AppAssistantRead> {
+  const { name } = argsOf(z.strictObject({ name: z.string() }), input, 'gugu.assistant.status takes the binding\'s name alone');
+  return readStatus(extensionId, name);
 }
 
 /**
  * `gugu.assistant.open(name, screen)` (44, `assistant:open`, in a click): the window opens that screen by its existing
- * entry (`act`). Answered done or refused; nothing of what the person does there.
+ * entry (`act`). Answered done or refused; nothing of what the person does there. `setup` also while the account shows no
+ * assistant (`noAssistantShown`); every other screen is the bound assistant's.
  */
 export async function appAssistantOpen(extensionId: string, input: unknown, act: (action: ExtensionHostAction) => Promise<unknown>): Promise<void> {
   const { name, screen } = argsOf(z.strictObject({ name: z.string(), screen: z.enum(ASSISTANT_SCREENS) }), input,
     `gugu.assistant.open takes the binding's name and one of ${ASSISTANT_SCREENS.join(', ')}`);
+  const none = screen === 'setup' ? await noAssistantShown(extensionId, name, 'assistant-open') : null;
+  if (none) {
+    await act({ kind: 'openAssistantScreen', screen, ownerId: none.ownerId });
+    return;
+  }
   const bound = await boundAssistant(extensionId, name, 'assistant-open');
   if (!bound) throw coded('not-found', `No conversation is chosen for "${name}" yet: the person chooses it in the App's permissions`);
   await act({ kind: 'openAssistantScreen', screen, ownerId: bound.ownerId });
@@ -141,30 +169,45 @@ export async function appAssistantAdvanceSetup(extensionId: string, input: unkno
   await act({ kind: 'advanceAssistantSetup', next, ownerId: bound.ownerId });
 }
 
+/** The Apps whose last word was this account's snapshot without an assistant: each hears `unbound` once when one appears. */
+const heardWithout = new Set<string>();
+
 /**
  * The window's assistant changed (controller `assistantStatusChanged`): kept, and each App granted `assistant:status`
- * whose binding is still the account's chat with its own assistant hears it (`hear`: that App's pages the person works).
- * An App refused, withdrawn, disabled or removed hears nothing — checked for each change, as a read is.
+ * hears what `status` would answer it now (`hear`: that App's pages the person works) — the snapshot without an assistant
+ * while there is none, the bound one's after. An App that heard the snapshot without one and now gets `unbound` (the
+ * assistant appeared, its conversation not chosen) hears that once, never the later changes of an assistant it is not
+ * pointed at. An App refused, withdrawn, disabled or removed hears nothing — checked for each change, as a read is.
  */
 export async function assistantStatusChanged(input: unknown, hear: (extensionId: string, event: ExtensionHostEvent) => void): Promise<void> {
   const parsed = pushedAssistantStatusSchema.safeParse(input);
   if (!parsed.success) throw coded('invalid', 'Not an assistant snapshot an App may see');
   const same = shown?.ownerId === parsed.data.ownerId && JSON.stringify(shown.status) === JSON.stringify(parsed.data.status);
+  if (shown?.ownerId !== parsed.data.ownerId) heardWithout.clear();
   shown = parsed.data;
   if (same) return;
   const service = extensionsService();
   await Promise.all(service.list().extensions.map(async ({ manifest }) => {
     const name = manifest.permissions?.bindings?.[0]?.name;
     if (!name || !manifest.permissions?.bindings?.[0]?.actions.includes('assistant-status')) return;
-    if (!service.isEnabled(manifest.id) || !service.hasCapability(manifest.id, 'assistant:status')) return;
-    const bound = await boundAssistant(manifest.id, name, 'assistant-status').catch(() => null);
-    // The newest snapshot, after the wait: an older one never lands over it.
-    const status = bound ? statusFor(bound.ownerId) : null;
-    if (status) hear(manifest.id, { type: 'assistantChanged', name, state: 'ready', status });
+    if (!service.isEnabled(manifest.id) || !service.hasCapability(manifest.id, 'assistant:status')) {
+      heardWithout.delete(manifest.id);
+      return;
+    }
+    // Read after the waits: the newest snapshot, an older one never lands over it.
+    const read = await readStatus(manifest.id, name).catch(() => null);
+    if (read?.state === 'ready') {
+      if (read.status.assistant === 'found') heardWithout.delete(manifest.id);
+      else heardWithout.add(manifest.id);
+      hear(manifest.id, { type: 'assistantChanged', name, state: 'ready', status: read.status });
+    } else if (read?.state === 'unbound' && heardWithout.delete(manifest.id)) {
+      hear(manifest.id, { type: 'assistantChanged', name, state: 'unbound' });
+    }
   }));
 }
 
 /** Tests only: a window that has shown nothing. */
 export function forgetShownAssistantForTest(): void {
   shown = null;
+  heardWithout.clear();
 }

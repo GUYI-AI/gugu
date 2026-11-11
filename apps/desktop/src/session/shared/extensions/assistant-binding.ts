@@ -77,11 +77,18 @@ export const appAssistantStatusSchema = z.strictObject({
 export type AppAssistantStatus = z.infer<typeof appAssistantStatusSchema>;
 
 /**
- * `gugu.assistant.status(name)`, and what `onChanged` hears (`ready` only). `unbound`: no conversation chosen yet.
+ * `gugu.assistant.status(name)`. `ready`: the bound assistant's snapshot — or, while the account shows no assistant
+ * (`none` / `loading` / `unreadable`), the snapshot without one (`withoutAssistant`), whatever conversation is chosen, so
+ * an App can start the first setup. `unbound`: the account has an assistant and no conversation is chosen yet.
  * `unavailable`: it cannot be told now (the account's assistant could not be verified, or this window has not shown it
  * yet) — try again later. A conversation that is not the person's chat with their own assistant is refused, not an answer.
  */
 export type AppAssistantRead = { name: string; state: 'unbound' | 'unavailable' } | { name: string; state: 'ready'; status: AppAssistantStatus };
+/** What `onChanged` hears: each new `ready`, and `unbound` once when an assistant appears for an App not pointed at it. */
+export type AppAssistantHeard = { name: string; state: 'unbound' } | { name: string; state: 'ready'; status: AppAssistantStatus };
+
+/** The snapshot an App sees while the account shows no assistant: nothing that would name or place one. */
+export const withoutAssistant = (status: AppAssistantStatus): AppAssistantStatus => ({ ...status, name: null, avatar: null, home: null });
 
 /** What the window hands main each time the snapshot changes: whose it is (host data, never passed on) and what it is. */
 export const pushedAssistantStatusSchema = z.strictObject({ ownerId: z.string().uuid(), status: appAssistantStatusSchema });

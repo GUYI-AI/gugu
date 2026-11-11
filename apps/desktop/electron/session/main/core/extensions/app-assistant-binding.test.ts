@@ -297,6 +297,130 @@ describe('gugu.assistant.onChanged: each new snapshot, to an App still entitled 
   });
 });
 
+describe('an account with no assistant: the first setup can start from the App', () => {
+  const NO_ASSISTANT = ['none', 'loading', 'unreadable'] as const;
+  // What the window would never send for these states, sent anyway: main still keeps it from the App.
+  const without = (assistant: (typeof NO_ASSISTANT)[number], over: Partial<AppAssistantStatus> = {}) =>
+    status({ assistant, setup: assistant === 'none' ? 'shell' : null, preparing: false, member: false, ...over });
+  const stripped = (value: AppAssistantStatus) => ({ ...value, name: null, avatar: null, home: null });
+
+  it.each(NO_ASSISTANT)('%s, no conversation chosen: status is the snapshot without one — no name, look or home, nothing asked', async (assistant) => {
+    state.selectedBy = '';
+    state.provisions = [];
+    await show(without(assistant));
+    state.reads = 0;
+    const read = await appAssistantStatus(APP, { name: 'main' });
+    expect(read).toEqual({ name: 'main', state: 'ready', status: stripped(without(assistant)) });
+    expect(leaks(read)).toEqual([]);
+    expect(state.reads).toBe(0);
+  });
+
+  it('the assistant gone while the bound chat is being checked: the snapshot without one, never its name, look or home', async () => {
+    await show(status());
+    const gone = without('none', { name: 'Dot', avatar: status().avatar, home: status().home });
+    state.afterRead = () => {
+      state.afterRead = undefined;
+      void assistantStatusChanged({ ownerId: OWNER, status: gone }, () => {});
+    };
+    expect(await appAssistantStatus(APP, { name: 'main' })).toEqual({ name: 'main', state: 'ready', status: stripped(gone) });
+  });
+
+  it('has an assistant and no conversation chosen: still unbound, nothing of it', async () => {
+    state.selectedBy = '';
+    await show(status());
+    expect(await appAssistantStatus(APP, { name: 'main' })).toEqual({ name: 'main', state: 'unbound' });
+  });
+
+  it('a conversation chosen before (its assistant since closed): the snapshot without one, not refused', async () => {
+    await show(without('none'));
+    for (const [, set] of NOT_MINE) {
+      set();
+      expect(await appAssistantStatus(APP, { name: 'main' })).toEqual({ name: 'main', state: 'ready', status: stripped(without('none')) });
+    }
+  });
+
+  it('still needs the grant, the App enabled and installed and the action declared; another account\'s window tells nothing', async () => {
+    state.selectedBy = '';
+    await show(without('none'));
+    for (const set of [() => { state.grants['assistant-status'] = false; }, () => { state.enabled = false; }, () => { state.installed = false; }, () => { state.declared = ['unread', 'assistant-open']; }]) {
+      Object.assign(state, { installed: true, enabled: true, grants: { 'assistant-status': true, 'assistant-open': true }, declared: ['unread', 'assistant-status', 'assistant-open'] });
+      set();
+      await expect(appAssistantStatus(APP, { name: 'main' })).rejects.toMatchObject({ code: 'denied' });
+    }
+    Object.assign(state, { installed: true, enabled: true, grants: { 'assistant-status': true, 'assistant-open': true }, declared: ['unread', 'assistant-status', 'assistant-open'] });
+    state.owner = OTHER;
+    expect(await appAssistantStatus(APP, { name: 'main' })).toEqual({ name: 'main', state: 'unbound' });
+  });
+
+  it.each(NO_ASSISTANT)('%s: open("setup") opens setup with no conversation chosen; it needs its own grant', async (assistant) => {
+    state.selectedBy = '';
+    await show(without(assistant));
+    state.reads = 0;
+    const act = vi.fn(async (_action: ExtensionHostAction) => undefined);
+    await appAssistantOpen(APP, { name: 'main', screen: 'setup' }, act);
+    expect(act).toHaveBeenCalledExactlyOnceWith({ kind: 'openAssistantScreen', screen: 'setup', ownerId: OWNER });
+    expect(state.reads).toBe(0);
+    state.grants = { 'assistant-status': true };
+    await expect(appAssistantOpen(APP, { name: 'main', screen: 'setup' }, act)).rejects.toMatchObject({ code: 'denied' });
+    expect(act).toHaveBeenCalledOnce();
+  });
+
+  it('every other screen, and advanceSetup, still need the bound assistant chat', async () => {
+    state.selectedBy = '';
+    await show(without('none'));
+    const act = vi.fn(async () => undefined);
+    for (const screen of ASSISTANT_SCREENS.filter((screen) => screen !== 'setup')) {
+      await expect(appAssistantOpen(APP, { name: 'main', screen }, act)).rejects.toMatchObject({ code: 'not-found' });
+    }
+    await expect(appAssistantAdvanceSetup(APP, { name: 'main', next: 'ready' }, act)).rejects.toMatchObject({ code: 'not-found' });
+    expect(act).not.toHaveBeenCalled();
+  });
+
+  it('has an assistant and no conversation chosen: open("setup") is refused too', async () => {
+    state.selectedBy = '';
+    await show(status());
+    const act = vi.fn(async () => undefined);
+    await expect(appAssistantOpen(APP, { name: 'main', screen: 'setup' }, act)).rejects.toMatchObject({ code: 'not-found' });
+    expect(act).not.toHaveBeenCalled();
+  });
+
+  it('onChanged follows none → preparing → found, then says unbound once and nothing of the assistant after', async () => {
+    state.selectedBy = '';
+    state.provisions = [];
+    await show(without('none'));
+    await show(without('none', { preparing: true }));
+    await show(without('loading', { preparing: true }));
+    state.provisions = [provision(ASSISTANT)];
+    await show(status());
+    await show(status({ name: 'Renamed', setup: 'ready' }));
+    expect(hear.mock.calls).toEqual([
+      [APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: stripped(without('none')) }],
+      [APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: stripped(without('none', { preparing: true })) }],
+      [APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: stripped(without('loading', { preparing: true })) }],
+      [APP, { type: 'assistantChanged', name: 'main', state: 'unbound' }],
+    ]);
+    expect(leaks(hear.mock.calls)).toEqual([]);
+  });
+
+  it('an App not pointed at an existing assistant hears none of its changes', async () => {
+    state.selectedBy = '';
+    await show(status());
+    await show(status({ name: 'Renamed' }));
+    await show(status({ setup: 'ready' }));
+    expect(hear).not.toHaveBeenCalled();
+  });
+
+  it('once the person chooses the assistant chat, the App hears it as before', async () => {
+    state.selectedBy = '';
+    await show(without('none'));
+    await show(status());
+    hear.mockReset();
+    state.selectedBy = OWNER;
+    await show(status({ setup: 'ready' }));
+    expect(hear).toHaveBeenCalledExactlyOnceWith(APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: status({ setup: 'ready' }) });
+  });
+});
+
 describe('disabling or uninstalling the App is not closing the assistant', () => {
   it('nothing reaches the window — no close, no screen — and the App can no longer ask for one', async () => {
     await show();
