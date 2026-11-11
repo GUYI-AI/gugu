@@ -121,9 +121,11 @@ import {
   scrollContainerEmbedded,
   unitRowWrapper,
   widthProbeClass,
+  olderPageLoading,
 } from './chat-root.css';
 import './chat-fonts.css';
 import { vars } from './styles/theme.css';
+import { planSpinner } from './styles/effects.css';
 import { syncContentColumnGeometry } from './lib/content-column-geometry';
 
 // Centered content column. The scroll container stays full width (so the
@@ -154,6 +156,9 @@ const PREFETCH_MIN_REMAINING_MS = 3;
 // screen ahead of the reader. Debounced: fires once until the reader scrolls away
 // or the rendered history changes (#2403).
 const REACH_START_THRESHOLD_PX = 200;
+
+// How long an older-page request may run before the list shows it as loading.
+const OLDER_PAGE_LOADING_DELAY_MS = 150;
 
 // Maximum absolute scrollTop delta that can originate from a writeScrollTop
 // self-write (sub-pixel / device-pixel rounding). Any delta larger than this
@@ -282,7 +287,8 @@ export type ChatRootProps = {
    */
   commands?: () => ChatCommands;
   /** Fired when the user scrolls near the top and the engine has run out of history. */
-  onReachStart?: () => void;
+  /** Fires near the top of the loaded history. Return the page request to show it as loading until it settles. */
+  onReachStart?: () => void | Promise<unknown>;
   /** Fired when the "at bottom" sticky state changes. */
   onAtBottomChange?: (atBottom: boolean) => void;
   /**
@@ -684,6 +690,27 @@ export function ChatRoot(props: ChatRootProps) {
     virt.setCount(0, () => 0);
     pendingSizeDeltas = [];
   }));
+  // ── Older page in flight ───────────────────────────────────────────────────
+  // The host's page request, as returned by onReachStart. A request that settles within OLDER_PAGE_LOADING_DELAY_MS
+  // (a local read) shows nothing: a ring that flashes for a frame or two is noise.
+  const [olderPageLoadingShown, setOlderPageLoadingShown] = createSignal(false);
+  let olderPageRequest: Promise<unknown> | null = null;
+  let olderPageTimer: ReturnType<typeof setTimeout> | undefined;
+  const showOlderPageLoading = (request: void | Promise<unknown>) => {
+    if (!(request instanceof Promise)) return;
+    olderPageRequest = request;
+    clearTimeout(olderPageTimer);
+    olderPageTimer = setTimeout(() => { if (olderPageRequest === request) setOlderPageLoadingShown(true); }, OLDER_PAGE_LOADING_DELAY_MS);
+    const settle = () => {
+      if (olderPageRequest !== request) return;
+      olderPageRequest = null;
+      clearTimeout(olderPageTimer);
+      setOlderPageLoadingShown(false);
+    };
+    request.then(settle, settle);
+  };
+  onCleanup(() => { olderPageRequest = null; clearTimeout(olderPageTimer); });
+
   // @@@rebuild-moves-with-reader — where the reader's row sat before a reseeding rebuild. The count-sync effect moves
   // the scroll offset by as much as that row moved, in the same synchronous update. Leaving it to the next frame's
   // projection is not enough: a reader still scrolling when the page lands has an unread scroll delta, and the read
@@ -1677,7 +1704,7 @@ export function ChatRoot(props: ChatRootProps) {
     if (st <= Math.max(REACH_START_THRESHOLD_PX, shadowViewHeight)) {
       if (!reachStartFired) {
         reachStartFired = true;
-        props.onReachStart?.();
+        showOlderPageLoading(props.onReachStart?.());
       }
     } else {
       reachStartFired = false;
@@ -2360,6 +2387,22 @@ export function ChatRoot(props: ChatRootProps) {
                     data-chat-canvas
                     class={`${canvas} ${contentClass()}`}
                   >
+                    <Show when={olderPageLoadingShown()}>
+                      <svg
+                        data-older-page-loading
+                        role="status"
+                        aria-label={props.context.translate('transcript.loadingOlder')}
+                        class={olderPageLoading}
+                        style={{ top: `${Math.max(0, padTop() - 22)}px` }}
+                        viewBox="0 0 14 14"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.5"
+                      >
+                        <circle cx="7" cy="7" r="6" opacity="0.3" />
+                        <circle class={planSpinner} cx="7" cy="7" r="6" stroke-linecap="round" stroke-dasharray="9.42 28.28" />
+                      </svg>
+                    </Show>
                     <For each={visible()}>
                       {(unitIndex) => {
                         const u = createMemo(() => units().at(unitIndex));

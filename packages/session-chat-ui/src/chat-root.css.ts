@@ -81,6 +81,20 @@ export const canvas = style({
 });
 
 /**
+ * An older page is on its way: a small ring in the padding above the first row. It takes no layout space, so showing
+ * and hiding it never moves a row.
+ */
+export const olderPageLoading = style({
+  position: 'absolute',
+  left: '50%',
+  width: 14,
+  height: 14,
+  marginLeft: -7,
+  color: vars.fgPassive,
+  pointerEvents: 'none',
+});
+
+/**
  * Zero-height width probe — carries `contentClass` so it reports the capped
  * content-column width. The width ResizeObserver targets this instead of the
  * virtualizer canvas so it only fires on genuine layout-width changes (viewport
