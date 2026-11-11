@@ -670,8 +670,15 @@ export function ChatRoot(props: ChatRootProps) {
     else {
       keepReadingAnchor(previous, build);
       const m = untrack(anchor);
-      const at = m.kind === 'anchor' ? previous.indexById.get(m.itemId) : undefined;
-      rebuiltUnder = m.kind === 'anchor' && at !== undefined && build.indexById.has(m.itemId) ? { itemId: m.itemId, top: virt.top(at) } : null;
+      let at = m.kind === 'anchor' && build.indexById.has(m.itemId) ? previous.indexById.get(m.itemId) : undefined;
+      // A reader at the tail, or reading the live turn, is below every committed row: they move with the last one.
+      if (at === undefined) {
+        at = previous.units.length - 1;
+        while (at >= 0 && !build.indexById.has(previous.units[at]!.itemId)) at--;
+      }
+      // A collapse in flight projects its shrinking geometry and the viewport together (see applyAboveCompensation).
+      const collapsing = activityCollapse?.model === build.state && m.kind === 'anchor' && activityCollapse.itemId === m.itemId;
+      rebuiltUnder = at >= 0 && !collapsing ? { itemId: previous.units[at]!.itemId, top: virt.top(at) } : null;
     }
     if (previous) snapshotInto(previous.state, previous.units);
     virt.setCount(0, () => 0);
@@ -995,7 +1002,9 @@ export function ChatRoot(props: ChatRootProps) {
       const moved = rebuiltUnder;
       rebuiltUnder = null;
       const now = moved ? committedBuild()!.indexById.get(moved.itemId) : undefined;
-      if (moved && now !== undefined) shiftScrollBy(virt.top(now) - moved.top);
+      // A scroller that is not drawn keeps the offset the browser froze (@@@skipped-scroller); its next drawn frame
+      // projects the anchor, which names a surviving row.
+      if (moved && now !== undefined && !skipped) shiftScrollBy(virt.top(now) - moved.top);
       // Defer projection to the write phase: projectAnchor will fire once per
       // frame (not once per row) preventing layout thrashing on streaming updates.
       needsProject = true;
@@ -2021,11 +2030,10 @@ export function ChatRoot(props: ChatRootProps) {
     }
   };
 
-  // An older page is one more rebuild of the committed tier: the rebuild reseeds the virtualizer by row identity and
-  // the reader's anchor is projected onto the new geometry in the same frame, like any other prepend or seed.
+  // An older page is one more rebuild of the committed tier, like any other prepend or seed: the rebuild reseeds the
+  // virtualizer by row identity and moves the scroll offset with the reader's row (@@@rebuild-moves-with-reader).
   const doLoadOlder = (turns: TranscriptTurn[]) => {
-    if (!scrollEl || turns.length === 0) return;
-    state().transcript.history.prepend(turns);
+    if (turns.length > 0) state().transcript.history.prepend(turns);
   };
 
   // ── Snapshot / restore helpers ────────────────────────────────────────────

@@ -14,7 +14,8 @@ afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()); });
 
 // Every turn is on one calendar day, as in a real session: the day line above the first loaded turn moves up to the
 // older page's first turn when it lands, so the row at the very top of the list does not survive the rebuild.
-const DAY = Date.UTC(2026, 10, 10, 2);
+// Local noon minus the 1000 minutes the turn numbers add: turns 960..1039 fall within 80 minutes of noon in any zone.
+const DAY = new Date(2026, 10, 10, 12).getTime() - 1000 * 60_000;
 const long = (seq: number) => Array.from({ length: 6 }, (_, i) => `Line ${i} of reply ${seq}.`).join('\n\n');
 const turn = (seq: number): TranscriptTurn => ({
   id: `turn-${seq}`, seq, initiator: 'user', startedAt: DAY + seq * 60_000, endedAt: DAY + seq * 60_000 + 30_000, outcome: { kind: 'done' },
@@ -69,17 +70,23 @@ async function mount(mode: (typeof MODES)[number], delay: number) {
     scroller.dispatchEvent(new Event('scroll'));
     await frame();
   };
+  /** Scroll up in steps until one more page has been asked for. */
+  const scrollUpToNextRequest = async (step: number) => {
+    const asked = requested;
+    for (let i = 0; i < 400 && requested === asked; i++) await scrollBy(-step);
+    expect(requested).toBe(asked + 1);
+  };
   const settled = async (turns: number) => {
     await until('the older page is in history', () => state.transcript.history.get().length >= turns);
     await untilStable('layout settled', () => [scroller.scrollHeight, scroller.scrollTop, state.transcript.history.get().length]);
   };
-  return { scroller, top, reading, scrollBy, settled, requested: () => requested, turns: () => state.transcript.history.get().length };
+  return { scroller, top, reading, scrollBy, scrollUpToNextRequest, settled, requested: () => requested, turns: () => state.transcript.history.get().length };
 }
 
 for (const mode of MODES) {
   it(`keeps the reading row when the page lands while the reader has stopped (${mode})`, async () => {
     const view = await mount(mode, 0);
-    while (view.requested() === 0) await view.scrollBy(-150);
+    await view.scrollUpToNextRequest(150);
     const before = view.reading();
     await view.settled(40);
     expect(view.top(before.id)).toBeCloseTo(before.top, 0);
@@ -87,7 +94,7 @@ for (const mode of MODES) {
 
   it(`keeps the reading row when the page lands while the reader is still scrolling (${mode})`, async () => {
     const view = await mount(mode, 3);
-    while (view.requested() === 0) await view.scrollBy(-150);
+    await view.scrollUpToNextRequest(150);
     const before = view.reading();
     // 20 more frames of 10px each; the page lands on the third, in a frame that also carries the reader's own step.
     expect(view.scroller.scrollTop).toBeGreaterThan(200);
@@ -110,7 +117,7 @@ for (const mode of MODES) {
     // One trip to the top asks for one page; the rest of the history waits for the reader to scroll up again.
     expect(view.requested()).toBe(1);
     // Scrolling up again does ask for the next one.
-    while (view.requested() === 1) await view.scrollBy(-600);
+    await view.scrollUpToNextRequest(600);
     await view.settled(60);
     expect(view.turns()).toBe(60);
   });

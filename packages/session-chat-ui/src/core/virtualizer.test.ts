@@ -1,8 +1,7 @@
 /**
  * Virtualizer — unit tests.
  *
- * Covers the core BIT arithmetic plus the prepend path added for
- * incremental history loading.
+ * Covers the core BIT arithmetic.
  */
 
 import { describe, expect, it } from 'vitest';

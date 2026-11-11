@@ -207,7 +207,7 @@ export type SegmentCtx = {
  *              cur.top) and assigns the result to the lower unit's `gapBefore`.
  *              Falls back to `density.turnGap` when absent. Turn boundaries
  *              resolve to 8px via the user message's margin (top: 8, bottom: 8).
- * `estimate` — O(1) height heuristic for off-screen units at setCount/prepend.
+ * `estimate` — O(1) height heuristic for off-screen units at setCount.
  *              Falls back to `genericEstimate` when omitted.
  * `measure`  — exact height (px); called only for visible units.
  *              Returns a number — no Measured<L> tree.
