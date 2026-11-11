@@ -8,7 +8,7 @@ import { GUGU_APPS_REPO_FORMER_NAME } from '@shared/extensions/market'
 import { assistantRulesLastGoodStore } from '../../../../apps/desktop/electron/assistant-rules-last-good'
 import { assistantRules, createAssistantRulesResolver, installAssistantRulesResolver } from '../../../../apps/desktop/electron/assistant-rules-resolver'
 import { assistantRulesDistrust, type AssistantRulesProvider } from '../../../../apps/desktop/electron/assistant-rules-trust'
-import { fixtureBundle, fixtureHost, installBundle, markedRules, OFFICIAL_SOURCE } from './fixtureApp'
+import { FIXTURE_TRUST, fixtureBundle, fixtureHost, installBundle, markedRules, OFFICIAL_SOURCE, signedRecord } from './fixtureApp'
 
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'assistant-rules-resolver-')) })
@@ -41,13 +41,14 @@ describe('whom the host believes', () => {
     const host = fixtureHost(root, lastGoodDir())
     installBundle(host.service, await bundle('other', { id: 'not-the-assistant' }), 'market', OFFICIAL_SOURCE('0.0.1'))
     expect(await host.resolver.refresh()).toMatchObject({ source: 'built-in' })
+    const signed = await bundle('signed')
     const provider = (overrides: Partial<AssistantRulesProvider>): AssistantRulesProvider => ({
-      manifest: { id: 'gugu-assistant', version: '0.0.1', contributes: { assistantRules: 'rules' } as never }, rootDir: root, manifestDigest: 'x',
-      origin: 'market', marketSource: OFFICIAL_SOURCE('0.0.1'), activeVariant: 'upstream', enabled: true, ...overrides,
+      manifest: { id: 'gugu-assistant', version: '0.0.1', contributes: { assistantRules: 'rules' } as never }, rootDir: signed, manifestDigest: 'x',
+      origin: 'market', marketSource: signedRecord(signed, OFFICIAL_SOURCE('0.0.1')), activeVariant: 'upstream', enabled: true, ...overrides,
     })
-    expect(await assistantRulesDistrust(provider({}))).toBeNull()
-    expect(await assistantRulesDistrust(provider({ manifest: { id: 'other', version: '1', contributes: {} as never } }))).toMatch(/not gugu-assistant/)
-    expect(await assistantRulesDistrust(provider({ activeVariant: 'mine' }))).toMatch(/fork "mine" is in use/)
+    expect(await assistantRulesDistrust(provider({}), FIXTURE_TRUST)).toBeNull()
+    expect(await assistantRulesDistrust(provider({ manifest: { id: 'other', version: '1', contributes: {} as never } }), FIXTURE_TRUST)).toMatch(/not gugu-assistant/)
+    expect(await assistantRulesDistrust(provider({ activeVariant: 'mine' }), FIXTURE_TRUST)).toMatch(/fork "mine" is in use/)
     // One more condition (a release signature, #1931) is one more entry: the callers stay as they are.
     expect(await assistantRulesDistrust(provider({}), [async () => 'the signature does not verify'])).toBe('the signature does not verify')
   })
@@ -126,8 +127,7 @@ describe('cheap to read', () => {
     const app = await bundle('v1')
     installBundle(host.service, app, 'market', OFFICIAL_SOURCE('0.0.1'))
     const first = await host.resolver.refresh()
-    // The installed copy's folder changed underneath without a new version: not read again, so not noticed.
-    await writeFile(join(host.service.get('gugu-assistant').rootDir, 'rules', 'notes.md'), 'x\n')
+    // Unchanged: its folder is not read again (an edit to it is caught by the signed release instead: assistantRulesSignedRelease.test.ts).
     expect(await host.resolver.refresh()).toBe(first)
     const reads = host.providerReads()
     for (let turn = 0; turn < 20; turn++) expect(await host.resolver.current()).toBe(first)
@@ -163,7 +163,7 @@ describe('the installed record keeps where in the market an App\'s code was', ()
     const { service } = fixtureHost(root, lastGoodDir())
     const app = await bundle('v1')
     installBundle(service, app, 'market', OFFICIAL_SOURCE('0.0.1'))
-    expect(service.marketSource('gugu-assistant')).toEqual(OFFICIAL_SOURCE('0.0.1'))
+    expect(service.marketSource('gugu-assistant')).toEqual({ ...OFFICIAL_SOURCE('0.0.1'), release: expect.objectContaining({ keyId: 'gugu-assistant-test' }) })
     installBundle(service, app, 'folder')
     expect(service.marketSource('gugu-assistant')).toBeNull()
     installBundle(service, app, 'market', OFFICIAL_SOURCE('0.0.1'))
