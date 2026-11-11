@@ -11,6 +11,7 @@ import { mountProjection } from './projection-view';
 import { taskPagesApi, mountTaskPage } from './task-pages';
 import { appSurfacesApi } from './app-surfaces';
 import { bindingResourcesApi } from './binding-resources';
+import { voiceNoteApi } from './voice-note-api';
 
 /**
  * `gugu` itself, built on a host — the same object wherever an App runs (F16): a page (desktop webview or
@@ -210,7 +211,7 @@ export function createGugu(
   // `files.onChanged`) are host halves.
   const api: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw)) {
-    if (['navigationGo', 'navigationClaimBack', 'onBack', 'appFiles', 'chats', 'checkPage', 'clipboard', 'bindings', 'messages', 'prompts', 'cloud', 'framed', 'program', 'projects', 'sessions', 'theme', 'onFilesChanged', 'onDownloadProgress', 'onCloudHeard', 'onBindingResources', 'modal', 'onModalFocus', 'projection', 'onProjection', 'onProjectionSource', 'pages', 'onTaskPage', 'surfaces', 'onSurface', 'projectionMedia'].includes(key)) continue;
+    if (['navigationGo', 'navigationClaimBack', 'onBack', 'appFiles', 'chats', 'checkPage', 'clipboard', 'bindings', 'messages', 'prompts', 'cloud', 'framed', 'program', 'projects', 'sessions', 'theme', 'onFilesChanged', 'onDownloadProgress', 'onCloudHeard', 'onBindingResources', 'voiceNote', 'onVoiceNote', 'modal', 'onModalFocus', 'projection', 'onProjection', 'onProjectionSource', 'pages', 'onTaskPage', 'surfaces', 'onSurface', 'projectionMedia'].includes(key)) continue;
     api[key] = typeof value === 'function' && verbs.has(key) ? coded(value as (...args: never[]) => unknown) : value;
   }
   api.files = files;
@@ -295,6 +296,9 @@ export function createGugu(
   }
   // #1927 (42, `chat:resources`): the bound conversation's agent's resources, beside the binding's other verbs.
   if (raw.bindings?.resources) api.bindings = Object.freeze({ ...(api.bindings as object), ...bindingResourcesApi(raw, host.reportError) });
+  // #1927 (47, `chat:voice-notes:record`): the host's voice-note recorder, driven by name; the audio stays in the host.
+  const voiceNote = voiceNoteApi(raw, host.reportError);
+  if (voiceNote) api.voiceNote = Object.freeze(voiceNote);
   // `gugu.messages` (`chat:read`): a chat's timeline or thread, and the messages holding a text or naming a file.
   if (raw.messages) api.messages = Object.freeze({ history: coded(raw.messages.history), search: coded(raw.messages.search) });
   // `gugu.chats` (`chat:read`): the chats whoever reads is in, and who is in one.

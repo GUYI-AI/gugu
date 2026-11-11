@@ -43,6 +43,7 @@ const CAPABILITY_MESSAGE = {
   'chat:draft': 'extensions.permissionsChatDraft',
   'chat:resources': 'extensions.permissionsChatResources',
   'chat:resources:write': 'extensions.permissionsChatResourcesWrite',
+  'chat:voice-notes:record': 'extensions.permissionsChatVoiceNotesRecord',
   'agents:read': 'extensions.permissionsAgentsRead',
   'agents:read:all': 'extensions.permissionsAgentsReadAll',
   'agents:read:all-machines': 'extensions.permissionsAgentsReadAllMachines',

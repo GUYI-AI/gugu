@@ -73,6 +73,16 @@ export const HOST_CALLS = {
   'bindings.watch': { verb: 'bindingsWatch', pack: (watchId: string, name: string, on: boolean) => ({ watchId, name, on }) },
   'bindings.save': { verb: 'bindingsSave', pack: (name: string, change: Record<string, unknown>) => ({ ...change, name }) },
   'bindings.remove': { verb: 'bindingsRemove', pack: (name: string, change: Record<string, unknown>) => ({ ...change, name }) },
+  // #1927 (47, `chat:voice-notes:record`): the host's voice-note recorder, named by the binding; `onChanged` rides on `watch`
+  // and `onVoiceNote` (create-gugu.ts).
+  'voiceNote.start': { verb: 'voiceNoteStart', pack: (name: string, options?: Record<string, unknown>) => ({ ...options, name }) },
+  'voiceNote.pause': { verb: 'voiceNotePause', pack: (name: string) => ({ name }) },
+  'voiceNote.resume': { verb: 'voiceNoteResume', pack: (name: string) => ({ name }) },
+  'voiceNote.stop': { verb: 'voiceNoteStop', pack: (name: string) => ({ name }) },
+  'voiceNote.retry': { verb: 'voiceNoteRetry', pack: (name: string, job: string) => ({ name, job }) },
+  'voiceNote.openMicSettings': { verb: 'voiceNoteOpenMicSettings', pack: (name: string) => ({ name }) },
+  'voiceNote.status': { verb: 'voiceNoteStatus', pack: (name: string) => ({ name }) },
+  'voiceNote.watch': { verb: 'voiceNoteWatch', pack: (watchId: string, name: string, on: boolean) => ({ watchId, name, on }) },
   'messages.history': { verb: 'messagesHistory' },
   'messages.search': { verb: 'messagesSearch' },
   // The chats whoever reads is in, and one's members (`chat:read`): `{ chat }` names it.
@@ -180,6 +190,7 @@ export const HOST_EVENTS = {
   onAgentsChanged: { event: 'agentsChanged', pick: (event: Event<'agentsChanged'>) => [event.agentIds] },
   onCloudHeard: { event: 'cloudHeard', only: 'page', pick: (event: Event<'cloudHeard'>) => [event.topic, event.event, event.heard] },
   onBindingResources: { event: 'bindingResources', only: 'page', pick: (event: Event<'bindingResources'>) => [event.watchId, event.event] },
+  onVoiceNote: { event: 'voiceNote', only: 'page', pick: (event: Event<'voiceNote'>) => [event.watchId, event.event] },
   onProgramNotification: {
     event: 'programNotification',
     pick: (event: Event<'programNotification'>) => [{ server: event.server, method: event.method, ...(event.params === undefined ? {} : { params: event.params }) }],

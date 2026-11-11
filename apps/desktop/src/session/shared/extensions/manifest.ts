@@ -7,6 +7,7 @@ import { claimTakes } from './file-openers';
 import { INSTRUCTIONS_MAX_CHARS, SUBTITLE_MAX_CHARS } from './app-listing';
 import { BINDING_ACTION_CAPABILITY, BINDING_ACTIONS_API_VERSION, BINDING_NAME, CONVERSATION_BINDING_ACTIONS } from './unread-binding';
 import { RESOURCE_ACTIONS_API_VERSION, RESOURCE_BINDING_ACTIONS, resourceDomainProblem } from './agent-resources';
+import { VOICE_NOTE_API_VERSION, VOICE_NOTE_RECORD_ACTION } from './voice-note-session';
 
 /**
  * Extension (App) manifest — the `manifest.json` at the root of an
@@ -354,6 +355,9 @@ export const EXTENSION_CAPABILITIES = [
   // and changed through the resource store (`save` / `remove`). Each needs its binding action declared.
   'chat:resources',
   'chat:resources:write',
+  // That same personal assistant's voice-note recorder (#1927, API 47): the host records from the microphone when the
+  // person clicks in the App; the App drives it and hears its state, never the audio (`gugu.voiceNote`).
+  'chat:voice-notes:record',
   /*
    * Seeing the agents at work (behavior tab-extensions:「agent 的可见与可控」).
    *
@@ -778,6 +782,17 @@ export const extensionManifestSchema = z
       }
       if (domains && new Set(domains).size !== domains.length) {
         ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings', 0, 'domains', action], message: 'each domain once' });
+      }
+    }
+    // #1927 (47): the voice-note recorder, as `files` is: the action and its capability together.
+    {
+      const capability = BINDING_ACTION_CAPABILITY[VOICE_NOTE_RECORD_ACTION];
+      const has = unreadBinding?.actions.includes(VOICE_NOTE_RECORD_ACTION) ?? false;
+      if (has !== declared.includes(capability)) {
+        ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings'], message: `${capability} requires the conversation binding's "${VOICE_NOTE_RECORD_ACTION}" action, and the action requires ${capability}` });
+      }
+      if (has && manifest.apiVersion < VOICE_NOTE_API_VERSION) {
+        ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: `the conversation binding's "${VOICE_NOTE_RECORD_ACTION}" action requires apiVersion ${VOICE_NOTE_API_VERSION}` });
       }
     }
     const writes = unreadBinding?.domains?.['resources:write'] ?? [];

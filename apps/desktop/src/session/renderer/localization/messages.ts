@@ -283,6 +283,8 @@ const enUSCoreMessages = {
   // lists (`extensions.resourceKind.*`).
   'extensions.permissionsChatResources': 'Read only what your agent keeps in the conversation you select: {kinds}',
   'extensions.permissionsChatResourcesWrite': 'Change what your agent keeps in the conversation you select: {kinds}; your agent applies the changes',
+  // #1927 (47): the host records; the App starts and stops it and draws the bar.
+  'extensions.permissionsChatVoiceNotesRecord': 'Record voice notes from your microphone when you click, for your agent in the conversation you select; the App never gets the audio',
   'extensions.unreadBindingChoose': 'Choose conversation',
   'extensions.unreadBindingSearch': 'Search conversations',
   'extensions.unreadBindingEmpty': 'No available conversations',
@@ -1462,6 +1464,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'extensions.permissionsChatDraft': '只往你选定的那条会话的输入框里放草稿，发不发由你',
   'extensions.permissionsChatResources': '只读取你选定的那条会话里 agent 记着的{kinds}',
   'extensions.permissionsChatResourcesWrite': '改动你选定的那条会话里 agent 记着的{kinds}，由 agent 照改',
+  'extensions.permissionsChatVoiceNotesRecord': '你点了才用麦克风录语音笔记，交给你选定的那条会话里的 agent；App 拿不到录音',
   'extensions.unreadBindingChoose': '选择会话',
   'extensions.unreadBindingSearch': '搜索会话',
   'extensions.unreadBindingEmpty': '暂无可选会话',

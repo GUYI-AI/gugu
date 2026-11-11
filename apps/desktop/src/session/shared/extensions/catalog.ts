@@ -41,6 +41,8 @@ export const CAPABILITY_RISK = {
   // reading is what the person told it; changing them changes what it knows of them.
   'chat:resources': 'medium',
   'chat:resources:write': 'high',
+  // The microphone, recording when the person clicks in the App (the host records; the App never gets the audio).
+  'chat:voice-notes:record': 'high',
   'agents:read': 'medium',
   // Every `:all` widens past the agents the App started — that widening is the whole point of
   // reading it as high, even for the ability that is medium in its narrow form.

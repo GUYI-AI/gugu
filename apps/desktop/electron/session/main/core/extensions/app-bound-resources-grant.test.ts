@@ -46,7 +46,7 @@ const refused = { code: 'denied' };
 
 describe('declaring an agent\'s resources (manifest)', () => {
   it('needs API 42, each action with its capability and its domains; unread-only and files Apps parse as before', () => {
-    expect(EXTENSION_API_VERSION).toBe(42);
+    expect(EXTENSION_API_VERSION).toBeGreaterThanOrEqual(42);
     expect(() => parseExtensionManifest(manifest())).not.toThrow();
     expect(() => parseExtensionManifest(manifest({ actions: ['unread', 'resources'], domains: { resources: ['memory'] } }))).not.toThrow();
     expect(() => parseExtensionManifest(manifest({ actions: ['unread'], domains: null }))).not.toThrow();

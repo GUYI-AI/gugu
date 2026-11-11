@@ -8,12 +8,14 @@ import type { AppFileEntry } from './app-runtime-protocol';
  * consented and withdrawn on its own (`BINDING_ACTION_CAPABILITY`).
  * `resources` / `resources:write` (API 42, agent-resources.ts): read / change the panel resources of the agent whose
  * private conversation with the person this is, in the domains the binding lists for each.
+ * `voice-notes:record` (API 47, voice-note-session.ts): drive the host's voice-note recorder for that same assistant.
  */
-export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'resources', 'resources:write'] as const;
+export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'resources', 'resources:write', 'voice-notes:record'] as const;
 export type ConversationBindingAction = (typeof CONVERSATION_BINDING_ACTIONS)[number];
 export const BINDING_ACTION_CAPABILITY = {
   unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft',
   resources: 'chat:resources', 'resources:write': 'chat:resources:write',
+  'voice-notes:record': 'chat:voice-notes:record',
 } as const;
 /** The first App API that lets a binding declare more than `unread`. */
 export const BINDING_ACTIONS_API_VERSION = 40;
