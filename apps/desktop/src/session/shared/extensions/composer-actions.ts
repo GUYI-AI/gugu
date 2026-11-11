@@ -7,7 +7,8 @@ import { z } from 'zod';
  * label, an icon from the host's set, and one `run` from a closed set. No App code runs on that click.
  *
  * - `voice-note`: the host starts a voice note for that assistant, as the built-in entry does (needs `voice-notes:record`).
- * - `draft`: the host puts `text` at the end of that composer; the person sends it, or not (needs `draft`).
+ * - `draft`: the host puts `text` (in the person's language) at the end of that composer; the person sends it, or not
+ *   (needs `draft`).
  * - `page-intent`: the host expands the App's panel if it is collapsed and tells the App's page `intent`, once, on
  *   `gugu.bindings.onSurface` (the `surface` action the placement already has). No data comes with it.
  *
@@ -37,16 +38,15 @@ const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u206
 const UNSAFE_IN_TEXT = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
 const label = z.string().trim().min(1).max(COMPOSER_ACTION_LABEL_MAX).refine((text) => !UNSAFE.test(text), 'a label is one line of plain text');
 
+const draftText = z.string().trim().min(1).max(COMPOSER_ACTION_DRAFT_MAX).refine((text) => !UNSAFE_IN_TEXT.test(text), 'a draft is plain text');
+
 export const composerActionSchema = z.strictObject({
   id: z.string().regex(NAME),
   label: z.strictObject({ zh: label, en: label }),
   icon: z.enum(COMPOSER_ACTION_ICONS),
   run: z.discriminatedUnion('kind', [
     z.strictObject({ kind: z.literal('voice-note') }),
-    z.strictObject({
-      kind: z.literal('draft'),
-      text: z.string().trim().min(1).max(COMPOSER_ACTION_DRAFT_MAX).refine((text) => !UNSAFE_IN_TEXT.test(text), 'a draft is plain text'),
-    }),
+    z.strictObject({ kind: z.literal('draft'), text: z.strictObject({ zh: draftText, en: draftText }) }),
     z.strictObject({ kind: z.literal('page-intent'), intent: z.string().regex(NAME).refine((intent) => intent !== VOICE_NOTE_PAGE_INTENT, `"${VOICE_NOTE_PAGE_INTENT}" is the host's own intent`) }),
   ]),
 });
@@ -62,5 +62,5 @@ export const composerActionRunSchema = composerActionsAskSchema.extend({ actionI
 /** What main did, or what the window does now (a draft goes into the composer it drew). */
 export type ComposerActionResult =
   | { kind: 'voice-note'; outcome: 'started' | 'busy' | 'no_assistant' | 'cancelled' | 'mic_denied' | 'mic_missing' | 'capture_failed' | 'unavailable' }
-  | { kind: 'draft'; text: string }
+  | { kind: 'draft'; text: { zh: string; en: string } }
   | { kind: 'page-intent'; delivered: boolean };

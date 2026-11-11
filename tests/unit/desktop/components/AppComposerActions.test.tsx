@@ -20,7 +20,7 @@ const state = vi.hoisted(() => ({
 }));
 const list = vi.hoisted(() => vi.fn());
 const run = vi.hoisted(() => vi.fn());
-vi.mock('react-i18next', async (original) => ({ ...(await original<object>()), useTranslation: () => ({ i18n: { language: state.language } }) }));
+vi.mock('react-i18next', async (original) => ({ ...(await original<object>()), useTranslation: () => ({ i18n: { get language() { return state.language; } } }) }));
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn: vi.fn() }) }));
 vi.mock('@/store/chatContext', () => ({ useChatStore: () => ({ writeDraft: (chatId: string, draft: unknown) => state.drafts.push([chatId, draft]) }) }));
 vi.mock('@/components/assistant/useVoiceNoteHandler', () => ({ useVoiceNoteHandler: () => ({ handler: null, recording: state.recording }) }));
@@ -79,7 +79,7 @@ describe('the 「+」 entries of an App beside the person\'s own assistant chat'
   it('a click hands main only the App, the column and the id; a draft comes back for this composer, after what is there', async () => {
     await render();
     await settle();
-    run.mockResolvedValueOnce({ success: true, data: { kind: 'draft', text: '帮我看看今天的安排。' } });
+    run.mockResolvedValueOnce({ success: true, data: { kind: 'draft', text: { zh: '帮我看看今天的安排。', en: 'Look at my day with me.' } } });
     await click('ask');
     expect(run).toHaveBeenCalledExactlyOnceWith({ ownerId: 'owner-a', extensionId: 'assistant', authority: 'stamp-1', actionId: 'ask' });
     expect(state.drafts).toEqual([[CHAT, { at: 'end', text: '帮我看看今天的安排。' }]]);
@@ -89,6 +89,11 @@ describe('the 「+」 entries of an App beside the person\'s own assistant chat'
     await click('voice-note');
     expect(run.mock.calls.map(([args]) => args.actionId)).toEqual(['ask', 'ideas', 'voice-note']);
     expect(state.drafts).toHaveLength(1);
+    // In the person's language when it lands.
+    state.language = 'en-US';
+    run.mockResolvedValueOnce({ success: true, data: { kind: 'draft', text: { zh: '帮我看看今天的安排。', en: 'Look at my day with me.' } } });
+    await click('ask');
+    expect(state.drafts.at(-1)).toEqual([CHAT, { at: 'end', text: 'Look at my day with me.' }]);
   });
 
   it('refused (the App switched off meanwhile, another account) or failed: nothing happens', async () => {

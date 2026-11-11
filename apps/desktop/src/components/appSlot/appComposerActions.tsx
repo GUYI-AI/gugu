@@ -36,7 +36,8 @@ export function composerMenu(
  * #1927 (API 48) The 「+」 entries an App placed beside the person's own assistant chat declares, for this column
  * (AppConversationSurfaceHost): main says which to draw — none unless this is that chat — and runs the one the person
  * clicks (app-composer-actions.ts). Only ids go to main; no App code runs on the click. A draft comes back for this
- * composer, put after what the person already wrote, as the built-in's 「分析健康报告」 does (AssistantChatSlot).
+ * composer, in the person's language, put after what they already wrote, as the built-in's 「分析健康报告」 does
+ * (AssistantChatSlot).
  */
 export function useAppComposerActions({ ownerId, extensionId, authority, chatId }: { ownerId: string; extensionId: string; authority: string; chatId: string }) {
   const { i18n } = useTranslation()
@@ -45,6 +46,8 @@ export function useAppComposerActions({ ownerId, extensionId, authority, chatId 
   const asked = `${ownerId}\n${extensionId}\n${authority}`
   const [read, setRead] = useState<{ asked: string; views: ComposerActionView[] } | null>(null)
   const [serial, setSerial] = useState(0)
+  // The language when the draft lands, not when the menu was drawn.
+  const zhNow = useCallback(() => i18n.language.startsWith('zh'), [i18n])
   // A grant of this App changed (its draft or recorder withdrawn, say): read again.
   useEffect(() => events.on(extensionsInventoryChangedChannel, (note) => {
     if (!note?.extensionId || note.extensionId === extensionId) setSerial((value) => value + 1)
@@ -70,9 +73,9 @@ export function useAppComposerActions({ ownerId, extensionId, authority, chatId 
         log.warn({ error: result.error, code: result.code }, 'App composer action not run')
         return
       }
-      if (result.data.kind === 'draft') writeDraft(chatId, { at: 'end', text: result.data.text })
+      if (result.data.kind === 'draft') writeDraft(chatId, { at: 'end', text: zhNow() ? result.data.text.zh : result.data.text.en })
     }, (error: unknown) => log.warn({ error }, 'App composer action failed'))
-  }, [ownerId, extensionId, authority, chatId, writeDraft])
+  }, [ownerId, extensionId, authority, chatId, writeDraft, zhNow])
   const views = read?.asked === asked ? read.views : []
   const zh = i18n.language.startsWith('zh')
   return useMemo(() => composerMenu(views, { zh, recording, run }), [views, zh, recording, run])

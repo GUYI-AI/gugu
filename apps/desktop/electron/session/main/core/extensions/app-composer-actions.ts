@@ -87,7 +87,7 @@ export async function runComposerAction(
   if (!bound) throw denied('No conversation is chosen for this App');
   await bound.recheck();
   still();
-  if (action.run.kind === 'draft') return { kind: 'draft', text: action.run.text };
+  if (action.run.kind === 'draft') return { kind: 'draft', text: { ...action.run.text } };
   return { kind: 'page-intent', delivered: await tellPage(extensionId, action.run.intent) };
 }
 

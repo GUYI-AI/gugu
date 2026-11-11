@@ -977,7 +977,7 @@ API 48, the same assistant: \`contributes.conversationSurface.composerActions\` 
 \`[{ id, label: { zh, en } (one line, ≤ 40), icon, run }]\`, at most 6; \`icon\` one of sparkles, mic, upload, lightbulb, pencil,
 heart, checklist, document, book, image, message. \`run\`, each needing that binding action (and its capability):
 - \`{ kind: "voice-note" }\` (\`voice-notes:record\`): the host starts a voice note and says why if it cannot, as its own entry does.
-- \`{ kind: "draft", text }\` (\`draft\`): \`text\` (≤ 2000) goes after what is in that composer. Nothing is sent.
+- \`{ kind: "draft", text: { zh, en } }\` (\`draft\`): the person's language (≤ 2000) goes after what is in that composer. Nothing is sent.
 - \`{ kind: "page-intent", intent }\` (\`surface\`): your panel is expanded and \`gugu.bindings.onSurface\` hears
   \`{ state: "bound", panel, intent }\` once. No data comes with it; show that view. The host's recording bar beside that
   conversation sends \`intent: "voice-note"\` when the person opens the note it shows (yours may not use that name).

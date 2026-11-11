@@ -11,7 +11,7 @@ const ACTIONS = ['unread', 'draft', 'surface', 'voice-notes:record'];
 const CAPABILITY = { unread: 'chat:unread', draft: 'chat:draft', surface: 'chat:surface', 'voice-notes:record': 'chat:voice-notes:record' } as Record<string, string>;
 const ideas = { id: 'ideas', label: { zh: '获取灵感', en: 'Get ideas' }, icon: 'sparkles', run: { kind: 'page-intent', intent: 'ideas' } };
 const voice = { id: 'voice-note', label: { zh: '录制语音笔记', en: 'Record a voice note' }, icon: 'mic', run: { kind: 'voice-note' } };
-const draft = { id: 'ask', label: { zh: '问问它', en: 'Ask it' }, icon: 'message', run: { kind: 'draft', text: '帮我看看今天的安排。' } };
+const draft = { id: 'ask', label: { zh: '问问它', en: 'Ask it' }, icon: 'message', run: { kind: 'draft', text: { zh: '帮我看看今天的安排。', en: 'Look at my day with me.' } } };
 
 function manifest(composerActions: unknown[] | undefined, options: { actions?: string[]; apiVersion?: number } = {}) {
   const actions = options.actions ?? ACTIONS;
@@ -59,14 +59,16 @@ describe('composer actions in the manifest', () => {
       { ...ideas, run: { kind: 'page-intent', intent: 'ideas', data: { chat: 'x' } } },
       { ...ideas, run: { kind: 'page-intent', intent: 'open ideas' } },
       { ...ideas, run: { kind: 'page-intent', intent: 'voice-note' } },
-      { ...draft, run: { kind: 'draft', text: 'x'.repeat(2001) } },
-      { ...draft, run: { kind: 'draft', text: 'bell\u0007' } },
+      { ...draft, run: { kind: 'draft', text: { zh: 'x'.repeat(2001), en: 'x' } } },
+      { ...draft, run: { kind: 'draft', text: '帮我看看' } },
+      { ...draft, run: { kind: 'draft', text: { zh: '帮我看看' } } },
+      { ...draft, run: { kind: 'draft', text: { zh: 'bell\u0007', en: 'x' } } },
       { ...voice, run: { kind: 'voice-note', meeting: { title: 'x' } } },
     ]) refused(manifest([bad]), /./);
     refused(manifest([ideas, { ...draft, id: 'ideas' }]), /each composer action id once/);
     refused(manifest(Array.from({ length: 7 }, (_, at) => ({ ...ideas, id: `ideas-${at}` }))), /./);
     refused(manifest([]), /./);
     // A draft keeps its lines.
-    expect(() => parseExtensionManifest(manifest([{ ...draft, run: { kind: 'draft', text: '第一行\n第二行' } }]))).not.toThrow();
+    expect(() => parseExtensionManifest(manifest([{ ...draft, run: { kind: 'draft', text: { zh: '第一行\n第二行', en: 'one\ntwo' } } }]))).not.toThrow();
   });
 });
