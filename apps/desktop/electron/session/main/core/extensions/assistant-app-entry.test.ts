@@ -139,8 +139,13 @@ describe('the trusted App: granted and bound by the host, nothing asked', () => 
   ])('refuses %s: no binding, no trust', async (_name, put) => {
     const h = host();
     put(h);
+    ensureApp.mockClear();
     expect(await sync(DM)).toMatchObject({ trusted: false, outcome: 'distrusted', changed: false });
     expect(h.bound()).toBeNull();
+    // D2: its id held, but not by the trusted App — the ensure step is asked (it puts the release over gugu's own copy only).
+    expect(ensureApp).toHaveBeenCalledOnce();
+    expect(await sync(null)).toMatchObject({ outcome: 'distrusted' });
+    expect(ensureApp).toHaveBeenCalledOnce();
   });
 
   it('refuses a fork switched on, and touches no other App', async () => {

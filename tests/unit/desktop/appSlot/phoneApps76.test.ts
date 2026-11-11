@@ -764,6 +764,32 @@ describe('the phone installs Apps from the market', () => {
     expect(!again.success && again.error).toMatch(/installed here already/)
   })
 
+  // #1931 D2: the ensure step's `over` — only gugu's own market copy, as it looked at it, switched on, and only a signed release.
+  it("`gugu` with `over`: never over the person's copy or one that changed, and only as a signed release", async () => {
+    await list('notes', '1.0.0', ['files:read'])
+    const apps = await start()
+    await apps.installFromMarket({ ref: { extensionId: 'notes', version: '1.0.0' }, consent: { kind: 'gugu' } })
+    const record = apps.installRecord('notes')!
+    expect(record).toMatchObject({ origin: 'market', version: '1.0.0', enabled: true })
+    const over = async (manifestDigest: string) => {
+      const result = await apps.installFromMarket({ ref: { extensionId: 'notes', version: '1.0.0' }, consent: { kind: 'gugu', over: { version: '1.0.0', manifestDigest } } })
+      return !result.success && result.error
+    }
+    expect(await over('0'.repeat(64))).toMatch(/installed here already; it changed since it was looked at/)
+    await apps.setEnabled('notes', false)
+    expect(apps.installRecord('notes')?.enabled).toBe(false)
+    expect(await over(record.manifestDigest)).toMatch(/installed here already; it is switched off/)
+    await apps.setEnabled('notes', true)
+    // The market here lists no signed release for it (its trust table names only the assistant App).
+    expect(await over(record.manifestDigest)).toMatch(/notes@1\.0\.0 is not a signed release; it does not go over the copy here/)
+    expect(installedDir('notes')).toBe('notes@1.0.0')
+    // From a chat: the person's.
+    await apps.uninstall('notes')
+    await apps.installAttachment({ messageId: await publish('notes', '1.0.0') })
+    expect(await over(apps.installRecord('notes')!.manifestDigest)).toMatch(/installed here already; it is not the market's copy/)
+    expect(apps.installRecord('notes')?.origin).toBe('attachment')
+  })
+
   it("`gugu`: an App whose code is in someone else's repository is refused, nothing stored", async () => {
     await list('notes', '1.0.0', ['files:read'], false, false, { repo: 'someone/their-apps', path: '.', commit: 'd'.repeat(40) })
     const apps = await start()

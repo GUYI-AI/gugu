@@ -94,6 +94,9 @@ export async function syncAssistantAppEntry(input: unknown, deps: AssistantAppEn
   const distrust = await notTrusted(service, deps.trust);
   if (distrust) {
     log.info('assistant App entry: not the trusted App', { reason: distrust });
+    // Its id is held, but not by the trusted App: the ensure step puts the signed release over gugu's own market copy (an
+    // old unsigned build) and leaves the person's own (a folder, a fork, switched off) — it tells them apart, not this.
+    if (chatId) (deps.ensureApp ?? ensureAssistantAppHere)();
     return state(false, 'distrusted');
   }
   const name = service.get(ASSISTANT_APP_ID).manifest.permissions?.bindings?.[0]?.name;

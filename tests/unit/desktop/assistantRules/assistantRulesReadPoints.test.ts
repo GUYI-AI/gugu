@@ -25,7 +25,7 @@ it('each read point asks once per render, so a swap during it cannot mix two ver
   const B = Object.freeze({ source: 'app', rules: markedRules('BBBMARK', '2.0.0'), appVersion: '2.0.0' }) as ResolvedAssistantRules
   let asked = 0
   const next = async () => (asked++ % 2 === 0 ? A : B)
-  installAssistantRulesResolver({ refresh: next, current: next, available: next, subscribe: () => () => {} })
+  installAssistantRulesResolver({ refresh: next, current: next, available: next, subscribe: () => () => {}, appChanged: next })
   const renders: Record<string, string> = {}
 
   const home = join(root, 'home'), guguHome = join(root, 'gugu'), cwd = join(guguHome, 'assistant')

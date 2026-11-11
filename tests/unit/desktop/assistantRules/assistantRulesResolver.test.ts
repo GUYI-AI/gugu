@@ -7,7 +7,7 @@ import { assistantRulesFiles } from '@gugu/core/shared/assistantRulesFormat'
 import { GUGU_APPS_REPO_FORMER_NAME } from '@shared/extensions/market'
 import { assistantRulesLastGoodStore } from '../../../../apps/desktop/electron/assistant-rules-last-good'
 import { assistantRules, createAssistantRulesResolver, installAssistantRulesResolver, NO_ASSISTANT_RULES } from '../../../../apps/desktop/electron/assistant-rules-resolver'
-import { assistantRulesDistrust, type AssistantRulesProvider } from '../../../../apps/desktop/electron/assistant-rules-trust'
+import { assistantRulesDistrust, hearAssistantAppChanges, installedAssistantRulesProvider, type AssistantRulesProvider } from '../../../../apps/desktop/electron/assistant-rules-trust'
 import { FIXTURE_TRUST, fixtureBundle, fixtureHost, installBundle, markedRules, OFFICIAL_SOURCE, signedRecord } from './fixtureApp'
 
 let root: string
@@ -156,6 +156,70 @@ describe('a new version swaps in between renders, never inside one', () => {
     if (!before.rules) throw new Error('no rules')
     expect(Object.isFrozen(before) && Object.isFrozen(before.rules) && Object.isFrozen(before.rules.texts)).toBe(true)
     expect(await host.resolver.current()).toBe(after)
+  })
+})
+
+// D2 (verify pass 1): after the person updated an untrusted copy to the signed release, its rules were used only after a
+// restart — the resolver answered every read from the one snapshot of the process, which only an assistant start or setup
+// replaced; nothing told it the App changed.
+describe('trust is decided again when the App changes, without a restart', () => {
+  /** The service tells its listeners once the change is written (a microtask); the look it starts runs on. */
+  const told = () => new Promise(resolve => { setTimeout(resolve, 0) })
+
+  it('an update from an untrusted copy to the signed release is what the next session start uses', async () => {
+    const host = fixtureHost(root, lastGoodDir())
+    hearAssistantAppChanges(host.service, host.resolver)
+    installBundle(host.service, await bundle('old', { version: '0.1.0' }), 'market', OFFICIAL_SOURCE('0.1.0'), { unsigned: true })
+    expect((await host.resolver.refresh()).source).toBe('none')
+    expect(host.warnings[0]?.detail.reason).toMatch(/no signed release was recorded/)
+    // The person's 更新: the market writes the signed release and its record.
+    installBundle(host.service, await bundle('new', { version: '1.0.0', files: assistantRulesFiles(MARKED) }), 'market', OFFICIAL_SOURCE('1.0.0'))
+    await told()
+    // Every read point that answers from memory (a task agent's start, a dispatch, the windows) has the new answer.
+    expect(await host.resolver.current()).toMatchObject({ source: 'app', appVersion: '1.0.0', rules: MARKED })
+    expect(await assistantRulesLastGoodStore(lastGoodDir).read()).toMatchObject({ appVersion: '1.0.0' })
+  })
+
+  it('switched off, back on, removed: each decided again when it happens', async () => {
+    const host = fixtureHost(root, lastGoodDir())
+    hearAssistantAppChanges(host.service, host.resolver)
+    installBundle(host.service, await bundle('v2', { version: '2.0.0', files: assistantRulesFiles(MARKED) }), 'market', OFFICIAL_SOURCE('2.0.0'))
+    expect((await host.resolver.current()).source).toBe('app')
+    host.service.setEnabled('gugu-assistant', false)
+    await told()
+    expect(await host.resolver.current()).toMatchObject({ source: 'last-good', appVersion: '2.0.0' })
+    host.service.setEnabled('gugu-assistant', true)
+    await told()
+    expect((await host.resolver.current()).source).toBe('app')
+    host.service.uninstall('gugu-assistant')
+    await told()
+    expect((await host.resolver.current()).source).toBe('last-good')
+    // Another App's change is not the assistant App's.
+    const reads = host.providerReads()
+    installBundle(host.service, await bundle('other', { id: 'other-app' }), 'folder')
+    await told()
+    await host.resolver.current()
+    expect(host.providerReads()).toBe(reads)
+  })
+
+  it('a look begun before the change does not answer for after it', async () => {
+    const host = fixtureHost(root, lastGoodDir())
+    installBundle(host.service, await bundle('old', { version: '0.1.0' }), 'market', OFFICIAL_SOURCE('0.1.0'), { unsigned: true })
+    let open!: () => void
+    const gate = new Promise<void>(resolve => { open = resolve })
+    const resolver = createAssistantRulesResolver({
+      // What the look saw of the App is taken when it starts; it answers after the gate.
+      provider: async () => { const seen = installedAssistantRulesProvider(host.service); await gate; return seen },
+      lastGood: assistantRulesLastGoodStore(lastGoodDir), trust: FIXTURE_TRUST, warn: () => {},
+    })
+    const stale = resolver.refresh()
+    await told()
+    installBundle(host.service, await bundle('new', { version: '1.0.0' }), 'market', OFFICIAL_SOURCE('1.0.0'))
+    const changed = resolver.appChanged()
+    open()
+    expect((await stale).source).toBe('none')
+    expect(await changed).toMatchObject({ source: 'app', appVersion: '1.0.0' })
+    expect(await resolver.current()).toMatchObject({ source: 'app', appVersion: '1.0.0' })
   })
 })
 
