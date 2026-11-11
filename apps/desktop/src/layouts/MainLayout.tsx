@@ -506,17 +506,23 @@ function InnerLayout({
   }, [])
 
   // @@@1507 直达指定设置 section(侧栏「额度」→ quota)。移动端无设置弹窗:直达「我的」tab 对应 detail 面。
-  const openSettingsSection = useCallback((section: ActiveSection) => {
-    // Nothing of the assistant is in Settings (owner 11-12): an old route to its 资料 / 连接应用 lands in its App.
+  const openSettingsSection = useCallback((asked: ActiveSection) => {
+    let section = asked
+    // Nothing of the assistant is in Settings (owner 11-12): an old route to its 资料 / 连接应用 lands in its App. A phone
+    // with no assistant has the person's own connected apps as a row of Settings (SettingsPanel): a route to them goes there.
     if (isAssistantSettingsSection(section)) {
       if (!mobile) {
         setSettingsModalOpen(false)
         openAssistantPageInApp(section === 'assistant' ? 'settings' : 'connected-apps')
-      } else if (phoneAssistant.available) {
+        return
+      }
+      if (phoneAssistant.available) {
         setActiveTab('assistant')
         window.dispatchEvent(new CustomEvent(UI_EVENTS.openAssistantConnectors, { detail: { sub: section === 'assistant' ? 'settings' : 'connectors' } }))
+        return
       }
-      return
+      if (section === 'assistant') return
+      section = 'connectors'
     }
     setSettingsSection(section)
     if (mobile) {

@@ -528,6 +528,7 @@ export default {
     },
     "nav": {
       "about": "About",
+      "connectors": "Connected apps",
       "account": "Account",
       "apps": "Apps",
       "browser": "Browser",

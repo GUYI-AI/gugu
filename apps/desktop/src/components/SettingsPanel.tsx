@@ -5,6 +5,8 @@ import { useAuth } from '../store/auth'
 import { membershipSettingsSection } from '../lib/billing/settingsDestination'
 import { AboutSection } from './settings/AboutSection'
 import { AccountSection } from './settings/AccountSection'
+import { ConnectorsSection } from './settings/ConnectorsSection'
+import { useConnectionAuthority } from '@/lib/connectionBridge'
 import { DevicesSection } from './settings/DevicesSection'
 import { FileStorageSection } from './settings/FileStorageSection'
 import { GeneralSection } from './settings/GeneralSection'
@@ -41,6 +43,8 @@ import { useTranslation } from 'react-i18next'
  * - 「这台手机」只在手机壳上(#7199 手机当设备:那几个动作要安卓的系统接口;桌面的「这台电脑能做的事」在「设备」里);
  * - 会话页那几格只在有会话页宿主的桌面形态上(它们是会话页的组件);手机「我的」不画。
  * 咕咕的资料、连接应用不在这里:它们在它的 App 里(owner 11-12)。
+ * - 「连接应用」(人自己连的应用,不是咕咕的)只在手机壳上、「通用」那组:手机没有资源库;电脑上它们在资源库「集成」。
+ *   连接还记在助理家里(legacy)时那是它的,不画。
  */
 const sectionsFor = (mobile: boolean): ActiveSection[] =>
   SETTINGS_SECTIONS.filter(
@@ -49,6 +53,7 @@ const sectionsFor = (mobile: boolean): ActiveSection[] =>
       (section !== 'permissions' || platform.kind === 'electron' || platform.systemPermissions.length > 0) &&
       (section !== 'apps' || platform.kind === 'capacitor') &&
       (section !== 'phone' || platform.kind === 'capacitor') &&
+      (section !== 'connectors' || mobile) &&
       (!SESSION_HOST_SETTINGS_SECTIONS.includes(section) || (!mobile && platform.capabilities.sessionHost)),
   )
 const MOBILE_SECTIONS_FOR_PLATFORM = sectionsFor(true)
@@ -82,13 +87,19 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
 }) {
   const { user, updateUser, logout } = useAuth()
   const { t } = useTranslation('main')
-  const sections = mobile ? MOBILE_SECTIONS_FOR_PLATFORM : DESKTOP_SECTIONS_FOR_PLATFORM
+  // The person's own connected apps (a phone row): not while connections are still kept in the assistant's home (legacy).
+  const { route: connectionRoute } = useConnectionAuthority()
+  const sections = mobile
+    ? MOBILE_SECTIONS_FOR_PLATFORM.filter((s) => s !== 'connectors' || connectionRoute?.mode !== 'legacy')
+    : DESKTOP_SECTIONS_FOR_PLATFORM
 
   // @@@1507 初始 section 可由调用方指定(如侧栏「额度」直接开到 quota);缺省 account。
   const [internalSection, setInternalSection] = useState<ActiveSection>(initialSection)
   const requestedSection = section ?? internalSection
-  // The assistant's pages are in its App (MainLayout sends their routes there): never drawn here.
-  const activeSection = isAssistantSettingsSection(requestedSection) ? 'account' : requestedSection
+  // The assistant's pages are in its App (MainLayout sends their routes there): never drawn here. On the phone a route to
+  // connected apps (or its chat tools, part of them) is the person's own row, where it is shown.
+  const ownConnections = sections.includes('connectors') && (requestedSection === 'connectors' || requestedSection === 'channels')
+  const activeSection = ownConnections ? 'connectors' : isAssistantSettingsSection(requestedSection) ? 'account' : requestedSection
   const setActiveSection = onSectionChange ?? setInternalSection
   const [internalPane, setInternalPane] = useState<'nav' | 'detail'>(mobile ? 'nav' : 'detail')
   const mobilePane = pane ?? internalPane
@@ -109,6 +120,7 @@ export function SettingsPanel({ mobile = false, inline = false, onClose, initial
 
   function renderSection() {
     switch (activeSection) {
+      case 'connectors': return <ConnectorsSection />
       case 'account':  return <AccountSection user={user} updateUser={updateUser} logout={logout} mobile={mobile} />
       case 'general':  return <GeneralSection onOpenPermissions={() => selectSection('permissions')} onOpenThemes={openThemes} />
       case 'devices':  return <DevicesSection onUpgrade={() => selectSection(membershipSettingsSection(mobile))} />

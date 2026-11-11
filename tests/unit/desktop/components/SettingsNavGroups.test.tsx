@@ -28,9 +28,10 @@ const groups = () =>
 
 const captions = () => [...harness.container.querySelectorAll('.gg-settings-nav-caption')].map((el) => el.textContent)
 
-// SettingsPanel excludes apps/phone on desktop. Permission/session-host capability filters
-// can only remove more entries, so this covers every section a desktop host may supply.
-const desktopSections = SETTINGS_SECTIONS.filter((section) => section !== 'apps' && section !== 'phone')
+// SettingsPanel excludes apps/phone and the person's own connected apps (a phone row; the Library's 集成 on a computer) on
+// desktop. Permission/session-host capability filters can only remove more entries, so this covers every section a desktop
+// host may supply.
+const desktopSections = SETTINGS_SECTIONS.filter((section) => section !== 'apps' && section !== 'phone' && section !== 'connectors')
 // SettingsPanel never supplies the native Beta password destination to the mobile shell.
 const mobileSections = SETTINGS_SECTIONS.filter((section) => section !== 'passwords')
 
@@ -59,7 +60,7 @@ describe('the one settings nav', () => {
     await render(mobileSections, { mobile: true })
     expect(groups()).toEqual([
       ['account', 'usage', 'files', 'subscriptions'],
-      ['general', 'interface', 'permissions', 'model', 'resource-monitor'],
+      ['general', 'connectors', 'interface', 'permissions', 'model', 'resource-monitor'],
       ['sessions', 'browser', 'devices', 'apps', 'phone'],
       ['about'],
     ])
@@ -70,7 +71,7 @@ describe('the one settings nav', () => {
     await render(mobileSections.filter((section) => !SESSION_HOST_SETTINGS_SECTIONS.includes(section) && section !== 'devices' && section !== 'channels' && section !== 'apps' && section !== 'phone'), { mobile: true })
     expect(groups()).toEqual([
       ['account', 'usage', 'files'],
-      ['general', 'permissions', 'model'],
+      ['general', 'connectors', 'permissions', 'model'],
       ['about'],
     ])
   })
@@ -111,18 +112,21 @@ describe('the one settings nav', () => {
     expect(harness.container.querySelector('[aria-current="page"]')?.getAttribute('data-testid')).toBe('settings-nav-account')
   })
 
-  // Owner 11-12「设置里面不应该有咕咕设置吧?」: its 资料 and 连接应用 live in its App, on desktop and phone.
-  it('has nothing of the assistant: no 咕咕 group, no 资料, no 连接应用', async () => {
+  // Owner 11-12「设置里面不应该有咕咕设置吧?」: its 资料 and 连接应用 live in its App, on desktop and phone. The phone's 连接应用
+  // under 偏好 is the person's own (they have no Library there), never under a 咕咕 heading.
+  it('has nothing of the assistant: no 咕咕 group, no 资料; 连接应用 only as the phone\'s plain row', async () => {
     for (const mobile of [false, true]) {
       await render(mobile ? mobileSections : desktopSections, { mobile })
       expect(SETTINGS_SECTIONS).not.toContain('assistant')
-      expect(SETTINGS_SECTIONS).not.toContain('connectors')
       // Their old routes are told apart, to be sent to the App (MainLayout).
       expect((['assistant', 'connectors', 'channels', 'account', 'devices'] as const).map(isAssistantSettingsSection)).toEqual([true, true, true, false, false])
       expect(harness.container.querySelector('[data-group="assistant"]')).toBeNull()
-      expect(harness.container.querySelector('[data-testid="settings-nav-assistant"], [data-testid="settings-nav-connectors"]')).toBeNull()
+      expect(harness.container.querySelector('[data-testid="settings-nav-assistant"]')).toBeNull()
+      const connectors = harness.container.querySelector('[data-testid="settings-nav-connectors"]')
+      expect(connectors?.closest('[role="group"]')?.getAttribute('data-group') ?? null).toBe(mobile ? 'preferences' : null)
       const nav = harness.container.querySelector('.gg-settings-nav-scroll')!
-      expect(nav.textContent).not.toMatch(/资料|连接应用|咕咕/)
+      expect(nav.textContent).not.toMatch(/资料|咕咕/)
+      if (!mobile) expect(nav.textContent).not.toMatch(/连接应用/)
       harness.cleanup()
       harness = createReactHarness()
     }

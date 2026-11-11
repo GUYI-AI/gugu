@@ -7,6 +7,8 @@ import { Pane, PaneHeader } from '../ui/Pane'
 import { ListRow } from '../ui/ListRow'
 import { IconButton } from '../ui/IconButton'
 import {
+  Plug,
+  PlugFilled,
   ChevronLeft,
   ChevronRight,
   Globe,
@@ -124,8 +126,10 @@ function IbPhone() {
   return <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"><path fill="currentColor" fillRule="evenodd" d="M12.052 2h-.104c-1.68 0-3.01 0-4.052.142c-1.072.147-1.94.456-2.624 1.152s-.988 1.58-1.132 2.67C4 7.024 4 8.378 4 10.087v3.826c0 1.71 0 3.064.14 4.123c.144 1.09.448 1.974 1.132 2.67s1.552 1.005 2.624 1.152C8.937 22 10.268 22 11.948 22h.104c1.68 0 3.01 0 4.052-.142c1.072-.147 1.94-.456 2.624-1.152s.988-1.58 1.132-2.67c.14-1.06.14-2.414.14-4.123v-3.826c0-1.71 0-3.064-.14-4.123c-.144-1.09-.448-1.974-1.132-2.67s-1.552-1.005-2.624-1.152C15.063 2 13.732 2 12.052 2m-3.48 16.512a.69.69 0 0 1 .685-.698h5.486c.379 0 .686.312.686.698a.69.69 0 0 1-.686.697H9.257a.69.69 0 0 1-.686-.697" clipRule="evenodd"/></svg>
 }
 
-// Nothing of the assistant here: its 资料 and 连接应用 live in its App (owner 11-12).
+// Nothing of the assistant here: its 资料 and 连接应用 live in its App (owner 11-12). 连接应用 here is the person's own
+// connected apps, a phone row under 通用 (a computer has them in the Library's 集成).
 const NAV_ITEMS: NavItem[] = [
+  { key: 'connectors', labelKey: 'settings.nav.connectors', il: <Plug size={15} />, ib: <PlugFilled size={15} /> },
   { key: 'account', labelKey: 'settings.nav.account', il: <IlAccount />, ib: <IbAccount /> },
   { key: 'general', labelKey: 'settings.nav.general', il: <IlGeneral />, ib: <IbGeneral /> },
   { key: 'passwords', labelKey: 'settings.nav.passwords', il: <IlPermissions />, ib: <IbPermissions /> },

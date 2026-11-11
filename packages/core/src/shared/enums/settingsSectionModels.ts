@@ -3,6 +3,8 @@ export type ActiveSection =
   // live in its App, drawn over its panel (owner 11-06, 11-12「设置里面不应该有咕咕设置」). The keys stay for its own settings
   // page's inner sections and for old routes, which the shell sends to the App (`isAssistantSettingsSection`).
   | 'assistant'
+  // Also the person's own connected apps on the phone: a plain row of Settings there (no 咕咕 heading), the phone having no
+  // Library (a computer's home for them is the Library's 集成); never a Settings row on a computer.
   | 'connectors'
   | 'account'
   | 'general'
@@ -42,7 +44,7 @@ export type SettingsGroupId = 'account' | 'preferences' | 'work' | 'about'
 /**
  * The one settings (product spec): sections in groups, a caption + divider between groups.
  * 账户 · 用量 · 文件存储 · 订阅 / 通用 · 界面 · 权限 · 模型 / 会话 · 仓库 · 浏览器 · 设备 · App / 关于.
- * Nothing of the assistant: it lives in its App (owner 11-12).
+ * Nothing of the assistant: it lives in its App (owner 11-12). 连接应用 under 通用 is the person's own, and only on the phone.
  * Which of them a host shows is SettingsPanel's filter (task host, system permissions, the phone's own Apps).
  * 桌面左栏与手机「我的」读的都是这一份,❌ 各写一个顺序。
  */
@@ -52,7 +54,8 @@ export const SETTINGS_GROUPS: readonly { readonly id: SettingsGroupId; readonly 
   // 它读的是这台电脑上装着的 Harness,由会话页那一侧画 ⇒ 只在有会话页的地方出现。
   { id: 'account', sections: ['account', 'usage', 'files', 'subscriptions'] },
   // product spec:桌面与手机同一页;这台机器读不读得到真值由 SettingsPanel 那道过滤决定。
-  { id: 'preferences', sections: ['general', 'interface', 'permissions', 'passwords', 'model', 'resource-monitor'] },
+  // 连接应用:the person's own connected apps, a phone-only row (a computer has them in the Library's 集成).
+  { id: 'preferences', sections: ['general', 'connectors', 'interface', 'permissions', 'passwords', 'model', 'resource-monitor'] },
   // agent 跑起来的那几样(会话的默认行为、仓库、浏览器)挨着「设备」。App 只在手机壳上:那里的 App 由
   // 这一页自己的 App 仓管(L9)。
   { id: 'work', sections: ['sessions', 'browser', 'devices', 'apps', 'phone'] },

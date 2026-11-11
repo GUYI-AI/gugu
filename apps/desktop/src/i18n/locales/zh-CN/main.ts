@@ -522,6 +522,7 @@ export default {
     },
     "nav": {
       "about": "关于",
+      "connectors": "连接应用",
       "account": "账户",
       "apps": "App",
       "browser": "浏览器",

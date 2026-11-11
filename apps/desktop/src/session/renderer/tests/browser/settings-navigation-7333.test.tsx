@@ -28,7 +28,8 @@ vi.mock('@/lib/fileStorage', async (original) => {
 });
 const { SettingsPanel } = await import('@/components/SettingsPanel');
 
-const desktopSections = SETTINGS_SECTIONS.filter((section) => section !== 'apps' && section !== 'phone');
+// apps / phone / the person's own connected apps are phone rows (a computer keeps those in the Library's 集成).
+const desktopSections = SETTINGS_SECTIONS.filter((section) => section !== 'apps' && section !== 'phone' && section !== 'connectors');
 const nickname = '一个名称很长但仍能完整访问的验收账号';
 const user: AuthUser = { id: 'settings-7333', nickname, gugu_number: 7333, email: 'settings@example.com' };
 let harness: ReturnType<typeof createReactHarness>;

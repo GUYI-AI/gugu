@@ -880,16 +880,19 @@ describe('MainLayout', () => {
     await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'devices' } })) })
     expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="devices"]')).not.toBeNull()
   })
-  // Owner 11-12: 连接应用 is the assistant's, never in Settings — without an assistant on the phone it opens nowhere.
-  it.each(['owner','read-error'])('opens no Settings page for the phone connectors without an assistant for %s',async state => {
+  // 11-12 gap: the person's own connected apps are not the assistant's. A phone with no assistant has them as a plain row of
+  // Settings (under 偏好, SettingsPanel): a route to them (or the chat tools, part of them) opens that page; its 资料 has none.
+  it.each(['owner','read-error'])('a phone with no assistant opens its own connected apps in Settings for %s',async state => {
     platformMock.kind = 'capacitor'; platformMock.capabilities.sessionHost = false
     phoneAssistantMock.state.available = false
     connectionAuthority.mode = 'owner'; connectionAuthority.failed = state === 'read-error'
     await harness.render(createNode(MainLayout,{ user: { id: 'user-1',email: 'user@example.com',nickname: 'User' } }))
-    await act(async () => { window.dispatchEvent(new Event(UI_EVENTS.openAssistantConnectors)) })
-    await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'connectors' } })) })
-    // The phone's 「我的」 stays where it was (its own tab page): never on a page of the assistant's.
-    expect(harness.container.querySelector('[data-testid="mock-settings-panel"]:is([data-section="connectors"], [data-section="channels"], [data-section="assistant"])')).toBeNull()
+    await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'assistant' } })) })
+    expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="assistant"]')).toBeNull()
+    for (const section of ['connectors', 'channels']) {
+      await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section } })) })
+      await vi.waitFor(() => expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="connectors"]')).not.toBeNull())
+    }
     expect(layerOpen('mobile-assistant-layer')).toBe(false)
   })
   it.each(['assistant', 'connectors', 'channels'] as const)('a %s Settings route on the phone opens the assistant layer, not Settings', async (section) => {
