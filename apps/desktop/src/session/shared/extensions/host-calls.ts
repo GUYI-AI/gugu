@@ -86,6 +86,7 @@ export const HOST_CALLS = {
   'assistant.advanceSetup': { verb: 'assistantAdvanceSetup', pack: (name: string, next: string) => ({ name, next }) },
   'assistant.rename': { verb: 'assistantRename', pack: (name: string, text: string) => ({ name, text }) },
   'assistant.figure': { verb: 'assistantFigure', pack: (name: string, figure: unknown = null) => ({ name, figure }) },
+  'assistant.connect': { verb: 'assistantConnect', pack: (name: string, id: string) => ({ name, id }) },
   // #1925 (46, `chat:work`): the assistant's work, by the binding's name, and one row's conversation by the handle it came with.
   'bindings.work': { verb: 'bindingsWork', pack: (name: string) => ({ name }) },
   'bindings.openWork': { verb: 'bindingsOpenWork', pack: (name: string, handle: string) => ({ name, handle }) },

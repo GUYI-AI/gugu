@@ -842,7 +842,7 @@ export const extensionsController = createRPCController({
       const { reportConversationSurface } = await import('./app-unread-bindings');
       // 46 `intent`: the person's click in the host's row above the conversation — told once, whatever else changed.
       if (reportConversationSurface(args) || args.intent) {
-        void pushBindingSurfaces(args.extensionId, args.intent)
+        void pushBindingSurfaces(args.extensionId, args.intent ? { kind: args.intent } : undefined)
           .catch((error: unknown) => log.warn('App conversation surface could not be told to its pages:', error));
       }
       return { success: true as const };
@@ -929,8 +929,8 @@ export const extensionsController = createRPCController({
 
   /**
    * Entry switch: the window's assistant changed (or the assistant App did): the trusted assistant App's binding is brought to
-   * the account's own assistant chat by the host (assistant-app-entry.ts). Answers whether that App is the trusted one and
-   * whether #1931's ensure step is putting it in; a binding written is told as a choice in the App's permissions is.
+   * the account's own assistant chat by the host (assistant-app-entry.ts). Answers whether that App is the trusted one; a
+   * binding written is told as a choice in the App's permissions is.
    */
   syncAssistantAppEntry: async (args: { ownerId: string; chatId: string | null }) => {
     try {
@@ -945,7 +945,7 @@ export const extensionsController = createRPCController({
   },
 
   /** #1925 (44) The assistant panel's numbers as the session page read them (`useAssistantAppCounts`), for Apps to see. */
-  assistantCountsChanged: async (args: { ownerId: string; counts: unknown }) => {
+  assistantCountsChanged: async (args: { ownerId: string; counts: unknown; connectors: unknown }) => {
     try {
       const [{ assistantCountsChanged }, { deliverToPersonPages }] = await Promise.all([import('./app-assistant-binding'), import('./extension-bridge')]);
       await assistantCountsChanged(args, deliverToPersonPages);

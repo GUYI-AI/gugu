@@ -260,14 +260,15 @@ export async function setBindingSurfacePanel(
 }
 
 /**
- * #1927 (48) `intent` told once to the page drawn beside the bound conversation (`onSurface`), its panel expanded first if
- * it was collapsed: only a page the person works that `appBindingSurface` answers `bound` now — every other page, and every
- * page while the window draws nothing there, hears nothing. True: a page was told.
+ * #1927 (48) `intent` told once to the page drawn beside the bound conversation (`onSurface`), its panel first expanded and
+ * any host page over it closed (`uncover`), as for the row's `profile`: only a page the person works that
+ * `appBindingSurface` answers `bound` now — every other page, and every page while the window draws nothing there, hears
+ * nothing. True: a page was told.
  */
 export async function tellSurfaceIntent(
   extensionId: string,
-  intent: string,
-  pages: readonly { tabName: string; tabId: string; person: boolean; expand(): Promise<unknown>; tell(surface: AppBindingSurface): boolean }[],
+  intent: AppSurfaceIntent,
+  pages: readonly { tabName: string; tabId: string; person: boolean; uncover(): Promise<unknown>; tell(surface: AppBindingSurface): boolean }[],
 ): Promise<boolean> {
   const name = conversationSurfaceBinding(extensionsService().get(extensionId).manifest);
   if (!name) return false;
@@ -276,8 +277,8 @@ export async function tellSurfaceIntent(
     if (!page.person) continue;
     const surface = await appBindingSurface(extensionId, page, { name }).catch(() => null);
     if (surface?.state !== 'bound' || surface.layout !== 'side-panel') continue;
-    if (surface.panel.collapsed) await page.expand();
-    if (page.tell({ ...surface, panel: { ...surface.panel, collapsed: false }, intent })) told = true;
+    if (surface.panel.collapsed || surface.panel.hostPage) await page.uncover();
+    if (page.tell({ ...surface, panel: { ...surface.panel, collapsed: false, hostPage: false }, intent })) told = true;
   }
   return told;
 }

@@ -129,6 +129,7 @@ const gestureCalls: Record<string, Record<string, unknown>> = {
   assistantOpen: { name: 'main', screen: 'move' },
   assistantAdvanceSetup: { name: 'main', next: 'ready' },
   assistantRename: { name: 'main', text: 'Pip' },
+  assistantConnect: { name: 'main', id: 'feishu' },
   bindingsOpenWork: { name: 'main', handle: 'wAAAAAAAAAAAAAAAAAAAAAA' },
   voiceNoteStart: { name: 'main' },
   voiceNoteResume: { name: 'main' },

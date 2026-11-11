@@ -935,6 +935,8 @@ export const BRIDGE_VERBS = {
   assistantRename: { needs: 'assistant:rename', only: 'page', gesture: true },
   /** #1925 (44) The assistant's moving figure drawn by the host over the page (`gugu.assistant.figure`): what status shows, moving. */
   assistantFigure: { needs: 'assistant:status', only: 'page' },
+  /** #1925 (44) The connect step's click (`gugu.assistant.connect`): that service's connect dialog, for the assistant's home. */
+  assistantConnect: { needs: 'assistant:open', only: 'page', gesture: true },
   /**
    * #1925 (44) A short line in the host's own toast, as the host says 「更改已保存」 after a save: only from a page the person
    * works, while it is on screen and has the focus; text only (no action, link or icon), at most `APP_TOAST_MAX` characters,

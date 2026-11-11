@@ -1542,15 +1542,15 @@ export async function pushBindingSurfaces(extensionId: string, intent?: AppSurfa
 
 /**
  * #1927 (48) The page drawn beside the bound conversation is told `intent` once (`gugu.bindings.onSurface`), its panel
- * expanded first if it was collapsed — the host's run of a `page-intent` composer entry, or of its recording bar's open.
+ * expanded and uncovered first — the host's run of a `page-intent` composer entry, or of its recording bar's open.
  * Only that page, only while it is drawn there for the person (`appBindingSurface` answers `bound`). False: no page heard it.
  */
-export async function deliverSurfaceIntent(extensionId: string, intent: string): Promise<boolean> {
+export async function deliverSurfaceIntent(extensionId: string, intent: AppSurfaceIntent): Promise<boolean> {
   const { tellSurfaceIntent } = await import('./app-unread-bindings');
   if (!extensionsService().isInstalled(extensionId)) return false;
   const pages = [...bindings].filter(([, binding]) => binding.extensionId === extensionId).map(([webContentsId, binding]) => ({
     tabName: binding.tabName, tabId: binding.tabId, person: binding.operator.kind === 'person',
-    expand: () => deliver(binding, { kind: 'conversationPanel', collapsed: false }),
+    uncover: () => deliver(binding, { kind: 'conversationPanel', collapsed: false, uncover: true }),
     tell: (surface: import('@shared/extensions/unread-binding').AppBindingSurface) => {
       const contents = webContents.fromId(webContentsId);
       if (bindings.get(webContentsId) !== binding || !contents || contents.isDestroyed()) return false;
@@ -2137,7 +2137,8 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
     case 'assistantOpen':
     case 'assistantAdvanceSetup':
     case 'assistantRename':
-    case 'assistantFigure': {
+    case 'assistantFigure':
+    case 'assistantConnect': {
       // #1925 The person's own assistant, through their grant: an agent working the page is not that account.
       const page = thePage(caller);
       if (page.operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reaches none of its assistant'), { code: 'denied' });
@@ -2147,6 +2148,7 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       if (method === 'assistantOpen') return await assistant.appAssistantOpen(caller.extensionId, args, act);
       if (method === 'assistantRename') return await assistant.appAssistantRename(caller.extensionId, args, act);
       if (method === 'assistantFigure') return await assistant.appAssistantFigure(caller.extensionId, args, act);
+      if (method === 'assistantConnect') return await assistant.appAssistantConnect(caller.extensionId, args, act);
       return await assistant.appAssistantAdvanceSetup(caller.extensionId, args, act);
     }
     case 'bindingsResources':

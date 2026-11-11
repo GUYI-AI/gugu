@@ -254,6 +254,8 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
     // #1925 main checked the page is drawn beside its bound conversation: its own panel there, collapsed or expanded.
     case 'conversationPanel':
       return import('@renderer/features/apps/app-conversation-panel').then(({ setAppConversationPanelCollapsed }) => {
+        // #1927 (48) An intent is about to be told to the App's page: nothing of the host's stays over it (as the row's profile).
+        if (action.uncover) readAppHostLayerBridge()?.close(extensionId);
         setAppConversationPanelCollapsed(extensionId, action.collapsed);
       });
     // #1925 (46) Main checked the account, the grant, the assistant's chat and the row: the shell draws that task in the App's
@@ -336,6 +338,8 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       const { figure, ownerId, who } = action;
       return import('../apps/app-host-layer').then(({ setAssistantFigure, pageKey }) => setAssistantFigure(extensionId, figure && ownerId ? { figure, ownerId, who, from: pageKey(sessionId, tabId) } : null));
     }
+    case 'openAssistantConnector':
+      return import('../apps/assistant-app-counts').then(({ openAssistantConnector }) => openAssistantConnector(action.id, action.ownerId));
     case 'toast':
       // The host's own toast, as the built-in 「更改已保存」: the text alone.
       toast({ title: action.text });

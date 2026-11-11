@@ -24,13 +24,32 @@ const shell = (over: Partial<AssistantShellSnapshot> = {}): AssistantShellSnapsh
   assistant: { id: 'assistant', display_name: '咕咕', avatar: null, created_at: null },
   assistantState: 'found', ownerName: 'U', ownerId: OWNER, chatId: DM, home: null, setup: null, member: false, preparing: false, ...over,
 })
-const word = { ownerId: OWNER, trusted: true, ensuring: false }
+const word = { ownerId: OWNER, trusted: true }
 const bound = { [ASSISTANT_APP_ID]: DM }
 const APP = { kind: 'app', extensionId: ASSISTANT_APP_ID, chatId: DM }
 
 describe('decideAssistantEntry', () => {
   it('goes to the App when it is the trusted one for this account and drawn beside the account\'s own assistant chat', () => {
     expect(decideAssistantEntry({ shell: shell(), word, surfaces: bound })).toEqual(APP)
+  })
+
+  // The App is the assistant's page on every machine the person opens it from, wherever the assistant lives.
+  it.each([
+    ['on this computer', { kind: 'computer', deviceId: 'this', thisDevice: true, label: null, online: true, known: true, hostKind: 'desktop' }],
+    ['on another computer', { kind: 'computer', deviceId: 'mac-2', thisDevice: false, label: 'Mac', online: true, known: true, hostKind: 'desktop' }],
+    ['on another computer that is offline', { kind: 'computer', deviceId: 'mac-2', thisDevice: false, label: 'Mac', online: false, known: true, hostKind: 'desktop' }],
+    ['on a server', { kind: 'computer', deviceId: 'srv', thisDevice: false, label: 'srv', online: true, known: true, hostKind: 'server' }],
+    ['in the cloud', { kind: 'cloud', deviceId: 'cloud-1' }],
+    ['somewhere not read yet', null],
+  ] as const)('goes to the App with the assistant living %s', (_where, home) => {
+    expect(decideAssistantEntry({ shell: shell({ home: home as AssistantShellSnapshot['home'] }), word, surfaces: bound })).toEqual(APP)
+    installAssistantShellBridge(); installAppConversationSurfaceBridge(); installAssistantAppEntryBridge()
+    publishAssistantShell(shell({ home: home as AssistantShellSnapshot['home'] }))
+    publishAssistantAppWord(word)
+    publishAppConversationSurfaces(bound)
+    expect(readAssistantEntryTarget()).toEqual(APP)
+    publishAssistantAppWord(null)
+    publishAppConversationSurfaces({})
   })
 
   it.each([

@@ -5,12 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GUGU_APPS_REPO, type MarketCodeSource } from '@shared/extensions/market';
 import type { ExtensionOrigin } from '@shared/extensions/upgrade';
 import { ExtensionsService } from './extensions-service';
+import { RELEASE_LEGAL_FILES, signTestRelease, testKey, testTrust } from './test-support/signed-release';
 
 /**
  * Entry switch: the host binds the trusted assistant App (gugu-assistant from gugu's market repository, not a fork) to the
  * account's own assistant chat — no chooser, no consent — keeps it there through setup, a move, close and reopen, follows the
  * account, and never touches the person's own choice. Any other App, the same id from elsewhere included, gets none of it.
- * Real extensions service and manifest; the account and the database (provision marker, chat, members) are faked.
+ * Real extensions service, manifest and trust check (#1931's, signed releases included: a key made here, trusted by these tests
+ * only); the account and the database (provision marker, chat, members) are faked.
  */
 const OWNER = '11000000-0000-4000-8000-000000000001';
 const OTHER_OWNER = '22000000-0000-4000-8000-000000000002';
@@ -61,13 +63,16 @@ vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: ({ schem
   };
   return query;
 } }) }));
-const { syncAssistantAppEntry, assistantAppDistrust } = await import('./assistant-app-entry');
-const { noteAssistantAppEnsuring } = await import('./assistant-app-ensuring');
+const { syncAssistantAppEntry } = await import('./assistant-app-entry');
+const { assistantRulesDistrust, assistantRulesTrust, installedAssistantRulesProvider } = await import('../../../../assistant-rules-trust');
+const KEY = testKey('gugu-assistant-entry-test');
+const TRUST = assistantRulesTrust(testTrust(KEY, [ID]));
 
 const roots: string[] = [];
-afterEach(() => { roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })); noteAssistantAppEnsuring(false); });
+afterEach(() => { roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })); });
 
-const OFFICIAL: MarketCodeSource = { repo: GUGU_APPS_REPO, path: 'releases/gugu-assistant/0.1.0', commit: 'a'.repeat(40) };
+const official = (version = '0.1.0'): MarketCodeSource => ({ repo: GUGU_APPS_REPO, path: `releases/gugu-assistant/${version}`, commit: 'a'.repeat(40) });
+const OFFICIAL = official();
 function manifest(id = ID, version = '0.1.0', actions = ['unread', 'surface']) {
   return {
     id, name: 'Assistant', version, apiVersion: 45, defaultLocale: 'en', platforms: ['desktop'], entry: 'index.html',
@@ -80,16 +85,22 @@ function host() {
   const root = mkdtempSync(path.join(tmpdir(), 'assistant-app-entry-')); roots.push(root);
   const service = new ExtensionsService(path.join(root, 'installed'));
   db.service = service;
-  const install = (value = manifest(), origin: ExtensionOrigin = 'market', source: MarketCodeSource | null = OFFICIAL, publisher?: { id: string }) => {
+  // A market install from its release folder records the bundle signed as that release, as the market's does (`unsigned`: the
+  // source alone, as an install from before releases were checked).
+  const install = (value = manifest(), origin: ExtensionOrigin = 'market', source: MarketCodeSource | null = official(value.version), publisher?: { id: string }, unsigned = false) => {
     const dir = path.join(root, `source-${value.id}-${value.version}-${origin}`); mkdirSync(dir, { recursive: true });
     writeFileSync(path.join(dir, 'index.html'), '<p>Assistant</p>');
     writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(value));
-    service.installFromDirectory(dir, service.inspectDirectory(dir).manifestDigest, origin, publisher, undefined, source ?? undefined);
+    for (const [name, text] of Object.entries(RELEASE_LEGAL_FILES)) writeFileSync(path.join(dir, name), text);
+    const release = origin === 'market' && source && !unsigned
+      ? signTestRelease({ appDir: dir, appId: value.id, version: value.version, zip: new Uint8Array(), key: KEY }).proof : undefined;
+    service.installFromDirectory(dir, service.inspectDirectory(dir).manifestDigest, origin, publisher, undefined, source ? { ...source, ...release ? { release } : {} } : undefined);
   };
   const bound = (owner = OWNER, id = ID) => service.conversationUnreadBinding(owner, id, 'main')?.chatId ?? null;
   return { service, install, bound };
 }
-const sync = (chatId: string | null, ownerId = OWNER) => syncAssistantAppEntry({ ownerId, chatId });
+const ensureApp = vi.fn();
+const sync = (chatId: string | null, ownerId = OWNER) => syncAssistantAppEntry({ ownerId, chatId }, { trust: TRUST, ensureApp });
 
 beforeEach(() => {
   db.signedIn = OWNER;
@@ -120,6 +131,11 @@ describe('the trusted App: granted and bound by the host, nothing asked', () => 
     ['the same id from a folder', (h: ReturnType<typeof host>) => h.install(manifest(), 'folder', null, { id: STRANGER })],
     ['the same id from another market repository', (h: ReturnType<typeof host>) => h.install(manifest(), 'market', { ...OFFICIAL, repo: 'someone/gugu-apps' })],
     ['the same id from the market with no record of its source', (h: ReturnType<typeof host>) => h.install(manifest(), 'market', null)],
+    ['the same id from its release folder with no signed release recorded', (h: ReturnType<typeof host>) => h.install(manifest(), 'market', OFFICIAL, undefined, true)],
+    ['the same id whose manifest on disk is no longer the signed one', (h: ReturnType<typeof host>) => {
+      h.install();
+      writeFileSync(path.join(h.service.get(ID).rootDir, 'manifest.json'), JSON.stringify({ ...manifest(), name: 'Edited' }));
+    }],
   ])('refuses %s: no binding, no trust', async (_name, put) => {
     const h = host();
     put(h);
@@ -132,7 +148,7 @@ describe('the trusted App: granted and bound by the host, nothing asked', () => 
     h.install();
     h.install(manifest('other-app'));
     const forked = new Proxy(h.service, { get: (target, key) => key === 'variants' ? () => ({ active: 'mine', variants: [] }) : Reflect.get(target, key, target) });
-    expect(await assistantAppDistrust(forked)).toMatch(/fork "mine" is in use/);
+    expect(await assistantRulesDistrust(installedAssistantRulesProvider(forked)!, TRUST)).toMatch(/fork "mine" is in use/);
     db.service = forked;
     expect(await sync(DM)).toMatchObject({ trusted: false, outcome: 'distrusted' });
     db.service = h.service;
@@ -141,11 +157,14 @@ describe('the trusted App: granted and bound by the host, nothing asked', () => 
     expect(h.bound(OWNER, 'other-app')).toBeNull();
   });
 
-  it('answers absent, and says when the ensure step is putting it in', async () => {
+  it('answers absent while the App is not in, and asks the ensure step to put it in while the window shows the assistant', async () => {
     host();
-    expect(await sync(DM)).toMatchObject({ trusted: false, outcome: 'absent', ensuring: false });
-    noteAssistantAppEnsuring(true);
-    expect(await sync(DM)).toMatchObject({ outcome: 'absent', ensuring: true });
+    ensureApp.mockClear();
+    expect(await sync(null)).toMatchObject({ trusted: false, outcome: 'absent', changed: false });
+    expect(ensureApp).not.toHaveBeenCalled();
+    // Wherever the assistant lives (its provision is on another device here): its page is needed on this machine.
+    expect(await sync(DM)).toMatchObject({ trusted: false, outcome: 'absent', changed: false });
+    expect(ensureApp).toHaveBeenCalledOnce();
   });
 
   it.each([

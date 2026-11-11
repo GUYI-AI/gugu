@@ -20,6 +20,7 @@ import { deterministicModuleSideEffects } from './scripts/build/deterministic-mo
 import { devNodeExternals, type DependencyManifest } from './scripts/build/dev-node-externals.mjs'
 import { activateDbEnv, serverChannelForDb } from './scripts/build/build-env-preflight.mts'
 import { serverPackageIdentity } from './scripts/build/server-package-identity.mts'
+import { releaseContractBrowserCrypto } from './scripts/build/release-contract-browser-crypto.mts'
 import { vanillaExtractPlugin } from '@vanilla-extract/vite-plugin'
 import solid from 'vite-plugin-solid'
 import { emdashAliasEntries } from './apps/desktop/electron/sessionpage/emdash-aliases.mjs'
@@ -685,6 +686,8 @@ export default defineConfig(({ command }) => ({
     ),
   },
   plugins: [
+    // #1931 The release contract's `node:crypto` is release-crypto-web.ts in the page bundle (the phone verifies releases too).
+    releaseContractBrowserCrypto(),
     startupFirstFrame(isElectronTarget),
     deterministicModuleSideEffects(),
     guguEntryReachabilityPlugin(reachability, isGuguEntry),
