@@ -151,10 +151,13 @@ const PREFETCH_BEHIND = 20;
 const PREFETCH_MIN_REMAINING_MS = 3;
 
 // onReachStart fires when scrollTop is within this threshold of the canvas top,
-// or within one viewport height when that is larger, so each older page lands a
-// screen ahead of the reader. Debounced: fires once until the reader scrolls away
-// or the rendered history changes (#2403).
+// or within OLDER_PAGE_AHEAD_SCREENS viewport heights when that is larger. Debounced: fires once until the reader
+// scrolls away or the rendered history changes (#2403).
 const REACH_START_THRESHOLD_PX = 200;
+// @@@older-pages-ahead-by-screens — how much loaded history is kept above the reader, in screens. A page is a number
+// of bytes, not of rows: one page of folded exchanges can add less than a screen. Asking again after each landing
+// until this much is above keeps the reader from catching up with the top, whatever a page turns out to hold.
+const OLDER_PAGE_AHEAD_SCREENS = 3;
 
 // How long an older-page request may run before the list shows it as loading.
 const OLDER_PAGE_LOADING_DELAY_MS = 150;
@@ -598,7 +601,7 @@ export function ChatRoot(props: ChatRootProps) {
   const committedBuild = createMemo<CommittedBuild | undefined>((previous) => {
     const s = state();
     const next = projectedCommitted();
-    const ctx = segmentCtx(false);
+    const ctx = { ...segmentCtx(false), settled: true };
     const folds = committedFolds();
     const sourceWindow = commands().sourceWindow;
     // A model swap (view.setModel) starts from an empty incremental cache.
@@ -1702,7 +1705,7 @@ export function ChatRoot(props: ChatRootProps) {
     const rendered = units();
     const rows = `${rendered.length}\u0000${rendered.at(0)?.id ?? ''}`;
     if (rows !== reachStartRows) { reachStartRows = rows; reachStartFired = false; }
-    if (st <= Math.max(REACH_START_THRESHOLD_PX, shadowViewHeight)) {
+    if (st <= Math.max(REACH_START_THRESHOLD_PX, OLDER_PAGE_AHEAD_SCREENS * shadowViewHeight)) {
       if (!reachStartFired) {
         reachStartFired = true;
         showOlderPageLoading(props.onReachStart?.());

@@ -1,13 +1,14 @@
 // #6264 桌面开窗口时报「我是哪一版」:咕咕 server 的账号进程记进这个账号的数据目录(守护进程据此让它跑匹配的版本);
 // 协议在兼容窗口外 = 版本信号,留「当场换」请求。桌面自己(非 server)什么也不记。
 import fs from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MIN_CLIENT_PROTOCOL, REMOTE_PROTOCOL_VERSION } from '@gugu/core/cloud/serverMachineHealth';
 import type { DeviceRpcHandlerContext } from '@gugu/core/cloud/deviceRpcResponder';
 import { createSessionHostDeviceRpcHandlers } from './device-session-host';
-import { FrameSessionHost } from './frame-host';
+import { FrameSessionHost, type FrameSocket } from './frame-host';
 
 const saved = { mode: process.env.GUGU_SERVER_MODE, data: process.env.GUGU_TASK_HOST_USER_DATA };
 afterEach(() => {
@@ -49,6 +50,30 @@ describe('taskhost.open accepts only protocol facts from released desktop report
       expect(await open({ client: 'client0004' }, ctx)).toEqual({ result: { opened: true, protocol: REMOTE_PROTOCOL_VERSION } });
       expect(attach).toHaveBeenCalledTimes(2);
     } finally { dispose(); }
+  });
+});
+
+describe('answers to a reader that reads packed frames', () => {
+  const page = JSON.stringify({ t: 'result', id: 3, ok: true, value: { turns: Array.from({ length: 200 }, (_, seq) => ({ id: `s:turn:s${seq}`, seq, items: [{ kind: 'message', role: 'assistant', text: 'All green. ' }] })) } });
+  const pushed = JSON.stringify({ t: 'event', channel: 'sessions.changed', data: 'x'.repeat(page.length) });
+  async function sentTo(open: Record<string, unknown>) {
+    let socket!: FrameSocket;
+    const published: Array<{ frames: Array<Record<string, string>> }> = [];
+    const { handlers, dispose } = createSessionHostDeviceRpcHandlers({ host: () => ({ attach: (given: FrameSocket) => { socket = given; } }) as unknown as FrameSessionHost });
+    await handlers['taskhost.open']!({ client: 'window001', protocol: REMOTE_PROTOCOL_VERSION, ...open }, { ...ctx, publishEvent: (event: unknown) => { published.push(event as never); } } as unknown as DeviceRpcHandlerContext);
+    socket.send(page); socket.send(pushed);
+    await Promise.resolve();
+    dispose();
+    return published.flatMap(batch => batch.frames);
+  }
+  it('packs the answer and leaves a pushed event as it is', async () => {
+    const [answer, event] = await sentTo({ pack: ['gzip'] });
+    expect(gunzipSync(Buffer.from(answer!.z!, 'base64')).toString()).toBe(page);
+    expect(answer!.z!.length).toBeLessThan(page.length / 5);
+    expect(event).toEqual({ f: pushed });
+  });
+  it('sends every frame as it is to a reader that said nothing, or named a packing this machine does not have', async () => {
+    for (const open of [{}, { pack: ['zstd'] }, { pack: 'gzip' }]) expect(await sentTo(open)).toEqual([{ f: page }, { f: pushed }]);
   });
 });
 

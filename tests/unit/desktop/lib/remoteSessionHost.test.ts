@@ -1,4 +1,5 @@
 // #6264
+import { gzipSync } from 'node:zlib'
 import { describe, expect, it, vi } from 'vitest'
 
 // 线本身由注入的 deps 替掉;真的 deviceRpc 模块在测试里不求值(它一加载就挂 Supabase / 渲染层全局)。
@@ -222,10 +223,10 @@ describe('remote task host pipe over device RPC', () => {
   it('sends only the compatible protocol, without a desktop version or identity', async () => {
     const device = fakeDevice(() => ({ result: { opened: true, protocol: REMOTE_PROTOCOL_VERSION } }))
     await openRemoteSessionHostPipe('dev', { ...device.deps, protocol: async () => MIN_SERVER_PROTOCOL })({ onFrame: () => undefined, onClose: () => undefined })
-    expect(device.calls[0]).toEqual({ type: 'taskhost.open', payload: { client: 'client00000001', protocol: MIN_SERVER_PROTOCOL } })
+    expect(device.calls[0]).toEqual({ type: 'taskhost.open', payload: { client: 'client00000001', protocol: MIN_SERVER_PROTOCOL, pack: ['gzip'] } })
     const bare = fakeDevice(() => ({ result: { opened: true, protocol: REMOTE_PROTOCOL_VERSION } }))
     await openRemoteSessionHostPipe('dev', bare.deps)({ onFrame: () => undefined, onClose: () => undefined })
-    expect(bare.calls[0]).toEqual({ type: 'taskhost.open', payload: { client: 'client00000001', protocol: REMOTE_PROTOCOL_VERSION } })
+    expect(bare.calls[0]).toEqual({ type: 'taskhost.open', payload: { client: 'client00000001', protocol: REMOTE_PROTOCOL_VERSION, pack: ['gzip'] } })
   })
 
   it('一套说法(协议 6):那台机器开窗口的应答里没报协议,或报的低于 MIN_SERVER_PROTOCOL ⇒ 太旧,窗口当场关掉', async () => {
@@ -547,3 +548,45 @@ describe('device-link frame timeout recovery', () => {
     expect(closed).toHaveBeenCalledTimes(1)
   })
 })
+
+// Last in this file: the final case leaves this reader no longer asking for packed frames.
+describe('packed frames from the machine', () => {
+  const opened = () => fakeDevice(() => ({ result: { opened: true, protocol: REMOTE_PROTOCOL_VERSION } }))
+  const packed = (frame: string) => gzipSync(frame).toString('base64')
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 150))
+
+  it('asks for them, reads them, and keeps the frames in the order they came', async () => {
+    const device = opened()
+    const frames: unknown[] = []
+    await openRemoteSessionHostPipe('dev', device.deps)({ onFrame: (f) => frames.push(f), onClose: () => undefined })
+    expect(device.calls[0]!.payload.pack).toEqual(['gzip'])
+    const page = JSON.stringify({ t: 'result', id: 1, ok: true, value: '第 3 页 '.repeat(2_000) })
+    const z = packed(page)
+    device.push({ type: SESSION_HOST_FRAME_EVENT, client: 'client00000001', seq: 0, frames: [{ z: z.slice(0, 100), p: 0, n: 2 }, { z: z.slice(100), p: 1, n: 2 }, { f: 'after' }] })
+    await vi.waitFor(() => expect(frames).toEqual([page, 'after']))
+  })
+
+  it('does not hand over a frame still being unpacked when the window closes', async () => {
+    const device = opened()
+    const frames: unknown[] = []
+    const pipe = await openRemoteSessionHostPipe('dev', device.deps)({ onFrame: (f) => frames.push(f), onClose: () => undefined })
+    device.push({ type: SESSION_HOST_FRAME_EVENT, client: 'client00000001', seq: 0, frames: [{ z: packed('{"t":"result","id":1,"ok":true,"value":null}') }] })
+    pipe.close()
+    await settle()
+    expect(frames).toEqual([])
+  })
+
+  it('closes the window on one it cannot read, and opens the next without asking for them', async () => {
+    const device = opened()
+    const frames: unknown[] = []
+    const closed: string[] = []
+    await openRemoteSessionHostPipe('dev', device.deps)({ onFrame: (f) => frames.push(f), onClose: (reason) => closed.push(reason) })
+    device.push({ type: SESSION_HOST_FRAME_EVENT, client: 'client00000001', seq: 0, frames: [{ z: 'bm90IGd6aXA=' }] })
+    await vi.waitFor(() => expect(closed).toEqual(['packed frame unreadable']))
+    expect(frames).toEqual([])
+    const next = opened()
+    await openRemoteSessionHostPipe('dev', next.deps)({ onFrame: () => undefined, onClose: () => undefined })
+    expect(next.calls[0]!.payload).toEqual({ client: 'client00000001', protocol: REMOTE_PROTOCOL_VERSION })
+  })
+})
+

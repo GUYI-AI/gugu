@@ -10,10 +10,12 @@
 // 帧就是会话页宿主协议(host-ws-protocol)的帧,装进 JSON 信封(frameToCarrier);超过 PIECE_CHARS 的帧分片。
 //
 // 成本:每条连接双向各一拍心跳(20s);一条帧的往返 = 一次设备 RPC(同一微任务里的帧合成一条)。
+import { gzipSync } from 'node:zlib';
 import {
   createPieceJoiner,
   createSeqOrderer,
   SESSION_HOST_FRAME_EVENT,
+  SESSION_HOST_PACK,
   SESSION_HOST_RPC,
   toPieces,
   type SessionHostFrameBatch,
@@ -88,6 +90,17 @@ export function remoteInvokePolicyForCaller(callerId: string | undefined): Frame
   };
 }
 
+/**
+ * What is packed for a reader that asked (`taskhost.open {pack}`): an answer. A page of history is one, and the bulk
+ * of what a device link carries. Pushed events go as they are: they are small, and the link reads a terminal's output
+ * off the frame itself to tell a machine in use from one merely connected (server/device-link-host.ts `isTunnelUse`).
+ * Measured on a real 3055-turn conversation read back to its first turn: 38 folded pages, 18.7MB as written on the
+ * line, 6.1MB packed; packing all of them took 0.26 s on this side and unpacking 0.03 s on the other.
+ */
+export function packAnswer(frame: string): string | null {
+  return frame.startsWith('{"t":"result"') ? gzipSync(frame).toString('base64') : null;
+}
+
 let installed: FrameSessionHost | null = null;
 
 type HostHandler = (event: unknown, ...args: unknown[]) => unknown;
@@ -156,6 +169,7 @@ export function createSessionHostDeviceRpcHandlers(options: { host?: () => Frame
     frameHost: FrameSessionHost,
     asker: DeviceRpcAskerContext | undefined,
     callerId: string | undefined,
+    packed: boolean,
   ): void => {
     clients.get(client)?.close('replaced');
     let frameCb: ((frame: string | Uint8Array) => void) | null = null;
@@ -168,7 +182,7 @@ export function createSessionHostDeviceRpcHandlers(options: { host?: () => Frame
       flushScheduled = false;
       const frames = outbox;
       outbox = [];
-      for (const pieces of toPieces(frames)) {
+      for (const pieces of toPieces(frames, packed ? packAnswer : undefined)) {
         const batch: SessionHostFrameBatch = { client, seq: outSeq++, frames: pieces };
         void Promise.resolve(publish({ type: SESSION_HOST_FRAME_EVENT, ...batch })).catch((error: unknown) =>
           log.warn('[session-host-device] push failed', { client, error: String(error) })
@@ -239,7 +253,9 @@ export function createSessionHostDeviceRpcHandlers(options: { host?: () => Frame
           },
         };
       }
-      openClient(client, ctx.publishEvent, frameHost, ctx.asker, ctx.request?.user_id);
+      // The reader says what it can read packed; one that says nothing is sent every frame as it is.
+      const pack = (payload as { pack?: unknown }).pack;
+      openClient(client, ctx.publishEvent, frameHost, ctx.asker, ctx.request?.user_id, Array.isArray(pack) && pack.includes(SESSION_HOST_PACK));
       return { result: { opened: true, protocol: REMOTE_PROTOCOL_VERSION } };
     },
     [SESSION_HOST_RPC.frame]: (payload) => {

@@ -54,10 +54,12 @@ function SentMessageSlot(props: { message: MessageItem; ctx: () => MeasureCtx | 
   const commands = useCommands();
   const [root, setRoot] = createSignal<HTMLDivElement>();
   const mount = createMemo(() => commands().onMessageBodyMount);
-  // What a sent message says never changes: the slot is offered once per message id, and again only for another message.
-  const id = createMemo(() => props.message.id);
+  // The slot is offered once per message id and what it says, and again only for another message — or for the same one
+  // saying more: a folded page (transport-trim `folded-form`) holds a send to an agent back cut, until its turn is read again.
+  const id = createMemo(() => props.message.id), said = createMemo(() => props.message.content);
   createEffect(() => {
     const element = root(), offer = mount(), messageId = id();
+    said();
     if (!element || !offer || !messageId) return;
     const cleanup = untrack(() => offer({ root: element, message: props.message }));
     if (cleanup) onCleanup(cleanup);

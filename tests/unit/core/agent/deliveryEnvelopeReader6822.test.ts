@@ -302,3 +302,33 @@ describe('reply preview truncation', () => {
     expect(readDeliveryEnvelope(env)?.segments[0]?.facts?.replyTo?.preview).toBe('a'.repeat(139) + '🎉' + '…')
   });
 });
+
+// A transcript list is rebuilt from its messages again and again, and each rebuild asks for every envelope.
+describe('readDeliveryEnvelope reads a text once', () => {
+  const text = renderDeliveryEnvelope({ route: 'chat', from: 'Owner', fromId: 'user:owner', chat: 'dm', chatKind: 'dm',
+    messageId: 'msg:11111111-2222-4333-8444-555555555555', content: 'Hi', at: '2026-11-11T04:10:00Z' })
+
+  it('hands the same reading to everyone who asks about the same text', () => {
+    const first = readDeliveryEnvelope(text)
+    expect(first?.segments[0]?.body).toBe('Hi')
+    expect(readDeliveryEnvelope(text)).toBe(first)
+    // The same characters in another string are the same text.
+    expect(readDeliveryEnvelope(` ${text}`.slice(1))).toBe(first)
+  })
+
+  it('refuses a change to a shared reading', () => {
+    const reading = readDeliveryEnvelope(text)!
+    expect(() => { reading.segments[0]!.body = 'changed' }).toThrow(TypeError)
+    expect(() => { reading.segments.push(reading.segments[0]!) }).toThrow(TypeError)
+    expect(() => { reading.segments[0]!.facts!.from = 'someone else' }).toThrow(TypeError)
+    expect(readDeliveryEnvelope(text)?.segments[0]?.body).toBe('Hi')
+  })
+
+  it('still reads ordinary text and a broken envelope as not a delivery, each time', () => {
+    for (let round = 0; round < 2; round++) {
+      expect(readDeliveryEnvelope('just words')).toBeNull()
+      expect(readDeliveryEnvelope('  [not a batch] words')).toBeNull()
+      expect(readDeliveryEnvelope('<gugu_delivery route="chat">unclosed')).toBeNull()
+    }
+  })
+})

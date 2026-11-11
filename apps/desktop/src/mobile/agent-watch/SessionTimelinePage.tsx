@@ -304,6 +304,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           onAtBottom={nativeHistory ? nativeRecord.loadNewer : undefined}
           historyReady={boundedHistory ? windowReady : !nativeHistory || nativeRecord.record !== null} historyCursor={nativeHistory ? nativeRecord.record?.nextCursor : undefined}
           onLoadOlder={nativeHistory ? nativeRecord.loadOlder : loadOlder}
+          onHeldShown={nativeHistory ? nativeRecord.fillHeldTurn : undefined}
           onLoadToolImage={loadToolImage}
           emptyNote={answering && (phase === 'loading' || timeline.turns.length > 0) ? (
             /* 刚建的会话:记录要等 agent 写下第一行才有。那时说「正在等它开口」,❌ 不说「正在读取」——

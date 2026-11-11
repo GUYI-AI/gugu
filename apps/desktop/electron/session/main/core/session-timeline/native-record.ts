@@ -11,7 +11,7 @@ export function createNativeRecordReader(deps: {
   withTimeline<T>(id: string, read: (timeline: SessionTimeline) => T | Promise<T>): Promise<SessionTimelineResult<T>>;
 }) {
 /** ACP phone views share the desktop's committed archive, including provider-generated identities. */
-async function nativeRecord(input: { conversationId: string; before?: number; after?: number; tail?: boolean; limit?: number }): Promise<SessionTimelineResult<import('@gugu/session-core/session-record/contract').NativeSessionRecord>> {
+async function nativeRecord(input: { conversationId: string; before?: number; after?: number; tail?: boolean; limit?: number; lean?: boolean | 'folded' }): Promise<SessionTimelineResult<import('@gugu/session-core/session-record/contract').NativeSessionRecord>> {
   const row = deps.readSession(input.conversationId);
   if (!row || row.runtime !== 'acp') return { ok: false, error: { code: 'unsupported_runtime', message: '这条会话没有原生对话记录' } };
   return deps.withTimeline(input.conversationId, async () => {
@@ -23,7 +23,8 @@ async function nativeRecord(input: { conversationId: string; before?: number; af
       const first = nativeConversationUnread(input.conversationId)[0];
       const firstSeq = first?.startsWith(prefix) ? Number(/^(\d+):/.exec(first.slice(prefix.length))?.[1]) : NaN;
       const before = input.before ?? (input.after !== undefined ? input.after + limit + 1 : !input.tail && Number.isSafeInteger(firstSeq) ? firstSeq + limit : undefined);
-      const page = await getStoredHistory({ sessionId: input.conversationId, before, limit });
+      // Only a read the phone asked for by going back is an older page; opening at the unread line also names a `before`.
+      const page = await getStoredHistory({ sessionId: input.conversationId, before, limit, lean: input.lean }, { older: input.before !== undefined });
       const latest = await getStoredHistory({ sessionId: input.conversationId, limit: 1 });
       const selected = page.turns.map((turn, index) => ({ turn, origin: page.originTurnIds[index]! })).filter(({ turn }) => input.after === undefined || turn.seq > input.after);
       const turns = selected.map(one => one.turn);
