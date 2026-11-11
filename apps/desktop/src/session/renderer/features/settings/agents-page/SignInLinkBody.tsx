@@ -23,6 +23,8 @@ export type SignInCodeEntry = {
   rejected: boolean;
   /** 宿主说不清在不在要码(老版本的机器):收起时留一个「网页给了授权码?」的入口。 */
   canReveal: boolean;
+  /** CLI 要的是授权码还是 API key —— 只换说法,交上去的路是同一条。 */
+  kind: 'code' | 'key';
   onReveal(): void;
   onSubmit(code: string): void;
 };
@@ -41,13 +43,15 @@ export function SignInLinkBody({
   failure: string | null;
 }) {
   const { translate } = useSessionMessages();
+  // 要的是 API Key:网页那头不会自己回来,只有粘进来这一条路,不摆「正在等待授权」。
+  const wantsKey = codeEntry?.open === true && codeEntry.kind === 'key';
 
   if (phase === 'failed') {
     return (
       <div className="grid gap-2" data-testid="agent-sign-in-failed">
         <p className="text-sm text-foreground">{translate('agentsPage.signInNotFinished')}</p>
         {failure ? (
-          <p className="whitespace-pre-wrap break-words font-mono text-xs leading-5 text-foreground-destructive" role="alert">
+          <p className="whitespace-pre-wrap font-mono text-xs leading-5 text-foreground-destructive [overflow-wrap:anywhere]" role="alert">
             {failure}
           </p>
         ) : null}
@@ -63,7 +67,9 @@ export function SignInLinkBody({
           {translate('agentsPage.signInOpening')}
         </div>
       ) : (
-        <p className="text-sm leading-6 text-foreground-muted">{translate('agentsPage.signInWaiting')}</p>
+        <p className="text-sm leading-6 text-foreground-muted">
+          {translate(wantsKey ? 'agentsPage.signInWaitingKey' : 'agentsPage.signInWaiting')}
+        </p>
       )}
       {userCode ? (
         <div className="flex items-center justify-between rounded-lg border border-border bg-background-secondary px-3 py-2">
@@ -80,7 +86,7 @@ export function SignInLinkBody({
             <LoadingIndicator size="inline" />
             {translate('agentsPage.signInVerifying')}
           </span>
-        ) : phase === 'waiting' ? (
+        ) : phase === 'waiting' && !wantsKey ? (
           <span className="flex items-center gap-2 text-xs text-foreground-muted" role="status" data-testid="agent-sign-in-waiting">
             <LoadingIndicator size="inline" />
             {translate('agentsPage.signInWaitingShort')}
@@ -129,8 +135,9 @@ function CodeEntry({ entry, verifying }: { entry: SignInCodeEntry; verifying: bo
           autoFocus
           name="code"
           autoComplete="off"
-          placeholder={translate('agentsPage.signInCodePlaceholder')}
-          aria-label={translate('agentsPage.signInCodeLabel')}
+          type={entry.kind === 'key' ? 'password' : 'text'}
+          placeholder={translate(entry.kind === 'key' ? 'agentsPage.signInKeyPlaceholder' : 'agentsPage.signInCodePlaceholder')}
+          aria-label={translate(entry.kind === 'key' ? 'agentsPage.signInKeyLabel' : 'agentsPage.signInCodeLabel')}
           disabled={verifying}
           className="font-mono"
           data-testid="agent-sign-in-code-input"

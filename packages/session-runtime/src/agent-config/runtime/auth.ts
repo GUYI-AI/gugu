@@ -385,6 +385,7 @@ export class AgentAuthManager {
           userCode: null,
           awaitingInput: false,
           inputPromptCount: 0,
+          inputKind: 'code',
           exit: null,
         },
       }),

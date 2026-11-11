@@ -154,6 +154,17 @@ describe('终端登录不摆终端:链接 + 等待 + 填码(#2507)', () => {
     expect(q('agent-sign-in-code-input')).not.toBeNull();
   });
 
+  it('要的是 API Key ⇒ 说「创建一把粘贴到下面」,不摆「正在等待授权」', async () => {
+    await render();
+    await set({
+      status: { kind: 'unauthenticated' },
+      login: login({ awaitingInput: true, inputPromptCount: 1, inputKind: 'key' }),
+    });
+    expect((q('agent-sign-in-code-input') as HTMLInputElement).type).toBe('password');
+    expect(dom.window.document.body.textContent).toContain('agentsPage.signInWaitingKey');
+    expect(q('agent-sign-in-waiting')).toBeNull();
+  });
+
   it('登录命令失败退出 ⇒ 摆出它最后几行原话,给「重试」', async () => {
     await render();
     await set({

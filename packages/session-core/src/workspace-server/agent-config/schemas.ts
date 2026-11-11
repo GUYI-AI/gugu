@@ -212,6 +212,8 @@ export const authLoginStateSchema = z.object({
   awaitingInput: z.boolean().optional(),
   /** 第几次提示要码;比上次大 = 刚交的码没被接受、又在要。 */
   inputPromptCount: z.number().int().nonnegative().optional(),
+  /** 要的是网页给的授权码(`code`),还是一把 API key(`key`,如 opencode「Enter your API key」)。 */
+  inputKind: z.enum(['code', 'key']).optional(),
   exit: z
     .object({
       exitCode: z.number().int().nullable(),

@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from '@renderer/lib/ui/dialog';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { rendererLogger } from '@/lib/log';
 
 /**
  * #6264 登录发生在**别的机器上**(会话 / 新建框在那台机器上)。窗口还是这一个、绑定也是同一个
@@ -200,7 +201,7 @@ function LinkSignIn({
 }: StepProps) {
   const { translate } = useSessionMessages();
   const [attempt, setAttempt] = useState(0);
-  const [startError, setStartError] = useState<string | null>(null);
+  const [startFailed, setStartFailed] = useState(false);
   const [state, setState] = useState<AuthStatusModelState | null>(null);
   /** 这次登录印出来的链接;主进程那格被标成已处理后就清空了,这里留着。 */
   const [link, setLink] = useState<string | null>(null);
@@ -220,7 +221,7 @@ function LinkSignIn({
     let stop: (() => void) | null = null;
     let startedSignedOut: boolean | null = null;
     const handled = new Set<string>();
-    setStartError(null);
+    setStartFailed(false);
     setState(null);
     setLink(null);
     setRevealed(false);
@@ -279,7 +280,9 @@ function LinkSignIn({
         );
       },
       (error: unknown) => {
-        if (!disposed) setStartError(error instanceof Error ? error.message : String(error));
+        // 起不来是宿主那头的故障,原文进日志;界面只说「没有登录成功」并给「重试」。
+        rendererLogger('settings/agent-sign-in').warn({ error, providerId }, 'login start failed');
+        if (!disposed) setStartFailed(true);
       }
     );
     return () => {
@@ -304,8 +307,9 @@ function LinkSignIn({
 
   const prompts = login?.inputPromptCount ?? 0;
   const askingAgain = submittedAt !== null && login?.awaitingInput === true && prompts > submittedAt;
-  const failure = startError ?? (exit && (!exitedCleanly || exitGraceOver) ? exit.tail || null : null);
-  const failed = startError !== null || (exit !== null && (!exitedCleanly || exitGraceOver));
+  const failed = startFailed || (exit !== null && (!exitedCleanly || exitGraceOver));
+  // 登录命令自己打出来的最后几行是给人看的原话(厂商写给用户的),不是我们的内部异常。
+  const failure = !startFailed && failed ? exit?.tail || null : null;
   const phase: SignInLinkPhase = failed
     ? 'failed'
     : exit !== null || (submittedAt !== null && !askingAgain)
@@ -320,6 +324,7 @@ function LinkSignIn({
         open: login.awaitingInput === true || revealed,
         rejected: askingAgain,
         canReveal: !hostReadsPrompt || returned,
+        kind: login.inputKind ?? 'code',
         onReveal: () => setRevealed(true),
         onSubmit: (code) => {
           bindingRef.current?.sendInput(`${code}\r`);

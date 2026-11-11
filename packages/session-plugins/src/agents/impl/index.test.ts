@@ -1322,7 +1322,8 @@ describe('pluginRegistry', () => {
     expect(cliLoginArgs(codex, 'codex-login')).toEqual(['login']);
 
     const opencode = pluginRegistry.get('opencode')!;
-    expect(cliLoginArgs(opencode, 'opencode-login')).toEqual(['auth', 'login']);
+    // #2507 指定提供方:没有终端时停在挑提供方的菜单上就走不下去。
+    expect(cliLoginArgs(opencode, 'opencode-login')).toEqual(['auth', 'login', '-p', 'opencode']);
 
     // kimi / qoder —— owner 2026-08-26 实测「说了需要登录、却没把人带到能登录的地方」的两家。
     // 出处逐条写在各自的 auth.ts 抬头（kimi:MoonshotAI/kimi-code@b17bd61 的
@@ -1371,7 +1372,7 @@ describe('pluginRegistry', () => {
       codex: ['login', '--device-auth'],
       kimi: ['login'],
       kiro: ['login', '--use-device-flow'],
-      opencode: ['auth', 'login'],
+      opencode: ['auth', 'login', '-p', 'opencode'],
     });
   });
 

@@ -20,6 +20,9 @@ import '@/styles/tokens.css';
 import '@renderer/index.css';
 
 const CLAUDE = { id: 'claude', name: 'Claude Code', reading: 'installed', capabilities: { auth: { kind: 'supported', methods: [{ kind: 'cli-login', id: 'claude-login', name: 'Claude', args: ['auth', 'login'] }] } } };
+// #2507 其他家:Kimi 能在产品里登录(cli-login),Pi 没有任何登录方法。
+const KIMI = { id: 'kimi', name: 'Kimi', reading: 'installed', status: 'available', capabilities: { auth: { kind: 'supported', methods: [{ kind: 'cli-login', id: 'kimi-login', name: 'Kimi', args: ['login'] }] } } };
+const PI = { id: 'pi', name: 'Pi', reading: 'installed', status: 'available', capabilities: {} };
 // 有图标才会画到真正读主题的那一层(没图标时 AppIcon 只画一块底色)。
 const ICONS = {
   claude: { kind: 'svg', variants: [{ minSize: 0, light: '<svg viewBox="0 0 1 1"></svg>' }], plate: { color: '#D97757', mark: 'white' } },
@@ -29,7 +32,11 @@ const ICONS = {
 vi.mock('@renderer/lib/ipc', async (importOriginal) => {
   const pending = () => new Promise(() => {});
   const answers: Record<string, () => Promise<unknown>> = {
-    listManagement: async () => control.codex ? [CLAUDE, { id: 'codex', name: 'Codex', reading: 'installed', capabilities: CLAUDE.capabilities }] : [CLAUDE],
+    listManagement: async () => [
+      CLAUDE,
+      ...(control.codex ? [{ id: 'codex', name: 'Codex', reading: 'installed', capabilities: CLAUDE.capabilities }] : []),
+      ...(control.others ? [KIMI, PI] : []),
+    ],
     listIcons: async () => ICONS,
     modelCatalog: async () => ({ state: { kind: 'ready', models: [] }, refreshing: false }),
   };
@@ -58,6 +65,7 @@ const control = vi.hoisted(() => ({
   selected: '',
   connections: [] as HarnessConnection[],
   codex: false,
+  others: false,
   signedOut: false,
   expired: false,
   rejectSelect: false,
@@ -143,6 +151,7 @@ beforeEach(() => {
   control.created = null;
   control.selected = '';
   control.codex = false;
+  control.others = false;
   control.signedOut = false;
   control.expired = false;
   control.rejectSelect = false;
@@ -254,6 +263,23 @@ it.each(['claude', 'codex'])('an unsigned native %s connection can be added in p
   expect(layer.querySelector('[role="dialog"]')?.textContent).toContain(`Add a ${provider === 'codex' ? 'Codex' : 'Claude Code'} connection`);
   expect(layer.querySelector('form')?.closest('[aria-hidden="true"], [inert]')).toBeNull();
   expect(control.created).toBeNull();
+  expect(thrown).toEqual([]);
+});
+
+// #2507 owner 2026-11-12:「订阅里面说去资源库智能体里登录，但我去看现在根本没有登录选项……本来这里应该点击直接跳转的」。
+it('another agent that is not signed in gets Sign in on its row, opening the same sign-in window; one without any sign-in gets nothing pointing to the Library', async () => {
+  control.others = true;
+  control.signedOut = true;
+  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  await until('the Kimi row offers Sign in', () => !!host.querySelector('[data-testid="subscription-sign-in-kimi"]'));
+  await until('the Pi row is drawn', () => !!host.querySelector('[data-testid="subscription-row-pi"]'));
+  expect(host.querySelector('[data-testid="subscription-sign-in-pi"]')).toBeNull();
+  expect(host.textContent).not.toContain('Library');
+  const signIn = host.querySelector<HTMLButtonElement>('[data-testid="subscription-sign-in-kimi"]')!;
+  expect(signIn.textContent).toBe('Sign in');
+  signIn.click();
+  expect(modalStore.activeModalId).toBe('agentSignInModal');
+  expect(modalStore.activeModalArgs).toMatchObject({ providerId: 'kimi', steps: [{ methodId: 'kimi-login', transport: 'terminal' }] });
   expect(thrown).toEqual([]);
 });
 

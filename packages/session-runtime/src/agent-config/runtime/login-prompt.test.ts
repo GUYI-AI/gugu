@@ -1,5 +1,51 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { isInputPrompt, LoginOutputReader } from './login-prompt';
+
+/** 2026-11-12 在 MBP 上用隔离的 HOME 跑真 CLI 抓下来的原始输出(含颜色与超链接序列),逐字节。 */
+const capture = (name: string) => readFileSync(new URL(`./__fixtures__/login-output/${name}`, import.meta.url), 'utf8');
+
+/** 一个字一个字地喂:提示必须在任何切分下都判得一样。 */
+function readAll(text: string, chunk = 1): LoginOutputReader {
+  const reader = new LoginOutputReader();
+  for (let index = 0; index < text.length; index += chunk) reader.push(text.slice(index, index + chunk));
+  return reader;
+}
+
+describe('真 CLI 的登录输出(#2507)', () => {
+  it.each([1, 7, 4096])('Claude 2.1.296 `auth login`:停在「Paste code here if prompted >」⇒ 要码(每段 %i 字)', (chunk) => {
+    expect(readAll(capture('claude-2.1.296-auth-login.txt'), chunk).reading()).toMatchObject({
+      awaitingInput: true,
+      inputKind: 'code',
+      userCode: null,
+    });
+  });
+
+  it.each([1, 7, 4096])('Codex 0.160.0 `login --device-auth`:设备码在下一行、不要码(每段 %i 字)', (chunk) => {
+    expect(readAll(capture('codex-0.160.0-login-device-auth.txt'), chunk).reading()).toMatchObject({
+      userCode: 'CKN2-AUWY2',
+      awaitingInput: false,
+    });
+  });
+
+  it.each([1, 7, 4096])('Kimi 0.41.0 `login`:「paste the URL above and enter code: W1DF-PXG1」是带去网页的码,不是要码(每段 %i 字)', (chunk) => {
+    expect(readAll(capture('kimi-0.41.0-login.txt'), chunk).reading()).toMatchObject({
+      userCode: 'W1DF-PXG1',
+      awaitingInput: false,
+    });
+  });
+
+  it.each([1, 7, 4096])('OpenCode 1.18.28 `auth login -p opencode`:clack 输入框要的是 API key(每段 %i 字)', (chunk) => {
+    expect(readAll(capture('opencode-1.18.28-auth-login-p-opencode.txt'), chunk).reading()).toMatchObject({
+      awaitingInput: true,
+      inputKind: 'key',
+    });
+  });
+
+  it('OpenCode 不带 -p:停在选供应商的菜单上 ⇒ 不是要码(没有终端时这条路走不通,得在命令里指定供应商)', () => {
+    expect(readAll(capture('opencode-1.18.28-auth-login-picker.txt'), 4096).reading().awaitingInput).toBe(false);
+  });
+});
 
 describe('LoginOutputReader (#2507)', () => {
   it('opens the code box when the CLI stops on a paste-back prompt without a trailing newline', () => {
@@ -57,13 +103,21 @@ describe('LoginOutputReader (#2507)', () => {
     reader.push('\nError: token exchange failed (403)\n');
     expect(reader.tail()).toContain('Error: token exchange failed (403)');
   });
+
+  it('shortens long links in the failure lines so the reason stays visible', () => {
+    const reader = readAll(capture('claude-2.1.296-auth-login.txt'), 4096);
+    reader.push('fakecode\r\nLogin failed: Request failed with status code 400\r\n');
+    expect(reader.tail()).toContain("If the browser didn't open, visit: https://claude.com/…");
+    expect(reader.tail()).not.toContain('client_id');
+    expect(reader.tail()).toContain('Login failed: Request failed with status code 400');
+  });
 });
 
 describe('isInputPrompt', () => {
   it.each([
     'Paste code here if prompted >',
     'Enter the authorization code:',
-    'Paste the API token from the page above',
+    'Paste the authorization code here:',
     '请粘贴网页上的授权码：',
     'Verification code:',
   ])('treats "%s" as a request for a code', (line) => {
@@ -73,6 +127,8 @@ describe('isInputPrompt', () => {
   it.each([
     'Waiting for authentication...',
     'Open https://example.com/device?code=ABCD and enter the code shown',
+    'If the browser did not open, paste the URL above and enter code: W1DF-PXG1',
+    '2. Enter this one-time code (expires in 15 minutes)',
     'Logged in successfully',
   ])('does not treat "%s" as a request for a code', (line) => {
     expect(isInputPrompt(line)).toBe(false);
