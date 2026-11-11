@@ -288,6 +288,37 @@ describe('46: the host\'s row above it (`conversationSurface.header`)', () => {
     expect(headers()).toEqual({});
   });
 
+  // Real window (verify-pass1 11-b): the built-in assistant's composer said 「和咕咕聊天」; the App's said the generic
+  // 「发送消息…」. Over the account's own assistant chat (the row's word) it now says what the built-in's did, with the name
+  // the row shows. Control (the parent commit): no placeholder was passed, whatever the chat.
+  it('over the own assistant chat the composer says 「和<its name>聊天」, as the built-in\'s; any other chat keeps the ordinary one', async () => {
+    const { installAssistantShellBridge, publishAssistantShell } = await import('../../../../apps/desktop/src/lib/assistantShellBridge');
+    installAssistantShellBridge();
+    const shell = (chatId: string | null, ownerId = 'owner-a') => publishAssistantShell({ cloudAvailable: false, canHostHere: true, cloud: null, loadError: null,
+      assistant: { id: 'assistant-1', display_name: '咕咕', avatar: null, created_at: null }, assistantState: 'found', ownerName: null, ownerId, chatId, home: null, setup: null, member: null, preparing: false });
+    const placeholder = () => (state.panels.at(-1)?.chrome as { placeholder?: string } | undefined)?.placeholder;
+    await act(async () => shell(CHAT));
+    state.inventory = [headed('today')];
+    query.mockResolvedValue(answer('assistant'));
+    await render();
+    // The built-in's own wording (assistant catalog `chat.placeholder`), in the test's language.
+    expect(placeholder()).toBe('和咕咕聊天');
+    // The shell's assistant is another chat's, or another account's: the ordinary placeholder.
+    await act(async () => shell(OTHER_CHAT));
+    expect(placeholder()).toBeUndefined();
+    await act(async () => shell(CHAT, 'owner-b'));
+    expect(placeholder()).toBeUndefined();
+    // Main did not verify it as that chat: the ordinary placeholder too.
+    await act(async () => shell(CHAT));
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    query.mockResolvedValue(answer(null));
+    await render();
+    expect(drawn()).not.toBeNull();
+    expect(placeholder()).toBeUndefined();
+    await act(async () => shell(null));
+  });
+
   it('the bridge keeps a row only with a conversation it draws: never one for an App with none beside it', async () => {
     const row = { kind: 'assistant', ownerId: 'owner-a' } as const;
     await act(async () => publishAppConversationSurfaces({ today: CHAT }, { today: row, notes: row }));

@@ -1,6 +1,8 @@
 import { memo, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
+import { useTranslation } from 'react-i18next'
 import { observer } from 'mobx-react-lite'
+import '../../i18n/registerAssistantCatalog'
 import { ChatAreaPanel } from '../ChatAreaPanel'
 import type { AssistantChatHandlers } from '../assistant/AssistantChatSlot'
 import { Plus } from '../../lib/icons'
@@ -8,6 +10,7 @@ import { rendererLogger } from '../../lib/log'
 import { useReportChatOnScreen } from '../../lib/onScreenChat'
 import { installShellSlots, readShellSlots } from '../../lib/shellSlots'
 import { APP_CONVERSATION_SLOT_PREFIX, installAppConversationSurfaceBridge, noteAppConversationDrawn, publishAppConversationSurfaces } from '../../lib/appConversationSurfaceBridge'
+import { readAssistantShellBridge, type AssistantShellAssistant } from '../../lib/assistantShellBridge'
 import { useAuth } from '../../store/auth'
 import { useAppComposerActions } from './appComposerActions'
 import { useStoreValueBy } from '../../store/chatContext'
@@ -22,9 +25,10 @@ installAppConversationSurfaceBridge()
 
 const log = rendererLogger('app-conversation-surface')
 const EMPTY: ReadonlyMap<string, HTMLElement> = new Map()
-// The built-in assistant's chat face (AssistantChatSlot), without what is the assistant's own: its typing line, its composer
-// entries. The 「+」 holds what the App declares for the person's own assistant chat (API 48, appComposerActions.tsx), run
-// by the host; the composer keeps its ordinary placeholder.
+// The built-in assistant's chat face (AssistantChatSlot), without its typing line. The 「+」 holds what the App declares for
+// the person's own assistant chat (API 48, appComposerActions.tsx), run by the host. Over that chat (46's `header`, main's
+// word) the composer says what the built-in's did, 「和<its name>聊天」, the name read as the host's row reads it.
+const noop = () => () => undefined
 
 /** What one read answered for one account: each App's binding, and each App as installed when it was read. */
 type Verified = { ownerId: string; bindings: Record<string, GrantedSurfaceBinding>; installed: Record<string, string> }
@@ -125,23 +129,37 @@ export const AppConversationSurfaceHost = observer(function AppConversationSurfa
         const surface = drawable.get(key.slice(APP_CONVERSATION_SLOT_PREFIX.length))
         // Keyed by its authority too: the same conversation under a new grant, choice or installation is drawn anew.
         return surface && ownerId ? [createPortal(<AppConversationColumn chatId={surface.chatId} viewportKey={key} visible={visible} ownerId={ownerId}
-          extensionId={key.slice(APP_CONVERSATION_SLOT_PREFIX.length)} authority={surface.authority} {...handlers} />, element, `${key}#${surface.authority}`)] : []
+          extensionId={key.slice(APP_CONVERSATION_SLOT_PREFIX.length)} authority={surface.authority} ownAssistant={surface.header === 'assistant'} {...handlers} />, element, `${key}#${surface.authority}`)] : []
       })}
     </>
   )
 })
 
 /**
+ * The assistant the shell has for this account, when `chatId` is its private chat (as the host's row above it reads it,
+ * app-conversation-frame.tsx): else null — another account's, still being read, or another chat.
+ */
+function useOwnAssistant(ownerId: string, chatId: string, verified: boolean): AssistantShellAssistant | null {
+  const bridge = readAssistantShellBridge()
+  const snapshot = useSyncExternalStore(bridge?.subscribe ?? noop, () => bridge?.getSnapshot() ?? null)
+  return verified && snapshot?.ownerId === ownerId && snapshot.chatId === chatId ? snapshot.assistant : null
+}
+
+/**
  * The native conversation in the column, as the built-in assistant's (AssistantChatSlot): seen only while the slot is up and
  * the session page is on screen — the one rule read confirmation follows there. Opening the App does not confirm anything.
+ * `ownAssistant`: main verified it is the account's own assistant chat and the App declared the host's row over it (46).
  */
-const AppConversationColumn = memo(function AppConversationColumn({ chatId, viewportKey, visible, ownerId, extensionId, authority, ...handlers }: {
-  chatId: string; viewportKey: string; visible: boolean; ownerId: string; extensionId: string; authority: string
+const AppConversationColumn = memo(function AppConversationColumn({ chatId, viewportKey, visible, ownerId, extensionId, authority, ownAssistant, ...handlers }: {
+  chatId: string; viewportKey: string; visible: boolean; ownerId: string; extensionId: string; authority: string; ownAssistant: boolean
 } & AssistantChatHandlers) {
+  const { t } = useTranslation('assistant')
   useReportChatOnScreen(visible ? chatId : null)
   // A draft for this chat (`gugu.dispatch`) lands in this composer while it is drawn: the chat need not come up (MainLayout).
   useEffect(() => noteAppConversationDrawn(chatId), [chatId])
   const attachMenu = useAppComposerActions({ ownerId, extensionId, authority, chatId })
-  const chrome = useMemo(() => ({ attachGlyph: <Plus />, attachMenu }), [attachMenu])
+  const name = useOwnAssistant(ownerId, chatId, ownAssistant)?.display_name ?? null
+  const placeholder = name ? t('chat.placeholder', { name }) : undefined
+  const chrome = useMemo(() => ({ attachGlyph: <Plus />, attachMenu, ...(placeholder ? { placeholder } : {}) }), [attachMenu, placeholder])
   return <ChatAreaPanel chatId={chatId} viewportKey={viewportKey} hidden={!visible} chrome={chrome} {...handlers} />
 })
