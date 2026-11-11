@@ -133,7 +133,6 @@ export const AssistantAppCountsSource = observer(function AssistantAppCountsSour
       log.warn('Assistant counts for Apps failed', { error: String(error) });
     });
     // `counts` and `connectors` are in `key`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, ownerId]);
   return (
     <>
