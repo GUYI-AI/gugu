@@ -3,8 +3,9 @@ import { VaultError } from './contracts'
 import { decode, seal, unseal } from './crypto'
 
 /**
- * Cryptography for end-to-end vault sync (SYNC.md). Symmetric parts reuse the vault's AES-256-GCM (`crypto.ts`);
- * device key pairs and sealed shares use libsodium's X25519 sealed boxes. Nothing here touches the network or disk.
+ * Cryptography for end-to-end vault sync (SYNC.md). Symmetric parts reuse the vault's AES-256-GCM (`crypto.ts`). A
+ * device is one Ed25519 key (kept as its 32-byte seed): it signs membership with it, and sealed shares reach it through
+ * the X25519 key derived from it (libsodium's conversion). Nothing here touches the network or disk.
  */
 const loadSodium = async () => {
   const { default: sodium } = await import('libsodium-wrappers')
@@ -19,11 +20,21 @@ const plain = (bytes: Uint8Array) => new Uint8Array(bytes)
 /** Associated data: an array of fields, encoded so no field can run into the next. */
 export const aad = (...parts: (string | number)[]) => JSON.stringify(['gugu-vault-sync-v1', ...parts.map(String)])
 
+/** publicKey: the Ed25519 public key (base64). secretKey: the 32-byte seed it comes from. */
 export interface DeviceKeyPair { publicKey: string; secretKey: Buffer }
+async function pairFromSeed(seed: Buffer): Promise<DeviceKeyPair> {
+  const input = plain(seed), pair = (await loadSodium()).crypto_sign_seed_keypair(input)
+  try { return { publicKey: b64(pair.publicKey), secretKey: Buffer.from(input) } }
+  finally { pair.privateKey.fill(0); input.fill(0) }
+}
 export async function createDeviceKeyPair(): Promise<DeviceKeyPair> {
-  const pair = (await loadSodium()).crypto_box_keypair()
-  try { return { publicKey: b64(pair.publicKey), secretKey: Buffer.from(pair.privateKey) } }
-  finally { pair.privateKey.fill(0) }
+  const seed = randomBytes(KEY_BYTES)
+  try { return await pairFromSeed(seed) } finally { seed.fill(0) }
+}
+/** Runs `use` with the full Ed25519 secret key of a seed, wiped afterwards. */
+async function withSigningKey<T>(seed: Buffer, use: (sodium: Awaited<ReturnType<typeof loadSodium>>, secret: Uint8Array) => T): Promise<T> {
+  const sodium = await loadSodium(), input = plain(seed), pair = sodium.crypto_sign_seed_keypair(input)
+  try { return use(sodium, pair.privateKey) } finally { pair.privateKey.fill(0); input.fill(0) }
 }
 function publicKeyBytes(value: string): Buffer {
   const bytes = decode(value)
@@ -32,17 +43,27 @@ function publicKeyBytes(value: string): Buffer {
 }
 /** Only the holder of the matching secret key can open it. */
 export async function sealTo(publicKey: string, message: Buffer): Promise<string> {
-  const input = plain(message)
-  try { return b64((await loadSodium()).crypto_box_seal(input, plain(publicKeyBytes(publicKey)))) } finally { input.fill(0) }
+  const sodium = await loadSodium(), input = plain(message)
+  try { return b64(sodium.crypto_box_seal(input, sodium.crypto_sign_ed25519_pk_to_curve25519(plain(publicKeyBytes(publicKey))))) }
+  catch { throw new VaultError('DATA_DAMAGED') }
+  finally { input.fill(0) }
 }
 export async function openSealed(pair: DeviceKeyPair, sealed: string): Promise<Buffer> {
-  const sodium = await loadSodium()
-  const secret = plain(pair.secretKey)
-  try {
-    const opened = sodium.crypto_box_seal_open(plain(decode(sealed)), plain(publicKeyBytes(pair.publicKey)), secret)
-    try { return Buffer.from(opened) } finally { opened.fill(0) }
-  } catch { throw new VaultError('DATA_DAMAGED') }
-  finally { secret.fill(0) }
+  return withSigningKey(pair.secretKey, (sodium, signing) => {
+    const secret = sodium.crypto_sign_ed25519_sk_to_curve25519(signing)
+    try {
+      const opened = sodium.crypto_box_seal_open(plain(decode(sealed)), sodium.crypto_sign_ed25519_pk_to_curve25519(plain(publicKeyBytes(pair.publicKey))), secret)
+      try { return Buffer.from(opened) } finally { opened.fill(0) }
+    } catch { throw new VaultError('DATA_DAMAGED') }
+    finally { secret.fill(0) }
+  })
+}
+export async function sign(pair: DeviceKeyPair, text: string): Promise<string> {
+  return withSigningKey(pair.secretKey, (sodium, signing) => b64(sodium.crypto_sign_detached(plain(Buffer.from(text, 'utf8')), signing)))
+}
+export async function verifySignature(publicKey: string, text: string, signature: string): Promise<boolean> {
+  try { return (await loadSodium()).crypto_sign_verify_detached(plain(decode(signature)), plain(Buffer.from(text, 'utf8')), plain(publicKeyBytes(publicKey))) }
+  catch { return false }
 }
 
 export const randomKey = () => randomBytes(KEY_BYTES)
@@ -60,9 +81,10 @@ export function verifyCommitment(publicKey: string, deviceNonce: string, commit:
   const expected = Buffer.from(commitment(publicKey, deviceNonce), 'hex'), actual = Buffer.from(commit, 'hex')
   return actual.length === expected.length && timingSafeEqual(actual, expected)
 }
-/** The 6 digits both screens show. Depends on randomness from both sides, so a swapped key cannot be ground to match. */
-export function shortCode(publicKey: string, deviceNonce: string, approverNonce: string): string {
-  const value = digest('code', publicKeyBytes(publicKey), decode(deviceNonce), decode(approverNonce)).readBigUInt64BE(0) % 1_000_000n
+/** The 6 digits both screens show. Depends on randomness from both sides, so a swapped key cannot be ground to match;
+ * covers both keys, so the new device also knows which device vouches for it. */
+export function shortCode(publicKey: string, deviceNonce: string, approverNonce: string, approverKey: string): string {
+  const value = digest('code', publicKeyBytes(publicKey), decode(deviceNonce), decode(approverNonce), publicKeyBytes(approverKey)).readBigUInt64BE(0) % 1_000_000n
   return value.toString().padStart(6, '0')
 }
 
@@ -76,6 +98,9 @@ export function unboxed(key: Buffer, value: string, binding: string): Buffer {
   if (bytes.length < 28) throw new VaultError('DATA_DAMAGED')
   return unseal(key, { nonce: b64(bytes.subarray(0, 12)), tag: b64(bytes.subarray(12, 28)), ciphertext: b64(bytes.subarray(28)) }, binding)
 }
+
+/** What a signed membership entry says about the vault key: a hash only, from which the key cannot be learned. */
+export const keyHash = (owner: string, epoch: number, key: Buffer) => digest('vault-key', owner, String(epoch), key).toString('hex')
 
 /** The vault key travels to a device together with its epoch, so a share cannot be replayed into another epoch. */
 export async function sealVaultKey(publicKey: string, epoch: number, vaultKey: Buffer): Promise<string> {
@@ -102,17 +127,13 @@ export function normalizeRecoveryCode(input: string): string | undefined {
   const value = input.toUpperCase().replace(/[\s-]/g, '').replace(/O/g, '0').replace(/[IL]/g, '1')
   return value.length === RECOVERY_LENGTH && [...value].every(symbol => RECOVERY_ALPHABET.includes(symbol)) ? value : undefined
 }
-/** The code is a device on paper: a key pair the vault key is sealed to, and a separate proof whose SHA-256 the cloud
- * keeps to recognise the code. Neither reveals the other. */
+/** The code is a device on paper: a key the vault key is sealed to (and that signs, when the code admits a device),
+ * and a separate proof whose SHA-256 the cloud keeps to recognise the code. Neither reveals the other. */
 export async function recoveryKeys(code: string): Promise<{ pair: DeviceKeyPair; proof: string; verifier: string }> {
   const normalized = normalizeRecoveryCode(code)
   if (!normalized) throw new VaultError('RECOVERY_INVALID')
-  const seed = plain(digest('recovery-seed', normalized)), proof = digest('recovery-proof', normalized)
-  try {
-    const pair = (await loadSodium()).crypto_box_seed_keypair(seed)
-    try { return { pair: { publicKey: b64(pair.publicKey), secretKey: Buffer.from(pair.privateKey) }, proof: proof.toString('base64'),
-      verifier: createHash('sha256').update(proof).digest('hex') } }
-    finally { pair.privateKey.fill(0) }
-  } finally { seed.fill(0); proof.fill(0) }
+  const seed = digest('recovery-seed', normalized), proof = digest('recovery-proof', normalized)
+  try { return { pair: await pairFromSeed(seed), proof: proof.toString('base64'), verifier: createHash('sha256').update(proof).digest('hex') } }
+  finally { seed.fill(0); proof.fill(0) }
 }
 

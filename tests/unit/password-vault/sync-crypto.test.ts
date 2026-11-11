@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aad, boxed, commitment, createDeviceKeyPair, normalizeRecoveryCode, openSealed, openVaultKey, randomKey, randomNonce, recoveryCode, recoveryKeys, sealTo, sealVaultKey, shortCode, unboxed, verifyCommitment } from '../../../apps/desktop/electron/password-vault/sync-crypto'
+import { aad, boxed, commitment, createDeviceKeyPair, keyHash, normalizeRecoveryCode, openSealed, openVaultKey, randomKey, randomNonce, recoveryCode, recoveryKeys, sealTo, sealVaultKey, shortCode, sign, unboxed, verifyCommitment, verifySignature } from '../../../apps/desktop/electron/password-vault/sync-crypto'
 
 describe('vault sync crypto', () => {
   it('a sealed share opens only with the matching device key', async () => {
@@ -22,15 +22,28 @@ describe('vault sync crypto', () => {
     expect(verifyCommitment(swapped.publicKey, nonce, commit)).toBe(false)
     expect(verifyCommitment(device.publicKey, randomNonce(), commit)).toBe(false)
   })
-  it('both sides derive the same 6 digits; any changed input changes them', async () => {
-    const device = await createDeviceKeyPair(), deviceNonce = randomNonce(), approverNonce = randomNonce()
-    const code = shortCode(device.publicKey, deviceNonce, approverNonce)
+  it('both sides derive the same 6 digits; any changed input, the approver key included, changes them', async () => {
+    const device = await createDeviceKeyPair(), approver = await createDeviceKeyPair(), deviceNonce = randomNonce(), approverNonce = randomNonce()
+    const code = shortCode(device.publicKey, deviceNonce, approverNonce, approver.publicKey)
     expect(code).toMatch(/^\d{6}$/)
-    expect(shortCode(device.publicKey, deviceNonce, approverNonce)).toBe(code)
-    const changed = new Set([shortCode((await createDeviceKeyPair()).publicKey, deviceNonce, approverNonce),
-      shortCode(device.publicKey, randomNonce(), approverNonce), shortCode(device.publicKey, deviceNonce, randomNonce())])
-    // A collision is possible with probability 1e-6 per pair; three independent misses are what we expect.
+    expect(shortCode(device.publicKey, deviceNonce, approverNonce, approver.publicKey)).toBe(code)
+    const changed = new Set([shortCode((await createDeviceKeyPair()).publicKey, deviceNonce, approverNonce, approver.publicKey),
+      shortCode(device.publicKey, randomNonce(), approverNonce, approver.publicKey), shortCode(device.publicKey, deviceNonce, randomNonce(), approver.publicKey),
+      shortCode(device.publicKey, deviceNonce, approverNonce, (await createDeviceKeyPair()).publicKey)])
+    // A collision is possible with probability 1e-6 per pair; four independent misses are what we expect.
     expect(changed.has(code)).toBe(false)
+  })
+  it('one device key both signs and receives sealed shares', async () => {
+    const device = await createDeviceKeyPair(), other = await createDeviceKeyPair()
+    const signature = await sign(device, 'members')
+    expect(await verifySignature(device.publicKey, 'members', signature)).toBe(true)
+    expect(await verifySignature(device.publicKey, 'members!', signature)).toBe(false)
+    expect(await verifySignature(other.publicKey, 'members', signature)).toBe(false)
+    expect(await verifySignature(device.publicKey, 'members', 'not-a-signature')).toBe(false)
+    const key = randomKey()
+    expect(keyHash('owner', 1, key)).toBe(keyHash('owner', 1, Buffer.from(key)))
+    expect(new Set([keyHash('owner', 1, key), keyHash('owner', 2, key), keyHash('other', 1, key), keyHash('owner', 1, randomKey())]).size).toBe(4)
+    expect(keyHash('owner', 1, key)).not.toContain(key.toString('hex'))
   })
   it('boxes authenticate their binding', () => {
     const key = randomKey(), binding = aad('item', 'owner', 'id', 2)

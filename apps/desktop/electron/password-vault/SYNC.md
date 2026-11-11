@@ -25,8 +25,8 @@ not on a settings page; the recovery code lives in 设置 → 账户.
 - **Item key** `IK` per credential. `wrapped = AES-256-GCM(VK, IK, aad = item-key|owner|item|epoch)`.
 - **Item ciphertext** `AES-256-GCM(IK, json, aad = item|owner|item|version)`. The JSON holds origin, account, password,
   named fields and the grant list; the cloud sees only id, version, epoch and timestamps.
-- **Device key pair** X25519 (`crypto_box_keypair`, libsodium-wrappers, already a dependency). The secret never leaves
-  the device; it is stored through the platform key protector (macOS Keychain via safeStorage).
+- **Device key** one Ed25519 key (its 32-byte seed; libsodium-wrappers). It signs membership; sealed shares reach it
+  through the X25519 key derived from it. The seed never leaves the device; the platform key protector stores it.
 - **Shares** `crypto_box_seal(VK‖epoch, device_pk)` for full-scope devices; `crypto_box_seal(IK, device_pk)` per granted
   item for limited-scope devices (servers, Windows, Linux — pending owner decision 2).
 
@@ -38,7 +38,7 @@ not derived from the key alone (Bluetooth numeric-comparison shape):
 1. New device `N` registers `pk_N` and `commit = SHA-256(pk_N‖nonce_N)` (status `pending`).
 2. Approver `A` records the `pk_N` and `commit` it sees, then posts `nonce_A` (once per request).
 3. `N` records `nonce_A`, then reveals `nonce_N`. `A` checks `nonce_N` against the commitment it recorded.
-4. Both show `code = SHA-256("gugu-vault-sas-v1"‖pk_N‖nonce_N‖nonce_A) mod 10^6`. The person compares and taps 允许 on
+4. Both show `code = SHA-256("code"‖pk_N‖nonce_N‖nonce_A‖pk_A) mod 10^6` (so `N` also knows who vouches for it). The person compares and taps 允许 on
    `A`, which seals `VK` to `pk_N`. A mismatch is refused on `A`; nothing is sealed.
 
 Both sides compute the code only from what they recorded before their own nonce went out: were `A` to read the
@@ -49,7 +49,8 @@ round with fresh nonces. Each attempt then matches with probability 10⁻⁶ and
 ## Cloud (identity schema, gugu-supabase)
 
 `password_vault_heads` (epoch, revision) · `password_vault_devices` (device, pk, commit, nonces, scope, status) ·
-`password_vault_shares` · `password_vault_items` (id, version, epoch, wrapped key, ciphertext, tombstone, revision).
+`password_vault_shares` · `password_vault_items` (id, version, epoch, wrapped key, ciphertext, tombstone, revision) ·
+`password_vault_log` (signed membership entries, numbered without gaps; each lands in the same transaction as its change).
 Tables are closed to API roles; owner-checked `SECURITY DEFINER` RPCs only. Saves carry `expected_version`; a mismatch
 is refused (`40001`) and the client pulls before the person retries. Every write (each joining step included) bumps the
 head revision; clients poll it every 5 s (3 s while a code is on screen) and fetch what changed since their revision.
@@ -64,7 +65,7 @@ First sync on a device with an existing local vault uploads it (same origin + ac
 ## Recovery code
 
 A device on paper: 25 Crockford base32 symbols (~125 bits, not chosen by the person). `seed = H("recovery-seed", code)`
-gives an X25519 pair the vault key is sealed to; `proof = H("recovery-proof", code)`, and the cloud keeps only
+gives a key pair the vault key is sealed to (it also vouches for the entry that set it, and signs the one using it up); `proof = H("recovery-proof", code)`, and the cloud keeps only
 `SHA-256(proof)`. A device with the account and the proof receives the sealed key, joins as a full member, and the code
 is used up; a new one is issued and shown once. Re-keying re-seals to it; replacing or removing it re-keys, so an old
 code opens nothing. Reset is refused while a code exists. Offered once after the first saved password (skippable); kept
@@ -76,12 +77,19 @@ The removing device generates `VK'` (epoch+1), new item keys, re-encrypts every 
 that remain, in one RPC that also revokes the device. A removed device keeps whatever it already decrypted; it cannot
 read anything written afterwards.
 
+## Signed membership
+
+Every change of who holds `VK` (create, approve, re-key, recovery code set / replaced / used) appends an entry: owner,
+seq, epoch, `H(VK)`, the members with their keys and scope, the recovery key, the signer. A device accepts entry n only
+when a full member of entry n−1 (or its recovery key, which the entry then drops) signed it, and `H(VK)` changes only
+with the epoch. It starts trusting from an entry it wrote itself (creating the vault, recovering), from one its approver
+signed listing it (the key pinned with the code), or, holding only the recovery code, from the entry the code vouched
+for. Then: a `VK` whose hash is not the signed one is refused; a re-key seals only to signed members the cloud still
+lists under the same key; the recovery key comes from the log, not the cloud. A broken chain stops sync on that device
+(its local vault keeps working). Leaving the vault drops trust; joining again starts from the new approval.
+
 ## Not defended
 
-A compromised server can withhold or roll back ciphertext (availability), and can see item counts and timing. Root on a
-device that holds a key can read what that device can read.
-
-Open (2026-11-11): an **actively malicious** server can still (a) hand a device a vault key of its own, since shares are
-anonymous sealed boxes, so that device's later writes are readable; (b) list a device nobody approved, so the next
-re-key seals the new key to it. Closing both needs signed membership (devices sign approvals and re-keys; members verify
-the chain from the device that approved them). A passive leak of the database reads nothing.
+A compromised server can withhold or roll back ciphertext and log entries (availability; a recovering device trusts
+the newest entry the code vouched for), and can see item counts and timing. It cannot add a device or a key of its
+own. Root on a device that holds a key can read what that device can read. A passive leak of the database reads nothing.

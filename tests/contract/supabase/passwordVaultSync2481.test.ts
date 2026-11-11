@@ -9,25 +9,26 @@ import { VaultError, type VaultKeyProtector } from '../../../apps/desktop/electr
 import type { SyncValue } from '../../../apps/desktop/electron/password-vault/management'
 import { VaultSync, type SyncRpc, type SyncVault, type SyncView } from '../../../apps/desktop/electron/password-vault/sync'
 import * as crypto from '../../../apps/desktop/electron/password-vault/sync-crypto'
+import { parseSnapshot, writeEntry } from '../../../apps/desktop/electron/password-vault/sync-members'
 import { withContractDatabase } from './database'
 
 type Database = Parameters<Parameters<typeof withContractDatabase>[0]>[0]
 const rpc = {
-  password_vault_state: [['p_device_id', 'text'], ['p_since', 'bigint']],
+  password_vault_state: [['p_device_id', 'text'], ['p_since', 'bigint'], ['p_log_since', 'bigint']],
   password_vault_revision: [['p_device_id', 'text']],
-  password_vault_initialize: [['p_device_id', 'text'], ['p_public_key', 'text'], ['p_sealed_key', 'text']],
+  password_vault_initialize: [['p_device_id', 'text'], ['p_public_key', 'text'], ['p_sealed_key', 'text'], ['p_entry', 'jsonb']],
   password_vault_request: [['p_device_id', 'text'], ['p_public_key', 'text'], ['p_commitment', 'text']],
   password_vault_challenge: [['p_approver_device_id', 'text'], ['p_device_id', 'text'], ['p_approver_nonce', 'text']],
   password_vault_reveal: [['p_device_id', 'text'], ['p_device_nonce', 'text']],
-  password_vault_approve: [['p_approver_device_id', 'text'], ['p_device_id', 'text'], ['p_public_key', 'text'], ['p_scope', 'text'], ['p_epoch', 'integer'], ['p_shares', 'jsonb']],
+  password_vault_approve: [['p_approver_device_id', 'text'], ['p_device_id', 'text'], ['p_public_key', 'text'], ['p_scope', 'text'], ['p_epoch', 'integer'], ['p_shares', 'jsonb'], ['p_entry', 'jsonb']],
   password_vault_dismiss: [['p_caller_device_id', 'text'], ['p_device_id', 'text']],
   password_vault_refuse: [['p_caller_device_id', 'text'], ['p_device_id', 'text']],
   password_vault_save: [['p_device_id', 'text'], ['p_item_id', 'uuid'], ['p_expected_version', 'bigint'], ['p_epoch', 'integer'], ['p_wrapped_key', 'text'], ['p_ciphertext', 'text'], ['p_shares', 'jsonb']],
   password_vault_delete: [['p_device_id', 'text'], ['p_item_id', 'uuid'], ['p_expected_version', 'bigint']],
-  password_vault_rotate: [['p_device_id', 'text'], ['p_epoch', 'integer'], ['p_remove_device_ids', 'text[]'], ['p_items', 'jsonb'], ['p_shares', 'jsonb'], ['p_recovery', 'jsonb']],
-  password_vault_set_recovery: [['p_device_id', 'text'], ['p_epoch', 'integer'], ['p_public_key', 'text'], ['p_verifier', 'text'], ['p_sealed', 'text']],
+  password_vault_rotate: [['p_device_id', 'text'], ['p_epoch', 'integer'], ['p_remove_device_ids', 'text[]'], ['p_items', 'jsonb'], ['p_shares', 'jsonb'], ['p_recovery', 'jsonb'], ['p_entry', 'jsonb']],
+  password_vault_set_recovery: [['p_device_id', 'text'], ['p_epoch', 'integer'], ['p_public_key', 'text'], ['p_verifier', 'text'], ['p_sealed', 'text'], ['p_entry', 'jsonb']],
   password_vault_recovery_begin: [['p_device_id', 'text'], ['p_proof', 'text']],
-  password_vault_recover: [['p_device_id', 'text'], ['p_proof', 'text'], ['p_public_key', 'text'], ['p_epoch', 'integer'], ['p_sealed_key', 'text']],
+  password_vault_recover: [['p_device_id', 'text'], ['p_proof', 'text'], ['p_public_key', 'text'], ['p_epoch', 'integer'], ['p_sealed_key', 'text'], ['p_entry', 'jsonb']],
 } as const
 
 function rpcAs(db: Database, owner: string): SyncRpc {
@@ -239,6 +240,64 @@ describe('password vault sync between two devices of one account', () => {
       expect(await reinstalled.askAgain()).toMatchObject({ state: 'joining' })
       expect(ready(await restarted.refresh()).requests).toEqual([expect.objectContaining({ deviceId: laptopId, stage: 'new' })])
       restarted.dispose(); reinstalled.dispose()
+    } finally { await db.query('ROLLBACK') }
+  }))
+
+  it('a cloud acting on its own can neither slip in a device nor hand out a key of its own', async () => withContractDatabase(async db => {
+    await db.query('BEGIN')
+    try {
+      const owner = randomUUID(), [macId, laptopId, cloudId, spareId] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()]
+      await db.query(`INSERT INTO auth.users(id,aud,role,email,created_at,updated_at) VALUES($1,'authenticated','authenticated',$2,now(),now())`, [owner, `${owner}@vault.invalid`])
+      for (const id of [macId, laptopId, cloudId, spareId]) await db.query(`INSERT INTO identity.gugu_devices(device_id,user_id,label,hostname,platform,machine_id)
+        VALUES($1,$2,$3,'h','darwin',$4)`, [id, owner, id.slice(0, 8), `machine-${id}`])
+      const engine = (deviceId: string, vault: MemoryVault, folder = deviceId) =>
+        (vault.sync = new VaultSync({ root: join(root, folder), ownerId: owner, deviceId, keys, rpc: rpcAs(db, owner), vault, changed() {} }))
+      const macVault = new MemoryVault(), laptopVault = new MemoryVault()
+      macVault.items.set(randomUUID(), credential('https://github.com', 'me@example.com', 'canary-github'))
+      const mac = engine(macId, macVault), laptop = engine(laptopId, laptopVault)
+      await mac.refresh(); await laptop.refresh(); await mac.refresh(); await mac.challenge(laptopId); await laptop.refresh(); await mac.approve(laptopId)
+      expect(await laptop.refresh()).toMatchObject({ state: 'ready' })
+      const head = async () => parseSnapshot((await db.query<{ body: string }>('SELECT body FROM identity.password_vault_log WHERE owner_user_id=$1 ORDER BY seq DESC LIMIT 1', [owner])).rows[0]!.body)!
+      expect((await head()).members.map(member => member.id).sort()).toEqual([macId, laptopId].sort())
+      const cloud = await crypto.createDeviceKeyPair()
+
+      // An entry that adds the cloud's device under the Mac's name: both devices refuse the whole state.
+      const signed = await head()
+      const forged = await writeEntry(owner, signed, { ...signed, members: [...signed.members, { id: cloudId, key: cloud.publicKey, scope: 'full' }] }, { id: macId, pair: cloud })
+      await db.query('INSERT INTO identity.password_vault_log(owner_user_id,seq,body,signature) VALUES($1,$2,$3,$4)', [owner, forged.entry.seq, forged.entry.body, forged.entry.signature])
+      await expect(mac.refresh()).rejects.toMatchObject({ code: 'INVALID' })
+      await expect(laptop.refresh()).rejects.toMatchObject({ code: 'INVALID' })
+      await db.query('DELETE FROM identity.password_vault_log WHERE owner_user_id=$1 AND seq=$2', [owner, forged.entry.seq])
+
+      // A device the cloud approved by itself, without an entry: not listed, and a re-key never seals the new key to it.
+      await db.query(`INSERT INTO identity.password_vault_devices(owner_user_id,device_id,public_key,status,scope,approved_at) VALUES($1,$2,$3,'approved','full',now())`, [owner, cloudId, cloud.publicKey])
+      expect(ready(await mac.refresh()).devices.map(device => device.deviceId).sort()).toEqual([macId, laptopId].sort())
+      await expect(mac.remove(laptopId)).rejects.toMatchObject({ code: 'INVALID' })
+      expect((await db.query('SELECT 1 FROM identity.password_vault_shares WHERE owner_user_id=$1 AND device_id=$2', [owner, cloudId])).rows).toHaveLength(0)
+      await db.query('DELETE FROM identity.password_vault_devices WHERE owner_user_id=$1 AND device_id=$2', [owner, cloudId])
+
+      // A vault key of the cloud's own, sealed to the laptop: the laptop will not use it.
+      const share = (await db.query<{ sealed: string }>('SELECT sealed FROM identity.password_vault_shares WHERE owner_user_id=$1 AND device_id=$2 AND item_id IS NULL', [owner, laptopId])).rows[0]!
+      const laptopKey = (await db.query<{ public_key: string }>('SELECT public_key FROM identity.password_vault_devices WHERE owner_user_id=$1 AND device_id=$2', [owner, laptopId])).rows[0]!.public_key
+      await db.query('UPDATE identity.password_vault_shares SET sealed=$3 WHERE owner_user_id=$1 AND device_id=$2 AND item_id IS NULL', [owner, laptopId, await crypto.sealVaultKey(laptopKey, 1, crypto.randomKey())])
+      const restarted = engine(laptopId, laptopVault)
+      await expect(restarted.refresh()).rejects.toMatchObject({ code: 'INVALID' })
+      await expect(laptopVault.save(randomUUID(), credential('https://new.example.com', 'me', 'canary-new'))).rejects.toThrow()
+      // The refused edit schedules a pull; let it finish before the cloud is touched again.
+      await settle(); await restarted.refresh().catch(() => {})
+      await db.query('UPDATE identity.password_vault_shares SET sealed=$3 WHERE owner_user_id=$1 AND device_id=$2 AND item_id IS NULL', [owner, laptopId, share.sealed])
+      expect(await restarted.refresh()).toMatchObject({ state: 'ready' })
+
+      // The cloud knows the recovery code's public key and can seal any key to it: a device recovering with the code
+      // checks that key against what the devices signed, and does not join.
+      const { code } = await mac.createRecovery()
+      const recoveryKey = (await db.query<{ recovery_public_key: string; key_epoch: number }>('SELECT recovery_public_key, key_epoch FROM identity.password_vault_heads WHERE owner_user_id=$1', [owner])).rows[0]!
+      await db.query('UPDATE identity.password_vault_heads SET recovery_sealed=$2 WHERE owner_user_id=$1', [owner, await crypto.sealVaultKey(recoveryKey.recovery_public_key, recoveryKey.key_epoch, crypto.randomKey())])
+      const spare = engine(spareId, new MemoryVault())
+      await spare.refresh()
+      await expect(spare.recover(code)).rejects.toMatchObject({ code: 'INVALID' })
+      expect((await db.query(`SELECT 1 FROM identity.password_vault_devices WHERE owner_user_id=$1 AND device_id=$2 AND status='approved'`, [owner, spareId])).rows).toHaveLength(0)
+      mac.dispose(); laptop.dispose(); restarted.dispose(); spare.dispose()
     } finally { await db.query('ROLLBACK') }
   }))
 })
