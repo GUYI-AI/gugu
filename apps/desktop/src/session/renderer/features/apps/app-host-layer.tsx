@@ -317,7 +317,7 @@ export function AppPagePlace({ extensionId, tabKind }: { extensionId: string; ta
   const shown = !!figure && shell?.ownerId === figure.ownerId && found === (figure.who === 'assistant');
   return (
     <>
-      <div ref={anchor} className="flex min-h-0 flex-1 flex-col" data-testid="app-page-anchor">
+      <div ref={anchor} className="flex min-h-0 flex-1 flex-col" data-testid="app-page-anchor" data-app-page-anchor="">
         <ExtensionSharedSlot tabKind={tabKind} tabId="dock" />
       </div>
       {shown ? <AssistantFigureOverlay anchor={anchor} figure={figure} /> : null}

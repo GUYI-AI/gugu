@@ -94,6 +94,24 @@ describe('an App\'s main page beside its bound conversation', () => {
     expect((find('app-conversation-panel-collapse') as HTMLElement).style.pointerEvents).toBe('auto');
   });
 
+  // Real window (verify-pass1 11-b): the built-in panel is a card with rounded corners; the App's page in it was square,
+  // being drawn in the root layer, outside the card's clip. Its slot now carries the card's inside corners, which the root
+  // layer draws the page with (page-corners.ts). Control (the parent commit): no rule gave the page's slot any corners.
+  it('the page\'s place in the panel has the card\'s inside corners, from the built-in panel\'s own CSS values', async () => {
+    await act(async () => publishAppConversationSurfaces({ today: CHAT }));
+    await render();
+    const anchor = find('app-conversation-panel')!.querySelector('[data-app-page-anchor]');
+    expect(anchor?.contains(find('app-page'))).toBe(true);
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync(`${process.cwd()}/apps/desktop/src/session/renderer/features/assistant/assistant-today.css`, 'utf8');
+    const panel = /\n\.ta-panel \{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(panel).toContain('border: 1px solid var(--ta-panel-border);');
+    expect(panel).toContain('border-radius: var(--ta-radius-panel);');
+    expect(panel).toContain('overflow: hidden;');
+    expect(css).toContain('.ta-panel [data-app-page-anchor] [data-extension-slot] { border-radius: calc(var(--ta-radius-panel) - 1px); }');
+    expect(css).toMatch(/--ta-radius-panel: 20px;/);
+  });
+
   it('collapse round-trips: the frame\'s buttons, the App\'s own setPanel, remembered on this computer, told to main', async () => {
     await act(async () => publishAppConversationSurfaces({ today: CHAT }));
     await render();

@@ -11,6 +11,7 @@ import { installedExtensionsStore } from './installed-extensions-store';
 import { AppSettingsPage } from './app-settings-page';
 import { ExtensionGuestBinding, type ExtensionGuestTarget } from './extension-guest-binding';
 import { nativeAppSurfaceMetrics, observeNativeSurfaceOcclusion } from './native-app-surface';
+import { pageCorners } from './page-corners';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
 import { bindAppPageZoom } from '@/components/preview/file-content-zoom';
 import { clippedElementBox, elementBox, type ElementBox as Box } from '@/lib/elementVisibility';
@@ -452,6 +453,8 @@ export const ExtensionPage = observer(function ExtensionPage({
             box.style.top = `${clip.top}px`;
             box.style.width = `${clip.width}px`;
             box.style.height = `${clip.height}px`;
+            // Rounded where the place it is put in is rounded (the assistant panel's card): clipped as that place clips.
+            Object.assign(box.style, pageCorners(getComputedStyle(claim.element), full, clip));
             box.style.visibility = shown ? 'visible' : 'hidden';
             box.style.zIndex = ancestorsOf(claim.element).some((element) => element.hasAttribute('data-tab-fullscreen'))
               ? 'var(--z-pane-fullscreen-resident)'

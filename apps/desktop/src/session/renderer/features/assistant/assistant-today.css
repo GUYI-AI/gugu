@@ -237,6 +237,10 @@
   border-radius: var(--ta-radius-panel);
   background: var(--ta-panel-bg);
 }
+/* An App's page as this panel (AppConversationFrame): it is drawn in the root layer, outside this card's clip, and takes its
+   slot's corners (page-corners.ts) — the card's inside corners, its radius less its 1px border, as the built-in panel's
+   content was clipped. */
+.ta-panel [data-app-page-anchor] [data-extension-slot] { border-radius: calc(var(--ta-radius-panel) - 1px); }
 .ta-panel-top {
   position: relative;
   display: flex;
