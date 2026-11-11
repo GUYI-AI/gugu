@@ -667,10 +667,51 @@ export function ChatRoot(props: ChatRootProps) {
     if (!build) return;
     if (previous?.state === build.state && !build.reseed) return;
     if (previous?.state !== build.state) itemScrollGeneration++;
+    else {
+      keepReadingAnchor(previous, build);
+      const m = untrack(anchor);
+      const at = m.kind === 'anchor' ? previous.indexById.get(m.itemId) : undefined;
+      rebuiltUnder = m.kind === 'anchor' && at !== undefined && build.indexById.has(m.itemId) ? { itemId: m.itemId, top: virt.top(at) } : null;
+    }
     if (previous) snapshotInto(previous.state, previous.units);
     virt.setCount(0, () => 0);
     pendingSizeDeltas = [];
   }));
+  // @@@rebuild-moves-with-reader — where the reader's row sat before a reseeding rebuild. The count-sync effect moves
+  // the scroll offset by as much as that row moved, in the same synchronous update. Leaving it to the next frame's
+  // projection is not enough: a reader still scrolling when the page lands has an unread scroll delta, and the read
+  // phase would take the anchor again from the old offset in the new geometry, a whole page away.
+  let rebuiltUnder: { itemId: string; top: number } | null = null;
+
+  // @@@anchor-outlives-its-row — the reading anchor names the row at the top of the viewport, and a rebuild can take
+  // that row away while everything the reader sees stays: the day line above the first loaded turn moves up to an
+  // older turn of the same day when a page lands above it; a fold run is keyed again. An anchor without its row
+  // projects nothing, so the scroll offset stays where it was and the older page is drawn in place of what was being
+  // read. The outgoing geometry is still in the virtualizer here: hand the anchor to the nearest row that survives,
+  // at the same scroll position.
+  function keepReadingAnchor(previous: CommittedBuild, build: CommittedBuild): void {
+    const m = untrack(anchor);
+    if (m.kind !== 'anchor' || build.indexById.has(m.itemId)) return;
+    const from = previous.indexById.get(m.itemId);
+    if (from === undefined) return;
+    let last = from;
+    while (previous.units[last + 1]?.itemId === m.itemId) last++;
+    const survives = (i: number) => {
+      const id = previous.units[i]?.itemId;
+      return id !== undefined && build.indexById.has(id);
+    };
+    let to = last + 1;
+    while (to < previous.units.length && !survives(to)) to++;
+    if (to >= previous.units.length) {
+      to = from - 1;
+      while (to >= 0 && !survives(to)) to--;
+      if (to < 0) return;
+    }
+    const position = m.edge === 'top'
+      ? virt.top(from) + m.offset
+      : virt.top(last) + virt.size(last) - viewHeight() + padBottom() - padTop() + m.offset;
+    setAnchor({ kind: 'anchor', itemId: previous.units[to]!.itemId, edge: 'top', offset: position - virt.top(to) });
+  }
 
   /**
    * 还在跑的后台任务挂在哪(owner 2026-10-27 原型:后台那一句与「执行中」同一行)。
@@ -951,6 +992,10 @@ export function ChatRoot(props: ChatRootProps) {
       sizedActiveIds = [];
       for (let i = committedLength; i < us.length; i++) sizedActiveIds.push(us.at(i)?.id);
       refreshTotal();
+      const moved = rebuiltUnder;
+      rebuiltUnder = null;
+      const now = moved ? committedBuild()!.indexById.get(moved.itemId) : undefined;
+      if (moved && now !== undefined) shiftScrollBy(virt.top(now) - moved.top);
       // Defer projection to the write phase: projectAnchor will fire once per
       // frame (not once per row) preventing layout thrashing on streaming updates.
       needsProject = true;
@@ -1399,23 +1444,27 @@ export function ChatRoot(props: ChatRootProps) {
     if (ref < 0) return;
     let aboveDelta = 0;
     for (const [i, d] of deltas) if (i < ref) aboveDelta += d;
-    if (aboveDelta === 0) return;
+    shiftScrollBy(aboveDelta);
+  };
+
+  function shiftScrollBy(delta: number): void {
+    if (delta === 0 || !scrollEl) return;
     // 平移,不是改写:用户还没被 readPhase 读到的那段移动(live − expected)原样保留,仍会被判成用户滚动。
     const live = scrollEl.scrollTop;
     const unread = live - expectedScrollTop;
     const carried = aboveResidue;
-    writeScrollTop(live + aboveDelta + carried);
+    writeScrollTop(live + delta + carried);
     const stored = scrollEl.scrollTop;
     aboveResidue = expectedScrollTop - stored;
     expectedScrollTop = stored - unread;
-    // 平滑滚动的目标是文档坐标:上方长高,目标随之平移,否则落点差一个 aboveDelta(之后再被投影拽一下)。
+    // 平滑滚动的目标是文档坐标:上方长高,目标随之平移,否则落点差一个 delta(之后再被投影拽一下)。
     if (smoothScrolling && smoothScrollTarget !== undefined) {
-      smoothScrollTarget += aboveDelta;
+      smoothScrollTarget += delta;
       scrollEl.scrollTo({ top: smoothScrollTarget, behavior: 'smooth' });
       aboveResidue = 0;
     }
     shadowScrollTop = stored;
-  };
+  }
 
   // ── Frame scheduler — created EAGERLY (before onMount) ───────────────────
   //
@@ -1972,66 +2021,11 @@ export function ChatRoot(props: ChatRootProps) {
     }
   };
 
+  // An older page is one more rebuild of the committed tier: the rebuild reseeds the virtualizer by row identity and
+  // the reader's anchor is projected onto the new geometry in the same frame, like any other prepend or seed.
   const doLoadOlder = (turns: TranscriptTurn[]) => {
-    const el = scrollEl;
-    if (!el || turns.length === 0) return;
-
-    const t = theme();
-    // No `prevDayKey`: these turns are older than everything on screen, so the
-    // day context genuinely starts fresh here. These units only seed the
-    // virtualizer's height estimates — history.prepend() below triggers the
-    // authoritative full rebuild, which is what settles the final separator set
-    // (the old head's separator may become redundant once an older same-day
-    // turn lands above it).
-    const prependedUnits = flattenTier(turns, segmentCtx(false), SEGMENTERS, UNIT_REGISTRY);
-
-    const anchorUnitIdx = virt.findIndex(Math.max(0, el.scrollTop - padTop()));
-    const anchorId = units().at(anchorUnitIdx)?.itemId;
-    const anchorOffset = el.scrollTop - (virt.top(anchorUnitIdx) + padTop());
-
-    const loadEstimateCtx: MeasureCtx = {
-      theme: t,
-      translate: props.context.translate,
-      commands: commands(),
-      selfIdentity: props.context.selfIdentity(),
-      chatName: props.context.chatName,
-      appName: props.context.appName,
-      width: containerWidth(),
-      isCollapsed: () => false,
-      expanded: () => false,
-      caches: caches(),
-      bodySize: bodySizeOf,
-    };
-    const count = prependedUnits.length;
-    // 前插改变了所有行号;这一批的锚位由下面按 anchorId 重算,旧的逐行增量作废(行号已失效)。
-    pendingSizeDeltas = [];
-    virt.prepend(count, (i) => {
-      const unit = prependedUnits[i];
-      if (!unit) return userTopGap + 60;
-      const unitDef = UNIT_REGISTRY[unit.kind];
-      const contentH =
-        unitDef?.estimate?.(unit.data, loadEstimateCtx, unitDef.vars ?? {}) ??
-        genericEstimate(unit.data as unknown as ChatItem, loadEstimateCtx);
-      return unitReservedHeight(unit, contentH);
-    });
-
+    if (!scrollEl || turns.length === 0) return;
     state().transcript.history.prepend(turns);
-    refreshTotal();
-
-    if (anchorId !== undefined) {
-      const newUs = units();
-      let newUnitIdx = -1;
-      for (let i = 0; i < newUs.length; i++) {
-        if (newUs.at(i)?.itemId === anchorId) {
-          newUnitIdx = i;
-          break;
-        }
-      }
-      if (newUnitIdx >= 0) {
-        const newTop = virt.top(newUnitIdx) + padTop() + anchorOffset;
-        writeScrollTop(newTop);
-      }
-    }
   };
 
   // ── Snapshot / restore helpers ────────────────────────────────────────────
