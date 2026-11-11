@@ -98,23 +98,28 @@ const storedTurn = {
 };
 
 describe('#6582 runningBackgroundTaskIds', () => {
-  it('刷新已落定回合里的原生子任务进度，并合并同一读取期间的后续更新', async () => {
+  it('re-reads history when a settled turn\'s subagent card changes, not on each of its calls, and merges a change that lands during the read (#2500)', async () => {
     const { store, session } = attachedStore(readyState);
     let finish!: () => void;
     const refresh = vi.spyOn(store as unknown as Internal, '_refreshHistory')
       .mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }))
       .mockResolvedValue(undefined);
-    const child = { subagentSessionId: 'native-child', launchTurnId: 'committed-parent', status: 'running' };
+    const child = { agentId: 'child', subagentSessionId: 'native-child', launchTurnId: 'committed-parent', status: 'running' };
     session.agents.push([child]);
-    session.agents.push([{ ...child, activityVersion: 1 }]);
-    session.agents.push([{ ...child, activityVersion: 2 }]);
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(refresh).toHaveBeenCalledWith({ preserveLiveTurn: true });
+    // Its calls and its running text are in the registry; the stored turn does not change with them.
+    session.agents.push([{ ...child, activityVersion: 1, steps: [{ kind: 'read-tool-call', id: 's1', seq: 0, toolCallId: 's1', title: 'Read', status: 'done' }] }]);
+    session.agents.push([{ ...child, activityVersion: 2, output: 'so far' }]);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    // It settles while the first read is still out: one more read, after that one.
+    session.agents.push([{ ...child, status: 'completed' }]);
+    expect(refresh).toHaveBeenCalledTimes(1);
     finish();
     await Promise.resolve();
     expect(refresh).toHaveBeenCalledTimes(2);
     store.dispose();
-    session.agents.push([{ ...child, activityVersion: 3 }]);
+    session.agents.push([{ ...child, status: 'failed' }]);
     expect(refresh).toHaveBeenCalledTimes(2);
   });
 
