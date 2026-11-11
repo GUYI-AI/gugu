@@ -416,6 +416,7 @@ const enUSCoreMessages = {
   'extensions.unpinFromRail': 'Take off the left rail',
   'extensions.dockFailed': 'The left rail could not be changed',
   'extensions.turnOnInSettings': 'Switched off — turn it on in Apps',
+  'extensions.assistantPreparing': 'Getting your Gugu ready…',
   // ── extensions: cloud market versioning (#5410) ─────────────────────────
   'extensions.groupUpdate': 'Update available',
   'extensions.marketShown': '{shown} of {total} shown',
@@ -1579,6 +1580,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'extensions.unpinFromRail': '从左栏移走',
   'extensions.dockFailed': '左栏没能改动',
   'extensions.turnOnInSettings': '已停用：到「App」里启用',
+  'extensions.assistantPreparing': '正在准备你的咕咕…',
   // ── extensions: 云端市场的版本(#5410) ───────────────────────────────────
   'extensions.groupUpdate': '有更新',
   'extensions.marketShown': '已显示 {shown} / {total}',

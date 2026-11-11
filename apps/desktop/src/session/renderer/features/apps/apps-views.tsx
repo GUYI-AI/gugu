@@ -11,6 +11,7 @@ import { useAssistantEntryTarget } from '@/lib/assistantEntry';
 import { openAppInWindow } from '@renderer/features/extensions/app-dock';
 import { AppConversationFrame } from './app-conversation-frame';
 import { AppHostLayerFrame } from './app-host-layer';
+import { useAssistantPageNotHere } from './assistant-page-not-here';
 import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
 import { ExtensionsLibraryPage } from '@renderer/features/library/extensions-library-page';
@@ -161,10 +162,13 @@ const AppMainPanel = observer(function AppMainPanel() {
   // (125 10-06), and so did the line a switched-off App gets. Inline: tokens.css's `*{padding:0}` wipes utilities
   // outside the skinned shell. The assistant's page has no title there: it starts at the top, as the built-in page did.
   const assistantPage = useShownAsAssistant(params.appId, params.tab);
+  // The assistant App not here yet (restored while it is being put in, or switched off): the page says it is getting ready, never
+  // that the App is switched off, and gives way to the assistant's chat (assistant-page-not-here.ts).
+  const assistantNotHere = useAssistantPageNotHere(params.appId, !!main?.enabled);
   return (
     <div className="flex h-full min-h-0 w-full flex-col" style={assistantPage ? undefined : { paddingTop: WINDOW_CONTROL_BAR_HEIGHT_PX }} data-testid="app-page" data-assistant-page={assistantPage ? '' : undefined}>
       {!main?.enabled ? (
-        <p className="text-sm text-foreground-muted" style={{ padding: 24 }}>{translate('extensions.turnOnInSettings')}</p>
+        <p className="text-sm text-foreground-muted" style={{ padding: 24 }}>{translate(assistantNotHere ? 'extensions.assistantPreparing' : 'extensions.turnOnInSettings')}</p>
       ) : (
         <>
           {error && errorDetailsShown.has(main.kind) ? <AppErrorDetails error={error} testId="app-page-error-details" /> : null}
