@@ -19,6 +19,7 @@ export const PHONE_CAPABILITY_SUPPORT = {
   'chat:unread': 'desktop-only',
   'chat:files': 'desktop-only',
   'chat:draft': 'desktop-only',
+  'chat:surface': 'desktop-only',
   'agents:read': 'available',
   'agents:read:all': 'agent',
   'agents:read:all-machines': 'available',

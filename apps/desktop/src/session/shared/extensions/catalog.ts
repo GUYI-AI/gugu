@@ -37,6 +37,8 @@ export const CAPABILITY_RISK = {
   // The one conversation the person selected for the App, never another: its files read only, and a draft they send or not.
   'chat:files': 'medium',
   'chat:draft': 'medium',
+  // #1925 That conversation drawn by the host beside the App's page: the App sees none of it, only whether it is shown.
+  'chat:surface': 'medium',
   'agents:read': 'medium',
   // Every `:all` widens past the agents the App started — that widening is the whole point of
   // reading it as high, even for the ability that is medium in its narrow form.

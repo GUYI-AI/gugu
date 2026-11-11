@@ -51,6 +51,8 @@ export type ExtensionHostAction =
   /** `gugu.dispatch` with `draft`: into the composer of the chat (the window brings it up), or of that agent's session. */
   | { kind: 'compose'; detail: AppComposeDetail }
   | { kind: 'compose'; sessionId: string; text: string }
+  /** #1925 `gugu.bindings.setPanel`: the page's own panel beside its bound conversation, collapsed or expanded. */
+  | { kind: 'conversationPanel'; collapsed: boolean }
   /** `gugu.showMessage` / `files.openWith`: the window that shows chats does it, bringing the chat up. */
   | { kind: 'showMessage'; detail: AppShowMessageDetail }
   | { kind: 'openWith'; detail: AppOpenWithDetail }

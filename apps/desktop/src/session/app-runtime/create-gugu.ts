@@ -287,10 +287,21 @@ export function createGugu(
   }
   // Called straight through, not deferred: the preload checks the person's gesture on this very call.
   if (raw.clipboard) api.clipboard = Object.freeze({ writeText: coded(raw.clipboard.writeText) });
-  // `gugu.bindings` (`chat:unread`; `list` / `read`, 40: `chat:files`): the one conversation the person chose, by its name.
+  // `gugu.bindings` (`chat:unread`; `list` / `read`, 40: `chat:files`; `surface` / `setPanel` / `onSurface`, 41:
+  // `chat:surface`): the one conversation the person chose, by its name.
   if (raw.bindings) {
-    const { get, list, read } = raw.bindings;
-    api.bindings = Object.freeze({ get: coded(get), ...(list ? { list: coded(list) } : {}), ...(read ? { read: coded(read) } : {}) });
+    const { get, list, read, surface, setPanel, onSurface } = raw.bindings;
+    api.bindings = Object.freeze({
+      get: coded(get), ...(list ? { list: coded(list) } : {}), ...(read ? { read: coded(read) } : {}),
+      ...(surface && setPanel && onSurface ? {
+        surface: coded(surface),
+        setPanel: coded(setPanel),
+        onSurface: (listener: unknown) => {
+          if (typeof listener !== 'function') throw guguError('invalid', 'gugu.bindings.onSurface(fn) takes a function');
+          return onSurface(listener as Parameters<typeof onSurface>[0]);
+        },
+      } : {}),
+    });
   }
   // `gugu.messages` (`chat:read`): a chat's timeline or thread, and the messages holding a text or naming a file.
   if (raw.messages) api.messages = Object.freeze({ history: coded(raw.messages.history), search: coded(raw.messages.search) });

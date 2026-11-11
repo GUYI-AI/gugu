@@ -40,6 +40,7 @@ const CAPABILITY_MESSAGE = {
   'chat:unread': 'extensions.permissionsChatUnread',
   'chat:files': 'extensions.permissionsChatFiles',
   'chat:draft': 'extensions.permissionsChatDraft',
+  'chat:surface': 'extensions.permissionsChatSurface',
   'agents:read': 'extensions.permissionsAgentsRead',
   'agents:read:all': 'extensions.permissionsAgentsReadAll',
   'agents:read:all-machines': 'extensions.permissionsAgentsReadAllMachines',

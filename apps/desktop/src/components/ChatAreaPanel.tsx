@@ -95,7 +95,7 @@ interface ChatAreaPanelProps {
   openNonce?: number
   onBack?: () => void
   /** #7199「助理」App 里那块:头栏只在搜索时出现(头像、搜索、设置在 App 自己那一排),输入框「和 X 聊天」+「+」;typing = 接在消息流末尾、取代运行条的「它在处理」。 */
-  chrome?: { placeholder: string; attachGlyph: ReactNode; attachMenu?: readonly ComposerAttachAction[]; typing?: ReactNode; composerHeader?: ReactNode; hideRunningStatus?: boolean;runtimeReady?:boolean }
+  chrome?: { placeholder?: string; attachGlyph: ReactNode; attachMenu?: readonly ComposerAttachAction[]; typing?: ReactNode; composerHeader?: ReactNode; hideRunningStatus?: boolean;runtimeReady?:boolean }
   /** Block tab-strip slots for actions, title, topics and right-panel tabs; absent on standalone/phone headers. */
   blockHost?: { actions: HTMLElement | null; title: HTMLElement | null; tabs: HTMLElement | null }
   onOpenUserChat?: (target: MemberProfileChatTarget) => void; onOpenSessionpageAgentFile?: (agentUserId: string, path: string) => Promise<void>

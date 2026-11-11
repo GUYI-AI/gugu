@@ -70,6 +70,8 @@ import { PhoneMessageSearch } from '../mobile/chat/PhoneMessageSearch'
 import { AssistantShellHost } from '../components/assistant/AssistantShellHost'
 import { OwnedAgentResourcesHost } from '../components/appSlot/OwnedAgentResourcesHost'
 import { ChatSlotHost } from '../components/ChatSlotHost'
+import { AppConversationSurfaceHost } from '../components/appSlot/AppConversationSurfaceHost'
+import { appConversationSurfaceShows } from '../lib/appConversationSurfaceBridge'
 import { OfflineSessionSlotHost } from '../components/chat/OfflineSessionSlotHost'
 import { ChatListSlotHost } from '../components/ChatListSlotHost'
 import { AssistantTaskChatOpener } from '../components/assistant/AssistantTaskChatOpener'
@@ -654,7 +656,9 @@ function InnerLayout({
     const onCompose = (event: Event) => {
       const detail = (event as CustomEvent<AppComposeDetail>).detail
       if (!detail) return
-      if (openOwnedAgent(detail.chatId, undefined, {
+      // #1925 Drawn beside an App's page right now: its composer there takes the draft, nothing else comes up.
+      const besideApp = appConversationSurfaceShows(detail.chatId)
+      if (!besideApp && openOwnedAgent(detail.chatId, undefined, {
         text: [detail.text, ...(detail.refs ?? []).map(filePillText)].filter(Boolean).join('\n'),
         files: detail.images?.map(image => new File([image.bytes], image.name, { type: image.type })), append: true,
       })) { setDraftQuote(detail.chatId, null); return }
@@ -671,6 +675,7 @@ function InnerLayout({
           setDraftAttachments(chatId, [...(readChats().draftAttachments[chatId] ?? []), ...images])
         }
       }
+      if (besideApp) { placed(detail.chatId); return }
       if (bringUp(detail.chatId, placed)) {
         const chat = readChats().chats.find((candidate) => candidate.id === detail.chatId)
         focusComposerForUserEntry('quote-attached', chat?.kind === 'topic' ? chat.source_chat_id ?? undefined : detail.chatId)
@@ -1264,6 +1269,10 @@ function InnerLayout({
         /></>
       )}
       {!mobile && sessionHostAvailable && <OfflineSessionSlotHost />}
+      {/* #1925 An App's main page beside its bound conversation: the session page leaves the column, the native conversation is drawn here. */}
+      {!mobile && sessionHostAvailable && (
+        <AppConversationSurfaceHost visible={activeTab === 'tasks'} onOpenUserChat={slotOpenProfileChat} onOpenSessionpageAgentFile={handleOpenSessionpageAgentFile} />
+      )}
 
     </PhoneViewportShell>
   )

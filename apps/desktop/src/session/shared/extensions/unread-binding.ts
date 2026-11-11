@@ -5,14 +5,31 @@ import type { AppFileEntry } from './app-runtime-protocol';
  * What one conversation binding may do (#1927). `unread` is the binding itself: it is what the person chose the
  * conversation for. `files` (API 40): list and read that conversation's chat-folder files, read only. `draft` (API 40):
  * put words into that conversation's composer; the person sends them, or not. Each extra action is its own capability,
- * consented and withdrawn on its own (`BINDING_ACTION_CAPABILITY`).
+ * consented and withdrawn on its own (`BINDING_ACTION_CAPABILITY`). `surface` (API 41, #1925): the App's main page is shown
+ * beside that conversation, which the host draws natively (`contributes.conversationSurface`); the App learns only whether
+ * it is shown and whether its panel is collapsed.
  */
-export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft'] as const;
+export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'surface'] as const;
 export type ConversationBindingAction = (typeof CONVERSATION_BINDING_ACTIONS)[number];
-export const BINDING_ACTION_CAPABILITY = { unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft' } as const;
+export const BINDING_ACTION_CAPABILITY = { unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft', surface: 'chat:surface' } as const;
 /** The first App API that lets a binding declare more than `unread`. */
 export const BINDING_ACTIONS_API_VERSION = 40;
+/** The first App API of each extra action. */
+export const BINDING_ACTION_API_VERSION = { files: BINDING_ACTIONS_API_VERSION, draft: BINDING_ACTIONS_API_VERSION, surface: 41 } as const;
 export const BINDING_NAME = /^[a-z][a-z0-9-]{0,47}$/;
+
+/**
+ * Where the main page goes beside the bound conversation (#1925). One layout only: the conversation is the main column and
+ * the page is the collapsible panel on its right, the frame the built-in assistant page draws.
+ */
+export const CONVERSATION_SURFACE_PLACEMENTS = ['side-panel'] as const;
+
+/**
+ * `gugu.bindings.surface(name)` (41, `chat:surface`): whether the bound conversation is drawn beside this page now, and
+ * whether this page's panel is collapsed. `unbound` says only that it is not: no chosen conversation, the grant withdrawn,
+ * the account switched or out of it, or the page shown elsewhere. Never the chat, its messages or its people.
+ */
+export type AppBindingSurface = { name: string; state: 'unbound' } | { name: string; state: 'bound'; panel: { collapsed: boolean } };
 
 /** A stored target is host data and never part of the App's answer. */
 export const storedUnreadBindingSchema = z.strictObject({

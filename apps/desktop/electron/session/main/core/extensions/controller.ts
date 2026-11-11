@@ -25,6 +25,7 @@ import {
   setExtensionAppView,
   unbindExtensionSurfaces,
   updateExtensionSurfaceLayout,
+  pushBindingSurfaces,
 } from '@main/core/extensions/extension-bridge';
 import {
   extensionDataRoot,
@@ -804,6 +805,25 @@ export const extensionsController = createRPCController({
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
 
+  /** #1925 The window drawing an App's main page beside its bound conversation: which, for this account (host-only). */
+  conversationSurfaceBindings: async (args: { ownerId: string }) => {
+    try {
+      const { grantedSurfaceBindings } = await import('./app-unread-bindings');
+      return { success: true as const, data: { ownerId: args.ownerId, bindings: await grantedSurfaceBindings(args.ownerId) } };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
+  /** #1925 What that window draws now (null: not the conversation): the App's pages hear `gugu.bindings.onSurface`. */
+  reportConversationSurface: async (args: { extensionId: string; tabKind: string; tabId: string; shown: { chatId: string; collapsed: boolean } | null }) => {
+    try {
+      const { reportConversationSurface } = await import('./app-unread-bindings');
+      if (reportConversationSurface(args)) {
+        void pushBindingSurfaces(args.extensionId).catch((error: unknown) => log.warn('App conversation surface could not be told to its pages:', error));
+      }
+      return { success: true as const };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
   unreadBindingChoices: async (args: { extensionId: string; name: string }) => {
     try {
       const { unreadBindingChoices } = await import('./app-unread-bindings');
@@ -892,7 +912,8 @@ export const extensionsController = createRPCController({
       // Capabilities need no reload: the bridge asks for the granted set on every
       // call, so a withdrawn capability stops working on the next call either way.
       reloadExtensionSurfaces(installed.manifest.id);
-      if (args.permission === 'chat:unread') events.emit(extensionsInventoryChangedChannel, { extensionId: args.extensionId });
+      // The window's projections of the binding (rail unread, #1925 the conversation beside the page) read it again.
+      if (args.permission === 'chat:unread' || args.permission === 'chat:surface') events.emit(extensionsInventoryChangedChannel, { extensionId: args.extensionId });
       void notifyInstalledAppsChanged();
       return { success: true, data: { revoked: service.revokedPermissions(args.extensionId) } };
     } catch (error) {

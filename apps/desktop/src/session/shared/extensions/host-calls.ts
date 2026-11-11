@@ -66,6 +66,9 @@ export const HOST_CALLS = {
   // #1927 (40, `chat:files`): the bound conversation's files, named by the binding and a path there, never by a chat.
   'bindings.list': { verb: 'bindingsList', pack: (name: string, options?: Record<string, unknown>) => ({ ...options, name }) },
   'bindings.read': { verb: 'bindingsRead', pack: (name: string, path: string) => ({ name, path }) },
+  // #1925 (41, `chat:surface`): the conversation drawn beside this page — shown or not, the panel collapsed or not.
+  'bindings.surface': { verb: 'bindingsSurface', pack: (name: string) => ({ name }) },
+  'bindings.setPanel': { verb: 'bindingsSurfacePanel', pack: (name: string, options?: Record<string, unknown>) => ({ ...options, name }) },
   'messages.history': { verb: 'messagesHistory' },
   'messages.search': { verb: 'messagesSearch' },
   // The chats whoever reads is in, and one's members (`chat:read`): `{ chat }` names it.
@@ -165,6 +168,8 @@ export const HOST_EVENTS = {
   onProjectionSource: { event: 'projectionSource', only: 'program', pick: (event: Event<'projectionSource'>) => [event.event] },
   onModalFocus: { event: 'modalFocus', only: 'page', pick: (event: Event<'modalFocus'>) => [event.edge] },
   onContextChanged: { event: 'context', pick: (event: Event<'context'>) => [event.context] },
+  /** `gugu.bindings.onSurface(fn)` (41): what `bindings.surface` answers, each time it changes. */
+  'bindings.onSurface': { event: 'bindingSurface', only: 'page', pick: (event: Event<'bindingSurface'>) => [event.surface] },
   /** `gugu.files.onChanged(place, fn)` rides on it; it says files moved, never who moved them. */
   onFilesChanged: { event: 'filesChanged', pick: (event: Event<'filesChanged'>) => [event.watchId, event.change] },
   /** `gugu.files.download(file, { onProgress })` rides on it. */

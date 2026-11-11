@@ -1480,6 +1480,24 @@ export function pushContext(webContentsId: number): void {
   );
 }
 
+/**
+ * #1925 Each page of this App the person works is told what `gugu.bindings.surface` answers it now — after the window's
+ * report of what it draws beside the App's main page changed. A page elsewhere hears `unbound`.
+ */
+export async function pushBindingSurfaces(extensionId: string): Promise<void> {
+  const { appBindingSurface, conversationSurfaceBinding } = await import('./app-unread-bindings');
+  // Uninstalled meanwhile: its pages are gone with it.
+  if (!extensionsService().isInstalled(extensionId)) return;
+  const name = conversationSurfaceBinding(extensionsService().get(extensionId).manifest);
+  if (!name) return;
+  for (const [webContentsId, binding] of [...bindings]) {
+    if (binding.extensionId !== extensionId || binding.operator.kind !== 'person') continue;
+    const surface = await appBindingSurface(extensionId, binding, { name }).catch(() => ({ name, state: 'unbound' as const }));
+    const contents = webContents.fromId(webContentsId);
+    if (bindings.get(webContentsId) === binding && contents && !contents.isDestroyed()) sendEvent(contents, { type: 'bindingSurface', surface });
+  }
+}
+
 /** Re-pushes context to every open surface and background page — used when theme or language moves. */
 export function pushContextToAllSurfaces(): void {
   for (const id of bindings.keys()) pushContext(id);
@@ -1989,6 +2007,17 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       if (thePage(caller).operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reads none of it'), { code: 'denied' });
       const { appBindingList, appBindingRead } = await import('./app-unread-bindings');
       return await (method === 'bindingsList' ? appBindingList : appBindingRead)(caller.extensionId, args);
+    }
+    case 'bindingsSurface':
+    case 'bindingsSurfacePanel': {
+      // #1925 As its files (#1927): the binding is the person's, so a page an agent works hears nothing of it.
+      const page = thePage(caller);
+      if (page.operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works hears none of it'), { code: 'denied' });
+      const { appBindingSurface, setBindingSurfacePanel } = await import('./app-unread-bindings');
+      if (method === 'bindingsSurface') return await appBindingSurface(caller.extensionId, page, args);
+      return await setBindingSurfacePanel(caller.extensionId, page, args, async (collapsed) => {
+        await deliver(page, { kind: 'conversationPanel', collapsed });
+      });
     }
     case 'messagesHistory':
     case 'messagesSearch': {

@@ -102,7 +102,10 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // 40 (#1927): the one conversation binding may also declare `files` (`chat:files`: `gugu.bindings.list` / `read`, that
 // conversation's chat-folder files, read only) and `draft` (`chat:draft`: `dispatch(text, { draft: true, to: { binding } })`).
 // Still no chat id, title, member or message reaches the App.
-export const EXTENSION_API_VERSION = 40;
+// 41 (#1925): the binding may also declare `surface` (`chat:surface`) with `contributes.conversationSurface`: the App's main
+// page is drawn as the panel beside that conversation, which the host draws natively. `gugu.bindings.surface` /
+// `setPanel` / `onSurface` say only whether it is shown and whether the panel is collapsed.
+export const EXTENSION_API_VERSION = 41;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
@@ -559,6 +562,8 @@ export type ExtensionHostEvent =
   | { type: 'projection'; watchId: string; packet: import('./projection-protocol').ProjectionHostPacket }
   | { type: 'projectionSource'; event: import('./projection-protocol').ProjectionSourceEvent }
   | { type: 'context'; context: ExtensionHostContext }
+  /** #1925 What `gugu.bindings.surface(name)` would answer now, after the conversation beside the page came or went. */
+  | { type: 'bindingSurface'; surface: import('./unread-binding').AppBindingSurface }
   | { type: 'modalFocus'; edge: 'first' | 'last' }
   /**
    * The user picked something the extension declared in its manifest.
@@ -832,6 +837,12 @@ export const BRIDGE_VERBS = {
    */
   bindingsList: { needs: 'chat:files', only: 'page' },
   bindingsRead: { needs: 'chat:files', only: 'page' },
+  /**
+   * #1925 (41): whether the bound conversation is drawn beside this page now, and its panel collapsed or not — and the
+   * page collapsing or expanding its own panel. The conversation itself is the host's; nothing of it is answered.
+   */
+  bindingsSurface: { needs: 'chat:surface', only: 'page' },
+  bindingsSurfacePanel: { needs: 'chat:surface', only: 'page' },
   messagesHistory: { needs: 'chat:read' },
   messagesSearch: { needs: 'chat:read' },
   /**

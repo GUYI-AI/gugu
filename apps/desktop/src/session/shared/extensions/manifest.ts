@@ -5,7 +5,7 @@ import { networkHostAllowed } from './network-host';
 import { APP_PLATFORMS } from './app-platforms';
 import { claimTakes } from './file-openers';
 import { INSTRUCTIONS_MAX_CHARS, SUBTITLE_MAX_CHARS } from './app-listing';
-import { BINDING_ACTION_CAPABILITY, BINDING_ACTIONS_API_VERSION, BINDING_NAME, CONVERSATION_BINDING_ACTIONS } from './unread-binding';
+import { BINDING_ACTION_API_VERSION, BINDING_ACTION_CAPABILITY, BINDING_NAME, CONVERSATION_BINDING_ACTIONS, CONVERSATION_SURFACE_PLACEMENTS } from './unread-binding';
 
 /**
  * Extension (App) manifest — the `manifest.json` at the root of an
@@ -348,6 +348,9 @@ export const EXTENSION_CAPABILITIES = [
   // `{ binding }`). Each needs its binding action declared, and `chat:unread`, the binding itself.
   'chat:files',
   'chat:draft',
+  // The App's main page drawn beside that same conversation (#1925, API 41), the host's own native conversation in the main
+  // column (`contributes.conversationSurface`): the App sees none of it, only whether it is shown (`gugu.bindings.surface`).
+  'chat:surface',
   /*
    * Seeing the agents at work (behavior tab-extensions:「agent 的可见与可控」).
    *
@@ -614,6 +617,12 @@ export const extensionManifestSchema = z
     contributes: z.strictObject({
       tabs: z.array(tabContributionSchema).min(1).max(8).default([{ name: 'settings', title: 'Settings', hostPage: 'settings' }]),
       unreadSource: z.strictObject({ binding: z.string().regex(BINDING_NAME) }).optional(),
+      /**
+       * API 41 (#1925): the main page is presented beside the binding's conversation, which the host draws (its composer,
+       * streaming, voice, attachments, read state): the conversation is the main column, the page the collapsible panel on
+       * its right. Needs the binding's `surface` action and `chat:surface`; unbound or not granted, the page opens alone.
+       */
+      conversationSurface: z.strictObject({ binding: z.string().regex(BINDING_NAME), placement: z.enum(CONVERSATION_SURFACE_PLACEMENTS) }).optional(),
       mcpServers: z.array(mcpServerContributionSchema).min(1).max(4).optional(),
       /**
        * Bundle-relative folder of Agent Skills (`<skill>/SKILL.md`), handed to every agent
@@ -737,14 +746,22 @@ export const extensionManifestSchema = z
       ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: 'conversation unread bindings require apiVersion 37' });
     }
     // #1927: an extra action of the binding and its capability come together, as `unread` and `chat:unread` do.
-    for (const action of ['files', 'draft'] as const) {
+    for (const action of ['files', 'draft', 'surface'] as const) {
       const capability = BINDING_ACTION_CAPABILITY[action];
       if ((unreadBinding?.actions.includes(action) ?? false) !== declared.includes(capability)) {
         ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings'], message: `${capability} requires the conversation binding's "${action}" action, and the action requires ${capability}` });
       }
-      if (unreadBinding?.actions.includes(action) && manifest.apiVersion < BINDING_ACTIONS_API_VERSION) {
-        ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: `the conversation binding's "${action}" action requires apiVersion ${BINDING_ACTIONS_API_VERSION}` });
+      if (unreadBinding?.actions.includes(action) && manifest.apiVersion < BINDING_ACTION_API_VERSION[action]) {
+        ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: `the conversation binding's "${action}" action requires apiVersion ${BINDING_ACTION_API_VERSION[action]}` });
       }
+    }
+    // #1925: the page placed beside the conversation and the `surface` action come together, naming the one binding.
+    const surface = manifest.contributes.conversationSurface;
+    if (surface && surface.binding !== unreadBinding?.name) {
+      ctx.addIssue({ code: 'custom', path: ['contributes', 'conversationSurface'], message: 'conversationSurface must name the declared conversation binding' });
+    }
+    if (Boolean(surface) !== (unreadBinding?.actions.includes('surface') ?? false)) {
+      ctx.addIssue({ code: 'custom', path: ['contributes', 'conversationSurface'], message: 'contributes.conversationSurface requires the conversation binding\'s "surface" action, and the action requires conversationSurface' });
     }
     const byFamily = new Map<string, string>();
     for (const word of declared) {

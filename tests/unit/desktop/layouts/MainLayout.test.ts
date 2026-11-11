@@ -2,6 +2,12 @@ vi.mock('../../../../apps/desktop/src/components/appSlot/OwnedAgentResourcesHost
 const resourceHosts = vi.hoisted(() => ({ host: vi.fn(), suspend: vi.fn(), resume: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/ownedAgentResources', () => ({ hostOwnedAgentResources: resourceHosts.host, suspendOwnedAgentResources: resourceHosts.suspend, resumeOwnedAgentResources: resourceHosts.resume }))
 vi.mock('../../../../apps/desktop/src/hooks/useSessionInputOutbox', () => ({ SessionInputOutboxHost: () => null }))
+// #1925 Which chats are drawn beside an App's page right now (the host's own answer is AppConversationSurfaceHost.test.tsx's).
+const besideApp = vi.hoisted(() => new Set<string>())
+vi.mock('../../../../apps/desktop/src/lib/appConversationSurfaceBridge', async (original) => ({
+  ...await original<typeof import('../../../../apps/desktop/src/lib/appConversationSurfaceBridge')>(),
+  appConversationSurfaceShows: (chatId: string) => besideApp.has(chatId),
+}))
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs'
 import postcss from 'postcss'
@@ -1216,6 +1222,32 @@ it.each(['group', 'topic', 'owned', 'assistant'] as const)('places an annotated 
   expect(chatStoreMock.setDraftAttachments).toHaveBeenCalledWith(target, [expect.objectContaining({ file: expect.objectContaining({ name: 'edited.png', type: 'image/png' }) })])
   if (kind === 'topic') expect(drainTopicSplitRequest(parent)).toMatchObject({ chatId: target })
   if (kind === 'assistant') await act(async () => publishAssistantShell({ assistant: null, chatId: null } as never))
+})
+
+// #1925 A `{ binding }` draft reaches main's `draftInChat` as a draft into the bound chat: drawn beside the App's page, that
+// composer takes it and the person stays on the App's page. Control: the same draft, not drawn there, brings the chat up.
+it.each(['group', 'owned'] as const)('a draft for a %s conversation drawn beside an App\'s page lands in that composer; nothing else comes up', async kind => {
+  const target = '0b1e7c1a-0000-4000-8000-000000000003'
+  chatStoreMock.activeChatId = 'other-chat'
+  chatStoreMock.chats = [{ id: target, kind: kind === 'owned' ? 'dm' : 'group', peer_user_id: kind === 'owned' ? 'agent' : null }] as never
+  if (kind === 'owned') taskRoute.contacts = [{ id: 'agent', type: 'agent', owner_user_id: 'user-1' }]
+  const navigate = vi.spyOn(appState.navigation, 'navigate').mockImplementation(() => undefined)
+  try {
+    besideApp.add(target)
+    await renderMainLayoutWithToast()
+    await act(async () => { window.dispatchEvent(new CustomEvent(APP_COMPOSE_EVENT, { detail: { chatId: target, text: 'What is first today?\n' } })) })
+    expect(chatStoreMock.writeDraft).toHaveBeenCalledExactlyOnceWith(target, { at: 'end', text: 'What is first today?\n' })
+    expect(chatStoreMock.setDraftQuote).not.toHaveBeenCalled()
+    expect(chatStoreMock.setActiveChatId).not.toHaveBeenCalled()
+    expect(sessionPageViewRequests.openChat).not.toHaveBeenCalled()
+    expect(navigate).not.toHaveBeenCalled()
+    besideApp.clear()
+    chatStoreMock.writeDraft.mockClear()
+    await act(async () => { window.dispatchEvent(new CustomEvent(APP_COMPOSE_EVENT, { detail: { chatId: target, text: 'again' } })) })
+    // The owned agent's own page takes it (its composer, `setDraftQuote`); a group comes up in the chats.
+    if (kind === 'owned') expect(chatStoreMock.setDraftQuote).toHaveBeenCalledWith(target, null)
+    else expect(chatStoreMock.setActiveChatId.mock.calls.length + sessionPageViewRequests.openChat.mock.calls.length).toBeGreaterThan(0)
+  } finally { besideApp.clear(); navigate.mockRestore() }
 })
 
 it.each(['group', 'topic'] as const)('keeps a private annotated image private in its %s destination draft', async kind => {

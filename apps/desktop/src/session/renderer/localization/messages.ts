@@ -278,6 +278,8 @@ const enUSCoreMessages = {
   // #1927: the same conversation as `chat:unread`'s, never another.
   'extensions.permissionsChatFiles': 'Read only the files of the conversation you select, without changing them',
   'extensions.permissionsChatDraft': 'Put a draft into the conversation you select; only you can send it',
+  // #1925: gugu draws that conversation beside the App's page; the App sees none of it.
+  'extensions.permissionsChatSurface': 'Show its page beside the conversation you select; the App cannot see that conversation',
   'extensions.unreadBindingChoose': 'Choose conversation',
   'extensions.unreadBindingSearch': 'Search conversations',
   'extensions.unreadBindingEmpty': 'No available conversations',
@@ -1455,6 +1457,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'extensions.permissionsChatUnread': '只获知你选定的一条会话是否有未读消息',
   'extensions.permissionsChatFiles': '只读取你选定的那条会话里的文件，不改动',
   'extensions.permissionsChatDraft': '只往你选定的那条会话的输入框里放草稿，发不发由你',
+  'extensions.permissionsChatSurface': '把它的页面摆在你选定的那条会话旁边，它看不到这条会话',
   'extensions.unreadBindingChoose': '选择会话',
   'extensions.unreadBindingSearch': '搜索会话',
   'extensions.unreadBindingEmpty': '暂无可选会话',

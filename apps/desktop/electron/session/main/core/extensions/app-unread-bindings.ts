@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { fetchInChunks } from '@gugu/core/shared/inChunks';
 import { userIdFromSupabaseAccessToken } from '@gugu/core';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
-import { boundEntryOf, boundPathOf, type AppBoundList, type AppBoundRead, type AppUnreadBinding, type StoredUnreadBinding } from '@shared/extensions/unread-binding';
+import { boundEntryOf, boundPathOf, type AppBindingSurface, type AppBoundList, type AppBoundRead, type AppUnreadBinding, type StoredUnreadBinding } from '@shared/extensions/unread-binding';
+import type { ExtensionManifest } from '@shared/extensions/manifest';
 import { DEFAULT_TEXT_MAX_BYTES, type AppComposeDetail } from '@shared/extensions/app-runtime-protocol';
 import { dispatchCallOf } from '@shared/extensions/app-dispatch-core';
 import { currentAccountAccessToken } from './account-token';
@@ -54,7 +55,7 @@ function argsOf<T extends z.ZodType>(schema: T, input: unknown): z.infer<T> {
  * and the same selection — and is called after every wait; the last call of each verb has no wait after it. Null: nobody
  * has chosen the conversation yet.
  */
-async function boundConversation(extensionId: string, name: string, action: 'files' | 'draft') {
+async function boundConversation(extensionId: string, name: string, action: 'files' | 'draft' | 'surface') {
   const { token, ownerId } = await account();
   const before = extensionsService().conversationBinding(ownerId, extensionId, name, action);
   if (!before) return null;
@@ -145,6 +146,82 @@ export async function draftIntoBoundConversation(
   return { to: { binding: name } };
 }
 
+/**
+ * #1925 What the host window says it draws now: an App's main page as the panel beside this conversation, the panel
+ * collapsed or not (`reportConversationSurface`, from the trusted renderer, never from an App). Believed only for the
+ * conversation the App's binding still reaches, checked again on every answer.
+ */
+type ShownSurface = { tabName: string; tabId: string; chatId: string; collapsed: boolean };
+const shownSurfaces = new Map<string, ShownSurface>();
+const surfaceReportSchema = z.strictObject({
+  extensionId: z.string().min(1),
+  tabKind: z.string().min(1),
+  tabId: z.string().min(1),
+  shown: z.strictObject({ chatId: z.string().uuid(), collapsed: z.boolean() }).nullable(),
+});
+
+/** Trusted renderer only, not an App bridge verb. True when what the App's pages hear changed. */
+export function reportConversationSurface(input: unknown): boolean {
+  const { extensionId, tabKind, tabId, shown } = surfaceReportSchema.parse(input);
+  const tabName = tabKind.startsWith(`${extensionId}.`) ? tabKind.slice(extensionId.length + 1) : '';
+  if (!tabName) throw invalid(`Tab kind "${tabKind}" does not belong to "${extensionId}"`);
+  const before = shownSurfaces.get(extensionId);
+  if (!shown) {
+    if (before?.tabName !== tabName || before.tabId !== tabId) return false;
+    shownSurfaces.delete(extensionId);
+    return true;
+  }
+  const next = { tabName, tabId, ...shown };
+  if (before && JSON.stringify(before) === JSON.stringify(next)) return false;
+  shownSurfaces.set(extensionId, next);
+  return true;
+}
+
+/** The binding an App's main page is placed beside (`contributes.conversationSurface`); none: it is not. */
+export function conversationSurfaceBinding(manifest: ExtensionManifest): string | null {
+  return manifest.contributes.conversationSurface?.binding ?? null;
+}
+
+/**
+ * `gugu.bindings.surface(name)` (41, `chat:surface`), for the page asking: `bound` only while the window draws the very
+ * conversation the binding reaches beside this page — the current account's own selection for this installed App, its
+ * grant, still a member, the same selection after the wait. Anything else is `unbound`, whatever the reason: the App
+ * hears neither which check failed nor the chat.
+ */
+export async function appBindingSurface(extensionId: string, page: { tabName: string; tabId: string }, input: unknown): Promise<AppBindingSurface> {
+  const { name } = argsOf(z.strictObject({ name: z.string() }), input);
+  if (conversationSurfaceBinding(extensionsService().get(extensionId).manifest) !== name) {
+    throw denied(`"${name}" is not the binding this App's page is placed beside (contributes.conversationSurface)`);
+  }
+  const unbound = { name, state: 'unbound' } as const;
+  const shownHere = () => {
+    const shown = shownSurfaces.get(extensionId);
+    return shown?.tabName === page.tabName && shown.tabId === page.tabId ? shown : null;
+  };
+  if (!shownHere()) return unbound;
+  const bound = await boundConversation(extensionId, name, 'surface').catch(() => null);
+  const shown = shownHere();
+  if (!bound || !shown || shown.chatId !== bound.chatId) return unbound;
+  return { name, state: 'bound', panel: { collapsed: shown.collapsed } };
+}
+
+/**
+ * `gugu.bindings.setPanel(name, { collapsed })` (41): the page collapses or expands its own panel, only while it is drawn
+ * beside its bound conversation (`ask` hands it to that page's window). Unbound, nothing changes.
+ */
+export async function setBindingSurfacePanel(
+  extensionId: string,
+  page: { tabName: string; tabId: string },
+  input: unknown,
+  ask: (collapsed: boolean) => Promise<void>,
+): Promise<AppBindingSurface> {
+  const { name, collapsed } = argsOf(z.strictObject({ name: z.string(), collapsed: z.boolean() }), input);
+  const surface = await appBindingSurface(extensionId, page, { name });
+  if (surface.state !== 'bound') return surface;
+  if (surface.panel.collapsed !== collapsed) await ask(collapsed);
+  return { name, state: 'bound', panel: { collapsed } };
+}
+
 /** Trusted App permissions UI only. This is not an App bridge verb. */
 export async function unreadBindingChoices(extensionId: string, name: string) {
   const { ownerId } = await account();
@@ -173,15 +250,36 @@ export async function setUnreadBinding(input: unknown): Promise<void> {
 
 /** Host projection reads a validated, current account association, never a page-supplied chat. */
 export async function grantedUnreadBindings(expectedOwner: string): Promise<Record<string, StoredUnreadBinding>> {
+  return grantedBindings(expectedOwner, 'chat:unread', (manifest) => manifest.contributes.unreadSource?.binding,
+    (service, ownerId, extensionId, name) => service.conversationUnreadBinding(ownerId, extensionId, name));
+}
+
+/**
+ * #1925 The same projection for the trusted window that draws an App's main page beside its bound conversation: the Apps
+ * placing their page there (`contributes.conversationSurface`), with the `surface` action granted, of a conversation the
+ * current account is still in.
+ */
+export async function grantedSurfaceBindings(expectedOwner: string): Promise<Record<string, StoredUnreadBinding>> {
+  return grantedBindings(expectedOwner, 'chat:surface', conversationSurfaceBinding,
+    (service, ownerId, extensionId, name) => service.conversationBinding(ownerId, extensionId, name, 'surface'));
+}
+
+type Service = ReturnType<typeof extensionsService>;
+async function grantedBindings(
+  expectedOwner: string,
+  capability: 'chat:unread' | 'chat:surface',
+  nameOf: (manifest: ExtensionManifest) => string | null | undefined,
+  selection: (service: Service, ownerId: string, extensionId: string, name: string) => StoredUnreadBinding | null,
+): Promise<Record<string, StoredUnreadBinding>> {
   const { token, ownerId } = await account();
   if (ownerId !== expectedOwner) throw denied('Account changed');
   const service = extensionsService();
   const candidates: { extensionId: string; binding: StoredUnreadBinding }[] = [];
   for (const { manifest } of service.list().extensions) {
-    const name = manifest.contributes.unreadSource?.binding;
-    if (!name || !service.isEnabled(manifest.id) || !service.hasCapability(manifest.id, 'chat:unread')) continue;
+    const name = nameOf(manifest);
+    if (!name || !service.isEnabled(manifest.id) || !service.hasCapability(manifest.id, capability)) continue;
     try {
-      const binding = service.conversationUnreadBinding(ownerId, manifest.id, name);
+      const binding = selection(service, ownerId, manifest.id, name);
       if (binding) candidates.push({ extensionId: manifest.id, binding });
     } catch (error) {
       // Same rule as the re-check below: a denied grant (e.g. no verified publisher) is absence for this App only.
@@ -200,7 +298,7 @@ export async function grantedUnreadBindings(expectedOwner: string): Promise<Reco
   for (const { extensionId, binding } of candidates) {
     if (!active.has(binding.chatId)) continue;
     try {
-      if (service.conversationUnreadBinding(ownerId, extensionId, binding.name)?.handle === binding.handle) result[extensionId] = binding;
+      if (selection(service, ownerId, extensionId, binding.name)?.handle === binding.handle) result[extensionId] = binding;
     } catch (error) {
       // Confirmed withdrawal is absence of authority, not a failed/empty unread read.
       if ((error as { code?: string }).code !== 'denied') throw error;

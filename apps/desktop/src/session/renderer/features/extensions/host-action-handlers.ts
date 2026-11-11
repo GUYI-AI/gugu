@@ -246,6 +246,11 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       const target = action.sessionId;
       return import('./compose-in-session').then(({ composeWhenOpen }) => composeWhenOpen(() => findSessionView(target), action.text));
     }
+    // #1925 main checked the page is drawn beside its bound conversation: its own panel there, collapsed or expanded.
+    case 'conversationPanel':
+      return import('@renderer/features/apps/app-conversation-panel').then(({ setAppConversationPanelCollapsed }) => {
+        setAppConversationPanelCollapsed(extensionId, action.collapsed);
+      });
     // The chat shell takes them (MainLayout: another chat comes up first), as the phone's page gives them.
     case 'showMessage':
       return openLinkTarget({ kind: 'chat', chatId: action.detail.chatId, messageId: action.detail.messageId });

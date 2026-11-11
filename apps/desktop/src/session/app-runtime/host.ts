@@ -19,6 +19,9 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     get(name: string): Promise<import('@shared/extensions/unread-binding').AppUnreadBinding>;
     list?(name: string, options?: { folder?: string }): Promise<import('@shared/extensions/unread-binding').AppBoundList>;
     read?(name: string, path: string): Promise<import('@shared/extensions/unread-binding').AppBoundRead>;
+    surface?(name: string): Promise<import('@shared/extensions/unread-binding').AppBindingSurface>;
+    setPanel?(name: string, options: { collapsed: boolean }): Promise<import('@shared/extensions/unread-binding').AppBindingSurface>;
+    onSurface?(listener: (surface: import('@shared/extensions/unread-binding').AppBindingSurface) => void): () => void;
   };
   taskMessage?(args: { intent: 'pause' | 'continue' }): Promise<void>;
   readonly sessions?: {
