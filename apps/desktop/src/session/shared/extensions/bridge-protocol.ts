@@ -108,7 +108,10 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // 42 (#1927): when that conversation is the person's private one with an agent of theirs, `resources` (`chat:resources`:
 // `gugu.bindings.resources` / `resource` / `onResourcesChanged`) and `resources:write` (`chat:resources:write`:
 // `gugu.bindings.save` / `remove`) reach that agent's panel resources, in the domains the binding lists (agent-resources.ts).
-// 43: reserved (#1928 the bound agent's schedules), merged in as it lands.
+// 43 (#1928): when that conversation is the person's private one with an agent of theirs, `schedules` (`chat:schedules`:
+// `gugu.bindings.schedules` / `onSchedulesChanged`, that agent's schedules here) and `schedules:control`
+// (`chat:schedules:control`: `gugu.bindings.controlSchedule`, idempotent by the caller's operation id, through the host's
+// own schedule store). Never the agent's id, its session or the chat.
 // 44 (#1925): when that conversation is the person's private chat with their own assistant, the binding may also declare
 // `assistant-status` (`assistant:status`: `gugu.assistant.status` / `onChanged`) and `assistant-open` (`assistant:open`:
 // `gugu.assistant.open(name, screen)` — one of the host's own screens for it, a closed list — and `advanceSetup`).
@@ -660,6 +663,12 @@ export type ExtensionHostEvent =
    */
   | { type: 'assistantChanged'; name: string; state: 'ready'; status: import('./assistant-binding').AppAssistantStatus }
   | { type: 'assistantChanged'; name: string; state: 'unbound' }
+  /**
+   * #1928 The schedules of the agent a page's binding is with changed (`gugu.bindings.onSchedulesChanged(name, fn)`): the
+   * binding's name only, as `filesChanged` says files moved — the page lists them again. Rides on `chat:schedules`, checked
+   * again before each; once it is gone the host stops listening and says nothing more.
+   */
+  | { type: 'schedulesChanged'; binding: string }
   /** What this page hears of its own topic (`gugu.cloud.on`): a broadcast's payload, or that it is (re)subscribed: read again then. */
   | { type: 'cloudHeard'; topic: string; event: string; heard: { subscribed: true } | { payload: Record<string, unknown> } }
   /** #1927 (42) What a page hears of its binding's agent resources (`gugu.bindings.onResourcesChanged`): read again, or ended. */
@@ -869,6 +878,13 @@ export const BRIDGE_VERBS = {
   bindingsWatch: { needs: 'chat:resources', only: 'page' },
   bindingsSave: { needs: 'chat:resources:write', only: 'page' },
   bindingsRemove: { needs: 'chat:resources:write', only: 'page' },
+  /**
+   * #1928 (43): the schedules of the agent the bound conversation is with — listed, heard changing (`schedulesChanged`),
+   * and changed through the host's schedule store by the caller's operation id. The host finds the agent from the binding.
+   */
+  bindingsSchedules: { needs: 'chat:schedules', only: 'page' },
+  bindingsSchedulesWatch: { needs: 'chat:schedules', only: 'page' },
+  bindingsScheduleControl: { needs: 'chat:schedules:control', only: 'page' },
   /**
    * #1925 (44): the bound conversation's assistant, when it is the person's own — its snapshot, read; one of the host's
    * screens for it opened, and the setup steps the App draws moved on, both in the person's click. The page names the

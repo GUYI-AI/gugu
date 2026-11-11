@@ -76,6 +76,10 @@ export const HOST_CALLS = {
   'bindings.watch': { verb: 'bindingsWatch', pack: (watchId: string, name: string, on: boolean) => ({ watchId, name, on }) },
   'bindings.save': { verb: 'bindingsSave', pack: (name: string, change: Record<string, unknown>) => ({ ...change, name }) },
   'bindings.remove': { verb: 'bindingsRemove', pack: (name: string, change: Record<string, unknown>) => ({ ...change, name }) },
+  // #1928 (43, `chat:schedules` / `chat:schedules:control`): the bound agent's schedules, named by the binding, never by an agent.
+  'bindings.schedules': { verb: 'bindingsSchedules', pack: (name: string) => ({ name }) },
+  'bindings.watchSchedules': { verb: 'bindingsSchedulesWatch', pack: (name: string, on: boolean) => ({ name, on }) },
+  'bindings.controlSchedule': { verb: 'bindingsScheduleControl', pack: (name: string, change?: Record<string, unknown>) => ({ ...change, name }) },
   // #1925 (44, `assistant:status` / `assistant:open`): the bound conversation's assistant, named by the binding alone.
   'assistant.status': { verb: 'assistantStatus', pack: (name: string) => ({ name }) },
   'assistant.open': { verb: 'assistantOpen', pack: (name: string, screen: string) => ({ name, screen }) },
@@ -194,6 +198,8 @@ export const HOST_EVENTS = {
   },
   onCloudHeard: { event: 'cloudHeard', only: 'page', pick: (event: Event<'cloudHeard'>) => [event.topic, event.event, event.heard] },
   onBindingResources: { event: 'bindingResources', only: 'page', pick: (event: Event<'bindingResources'>) => [event.watchId, event.event] },
+  /** `gugu.bindings.onSchedulesChanged(name, fn)` rides on it (#1928): which binding's agent's schedules changed. */
+  onSchedulesChanged: { event: 'schedulesChanged', only: 'page', pick: (event: Event<'schedulesChanged'>) => [event.binding] },
   onProgramNotification: {
     event: 'programNotification',
     pick: (event: Event<'programNotification'>) => [{ server: event.server, method: event.method, ...(event.params === undefined ? {} : { params: event.params }) }],

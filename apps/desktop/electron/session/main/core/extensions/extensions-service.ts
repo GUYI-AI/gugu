@@ -883,6 +883,7 @@ export class ExtensionsService {
     // #1925 / #1927 The assistant's and the agent resources' grants likewise.
     if (permission === 'assistant:status' || permission === 'assistant:open') this.unreadAuthorities.delete(extensionId);
     if (permission === 'chat:resources' || permission === 'chat:resources:write') this.unreadAuthorities.delete(extensionId);
+    if (permission === 'chat:schedules' || permission === 'chat:schedules:control') this.unreadAuthorities.delete(extensionId);
     this.revocationsFile.write(revocations);
     this.bindingAuthorityChanged(extensionId);
   }

@@ -909,6 +909,22 @@ and \`"resources:write"\` (\`chat:resources:write\`) reach its resources, each w
   \`unavailable\`, \`unbound\`. \`operationId\` is your UUID: the same call again answers the same receipt, status now.
 - \`gugu.bindings.onResourcesChanged("main", fn)\` → unsubscribe; \`fn\` hears \`{ state: "changed" }\`: read again, or
   \`{ state: "ended" }\`: the grant, account or chosen conversation changed — call \`get\` again.
+API 43, when that conversation is the person's private one with an agent of theirs: \`"schedules"\` (with \`chat:schedules\`)
+and \`"schedules:control"\` (with \`chat:schedules:control\`; needs \`"schedules"\` too) — that agent's schedules, the ones its
+own \`schedule_*\` tools and the person's list show: on this computer, or the person's assistant's wherever it lives. Another
+chat, or someone else's agent: \`denied\`.
+- \`gugu.bindings.schedules("main")\` → \`{ state: "ready", schedules }\`, each \`{ id, revision, title, prompt, at, cron, tz,
+  state: "active" | "paused" | "ended", nextRunAt, lastRun: { status, at } | null, updatedAt }\`; or \`unbound\`,
+  \`elsewhere\` (an agent, not the assistant, lives on another computer) or \`unavailable\` (try again later).
+- \`gugu.bindings.onSchedulesChanged("main", fn)\` → unsubscribe: they changed, list again. Silent for good once the grant goes.
+- \`gugu.bindings.controlSchedule("main", { operationId, op, … })\`, \`op\`: \`register\` (\`prompt\`, \`title?\`, \`at\` or \`cron\`,
+  \`tz?\`), \`update\` (\`title\` and/or a new time; what it asks stays the agent's), \`pause\`, \`resume\`, \`remove\` — those four
+  with \`scheduleId\` and the \`revision\` you read. → \`{ operationId, op, status, scheduleId, revision, at }\`: \`applied\`,
+  \`conflict\` (changed since: list, decide, new \`operationId\`) or \`missing\`. The same \`operationId\` again answers the same
+  receipt, never a second change. A run under way is never stopped (\`remove\` then: \`unavailable\`). Closing your page,
+  disabling or uninstalling your App leaves the schedules as they are. The assistant living elsewhere: \`pause\`, \`resume\`,
+  \`remove\` only (else \`elsewhere\`), first \`pending\` until its computer applies it — the same \`operationId\` again tells
+  \`applied\`, \`failed\` or \`superseded\` (a later change replaced it).
 API 44, only when that conversation is the person's private chat with their own assistant (else \`denied\`): add
 \`"assistant-status"\` (with \`assistant:status\`) and/or \`"assistant-open"\` (with \`assistant:open\`). Setup, move and close stay gugu's screens.
 - \`gugu.assistant.status("main")\` → \`{ state: "ready", status }\` | \`{ state: "unbound" | "unavailable" }\`; \`gugu.assistant.onChanged(fn)\`
@@ -1288,7 +1304,7 @@ export const EXTENSION_GUIDE_TOPICS: readonly { topic: string; about: string; te
   },
   {
     topic: 'apps-bindings',
-    about: 'gugu.bindings (chat:unread, API 37+): the one conversation the person chooses for your App — its unread dot, its files (40), a draft into it (40), your main page beside it (41), its agent\'s resources (42), its assistant (44).',
+    about: 'gugu.bindings (chat:unread, API 37+): the one conversation the person chooses for your App — its unread dot, its files (40), a draft into it (40), your main page beside it (41), its agent\'s resources (42) and schedules (43), its assistant (44).',
     text: EXTENSION_GUIDE_BINDINGS,
   },
   {

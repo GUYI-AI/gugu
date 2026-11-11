@@ -43,6 +43,10 @@ export const CAPABILITY_RISK = {
   // reading is what the person told it; changing them changes what it knows of them.
   'chat:resources': 'medium',
   'chat:resources:write': 'high',
+  // #1928 That conversation's agent, only when it is the person's own: its schedules seen, and changed — what a schedule
+  // says reaches the agent when due, as a word to it would, so changing them reads as high.
+  'chat:schedules': 'medium',
+  'chat:schedules:control': 'high',
   // That conversation's assistant, when it is the person's own (#1925): a snapshot of it; its host screens opened in a click.
   'assistant:status': 'medium',
   'assistant:open': 'medium',
@@ -96,7 +100,7 @@ export function declaredPermissions(manifest: ExtensionManifest): DeclaredPermis
  */
 export function permissionSide(permission: DeclaredPermission): 'see' | 'do' {
   if (permission.kind === 'network') return 'do';
-  return permission.key.startsWith('files:read') || permission.key.startsWith('agents:read') || permission.key.startsWith('agents:history') || (permission.key === 'chat:read' || permission.key === 'chat:unread' || permission.key === 'chat:files' || permission.key === 'chat:resources' || permission.key === 'assistant:status')
+  return permission.key.startsWith('files:read') || permission.key.startsWith('agents:read') || permission.key.startsWith('agents:history') || (permission.key === 'chat:read' || permission.key === 'chat:unread' || permission.key === 'chat:files' || permission.key === 'chat:resources' || permission.key === 'chat:schedules' || permission.key === 'assistant:status')
     ? 'see'
     : 'do';
 }

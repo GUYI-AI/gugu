@@ -357,6 +357,10 @@ export const EXTENSION_CAPABILITIES = [
   // and changed through the resource store (`save` / `remove`). Each needs its binding action declared.
   'chat:resources',
   'chat:resources:write',
+  // #1928 (API 43): when that conversation is the person's private one with an agent of theirs, that agent's schedules —
+  // listed (`gugu.bindings.schedules`), and changed through the host's own schedule store (`controlSchedule`).
+  'chat:schedules',
+  'chat:schedules:control',
   // #1925 (API 44) That same selected conversation's assistant, when it is the person's own: a snapshot of it and its
   // changes (`gugu.assistant.status` / `onChanged`) — and, in the person's click, one of the host's own screens for it
   // opened, or its setup moved on a step (`gugu.assistant.open` / `advanceSetup`). Each with its binding action.
@@ -799,6 +803,10 @@ export const extensionManifestSchema = z
     const writes = unreadBinding?.domains?.['resources:write'] ?? [];
     if (writes.length > 0 && !(unreadBinding?.actions.includes('resources') && writes.every((domain) => unreadBinding.domains?.resources?.includes(domain)))) {
       ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings', 0, 'domains', 'resources:write'], message: '"resources:write" changes only domains the binding also reads ("resources")' });
+    }
+    // #1928 (43): control decides on the revisions it read, so it comes with `schedules` (the pairing and API are above).
+    if (unreadBinding?.actions.includes('schedules:control') && !unreadBinding.actions.includes('schedules')) {
+      ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings'], message: 'the conversation binding\'s "schedules:control" action requires its "schedules" action' });
     }
     const byFamily = new Map<string, string>();
     for (const word of declared) {

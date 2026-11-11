@@ -18,6 +18,45 @@ import { bindingResourcesApi } from './binding-resources';
  * is not there: a program has no editor and no clipboard, and its host refuses what needs a person's gesture.
  */
 
+/**
+ * #1928 (43) `gugu.bindings.schedules` / `controlSchedule` / `onSchedulesChanged(name, fn)`, where the host has them (a
+ * page, `chat:schedules`). `onSchedulesChanged` keeps one host watch per binding name however many handlers, as `cloud.on`
+ * does per topic; a watch the host refuses is reported as the App's error — the call returns the unsubscribe.
+ */
+function boundSchedules(raw: GuguHost): Record<string, unknown> {
+  const { schedules, watchSchedules, controlSchedule } = raw.bindings ?? {};
+  const heard = raw.onSchedulesChanged;
+  const listeners = new Map<string, Set<(change: { name: string }) => void>>();
+  let hearing: (() => void) | null = null;
+  const onSchedulesChanged = watchSchedules && heard ? (name: unknown, handler: (change: { name: string }) => void): (() => void) => {
+    if (typeof name !== 'string' || !name) throw guguError('invalid', 'bindings.onSchedulesChanged(name, fn) names a binding');
+    if (typeof handler !== 'function') throw guguError('invalid', 'bindings.onSchedulesChanged(name, fn) takes a function');
+    hearing ??= heard((binding) => {
+      for (const fn of listeners.get(binding) ?? []) fn({ name: binding });
+    });
+    let handlers = listeners.get(name);
+    if (!handlers) {
+      handlers = new Set();
+      listeners.set(name, handlers);
+      watchSchedules(name, true).catch((error: unknown) => {
+        void raw.reportError(`gugu.bindings.onSchedulesChanged(${name}): ${error instanceof Error ? error.message : String(error)}`).catch(() => undefined);
+      });
+    }
+    handlers.add(handler);
+    return () => {
+      const current = listeners.get(name);
+      if (!current?.delete(handler) || current.size > 0) return;
+      listeners.delete(name);
+      void watchSchedules(name, false).catch(() => undefined);
+    };
+  } : undefined;
+  return {
+    ...(schedules ? { schedules: coded(schedules) } : {}),
+    ...(controlSchedule ? { controlSchedule: coded(controlSchedule) } : {}),
+    ...(onSchedulesChanged ? { onSchedulesChanged } : {}),
+  };
+}
+
 export type FilesModule = typeof import('./files-entry');
 export type CodemirrorModule = typeof import('./codemirror-entry');
 export type MarkdownModule = typeof import('./markdown-entry');
@@ -210,7 +249,7 @@ export function createGugu(
   // `files.onChanged`) are host halves.
   const api: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw)) {
-    if (['navigationGo', 'navigationClaimBack', 'onBack', 'appFiles', 'chats', 'checkPage', 'clipboard', 'bindings', 'assistant', 'onAssistantChanged', 'messages', 'prompts', 'cloud', 'framed', 'program', 'projects', 'sessions', 'theme', 'onFilesChanged', 'onDownloadProgress', 'onCloudHeard', 'onBindingResources', 'modal', 'onModalFocus', 'projection', 'onProjection', 'onProjectionSource', 'pages', 'onTaskPage', 'surfaces', 'onSurface', 'projectionMedia'].includes(key)) continue;
+    if (['navigationGo', 'navigationClaimBack', 'onBack', 'appFiles', 'chats', 'checkPage', 'clipboard', 'bindings', 'assistant', 'onAssistantChanged', 'messages', 'prompts', 'cloud', 'framed', 'program', 'projects', 'sessions', 'theme', 'onFilesChanged', 'onDownloadProgress', 'onCloudHeard', 'onBindingResources', 'onSchedulesChanged', 'modal', 'onModalFocus', 'projection', 'onProjection', 'onProjectionSource', 'pages', 'onTaskPage', 'surfaces', 'onSurface', 'projectionMedia'].includes(key)) continue;
     api[key] = typeof value === 'function' && verbs.has(key) ? coded(value as (...args: never[]) => unknown) : value;
   }
   api.files = files;
@@ -302,6 +341,7 @@ export function createGugu(
           return onSurface(listener as Parameters<typeof onSurface>[0]);
         },
       } : {}),
+      ...boundSchedules(raw),
     });
   }
   // `gugu.assistant` (44, `assistant:status` / `assistant:open`): the bound conversation's assistant, by the binding's name.
