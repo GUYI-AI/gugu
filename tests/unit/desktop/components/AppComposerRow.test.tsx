@@ -61,7 +61,7 @@ describe('the row above the own assistant chat\'s composer beside its App', () =
     expect(composerChip(VIEWS, { zh: false, run: () => undefined })?.label).toBe('Ideas');
     expect(composerChip([VIEWS[1]!], { zh: true, run: () => undefined })).toBeNull();
     await render();
-    const capsule = find('app-composer-chip')!;
+    const capsule = find('assistant-ideas-entry')!;
     expect(capsule.className).toBe('ta-ideas-pill');
     expect(capsule.textContent).toBe('灵感');
     expect(capsule.querySelector('svg')).not.toBeNull();
@@ -74,12 +74,12 @@ describe('the row above the own assistant chat\'s composer beside its App', () =
   it('the capsule stays hidden where the person hid the built-in 「灵感」 here, and gives way while a voice note records', async () => {
     localStorage.setItem(IDEAS_HIDDEN, 'hidden');
     await render();
-    expect(find('app-composer-chip')).toBeNull();
+    expect(find('assistant-ideas-entry')).toBeNull();
     expect(find('app-composer-entries')).toBeNull();
     localStorage.removeItem(IDEAS_HIDDEN);
     state.recording = true;
     await render();
-    expect(find('app-composer-chip')).toBeNull();
+    expect(find('assistant-ideas-entry')).toBeNull();
   });
 
   it('the 自定义 hint, offered after setup: opened, it is retired and the App\'s page is told; dismissed, it is retired', async () => {
@@ -106,6 +106,6 @@ describe('the row above the own assistant chat\'s composer beside its App', () =
   it('a hint already opened or dismissed on the built-in page (its record gone) is not offered again', async () => {
     await render();
     expect(find('assistant-customize-card')).toBeNull();
-    expect(find('app-composer-chip')).not.toBeNull();
+    expect(find('assistant-ideas-entry')).not.toBeNull();
   });
 });

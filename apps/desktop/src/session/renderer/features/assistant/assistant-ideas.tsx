@@ -14,15 +14,18 @@ import { AssistantEmpty } from './assistant-ui-parts';
  * 胶囊能隐藏(面板左上那颗开关,隐藏先确认;lib/assistantIdeas.ts)。手机盖一层整页;胶囊与自定义入口在输入框上方的一行。
  */
 
-/** Composer-row entry; hidden and recording states consume no space. */
-export function IdeasEntry({ assistantId, busy, onOpen }: { assistantId: string; busy: boolean; onOpen: () => void }) {
+/**
+ * Composer-row entry; hidden and recording states consume no space. Beside the assistant's App the same capsule carries the
+ * App's entry (its `chip` label and icon, AppComposerRow); the host's 「灵感」 otherwise.
+ */
+export function IdeasEntry({ assistantId, busy, onOpen, label, icon }: { assistantId: string; busy: boolean; onOpen: () => void; label?: string; icon?: ReactNode }) {
   const { t } = useTranslation('assistant');
   const hidden = useIdeasEntryHidden(assistantId);
   if (hidden || busy) return null;
   return (
     <button type="button" className="ta-ideas-pill" onClick={onOpen} data-testid="assistant-ideas-entry">
-      <Sparkles />
-      {t('ideas.title')}
+      {icon ?? <Sparkles />}
+      {label ?? t('ideas.title')}
     </button>
   );
 }
