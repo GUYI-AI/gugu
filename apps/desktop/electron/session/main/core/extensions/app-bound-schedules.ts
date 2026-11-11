@@ -131,12 +131,26 @@ async function boundAgent(extensionId: string, name: string, action: 'schedules'
   await recheck();
   const home = sessionId ? await agentScheduleHome(sessionId) : null;
   await recheck();
-  if (home) return { ...reached(agentId), state: 'ready', home };
-  // Not here: only the person's assistant has a panel another computer reads and changes, as the built-in list does.
   const assistant = await personalAssistantOf(token, ownerId);
   await recheck();
-  if (assistant?.agentId !== agentId) return { state: 'elsewhere' };
+  const isAssistant = assistant?.agentId === agentId;
+  // Listed here is not living here: a move away that did not finish cleaning up leaves the person's assistant on this
+  // computer's roster. Its schedule store here is used only while its home is this computer.
+  if (home && (!isAssistant || await isThisComputer(assistant.deviceId))) return { ...reached(agentId), state: 'ready', home };
+  // Not here: only the person's assistant has a panel another computer reads and changes, as the built-in list does.
+  if (!isAssistant) return { state: 'elsewhere' };
+  await recheck();
   return { ...reached(agentId), state: 'remote', panel: { ownerId, assistantId: agentId, deviceId: assistant.deviceId, cloud: panelAs(token, ownerId) } };
+}
+
+/** Whether the assistant's home device is this computer; not knowable yet (not signed in to the other machines) = failed. */
+async function isThisComputer(deviceId: string): Promise<boolean> {
+  const { otherMachines } = await import('@main/core/sessions/session-family');
+  try {
+    return await otherMachines().isThisDevice(deviceId);
+  } catch {
+    throw coded('failed', 'Could not tell whether its home is this computer');
+  }
 }
 
 function nameOf(input: unknown): string {
