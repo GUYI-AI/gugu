@@ -55,10 +55,13 @@ it('shows three dots above the first row while an older page is on its way, with
   const before = view.firstRowTop();
   await until('the dots are shown', () => view.dots() !== null);
   const dots = view.dots()!.getBoundingClientRect(), box = view.scroller.getBoundingClientRect();
+  // The content column, not the scroller's own box: under classic scrollbars the box is a scrollbar wider than the
+  // column, and its centre lies half a scrollbar to the right.
+  const column = view.scroller.querySelector<HTMLElement>('[data-chat-canvas]')!.getBoundingClientRect();
   // In the padding above the first row, inside the viewport, centred on the content column.
   expect(dots.top).toBeGreaterThanOrEqual(box.top);
   expect(dots.bottom).toBeLessThanOrEqual(before);
-  expect(Math.abs((dots.left + dots.right) / 2 - (box.left + box.right) / 2)).toBeLessThanOrEqual(1);
+  expect(Math.abs((dots.left + dots.right) / 2 - (column.left + column.right) / 2)).toBeLessThanOrEqual(1);
   expect(view.dots()!.getAttribute('role')).toBe('status');
   expect(view.dots()!.getAttribute('aria-label')).toBe('Loading earlier messages');
   expect(view.dots()!.children.length).toBe(3);
