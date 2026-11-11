@@ -2497,7 +2497,8 @@ export class SessionCell {
    * 只有本进程看着起、还没等到终态的才在这里,上一个进程的(重放里、库里)都不在。
    */
   private dispatchBackgroundCommandsChangedIfNeeded(): void {
-    const next = runningBackgroundCommands(this.transcript.history, this.transcript.activeTurn)
+    const next = runningBackgroundCommands(this.transcript.history, this.transcript.activeTurn,
+      this.transcript.agents.flatMap((agent) => agent.steps ?? []))
       .map((command) => command.backgroundTaskId);
     const previous = this.lastRunningCommandTaskIds;
     if (next.length === previous.length && next.every((id, index) => id === previous[index])) return;

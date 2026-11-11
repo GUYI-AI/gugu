@@ -48,7 +48,7 @@ vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: () => ({
 } }) }));
 const { reportConversationSurface, tellSurfaceIntent } = await import('./app-unread-bindings');
 const { forgetHostLayersForTest, reportHostLayer } = await import('./app-host-layers');
-const IDEAS = { kind: 'page-intent', intent: 'ideas' } as const;
+const IDEAS = { kind: 'composer-action', id: 'ideas' } as const;
 
 // The corner the host's collapse control covers, the built-in panel's top row: the same answer at every width.
 const INSET = { top: 52, right: 48 };
@@ -77,7 +77,7 @@ describe('a page intent', () => {
     show(true);
     expect(await tellSurfaceIntent('today', IDEAS, [main.it, elsewhere.it, other.it])).toBe(true);
     expect(main.expanded).toEqual([true]);
-    expect(main.heard).toEqual([{ name: 'main', state: 'bound', panel: { collapsed: false, inset: INSET, hostPage: false }, intent: IDEAS }]);
+    expect(main.heard).toEqual([{ name: 'main', state: 'bound', layout: 'side-panel', panel: { collapsed: false, inset: INSET, hostPage: false }, intent: IDEAS }]);
     for (const secret of [CHAT, OWNER, 'h1']) expect(JSON.stringify(main.heard)).not.toContain(secret);
     expect([elsewhere.heard, other.heard, elsewhere.expanded, other.expanded]).toEqual([[], [], [], []]);
     // Open already: told, nothing to expand.
@@ -91,7 +91,7 @@ describe('a page intent', () => {
     const covered = page('main', 'dock');
     await tellSurfaceIntent('today', { kind: 'voice-note' }, [covered.it]);
     expect(covered.expanded).toEqual([true]);
-    expect(covered.heard).toEqual([{ name: 'main', state: 'bound', panel: { collapsed: false, inset: INSET, hostPage: false }, intent: { kind: 'voice-note' } }]);
+    expect(covered.heard).toEqual([{ name: 'main', state: 'bound', layout: 'side-panel', panel: { collapsed: false, inset: INSET, hostPage: false }, intent: { kind: 'voice-note' } }]);
   });
 
   it('nobody hears it while nothing is drawn there, for another account, an agent\'s page, the grant gone or the App not placed', async () => {

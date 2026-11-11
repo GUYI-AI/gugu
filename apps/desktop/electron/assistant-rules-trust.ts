@@ -2,13 +2,14 @@
 // from the official market source as the release signed with a key this build trusts, its rules still the signed bytes.
 // Each condition names why an installed App is not believed; nothing that asks changes.
 import type { ExtensionManifest } from '@shared/extensions/manifest'
-import { isOfficialMarketSource, type MarketInstallRecord } from '@shared/extensions/market'
+import type { MarketInstallRecord } from '@shared/extensions/market'
+import { ASSISTANT_APP_ID, ASSISTANT_APP_TRUST } from '@shared/extensions/assistant-entry'
 import type { ExtensionOrigin } from '@shared/extensions/upgrade'
 import type { InstalledExtension } from './session/main/core/extensions/extensions-service'
 import { firstProblem, releaseFileProblems, SHIPPED_RELEASE_TRUST, verifyReleaseProof, type ReleaseTrustTable } from './session/main/core/extensions/release/market-release'
 
 /** The product's assistant App (GUYI-AI/gugu-assistant), published to the market as a compiled release. */
-export const ASSISTANT_RULES_PROVIDER_ID = 'gugu-assistant'
+export const ASSISTANT_RULES_PROVIDER_ID = ASSISTANT_APP_ID
 
 /** What the host knows of the installed App that may provide the rules. */
 export interface AssistantRulesProvider {
@@ -27,23 +28,14 @@ export interface AssistantRulesProvider {
 export type AssistantRulesTrustCondition = (provider: AssistantRulesProvider) => string | null | Promise<string | null>
 
 /**
- * The conditions, with the release keys of `table` (the shipped one; tests pass their own). The last two are the signed
- * release (market-release.ts): its folder in the market repository, its proof verifying again, and the manifest and rules
- * folder on disk still being the signed bytes — edited there, the App is not believed and the last good copy stays in use.
+ * The conditions, with the release keys of `table` (the shipped one; tests pass their own). The first ones are the shared
+ * list (assistant-entry.ts `ASSISTANT_APP_TRUST`: its id, from the market, gugu's repository, not a fork, its signed release
+ * folder), which the assistant's place on both hosts also reads; the last is the signed release itself (market-release.ts):
+ * its proof verifying again, and the manifest and rules folder on disk still being the signed bytes — edited there, the App
+ * is not believed and the last good copy stays in use.
  */
 export function assistantRulesTrust(table: ReleaseTrustTable = SHIPPED_RELEASE_TRUST): readonly AssistantRulesTrustCondition[] {
-  return Object.freeze([
-    provider => provider.manifest.id === ASSISTANT_RULES_PROVIDER_ID ? null : `it is ${provider.manifest.id}, not ${ASSISTANT_RULES_PROVIDER_ID}`,
-    provider => provider.origin === 'market' ? null : `it was installed from ${provider.origin ?? 'an unrecorded place'}, not the market`,
-    provider => !provider.marketSource ? 'there is no record of where in the market its code was'
-      : isOfficialMarketSource(provider.marketSource) ? null : `its code is at ${provider.marketSource.repo}, not in gugu's market repository`,
-    provider => provider.activeVariant === 'upstream' ? null : `its fork "${provider.activeVariant}" is in use`,
-    provider => {
-      const folder = `releases/${ASSISTANT_RULES_PROVIDER_ID}/${provider.manifest.version}`
-      return provider.marketSource?.path === folder ? null : `its code is at ${provider.marketSource?.path}, not in its signed release folder ${folder}`
-    },
-    provider => signedReleaseDistrust(provider, table),
-  ])
+  return Object.freeze([...ASSISTANT_APP_TRUST, (provider: AssistantRulesProvider) => signedReleaseDistrust(provider, table)])
 }
 
 function signedReleaseDistrust(provider: AssistantRulesProvider, table: ReleaseTrustTable): string | null {

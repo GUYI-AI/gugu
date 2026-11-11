@@ -22,6 +22,7 @@ import { appHostLayerReportSchema } from '@shared/extensions/app-host-layer';
 import { forgetHostLayersForTest, hostLayerOf, reportHostLayer } from './app-host-layers';
 import type { ExtensionHostEvent } from '@shared/extensions/bridge-protocol';
 import type { ExtensionHostAction } from '@shared/extensions/host-actions';
+import { unsupportedHere, type AppBindingUnsupported } from '@shared/extensions/phone-binding';
 import { currentAccountAccessToken } from './account-token';
 import { extensionsService } from './extensions-root';
 
@@ -178,9 +179,9 @@ export async function appAssistantStatus(extensionId: string, input: unknown): P
 /**
  * `gugu.assistant.open(name, screen)` (44, `assistant:open`, in a click): the window opens that screen by its existing
  * entry (`act`). Answered done or refused; nothing of what the person does there. `setup` also while the account shows no
- * assistant (`noAssistantShown`); every other screen is the bound assistant's.
+ * assistant (`noAssistantShown`); every other screen is the bound assistant's. `health` (49) is a phone's: here `unsupported`.
  */
-export async function appAssistantOpen(extensionId: string, input: unknown, act: (action: ExtensionHostAction) => Promise<unknown>): Promise<void> {
+export async function appAssistantOpen(extensionId: string, input: unknown, act: (action: ExtensionHostAction) => Promise<unknown>): Promise<void | AppBindingUnsupported> {
   const { name, screen } = argsOf(z.strictObject({ name: z.string(), screen: z.enum(ASSISTANT_SCREENS) }), input,
     `gugu.assistant.open takes the binding's name and one of ${ASSISTANT_SCREENS.join(', ')}`);
   const none = screen === 'setup' ? await noAssistantShown(extensionId, name, 'assistant-open') : null;
@@ -190,6 +191,8 @@ export async function appAssistantOpen(extensionId: string, input: unknown, act:
   }
   const bound = await boundAssistant(extensionId, name, 'assistant-open');
   if (!bound) throw coded('not-found', `No conversation is chosen for "${name}" yet: the person chooses it in the App's permissions`);
+  // API 49 `health`: the phone's own health page (Health Connect, read on the phone); a computer has none — closed, never an error.
+  if (screen === 'health') return unsupportedHere(name);
   await act({ kind: 'openAssistantScreen', screen, ownerId: bound.ownerId });
 }
 

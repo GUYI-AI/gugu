@@ -54,16 +54,21 @@ describe('each screen opens by its existing entry, and nothing else', () => {
     devices: 'settings:devices', 'connected-apps': 'settings:connectors',
   } as const
 
-  const SHELL_SCREENS = ASSISTANT_SCREENS.filter((screen) => !isAssistantLayerScreen(screen))
+  // The panel's own pages go over the App's panel; `health` (49) is a phone's own page: main answers `unsupported` on a
+  // computer and never asks the window.
+  const SHELL_SCREENS = ASSISTANT_SCREENS.filter((screen) => !isAssistantLayerScreen(screen) && screen !== 'health')
 
   it.each(SHELL_SCREENS)('%s', (screen) => {
     openAssistantScreen(screen, OWNER)
     expect(entries()).toEqual([ENTRY[screen as keyof typeof ENTRY]])
   })
 
-  it('the shell\'s screens are exactly these seven; the panel\'s own pages go over the App\'s panel instead', () => {
+  it('the shell\'s screens are exactly these seven; the panel\'s own pages go over the App\'s panel, health is a phone\'s', () => {
     expect([...SHELL_SCREENS].sort()).toEqual(Object.keys(ENTRY).sort())
     expect(ASSISTANT_SCREENS.filter(isAssistantLayerScreen)).toEqual(['settings', 'projects', 'capabilities'])
+    expect(ASSISTANT_SCREENS).toContain('health')
+    expect(() => openAssistantScreen('health', OWNER)).toThrow()
+    expect(entries()).toEqual([])
   })
 
   it('an unknown value, or a panel page, opens nothing here', () => {

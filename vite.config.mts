@@ -20,6 +20,7 @@ import { deterministicModuleSideEffects } from './scripts/build/deterministic-mo
 import { devNodeExternals, type DependencyManifest } from './scripts/build/dev-node-externals.mjs'
 import { activateDbEnv, serverChannelForDb } from './scripts/build/build-env-preflight.mts'
 import { serverPackageIdentity } from './scripts/build/server-package-identity.mts'
+import { rendererNodeShimGuard } from './scripts/build/renderer-node-shim-guard.mts'
 import { vanillaExtractPlugin } from '@vanilla-extract/vite-plugin'
 import solid from 'vite-plugin-solid'
 import { emdashAliasEntries } from './apps/desktop/electron/sessionpage/emdash-aliases.mjs'
@@ -692,6 +693,8 @@ export default defineConfig(({ command }) => ({
     // 并入本体后它们不再各自 tsdown 出 dist,而是由这一次构建直接编 .css.ts —— 少一套构建。
     vanillaExtractPlugin(),
     rendererChunkCycleGuard(),
+    // #1931 A Node built-in imported by renderer code becomes a shim calling `require`, which the renderer lacks: no build.
+    rendererNodeShimGuard(fileURLToPath(new URL('.', import.meta.url))),
     // ⚠️ 必须在 rendererAsciiOutput() 之前:ASCII 转义要最后收尾(#6484),顺序由 obfuscateOwnChunks7195 测试钉住。
     ...(obfuscateRenderer ? [obfuscateOwnChunks({ version: appVersion })] : []),
     rendererAsciiOutput(),

@@ -1,5 +1,5 @@
 import { runningBackgroundCommands } from '@gugu/session-core/acp/client';
-import type { TranscriptTurn } from './../model';
+import type { TranscriptItem, TranscriptTurn } from './../model';
 
 /**
  * 还在跑的**后台命令**花名册(#5117)。
@@ -57,9 +57,11 @@ export function collectBackgroundCommandRoster(
   /** 一个字都没给时的通用词(调用方给,好过在这儿编)。 */
   fallbackName: string,
   /** `runningBackgroundTaskIds` 的结果:数组 ⇒ 只留运行时也说在跑的;`null` ⇒ 不筛(旧运行时)。 */
-  runningTaskIds: readonly string[] | null
+  runningTaskIds: readonly string[] | null,
+  /** Subagents' own calls from the registry (#2500): a command one of them started hangs there, not in the turns. */
+  subagentSteps: readonly TranscriptItem[] = []
 ): BackgroundCommandEntry[] {
-  const running = runningBackgroundCommands(turns, activeTurn);
+  const running = runningBackgroundCommands(turns, activeTurn, subagentSteps);
   const live = runningTaskIds === null ? running : running.filter((node) => runningTaskIds.includes(node.backgroundTaskId));
   return live.map((node) => {
     const title = node.title.trim();

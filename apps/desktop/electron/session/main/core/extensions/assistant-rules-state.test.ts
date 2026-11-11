@@ -30,7 +30,7 @@ const releaseKey = vi.hoisted(() => {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');
   return { id: 'gugu-assistant-test', privateKey, publicKey: publicKey.export({ type: 'spki', format: 'pem' }).toString() };
 });
-vi.mock('./release/release-keys.json', () => ({
+vi.mock('@shared/extensions/release/release-keys.json', () => ({
   default: { schemaVersion: 1, keys: [{ id: releaseKey.id, appId: 'gugu-assistant', sourceRepo: 'GUYI-AI/gugu-assistant', publicKey: releaseKey.publicKey }] },
 }));
 
@@ -116,7 +116,8 @@ describe('whether the assistant here waits for its rules', () => {
     expect(await ensureAssistantApp('start')).toBe('present');
     await settle();
     expect(await assistantRulesState()).toEqual({ pending: true, stuck: true });
-    expect(told).toContainEqual({ pending: true, stuck: true });
+    // The windows are told after a refresh that reads the disk; under a loaded run that can outlast a fixed pause.
+    await vi.waitFor(() => expect(told).toContainEqual({ pending: true, stuck: true }));
   });
 });
 

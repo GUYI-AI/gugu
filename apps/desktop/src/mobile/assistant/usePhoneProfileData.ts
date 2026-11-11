@@ -1,44 +1,14 @@
 import { EMPTY_INTEGRATION_SUMMARIES,useAssistantIntegrationSummaries } from '@/components/assistant/useAssistantIntegrationSummaries'
 import { useLocale } from '@/i18n'
-import { splitInstructions, splitPersona } from '@/session/renderer/features/assistant/assistant-files'
-import { readText } from '@/session/renderer/features/assistant/assistant-machine-core'
 import type { IntegrationMetadata } from '@/session/renderer/features/integrations/integrations-provider'
 import type { ConnectionStatus } from '@/session/shared/issue-providers'
 import { cachedAssistantPanelIntegration,peekAssistantPanelIntegration,peekAssistantPanelIntegrations,readAssistantPanelIntegrations,readAssistantPanelIntegration } from '@/components/assistant/assistant-panel-integrations'
 import { machineKey, usePhoneRead } from './usePhoneRead'
 import type { PhoneMachineState } from './phoneMachine'
-import type { Persona } from './phoneProfileModel'
 import { useEffect } from 'react'
 import { useConnectionAuthority,useOwnerConnectionStore } from '@/lib/connectionBridge'
 import { readOwnerConnectionMetadata,peekOwnerConnectionMetadata,CONNECTIONS_CHANGED } from '@/components/connections/owner-connection-metadata'
 
-
-export type PhonePersona = {
-  /** 读到的性格;还没读到(在休息、正在醒、读失败)= null。 */
-  persona: Persona | null
-  revision?: string
-  loading: boolean
-  error: unknown
-  /** 重读(读失败时的「重试」、保存之后核一遍写进去的)。 */
-  reload: () => void
-}
-
-/**
- * 性格 = 它家里 ~/.claude/CLAUDE.md 里宿主维护那段之外的部分(与桌面 usePersona 同一份解析)。醒着、工作区开好了才读;❌ 自己叫醒。
- * 重读时先留着上一次读到的(资料页胶囊不闪成「性格」)。
- */
-export function usePhonePersona(machine: PhoneMachineState): PhonePersona {
-  const ready = machine.state === 'ready' ? machine.machine : null
-  const read = usePhoneRead(ready ? `persona|${machineKey(ready)}` : null,async () => {
-    const raw = await readText(ready!,ready!.paths.instructions)
-    return { persona: splitPersona(splitInstructions(raw ?? '').user),revision: ready!.panel?.revision(ready!.paths.instructions) }
-  },'read assistant personality')
-  return { persona: read.state === 'ok' ? read.data.persona : null,
-    revision: read.state === 'ok' ? read.data.revision : undefined,
-    loading: !!ready && read.state === 'loading',
-    error: read.state === 'error' ? read.error : read.state === 'ok' ? read.refreshError ?? null : null,reload: read.reload }
-
-}
 
 export type PhoneIntegrations = {
   items: IntegrationMetadata[]

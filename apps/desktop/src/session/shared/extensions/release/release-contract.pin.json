@@ -1,0 +1,7 @@
+{
+  "repo": "GUYI-AI/gugu-apps",
+  "commit": "1a5e2af73d050b68a764634eb76148688d798d77",
+  "path": "scripts/release-contract.mjs",
+  "sha256": "80a6829dd242b248b23fce549730e9871374339395c51c8cfd5d6b2492fcc448",
+  "check": "release-contract.mjs here is that file byte for byte (market-release.test.ts compares its sha256). To move the pin: copy the file from the new commit unchanged, then set commit and sha256 from `git -C <gugu-apps checkout> show <commit>:scripts/release-contract.mjs | shasum -a 256`, then refresh the page's copy with `node scripts/build/release-contract-web.mts --write` (releaseContractWeb.test.ts fails until it matches)."
+}

@@ -48,3 +48,17 @@ describe('consent for an agent\'s resources', () => {
     expect(narrower.description).toBe(enUSMessages['extensions.updateNothingNew']);
   });
 });
+
+describe('#50 consent for managing voice notes', () => {
+  it('its own row, in both languages, saying each delete is the person\'s to confirm', () => {
+    const manifest = parseExtensionManifest({ id: 'assistant', name: 'Assistant', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en',
+      platforms: ['desktop'], entry: 'index.html',
+      permissions: { capabilities: ['chat:unread', 'chat:resources', 'chat:voice-notes:manage'],
+        bindings: [{ name: 'main', kind: 'conversation', actions: ['unread', 'resources', 'voice-notes:manage'], domains: { resources: ['voice-notes'] } }] },
+      contributes: { tabs: [{ name: 'main', title: 'Assistant' }] } });
+    expect(describeCapability('chat:voice-notes:manage', manifest, say(enUSMessages)))
+      .toBe('Transcribe, export or delete the voice notes your agent keeps in the conversation you select; you confirm each delete');
+    expect(describeCapability('chat:voice-notes:manage', manifest, say(zhCNMessages))).toBe('转写、导出或删除你选定的那条会话里 agent 记着的语音笔记，每次删除都由你确认');
+    for (const messages of [enUSMessages, zhCNMessages]) expect(describePermissions(manifest, say(messages))).toContain(messages['extensions.permissionsChatVoiceNotesManage']);
+  });
+});

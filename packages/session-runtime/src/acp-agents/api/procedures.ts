@@ -260,8 +260,9 @@ export function createAcpProcedures(runtime: AcpRuntime) {
       before?: number;
       limit: number;
       changedSince?: HistoryCursor;
+      contentFrom?: number;
     }): Result<HistoryPage, AcpGetHistoryError> {
-      const result = runtime.getHistory(input.sessionId, input.before, input.limit, input.changedSince);
+      const result = runtime.getHistory(input.sessionId, input.before, input.limit, input.changedSince, input.contentFrom);
       if (!result.success) return result;
       const page = trimCursorPageForTransport(result.data);
       // Reuse cursor reset when a reconnect gap exceeds a page. Never advance past

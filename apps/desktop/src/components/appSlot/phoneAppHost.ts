@@ -78,6 +78,10 @@ import { rendererFileServiceUrl } from '../../lib/chatFolder'
 import { AppModalSessions, type AppModalFocus } from '../../session/shared/extensions/app-modal'
 import { closeAppModal, focusAppModalClose, showAppModal } from '../appModal/appModal'
 import { APP_FORWARD_FILES_EVENT, APP_SESSION_FRAME_NAME } from '../../session/shared/extensions/app-runtime-protocol'
+import { answerPhoneBinding, createPhoneBindings } from './phoneAppBindings'
+import { phoneBindingPorts } from './phoneBindingPorts'
+import { appToast } from '../../session/shared/extensions/app-toast'
+import { toast } from '../../session/renderer/lib/hooks/use-toast'
 
 const log = rendererLogger('app-slot/phone-host')
 
@@ -243,6 +247,12 @@ const files = createAppFiles({
     revoke: (pageId, reason, docNames) => relay.revoke(pageId, reason, docNames),
   },
 })
+
+/**
+ * API 49 The conversation binding on this phone (phoneAppBindings.ts): the host's own binding of the assistant App to the
+ * account's private chat with its assistant, answered here as main answers it on a computer.
+ */
+const phoneBindings = createPhoneBindings(phoneBindingPorts(files))
 
 /** A chat document's place and the files its page names beside it, for its preview (chat-folder-preview-registration.ts). */
 export function chatDocumentPlace(itemId: string) {
@@ -550,7 +560,22 @@ export function hostAppFrame(
       if (!manifest) refused('not-installed', `${hosted.binding.extensionId} is not installed on this phone`)
       return callOnComputer({ extensionId: manifest.id, extensionName: manifest.name, version: manifest.version }, folderMachine(folder.deviceId), method, args).then(computerReply)
     }
+    // API 49 The binding's verbs, and a draft into the binding's conversation: the phone's binding host answers them.
+    const page = { extensionId: hosted.binding.extensionId, tabId: hosted.binding.tabId, pageId }
+    const bound = answerPhoneBinding(phoneBindings, method, page, args, (watchId, heard) => event({ type: 'bindingResources', watchId, event: heard }),
+      (binding) => event({ type: 'schedulesChanged', binding }))
+    if (bound) return bound
+    if (method === 'dispatch' && args.to && typeof args.to === 'object' && Object.hasOwn(args.to, 'binding')) return phoneBindings.draft(hosted.binding.extensionId, args)
     switch (method) {
+      case 'toast':
+        // #1925 (44) The host's own toast, by the desktop's rule (app-toast.ts): a page on a phone is the person's; on screen =
+        // this frame laid out, focused = the app in front.
+        return appToast({
+          extensionId: hosted.binding.extensionId,
+          person: true,
+          onScreen: frame.isConnected && frame.offsetParent !== null && frame.clientWidth > 0,
+          focused: () => document.visibilityState === 'visible' && document.hasFocus(),
+        }, args, async (action) => { if (action.kind === 'toast') toast({ title: action.text }) })
       case 'linkTo': {
         const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
         if (!manifest) refused('not-installed', 'This App is not installed')
@@ -937,6 +962,8 @@ export function hostAppFrame(
   const snapshot = () => new Map(cachedPhoneAgents(hosted.binding.extensionId, hosted.binding.capabilities).map((agent) => [agent.agentId, JSON.stringify(agent)]))
   let previous = snapshot()
   const stopState = onPhoneAppState(stateChanged)
+  // API 49 Where the assistant's layer shows this page, and the assistant as it knows it: heard while the page is up.
+  const stopBindings = phoneBindings.attach({ extensionId: hosted.binding.extensionId, tabId: hosted.binding.tabId, pageId }, event)
   const stopAgents = subscribeDeviceSessions(() => {
     stateChanged()
     const next = snapshot()
@@ -996,6 +1023,7 @@ export function hostAppFrame(
     dispose() {
       stopState()
       stopAgents()
+      stopBindings()
       void phoneModals.pageGone(pageId)
       for (const { source } of watched.values()) readFiles.forget(source)
       watched = new Map()

@@ -32,7 +32,7 @@ vi.mock('@main/core/extensions/extensions-root', () => ({
     grantedCapabilities: () => ['chat:unread', 'chat:surface'],
   }),
 }));
-const BOUND = { name: 'main', state: 'bound', panel: { collapsed: false, inset: { top: 52, right: 48 }, hostPage: false } } as const;
+const BOUND = { name: 'main', state: 'bound', layout: 'side-panel', panel: { collapsed: false, inset: { top: 52, right: 48 }, hostPage: false } } as const;
 const verdict = vi.hoisted(() => ({ holds: true }));
 const appBindingSurface = vi.fn(async (_id: string, page: { tabId: string }) => (page.tabId === 'dock' ? BOUND : { name: 'main', state: 'unbound' }));
 const surfaceIntentHolds = vi.fn(async () => verdict.holds);

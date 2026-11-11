@@ -2168,6 +2168,25 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       const verb = { bindingsResources: resources.appResourceList, bindingsResource: resources.appResourceRead, bindingsSave: resources.appResourceSave, bindingsRemove: resources.appResourceRemove }[method];
       return await verb(caller.extensionId, args);
     }
+    case 'bindingsUpload':
+    case 'bindingsCreateFolder':
+    case 'bindingsRename':
+    case 'bindingsRemoveFolder':
+    case 'bindingsTranscribeVoiceNote':
+    case 'bindingsRemoveVoiceNote':
+    case 'bindingsExportVoiceNote': {
+      // 50 As the resources above: the person's own, never a page an agent works.
+      const page = thePage(caller);
+      if (page.operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works manages none of its agent\'s resources'), { code: 'denied' });
+      const manage = await import('./app-bound-resources-manage');
+      if (method === 'bindingsCreateFolder') return await manage.appResourceCreateFolder(caller.extensionId, args);
+      if (method === 'bindingsRename') return await manage.appResourceRename(caller.extensionId, args);
+      const verb = {
+        bindingsUpload: manage.appResourceUpload, bindingsRemoveFolder: manage.appResourceRemoveFolder,
+        bindingsTranscribeVoiceNote: manage.appVoiceNoteTranscribe, bindingsRemoveVoiceNote: manage.appVoiceNoteRemove, bindingsExportVoiceNote: manage.appVoiceNoteExport,
+      }[method];
+      return await verb(caller.extensionId, page.embedderId, args);
+    }
     case 'voiceNoteStart':
     case 'voiceNotePause':
     case 'voiceNoteResume':

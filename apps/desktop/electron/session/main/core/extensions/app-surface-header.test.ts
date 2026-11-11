@@ -118,7 +118,7 @@ describe('the person\'s click on the assistant in that row (intent, told once)',
 
   it('rides on the answer of the page beside the conversation only; the window\'s report carries it only with that conversation', async () => {
     expect(withIntent({ name: 'main', state: 'unbound' }, { kind: 'profile' })).toEqual({ name: 'main', state: 'unbound' });
-    const bound = { name: 'main', state: 'bound' as const, panel: { collapsed: false, inset: { top: 52, right: 48 }, hostPage: false } };
+    const bound = { name: 'main', state: 'bound' as const, layout: 'side-panel' as const, panel: { collapsed: false, inset: { top: 52, right: 48 }, hostPage: false } };
     expect(withIntent(bound, { kind: 'profile' })).toEqual({ ...bound, intent: { kind: 'profile' } });
     expect(withIntent(bound, undefined)).toBe(bound);
     expect(show({ intent: 'profile' })).toBe(true);

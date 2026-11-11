@@ -287,9 +287,11 @@ describe('codex rollout 记录源', () => {
     expect(all.filter((item) => item.kind === 'message' && item.role === 'assistant').map((item) => item.kind === 'message' ? item.text : ''))
       .toEqual(['PARENT_RESULT']);
     const launch = all.find((item) => item.kind === 'spawn-subagent-tool-call');
-    expect(launch).toMatchObject({ agentStatus: 'completed', outputText: 'CHILD_RESULT', reasoningText: 'CHILD_THOUGHT',
-      children: [expect.objectContaining({ toolCallId: 'child-step' }),
-        expect.objectContaining({ kind: 'spawn-subagent-tool-call', agentStatus: 'completed', outputText: 'NESTED_RESULT' })] });
+    expect(launch).toMatchObject({ agentStatus: 'completed', outputText: 'CHILD_RESULT', reasoningText: 'CHILD_THOUGHT' });
+    // The child's own calls, its nested launch among them, are not copied into the turn that launched it (#2500).
+    expect(launch && 'children' in launch ? launch.children ?? [] : []).toEqual([]);
+    // Every child here has finished, so the timeline reports no running subagent.
+    expect(snapshot.subagents).toEqual([]);
     // The parent's own record says the child finished, in the parent's turn. The nested child's finish is a line in
     // the child's record: it completes the nested card (above) and adds no row. Neither makes a turn of its own.
     expect(snapshot.turns).toHaveLength(1);

@@ -18,8 +18,9 @@ import type { AssistantTaskChat } from './assistantTaskChat'
 import { installedExtensionsStore } from '../session/renderer/features/extensions/installed-extensions-store'
 import { readsWork } from '../components/appSlot/appWorkLedger'
 
-/** 产品自己的助理 App(GUYI-AI/gugu-assistant;主进程同名常量 ASSISTANT_APP_ID)。 */
-export const ASSISTANT_APP_ID = 'gugu-assistant'
+/** 产品自己的助理 App(GUYI-AI/gugu-assistant):两端同一个常量(assistant-entry.ts)。 */
+import { ASSISTANT_APP_ID } from '../session/shared/extensions/assistant-entry'
+export { ASSISTANT_APP_ID }
 
 /** 主进程对这个账号说的:装着的是不是受信的那个 App(补装那一步还没装好时,栏顶那一格的「准备中」由壳的 rulesPending 画)。 */
 export type AssistantAppWord = { ownerId: string; trusted: boolean }

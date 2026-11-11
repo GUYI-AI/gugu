@@ -213,9 +213,10 @@ export class AcpRuntime {
     sessionId: string,
     before?: number,
     limit?: number,
-    changedSince?: HistoryCursor
+    changedSince?: HistoryCursor,
+    contentFrom?: number
   ): Result<HistoryPage, AcpGetHistoryError> {
-    return ok(this.manager.getHistory(sessionId, before, limit, changedSince));
+    return ok(this.manager.getHistory(sessionId, before, limit, changedSince, contentFrom));
   }
 
   getToolImage(sessionId: string, itemId: string, index: number) {

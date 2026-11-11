@@ -10,6 +10,8 @@ import type { ComposerActionIcon, ComposerActionView } from '@/session/shared/ex
 import { extensionsInventoryChangedChannel } from '@/session/shared/extensions/marketEvents'
 
 const log = rendererLogger('app-composer-actions')
+// One empty list, so a menu not yet read (or read for another App) keeps one identity across renders.
+const NO_VIEWS: ComposerActionView[] = []
 
 /** The host's icons an App's entry may name (composer-actions.ts), the same glyphs as the built-in entries. */
 const ICONS: Record<ComposerActionIcon, ReactNode> = {
@@ -76,7 +78,7 @@ export function useAppComposerActions({ ownerId, extensionId, authority, chatId 
       if (result.data.kind === 'draft') writeDraft(chatId, { at: 'end', text: zhNow() ? result.data.text.zh : result.data.text.en })
     }, (error: unknown) => log.warn({ error }, 'App composer action failed'))
   }, [ownerId, extensionId, authority, chatId, writeDraft, zhNow])
-  const views = read?.asked === asked ? read.views : []
+  const views = read?.asked === asked ? read.views : NO_VIEWS
   const zh = i18n.language.startsWith('zh')
   return useMemo(() => composerMenu(views, { zh, recording, run }), [views, zh, recording, run])
 }

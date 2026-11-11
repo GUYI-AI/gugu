@@ -24,8 +24,6 @@ vi.mock('../../../apps/desktop/src/mobile/assistant/phoneMachine', () => ({ useP
 vi.mock('../../../apps/desktop/src/mobile/assistant/phoneVoiceRuntime', () => ({ usePhoneVoiceNotes: () => ({ disabled: true, start: vi.fn() }) }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneVoiceBar', () => ({ PhoneVoiceBar: () => null }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneIdeas', () => ({ PhoneIdeas: () => null }))
-vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneToday', () => ({ PhoneToday: () => <div>today content</div> }))
-vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneTasks', () => ({ PhoneTasks: () => <div>tasks content</div> }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneMemory', () => ({ PhoneMemory: () => <div>memory content</div> }))
 function ProfileFixture({ go, sub }: { go: (sub: string) => void; sub: string | null }) {
   const [detail, setDetail] = useState(false)
@@ -34,11 +32,21 @@ function ProfileFixture({ go, sub }: { go: (sub: string) => void; sub: string | 
     {sub === 'library:capabilities' && (detail ? <span data-testid="capability-detail">Calendar</span> : <button data-testid="open-capability-detail" onClick={() => setDetail(true)}>Calendar</button>)}</>
 }
 vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneProfile', () => ({ PhoneProfile: ProfileFixture }))
+// The assistant App fills the sections; the phone's own screens are opened as it opens them (`gugu.assistant.open`).
+vi.mock('../../../apps/desktop/src/mobile/assistant/phoneAssistantEntry', () => ({ PHONE_ASSISTANT_LAYER_TAB: 'assistant-layer',
+  usePhoneAssistantEntry: () => ({ entry: 'app', extensionId: 'gugu-assistant', tabKind: 'gugu-assistant.panel', binding: 'main' }) }))
+vi.mock('../../../apps/desktop/src/components/appSlot/PhoneAppFrame', () => ({ PhoneAppFrame: () => <div data-testid="app-frame" /> }))
+vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneAssistantWorkLedger', () => ({ PhoneAssistantWorkLedger: () => null }))
+vi.mock('../../../apps/desktop/src/mobile/assistant/PhoneAssistantCounts', () => ({ PhoneAssistantCountsSource: () => null }))
+
 vi.mock('../../../apps/desktop/src/session/renderer/features/assistant/assistant-shell', () => ({ ShellSlot: () => null }))
 const { searchInChat } = vi.hoisted(() => ({ searchInChat: vi.fn() }))
 vi.mock('../../../apps/desktop/src/session/renderer/features/global-search/search-session', () => ({ searchInChat }))
 
+import { act } from 'react'
 import { MobileAssistantApp } from '../../../apps/desktop/src/mobile/assistant/MobileAssistantApp'
+import { phoneAssistantLayer } from '../../../apps/desktop/src/components/appSlot/phoneAssistantLayer'
+const appOpens = (page: 'devices' | 'library:capabilities') => act(async () => { phoneAssistantLayer.actions()!.open({ section: 'profile', page }) })
 
 let h: ReturnType<typeof createReactHarness>
 const find = (id: string) => h.container.querySelector<HTMLElement>(`[data-testid="${id}"]`)!
@@ -85,6 +93,8 @@ it('keeps profile subpages inside the same header and restores the search action
     expect(find('retained-chat')).toBe(chat)
   }
   expectProfileLocation()
+  await appOpens('devices')
+  expectProfileLocation()
   for (const sub of ['devices', 'devices:this-phone', 'devices:offline', 'connectors', 'library:capabilities', 'devices']) {
     await clickElement(find(`open-${sub}`))
     expectProfileLocation()
@@ -103,7 +113,7 @@ it('keeps profile subpages inside the same header and restores the search action
 it('returns from a profile detail before leaving its section using the one phone header', async () => {
   await h.render(<MobileAssistantApp {...props} />)
   await clickElement(find('mobile-assistant-pill'))
-  await clickElement(find('open-library:capabilities'))
+  await appOpens('library:capabilities')
   await clickElement(find('open-capability-detail'))
   expect(find('capability-detail')).not.toBeNull()
   await clickElement(find('mobile-assistant-back'))

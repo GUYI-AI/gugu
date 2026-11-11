@@ -18,6 +18,11 @@ export function bindingResourcesApi(raw: GuguHost, reportError: (message: string
     ...(save ? { save: coded(save) } : {}),
     ...(remove ? { remove: coded(remove) } : {}),
   };
+  // 50 (resources-management.ts): each one call, answered as the host answers it.
+  for (const member of ['upload', 'createFolder', 'rename', 'removeFolder', 'transcribeVoiceNote', 'removeVoiceNote', 'exportVoiceNote'] as const) {
+    const call = bindings[member];
+    if (call) api[member] = coded(call as (...args: never[]) => Promise<unknown>);
+  }
   const hear = raw.onBindingResources;
   if (!watch || !hear) return api;
   const handlers = new Map<string, (event: AppResourceEvent) => void>();

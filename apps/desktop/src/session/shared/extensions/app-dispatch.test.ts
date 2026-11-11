@@ -105,7 +105,7 @@ describe('the verb row: what a call needs', () => {
     expect(dispatchCallOf({ text: 'x', to: { new: true }, spawn: { chat: GROUP, title: 'Card', transport: 'acp', model: null } }).spawn).toEqual({ chat: GROUP, title: 'Card', transport: 'acp' });
   });
 
-  it('#1927 `{ binding }`: a text draft only, needing chat:draft and the person’s gesture', () => {
+  it('#1927 `{ binding }`: a draft with no refs or images (files go in attach, 50), needing chat:draft and the person’s gesture', () => {
     expect(dispatchNeeds({ draft: true, to: { binding: 'main' } })).toBe('chat:draft');
     // Not a draft is still the binding's: refused at the door without chat:draft, then said wrong by the call.
     expect(dispatchNeeds({ to: { binding: 'main' } })).toBe('chat:draft');
@@ -114,8 +114,8 @@ describe('the verb row: what a call needs', () => {
     expect(() => dispatchCallOf({ text: 'x', to: { binding: 'main' } })).toThrow(/only a draft/);
     expect(() => dispatchCallOf({ text: 'x', draft: true, to: { binding: 'main', chat: GROUP } })).toThrow(/names the conversation alone/);
     expect(() => dispatchCallOf({ text: 'x', draft: true, to: { binding: 'Main' } })).toThrow(/declared conversation binding/);
-    expect(() => dispatchCallOf({ text: 'x', draft: true, to: { binding: 'main' }, refs: [{ file: { chat: GROUP, id: GROUP } }] })).toThrow(/text only/);
-    expect(() => dispatchCallOf({ text: 'x', draft: true, to: { binding: 'main' }, images: [] })).toThrow(/text only/);
+    expect(() => dispatchCallOf({ text: 'x', draft: true, to: { binding: 'main' }, refs: [{ file: { chat: GROUP, id: GROUP } }] })).toThrow(/carries no refs or images/);
+    expect(() => dispatchCallOf({ text: 'x', draft: true, to: { binding: 'main' }, images: [] })).toThrow(/carries no refs or images/);
     const page = (has: boolean, gesture = true) => ({ kind: 'page' as const, widget: false, gesture, has: (word: string) => has && word === 'chat:draft' });
     expect(callRefusal('dispatch', { text: 'x', draft: true, to: { binding: 'main' } }, page(true))).toBeNull();
     expect(callRefusal('dispatch', { text: 'x', draft: true, to: { binding: 'main' } }, page(false))).toMatchObject({ code: 'denied', message: expect.stringContaining('chat:draft') });

@@ -150,6 +150,8 @@ export type SegmentCtx = {
   plan: () => SessionPlans | null;
   translate: ChatTranslator;
   pendingToolCallIds: () => Set<string>;
+  /** A running subagent's text so far, by its launch call; the card itself gets it only when it settles (#2500). */
+  liveSubagent?: (toolCallId: string) => { output?: string; reasoning?: string } | undefined;
   /** 这次调用正在等的那条审批请求（计划审批卡拿它画选项）；没在等 ⇒ undefined。 */
   permissionFor?: (toolCallId: string) => AcpPermissionRequest | undefined;
   terminalSnapshot: (terminalId: string) => TerminalState | null;

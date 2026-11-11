@@ -538,7 +538,6 @@ export default {
     "active": "Active",
     "inactive": "Paused",
     "next": "Next {{time}}",
-    "nextUnavailable": "Couldn't read the next run time",
     "ended": "Ended",
     "enabled": "On",
     "everyDay": "Daily at {{time}}",
@@ -547,7 +546,6 @@ export default {
     "schedule": "Schedule",
     "instructions": "Instructions",
     "editPrompt": "Please change when “{{name}}” runs.",
-    "changeTime": "Change time",
     "delete": "Delete",
     "deleteTitle": "Delete scheduled task",
     "deleteBody": "“{{name}}” will be deleted. This can't be undone.",
@@ -571,8 +569,6 @@ export default {
     "fasterPrompt": "Please help me set up memory faster.",
     "all": "All",
     "voiceNotes": "Voice notes",
-    "voiceNotesEmptyTitle": "No voice notes yet",
-    "voiceLoadFailed": "Couldn't load voice notes",
     "items_one": "{{count}} item",
     "items_other": "{{count}} items",
     "createdBy": "Noted by {{name}}",
@@ -719,7 +715,6 @@ export default {
     "uploading": "Uploading {{name}}…",
     "uploaded_one": "Uploaded {{count}} file",
     "uploaded_other": "Uploaded {{count}} files",
-    "uploadFailed": "Couldn't upload {{name}}: {{message}}",
     "uploadedBanner": "Uploaded {{files}}",
     "analyze": "Have {{name}} look",
     "analyzePrompt": "I put {{files}} in your “{{path}}”. Please take a look and remember what helps you know me.",
@@ -743,12 +738,7 @@ export default {
     "folderDeleted": "Folder deleted",
     "deleteFailed": "Couldn't delete it. Try again.",
     "folderEmpty": "This folder is empty",
-    "empty": "No files yet. Upload yours to help {{name}} know you better.",
-    "loadFailed": "Couldn't load the files",
-    "goneTitle": "This item is gone",
-    "gone": "It may have been deleted or renamed.",
-    "notText": "This isn't a text file, so it can't be shown on the phone.",
-    "tooBigToView": "This file is {{size}}; the phone only shows files up to 1 MB."
+    "empty": "No files yet. Upload yours to help {{name}} know you better."
   },
   "customize": {
     "title": "Customize",
@@ -768,8 +758,7 @@ export default {
     },
     "saved": "Changes saved",
     "saveFailed": "Couldn't save: {{message}}",
-    "shellMissing": "Gugu's main window isn't ready yet. Try again shortly.",
-    "loadFailed": "Couldn't read the personality"
+    "shellMissing": "Gugu's main window isn't ready yet. Try again shortly."
   },
   "diary": {
     "title": "Diary",

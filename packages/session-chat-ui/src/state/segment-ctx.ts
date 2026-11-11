@@ -35,6 +35,8 @@ export function segmentCtxFor(context: ChatContext, state: ChatState, caches: Ch
     plan: () => state.session.state.plan,
     translate: context.translate,
     pendingToolCallIds: () => state.session.state.pendingToolCallIds,
+    liveSubagent: (toolCallId: string) =>
+      state.session.state.backgroundTasks.subagents.find((entry) => entry.launchToolCallId === toolCallId),
     permissionFor: (toolCallId: string) =>
       state.session.state.permissions.find((request) => request.toolCall?.toolCallId === toolCallId),
     terminalSnapshot: (terminalId: string) => state.session.state.terminalSnapshot(terminalId),

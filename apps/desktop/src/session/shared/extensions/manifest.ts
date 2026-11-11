@@ -6,6 +6,7 @@ import { APP_PLATFORMS } from './app-platforms';
 import { claimTakes } from './file-openers';
 import { INSTRUCTIONS_MAX_CHARS, SUBTITLE_MAX_CHARS } from './app-listing';
 import { BINDING_ACTION_API_VERSION, BINDING_ACTION_CAPABILITY, BINDING_NAME, CONVERSATION_BINDING_ACTIONS, CONVERSATION_SURFACE_HEADER_API_VERSION, CONVERSATION_SURFACE_HEADERS, CONVERSATION_SURFACE_PLACEMENTS } from './unread-binding';
+import { PHONE_BINDING_API_VERSION } from './phone-binding';
 import { RESOURCE_BINDING_ACTIONS, resourceDomainProblem } from './agent-resources';
 import { COMPOSER_ACTION_MAX, COMPOSER_ACTIONS_API_VERSION, COMPOSER_RUN_ACTION, composerActionSchema } from './composer-actions';
 
@@ -358,6 +359,9 @@ export const EXTENSION_CAPABILITIES = [
   // and changed through the resource store (`save` / `remove`). Each needs its binding action declared.
   'chat:resources',
   'chat:resources:write',
+  // API 50 (resources-management.ts): that agent's voice notes as the assistant's own page works them — one waiting
+  // transcribed, one removed once the person said yes, one exported where they save it. Needs `resources` reading them.
+  'chat:voice-notes:manage',
   // #1928 (API 43): when that conversation is the person's private one with an agent of theirs, that agent's schedules —
   // listed (`gugu.bindings.schedules`), and changed through the host's own schedule store (`controlSchedule`).
   'chat:schedules',
@@ -466,6 +470,13 @@ export function grantedReach(granted: readonly string[], family: string): AgentR
  * 曾经有过一个 `isExtensionCapability`,导出了、谁也没调用。
  */
 
+/**
+ * How many capabilities one manifest may list: a sanity bound on the manifest, not a permission (each is still consented
+ * to and withdrawn on its own, from the closed list above). It was 12 when no binding had actions; the conversation
+ * binding's actions each bring a capability of their own (15 today), so the assistant App alone lists 14.
+ */
+export const EXTENSION_CAPABILITIES_MAX = 24;
+
 const permissionsSchema = z.strictObject({
   /**
    * Abilities this extension asks for. Each is consented to and revoked on its
@@ -477,7 +488,7 @@ const permissionsSchema = z.strictObject({
    */
   capabilities: z
     .array(z.enum(EXTENSION_CAPABILITIES))
-    .max(12)
+    .max(EXTENSION_CAPABILITIES_MAX)
     .optional(),
   /** Object declarations are permission requests, never caller-selected account or chat IDs. */
   bindings: z.array(z.strictObject({
@@ -785,8 +796,9 @@ export const extensionManifestSchema = z
     if (Boolean(unreadBinding) !== declared.includes('chat:unread')) {
       ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings'], message: 'chat:unread requires exactly one conversation binding with the unread action, and the binding requires chat:unread' });
     }
-    if (unreadBinding && manifest.platforms?.includes('phone')) {
-      ctx.addIssue({ code: 'custom', path: ['platforms'], message: 'conversation unread bindings currently require a desktop-only App' });
+    // API 49 (phone-binding.ts): a phone answers the binding from 49; an App listing the phone with a binding says so.
+    if (unreadBinding && manifest.platforms?.includes('phone') && manifest.apiVersion < PHONE_BINDING_API_VERSION) {
+      ctx.addIssue({ code: 'custom', path: ['platforms'], message: `a conversation binding on a phone requires apiVersion ${PHONE_BINDING_API_VERSION}` });
     }
     if (unreadBinding && manifest.apiVersion < 37) {
       ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: 'conversation unread bindings require apiVersion 37' });
@@ -843,6 +855,10 @@ export const extensionManifestSchema = z
       if (domains && new Set(domains).size !== domains.length) {
         ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings', 0, 'domains', action], message: 'each domain once' });
       }
+    }
+    // 50: the voice-note operations work on notes the binding also reads.
+    if (unreadBinding?.actions.includes('voice-notes:manage') && !unreadBinding.domains?.resources?.includes('voice-notes')) {
+      ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings', 0, 'actions'], message: '"voice-notes:manage" works on notes the binding also reads: domains: { "resources": [..., "voice-notes"] }' });
     }
     const writes = unreadBinding?.domains?.['resources:write'] ?? [];
     if (writes.length > 0 && !(unreadBinding?.actions.includes('resources') && writes.every((domain) => unreadBinding.domains?.resources?.includes(domain)))) {
