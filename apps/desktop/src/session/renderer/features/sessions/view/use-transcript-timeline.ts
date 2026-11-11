@@ -2,13 +2,13 @@ import { chatActor } from '@renderer/lib/chat/actor-identity';
 import { chatDisplayName } from '@renderer/lib/chat/chat-name';
 import { readChatSummary, resolveChatId, subscribeChatNames } from '@/lib/chatSummariesBridge';
 import { translateSessionMessage } from '../../../localization/locale-store';
-import { useLayoutEffect, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { createComputed, createMemo, createRoot, createSignal } from 'solid-js';
 import { readIdentityDirectoryBridge } from '@/lib/identityDirectoryBridge';
 import { readSelfIdentityBridge } from '@/lib/selfIdentityBridge';
 import type { TimelineRailOptions } from '@gugu/core/shared/timelineRail';
 import { pendingPromptTurn, type ChatSessionState, type SelfIdentity, type TranscriptApi, type TranscriptTurn } from '@gugu/session-chat-ui';
-import { timelineTurnsFromTranscript, type TimelineTurn } from './session-timeline-turns';
+import { timelineTurnsFromOutline, timelineTurnsFromTranscript, type TimelineOutlineTurn, type TimelineTurn } from './session-timeline-turns';
 
 /** How long name updates are gathered before the rail is reprojected once for all of them. */
 const IDENTITY_REFRESH_MS = 50;
@@ -20,7 +20,12 @@ export function useTranscriptTimeline<T>(
   select: (turns: TimelineTurn[]) => T,
   /** 乐观行(发出了、真的那一轮还没开出)也算一格:刻度与左边那条车道从发出那一刻就在,交接时这一列不横移。 */
   session?: Pick<ChatSessionState, 'state'>,
+  /** The turns older than the loaded ones, in outline: the rail then covers the whole conversation, not its loaded end. */
+  outline?: readonly TimelineOutlineTurn[],
 ): T {
+  const setOutline = useRef<((turns: readonly TimelineOutlineTurn[]) => void) | null>(null);
+  const latestOutline = useRef(outline);
+  latestOutline.current = outline;
   const [snapshot, setSnapshot] = useState<{
     transcript: TranscriptApi | undefined;
     value: T;
@@ -92,11 +97,22 @@ export function useTranscriptTimeline<T>(
         const turn = transcript.state.activeTurnSnapshot ?? (pending ? pendingPromptTurn(pending) : null);
         return timelineTurnsFromTranscript(turn ? [turn] : [], selfIdentity(), options, activityContext);
       });
-      const selected = createMemo(() => select([...committed(), ...active()]));
+      // What is loaded is drawn from the turns themselves; the outline only speaks for what is older than them.
+      const [older, setOlder] = createSignal<readonly TimelineOutlineTurn[]>(latestOutline.current ?? []);
+      setOutline.current = setOlder;
+      const oldestLoaded = createMemo(() => transcript.state.committedTurns[0]?.seq);
+      const unloaded = createMemo(() => {
+        identityRevision();
+        const from = oldestLoaded(), turns = older();
+        if (!turns.length) return [];
+        return timelineTurnsFromOutline(from === undefined ? turns : turns.filter((turn) => turn.seq < from), selfIdentity(), options);
+      });
+      const selected = createMemo(() => select([...unloaded(), ...committed(), ...active()]));
       createComputed(() => setSnapshot({ transcript, value: selected() }));
-      return () => { offDirectory?.(); offChatNames(); offSelf?.(); clearTimeout(identityRefresh); dispose(); };
+      return () => { setOutline.current = null; offDirectory?.(); offChatNames(); offSelf?.(); clearTimeout(identityRefresh); dispose(); };
     });
   }, [transcript, selfIdentity, select, session]);
+  useLayoutEffect(() => { setOutline.current?.(outline ?? []); }, [outline]);
 
   return snapshot.transcript === transcript ? snapshot.value : select([]);
 }

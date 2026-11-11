@@ -2843,6 +2843,11 @@ export class AcpChatStore {
     return typeof this._olderCursor === 'number';
   }
 
+  /** Changes each time this store starts its history over; a reader holding pages across awaits compares it. */
+  get historyEpoch(): number {
+    return this._historyGeneration;
+  }
+
   /**
    * 往上翻一页(#5381)。返回**这一页**由旧到新的回合,交给视图 `loadOlder()` 去 prepend
    * (它会把滚动位置钉住);同时留在 store 里参与下一次合成。

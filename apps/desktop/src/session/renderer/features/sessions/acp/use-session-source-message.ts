@@ -11,9 +11,14 @@ type SourceStore = {
   chatState: { transcript: { state: { committedTurns: readonly TranscriptTurn[]; activeTurnSnapshot?: TranscriptTurn | null } } };
   canLoadOlderHistory: boolean;
   loadOlderHistory(): Promise<TranscriptTurn[]>;
+  /** Changes whenever the store starts its history over (reattach, revert): pages read before that belong to nothing. */
+  historyEpoch?: number;
   /** A phone host applies fetched pages through its timeline props. */
   historyManagedByHost?: boolean;
 };
+
+/** How many turns a reveal reading back to a far message lets pile up before it prepends them. */
+const REVEAL_BATCH_TURNS = 300;
 
 /** The chat reveal controller, with the session's history loader and virtual list. */
 export function useSessionSourceMessage(store: SourceStore | null | undefined, view: MutableRefObject<ChatView | null>, onMissing: () => void) {
@@ -37,26 +42,50 @@ export function useSessionSourceMessage(store: SourceStore | null | undefined, v
   }, [store]);
 
   // Top-edge pagination and quote navigation share this request, so one page is prepended once.
-  const loadOlder = useCallback(async () => {
+  // `until` (a reveal reading back to a far message): keep reading pages until one of them satisfies it, prepending
+  // them a batch at a time. Each prepend rebuilds the list, so thirty pages landed one by one are thirty rebuilds on
+  // the way to a place the reader has not seen yet, while all of them landed at once is one rebuild that holds the
+  // window for seconds. The list's own asks meanwhile join this request.
+  const loadOlder = useCallback(async (until?: (turns: readonly TranscriptTurn[]) => boolean) => {
     const current = latest.current;
     if (!current) return [];
     if (loading.current?.store === current) return loading.current.promise;
     const currentView = view.current;
-    const promise = current.loadOlderHistory().then(async turns => {
-      // The page is in hand, so this request is over: prepending it re-arms the list, and what the list asks for
-      // next is the page above. Kept as "in flight" through the frame below, that ask got this finished page back.
-      if (loading.current?.promise === promise) loading.current = null;
-      if (mounted.current && latest.current === current && view.current === currentView && currentView && turns.length) {
-        if (!current.historyManagedByHost) currentView.loadOlder(turns);
-        // History is committed before the virtual list publishes its rows and height map.
-        // Let that layout frame finish before resolving an anchor or starting its flash.
-        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    const epoch = current.historyEpoch;
+    // A store that started over while pages were being read has drawn its history anew, without them.
+    const shown = () => mounted.current && latest.current === current && view.current === currentView && current.historyEpoch === epoch;
+    const land = async (turns: TranscriptTurn[]) => {
+      if (!shown() || !currentView || !turns.length) return;
+      if (!current.historyManagedByHost) currentView.loadOlder(turns);
+      // History is committed before the virtual list publishes its rows and height map.
+      // Let that layout frame finish before resolving an anchor or starting its flash.
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    };
+    // The pages are in hand, so this request is over: prepending them re-arms the list, and what the list asks for
+    // next is the page above. Kept as "in flight" through the frame a prepend waits, that ask got this finished request back.
+    const over = () => { if (loading.current?.promise === request) loading.current = null; };
+    const request: Promise<TranscriptTurn[]> = (async () => {
+      let held = await current.loadOlderHistory();
+      if (until && !current.historyManagedByHost) {
+        let found = until(held);
+        while (!found && held.length && current.canLoadOlderHistory && shown()) {
+          const older = await current.loadOlderHistory();
+          if (!older.length) break;
+          found = until(older);
+          if (!found && held.length + older.length > REVEAL_BATCH_TURNS) {
+            await land(held);
+            held = older;
+          } else held = [...older, ...held];
+        }
+        if (!shown()) held = [];
       }
-      return turns;
-    });
-    loading.current = { store: current, promise };
-    try { return await promise; }
-    finally { if (loading.current?.promise === promise) loading.current = null; }
+      over();
+      await land(held);
+      return held;
+    })();
+    loading.current = { store: current, promise: request };
+    try { return await request; }
+    finally { over(); }
   }, [view]);
 
   const reveal = useCallback((reference: string) => {
@@ -83,8 +112,9 @@ export function useSessionSourceMessage(store: SourceStore | null | undefined, v
     void revealSourceMessage(reference, {
       showLoaded,
       load: async () => {
+        const holds = (turns: readonly TranscriptTurn[]) => resolveConversationMessageReference(turns, reference, current.sessionId) !== null;
         while (valid() && current.canLoadOlderHistory) {
-          const turns = await loadOlder();
+          const turns = await loadOlder(holds);
           if (showLoaded()) return;
           if (!turns.length) break;
         }
