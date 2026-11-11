@@ -1,10 +1,9 @@
 // #1931 Reads an installed App's personal-assistant product rules (`contributes.assistantRules`) into the same typed
 // rules the host's built-in copy has (@gugu/core/shared/assistantRulesFormat). Text and data only: nothing here runs App code.
 //
-// This module validates; it does not decide whom to believe. A caller reads a folder only from the App the host trusts as
-// the product's rules provider (that check, and keeping the last good copy, come with the read points that use it), so
-// no read point calls this yet. Everything that is not exactly the format is refused with the file and the reason —
-// never repaired, defaulted or partly accepted.
+// This module validates; it does not decide whom to believe: assistant-rules-resolver.ts reads a folder only from the App
+// assistant-rules-trust.ts believes, and reads its own last good copy back through here too. Everything that is not
+// exactly the format is refused with the file and the reason — never repaired, defaulted or partly accepted.
 import { lstat, readdir, readFile } from 'node:fs/promises'
 import { z } from 'zod'
 import {

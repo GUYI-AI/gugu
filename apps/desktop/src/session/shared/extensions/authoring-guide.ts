@@ -1042,8 +1042,10 @@ standing behavior is a skill whose description says when to read it.
 with one newline. Text files are UTF-8 without a byte-order mark, LF only; \`{{slot}}\`s are limited per key and filled by
 the host. Nothing in the folder runs: the host reads it at its own points and refuses it whole on any unknown key or
 file, an unsupported \`format\`, a bad encoding, a size over its bound or a path leaving the folder.
-**It is honoured only for the App the host trusts as the product's rules provider.** Any other App's folder is never
-read, so declaring it gives an ordinary App nothing.
+**It is honoured only for the product's assistant App: id \`gugu-assistant\`, installed from the market, its code in
+gugu's market repository, no fork switched on.** Any other App's folder is never read, so declaring it gives an ordinary
+App nothing. The host keeps a copy of the last folder it accepted and goes on using it when that App is switched off,
+uninstalled, or a later version's folder is refused.
 
 ## Prompts (API 34)
 

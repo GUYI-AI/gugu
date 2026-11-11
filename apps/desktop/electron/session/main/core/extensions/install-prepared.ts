@@ -78,7 +78,8 @@ export async function installPrepared(prepared: PreparedInstall, consent: Instal
   const asks = prepared.asks || grant !== null;
   let notGivenAt: { id: string; name: string } | null = null;
   const done = await agreeThenInstall(ask, asks, consent, () => (dependencies.requestInstallConsent ?? requestExtensionInstallConsent)({ sourceDir: prepared.dir, ...ask }), async () => {
-    const installed = extensionsService().installFromDirectory(prepared.dir, manifestDigest, prepared.origin, prepared.publisher, prepared.variant);
+    // A market install keeps where its code is (`marketSource`): the sheet's first line names it.
+    const installed = extensionsService().installFromDirectory(prepared.dir, manifestDigest, prepared.origin, prepared.publisher, prepared.variant, prepared.sheet.market?.source);
     notGivenAt = await given.recordInstallGrant(installed.manifest.id, grant);
     (dependencies.afterInstall ?? applyInstalledExtension)(installed);
     return installed;
