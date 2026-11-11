@@ -4,6 +4,7 @@ import { Button } from '../ui/Button'
 import { Markdown } from '../markdown/Markdown'
 import { Monitor, Sparkles } from '../../lib/icons'
 import { usePhoneRead, machineKey } from '../../mobile/assistant/usePhoneRead'
+import { assistantReadWaiting } from './useAssistantRead'
 import type { AssistantMachine } from '../../session/renderer/features/assistant/assistant-machine-core'
 import type { UserLibraryKind, UserLibraryEntry, UserLibraryRead } from '../../session/shared/user-library'
 import { AssistantEmpty, AssistantRow, AssistantSection, PageHead } from '../../session/renderer/features/assistant/assistant-ui-parts'
@@ -60,7 +61,8 @@ export function AssistantLibraryCount({ machine, kind, assistantId, onCount }: {
   const read = usePhoneRead(sourceKey(machine, kind, assistantId), () => readVolume(machine, kind), 'read Gugu library',undefined,
     () => machine?.panel ? assistantPanelLibrary(machine.panel).peekVolume(kind) : undefined)
   useLibraryNotifications(machine, kind, read.refresh)
-  const count: LibraryCountRead = read.state === 'ok' ? read.data.items.length : read.state === 'error' ? 'failed' : 'loading'
+  // A collection not prepared yet (a new assistant's setup finishing) is still coming, not unreadable.
+  const count: LibraryCountRead = read.state === 'ok' ? read.data.items.length : read.state === 'error' && !assistantReadWaiting(read.error) ? 'failed' : 'loading'
   useEffect(() => onCount(count), [count, onCount])
   return null
 }

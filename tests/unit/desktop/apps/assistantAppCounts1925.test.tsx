@@ -95,6 +95,15 @@ describe('the counts as read states', () => {
     expect(last().counts).toEqual({ devices: { state: 'ready', value: 4 }, connectedApps: { state: 'ready', value: { saved: 2, connected: 1 } }, projects: { state: 'ready', value: 3 }, capabilities: { state: 'ready', value: 5 } });
   });
 
+  // Owner 11-12 (fresh account): right after setup the cloud had not prepared the panel's collections yet; that is still
+  // coming, not 「暂时读不到资源」.
+  it('a collection not prepared yet is loading, never unreadable', () => {
+    reads.apps = { state: 'error', error: Object.assign(new Error('This collection has not been prepared yet'), { code: 'unprepared' }) };
+    mount();
+    expect(last().counts).toMatchObject({ connectedApps: { state: 'loading' } });
+    expect(last().connectors).toEqual({ state: 'loading' });
+  });
+
   it('unreadable where the built-in row says it cannot read: the library, the connections, the chat channels, the panel itself', () => {
     reads.capabilities = 'failed';
     reads.apps = { state: 'error' };
