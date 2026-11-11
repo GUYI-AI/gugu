@@ -908,6 +908,11 @@ wherever the assistant lives (this computer, another, the cloud).
 - \`gugu.bindings.openWork("main", handle)\` in a click: the host draws that task's conversation in your panel, over your
   page, with its own back control; \`gugu.bindings.closeWork("main")\` takes it away. \`open\` is that row's handle while it is
   drawn, else null — hide your list then. You cannot see it. Another account, a withdrawn grant, a new choice: it closes.
+- \`contributes.conversationSurface.header: "assistant"\` (46), over that same assistant chat: the host draws the built-in
+  assistant page's top row above the conversation — its face and name, search, settings gear, expand — from its own data.
+  A click on the face and name: \`onSurface\` hears \`intent: { kind: "profile" }\` once, the panel expanded; show its
+  profile. The gear opens the host's settings page over your page. \`panel.hostPage\` is true while a host page (that, or a
+  task) is over your page. Another conversation: no row.
 
 Which chats the reader is in and who is in one — for a page that is in no chat (an App's own tab, full screen) to
 offer one — and what people and agents said in a chat: a stretch of its timeline, one thread, or the messages that

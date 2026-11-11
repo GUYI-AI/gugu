@@ -6,9 +6,16 @@
 
 /** App id → the conversation the shell may draw beside its main page now. Absent: that App's page opens alone. */
 export type AppConversationSurfaces = Readonly<Record<string, string>>
+/**
+ * #1925 (46) App id → the host's own row above that conversation (`contributes.conversationSurface.header`), for the account
+ * main verified it for: only while the conversation is that account's private chat with its own assistant. Absent: no row.
+ */
+export type AppConversationHeaders = Readonly<Record<string, { kind: 'assistant'; ownerId: string }>>
 
 export interface AppConversationSurfaceBridge {
   getSnapshot(): AppConversationSurfaces
+  /** 46: the rows above those conversations; changes are told to the same listeners. */
+  getHeaders(): AppConversationHeaders
   subscribe(listener: () => void): () => void
 }
 
@@ -16,11 +23,14 @@ export const APP_CONVERSATION_SURFACE_BRIDGE_KEY = '__GUGU_APP_CONVERSATION_SURF
 type BridgeWindow = Window & { [APP_CONVERSATION_SURFACE_BRIDGE_KEY]?: AppConversationSurfaceBridge }
 
 const NONE: AppConversationSurfaces = Object.freeze({})
+const NO_HEADERS: AppConversationHeaders = Object.freeze({})
 let current: AppConversationSurfaces = NONE
+let headers: AppConversationHeaders = NO_HEADERS
 const listeners = new Set<() => void>()
 
 const bridge: AppConversationSurfaceBridge = {
   getSnapshot: () => current,
+  getHeaders: () => headers,
   subscribe: (listener) => {
     listeners.add(listener)
     return () => {
@@ -35,11 +45,15 @@ export function installAppConversationSurfaceBridge(w: Window = window): void {
   if (target[APP_CONVERSATION_SURFACE_BRIDGE_KEY] !== bridge) target[APP_CONVERSATION_SURFACE_BRIDGE_KEY] = bridge
 }
 
-/** 壳:发布此刻能画的那几条(没变就不通知)。 */
-export function publishAppConversationSurfaces(next: AppConversationSurfaces): void {
+/** 壳:发布此刻能画的那几条,和它们上面那一行(没变就不通知);一行只给此刻画着的会话。 */
+export function publishAppConversationSurfaces(next: AppConversationSurfaces, nextHeaders: AppConversationHeaders = NO_HEADERS): void {
   const keys = Object.keys(next)
-  if (keys.length === Object.keys(current).length && keys.every((key) => current[key] === next[key])) return
-  current = keys.length === 0 ? NONE : Object.freeze({ ...next })
+  const rows = Object.fromEntries(Object.entries(nextHeaders).filter(([key]) => Object.hasOwn(next, key)))
+  const sameSurfaces = keys.length === Object.keys(current).length && keys.every((key) => current[key] === next[key])
+  const sameHeaders = JSON.stringify(Object.entries(rows).sort()) === JSON.stringify(Object.entries(headers).sort())
+  if (sameSurfaces && sameHeaders) return
+  if (!sameSurfaces) current = keys.length === 0 ? NONE : Object.freeze({ ...next })
+  if (!sameHeaders) headers = Object.keys(rows).length === 0 ? NO_HEADERS : Object.freeze(rows)
   for (const listener of listeners) listener()
 }
 

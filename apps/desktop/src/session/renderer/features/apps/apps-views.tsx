@@ -9,7 +9,7 @@ import { SquareArrowOutUpRight, Settings } from '@/lib/icons';
 import { followLink } from '@/lib/guguLinks';
 import { openAppInWindow } from '@renderer/features/extensions/app-dock';
 import { AppConversationFrame } from './app-conversation-frame';
-import { AppDockPage } from './app-work-slot';
+import { AppDockPage } from './app-host-layer-slot';
 import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
 import { ExtensionsLibraryPage } from '@renderer/features/library/extensions-library-page';

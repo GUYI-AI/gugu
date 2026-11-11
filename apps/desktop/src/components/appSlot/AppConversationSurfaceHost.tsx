@@ -93,7 +93,9 @@ export const AppConversationSurfaceHost = observer(function AppConversationSurfa
   const candidates = placing.flatMap((manifest) => {
     const binding = current?.bindings[manifest.id]
     if (!binding || changed.apps.has(manifest.id) || lapsed.includes(manifest.id)) return []
-    return binding.ownerId === ownerId && binding.name === manifest.contributes.conversationSurface?.binding ? [[manifest.id, binding.chatId, binding.authority] as const] : []
+    // 46: the host's row above it, only as main verified it for this read (declared, and the account's own assistant chat).
+    const header = binding.header === 'assistant' && manifest.contributes.conversationSurface?.header === 'assistant' ? 'assistant' : null
+    return binding.ownerId === ownerId && binding.name === manifest.contributes.conversationSurface?.binding ? [[manifest.id, binding.chatId, binding.authority, header] as const] : []
   })
   // Still in it: the chat list is the account's own membership, as the rail's unread source reads it.
   const wantedChats = candidates.map(([, chatId]) => chatId)
@@ -101,8 +103,13 @@ export const AppConversationSurfaceHost = observer(function AppConversationSurfa
     (store) => store.chats.filter((chat) => wantedChats.includes(chat.id)).map((chat) => chat.id))
   const signature = JSON.stringify(candidates.filter(([, chatId]) => present.includes(chatId)))
   // The signature is the dependency: a new object only when what may be drawn, or its authority, changed.
-  const drawable = useMemo(() => new Map((JSON.parse(signature) as [string, string, string][]).map(([id, chatId, authority]) => [id, { chatId, authority }])), [signature])
-  useEffect(() => { publishAppConversationSurfaces(Object.fromEntries([...drawable].map(([id, { chatId }]) => [id, chatId]))) }, [drawable])
+  const drawable = useMemo(() => new Map((JSON.parse(signature) as [string, string, string, 'assistant' | null][]).map(([id, chatId, authority, header]) => [id, { chatId, authority, header }])), [signature])
+  useEffect(() => {
+    publishAppConversationSurfaces(
+      Object.fromEntries([...drawable].map(([id, { chatId }]) => [id, chatId])),
+      Object.fromEntries([...drawable].flatMap(([id, { header }]) => (header && ownerId ? [[id, { kind: header, ownerId }]] : []))),
+    )
+  }, [drawable, ownerId])
   useEffect(() => () => publishAppConversationSurfaces({}), [])
 
   const slots = readShellSlots()

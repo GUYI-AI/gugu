@@ -2,7 +2,7 @@ import { openFolderInTab } from '@renderer/features/sessions/file-view/file-view
 import { findSessionAnywhere } from '@renderer/features/sessions/stores/session-selectors';
 import { composeChatDraft } from '@/lib/composeDraft';
 import { followLink, openLinkTarget } from '@/lib/guguLinks';
-import { readAppWorkChatBridge } from '@/lib/appWorkChatBridge';
+import { readAppHostLayerBridge } from '@/lib/appHostLayerBridge';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { rpc } from '@renderer/lib/ipc';
@@ -256,10 +256,12 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
     // panel, or takes it away. The shell's bridge refuses an account or a row it does not have now.
     case 'openWork':
     case 'closeWork': {
-      const bridge = readAppWorkChatBridge();
-      if (!bridge) throw new Error('This window draws no task conversations');
-      if (action.kind === 'closeWork') return bridge.close(extensionId);
-      return bridge.open(extensionId, { ownerId: action.ownerId, workId: action.workId, sessionId: action.sessionId });
+      // #1925 (46) The host page over the App's panel (lib/appHostLayerBridge.ts): opening a task replaces any page there;
+      // closing takes away a task only, never another host page the person opened.
+      const bridge = readAppHostLayerBridge();
+      if (!bridge) throw new Error('This window draws no host pages over an App');
+      if (action.kind === 'closeWork') return bridge.close(extensionId, 'work');
+      return bridge.open(extensionId, { kind: 'work', ownerId: action.ownerId, workId: action.workId, sessionId: action.sessionId });
     }
     // The chat shell takes them (MainLayout: another chat comes up first), as the phone's page gives them.
     case 'showMessage':
