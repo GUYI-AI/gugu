@@ -40,11 +40,21 @@ async function mount(pages: number) {
 }
 
 it('keeps loading older pages while the loaded history does not fill the viewport', async () => {
-  const { scroller, remaining } = await mount(40);
+  const { scroller, remaining } = await mount(200);
   expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight);
-  // Not the whole history: loading stops once a screen of history is above the reader.
+  // Not the whole history: loading stops once enough history is above the reader.
   expect(remaining()).toBeGreaterThan(0);
   expect(scroller.scrollTop).toBeGreaterThanOrEqual(scroller.clientHeight);
+});
+
+// A page is a number of bytes, not of rows (here three short rows). One page ahead of the reader would be a fraction
+// of a screen, and the reader would catch up with the top on every page.
+it('keeps three screens of loaded history above the reader, however little each page holds', async () => {
+  const { scroller, remaining } = await mount(200);
+  expect(remaining()).toBeGreaterThan(0);
+  expect(scroller.scrollTop).toBeGreaterThanOrEqual(3 * scroller.clientHeight);
+  // And no more than that plus the page that crossed the line.
+  expect(scroller.scrollTop).toBeLessThan(4 * scroller.clientHeight);
 });
 
 it('stops asking once the host has no older history', async () => {
