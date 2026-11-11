@@ -35,6 +35,12 @@ export const agentRunContextSchema = z.object({
   /** Selected device credentials. Provider/platform overrides remain authoritative. */
   credentialEnv: z.record(z.string(), z.string()).optional(),
   /**
+   * 选中的是一把「API Key 连接」(#2507,Claude / Codex 以外、声明了 `apiKeyConnection` 的家)。
+   * 有它时这一家的登录态 = 已登录(API Key)、付费方 = 这把 key / 它的地址,由宿主照它答,
+   * ❌ 再去读 CLI 自己的文件 —— 那里没有这把 key,只会答「未登录」。`endpoint` 缺席 = 官方地址。
+   */
+  apiKeyConnection: z.object({ endpoint: z.string().optional() }).optional(),
+  /**
    * 底座 env:白名单透传 + 平台补偿(Windows 八个必备变量 / `SSH_AUTH_SOCK` 探测)
    * + **用户在 Agents 设置里填的 env**。
    *

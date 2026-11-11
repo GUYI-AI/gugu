@@ -32,6 +32,8 @@ const v1Schema = z.object({
   harnessConnection: z.object({
     kind: z.enum(['native', 'account', 'api-key']),
     endpoint: z.string().optional(),
+    /** API Key 连接点名的模型(#2507,只有声明了 `model: 'required'` 的家才有)。 */
+    model: z.string().optional(),
     removed: z.boolean().optional(),
   }).optional(),
 });

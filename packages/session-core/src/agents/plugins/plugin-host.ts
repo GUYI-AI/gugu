@@ -42,6 +42,7 @@ import type {
 } from './capabilities/auth';
 import type { McpServerRegistration } from './capabilities/mcp';
 import type { SubscriptionPlanReading, SubscriptionUsageReading } from './capabilities/subscription';
+import { apiKeyConnectionPlan, apiKeyConnectionUsage } from './capabilities/api-key-connection';
 import { readAgentMemoryDocuments, type AgentMemoryDocument } from './capabilities/memory';
 import type { AgentCommand, CommandContext } from './capabilities/prompt';
 import { declaresSessionTuiLeg, harnessSelfUpdateLaunch } from './capabilities/session-bundle';
@@ -406,11 +407,13 @@ export class AgentPluginHost {
     runContext: AgentRunContext
   ): Promise<Result<SubscriptionPlanReading, AgentHostError>> {
     if (!this.registry.get(providerId)) return err({ type: 'unknown-provider', providerId });
+    // 选中的是 API Key 连接(#2507):付钱的就是这把 key,❌ 去读 CLI 自己的文件(那里没有它,只会答「未登录」)。
+    if (runContext.apiKeyConnection) return ok(apiKeyConnectionPlan(runContext.apiKeyConnection.endpoint));
     const behavior = this.subscriptionBehavior(providerId);
-    if (!behavior) return ok({ payer: 'unknown' });
+    if (!behavior) return ok(await this.planFromAuth(providerId, runContext, { payer: 'unknown' }, true));
     const ctx = await this.credentialContext(providerId, runContext);
     if (!ctx.success) return ctx;
-    return ok(await behavior.readPlan(ctx.data));
+    return ok(await this.planFromAuth(providerId, runContext, await behavior.readPlan(ctx.data), false));
   }
 
   async readSubscriptionUsage(
@@ -418,11 +421,37 @@ export class AgentPluginHost {
     runContext: AgentRunContext
   ): Promise<Result<SubscriptionUsageReading, AgentHostError>> {
     if (!this.registry.get(providerId)) return err({ type: 'unknown-provider', providerId });
+    if (runContext.apiKeyConnection) return ok(apiKeyConnectionUsage(runContext.apiKeyConnection.endpoint));
     const behavior = this.subscriptionBehavior(providerId);
     if (!behavior) return ok({ kind: 'unavailable', reason: 'not-reported', readAt: Date.now() });
     const ctx = await this.credentialContext(providerId, runContext);
     if (!ctx.success) return ctx;
-    return ok(await behavior.readUsage(ctx.data, await behavior.readPlan(ctx.data)));
+    const plan = await this.planFromAuth(providerId, runContext, await behavior.readPlan(ctx.data), false);
+    if (plan.payer === 'not-signed-in') return ok({ kind: 'unavailable', reason: 'not-signed-in', readAt: Date.now() });
+    return ok(await behavior.readUsage(ctx.data, plan));
+  }
+
+  /**
+   * 读不出套餐(`unknown`)时由登录读数兜(#2507):没登录就答「未登录」—— 订阅页这一行才给「登录」,
+   * ❌ 把读套餐那一步撞出来的原始报错摆给用户(Copilot 没登 gh 时就是一句 `gh api … 失败`);
+   * 这家根本没有套餐读法(`noReader`)而登录了,就按凭据说谁付钱,❌ 说「读取失败」。
+   * 读出了套餐的照原样,登录读数判不出的也照原样。
+   */
+  private async planFromAuth(
+    providerId: string,
+    runContext: AgentRunContext,
+    plan: SubscriptionPlanReading,
+    noReader: boolean
+  ): Promise<SubscriptionPlanReading> {
+    if (plan.payer !== 'unknown') return plan;
+    const auth = await this.checkAuthStatus(providerId, runContext);
+    if (!auth.success) return plan;
+    if (auth.data.kind === 'unauthenticated') return { payer: 'not-signed-in' };
+    // 凭据种类没说的不猜(订阅还是 Key 判错了,付钱那行就是一句假话)。
+    if (noReader && auth.data.kind === 'authenticated' && auth.data.credentialKind) {
+      return { payer: auth.data.credentialKind };
+    }
+    return plan;
   }
 
   private subscriptionBehavior(providerId: string) {
@@ -781,6 +810,12 @@ export class AgentPluginHost {
     runContext: AgentRunContext,
     program: string | undefined
   ): Promise<Result<AgentAuthStatus, AgentHostError>> {
+    // 主程序跑在一把 API Key 连接上(#2507):登录态就是它 —— 与 Claude / Codex 的 API 连接同一种读数。
+    // 伴随程序(#6335)不吃这把 key,照它自己的答。
+    if (program === undefined && runContext.apiKeyConnection) {
+      if (!this.registry.get(providerId)) return err({ type: 'unknown-provider', providerId });
+      return ok({ kind: 'authenticated', credentialKind: 'api-key' });
+    }
     const programAuth = this.resolveProgramAuth(providerId, program);
     if (!programAuth.success) return programAuth;
     const behavior = programAuth.data?.behavior;

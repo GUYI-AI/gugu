@@ -71,7 +71,9 @@ export async function resolveLocalAgentRunContext(
     options.bridgeWait
   );
 
+  // Claude / Codex 的账号与 API 连接;其余家声明了 `apiKeyConnection` 的,选中的 API Key 连接(#2507)。
   const connection: Partial<AgentRunContext> = providerId === 'claude' || providerId === 'codex'
+    || getPlugin(providerId).capabilities.apiKeyConnection?.kind === 'supported'
     ? await import('./harness-connections').then(({ resolveHarnessConnection }) =>
         resolveHarnessConnection(providerId, {
           connectionId: options.connectionId,

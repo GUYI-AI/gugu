@@ -6,11 +6,19 @@ export const harnessConnectionSchema = z.object({
   kind: z.enum(['native', 'account', 'api-key']),
   name: z.string(),
   endpoint: z.string().optional(),
+  /** API Key 连接点名的模型(只有声明了 `model: 'required'` 的家才有)。 */
+  model: z.string().optional(),
   current: z.boolean(),
 });
 
+/**
+ * 哪一家。合同只收一个非空 id:**哪些家能有连接**由主进程按插件注册表判(Claude / Codex 有账号连接;
+ * 声明了 `apiKeyConnection` 的家有 API Key 连接;其余一律拒),❌ 在合同里写死名单。
+ */
+const connectionProviderId = z.string().trim().min(1).max(64);
+
 export const harnessConnectionTargetSchema = z.object({
-  providerId: z.enum(['claude', 'codex']),
+  providerId: connectionProviderId,
   connectionId: z.string().min(1),
 });
 
@@ -21,17 +29,19 @@ export const harnessConnectionSelectSchema = harnessConnectionTargetSchema.exten
 
 export const createHarnessConnectionSchema = z
   .object({
-    providerId: z.enum(['claude', 'codex']),
+    providerId: connectionProviderId,
     kind: z.enum(['account', 'api-key']),
     name: z.string().trim().max(80).optional(),
     apiKey: z.string().trim().min(1).max(8192).optional(),
     endpoint: z.string().url().optional(),
+    /** 该家声明 `model: 'required'` 时必填(主进程按声明核),其余家不收。 */
+    model: z.string().trim().min(1).max(200).optional(),
   })
   .superRefine((value, ctx) => {
     if (value.kind === 'api-key' && !value.apiKey) {
       ctx.addIssue({ code: 'custom', path: ['apiKey'], message: 'API key is required' });
     }
-    if (value.kind === 'account' && (value.apiKey || value.endpoint)) {
+    if (value.kind === 'account' && (value.apiKey || value.endpoint || value.model)) {
       ctx.addIssue({ code: 'custom', message: 'Account sign-in cannot include API credentials' });
     }
     if (value.endpoint) {

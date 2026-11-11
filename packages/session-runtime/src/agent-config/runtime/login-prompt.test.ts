@@ -42,6 +42,33 @@ describe('真 CLI 的登录输出(#2507)', () => {
     });
   });
 
+  it.each([1, 7, 4096])('MiMo 0.1.13 `auth login -p xiaomi`:给链接后停在「Paste code here if prompted >」⇒ 要码(每段 %i 字)', (chunk) => {
+    expect(readAll(capture('mimocode-0.1.13-auth-login-p-xiaomi.txt'), chunk).reading()).toMatchObject({
+      awaitingInput: true,
+      inputKind: 'code',
+      userCode: null,
+    });
+  });
+
+  it.each([1, 7, 4096])('Copilot 1.0.109 `login --device-code`:设备码与链接同一行、剪贴板转义不算输出、不要码(每段 %i 字)', (chunk) => {
+    const reader = readAll(capture('copilot-1.0.109-login-device-code.txt'), chunk);
+    expect(reader.reading()).toMatchObject({ userCode: 'D7E7-AB5E', awaitingInput: false });
+    expect(reader.tail()).not.toMatch(/\]52;/);
+  });
+
+  it.each([1, 7, 4096])('Kilo 7.8.27 `auth login -p kilo`:码已经带在链接里,只等授权、不要码(每段 %i 字)', (chunk) => {
+    expect(readAll(capture('kilo-7.8.27-auth-login-p-kilo.txt'), chunk).reading()).toMatchObject({
+      awaitingInput: false,
+    });
+  });
+
+  it.each([1, 7, 4096])('Hermes 2026.9.24 `auth add nous --type oauth`:「If prompted, enter code: NF3L-YTKR」是带去网页的码,不是要码(每段 %i 字)', (chunk) => {
+    expect(readAll(capture('hermes-2026.9.24-auth-add-nous.txt'), chunk).reading()).toMatchObject({
+      userCode: 'NF3L-YTKR',
+      awaitingInput: false,
+    });
+  });
+
   it('OpenCode 不带 -p:停在选供应商的菜单上 ⇒ 不是要码(没有终端时这条路走不通,得在命令里指定供应商)', () => {
     expect(readAll(capture('opencode-1.18.28-auth-login-picker.txt'), 4096).reading().awaitingInput).toBe(false);
   });
