@@ -197,6 +197,8 @@ function sameSnapshot(a: AssistantShellSnapshot, b: AssistantShellSnapshot): boo
     a.ownerName === b.ownerName &&
     a.assistantState === b.assistantState &&
     a.chatId === b.chatId && a.chatReadFailed === b.chatReadFailed &&
+    // 只差会员档、正在安家、换了账号的那一份也是新的:从前漏比,读到会员档 / 开始安家 / 换号后桥上一直是旧的。
+    a.member === b.member && a.preparing === b.preparing && a.ownerId === b.ownerId && a.ownerAvatar === b.ownerAvatar &&
     JSON.stringify(a.cloud) === JSON.stringify(b.cloud) &&
     JSON.stringify(a.assistant) === JSON.stringify(b.assistant)
   )
