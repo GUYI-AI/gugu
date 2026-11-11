@@ -17,7 +17,7 @@ import type { ExtensionManifest } from '../../session/shared/extensions/manifest
 import {
   base64Of, bytesOfBase64, firstProblem, sha256Hex, SHIPPED_RELEASE_TRUST, signedFileProblems, verifyReleaseProof, withinScope,
   type FileDigest, type ReleaseTrustTable, type SignedRelease,
-} from '../../session/shared/extensions/release/release-trust'
+} from '../../session/shared/extensions/release/release-trust-web'
 import { rendererLogger } from '../../lib/log'
 
 const log = rendererLogger('assistant-rules')

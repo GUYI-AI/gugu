@@ -8,7 +8,7 @@
 // strict RFC 8032 mode (canonical encodings, S < L), plus what makes it answer as Node's OpenSSL does: noble checks the
 // cofactored equation [8]SB = [8]R + [8]kA, OpenSSL the cofactorless SB = R + kA; with R and A both free of small-order
 // parts (decoded canonically) the two are the same equation.
-// scripts/build/release-contract-browser-crypto.mts serves this module to the contract in place of `node:crypto`.
+// release-contract-web.mjs (the mirrored contract with only its crypto import changed) imports this in place of `node:crypto`.
 import { ed25519 } from '@noble/curves/ed25519.js'
 
 /** DER prefix of an Ed25519 SubjectPublicKeyInfo (RFC 8410): SEQUENCE { SEQUENCE { OID 1.3.101.112 }, BIT STRING (33) }. */

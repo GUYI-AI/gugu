@@ -15,18 +15,12 @@ import { NEUTRAL_ASSISTANT_RULES } from '../assistantRules/neutralRules'
 import { markedRules } from '../assistantRules/fixtureApp'
 
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }))
-// The page bundle's node:crypto for the release contract (release-contract-browser-crypto.mts): the contract checks the
-// signature with release-crypto-web.ts here, as on the phone. Key making and signing below stay Node's.
+// The phone path runs the contract's web copy (release-trust-web.ts), whose signature check is release-crypto-web.ts:
+// counted here to show it is that one that answers. Key making and signing below stay Node's.
 const webCrypto = vi.hoisted(() => ({ verified: 0 }))
-vi.mock('node:crypto', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:crypto')>()
-  const web = await import('../../../../apps/desktop/src/session/shared/extensions/release/release-crypto-web')
-  return {
-    ...actual,
-    default: actual,
-    createPublicKey: web.createPublicKey,
-    verify: (...args: Parameters<typeof web.verify>) => { webCrypto.verified += 1; return web.verify(...args) },
-  }
+vi.mock('../../../../apps/desktop/src/session/shared/extensions/release/release-crypto-web', async (importOriginal) => {
+  const web = await importOriginal<typeof import('../../../../apps/desktop/src/session/shared/extensions/release/release-crypto-web')>()
+  return { ...web, verify: (...args: Parameters<typeof web.verify>) => { webCrypto.verified += 1; return web.verify(...args) } }
 })
 
 // #1931 The phone's route to the assistant's product rules: the market's assistant App, read (never installed) and believed
