@@ -2,7 +2,7 @@ import { openFolderInTab } from '@renderer/features/sessions/file-view/file-view
 import { findSessionAnywhere } from '@renderer/features/sessions/stores/session-selectors';
 import { composeChatDraft } from '@/lib/composeDraft';
 import { followLink, openLinkTarget } from '@/lib/guguLinks';
-import { readAppWorkChatBridge } from '@/lib/appWorkChatBridge';
+import { readAppHostLayerBridge } from '@/lib/appHostLayerBridge';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { rpc } from '@renderer/lib/ipc';
@@ -22,6 +22,7 @@ import {
   EXTENSION_LISTED_SESSION_METHOD,
   EXTENSION_MEMBER_FACES_METHOD,
   EXTENSION_PICK_DISPATCH_TARGET_METHOD,
+  EXTENSION_VOICE_NOTE_METHOD,
   INSTALL_CONSENT_HUMAN_WINDOW_MS,
   type ExtensionHostAction,
   type ExtensionHostActionResult,
@@ -259,10 +260,12 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
     // panel, or takes it away. The shell's bridge refuses an account or a row it does not have now.
     case 'openWork':
     case 'closeWork': {
-      const bridge = readAppWorkChatBridge();
-      if (!bridge) throw new Error('This window draws no task conversations');
-      if (action.kind === 'closeWork') return bridge.close(extensionId);
-      return bridge.open(extensionId, { ownerId: action.ownerId, workId: action.workId, sessionId: action.sessionId });
+      // #1925 (46) The host page over the App's panel (lib/appHostLayerBridge.ts): opening a task replaces any page there;
+      // closing takes away a task only, never another host page the person opened.
+      const bridge = readAppHostLayerBridge();
+      if (!bridge) throw new Error('This window draws no host pages over an App');
+      if (action.kind === 'closeWork') return bridge.close(extensionId, 'work');
+      return bridge.open(extensionId, { kind: 'work', ownerId: action.ownerId, workId: action.workId, sessionId: action.sessionId });
     }
     // The chat shell takes them (MainLayout: another chat comes up first), as the phone's page gives them.
     case 'showMessage':
@@ -379,6 +382,16 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
     return remoteHostsStore.reachProject(sessionId, deviceId, typeof projectId === 'string' ? projectId : undefined);
   },
   /** `gugu.dispatch` naming no target: the person picks one in the shell's sheet (DispatchSheet). */
+  /**
+   * #1927 (47) `gugu.voiceNote`: main has checked the App's grant; the recorder here checks its own account and assistant
+   * (app-voice-note-host.ts). Imported when asked, as above: until an App asks, the recorder's App half is not loaded.
+   */
+  [EXTENSION_VOICE_NOTE_METHOD]: async (params: unknown) => {
+    const request = params as import('@shared/extensions/voice-note-session').VoiceNoteWindowRequest | null;
+    if (!request || typeof request !== 'object' || typeof request.op !== 'string') throw new Error('Invalid voice note request');
+    const { appVoiceNoteRequest } = await import('@renderer/features/assistant/voice-notes/app-voice-note-host');
+    return appVoiceNoteRequest(request);
+  },
   [EXTENSION_PICK_DISPATCH_TARGET_METHOD]: async (params: unknown) => {
     const { pickDispatchTarget } = await import('@/components/chat/dispatchAsk');
     return pickDispatchTarget(params as DispatchAsk);

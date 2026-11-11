@@ -39,6 +39,7 @@ type Host = {
   pickAgent(ask: Record<string, unknown>): Promise<unknown>
   assistant: Record<'open' | 'advanceSetup' | 'rename', (name: string, value: string) => Promise<unknown>>
   bindings: { openWork(name: string, handle: string): Promise<unknown> }
+  voiceNote: Record<'start' | 'resume' | 'retry' | 'openMicSettings', (name: string, value?: unknown) => Promise<unknown>>
 }
 const host = electron.exposed.__guguHost as Host
 
@@ -63,6 +64,11 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   assistantRename: () => host.assistant.rename('main', 'Pip'),
   // #1925 (46): one of the assistant's tasks drawn in the App's panel.
   bindingsOpenWork: () => host.bindings.openWork('main', 'wAAAAAAAAAAAAAAAAAAAAAA'),
+  // #1927 (47): the host's voice-note recorder, started, resumed, retried, or the microphone settings opened.
+  voiceNoteStart: () => host.voiceNote.start('main'),
+  voiceNoteResume: () => host.voiceNote.resume('main'),
+  voiceNoteRetry: () => host.voiceNote.retry('main', 'job-1'),
+  voiceNoteOpenMicSettings: () => host.voiceNote.openMicSettings('main'),
 }
 
 const sent = () => electron.invoke.mock.calls.map(([, request]) => request as { method: string; gesture: unknown })

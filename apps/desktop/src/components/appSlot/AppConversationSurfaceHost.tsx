@@ -9,6 +9,7 @@ import { useReportChatOnScreen } from '../../lib/onScreenChat'
 import { installShellSlots, readShellSlots } from '../../lib/shellSlots'
 import { APP_CONVERSATION_SLOT_PREFIX, installAppConversationSurfaceBridge, noteAppConversationDrawn, publishAppConversationSurfaces } from '../../lib/appConversationSurfaceBridge'
 import { useAuth } from '../../store/auth'
+import { useAppComposerActions } from './appComposerActions'
 import { useStoreValueBy } from '../../store/chatContext'
 import { events, rpc } from '@/session/renderer/lib/ipc'
 import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
@@ -21,9 +22,9 @@ installAppConversationSurfaceBridge()
 
 const log = rendererLogger('app-conversation-surface')
 const EMPTY: ReadonlyMap<string, HTMLElement> = new Map()
-// The built-in assistant's chat face (AssistantChatSlot), without what is the assistant's own: its ideas, voice notes and
-// health report in the「+」, its typing line, its composer entries. The composer keeps its ordinary placeholder.
-const CHROME = { attachGlyph: <Plus /> }
+// The built-in assistant's chat face (AssistantChatSlot), without what is the assistant's own: its typing line, its composer
+// entries. The 「+」 holds what the App declares for the person's own assistant chat (API 48, appComposerActions.tsx), run
+// by the host; the composer keeps its ordinary placeholder.
 
 /** What one read answered for one account: each App's binding, and each App as installed when it was read. */
 type Verified = { ownerId: string; bindings: Record<string, GrantedSurfaceBinding>; installed: Record<string, string> }
@@ -93,7 +94,9 @@ export const AppConversationSurfaceHost = observer(function AppConversationSurfa
   const candidates = placing.flatMap((manifest) => {
     const binding = current?.bindings[manifest.id]
     if (!binding || changed.apps.has(manifest.id) || lapsed.includes(manifest.id)) return []
-    return binding.ownerId === ownerId && binding.name === manifest.contributes.conversationSurface?.binding ? [[manifest.id, binding.chatId, binding.authority] as const] : []
+    // 46: the host's row above it, only as main verified it for this read (declared, and the account's own assistant chat).
+    const header = binding.header === 'assistant' && manifest.contributes.conversationSurface?.header === 'assistant' ? 'assistant' : null
+    return binding.ownerId === ownerId && binding.name === manifest.contributes.conversationSurface?.binding ? [[manifest.id, binding.chatId, binding.authority, header] as const] : []
   })
   // Still in it: the chat list is the account's own membership, as the rail's unread source reads it.
   const wantedChats = candidates.map(([, chatId]) => chatId)
@@ -101,8 +104,13 @@ export const AppConversationSurfaceHost = observer(function AppConversationSurfa
     (store) => store.chats.filter((chat) => wantedChats.includes(chat.id)).map((chat) => chat.id))
   const signature = JSON.stringify(candidates.filter(([, chatId]) => present.includes(chatId)))
   // The signature is the dependency: a new object only when what may be drawn, or its authority, changed.
-  const drawable = useMemo(() => new Map((JSON.parse(signature) as [string, string, string][]).map(([id, chatId, authority]) => [id, { chatId, authority }])), [signature])
-  useEffect(() => { publishAppConversationSurfaces(Object.fromEntries([...drawable].map(([id, { chatId }]) => [id, chatId]))) }, [drawable])
+  const drawable = useMemo(() => new Map((JSON.parse(signature) as [string, string, string, 'assistant' | null][]).map(([id, chatId, authority, header]) => [id, { chatId, authority, header }])), [signature])
+  useEffect(() => {
+    publishAppConversationSurfaces(
+      Object.fromEntries([...drawable].map(([id, { chatId }]) => [id, chatId])),
+      Object.fromEntries([...drawable].flatMap(([id, { header }]) => (header && ownerId ? [[id, { kind: header, ownerId }]] : []))),
+    )
+  }, [drawable, ownerId])
   useEffect(() => () => publishAppConversationSurfaces({}), [])
 
   const slots = readShellSlots()
@@ -116,7 +124,8 @@ export const AppConversationSurfaceHost = observer(function AppConversationSurfa
         if (!key.startsWith(APP_CONVERSATION_SLOT_PREFIX)) return []
         const surface = drawable.get(key.slice(APP_CONVERSATION_SLOT_PREFIX.length))
         // Keyed by its authority too: the same conversation under a new grant, choice or installation is drawn anew.
-        return surface ? [createPortal(<AppConversationColumn chatId={surface.chatId} viewportKey={key} visible={visible} {...handlers} />, element, `${key}#${surface.authority}`)] : []
+        return surface && ownerId ? [createPortal(<AppConversationColumn chatId={surface.chatId} viewportKey={key} visible={visible} ownerId={ownerId}
+          extensionId={key.slice(APP_CONVERSATION_SLOT_PREFIX.length)} authority={surface.authority} {...handlers} />, element, `${key}#${surface.authority}`)] : []
       })}
     </>
   )
@@ -126,11 +135,13 @@ export const AppConversationSurfaceHost = observer(function AppConversationSurfa
  * The native conversation in the column, as the built-in assistant's (AssistantChatSlot): seen only while the slot is up and
  * the session page is on screen — the one rule read confirmation follows there. Opening the App does not confirm anything.
  */
-const AppConversationColumn = memo(function AppConversationColumn({ chatId, viewportKey, visible, ...handlers }: {
-  chatId: string; viewportKey: string; visible: boolean
+const AppConversationColumn = memo(function AppConversationColumn({ chatId, viewportKey, visible, ownerId, extensionId, authority, ...handlers }: {
+  chatId: string; viewportKey: string; visible: boolean; ownerId: string; extensionId: string; authority: string
 } & AssistantChatHandlers) {
   useReportChatOnScreen(visible ? chatId : null)
   // A draft for this chat (`gugu.dispatch`) lands in this composer while it is drawn: the chat need not come up (MainLayout).
   useEffect(() => noteAppConversationDrawn(chatId), [chatId])
-  return <ChatAreaPanel chatId={chatId} viewportKey={viewportKey} hidden={!visible} chrome={CHROME} {...handlers} />
+  const attachMenu = useAppComposerActions({ ownerId, extensionId, authority, chatId })
+  const chrome = useMemo(() => ({ attachGlyph: <Plus />, attachMenu }), [attachMenu])
+  return <ChatAreaPanel chatId={chatId} viewportKey={viewportKey} hidden={!visible} chrome={chrome} {...handlers} />
 })

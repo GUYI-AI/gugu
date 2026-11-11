@@ -50,6 +50,7 @@ const CAPABILITY_MESSAGE = {
   'assistant:open': 'extensions.permissionsAssistantOpen',
   'assistant:rename': 'extensions.permissionsAssistantRename',
   'chat:work': 'extensions.permissionsChatWork',
+  'chat:voice-notes:record': 'extensions.permissionsChatVoiceNotesRecord',
   'agents:read': 'extensions.permissionsAgentsRead',
   'agents:read:all': 'extensions.permissionsAgentsReadAll',
   'agents:read:all-machines': 'extensions.permissionsAgentsReadAllMachines',

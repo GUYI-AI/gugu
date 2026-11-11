@@ -48,6 +48,18 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
   };
   onAssistantChanged?(handler: (read: import('@shared/extensions/assistant-binding').AppAssistantHeard) => void): () => void;
   onBindingResources?(handler: (watchId: string, event: import('@shared/extensions/agent-resources').AppResourceEvent) => void): () => void;
+  /** #1927 (47): the host's voice-note recorder for the bound conversation's personal assistant (voice-note-session.ts). */
+  readonly voiceNote?: {
+    start(name: string, options?: Record<string, unknown>): Promise<import('@shared/extensions/voice-note-session').AppVoiceNoteStart>;
+    pause(name: string): Promise<import('@shared/extensions/voice-note-session').AppVoiceNoteStatus>;
+    resume(name: string): Promise<import('@shared/extensions/voice-note-session').AppVoiceNoteStatus>;
+    stop(name: string): Promise<import('@shared/extensions/voice-note-session').AppVoiceNoteStatus>;
+    retry(name: string, job: string): Promise<import('@shared/extensions/voice-note-session').AppVoiceNoteStatus>;
+    openMicSettings(name: string): Promise<void>;
+    status(name: string): Promise<import('@shared/extensions/voice-note-session').AppVoiceNoteStatus>;
+    watch(watchId: string, name: string, on: boolean): Promise<unknown>;
+  };
+  onVoiceNote?(handler: (watchId: string, event: import('@shared/extensions/voice-note-session').AppVoiceNoteEvent) => void): () => void;
   onSchedulesChanged?(handler: (binding: string) => void): () => void;
   taskMessage?(args: { intent: 'pause' | 'continue' }): Promise<void>;
   readonly sessions?: {

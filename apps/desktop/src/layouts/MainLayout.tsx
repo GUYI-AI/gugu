@@ -71,6 +71,7 @@ import { AssistantShellHost } from '../components/assistant/AssistantShellHost'
 import { OwnedAgentResourcesHost } from '../components/appSlot/OwnedAgentResourcesHost'
 import { ChatSlotHost } from '../components/ChatSlotHost'
 import { AppConversationSurfaceHost } from '../components/appSlot/AppConversationSurfaceHost'
+import { AppHostLayerHost } from '../components/appSlot/AppHostLayerHost'
 import { AppWorkLedgerHost } from '../components/appSlot/AppWorkLedgerHost'
 import { AssistantAppEntryHost } from '../components/appSlot/AssistantAppEntryHost'
 import { openAssistantEntry } from '../lib/assistantEntry'
@@ -1293,7 +1294,8 @@ function InnerLayout({
         <AppConversationSurfaceHost visible={activeTab === 'tasks'} onOpenUserChat={slotOpenProfileChat} onOpenSessionpageAgentFile={handleOpenSessionpageAgentFile} />
       )}
       {/* #1925 (46) The assistant's work, for an App that lists it; a task it opens is drawn in its panel. */}
-      {!mobile && sessionHostAvailable && <AppWorkLedgerHost visible={activeTab === 'tasks'} />}
+      {!mobile && sessionHostAvailable && <AppWorkLedgerHost />}
+      {!mobile && sessionHostAvailable && <AppHostLayerHost visible={activeTab === 'tasks'} />}
       {/* Entry switch: the trusted assistant App bound to the assistant's chat by the host; every entry asks lib/assistantEntry.ts. */}
       {!mobile && sessionHostAvailable && <AssistantAppEntryHost />}
 

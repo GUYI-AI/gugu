@@ -26,6 +26,7 @@ import {
   unbindExtensionSurfaces,
   updateExtensionSurfaceLayout,
   pushBindingSurfaces,
+  deliverSurfaceIntent,
   pushBindingWork,
 } from '@main/core/extensions/extension-bridge';
 import {
@@ -397,6 +398,16 @@ export const extensionsController = createRPCController({
     const agentIds = (Array.isArray(args?.agentIds) ? args.agentIds : []).filter((id): id is string => typeof id === 'string');
     const { notifyAgentResourcesChanged } = await import('@main/core/extensions/app-resource-watches');
     void notifyAgentResourcesChanged(args?.resync === true ? 'all' : agentIds);
+    return { success: true };
+  },
+
+  /**
+   * #1927 (47) The main window's voice-note recorder moved (app-voice-note-host.ts, at most about ten times a second): pages
+   * hearing it (`gugu.voiceNote.onChanged`) hear it whole, as its allow-list lets them, or end.
+   */
+  voiceNoteChanged: async (change: unknown) => {
+    const { voiceNoteChanged } = await import('@main/core/extensions/app-voice-note-watches');
+    void voiceNoteChanged(change);
     return { success: true };
   },
 
@@ -826,13 +837,41 @@ export const extensionsController = createRPCController({
   },
 
   /** #1925 What that window draws now (null: not the conversation): the App's pages hear `gugu.bindings.onSurface`. */
-  reportConversationSurface: async (args: { extensionId: string; tabKind: string; tabId: string; shown: { chatId: string; collapsed: boolean } | null }) => {
+  reportConversationSurface: async (args: { extensionId: string; tabKind: string; tabId: string; shown: { chatId: string; collapsed: boolean } | null; intent?: 'profile' }) => {
     try {
       const { reportConversationSurface } = await import('./app-unread-bindings');
-      if (reportConversationSurface(args)) {
-        void pushBindingSurfaces(args.extensionId).catch((error: unknown) => log.warn('App conversation surface could not be told to its pages:', error));
+      // 46 `intent`: the person's click in the host's row above the conversation — told once, whatever else changed.
+      if (reportConversationSurface(args) || args.intent) {
+        void pushBindingSurfaces(args.extensionId, args.intent)
+          .catch((error: unknown) => log.warn('App conversation surface could not be told to its pages:', error));
       }
       return { success: true as const };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
+  /**
+   * #1927 (48) The composer 「+」 entries of an App placed beside the person's own assistant chat, for the column the shell
+   * drew under `authority`; and one the person clicked, run by the host (app-composer-actions.ts). Trusted window only.
+   */
+  conversationComposerActions: async (args: { ownerId: string; extensionId: string; authority: string }) => {
+    try {
+      const { composerActionsFor } = await import('./app-composer-actions');
+      return { success: true as const, data: await composerActionsFor(args) };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+  runConversationComposerAction: async (args: { ownerId: string; extensionId: string; authority: string; actionId: string }) => {
+    try {
+      const { runComposerAction } = await import('./app-composer-actions');
+      return { success: true as const, data: await runComposerAction(args, deliverSurfaceIntent) };
+    } catch (error) {
+      return { success: false as const, error: error instanceof Error ? error.message : String(error), code: String((error as { code?: unknown } | null)?.code ?? 'failed') };
+    }
+  },
+  /** #1927 (48) The host's recording bar beside that conversation: the person opened the note it shows. */
+  conversationVoiceNoteOpened: async (args: { ownerId: string; extensionId: string }) => {
+    try {
+      const { voiceNoteOpenedBeside } = await import('./app-composer-actions');
+      return { success: true as const, data: { told: await voiceNoteOpenedBeside(args, deliverSurfaceIntent) } };
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
 
@@ -850,12 +889,17 @@ export const extensionsController = createRPCController({
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
 
-  /** #1925 (46) Which task's conversation the window draws in an App's panel now (null: none): its pages hear `open`. */
-  reportWorkChat: async (args: { extensionId: string; ownerId: string | null; open: { workId: string; sessionId: string } | null }) => {
+  /**
+   * #1925 (44, 46) What that window draws over an App's panel now (app-host-layer.ts; null: nothing): its pages hear
+   * `hostPage` (`onAssistantChanged`), `panel.hostPage` (`onSurface`) and, reading work, which row is open (`onWorkChanged`).
+   */
+  reportHostLayer: async (args: { extensionId: string; layer: import('@shared/extensions/app-host-layer').AppHostLayer | null }) => {
     try {
-      const { reportWorkChat } = await import('./app-work-binding');
-      if (reportWorkChat(args)) {
-        void pushBindingWork(args.extensionId).catch((error: unknown) => log.warn('The open task could not be told to an App\'s pages:', error));
+      // One record for every host page over an App's panel (app-host-layers.ts): a task (46) or a panel page (44).
+      const [{ appHostLayerChanged }, { deliverToPersonPages }] = await Promise.all([import('./app-assistant-binding'), import('./extension-bridge')]);
+      if (await appHostLayerChanged(args, deliverToPersonPages)) {
+        void pushBindingWork(args.extensionId).catch((error: unknown) => log.warn('The work list could not be told to an App\'s pages:', error));
+        void pushBindingSurfaces(args.extensionId).catch((error: unknown) => log.warn('App conversation surface could not be told to its pages:', error));
       }
       return { success: true as const };
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
@@ -908,18 +952,6 @@ export const extensionsController = createRPCController({
       return { success: true as const };
     } catch (error) {
       log.warn('Failed to take the assistant counts for Apps:', error);
-      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
-    }
-  },
-
-  /** #1925 (44) The host layer over an App's panel opened or closed (`app-host-layer.tsx`): that App hears `hostPage`. */
-  appHostLayerChanged: async (args: { extensionId: string; layer: unknown }) => {
-    try {
-      const [{ appHostLayerChanged }, { deliverToPersonPages }] = await Promise.all([import('./app-assistant-binding'), import('./extension-bridge')]);
-      await appHostLayerChanged(args, deliverToPersonPages);
-      return { success: true as const };
-    } catch (error) {
-      log.warn('Failed to take the host layer of an App:', error);
       return { success: false as const, error: error instanceof Error ? error.message : String(error) };
     }
   },
