@@ -37,7 +37,7 @@ type Host = {
   appFiles: Record<'openWith' | 'upload' | 'download' | 'forward', (args: unknown) => Promise<unknown>>
   cloud: Record<'write', (...args: unknown[]) => Promise<unknown>>
   pickAgent(ask: Record<string, unknown>): Promise<unknown>
-  assistant: Record<'open' | 'advanceSetup', (name: string, value: string) => Promise<unknown>>
+  assistant: Record<'open' | 'advanceSetup' | 'rename', (name: string, value: string) => Promise<unknown>>
 }
 const host = electron.exposed.__guguHost as Host
 
@@ -59,6 +59,7 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   // #1925 (44): one of the assistant's host screens, and the setup steps an App draws.
   assistantOpen: () => host.assistant.open('main', 'move'),
   assistantAdvanceSetup: () => host.assistant.advanceSetup('main', 'ready'),
+  assistantRename: () => host.assistant.rename('main', 'Pip'),
 }
 
 const sent = () => electron.invoke.mock.calls.map(([, request]) => request as { method: string; gesture: unknown })

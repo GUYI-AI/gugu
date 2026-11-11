@@ -351,9 +351,11 @@ export const EXTENSION_CAPABILITIES = [
   'chat:draft',
   // #1925 (API 44) That same selected conversation's assistant, when it is the person's own: a snapshot of it and its
   // changes (`gugu.assistant.status` / `onChanged`) — and, in the person's click, one of the host's own screens for it
-  // opened, or its setup moved on a step (`gugu.assistant.open` / `advanceSetup`). Each with its binding action.
+  // opened, or its setup moved on a step (`gugu.assistant.open` / `advanceSetup`) — or it renamed (`gugu.assistant.rename`).
+  // Each with its binding action.
   'assistant:status',
   'assistant:open',
+  'assistant:rename',
   /*
    * Seeing the agents at work (behavior tab-extensions:「agent 的可见与可控」).
    *

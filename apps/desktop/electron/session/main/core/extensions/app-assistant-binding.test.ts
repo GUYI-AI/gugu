@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ASSISTANT_SCREENS, type AppAssistantStatus } from '@shared/extensions/assistant-binding';
+import { ASSISTANT_SCREENS, type ShownAssistant } from '@shared/extensions/assistant-binding';
 import type { ExtensionHostAction } from '@shared/extensions/host-actions';
 
 /**
@@ -35,7 +35,8 @@ vi.mock('./extensions-root', () => ({ extensionsService: () => ({
   },
   list: () => ({ extensions: state.installed ? [{ manifest: { id: APP, permissions: { bindings: [{ name: 'main', kind: 'conversation', actions: state.declared }] } } }] : [] }),
   isEnabled: () => state.enabled,
-  hasCapability: (_app: string, capability: string) => state.grants[capability === 'assistant:status' ? 'assistant-status' : 'assistant-open'] === true,
+  isInstalled: (app: string) => state.installed && app === APP,
+  hasCapability: (_app: string, capability: string) => state.grants[`assistant-${capability.slice('assistant:'.length)}`] === true,
 }) }));
 vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: ({ schema }: { schema: string }) => ({ from: (table: string) => {
   const answer = () => {
@@ -54,15 +55,17 @@ vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: ({ schem
   return query;
 } }) }));
 const binding = await import('./app-assistant-binding');
-const { appAssistantStatus, appAssistantOpen, appAssistantAdvanceSetup, assistantStatusChanged, forgetShownAssistantForTest } = binding;
+const { appAssistantStatus, appAssistantOpen, appAssistantAdvanceSetup, appAssistantRename, assistantStatusChanged, assistantCountsChanged, appHostLayerChanged, forgetShownAssistantForTest } = binding;
 
 const provision = (agent: string, removed: string | null = null) => ({
   agent_user_id: agent, device_id: DEVICE, member_key: 'assistant', phase: 'ready', created_at: '2026-11-01T00:00:00Z', agent: { removed_at: removed },
 });
-const status = (over: Partial<AppAssistantStatus> = {}): AppAssistantStatus => ({
+const status = (over: Partial<ShownAssistant> = {}): ShownAssistant => ({
   assistant: 'found', name: 'Dot', avatar: 'data:image/webp;base64,UklGRg==', home: { kind: 'this-computer', online: true },
   setup: 'connect', preparing: false, cloudAvailable: true, member: null, loadError: null, ...over,
 });
+/** As an App reads the window's snapshot: with the panel's numbers (none pushed: null). */
+const seen = (value: ShownAssistant, counts: unknown = null) => ({ ...value, counts });
 const hear = vi.fn();
 const show = (value = status(), ownerId = OWNER) => assistantStatusChanged({ ownerId, status: value }, hear);
 const IDS = [OWNER, OTHER, CHAT, ASSISTANT, DEVICE, STRANGER, 'h1'];
@@ -72,7 +75,7 @@ beforeEach(() => {
   forgetShownAssistantForTest();
   Object.assign(state, {
     owner: OWNER, selectedBy: OWNER, handle: 'h1', installed: true, enabled: true,
-    grants: { 'assistant-status': true, 'assistant-open': true }, declared: ['unread', 'assistant-status', 'assistant-open'],
+    grants: { 'assistant-status': true, 'assistant-open': true, 'assistant-rename': true }, declared: ['unread', 'assistant-status', 'assistant-open', 'assistant-rename'],
     provisions: [provision(ASSISTANT)], provisionError: false, chatKind: 'dm', members: [OWNER, ASSISTANT], chatError: false,
     reads: 0, afterRead: undefined,
   });
@@ -95,10 +98,10 @@ describe('gugu.assistant.status: the snapshot of the person\'s own assistant', (
   it('answers the snapshot the window showed — and no chat, device, account id or binding handle', async () => {
     await show();
     const read = await appAssistantStatus(APP, { name: 'main' });
-    expect(read).toEqual({ name: 'main', state: 'ready', status: status() });
+    expect(read).toEqual({ name: 'main', state: 'ready', status: seen(status()), hostPage: false });
     expect(leaks(read)).toEqual([]);
     // Exactly the fields the built-in view holds and an App needs to pick what to draw.
-    expect(Object.keys((read as { status: object }).status).sort()).toEqual(['assistant', 'avatar', 'cloudAvailable', 'home', 'loadError', 'member', 'name', 'preparing', 'setup']);
+    expect(Object.keys((read as { status: object }).status).sort()).toEqual(['assistant', 'avatar', 'cloudAvailable', 'counts', 'home', 'loadError', 'member', 'name', 'preparing', 'setup']);
   });
 
   it('passes unreadable apart from none, and an unknown membership as null, never false', async () => {
@@ -173,7 +176,7 @@ describe('gugu.assistant.open: one of the host\'s own screens, from a closed lis
   it('refuses any other value, or anything more than the value, before anything is asked', async () => {
     const act = vi.fn(async () => undefined);
     for (const args of [
-      { name: 'main', screen: 'settings' }, { name: 'main', screen: 'Setup' }, { name: 'main', screen: '' }, { name: 'main', screen: 'close ' },
+      { name: 'main', screen: 'memory' }, { name: 'main', screen: 'Setup' }, { name: 'main', screen: '' }, { name: 'main', screen: 'close ' },
       { name: 'main', screen: ['close'] }, { name: 'main', screen: { kind: 'close' } }, { name: 'main' }, { screen: 'close' },
       { name: 'main', screen: 'model', model: 'opus' }, { name: 'main', screen: 'move', to: 'cloud' }, { name: 'main', screen: 'close', chatId: CHAT },
     ]) await expect(appAssistantOpen(APP, args, act)).rejects.toMatchObject({ code: 'invalid' });
@@ -250,7 +253,7 @@ describe('gugu.assistant.advanceSetup: the steps the App draws, connect → read
 describe('gugu.assistant.onChanged: each new snapshot, to an App still entitled to it', () => {
   it('tells a granted App the new snapshot as status answers it, once per change, with no id', async () => {
     await show();
-    expect(hear).toHaveBeenCalledExactlyOnceWith(APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: status() });
+    expect(hear).toHaveBeenCalledExactlyOnceWith(APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: seen(status()), hostPage: false });
     expect(leaks(hear.mock.calls)).toEqual([]);
     await show();
     expect(hear).toHaveBeenCalledOnce();
@@ -300,9 +303,9 @@ describe('gugu.assistant.onChanged: each new snapshot, to an App still entitled 
 describe('an account with no assistant: the first setup can start from the App', () => {
   const NO_ASSISTANT = ['none', 'loading', 'unreadable'] as const;
   // What the window would never send for these states, sent anyway: main still keeps it from the App.
-  const without = (assistant: (typeof NO_ASSISTANT)[number], over: Partial<AppAssistantStatus> = {}) =>
+  const without = (assistant: (typeof NO_ASSISTANT)[number], over: Partial<ShownAssistant> = {}) =>
     status({ assistant, setup: assistant === 'none' ? 'shell' : null, preparing: false, member: false, ...over });
-  const stripped = (value: AppAssistantStatus) => ({ ...value, name: null, avatar: null, home: null });
+  const stripped = (value: ShownAssistant) => ({ ...value, name: null, avatar: null, home: null, counts: null });
 
   it.each(NO_ASSISTANT)('%s, no conversation chosen: status is the snapshot without one — no name, look or home, nothing asked', async (assistant) => {
     state.selectedBy = '';
@@ -310,7 +313,7 @@ describe('an account with no assistant: the first setup can start from the App',
     await show(without(assistant));
     state.reads = 0;
     const read = await appAssistantStatus(APP, { name: 'main' });
-    expect(read).toEqual({ name: 'main', state: 'ready', status: stripped(without(assistant)) });
+    expect(read).toEqual({ name: 'main', state: 'ready', status: stripped(without(assistant)), hostPage: false });
     expect(leaks(read)).toEqual([]);
     expect(state.reads).toBe(0);
   });
@@ -322,7 +325,7 @@ describe('an account with no assistant: the first setup can start from the App',
       state.afterRead = undefined;
       void assistantStatusChanged({ ownerId: OWNER, status: gone }, () => {});
     };
-    expect(await appAssistantStatus(APP, { name: 'main' })).toEqual({ name: 'main', state: 'ready', status: stripped(gone) });
+    expect(await appAssistantStatus(APP, { name: 'main' })).toEqual({ name: 'main', state: 'ready', status: stripped(gone), hostPage: false });
   });
 
   it('has an assistant and no conversation chosen: still unbound, nothing of it', async () => {
@@ -335,7 +338,7 @@ describe('an account with no assistant: the first setup can start from the App',
     await show(without('none'));
     for (const [, set] of NOT_MINE) {
       set();
-      expect(await appAssistantStatus(APP, { name: 'main' })).toEqual({ name: 'main', state: 'ready', status: stripped(without('none')) });
+      expect(await appAssistantStatus(APP, { name: 'main' })).toEqual({ name: 'main', state: 'ready', status: stripped(without('none')), hostPage: false });
     }
   });
 
@@ -394,9 +397,9 @@ describe('an account with no assistant: the first setup can start from the App',
     await show(status());
     await show(status({ name: 'Renamed', setup: 'ready' }));
     expect(hear.mock.calls).toEqual([
-      [APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: stripped(without('none')) }],
-      [APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: stripped(without('none', { preparing: true })) }],
-      [APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: stripped(without('loading', { preparing: true })) }],
+      [APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: stripped(without('none')), hostPage: false }],
+      [APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: stripped(without('none', { preparing: true })), hostPage: false }],
+      [APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: stripped(without('loading', { preparing: true })), hostPage: false }],
       [APP, { type: 'assistantChanged', name: 'main', state: 'unbound' }],
     ]);
     expect(leaks(hear.mock.calls)).toEqual([]);
@@ -417,7 +420,196 @@ describe('an account with no assistant: the first setup can start from the App',
     hear.mockReset();
     state.selectedBy = OWNER;
     await show(status({ setup: 'ready' }));
-    expect(hear).toHaveBeenCalledExactlyOnceWith(APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: status({ setup: 'ready' }) });
+    expect(hear).toHaveBeenCalledExactlyOnceWith(APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: seen(status({ setup: 'ready' })), hostPage: false });
+  });
+});
+
+describe('counts: the panel\'s numbers, with the bound assistant\'s snapshot', () => {
+  const COUNTS = { devices: 3, connectedApps: { saved: 4, connected: 2 }, projects: 7, capabilities: 5 };
+  const read = () => appAssistantStatus(APP, { name: 'main' });
+
+  it('the bound App reads them and hears them change — numbers only', async () => {
+    await show();
+    hear.mockReset();
+    await assistantCountsChanged({ ownerId: OWNER, counts: COUNTS }, hear);
+    expect(await read()).toEqual({ name: 'main', state: 'ready', status: seen(status(), COUNTS), hostPage: false });
+    expect(hear).toHaveBeenCalledExactlyOnceWith(APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: seen(status(), COUNTS), hostPage: false });
+    await assistantCountsChanged({ ownerId: OWNER, counts: COUNTS }, hear);
+    expect(hear).toHaveBeenCalledOnce();
+    expect(leaks(hear.mock.calls)).toEqual([]);
+  });
+
+  it('unknown stays null, never 0', async () => {
+    await show();
+    const partly = { devices: null, connectedApps: null, projects: 0, capabilities: null };
+    await assistantCountsChanged({ ownerId: OWNER, counts: partly }, hear);
+    expect(await read()).toMatchObject({ status: { counts: partly } });
+  });
+
+  it('another account\'s numbers reach nothing; the snapshot without an assistant has none', async () => {
+    await show();
+    await assistantCountsChanged({ ownerId: OTHER, counts: COUNTS }, hear);
+    expect(await read()).toMatchObject({ status: { counts: null } });
+    await assistantCountsChanged({ ownerId: OWNER, counts: COUNTS }, hear);
+    state.selectedBy = '';
+    await show(status({ assistant: 'none', name: null, avatar: null, home: null }));
+    expect(await read()).toMatchObject({ state: 'ready', status: { assistant: 'none', counts: null } });
+  });
+
+  it('an App not pointed at the assistant hears nothing of them', async () => {
+    state.selectedBy = '';
+    await show();
+    hear.mockReset();
+    await assistantCountsChanged({ ownerId: OWNER, counts: COUNTS }, hear);
+    expect(hear).not.toHaveBeenCalled();
+  });
+
+  it('takes numbers alone: an id, a path, a URL, a name, a negative, a fraction or another field is refused, and nothing kept', async () => {
+    await show();
+    for (const bad of [
+      { ...COUNTS, devices: DEVICE }, { ...COUNTS, projects: '/Users/me/project' }, { ...COUNTS, capabilities: 'https://example.com/x' },
+      { ...COUNTS, connectedApps: { saved: 1, connected: 1, names: ['Mail'] } }, { ...COUNTS, projects: ['Docs'] },
+      { ...COUNTS, devices: -1 }, { ...COUNTS, projects: 1.5 }, { ...COUNTS, chatId: CHAT }, { devices: 1 },
+    ]) await expect(assistantCountsChanged({ ownerId: OWNER, counts: bad }, hear)).rejects.toMatchObject({ code: 'invalid' });
+    await expect(assistantCountsChanged({ ownerId: 'me', counts: COUNTS }, hear)).rejects.toMatchObject({ code: 'invalid' });
+    expect(await read()).toMatchObject({ status: { counts: null } });
+  });
+});
+
+describe('the panel\'s own pages over the App\'s panel: settings, projects, capabilities', () => {
+  const LAYERS = ['settings', 'projects', 'capabilities'] as const;
+
+  it.each(LAYERS)('%s: the window is asked to draw it, for the account checked', async (screen) => {
+    const act = vi.fn(async (_action: ExtensionHostAction) => undefined);
+    await appAssistantOpen(APP, { name: 'main', screen }, act);
+    expect(act).toHaveBeenCalledExactlyOnceWith({ kind: 'openAssistantScreen', screen, ownerId: OWNER });
+  });
+
+  it.each(LAYERS)('%s: refused unbound, with no assistant, not the assistant chat, without its grant, disabled, or changed mid-request', async (screen) => {
+    const act = vi.fn(async () => undefined);
+    state.selectedBy = '';
+    await expect(appAssistantOpen(APP, { name: 'main', screen }, act)).rejects.toMatchObject({ code: 'not-found' });
+    await show(status({ assistant: 'none', name: null, avatar: null, home: null }));
+    await expect(appAssistantOpen(APP, { name: 'main', screen }, act)).rejects.toMatchObject({ code: 'not-found' });
+    state.selectedBy = OWNER;
+    for (const [, set] of NOT_MINE) {
+      Object.assign(state, { provisions: [provision(ASSISTANT)], chatKind: 'dm', members: [OWNER, ASSISTANT] });
+      await show();
+      set();
+      await expect(appAssistantOpen(APP, { name: 'main', screen }, act)).rejects.toMatchObject({ code: 'denied' });
+    }
+    Object.assign(state, { provisions: [provision(ASSISTANT)], chatKind: 'dm', members: [OWNER, ASSISTANT] });
+    for (const set of [() => { state.grants['assistant-open'] = false; }, () => { state.enabled = false; }]) {
+      Object.assign(state, { enabled: true, grants: { 'assistant-status': true, 'assistant-open': true } });
+      set();
+      await expect(appAssistantOpen(APP, { name: 'main', screen }, act)).rejects.toMatchObject({ code: 'denied' });
+    }
+    for (const change of [() => { state.owner = OTHER; }, () => { state.grants['assistant-open'] = false; }, () => { state.handle = 'h2'; }]) {
+      Object.assign(state, { owner: OWNER, handle: 'h1', enabled: true, grants: { 'assistant-status': true, 'assistant-open': true } });
+      state.afterRead = change;
+      await expect(appAssistantOpen(APP, { name: 'main', screen }, act)).rejects.toMatchObject({ code: 'denied' });
+    }
+    expect(act).not.toHaveBeenCalled();
+  });
+
+  it('the App hears only that a host page is open, then closed — never which, nor what it shows', async () => {
+    await show();
+    hear.mockReset();
+    await appHostLayerChanged({ extensionId: APP, layer: { kind: 'assistant-projects', ownerId: OWNER } }, hear);
+    expect(hear).toHaveBeenCalledExactlyOnceWith(APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: seen(status()), hostPage: true });
+    expect(await appAssistantStatus(APP, { name: 'main' })).toMatchObject({ state: 'ready', hostPage: true });
+    expect(JSON.stringify(hear.mock.calls)).not.toContain('projects');
+    await appHostLayerChanged({ extensionId: APP, layer: { kind: 'assistant-projects', ownerId: OWNER } }, hear);
+    expect(hear).toHaveBeenCalledOnce();
+    await appHostLayerChanged({ extensionId: APP, layer: null }, hear);
+    expect(hear).toHaveBeenLastCalledWith(APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: seen(status()), hostPage: false });
+    expect(await appAssistantStatus(APP, { name: 'main' })).toMatchObject({ hostPage: false });
+  });
+
+  it('a layer opened for another account is not this one\'s; an App not entitled hears nothing of it', async () => {
+    await show();
+    hear.mockReset();
+    await appHostLayerChanged({ extensionId: APP, layer: { kind: 'assistant-settings', ownerId: OTHER } }, hear);
+    expect(await appAssistantStatus(APP, { name: 'main' })).toMatchObject({ hostPage: false });
+    state.grants['assistant-status'] = false;
+    await appHostLayerChanged({ extensionId: APP, layer: { kind: 'assistant-settings', ownerId: OWNER } }, hear);
+    state.grants['assistant-status'] = true;
+    state.selectedBy = '';
+    await appHostLayerChanged({ extensionId: APP, layer: null }, hear);
+    expect(hear.mock.calls.filter(([, event]) => (event as { hostPage?: boolean }).hostPage === true)).toEqual([]);
+  });
+
+  it('takes only a known App and a known page, for an account', async () => {
+    for (const bad of [
+      { extensionId: APP, layer: { kind: 'assistant-memory', ownerId: OWNER } }, { extensionId: APP, layer: { kind: 'assistant-settings' } },
+      { extensionId: APP, layer: { kind: 'assistant-settings', ownerId: OWNER, path: '/x' } }, { extensionId: APP }, { extensionId: '', layer: null },
+    ]) await expect(appHostLayerChanged(bad, hear)).rejects.toMatchObject({ code: 'invalid' });
+    await expect(appHostLayerChanged({ extensionId: 'another-app', layer: null }, hear)).rejects.toMatchObject({ code: 'denied' });
+  });
+});
+
+describe('gugu.assistant.rename: the shell\'s own renameAssistant, by the built-in field\'s rule', () => {
+  const rename = (text: unknown, act = vi.fn(async (_action: ExtensionHostAction) => undefined)) => appAssistantRename(APP, { name: 'main', text }, act);
+
+  it('renames, trimmed, through the window for the account checked', async () => {
+    await show();
+    const act = vi.fn(async (_action: ExtensionHostAction) => undefined);
+    expect(await rename('  Pip  ', act)).toBe('renamed');
+    expect(act).toHaveBeenCalledExactlyOnceWith({ kind: 'renameAssistant', text: 'Pip', ownerId: OWNER });
+  });
+
+  it('answers from a closed set: the same name, empty, too long — nothing saved; a failed save is failed', async () => {
+    await show();
+    const act = vi.fn(async (_action: ExtensionHostAction) => undefined);
+    expect(await rename(' Dot ', act)).toBe('unchanged');
+    expect(await rename('   ', act)).toBe('empty');
+    expect(await rename('x'.repeat(31), act)).toBe('too-long');
+    expect(await rename('x'.repeat(30), act)).toBe('renamed');
+    expect(act).toHaveBeenCalledOnce();
+    expect(await rename('Pip', vi.fn(async () => { throw new Error('offline'); }))).toBe('failed');
+  });
+
+  it('refused unbound, not the assistant chat, without its own grant (open is not enough), disabled, or changed mid-request', async () => {
+    const act = vi.fn(async () => undefined);
+    await show();
+    state.selectedBy = '';
+    await expect(rename('Pip', act)).rejects.toMatchObject({ code: 'not-found' });
+    state.selectedBy = OWNER;
+    for (const [, set] of NOT_MINE) {
+      Object.assign(state, { provisions: [provision(ASSISTANT)], chatKind: 'dm', members: [OWNER, ASSISTANT] });
+      set();
+      await expect(rename('Pip', act)).rejects.toMatchObject({ code: 'denied' });
+    }
+    Object.assign(state, { provisions: [provision(ASSISTANT)], chatKind: 'dm', members: [OWNER, ASSISTANT] });
+    const all = () => ({ enabled: true, grants: { 'assistant-status': true, 'assistant-open': true, 'assistant-rename': true }, declared: ['unread', 'assistant-status', 'assistant-open', 'assistant-rename'] });
+    for (const set of [() => { state.grants['assistant-rename'] = false; }, () => { state.enabled = false; }, () => { state.declared = ['unread', 'assistant-status', 'assistant-open']; }]) {
+      Object.assign(state, all());
+      set();
+      await expect(rename('Pip', act)).rejects.toMatchObject({ code: 'denied' });
+    }
+    for (const change of [() => { state.owner = OTHER; }, () => { state.grants['assistant-rename'] = false; }, () => { state.handle = 'h2'; }]) {
+      Object.assign(state, all(), { owner: OWNER, handle: 'h1' });
+      state.afterRead = change;
+      await expect(rename('Pip', act)).rejects.toMatchObject({ code: 'denied' });
+    }
+    expect(act).not.toHaveBeenCalled();
+  });
+
+  it('fails, saving nothing, while the window has not shown the assistant', async () => {
+    const act = vi.fn(async () => undefined);
+    await expect(rename('Pip', act)).rejects.toMatchObject({ code: 'failed' });
+    await show(status({ assistant: 'loading', name: null, avatar: null, home: null }));
+    await expect(rename('Pip', act)).rejects.toMatchObject({ code: 'failed' });
+    expect(act).not.toHaveBeenCalled();
+  });
+
+  it('takes the binding\'s name and a string: anything more, or else, is refused before anything is asked', async () => {
+    const act = vi.fn(async () => undefined);
+    for (const args of [{ name: 'main' }, { name: 'main', text: 3 }, { name: 'main', text: 'x'.repeat(1001) }, { name: 'main', text: 'Pip', ownerId: OWNER }, { text: 'Pip' }]) {
+      await expect(appAssistantRename(APP, args, act)).rejects.toMatchObject({ code: 'invalid' });
+    }
+    expect(state.reads).toBe(0);
+    expect(act).not.toHaveBeenCalled();
   });
 });
 

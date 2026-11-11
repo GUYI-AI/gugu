@@ -887,17 +887,21 @@ API 40, the same conversation only: add \`"files"\` (with \`chat:files\`) and/or
   write, rename or delete, no other chat; a topic is refused. Paths are names from the top; \`..\`, absolute paths, ids: \`invalid\`.
 - \`gugu.dispatch(text, { draft: true, to: { binding: "main" } })\` in a click: the text into that conversation's composer. Nothing is sent.
 API 44, only when that conversation is the person's private chat with their own assistant (else \`denied\`): add
-\`"assistant-status"\` (with \`assistant:status\`) and/or \`"assistant-open"\` (with \`assistant:open\`). Setup, move and close stay gugu's screens.
-- \`gugu.assistant.status("main")\` → \`{ state: "ready", status }\` | \`{ state: "unbound" | "unavailable" }\`; \`gugu.assistant.onChanged(fn)\`
-  hears each new \`{ state: "ready", status }\`. \`status\`: \`{ assistant: "found"|"loading"|"none"|"unreadable", name, avatar (data: image),
-  home: { kind: "cloud"|"this-computer"|"other-computer"|"server", online } | null, setup: "shell"|"connect"|"ready"|null, preparing,
-  cloudAvailable, member: boolean|null, loadError }\` — no chat, device or account id.
-- While the account has no assistant (\`none\`, \`loading\`, \`unreadable\`), \`ready\` comes whatever conversation is chosen, or none,
-  with \`name\`, \`avatar\`, \`home\` null, and \`gugu.assistant.open("main", "setup")\` works: the first setup can start from your page. When one
-  appears and that conversation is not chosen, \`onChanged\` hears \`{ state: "unbound" }\` once: ask the person to choose it.
-- In a click: \`gugu.assistant.open("main", screen)\`, screen one of \`setup\`, \`move\`, \`close\`, \`look\`, \`model\`, \`devices\`,
-  \`connected-apps\`: gugu opens that screen; the person acts there. \`gugu.assistant.advanceSetup("main", "ready" | "done")\`: the
-  steps you draw, from \`connect\` (to ready or done) or \`ready\` (to done); any other is \`invalid\`. Both resolve or are refused, nothing more.
+\`"assistant-status"\` (\`assistant:status\`), \`"assistant-open"\` (\`assistant:open\`), \`"assistant-rename"\` (\`assistant:rename\`).
+- \`gugu.assistant.status("main")\` → \`{ state: "ready", status, hostPage }\` | \`{ state: "unbound" | "unavailable" }\`;
+  \`gugu.assistant.onChanged(fn)\` hears each new one. \`status\`: \`{ assistant: "found"|"loading"|"none"|"unreadable", name, avatar
+  (data: image), home: { kind: "cloud"|"this-computer"|"other-computer"|"server", online } | null, setup: "shell"|"connect"|"ready"|null,
+  preparing, cloudAvailable, member: boolean|null, loadError, counts: { devices, connectedApps: { saved, connected }, projects,
+  capabilities } }\` — numbers each null while unknown; no id.
+- With no assistant yet (\`none\`, \`loading\`, \`unreadable\`): \`ready\` with any or no conversation, \`name\`, \`avatar\`, \`home\`, \`counts\` null,
+  and \`gugu.assistant.open("main", "setup")\` works. Once one appears, unchosen: \`onChanged\` hears \`{ state: "unbound" }\` once.
+- In a click: \`gugu.assistant.open("main", screen)\` — gugu's screens \`setup\`, \`move\`, \`close\`, \`look\`, \`model\`, \`devices\`,
+  \`connected-apps\`, or \`settings\`, \`projects\`, \`capabilities\` drawn over your page with gugu's back control (\`hostPage\` true until
+  closed: hide yours). \`gugu.assistant.advanceSetup("main", "ready" | "done")\`: from \`connect\`, or \`ready\` to done; else \`invalid\`.
+  \`gugu.assistant.rename("main", text)\` → \`"renamed"|"unchanged"|"empty"|"too-long"|"failed"\` (trimmed, ≤ 30 characters).
+
+Free (API 44, desktop page): \`toast(text)\` → one line in gugu's own toast, as its "Changes saved": ≤ 80 characters,
+text only, while your page is on screen and focused (else \`denied\`), one every 2 s (else \`rate-limited\`).
 
 Which chats the reader is in and who is in one — for a page that is in no chat (an App's own tab, full screen) to
 offer one — and what people and agents said in a chat: a stretch of its timeline, one thread, or the messages that

@@ -8,7 +8,7 @@ import type { ViewDefinition } from '@renderer/app/view-registry';
 import { SquareArrowOutUpRight, Settings } from '@/lib/icons';
 import { followLink } from '@/lib/guguLinks';
 import { openAppInWindow } from '@renderer/features/extensions/app-dock';
-import { ExtensionSharedSlot } from '@renderer/features/extensions/extension-shared-slot';
+import { AppHostLayerFrame } from './app-host-layer';
 import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
 import { ExtensionsLibraryPage } from '@renderer/features/library/extensions-library-page';
@@ -148,7 +148,8 @@ const AppMainPanel = observer(function AppMainPanel() {
       ) : (
         <>
           {error && errorDetailsShown.has(main.kind) ? <AppErrorDetails error={error} testId="app-page-error-details" /> : null}
-          <ExtensionSharedSlot tabKind={main.kind} tabId="dock" />
+          {/* #1925 (44) Its main page, or a host page over it (the App's host layer). */}
+          <AppHostLayerFrame extensionId={main.extensionId} tabKind={main.kind} />
         </>
       )}
     </div>

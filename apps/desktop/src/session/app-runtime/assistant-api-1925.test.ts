@@ -15,11 +15,13 @@ describe('gugu.assistant', () => {
     const status = vi.fn(async (name: string) => ({ name, state: 'unbound' }));
     const open = vi.fn(async () => { throw { code: 'denied', message: 'This account has no assistant of its own' }; });
     const advanceSetup = vi.fn(async () => undefined);
+    const rename = vi.fn(async () => 'renamed');
     const gugu = createGugu({
-      appFiles: {}, reportError: () => {}, assistant: { status, open, advanceSetup },
+      appFiles: {}, reportError: () => {}, assistant: { status, open, advanceSetup, rename },
       onAssistantChanged: (handler: (read: unknown) => void) => { hear = handler; return () => { hear = undefined; }; },
     } as never, files) as Record<string, unknown> & { assistant: Record<string, (...args: unknown[]) => unknown> };
-    expect(Object.keys(gugu.assistant).sort()).toEqual(['advanceSetup', 'onChanged', 'open', 'status']);
+    expect(Object.keys(gugu.assistant).sort()).toEqual(['advanceSetup', 'onChanged', 'open', 'rename', 'status']);
+    expect(await gugu.assistant.rename('main', 'Pip')).toBe('renamed');
     expect(gugu.onAssistantChanged).toBeUndefined();
     expect(await gugu.assistant.status('main')).toEqual({ name: 'main', state: 'unbound' });
     await expect(gugu.assistant.open('main', 'close')).rejects.toMatchObject({ code: 'denied', message: expect.any(String) });
@@ -37,8 +39,8 @@ describe('gugu.assistant', () => {
 
   it('onChanged gets what status answers — the snapshot, or unbound alone — and nothing of the event itself', () => {
     const { pick } = HOST_EVENTS.onAssistantChanged;
-    const status = { assistant: 'none', name: null, avatar: null, home: null, setup: 'shell', preparing: true, cloudAvailable: true, member: null, loadError: null } as const;
-    expect(pick({ type: 'assistantChanged', name: 'main', state: 'ready', status })).toEqual([{ name: 'main', state: 'ready', status }]);
+    const status = { assistant: 'none', name: null, avatar: null, home: null, setup: 'shell', preparing: true, cloudAvailable: true, member: null, loadError: null, counts: null } as const;
+    expect(pick({ type: 'assistantChanged', name: 'main', state: 'ready', status, hostPage: true })).toEqual([{ name: 'main', state: 'ready', status, hostPage: true }]);
     expect(pick({ type: 'assistantChanged', name: 'main', state: 'unbound' })).toEqual([{ name: 'main', state: 'unbound' }]);
   });
 

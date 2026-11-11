@@ -42,6 +42,7 @@ const CAPABILITY_MESSAGE = {
   'chat:draft': 'extensions.permissionsChatDraft',
   'assistant:status': 'extensions.permissionsAssistantStatus',
   'assistant:open': 'extensions.permissionsAssistantOpen',
+  'assistant:rename': 'extensions.permissionsAssistantRename',
   'agents:read': 'extensions.permissionsAgentsRead',
   'agents:read:all': 'extensions.permissionsAgentsReadAll',
   'agents:read:all-machines': 'extensions.permissionsAgentsReadAllMachines',

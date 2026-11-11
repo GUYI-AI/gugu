@@ -104,8 +104,14 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // Still no chat id, title, member or message reaches the App.
 // 44 (#1925): when that conversation is the person's private chat with their own assistant, the binding may also declare
 // `assistant-status` (`assistant:status`: `gugu.assistant.status` / `onChanged`) and `assistant-open` (`assistant:open`:
-// `gugu.assistant.open(name, screen)` — one of the host's own screens for it, a closed list — and `advanceSetup`).
+// `gugu.assistant.open(name, screen)` — one of the host's own screens for it, a closed list — and `advanceSetup`), and
+// `assistant-rename` (`assistant:rename`: `gugu.assistant.rename`). The panel's own pages (settings, projects, capabilities)
+// open as one host layer over the App's panel (`app-host-layer.ts`). Any page: `gugu.toast(text)`, the host's toast.
 export const EXTENSION_API_VERSION = 44;
+
+/** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
+export const APP_TOAST_MAX = 80;
+export const APP_TOAST_INTERVAL_MS = 2000;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
@@ -649,7 +655,7 @@ export type ExtensionHostEvent =
    * once, `unbound` when an assistant appears for an App that heard the snapshot without one. Only to the pages the person
    * works of an App with `assistant:status`, each time checked as a read is.
    */
-  | { type: 'assistantChanged'; name: string; state: 'ready'; status: import('./assistant-binding').AppAssistantStatus }
+  | { type: 'assistantChanged'; name: string; state: 'ready'; status: import('./assistant-binding').AppAssistantStatus; hostPage: boolean }
   | { type: 'assistantChanged'; name: string; state: 'unbound' }
   /** What this page hears of its own topic (`gugu.cloud.on`): a broadcast's payload, or that it is (re)subscribed: read again then. */
   | { type: 'cloudHeard'; topic: string; event: string; heard: { subscribed: true } | { payload: Record<string, unknown> } }
@@ -850,6 +856,14 @@ export const BRIDGE_VERBS = {
   assistantStatus: { needs: 'assistant:status', only: 'page' },
   assistantOpen: { needs: 'assistant:open', only: 'page', gesture: true },
   assistantAdvanceSetup: { needs: 'assistant:open', only: 'page', gesture: true },
+  assistantRename: { needs: 'assistant:rename', only: 'page', gesture: true },
+  /**
+   * #1925 (44) A short line in the host's own toast, as the host says 「更改已保存」 after a save: only from a page the person
+   * works, while it is on screen and has the focus; text only (no action, link or icon), at most `APP_TOAST_MAX` characters,
+   * one every `APP_TOAST_INTERVAL_MS` (else `rate-limited`). No capability: it says nothing outside what the page could
+   * show itself, and only while the person is looking at it.
+   */
+  toast: { needs: null, only: 'page' },
   messagesHistory: { needs: 'chat:read' },
   messagesSearch: { needs: 'chat:read' },
   /**

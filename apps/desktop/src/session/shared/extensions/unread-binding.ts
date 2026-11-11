@@ -13,7 +13,7 @@ export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', ...ASSI
 export type ConversationBindingAction = (typeof CONVERSATION_BINDING_ACTIONS)[number];
 export const BINDING_ACTION_CAPABILITY = {
   unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft',
-  'assistant-status': 'assistant:status', 'assistant-open': 'assistant:open',
+  'assistant-status': 'assistant:status', 'assistant-open': 'assistant:open', 'assistant-rename': 'assistant:rename',
 } as const;
 /** The first App API that lets a binding declare more than `unread`. */
 export const BINDING_ACTIONS_API_VERSION = 40;

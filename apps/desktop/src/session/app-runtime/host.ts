@@ -25,6 +25,7 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     status(name: string): Promise<import('@shared/extensions/assistant-binding').AppAssistantRead>;
     open(name: string, screen: string): Promise<void>;
     advanceSetup(name: string, next: string): Promise<void>;
+    rename(name: string, text: string): Promise<import('@shared/extensions/assistant-binding').AssistantRenameResult>;
   };
   onAssistantChanged?(handler: (read: import('@shared/extensions/assistant-binding').AppAssistantHeard) => void): () => void;
   taskMessage?(args: { intent: 'pause' | 'continue' }): Promise<void>;
