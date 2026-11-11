@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
     refreshStatus: ReturnType<typeof vi.fn>;
   },
   opened: [] as string[],
+  startFailure: null as Error | null,
+  logged: [] as unknown[],
 }));
 
 const state = observable.box<AuthStatusModelState>({ status: { kind: 'unauthenticated' }, login: null }, { deep: false });
@@ -22,6 +24,7 @@ const state = observable.box<AuthStatusModelState>({ status: { kind: 'unauthenti
 vi.mock('@renderer/lib/acp/auth-login-binding', () => ({
   AcpAuthLoginBinding: {
     create: async () => {
+      if (mocks.startFailure) throw mocks.startFailure;
       mocks.binding = {
         status: { current: () => state.get() },
         sendInput: vi.fn(),
@@ -42,6 +45,7 @@ vi.mock('./AcpAuthenticateSignIn', () => ({ AcpAuthenticateSignIn: () => null })
 vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgent: () => ({ data: null }) }));
 vi.mock('@/components/settings/addServer/CommandBlock', () => ({ CommandBlock: () => null }));
 vi.mock('@/i18n/registerSettingsCatalog', () => ({}));
+vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn: (...args: unknown[]) => mocks.logged.push(args) }) }));
 vi.mock('@/lib/loading/LoadingIndicator', () => ({ LoadingIndicator: () => null }));
 // 不带 autoFocus:React 在 jsdom 里给获得焦点的输入框挂旧式 change 垫片(attachEvent),会刷一串无关报错。
 vi.mock('@renderer/lib/ui/input', () => ({
@@ -107,6 +111,8 @@ describe('终端登录不摆终端:链接 + 等待 + 填码(#2507)', () => {
     root = createRoot(dom.window.document.getElementById('root')!);
     mocks.binding = null;
     mocks.opened = [];
+    mocks.startFailure = null;
+    mocks.logged = [];
     runInAction(() => state.set({ status: { kind: 'unauthenticated' }, login: null }));
   });
 
@@ -173,6 +179,15 @@ describe('终端登录不摆终端:链接 + 等待 + 填码(#2507)', () => {
     });
     expect(q('agent-sign-in-failed')?.textContent).toContain('Error: token exchange failed (403)');
     expect(dom.window.document.body.textContent).toContain('agentsPage.signInRetry');
+  });
+
+  it('登录起不来 ⇒ 原文进日志,界面只说没登录成功并给「重试」', async () => {
+    mocks.startFailure = new Error('host rpc: ECONNRESET at 127.0.0.1:41507');
+    await render();
+    expect(q('agent-sign-in-failed')).not.toBeNull();
+    expect(dom.window.document.body.textContent).not.toContain('ECONNRESET');
+    expect(dom.window.document.body.textContent).toContain('agentsPage.signInRetry');
+    expect(mocks.logged).toHaveLength(1);
   });
 
   it('读数翻成已登录 ⇒ 收掉登录进程并算成功', async () => {
