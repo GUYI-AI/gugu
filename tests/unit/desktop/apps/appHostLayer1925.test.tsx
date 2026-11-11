@@ -29,7 +29,7 @@ vi.mock('../../../../apps/desktop/src/components/agentAvatar/AgentAvatar', () =>
 }));
 
 const { installAssistantShellBridge, publishAssistantShell } = await import(`${D}/lib/assistantShellBridge`);
-const { AppHostLayerFrame, openAssistantLayer, setAssistantFigure, appPageNewDocument, pageKey, resetMountedAppPagesForTest } = await import(`${D}/session/renderer/features/apps/app-host-layer`);
+const { AppHostLayerFrame, openAssistantLayer, setAssistantFigure, appPageNewDocument, pageKey, resetMountedAppPagesForTest, useAppHostLayer } = await import(`${D}/session/renderer/features/apps/app-host-layer`);
 const { installAppHostLayerBridge, readAppHostLayerBridge, resetAppHostLayersForTest, setAppHostLayerAccount } = await import(`${D}/lib/appHostLayerBridge`);
 installAppHostLayerBridge();
 
@@ -97,7 +97,7 @@ describe('the host layer over an App\'s panel', () => {
   it('refused, drawing nothing, for another account, while the assistant is not shown, or with no panel on screen', () => {
     expect(() => openAssistantLayer(APP, 'settings', OWNER, PANEL)).toThrow();
     mount();
-    expect(() => openAssistantLayer(APP, 'settings', OTHER)).toThrow();
+    expect(() => openAssistantLayer(APP, 'settings', OTHER, PANEL)).toThrow();
     act(() => publishAssistantShell(shell({ assistantState: 'loading', assistant: null })));
     expect(() => openAssistantLayer(APP, 'settings', OWNER, PANEL)).toThrow();
     expect(shown()).toEqual(PAGE);
@@ -115,6 +115,21 @@ describe('the host layer over an App\'s panel', () => {
     act(() => publishAssistantShell(shell({ assistantState: 'none', assistant: null })));
     expect(shown()).toEqual(PAGE);
     expect(layer()).toBeNull();
+  });
+
+  it('not drawn even for the one render before it is closed: what each render saw after the account changed', () => {
+    const seen: (string | null)[] = [];
+    function Probe() {
+      seen.push(useAppHostLayer(APP));
+      return null;
+    }
+    act(() => root.render(<><AppHostLayerFrame extensionId={APP} tabKind={`${APP}.main`} /><Probe /></>));
+    open('capabilities');
+    expect(seen.at(-1)).toBe('assistant-capabilities');
+    const from = seen.length;
+    act(() => publishAssistantShell(shell({ ownerId: OTHER })));
+    expect(seen.length).toBeGreaterThan(from);
+    expect(seen.slice(from).every((kind) => kind === null)).toBe(true);
   });
 
   it('taken away when the panel goes: main hears it closed', () => {

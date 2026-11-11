@@ -108,6 +108,18 @@ describe('a task of the assistant in an App\'s panel', () => {
     }
   });
 
+  it('the App\'s page gone (another tab): a task stays, back where it was with the page; a panel page goes with it', async () => {
+    await act(async () => root.render(<AppDockPage extensionId="today" tabKind="today.main" />));
+    await open();
+    await act(async () => root.render(<div />));
+    expect(readAppHostLayerBridge()!.getSnapshot().today?.kind).toBe('work');
+    await act(async () => root.render(<AppDockPage extensionId="today" tabKind="today.main" />));
+    expect(find('app-work-chat')).not.toBeNull();
+    await act(async () => readAppHostLayerBridge()!.open('today', { kind: 'assistant-settings', ownerId: OWNER }));
+    await act(async () => root.render(<div />));
+    expect(readAppHostLayerBridge()!.getSnapshot()).toEqual({});
+  });
+
   it('each App\'s own: another App\'s open or close is that App\'s panel, never this one\'s', async () => {
     await act(async () => root.render(<AppDockPage extensionId="today" tabKind="today.main" />));
     await open('other');
