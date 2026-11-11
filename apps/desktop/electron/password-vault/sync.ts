@@ -34,7 +34,7 @@ export type SyncView =
 
 const b64 = z.string().regex(/^[A-Za-z0-9+/]{43}=$/)
 const fileSchema = z.strictObject({ schema: z.literal(1), deviceId: z.string().min(1), publicKey: b64, secret: z.string(),
-  nonce: b64.optional(), revision: z.string().regex(/^\d+$/), versions: z.record(z.string(), z.string().regex(/^\d+$/)), merged: z.boolean(),
+  nonce: b64.optional(), pinned: b64.optional(), revision: z.string().regex(/^\d+$/), versions: z.record(z.string(), z.string().regex(/^\d+$/)), merged: z.boolean(),
   recoveryAsked: z.boolean().optional() })
 type DeviceFile = z.infer<typeof fileSchema>
 const remoteDevice = z.object({ deviceId: z.string(), label: z.string().nullable(), platform: z.string().nullable(), hostKind: z.string().nullable(),
@@ -70,10 +70,18 @@ export class VaultSync {
   #view: SyncView = { state: 'off' }
   #queue: Promise<unknown> = Promise.resolve()
   #writes: Promise<unknown> = Promise.resolve()
-  /** Nonces this device posted as approver, per requesting device. Lost on restart: the request is then dismissed and asked again. */
-  readonly #challenges = new Map<string, string>()
+  /** Per requesting device: the nonce this device posted as approver, and the key and commitment it saw before posting.
+   * Lost on restart: the request then shows as elsewhere, and opening it again starts a new round. */
+  readonly #challenges = new Map<string, { nonce: string; publicKey: string; commitment: string }>()
+  /** The head revision of the last pull: polling compares against it and pulls only when something was written. */
+  #seen?: string
   constructor(options: VaultSyncOptions) { this.#o = options }
   view(): SyncView { return this.#view }
+  /** Cheap check: has anything been written for this account since the last pull? */
+  async poll(): Promise<boolean> {
+    const file = await this.load()
+    return String(await this.call('password_vault_revision', { p_device_id: file.deviceId })) !== this.#seen
+  }
   dispose() { this.#secret?.fill(0); this.#secret = undefined; this.#vaultKey?.key.fill(0); this.#vaultKey = undefined }
 
   private serial<T>(work: () => Promise<T>): Promise<T> {
@@ -158,13 +166,16 @@ export class VaultSync {
   private async fetch(file: DeviceFile, since: string) {
     const parsed = remoteState.safeParse(await this.call('password_vault_state', { p_device_id: file.deviceId, p_since: Number(since) }))
     if (!parsed.success) throw new SyncError('INVALID')
+    this.#seen = parsed.data.initialized ? parsed.data.revision : '0'
     return parsed.data
   }
   private async step(): Promise<SyncView> {
     const file = await this.load()
     let state = await this.fetch(file, file.revision)
     if (!state.initialized) {
-      // The account's first device creates the vault; the second of two racing first devices then asks to join.
+      // No passwords anywhere yet: nothing to sync and nobody to ask. The device with the first entry creates the vault;
+      // the second of two racing first devices then asks to join.
+      if (!(await this.#o.vault.syncExport()).length) return { state: 'off' }
       const vaultKey = c.randomKey()
       try {
         await this.call('password_vault_initialize', { p_device_id: file.deviceId, p_public_key: file.publicKey, p_sealed_key: await c.sealVaultKey(file.publicKey, 1, vaultKey) })
@@ -175,11 +186,11 @@ export class VaultSync {
       if (!state.initialized) throw new SyncError('STATE')
     }
     const me = state.devices.find(device => device.deviceId === file.deviceId)
-    if (me?.status === 'approved' && me.publicKey !== file.publicKey) return { state: 'blocked', recovery: state.recovery }
-    if (me?.status !== 'approved') {
-      // Removed elsewhere (or never joined): edits stay local and merge when this device joins again.
+    if (me?.status !== 'approved' || me.publicKey !== file.publicKey) {
+      // Removed elsewhere, never joined, or approved under a key this device no longer has (reinstalled): edits stay
+      // local and merge when this device joins again; a lost key simply asks again.
       if (file.merged) { Object.assign(file, { merged: false, revision: '0', versions: {} }); this.#state = undefined; await this.save() }
-      return { ...await this.join(file, me), recovery: state.recovery }
+      return { ...await this.join(file, me?.status === 'approved' ? undefined : me), recovery: state.recovery }
     }
     const vaultKey = await this.openVaultKey(state, file)
     if (!vaultKey) return { state: 'joining' }
@@ -193,7 +204,7 @@ export class VaultSync {
   }
   private async join(file: DeviceFile, me: z.infer<typeof remoteDevice> | undefined): Promise<Extract<SyncView, { state: 'joining' | 'blocked' }>> {
     if (!me || me.publicKey !== file.publicKey) {
-      file.nonce = c.randomNonce(); await this.save()
+      file.nonce = c.randomNonce(); delete file.pinned; await this.save()
       try { await this.call('password_vault_request', { p_device_id: file.deviceId, p_public_key: file.publicKey, p_commitment: c.commitment(file.publicKey, file.nonce) }) }
       catch (error) { if (error instanceof SyncError && error.code === 'STATE') return { state: 'blocked' }; throw error }
       return { state: 'joining' }
@@ -203,8 +214,14 @@ export class VaultSync {
       await this.call('password_vault_dismiss', { p_caller_device_id: file.deviceId, p_device_id: file.deviceId })
       return this.join(file, undefined)
     }
-    if (me.approverNonce && !me.deviceNonce) await this.call('password_vault_reveal', { p_device_id: file.deviceId, p_device_nonce: file.nonce })
-    return { state: 'joining', ...(me.approverNonce ? { code: c.shortCode(file.publicKey, file.nonce, me.approverNonce) } : {}) }
+    if (!me.approverNonce && !me.deviceNonce && !file.pinned) return { state: 'joining' }
+    // Our nonce goes out once, for one approver nonce, and the code is computed from that one only. Were the code taken
+    // from whatever approver nonce the cloud shows later, a cloud that has seen our nonce could pick one that makes the
+    // two screens agree on its own key. Anything else than the pinned round starts a new round with a fresh nonce.
+    if (!file.pinned && !me.deviceNonce && me.approverNonce) { file.pinned = me.approverNonce; await this.save() }
+    if (!file.pinned || me.approverNonce !== file.pinned || me.deviceNonce && me.deviceNonce !== file.nonce) return this.join(file, undefined)
+    if (!me.deviceNonce) await this.call('password_vault_reveal', { p_device_id: file.deviceId, p_device_nonce: file.nonce })
+    return { state: 'joining', code: c.shortCode(file.publicKey, file.nonce, file.pinned) }
   }
   private async apply(file: DeviceFile, state: RemoteState, vaultKey: Buffer) {
     const changes: { id: string; value?: SyncValue }[] = []
@@ -239,22 +256,38 @@ export class VaultSync {
     const requests = state.devices.filter(device => device.status === 'pending').map((device): SyncRequest => {
       const mine = this.#challenges.get(device.deviceId)
       if (!device.approverNonce) return { ...view(device), stage: 'new' }
-      if (!mine || device.approverNonce !== mine) return { ...view(device), stage: 'elsewhere' }
-      if (!device.deviceNonce || !device.commitment) return { ...view(device), stage: 'waiting' }
-      // The requesting device committed to its key and nonce before seeing ours; a swapped key fails here.
-      if (!c.verifyCommitment(device.publicKey, device.deviceNonce, device.commitment)) return { ...view(device), stage: 'mismatch' }
-      return { ...view(device), stage: 'compare', code: c.shortCode(device.publicKey, device.deviceNonce, mine) }
+      if (!mine || device.approverNonce !== mine.nonce) return { ...view(device), stage: 'elsewhere' }
+      if (!this.kept(device, mine)) return { ...view(device), stage: 'mismatch' }
+      if (!device.deviceNonce) return { ...view(device), stage: 'waiting' }
+      return { ...view(device), stage: 'compare', code: c.shortCode(device.publicKey, device.deviceNonce, mine.nonce) }
     })
     const recovery = state.recovery ? 'set' : file.recoveryAsked ? 'unset' : 'ask'
     return { state: 'ready', devices: state.devices.filter(device => device.status === 'approved').map(view), requests, recovery }
   }
 
-  /** The person opened a request on this device: post our nonce so both screens can show the code. */
+  /** The requesting device committed to its key and nonce before seeing ours: the key and commitment we saw before posting
+   * our nonce must still be the ones shown, and its nonce, once revealed, must open that commitment. */
+  private kept(device: z.infer<typeof remoteDevice>, mine: { publicKey: string; commitment: string }) {
+    return device.publicKey === mine.publicKey && device.commitment === mine.commitment
+      && (!device.deviceNonce || c.verifyCommitment(device.publicKey, device.deviceNonce, mine.commitment))
+  }
+  /** The person is at this device while a request waits: post our nonce so both screens show the code. A request opened
+   * elsewhere (another device, or this one before a restart) is dropped instead; the device asks again at once with a
+   * fresh nonce, and the next open here takes it. */
   challenge(deviceId: string): Promise<SyncView> {
     return this.serial(async () => {
-      const file = await this.load(), nonce = c.randomNonce()
+      const file = await this.load(), state = await this.fetch(file, file.revision)
+      const device = state.initialized ? state.devices.find(entry => entry.deviceId === deviceId && entry.status === 'pending') : undefined
+      if (!device?.commitment) throw new SyncError('STATE')
+      if (this.#challenges.get(deviceId)?.nonce === device.approverNonce) return
+      if (device.approverNonce) {
+        this.#challenges.delete(deviceId)
+        await this.call('password_vault_dismiss', { p_caller_device_id: file.deviceId, p_device_id: deviceId })
+        return
+      }
+      const nonce = c.randomNonce()
       await this.call('password_vault_challenge', { p_approver_device_id: file.deviceId, p_device_id: deviceId, p_approver_nonce: nonce })
-      this.#challenges.set(deviceId, nonce)
+      this.#challenges.set(deviceId, { nonce, publicKey: device.publicKey, commitment: device.commitment })
     }).then(() => this.refresh())
   }
   /** The codes matched on both screens: seal the vault key to exactly the key whose code was shown. */
@@ -263,8 +296,7 @@ export class VaultSync {
       const file = await this.load(), state = await this.fetch(file, file.revision)
       if (!state.initialized) throw new SyncError('STATE')
       const device = state.devices.find(entry => entry.deviceId === deviceId && entry.status === 'pending'), mine = this.#challenges.get(deviceId)
-      if (!device || !mine || device.approverNonce !== mine || !device.deviceNonce || !device.commitment
-        || !c.verifyCommitment(device.publicKey, device.deviceNonce, device.commitment)) throw new SyncError('STATE')
+      if (!device || !mine || device.approverNonce !== mine.nonce || !device.deviceNonce || !this.kept(device, mine)) throw new SyncError('STATE')
       const vaultKey = await this.openVaultKey(state, file)
       if (!vaultKey) throw new SyncError('NOT_MEMBER')
       const scope = this.#o.scopeFor?.(device) ?? 'full'
@@ -324,7 +356,7 @@ export class VaultSync {
           p_sealed_key: await c.sealVaultKey(file.publicKey, begun.epoch, vaultKey) })
         this.#vaultKey?.key.fill(0); this.#vaultKey = { epoch: begun.epoch, key: vaultKey }
         // Pull everything and merge this device's own entries, as for any device that joins.
-        Object.assign(file, { merged: false, revision: '0', versions: {}, recoveryAsked: true }); delete file.nonce; await this.save()
+        Object.assign(file, { merged: false, revision: '0', versions: {}, recoveryAsked: true }); delete file.nonce; delete file.pinned; await this.save()
       } finally { keys.pair.secretKey.fill(0) }
     }).then(() => this.createRecovery())
   }
@@ -394,6 +426,7 @@ export class VaultSync {
   /** Our own write may skip the revision only when nothing else was written in between. */
   private advance(file: DeviceFile, revision: string) {
     if (BigInt(revision) === BigInt(file.revision) + 1n) file.revision = revision
+    if (this.#seen !== undefined && BigInt(revision) === BigInt(this.#seen) + 1n) this.#seen = revision
   }
 }
 const maxRevision = (a: string, b: string) => BigInt(a) > BigInt(b) ? a : b

@@ -66,6 +66,7 @@ import { AgentShareHost } from '../components/AgentShareHost'
 import { ContactsProvider } from '../store/contacts'
 import { DevicesProvider } from '../store/devices'
 import { ServerLoginApproveHost } from '../mobile/server-login/ServerLoginApproveHost'
+import { PasswordDeviceHost } from '../components/password/PasswordDeviceHost'
 import { PhoneMessageSearch } from '../mobile/chat/PhoneMessageSearch'
 import { AssistantShellHost } from '../components/assistant/AssistantShellHost'
 import { OwnedAgentResourcesHost } from '../components/appSlot/OwnedAgentResourcesHost'
@@ -1180,6 +1181,7 @@ function InnerLayout({
         <SentMessageBodyHost />{effectsActive && <SessionInputOutboxHost accountId={user.id} />}{mobile && <AgentWatchRoot />}
         {/* 批准页的机器移除与设置共用 DevicesProvider 那份设备数据;系统交给 App 的邀请短链与相机扫码同一条路。 */}
         <ServerLoginApproveHost active={effectsActive} onScanRoute={openScanRoute} />
+        {effectsActive && <PasswordDeviceHost />}
         {mobile && platform.kind === 'capacitor' && <PhoneDeviceRoot />}
 
         {/* The mobile navigation is shell chrome, not state owned by a retained tab subtree. */}

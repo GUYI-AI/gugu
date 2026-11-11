@@ -5030,6 +5030,20 @@ app.whenReady().then(async () => {
         const { data, error } = await makeIdentityClient(auth.accessToken).rpc(name, args)
         if (error) throw error
         return data
+      },
+      presence: () => {
+        const state = powerMonitor.getSystemIdleState(30)
+        return state === 'active' || state === 'locked' ? state : 'idle'
+      },
+      notify: (title, body) => {
+        if (IS_TEST_MODE || mainWindow?.isFocused()) return
+        void notificationGate.usable().then(usable => {
+          if (!usable) return
+          const notification = new Notification({ title, body })
+          notification.on('click', () => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus() } })
+          notification.once('failed', (_event, error) => { notificationLogger.warn({ error: String(error) }, `[notification] 密码设备提示被系统拒绝: ${error}`) })
+          notification.show()
+        })
       } })
     bindPasswordBetaAgent(emdash.passwordBetaAgent)
     app.once('will-quit', startSessionpageAgentArchivalSync({ getAuth: getSessionpageAuth, resolveDeviceId: localDeviceId,

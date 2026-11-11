@@ -31,12 +31,10 @@ export type PasswordUiCommand =
   | { type: 'decide'; requestId: string; decision: 'allow_once' | 'reject' }
   | { type: 'save-draft'; requestId: string }
   | { type: 'reject-save'; requestId: string }
-  /** Another device asks to join: open (both screens show the code), allow after comparing, or refuse. */
-  | { type: 'sync-open'; deviceId: string }
+  /** Another device asks to join (the app opens it on the machine the person is at): allow after comparing the
+   * digits, or refuse. Removing a device is Settings → 设备, which re-keys. */
   | { type: 'sync-approve'; deviceId: string }
   | { type: 'sync-reject'; deviceId: string }
-  /** Stop this device from receiving passwords; the key changes so it cannot read later edits. */
-  | { type: 'sync-remove'; deviceId: string }
   /** Recovery code (a device on paper): generate or replace it, drop it, decline the offer, or join with it. Generating
    * and recovering answer with `recoveryCode`, shown once. */
   | { type: 'sync-recovery-create' }

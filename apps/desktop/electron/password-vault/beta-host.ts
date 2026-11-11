@@ -27,7 +27,11 @@ interface NativeHost { window(): BrowserWindow | null; account(): Promise<string
   /** System owner verification (Touch ID or login password) through the native helper. */
   verifyOwner(reason: string): Promise<void>
   /** Signed-in identity-schema RPC for vault sync; throws the backend error (with its SQLSTATE `code`). */
-  rpc(name: string, args: Record<string, unknown>): Promise<unknown> }
+  rpc(name: string, args: Record<string, unknown>): Promise<unknown>
+  /** Is the person at this machine: used in the last half minute, idle but unlocked, or locked. */
+  presence(): 'active' | 'idle' | 'locked'
+  /** A system notification that brings the window forward when clicked; nothing when the window already has focus. */
+  notify(title: string, body: string): void }
 type Account = Awaited<ReturnType<typeof createAccount>>
 let native: NativeHost | undefined
 let current: Account | undefined
@@ -74,29 +78,54 @@ async function createAccount(ownerId: string, host: NativeHost) {
   const sync = port.sync = new VaultSync({ root: syncDirectory(privatePasswordVaultDirectory(), ownerId), ownerId, deviceId, keys, changed,
     rpc: async (name, args) => { assertCurrent(); if (await host.account() !== ownerId) throw unavailable(); return host.rpc(name, args) },
     vault: { syncExport: () => vault.syncExport(person), syncApply: changes => vault.syncApply(person, changes) } })
-  return { ownerId, vault, login, saves, controller, assertCurrent, sync, pull: pulling(sync, controller.signal) }
+  return { ownerId, vault, login, saves, controller, assertCurrent, sync, pull: pulling(sync, host, controller.signal) }
 }
-/** Pull every minute, every few seconds while a device is joining or a code is being compared, and soon after the
- * settings page asks (at most every 10 seconds). Failures wait for the next pull; nothing is shown for them. */
-function pulling(sync: VaultSync, signal: AbortSignal) {
-  let timer: ReturnType<typeof setTimeout> | undefined, last = 0, running = false
+/** Polls the head revision every 5 seconds (3 while a code is on screen) and pulls when something was written, and every
+ * minute regardless. Every step of joining writes, so both devices see the other's step at the next poll. Failures wait
+ * for the next round; nothing is shown.
+ * A device asking to join is opened on the machine the person is at: at once where they are active, after a pause where
+ * the screen is merely unlocked, never where it is locked; an active machine also takes over a request opened elsewhere. */
+function pulling(sync: VaultSync, host: Pick<NativeHost, 'presence' | 'notify'>, signal: AbortSignal) {
+  let timer: ReturnType<typeof setTimeout> | undefined, last = 0, running = false, forced = false
+  const seen = new Map<string, number>()
   const urgent = () => {
     const view = sync.view()
-    return view.state === 'joining' || view.state === 'ready' && view.requests.some(request => request.stage === 'waiting' || request.stage === 'compare')
+    return view.state === 'joining' && !!view.code || view.state === 'ready' && view.requests.some(request => request.stage === 'waiting' || request.stage === 'compare')
+  }
+  const claim = async () => {
+    const view = sync.view()
+    if (view.state !== 'ready') { seen.clear(); return }
+    for (const id of seen.keys()) if (!view.requests.some(request => request.deviceId === id)) seen.delete(id)
+    const presence = host.presence()
+    for (const request of view.requests) {
+      if (!seen.has(request.deviceId)) { seen.set(request.deviceId, Date.now()); host.notify(`「${request.label || '新设备'}」想用你的密码`, '打开咕咕，核对两台设备上的数字。') }
+      const waited = Date.now() - seen.get(request.deviceId)! > 8_000
+      if (presence !== 'locked' && request.stage === 'new' && (presence === 'active' || waited) || presence === 'active' && request.stage === 'elsewhere')
+        await sync.challenge(request.deviceId).catch(() => {})
+    }
   }
   const run = async () => {
     if (signal.aborted || running) return
-    running = true; last = Date.now()
-    try { await sync.refresh() } catch { /* offline or not signed in: the next pull retries */ }
-    finally { running = false; schedule(urgent() ? 3_000 : 60_000) }
+    running = true
+    try {
+      const full = forced || Date.now() - last > 60_000
+      forced = false
+      if (full || await sync.poll()) { last = Date.now(); await sync.refresh(); await claim() }
+    } catch { /* offline or not signed in: the next round retries */ }
+    finally { running = false; schedule(urgent() ? 3_000 : 5_000) }
   }
   const schedule = (delay: number) => {
     if (signal.aborted) return
     clearTimeout(timer); timer = setTimeout(() => void run(), delay); timer.unref?.()
   }
   signal.addEventListener('abort', () => { clearTimeout(timer); sync.dispose() }, { once: true })
-  schedule(0)
-  return { soon: () => { if (Date.now() - last > 10_000) schedule(0) } }
+  forced = true; schedule(0)
+  return {
+    /** The settings page or a prompt asked: pull soon, at most every 10 seconds. */
+    soon: () => { if (Date.now() - last > 10_000) { forced = true; schedule(0) } },
+    /** A local save: the first one creates the vault, so pull now. */
+    now: () => { forced = true; schedule(0) },
+  }
 }
 async function account(): Promise<Account> {
   if (!PASSWORD_BETA_ENABLED || !native) throw unavailable()
@@ -137,6 +166,7 @@ export function installPasswordBetaHost(host: NativeHost): void {
           const creator: CredentialGrant | undefined = request && !command.reference ? { subject: `agent:${request.agent}`, level: 'write' } : undefined
           const saved = await value.vault.save(person, randomUUID(), { origin: command.origin, account: command.account, password: command.password, fields: command.fields ?? [] }, command.reference, creator)
           if (request) value.saves.complete(request.requestId, saved.reference.id)
+          value.pull.now()
           break
         }
         case 'save-draft': return { ok: true, snapshot: await snapshot(value), draft: value.saves.draft(command.requestId) }
@@ -145,10 +175,8 @@ export function installPasswordBetaHost(host: NativeHost): void {
         case 'reveal': return { ok: true, snapshot: await snapshot(value), secrets: await value.vault.reveal(person, command.reference) }
         case 'grants': await value.vault.setGrants(person, command.reference, command.grants); break
         case 'decide': value.login.decide(command.requestId, command.decision); break
-        case 'sync-open': await value.sync.challenge(command.deviceId); break
         case 'sync-approve': await value.sync.approve(command.deviceId); break
         case 'sync-reject': await value.sync.reject(command.deviceId); break
-        case 'sync-remove': await value.sync.remove(command.deviceId); break
         case 'sync-recovery-create': { const { code } = await value.sync.createRecovery(); changed(); return { ok: true, snapshot: await snapshot(value), recoveryCode: code } }
         case 'sync-recovery-remove': await value.sync.removeRecovery(); break
         case 'sync-recovery-skip': await value.sync.skipRecovery(); break

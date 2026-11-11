@@ -8,11 +8,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { VaultError, type VaultKeyProtector } from '../../../apps/desktop/electron/password-vault/contracts'
 import type { SyncValue } from '../../../apps/desktop/electron/password-vault/management'
 import { VaultSync, type SyncRpc, type SyncVault, type SyncView } from '../../../apps/desktop/electron/password-vault/sync'
+import * as crypto from '../../../apps/desktop/electron/password-vault/sync-crypto'
 import { withContractDatabase } from './database'
 
 type Database = Parameters<Parameters<typeof withContractDatabase>[0]>[0]
 const rpc = {
   password_vault_state: [['p_device_id', 'text'], ['p_since', 'bigint']],
+  password_vault_revision: [['p_device_id', 'text']],
   password_vault_initialize: [['p_device_id', 'text'], ['p_public_key', 'text'], ['p_sealed_key', 'text']],
   password_vault_request: [['p_device_id', 'text'], ['p_public_key', 'text'], ['p_commitment', 'text']],
   password_vault_challenge: [['p_approver_device_id', 'text'], ['p_device_id', 'text'], ['p_approver_nonce', 'text']],
@@ -155,6 +157,80 @@ describe('password vault sync between two devices of one account', () => {
       await mac.removeRecovery()
       expect(ready(await mac.refresh()).recovery).toBe('unset')
       mac.dispose(); laptop.dispose(); spare.dispose(); third.dispose()
+    } finally { await db.query('ROLLBACK') }
+  }))
+
+  it('a cloud that rewrites a round cannot make the codes agree; moved requests and reinstalls start a new round', async () => withContractDatabase(async db => {
+    await db.query('BEGIN')
+    try {
+      const owner = randomUUID(), [macId, laptopId] = [randomUUID(), randomUUID()]
+      await db.query(`INSERT INTO auth.users(id,aud,role,email,created_at,updated_at) VALUES($1,'authenticated','authenticated',$2,now(),now())`, [owner, `${owner}@vault.invalid`])
+      for (const id of [macId, laptopId]) await db.query(`INSERT INTO identity.gugu_devices(device_id,user_id,label,hostname,platform,machine_id)
+        VALUES($1,$2,$3,'h','darwin',$4)`, [id, owner, id === macId ? 'Mac' : 'Laptop', `machine-${id}`])
+      const engine = (deviceId: string, vault: MemoryVault, folder = deviceId) =>
+        (vault.sync = new VaultSync({ root: join(root, folder), ownerId: owner, deviceId, keys, rpc: rpcAs(db, owner), vault, changed() {} }))
+      const row = async () => (await db.query<{ public_key: string; commitment: string | null; approver_nonce: string | null; device_nonce: string | null; status: string }>(
+        'SELECT public_key, commitment, approver_nonce, device_nonce, status FROM identity.password_vault_devices WHERE owner_user_id=$1 AND device_id=$2', [owner, laptopId])).rows[0]
+      const macVault = new MemoryVault(), laptopVault = new MemoryVault()
+      const mac = engine(macId, macVault), laptop = engine(laptopId, laptopVault)
+
+      // No passwords anywhere: no vault, nothing to ask. The first entry creates it.
+      expect(await mac.refresh()).toEqual({ state: 'off' })
+      expect(await laptop.refresh()).toEqual({ state: 'off' })
+      expect((await db.query('SELECT 1 FROM identity.password_vault_heads WHERE owner_user_id=$1', [owner])).rows).toHaveLength(0)
+      macVault.items.set(randomUUID(), credential('https://github.com', 'me@example.com', 'canary-github'))
+      expect(await mac.refresh()).toMatchObject({ state: 'ready' })
+      expect(await mac.poll()).toBe(false)
+
+      // A round: the laptop asks, the Mac posts its nonce, the laptop reveals and shows a code.
+      expect(await laptop.refresh()).toMatchObject({ state: 'joining' })
+      expect(await mac.poll()).toBe(true)
+      expect(ready(await mac.challenge(laptopId)).requests[0]!.stage).toBe('waiting')
+      expect((await laptop.refresh() as Extract<SyncView, { state: 'joining' }>).code).toMatch(/^\d{6}$/)
+      const first = await row()
+
+      // The cloud swaps the approver nonce after the laptop revealed (it could pick one that makes the codes agree):
+      // the laptop shows no code from it and starts over with a fresh commitment.
+      await db.query('UPDATE identity.password_vault_devices SET approver_nonce=$3 WHERE owner_user_id=$1 AND device_id=$2', [owner, laptopId, crypto.randomNonce()])
+      expect(await laptop.refresh()).toEqual({ state: 'joining', recovery: false })
+      expect(await row()).toMatchObject({ approver_nonce: null, device_nonce: null, status: 'pending' })
+      expect((await row())!.commitment).not.toBe(first!.commitment)
+      expect(ready(await mac.refresh()).requests[0]!.stage).toBe('new')
+
+      // The cloud swaps the asking key after the Mac posted its nonce, with a commitment made for it afterwards: mismatch.
+      expect(ready(await mac.challenge(laptopId)).requests[0]!.stage).toBe('waiting')
+      await laptop.refresh()
+      const fake = await crypto.createDeviceKeyPair(), fakeNonce = crypto.randomNonce()
+      await db.query('UPDATE identity.password_vault_devices SET public_key=$3, commitment=$4, device_nonce=$5 WHERE owner_user_id=$1 AND device_id=$2',
+        [owner, laptopId, fake.publicKey, crypto.commitment(fake.publicKey, fakeNonce), fakeNonce])
+      expect(ready(await mac.refresh()).requests[0]!.stage).toBe('mismatch')
+      await expect(mac.approve(laptopId)).rejects.toMatchObject({ code: 'STATE' })
+      // The laptop sees a key that is not its own and asks again.
+      expect(await laptop.refresh()).toMatchObject({ state: 'joining' })
+      expect((await row())!.public_key).not.toBe(fake.publicKey)
+
+      // Opened before a restart (or on another device): the request shows as elsewhere; opening it here drops it, the
+      // laptop asks again at once, and this device takes the new round.
+      await mac.challenge(laptopId)
+      mac.dispose()
+      const restarted = engine(macId, macVault)
+      expect(ready(await restarted.refresh()).requests[0]!.stage).toBe('elsewhere')
+      await restarted.challenge(laptopId)
+      expect(await row()).toBeUndefined()
+      expect(await laptop.refresh()).toMatchObject({ state: 'joining' })
+      expect(ready(await restarted.challenge(laptopId)).requests[0]!.stage).toBe('waiting')
+      const shown = await laptop.refresh() as Extract<SyncView, { state: 'joining' }>
+      expect(ready(await restarted.refresh()).requests[0]).toMatchObject({ stage: 'compare', code: shown.code })
+      await restarted.approve(laptopId)
+      expect(await laptop.refresh()).toMatchObject({ state: 'ready' })
+
+      // Reinstalled: same device, its key gone. It asks again instead of being stuck, and the vault is re-keyed.
+      laptop.dispose()
+      const reinstalled = engine(laptopId, new MemoryVault(), `${laptopId}-reinstalled`)
+      expect(await reinstalled.refresh()).toMatchObject({ state: 'joining' })
+      expect(ready(await restarted.refresh()).requests).toEqual([expect.objectContaining({ deviceId: laptopId, stage: 'new' })])
+      expect((await db.query<{ key_epoch: number }>('SELECT key_epoch FROM identity.password_vault_heads WHERE owner_user_id=$1', [owner])).rows[0]!.key_epoch).toBe(2)
+      restarted.dispose(); reinstalled.dispose()
     } finally { await db.query('ROLLBACK') }
   }))
 })
