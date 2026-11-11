@@ -27,11 +27,21 @@ export const BINDING_NAME = /^[a-z][a-z0-9-]{0,47}$/;
 export const CONVERSATION_SURFACE_PLACEMENTS = ['side-panel'] as const;
 
 /**
- * `gugu.bindings.surface(name)` (41, `chat:surface`): whether the bound conversation is drawn beside this page now, and
- * whether this page's panel is collapsed. `unbound` says only that it is not: no chosen conversation, the grant withdrawn,
- * the account switched or out of it, or the page shown elsewhere. Never the chat, its messages or its people.
+ * The top-right corner of the App's page that the host's 收起面板 control covers while the panel is open (#1925): `right`
+ * px in from the page's right edge, `top` px down from its top, the control centred in that band — the built-in assistant
+ * panel's top row (52px high, its control 16px in from the edge). The same at every panel width. A page drawing its own top
+ * row (its name, its tabs) lines up with the built-in by making that row `top` px high and keeping `right` px clear.
  */
-export type AppBindingSurface = { name: string; state: 'unbound' } | { name: string; state: 'bound'; panel: { collapsed: boolean } };
+export const CONVERSATION_SURFACE_PANEL_INSET: Readonly<{ top: number; right: number }> = Object.freeze({ top: 52, right: 48 });
+
+/**
+ * `gugu.bindings.surface(name)` (41, `chat:surface`): whether the bound conversation is drawn beside this page now, whether
+ * this page's panel is collapsed, and the corner of the page the host's control covers (`panel.inset`). `unbound` says only
+ * that it is not: no chosen conversation, the grant withdrawn, the account switched or out of it, or the page shown
+ * elsewhere. Never the chat, its messages or its people.
+ */
+export type AppBindingSurface = { name: string; state: 'unbound' }
+  | { name: string; state: 'bound'; panel: { collapsed: boolean; inset: { top: number; right: number } } };
 
 /** A stored target is host data and never part of the App's answer. */
 export const storedUnreadBindingSchema = z.strictObject({

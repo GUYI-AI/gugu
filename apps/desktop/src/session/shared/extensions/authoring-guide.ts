@@ -889,9 +889,11 @@ API 40, the same conversation only: add \`"files"\` (with \`chat:files\`) and/or
 API 41, your main page beside that conversation: add \`"surface"\` (with \`chat:surface\`) and
 \`contributes.conversationSurface: {binding: "main", placement: "side-panel"}\`. The host draws the conversation itself (composer,
 streaming, voice, attachments, read state) as the main column; your main page is the collapsible panel on its right.
-- \`gugu.bindings.surface("main")\` → \`{ state: "bound", panel: { collapsed } }\` while it is drawn beside this page, else
+- \`gugu.bindings.surface("main")\` → \`{ state: "bound", panel: { collapsed, inset } }\` while it is drawn beside this page, else
   \`{ state: "unbound" }\`: none chosen, a grant withdrawn, another account, no longer in it, or your page opened elsewhere.
   \`gugu.bindings.onSurface(fn)\` hears each change; \`gugu.bindings.setPanel("main", { collapsed })\` collapses or expands your panel.
+- \`panel.inset\` \`{ top, right }\` (px): the host's collapse button covers your page's top-right corner, centred in the top
+  \`top\` px, within \`right\` px of the edge. Make your top row (name, tabs) \`top\` px high and keep \`right\` px clear.
 - You get no chat, message, person or DOM of it. Opening your page marks nothing read; a \`{ binding }\` draft lands in that composer.
 API 46, the assistant's 任务 list: add \`"work"\` (with \`chat:work\`). Only while the chosen conversation is the person's private
 chat with their own assistant; any other is refused (\`denied\`). The host keeps the ledger; it reads it as its own list does,

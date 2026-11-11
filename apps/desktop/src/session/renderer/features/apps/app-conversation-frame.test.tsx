@@ -24,6 +24,7 @@ const { AppConversationFrame } = await import('./app-conversation-frame');
 const { applyExtensionHostAction } = await import('@renderer/features/extensions/host-action-handlers');
 const { installShellSlots, readShellSlots } = await import('@/lib/shellSlots');
 const { installAppConversationSurfaceBridge, publishAppConversationSurfaces } = await import('@/lib/appConversationSurfaceBridge');
+const { CONVERSATION_SURFACE_PANEL_INSET: INSET } = await import('@shared/extensions/unread-binding');
 installShellSlots();
 installAppConversationSurfaceBridge();
 
@@ -67,6 +68,25 @@ describe('an App\'s main page beside its bound conversation', () => {
     expect(lastReport()).toEqual({ extensionId: 'today', tabKind: 'today.main', tabId: 'dock', shown: { chatId: CHAT, collapsed: false } });
     await click('app-conversation-search');
     expect(state.searched).toEqual([CHAT]);
+  });
+
+  it('the page fills the panel from its top; the collapse control sits over the very corner the App is told (panel.inset)', async () => {
+    await act(async () => publishAppConversationSurfaces({ today: CHAT }));
+    await render();
+    const panel = find('app-conversation-panel')!;
+    // No row of the host's above the page: the page's own top row is where the built-in panel's top row is.
+    expect(panel.querySelector('.ta-panel-top')).toBeNull();
+    expect(panel.firstElementChild!.contains(find('app-page'))).toBe(true);
+    const corner = find('app-conversation-panel-corner') as HTMLElement;
+    expect(corner.parentElement).toBe(panel);
+    expect(corner.contains(find('app-conversation-panel-collapse'))).toBe(true);
+    expect({ position: corner.style.position, top: corner.style.top, right: corner.style.right, width: corner.style.width, height: corner.style.height })
+      .toEqual({ position: 'absolute', top: '0px', right: '0px', width: `${INSET.right}px`, height: `${INSET.top}px` });
+    expect(INSET).toEqual({ top: 52, right: 48 });
+    // Over the page, which is drawn in the root layer; only the control itself takes clicks.
+    expect(corner.style.zIndex).toBe('var(--z-pane-resident-chrome)');
+    expect(corner.style.pointerEvents).toBe('none');
+    expect((find('app-conversation-panel-collapse') as HTMLElement).style.pointerEvents).toBe('auto');
   });
 
   it('collapse round-trips: the frame\'s buttons, the App\'s own setPanel, remembered on this computer, told to main', async () => {

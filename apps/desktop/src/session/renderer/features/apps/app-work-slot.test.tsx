@@ -9,7 +9,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
  * #1925 (API 46) The session page's half of one of the assistant's tasks opened in an App's panel: the host action main sends
  * (`openWork` / `closeWork`, after its checks) goes to the shell's bridge, which refuses an account or a row it has not read;
  * while it holds one for this App, the panel leaves the cell the shell draws the built-in task window into — in place of the
- * App's page, as the built-in panel's task view does (its top row hidden, its own collapse) — and gives the page back after.
+ * App's page, as the built-in panel's task view does (the page's corner control gone, its own collapse) — and gives the page back after.
  */
 const CHAT = '33000000-0000-4000-8000-000000000003';
 const OWNER = '11000000-0000-4000-8000-000000000001';
@@ -57,7 +57,7 @@ afterEach(async () => {
 });
 
 describe('a task of the assistant in an App\'s panel', () => {
-  it('beside the conversation: the panel\'s cell in place of the page, its top row hidden, its own collapse; closed, the page is back', async () => {
+  it('beside the conversation: the panel\'s cell in place of the page and its corner control, its own collapse; closed, the page is back', async () => {
     await act(async () => publishAppConversationSurfaces({ today: CHAT }));
     await act(async () => root.render(<AppConversationFrame extensionId="today" tabKind="today.main" />));
     expect(find('app-work-chat')).toBeNull();
@@ -66,7 +66,8 @@ describe('a task of the assistant in an App\'s panel', () => {
     expect(cell?.className).toBe('ta-task-chat-slot');
     expect(find('app-conversation-panel')!.contains(cell!)).toBe(true);
     expect(find('app-page')).toBeNull();
-    expect(element.querySelector('.ta-panel-top')!.hasAttribute('hidden')).toBe(true);
+    // The page's corner control goes with the page; the task view has its own collapse.
+    expect(find('app-conversation-panel-corner')).toBeNull();
     // The conversation's column stays as it was.
     expect(readShellSlots()!.getSlots().has('app-conversation:today')).toBe(true);
     await act(async () => (find('app-work-panel-collapse') as HTMLButtonElement).click());
@@ -78,7 +79,7 @@ describe('a task of the assistant in an App\'s panel', () => {
     await workAction('today', { kind: 'closeWork' });
     expect(find('app-work-chat')).toBeNull();
     expect(find('app-page')).not.toBeNull();
-    expect(element.querySelector('.ta-panel-top')!.hasAttribute('hidden')).toBe(false);
+    expect(find('app-conversation-panel-corner')).not.toBeNull();
     expect(readShellSlots()!.getSlots().has('app-work:today')).toBe(false);
   });
 

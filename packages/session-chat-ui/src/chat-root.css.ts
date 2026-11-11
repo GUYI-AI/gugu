@@ -6,7 +6,7 @@
  * should now pass a VE class or a raw CSS class string.
  */
 
-import { style } from '@vanilla-extract/css';
+import { keyframes, style } from '@vanilla-extract/css';
 import { vars } from './styles/theme.css';
 import {
   CHAT_CONTENT_GUTTER_PX,
@@ -78,6 +78,49 @@ export const scrollContainerEmbedded = style({
 /** Virtualizer canvas — positions all rows absolutely inside this container. */
 export const canvas = style({
   position: 'relative',
+});
+
+// One dot lengthens while the one before it shortens, on the same curve: the three always add up to the same width,
+// so the group never shifts sideways.
+const olderPageFlow = keyframes({
+  '0%': { width: 5, opacity: 0.2, animationTimingFunction: 'cubic-bezier(0.45, 0, 0.55, 1)' },
+  '33.333%': { width: 13, opacity: 0.62, animationTimingFunction: 'cubic-bezier(0.45, 0, 0.55, 1)' },
+  '66.667%': { width: 5, opacity: 0.2 },
+  '100%': { width: 5, opacity: 0.2 },
+});
+
+/**
+ * An older page is on its way: three dots in the padding above the first row, the lit one handing its length on to
+ * the next. The box takes no layout space and contains its own layout, so showing, hiding and animating it never
+ * moves or re-measures a row.
+ */
+export const olderPageLoading = style({
+  position: 'absolute',
+  left: '50%',
+  width: 31,
+  height: 5,
+  marginLeft: -15.5,
+  display: 'flex',
+  justifyContent: 'center',
+  gap: 4,
+  contain: 'strict',
+  pointerEvents: 'none',
+});
+
+export const olderPageLoadingDot = style({
+  flex: 'none',
+  width: 5,
+  height: 5,
+  borderRadius: 2.5,
+  background: vars.fg,
+  opacity: 0.2,
+  animation: `${olderPageFlow} 1500ms infinite`,
+  selectors: {
+    '&:nth-child(1)': { animationDelay: '-1500ms' },
+    '&:nth-child(2)': { animationDelay: '-1000ms' },
+    '&:nth-child(3)': { animationDelay: '-500ms' },
+  },
+  '@media': { '(prefers-reduced-motion: reduce)': { animation: 'none', opacity: 0.34 } },
 });
 
 /**
