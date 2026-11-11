@@ -16,7 +16,7 @@ import { httpsOrigin } from './schema'
 import { passwordGrantCandidates, passwordGrantSubjects, passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
 import { BetaPasswordLogin } from './beta-login'
 import { BetaPasswordSaves, type SaveProposal, type SaveResult } from './beta-save'
-import { SyncError, VaultSync } from './sync'
+import { SyncError, VaultSync, syncDirectory } from './sync'
 
 export const PASSWORD_UI_CHANNEL = 'gugu:password-beta-ui'
 export const PASSWORD_CHANGED_CHANNEL = 'gugu:password-beta-changed'
@@ -71,7 +71,7 @@ async function createAccount(ownerId: string, host: NativeHost) {
     return result
   })
   login.bindVault(vault)
-  const sync = port.sync = new VaultSync({ root: join(root, 'sync'), ownerId, deviceId, keys, changed,
+  const sync = port.sync = new VaultSync({ root: syncDirectory(privatePasswordVaultDirectory(), ownerId), ownerId, deviceId, keys, changed,
     rpc: async (name, args) => { assertCurrent(); if (await host.account() !== ownerId) throw unavailable(); return host.rpc(name, args) },
     vault: { syncExport: () => vault.syncExport(person), syncApply: changes => vault.syncApply(person, changes) } })
   return { ownerId, vault, login, saves, controller, assertCurrent, sync, pull: pulling(sync, controller.signal) }

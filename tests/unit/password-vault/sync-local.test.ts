@@ -6,6 +6,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { LocalPasswordVault } from '../../../apps/desktop/electron/password-vault/service'
 import { VaultError, type VaultDependencies, type VaultKeyProtector } from '../../../apps/desktop/electron/password-vault/contracts'
 import type { SyncChange } from '../../../apps/desktop/electron/password-vault/management'
+import { VaultSync, syncDirectory } from '../../../apps/desktop/electron/password-vault/sync'
 import { seal, unseal } from '../../../apps/desktop/electron/password-vault/crypto'
 
 // #2481: the local vault publishes each change to the sync engine before committing it, and applies pulled changes.
@@ -15,17 +16,17 @@ afterEach(async () => {
   for (const vault of vaults.splice(0)) await vault.dispose().catch(() => undefined)
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
-async function fixture(publish: (change: SyncChange) => Promise<void>) {
-  const root = await mkdtemp(join(await realpath(tmpdir()), 'gugu-vault-sync-')); roots.push(root)
+async function fixture(publish: (change: SyncChange) => Promise<void>, root?: string) {
+  root ??= await mkdtemp(join(await realpath(tmpdir()), 'gugu-vault-sync-')); roots.push(root)
   const wrappingKey = randomBytes(32), invalidate = vi.fn(async () => undefined)
   const keys: VaultKeyProtector = { verifyPerson: async () => undefined,
     wrap: async (key, binding) => JSON.stringify(seal(wrappingKey, key, binding)), unwrap: async (wrapped, binding) => unseal(wrappingKey, JSON.parse(wrapped), binding) }
-  const dependencies: VaultDependencies = { root: join(root, 'v1'), accountId: owner, installationBinding: randomUUID(),
+  const dependencies: VaultDependencies = { root: join(root, owner), accountId: owner, installationBinding: randomUUID(),
     assertLocalPerson: context => { if (context !== person) throw new Error('forged principal') }, assertPrivateStorageReady: async () => undefined,
     acquireFeatureGuard: async () => ({ status: 'ready' as const, signal: new AbortController().signal, assertCurrent() {} }),
     invalidate, keys, sync: { publish } }
   const vault = new LocalPasswordVault(dependencies); vaults.push(vault)
-  return { vault, invalidate }
+  return { vault, invalidate, keys, root }
 }
 const input = (password: string) => ({ origin: 'https://github.com', account: 'me@example.com', password })
 
@@ -64,5 +65,16 @@ describe('local vault ↔ sync engine', () => {
     await vault.syncApply(person, [{ id: remote }])
     expect((await vault.list(person)).map(item => item.reference.id)).toEqual([saved.reference.id])
     expect(() => vault.syncApply({}, [{ id: saved.reference.id }])).toThrow()
+  })
+  it('keeps its own state outside the vault root, so a first vault can still be created after sync started', async () => {
+    const directory = await mkdtemp(join(await realpath(tmpdir()), 'gugu-vault-dir-'))
+    const { vault, keys } = await fixture(async () => {}, directory)
+    // The engine writes its device key first (the cloud is unreachable here), before the vault exists.
+    const sync = new VaultSync({ root: syncDirectory(directory, owner), ownerId: owner, deviceId: randomUUID(), keys, changed() {},
+      rpc: async () => { throw new Error('offline') }, vault: { syncExport: () => vault.syncExport(person), syncApply: changes => vault.syncApply(person, changes) } })
+    await expect(sync.refresh()).rejects.toMatchObject({ code: 'OFFLINE' })
+    await vault.save(person, randomUUID(), input('first'))
+    expect(await vault.list(person)).toHaveLength(1)
+    sync.dispose()
   })
 })

@@ -49,6 +49,9 @@ const valueSchema = z.strictObject({ origin: z.string(), account: z.string(), pa
   grants: z.array(z.strictObject({ subject: z.string(), level: z.enum(['read', 'write']) })) })
 const sameValue = (a: SyncValue, b: SyncValue) => JSON.stringify(valueSchema.parse(a)) === JSON.stringify(valueSchema.parse(b))
 
+/** Sync state lives beside the account's vault root, never inside it: the vault requires its root to be empty
+ * before it is first created, and treats anything else there as damage. */
+export const syncDirectory = (vaultDirectory: string, ownerId: string) => join(vaultDirectory, 'sync', ownerId)
 export interface VaultSyncOptions {
   root: string; ownerId: string; deviceId: string; keys: VaultKeyProtector; rpc: SyncRpc; vault: SyncVault
   /** The person approved a device; scope by the device kind (pending owner decision 2: every device gets the whole vault). */
