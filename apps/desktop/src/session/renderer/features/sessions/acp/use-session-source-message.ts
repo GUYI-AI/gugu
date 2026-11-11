@@ -43,6 +43,9 @@ export function useSessionSourceMessage(store: SourceStore | null | undefined, v
     if (loading.current?.store === current) return loading.current.promise;
     const currentView = view.current;
     const promise = current.loadOlderHistory().then(async turns => {
+      // The page is in hand, so this request is over: prepending it re-arms the list, and what the list asks for
+      // next is the page above. Kept as "in flight" through the frame below, that ask got this finished page back.
+      if (loading.current?.promise === promise) loading.current = null;
       if (mounted.current && latest.current === current && view.current === currentView && currentView && turns.length) {
         if (!current.historyManagedByHost) currentView.loadOlder(turns);
         // History is committed before the virtual list publishes its rows and height map.
