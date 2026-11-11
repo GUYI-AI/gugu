@@ -41,7 +41,10 @@ const appAssistantRename = vi.fn(async (_id: string, args: { text: string }, act
   await act({ kind: 'renameAssistant', text: args.text, ownerId: OWNER });
   return 'renamed';
 });
-vi.mock('./app-assistant-binding', () => ({ appAssistantStatus, appAssistantOpen, appAssistantAdvanceSetup, appAssistantRename }));
+const appAssistantFigure = vi.fn(async (_id: string, args: { figure: { x: number; y: number; size: number } | null }, act: (action: ExtensionHostAction) => Promise<unknown>) => {
+  await act({ kind: 'assistantFigure', figure: args.figure, ownerId: OWNER, who: 'assistant' });
+});
+vi.mock('./app-assistant-binding', () => ({ appAssistantStatus, appAssistantOpen, appAssistantAdvanceSetup, appAssistantRename, appAssistantFigure }));
 const { answerCall, setExtensionBridgeHost } = await import('./extension-bridge');
 const deliver = vi.fn(async () => undefined);
 setExtensionBridgeHost({ deliver, presentation: () => ({}) as never, selfGuguNumber: () => null } as never);
@@ -51,7 +54,7 @@ const page = (operator: { kind: 'person' } | { kind: 'agent'; id: string }, gest
   binding: { extensionId: 'assistant-app', operator, conversation: null, widget: null, surface: null, tabId: 'tab-1', embedderId: 7, metrics },
 }) as never;
 const agent = { kind: 'agent' as const, id: 'user:22000000-0000-4000-8000-000000000002' };
-const called = () => appAssistantStatus.mock.calls.length + appAssistantOpen.mock.calls.length + appAssistantAdvanceSetup.mock.calls.length + appAssistantRename.mock.calls.length;
+const called = () => appAssistantStatus.mock.calls.length + appAssistantOpen.mock.calls.length + appAssistantAdvanceSetup.mock.calls.length + appAssistantRename.mock.calls.length + appAssistantFigure.mock.calls.length;
 
 beforeEach(() => {
   granted.clear();
@@ -59,6 +62,7 @@ beforeEach(() => {
   appAssistantOpen.mockClear();
   appAssistantAdvanceSetup.mockClear();
   appAssistantRename.mockClear();
+  appAssistantFigure.mockClear();
   deliver.mockClear();
   focus.focused = true;
 });
@@ -129,6 +133,29 @@ describe('the bridge door for rename', () => {
     granted.clear();
     granted.add('assistant:open');
     expect(await answerCall(page({ kind: 'person' }), 'assistantRename', { name: 'main', text: 'Pip' })).toMatchObject({ ok: false, code: 'denied', message: expect.stringContaining('assistant:rename') });
+    expect(called()).toBe(0);
+    expect(deliver).not.toHaveBeenCalled();
+  });
+});
+
+describe('the bridge door for the figure', () => {
+  const WHERE = { x: 24, y: 40, size: 96 };
+  it('with assistant:status, no gesture: handed to the window drawing that page, as the App the call came from', async () => {
+    granted.add('assistant:status');
+    expect(await answerCall(page({ kind: 'person' }, false), 'assistantFigure', { name: 'main', figure: WHERE })).toEqual({ ok: true, value: undefined });
+    expect(appAssistantFigure).toHaveBeenCalledExactlyOnceWith('assistant-app', { name: 'main', figure: WHERE }, expect.any(Function));
+    expect(deliver).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ embedderId: 7, tabId: 'tab-1' }), { kind: 'assistantFigure', figure: WHERE, ownerId: OWNER, who: 'assistant' });
+  });
+
+  it('without assistant:status (open or rename are not it), from a page an agent works, a background page or a program: refused, nothing asked', async () => {
+    granted.add('assistant:open');
+    granted.add('assistant:rename');
+    expect(await answerCall(page({ kind: 'person' }), 'assistantFigure', { name: 'main', figure: WHERE })).toMatchObject({ ok: false, code: 'denied', message: expect.stringContaining('assistant:status') });
+    granted.add('assistant:status');
+    expect(await answerCall(page(agent), 'assistantFigure', { name: 'main', figure: WHERE })).toMatchObject({ ok: false, code: 'denied' });
+    for (const kind of ['background', 'program']) {
+      expect(await answerCall({ kind, extensionId: 'assistant-app', pageId: -1, binding: null } as never, 'assistantFigure', { name: 'main', figure: WHERE })).toMatchObject({ ok: false, code: 'invalid' });
+    }
     expect(called()).toBe(0);
     expect(deliver).not.toHaveBeenCalled();
   });

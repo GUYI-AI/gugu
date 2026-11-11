@@ -102,7 +102,7 @@ describe('扩展指南与源码对得上 (#6614)', () => {
     const all = EXTENSION_GUIDE_TOPICS.map(({ text }) => text).join('\n')
     // `gugu.assistant.*` (#1925): the host's rows, and `onChanged` built on `onAssistantChanged` (create-gugu.ts).
     const assistantVerbs = [...Object.keys(HOST_CALLS).filter((key) => key.startsWith('assistant.')), 'assistant.onChanged']
-    expect(assistantVerbs).toEqual(['assistant.status', 'assistant.open', 'assistant.advanceSetup', 'assistant.rename', 'assistant.onChanged'])
+    expect(assistantVerbs).toEqual(['assistant.status', 'assistant.open', 'assistant.advanceSetup', 'assistant.rename', 'assistant.figure', 'assistant.onChanged'])
     const missing = [...verbs.map((verb) => `gugu.files.${verb}(`), ...messageVerbs.map((key) => `gugu.${key}(`), ...cloudVerbs.map((key) => `gugu.${key}(`), ...modalVerbs.map((key) => `gugu.${key}(`), ...assistantVerbs.map((key) => `gugu.${key}(`), 'gugu.bind.codemirror(', 'gugu.codemirror(', 'gugu.clipboard.writeText(', 'gugu.navigation.go(']
       .filter((call) => !all.includes(call))
     expect(missing).toEqual([])

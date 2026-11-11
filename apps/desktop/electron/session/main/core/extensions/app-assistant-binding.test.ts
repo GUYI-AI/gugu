@@ -55,7 +55,7 @@ vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: ({ schem
   return query;
 } }) }));
 const binding = await import('./app-assistant-binding');
-const { appAssistantStatus, appAssistantOpen, appAssistantAdvanceSetup, appAssistantRename, assistantStatusChanged, assistantCountsChanged, appHostLayerChanged, forgetShownAssistantForTest } = binding;
+const { appAssistantStatus, appAssistantOpen, appAssistantAdvanceSetup, appAssistantRename, appAssistantFigure, assistantStatusChanged, assistantCountsChanged, appHostLayerChanged, forgetShownAssistantForTest } = binding;
 
 const provision = (agent: string, removed: string | null = null) => ({
   agent_user_id: agent, device_id: DEVICE, member_key: 'assistant', phase: 'ready', created_at: '2026-11-01T00:00:00Z', agent: { removed_at: removed },
@@ -608,6 +608,89 @@ describe('gugu.assistant.rename: the shell\'s own renameAssistant, by the built-
     for (const args of [{ name: 'main' }, { name: 'main', text: 3 }, { name: 'main', text: 'x'.repeat(1001) }, { name: 'main', text: 'Pip', ownerId: OWNER }, { text: 'Pip' }]) {
       await expect(appAssistantRename(APP, args, act)).rejects.toMatchObject({ code: 'invalid' });
     }
+    expect(state.reads).toBe(0);
+    expect(act).not.toHaveBeenCalled();
+  });
+});
+
+describe('gugu.assistant.figure: the assistant moving, drawn by the host over the App\'s page', () => {
+  const WHERE = { x: 24, y: 40, size: 96 };
+  const figure = (value: unknown, act = vi.fn(async (_action: ExtensionHostAction) => undefined)) => appAssistantFigure(APP, { name: 'main', figure: value }, act);
+
+  it('the bound assistant\'s, for the account checked — no id of it reaches the action', async () => {
+    await show();
+    const act = vi.fn(async (_action: ExtensionHostAction) => undefined);
+    await figure(WHERE, act);
+    expect(act).toHaveBeenCalledExactlyOnceWith({ kind: 'assistantFigure', figure: WHERE, ownerId: OWNER, who: 'assistant' });
+  });
+
+  it('with no assistant yet: the setup guide\'s bird, whatever conversation is chosen, as status answers', async () => {
+    state.selectedBy = '';
+    state.provisions = [];
+    await show(status({ assistant: 'none', name: null, avatar: null, home: null, setup: 'shell' }));
+    const act = vi.fn(async (_action: ExtensionHostAction) => undefined);
+    await figure(WHERE, act);
+    expect(act).toHaveBeenCalledExactlyOnceWith({ kind: 'assistantFigure', figure: WHERE, ownerId: OWNER, who: 'draft' });
+  });
+
+  it('the assistant gone while the chat is checked: the bird, never the assistant\'s figure', async () => {
+    await show();
+    state.afterRead = () => {
+      state.afterRead = undefined;
+      void assistantStatusChanged({ ownerId: OWNER, status: status({ assistant: 'none', name: null, avatar: null, home: null, setup: 'shell' }) }, () => {});
+    };
+    const act = vi.fn(async (_action: ExtensionHostAction) => undefined);
+    await figure(WHERE, act);
+    expect(act).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ who: 'draft' }));
+  });
+
+  it('null takes it away with nothing asked', async () => {
+    const act = vi.fn(async (_action: ExtensionHostAction) => undefined);
+    await figure(null, act);
+    expect(act).toHaveBeenCalledExactlyOnceWith({ kind: 'assistantFigure', figure: null, ownerId: null, who: 'assistant' });
+    expect(state.reads).toBe(0);
+  });
+
+  it('refused unbound, not the assistant chat, without assistant:status, disabled, or changed mid-request; failed before the window showed it', async () => {
+    const act = vi.fn(async () => undefined);
+    await expect(figure(WHERE, act)).rejects.toMatchObject({ code: 'failed' });
+    await show();
+    state.selectedBy = '';
+    await expect(figure(WHERE, act)).rejects.toMatchObject({ code: 'not-found' });
+    state.selectedBy = OWNER;
+    for (const [, set] of NOT_MINE) {
+      Object.assign(state, { provisions: [provision(ASSISTANT)], chatKind: 'dm', members: [OWNER, ASSISTANT] });
+      set();
+      await expect(figure(WHERE, act)).rejects.toMatchObject({ code: 'denied' });
+    }
+    Object.assign(state, { provisions: [provision(ASSISTANT)], chatKind: 'dm', members: [OWNER, ASSISTANT] });
+    const all = () => ({ enabled: true, grants: { 'assistant-status': true, 'assistant-open': true, 'assistant-rename': true }, declared: ['unread', 'assistant-status', 'assistant-open', 'assistant-rename'] });
+    for (const set of [() => { state.grants['assistant-status'] = false; }, () => { state.enabled = false; }, () => { state.installed = false; }]) {
+      Object.assign(state, all(), { installed: true });
+      set();
+      await expect(figure(WHERE, act)).rejects.toMatchObject({ code: 'denied' });
+    }
+    for (const change of [() => { state.owner = OTHER; }, () => { state.grants['assistant-status'] = false; }, () => { state.handle = 'h2'; }]) {
+      Object.assign(state, all(), { installed: true, owner: OWNER, handle: 'h1' });
+      state.afterRead = change;
+      await expect(figure(WHERE, act)).rejects.toMatchObject({ code: 'denied' });
+    }
+    // Another account's window: its snapshot is not this one's, and neither is the bird.
+    Object.assign(state, all(), { installed: true, owner: OWNER, handle: 'h1', afterRead: undefined, provisions: [] });
+    forgetShownAssistantForTest();
+    await show(status({ assistant: 'none', name: null, avatar: null, home: null, setup: 'shell' }), OTHER);
+    state.selectedBy = '';
+    await expect(figure(WHERE, act)).rejects.toMatchObject({ code: 'not-found' });
+    expect(act).not.toHaveBeenCalled();
+  });
+
+  it('takes the binding\'s name and { x, y, size } in range: anything more, or else, is refused before anything is asked', async () => {
+    const act = vi.fn(async () => undefined);
+    for (const value of [{ x: 0, y: 0 }, { x: 0, y: 0, size: 8 }, { x: 0, y: 0, size: 600 }, { x: 0, y: 0, size: 64.5 }, { x: Infinity, y: 0, size: 64 },
+      { x: 0, y: 0, size: 64, avatar: 'data:' }, 'top-left', undefined]) {
+      await expect(appAssistantFigure(APP, value === undefined ? { name: 'main' } : { name: 'main', figure: value }, act)).rejects.toMatchObject({ code: 'invalid' });
+    }
+    await expect(appAssistantFigure(APP, { name: 'main', figure: WHERE, ownerId: OWNER }, act)).rejects.toMatchObject({ code: 'invalid' });
     expect(state.reads).toBe(0);
     expect(act).not.toHaveBeenCalled();
   });

@@ -5,6 +5,7 @@ import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow }
 import {
   ASSISTANT_SCREENS,
   ASSISTANT_SETUP_ADVANCES,
+  assistantFigureSchema,
   pushedAssistantCountsSchema,
   pushedAssistantStatusSchema,
   renameCheck,
@@ -204,6 +205,31 @@ export async function appAssistantRename(extensionId: string, input: unknown, ac
     return 'failed';
   }
   return 'renamed';
+}
+
+/**
+ * `gugu.assistant.figure(name, figure)` (44, `assistant:status`): the host draws the assistant's moving figure over the
+ * page (`act`) — what `status` shows of it, moving: the bound assistant's, or, while the account shows none, the setup
+ * guide's bird (`draft`), as `status` answers then. null takes it away, whatever the binding is now.
+ */
+export async function appAssistantFigure(extensionId: string, input: unknown, act: (action: ExtensionHostAction) => Promise<unknown>): Promise<void> {
+  const { name, figure } = argsOf(z.strictObject({ name: z.string(), figure: assistantFigureSchema.nullable() }), input,
+    'gugu.assistant.figure takes the binding\'s name and { x, y, size } (CSS pixels of the page), or null');
+  if (!figure) {
+    await act({ kind: 'assistantFigure', figure: null, ownerId: null, who: 'assistant' });
+    return;
+  }
+  const none = await noAssistantShown(extensionId, name, 'assistant-status');
+  if (none) {
+    await act({ kind: 'assistantFigure', figure, ownerId: none.ownerId, who: 'draft' });
+    return;
+  }
+  const bound = await boundAssistant(extensionId, name, 'assistant-status');
+  if (!bound) throw coded('not-found', `No conversation is chosen for "${name}" yet: the person chooses it in the App's permissions`);
+  // As `status` would answer now: the window may not have shown it yet, or no longer shows one.
+  const status = statusFor(bound.ownerId);
+  if (!status) throw coded('failed', 'This window has not shown the assistant yet: try again in a moment');
+  await act({ kind: 'assistantFigure', figure, ownerId: bound.ownerId, who: status.assistant === 'found' ? 'assistant' : 'draft' });
 }
 
 /** The Apps whose last word was this account's snapshot without an assistant: each hears `unbound` once when one appears. */

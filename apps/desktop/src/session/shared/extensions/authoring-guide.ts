@@ -899,6 +899,8 @@ API 44, only when that conversation is the person's private chat with their own 
   \`connected-apps\`, or \`settings\`, \`projects\`, \`capabilities\` drawn over your page with gugu's back control (\`hostPage\` true until
   closed: hide yours). \`gugu.assistant.advanceSetup("main", "ready" | "done")\`: from \`connect\`, or \`ready\` to done; else \`invalid\`.
   \`gugu.assistant.rename("main", text)\` → \`"renamed"|"unchanged"|"empty"|"too-long"|"failed"\` (trimmed, ≤ 30 characters).
+- \`gugu.assistant.figure("main", { x, y, size } | null)\`: gugu draws the assistant moving (none yet: the setup bird) over your
+  page at x, y (CSS px), size 16–512, clipped, clicks pass through; say it again when your layout moves, null removes it.
 
 Free (API 44, desktop page): \`toast(text)\` → one line in gugu's own toast, as its "Changes saved": ≤ 80 characters,
 text only, while your page is on screen and focused (else \`denied\`), one every 2 s (else \`rate-limited\`).

@@ -16,12 +16,15 @@ describe('gugu.assistant', () => {
     const open = vi.fn(async () => { throw { code: 'denied', message: 'This account has no assistant of its own' }; });
     const advanceSetup = vi.fn(async () => undefined);
     const rename = vi.fn(async () => 'renamed');
+    const figure = vi.fn(async () => undefined);
     const gugu = createGugu({
-      appFiles: {}, reportError: () => {}, assistant: { status, open, advanceSetup, rename },
+      appFiles: {}, reportError: () => {}, assistant: { status, open, advanceSetup, rename, figure },
       onAssistantChanged: (handler: (read: unknown) => void) => { hear = handler; return () => { hear = undefined; }; },
     } as never, files) as Record<string, unknown> & { assistant: Record<string, (...args: unknown[]) => unknown> };
-    expect(Object.keys(gugu.assistant).sort()).toEqual(['advanceSetup', 'onChanged', 'open', 'rename', 'status']);
+    expect(Object.keys(gugu.assistant).sort()).toEqual(['advanceSetup', 'figure', 'onChanged', 'open', 'rename', 'status']);
     expect(await gugu.assistant.rename('main', 'Pip')).toBe('renamed');
+    expect(await gugu.assistant.figure('main', { x: 8, y: 8, size: 96 })).toBeUndefined();
+    expect(figure).toHaveBeenCalledExactlyOnceWith('main', { x: 8, y: 8, size: 96 });
     expect(gugu.onAssistantChanged).toBeUndefined();
     expect(await gugu.assistant.status('main')).toEqual({ name: 'main', state: 'unbound' });
     await expect(gugu.assistant.open('main', 'close')).rejects.toMatchObject({ code: 'denied', message: expect.any(String) });

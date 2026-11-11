@@ -229,6 +229,8 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
     case 'newDocument':
       extensionSurfaceStore.say(sessionId, tabId, { title: null, badge: null, error: null });
       extensionSurfaceStore.clearDirtyOfPage(sessionId);
+      // #1925 A host page or the assistant's figure that page asked for over its panel goes with the old document.
+      void import('../apps/app-host-layer').then(({ appPageNewDocument, pageKey }) => appPageNewDocument(extensionId, pageKey(sessionId, tabId)), () => undefined);
       return;
     case 'openBrowserTab': {
       const view = requireSessionView(sessionId);
@@ -305,13 +307,17 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       // The panel's own pages go over this App's panel (its host layer); the rest are the shell's screens.
       if (isAssistantLayerScreen(action.screen)) {
         const screen = action.screen;
-        return import('../apps/app-host-layer').then(({ openAssistantLayer }) => openAssistantLayer(extensionId, screen, action.ownerId));
+        return import('../apps/app-host-layer').then(({ openAssistantLayer, pageKey }) => openAssistantLayer(extensionId, screen, action.ownerId, pageKey(sessionId, tabId)));
       }
       return import('@/lib/assistantAppHost').then(({ openAssistantScreen }) => openAssistantScreen(action.screen, action.ownerId));
     case 'advanceAssistantSetup':
       return import('@/lib/assistantAppHost').then(({ advanceAssistantSetup }) => advanceAssistantSetup(action.next, action.ownerId));
     case 'renameAssistant':
       return import('@/lib/assistantAppHost').then(({ renameAssistantFor }) => renameAssistantFor(action.text, action.ownerId));
+    case 'assistantFigure': {
+      const { figure, ownerId, who } = action;
+      return import('../apps/app-host-layer').then(({ setAssistantFigure, pageKey }) => setAssistantFigure(extensionId, figure && ownerId ? { figure, ownerId, who, from: pageKey(sessionId, tabId) } : null));
+    }
     case 'toast':
       // The host's own toast, as the built-in 「更改已保存」: the text alone.
       toast({ title: action.text });

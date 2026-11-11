@@ -71,6 +71,7 @@ export const HOST_CALLS = {
   'assistant.open': { verb: 'assistantOpen', pack: (name: string, screen: string) => ({ name, screen }) },
   'assistant.advanceSetup': { verb: 'assistantAdvanceSetup', pack: (name: string, next: string) => ({ name, next }) },
   'assistant.rename': { verb: 'assistantRename', pack: (name: string, text: string) => ({ name, text }) },
+  'assistant.figure': { verb: 'assistantFigure', pack: (name: string, figure: unknown = null) => ({ name, figure }) },
   'messages.history': { verb: 'messagesHistory' },
   'messages.search': { verb: 'messagesSearch' },
   // The chats whoever reads is in, and one's members (`chat:read`): `{ chat }` names it.
