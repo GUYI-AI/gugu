@@ -115,6 +115,13 @@ export async function dispatchForApp(
   page: Omit<DispatchHere, 'preselect' | 'local'> & { session: string | null },
   effects: DesktopDispatchEffects,
 ): Promise<{ to: unknown; id?: string; deferred?: true } | { cancelled: true }> {
+  // #1927 `{ binding }`: the one conversation the person chose for this App, found and checked by the host — the answer
+  // names the binding, never the chat.
+  const to = args.to as { binding?: unknown } | null | undefined;
+  if (to && typeof to === 'object' && Object.hasOwn(to, 'binding')) {
+    const { draftIntoBoundConversation } = await import('./app-unread-bindings');
+    return draftIntoBoundConversation(extensionId, args, effects.draftInChat);
+  }
   const quoted = await draftOfWorkingCopyRefs(args);
   if (quoted) {
     await effects.draftInSession(quoted.session, quoted.text);

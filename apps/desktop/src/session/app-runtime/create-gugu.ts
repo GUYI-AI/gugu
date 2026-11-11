@@ -287,8 +287,12 @@ export function createGugu(
   }
   // Called straight through, not deferred: the preload checks the person's gesture on this very call.
   if (raw.clipboard) api.clipboard = Object.freeze({ writeText: coded(raw.clipboard.writeText) });
+  // `gugu.bindings` (`chat:unread`; `list` / `read`, 40: `chat:files`): the one conversation the person chose, by its name.
+  if (raw.bindings) {
+    const { get, list, read } = raw.bindings;
+    api.bindings = Object.freeze({ get: coded(get), ...(list ? { list: coded(list) } : {}), ...(read ? { read: coded(read) } : {}) });
+  }
   // `gugu.messages` (`chat:read`): a chat's timeline or thread, and the messages holding a text or naming a file.
-  if (raw.bindings) api.bindings = Object.freeze({ get: coded(raw.bindings.get) });
   if (raw.messages) api.messages = Object.freeze({ history: coded(raw.messages.history), search: coded(raw.messages.search) });
   // `gugu.chats` (`chat:read`): the chats whoever reads is in, and who is in one.
   if (raw.chats) api.chats = Object.freeze({ list: coded(raw.chats.list), members: coded(raw.chats.members) });

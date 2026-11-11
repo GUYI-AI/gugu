@@ -877,6 +877,15 @@ a chat ID, messages or another conversation. This grants neither \`chat:read\` n
 The host validates the current account, installed publisher, grant and active membership. An App cannot set its own target.
 Declare \`contributes.unreadSource: {binding: "main"}\` for the host rail red dot. It follows the original chat unread source
 even before your page opens or after eviction. Opening the App does not mark messages read; page badges still work.
+API 40, the same conversation only: add \`"files"\` (with \`chat:files\`) and/or \`"draft"\` (with \`chat:draft\`) to
+\`actions\`; each is consented and withdrawn on its own, and \`get\` lists the granted ones in \`actions\`.
+- \`gugu.bindings.list("main", { folder? })\` → \`{ state: "ready", entries }\`: one folder by its path (\`""\` the top; none: all).
+  \`gugu.bindings.read("main", "today.json")\` → \`{ state: "ready", entry, content, truncated, totalSize, binary? }\`, text up to 20 MiB.
+  Entry: \`{ name, path, type, contentType, size, version, createdAt, updatedAt }\` — no chat, item id, people or messages.
+- Otherwise \`state\` says why, never an empty list: \`unbound\` (no conversation chosen), \`missing\` (no such file or folder),
+  \`unprepared\` (there, its content not stored yet), \`unavailable\` (cannot be read now: try again later). Read only: no
+  write, rename or delete, no other chat; a topic is refused. Paths are names from the top; \`..\`, absolute paths, ids: \`invalid\`.
+- \`gugu.dispatch(text, { draft: true, to: { binding: "main" } })\` in a click: the text into that conversation's composer. Nothing is sent.
 
 Which chats the reader is in and who is in one — for a page that is in no chat (an App's own tab, full screen) to
 offer one — and what people and agents said in a chat: a stretch of its timeline, one thread, or the messages that

@@ -1978,6 +1978,13 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       const { appUnreadBinding } = await import('./app-unread-bindings');
       return await appUnreadBinding(caller.extensionId, args);
     }
+    case 'bindingsList':
+    case 'bindingsRead': {
+      // The person's grant (#1927): an agent working the page (`app_check`) is not that account, and reads nothing of it.
+      if (thePage(caller).operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reads none of it'), { code: 'denied' });
+      const { appBindingList, appBindingRead } = await import('./app-unread-bindings');
+      return await (method === 'bindingsList' ? appBindingList : appBindingRead)(caller.extensionId, args);
+    }
     case 'messagesHistory':
     case 'messagesSearch': {
       const { messagesForApp } = await import('@main/core/extensions/extension-send');

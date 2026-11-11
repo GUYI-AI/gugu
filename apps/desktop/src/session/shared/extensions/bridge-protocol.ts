@@ -99,7 +99,10 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 //     searchable and a phone opens a submenu in the menu's place. Presentation only: an older host draws plain rows.
 // 39: `files.create(place, content, { ifExists: 'use' })` answers the file already at that name instead of making a " (2)";
 // an App declaring 39 can rely on it (an older host ignores the option).
-export const EXTENSION_API_VERSION = 39;
+// 40 (#1927): the one conversation binding may also declare `files` (`chat:files`: `gugu.bindings.list` / `read`, that
+// conversation's chat-folder files, read only) and `draft` (`chat:draft`: `dispatch(text, { draft: true, to: { binding } })`).
+// Still no chat id, title, member or message reaches the App.
+export const EXTENSION_API_VERSION = 40;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
@@ -823,6 +826,12 @@ export const BRIDGE_VERBS = {
    * ones holding a piece of text or naming a file — the doors an agent's `message_history` / `message_search` take.
    */
   bindingsGet: { needs: 'chat:unread', only: 'page' },
+  /**
+   * #1927 (40): the bound conversation's chat-folder files, read only and as the person — one folder listed, one file's
+   * text read, by its path there. The host finds the chat from the binding; the call never names one.
+   */
+  bindingsList: { needs: 'chat:files', only: 'page' },
+  bindingsRead: { needs: 'chat:files', only: 'page' },
   messagesHistory: { needs: 'chat:read' },
   messagesSearch: { needs: 'chat:read' },
   /**

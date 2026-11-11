@@ -15,7 +15,11 @@ import type { AppSurfaceHost } from '@shared/extensions/app-surface';
  * `window.gugu` verbatim (`gugu-entry.ts`), so the v1 verbs keep their preload-side types.
  */
 export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
-  readonly bindings?: { get(name: string): Promise<import('@shared/extensions/unread-binding').AppUnreadBinding> };
+  readonly bindings?: {
+    get(name: string): Promise<import('@shared/extensions/unread-binding').AppUnreadBinding>;
+    list?(name: string, options?: { folder?: string }): Promise<import('@shared/extensions/unread-binding').AppBoundList>;
+    read?(name: string, path: string): Promise<import('@shared/extensions/unread-binding').AppBoundRead>;
+  };
   taskMessage?(args: { intent: 'pause' | 'continue' }): Promise<void>;
   readonly sessions?: {
     index(options?: AppSessionIndexOptions): Promise<AppSessionIndex>;

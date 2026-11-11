@@ -118,6 +118,15 @@ vi.mock('@main/core/sessions/session-orchestration', () => ({
   },
 }));
 
+/** #1927 The host's binding resolution: what a `{ binding }` draft is handed to, and with which composer. */
+const boundDrafts = vi.hoisted(() => [] as Array<{ extensionId: string; args: Record<string, unknown> }>);
+vi.mock('./app-unread-bindings', () => ({
+  draftIntoBoundConversation: async (extensionId: string, args: Record<string, unknown>, draftInChat: (detail: unknown) => Promise<void>) => {
+    boundDrafts.push({ extensionId, args });
+    await draftInChat({ chatId: GROUP, text: 'bound\n' });
+    return { to: { binding: 'main' } };
+  },
+}));
 vi.mock('@main/core/extensions/extension-agent-context', () => ({
   agentSessionContext: async (sessionId: string) => (sessionId === 'conv-agent' ? { sessionId, projectId: 'p-1', workspaceRoot: null } : null),
 }));
@@ -396,5 +405,15 @@ describe('a draft: only into a composer — nothing sent, nothing asked', () => 
     await expect(draft({ text: '   ', to: { chat: GROUP } })).rejects.toMatchObject({ code: 'invalid' });
     await expect(draft({ text: 'x', to: { chat: OTHER_GROUP } })).rejects.toMatchObject({ code: 'not-found' });
     await expect(draft({ text: 'x', to: { agent: `user:${PERSON}` } })).rejects.toMatchObject({ code: 'not-found' });
+  });
+
+  it('#1927 `{ binding }`: handed to the host\'s binding with the chat composer alone — no sheet, no agent, nothing sent', async () => {
+    granted.clear();
+    drafts.length = 0; sessionDrafts.length = 0; boundDrafts.length = 0; picked = { to: { chat: GROUP }, visible: false, text: 'picked' };
+    expect(await draft({ text: 'Ask about today', to: { binding: 'main' } })).toEqual({ to: { binding: 'main' } });
+    expect(boundDrafts).toEqual([{ extensionId: 'notes', args: { draft: true, text: 'Ask about today', to: { binding: 'main' } } }]);
+    expect(drafts).toEqual([{ chatId: GROUP, text: 'bound\n' }]);
+    expect([sessionDrafts, rpcs, toldSessions, remoteSent, spawned, scopes]).toEqual([[], [], [], [], [], []]);
+    picked = null;
   });
 });

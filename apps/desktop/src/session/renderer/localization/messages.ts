@@ -275,6 +275,9 @@ const enUSCoreMessages = {
   // `gugu.dispatch` to a member of a chat: a whisper to one person or agent, sent as you and marked as from this App (摩擦单 F16, F79).
   'extensions.permissionsChatRelay': 'Whisper to a person or agent in any chat you are in, in your name — they see it came from this App',
   'extensions.permissionsChatUnread': 'See only whether one conversation you select has unread messages',
+  // #1927: the same conversation as `chat:unread`'s, never another.
+  'extensions.permissionsChatFiles': 'Read only the files of the conversation you select, without changing them',
+  'extensions.permissionsChatDraft': 'Put a draft into the conversation you select; only you can send it',
   'extensions.unreadBindingChoose': 'Choose conversation',
   'extensions.unreadBindingSearch': 'Search conversations',
   'extensions.unreadBindingEmpty': 'No available conversations',
@@ -1450,6 +1453,8 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'extensions.permissionsFilesWrite': '改你所在的所有对话里的文件，和{computer}上各个会话里的文件',
   'extensions.permissionsChatRelay': '以你的名义在你所在的对话里给某个人或 agent 发悄悄话，对方看得到是这个 App 发的',
   'extensions.permissionsChatUnread': '只获知你选定的一条会话是否有未读消息',
+  'extensions.permissionsChatFiles': '只读取你选定的那条会话里的文件，不改动',
+  'extensions.permissionsChatDraft': '只往你选定的那条会话的输入框里放草稿，发不发由你',
   'extensions.unreadBindingChoose': '选择会话',
   'extensions.unreadBindingSearch': '搜索会话',
   'extensions.unreadBindingEmpty': '暂无可选会话',

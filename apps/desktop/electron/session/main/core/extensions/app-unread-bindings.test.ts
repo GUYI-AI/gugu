@@ -121,3 +121,119 @@ describe('one-conversation unread permission boundary', () => {
     },
   );
 });
+
+/** #1927 (API 40): the same binding's `files` and `draft` actions, each with its own capability. */
+function boundManifest(actions: string[] = ['unread', 'files', 'draft'], capabilities?: string[], apiVersion = EXTENSION_API_VERSION) {
+  return { ...manifest(), apiVersion, permissions: { capabilities: capabilities ?? ['chat:unread', ...actions.filter(a => a !== 'unread').map(a => `chat:${a}`)],
+    bindings: [{ name: 'main', kind: 'conversation', actions }] } };
+}
+function boundFixture(value = boundManifest()) {
+  const made = fixture(); made.install(value); return made;
+}
+
+describe('the bound conversation\'s files and draft (#1927, API 40)', () => {
+  it('needs API 40 and each action declared with its own capability; an unread-only App parses as before', () => {
+    expect(EXTENSION_API_VERSION).toBe(40);
+    expect(() => parseExtensionManifest(boundManifest())).not.toThrow();
+    expect(() => parseExtensionManifest(boundManifest(['unread', 'files']))).not.toThrow();
+    expect(() => parseExtensionManifest(boundManifest(['unread', 'draft']))).not.toThrow();
+    expect(() => parseExtensionManifest({ ...manifest(), apiVersion: 37 })).not.toThrow();
+    for (const apiVersion of [37, 38, 39]) {
+      expect(() => parseExtensionManifest(boundManifest(['unread', 'files'], undefined, apiVersion))).toThrow(/apiVersion 40/);
+      expect(() => parseExtensionManifest(boundManifest(['unread', 'draft'], undefined, apiVersion))).toThrow(/apiVersion 40/);
+    }
+    // An action without its capability, a capability without its action, an action without the binding itself.
+    expect(() => parseExtensionManifest(boundManifest(['unread', 'files'], ['chat:unread']))).toThrow(/chat:files/);
+    expect(() => parseExtensionManifest(boundManifest(['unread'], ['chat:unread', 'chat:files']))).toThrow(/chat:files/);
+    expect(() => parseExtensionManifest(boundManifest(['unread'], ['chat:unread', 'chat:draft']))).toThrow(/chat:draft/);
+    expect(() => parseExtensionManifest({ ...manifest(), permissions: { capabilities: ['chat:files'] } })).toThrow();
+    for (const actions of [['files'], ['unread', 'files', 'files'], ['unread', 'write'], ['unread', 'files', 'draft', 'read']]) {
+      expect(() => parseExtensionManifest(boundManifest(actions, ['chat:unread', 'chat:files']))).toThrow();
+    }
+    expect(() => parseExtensionManifest({ ...boundManifest(), platforms: ['desktop', 'phone'] })).toThrow(/desktop-only/);
+  });
+
+  it('reaches the one selected conversation only with the action declared and its capability granted', () => {
+    const { service } = boundFixture(); service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
+    expect(service.conversationBinding(OWNER, ID, 'main', 'files')?.chatId).toBe(CHAT);
+    expect(service.conversationBinding(OWNER, ID, 'main', 'draft')?.chatId).toBe(CHAT);
+    expect(service.conversationBinding(OTHER, ID, 'main', 'files')).toBeNull();
+    expect(() => service.conversationBinding(OWNER, ID, 'other', 'files')).toThrow();
+    expect(service.conversationBindingActions(ID)).toEqual(['unread', 'files', 'draft']);
+    // Neither grant is chat:read, files:read, a relay or Agent control.
+    for (const word of ['chat:read', 'files:read', 'files:write', 'chat:relay', 'agents:control'] as const) expect(service.hasCapability(ID, word)).toBe(false);
+  });
+
+  it('refuses a binding without the action: an unread-only App keeps exactly the unread answer', () => {
+    const { service } = fixture(); service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
+    expect(service.conversationBindingActions(ID)).toEqual(['unread']);
+    for (const action of ['files', 'draft'] as const) expect(() => service.conversationBinding(OWNER, ID, 'main', action)).toThrow(expect.objectContaining({ code: 'denied' }));
+  });
+
+  it('withdrawing chat:files stops files at once and keeps unread and draft; restoring it reads the same selection', () => {
+    const { service } = boundFixture(); service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
+    const authority = service.conversationUnreadAuthority(OWNER, ID, 'main');
+    service.setPermissionGranted(ID, 'chat:files', false);
+    expect(() => service.conversationBinding(OWNER, ID, 'main', 'files')).toThrow(expect.objectContaining({ code: 'denied' }));
+    expect(service.conversationBinding(OWNER, ID, 'main', 'draft')?.chatId).toBe(CHAT);
+    expect(service.conversationUnreadBinding(OWNER, ID, 'main')?.chatId).toBe(CHAT);
+    expect(service.conversationBindingActions(ID)).toEqual(['unread', 'draft']);
+    // A chooser drawn before the grant changed must ask again.
+    expect(service.conversationUnreadAuthority(OWNER, ID, 'main')).not.toBe(authority);
+    service.setPermissionGranted(ID, 'chat:files', true);
+    expect(service.conversationBinding(OWNER, ID, 'main', 'files')?.chatId).toBe(CHAT);
+  });
+
+  it('withdrawing chat:unread takes every action with the selection; restored, nothing comes back without a new choice', () => {
+    const { service } = boundFixture(); service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
+    service.setPermissionGranted(ID, 'chat:unread', false);
+    for (const action of ['files', 'draft'] as const) expect(() => service.conversationBinding(OWNER, ID, 'main', action)).toThrow();
+    service.setPermissionGranted(ID, 'chat:unread', true);
+    for (const action of ['files', 'draft'] as const) expect(service.conversationBinding(OWNER, ID, 'main', action)).toBeNull();
+  });
+
+  it('fails closed while disabled, after uninstall, for another publisher and when an upgrade adds an action', () => {
+    const { service, install } = boundFixture(); service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
+    service.setEnabled(ID, false);
+    expect(() => service.conversationBinding(OWNER, ID, 'main', 'files')).toThrow(expect.objectContaining({ code: 'denied' }));
+    service.setEnabled(ID, true);
+    service.uninstall(ID);
+    expect(() => service.conversationBinding(OWNER, ID, 'main', 'files')).toThrow(expect.objectContaining({ code: 'denied' }));
+    install(boundManifest());
+    expect(service.conversationBinding(OWNER, ID, 'main', 'files')).toBeNull();
+    service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
+    install(boundManifest(), OTHER);
+    expect(service.conversationBinding(OWNER, ID, 'main', 'files')).toBeNull();
+    // An unread-only selection does not carry over to a version that adds files: the person chooses again.
+    const unreadOnly = fixture(); unreadOnly.service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
+    unreadOnly.install(boundManifest());
+    expect(unreadOnly.service.conversationBinding(OWNER, ID, 'main', 'files')).toBeNull();
+  });
+
+  it('at the shared door: files need chat:files, a bound draft needs chat:draft and a gesture; nothing else opens', () => {
+    const { service } = boundFixture(); service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
+    const has = (word: Parameters<ExtensionsService['hasCapability']>[1]) => service.hasCapability(ID, word);
+    const page = (gesture = true) => ({ kind: 'page' as const, gesture, widget: false, has });
+    const draft = { text: 'Ask about today', draft: true, to: { binding: 'main' } };
+    expect(callRefusal('bindingsList', { name: 'main' }, page())).toBeNull();
+    expect(callRefusal('bindingsRead', { name: 'main', path: 'today.json' }, page())).toBeNull();
+    expect(callRefusal('dispatch', draft, page())).toBeNull();
+    expect(callRefusal('dispatch', draft, page(false))?.code).toBe('denied');
+    for (const kind of ['background', 'program'] as const) {
+      // A page's own verb: not on a background page's or a program's `gugu` at all.
+      expect(callRefusal('bindingsRead', { name: 'main', path: 'today.json' }, { kind, has })?.code).toBe('invalid');
+      expect(callRefusal('dispatch', draft, { kind, has })?.code).toBe('denied');
+    }
+    for (const [verb, args] of [
+      ['filesList', { place: { chat: CHAT } }], ['filesSearch', { query: 'today' }], ['messagesHistory', { chat: CHAT }],
+      ['chatsList', {}], ['dispatch', { text: 'x', to: { chat: CHAT, member: `user:${OTHER}` } }],
+    ] as const) expect(callRefusal(verb, args, page())?.code).toBe('denied');
+    service.setPermissionGranted(ID, 'chat:files', false);
+    service.setPermissionGranted(ID, 'chat:draft', false);
+    expect(callRefusal('bindingsList', { name: 'main' }, page())?.code).toBe('denied');
+    expect(callRefusal('bindingsRead', { name: 'main', path: 'today.json' }, page())?.code).toBe('denied');
+    expect(callRefusal('dispatch', draft, page())?.code).toBe('denied');
+    // A plain chat draft needs no capability, as before.
+    expect(callRefusal('dispatch', { text: 'x', draft: true, to: { chat: CHAT } }, page())).toBeNull();
+  });
+});

@@ -63,6 +63,9 @@ export const HOST_CALLS = {
   dispatch: { verb: 'dispatch', pack: (text: string, options?: Record<string, unknown>) => ({ ...options, text }) },
   // A chat's messages (`chat:read`): each call names its chat, as a file call names its place.
   'bindings.get': { verb: 'bindingsGet', pack: (name: string) => ({ name }) },
+  // #1927 (40, `chat:files`): the bound conversation's files, named by the binding and a path there, never by a chat.
+  'bindings.list': { verb: 'bindingsList', pack: (name: string, options?: Record<string, unknown>) => ({ ...options, name }) },
+  'bindings.read': { verb: 'bindingsRead', pack: (name: string, path: string) => ({ name, path }) },
   'messages.history': { verb: 'messagesHistory' },
   'messages.search': { verb: 'messagesSearch' },
   // The chats whoever reads is in, and one's members (`chat:read`): `{ chat }` names it.

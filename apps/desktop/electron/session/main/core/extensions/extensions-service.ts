@@ -22,7 +22,7 @@ import { requireAppPlatform } from '@shared/extensions/app-platforms';
 import { assertConfinedProgramBundle } from './extension-validate';
 
 import { z } from 'zod';
-import { readUnreadBindings, unreadBindingKey, type StoredUnreadBinding } from '@shared/extensions/unread-binding';
+import { BINDING_ACTION_CAPABILITY, readUnreadBindings, unreadBindingKey, type ConversationBindingAction, type StoredUnreadBinding } from '@shared/extensions/unread-binding';
 import { BUNDLE_SKIP_NAMES } from '@shared/extensions/market';
 import { appVariantsSchema, type AppVariants, type ExtensionVariant } from '@shared/extensions/variants';
 import { removeTreeSync } from '@main/core/utils/remove-tree';
@@ -215,6 +215,25 @@ export class ExtensionsService {
     const stored = this.unreadBindingsFile.read();
     const binding = Object.hasOwn(stored, key) ? stored[key]! : null;
     return binding?.name === name ? binding : null;
+  }
+
+  /**
+   * Host-only (#1927): the same binding, for one more of its actions — declared on it, and that action's own capability
+   * still granted (`chat:files`, `chat:draft`) on top of everything the unread grant needs. Refused otherwise, as that is.
+   */
+  conversationBinding(ownerId: string, extensionId: string, name: string, action: Exclude<ConversationBindingAction, 'unread'>): StoredUnreadBinding | null {
+    if (!this.isInstalled(extensionId)) throw Object.assign(new Error('This App is not installed'), { code: 'denied' });
+    const declaration = this.get(extensionId).manifest.permissions?.bindings?.[0];
+    if (!declaration?.actions.includes(action) || !this.hasCapability(extensionId, BINDING_ACTION_CAPABILITY[action])) {
+      throw Object.assign(new Error(`This App has no "${action}" grant for this binding`), { code: 'denied' });
+    }
+    return this.conversationUnreadBinding(ownerId, extensionId, name);
+  }
+
+  /** What the App's binding may do now: its declared actions whose capability is still granted. */
+  conversationBindingActions(extensionId: string): ConversationBindingAction[] {
+    const declared = this.get(extensionId).manifest.permissions?.bindings?.[0]?.actions ?? [];
+    return declared.filter((action) => this.hasCapability(extensionId, BINDING_ACTION_CAPABILITY[action]));
   }
 
   /** Host-only stamp: a pending selection must not cross an installation or grant change. */
@@ -788,6 +807,9 @@ export class ExtensionsService {
       this.unreadAuthorities.delete(extensionId);
       if (!granted) this.forgetConversationUnreadBindings(extensionId);
     }
+    // A binding's other grants (#1927) change what a pending selection authorizes: a chooser drawn before must ask again.
+    // The selection itself stays: it is `chat:unread`'s, and each of these is checked again on every call.
+    if (permission === 'chat:files' || permission === 'chat:draft') this.unreadAuthorities.delete(extensionId);
     this.revocationsFile.write(revocations);
   }
 

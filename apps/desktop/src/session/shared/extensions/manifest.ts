@@ -5,6 +5,7 @@ import { networkHostAllowed } from './network-host';
 import { APP_PLATFORMS } from './app-platforms';
 import { claimTakes } from './file-openers';
 import { INSTRUCTIONS_MAX_CHARS, SUBTITLE_MAX_CHARS } from './app-listing';
+import { BINDING_ACTION_CAPABILITY, BINDING_ACTIONS_API_VERSION, BINDING_NAME, CONVERSATION_BINDING_ACTIONS } from './unread-binding';
 
 /**
  * Extension (App) manifest — the `manifest.json` at the root of an
@@ -342,6 +343,11 @@ export const EXTENSION_CAPABILITIES = [
   'chat:read',
   // Only the unread signal of the one conversation selected in the host's App permissions.
   'chat:unread',
+  // That same selected conversation (#1927, API 40), never another: its chat-folder files listed and read, read only
+  // (`gugu.bindings.list` / `read`) — and a draft put into its composer, which the person sends or not (`dispatch` to
+  // `{ binding }`). Each needs its binding action declared, and `chat:unread`, the binding itself.
+  'chat:files',
+  'chat:draft',
   /*
    * Seeing the agents at work (behavior tab-extensions:「agent 的可见与可控」).
    *
@@ -447,9 +453,13 @@ const permissionsSchema = z.strictObject({
     .optional(),
   /** Object declarations are permission requests, never caller-selected account or chat IDs. */
   bindings: z.array(z.strictObject({
-    name: z.string().regex(/^[a-z][a-z0-9-]{0,47}$/),
+    name: z.string().regex(BINDING_NAME),
     kind: z.literal('conversation'),
-    actions: z.tuple([z.literal('unread')]),
+    // `unread` is the binding itself; `files` / `draft` (API 40) add to it. Each at most once.
+    actions: z.array(z.enum(CONVERSATION_BINDING_ACTIONS)).min(1).max(CONVERSATION_BINDING_ACTIONS.length)
+      .refine((actions) => actions.includes('unread') && new Set(actions).size === actions.length, {
+        message: 'a conversation binding has the unread action, and each action once',
+      }),
   })).length(1).optional(),
   /** Hostnames its pages and host-confined tools may reach. Anything else is blocked. */
   network: z
@@ -718,13 +728,23 @@ export const extensionManifestSchema = z
       ctx.addIssue({ code: 'custom', path: ['contributes', 'unreadSource'], message: 'unreadSource must name the declared conversation unread binding' });
     }
     if (Boolean(unreadBinding) !== declared.includes('chat:unread')) {
-      ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings'], message: 'chat:unread requires exactly one conversation binding with only the unread action' });
+      ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings'], message: 'chat:unread requires exactly one conversation binding with the unread action, and the binding requires chat:unread' });
     }
     if (unreadBinding && manifest.platforms?.includes('phone')) {
       ctx.addIssue({ code: 'custom', path: ['platforms'], message: 'conversation unread bindings currently require a desktop-only App' });
     }
     if (unreadBinding && manifest.apiVersion < 37) {
       ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: 'conversation unread bindings require apiVersion 37' });
+    }
+    // #1927: an extra action of the binding and its capability come together, as `unread` and `chat:unread` do.
+    for (const action of ['files', 'draft'] as const) {
+      const capability = BINDING_ACTION_CAPABILITY[action];
+      if ((unreadBinding?.actions.includes(action) ?? false) !== declared.includes(capability)) {
+        ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings'], message: `${capability} requires the conversation binding's "${action}" action, and the action requires ${capability}` });
+      }
+      if (unreadBinding?.actions.includes(action) && manifest.apiVersion < BINDING_ACTIONS_API_VERSION) {
+        ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: `the conversation binding's "${action}" action requires apiVersion ${BINDING_ACTIONS_API_VERSION}` });
+      }
     }
     const byFamily = new Map<string, string>();
     for (const word of declared) {

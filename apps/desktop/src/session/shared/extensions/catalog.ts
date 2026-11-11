@@ -34,6 +34,9 @@ export const CAPABILITY_RISK = {
   // What was said in any chat the person is in.
   'chat:read': 'high',
   'chat:unread': 'medium',
+  // The one conversation the person selected for the App, never another: its files read only, and a draft they send or not.
+  'chat:files': 'medium',
+  'chat:draft': 'medium',
   'agents:read': 'medium',
   // Every `:all` widens past the agents the App started — that widening is the whole point of
   // reading it as high, even for the ability that is medium in its narrow form.
@@ -84,7 +87,7 @@ export function declaredPermissions(manifest: ExtensionManifest): DeclaredPermis
  */
 export function permissionSide(permission: DeclaredPermission): 'see' | 'do' {
   if (permission.kind === 'network') return 'do';
-  return permission.key.startsWith('files:read') || permission.key.startsWith('agents:read') || permission.key.startsWith('agents:history') || (permission.key === 'chat:read' || permission.key === 'chat:unread')
+  return permission.key.startsWith('files:read') || permission.key.startsWith('agents:read') || permission.key.startsWith('agents:history') || (permission.key === 'chat:read' || permission.key === 'chat:unread' || permission.key === 'chat:files')
     ? 'see'
     : 'do';
 }

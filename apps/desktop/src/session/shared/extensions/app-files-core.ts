@@ -4,10 +4,10 @@ import { AttachmentsError, configuredEndpoint, placeAttachment, uploadAttachment
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
 import { coreLogger } from '@gugu/core/log';
 import { isDeviceOnline } from '@gugu/core/shared/enums/deviceModels';
-import { FILE_CHUNK_BYTES, MissingFileObjectError, fileBlob, type FileHandle, type ResolvedFile } from '@gugu/core/shared/fileResolver';
+import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileBlob, type FileHandle, type ResolvedFile } from '@gugu/core/shared/fileResolver';
 import { fetchInChunks } from '@gugu/core/shared/inChunks';
 import { mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
-import { opensAsStoredText, workspaceUploadKind } from '@gugu/core/shared/workspaceUpload.mjs';
+import { opensAsStoredText, workspaceFileText, workspaceUploadKind } from '@gugu/core/shared/workspaceUpload.mjs';
 import type { ErrorDetail, ExtensionChat, ExtensionChatFolder } from './bridge-protocol';
 import type { Grant, PageSync } from './file-sync-core';
 import {
@@ -150,6 +150,10 @@ export type BesideDocument =
   | { kind: 'file'; file: FileHandle; contentType: string }
   | { kind: 'text'; text: string; contentType: string }
   | { kind: 'offline'; machine: string; deviceId: string };
+
+/** `readAtPath`'s answer (#1927): the file and its text, or which of the three ways it is not there to read. */
+export type PathText = { state: 'missing' | 'unprepared' | 'unavailable' }
+  | { state: 'ready'; entry: AppFileEntry; content: string; truncated: boolean; totalSize: number; binary?: true };
 
 /** What a download saves: bytes behind a short-lived signed URL, or a document's text. */
 export type DownloadSource = { name: string; kind: 'file'; file: FileHandle } | { name: string; kind: 'text'; text: string };
@@ -1488,6 +1492,69 @@ export function createAppFiles(platform: FilesPlatform) {
         return { kind: 'offline', machine: revision.host_label?.trim() ?? '', deviceId: revision.host_device_id ?? '' };
       }
       return { kind: 'file', file, contentType: revision.content_type };
+    },
+
+    /**
+     * #1927 A file by its path from the top of one chat's folder, and its text, as the signed-in person — for the host's
+     * conversation binding only (`gugu.bindings.read`), which named the chat itself. Each outcome is said: no file there
+     * (`missing`), there without bytes yet (`unprepared`), not readable now (`unavailable`); a refusal of the folder's door
+     * (not a member any more) throws as it does. The entry goes out whole; the caller keeps what the App may see.
+     */
+    async readAtPath(chatId: string, filePath: string, maxBytes: number): Promise<PathText> {
+      const { token, userId } = await platform.account();
+      let rows: ItemRow[];
+      try {
+        rows = await itemsByPath(token, chatId, filePath, userId);
+      } catch (error) {
+        if (error instanceof AppFileError && error.code === 'failed') return { state: 'unavailable' };
+        throw error;
+      }
+      const found = rows.filter((row) => row.kind !== 'folder');
+      if (found.length === 0) {
+        if (rows.length > 0) throw notAFile(rows[0]!);
+        return { state: 'missing' };
+      }
+      if (found.length > 1) throw new AppFileError('ambiguous', `More than one file is at ${filePath}`);
+      const row = found[0]!;
+      // The door answers this chat's rows only; one of another chat is not this one's file, whatever answered it.
+      if (row.chat_id !== chatId) return { state: 'missing' };
+      const entry = entryOf(row, undefined);
+      const ready = (text: { text: string; binary?: true }, size: number): PathText => size > maxBytes
+        ? { state: 'ready', entry: { ...entry, size }, content: '', truncated: true, totalSize: size }
+        : { state: 'ready', entry: { ...entry, size }, content: text.text, ...(text.binary ? { binary: true as const } : {}), truncated: false, totalSize: size };
+      if (row.kind !== 'file') {
+        // A live document: its text as the file service has it now, as a download's and an agent's read are.
+        try {
+          const text = await readDocumentText({ filesUrl: platform.filesUrl, fetch }, token, row.id, null);
+          return ready({ text }, new TextEncoder().encode(text).byteLength);
+        } catch (error) {
+          if (error instanceof ChatFolderReadError && error.status === 404) return { state: 'missing' };
+          return { state: 'unavailable' };
+        }
+      }
+      if ((row.size_bytes ?? 0) > maxBytes) return { state: 'ready', entry, content: '', truncated: true, totalSize: row.size_bytes ?? 0 };
+      const file = await platform.resolveFile?.({ id: row.id }, null, {}).catch(() => null);
+      if (!file) return { state: 'unavailable' };
+      // No bytes in the store for it yet (an upload not finished); deleted or a temporary copy cleared: no content any more.
+      if (file.status === 'missing') return { state: 'unprepared' };
+      if (file.status !== 'ready') return { state: 'missing' };
+      try {
+        if (file.revision.chat_id && file.revision.chat_id !== chatId) return { state: 'missing' };
+        if (file.revision.source === 'local' && file.revision.host_online === false) return { state: 'unavailable' };
+        const bytes = new Uint8Array(await (await fileBlob(file)).arrayBuffer());
+        const text = workspaceFileText(row.filename, bytes);
+        return ready(text ? { text: text.text } : { text: '', binary: true }, bytes.byteLength);
+      } catch (error) {
+        // Gone between asking and reading: as the metadata would have said. Access withdrawn meanwhile: refused.
+        if (error instanceof MissingFileObjectError) return { state: 'unprepared' };
+        if (error instanceof FileReadRevokedError) {
+          if (error.reason === 'access' || error.reason === 'revision') throw new AppFileError('denied', 'Access to this file changed while it was read');
+          return { state: 'missing' };
+        }
+        return { state: 'unavailable' };
+      } finally {
+        await file.dispose();
+      }
     },
 
     async downloadSource(surface: FileSurface, args: { ref: ChatFileRef }): Promise<DownloadSource> {

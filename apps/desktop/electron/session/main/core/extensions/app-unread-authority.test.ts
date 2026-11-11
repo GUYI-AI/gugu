@@ -9,6 +9,7 @@ vi.mock('@gugu/core', () => ({ userIdFromSupabaseAccessToken: (token: string) =>
 vi.mock('./account-token', () => ({ currentAccountAccessToken: async () => state.owner }));
 vi.mock('./app-files', () => ({ unreadBindingChatChoices: async () => { state.afterChoices?.(); return []; } }));
 vi.mock('./extensions-root', () => ({ extensionsService: () => ({ conversationUnreadBinding: get, setConversationUnreadBinding: set,
+  conversationBindingActions: () => ['unread'],
   conversationUnreadAuthority: (owner: string, app: string, name: string) => { get(owner, app, name); return state.authority; },
 }) }));
 vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: () => ({ from: () => {
