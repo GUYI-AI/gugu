@@ -9,7 +9,7 @@ import { EXTENSION_API_VERSION } from '@shared/extensions/manifest';
 import type { MarketSnapshotStore } from '@shared/extensions/market-snapshot';
 import { CloudExtensionMarket, type BundleDownloadOptions, type MarketBackend } from './market-catalog';
 import type { ReleaseTrustTable } from './release/market-release';
-import { RELEASE_LEGAL_FILES, signTestRelease, testKey, testTrust, type SignedTestRelease, type TestKey } from './test-support/signed-release';
+import { RELEASE_LEGAL_FILES, signTestRelease, testKey, testTrust, type SignedTestRelease } from './test-support/signed-release';
 
 /**
  * #1931 A registered App (one the trust table names) installs from the market only as its signed release: the release is
