@@ -128,6 +128,7 @@ const gestureCalls: Record<string, Record<string, unknown>> = {
   assistantOpen: { name: 'main', screen: 'move' },
   assistantAdvanceSetup: { name: 'main', next: 'ready' },
   assistantRename: { name: 'main', text: 'Pip' },
+  assistantConnect: { name: 'main', id: 'feishu' },
 }
 
 describe('the phone refuses a verb outside the gesture it needs, in the same sentence as the desktop (L11 B4)', () => {

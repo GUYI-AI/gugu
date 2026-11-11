@@ -827,7 +827,7 @@ export const extensionsController = createRPCController({
   },
 
   /** #1925 (44) The assistant panel's numbers as the session page read them (`useAssistantAppCounts`), for Apps to see. */
-  assistantCountsChanged: async (args: { ownerId: string; counts: unknown }) => {
+  assistantCountsChanged: async (args: { ownerId: string; counts: unknown; connectors: unknown }) => {
     try {
       const [{ assistantCountsChanged }, { deliverToPersonPages }] = await Promise.all([import('./app-assistant-binding'), import('./extension-bridge')]);
       await assistantCountsChanged(args, deliverToPersonPages);
