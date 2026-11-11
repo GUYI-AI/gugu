@@ -1,6 +1,6 @@
 import '@/i18n/registerAssistantCatalog';
 import '../assistant/assistant-today.css';
-import { useCallback, useEffect, useSyncExternalStore, type CSSProperties } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PanelRight, Search } from '@/lib/icons';
 import { readShellSlots } from '@/lib/shellSlots';
@@ -23,6 +23,9 @@ const CORNER: CSSProperties = {
   position: 'absolute', top: 0, right: 0, width: CONVERSATION_SURFACE_PANEL_INSET.right, height: CONVERSATION_SURFACE_PANEL_INSET.top,
   display: 'flex', alignItems: 'center', justifyContent: 'flex-start', zIndex: 'var(--z-pane-resident-chrome)', pointerEvents: 'none',
 };
+
+/** #1927 (48) The host's recording bar, loaded only when an App's column is drawn (the assistant chat's, it then decides). */
+const AppConversationVoiceBar = lazy(() => import('./app-conversation-voice-bar'));
 
 function report(extensionId: string, tabKind: string, shown: { chatId: string; collapsed: boolean } | null): void {
   void rpc.extensions.reportConversationSurface({ extensionId, tabKind, tabId: DOCK, shown }).then((result) => {
@@ -57,12 +60,14 @@ export function AppConversationFrame({ extensionId, tabKind }: { extensionId: st
     (element: HTMLDivElement | null) => readShellSlots()?.setSlot(appConversationSlotKey(extensionId), element),
     [extensionId],
   );
+  // The column the recording bar sits in, above its composer (as the built-in's `chatColumn`).
+  const [chatColumn, setChatColumn] = useState<HTMLDivElement | null>(null);
 
   if (!chatId) return <ExtensionSharedSlot tabKind={tabKind} tabId={DOCK} />;
   const setCollapsed = (next: boolean) => setAppConversationPanelCollapsed(extensionId, next);
   return (
     <div className="ta-app" data-panel={collapsed ? 'closed' : 'open'} data-testid="app-conversation-surface">
-      <div className="ta-chat-col" data-testid="app-conversation-column">
+      <div ref={setChatColumn} className="ta-chat-col" data-testid="app-conversation-column">
         <div className="ta-chat-top">
           <div className="ta-chat-actions">
             <button type="button" className="ta-circle" aria-label={t('top.search')} title={t('top.search')} onClick={() => searchInChat(chatId)} data-testid="app-conversation-search">
@@ -76,6 +81,7 @@ export function AppConversationFrame({ extensionId, tabKind }: { extensionId: st
           </div>
         </div>
         <div ref={column} className="ta-chat" data-app-conversation-slot={extensionId} />
+        <Suspense fallback={null}><AppConversationVoiceBar extensionId={extensionId} chatId={chatId} column={chatColumn} /></Suspense>
       </div>
       {collapsed ? null : (
         <section className="ta-panel" data-testid="app-conversation-panel">

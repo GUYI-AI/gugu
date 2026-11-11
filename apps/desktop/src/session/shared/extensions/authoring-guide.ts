@@ -934,6 +934,15 @@ records from the microphone, uploads, transcribes and hands the note to the assi
 - \`gugu.voiceNote.onChanged("main", fn)\` → unsubscribe; \`fn\` hears \`{ state: "changed", recorder, jobs }\` (about 10 a second
   while recording) or \`{ state: "ended" }\`. A recording goes on when your page closes. Disabled or uninstalled mid-recording:
   the host stops it and keeps the note, and takes no further call from your App; another account: it stops.
+API 48, the same assistant: \`contributes.conversationSurface.composerActions\` adds entries to that conversation's composer
+"+", drawn and run by the host on the person's click (no code of yours runs then). Not drawn beside any other conversation.
+\`[{ id, label: { zh, en } (one line, ≤ 40), icon, run }]\`, at most 6; \`icon\` one of sparkles, mic, upload, lightbulb, pencil,
+heart, checklist, document, book, image, message. \`run\`, each needing that binding action (and its capability):
+- \`{ kind: "voice-note" }\` (\`voice-notes:record\`): the host starts a voice note and says why if it cannot, as its own entry does.
+- \`{ kind: "draft", text }\` (\`draft\`): \`text\` (≤ 2000) goes after what is in that composer. Nothing is sent.
+- \`{ kind: "page-intent", intent }\` (\`surface\`): your panel is expanded and \`gugu.bindings.onSurface\` hears
+  \`{ state: "bound", panel, intent }\` once. No data comes with it; show that view. The host's recording bar beside that
+  conversation sends \`intent: "voice-note"\` when the person opens the note it shows (yours may not use that name).
 `;
 
 export const EXTENSION_GUIDE_MESSAGES = `# gugu.chats, gugu.messages — the chats you are in, and what was said
