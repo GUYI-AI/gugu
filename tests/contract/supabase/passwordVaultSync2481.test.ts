@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { VaultError, type VaultKeyProtector } from '../../../apps/desktop/electron/password-vault/contracts'
 import type { SyncValue } from '../../../apps/desktop/electron/password-vault/management'
-import { VaultSync, type SyncRpc, type SyncVault } from '../../../apps/desktop/electron/password-vault/sync'
+import { VaultSync, type SyncRpc, type SyncVault, type SyncView } from '../../../apps/desktop/electron/password-vault/sync'
 import { withContractDatabase } from './database'
 
 type Database = Parameters<Parameters<typeof withContractDatabase>[0]>[0]
@@ -62,6 +62,7 @@ class MemoryVault implements SyncVault {
   async remove(id: string) { await this.sync!.publish({ kind: 'delete', id }); this.items.delete(id) }
 }
 const credential = (origin: string, account: string, password: string): SyncValue => ({ origin, account, password, fields: [], grants: [] })
+const ready = (view: SyncView) => { if (view.state !== 'ready') throw new Error(`expected ready, got ${view.state}`); return view }
 const settle = () => new Promise(resolve => setTimeout(resolve, 5))
 
 let root: string
@@ -93,11 +94,11 @@ describe('password vault sync between two devices of one account', () => {
 
       // The second device asks; the person opens it on the Mac; both screens show the same 6 digits.
       expect(await laptop.refresh()).toEqual({ state: 'joining' })
-      expect((await mac.refresh() as any).requests).toEqual([expect.objectContaining({ deviceId: laptopId, label: 'Laptop', stage: 'new' })])
-      expect((await mac.challenge(laptopId) as any).requests[0].stage).toBe('waiting')
-      const shown = await laptop.refresh() as { state: string; code: string }
+      expect(ready(await mac.refresh()).requests).toEqual([expect.objectContaining({ deviceId: laptopId, label: 'Laptop', stage: 'new' })])
+      expect(ready(await mac.challenge(laptopId)).requests[0].stage).toBe('waiting')
+      const shown = await laptop.refresh() as Extract<SyncView, { state: 'joining' }>
       expect(shown.code).toMatch(/^\d{6}$/)
-      const request = (await mac.refresh() as any).requests[0]
+      const request = ready(await mac.refresh()).requests[0]
       expect(request).toMatchObject({ stage: 'compare', code: shown.code })
       await mac.approve(laptopId)
 
@@ -118,7 +119,7 @@ describe('password vault sync between two devices of one account', () => {
       expect(laptopVault.items.get(mail)?.password).toBe('canary-mail-2')
 
       // Removing the laptop re-keys; it can no longer write, and only edits made locally stay with it.
-      expect((await mac.remove(laptopId) as any).devices.map((device: any) => device.deviceId)).toEqual([macId])
+      expect(ready(await mac.remove(laptopId)).devices.map(device => device.deviceId)).toEqual([macId])
       expect((await db.query<{ key_epoch: number }>('SELECT key_epoch FROM identity.password_vault_heads WHERE owner_user_id=$1', [owner])).rows[0]!.key_epoch).toBe(2)
       await macVault.save(github, credential('https://github.com', 'me@example.com', 'canary-after-removal'))
       expect(await laptop.refresh()).toEqual({ state: 'joining' })
@@ -127,7 +128,7 @@ describe('password vault sync between two devices of one account', () => {
       await mac.refresh()
       expect(macVault.items.get(laptopOnly)?.password).toBe('canary-laptop')
       // The Mac's request list now shows the laptop asking again; ignoring it leaves the vault as it is.
-      expect((await mac.refresh() as any).requests).toEqual([expect.objectContaining({ deviceId: laptopId, stage: 'new' })])
+      expect(ready(await mac.refresh()).requests).toEqual([expect.objectContaining({ deviceId: laptopId, stage: 'new' })])
       mac.dispose(); laptop.dispose()
     } finally { await db.query('ROLLBACK') }
   }))

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
-import { PASSWORD_FILL_EVENT, takePasswordFill, type PasswordBetaUi, type PasswordField, type PasswordGrant, type PasswordItem, type PasswordSaveDraft, type PasswordSecrets, type PasswordSnapshot, type PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
+import { PASSWORD_FILL_EVENT, takePasswordFill, type PasswordBetaUi, type PasswordField, type PasswordGrant, type PasswordItem, type PasswordSaveDraft, type PasswordSecrets, type PasswordSnapshot, type PasswordSyncDevice, type PasswordSyncRequest, type PasswordSyncView, type PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
 import { ChevronRight, Eye, EyeOff, Globe, Plus, Trash } from '@/lib/icons'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
 import { useSettingsDetail } from './SettingsDetailNavigation'
@@ -81,13 +81,68 @@ export function PasswordSection({ actionsHost }: { actionsHost?: () => HTMLEleme
       <SettingsNote>安全存储密码以供你的智能体使用。</SettingsNote>
       {slot ? createPortal(add, slot) : add}
     </div>
+    {snapshot?.sync && <SyncStatus sync={snapshot.sync} busy={busy} run={run} />}
     <SettingsGroup title="密码管理" presentation="navigation">
       {snapshot?.items.map(value => <SettingsRow key={value.reference.id} leading={<Globe size={18} aria-hidden="true" />} title={host(value.origin)}
         control={<ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" />} onClick={() => go({ kind: 'detail', id: value.reference.id })} />)}
       {snapshot && !snapshot.items.length && <SettingsRow title={<span className="text-[var(--text-secondary)]">还没有保存密码</span>} />}
     </SettingsGroup>
+    {snapshot?.sync?.state === 'ready' && <SyncDevices devices={snapshot.sync.devices} busy={busy} run={run} />}
     {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
   </SettingsPage>
+}
+
+/** The 6 digits both devices show, grouped 3 + 3 so they are easy to compare aloud. */
+const Code = ({ value }: { value: string }) => <span className="font-mono text-[length:var(--font-title)] font-semibold tracking-[0.2em] text-[var(--fg)]" aria-label={`验证码 ${value.split('').join(' ')}`}>
+  {value.slice(0, 3)} {value.slice(3)}</span>
+type SyncProps = { busy: boolean; run: ScreenProps['run'] }
+/** Cross-device sync (#2481): what this device is waiting for, or what another device asks of it. */
+function SyncStatus({ sync, busy, run }: SyncProps & { sync: PasswordSyncView }) {
+  if (sync.state === 'joining') return <SettingsGroup title="同步到这台设备">
+    {sync.code
+      ? <SettingsRow title="核对验证码" description="和另一台设备上的数字一样，再在那台设备上点「允许」。" control={<Code value={sync.code} />} />
+      : <SettingsRow title="等待另一台设备允许" description="在已经能用这些密码的设备上，打开 设置 → 密码，允许这台设备。" />}
+  </SettingsGroup>
+  if (sync.state === 'blocked') return <SettingsGroup title="同步到这台设备">
+    <SettingsRow title="这台设备的同步钥匙已丢失" description="在另一台设备的 设置 → 密码 里移除这台设备，这里会重新申请。" />
+  </SettingsGroup>
+  if (sync.state !== 'ready' || !sync.requests.length) return null
+  return <SettingsGroup title="新设备请求使用你的密码">
+    {sync.requests.map(request => <SyncRequestRow key={request.deviceId} request={request} busy={busy} run={run} />)}
+  </SettingsGroup>
+}
+function SyncRequestRow({ request, busy, run }: SyncProps & { request: PasswordSyncRequest }) {
+  const reject = <Button size="sm" disabled={busy} onClick={() => { void run({ type: 'sync-reject', deviceId: request.deviceId }) }}>拒绝</Button>
+  const name = request.label || '未命名设备'
+  if (request.stage === 'new') return <SettingsRow title={name} description="打开后两台设备会显示同一串数字。"
+    control={<div className="flex gap-2">{reject}<Button size="sm" variant="primary" disabled={busy} onClick={() => { void run({ type: 'sync-open', deviceId: request.deviceId }) }}>打开</Button></div>} />
+  if (request.stage === 'compare' && request.code) return <SettingsRow title={name} description="那台设备上显示的也是这串数字，才点「允许」。"
+    control={<div className="flex items-center gap-3"><Code value={request.code} />{reject}
+      <Button size="sm" variant="primary" disabled={busy} onClick={() => { void run({ type: 'sync-approve', deviceId: request.deviceId }) }}>允许</Button></div>} />
+  const description = request.stage === 'waiting' ? '等那台设备显示验证码…'
+    : request.stage === 'mismatch' ? '那台设备的验证码对不上，不能允许。'
+      : '已在别处打开。拒绝后那台设备会重新申请。'
+  return <SettingsRow title={name} description={description} control={reject} />
+}
+function SyncDevices({ devices, busy, run }: SyncProps & { devices: PasswordSyncDevice[] }) {
+  const [removing, setRemoving] = useState<PasswordSyncDevice>()
+  return <>
+    <SettingsGroup title="同步的设备" note="这些设备都能用上面的密码。">
+      {devices.map(device => <SettingsRow key={device.deviceId} title={device.label || '未命名设备'} description={device.current ? '本机' : undefined}
+        control={device.current ? undefined : <Button variant="ghost" size="sm" disabled={busy} onClick={() => setRemoving(device)}>移除</Button>} />)}
+    </SettingsGroup>
+    {removing && <Sheet onClose={() => setRemoving(undefined)} desktopWidth="400px" mobileFitContent ariaLabel={`移除 ${removing.label}`}
+      testId="password-sync-remove-dialog" zIndex="var(--z-settings-modal)">
+      <div className="flex flex-col gap-3 p-[18px]">
+        <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">不再同步到 {removing.label || '这台设备'}？</div>
+        <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">它收不到之后新增和修改的密码。它已经存下的密码不会被删掉，需要的话去网站上改密码。</div>
+        <div className="flex justify-end gap-2">
+          <Button size="sm" onClick={() => setRemoving(undefined)}>取消</Button>
+          <Button size="sm" variant="danger" disabled={busy} onClick={() => { void run({ type: 'sync-remove', deviceId: removing.deviceId }).then(() => setRemoving(undefined)) }}>移除</Button>
+        </div>
+      </div>
+    </Sheet>}
+  </>
 }
 
 interface ScreenProps {

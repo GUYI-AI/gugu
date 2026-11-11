@@ -5022,6 +5022,14 @@ app.whenReady().then(async () => {
         const helper = deviceActionsRuntime().macHelper()
         if (!helper) throw new Error('mac helper unavailable')
         await helper.call('owner.verify', { reason }, { timeoutMs: 120_000 })
+      },
+      // #2481 vault sync: ciphertext and device keys only; the backend checks the signed-in owner of the device.
+      rpc: async (name, args) => {
+        const auth = await getSessionpageAuth()
+        if (!auth) throw new Error('Not signed in')
+        const { data, error } = await makeIdentityClient(auth.accessToken).rpc(name, args)
+        if (error) throw error
+        return data
       } })
     bindPasswordBetaAgent(emdash.passwordBetaAgent)
     app.once('will-quit', startSessionpageAgentArchivalSync({ getAuth: getSessionpageAuth, resolveDeviceId: localDeviceId,

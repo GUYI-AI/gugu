@@ -13,7 +13,13 @@ export type PasswordRequestView = PasswordApproval | PasswordSaveRequest
 export interface PasswordSaveDraft { origin: string; account: string; password: string; fields: PasswordField[]; credentialId?: string; agentName: string }
 export const PASSWORD_REQUEST_PREFIX = 'gugu-password-request-v1\n'
 export interface PasswordGrantCandidate { subject: string; name: string; kind: 'agent' | 'project'; project?: string }
-export interface PasswordSnapshot { items: PasswordItem[]; approvals: PasswordApproval[]; saves: PasswordSaveRequest[]; candidates: PasswordGrantCandidate[] }
+/** Cross-device sync (#2481). joining: this device waits for approval on another device, `code` once both sides are
+ * ready · blocked: this device joined before with a key it no longer has · ready: the account's devices and requests. */
+export interface PasswordSyncDevice { deviceId: string; label: string; platform: string; current: boolean }
+export interface PasswordSyncRequest extends PasswordSyncDevice { stage: 'new' | 'elsewhere' | 'waiting' | 'compare' | 'mismatch'; code?: string }
+export type PasswordSyncView = { state: 'off' } | { state: 'joining'; code?: string } | { state: 'blocked' }
+  | { state: 'ready'; devices: PasswordSyncDevice[]; requests: PasswordSyncRequest[] }
+export interface PasswordSnapshot { items: PasswordItem[]; approvals: PasswordApproval[]; saves: PasswordSaveRequest[]; candidates: PasswordGrantCandidate[]; sync?: PasswordSyncView }
 export type PasswordUiCommand =
   | { type: 'snapshot' }
   /** Without reference: add. With reference: edit, where blank account/password/field values keep the stored value.
@@ -25,6 +31,12 @@ export type PasswordUiCommand =
   | { type: 'decide'; requestId: string; decision: 'allow_once' | 'reject' }
   | { type: 'save-draft'; requestId: string }
   | { type: 'reject-save'; requestId: string }
+  /** Another device asks to join: open (both screens show the code), allow after comparing, or refuse. */
+  | { type: 'sync-open'; deviceId: string }
+  | { type: 'sync-approve'; deviceId: string }
+  | { type: 'sync-reject'; deviceId: string }
+  /** Stop this device from receiving passwords; the key changes so it cannot read later edits. */
+  | { type: 'sync-remove'; deviceId: string }
 export type PasswordUiReply = { ok: true; snapshot: PasswordSnapshot; secrets?: PasswordSecrets; draft?: PasswordSaveDraft }
   | { ok: false; code: string }
 export interface PasswordBetaUi { invoke(command: PasswordUiCommand): Promise<PasswordUiReply>; subscribe(listener: () => void): () => void }
