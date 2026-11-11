@@ -167,10 +167,17 @@ describe('gugu.assistant.status: the snapshot of the person\'s own assistant', (
 });
 
 describe('gugu.assistant.open: one of the host\'s own screens, from a closed list', () => {
-  it.each(ASSISTANT_SCREENS)('%s: the window is asked to open exactly that screen, for the account checked', async (screen) => {
+  it.each(ASSISTANT_SCREENS.filter((screen) => screen !== 'health'))('%s: the window is asked to open exactly that screen, for the account checked', async (screen) => {
     const act = vi.fn(async (_action: ExtensionHostAction) => undefined);
     expect(await appAssistantOpen(APP, { name: 'main', screen }, act)).toBeUndefined();
     expect(act).toHaveBeenCalledExactlyOnceWith({ kind: 'openAssistantScreen', screen, ownerId: OWNER });
+  });
+
+  it('health (49) is a phone\'s page: a computer answers the closed unsupported state once the binding is checked, and opens nothing', async () => {
+    const act = vi.fn(async (_action: ExtensionHostAction) => undefined);
+    expect(await appAssistantOpen(APP, { name: 'main', screen: 'health' }, act)).toEqual({ name: 'main', state: 'unsupported' });
+    expect(act).not.toHaveBeenCalled();
+    await expect(appAssistantOpen(APP, { name: 'other', screen: 'health' }, act)).rejects.toMatchObject({ code: 'denied' });
   });
 
   it('refuses any other value, or anything more than the value, before anything is asked', async () => {

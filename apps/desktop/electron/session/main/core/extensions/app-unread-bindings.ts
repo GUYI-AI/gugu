@@ -307,7 +307,7 @@ export async function appBindingSurface(extensionId: string, page: { tabName: st
   if (!bound || !shown || shown.chatId !== bound.chatId) return unbound;
   // 46: a page of the host's own over the App's page in this panel (app-host-layers.ts), for this account; never which.
   const hostPage = hostLayerOf(extensionId, bound.ownerId) !== null;
-  return { name, state: 'bound', panel: { collapsed: shown.collapsed, inset: { ...CONVERSATION_SURFACE_PANEL_INSET }, hostPage } };
+  return { name, state: 'bound', layout: 'side-panel', panel: { collapsed: shown.collapsed, inset: { ...CONVERSATION_SURFACE_PANEL_INSET }, hostPage } };
 }
 
 /** The row an App declared above its conversation (`contributes.conversationSurface.header`, 46); none: it declared none. */
@@ -353,9 +353,9 @@ export async function setBindingSurfacePanel(
 ): Promise<AppBindingSurface> {
   const { name, collapsed } = argsOf(z.strictObject({ name: z.string(), collapsed: z.boolean() }), input);
   const surface = await appBindingSurface(extensionId, page, { name });
-  if (surface.state !== 'bound') return surface;
+  if (surface.state !== 'bound' || surface.layout !== 'side-panel') return surface;
   if (surface.panel.collapsed !== collapsed) await ask(collapsed);
-  return { name, state: 'bound', panel: { ...surface.panel, collapsed } };
+  return { name, state: 'bound', layout: 'side-panel', panel: { ...surface.panel, collapsed } };
 }
 
 /**
@@ -375,7 +375,7 @@ export async function tellSurfaceIntent(
   for (const page of pages) {
     if (!page.person) continue;
     const surface = await appBindingSurface(extensionId, page, { name }).catch(() => null);
-    if (surface?.state !== 'bound') continue;
+    if (surface?.state !== 'bound' || surface.layout !== 'side-panel') continue;
     if (surface.panel.collapsed || surface.panel.hostPage) await page.uncover();
     if (page.tell({ ...surface, panel: { ...surface.panel, collapsed: false, hostPage: false }, intent })) told = true;
   }

@@ -898,7 +898,7 @@ streaming, voice, attachments, read state) as the main column; your main page is
 API 42 to 46, when that conversation is the person's private one with their own agent or assistant (its resources,
 schedules, the work it handed out): \`guide_read apps-bindings-agent\`; the assistant itself (\`gugu.assistant\`, 44) and
 \`toast\`: \`guide_read apps-assistant\`; the host's top row over it, its voice-note recorder, your composer "+" entries
-(46 to 48): \`guide_read apps-bindings-assistant\`.
+(46 to 48): \`guide_read apps-bindings-assistant\`. On a phone (49): \`guide_read apps-bindings-phone\`.
 Managing its files and voice notes, and drafts carrying files (API 50): \`guide_read apps-bindings-manage\`.
 `;
 
@@ -1020,6 +1020,37 @@ heart, checklist, document, book, image, message. \`run\`, each needing that bin
   show that view.
 The host's recording bar sits above that composer while a note for this assistant records (whoever started it); when the
 person opens the note it shows, your page hears \`intent: { kind: "voice-note" }\` (read it through \`voice-notes\`).
+`;
+
+export const EXTENSION_GUIDE_BINDINGS_PHONE = `# gugu.bindings on a phone (API 49)
+
+List \`"phone"\` in \`platforms\` with the binding, at \`apiVersion\` 49 (earlier: refused). A phone has no picker: it binds only gugu's own
+assistant App (\`gugu-assistant\`, from the market) to the account's private chat with its own assistant; any other App's binding is
+\`unbound\` there. Calls answer as on a computer — files, draft, resources, schedules, \`gugu.assistant\`, work, \`toast\` — as the
+person signed in on that phone, checked again after every wait.
+
+- Layout: \`gugu.bindings.surface("main")\` is \`{ state: "bound", layout: "side-panel", panel }\` on a computer and
+  \`{ state: "bound", layout: "phone", section, hostPage }\` on a phone. There gugu draws the layer, its header and its tabs: \`聊天\` is
+  the conversation (gugu's; you never see it), and your main page fills the others, full screen inside the safe areas. \`section\` is
+  \`today\`, \`tasks\`, \`memory\` or \`profile\` (behind the assistant's face): draw that section's phone layout, with no tab row and
+  no header of your own. \`hostPage\`: one of the phone's own screens covers your page now. \`gugu.bindings.onSurface(fn)\` hears
+  each move; \`gugu.bindings.setPanel("main", { section })\` moves the layer; \`gugu.navigation.onBack(fn)\` holds Back for your steps.
+- \`{ state: "unsupported" }\` — closed, not an error, the same if asked again: hide that control on a phone. It answers
+  \`gugu.bindings.setPanel("main", { collapsed })\`, \`gugu.assistant.open("main", "move")\` (a phone is never its home), \`advanceSetup\`,
+  \`gugu.assistant.figure\` (the layer's header draws the face) and every \`gugu.voiceNote.*\` (聊天 records with the phone's own
+  recorder). Composer entries (\`composerActions\`) and \`unreadSource\` draw nothing there.
+- \`gugu.assistant.open\` opens the phone's own screens: \`setup\` and \`settings\` its settings page, \`look\` its 换形象 page,
+  \`model\`, \`devices\`, \`connected-apps\`, \`projects\`, \`capabilities\` theirs under 资料, \`health\` its 健康 page under 记忆,
+  \`close\` the one confirmation. \`gugu.assistant.rename\` works as on a computer. \`gugu.bindings.openWork\` draws the task's
+  conversation over 任务, with its own back. A \`{ binding }\` draft lands in 聊天 and the layer goes there.
+- Health: read on the phone and never handed to you. Draw a 健康 row or card with no figures; on a click,
+  \`gugu.assistant.open("main", "health")\`. A computer answers \`unsupported\`: hide it there.
+- Files: \`gugu.bindings.list\` / \`read\` (the chat's own folder, by path), the \`files\` / \`memory\` / \`voice-notes\` resources and
+  \`save\` / \`remove\` work. API 50's \`upload\`, \`createFolder\`, \`rename\`, \`removeFolder\`, \`transcribeVoiceNote\`,
+  \`removeVoiceNote\`, \`exportVoiceNote\` and a draft's \`attach\` answer \`unsupported\` on a phone (a draft with \`attach\` places
+  nothing): hide those controls there.
+- Schedules: the assistant always lives elsewhere seen from a phone; pause, resume and remove go through its panel (\`pending\`
+  until its home applies them); adding or retiming one is asked of the assistant (\`invalid\`).
 `;
 
 export const EXTENSION_GUIDE_BINDINGS_MANAGE = `# gugu.bindings — managing the agent's files and voice notes, drafts carrying files
@@ -1437,6 +1468,11 @@ export const EXTENSION_GUIDE_TOPICS: readonly { topic: string; about: string; te
     topic: 'apps-bindings-assistant',
     about: 'What the host draws for your App on the person\'s own assistant chat: its top row (header, 46), its voice-note recorder driven from your page (gugu.voiceNote, 47), your entries in that conversation\'s composer "+", run by the host (composerActions, 48); intents your page hears.',
     text: EXTENSION_GUIDE_BINDINGS_ASSISTANT,
+  },
+  {
+    topic: 'apps-bindings-phone',
+    about: 'The binding on a phone (API 49): who is bound there, the phone layout and the section your page fills, what answers unsupported, and the phone\'s own screens.',
+    text: EXTENSION_GUIDE_BINDINGS_PHONE,
   },
   {
     topic: 'apps-messages',

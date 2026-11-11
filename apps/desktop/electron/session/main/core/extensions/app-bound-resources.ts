@@ -1,13 +1,9 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
-import {
-  AssistantPanelError, assistantPanelCollection, createAssistantPanelClient, type AssistantPanelDomain, type AssistantPanelItem,
-  type AssistantPanelSnapshot,
-} from '@gugu/core/cloud/assistantPanel';
+import { AssistantPanelError, createAssistantPanelClient, type AssistantPanelDomain } from '@gugu/core/cloud/assistantPanel';
 import { readAssistantPanelBody, uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies';
 import { withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead';
-import { parseMemoryNote } from '@gugu/core/shared/assistantMemory';
 import { pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision';
 import { splitInstructions } from '@gugu/core/shared/assistantInstructions';
 import { DEFAULT_TEXT_MAX_BYTES } from '@shared/extensions/app-runtime-protocol';
@@ -17,6 +13,9 @@ import {
 } from '@shared/extensions/agent-resources';
 import type { ReadFailureReason, Unavailable } from '@shared/extensions/resources-management';
 import type { ConversationBindingAction } from '@shared/extensions/unread-binding';
+import { domainState, reasonOf, refusedOrUnavailable, savedData, unavailable, writeOutcome } from '@shared/extensions/bound-resources-core';
+// The rules both hosts answer by (bound-resources-core.ts); the names this module gave them stay importable from here.
+export { domainState, reasonOf, refusedOrUnavailable, savedData, unavailable };
 import { account, current, member } from './app-unread-bindings';
 import { extensionsService } from './extensions-root';
 import { addResourceWatch, stopResourceWatch } from './app-resource-watches';
@@ -33,14 +32,7 @@ import { addResourceWatch, stopResourceWatch } from './app-resource-watches';
 const denied = (message: string) => Object.assign(new Error(message), { code: 'denied' });
 const invalid = (message: string) => Object.assign(new Error(message), { code: 'invalid' });
 const failed = (message: string, reason: ReadFailureReason = 'unreadable') => Object.assign(new Error(message), { code: 'failed', reason });
-/** A read that could not be made now, and why (50): the class the assistant's own pages tell the person. */
-export const unavailable = (reason: ReadFailureReason): Unavailable => ({ state: 'unavailable', reason });
-export const reasonOf = (error: unknown): ReadFailureReason => {
-  const given = (error as { reason?: unknown } | null)?.reason;
-  return typeof given === 'string' ? given as ReadFailureReason : 'unreadable';
-};
 const codeOf = (error: unknown) => (error as { code?: unknown } | null)?.code;
-const statusOf = (error: unknown) => (error as { status?: unknown } | null)?.status;
 function argsOf<T extends z.ZodType>(schema: T, input: unknown): z.infer<T> {
   const parsed = schema.safeParse(input);
   if (!parsed.success) throw invalid(`gugu.bindings takes the binding's name, a resource domain and key, never an owner, agent, chat or path (${parsed.error.issues.map((issue) => issue.path.join('.') || issue.message).join(', ')})`);
@@ -134,24 +126,6 @@ export function storeOf(ownerId: string) {
   }, () => ownerId);
 }
 
-/**
- * A refusal of the account, by the store or the token, is a refusal; anything else a read could not make now is
- * `unavailable`, with the class the assistant's pages say it as (assistant-panel-errors.ts): out of time, past the store's
- * answer budget, or not read.
- */
-export function refusedOrUnavailable(error: unknown): Unavailable {
-  const code = codeOf(error);
-  if (code === 'denied' || code === 'invalid') throw error;
-  if (code === 'account-changed' || code === 'signed-out' || code === '42501' || statusOf(error) === 401 || statusOf(error) === 403) {
-    throw denied('This account may not read this agent\'s resources');
-  }
-  if (code === 'read-timeout') return unavailable('timed-out');
-  if (code === '54000') return unavailable('too-large');
-  if (code === 'stale') return unavailable('stale');
-  if (code === 'application-failed') return unavailable('not-applied');
-  return unavailable(code === 'failed' ? reasonOf(error) : 'unreadable');
-}
-
 /** Runs `use` under the binding's authority; `unbound` or `unavailable` (checked again first) said apart from a refusal. */
 async function withBound<T>(extensionId: string, name: string, domain: string, use: (bound: Bound) => Promise<T>): Promise<T | 'unbound' | Unavailable> {
   const bound = await boundAgent(extensionId, name, ['resources'], domain).catch((error: unknown) => {
@@ -176,23 +150,6 @@ function readableDomainOf(value: unknown): ReadableResourceDomain {
   const domain = resourceDomainOf(value);
   if (!(READABLE_RESOURCE_DOMAINS as readonly string[]).includes(domain)) throw denied(`The ${domain} resources are never granted to an App`);
   return domain as ReadableResourceDomain;
-}
-
-/**
- * Whether `domain` can be read now, exactly as the assistant's own pages decide it (assistantPanelFiles `collection`, which
- * their lists and reads go through, and whose error the page shows instead of the domain): a change in it that failed to
- * apply, or an out-of-date observation, makes the whole domain unreadable — not just that one resource; so does a failed
- * publication. No marker is not yet published, never an empty domain (a voice-note list published in part excepted).
- */
-export function domainState(snapshot: AssistantPanelSnapshot, domain: ReadableResourceDomain): Unavailable | { state: 'unprepared' } | { state: 'ready'; items: AssistantPanelItem[] } {
-  const collection = assistantPanelCollection(snapshot, domain as AssistantPanelDomain);
-  // In the order the pages check them (`collection`): a change that failed to apply, an observation out of date, then
-  // a publication that failed.
-  if (snapshot.application.some((row) => row.domain === domain && row.status === 'failed')) return unavailable('not-applied');
-  if (collection.items.some((item) => item.stale_at)) return unavailable('stale');
-  if (collection.state === 'error') return unavailable('unreadable');
-  if (collection.state === 'unprepared' && !(domain === 'voice-notes' && collection.items.length > 0)) return { state: 'unprepared' };
-  return { state: 'ready', items: collection.items };
 }
 
 /** `gugu.bindings.resources(name, domain)` (42, `chat:resources`): one domain of the agent's resources, whole. */
@@ -260,35 +217,6 @@ export async function appResourceRead(extensionId: string, input: unknown): Prom
 }
 
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
-
-/**
- * What a save stores of `domain`, as the assistant's own pages store it for a text written there (assistantPanelFiles
- * `write`, `writeText`'s `text/plain`): the same fields, so the assistant's pages and the agent read an App's change as
- * their own. A resource keeps its path; a new one's path is its key.
- */
-export function savedData(domain: 'memory' | 'files' | 'skills', key: string, existing: AssistantPanelItem | null, text: string, modifiedAt: string): Record<string, unknown> {
-  const live = existing && !existing.deleted_at ? existing : null;
-  if (domain === 'memory') {
-    const relative = typeof live?.data.relativePath === 'string' ? live.data.relativePath : key;
-    const note = parseMemoryNote(relative.split('/').pop()!, text);
-    return { relativePath: relative, title: note.title, modifiedAt, kind: relative === 'owner-profile.md' ? 'user' : note.kind };
-  }
-  if (domain === 'files') {
-    const path = typeof live?.data.path === 'string' ? live.data.path : key;
-    return { name: path.split('/').pop()!, path, kind: 'file', contentType: 'text/plain', sizeBytes: new TextEncoder().encode(text).byteLength, modifiedAt };
-  }
-  return { name: key, modifiedAt };
-}
-
-/** A change the store refused, said as the App hears it; a refusal of the request itself is thrown. */
-function writeOutcome(error: unknown): { state: 'conflict' | 'deleted' } | Unavailable {
-  const code = codeOf(error);
-  if (code === 'PT409' || code === '40001') return { state: 'conflict' };
-  if (code === '55000') return { state: 'deleted' };
-  if (code === '23505') throw invalid('This operationId was already used for a different change');
-  if (code === '22023' || code === '54000') throw invalid('The resource store does not take this change as it is');
-  return refusedOrUnavailable(error);
-}
 
 /** Removes a body this call uploaded that no change took. The store refuses removing one a change refers to. */
 export async function discard(bound: Bound, itemId: string): Promise<void> {

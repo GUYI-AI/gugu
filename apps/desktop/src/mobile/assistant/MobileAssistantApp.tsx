@@ -29,6 +29,15 @@ import { useChatStore } from '@/store/chatContext'
 import { ChatLineScope } from '@/store/chatLineScope'
 import { useAssistantPanelPage } from '@/lib/assistantPanelPage'
 import { PhoneHomeContext } from './phoneHome'
+import { PhoneAppFrame } from '@/components/appSlot/PhoneAppFrame'
+import { phoneAssistantLayer } from '@/components/appSlot/phoneAssistantLayer'
+import { requestAssistantClose } from '@/lib/assistantClose'
+import type { AssistantLayerEntry } from '@/session/shared/extensions/assistant-entry'
+import type { PhoneAssistantScreen, PhoneSurfaceSection } from '@/session/shared/extensions/phone-binding'
+import { PHONE_ASSISTANT_LAYER_TAB, usePhoneAssistantEntry } from './phoneAssistantEntry'
+import { PhoneAssistantWorkLedger } from './PhoneAssistantWorkLedger'
+import { phoneWorkChats } from './phoneWorkChats'
+import { useContactsStore } from '@/store/contactsContext'
 import { PhoneIdeas } from './PhoneIdeas'
 import { PhoneMemory } from './PhoneMemory'
 import { PhoneProfile } from './PhoneProfile'
@@ -131,12 +140,24 @@ function MobileAssistantAppContent({
     setRoute(next)
   }, [route])
   const tab = route.tab
+  // API 49 The assistant's place (assistant-entry.ts): the product's assistant App fills every section but the conversation;
+  // without it (or with one not trusted) the built-in pages, exactly as before.
+  const entry = usePhoneAssistantEntry()
+  const app = entry.entry === 'app' ? entry : null
   const opened = useOpenedAssistantTaskChat()
   useEffect(() => {
     if (opened?.request.assistantId === assistant.id) setRoute({ tab: 'tasks' })
   }, [opened, assistant.id])
   const taskChat = tab === 'tasks' && opened?.request.assistantId === assistant.id
   const sub = route.sub ?? null
+  // The App's page shows the section the person is on; on 聊天 it stays where it was, hidden. A screen of the phone's own
+  // (`sub`, opened for it: settings, customize, devices…) is drawn over it, as the built-in drills down.
+  const appSection = useRef<PhoneSurfaceSection>('today')
+  if (tab !== 'chat') appSection.current = tab
+  const { user: signedIn } = useAuth()
+  const ownerId = signedIn?.id ?? null
+  const hostScreen = Boolean(app && sub)
+  useLayerForApp(app, ownerId, visible, appSection.current, hostScreen, open, assistant.id)
   const pageBody = useRef<HTMLElement | null>(null)
   const pageScroll = useRef(new Map<string, number>())
   const pageKey = `${tab}:${sub ?? ''}`
@@ -267,7 +288,15 @@ function MobileAssistantAppContent({
         }}
       />
       {ideasOpen ? <PhoneIdeas assistant={assistant} chatId={chatId} askInChat={askInChat} onClose={() => setIdeasOpen(false)} /> : null}
-      {tab === 'chat' ? null : (
+      {app ? (
+        <div className="ta-phone-app" data-testid="mobile-assistant-app-page" hidden={tab === 'chat' || taskChat || hostScreen}
+          style={{ display: tab === 'chat' || taskChat || hostScreen ? 'none' : 'flex', flex: 1, minHeight: 0, flexDirection: 'column', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          <PhoneAppFrame kind={app.tabKind} tabId={PHONE_ASSISTANT_LAYER_TAB} chatId={null} hidden={tab === 'chat' || taskChat || hostScreen}
+            onOpenWith={() => undefined} testId="mobile-assistant-app-frame" missingTestId="mobile-assistant-app-missing" />
+        </div>
+      ) : null}
+      {app ? <PhoneAssistantWorkLedger ownerId={ownerId} assistantId={assistant.id} /> : null}
+      {tab === 'chat' || (app && !hostScreen) ? null : (
         <main id={`assistant-${assistant.id}-${tab}`} role="tabpanel" aria-label={labels[tab]} className="ta-phone-body" ref={pageBody} onScroll={(event) => pageScroll.current.set(pageKey, event.currentTarget.scrollTop)} data-testid={`mobile-assistant-${tab}`} hidden={taskChat}>
           {tab === 'today' ? <PhoneToday {...page} /> : null}
           {tab === 'tasks' ? <PhoneTasks {...page} /> : null}
@@ -279,6 +308,41 @@ function MobileAssistantAppContent({
     </div>
     </PhoneHomeContext.Provider>
   )
+}
+
+/**
+ * While the layer is up with the App's page in it: the binding host hears which section the page fills (null when the layer
+ * is not on screen), and the layer does what the page asks — move to a section, open one of the phone's own screens for the
+ * assistant (PHONE_ASSISTANT_SCREENS), draw a task's conversation over 任务.
+ */
+function useLayerForApp(app: Extract<AssistantLayerEntry, { entry: 'app' }> | null, ownerId: string | null, visible: boolean,
+  section: PhoneSurfaceSection, hostPage: boolean, open: (route: PhoneRoute) => void, assistantId: string) {
+  const extensionId = app?.extensionId ?? null
+  useEffect(() => {
+    phoneAssistantLayer.report(extensionId && ownerId && visible ? { ownerId, extensionId, tabId: PHONE_ASSISTANT_LAYER_TAB, section, hostPage } : null)
+  }, [extensionId, ownerId, visible, section, hostPage])
+  useEffect(() => () => phoneAssistantLayer.report(null), [])
+  const openRef = useRef(open)
+  openRef.current = open
+  const { updateAgentProfile } = useContactsStore()
+  const renameRef = useRef(updateAgentProfile)
+  renameRef.current = updateAgentProfile
+  useEffect(() => {
+    if (!extensionId) return undefined
+    return phoneAssistantLayer.provide({
+      rename: async (agentId, name) => {
+        if (agentId !== assistantId) throw Object.assign(new Error('Not this layer\'s assistant'), { code: 'denied' })
+        await renameRef.current(agentId, { name })
+      },
+      move: (next) => { showAssistantTaskChat(null); openRef.current({ tab: next }) },
+      open: (screen: PhoneAssistantScreen) => {
+        if ('confirm' in screen) requestAssistantClose()
+        else if ('connectors' in screen) openRef.current({ tab: 'profile', sub: 'connectors' })
+        else openRef.current({ tab: screen.section, sub: screen.page })
+      },
+      openWork: (work) => { phoneWorkChats.open(assistantId, work) },
+    })
+  }, [extensionId, assistantId])
 }
 
 export function MobileAssistantApp(props: Parameters<typeof MobileAssistantAppContent>[0]) {

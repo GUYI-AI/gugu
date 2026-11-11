@@ -84,15 +84,18 @@ export type AppSurfaceIntent = { kind: 'profile' } | { kind: 'voice-note' } | { 
 export const APP_SURFACE_INTENTS = ['profile'] as const;
 
 /**
- * `gugu.bindings.surface(name)` (41, `chat:surface`): whether the bound conversation is drawn beside this page now, whether
- * this page's panel is collapsed, and the corner of the page the host's control covers (`panel.inset`). `unbound` says only
- * that it is not: no chosen conversation, the grant withdrawn, the account switched or out of it, or the page shown
- * elsewhere. Never the chat, its messages or its people. 46: `panel.hostPage` — a page of the host's own is drawn over the
- * App's page in its panel now (a task's conversation, the assistant's settings: `app-host-layer.ts`), never which or what it
- * shows; `intent`, in an `onSurface` event only (`AppSurfaceIntent`).
+ * `gugu.bindings.surface(name)` (41, `chat:surface`): whether the bound conversation is drawn beside this page now, and in
+ * which layout (49): `side-panel` on a computer — whether this page's panel is collapsed, and the corner of the page the
+ * host's control covers (`panel.inset`); `phone` on a phone — the conversation is the layer's first section, the host's, and
+ * this page fills the section the person is on (`section`, phone-binding.ts), full screen, with no tab row of its own.
+ * `unbound` says only that it is not: no chosen conversation, the grant withdrawn, the account switched or out of it, or
+ * the page shown elsewhere. Never the chat, its messages or its people. 46: `hostPage` (`panel.hostPage` on a computer) — a
+ * page of the host's own is drawn over the App's page now (a task's conversation, the assistant's settings), never which or
+ * what it shows; `intent`, in an `onSurface` event only (`AppSurfaceIntent`).
  */
 export type AppBindingSurface = { name: string; state: 'unbound' }
-  | { name: string; state: 'bound'; panel: { collapsed: boolean; inset: { top: number; right: number }; hostPage: boolean }; intent?: AppSurfaceIntent };
+  | { name: string; state: 'bound'; layout: 'side-panel'; panel: { collapsed: boolean; inset: { top: number; right: number }; hostPage: boolean }; intent?: AppSurfaceIntent }
+  | { name: string; state: 'bound'; layout: 'phone'; section: import('./phone-binding').PhoneSurfaceSection; hostPage: boolean; intent?: AppSurfaceIntent };
 
 /** A stored target is host data and never part of the App's answer. */
 export const storedUnreadBindingSchema = z.strictObject({

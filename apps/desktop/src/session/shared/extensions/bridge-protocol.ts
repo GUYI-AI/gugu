@@ -134,7 +134,11 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // 48 (#1927): `contributes.conversationSurface.composerActions`: entries in that assistant chat's composer 「+」 the host draws
 // and runs on the person's click — a voice note, a draft, or a `page-intent` the page hears once on `bindings.onSurface`
 // (composer-actions.ts). No App code runs on that click.
-// 49: the phone gate (reserved here).
+// 49 (phone-binding.ts): the conversation binding on a phone. An App listing `phone` may declare it from 49; the phone binds
+// only the product's assistant App, to the account's private chat with its own assistant. `bindings.surface` says the
+// layout: `side-panel` (a computer, `panel`) or `phone` (`section`: the layer's section the page fills). What has no phone
+// meaning answers `{ state: "unsupported" }`: `setPanel` with `collapsed`, `assistant.open(…, "move")`, `advanceSetup`; and
+// `assistant.open(…, "health")` on a computer (the phone's own 健康 page; its data never reaches the App).
 // 50 (#1927): what the assistant's own 记忆 pages do that 42 could not (resources-management.ts): a closed `reason` on every
 // `unavailable`; 给助理的资料 `upload` (the host's picker) / `createFolder` / `rename` / `removeFolder` (asked first) under
 // `resources:write` listing `files`; `voice-notes:manage` (`chat:voice-notes:manage`): `transcribeVoiceNote`,
