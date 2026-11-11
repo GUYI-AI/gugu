@@ -38,6 +38,43 @@ function fixture(value = manifest()) {
   return { service, install };
 }
 
+describe('rename: its own action and capability, from API 44', () => {
+  const ALL = ['unread', 'assistant-status', 'assistant-open', 'assistant-rename'];
+
+  it('parses with assistant:rename; an older apiVersion, or the action and the capability apart, is refused', () => {
+    expect(() => parseExtensionManifest(manifest(ALL))).not.toThrow();
+    expect(() => parseExtensionManifest(manifest(['unread', 'assistant-rename']))).not.toThrow();
+    expect(() => parseExtensionManifest(manifest(['unread', 'assistant-rename'], undefined, 43))).toThrow(/"assistant-rename" action requires apiVersion 44/);
+    expect(() => parseExtensionManifest(manifest(['unread', 'assistant-rename'], ['chat:unread']))).toThrow(/assistant:rename requires/);
+    expect(() => parseExtensionManifest(manifest(['unread', 'assistant-open'], ['chat:unread', 'assistant:open', 'assistant:rename']))).toThrow(/assistant:rename requires/);
+  });
+
+  it('withdrawing assistant:rename stops rename at once and keeps the rest; a chooser drawn before must ask again', () => {
+    const { service } = fixture(manifest(ALL)); service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
+    expect(service.conversationBinding(OWNER, ID, 'main', 'assistant-rename')?.chatId).toBe(CHAT);
+    const authority = service.conversationUnreadAuthority(OWNER, ID, 'main');
+    service.setPermissionGranted(ID, 'assistant:rename', false);
+    expect(() => service.conversationBinding(OWNER, ID, 'main', 'assistant-rename')).toThrow(expect.objectContaining({ code: 'denied' }));
+    expect(service.conversationBinding(OWNER, ID, 'main', 'assistant-open')?.chatId).toBe(CHAT);
+    expect(service.conversationUnreadAuthority(OWNER, ID, 'main')).not.toBe(authority);
+  });
+
+  it('at the shared door: rename needs assistant:rename and a gesture; toast needs neither, only a page', () => {
+    const { service } = fixture(manifest(ALL));
+    const has = (word: Parameters<ExtensionsService['hasCapability']>[1]) => service.hasCapability(ID, word);
+    const page = (gesture = true) => ({ kind: 'page' as const, gesture, widget: false, has });
+    expect(callRefusal('assistantRename', { name: 'main', text: 'Pip' }, page())).toBeNull();
+    expect(callRefusal('assistantRename', { name: 'main', text: 'Pip' }, page(false))?.code).toBe('denied');
+    expect(callRefusal('toast', { text: 'Saved' }, page(false))).toBeNull();
+    for (const kind of ['background', 'program'] as const) {
+      expect(callRefusal('assistantRename', { name: 'main', text: 'Pip' }, { kind, has })?.code).toBe('invalid');
+      expect(callRefusal('toast', { text: 'Saved' }, { kind, has })?.code).toBe('invalid');
+    }
+    service.setPermissionGranted(ID, 'assistant:rename', false);
+    expect(callRefusal('assistantRename', { name: 'main', text: 'Pip' }, page())?.code).toBe('denied');
+  });
+});
+
 describe('the manifest: assistant actions on the conversation binding, from API 44', () => {
   it('parses at 44 with each action and its capability; an older apiVersion, a mismatch or no binding is refused', () => {
     expect(EXTENSION_API_VERSION).toBeGreaterThanOrEqual(44);

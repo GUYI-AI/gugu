@@ -358,12 +358,14 @@ export function createGugu(
   // `gugu.assistant` (44, `assistant:status` / `assistant:open`): the bound conversation's assistant, by the binding's name.
   // `open` and `advanceSetup` are called straight through: the preload reads the person's gesture on this very call.
   if (raw.assistant) {
-    const { status, open, advanceSetup } = raw.assistant;
+    const { status, open, advanceSetup, rename, figure } = raw.assistant;
     const onAssistantChanged = raw.onAssistantChanged;
     api.assistant = Object.freeze({
       status: coded(status),
       open: coded(open),
       advanceSetup: coded(advanceSetup),
+      rename: coded(rename),
+      figure: coded(figure),
       ...(onAssistantChanged ? {
         onChanged: (handler: unknown): (() => void) => {
           if (typeof handler !== 'function') throw guguError('invalid', 'gugu.assistant.onChanged takes a function');
