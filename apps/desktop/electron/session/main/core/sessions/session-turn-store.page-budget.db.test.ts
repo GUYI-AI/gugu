@@ -80,6 +80,22 @@ describe('stored history page budget', () => {
     expect(page.turns.at(-1)!.seq).toBe(119);
   });
 
+  it('sends only the opening of tool output to a device-link reader whose view does not show it, and to no one else', async () => {
+    const output = 'o'.repeat(6_000);
+    for (let i = 0; i < 3; i += 1) {
+      await persistCommittedTurn({ sessionId: 'c1', source: 'live', turn: { ...turn(i, 10),
+        items: [{ kind: 'execute-tool-call', id: `c1:turn:${i}:e`, seq: 0, toolCallId: `e${i}`, title: 'run', status: 'done', outputText: output }] } as TranscriptTurn });
+    }
+    const outputs = (page: { turns: TranscriptTurn[] }) => page.turns.map(one => (one.items[0] as { outputText?: string }).outputText!.length);
+    const lean = await getStoredHistory({ sessionId: 'c1', limit: 100, lean: true });
+    expect(lean.turns.map(one => one.seq)).toEqual([0, 1, 2]);
+    expect(Math.max(...outputs(lean))).toBeLessThan(output.length / 10);
+    // A reader that did not ask (an older build, a view that shows output) gets it as before.
+    expect(outputs(await getStoredHistory({ sessionId: 'c1', limit: 100 }))).toEqual([6_000, 6_000, 6_000]);
+    // A window on this machine reads its own database: it is never sent less, whatever it asks.
+    expect(outputs(await getStoredHistory({ sessionId: 'c1', limit: 100, lean: true }, { local: true }))).toEqual([6_000, 6_000, 6_000]);
+  });
+
   it('gives a window on this machine the larger page', async () => {
     await store(60);
     expect(60 * TURN_BYTES).toBeLessThan(LOCAL_PAYLOAD_BUDGET);

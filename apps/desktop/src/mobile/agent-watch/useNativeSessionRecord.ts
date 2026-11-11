@@ -65,7 +65,7 @@ export function useNativeSessionRecord(deviceId: string, sessionId: string, enab
         : tail ? { tail: true } : (mode === 'newer' || previous?.hasNewer) && last !== undefined ? { after: last }
         : last !== undefined ? { after: Math.max(-1, last - 29) } : {}
       const page = await recoverTimelineRead(async () => {
-        const result = await machineRpc(deviceId, local).sessionTimeline.sessionNativeRecord({ conversationId: sessionId, ...input })
+        const result = await machineRpc(deviceId, local).sessionTimeline.sessionNativeRecord({ conversationId: sessionId, ...input, lean: true })
         if (!result.ok) throw Object.assign(new Error(result.error.message), { code: result.error.code })
         return result.value
       }, signal, () => { if (epoch.current === ownEpoch) setConfirmed(null) })

@@ -330,6 +330,12 @@ export async function getStoredHistory(params: {
   /** 给了就改成「seq ≥ fromSeq 的全部行」,供界面开场补读用;与 before/limit 互斥。 */
   fromSeq?: number;
   ownerNotificationsOnly?: boolean;
+  /**
+   * The reader's view shows no tool output (the conversation view), so output and terminal captures may arrive as
+   * their opening only (transport-trim `unshown-output`). Honoured over a device link; a window on this machine pays
+   * nothing for the whole turn and gets it.
+   */
+  lean?: boolean;
 }, reader: { local?: boolean; older?: boolean } = {}): Promise<StoredTurnPage> {
   // @@@page-budget-by-reader — a window on this machine reads its own database over the process channel; every
   // other reader (another machine, a phone) is paying for a shared device link. Same paging, three page sizes:
@@ -337,6 +343,7 @@ export async function getStoredHistory(params: {
   // going back is larger. `older` says which it is when `before` alone does not (a phone opens at its unread line).
   const older = reader.older ?? params.before !== undefined;
   const budget = reader.local ? LOCAL_PAYLOAD_BUDGET : older ? REMOTE_OLDER_PAGE_BUDGET : TRANSPORT_PAYLOAD_BUDGET;
+  const lean = params.lean === true && !reader.local && params.fromSeq === undefined;
   for (;;) {
     const epoch = ownerNotificationEpoch(params.sessionId);
     const page = await readStoredTurns(params.sessionId, {
@@ -345,12 +352,13 @@ export async function getStoredHistory(params: {
       fromSeq: params.fromSeq,
       ownerNotificationsOnly: params.ownerNotificationsOnly,
       budget,
+      lean,
     });
     // A revert can reuse every sequence in the page. Its rows and generation must describe the same snapshot.
     if (epoch !== ownerNotificationEpoch(params.sessionId)) continue;
     const snapshot = { ...page, nativeOwnerNotificationEpoch: epoch };
     return params.fromSeq === undefined
-      ? trimCursorPageForTransport(snapshot, TRANSPORT_TEXT_LIMIT, budget)
+      ? trimCursorPageForTransport(snapshot, TRANSPORT_TEXT_LIMIT, budget, lean)
       : { ...snapshot, turns: trimTurnsForTransport(page.turns) };
   }
 }
@@ -412,7 +420,7 @@ export interface StoredTurnPage {
  */
 export async function readStoredTurns(
   sessionId: string,
-  options: { before?: number; limit?: number; fromSeq?: number; ownerNotificationsOnly?: boolean; budget?: number } = {}
+  options: { before?: number; limit?: number; fromSeq?: number; ownerNotificationsOnly?: boolean; budget?: number; lean?: boolean } = {}
 ): Promise<StoredTurnPage> {
   if (options.fromSeq !== undefined) {
     // 「开场那一页之后新落库的行」—— 开场时补读一次用(acp-chat-store `_reloadStoredTail`)。❌ 不分页:这一段只是
@@ -458,7 +466,7 @@ export async function readStoredTurns(
     for (const row of step) {
       const turn = JSON.parse(row.data) as TranscriptTurn;
       rows.push({ ...row, turn });
-      if (options.budget !== undefined) bytes += transportSizeOf(turn) + 1;
+      if (options.budget !== undefined) bytes += transportSizeOf(turn, TRANSPORT_TEXT_LIMIT, options.lean) + 1;
     }
     if (step.length < want) { exhausted = true; break; }
     before = step.at(-1)!.seq;
@@ -467,7 +475,7 @@ export async function readStoredTurns(
 
   const readable = await readableParsedRows(sessionId, rows.slice().reverse());
   if (!readable.length && !exhausted && rows.length) {
-    return readStoredTurns(sessionId, { before: rows.at(-1)!.seq, limit, budget: options.budget });
+    return readStoredTurns(sessionId, { before: rows.at(-1)!.seq, limit, budget: options.budget, lean: options.lean });
   }
 
   return {

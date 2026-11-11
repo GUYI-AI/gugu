@@ -1,7 +1,8 @@
 import type { TerminalState, ToolImage, ToolImageRef, ToolNode, TranscriptItem, TranscriptTurn } from '../acp/client';
 import { messageContentText } from '../acp/models/entity-content';
 import { isGuguServer } from '../acp/models/turns/opened-outputs';
-import { catalogCall } from '../acp/models/turns/tool-calls';
+import { catalogCall, toolCallName } from '../acp/models/turns/tool-calls';
+import { isQuestionOrPlanToolName } from './sources/question-tools';
 import type {
   TimelineAfterResult,
   TimelineBatch,
@@ -39,15 +40,41 @@ function imageRefsOf(images: readonly ToolImage[]): ToolImageRef[] {
 
 const TRANSPORTED_BLOCKS = new Set(['diff', 'terminal']);
 
+/**
+ * @@@unshown-output — what a reader whose view shows no tool output gets of it: the opening. The conversation view
+ * (the session page on a desktop and on a phone) draws a call as one line, what was done and with what; its output
+ * and the terminal capture beside it appear nowhere. On a real 3055-turn conversation they are 14MB of the 50MB a
+ * remote reader pages through. Such a reader asks for `lean` pages. A view that does show output (the full tool
+ * rows) must not ask: it would show the opening with its "N characters omitted" note and have no way to the rest.
+ */
+export const HELD_PREVIEW_CHARS = 300;
+const HELD_FIELDS: ReadonlySet<string> = new Set(['outputText', 'rawOutput']);
+/** Gugu's own calls whose answer the conversation view reads: a send's receipt, what a tab opened, and a wrapped call. */
+const READ_WHEN_FOLDED = /(?:^|__)(?:message_send|message_send_file|message_send_as_owner|widget_send|session_message|session_open_in_tab|catalog_call)$/;
+
+/**
+ * Whether the conversation view does without a call's output. Not when it reads or shows it: a call that did not
+ * succeed (the output is its reason), a patch, a plan, a sub-agent's dispatch and its completion (the roster reads
+ * them), a question put to the reader or a plan to approve (a card with its answer), and the Gugu calls above.
+ */
+function outputUnshown(node: ToolNode): boolean {
+  if (node.kind === 'tool-group' || node.status !== 'done') return false;
+  if (node.kind === 'patch-tool-call' || node.kind === 'create-plan-tool-call'
+    || node.kind === 'spawn-subagent-tool-call' || node.kind === 'subagent-done-tool-call') return false;
+  if (isQuestionOrPlanToolName(toolCallName(node))) return false;
+  return !(node.kind === 'mcp-tool-call' && isGuguServer(node.server) && READ_WHEN_FOLDED.test(node.tool));
+}
+
 function isToolNode(item: TranscriptItem): item is ToolNode {
   return item.kind !== 'message' && item.kind !== 'thinking';
 }
 
 /** @returns 裁过的那一份，或者原对象（一个字都没超时）。 */
-function trimToolNode(node: ToolNode, limit: number): ToolNode {
+function trimToolNode(node: ToolNode, limit: number, lean = false): ToolNode {
   const source = node as unknown as Record<string, unknown>;
   let dropped = 0;
   let patch: Record<string, unknown> | null = null;
+  const held = lean && outputUnshown(node);
 
   for (const field of TRIMMED_FIELDS) {
     // A successful root send contains the conversation's message, just like a message item (a widget's data included).
@@ -57,10 +84,11 @@ function trimToolNode(node: ToolNode, limit: number): ToolNode {
       && (node.tool === 'message_send' || node.tool === 'session_message' || node.tool === 'widget_send'
         || catalogCall(node.tool, node.rawInput)?.tool === 'widget_send')) continue;
     const value = source[field];
-    if (typeof value !== 'string' || value.length <= limit) continue;
+    const fits = held && HELD_FIELDS.has(field) ? Math.min(limit, HELD_PREVIEW_CHARS) : limit;
+    if (typeof value !== 'string' || value.length <= fits) continue;
     patch ??= {};
-    patch[field] = value.slice(0, limit);
-    dropped += value.length - limit;
+    patch[field] = value.slice(0, fits);
+    dropped += value.length - fits;
   }
 
   const images = node.kind === 'tool-group' ? undefined : node.images;
@@ -79,7 +107,7 @@ function trimToolNode(node: ToolNode, limit: number): ToolNode {
 
   // 工具组与嵌套调用都往下走：大输出常常挂在子调用上（一个 Bash 组里的某一条）。
   const children = node.children;
-  const trimmedChildren = children ? trimToolNodes(children, limit) : children;
+  const trimmedChildren = children ? trimToolNodes(children, limit, lean) : children;
   if (trimmedChildren !== children) {
     patch ??= {};
     patch.children = trimmedChildren;
@@ -92,10 +120,10 @@ function trimToolNode(node: ToolNode, limit: number): ToolNode {
   return next as unknown as ToolNode;
 }
 
-function trimToolNodes(nodes: readonly ToolNode[], limit: number): ToolNode[] {
+function trimToolNodes(nodes: readonly ToolNode[], limit: number, lean = false): ToolNode[] {
   let changed = false;
   const next = nodes.map((node) => {
-    const trimmed = trimToolNode(node, limit);
+    const trimmed = trimToolNode(node, limit, lean);
     if (trimmed !== node) changed = true;
     return trimmed;
   });
@@ -105,11 +133,12 @@ function trimToolNodes(nodes: readonly ToolNode[], limit: number): ToolNode[] {
 export function trimItemsForTransport(
   items: readonly TranscriptItem[],
   limit = TRANSPORT_TEXT_LIMIT,
+  lean = false,
 ): TranscriptItem[] {
   let changed = false;
   const next = items.map((item) => {
     if (!isToolNode(item)) return item;
-    const trimmed = trimToolNode(item, limit);
+    const trimmed = trimToolNode(item, limit, lean);
     if (trimmed !== item) changed = true;
     return trimmed as TranscriptItem;
   });
@@ -135,9 +164,20 @@ function withoutEchoedContent(item: TranscriptItem): TranscriptItem {
   return rest as TranscriptItem;
 }
 
-/** What a page of turns sends: the field trim, and each message's text once. */
-function projectTurnsForPage(turns: readonly TranscriptTurn[], limit: number): TranscriptTurn[] {
-  const trimmed = trimTurnsForTransport(turns, limit);
+/** A turn as a lean page carries it, or the turn itself when it holds nothing the view does without. */
+function leanTurn(turn: TranscriptTurn, limit: number): TranscriptTurn {
+  const preview = Math.min(limit, HELD_PREVIEW_CHARS);
+  const items = trimItemsForTransport(turn.items, limit, true);
+  const long = turn.terminals?.some(terminal => terminal.output.length > preview) === true;
+  if (!long) return items === turn.items ? turn : { ...turn, items };
+  return { ...turn, items, terminals: turn.terminals!.map(terminal => terminal.output.length > preview
+    ? { ...terminal, output: terminal.output.slice(0, preview), truncated: true } : terminal) };
+}
+
+/** What a page of turns sends: the field trim, each message's text once, and for a lean reader only the opening of output its view does not show. */
+function projectTurnsForPage(turns: readonly TranscriptTurn[], limit: number, lean = false): TranscriptTurn[] {
+  const held = lean ? turns.map(turn => leanTurn(turn, limit)) : null;
+  const trimmed = !held ? trimTurnsForTransport(turns, limit) : held.some((turn, index) => turn !== turns[index]) ? held : turns;
   let changed = false;
   const next = trimmed.map((turn) => {
     let slimmed = false;
@@ -150,7 +190,7 @@ function projectTurnsForPage(turns: readonly TranscriptTurn[], limit: number): T
     changed = true;
     return { ...turn, items };
   });
-  return changed ? next : trimmed;
+  return changed ? next : (trimmed as TranscriptTurn[]);
 }
 
 export function trimTurnsForTransport(
@@ -210,8 +250,8 @@ export const LOCAL_PAYLOAD_BUDGET = 2 * 1024 * 1024;
 export const REMOTE_OLDER_PAGE_BUDGET = 512 * 1024;
 
 /** 一轮裁完以后在这一包里占多少字节 —— 读库的一侧据此在装满时停手，❌ 先读满 100 行再丢。 */
-export function transportSizeOf(turn: TranscriptTurn, limit = TRANSPORT_TEXT_LIMIT): number {
-  return new TextEncoder().encode(JSON.stringify(projectTurnsForPage([turn], limit)[0])).byteLength;
+export function transportSizeOf(turn: TranscriptTurn, limit = TRANSPORT_TEXT_LIMIT, lean = false): number {
+  return new TextEncoder().encode(JSON.stringify(projectTurnsForPage([turn], limit, lean)[0])).byteLength;
 }
 
 /**
@@ -251,8 +291,9 @@ function trimTurnPageForTransport<T extends { turns: TranscriptTurn[]; hasOlder:
   page: T,
   limit: number,
   budget: number,
+  lean = false,
 ): T {
-  const trimmed = projectTurnsForPage(page.turns, limit);
+  const trimmed = projectTurnsForPage(page.turns, limit, lean);
   const fitted = fitTurnsToBudget(trimmed, budget);
   if (trimmed === page.turns && !fitted.dropped) return page;
   return { ...page, turns: fitted.turns as TranscriptTurn[], hasOlder: page.hasOlder || fitted.dropped };
@@ -267,9 +308,10 @@ export function trimCursorPageForTransport<T extends {
   page: T,
   limit = TRANSPORT_TEXT_LIMIT,
   budget = TRANSPORT_PAYLOAD_BUDGET,
+  lean = false,
 ): T {
   const trimmed = trimTurnPageForTransport(
-    { turns: page.turns, hasOlder: page.nextCursor !== null }, limit, budget,
+    { turns: page.turns, hasOlder: page.nextCursor !== null }, limit, budget, lean,
   );
   if (trimmed.turns === page.turns) return page;
   const skipped = page.turns.length - trimmed.turns.length;

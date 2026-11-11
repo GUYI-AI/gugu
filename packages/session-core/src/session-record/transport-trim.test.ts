@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { ToolNode, TranscriptItem, TranscriptTurn } from '../acp/client';
 import type { TimelineSnapshot, TurnPatch } from './contract';
 import {
+  HELD_PREVIEW_CHARS,
   REMOTE_OLDER_PAGE_BUDGET,
   TRANSPORT_PAYLOAD_BUDGET,
   TRANSPORT_TEXT_LIMIT,
@@ -12,7 +13,8 @@ import {
   trimCursorPageForTransport,
   trimOlderForTransport,
   trimSnapshotForTransport,
-  trimTurnsForTransport
+  trimTurnsForTransport,
+  transportSizeOf
 } from './transport-trim';
 
 const LIMIT = 16;
@@ -380,5 +382,63 @@ describe('a page sends each message\'s text once', () => {
     const page = trimCursorPageForTransport({ turns, nextCursor: null }, TRANSPORT_TEXT_LIMIT, 256 * 1024);
     expect(page.turns).toHaveLength(4);
     expect(page.nextCursor).toBeNull();
+  });
+});
+
+// The conversation view draws a call as one line and shows its output nowhere; a reader with that view asks for lean
+// pages. Held here: what such a page leaves out, and what it never does (the view reads or shows it).
+describe('a lean page leaves out output the conversation view does not show', () => {
+  const long = 'o'.repeat(HELD_PREVIEW_CHARS * 4);
+  const lean = (items: TranscriptItem[], extra: Record<string, unknown> = {}) =>
+    trimCursorPageForTransport({ turns: [{ ...turn('t', items), ...extra }], nextCursor: null }, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET, true).turns[0]!;
+  const gugu = (tool: string, fields: Record<string, unknown> = {}) =>
+    ({ kind: 'mcp-tool-call', id: tool, seq: 1, toolCallId: tool, server: 'gugu', tool, status: 'done', rawInput: '{}', ...fields }) as unknown as ToolNode;
+
+  it('sends the opening of a finished call\'s output and says how much is missing', () => {
+    const call = lean([execTool('e', { outputText: long, rawOutput: long, rawInput: long })]).items[0] as unknown as Record<string, unknown>;
+    expect(call.outputText).toBe(long.slice(0, HELD_PREVIEW_CHARS));
+    expect(call.rawOutput).toBe(long.slice(0, HELD_PREVIEW_CHARS));
+    // What the step line is drawn from (the call's input, its title) is whole.
+    expect(call.rawInput).toBe(long);
+    expect(call.trimmedChars).toBe(2 * (long.length - HELD_PREVIEW_CHARS));
+  });
+
+  it('does the same for a call inside a group, and for a terminal capture', () => {
+    const group = { kind: 'tool-group', id: 'g', seq: 1, status: 'done', children: [execTool('c', { outputText: long })] } as unknown as ToolNode;
+    const sent = lean([group], { terminals: [{ terminalId: 'term', output: long, truncated: false }, { terminalId: 'short', output: 'ok', truncated: false }] });
+    expect(((sent.items[0] as ToolNode).children![0] as unknown as Record<string, unknown>).outputText).toHaveLength(HELD_PREVIEW_CHARS);
+    expect(sent.terminals).toEqual([{ terminalId: 'term', output: long.slice(0, HELD_PREVIEW_CHARS), truncated: true }, { terminalId: 'short', output: 'ok', truncated: false }]);
+  });
+
+  it('sends whole what the view reads or shows: a failure\'s reason, a patch, a sub-agent, a question\'s answer, a send\'s receipt, what a tab opened', () => {
+    const receipt = JSON.stringify({ message_id: 'msg:1', note: long });
+    const kept: ToolNode[] = [
+      execTool('failed', { status: 'failed', outputText: long }),
+      execTool('running', { status: 'running', outputText: long }),
+      { ...execTool('patch', { outputText: long }), kind: 'patch-tool-call' } as ToolNode,
+      { ...execTool('agent', { outputText: long }), kind: 'spawn-subagent-tool-call' } as ToolNode,
+      execTool('question', { kind: 'unknown-tool-call', toolName: 'AskUserQuestion', outputText: long }),
+      gugu('message_send', { rawOutput: receipt }),
+      gugu('session_open_in_tab', { outputText: receipt }),
+      { ...gugu('mcp__plugin_x_gugu__message_send_file', { rawOutput: receipt }), server: 'plugin_x_gugu' } as ToolNode,
+    ];
+    const page = { turns: [turn('t', kept)], nextCursor: null };
+    // Nothing was left out, so nothing is rebuilt.
+    expect(trimCursorPageForTransport(page, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET, true)).toBe(page);
+    // A Gugu call whose answer the view does not read is like any other.
+    expect((lean([gugu('message_history', { outputText: long })]).items[0] as unknown as Record<string, unknown>).outputText).toHaveLength(HELD_PREVIEW_CHARS);
+  });
+
+  it('leaves a reader that did not ask as before', () => {
+    const page = { turns: [turn('t', [execTool('e', { outputText: long })])], nextCursor: null, terminals: undefined };
+    expect(trimCursorPageForTransport(page)).toBe(page);
+  });
+
+  it('counts a lean page by what it sends, so it holds more turns', () => {
+    const heavy = (index: number) => ({ ...turn(`t${index}`, [execTool(`e${index}`, { outputText: 'o'.repeat(8_000) })]), seq: index });
+    expect(transportSizeOf(heavy(0), TRANSPORT_TEXT_LIMIT, true)).toBeLessThan(transportSizeOf(heavy(0)) / 10);
+    const turns = Array.from({ length: 40 }, (_, index) => heavy(index));
+    expect(trimCursorPageForTransport({ turns, nextCursor: null }).turns.length).toBeLessThan(20);
+    expect(trimCursorPageForTransport({ turns, nextCursor: null }, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET, true).turns).toHaveLength(40);
   });
 });

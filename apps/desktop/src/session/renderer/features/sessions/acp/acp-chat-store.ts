@@ -786,7 +786,7 @@ export class AcpChatStore {
 
   /** A confirmed revert invalidates both the loaded window and every cursor that used its old sequences. */
   private async _readRevertedHistory(generation: number, session: AcpLiveSession | null, current: () => boolean = () => true): Promise<boolean> {
-    const stored = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, limit: 100 });
+    const stored = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, limit: 100, lean: true });
     const history = session ? await session.getHistory(undefined, stored.turns.length ? 1 : 100) : null;
     if (history && !history.success) throw history.error;
     if (this._disposed || this.session !== session || generation !== this._historyGeneration || !current()) return false;
@@ -2160,7 +2160,7 @@ export class AcpChatStore {
   private async _reloadStoredInPlace(generation: number, inserted: number): Promise<void> {
     const shown = this._storedHistoryTurns.length + (this._olderSource === 'stored' ? this._olderHistoryTurns.length : 0);
     try {
-      const page = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, limit: Math.max(100, shown + inserted) });
+      const page = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, limit: Math.max(100, shown + inserted), lean: true });
       if (!this._stillParkedIn(generation)) return;
       runInAction(() => {
         this._storedHistoryTurns = page.turns;
@@ -2741,7 +2741,7 @@ export class AcpChatStore {
   /** Read the newest stored page. Only a live bootstrap can replace a failed read with replay; idle opens must report it. */
   private _loadStoredFirstPage(generation: number, failOnError = false): Promise<void> {
     return rpc.sessions
-      .getStoredHistory({ sessionId: this.sessionId, limit: 100 })
+      .getStoredHistory({ sessionId: this.sessionId, limit: 100, lean: true })
       .then(async (stored) => {
         if (stored.turns.length === 0 || this._disposed) return;
         if (generation !== this._historyGeneration) return;
@@ -2786,7 +2786,7 @@ export class AcpChatStore {
         this.chatState.scroll.set({ kind: 'tail' });
         break;
       }
-      const page = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before: cursor, limit: 100 }).catch(() => null);
+      const page = await rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before: cursor, limit: 100, lean: true }).catch(() => null);
       if (!page || this._disposed) break;
       turns = [...page.turns, ...turns];
       cursor = page.nextCursor;
@@ -2876,7 +2876,7 @@ export class AcpChatStore {
     const request = ++this._historyWindowRequest;
     const opened = await HistoryWindow.open({
       context: this.chatContext, uri: this.runtimeSessionId, seq,
-      read: before => rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before, limit: 100 }).catch(() => null),
+      read: before => rpc.sessions.getStoredHistory({ sessionId: this.sessionId, before, limit: 100, lean: true }).catch(() => null),
       newestStored: () => this._storedHistoryTurns.at(-1)?.seq ?? -1,
     }).catch(() => null);
     if (!opened) return false;
@@ -2932,6 +2932,7 @@ export class AcpChatStore {
               sessionId: this.sessionId,
               before,
               limit: 100,
+              lean: true,
             })
           : await this._runtimeOlderPage(before);
       if (!page || this._disposed || generation !== this._historyGeneration) return [];

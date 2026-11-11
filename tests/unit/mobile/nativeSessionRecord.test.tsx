@@ -38,7 +38,7 @@ it.each([false, true])('opens the latest page in one read instead of walking fro
   function Fixture() { state = useNativeSessionRecord('entry-host', `cold-tail-${local}`, true, true, local); return null }
   await harness.render(<Fixture />)
   await vi.waitFor(() => expect(state.record?.turns.at(-1)?.seq).toBe(999))
-  expect(scope.read).toHaveBeenCalledExactlyOnceWith({ conversationId: `cold-tail-${local}`, tail: true })
+  expect(scope.read).toHaveBeenCalledExactlyOnceWith({ conversationId: `cold-tail-${local}`, tail: true, lean: true })
   expect(state.record?.hasNewer).toBe(false)
   expect(state.ready).toBe(true)
 })
@@ -54,16 +54,16 @@ it('shows an old cache immediately, replaces it with the tail, then preserves up
     await harness.render(<Fixture />)
     expect(state.record?.turns[0]?.seq).toBe(0)
     expect(state.ready).toBe(false)
-    expect(scope.read).toHaveBeenCalledExactlyOnceWith({ conversationId: 'cached-tail', tail: true })
+    expect(scope.read).toHaveBeenCalledExactlyOnceWith({ conversationId: 'cached-tail', tail: true, lean: true })
     await act(async () => { latest.resolve({ ok: true, value: record(940, 60) }) })
     expect(state.record?.turns.map(turn => turn.seq)).toEqual(Array.from({ length: 60 }, (_, i) => 940 + i))
     scope.read.mockResolvedValueOnce({ ok: true, value: record(880, 60, true) })
     await act(async () => { await state.loadOlder() })
-    expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 'cached-tail', before: 940 })
+    expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 'cached-tail', before: 940, lean: true })
     expect(state.record?.turns).toHaveLength(120)
     scope.read.mockResolvedValueOnce({ ok: true, value: record(970, 30) })
     await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
-    expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 'cached-tail', after: 970 })
+    expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 'cached-tail', after: 970, lean: true })
     expect(state.record?.turns[0]?.seq).toBe(880)
     expect(state.record?.turns.at(-1)?.seq).toBe(999)
   } finally { vi.useRealTimers() }
@@ -81,7 +81,7 @@ it('retries the initial tail after failure instead of falling back to first-unre
     scope.read.mockResolvedValueOnce({ ok: true, value: record(940, 60) })
     await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
     expect(scope.read.mock.calls.map(([input]) => input)).toEqual([
-      { conversationId: 'retry-tail', tail: true }, { conversationId: 'retry-tail', tail: true },
+      { conversationId: 'retry-tail', tail: true, lean: true }, { conversationId: 'retry-tail', tail: true, lean: true },
     ])
     expect(state.record?.turns.at(-1)?.seq).toBe(999)
     expect(state.ready).toBe(true)
@@ -99,7 +99,7 @@ it('starts each enabled target with a tail read and keeps the old target respons
   expect(scope.read).toHaveBeenCalledTimes(1)
   await harness.render(<Fixture id="new-tail" enabled />)
   await vi.waitFor(() => expect(state.ready).toBe(true))
-  expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 'new-tail', tail: true })
+  expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 'new-tail', tail: true, lean: true })
   await act(async () => { late.resolve({ ok: true, value: record(0, 1) }) })
   expect(state.record?.turns.at(-1)?.seq).toBe(999)
 })
@@ -115,12 +115,12 @@ it('does not consume a failed initial tail intent when the reader requests an ol
     await act(async () => { await vi.advanceTimersByTimeAsync(5100) })
     scope.read.mockResolvedValueOnce({ ok: true, value: record(540, 60, true) })
     await act(async () => { await state.loadOlder() })
-    expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 'older-tail', before: 600 })
+    expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 'older-tail', before: 600, lean: true })
     expect(state.record?.turns).toHaveLength(120)
     expect(state.ready).toBe(false)
     scope.read.mockResolvedValueOnce({ ok: true, value: record(940, 60) })
     await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
-    expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 'older-tail', tail: true })
+    expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 'older-tail', tail: true, lean: true })
     expect(state.record?.turns.at(-1)?.seq).toBe(999)
     expect(state.record?.turns).toHaveLength(60)
     expect(state.ready).toBe(true)
@@ -141,7 +141,7 @@ it('keeps the reconnect tail intent after its first read fails', async () => {
     scope.read.mockResolvedValueOnce({ ok: true, value: record(940, 60) })
     await act(async () => { await vi.advanceTimersByTimeAsync(600) })
     expect(scope.read.mock.calls.slice(1).map(([input]) => input)).toEqual([
-      { conversationId: 'reconnect-tail', tail: true }, { conversationId: 'reconnect-tail', tail: true },
+      { conversationId: 'reconnect-tail', tail: true, lean: true }, { conversationId: 'reconnect-tail', tail: true, lean: true },
     ])
     expect(state.record?.turns.at(-1)?.seq).toBe(999)
   } finally { vi.useRealTimers() }
@@ -170,15 +170,15 @@ it('keeps archive identities while paging older and newer, and explicitly follow
   scope.read.mockResolvedValueOnce({ ok: true, value: record(0, 60, true) })
   await act(async () => { await state.loadOlder() })
   expect(state.record?.turns).toHaveLength(120)
-  expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 's', before: 60 })
+  expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 's', before: 60, lean: true })
   scope.read.mockResolvedValueOnce({ ok: true, value: record(120, 60) })
   await act(async () => { state.loadNewer() })
   await vi.waitFor(() => expect(state.record?.turns).toHaveLength(180))
-  expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 's', after: 119 })
+  expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 's', after: 119, lean: true })
   scope.read.mockResolvedValueOnce({ ok: true, value: record(240, 60) })
   await act(async () => { state.followTail() })
   await vi.waitFor(() => expect(state.record?.turns[0]?.id).toBe('s:turn:s240'))
-  expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 's', tail: true })
+  expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 's', tail: true, lean: true })
 })
 it('ignores a late archive response after switching to another session', async () => {
   let finish!: (value: unknown) => void
@@ -208,7 +208,7 @@ it('removes reverted archive turns while serializing a simultaneous poll and pag
     scope.read.mockResolvedValueOnce({ ok: true, value: record(0, 2) })
     await act(async () => { state.followTail(); finish({ ok: true, value: record(0, 2) }) })
     expect(state.record?.turns.map(turn => turn.seq)).toEqual([0, 1])
-    expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 's', tail: true })
+    expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 's', tail: true, lean: true })
   } finally { vi.useRealTimers() }
 })
 
@@ -291,7 +291,7 @@ it.each(['link', 'presence'] as const)('keeps the pages the reader loaded when t
   else { await harness.render(<Fixture online={false} />); expect(state.record?.turns).toHaveLength(180); await harness.render(<Fixture />) }
   await vi.waitFor(() => expect(state.ready).toBe(true))
 
-  expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 'resume', tail: true })
+  expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 'resume', tail: true, lean: true })
   expect(state.record?.turns.map(turn => turn.seq)).toEqual(Array.from({ length: 183 }, (_, i) => 820 + i))
   // The same rows, not copies of them: the list above the reader is not rebuilt.
   expect(state.record!.turns.slice(0, 120).every((turn, index) => turn === held[index])).toBe(true)
@@ -300,7 +300,7 @@ it.each(['link', 'presence'] as const)('keeps the pages the reader loaded when t
   // And the reader can go on paging from where the held pages end.
   scope.read.mockResolvedValueOnce({ ok: true, value: older(760) })
   await act(async () => { await state.loadOlder() })
-  expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 'resume', before: 820 })
+  expect(scope.read).toHaveBeenLastCalledWith({ conversationId: 'resume', before: 820, lean: true })
 })
 
 it('starts over at the newest page when a reconnect finds more written than one page reaches', async () => {
