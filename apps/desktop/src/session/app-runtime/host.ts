@@ -28,6 +28,14 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     watch?(watchId: string, name: string, on: boolean): Promise<unknown>;
     save?(name: string, change: Record<string, unknown>): Promise<import('@shared/extensions/agent-resources').AppResourceWrite>;
     remove?(name: string, change: Record<string, unknown>): Promise<import('@shared/extensions/agent-resources').AppResourceWrite>;
+    /** 48: 给助理的资料 and voice notes as the assistant's own pages manage them (resources-management.ts). */
+    upload?(name: string, options?: { folder?: string }): Promise<import('@shared/extensions/resources-management').AppUploadAnswer>;
+    createFolder?(name: string, key: string): Promise<import('@shared/extensions/resources-management').AppFolderAnswer>;
+    rename?(name: string, key: string, to: string): Promise<import('@shared/extensions/resources-management').AppRenameAnswer>;
+    removeFolder?(name: string, key: string): Promise<import('@shared/extensions/resources-management').AppRemoveAllAnswer>;
+    transcribeVoiceNote?(name: string, key: string): Promise<import('@shared/extensions/resources-management').AppTranscribeAnswer>;
+    removeVoiceNote?(name: string, key: string): Promise<import('@shared/extensions/resources-management').AppRemoveAllAnswer>;
+    exportVoiceNote?(name: string, key: string): Promise<import('@shared/extensions/resources-management').AppExportAnswer>;
   };
   /** #1925 (44) The bound conversation's assistant, when it is the person's own (`assistant-binding.ts`): a page's. */
   readonly assistant?: {

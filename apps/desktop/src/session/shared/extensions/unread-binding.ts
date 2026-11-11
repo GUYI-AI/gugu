@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { AppFileEntry } from './app-runtime-protocol';
 import { ASSISTANT_BINDING_ACTIONS, ASSISTANT_BINDING_API_VERSION } from './assistant-binding';
 import { RESOURCE_ACTIONS_API_VERSION, RESOURCE_BINDING_ACTIONS } from './agent-resources';
+import { RESOURCES_MANAGEMENT_API_VERSION, VOICE_NOTES_MANAGE_ACTION } from './resources-management';
 
 /**
  * What one conversation binding may do (#1927). `unread` is the binding itself: it is what the person chose the
@@ -13,13 +14,15 @@ import { RESOURCE_ACTIONS_API_VERSION, RESOURCE_BINDING_ACTIONS } from './agent-
  * is collapsed. `resources` / `resources:write` (API 42, #1927, agent-resources.ts): read / change the panel resources of the
  * agent whose private conversation with the person this is, in the domains the binding lists for each. `assistant-status` /
  * `assistant-open` (#1925, API 44): the conversation's assistant, when it is the person's own (assistant-binding.ts).
+ * `voice-notes:manage` (API 48, resources-management.ts): its agent's voice notes transcribed, removed or exported.
  */
-export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'surface', ...RESOURCE_BINDING_ACTIONS, ...ASSISTANT_BINDING_ACTIONS] as const;
+export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'surface', ...RESOURCE_BINDING_ACTIONS, ...ASSISTANT_BINDING_ACTIONS, VOICE_NOTES_MANAGE_ACTION] as const;
 export type ConversationBindingAction = (typeof CONVERSATION_BINDING_ACTIONS)[number];
 export const BINDING_ACTION_CAPABILITY = {
   unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft', surface: 'chat:surface',
   resources: 'chat:resources', 'resources:write': 'chat:resources:write',
   'assistant-status': 'assistant:status', 'assistant-open': 'assistant:open',
+  'voice-notes:manage': 'chat:voice-notes:manage',
 } as const;
 /** The first App API that lets a binding declare more than `unread`. */
 export const BINDING_ACTIONS_API_VERSION = 40;
@@ -29,6 +32,7 @@ export const BINDING_ACTION_API_VERSION = {
   surface: 41,
   resources: RESOURCE_ACTIONS_API_VERSION, 'resources:write': RESOURCE_ACTIONS_API_VERSION,
   'assistant-status': ASSISTANT_BINDING_API_VERSION, 'assistant-open': ASSISTANT_BINDING_API_VERSION,
+  'voice-notes:manage': RESOURCES_MANAGEMENT_API_VERSION,
 } as const satisfies Record<Exclude<ConversationBindingAction, 'unread'>, number>;
 export const BINDING_NAME = /^[a-z][a-z0-9-]{0,47}$/;
 

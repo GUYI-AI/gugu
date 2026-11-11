@@ -76,6 +76,14 @@ export const HOST_CALLS = {
   'bindings.watch': { verb: 'bindingsWatch', pack: (watchId: string, name: string, on: boolean) => ({ watchId, name, on }) },
   'bindings.save': { verb: 'bindingsSave', pack: (name: string, change: Record<string, unknown>) => ({ ...change, name }) },
   'bindings.remove': { verb: 'bindingsRemove', pack: (name: string, change: Record<string, unknown>) => ({ ...change, name }) },
+  // 48 (resources-management.ts): 给助理的资料 and voice notes, as the assistant's own pages manage them.
+  'bindings.upload': { verb: 'bindingsUpload', pack: (name: string, options?: { folder?: string }) => ({ ...(options ?? {}), name }) },
+  'bindings.createFolder': { verb: 'bindingsCreateFolder', pack: (name: string, key: string) => ({ name, key }) },
+  'bindings.rename': { verb: 'bindingsRename', pack: (name: string, key: string, to: string) => ({ name, key, to }) },
+  'bindings.removeFolder': { verb: 'bindingsRemoveFolder', pack: (name: string, key: string) => ({ name, key }) },
+  'bindings.transcribeVoiceNote': { verb: 'bindingsTranscribeVoiceNote', pack: (name: string, key: string) => ({ name, key }) },
+  'bindings.removeVoiceNote': { verb: 'bindingsRemoveVoiceNote', pack: (name: string, key: string) => ({ name, key }) },
+  'bindings.exportVoiceNote': { verb: 'bindingsExportVoiceNote', pack: (name: string, key: string) => ({ name, key }) },
   // #1925 (44, `assistant:status` / `assistant:open`): the bound conversation's assistant, named by the binding alone.
   'assistant.status': { verb: 'assistantStatus', pack: (name: string) => ({ name }) },
   'assistant.open': { verb: 'assistantOpen', pack: (name: string, screen: string) => ({ name, screen }) },

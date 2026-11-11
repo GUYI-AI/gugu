@@ -43,6 +43,7 @@ export const CAPABILITY_RISK = {
   // reading is what the person told it; changing them changes what it knows of them.
   'chat:resources': 'medium',
   'chat:resources:write': 'high',
+  'chat:voice-notes:manage': 'high',
   // That conversation's assistant, when it is the person's own (#1925): a snapshot of it; its host screens opened in a click.
   'assistant:status': 'medium',
   'assistant:open': 'medium',

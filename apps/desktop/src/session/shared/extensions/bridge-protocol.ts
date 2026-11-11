@@ -112,7 +112,13 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // 44 (#1925): when that conversation is the person's private chat with their own assistant, the binding may also declare
 // `assistant-status` (`assistant:status`: `gugu.assistant.status` / `onChanged`) and `assistant-open` (`assistant:open`:
 // `gugu.assistant.open(name, screen)` — one of the host's own screens for it, a closed list — and `advanceSetup`).
-export const EXTENSION_API_VERSION = 44;
+// 45–47: reserved (work ledger, …, the voice-note recorder), merged in as they land.
+// 48: what the assistant's own 记忆 pages do that 42 could not (resources-management.ts): a closed `reason` on every
+// `unavailable`; 给助理的资料 `upload` (the host's picker) / `createFolder` / `rename` / `removeFolder` (asked first) under
+// `resources:write` listing `files`; `voice-notes:manage` (`chat:voice-notes:manage`): `transcribeVoiceNote`,
+// `removeVoiceNote` (asked first), `exportVoiceNote` (the host's save dialog); a binding draft's `attach` (files of its
+// folder or the agent's resources, by the path or key the App holds).
+export const EXTENSION_API_VERSION = 48;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
@@ -869,6 +875,22 @@ export const BRIDGE_VERBS = {
   bindingsWatch: { needs: 'chat:resources', only: 'page' },
   bindingsSave: { needs: 'chat:resources:write', only: 'page' },
   bindingsRemove: { needs: 'chat:resources:write', only: 'page' },
+  /**
+   * 48 (resources-management.ts): 给助理的资料 as the assistant's own page manages it — what the person picks in the host's
+   * picker uploaded, a folder made, renamed, removed with all in it once the person said yes in the host's own question.
+   * The bytes go host → store; the App names a folder, a key and a name, and hears back the entries made.
+   */
+  bindingsUpload: { needs: 'chat:resources:write', only: 'page', gesture: true, toAgent: { answer: { state: 'cancelled' } } },
+  bindingsCreateFolder: { needs: 'chat:resources:write', only: 'page' },
+  bindingsRename: { needs: 'chat:resources:write', only: 'page' },
+  bindingsRemoveFolder: { needs: 'chat:resources:write', only: 'page', gesture: true, toAgent: { answer: { state: 'cancelled' } } },
+  /**
+   * 48: the agent's voice notes as the assistant's own page works them — a note waiting transcribed by this computer, one
+   * removed once the person said yes, one exported where the person saves it.
+   */
+  bindingsTranscribeVoiceNote: { needs: 'chat:voice-notes:manage', only: 'page', gesture: true },
+  bindingsRemoveVoiceNote: { needs: 'chat:voice-notes:manage', only: 'page', gesture: true, toAgent: { answer: { state: 'cancelled' } } },
+  bindingsExportVoiceNote: { needs: 'chat:voice-notes:manage', only: 'page', gesture: true, toAgent: { answer: { state: 'cancelled' } } },
   /**
    * #1925 (44): the bound conversation's assistant, when it is the person's own — its snapshot, read; one of the host's
    * screens for it opened, and the setup steps the App draws moved on, both in the person's click. The page names the

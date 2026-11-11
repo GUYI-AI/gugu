@@ -44,6 +44,7 @@ const CAPABILITY_MESSAGE = {
   'chat:surface': 'extensions.permissionsChatSurface',
   'chat:resources': 'extensions.permissionsChatResources',
   'chat:resources:write': 'extensions.permissionsChatResourcesWrite',
+  'chat:voice-notes:manage': 'extensions.permissionsChatVoiceNotesManage',
   'assistant:status': 'extensions.permissionsAssistantStatus',
   'assistant:open': 'extensions.permissionsAssistantOpen',
   'agents:read': 'extensions.permissionsAgentsRead',

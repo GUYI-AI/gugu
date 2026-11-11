@@ -357,6 +357,9 @@ export const EXTENSION_CAPABILITIES = [
   // and changed through the resource store (`save` / `remove`). Each needs its binding action declared.
   'chat:resources',
   'chat:resources:write',
+  // API 48 (resources-management.ts): that agent's voice notes as the assistant's own page works them — one waiting
+  // transcribed, one removed once the person said yes, one exported where they save it. Needs `resources` reading them.
+  'chat:voice-notes:manage',
   // #1925 (API 44) That same selected conversation's assistant, when it is the person's own: a snapshot of it and its
   // changes (`gugu.assistant.status` / `onChanged`) — and, in the person's click, one of the host's own screens for it
   // opened, or its setup moved on a step (`gugu.assistant.open` / `advanceSetup`). Each with its binding action.
@@ -795,6 +798,10 @@ export const extensionManifestSchema = z
       if (domains && new Set(domains).size !== domains.length) {
         ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings', 0, 'domains', action], message: 'each domain once' });
       }
+    }
+    // 48: the voice-note operations work on notes the binding also reads.
+    if (unreadBinding?.actions.includes('voice-notes:manage') && !unreadBinding.domains?.resources?.includes('voice-notes')) {
+      ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings', 0, 'actions'], message: '"voice-notes:manage" works on notes the binding also reads: domains: { "resources": [..., "voice-notes"] }' });
     }
     const writes = unreadBinding?.domains?.['resources:write'] ?? [];
     if (writes.length > 0 && !(unreadBinding?.actions.includes('resources') && writes.every((domain) => unreadBinding.domains?.resources?.includes(domain)))) {
