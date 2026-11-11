@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
-import { CONTEXT_WAIT_MS, createResourceWindow, type ResourceWindowDeps } from './app-resource-window-core';
+import { TRANSCRIBE_WAIT_MS, createResourceWindow, type ResourceWindowDeps } from './app-resource-window-core';
 
 /**
  * #48 The window's half of an App's managing calls: the assistant page's own question before a delete (its words), its
@@ -8,14 +8,15 @@ import { CONTEXT_WAIT_MS, createResourceWindow, type ResourceWindowDeps } from '
  */
 const OWNER = 'owner-1';
 const AGENT = 'agent-1';
-type Spied = 'retry' | 'forget' | 'confirm' | 'saveTextFile' | 'wait';
+type Spied = 'retry' | 'forget' | 'confirm' | 'saveTextFile' | 'activate' | 'contextChanged';
 let deps: Omit<ResourceWindowDeps, Spied> & { [K in Spied]: Mock<ResourceWindowDeps[K]> };
 let account: string | null;
 let context: string | null;
 let phase: string | null;
+let clock: number;
 
 beforeEach(() => {
-  account = OWNER; context = AGENT; phase = null;
+  account = OWNER; context = AGENT; phase = null; clock = 0;
   deps = {
     account: () => account,
     contextAssistant: () => context,
@@ -25,7 +26,9 @@ beforeEach(() => {
     confirm: vi.fn<ResourceWindowDeps['confirm']>(async () => true),
     t: (key, ns, values) => `${ns}:${key}${values ? JSON.stringify(values) : ''}`,
     saveTextFile: vi.fn<ResourceWindowDeps['saveTextFile']>(async () => ({ success: true, path: '/chosen/Standup.md' })),
-    wait: vi.fn<ResourceWindowDeps['wait']>(async () => undefined),
+    activate: vi.fn<ResourceWindowDeps['activate']>(),
+    contextChanged: vi.fn<ResourceWindowDeps['contextChanged']>(async () => false),
+    now: () => clock,
   };
 });
 
@@ -65,7 +68,7 @@ describe('the question before a delete', () => {
   });
 });
 
-describe('开始转写', () => {
+describe('开始转写, with the assistant\'s page open or not', () => {
   const ask = { ownerId: OWNER, assistantId: AGENT, noteId: 'n1' };
   it('this window\'s pipeline for the note: started; one already working is busy', async () => {
     const window = createResourceWindow(deps);
@@ -80,15 +83,35 @@ describe('开始转写', () => {
     expect(deps.retry).toHaveBeenCalledTimes(2);
   });
 
-  it('waits for the voice-note host to come up for this assistant, then says not ready; a pipeline that throws is not ready', async () => {
+  it('the page closed (no context here): API 47\'s host is woken and the note started once it has the assistant', async () => {
     const window = createResourceWindow(deps);
     context = null;
-    expect(await window.transcribe(ask)).toBe('not-ready');
-    expect(deps.wait).toHaveBeenCalledTimes(CONTEXT_WAIT_MS / 250);
-    expect(deps.retry).not.toHaveBeenCalled();
-    deps.wait.mockReset().mockImplementationOnce(async () => { context = AGENT; });
+    deps.contextChanged.mockImplementationOnce(async () => { context = AGENT; return true; });
     expect(await window.transcribe(ask)).toBe('started');
-    deps.retry.mockRejectedValueOnce(new Error('no voice-note host'));
+    expect(deps.activate).toHaveBeenCalledTimes(1);
+    expect(deps.retry).toHaveBeenCalledExactlyOnceWith('n1');
+  });
+
+  it('its home not read yet: tried again on the next change of the context, not refused for it', async () => {
+    const window = createResourceWindow(deps);
+    deps.retry.mockRejectedValueOnce(new Error('machine not ready'));
+    deps.contextChanged.mockResolvedValueOnce(true);
+    expect(await window.transcribe(ask)).toBe('started');
+    expect(deps.retry).toHaveBeenCalledTimes(2);
+    expect(deps.contextChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('another assistant\'s context here, or none coming before the deadline: not ready, nothing started', async () => {
+    const window = createResourceWindow(deps);
+    context = 'agent-2';
+    deps.contextChanged.mockResolvedValue(false);
+    expect(await window.transcribe(ask)).toBe('not-ready');
+    expect(deps.contextChanged).toHaveBeenCalledExactlyOnceWith(TRANSCRIBE_WAIT_MS);
+    context = AGENT;
+    deps.retry.mockRejectedValue(new Error('machine not ready'));
+    expect(await window.transcribe(ask)).toBe('not-ready');
+    // Changes keep coming, the home never read: the deadline still holds.
+    deps.contextChanged.mockImplementation(async (ms) => { clock += Math.min(ms, 6_000); return true; });
     expect(await window.transcribe(ask)).toBe('not-ready');
   });
 
@@ -96,10 +119,22 @@ describe('开始转写', () => {
     const window = createResourceWindow(deps);
     account = 'someone-else';
     expect(await window.transcribe(ask)).toBe('denied');
+    expect(deps.activate).not.toHaveBeenCalled();
     account = OWNER; context = null;
-    deps.wait.mockImplementationOnce(async () => { account = 'someone-else'; });
+    deps.contextChanged.mockImplementationOnce(async () => { account = 'someone-else'; context = AGENT; return true; });
     expect(await window.transcribe(ask)).toBe('denied');
     expect(deps.retry).not.toHaveBeenCalled();
+  });
+});
+
+describe('delete and export need no voice-note context: the page closed, they work', () => {
+  it('asks and answers with no assistant set up in this window', async () => {
+    context = null;
+    const window = createResourceWindow(deps);
+    expect(await window.confirmRemoval({ kind: 'voice-note', title: 'Standup', ownerId: OWNER, assistantId: AGENT, noteId: 'n1' })).toBe(true);
+    expect(await window.exportNote({ ownerId: OWNER, title: 'Standup', summary: 'Ship it', transcript: null })).toBe('saved');
+    expect(deps.forget).not.toHaveBeenCalled();
+    expect(deps.activate).not.toHaveBeenCalled();
   });
 });
 

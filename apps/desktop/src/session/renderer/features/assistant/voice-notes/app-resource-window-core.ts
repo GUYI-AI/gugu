@@ -13,6 +13,14 @@ export type ResourceWindowDeps = {
   account(): string | null;
   /** The assistant this window's voice notes go to now (null: none set up here yet). */
   contextAssistant(): string | null;
+  /**
+   * API 47's voice-note host (app-voice-notes-active.ts): from now on this window keeps the voice-note context from its own
+   * assistant data, the assistant's page open or not.
+   */
+  activate(): void;
+  /** Resolves true when the context next changes (the assistant found, its home read), false after `ms`. */
+  contextChanged(ms: number): Promise<boolean>;
+  now(): number;
   /** This window's own job for the note, if it has one: its phase. */
   jobPhase(noteId: string): string | null;
   retry(noteId: string): Promise<void>;
@@ -20,12 +28,14 @@ export type ResourceWindowDeps = {
   confirm(words: { title: string; description: string; confirmLabel: string }): Promise<boolean>;
   t(key: string, ns: 'assistant' | 'voiceNotes', values?: Record<string, string>): string;
   saveTextFile(args: { title: string; defaultPath: string; content: string }): Promise<{ success: boolean; path?: string }>;
-  wait(ms: number): Promise<void>;
 };
 
 const WORKING = new Set(['recording', 'uploading', 'transcribing', 'summarizing']);
-/** How long 开始转写 waits for this window's voice-note host to come up for the assistant before saying not ready. */
-export const CONTEXT_WAIT_MS = 3000;
+/**
+ * How long 开始转写 waits for this window to have the assistant's home in hand (API 47's host reading it, a cloud home
+ * answering) before saying not ready — inside main's 30 s for a window's answer.
+ */
+export const TRANSCRIBE_WAIT_MS = 15_000;
 
 export function createResourceWindow(deps: ResourceWindowDeps) {
   return {
@@ -42,22 +52,30 @@ export function createResourceWindow(deps: ResourceWindowDeps) {
       }
       return yes;
     },
-    /** The page's 开始转写 (`retryVoiceNote`): read back from the store, transcribed here, handed to the assistant to sum up. */
+    /**
+     * The page's 开始转写 (`retryVoiceNote`): read back from the assistant's home, transcribed here, handed to it to sum
+     * up. API 47's host keeps the context, so the assistant's page need not be open; until the home is read (the
+     * pipeline refuses before that), it is tried again on each change of the context.
+     */
     async transcribe(ask: VoiceNoteTranscribeAsk): Promise<VoiceNoteTranscribeOutcome> {
       if (deps.account() !== ask.ownerId) return 'denied';
-      for (let waited = 0; deps.contextAssistant() !== ask.assistantId; waited += 250) {
-        if (waited >= CONTEXT_WAIT_MS) return 'not-ready';
-        await deps.wait(250);
+      deps.activate();
+      const deadline = deps.now() + TRANSCRIBE_WAIT_MS;
+      for (;;) {
+        if (deps.contextAssistant() === ask.assistantId) {
+          const phase = deps.jobPhase(ask.noteId);
+          if (phase && WORKING.has(phase)) return 'busy';
+          try {
+            await deps.retry(ask.noteId);
+            return 'started';
+          } catch {
+            // Its home not read here yet: the next change of the context may bring it.
+          }
+        }
+        const left = deadline - deps.now();
+        if (left <= 0 || !(await deps.contextChanged(left))) return deps.account() === ask.ownerId ? 'not-ready' : 'denied';
         if (deps.account() !== ask.ownerId) return 'denied';
       }
-      const phase = deps.jobPhase(ask.noteId);
-      if (phase && WORKING.has(phase)) return 'busy';
-      try {
-        await deps.retry(ask.noteId);
-      } catch {
-        return 'not-ready';
-      }
-      return 'started';
     },
     /** The page's 导出 Markdown: its file name, its Markdown, the host's save dialog. */
     async exportNote(ask: VoiceNoteExportAsk): Promise<VoiceNoteExportOutcome> {
