@@ -121,11 +121,10 @@ import {
   scrollContainerEmbedded,
   unitRowWrapper,
   widthProbeClass,
-  olderPageLoading,
+  olderPageLoading, olderPageLoadingDot,
 } from './chat-root.css';
 import './chat-fonts.css';
 import { vars } from './styles/theme.css';
-import { ShimmerText } from './components/primitives/ShimmerText';
 import { syncContentColumnGeometry } from './lib/content-column-geometry';
 
 // Centered content column. The scroll container stays full width (so the
@@ -692,8 +691,8 @@ export function ChatRoot(props: ChatRootProps) {
   }));
   // ── Older page in flight ───────────────────────────────────────────────────
   // The host's page request, as returned by onReachStart. A request that settles within OLDER_PAGE_LOADING_DELAY_MS
-  // (a local read) shows nothing: a line that flashes for a frame or two is noise.
-  // Holds the model the request was made for: a view that swaps to another conversation does not show the line there.
+  // (a local read) shows nothing: dots that flash for a frame or two are noise.
+  // Holds the model the request was made for: a view that swaps to another conversation does not show the dots there.
   const [olderPageLoadingFor, setOlderPageLoadingFor] = createSignal<ChatState | null>(null);
   let olderPageRequest: Promise<unknown> | null = null;
   let olderPageTimer: ReturnType<typeof setTimeout> | undefined;
@@ -2390,8 +2389,14 @@ export function ChatRoot(props: ChatRootProps) {
                     class={`${canvas} ${contentClass()}`}
                   >
                     <Show when={olderPageLoadingFor() === state()}>
-                      <div data-older-page-loading role="status" class={olderPageLoading} style={{ top: `${Math.max(0, padTop() - 24)}px` }}>
-                        <ShimmerText active>{props.context.translate('transcript.loadingOlder')}</ShimmerText>
+                      <div
+                        data-older-page-loading
+                        role="status"
+                        aria-label={props.context.translate('transcript.loadingOlder')}
+                        class={olderPageLoading}
+                        style={{ top: `${Math.max(0, padTop() - 18)}px` }}
+                      >
+                        <span class={olderPageLoadingDot} /><span class={olderPageLoadingDot} /><span class={olderPageLoadingDot} />
                       </div>
                     </Show>
                     <For each={visible()}>

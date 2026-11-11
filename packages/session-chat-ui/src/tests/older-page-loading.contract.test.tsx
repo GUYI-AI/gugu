@@ -6,7 +6,7 @@ import { createChatState } from '../state/chat-state';
 import type { TranscriptTurn } from '../model';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
 
-// While the host's older-page request is running, the list shows one quiet line above its first row. It takes no
+// While the host's older-page request is running, the list shows three dots above its first row. They take no
 // layout space, and a request that settles at once shows nothing.
 const cleanups: Array<() => void> = [];
 afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()); });
@@ -43,43 +43,49 @@ async function mount(request: () => Promise<TranscriptTurn[]>) {
     }
     expect(asked).toBe(1);
   };
-  const ring = () => host.querySelector<HTMLElement>('[data-older-page-loading]');
+  const dots = () => host.querySelector<HTMLElement>('[data-older-page-loading]');
   const firstRowTop = () => host.querySelector<HTMLElement>('[data-item-id="message-1020"]')!.getBoundingClientRect().top;
-  return { scroller, toTop, ring, firstRowTop, turns: () => state.transcript.history.get().length };
+  return { scroller, toTop, dots, firstRowTop, turns: () => state.transcript.history.get().length };
 }
 
-it('shows a loading line above the first row while an older page is on its way, without moving any row', async () => {
+it('shows three dots above the first row while an older page is on its way, without moving any row', async () => {
   const page = Promise.withResolvers<TranscriptTurn[]>();
   const view = await mount(() => page.promise);
   await view.toTop();
   const before = view.firstRowTop();
-  await until('the loading line is shown', () => view.ring() !== null);
-  const ring = view.ring()!.getBoundingClientRect(), box = view.scroller.getBoundingClientRect();
+  await until('the dots are shown', () => view.dots() !== null);
+  const dots = view.dots()!.getBoundingClientRect(), box = view.scroller.getBoundingClientRect();
   // In the padding above the first row, inside the viewport, centred on the content column.
-  expect(ring.top).toBeGreaterThanOrEqual(box.top);
-  expect(ring.bottom).toBeLessThanOrEqual(before);
-  expect(view.ring()!.getAttribute('role')).toBe('status');
-  expect(view.ring()!.textContent).toBe('Loading…');
+  expect(dots.top).toBeGreaterThanOrEqual(box.top);
+  expect(dots.bottom).toBeLessThanOrEqual(before);
+  expect(Math.abs((dots.left + dots.right) / 2 - (box.left + box.right) / 2)).toBeLessThanOrEqual(1);
+  expect(view.dots()!.getAttribute('role')).toBe('status');
+  expect(view.dots()!.getAttribute('aria-label')).toBe('Loading earlier messages');
+  expect(view.dots()!.children.length).toBe(3);
+  // The lit dot lengthens only as far as the one before it shortens: the group keeps one width.
+  const widths = new Set<number>();
+  for (let i = 0; i < 12; i++) { widths.add(Math.round([...view.dots()!.children].reduce((sum, dot) => sum + dot.getBoundingClientRect().width, 0))); await frame(); }
+  expect([...widths]).toEqual([23]);
   expect(view.firstRowTop()).toBe(before);
   page.resolve(range(1000, 1020));
   await until('the page is in history', () => view.turns() === 40);
-  await until('the loading line is gone', () => view.ring() === null);
+  await until('the dots are gone', () => view.dots() === null);
 });
 
 it('shows nothing for a request that settles at once', async () => {
   const view = await mount(async () => range(1000, 1020));
   await view.toTop();
   await until('the page is in history', () => view.turns() === 40);
-  expect(view.ring()).toBeNull();
+  expect(view.dots()).toBeNull();
   await new Promise(resolve => setTimeout(resolve, 250));
-  expect(view.ring()).toBeNull();
+  expect(view.dots()).toBeNull();
 });
 
-it('hides the loading line when the request fails', async () => {
+it('hides the dots when the request fails', async () => {
   const page = Promise.withResolvers<TranscriptTurn[]>();
   const view = await mount(() => page.promise);
   await view.toTop();
-  await until('the loading line is shown', () => view.ring() !== null);
+  await until('the dots are shown', () => view.dots() !== null);
   page.reject(new Error('host away'));
-  await until('the loading line is gone', () => view.ring() === null);
+  await until('the dots are gone', () => view.dots() === null);
 });
