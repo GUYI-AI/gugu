@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Unavailable } from './resources-management';
 
 /**
  * #1927 (API 42): what an App may reach of an agent's durable panel resources through its one conversation binding — the
@@ -42,16 +43,17 @@ export type AppResource = { key: string; revision: string; updatedAt: string; da
 type Named = { name: string; domain: string };
 /**
  * `gugu.bindings.resources(name, domain)`: one domain, whole. `unprepared`: the agent has not published it yet;
- * `unavailable`: it cannot be read now (the store did not answer, the publication failed or is out of date). Never an
- * empty list for either.
+ * `unavailable`: it cannot be read now, and (50) why, from a closed list (`ReadFailureReason`). Never an empty list for
+ * either.
  */
-export type AppResourceList = Named & ({ state: 'unbound' | 'unprepared' | 'unavailable' } | { state: 'ready'; revision: string; resources: AppResource[] });
+export type AppResourceList = Named & ({ state: 'unbound' | 'unprepared' } | Unavailable | { state: 'ready'; revision: string; resources: AppResource[] });
 /**
  * `gugu.bindings.resource(name, domain, key)`: one resource and its content. `missing`: no such key (`revision` "0", what
  * creating it expects) or a deleted one (`deleted`, its tombstone's revision); `unprepared`: there, its content not stored yet.
  */
 export type AppResourceRead = Named & { key: string } & (
-  | { state: 'unbound' | 'unprepared' | 'unavailable' }
+  | { state: 'unbound' | 'unprepared' }
+  | Unavailable
   | { state: 'missing'; revision: string; deleted?: true }
   | { state: 'ready'; resource: AppResource; content: string; truncated: boolean; totalSize: number; binary?: true }
 );
@@ -63,7 +65,8 @@ export type AppResourceReceipt = { operationId: string; revision: string; status
  * whether the change landed is unknown, and the same call (same `operationId`) answers it.
  */
 export type AppResourceWrite = Named & { key: string } & (
-  | { state: 'unbound' | 'unavailable' | 'conflict' | 'deleted' }
+  | { state: 'unbound' | 'conflict' | 'deleted' }
+  | Unavailable
   | { state: 'committed'; receipt: AppResourceReceipt }
 );
 /** What `gugu.bindings.onResourcesChanged(name, fn)` hears: something changed (read again), or the subscription ended. */

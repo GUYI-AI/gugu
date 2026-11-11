@@ -74,7 +74,7 @@ export function setVoiceNotesContext(next: VoiceNotesContext | null) {
   for (const listener of contextListeners) listener();
 }
 
-/** #1927 (47) Which assistant the notes go to now (an App's `gugu.voiceNote` checks it is the one its binding found). */
+/** #1927 (47) Which assistant the notes go to now (an App's `gugu.voiceNote`, and its managing calls (50), check it is the one its binding found). */
 export function voiceNotesAssistantId(): string | null {
   return context?.assistantId ?? null;
 }

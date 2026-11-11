@@ -3,6 +3,7 @@ import type { ExtensionCapability } from './manifest';
 import { decodeTypedId } from '@gugu/core/shared/typedId.mjs';
 import { personId } from './app-runtime-protocol';
 import { BINDING_NAME } from './unread-binding';
+import { draftAttachmentsOf, type DraftAttachment } from './resources-management';
 
 /**
  * `gugu.dispatch(text, options)` (15): the one way an App hands something to someone — owner 10-25「全部统一」. Before it there
@@ -90,6 +91,8 @@ export interface DispatchCall {
   to: DispatchTarget | null;
   refs: unknown;
   images: unknown;
+  /** 50: files a binding draft carries, of its folder or the agent's resources (resources-management.ts). */
+  attach?: DraftAttachment[];
   visible: boolean;
   delivery?: 'queue' | 'defer';
   key?: string;
@@ -103,11 +106,13 @@ export function dispatchCallOf(args: Record<string, unknown>): DispatchCall {
   const draft = args.draft === true;
   if (named(args.draft) && typeof args.draft !== 'boolean') invalid('draft is true, or absent');
   const to = dispatchTargetOf(args.to);
-  if (!text && !named(args.refs)) invalid('Say something: text is empty');
+  if (!text && !named(args.refs) && !named(args.attach)) invalid('Say something: text is empty');
   if (named(args.images) && !draft) invalid('images go only into a chat\'s composer: { draft: true }');
   if (draft && to && ('member' in to || 'new' in to)) invalid('A draft goes into a composer: to { chat }, { agent } or { binding }');
   if (to && 'binding' in to && !draft) invalid('A binding\'s conversation takes only a draft the person sends: { draft: true, to: { binding } }');
-  if (to && 'binding' in to && (named(args.refs) || named(args.images))) invalid('A draft into a binding\'s conversation is text only: no refs or images');
+  if (to && 'binding' in to && (named(args.refs) || named(args.images))) invalid('A draft into a binding\'s conversation carries no refs or images: files of its folder or the agent\'s go in attach');
+  if (named(args.attach) && !(to && 'binding' in to && draft)) invalid('attach is for a draft into a binding\'s conversation: { draft: true, to: { binding }, attach }');
+  const attach = named(args.attach) ? draftAttachmentsOf(args.attach) : undefined;
   if (!draft && to && !('member' in to) && !('agent' in to) && !('new' in to)) invalid('A chat as such is told nothing: to { chat, member }, or { draft: true }');
   if (named(args.visible) && args.visible !== true) invalid('visible is true, or absent');
   if (args.visible === true && (draft || (to && !('member' in to)))) invalid('visible is for a member of a chat: to { chat, member }');
@@ -130,6 +135,7 @@ export function dispatchCallOf(args: Record<string, unknown>): DispatchCall {
     to,
     refs: args.refs,
     images: args.images,
+    ...(attach ? { attach } : {}),
     visible: args.visible === true,
     ...(args.delivery === 'queue' || args.delivery === 'defer' ? { delivery: args.delivery } : {}),
     ...(typeof args.key === 'string' ? { key: args.key } : {}),

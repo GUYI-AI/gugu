@@ -15,6 +15,7 @@ import {
   READABLE_RESOURCE_DOMAINS, WRITABLE_RESOURCE_DOMAINS, appResourceOf, resourceChangeSchema, resourceDomainOf, resourceKeyOf,
   type AppResourceEvent, type AppResourceList, type AppResourceRead, type AppResourceWrite, type ReadableResourceDomain, type ResourceBindingAction,
 } from '@shared/extensions/agent-resources';
+import type { ReadFailureReason, Unavailable } from '@shared/extensions/resources-management';
 import type { ConversationBindingAction } from '@shared/extensions/unread-binding';
 import { account, current, member } from './app-unread-bindings';
 import { extensionsService } from './extensions-root';
@@ -31,7 +32,13 @@ import { addResourceWatch, stopResourceWatch } from './app-resource-watches';
 
 const denied = (message: string) => Object.assign(new Error(message), { code: 'denied' });
 const invalid = (message: string) => Object.assign(new Error(message), { code: 'invalid' });
-const failed = (message: string) => Object.assign(new Error(message), { code: 'failed' });
+const failed = (message: string, reason: ReadFailureReason = 'unreadable') => Object.assign(new Error(message), { code: 'failed', reason });
+/** A read that could not be made now, and why (50): the class the assistant's own pages tell the person. */
+export const unavailable = (reason: ReadFailureReason): Unavailable => ({ state: 'unavailable', reason });
+export const reasonOf = (error: unknown): ReadFailureReason => {
+  const given = (error as { reason?: unknown } | null)?.reason;
+  return typeof given === 'string' ? given as ReadFailureReason : 'unreadable';
+};
 const codeOf = (error: unknown) => (error as { code?: unknown } | null)?.code;
 const statusOf = (error: unknown) => (error as { status?: unknown } | null)?.status;
 function argsOf<T extends z.ZodType>(schema: T, input: unknown): z.infer<T> {
@@ -50,11 +57,11 @@ const PERSONAL_ASSISTANT_SELECT = 'agent_user_id,device_id,member_key,phase,crea
  * its private one. Only it has panel resources: anything else — another of the person's agents, someone else's, a group,
  * a person — is refused here, before the store is asked.
  */
-async function personalAssistantOf(token: string, ownerId: string, chatId: string): Promise<string> {
+async function personalAssistantOf(token: string, ownerId: string, chatId: string): Promise<{ agentId: string; deviceId: string }> {
   const client = createGuguSupabaseClient({ schema: 'identity', headers: { Authorization: `Bearer ${token}` } });
   const { data, error } = await client.from('agent_provisions').select(PERSONAL_ASSISTANT_SELECT)
     .eq('owner_user_id', ownerId).eq('member_key', 'assistant').limit(32).abortSignal(AbortSignal.timeout(5000));
-  if (error) throw failed('Could not verify the agent of the chosen conversation');
+  if (error) throw failed('Could not verify the agent of the chosen conversation', 'owner-unknown');
   type Identity = { owner_user_id?: unknown; removed_at?: unknown };
   type Row = Omit<AssistantProvisionRow, 'agent'> & { dm_chat_id?: unknown; agent: Identity | Identity[] | null };
   const rows = (data ?? []) as Row[];
@@ -63,7 +70,7 @@ async function personalAssistantOf(token: string, ownerId: string, chatId: strin
     // Its own check of each identity: exactly one, its removal said (null or a time), else it throws.
     pick = pickAssistant(rows as AssistantProvisionRow[]);
   } catch {
-    throw failed('Could not verify the agent of the chosen conversation');
+    throw failed('Could not verify the agent of the chosen conversation', 'owner-unknown');
   }
   const served = pick && rows.some((row) => {
     const agent = Array.isArray(row.agent) ? row.agent.length === 1 ? row.agent[0] : null : row.agent;
@@ -71,10 +78,13 @@ async function personalAssistantOf(token: string, ownerId: string, chatId: strin
       && ['ready', 'completed'].includes(String(row.phase)) && agent?.owner_user_id === ownerId && agent.removed_at === null;
   });
   if (!pick || !served) throw denied('The chosen conversation is not your private conversation with your personal assistant');
-  return pick.agentId;
+  return pick;
 }
 
-export type Bound = { ownerId: string; token: string; chatId: string; handle: string; agentId: string; recheck(): Promise<void> };
+/** The authority of one call, and the assistant's home device (what its own pages name in a change, 50). */
+export type Bound = { ownerId: string; token: string; chatId: string; handle: string; agentId: string; deviceId: string; recheck(): Promise<void> };
+/** The binding actions a call may need: any but `unread` (a domain where the action has them). */
+export type ResourceCallAction = Exclude<ConversationBindingAction, 'unread'>;
 
 /**
  * The authority one call works under: the current account's own selection for this installed App, with the action granted
@@ -83,12 +93,12 @@ export type Bound = { ownerId: string; token: string; chatId: string; handle: st
  * called after every wait. Null: nobody has chosen the conversation yet.
  */
 export async function boundAgent(
-  extensionId: string, name: string, needs: readonly Exclude<ConversationBindingAction, 'unread'>[], domain: string | null,
+  extensionId: string, name: string, needs: readonly ResourceCallAction[], domain: string | null,
 ): Promise<Bound | null> {
   const { token, ownerId } = await account();
   const service = extensionsService();
   // Every action the call needs, each granted (a change needs reading the domain too): one binding behind them all.
-  const grant = () => needs.map((action) => domain === null
+  const grant = () => needs.map((action) => domain === null || action === 'voice-notes:manage'
     ? service.conversationBinding(ownerId, extensionId, name, action)
     // A domain is only ever named with the resource actions.
     : service.conversationResourceBinding(ownerId, extensionId, name, action as ResourceBindingAction, domain)).at(-1) ?? null;
@@ -98,17 +108,23 @@ export async function boundAgent(
     await current(ownerId);
     if (grant()?.handle !== before.handle) throw denied('Conversation binding changed');
   };
-  const [membership, agent] = await Promise.allSettled([member(token, ownerId, before.chatId), personalAssistantOf(token, ownerId, before.chatId)]);
+  const membershipOf = member(token, ownerId, before.chatId).catch((error: unknown) => {
+    // Membership that could not be checked: this account's access could not be verified (the pages' accessFailed).
+    if (codeOf(error) === 'failed') throw Object.assign(error as Error, { reason: 'access-unverified' });
+    throw error;
+  });
+  const [membership, agent] = await Promise.allSettled([membershipOf, personalAssistantOf(token, ownerId, before.chatId)]);
   // A refusal outweighs a check that could not be made: the call is refused, not to be tried again.
   const rejected = [membership, agent].filter((check): check is PromiseRejectedResult => check.status === 'rejected');
   const refusal = rejected.find((check) => codeOf(check.reason) === 'denied') ?? rejected[0];
   if (refusal) throw refusal.reason;
   await recheck();
-  return { ownerId, token, chatId: before.chatId, handle: before.handle, agentId: (agent as PromiseFulfilledResult<string>).value, recheck };
+  const { agentId, deviceId } = (agent as PromiseFulfilledResult<{ agentId: string; deviceId: string }>).value;
+  return { ownerId, token, chatId: before.chatId, handle: before.handle, agentId, deviceId, recheck };
 }
 
 /** The store, as the signed-in person; a call made after the account changed is refused before it is sent. */
-function storeOf(ownerId: string) {
+export function storeOf(ownerId: string) {
   return createAssistantPanelClient(async (rpc, args) => {
     const { token, ownerId: now } = await account().catch(() => ({ token: '', ownerId: null }));
     if (now !== ownerId) throw new AssistantPanelError('account-changed', 'Assistant panel account changed');
@@ -118,23 +134,32 @@ function storeOf(ownerId: string) {
   }, () => ownerId);
 }
 
-/** A refusal of the account, by the store or the token, is a refusal; anything else a read could not make now is `unavailable`. */
-function refusedOrUnavailable(error: unknown): 'unavailable' {
+/**
+ * A refusal of the account, by the store or the token, is a refusal; anything else a read could not make now is
+ * `unavailable`, with the class the assistant's pages say it as (assistant-panel-errors.ts): out of time, past the store's
+ * answer budget, or not read.
+ */
+export function refusedOrUnavailable(error: unknown): Unavailable {
   const code = codeOf(error);
   if (code === 'denied' || code === 'invalid') throw error;
   if (code === 'account-changed' || code === 'signed-out' || code === '42501' || statusOf(error) === 401 || statusOf(error) === 403) {
     throw denied('This account may not read this agent\'s resources');
   }
-  return 'unavailable';
+  if (code === 'read-timeout') return unavailable('timed-out');
+  if (code === '54000') return unavailable('too-large');
+  if (code === 'stale') return unavailable('stale');
+  if (code === 'application-failed') return unavailable('not-applied');
+  return unavailable(code === 'failed' ? reasonOf(error) : 'unreadable');
 }
 
 /** Runs `use` under the binding's authority; `unbound` or `unavailable` (checked again first) said apart from a refusal. */
-async function withBound<T>(extensionId: string, name: string, domain: string, use: (bound: Bound) => Promise<T>): Promise<T | 'unbound' | 'unavailable'> {
+async function withBound<T>(extensionId: string, name: string, domain: string, use: (bound: Bound) => Promise<T>): Promise<T | 'unbound' | Unavailable> {
   const bound = await boundAgent(extensionId, name, ['resources'], domain).catch((error: unknown) => {
-    if (codeOf(error) === 'failed') return 'unavailable' as const;
+    if (codeOf(error) === 'failed') return unavailable(reasonOf(error));
     throw error;
   });
-  if (bound === 'unavailable' || bound === null) return bound ?? 'unbound';
+  if (bound === null) return 'unbound';
+  if ('state' in bound) return bound;
   try {
     const value = await use(bound);
     await bound.recheck();
@@ -159,10 +184,13 @@ function readableDomainOf(value: unknown): ReadableResourceDomain {
  * apply, or an out-of-date observation, makes the whole domain unreadable — not just that one resource; so does a failed
  * publication. No marker is not yet published, never an empty domain (a voice-note list published in part excepted).
  */
-function domainState(snapshot: AssistantPanelSnapshot, domain: ReadableResourceDomain): { state: 'unavailable' | 'unprepared' } | { state: 'ready'; items: AssistantPanelItem[] } {
+export function domainState(snapshot: AssistantPanelSnapshot, domain: ReadableResourceDomain): Unavailable | { state: 'unprepared' } | { state: 'ready'; items: AssistantPanelItem[] } {
   const collection = assistantPanelCollection(snapshot, domain as AssistantPanelDomain);
-  if (snapshot.application.some((row) => row.domain === domain && row.status === 'failed')) return { state: 'unavailable' };
-  if (collection.state === 'error' || collection.items.some((item) => item.stale_at)) return { state: 'unavailable' };
+  // In the order the pages check them (`collection`): a change that failed to apply, an observation out of date, then
+  // a publication that failed.
+  if (snapshot.application.some((row) => row.domain === domain && row.status === 'failed')) return unavailable('not-applied');
+  if (collection.items.some((item) => item.stale_at)) return unavailable('stale');
+  if (collection.state === 'error') return unavailable('unreadable');
   if (collection.state === 'unprepared' && !(domain === 'voice-notes' && collection.items.length > 0)) return { state: 'unprepared' };
   return { state: 'ready', items: collection.items };
 }
@@ -175,10 +203,10 @@ export async function appResourceList(extensionId: string, input: unknown): Prom
   const answer = await withBound(extensionId, args.name, domain, async (bound): Promise<AppResourceList> => {
     const snapshot = await withAssistantPanelReadDeadline(() => storeOf(bound.ownerId).snapshot(bound.agentId));
     const readable = domainState(snapshot, domain);
-    if (readable.state !== 'ready') return { ...named, state: readable.state };
+    if (readable.state !== 'ready') return { ...named, ...readable };
     return { ...named, state: 'ready', revision: snapshot.revision, resources: readable.items.map((item) => appResourceOf(domain, item)) };
   });
-  return typeof answer === 'string' ? { ...named, state: answer } : answer;
+  return answer === 'unbound' ? { ...named, state: answer } : 'name' in answer ? answer : { ...named, ...answer };
 }
 
 /** `gugu.bindings.resource(name, domain, key)` (42, `chat:resources`): one resource and its content, up to 20 MiB of it. */
@@ -197,11 +225,11 @@ export async function appResourceRead(extensionId: string, input: unknown): Prom
     ]);
     await bound.recheck();
     const readable = snapshot ? domainState(snapshot, domain) : null;
-    if (readable && readable.state !== 'ready') return { ...named, state: readable.state };
+    if (readable && readable.state !== 'ready') return { ...named, ...readable };
     if (!item) return { ...named, state: 'missing', revision: '0' };
     // A deleted resource stays deleted: its tombstone's revision is what bringing it back (where the domain allows) expects.
     if (item.deleted_at) return { ...named, state: 'missing', revision: item.revision, deleted: true };
-    if (item.stale_at) return { ...named, state: 'unavailable' };
+    if (item.stale_at) return { ...named, ...unavailable('stale') };
     const resource = appResourceOf(domain, item);
     const ready = (bytes: Uint8Array) => {
       if (bytes.byteLength > DEFAULT_TEXT_MAX_BYTES) return { ...named, state: 'ready' as const, resource, content: '', truncated: true, totalSize: bytes.byteLength };
@@ -228,7 +256,7 @@ export async function appResourceRead(extensionId: string, input: unknown): Prom
       throw error;
     }
   });
-  return typeof answer === 'string' ? { ...named, state: answer } : answer;
+  return answer === 'unbound' ? { ...named, state: answer } : 'name' in answer ? answer : { ...named, ...answer };
 }
 
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
@@ -253,17 +281,17 @@ export function savedData(domain: 'memory' | 'files' | 'skills', key: string, ex
 }
 
 /** A change the store refused, said as the App hears it; a refusal of the request itself is thrown. */
-function writeOutcome(error: unknown): 'conflict' | 'deleted' | 'unavailable' {
+function writeOutcome(error: unknown): { state: 'conflict' | 'deleted' } | Unavailable {
   const code = codeOf(error);
-  if (code === 'PT409' || code === '40001') return 'conflict';
-  if (code === '55000') return 'deleted';
+  if (code === 'PT409' || code === '40001') return { state: 'conflict' };
+  if (code === '55000') return { state: 'deleted' };
   if (code === '23505') throw invalid('This operationId was already used for a different change');
   if (code === '22023' || code === '54000') throw invalid('The resource store does not take this change as it is');
   return refusedOrUnavailable(error);
 }
 
 /** Removes a body this call uploaded that no change took. The store refuses removing one a change refers to. */
-async function discard(bound: Bound, itemId: string): Promise<void> {
+export async function discard(bound: Bound, itemId: string): Promise<void> {
   const client = createGuguSupabaseClient({ schema: 'chat', headers: { Authorization: `Bearer ${bound.token}` } });
   await Promise.resolve(client.rpc('workspace_delete_as', { p_item_id: itemId, p_as_user_id: bound.ownerId })).catch(() => undefined);
 }
@@ -291,11 +319,11 @@ async function change(
   const content = args.content ?? '';
   if (new TextEncoder().encode(content).byteLength > DEFAULT_TEXT_MAX_BYTES) throw invalid('content is at most 20 MiB');
   const bound = await boundAgent(extensionId, args.name, ['resources', 'resources:write'], domain).catch((error: unknown) => {
-    if (codeOf(error) === 'failed') return 'unavailable' as const;
+    if (codeOf(error) === 'failed') return unavailable(reasonOf(error));
     throw error;
   });
-  if (bound === 'unavailable') return { ...named, state: 'unavailable' };
   if (!bound) return { ...named, state: 'unbound' };
+  if ('state' in bound) return { ...named, ...bound };
   let uploaded: string | undefined;
   try {
     const prepared = await prepare(bound, { domain, key, expectedRevision: args.expectedRevision, content });
@@ -319,9 +347,9 @@ async function change(
       throw refusal;
     }
     // Whether an unanswered commit landed is unknown: its body stays, for the same call again to find.
-    if (uploaded && outcome !== 'unavailable') await discard(bound, uploaded);
+    if (uploaded && outcome.state !== 'unavailable') await discard(bound, uploaded);
     await bound.recheck();
-    return { ...named, state: outcome };
+    return { ...named, ...outcome };
   }
 }
 

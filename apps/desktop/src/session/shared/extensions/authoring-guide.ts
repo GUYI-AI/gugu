@@ -899,6 +899,7 @@ API 42 to 46, when that conversation is the person's private one with their own 
 schedules, the work it handed out): \`guide_read apps-bindings-agent\`; the assistant itself (\`gugu.assistant\`, 44) and
 \`toast\`: \`guide_read apps-assistant\`; the host's top row over it, its voice-note recorder, your composer "+" entries
 (46 to 48): \`guide_read apps-bindings-assistant\`.
+Managing its files and voice notes, and drafts carrying files (API 50): \`guide_read apps-bindings-manage\`.
 `;
 
 export const EXTENSION_GUIDE_BINDINGS_AGENT = `# gugu.bindings — the agent behind the chosen conversation
@@ -1019,6 +1020,22 @@ heart, checklist, document, book, image, message. \`run\`, each needing that bin
   show that view.
 The host's recording bar sits above that composer while a note for this assistant records (whoever started it); when the
 person opens the note it shows, your page hears \`intent: { kind: "voice-note" }\` (read it through \`voice-notes\`).
+`;
+
+export const EXTENSION_GUIDE_BINDINGS_MANAGE = `# gugu.bindings — managing the agent's files and voice notes, drafts carrying files
+
+The same binding as \`apps-bindings-agent\`: the person's private conversation with their personal assistant, desktop only.
+API 50: every \`unavailable\` carries \`reason\`: \`stale\`, \`not-applied\`, \`timed-out\`, \`unreadable\`, \`access-unverified\`,
+\`owner-unknown\`, \`too-large\`. Each call below, in a click, your page only; \`key\` as \`resources\` gives it:
+- \`"resources:write"\` with \`"files"\`: \`bindings.upload("main", { folder? })\` opens gugu's file picker (50 MB, no video, audio or archive)
+  → \`{ state: "done", uploaded: [{ key, name, receipt }], refused: [{ name, why }] }\` | \`cancelled\`; \`bindings.createFolder("main", key)\` →
+  \`committed\` | \`exists\`; \`bindings.rename("main", key, to)\` → \`{ renamedTo, receipts }\` | \`missing\` | \`exists\`; \`bindings.removeFolder("main", key)\`
+  → gugu asks the person first: \`committed\` | \`cancelled\`.
+- \`"voice-notes:manage"\` (\`chat:voice-notes:manage\`, needs \`"voice-notes"\` read), \`key\` the note's id:
+  \`transcribeVoiceNote\` → \`started\` | \`not-waiting\` | \`busy\` | \`not-ready\` (its home not reachable now: try later);
+  \`removeVoiceNote\` (gugu asks) → \`committed\` | \`cancelled\`; \`exportVoiceNote\` (gugu's save dialog) → \`saved\` | \`cancelled\`.
+- A draft carries files: \`gugu.dispatch(text, { draft: true, to: { binding: "main" }, attach: [{ file: path } | { domain, key }] })\`,
+  up to 9, each one you may read (\`"files"\` / that domain). Pills in the composer; nothing is sent.
 `;
 
 export const EXTENSION_GUIDE_MESSAGES = `# gugu.chats, gugu.messages — the chats you are in, and what was said
@@ -1410,6 +1427,11 @@ export const EXTENSION_GUIDE_TOPICS: readonly { topic: string; about: string; te
     topic: 'apps-assistant',
     about: 'gugu.assistant on the person\'s own assistant chat (44): its status and counts, gugu\'s screens over your page, setup, rename, its moving figure; and toast, gugu\'s own one-line notice for a desktop page.',
     text: EXTENSION_GUIDE_ASSISTANT,
+  },
+  {
+    topic: 'apps-bindings-manage',
+    about: 'gugu.bindings (API 50, desktop): the assistant\'s files uploaded, foldered, renamed, removed; its voice notes transcribed, removed, exported — as its own pages do, the person asked first; a draft carrying files; why a read is unavailable.',
+    text: EXTENSION_GUIDE_BINDINGS_MANAGE,
   },
   {
     topic: 'apps-bindings-assistant',

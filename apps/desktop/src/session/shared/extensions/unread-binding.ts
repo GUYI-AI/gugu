@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { AppFileEntry } from './app-runtime-protocol';
 import { ASSISTANT_BINDING_ACTIONS, ASSISTANT_BINDING_API_VERSION } from './assistant-binding';
 import { RESOURCE_ACTIONS_API_VERSION, RESOURCE_BINDING_ACTIONS } from './agent-resources';
+import { RESOURCES_MANAGEMENT_API_VERSION, VOICE_NOTES_MANAGE_ACTION } from './resources-management';
 import { VOICE_NOTE_API_VERSION, VOICE_NOTE_RECORD_ACTION } from './voice-note-session';
 
 /**
@@ -17,15 +18,17 @@ import { VOICE_NOTE_API_VERSION, VOICE_NOTE_RECORD_ACTION } from './voice-note-s
  * `work` (#1925, API 46, work-binding.ts): when that conversation is the person's private chat with their own assistant,
  * the list of work the assistant handed out, and one task's conversation drawn by the host in the App's panel.
  * `voice-notes:record` (#1927, API 47, voice-note-session.ts): drive the host's voice-note recorder for that same assistant.
+ * `voice-notes:manage` (API 50, resources-management.ts): its agent's voice notes transcribed, removed or exported.
  */
 // #1928 (API 43, bound-schedules.ts): `schedules` / `schedules:control`, the schedules of the agent the conversation is with.
-export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'surface', ...RESOURCE_BINDING_ACTIONS, 'schedules', 'schedules:control', ...ASSISTANT_BINDING_ACTIONS, 'work', VOICE_NOTE_RECORD_ACTION] as const;
+export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'surface', ...RESOURCE_BINDING_ACTIONS, 'schedules', 'schedules:control', ...ASSISTANT_BINDING_ACTIONS, 'work', VOICE_NOTE_RECORD_ACTION, VOICE_NOTES_MANAGE_ACTION] as const;
 export type ConversationBindingAction = (typeof CONVERSATION_BINDING_ACTIONS)[number];
 export const BINDING_ACTION_CAPABILITY = {
   unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft', surface: 'chat:surface',
   resources: 'chat:resources', 'resources:write': 'chat:resources:write',
   schedules: 'chat:schedules', 'schedules:control': 'chat:schedules:control',
   'assistant-status': 'assistant:status', 'assistant-open': 'assistant:open', 'assistant-rename': 'assistant:rename',
+  'voice-notes:manage': 'chat:voice-notes:manage',
   work: 'chat:work',
   [VOICE_NOTE_RECORD_ACTION]: 'chat:voice-notes:record',
 } as const;
@@ -39,6 +42,7 @@ export const BINDING_ACTION_API_VERSION = {
   // bound-schedules.ts's BOUND_SCHEDULES_API_VERSION (it imports BINDING_NAME from here, so not imported back).
   schedules: 43, 'schedules:control': 43,
   'assistant-status': ASSISTANT_BINDING_API_VERSION, 'assistant-open': ASSISTANT_BINDING_API_VERSION, 'assistant-rename': ASSISTANT_BINDING_API_VERSION,
+  'voice-notes:manage': RESOURCES_MANAGEMENT_API_VERSION,
   work: 46,
   [VOICE_NOTE_RECORD_ACTION]: VOICE_NOTE_API_VERSION,
 } as const satisfies Record<Exclude<ConversationBindingAction, 'unread'>, number>;
