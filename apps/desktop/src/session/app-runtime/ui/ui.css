@@ -76,7 +76,8 @@
 :where(h2, h3, h4, h5, h6):where(:not(:first-child)) { margin-top: var(--em-spacing-xl); }
 
 :where(p, ul, ol, dl, table, pre, blockquote, figure, form, fieldset, details, progress, meter, .card, .list, .stack, .row) { margin: 0 0 var(--em-spacing-md); }
-:where(body, main, section, article, aside, header, footer, .card, details, dialog, li, td, th, form, fieldset, figure, blockquote) > :where(:last-child) { margin-bottom: 0; }
+/* 对话框除外：平台靠 margin: auto 把它摆在正中，作者样式压过平台样式，这里一写 margin-bottom 它就被钉到底部 */
+:where(body, main, section, article, aside, header, footer, .card, details, dialog, li, td, th, form, fieldset, figure, blockquote) > :where(:last-child:not(dialog)) { margin-bottom: 0; }
 :where(ul, ol):not(.list) { padding-inline-start: 1.25em; }
 :where(li) + :where(li) { margin-top: 2px; }
 :where(strong, b) { font-weight: 600; }
