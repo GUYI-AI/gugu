@@ -132,7 +132,8 @@ describe('asking main to bind the trusted App', () => {
     expect(word()).toBeNull();
     late(state.answer({ ownerId: OWNER, chatId: DM }));
     await flush();
-    expect(word()?.ownerId ?? null).not.toBe(OWNER);
+    // The answer was about the other account: nothing is published for this one.
+    expect(word()).toBeNull();
   });
 
   it('asks again, a few times, what main could not verify; never says anything', async () => {

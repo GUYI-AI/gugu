@@ -240,7 +240,12 @@ describe('the person\'s own choice stands', () => {
     install();
     await sync(DM);
     service.setConversationUnreadBinding(OWNER, ID, 'main', GROUP, 'person');
+    // Left alone at once: not even the chat is looked up.
+    let reads = 0;
+    db.afterRead = () => { reads += 1; };
     expect(await sync(DM)).toMatchObject({ trusted: true, outcome: 'chosen', changed: false });
+    expect(reads).toBe(0);
+    db.afterRead = undefined;
     expect(bound()).toBe(GROUP);
     db.assistants[OWNER] = null;
     expect(await sync(null)).toMatchObject({ outcome: 'chosen' });
