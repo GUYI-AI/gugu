@@ -6,7 +6,7 @@ import type { MarketReleaseProof } from '../../session/shared/extensions/market'
 import {
   MAX_RELEASE_MANIFEST_BYTES, RELEASE_SIGNATURE_BYTES, releaseProof, releaseRequired, SHIPPED_RELEASE_TRUST, verifyMarketRelease,
   type ReleaseTrustTable, type SignedRelease,
-} from '../../session/shared/extensions/release/release-trust'
+} from '../../session/shared/extensions/release/release-trust-web'
 
 /**
  * The App market as the phone reads it (L9; 161 10-15: the phone installs market Apps). The same `market/index.json` the

@@ -362,7 +362,6 @@ function useAssistantShell(): { member: boolean | null; preparing: boolean; rule
 
 function AssistantRailTop({ active, onOpen }: { active: boolean; onOpen: () => void }) {
   const { t } = useTranslation('assistant')
-  const { user } = useAuth()
   // Entry switch: where a click goes (lib/assistantEntry.ts). On the assistant App, its conversation's unread is a dot here,
   // read from the chat itself as the dock reads an App's (#1930); opening the App reads nothing by itself.
   const target = useAssistantEntryTarget()
