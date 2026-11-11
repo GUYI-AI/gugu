@@ -70,6 +70,7 @@ it.each([390, 1024])(
     const sample = () =>
       requestAnimationFrame(() =>
         setTimeout(() => {
+          if (!sampling) return
           const scroller = host.querySelector<HTMLElement>('[data-chat-scroll]')
           const rows = host.querySelectorAll('[data-item-id]').length
           if (scroller && rows > 0)
@@ -77,7 +78,7 @@ it.each([390, 1024])(
               rows,
               gap: Math.round(scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop)
             })
-          if (sampling) sample()
+          sample()
         }, 0)
       )
     sample()
@@ -148,6 +149,7 @@ it.each([390, 1024])(
       composer: 'slot'
     })
     cleanup.push(() => {
+      sampling = false
       view.dispose()
       state.dispose()
       context.dispose()
@@ -157,17 +159,21 @@ it.each([390, 1024])(
     await until('rows mounted', () => host.querySelectorAll('[data-item-id]').length > 0)
     await new Promise((resolve) => setTimeout(resolve, 400))
     const slot = view.composerSlot!
-    const last = () => [...host.querySelectorAll<HTMLElement>('[data-item-id]')].at(-1)!
+    const last = () => [...host.querySelectorAll<HTMLElement>('[data-item-id]')].at(-1)
     const overlaps: number[] = []
     let sampling = true
     // After each frame is drawn: how far the last row reaches below the top of the composer.
     const sample = () =>
       requestAnimationFrame(() =>
         setTimeout(() => {
-          overlaps.push(
-            Math.round(last().getBoundingClientRect().bottom - slot.getBoundingClientRect().top)
-          )
-          if (sampling) sample()
+          // A frame already queued when the test stops must not read a torn-down view.
+          if (!sampling) return
+          const row = last()
+          if (row)
+            overlaps.push(
+              Math.round(row.getBoundingClientRect().bottom - slot.getBoundingClientRect().top)
+            )
+          sample()
         }, 0)
       )
     const composer = document.createElement('div')
