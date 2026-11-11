@@ -54,6 +54,9 @@ const FIRST_SENDER_ID = 1_000_000;
  */
 let nextSenderId = FIRST_SENDER_ID;
 
+/** Whether a sender is one of these lines (a device connection, a web socket) rather than a window of this app. */
+export const isFrameSender = (senderId: number): boolean => senderId >= FIRST_SENDER_ID;
+
 /** port1(宿主侧,PortLike):postMessage 走线,收到的 pm 帧以 {data} 事件派发给 portTransport。 */
 class HostPort implements MessagePortMainLike {
   private readonly listeners = new Map<string, Set<(...args: unknown[]) => void>>();

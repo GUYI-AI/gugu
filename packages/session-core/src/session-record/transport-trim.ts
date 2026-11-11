@@ -158,6 +158,18 @@ function trimPatches(patches: readonly TurnPatch[], limit: number): TurnPatch[] 
 export const TRANSPORT_PAYLOAD_BUDGET = 128 * 1024;
 
 /**
+ * 同一道总量闸，给**本机窗口读本机库**用的那一档：这一包只过进程间通道，不占设备 RPC 的额度，
+ * 128K 在这里只会让一页剩下几轮（实测三条真实会话：128K 一页 4~7 轮，2M 一页 74~99 轮）。
+ * 仍然要有上限：一页是一次同步解析加一次整表重排，❌ 放成无限。
+ */
+export const LOCAL_PAYLOAD_BUDGET = 2 * 1024 * 1024;
+
+/** 一轮裁完以后在这一包里占多少字节 —— 读库的一侧据此在装满时停手，❌ 先读满 100 行再丢。 */
+export function transportSizeOf(turn: TranscriptTurn, limit = TRANSPORT_TEXT_LIMIT): number {
+  return new TextEncoder().encode(JSON.stringify(trimTurnsForTransport([turn], limit)[0])).byteLength;
+}
+
+/**
  * 把一段轮压进总量预算。
  *
  * @returns 装得下的那一段（可能比传进来的短），以及是否真的丢过。

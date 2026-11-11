@@ -1,7 +1,7 @@
 import { beginCanonicalQueueTask } from './canonical-queue-state';
 import { renumberStoredTurn, rewriteTurnId } from './session-turn-identity';
 export { renumberStoredTurn } from './session-turn-identity';
-import { findToolImage, findToolItem, trimCursorPageForTransport, trimTurnsForTransport } from '@gugu/session-core/session-record';
+import { findToolImage, findToolItem, LOCAL_PAYLOAD_BUDGET, TRANSPORT_PAYLOAD_BUDGET, TRANSPORT_TEXT_LIMIT, transportSizeOf, trimCursorPageForTransport, trimTurnsForTransport } from '@gugu/session-core/session-record';
 import { and, asc, desc, eq, gte, like, lt, notLike, sql } from 'drizzle-orm';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { hermesNativeDigest } from '@gugu/session-core/acp/hermes-prompt';
@@ -12,7 +12,7 @@ import { activitySignal } from '../activity/signals';
 import { noteNativeConversationReplies, noteNativeConversationHistory, truncateNativeConversationRead } from './session-conversation-read';
 import { nativeConversationActivity } from './session-conversation-activity';
 import { publishNativeConversationInbox, queueNativeConversationInbox } from './native-conversation-inbox';
-import { mayFillReplay, didFillReplay, stopFillingReplay, readableStoredRows } from './session-turn-replay';
+import { mayFillReplay, didFillReplay, stopFillingReplay, readableParsedRows, readableStoredRows } from './session-turn-replay';
 import { ownerNotificationEpoch, rewindOwnerNotificationState, publishOwnerNotificationState } from './owner-notification-state';
 import { persistWithTurnSettlement } from './turn-settlement';
 import { events } from '@main/lib/events';
@@ -330,7 +330,10 @@ export async function getStoredHistory(params: {
   /** 给了就改成「seq ≥ fromSeq 的全部行」,供界面开场补读用;与 before/limit 互斥。 */
   fromSeq?: number;
   ownerNotificationsOnly?: boolean;
-}): Promise<StoredTurnPage> {
+}, reader: { local?: boolean } = {}): Promise<StoredTurnPage> {
+  // @@@page-budget-by-reader — a window on this machine reads its own database over the process channel; every
+  // other reader (another machine, a phone) is paying for a shared device link. Same paging, two page sizes.
+  const budget = reader.local ? LOCAL_PAYLOAD_BUDGET : TRANSPORT_PAYLOAD_BUDGET;
   for (;;) {
     const epoch = ownerNotificationEpoch(params.sessionId);
     const page = await readStoredTurns(params.sessionId, {
@@ -338,12 +341,13 @@ export async function getStoredHistory(params: {
       limit: params.limit,
       fromSeq: params.fromSeq,
       ownerNotificationsOnly: params.ownerNotificationsOnly,
+      budget,
     });
     // A revert can reuse every sequence in the page. Its rows and generation must describe the same snapshot.
     if (epoch !== ownerNotificationEpoch(params.sessionId)) continue;
     const snapshot = { ...page, nativeOwnerNotificationEpoch: epoch };
     return params.fromSeq === undefined
-      ? trimCursorPageForTransport(snapshot)
+      ? trimCursorPageForTransport(snapshot, TRANSPORT_TEXT_LIMIT, budget)
       : { ...snapshot, turns: trimTurnsForTransport(page.turns) };
   }
 }
@@ -383,6 +387,9 @@ export async function getStoredSettledTurn(params: { sessionId: string; referenc
   return turn.outcome ? { originTurnId: row.originTurnId, turn: trimTurnsForTransport([turn])[0]! } : null;
 }
 
+/** How many rows one step of a budgeted page read takes: what a full page overshoots by, at most. */
+const STORED_PAGE_STEP = 8;
+
 export interface StoredTurnPage {
   turns: TranscriptTurn[];
   /** The generation in which these rows were read; older hosts omit it (generation zero). */
@@ -402,7 +409,7 @@ export interface StoredTurnPage {
  */
 export async function readStoredTurns(
   sessionId: string,
-  options: { before?: number; limit?: number; fromSeq?: number; ownerNotificationsOnly?: boolean } = {}
+  options: { before?: number; limit?: number; fromSeq?: number; ownerNotificationsOnly?: boolean; budget?: number } = {}
 ): Promise<StoredTurnPage> {
   if (options.fromSeq !== undefined) {
     // 「开场那一页之后新落库的行」—— 开场时补读一次用(acp-chat-store `_reloadStoredTail`)。❌ 不分页:这一段只是
@@ -430,31 +437,40 @@ export async function readStoredTurns(
     };
   }
   const limit = options.limit ?? 100;
-  const where =
-    options.before === undefined
-      ? eq(sessionTurns.sessionId, sessionId)
-      : and(
-          eq(sessionTurns.sessionId, sessionId),
-          lt(sessionTurns.seq, options.before)
-        );
+  // @@@read-no-more-than-fits — the page that leaves here is cut to `budget` bytes, and the next call starts from the
+  // oldest turn that was kept. Reading all `limit` rows first meant parsing megabytes to send a few turns, then
+  // reading the same rows again. Rows come in small steps instead, and the reading stops once the page is full.
+  const rows: { seq: number; data: string; turnId: string; turn: TranscriptTurn }[] = [];
+  let before = options.before, bytes = 0, exhausted = false;
+  while (rows.length < limit) {
+    const want = Math.min(options.budget === undefined ? limit : STORED_PAGE_STEP, limit - rows.length);
+    const step = await db
+      .select({ seq: sessionTurns.seq, data: sessionTurns.data, turnId: sessionTurns.turnId })
+      .from(sessionTurns)
+      .where(before === undefined
+        ? eq(sessionTurns.sessionId, sessionId)
+        : and(eq(sessionTurns.sessionId, sessionId), lt(sessionTurns.seq, before)))
+      .orderBy(desc(sessionTurns.seq))
+      .limit(want);
+    for (const row of step) {
+      const turn = JSON.parse(row.data) as TranscriptTurn;
+      rows.push({ ...row, turn });
+      if (options.budget !== undefined) bytes += transportSizeOf(turn) + 1;
+    }
+    if (step.length < want) { exhausted = true; break; }
+    before = step.at(-1)!.seq;
+    if (options.budget !== undefined && bytes >= options.budget) break;
+  }
 
-  const rows = await db
-    .select({ seq: sessionTurns.seq, data: sessionTurns.data, turnId: sessionTurns.turnId })
-    .from(sessionTurns)
-    .where(where)
-    .orderBy(desc(sessionTurns.seq))
-    .limit(limit);
-
-  const ordered = rows.slice().reverse();
-  const readable = await readableStoredRows(sessionId, ordered);
-  if (!readable.length && rows.length === limit && rows.length) {
-    return readStoredTurns(sessionId, { before: rows.at(-1)!.seq, limit });
+  const readable = await readableParsedRows(sessionId, rows.slice().reverse());
+  if (!readable.length && !exhausted && rows.length) {
+    return readStoredTurns(sessionId, { before: rows.at(-1)!.seq, limit, budget: options.budget });
   }
 
   return {
     turns: readable.map(row => row.turn),
     originTurnIds: readable.map(row => row.turnId),
-    nextCursor: rows.length < limit ? null : (rows.at(-1)?.seq ?? null),
+    nextCursor: exhausted ? null : (rows.at(-1)?.seq ?? null),
   };
 }
 

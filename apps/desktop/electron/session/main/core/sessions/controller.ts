@@ -1,5 +1,6 @@
 import { openRuntimeFork, runtimeFork, type RuntimeFork } from './session-life-forks';
-import { createRPCController } from '@shared/lib/ipc/rpc';
+import { createRPCController, withSender } from '@shared/lib/ipc/rpc';
+import { isFrameSender } from '@main/host-ws/frame-host';
 import { archiveSession, restoreSession } from './archiveSession';
 import { dehydrateSession } from './dehydrateSession';
 import { getSessions } from './getSessions';
@@ -37,7 +38,9 @@ import { setSessionsOnScreen } from './sessions-on-screen';
  */
 export const sessionController = createRPCController({
   getSessions,
-  getStoredHistory,
+  // A window of this app reads at the local page size; a device link or a web socket reads at the transport size.
+  getStoredHistory: withSender((sender: number, params: Parameters<typeof getStoredHistory>[0]) =>
+    getStoredHistory(params, { local: !isFrameSender(sender) })),
   getStoredSettledTurn,
   getStoredToolImage,
   // #980 打开一条没在跑的会话时:把 agent 自己的记录里有、库里还没有的那几轮补进库,回补进了几轮。

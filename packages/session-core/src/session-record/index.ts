@@ -17,7 +17,10 @@ export {
 } from './timeline';
 
 export {
+  LOCAL_PAYLOAD_BUDGET,
+  TRANSPORT_PAYLOAD_BUDGET,
   TRANSPORT_TEXT_LIMIT,
+  transportSizeOf,
   trimAfterResultForTransport,
   trimBatchForTransport,
   trimCursorPageForTransport,
