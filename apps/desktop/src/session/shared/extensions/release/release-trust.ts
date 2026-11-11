@@ -92,12 +92,13 @@ export function verifyMarketRelease(input: {
   return release
 }
 
-const base64Of = (bytes: Uint8Array) => {
+/** Bytes as base64, and back (a proof, a kept copy): no Buffer in the page. */
+export const base64Of = (bytes: Uint8Array) => {
   let text = ''
   for (let at = 0; at < bytes.length; at += 0x8000) text += String.fromCharCode(...bytes.subarray(at, at + 0x8000))
   return btoa(text)
 }
-const bytesOfBase64 = (text: string) => Uint8Array.from(atob(text), (char) => char.charCodeAt(0))
+export const bytesOfBase64 = (text: string) => Uint8Array.from(atob(text), (char) => char.charCodeAt(0))
 
 /** The proof an install keeps, from the bytes that were verified. */
 export function releaseProof(keyId: string, raw: Uint8Array, signature: Uint8Array): MarketReleaseProof {
