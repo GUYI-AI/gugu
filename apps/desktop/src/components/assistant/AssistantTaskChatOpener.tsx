@@ -13,7 +13,8 @@ import { AssistantTaskChatWindow } from './AssistantTaskChatWindow'
 import {AssistantWorkTaskWindow} from './AssistantWorkTaskWindow'
 import { readRequiredDisplayIdentities } from '../../lib/identityReadAdapter'
 import { rendererLogger } from '../../lib/log'
-import { openAssistantTaskInApp } from '../../lib/assistantEntry'
+import { assistantAppUsable, openAssistantTaskInApp } from '../../lib/assistantEntry'
+import { followLink } from '../../lib/guguLinks'
 import { resolveAssistantWorkTarget } from '../../lib/assistantWorkTarget'
 
 const log = rendererLogger('assistant/task-chat-open')
@@ -45,6 +46,11 @@ export function AssistantTaskChatOpener({ visible, desktop = false }: { visible:
       // Entry switch: the assistant's page is its App. The task's conversation opens over the App's panel (its host layer),
       // the same window the built-in panel drew; a task named without its work id is found in the assistant's work first.
       if (desktop) {
+        // The App not usable here (switched off, going in, failing): the task is an ordinary task, opened as any session is.
+        if (!assistantAppUsable()) {
+          followLink({ kind: 'session', sessionId: request.task.sessionId, deviceId: request.task.deviceId })
+          return
+        }
         const ownerId = user.id
         const work = request.workId ? Promise.resolve(request as AssistantTaskChat & { workId: string })
           : resolveAssistantWorkTarget(request.assistantId, { ...(request.taskAgentId ? { agentId: request.taskAgentId } : { sessionId: request.task.sessionId }) })

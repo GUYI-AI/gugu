@@ -7,6 +7,7 @@ import { isNeedsYou } from '@gugu/core/shared/agentStatusPresentation'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { sessionPresentation } from '@/mobile/agent-watch/watch-status'
 import { followLink } from '@/lib/guguLinks'
+import { readAssistantShellBridge } from '@/lib/assistantShellBridge'
 import { Bell } from '@/lib/icons'
 import { installShellSlots, readShellSlots } from '@/lib/shellSlots'
 import { setSidebarNotificationsOpen, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge'
@@ -17,6 +18,7 @@ import { SectionLabel } from '../ui/SectionLabel'
 import { rowKeyActivate } from '../contacts/contactsPanelStyles'
 import { NOTIFICATION_LIST_SLOT_PREFIX, NOTIFICATION_TOGGLE_SLOT_PREFIX } from './NotificationSlot'
 import { NeedsYouTaskRow } from './NeedsYouTaskRow'
+import { isAssistantAgent } from '@/session/renderer/features/assistant/assistant-lineage'
 import { markNeedsYouTaskSeen, useNeedsYouTasks, type NeedsYouTask } from './useNeedsYouTasks'
 import { usePasswordNotifications, openPasswordRequest } from '@/lib/passwordBetaNotifications'
 
@@ -68,7 +70,16 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
         {passwords.map(request => <Button key={request.requestId} variant="ghost" className="w-full justify-start" data-password-notification={request.requestId}
           onClick={() => { openPasswordRequest(request); setSidebarNotificationsOpen(false) }}>请求使用密码 · {request.origin}</Button>)}
         {tasks.map(task => {
-          const openTask = () => followLink({ kind: 'session', sessionId: task.session.conversationId, deviceId: task.deviceId })
+          // The assistant's own session is the assistant, not a task of its: its row opens the assistant's chat, which the one
+          // decision (lib/assistantEntry.ts) sends to its App, or, when the App is not usable here, opens as any chat — never the
+          // task view, which has no place for it. The task view's read bit is not set by a chat, so this click sets it.
+          // Read at the click: the list does not follow the assistant's snapshot.
+          const openTask = () => {
+            const assistant = readAssistantShellBridge()?.getSnapshot()
+            if (!assistant?.chatId || !isAssistantAgent(task.session.agent?.userId, assistant.assistant?.id)) return followLink({ kind: 'session', sessionId: task.session.conversationId, deviceId: task.deviceId })
+            void markRead([task])
+            return followLink({ kind: 'chat', chatId: assistant.chatId })
+          }
           return <NeedsYouTaskRow key={`${task.deviceId}/${task.session.conversationId}`} task={task} mobile={mobile} emphasis={unread(task)} onClick={openTask} onKeyDown={rowKeyActivate(openTask)} />
         })}
       </div>

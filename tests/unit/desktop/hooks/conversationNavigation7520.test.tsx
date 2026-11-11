@@ -7,13 +7,14 @@ import { useLinkNavigation } from '../../../../apps/desktop/src/hooks/useLinkNav
 import { openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
 import type { GuguLinkTarget } from '@gugu/core/shared/ui/guguLink'
 import { until } from '../../../support/awaitCondition'
+import { UNAVAILABLE_APP_STATES, clearAssistantAppState, setAssistantAppState } from '../../../support/assistantAppStates'
 
 const mocked = vi.hoisted(() => ({ lookup: vi.fn(), file: vi.fn(), local: vi.fn(), reveal: vi.fn(), work: vi.fn(), task: null as unknown }))
 vi.mock('react-i18next', async (original) => ({ ...await original<typeof import('react-i18next')>(), useTranslation: () => ({ t: (key: string) => key }) }))
 vi.mock('../../../../apps/desktop/src/lib/fileAccess', async original => ({ ...await original<typeof import('../../../../apps/desktop/src/lib/fileAccess')>(), localFileRevision: mocked.local }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { getMessageById: mocked.lookup } }))
 vi.mock('../../../../apps/desktop/src/hooks/useSourceMessageReveal', () => ({ askReveal: mocked.reveal }))
-vi.mock('../../../../apps/desktop/src/lib/assistantShellBridge', () => ({ readAssistantShellBridge: () => ({ getSnapshot: () => ({ assistant: { id: 'assistant' }, chatId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' }) }) }))
+vi.mock('../../../../apps/desktop/src/lib/assistantShellBridge', () => ({ readAssistantShellBridge: () => ({ getSnapshot: () => ({ assistant: { id: 'assistant' }, assistantState: 'found', ownerId: 'owner', chatId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' }), subscribe: () => () => undefined }) }))
 vi.mock('../../../../apps/desktop/src/lib/assistantTaskChat', () => ({ OPEN_ASSISTANT_TASK_CHAT: '__open_assistant_task_chat', readAssistantTaskChat: () => mocked.task }))
 vi.mock('../../../../apps/desktop/src/lib/assistantWork', () => ({ assistantWorkCloud: { listAll: mocked.work } }))
 
@@ -47,10 +48,12 @@ beforeEach(async () => {
   openAssistant.mockImplementation((tasks: boolean) => tasks ? 'assistant:task-chat' : 'assistant:chat')
   mocked.task = { assistantId: 'assistant', taskAgentId: 'task', task: { deviceId: 'device', sessionId: 'session' }, assistants: [] }
   mocked.lookup.mockResolvedValue({ chat_id: assistantChat })
+  // The assistant's tasks have their place over its App's panel while the App is the entry's target (lib/assistantEntry.ts).
+  setAssistantAppState('usable', 'owner')
   container = document.createElement('div'); document.body.append(container); root = createRoot(container)
   await act(async () => { root.render(<Hook />) })
 })
-afterEach(async () => { await act(async () => root.unmount()); container.remove() })
+afterEach(async () => { await act(async () => root.unmount()); container.remove(); clearAssistantAppState() })
 
 describe('conversation source navigation', () => {
   it('reveals a valid assistant source on the left without replacing the task pane', async () => {
@@ -119,6 +122,32 @@ describe('conversation source navigation', () => {
     expect(openAssistant).toHaveBeenCalledWith(true)
     expect(openAssistant).not.toHaveBeenCalledWith(false)
     expect(mocked.reveal).not.toHaveBeenCalled()
+  })
+
+  // The App not usable here (switched off by the person, still going in, failing to go in): a task the assistant started is an
+  // ordinary one — its conversation opens as any conversation does, with the exact message, and nothing reads the assistant's
+  // ledger or asks for the App's panel. The assistant's own chat is still its chat, opened by the one decision.
+  describe.each(UNAVAILABLE_APP_STATES)('the App %s', (state) => {
+    beforeEach(() => setAssistantAppState(state, 'owner'))
+    it('opens a task chat link as the ordinary chat it is, the message revealed there', async () => {
+      mocked.lookup.mockResolvedValue({ chat_id: taskChat })
+      openChat.mockReturnValue('tasks:chat')
+      const listener = vi.fn(); window.addEventListener('__open_assistant_task_chat', listener)
+      try {
+        await act(async () => { await click(taskChat) })
+        expect(openChat).toHaveBeenCalledExactlyOnceWith(taskChat)
+        expect(mocked.reveal).toHaveBeenCalledWith(taskChat, messageId, 'tasks:chat')
+        expect(openAssistant).not.toHaveBeenCalled()
+        expect(listener).not.toHaveBeenCalled()
+        expect(mocked.work).not.toHaveBeenCalled()
+      } finally { window.removeEventListener('__open_assistant_task_chat', listener) }
+    })
+    it('still opens the assistant\'s own chat through the one decision', async () => {
+      await act(async () => { await click(assistantChat) })
+      expect(openAssistant).toHaveBeenCalledExactlyOnceWith(false)
+      expect(mocked.reveal).toHaveBeenCalledWith(assistantChat, messageId, 'assistant:chat')
+      expect(openChat).not.toHaveBeenCalled()
+    })
   })
 
   it('does not navigate or show an old error after changing accounts', async () => {
