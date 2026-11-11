@@ -31,7 +31,6 @@ const denied = (message: string) => Object.assign(new Error(message), { code: 'd
 const invalid = (message: string) => Object.assign(new Error(message), { code: 'invalid' });
 const failed = (message: string) => Object.assign(new Error(message), { code: 'failed' });
 const codeOf = (error: unknown) => (error as { code?: unknown } | null)?.code;
-const statusOf = (error: unknown) => (error as { status?: unknown } | null)?.status;
 function argsOf<T extends z.ZodType>(schema: T, input: unknown): z.infer<T> {
   const parsed = schema.safeParse(input);
   if (!parsed.success) throw invalid(`gugu.bindings takes the binding's name, a resource domain and key, never an owner, agent, chat or path (${parsed.error.issues.map((issue) => issue.path.join('.') || issue.message).join(', ')})`);
