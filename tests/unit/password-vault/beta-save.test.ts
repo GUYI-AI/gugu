@@ -26,7 +26,8 @@ describe('Agent save requests', () => {
     expect(posted[0].startsWith(PASSWORD_REQUEST_PREFIX)).toBe(true)
     expect(posted[0]).not.toContain('canary')
     expect(posted[0]).not.toContain('dev@example.com')
-    expect(JSON.parse(posted[0].slice(PASSWORD_REQUEST_PREFIX.length))).toMatchObject({ kind: 'save', origin: 'https://github.com', agentName: '研究助理' })
+    // The card shows the proposed account the way every stored account is shown: masked.
+    expect(JSON.parse(posted[0].slice(PASSWORD_REQUEST_PREFIX.length))).toMatchObject({ kind: 'save', origin: 'https://github.com', agentName: '研究助理', maskedAccount: 'd***@example.com' })
     expect(value.pending().map(request => request.requestId)).toEqual([reply.requestId])
     expect(value.draft(reply.requestId)).toMatchObject({ account: 'dev@example.com', password: 'canary-secret', fields: [{ name: 'API Key', value: 'canary-key' }] })
   })

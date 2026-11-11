@@ -24,6 +24,8 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
   const [current, setCurrent] = createSignal<PasswordRequestView>()
   const [state, setState] = createSignal(save ? '等待你填写' : '等待你批准')
   const [busy, setBusy] = createSignal(false)
+  // Once this card settled the request (已允许 / 已拒绝), the refresh its own action triggers must not overwrite that.
+  let settled = false
   const ui = () => (window as unknown as { passwordVaultBeta?: PasswordBetaUi }).passwordVaultBeta
   const refresh = async () => {
     try {
@@ -31,7 +33,7 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
       const list: PasswordRequestView[] | undefined = reply?.ok ? (save ? reply.snapshot.saves : reply.snapshot.approvals) : undefined
       const pending = list?.find(value => value.requestId === props.request.requestId)
       setCurrent(pending)
-      if (!pending) setState('这条请求已结束，或需要在发起的电脑上处理')
+      if (!pending && !settled) setState('这条请求已结束，或需要在发起的电脑上处理')
     } catch { setCurrent(undefined); setState('当前无法读取这条请求') }
   }
   onMount(() => { void refresh(); const close = ui()?.subscribe(() => { void refresh() }); onCleanup(() => close?.()) })
@@ -40,7 +42,7 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
     setBusy(true)
     try {
       const result = await ui()?.invoke(command)
-      if (result?.ok) { setCurrent(undefined); setState(done) }
+      if (result?.ok) { settled = true; setCurrent(undefined); setState(done) }
       else setState('这条请求已结束，需要时让 Agent 重新发起')
     } catch { setState('当前无法处理，请重试') }
     finally { setBusy(false) }

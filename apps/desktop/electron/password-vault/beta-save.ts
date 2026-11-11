@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { PasswordItem, PasswordSaveDraft, PasswordSaveRequest } from '@gugu/core/shared/passwordBetaProtocol'
 import type { GuguMcpContext } from '../acp-engine-utils'
 import { postPasswordRequest } from './beta-messages'
+import { maskedAccount } from './schema'
 
 const unavailable = () => new Error('password_save_unavailable')
 /** The person may answer later; a proposal is held in memory only, never on disk or in a message. */
@@ -26,7 +27,9 @@ export class BetaPasswordSaves {
     // One open request per session: a looping Agent cannot flood the person's private chat.
     if ([...this.requests.values()].some(value => value.result === 'pending' && value.view.sessionId === caller.sessionId)) throw unavailable()
     const requestId = randomUUID(), presentation = this.host.describe(caller.agentId, caller.sessionId)
-    const view: PasswordSaveRequest = { kind: 'save', requestId, origin, ...(item ? { credentialId: item.reference.id, maskedAccount: item.maskedAccount } : {}),
+    // The card shows the account the Agent proposed (masked like every stored one), else the stored one.
+    const shown = proposal.account ? maskedAccount(proposal.account) : item?.maskedAccount
+    const view: PasswordSaveRequest = { kind: 'save', requestId, origin, ...(item ? { credentialId: item.reference.id } : {}), ...(shown ? { maskedAccount: shown } : {}),
       agent: caller.agentId, ...presentation, sessionId: caller.sessionId, deviceId: this.host.deviceId, expiresAt: Date.now() + SAVE_REQUEST_TTL_MS }
     const fields = (proposal.fields ?? []).map(field => ({ id: item?.fields.find(value => value.name === field.name)?.id ?? randomUUID(), name: field.name, value: field.value }))
     const draft: PasswordSaveDraft = { origin, account: proposal.account ?? '', password: proposal.password ?? '', fields, agentName: presentation.agentName,
