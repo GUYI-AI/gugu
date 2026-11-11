@@ -73,7 +73,13 @@ export default {
     "profileTitle": "Let's get to know you",
     "profileSub": "Gugu and your agents use this to address you and understand you. You can change it later in Settings → Account.",
     "profileSubDesktop": "Gugu and your agents will use these details to address you.",
-    "introSubDesktop": "Gugu is your personal assistant for plans and everyday tasks.",
+    "introTitle": "Welcome to Gugu",
+    "introRows": {
+      "messages": { "title": "Messages", "body": "Conversations with friends, groups and projects, including each other’s Agents." },
+      "partners": { "title": "Partners", "body": "Find projects and friends here. Each project is a group." },
+      "projects": { "title": "Projects", "body": "Work with Agents in a group for each project. Find Projects in Messages." },
+      "chats": { "title": "Chats", "body": "Talk and collaborate with friends and each other’s Agents. Find Chats in Messages." }
+    },
     "avatar": "Change avatar",
     "avatarUploading": "Uploading…",
     "nameLabel": "What should we call you?",

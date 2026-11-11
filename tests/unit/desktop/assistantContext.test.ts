@@ -165,20 +165,20 @@ it('loads the dedicated cloud home where the assistant guide and skills actually
   expect(options.strictMcpConfig).toBe(true)
 })
 
-it('enables host idle compaction only for a prepared personal assistant, never its home executors', () => {
+it('enables host idle compaction only for a prepared personal assistant, never its home executors', async () => {
   const prepared = personalAssistantContext(fixture(), 'cloud', { index: '<gugu_resource_index />', guguHome: '/gugu' })
   expect(prepared.sessionNewPatch!.meta!.guguAssistant).toEqual({ idleCompaction: true })
   expect(personalAssistantContext(fixture()).sessionNewPatch!.meta!.guguAssistant).toBeUndefined()
   const childSource = fixture()
   childSource.sessionNewPatch!.meta!.guguAssistant = { idleCompaction: true }
-  const child = assistantHomeTaskContext(childSource, '/gugu/assistant', '/gugu')
+  const child = await assistantHomeTaskContext(childSource, '/gugu/assistant', '/gugu')
   expect(child.sessionNewPatch!.meta!.guguAssistant).toBeUndefined()
 })
 
-it('keeps home executors isolated while the host supplies the contract in their work order, auto memory or recovery subscriptions', () => {
+it('keeps home executors isolated while the host supplies the contract in their work order, auto memory or recovery subscriptions', async () => {
   const before = fixture()
-  expect(assistantHomeTaskContext(before, '/business', '/gugu')).toBe(before)
-  const after = assistantHomeTaskContext(before, '/gugu/assistant', '/gugu')
+  expect(await assistantHomeTaskContext(before, '/business', '/gugu')).toBe(before)
+  const after = await assistantHomeTaskContext(before, '/gugu/assistant', '/gugu')
   const options = (after.sessionNewPatch!.meta!.claudeCode as { options: Record<string, unknown> }).options
   expect(options.systemPrompt).not.toContain(ASSISTANT_TASK_EXECUTION)
   expect(options.systemPrompt).toContain(before.sessionPrompt)
@@ -195,12 +195,12 @@ it('keeps home executors isolated while the host supplies the contract in their 
   expect(JSON.stringify(after.artifacts)).not.toContain('recovery.cjs')
 })
 
-it('preserves executor tool-search choices without inheriting the assistant override', () => {
+it('preserves executor tool-search choices without inheriting the assistant override', async () => {
   for (const value of ['true', 'auto:5']) {
     const capabilities = fixture()
     const claude = capabilities.sessionNewPatch!.meta!.claudeCode as { options: { env: Record<string, string> } }
     claude.options.env.ENABLE_TOOL_SEARCH = value
-    const executor = assistantHomeTaskContext(capabilities, '/gugu/assistant', '/gugu')
+    const executor = await assistantHomeTaskContext(capabilities, '/gugu/assistant', '/gugu')
     const options = (executor.sessionNewPatch!.meta!.claudeCode as { options: { env: Record<string, string> } }).options
     expect(options.env.ENABLE_TOOL_SEARCH).toBe(value)
     for (const kind of ['cloud', 'computer'] as const) {

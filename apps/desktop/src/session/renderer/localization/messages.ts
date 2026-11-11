@@ -285,9 +285,14 @@ const enUSCoreMessages = {
   // lists (`extensions.resourceKind.*`).
   'extensions.permissionsChatResources': 'Read only what your agent keeps in the conversation you select: {kinds}',
   'extensions.permissionsChatResourcesWrite': 'Change what your agent keeps in the conversation you select: {kinds}; your agent applies the changes',
+  // #1928: only when that conversation is your private one with an agent of yours.
+  'extensions.permissionsChatSchedules': 'See only the schedules of your agent in the conversation you select, without changing them',
+  'extensions.permissionsChatSchedulesControl': 'Add, change, pause or remove the schedules of your agent in the conversation you select',
   // #1925: that conversation's assistant, only when it is the person's own.
   'extensions.permissionsAssistantStatus': 'See your setup progress while you have no assistant, and the name, look, home and setup progress of your assistant in the conversation you select',
   'extensions.permissionsAssistantOpen': 'When you click, open setup while you have no assistant, and the setup, move, close and settings pages of your assistant in the conversation you select, or move its setup on',
+  // #1925 (46): only when that conversation is the person's chat with their own assistant; a task's conversation is drawn by gugu.
+  'extensions.permissionsChatWork': 'See the tasks your assistant handed out, their titles and progress, and show a task\'s conversation in its panel; the App cannot see that conversation',
   'extensions.unreadBindingChoose': 'Choose conversation',
   'extensions.unreadBindingSearch': 'Search conversations',
   'extensions.unreadBindingEmpty': 'No available conversations',
@@ -1469,8 +1474,11 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'extensions.permissionsChatSurface': '把它的页面摆在你选定的那条会话旁边，它看不到这条会话',
   'extensions.permissionsChatResources': '只读取你选定的那条会话里 agent 记着的{kinds}',
   'extensions.permissionsChatResourcesWrite': '改动你选定的那条会话里 agent 记着的{kinds}，由 agent 照改',
+  'extensions.permissionsChatSchedules': '只查看你选定的那条会话里你的 agent 的已安排，不改动',
+  'extensions.permissionsChatSchedulesControl': '添加、修改、暂停或删除你选定的那条会话里你的 agent 的已安排',
   'extensions.permissionsAssistantStatus': '还没有助理时获知开通进度；有了之后只获知你选定的那条会话里你的助理的名字、形象、住处和开通进度',
   'extensions.permissionsAssistantOpen': '你点按时，还没有助理就打开开通页；有了之后为你选定会话里的助理打开开通、搬家、关闭和设置页面，或推进开通步骤',
+  'extensions.permissionsChatWork': '查看你的助理派出的任务（标题和进度），并在它的面板里显示某个任务的对话，它看不到这段对话',
   'extensions.unreadBindingChoose': '选择会话',
   'extensions.unreadBindingSearch': '搜索会话',
   'extensions.unreadBindingEmpty': '暂无可选会话',

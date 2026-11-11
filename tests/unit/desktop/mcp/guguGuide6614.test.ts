@@ -63,7 +63,7 @@ function preloadVerbs(): string[] {
   // `appFiles.*` and `clipboard.*` are host halves internal to the platform runtime: pages call `gugu.files.*` and
   // `gugu.clipboard.writeText`, which the runtime builds on them (checked below); so is `onFilesChanged`.
   // `onAssistantChanged` is `gugu.assistant.onChanged`'s host half (#1925), checked below as the page reaches it.
-  const hostHalves = ['navigationGo', 'navigationClaimBack', 'onBack', 'onDownloadProgress', 'onFilesChanged', 'onCloudHeard', 'onBindingResources', 'onModalFocus', 'onProjection', 'onProjectionSource', 'onTaskPage', 'onSurface', 'onAssistantChanged']
+  const hostHalves = ['navigationGo', 'navigationClaimBack', 'onBack', 'onDownloadProgress', 'onFilesChanged', 'onCloudHeard', 'onBindingResources', 'onSchedulesChanged', 'onModalFocus', 'onProjection', 'onProjectionSource', 'onTaskPage', 'onSurface', 'onAssistantChanged']
   return [...Object.keys(HOST_CALLS), ...Object.keys(HOST_EVENTS)].filter((key) => !key.includes('.') && !hostHalves.includes(key))
 }
 

@@ -1,13 +1,9 @@
 // #7199 给个人助理安家(owner 10-16「先给用户建一个个人助理」「会员一键领取;非会员在本机创建」):
 //   会员 → 一键领取,住云上:交给管家开一台它的宿主,建它时带上引导里起的名字、选的形象和主人留的「称呼和基本信息」;
 //   非会员 → 装在这台电脑上:主进程先把它的家准备好(工作目录、说明、那条记忆),再走与「新建 agent」同一条链建它(member_key='assistant')。
-// 两条都带同一份初始化任务(@gugu/core/shared/assistantPolicy):建好它先开口。界面在 components/assistant/onboarding;手机也用这里。
-import {
-  ASSISTANT_CHILD_HARNESS,
-  ASSISTANT_FIRST_TASK,
-  ownerProfileMarkdown,
-  type OwnerProfileInput,
-} from '@gugu/core/shared/assistantPolicy'
+// 两条都带同一份初始化任务(产品规则 #1931,assistantSetupRules.ts):建好它先开口。界面在 components/assistant/onboarding;手机也用这里。
+import { ownerProfileMarkdown, type OwnerProfileInput } from '@gugu/core/shared/assistantPolicy'
+import type { AssistantProductRules } from '@gugu/core/shared/assistantRulesFormat'
 import type { CreateAgentOnDeviceResult } from '@gugu/core/shared/types/chat'
 import { REST_FACES } from '../components/agentAvatar/engine/identity'
 import type { AgentLook } from '../components/agentAvatar/look'
@@ -26,6 +22,7 @@ import {
   type SingleProvisionDeps,
 } from './agentProvision'
 import { ASSISTANT_HOME_CHANNELS, type AssistantEngine } from './assistantHomeIpc'
+import { assistantSetupRules } from './assistantSetupRules'
 import { prepareLocalAssistantSetup } from './assistantSetupPreparation'
 import { provisionCloudComputer } from './cloudComputerStore'
 import { contactsService } from './contacts'
@@ -56,17 +53,18 @@ export function draftAvatarUrl(draft: AgentLook): string {
   return contactsService.agentLookAvatarUrl({ color: draft.color, rest: draft.rest, wear: draft.wear })
 }
 
-export function cleanAssistantSetupDraft(draft: AssistantSetupDraft) {
+/** `rules`: the assistant's product rules for this setup (assistantSetupRules) — the profile memory is in their words. */
+export function cleanAssistantSetupDraft(draft: AssistantSetupDraft, rules: AssistantProductRules) {
   const name = draft.name.trim()
   if (!name || name.length > ASSISTANT_NAME_MAX) throw new Error(`assistant name must be 1–${ASSISTANT_NAME_MAX} characters`)
   const preferredName = draft.owner.preferredName.trim()
   if (!preferredName || preferredName.length > OWNER_NAME_MAX) throw new Error(`owner name must be 1–${OWNER_NAME_MAX} characters`)
-  return { name, avatar: draftAvatarUrl(draft), ownerProfile: ownerProfileMarkdown({ preferredName, about: draft.owner.about.slice(0, OWNER_ABOUT_MAX), language: getLocaleSnapshot().resolvedLocale }) }
+  return { name, avatar: draftAvatarUrl(draft), ownerProfile: ownerProfileMarkdown({ preferredName, about: draft.owner.about.slice(0, OWNER_ABOUT_MAX), language: getLocaleSnapshot().resolvedLocale }, rules) }
 }
 
 /** 会员一键领取:管家开它的宿主、在上面建它(要几分钟;进度看管家的 /state,界面在 CloudComputerProvisionPanel 那三步)。 */
 export async function claimCloudAssistant(draft: AssistantSetupDraft): Promise<void> {
-  await provisionCloudComputer({ assistant: { ...cleanAssistantSetupDraft(draft), locale: getLocaleSnapshot().resolvedLocale } })
+  await provisionCloudComputer({ assistant: { ...cleanAssistantSetupDraft(draft, await assistantSetupRules()), locale: getLocaleSnapshot().resolvedLocale } })
 }
 
 /** 助理的续建记录另放一份:❌ 被启动时「收掉没建完的单 agent」那一扫当成普通 agent 撤掉(见 createResumeStore)。 */
@@ -97,11 +95,11 @@ export function completedAssistantSetup(result: Awaited<ReturnType<typeof provis
   return completedSingleProvisionSession(result)
 }
 
-async function startDeps(engine: AssistantEngine = 'claude'): Promise<SingleProvisionDeps> {
+async function startDeps(engine: AssistantEngine, rules: AssistantProductRules): Promise<SingleProvisionDeps> {
   return {
     resumeStore: assistantResumeStore,
     model: null,
-    assistant: { childHarness: engine === 'codex' ? 'codex' : ASSISTANT_CHILD_HARNESS, firstTask: ASSISTANT_FIRST_TASK },
+    assistant: { childHarness: engine === 'codex' ? 'codex' : rules.defaults.childHarness, firstTask: rules.texts['first-task'] },
   }
 }
 
@@ -127,7 +125,8 @@ export function setUpAssistantOnThisComputer(draft: AssistantSetupDraft, localDe
 async function setUpHere(draft: AssistantSetupDraft, localDeviceId: string, options: { engine?: AssistantEngine; signal?: AbortSignal; onInstalling?: () => void }): Promise<CreateAgentOnDeviceResult> {
   const ipc = desktopIpc()
   if (!ipc) throw new AssistantSetupError('not-desktop', 'only the desktop app can host the assistant')
-  const clean = cleanAssistantSetupDraft(draft)
+  const rules = await assistantSetupRules()
+  const clean = cleanAssistantSetupDraft(draft, rules)
   const engine = options.engine ?? 'claude'
   // 开通的是全新的一位:上一位留在这台电脑上的家先清掉(#7350,别处删掉的 / 关到一半的),❌ 带着上一位的记忆和性格。
   const home = await prepareLocalAssistantSetup(ipc, { ownerProfile: clean.ownerProfile, fresh: true, ...(engine === 'codex' ? { engine } : {}) }, options)
@@ -142,7 +141,7 @@ async function setUpHere(draft: AssistantSetupDraft, localDeviceId: string, opti
       inheritMemory: false,
       historyImportRequired: false,
     },
-    await startDeps(engine),
+    await startDeps(engine, rules),
   )
   return completedAssistantSetup(result)
 }
@@ -184,7 +183,7 @@ export function resumeLocalAssistant(record: ProvisionResumeRecord): Promise<Cre
     }
     const engine = record.blueprint?.members[0]?.agent_type === 'codex' ? 'codex' : 'claude'
     await ipc.invoke(ASSISTANT_HOME_CHANNELS.prepare, engine === 'codex' ? { engine } : {})
-    return completedAssistantSetup(await resumeSingleAgent(record, await startDeps(engine)))
+    return completedAssistantSetup(await resumeSingleAgent(record, await startDeps(engine, await assistantSetupRules())))
   })
 }
 

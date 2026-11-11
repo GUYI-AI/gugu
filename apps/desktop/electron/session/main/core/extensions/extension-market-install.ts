@@ -1,6 +1,6 @@
 import type { ExtensionInstallConsentRequest, ExtensionInstallConsentResult } from '@shared/extensions/host-actions';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
-import { isGuguOwnApp } from '@shared/extensions/first-run';
+import { isOfficialMarketSource } from '@shared/extensions/market';
 import { pinsAutoUpdate } from '@shared/extensions/market-entries';
 import { marketDownloadProgressChannel } from '@shared/extensions/marketEvents';
 import { events } from '@main/lib/events';
@@ -99,13 +99,13 @@ export async function installExtensionFromMarket(
       // Nobody asked: so only gugu's own — the code in its own repository (the bytes were checked against what the market
       // published from there) — and never over an App installed here, whose update asks as any update does. Files with no
       // record of where they came from are an install a start cut off between landing and its record: put in again.
-      if (!isGuguOwnApp(prepared.source)) {
+      if (!isOfficialMarketSource(prepared.source)) {
         throw new Error(`${manifest.id} is not gugu's own App (its code is at ${prepared.source.repo}); only gugu's own go in without asking`);
       }
       if (plan.displaced && service.origins()[manifest.id] !== undefined) {
         throw new Error(`${manifest.id} is installed here already; it is not put in again without asking`);
       }
-      const installed = service.installFromDirectory(prepared.sourceDir, manifestDigest, 'market');
+      const installed = service.installFromDirectory(prepared.sourceDir, manifestDigest, 'market', undefined, undefined, prepared.source);
       (dependencies.afterInstall ?? applyInstalledExtension)(installed);
       const announced = await announceInstalledChanged(dependencies.notifyInstalledChanged);
       return { installed: true, outcome: 'confirmed', ...summary, manifest: installed.manifest, rootDir: installed.rootDir, asked: false, announced };
