@@ -741,7 +741,9 @@ textarea.ta-input { min-height: 80px; resize: vertical; line-height: 1.5; }
 .ta-day-note-title { font-size: var(--ta-fs-title); line-height: var(--ta-lh-title); font-weight: 600; color: var(--ta-fg); }
 .ta-day-list { display: flex; flex-direction: column; gap: 2px; }
 .ta-day-row { border-radius: var(--ta-radius-control); }
-.ta-day-row[data-open] { background: var(--ta-glass); }
+/* An expanded row is a multi-line block, not a pill: nest its corners inside the card (card radius minus card padding). */
+.ta-day-row[data-open] { border-radius: calc(var(--ta-radius-card) - var(--spacing-md)); background: var(--ta-glass); }
+.ta-day-row[data-open] .ta-day-row-main { border-radius: calc(var(--ta-radius-card) - var(--spacing-md)); }
 .ta-day-row-line { display: flex; align-items: center; gap: 8px; }
 .ta-day-row-main {
   display: flex;
