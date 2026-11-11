@@ -887,6 +887,21 @@ API 40, the same conversation only: add \`"files"\` (with \`chat:files\`) and/or
   write, rename or delete, no other chat; a topic is refused. Paths are names from the top; \`..\`, absolute paths, ids: \`invalid\`.
 - \`gugu.dispatch(text, { draft: true, to: { binding: "main" } })\` in a click: the text into that conversation's composer. Nothing is sent.
 
+API 42, when that conversation is the person's private one with an agent of theirs: \`"resources"\` (\`chat:resources\`) and
+\`"resources:write"\` (\`chat:resources:write\`) reach that agent's resources, each with its domains:
+\`domains: { "resources": ["memory", "files", "personality", "skills", "voice-notes"], "resources:write": ["memory"] }\`
+(write: only domains also read, never voice-notes). Any other conversation is \`denied\`.
+- \`gugu.bindings.resources("main", "memory")\` → \`{ state: "ready", revision, resources: [{ key, revision, updatedAt, data }] }\`.
+  \`gugu.bindings.resource("main", "memory", key)\` → \`{ state: "ready", resource, content, truncated, totalSize, binary? }\`.
+  Otherwise \`unbound\`, \`unprepared\` (not published yet), \`unavailable\` (try later), or \`missing\` with the \`revision\` a
+  save expects (\`"0"\`; a deleted one's tombstone, \`deleted: true\`).
+- \`gugu.bindings.save("main", { domain, key, operationId, expectedRevision, content })\` /
+  \`gugu.bindings.remove("main", { domain, key, operationId, expectedRevision })\` → \`{ state: "committed", receipt: { operationId,
+  revision, status } }\` (\`pending\` until the agent's machine applies it), or \`conflict\` (read again), \`deleted\`,
+  \`unavailable\`, \`unbound\`. \`operationId\` is your UUID: the same call again answers the same receipt, status now.
+- \`gugu.bindings.onResourcesChanged("main", fn)\` → unsubscribe; \`fn\` hears \`{ state: "changed" }\`: read again, or
+  \`{ state: "ended" }\`: the grant, account or chosen conversation changed — call \`get\` again.
+
 Which chats the reader is in and who is in one — for a page that is in no chat (an App's own tab, full screen) to
 offer one — and what people and agents said in a chat: a stretch of its timeline, one thread, or the messages that
 cite a file (a pill, a link) — "this passage was discussed 3 times", each a click away with \`gugu.showMessage(m.id)\`.

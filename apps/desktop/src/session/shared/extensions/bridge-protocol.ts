@@ -102,7 +102,10 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // 40 (#1927): the one conversation binding may also declare `files` (`chat:files`: `gugu.bindings.list` / `read`, that
 // conversation's chat-folder files, read only) and `draft` (`chat:draft`: `dispatch(text, { draft: true, to: { binding } })`).
 // Still no chat id, title, member or message reaches the App.
-export const EXTENSION_API_VERSION = 40;
+// 42 (#1927): when that conversation is the person's private one with an agent of theirs, `resources` (`chat:resources`:
+// `gugu.bindings.resources` / `resource` / `onResourcesChanged`) and `resources:write` (`chat:resources:write`:
+// `gugu.bindings.save` / `remove`) reach that agent's panel resources, in the domains the binding lists (agent-resources.ts).
+export const EXTENSION_API_VERSION = 42;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
@@ -643,6 +646,8 @@ export type ExtensionHostEvent =
   | { type: 'agentsChanged'; agentIds: readonly string[] }
   /** What this page hears of its own topic (`gugu.cloud.on`): a broadcast's payload, or that it is (re)subscribed: read again then. */
   | { type: 'cloudHeard'; topic: string; event: string; heard: { subscribed: true } | { payload: Record<string, unknown> } }
+  /** #1927 (42) What a page hears of its binding's agent resources (`gugu.bindings.onResourcesChanged`): read again, or ended. */
+  | { type: 'bindingResources'; watchId: string; event: import('./agent-resources').AppResourceEvent }
   /**
    * The person clicked a banner this extension posted. Delivered to the background
    * page and to this extension's tabs in the session the banner opened; `tag` and
@@ -832,6 +837,16 @@ export const BRIDGE_VERBS = {
    */
   bindingsList: { needs: 'chat:files', only: 'page' },
   bindingsRead: { needs: 'chat:files', only: 'page' },
+  /**
+   * #1927 (42): the panel resources of the agent the bound conversation is with — a domain whole, one resource and its
+   * content, hearing that they changed; and, with `chat:resources:write`, a change through the resource store. The host
+   * finds the agent from the binding; the call names a domain and a key, never an owner, agent, chat or path on disk.
+   */
+  bindingsResources: { needs: 'chat:resources', only: 'page' },
+  bindingsResource: { needs: 'chat:resources', only: 'page' },
+  bindingsWatch: { needs: 'chat:resources', only: 'page' },
+  bindingsSave: { needs: 'chat:resources:write', only: 'page' },
+  bindingsRemove: { needs: 'chat:resources:write', only: 'page' },
   messagesHistory: { needs: 'chat:read' },
   messagesSearch: { needs: 'chat:read' },
   /**

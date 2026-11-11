@@ -6,10 +6,15 @@ import type { AppFileEntry } from './app-runtime-protocol';
  * conversation for. `files` (API 40): list and read that conversation's chat-folder files, read only. `draft` (API 40):
  * put words into that conversation's composer; the person sends them, or not. Each extra action is its own capability,
  * consented and withdrawn on its own (`BINDING_ACTION_CAPABILITY`).
+ * `resources` / `resources:write` (API 42, agent-resources.ts): read / change the panel resources of the agent whose
+ * private conversation with the person this is, in the domains the binding lists for each.
  */
-export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft'] as const;
+export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'resources', 'resources:write'] as const;
 export type ConversationBindingAction = (typeof CONVERSATION_BINDING_ACTIONS)[number];
-export const BINDING_ACTION_CAPABILITY = { unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft' } as const;
+export const BINDING_ACTION_CAPABILITY = {
+  unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft',
+  resources: 'chat:resources', 'resources:write': 'chat:resources:write',
+} as const;
 /** The first App API that lets a binding declare more than `unread`. */
 export const BINDING_ACTIONS_API_VERSION = 40;
 export const BINDING_NAME = /^[a-z][a-z0-9-]{0,47}$/;

@@ -23,6 +23,7 @@ import { assertConfinedProgramBundle } from './extension-validate';
 
 import { z } from 'zod';
 import { BINDING_ACTION_CAPABILITY, readUnreadBindings, unreadBindingKey, type ConversationBindingAction, type StoredUnreadBinding } from '@shared/extensions/unread-binding';
+import type { ResourceBindingAction } from '@shared/extensions/agent-resources';
 import { BUNDLE_SKIP_NAMES } from '@shared/extensions/market';
 import { appVariantsSchema, type AppVariants, type ExtensionVariant } from '@shared/extensions/variants';
 import { removeTreeSync } from '@main/core/utils/remove-tree';
@@ -162,7 +163,11 @@ export interface InvalidExtensionDir {
 
 /** A binding declaration as a selection depends on it: its actions in any order are the same declaration (#1927). */
 function bindingDeclaration(bindings: NonNullable<ExtensionManifest['permissions']>['bindings']): string {
-  return JSON.stringify(bindings?.map((binding) => ({ ...binding, actions: [...binding.actions].sort() })) ?? null);
+  return JSON.stringify(bindings?.map((binding) => ({
+    ...binding, actions: [...binding.actions].sort(),
+    // #1927 (42): so are its resource domains; a domain more or less is another declaration.
+    ...(binding.domains ? { domains: Object.fromEntries(Object.entries(binding.domains).sort(([a], [b]) => a.localeCompare(b)).map(([action, domains]) => [action, [...(domains ?? [])].sort()])) } : {}),
+  })) ?? null);
 }
 
 export class ExtensionsService {
@@ -181,6 +186,8 @@ export class ExtensionsService {
   private readonly openWithFile: JsonFile<Record<string, string>>;
   private readonly unreadBindingsFile: JsonFile<Record<string, import('@shared/extensions/unread-binding').StoredUnreadBinding>>;
   private readonly unreadAuthorities = new Map<string, { scope: string; value: string }>();
+  /** #1927 (42): who holds a binding's authority past one call (resource subscriptions), told when it may have changed. */
+  private readonly bindingAuthorityListeners = new Set<(extensionId: string) => void>();
   private readonly readings = new Map<string, { stamps: { file: string; stamp: FileStamp | null }[]; installed: InstalledExtension }>();
 
   constructor(private readonly rootDir: string) {
@@ -235,6 +242,32 @@ export class ExtensionsService {
     return this.conversationUnreadBinding(ownerId, extensionId, name);
   }
 
+  /**
+   * Host-only (#1927, 42): the binding for a resource action on one domain — the action declared and granted as above, and
+   * the domain listed for it in the manifest. Refused otherwise; null: nobody chose the conversation yet.
+   */
+  conversationResourceBinding(ownerId: string, extensionId: string, name: string, action: ResourceBindingAction, domain: string): StoredUnreadBinding | null {
+    const binding = this.conversationBinding(ownerId, extensionId, name, action);
+    if (!(this.get(extensionId).manifest.permissions?.bindings?.[0]?.domains?.[action] ?? []).includes(domain)) {
+      throw Object.assign(new Error(`This App has no "${action}" grant for the ${domain} domain`), { code: 'denied' });
+    }
+    return binding;
+  }
+
+  /**
+   * #1927 (42): hear that an App's binding authority may have changed — a grant, its enablement, an install or uninstall,
+   * or the chosen conversation — after the change is written. The listener checks again what it holds; it is told, never
+   * trusted with what changed.
+   */
+  onBindingAuthorityChanged(listener: (extensionId: string) => void): () => void {
+    this.bindingAuthorityListeners.add(listener);
+    return () => { this.bindingAuthorityListeners.delete(listener); };
+  }
+
+  private bindingAuthorityChanged(extensionId: string): void {
+    queueMicrotask(() => { for (const listener of this.bindingAuthorityListeners) listener(extensionId); });
+  }
+
   /** What the App's binding may do now: its declared actions whose capability is still granted. */
   conversationBindingActions(extensionId: string): ConversationBindingAction[] {
     const declared = this.get(extensionId).manifest.permissions?.bindings?.[0]?.actions ?? [];
@@ -259,6 +292,7 @@ export class ExtensionsService {
     else stored[key] = { ownerId, name, chatId: z.string().uuid().parse(chatId), handle: randomUUID() };
     this.unreadBindingsFile.write(readUnreadBindings(stored));
     this.unreadAuthorities.delete(extensionId);
+    this.bindingAuthorityChanged(extensionId);
   }
 
   private forgetConversationUnreadBindings(extensionId: string): void {
@@ -476,6 +510,7 @@ export class ExtensionsService {
     const installed = this.get(manifest.id);
     this.unreadAuthorities.delete(manifest.id);
     if (resetUnreadBinding) this.forgetConversationUnreadBindings(manifest.id);
+    this.bindingAuthorityChanged(manifest.id);
     if (origin !== 'preinstalled') activitySignal({ event_id: randomUUID(), kind: firstInstall ? 'app.installed' : 'app.replaced',
       object_id: manifest.id, app_version: manifest.version, occurred_at: Date.now() });
     return installed;
@@ -693,6 +728,7 @@ export class ExtensionsService {
    */
   setEnabled(extensionId: string, enabled: boolean): void {
     this.unreadAuthorities.delete(extensionId);
+    this.bindingAuthorityChanged(extensionId);
     this.get(extensionId);
     if (!enabled && this.origins()[extensionId] === 'preinstalled') {
       throw new Error(`"${extensionId}" is a preinstalled App and cannot be switched off.`);
@@ -815,7 +851,9 @@ export class ExtensionsService {
     // A binding's other grants (#1927) change what a pending selection authorizes: a chooser drawn before must ask again.
     // The selection itself stays: it is `chat:unread`'s, and each of these is checked again on every call.
     if (permission === 'chat:files' || permission === 'chat:draft') this.unreadAuthorities.delete(extensionId);
+    if (permission === 'chat:resources' || permission === 'chat:resources:write') this.unreadAuthorities.delete(extensionId);
     this.revocationsFile.write(revocations);
+    this.bindingAuthorityChanged(extensionId);
   }
 
   uninstall(extensionId: string): void {
@@ -838,6 +876,7 @@ export class ExtensionsService {
     // can fail has succeeded.
     this.unreadAuthorities.delete(extensionId);
     this.forgetConversationUnreadBindings(extensionId);
+    this.bindingAuthorityChanged(extensionId);
     this.forgetRevocations(extensionId);
     const settings = this.settingsFile.read();
     if (Object.hasOwn(settings, extensionId)) {

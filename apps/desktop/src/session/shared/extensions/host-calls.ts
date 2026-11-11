@@ -66,6 +66,13 @@ export const HOST_CALLS = {
   // #1927 (40, `chat:files`): the bound conversation's files, named by the binding and a path there, never by a chat.
   'bindings.list': { verb: 'bindingsList', pack: (name: string, options?: Record<string, unknown>) => ({ ...options, name }) },
   'bindings.read': { verb: 'bindingsRead', pack: (name: string, path: string) => ({ name, path }) },
+  // #1927 (42, `chat:resources` / `chat:resources:write`): the bound conversation's agent's resources, named by the binding, a
+  // domain and a key; `onResourcesChanged` rides on `watch` and `onBindingResources` (create-gugu.ts).
+  'bindings.resources': { verb: 'bindingsResources', pack: (name: string, domain: string) => ({ name, domain }) },
+  'bindings.resource': { verb: 'bindingsResource', pack: (name: string, domain: string, key: string) => ({ name, domain, key }) },
+  'bindings.watch': { verb: 'bindingsWatch', pack: (watchId: string, name: string, on: boolean) => ({ watchId, name, on }) },
+  'bindings.save': { verb: 'bindingsSave', pack: (name: string, change: Record<string, unknown>) => ({ ...change, name }) },
+  'bindings.remove': { verb: 'bindingsRemove', pack: (name: string, change: Record<string, unknown>) => ({ ...change, name }) },
   'messages.history': { verb: 'messagesHistory' },
   'messages.search': { verb: 'messagesSearch' },
   // The chats whoever reads is in, and one's members (`chat:read`): `{ chat }` names it.
@@ -172,6 +179,7 @@ export const HOST_EVENTS = {
   onAppStateChanged: { event: 'appState', pick: (event: Event<'appState'>) => [event.state] },
   onAgentsChanged: { event: 'agentsChanged', pick: (event: Event<'agentsChanged'>) => [event.agentIds] },
   onCloudHeard: { event: 'cloudHeard', only: 'page', pick: (event: Event<'cloudHeard'>) => [event.topic, event.event, event.heard] },
+  onBindingResources: { event: 'bindingResources', only: 'page', pick: (event: Event<'bindingResources'>) => [event.watchId, event.event] },
   onProgramNotification: {
     event: 'programNotification',
     pick: (event: Event<'programNotification'>) => [{ server: event.server, method: event.method, ...(event.params === undefined ? {} : { params: event.params }) }],

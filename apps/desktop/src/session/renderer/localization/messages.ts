@@ -278,6 +278,9 @@ const enUSCoreMessages = {
   // #1927: the same conversation as `chat:unread`'s, never another.
   'extensions.permissionsChatFiles': 'Read only the files of the conversation you select, without changing them',
   'extensions.permissionsChatDraft': 'Put a draft into the conversation you select; only you can send it',
+  // #1927 (42): the agent of that same conversation, when it is your private one with it; never another agent's.
+  'extensions.permissionsChatResources': 'Read only what your agent keeps in the conversation you select, of the kinds this App lists (memory, files, personality, skills, voice notes)',
+  'extensions.permissionsChatResourcesWrite': 'Change what your agent keeps in the conversation you select, only the kinds this App lists; your agent applies the changes',
   'extensions.unreadBindingChoose': 'Choose conversation',
   'extensions.unreadBindingSearch': 'Search conversations',
   'extensions.unreadBindingEmpty': 'No available conversations',
@@ -1455,6 +1458,8 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'extensions.permissionsChatUnread': '只获知你选定的一条会话是否有未读消息',
   'extensions.permissionsChatFiles': '只读取你选定的那条会话里的文件，不改动',
   'extensions.permissionsChatDraft': '只往你选定的那条会话的输入框里放草稿，发不发由你',
+  'extensions.permissionsChatResources': '只读取你选定的那条会话里 agent 记着的、这个 App 列出的几类内容（记忆、资料、性格约定、技能、语音笔记）',
+  'extensions.permissionsChatResourcesWrite': '改动你选定的那条会话里 agent 记着的、这个 App 列出的几类内容，由 agent 照改',
   'extensions.unreadBindingChoose': '选择会话',
   'extensions.unreadBindingSearch': '搜索会话',
   'extensions.unreadBindingEmpty': '暂无可选会话',

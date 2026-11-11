@@ -19,7 +19,14 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     get(name: string): Promise<import('@shared/extensions/unread-binding').AppUnreadBinding>;
     list?(name: string, options?: { folder?: string }): Promise<import('@shared/extensions/unread-binding').AppBoundList>;
     read?(name: string, path: string): Promise<import('@shared/extensions/unread-binding').AppBoundRead>;
+    /** #1927 (42): the bound conversation's agent's resources (agent-resources.ts). */
+    resources?(name: string, domain: string): Promise<import('@shared/extensions/agent-resources').AppResourceList>;
+    resource?(name: string, domain: string, key: string): Promise<import('@shared/extensions/agent-resources').AppResourceRead>;
+    watch?(watchId: string, name: string, on: boolean): Promise<unknown>;
+    save?(name: string, change: Record<string, unknown>): Promise<import('@shared/extensions/agent-resources').AppResourceWrite>;
+    remove?(name: string, change: Record<string, unknown>): Promise<import('@shared/extensions/agent-resources').AppResourceWrite>;
   };
+  onBindingResources?(handler: (watchId: string, event: import('@shared/extensions/agent-resources').AppResourceEvent) => void): () => void;
   taskMessage?(args: { intent: 'pause' | 'continue' }): Promise<void>;
   readonly sessions?: {
     index(options?: AppSessionIndexOptions): Promise<AppSessionIndex>;

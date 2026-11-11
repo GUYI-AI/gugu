@@ -387,6 +387,17 @@ export const extensionsController = createRPCController({
     return { success: true };
   },
 
+  /**
+   * #1927 (42) The account's event bus said these agents' panel resources changed (`assistant_panel_changed`), or — `resync`
+   * — it joined again or the signed-in account changed: pages hearing their binding's agent resources read again, or end.
+   */
+  agentResourcesChanged: async (args: { agentIds?: string[]; resync?: boolean }) => {
+    const agentIds = (Array.isArray(args?.agentIds) ? args.agentIds : []).filter((id): id is string => typeof id === 'string');
+    const { notifyAgentResourcesChanged } = await import('@main/core/extensions/app-resource-watches');
+    void notifyAgentResourcesChanged(args?.resync === true ? 'all' : agentIds);
+    return { success: true };
+  },
+
   /** A device of the account went on or off: the folders on screen read their files again, so each says where it is kept now. */
   devicesOnlineChanged: async () => {
     void notifyWatchedChatsChanged();

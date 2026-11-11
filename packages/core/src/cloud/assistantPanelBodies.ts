@@ -9,6 +9,8 @@ import { anySignal } from '../shared/anySignal'
 
 export type AssistantPanelBodyAccess = {
   signal?: AbortSignal; token: string; ownerId: string; chatId: string; accountId(): string | null | Promise<string | null>
+  /** Refuse a body larger than this before reading any byte: `too-large`, its `size` on the error. Absent: no bound. */
+  maxBytes?: number
 }
 async function assertOwner(input: AssistantPanelBodyAccess): Promise<void> {
   input.signal?.throwIfAborted()
@@ -83,6 +85,9 @@ export async function readAssistantPanelBody(item: AssistantPanelItem, input: As
   if (handle.status !== 'ready') throw new AssistantPanelError('body-unavailable','Assistant panel resource content is unavailable')
   try {
     if (handle.revision.source !== 'managed-object' || handle.revision.sha256 !== item.body_sha256) throw new AssistantPanelError('body-changed','Assistant panel resource content did not match its saved version')
+    if (input.maxBytes !== undefined && handle.revision.size_bytes > input.maxBytes) {
+      throw Object.assign(new AssistantPanelError('too-large','Assistant panel resource content is larger than the read allows'),{ size: handle.revision.size_bytes })
+    }
     const bytes = new Uint8Array(handle.revision.size_bytes)
     let offset = 0
     for await (const part of handle.stream()) { await assertOwner(input); bytes.set(part,offset); offset += part.length }
