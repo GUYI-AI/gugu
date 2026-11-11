@@ -58,6 +58,9 @@ export type SubagentRosterEntry = {
   /** 派出去的那一刻(毫秒);拿不到就没有。转录末尾那一行自己按它走秒,❌ 等花名册重算。 */
   startedAt?: number;
   canCancel?: boolean;
+  /** Its text so far, from the registry (#2500): the opened launch card shows it while the subagent runs. */
+  output?: string;
+  reasoning?: string;
 };
 
 function isSubagent(item: ToolNode): item is Extract<ToolNode, { kind: 'spawn-subagent-tool-call' }> {
@@ -75,6 +78,17 @@ function isSubagent(item: ToolNode): item is Extract<ToolNode, { kind: 'spawn-su
  * ⚠️ 数的是**有 `toolCallId` 的那些**,也就是叶子:连续的文件读取会被 `read-batch`
  * 收成一个 `tool-group`,那层壳是排版不是调用,它没有 `toolCallId`,自然不计数。
  */
+/** What the roster reads from one entry of the runtime's subagent registry. */
+export type SubagentRegistryEntry = {
+  toolCallId: string;
+  steps?: readonly ToolNode[];
+  /** Every finished call, when `steps` is only the newest part of them (the phone's timeline). */
+  completedSteps?: number;
+  /** What it has written and thought so far. The launch card gets these only when the subagent settles. */
+  output?: string;
+  reasoning?: string;
+};
+
 export type SubagentCall = {
   toolCallId: string;
   /** 供应商给这次调用起的名字。拿不到就是空串 —— ❌ 不编。 */
@@ -153,7 +167,13 @@ export function collectSubagentRoster(
   activeTurn: TranscriptTurn | null,
   fallbackName: string,
   /** 现在几点 —— 显式传进来,判据才好钉住时间那一路(❌ 别在函数里读墙钟)。 */
-  now: number = Date.now()
+  now: number = Date.now(),
+  /**
+   * The runtime's subagent registry (#2500). A subagent's own calls are kept there, on its entry, and no longer
+   * in the turn that launched it. Turns stored before that change still hold them as nested children, and those
+   * are read as before.
+   */
+  registry: readonly SubagentRegistryEntry[] = []
 ): SubagentRosterEntry[] {
   const found: ToolNode[] = [];
   const callsByParent = new Map<string, Map<string, SubagentCall>>();
@@ -182,6 +202,29 @@ export function collectSubagentRoster(
   };
   for (const turn of turns) scan(turn.items, turn.startedAt === undefined);
   if (activeTurn) scan(activeTurn.items, activeTurn.startedAt === undefined);
+  const completedByParent = new Map<string, number>();
+  const textByParent = new Map<string, { output?: string; reasoning?: string }>();
+  for (const agent of registry) {
+    if (agent.output !== undefined || agent.reasoning !== undefined) textByParent.set(agent.toolCallId, {
+      ...(agent.output !== undefined ? { output: agent.output } : {}),
+      ...(agent.reasoning !== undefined ? { reasoning: agent.reasoning } : {}),
+    });
+    if (agent.completedSteps !== undefined) completedByParent.set(agent.toolCallId, agent.completedSteps);
+    if (!agent.steps?.length) continue;
+    const byId = callsByParent.get(agent.toolCallId) ?? new Map<string, SubagentCall>();
+    for (const step of agent.steps) {
+      if (step.kind === 'tool-group') continue;
+      byId.set(step.toolCallId, {
+        toolCallId: step.toolCallId,
+        title: step.title ?? '',
+        category: toolRunCategory(step, true) ?? 'tool',
+        detail: toolStepDetail(step) ?? step.title,
+        status: step.status,
+        seq: step.seq,
+      });
+    }
+    callsByParent.set(agent.toolCallId, byId);
+  }
 
   const byCallId = new Map<string, SubagentRosterEntry>();
   for (const item of found) {
@@ -201,7 +244,7 @@ export function collectSubagentRoster(
       continue;
     }
     const calls = [...(callsByParent.get(item.toolCallId)?.values() ?? [])];
-    const steps = calls.filter((call) => call.status === 'done').length;
+    const steps = completedByParent.get(item.toolCallId) ?? calls.filter((call) => call.status === 'done').length;
     const startedAt = item.agentStartedAt ?? item.startedAt;
     const elapsedMs = startedAt !== undefined ? Math.max(0, now - startedAt) : 0;
     // 同一次派发会来好几条事件 ⇒ 按 toolCallId 去重,后到的覆盖先到的(名字是后面才补齐的)。
@@ -216,6 +259,7 @@ export function collectSubagentRoster(
       elapsedMs,
       ...(startedAt !== undefined ? { startedAt } : {}),
       canCancel: item.canCancel === true,
+      ...textByParent.get(item.toolCallId),
     });
   }
   return [...byCallId.values()];
