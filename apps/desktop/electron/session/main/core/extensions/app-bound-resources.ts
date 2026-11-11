@@ -1,13 +1,9 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
-import {
-  AssistantPanelError, assistantPanelCollection, createAssistantPanelClient, type AssistantPanelDomain, type AssistantPanelItem,
-  type AssistantPanelSnapshot,
-} from '@gugu/core/cloud/assistantPanel';
+import { AssistantPanelError, createAssistantPanelClient, type AssistantPanelDomain } from '@gugu/core/cloud/assistantPanel';
 import { readAssistantPanelBody, uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies';
 import { withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead';
-import { parseMemoryNote } from '@gugu/core/shared/assistantMemory';
 import { pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision';
 import { splitInstructions } from '@gugu/core/shared/assistantInstructions';
 import { DEFAULT_TEXT_MAX_BYTES } from '@shared/extensions/app-runtime-protocol';
@@ -37,7 +33,6 @@ const denied = (message: string) => Object.assign(new Error(message), { code: 'd
 const invalid = (message: string) => Object.assign(new Error(message), { code: 'invalid' });
 const failed = (message: string, reason: ReadFailureReason = 'unreadable') => Object.assign(new Error(message), { code: 'failed', reason });
 const codeOf = (error: unknown) => (error as { code?: unknown } | null)?.code;
-const statusOf = (error: unknown) => (error as { status?: unknown } | null)?.status;
 function argsOf<T extends z.ZodType>(schema: T, input: unknown): z.infer<T> {
   const parsed = schema.safeParse(input);
   if (!parsed.success) throw invalid(`gugu.bindings takes the binding's name, a resource domain and key, never an owner, agent, chat or path (${parsed.error.issues.map((issue) => issue.path.join('.') || issue.message).join(', ')})`);

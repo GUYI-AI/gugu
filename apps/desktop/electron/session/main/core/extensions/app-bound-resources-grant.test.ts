@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { appPlatformProblems } from '@shared/extensions/app-platforms';
 import { EXTENSION_API_VERSION, parseExtensionManifest } from '@shared/extensions/manifest';
 import { callRefusal } from '@shared/extensions/bridge-protocol';
 import { ExtensionsService } from './extensions-service';
@@ -211,12 +212,14 @@ describe('#50 managing voice notes (voice-notes:manage)', () => {
     ...(patch.capabilities ? { capabilities: patch.capabilities } : {}),
     domains: { resources: patch.reads ?? ['memory', 'voice-notes'] } });
 
-  it('needs API 50, its capability, and voice-notes read by the same binding; desktop only', () => {
+  it('needs API 50, its capability, and voice-notes read by the same binding; a phone answers it unsupported', () => {
     expect(() => parseExtensionManifest(manager())).not.toThrow();
     expect(() => parseExtensionManifest(manager({ apiVersion: 49 }))).toThrow(/apiVersion 50/);
     expect(() => parseExtensionManifest(manager({ reads: ['memory'] }))).toThrow(/voice-notes/);
     expect(() => parseExtensionManifest(manager({ capabilities: ['chat:unread', 'chat:resources'] }))).toThrow(/chat:voice-notes:manage/);
-    expect(() => parseExtensionManifest({ ...manager(), platforms: ['desktop', 'phone'] })).toThrow(/desktop-only/);
+    // On a phone (49): declared there without refusal; the phone answers each managing verb `unsupported` (phone-binding.ts).
+    expect(() => parseExtensionManifest({ ...manager(), platforms: ['desktop', 'phone'] })).not.toThrow();
+    expect(appPlatformProblems({ ...manager(), platforms: ['desktop', 'phone'] })).toEqual([]);
   });
 
   it('is its own grant: withdrawn on its own, not opened by reading voice notes, refused at the door without it', () => {

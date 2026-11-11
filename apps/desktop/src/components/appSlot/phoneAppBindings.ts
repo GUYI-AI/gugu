@@ -11,7 +11,7 @@ import { dispatchCallOf } from '../../session/shared/extensions/app-dispatch-cor
 import { ASSISTANT_SCREENS, assistantFigureSchema, renameCheck, withoutAssistant, type AppAssistantRead, type AppAssistantStatus, type AssistantRenameResult } from '../../session/shared/extensions/assistant-binding'
 import { assistantLayerEntry, type AssistantAppInstall } from '../../session/shared/extensions/assistant-entry'
 import { domainState, reasonOf, refusedOrUnavailable, savedData, unavailable, writeOutcome } from '../../session/shared/extensions/bound-resources-core'
-import type { Unavailable } from '../../session/shared/extensions/resources-management'
+import { folderArgsSchema, renameArgsSchema, uploadArgsSchema, VOICE_NOTES_MANAGE_ACTION, voiceNoteArgsSchema, type Unavailable } from '../../session/shared/extensions/resources-management'
 import type { ExtensionHostEvent } from '../../session/shared/extensions/bridge-protocol'
 import type { ExtensionManifest } from '../../session/shared/extensions/manifest'
 import { VOICE_NOTE_RECORD_ACTION, voiceNoteNameSchema, voiceNoteRetrySchema, voiceNoteStartSchema, voiceNoteWatchSchema } from '../../session/shared/extensions/voice-note-session'
@@ -234,13 +234,15 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     return { name, ...text, entry: boundEntryOf(entry) }
   }
   /** `dispatch(text, { draft: true, to: { binding } })` (40, `chat:draft`): into the bound chat's composer; nothing is sent. */
-  async function draft(extensionId: string, args: Record<string, unknown>): Promise<{ to: { binding: string } }> {
+  async function draft(extensionId: string, args: Record<string, unknown>): Promise<{ to: { binding: string } } | AppBindingUnsupported> {
     const call = dispatchCallOf(args)
     if (!call.draft || !call.to || !('binding' in call.to)) throw coded('invalid', 'A binding\'s conversation takes only a draft: { draft: true, to: { binding } }')
     const name = call.to.binding
     const at = await bound(extensionId, name, ['draft'])
     if (!at) throw coded('not-found', `No conversation is bound for "${name}" on this phone`)
     at.recheck()
+    // 50's `attach`: files are not put into the phone's composer from an App — nothing is placed, never the text without them.
+    if (call.attach) return unsupportedHere(name)
     await ports.draft(at.chatId, `${call.text}\n`)
     return { to: { binding: name } }
   }
@@ -704,6 +706,21 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     return 'renamed'
   }
   /**
+   * API 50 (resources-management.ts) on a phone: 给助理的资料's upload / createFolder / rename / removeFolder (`resources:write`
+   * listing `files`) and a voice note's transcribe / remove / export (`voice-notes:manage`) are not managed from an App's page
+   * on a phone — each answers `unsupported` once its arguments and grant are checked; nothing is asked or changed.
+   */
+  async function manage(extensionId: string, method: (typeof MANAGE_VERBS)[number], input: unknown): Promise<AppBindingUnsupported> {
+    const files = method === 'bindingsUpload' || method === 'bindingsCreateFolder' || method === 'bindingsRename' || method === 'bindingsRemoveFolder'
+    const schema = method === 'bindingsUpload' ? uploadArgsSchema : method === 'bindingsRename' ? renameArgsSchema
+      : files ? folderArgsSchema : voiceNoteArgsSchema
+    const { name } = argsOf(schema, input, 'gugu.bindings takes the binding\'s name and the key, folder or new name it changes')
+    const app = installed(extensionId)
+    if (files) declared(app, name, 'resources:write', 'files')
+    else declared(app, name, VOICE_NOTES_MANAGE_ACTION)
+    return unsupportedHere(name)
+  }
+  /**
    * `gugu.voiceNote.*` (47, `voice-notes:record`): on a phone the assistant's 聊天 records with the phone's own recorder
    * (PhoneVoiceBar); an App does not drive it there — every verb answers `unsupported`, once the App may ask, and a watch
    * never fires. The arguments are checked as a computer checks them (voice-note-session.ts).
@@ -793,10 +810,13 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
   return {
     get, list, read, draft, surface, setPanel, resources, resource, save, remove, watch, pageGone,
     schedules, controlSchedule, watchSchedules, work, openWork, closeWork,
-    assistantStatus, assistantOpen, assistantAdvanceSetup, assistantRename, assistantFigure, assistantConnect, voiceNote, attach,
+    assistantStatus, assistantOpen, assistantAdvanceSetup, assistantRename, assistantFigure, assistantConnect, voiceNote, manage, attach,
   }
 }
 export type PhoneBindings = ReturnType<typeof createPhoneBindings>
+
+/** API 50's managing verbs: answered `unsupported` on a phone. */
+const MANAGE_VERBS = ['bindingsUpload', 'bindingsCreateFolder', 'bindingsRename', 'bindingsRemoveFolder', 'bindingsTranscribeVoiceNote', 'bindingsRemoveVoiceNote', 'bindingsExportVoiceNote'] as const
 
 /** The voice-note recorder's verbs (47): answered `unsupported` on a phone. */
 const VOICE_NOTE_VERBS = ['voiceNoteStart', 'voiceNotePause', 'voiceNoteResume', 'voiceNoteStop', 'voiceNoteRetry', 'voiceNoteOpenMicSettings', 'voiceNoteStatus', 'voiceNoteWatch'] as const
@@ -806,7 +826,7 @@ export const PHONE_BINDING_VERBS = [
   'bindingsGet', 'bindingsList', 'bindingsRead', 'bindingsSurface', 'bindingsSurfacePanel',
   'bindingsResources', 'bindingsResource', 'bindingsWatch', 'bindingsSave', 'bindingsRemove',
   'bindingsSchedules', 'bindingsSchedulesWatch', 'bindingsScheduleControl', 'bindingsWork', 'bindingsOpenWork', 'bindingsCloseWork',
-  'assistantStatus', 'assistantOpen', 'assistantAdvanceSetup', 'assistantRename', 'assistantFigure', 'assistantConnect', ...VOICE_NOTE_VERBS,
+  'assistantStatus', 'assistantOpen', 'assistantAdvanceSetup', 'assistantRename', 'assistantFigure', 'assistantConnect', ...VOICE_NOTE_VERBS, ...MANAGE_VERBS,
 ] as const
 
 /** One call of those, answered; `hear` carries a resource watch's events to the page. */
@@ -841,6 +861,9 @@ export function answerPhoneBinding(
     case 'assistantRename': return bindings.assistantRename(page.extensionId, args)
     case 'assistantFigure': return bindings.assistantFigure(page.extensionId, args)
     case 'assistantConnect': return bindings.assistantConnect(page.extensionId, args)
+    case 'bindingsUpload': case 'bindingsCreateFolder': case 'bindingsRename': case 'bindingsRemoveFolder':
+    case 'bindingsTranscribeVoiceNote': case 'bindingsRemoveVoiceNote': case 'bindingsExportVoiceNote':
+      return bindings.manage(page.extensionId, method, args)
     case 'voiceNoteStart': case 'voiceNotePause': case 'voiceNoteResume': case 'voiceNoteStop': case 'voiceNoteRetry':
     case 'voiceNoteOpenMicSettings': case 'voiceNoteStatus': case 'voiceNoteWatch':
       return bindings.voiceNote(page.extensionId, method, args)

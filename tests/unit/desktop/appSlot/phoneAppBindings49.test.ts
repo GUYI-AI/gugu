@@ -277,6 +277,37 @@ describe('the binding on a phone: who is asked, every refusal', () => {
     expect(drafted).toEqual([{ chatId: CHAT, text: 'hi\n' }])
     expect(await codeOf(createPhoneBindings(ports()).draft(ASSISTANT_APP_ID, { text: 'hi', to: { binding: 'main' } }))).toBe('invalid')
   })
+  it('answers a draft carrying files (50) unsupported and places nothing — never the text without them', async () => {
+    const answer = await createPhoneBindings(ports()).draft(ASSISTANT_APP_ID, { text: 'see', draft: true, to: { binding: 'main' }, attach: [{ file: 'today.json' }] })
+    expect(answer).toEqual({ name: 'main', state: 'unsupported' })
+    expect(drafted).toEqual([])
+  })
+})
+
+describe('API 50 on a phone: managing files and voice notes answers unsupported', () => {
+  it.each([
+    ['bindingsUpload', { name: 'main' }, 'resources'], ['bindingsCreateFolder', { name: 'main', key: 'docs' }, 'resources'],
+    ['bindingsRename', { name: 'main', key: 'a.md', to: 'b.md' }, 'resources'], ['bindingsRemoveFolder', { name: 'main', key: 'docs' }, 'resources'],
+    ['bindingsTranscribeVoiceNote', { name: 'main', key: 'n1' }, 'voice'], ['bindingsRemoveVoiceNote', { name: 'main', key: 'n1' }, 'voice'],
+    ['bindingsExportVoiceNote', { name: 'main', key: 'n1' }, 'voice'],
+  ] as const)('%s: unsupported once its arguments and grant hold; nothing asked or changed', async (method, args, needs) => {
+    const base = assistantManifest()
+    const binding = base.permissions!.bindings![0]!
+    // At most 12 capabilities: voice-note managing in place of rename here.
+    const withManage = () => install({ manifest: assistantManifest({ apiVersion: 50, permissions: { ...base.permissions,
+      capabilities: [...base.permissions!.capabilities!.filter((c) => c !== 'assistant:rename'), 'chat:voice-notes:manage'],
+      bindings: [{ ...binding, actions: [...binding.actions.filter((a) => a !== 'assistant-rename'), 'voice-notes:manage'],
+        domains: { ...binding.domains, 'resources:write': ['memory', 'files'] } }] } }) })
+    world.app = withManage()
+    const bindings = createPhoneBindings(ports())
+    expect(await answerPhoneBinding(bindings, method, PAGE, { ...args }, () => undefined)).toEqual({ name: 'main', state: 'unsupported' })
+    expect(await codeOf(answerPhoneBinding(bindings, method, PAGE, { ...args, name: 'other' }, () => undefined)!)).toBe('denied')
+    expect(await codeOf(answerPhoneBinding(bindings, method, PAGE, { ...args, extra: 1 }, () => undefined)!)).toBe('invalid')
+    // Without the grant it needs (files writable, or voice-note managing): refused, not unsupported.
+    world.app = needs === 'resources' ? install() : install({ manifest: assistantManifest() })
+    expect(await codeOf(answerPhoneBinding(bindings, method, PAGE, { ...args }, () => undefined)!)).toBe('denied')
+    expect(commits).toEqual([])
+  })
 })
 
 describe('the layout signal and the unsupported-here states', () => {
