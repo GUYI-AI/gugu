@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { requestAssistantSetupAfterIntro } from '../../lib/firstRun'
 import { useAuth } from '../../store/auth'
 import { useTranslation } from 'react-i18next'
@@ -14,6 +14,7 @@ import { ChevronLeft } from '@/lib/icons'
 import { useAssistantHome } from '../../lib/useAssistantHome'
 import { openAssistantEntry } from '../../lib/assistantEntry'
 import { useAssistantPanelBack } from '../../lib/assistantPanelPage'
+import { onAssistantSettingsSection, takeAssistantSettingsSection } from '../../lib/assistantSettingsSection'
 
 const SECTIONS: readonly ActiveSection[] = ['connectors', 'devices', 'channels']
 
@@ -53,6 +54,16 @@ export function AssistantSettingsPage({ onOpenPage, onOpenSection, panelNavigati
   const { t } = useTranslation('assistant')
   const { contact, cloudDeviceId } = useAssistantHome()
   const [section, setSection] = useState<ActiveSection | 'aimodel' | null>(null)
+  // An entry that asked for its model (换模型, the App's open "model"): over the App's panel, opened at it (now, or once drawn).
+  useEffect(() => {
+    if (!panelNavigation) return
+    const take = () => {
+      const asked = takeAssistantSettingsSection()
+      if (asked) setSection(asked)
+    }
+    take()
+    return onAssistantSettingsSection(take)
+  }, [panelNavigation])
   // A detail owns the toolbar first; closing it restores this section's return.
   useAssistantPanelBack(panelNavigation && section ? `settings:${section}` : null, () => setSection(null), 0)
   return (

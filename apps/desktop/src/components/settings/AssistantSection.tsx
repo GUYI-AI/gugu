@@ -36,7 +36,8 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
   onOpenSection: (section: ActiveSection) => void
   /** 打开助理 App 里的某一页(会先收起设置);手机上助理是底部 tab,不给。 */
   onOpenAssistantPage?: (tab: AssistantPageTab) => void
-  onOpenModel?: () => void
+  /** 它用哪个模型:同一页里的模型那一屏(AssistantSettingsPage)。它的 agent 设置只剩形象,❌ 开那个弹窗。 */
+  onOpenModel: () => void
 }) {
   const { t } = useTranslation('assistant')
   const { updateAgentProfile } = useContactsStore()
@@ -50,7 +51,6 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
       : null
 
   const [lookOpen, setLookOpen] = useState(false)
-  const [modelOpen, setModelOpen] = useState(false)
 
   // 还没有咕咕:一页只画「安家」的流程(会员一键领取、非会员装在这台电脑上)。认它是谁还在读 / 读不到时照实说,❌ 当成没有。
   if (!contact) {
@@ -133,7 +133,7 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
           leading={<SidebarMinimalistic size={16} />}
           description={t('settingsPage.modelNote')}
           control={<ChevronRight size={16} className="gg-settings-row-chevron" aria-hidden="true" />}
-          onClick={onOpenModel ?? (() => setModelOpen(true))}
+          onClick={onOpenModel}
           data-testid="settings-assistant-model"
         />
         {link('connectors', t('connectors.title'), t('connectors.note', { name }))}
@@ -151,7 +151,6 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
       {/* 会议提醒读的是这台电脑的日历、提醒也只在桌面弹:手机上没有这个开关(手机端咕咕页自己的事)。 */}
       {platform.capabilities.agentRuntime ? <MeetingReminderGroup /> : null}
       {lookOpen && contact ? <AgentSettingsModal agent={contact} initialTab="look" zIndex="var(--z-settings-modal)" onClose={() => setLookOpen(false)} /> : null}
-      {modelOpen && contact ? <AgentSettingsModal agent={contact} initialTab="aimodel" zIndex="var(--z-settings-modal)" onClose={() => setModelOpen(false)} /> : null}
     </SettingsPage>
   )
 }

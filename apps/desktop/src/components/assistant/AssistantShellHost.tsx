@@ -38,6 +38,7 @@ import { AssistantMoveGroup, type AssistantMoveGroupProps } from './AssistantMov
 import { AssistantMoveDialog } from './AssistantMoveDialog'
 import { AssistantDevicesPage } from '../devices/AssistantDevicesPage'
 import { UI_EVENTS } from '../../lib/uiEvents'
+import { openAssistantPageInApp } from '../../lib/assistantEntry'
 import { useAuth } from '../../store/auth'
 import { useContactsStore } from '../../store/contactsContext'
 import { useDevicesStore } from '../../store/devicesContext'
@@ -145,8 +146,8 @@ export function AssistantShellHost() {
   const contact = mine.contact
   // 和它的那条私聊:聊天格子画它,「今天」页读它的文件夹 —— 同一条,在这里认一次。
   const dm = useAssistantDm(contact?.id ?? null)
-  // agent 设置开在哪一页:形象(形象工坊)/ 模型(#1925 App 打开的「模型」);null = 没开。
-  const [settingsTab, setSettingsTab] = useState<'look' | 'aimodel' | null>(null)
+  // 它的 agent 设置只有形象(形象工坊)一页(owner 11-12);null = 没开。
+  const [settingsTab, setSettingsTab] = useState<'look' | null>(null)
   const ownerUserId = user?.id ?? null
   const readyCloudDeviceId = snapshot?.state === 'awake' ? snapshot.deviceId : null
   useEffect(() => {
@@ -163,7 +164,10 @@ export function AssistantShellHost() {
         await updateAgentProfile(contact.id, { name })
       },
       openLook: () => setSettingsTab('look'),
-      openModel: () => setSettingsTab('aimodel'),
+      // #1925 App 打开的「模型」:它在 App 资料页(画在 App 面板上),直接开到模型那一屏。
+      openModel: () => {
+        openAssistantPageInApp('settings', 'aimodel')
+      },
       refreshCloud: () => void refreshCloudComputer().catch(() => undefined),
       advanceSetup: (next) => {
         if (ownerUserId) writeSetupStep(ownerUserId, next === 'shell' ? null : next)
