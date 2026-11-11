@@ -2,6 +2,7 @@ import { openFolderInTab } from '@renderer/features/sessions/file-view/file-view
 import { findSessionAnywhere } from '@renderer/features/sessions/stores/session-selectors';
 import { composeChatDraft } from '@/lib/composeDraft';
 import { followLink, openLinkTarget } from '@/lib/guguLinks';
+import { readAppWorkChatBridge } from '@/lib/appWorkChatBridge';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { rpc } from '@renderer/lib/ipc';
@@ -251,6 +252,15 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       return import('@renderer/features/apps/app-conversation-panel').then(({ setAppConversationPanelCollapsed }) => {
         setAppConversationPanelCollapsed(extensionId, action.collapsed);
       });
+    // #1925 (46) Main checked the account, the grant, the assistant's chat and the row: the shell draws that task in the App's
+    // panel, or takes it away. The shell's bridge refuses an account or a row it does not have now.
+    case 'openWork':
+    case 'closeWork': {
+      const bridge = readAppWorkChatBridge();
+      if (!bridge) throw new Error('This window draws no task conversations');
+      if (action.kind === 'closeWork') return bridge.close(extensionId);
+      return bridge.open(extensionId, { ownerId: action.ownerId, workId: action.workId, sessionId: action.sessionId });
+    }
     // The chat shell takes them (MainLayout: another chat comes up first), as the phone's page gives them.
     case 'showMessage':
       return openLinkTarget({ kind: 'chat', chatId: action.detail.chatId, messageId: action.detail.messageId });

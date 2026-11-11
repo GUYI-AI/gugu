@@ -255,7 +255,8 @@ function surfaceManifest({ actions = ['unread', 'surface'], capabilities, apiVer
 
 describe('the bound conversation beside the App\'s page (#1925, API 41)', () => {
   it('needs API 41, the surface action with chat:surface, and conversationSurface naming that binding', () => {
-    expect(EXTENSION_API_VERSION).toBe(41);
+    // The host speaks 41 or later (46 adds `work`, below).
+    expect(EXTENSION_API_VERSION).toBeGreaterThanOrEqual(41);
     expect(() => parseExtensionManifest(surfaceManifest())).not.toThrow();
     expect(() => parseExtensionManifest(surfaceManifest({ actions: ['unread', 'files', 'draft', 'surface'] }))).not.toThrow();
     // An App of before parses as it did: no surface, no conversationSurface.
@@ -351,5 +352,68 @@ describe('the bound conversation beside the App\'s page (#1925, API 41)', () => 
     service.setPermissionGranted(ID, 'chat:surface', false);
     expect(callRefusal('bindingsSurface', { name: 'main' }, page)?.code).toBe('denied');
     expect(callRefusal('bindingsSurfacePanel', { name: 'main', collapsed: true }, page)?.code).toBe('denied');
+  });
+});
+
+/** #1925 (API 46): the same binding's `work` action — the assistant's work list, and one task drawn in the App's panel. */
+function workManifest({ actions = ['unread', 'work'], capabilities, apiVersion = EXTENSION_API_VERSION }: { actions?: string[]; capabilities?: string[]; apiVersion?: number } = {}) {
+  const base = manifest();
+  return { ...base, apiVersion,
+    permissions: { capabilities: capabilities ?? ['chat:unread', ...actions.filter(a => a !== 'unread').map(a => `chat:${a}`)], bindings: [{ name: 'main', kind: 'conversation', actions }] } };
+}
+
+describe('the assistant\'s work on the binding (#1925, API 46)', () => {
+  it('needs API 46 and the work action with chat:work, each without the other refused; desktop only', () => {
+    expect(EXTENSION_API_VERSION).toBe(46);
+    expect(() => parseExtensionManifest(workManifest())).not.toThrow();
+    expect(() => parseExtensionManifest(surfaceManifest({ actions: ['unread', 'surface', 'work'] }))).not.toThrow();
+    for (const apiVersion of [37, 40, 41, 45]) expect(() => parseExtensionManifest(workManifest({ apiVersion }))).toThrow(/apiVersion 46/);
+    expect(() => parseExtensionManifest(workManifest({ capabilities: ['chat:unread'] }))).toThrow(/chat:work/);
+    expect(() => parseExtensionManifest(workManifest({ actions: ['unread'], capabilities: ['chat:unread', 'chat:work'] }))).toThrow(/chat:work/);
+    // No binding at all: there is no conversation to be the assistant's.
+    expect(() => parseExtensionManifest({ ...manifest(), permissions: { capabilities: ['chat:work'] } })).toThrow();
+    expect(() => parseExtensionManifest({ ...workManifest(), platforms: ['desktop', 'phone'] })).toThrow(/desktop-only/);
+    // An App of before parses as it did.
+    expect(() => parseExtensionManifest(boundManifest())).not.toThrow();
+  });
+
+  it('reaches the selected conversation only with work declared and chat:work granted; withdrawn, only work stops', () => {
+    const { service } = fixture(); service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
+    expect(() => service.conversationBinding(OWNER, ID, 'main', 'work')).toThrow(expect.objectContaining({ code: 'denied' }));
+    const working = fixture(); working.install(workManifest({ actions: ['unread', 'draft', 'work'] }));
+    working.service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
+    expect(working.service.conversationBinding(OWNER, ID, 'main', 'work')?.chatId).toBe(CHAT);
+    expect(working.service.conversationBinding(OTHER, ID, 'main', 'work')).toBeNull();
+    expect(working.service.conversationBindingActions(ID)).toEqual(['unread', 'draft', 'work']);
+    // chat:work widens nothing else: no messages, no files, no surface, no agents.
+    for (const word of ['chat:read', 'chat:files', 'chat:surface', 'files:read', 'chat:relay', 'agents:read', 'agents:control'] as const) expect(working.service.hasCapability(ID, word)).toBe(false);
+    const authority = working.service.conversationUnreadAuthority(OWNER, ID, 'main');
+    working.service.setPermissionGranted(ID, 'chat:work', false);
+    expect(() => working.service.conversationBinding(OWNER, ID, 'main', 'work')).toThrow(expect.objectContaining({ code: 'denied' }));
+    expect(working.service.conversationBinding(OWNER, ID, 'main', 'draft')?.chatId).toBe(CHAT);
+    // A chooser drawn before the change must ask again.
+    expect(working.service.conversationUnreadAuthority(OWNER, ID, 'main')).not.toBe(authority);
+    working.service.setPermissionGranted(ID, 'chat:work', true);
+    working.service.setEnabled(ID, false);
+    expect(() => working.service.conversationBinding(OWNER, ID, 'main', 'work')).toThrow(expect.objectContaining({ code: 'denied' }));
+    working.service.setEnabled(ID, true);
+    working.service.uninstall(ID);
+    expect(() => working.service.conversationBinding(OWNER, ID, 'main', 'work')).toThrow(expect.objectContaining({ code: 'denied' }));
+  });
+
+  it('at the shared door: work and closeWork need chat:work, openWork a click too, all a page\'s; nothing else opens', () => {
+    const { service, install } = fixture(); install(workManifest());
+    const has = (word: Parameters<ExtensionsService['hasCapability']>[1]) => service.hasCapability(ID, word);
+    const page = { kind: 'page' as const, gesture: false, widget: false, has };
+    const handle = 'wAAAAAAAAAAAAAAAAAAAAAA';
+    expect(callRefusal('bindingsWork', { name: 'main' }, page)).toBeNull();
+    expect(callRefusal('bindingsCloseWork', { name: 'main' }, page)).toBeNull();
+    expect(callRefusal('bindingsOpenWork', { name: 'main', handle }, page)?.code).toBe('denied');
+    expect(callRefusal('bindingsOpenWork', { name: 'main', handle }, { ...page, gesture: true })).toBeNull();
+    for (const kind of ['background', 'program'] as const) expect(callRefusal('bindingsWork', { name: 'main' }, { kind, has })?.code).toBe('invalid');
+    for (const [verb, args] of [['bindingsRead', { name: 'main', path: 'x' }], ['bindingsSurface', { name: 'main' }], ['messagesHistory', { chat: CHAT }], ['chatsList', {}],
+      ['dispatch', { text: 'x', draft: true, to: { binding: 'main' } }]] as const) expect(callRefusal(verb, args, { ...page, gesture: true })?.code).toBe('denied');
+    service.setPermissionGranted(ID, 'chat:work', false);
+    for (const verb of ['bindingsWork', 'bindingsOpenWork', 'bindingsCloseWork'] as const) expect(callRefusal(verb, { name: 'main', handle }, { ...page, gesture: true })?.code).toBe('denied');
   });
 });

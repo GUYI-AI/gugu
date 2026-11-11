@@ -37,6 +37,7 @@ type Host = {
   appFiles: Record<'openWith' | 'upload' | 'download' | 'forward', (args: unknown) => Promise<unknown>>
   cloud: Record<'write', (...args: unknown[]) => Promise<unknown>>
   pickAgent(ask: Record<string, unknown>): Promise<unknown>
+  bindings: { openWork(name: string, handle: string): Promise<unknown> }
 }
 const host = electron.exposed.__guguHost as Host
 
@@ -55,6 +56,8 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   cloudWrite: () => host.cloud.write('radar_save', {}),
   pickAgent: () => host.pickAgent({}),
   openLink: () => host.openLink('gugu://ext/radar/radar'),
+  // #1925 (46): one of the assistant's tasks drawn in the App's panel.
+  bindingsOpenWork: () => host.bindings.openWork('main', 'wAAAAAAAAAAAAAAAAAAAAAA'),
 }
 
 const sent = () => electron.invoke.mock.calls.map(([, request]) => request as { method: string; gesture: unknown })

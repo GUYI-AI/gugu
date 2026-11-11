@@ -232,7 +232,7 @@ export class ExtensionsService {
 
   /**
    * Host-only (#1927): the same binding, for one more of its actions — declared on it, and that action's own capability
-   * still granted (`chat:files`, `chat:draft`, `chat:surface`) on top of everything the unread grant needs. Refused
+   * still granted (`chat:files`, `chat:draft`, `chat:surface`, `chat:work`) on top of everything the unread grant needs. Refused
    * otherwise, as that is.
    */
   conversationBinding(ownerId: string, extensionId: string, name: string, action: Exclude<ConversationBindingAction, 'unread'>): StoredUnreadBinding | null {
@@ -838,7 +838,7 @@ export class ExtensionsService {
     }
     // A binding's other grants (#1927) change what a pending selection authorizes: a chooser drawn before must ask again.
     // The selection itself stays: it is `chat:unread`'s, and each of these is checked again on every call.
-    if (permission === 'chat:files' || permission === 'chat:draft') this.unreadAuthorities.delete(extensionId);
+    if (permission === 'chat:files' || permission === 'chat:draft' || permission === 'chat:work') this.unreadAuthorities.delete(extensionId);
     if (permission === 'chat:surface') this.forgetAuthorities(extensionId);
     this.revocationsFile.write(revocations);
   }

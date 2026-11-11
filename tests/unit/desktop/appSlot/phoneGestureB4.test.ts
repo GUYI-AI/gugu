@@ -91,7 +91,8 @@ beforeEach(() => {
   document.body.appendChild(frame)
   posted = vi.fn()
   Object.defineProperty(frame.contentWindow!, 'postMessage', { value: posted, configurable: true })
-  start(['files:read', 'files:write', 'agents:tools'])
+  // `chat:work` (#1925, 46) is the desktop's alone: held here only so `openWork` reaches the gesture door, which refuses it in the same sentence.
+  start(['files:read', 'files:write', 'agents:tools', 'chat:work'])
 })
 afterEach(() => {
   host?.dispose()
@@ -124,6 +125,7 @@ const gestureCalls: Record<string, Record<string, unknown>> = {
   cloudWrite: { name: 'radar_save', args: {} },
   pickAgent: {},
   taskMessage: { intent: 'pause' },
+  bindingsOpenWork: { name: 'main', handle: 'wAAAAAAAAAAAAAAAAAAAAAA' },
 }
 
 describe('the phone refuses a verb outside the gesture it needs, in the same sentence as the desktop (L11 B4)', () => {

@@ -26,6 +26,7 @@ import {
   unbindExtensionSurfaces,
   updateExtensionSurfaceLayout,
   pushBindingSurfaces,
+  pushBindingWork,
 } from '@main/core/extensions/extension-bridge';
 import {
   extensionDataRoot,
@@ -824,6 +825,31 @@ export const extensionsController = createRPCController({
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
 
+  /**
+   * #1925 (46) The window's reading of the account's work ledger, as the built-in list reads it (AppWorkLedgerHost): kept
+   * for `gugu.bindings.work`, and told to the pages of each App reading it (app-work-binding.ts).
+   */
+  workLedgerChanged: async (args: { ownerId: string | null; assistantId: string | null; state: string; rows: unknown[] }) => {
+    try {
+      const { workLedgerChanged } = await import('./app-work-binding');
+      for (const extensionId of await workLedgerChanged(args)) {
+        void pushBindingWork(extensionId).catch((error: unknown) => log.warn('The work list could not be told to an App\'s pages:', error));
+      }
+      return { success: true as const };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
+  /** #1925 (46) Which task's conversation the window draws in an App's panel now (null: none): its pages hear `open`. */
+  reportWorkChat: async (args: { extensionId: string; ownerId: string | null; open: { workId: string; sessionId: string } | null }) => {
+    try {
+      const { reportWorkChat } = await import('./app-work-binding');
+      if (reportWorkChat(args)) {
+        void pushBindingWork(args.extensionId).catch((error: unknown) => log.warn('The open task could not be told to an App\'s pages:', error));
+      }
+      return { success: true as const };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
   unreadBindingChoices: async (args: { extensionId: string; name: string }) => {
     try {
       const { unreadBindingChoices } = await import('./app-unread-bindings');
@@ -912,8 +938,9 @@ export const extensionsController = createRPCController({
       // Capabilities need no reload: the bridge asks for the granted set on every
       // call, so a withdrawn capability stops working on the next call either way.
       reloadExtensionSurfaces(installed.manifest.id);
-      // The window's projections of the binding (rail unread, #1925 the conversation beside the page) read it again.
-      if (args.permission === 'chat:unread' || args.permission === 'chat:surface') events.emit(extensionsInventoryChangedChannel, { extensionId: args.extensionId });
+      // The window's projections of the binding (rail unread, #1925 the conversation beside the page, a task's conversation
+      // in its panel) read it again.
+      if (args.permission === 'chat:unread' || args.permission === 'chat:surface' || args.permission === 'chat:work') events.emit(extensionsInventoryChangedChannel, { extensionId: args.extensionId });
       void notifyInstalledAppsChanged();
       return { success: true, data: { revoked: service.revokedPermissions(args.extensionId) } };
     } catch (error) {

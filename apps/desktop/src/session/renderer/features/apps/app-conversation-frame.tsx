@@ -10,6 +10,7 @@ import { searchInChat } from '@renderer/features/global-search/search-session';
 import { rpc } from '@renderer/lib/ipc';
 import { log } from '@renderer/utils/logger';
 import { setAppConversationPanelCollapsed, useAppConversationPanelCollapsed } from './app-conversation-panel';
+import { AppDockPage, AppWorkChatSlot, useAppWorkChatOpen } from './app-work-slot';
 
 /** The App's main page has this tab id here, as on its page of its own (`AppMainPanel`). */
 const DOCK = 'dock';
@@ -38,6 +39,8 @@ export function AppConversationFrame({ extensionId, tabKind }: { extensionId: st
     () => bridge?.getSnapshot()[extensionId] ?? null,
   );
   const collapsed = useAppConversationPanelCollapsed(extensionId);
+  // #1925 (46) One of the assistant's tasks open in this panel: the built-in panel's task view, the page set aside.
+  const workOpen = useAppWorkChatOpen(extensionId);
   // What main tells the App's pages (`gugu.bindings.onSurface`): drawn beside this conversation, the panel as it is; or not.
   useEffect(() => report(extensionId, tabKind, chatId ? { chatId, collapsed } : null), [extensionId, tabKind, chatId, collapsed]);
   useEffect(() => () => report(extensionId, tabKind, null), [extensionId, tabKind]);
@@ -46,7 +49,7 @@ export function AppConversationFrame({ extensionId, tabKind }: { extensionId: st
     [extensionId],
   );
 
-  if (!chatId) return <ExtensionSharedSlot tabKind={tabKind} tabId={DOCK} />;
+  if (!chatId) return <AppDockPage extensionId={extensionId} tabKind={tabKind} />;
   const setCollapsed = (next: boolean) => setAppConversationPanelCollapsed(extensionId, next);
   return (
     <div className="ta-app" data-panel={collapsed ? 'closed' : 'open'} data-testid="app-conversation-surface">
@@ -67,14 +70,23 @@ export function AppConversationFrame({ extensionId, tabKind }: { extensionId: st
       </div>
       {collapsed ? null : (
         <section className="ta-panel" data-testid="app-conversation-panel">
-          <div className="ta-panel-top">
+          <div className="ta-panel-top" hidden={workOpen}>
             <button type="button" className="ta-circle ta-panel-collapse" aria-label={t('panel.collapse')} title={t('panel.collapse')} onClick={() => setCollapsed(true)} data-testid="app-conversation-panel-collapse">
               <PanelRight />
             </button>
           </div>
-          <div className="flex min-h-0 flex-1 flex-col">
-            <ExtensionSharedSlot tabKind={tabKind} tabId={DOCK} />
-          </div>
+          {workOpen ? (
+            <>
+              <AppWorkChatSlot extensionId={extensionId} />
+              <button type="button" className="ta-circle ta-task-panel-collapse" aria-label={t('panel.collapse')} title={t('panel.collapse')} onClick={() => setCollapsed(true)} data-testid="app-work-panel-collapse">
+                <PanelRight />
+              </button>
+            </>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <ExtensionSharedSlot tabKind={tabKind} tabId={DOCK} />
+            </div>
+          )}
         </section>
       )}
     </div>
