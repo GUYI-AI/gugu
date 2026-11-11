@@ -1,5 +1,5 @@
 import type { ToolNode } from '@session-chat/model';
-import { deriveToolInputSummary } from '@session-chat/components/rows/tools/tool-input-summary';
+import { deriveToolInputSummary } from '@gugu/session-core/session-record/tool-input-summary';
 
 /** Real arguments shared by parent process rows and child progress rows. */
 export function toolStepDetail(item: Exclude<ToolNode, { kind: 'tool-group' }>): string | undefined {

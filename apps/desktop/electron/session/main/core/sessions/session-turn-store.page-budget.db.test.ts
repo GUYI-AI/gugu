@@ -96,6 +96,20 @@ describe('stored history page budget', () => {
     expect(outputs(await getStoredHistory({ sessionId: 'c1', limit: 100, lean: true }, { local: true }))).toEqual([6_000, 6_000, 6_000]);
   });
 
+  it('carries a call\'s step line and not its raw input only to a device-link reader that asked for lean pages', async () => {
+    await persistCommittedTurn({ sessionId: 'c1', source: 'live', turn: { ...turn(0, 10),
+      items: [{ kind: 'mcp-tool-call', id: 'c1:turn:0:m', seq: 0, toolCallId: 'm', server: 'github', tool: 'search', title: 'search', status: 'done', rawInput: '{"query":"needle"}' }] } as TranscriptTurn });
+    const call = async (params: { lean?: boolean; fromSeq?: number }, reader?: { local: boolean }) =>
+      (await getStoredHistory({ sessionId: 'c1', ...(params.fromSeq === undefined ? { limit: 100 } : {}), ...params }, reader)).turns[0]!.items[0] as { rawInput?: string; inputSummary?: string };
+    expect(await call({ lean: true })).toMatchObject({ inputSummary: 'needle' });
+    expect(await call({ lean: true })).not.toHaveProperty('rawInput');
+    // Whole: a reader that did not ask, a window on this machine, and the read that catches a window up.
+    for (const whole of [await call({}), await call({ lean: true }, { local: true }), await call({ lean: true, fromSeq: 0 })]) {
+      expect(whole.rawInput).toBe('{"query":"needle"}');
+      expect(whole).not.toHaveProperty('inputSummary');
+    }
+  });
+
   it('gives a window on this machine the larger page', async () => {
     await store(60);
     expect(60 * TURN_BYTES).toBeLessThan(LOCAL_PAYLOAD_BUDGET);

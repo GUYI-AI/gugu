@@ -3,6 +3,7 @@ import { messageContentText } from '../acp/models/entity-content';
 import { isGuguServer } from '../acp/models/turns/opened-outputs';
 import { catalogCall, toolCallName } from '../acp/models/turns/tool-calls';
 import { isQuestionOrPlanToolName } from './sources/question-tools';
+import { deriveToolInputSummary } from './tool-input-summary';
 import type {
   TimelineAfterResult,
   TimelineBatch,
@@ -65,6 +66,34 @@ function outputUnshown(node: ToolNode): boolean {
   return !(node.kind === 'mcp-tool-call' && isGuguServer(node.server) && READ_WHEN_FOLDED.test(node.tool));
 }
 
+/**
+ * @@@step-line — what else a lean page leaves out of a call. In the conversation view a call is its step line: the
+ * kind of call and one detail (`toolStepDetail`) — the command, the path, the query, the address, the provider's
+ * summary, or a line derived from the raw input when the call names none of these. The line shows no title, and
+ * nothing reads the raw input or where the call worked. So the page carries the detail the line shows (deriving the
+ * summary here, with the view's own function, when the view would have) and not the raw input or the locations, and
+ * cuts the title to these characters. The line reads the same, to the letter; nothing is fetched later.
+ * 5MB of the measured conversation.
+ */
+export const HELD_TITLE_CHARS = 80;
+
+/**
+ * Whether a call is only ever its step line to the conversation view. Not a sub-agent's own call (the roster lists
+ * each with its title and whole detail), a call that left a background task (the task list names the task by its
+ * title), nor the notice that such a task ended (its line is its title).
+ */
+function stepLineOnly(node: ToolNode): boolean {
+  if (node.kind === 'background-command-done-tool-call') return false;
+  if ('parentToolCallId' in node && node.parentToolCallId) return false;
+  return !('backgroundTaskId' in node && node.backgroundTaskId);
+}
+
+/** Whether the view derives this call's step detail from its raw input: the last resort of `toolStepDetail`. */
+function detailFromRawInput(node: ToolNode, source: Record<string, unknown>): boolean {
+  if (node.kind === 'read-tool-call' || node.kind === 'search-tool-call' || node.kind === 'web-fetch-tool-call') return false;
+  return source.inputSummary == null && (node.kind !== 'execute-tool-call' || source.command == null);
+}
+
 function isToolNode(item: TranscriptItem): item is ToolNode {
   return item.kind !== 'message' && item.kind !== 'thinking';
 }
@@ -75,6 +104,21 @@ function trimToolNode(node: ToolNode, limit: number, lean = false): ToolNode {
   let dropped = 0;
   let patch: Record<string, unknown> | null = null;
   const held = lean && outputUnshown(node);
+  const line = held && stepLineOnly(node);
+  const withheld: string[] = [];
+  if (line) {
+    if (typeof source.rawInput === 'string' && source.rawInput.length > 0) {
+      withheld.push('rawInput');
+      dropped += source.rawInput.length;
+      const summary = detailFromRawInput(node, source) ? deriveToolInputSummary(source.rawInput) : undefined;
+      patch = summary === undefined ? {} : { inputSummary: summary };
+    }
+    if (Array.isArray(source.locations) && source.locations.length > 0) { withheld.push('locations'); patch ??= {}; }
+    if (typeof source.title === 'string' && source.title.length > HELD_TITLE_CHARS) {
+      patch = { ...patch, title: source.title.slice(0, HELD_TITLE_CHARS) };
+      dropped += source.title.length - HELD_TITLE_CHARS;
+    }
+  }
 
   for (const field of TRIMMED_FIELDS) {
     // A successful root send contains the conversation's message, just like a message item (a widget's data included).
@@ -83,6 +127,7 @@ function trimToolNode(node: ToolNode, limit: number, lean = false): ToolNode {
       && !node.parentToolCallId && isGuguServer(node.server)
       && (node.tool === 'message_send' || node.tool === 'session_message' || node.tool === 'widget_send'
         || catalogCall(node.tool, node.rawInput)?.tool === 'widget_send')) continue;
+    if (withheld.includes(field)) continue;
     const value = source[field];
     const fits = held && HELD_FIELDS.has(field) ? Math.min(limit, HELD_PREVIEW_CHARS) : limit;
     if (typeof value !== 'string' || value.length <= fits) continue;
@@ -116,6 +161,7 @@ function trimToolNode(node: ToolNode, limit: number, lean = false): ToolNode {
   if (!patch) return node;
   // 累加：这条调用**总共**少了多少字。它自己被裁过，`dropped` 就落在自己这一格上。
   const next: Record<string, unknown> = { ...node, ...patch, ...(dropped > 0 ? { trimmedChars: dropped } : {}) };
+  for (const field of withheld) delete next[field];
   delete next.images;
   return next as unknown as ToolNode;
 }

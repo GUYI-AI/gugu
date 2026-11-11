@@ -331,8 +331,9 @@ export async function getStoredHistory(params: {
   fromSeq?: number;
   ownerNotificationsOnly?: boolean;
   /**
-   * The reader's view shows no tool output (the conversation view), so output and terminal captures may arrive as
-   * their opening only (transport-trim `unshown-output`). Honoured over a device link; a window on this machine pays
+   * The reader's view is the conversation view: it shows no tool output and draws a call as its step line. So output
+   * may arrive as its opening only, with no terminal capture, and a call as what its line shows, without its raw
+   * input (transport-trim `unshown-output`, `step-line`). Honoured over a device link; a window on this machine pays
    * nothing for the whole turn and gets it.
    */
   lean?: boolean;

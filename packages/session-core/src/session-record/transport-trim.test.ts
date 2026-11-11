@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 
 import type { ToolNode, TranscriptItem, TranscriptTurn } from '../acp/client';
 import type { TimelineSnapshot, TurnPatch } from './contract';
+import { deriveToolInputSummary } from './tool-input-summary';
 import {
   HELD_PREVIEW_CHARS,
+  HELD_TITLE_CHARS,
   REMOTE_OLDER_PAGE_BUDGET,
   TRANSPORT_PAYLOAD_BUDGET,
   TRANSPORT_TEXT_LIMIT,
@@ -395,11 +397,11 @@ describe('a lean page leaves out output the conversation view does not show', ()
     ({ kind: 'mcp-tool-call', id: tool, seq: 1, toolCallId: tool, server: 'gugu', tool, status: 'done', rawInput: '{}', ...fields }) as unknown as ToolNode;
 
   it('sends the opening of a finished call\'s output and says how much is missing', () => {
-    const call = lean([execTool('e', { outputText: long, rawOutput: long, rawInput: long })]).items[0] as unknown as Record<string, unknown>;
+    const call = lean([execTool('e', { outputText: long, rawOutput: long, command: long })]).items[0] as unknown as Record<string, unknown>;
     expect(call.outputText).toBe(long.slice(0, HELD_PREVIEW_CHARS));
     expect(call.rawOutput).toBe(long.slice(0, HELD_PREVIEW_CHARS));
-    // What the step line is drawn from (the call's input, its title) is whole.
-    expect(call.rawInput).toBe(long);
+    // What the step line shows (the command) is whole.
+    expect(call.command).toBe(long);
     expect(call.trimmedChars).toBe(2 * (long.length - HELD_PREVIEW_CHARS));
   });
 
@@ -450,5 +452,88 @@ describe('a lean page leaves out output the conversation view does not show', ()
     const turns = Array.from({ length: 40 }, (_, index) => heavy(index));
     expect(trimCursorPageForTransport({ turns, nextCursor: null }).turns.length).toBeLessThan(20);
     expect(trimCursorPageForTransport({ turns, nextCursor: null }, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET, true).turns).toHaveLength(40);
+  });
+});
+
+// In the conversation view a call is its step line: the kind of call and one detail. A lean page carries that detail
+// and not the raw input it may have come from. `detail` below is `toolStepDetail`, the view's own choice of it.
+describe('a lean page carries what a call\'s step line shows, not its raw input', () => {
+  const input = JSON.stringify({ url: 'https://example.com/a', depth: 2, body: 'b'.repeat(4_000) });
+  const lean = (items: TranscriptItem[]) =>
+    trimCursorPageForTransport({ turns: [turn('t', items)], nextCursor: null }, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET, true).turns[0]!;
+  const detail = (item: Record<string, unknown>) => {
+    switch (item.kind) {
+      case 'execute-tool-call': return item.command ?? item.inputSummary ?? deriveToolInputSummary(item.rawInput as string | undefined);
+      case 'read-tool-call': return item.path ?? item.resource;
+      case 'search-tool-call': return item.query;
+      case 'web-fetch-tool-call': return item.url;
+      default: return item.inputSummary ?? deriveToolInputSummary(item.rawInput as string | undefined);
+    }
+  };
+  const node = (fields: Record<string, unknown>) =>
+    ({ id: 'n', seq: 1, toolCallId: 'n', title: 'run', status: 'done', rawInput: input, locations: [{ path: '/a' }], ...fields }) as unknown as ToolNode;
+  const calls: ToolNode[] = [
+    node({ kind: 'execute-tool-call', command: 'c'.repeat(2_000) }),
+    node({ kind: 'execute-tool-call', inputSummary: 'make test' }),
+    node({ kind: 'execute-tool-call' }),
+    node({ kind: 'execute-tool-call', command: '' }),
+    node({ kind: 'read-tool-call', path: '/a/b.ts' }),
+    node({ kind: 'read-tool-call' }),
+    node({ kind: 'search-tool-call', query: 'needle' }),
+    node({ kind: 'web-fetch-tool-call', url: 'https://example.com' }),
+    node({ kind: 'mcp-tool-call', server: 'github', tool: 'search' }),
+    node({ kind: 'mcp-tool-call', server: 'github', tool: 'search', inputSummary: '' }),
+    node({ kind: 'mcp-tool-call', server: 'gugu', tool: 'message_history' }),
+    node({ kind: 'unknown-tool-call', toolName: 'Skill', rawInput: 'not json  at all' }),
+    node({ kind: 'unknown-tool-call', toolName: 'Skill', rawInput: '{}' }),
+  ];
+
+  it('leaves every line as the view would have drawn it from the whole call', () => {
+    const sent = lean(calls).items as unknown as Array<Record<string, unknown>>;
+    expect(sent.map(detail)).toEqual((calls as unknown as Array<Record<string, unknown>>).map(detail));
+    for (const call of sent) {
+      expect(call).not.toHaveProperty('rawInput');
+      expect(call).not.toHaveProperty('locations');
+    }
+    // Derived only where the view would have derived it; a call that names its own detail is not given another.
+    expect(sent.map(call => call.inputSummary)).toEqual([
+      undefined, 'make test', deriveToolInputSummary(input), undefined, undefined, undefined, undefined, undefined,
+      deriveToolInputSummary(input), '', deriveToolInputSummary(input), 'not json at all', undefined,
+    ]);
+    expect(sent[2]!.trimmedChars).toBe(input.length);
+  });
+
+  it('cuts a long title, which the line does not show, and leaves a call with nothing to leave out as it is', () => {
+    const titled = lean([execTool('e', { title: 't'.repeat(HELD_TITLE_CHARS * 2), command: 'ls' })]).items[0] as unknown as Record<string, unknown>;
+    expect(titled).toMatchObject({ title: 't'.repeat(HELD_TITLE_CHARS), command: 'ls', trimmedChars: HELD_TITLE_CHARS });
+    const page = { turns: [turn('t', [execTool('e', { command: 'ls' })])], nextCursor: null };
+    expect(trimCursorPageForTransport(page, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET, true)).toBe(page);
+  });
+
+  it('sends whole the calls the view reads more of than a line', () => {
+    const more = { title: 't'.repeat(HELD_TITLE_CHARS * 2) };
+    const kept: ToolNode[] = [
+      node({ kind: 'execute-tool-call', status: 'failed', ...more }),
+      node({ kind: 'execute-tool-call', status: 'in_progress', ...more }),
+      node({ kind: 'patch-tool-call', ...more }),
+      node({ kind: 'spawn-subagent-tool-call', ...more }),
+      node({ kind: 'unknown-tool-call', toolName: 'AskUserQuestion', ...more }),
+      node({ kind: 'mcp-tool-call', server: 'gugu', tool: 'message_send', ...more }),
+      node({ kind: 'mcp-tool-call', server: 'gugu', tool: 'session_open_in_tab', ...more }),
+      // A sub-agent's own call (the roster lists it with its title and whole detail), a call that left a background
+      // task (the task list names it), and the notice that the task ended (its line is its title).
+      node({ kind: 'execute-tool-call', parentToolCallId: 'agent-1', ...more }),
+      node({ kind: 'execute-tool-call', backgroundTaskId: 'task-1', ...more }),
+      node({ kind: 'background-command-done-tool-call', ...more }),
+    ];
+    const sent = lean(kept).items as unknown as Array<Record<string, unknown>>;
+    expect(sent.map(call => [call.rawInput, call.title, call.locations])).toEqual(kept.map(() => [input, more.title, [{ path: '/a' }]]));
+    expect(sent.every(call => call.inputSummary === undefined)).toBe(true);
+  });
+
+  it('leaves a reader that did not ask for lean pages the raw input', () => {
+    const sent = trimCursorPageForTransport({ turns: [turn('t', calls)], nextCursor: null }).turns[0]!.items as unknown as Array<Record<string, unknown>>;
+    expect(sent.map(call => call.rawInput)).toEqual((calls as unknown as Array<Record<string, unknown>>).map(call => call.rawInput));
+    expect(sent.every(call => call.title === 'run' && Array.isArray(call.locations))).toBe(true);
   });
 });
