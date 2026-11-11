@@ -62,7 +62,7 @@ vi.mock('@/components/ChatAreaPanel', async () => {
 
 const { AppConversationSurfaceHost } = await import('../../../../apps/desktop/src/components/appSlot/AppConversationSurfaceHost');
 const { readShellSlots } = await import('../../../../apps/desktop/src/lib/shellSlots');
-const { appConversationSurfaceShows, readAppConversationSurfaceBridge } = await import('../../../../apps/desktop/src/lib/appConversationSurfaceBridge');
+const { appConversationSurfaceShows, publishAppConversationSurfaces, readAppConversationSurfaceBridge } = await import('../../../../apps/desktop/src/lib/appConversationSurfaceBridge');
 
 let root: Root;
 let host: HTMLDivElement;
@@ -285,6 +285,13 @@ describe('46: the host\'s row above it (`conversationSurface.header`)', () => {
     await render();
     expect(published()).toEqual({ today: CHAT });
     expect(headers()).toEqual({});
+  });
+
+  it('the bridge keeps a row only with a conversation it draws: never one for an App with none beside it', async () => {
+    const row = { kind: 'assistant', ownerId: 'owner-a' } as const;
+    await act(async () => publishAppConversationSurfaces({ today: CHAT }, { today: row, notes: row }));
+    expect(headers()).toEqual({ today: row });
+    await act(async () => publishAppConversationSurfaces({}));
   });
 
   it('goes at once with the conversation: an account switch, a withdrawn grant or choice (main names it), the App switched off', async () => {

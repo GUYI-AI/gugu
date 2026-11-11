@@ -25,7 +25,7 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/apps/assistant-a
 vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ isMyAssistant: () => false }));
 
 const { installAssistantShellBridge, publishAssistantShell } = await import(`${D}/lib/assistantShellBridge`);
-const { AppHostLayerFrame, openAssistantLayer, resetMountedAppPagesForTest } = await import(`${D}/session/renderer/features/apps/app-host-layer`);
+const { AppHostLayerFrame, openAssistantLayer, resetMountedAppPagesForTest, useAppHostLayer } = await import(`${D}/session/renderer/features/apps/app-host-layer`);
 const { installAppHostLayerBridge, readAppHostLayerBridge, resetAppHostLayersForTest, setAppHostLayerAccount } = await import(`${D}/lib/appHostLayerBridge`);
 installAppHostLayerBridge();
 
@@ -108,6 +108,21 @@ describe('the host layer over an App\'s panel', () => {
     act(() => publishAssistantShell(shell({ assistantState: 'none', assistant: null })));
     expect(shown()).toEqual(['app-page']);
     expect(layer()).toBeNull();
+  });
+
+  it('not drawn even for the one render before it is closed: what each render saw after the account changed', () => {
+    const seen: (string | null)[] = [];
+    function Probe() {
+      seen.push(useAppHostLayer(APP));
+      return null;
+    }
+    act(() => root.render(<><AppHostLayerFrame extensionId={APP} tabKind={`${APP}.main`} /><Probe /></>));
+    open('capabilities');
+    expect(seen.at(-1)).toBe('assistant-capabilities');
+    const from = seen.length;
+    act(() => publishAssistantShell(shell({ ownerId: OTHER })));
+    expect(seen.length).toBeGreaterThan(from);
+    expect(seen.slice(from).every((kind) => kind === null)).toBe(true);
   });
 
   it('taken away when the panel goes: main hears it closed', () => {
