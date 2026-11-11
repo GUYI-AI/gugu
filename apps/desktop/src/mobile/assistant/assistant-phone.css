@@ -98,6 +98,9 @@
 
 .ta-phone-chat { display: flex; flex: 1; min-height: 0; min-width: 0; }
 .ta-phone-chat[hidden] { display: none; }
+/* The assistant App's page fills the section it is on; it pads the home indicator itself (no bottom bar here). */
+.ta-phone-app { display: flex; flex: 1; min-height: 0; flex-direction: column; padding-bottom: env(safe-area-inset-bottom); }
+.ta-phone-app[hidden] { display: none; }
 .ta-phone .ta-chat { padding-top: 0; }
 /* 这一层没有底栏(owner 10-26):输入条自己垫安全区;❌ 再画一道发丝线(手机聊天页那道线是给贴边底栏分界用的)。 */
 .ta-phone .ta-chat [data-chat-composer] { padding: 0 8px max(8px, env(safe-area-inset-bottom)) !important; border-top: 0 !important; }

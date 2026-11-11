@@ -100,6 +100,9 @@ export function appAssistantStatusOf(snapshot: AssistantShellSnapshot, face: str
   const home = snapshot.home
   // 主题色 = 它那只鸟的身体色相(内置视图 `.ta-app` 的 --ta-tint-h 同一个);照片头像没有 = null。
   const tint = found ? assistantTintHue(found.id, found.avatar) ?? null : null
+  // 安家途中云上的家正在开 / 没开成:内置视图整页换成宿主的安家流程(进度、失败与重来都在那里说),App 也该照此画安家那一页。
+  const cloudBeingMade = home?.kind === 'cloud' && snapshot.setup !== null
+    && (snapshot.cloud?.state === 'provisioning' || snapshot.cloud?.state === 'error')
   return {
     assistant: snapshot.assistantState,
     name: found ? found.display_name.slice(0, NAME_MAX) : null,
@@ -109,7 +112,7 @@ export function appAssistantStatusOf(snapshot: AssistantShellSnapshot, face: str
       : home.kind === 'cloud' ? { kind: 'cloud', online: CLOUD_ANSWERS.has(snapshot.cloud?.state ?? ''), label: null }
       : { kind: home.hostKind === 'server' ? 'server' : home.thisDevice ? 'this-computer' : 'other-computer', online: home.online, label: textOrNull(home.label) },
     setup: snapshot.setup,
-    preparing: snapshot.preparing,
+    preparing: snapshot.preparing || cloudBeingMade,
     cloudAvailable: snapshot.cloudAvailable,
     member: snapshot.member,
     // 失败那一类是个词;万一不是(❌ 原话、❌ 码里带别的),就说「出了问题」那一类。

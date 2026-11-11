@@ -38,7 +38,9 @@ function marginRulesMatching(element: Element): string[] {
 
 describe('the App kit leaves a dialog where the platform puts it', () => {
   it('sets no margin on a dialog at the end of the page, of a section, or anywhere else', () => {
-    document.body.innerHTML = '<main><p>Page</p><dialog id="in-main"><p>Sure?</p></dialog></main><section><dialog id="first"></dialog><p>x</p></section><dialog id="last"><form method="dialog"><button>OK</button></form></dialog>';
+    document.body.innerHTML = '<main><p>Page</p><dialog id="in-main"><p>Sure?</p></dialog></main><section><dialog id="first"></dialog><p>x</p></section><dialog id="last"><form method="dialog"></form></dialog>';
+    // The App page's own close button.
+    document.querySelector('#last form')!.append(Object.assign(document.createElement('button'), { textContent: 'OK' }));
     for (const id of ['last', 'in-main', 'first']) {
       expect(marginRulesMatching(document.getElementById(id)!), id).toEqual([]);
     }

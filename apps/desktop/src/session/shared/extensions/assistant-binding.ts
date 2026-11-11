@@ -104,7 +104,8 @@ export const isAssistantFace = (value: string) => value.length <= FACE_MAX && FA
  * - `home`: where it lives (cloud, this computer, another computer, a server), whether it answers there now (a cloud home
  *   that is resting wakes when spoken to: online), and that computer's name as the person named it (`label`, null on the
  *   cloud or unnamed); null until known;
- * - `setup`, `preparing`: the setup step (null: not in setup), and whether its home is being made now;
+ * - `setup`, `preparing`: the setup step (null: not in setup), and whether its home is being made now (a cloud home made
+ *   during setup that is still being made or failed to be: the host's setup shows the progress, the failure and the retry);
  * - `cloudAvailable`: whether a cloud home can be had; `member`: membership, null when not known (never false for that);
  * - `loadError`: the class of the cloud service's last failed read, null when it did not fail;
  * - `ownerName`: what the person is called (the name the ready step greets), null when not set.

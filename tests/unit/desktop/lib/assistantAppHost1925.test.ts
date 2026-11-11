@@ -191,6 +191,13 @@ describe('the snapshot an App may see', () => {
     expect(appAssistantStatusOf(snapshot({ setup: 'ready', preparing: true, cloudAvailable: false, loadError: 'network' }), null))
       .toMatchObject({ setup: 'ready', preparing: true, cloudAvailable: false, loadError: 'network' })
     expect(appAssistantStatusOf(snapshot({ loadError: `Error: device ${DEVICE} gone` }), null).loadError).toBe('failed')
+    // Its cloud home, made during setup, still being made or failed to be: the built-in drew the host's setup over the page.
+    const cloud = (state: string, over: Partial<AssistantShellSnapshot> = {}) => appAssistantStatusOf(snapshot({
+      home: { kind: 'cloud', deviceId: CLOUD }, cloud: { state, deviceId: CLOUD, error: null, since: null } as never, ...over }), null).preparing
+    expect(cloud('provisioning')).toBe(true)
+    expect(cloud('error')).toBe(true)
+    expect(cloud('awake')).toBe(false)
+    expect(cloud('error', { setup: null })).toBe(false)
     expect(appAssistantStatusOf(snapshot({ assistant: { id: ASSISTANT, display_name: 'D'.repeat(500), avatar: null, created_at: null } }), null).name).toHaveLength(200)
   })
 })

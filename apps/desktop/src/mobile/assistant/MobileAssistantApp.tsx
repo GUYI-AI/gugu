@@ -325,8 +325,7 @@ function MobileAssistantAppContent({
       />
       {ideasOpen ? <PhoneIdeas assistant={assistant} chatId={chatId} askInChat={askInChat} onClose={() => setIdeasOpen(false)} /> : null}
       {app ? (
-        <div className="ta-phone-app" data-testid="mobile-assistant-app-page" hidden={tab === 'chat' || taskChat || hostScreen}
-          style={{ display: tab === 'chat' || taskChat || hostScreen ? 'none' : 'flex', flex: 1, minHeight: 0, flexDirection: 'column', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="ta-phone-app" data-testid="mobile-assistant-app-page" hidden={tab === 'chat' || taskChat || hostScreen}>
           <PhoneAppFrame kind={app.tabKind} tabId={PHONE_ASSISTANT_LAYER_TAB} chatId={null} hidden={tab === 'chat' || taskChat || hostScreen}
             onOpenWith={() => undefined} testId="mobile-assistant-app-frame" missingTestId="mobile-assistant-app-missing" />
         </div>
