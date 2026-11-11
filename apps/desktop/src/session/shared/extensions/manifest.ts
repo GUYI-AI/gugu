@@ -1,12 +1,13 @@
 import { z } from 'zod';
 import { WIDGET_HEIGHT_MIN, WIDGET_HEIGHT_MAX } from '@gugu/core/shared/ui/widgetModels';
-import { EXTENSION_API_VERSION, EXTENSION_TOOL_CONFINEMENT_API_VERSION } from './bridge-protocol';
+import { EXTENSION_API_VERSION, EXTENSION_ASSISTANT_RULES_API_VERSION, EXTENSION_TOOL_CONFINEMENT_API_VERSION } from './bridge-protocol';
 import { networkHostAllowed } from './network-host';
 import { APP_PLATFORMS } from './app-platforms';
 import { claimTakes } from './file-openers';
 import { INSTRUCTIONS_MAX_CHARS, SUBTITLE_MAX_CHARS } from './app-listing';
-import { BINDING_ACTION_CAPABILITY, BINDING_ACTIONS_API_VERSION, BINDING_NAME, CONVERSATION_BINDING_ACTIONS } from './unread-binding';
-import { EXTENSION_ASSISTANT_RULES_API_VERSION } from './bridge-protocol';
+import { BINDING_ACTION_API_VERSION, BINDING_ACTION_CAPABILITY, BINDING_NAME, CONVERSATION_BINDING_ACTIONS, CONVERSATION_SURFACE_HEADER_API_VERSION, CONVERSATION_SURFACE_HEADERS, CONVERSATION_SURFACE_PLACEMENTS } from './unread-binding';
+import { RESOURCE_BINDING_ACTIONS, resourceDomainProblem } from './agent-resources';
+import { COMPOSER_ACTION_MAX, COMPOSER_ACTIONS_API_VERSION, COMPOSER_RUN_ACTION, composerActionSchema } from './composer-actions';
 
 /**
  * Extension (App) manifest — the `manifest.json` at the root of an
@@ -349,6 +350,32 @@ export const EXTENSION_CAPABILITIES = [
   // `{ binding }`). Each needs its binding action declared, and `chat:unread`, the binding itself.
   'chat:files',
   'chat:draft',
+  // The App's main page drawn beside that same conversation (#1925, API 41), the host's own native conversation in the main
+  // column (`contributes.conversationSurface`): the App sees none of it, only whether it is shown (`gugu.bindings.surface`).
+  'chat:surface',
+  // When that conversation is the person's private one with an agent of theirs (#1927, API 42): that agent's panel
+  // resources, in the domains the binding lists — read (`gugu.bindings.resources` / `resource` / `onResourcesChanged`),
+  // and changed through the resource store (`save` / `remove`). Each needs its binding action declared.
+  'chat:resources',
+  'chat:resources:write',
+  // #1928 (API 43): when that conversation is the person's private one with an agent of theirs, that agent's schedules —
+  // listed (`gugu.bindings.schedules`), and changed through the host's own schedule store (`controlSchedule`).
+  'chat:schedules',
+  'chat:schedules:control',
+  // #1925 (API 44) That same selected conversation's assistant, when it is the person's own: a snapshot of it and its
+  // changes (`gugu.assistant.status` / `onChanged`) — and, in the person's click, one of the host's own screens for it
+  // opened, or its setup moved on a step (`gugu.assistant.open` / `advanceSetup`) — or it renamed (`gugu.assistant.rename`).
+  // Each with its binding action.
+  'assistant:status',
+  'assistant:open',
+  'assistant:rename',
+  // #1925 (API 46) When that same conversation is the person's private chat with their own assistant: the work it handed out
+  // (`gugu.bindings.work` / `onWorkChanged`, each row as the built-in list draws it) and, in a click, one task's conversation
+  // drawn by the host in the App's panel (`openWork` / `closeWork`): the App sees none of that conversation.
+  'chat:work',
+  // That same personal assistant's voice-note recorder (#1927, API 47): the host records from the microphone when the
+  // person clicks in the App; the App drives it and hears its state, never the audio (`gugu.voiceNote`).
+  'chat:voice-notes:record',
   /*
    * Seeing the agents at work (behavior tab-extensions:「agent 的可见与可控」).
    *
@@ -461,6 +488,11 @@ const permissionsSchema = z.strictObject({
       .refine((actions) => actions.includes('unread') && new Set(actions).size === actions.length, {
         message: 'a conversation binding has the unread action, and each action once',
       }),
+    /** #1927 (42): the resource domains each resource action asks for, from a closed list (agent-resources.ts). */
+    domains: z.strictObject({
+      resources: z.array(z.string()).min(1).max(8).optional(),
+      'resources:write': z.array(z.string()).min(1).max(8).optional(),
+    }).optional(),
   })).length(1).optional(),
   /** Hostnames its pages and host-confined tools may reach. Anything else is blocked. */
   network: z
@@ -615,6 +647,19 @@ export const extensionManifestSchema = z
     contributes: z.strictObject({
       tabs: z.array(tabContributionSchema).min(1).max(8).default([{ name: 'settings', title: 'Settings', hostPage: 'settings' }]),
       unreadSource: z.strictObject({ binding: z.string().regex(BINDING_NAME) }).optional(),
+      /**
+       * API 41 (#1925): the main page is presented beside the binding's conversation, which the host draws (its composer,
+       * streaming, voice, attachments, read state): the conversation is the main column, the page the collapsible panel on
+       * its right. Needs the binding's `surface` action and `chat:surface`; unbound or not granted, the page opens alone.
+       * API 48 (#1927): `composerActions`, entries in that conversation's composer 「+」 the host draws and runs on the
+       * person's click (composer-actions.ts), for the person's own assistant chat only.
+       */
+      conversationSurface: z.strictObject({
+        binding: z.string().regex(BINDING_NAME),
+        placement: z.enum(CONVERSATION_SURFACE_PLACEMENTS),
+        header: z.enum(CONVERSATION_SURFACE_HEADERS).optional(),
+        composerActions: z.array(composerActionSchema).min(1).max(COMPOSER_ACTION_MAX).optional(),
+      }).optional(),
       mcpServers: z.array(mcpServerContributionSchema).min(1).max(4).optional(),
       /**
        * Bundle-relative folder of Agent Skills (`<skill>/SKILL.md`), handed to every agent
@@ -746,15 +791,66 @@ export const extensionManifestSchema = z
     if (unreadBinding && manifest.apiVersion < 37) {
       ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: 'conversation unread bindings require apiVersion 37' });
     }
-    // #1927: an extra action of the binding and its capability come together, as `unread` and `chat:unread` do.
-    for (const action of ['files', 'draft'] as const) {
+    // #1927: an extra action of the binding and its capability come together, as `unread` and `chat:unread` do, from the
+    // API version the action came in (#1925: `surface` 41, the assistant's 44; #1927: the voice-note recorder 47).
+    for (const action of Object.keys(BINDING_ACTION_API_VERSION) as (keyof typeof BINDING_ACTION_API_VERSION)[]) {
       const capability = BINDING_ACTION_CAPABILITY[action];
       if ((unreadBinding?.actions.includes(action) ?? false) !== declared.includes(capability)) {
         ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings'], message: `${capability} requires the conversation binding's "${action}" action, and the action requires ${capability}` });
       }
-      if (unreadBinding?.actions.includes(action) && manifest.apiVersion < BINDING_ACTIONS_API_VERSION) {
-        ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: `the conversation binding's "${action}" action requires apiVersion ${BINDING_ACTIONS_API_VERSION}` });
+      if (unreadBinding?.actions.includes(action) && manifest.apiVersion < BINDING_ACTION_API_VERSION[action]) {
+        ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: `the conversation binding's "${action}" action requires apiVersion ${BINDING_ACTION_API_VERSION[action]}` });
       }
+    }
+    // #1925: the page placed beside the conversation and the `surface` action come together, naming the one binding.
+    const surface = manifest.contributes.conversationSurface;
+    if (surface && surface.binding !== unreadBinding?.name) {
+      ctx.addIssue({ code: 'custom', path: ['contributes', 'conversationSurface'], message: 'conversationSurface must name the declared conversation binding' });
+    }
+    if (Boolean(surface) !== (unreadBinding?.actions.includes('surface') ?? false)) {
+      ctx.addIssue({ code: 'custom', path: ['contributes', 'conversationSurface'], message: 'contributes.conversationSurface requires the conversation binding\'s "surface" action, and the action requires conversationSurface' });
+    }
+    // #1925 (46) The host's own row above the conversation: an App of 46 or later.
+    if (surface?.header && manifest.apiVersion < CONVERSATION_SURFACE_HEADER_API_VERSION) {
+      ctx.addIssue({ code: 'custom', path: ['contributes', 'conversationSurface', 'header'], message: `contributes.conversationSurface.header requires apiVersion ${CONVERSATION_SURFACE_HEADER_API_VERSION}` });
+    }
+    // #1927 (48): composer entries, each run needing its binding action (whose capability the loop above pairs with it).
+    const entries = surface?.composerActions ?? [];
+    if (entries.length > 0 && manifest.apiVersion < COMPOSER_ACTIONS_API_VERSION) {
+      ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: `contributes.conversationSurface.composerActions requires apiVersion ${COMPOSER_ACTIONS_API_VERSION}` });
+    }
+    if (new Set(entries.map((entry) => entry.id)).size !== entries.length) {
+      ctx.addIssue({ code: 'custom', path: ['contributes', 'conversationSurface', 'composerActions'], message: 'each composer action id once' });
+    }
+    entries.forEach((entry, at) => {
+      const needs = COMPOSER_RUN_ACTION[entry.run.kind];
+      if (!unreadBinding?.actions.includes(needs)) {
+        ctx.addIssue({ code: 'custom', path: ['contributes', 'conversationSurface', 'composerActions', at, 'run'], message: `a "${entry.run.kind}" composer action requires the conversation binding's "${needs}" action` });
+      }
+    });
+    // #1927 (42): an agent's resources, as `files` is (the action and its capability, and the API, are the loop above's):
+    // each action names the domains it wants from the closed list; a writer writes only domains it also reads.
+    for (const action of RESOURCE_BINDING_ACTIONS) {
+      const has = unreadBinding?.actions.includes(action) ?? false;
+      const domains = unreadBinding?.domains?.[action];
+      if (has !== (domains !== undefined)) {
+        ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings', 0, 'domains'], message: `the "${action}" action and its domains come together: domains: { "${action}": [...] }` });
+      }
+      for (const domain of domains ?? []) {
+        const problem = resourceDomainProblem(action, domain);
+        if (problem) ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings', 0, 'domains', action], message: problem });
+      }
+      if (domains && new Set(domains).size !== domains.length) {
+        ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings', 0, 'domains', action], message: 'each domain once' });
+      }
+    }
+    const writes = unreadBinding?.domains?.['resources:write'] ?? [];
+    if (writes.length > 0 && !(unreadBinding?.actions.includes('resources') && writes.every((domain) => unreadBinding.domains?.resources?.includes(domain)))) {
+      ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings', 0, 'domains', 'resources:write'], message: '"resources:write" changes only domains the binding also reads ("resources")' });
+    }
+    // #1928 (43): control decides on the revisions it read, so it comes with `schedules` (the pairing and API are above).
+    if (unreadBinding?.actions.includes('schedules:control') && !unreadBinding.actions.includes('schedules')) {
+      ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings'], message: 'the conversation binding\'s "schedules:control" action requires its "schedules" action' });
     }
     const byFamily = new Map<string, string>();
     for (const word of declared) {

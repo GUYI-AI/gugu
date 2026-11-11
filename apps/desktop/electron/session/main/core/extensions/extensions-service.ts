@@ -23,6 +23,7 @@ import { assertConfinedProgramBundle } from './extension-validate';
 
 import { z } from 'zod';
 import { BINDING_ACTION_CAPABILITY, readUnreadBindings, unreadBindingKey, type ConversationBindingAction, type StoredUnreadBinding } from '@shared/extensions/unread-binding';
+import type { ResourceBindingAction } from '@shared/extensions/agent-resources';
 import { BUNDLE_SKIP_NAMES, type MarketInstallRecord } from '@shared/extensions/market';
 import { appVariantsSchema, type AppVariants, type ExtensionVariant } from '@shared/extensions/variants';
 import { removeTreeSync } from '@main/core/utils/remove-tree';
@@ -129,6 +130,15 @@ const PUBLISHERS_FILENAME = '.extension-publishers.json';
 const MARKET_SOURCES_FILENAME = '.extension-market-sources.json';
 const isReleaseProof = (value: unknown) => !!value && typeof value === 'object'
   && ['keyId', 'manifest', 'signature'].every((key) => typeof (value as Record<string, unknown>)[key] === 'string');
+/**
+ * Who made each conversation binding (#1927), as `{ [<owner>/<publisher>/<id>]: 'person' | { host: handle | null } }`: the
+ * person in the App's permissions (their chooser, a pick or a removal), or the host itself for the trusted assistant App
+ * (assistant-app-entry.ts), with the handle it wrote. A binding the host did not write — the person's, or one from before
+ * this record — is the person's choice, and the host never writes over it (owner: automation never overrides an explicit
+ * choice). Pruned on uninstall and when another publisher's App replaces it, like the bindings.
+ */
+const BINDING_AUTHORS_FILENAME = '.conversation-binding-authors.json';
+type BindingAuthor = 'person' | { host: string | null };
 
 /** Who published an App installed from a chat or a folder (`PUBLISHERS_FILENAME`). */
 export interface ExtensionPublisher {
@@ -172,8 +182,20 @@ export interface InvalidExtensionDir {
 }
 
 /** A binding declaration as a selection depends on it: its actions in any order are the same declaration (#1927). */
+/** The stamp kept for `scope`, or a new one when the scope moved or the stamp was forgotten. */
+function stampOf(stamps: Map<string, { scope: string; value: string }>, extensionId: string, scope: string): string {
+  let stamp = stamps.get(extensionId);
+  if (stamp?.scope !== scope) { stamp = { scope, value: randomUUID() }; stamps.set(extensionId, stamp); }
+  return stamp.value;
+}
+
 function bindingDeclaration(bindings: NonNullable<ExtensionManifest['permissions']>['bindings']): string {
-  return JSON.stringify(bindings?.map((binding) => ({ ...binding, actions: [...binding.actions].sort() })) ?? null);
+  return JSON.stringify(bindings?.map((binding) => ({
+    ...binding, actions: [...binding.actions].sort(),
+    // #1927 (42): its resource domains are not what the person chose the conversation for; more of them is asked as a
+    // permission when the update lands (upgrade.ts `addedPermissions`), fewer asks nothing, and the choice stays.
+    domains: undefined,
+  })) ?? null);
 }
 
 export class ExtensionsService {
@@ -192,11 +214,18 @@ export class ExtensionsService {
   private readonly marketSourcesFile: JsonFile<Record<string, MarketInstallRecord>>;
   private readonly openWithFile: JsonFile<Record<string, string>>;
   private readonly unreadBindingsFile: JsonFile<Record<string, import('@shared/extensions/unread-binding').StoredUnreadBinding>>;
+  private readonly bindingAuthorsFile: JsonFile<Record<string, BindingAuthor>>;
   private readonly unreadAuthorities = new Map<string, { scope: string; value: string }>();
+  private readonly surfaceAuthorities = new Map<string, { scope: string; value: string }>();
+  /** #1927 (42): who holds a binding's authority past one call (resource subscriptions), told when it may have changed. */
+  private readonly bindingAuthorityListeners = new Set<(extensionId: string) => void>();
   private readonly readings = new Map<string, { stamps: { file: string; stamp: FileStamp | null }[]; installed: InstalledExtension }>();
 
   constructor(private readonly rootDir: string) {
     this.unreadBindingsFile = jsonFile(rootDir, '.conversation-unread-bindings.json', '{}', readUnreadBindings, 0o600);
+    this.bindingAuthorsFile = jsonFile(rootDir, BINDING_AUTHORS_FILENAME, '{}', mapOf<BindingAuthor>(BINDING_AUTHORS_FILENAME, 'binding authors',
+      (value) => value === 'person' || (!!value && typeof value === 'object' && Object.keys(value).length === 1
+        && (typeof (value as { host?: unknown }).host === 'string' || (value as { host?: unknown }).host === null))), 0o600);
     this.variantsFile = jsonFile(rootDir, '.variants.json', '{}', (value) => Object.assign(Object.create(null) as Record<string, AppVariants>, z.record(z.string(), appVariantsSchema).parse(value)));
     this.grantsFile = jsonFile(rootDir, '.granted-permissions.json', '{}', (value) => z.record(z.string(), z.object({ capabilities: z.array(z.string()), network: z.array(z.string()) })).parse(value) as Record<string, NonNullable<ExtensionManifest['permissions']>>);
     this.settingsFile = jsonFile(rootDir, SETTINGS_FILENAME, '{}', (value) => {
@@ -239,7 +268,8 @@ export class ExtensionsService {
 
   /**
    * Host-only (#1927): the same binding, for one more of its actions — declared on it, and that action's own capability
-   * still granted (`chat:files`, `chat:draft`) on top of everything the unread grant needs. Refused otherwise, as that is.
+   * still granted (`chat:files`, `chat:draft`, `chat:surface`, `chat:work`) on top of everything the unread grant needs. Refused
+   * otherwise, as that is.
    */
   conversationBinding(ownerId: string, extensionId: string, name: string, action: Exclude<ConversationBindingAction, 'unread'>): StoredUnreadBinding | null {
     if (!this.isInstalled(extensionId)) throw Object.assign(new Error('This App is not installed'), { code: 'denied' });
@@ -248,6 +278,32 @@ export class ExtensionsService {
       throw Object.assign(new Error(`This App has no "${action}" grant for this binding`), { code: 'denied' });
     }
     return this.conversationUnreadBinding(ownerId, extensionId, name);
+  }
+
+  /**
+   * Host-only (#1927, 42): the binding for a resource action on one domain — the action declared and granted as above, and
+   * the domain listed for it in the manifest. Refused otherwise; null: nobody chose the conversation yet.
+   */
+  conversationResourceBinding(ownerId: string, extensionId: string, name: string, action: ResourceBindingAction, domain: string): StoredUnreadBinding | null {
+    const binding = this.conversationBinding(ownerId, extensionId, name, action);
+    if (!(this.get(extensionId).manifest.permissions?.bindings?.[0]?.domains?.[action] ?? []).includes(domain)) {
+      throw Object.assign(new Error(`This App has no "${action}" grant for the ${domain} domain`), { code: 'denied' });
+    }
+    return binding;
+  }
+
+  /**
+   * #1927 (42): hear that an App's binding authority may have changed — a grant, its enablement, an install or uninstall,
+   * or the chosen conversation — after the change is written. The listener checks again what it holds; it is told, never
+   * trusted with what changed.
+   */
+  onBindingAuthorityChanged(listener: (extensionId: string) => void): () => void {
+    this.bindingAuthorityListeners.add(listener);
+    return () => { this.bindingAuthorityListeners.delete(listener); };
+  }
+
+  private bindingAuthorityChanged(extensionId: string): void {
+    queueMicrotask(() => { for (const listener of this.bindingAuthorityListeners) listener(extensionId); });
   }
 
   /** What the App's binding may do now: its declared actions whose capability is still granted. */
@@ -260,20 +316,61 @@ export class ExtensionsService {
   conversationUnreadAuthority(ownerId: string, extensionId: string, name: string): string {
     const binding = this.conversationUnreadBinding(ownerId, extensionId, name);
     const scope = JSON.stringify([ownerId, appKey(this.identityOf(extensionId)!), this.get(extensionId).manifestDigest, name, binding?.handle ?? null]);
-    let authority = this.unreadAuthorities.get(extensionId);
-    if (authority?.scope !== scope) { authority = { scope, value: randomUUID() }; this.unreadAuthorities.set(extensionId, authority); }
-    return authority.value;
+    return stampOf(this.unreadAuthorities, extensionId, scope);
   }
 
-  /** Only the host's common permission UI calls this, after validating current membership. */
-  setConversationUnreadBinding(ownerId: string, extensionId: string, name: string, chatId: string | null): void {
+  /**
+   * Host-only stamp (#1925) of what lets the window draw the conversation beside this App's page: the account, this
+   * installation, its switch, its `chat:unread` and `chat:surface` grants, the selection. A new one when any of them changes
+   * for this App, and only then: another App installed, updated, granted or removed leaves it as it is, and so does this
+   * App's `chat:files` / `chat:draft`.
+   */
+  conversationSurfaceAuthority(ownerId: string, extensionId: string, name: string): string {
+    const binding = this.conversationBinding(ownerId, extensionId, name, 'surface');
+    const scope = JSON.stringify([ownerId, appKey(this.identityOf(extensionId)!), this.get(extensionId).manifestDigest, name, binding?.handle ?? null]);
+    return stampOf(this.surfaceAuthorities, extensionId, scope);
+  }
+
+  private forgetAuthorities(extensionId: string): void {
+    this.unreadAuthorities.delete(extensionId);
+    this.surfaceAuthorities.delete(extensionId);
+  }
+
+  /**
+   * Only the host's common permission UI calls this (`by` person: the person's own pick or removal), after validating
+   * current membership — or the host's binding of the trusted assistant App (`by` host, assistant-app-entry.ts), which is
+   * refused over a binding the person chose (`conversationBindingChosenByPerson`).
+   */
+  setConversationUnreadBinding(ownerId: string, extensionId: string, name: string, chatId: string | null, by: 'person' | 'host' = 'person'): void {
     this.conversationUnreadBinding(ownerId, extensionId, name);
+    if (by === 'host' && this.conversationBindingChosenByPerson(ownerId, extensionId, name)) {
+      throw Object.assign(new Error('The person chose this App\'s conversation; the host does not change it'), { code: 'denied' });
+    }
     const key = unreadBindingKey(ownerId, appKey(this.identityOf(extensionId)!));
     const stored = this.unreadBindingsFile.read();
+    const handle = chatId === null ? null : randomUUID();
     if (chatId === null) delete stored[key];
-    else stored[key] = { ownerId, name, chatId: z.string().uuid().parse(chatId), handle: randomUUID() };
+    else stored[key] = { ownerId, name, chatId: z.string().uuid().parse(chatId), handle: handle! };
     this.unreadBindingsFile.write(readUnreadBindings(stored));
-    this.unreadAuthorities.delete(extensionId);
+    const authors = this.bindingAuthorsFile.read();
+    authors[key] = by === 'person' ? 'person' : { host: handle };
+    this.bindingAuthorsFile.write(authors);
+    this.forgetAuthorities(extensionId);
+    this.bindingAuthorityChanged(extensionId);
+  }
+
+  /**
+   * Whether this account's binding of this App is the person's choice: they picked or removed it in the App's permissions,
+   * or a binding is there that the host did not write (one from before the record was kept counts as theirs). No binding
+   * and no pick: nobody chose — the host may bind the trusted assistant App (assistant-app-entry.ts).
+   */
+  conversationBindingChosenByPerson(ownerId: string, extensionId: string, name: string): boolean {
+    const binding = this.conversationUnreadBinding(ownerId, extensionId, name);
+    const key = unreadBindingKey(ownerId, appKey(this.identityOf(extensionId)!));
+    const authors = this.bindingAuthorsFile.read();
+    const author = Object.hasOwn(authors, key) ? authors[key]! : undefined;
+    if (author === 'person') return true;
+    return binding !== null && author?.host !== binding.handle;
   }
 
   private forgetConversationUnreadBindings(extensionId: string): void {
@@ -283,6 +380,15 @@ export class ExtensionsService {
     const stored = this.unreadBindingsFile.read();
     for (const key of Object.keys(stored)) if (key.endsWith(suffix)) delete stored[key];
     this.unreadBindingsFile.write(stored);
+  }
+
+  /** Who chose this App's bindings: forgotten with the App itself, or when another publisher's App takes its id. */
+  private forgetBindingAuthors(extensionId: string): void {
+    const suffix = `/${extensionId}`;
+    const authors = this.bindingAuthorsFile.read();
+    const kept = Object.keys(authors).filter((key) => !key.endsWith(suffix));
+    if (kept.length === Object.keys(authors).length) return;
+    this.bindingAuthorsFile.write(Object.fromEntries(kept.map((key) => [key, authors[key]!])));
   }
 
   settings(extensionId: string): AppSettings {
@@ -481,6 +587,7 @@ export class ExtensionsService {
     if (previousIdentity && identity && appKey(previousIdentity) !== appKey(identity)) {
       delete grants[appKey(previousIdentity)];
       this.setGivenHere(previousIdentity, null);
+      this.forgetBindingAuthors(manifest.id);
     }
     if (identity) grants[appKey(identity)] = approved;
     if (identity || previousIdentity) this.grantsFile.write(grants);
@@ -501,8 +608,9 @@ export class ExtensionsService {
       }
     }
     const installed = this.get(manifest.id);
-    this.unreadAuthorities.delete(manifest.id);
+    this.forgetAuthorities(manifest.id);
     if (resetUnreadBinding) this.forgetConversationUnreadBindings(manifest.id);
+    this.bindingAuthorityChanged(manifest.id);
     if (origin !== 'preinstalled') activitySignal({ event_id: randomUUID(), kind: firstInstall ? 'app.installed' : 'app.replaced',
       object_id: manifest.id, app_version: manifest.version, occurred_at: Date.now() });
     return installed;
@@ -513,7 +621,10 @@ export class ExtensionsService {
     const manifest = this.get(id).manifest;
     const identity = this.identityOf(id);
     const permissions = identity ? this.grantsFile.read()[appKey(identity)] : undefined;
-    return permissions ? { ...manifest, permissions } : manifest;
+    // #1927 (42): the installed version's binding, its resource domains included, was approved when it landed (an update
+    // listing more is asked: upgrade.ts `addedPermissions`), so what is new is measured against it.
+    const bindings = manifest.permissions?.bindings;
+    return permissions ? { ...manifest, permissions: { ...permissions, ...(bindings ? { bindings } : {}) } } : manifest;
   }
 
   variants(id: string): AppVariants {
@@ -724,7 +835,8 @@ export class ExtensionsService {
    * silently switched off.
    */
   setEnabled(extensionId: string, enabled: boolean): void {
-    this.unreadAuthorities.delete(extensionId);
+    this.forgetAuthorities(extensionId);
+    this.bindingAuthorityChanged(extensionId);
     this.get(extensionId);
     if (!enabled && this.origins()[extensionId] === 'preinstalled') {
       throw new Error(`"${extensionId}" is a preinstalled App and cannot be switched off.`);
@@ -841,13 +953,19 @@ export class ExtensionsService {
     if (current.size === 0) delete revocations[extensionId];
     else revocations[extensionId] = [...current];
     if (permission === 'chat:unread') {
-      this.unreadAuthorities.delete(extensionId);
+      this.forgetAuthorities(extensionId);
       if (!granted) this.forgetConversationUnreadBindings(extensionId);
     }
     // A binding's other grants (#1927) change what a pending selection authorizes: a chooser drawn before must ask again.
     // The selection itself stays: it is `chat:unread`'s, and each of these is checked again on every call.
-    if (permission === 'chat:files' || permission === 'chat:draft') this.unreadAuthorities.delete(extensionId);
+    if (permission === 'chat:files' || permission === 'chat:draft' || permission === 'chat:work') this.unreadAuthorities.delete(extensionId);
+    if (permission === 'chat:surface') this.forgetAuthorities(extensionId);
+    // #1925 / #1927 The assistant's and the agent resources' grants likewise.
+    if (permission === 'assistant:status' || permission === 'assistant:open' || permission === 'assistant:rename') this.unreadAuthorities.delete(extensionId);
+    if (permission === 'chat:resources' || permission === 'chat:resources:write' || permission === 'chat:voice-notes:record') this.unreadAuthorities.delete(extensionId);
+    if (permission === 'chat:schedules' || permission === 'chat:schedules:control') this.unreadAuthorities.delete(extensionId);
     this.revocationsFile.write(revocations);
+    this.bindingAuthorityChanged(extensionId);
   }
 
   uninstall(extensionId: string): void {
@@ -868,8 +986,10 @@ export class ExtensionsService {
     // caller sees a failure and skips the rest of its teardown — its cookies and
     // localStorage would outlive it. Nothing is destroyed until every step that
     // can fail has succeeded.
-    this.unreadAuthorities.delete(extensionId);
+    this.forgetAuthorities(extensionId);
     this.forgetConversationUnreadBindings(extensionId);
+    this.forgetBindingAuthors(extensionId);
+    this.bindingAuthorityChanged(extensionId);
     this.forgetRevocations(extensionId);
     const settings = this.settingsFile.read();
     if (Object.hasOwn(settings, extensionId)) {

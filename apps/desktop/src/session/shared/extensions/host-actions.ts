@@ -5,6 +5,7 @@ import type { GroupAvatarMember } from '@gugu/core/shared/types/chat';
 import type { ExtensionManifest } from './manifest';
 import type { MarketCodeSource } from './market';
 import type { AppModalPage } from './app-modal';
+import type { AssistantScreen, AssistantSetupAdvance } from './assistant-binding';
 
 /**
  * What the bridge asks the renderer to do on an extension's behalf.
@@ -51,6 +52,14 @@ export type ExtensionHostAction =
   /** `gugu.dispatch` with `draft`: into the composer of the chat (the window brings it up), or of that agent's session. */
   | { kind: 'compose'; detail: AppComposeDetail }
   | { kind: 'compose'; sessionId: string; text: string }
+  /** #1925 `gugu.bindings.setPanel`: the page's own panel beside its bound conversation, collapsed or expanded. */
+  | { kind: 'conversationPanel'; collapsed: boolean }
+  /**
+   * #1925 (46) `gugu.bindings.openWork` / `closeWork`: that task's own conversation drawn in the App's panel over its page,
+   * or taken away. `ownerId` is the account main checked, which the window must still show; the ids are host data.
+   */
+  | { kind: 'openWork'; ownerId: string; workId: string; sessionId: string }
+  | { kind: 'closeWork' }
   /** `gugu.showMessage` / `files.openWith`: the window that shows chats does it, bringing the chat up. */
   | { kind: 'showMessage'; detail: AppShowMessageDetail }
   | { kind: 'openWith'; detail: AppOpenWithDetail }
@@ -67,7 +76,23 @@ export type ExtensionHostAction =
   /** An install could not give the chat it was asked for (main's own, no page asks it): the window says so, with the App's page. */
   | { kind: 'notGivenAt'; extensionId: string; chat: { id: string; name: string } }
   /** A banner's click naming a chat's file: opened in its chat, as a link to it is. */
-  | { kind: 'openChatFile'; chatId: string; itemId: string; onlyIfOpen?: string; intent?: TabOpenIntent; viewState?: Record<string, unknown> };
+  | { kind: 'openChatFile'; chatId: string; itemId: string; onlyIfOpen?: string; intent?: TabOpenIntent; viewState?: Record<string, unknown> }
+  /**
+   * #1925 One of the host's own screens for the person's assistant (`gugu.assistant.open`), by its existing entry
+   * (lib/assistantAppHost.ts), and the setup steps an App draws moved on (`advanceSetup`). `ownerId` is main's: the
+   * account it checked, which the window must still show.
+   */
+  | { kind: 'openAssistantScreen'; screen: AssistantScreen; ownerId: string }
+  | { kind: 'advanceAssistantSetup'; next: AssistantSetupAdvance; ownerId: string }
+  /** #1925 (44) Renamed through the shell's own `renameAssistant`, the built-in field's rule checked again (`renameCheck`). */
+  | { kind: 'renameAssistant'; text: string; ownerId: string }
+  /** #1925 (44) `gugu.toast(text)`: the host's own toast, the text alone (main checked the page, its focus and the rate). */
+  | { kind: 'toast'; text: string }
+  /**
+   * #1925 (44) The assistant's moving figure over this App's page at `figure` (null: taken away): the bound assistant's,
+   * or — `draft` — the setup guide's bird while the account has none. `ownerId` is main's checked account.
+   */
+  | { kind: 'assistantFigure'; figure: import('./assistant-binding').AssistantFigure | null; ownerId: string | null; who: 'assistant' | 'draft' };
 
 export interface ExtensionHostActionCommand {
   /** The page that asked; null for a link's or a banner's click, which no page made. */
@@ -98,6 +123,13 @@ export const EXTENSION_LISTED_SESSION_METHOD = 'extensions.listedSession';
  * `INSTALL_CONSENT_HUMAN_WINDOW_MS`, as an install's consent does (ipc-bridge's clock is longer).
  */
 export const EXTENSION_PICK_DISPATCH_TARGET_METHOD = 'extensions.pickDispatchTarget';
+
+/**
+ * #1927 (47) Main asks the window that holds the voice-note recorder (`gugu.voiceNote`): `VoiceNoteWindowRequest` →
+ * `VoiceNoteWindowAnswer` (voice-note-session.ts). Main has checked the App's grant and found the assistant; the window
+ * checks it is that account's and that assistant's recorder before it does anything.
+ */
+export const EXTENSION_VOICE_NOTE_METHOD = 'extensions.voiceNote';
 
 /**
  * 留给**人**读完权限再决定的时间,谁发起的安装都是这一个。

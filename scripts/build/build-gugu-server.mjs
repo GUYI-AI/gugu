@@ -156,6 +156,12 @@ installVendorNodeDependencies(join(stage, 'app'), ['--omit=dev', '--no-audit', '
   }
   sweep(appModules)
 
+  // node-pty 发布时带着所有平台的预编译件(Windows 两份就 58MB):只留本包的平台,与桌面包 electron-builder 的 files 规则同一条。
+  const ptyPrebuilds = join(appModules, 'node-pty', 'prebuilds')
+  for (const platform of readdirSync(ptyPrebuilds)) {
+    if (platform !== `${osName}-${arch}`) rmSync(join(ptyPrebuilds, platform), { recursive: true, force: true })
+  }
+
   // 出包闸:dist-electron 里每一个按路径现解析的模块,都必须落在包自己的 node_modules 里。
   const resolved = assertRuntimeSpecifiersResolve(join(stage, 'app'))
   console.log(`[server-bundle] runtime modules resolve: ${resolved.join(', ')}`)

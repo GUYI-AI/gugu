@@ -8,7 +8,8 @@ import type { ViewDefinition } from '@renderer/app/view-registry';
 import { SquareArrowOutUpRight, Settings } from '@/lib/icons';
 import { followLink } from '@/lib/guguLinks';
 import { openAppInWindow } from '@renderer/features/extensions/app-dock';
-import { ExtensionSharedSlot } from '@renderer/features/extensions/extension-shared-slot';
+import { AppConversationFrame } from './app-conversation-frame';
+import { AppHostLayerFrame } from './app-host-layer';
 import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
 import { ExtensionsLibraryPage } from '@renderer/features/library/extensions-library-page';
@@ -148,12 +149,20 @@ const AppMainPanel = observer(function AppMainPanel() {
       ) : (
         <>
           {error && errorDetailsShown.has(main.kind) ? <AppErrorDetails error={error} testId="app-page-error-details" /> : null}
-          <ExtensionSharedSlot tabKind={main.kind} tabId="dock" />
+          {/* #1925 Its main page placed beside its bound conversation: the conversation's frame, while the host may draw it. */}
+          {/* #1925 (44, 46) Elsewhere its page stands alone; a host page over it (a task, the assistant's own pages) in its place. */}
+          {placedBesideConversation(main) ? <AppConversationFrame extensionId={main.extensionId} tabKind={main.kind} /> : <AppHostLayerFrame extensionId={main.extensionId} tabKind={main.kind} />}
         </>
       )}
     </div>
   );
 });
+
+/** The App's main page — not another of its tabs — and the App declares it beside its conversation binding (#1925). */
+function placedBesideConversation(page: { extensionId: string; kind: string }): boolean {
+  return installedExtensionsStore.mainTabOf(page.extensionId)?.kind === page.kind
+    && !!installedExtensionsStore.manifestFor(page.extensionId)?.contributes.conversationSurface;
+}
 
 export const appView = {
   WrapView: AppViewWrapper,

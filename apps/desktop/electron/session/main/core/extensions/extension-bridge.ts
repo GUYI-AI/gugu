@@ -1,5 +1,6 @@
 import type { ExtensionFileChangeBatch } from '@shared/extensions/bridge-protocol';
 import { chatForCapabilities } from '@shared/extensions/bridge-protocol';
+import type { AppSurfaceIntent } from '@shared/extensions/unread-binding';
 import { appStateOf } from '@shared/extensions/app-state';
 import { sameWidgetIdentity, widgetContext } from '@shared/extensions/widget-context';
 import { groupFileLink } from '@gugu/core/shared/ui/guguLink';
@@ -62,6 +63,8 @@ import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
 import { rosterMoved, type MemberChange } from '@shared/extensions/app-files-core';
 import { coalescedReads } from '@shared/extensions/coalesced-reads';
 import { agentReport } from '@shared/extensions/agent-view';
+import { stopResourceWatches } from './app-resource-watches';
+import { stopVoiceWatches } from './app-voice-note-watches';
 import { changedGroupFiles, resourceChatOf, type DesktopFilePage } from '@main/core/extensions/app-files';
 
 /**
@@ -471,6 +474,37 @@ async function watchCloud(caller: BridgeCaller, topic: unknown, event: unknown, 
   mine.set(key, stop);
 }
 
+/**
+ * #1928 Each page's watches of its bindings' agent schedules (`gugu.bindings.onSchedulesChanged`), by binding name: torn
+ * down with the page's other watches, or by the watch itself once the App's authority is gone.
+ */
+const scheduleWatches = new Map<number, Map<string, () => void>>();
+
+async function watchSchedules(caller: BridgeCaller, args: Record<string, unknown>): Promise<void> {
+  const name = typeof args.name === 'string' ? args.name : '';
+  const mine = scheduleWatches.get(caller.pageId) ?? new Map<string, () => void>();
+  if (args.on === false) {
+    mine.get(name)?.();
+    mine.delete(name);
+    return;
+  }
+  if (mine.has(name)) return;
+  scheduleWatches.set(caller.pageId, mine);
+  let stop: (() => void) | null = null;
+  const entry = () => stop?.();
+  mine.set(name, entry);
+  const forget = () => { if (mine.get(name) === entry) mine.delete(name); };
+  try {
+    const { watchBoundSchedules } = await import('./app-bound-schedules');
+    stop = await watchBoundSchedules(caller.extensionId, { name: args.name }, () => caller.hear({ type: 'schedulesChanged', binding: name }), forget);
+  } catch (error) {
+    forget();
+    throw error;
+  }
+  // The page went, or stopped listening, while the watch was set up.
+  if (scheduleWatches.get(caller.pageId) !== mine || mine.get(name) !== entry) stop();
+}
+
 function cloudAppOf(caller: BridgeCaller) {
   return { id: caller.extensionId, origin: extensionsService().origins()[caller.extensionId] };
 }
@@ -481,6 +515,11 @@ const workingCopyPages = new Set<number>();
 export function stopPageWatches(pageId: number): void {
   for (const stop of cloudWatches.get(pageId)?.values() ?? []) stop();
   cloudWatches.delete(pageId);
+  stopResourceWatches(pageId);
+  // #1927 (47) Its hearing of the recorder goes with the page; a recording it started does not.
+  stopVoiceWatches(pageId);
+  for (const stop of scheduleWatches.get(pageId)?.values() ?? []) stop();
+  scheduleWatches.delete(pageId);
   const watching = pageWatches.get(pageId);
   for (const watch of watching?.values() ?? []) watch.disk?.stop();
   pageWatches.delete(pageId);
@@ -1480,6 +1519,89 @@ export function pushContext(webContentsId: number): void {
   );
 }
 
+/**
+ * #1925 Each page of this App the person works is told what `gugu.bindings.surface` answers it now — after the window's
+ * report of what it draws beside the App's main page, or over its panel (46), changed. A page elsewhere hears `unbound`.
+ * 46: with `intent`, the person's click in the host's row is told once, with that answer, to the page drawn beside the
+ * conversation — only while the row may be drawn (`surfaceIntentHolds`); otherwise the pages hear the answer alone.
+ */
+export async function pushBindingSurfaces(extensionId: string, intent?: AppSurfaceIntent): Promise<void> {
+  const { appBindingSurface, conversationSurfaceBinding, surfaceIntentHolds, withIntent } = await import('./app-unread-bindings');
+  // Uninstalled meanwhile: its pages are gone with it.
+  if (!extensionsService().isInstalled(extensionId)) return;
+  const name = conversationSurfaceBinding(extensionsService().get(extensionId).manifest);
+  if (!name) return;
+  const told = intent && await surfaceIntentHolds(extensionId) ? intent : undefined;
+  for (const [webContentsId, binding] of [...bindings]) {
+    if (binding.extensionId !== extensionId || binding.operator.kind !== 'person') continue;
+    const surface = await appBindingSurface(extensionId, binding, { name }).catch(() => ({ name, state: 'unbound' as const }));
+    const contents = webContents.fromId(webContentsId);
+    if (bindings.get(webContentsId) === binding && contents && !contents.isDestroyed()) sendEvent(contents, { type: 'bindingSurface', surface: withIntent(surface, told) });
+  }
+}
+
+/**
+ * #1927 (48) The page drawn beside the bound conversation is told `intent` once (`gugu.bindings.onSurface`), its panel
+ * expanded first if it was collapsed — the host's run of a `page-intent` composer entry, or of its recording bar's open.
+ * Only that page, only while it is drawn there for the person (`appBindingSurface` answers `bound`). False: no page heard it.
+ */
+export async function deliverSurfaceIntent(extensionId: string, intent: string): Promise<boolean> {
+  const { tellSurfaceIntent } = await import('./app-unread-bindings');
+  if (!extensionsService().isInstalled(extensionId)) return false;
+  const pages = [...bindings].filter(([, binding]) => binding.extensionId === extensionId).map(([webContentsId, binding]) => ({
+    tabName: binding.tabName, tabId: binding.tabId, person: binding.operator.kind === 'person',
+    expand: () => deliver(binding, { kind: 'conversationPanel', collapsed: false }),
+    tell: (surface: import('@shared/extensions/unread-binding').AppBindingSurface) => {
+      const contents = webContents.fromId(webContentsId);
+      if (bindings.get(webContentsId) !== binding || !contents || contents.isDestroyed()) return false;
+      sendEvent(contents, { type: 'bindingSurface', surface });
+      return true;
+    },
+  }));
+  return tellSurfaceIntent(extensionId, intent, pages);
+}
+
+/**
+ * #1925 (46) Each page of this App the person works is told what `gugu.bindings.work` answers now — after the window read the
+ * ledger again or changed the task drawn in the App's panel (`onWorkChanged`; a refusal is heard as `unavailable`). One telling
+ * per App at a time: changes meanwhile are told once more after it, the newest; the same answer twice is told once.
+ */
+const workTellings = new Map<string, Promise<void>>();
+const workAgain = new Set<string>();
+const workTold = new Map<string, string>();
+export function pushBindingWork(extensionId: string): Promise<void> {
+  const running = workTellings.get(extensionId);
+  if (running) {
+    workAgain.add(extensionId);
+    return running;
+  }
+  const telling = (async () => {
+    do {
+      workAgain.delete(extensionId);
+      await tellBindingWork(extensionId);
+    } while (workAgain.has(extensionId));
+  })().finally(() => workTellings.delete(extensionId));
+  workTellings.set(extensionId, telling);
+  return telling;
+}
+async function tellBindingWork(extensionId: string): Promise<void> {
+  const { appBindingWorkHeard, workBindingName } = await import('./app-work-binding');
+  // Uninstalled meanwhile: its pages are gone with it.
+  if (!extensionsService().isInstalled(extensionId)) return void workTold.delete(extensionId);
+  const name = workBindingName(extensionsService().get(extensionId).manifest);
+  const pages = [...bindings].filter(([, binding]) => binding.extensionId === extensionId && binding.operator.kind === 'person');
+  // No page the person works: nothing to tell, nothing asked.
+  if (!name || pages.length === 0) return void workTold.delete(extensionId);
+  const work = await appBindingWorkHeard(extensionId, name);
+  const said = JSON.stringify(work);
+  if (workTold.get(extensionId) === said) return;
+  workTold.set(extensionId, said);
+  for (const [webContentsId, binding] of pages) {
+    const contents = webContents.fromId(webContentsId);
+    if (bindings.get(webContentsId) === binding && contents && !contents.isDestroyed()) sendEvent(contents, { type: 'bindingWork', work });
+  }
+}
+
 /** Re-pushes context to every open surface and background page — used when theme or language moves. */
 export function pushContextToAllSurfaces(): void {
   for (const id of bindings.keys()) pushContext(id);
@@ -1679,6 +1801,16 @@ function failure(extensionId: string, method: string, error: unknown): Extension
   const failed = bridgeFailure(error);
   log.error('Extension bridge call failed', { extensionId, method, message: failed.message });
   return { ok: false, ...failed };
+}
+
+/**
+ * #1925 An event only the person's grant reaches: to this App's pages the person works — no background page, no page an
+ * agent works (`app_check`), as the binding's verbs answer no one else.
+ */
+export function deliverToPersonPages(extensionId: string, event: ExtensionHostEvent): void {
+  for (const [webContentsId, binding] of bindings) {
+    if (binding.extensionId === extensionId && binding.operator.kind === 'person') hearOn(webContentsId)(event);
+  }
 }
 
 /** Send an event to every live page of one extension — its background and all its tabs. */
@@ -1989,6 +2121,99 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       if (thePage(caller).operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reads none of it'), { code: 'denied' });
       const { appBindingList, appBindingRead } = await import('./app-unread-bindings');
       return await (method === 'bindingsList' ? appBindingList : appBindingRead)(caller.extensionId, args);
+    }
+    case 'bindingsSurface':
+    case 'bindingsSurfacePanel': {
+      // #1925 As its files (#1927): the binding is the person's, so a page an agent works hears nothing of it.
+      const page = thePage(caller);
+      if (page.operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works hears none of it'), { code: 'denied' });
+      const { appBindingSurface, setBindingSurfacePanel } = await import('./app-unread-bindings');
+      if (method === 'bindingsSurface') return await appBindingSurface(caller.extensionId, page, args);
+      return await setBindingSurfacePanel(caller.extensionId, page, args, async (collapsed) => {
+        await deliver(page, { kind: 'conversationPanel', collapsed });
+      });
+    }
+    case 'assistantStatus':
+    case 'assistantOpen':
+    case 'assistantAdvanceSetup':
+    case 'assistantRename':
+    case 'assistantFigure': {
+      // #1925 The person's own assistant, through their grant: an agent working the page is not that account.
+      const page = thePage(caller);
+      if (page.operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reaches none of its assistant'), { code: 'denied' });
+      const assistant = await import('./app-assistant-binding');
+      if (method === 'assistantStatus') return await assistant.appAssistantStatus(caller.extensionId, args);
+      const act = (action: ExtensionHostAction) => deliver(page, action);
+      if (method === 'assistantOpen') return await assistant.appAssistantOpen(caller.extensionId, args, act);
+      if (method === 'assistantRename') return await assistant.appAssistantRename(caller.extensionId, args, act);
+      if (method === 'assistantFigure') return await assistant.appAssistantFigure(caller.extensionId, args, act);
+      return await assistant.appAssistantAdvanceSetup(caller.extensionId, args, act);
+    }
+    case 'bindingsResources':
+    case 'bindingsResource':
+    case 'bindingsWatch':
+    case 'bindingsSave':
+    case 'bindingsRemove': {
+      // #1927 (42) The person's grant, as for the binding's files: a page an agent works (`app_check`) reaches none of it.
+      if (thePage(caller).operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reaches none of its agent\'s resources'), { code: 'denied' });
+      const resources = await import('./app-bound-resources');
+      if (method === 'bindingsWatch') return await resources.appResourceWatch(caller.extensionId, caller.pageId, args, (watchId, event) => caller.hear({ type: 'bindingResources', watchId, event }));
+      const verb = { bindingsResources: resources.appResourceList, bindingsResource: resources.appResourceRead, bindingsSave: resources.appResourceSave, bindingsRemove: resources.appResourceRemove }[method];
+      return await verb(caller.extensionId, args);
+    }
+    case 'voiceNoteStart':
+    case 'voiceNotePause':
+    case 'voiceNoteResume':
+    case 'voiceNoteStop':
+    case 'voiceNoteRetry':
+    case 'voiceNoteOpenMicSettings':
+    case 'voiceNoteStatus':
+    case 'voiceNoteWatch': {
+      // #1927 (47) The person's recorder, as the binding's resources are the person's: a page an agent works drives none of it.
+      if (thePage(caller).operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works does not record'), { code: 'denied' });
+      const voice = await import('./app-voice-notes');
+      if (method === 'voiceNoteWatch') return await voice.appVoiceNoteWatch(caller.extensionId, caller.pageId, args, (watchId, event) => caller.hear({ type: 'voiceNote', watchId, event }));
+      if (method === 'voiceNoteStart') return await voice.appVoiceNoteStart(caller.extensionId, args);
+      if (method === 'voiceNoteRetry') return await voice.appVoiceNoteRetry(caller.extensionId, args);
+      if (method === 'voiceNoteOpenMicSettings') return await voice.appVoiceNoteOpenMicSettings(caller.extensionId, args);
+      const verb = ({ voiceNotePause: 'pause', voiceNoteResume: 'resume', voiceNoteStop: 'stop', voiceNoteStatus: 'status' } as const)[method];
+      return await voice.appVoiceNote(verb, caller.extensionId, args);
+    }
+    case 'bindingsSchedules':
+    case 'bindingsSchedulesWatch':
+    case 'bindingsScheduleControl': {
+      // #1928 The person's own agent, by the person's grant: an agent working the page (`app_check`) reaches none of it.
+      if (thePage(caller).operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reaches none of its agent\'s schedules'), { code: 'denied' });
+      if (method === 'bindingsSchedulesWatch') {
+        await watchSchedules(caller, args);
+        return undefined;
+      }
+      const { appBoundSchedules, appBoundScheduleControl } = await import('./app-bound-schedules');
+      return await (method === 'bindingsSchedules' ? appBoundSchedules : appBoundScheduleControl)(caller.extensionId, args);
+    }
+    case 'bindingsWork':
+    case 'bindingsOpenWork':
+    case 'bindingsCloseWork': {
+      // #1925 (46) As its files (#1927): the binding is the person's, so a page an agent works reads none of its work.
+      const page = thePage(caller);
+      if (page.operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reads none of its work'), { code: 'denied' });
+      const work = await import('./app-work-binding');
+      if (method === 'bindingsWork') return await work.appBindingWork(caller.extensionId, args);
+      const act = (action: ExtensionHostAction) => deliver(page, action);
+      if (method === 'bindingsOpenWork') return await work.appOpenWork(caller.extensionId, page, args, act);
+      return await work.appCloseWork(caller.extensionId, args, act);
+    }
+    case 'toast': {
+      // #1925 (44) The host's own toast: the person's page, on screen and focused now, at its rate (app-toast.ts).
+      const page = thePage(caller);
+      const { appToast } = await import('./app-toast');
+      await appToast({
+        extensionId: caller.extensionId,
+        person: page.operator.kind === 'person',
+        onScreen: page.metrics.visible && page.metrics.width > 0,
+        focused: () => webContents.fromId(caller.pageId)?.isFocused() === true,
+      }, args, (action) => deliver(page, action));
+      return undefined;
     }
     case 'messagesHistory':
     case 'messagesSearch': {

@@ -5,9 +5,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // the same place, so the same live page moved here, not a second one. What the dock claims is what this reads.
 const mocks = vi.hoisted(() => ({
   claims: [] as Record<string, unknown>[],
-  params: {} as { appId?: string },
+  params: {} as { appId?: string; tab?: string },
   lastSession: undefined as { projectId: string; sessionId: string } | undefined,
-  main: null as { kind: string; enabled: boolean; extensionName: string } | null,
+  main: null as { kind: string; enabled: boolean; extensionName: string; extensionId?: string } | null,
+  manifest: undefined as { contributes: Record<string, unknown> } | undefined,
+  frames: [] as Record<string, unknown>[],
+  tabs: [] as { kind: string; enabled: boolean; extensionName: string; extensionId: string }[],
   said: { title: null, badge: null, error: null } as { title: string | null; badge: string | number | null; error: string | null },
   saidFor: [] as [string | null, string][],
   toggle: null as null | (() => void),
@@ -29,8 +32,19 @@ vi.mock('@renderer/features/extensions/extension-shared-slot', () => ({
     return null;
   },
 }));
+// #1925 (44) The App's main page stands in its host layer frame: with no layer open, that is the same shared slot.
+vi.mock('./app-host-layer', () => ({
+  AppHostLayerFrame: ({ tabKind }: { tabKind: string }) => {
+    mocks.claims.push({ tabKind, tabId: 'dock' });
+    return null;
+  },
+}));
 vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: { mainTabOf: () => mocks.main },
+  installedExtensionsStore: { mainTabOf: () => mocks.main, manifestFor: () => mocks.manifest, get allTabContributions() { return mocks.tabs; } },
+}));
+// #1925 The frame beside a bound conversation is app-conversation-frame.test.tsx's: here, only whether it is chosen.
+vi.mock('./app-conversation-frame', () => ({
+  AppConversationFrame: (props: Record<string, unknown>) => { mocks.frames.push(props); return null; },
 }));
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useParams: () => ({ params: mocks.params }) }));
 vi.mock('@renderer/lib/stores/app-state', () => ({
@@ -68,6 +82,9 @@ const { WINDOW_CONTROL_BAR_HEIGHT_PX } = await import('@/lib/window-chrome');
 describe('an App opened from the far-left rail', () => {
   beforeEach(() => {
     mocks.claims.length = 0;
+    mocks.frames.length = 0;
+    mocks.tabs = [];
+    mocks.manifest = { contributes: {} };
     mocks.saidFor.length = 0;
     mocks.said = { title: null, badge: null, error: null };
     mocks.params = { appId: 'clock' };
@@ -128,6 +145,22 @@ describe('an App opened from the far-left rail', () => {
     expect(renderToStaticMarkup(<appView.MainPanel />)).toMatch(/data-testid="app-page"[^>]*>[^]*extensions\.turnOnInSettings/);
     expect(renderToStaticMarkup(<appView.MainPanel />)).toContain(`padding-top:${WINDOW_CONTROL_BAR_HEIGHT_PX}px`);
     expect(mocks.claims).toEqual([]);
+  });
+
+  // #1925 Only an App placing its main page beside its binding gets the conversation's frame; every other page is as before.
+  it('an App whose main page is placed beside its bound conversation gets that frame; any other page is drawn as before', () => {
+    mocks.main = { kind: 'today.main', enabled: true, extensionName: 'Today', extensionId: 'today' };
+    mocks.manifest = { contributes: { conversationSurface: { binding: 'main', placement: 'side-panel' } } };
+    renderToStaticMarkup(<appView.MainPanel />);
+    expect(mocks.frames).toEqual([{ extensionId: 'today', tabKind: 'today.main' }]);
+    expect(mocks.claims).toEqual([]);
+    // Another of its tabs, opened by name, is not the main page: it is drawn alone, as before.
+    mocks.frames.length = 0;
+    mocks.params = { appId: 'today', tab: 'notes' };
+    mocks.tabs = [{ kind: 'today.notes', enabled: true, extensionName: 'Today', extensionId: 'today' }];
+    renderToStaticMarkup(<appView.MainPanel />);
+    expect(mocks.frames).toEqual([]);
+    expect(mocks.claims).toEqual([{ tabKind: 'today.notes', tabId: 'dock' }]);
   });
 
   it('both places of the rail are drawn without the task list beside them', () => {
