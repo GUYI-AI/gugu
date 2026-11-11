@@ -103,7 +103,8 @@ export const shownAssistantSchema = z.strictObject({
 });
 export type ShownAssistant = z.infer<typeof shownAssistantSchema>;
 
-const COUNT = z.number().int().min(0).max(1_000_000);
+const COUNT_MAX = 1_000_000;
+const COUNT = z.number().int().min(0).max(COUNT_MAX);
 /**
  * The numbers the built-in panel's rows show, from the same sources (`useAssistantAppCounts`), numbers only: `devices` (the
  * shell's `deviceCount`), `connectedApps` (`saved` / `connected`, integrations and chat channels), `projects` (the
@@ -117,6 +118,20 @@ export const appAssistantCountsSchema = z.strictObject({
   capabilities: COUNT.nullable(),
 });
 export type AppAssistantCounts = z.infer<typeof appAssistantCountsSchema>;
+/** The four numbers as an App may see them: whole, not negative, each null when not known. Anything else is not known. */
+export function appAssistantCountsOf(read: { devices: unknown; connectedApps: unknown; projects: unknown; capabilities: unknown }): AppAssistantCounts {
+  const count = (value: unknown) => (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= COUNT_MAX ? value : null);
+  const apps = read.connectedApps as { saved?: unknown; connected?: unknown } | null;
+  const saved = count(apps?.saved);
+  const connected = count(apps?.connected);
+  return appAssistantCountsSchema.parse({
+    devices: count(read.devices),
+    connectedApps: saved === null || connected === null ? null : { saved, connected },
+    projects: count(read.projects),
+    capabilities: count(read.capabilities),
+  });
+}
+
 /** `counts`: the bound assistant's rows; null while it is not found (the snapshot without an assistant has none). */
 export const appAssistantStatusSchema = shownAssistantSchema.extend({ counts: appAssistantCountsSchema.nullable() });
 export type AppAssistantStatus = z.infer<typeof appAssistantStatusSchema>;

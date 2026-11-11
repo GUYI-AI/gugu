@@ -17,21 +17,7 @@ import { rpc } from '@renderer/lib/ipc';
 import { log } from '@renderer/utils/logger';
 import { useAssistantMachine } from '@renderer/features/assistant/assistant-data';
 import { useAssistantShell } from '@renderer/features/assistant/assistant-shell';
-import { appAssistantCountsSchema, type AppAssistantCounts } from '@shared/extensions/assistant-binding';
-
-/** The four numbers as an App may see them: whole, not negative, each null when not known. Anything else is not known. */
-export function appAssistantCountsOf(read: { devices: unknown; connectedApps: unknown; projects: unknown; capabilities: unknown }): AppAssistantCounts {
-  const count = (value: unknown) => (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null);
-  const apps = read.connectedApps as { saved?: unknown; connected?: unknown } | null;
-  const saved = count(apps?.saved);
-  const connected = count(apps?.connected);
-  return appAssistantCountsSchema.parse({
-    devices: count(read.devices),
-    connectedApps: saved === null || connected === null ? null : { saved, connected },
-    projects: count(read.projects),
-    capabilities: count(read.capabilities),
-  });
-}
+import { appAssistantCountsOf } from '@shared/extensions/assistant-binding';
 
 let pushed = '';
 
