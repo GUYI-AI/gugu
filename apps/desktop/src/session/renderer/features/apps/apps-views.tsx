@@ -8,8 +8,8 @@ import type { ViewDefinition } from '@renderer/app/view-registry';
 import { SquareArrowOutUpRight, Settings } from '@/lib/icons';
 import { followLink } from '@/lib/guguLinks';
 import { openAppInWindow } from '@renderer/features/extensions/app-dock';
-import { ExtensionSharedSlot } from '@renderer/features/extensions/extension-shared-slot';
 import { AppConversationFrame } from './app-conversation-frame';
+import { AppDockPage } from './app-work-slot';
 import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
 import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
 import { ExtensionsLibraryPage } from '@renderer/features/library/extensions-library-page';
@@ -150,7 +150,8 @@ const AppMainPanel = observer(function AppMainPanel() {
         <>
           {error && errorDetailsShown.has(main.kind) ? <AppErrorDetails error={error} testId="app-page-error-details" /> : null}
           {/* #1925 Its main page placed beside its bound conversation: the conversation's frame, while the host may draw it. */}
-          {placedBesideConversation(main) ? <AppConversationFrame extensionId={main.extensionId} tabKind={main.kind} /> : <ExtensionSharedSlot tabKind={main.kind} tabId="dock" />}
+          {/* #1925 (46) Elsewhere its page stands alone; one of the assistant's tasks it opened is drawn in the page's place. */}
+          {placedBesideConversation(main) ? <AppConversationFrame extensionId={main.extensionId} tabKind={main.kind} /> : <AppDockPage extensionId={main.extensionId} tabKind={main.kind} />}
         </>
       )}
     </div>

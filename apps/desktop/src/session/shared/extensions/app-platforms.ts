@@ -26,6 +26,7 @@ export const PHONE_CAPABILITY_SUPPORT = {
   'chat:schedules:control': 'desktop-only',
   'assistant:status': 'desktop-only',
   'assistant:open': 'desktop-only',
+  'chat:work': 'desktop-only',
   'agents:read': 'available',
   'agents:read:all': 'agent',
   'agents:read:all-machines': 'available',

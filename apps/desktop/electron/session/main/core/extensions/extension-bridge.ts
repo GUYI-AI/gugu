@@ -1533,6 +1533,47 @@ export async function pushBindingSurfaces(extensionId: string): Promise<void> {
   }
 }
 
+/**
+ * #1925 (46) Each page of this App the person works is told what `gugu.bindings.work` answers now — after the window read the
+ * ledger again or changed the task drawn in the App's panel (`onWorkChanged`; a refusal is heard as `unavailable`). One telling
+ * per App at a time: changes meanwhile are told once more after it, the newest; the same answer twice is told once.
+ */
+const workTellings = new Map<string, Promise<void>>();
+const workAgain = new Set<string>();
+const workTold = new Map<string, string>();
+export function pushBindingWork(extensionId: string): Promise<void> {
+  const running = workTellings.get(extensionId);
+  if (running) {
+    workAgain.add(extensionId);
+    return running;
+  }
+  const telling = (async () => {
+    do {
+      workAgain.delete(extensionId);
+      await tellBindingWork(extensionId);
+    } while (workAgain.has(extensionId));
+  })().finally(() => workTellings.delete(extensionId));
+  workTellings.set(extensionId, telling);
+  return telling;
+}
+async function tellBindingWork(extensionId: string): Promise<void> {
+  const { appBindingWorkHeard, workBindingName } = await import('./app-work-binding');
+  // Uninstalled meanwhile: its pages are gone with it.
+  if (!extensionsService().isInstalled(extensionId)) return void workTold.delete(extensionId);
+  const name = workBindingName(extensionsService().get(extensionId).manifest);
+  const pages = [...bindings].filter(([, binding]) => binding.extensionId === extensionId && binding.operator.kind === 'person');
+  // No page the person works: nothing to tell, nothing asked.
+  if (!name || pages.length === 0) return void workTold.delete(extensionId);
+  const work = await appBindingWorkHeard(extensionId, name);
+  const said = JSON.stringify(work);
+  if (workTold.get(extensionId) === said) return;
+  workTold.set(extensionId, said);
+  for (const [webContentsId, binding] of pages) {
+    const contents = webContents.fromId(webContentsId);
+    if (bindings.get(webContentsId) === binding && contents && !contents.isDestroyed()) sendEvent(contents, { type: 'bindingWork', work });
+  }
+}
+
 /** Re-pushes context to every open surface and background page — used when theme or language moves. */
 export function pushContextToAllSurfaces(): void {
   for (const id of bindings.keys()) pushContext(id);
@@ -2099,6 +2140,18 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       }
       const { appBoundSchedules, appBoundScheduleControl } = await import('./app-bound-schedules');
       return await (method === 'bindingsSchedules' ? appBoundSchedules : appBoundScheduleControl)(caller.extensionId, args);
+    }
+    case 'bindingsWork':
+    case 'bindingsOpenWork':
+    case 'bindingsCloseWork': {
+      // #1925 (46) As its files (#1927): the binding is the person's, so a page an agent works reads none of its work.
+      const page = thePage(caller);
+      if (page.operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reads none of its work'), { code: 'denied' });
+      const work = await import('./app-work-binding');
+      if (method === 'bindingsWork') return await work.appBindingWork(caller.extensionId, args);
+      const act = (action: ExtensionHostAction) => deliver(page, action);
+      if (method === 'bindingsOpenWork') return await work.appOpenWork(caller.extensionId, page, args, act);
+      return await work.appCloseWork(caller.extensionId, args, act);
     }
     case 'messagesHistory':
     case 'messagesSearch': {

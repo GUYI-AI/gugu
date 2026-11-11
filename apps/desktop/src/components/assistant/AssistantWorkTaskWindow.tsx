@@ -21,7 +21,8 @@ import {useMessageFilePreview} from '../chat/useMessageFilePreview'
 import {useAssistantWorkRuntime} from './useAssistantWorkRuntime'
 import {ConnectionStatus} from '../connection/ConnectionStatus'
 
-export function AssistantWorkTaskWindow({ownerId,request}:{ownerId:string;request:AssistantTaskChat}){
+/** `onClose`: what its back control does — the assistant's own panel by default; an App's panel takes its own (#1925). */
+export function AssistantWorkTaskWindow({ownerId,request,onClose}:{ownerId:string;request:AssistantTaskChat;onClose?:()=>void}){
  const {t}=useTranslation('assistant'),mobile=useMobileShell()
  const {contacts}=useContactsStore(),opened=useOpenedAssistantTaskChat()
  const read=useAssistantWorkDetail(ownerId,request.assistantId,request.workId!,request.task.sessionId)
@@ -71,7 +72,7 @@ export function AssistantWorkTaskWindow({ownerId,request}:{ownerId:string;reques
   {runtime.connection!=='online'?<ConnectionStatus state={runtime.connection} lastSeenAt={runtime.lastSeenAt} detail={runtime.detail} testId="assistant-task-connection-status"/>:null}
   {unreadable?<span className="task-chat-subtitle__detail" role="status" title={unreadable}>{unreadable}</span>:null}
  </span>
- const close=()=>showAssistantTaskChat(null)
+ const close=onClose??(()=>showAssistantTaskChat(null))
  const transcript=<CloudTaskTranscript mobile={mobile} request={canonical??request} events={detail?.events??[]}/>
  if(agent)return <AssistantTaskChatWindow agent={{...agent,display_name:title}} task={(canonical??request).task} onClose={close} status={status} pendingContent={transcript}/>
  return <section className="assistant-task-chat-window ta-skin" data-testid="assistant-task-chat-window" aria-label={title}>

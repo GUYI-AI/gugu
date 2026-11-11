@@ -895,6 +895,15 @@ streaming, voice, attachments, read state) as the main column; your main page is
 - \`panel.inset\` \`{ top, right }\` (px): the host's collapse button covers your page's top-right corner, centred in the top
   \`top\` px, within \`right\` px of the edge. Make your top row (name, tabs) \`top\` px high and keep \`right\` px clear.
 - You get no chat, message, person or DOM of it. Opening your page marks nothing read; a \`{ binding }\` draft lands in that composer.
+API 42 to 46, when that conversation is the person's private one with their own agent or assistant (its resources,
+schedules, the assistant itself, the work it handed out): \`guide_read apps-bindings-agent\`.
+`;
+
+export const EXTENSION_GUIDE_BINDINGS_AGENT = `# gugu.bindings, gugu.assistant — the agent behind the chosen conversation
+
+The binding of \`apps-bindings\` (\`chat:unread\`, the one conversation the person chooses), when that conversation is the
+person's private one with an agent of theirs or their own assistant: more actions on it, each with its own capability,
+consented and withdrawn on its own; \`get\` lists the granted ones in \`actions\`.
 API 42, when that conversation is the person's private one with their personal assistant: \`"resources"\` (\`chat:resources\`)
 and \`"resources:write"\` (\`chat:resources:write\`) reach its resources, each with its domains:
 \`domains: { "resources": ["memory", "files", "personality", "skills", "voice-notes"], "resources:write": ["memory"] }\`
@@ -937,6 +946,19 @@ API 44, only when that conversation is the person's private chat with their own 
 - In a click: \`gugu.assistant.open("main", screen)\`, screen one of \`setup\`, \`move\`, \`close\`, \`look\`, \`model\`, \`devices\`,
   \`connected-apps\`: gugu opens that screen; the person acts there. \`gugu.assistant.advanceSetup("main", "ready" | "done")\`: the
   steps you draw, from \`connect\` (to ready or done) or \`ready\` (to done); any other is \`invalid\`. Both resolve or are refused, nothing more.
+API 46, the assistant's 任务 list: add \`"work"\` (with \`chat:work\`). Only while the chosen conversation is the person's private
+chat with their own assistant; any other is refused (\`denied\`). The host keeps the ledger; it reads it as its own list does,
+wherever the assistant lives (this computer, another, the cloud).
+- \`gugu.bindings.work("main")\` → \`{ state: "ready", items, stale, open }\`, items newest first, each
+  \`{ handle, title, naming, status, unseen, updatedAt }\`: \`naming\` = draw "naming…" for the title; \`status\` =
+  \`{ status, detail }\` as an agent's state is drawn, or null; \`unseen\` = idle with news; \`stale\` = the last refresh failed,
+  these are the last rows read. Else \`{ state: "unavailable", open }\` (not read yet / cannot be: wait for the event) or
+  \`{ state: "unbound" }\`. \`gugu.bindings.onWorkChanged("main", fn)\` hears every new answer.
+- \`handle\` is opaque: this App, this account, this choice of conversation; read again after a restart. No work, session,
+  chat or device id, path, URL or message.
+- \`gugu.bindings.openWork("main", handle)\` in a click: the host draws that task's conversation in your panel, over your
+  page, with its own back control; \`gugu.bindings.closeWork("main")\` takes it away. \`open\` is that row's handle while it is
+  drawn, else null — hide your list then. You cannot see it. Another account, a withdrawn grant, a new choice: it closes.
 `;
 
 export const EXTENSION_GUIDE_MESSAGES = `# gugu.chats, gugu.messages — the chats you are in, and what was said
@@ -1316,8 +1338,13 @@ export const EXTENSION_GUIDE_TOPICS: readonly { topic: string; about: string; te
   },
   {
     topic: 'apps-bindings',
-    about: 'gugu.bindings (chat:unread, API 37+): the one conversation the person chooses for your App — its unread dot, its files (40), a draft into it (40), your main page beside it (41), its agent\'s resources (42) and schedules (43), its assistant (44).',
+    about: 'gugu.bindings (chat:unread, API 37+): the one conversation the person chooses for your App — its unread dot, its files (40), a draft into it (40), your main page beside it (41) — and where to read the rest.',
     text: EXTENSION_GUIDE_BINDINGS,
+  },
+  {
+    topic: 'apps-bindings-agent',
+    about: 'The same binding when its conversation is the person\'s private one with their own agent or assistant: the agent\'s resources (42) and schedules (43), gugu.assistant (44), the work the assistant handed out (46).',
+    text: EXTENSION_GUIDE_BINDINGS_AGENT,
   },
   {
     topic: 'apps-messages',

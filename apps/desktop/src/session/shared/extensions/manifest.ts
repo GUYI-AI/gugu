@@ -366,6 +366,10 @@ export const EXTENSION_CAPABILITIES = [
   // opened, or its setup moved on a step (`gugu.assistant.open` / `advanceSetup`). Each with its binding action.
   'assistant:status',
   'assistant:open',
+  // #1925 (API 46) When that same conversation is the person's private chat with their own assistant: the work it handed out
+  // (`gugu.bindings.work` / `onWorkChanged`, each row as the built-in list draws it) and, in a click, one task's conversation
+  // drawn by the host in the App's panel (`openWork` / `closeWork`): the App sees none of that conversation.
+  'chat:work',
   /*
    * Seeing the agents at work (behavior tab-extensions:「agent 的可见与可控」).
    *

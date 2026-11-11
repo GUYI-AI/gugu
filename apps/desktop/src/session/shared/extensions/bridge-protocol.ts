@@ -118,7 +118,11 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // 45 (#1931): `contributes.assistantRules`, the personal assistant's product rules as text/data files the host reads at its
 // own read points (assistantRulesFormat.ts); never run, and honoured only for the App the host trusts as their provider.
 export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
-export const EXTENSION_API_VERSION = 45;
+// 46 (#1925): when that conversation is the person's private chat with their own assistant, the binding may also declare
+// `work` (`chat:work`): `gugu.bindings.work` / `onWorkChanged` read the work the assistant handed out, each row as the
+// built-in list draws it with an opaque handle; `openWork(name, handle)` (in a click) / `closeWork` have the host draw that
+// task's own conversation in the App's panel. No work, session, chat or device id, path, URL or message reaches the App.
+export const EXTENSION_API_VERSION = 46;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
@@ -577,6 +581,11 @@ export type ExtensionHostEvent =
   | { type: 'context'; context: ExtensionHostContext }
   /** #1925 What `gugu.bindings.surface(name)` would answer now, after the conversation beside the page came or went. */
   | { type: 'bindingSurface'; surface: import('./unread-binding').AppBindingSurface }
+  /**
+   * #1925 (46) What `gugu.bindings.work(name)` would answer now, after the work, its rows or the task drawn in the App's panel
+   * changed (`onWorkChanged`). Only to the pages the person works; a call that would be refused is heard as `unavailable`.
+   */
+  | { type: 'bindingWork'; work: import('./work-binding').AppBindingWork }
   | { type: 'modalFocus'; edge: 'first' | 'last' }
   /**
    * The user picked something the extension declared in its manifest.
@@ -896,6 +905,14 @@ export const BRIDGE_VERBS = {
   assistantStatus: { needs: 'assistant:status', only: 'page' },
   assistantOpen: { needs: 'assistant:open', only: 'page', gesture: true },
   assistantAdvanceSetup: { needs: 'assistant:open', only: 'page', gesture: true },
+  /**
+   * #1925 (46): the work the person's own assistant handed out, each row as the built-in list draws it, when the bound
+   * conversation is the person's chat with that assistant — and, in a click, one row's task conversation drawn by the host
+   * in the App's panel, or taken away. The page names the binding and a handle the host gave it; never the task.
+   */
+  bindingsWork: { needs: 'chat:work', only: 'page' },
+  bindingsOpenWork: { needs: 'chat:work', only: 'page', gesture: true },
+  bindingsCloseWork: { needs: 'chat:work', only: 'page' },
   messagesHistory: { needs: 'chat:read' },
   messagesSearch: { needs: 'chat:read' },
   /**

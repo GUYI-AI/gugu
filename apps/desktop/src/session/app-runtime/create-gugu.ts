@@ -328,9 +328,10 @@ export function createGugu(
   // Called straight through, not deferred: the preload checks the person's gesture on this very call.
   if (raw.clipboard) api.clipboard = Object.freeze({ writeText: coded(raw.clipboard.writeText) });
   // `gugu.bindings` (`chat:unread`; `list` / `read`, 40: `chat:files`; `surface` / `setPanel` / `onSurface`, 41:
-  // `chat:surface`): the one conversation the person chose, by its name.
+  // `chat:surface`; `work` / `openWork` / `closeWork` / `onWorkChanged`, 46: `chat:work`): the one conversation the person
+  // chose, by its name. `openWork` is called straight through: the preload reads the person's gesture on this very call.
   if (raw.bindings) {
-    const { get, list, read, surface, setPanel, onSurface } = raw.bindings;
+    const { get, list, read, surface, setPanel, onSurface, work, openWork, closeWork, onWork } = raw.bindings;
     api.bindings = Object.freeze({
       get: coded(get), ...(list ? { list: coded(list) } : {}), ...(read ? { read: coded(read) } : {}),
       ...(surface && setPanel && onSurface ? {
@@ -342,6 +343,16 @@ export function createGugu(
         },
       } : {}),
       ...boundSchedules(raw),
+      ...(work && openWork && closeWork && onWork ? {
+        work: coded(work),
+        openWork: coded(openWork),
+        closeWork: coded(closeWork),
+        // One host event for every binding: this listener hears its binding's alone.
+        onWorkChanged: (name: unknown, listener: unknown) => {
+          if (typeof name !== 'string' || typeof listener !== 'function') throw guguError('invalid', 'gugu.bindings.onWorkChanged(name, fn) takes the binding\'s name and a function');
+          return onWork((answer) => { if (answer.name === name) (listener as (work: typeof answer) => void)(answer); });
+        },
+      } : {}),
     });
   }
   // `gugu.assistant` (44, `assistant:status` / `assistant:open`): the bound conversation's assistant, by the binding's name.

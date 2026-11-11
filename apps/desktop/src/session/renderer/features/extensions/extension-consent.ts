@@ -48,6 +48,7 @@ const CAPABILITY_MESSAGE = {
   'chat:schedules:control': 'extensions.permissionsChatSchedulesControl',
   'assistant:status': 'extensions.permissionsAssistantStatus',
   'assistant:open': 'extensions.permissionsAssistantOpen',
+  'chat:work': 'extensions.permissionsChatWork',
   'agents:read': 'extensions.permissionsAgentsRead',
   'agents:read:all': 'extensions.permissionsAgentsReadAll',
   'agents:read:all-machines': 'extensions.permissionsAgentsReadAllMachines',
