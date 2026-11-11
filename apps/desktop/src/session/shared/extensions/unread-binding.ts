@@ -71,12 +71,12 @@ export const CONVERSATION_SURFACE_PANEL_INSET: Readonly<{ top: number; right: nu
 /**
  * What the person asked of the App's page through the host, told once in the `onSurface` event that follows the click and
  * never in an answer. From the host's own row (46, `contributes.conversationSurface.header`): `profile` = the assistant's
- * face and name were clicked, show its profile. #1927 (48): `page-intent` = the person clicked the App's composer entry that
- * declares it (`run: { kind: "page-intent", intent }`, composer-actions.ts); `voice-note` = the person opened the note the
- * host's recording bar shows. The panel is expanded (and any host page over it closed) before it is told. Nothing else
+ * face and name were clicked, show its profile. #1927 (48): `composer-action` = the person clicked the App's composer entry
+ * `id` (its own manifest's id, whose run is `{ kind: "page-intent" }`: composer-actions.ts); `voice-note` = the person opened
+ * the note the host's recording bar shows. The panel is expanded (and any host page over it closed) before it is told. Nothing else
  * comes with it. `APP_SURFACE_INTENTS`: the ones the window may report from its own row.
  */
-export type AppSurfaceIntent = { kind: 'profile' } | { kind: 'voice-note' } | { kind: 'page-intent'; intent: string };
+export type AppSurfaceIntent = { kind: 'profile' } | { kind: 'voice-note' } | { kind: 'composer-action'; id: string };
 export const APP_SURFACE_INTENTS = ['profile'] as const;
 
 /**

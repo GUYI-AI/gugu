@@ -87,7 +87,7 @@ export async function runComposerAction(
   await bound.recheck();
   still();
   if (action.run.kind === 'draft') return { kind: 'draft', text: { ...action.run.text } };
-  return { kind: 'page-intent', delivered: await tellPage(extensionId, { kind: 'page-intent', intent: action.run.intent }) };
+  return { kind: 'page-intent', delivered: await tellPage(extensionId, { kind: 'composer-action', id: action.id }) };
 }
 
 /**
