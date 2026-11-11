@@ -48,6 +48,8 @@ export interface VaultDependencies {
   browser?: VaultBrowserSink
   /** Synchronous revocation first, then wait for browser cleanup before edit/delete success. */
   invalidate(event: Invalidation): Promise<void>
+  /** Cross-device sync (SYNC.md). Absent = this device keeps a local-only vault. */
+  sync?: { publish(change: import('./management').SyncChange): Promise<void> }
   now?: () => number
 }
 import type { PasswordAvailability } from '../permissions/password-readiness'

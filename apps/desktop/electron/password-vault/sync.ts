@@ -1,0 +1,353 @@
+import { randomUUID } from 'node:crypto'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { z } from 'zod'
+import { VaultError, type VaultKeyProtector } from './contracts'
+import type { SyncChange, SyncValue } from './management'
+import * as c from './sync-crypto'
+
+/**
+ * End-to-end encrypted sync of one account's vault across its devices (SYNC.md). The cloud holds ciphertext only; this
+ * engine holds the device key, opens the vault key from its share, and moves items between the cloud and the local vault.
+ * Local writes publish here first (inside the vault's queue), so publish never waits for refresh; refresh applies pulled
+ * items through the vault's own queue.
+ */
+export type SyncCode = 'STALE' | 'NOT_MEMBER' | 'STATE' | 'OFFLINE' | 'INVALID'
+export class SyncError extends Error { constructor(readonly code: SyncCode) { super(code); this.name = 'SyncError' } }
+export type SyncRpc = (name: string, args: Record<string, unknown>) => Promise<unknown>
+/** The local vault as the engine sees it; both calls run in the vault's queue under the trusted person context. */
+export interface SyncVault {
+  syncExport(): Promise<(SyncValue & { id: string })[]>
+  syncApply(changes: { id: string; value?: SyncValue }[]): Promise<void>
+}
+export interface SyncDevice { deviceId: string; label: string; platform: string; current: boolean }
+/** new: nobody opened it yet · elsewhere: opened on another device (or before this app restarted) · waiting: our nonce is
+ * posted, the device has not revealed yet · compare: both screens show `code` · mismatch: the device broke its commitment. */
+export interface SyncRequest extends SyncDevice { stage: 'new' | 'elsewhere' | 'waiting' | 'compare' | 'mismatch'; code?: string }
+export type SyncView =
+  | { state: 'off' }
+  | { state: 'joining'; code?: string }
+  | { state: 'blocked' }
+  | { state: 'ready'; devices: SyncDevice[]; requests: SyncRequest[] }
+
+const b64 = z.string().regex(/^[A-Za-z0-9+/]{43}=$/)
+const fileSchema = z.strictObject({ schema: z.literal(1), deviceId: z.string().min(1), publicKey: b64, secret: z.string(),
+  nonce: b64.optional(), revision: z.string().regex(/^\d+$/), versions: z.record(z.string(), z.string().regex(/^\d+$/)), merged: z.boolean() })
+type DeviceFile = z.infer<typeof fileSchema>
+const remoteDevice = z.object({ deviceId: z.string(), label: z.string().nullable(), platform: z.string().nullable(), hostKind: z.string().nullable(),
+  status: z.enum(['pending', 'approved']), scope: z.enum(['full', 'granted']).nullable(), publicKey: b64, commitment: z.string().nullable(),
+  approverDeviceId: z.string().nullable(), approverNonce: b64.nullable(), deviceNonce: b64.nullable() })
+const remoteItem = z.object({ itemId: z.string(), version: z.string(), epoch: z.number(), wrappedKey: z.string().nullable(),
+  ciphertext: z.string().nullable(), deleted: z.boolean(), revision: z.string() })
+const remoteState = z.union([z.object({ initialized: z.literal(false) }), z.object({ initialized: z.literal(true), epoch: z.number().int(),
+  revision: z.string(), rotationRequired: z.boolean(), devices: z.array(remoteDevice),
+  shares: z.array(z.object({ itemId: z.string().nullable(), epoch: z.number(), sealed: z.string() })), items: z.array(remoteItem) })])
+type RemoteState = Extract<z.infer<typeof remoteState>, { initialized: true }>
+type RemoteItem = z.infer<typeof remoteItem>
+const valueSchema = z.strictObject({ origin: z.string(), account: z.string(), password: z.string(),
+  fields: z.array(z.strictObject({ id: z.string(), name: z.string(), value: z.string() })),
+  grants: z.array(z.strictObject({ subject: z.string(), level: z.enum(['read', 'write']) })) })
+const sameValue = (a: SyncValue, b: SyncValue) => JSON.stringify(valueSchema.parse(a)) === JSON.stringify(valueSchema.parse(b))
+
+export interface VaultSyncOptions {
+  root: string; ownerId: string; deviceId: string; keys: VaultKeyProtector; rpc: SyncRpc; vault: SyncVault
+  /** The person approved a device; scope by the device kind (pending owner decision 2: every device gets the whole vault). */
+  scopeFor?(device: { hostKind: string | null; platform: string | null }): 'full' | 'granted'
+  changed(): void
+}
+export class VaultSync {
+  readonly #o: VaultSyncOptions
+  #file?: DeviceFile
+  #secret?: Buffer
+  #vaultKey?: { epoch: number; key: Buffer }
+  #state?: RemoteState
+  #view: SyncView = { state: 'off' }
+  #queue: Promise<unknown> = Promise.resolve()
+  #writes: Promise<unknown> = Promise.resolve()
+  /** Nonces this device posted as approver, per requesting device. Lost on restart: the request is then dismissed and asked again. */
+  readonly #challenges = new Map<string, string>()
+  constructor(options: VaultSyncOptions) { this.#o = options }
+  view(): SyncView { return this.#view }
+  dispose() { this.#secret?.fill(0); this.#secret = undefined; this.#vaultKey?.key.fill(0); this.#vaultKey = undefined }
+
+  private serial<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.#queue.then(work); this.#queue = next.catch(() => undefined); return next
+  }
+  private async call<T = unknown>(name: string, args: Record<string, unknown>): Promise<T> {
+    try { return await this.#o.rpc(name, args) as T }
+    catch (error) { throw toSyncError(error) }
+  }
+  private get path() { return join(this.#o.root, 'sync-device.json') }
+  private binding(deviceId: string) { return JSON.stringify(['gugu-vault-sync-device', 1, this.#o.ownerId, deviceId]) }
+  private async load(): Promise<DeviceFile> {
+    if (this.#file) return this.#file
+    let raw: string | undefined
+    try { raw = await readFile(this.path, 'utf8') } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new VaultError('STORAGE_FAILED') }
+    const parsed = raw ? fileSchema.safeParse(JSON.parse(raw)) : undefined
+    if (parsed?.success && parsed.data.deviceId === this.#o.deviceId) {
+      this.#file = parsed.data
+      this.#secret = await this.#o.keys.unwrap(parsed.data.secret, this.binding(parsed.data.deviceId))
+      return this.#file
+    }
+    // No key yet (or one from another device id): a fresh key pair, and the device asks to join again.
+    const pair = await c.createDeviceKeyPair()
+    try {
+      this.#file = { schema: 1, deviceId: this.#o.deviceId, publicKey: pair.publicKey, secret: await this.#o.keys.wrap(pair.secretKey, this.binding(this.#o.deviceId)),
+        revision: '0', versions: {}, merged: false }
+      this.#secret = Buffer.from(pair.secretKey)
+      await this.save()
+      return this.#file
+    } finally { pair.secretKey.fill(0) }
+  }
+  private save(): Promise<void> {
+    const write = this.#writes.then(async () => {
+      if (!this.#file) return
+      await mkdir(this.#o.root, { recursive: true, mode: 0o700 })
+      const temporary = `${this.path}.${randomUUID()}.tmp`
+      await writeFile(temporary, JSON.stringify(this.#file), { mode: 0o600 })
+      await rename(temporary, this.path)
+    })
+    this.#writes = write.catch(() => undefined)
+    return write
+  }
+  private pair(file: DeviceFile): c.DeviceKeyPair {
+    if (!this.#secret) throw new VaultError('LOCKED')
+    return { publicKey: file.publicKey, secretKey: this.#secret }
+  }
+  private async openVaultKey(state: RemoteState, file: DeviceFile): Promise<Buffer | undefined> {
+    if (this.#vaultKey?.epoch === state.epoch) return this.#vaultKey.key
+    const share = state.shares.find(entry => entry.itemId === null && entry.epoch === state.epoch)
+    if (!share) return undefined
+    const key = await c.openVaultKey(this.pair(file), state.epoch, share.sealed)
+    this.#vaultKey?.key.fill(0); this.#vaultKey = { epoch: state.epoch, key }
+    return key
+  }
+  private seal(vaultKey: Buffer, epoch: number, id: string, version: number, value: SyncValue, itemKey = c.randomKey()) {
+    try {
+      return { wrappedKey: c.boxed(vaultKey, itemKey, c.aad('item-key', this.#o.ownerId, id, epoch)),
+        ciphertext: c.boxed(itemKey, Buffer.from(JSON.stringify(value), 'utf8'), c.aad('item', this.#o.ownerId, id, version)) }
+    } finally { itemKey.fill(0) }
+  }
+  private open(vaultKey: Buffer, item: RemoteItem): SyncValue {
+    const itemKey = c.unboxed(vaultKey, item.wrappedKey!, c.aad('item-key', this.#o.ownerId, item.itemId, item.epoch))
+    try {
+      const bytes = c.unboxed(itemKey, item.ciphertext!, c.aad('item', this.#o.ownerId, item.itemId, Number(item.version)))
+      try {
+        const parsed = valueSchema.safeParse(JSON.parse(bytes.toString('utf8')))
+        if (!parsed.success) throw new VaultError('DATA_DAMAGED')
+        return parsed.data
+      } finally { bytes.fill(0) }
+    } finally { itemKey.fill(0) }
+  }
+
+  /** Pull, join, merge and apply. Safe to call often; serialized. */
+  refresh(): Promise<SyncView> {
+    return this.serial(async () => {
+      try { this.#view = await this.step() }
+      catch (error) { if (!(error instanceof SyncError) || error.code !== 'OFFLINE') this.#view = { state: 'off' }; throw error }
+      finally { this.#o.changed() }
+      return this.#view
+    })
+  }
+  private async fetch(file: DeviceFile, since: string) {
+    const parsed = remoteState.safeParse(await this.call('password_vault_state', { p_device_id: file.deviceId, p_since: Number(since) }))
+    if (!parsed.success) throw new SyncError('INVALID')
+    return parsed.data
+  }
+  private async step(): Promise<SyncView> {
+    const file = await this.load()
+    let state = await this.fetch(file, file.revision)
+    if (!state.initialized) {
+      // The account's first device creates the vault; the second of two racing first devices then asks to join.
+      const vaultKey = c.randomKey()
+      try {
+        await this.call('password_vault_initialize', { p_device_id: file.deviceId, p_public_key: file.publicKey, p_sealed_key: await c.sealVaultKey(file.publicKey, 1, vaultKey) })
+        Object.assign(file, { revision: '0', versions: {}, merged: false }); await this.save()
+      } catch (error) { if (!(error instanceof SyncError) || error.code !== 'STATE') throw error }
+      finally { vaultKey.fill(0) }
+      state = await this.fetch(file, '0')
+      if (!state.initialized) throw new SyncError('STATE')
+    }
+    const me = state.devices.find(device => device.deviceId === file.deviceId)
+    if (me?.status === 'approved' && me.publicKey !== file.publicKey) return { state: 'blocked' }
+    if (me?.status !== 'approved') {
+      // Removed elsewhere (or never joined): edits stay local and merge when this device joins again.
+      if (file.merged) { Object.assign(file, { merged: false, revision: '0', versions: {} }); this.#state = undefined; await this.save() }
+      return this.join(file, me)
+    }
+    const vaultKey = await this.openVaultKey(state, file)
+    if (!vaultKey) return { state: 'joining' }
+    // A brand-new member pulls everything once, then only what changed.
+    if (!file.merged && file.revision !== '0') { Object.assign(file, { revision: '0' }); state = await this.fetch(file, '0') as RemoteState }
+    this.#state = state
+    await this.apply(file, state, vaultKey)
+    if (!file.merged) await this.merge(file, state, vaultKey)
+    if (state.rotationRequired && me.scope === 'full') { await this.rotate([]); this.#state = state = await this.fetch(file, file.revision) as RemoteState }
+    return this.ready(file, state)
+  }
+  private async join(file: DeviceFile, me: z.infer<typeof remoteDevice> | undefined): Promise<SyncView> {
+    if (!me || me.publicKey !== file.publicKey) {
+      file.nonce = c.randomNonce(); await this.save()
+      try { await this.call('password_vault_request', { p_device_id: file.deviceId, p_public_key: file.publicKey, p_commitment: c.commitment(file.publicKey, file.nonce) }) }
+      catch (error) { if (error instanceof SyncError && error.code === 'STATE') return { state: 'blocked' }; throw error }
+      return { state: 'joining' }
+    }
+    if (!file.nonce) {
+      // The nonce behind this request is gone (reinstalled store): ask again with a new one.
+      await this.call('password_vault_dismiss', { p_caller_device_id: file.deviceId, p_device_id: file.deviceId })
+      return this.join(file, undefined)
+    }
+    if (me.approverNonce && !me.deviceNonce) await this.call('password_vault_reveal', { p_device_id: file.deviceId, p_device_nonce: file.nonce })
+    return { state: 'joining', ...(me.approverNonce ? { code: c.shortCode(file.publicKey, file.nonce, me.approverNonce) } : {}) }
+  }
+  private async apply(file: DeviceFile, state: RemoteState, vaultKey: Buffer) {
+    const changes: { id: string; value?: SyncValue }[] = []
+    for (const item of state.items) {
+      if (file.versions[item.itemId] === item.version) continue
+      changes.push(item.deleted ? { id: item.itemId } : { id: item.itemId, value: this.open(vaultKey, item) })
+    }
+    await this.#o.vault.syncApply(changes)
+    for (const item of state.items) file.versions[item.itemId] = item.version
+    file.revision = maxRevision(file.revision, state.revision)
+    await this.save()
+  }
+  /** First sync of a device that already had a local vault: the same site and account become one entry. */
+  private async merge(file: DeviceFile, state: RemoteState, vaultKey: Buffer) {
+    const remote = new Map<string, { id: string; value: SyncValue }>()
+    for (const item of state.items) if (!item.deleted) { const value = this.open(vaultKey, item); remote.set(`${value.origin}\n${value.account}`, { id: item.itemId, value }) }
+    const local = await this.#o.vault.syncExport(), dropped: { id: string }[] = []
+    for (const entry of local) {
+      if (file.versions[entry.id]) continue
+      const { id, ...value } = entry, twin = remote.get(`${value.origin}\n${value.account}`)
+      if (twin && twin.id !== id) {
+        const grants = [...new Map([...twin.value.grants, ...value.grants].map(grant => [grant.subject, grant] as const)).values()]
+        if (grants.length !== twin.value.grants.length) await this.publishSave(file, state.epoch, vaultKey, twin.id, { ...twin.value, grants })
+        dropped.push({ id })
+      } else if (!twin) await this.publishSave(file, state.epoch, vaultKey, id, value)
+    }
+    await this.#o.vault.syncApply(dropped)
+    file.merged = true; await this.save()
+  }
+  private ready(file: DeviceFile, state: RemoteState): SyncView {
+    const view = (device: z.infer<typeof remoteDevice>): SyncDevice => ({ deviceId: device.deviceId, label: device.label ?? '', platform: device.platform ?? '', current: device.deviceId === file.deviceId })
+    const requests = state.devices.filter(device => device.status === 'pending').map((device): SyncRequest => {
+      const mine = this.#challenges.get(device.deviceId)
+      if (!device.approverNonce) return { ...view(device), stage: 'new' }
+      if (!mine || device.approverNonce !== mine) return { ...view(device), stage: 'elsewhere' }
+      if (!device.deviceNonce || !device.commitment) return { ...view(device), stage: 'waiting' }
+      // The requesting device committed to its key and nonce before seeing ours; a swapped key fails here.
+      if (!c.verifyCommitment(device.publicKey, device.deviceNonce, device.commitment)) return { ...view(device), stage: 'mismatch' }
+      return { ...view(device), stage: 'compare', code: c.shortCode(device.publicKey, device.deviceNonce, mine) }
+    })
+    return { state: 'ready', devices: state.devices.filter(device => device.status === 'approved').map(view), requests }
+  }
+
+  /** The person opened a request on this device: post our nonce so both screens can show the code. */
+  challenge(deviceId: string): Promise<SyncView> {
+    return this.serial(async () => {
+      const file = await this.load(), nonce = c.randomNonce()
+      await this.call('password_vault_challenge', { p_approver_device_id: file.deviceId, p_device_id: deviceId, p_approver_nonce: nonce })
+      this.#challenges.set(deviceId, nonce)
+    }).then(() => this.refresh())
+  }
+  /** The codes matched on both screens: seal the vault key to exactly the key whose code was shown. */
+  approve(deviceId: string): Promise<SyncView> {
+    return this.serial(async () => {
+      const file = await this.load(), state = await this.fetch(file, file.revision)
+      if (!state.initialized) throw new SyncError('STATE')
+      const device = state.devices.find(entry => entry.deviceId === deviceId && entry.status === 'pending'), mine = this.#challenges.get(deviceId)
+      if (!device || !mine || device.approverNonce !== mine || !device.deviceNonce || !device.commitment
+        || !c.verifyCommitment(device.publicKey, device.deviceNonce, device.commitment)) throw new SyncError('STATE')
+      const vaultKey = await this.openVaultKey(state, file)
+      if (!vaultKey) throw new SyncError('NOT_MEMBER')
+      const scope = this.#o.scopeFor?.(device) ?? 'full'
+      const shares = scope === 'full' ? [{ deviceId, sealed: await c.sealVaultKey(device.publicKey, state.epoch, vaultKey) }] : []
+      await this.call('password_vault_approve', { p_approver_device_id: file.deviceId, p_device_id: deviceId, p_public_key: device.publicKey,
+        p_scope: scope, p_epoch: state.epoch, p_shares: shares })
+      this.#challenges.delete(deviceId)
+    }).then(() => this.refresh())
+  }
+  reject(deviceId: string): Promise<SyncView> {
+    return this.serial(async () => {
+      const file = await this.load()
+      await this.call('password_vault_dismiss', { p_caller_device_id: file.deviceId, p_device_id: deviceId })
+      this.#challenges.delete(deviceId)
+    }).then(() => this.refresh())
+  }
+  /** Remove a device and re-key, so it cannot read anything written afterwards. */
+  remove(deviceId: string): Promise<SyncView> {
+    return this.serial(() => this.rotate([deviceId])).then(() => this.refresh())
+  }
+  private async rotate(remove: string[]) {
+    const file = await this.load(), state = await this.fetch(file, '0')
+    if (!state.initialized) throw new SyncError('STATE')
+    const oldKey = await this.openVaultKey(state, file)
+    if (!oldKey) throw new SyncError('NOT_MEMBER')
+    const epoch = state.epoch + 1, nextKey = c.randomKey()
+    try {
+      const items = state.items.filter(item => !item.deleted).map(item => {
+        const value = this.open(oldKey, item), version = Number(item.version) + 1
+        return { itemId: item.itemId, expectedVersion: Number(item.version), ...this.seal(nextKey, epoch, item.itemId, version, value) }
+      })
+      const keep = state.devices.filter(device => device.status === 'approved' && device.scope === 'full' && !remove.includes(device.deviceId))
+      const shares = await Promise.all(keep.map(async device => ({ deviceId: device.deviceId, sealed: await c.sealVaultKey(device.publicKey, epoch, nextKey) })))
+      const result = await this.call<{ revision: string }>('password_vault_rotate', { p_device_id: file.deviceId, p_epoch: state.epoch, p_remove_device_ids: remove, p_items: items, p_shares: shares })
+      this.#vaultKey?.key.fill(0); this.#vaultKey = { epoch, key: Buffer.from(nextKey) }
+      // Re-keying changes no value: the local vault keeps these items as they are.
+      for (const item of items) file.versions[item.itemId] = String(item.expectedVersion + 1)
+      this.advance(file, result.revision); await this.save()
+    } finally { nextKey.fill(0) }
+  }
+
+  /** Called by the vault before a local commit. A device that never joined keeps the change local; it merges on joining.
+   * A joined device that cannot reach the cloud refuses the edit: offline devices read and use, they do not edit. */
+  async publish(change: SyncChange): Promise<void> {
+    const file = await this.load()
+    if (!file.merged) return
+    try {
+      const state = this.#state ?? await this.fetch(file, file.revision)
+      if (!state.initialized) throw new SyncError('NOT_MEMBER')
+      const vaultKey = await this.openVaultKey(state, file)
+      if (!vaultKey) throw new SyncError('NOT_MEMBER')
+      if (change.kind === 'save') {
+        try { await this.publishSave(file, state.epoch, vaultKey, change.id, change.value) }
+        catch (error) { if (!(error instanceof SyncError && error.code === 'STALE' && await this.alreadyThere(file, vaultKey, change.id, change.value))) throw error }
+      } else if (file.versions[change.id]) {
+        const result = await this.call<{ revision: string }>('password_vault_delete', { p_device_id: file.deviceId, p_item_id: change.id, p_expected_version: Number(file.versions[change.id]) })
+        file.versions[change.id] = String(Number(file.versions[change.id]) + 1); this.advance(file, result.revision); await this.save()
+      }
+    } catch (error) {
+      // Another device changed it first (or the key moved on): the person sees a conflict, and the next refresh pulls it.
+      setTimeout(() => { void this.refresh().catch(() => {}) }, 0)
+      if (error instanceof SyncError && error.code === 'STALE') throw new VaultError('STALE_REFERENCE')
+      throw new VaultError('UNAVAILABLE')
+    }
+  }
+  /** A retry after the cloud write succeeded but the local commit did not: the cloud already holds exactly this value. */
+  private async alreadyThere(file: DeviceFile, vaultKey: Buffer, id: string, value: SyncValue): Promise<boolean> {
+    const state = await this.fetch(file, file.revision)
+    const item = state.initialized ? state.items.find(entry => entry.itemId === id && !entry.deleted) : undefined
+    if (!item || !sameValue(this.open(vaultKey, item), value)) return false
+    file.versions[id] = item.version; await this.save()
+    return true
+  }
+  private async publishSave(file: DeviceFile, epoch: number, vaultKey: Buffer, id: string, value: SyncValue) {
+    const expected = Number(file.versions[id] ?? 0), sealed = this.seal(vaultKey, epoch, id, expected + 1, value)
+    const result = await this.call<{ version: string; revision: string }>('password_vault_save', { p_device_id: file.deviceId, p_item_id: id,
+      p_expected_version: expected, p_epoch: epoch, p_wrapped_key: sealed.wrappedKey, p_ciphertext: sealed.ciphertext, p_shares: [] })
+    file.versions[id] = result.version; this.advance(file, result.revision); await this.save()
+  }
+  /** Our own write may skip the revision only when nothing else was written in between. */
+  private advance(file: DeviceFile, revision: string) {
+    if (BigInt(revision) === BigInt(file.revision) + 1n) file.revision = revision
+  }
+}
+const maxRevision = (a: string, b: string) => BigInt(a) > BigInt(b) ? a : b
+function toSyncError(error: unknown): SyncError {
+  const value = error as { code?: string; message?: string } | undefined
+  if (value?.code === '40001') return new SyncError('STALE')
+  if (value?.code === '42501') return new SyncError('NOT_MEMBER')
+  if (value?.code === '55000') return new SyncError('STATE')
+  if (value?.code === '22023' || value?.code === '54000') return new SyncError('INVALID')
+  return new SyncError('OFFLINE')
+}

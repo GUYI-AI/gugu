@@ -9,7 +9,7 @@ const context = (sent = true) => ({ kind: 'social', agentId: 'agent-1',
 }) as unknown as GuguMcpContext
 const caller = { agentId: 'agent-1', sessionId: 'session-1' }
 function saves() {
-  const deliver = vi.fn(async () => {}), changed = vi.fn()
+  const deliver = vi.fn(async (_session: string, _request: string, _status: string, _credential?: string) => {}), changed = vi.fn()
   const value = new BetaPasswordSaves({ deviceId: 'device-1', changed, deliver, describe: () => ({ agentName: '研究助理', sessionTitle: '注册账号' }) })
   return { value, deliver, changed }
 }

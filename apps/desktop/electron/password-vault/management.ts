@@ -10,8 +10,12 @@ export interface ManagementRuntime {
   current(): void
   persist(payload: VaultPayload): Promise<void>
   record(event: AuditInput): Promise<string>
+  /** Cross-device sync: the cloud write happens first; a refusal (stale, offline) aborts before the local commit. */
+  publish(change: SyncChange): Promise<void>
   cleanup: Promise<boolean>
 }
+export type SyncValue = Omit<StoredCredential, 'id' | 'version'>
+export type SyncChange = { kind: 'save'; id: string; value: SyncValue } | { kind: 'delete'; id: string }
 export const summary = (value: StoredCredential, epoch: string): CredentialSummary => ({
   reference: { id: value.id, version: value.version, epoch }, origin: value.origin, maskedAccount: maskedAccount(value.account),
   fields: value.fields.map(field => ({ id: field.id, name: field.name })), grants: value.grants.map(grant => ({ ...grant })),
@@ -64,6 +68,8 @@ export async function saveCredential(runtime: ManagementRuntime, operationId: st
   runtime.current()
   // An Agent that creates a credential may keep maintaining it; nobody else gains access.
   const grants = old ? old.grants : creator ? [creator] : []
+  await runtime.publish({ kind: 'save', id: operation.credentialId, value: { ...value, grants } })
+  runtime.current()
   payload.credentials = [...payload.credentials.filter(item => item.id !== operation!.credentialId), { ...value, grants, id: operation.credentialId, version: operation.version }]
   operation.status = 'committed'
   await runtime.persist(payload)
@@ -84,6 +90,7 @@ export async function deleteCredential(runtime: ManagementRuntime, operationId: 
     payload.operations.push(operation); await runtime.persist(payload)
   }
   await runtime.record({ id: operationId, action: 'delete', source: 'local-person', outcome: 'pending', credential: { id: old.id, version: old.version }, origin: old.origin })
+  runtime.current(); await runtime.publish({ kind: 'delete', id: old.id })
   runtime.current(); payload.credentials = payload.credentials.filter(item => item.id !== old.id); operation.status = 'committed'
   await runtime.persist(payload); await runtime.record(receipt(operation, 'delete'))
 }
@@ -93,7 +100,11 @@ export async function updateGrants(runtime: ManagementRuntime, reference: Creden
   const old = runtime.check(reference)
   const unique = new Map(grants.map(grant => [grant.subject, grant.level] as const))
   runtime.current()
-  old.grants = [...unique].map(([subject, level]) => ({ subject, level }))
+  const next = [...unique].map(([subject, level]) => ({ subject, level }))
+  const { id: _id, version: _version, ...value } = old
+  await runtime.publish({ kind: 'save', id: old.id, value: { ...value, grants: next } })
+  runtime.current()
+  old.grants = next
   await runtime.persist(runtime.payload)
   await runtime.record({ id: randomUUID(), action: 'grant', source: 'local-person', outcome: 'completed', credential: { id: old.id, version: old.version }, origin: old.origin })
   return summary(old, runtime.epoch)

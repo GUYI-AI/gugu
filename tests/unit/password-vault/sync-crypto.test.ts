@@ -1,0 +1,43 @@
+import { describe, expect, it } from 'vitest'
+import { aad, boxed, commitment, createDeviceKeyPair, openSealed, openVaultKey, randomKey, randomNonce, sealTo, sealVaultKey, shortCode, unboxed, verifyCommitment } from '../../../apps/desktop/electron/password-vault/sync-crypto'
+
+describe('vault sync crypto', () => {
+  it('a sealed share opens only with the matching device key', async () => {
+    const device = await createDeviceKeyPair(), other = await createDeviceKeyPair()
+    const sealed = await sealTo(device.publicKey, Buffer.from('canary-vault-key'))
+    expect(sealed).not.toContain('canary')
+    expect((await openSealed(device, sealed)).toString()).toBe('canary-vault-key')
+    await expect(openSealed(other, sealed)).rejects.toThrow('DATA_DAMAGED')
+  })
+  it('binds a vault key share to its epoch', async () => {
+    const device = await createDeviceKeyPair(), key = randomKey()
+    const sealed = await sealVaultKey(device.publicKey, 3, key)
+    expect((await openVaultKey(device, 3, sealed)).equals(key)).toBe(true)
+    await expect(openVaultKey(device, 4, sealed)).rejects.toThrow('DATA_DAMAGED')
+  })
+  it('the commitment hides the nonce and binds the key', async () => {
+    const device = await createDeviceKeyPair(), swapped = await createDeviceKeyPair(), nonce = randomNonce()
+    const commit = commitment(device.publicKey, nonce)
+    expect(verifyCommitment(device.publicKey, nonce, commit)).toBe(true)
+    expect(verifyCommitment(swapped.publicKey, nonce, commit)).toBe(false)
+    expect(verifyCommitment(device.publicKey, randomNonce(), commit)).toBe(false)
+  })
+  it('both sides derive the same 6 digits; any changed input changes them', async () => {
+    const device = await createDeviceKeyPair(), deviceNonce = randomNonce(), approverNonce = randomNonce()
+    const code = shortCode(device.publicKey, deviceNonce, approverNonce)
+    expect(code).toMatch(/^\d{6}$/)
+    expect(shortCode(device.publicKey, deviceNonce, approverNonce)).toBe(code)
+    const changed = new Set([shortCode((await createDeviceKeyPair()).publicKey, deviceNonce, approverNonce),
+      shortCode(device.publicKey, randomNonce(), approverNonce), shortCode(device.publicKey, deviceNonce, randomNonce())])
+    // A collision is possible with probability 1e-6 per pair; three independent misses are what we expect.
+    expect(changed.has(code)).toBe(false)
+  })
+  it('boxes authenticate their binding', () => {
+    const key = randomKey(), binding = aad('item', 'owner', 'id', 2)
+    const box = boxed(key, Buffer.from('{"password":"canary"}'), binding)
+    expect(unboxed(key, box, binding).toString()).toContain('canary')
+    expect(() => unboxed(key, box, aad('item', 'owner', 'id', 3))).toThrow('DATA_DAMAGED')
+    expect(() => unboxed(randomKey(), box, binding)).toThrow('DATA_DAMAGED')
+    expect(aad('a|b', 'c')).not.toBe(aad('a', 'b|c'))
+  })
+})

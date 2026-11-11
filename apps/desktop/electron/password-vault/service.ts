@@ -3,11 +3,11 @@ import type { AuditInput, AuditReceipt, AuditRecord, CredentialGrant, Credential
 import { VaultError } from './contracts'
 import { EncryptedVaultAudit } from './audit'
 import { sealedJson } from './crypto'
-import { auditInput, binding, credentialInputSchema, grantSchema, uuid, identity, httpsOrigin, type VaultDocument, type VaultPayload } from './schema'
+import { auditInput, binding, credentialInputSchema, grantSchema, payloadSchema, uuid, identity, httpsOrigin, type VaultDocument, type VaultPayload } from './schema'
 import { VaultFile } from './vault-file'
 import { captureBrowserSink, performCredentialUse } from './browser-use'
 import { OutcomeAuditIssuer } from './outcome-audit'
-import { saveCredential, deleteCredential, updateGrants, summary, type ManagementRuntime } from './management'
+import { saveCredential, deleteCredential, updateGrants, summary, type ManagementRuntime, type SyncValue } from './management'
 import { VaultFeatureOperation } from './feature-guard'
 import { anySignal } from '@gugu/core/shared/anySignal'
 
@@ -207,7 +207,8 @@ export class LocalPasswordVault {
     const sensitive = { credentialId: '', clear() { for (const item of payload.credentials) { item.account = ''; item.password = ''; for (const field of item.fields) field.value = '' } } }
     this.#activeSecrets.add(sensitive)
     const detach = feature?.onInvalidate(() => sensitive.clear()), current = () => { this.current(epoch); feature?.assertCurrent() }
-    return { key, epoch, payload, cleanup, release: () => { detach?.(); sensitive.clear(); this.#activeSecrets.delete(sensitive) }, check: reference => this.check(reference, payload, true), current, record: event => this.record(event),
+    const publish = this.#dependencies.sync ? (change: Parameters<ManagementRuntime['publish']>[0]) => this.#dependencies.sync!.publish(change) : () => Promise.resolve()
+    return { key, epoch, payload, cleanup, publish, release: () => { detach?.(); sensitive.clear(); this.#activeSecrets.delete(sensitive) }, check: reference => this.check(reference, payload, true), current, record: event => this.record(event),
       persist: async value => { current(); const next = { ...document, payload: sealedJson(key, value, binding(document, 'data')) }; await this.#file.persist(next); current(); this.#document = next } }
   }
   save(context: object, operationId: string, input: CredentialInput, previous?: CredentialReference, creator?: CredentialGrant): Promise<CredentialSummary> {
@@ -256,6 +257,48 @@ export class LocalPasswordVault {
       try { await this.gates(); await this.open(undefined, true); runtime = this.management(Promise.resolve(true)); return await updateGrants(runtime, reference, copy) }
       catch (error) { if (['STORAGE_FAILED', 'DATA_DAMAGED', 'AUDIT_FAILED'].includes(safe(error).code)) await this.fail(); throw safe(error) }
       finally { runtime?.release() }
+    })
+  }
+  /** Sync engine only (same trusted person context): every credential in plaintext, for the first upload and merge. */
+  syncExport(context: object): Promise<(SyncValue & { id: string })[]> {
+    this.person(context)
+    return this.run(async () => {
+      await this.gates(); await this.open(undefined, true); const { key, document } = this.unlocked()
+      return this.#file.payload(document, key).credentials.map(({ version: _version, ...value }) => value)
+    })
+  }
+  /** Sync engine only: apply changes pulled from the cloud. Each changed credential is revoked like a local edit, so
+   * in-flight uses of it stop; its local version moves on, so stale references fail. */
+  syncApply(context: object, changes: { id: string; value?: SyncValue }[]): Promise<void> {
+    this.person(context)
+    if (!changes.length) return Promise.resolve()
+    return this.run(async () => {
+      let runtime: ReturnType<LocalPasswordVault['management']> | undefined
+      const revocations: ReturnType<LocalPasswordVault['revoke']>[] = []
+      try {
+        await this.gates(); await this.open(undefined, true)
+        const { key, document, epoch } = this.unlocked(), before = this.#file.payload(document, key)
+        for (const change of changes) {
+          const old = before.credentials.find(item => item.id === change.id)
+          if (old) revocations.push(this.revoke({ id: old.id, version: old.version, epoch }, change.value ? 'edit' : 'delete'))
+        }
+        for (const item of before.credentials) { item.account = ''; item.password = ''; for (const field of item.fields) field.value = '' }
+        await Promise.all(revocations.map(revocation => revocation.cleanup))
+        runtime = this.management(Promise.resolve(true))
+        const { payload } = runtime, events: AuditInput[] = []
+        for (const change of changes) {
+          const old = payload.credentials.find(item => item.id === change.id)
+          if (!change.value && !old) continue
+          const parsed = change.value ? payloadSchema.shape.credentials.element.safeParse({ ...change.value, id: change.id, version: (old?.version ?? 0) + 1 }) : undefined
+          if (parsed && !parsed.success) throw new VaultError('DATA_DAMAGED')
+          payload.credentials = [...payload.credentials.filter(item => item.id !== change.id), ...(parsed ? [parsed.data] : [])]
+          events.push({ id: randomUUID(), action: parsed ? old ? 'edit' : 'add' : 'delete', source: 'lifecycle', outcome: 'completed',
+            credential: { id: change.id, version: parsed?.data.version ?? old!.version }, origin: parsed?.data.origin ?? old!.origin })
+        }
+        await runtime.persist(payload)
+        for (const event of events) await this.record(event)
+      } catch (error) { if (['STORAGE_FAILED', 'DATA_DAMAGED', 'AUDIT_FAILED'].includes(safe(error).code)) await this.fail(); throw safe(error) }
+      finally { runtime?.release(); for (const revocation of revocations) revocation.release() }
     })
   }
   /** Person-only plaintext for the settings eye button, after local system verification (Touch ID or login password). */
