@@ -30,7 +30,7 @@ const retiredAssistantParams = (): { tab?: unknown } | undefined =>
  * choice), main is asked to bring the trusted App's binding to that chat (`syncAssistantAppEntry`,
  * electron/.../assistant-app-entry.ts) and answers whether that App is the trusted one; that answer is
  * published for the entries. Background only: a failure is logged and tried again, never shown — the built-in page
- * stays the entry meanwhile.
+ * stays the entry meanwhile. The App is bound only once the assistant's setup is ready for that chat (main answers `pending` before).
  *
  * Also what the built-in page did by being opened, now that the App's page is opened instead: its panel state carried over
  * once (G6), and the assistant's home on this computer refreshed to this version each time the App's page comes up.
@@ -44,6 +44,10 @@ export const AssistantAppEntryHost = observer(function AssistantAppEntryHost() {
   // The chat the window shows as the assistant's; null while it shows none (main decides whether that means "closed").
   const chatId = mine?.assistantState === 'found' ? mine.chatId : null
   const known = !!mine && (mine.assistantState === 'found' || mine.assistantState === 'none')
+  // Where the assistant's setup is (`setup`) and whether it is still being made (`preparing`): its private chat is known before
+  // the assistant is ready, and the binding waits for ready (main: `pending`), so the end of the setup is asked again.
+  const setupStep = mine?.setup ?? null
+  const preparing = mine?.preparing === true
   const manifest = installedExtensionsStore.manifestFor(ASSISTANT_APP_ID)
   const installed = manifest ? JSON.stringify([manifest.version, installedExtensionsStore.origins[ASSISTANT_APP_ID] ?? null, installedExtensionsStore.isEnabled(ASSISTANT_APP_ID)]) : ''
   const [changes, setChanges] = useState(0)
@@ -64,7 +68,9 @@ export const AssistantAppEntryHost = observer(function AssistantAppEntryHost() {
         if (!result.success) throw new Error(result.error)
         if (result.data.ownerId !== ownerId) return
         publishAssistantAppWord({ ownerId, trusted: result.data.trusted })
-        if (result.data.outcome === 'unverified' && attempt < ENTRY_SYNC_RETRY_MS.length) {
+        // `pending`: the assistant's setup has not finished, so nothing was bound yet (the App would be refused over it): asked
+        // again as `unverified` is, and whenever the setup moves on (below).
+        if ((result.data.outcome === 'unverified' || result.data.outcome === 'pending') && attempt < ENTRY_SYNC_RETRY_MS.length) {
           timer = setTimeout(() => ask(attempt + 1), ENTRY_SYNC_RETRY_MS[attempt])
         }
       }).catch((error: unknown) => {
@@ -76,7 +82,7 @@ export const AssistantAppEntryHost = observer(function AssistantAppEntryHost() {
       disposed = true
       if (timer) clearTimeout(timer)
     }
-  }, [ownerId, known, chatId, installed, changes])
+  }, [ownerId, known, chatId, installed, changes, setupStep, preparing])
 
   const target = useAssistantEntryTarget()
   // The built-in page's panel, carried over the first time the App is where the entry goes.

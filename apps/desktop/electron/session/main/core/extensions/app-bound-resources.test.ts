@@ -307,17 +307,24 @@ describe('reading the agent\'s resources', () => {
     const asked = () => store.calls + store.bodyReads.length + store.uploads.length;
     // Another agent of the same person, its own private conversation chosen (not the assistant: the store has no panel for it).
     const researcher = { ...ASSISTANT, member_key: 'researcher' };
-    // An older assistant superseded by a newer one (the one the assistant's pages show); one still being set up (the store
-    // serves ready or completed only).
+    // An older assistant superseded by a newer one (the one the assistant's pages show).
     const superseded = [{ ...ASSISTANT, created_at: '2026-10-01T00:00:00Z' },
       { ...ASSISTANT, agent_user_id: OTHER, dm_chat_id: OTHER, created_at: '2026-11-05T00:00:00Z' }];
-    const settingUp = [{ ...ASSISTANT, phase: 'provisioning' }];
-    for (const provisions of [[researcher], superseded, settingUp]) {
+    for (const provisions of [[researcher], superseded]) {
       state.provisions = provisions;
       await expect(list('memory')).rejects.toMatchObject({ code: 'denied' });
       await expect(read('memory', 'owner-profile.md')).rejects.toMatchObject({ code: 'denied' });
       await expect(save('a.md', 'x', '0')).rejects.toMatchObject({ code: 'denied' });
       await expect(appResourceWatch('assistant', 51, { watchId: '1', name: 'main', on: true }, () => undefined)).rejects.toMatchObject({ code: 'denied' });
+    }
+    // One still being set up (the store serves ready or completed only) for that very conversation: not a refusal — the binding
+    // is not valid yet. Answered unbound, never an error the App would report and keep (verify-pass1 D4), nothing watched.
+    for (const phase of ['queued', 'preparing', 'awaiting_terminal', 'provisioning']) {
+      state.provisions = [{ ...ASSISTANT, phase }];
+      expect(await list('memory')).toMatchObject({ name: 'main', domain: 'memory', state: 'unbound' });
+      expect(await read('memory', 'owner-profile.md')).toMatchObject({ state: 'unbound' });
+      expect(await save('a.md', 'x', '0')).toMatchObject({ state: 'unbound' });
+      await expect(appResourceWatch('assistant', 51, { watchId: '1', name: 'main', on: true }, () => undefined)).resolves.toEqual({ name: 'main', state: 'unbound' });
     }
     expect(asked()).toBe(0);
     // Asked for the account's own assistant provisions, never for an id the App supplied.

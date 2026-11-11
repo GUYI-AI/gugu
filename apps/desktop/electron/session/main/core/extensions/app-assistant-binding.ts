@@ -24,6 +24,7 @@ import type { ExtensionHostEvent } from '@shared/extensions/bridge-protocol';
 import type { ExtensionHostAction } from '@shared/extensions/host-actions';
 import { unsupportedHere, type AppBindingUnsupported } from '@shared/extensions/phone-binding';
 import { currentAccountAccessToken } from './account-token';
+import { assistantServingChat } from './app-assistant-serving';
 import { extensionsService } from './extensions-root';
 
 /**
@@ -90,12 +91,18 @@ async function conversationOf(token: string, chatId: string): Promise<{ kind: st
  * Whether this conversation is the account's private chat with its own assistant and no one else — the one check every
  * assistant action makes (`boundAssistant`), also asked by the host's own binding of the trusted assistant App
  * (assistant-app-entry.ts). `failed`: it could not be verified now (never read as "no").
+ *
+ * `'pending'`: it is, but the assistant's setup has not reached the phase the store serves its resources in, so every call the
+ * App would make over the binding is not valid yet (`assistantServingChat`, app-assistant-serving.ts). The host binds on
+ * `true` only: a binding written sooner is one the App is refused over for good (verify-pass1 D4).
  */
-export async function isOwnAssistantChat(token: string, ownerId: string, chatId: string): Promise<boolean> {
+export async function isOwnAssistantChat(token: string, ownerId: string, chatId: string): Promise<boolean | 'pending'> {
   const [assistant, conversation] = await Promise.all([personalAssistant(token, ownerId), conversationOf(token, chatId)]);
   if (!assistant) return false;
   const members = new Set(conversation.members);
-  return conversation.kind === 'dm' && members.size === 2 && members.has(ownerId) && members.has(assistant);
+  if (!(conversation.kind === 'dm' && members.size === 2 && members.has(ownerId) && members.has(assistant))) return false;
+  const serving = await assistantServingChat(token, ownerId, chatId);
+  return serving.state === 'served' ? true : serving.state === 'pending' ? 'pending' : false;
 }
 
 /**
