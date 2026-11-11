@@ -324,7 +324,7 @@ describe('the person\'s own choice stands', () => {
 });
 
 describe('the built-in page\'s last tab, handed to the trusted App once (G6)', () => {
-  const bound = { name: 'main', state: 'bound' as const, panel: { collapsed: false, inset: { top: 0, right: 0 }, hostPage: false } };
+  const bound = { name: 'main', state: 'bound' as const, layout: 'side-panel' as const, panel: { collapsed: false, inset: { top: 0, right: 0 }, hostPage: false } };
   const push = vi.fn(async () => undefined);
   const handOver = (tab: string, ownerId = OWNER) => handOverAssistantPage({ ownerId, tab }, { trust: TRUST, push });
   afterEach(() => { forgetAssistantPageResumeForTest(); push.mockClear(); });
