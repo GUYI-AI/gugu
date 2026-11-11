@@ -69,6 +69,10 @@ export const HOST_CALLS = {
   // #1925 (41, `chat:surface`): the conversation drawn beside this page — shown or not, the panel collapsed or not.
   'bindings.surface': { verb: 'bindingsSurface', pack: (name: string) => ({ name }) },
   'bindings.setPanel': { verb: 'bindingsSurfacePanel', pack: (name: string, options?: Record<string, unknown>) => ({ ...options, name }) },
+  // #1925 (46, `chat:work`): the assistant's work, by the binding's name, and one row's conversation by the handle it came with.
+  'bindings.work': { verb: 'bindingsWork', pack: (name: string) => ({ name }) },
+  'bindings.openWork': { verb: 'bindingsOpenWork', pack: (name: string, handle: string) => ({ name, handle }) },
+  'bindings.closeWork': { verb: 'bindingsCloseWork', pack: (name: string) => ({ name }) },
   'messages.history': { verb: 'messagesHistory' },
   'messages.search': { verb: 'messagesSearch' },
   // The chats whoever reads is in, and one's members (`chat:read`): `{ chat }` names it.
@@ -170,6 +174,8 @@ export const HOST_EVENTS = {
   onContextChanged: { event: 'context', pick: (event: Event<'context'>) => [event.context] },
   /** `gugu.bindings.onSurface(fn)` (41): what `bindings.surface` answers, each time it changes. */
   'bindings.onSurface': { event: 'bindingSurface', only: 'page', pick: (event: Event<'bindingSurface'>) => [event.surface] },
+  /** `gugu.bindings.onWorkChanged(name, fn)` rides on it (46, create-gugu.ts): what `bindings.work` answers, each time it changes. */
+  'bindings.onWork': { event: 'bindingWork', only: 'page', pick: (event: Event<'bindingWork'>) => [event.work] },
   /** `gugu.files.onChanged(place, fn)` rides on it; it says files moved, never who moved them. */
   onFilesChanged: { event: 'filesChanged', pick: (event: Event<'filesChanged'>) => [event.watchId, event.change] },
   /** `gugu.files.download(file, { onProgress })` rides on it. */

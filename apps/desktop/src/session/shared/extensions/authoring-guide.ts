@@ -893,6 +893,19 @@ streaming, voice, attachments, read state) as the main column; your main page is
   \`{ state: "unbound" }\`: none chosen, a grant withdrawn, another account, no longer in it, or your page opened elsewhere.
   \`gugu.bindings.onSurface(fn)\` hears each change; \`gugu.bindings.setPanel("main", { collapsed })\` collapses or expands your panel.
 - You get no chat, message, person or DOM of it. Opening your page marks nothing read; a \`{ binding }\` draft lands in that composer.
+API 46, the assistant's 任务 list: add \`"work"\` (with \`chat:work\`). Only while the chosen conversation is the person's private
+chat with their own assistant; any other is refused (\`denied\`). The host keeps the ledger; it reads it as its own list does,
+wherever the assistant lives (this computer, another, the cloud).
+- \`gugu.bindings.work("main")\` → \`{ state: "ready", items, stale, open }\`, items newest first, each
+  \`{ handle, title, naming, status, unseen, updatedAt }\`: \`naming\` = draw "naming…" for the title; \`status\` =
+  \`{ status, detail }\` as an agent's state is drawn, or null; \`unseen\` = idle with news; \`stale\` = the last refresh failed,
+  these are the last rows read. Else \`{ state: "unavailable", open }\` (not read yet / cannot be: wait for the event) or
+  \`{ state: "unbound" }\`. \`gugu.bindings.onWorkChanged("main", fn)\` hears every new answer.
+- \`handle\` is opaque: this App, this account, this choice of conversation; read again after a restart. No work, session,
+  chat or device id, path, URL or message.
+- \`gugu.bindings.openWork("main", handle)\` in a click: the host draws that task's conversation in your panel, over your
+  page, with its own back control; \`gugu.bindings.closeWork("main")\` takes it away. \`open\` is that row's handle while it is
+  drawn, else null — hide your list then. You cannot see it. Another account, a withdrawn grant, a new choice: it closes.
 
 Which chats the reader is in and who is in one — for a page that is in no chat (an App's own tab, full screen) to
 offer one — and what people and agents said in a chat: a stretch of its timeline, one thread, or the messages that

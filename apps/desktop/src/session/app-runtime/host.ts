@@ -22,6 +22,10 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     surface?(name: string): Promise<import('@shared/extensions/unread-binding').AppBindingSurface>;
     setPanel?(name: string, options: { collapsed: boolean }): Promise<import('@shared/extensions/unread-binding').AppBindingSurface>;
     onSurface?(listener: (surface: import('@shared/extensions/unread-binding').AppBindingSurface) => void): () => void;
+    work?(name: string): Promise<import('@shared/extensions/work-binding').AppBindingWork>;
+    openWork?(name: string, handle: string): Promise<void>;
+    closeWork?(name: string): Promise<void>;
+    onWork?(listener: (work: import('@shared/extensions/work-binding').AppBindingWork) => void): () => void;
   };
   taskMessage?(args: { intent: 'pause' | 'continue' }): Promise<void>;
   readonly sessions?: {

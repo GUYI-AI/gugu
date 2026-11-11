@@ -280,6 +280,8 @@ const enUSCoreMessages = {
   'extensions.permissionsChatDraft': 'Put a draft into the conversation you select; only you can send it',
   // #1925: gugu draws that conversation beside the App's page; the App sees none of it.
   'extensions.permissionsChatSurface': 'Show its page beside the conversation you select; the App cannot see that conversation',
+  // #1925 (46): only when that conversation is the person's chat with their own assistant; a task's conversation is drawn by gugu.
+  'extensions.permissionsChatWork': 'See the tasks your assistant handed out, their titles and progress, and show a task\'s conversation in its panel; the App cannot see that conversation',
   'extensions.unreadBindingChoose': 'Choose conversation',
   'extensions.unreadBindingSearch': 'Search conversations',
   'extensions.unreadBindingEmpty': 'No available conversations',
@@ -1458,6 +1460,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'extensions.permissionsChatFiles': '只读取你选定的那条会话里的文件，不改动',
   'extensions.permissionsChatDraft': '只往你选定的那条会话的输入框里放草稿，发不发由你',
   'extensions.permissionsChatSurface': '把它的页面摆在你选定的那条会话旁边，它看不到这条会话',
+  'extensions.permissionsChatWork': '查看你的助理派出的任务（标题和进度），并在它的面板里显示某个任务的对话，它看不到这段对话',
   'extensions.unreadBindingChoose': '选择会话',
   'extensions.unreadBindingSearch': '搜索会话',
   'extensions.unreadBindingEmpty': '暂无可选会话',

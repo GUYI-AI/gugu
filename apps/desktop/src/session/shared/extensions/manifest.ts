@@ -351,6 +351,10 @@ export const EXTENSION_CAPABILITIES = [
   // The App's main page drawn beside that same conversation (#1925, API 41), the host's own native conversation in the main
   // column (`contributes.conversationSurface`): the App sees none of it, only whether it is shown (`gugu.bindings.surface`).
   'chat:surface',
+  // #1925 (API 46) When that same conversation is the person's private chat with their own assistant: the work it handed out
+  // (`gugu.bindings.work` / `onWorkChanged`, each row as the built-in list draws it) and, in a click, one task's conversation
+  // drawn by the host in the App's panel (`openWork` / `closeWork`): the App sees none of that conversation.
+  'chat:work',
   /*
    * Seeing the agents at work (behavior tab-extensions:「agent 的可见与可控」).
    *
@@ -746,7 +750,7 @@ export const extensionManifestSchema = z
       ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: 'conversation unread bindings require apiVersion 37' });
     }
     // #1927: an extra action of the binding and its capability come together, as `unread` and `chat:unread` do.
-    for (const action of ['files', 'draft', 'surface'] as const) {
+    for (const action of ['files', 'draft', 'surface', 'work'] as const) {
       const capability = BINDING_ACTION_CAPABILITY[action];
       if ((unreadBinding?.actions.includes(action) ?? false) !== declared.includes(capability)) {
         ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings'], message: `${capability} requires the conversation binding's "${action}" action, and the action requires ${capability}` });

@@ -39,6 +39,9 @@ export const CAPABILITY_RISK = {
   'chat:draft': 'medium',
   // #1925 That conversation drawn by the host beside the App's page: the App sees none of it, only whether it is shown.
   'chat:surface': 'medium',
+  // #1925 The work the person's own assistant handed out, and one task's conversation drawn by the host: the App sees titles
+  // and progress, never that conversation.
+  'chat:work': 'medium',
   'agents:read': 'medium',
   // Every `:all` widens past the agents the App started — that widening is the whole point of
   // reading it as high, even for the ability that is medium in its narrow form.

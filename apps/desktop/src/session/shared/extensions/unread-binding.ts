@@ -7,15 +7,17 @@ import type { AppFileEntry } from './app-runtime-protocol';
  * put words into that conversation's composer; the person sends them, or not. Each extra action is its own capability,
  * consented and withdrawn on its own (`BINDING_ACTION_CAPABILITY`). `surface` (API 41, #1925): the App's main page is shown
  * beside that conversation, which the host draws natively (`contributes.conversationSurface`); the App learns only whether
- * it is shown and whether its panel is collapsed.
+ * it is shown and whether its panel is collapsed. `work` (API 46, #1925): when that conversation is the person's private
+ * chat with their own assistant, the list of work the assistant handed out (`work-binding.ts`), and one task's conversation
+ * drawn by the host in the App's panel.
  */
-export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'surface'] as const;
+export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'surface', 'work'] as const;
 export type ConversationBindingAction = (typeof CONVERSATION_BINDING_ACTIONS)[number];
-export const BINDING_ACTION_CAPABILITY = { unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft', surface: 'chat:surface' } as const;
+export const BINDING_ACTION_CAPABILITY = { unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft', surface: 'chat:surface', work: 'chat:work' } as const;
 /** The first App API that lets a binding declare more than `unread`. */
 export const BINDING_ACTIONS_API_VERSION = 40;
 /** The first App API of each extra action. */
-export const BINDING_ACTION_API_VERSION = { files: BINDING_ACTIONS_API_VERSION, draft: BINDING_ACTIONS_API_VERSION, surface: 41 } as const;
+export const BINDING_ACTION_API_VERSION = { files: BINDING_ACTIONS_API_VERSION, draft: BINDING_ACTIONS_API_VERSION, surface: 41, work: 46 } as const;
 export const BINDING_NAME = /^[a-z][a-z0-9-]{0,47}$/;
 
 /**
