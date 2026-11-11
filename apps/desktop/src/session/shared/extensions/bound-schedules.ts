@@ -30,9 +30,11 @@ export type AppBoundSchedule = {
 };
 
 /**
- * `gugu.bindings.schedules(name)`. `unbound`: no conversation chosen yet. `elsewhere`: the agent lives on another computer,
- * whose host keeps its schedules. `unavailable`: they cannot be read now (saved changes not yet applied, the database or the
- * account service did not answer) — try again later. None of them is an empty list.
+ * `gugu.bindings.schedules(name)`. `unbound`: no conversation chosen yet. `elsewhere`: an agent other than the person's
+ * assistant lives on another computer, whose host keeps its schedules (the assistant's are read from its panel wherever it
+ * lives, as the built-in list does). `unavailable`: they cannot be read now (saved changes not yet applied, the assistant's
+ * home has not published them, a change to them is unresolved, the database or the cloud did not answer) — try again later.
+ * None of them is an empty list.
  */
 export type AppBoundSchedules = { name: string; state: 'unbound' | 'elsewhere' | 'unavailable' }
   | { name: string; state: 'ready'; schedules: AppBoundSchedule[] };
@@ -44,10 +46,12 @@ export type AppScheduleOperation = (typeof SCHEDULE_OPERATIONS)[number];
  * What one `operationId` came to, kept by the host: the same id asked again answers this, never a second change.
  * `applied`: done (`revision` the schedule's after it; null once removed). `conflict`: the schedule changed since the
  * revision named (`revision` the current one): read again and decide with a new operation id. `missing`: no such
- * schedule of this agent's.
+ * schedule of this agent's. For the assistant living elsewhere, the panel's own states of an accepted change: `pending`
+ * until its home applies it (the same id asked again tells where it is now), `failed` when the home could not,
+ * `superseded` when a later change to the schedule replaced it first.
  */
 export type AppScheduleReceipt = { name: string; operationId: string; op: AppScheduleOperation; at: string } & (
-  | { status: 'applied'; scheduleId: string; revision: string | null }
+  | { status: 'applied' | 'pending' | 'failed' | 'superseded'; scheduleId: string; revision: string | null }
   | { status: 'conflict'; scheduleId: string; revision: string }
   | { status: 'missing'; scheduleId: string }
 );

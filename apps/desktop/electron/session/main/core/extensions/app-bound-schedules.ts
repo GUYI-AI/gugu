@@ -22,6 +22,18 @@ import {
 } from '@main/core/automations/app-agent-schedules';
 import { currentAccountAccessToken } from './account-token';
 import { extensionsRoot, extensionsService } from './extensions-root';
+import {
+  commitPanelRequest,
+  listPanelSchedules,
+  panelAs,
+  panelSchedulesPrint,
+  personalAssistantOf,
+  planPanelChange,
+  type PanelHome,
+  type PanelOutcome,
+  type PanelRequest,
+} from './app-bound-schedules-panel';
+import { onAssistantPanelChanged } from './assistant-panel-changes';
 
 /**
  * #1928 (API 43) The schedules of the agent an App's binding is with: `gugu.bindings.schedules` / `onSchedulesChanged`
@@ -32,6 +44,10 @@ import { extensionsRoot, extensionsService } from './extensions-root';
  * owns, read as the person. The App never names an owner, agent, session or chat. All of it is checked again after every
  * wait, and once more when a change has been made: an account switch, a withdrawal, a disable, an uninstall or another
  * selection in between and the answer is `denied`.
+ *
+ * Where the agent lives decides the path, as for the built-in 已安排 panel: on this computer, its schedule store directly;
+ * the person's assistant living on another computer or in the cloud, its panel (app-bound-schedules-panel.ts), whose
+ * changes its home applies — a receipt says `pending` until it has; any other agent elsewhere, `elsewhere`.
  *
  * Lifecycle is the host's, not the page's: closing or evicting a page stops only what it was told; disabling or
  * uninstalling the App takes its authority and leaves every schedule as it is (whether that should also pause them is a
@@ -89,10 +105,12 @@ async function agentSessionHere(ownerId: string, agentId: string): Promise<strin
   return [...found][0] ?? null;
 }
 
+type Reached = { scope: string; ownerId: string; token: string; agentId: string; recheck(): Promise<void> };
 type Bound =
   | { state: 'unbound' }
   | { state: 'elsewhere' }
-  | { state: 'ready'; scope: string; home: AgentScheduleHome; recheck(): Promise<void> };
+  | (Reached & { state: 'ready'; home: AgentScheduleHome })
+  | (Reached & { state: 'remote'; panel: PanelHome });
 
 async function boundAgent(extensionId: string, name: string, action: 'schedules' | 'schedules:control'): Promise<Bound> {
   const { token, ownerId } = await account();
@@ -102,16 +120,23 @@ async function boundAgent(extensionId: string, name: string, action: 'schedules'
     await current(ownerId);
     if (extensionsService().conversationBinding(ownerId, extensionId, name, action)?.handle !== before.handle) throw denied('Conversation binding changed');
   };
+  const reached = (agentId: string): Reached => {
+    const identity = extensionsService().identityOf(extensionId);
+    if (!identity) throw denied('The installed App has no verified publisher');
+    return { scope: `${ownerId}/${appKey(identity)}`, ownerId, token, agentId, recheck };
+  };
   const agentId = await ownAgentOf(token, ownerId, before.chatId);
   await recheck();
   const sessionId = await agentSessionHere(ownerId, agentId);
   await recheck();
   const home = sessionId ? await agentScheduleHome(sessionId) : null;
   await recheck();
-  if (!home) return { state: 'elsewhere' };
-  const identity = extensionsService().identityOf(extensionId);
-  if (!identity) throw denied('The installed App has no verified publisher');
-  return { state: 'ready', scope: `${ownerId}/${appKey(identity)}`, home, recheck };
+  if (home) return { ...reached(agentId), state: 'ready', home };
+  // Not here: only the person's assistant has a panel another computer reads and changes, as the built-in list does.
+  const assistant = await personalAssistantOf(token, ownerId);
+  await recheck();
+  if (assistant?.agentId !== agentId) return { state: 'elsewhere' };
+  return { ...reached(agentId), state: 'remote', panel: { ownerId, assistantId: agentId, deviceId: assistant.deviceId, cloud: panelAs(token, ownerId) } };
 }
 
 function nameOf(input: unknown): string {
@@ -120,16 +145,16 @@ function nameOf(input: unknown): string {
   return parsed.data.name;
 }
 
-/** `gugu.bindings.schedules(name)`: the bound agent's schedules here, or why there are none to show. */
+/** `gugu.bindings.schedules(name)`: the bound agent's schedules, or why there are none to show. */
 export async function appBoundSchedules(extensionId: string, input: unknown): Promise<AppBoundSchedules> {
   const name = nameOf(input);
   const bound = await boundAgent(extensionId, name, 'schedules').catch((error: unknown) => {
     if (codeOf(error) === 'failed') return { state: 'unavailable' as const };
     throw error;
   });
-  if (bound.state !== 'ready') return { name, state: bound.state };
+  if (bound.state !== 'ready' && bound.state !== 'remote') return { name, state: bound.state };
   try {
-    const schedules = await listAppSchedules(bound.home);
+    const schedules = bound.state === 'ready' ? await listAppSchedules(bound.home) : await listPanelSchedules(bound.panel, bound.recheck);
     await bound.recheck();
     return { name, state: 'ready', schedules };
   } catch (error) {
@@ -141,16 +166,22 @@ export async function appBoundSchedules(extensionId: string, input: unknown): Pr
 
 /*
  * The record of each operation id (`.app-schedule-receipts.json` beside the installed Apps, by account and installed App):
- * `pending` from just before its effect, `receipt` once answered. Bounded per App; an id older than the last
+ * `pending` from just before its effect, `receipt` once answered, and — for a change sent to the assistant's panel — the
+ * exact request sent (`panel`), sent again unchanged to learn where it is. Bounded per App; an id older than the last
  * KEPT_PER_APP is forgotten.
  */
 const RECEIPTS_FILE = '.app-schedule-receipts.json';
 const KEPT_PER_APP = 500;
+const RECEIPT_STATUSES = ['applied', 'conflict', 'missing', 'pending', 'failed', 'superseded'] as const;
+/** Where an answer can no longer move: anything else is asked of the panel again. */
+const SETTLED = new Set<string>(['applied', 'conflict', 'missing', 'superseded']);
 const keptSchema = z.object({
   digest: z.string(),
   at: z.number(),
   pending: z.object({ trigger: triggerConfigSchema.optional() }).optional(),
-  receipt: z.object({ operationId: z.string(), op: z.enum(SCHEDULE_OPERATIONS), at: z.string(), status: z.enum(['applied', 'conflict', 'missing']), scheduleId: z.string(),
+  panel: z.object({ assistantId: z.string(), operationId: z.string(), key: z.string(), expectedRevision: z.string(),
+    operation: z.enum(['enable', 'disable', 'remove']), deviceId: z.string() }).optional(),
+  receipt: z.object({ operationId: z.string(), op: z.enum(SCHEDULE_OPERATIONS), at: z.string(), status: z.enum(RECEIPT_STATUSES), scheduleId: z.string(),
     revision: z.string().nullable().optional() }).optional(),
 });
 type Kept = z.infer<typeof keptSchema>;
@@ -199,8 +230,9 @@ function digestOf(change: AppScheduleControl): string {
 
 /**
  * `gugu.bindings.controlSchedule(name, { operationId, op, … })`: one change to the bound agent's schedules, by the host's
- * own schedule store, answered with its receipt. The same operation id again is answered from the record — never a
- * second change; another change under it is `invalid`.
+ * own schedule store or — for the assistant living elsewhere — its panel, answered with its receipt. The same operation id
+ * again is answered from the record — never a second change; another change under it is `invalid`. A panel change not yet
+ * settled is asked of the panel again: `pending` until the assistant's home applies it.
  */
 export async function appBoundScheduleControl(extensionId: string, input: unknown): Promise<AppScheduleReceipt> {
   const parsed = scheduleControlSchema.safeParse(input);
@@ -211,21 +243,42 @@ export async function appBoundScheduleControl(extensionId: string, input: unknow
   const bound = await boundAgent(extensionId, change.name, 'schedules:control');
   if (bound.state === 'unbound') throw coded('not-found', `No conversation is chosen for "${change.name}" yet: the person chooses it in the App's permissions`);
   if (bound.state === 'elsewhere') throw coded('elsewhere', ELSEWHERE);
-  const { scope, home, recheck } = bound;
+  const { scope, recheck } = bound;
   const digest = digestOf(change);
-  const answer = async (outcome: ScheduleOutcome): Promise<AppScheduleReceipt> => {
-    const receipt = { operationId: change.operationId, op: change.op, at: new Date().toISOString(), ...outcome };
-    keep(scope, change.operationId, { digest, at: Date.now(), receipt });
+  const scheduleId = 'scheduleId' in change ? change.scheduleId : '';
+  const answer = async (outcome: ScheduleOutcome | PanelOutcome, panel?: PanelRequest, at = new Date().toISOString()): Promise<AppScheduleReceipt> => {
+    const receipt = { operationId: change.operationId, op: change.op, at, ...outcome };
+    keep(scope, change.operationId, { digest, at: Date.now(), receipt, ...(panel ? { panel } : {}) });
     await recheck();
     return { name: change.name, ...receipt } as AppScheduleReceipt;
+  };
+  /** A change already sent to the assistant's panel: the request again, unchanged — the panel answers where it is. */
+  const fromPanel = async (kept: Kept & { panel: PanelRequest }): Promise<AppScheduleReceipt> => {
+    if (kept.panel.assistantId !== bound.agentId) throw denied(NOT_OWN_AGENT);
+    const panel: PanelHome = bound.state === 'remote' ? bound.panel
+      : { ownerId: bound.ownerId, assistantId: kept.panel.assistantId, deviceId: kept.panel.deviceId, cloud: panelAs(bound.token, bound.ownerId) };
+    const outcome = await commitPanelRequest(panel, kept.panel, scheduleId, recheck);
+    // Its record at the panel is gone (kept 30 days once settled): the last answer stands.
+    if (kept.receipt && (outcome.status === 'conflict' || outcome.status === 'missing')) return { name: change.name, ...kept.receipt } as AppScheduleReceipt;
+    return answer(outcome, kept.panel, kept.receipt?.at);
   };
   return serial(scope, async () => {
     const kept = keptFor(scope, change.operationId);
     if (kept && kept.digest !== digest) throw coded('invalid', 'This operationId was already used for another change: use a new one');
-    if (kept?.receipt) {
+    if (kept?.receipt && SETTLED.has(kept.receipt.status)) {
       await recheck();
       return { name: change.name, ...kept.receipt } as AppScheduleReceipt;
     }
+    if (kept?.panel) return fromPanel(kept as Kept & { panel: PanelRequest });
+    if (bound.state === 'remote') {
+      if (kept?.pending) throw coded('elsewhere', 'This change was begun while the assistant lived on this computer: ask again once it does, or read the schedules and decide anew');
+      const plan = await planPanelChange(bound.panel, change, recheck);
+      await recheck();
+      if ('outcome' in plan) return answer(plan.outcome);
+      keep(scope, change.operationId, { digest, at: Date.now(), panel: plan.request });
+      return answer(await commitPanelRequest(bound.panel, plan.request, scheduleId, recheck), plan.request);
+    }
+    const { home } = bound;
     await applySavedScheduleChanges(home.sessionId);
     await recheck();
     if (kept?.pending) {
@@ -246,7 +299,9 @@ export const SCHEDULES_HEARD_AFTER_MS = 50;
 
 /**
  * `gugu.bindings.onSchedulesChanged(name, fn)`'s host half: `hear` whenever the bound agent's schedules change, while the
- * App's authority stands. Checked before each word; once it is gone the watch stops itself (`ended`) and says nothing.
+ * App's authority stands — here, from the schedule store's own events; for the assistant living elsewhere, from the
+ * panel's change word, heard only when its schedules or their outstanding changes differ from before. Checked before each
+ * word; once the authority is gone the watch stops itself (`ended`) and says nothing.
  */
 export async function watchBoundSchedules(extensionId: string, input: unknown, hear: () => void, ended: () => void): Promise<() => void> {
   const name = nameOf(input);
@@ -256,19 +311,41 @@ export async function watchBoundSchedules(extensionId: string, input: unknown, h
   let stopped = false;
   let queued = false;
   let off = () => {};
+  let checks: Promise<unknown> = Promise.resolve();
   const stop = () => {
     if (stopped) return;
     stopped = true;
     off();
     ended();
   };
-  off = watchAgentSchedules(bound.home.sessionId, () => {
+  let differs = async () => true;
+  if (bound.state === 'remote') {
+    // An unreadable panel is one word (the page reads again and is told `unavailable`), not one per change word.
+    const print = () => panelSchedulesPrint(bound.panel).catch(() => null);
+    let last = await print();
+    await bound.recheck();
+    differs = async () => {
+      const now = await print();
+      if (now === last) return false;
+      last = now;
+      return true;
+    };
+  }
+  const changed = () => {
     if (stopped || queued) return;
     queued = true;
     setTimeout(() => {
       queued = false;
-      if (!stopped) void bound.recheck().then(() => { if (!stopped) hear(); }, stop);
+      if (stopped) return;
+      checks = checks.then(async () => {
+        if (stopped) return;
+        await bound.recheck();
+        const heard = await differs();
+        await bound.recheck();
+        if (heard && !stopped) hear();
+      }).catch(stop);
     }, SCHEDULES_HEARD_AFTER_MS);
-  });
+  };
+  off = bound.state === 'ready' ? watchAgentSchedules(bound.home.sessionId, changed) : onAssistantPanelChanged(bound.ownerId, bound.agentId, changed);
   return stop;
 }
