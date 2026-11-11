@@ -35,6 +35,8 @@ import { useLibraryHost } from '@renderer/features/library/library-host'
 import { forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog'
 import { harnessModelCredentialKey } from '@renderer/lib/stores/use-harness-model-credential'
 import { resolveSignInMethod } from '../agents-page/agent-account'
+import { dropIfNeverSignedIn } from './drop-unsigned-connection'
+import { rendererLogger } from '@/lib/log'
 import type { SubscriptionUsageWindow } from '@gugu/session-core/agents/plugins'
 import {
   ConnectionActionError,
@@ -217,7 +219,18 @@ export function SubscriptionConnections({
           }
     )
   }, [failure, tone, refusedId, closeAndSwitch, closing, progress, onError])
-  const signIn = (connectionId: string) => {
+  /** 刚加的账号连接窗口关了还没登上:这条没有用处,拿掉(见 `dropIfNeverSignedIn`)。失败只记日志 —— 留下一条就是原来的样子。 */
+  const dropIfUnsigned = async (connectionId: string) => {
+    try {
+      const client = await getAgentConfigRuntimeClient(machine)
+      await dropIfNeverSignedIn(client, { providerId: agent.id, connectionId })
+    } catch (error) {
+      rendererLogger('settings/subscriptions').warn({ error, providerId: agent.id }, 'unsigned connection not removed')
+    } finally {
+      refresh()
+    }
+  }
+  const signIn = (connectionId: string, fresh = false) => {
     if (!method || !canSignIn) return
     setOpen(false)
     const finished = () => action.mutate({ kind: 'refresh', id: connectionId })
@@ -237,7 +250,7 @@ export function SubscriptionConnections({
           }
         : {}),
       onSuccess: finished,
-      onClose: finished
+      onClose: fresh ? () => void dropIfUnsigned(connectionId) : finished
     })
   }
   // 正在用的连接登不上了(失效 / 没登录):「登录」直接摆在外面,❌ 藏进「切换连接 → ⋯」两层菜单里。
@@ -300,7 +313,7 @@ export function SubscriptionConnections({
                   onCreated={(connection) => {
                     refresh()
                     setAdding(false)
-                    if (connection.kind === 'account') signIn(connection.id)
+                    if (connection.kind === 'account') signIn(connection.id, true)
                     else setOpen(true)
                   }}
                 />
@@ -416,7 +429,7 @@ export function SubscriptionConnections({
               onCreated={(connection) => {
                 refresh()
                 setAdding(false)
-                if (connection.kind === 'account') signIn(connection.id)
+                if (connection.kind === 'account') signIn(connection.id, true)
                 else setOpen(true)
               }}
             />

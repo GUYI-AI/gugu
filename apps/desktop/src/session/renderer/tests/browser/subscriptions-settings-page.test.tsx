@@ -75,6 +75,7 @@ const control = vi.hoisted(() => ({
   membershipError: false,
   held: 0,
   created: null as Record<string, unknown> | null,
+  removed: [] as string[],
   selected: '',
   connections: [] as HarnessConnection[],
   codex: false,
@@ -123,10 +124,18 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
     refreshAuthStatus: async () => ({ success: true, data: control.signedOut ? { kind: 'unauthenticated', ...(control.expired ? { reason: 'expired' } : {}) } : { kind: 'authenticated', account: 'me@example.test' } }),
     createConnection: async (input: Record<string, unknown>) => {
       control.created = input;
-      const connection: HarnessConnection = { id: 'api-1', kind: 'api-key', name: 'Saved API', endpoint: input.endpoint as string | undefined,
-        ...(input.model ? { model: input.model as string } : {}), current: false };
+      const connection: HarnessConnection = input.kind === 'account'
+        ? { id: 'account-1', kind: 'account', name: 'Claude 1', current: false }
+        : { id: 'api-1', kind: 'api-key', name: 'Saved API', endpoint: input.endpoint as string | undefined,
+          ...(input.model ? { model: input.model as string } : {}), current: false };
       connectionsOf(input.providerId as string).push(connection);
       return { success: true, data: connection };
+    },
+    removeConnection: async ({ providerId, connectionId }: { providerId?: string; connectionId: string }) => {
+      control.removed.push(connectionId);
+      const list = connectionsOf(providerId);
+      list.splice(list.findIndex(c => c.id === connectionId), 1);
+      return { success: true };
     },
     selectConnection: async ({ providerId, connectionId, stopBusySessions }: { providerId?: string; connectionId: string; stopBusySessions?: boolean }) => {
       control.stopBusySessions.push(stopBusySessions === true);
@@ -177,6 +186,7 @@ beforeEach(() => {
   control.membershipError = false;
   control.held = 0;
   control.created = null;
+  control.removed = [];
   control.selected = '';
   control.codex = false;
   control.others = false;
@@ -293,6 +303,29 @@ it.each(['claude', 'codex'])('an unsigned native %s connection can be added in p
   expect(layer.querySelector('[role="dialog"]')?.textContent).toContain(`Add a ${provider === 'codex' ? 'Codex' : 'Claude Code'} connection`);
   expect(layer.querySelector('form')?.closest('[aria-hidden="true"], [inert]')).toBeNull();
   expect(control.created).toBeNull();
+  expect(thrown).toEqual([]);
+});
+
+// owner 2026-11-12 选 A:「添加连接 → 账号」没登成功(失败或取消)就把这条新连接拿掉;窗口关时已经登上的留着。
+it.each([
+  ['still signed out', true, ['account-1']],
+  ['already signed in', false, []],
+])('a new account connection whose sign-in window closes %s is removed only when it never signed in', async (_label, signedOut, removed) => {
+  control.signedOut = true;
+  root.render(<SessionSettingsContent section="subscriptions" portalContainer={layer} />);
+  await until('the Claude row has its connection action', () => !!host.querySelector('[data-testid="subscription-switch-claude"]'));
+  (host.querySelector('[data-testid="subscription-switch-claude"]') as HTMLButtonElement).click();
+  await until('the add action is offered', () => !!layer.querySelector('[data-testid="subscription-add-connection"]'));
+  await userEvent.click(page.getByTestId('subscription-add-connection'));
+  await until('the account form opens', () => !!layer.querySelector('.subscription-connection-form button[type="submit"]'));
+  (layer.querySelector('.subscription-connection-form button[type="submit"]') as HTMLButtonElement).click();
+  await until('the sign-in window opens for the new connection', () => modalStore.activeModalId === 'agentSignInModal');
+  expect(control.created).toMatchObject({ providerId: 'claude', kind: 'account' });
+  expect(modalStore.activeModalArgs).toMatchObject({ providerId: 'claude', connectionId: 'account-1' });
+  control.signedOut = signedOut;
+  (modalStore.activeModalArgs as { onClose: () => void }).onClose();
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  expect(control.removed).toEqual(removed);
   expect(thrown).toEqual([]);
 });
 
