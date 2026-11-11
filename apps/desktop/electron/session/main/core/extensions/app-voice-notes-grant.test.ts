@@ -41,7 +41,7 @@ function fixture(value: object = manifest()) {
 const refused = { code: 'denied' };
 
 describe('declaring the recorder (manifest)', () => {
-  it('needs API 47, the action with its capability, the binding itself, and a desktop-only App', () => {
+  it('needs API 47, the action with its capability and the binding itself; on a phone API 49, where it answers unsupported', () => {
     expect(EXTENSION_API_VERSION).toBeGreaterThanOrEqual(47);
     expect(() => parseExtensionManifest(manifest())).not.toThrow();
     expect(() => parseExtensionManifest(manifest({ actions: ['unread', 'resources', 'voice-notes:record'], capabilities: ['chat:unread', 'chat:resources', 'chat:voice-notes:record'] })))
@@ -50,9 +50,11 @@ describe('declaring the recorder (manifest)', () => {
     expect(() => parseExtensionManifest(manifest({ capabilities: ['chat:unread'] }))).toThrow(/chat:voice-notes:record/);
     expect(() => parseExtensionManifest(manifest({ actions: ['unread'], capabilities: ['chat:unread', 'chat:voice-notes:record'] }))).toThrow(/chat:voice-notes:record/);
     expect(() => parseExtensionManifest(manifest({ actions: ['voice-notes:record'], capabilities: ['chat:voice-notes:record'] }))).toThrow();
-    expect(() => parseExtensionManifest(manifest({ platforms: ['desktop', 'phone'] }))).toThrow(/desktop-only/);
-    // Its own row, not only the binding's: a phone has no host recorder to drive.
-    expect(appPlatformProblems(manifest({ platforms: ['desktop', 'phone'] }))).toContain('platforms: phone does not support chat:voice-notes:record');
+    // A phone takes the binding from 49 (phone-binding.ts); there the recorder's verbs answer `unsupported` (its own 聊天
+    // records), so the capability does not keep the assistant App off the phone.
+    expect(() => parseExtensionManifest(manifest({ platforms: ['desktop', 'phone'], apiVersion: 48 }))).toThrow(/on a phone requires apiVersion 49/);
+    expect(() => parseExtensionManifest(manifest({ platforms: ['desktop', 'phone'], apiVersion: 49 }))).not.toThrow();
+    expect(appPlatformProblems(manifest({ platforms: ['desktop', 'phone'], apiVersion: 49 }))).toEqual([]);
   });
 
   it('adding it in an update is a permission asked for', () => {
