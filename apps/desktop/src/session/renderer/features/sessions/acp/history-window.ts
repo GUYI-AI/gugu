@@ -23,7 +23,8 @@ const NEWER_STEP_TURNS = 80;
 export class HistoryWindow {
   readonly state: ChatState;
   private olderCursor: number | null = null;
-  private reading: Promise<unknown> | null = null;
+  /** The read in flight each way. The two ways do not wait on each other: one extends the top, the other the bottom. */
+  private readonly reading: { older: Promise<unknown> | null; newer: Promise<unknown> | null } = { older: null, newer: null };
   private closed = false;
 
   private constructor(context: ChatContext, uri: string, private readonly read: ReadStoredPage, private readonly newestStored: () => number) {
@@ -41,6 +42,10 @@ export class HistoryWindow {
     if (!page || !holds(page)) { window.dispose(); return null; }
     window.olderCursor = page.nextCursor;
     window.state.transcript.history.seed(page.turns);
+    // The turns below are read at once, not when the reader reaches the window's end: a first page that does not fill
+    // the viewport (one large turn is a page of its own over a device link) cannot be scrolled, so the end would
+    // never be reached and the window would stay at that one turn.
+    void window.loadNewer();
     return window;
   }
 
@@ -51,7 +56,7 @@ export class HistoryWindow {
 
   /** The page above the window, for the list to prepend (`view.loadOlder`, which also holds the reader's row). */
   loadOlder(): Promise<TranscriptTurn[]> {
-    return this.once(async () => {
+    return this.once('older', async () => {
       if (this.olderCursor === null) return [];
       const page = await this.read(this.olderCursor);
       if (!page || this.closed) return [];
@@ -66,7 +71,7 @@ export class HistoryWindow {
    * never shows a history with a hole in it.
    */
   loadNewer(): Promise<TranscriptTurn[]> {
-    return this.once(async () => {
+    return this.once('newer', async () => {
       const newest = this.turns.at(-1)?.seq;
       if (newest === undefined || !this.hasNewer) return [];
       let cursor: number | null = Math.min(newest + 1 + NEWER_STEP_TURNS, this.newestStored() + 1);
@@ -78,6 +83,7 @@ export class HistoryWindow {
         if (!page.turns.length || page.turns[0]!.seq <= newest + 1) break;
         cursor = page.nextCursor;
       }
+      // Appended to what the window holds now: the page above may have been prepended while these were read.
       if (found.length) this.state.transcript.history.append(found);
       return found;
     }, []);
@@ -89,11 +95,16 @@ export class HistoryWindow {
     this.state.dispose();
   }
 
-  /** One read at a time: the list asks again while a page is on its way. */
-  private once<T>(run: () => Promise<T>, busy: T): Promise<T> {
-    if (this.reading || this.closed) return Promise.resolve(busy);
-    const reading = run().finally(() => { if (this.reading === reading) this.reading = null; });
-    this.reading = reading;
+  /** One read at a time each way: the list asks again while a page is on its way. */
+  private once<T>(way: 'older' | 'newer', run: () => Promise<T>, busy: T): Promise<T> {
+    if (this.reading[way] || this.closed) return Promise.resolve(busy);
+    const reading = run().finally(() => { if (this.reading[way] === reading) this.reading[way] = null; });
+    this.reading[way] = reading;
     return reading;
+  }
+
+  /** Settles when no read is in flight (tests, and a caller that needs the window whole before acting on it). */
+  async settled(): Promise<void> {
+    while (this.reading.older || this.reading.newer) await Promise.allSettled([this.reading.older, this.reading.newer]);
   }
 }
