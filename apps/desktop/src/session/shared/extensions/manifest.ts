@@ -5,7 +5,7 @@ import { networkHostAllowed } from './network-host';
 import { APP_PLATFORMS } from './app-platforms';
 import { claimTakes } from './file-openers';
 import { INSTRUCTIONS_MAX_CHARS, SUBTITLE_MAX_CHARS } from './app-listing';
-import { BINDING_ACTION_API_VERSION, BINDING_ACTION_CAPABILITY, BINDING_NAME, CONVERSATION_BINDING_ACTIONS, CONVERSATION_SURFACE_PLACEMENTS } from './unread-binding';
+import { BINDING_ACTION_API_VERSION, BINDING_ACTION_CAPABILITY, BINDING_NAME, CONVERSATION_BINDING_ACTIONS, CONVERSATION_SURFACE_HEADER_API_VERSION, CONVERSATION_SURFACE_HEADERS, CONVERSATION_SURFACE_PLACEMENTS } from './unread-binding';
 import { RESOURCE_BINDING_ACTIONS, resourceDomainProblem } from './agent-resources';
 
 /**
@@ -648,7 +648,7 @@ export const extensionManifestSchema = z
        * streaming, voice, attachments, read state): the conversation is the main column, the page the collapsible panel on
        * its right. Needs the binding's `surface` action and `chat:surface`; unbound or not granted, the page opens alone.
        */
-      conversationSurface: z.strictObject({ binding: z.string().regex(BINDING_NAME), placement: z.enum(CONVERSATION_SURFACE_PLACEMENTS) }).optional(),
+      conversationSurface: z.strictObject({ binding: z.string().regex(BINDING_NAME), placement: z.enum(CONVERSATION_SURFACE_PLACEMENTS), header: z.enum(CONVERSATION_SURFACE_HEADERS).optional() }).optional(),
       mcpServers: z.array(mcpServerContributionSchema).min(1).max(4).optional(),
       /**
        * Bundle-relative folder of Agent Skills (`<skill>/SKILL.md`), handed to every agent
@@ -798,6 +798,10 @@ export const extensionManifestSchema = z
     }
     if (Boolean(surface) !== (unreadBinding?.actions.includes('surface') ?? false)) {
       ctx.addIssue({ code: 'custom', path: ['contributes', 'conversationSurface'], message: 'contributes.conversationSurface requires the conversation binding\'s "surface" action, and the action requires conversationSurface' });
+    }
+    // #1925 (46) The host's own row above the conversation: an App of 46 or later.
+    if (surface?.header && manifest.apiVersion < CONVERSATION_SURFACE_HEADER_API_VERSION) {
+      ctx.addIssue({ code: 'custom', path: ['contributes', 'conversationSurface', 'header'], message: `contributes.conversationSurface.header requires apiVersion ${CONVERSATION_SURFACE_HEADER_API_VERSION}` });
     }
     // #1927 (42): an agent's resources, as `files` is (the action and its capability, and the API, are the loop above's):
     // each action names the domains it wants from the closed list; a writer writes only domains it also reads.

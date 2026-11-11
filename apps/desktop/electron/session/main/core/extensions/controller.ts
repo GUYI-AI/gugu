@@ -826,11 +826,13 @@ export const extensionsController = createRPCController({
   },
 
   /** #1925 What that window draws now (null: not the conversation): the App's pages hear `gugu.bindings.onSurface`. */
-  reportConversationSurface: async (args: { extensionId: string; tabKind: string; tabId: string; shown: { chatId: string; collapsed: boolean } | null }) => {
+  reportConversationSurface: async (args: { extensionId: string; tabKind: string; tabId: string; shown: { chatId: string; collapsed: boolean } | null; intent?: 'profile' }) => {
     try {
       const { reportConversationSurface } = await import('./app-unread-bindings');
-      if (reportConversationSurface(args)) {
-        void pushBindingSurfaces(args.extensionId).catch((error: unknown) => log.warn('App conversation surface could not be told to its pages:', error));
+      // 46 `intent`: the person's click in the host's row above the conversation — told once, whatever else changed.
+      if (reportConversationSurface(args) || args.intent) {
+        void pushBindingSurfaces(args.extensionId, args.intent ? { kind: args.intent } : undefined)
+          .catch((error: unknown) => log.warn('App conversation surface could not be told to its pages:', error));
       }
       return { success: true as const };
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
@@ -850,12 +852,17 @@ export const extensionsController = createRPCController({
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },
 
-  /** #1925 (46) Which task's conversation the window draws in an App's panel now (null: none): its pages hear `open`. */
-  reportWorkChat: async (args: { extensionId: string; ownerId: string | null; open: { workId: string; sessionId: string } | null }) => {
+  /**
+   * #1925 (44, 46) What that window draws over an App's panel now (app-host-layer.ts; null: nothing): its pages hear
+   * `hostPage` (`onAssistantChanged`), `panel.hostPage` (`onSurface`) and, reading work, which row is open (`onWorkChanged`).
+   */
+  reportHostLayer: async (args: { extensionId: string; layer: import('@shared/extensions/app-host-layer').AppHostLayer | null }) => {
     try {
-      const { reportWorkChat } = await import('./app-work-binding');
-      if (reportWorkChat(args)) {
-        void pushBindingWork(args.extensionId).catch((error: unknown) => log.warn('The open task could not be told to an App\'s pages:', error));
+      // One record for every host page over an App's panel (app-host-layers.ts): a task (46) or a panel page (44).
+      const [{ appHostLayerChanged }, { deliverToPersonPages }] = await Promise.all([import('./app-assistant-binding'), import('./extension-bridge')]);
+      if (await appHostLayerChanged(args, deliverToPersonPages)) {
+        void pushBindingWork(args.extensionId).catch((error: unknown) => log.warn('The work list could not be told to an App\'s pages:', error));
+        void pushBindingSurfaces(args.extensionId).catch((error: unknown) => log.warn('App conversation surface could not be told to its pages:', error));
       }
       return { success: true as const };
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
@@ -891,18 +898,6 @@ export const extensionsController = createRPCController({
       return { success: true as const };
     } catch (error) {
       log.warn('Failed to take the assistant counts for Apps:', error);
-      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
-    }
-  },
-
-  /** #1925 (44) The host layer over an App's panel opened or closed (`app-host-layer.tsx`): that App hears `hostPage`. */
-  appHostLayerChanged: async (args: { extensionId: string; layer: unknown }) => {
-    try {
-      const [{ appHostLayerChanged }, { deliverToPersonPages }] = await Promise.all([import('./app-assistant-binding'), import('./extension-bridge')]);
-      await appHostLayerChanged(args, deliverToPersonPages);
-      return { success: true as const };
-    } catch (error) {
-      log.warn('Failed to take the host layer of an App:', error);
       return { success: false as const, error: error instanceof Error ? error.message : String(error) };
     }
   },

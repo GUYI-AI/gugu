@@ -117,6 +117,8 @@
   padding: 0;
   cursor: pointer;
 }
+/* 还认不出它时(正在读 / 读不到 / 还没有 / 正在准备):同一枚胶囊写一句状态,不能点。 */
+.ta-identity[role='status'] { cursor: default; }
 .ta-identity-name {
   margin-top: -8px;
   max-width: 220px;

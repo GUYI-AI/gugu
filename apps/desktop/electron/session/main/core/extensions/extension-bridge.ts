@@ -1,5 +1,6 @@
 import type { ExtensionFileChangeBatch } from '@shared/extensions/bridge-protocol';
 import { chatForCapabilities } from '@shared/extensions/bridge-protocol';
+import type { AppSurfaceIntent } from '@shared/extensions/unread-binding';
 import { appStateOf } from '@shared/extensions/app-state';
 import { sameWidgetIdentity, widgetContext } from '@shared/extensions/widget-context';
 import { groupFileLink } from '@gugu/core/shared/ui/guguLink';
@@ -1517,19 +1518,22 @@ export function pushContext(webContentsId: number): void {
 
 /**
  * #1925 Each page of this App the person works is told what `gugu.bindings.surface` answers it now — after the window's
- * report of what it draws beside the App's main page changed. A page elsewhere hears `unbound`.
+ * report of what it draws beside the App's main page, or over its panel (46), changed. A page elsewhere hears `unbound`.
+ * 46: with `intent`, the person's click in the host's row is told once, with that answer, to the page drawn beside the
+ * conversation — only while the row may be drawn (`surfaceIntentHolds`); otherwise the pages hear the answer alone.
  */
-export async function pushBindingSurfaces(extensionId: string): Promise<void> {
-  const { appBindingSurface, conversationSurfaceBinding } = await import('./app-unread-bindings');
+export async function pushBindingSurfaces(extensionId: string, intent?: AppSurfaceIntent): Promise<void> {
+  const { appBindingSurface, conversationSurfaceBinding, surfaceIntentHolds, withIntent } = await import('./app-unread-bindings');
   // Uninstalled meanwhile: its pages are gone with it.
   if (!extensionsService().isInstalled(extensionId)) return;
   const name = conversationSurfaceBinding(extensionsService().get(extensionId).manifest);
   if (!name) return;
+  const told = intent && await surfaceIntentHolds(extensionId) ? intent : undefined;
   for (const [webContentsId, binding] of [...bindings]) {
     if (binding.extensionId !== extensionId || binding.operator.kind !== 'person') continue;
     const surface = await appBindingSurface(extensionId, binding, { name }).catch(() => ({ name, state: 'unbound' as const }));
     const contents = webContents.fromId(webContentsId);
-    if (bindings.get(webContentsId) === binding && contents && !contents.isDestroyed()) sendEvent(contents, { type: 'bindingSurface', surface });
+    if (bindings.get(webContentsId) === binding && contents && !contents.isDestroyed()) sendEvent(contents, { type: 'bindingSurface', surface: withIntent(surface, told) });
   }
 }
 

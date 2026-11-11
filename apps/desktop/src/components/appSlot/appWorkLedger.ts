@@ -1,9 +1,8 @@
 // #1925 (API 46) The shell's half of the assistant's work list for Apps, apart from what it draws (AppWorkLedgerHost.tsx):
-// which Apps read it, what of each built-in row goes to main, and the pushes and reports to main.
+// which Apps read it, what of each built-in row goes to main, and the pushes to main.
 import { agentNamingUntil } from '@gugu/core/shared/agentDefaultName'
 import { AGENT_STATUSES, AGENT_STATUS_DETAILS } from '@gugu/core/shared/agentStatus'
 import type { AssistantPanelTask, AssistantWorkTasksRead } from '../assistant/assistant-panel-tasks'
-import type { AppWorkChats } from '../../lib/appWorkChatBridge'
 import { rendererLogger } from '../../lib/log'
 import { rpc } from '@/session/renderer/lib/ipc'
 import type { ExtensionManifest } from '@/session/shared/extensions/manifest'
@@ -70,24 +69,7 @@ export function pushLedger(ledger: PushedWorkLedger): void {
   void Promise.resolve().then(() => rpc.extensions.workLedgerChanged(ledger)).then((result) => { if (!result.success) forget(result.error) }, forget)
 }
 
-/** Main hears which task each App's panel shows, for its pages (`open`); each change once. */
-const reported = new Map<string, string>()
-export function reportChats(chats: AppWorkChats): void {
-  for (const extensionId of new Set([...reported.keys(), ...Object.keys(chats)])) {
-    const chat = chats[extensionId]
-    const open = chat ? { workId: chat.request.workId, sessionId: chat.request.task.sessionId } : null
-    const key = JSON.stringify([chat?.ownerId ?? null, open])
-    if ((reported.get(extensionId) ?? JSON.stringify([null, null])) === key) continue
-    if (chat) reported.set(extensionId, key)
-    else reported.delete(extensionId)
-    void Promise.resolve().then(() => rpc.extensions.reportWorkChat({ extensionId, ownerId: chat?.ownerId ?? null, open })).then((result) => {
-      if (!result.success) log.warn({ error: result.error }, 'The task shown in an App\'s panel could not be reported')
-    }, (error: unknown) => log.warn({ error }, 'The task shown in an App\'s panel could not be reported'))
-  }
-}
-
-/** Tests only: a window that has pushed and reported nothing yet. */
+/** Tests only: a window that has pushed nothing yet. */
 export function forgetPushedWorkForTest(): void {
   lastPushed = JSON.stringify(NO_LEDGER)
-  reported.clear()
 }

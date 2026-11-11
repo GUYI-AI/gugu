@@ -16,15 +16,15 @@ const state = vi.hoisted(() => ({ pages: [] as Record<string, unknown>[], report
 vi.mock('@renderer/features/extensions/extension-shared-slot', () => ({
   ExtensionSharedSlot: (props: Record<string, unknown>) => { state.pages.push(props); return <div data-testid="app-page" />; },
 }));
-// #1925 (44) The page stands in its host layer frame (app-host-layer, tested in appHostLayer1925): with no layer open,
-// that is the page's shared slot.
-vi.mock('./app-host-layer', () => ({
-  AppHostLayerFrame: ({ tabKind }: { tabKind: string }) => { state.pages.push({ tabKind, tabId: 'dock' }); return <div data-testid="app-page" />; },
-}));
 vi.mock('@renderer/features/global-search/search-session', () => ({ searchInChat: (chatId: string) => state.searched.push(chatId) }));
 vi.mock('@renderer/lib/ipc', () => ({ rpc: { extensions: { reportConversationSurface: async (args: unknown) => { state.reports.push(args); return { success: true }; } } } }));
 vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { navigation: { navigate: vi.fn() } } }));
 
+// The panel's own pages and their reads (app-host-layer.tsx): not this test's; their modules read the cloud on import.
+vi.mock('@renderer/features/assistant/assistant-data', () => ({ useAssistantMachine: () => ({ data: undefined }) }));
+vi.mock('@/components/assistant/AssistantProjectsLibrary', () => ({ AssistantProjectsLibrary: () => null }));
+vi.mock('@/components/assistant/AssistantLibraryVolume', () => ({ AssistantLibraryVolume: () => null }));
+vi.mock('@renderer/features/apps/assistant-app-counts', () => ({ AssistantAppCountsSource: () => null }));
 const { AppConversationFrame } = await import('./app-conversation-frame');
 const { applyExtensionHostAction } = await import('@renderer/features/extensions/host-action-handlers');
 const { installShellSlots, readShellSlots } = await import('@/lib/shellSlots');

@@ -91,8 +91,8 @@ beforeEach(() => {
   document.body.appendChild(frame)
   posted = vi.fn()
   Object.defineProperty(frame.contentWindow!, 'postMessage', { value: posted, configurable: true })
-  // `assistant:open` (#1925, 44) and `chat:work` (#1925, 46) are the desktop's alone: held here only so their verbs reach the
-  // gesture door, which refuses them in the same sentence.
+  // `assistant:open`, `assistant:rename` (#1925, 44) and `chat:work` (#1925, 46) are the desktop's alone: held here only so their
+  // verbs reach the gesture door, which refuses them in the same sentence.
   start(['files:read', 'files:write', 'agents:tools', 'assistant:open', 'assistant:rename', 'chat:work'])
 })
 afterEach(() => {
