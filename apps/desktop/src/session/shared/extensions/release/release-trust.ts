@@ -5,16 +5,20 @@
 // download site is not what the client trusts.
 //
 // The signature check is the market's own code (release-contract.mjs, mirrored byte for byte at a pinned commit), never a
-// second implementation. It imports `node:crypto`: main gets Node's; the page bundle gets release-crypto-web.ts in its
-// place (scripts/build/release-contract-browser-crypto.mts). Nothing here needs Node: bytes are Uint8Arrays, digests are
+// second implementation, and this module takes it as an argument (`releaseChecks`) instead of importing it: the mirror
+// imports `node:crypto`, which the page does not have. Main binds the mirror itself (market-release.ts); the page binds
+// release-contract-web.mjs, the mirror with only its crypto import pointed at release-crypto-web.ts (release-trust-web.ts).
+// So nothing here, and nothing the page imports for this, loads a Node built-in. Bytes are Uint8Arrays, digests are
 // WebCrypto's. An App the table does not name is installed exactly as before: its `release`, if any, is not read.
 import { z } from 'zod'
 import { compareExtensionVersions } from '../manifest'
 import { semverCore, type MarketReleaseProof } from '../market'
-import { verifyReleaseSignature, type ReleaseTrustKey, type SignedRelease } from './release-contract.mjs'
+import type { ReleaseTrustKey, SignedRelease, verifyReleaseSignature } from './release-contract.mjs'
 import shippedTable from './release-keys.json'
 
 export type { SignedRelease }
+/** The contract's signature check, from the mirror (main) or its web copy (the page). */
+export type VerifyReleaseSignature = typeof verifyReleaseSignature
 
 /** The largest `release.json` the market accepts (release-contract.mjs) and the size of an Ed25519 signature. */
 export const MAX_RELEASE_MANIFEST_BYTES = 512 * 1024
@@ -60,12 +64,8 @@ const contractBytes = (bytes: Uint8Array) => new ContractBytes(bytes)
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
-/**
- * Verifies a downloaded release against the trust table: signature, key scope and revocation, the release being for this App
- * and version, its app package being the one the index names, and this gugu being inside its signed desktop range.
- * Returns the release; throws one line naming what failed.
- */
-export function verifyMarketRelease(input: {
+/** A downloaded release as `verifyMarketRelease` checks it. */
+export interface MarketReleaseInput {
   appId: string
   version: string
   keyId: string
@@ -73,23 +73,57 @@ export function verifyMarketRelease(input: {
   signature: Uint8Array
   appZip: { sha256: string; bytes: number }
   appVersion: string
-}, table: ReleaseTrustTable): SignedRelease {
-  let release: SignedRelease
-  try {
-    release = verifyReleaseSignature(contractBytes(input.raw), contractBytes(input.signature), input.keyId, trustedKeys(table), { appId: input.appId, version: input.version })
-  } catch (error) {
-    throw new Error(`its signed release does not verify (${messageOf(error)})`)
+}
+
+/** The checks that need the contract's signature check, bound to the one this side has (main: Node's; the page: the web copy). */
+export interface ReleaseChecks {
+  /**
+   * Verifies a downloaded release against the trust table: signature, key scope and revocation, the release being for this
+   * App and version, its app package being the one the index names, and this gugu being inside its signed desktop range.
+   * Returns the release; throws one line naming what failed.
+   */
+  verifyMarketRelease(input: MarketReleaseInput, table: ReleaseTrustTable): SignedRelease
+  /** Verifies a kept proof again for the installed App `appId@version`. Throws one line naming what failed. */
+  verifyReleaseProof(proof: MarketReleaseProof, expected: { appId: string; version: string }, table: ReleaseTrustTable): SignedRelease
+}
+
+export function releaseChecks(verifyReleaseSignature: VerifyReleaseSignature): ReleaseChecks {
+  return {
+    verifyMarketRelease(input, table) {
+      let release: SignedRelease
+      try {
+        release = verifyReleaseSignature(contractBytes(input.raw), contractBytes(input.signature), input.keyId, trustedKeys(table), { appId: input.appId, version: input.version })
+      } catch (error) {
+        throw new Error(`its signed release does not verify (${messageOf(error)})`)
+      }
+      const app = release.artifacts.find((artifact) => artifact.role === 'app')
+      if (!app || app.sha256 !== input.appZip.sha256 || app.bytes !== input.appZip.bytes) {
+        throw new Error('its signed release is for another package than the one the market lists')
+      }
+      const { min, maxExclusive } = release.compatibility.desktop
+      const at = semverCore(input.appVersion)
+      if (!at || compareExtensionVersions(at, min) < 0 || compareExtensionVersions(at, maxExclusive) >= 0) {
+        throw new Error(`its signed release is for gugu ${min} up to (not including) ${maxExclusive}, not ${input.appVersion}`)
+      }
+      return release
+    },
+    verifyReleaseProof(proof, expected, table) {
+      let raw: Uint8Array
+      let signature: Uint8Array
+      try {
+        raw = bytesOfBase64(proof.manifest)
+        signature = bytesOfBase64(proof.signature)
+      } catch {
+        throw new Error('its kept release proof is malformed')
+      }
+      if (raw.length > MAX_RELEASE_MANIFEST_BYTES || signature.length !== RELEASE_SIGNATURE_BYTES) throw new Error('its kept release proof is malformed')
+      try {
+        return verifyReleaseSignature(contractBytes(raw), contractBytes(signature), proof.keyId, trustedKeys(table), expected)
+      } catch (error) {
+        throw new Error(`its kept release proof does not verify (${messageOf(error)})`)
+      }
+    },
   }
-  const app = release.artifacts.find((artifact) => artifact.role === 'app')
-  if (!app || app.sha256 !== input.appZip.sha256 || app.bytes !== input.appZip.bytes) {
-    throw new Error('its signed release is for another package than the one the market lists')
-  }
-  const { min, maxExclusive } = release.compatibility.desktop
-  const at = semverCore(input.appVersion)
-  if (!at || compareExtensionVersions(at, min) < 0 || compareExtensionVersions(at, maxExclusive) >= 0) {
-    throw new Error(`its signed release is for gugu ${min} up to (not including) ${maxExclusive}, not ${input.appVersion}`)
-  }
-  return release
 }
 
 /** Bytes as base64, and back (a proof, a kept copy): no Buffer in the page. */
@@ -103,24 +137,6 @@ export const bytesOfBase64 = (text: string) => Uint8Array.from(atob(text), (char
 /** The proof an install keeps, from the bytes that were verified. */
 export function releaseProof(keyId: string, raw: Uint8Array, signature: Uint8Array): MarketReleaseProof {
   return { keyId, manifest: base64Of(raw), signature: base64Of(signature) }
-}
-
-/** Verifies a kept proof again for the installed App `appId@version`. Throws one line naming what failed. */
-export function verifyReleaseProof(proof: MarketReleaseProof, expected: { appId: string; version: string }, table: ReleaseTrustTable): SignedRelease {
-  let raw: Uint8Array
-  let signature: Uint8Array
-  try {
-    raw = bytesOfBase64(proof.manifest)
-    signature = bytesOfBase64(proof.signature)
-  } catch {
-    throw new Error('its kept release proof is malformed')
-  }
-  if (raw.length > MAX_RELEASE_MANIFEST_BYTES || signature.length !== RELEASE_SIGNATURE_BYTES) throw new Error('its kept release proof is malformed')
-  try {
-    return verifyReleaseSignature(contractBytes(raw), contractBytes(signature), proof.keyId, trustedKeys(table), expected)
-  } catch (error) {
-    throw new Error(`its kept release proof does not verify (${messageOf(error)})`)
-  }
 }
 
 /** One file as the release lists it, and as it was found. */

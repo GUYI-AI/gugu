@@ -9,7 +9,9 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { MarketCodeSource, MarketInstallRecord, MarketReleaseProof } from '@shared/extensions/market';
-import { signedFileProblems, withinScope, type FileDigest, type SignedRelease } from '@shared/extensions/release/release-trust';
+// Main has Node, so it runs the mirrored contract itself (the page runs its web copy: release-trust-web.ts).
+import { verifyReleaseSignature } from '@shared/extensions/release/release-contract.mjs';
+import { releaseChecks, signedFileProblems, withinScope, type FileDigest, type SignedRelease } from '@shared/extensions/release/release-trust';
 
 export {
   firstProblem,
@@ -19,11 +21,11 @@ export {
   releaseRequired,
   releaseTrustTableSchema,
   SHIPPED_RELEASE_TRUST,
-  verifyMarketRelease,
-  verifyReleaseProof,
   type ReleaseTrustTable,
   type SignedRelease,
 } from '@shared/extensions/release/release-trust';
+
+export const { verifyMarketRelease, verifyReleaseProof } = releaseChecks(verifyReleaseSignature);
 
 /** What a market install records about its bytes (extensions-service `MARKET_SOURCES_FILENAME`): the source, and the verified proof. */
 export function marketInstallRecord(prepared: { source: MarketCodeSource; release?: { proof: MarketReleaseProof } }): MarketInstallRecord {
