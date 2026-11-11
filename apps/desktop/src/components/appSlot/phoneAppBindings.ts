@@ -10,7 +10,8 @@ import type { PathText } from '../../session/shared/extensions/app-files-core'
 import { dispatchCallOf } from '../../session/shared/extensions/app-dispatch-core'
 import { ASSISTANT_SCREENS, assistantFigureSchema, renameCheck, withoutAssistant, type AppAssistantRead, type AppAssistantStatus, type AssistantRenameResult } from '../../session/shared/extensions/assistant-binding'
 import { assistantLayerEntry, type AssistantAppInstall } from '../../session/shared/extensions/assistant-entry'
-import { domainState, refusedOrUnavailable, savedData, writeOutcome } from '../../session/shared/extensions/bound-resources-core'
+import { domainState, reasonOf, refusedOrUnavailable, savedData, unavailable, writeOutcome } from '../../session/shared/extensions/bound-resources-core'
+import type { Unavailable } from '../../session/shared/extensions/resources-management'
 import type { ExtensionHostEvent } from '../../session/shared/extensions/bridge-protocol'
 import type { ExtensionManifest } from '../../session/shared/extensions/manifest'
 import { VOICE_NOTE_RECORD_ACTION, voiceNoteNameSchema, voiceNoteRetrySchema, voiceNoteStartSchema, voiceNoteWatchSchema } from '../../session/shared/extensions/voice-note-session'
@@ -295,9 +296,13 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     if (!(READABLE_RESOURCE_DOMAINS as readonly string[]).includes(domain)) throw coded('denied', `The ${domain} resources are never granted to an App`)
     return domain as ReadableResourceDomain
   }
-  async function withResources<T>(extensionId: string, name: string, domain: string, use: (at: Bound) => Promise<T>): Promise<T | 'unbound' | 'unavailable'> {
-    const at = await boundOrUnavailable(extensionId, name, ['resources'], domain)
-    if (at === 'unavailable' || at === null) return at ?? 'unbound'
+  async function withResources<T>(extensionId: string, name: string, domain: string, use: (at: Bound) => Promise<T>): Promise<T | 'unbound' | Unavailable> {
+    const at = await bound(extensionId, name, ['resources'], domain).catch((error: unknown) => {
+      if (codeOf(error) === 'failed') return unavailable(reasonOf(error))
+      throw error
+    })
+    if (at === null) return 'unbound'
+    if ('state' in at) return at
     try {
       const value = await use(at)
       at.recheck()
@@ -315,10 +320,10 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     const answer = await withResources(extensionId, args.name, domain, async (at): Promise<AppResourceList> => {
       const snapshot = await ports.panel.snapshot(at.ownerId, at.agentId)
       const readable = domainState(snapshot, domain)
-      if (readable.state !== 'ready') return { ...named, state: readable.state }
+      if (readable.state !== 'ready') return { ...named, ...readable }
       return { ...named, state: 'ready', revision: snapshot.revision, resources: readable.items.map((item) => appResourceOf(domain, item)) }
     })
-    return typeof answer === 'string' ? { ...named, state: answer } : answer
+    return answer === 'unbound' ? { ...named, state: answer } : 'name' in answer ? answer : { ...named, ...answer }
   }
   async function resource(extensionId: string, input: unknown): Promise<AppResourceRead> {
     const args = argsOf(z.strictObject({ name: z.string(), domain: z.unknown(), key: z.unknown() }), input, RESOURCE_ARGS)
@@ -332,10 +337,10 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
       ])
       at.recheck()
       const readable = snapshot ? domainState(snapshot, domain) : null
-      if (readable && readable.state !== 'ready') return { ...named, state: readable.state }
+      if (readable && readable.state !== 'ready') return { ...named, ...readable }
       if (!item) return { ...named, state: 'missing', revision: '0' }
       if (item.deleted_at) return { ...named, state: 'missing', revision: item.revision, deleted: true }
-      if (item.stale_at) return { ...named, state: 'unavailable' }
+      if (item.stale_at) return { ...named, ...unavailable('stale') }
       const found = appResourceOf(domain, item)
       const ready = (bytes: Uint8Array) => {
         if (bytes.byteLength > DEFAULT_TEXT_MAX_BYTES) return { ...named, state: 'ready' as const, resource: found, content: '', truncated: true, totalSize: bytes.byteLength }
@@ -359,7 +364,7 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
         throw error
       }
     })
-    return typeof answer === 'string' ? { ...named, state: answer } : answer
+    return answer === 'unbound' ? { ...named, state: answer } : 'name' in answer ? answer : { ...named, ...answer }
   }
 
   type Writable = 'memory' | 'files' | 'personality' | 'skills'
@@ -377,9 +382,12 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     const content = args.content ?? ''
     if (new TextEncoder().encode(content).byteLength > DEFAULT_TEXT_MAX_BYTES) throw coded('invalid', 'content is at most 20 MiB')
     // A change needs reading the domain too, as on a computer.
-    const at = await boundOrUnavailable(extensionId, args.name, ['resources', 'resources:write'], domain)
-    if (at === 'unavailable') return { ...named, state: 'unavailable' }
+    const at = await bound(extensionId, args.name, ['resources', 'resources:write'], domain).catch((error: unknown) => {
+      if (codeOf(error) === 'failed') return unavailable(reasonOf(error))
+      throw error
+    })
     if (!at) return { ...named, state: 'unbound' }
+    if ('state' in at) return { ...named, ...at }
     let uploaded: string | undefined
     try {
       const prepared = await prepare(at, { domain, key, expectedRevision: args.expectedRevision, content })
@@ -402,9 +410,10 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
         if (uploaded) await ports.panel.discard(at.token, at.ownerId, uploaded)
         throw refusal
       }
-      if (uploaded && outcome !== 'unavailable') await ports.panel.discard(at.token, at.ownerId, uploaded)
+      // Whether an unanswered commit landed is unknown: its body stays, for the same call again to find.
+      if (uploaded && outcome.state !== 'unavailable') await ports.panel.discard(at.token, at.ownerId, uploaded)
       at.recheck()
-      return { ...named, state: outcome }
+      return { ...named, ...outcome }
     }
   }
   const save = (extensionId: string, input: unknown) => change(extensionId, input, 'save', async (at, { domain, key, expectedRevision, content: text }) => {

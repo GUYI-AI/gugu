@@ -1049,6 +1049,7 @@ person signed in on that phone, checked again after every wait.
   work; adding, renaming or moving files from your page is not on a phone yet (send the person to 聊天's attach).
 - Schedules: the assistant always lives elsewhere seen from a phone; pause, resume and remove go through its panel (\`pending\`
   until its home applies them); adding or retiming one is asked of the assistant (\`invalid\`).
+`;
 
 export const EXTENSION_GUIDE_BINDINGS_MANAGE = `# gugu.bindings — managing the agent's files and voice notes, drafts carrying files
 
