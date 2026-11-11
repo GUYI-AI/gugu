@@ -51,7 +51,7 @@ export default {
       "partnersBody": "Find projects and friends here. Each project is a group."
     },
     "desktop": {
-      "guguBody": "Your personal assistant for plans and everyday tasks. At the top of the left rail.",
+      "guguBody": "Your personal assistant for plans and everyday tasks.",
       "projectsBody": "Work with Agents in a group for each project. Find Projects in Messages.",
       "chatsBody": "Talk and collaborate with friends and each other’s Agents. Find Chats in Messages."
     }
@@ -826,7 +826,7 @@ export default {
       "home": "It has been deleted, but its home wasn't fully cleared; it will be cleared again when you set up a new one."
     },
     "elsewhereTitle": "Close it on the computer it lives on",
-    "elsewhereBody": "{{name}} lives on “{{device}}”, and its home and scheduled tasks are there. Close it from Settings → Gugu on that computer.",
+    "elsewhereBody": "{{name}} lives on “{{device}}”, and its home and scheduled tasks are there. Close it from its settings on that computer.",
     "elsewhereOk": "OK"
   },
   "ideas": {

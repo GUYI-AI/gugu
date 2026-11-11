@@ -867,14 +867,47 @@ describe('MainLayout', () => {
     expect(layerOpen('mobile-assistant-layer')).toBe(true)
     expect(harness.container.querySelector('[data-testid="mock-assistant-tab"]')?.getAttribute('data-visible')).toBe('true')
   })
-  it.each(['owner','read-error'])('opens standalone phone settings without an assistant for %s',async state => {
+  // Owner 11-12「设置里面不应该有咕咕设置吧?」: on a computer an old route to its 资料 / 连接应用 never opens Settings (it goes to
+  // the App: assistantEntry.test.ts `openAssistantPageInApp`); any other section still does.
+  it('a desktop Settings route to the assistant\'s pages opens no Settings; another section does', async () => {
+    platformMock.kind = 'web'
+    platformMock.capabilities.sessionHost = false
+    await harness.render(createNode(MainLayout, { user: { id: 'user-1', email: 'user@example.com', nickname: 'User' } }))
+    for (const section of ['assistant', 'connectors', 'channels']) {
+      await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section } })) })
+      expect(harness.container.querySelector('[data-testid="mock-settings-panel"]')).toBeNull()
+    }
+    await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'devices' } })) })
+    expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="devices"]')).not.toBeNull()
+  })
+  // Owner 11-12: 连接应用 is the assistant's, never in Settings — without an assistant on the phone it opens nowhere.
+  it.each(['owner','read-error'])('opens no Settings page for the phone connectors without an assistant for %s',async state => {
     platformMock.kind = 'capacitor'; platformMock.capabilities.sessionHost = false
     phoneAssistantMock.state.available = false
     connectionAuthority.mode = 'owner'; connectionAuthority.failed = state === 'read-error'
     await harness.render(createNode(MainLayout,{ user: { id: 'user-1',email: 'user@example.com',nickname: 'User' } }))
     await act(async () => { window.dispatchEvent(new Event(UI_EVENTS.openAssistantConnectors)) })
-    await vi.waitFor(() => expect(harness.container.querySelector('[data-testid="mock-settings-panel"][data-section="connectors"]')).not.toBeNull())
+    await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section: 'connectors' } })) })
+    // The phone's 「我的」 stays where it was (its own tab page): never on a page of the assistant's.
+    expect(harness.container.querySelector('[data-testid="mock-settings-panel"]:is([data-section="connectors"], [data-section="channels"], [data-section="assistant"])')).toBeNull()
     expect(layerOpen('mobile-assistant-layer')).toBe(false)
+  })
+  it.each(['assistant', 'connectors', 'channels'] as const)('a %s Settings route on the phone opens the assistant layer, not Settings', async (section) => {
+    platformMock.kind = 'capacitor'; platformMock.capabilities.sessionHost = false
+    phoneAssistantMock.state.available = true
+    phoneAssistantMock.state.assistant = { id: 'agent-1', display_name: '小咕', avatar: null, created_at: null }
+    const asked: unknown[] = []
+    const hear = (event: Event) => asked.push((event as CustomEvent).detail)
+    window.addEventListener(UI_EVENTS.openAssistantConnectors, hear)
+    try {
+      await harness.render(createNode(MainLayout, { user: { id: 'user-1', email: 'user@example.com', nickname: 'User' } }))
+      await act(async () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.openSettings, { detail: { section } })) })
+      expect(layerOpen('mobile-assistant-layer')).toBe(true)
+      expect(harness.container.querySelector('[data-testid="mock-settings-panel"]:is([data-section="connectors"], [data-section="channels"], [data-section="assistant"])')).toBeNull()
+      expect(asked).toEqual([{ sub: section === 'assistant' ? 'settings' : 'connectors' }])
+    } finally {
+      window.removeEventListener(UI_EVENTS.openAssistantConnectors, hear)
+    }
   })
   // owner 10-16「得考虑最开始没有创建咕咕的新用户」:没有它,那一行照样在,头像是淡一点的默认咕咕 + 小「+」,点进去是安家引导。
   it('keeps the 咕咕 row first for a new user with no assistant, and marks it as the place to set one up', async () => {

@@ -55,7 +55,7 @@ function openSettings(section: ActiveSection) {
 
 /**
  * 还没有咕咕:给它安家的流程(欢迎 → 起名选色 → 称呼 → 安家),会员一键住云上、非会员装在这台电脑上。
- * 会话页的「咕咕」App 和全局设置「咕咕」那一页(没有它时)画的是同一份,数据都从壳的 store 读。
+ * 画在咕咕 App 面板上的开通那一层(AssistantSetupPage)与它的设置页(没有它时)画的是同一份,数据都从壳的 store 读。
  */
 export function OnboardingSlot({ snapshot: given, device: givenDevice }: { snapshot?: CloudComputerSnapshot | null; device?: Device | null } = {}) {
   const { user } = useAuth()
@@ -78,11 +78,11 @@ export function OnboardingSlot({ snapshot: given, device: givenDevice }: { snaps
 }
 
 /**
- * 全局设置「咕咕」那一页里的状态 / 快速聊天 / 关闭三组(owner 10-16:只有一个设置,咕咕是其中一组)。
+ * 咕咕设置页(画在它 App 的面板上,AssistantSettingsPage)里的状态 / 快速聊天 / 关闭三组。
  * 连接状态(只取真实读数)、它花了多少积分、关闭;背后是它住的那台云端宿主,但说的一律是它
  * (owner 10-15:用户看不到它住在哪;❌「云电脑」「运行中 / 休眠中」)。owner 10-17:Agent 没有休息这回事 ——
  * ❌「休息中」「这次醒着」「现在叫醒」「休息」那几行;宿主闲时收回、有事自己醒,那是后台资源的事。
- * 原来画在助理 App 的齿轮页,现在设置里直接画,App 的齿轮只是打开设置。
+ * App 的齿轮打开那一页;全局设置里没有咕咕(owner 11-12)。
  */
 export function AssistantStatusGroups({
   snapshot,
@@ -267,8 +267,8 @@ export function AssistantShellHost() {
 
   const content = (slot: AssistantShellSlot): ReactNode => {
     switch (slot) {
-      // The devices page of the assistant's panel (AssistantLibraryVolume, drawn over the App's panel). Setup is Settings'
-      // 「咕咕」 page (OnboardingSlot there); the conversation, the App's.
+      // The devices page of the assistant's panel (AssistantLibraryVolume, drawn over the App's panel). Setup is the App's
+      // host layer (AssistantSetupPage); the conversation, the App's.
       case 'devices': return <AssistantDevicesPage cloudDeviceId={cloudDeviceId} panelNavigation />
       default: return null
     }

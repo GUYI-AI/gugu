@@ -43,7 +43,7 @@ import { EmdashSessionFrame, prewarmEmdashAssets } from '../components/sessionpa
 import { useSessionpageAgentInstallNavigation } from '../components/sessionpage/sessionpageAgentInstallNavigation'
 import { useOpenNewSessionOnDeviceHost } from '../components/sessionpage/openNewSessionOnDeviceHost'
 import { MobileCreatePage } from '../components/MobileAgentCreatePage'
-import type { ActiveSection } from '@gugu/core/shared/enums/settingsSectionModels'
+import { isAssistantSettingsSection, type ActiveSection } from '@gugu/core/shared/enums/settingsSectionModels'
 import { ResizableChatListPane } from './ResizableChatListPane'
 import {
   readStoredChatListPaneWidth,
@@ -74,7 +74,7 @@ import { AppConversationSurfaceHost } from '../components/appSlot/AppConversatio
 import { AppHostLayerHost } from '../components/appSlot/AppHostLayerHost'
 import { AppWorkLedgerHost } from '../components/appSlot/AppWorkLedgerHost'
 import { AssistantAppEntryHost } from '../components/appSlot/AssistantAppEntryHost'
-import { openAssistantApp, openAssistantEntry, readAssistantEntryTarget } from '../lib/assistantEntry'
+import { openAssistantApp, openAssistantEntry, openAssistantPageInApp, readAssistantEntryTarget } from '../lib/assistantEntry'
 import { appConversationSurfaceShows } from '../lib/appConversationSurfaceBridge'
 import { OfflineSessionSlotHost } from '../components/chat/OfflineSessionSlotHost'
 import { ChatListSlotHost } from '../components/ChatListSlotHost'
@@ -521,13 +521,24 @@ function InnerLayout({
 
   // @@@1507 直达指定设置 section(侧栏「额度」→ quota)。移动端无设置弹窗:直达「我的」tab 对应 detail 面。
   const openSettingsSection = useCallback((section: ActiveSection) => {
+    // Nothing of the assistant is in Settings (owner 11-12): an old route to its 资料 / 连接应用 lands in its App.
+    if (isAssistantSettingsSection(section)) {
+      if (!mobile) {
+        setSettingsModalOpen(false)
+        openAssistantPageInApp(section === 'assistant' ? 'settings' : 'connected-apps')
+      } else if (phoneAssistant.available) {
+        setActiveTab('assistant')
+        window.dispatchEvent(new CustomEvent(UI_EVENTS.openAssistantConnectors, { detail: { sub: section === 'assistant' ? 'settings' : 'connectors' } }))
+      }
+      return
+    }
     setSettingsSection(section)
     if (mobile) {
       navigateMobile(() => { setSettingsPane('detail'); setActiveTab('settings') }, 'push')
       return
     }
     setSettingsModalOpen(true)
-  }, [setActiveTab, mobile])
+  }, [setActiveTab, mobile, phoneAssistant.available])
 
   // 会话页要打开设置(⌘, / 应用菜单 / 命令面板 / 浏览器工具栏「管理配置」):设置只有这一个弹窗(product spec)。
   // 指了格就落到那一格;没指就照原样打开(上次停在哪一格就是哪一格)。
@@ -575,14 +586,11 @@ function InnerLayout({
   // 打开它都切到那一格的聊天,❌ 在对话页里另开一屏。在画出来之前换过去,对话页 ❌ 先闪一帧那条私聊。
   useEffect(() => {
     if (!mobile) return
-    const open = () => { void import('@/lib/connectionBridge').then(async ({ connectionBridge }) => {
-      const route = await Promise.resolve().then(() => connectionBridge().routing.read()).catch(() => null)
-      if (route?.mode === 'legacy' && phoneAssistant.available) setActiveTab('assistant')
-      else openSettingsSection('connectors')
-    }) }
+    // 连接应用 is the assistant's (its profile's page on the phone), never in Settings.
+    const open = () => { if (phoneAssistant.available) setActiveTab('assistant') }
     window.addEventListener(UI_EVENTS.openAssistantConnectors, open)
     return () => window.removeEventListener(UI_EVENTS.openAssistantConnectors, open)
-  }, [openSettingsSection, mobile,phoneAssistant.available,setActiveTab])
+  }, [mobile,phoneAssistant.available,setActiveTab])
   useLayoutEffect(() => {
     if (!assistantOnPhone || activeTab !== 'chats' || mobilePane !== 'chat' || !phoneAssistant.available) return
     setMobilePane('list')

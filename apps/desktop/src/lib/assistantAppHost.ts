@@ -1,6 +1,7 @@
 // #1925 「助理」搬进一个装上的 App(App id gugu-assistant)之后,壳这一侧替它做的三件小事(主进程先验过权,见
 // electron/.../app-assistant-binding.ts):
-//   · 打开壳自己的那几屏(开通 / 搬家 / 关闭 / 形象 / 模型 / 设备 / 连接应用)—— 每一个都走它现成的入口,❌ 另画一份;
+//   · 打开壳自己的那几屏(关闭 / 形象 / 模型 / 设备)—— 每一个都走它现成的入口,❌ 另画一份;开通、资料(搬家在里面)、
+//     连接应用是它自己的页,画在 App 的面板上(app-host-layer.tsx),❌ 设置里(owner 11-12:设置里不该有咕咕设置);
 //   · 把壳发布的快照(lib/assistantShellBridge.ts)按 App 能看的那几项交给主进程 —— ❌ 任何 id、路径、令牌;
 //   · App 自己画的开通后两步(连应用 → 一切就绪 → 走完)往下走一步,走的是内置视图同一个 advanceSetup。
 // 开通、搬家、关闭的编排(身份、租约、凭据、清理)一律留在壳里,App 只能叫开那一屏,人在那一屏里自己做。
@@ -17,7 +18,6 @@ import {
   type ShownAssistant,
 } from '@shared/extensions/assistant-binding'
 import { requestAssistantClose } from './assistantClose'
-import { requestAssistantSetupAfterIntro } from './firstRun'
 import { assistantTintHue } from './assistantTint'
 import { readAssistantShellBridge, type AssistantShellActions, type AssistantShellBridge, type AssistantShellSnapshot } from './assistantShellBridge'
 import { UI_EVENTS } from './uiEvents'
@@ -40,19 +40,11 @@ function actionsOf(bridge: AssistantShellBridge): AssistantShellActions {
 }
 
 /**
- * 每一屏现成的入口:开通(还没有它时设置「咕咕」那一页画的就是开通流程)与搬家(那一页的「搬家」一组)都在设置「咕咕」那一页;
- * 关闭 = 那一份唯一的确认(AssistantCloseHost);形象 / 模型 = agent 设置那两页;设备 / 连接应用 = 设置里那两格。
+ * 每一屏现成的入口:关闭 = 那一份唯一的确认(AssistantCloseHost);形象 / 模型 = agent 设置那两页;设备 = 设置里那一格。
  */
 export function openAssistantScreen(screen: AssistantScreen, ownerId: string): void {
   const bridge = shellOf(ownerId)
   switch (screen) {
-    case 'setup':
-      // The App's own intro is the one the person just clicked through: Settings' setup starts at the next real step (the name),
-      // not at a second copy of the same intro. Only while there is no assistant yet: that is when the setup is what Settings draws.
-      if (bridge.getSnapshot()?.assistantState === 'none') requestAssistantSetupAfterIntro(ownerId)
-      return openSettings('assistant')
-    case 'move':
-      return openSettings('assistant')
     case 'close':
       return requestAssistantClose()
     case 'look':
@@ -61,10 +53,9 @@ export function openAssistantScreen(screen: AssistantScreen, ownerId: string): v
       return actionsOf(bridge).openModel()
     case 'devices':
       return openSettings('devices')
-    case 'connected-apps':
-      return openSettings('connectors')
   }
-  // settings / projects / capabilities are the panel's own pages: drawn over the App's panel (app-host-layer.tsx), not here.
+  // setup / settings / move / connected-apps / projects / capabilities are the assistant's own pages: drawn over the App's
+  // panel (app-host-layer.tsx), not here and not in Settings.
   throw new Error(`Not one of the shell's assistant screens: ${String(screen)}`)
 }
 

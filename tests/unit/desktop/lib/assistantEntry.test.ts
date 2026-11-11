@@ -8,6 +8,7 @@ import {
   decideAssistantEntry,
   installAssistantAppEntryBridge,
   openAssistantEntry,
+  openAssistantPageInApp,
   openAssistantTaskInApp,
   publishAssistantAppWord,
   readAssistantEntryTarget,
@@ -17,6 +18,7 @@ import { appConversationSlotKey, installAppConversationSurfaceBridge, publishApp
 import { appState } from '../../../../apps/desktop/src/session/renderer/lib/stores/app-state'
 import { appHostLayerSlotKey, installAppHostLayerBridge, readAppHostLayerBridge, resetAppHostLayersForTest, setAppHostLayerAccount } from '../../../../apps/desktop/src/lib/appHostLayerBridge'
 import { installedExtensionsStore } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
+import { appConversationPanelCollapsed, setAppConversationPanelCollapsed } from '../../../../apps/desktop/src/session/renderer/features/apps/app-conversation-panel'
 import { EXTENSION_API_VERSION } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
 
 const OWNER = '11000000-0000-4000-8000-000000000001'
@@ -139,7 +141,7 @@ describe('openAssistantEntry', () => {
     expect(appState.navigation.viewParamsStore.app?.appId).toBe(ASSISTANT_APP_ID)
   })
 
-  it('the App not usable here: opens the assistant\'s chat as any chat, or setup when there is no assistant; a link caller does it itself', () => {
+  it('the App not usable here: opens the assistant\'s chat as any chat, nothing when there is no assistant (no Settings group); a link caller does it itself', () => {
     installApp(undefined, [ASSISTANT_APP_ID])
     expect(openAssistantEntry()).toBeNull()
     expect(opened).toEqual([{ kind: 'chat', chatId: DM }])
@@ -149,7 +151,8 @@ describe('openAssistantEntry', () => {
     expect(opened).toEqual([])
     publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null }))
     openAssistantEntry()
-    expect(settings).toEqual([{ section: 'assistant' }])
+    expect(settings).toEqual([])
+    expect(opened).toEqual([])
   })
 
   it('opens a task the shell found in the App: its own page, the task over its panel, for this account only', () => {
@@ -184,6 +187,87 @@ describe('openAssistantEntry', () => {
     expect(readAssistantEntryTarget().kind).toBe('chat')
     publishAssistantAppWord({ ...word, ownerId: OTHER })
     expect(readAssistantEntryTarget().kind).toBe('app')
+  })
+})
+
+/**
+ * Owner 11-12「设置里面不应该有咕咕设置吧?」: every route of the shell's that used to open Settings' 咕咕 group (资料, 连接应用:
+ * notifications, connection prompts, old section links — MainLayout sends them all here) lands in the App: its page, with that
+ * page of the assistant over its panel; never a Settings event.
+ */
+describe('openAssistantPageInApp', () => {
+  const opened: unknown[] = []
+  const settings: unknown[] = []
+  const revealed: unknown[] = []
+  const onLink = (event: Event) => { event.preventDefault(); opened.push((event as CustomEvent<{ target: unknown }>).detail.target) }
+  const onSettings = (event: Event) => settings.push((event as CustomEvent).detail)
+  const onReveal = () => revealed.push(true)
+  const layer = () => readAppHostLayerBridge()?.getSnapshot()[ASSISTANT_APP_ID] ?? null
+  beforeEach(() => {
+    installAssistantShellBridge(); installAppConversationSurfaceBridge(); installAssistantAppEntryBridge(); installAppHostLayerBridge()
+    setAppHostLayerAccount(OWNER)
+    installApp()
+    publishAssistantShell(shell())
+    publishAssistantAppWord(word)
+    publishAppConversationSurfaces(bound)
+    appState.navigation.navigate('home')
+    opened.length = 0; settings.length = 0; revealed.length = 0
+    window.addEventListener('gugu:open-link-target', onLink)
+    window.addEventListener('__open_settings', onSettings)
+    window.addEventListener('__sessionpage_reveal', onReveal)
+  })
+  afterEach(() => {
+    window.removeEventListener('gugu:open-link-target', onLink)
+    window.removeEventListener('__open_settings', onSettings)
+    window.removeEventListener('__sessionpage_reveal', onReveal)
+    expect(settings).toEqual([])
+    resetAppHostLayersForTest()
+    publishAssistantAppWord(null)
+    publishAppConversationSurfaces({})
+    publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null, ownerId: null }))
+    noApps()
+  })
+
+  it('资料 with the assistant there: the App\'s page, its settings page over the panel, the panel unfolded', () => {
+    setAppConversationPanelCollapsed(ASSISTANT_APP_ID, true)
+    expect(openAssistantPageInApp('settings')).toBe(true)
+    expect(revealed).toEqual([true])
+    expect(appState.navigation.viewParamsStore.app?.appId).toBe(ASSISTANT_APP_ID)
+    expect(layer()).toEqual({ kind: 'assistant-settings', ownerId: OWNER })
+    expect(appConversationPanelCollapsed(ASSISTANT_APP_ID)).toBe(false)
+  })
+
+  it('连接应用 with the assistant there: its connected apps over the panel', () => {
+    expect(openAssistantPageInApp('connected-apps')).toBe(true)
+    expect(layer()).toEqual({ kind: 'assistant-connected-apps', ownerId: OWNER })
+  })
+
+  it('no assistant yet: 资料 is setting it up; 连接应用 waits on the App\'s page', () => {
+    publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null, setup: 'shell' }))
+    expect(openAssistantPageInApp('connected-apps')).toBe(true)
+    expect(appState.navigation.viewParamsStore.app?.appId).toBe(ASSISTANT_APP_ID)
+    expect(layer()).toBeNull()
+    expect(openAssistantPageInApp('settings')).toBe(true)
+    expect(layer()).toEqual({ kind: 'assistant-setup', ownerId: OWNER })
+  })
+
+  it('still finding it: the App\'s page alone (it says so), nothing over it', () => {
+    publishAssistantShell(shell({ assistant: null, assistantState: 'loading', chatId: null }))
+    expect(openAssistantPageInApp('settings')).toBe(true)
+    expect(appState.navigation.viewParamsStore.app?.appId).toBe(ASSISTANT_APP_ID)
+    expect(layer()).toBeNull()
+  })
+
+  it('the App not usable (D9/D10): the assistant\'s chat as any chat; with no assistant, nothing — no Settings group to fall back on', () => {
+    installApp(undefined, [ASSISTANT_APP_ID])
+    expect(openAssistantPageInApp('settings')).toBe(true)
+    expect(opened).toEqual([{ kind: 'chat', chatId: DM }])
+    expect(appState.navigation.currentViewId).toBe('home')
+    opened.length = 0
+    publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null }))
+    expect(openAssistantPageInApp('connected-apps')).toBe(false)
+    expect(opened).toEqual([])
+    expect(layer()).toBeNull()
   })
 })
 

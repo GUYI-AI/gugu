@@ -17,20 +17,23 @@ export type AssistantBindingAction = (typeof ASSISTANT_BINDING_ACTIONS)[number];
 export const ASSISTANT_BINDING_API_VERSION = 44;
 
 /**
- * The host screens `gugu.assistant.open` opens, each by its existing entry (`lib/assistantAppHost.ts`): the assistant
- * section of Settings (setup — the onboarding, when there is no assistant — and the move group are both drawn there), the
- * one close confirmation, its look and model tabs, the devices and connected-apps sections — and the built-in panel's own
- * pages (`ASSISTANT_LAYER_SCREENS`); `health` (API 49) the phone's own health page (its data read on the phone, never handed
- * to the App; a computer answers `unsupported`). A closed list: no other value, and nothing more than the value, is taken.
+ * The host screens `gugu.assistant.open` opens: the assistant's own pages, drawn over the App's panel
+ * (`ASSISTANT_LAYER_SCREENS`); the one close confirmation, its look and model tabs, and the Settings devices section, each
+ * by its existing entry (`lib/assistantAppHost.ts`); `health` (API 49) the phone's own health page (its data read on the
+ * phone, never handed to the App; a computer answers `unsupported`). A closed list: no other value, and nothing more than
+ * the value, is taken. Nothing of the assistant is in Settings (owner 11-06, 11-12: everything about it lives in its App).
  */
 export const ASSISTANT_SCREENS = ['setup', 'move', 'close', 'look', 'model', 'devices', 'connected-apps', 'settings', 'projects', 'capabilities', 'health'] as const;
 export type AssistantScreen = (typeof ASSISTANT_SCREENS)[number];
 /**
- * The pages the built-in panel draws inside itself (its gear, 项目, 能力), not in the Settings window: the host draws them
- * in the App's panel, over its page, with a back control of its own (the App's host layer, `app-host-layer.tsx`). The App
- * hears only that a host page is open (`hostPage`), never what it shows.
+ * The assistant's own pages, drawn by the host in the App's panel, over its page, with a back control of its own (the App's
+ * host layer, `app-host-layer.tsx`): `setup` the setup guide while there is no assistant yet (from its name on, the App's
+ * own intro being the first screen; once there is one, its settings page), `settings` its settings page (资料: who it is,
+ * what it uses, where it lives), `move` that same page (its move group is there), `connected-apps` the apps connected to
+ * it, `projects` / `capabilities` the built-in panel's 项目 and 能力. The App hears only that a host page is open
+ * (`hostPage`), never what it shows.
  */
-export const ASSISTANT_LAYER_SCREENS = ['settings', 'projects', 'capabilities'] as const satisfies readonly AssistantScreen[];
+export const ASSISTANT_LAYER_SCREENS = ['setup', 'settings', 'move', 'connected-apps', 'projects', 'capabilities'] as const satisfies readonly AssistantScreen[];
 export type AssistantLayerScreen = (typeof ASSISTANT_LAYER_SCREENS)[number];
 export const isAssistantLayerScreen = (screen: string): screen is AssistantLayerScreen => (ASSISTANT_LAYER_SCREENS as readonly string[]).includes(screen);
 

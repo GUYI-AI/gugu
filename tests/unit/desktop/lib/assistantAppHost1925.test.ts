@@ -49,12 +49,10 @@ beforeEach(() => {
 })
 
 describe('each screen opens by its existing entry, and nothing else', () => {
-  const ENTRY = {
-    setup: 'settings:assistant', move: 'settings:assistant', close: 'close', look: 'look', model: 'model',
-    devices: 'settings:devices', 'connected-apps': 'settings:connectors',
-  } as const
+  const ENTRY = { close: 'close', look: 'look', model: 'model', devices: 'settings:devices' } as const
 
-  // The panel's own pages go over the App's panel; `health` (49) is a phone's own page: main answers `unsupported` on a
+  // The assistant's own pages (setup, settings, move, connected apps, projects, capabilities) go over the App's panel, never
+  // Settings (owner 11-12); `health` (49) is a phone's own page: main answers `unsupported` on a
   // computer and never asks the window.
   const SHELL_SCREENS = ASSISTANT_SCREENS.filter((screen) => !isAssistantLayerScreen(screen) && screen !== 'health')
 
@@ -63,23 +61,23 @@ describe('each screen opens by its existing entry, and nothing else', () => {
     expect(entries()).toEqual([ENTRY[screen as keyof typeof ENTRY]])
   })
 
-  it('the shell\'s screens are exactly these seven; the panel\'s own pages go over the App\'s panel, health is a phone\'s', () => {
+  it('the shell\'s screens are exactly these four; the assistant\'s own pages go over the App\'s panel, health is a phone\'s', () => {
     expect([...SHELL_SCREENS].sort()).toEqual(Object.keys(ENTRY).sort())
-    expect(ASSISTANT_SCREENS.filter(isAssistantLayerScreen)).toEqual(['settings', 'projects', 'capabilities'])
+    expect(ASSISTANT_SCREENS.filter(isAssistantLayerScreen)).toEqual(['setup', 'move', 'connected-apps', 'settings', 'projects', 'capabilities'])
     expect(ASSISTANT_SCREENS).toContain('health')
     expect(() => openAssistantScreen('health', OWNER)).toThrow()
     expect(entries()).toEqual([])
   })
 
   it('an unknown value, or a panel page, opens nothing here', () => {
-    for (const screen of ['settings', 'projects', 'capabilities', 'chat', '', 'Close', 'memory']) expect(() => openAssistantScreen(screen as never, OWNER)).toThrow()
+    for (const screen of ['setup', 'move', 'connected-apps', 'settings', 'projects', 'capabilities', 'chat', '', 'Close', 'memory']) expect(() => openAssistantScreen(screen as never, OWNER)).toThrow()
     expect(entries()).toEqual([])
   })
 
   it('for another account than the window shows, or before the window shows one: nothing', () => {
     expect(() => openAssistantScreen('close', OTHER)).toThrow()
     publishAssistantShell(snapshot({ ownerId: null }))
-    expect(() => openAssistantScreen('move', OWNER)).toThrow()
+    expect(() => openAssistantScreen('devices', OWNER)).toThrow()
     expect(entries()).toEqual([])
   })
 

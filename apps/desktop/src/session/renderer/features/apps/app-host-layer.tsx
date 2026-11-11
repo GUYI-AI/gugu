@@ -30,13 +30,20 @@ import { useAssistantMachine } from '@renderer/features/assistant/assistant-data
 import { useAssistantShell } from '@renderer/features/assistant/assistant-shell';
 import { AssistantShellPageFrame } from '@renderer/features/assistant/assistant-ui';
 import type { AssistantFigure, AssistantLayerScreen } from '@shared/extensions/assistant-binding';
-import type { AppHostLayerPage } from '@shared/extensions/app-host-layer';
+import { assistantLayerPage, assistantLayerPageShown, type AppHostLayerPage } from '@shared/extensions/app-host-layer';
 import { AssistantAppCountsSource } from './assistant-app-counts';
 
 const noop = () => () => undefined;
 
-/** The title of the page the shell draws, as the built-in panel heads it (assistant-profile.tsx `ShellPage`). */
-const SHELL_PAGE_TITLES: Partial<Record<AppHostLayerPage, string>> = { 'assistant-settings': 'nav.settings' };
+/**
+ * The pages the shell draws into this App's cell (AppHostLayerHost), with the title the built-in panel heads them with
+ * (assistant-profile.tsx `ShellPage`); null: the page heads itself (the setup guide's own card).
+ */
+const SHELL_PAGE_TITLES: Partial<Record<AppHostLayerPage, string | null>> = {
+  'assistant-setup': null,
+  'assistant-settings': 'nav.settings',
+  'assistant-connected-apps': 'connectors.title',
+};
 
 /** The whole host page over this App's panel now; null: the App's page is there. */
 function useAppHostLayerNow(extensionId: string): AppHostLayer | null {
@@ -45,9 +52,13 @@ function useAppHostLayerNow(extensionId: string): AppHostLayer | null {
   return useSyncExternalStore(bridge?.subscribe ?? noop, layer, layer);
 }
 
-/** A panel page for an account, or an assistant, this window no longer shows: not to be drawn (and closed: `AppHostLayerSources`). */
+/**
+ * A panel page for an account this window no longer shows, or for the assistant as it no longer is (the setup guide once
+ * the assistant is there: the App draws the steps after it; any other page once it is gone): not to be drawn (and closed:
+ * `AppHostLayerSources`).
+ */
 const pageStale = (layer: AppHostLayer, shell: ReturnType<typeof useAssistantShell>) =>
-  layer.kind !== 'work' && (shell?.ownerId !== layer.ownerId || shell.assistantState !== 'found' || !shell.assistant);
+  layer.kind !== 'work' && (shell?.ownerId !== layer.ownerId || !assistantLayerPageShown(layer.kind, shell.assistantState === 'found' && !!shell.assistant));
 
 /**
  * Which host page is over this App's panel now: a task (`work`) or one of the panel's pages; null: the App's page — also
@@ -67,20 +78,23 @@ const openers = new Map<string, { from: string; kind: AppHostLayer['kind'] }>();
 export const pageKey = (sessionId: string | null, tabId: string) => `${sessionId ?? ''}\u0000${tabId}`;
 
 /**
- * Host action `openAssistantScreen` for one of the panel's own pages (44): main checked the account and the binding; this
- * window must still show that account's assistant, and that App's page must be on screen. One layer at a time: it takes the
- * place of what was open (a task's conversation too).
+ * Host action `openAssistantScreen` for one of the assistant's own pages (44): main checked the account and the binding; this
+ * window must still show that account (with its assistant, for every page but the setup guide), and that App's page must be
+ * on screen. One layer at a time: it takes the place of what was open (a task's conversation too). The setup guide starts
+ * at the name (AssistantSetupPage): the App's own intro, under it, is its first screen.
  */
 export function openAssistantLayer(extensionId: string, screen: AssistantLayerScreen, ownerId: string, from: string): void {
   const shell = readAssistantShellBridge()?.getSnapshot();
-  if (!shell || shell.ownerId !== ownerId || shell.assistantState !== 'found' || !shell.assistant) {
+  if (!shell || shell.ownerId !== ownerId) throw new Error('This window does not show that account now');
+  const kind = assistantLayerPage(screen, shell.assistantState === 'found' && !!shell.assistant);
+  if (kind !== 'assistant-setup' && (shell.assistantState !== 'found' || !shell.assistant)) {
     throw new Error('This window does not show that account\'s assistant now');
   }
   if (!mounted.get(extensionId)) throw new Error('This App\'s panel is not on screen');
   const bridge = readAppHostLayerBridge();
   if (!bridge) throw new Error('This window draws no host pages over an App');
-  bridge.open(extensionId, { kind: `assistant-${screen}`, ownerId });
-  openers.set(extensionId, { from, kind: `assistant-${screen}` });
+  bridge.open(extensionId, { kind, ownerId });
+  openers.set(extensionId, { from, kind });
 }
 
 /** The host's back control, and every reason a page may not stay (account, assistant, the App's page gone). */
@@ -234,10 +248,15 @@ function HostPageLayer({ extensionId, kind, onCollapse }: { extensionId: string;
       </div>
       <div className="ta-panel-body">
         {title ? (
-          // The settings: the shell's own page (AssistantShellHost's), in this App's own cell.
+          // The settings, the connected apps: the shell's own page (AppHostLayerHost's), in this App's own cell.
           <AssistantShellPageFrame title={t(title)} testId={`app-host-layer-${kind}`}>
             <AppHostLayerSlot extensionId={extensionId} className="ta-skin" testId="app-host-layer-cell" />
           </AssistantShellPageFrame>
+        ) : title === null ? (
+          // The setup guide: its own card, centred where the App's intro was.
+          <div className="flex min-h-full flex-col items-center justify-center" data-testid={`app-host-layer-${kind}`}>
+            <AppHostLayerSlot extensionId={extensionId} className="ta-skin flex w-full justify-center" testId="app-host-layer-cell" />
+          </div>
         ) : <AssistantPanelPage kind={kind} />}
       </div>
     </div>
