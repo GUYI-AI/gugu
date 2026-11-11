@@ -13,8 +13,8 @@ function saves() {
   const value = new BetaPasswordSaves({ deviceId: 'device-1', changed, deliver, describe: () => ({ agentName: '研究助理', sessionTitle: '注册账号' }) })
   return { value, deliver, changed }
 }
-const item: PasswordItem = { reference: { id: '22222222-2222-4222-8222-222222222222', version: 3, epoch: 'e' }, origin: 'https://github.com',
-  maskedAccount: 'd***@example.com', fields: [{ id: '33333333-3333-4333-8333-333333333333', name: 'API Key' }], grants: [] }
+const item: PasswordItem = { reference: { id: '22222222-2222-4222-8222-222222222222', version: 3, epoch: 'e' }, origin: 'https://github.com', name: '',
+  maskedAccount: 'd***@example.com', accountSecret: false, hasPassword: true, fields: [{ id: '33333333-3333-4333-8333-333333333333', name: 'API Key', secret: true }], grants: [], sites: [] }
 afterEach(() => { posted.length = 0; vi.useRealTimers() })
 
 describe('Agent save requests', () => {

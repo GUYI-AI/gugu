@@ -1,13 +1,12 @@
 import { app, BrowserWindow, webContents, type WebContents } from 'electron'
 import { ANIMATION_WINDOW_SEEN_EVENT } from '@gugu/session-shared/animation-visibility'
 import { createLogger } from './lib/logger'
-import { assertCredentialAgentContents } from './session/main/core/browser/credential-isolation-registry'
 
 /** Install before creating windows; layers and portals use their actual native owner. */
 export function forwardWindowSeen(): void {
   const send = (contents: WebContents) => {
     if (contents.isDestroyed()) return
-    try { assertCredentialAgentContents(contents) } catch { return }
+    if (contents.isDestroyed()) return
     const host = BrowserWindow.fromWebContents(contents)
     if (!host || host.isDestroyed()) return
     const seen = host.isVisible() && !host.isMinimized()
@@ -15,7 +14,7 @@ export function forwardWindowSeen(): void {
       .catch((error: unknown) => {
         if (contents.isDestroyed()) return
         // A delivery started before isolation may settle after the private gate closed.
-        try { assertCredentialAgentContents(contents) } catch { return }
+        if (contents.isDestroyed()) return
         createLogger('ui/animation-visibility').error({ err: error }, 'Window animation visibility could not be delivered')
       })
   }

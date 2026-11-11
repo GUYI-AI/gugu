@@ -17,33 +17,40 @@ export interface ManagementRuntime {
 export type SyncValue = Omit<StoredCredential, 'id' | 'version'>
 export type SyncChange = { kind: 'save'; id: string; value: SyncValue } | { kind: 'delete'; id: string }
 export const summary = (value: StoredCredential, epoch: string): CredentialSummary => ({
-  reference: { id: value.id, version: value.version, epoch }, origin: value.origin, maskedAccount: maskedAccount(value.account),
-  fields: value.fields.map(field => ({ id: field.id, name: field.name })), grants: value.grants.map(grant => ({ ...grant })),
+  reference: { id: value.id, version: value.version, epoch }, name: value.name, origin: value.origin,
+  ...(value.accountSecret ? {} : { account: value.account }), maskedAccount: maskedAccount(value.account), accountSecret: value.accountSecret,
+  hasPassword: !!value.password,
+  fields: value.fields.map(field => ({ id: field.id, name: field.name, secret: field.secret, ...(field.secret ? {} : { value: field.value }) })),
+  grants: value.grants.map(grant => ({ ...grant })), sites: [...value.sites],
 })
 const result = (operation: VaultPayload['operations'][number], payload: VaultPayload, epoch: string): CredentialSummary => {
   const value = payload.credentials.find(item => item.id === operation.credentialId)
   if (!value) throw new VaultError('STALE_REFERENCE')
   return summary(value, epoch)
 }
-/** Blank account/password/field values keep the stored value; a field absent from the input is removed. */
-function merged(input: Required<CredentialInput>, old?: StoredCredential) {
+export type ValidatedInput = Omit<Required<CredentialInput>, 'name' | 'accountSecret' | 'sites' | 'fields'>
+  & { name?: string; accountSecret?: boolean; sites?: string[]; fields: { id: string; name: string; value: string; secret: boolean }[] }
+/** Blank account/password/field values keep the stored value; a field absent from the input is removed. A credential
+ * holds at least one value. Omitted name, secret marks and sites keep the stored ones. */
+function merged(input: ValidatedInput, old?: StoredCredential) {
   const account = input.account || old?.account || '', password = input.password || old?.password || ''
-  if (!account || !password) throw new VaultError('INVALID_INPUT')
   const names = new Set<string>()
   const fields = input.fields.map(field => {
     const value = field.value || old?.fields.find(item => item.id === field.id)?.value || ''
     if (!value || names.has(field.name)) throw new VaultError('INVALID_INPUT')
     names.add(field.name)
-    return { id: field.id, name: field.name, value }
+    return { id: field.id, name: field.name, value, secret: field.secret }
   })
-  return { origin: input.origin, account, password, fields }
+  if (!account && !password && !fields.length) throw new VaultError('INVALID_INPUT')
+  return { origin: input.origin, name: input.name ?? old?.name ?? '', account, accountSecret: input.accountSecret ?? old?.accountSecret ?? false,
+    password, fields, sites: input.sites ?? old?.sites ?? [] }
 }
 function receipt(operation: VaultPayload['operations'][number], action: 'add' | 'edit' | 'delete'): AuditInput {
   return { id: operation.auditId, action, source: 'local-person', outcome: 'completed',
     credential: { id: operation.credentialId, version: operation.version }, origin: operation.origin }
 }
 /** The encrypted operation ledger makes lost responses/restarts safe to retry under the original operation id. */
-export async function saveCredential(runtime: ManagementRuntime, operationId: string, input: Required<CredentialInput>, previous?: CredentialReference,
+export async function saveCredential(runtime: ManagementRuntime, operationId: string, input: ValidatedInput, previous?: CredentialReference,
   creator?: CredentialGrant): Promise<CredentialSummary> {
   const { key, epoch, payload } = runtime
   // The durable request binds the credential/version, while runtime.check separately validates

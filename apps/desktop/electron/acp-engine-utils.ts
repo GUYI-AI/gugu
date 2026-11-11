@@ -251,7 +251,7 @@ function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSigna
   const baseTools = initial.personalAssistant ? GUGU_ASSISTANT_LISTED_TOOLS : GUGU_LISTED_TOOLS
   const search = initial.webSearch?.available() ? initial.webSearch : undefined
   const listedTools = new Set<string>(search ? [...baseTools, 'web_search'] : baseTools)
-  if (PASSWORD_BETA_ENABLED) for (const name of ['password_credentials', 'password_login']) listedTools.add(name)
+  if (PASSWORD_BETA_ENABLED) for (const name of ['password_credentials', 'password_fill']) listedTools.add(name)
   const trackRequest: GuguMcpRequestTracker = (work, toolName, requestId) => {
     const tracked = trackHostRequest(work, toolName, requestId)
     if (initial.personalAssistant && toolName) {

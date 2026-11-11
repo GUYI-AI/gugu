@@ -7,7 +7,8 @@ import { maskedAccount } from './schema'
 const unavailable = () => new Error('password_save_unavailable')
 /** The person may answer later; a proposal is held in memory only, never on disk or in a message. */
 const SAVE_REQUEST_TTL_MS = 30 * 60_000
-export interface SaveProposal { account?: string; password?: string; fields?: { name: string; value: string }[] }
+/** What an Agent proposes. A field without a value is one the person fills in; `secret` defaults to true. */
+export interface SaveProposal { name?: string; account?: string; accountSecret?: boolean; password?: string; fields?: { name: string; value?: string; secret?: boolean }[] }
 export type SaveResult = 'saved' | 'rejected' | 'expired' | 'invalidated'
 type Pending = { view: PasswordSaveRequest; draft: PasswordSaveDraft; result: 'pending' | SaveResult; credentialId?: string; timer: ReturnType<typeof setTimeout>; remote?: string }
 export interface BetaSaveHost {
@@ -30,10 +31,18 @@ export class BetaPasswordSaves {
     const requestId = randomUUID(), presentation = remote ? { agentName: remote.agentName, sessionTitle: remote.sessionTitle } : this.host.describe(caller.agentId, caller.sessionId)
     // The card shows the account the Agent proposed (masked like every stored one), else the stored one.
     const shown = proposal.account ? maskedAccount(proposal.account) : item?.maskedAccount
+    const fields = (proposal.fields ?? []).map(field => {
+      const stored = item?.fields.find(value => value.name === field.name)
+      return { id: stored?.id ?? randomUUID(), name: field.name, value: field.value ?? '', secret: field.secret ?? stored?.secret ?? true }
+    })
+    // The card is the form: an account and a password unless the Agent proposed only named values (an API key).
+    const login = proposal.account !== undefined || proposal.password !== undefined || !fields.length
+    const inputs = [...(login ? [{ key: 'account', name: '账号', secret: proposal.accountSecret ?? item?.accountSecret ?? false }, { key: 'password', name: '密码', secret: true }] : []),
+      ...fields.map(field => ({ key: field.id, name: field.name, secret: field.secret }))]
     const view: PasswordSaveRequest = { kind: 'save', requestId, origin, ...(item ? { credentialId: item.reference.id } : {}), ...(shown ? { maskedAccount: shown } : {}),
-      agent: caller.agentId, ...presentation, sessionId: caller.sessionId, deviceId: this.host.deviceId, expiresAt: Date.now() + SAVE_REQUEST_TTL_MS }
-    const fields = (proposal.fields ?? []).map(field => ({ id: item?.fields.find(value => value.name === field.name)?.id ?? randomUUID(), name: field.name, value: field.value }))
-    const draft: PasswordSaveDraft = { origin, account: proposal.account ?? '', password: proposal.password ?? '', fields, agentName: presentation.agentName,
+      agent: caller.agentId, ...presentation, sessionId: caller.sessionId, deviceId: this.host.deviceId, expiresAt: Date.now() + SAVE_REQUEST_TTL_MS, inputs }
+    const draft: PasswordSaveDraft = { origin, ...(proposal.name !== undefined ? { name: proposal.name } : {}), account: proposal.account ?? '',
+      ...(proposal.accountSecret !== undefined ? { accountSecret: proposal.accountSecret } : {}), password: proposal.password ?? '', fields, agentName: presentation.agentName,
       ...(item ? { credentialId: item.reference.id } : {}) }
     const timer = setTimeout(() => this.finish(requestId, 'expired'), SAVE_REQUEST_TTL_MS)
     timer.unref?.()

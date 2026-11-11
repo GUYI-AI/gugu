@@ -1,5 +1,5 @@
 {
   "repository": "OpenDCAI/gugu-supabase",
-  "ref": "0bbc3af66df7aeb4606c19b1b8c0557051802275",
-  "status": "gugu-supabase dev 0bbc3af6 (includes #192 private feedback evidence storage and #225), deployed to staging"
+  "ref": "4cdeae3a1f99bf30ba83338ead46dd084dd48ffb",
+  "status": "gugu-supabase dev 4cdeae3a (includes #254 password vault sync with signed membership); staging deploy pending"
 }

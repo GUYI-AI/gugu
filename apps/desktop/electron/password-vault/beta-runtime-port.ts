@@ -1,13 +1,16 @@
 import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import type { GuguMcpContext } from '../acp-engine-utils'
 import type { SaveProposal } from './beta-save'
+import type { CredentialSearch } from './beta-agent-view'
+import type { FillRequest } from './fill-plan'
+
+/** password_fill on a browser page. Without credentialId: the credential of that page's website, when there is one. */
+export type FillInput = FillRequest & { credentialId?: string }
 
 /** The Agent's password tools: on a desktop the local vault (beta-host.ts), on a Gugu server the account's desktop (server-agent.ts). */
 export interface PasswordAgentPort {
-  list(context: GuguMcpContext): Promise<unknown>
-  request(context: GuguMcpContext, signal: AbortSignal, input: {
-    credentialId: string; browserId?: string; loginUrl: string; selection: { form: string; account: string; password: string; submitter?: string }
-  }): Promise<unknown>
+  list(context: GuguMcpContext, search?: CredentialSearch): Promise<unknown>
+  request(context: GuguMcpContext, signal: AbortSignal, input: FillInput): Promise<unknown>
   start(context: GuguMcpContext, requestId: string): Promise<unknown>
   status(context: GuguMcpContext, requestId: string): Promise<unknown>
   save(context: GuguMcpContext, input: SaveProposal & { origin: string; credentialId?: string }): Promise<unknown>

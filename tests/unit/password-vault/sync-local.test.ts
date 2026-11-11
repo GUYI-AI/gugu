@@ -36,7 +36,7 @@ describe('local vault ↔ sync engine', () => {
     let refuse = false
     const { vault } = await fixture(async change => { if (refuse) throw new VaultError('STALE_REFERENCE'); published.push(structuredClone(change)) })
     const saved = await vault.save(person, randomUUID(), input('first'))
-    expect(published).toEqual([{ kind: 'save', id: saved.reference.id, value: { ...input('first'), fields: [], grants: [] } }])
+    expect(published).toEqual([{ kind: 'save', id: saved.reference.id, value: { ...input('first'), name: '', accountSecret: false, fields: [], grants: [], sites: [] } }])
     refuse = true
     await expect(vault.save(person, randomUUID(), input('second'), saved.reference)).rejects.toMatchObject({ code: 'STALE_REFERENCE' })
     expect((await vault.reveal(person, saved.reference)).password).toBe('first')
@@ -52,8 +52,8 @@ describe('local vault ↔ sync engine', () => {
     const { vault, invalidate } = await fixture(async () => {})
     const saved = await vault.save(person, randomUUID(), input('local'))
     const remote = randomUUID()
-    await vault.syncApply(person, [{ id: remote, value: { ...input('remote'), origin: 'https://mail.example.com', fields: [], grants: [] } },
-      { id: saved.reference.id, value: { ...input('edited elsewhere'), fields: [], grants: [] } }])
+    await vault.syncApply(person, [{ id: remote, value: { ...input('remote'), origin: 'https://mail.example.com', name: '', accountSecret: false, fields: [], grants: [], sites: [] } },
+      { id: saved.reference.id, value: { ...input('edited elsewhere'), name: '', accountSecret: false, fields: [], grants: [], sites: [] } }])
     const listed = await vault.list(person)
     expect(listed.map(item => item.reference.id).sort()).toEqual([saved.reference.id, remote].sort())
     expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ reason: 'edit', credentialId: saved.reference.id }))

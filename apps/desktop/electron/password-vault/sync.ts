@@ -55,9 +55,10 @@ const remoteState = z.union([z.object({ initialized: z.literal(false) }), z.obje
   shares: z.array(z.object({ itemId: z.string().nullable(), epoch: z.number(), sealed: z.string() })), items: z.array(remoteItem) })])
 type RemoteState = Extract<z.infer<typeof remoteState>, { initialized: true }>
 type RemoteItem = z.infer<typeof remoteItem>
-const valueSchema = z.strictObject({ origin: z.string(), account: z.string(), password: z.string(),
-  fields: z.array(z.strictObject({ id: z.string(), name: z.string(), value: z.string() })),
-  grants: z.array(z.strictObject({ subject: z.string(), level: z.enum(['read', 'write']) })) })
+// Keys added later default here, so an entry written before they existed compares equal to its re-saved self.
+const valueSchema = z.strictObject({ origin: z.string(), name: z.string().default(''), account: z.string(), accountSecret: z.boolean().default(false), password: z.string(),
+  fields: z.array(z.strictObject({ id: z.string(), name: z.string(), value: z.string(), secret: z.boolean().default(true) })),
+  grants: z.array(z.strictObject({ subject: z.string(), level: z.enum(['read', 'write']) })), sites: z.array(z.string()).default([]) })
 const sameValue = (a: SyncValue, b: SyncValue) => JSON.stringify(valueSchema.parse(a)) === JSON.stringify(valueSchema.parse(b))
 
 /** Sync state lives beside the account's vault root, never inside it: the vault requires its root to be empty
@@ -284,14 +285,16 @@ export class VaultSync {
     file.revision = maxRevision(file.revision, state.revision)
     await this.save()
   }
-  /** First sync of a device that already had a local vault: the same site and account become one entry. */
+  /** First sync of a device that already had a local vault: the same site, account and name become one entry (two
+   * API keys of one site without an account stay apart by name). */
   private async merge(file: DeviceFile, state: RemoteState, vaultKey: Buffer) {
     const remote = new Map<string, { id: string; value: SyncValue }>()
-    for (const item of state.items) if (!item.deleted) { const value = this.open(vaultKey, item); remote.set(`${value.origin}\n${value.account}`, { id: item.itemId, value }) }
+    const twinKey = (value: SyncValue) => JSON.stringify([value.origin, value.account, value.account ? '' : value.name ?? ''])
+    for (const item of state.items) if (!item.deleted) { const value = this.open(vaultKey, item); remote.set(twinKey(value), { id: item.itemId, value }) }
     const local = await this.#o.vault.syncExport(), dropped: { id: string }[] = []
     for (const entry of local) {
       if (file.versions[entry.id]) continue
-      const { id, ...value } = entry, twin = remote.get(`${value.origin}\n${value.account}`)
+      const { id, ...value } = entry, twin = remote.get(twinKey(value))
       if (twin && twin.id !== id) {
         const grants = [...new Map([...twin.value.grants, ...value.grants].map(grant => [grant.subject, grant] as const)).values()]
         if (grants.length !== twin.value.grants.length) await this.publishSave(file, state.epoch, vaultKey, twin.id, { ...twin.value, grants })

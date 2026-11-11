@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import type { AuditInput, AuditReceipt, AuditRecord, CredentialGrant, CredentialInput, CredentialReference, CredentialSecrets, CredentialSummary, CredentialUseResult, VaultUseBinding, VaultUseCapability, LockReason, VaultDependencies, VaultState, VaultInstallationIdentity } from './contracts'
+import type { AuditInput, AuditReceipt, AuditRecord, CredentialGrant, CredentialInput, CredentialReference, CredentialSecrets, CredentialSummary, CredentialUseResult, VaultFillPlan, VaultUseBinding, VaultUseCapability, LockReason, VaultDependencies, VaultState, VaultInstallationIdentity } from './contracts'
 import { VaultError } from './contracts'
 import { EncryptedVaultAudit } from './audit'
 import { sealedJson } from './crypto'
@@ -7,6 +7,7 @@ import { auditInput, binding, credentialInputSchema, grantSchema, payloadSchema,
 import { VaultFile } from './vault-file'
 import { captureBrowserSink, performCredentialUse } from './browser-use'
 import { OutcomeAuditIssuer } from './outcome-audit'
+import { totpCode } from './totp'
 import { saveCredential, deleteCredential, updateGrants, summary, type ManagementRuntime, type SyncValue } from './management'
 import { VaultFeatureOperation } from './feature-guard'
 import { anySignal } from '@gugu/core/shared/anySignal'
@@ -33,6 +34,10 @@ export class LocalPasswordVault {
   #failure?: VaultState['reason']
   #queue: Promise<unknown> = Promise.resolve()
   #disposed = false
+  /** Uses the person approved on a website that is not the credential's (useId). Forgotten on lock. */
+  readonly #elsewhere = new Set<string>()
+  /** Uses with no saved credential behind them (every value typed for that use): nothing to look up afterwards. */
+  readonly #transient = new Set<string>()
   readonly #dependencies: VaultDependencies
   constructor(dependencies: VaultDependencies) {
     if (!identity.safeParse(dependencies.accountId).success || !dependencies.installationBinding?.trim()) throw new VaultError('INVALID_INPUT')
@@ -48,9 +53,10 @@ export class LocalPasswordVault {
       const payload = this.#file.payload(document, key)
       try {
         if (bound.accountId !== this.#dependencies.accountId || bound.installationId !== document.installationId || bound.credentialVersion !== String(Number(bound.credentialVersion))) throw new VaultError('STALE_REFERENCE')
+        if (this.#transient.has(bound.useId)) return
         const value = this.check({ id: bound.credentialId, version: Number(bound.credentialVersion), epoch: bound.lockEpoch }, payload)
-        if (value.origin !== bound.origin) throw new VaultError('STALE_REFERENCE')
-      } finally { for (const item of payload.credentials) { item.account = ''; item.password = '' } }
+        if (value.origin !== bound.origin && !value.sites.includes(bound.origin) && !this.#elsewhere.has(bound.useId)) throw new VaultError('STALE_REFERENCE')
+      } finally { for (const item of payload.credentials) { item.account = ''; item.password = ''; for (const field of item.fields) field.value = '' } }
     })
     activeRoots.set(dependencies.root, this)
   }
@@ -99,7 +105,7 @@ export class LocalPasswordVault {
   }
   private wipe(): void {
     this.#epochAbort.abort(); this.#epochAbort = new AbortController()
-    this.#outcomes.clear()
+    this.#outcomes.clear(); this.#elsewhere.clear(); this.#transient.clear()
     for (const secret of this.#activeSecrets) secret.clear()
     this.#activeSecrets.clear()
     for (const key of this.#transientKeys) key.fill(0)
@@ -216,7 +222,7 @@ export class LocalPasswordVault {
     if (!uuid.safeParse(operationId).success) return Promise.reject(new VaultError('INVALID_INPUT'))
     const validated = credentialInputSchema.safeParse(input)
     if (!validated.success || creator && !grantSchema.safeParse(creator).success) return Promise.reject(new VaultError('INVALID_INPUT'))
-    if (!previous && (!validated.data.account || !validated.data.password)) return Promise.reject(new VaultError('INVALID_INPUT'))
+    if (!previous && !validated.data.account && !validated.data.password && !validated.data.fields.length) return Promise.reject(new VaultError('INVALID_INPUT'))
     let origin: string
     try { origin = httpsOrigin(input.origin) } catch (error) { return Promise.reject(safe(error)) }
     const normalized = { ...validated.data, origin }, revocation = this.revoke(previous, 'edit')
@@ -351,9 +357,23 @@ export class LocalPasswordVault {
       catch { await this.fail(); return { status: effectPossible ? 'uncertain' : 'unavailable', code: 'AUDIT_FAILED', retry: false, retainIsolatedLogin: true } }
     })
   }
-  useCredential(capability: VaultUseCapability, useBinding: VaultUseBinding): Promise<CredentialUseResult> {
+  /** `plan`: which values, in the order of the page's targets; built by the trusted host from the approved request. */
+  useCredential(capability: VaultUseCapability, useBinding: VaultUseBinding, plan: VaultFillPlan): Promise<CredentialUseResult> {
     const sink = this.#browser
-    if (!sink) return Promise.resolve({ status: 'unavailable', retry: false, retainIsolatedLogin: true })
+    if (!sink || !plan || !Array.isArray(plan.values) || !plan.values.length || plan.values.length > 16) return Promise.resolve({ status: 'unavailable', retry: false, retainIsolatedLogin: true })
+    const wanted = Object.freeze(plan.values.map(entry => Object.freeze({ ...entry }))), elsewhere = plan.elsewhere === true
+    const typed = Object.freeze(plan.values.map((_entry, index) => { const text = plan.typed?.[index]; return typeof text === 'string' && text ? text : undefined }))
+    const transient = plan.transient === true
+    // Nothing saved: every value must have been typed for this use, and none may name a stored one.
+    if (transient && wanted.some((entry, index) => entry.kind !== 'typed' || !typed[index])) return Promise.resolve({ status: 'unavailable', retry: false, retainIsolatedLogin: true })
+    if (transient) {
+      this.#transient.add(useBinding.useId)
+      if (this.#transient.size > 256) this.#transient.delete(this.#transient.values().next().value!)
+    }
+    if (elsewhere) {
+      this.#elsewhere.add(useBinding.useId)
+      if (this.#elsewhere.size > 256) this.#elsewhere.delete(this.#elsewhere.values().next().value!)
+    }
     // Copy the binding; mutating a caller-owned object while waiting must not change the authorization.
     const bound = Object.freeze({ ...useBinding })
     let feature: VaultFeatureOperation | undefined
@@ -366,17 +386,31 @@ export class LocalPasswordVault {
         await held.wait(() => this.gates()); await held.wait(() => this.open(held))
         const { key, document, epoch } = this.unlocked(), payload = this.#file.payload(document, key)
         try {
-          const value = this.check({ id: bound.credentialId, version: Number(bound.credentialVersion), epoch: bound.lockEpoch }, payload)
-          if (bound.accountId !== this.#dependencies.accountId || bound.installationId !== document.installationId || bound.credentialVersion !== String(value.version) || bound.origin !== value.origin) throw new VaultError('STALE_REFERENCE')
+          if (bound.accountId !== this.#dependencies.accountId || bound.installationId !== document.installationId) throw new VaultError('STALE_REFERENCE')
+          const value = transient ? undefined : this.check({ id: bound.credentialId, version: Number(bound.credentialVersion), epoch: bound.lockEpoch }, payload)
+          if (value && bound.credentialVersion !== String(value.version)) throw new VaultError('STALE_REFERENCE')
+          // Its own website or one of its sites; another one only with the person's approval of this very use.
+          if (value && bound.origin !== value.origin && !value.sites.includes(bound.origin) && !elsewhere) throw new VaultError('STALE_REFERENCE')
+          if (!value && bound.lockEpoch !== epoch) throw new VaultError('STALE_REFERENCE')
+          const text = wanted.map((entry, index) => {
+            if (typed[index]) return typed[index]!
+            if (!value || entry.kind === 'typed') throw new VaultError('UNAVAILABLE')
+            if (entry.kind === 'account') return value.account
+            if (entry.kind === 'password') return value.password
+            const field = value.fields.find(item => item.id === entry.id)
+            if (!field) throw new VaultError('STALE_REFERENCE')
+            return entry.kind === 'code' ? totpCode(field.value) : field.value
+          })
+          if (text.some(entry => !entry)) throw new VaultError('UNAVAILABLE')
           control.assertCurrent(); held.assertCurrent(); this.current(epoch)
-          const abort = new AbortController(), account = Buffer.from(value.account), password = Buffer.from(value.password), credentialId = value.id
-          const secret = { credentialId, clear() { abort.abort(); account.fill(0); password.fill(0) } }
+          const abort = new AbortController(), values = text.map(entry => Buffer.from(entry)), credentialId = value?.id ?? bound.credentialId
+          const secret = { credentialId, clear() { abort.abort(); for (const entry of values) entry.fill(0) } }
           this.#activeSecrets.add(secret)
           const detach = held.onInvalidate(() => secret.clear())
-          return { account, password, signal: abort.signal,
+          return { values, signal: abort.signal,
             assertCurrent: () => { held.assertCurrent(); this.current(epoch); if (!this.#key || this.#failure || this.#revocations.has(credentialId)) throw new VaultError('LOCKED') },
             release: () => { detach(); secret.clear(); this.#activeSecrets.delete(secret) } }
-        } finally { for (const item of payload.credentials) { item.account = ''; item.password = '' } }
+        } finally { for (const item of payload.credentials) { item.account = ''; item.password = ''; for (const field of item.fields) field.value = '' } }
       })
     }), (entry, effectPossible) => feature ? this.#file.disk.withFeature(feature, () => this.appendAudit(entry, { effectPossible })) : Promise.resolve({ status: 'unavailable', code: 'AUDIT_FAILED', retry: false, retainIsolatedLogin: true }), this.#outcomes).finally(() => feature?.release())
   }

@@ -48,14 +48,17 @@ describe('key-value credentials, grants and person-only reveal', () => {
     const keep = field('API Key', 'key-' + randomUUID()), drop = field('TOTP', 'totp-' + randomUUID())
     const first = await vault.save(person, randomUUID(), { origin: 'https://api.example.test', account: 'demo@example.test', password: 'original', fields: [keep, drop] })
     const edited = await vault.save(person, randomUUID(), { origin: 'https://api.example.test', account: '', password: '', fields: [{ ...keep, name: 'Token', value: '' }] }, first.reference)
-    expect(edited.fields).toEqual([{ id: keep.id, name: 'Token' }])
+    expect(edited.fields).toEqual([{ id: keep.id, name: 'Token', secret: true }])
     const secrets = await vault.reveal(person, edited.reference)
     expect(secrets.account).toBe('demo@example.test'); expect(secrets.password).toBe('original')
-    expect(secrets.fields).toEqual([{ id: keep.id, name: 'Token', value: keep.value }])
+    expect(secrets.fields).toEqual([{ id: keep.id, name: 'Token', value: keep.value, secret: true }])
   })
-  it('rejects a new credential without account or password, and duplicate field names', async () => {
+  it('rejects a new credential without any value, and duplicate field names; an API key alone is a credential', async () => {
     const { vault } = await fixture()
-    await expect(vault.save(person, randomUUID(), { origin: 'https://a.example.test', account: '', password: 'x' })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    await expect(vault.save(person, randomUUID(), { origin: 'https://a.example.test', account: '', password: '' })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    const key = await vault.save(person, randomUUID(), { origin: 'https://api.example.test', name: '公司', account: '', password: '', fields: [field('API Key', 'sk-' + randomUUID())] })
+    expect(key).toMatchObject({ name: '公司', hasPassword: false, fields: [{ name: 'API Key', secret: true }] })
+    expect(key.fields[0]).not.toHaveProperty('value')
     await expect(vault.save(person, randomUUID(), { origin: 'https://a.example.test', account: 'a', password: 'x', fields: [field('K', '1'), field('K', '2')] })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
   })
   it('requires local verification for every reveal and returns nothing when it fails', async () => {
@@ -82,6 +85,19 @@ describe('key-value credentials, grants and person-only reveal', () => {
     // A stale reference releases nothing.
     await vault.save(person, randomUUID(), { origin: 'https://a.example.test', account: '', password: 'changed' }, saved.reference)
     await expect(vault.releaseToServer(saved.reference, plain => sealTo(server.publicKey, plain), { agentId: randomUUID(), sessionId, requestId: randomUUID() })).rejects.toBeInstanceOf(VaultError)
+  })
+  it('lists non-secret values and hides secret ones; marks and name survive edits that omit them', async () => {
+    const { vault } = await fixture(), apiKey = 'sk-' + randomUUID()
+    const saved = await vault.save(person, randomUUID(), { origin: 'https://db.example.test', name: '生产库', account: 'admin', password: 'pw-' + randomUUID(),
+      fields: [{ ...field('主机', 'db.example.test'), secret: false }, field('API Key', apiKey)] })
+    expect(saved).toMatchObject({ name: '生产库', account: 'admin', accountSecret: false, hasPassword: true })
+    expect(saved.fields.map(entry => [entry.name, entry.secret, entry.value])).toEqual([['主机', false, 'db.example.test'], ['API Key', true, undefined]])
+    expect(JSON.stringify(await vault.list(person)).includes(apiKey)).toBe(false)
+    const hidden = await vault.save(person, randomUUID(), { origin: 'https://db.example.test', account: '', accountSecret: true, password: '',
+      fields: saved.fields.map(entry => ({ id: entry.id, name: entry.name, value: '', secret: entry.secret })) }, saved.reference)
+    expect(hidden).toMatchObject({ name: '生产库', accountSecret: true })
+    expect(hidden).not.toHaveProperty('account')
+    expect(hidden.maskedAccount).toBe('a***')
   })
   it('grants per credential, dedupes subjects and keeps them across edits', async () => {
     const { vault } = await fixture(), agent = `agent:${randomUUID()}`, project = `project:${randomUUID()}`

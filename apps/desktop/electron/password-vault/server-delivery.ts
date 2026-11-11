@@ -16,14 +16,14 @@ export const PASSWORD_AGENT_RPC = 'password.agent'
 export const remoteCallerSchema = z.strictObject({ deviceId: z.string().uuid(), sessionId: z.string().uuid(), agentId: z.string().uuid(),
   agentName: z.string().max(200), sessionTitle: z.string().max(500) })
 export type RemoteCaller = z.infer<typeof remoteCallerSchema>
-const fields = z.array(z.strictObject({ name: z.string().trim().min(1).max(200), value: z.string().max(65536) })).max(50)
+const fields = z.array(z.strictObject({ name: z.string().trim().min(1).max(200), value: z.string().max(65536).optional(), secret: z.boolean().optional() })).max(50)
 export const remoteOpSchema = z.discriminatedUnion('op', [
   z.strictObject({ op: z.literal('list'), caller: remoteCallerSchema }),
   z.strictObject({ op: z.literal('request'), caller: remoteCallerSchema, credentialId: z.string().uuid(), origin: z.string().url() }),
   z.strictObject({ op: z.literal('status'), caller: remoteCallerSchema, requestId: z.string().uuid() }),
   z.strictObject({ op: z.literal('release'), caller: remoteCallerSchema, requestId: z.string().uuid(), serverKey: z.string().regex(/^[A-Za-z0-9+/]{43}=$/) }),
-  z.strictObject({ op: z.literal('save'), caller: remoteCallerSchema, origin: z.string().url(), credentialId: z.string().uuid().optional(),
-    account: z.string().max(4096).optional(), password: z.string().max(65536).optional(), fields: fields.optional() }),
+  z.strictObject({ op: z.literal('save'), caller: remoteCallerSchema, origin: z.string().url(), credentialId: z.string().uuid().optional(), name: z.string().max(200).optional(),
+    account: z.string().max(4096).optional(), accountSecret: z.boolean().optional(), password: z.string().max(65536).optional(), fields: fields.optional() }),
   z.strictObject({ op: z.literal('saveStatus'), caller: remoteCallerSchema, requestId: z.string().uuid() }),
 ])
 export type RemoteOp = z.infer<typeof remoteOpSchema>

@@ -17,4 +17,3 @@ export const desktopMainEntries: Record<string, string> = {
 export const webHostEntries: Record<string, string> = { 'task-host': 'electron/session-host-entry.ts', ...workers }
 export const desktopPreloadEntry = 'electron/preload.ts'
 export const extensionPreloadEntry = 'electron/extension-bridge-preload.ts'
-export const vaultLoginPreloadEntry = 'electron/vault-browser-login-preload.ts'

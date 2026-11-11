@@ -9,6 +9,8 @@ import { seal, unseal } from '../../../apps/desktop/electron/password-vault/cryp
 import type { VaultDependencies, VaultUseBinding, VaultUseCapability } from '../../../apps/desktop/electron/password-vault/contracts'
 import { PasswordFeatureReadiness, PASSWORD_PROTECTIONS, type PasswordInstallation, type PasswordExecutionMode } from '../../../apps/desktop/electron/permissions/password-readiness'
 import type { LivePasswordFact } from '../../../apps/desktop/electron/permissions/password-facts'
+const LOGIN = { values: [{ kind: 'account' }, { kind: 'password' }], elsewhere: false } as const
+
 
 const writes = vi.hoisted(() => ({ enabled: false, count: 0, afterRename: undefined as undefined | ((path: string) => Promise<void>) }))
 vi.mock('node:fs/promises', async original => {
@@ -80,7 +82,7 @@ describe('live password feature guard held by storage', () => {
     expect(f.acquireFeatureGuard).toHaveBeenCalledOnce(); expect(f.acquireFeatureGuard.mock.calls[0]?.[0]).toBe('save')
     expect(replacement).not.toHaveBeenCalled(); expect(f.legacy).not.toHaveBeenCalled()
     const request = await f.use()
-    expect((await f.vault.useCredential(request.capability, request.binding)).status).toBe('submitted_unconfirmed')
+    expect((await f.vault.useCredential(request.capability, request.binding, LOGIN)).status).toBe('submitted_unconfirmed')
     expect(f.acquireFeatureGuard.mock.calls.map(call => call[0])).toEqual(['save', 'save', 'use'])
     expect(f.state.deliveries).toBe(1); expect(f.state.submissions).toBe(1)
   })
@@ -109,7 +111,7 @@ describe('live password feature guard held by storage', () => {
       if (!blocked && args[0].includes('/audit/')) { blocked = true; entered.resolve(); await release.promise }
       return original.apply(this, args)
     })
-    const pending = f.vault.useCredential(request.capability, request.binding)
+    const pending = f.vault.useCredential(request.capability, request.binding, LOGIN)
     await entered.promise; f.invalidate(kind); release.resolve(); await pending
     expect(f.state.deliveries).toBe(0); expect(f.state.submissions).toBe(0)
   })
@@ -117,23 +119,23 @@ describe('live password feature guard held by storage', () => {
     const abort = new AbortController(); abort.abort()
     const candidate = kind === 'missing' ? undefined : kind === 'wrong-type' ? { aborted: false } : abort.signal
     const f = await fixture(true, () => candidate); await f.setup(); const request = await f.use()
-    const result = await f.vault.useCredential(request.capability, request.binding)
+    const result = await f.vault.useCredential(request.capability, request.binding, LOGIN)
     expect(result.status).toBe('unavailable'); expect(f.state.deliveries).toBe(0); expect(f.state.submissions).toBe(0)
     expect(f.acquireFeatureGuard.mock.calls.map(call => call[0])).toEqual(['save', 'save'])
   })
   it('clears already delivered buffers synchronously on live revocation and refuses later submission', async () => {
     const f = await fixture(); await f.setup(); const request = await f.use(), entered = deferred(), release = deferred()
-    let secret: { account: Buffer; password: Buffer } | undefined, stillCurrent = true
+    let secret: { values: readonly Buffer[] } | undefined, stillCurrent = true
     f.dependencies.browser.fillAndSubmit.mockImplementationOnce(async (_binding, value, control) => {
       f.state.deliveries++; secret = value; await control.prepareSubmission(); entered.resolve(); await release.promise
       try { control.claimSubmission() } catch { stillCurrent = false }
       return 'submitted_unconfirmed'
     })
-    const pending = f.vault.useCredential(request.capability, request.binding)
+    const pending = f.vault.useCredential(request.capability, request.binding, LOGIN)
     await entered.promise
-    const hadPlaintext = !!secret?.password.some(byte => byte !== 0)
+    const hadPlaintext = !!secret?.values[1]!.some(byte => byte !== 0)
     f.invalidate('revoked')
-    const clearedSynchronously = !!secret && [secret.account, secret.password].every(bytes => bytes.every(byte => byte === 0))
+    const clearedSynchronously = !!secret && [...secret.values].every(bytes => bytes.every(byte => byte === 0))
     release.resolve(); const result = await pending
     expect(hadPlaintext).toBe(true); expect(clearedSynchronously).toBe(true)
     expect(stillCurrent).toBe(false); expect(f.state.submissions).toBe(0); expect(result.status).toBe('uncertain')
@@ -148,7 +150,7 @@ describe('live password feature guard held by storage', () => {
     } else {
       f.dependencies.browser.cleanup.mockImplementationOnce(async () => { entered.resolve(); await release.promise; return { status: 'cleaned' } })
     }
-    const pending = f.vault.useCredential(request.capability, request.binding)
+    const pending = f.vault.useCredential(request.capability, request.binding, LOGIN)
     await entered.promise; f.invalidate('closed'); release.resolve()
     const result = await pending
     expect(f.state.submissions).toBe(1); expect(result.status).toBe('uncertain'); expect(result.retainIsolatedLogin).toBe(true)

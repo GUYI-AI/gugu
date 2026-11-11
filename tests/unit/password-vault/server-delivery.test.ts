@@ -11,8 +11,8 @@ import type { PasswordItem } from '../../../packages/core/src/shared/passwordBet
 
 const agentId = '11111111-1111-4111-8111-111111111111', owner = '99999999-9999-4999-8999-999999999999'
 const caller: RemoteCaller = { deviceId: '77777777-7777-4777-8777-777777777777', sessionId: '66666666-6666-4666-8666-666666666661', agentId, agentName: '研究助理', sessionTitle: '登录' }
-const item: PasswordItem = { reference: { id: '22222222-2222-4222-8222-222222222222', version: 1, epoch: 'e' }, origin: 'https://site.example',
-  maskedAccount: 't***', fields: [], grants: [] }
+const item: PasswordItem = { reference: { id: '22222222-2222-4222-8222-222222222222', version: 1, epoch: 'e' }, origin: 'https://site.example', name: '',
+  maskedAccount: 't***', accountSecret: false, hasPassword: true, fields: [], grants: [], sites: [] }
 afterEach(() => { vi.useRealTimers() })
 
 describe('「本机送」 on the desktop: requests from a server', () => {
@@ -76,7 +76,8 @@ describe('「本机送」 on the server: the password tools ask the desktop', ()
     }
     return { agent: createServerPasswordAgent(host), context, posted, delivered, calls, host }
   }
-  const selection = { form: '#login', account: '#user', password: '#pass' }
+  const fill = { form: '#login', submit: '#go', fill: [{ field: '账号', into: '#user' }, { field: '密码', into: '#pass' }] }
+const selection = { form: '#login', account: '#user', password: '#pass', submitter: '#go' }
 
   it('finds the desktop that keeps the vault, posts the card from its own session, and tells the session the answer', async () => {
     home = await mkdtemp(path.join(tmpdir(), 'server-home-'))
@@ -85,7 +86,7 @@ describe('「本机送」 on the server: the password tools ask the desktop', ()
     const { agent, context, posted, delivered, calls } = server(op => op.op === 'request'
       ? { requestId: '33333333-3333-4333-8333-333333333333', status: 'pending', view: { kind: 'login', requestId: '33333333-3333-4333-8333-333333333333' } }
       : { status: answer })
-    const reply = await agent.request(context, new AbortController().signal, { credentialId: item.reference.id, loginUrl: 'https://site.example/login', selection })
+    const reply = await agent.request(context, new AbortController().signal, { credentialId: item.reference.id, url: 'https://site.example/login', ...fill })
     expect(reply).toEqual({ requestId: '33333333-3333-4333-8333-333333333333', status: 'pending' })
     expect(calls.slice(0, 2)).toEqual(['old-laptop:request', 'mac-1:request'])
     expect(posted).toHaveLength(1)
@@ -102,11 +103,11 @@ describe('「本机送」 on the server: the password tools ask the desktop', ()
       if (op.op === 'release') return { sealed: await sealTo(op.serverKey, Buffer.from(JSON.stringify({ account: 'tomsmith', password: 'canary-pass' }))) }
       return { status: 'approved' }
     })
-    await agent.request(context, new AbortController().signal, { credentialId: item.reference.id, loginUrl: 'https://site.example/login', selection })
+    await agent.request(context, new AbortController().signal, { credentialId: item.reference.id, url: 'https://site.example/login', ...fill })
     const result = await agent.start(context, requestId)
     expect(result).toEqual({ status: 'submitted_unconfirmed' })
     expect(JSON.stringify(result)).not.toContain('canary')
-    expect(host.privateLogin).toHaveBeenCalledWith('66666666-6666-4666-8666-666666666661', expect.objectContaining({ origin: 'https://site.example', account: 'tomsmith', password: 'canary-pass' }))
+    expect(host.privateLogin).toHaveBeenCalledWith('66666666-6666-4666-8666-666666666661', expect.objectContaining({ origin: 'https://site.example', selection, account: 'tomsmith', password: 'canary-pass' }))
     // Used once: a second start has nothing to release.
     await expect(agent.start(context, requestId)).rejects.toThrow()
     // The delivery key stays on this server, private.
@@ -117,8 +118,11 @@ describe('「本机送」 on the server: the password tools ask the desktop', ()
   it('refuses a request that is not https, and another session’s request', async () => {
     home = await mkdtemp(path.join(tmpdir(), 'server-home-'))
     const { agent, context } = server(() => ({ requestId: '55555555-5555-4555-8555-555555555555', status: 'approved', view: {} }))
-    await expect(agent.request(context, new AbortController().signal, { credentialId: item.reference.id, loginUrl: 'http://site.example/login', selection })).rejects.toThrow()
-    await agent.request(context, new AbortController().signal, { credentialId: item.reference.id, loginUrl: 'https://site.example/login', selection })
+    await expect(agent.request(context, new AbortController().signal, { credentialId: item.reference.id, url: 'http://site.example/login', ...fill })).rejects.toThrow()
+    await agent.request(context, new AbortController().signal, { credentialId: item.reference.id, url: 'https://site.example/login', ...fill })
+    // A server's browser takes logins only for now: anything else is refused before the desktop is asked.
+    expect(await agent.request(context, new AbortController().signal, { credentialId: item.reference.id, url: 'https://site.example/settings',
+      fill: [{ field: 'API Key', into: '#key' }], submit: '#save' })).toMatchObject({ status: 'invalid_request' })
     const other = { ...context, nativeSessionId: '66666666-6666-4666-8666-666666666662' } as GuguMcpContext
     await expect(agent.start(other, '55555555-5555-4555-8555-555555555555')).rejects.toThrow()
   })

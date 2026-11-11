@@ -106,6 +106,7 @@
     "ListFilter": "filter-linear",
     "ListTree": "list-linear",
     "Lock": "lock-keyhole-minimalistic-linear",
+    "LockOpen": "lock-keyhole-minimalistic-unlocked-linear",
     "LogIn": "login-3-linear",
     "LogOut": "logout-3-linear",
     "Mail": "letter-linear",

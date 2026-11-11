@@ -6,6 +6,8 @@ import type { SaveProposal } from './beta-save'
 import { httpsOrigin } from './schema'
 import { PASSWORD_AGENT_RPC, releasedSchema, serverDeliveryKey, type RemoteCaller, type RemoteOp } from './server-delivery'
 import { openSealed } from './sync-crypto'
+import { searchCredentials, type AgentCredential, type CredentialSearch } from './beta-agent-view'
+import type { FillInput } from './beta-runtime-port'
 
 /** Polled while the person may still answer the card on their desktop. */
 const POLL_MS = 3_000
@@ -77,15 +79,22 @@ export function createServerPasswordAgent(host: ServerPasswordHost) {
   }
 
   return Object.freeze({
-    async list(context: GuguMcpContext) {
-      return (await vault<unknown[]>({ op: 'list', caller: await caller(context) })).result
+    async list(context: GuguMcpContext, search: CredentialSearch = {}) {
+      // The desktop answers with this Agent's view of every credential; the search runs here, the same as on a desktop.
+      return searchCredentials((await vault<AgentCredential[]>({ op: 'list', caller: await caller(context) })).result, search)
     },
-    async request(context: GuguMcpContext, _lifetime: AbortSignal, input: { credentialId: string; browserId?: string; loginUrl: string; selection: Selection }) {
+    async request(context: GuguMcpContext, _lifetime: AbortSignal, input: FillInput) {
+      // A server's browser takes a login for now: 账号 and 密码 into one form, from the credential of that website.
+      const account = input.fill.filter(entry => !entry.code && ['账号', 'account', 'username', '用户名'].includes(entry.field.trim().toLowerCase()))
+      const password = input.fill.filter(entry => !entry.code && ['密码', 'password'].includes(entry.field.trim().toLowerCase()))
+      if (!input.credentialId || !input.form || input.fill.length !== 2 || account.length !== 1 || password.length !== 1)
+        return { status: 'invalid_request', retry: false, error: 'On a Gugu server, password_fill fills a login: credentialId, form, and fill with 账号 and 密码.' }
+      const selection: Selection = { form: input.form, account: account[0]!.into, password: password[0]!.into, ...(input.submit ? { submitter: input.submit } : {}) }
       const who = await caller(context)
       let origin: string
-      try { origin = httpsOrigin(new URL(input.loginUrl).origin) } catch { throw unavailable() }
+      try { origin = httpsOrigin(new URL(input.url).origin) } catch { throw unavailable() }
       const { device, result } = await vault<{ requestId: string; status: string; view: PasswordApproval }>({ op: 'request', caller: who, credentialId: input.credentialId, origin })
-      logins.set(result.requestId, { desktop: device, caller: who, url: input.loginUrl, origin, selection: input.selection, status: result.status })
+      logins.set(result.requestId, { desktop: device, caller: who, url: input.url, origin, selection, status: result.status })
       if (result.status === 'pending') {
         await postPasswordRequest(context, result.view)
         watch(() => ask<{ status: string }>(device, { op: 'status', caller: who, requestId: result.requestId }), ({ status }) => {
@@ -119,7 +128,7 @@ export function createServerPasswordAgent(host: ServerPasswordHost) {
     async save(context: GuguMcpContext, input: SaveProposal & { origin: string; credentialId?: string }) {
       const who = await caller(context)
       const { device, result } = await vault<{ requestId?: string; status: string; credentialId?: string; view?: PasswordSaveRequest }>({ op: 'save', caller: who,
-        origin: input.origin, credentialId: input.credentialId, account: input.account, password: input.password, fields: input.fields })
+        origin: input.origin, credentialId: input.credentialId, name: input.name, account: input.account, accountSecret: input.accountSecret, password: input.password, fields: input.fields })
       if (result.status !== 'pending' || !result.requestId || !result.view) return { status: result.status, ...(result.credentialId ? { credentialId: result.credentialId } : {}) }
       const requestId = result.requestId
       saves.set(requestId, { desktop: device, caller: who })

@@ -68,7 +68,7 @@ class MemoryVault implements SyncVault {
   async save(id: string, value: SyncValue) { await this.sync!.publish({ kind: 'save', id, value }); this.items.set(id, value) }
   async remove(id: string) { await this.sync!.publish({ kind: 'delete', id }); this.items.delete(id) }
 }
-const credential = (origin: string, account: string, password: string): SyncValue => ({ origin, account, password, fields: [], grants: [] })
+const credential = (origin: string, account: string, password: string): SyncValue => ({ origin, name: '', account, accountSecret: false, password, fields: [], grants: [], sites: [] })
 const ready = (view: SyncView) => { if (view.state !== 'ready') throw new Error(`expected ready, got ${view.state}`); return view }
 const settle = () => new Promise(resolve => setTimeout(resolve, 5))
 

@@ -29,10 +29,10 @@ describe('Beta password MCP boundary', () => {
     const lifetime = await register('beta')
     ports.request.mockResolvedValue({ status: 'pending', requestId: 'request' })
     const call = new AbortController()
-    const input = { action: 'request', credentialId, browserId: 'browser', loginUrl: 'https://example.com/login', selection: { form: 'form', account: '#account', password: '#password' } }
-    const reply = await handlers.get('password_login')!(input, call.signal)
+    const fill = { credentialId, browserId: 'browser', url: 'https://example.com/login', fill: [{ field: '账号', into: '#account' }, { field: '密码', into: '#password' }] }
+    const reply = await handlers.get('password_fill')!({ action: 'request', ...fill }, call.signal)
     call.abort()
-    expect(ports.request).toHaveBeenCalledWith(context(), lifetime, input)
+    expect(ports.request).toHaveBeenCalledWith(context(), lifetime, fill)
     expect(ports.start).not.toHaveBeenCalled()
     expect(JSON.stringify(reply)).toContain('pending')
     expect(lifetime.aborted).toBe(false)
@@ -41,14 +41,14 @@ describe('Beta password MCP boundary', () => {
     await register('beta')
     const canary = 'password-test-error-canary'
     ports.start.mockRejectedValue(new Error(canary, { cause: new Error(canary) }))
-    const reply = await handlers.get('password_login')!({ action: 'start', requestId }, new AbortController().signal)
+    const reply = await handlers.get('password_fill')!({ action: 'start', requestId }, new AbortController().signal)
     expect(JSON.stringify(reply)).not.toContain(canary)
     expect(JSON.stringify(reply)).toContain('unavailable')
   })
   it('uses separate explicit start and status actions', async () => {
     await register('beta')
     ports.status.mockResolvedValue({ status: 'approved' })
-    await handlers.get('password_login')!({ action: 'status', requestId }, new AbortController().signal)
+    await handlers.get('password_fill')!({ action: 'status', requestId }, new AbortController().signal)
     expect(ports.status).toHaveBeenCalledWith(context(), requestId)
     expect(ports.start).not.toHaveBeenCalled()
   })
@@ -73,8 +73,8 @@ describe('Beta password MCP boundary', () => {
     ports.request.mockImplementation(async (bound: { runHostAction: (action: unknown) => Promise<unknown> }) => { seen.push(await bound.runHostAction('card')); return { status: 'pending', requestId } })
     ports.save.mockImplementation(async (bound: { runHostAction: (action: unknown) => Promise<unknown> }) => { seen.push(await bound.runHostAction('card')); return { status: 'pending', requestId } })
     const login = new AbortController(), save = new AbortController()
-    const input = { action: 'request', credentialId, loginUrl: 'https://example.com/login', selection: { form: 'form', account: '#account', password: '#password' } }
-    expect(JSON.stringify(await handlers.get('password_login')!(input, login.signal))).toContain('pending')
+    const input = { action: 'request', url: 'https://example.com/settings', fill: [{ field: 'API Key', into: '#key' }] }
+    expect(JSON.stringify(await handlers.get('password_fill')!(input, login.signal))).toContain('pending')
     await handlers.get('password_save')!({ action: 'request', origin: 'https://example.com', password: 'p' }, save.signal)
     expect(seen).toEqual([login.signal, save.signal])
   })
@@ -85,4 +85,13 @@ describe('Beta password MCP boundary', () => {
     expect(ports.save).not.toHaveBeenCalled()
     expect(ports.saveStatus).not.toHaveBeenCalled()
   })
+  it('fills nothing it cannot: other surfaces are not available yet, and a request needs url and fill', async () => {
+    await register('beta')
+    const screen = await handlers.get('password_fill')!({ action: 'request', on: 'screen', url: 'https://example.com', fill: [{ field: '密码', into: 'x' }] }, new AbortController().signal)
+    expect(JSON.stringify(screen)).toContain('not_available')
+    const missing = await handlers.get('password_fill')!({ action: 'request', credentialId }, new AbortController().signal) as { isError?: boolean }
+    expect(missing.isError).toBe(true)
+    expect(ports.request).not.toHaveBeenCalled()
+  })
 })
+
