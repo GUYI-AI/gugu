@@ -4,7 +4,8 @@
 //
 // 判据:登录的这个账号,主进程认过它装的是那个受信的官方 App(gugu-assistant:从市场装、签名的发行版、在 gugu 的市场仓、没用分叉;
 // electron/.../assistant-app-entry.ts),并且开着 = 去 App。还用不了(正在装 = 栏顶那一格画「准备中」;装不上 = 统一报错出口说过一次;
-// 人自己关掉了它):有助理 = 打开和它的私聊(同任何一条对话);还没有助理 = 不动(设置里没有咕咕那一组,owner 11-12)。
+// 人自己关掉了它):有助理 = 打开和它的私聊(同任何一条对话);还没有助理 = 「App」页上的那个 App(装上它 / 打开它:开通在 App 里,
+// 设置里没有咕咕那一组,owner 11-12)。
 // 它自己的几页(开通、资料、连接应用)也只在 App 里:画在 App 面板上的宿主层(openAssistantPageInApp)。
 //
 // 主进程那一句话(受不受信)由壳的 AssistantAppEntryHost 问来,挂在 window 上(形制同 assistantShellBridge:两棵树一份)。
@@ -17,6 +18,8 @@ import { assistantLayerPage } from '../session/shared/extensions/app-host-layer'
 import { setAppConversationPanelCollapsed } from '../session/renderer/features/apps/app-conversation-panel'
 import type { AssistantTaskChat } from './assistantTaskChat'
 import { openLinkTarget } from './guguLinks'
+import { notify } from './notices'
+import { platform } from '../platform'
 import { UI_EVENTS } from './uiEvents'
 import { installedExtensionsStore } from '../session/renderer/features/extensions/installed-extensions-store'
 import { readsWork } from '../components/appSlot/appWorkLedger'
@@ -71,7 +74,7 @@ export type AssistantEntryPurpose = 'open' | 'task-chat'
 /**
  * - `app`:去 App 自己那一页;`chatId` = 旁边此刻画着的就是和自己助理的那条私聊(null:没画,比如人在 App 的权限里选了别的)。
  * - `chat`:App 此刻用不了,和自己助理的那条私聊照任何一条对话打开。
- * - `setup`:还没有助理、也没有 App:没有地方可去(设置里没有咕咕那一组;开通在 App 里)。
+ * - `setup`:还没有助理、也没有 App:开通在 App 里,所以去「App」页上的那个 App(装上 / 打开它;设置里没有咕咕那一组)。
  * - `wait`:还在读它是谁 / 读不到:不动。
  */
 export type AssistantEntryTarget =
@@ -162,7 +165,7 @@ export function openAssistantApp(target: Extract<AssistantEntryTarget, { kind: '
 
 /**
  * 每个入口都走这一下。去 App:答那条会话(或任务的对话)画在哪一格。App 此刻用不了:`fallback` 时打开和自己助理的私聊
- * (照任何一条对话,经链接那条路);还没有助理就不动;答 null。`fallback: false` = 调用处自己打开那条对话(链接、通知)。
+ * (照任何一条对话,经链接那条路);还没有助理 = 「App」页上的那个 App;答 null。`fallback: false` = 调用处自己打开那条对话(链接、通知)。
  */
 export function openAssistantEntry(purpose: AssistantEntryPurpose = 'open', fallback = true): string | null {
   const target = readAssistantEntryTarget()
@@ -172,7 +175,33 @@ export function openAssistantEntry(purpose: AssistantEntryPurpose = 'open', fall
   }
   if (!fallback) return null
   if (target.kind === 'chat') void openLinkTarget({ kind: 'chat', chatId: target.chatId }).catch(() => undefined)
+  else if (target.kind === 'setup') openAssistantAppToInstall()
   return null
+}
+
+/**
+ * No assistant and no App where it lives (not installed, switched off, a copy main does not trust): a 开通 the shell still
+ * asks for (an entry, a reminder, an old 资料 route) opens the Apps page on the assistant App — its market page to install it,
+ * or its own page to switch it on — since setting it up is in the App (owner 11-12), never nothing. Only where Apps are
+ * (a task host): the web build has no Apps page. A refused link (that App gone from the market) is said once.
+ */
+function openAssistantAppToInstall(): boolean {
+  if (!platform.capabilities.sessionHost) return false
+  window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal))
+  void openLinkTarget({ kind: 'app-detail', extensionId: ASSISTANT_APP_ID })
+    .catch((error: unknown) => notify({ tier: 'error', title: error instanceof Error ? error.message : String(error) }))
+  return true
+}
+
+/**
+ * The person's own connected apps (not the assistant's): on a computer their home is the Library's 集成 (the phone, which has
+ * no Library, has a row in Settings). Where a route to them has no assistant App to land in, it lands there.
+ */
+function openOwnConnections(): boolean {
+  if (!platform.capabilities.sessionHost) return false
+  window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal))
+  appState.navigation.navigate('library', { tab: 'integrations' })
+  return true
 }
 
 /** The assistant's own pages a route of the shell's names (what Settings' 咕咕 group held): its setup or settings, its connected apps. */
@@ -183,7 +212,8 @@ export type AssistantInAppPage = 'settings' | 'connected-apps'
  * prompt, an old section link) lands here: the App's page, with that page of the assistant drawn over its panel (the host
  * layer, as the App's own `gugu.assistant.open` draws it). With no assistant yet, 资料 is setting it up (from the name: the
  * App's intro is its first screen); its connected apps wait for it (the App's page alone). App not usable now: its chat as
- * any chat (D9/D10), and with no assistant nothing (no Settings group to fall back on). Answers whether it went anywhere.
+ * any chat (D9/D10); with no assistant either, 资料 opens the Apps page on the App (to install or switch it on) and the connected
+ * apps the person's own on the Library's 集成 (no Settings group to fall back on). Answers whether it went anywhere.
  */
 export function openAssistantPageInApp(page: AssistantInAppPage): boolean {
   const target = readAssistantEntryTarget()
@@ -191,6 +221,8 @@ export function openAssistantPageInApp(page: AssistantInAppPage): boolean {
     void openLinkTarget({ kind: 'chat', chatId: target.chatId }).catch(() => undefined)
     return true
   }
+  // No assistant and no App: 资料 is 开通, which is the App's to do; the connected apps are the person's own.
+  if (target.kind === 'setup') return page === 'settings' ? openAssistantAppToInstall() : openOwnConnections()
   if (target.kind !== 'app') return false
   const shell = readAssistantShellBridge()?.getSnapshot()
   const ownerId = shell?.ownerId

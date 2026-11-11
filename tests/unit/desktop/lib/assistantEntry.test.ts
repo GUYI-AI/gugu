@@ -21,6 +21,13 @@ import { installedExtensionsStore } from '../../../../apps/desktop/src/session/r
 import { appConversationPanelCollapsed, setAppConversationPanelCollapsed } from '../../../../apps/desktop/src/session/renderer/features/apps/app-conversation-panel'
 import { EXTENSION_API_VERSION } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
 
+// Where Apps are (a task host): the no-App 开通 opens the Apps page there; the web build has none.
+const host = vi.hoisted(() => ({ sessionHost: true }))
+vi.mock('../../../../apps/desktop/src/platform', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../apps/desktop/src/platform')>()
+  return { ...actual, platform: new Proxy(actual.platform, { get: (target, key) => (key === 'capabilities' ? { ...target.capabilities, sessionHost: host.sessionHost } : Reflect.get(target, key)) }) }
+})
+
 const OWNER = '11000000-0000-4000-8000-000000000001'
 const OTHER = '22000000-0000-4000-8000-000000000002'
 const DM = '33000000-0000-4000-8000-000000000003'
@@ -141,7 +148,7 @@ describe('openAssistantEntry', () => {
     expect(appState.navigation.viewParamsStore.app?.appId).toBe(ASSISTANT_APP_ID)
   })
 
-  it('the App not usable here: opens the assistant\'s chat as any chat, nothing when there is no assistant (no Settings group); a link caller does it itself', () => {
+  it('the App not usable here: opens the assistant\'s chat as any chat; a link caller does it itself', () => {
     installApp(undefined, [ASSISTANT_APP_ID])
     expect(openAssistantEntry()).toBeNull()
     expect(opened).toEqual([{ kind: 'chat', chatId: DM }])
@@ -149,9 +156,26 @@ describe('openAssistantEntry', () => {
     opened.length = 0
     expect(openAssistantEntry('open', false)).toBeNull()
     expect(opened).toEqual([])
+  })
+
+  // 11-12 gap: no assistant and no App, a 开通 (an entry, a reminder) went nowhere once Settings lost its 咕咕 group. Setting it
+  // up is the App's: the Apps page on the assistant App — its market page to install it, its own page to switch it on.
+  it.each([
+    ['not installed', () => noApps()],
+    ['switched off', () => installApp(undefined, [ASSISTANT_APP_ID])],
+    ['a copy main does not trust', () => publishAssistantAppWord({ ...word, trusted: false })],
+  ])('no assistant, the App %s: 开通 opens the Apps page on the assistant App, never Settings', (_why, arrange) => {
+    arrange()
     publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null }))
-    openAssistantEntry()
+    expect(readAssistantEntryTarget()).toEqual({ kind: 'setup' })
+    expect(openAssistantEntry()).toBeNull()
+    expect(opened).toEqual([{ kind: 'app-detail', extensionId: ASSISTANT_APP_ID }])
     expect(settings).toEqual([])
+    // A link caller does it itself; the web build has no Apps page.
+    opened.length = 0
+    openAssistantEntry('open', false)
+    host.sessionHost = false
+    try { openAssistantEntry() } finally { host.sessionHost = true }
     expect(opened).toEqual([])
   })
 
@@ -258,16 +282,35 @@ describe('openAssistantPageInApp', () => {
     expect(layer()).toBeNull()
   })
 
-  it('the App not usable (D9/D10): the assistant\'s chat as any chat; with no assistant, nothing — no Settings group to fall back on', () => {
+  it('the App not usable (D9/D10): the assistant\'s chat as any chat', () => {
     installApp(undefined, [ASSISTANT_APP_ID])
     expect(openAssistantPageInApp('settings')).toBe(true)
     expect(opened).toEqual([{ kind: 'chat', chatId: DM }])
     expect(appState.navigation.currentViewId).toBe('home')
-    opened.length = 0
+  })
+
+  // 11-12 gap: no assistant and no App, no Settings group to fall back on. 资料 is 开通: the Apps page on the assistant App, to
+  // install or switch it on. The connected apps are the person's own: their computer home, the Library's 集成.
+  it('no assistant and the App not usable: 资料 opens the Apps page on the App; 连接应用 the Library\'s 集成; the web build neither', () => {
+    installApp(undefined, [ASSISTANT_APP_ID])
     publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null }))
-    expect(openAssistantPageInApp('connected-apps')).toBe(false)
+    expect(openAssistantPageInApp('settings')).toBe(true)
+    expect(opened).toEqual([{ kind: 'app-detail', extensionId: ASSISTANT_APP_ID }])
+    expect(revealed).toEqual([true])
+    opened.length = 0
+    expect(openAssistantPageInApp('connected-apps')).toBe(true)
+    expect(appState.navigation.currentViewId).toBe('library')
+    expect(appState.navigation.viewParamsStore.library?.tab).toBe('integrations')
     expect(opened).toEqual([])
     expect(layer()).toBeNull()
+    appState.navigation.navigate('home')
+    host.sessionHost = false
+    try {
+      expect(openAssistantPageInApp('settings')).toBe(false)
+      expect(openAssistantPageInApp('connected-apps')).toBe(false)
+    } finally { host.sessionHost = true }
+    expect(opened).toEqual([])
+    expect(appState.navigation.currentViewId).toBe('home')
   })
 })
 
