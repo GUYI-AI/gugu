@@ -7,6 +7,7 @@ import {
 import { setProjectionViewerOpener, type ProjectionViewerClient } from './projection-viewer-provider';
 import { setProjectionRemoteCaller, type ProjectionRemoteCaller } from './projection-remote-viewer';
 import type { DispatchAsk, DispatchPicked } from '@shared/extensions/app-dispatch-core';
+import type { VoiceNoteWindowAnswer, VoiceNoteWindowRequest } from '@shared/extensions/voice-note-session';
 import {
   EXTENSION_HOST_ACTION_METHOD,
   EXTENSION_PICK_DISPATCH_TARGET_METHOD,
@@ -68,6 +69,8 @@ export type ExtensionHostWindowChannel = {
   listedSession: (sessionId: string, hint?: { deviceId?: string; projectId?: string }) => Promise<string | null>;
   /** An action no page asked for (a link's or a banner's click), done by the window that shows chats and Apps. */
   act: (command: ExtensionHostActionCommand) => Promise<ExtensionHostActionResult>;
+  /** #1927 (47) `gugu.voiceNote`, asked of the window that holds the voice-note recorder (app-voice-note-host.ts). */
+  voiceNote?: (request: VoiceNoteWindowRequest) => Promise<VoiceNoteWindowAnswer>;
   isHostWindowFullScreen: () => boolean;
   onHostWindowFullScreenChange: (listener: () => void) => () => void;
   /**
@@ -199,6 +202,15 @@ export function notifyInstalledExtensionsChanged(): Promise<void> {
 /** What a link's or a banner's click opens in the window: the App in a chat's panel or on its own page, a chat's file. */
 export function actInWindow(action: ExtensionHostAction): Promise<ExtensionHostActionResult> {
   return Promise.resolve().then(() => requireHostWindow().act({ origin: null, action }));
+}
+
+/** #1927 (47) The voice-note recorder lives in the main window: what an App asks of it goes there, whoever drew the page. */
+export function askVoiceNoteWindow(request: VoiceNoteWindowRequest): Promise<VoiceNoteWindowAnswer> {
+  return Promise.resolve().then(() => {
+    const ask = requireHostWindow().voiceNote;
+    if (!ask) throw Object.assign(new Error('This host has no voice-note recorder'), { code: 'unavailable' });
+    return ask(request);
+  });
 }
 
 /** Members' faces, asked of the window (`lib/memberFaces.ts`). */

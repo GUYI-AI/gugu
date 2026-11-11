@@ -398,6 +398,16 @@ export const extensionsController = createRPCController({
     return { success: true };
   },
 
+  /**
+   * #1927 (47) The main window's voice-note recorder moved (app-voice-note-host.ts, at most about ten times a second): pages
+   * hearing it (`gugu.voiceNote.onChanged`) hear it whole, as its allow-list lets them, or end.
+   */
+  voiceNoteChanged: async (change: unknown) => {
+    const { voiceNoteChanged } = await import('@main/core/extensions/app-voice-note-watches');
+    void voiceNoteChanged(change);
+    return { success: true };
+  },
+
   /** A device of the account went on or off: the folders on screen read their files again, so each says where it is kept now. */
   devicesOnlineChanged: async () => {
     void notifyWatchedChatsChanged();

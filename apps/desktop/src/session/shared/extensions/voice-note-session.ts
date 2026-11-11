@@ -76,9 +76,13 @@ export const voiceNoteWatchSchema = z.strictObject({ watchId: z.string().min(1).
 
 /** What main asks the window that holds the recorder (`extensions.voiceNote`); answered by app-voice-note-host.ts there. */
 export type VoiceNoteWindowRequest =
-  | { op: 'status' | 'pause' | 'resume' | 'stop' | 'finish' | 'openMicSettings'; ownerId: string; assistantId: string }
+  | { op: 'status' | 'pause' | 'resume' | 'stop' | 'openMicSettings'; ownerId: string; assistantId: string }
   | { op: 'start'; ownerId: string; assistantId: string; meeting?: z.infer<typeof voiceNoteMeetingSchema> }
-  | { op: 'retry'; ownerId: string; assistantId: string; job: string };
+  | { op: 'retry'; ownerId: string; assistantId: string; job: string }
+  /** The App that started this recording lost its grant: stop it — that one, still recording — and keep the note. */
+  | { op: 'finish'; job: string };
+/** What the window tells main whenever the recorder or a note moves (at most about ten times a second). */
+export type VoiceNoteWindowChange = { ownerId: string | null; assistantId: string | null; view: AppVoiceNoteView };
 export type VoiceNoteWindowAnswer =
   | { state: 'ready'; view: AppVoiceNoteView; started?: { outcome: 'started'; job: string } | { outcome: (typeof APP_VOICE_START_REFUSALS)[number] } }
   | { state: 'unavailable' | 'denied' | 'unknown-job' };
