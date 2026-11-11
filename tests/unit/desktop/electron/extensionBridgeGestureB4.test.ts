@@ -37,7 +37,7 @@ type Host = {
   appFiles: Record<'openWith' | 'upload' | 'download' | 'forward', (args: unknown) => Promise<unknown>>
   cloud: Record<'write', (...args: unknown[]) => Promise<unknown>>
   pickAgent(ask: Record<string, unknown>): Promise<unknown>
-  assistant: Record<'open' | 'advanceSetup' | 'rename', (name: string, value: string) => Promise<unknown>>
+  assistant: Record<'open' | 'advanceSetup' | 'rename' | 'connect', (name: string, value: string) => Promise<unknown>>
   bindings: { openWork(name: string, handle: string): Promise<unknown> }
   voiceNote: Record<'start' | 'resume' | 'retry' | 'openMicSettings', (name: string, value?: unknown) => Promise<unknown>>
 }
@@ -62,6 +62,7 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   assistantOpen: () => host.assistant.open('main', 'move'),
   assistantAdvanceSetup: () => host.assistant.advanceSetup('main', 'ready'),
   assistantRename: () => host.assistant.rename('main', 'Pip'),
+  assistantConnect: () => host.assistant.connect('main', 'feishu'),
   // #1925 (46): one of the assistant's tasks drawn in the App's panel.
   bindingsOpenWork: () => host.bindings.openWork('main', 'wAAAAAAAAAAAAAAAAAAAAAA'),
   // #1927 (47): the host's voice-note recorder, started, resumed, retried, or the microphone settings opened.

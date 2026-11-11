@@ -55,17 +55,17 @@ vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: ({ schem
   return query;
 } }) }));
 const binding = await import('./app-assistant-binding');
-const { appAssistantStatus, appAssistantOpen, appAssistantAdvanceSetup, appAssistantRename, appAssistantFigure, assistantStatusChanged, assistantCountsChanged, appHostLayerChanged, forgetShownAssistantForTest } = binding;
+const { appAssistantStatus, appAssistantOpen, appAssistantAdvanceSetup, appAssistantRename, appAssistantFigure, appAssistantConnect, assistantStatusChanged, assistantCountsChanged, appHostLayerChanged, forgetShownAssistantForTest } = binding;
 
 const provision = (agent: string, removed: string | null = null) => ({
   agent_user_id: agent, device_id: DEVICE, member_key: 'assistant', phase: 'ready', created_at: '2026-11-01T00:00:00Z', agent: { removed_at: removed },
 });
 const status = (over: Partial<ShownAssistant> = {}): ShownAssistant => ({
-  assistant: 'found', name: 'Dot', avatar: 'data:image/webp;base64,UklGRg==', home: { kind: 'this-computer', online: true },
-  setup: 'connect', preparing: false, cloudAvailable: true, member: null, loadError: null, ...over,
+  assistant: 'found', name: 'Dot', avatar: 'data:image/webp;base64,UklGRg==', tint: 83.3, home: { kind: 'this-computer', online: true, label: 'Studio Mac' },
+  setup: 'connect', preparing: false, cloudAvailable: true, member: null, loadError: null, ownerName: 'Ann', ...over,
 });
-/** As an App reads the window's snapshot: with the panel's numbers (none pushed: null). */
-const seen = (value: ShownAssistant, counts: unknown = null) => ({ ...value, counts });
+/** As an App reads the window's snapshot: with the panel's numbers and the connect list (none pushed: null), and the name limit. */
+const seen = (value: ShownAssistant, counts: unknown = null, connectors: unknown = null) => ({ ...value, counts, connectors, nameMax: 30 });
 const hear = vi.fn();
 const show = (value = status(), ownerId = OWNER) => assistantStatusChanged({ ownerId, status: value }, hear);
 const IDS = [OWNER, OTHER, CHAT, ASSISTANT, DEVICE, STRANGER, 'h1'];
@@ -101,7 +101,7 @@ describe('gugu.assistant.status: the snapshot of the person\'s own assistant', (
     expect(read).toEqual({ name: 'main', state: 'ready', status: seen(status()), hostPage: false });
     expect(leaks(read)).toEqual([]);
     // Exactly the fields the built-in view holds and an App needs to pick what to draw.
-    expect(Object.keys((read as { status: object }).status).sort()).toEqual(['assistant', 'avatar', 'cloudAvailable', 'counts', 'home', 'loadError', 'member', 'name', 'preparing', 'setup']);
+    expect(Object.keys((read as { status: object }).status).sort()).toEqual(['assistant', 'avatar', 'cloudAvailable', 'connectors', 'counts', 'home', 'loadError', 'member', 'name', 'nameMax', 'ownerName', 'preparing', 'setup', 'tint']);
   });
 
   it('passes unreadable apart from none, and an unknown membership as null, never false', async () => {
@@ -305,7 +305,7 @@ describe('an account with no assistant: the first setup can start from the App',
   // What the window would never send for these states, sent anyway: main still keeps it from the App.
   const without = (assistant: (typeof NO_ASSISTANT)[number], over: Partial<ShownAssistant> = {}) =>
     status({ assistant, setup: assistant === 'none' ? 'shell' : null, preparing: false, member: false, ...over });
-  const stripped = (value: ShownAssistant) => ({ ...value, name: null, avatar: null, home: null, counts: null });
+  const stripped = (value: ShownAssistant) => ({ ...value, name: null, avatar: null, tint: null, home: null, counts: null, connectors: null, nameMax: 30 });
 
   it.each(NO_ASSISTANT)('%s, no conversation chosen: status is the snapshot without one — no name, look or home, nothing asked', async (assistant) => {
     state.selectedBy = '';
@@ -424,55 +424,140 @@ describe('an account with no assistant: the first setup can start from the App',
   });
 });
 
-describe('counts: the panel\'s numbers, with the bound assistant\'s snapshot', () => {
-  const COUNTS = { devices: 3, connectedApps: { saved: 4, connected: 2 }, projects: 7, capabilities: 5 };
+describe('counts and the connect list: what the panel and the connect step read, with the bound assistant\'s snapshot', () => {
+  const ready = <T,>(value: T) => ({ state: 'ready' as const, value });
+  const COUNTS = { devices: ready(3), connectedApps: ready({ saved: 4, connected: 2 }), projects: ready(7), capabilities: ready(5) };
+  const ICON = 'data:image/svg+xml;base64,PHN2Zy8+';
+  const CONNECTORS = ready([
+    { id: 'feishu', name: 'Feishu', icon: { light: ICON, dark: null, invertInDark: false }, connected: true },
+    { id: 'github', name: 'GitHub', icon: null, connected: false },
+  ]);
+  const push = (counts: unknown = COUNTS, connectors: unknown = CONNECTORS, ownerId = OWNER) => assistantCountsChanged({ ownerId, counts, connectors }, hear);
   const read = () => appAssistantStatus(APP, { name: 'main' });
 
-  it('the bound App reads them and hears them change — numbers only', async () => {
+  it('the bound App reads them and hears them change — numbers, names and marks only', async () => {
     await show();
     hear.mockReset();
-    await assistantCountsChanged({ ownerId: OWNER, counts: COUNTS }, hear);
-    expect(await read()).toEqual({ name: 'main', state: 'ready', status: seen(status(), COUNTS), hostPage: false });
-    expect(hear).toHaveBeenCalledExactlyOnceWith(APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: seen(status(), COUNTS), hostPage: false });
-    await assistantCountsChanged({ ownerId: OWNER, counts: COUNTS }, hear);
+    await push();
+    expect(await read()).toEqual({ name: 'main', state: 'ready', status: seen(status(), COUNTS, CONNECTORS), hostPage: false });
+    expect(hear).toHaveBeenCalledExactlyOnceWith(APP, { type: 'assistantChanged', name: 'main', state: 'ready', status: seen(status(), COUNTS, CONNECTORS), hostPage: false });
+    await push();
     expect(hear).toHaveBeenCalledOnce();
+    await push(COUNTS, ready([{ ...CONNECTORS.value[1]!, connected: true }]));
+    expect(hear).toHaveBeenCalledTimes(2);
     expect(leaks(hear.mock.calls)).toEqual([]);
   });
 
-  it('unknown stays null, never 0', async () => {
+  it('each says how its read is: ready with it, loading, or unreadable — never 0 for those', async () => {
     await show();
-    const partly = { devices: null, connectedApps: null, projects: 0, capabilities: null };
-    await assistantCountsChanged({ ownerId: OWNER, counts: partly }, hear);
-    expect(await read()).toMatchObject({ status: { counts: partly } });
+    const partly = { devices: { state: 'loading' }, connectedApps: { state: 'unreadable' }, projects: ready(0), capabilities: { state: 'unreadable' } };
+    await push(partly, { state: 'loading' });
+    expect(await read()).toMatchObject({ status: { counts: partly, connectors: { state: 'loading' } } });
   });
 
-  it('another account\'s numbers reach nothing; the snapshot without an assistant has none', async () => {
+  it('another account\'s reach nothing; the snapshot without an assistant has none, and says the name limit all the same', async () => {
     await show();
-    await assistantCountsChanged({ ownerId: OTHER, counts: COUNTS }, hear);
-    expect(await read()).toMatchObject({ status: { counts: null } });
-    await assistantCountsChanged({ ownerId: OWNER, counts: COUNTS }, hear);
+    await push(COUNTS, CONNECTORS, OTHER);
+    expect(await read()).toMatchObject({ status: { counts: null, connectors: null, nameMax: 30 } });
+    await push();
     state.selectedBy = '';
-    await show(status({ assistant: 'none', name: null, avatar: null, home: null }));
-    expect(await read()).toMatchObject({ state: 'ready', status: { assistant: 'none', counts: null } });
+    await show(status({ assistant: 'none', name: null, avatar: null, tint: null, home: null }));
+    expect(await read()).toMatchObject({ state: 'ready', status: { assistant: 'none', counts: null, connectors: null, nameMax: 30, ownerName: 'Ann' } });
   });
 
   it('an App not pointed at the assistant hears nothing of them', async () => {
     state.selectedBy = '';
     await show();
     hear.mockReset();
-    await assistantCountsChanged({ ownerId: OWNER, counts: COUNTS }, hear);
+    await push();
     expect(hear).not.toHaveBeenCalled();
   });
 
-  it('takes numbers alone: an id, a path, a URL, a name, a negative, a fraction or another field is refused, and nothing kept', async () => {
+  it('takes read states of numbers alone: an id, a path, a URL, a name, a negative, a fraction, a bare number or another field is refused, nothing kept', async () => {
     await show();
     for (const bad of [
-      { ...COUNTS, devices: DEVICE }, { ...COUNTS, projects: '/Users/me/project' }, { ...COUNTS, capabilities: 'https://example.com/x' },
-      { ...COUNTS, connectedApps: { saved: 1, connected: 1, names: ['Mail'] } }, { ...COUNTS, projects: ['Docs'] },
-      { ...COUNTS, devices: -1 }, { ...COUNTS, projects: 1.5 }, { ...COUNTS, chatId: CHAT }, { devices: 1 },
-    ]) await expect(assistantCountsChanged({ ownerId: OWNER, counts: bad }, hear)).rejects.toMatchObject({ code: 'invalid' });
-    await expect(assistantCountsChanged({ ownerId: 'me', counts: COUNTS }, hear)).rejects.toMatchObject({ code: 'invalid' });
-    expect(await read()).toMatchObject({ status: { counts: null } });
+      { ...COUNTS, devices: ready(DEVICE) }, { ...COUNTS, projects: ready('/Users/me/project') }, { ...COUNTS, capabilities: ready('https://example.com/x') },
+      { ...COUNTS, connectedApps: ready({ saved: 1, connected: 1, names: ['Mail'] }) }, { ...COUNTS, projects: ready(['Docs']) },
+      { ...COUNTS, devices: ready(-1) }, { ...COUNTS, projects: ready(1.5) }, { ...COUNTS, chatId: CHAT }, { devices: ready(1) },
+      { ...COUNTS, devices: 3 }, { ...COUNTS, devices: null }, { ...COUNTS, devices: { state: 'loading', value: 3 } }, { ...COUNTS, devices: { state: 'failed' } },
+    ]) await expect(push(bad)).rejects.toMatchObject({ code: 'invalid' });
+    await expect(assistantCountsChanged({ ownerId: 'me', counts: COUNTS, connectors: CONNECTORS }, hear)).rejects.toMatchObject({ code: 'invalid' });
+    expect(await read()).toMatchObject({ status: { counts: null, connectors: null } });
+  });
+
+  it('a connect row carries no account, address or link: anything but the service, its name, its mark and connected is refused', async () => {
+    await show();
+    const row = CONNECTORS.value[0]!;
+    for (const bad of [
+      { ...row, account: 'me@example.com' }, { ...row, displayName: 'Ann Lee' }, { ...row, id: '../etc' }, { ...row, id: CHAT + ' x' },
+      { ...row, icon: { ...row.icon, light: 'https://example.com/icon.svg' } }, { ...row, icon: { ...row.icon, light: 'data:text/html;base64,PGI+' } },
+      { ...row, name: '' }, { ...row, connected: 'yes' },
+    ]) await expect(push(COUNTS, ready([bad]))).rejects.toMatchObject({ code: 'invalid' });
+    expect(await read()).toMatchObject({ status: { connectors: null } });
+  });
+});
+
+describe('gugu.assistant.connect: the connect step\'s click, the window\'s own connect dialog', () => {
+  const ready = <T,>(value: T) => ({ state: 'ready' as const, value });
+  const COUNTS = { devices: ready(1), connectedApps: ready({ saved: 0, connected: 0 }), projects: ready(0), capabilities: ready(0) };
+  const LIST = ready([{ id: 'feishu', name: 'Feishu', icon: null, connected: false }]);
+  const connect = (id: unknown, act = vi.fn(async (_action: ExtensionHostAction) => undefined)) => appAssistantConnect(APP, { name: 'main', id }, act);
+
+  it('a service of the list status shows: handed to the window for the account checked', async () => {
+    await show();
+    await assistantCountsChanged({ ownerId: OWNER, counts: COUNTS, connectors: LIST }, hear);
+    const act = vi.fn(async (_action: ExtensionHostAction) => undefined);
+    await connect('feishu', act);
+    expect(act).toHaveBeenCalledExactlyOnceWith({ kind: 'openAssistantConnector', id: 'feishu', ownerId: OWNER });
+  });
+
+  it('one not in the list: not-found; the list not read yet, or not ready: failed — nothing opened', async () => {
+    const act = vi.fn(async () => undefined);
+    await show();
+    await expect(connect('feishu', act)).rejects.toMatchObject({ code: 'failed' });
+    await assistantCountsChanged({ ownerId: OWNER, counts: COUNTS, connectors: { state: 'unreadable' } }, hear);
+    await expect(connect('feishu', act)).rejects.toMatchObject({ code: 'failed' });
+    await assistantCountsChanged({ ownerId: OWNER, counts: COUNTS, connectors: LIST }, hear);
+    await expect(connect('github', act)).rejects.toMatchObject({ code: 'not-found' });
+    await assistantCountsChanged({ ownerId: OTHER, counts: COUNTS, connectors: LIST }, hear);
+    await expect(connect('feishu', act)).rejects.toMatchObject({ code: 'failed' });
+    expect(act).not.toHaveBeenCalled();
+  });
+
+  it('refused unbound, not the assistant chat, without assistant:open (status is not it), disabled, or changed mid-request', async () => {
+    const act = vi.fn(async () => undefined);
+    await show();
+    await assistantCountsChanged({ ownerId: OWNER, counts: COUNTS, connectors: LIST }, hear);
+    state.selectedBy = '';
+    await expect(connect('feishu', act)).rejects.toMatchObject({ code: 'not-found' });
+    state.selectedBy = OWNER;
+    for (const [, set] of NOT_MINE) {
+      Object.assign(state, { provisions: [provision(ASSISTANT)], chatKind: 'dm', members: [OWNER, ASSISTANT] });
+      set();
+      await expect(connect('feishu', act)).rejects.toMatchObject({ code: 'denied' });
+    }
+    Object.assign(state, { provisions: [provision(ASSISTANT)], chatKind: 'dm', members: [OWNER, ASSISTANT] });
+    const all = () => ({ enabled: true, installed: true, grants: { 'assistant-status': true, 'assistant-open': true, 'assistant-rename': true }, declared: ['unread', 'assistant-status', 'assistant-open', 'assistant-rename'] });
+    for (const set of [() => { state.grants['assistant-open'] = false; }, () => { state.enabled = false; }, () => { state.installed = false; }]) {
+      Object.assign(state, all());
+      set();
+      await expect(connect('feishu', act)).rejects.toMatchObject({ code: 'denied' });
+    }
+    for (const change of [() => { state.owner = OTHER; }, () => { state.grants['assistant-open'] = false; }, () => { state.handle = 'h2'; }]) {
+      Object.assign(state, all(), { owner: OWNER, handle: 'h1' });
+      state.afterRead = change;
+      await expect(connect('feishu', act)).rejects.toMatchObject({ code: 'denied' });
+    }
+    expect(act).not.toHaveBeenCalled();
+  });
+
+  it('takes the binding\'s name and an id: anything more, or else, is refused before anything is asked', async () => {
+    const act = vi.fn(async () => undefined);
+    for (const args of [{ name: 'main' }, { name: 'main', id: 3 }, { name: 'main', id: 'x'.repeat(101) }, { name: 'main', id: 'feishu', ownerId: OWNER }]) {
+      await expect(appAssistantConnect(APP, args, act)).rejects.toMatchObject({ code: 'invalid' });
+    }
+    expect(state.reads).toBe(0);
+    expect(act).not.toHaveBeenCalled();
   });
 });
 

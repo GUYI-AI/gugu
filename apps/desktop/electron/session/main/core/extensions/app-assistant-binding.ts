@@ -3,6 +3,7 @@ import { userIdFromSupabaseAccessToken } from '@gugu/core';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
 import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision';
 import {
+  ASSISTANT_NAME_MAX,
   ASSISTANT_SCREENS,
   ASSISTANT_SETUP_ADVANCES,
   assistantFigureSchema,
@@ -126,9 +127,10 @@ async function boundAssistant(extensionId: string, name: string, action: Assista
  */
 let shown: PushedAssistantStatus | null = null;
 const statusFor = (ownerId: string) => (shown?.ownerId === ownerId ? shown.status : null);
-/** The panel's numbers as the session page last read them (`useAssistantAppCounts`), whose they are kept here too. */
+/** The panel's numbers and the connect step's list as the session page last read them (assistant-app-counts.tsx), whose they are kept here too. */
 let counted: PushedAssistantCounts | null = null;
 const countsFor = (ownerId: string) => (counted?.ownerId === ownerId ? counted.counts : null);
+const connectorsFor = (ownerId: string) => (counted?.ownerId === ownerId ? counted.connectors : null);
 /** The host layer over each App's panel (`app-host-layer.ts`), as the window reported it, for which account: one record for
  * every host page (app-host-layers.ts) — the work binding's task conversations (46) as these panel pages. */
 const hostPageFor = (extensionId: string, ownerId: string) => hostLayerOf(extensionId, ownerId) !== null;
@@ -160,7 +162,9 @@ async function readStatus(extensionId: string, name: string): Promise<AppAssista
   if (!status) return { name, state: 'unavailable' };
   return {
     name, state: 'ready',
-    status: status.assistant === 'found' ? { ...status, counts: countsFor(bound.ownerId) } : withoutAssistant(status),
+    status: status.assistant === 'found'
+      ? { ...status, counts: countsFor(bound.ownerId), connectors: connectorsFor(bound.ownerId), nameMax: ASSISTANT_NAME_MAX }
+      : withoutAssistant(status),
     hostPage: hostPageFor(extensionId, bound.ownerId),
   };
 }
@@ -205,6 +209,22 @@ export async function appAssistantAdvanceSetup(extensionId: string, input: unkno
     throw coded('invalid', `Setup is ${status.setup ?? 'not under way'}: it moves from connect to ready or done, and from ready to done`);
   }
   await act({ kind: 'advanceAssistantSetup', next, ownerId: bound.ownerId });
+}
+
+/**
+ * `gugu.assistant.connect(name, id)` (44, `assistant:open`, in a click): the connect step's own click — the window opens
+ * that service's connect dialog for the assistant's home (`act`, the built-in `useOpenConnector`). Only a service of the
+ * list `status` shows (`connectors`, read); what the person does in the dialog is theirs.
+ */
+export async function appAssistantConnect(extensionId: string, input: unknown, act: (action: ExtensionHostAction) => Promise<unknown>): Promise<void> {
+  const { name, id } = argsOf(z.strictObject({ name: z.string(), id: z.string().max(100) }), input,
+    'gugu.assistant.connect takes the binding\'s name and a connector id from status.connectors');
+  const bound = await boundAssistant(extensionId, name, 'assistant-open');
+  if (!bound) throw coded('not-found', `No conversation is chosen for "${name}" yet: the person chooses it in the App's permissions`);
+  const connectors = statusFor(bound.ownerId)?.assistant === 'found' ? connectorsFor(bound.ownerId) : null;
+  if (connectors?.state !== 'ready') throw coded('failed', 'The connect list has not been read yet: try again in a moment');
+  if (!connectors.value.some((connector) => connector.id === id)) throw coded('not-found', `No connector "${id}" in the list status shows`);
+  await act({ kind: 'openAssistantConnector', id, ownerId: bound.ownerId });
 }
 
 /**
@@ -306,7 +326,7 @@ export async function assistantStatusChanged(input: unknown, hear: (extensionId:
 export async function assistantCountsChanged(input: unknown, hear: (extensionId: string, event: ExtensionHostEvent) => void): Promise<void> {
   const parsed = pushedAssistantCountsSchema.safeParse(input);
   if (!parsed.success) throw coded('invalid', 'Not assistant counts an App may see');
-  const same = counted?.ownerId === parsed.data.ownerId && JSON.stringify(counted.counts) === JSON.stringify(parsed.data.counts);
+  const same = counted?.ownerId === parsed.data.ownerId && JSON.stringify([counted.counts, counted.connectors]) === JSON.stringify([parsed.data.counts, parsed.data.connectors]);
   counted = parsed.data;
   if (!same) await tell(hear);
 }
