@@ -853,13 +853,14 @@ export const extensionsController = createRPCController({
   },
 
   /**
-   * #1925 (46) What that window draws over an App's panel now (app-host-layer.ts; null: nothing): its pages hear
-   * `panel.hostPage` (`onSurface`) and, reading work, which row is open (`onWorkChanged`).
+   * #1925 (44, 46) What that window draws over an App's panel now (app-host-layer.ts; null: nothing): its pages hear
+   * `hostPage` (`onAssistantChanged`), `panel.hostPage` (`onSurface`) and, reading work, which row is open (`onWorkChanged`).
    */
-  reportHostLayer: async (args: { extensionId: string; layer: { kind: 'work'; ownerId: string; workId: string; sessionId: string } | { kind: 'assistant-settings'; ownerId: string } | null }) => {
+  reportHostLayer: async (args: { extensionId: string; layer: import('@shared/extensions/app-host-layer').AppHostLayer | null }) => {
     try {
-      const { reportHostLayer } = await import('./app-host-layers');
-      if (reportHostLayer(args)) {
+      // One record for every host page over an App's panel (app-host-layers.ts): a task (46) or a panel page (44).
+      const [{ appHostLayerChanged }, { deliverToPersonPages }] = await Promise.all([import('./app-assistant-binding'), import('./extension-bridge')]);
+      if (await appHostLayerChanged(args, deliverToPersonPages)) {
         void pushBindingWork(args.extensionId).catch((error: unknown) => log.warn('The work list could not be told to an App\'s pages:', error));
         void pushBindingSurfaces(args.extensionId).catch((error: unknown) => log.warn('App conversation surface could not be told to its pages:', error));
       }
@@ -885,6 +886,18 @@ export const extensionsController = createRPCController({
       return { success: true as const };
     } catch (error) {
       log.warn('Failed to take the assistant snapshot for Apps:', error);
+      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+
+  /** #1925 (44) The assistant panel's numbers as the session page read them (`useAssistantAppCounts`), for Apps to see. */
+  assistantCountsChanged: async (args: { ownerId: string; counts: unknown }) => {
+    try {
+      const [{ assistantCountsChanged }, { deliverToPersonPages }] = await Promise.all([import('./app-assistant-binding'), import('./extension-bridge')]);
+      await assistantCountsChanged(args, deliverToPersonPages);
+      return { success: true as const };
+    } catch (error) {
+      log.warn('Failed to take the assistant counts for Apps:', error);
       return { success: false as const, error: error instanceof Error ? error.message : String(error) };
     }
   },

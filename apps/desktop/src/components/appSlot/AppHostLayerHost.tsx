@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 import { observer } from 'mobx-react-lite'
 import { AssistantSettingsPage } from '../assistant/AssistantSettingsPage'
 import { AssistantWorkTaskWindow } from '../assistant/AssistantWorkTaskWindow'
-import { readAppConversationSurfaceBridge, type AppConversationHeaders } from '../../lib/appConversationSurfaceBridge'
 import { appHostLayerSlotKey, installAppHostLayerBridge, readAppHostLayerBridge, retainAppHostLayers, setAppHostLayerAccount, type AppHostLayer, type AppHostLayers } from '../../lib/appHostLayerBridge'
 import { installShellSlots, readShellSlots } from '../../lib/shellSlots'
 import { useAuth } from '../../store/auth'
@@ -18,7 +17,6 @@ installAppHostLayerBridge()
 
 const EMPTY: ReadonlyMap<string, HTMLElement> = new Map()
 const NONE: AppHostLayers = Object.freeze({})
-const NO_HEADERS: AppConversationHeaders = Object.freeze({})
 const noop = () => () => undefined
 
 /**
@@ -26,10 +24,11 @@ const noop = () => () => undefined
  * page itself — a task's conversation (AssistantWorkTaskWindow), the assistant's settings (AssistantSettingsPage) — drawn in
  * the cell the App's panel leaves for it, for the account it was opened for and no other.
  *
- * Taken away at once when that changes: another account; leaving the session page; the App switched off, removed, or main
- * naming its grant or choice as changed; and what opened it gone — a task's App no longer reading work, the settings' App no
- * longer drawn with the host's row above its conversation. Each open and close is told to main (`reportHostLayer`), which
- * tells the App only that a host page is there (and with `chat:work` which row). Nothing of a page reaches the App.
+ * Taken away at once when that changes: another account; the App switched off or removed, or main naming its grant or choice
+ * as changed; for a task, also leaving the session page or the App no longer reading work (the session page closes a panel
+ * page whose App page went, or whose assistant this window no longer shows). Each open and close is told to main
+ * (`reportHostLayer`), which tells the App only that a host page is there (and with `chat:work` which row). Nothing of a
+ * page reaches the App.
  */
 export const AppHostLayerHost = observer(function AppHostLayerHost({ visible }: {
   /** 会话页那一屏此刻摆在眼前(MainLayout 的 tab 在「任务」):离开就收起,与内置任务窗同一条判据。 */
@@ -39,8 +38,7 @@ export const AppHostLayerHost = observer(function AppHostLayerHost({ visible }: 
   const ownerId = user?.id ?? null
   const reading = installedExtensionsStore.manifests.filter((manifest) => readsWork(manifest) && installedExtensionsStore.isEnabled(manifest.id)).map((manifest) => manifest.id)
   const readingKey = reading.join('\n')
-  const surfaces = readAppConversationSurfaceBridge()
-  const headers = useSyncExternalStore(surfaces?.subscribe ?? noop, () => surfaces?.getHeaders() ?? NO_HEADERS)
+  const onKey = installedExtensionsStore.manifests.filter((manifest) => installedExtensionsStore.isEnabled(manifest.id)).map((manifest) => manifest.id).join('\n')
   const bridge = readAppHostLayerBridge()
   const layers = useSyncExternalStore(bridge?.subscribe ?? noop, () => bridge?.getSnapshot() ?? NONE)
 
@@ -53,11 +51,12 @@ export const AppHostLayerHost = observer(function AppHostLayerHost({ visible }: 
   }), [])
   useEffect(() => {
     const still = new Set(readingKey ? readingKey.split('\n') : [])
-    const opened = (extensionId: string, layer: AppHostLayer) => layer.kind === 'work'
-      ? still.has(extensionId)
-      : headers[extensionId]?.kind === 'assistant' && headers[extensionId].ownerId === layer.ownerId
-    retainAppHostLayers((extensionId, layer) => visible && layer.ownerId === ownerId && opened(extensionId, layer))
-  }, [visible, ownerId, readingKey, headers, layers])
+    const on = new Set(onKey ? onKey.split('\n') : [])
+    // A task: as the built-in task window, only while the session page is on screen and the App reads work. A page of the
+    // assistant's panel: while the App is installed and on (its page gone, or the assistant: the session page closes it).
+    const keep = (extensionId: string, layer: AppHostLayer) => layer.kind === 'work' ? visible && still.has(extensionId) : on.has(extensionId)
+    retainAppHostLayers((extensionId, layer) => layer.ownerId === ownerId && keep(extensionId, layer))
+  }, [visible, ownerId, readingKey, onKey, layers])
   useEffect(() => reportHostLayers(layers), [layers])
 
   return <AppHostLayerPortals ownerId={ownerId} layers={layers} />
@@ -80,7 +79,9 @@ function AppHostLayerPortals({ ownerId, layers }: { ownerId: string | null; laye
             `${extensionId}#work#${layer.request.workId}#${layer.request.task.sessionId}`,
           )]
         }
-        // The panel's settings page as the built-in panel draws it (AssistantShellHost's `settings` cell).
+        // The panel's settings page as the built-in panel draws it (AssistantShellHost's `settings` cell). The panel's other
+        // pages need nothing of this tree: the session page draws them (app-host-layer.tsx).
+        if (layer.kind !== 'assistant-settings') return []
         return [createPortal(<AssistantSettingsPage panelNavigation />, element, `${extensionId}#${layer.kind}`)]
       })}
     </>

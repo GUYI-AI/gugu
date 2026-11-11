@@ -56,7 +56,7 @@ function DiaryPage({ context, sub }: AssistantPageProps & { sub: string }) {
 }
 
 /** 设备:壳那棵树里的组件(设置里同一份逻辑与数据),画进格子、在这里换助理 App 的样子(.ta-skin)。 */
-function ShellPage({ slot, title }: { slot: 'devices' | 'connectors' | 'settings'; title: string }) {
+export function ShellPage({ slot, title }: { slot: 'devices' | 'connectors' | 'settings'; title: string }) {
   const { t } = useTranslation('assistant');
   return (
     <AssistantShellPageFrame title={t(title)} testId={`assistant-slot-${slot}`}>

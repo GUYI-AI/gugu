@@ -2111,7 +2111,8 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
     }
     case 'assistantStatus':
     case 'assistantOpen':
-    case 'assistantAdvanceSetup': {
+    case 'assistantAdvanceSetup':
+    case 'assistantRename': {
       // #1925 The person's own assistant, through their grant: an agent working the page is not that account.
       const page = thePage(caller);
       if (page.operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reaches none of its assistant'), { code: 'denied' });
@@ -2119,6 +2120,7 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       if (method === 'assistantStatus') return await assistant.appAssistantStatus(caller.extensionId, args);
       const act = (action: ExtensionHostAction) => deliver(page, action);
       if (method === 'assistantOpen') return await assistant.appAssistantOpen(caller.extensionId, args, act);
+      if (method === 'assistantRename') return await assistant.appAssistantRename(caller.extensionId, args, act);
       return await assistant.appAssistantAdvanceSetup(caller.extensionId, args, act);
     }
     case 'bindingsResources':
@@ -2156,6 +2158,18 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       const act = (action: ExtensionHostAction) => deliver(page, action);
       if (method === 'bindingsOpenWork') return await work.appOpenWork(caller.extensionId, page, args, act);
       return await work.appCloseWork(caller.extensionId, args, act);
+    }
+    case 'toast': {
+      // #1925 (44) The host's own toast: the person's page, on screen and focused now, at its rate (app-toast.ts).
+      const page = thePage(caller);
+      const { appToast } = await import('./app-toast');
+      await appToast({
+        extensionId: caller.extensionId,
+        person: page.operator.kind === 'person',
+        onScreen: page.metrics.visible && page.metrics.width > 0,
+        focused: () => webContents.fromId(caller.pageId)?.isFocused() === true,
+      }, args, (action) => deliver(page, action));
+      return undefined;
     }
     case 'messagesHistory':
     case 'messagesSearch': {

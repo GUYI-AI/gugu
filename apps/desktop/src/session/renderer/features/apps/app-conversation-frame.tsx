@@ -14,7 +14,7 @@ import { rpc } from '@renderer/lib/ipc';
 import { log } from '@renderer/utils/logger';
 import { CONVERSATION_SURFACE_PANEL_INSET } from '@shared/extensions/unread-binding';
 import { setAppConversationPanelCollapsed, useAppConversationPanelCollapsed } from './app-conversation-panel';
-import { AppDockPage, AppHostLayerView, useAppHostLayer } from './app-host-layer-slot';
+import { AppHostLayerFrame, AppHostLayerSources, AppHostLayerView, useAppHostLayer } from './app-host-layer';
 
 /** The App's main page has this tab id here, as on its page of its own (`AppMainPanel`). */
 const DOCK = 'dock';
@@ -63,7 +63,7 @@ function headerIdentity(shell: AssistantShellSnapshot | null, ownerId: string, c
  * 46, `conversationSurface.header: "assistant"`, over the account's own assistant chat (the shell's word, main-verified):
  * the built-in row itself (AssistantChatTop) — its face and name (a click: the App hears `intent: profile`, the panel
  * expanded, any host page closed), its settings gear (the host's settings page over the panel). A host page over the panel
- * (app-host-layer-slot.tsx) sets the App's page aside until it closes.
+ * (app-host-layer.tsx) sets the App's page aside until it closes.
  */
 export function AppConversationFrame({ extensionId, tabKind }: { extensionId: string; tabKind: string }) {
   const { t } = useTranslation('assistant');
@@ -85,7 +85,7 @@ export function AppConversationFrame({ extensionId, tabKind }: { extensionId: st
     [extensionId],
   );
 
-  if (!chatId) return <AppDockPage extensionId={extensionId} tabKind={tabKind} />;
+  if (!chatId) return <AppHostLayerFrame extensionId={extensionId} tabKind={tabKind} />;
   const setCollapsed = (next: boolean) => setAppConversationPanelCollapsed(extensionId, next);
   // The face and name: the App's page shows the profile — told once, with the panel expanded and nothing over it.
   const showProfile = () => {
@@ -105,6 +105,7 @@ export function AppConversationFrame({ extensionId, tabKind }: { extensionId: st
   } : null;
   return (
     <div className="ta-app" data-panel={collapsed ? 'closed' : 'open'} data-testid="app-conversation-surface">
+      <AppHostLayerSources extensionId={extensionId} />
       <div className="ta-chat-col" data-testid="app-conversation-column">
         <AssistantChatTop testIdPrefix="app-conversation" identity={identity} chatId={chatId} onSettings={openSettings} panelOpen={!collapsed} onExpand={() => setCollapsed(false)} />
         <div ref={column} className="ta-chat" data-app-conversation-slot={extensionId} />

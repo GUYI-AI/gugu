@@ -114,7 +114,9 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // own schedule store). Never the agent's id, its session or the chat.
 // 44 (#1925): when that conversation is the person's private chat with their own assistant, the binding may also declare
 // `assistant-status` (`assistant:status`: `gugu.assistant.status` / `onChanged`) and `assistant-open` (`assistant:open`:
-// `gugu.assistant.open(name, screen)` — one of the host's own screens for it, a closed list — and `advanceSetup`).
+// `gugu.assistant.open(name, screen)` — one of the host's own screens for it, a closed list — and `advanceSetup`), and
+// `assistant-rename` (`assistant:rename`: `gugu.assistant.rename`). The panel's own pages (settings, projects, capabilities)
+// open as one host layer over the App's panel (`app-host-layer.ts`). Any page: `gugu.toast(text)`, the host's toast.
 // 45 (#1931): `contributes.assistantRules`, the personal assistant's product rules as text/data files the host reads at its
 // own read points (assistantRulesFormat.ts); never run, and honoured only for the App the host trusts as their provider.
 export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
@@ -127,6 +129,10 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // on the face and name is told once as `onSurface` → `intent: { kind: "profile" }`; the gear opens the assistant's settings
 // as a host page over the App's panel. One host page at a time there (`app-host-layer.ts`): `panel.hostPage` says one is open.
 export const EXTENSION_API_VERSION = 46;
+
+/** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
+export const APP_TOAST_MAX = 80;
+export const APP_TOAST_INTERVAL_MS = 2000;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
@@ -681,7 +687,7 @@ export type ExtensionHostEvent =
    * once, `unbound` when an assistant appears for an App that heard the snapshot without one. Only to the pages the person
    * works of an App with `assistant:status`, each time checked as a read is.
    */
-  | { type: 'assistantChanged'; name: string; state: 'ready'; status: import('./assistant-binding').AppAssistantStatus }
+  | { type: 'assistantChanged'; name: string; state: 'ready'; status: import('./assistant-binding').AppAssistantStatus; hostPage: boolean }
   | { type: 'assistantChanged'; name: string; state: 'unbound' }
   /**
    * #1928 The schedules of the agent a page's binding is with changed (`gugu.bindings.onSchedulesChanged(name, fn)`): the
@@ -921,6 +927,14 @@ export const BRIDGE_VERBS = {
   bindingsWork: { needs: 'chat:work', only: 'page' },
   bindingsOpenWork: { needs: 'chat:work', only: 'page', gesture: true },
   bindingsCloseWork: { needs: 'chat:work', only: 'page' },
+  assistantRename: { needs: 'assistant:rename', only: 'page', gesture: true },
+  /**
+   * #1925 (44) A short line in the host's own toast, as the host says 「更改已保存」 after a save: only from a page the person
+   * works, while it is on screen and has the focus; text only (no action, link or icon), at most `APP_TOAST_MAX` characters,
+   * one every `APP_TOAST_INTERVAL_MS` (else `rate-limited`). No capability: it says nothing outside what the page could
+   * show itself, and only while the person is looking at it.
+   */
+  toast: { needs: null, only: 'page' },
   messagesHistory: { needs: 'chat:read' },
   messagesSearch: { needs: 'chat:read' },
   /**

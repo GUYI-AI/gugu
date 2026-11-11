@@ -8,9 +8,10 @@ import type { AssistantShellActions, AssistantShellSnapshot } from '../../../../
 vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ isMyAssistant: () => false }))
 
 const { installAssistantShellBridge, publishAssistantShell, readAssistantShellBridge } = await import('../../../../apps/desktop/src/lib/assistantShellBridge')
-const { advanceAssistantSetup, appAssistantStatusOf, openAssistantScreen, startAssistantAppStatus } = await import('../../../../apps/desktop/src/lib/assistantAppHost')
+const { advanceAssistantSetup, appAssistantStatusOf, openAssistantScreen, renameAssistantFor, startAssistantAppStatus } = await import('../../../../apps/desktop/src/lib/assistantAppHost')
 const { UI_EVENTS } = await import('../../../../apps/desktop/src/lib/uiEvents')
-const { ASSISTANT_SCREENS, appAssistantStatusSchema } = await import('../../../../apps/desktop/src/session/shared/extensions/assistant-binding')
+const { ASSISTANT_NAME_MAX, ASSISTANT_SCREENS, isAssistantLayerScreen, shownAssistantSchema } = await import('../../../../apps/desktop/src/session/shared/extensions/assistant-binding')
+const { ASSISTANT_NAME_MAX: BUILT_IN_NAME_MAX } = await import('../../../../apps/desktop/src/lib/assistantSetup')
 
 const OWNER = '11000000-0000-4000-8000-000000000001'
 const OTHER = '22000000-0000-4000-8000-000000000002'
@@ -53,17 +54,20 @@ describe('each screen opens by its existing entry, and nothing else', () => {
     devices: 'settings:devices', 'connected-apps': 'settings:connectors',
   } as const
 
-  it.each(ASSISTANT_SCREENS)('%s', (screen) => {
+  const SHELL_SCREENS = ASSISTANT_SCREENS.filter((screen) => !isAssistantLayerScreen(screen))
+
+  it.each(SHELL_SCREENS)('%s', (screen) => {
     openAssistantScreen(screen, OWNER)
-    expect(entries()).toEqual([ENTRY[screen]])
+    expect(entries()).toEqual([ENTRY[screen as keyof typeof ENTRY]])
   })
 
-  it('the list is exactly these seven', () => {
-    expect([...ASSISTANT_SCREENS].sort()).toEqual(Object.keys(ENTRY).sort())
+  it('the shell\'s screens are exactly these seven; the panel\'s own pages go over the App\'s panel instead', () => {
+    expect([...SHELL_SCREENS].sort()).toEqual(Object.keys(ENTRY).sort())
+    expect(ASSISTANT_SCREENS.filter(isAssistantLayerScreen)).toEqual(['settings', 'projects', 'capabilities'])
   })
 
-  it('an unknown value opens nothing', () => {
-    for (const screen of ['settings', 'chat', '', 'Close', 'memory']) expect(() => openAssistantScreen(screen as never, OWNER)).toThrow()
+  it('an unknown value, or a panel page, opens nothing here', () => {
+    for (const screen of ['settings', 'projects', 'capabilities', 'chat', '', 'Close', 'memory']) expect(() => openAssistantScreen(screen as never, OWNER)).toThrow()
     expect(entries()).toEqual([])
   })
 
@@ -79,6 +83,33 @@ describe('each screen opens by its existing entry, and nothing else', () => {
     expect(() => openAssistantScreen('look', OWNER)).toThrow()
     expect(() => openAssistantScreen('model', OWNER)).toThrow()
     expect(entries()).toEqual([])
+  })
+})
+
+describe('rename: the shell\'s own renameAssistant, by the built-in name field\'s rule', () => {
+  it('trims and saves through renameAssistant', async () => {
+    await renameAssistantFor('  Pip  ', OWNER)
+    expect(actions.renameAssistant).toHaveBeenCalledExactlyOnceWith('Pip')
+  })
+
+  it('the same name saves nothing; empty or over the field\'s limit is refused, nothing saved', async () => {
+    await renameAssistantFor(' Dot ', OWNER)
+    await expect(renameAssistantFor('   ', OWNER)).rejects.toThrow()
+    await expect(renameAssistantFor('x'.repeat(ASSISTANT_NAME_MAX + 1), OWNER)).rejects.toThrow()
+    expect(actions.renameAssistant).not.toHaveBeenCalled()
+    expect(ASSISTANT_NAME_MAX).toBe(BUILT_IN_NAME_MAX)
+  })
+
+  it('another account, or no assistant shown: nothing saved', async () => {
+    await expect(renameAssistantFor('Pip', OTHER)).rejects.toThrow()
+    publishAssistantShell(snapshot({ assistantState: 'none', assistant: null }))
+    await expect(renameAssistantFor('Pip', OWNER)).rejects.toThrow()
+    expect(actions.renameAssistant).not.toHaveBeenCalled()
+  })
+
+  it('a failed save is a failure', async () => {
+    actions.renameAssistant.mockRejectedValueOnce(new Error('offline'))
+    await expect(renameAssistantFor('Pip', OWNER)).rejects.toThrow('offline')
   })
 })
 
@@ -108,7 +139,7 @@ describe('the snapshot an App may see', () => {
   it('holds no chat, device or account id, no path or storage address, and nothing of the owner', () => {
     for (const shell of [snapshot(), snapshot({ home: { kind: 'cloud', deviceId: CLOUD }, cloud: { state: 'awake', deviceId: CLOUD, error: null, since: null, adoptingFrom: DEVICE } })]) {
       const status = appAssistantStatusOf(shell, FACE)
-      expect(appAssistantStatusSchema.parse(status)).toEqual(status)
+      expect(shownAssistantSchema.parse(status)).toEqual(status)
       for (const secret of [OWNER, CHAT, ASSISTANT, DEVICE, CLOUD, 'storage.example', 'https:', 'MacBook', 'Ann']) expect(said(status)).not.toContain(secret)
     }
     // A face that is not the host's own small image is not passed on.

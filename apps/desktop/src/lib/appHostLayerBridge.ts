@@ -1,11 +1,12 @@
-// #1925 (API 46) One host layer over an App's panel(形制同 appConversationSurfaceBridge:window 上一个对象 + getSnapshot /
-// subscribe):一个 App 的面板上此刻盖着的那一页宿主自己的页(助理的某个任务的对话、助理的设置……),一次一页,开新的就收起旧的。
-// 种类与 main 那一侧的形状见 session/shared/extensions/app-host-layer.ts。两棵树:
-//   · 壳(components/appSlot/AppHostLayerHost.tsx)把每一页画进 App 那一块面板里留的格子(lib/shellSlots.ts 的
+// #1925 (API 44, 46) One host layer over an App's panel(形制同 appConversationSurfaceBridge:window 上一个对象 +
+// getSnapshot / subscribe):一个 App 的面板上此刻盖着的那一页宿主自己的页(助理的某个任务的对话、助理的设置 / 项目 / 能力),
+// 一次一页,开新的就收起旧的。种类与 main 那一侧的形状见 session/shared/extensions/app-host-layer.ts。两棵树:
+//   · 壳(components/appSlot/AppHostLayerHost.tsx)把要壳来画的那几页画进 App 那一块面板里留的格子(lib/shellSlots.ts 的
 //     `app-host-layer:<App id>`)—— 画的就是内置那一页本身(AssistantWorkTaskWindow、AssistantSettingsPage);
-//     换账号、离开会话页、App 停用 / 卸载 / 授权变了 → 当场收起;每次开合告诉 main(App 只听到开着没有);
-//   · 会话页(features/apps/app-host-layer-slot.tsx)看这里有没有那个 App 的一页:有 = 面板里不摆 App 的页,留出那一格,
-//     配上宿主自己的返回 / 收起。它也是开页的地方:main 验过权之后的 host action(`openWork`),宿主自己那一行的齿轮。
+//     换账号、App 停用 / 卸载 / 授权变了、(任务)离开会话页 → 当场收起;每次开合告诉 main(App 只听到开着没有);
+//   · 会话页(features/apps/app-host-layer.tsx)看这里有没有那个 App 的一页:有 = 不摆 App 的页,留出那一格或画那一页,
+//     配上宿主自己的返回 / 收起。它也是开页的地方:main 验过权之后的 host action(`openWork`、`openAssistantScreen`),
+//     宿主自己那一行的齿轮。
 // 桥只由壳装;会话页 bundle 只读 window 上那一个对象,❌ 自己装(会装上一个永远空的副本)。App 的页面够不着这里。
 import type { AppHostLayerPage } from '@/session/shared/extensions/app-host-layer'
 import type { AssistantTaskChat } from './assistantTaskChat'

@@ -11,7 +11,8 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
  * `work`, and hands main exactly what each row draws (plus the two ids main keeps). A task main let an App open is drawn with
  * the built-in task window in the cell the App's panel leaves (AppHostLayerHost), for the account it was opened for; another
  * account, leaving the session page, the App switched off or removed, or main naming its grant or choice as changed take it
- * away at once. The same layer draws the assistant's settings page (46, the gear of the host's row): one page at a time.
+ * away at once. The same layer draws the assistant's settings page (44 `gugu.assistant.open`, 46 the gear of the host's
+ * row): one page at a time.
  */
 const OWNER = '11000000-0000-4000-8000-000000000001';
 const OTHER = '22000000-0000-4000-8000-000000000002';
@@ -71,8 +72,6 @@ const { forgetPushedWorkForTest, pushedRowsOf } = await import('../../../../apps
 const { forgetReportedHostLayersForTest } = await import('../../../../apps/desktop/src/components/appSlot/appHostLayer');
 const { readShellSlots } = await import('../../../../apps/desktop/src/lib/shellSlots');
 const { appHostLayerSlotKey, readAppHostLayerBridge, resetAppHostLayersForTest } = await import('../../../../apps/desktop/src/lib/appHostLayerBridge');
-const { installAppConversationSurfaceBridge, publishAppConversationSurfaces } = await import('../../../../apps/desktop/src/lib/appConversationSurfaceBridge');
-installAppConversationSurfaceBridge();
 const { installAssistantShellBridge, publishAssistantShell } = await import('../../../../apps/desktop/src/lib/assistantShellBridge');
 const { installIdentityDirectoryBridge, publishIdentityDirectory } = await import('../../../../apps/desktop/src/lib/identityDirectoryBridge');
 const { assistantPanelTaskChat } = await import('../../../../apps/desktop/src/components/assistant/assistant-panel-tasks');
@@ -114,7 +113,6 @@ beforeEach(async () => {
   resetAppHostLayersForTest();
   forgetPushedWorkForTest();
   forgetReportedHostLayersForTest();
-  publishAppConversationSurfaces({});
   assistantId = `44000000-0000-4000-8000-${String(++assistantSerial).padStart(12, '0')}`;
   Object.assign(state, { owner: OWNER, inventory: [reading(APP), plain('notes')], disabled: [], windows: [] });
   pushed.mockClear();
@@ -324,12 +322,9 @@ describe('a task drawn in the App\'s panel', () => {
   });
 });
 
-describe('the assistant\'s settings page over the App\'s panel (the gear of the host\'s row)', () => {
-  const CHAT = '33000000-0000-4000-8000-000000000003';
-  const withRow = (owner = OWNER) => act(async () => publishAppConversationSurfaces({ [APP]: CHAT }, { [APP]: { kind: 'assistant', ownerId: owner } }));
+describe('the assistant\'s settings page over the App\'s panel (gugu.assistant.open, or the gear of the host\'s row)', () => {
   const openSettings = (owner = OWNER) => act(async () => readAppHostLayerBridge()!.open(APP, { kind: 'assistant-settings', ownerId: owner }));
   const ready = async () => {
-    await withRow();
     await render();
     await settle();
     readShellSlots()!.setSlot(appHostLayerSlotKey(APP), cell);
@@ -360,16 +355,15 @@ describe('the assistant\'s settings page over the App\'s panel (the gear of the 
     expect(chats()).toEqual({});
   });
 
-  it('closed at once when the row goes (another conversation, the grant, the App), another account, leaving the session page, or main naming it changed', async () => {
+  it('closed at once on another account, the App switched off or removed, or main naming it changed', async () => {
     for (const leave of [
-      () => act(async () => publishAppConversationSurfaces({ [APP]: CHAT })),
-      () => act(async () => publishAppConversationSurfaces({})),
-      () => act(async () => publishAppConversationSurfaces({ [APP]: CHAT }, { [APP]: { kind: 'assistant', ownerId: OTHER } })),
       async () => { state.owner = OTHER; await render(); },
-      () => render(false),
+      async () => { state.disabled = [APP]; await render(); },
+      async () => { state.inventory = [plain('notes')]; await render(); },
       () => note(APP),
+      () => note(undefined),
     ]) {
-      state.owner = OWNER;
+      Object.assign(state, { owner: OWNER, inventory: [reading(APP), plain('notes')], disabled: [] });
       await ready();
       await openSettings();
       await settle();
@@ -382,11 +376,15 @@ describe('the assistant\'s settings page over the App\'s panel (the gear of the 
     }
   });
 
-  it('the App\'s own work going leaves the settings page; the closeWork path never takes it away', async () => {
+  it('the App no longer reading work, another App\'s change, or the session page set aside leave it; the closeWork path never takes it away', async () => {
     await ready();
     await openSettings();
-    state.inventory = [plain('notes')];
+    state.inventory = [{ ...reading(APP), permissions: { bindings: [{ name: 'main', kind: 'conversation', actions: ['unread'] }] } }, plain('notes')];
     await render();
+    await note('notes');
+    // Unlike a task: the panel's page stays while the session page is set aside (the session page closes it when its App
+    // page goes, or its assistant: app-host-layer.tsx).
+    await render(false);
     await settle();
     expect(Object.keys(chats())).toEqual([APP]);
     await act(async () => readAppHostLayerBridge()!.close(APP, 'work'));

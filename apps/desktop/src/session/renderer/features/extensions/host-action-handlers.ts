@@ -37,6 +37,7 @@ import type { DispatchAsk } from '@shared/extensions/app-dispatch-core';
 import { openApp } from './app-dock';
 import { installedExtensionsStore } from './installed-extensions-store';
 import { safeParseExtensionManifest } from '@shared/extensions/manifest';
+import { isAssistantLayerScreen } from '@shared/extensions/assistant-binding';
 import { extensionSurfaceStore } from './extension-surface-store';
 import { peekStore } from './peek-store';
 import { screenLayout } from '@renderer/app/screen-layout';
@@ -318,9 +319,20 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       return openForClick(action, tabId);
     // #1925 The assistant's own screens, each by its existing entry; and the setup steps an App draws, moved on.
     case 'openAssistantScreen':
+      // The panel's own pages go over this App's panel (its host layer); the rest are the shell's screens.
+      if (isAssistantLayerScreen(action.screen)) {
+        const screen = action.screen;
+        return import('../apps/app-host-layer').then(({ openAssistantLayer }) => openAssistantLayer(extensionId, screen, action.ownerId));
+      }
       return import('@/lib/assistantAppHost').then(({ openAssistantScreen }) => openAssistantScreen(action.screen, action.ownerId));
     case 'advanceAssistantSetup':
       return import('@/lib/assistantAppHost').then(({ advanceAssistantSetup }) => advanceAssistantSetup(action.next, action.ownerId));
+    case 'renameAssistant':
+      return import('@/lib/assistantAppHost').then(({ renameAssistantFor }) => renameAssistantFor(action.text, action.ownerId));
+    case 'toast':
+      // The host's own toast, as the built-in 「更改已保存」: the text alone.
+      toast({ title: action.text });
+      return;
   }
 }
 

@@ -1,5 +1,6 @@
-// #1925 (API 46) The shell's word to main on the host page over each App's panel (AppHostLayerHost.tsx): which kind, for
-// whom, and a task's ids — never sent to an App; main answers `panel.hostPage` and `open` from it (app-host-layers.ts).
+// #1925 (API 44, 46) The shell's word to main on the host page over each App's panel (AppHostLayerHost.tsx): which kind, for
+// whom, and a task's ids — never sent to an App; main answers `hostPage`, `panel.hostPage` and `open` from it
+// (app-host-layers.ts).
 import type { AppHostLayer, AppHostLayers } from '../../lib/appHostLayerBridge'
 import { rendererLogger } from '../../lib/log'
 import { rpc } from '@/session/renderer/lib/ipc'

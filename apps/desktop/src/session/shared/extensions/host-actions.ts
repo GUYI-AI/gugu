@@ -83,7 +83,11 @@ export type ExtensionHostAction =
    * account it checked, which the window must still show.
    */
   | { kind: 'openAssistantScreen'; screen: AssistantScreen; ownerId: string }
-  | { kind: 'advanceAssistantSetup'; next: AssistantSetupAdvance; ownerId: string };
+  | { kind: 'advanceAssistantSetup'; next: AssistantSetupAdvance; ownerId: string }
+  /** #1925 (44) Renamed through the shell's own `renameAssistant`, the built-in field's rule checked again (`renameCheck`). */
+  | { kind: 'renameAssistant'; text: string; ownerId: string }
+  /** #1925 (44) `gugu.toast(text)`: the host's own toast, the text alone (main checked the page, its focus and the rate). */
+  | { kind: 'toast'; text: string };
 
 export interface ExtensionHostActionCommand {
   /** The page that asked; null for a link's or a banner's click, which no page made. */

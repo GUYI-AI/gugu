@@ -23,13 +23,20 @@ vi.mock('@renderer/features/global-search/search-session', () => ({ searchInChat
 vi.mock('@renderer/lib/ipc', () => ({ rpc: { extensions: { reportConversationSurface: async () => ({ success: true }) } } }));
 vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { navigation: { navigate: vi.fn() } } }));
 
+// The panel's own pages and their reads (app-host-layer.tsx): not this test's; their modules read the cloud on import.
+vi.mock('@renderer/features/assistant/assistant-data', () => ({ useAssistantMachine: () => ({ data: undefined }) }));
+vi.mock('@/components/assistant/AssistantProjectsLibrary', () => ({ AssistantProjectsLibrary: () => null }));
+vi.mock('@/components/assistant/AssistantLibraryVolume', () => ({ AssistantLibraryVolume: () => null }));
+vi.mock('@renderer/features/apps/assistant-app-counts', () => ({ AssistantAppCountsSource: () => null }));
 const { AppConversationFrame } = await import('./app-conversation-frame');
-const { AppDockPage } = await import('./app-host-layer-slot');
+const { AppHostLayerFrame: AppDockPage, resetMountedAppPagesForTest } = await import('./app-host-layer');
 const { applyExtensionHostAction } = await import('@renderer/features/extensions/host-action-handlers');
 const { installShellSlots, readShellSlots } = await import('@/lib/shellSlots');
 const { installAppConversationSurfaceBridge, publishAppConversationSurfaces } = await import('@/lib/appConversationSurfaceBridge');
 const { installAppHostLayerBridge, readAppHostLayerBridge, resetAppHostLayersForTest, setAppHostLayerAccount, setAppWorkRows } = await import('@/lib/appHostLayerBridge');
+const { installAssistantShellBridge, publishAssistantShell } = await import('@/lib/assistantShellBridge');
 installShellSlots();
+installAssistantShellBridge();
 installAppConversationSurfaceBridge();
 installAppHostLayerBridge();
 
@@ -44,7 +51,11 @@ beforeEach(() => {
   state.pages.length = 0;
   localStorage.clear();
   resetAppHostLayersForTest();
+  resetMountedAppPagesForTest();
   setAppHostLayerAccount(OWNER);
+  // The window shows this account's assistant (a panel page is drawn only then).
+  publishAssistantShell({ cloudAvailable: true, canHostHere: true, cloud: null, loadError: null, ownerName: 'Me', ownerId: OWNER, chatId: CHAT, chatReadFailed: false,
+    assistant: { id: 'assistant-1', display_name: 'Dot', avatar: null, created_at: null }, assistantState: 'found', home: null, setup: null, member: true, preparing: false, deviceCount: 1, ownerAvatar: null } as never);
   // What the shell read: this account's rows, of which this one.
   setAppWorkRows({ ownerId: OWNER, assistantId: 'assistant-1', open: (workId: string, sessionId: string) => (workId === WORK && sessionId === 'exec-a'
     ? { workId, title: 'Compare three flights', outcome: 'active', assistantId: 'assistant-1', taskAgentId: 'agent-a', task: { deviceId: 'device-a', sessionId }, assistants: [] }

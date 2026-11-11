@@ -88,6 +88,7 @@ export const HOST_CALLS = {
   'bindings.work': { verb: 'bindingsWork', pack: (name: string) => ({ name }) },
   'bindings.openWork': { verb: 'bindingsOpenWork', pack: (name: string, handle: string) => ({ name, handle }) },
   'bindings.closeWork': { verb: 'bindingsCloseWork', pack: (name: string) => ({ name }) },
+  'assistant.rename': { verb: 'assistantRename', pack: (name: string, text: string) => ({ name, text }) },
   'messages.history': { verb: 'messagesHistory' },
   'messages.search': { verb: 'messagesSearch' },
   // The chats whoever reads is in, and one's members (`chat:read`): `{ chat }` names it.
@@ -116,6 +117,8 @@ export const HOST_CALLS = {
   'sessions.index': { verb: 'sessionsIndex', pack: (options?: Record<string, unknown>) => ({ ...options }) },
   'sessions.read': { verb: 'sessionsRead' },
   notify: { verb: 'notify' },
+  // #1925 (44) The host's own toast, a short line while the page is on screen and focused.
+  toast: { verb: 'toast', pack: (text: string) => ({ text }) },
   openLink: { verb: 'openLink', pack: (url: string) => ({ url }) },
   linkTo: { verb: 'linkTo', pack: (options: Record<string, unknown> = {}) => options },
   setTabTitle: { verb: 'setTabTitle', pack: (title: string) => ({ title }) },
@@ -200,7 +203,9 @@ export const HOST_EVENTS = {
   /** `gugu.assistant.onChanged(fn)` rides on it (#1925): the answer `status` gives, to a page the person works. */
   onAssistantChanged: {
     event: 'assistantChanged', only: 'page',
-    pick: (event: Event<'assistantChanged'>) => [event.state === 'ready' ? { name: event.name, state: event.state, status: event.status } : { name: event.name, state: event.state }],
+    pick: (event: Event<'assistantChanged'>) => [event.state === 'ready'
+      ? { name: event.name, state: event.state, status: event.status, hostPage: event.hostPage }
+      : { name: event.name, state: event.state }],
   },
   onCloudHeard: { event: 'cloudHeard', only: 'page', pick: (event: Event<'cloudHeard'>) => [event.topic, event.event, event.heard] },
   onBindingResources: { event: 'bindingResources', only: 'page', pick: (event: Event<'bindingResources'>) => [event.watchId, event.event] },

@@ -8,10 +8,12 @@ import type { ExtensionHostAction } from '@shared/extensions/host-actions';
  * What happens past the door is app-assistant-binding.test.ts's.
  */
 const granted = new Set<string>();
+const focus = vi.hoisted(() => ({ focused: true }));
 vi.mock('electron', () => ({
   app: { getLocale: () => 'en-US' },
   ipcMain: { handle: vi.fn(), on: vi.fn() },
-  webContents: { fromId: () => undefined },
+  // The page's own webContents (pageId 41): whether it has the focus now.
+  webContents: { fromId: (id: number) => (id === 41 ? { isFocused: () => focus.focused, isDestroyed: () => false } : undefined) },
   shell: { openExternal: vi.fn() },
   clipboard: { writeText: vi.fn() },
 }));
@@ -35,24 +37,30 @@ const appAssistantOpen = vi.fn(async (_id: string, args: { screen: string }, act
 const appAssistantAdvanceSetup = vi.fn(async (_id: string, _args: unknown, act: (action: ExtensionHostAction) => Promise<unknown>) => {
   await act({ kind: 'advanceAssistantSetup', next: 'ready', ownerId: OWNER });
 });
-vi.mock('./app-assistant-binding', () => ({ appAssistantStatus, appAssistantOpen, appAssistantAdvanceSetup }));
+const appAssistantRename = vi.fn(async (_id: string, args: { text: string }, act: (action: ExtensionHostAction) => Promise<unknown>) => {
+  await act({ kind: 'renameAssistant', text: args.text, ownerId: OWNER });
+  return 'renamed';
+});
+vi.mock('./app-assistant-binding', () => ({ appAssistantStatus, appAssistantOpen, appAssistantAdvanceSetup, appAssistantRename }));
 const { answerCall, setExtensionBridgeHost } = await import('./extension-bridge');
 const deliver = vi.fn(async () => undefined);
 setExtensionBridgeHost({ deliver, presentation: () => ({}) as never, selfGuguNumber: () => null } as never);
 
-const page = (operator: { kind: 'person' } | { kind: 'agent'; id: string }, gesture = true) => ({
+const page = (operator: { kind: 'person' } | { kind: 'agent'; id: string }, gesture = true, metrics = { visible: true, width: 400, height: 600 }) => ({
   kind: 'page', extensionId: 'assistant-app', pageId: 41, gesture, filePage: () => ({}),
-  binding: { extensionId: 'assistant-app', operator, conversation: null, widget: null, surface: null, tabId: 'tab-1', embedderId: 7 },
+  binding: { extensionId: 'assistant-app', operator, conversation: null, widget: null, surface: null, tabId: 'tab-1', embedderId: 7, metrics },
 }) as never;
 const agent = { kind: 'agent' as const, id: 'user:22000000-0000-4000-8000-000000000002' };
-const called = () => appAssistantStatus.mock.calls.length + appAssistantOpen.mock.calls.length + appAssistantAdvanceSetup.mock.calls.length;
+const called = () => appAssistantStatus.mock.calls.length + appAssistantOpen.mock.calls.length + appAssistantAdvanceSetup.mock.calls.length + appAssistantRename.mock.calls.length;
 
 beforeEach(() => {
   granted.clear();
   appAssistantStatus.mockClear();
   appAssistantOpen.mockClear();
   appAssistantAdvanceSetup.mockClear();
+  appAssistantRename.mockClear();
   deliver.mockClear();
+  focus.focused = true;
 });
 
 describe('the bridge door for the person\'s own assistant', () => {
@@ -103,6 +111,45 @@ describe('the bridge door for the person\'s own assistant', () => {
       }
     }
     expect(called()).toBe(0);
+    expect(deliver).not.toHaveBeenCalled();
+  });
+});
+
+describe('the bridge door for rename', () => {
+  it('in a click, with assistant:rename: answered with the closed result, the rename handed to the window drawing that page', async () => {
+    granted.add('assistant:rename');
+    expect(await answerCall(page({ kind: 'person' }), 'assistantRename', { name: 'main', text: 'Pip' })).toEqual({ ok: true, value: 'renamed' });
+    expect(deliver).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ embedderId: 7 }), { kind: 'renameAssistant', text: 'Pip', ownerId: OWNER });
+  });
+
+  it('outside a gesture, without its own grant (open is not enough), or from a page an agent works: refused, nothing asked', async () => {
+    granted.add('assistant:rename');
+    expect(await answerCall(page({ kind: 'person' }, false), 'assistantRename', { name: 'main', text: 'Pip' })).toMatchObject({ ok: false, code: 'denied', message: expect.stringContaining('gesture') });
+    expect(await answerCall(page(agent), 'assistantRename', { name: 'main', text: 'Pip' })).toMatchObject({ ok: false, code: 'denied' });
+    granted.clear();
+    granted.add('assistant:open');
+    expect(await answerCall(page({ kind: 'person' }), 'assistantRename', { name: 'main', text: 'Pip' })).toMatchObject({ ok: false, code: 'denied', message: expect.stringContaining('assistant:rename') });
+    expect(called()).toBe(0);
+    expect(deliver).not.toHaveBeenCalled();
+  });
+});
+
+describe('the bridge door for gugu.toast', () => {
+  it('no capability: the person\'s page, on screen and focused, hands the text to the window drawing it', async () => {
+    expect(await answerCall(page({ kind: 'person' }, false), 'toast', { text: 'Changes saved' })).toEqual({ ok: true, value: undefined });
+    expect(deliver).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ extensionId: 'assistant-app', embedderId: 7 }), { kind: 'toast', text: 'Changes saved' });
+  });
+
+  it('a page an agent works, a page off screen or without the focus, a background page or a program: no toast', async () => {
+    focus.focused = true;
+    expect(await answerCall(page(agent), 'toast', { text: 'one' })).toMatchObject({ ok: false, code: 'denied' });
+    expect(await answerCall(page({ kind: 'person' }, false, { visible: false, width: 400, height: 600 }), 'toast', { text: 'two' })).toMatchObject({ ok: false, code: 'denied' });
+    expect(await answerCall(page({ kind: 'person' }, false, { visible: true, width: 0, height: 0 }), 'toast', { text: 'three' })).toMatchObject({ ok: false, code: 'denied' });
+    focus.focused = false;
+    expect(await answerCall(page({ kind: 'person' }), 'toast', { text: 'four' })).toMatchObject({ ok: false, code: 'denied' });
+    for (const kind of ['background', 'program']) {
+      expect(await answerCall({ kind, extensionId: 'assistant-app', pageId: -1, binding: null } as never, 'toast', { text: 'five' })).toMatchObject({ ok: false, code: 'invalid' });
+    }
     expect(deliver).not.toHaveBeenCalled();
   });
 });
