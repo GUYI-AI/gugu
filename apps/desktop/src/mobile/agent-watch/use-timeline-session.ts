@@ -308,8 +308,13 @@ export function useTimelineSession(
       if (cancelled || !readyRef.current) return
       applyResult(result)
     })
-    const stopErrors = client.subscribeSessionErrors?.(deviceId, subscriptionId, () => {
+    const stopErrors = client.subscribeSessionErrors?.(deviceId, subscriptionId, (failure) => {
       if (cancelled) return
+      // A bounded window ends when its stopped session starts again: open it afresh, which asks the host where to follow it.
+      if (client.boundedWindow && rpcErrorCode(failure) === 'scope_changed') {
+        reload()
+        return
+      }
       setLink('lost')
       catchUp()
     })
