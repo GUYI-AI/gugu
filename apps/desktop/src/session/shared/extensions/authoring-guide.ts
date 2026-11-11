@@ -887,6 +887,20 @@ API 40, the same conversation only: add \`"files"\` (with \`chat:files\`) and/or
   write, rename or delete, no other chat; a topic is refused. Paths are names from the top; \`..\`, absolute paths, ids: \`invalid\`.
 - \`gugu.dispatch(text, { draft: true, to: { binding: "main" } })\` in a click: the text into that conversation's composer. Nothing is sent.
 
+API 43, when that conversation is the person's private one with an agent of theirs: \`"schedules"\` (with \`chat:schedules\`)
+and \`"schedules:control"\` (with \`chat:schedules:control\`; needs \`"schedules"\` too) — that agent's schedules on this computer,
+the ones its own \`schedule_*\` tools and the person's list show. Another chat, or someone else's agent: \`denied\`.
+- \`gugu.bindings.schedules("main")\` → \`{ state: "ready", schedules }\`, each \`{ id, revision, title, prompt, at, cron, tz,
+  state: "active" | "paused" | "ended", nextRunAt, lastRun: { status, at } | null, updatedAt }\`; or \`unbound\`,
+  \`elsewhere\` (the agent lives on another computer) or \`unavailable\` (try again later).
+- \`gugu.bindings.onSchedulesChanged("main", fn)\` → unsubscribe: they changed, list again. Silent for good once the grant goes.
+- \`gugu.bindings.controlSchedule("main", { operationId, op, … })\`, \`op\`: \`register\` (\`prompt\`, \`title?\`, \`at\` or \`cron\`,
+  \`tz?\`), \`update\` (\`title\` and/or a new time; what it asks stays the agent's), \`pause\`, \`resume\`, \`remove\` — those four
+  with \`scheduleId\` and the \`revision\` you read. → \`{ operationId, op, status, scheduleId, revision, at }\`: \`applied\`,
+  \`conflict\` (changed since: list, decide, new \`operationId\`) or \`missing\`. The same \`operationId\` again answers the same
+  receipt, never a second change. A run under way is never stopped (\`remove\` then: \`unavailable\`). Closing your page,
+  disabling or uninstalling your App leaves the schedules as they are.
+
 Which chats the reader is in and who is in one — for a page that is in no chat (an App's own tab, full screen) to
 offer one — and what people and agents said in a chat: a stretch of its timeline, one thread, or the messages that
 cite a file (a pill, a link) — "this passage was discussed 3 times", each a click away with \`gugu.showMessage(m.id)\`.

@@ -6,6 +6,7 @@ import { APP_PLATFORMS } from './app-platforms';
 import { claimTakes } from './file-openers';
 import { INSTRUCTIONS_MAX_CHARS, SUBTITLE_MAX_CHARS } from './app-listing';
 import { BINDING_ACTION_CAPABILITY, BINDING_ACTIONS_API_VERSION, BINDING_NAME, CONVERSATION_BINDING_ACTIONS } from './unread-binding';
+import { BOUND_SCHEDULES_API_VERSION } from './bound-schedules';
 
 /**
  * Extension (App) manifest — the `manifest.json` at the root of an
@@ -348,6 +349,10 @@ export const EXTENSION_CAPABILITIES = [
   // `{ binding }`). Each needs its binding action declared, and `chat:unread`, the binding itself.
   'chat:files',
   'chat:draft',
+  // #1928 (API 43): when that conversation is the person's private one with an agent of theirs, that agent's schedules —
+  // listed (`gugu.bindings.schedules`), and changed through the host's own schedule store (`controlSchedule`).
+  'chat:schedules',
+  'chat:schedules:control',
   /*
    * Seeing the agents at work (behavior tab-extensions:「agent 的可见与可控」).
    *
@@ -745,6 +750,20 @@ export const extensionManifestSchema = z
       if (unreadBinding?.actions.includes(action) && manifest.apiVersion < BINDING_ACTIONS_API_VERSION) {
         ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: `the conversation binding's "${action}" action requires apiVersion ${BINDING_ACTIONS_API_VERSION}` });
       }
+    }
+    // #1928: the schedules of the agent the conversation is with, the same pairing from API 43. Control decides on the
+    // revisions it read, so it comes with `schedules`.
+    for (const action of ['schedules', 'schedules:control'] as const) {
+      const capability = BINDING_ACTION_CAPABILITY[action];
+      if ((unreadBinding?.actions.includes(action) ?? false) !== declared.includes(capability)) {
+        ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings'], message: `${capability} requires the conversation binding's "${action}" action, and the action requires ${capability}` });
+      }
+      if (unreadBinding?.actions.includes(action) && manifest.apiVersion < BOUND_SCHEDULES_API_VERSION) {
+        ctx.addIssue({ code: 'custom', path: ['apiVersion'], message: `the conversation binding's "${action}" action requires apiVersion ${BOUND_SCHEDULES_API_VERSION}` });
+      }
+    }
+    if (unreadBinding?.actions.includes('schedules:control') && !unreadBinding.actions.includes('schedules')) {
+      ctx.addIssue({ code: 'custom', path: ['permissions', 'bindings'], message: 'the conversation binding\'s "schedules:control" action requires its "schedules" action' });
     }
     const byFamily = new Map<string, string>();
     for (const word of declared) {

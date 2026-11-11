@@ -102,7 +102,11 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // 40 (#1927): the one conversation binding may also declare `files` (`chat:files`: `gugu.bindings.list` / `read`, that
 // conversation's chat-folder files, read only) and `draft` (`chat:draft`: `dispatch(text, { draft: true, to: { binding } })`).
 // Still no chat id, title, member or message reaches the App.
-export const EXTENSION_API_VERSION = 40;
+// 43 (#1928): when that conversation is the person's private one with an agent of theirs, `schedules` (`chat:schedules`:
+// `gugu.bindings.schedules` / `onSchedulesChanged`, that agent's schedules here) and `schedules:control`
+// (`chat:schedules:control`: `gugu.bindings.controlSchedule`, idempotent by the caller's operation id, through the host's
+// own schedule store). Never the agent's id, its session or the chat.
+export const EXTENSION_API_VERSION = 43;
 
 /**
  * The page `app_check` runs is started with this argument (摩擦单 F5, F69): it says how often it wrote, set presence and
@@ -641,6 +645,12 @@ export type ExtensionHostEvent =
    * another session.
    */
   | { type: 'agentsChanged'; agentIds: readonly string[] }
+  /**
+   * #1928 The schedules of the agent a page's binding is with changed (`gugu.bindings.onSchedulesChanged(name, fn)`): the
+   * binding's name only, as `filesChanged` says files moved — the page lists them again. Rides on `chat:schedules`, checked
+   * again before each; once it is gone the host stops listening and says nothing more.
+   */
+  | { type: 'schedulesChanged'; binding: string }
   /** What this page hears of its own topic (`gugu.cloud.on`): a broadcast's payload, or that it is (re)subscribed: read again then. */
   | { type: 'cloudHeard'; topic: string; event: string; heard: { subscribed: true } | { payload: Record<string, unknown> } }
   /**
@@ -832,6 +842,13 @@ export const BRIDGE_VERBS = {
    */
   bindingsList: { needs: 'chat:files', only: 'page' },
   bindingsRead: { needs: 'chat:files', only: 'page' },
+  /**
+   * #1928 (43): the schedules of the agent the bound conversation is with — listed, heard changing (`schedulesChanged`),
+   * and changed through the host's schedule store by the caller's operation id. The host finds the agent from the binding.
+   */
+  bindingsSchedules: { needs: 'chat:schedules', only: 'page' },
+  bindingsSchedulesWatch: { needs: 'chat:schedules', only: 'page' },
+  bindingsScheduleControl: { needs: 'chat:schedules:control', only: 'page' },
   messagesHistory: { needs: 'chat:read' },
   messagesSearch: { needs: 'chat:read' },
   /**

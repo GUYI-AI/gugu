@@ -7,9 +7,12 @@ import type { AppFileEntry } from './app-runtime-protocol';
  * put words into that conversation's composer; the person sends them, or not. Each extra action is its own capability,
  * consented and withdrawn on its own (`BINDING_ACTION_CAPABILITY`).
  */
-export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft'] as const;
+// #1928 (API 43, bound-schedules.ts): `schedules` / `schedules:control`, the schedules of the agent the conversation is with.
+export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'schedules', 'schedules:control'] as const;
 export type ConversationBindingAction = (typeof CONVERSATION_BINDING_ACTIONS)[number];
-export const BINDING_ACTION_CAPABILITY = { unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft' } as const;
+export const BINDING_ACTION_CAPABILITY = {
+  unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft', schedules: 'chat:schedules', 'schedules:control': 'chat:schedules:control',
+} as const;
 /** The first App API that lets a binding declare more than `unread`. */
 export const BINDING_ACTIONS_API_VERSION = 40;
 export const BINDING_NAME = /^[a-z][a-z0-9-]{0,47}$/;

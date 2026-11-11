@@ -66,6 +66,10 @@ export const HOST_CALLS = {
   // #1927 (40, `chat:files`): the bound conversation's files, named by the binding and a path there, never by a chat.
   'bindings.list': { verb: 'bindingsList', pack: (name: string, options?: Record<string, unknown>) => ({ ...options, name }) },
   'bindings.read': { verb: 'bindingsRead', pack: (name: string, path: string) => ({ name, path }) },
+  // #1928 (43, `chat:schedules` / `chat:schedules:control`): the bound agent's schedules, named by the binding, never by an agent.
+  'bindings.schedules': { verb: 'bindingsSchedules', pack: (name: string) => ({ name }) },
+  'bindings.watchSchedules': { verb: 'bindingsSchedulesWatch', pack: (name: string, on: boolean) => ({ name, on }) },
+  'bindings.controlSchedule': { verb: 'bindingsScheduleControl', pack: (name: string, change?: Record<string, unknown>) => ({ ...change, name }) },
   'messages.history': { verb: 'messagesHistory' },
   'messages.search': { verb: 'messagesSearch' },
   // The chats whoever reads is in, and one's members (`chat:read`): `{ chat }` names it.
@@ -172,6 +176,8 @@ export const HOST_EVENTS = {
   onAppStateChanged: { event: 'appState', pick: (event: Event<'appState'>) => [event.state] },
   onAgentsChanged: { event: 'agentsChanged', pick: (event: Event<'agentsChanged'>) => [event.agentIds] },
   onCloudHeard: { event: 'cloudHeard', only: 'page', pick: (event: Event<'cloudHeard'>) => [event.topic, event.event, event.heard] },
+  /** `gugu.bindings.onSchedulesChanged(name, fn)` rides on it (#1928): which binding's agent's schedules changed. */
+  onSchedulesChanged: { event: 'schedulesChanged', only: 'page', pick: (event: Event<'schedulesChanged'>) => [event.binding] },
   onProgramNotification: {
     event: 'programNotification',
     pick: (event: Event<'programNotification'>) => [{ server: event.server, method: event.method, ...(event.params === undefined ? {} : { params: event.params }) }],

@@ -471,6 +471,37 @@ async function watchCloud(caller: BridgeCaller, topic: unknown, event: unknown, 
   mine.set(key, stop);
 }
 
+/**
+ * #1928 Each page's watches of its bindings' agent schedules (`gugu.bindings.onSchedulesChanged`), by binding name: torn
+ * down with the page's other watches, or by the watch itself once the App's authority is gone.
+ */
+const scheduleWatches = new Map<number, Map<string, () => void>>();
+
+async function watchSchedules(caller: BridgeCaller, args: Record<string, unknown>): Promise<void> {
+  const name = typeof args.name === 'string' ? args.name : '';
+  const mine = scheduleWatches.get(caller.pageId) ?? new Map<string, () => void>();
+  if (args.on === false) {
+    mine.get(name)?.();
+    mine.delete(name);
+    return;
+  }
+  if (mine.has(name)) return;
+  scheduleWatches.set(caller.pageId, mine);
+  let stop: (() => void) | null = null;
+  const entry = () => stop?.();
+  mine.set(name, entry);
+  const forget = () => { if (mine.get(name) === entry) mine.delete(name); };
+  try {
+    const { watchBoundSchedules } = await import('./app-bound-schedules');
+    stop = await watchBoundSchedules(caller.extensionId, { name: args.name }, () => caller.hear({ type: 'schedulesChanged', binding: name }), forget);
+  } catch (error) {
+    forget();
+    throw error;
+  }
+  // The page went, or stopped listening, while the watch was set up.
+  if (scheduleWatches.get(caller.pageId) !== mine || mine.get(name) !== entry) stop();
+}
+
 function cloudAppOf(caller: BridgeCaller) {
   return { id: caller.extensionId, origin: extensionsService().origins()[caller.extensionId] };
 }
@@ -481,6 +512,8 @@ const workingCopyPages = new Set<number>();
 export function stopPageWatches(pageId: number): void {
   for (const stop of cloudWatches.get(pageId)?.values() ?? []) stop();
   cloudWatches.delete(pageId);
+  for (const stop of scheduleWatches.get(pageId)?.values() ?? []) stop();
+  scheduleWatches.delete(pageId);
   const watching = pageWatches.get(pageId);
   for (const watch of watching?.values() ?? []) watch.disk?.stop();
   pageWatches.delete(pageId);
@@ -1989,6 +2022,18 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       if (thePage(caller).operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reads none of it'), { code: 'denied' });
       const { appBindingList, appBindingRead } = await import('./app-unread-bindings');
       return await (method === 'bindingsList' ? appBindingList : appBindingRead)(caller.extensionId, args);
+    }
+    case 'bindingsSchedules':
+    case 'bindingsSchedulesWatch':
+    case 'bindingsScheduleControl': {
+      // #1928 The person's own agent, by the person's grant: an agent working the page (`app_check`) reaches none of it.
+      if (thePage(caller).operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reaches none of its agent\'s schedules'), { code: 'denied' });
+      if (method === 'bindingsSchedulesWatch') {
+        await watchSchedules(caller, args);
+        return undefined;
+      }
+      const { appBoundSchedules, appBoundScheduleControl } = await import('./app-bound-schedules');
+      return await (method === 'bindingsSchedules' ? appBoundSchedules : appBoundScheduleControl)(caller.extensionId, args);
     }
     case 'messagesHistory':
     case 'messagesSearch': {

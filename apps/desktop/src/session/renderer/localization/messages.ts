@@ -278,6 +278,9 @@ const enUSCoreMessages = {
   // #1927: the same conversation as `chat:unread`'s, never another.
   'extensions.permissionsChatFiles': 'Read only the files of the conversation you select, without changing them',
   'extensions.permissionsChatDraft': 'Put a draft into the conversation you select; only you can send it',
+  // #1928: only when that conversation is your private one with an agent of yours.
+  'extensions.permissionsChatSchedules': 'See only the schedules of your agent in the conversation you select, without changing them',
+  'extensions.permissionsChatSchedulesControl': 'Add, change, pause or remove the schedules of your agent in the conversation you select',
   'extensions.unreadBindingChoose': 'Choose conversation',
   'extensions.unreadBindingSearch': 'Search conversations',
   'extensions.unreadBindingEmpty': 'No available conversations',
@@ -1455,6 +1458,8 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'extensions.permissionsChatUnread': '只获知你选定的一条会话是否有未读消息',
   'extensions.permissionsChatFiles': '只读取你选定的那条会话里的文件，不改动',
   'extensions.permissionsChatDraft': '只往你选定的那条会话的输入框里放草稿，发不发由你',
+  'extensions.permissionsChatSchedules': '只查看你选定的那条会话里你的 agent 的已安排，不改动',
+  'extensions.permissionsChatSchedulesControl': '添加、修改、暂停或删除你选定的那条会话里你的 agent 的已安排',
   'extensions.unreadBindingChoose': '选择会话',
   'extensions.unreadBindingSearch': '搜索会话',
   'extensions.unreadBindingEmpty': '暂无可选会话',

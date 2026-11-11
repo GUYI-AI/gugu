@@ -19,7 +19,12 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     get(name: string): Promise<import('@shared/extensions/unread-binding').AppUnreadBinding>;
     list?(name: string, options?: { folder?: string }): Promise<import('@shared/extensions/unread-binding').AppBoundList>;
     read?(name: string, path: string): Promise<import('@shared/extensions/unread-binding').AppBoundRead>;
+    /** #1928 (43): the bound agent's schedules; `onSchedulesChanged` is composed of `watchSchedules` and the event. */
+    schedules?(name: string): Promise<import('@shared/extensions/bound-schedules').AppBoundSchedules>;
+    watchSchedules?(name: string, on: boolean): Promise<unknown>;
+    controlSchedule?(name: string, change: Record<string, unknown>): Promise<import('@shared/extensions/bound-schedules').AppScheduleReceipt>;
   };
+  onSchedulesChanged?(handler: (binding: string) => void): () => void;
   taskMessage?(args: { intent: 'pause' | 'continue' }): Promise<void>;
   readonly sessions?: {
     index(options?: AppSessionIndexOptions): Promise<AppSessionIndex>;
