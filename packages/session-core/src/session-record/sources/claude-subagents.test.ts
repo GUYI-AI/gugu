@@ -92,12 +92,9 @@ describe('Claude native subagent records', () => {
     ].join('\n') + '\n');
     await reopened.catchUp();
     const updated = reopened.getSnapshot().turns.flatMap((turn) => turn.items);
-    expect(updated.find((item) => item.kind === 'spawn-subagent-tool-call')).toMatchObject({
-      agentStatus: 'completed', outputText: 'CHILD_RESULT', children: [
-        expect.objectContaining({ toolCallId: 'child-step', status: 'done', outputText: 'SHELL_RESULT' }),
-        expect.objectContaining({ kind: 'spawn-subagent-tool-call' }),
-      ],
-    });
+    // The child's tail was read from where the archive left it: its end reached the card, and it is no longer running.
+    expect(updated.find((item) => item.kind === 'spawn-subagent-tool-call')).toMatchObject({ agentStatus: 'completed', outputText: 'CHILD_RESULT' });
+    expect(reopened.getSnapshot().subagents).toEqual([]);
     expect(updated.filter((item) => item.kind === 'message')).toEqual(items.filter((item) => item.kind === 'message'));
 
     // Older composite archives could lose child cursors during immediate disposal.
@@ -107,7 +104,7 @@ describe('Claude native subagent records', () => {
     const rebuilt = await createSessionTimeline(createClaudeJsonlSource(locator), { sessionId: 'native-parent', archive: stale });
     disposers.push(() => rebuilt.dispose());
     expect(rebuilt.getSnapshot().turns.flatMap((turn) => turn.items).find((item) => item.kind === 'spawn-subagent-tool-call'))
-      .toMatchObject({ agentStatus: 'completed', children: [expect.objectContaining({ toolCallId: 'child-step', status: 'done' }), expect.anything()] });
+      .toMatchObject({ agentStatus: 'completed', outputText: 'CHILD_RESULT' });
   });
 
   it('says a child finished where the root record notes it, with its reply, and only there', async () => {
