@@ -2185,9 +2185,18 @@ export function ChatRoot(props: ChatRootProps) {
     // scrollbar drift (e.g. when switching conversation tabs).
     onCleanup(() => snapshotInto(state()));
 
+    // @@@tail-settles-before-paint, resize side — ResizeObserver deliveries land after this frame's write phase
+    // and before its paint. The effect @@@project-on-every-layout-input re-projects on the next frame, so the frame
+    // in between is drawn short of the bottom by the change (the phone composer arriving under a conversation that
+    // is reopened: one frame 90 px short, then a jump). A reader following the tail is settled here, in this frame.
+    const settleTailNow = () => {
+      if (skipped || anchor().kind !== 'tail' || props.stickToBottom === false) return;
+      if (smoothScrolling || performance.now() - lastUserScrollAt <= SCROLL_SETTLE_MS) return;
+      writeScrollTop(maxScrollTop());
+    };
     // @@@view-height-at-mount (#6578) — read now: the RO's first delivery lands after rAF, i.e. after attach() below projected against the 600 seed.
     const syncViewHeight = () => { if (el.clientHeight > 0) setViewHeight(el.clientHeight); };
-    const roHeight = new ResizeObserver(syncViewHeight);
+    const roHeight = new ResizeObserver(() => { syncViewHeight(); settleTailNow(); });
     roHeight.observe(el);
     onCleanup(() => roHeight.disconnect());
     syncViewHeight();
@@ -2211,7 +2220,7 @@ export function ChatRoot(props: ChatRootProps) {
     // amounts for the same strip and the transcript stepped 8px on every
     // placement change.
     if (props.composer === 'slot' && composerSlotEl) {
-      const roSlot = new ResizeObserver(() => updateSlotPadBottom());
+      const roSlot = new ResizeObserver(() => { updateSlotPadBottom(); settleTailNow(); });
       roSlot.observe(composerSlotEl);
       onCleanup(() => roSlot.disconnect());
     }

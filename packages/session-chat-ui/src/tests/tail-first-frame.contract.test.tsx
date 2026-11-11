@@ -105,3 +105,81 @@ it.each([390, 1024])(
     ).toEqual([])
   }
 )
+
+// The phone puts its composer into the slot after the conversation is drawn; the slot's height reaches the list
+// through a ResizeObserver, after the frame's write phase. The latest reply must clear the composer in that frame.
+it.each([390, 1024])(
+  'the latest reply clears a composer that arrives under it in the same frame (%i)',
+  async (width) => {
+    await page.viewport(width, 800)
+    const context = createChatContext({
+      locale: () => 'en-US',
+      layout: { preset: 'double', userGutter: 0, agentConversation: true }
+    })
+    const state = createChatState(context)
+    const host = document.body.appendChild(document.createElement('div'))
+    host.style.cssText = `position:fixed;left:0;top:0;width:${width}px;height:700px`
+    state.transcript.history.seed(
+      Array.from(
+        { length: 30 },
+        (_, n): TranscriptTurn => ({
+          id: `turn-${n}`,
+          seq: n,
+          initiator: 'user',
+          outcome: { kind: 'done' },
+          items: [
+            { kind: 'message', id: `user-${n}`, seq: 0, role: 'user', text: `Question ${n}` },
+            {
+              kind: 'message',
+              id: `reply-${n}`,
+              seq: 1,
+              role: 'assistant',
+              text: `Reply ${n}.\n\nA second paragraph.`
+            }
+          ]
+        })
+      )
+    )
+    const view = createChatView({
+      context,
+      state,
+      parent: host,
+      stickToBottom: true,
+      composer: 'slot'
+    })
+    cleanup.push(() => {
+      view.dispose()
+      state.dispose()
+      context.dispose()
+      host.remove()
+    })
+    view.setScrollMode({ kind: 'tail' })
+    await until('rows mounted', () => host.querySelectorAll('[data-item-id]').length > 0)
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    const slot = view.composerSlot!
+    const last = () => [...host.querySelectorAll<HTMLElement>('[data-item-id]')].at(-1)!
+    const overlaps: number[] = []
+    let sampling = true
+    // After each frame is drawn: how far the last row reaches below the top of the composer.
+    const sample = () =>
+      requestAnimationFrame(() =>
+        setTimeout(() => {
+          overlaps.push(
+            Math.round(last().getBoundingClientRect().bottom - slot.getBoundingClientRect().top)
+          )
+          if (sampling) sample()
+        }, 0)
+      )
+    const composer = document.createElement('div')
+    composer.style.height = '90px'
+    slot.append(composer)
+    sample()
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    sampling = false
+    expect(overlaps.length).toBeGreaterThan(3)
+    expect(
+      overlaps.filter((overlap) => overlap > 0),
+      JSON.stringify(overlaps.slice(0, 8))
+    ).toEqual([])
+  }
+)
