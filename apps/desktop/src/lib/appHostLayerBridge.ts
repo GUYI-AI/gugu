@@ -27,6 +27,11 @@ export interface AppHostLayerBridge {
    * 会话页:在这个 App 的面板上开这一页(换掉开着的那一页)。壳此刻显示的不是这个账号 / 任务不在壳读到的那一份里 = 抛,不画。
    */
   open(extensionId: string, target: AppHostLayerTarget): void
+  /**
+   * 壳自己的点击(任务的链接、来源角标、通知):在这个 App 的面板上开这一个任务的对话,任务是壳自己认出来的那一条(与内置任务窗
+   * 同一份 `AssistantTaskChat`),❌ App 递来的 id。壳此刻显示的不是这个账号 = 抛,不画。
+   */
+  openTask(extensionId: string, ownerId: string, request: AssistantTaskChat & { workId: string }): void
   /** 会话页:收起(给了 `kind` = 只在开着的是这一种时收起);没开着 = 什么都不变。 */
   close(extensionId: string, kind?: AppHostLayer['kind']): void
   getSnapshot(): AppHostLayers
@@ -63,6 +68,10 @@ function layerOf(target: AppHostLayerTarget): AppHostLayer {
 const bridge: AppHostLayerBridge = {
   open: (extensionId, target) => {
     publish({ ...current, [extensionId]: layerOf(target) })
+  },
+  openTask: (extensionId, ownerId, request) => {
+    if (!account || account !== ownerId) throw new Error('This window does not show that account now')
+    publish({ ...current, [extensionId]: { kind: 'work', ownerId, request } })
   },
   close: (extensionId, kind) => {
     const open = current[extensionId]

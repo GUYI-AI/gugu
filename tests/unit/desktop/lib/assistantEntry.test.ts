@@ -8,12 +8,16 @@ import {
   decideAssistantEntry,
   installAssistantAppEntryBridge,
   openAssistantEntry,
+  openAssistantTaskInApp,
   publishAssistantAppWord,
   readAssistantEntryTarget,
 } from '../../../../apps/desktop/src/lib/assistantEntry'
 import { installAssistantShellBridge, publishAssistantShell, type AssistantShellSnapshot } from '../../../../apps/desktop/src/lib/assistantShellBridge'
 import { appConversationSlotKey, installAppConversationSurfaceBridge, publishAppConversationSurfaces } from '../../../../apps/desktop/src/lib/appConversationSurfaceBridge'
 import { appState } from '../../../../apps/desktop/src/session/renderer/lib/stores/app-state'
+import { appHostLayerSlotKey, installAppHostLayerBridge, readAppHostLayerBridge, resetAppHostLayersForTest, setAppHostLayerAccount } from '../../../../apps/desktop/src/lib/appHostLayerBridge'
+import { installedExtensionsStore } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
+import { EXTENSION_API_VERSION } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
 
 const OWNER = '11000000-0000-4000-8000-000000000001'
 const OTHER = '22000000-0000-4000-8000-000000000002'
@@ -68,8 +72,13 @@ describe('decideAssistantEntry', () => {
     expect(decideAssistantEntry({ shell: shell(), word, surfaces: bound, ...over } as Parameters<typeof decideAssistantEntry>[0])).toEqual({ kind: 'built-in' })
   })
 
-  it.each(['task-chat', 'record-meeting'] as const)('keeps %s on the built-in page, which alone hosts it today', (purpose) => {
-    expect(decideAssistantEntry({ shell: shell(), word, surfaces: bound, purpose })).toEqual({ kind: 'built-in' })
+  it('opens a task\'s conversation in the App only when the App reads the assistant\'s work (API 46)', () => {
+    expect(decideAssistantEntry({ shell: shell(), word, surfaces: bound, purpose: 'task-chat', appReadsWork: true })).toEqual(APP)
+    expect(decideAssistantEntry({ shell: shell(), word, surfaces: bound, purpose: 'task-chat', appReadsWork: false })).toEqual({ kind: 'built-in' })
+  })
+
+  it('keeps recording a meeting host-owned (the built-in recorder)', () => {
+    expect(decideAssistantEntry({ shell: shell(), word, surfaces: bound, purpose: 'record-meeting', appReadsWork: true })).toEqual({ kind: 'built-in' })
   })
 })
 
@@ -110,6 +119,32 @@ describe('openAssistantEntry', () => {
     publishAssistantAppWord(word)
     expect(openAssistantEntry(builtIn, 'task-chat')).toBe('assistant:chat')
     expect(builtIn).toHaveBeenCalledTimes(2)
+  })
+
+  it('opens a task the shell found in the App: its own page, the task over its panel, for this account only', () => {
+    const request = { workId: 'w1', title: 'T', assistantId: 'assistant', taskAgentId: 'agent-1', task: { deviceId: 'd', sessionId: 's1' }, assistants: [] }
+    const manifest = (actions: string[]) => ({ id: ASSISTANT_APP_ID, name: 'A', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html',
+      permissions: { capabilities: ['chat:unread'], bindings: [{ name: 'main', kind: 'conversation', actions }] }, contributes: { tabs: [{ name: 'today', title: 'A' }] } })
+    const apply = (actions: string[]) => installedExtensionsStore.applyList({ extensions: [manifest(actions)], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
+    installAppHostLayerBridge()
+    setAppHostLayerAccount(OWNER)
+    try {
+      apply(['unread', 'surface'])
+      expect(openAssistantTaskInApp(OWNER, request)).toBeNull()
+      expect(readAppHostLayerBridge()?.getSnapshot()).toEqual({})
+      apply(['unread', 'surface', 'work'])
+      expect(openAssistantTaskInApp(OWNER, request)).toBe(appHostLayerSlotKey(ASSISTANT_APP_ID))
+      expect(appState.navigation.viewParamsStore.app?.appId).toBe(ASSISTANT_APP_ID)
+      expect(readAppHostLayerBridge()?.getSnapshot()[ASSISTANT_APP_ID]).toEqual({ kind: 'work', ownerId: OWNER, request })
+      // The task link itself lands in that cell.
+      expect(openAssistantEntry(() => 'assistant:task-chat', 'task-chat')).toBe(appHostLayerSlotKey(ASSISTANT_APP_ID))
+      setAppHostLayerAccount(OTHER)
+      expect(() => openAssistantTaskInApp(OWNER, request)).toThrow()
+    } finally {
+      resetAppHostLayersForTest()
+      setAppHostLayerAccount(null)
+      installedExtensionsStore.applyList({ extensions: [], invalid: [], icons: {}, disabled: [], disclosure: {}, dock: [] } as never)
+    }
   })
 
   it('follows each change of the three answers', () => {
