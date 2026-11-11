@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type ReactElement, type ReactNode } f
 import { ChevronDown, MoreHorizontal, Plus } from '@/lib/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config'
-import type { AgentPayload } from '@shared/core/agents/agent-payload'
+import { agentConnectionForm, type AgentConnectionForm, type AgentPayload } from '@shared/core/agents/agent-payload'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import { onMachineEvent } from '@renderer/lib/ipc'
 import { subscriptionSwitchProgressChannel } from '@shared/core/sessions/subscriptionSwitchEvents'
@@ -50,11 +50,13 @@ function connectionsKey(machine: string | null, providerId: string) {
   return ['subscriptions', machine ?? 'local', providerId, 'connections']
 }
 
+/** 有连接的家:Claude / Codex(账号 + API Key),以及声明了 API Key 连接的家(#2507)。 */
 export function useSubscriptionConnections(
   machine: string | null,
-  providerId: string,
+  agent: Pick<AgentPayload, 'id' | 'capabilities'>,
   background = false
 ) {
+  const providerId = agent.id
   return useQuery({
     queryKey: connectionsKey(machine, providerId),
     queryFn: async () => {
@@ -64,7 +66,7 @@ export function useSubscriptionConnections(
       if (!result.success) throw new Error(errorText(result.error))
       return result.data
     },
-    enabled: providerId === 'claude' || providerId === 'codex',
+    enabled: agentConnectionForm(agent) !== null,
     staleTime: 30_000,
     retry: background,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30_000)
@@ -127,9 +129,11 @@ export function SubscriptionConnections({
   const queryClient = useQueryClient()
   const showSignIn = useShowModal('agentSignInModal')
   const host = useLibraryHost()
-  const connections = useSubscriptionConnections(machine, agent.id, settingsRows)
+  const connections = useSubscriptionConnections(machine, agent, settingsRows)
+  const form = agentConnectionForm(agent)
   const method = resolveSignInMethod(agent.capabilities)
-  const canSignIn = method?.kind === 'cli-login' && (!machine || !!method.headlessArgs)
+  // 账号连接(多个账号、各自登录)只有 Claude / Codex;其余家的账号就是它 CLI 自己那份登录,❌ 在这里再开一个。
+  const canSignIn = !!form?.accounts && method?.kind === 'cli-login' && (!machine || !!method.headlessArgs)
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: subscriptionKey(machine, agent.id) })
     void queryClient.invalidateQueries({ queryKey: harnessModelCredentialKey(agent.id) })
@@ -144,13 +148,12 @@ export function SubscriptionConnections({
       id: string
       stopBusySessions?: true
     }) => {
-      if (agent.id !== 'claude' && agent.id !== 'codex') throw new Error('Unsupported harness')
       const client = await getAgentConfigRuntimeClient(machine)
       if (kind === 'refresh') {
         const reading = await client.refreshAuthStatus({ providerId: agent.id, connectionId: id })
         if (!reading.success) throw new Error(errorText(reading.error))
       } else {
-        const input: { providerId: 'claude' | 'codex'; connectionId: string } = {
+        const input: { providerId: string; connectionId: string } = {
           providerId: agent.id,
           connectionId: id
         }
@@ -293,6 +296,7 @@ export function SubscriptionConnections({
                   agent={agent}
                   machine={machine}
                   canSignIn={canSignIn}
+                  form={form}
                   onCreated={(connection) => {
                     refresh()
                     setAdding(false)
@@ -408,6 +412,7 @@ export function SubscriptionConnections({
               agent={agent}
               machine={machine}
               canSignIn={canSignIn}
+              form={form}
               onCreated={(connection) => {
                 refresh()
                 setAdding(false)
@@ -488,9 +493,14 @@ function ConnectionOption({
     status?.kind === 'authenticated' && status.account
       ? status.account
       : connection.kind === 'api-key'
-        ? connection.endpoint
-          ? new URL(connection.endpoint).host
-          : translate('subscriptions.connections.officialApi')
+        ? [
+            connection.endpoint
+              ? new URL(connection.endpoint).host
+              : translate('subscriptions.connections.officialApi'),
+            connection.model
+          ]
+            .filter(Boolean)
+            .join(' · ')
         : status?.kind === 'unauthenticated'
           ? translate(
               status.reason === 'expired'
@@ -613,20 +623,25 @@ function ConnectionForm({
   agent,
   machine,
   canSignIn,
+  form,
   onCreated
 }: {
   agent: AgentPayload
   machine: string | null
   canSignIn: boolean
+  form: AgentConnectionForm | null
   onCreated: (connection: HarnessConnection) => void
 }) {
   const { translate } = useSessionMessages()
   const [kind, setKind] = useState<'account' | 'api-key'>(canSignIn ? 'account' : 'api-key')
   const [thirdParty, setThirdParty] = useState(false)
+  // 地址:可选的家勾「第三方」才出;必填的家直接摆出来(#2507,格子照这家的声明)。
+  const endpointField = form?.endpoint ?? 'none'
+  const showEndpoint = endpointField === 'required' || (endpointField === 'optional' && thirdParty)
+  const showModel = form?.model === 'required'
   const create = useMutation({
-    mutationFn: async (form: HTMLFormElement) => {
-      const data = new FormData(form)
-      if (agent.id !== 'claude' && agent.id !== 'codex') throw new Error('Unsupported harness')
+    mutationFn: async (element: HTMLFormElement) => {
+      const data = new FormData(element)
       const result = await (
         await getAgentConfigRuntimeClient(machine)
       ).createConnection({
@@ -636,12 +651,13 @@ function ConnectionForm({
         ...(kind === 'api-key'
           ? {
               apiKey: String(data.get('apiKey') ?? '').trim(),
-              ...(thirdParty ? { endpoint: String(data.get('endpoint') ?? '').trim() } : {})
+              ...(showEndpoint ? { endpoint: String(data.get('endpoint') ?? '').trim() } : {}),
+              ...(showModel ? { model: String(data.get('model') ?? '').trim() } : {})
             }
           : {})
       })
       if (!result.success) throw new Error(errorText(result.error))
-      form.reset()
+      element.reset()
       return result.data
     },
     onSuccess: onCreated
@@ -691,25 +707,38 @@ function ConnectionForm({
               placeholder="sk-…"
             />
           </label>
-          <label className="subscription-checkbox">
-            <input
-              type="checkbox"
-              checked={thirdParty}
-              onChange={(event) => setThirdParty(event.target.checked)}
-            />
-            {translate('subscriptions.connections.thirdParty')}
-          </label>
-          {thirdParty && (
+          {endpointField === 'optional' && (
+            <label className="subscription-checkbox">
+              <input
+                type="checkbox"
+                checked={thirdParty}
+                onChange={(event) => setThirdParty(event.target.checked)}
+              />
+              {translate('subscriptions.connections.thirdParty')}
+            </label>
+          )}
+          {showEndpoint && (
             <label>
               {translate('subscriptions.connections.endpoint')}
               <Input
                 name="endpoint"
                 type="url"
                 required
-                placeholder={
-                  agent.id === 'codex' ? 'https://api.example.com/v1' : 'https://api.example.com'
-                }
+                placeholder={endpointPlaceholder(agent.id, form?.protocol)}
               />
+            </label>
+          )}
+          {showEndpoint && form?.protocol && (
+            <p className="subscription-connection-description">
+              {translate('subscriptions.connections.protocolHint', {
+                protocol: PROTOCOL_NAMES[form.protocol]
+              })}
+            </p>
+          )}
+          {showModel && (
+            <label>
+              {translate('subscriptions.connections.model')}
+              <Input name="model" required autoComplete="off" spellCheck={false} />
             </label>
           )}
         </>
@@ -743,4 +772,19 @@ function ConnectionForm({
       </Button>
     </form>
   )
+}
+
+/** 接口的官方名字(专名,不翻译)—— 地址下那一行提示用。 */
+const PROTOCOL_NAMES: Record<NonNullable<AgentConnectionForm['protocol']>, string> = {
+  'anthropic-messages': 'Anthropic Messages',
+  'openai-chat-completions': 'OpenAI Chat Completions',
+  'openai-responses': 'OpenAI Responses',
+  'gemini-generate-content': 'Gemini'
+}
+
+/** Claude 的地址是裸根、Codex 带 `/v1`(与之前一样);其余家照它要讲的接口:OpenAI 那两种带 `/v1`。 */
+function endpointPlaceholder(providerId: string, protocol: AgentConnectionForm['protocol']): string {
+  if (providerId === 'codex') return 'https://api.example.com/v1'
+  if (protocol === 'openai-chat-completions' || protocol === 'openai-responses') return 'https://api.example.com/v1'
+  return 'https://api.example.com'
 }

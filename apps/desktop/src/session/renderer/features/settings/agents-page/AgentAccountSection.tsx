@@ -1,26 +1,15 @@
 import { agentSupportsConnectionManagement } from '@shared/core/agents/agent-payload';
-import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef } from 'react';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { usePlatformModelCatalog } from '@renderer/features/sessions/session-config/platform-model-catalog';
-import { subscriptionKey, useSubscriptionPlan } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { useSubscriptionPlan } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { planLabel } from '@renderer/features/settings/subscriptions/subscription-view';
-import { useAgentAuthStatuses } from '@renderer/lib/stores/use-agent-auth-status';
-import { forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
-import { harnessModelCredentialKey } from '@renderer/lib/stores/use-harness-model-credential';
-import { useShowModal } from '@renderer/lib/modal/modal-provider';
 import { Button } from '@renderer/lib/ui/button';
 import { AgentConnectionDetails } from './AgentConnectionDetails';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { sessionViewOfLeg, type SessionpageLeg } from '@shared/core/sessions/sessions';
-import {
-  accountRowOf,
-  mergeAccountRows,
-  resolveAccountTargets,
-  type AccountTarget,
-  type MergedAccountRow,
-} from './agent-account';
+import { resolveAccountTargets, type MergedAccountRow } from './agent-account';
+import { useAgentSignIn } from './use-agent-sign-in';
 
 type Translate = ReturnType<typeof useSessionMessages>['translate'];
 
@@ -101,101 +90,19 @@ export function AgentAccountSection({ agent }: { agent: AgentPayload }) {
   }
   const targets = resolveAccountTargets(agent);
   if (targets.length === 0) return null;
-  return <AgentAccountRow agent={agent} targets={targets} />;
+  return <AgentAccountRow agent={agent} />;
 }
 
-function AgentAccountRow({ agent, targets }: { agent: AgentPayload; targets: AccountTarget[] }) {
+function AgentAccountRow({ agent }: { agent: AgentPayload }) {
   const { translate } = useSessionMessages();
-  // #6264 资源库看的是别的机器:读数与登录都在**那台机器上**(同一组动词,rpc 送到那台机器),行还是这一行。
   const host = useLibraryHost();
-  const remote = host.remote;
-  const local = useAgentAuthStatuses(
-    agent.id,
-    targets.map((target) => target.program),
-    { machine: remote?.deviceId ?? null }
-  );
-  const refreshAuth = local.refresh;
-  const queryClient = useQueryClient();
-  const showSignIn = useShowModal('agentSignInModal');
-  const row = mergeAccountRows(targets.map((target, index) => accountRowOf(target, local.auths[index])))!;
+  const { row: merged, openSignIn } = useAgentSignIn(agent);
+  const row = merged!;
   // 与新建框同一份目录(问的也是资源库正在看的那台机器)。
   const platform = usePlatformModelCatalog(agent.id, 'acp');
   // 账号下面一行写套餐名:与设置「订阅」页同一份读数(同一把键),❌ 各问各的(product spec)。
-  const machine = remote?.deviceId ?? null;
+  const machine = host.remote?.deviceId ?? null;
   const plan = planLabel(useSubscriptionPlan(machine, agent.id).data, translate);
-
-  /**
-   * 装上 / 卸掉 / 换一份之后重探一次登录态。挂载时那一探若赶在装好之前,读到的是「没这个程序」
-   * 那种判不出(`unknown`),而弹窗一直开着就一直停在那 —— 要关掉重开才会翻(#6335 首测实录)。
-   * 只在安装读数**变了**时探:首次挂载那一探由 `useAgentAuthStatuses` 自己发,❌ 不重复。
-   * 看的是每个程序各自那一份安装读数(只补装了终端那个程序时同样要翻)。
-   */
-  const installKey = targets.map((target) => target.installStatus ?? '').join('|');
-  const lastInstall = useRef(installKey);
-  useEffect(() => {
-    if (lastInstall.current === installKey) return;
-    lastInstall.current = installKey;
-    void refreshAuth();
-  }, [installKey, refreshAuth]);
-
-  const openSignIn = useCallback(() => {
-    if (remote) {
-      /** 在那台机器上登:登完 / 关窗都让那台机器上这一家的读数(账号、模型目录)重问一遍。 */
-      const refresh = () => {
-        void refreshAuth();
-        void queryClient.invalidateQueries({ queryKey: ['agents'] });
-        void queryClient.invalidateQueries({ queryKey: subscriptionKey(machine, agent.id) });
-      };
-      const main = row.steps.find((step) => step.program === undefined) ?? row.steps[0];
-      const method = main?.method;
-      const cliArgs = method?.kind === 'cli-login' ? method.args : [];
-      showSignIn({
-        providerId: agent.id,
-        providerName: agent.name,
-        steps: method ? [{ methodId: method.id }] : [],
-        remote: {
-          deviceId: remote.deviceId,
-          deviceLabel: remote.deviceLabel,
-          headless: method?.kind === 'cli-login' && !!method.headlessArgs,
-          // 只能自己登时,在那台机器终端里要敲的命令:CLI 名取这家的可执行文件名(与那台机器同一个名字)。
-          command: [agent.command?.split(/[\\/]/).filter(Boolean).pop() || agent.id, ...cliArgs].join(' '),
-        },
-        onSuccess: refresh,
-        onClose: refresh,
-      });
-      return;
-    }
-    /**
-     * 登录完**强制**重读三样:这一家的登录态、它的模型目录、它的模型凭据读数。
-     *
-     * 目录那份带 force —— 主进程的 TTL 对「用户刚刚登完」这件事一无所知,不跳过它的话
-     * composer 会继续显示那句「需要先登录」,用户以为没登上又去登一遍(#5605 一族)。
-     * 三者用的都是**已有**那几把 react-query key,所以 composer 手上那份当场跟着翻。
-     * 成功与关窗都走同一条:登录成没成只有 harness 知道,关窗那一下同样要重问(见 `login-success.ts`)。
-     *
-     * 只有主程序在这一趟里登过时才强制重探目录:模型目录与凭据是主程序起出来的
-     * (`harness-model-catalog` 探的是主程序),伴随程序的登录一个字节都不影响它们。
-     */
-    const touchesMain = row.steps.some((step) => step.program === undefined);
-    const refreshAfterLogin = () => {
-      void refreshAuth();
-      void queryClient.invalidateQueries({ queryKey: subscriptionKey(machine, agent.id) });
-      if (!touchesMain) return;
-      void forceRefreshHarnessModelCatalog(queryClient, agent.id);
-      void queryClient.invalidateQueries({ queryKey: harnessModelCredentialKey(agent.id) });
-    };
-    showSignIn({
-      providerId: agent.id,
-      providerName: agent.name,
-      steps: row.steps.map((step) => ({
-        methodId: step.method.id,
-        ...(step.program === undefined ? {} : { program: step.program }),
-        transport: step.method.kind === 'acp-authenticate' ? 'acp-authenticate' : 'terminal',
-      })),
-      onSuccess: refreshAfterLogin,
-      onClose: refreshAfterLogin,
-    });
-  }, [agent.id, agent.name, agent.command, queryClient, refreshAuth, row.steps, showSignIn, remote, machine]);
 
   const hint = row.status === 'signed-out' && platform.models.length > 0
     // 这一家有咕咕提供的模型:不登录也照样能用(资源库体检 10-07:Claude「未登录」而任务照常跑)。

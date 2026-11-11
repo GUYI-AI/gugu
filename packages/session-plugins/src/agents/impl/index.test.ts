@@ -1322,7 +1322,8 @@ describe('pluginRegistry', () => {
     expect(cliLoginArgs(codex, 'codex-login')).toEqual(['login']);
 
     const opencode = pluginRegistry.get('opencode')!;
-    expect(cliLoginArgs(opencode, 'opencode-login')).toEqual(['auth', 'login']);
+    // #2507 指定提供方:没有终端时停在挑提供方的菜单上就走不下去。
+    expect(cliLoginArgs(opencode, 'opencode-login')).toEqual(['auth', 'login', '-p', 'opencode']);
 
     // kimi / qoder —— owner 2026-08-26 实测「说了需要登录、却没把人带到能登录的地方」的两家。
     // 出处逐条写在各自的 auth.ts 抬头（kimi:MoonshotAI/kimi-code@b17bd61 的
@@ -1342,7 +1343,17 @@ describe('pluginRegistry', () => {
     // 从前它是「有 behavior 没 descriptor」:checkStatus 登记着却永远跑不到
     // (`checkAuthStatusUncached` 见 auth.kind==='none' 直接答 unknown)。
     const mimocode = pluginRegistry.get('mimocode')!;
-    expect(cliLoginArgs(mimocode, 'mimocode-login')).toEqual(['auth', 'login']);
+    // #2507 不带 `-p` 停在选供应商的菜单上;`xiaomi` 是小米账号(`mimo` 是免费自动通道,不是账号)。
+    expect(cliLoginArgs(mimocode, 'mimocode-login')).toEqual(['auth', 'login', '-p', 'xiaomi']);
+
+    // #2507 kilo:`-p kilo` 是 Kilo 自家网关,设备码登录(7.8.27 隔离环境实跑:不弹菜单)。
+    expect(cliLoginArgs(pluginRegistry.get('kilocode')!, 'kilo-login')).toEqual(['auth', 'login', '-p', 'kilo']);
+
+    // #2507 copilot:本机 `copilot login`(浏览器回跳本机);别的机器 `--device-code`(下一条断言)。
+    expect(cliLoginArgs(pluginRegistry.get('copilot')!, 'copilot-login')).toEqual(['login']);
+
+    // #2507 hermes:`hermes login` 已删;Nous Portal 设备码走 `auth add nous`(2026.9.24 实跑)。
+    expect(cliLoginArgs(pluginRegistry.get('hermes')!, 'hermes-nous-login')).toEqual(['auth', 'add', 'nous', '--type', 'oauth']);
   });
 
   /**
@@ -1356,7 +1367,7 @@ describe('pluginRegistry', () => {
    */
   /**
    * #6264「在别的机器上登录」—— 只给声明了不靠回跳的登录方式的家,每一条都有厂商出处(写在各家 descriptor 旁)。
-   * 名单外的(qoder / mimocode)在远程时如实说明「到那台机器的终端里自己登」。
+   * 名单外的(qoder)在远程时如实说明「到那台机器的终端里自己登」。
    */
   it('能从别的电脑替它登录的家 = 声明了 headlessArgs 的家,参数逐字', () => {
     const headless = Object.fromEntries(
@@ -1369,9 +1380,13 @@ describe('pluginRegistry', () => {
     expect(headless).toEqual({
       claude: ['auth', 'login'],
       codex: ['login', '--device-auth'],
+      copilot: ['login', '--device-code'],
+      hermes: ['auth', 'add', 'nous', '--type', 'oauth', '--no-browser'],
+      kilocode: ['auth', 'login', '-p', 'kilo'],
       kimi: ['login'],
       kiro: ['login', '--use-device-flow'],
-      opencode: ['auth', 'login'],
+      mimocode: ['auth', 'login', '-p', 'xiaomi'],
+      opencode: ['auth', 'login', '-p', 'opencode'],
     });
   });
 
@@ -1392,6 +1407,10 @@ describe('pluginRegistry', () => {
       // #7525:codebuddy 也没有登录子命令,走协议登录(ACP `authenticate`,国际版 / 中国版两条)。
       'codebuddy',
       'codex',
+      // #2507:GitHub 账号,`copilot login`。
+      'copilot',
+      // #2507:Nous Portal,`hermes auth add nous`。
+      'hermes',
       'kilocode',
       'kimi',
       'kiro',

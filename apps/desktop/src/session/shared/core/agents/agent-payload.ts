@@ -3,6 +3,8 @@ import type { GuguPermissionMode, ProviderPermissionModeMap } from '@gugu/sessio
 import { declaredInjectionTiming } from '@gugu/session-core/agents/plugins';
 import type {
   AgentAuthDescriptor,
+  ApiKeyConnectionDescriptor,
+  ApiKeyConnectionFields,
   LiveSettingsCapability,
   SessionBundleDescriptor,
 } from '@gugu/session-core/agents/plugins';
@@ -133,6 +135,11 @@ export type AgentCapabilities = {
     startup?: { noticeKey: string };
   };
   auth: AgentAuthDescriptor;
+  /**
+   * 「API Key 连接」(#2507):订阅页的连接表单按它摆格(地址 / 模型 / 协议提示)。缺席 = 旧宿主或没声明,
+   * 当作 `none`。Claude / Codex 不在这里 —— 它们的连接走 `auth.connections`。
+   */
+  apiKeyConnection?: ApiKeyConnectionDescriptor;
   hostDependency: AgentHostDependencyInfo;
   models: AgentModelsCapability;
   effort: AgentEffortCapability;
@@ -167,6 +174,26 @@ export type AgentCapabilities = {
 
 export function agentSupportsAcp(capabilities: AgentCapabilities | undefined | null): boolean {
   return capabilities?.acp.kind === 'supported';
+}
+
+/**
+ * 订阅页的连接表单要摆哪几格(#2507)。Claude / Codex:有「账号」,API Key 的地址可选、没有模型格、不写协议提示
+ * (与之前逐字一样);声明了 `apiKeyConnection` 的家:只有 API Key,格子照声明;其余家:没有连接(null)。
+ */
+export type AgentConnectionForm = {
+  accounts: boolean;
+} & Pick<ApiKeyConnectionFields, 'endpoint' | 'model' | 'protocol'>;
+
+export function agentConnectionForm(agent: Pick<AgentPayload, 'id' | 'capabilities'> | undefined | null): AgentConnectionForm | null {
+  if (agentSupportsConnectionManagement(agent)) return { accounts: true, endpoint: 'optional', model: 'none' };
+  const declared = agent?.capabilities.apiKeyConnection;
+  if (declared?.kind !== 'supported') return null;
+  return {
+    accounts: false,
+    endpoint: declared.endpoint,
+    model: declared.model,
+    ...(declared.protocol ? { protocol: declared.protocol } : {}),
+  };
 }
 
 /** Normalize legacy payloads with the adapter's own default before reading this optional capability. */

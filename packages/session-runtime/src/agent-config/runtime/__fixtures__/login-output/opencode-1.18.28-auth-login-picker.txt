@@ -1,0 +1,16 @@
+[0m
+[90m┌[39m  Add credential
+[?25l[90m│[39m
+[36m◆[39m  Select provider
+
+[36m│[39m  [2mSearch:[22m [7m[8m_[28m[27m
+[36m│[39m  [32m●[39m OpenCode[2m (recommended)[22m
+[36m│[39m  [2m○[22m [2mOpenAI[22m
+[36m│[39m  [2m○[22m [2mGitHub Copilot[22m
+[36m│[39m  [2m○[22m [2mGoogle[22m
+[36m│[39m  [2m○[22m [2mAnthropic[22m
+[36m│[39m  [2m○[22m [2mOpenRouter[22m
+[36m│[39m  [2m○[22m [2mVercel AI Gateway[22m
+[36m│[39m  [2m...[22m
+[36m│[39m  [2m[2m↑/↓[22m[2m to select • [2mEnter:[22m[2m confirm • [2mType:[22m[2m to search[22m
+[36m└[39m

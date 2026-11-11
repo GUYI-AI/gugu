@@ -414,6 +414,8 @@ export interface StoredTurnPage {
   originTurnIds: string[];
   /** 还有更早的一页时给出游标（本页最早那一条的 `seq`）；到头了、或是 `fromSeq` 读法时为 null。 */
   nextCursor: number | null;
+  /** Aligned with `turns`: how many times each row was rewritten (`session_turns.revision`). */
+  turnRevisions?: number[];
 }
 
 /**
@@ -435,6 +437,7 @@ export async function readStoredTurns(
         seq: sessionTurns.seq,
         data: sessionTurns.data,
         turnId: sessionTurns.turnId,
+        revision: sessionTurns.revision,
       })
       .from(sessionTurns)
       .where(
@@ -450,18 +453,19 @@ export async function readStoredTurns(
       turns: readable.map(row => row.turn),
       originTurnIds: readable.map(row => row.turnId),
       nextCursor: null,
+      turnRevisions: readable.map(row => row.revision),
     };
   }
   const limit = options.limit ?? 100;
   // @@@read-no-more-than-fits — the page that leaves here is cut to `budget` bytes, and the next call starts from the
   // oldest turn that was kept. Reading all `limit` rows first meant parsing megabytes to send a few turns, then
   // reading the same rows again. Rows come in small steps instead, and the reading stops once the page is full.
-  const rows: { seq: number; data: string; turnId: string; turn: TranscriptTurn }[] = [];
+  const rows: { seq: number; data: string; turnId: string; revision: number; turn: TranscriptTurn }[] = [];
   let before = options.before, bytes = 0, exhausted = false;
   while (rows.length < limit) {
     const want = Math.min(options.budget === undefined ? limit : STORED_PAGE_STEP, limit - rows.length);
     const step = await db
-      .select({ seq: sessionTurns.seq, data: sessionTurns.data, turnId: sessionTurns.turnId })
+      .select({ seq: sessionTurns.seq, data: sessionTurns.data, turnId: sessionTurns.turnId, revision: sessionTurns.revision })
       .from(sessionTurns)
       .where(before === undefined
         ? eq(sessionTurns.sessionId, sessionId)
@@ -487,6 +491,7 @@ export async function readStoredTurns(
     turns: readable.map(row => row.turn),
     originTurnIds: readable.map(row => row.turnId),
     nextCursor: exhausted ? null : (rows.at(-1)?.seq ?? null),
+    turnRevisions: readable.map(row => row.revision),
   };
 }
 
@@ -526,6 +531,16 @@ export async function truncateStoredHistory(sessionId: string, fromSeq: number |
         session_id: sessionId, turn_seq: fromSeq, occurred_at: Date.now() });
     }
   });
+}
+
+/**
+ * Every row from `fromSeq` on, oldest first, with its revision: what a reader holding these turns compares with its own
+ * to find the few it has to read again. Integers only, so even a long conversation's whole list is small.
+ */
+export async function storedTurnRevisions(sessionId: string, fromSeq: number): Promise<Array<[seq: number, revision: number]>> {
+  const rows = await db.select({ seq: sessionTurns.seq, revision: sessionTurns.revision }).from(sessionTurns)
+    .where(and(eq(sessionTurns.sessionId, sessionId), gte(sessionTurns.seq, fromSeq))).orderBy(asc(sessionTurns.seq));
+  return rows.map(row => [row.seq, row.revision]);
 }
 
 /** One stored turn by its sequence, or null when the session's stored history no longer has it. */

@@ -1324,6 +1324,13 @@ export type NativeSessionRecord = {
   originTurnIds: string[];
   nextCursor: number | null;
   activeTurn: TranscriptTurn | null;
+  /**
+   * Aligned with `turns`: how many times the host rewrote each one. A reader that keeps turns compares it with what it
+   * holds (`revisions`). Hosts from before it send nothing, and such a reader falls back to reading the pages again.
+   */
+  turnRevisions?: number[];
+  /** Asked for with `revisionsFrom`: every stored row from that sequence on, oldest first, as `[seq, revision]`. */
+  revisions?: Array<[seq: number, revision: number]>;
 };
 
 export * from './attachment-upload-contract';

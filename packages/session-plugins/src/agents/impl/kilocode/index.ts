@@ -1,3 +1,4 @@
+import { kilocodeApiKeyConnection, kilocodeApiKeyConnectionBehavior } from './api-key-connection';
 import {
   definePlugin,
   registerPluginBehavior,
@@ -47,6 +48,8 @@ export const plugin = definePlugin(
   },
   {
     sessionBundle: kilocodeSessionBundleDescriptor,
+    // 「API Key 连接」(#2507):一把 key 怎么进这一家的进程,见 ./api-key-connection.ts。
+    apiKeyConnection: kilocodeApiKeyConnection,
     vendorAccount: {
       kind: 'not-required',
       evidence:
@@ -59,7 +62,11 @@ export const plugin = definePlugin(
           kind: 'cli-login',
           id: 'kilo-login',
           name: 'Sign in with Kilo',
-          args: ['auth', 'login'],
+          // #2507 不带 `-p` 先弹「选供应商」菜单,没有终端选不了。`kilo` 是 Kilo 自家网关的供应商 id
+          // (Kilo-Org/kilocode `packages/opencode/src/cli/cmd/providers.ts`:先按 id 精确匹配),它只有一种登录
+          // (设备码,PR #15064),所以也不弹方法菜单:打印链接 + 码、轮询到授权完成,不靠本机回跳 ⇒ 别的机器上同一条。
+          args: ['auth', 'login', '-p', 'kilo'],
+          headlessArgs: ['auth', 'login', '-p', 'kilo'],
           description: 'Open the Kilo CLI sign-in flow in a terminal.',
         },
       ],
@@ -156,6 +163,7 @@ export const plugin = definePlugin(
 );
 
 export const provider = registerPluginBehavior(plugin, {
+  apiKeyConnection: kilocodeApiKeyConnectionBehavior,
   sessionBundle: { materialize: materializeKilocodeSessionBundle, platformModel },
   auth: {
     checkStatus: kilocodeAuthStatus,

@@ -1,3 +1,4 @@
+import { mimocodeApiKeyConnection, mimocodeApiKeyConnectionBehavior } from './api-key-connection';
 import { platformModel } from './platform-model';
 import { resolveSessionPermissionMode } from '@gugu/session-core/acp';
 import {
@@ -51,6 +52,8 @@ export const plugin = definePlugin(
      * 厂商账号是不是硬门槛 —— 判据与陷阱见 `capabilities/vendor-account.ts` 抬头。
      * 这一格是**实测**出来的，❌ 不收「文档写着」。
      */
+    // 「API Key 连接」(#2507):一把 key 怎么进这一家的进程,见 ./api-key-connection.ts。
+    apiKeyConnection: mimocodeApiKeyConnection,
     vendorAccount: {
       kind: 'not-required',
       evidence:
@@ -75,7 +78,12 @@ export const plugin = definePlugin(
           kind: 'cli-login',
           id: 'mimocode-login',
           name: 'Sign in with MiMo Code',
-          args: ['auth', 'login'],
+          // #2507 不带 `-p` 先弹「选供应商」菜单(MiMo (推荐) / MiMo Auto (free) / 自定义),没有终端选不了。
+          // `xiaomi` 才是小米账号的供应商 id:直接给链接、停在「Paste code here if prompted >」(0.1.13 隔离环境实跑)。
+          // ❌ `-p mimo` —— 那是免费自动通道,一秒就「登好」了但不是你的账号;❌ `-p 'MiMo (推荐)'` —— 显示名不是 id。
+          // 只打链接 + 回填,不靠本机回跳 ⇒ 别的机器上同一条。
+          args: ['auth', 'login', '-p', 'xiaomi'],
+          headlessArgs: ['auth', 'login', '-p', 'xiaomi'],
           description: 'Open the MiMo Code CLI sign-in flow in a terminal.',
         },
       ],
@@ -220,6 +228,7 @@ export const plugin = definePlugin(
 );
 
 export const provider = registerPluginBehavior(plugin, {
+  apiKeyConnection: mimocodeApiKeyConnectionBehavior,
   sessionBundle: { materialize: materializeMimocodeSessionBundle, platformModel },
   subscription: mimocodeSubscription,
   // 两件事:#4956 默认预选规则的 modelCredential 判读,以及与 opencode 同形的
