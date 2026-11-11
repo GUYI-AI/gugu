@@ -1,6 +1,6 @@
 import '@/i18n/registerAssistantCatalog';
 import '../assistant/assistant-today.css';
-import { useCallback, useEffect, useSyncExternalStore, type CSSProperties } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PanelRight } from '@/lib/icons';
 import { readShellSlots } from '@/lib/shellSlots';
@@ -27,6 +27,9 @@ const CORNER: CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'flex-start', zIndex: 'var(--z-pane-resident-chrome)', pointerEvents: 'none',
 };
 const noop = () => () => undefined;
+
+/** #1927 (48) The host's recording bar, loaded only when an App's column is drawn (the assistant chat's, it then decides). */
+const AppConversationVoiceBar = lazy(() => import('./app-conversation-voice-bar'));
 
 function report(extensionId: string, tabKind: string, shown: { chatId: string; collapsed: boolean } | null, intent?: 'profile'): void {
   void rpc.extensions.reportConversationSurface({ extensionId, tabKind, tabId: DOCK, shown, ...(intent ? { intent } : {}) }).then((result) => {
@@ -83,6 +86,8 @@ export function AppConversationFrame({ extensionId, tabKind }: { extensionId: st
     (element: HTMLDivElement | null) => readShellSlots()?.setSlot(appConversationSlotKey(extensionId), element),
     [extensionId],
   );
+  // The column the recording bar sits in, above its composer (as the built-in's `chatColumn`).
+  const [chatColumn, setChatColumn] = useState<HTMLDivElement | null>(null);
 
   if (!chatId) return <AppHostLayerFrame extensionId={extensionId} tabKind={tabKind} />;
   const setCollapsed = (next: boolean) => setAppConversationPanelCollapsed(extensionId, next);
@@ -105,9 +110,10 @@ export function AppConversationFrame({ extensionId, tabKind }: { extensionId: st
   return (
     <div className="ta-app" data-panel={collapsed ? 'closed' : 'open'} data-testid="app-conversation-surface">
       <AppHostLayerSources extensionId={extensionId} />
-      <div className="ta-chat-col" data-testid="app-conversation-column">
+      <div ref={setChatColumn} className="ta-chat-col" data-testid="app-conversation-column">
         <AssistantChatTop testIdPrefix="app-conversation" identity={identity} chatId={chatId} onSettings={openSettings} panelOpen={!collapsed} onExpand={() => setCollapsed(false)} />
         <div ref={column} className="ta-chat" data-app-conversation-slot={extensionId} />
+        <Suspense fallback={null}><AppConversationVoiceBar extensionId={extensionId} chatId={chatId} column={chatColumn} /></Suspense>
       </div>
       {collapsed ? null : (
         <section className="ta-panel" data-testid="app-conversation-panel">

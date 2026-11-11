@@ -64,6 +64,7 @@ import { rosterMoved, type MemberChange } from '@shared/extensions/app-files-cor
 import { coalescedReads } from '@shared/extensions/coalesced-reads';
 import { agentReport } from '@shared/extensions/agent-view';
 import { stopResourceWatches } from './app-resource-watches';
+import { stopVoiceWatches } from './app-voice-note-watches';
 import { changedGroupFiles, resourceChatOf, type DesktopFilePage } from '@main/core/extensions/app-files';
 
 /**
@@ -515,6 +516,8 @@ export function stopPageWatches(pageId: number): void {
   for (const stop of cloudWatches.get(pageId)?.values() ?? []) stop();
   cloudWatches.delete(pageId);
   stopResourceWatches(pageId);
+  // #1927 (47) Its hearing of the recorder goes with the page; a recording it started does not.
+  stopVoiceWatches(pageId);
   for (const stop of scheduleWatches.get(pageId)?.values() ?? []) stop();
   scheduleWatches.delete(pageId);
   const watching = pageWatches.get(pageId);
@@ -1538,6 +1541,27 @@ export async function pushBindingSurfaces(extensionId: string, intent?: AppSurfa
 }
 
 /**
+ * #1927 (48) The page drawn beside the bound conversation is told `intent` once (`gugu.bindings.onSurface`), its panel
+ * expanded first if it was collapsed — the host's run of a `page-intent` composer entry, or of its recording bar's open.
+ * Only that page, only while it is drawn there for the person (`appBindingSurface` answers `bound`). False: no page heard it.
+ */
+export async function deliverSurfaceIntent(extensionId: string, intent: string): Promise<boolean> {
+  const { tellSurfaceIntent } = await import('./app-unread-bindings');
+  if (!extensionsService().isInstalled(extensionId)) return false;
+  const pages = [...bindings].filter(([, binding]) => binding.extensionId === extensionId).map(([webContentsId, binding]) => ({
+    tabName: binding.tabName, tabId: binding.tabId, person: binding.operator.kind === 'person',
+    expand: () => deliver(binding, { kind: 'conversationPanel', collapsed: false }),
+    tell: (surface: import('@shared/extensions/unread-binding').AppBindingSurface) => {
+      const contents = webContents.fromId(webContentsId);
+      if (bindings.get(webContentsId) !== binding || !contents || contents.isDestroyed()) return false;
+      sendEvent(contents, { type: 'bindingSurface', surface });
+      return true;
+    },
+  }));
+  return tellSurfaceIntent(extensionId, intent, pages);
+}
+
+/**
  * #1925 (46) Each page of this App the person works is told what `gugu.bindings.work` answers now — after the window read the
  * ledger again or changed the task drawn in the App's panel (`onWorkChanged`; a refusal is heard as `unavailable`). One telling
  * per App at a time: changes meanwhile are told once more after it, the newest; the same answer twice is told once.
@@ -2136,6 +2160,24 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       if (method === 'bindingsWatch') return await resources.appResourceWatch(caller.extensionId, caller.pageId, args, (watchId, event) => caller.hear({ type: 'bindingResources', watchId, event }));
       const verb = { bindingsResources: resources.appResourceList, bindingsResource: resources.appResourceRead, bindingsSave: resources.appResourceSave, bindingsRemove: resources.appResourceRemove }[method];
       return await verb(caller.extensionId, args);
+    }
+    case 'voiceNoteStart':
+    case 'voiceNotePause':
+    case 'voiceNoteResume':
+    case 'voiceNoteStop':
+    case 'voiceNoteRetry':
+    case 'voiceNoteOpenMicSettings':
+    case 'voiceNoteStatus':
+    case 'voiceNoteWatch': {
+      // #1927 (47) The person's recorder, as the binding's resources are the person's: a page an agent works drives none of it.
+      if (thePage(caller).operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works does not record'), { code: 'denied' });
+      const voice = await import('./app-voice-notes');
+      if (method === 'voiceNoteWatch') return await voice.appVoiceNoteWatch(caller.extensionId, caller.pageId, args, (watchId, event) => caller.hear({ type: 'voiceNote', watchId, event }));
+      if (method === 'voiceNoteStart') return await voice.appVoiceNoteStart(caller.extensionId, args);
+      if (method === 'voiceNoteRetry') return await voice.appVoiceNoteRetry(caller.extensionId, args);
+      if (method === 'voiceNoteOpenMicSettings') return await voice.appVoiceNoteOpenMicSettings(caller.extensionId, args);
+      const verb = ({ voiceNotePause: 'pause', voiceNoteResume: 'resume', voiceNoteStop: 'stop', voiceNoteStatus: 'status' } as const)[method];
+      return await voice.appVoiceNote(verb, caller.extensionId, args);
     }
     case 'bindingsSchedules':
     case 'bindingsSchedulesWatch':

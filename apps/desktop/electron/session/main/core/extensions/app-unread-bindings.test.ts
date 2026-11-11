@@ -374,7 +374,7 @@ function workManifest({ actions = ['unread', 'work'], capabilities, apiVersion =
 
 describe('the assistant\'s work on the binding (#1925, API 46)', () => {
   it('needs API 46 and the work action with chat:work, each without the other refused; desktop only', () => {
-    expect(EXTENSION_API_VERSION).toBe(46);
+    expect(EXTENSION_API_VERSION).toBeGreaterThanOrEqual(46);
     expect(() => parseExtensionManifest(workManifest())).not.toThrow();
     expect(() => parseExtensionManifest(surfaceManifest({ actions: ['unread', 'surface', 'work'] }))).not.toThrow();
     for (const apiVersion of [37, 40, 41, 45]) expect(() => parseExtensionManifest(workManifest({ apiVersion }))).toThrow(/apiVersion 46/);

@@ -126,9 +126,15 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // task's own conversation in the App's panel. No work, session, chat or device id, path, URL or message reaches the App.
 // Also 46: `contributes.conversationSurface.header: "assistant"` — over that same assistant chat, the host draws the built-in
 // assistant page's top row above the conversation (face and name, search, settings gear, expand) from its own data. A click
-// on the face and name is told once as `onSurface` → `intent: { kind: "profile" }`; the gear opens the assistant's settings
+// on the face and name is told once as `onSurface` → `intent: "profile"`; the gear opens the assistant's settings
 // as a host page over the App's panel. One host page at a time there (`app-host-layer.ts`): `panel.hostPage` says one is open.
-export const EXTENSION_API_VERSION = 46;
+// 47 (#1927): `voice-notes:record` (`chat:voice-notes:record`): `gugu.voiceNote.*` drives the host's voice-note recorder for
+// that personal assistant — the host records, uploads and transcribes; the App hears phases and opaque job handles only
+// (voice-note-session.ts).
+// 48 (#1927): `contributes.conversationSurface.composerActions`: entries in that assistant chat's composer 「+」 the host draws
+// and runs on the person's click — a voice note, a draft, or a `page-intent` the page hears once on `bindings.onSurface`
+// (composer-actions.ts). No App code runs on that click.
+export const EXTENSION_API_VERSION = 48;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
@@ -699,6 +705,8 @@ export type ExtensionHostEvent =
   | { type: 'cloudHeard'; topic: string; event: string; heard: { subscribed: true } | { payload: Record<string, unknown> } }
   /** #1927 (42) What a page hears of its binding's agent resources (`gugu.bindings.onResourcesChanged`): read again, or ended. */
   | { type: 'bindingResources'; watchId: string; event: import('./agent-resources').AppResourceEvent }
+  /** #1927 (47) What a page hears of the voice-note recorder (`gugu.voiceNote.onChanged`): its state whole, or ended. */
+  | { type: 'voiceNote'; watchId: string; event: import('./voice-note-session').AppVoiceNoteEvent }
   /**
    * The person clicked a banner this extension posted. Delivered to the background
    * page and to this extension's tabs in the session the banner opened; `tag` and
@@ -937,6 +945,19 @@ export const BRIDGE_VERBS = {
   bindingsWork: { needs: 'chat:work', only: 'page' },
   bindingsOpenWork: { needs: 'chat:work', only: 'page', gesture: true },
   bindingsCloseWork: { needs: 'chat:work', only: 'page' },
+  /**
+   * #1927 (47): the host's voice-note recorder, for the personal assistant the bound conversation is with. Starting,
+   * resuming and retrying (which records, or spends on transcription) and opening the system's microphone settings take
+   * the person's click; pausing, stopping and hearing it do not. The host records; the page never gets the audio.
+   */
+  voiceNoteStart: { needs: 'chat:voice-notes:record', only: 'page', gesture: true },
+  voiceNotePause: { needs: 'chat:voice-notes:record', only: 'page' },
+  voiceNoteResume: { needs: 'chat:voice-notes:record', only: 'page', gesture: true },
+  voiceNoteStop: { needs: 'chat:voice-notes:record', only: 'page' },
+  voiceNoteRetry: { needs: 'chat:voice-notes:record', only: 'page', gesture: true },
+  voiceNoteOpenMicSettings: { needs: 'chat:voice-notes:record', only: 'page', gesture: true },
+  voiceNoteStatus: { needs: 'chat:voice-notes:record', only: 'page' },
+  voiceNoteWatch: { needs: 'chat:voice-notes:record', only: 'page' },
   messagesHistory: { needs: 'chat:read' },
   messagesSearch: { needs: 'chat:read' },
   /**

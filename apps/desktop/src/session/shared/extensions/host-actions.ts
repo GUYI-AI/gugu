@@ -125,6 +125,13 @@ export const EXTENSION_LISTED_SESSION_METHOD = 'extensions.listedSession';
 export const EXTENSION_PICK_DISPATCH_TARGET_METHOD = 'extensions.pickDispatchTarget';
 
 /**
+ * #1927 (47) Main asks the window that holds the voice-note recorder (`gugu.voiceNote`): `VoiceNoteWindowRequest` →
+ * `VoiceNoteWindowAnswer` (voice-note-session.ts). Main has checked the App's grant and found the assistant; the window
+ * checks it is that account's and that assistant's recorder before it does anything.
+ */
+export const EXTENSION_VOICE_NOTE_METHOD = 'extensions.voiceNote';
+
+/**
  * 留给**人**读完权限再决定的时间,谁发起的安装都是这一个。
  *
  * 产品决定:owner 定约 5 分钟(原先 30 秒,「30 秒太短了」)。取 280 秒是要比 harness 自己的工具调用上限

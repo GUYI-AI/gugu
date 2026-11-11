@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { AppFileEntry } from './app-runtime-protocol';
 import { ASSISTANT_BINDING_ACTIONS, ASSISTANT_BINDING_API_VERSION } from './assistant-binding';
 import { RESOURCE_ACTIONS_API_VERSION, RESOURCE_BINDING_ACTIONS } from './agent-resources';
+import { VOICE_NOTE_API_VERSION, VOICE_NOTE_RECORD_ACTION } from './voice-note-session';
 
 /**
  * What one conversation binding may do (#1927). `unread` is the binding itself: it is what the person chose the
@@ -15,9 +16,10 @@ import { RESOURCE_ACTIONS_API_VERSION, RESOURCE_BINDING_ACTIONS } from './agent-
  * `assistant-open` (#1925, API 44): the conversation's assistant, when it is the person's own (assistant-binding.ts).
  * `work` (#1925, API 46, work-binding.ts): when that conversation is the person's private chat with their own assistant,
  * the list of work the assistant handed out, and one task's conversation drawn by the host in the App's panel.
+ * `voice-notes:record` (#1927, API 47, voice-note-session.ts): drive the host's voice-note recorder for that same assistant.
  */
 // #1928 (API 43, bound-schedules.ts): `schedules` / `schedules:control`, the schedules of the agent the conversation is with.
-export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'surface', ...RESOURCE_BINDING_ACTIONS, 'schedules', 'schedules:control', ...ASSISTANT_BINDING_ACTIONS, 'work'] as const;
+export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'surface', ...RESOURCE_BINDING_ACTIONS, 'schedules', 'schedules:control', ...ASSISTANT_BINDING_ACTIONS, 'work', VOICE_NOTE_RECORD_ACTION] as const;
 export type ConversationBindingAction = (typeof CONVERSATION_BINDING_ACTIONS)[number];
 export const BINDING_ACTION_CAPABILITY = {
   unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft', surface: 'chat:surface',
@@ -25,10 +27,11 @@ export const BINDING_ACTION_CAPABILITY = {
   schedules: 'chat:schedules', 'schedules:control': 'chat:schedules:control',
   'assistant-status': 'assistant:status', 'assistant-open': 'assistant:open', 'assistant-rename': 'assistant:rename',
   work: 'chat:work',
+  [VOICE_NOTE_RECORD_ACTION]: 'chat:voice-notes:record',
 } as const;
 /** The first App API that lets a binding declare more than `unread`. */
 export const BINDING_ACTIONS_API_VERSION = 40;
-/** The first App API of each action beyond `unread` (40 files and draft, 41 surface, 42 resources, 43 schedules, 44 the assistant's, 46 work). */
+/** The first App API of each action beyond `unread` (40 files and draft, 41 surface, 42 resources, 43 schedules, 44 the assistant's, 46 work, 47 its voice-note recorder). */
 export const BINDING_ACTION_API_VERSION = {
   files: BINDING_ACTIONS_API_VERSION, draft: BINDING_ACTIONS_API_VERSION,
   surface: 41,
@@ -37,6 +40,7 @@ export const BINDING_ACTION_API_VERSION = {
   schedules: 43, 'schedules:control': 43,
   'assistant-status': ASSISTANT_BINDING_API_VERSION, 'assistant-open': ASSISTANT_BINDING_API_VERSION, 'assistant-rename': ASSISTANT_BINDING_API_VERSION,
   work: 46,
+  [VOICE_NOTE_RECORD_ACTION]: VOICE_NOTE_API_VERSION,
 } as const satisfies Record<Exclude<ConversationBindingAction, 'unread'>, number>;
 export const BINDING_NAME = /^[a-z][a-z0-9-]{0,47}$/;
 
@@ -49,7 +53,7 @@ export const CONVERSATION_SURFACE_PLACEMENTS = ['side-panel'] as const;
 /**
  * #1925 (API 46) The top row the host draws above the conversation column (`contributes.conversationSurface.header`).
  * `assistant`: the built-in assistant page's own row — the assistant's face and name (a click: the App hears
- * `intent: { kind: "profile" }`), search, its settings gear (the host's settings page over the App's panel), expand. Drawn
+ * `intent: "profile"`), search, its settings gear (the host's settings page over the App's panel), expand. Drawn
  * only while the bound conversation is the person's private chat with their own assistant, from the host's own data.
  */
 export const CONVERSATION_SURFACE_HEADERS = ['assistant'] as const;
@@ -69,8 +73,9 @@ export const CONVERSATION_SURFACE_PANEL_INSET: Readonly<{ top: number; right: nu
  * the `onSurface` event that follows the click and never in an answer: `profile` = the assistant's face and name were clicked,
  * show its profile. The panel is expanded (and any host page over it closed) before it is told. Nothing else comes with it.
  */
-export type AppSurfaceIntent = { kind: 'profile' };
 export const APP_SURFACE_INTENTS = ['profile'] as const;
+/** The host row's intents (46), told as the same string `intent` a composer entry's `page-intent` is (48). */
+export type AppSurfaceIntent = (typeof APP_SURFACE_INTENTS)[number];
 
 /**
  * `gugu.bindings.surface(name)` (41, `chat:surface`): whether the bound conversation is drawn beside this page now, whether
@@ -81,7 +86,15 @@ export const APP_SURFACE_INTENTS = ['profile'] as const;
  * shows; `intent`, in an `onSurface` event only (`AppSurfaceIntent`).
  */
 export type AppBindingSurface = { name: string; state: 'unbound' }
-  | { name: string; state: 'bound'; panel: { collapsed: boolean; inset: { top: number; right: number }; hostPage: boolean }; intent?: AppSurfaceIntent };
+  | {
+    name: string; state: 'bound'; panel: { collapsed: boolean; inset: { top: number; right: number }; hostPage: boolean };
+    /**
+     * Only on the one `onSurface` event that carries it: `"profile"` (#1925, 46) — the person clicked the assistant's face and
+     * name in the host's row; `"voice-note"` (#1927, 48) — they opened the note the host's recording bar shows; else the
+     * `page-intent` of a composer entry they clicked (composer-actions.ts). No data.
+     */
+    intent?: string;
+  };
 
 /** A stored target is host data and never part of the App's answer. */
 export const storedUnreadBindingSchema = z.strictObject({

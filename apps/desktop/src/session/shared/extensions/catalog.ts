@@ -54,6 +54,8 @@ export const CAPABILITY_RISK = {
   // #1925 The work the person's own assistant handed out, and one task's conversation drawn by the host: the App sees titles
   // and progress, never that conversation.
   'chat:work': 'medium',
+  // The microphone, recording when the person clicks in the App (the host records; the App never gets the audio).
+  'chat:voice-notes:record': 'high',
   'agents:read': 'medium',
   // Every `:all` widens past the agents the App started — that widening is the whole point of
   // reading it as high, even for the ability that is medium in its narrow form.
