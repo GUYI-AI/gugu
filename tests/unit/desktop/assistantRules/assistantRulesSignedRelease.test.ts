@@ -2,7 +2,6 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { BUILT_IN_ASSISTANT_RULES } from '@gugu/core/shared/assistantProductRules/builtIn'
 import { assistantRulesFiles } from '@gugu/core/shared/assistantRulesFormat'
 import { GUGU_APPS_REPO } from '@shared/extensions/market'
 import { ASSISTANT_RULES_TRUST } from '../../../../apps/desktop/electron/assistant-rules-trust'
@@ -10,7 +9,7 @@ import { fixtureBundle, fixtureHost, installBundle, markedRules, OFFICIAL_SOURCE
 
 // #1931 The host believes the assistant App's rules only while they are its signed release: the proof kept at install
 // verifies again with a key this build trusts, and the manifest and rules folder on disk are still the signed bytes. When
-// they are not, the App is not believed and the last good copy (else the built-in one) is used.
+// they are not, the App is not believed and the last good copy is used (else none: nothing that needs the rules proceeds).
 let root: string
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'assistant-rules-signed-')) })
 afterEach(async () => { await rm(root, { recursive: true, force: true }) })
@@ -58,7 +57,7 @@ describe('what the install recorded', () => {
   it('no proof (installed before releases were checked, or put back from a fork): not believed, nothing re-downloaded', async () => {
     const host = fixtureHost(join(root, 'host'), join(root, 'last-good'))
     installBundle(host.service, await bundle('v1'), 'market', OFFICIAL_SOURCE('0.0.1'), { unsigned: true })
-    expect(await host.resolver.refresh()).toMatchObject({ source: 'built-in' })
+    expect(await host.resolver.refresh()).toMatchObject({ source: 'none', rules: null })
     expect(host.warnings[0]!.detail.reason).toBe('no signed release was recorded when it was installed')
   })
 
@@ -66,7 +65,7 @@ describe('what the install recorded', () => {
     const host = fixtureHost(join(root, 'host'), join(root, 'last-good'))
     const app = await bundle('v1')
     installBundle(host.service, app, 'market', signedRecord(app, { repo: GUGU_APPS_REPO, path: 'sources/gugu-assistant', commit: 'b'.repeat(40) }))
-    expect(await host.resolver.refresh()).toMatchObject({ source: 'built-in' })
+    expect(await host.resolver.refresh()).toMatchObject({ source: 'none', rules: null })
     expect(host.warnings[0]!.detail.reason).toBe('its code is at sources/gugu-assistant, not in its signed release folder releases/gugu-assistant/0.0.1')
   })
 
@@ -75,14 +74,14 @@ describe('what the install recorded', () => {
     const v1 = await bundle('v1')
     const v2 = await bundle('v2', { version: '2.0.0' })
     installBundle(host.service, v2, 'market', { ...OFFICIAL_SOURCE('2.0.0'), release: signedRecord(v1, OFFICIAL_SOURCE('0.0.1')).release })
-    expect(await host.resolver.refresh()).toMatchObject({ source: 'built-in' })
+    expect(await host.resolver.refresh()).toMatchObject({ source: 'none', rules: null })
     expect(host.warnings[0]!.detail.reason).toMatch(/^its kept release proof does not verify \(Release: untrusted release identity or signing key\)$/)
   })
 
   it('a proof signed with a key this build does not trust (the shipped table, its slot still empty): not believed', async () => {
     const host = fixtureHost(join(root, 'host'), join(root, 'last-good'), ASSISTANT_RULES_TRUST)
     installBundle(host.service, await bundle('v1'), 'market', OFFICIAL_SOURCE('0.0.1'))
-    expect(await host.resolver.refresh()).toMatchObject({ source: 'built-in', rules: BUILT_IN_ASSISTANT_RULES })
+    expect(await host.resolver.refresh()).toMatchObject({ source: 'none', rules: null })
     expect(host.warnings[0]!.detail.reason).toMatch(/kept release proof does not verify \(Release: untrusted release identity or signing key\)/)
   })
 })

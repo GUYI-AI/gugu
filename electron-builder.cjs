@@ -111,6 +111,11 @@ if (!isWindowsOnlyBuild && fs.existsSync(path.join(__dirname, 'tmux-bundle', 'tm
 if (isWindowsOnlyBuild && fs.existsSync(path.join(__dirname, 'psmux-bundle', 'tmux.exe'))) {
   extraResources.push({ from: 'psmux-bundle', to: 'psmux-bundle', filter: ['**/*'] })
 }
+// #1931 The assistant App's rules at the version pinned in scripts/assistant-rules-seed.json (scripts/build/assistant-rules-seed.ts):
+// a person upgrading offline starts with them (electron/assistant-rules-root.ts). Absent while no version is pinned.
+if (fs.existsSync(path.join(__dirname, 'assistant-rules-seed', 'seed.json'))) {
+  extraResources.push({ from: 'assistant-rules-seed', to: 'assistant-rules-seed', filter: ['**/*'] })
+}
 // L3 preinstalled Apps (工作区 first): apps/desktop/preinstalled-apps/<id>/ ships as Resources/preinstalled-apps/,
 // and gugu installs it from there at every start (electron/session/main/core/extensions/preinstalled-apps.ts).
 extraResources.push({ from: 'apps/desktop/preinstalled-apps', to: 'preinstalled-apps', filter: ['**/*', '!README.md'] })

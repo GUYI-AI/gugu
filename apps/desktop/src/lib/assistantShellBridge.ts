@@ -58,6 +58,8 @@ export type AssistantShellSnapshot = {
   member: boolean | null
   /** 正在给它安家(云上正在开 / 本机正在建):入口那一格画转圈,❌ 画成坏掉或「没有」。 */
   preparing: boolean
+  /** #1931 住这台电脑的它在等自己的规则(助理 App 正在装):已经有它也画转圈,它的会话等规则到了才开。 */
+  rulesPending?: boolean
 }
 
 /** 壳往会话页里画的那几格(在 lib/shellSlots.ts 里登记为 `assistant:<格>`)。新增一格 = 这里加一个名字 + AssistantShellHost 里配一个组件。 */

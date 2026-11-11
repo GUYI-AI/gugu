@@ -176,7 +176,7 @@ describe('the assistant App goes in where the assistant needs it', () => {
     expect(warnings[0]).toMatch(/is not gugu's own App \(its code is at someone\/gugu-apps\)/);
   });
 
-  it('while this build trusts no key for it (the shipped slot is empty), it never goes in: retried with backoff, the rules stay the built-in ones', async () => {
+  it('while this build trusts no key for it (the shipped slot is empty), it never goes in: retried with backoff, and no rules come from it', async () => {
     const { market: m } = await market(OFFICIAL, null);
     const { ensurer, resolver, warnings } = machine(m, () => true, async (count) => {
       if (count === 3) installBundle(service, await fixtureBundle(path.join(work, 'mine')), 'folder');
@@ -185,6 +185,6 @@ describe('the assistant App goes in where the assistant needs it', () => {
     expect(warnings).toHaveLength(3);
     expect(warnings[0]).toMatch(/gugu-assistant@1\.0\.0 failed the release check: its signed release does not verify \(Release: untrusted release identity or signing key\)\. Nothing was unpacked\./);
     expect(service.origins()['gugu-assistant']).toBe('folder');
-    expect((await resolver.current()).source).toBe('built-in');
+    expect((await resolver.current()).source).toBe('none');
   });
 });

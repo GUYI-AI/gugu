@@ -326,10 +326,13 @@ type AssistantEntry = 'found' | 'none' | 'preparing' | 'loading' | 'unreadable'
 function assistantEntryState(opts: {
   found: boolean
   preparing: boolean
+  /** #1931 It waits for its rules (the assistant App is being put in): preparing, even once it is found. */
+  rulesPending?: boolean
   cloudPending: boolean
   identityLoading: boolean
   identityError: boolean
 }): AssistantEntry {
+  if (opts.rulesPending) return 'preparing'
   if (opts.found) return 'found'
   if (opts.preparing) return 'preparing'
   if (opts.cloudPending || opts.identityLoading) return 'loading'
@@ -338,14 +341,14 @@ function assistantEntryState(opts: {
 }
 
 /** 壳发布在 snapshot 上的两项(助理安家那一半):是不是会员(没读到 = null,提示里就先不写会员相关)、是不是正在安家。 */
-function useAssistantShell(): { member: boolean | null; preparing: boolean } {
+function useAssistantShell(): { member: boolean | null; preparing: boolean; rulesPending: boolean } {
   const bridge = readAssistantShellBridge()
   const snapshot = useSyncExternalStore(
     (listener) => bridge?.subscribe(listener) ?? (() => undefined),
     () => bridge?.getSnapshot() ?? null,
   )
-  const view = snapshot as { member?: boolean | null; preparing?: boolean } | null
-  return { member: typeof view?.member === 'boolean' ? view.member : null, preparing: view?.preparing === true }
+  const view = snapshot as { member?: boolean | null; preparing?: boolean; rulesPending?: boolean } | null
+  return { member: typeof view?.member === 'boolean' ? view.member : null, preparing: view?.preparing === true, rulesPending: view?.rulesPending === true }
 }
 
 function AssistantRailTop({ active, onOpen }: { active: boolean; onOpen: () => void }) {
@@ -362,6 +365,7 @@ function AssistantRailTop({ active, onOpen }: { active: boolean; onOpen: () => v
     found: !!assistant,
     // 正在给它安家:云上在开,或本机正在建(壳那一半发布;读不到这一项 = 没在准备)。
     preparing: shell.preparing,
+    rulesPending: shell.rulesPending,
     // 管家那一读还没回来:云上是不是在开还不知道,先转圈,❌ 先说「没有」再闪成「准备中」。
     cloudPending: !!cloudComputer?.available && !cloudComputer.snapshot && !cloudComputer.loadError,
     identityLoading: mine.loading || (!!mine.agentId && !assistant),
