@@ -24,7 +24,7 @@ const shell = (over: Partial<AssistantShellSnapshot> = {}): AssistantShellSnapsh
   assistant: { id: 'assistant', display_name: '咕咕', avatar: null, created_at: null },
   assistantState: 'found', ownerName: 'U', ownerId: OWNER, chatId: DM, home: null, setup: null, member: false, preparing: false, ...over,
 })
-const word = { ownerId: OWNER, trusted: true, ensuring: false }
+const word = { ownerId: OWNER, trusted: true }
 const bound = { [ASSISTANT_APP_ID]: DM }
 const APP = { kind: 'app', extensionId: ASSISTANT_APP_ID, chatId: DM }
 

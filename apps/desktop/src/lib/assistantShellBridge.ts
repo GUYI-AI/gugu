@@ -203,6 +203,8 @@ function sameSnapshot(a: AssistantShellSnapshot, b: AssistantShellSnapshot): boo
     a.chatId === b.chatId && a.chatReadFailed === b.chatReadFailed &&
     // #1925 只差会员档、正在安家、换了账号的那一份也是新的:从前漏比,读到会员档 / 开始安家 / 换号后桥上一直是旧的。
     a.member === b.member && a.preparing === b.preparing && a.ownerId === b.ownerId && a.ownerAvatar === b.ownerAvatar &&
+    // #1931 等不等自己的规则也要比:漏了,只变这一项的那一份被吞,栏顶那一格一直不转圈(或一直转)。
+    (a.rulesPending ?? false) === (b.rulesPending ?? false) &&
     JSON.stringify(a.cloud) === JSON.stringify(b.cloud) &&
     JSON.stringify(a.assistant) === JSON.stringify(b.assistant)
   )

@@ -17,8 +17,8 @@ import { appConversationSlotKey, readAppConversationSurfaceBridge, type AppConve
 /** 产品自己的助理 App(GUYI-AI/gugu-assistant;主进程同名常量 ASSISTANT_APP_ID)。 */
 export const ASSISTANT_APP_ID = 'gugu-assistant'
 
-/** 主进程对这个账号说的:装着的是不是受信的那个 App;#1931 的补装那一步是不是正在把它装上。 */
-export type AssistantAppWord = { ownerId: string; trusted: boolean; ensuring: boolean }
+/** 主进程对这个账号说的:装着的是不是受信的那个 App(补装那一步还没装好时,栏顶那一格的「准备中」由壳的 rulesPending 画)。 */
+export type AssistantAppWord = { ownerId: string; trusted: boolean }
 
 export interface AssistantAppEntryBridge {
   getSnapshot(): AssistantAppWord | null
@@ -48,7 +48,7 @@ export function installAssistantAppEntryBridge(w: Window = window): void {
 
 /** 壳:发布主进程那一句(没变不通知;null = 没登录 / 还没问到)。 */
 export function publishAssistantAppWord(next: AssistantAppWord | null): void {
-  if (word === next || (word && next && word.ownerId === next.ownerId && word.trusted === next.trusted && word.ensuring === next.ensuring)) return
+  if (word === next || (word && next && word.ownerId === next.ownerId && word.trusted === next.trusted)) return
   word = next
   for (const listener of listeners) listener()
 }
@@ -107,17 +107,6 @@ export function useAssistantEntryTarget(): AssistantEntryTarget {
     return target.kind === 'app' ? target.chatId : ''
   })
   return key ? { kind: 'app', extensionId: ASSISTANT_APP_ID, chatId: key } : BUILT_IN
-}
-
-/** 主进程说受信的那个 App 正被补装上(还没装好):入口那一格画「准备中」。 */
-export function useAssistantAppEnsuring(ownerId: string | null): boolean {
-  return useSyncExternalStore(
-    (listener) => readAssistantAppEntryBridge()?.subscribe(listener) ?? (() => undefined),
-    () => {
-      const current = readAssistantAppEntryBridge()?.getSnapshot()
-      return !!ownerId && current?.ownerId === ownerId && current.ensuring
-    },
-  )
 }
 
 /**

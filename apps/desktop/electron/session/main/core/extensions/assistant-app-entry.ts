@@ -5,16 +5,16 @@ import {
   assistantRulesDistrust,
   installedAssistantRulesProvider,
   type AssistantRulesInstallRecord,
+  type AssistantRulesTrustCondition,
 } from '../../../../assistant-rules-trust';
 import { isOwnAssistantChat } from './app-assistant-binding';
 import { account, current } from './app-unread-bindings';
 import { extensionsService } from './extensions-root';
-import { assistantAppEnsuring } from './assistant-app-ensuring';
 
 /**
  * The entry switch (assistant App P5): the product's own assistant App replaces the built-in assistant page the person already
  * has, so the host sets it up the way the page was — nothing to choose, nothing to agree to. Only the trusted App: gugu's
- * `gugu-assistant`, installed from the market, its code in gugu's market repository, not a fork. Any other App, the same id
+ * `gugu-assistant`, installed from the market as its signed release in gugu's market repository, not a fork. Any other App, the same id
  * from anywhere else included, keeps the ordinary consent and chooser.
  *
  * - Its permissions: what it declares is granted at install (the market install with gugu's consent, #1931's ensure step);
@@ -31,12 +31,15 @@ export const ASSISTANT_APP_ID = ASSISTANT_RULES_PROVIDER_ID;
 
 // ── Trust ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // The one definition is #1931's (assistant-rules-trust.ts): the App whose product rules the host believes is the App this
-// entry trusts — its id, installed from the market, its code in gugu's market repository, not a fork.
+// entry trusts — its id, installed from the market, its code in gugu's market repository as its signed release (the proof
+// verifying again, the files still the signed bytes), not a fork.
 
 /** Why the installed App is not the trusted assistant App — the first condition that fails — or null when it is. */
-export async function assistantAppDistrust(service: AssistantRulesInstallRecord): Promise<string | null> {
+export async function assistantAppDistrust(
+  service: AssistantRulesInstallRecord, conditions?: readonly AssistantRulesTrustCondition[],
+): Promise<string | null> {
   const provider = installedAssistantRulesProvider(service);
-  return provider ? assistantRulesDistrust(provider) : 'it is not installed';
+  return provider ? assistantRulesDistrust(provider, conditions) : 'it is not installed';
 }
 
 // ── The binding ──────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -55,7 +58,6 @@ export interface AssistantAppEntryState {
   ownerId: string;
   extensionId: typeof ASSISTANT_APP_ID;
   trusted: boolean;
-  ensuring: boolean;
   outcome: AssistantAppEntryOutcome;
   changed: boolean;
 }
@@ -78,7 +80,7 @@ export async function syncAssistantAppEntry(input: unknown, deps: AssistantAppEn
   if (signedIn !== ownerId) throw Object.assign(new Error('Account changed'), { code: 'denied' });
   const service = extensionsService();
   const state = (trusted: boolean, outcome: AssistantAppEntryOutcome, changed = false): AssistantAppEntryState =>
-    ({ ownerId, extensionId: ASSISTANT_APP_ID, trusted, ensuring: assistantAppEnsuring(), outcome, changed });
+    ({ ownerId, extensionId: ASSISTANT_APP_ID, trusted, outcome, changed });
   if (!service.isInstalled(ASSISTANT_APP_ID)) return state(false, 'absent');
   const distrust = await (deps.distrust ?? assistantAppDistrust)(service);
   if (distrust) {
