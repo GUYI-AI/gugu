@@ -52,8 +52,11 @@ export type ExtensionHostAction =
   /** `gugu.dispatch` with `draft`: into the composer of the chat (the window brings it up), or of that agent's session. */
   | { kind: 'compose'; detail: AppComposeDetail }
   | { kind: 'compose'; sessionId: string; text: string }
-  /** #1925 `gugu.bindings.setPanel`: the page's own panel beside its bound conversation, collapsed or expanded. */
-  | { kind: 'conversationPanel'; collapsed: boolean }
+  /**
+   * #1925 `gugu.bindings.setPanel`: the page's own panel beside its bound conversation, collapsed or expanded. #1927 (48)
+   * `uncover`: any host page over the App's page there is closed too — the host is about to tell that page an intent.
+   */
+  | { kind: 'conversationPanel'; collapsed: boolean; uncover?: true }
   /**
    * #1925 (46) `gugu.bindings.openWork` / `closeWork`: that task's own conversation drawn in the App's panel over its page,
    * or taken away. `ownerId` is the account main checked, which the window must still show; the ids are host data.

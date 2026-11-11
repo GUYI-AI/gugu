@@ -33,10 +33,8 @@ describe('composer actions in the manifest', () => {
     expect(() => parseExtensionManifest(manifest(undefined))).not.toThrow();
   });
 
-  it('below its API version: refused', () => {
-    for (const apiVersion of [44, COMPOSER_ACTIONS_API_VERSION - 1]) {
-      refused(manifest([ideas], { apiVersion }), new RegExp(`composerActions requires apiVersion ${COMPOSER_ACTIONS_API_VERSION}`));
-    }
+  it('below API 48: refused', () => {
+    for (const apiVersion of [44, 47]) refused(manifest([ideas], { apiVersion }), /composerActions requires apiVersion 48/);
   });
 
   it('each run needs its binding action: a voice note the recorder, a draft the draft', () => {

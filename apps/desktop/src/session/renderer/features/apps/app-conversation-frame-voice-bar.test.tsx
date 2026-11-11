@@ -16,6 +16,11 @@ vi.mock('@renderer/features/extensions/extension-shared-slot', () => ({ Extensio
 vi.mock('@renderer/features/global-search/search-session', () => ({ searchInChat: vi.fn() }));
 vi.mock('@renderer/lib/ipc', () => ({ rpc: { extensions: { reportConversationSurface: async () => ({ success: true }) } } }));
 vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { navigation: { navigate: vi.fn() } } }));
+// The panel's own pages and their reads (app-host-layer.tsx), as app-conversation-frame.test.tsx: they read the cloud on import.
+vi.mock('@renderer/features/assistant/assistant-data', () => ({ useAssistantMachine: () => ({ data: undefined }) }));
+vi.mock('@/components/assistant/AssistantProjectsLibrary', () => ({ AssistantProjectsLibrary: () => null }));
+vi.mock('@/components/assistant/AssistantLibraryVolume', () => ({ AssistantLibraryVolume: () => null }));
+vi.mock('@renderer/features/apps/assistant-app-counts', () => ({ AssistantAppCountsSource: () => null }));
 vi.mock('./app-conversation-voice-bar', () => ({
   default: (props: Record<string, unknown>) => { state.bars.push(props); return <div data-testid="voice-bar-here" />; },
 }));
