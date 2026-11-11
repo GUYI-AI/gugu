@@ -1,23 +1,43 @@
 import { z } from 'zod';
 import type { AppFileEntry } from './app-runtime-protocol';
+import { ASSISTANT_BINDING_ACTIONS, ASSISTANT_BINDING_API_VERSION } from './assistant-binding';
+import { RESOURCE_ACTIONS_API_VERSION, RESOURCE_BINDING_ACTIONS } from './agent-resources';
 
 /**
  * What one conversation binding may do (#1927). `unread` is the binding itself: it is what the person chose the
  * conversation for. `files` (API 40): list and read that conversation's chat-folder files, read only. `draft` (API 40):
  * put words into that conversation's composer; the person sends them, or not. Each extra action is its own capability,
- * consented and withdrawn on its own (`BINDING_ACTION_CAPABILITY`). `surface` (API 41, #1925): the App's main page is shown
- * beside that conversation, which the host draws natively (`contributes.conversationSurface`); the App learns only whether
- * it is shown and whether its panel is collapsed. `work` (API 46, #1925): when that conversation is the person's private
- * chat with their own assistant, the list of work the assistant handed out (`work-binding.ts`), and one task's conversation
- * drawn by the host in the App's panel.
+ * consented and withdrawn on its own (`BINDING_ACTION_CAPABILITY`), from the API version it came in
+ * (`BINDING_ACTION_API_VERSION`). `surface` (API 41, #1925): the App's main page is shown beside that conversation, which
+ * the host draws natively (`contributes.conversationSurface`); the App learns only whether it is shown and whether its panel
+ * is collapsed. `resources` / `resources:write` (API 42, #1927, agent-resources.ts): read / change the panel resources of the
+ * agent whose private conversation with the person this is, in the domains the binding lists for each. `assistant-status` /
+ * `assistant-open` (#1925, API 44): the conversation's assistant, when it is the person's own (assistant-binding.ts).
+ * `work` (#1925, API 46, work-binding.ts): when that conversation is the person's private chat with their own assistant,
+ * the list of work the assistant handed out, and one task's conversation drawn by the host in the App's panel.
  */
-export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'surface', 'work'] as const;
+// #1928 (API 43, bound-schedules.ts): `schedules` / `schedules:control`, the schedules of the agent the conversation is with.
+export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'surface', ...RESOURCE_BINDING_ACTIONS, 'schedules', 'schedules:control', ...ASSISTANT_BINDING_ACTIONS, 'work'] as const;
 export type ConversationBindingAction = (typeof CONVERSATION_BINDING_ACTIONS)[number];
-export const BINDING_ACTION_CAPABILITY = { unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft', surface: 'chat:surface', work: 'chat:work' } as const;
+export const BINDING_ACTION_CAPABILITY = {
+  unread: 'chat:unread', files: 'chat:files', draft: 'chat:draft', surface: 'chat:surface',
+  resources: 'chat:resources', 'resources:write': 'chat:resources:write',
+  schedules: 'chat:schedules', 'schedules:control': 'chat:schedules:control',
+  'assistant-status': 'assistant:status', 'assistant-open': 'assistant:open',
+  work: 'chat:work',
+} as const;
 /** The first App API that lets a binding declare more than `unread`. */
 export const BINDING_ACTIONS_API_VERSION = 40;
-/** The first App API of each extra action. */
-export const BINDING_ACTION_API_VERSION = { files: BINDING_ACTIONS_API_VERSION, draft: BINDING_ACTIONS_API_VERSION, surface: 41, work: 46 } as const;
+/** The first App API of each action beyond `unread` (40 files and draft, 41 surface, 42 resources, 43 schedules, 44 the assistant's, 46 work). */
+export const BINDING_ACTION_API_VERSION = {
+  files: BINDING_ACTIONS_API_VERSION, draft: BINDING_ACTIONS_API_VERSION,
+  surface: 41,
+  resources: RESOURCE_ACTIONS_API_VERSION, 'resources:write': RESOURCE_ACTIONS_API_VERSION,
+  // bound-schedules.ts's BOUND_SCHEDULES_API_VERSION (it imports BINDING_NAME from here, so not imported back).
+  schedules: 43, 'schedules:control': 43,
+  'assistant-status': ASSISTANT_BINDING_API_VERSION, 'assistant-open': ASSISTANT_BINDING_API_VERSION,
+  work: 46,
+} as const satisfies Record<Exclude<ConversationBindingAction, 'unread'>, number>;
 export const BINDING_NAME = /^[a-z][a-z0-9-]{0,47}$/;
 
 /**

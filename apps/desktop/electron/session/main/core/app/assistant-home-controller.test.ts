@@ -14,6 +14,7 @@ vi.mock('@gugu/core/cloud/supabase', () => ({ createGuguSupabaseClient: () => mo
 vi.mock('../extensions/account-token', () => ({ currentAccountAccessToken: async () => 'account-token' }))
 vi.mock('../../../../lib/logger', () => ({ createLogger: () => ({ error: vi.fn() }) }))
 vi.mock('../../../../assistant-home-prepare', () => ({ prepareLocalAssistantHome: vi.fn(), wipeLocalAssistantHome: mocks.wipe }))
+vi.mock('../../../../assistant-rules-root', () => ({ ensureAssistantApp: vi.fn(async () => 'present') }))
 vi.mock('../../../../assistant-server-preparation', () => ({ createAssistantServerPreparation: () => ({ start: mocks.start, assertProvision: mocks.assertProvision, closeHome: mocks.close }) }))
 import { assistantHomeController as controller, setAssistantHomeDeviceResolver } from './assistant-home-controller'
 

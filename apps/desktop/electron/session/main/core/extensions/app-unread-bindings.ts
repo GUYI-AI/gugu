@@ -13,16 +13,16 @@ import { hostLayerOf } from './app-host-layers';
 import { ownAssistantOfChat } from './app-own-assistant-chat';
 
 const denied = (message: string) => Object.assign(new Error(message), { code: 'denied' });
-async function account() {
+export async function account() {
   const token = await currentAccountAccessToken();
   const ownerId = token ? userIdFromSupabaseAccessToken(token) : null;
   if (!token || !ownerId) throw denied('Not signed in');
   return { token, ownerId };
 }
-async function current(ownerId: string) {
+export async function current(ownerId: string) {
   if ((await account()).ownerId !== ownerId) throw denied('Account changed');
 }
-async function member(token: string, ownerId: string, chatId: string) {
+export async function member(token: string, ownerId: string, chatId: string) {
   const client = createGuguSupabaseClient({ schema: 'chat', headers: { Authorization: `Bearer ${token}` } });
   const { data, error } = await client.from('active_members').select('chat_id').eq('user_id', ownerId).eq('chat_id', chatId).maybeSingle();
   if (error) throw Object.assign(new Error('Could not verify conversation membership'), { code: 'failed' });

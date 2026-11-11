@@ -6,9 +6,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
 import { variantNameSchema, type ExtensionVariant } from '@shared/extensions/variants';
-import { isGuguOwnApp } from '@shared/extensions/first-run';
 import { compareExtensionVersions } from '@shared/extensions/manifest';
-import { bundleEntryRejection, type MarketCodeSource } from '@shared/extensions/market';
+import { bundleEntryRejection, isOfficialMarketSource, type MarketCodeSource } from '@shared/extensions/market';
 import { getGitExecutable } from '../utils/exec';
 import { reviewGitEnv } from '../runtime/review-git-env';
 import { loginShellEnv } from '@main/utils/userEnv';
@@ -86,7 +85,10 @@ export async function createAppFork(id: string, requestedName?: string) {
   const sourceDir = path.join(root, source.path);
   await requireAgentFileTreeAccess(root);
   await requireAgentFileAccess(path.join(root, '.git', 'gugu-fork.json'));
-  const branch = isGuguOwnApp(source) ? `fork/${id}/${name}` : `gugu-fork/${name}`;
+  // An App built from the market repository's own `sources/<id>`: a sparse clone of that folder, on a branch named for the App.
+  // A compiled release there (`releases/<id>/<version>`) is cloned whole, like any other repository.
+  const marketSources = isOfficialMarketSource(source) && (source.path === `sources/${id}` || source.path.startsWith(`sources/${id}/`));
+  const branch = marketSources ? `fork/${id}/${name}` : `gugu-fork/${name}`;
   const [{ githubAccountService }, { githubApiAuthService }, { getOctokit }] = await Promise.all([
     import('../github/accounts/github-account-service-instance'), import('../github/services/github-api-auth-service-instance'), import('../github/services/octokit-provider'),
   ]);
@@ -102,8 +104,8 @@ export async function createAppFork(id: string, requestedName?: string) {
   if (!existing) {
     try {
       await git(appSourcesRoot(), ['clone', '--no-checkout', '--origin', 'upstream',
-        ...(isGuguOwnApp(source) ? ['--filter=blob:none', '--sparse'] : []), `https://github.com/${source.repo}.git`, root], token);
-      if (isGuguOwnApp(source)) await git(root, ['sparse-checkout', 'set', '--', `sources/${id}`], token);
+        ...(marketSources ? ['--filter=blob:none', '--sparse'] : []), `https://github.com/${source.repo}.git`, root], token);
+      if (marketSources) await git(root, ['sparse-checkout', 'set', '--', `sources/${id}`], token);
       await git(root, ['fetch', 'upstream', source.commit], token);
       await git(root, ['checkout', '-b', branch, source.commit], token);
       await requireAgentFileAccess(path.join(sourceDir, 'manifest.json'));

@@ -104,7 +104,20 @@ export const EXTENSION_WIDGET_IDENTITY_API_VERSION = 33;
 // Still no chat id, title, member or message reaches the App.
 // 41 (#1925): the binding may also declare `surface` (`chat:surface`) with `contributes.conversationSurface`: the App's main
 // page is drawn as the panel beside that conversation, which the host draws natively. `gugu.bindings.surface` /
-// `setPanel` / `onSurface` say only whether it is shown and whether the panel is collapsed.
+// `setPanel` / `onSurface` say only whether it is shown, whether the panel is collapsed and the corner the host covers.
+// 42 (#1927): when that conversation is the person's private one with an agent of theirs, `resources` (`chat:resources`:
+// `gugu.bindings.resources` / `resource` / `onResourcesChanged`) and `resources:write` (`chat:resources:write`:
+// `gugu.bindings.save` / `remove`) reach that agent's panel resources, in the domains the binding lists (agent-resources.ts).
+// 43 (#1928): when that conversation is the person's private one with an agent of theirs, `schedules` (`chat:schedules`:
+// `gugu.bindings.schedules` / `onSchedulesChanged`, that agent's schedules here) and `schedules:control`
+// (`chat:schedules:control`: `gugu.bindings.controlSchedule`, idempotent by the caller's operation id, through the host's
+// own schedule store). Never the agent's id, its session or the chat.
+// 44 (#1925): when that conversation is the person's private chat with their own assistant, the binding may also declare
+// `assistant-status` (`assistant:status`: `gugu.assistant.status` / `onChanged`) and `assistant-open` (`assistant:open`:
+// `gugu.assistant.open(name, screen)` — one of the host's own screens for it, a closed list — and `advanceSetup`).
+// 45 (#1931): `contributes.assistantRules`, the personal assistant's product rules as text/data files the host reads at its
+// own read points (assistantRulesFormat.ts); never run, and honoured only for the App the host trusts as their provider.
+export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // 46 (#1925): when that conversation is the person's private chat with their own assistant, the binding may also declare
 // `work` (`chat:work`): `gugu.bindings.work` / `onWorkChanged` read the work the assistant handed out, each row as the
 // built-in list draws it with an opaque handle; `openWork(name, handle)` (in a click) / `closeWork` have the host draw that
@@ -663,8 +676,23 @@ export type ExtensionHostEvent =
    * another session.
    */
   | { type: 'agentsChanged'; agentIds: readonly string[] }
+  /**
+   * #1925 (44) The assistant's snapshot changed (`gugu.assistant.onChanged`): the same `ready` answer `status` gives — or,
+   * once, `unbound` when an assistant appears for an App that heard the snapshot without one. Only to the pages the person
+   * works of an App with `assistant:status`, each time checked as a read is.
+   */
+  | { type: 'assistantChanged'; name: string; state: 'ready'; status: import('./assistant-binding').AppAssistantStatus }
+  | { type: 'assistantChanged'; name: string; state: 'unbound' }
+  /**
+   * #1928 The schedules of the agent a page's binding is with changed (`gugu.bindings.onSchedulesChanged(name, fn)`): the
+   * binding's name only, as `filesChanged` says files moved — the page lists them again. Rides on `chat:schedules`, checked
+   * again before each; once it is gone the host stops listening and says nothing more.
+   */
+  | { type: 'schedulesChanged'; binding: string }
   /** What this page hears of its own topic (`gugu.cloud.on`): a broadcast's payload, or that it is (re)subscribed: read again then. */
   | { type: 'cloudHeard'; topic: string; event: string; heard: { subscribed: true } | { payload: Record<string, unknown> } }
+  /** #1927 (42) What a page hears of its binding's agent resources (`gugu.bindings.onResourcesChanged`): read again, or ended. */
+  | { type: 'bindingResources'; watchId: string; event: import('./agent-resources').AppResourceEvent }
   /**
    * The person clicked a banner this extension posted. Delivered to the background
    * page and to this extension's tabs in the session the banner opened; `tag` and
@@ -860,6 +888,31 @@ export const BRIDGE_VERBS = {
    */
   bindingsSurface: { needs: 'chat:surface', only: 'page' },
   bindingsSurfacePanel: { needs: 'chat:surface', only: 'page' },
+  /**
+   * #1927 (42): the panel resources of the agent the bound conversation is with — a domain whole, one resource and its
+   * content, hearing that they changed; and, with `chat:resources:write`, a change through the resource store. The host
+   * finds the agent from the binding; the call names a domain and a key, never an owner, agent, chat or path on disk.
+   */
+  bindingsResources: { needs: 'chat:resources', only: 'page' },
+  bindingsResource: { needs: 'chat:resources', only: 'page' },
+  bindingsWatch: { needs: 'chat:resources', only: 'page' },
+  bindingsSave: { needs: 'chat:resources:write', only: 'page' },
+  bindingsRemove: { needs: 'chat:resources:write', only: 'page' },
+  /**
+   * #1928 (43): the schedules of the agent the bound conversation is with — listed, heard changing (`schedulesChanged`),
+   * and changed through the host's schedule store by the caller's operation id. The host finds the agent from the binding.
+   */
+  bindingsSchedules: { needs: 'chat:schedules', only: 'page' },
+  bindingsSchedulesWatch: { needs: 'chat:schedules', only: 'page' },
+  bindingsScheduleControl: { needs: 'chat:schedules:control', only: 'page' },
+  /**
+   * #1925 (44): the bound conversation's assistant, when it is the person's own — its snapshot, read; one of the host's
+   * screens for it opened, and the setup steps the App draws moved on, both in the person's click. The page names the
+   * binding and a value from a closed list; the host finds the chat and the assistant, and answers done or refused.
+   */
+  assistantStatus: { needs: 'assistant:status', only: 'page' },
+  assistantOpen: { needs: 'assistant:open', only: 'page', gesture: true },
+  assistantAdvanceSetup: { needs: 'assistant:open', only: 'page', gesture: true },
   /**
    * #1925 (46): the work the person's own assistant handed out, each row as the built-in list draws it, when the bound
    * conversation is the person's chat with that assistant — and, in a click, one row's task conversation drawn by the host

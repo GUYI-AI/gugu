@@ -389,6 +389,17 @@ export const extensionsController = createRPCController({
     return { success: true };
   },
 
+  /**
+   * #1927 (42) The account's event bus said these agents' panel resources changed (`assistant_panel_changed`), or — `resync`
+   * — it joined again or the signed-in account changed: pages hearing their binding's agent resources read again, or end.
+   */
+  agentResourcesChanged: async (args: { agentIds?: string[]; resync?: boolean }) => {
+    const agentIds = (Array.isArray(args?.agentIds) ? args.agentIds : []).filter((id): id is string => typeof id === 'string');
+    const { notifyAgentResourcesChanged } = await import('@main/core/extensions/app-resource-watches');
+    void notifyAgentResourcesChanged(args?.resync === true ? 'all' : agentIds);
+    return { success: true };
+  },
+
   /** A device of the account went on or off: the folders on screen read their files again, so each says where it is kept now. */
   devicesOnlineChanged: async () => {
     void notifyWatchedChatsChanged();
@@ -861,6 +872,21 @@ export const extensionsController = createRPCController({
       const { unreadBindingChoices } = await import('./app-unread-bindings');
       return { success: true as const, data: await unreadBindingChoices(args.extensionId, args.name) };
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
+  /**
+   * #1925 The shell's assistant snapshot, as an App may see it (`useAssistantAppStatus`): kept for `gugu.assistant.status`,
+   * and told to the pages of each App still entitled to hear it (app-assistant-binding.ts).
+   */
+  assistantStatusChanged: async (args: { ownerId: string; status: unknown }) => {
+    try {
+      const [{ assistantStatusChanged }, { deliverToPersonPages }] = await Promise.all([import('./app-assistant-binding'), import('./extension-bridge')]);
+      await assistantStatusChanged(args, deliverToPersonPages);
+      return { success: true as const };
+    } catch (error) {
+      log.warn('Failed to take the assistant snapshot for Apps:', error);
+      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
+    }
   },
 
   setUnreadBinding: async (args: { extensionId: string; name: string; ownerId: string; authority: string; chatId: string | null }) => {

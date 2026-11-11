@@ -18,6 +18,7 @@ import { ListRow } from '../ui/ListRow'
 import { installPackageOf, packageArrived } from './sharedPackages'
 import { isExtensionBundle } from './summarizeExtensionBundle'
 import { useExtensionWorkspaceRevisions } from './useExtensionWorkspaceRevisions'
+import { useAssistantAppStatus } from './useAssistantAppStatus'
 
 const log = rendererLogger('chat/extension-forward')
 
@@ -34,6 +35,8 @@ export interface ExtensionForwardRequest {
 export function ExtensionForwardHost() {
   // The shell's other always-mounted duty for App pages: group workspace changes (hook's own note).
   useExtensionWorkspaceRevisions()
+  // #1925 And the person's assistant, as an App bound to it may see it.
+  useAssistantAppStatus()
   const { chats, subscribeAccountRevision, sendAttachmentsToChat, sendMessageToChat } = useChatStore('chats', 'subscribeAccountRevision', 'sendAttachmentsToChat', 'sendMessageToChat')
   const { user } = useAuth()
   const { toast } = useToast()

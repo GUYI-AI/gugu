@@ -23,7 +23,8 @@ import { assertConfinedProgramBundle } from './extension-validate';
 
 import { z } from 'zod';
 import { BINDING_ACTION_CAPABILITY, readUnreadBindings, unreadBindingKey, type ConversationBindingAction, type StoredUnreadBinding } from '@shared/extensions/unread-binding';
-import { BUNDLE_SKIP_NAMES } from '@shared/extensions/market';
+import type { ResourceBindingAction } from '@shared/extensions/agent-resources';
+import { BUNDLE_SKIP_NAMES, type MarketCodeSource } from '@shared/extensions/market';
 import { appVariantsSchema, type AppVariants, type ExtensionVariant } from '@shared/extensions/variants';
 import { removeTreeSync } from '@main/core/utils/remove-tree';
 
@@ -118,6 +119,14 @@ const ORIGINS_FILENAME = '.extension-origins.json';
  * off whoever is signed in later. An update from anyone else is asked about in full. Pruned on uninstall, like the origins.
  */
 const PUBLISHERS_FILENAME = '.extension-publishers.json';
+/**
+ * #1931 Where in the market each App installed from it had its code (`MarketCodeSource`: repository, folder, commit), as
+ * `{ [extensionId]: source }` — what the index said for the version installed, kept from the install on. The installed
+ * record otherwise says only `market`. Written by every market install (an upstream switch carries it in its variant),
+ * dropped when the App is installed from anywhere else or uninstalled; an App installed from the market before this was
+ * kept has none.
+ */
+const MARKET_SOURCES_FILENAME = '.extension-market-sources.json';
 
 /** Who published an App installed from a chat or a folder (`PUBLISHERS_FILENAME`). */
 export interface ExtensionPublisher {
@@ -169,7 +178,12 @@ function stampOf(stamps: Map<string, { scope: string; value: string }>, extensio
 }
 
 function bindingDeclaration(bindings: NonNullable<ExtensionManifest['permissions']>['bindings']): string {
-  return JSON.stringify(bindings?.map((binding) => ({ ...binding, actions: [...binding.actions].sort() })) ?? null);
+  return JSON.stringify(bindings?.map((binding) => ({
+    ...binding, actions: [...binding.actions].sort(),
+    // #1927 (42): its resource domains are not what the person chose the conversation for; more of them is asked as a
+    // permission when the update lands (upgrade.ts `addedPermissions`), fewer asks nothing, and the choice stays.
+    domains: undefined,
+  })) ?? null);
 }
 
 export class ExtensionsService {
@@ -185,10 +199,13 @@ export class ExtensionsService {
   private readonly givenHereFile: JsonFile<Record<string, string[]>>;
   private readonly originsFile: JsonFile<Record<string, ExtensionOrigin>>;
   private readonly publishersFile: JsonFile<Record<string, ExtensionPublisher>>;
+  private readonly marketSourcesFile: JsonFile<Record<string, MarketCodeSource>>;
   private readonly openWithFile: JsonFile<Record<string, string>>;
   private readonly unreadBindingsFile: JsonFile<Record<string, import('@shared/extensions/unread-binding').StoredUnreadBinding>>;
   private readonly unreadAuthorities = new Map<string, { scope: string; value: string }>();
   private readonly surfaceAuthorities = new Map<string, { scope: string; value: string }>();
+  /** #1927 (42): who holds a binding's authority past one call (resource subscriptions), told when it may have changed. */
+  private readonly bindingAuthorityListeners = new Set<(extensionId: string) => void>();
   private readonly readings = new Map<string, { stamps: { file: string; stamp: FileStamp | null }[]; installed: InstalledExtension }>();
 
   constructor(private readonly rootDir: string) {
@@ -214,6 +231,8 @@ export class ExtensionsService {
         ['string', 'undefined'].includes(typeof (value as ExtensionPublisher).name)));
     this.openWithFile = jsonFile(rootDir, OPEN_WITH_FILENAME, '{}', mapOf<string>(OPEN_WITH_FILENAME, 'file kinds to tabs',
       (tabKind) => typeof tabKind === 'string'));
+    this.marketSourcesFile = jsonFile(rootDir, MARKET_SOURCES_FILENAME, '{}', mapOf<MarketCodeSource>(MARKET_SOURCES_FILENAME, 'market sources',
+      (value) => !!value && typeof value === 'object' && ['repo', 'path', 'commit'].every((key) => typeof (value as Record<string, unknown>)[key] === 'string')));
   }
 
   /** Host-only scope. A handle is a reference, never a bearer credential. */
@@ -242,6 +261,32 @@ export class ExtensionsService {
       throw Object.assign(new Error(`This App has no "${action}" grant for this binding`), { code: 'denied' });
     }
     return this.conversationUnreadBinding(ownerId, extensionId, name);
+  }
+
+  /**
+   * Host-only (#1927, 42): the binding for a resource action on one domain — the action declared and granted as above, and
+   * the domain listed for it in the manifest. Refused otherwise; null: nobody chose the conversation yet.
+   */
+  conversationResourceBinding(ownerId: string, extensionId: string, name: string, action: ResourceBindingAction, domain: string): StoredUnreadBinding | null {
+    const binding = this.conversationBinding(ownerId, extensionId, name, action);
+    if (!(this.get(extensionId).manifest.permissions?.bindings?.[0]?.domains?.[action] ?? []).includes(domain)) {
+      throw Object.assign(new Error(`This App has no "${action}" grant for the ${domain} domain`), { code: 'denied' });
+    }
+    return binding;
+  }
+
+  /**
+   * #1927 (42): hear that an App's binding authority may have changed — a grant, its enablement, an install or uninstall,
+   * or the chosen conversation — after the change is written. The listener checks again what it holds; it is told, never
+   * trusted with what changed.
+   */
+  onBindingAuthorityChanged(listener: (extensionId: string) => void): () => void {
+    this.bindingAuthorityListeners.add(listener);
+    return () => { this.bindingAuthorityListeners.delete(listener); };
+  }
+
+  private bindingAuthorityChanged(extensionId: string): void {
+    queueMicrotask(() => { for (const listener of this.bindingAuthorityListeners) listener(extensionId); });
   }
 
   /** What the App's binding may do now: its declared actions whose capability is still granted. */
@@ -283,6 +328,7 @@ export class ExtensionsService {
     else stored[key] = { ownerId, name, chatId: z.string().uuid().parse(chatId), handle: randomUUID() };
     this.unreadBindingsFile.write(readUnreadBindings(stored));
     this.forgetAuthorities(extensionId);
+    this.bindingAuthorityChanged(extensionId);
   }
 
   private forgetConversationUnreadBindings(extensionId: string): void {
@@ -364,7 +410,7 @@ export class ExtensionsService {
    * permission list the user agreed to. It is required rather than optional: the
    * check is only worth anything if no caller can install without it.
    */
-  installFromDirectory(sourceDir: string, consentedDigest: string, origin: ExtensionOrigin, publisher?: ExtensionPublisher, variant?: ExtensionVariant): InstalledExtension {
+  installFromDirectory(sourceDir: string, consentedDigest: string, origin: ExtensionOrigin, publisher?: ExtensionPublisher, variant?: ExtensionVariant, marketSource?: MarketCodeSource): InstalledExtension {
     const { source, manifest, manifestDigest } = this.validateSource(sourceDir);
     requireAppPlatform(manifest, 'desktop');
     // Read the withdrawal record up front. It is written after the bundle lands,
@@ -374,6 +420,7 @@ export class ExtensionsService {
     const revocations = this.revocationsFile.read();
     const origins = this.origins();
     const publishers = this.publishers();
+    const marketSources = this.marketSourcesFile.read();
     const identity = appIdentityOf({ manifest, origin, publisher });
     const grants = this.grantsFile.read();
     const previousIdentity = this.identityOf(manifest.id);
@@ -469,6 +516,13 @@ export class ExtensionsService {
     }
     origins[manifest.id] = origin;
     this.originsFile.write(origins);
+    // The upstream of an App with forks carries where its code is in its variant record.
+    const fromMarket = origin === 'market' ? marketSource ?? (variant?.name === 'upstream' && variant.repo ? { repo: variant.repo, path: variant.path, commit: variant.commit } : undefined) : undefined;
+    if (fromMarket || Object.hasOwn(marketSources, manifest.id)) {
+      if (fromMarket) marketSources[manifest.id] = { repo: fromMarket.repo, path: fromMarket.path, commit: fromMarket.commit };
+      else delete marketSources[manifest.id];
+      this.marketSourcesFile.write(marketSources);
+    }
     // A package from a chat or a folder has a publisher; one installed without (preinstalled, market: gugu's) has none.
     if (publisher) publishers[manifest.id] = { ...publisher };
     else delete publishers[manifest.id];
@@ -500,6 +554,7 @@ export class ExtensionsService {
     const installed = this.get(manifest.id);
     this.forgetAuthorities(manifest.id);
     if (resetUnreadBinding) this.forgetConversationUnreadBindings(manifest.id);
+    this.bindingAuthorityChanged(manifest.id);
     if (origin !== 'preinstalled') activitySignal({ event_id: randomUUID(), kind: firstInstall ? 'app.installed' : 'app.replaced',
       object_id: manifest.id, app_version: manifest.version, occurred_at: Date.now() });
     return installed;
@@ -510,7 +565,10 @@ export class ExtensionsService {
     const manifest = this.get(id).manifest;
     const identity = this.identityOf(id);
     const permissions = identity ? this.grantsFile.read()[appKey(identity)] : undefined;
-    return permissions ? { ...manifest, permissions } : manifest;
+    // #1927 (42): the installed version's binding, its resource domains included, was approved when it landed (an update
+    // listing more is asked: upgrade.ts `addedPermissions`), so what is new is measured against it.
+    const bindings = manifest.permissions?.bindings;
+    return permissions ? { ...manifest, permissions: { ...permissions, ...(bindings ? { bindings } : {}) } } : manifest;
   }
 
   variants(id: string): AppVariants {
@@ -621,6 +679,11 @@ export class ExtensionsService {
     return this.originsFile.read();
   }
 
+  /** #1931 Where in the market an App installed from it had its code (`MARKET_SOURCES_FILENAME`); null when none was kept. */
+  marketSource(extensionId: string): MarketCodeSource | null {
+    return this.marketSourcesFile.read()[extensionId] ?? null;
+  }
+
   /**
    * An App gugu installed itself (`preinstalled`) that this build no longer ships: from now on it is the person's, an
    * ordinary market App — they can switch it off, uninstall it, update it from the market (gugu's Apps live there).
@@ -717,6 +780,7 @@ export class ExtensionsService {
    */
   setEnabled(extensionId: string, enabled: boolean): void {
     this.forgetAuthorities(extensionId);
+    this.bindingAuthorityChanged(extensionId);
     this.get(extensionId);
     if (!enabled && this.origins()[extensionId] === 'preinstalled') {
       throw new Error(`"${extensionId}" is a preinstalled App and cannot be switched off.`);
@@ -840,7 +904,12 @@ export class ExtensionsService {
     // The selection itself stays: it is `chat:unread`'s, and each of these is checked again on every call.
     if (permission === 'chat:files' || permission === 'chat:draft' || permission === 'chat:work') this.unreadAuthorities.delete(extensionId);
     if (permission === 'chat:surface') this.forgetAuthorities(extensionId);
+    // #1925 / #1927 The assistant's and the agent resources' grants likewise.
+    if (permission === 'assistant:status' || permission === 'assistant:open') this.unreadAuthorities.delete(extensionId);
+    if (permission === 'chat:resources' || permission === 'chat:resources:write') this.unreadAuthorities.delete(extensionId);
+    if (permission === 'chat:schedules' || permission === 'chat:schedules:control') this.unreadAuthorities.delete(extensionId);
     this.revocationsFile.write(revocations);
+    this.bindingAuthorityChanged(extensionId);
   }
 
   uninstall(extensionId: string): void {
@@ -863,6 +932,7 @@ export class ExtensionsService {
     // can fail has succeeded.
     this.forgetAuthorities(extensionId);
     this.forgetConversationUnreadBindings(extensionId);
+    this.bindingAuthorityChanged(extensionId);
     this.forgetRevocations(extensionId);
     const settings = this.settingsFile.read();
     if (Object.hasOwn(settings, extensionId)) {
@@ -890,6 +960,11 @@ export class ExtensionsService {
     if (publishers[extensionId]) {
       delete publishers[extensionId];
       this.publishersFile.write(publishers);
+    }
+    const marketSources = this.marketSourcesFile.read();
+    if (marketSources[extensionId]) {
+      delete marketSources[extensionId];
+      this.marketSourcesFile.write(marketSources);
     }
     // Same reason: "off" was a decision about something that no longer exists,
     // and a reinstall must not arrive switched off.

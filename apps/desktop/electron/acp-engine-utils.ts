@@ -13,6 +13,7 @@ import { getSupabaseAnonKey, getSupabaseUrl } from '@gugu/core/cloud/config'
 import { requireRuntimeAuth, resolveGuguHome, type RuntimeAuth, type RuntimeAuthProvider } from '@gugu/core'
 import { assistantExecutionAction } from '@gugu/core/shared/assistantWorkflow'
 import { coordinateAssistantAction, type AssistantWorkBinding } from './sessionpage/assistant-work'
+import { assistantRules } from './assistant-rules-resolver'
 import { makeIdentityClient } from './supabase'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { GuguMcpHost, type GuguMcpHostPersistence, type GuguMcpServerFactory } from './gugu-mcp-host'
@@ -273,12 +274,15 @@ function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSigna
   // 两种固定角色工具面各自复用前缀,不是按会话的动态授权清单。
   if (getContext().runSessionAction || getContext().runExtensionAction) {
     const sessionDispatcher: SessionDispatcher | undefined = getContext().runSessionAction
-      ? (action, requestSignal) => {
+      ? async (action, requestSignal) => {
           const run = getContext().runSessionAction
           if (!run) throw new Error('session_* tools are unavailable for this grant')
           const dispatch = (input: unknown) => run(input, anySignal([grantSignal, requestSignal]))
-          const work = initial.personalAssistant ? assistantExecutionAction(action) : action
-          return initial.personalAssistant && initial.assistantWork ? coordinateAssistantAction(initial.assistantWork, work, dispatch) : dispatch(work)
+          if (!initial.personalAssistant) return dispatch(action)
+          // One snapshot of the assistant's product rules for the whole dispatch (#1931): the task context and the report.
+          const { rules } = await assistantRules().current()
+          const work = assistantExecutionAction(action, rules)
+          return initial.assistantWork ? coordinateAssistantAction(initial.assistantWork, work, dispatch, rules) : dispatch(work)
         }
       : undefined
     registerGuguSessionTools(server, sessionDispatcher, trackRequest, initial.personalAssistant === true)
