@@ -216,7 +216,7 @@ describe('reading the agent\'s resources', () => {
     expect(await list('memory')).toEqual({ name: 'main', domain: 'memory', state: 'unavailable', reason: 'not-applied' });
     // As on the assistant's own pages (assistantPanelFiles `collection`): one failed change makes every resource of the
     // domain unreadable, not just that one; other domains read on.
-    // 48: each with the class the pages tell the person, nothing more.
+    // 50: each with the class the pages tell the person, nothing more.
     expect(await read('memory', 'owner-profile.md')).toEqual({ name: 'main', domain: 'memory', key: 'owner-profile.md', state: 'unavailable', reason: 'not-applied' });
     expect(await read('personality', 'instructions')).toMatchObject({ state: 'ready' });
     store.failedApplication.clear();

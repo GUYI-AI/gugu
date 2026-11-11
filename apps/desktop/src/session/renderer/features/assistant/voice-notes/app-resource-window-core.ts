@@ -4,7 +4,7 @@ import type {
 } from '@shared/extensions/host-actions';
 
 /**
- * #48 This window's half of an App's managing calls (app-bound-resources-manage.ts in main): the assistant page's own
+ * #50 This window's half of an App's managing calls (app-bound-resources-manage.ts in main): the assistant page's own
  * question before a delete, its 开始转写 and its 导出 Markdown — the same words, the same pipeline, the same save dialog.
  * The window checks the account (and, for a voice note, the assistant) it has itself; main checked the App's authority.
  */

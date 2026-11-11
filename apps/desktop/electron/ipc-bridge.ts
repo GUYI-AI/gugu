@@ -42,7 +42,7 @@ const RENDERER_COMMAND_TIMEOUT_MS = 30_000
 const HUMAN_DECISION_TIMEOUT_MS = new Map<string, number>([
   [EXTENSION_INSTALL_CONSENT_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
   [EXTENSION_PICK_DISPATCH_TARGET_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
-  // #48 The assistant page's own question before a delete, and its save dialog: as long as the person takes.
+  // #50 The assistant page's own question before a delete, and its save dialog: as long as the person takes.
   [EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
   [EXTENSION_EXPORT_VOICE_NOTE_METHOD, INSTALL_CONSENT_HUMAN_WINDOW_MS + 30_000],
 ])

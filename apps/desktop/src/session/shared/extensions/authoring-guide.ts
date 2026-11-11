@@ -897,7 +897,7 @@ streaming, voice, attachments, read state) as the main column; your main page is
 - You get no chat, message, person or DOM of it. Opening your page marks nothing read; a \`{ binding }\` draft lands in that composer.
 API 42 to 46, when that conversation is the person's private one with their own agent or assistant (its resources,
 schedules, the assistant itself, the work it handed out): \`guide_read apps-bindings-agent\`.
-Managing its files and voice notes, and drafts carrying files (API 48): \`guide_read apps-bindings-manage\`.
+Managing its files and voice notes, and drafts carrying files (API 50): \`guide_read apps-bindings-manage\`.
 `;
 
 export const EXTENSION_GUIDE_BINDINGS_AGENT = `# gugu.bindings, gugu.assistant — the agent behind the chosen conversation
@@ -992,7 +992,7 @@ text only, while your page is on screen and focused (else \`denied\`), one every
 export const EXTENSION_GUIDE_BINDINGS_MANAGE = `# gugu.bindings — managing the agent's files and voice notes, drafts carrying files
 
 The same binding as \`apps-bindings-agent\`: the person's private conversation with their personal assistant, desktop only.
-API 48: every \`unavailable\` carries \`reason\`: \`stale\`, \`not-applied\`, \`timed-out\`, \`unreadable\`, \`access-unverified\`,
+API 50: every \`unavailable\` carries \`reason\`: \`stale\`, \`not-applied\`, \`timed-out\`, \`unreadable\`, \`access-unverified\`,
 \`owner-unknown\`, \`too-large\`. Each call below, in a click, your page only; \`key\` as \`resources\` gives it:
 - \`"resources:write"\` with \`"files"\`: \`bindings.upload("main", { folder? })\` opens gugu's file picker (50 MB, no video, audio or archive)
   → \`{ state: "done", uploaded: [{ key, name, receipt }], refused: [{ name, why }] }\` | \`cancelled\`; \`bindings.createFolder("main", key)\` →
@@ -1392,7 +1392,7 @@ export const EXTENSION_GUIDE_TOPICS: readonly { topic: string; about: string; te
   },
   {
     topic: 'apps-bindings-manage',
-    about: 'gugu.bindings (API 48, desktop): the assistant\'s files uploaded, foldered, renamed, removed; its voice notes transcribed, removed, exported — as its own pages do, the person asked first; a draft carrying files; why a read is unavailable.',
+    about: 'gugu.bindings (API 50, desktop): the assistant\'s files uploaded, foldered, renamed, removed; its voice notes transcribed, removed, exported — as its own pages do, the person asked first; a draft carrying files; why a read is unavailable.',
     text: EXTENSION_GUIDE_BINDINGS_MANAGE,
   },
   {

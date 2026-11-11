@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppComposeDetail, AppFileEntry } from '@shared/extensions/app-runtime-protocol';
 
 /**
- * #48 A draft into the binding's conversation carrying files (`attach`): one of its folder by path (the binding's `files`)
+ * #50 A draft into the binding's conversation carrying files (`attach`): one of its folder by path (the binding's `files`)
  * or one of the agent's resources by domain and key (that domain's read grant; the pill links the resource's stored body,
  * a file of the same private conversation). Each found again under the selection the draft goes to; the App hears back
  * the binding only. The grant rules of `boundAgent` are app-bound-resources-grant.test.ts's.

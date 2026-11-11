@@ -400,7 +400,7 @@ export const extensionHostActionHandlers: RendererRpcHandlers = {
     const { pickDispatchTarget } = await import('@/components/chat/dispatchAsk');
     return pickDispatchTarget(params as DispatchAsk);
   },
-  /** #48 An App's managing calls: the assistant page's own question, 开始转写 and 导出 Markdown, in this window. */
+  /** #50 An App's managing calls: the assistant page's own question, 开始转写 and 导出 Markdown, in this window. */
   [EXTENSION_CONFIRM_RESOURCE_REMOVAL_METHOD]: async (params: unknown) => {
     const { resourceWindow } = await import('@renderer/features/assistant/voice-notes/app-resource-window');
     return resourceWindow().confirmRemoval(params as ResourceRemovalAsk);

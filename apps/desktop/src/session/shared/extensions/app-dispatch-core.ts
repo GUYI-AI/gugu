@@ -91,7 +91,7 @@ export interface DispatchCall {
   to: DispatchTarget | null;
   refs: unknown;
   images: unknown;
-  /** 48: files a binding draft carries, of its folder or the agent's resources (resources-management.ts). */
+  /** 50: files a binding draft carries, of its folder or the agent's resources (resources-management.ts). */
   attach?: DraftAttachment[];
   visible: boolean;
   delivery?: 'queue' | 'defer';

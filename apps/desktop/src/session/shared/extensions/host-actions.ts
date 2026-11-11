@@ -125,7 +125,7 @@ export const EXTENSION_LISTED_SESSION_METHOD = 'extensions.listedSession';
 export const EXTENSION_PICK_DISPATCH_TARGET_METHOD = 'extensions.pickDispatchTarget';
 
 /**
- * #48 (resources-management.ts) What an App's managing calls ask of the window that draws its page: the question the
+ * #50 (resources-management.ts) What an App's managing calls ask of the window that draws its page: the question the
  * assistant's page asks before a delete (with its words), its voice-note pipeline's 开始转写, and its 导出 Markdown.
  * The window checks the account and the assistant itself; the page sees only the outcome.
  */

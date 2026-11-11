@@ -159,7 +159,7 @@ const unreadable = (reason: ReadFailureReason) => Object.assign(new Error('An at
 const lastName = (key: string) => key.split('/').at(-1) ?? key;
 
 /**
- * 48 `attach`: files the person can already see in the bound conversation, as pills of the draft — one of its folder by
+ * 50 `attach`: files the person can already see in the bound conversation, as pills of the draft — one of its folder by
  * its path (the binding's `files`, as `bindings.list` names it), or one of the agent's resources by domain and key (the
  * binding's `resources` for that domain; what it links is the resource's stored body, a file of that same private
  * conversation). Each is found again here, under the selection the draft goes to; never a path or id the App made up.

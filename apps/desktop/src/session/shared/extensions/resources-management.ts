@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { AppResourceReceipt } from './agent-resources';
 
 /**
- * API 48: what the assistant's own 记忆 pages do to its resources that an App binding could not — each exactly as far as
+ * API 50: what the assistant's own 记忆 pages do to its resources that an App binding could not — each exactly as far as
  * those pages go, through the same store calls (`createAssistantPanelFiles`: `write`, `mkdir`, `rename`, `remove`) and the
  * same host dialogs. Who the owner, agent and chat are stays the host's; the App names the binding, a key it was given and
  * a name. Nothing of a path on disk, an item id, a device or a URL is ever answered.
@@ -18,7 +18,7 @@ import type { AppResourceReceipt } from './agent-resources';
  * - A draft into the bound conversation may carry files already in its folder or the agent's resources (`attach`), by the
  *   path or key the App holds — never a path of its own.
  */
-export const RESOURCES_MANAGEMENT_API_VERSION = 48;
+export const RESOURCES_MANAGEMENT_API_VERSION = 50;
 
 /** The binding action for the voice-note operations, and its capability. */
 export const VOICE_NOTES_MANAGE_ACTION = 'voice-notes:manage';

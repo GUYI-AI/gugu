@@ -203,15 +203,15 @@ describe('the installed App\'s resource grant', () => {
   });
 });
 
-describe('#48 managing voice notes (voice-notes:manage)', () => {
+describe('#50 managing voice notes (voice-notes:manage)', () => {
   const manager = (patch: { apiVersion?: number; reads?: string[]; capabilities?: string[] } = {}) => manifest({
     actions: ['unread', 'resources', 'voice-notes:manage'], apiVersion: patch.apiVersion,
     ...(patch.capabilities ? { capabilities: patch.capabilities } : {}),
     domains: { resources: patch.reads ?? ['memory', 'voice-notes'] } });
 
-  it('needs API 48, its capability, and voice-notes read by the same binding; desktop only', () => {
+  it('needs API 50, its capability, and voice-notes read by the same binding; desktop only', () => {
     expect(() => parseExtensionManifest(manager())).not.toThrow();
-    expect(() => parseExtensionManifest(manager({ apiVersion: 47 }))).toThrow(/apiVersion 48/);
+    expect(() => parseExtensionManifest(manager({ apiVersion: 49 }))).toThrow(/apiVersion 50/);
     expect(() => parseExtensionManifest(manager({ reads: ['memory'] }))).toThrow(/voice-notes/);
     expect(() => parseExtensionManifest(manager({ capabilities: ['chat:unread', 'chat:resources'] }))).toThrow(/chat:voice-notes:manage/);
     expect(() => parseExtensionManifest({ ...manager(), platforms: ['desktop', 'phone'] })).toThrow(/desktop-only/);

@@ -2164,7 +2164,7 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
     case 'bindingsTranscribeVoiceNote':
     case 'bindingsRemoveVoiceNote':
     case 'bindingsExportVoiceNote': {
-      // 48 As the resources above: the person's own, never a page an agent works.
+      // 50 As the resources above: the person's own, never a page an agent works.
       const page = thePage(caller);
       if (page.operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works manages none of its agent\'s resources'), { code: 'denied' });
       const manage = await import('./app-bound-resources-manage');

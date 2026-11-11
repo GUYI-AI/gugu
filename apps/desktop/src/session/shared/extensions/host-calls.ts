@@ -76,7 +76,7 @@ export const HOST_CALLS = {
   'bindings.watch': { verb: 'bindingsWatch', pack: (watchId: string, name: string, on: boolean) => ({ watchId, name, on }) },
   'bindings.save': { verb: 'bindingsSave', pack: (name: string, change: Record<string, unknown>) => ({ ...change, name }) },
   'bindings.remove': { verb: 'bindingsRemove', pack: (name: string, change: Record<string, unknown>) => ({ ...change, name }) },
-  // 48 (resources-management.ts): 给助理的资料 and voice notes, as the assistant's own pages manage them.
+  // 50 (resources-management.ts): 给助理的资料 and voice notes, as the assistant's own pages manage them.
   'bindings.upload': { verb: 'bindingsUpload', pack: (name: string, options?: { folder?: string }) => ({ ...(options ?? {}), name }) },
   'bindings.createFolder': { verb: 'bindingsCreateFolder', pack: (name: string, key: string) => ({ name, key }) },
   'bindings.rename': { verb: 'bindingsRename', pack: (name: string, key: string, to: string) => ({ name, key, to }) },

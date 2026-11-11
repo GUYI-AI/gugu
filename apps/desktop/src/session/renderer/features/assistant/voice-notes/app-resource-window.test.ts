@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * #48 on API 47's host: an App's 开始转写 with the assistant's page closed wakes this window's voice-note host
+ * #50 on API 47's host: an App's 开始转写 with the assistant's page closed wakes this window's voice-note host
  * (`appVoiceNotesActive`, which mounts app-voice-notes-context.tsx at the session app's root) and starts the note once
  * that host has set the assistant — the one getter `voiceNotesAssistantId` saying so, as for `gugu.voiceNote`.
  */

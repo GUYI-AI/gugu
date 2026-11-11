@@ -229,7 +229,7 @@ export function pickDispatchTarget(embedderId: number | null, ask: DispatchAsk):
   return Promise.resolve().then(() => requireHostWindow().invokeRendererExtensions(EXTENSION_PICK_DISPATCH_TARGET_METHOD, ask, embedderId) as Promise<DispatchPicked>);
 }
 
-/** #48 One question to the window that draws a page (host-actions.ts), answered by its handler there. */
+/** #50 One question to the window that draws a page (host-actions.ts), answered by its handler there. */
 export function invokeInEmbedder(embedderId: number | null, method: string, params: unknown): Promise<unknown> {
   if (embedderId === null) return Promise.reject(new Error('This surface is not embedded in a renderer that can act on its behalf'));
   return Promise.resolve().then(() => requireHostWindow().invokeRendererExtensions(method, params, embedderId));

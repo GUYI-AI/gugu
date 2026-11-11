@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * #48 The bridge's door for managing the bound conversation's agent resources: the App is the one the call came from;
+ * #50 The bridge's door for managing the bound conversation's agent resources: the App is the one the call came from;
  * `chat:resources:write` / `chat:voice-notes:manage` are asked at the door, and a click for what reaches the person's
  * screen (the picker, the question before a delete, the pipeline, the save dialog); only a page the person works reaches
  * them, with its own embedder — never one the App names. What happens past the door is app-bound-resources-manage.test.ts's.

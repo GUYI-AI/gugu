@@ -60,7 +60,7 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
   // #1925 (44): one of the assistant's host screens, and the setup steps an App draws.
   assistantOpen: () => host.assistant.open('main', 'move'),
   assistantAdvanceSetup: () => host.assistant.advanceSetup('main', 'ready'),
-  // 48: the host's picker, the question before a delete, the voice-note pipeline, the save dialog.
+  // 50: the host's picker, the question before a delete, the voice-note pipeline, the save dialog.
   bindingsUpload: () => bound().upload!('main'),
   bindingsRemoveFolder: () => bound().removeFolder!('main', 'docs'),
   bindingsTranscribeVoiceNote: () => bound().transcribeVoiceNote!('main', 'n1'),
@@ -80,7 +80,7 @@ const gestureCalls: Record<string, () => Promise<unknown>> = {
 function voice() {
   return (host as unknown as { voiceNote: Record<string, ((...args: unknown[]) => Promise<unknown>) | undefined> }).voiceNote;
 }
-// The page's `gugu.bindings` (48): its managing members, as the runtime exposes them.
+// The page's `gugu.bindings` (50): its managing members, as the runtime exposes them.
 function bound() {
   return (host as unknown as { bindings: Record<string, ((...args: unknown[]) => Promise<unknown>) | undefined> }).bindings;
 }

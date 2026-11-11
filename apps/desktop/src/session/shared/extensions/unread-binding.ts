@@ -18,7 +18,7 @@ import { VOICE_NOTE_API_VERSION, VOICE_NOTE_RECORD_ACTION } from './voice-note-s
  * `work` (#1925, API 46, work-binding.ts): when that conversation is the person's private chat with their own assistant,
  * the list of work the assistant handed out, and one task's conversation drawn by the host in the App's panel.
  * `voice-notes:record` (#1927, API 47, voice-note-session.ts): drive the host's voice-note recorder for that same assistant.
- * `voice-notes:manage` (API 48, resources-management.ts): its agent's voice notes transcribed, removed or exported.
+ * `voice-notes:manage` (API 50, resources-management.ts): its agent's voice notes transcribed, removed or exported.
  */
 // #1928 (API 43, bound-schedules.ts): `schedules` / `schedules:control`, the schedules of the agent the conversation is with.
 export const CONVERSATION_BINDING_ACTIONS = ['unread', 'files', 'draft', 'surface', ...RESOURCE_BINDING_ACTIONS, 'schedules', 'schedules:control', ...ASSISTANT_BINDING_ACTIONS, 'work', VOICE_NOTE_RECORD_ACTION, VOICE_NOTES_MANAGE_ACTION] as const;

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * #48 An App managing what the person's assistant keeps, as the assistant's 记忆 pages do: 给助理的资料 (upload through the
+ * #50 An App managing what the person's assistant keeps, as the assistant's 记忆 pages do: 给助理的资料 (upload through the
  * host's picker, new folder, rename, folder delete) and voice notes (开始转写, delete, export). Every call goes through the
  * pages' own store view (`createAssistantPanelFiles`) as the person, under the binding's authority, checked again after
  * each wait — the assistant at home on this computer or another alike: the change names the assistant's home device and
@@ -22,7 +22,7 @@ type Item = {
   observed_at: string | null; updated_at: string; stale_at?: string | null;
 };
 const state = vi.hoisted(() => ({
-  owner: '', selectedBy: '', handle: 'h1', installed: true, enabled: true, member: true, memberError: false, apiVersion: 48, home: '',
+  owner: '', selectedBy: '', handle: 'h1', installed: true, enabled: true, member: true, memberError: false, apiVersion: 50, home: '',
   grants: {} as Record<string, boolean>, domains: {} as Record<string, string[]>,
   provisions: [] as Record<string, unknown>[], provisionsError: false,
 }));
@@ -157,7 +157,7 @@ const ALL = [() => upload(), () => createFolder('docs'), () => rename('a.txt', '
 
 function reset(home: string) {
   Object.assign(state, { owner: OWNER, selectedBy: OWNER, handle: 'h1', installed: true, enabled: true, member: true, memberError: false,
-    apiVersion: 48, home, provisionsError: false,
+    apiVersion: 50, home, provisionsError: false,
     grants: { unread: true, resources: true, 'resources:write': true, 'voice-notes:manage': true },
     domains: { resources: ['memory', 'files', 'voice-notes'], 'resources:write': ['memory', 'files'] },
     provisions: [{ agent_user_id: AGENT, member_key: 'assistant', device_id: home, phase: 'completed', created_at: '2026-11-01T00:00:00Z',
@@ -295,9 +295,9 @@ describe('refusals', () => {
     expect(store.commits).toHaveLength(0);
   });
 
-  it('an App declaring an API before 48 is refused, whatever it holds', async () => {
-    state.apiVersion = 47;
-    for (const call of ALL) await expect(call()).rejects.toMatchObject({ code: 'denied', message: expect.stringContaining('48') });
+  it('an App declaring an API before 50 is refused, whatever it holds', async () => {
+    state.apiVersion = 49;
+    for (const call of ALL) await expect(call()).rejects.toMatchObject({ code: 'denied', message: expect.stringContaining('50') });
   });
 
   it('files need resources:write listing files; voice notes need voice-notes:manage and voice-notes read', async () => {

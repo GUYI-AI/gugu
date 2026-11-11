@@ -9,7 +9,7 @@ import {
 import { invokeInEmbedder } from './extension-bridge-relay';
 
 /**
- * #48 What the managing calls (app-bound-resources-manage.ts) need of the person's screen, each the host's own: the file
+ * #50 What the managing calls (app-bound-resources-manage.ts) need of the person's screen, each the host's own: the file
  * picker, the question the assistant's page asks before a delete, this window's voice-note pipeline, and its save dialog.
  * Reached only in the person's click (the bridge checks it); the page never draws or answers any of them.
  */

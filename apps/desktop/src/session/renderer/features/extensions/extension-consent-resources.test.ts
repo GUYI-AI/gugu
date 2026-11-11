@@ -49,7 +49,7 @@ describe('consent for an agent\'s resources', () => {
   });
 });
 
-describe('#48 consent for managing voice notes', () => {
+describe('#50 consent for managing voice notes', () => {
   it('its own row, in both languages, saying each delete is the person\'s to confirm', () => {
     const manifest = parseExtensionManifest({ id: 'assistant', name: 'Assistant', version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en',
       platforms: ['desktop'], entry: 'index.html',

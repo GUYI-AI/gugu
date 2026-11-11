@@ -43,7 +43,7 @@ export type AppResource = { key: string; revision: string; updatedAt: string; da
 type Named = { name: string; domain: string };
 /**
  * `gugu.bindings.resources(name, domain)`: one domain, whole. `unprepared`: the agent has not published it yet;
- * `unavailable`: it cannot be read now, and (48) why, from a closed list (`ReadFailureReason`). Never an empty list for
+ * `unavailable`: it cannot be read now, and (50) why, from a closed list (`ReadFailureReason`). Never an empty list for
  * either.
  */
 export type AppResourceList = Named & ({ state: 'unbound' | 'unprepared' } | Unavailable | { state: 'ready'; revision: string; resources: AppResource[] });

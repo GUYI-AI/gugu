@@ -33,7 +33,7 @@ import { addResourceWatch, stopResourceWatch } from './app-resource-watches';
 const denied = (message: string) => Object.assign(new Error(message), { code: 'denied' });
 const invalid = (message: string) => Object.assign(new Error(message), { code: 'invalid' });
 const failed = (message: string, reason: ReadFailureReason = 'unreadable') => Object.assign(new Error(message), { code: 'failed', reason });
-/** A read that could not be made now, and why (48): the class the assistant's own pages tell the person. */
+/** A read that could not be made now, and why (50): the class the assistant's own pages tell the person. */
 export const unavailable = (reason: ReadFailureReason): Unavailable => ({ state: 'unavailable', reason });
 export const reasonOf = (error: unknown): ReadFailureReason => {
   const given = (error as { reason?: unknown } | null)?.reason;
@@ -81,7 +81,7 @@ async function personalAssistantOf(token: string, ownerId: string, chatId: strin
   return pick;
 }
 
-/** The authority of one call, and the assistant's home device (what its own pages name in a change, 48). */
+/** The authority of one call, and the assistant's home device (what its own pages name in a change, 50). */
 export type Bound = { ownerId: string; token: string; chatId: string; handle: string; agentId: string; deviceId: string; recheck(): Promise<void> };
 /** The binding actions a call may need: any but `unread` (a domain where the action has them). */
 export type ResourceCallAction = Exclude<ConversationBindingAction, 'unread'>;

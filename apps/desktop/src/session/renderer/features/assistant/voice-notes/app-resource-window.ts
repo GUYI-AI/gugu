@@ -8,7 +8,7 @@ import { createResourceWindow, type ResourceWindow } from './app-resource-window
 import { appVoiceNotesActive } from './app-voice-notes-active';
 import { retryVoiceNote, subscribeVoiceNotesContext, voiceJobs, voiceNotesAssistantId } from './voice-note-jobs';
 
-/** #48 The window's half of an App's managing calls (app-resource-window-core.ts), on this window's own pieces. */
+/** #50 The window's half of an App's managing calls (app-resource-window-core.ts), on this window's own pieces. */
 let made: ResourceWindow | null = null;
 export function resourceWindow(): ResourceWindow {
   made ??= createResourceWindow({

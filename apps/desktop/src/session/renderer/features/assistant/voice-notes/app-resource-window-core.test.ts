@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { TRANSCRIBE_WAIT_MS, createResourceWindow, type ResourceWindowDeps } from './app-resource-window-core';
 
 /**
- * #48 The window's half of an App's managing calls: the assistant page's own question before a delete (its words), its
+ * #50 The window's half of an App's managing calls: the assistant page's own question before a delete (its words), its
  * 开始转写 (`retryVoiceNote`) and its 导出 Markdown (its file name, its Markdown, the save dialog) — each only for the
  * account (and assistant) this window has itself.
  */

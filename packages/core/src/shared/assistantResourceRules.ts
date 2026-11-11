@@ -1,6 +1,6 @@
 /**
  * What the assistant's 给助理的资料 takes, one rule for every door that puts something there: the assistant's own pages
- * (assistant-files.ts re-exports these) and an App the person lets manage it (#48, app-bound-resources-manage.ts).
+ * (assistant-files.ts re-exports these) and an App the person lets manage it (#50, app-bound-resources-manage.ts).
  */
 
 /** 上传规矩:单个文件 50MB 以内;视频、音频、压缩包不收(助理读不了)。 */

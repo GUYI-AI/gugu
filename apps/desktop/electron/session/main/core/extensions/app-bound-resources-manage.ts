@@ -16,7 +16,7 @@ import { manageHost } from './app-bound-resources-host';
 import { extensionsService } from './extensions-root';
 
 /**
- * #48 (resources-management.ts) What the assistant's own 记忆 pages do to its 给助理的资料 and voice notes, done for an App
+ * #50 (resources-management.ts) What the assistant's own 记忆 pages do to its 给助理的资料 and voice notes, done for an App
  * the person let manage them — by the very functions those pages call on the store (`createAssistantPanelFiles`: `write`,
  * `mkdir`, `rename`, `remove`, `text`), as the person, under the binding's authority (app-bound-resources.ts `boundAgent`:
  * account, grant, domain, selection, the personal assistant — checked again after every wait). The person's own screen
@@ -69,7 +69,7 @@ function panelOf(bound: Bound): Panel {
 /**
  * One managing call under the binding's authority: `unbound` when nobody chose the conversation, `unavailable` with its
  * class when it could not be done now, a refusal thrown. The calls on 给助理的资料 ride on `resources:write`, which an App
- * of API 42 already has: they are an App's of API 48 only.
+ * of API 42 already has: they are an App's of API 50 only.
  */
 async function under<T extends object>(
   extensionId: string, name: string, needs: readonly ResourceCallAction[], domain: 'files' | 'voice-notes',
@@ -112,7 +112,7 @@ function noteKeyOf(value: unknown): string {
 }
 
 /**
- * `gugu.bindings.upload(name, { folder? })` (48, `resources:write` listing `files`, in a click): the host's own picker;
+ * `gugu.bindings.upload(name, { folder? })` (50, `resources:write` listing `files`, in a click): the host's own picker;
  * each file the page's rules take (50 MB, no video, audio or archive) written as the page writes it — the same name
  * replaces what is there, as the person chose it — the others named back. Cancelled: nothing.
  */
@@ -152,7 +152,7 @@ export async function appResourceUpload(extensionId: string, embedderId: number 
   });
 }
 
-/** `gugu.bindings.createFolder(name, key)` (48): a folder made at `key`, as the page's 新建文件夹; already there: `exists`. */
+/** `gugu.bindings.createFolder(name, key)` (50): a folder made at `key`, as the page's 新建文件夹; already there: `exists`. */
 export async function appResourceCreateFolder(extensionId: string, input: unknown): Promise<AppFolderAnswer> {
   const args = argsOf(folderArgsSchema, input);
   const key = filesKeyOf(args.key);
@@ -165,7 +165,7 @@ export async function appResourceCreateFolder(extensionId: string, input: unknow
 }
 
 /**
- * `gugu.bindings.rename(name, key, to)` (48): the file or folder at `key` given the last name `to` — a folder with
+ * `gugu.bindings.rename(name, key, to)` (50): the file or folder at `key` given the last name `to` — a folder with
  * everything in it — as the page's 重命名. `missing`: nothing there; `exists`: that name is taken.
  */
 export async function appResourceRename(extensionId: string, input: unknown): Promise<AppRenameAnswer> {
@@ -190,7 +190,7 @@ export async function appResourceRename(extensionId: string, input: unknown): Pr
 }
 
 /**
- * `gugu.bindings.removeFolder(name, key)` (48, in a click): the folder at `key` and everything in it, once the person said
+ * `gugu.bindings.removeFolder(name, key)` (50, in a click): the folder at `key` and everything in it, once the person said
  * yes to the page's own question (删除文件夹？). A file is removed with `bindings.remove`.
  */
 export async function appResourceRemoveFolder(extensionId: string, embedderId: number | null, input: unknown): Promise<AppRemoveAllAnswer> {
@@ -221,7 +221,7 @@ async function noteText(panel: Panel, id: string, file: string): Promise<string 
 }
 
 /**
- * `gugu.bindings.transcribeVoiceNote(name, key)` (48, `voice-notes:manage`, in a click): a note uploaded from another
+ * `gugu.bindings.transcribeVoiceNote(name, key)` (50, `voice-notes:manage`, in a click): a note uploaded from another
  * device and waiting (`status: uploaded`) transcribed by this computer's voice-note pipeline and handed to the agent —
  * the page's 开始转写. Anything else is `not-waiting`; retrying one this computer recorded is API 47's.
  */
@@ -240,7 +240,7 @@ export async function appVoiceNoteTranscribe(extensionId: string, embedderId: nu
   return 'key' in answer ? answer : { ...answer, key };
 }
 
-/** `gugu.bindings.removeVoiceNote(name, key)` (48, in a click): the note and all of it, once the person said yes (删除“…”？). */
+/** `gugu.bindings.removeVoiceNote(name, key)` (50, in a click): the note and all of it, once the person said yes (删除“…”？). */
 export async function appVoiceNoteRemove(extensionId: string, embedderId: number | null, input: unknown): Promise<AppRemoveAllAnswer> {
   const args = argsOf(voiceNoteArgsSchema, input);
   const key = noteKeyOf(args.key);
@@ -257,7 +257,7 @@ export async function appVoiceNoteRemove(extensionId: string, embedderId: number
 }
 
 /**
- * `gugu.bindings.exportVoiceNote(name, key)` (48, in a click): its title, summary and transcript as the page's 导出
+ * `gugu.bindings.exportVoiceNote(name, key)` (50, in a click): its title, summary and transcript as the page's 导出
  * Markdown writes them, where the person saves it in the host's dialog.
  */
 export async function appVoiceNoteExport(extensionId: string, embedderId: number | null, input: unknown): Promise<AppExportAnswer> {
