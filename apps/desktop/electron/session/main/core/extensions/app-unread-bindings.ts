@@ -267,7 +267,7 @@ export async function setBindingSurfacePanel(
  */
 export async function tellSurfaceIntent(
   extensionId: string,
-  intent: string,
+  intent: AppSurfaceIntent,
   pages: readonly { tabName: string; tabId: string; person: boolean; uncover(): Promise<unknown>; tell(surface: AppBindingSurface): boolean }[],
 ): Promise<boolean> {
   const name = conversationSurfaceBinding(extensionsService().get(extensionId).manifest);

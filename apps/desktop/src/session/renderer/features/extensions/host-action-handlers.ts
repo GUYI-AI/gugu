@@ -338,6 +338,8 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       const { figure, ownerId, who } = action;
       return import('../apps/app-host-layer').then(({ setAssistantFigure, pageKey }) => setAssistantFigure(extensionId, figure && ownerId ? { figure, ownerId, who, from: pageKey(sessionId, tabId) } : null));
     }
+    case 'openAssistantConnector':
+      return import('../apps/assistant-app-counts').then(({ openAssistantConnector }) => openAssistantConnector(action.id, action.ownerId));
     case 'toast':
       // The host's own toast, as the built-in 「更改已保存」: the text alone.
       toast({ title: action.text });

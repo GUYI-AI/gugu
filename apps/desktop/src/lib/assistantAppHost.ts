@@ -17,6 +17,7 @@ import {
   type ShownAssistant,
 } from '@shared/extensions/assistant-binding'
 import { requestAssistantClose } from './assistantClose'
+import { assistantTintHue } from './assistantTint'
 import { readAssistantShellBridge, type AssistantShellActions, type AssistantShellBridge, type AssistantShellSnapshot } from './assistantShellBridge'
 import { UI_EVENTS } from './uiEvents'
 
@@ -97,21 +98,28 @@ const CLOUD_ANSWERS = new Set(['awake', 'asleep', 'waking'])
 export function appAssistantStatusOf(snapshot: AssistantShellSnapshot, face: string | null): ShownAssistant {
   const found = snapshot.assistantState === 'found' && snapshot.assistant ? snapshot.assistant : null
   const home = snapshot.home
+  // 主题色 = 它那只鸟的身体色相(内置视图 `.ta-app` 的 --ta-tint-h 同一个);照片头像没有 = null。
+  const tint = found ? assistantTintHue(found.id, found.avatar) ?? null : null
   return {
     assistant: snapshot.assistantState,
     name: found ? found.display_name.slice(0, NAME_MAX) : null,
     avatar: found && face && isAssistantFace(face) ? face : null,
+    tint: tint !== null && Number.isFinite(tint) && tint >= 0 && tint <= 360 ? tint : null,
     home: !home ? null
-      : home.kind === 'cloud' ? { kind: 'cloud', online: CLOUD_ANSWERS.has(snapshot.cloud?.state ?? '') }
-      : { kind: home.hostKind === 'server' ? 'server' : home.thisDevice ? 'this-computer' : 'other-computer', online: home.online },
+      : home.kind === 'cloud' ? { kind: 'cloud', online: CLOUD_ANSWERS.has(snapshot.cloud?.state ?? ''), label: null }
+      : { kind: home.hostKind === 'server' ? 'server' : home.thisDevice ? 'this-computer' : 'other-computer', online: home.online, label: textOrNull(home.label) },
     setup: snapshot.setup,
     preparing: snapshot.preparing,
     cloudAvailable: snapshot.cloudAvailable,
     member: snapshot.member,
     // 失败那一类是个词;万一不是(❌ 原话、❌ 码里带别的),就说「出了问题」那一类。
     loadError: snapshot.loadError === null ? null : isFailureClass(snapshot.loadError) ? snapshot.loadError : 'failed',
+    ownerName: textOrNull(snapshot.ownerName),
   }
 }
+
+/** A name as a person gave it, trimmed; nothing (or only spaces) = null. */
+const textOrNull = (text: string | null | undefined) => text?.trim().slice(0, NAME_MAX) || null
 
 /**
  * 壳的快照一变(或它的头像画好了)就按 App 能看的那几项交给主进程;没变不交。`face` 画头像(lib/memberFaces 的 memberFace),

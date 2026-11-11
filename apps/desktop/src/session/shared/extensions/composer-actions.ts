@@ -29,11 +29,6 @@ export type ComposerRunKind = (typeof COMPOSER_RUN_KINDS)[number];
 /** The binding action each run needs (and so its capability, `BINDING_ACTION_CAPABILITY`). */
 export const COMPOSER_RUN_ACTION = { 'voice-note': 'voice-notes:record', draft: 'draft', 'page-intent': 'surface' } as const satisfies Record<ComposerRunKind, string>;
 
-/** The intent the host's own recording bar sends when the person opens the note it shows (no App declares it). */
-export const VOICE_NOTE_PAGE_INTENT = 'voice-note';
-/** The intents the host itself sends (its recording bar; the assistant's face and name in its row, 46): no entry may send them. */
-const HOST_INTENTS: readonly string[] = [VOICE_NOTE_PAGE_INTENT, 'profile'];
-
 // Control characters, line and paragraph separators, and the bidirectional overrides that would make a label say other
 // than it reads.
 const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
@@ -49,7 +44,8 @@ export const composerActionSchema = z.strictObject({
   run: z.discriminatedUnion('kind', [
     z.strictObject({ kind: z.literal('voice-note') }),
     z.strictObject({ kind: z.literal('draft'), text: z.strictObject({ zh: draftText, en: draftText }) }),
-    z.strictObject({ kind: z.literal('page-intent'), intent: z.string().regex(NAME).refine((intent) => !HOST_INTENTS.includes(intent), `"${VOICE_NOTE_PAGE_INTENT}" and "profile" are the host's own intents`) }),
+    // Told as `intent: { kind: "page-intent", intent }` (unread-binding.ts `AppSurfaceIntent`): never mistaken for the host's own.
+    z.strictObject({ kind: z.literal('page-intent'), intent: z.string().regex(NAME) }),
   ]),
 });
 export type ComposerAction = z.infer<typeof composerActionSchema>;

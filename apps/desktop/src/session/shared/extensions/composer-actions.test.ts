@@ -33,8 +33,10 @@ describe('composer actions in the manifest', () => {
     expect(() => parseExtensionManifest(manifest(undefined))).not.toThrow();
   });
 
-  it('below API 48: refused', () => {
-    for (const apiVersion of [44, 47]) refused(manifest([ideas], { apiVersion }), /composerActions requires apiVersion 48/);
+  it('below its API version: refused', () => {
+    for (const apiVersion of [44, COMPOSER_ACTIONS_API_VERSION - 1]) {
+      refused(manifest([ideas], { apiVersion }), new RegExp(`composerActions requires apiVersion ${COMPOSER_ACTIONS_API_VERSION}`));
+    }
   });
 
   it('each run needs its binding action: a voice note the recorder, a draft the draft', () => {
@@ -58,7 +60,6 @@ describe('composer actions in the manifest', () => {
       { ...ideas, run: { kind: 'script', code: 'alert(1)' } },
       { ...ideas, run: { kind: 'page-intent', intent: 'ideas', data: { chat: 'x' } } },
       { ...ideas, run: { kind: 'page-intent', intent: 'open ideas' } },
-      { ...ideas, run: { kind: 'page-intent', intent: 'voice-note' } },
       { ...draft, run: { kind: 'draft', text: { zh: 'x'.repeat(2001), en: 'x' } } },
       { ...draft, run: { kind: 'draft', text: '帮我看看' } },
       { ...draft, run: { kind: 'draft', text: { zh: '帮我看看' } } },

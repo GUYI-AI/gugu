@@ -49,16 +49,18 @@ async function readVolume(machine: LibraryProps['machine'], kind: UserLibraryKin
   return result
 }
 
+/** What the card's read is: its number, still loading, or failed (the card says 「暂时读不到资源」). */
+export type LibraryCountRead = number | 'loading' | 'failed'
 /**
  * #1925 The number the card shows (`FileLibraryCard`), handed to `onCount` and drawn nowhere: the same read, under the same
- * key, kept fresh the same way; null while it loads or when it failed (never 0 for that). For an App's `counts`
+ * key, kept fresh the same way; loading or failed said as such (never 0 for that). For an App's `counts`
  * (assistant-app-counts.tsx).
  */
-export function AssistantLibraryCount({ machine, kind, assistantId, onCount }: { machine: LibraryProps['machine']; kind: UserLibraryKind; assistantId: string; onCount: (count: number | null) => void }) {
+export function AssistantLibraryCount({ machine, kind, assistantId, onCount }: { machine: LibraryProps['machine']; kind: UserLibraryKind; assistantId: string; onCount: (read: LibraryCountRead) => void }) {
   const read = usePhoneRead(sourceKey(machine, kind, assistantId), () => readVolume(machine, kind), 'read Gugu library',undefined,
     () => machine?.panel ? assistantPanelLibrary(machine.panel).peekVolume(kind) : undefined)
   useLibraryNotifications(machine, kind, read.refresh)
-  const count = read.state === 'ok' ? read.data.items.length : null
+  const count: LibraryCountRead = read.state === 'ok' ? read.data.items.length : read.state === 'error' ? 'failed' : 'loading'
   useEffect(() => onCount(count), [count, onCount])
   return null
 }
