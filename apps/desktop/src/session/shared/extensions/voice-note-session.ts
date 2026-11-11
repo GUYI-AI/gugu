@@ -77,7 +77,11 @@ export const voiceNoteWatchSchema = z.strictObject({ watchId: z.string().min(1).
 /** What main asks the window that holds the recorder (`extensions.voiceNote`); answered by app-voice-note-host.ts there. */
 export type VoiceNoteWindowRequest =
   | { op: 'status' | 'pause' | 'resume' | 'stop' | 'openMicSettings'; ownerId: string; assistantId: string }
-  | { op: 'start'; ownerId: string; assistantId: string; meeting?: z.infer<typeof voiceNoteMeetingSchema> }
+  | {
+    op: 'start'; ownerId: string; assistantId: string; meeting?: z.infer<typeof voiceNoteMeetingSchema>;
+    /** #1927 (48) The host's own click (a composer entry): the window says why it did not start, as the built-in entry does. */
+    present?: true;
+  }
   | { op: 'retry'; ownerId: string; assistantId: string; job: string }
   /** The App that started this recording lost its grant: stop it — that one, still recording — and keep the note. */
   | { op: 'finish'; job: string };

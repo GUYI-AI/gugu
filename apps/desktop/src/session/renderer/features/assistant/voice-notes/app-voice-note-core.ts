@@ -31,7 +31,8 @@ export type AppVoiceNoteDeps = {
     cancel(): void;
   };
   jobs: { getSnapshot(): readonly VoiceJobView[]; subscribe(listener: () => void): () => void };
-  start(meeting?: { title: string; start: string; end: string | null }): Promise<StartOutcome>;
+  /** `present`: the host's own click — say why it did not start, as the composer's entry does (`startVoiceNoteAndSay`). */
+  start(meeting: { title: string; start: string; end: string | null } | undefined, present: boolean): Promise<StartOutcome>;
   retry(id: string): Promise<void>;
   /** The assistant the recorder's notes go to, as this window's assistant pages set it; null before any did. */
   contextAssistant(): string | null;
@@ -145,7 +146,7 @@ export function createAppVoiceNoteCore(deps: AppVoiceNoteDeps) {
   function showOnRail() {
     if (!deps.shell || deps.shell.get()) return;
     shellHandler = {
-      start: async (meeting) => (await deps.start(meeting)) === 'started',
+      start: async (meeting) => (await deps.start(meeting, true)) === 'started',
       busy: () => deps.recorder.busy,
       subscribe: deps.recorder.subscribe,
     };
@@ -196,7 +197,7 @@ export function createAppVoiceNoteCore(deps: AppVoiceNoteDeps) {
           return deps.account() === ownerId ? { ...(ready() as { state: 'ready'; view: AppVoiceNoteView }), started: { outcome: 'no_assistant' } } : { state: 'denied' };
         }
         const before = new Set(deps.jobs.getSnapshot().map((job) => job.id));
-        const outcome = await deps.start(request.meeting);
+        const outcome = await deps.start(request.meeting, request.present === true);
         if (outcome !== 'started') {
           const refused = outcome === 'interrupted' ? 'capture_failed' : outcome;
           return deps.account() === ownerId ? { state: 'ready', view: view(ownerId, assistantId), started: { outcome: refused } } : { state: 'denied' };

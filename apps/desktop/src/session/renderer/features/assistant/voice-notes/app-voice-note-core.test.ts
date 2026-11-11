@@ -31,6 +31,7 @@ function fakes() {
     outcome: 'started' as StartOutcome,
     shellHandler: null as ShellVoiceHandler | null,
     sent: [] as VoiceNoteWindowChange[],
+    presented: [] as boolean[],
   };
   const setRecorder = (patch: Partial<RecorderSnapshot>) => { world.snapshot = { ...world.snapshot, ...patch }; fire('recorder'); };
   let n = 0;
@@ -45,8 +46,9 @@ function fakes() {
       cancel: () => { world.calls.push('cancel'); setRecorder({ phase: 'idle' }); },
     },
     jobs: { getSnapshot: () => world.jobs, subscribe: sub('jobs') },
-    start: async (meeting) => {
+    start: async (meeting, present) => {
       world.calls.push(`start${meeting ? `:${meeting.title}` : ''}`);
+      world.presented.push(present);
       if (world.outcome !== 'started') return world.outcome;
       setRecorder({ phase: 'starting' });
       setRecorder({ phase: 'recording' });
@@ -182,6 +184,24 @@ describe('driving it', () => {
     expect(world.calls).toEqual(['start:Sync', 'pause', 'resume', 'stop']);
   });
 
+  it('says why it did not start only for the host\'s own click (a composer entry, the rail\'s handler) — an App\'s call leaves that to the App', async () => {
+    const { world, core } = fakes();
+    world.outcome = 'busy';
+    await core.handle({ op: 'start', ...ask });
+    await core.handle({ op: 'start', ...ask, present: true });
+    expect(world.presented).toEqual([false, true]);
+    world.outcome = 'started';
+    await core.handle({ op: 'start', ...ask });
+    await core.handle({ op: 'stop', ...ask });
+    // The handler the rail and the meeting reminder call is the host's own, as the assistant page's is.
+    world.shellHandler = null;
+    await core.handle({ op: 'start', ...ask });
+    const rail = world.shellHandler as ShellVoiceHandler | null;
+    await core.handle({ op: 'stop', ...ask });
+    await rail?.start();
+    expect(world.presented.slice(2)).toEqual([false, false, true]);
+  });
+
   it('every way it does not start, from a closed set (a recording cut short at once is a capture failure)', async () => {
     for (const outcome of ['busy', 'no_assistant', 'cancelled', 'mic_denied', 'mic_missing', 'capture_failed', 'interrupted'] as const) {
       const { world, core } = fakes();
@@ -271,8 +291,8 @@ describe('the host\'s own indicators and its lifetime', () => {
   it('another account signed in while it was starting: refused, stopped at once, not shown on the rail', async () => {
     const { world, deps, fire, core } = fakes();
     const real = deps.start;
-    deps.start = async (meeting) => {
-      const outcome = await real(meeting);
+    deps.start = async (meeting, present) => {
+      const outcome = await real(meeting, present);
       world.account = OTHER;
       fire('account');
       return outcome;
