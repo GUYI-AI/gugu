@@ -76,7 +76,12 @@ function isSubagent(item: ToolNode): item is Extract<ToolNode, { kind: 'spawn-su
  * 收成一个 `tool-group`,那层壳是排版不是调用,它没有 `toolCallId`,自然不计数。
  */
 /** What the roster reads from one entry of the runtime's subagent registry. */
-export type SubagentRegistryEntry = { toolCallId: string; steps?: readonly ToolNode[] };
+export type SubagentRegistryEntry = {
+  toolCallId: string;
+  steps?: readonly ToolNode[];
+  /** Every finished call, when `steps` is only the newest part of them (the phone's timeline). */
+  completedSteps?: number;
+};
 
 export type SubagentCall = {
   toolCallId: string;
@@ -191,7 +196,9 @@ export function collectSubagentRoster(
   };
   for (const turn of turns) scan(turn.items, turn.startedAt === undefined);
   if (activeTurn) scan(activeTurn.items, activeTurn.startedAt === undefined);
+  const completedByParent = new Map<string, number>();
   for (const agent of registry) {
+    if (agent.completedSteps !== undefined) completedByParent.set(agent.toolCallId, agent.completedSteps);
     if (!agent.steps?.length) continue;
     const byId = callsByParent.get(agent.toolCallId) ?? new Map<string, SubagentCall>();
     for (const step of agent.steps) {
@@ -226,7 +233,7 @@ export function collectSubagentRoster(
       continue;
     }
     const calls = [...(callsByParent.get(item.toolCallId)?.values() ?? [])];
-    const steps = calls.filter((call) => call.status === 'done').length;
+    const steps = completedByParent.get(item.toolCallId) ?? calls.filter((call) => call.status === 'done').length;
     const startedAt = item.agentStartedAt ?? item.startedAt;
     const elapsedMs = startedAt !== undefined ? Math.max(0, now - startedAt) : 0;
     // 同一次派发会来好几条事件 ⇒ 按 toolCallId 去重,后到的覆盖先到的(名字是后面才补齐的)。

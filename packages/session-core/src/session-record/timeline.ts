@@ -26,13 +26,15 @@ import type { TurnStart,
   TimelineBatch,
   TimelineOlderResult,
   TimelineSnapshot,
+  TimelineSubagent,
   TurnPatch
 } from './contract';
-import { TOOL_IMAGE_FETCH_LIMIT } from './contract';
+import { TIMELINE_SUBAGENT_STEPS, TOOL_IMAGE_FETCH_LIMIT } from './contract';
 import { questionAnswered, readQuestion } from './sources/question-tools';
 import { findToolImage, findToolItem } from './tool-image';
 import { TIMELINE_ARCHIVE_MAX_SOURCE_BYTES } from './archive-budget';
 import { SESSION_PLAN_ID } from '../acp/models/plan';
+import type { ToolNode } from '../acp/models/turns/tool-calls';
 
 /**
  * 一条已经折算好的时间线的存档。
@@ -198,6 +200,12 @@ class RecordTimeline implements SessionTimeline {
   private seenKeys = new Set<string>();
   /** 上一次发布出去的每一轮，按 id。用来判"这一轮到底变了没有"。 */
   private published = new Map<string, PublishedTurn>();
+  /**
+   * Running subagents' calls as last published, by launch card (#2500). `source` is the registry's step list the
+   * entry was built from: the reducer keeps the list and each untouched step by identity, so an unchanged subagent
+   * costs one comparison and a changed one marks only the steps that are new objects.
+   */
+  private publishedSteps = new Map<string, { source: readonly ToolNode[]; steps: Map<string, { step: ToolNode; seq: number }> }>();
   private removed = new Map<string, number>();
   private settlements = new Map<string, Settlement>();
   /**
@@ -313,6 +321,7 @@ class RecordTimeline implements SessionTimeline {
     // `published` 里那两串 JSON 是用来比对"这一轮变了没有"的，存下来纯属浪费（它就是整条会话）——
     // 装回来时按当前的轮重算一遍即可（一份 39MB 的记录实测 23ms）。seq 才是必须存的那一半。
     this.published = new Map();
+    this.publishedSteps = new Map();
     const byId = new Map(this.currentTurns().map((turn) => [turn.id, turn]));
     for (const entry of archive.published) {
       const turn = byId.get(entry.turnId);
@@ -468,8 +477,18 @@ class RecordTimeline implements SessionTimeline {
       ...this.recentActionsSnapshot(),
       queuedPrompts: [...this.queued],
       liveReply: this.liveReply,
-      terminals: this.terminals
+      terminals: this.terminals,
+      subagents: this.subagentSteps(null)
     };
+  }
+
+  /** Running subagents' calls: the newest ones for a snapshot (`after` null), the changed ones for a batch. */
+  private subagentSteps(after: number | null): TimelineSubagent[] {
+    return [...this.publishedSteps].map(([toolCallId, entry]) => {
+      const all = [...entry.steps.values()];
+      const steps = after === null ? all.slice(-TIMELINE_SUBAGENT_STEPS) : all.filter((step) => step.seq > after);
+      return { toolCallId, completedSteps: all.filter(({ step }) => step.status === 'done').length, steps: steps.map(({ step }) => step) };
+    });
   }
 
   /**
@@ -850,6 +869,7 @@ class RecordTimeline implements SessionTimeline {
     this.parser = new AcpTranscriptParser({ sessionId: this.deps.sessionId });
     this.seenKeys = new Set();
     this.published = new Map();
+    this.publishedSteps = new Map();
     this.removed = new Map();
     this.settlements = new Map();
     this.questionsAwaitingInput = new Map();
@@ -949,6 +969,24 @@ class RecordTimeline implements SessionTimeline {
       });
       changed = true;
     }
+    const stagedSteps = new Map<string, { source: readonly ToolNode[]; steps: Map<string, { step: ToolNode; seq: number }> }>();
+    const running = new Set<string>();
+    for (const agent of this.parser.agents) {
+      if (agent.status !== 'running' || !agent.steps?.length) continue;
+      running.add(agent.toolCallId);
+      const prior = this.publishedSteps.get(agent.toolCallId);
+      if (prior && prior.source === agent.steps) continue;
+      const steps = new Map<string, { step: ToolNode; seq: number }>();
+      for (const step of agent.steps) {
+        if (step.kind === 'tool-group') continue;
+        const was = prior?.steps.get(step.toolCallId);
+        steps.set(step.toolCallId, was && was.step === step ? was : { step, seq: nextSeq });
+      }
+      stagedSteps.set(agent.toolCallId, { source: agent.steps, steps });
+      changed = true;
+    }
+    const settledSubagents = [...this.publishedSteps.keys()].filter((id) => !running.has(id));
+    if (settledSubagents.length > 0) changed = true;
     const gone: string[] = [];
     for (const id of this.published.keys()) {
       if (!alive.has(id)) gone.push(id);
@@ -967,6 +1005,8 @@ class RecordTimeline implements SessionTimeline {
       this.published.delete(id);
       this.removed.set(id, nextSeq);
     }
+    for (const [id, entry] of stagedSteps) this.publishedSteps.set(id, entry);
+    for (const id of settledSubagents) this.publishedSteps.delete(id);
     for (const id of this.dirtySettlements) this.settlementSeq.set(id, nextSeq);
     this.dirtySettlements.clear();
     this.queuedDirty = false;
@@ -1034,7 +1074,8 @@ class RecordTimeline implements SessionTimeline {
       ...this.recentActionsSnapshot(),
       queuedPrompts: [...this.queued],
       liveReply: this.liveReply,
-      terminals: this.terminals
+      terminals: this.terminals,
+      subagents: this.subagentSteps(seq)
     };
   }
 
