@@ -100,11 +100,12 @@ type SyncProps = { busy: boolean; run: ScreenProps['run']; error: string }
 /** Cross-device sync (#2481): what this device is waiting for, or what another device asks of it. */
 function SyncStatus({ sync, busy, run, error }: SyncProps & { sync: PasswordSyncView }) {
   const [entering, setEntering] = useState(false)
-  const [shown, setShown] = useState<string>()
+  // fresh: replaces a code (after a recovery the old one is used up); the first code is not called new.
+  const [shown, setShown] = useState<{ code: string; fresh: boolean }>()
   const recover = sync.state !== 'ready' && sync.state !== 'off' && sync.recovery
     && <SettingsRow title="用恢复码恢复" description="另一台设备都不在了，就在这里输入恢复码。"
       control={<Button size="sm" disabled={busy} onClick={() => setEntering(true)}>输入恢复码</Button>} />
-  const create = async () => { const reply = await run({ type: 'sync-recovery-create' }); if (reply?.recoveryCode) setShown(reply.recoveryCode) }
+  const create = async () => { const reply = await run({ type: 'sync-recovery-create' }); if (reply?.recoveryCode) setShown({ code: reply.recoveryCode, fresh: false }) }
   const body = sync.state === 'joining' ? <SettingsGroup title="同步到这台设备">
     {sync.code
       ? <SettingsRow title="核对验证码" description="和另一台设备上的数字一样，再在那台设备上点「允许」。" control={<Code value={sync.code} />} />
@@ -128,8 +129,8 @@ function SyncStatus({ sync, busy, run, error }: SyncProps & { sync: PasswordSync
   return <>
     {body}
     {entering && <RecoverSheet busy={busy} error={error} onClose={() => setEntering(false)}
-      onSubmit={async code => { const reply = await run({ type: 'sync-recover', code }); if (reply?.recoveryCode) { setEntering(false); setShown(reply.recoveryCode) } }} />}
-    {shown && <RecoveryCodeSheet code={shown} fresh onClose={() => setShown(undefined)} />}
+      onSubmit={async code => { const reply = await run({ type: 'sync-recover', code }); if (reply?.recoveryCode) { setEntering(false); setShown({ code: reply.recoveryCode, fresh: true }) } }} />}
+    {shown && <RecoveryCodeSheet code={shown.code} fresh={shown.fresh} onClose={() => setShown(undefined)} />}
   </>
 }
 function SyncRequestRow({ request, busy, run }: SyncProps & { request: PasswordSyncRequest }) {
