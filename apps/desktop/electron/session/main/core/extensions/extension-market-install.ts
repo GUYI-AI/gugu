@@ -10,6 +10,7 @@ import { extensionsService } from './extensions-root';
 import { installPlan } from './install-plan';
 import { installPrepared, notGivenNoteOf, type InstallDependencies } from './install-prepared';
 import type { CloudExtensionMarket, MarketPrepared } from './market-catalog';
+import { marketInstallRecord } from './release/market-release';
 import type { HandedConsent } from '@shared/extensions/install-consent-flow';
 
 export interface MarketInstall {
@@ -105,7 +106,7 @@ export async function installExtensionFromMarket(
       if (plan.displaced && service.origins()[manifest.id] !== undefined) {
         throw new Error(`${manifest.id} is installed here already; it is not put in again without asking`);
       }
-      const installed = service.installFromDirectory(prepared.sourceDir, manifestDigest, 'market', undefined, undefined, prepared.source);
+      const installed = service.installFromDirectory(prepared.sourceDir, manifestDigest, 'market', undefined, undefined, marketInstallRecord(prepared));
       (dependencies.afterInstall ?? applyInstalledExtension)(installed);
       const announced = await announceInstalledChanged(dependencies.notifyInstalledChanged);
       return { installed: true, outcome: 'confirmed', ...summary, manifest: installed.manifest, rootDir: installed.rootDir, asked: false, announced };
@@ -113,6 +114,8 @@ export async function installExtensionFromMarket(
     const consent = install.consent ?? { kind: 'here' as const };
     const done = await installPrepared({
       dir: prepared.sourceDir,
+      // Where these bytes came from, with their verified release when they had one (#1931): what the install keeps.
+      marketRecord: marketInstallRecord(prepared),
       manifest,
       manifestDigest,
       origin: 'market',

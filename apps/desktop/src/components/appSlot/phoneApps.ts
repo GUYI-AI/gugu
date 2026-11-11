@@ -620,6 +620,29 @@ const market = phoneMarket(
   (relativePath) => new URL(relativePath, feeds.market).href,
 )
 
+/**
+ * #1931 An App's files as the market published them — the version this build would take, on any platform, fetched and
+ * checked as an install is (size, sha256), unpacked with the same checks, its manifest read. Never installed or run: for the
+ * data it carries (the assistant App's rules, phoneAssistantRules.ts).
+ */
+async function marketData(extensionId: string): Promise<{ files: Map<string, Uint8Array>; manifest: ExtensionManifest; source: MarketCodeSource; version: string }> {
+  const fetched = await market.fetchData(extensionId)
+  const files = await unpack(fetched.bytes)
+  const manifestBytes = files.get('manifest.json')
+  if (!manifestBytes) throw new Error('Missing manifest.json in the package')
+  let raw: unknown
+  try {
+    raw = JSON.parse(new TextDecoder().decode(manifestBytes))
+  } catch {
+    throw new Error('manifest.json is not valid JSON')
+  }
+  const manifest = parseExtensionManifest(raw)
+  if (manifest.id !== extensionId || manifest.version !== fetched.version) {
+    throw new Error(`The package holds ${manifest.id}@${manifest.version}, not ${extensionId}@${fetched.version}`)
+  }
+  return { files, manifest, source: fetched.source, version: fetched.version }
+}
+
 /** Packages read for an ask handed back (`return`), kept until the person's yes installs them (`given`): never fetched twice. */
 const held = new Map<string, ReadPackage & { source: MarketCodeSource; releaseNotes: string }>()
 
@@ -978,6 +1001,7 @@ export const phoneApps = {
   installAttachment,
   installFromMarket,
   market,
+  marketData,
   marketUpdates,
   /**
    * The record of an App installed here (null: not installed, or shipped): where it came from, where in the market its code

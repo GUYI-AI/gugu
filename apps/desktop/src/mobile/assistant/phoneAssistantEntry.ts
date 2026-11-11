@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
 import { ASSISTANT_APP_ID, assistantLayerEntry, type AssistantLayerEntry } from '@/session/shared/extensions/assistant-entry'
 import type { AppAssistantStatus } from '@/session/shared/extensions/assistant-binding'
-import { isFailureClass, NAME_MAX, isAssistantFace } from '@/session/shared/extensions/assistant-binding'
+import { appAssistantCountsOf, isFailureClass, NAME_MAX, isAssistantFace } from '@/session/shared/extensions/assistant-binding'
 import { phoneInstalledApp } from '@/components/appSlot/phoneBindingPorts'
 import type { PhoneAssistantState } from './usePhoneAssistant'
 
@@ -61,5 +61,7 @@ export function phoneAssistantStatusOf(state: PhoneAssistantState, face: string 
     cloudAvailable: cloud.available,
     member: null,
     loadError: cloud.loadError ? (isFailureClass(String(cloud.loadError)) ? String(cloud.loadError) : 'failed') : null,
+    // The 资料 rows' numbers are read by those pages, not by this layer: not known here (null), never 0.
+    counts: found ? appAssistantCountsOf({ devices: null, connectedApps: null, projects: null, capabilities: null }) : null,
   }
 }

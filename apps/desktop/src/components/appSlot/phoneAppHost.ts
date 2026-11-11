@@ -80,6 +80,8 @@ import { closeAppModal, focusAppModalClose, showAppModal } from '../appModal/app
 import { APP_FORWARD_FILES_EVENT, APP_SESSION_FRAME_NAME } from '../../session/shared/extensions/app-runtime-protocol'
 import { answerPhoneBinding, createPhoneBindings } from './phoneAppBindings'
 import { phoneBindingPorts } from './phoneBindingPorts'
+import { appToast } from '../../session/shared/extensions/app-toast'
+import { toast } from '../../session/renderer/lib/hooks/use-toast'
 
 const log = rendererLogger('app-slot/phone-host')
 
@@ -565,6 +567,15 @@ export function hostAppFrame(
     if (bound) return bound
     if (method === 'dispatch' && args.to && typeof args.to === 'object' && Object.hasOwn(args.to, 'binding')) return phoneBindings.draft(hosted.binding.extensionId, args)
     switch (method) {
+      case 'toast':
+        // #1925 (44) The host's own toast, by the desktop's rule (app-toast.ts): a page on a phone is the person's; on screen =
+        // this frame laid out, focused = the app in front.
+        return appToast({
+          extensionId: hosted.binding.extensionId,
+          person: true,
+          onScreen: frame.isConnected && frame.offsetParent !== null && frame.clientWidth > 0,
+          focused: () => document.visibilityState === 'visible' && document.hasFocus(),
+        }, args, async (action) => { if (action.kind === 'toast') toast({ title: action.text }) })
       case 'linkTo': {
         const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
         if (!manifest) refused('not-installed', 'This App is not installed')

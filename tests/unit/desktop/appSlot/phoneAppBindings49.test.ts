@@ -25,7 +25,7 @@ const SCHEDULE = '1a000000-0000-4000-8000-000000000048'
 const WORK = '2a000000-0000-4000-8000-000000000048'
 
 const ALL_CAPABILITIES = ['chat:unread', 'chat:files', 'chat:draft', 'chat:surface', 'chat:resources', 'chat:resources:write',
-  'chat:schedules', 'chat:schedules:control', 'assistant:status', 'assistant:open', 'chat:work'] as const
+  'chat:schedules', 'chat:schedules:control', 'assistant:status', 'assistant:open', 'assistant:rename', 'chat:work'] as const
 function assistantManifest(overrides: Record<string, unknown> = {}): ExtensionManifest {
   return parseExtensionManifest({
     id: ASSISTANT_APP_ID, name: 'Assistant', version: '1.0.0', apiVersion: PHONE_BINDING_API_VERSION, defaultLocale: 'en', platforms: ['desktop', 'phone'],
@@ -34,7 +34,7 @@ function assistantManifest(overrides: Record<string, unknown> = {}): ExtensionMa
       capabilities: [...ALL_CAPABILITIES],
       bindings: [{
         name: 'main', kind: 'conversation',
-        actions: ['unread', 'files', 'draft', 'surface', 'resources', 'resources:write', 'schedules', 'schedules:control', 'assistant-status', 'assistant-open', 'work'],
+        actions: ['unread', 'files', 'draft', 'surface', 'resources', 'resources:write', 'schedules', 'schedules:control', 'assistant-status', 'assistant-open', 'assistant-rename', 'work'],
         domains: { resources: ['memory', 'files', 'voice-notes'], 'resources:write': ['memory'] },
       }],
     },
@@ -44,7 +44,7 @@ function assistantManifest(overrides: Record<string, unknown> = {}): ExtensionMa
 }
 function install(overrides: Partial<PhoneInstalledApp> = {}): PhoneInstalledApp {
   return {
-    manifest: assistantManifest(), origin: 'market', marketSource: { repo: 'GUYI-AI/gugu-apps' }, manifestDigest: 'd1',
+    manifest: assistantManifest(), origin: 'market', marketSource: { repo: 'GUYI-AI/gugu-apps', path: `releases/${ASSISTANT_APP_ID}/1.0.0` }, manifestDigest: 'd1',
     activeVariant: 'upstream', enabled: true, mainTabKind: `${ASSISTANT_APP_ID}.panel`, ...overrides,
   }
 }
@@ -69,7 +69,7 @@ type World = {
   during: (() => void) | null
 }
 let world: World
-const actions = { move: vi.fn(), open: vi.fn(), openWork: vi.fn() } satisfies PhoneLayerActions
+const actions = { move: vi.fn(), open: vi.fn(), openWork: vi.fn(), rename: vi.fn(async (_agentId: string, _name: string) => undefined) } satisfies PhoneLayerActions
 const drafted: { chatId: string; text: string }[] = []
 const commits: unknown[] = []
 
@@ -95,6 +95,7 @@ function ports(): PhoneBindingPorts {
       resourceChat: () => wait(() => world.resourceChat),
     },
     draft: async (chatId, text) => { drafted.push({ chatId, text }) },
+    renameAssistant: (agentId, name) => actions.rename(agentId, name),
     panel: {
       client: {
         snapshot: async () => world.snapshot,
@@ -130,14 +131,14 @@ function ports(): PhoneBindingPorts {
 }
 const FOUND: AppAssistantStatus = {
   assistant: 'found', name: 'Pip', avatar: null, home: { kind: 'cloud', online: true }, setup: null, preparing: false,
-  cloudAvailable: true, member: null, loadError: null,
+  cloudAvailable: true, member: null, loadError: null, counts: { devices: null, connectedApps: null, projects: null, capabilities: null },
 }
 
 beforeEach(() => {
   world = {
     account: { token: 't', ownerId: OWNER }, app: install(), assistant: { agentId: AGENT, chatId: CHAT, deviceId: DEVICE },
     conversation: { kind: 'dm', members: [OWNER, AGENT] }, resourceChat: CHAT,
-    shown: { ownerId: OWNER, extensionId: ASSISTANT_APP_ID, tabId: 'assistant-layer', section: 'today' },
+    shown: { ownerId: OWNER, extensionId: ASSISTANT_APP_ID, tabId: 'assistant-layer', section: 'today', hostPage: false },
     status: { ownerId: OWNER, status: FOUND }, work: null, openWork: null,
     snapshot: { version: 1, revision: '9', items: [panelItem('memory', '__collection__', { state: 'ready' }), panelItem('memory', 'notes/a.md', { title: 'A', relativePath: 'notes/a.md', secret: 'x' })], application: [] },
     during: null,
@@ -145,6 +146,7 @@ beforeEach(() => {
   actions.move.mockReset()
   actions.open.mockReset()
   actions.openWork.mockReset()
+  actions.rename.mockReset()
   drafted.length = 0
   commits.length = 0
 })
@@ -155,14 +157,16 @@ describe('the assistant\'s place: App or built-in (assistantLayerEntry)', () => 
   const entry = (overrides: Partial<AssistantAppInstall> | null) => assistantLayerEntry(overrides === null ? null : install(overrides as Partial<PhoneInstalledApp>), 'phone')
   it('is the App only for the trusted official App with everything the layer needs', () => {
     expect(entry({})).toEqual({ entry: 'app', extensionId: ASSISTANT_APP_ID, tabKind: `${ASSISTANT_APP_ID}.panel`, binding: 'main' })
-    expect(entry({ marketSource: { repo: 'shuxueshuxue/gugu-apps' } }).entry).toBe('app')
+    expect(entry({ marketSource: { repo: 'shuxueshuxue/gugu-apps', path: `releases/${ASSISTANT_APP_ID}/1.0.0` } }).entry).toBe('app')
   })
   it.each([
     ['not installed', null, /not installed/],
     ['another App', { manifest: assistantManifest({ id: 'look-alike' }) }, /not gugu-assistant/],
     ['from a chat', { origin: 'attachment' }, /not the market/],
     ['no market record', { marketSource: null }, /no record/],
-    ['someone else\'s repository', { marketSource: { repo: 'evil/gugu-apps' } }, /evil\/gugu-apps/],
+    ['someone else\'s repository', { marketSource: { repo: 'evil/gugu-apps', path: `releases/${ASSISTANT_APP_ID}/1.0.0` } }, /evil\/gugu-apps/],
+    ['not its signed release folder', { marketSource: { repo: 'GUYI-AI/gugu-apps', path: `sources/${ASSISTANT_APP_ID}` } }, /signed release folder/],
+    ['another version\'s release folder', { marketSource: { repo: 'GUYI-AI/gugu-apps', path: `releases/${ASSISTANT_APP_ID}/0.9.0` } }, /signed release folder/],
     ['a fork in use', { activeVariant: 'mine' }, /fork/],
     ['switched off', { enabled: false }, /switched off/],
     ['no phone', { manifest: assistantManifest({ platforms: ['desktop'] }) }, /does not declare phone/],
@@ -336,9 +340,43 @@ describe('the layout signal and the unsupported-here states', () => {
     world.app = install({ manifest: { ...base, permissions: { ...base.permissions, capabilities: base.permissions!.capabilities!.filter((c) => c !== 'assistant:open') } } as ExtensionManifest })
     expect(await codeOf(createPhoneBindings(ports()).assistantAdvanceSetup(ASSISTANT_APP_ID, { name: 'main', next: 'done' }))).toBe('denied')
   })
+  it('renames the assistant by the built-in field\'s rule, the way 自定义 saves it', async () => {
+    const bindings = createPhoneBindings(ports())
+    expect(await bindings.assistantRename(ASSISTANT_APP_ID, { name: 'main', text: '  Kiwi ' })).toBe('renamed')
+    expect(actions.rename).toHaveBeenCalledExactlyOnceWith(AGENT, 'Kiwi')
+    expect(await bindings.assistantRename(ASSISTANT_APP_ID, { name: 'main', text: 'Pip' })).toBe('unchanged')
+    expect(await bindings.assistantRename(ASSISTANT_APP_ID, { name: 'main', text: '   ' })).toBe('empty')
+    expect(await bindings.assistantRename(ASSISTANT_APP_ID, { name: 'main', text: 'x'.repeat(31) })).toBe('too-long')
+    actions.rename.mockRejectedValueOnce(new Error('offline'))
+    expect(await bindings.assistantRename(ASSISTANT_APP_ID, { name: 'main', text: 'Kiwi' })).toBe('failed')
+    expect(actions.rename).toHaveBeenCalledTimes(2)
+    // Refused before anything is saved: another binding, an App not bound here, or a name the layer has not shown.
+    expect(await codeOf(bindings.assistantRename(ASSISTANT_APP_ID, { name: 'other', text: 'Kiwi' }))).toBe('denied')
+    world.status = { ownerId: OTHER, status: FOUND }
+    expect(await codeOf(bindings.assistantRename(ASSISTANT_APP_ID, { name: 'main', text: 'Kiwi' }))).toBe('failed')
+    world.status = { ownerId: OWNER, status: FOUND }
+    world.app = install({ origin: 'attachment' })
+    expect(await codeOf(bindings.assistantRename(ASSISTANT_APP_ID, { name: 'main', text: 'Kiwi' }))).toBe('not-found')
+    expect(actions.rename).toHaveBeenCalledTimes(2)
+  })
+  it('answers the figure unsupported on a phone (its header draws the face), only to an App that may ask', async () => {
+    const bindings = createPhoneBindings(ports())
+    expect(await bindings.assistantFigure(ASSISTANT_APP_ID, { name: 'main', figure: { x: 0, y: 0, size: 64 } })).toEqual({ name: 'main', state: 'unsupported' })
+    expect(await bindings.assistantFigure(ASSISTANT_APP_ID, { name: 'main', figure: null })).toEqual({ name: 'main', state: 'unsupported' })
+    expect(await codeOf(bindings.assistantFigure(ASSISTANT_APP_ID, { name: 'other', figure: null }))).toBe('denied')
+    expect(await codeOf(bindings.assistantFigure(ASSISTANT_APP_ID, { name: 'main', figure: { x: 0, y: 0, size: 2 } }))).toBe('invalid')
+  })
+  it('says a phone screen is drawn over the page (hostPage) only for this App and account', async () => {
+    const bindings = createPhoneBindings(ports())
+    expect(await bindings.assistantStatus(ASSISTANT_APP_ID, { name: 'main' })).toMatchObject({ state: 'ready', hostPage: false })
+    world.shown = { ...world.shown!, hostPage: true }
+    expect(await bindings.assistantStatus(ASSISTANT_APP_ID, { name: 'main' })).toMatchObject({ state: 'ready', hostPage: true })
+    world.shown = { ...world.shown!, extensionId: 'another-app' }
+    expect(await bindings.assistantStatus(ASSISTANT_APP_ID, { name: 'main' })).toMatchObject({ state: 'ready', hostPage: false })
+  })
   it('answers the assistant\'s status from the layer, for this account only', async () => {
     const bindings = createPhoneBindings(ports())
-    expect(await bindings.assistantStatus(ASSISTANT_APP_ID, { name: 'main' })).toEqual({ name: 'main', state: 'ready', status: FOUND })
+    expect(await bindings.assistantStatus(ASSISTANT_APP_ID, { name: 'main' })).toEqual({ name: 'main', state: 'ready', status: FOUND, hostPage: false })
     world.status = { ownerId: OTHER, status: FOUND }
     expect(await bindings.assistantStatus(ASSISTANT_APP_ID, { name: 'main' })).toEqual({ name: 'main', state: 'unavailable' })
     world.status = { ownerId: OWNER, status: { ...FOUND, assistant: 'none', name: 'x' } }

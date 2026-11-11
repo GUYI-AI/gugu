@@ -9,10 +9,13 @@ import type { PushedWorkLedger } from '../../session/shared/extensions/work-bind
  * (phoneAppBindings.ts), which believes it only for the conversation the binding reaches, checked again on every answer.
  * Nothing here is an App's to write.
  */
-export type PhoneLayerShown = { ownerId: string; extensionId: string; tabId: string; section: PhoneSurfaceSection }
+/** `hostPage`: one of the phone's own screens is drawn over the App's page now (`gugu.assistant.open`, its settings, …). */
+export type PhoneLayerShown = { ownerId: string; extensionId: string; tabId: string; section: PhoneSurfaceSection; hostPage: boolean }
 export type PhoneLayerActions = {
   move(section: PhoneSurfaceSection): void
   open(screen: PhoneAssistantScreen): void
+  /** The layer's own assistant renamed as 自定义 saves a name (refused for any other agent). */
+  rename(agentId: string, name: string): Promise<void>
   /** The task's own conversation, drawn by the layer over the 任务 section (its back closes it); null closes it. */
   openWork(work: { workId: string; sessionId: string } | null): void
 }

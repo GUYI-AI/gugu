@@ -27,6 +27,7 @@ export const PHONE_CAPABILITY_SUPPORT = {
   'chat:schedules:control': 'available',
   'assistant:status': 'available',
   'assistant:open': 'available',
+  'assistant:rename': 'available',
   'chat:work': 'available',
   'agents:read': 'available',
   'agents:read:all': 'agent',

@@ -56,7 +56,7 @@ const PHONE: ReadonlySet<HostMember> = new Set<HostMember>([
   'bindings.resources', 'bindings.resource', 'bindings.watch', 'bindings.save', 'bindings.remove', 'onBindingResources',
   'bindings.schedules', 'bindings.watchSchedules', 'bindings.controlSchedule', 'onSchedulesChanged',
   'bindings.work', 'bindings.openWork', 'bindings.closeWork', 'bindings.onWork',
-  'assistant.status', 'assistant.open', 'assistant.advanceSetup', 'onAssistantChanged',
+  'assistant.status', 'assistant.open', 'assistant.advanceSetup', 'assistant.rename', 'assistant.figure', 'onAssistantChanged', 'toast',
   'appFiles.open', 'appFiles.reopen', 'appFiles.close', 'appFiles.list', 'appFiles.read', 'appFiles.readText', 'appFiles.exists', 'appFiles.draft', 'appFiles.writeText', 'appFiles.search', 'appFiles.recent', 'appFiles.create', 'appFiles.viewPreferences',
   'appFiles.keep', 'appFiles.remove', 'appFiles.canDelete', 'appFiles.rename', 'appFiles.mkdir', 'appFiles.move', 'appFiles.watch', 'appFiles.replace',
   'appFiles.versions', 'appFiles.readVersion', 'appFiles.upload', 'appFiles.writeChunk', 'appFiles.openWith', 'appFiles.download', 'appFiles.forward',

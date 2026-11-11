@@ -424,6 +424,10 @@ export default {
     "sendFailed": "发送失败，请重试",
     "verifyFailed": "验证失败，请重试"
   },
+  "assistantRules": {
+    "stuckTitle": "咕咕暂时无法启动",
+    "stuckBody": "它需要「咕咕助理」App，目前没能装上或已停用。联网或重新启用后会自动继续。"
+  },
   "brand": {
     "name": "咕咕"
   },

@@ -97,6 +97,11 @@ export function phoneBindingPorts(files: ReturnType<typeof createAppFiles>): Pho
       // The one way a draft reaches a chat's composer on this page (MainLayout): the assistant's chat comes up in its layer.
       composeChatDraft({ chatId, text })
     },
+    async renameAssistant(agentId, name) {
+      const actions = phoneAssistantLayer.actions()
+      if (!actions) throw failed('The assistant is not open on this phone now: try again in a moment')
+      await actions.rename(agentId, name)
+    },
     panel: {
       client: lazyPanelClient,
       snapshot: (_ownerId, agentId) => withAssistantPanelReadDeadline(() => lazyPanelClient.snapshot(agentId)),

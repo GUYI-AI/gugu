@@ -203,6 +203,13 @@ run(process.execPath, [join(root, 'scripts', 'build', 'build-frpc-bundle.mjs'), 
   cpSync(join(root, 'frpc-bundle', `${miseOs}-${arch}`, 'LICENSE'), join(frpcDir, 'LICENSE'))
 }
 
+// #1931 助理 App 的规则,按 scripts/assistant-rules-seed.json 钉的版本取(没钉 = 不带):离线升级的机器先用它。
+// 放在 app/assistant-rules-seed,assistant-rules-root.ts 按应用路径找到。
+run(process.execPath, [join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'), join(root, 'scripts', 'build', 'assistant-rules-seed.ts')], { cwd: root })
+if (existsSync(join(root, 'assistant-rules-seed', 'seed.json'))) {
+  cpSync(join(root, 'assistant-rules-seed'), join(stage, 'app', 'assistant-rules-seed'), { recursive: true })
+}
+
 // 自带 Node:服务器上不要求装任何东西。
 const nodeDir = join(stage, 'node')
 if (process.env.GUGU_SERVER_SKIP_NODE_DOWNLOAD === '1') {

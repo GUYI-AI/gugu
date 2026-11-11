@@ -37,6 +37,7 @@ import type { PhoneAssistantScreen, PhoneSurfaceSection } from '@/session/shared
 import { PHONE_ASSISTANT_LAYER_TAB, usePhoneAssistantEntry } from './phoneAssistantEntry'
 import { PhoneAssistantWorkLedger } from './PhoneAssistantWorkLedger'
 import { phoneWorkChats } from './phoneWorkChats'
+import { useContactsStore } from '@/store/contactsContext'
 import { PhoneIdeas } from './PhoneIdeas'
 import { PhoneMemory } from './PhoneMemory'
 import { PhoneProfile } from './PhoneProfile'
@@ -156,7 +157,7 @@ function MobileAssistantAppContent({
   const { user: signedIn } = useAuth()
   const ownerId = signedIn?.id ?? null
   const hostScreen = Boolean(app && sub)
-  useLayerForApp(app, ownerId, visible, appSection.current, open, assistant.id)
+  useLayerForApp(app, ownerId, visible, appSection.current, hostScreen, open, assistant.id)
   const pageBody = useRef<HTMLElement | null>(null)
   const pageScroll = useRef(new Map<string, number>())
   const pageKey = `${tab}:${sub ?? ''}`
@@ -315,17 +316,24 @@ function MobileAssistantAppContent({
  * assistant (PHONE_ASSISTANT_SCREENS), draw a task's conversation over 任务.
  */
 function useLayerForApp(app: Extract<AssistantLayerEntry, { entry: 'app' }> | null, ownerId: string | null, visible: boolean,
-  section: PhoneSurfaceSection, open: (route: PhoneRoute) => void, assistantId: string) {
+  section: PhoneSurfaceSection, hostPage: boolean, open: (route: PhoneRoute) => void, assistantId: string) {
   const extensionId = app?.extensionId ?? null
   useEffect(() => {
-    phoneAssistantLayer.report(extensionId && ownerId && visible ? { ownerId, extensionId, tabId: PHONE_ASSISTANT_LAYER_TAB, section } : null)
-  }, [extensionId, ownerId, visible, section])
+    phoneAssistantLayer.report(extensionId && ownerId && visible ? { ownerId, extensionId, tabId: PHONE_ASSISTANT_LAYER_TAB, section, hostPage } : null)
+  }, [extensionId, ownerId, visible, section, hostPage])
   useEffect(() => () => phoneAssistantLayer.report(null), [])
   const openRef = useRef(open)
   openRef.current = open
+  const { updateAgentProfile } = useContactsStore()
+  const renameRef = useRef(updateAgentProfile)
+  renameRef.current = updateAgentProfile
   useEffect(() => {
     if (!extensionId) return undefined
     return phoneAssistantLayer.provide({
+      rename: async (agentId, name) => {
+        if (agentId !== assistantId) throw Object.assign(new Error('Not this layer\'s assistant'), { code: 'denied' })
+        await renameRef.current(agentId, { name })
+      },
       move: (next) => { showAssistantTaskChat(null); openRef.current({ tab: next }) },
       open: (screen: PhoneAssistantScreen) => {
         if ('confirm' in screen) requestAssistantClose()

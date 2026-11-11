@@ -8,7 +8,7 @@ import {
 import { DEFAULT_TEXT_MAX_BYTES, type AppFileEntry } from '../../session/shared/extensions/app-runtime-protocol'
 import type { PathText } from '../../session/shared/extensions/app-files-core'
 import { dispatchCallOf } from '../../session/shared/extensions/app-dispatch-core'
-import { ASSISTANT_SCREENS, withoutAssistant, type AppAssistantRead, type AppAssistantStatus } from '../../session/shared/extensions/assistant-binding'
+import { ASSISTANT_SCREENS, assistantFigureSchema, renameCheck, withoutAssistant, type AppAssistantRead, type AppAssistantStatus, type AssistantRenameResult } from '../../session/shared/extensions/assistant-binding'
 import { assistantLayerEntry, type AssistantAppInstall } from '../../session/shared/extensions/assistant-entry'
 import { domainState, refusedOrUnavailable, savedData, writeOutcome } from '../../session/shared/extensions/bound-resources-core'
 import type { ExtensionHostEvent } from '../../session/shared/extensions/bridge-protocol'
@@ -55,6 +55,8 @@ export interface PhoneBindingPorts {
   }
   /** Words into that chat's composer (the layer's conversation comes up); nothing is sent. */
   draft(chatId: string, text: string): Promise<void>
+  /** The assistant renamed the way 自定义 renames it (its identity in the cloud and this phone's contacts). */
+  renameAssistant(agentId: string, name: string): Promise<void>
   panel: {
     /** The assistant panel's client as the person (its schedules are read and changed through it, #1928). */
     client: AssistantPanelClient
@@ -111,7 +113,7 @@ function declared(app: PhoneInstalledApp, name: string, action: ConversationBind
 
 /** One installation as it is now: an update, a switch, a reinstall from elsewhere is another. */
 function stampOf(app: PhoneInstalledApp | null): string {
-  return app ? JSON.stringify([app.manifest.id, app.manifest.version, app.manifestDigest, app.origin ?? null, app.marketSource?.repo ?? null, app.enabled, app.activeVariant]) : 'none'
+  return app ? JSON.stringify([app.manifest.id, app.manifest.version, app.manifestDigest, app.origin ?? null, app.marketSource?.repo ?? null, app.marketSource?.path ?? null, app.enabled, app.activeVariant]) : 'none'
 }
 
 type Bound = { ownerId: string; token: string; chatId: string; agentId: string; deviceId: string; handle: string; recheck(): void }
@@ -614,15 +616,20 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     const shown = ports.layer.status()
     return shown?.ownerId === ownerId && shown.status.assistant !== 'found' ? { ownerId, status: withoutAssistant(shown.status) } : null
   }
+  /** Whether one of the phone's own screens is drawn over this App's page in the layer now (#1925 `hostPage`). */
+  const hostPageOver = (extensionId: string, ownerId: string) => {
+    const shown = ports.layer.shown()
+    return shown?.extensionId === extensionId && shown.ownerId === ownerId && shown.hostPage
+  }
   async function readStatus(extensionId: string, name: string): Promise<AppAssistantRead> {
     const none = noAssistant(extensionId, name, 'assistant-status')
-    if (none) return { name, state: 'ready', status: none.status }
+    if (none) return { name, state: 'ready', status: none.status, hostPage: hostPageOver(extensionId, none.ownerId) }
     const at = await boundOrUnavailable(extensionId, name, ['assistant-status'])
     if (at === 'unavailable') return { name, state: 'unavailable' }
     if (!at) return { name, state: 'unbound' }
     const shown = ports.layer.status()
     if (!shown || shown.ownerId !== at.ownerId) return { name, state: 'unavailable' }
-    return { name, state: 'ready', status: shown.status.assistant === 'found' ? shown.status : withoutAssistant(shown.status) }
+    return { name, state: 'ready', status: shown.status.assistant === 'found' ? shown.status : withoutAssistant(shown.status), hostPage: hostPageOver(extensionId, at.ownerId) }
   }
   async function assistantStatus(extensionId: string, input: unknown): Promise<AppAssistantRead> {
     const { name } = argsOf(z.strictObject({ name: z.string() }), input, 'gugu.assistant.status takes the binding\'s name alone')
@@ -650,6 +657,38 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
     const { name } = argsOf(z.strictObject({ name: z.string(), next: z.enum(['ready', 'done']) }), input,
       'gugu.assistant.advanceSetup takes the binding\'s name and "ready" or "done"')
     declared(installed(extensionId), name, 'assistant-open')
+    return unsupportedHere(name)
+  }
+  /**
+   * `assistant.rename(name, text)` (44, `assistant:rename`, in a click): the bound assistant renamed by the built-in field's
+   * rule (`renameCheck`, against the name the layer shows) the way 自定义 saves a name. A closed answer.
+   */
+  async function assistantRename(extensionId: string, input: unknown): Promise<AssistantRenameResult> {
+    const { name, text } = argsOf(z.strictObject({ name: z.string(), text: z.string().max(1000) }), input,
+      'gugu.assistant.rename takes the binding\'s name and the new name')
+    const at = await bound(extensionId, name, ['assistant-rename'])
+    if (!at) throw coded('not-found', `No conversation is bound for "${name}" on this phone`)
+    const shown = ports.layer.status()
+    if (shown?.ownerId !== at.ownerId || shown.status.assistant !== 'found') throw coded('failed', 'The assistant is not shown on this phone yet: try again in a moment')
+    const check = renameCheck(text, shown.status.name)
+    if ('result' in check) return check.result
+    try {
+      await ports.renameAssistant(at.agentId, check.name)
+      at.recheck()
+    } catch (error) {
+      if (codeOf(error) === 'denied') throw error
+      return 'failed'
+    }
+    return 'renamed'
+  }
+  /**
+   * `assistant.figure(name, figure)` (44): on a phone the layer's own header already draws the assistant's face; nothing is
+   * laid over the App's page there — `unsupported`, once the App may ask.
+   */
+  async function assistantFigure(extensionId: string, input: unknown): Promise<AppBindingUnsupported> {
+    const { name } = argsOf(z.strictObject({ name: z.string(), figure: assistantFigureSchema.nullable() }), input,
+      'gugu.assistant.figure takes the binding\'s name and { x, y, size } (CSS pixels of the page), or null')
+    declared(installed(extensionId), name, 'assistant-status')
     return unsupportedHere(name)
   }
 
@@ -688,7 +727,7 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
         if (key === lastStatus) return
         lastStatus = key
         deliver(now.state === 'ready'
-          ? { type: 'assistantChanged', name: now.name, state: 'ready', status: now.status as AppAssistantStatus }
+          ? { type: 'assistantChanged', name: now.name, state: 'ready', status: now.status as AppAssistantStatus, hostPage: now.hostPage }
           : { type: 'assistantChanged', name: now.name, state: 'unbound' })
       })
     }
@@ -703,7 +742,8 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
         deliver({ type: 'bindingWork', work: now })
       })
     }
-    const offShown = ports.layer.onShown(tellSurface)
+    // A host page opening or closing over this page moves `hostPage`: told with the assistant.
+    const offShown = ports.layer.onShown(() => { tellSurface(); tellStatus() })
     const offStatus = ports.layer.onStatus(tellStatus)
     const offWork = ports.layer.onWork(tellWork)
     return () => {
@@ -719,7 +759,7 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
   return {
     get, list, read, draft, surface, setPanel, resources, resource, save, remove, watch, pageGone,
     schedules, controlSchedule, watchSchedules, work, openWork, closeWork,
-    assistantStatus, assistantOpen, assistantAdvanceSetup, attach,
+    assistantStatus, assistantOpen, assistantAdvanceSetup, assistantRename, assistantFigure, attach,
   }
 }
 export type PhoneBindings = ReturnType<typeof createPhoneBindings>
@@ -729,7 +769,7 @@ export const PHONE_BINDING_VERBS = [
   'bindingsGet', 'bindingsList', 'bindingsRead', 'bindingsSurface', 'bindingsSurfacePanel',
   'bindingsResources', 'bindingsResource', 'bindingsWatch', 'bindingsSave', 'bindingsRemove',
   'bindingsSchedules', 'bindingsSchedulesWatch', 'bindingsScheduleControl', 'bindingsWork', 'bindingsOpenWork', 'bindingsCloseWork',
-  'assistantStatus', 'assistantOpen', 'assistantAdvanceSetup',
+  'assistantStatus', 'assistantOpen', 'assistantAdvanceSetup', 'assistantRename', 'assistantFigure',
 ] as const
 
 /** One call of those, answered; `hear` carries a resource watch's events to the page. */
@@ -761,6 +801,8 @@ export function answerPhoneBinding(
     case 'assistantStatus': return bindings.assistantStatus(page.extensionId, args)
     case 'assistantOpen': return bindings.assistantOpen(page.extensionId, args)
     case 'assistantAdvanceSetup': return bindings.assistantAdvanceSetup(page.extensionId, args)
+    case 'assistantRename': return bindings.assistantRename(page.extensionId, args)
+    case 'assistantFigure': return bindings.assistantFigure(page.extensionId, args)
     default: return null
   }
 }

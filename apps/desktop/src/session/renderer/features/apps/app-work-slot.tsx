@@ -1,7 +1,7 @@
 import { useCallback, useSyncExternalStore } from 'react';
 import { appWorkSlotKey, readAppWorkChatBridge } from '@/lib/appWorkChatBridge';
 import { readShellSlots } from '@/lib/shellSlots';
-import { ExtensionSharedSlot } from '@renderer/features/extensions/extension-shared-slot';
+import { AppHostLayerFrame } from './app-host-layer';
 
 const noop = () => () => undefined;
 
@@ -27,7 +27,8 @@ export function AppWorkChatSlot({ extensionId }: { extensionId: string }) {
  */
 export function AppDockPage({ extensionId, tabKind }: { extensionId: string; tabKind: string }) {
   const workOpen = useAppWorkChatOpen(extensionId);
-  if (!workOpen) return <ExtensionSharedSlot tabKind={tabKind} tabId="dock" />;
+  // #1925 (44) Not a task: the page, or a host page over it (the App's host layer), as AppMainPanel had it.
+  if (!workOpen) return <AppHostLayerFrame extensionId={extensionId} tabKind={tabKind} />;
   return (
     <div className="flex h-full min-h-0 w-full flex-col" data-ta-scope="">
       <AppWorkChatSlot extensionId={extensionId} />

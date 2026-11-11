@@ -235,7 +235,7 @@ export async function coordinateAssistantAction(binding: AssistantWorkBinding, a
   if (record.work_result || record.client_message_id) return run(action)
   const field = record.action === 'spawn' ? 'prompt' : record.action === 'message' ? 'text' : null
   if (!field) return run(action)
-  const executorReport = (rules ?? (await assistantRules().current()).rules).texts['executor-report']
+  const executorReport = (rules ?? (await assistantRules().available()).rules).texts['executor-report']
   const store = new AssistantWorkStore(binding.memoryDir)
   const source = await binding.currentInput?.()
   const dispatchKey = binding.agentId ? createHash('sha256').update(JSON.stringify([binding.sessionId,record,source])).digest('hex') : undefined
