@@ -95,7 +95,9 @@ export type ExtensionHostAction =
    * #1925 (44) The assistant's moving figure over this App's page at `figure` (null: taken away): the bound assistant's,
    * or — `draft` — the setup guide's bird while the account has none. `ownerId` is main's checked account.
    */
-  | { kind: 'assistantFigure'; figure: import('./assistant-binding').AssistantFigure | null; ownerId: string | null; who: 'assistant' | 'draft' };
+  | { kind: 'assistantFigure'; figure: import('./assistant-binding').AssistantFigure | null; ownerId: string | null; who: 'assistant' | 'draft' }
+  /** #1925 (44) The connect dialog of one service of the connect step's list, for the assistant's home (`useOpenConnector`). */
+  | { kind: 'openAssistantConnector'; id: string; ownerId: string };
 
 export interface ExtensionHostActionCommand {
   /** The page that asked; null for a link's or a banner's click, which no page made. */

@@ -2137,7 +2137,8 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
     case 'assistantOpen':
     case 'assistantAdvanceSetup':
     case 'assistantRename':
-    case 'assistantFigure': {
+    case 'assistantFigure':
+    case 'assistantConnect': {
       // #1925 The person's own assistant, through their grant: an agent working the page is not that account.
       const page = thePage(caller);
       if (page.operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reaches none of its assistant'), { code: 'denied' });
@@ -2147,6 +2148,7 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       if (method === 'assistantOpen') return await assistant.appAssistantOpen(caller.extensionId, args, act);
       if (method === 'assistantRename') return await assistant.appAssistantRename(caller.extensionId, args, act);
       if (method === 'assistantFigure') return await assistant.appAssistantFigure(caller.extensionId, args, act);
+      if (method === 'assistantConnect') return await assistant.appAssistantConnect(caller.extensionId, args, act);
       return await assistant.appAssistantAdvanceSetup(caller.extensionId, args, act);
     }
     case 'bindingsResources':
