@@ -1,0 +1,286 @@
+{
+  "defaults/childHarness": {
+    "bytes": 6,
+    "sha256": "c857d09db23e6822e3600bc06ad8d58f92ed62bc8efd81c753f77048662cb97d"
+  },
+  "defaults/defaultModel": {
+    "bytes": 22,
+    "sha256": "812ca2f1efb288c40f56e8e52a5d45cc33669d57a06ca46cf3e6da2b8e49de29"
+  },
+  "defaults/deniedTools": {
+    "bytes": 14,
+    "sha256": "28f8986ab93b9fc3077a61a61739cf99d046434a8f4cd929c192343b66305311"
+  },
+  "defaults/profileRulesVersion": {
+    "bytes": 1,
+    "sha256": "e7f6c011776e8db7cd330b54174fd76f7d0216b612387a5ffcfb81e6f0919683"
+  },
+  "text/firstTask": {
+    "bytes": 1810,
+    "sha256": "4518c94e34c06ca9a0f40f3cd8b026e7d3b77f31d103b41719cdef36bbf0b1af"
+  },
+  "text/taskExecution": {
+    "bytes": 494,
+    "sha256": "5999482a8b0217d7a65ae4a3a365fe78905f979e8428d2bd4b79b309c370200d"
+  },
+  "text/contextCore": {
+    "bytes": 2800,
+    "sha256": "9714e930dfef1006b2825fa912a04ee885aea6579c560747b1d87451a62cef94"
+  },
+  "text/workflow": {
+    "bytes": 9704,
+    "sha256": "be2cb35ae949055b45298291a5fce0725837a1e1091257e1d5661d390cc03062"
+  },
+  "text/ownerProfileWritingRules": {
+    "bytes": 639,
+    "sha256": "79955df96f0e1d7b87e4c175f9a138294b172a0a9af3ce0d10a8226d8948ede8"
+  },
+  "text/ownerProfileMemoryName": {
+    "bytes": 12,
+    "sha256": "e8df058725699a17c279f209cc6b37487f5e0a96e81b1ea3710e45cba354bf90"
+  },
+  "text/ownerProfileIndexLine": {
+    "bytes": 60,
+    "sha256": "825a480a54558e9a20a93c7556d0108f796b8035800f80ae96b42134cd20bbd0"
+  },
+  "host/markers": {
+    "bytes": 242,
+    "sha256": "6de53b70d92b8a1e22f2c5135c629b3d0ff14ff6f93ebc2ebd7b4462d9b7c7cc"
+  },
+  "host/resourcesDirName": {
+    "bytes": 18,
+    "sha256": "3401efbf50dc46f6a5ca2d43b5c31980f584a1ebcfc6b7197ba23d1f50b85548"
+  },
+  "host/computerWorkdirName": {
+    "bytes": 9,
+    "sha256": "a39a7ffad4a3013f29da97b84f264337f234c1cf9b3c40c7c30c677a8a18609a"
+  },
+  "guide/cloud": {
+    "bytes": 16207,
+    "sha256": "a406883a1f7854fd39e6d714af6cc43d8ae25adbf22ea5ac7904d0e2004b9e01"
+  },
+  "brief/cloud/0": {
+    "bytes": 4845,
+    "sha256": "fc56f7e28187d3ecb9b906f5f02f76320cfd1da69ce2903c3ead41b123597700"
+  },
+  "brief/cloud/1": {
+    "bytes": 4904,
+    "sha256": "a0dc1dfde22ab45179dfccb69ffbdf57812c6a325c5fb07d201ce9694f0c4ae0"
+  },
+  "homePaths/cloud": {
+    "bytes": 403,
+    "sha256": "785d4a6b639b98d317fa6f5dc7b714f07cacf6b680c6e42c1da1baa36ace6b6f"
+  },
+  "guide/computer": {
+    "bytes": 16090,
+    "sha256": "9d39b40cc5190f1119de79a64cb5e1fd10aa60ce0e64bc43805a0058cc71339b"
+  },
+  "brief/computer/0": {
+    "bytes": 4656,
+    "sha256": "0962c1fdebfe98da48e0be4ebe395d955017af7731418b5a6e910b4119f5bfa0"
+  },
+  "brief/computer/1": {
+    "bytes": 4715,
+    "sha256": "98437ba4f8ee507b9925a0b96449d08c5dd0dbb40c8de7a51b8d25e1367fd451"
+  },
+  "homePaths/computer": {
+    "bytes": 419,
+    "sha256": "f393f33581efcfe34c6e4b72b2d6784c884d22990cb0897d3f91ab62071002ec"
+  },
+  "recovery/0": {
+    "bytes": 818,
+    "sha256": "411012b5c6e4948c0de127e0d2d46267c97400b721da88aad3bc4055a224fc2f"
+  },
+  "recovery/1": {
+    "bytes": 899,
+    "sha256": "e02cc2aa76d9d82ecd3812fb557c3f3155e5c0d5a0fdd4d4ca63a9d1f67dc936"
+  },
+  "ownerProfile/markdown/0": {
+    "bytes": 108,
+    "sha256": "d23cb3958e6579f846d29b4befcffe11cb045c447dec486367db2f011256799d"
+  },
+  "ownerProfile/memoryFile/0": {
+    "bytes": 198,
+    "sha256": "5dfb1fb6b67ac42dc9c760c7bda2770c22cc2d143e2136dad5f0ba5e9f8e272b"
+  },
+  "ownerProfile/markdown/1": {
+    "bytes": 45,
+    "sha256": "da8fa7b2ee5eb11e847b85a8de95b7333e75c0eea3ca007522d9af262651c27c"
+  },
+  "ownerProfile/memoryFile/1": {
+    "bytes": 135,
+    "sha256": "b15d9815a823e12b213956996ddcdc5478909868ddf3f825ce0d46518fa6715f"
+  },
+  "ownerProfile/markdown/2": {
+    "bytes": 45,
+    "sha256": "da8fa7b2ee5eb11e847b85a8de95b7333e75c0eea3ca007522d9af262651c27c"
+  },
+  "ownerProfile/memoryFile/2": {
+    "bytes": 135,
+    "sha256": "b15d9815a823e12b213956996ddcdc5478909868ddf3f825ce0d46518fa6715f"
+  },
+  "ownerProfile/index/0": {
+    "bytes": 61,
+    "sha256": "9f65ad89977cd38c50fe3ae38753e02d4d9deac8ac5253a7bd74ebcb3b800bc9"
+  },
+  "ownerProfile/index/1": {
+    "bytes": 61,
+    "sha256": "9f65ad89977cd38c50fe3ae38753e02d4d9deac8ac5253a7bd74ebcb3b800bc9"
+  },
+  "ownerProfile/index/2": {
+    "bytes": 108,
+    "sha256": "9b9550eafd4960c2a8e2c7ed13073e6eb91543a529306bfe11a5ec65896027d5"
+  },
+  "ownerProfile/index/3": {
+    "bytes": 45,
+    "sha256": "0da4928681139c651885c79943321c46b49aa553a58b94dc64ca714473b37f83"
+  },
+  "deniedTools/settings/0": {
+    "bytes": 66,
+    "sha256": "c5999160b67a1c37a6e7d65a6e3616675746f0c5097b9a88bc8d3cbe0ea34814"
+  },
+  "deniedTools/settings/1": {
+    "bytes": 66,
+    "sha256": "c5999160b67a1c37a6e7d65a6e3616675746f0c5097b9a88bc8d3cbe0ea34814"
+  },
+  "deniedTools/settings/2": {
+    "bytes": 102,
+    "sha256": "9eadecffa34de0818625276089ac319a0f7f81cea3caaab6e24c481dc8ba641f"
+  },
+  "deniedTools/settings/3": {
+    "bytes": 66,
+    "sha256": "c5999160b67a1c37a6e7d65a6e3616675746f0c5097b9a88bc8d3cbe0ea34814"
+  },
+  "upsert/0": {
+    "bytes": 16090,
+    "sha256": "9d39b40cc5190f1119de79a64cb5e1fd10aa60ce0e64bc43805a0058cc71339b"
+  },
+  "upsert/1": {
+    "bytes": 16100,
+    "sha256": "ce19bc24c44926e22c5a36c5ddf580a433d3a87c685ebf108d3125dfa3b728d1"
+  },
+  "upsert/2": {
+    "bytes": 16102,
+    "sha256": "1cc938bdc154c8b43361647e38e8c492fc6cfebb463eaa29af203fe62931d794"
+  },
+  "upsert/3": {
+    "bytes": 16094,
+    "sha256": "939ca33dc440c9480090901cc264940bebdb5d2f92dfdc800d60000153022ea9"
+  },
+  "upsert/4": {
+    "bytes": 16090,
+    "sha256": "9d39b40cc5190f1119de79a64cb5e1fd10aa60ce0e64bc43805a0058cc71339b"
+  },
+  "executionAction/0": {
+    "bytes": 606,
+    "sha256": "24e70ac95a8ffc769306d16cdf9835ee5ddfd4a6dc2699ba1d754465ae336458"
+  },
+  "executionAction/1": {
+    "bytes": 601,
+    "sha256": "d3964546a95af04d7954d092a8276a35c1144e7f7283eeb99661630dc09cc79e"
+  },
+  "executionAction/2": {
+    "bytes": 54,
+    "sha256": "d64e0e14d7c22ef6b8f29e97e353e37315c9d7ce8f52d7e78d4350f71312cfc6"
+  },
+  "executionAction/3": {
+    "bytes": 582,
+    "sha256": "67d2bef29f6dac608e2207d457aa104a092d451121ad53baf03a0dd5fc61b6fc"
+  },
+  "executionAction/4": {
+    "bytes": 17,
+    "sha256": "584e7600815c4c752e42f8f3c00aa4bf1597f13bb08ed5de443b33097e1a1751"
+  },
+  "executionAction/5": {
+    "bytes": 13,
+    "sha256": "7ea2f34019caa424e54577f9a4dea40eeb005d73997d7e4081e6c9d6c67ab157"
+  },
+  "platform/block": {
+    "bytes": 9064,
+    "sha256": "3826004aaf26d84089e6a1f96a510c6fb10da0758d29f4cb3be4e028c772a12b"
+  },
+  "platform/assistant/alone": {
+    "bytes": 8842,
+    "sha256": "1bbc81c59710265b3c4424b81726293cbe2fb3f90e2d75e0a7ffdc81275939ff"
+  },
+  "platform/assistant/embedded": {
+    "bytes": 8861,
+    "sha256": "6efb560d9859114ffb24240c9b1dac751597308a3eff50e582cdc6b7355c4b52"
+  },
+  "platform/assistant/absent": {
+    "bytes": 22,
+    "sha256": "7d4a6e44082132e824d5327016f0a4ce9d2d8be64fdac31c4145851f75760ff8"
+  },
+  "session/claudeOptions/cloud": {
+    "bytes": 9588,
+    "sha256": "0533ecde544ff06d202956ff86a68acf874571824afd94b3d27220b60a1b4436"
+  },
+  "session/claudeOptions/computer": {
+    "bytes": 9581,
+    "sha256": "3e42afd750ba16bde20a5b34812dd4e9766bdb821a16b3472cae75760c19ea85"
+  },
+  "session/taskAgentOptions": {
+    "bytes": 591,
+    "sha256": "b33323bafb71f9775f2e6fdca652061bbce172ca4c32ce977cccf3492170af7b"
+  },
+  "refresh/computer-claude/instructions": {
+    "bytes": 4731,
+    "sha256": "d76b92ffaed6fd7411f2fa37d85d15c703b4a64aa4a2c3ec0f62373d0b6ddf37"
+  },
+  "refresh/computer-claude/reference": {
+    "bytes": 16090,
+    "sha256": "9d39b40cc5190f1119de79a64cb5e1fd10aa60ce0e64bc43805a0058cc71339b"
+  },
+  "refresh/computer-claude/settings": {
+    "bytes": 834,
+    "sha256": "d4a653d56257a38f0a41764416edd9e9b383e5739a3e62b41aa61aa8813ac111"
+  },
+  "refresh/computer-codex/instructions": {
+    "bytes": 4728,
+    "sha256": "1c584b8ed79fb98f0cfdc91383ffdb6de1b180cf7d17e8e8679cd6ce0d622e99"
+  },
+  "refresh/computer-codex/reference": {
+    "bytes": 16090,
+    "sha256": "9d39b40cc5190f1119de79a64cb5e1fd10aa60ce0e64bc43805a0058cc71339b"
+  },
+  "refresh/computer-codex/settings": {
+    "bytes": 8,
+    "sha256": "a4d0f0eb87fed960b9f1819efda1cd7935b4f665fdd3872149260986d11e96da"
+  },
+  "refresh/cloud-claude/instructions": {
+    "bytes": 4972,
+    "sha256": "0b0062090c368888f92925012f8113655375026e384e9541e4d3c1ab3aa61100"
+  },
+  "refresh/cloud-claude/reference": {
+    "bytes": 16207,
+    "sha256": "a406883a1f7854fd39e6d714af6cc43d8ae25adbf22ea5ac7904d0e2004b9e01"
+  },
+  "refresh/cloud-claude/settings": {
+    "bytes": 8,
+    "sha256": "a4d0f0eb87fed960b9f1819efda1cd7935b4f665fdd3872149260986d11e96da"
+  },
+  "profileReview/missing": {
+    "bytes": 518,
+    "sha256": "aa42b6c0a179491cf3c45af92faefdaeeeb0732210f37c804a9a6084c14fefe6"
+  },
+  "profileReview/outdated": {
+    "bytes": 518,
+    "sha256": "aa42b6c0a179491cf3c45af92faefdaeeeb0732210f37c804a9a6084c14fefe6"
+  },
+  "profileReview/unreadable": {
+    "bytes": 528,
+    "sha256": "1d77ff26b58ea5e8047f2cf6a7a2cf8550b5d6a68550a8a29f185102c6a2ba1e"
+  },
+  "profileReview/current": {
+    "bytes": 6,
+    "sha256": "6e9c960fd025b2e5b1cbceebc7e7b31d041c4c352987f3b56b07f14ad43abca7"
+  },
+  "dispatch/executorReport": {
+    "bytes": 611,
+    "sha256": "89b5a00202c9026b7c4fd7dc035f17646ab9a7967eea3147cbcb58b491dbe03c"
+  },
+  "dispatch/shape": {
+    "bytes": 801,
+    "sha256": "e7fc8463982f77d416b99eaff635650ea9807b27bc43895585b21de72182475e"
+  }
+}

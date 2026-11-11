@@ -28,6 +28,15 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     watch?(watchId: string, name: string, on: boolean): Promise<unknown>;
     save?(name: string, change: Record<string, unknown>): Promise<import('@shared/extensions/agent-resources').AppResourceWrite>;
     remove?(name: string, change: Record<string, unknown>): Promise<import('@shared/extensions/agent-resources').AppResourceWrite>;
+    /** #1928 (43): the bound agent's schedules; `onSchedulesChanged` is composed of `watchSchedules` and the event. */
+    schedules?(name: string): Promise<import('@shared/extensions/bound-schedules').AppBoundSchedules>;
+    watchSchedules?(name: string, on: boolean): Promise<unknown>;
+    controlSchedule?(name: string, change: Record<string, unknown>): Promise<import('@shared/extensions/bound-schedules').AppScheduleReceipt>;
+    /** #1925 (46): the assistant's work; `onWorkChanged` is composed of `onWork` and the binding's name. */
+    work?(name: string): Promise<import('@shared/extensions/work-binding').AppBindingWork>;
+    openWork?(name: string, handle: string): Promise<void>;
+    closeWork?(name: string): Promise<void>;
+    onWork?(listener: (work: import('@shared/extensions/work-binding').AppBindingWork) => void): () => void;
   };
   /** #1925 (44) The bound conversation's assistant, when it is the person's own (`assistant-binding.ts`): a page's. */
   readonly assistant?: {
@@ -49,6 +58,7 @@ export interface GuguHost extends ProjectionHost, TaskPageHost, AppSurfaceHost {
     watch(watchId: string, name: string, on: boolean): Promise<unknown>;
   };
   onVoiceNote?(handler: (watchId: string, event: import('@shared/extensions/voice-note-session').AppVoiceNoteEvent) => void): () => void;
+  onSchedulesChanged?(handler: (binding: string) => void): () => void;
   taskMessage?(args: { intent: 'pause' | 'continue' }): Promise<void>;
   readonly sessions?: {
     index(options?: AppSessionIndexOptions): Promise<AppSessionIndex>;

@@ -71,6 +71,7 @@ import { AssistantShellHost } from '../components/assistant/AssistantShellHost'
 import { OwnedAgentResourcesHost } from '../components/appSlot/OwnedAgentResourcesHost'
 import { ChatSlotHost } from '../components/ChatSlotHost'
 import { AppConversationSurfaceHost } from '../components/appSlot/AppConversationSurfaceHost'
+import { AppWorkLedgerHost } from '../components/appSlot/AppWorkLedgerHost'
 import { appConversationSurfaceShows } from '../lib/appConversationSurfaceBridge'
 import { OfflineSessionSlotHost } from '../components/chat/OfflineSessionSlotHost'
 import { ChatListSlotHost } from '../components/ChatListSlotHost'
@@ -1273,6 +1274,8 @@ function InnerLayout({
       {!mobile && sessionHostAvailable && (
         <AppConversationSurfaceHost visible={activeTab === 'tasks'} onOpenUserChat={slotOpenProfileChat} onOpenSessionpageAgentFile={handleOpenSessionpageAgentFile} />
       )}
+      {/* #1925 (46) The assistant's work, for an App that lists it; a task it opens is drawn in its panel. */}
+      {!mobile && sessionHostAvailable && <AppWorkLedgerHost visible={activeTab === 'tasks'} />}
 
     </PhoneViewportShell>
   )

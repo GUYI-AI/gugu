@@ -6,6 +6,8 @@ import { createMoveJournalFileStore } from './assistant-move-journal'
 import { stdSerializers } from 'pino'
 import { ASSISTANT_HOME_CHANNELS, type AssistantEngine, type PrepareLocalHomeInput } from '../src/lib/assistantHomeIpc'
 import { prepareLocalAssistantHome, wipeLocalAssistantHome } from './assistant-home-prepare'
+import { assistantRules } from './assistant-rules-resolver'
+import { ensureAssistantApp } from './assistant-rules-root'
 import { createAssistantSetupPreparation } from './assistant-setup-preparation'
 import { createLogger } from './lib/logger'
 
@@ -59,5 +61,12 @@ export function installAssistantHome(): void {
     owners.delete(id)
   })
   ipcMain.handle(ASSISTANT_HOME_CHANNELS.prepare, (_event, input: PrepareLocalHomeInput | undefined) => prepareLocalAssistantHome(input ?? {}))
+  // The window asks for the rules when the assistant's setup starts: from then on this machine needs the assistant App.
+  ipcMain.handle(ASSISTANT_HOME_CHANNELS.rules, async () => {
+    void ensureAssistantApp('setup')
+    return (await assistantRules().refresh()).rules
+  })
+  // The first run's introduction: the same rules' words, read without the setup's consequences.
+  ipcMain.handle(ASSISTANT_HOME_CHANNELS.intro, async () => (await assistantRules().refresh()).rules.intro ?? null)
   ipcMain.handle(ASSISTANT_HOME_CHANNELS.wipe, () => wipeLocalAssistantHome())
 }

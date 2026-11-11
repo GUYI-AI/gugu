@@ -192,6 +192,7 @@ import { attachAuxWindows, isOwnPage } from './aux-window'
 import { forwardWindowSeen } from './animation-visibility'
 import { installQuickChat, type QuickChat } from './quick-chat-window'
 import { installAssistantHome } from './assistant-home'
+import { installProcessAssistantRules } from './assistant-rules-root'
 import { receivePhoneDeviceFile } from './phone-device-file'
 import {
   clearSessionpageSessionIntegrationOverridesForTest,
@@ -2355,6 +2356,8 @@ ipcMain.handle(RENDERER_LOG_CHANNEL, (event, payload: unknown) => forwardRendere
 // @@@4899 用户在反馈里勾了「附带日志」才走这条。读不到就让它抛到 renderer —— 界面当场取消
 // 勾选并说明,❌ 不许悄悄附一个空的(用户以为给了线索,排查方以为用户没日志)。
 ipcMain.handle('feedback:log-tail', () => readLogTailForFeedback())
+// #1931 The assistant's product rules: the trusted assistant App's, its last good copy, or the built-in copy.
+installProcessAssistantRules()
 // #7199 个人助理住在这台电脑上时,它的家在本机准备(工作目录、说明、禁用的工具、开通时主人留的那条记忆)。
 installAssistantHome()
 
@@ -5750,7 +5753,7 @@ app.whenReady().then(async () => {
             },
           }, undefined, info.providerId === 'codex' ? 'codex' : 'claude',
         ) : info.providerId === 'claude' && !SERVER_MODE
-          ? assistantHomeTaskContext(loaded, info.cwd, resolveGuguHome(process.env)) : loaded
+          ? await assistantHomeTaskContext(loaded, info.cwd, resolveGuguHome(process.env)) : loaded
         injectMark('capabilities-loaded')
         await applySessionMaterialization({
           cwd: info.cwd,

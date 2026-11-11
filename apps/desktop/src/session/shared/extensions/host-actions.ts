@@ -54,6 +54,12 @@ export type ExtensionHostAction =
   | { kind: 'compose'; sessionId: string; text: string }
   /** #1925 `gugu.bindings.setPanel`: the page's own panel beside its bound conversation, collapsed or expanded. */
   | { kind: 'conversationPanel'; collapsed: boolean }
+  /**
+   * #1925 (46) `gugu.bindings.openWork` / `closeWork`: that task's own conversation drawn in the App's panel over its page,
+   * or taken away. `ownerId` is the account main checked, which the window must still show; the ids are host data.
+   */
+  | { kind: 'openWork'; ownerId: string; workId: string; sessionId: string }
+  | { kind: 'closeWork' }
   /** `gugu.showMessage` / `files.openWith`: the window that shows chats does it, bringing the chat up. */
   | { kind: 'showMessage'; detail: AppShowMessageDetail }
   | { kind: 'openWith'; detail: AppOpenWithDetail }

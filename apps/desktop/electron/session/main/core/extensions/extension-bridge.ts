@@ -473,6 +473,37 @@ async function watchCloud(caller: BridgeCaller, topic: unknown, event: unknown, 
   mine.set(key, stop);
 }
 
+/**
+ * #1928 Each page's watches of its bindings' agent schedules (`gugu.bindings.onSchedulesChanged`), by binding name: torn
+ * down with the page's other watches, or by the watch itself once the App's authority is gone.
+ */
+const scheduleWatches = new Map<number, Map<string, () => void>>();
+
+async function watchSchedules(caller: BridgeCaller, args: Record<string, unknown>): Promise<void> {
+  const name = typeof args.name === 'string' ? args.name : '';
+  const mine = scheduleWatches.get(caller.pageId) ?? new Map<string, () => void>();
+  if (args.on === false) {
+    mine.get(name)?.();
+    mine.delete(name);
+    return;
+  }
+  if (mine.has(name)) return;
+  scheduleWatches.set(caller.pageId, mine);
+  let stop: (() => void) | null = null;
+  const entry = () => stop?.();
+  mine.set(name, entry);
+  const forget = () => { if (mine.get(name) === entry) mine.delete(name); };
+  try {
+    const { watchBoundSchedules } = await import('./app-bound-schedules');
+    stop = await watchBoundSchedules(caller.extensionId, { name: args.name }, () => caller.hear({ type: 'schedulesChanged', binding: name }), forget);
+  } catch (error) {
+    forget();
+    throw error;
+  }
+  // The page went, or stopped listening, while the watch was set up.
+  if (scheduleWatches.get(caller.pageId) !== mine || mine.get(name) !== entry) stop();
+}
+
 function cloudAppOf(caller: BridgeCaller) {
   return { id: caller.extensionId, origin: extensionsService().origins()[caller.extensionId] };
 }
@@ -486,6 +517,8 @@ export function stopPageWatches(pageId: number): void {
   stopResourceWatches(pageId);
   // #1927 (47) Its hearing of the recorder goes with the page; a recording it started does not.
   stopVoiceWatches(pageId);
+  for (const stop of scheduleWatches.get(pageId)?.values() ?? []) stop();
+  scheduleWatches.delete(pageId);
   const watching = pageWatches.get(pageId);
   for (const watch of watching?.values() ?? []) watch.disk?.stop();
   pageWatches.delete(pageId);
@@ -1524,6 +1557,47 @@ export async function deliverSurfaceIntent(extensionId: string, intent: string):
   return tellSurfaceIntent(extensionId, intent, pages);
 }
 
+/**
+ * #1925 (46) Each page of this App the person works is told what `gugu.bindings.work` answers now — after the window read the
+ * ledger again or changed the task drawn in the App's panel (`onWorkChanged`; a refusal is heard as `unavailable`). One telling
+ * per App at a time: changes meanwhile are told once more after it, the newest; the same answer twice is told once.
+ */
+const workTellings = new Map<string, Promise<void>>();
+const workAgain = new Set<string>();
+const workTold = new Map<string, string>();
+export function pushBindingWork(extensionId: string): Promise<void> {
+  const running = workTellings.get(extensionId);
+  if (running) {
+    workAgain.add(extensionId);
+    return running;
+  }
+  const telling = (async () => {
+    do {
+      workAgain.delete(extensionId);
+      await tellBindingWork(extensionId);
+    } while (workAgain.has(extensionId));
+  })().finally(() => workTellings.delete(extensionId));
+  workTellings.set(extensionId, telling);
+  return telling;
+}
+async function tellBindingWork(extensionId: string): Promise<void> {
+  const { appBindingWorkHeard, workBindingName } = await import('./app-work-binding');
+  // Uninstalled meanwhile: its pages are gone with it.
+  if (!extensionsService().isInstalled(extensionId)) return void workTold.delete(extensionId);
+  const name = workBindingName(extensionsService().get(extensionId).manifest);
+  const pages = [...bindings].filter(([, binding]) => binding.extensionId === extensionId && binding.operator.kind === 'person');
+  // No page the person works: nothing to tell, nothing asked.
+  if (!name || pages.length === 0) return void workTold.delete(extensionId);
+  const work = await appBindingWorkHeard(extensionId, name);
+  const said = JSON.stringify(work);
+  if (workTold.get(extensionId) === said) return;
+  workTold.set(extensionId, said);
+  for (const [webContentsId, binding] of pages) {
+    const contents = webContents.fromId(webContentsId);
+    if (bindings.get(webContentsId) === binding && contents && !contents.isDestroyed()) sendEvent(contents, { type: 'bindingWork', work });
+  }
+}
+
 /** Re-pushes context to every open surface and background page — used when theme or language moves. */
 export function pushContextToAllSurfaces(): void {
   for (const id of bindings.keys()) pushContext(id);
@@ -2096,6 +2170,30 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       if (method === 'voiceNoteOpenMicSettings') return await voice.appVoiceNoteOpenMicSettings(caller.extensionId, args);
       const verb = ({ voiceNotePause: 'pause', voiceNoteResume: 'resume', voiceNoteStop: 'stop', voiceNoteStatus: 'status' } as const)[method];
       return await voice.appVoiceNote(verb, caller.extensionId, args);
+    }
+    case 'bindingsSchedules':
+    case 'bindingsSchedulesWatch':
+    case 'bindingsScheduleControl': {
+      // #1928 The person's own agent, by the person's grant: an agent working the page (`app_check`) reaches none of it.
+      if (thePage(caller).operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reaches none of its agent\'s schedules'), { code: 'denied' });
+      if (method === 'bindingsSchedulesWatch') {
+        await watchSchedules(caller, args);
+        return undefined;
+      }
+      const { appBoundSchedules, appBoundScheduleControl } = await import('./app-bound-schedules');
+      return await (method === 'bindingsSchedules' ? appBoundSchedules : appBoundScheduleControl)(caller.extensionId, args);
+    }
+    case 'bindingsWork':
+    case 'bindingsOpenWork':
+    case 'bindingsCloseWork': {
+      // #1925 (46) As its files (#1927): the binding is the person's, so a page an agent works reads none of its work.
+      const page = thePage(caller);
+      if (page.operator.kind !== 'person') throw Object.assign(new Error('A binding is the person\'s: a page an agent works reads none of its work'), { code: 'denied' });
+      const work = await import('./app-work-binding');
+      if (method === 'bindingsWork') return await work.appBindingWork(caller.extensionId, args);
+      const act = (action: ExtensionHostAction) => deliver(page, action);
+      if (method === 'bindingsOpenWork') return await work.appOpenWork(caller.extensionId, page, args, act);
+      return await work.appCloseWork(caller.extensionId, args, act);
     }
     case 'messagesHistory':
     case 'messagesSearch': {

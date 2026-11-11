@@ -46,7 +46,7 @@ describe('assistantGuide', () => {
     for (const prompt of prompts) {
       expect(prompt).not.toMatch(/主人|用户/)
     }
-    for (const source of ['assistantPolicy', 'assistantWorkflow']) {
+    for (const source of ['assistantPolicy', 'assistantWorkflow', 'assistantRulesFormat', ...['defaults', 'firstTask', 'ownerProfile', 'role', 'workflow', 'builtIn'].map(name => `assistantProductRules/${name}`)]) {
       expect(readFileSync(new URL(`../../../../packages/core/src/shared/${source}.ts`, import.meta.url), 'utf8')).not.toContain('主人')
     }
     expect(ASSISTANT_CONTEXT_CORE.join('\n').length).toBeLessThanOrEqual(1262)
