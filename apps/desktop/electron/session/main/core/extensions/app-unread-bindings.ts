@@ -3,7 +3,7 @@ import { fetchInChunks } from '@gugu/core/shared/inChunks';
 import { userIdFromSupabaseAccessToken } from '@gugu/core';
 import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase';
 import { boundEntryOf, boundPathOf, type AppBoundList, type AppBoundRead, type AppUnreadBinding, type StoredUnreadBinding } from '@shared/extensions/unread-binding';
-import { DEFAULT_TEXT_MAX_BYTES, type AppComposeDetail, type AppFileEntry } from '@shared/extensions/app-runtime-protocol';
+import { DEFAULT_TEXT_MAX_BYTES, type AppComposeDetail } from '@shared/extensions/app-runtime-protocol';
 import { dispatchCallOf } from '@shared/extensions/app-dispatch-core';
 import { currentAccountAccessToken } from './account-token';
 import { extensionsService } from './extensions-root';
@@ -49,9 +49,10 @@ function argsOf<T extends z.ZodType>(schema: T, input: unknown): z.infer<T> {
 
 /**
  * #1927 The conversation one more action of the binding reaches (`files`, `draft`): the current account's own selection
- * for this installed App, with that action declared and granted, of a conversation the account is still in. `recheck`
- * says it is all still so — account, installed App, grant and the same selection — and is called after every wait;
- * the last call of each verb has no wait after it. Null: nobody has chosen the conversation yet.
+ * for this installed App, with that action declared and granted, of a conversation the account is still in — for `files`,
+ * one keeping its own folder (asked beside membership). `recheck` says it is all still so — account, installed App, grant
+ * and the same selection — and is called after every wait; the last call of each verb has no wait after it. Null: nobody
+ * has chosen the conversation yet.
  */
 async function boundConversation(extensionId: string, name: string, action: 'files' | 'draft') {
   const { token, ownerId } = await account();
@@ -61,7 +62,10 @@ async function boundConversation(extensionId: string, name: string, action: 'fil
     await current(ownerId);
     if (extensionsService().conversationBinding(ownerId, extensionId, name, action)?.handle !== before.handle) throw denied('Conversation binding changed');
   };
-  await member(token, ownerId, before.chatId);
+  const checks = await Promise.allSettled([member(token, ownerId, before.chatId), action === 'files' ? ownFolder(before.chatId) : undefined]);
+  // A refusal outweighs a check that could not be made: the call is refused, not to be tried again.
+  const failed = checks.find((check) => check.status === 'rejected' && codeOf(check.reason) === 'denied') ?? checks.find((check) => check.status === 'rejected');
+  if (failed) throw (failed as PromiseRejectedResult).reason;
   await recheck();
   return { chatId: before.chatId, recheck };
 }
@@ -78,55 +82,48 @@ async function ownFolder(chatId: string): Promise<void> {
   if (resource !== chatId) throw denied('The chosen conversation keeps no folder of its own: its files are another conversation\'s');
 }
 
-/** `gugu.bindings.list(name, { folder? })` (40, `chat:files`): one folder of the bound conversation (`''` the top; none: all). */
-export async function appBindingList(extensionId: string, input: unknown): Promise<AppBoundList> {
-  const { name, folder } = argsOf(z.strictObject({ name: z.string(), folder: z.unknown().optional() }), input);
-  const at = folder === undefined ? undefined : boundPathOf(folder, 'folder');
+/**
+ * What `use` read of the bound conversation's folder, once the binding is still what it was; or why there is nothing:
+ * unbound, missing (`not-found`), unavailable (`failed`, membership not verifiable). Any other failure is thrown as it is.
+ */
+async function inBoundFolder<T>(extensionId: string, name: string, use: (chatId: string) => Promise<T>): Promise<{ value: T } | { name: string; state: 'unbound' | 'missing' | 'unavailable' }> {
   const bound = await boundConversation(extensionId, name, 'files').catch((error: unknown) => {
     if (codeOf(error) === 'failed') return 'unavailable' as const;
     throw error;
   });
   if (bound === 'unavailable') return { name, state: 'unavailable' };
   if (!bound) return { name, state: 'unbound' };
-  let entries: AppFileEntry[];
   try {
-    await ownFolder(bound.chatId);
+    const value = await use(bound.chatId);
     await bound.recheck();
-    entries = await boundConversationFiles.list(bound.chatId, at);
+    return { value };
   } catch (error) {
     const code = codeOf(error);
     if (code !== 'not-found' && code !== 'failed') throw error;
     await bound.recheck();
     return { name, state: code === 'not-found' ? 'missing' : 'unavailable' };
   }
-  await bound.recheck();
-  return { name, state: 'ready', entries: entries.filter((entry) => entry.chat === bound.chatId).map(boundEntryOf) };
+}
+
+/** `gugu.bindings.list(name, { folder? })` (40, `chat:files`): one folder of the bound conversation (`''` the top; none: all). */
+export async function appBindingList(extensionId: string, input: unknown): Promise<AppBoundList> {
+  const { name, folder } = argsOf(z.strictObject({ name: z.string(), folder: z.unknown().optional() }), input);
+  const at = folder === undefined ? undefined : boundPathOf(folder, 'folder');
+  // A row of any other chat, whatever answered it, is not this conversation's file.
+  const listed = await inBoundFolder(extensionId, name, async (chatId) =>
+    (await boundConversationFiles.list(chatId, at)).filter((entry) => entry.chat === chatId).map(boundEntryOf));
+  return 'value' in listed ? { name, state: 'ready', entries: listed.value } : listed;
 }
 
 /** `gugu.bindings.read(name, path)` (40, `chat:files`): one file of the bound conversation by its path there, with its text. */
 export async function appBindingRead(extensionId: string, input: unknown): Promise<AppBoundRead> {
   const { name, path } = argsOf(z.strictObject({ name: z.string(), path: z.unknown() }), input);
   const at = boundPathOf(path, 'path');
-  const bound = await boundConversation(extensionId, name, 'files').catch((error: unknown) => {
-    if (codeOf(error) === 'failed') return 'unavailable' as const;
-    throw error;
-  });
-  if (bound === 'unavailable') return { name, state: 'unavailable' };
-  if (!bound) return { name, state: 'unbound' };
-  let read: Awaited<ReturnType<typeof boundConversationFiles.read>>;
-  try {
-    await ownFolder(bound.chatId);
-    await bound.recheck();
-    read = await boundConversationFiles.read(bound.chatId, at, DEFAULT_TEXT_MAX_BYTES);
-  } catch (error) {
-    if (codeOf(error) !== 'failed') throw error;
-    await bound.recheck();
-    return { name, state: 'unavailable' };
-  }
-  await bound.recheck();
-  if (read.state !== 'ready') return { name, state: read.state };
-  const { entry, content, truncated, totalSize, binary } = read;
-  return { name, state: 'ready', entry: boundEntryOf(entry), content, truncated, totalSize, ...(binary ? { binary } : {}) };
+  const read = await inBoundFolder(extensionId, name, (chatId) => boundConversationFiles.read(chatId, at, DEFAULT_TEXT_MAX_BYTES));
+  if (!('value' in read)) return read;
+  if (read.value.state !== 'ready') return { name, state: read.value.state };
+  const { entry, ...text } = read.value;
+  return { name, ...text, entry: boundEntryOf(entry) };
 }
 
 /**

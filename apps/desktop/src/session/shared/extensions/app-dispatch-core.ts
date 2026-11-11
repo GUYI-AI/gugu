@@ -2,6 +2,7 @@ import type { AppSpawnAction } from '@gugu/session-core/session-record/contract'
 import type { ExtensionCapability } from './manifest';
 import { decodeTypedId } from '@gugu/core/shared/typedId.mjs';
 import { personId } from './app-runtime-protocol';
+import { BINDING_NAME } from './unread-binding';
 
 /**
  * `gugu.dispatch(text, options)` (15): the one way an App hands something to someone — owner 10-25「全部统一」. Before it there
@@ -19,7 +20,6 @@ import { personId } from './app-runtime-protocol';
  */
 
 export type DispatchTarget = { chat: string } | { chat: string; member: string } | { agent: string } | { new: true } | { binding: string };
-const BINDING_NAME = /^[a-z][a-z0-9-]{0,47}$/;
 
 /** What the sheet offers, when the call does not say (`offer`): the rows it shows. */
 export const DISPATCH_OFFERS = ['chat', 'agent-in-chat', 'person-in-chat', 'my-agent', 'new-agent'] as const;

@@ -1941,8 +1941,13 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       // 15: the one way an App hands something to someone (app-dispatch-core.ts) — the shared answer with this computer's
       // sheet, composers and agents. As whoever works the page (owner 10-14): its agent writes to a chat as itself, and is
       // the one telling or starting an agent. The sheet lists the page's chat and who is in it, the page's session first.
-      const { dispatchForApp } = await import('@main/core/extensions/extension-send');
       const page = caller.binding;
+      // #1927 A binding is the person's, as for its files: only a page the person works puts a draft into it.
+      const to = args.to as { binding?: unknown } | null | undefined;
+      if (to && typeof to === 'object' && Object.hasOwn(to, 'binding') && page?.operator.kind !== 'person') {
+        throw Object.assign(new Error('A binding is the person\'s: a page an agent works puts no draft into it'), { code: 'denied' });
+      }
+      const { dispatchForApp } = await import('@main/core/extensions/extension-send');
       const drawnIn = page?.conversation ? chatsDrawnIn.get(page.conversation) : undefined;
       const operator = page?.operator;
       return await dispatchForApp(

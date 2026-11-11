@@ -43,7 +43,7 @@ export function boundEntryOf(entry: AppFileEntry): AppBoundEntry {
 export type AppBoundList = { name: string; state: 'unbound' } | { name: string; state: 'missing' } | { name: string; state: 'unavailable' }
   | { name: string; state: 'ready'; entries: AppBoundEntry[] };
 export type AppBoundRead = { name: string; state: 'unbound' | 'missing' | 'unprepared' | 'unavailable' }
-  | { name: string; state: 'ready'; entry: AppBoundEntry; content: string; truncated: boolean; totalSize: number; binary?: true };
+  | { name: string; state: 'ready'; entry: AppBoundEntry; content: string; truncated: boolean; totalSize: number; binary?: true; exact?: boolean };
 
 const invalid = (message: string): never => {
   throw Object.assign(new Error(message), { code: 'invalid' as const });

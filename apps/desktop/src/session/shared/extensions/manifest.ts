@@ -613,7 +613,7 @@ export const extensionManifestSchema = z
     permissions: permissionsSchema.optional(),
     contributes: z.strictObject({
       tabs: z.array(tabContributionSchema).min(1).max(8).default([{ name: 'settings', title: 'Settings', hostPage: 'settings' }]),
-      unreadSource: z.strictObject({ binding: z.string().regex(/^[a-z][a-z0-9-]{0,47}$/) }).optional(),
+      unreadSource: z.strictObject({ binding: z.string().regex(BINDING_NAME) }).optional(),
       mcpServers: z.array(mcpServerContributionSchema).min(1).max(4).optional(),
       /**
        * Bundle-relative folder of Agent Skills (`<skill>/SKILL.md`), handed to every agent

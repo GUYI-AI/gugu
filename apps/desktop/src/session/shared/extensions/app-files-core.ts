@@ -153,7 +153,7 @@ export type BesideDocument =
 
 /** `readAtPath`'s answer (#1927): the file and its text, or which of the three ways it is not there to read. */
 export type PathText = { state: 'missing' | 'unprepared' | 'unavailable' }
-  | { state: 'ready'; entry: AppFileEntry; content: string; truncated: boolean; totalSize: number; binary?: true };
+  | { state: 'ready'; entry: AppFileEntry; content: string; truncated: boolean; totalSize: number; binary?: true; exact?: boolean };
 
 /** What a download saves: bytes behind a short-lived signed URL, or a document's text. */
 export type DownloadSource = { name: string; kind: 'file'; file: FileHandle } | { name: string; kind: 'text'; text: string };
@@ -1519,9 +1519,11 @@ export function createAppFiles(platform: FilesPlatform) {
       // The door answers this chat's rows only; one of another chat is not this one's file, whatever answered it.
       if (row.chat_id !== chatId) return { state: 'missing' };
       const entry = entryOf(row, undefined);
-      const ready = (text: { text: string; binary?: true }, size: number): PathText => size > maxBytes
-        ? { state: 'ready', entry: { ...entry, size }, content: '', truncated: true, totalSize: size }
-        : { state: 'ready', entry: { ...entry, size }, content: text.text, ...(text.binary ? { binary: true as const } : {}), truncated: false, totalSize: size };
+      // Over the limit: its size only, as `files.readText` says it (`binary` is not known without reading it).
+      const tooLarge = (size: number): PathText => ({ state: 'ready', entry: { ...entry, size }, content: '', truncated: true, totalSize: size });
+      const ready = (text: { text: string; exact?: boolean } | null, size: number): PathText => size > maxBytes ? tooLarge(size)
+        : { state: 'ready', entry: { ...entry, size }, content: text?.text ?? '', ...(text ? { exact: text.exact ?? true } : { binary: true as const }), truncated: false, totalSize: size };
+      const refused = () => new AppFileError('denied', 'This account may not read this file');
       if (row.kind !== 'file') {
         // A live document: its text as the file service has it now, as a download's and an agent's read are.
         try {
@@ -1529,11 +1531,20 @@ export function createAppFiles(platform: FilesPlatform) {
           return ready({ text }, new TextEncoder().encode(text).byteLength);
         } catch (error) {
           if (error instanceof ChatFolderReadError && error.status === 404) return { state: 'missing' };
+          // The file service refusing this account is a refusal, never a read to try again.
+          if (error instanceof ChatFolderReadError && (error.status === 401 || error.status === 403)) throw refused();
           return { state: 'unavailable' };
         }
       }
-      if ((row.size_bytes ?? 0) > maxBytes) return { state: 'ready', entry, content: '', truncated: true, totalSize: row.size_bytes ?? 0 };
-      const file = await platform.resolveFile?.({ id: row.id }, null, {}).catch(() => null);
+      if ((row.size_bytes ?? 0) > maxBytes) return tooLarge(row.size_bytes ?? 0);
+      let file: ResolvedFile | null | undefined;
+      try {
+        file = await platform.resolveFile?.({ id: row.id }, null, {});
+      } catch (error) {
+        if (error instanceof AppFileError && error.code !== 'failed') throw error;
+        if (error instanceof FileReadRevokedError && error.reason === 'access') throw refused();
+        return { state: 'unavailable' };
+      }
       if (!file) return { state: 'unavailable' };
       // No bytes in the store for it yet (an upload not finished); deleted or a temporary copy cleared: no content any more.
       if (file.status === 'missing') return { state: 'unprepared' };
@@ -1541,9 +1552,10 @@ export function createAppFiles(platform: FilesPlatform) {
       try {
         if (file.revision.chat_id && file.revision.chat_id !== chatId) return { state: 'missing' };
         if (file.revision.source === 'local' && file.revision.host_online === false) return { state: 'unavailable' };
+        // The row may not say its size: the revision does, before a byte is read.
+        if (file.revision.size_bytes > maxBytes) return tooLarge(file.revision.size_bytes);
         const bytes = new Uint8Array(await (await fileBlob(file)).arrayBuffer());
-        const text = workspaceFileText(row.filename, bytes);
-        return ready(text ? { text: text.text } : { text: '', binary: true }, bytes.byteLength);
+        return ready(workspaceFileText(row.filename, bytes), bytes.byteLength);
       } catch (error) {
         // Gone between asking and reading: as the metadata would have said. Access withdrawn meanwhile: refused.
         if (error instanceof MissingFileObjectError) return { state: 'unprepared' };

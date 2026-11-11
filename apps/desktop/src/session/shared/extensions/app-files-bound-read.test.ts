@@ -2,7 +2,7 @@ import { rpcQuery } from '../../../../../../tests/support/rpcQuery';
 import { verifiedFileHandle } from '../../../../../../tests/support/verifiedFileHandle';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FilesPlatform } from './app-files-core';
-import type { ResolvedFile } from '@gugu/core/shared/fileResolver';
+import { FileReadRevokedError, type ResolvedFile } from '@gugu/core/shared/fileResolver';
 
 /**
  * #1927 `readAtPath`: one file of one chat's folder by its path, as the signed-in person, for the host's conversation
@@ -105,7 +105,7 @@ describe('a bound conversation\'s file by its path (#1927)', () => {
   it('a stored file\'s text, its binary as such, and one over the limit by its size alone', async () => {
     state.found = [row({ kind: 'file', size_bytes: 2 })];
     state.resolved = stored(new TextEncoder().encode('{}'));
-    expect(await files.readAtPath(CHAT, 'today.json', MAX)).toMatchObject({ state: 'ready', content: '{}', truncated: false, totalSize: 2 });
+    expect(await files.readAtPath(CHAT, 'today.json', MAX)).toMatchObject({ state: 'ready', content: '{}', exact: true, truncated: false, totalSize: 2 });
     state.found = [row({ kind: 'file', filename: 'a.png', content_type: 'image/png', size_bytes: 3 })];
     state.resolved = stored(new Uint8Array([0x89, 0, 1]), { file_name: 'a.png', content_type: 'image/png' });
     expect(await files.readAtPath(CHAT, 'a.png', MAX)).toMatchObject({ state: 'ready', content: '', binary: true, truncated: false });
@@ -114,6 +114,14 @@ describe('a bound conversation\'s file by its path (#1927)', () => {
     state.resolved = resolve;
     expect(await files.readAtPath(CHAT, 'today.json', MAX)).toMatchObject({ state: 'ready', content: '', truncated: true, totalSize: MAX + 1 });
     expect(resolve).not.toHaveBeenCalled();
+    // A row that does not say its size: the revision says it before any byte is read.
+    state.found = [row({ kind: 'file', size_bytes: null })];
+    const big = new Uint8Array(MAX + 5).fill(0x61);
+    // Called when the first byte is read.
+    const acquire = vi.fn(async () => big.slice());
+    state.resolved = async () => verifiedFileHandle(big, { item_id: ITEM, chat_id: CHAT, version: 2, file_name: 'today.json', content_type: 'application/json' }, acquire);
+    expect(await files.readAtPath(CHAT, 'today.json', MAX)).toMatchObject({ state: 'ready', content: '', truncated: true, totalSize: MAX + 5 });
+    expect(acquire).not.toHaveBeenCalled();
   });
 
   it('a row or revision of another chat is never this chat\'s file', async () => {
@@ -122,6 +130,16 @@ describe('a bound conversation\'s file by its path (#1927)', () => {
     state.found = [row({ kind: 'file' })];
     state.resolved = stored(new TextEncoder().encode('{}'), { chat_id: OTHER_CHAT });
     expect(await files.readAtPath(CHAT, 'today.json', MAX)).toEqual({ state: 'missing' });
+  });
+
+  it('the file service or resolver refusing the account is a refusal, not a read to try again', async () => {
+    for (const status of [401, 403]) {
+      vi.stubGlobal('fetch', async () => new Response('no', { status }));
+      await expect(files.readAtPath(CHAT, 'today.json', MAX)).rejects.toMatchObject({ code: 'denied' });
+    }
+    state.found = [row({ kind: 'file' })];
+    state.resolved = async () => { throw new FileReadRevokedError('access'); };
+    await expect(files.readAtPath(CHAT, 'today.json', MAX)).rejects.toMatchObject({ code: 'denied' });
   });
 
   it('refusals stay refusals: not a member, a folder, more than one file', async () => {

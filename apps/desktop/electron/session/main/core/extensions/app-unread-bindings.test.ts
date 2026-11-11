@@ -204,6 +204,10 @@ describe('the bound conversation\'s files and draft (#1927, API 40)', () => {
     service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
     install(boundManifest(), OTHER);
     expect(service.conversationBinding(OWNER, ID, 'main', 'files')).toBeNull();
+    // The same actions in another order are the same declaration: the selection stays.
+    service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
+    install(boundManifest(['unread', 'draft', 'files']), OTHER);
+    expect(service.conversationBinding(OWNER, ID, 'main', 'files')?.chatId).toBe(CHAT);
     // An unread-only selection does not carry over to a version that adds files: the person chooses again.
     const unreadOnly = fixture(); unreadOnly.service.setConversationUnreadBinding(OWNER, ID, 'main', CHAT);
     unreadOnly.install(boundManifest());

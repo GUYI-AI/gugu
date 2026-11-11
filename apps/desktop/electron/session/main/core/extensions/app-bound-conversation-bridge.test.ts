@@ -28,6 +28,8 @@ vi.mock('@main/core/extensions/extensions-root', () => ({
 const appBindingList = vi.fn(async (_id: string, args: { name: string }) => ({ name: args.name, state: 'unbound' }));
 const appBindingRead = vi.fn(async (_id: string, args: { name: string }) => ({ name: args.name, state: 'missing' }));
 vi.mock('./app-unread-bindings', () => ({ appBindingList, appBindingRead, appUnreadBinding: vi.fn() }));
+const dispatchForApp = vi.fn(async () => ({ to: { binding: 'main' } }));
+vi.mock('@main/core/extensions/extension-send', () => ({ dispatchForApp, messagesForApp: {} }));
 const { answerCall } = await import('./extension-bridge');
 
 const page = (operator: { kind: 'person' } | { kind: 'agent'; id: string }) => ({
@@ -40,6 +42,7 @@ beforeEach(() => {
   granted.clear();
   appBindingList.mockClear();
   appBindingRead.mockClear();
+  dispatchForApp.mockClear();
 });
 
 describe('the bridge door for the bound conversation\'s files', () => {
@@ -65,5 +68,17 @@ describe('the bridge door for the bound conversation\'s files', () => {
     }
     expect(appBindingList).not.toHaveBeenCalled();
     expect(appBindingRead).not.toHaveBeenCalled();
+  });
+
+  it('a draft into the binding: a person\'s page is handed on; a page an agent works is refused at the bridge, unregistered or not', async () => {
+    granted.add('chat:draft');
+    const draft = { text: 'Ask', draft: true, to: { binding: 'main' } };
+    expect(await answerCall(page({ kind: 'person' }), 'dispatch', draft)).toEqual({ ok: true, value: { to: { binding: 'main' } } });
+    expect(dispatchForApp).toHaveBeenCalledOnce();
+    dispatchForApp.mockClear();
+    // No `agentPages` entry for this page (never registered, or gone): the bridge's own check still refuses it.
+    expect(await answerCall(page({ kind: 'agent', id: 'user:22000000-0000-4000-8000-000000000002' }), 'dispatch', draft))
+      .toMatchObject({ ok: false, code: 'denied', message: expect.stringContaining('agent works') });
+    expect(dispatchForApp).not.toHaveBeenCalled();
   });
 });

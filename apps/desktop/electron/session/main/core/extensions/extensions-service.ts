@@ -160,6 +160,11 @@ export interface InvalidExtensionDir {
   reason: string;
 }
 
+/** A binding declaration as a selection depends on it: its actions in any order are the same declaration (#1927). */
+function bindingDeclaration(bindings: NonNullable<ExtensionManifest['permissions']>['bindings']): string {
+  return JSON.stringify(bindings?.map((binding) => ({ ...binding, actions: [...binding.actions].sort() })) ?? null);
+}
+
 export class ExtensionsService {
   private readonly variantsFile: JsonFile<Record<string, AppVariants>>;
   private readonly grantsFile: JsonFile<Record<string, NonNullable<ExtensionManifest['permissions']>>>;
@@ -350,7 +355,7 @@ export class ExtensionsService {
     const previousIdentity = this.identityOf(manifest.id);
     const previousBinding = this.list().extensions.find((entry) => entry.manifest.id === manifest.id)?.manifest.permissions?.bindings;
     const resetUnreadBinding = !identity || !previousIdentity || appKey(identity) !== appKey(previousIdentity)
-      || JSON.stringify(previousBinding) !== JSON.stringify(manifest.permissions?.bindings);
+      || bindingDeclaration(previousBinding) !== bindingDeclaration(manifest.permissions?.bindings);
     const previous = previousIdentity && identity && appKey(previousIdentity) === appKey(identity)
       ? grants[appKey(identity)] ?? this.list().extensions.find((entry) => entry.manifest.id === manifest.id)?.manifest.permissions
       : undefined;
