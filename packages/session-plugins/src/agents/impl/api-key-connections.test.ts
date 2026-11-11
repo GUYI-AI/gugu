@@ -42,7 +42,7 @@ describe('which agents take an API key connection', () => {
       .filter((provider) => provider.capabilities.apiKeyConnection.kind === 'supported')
       .map((provider) => provider.metadata.id)
       .sort();
-    expect(withKeys).toEqual(['codebuddy', 'copilot', 'dsh', 'hermes', 'kilocode', 'mimocode', 'opencode', 'pi', 'qwen', 'zcode']);
+    expect(withKeys).toEqual(['antigravity', 'codebuddy', 'copilot', 'dsh', 'hermes', 'kilocode', 'mimocode', 'opencode', 'pi', 'qwen', 'zcode']);
     // 声明了就必须说得出 key 怎么进进程:要么自己的 `launch`,要么走模型注入(借这家的平台模型写法)。
     // 没有行为的声明在表单里摆出一个存了也用不上的格子。
     for (const id of withKeys) {
@@ -54,9 +54,8 @@ describe('which agents take an API key connection', () => {
         expect(plugin.behavior.apiKeyConnection?.launch, id).toBeTypeOf('function');
       }
     }
-    // Kiro:厂商账号是硬门槛(`vendorAccount: required`,没有一把 key 换得掉);Antigravity:选 API Key 只能改
-    // 它配置根里那份 settings.json 的 `auth.type`(与 Google 登录共用一处),没有按进程选的路(见第 3 步报告)。
-    for (const id of ['claude', 'codex', 'kiro', 'antigravity']) {
+    // Kiro:厂商账号是硬门槛(`vendorAccount: required`,没有一把 key 换得掉)。
+    for (const id of ['claude', 'codex', 'kiro']) {
       expect(declared(id)).toEqual({ kind: 'none' });
     }
     // 阳控:这几家确实是开放给用户的那一批里的(名单变了这里要跟着看)。
@@ -72,6 +71,9 @@ describe('which agents take an API key connection', () => {
     expect(declared('mimocode')).toMatchObject({ endpoint: 'none', model: 'none' });
     expect(declared('kilocode')).toMatchObject({ endpoint: 'none', model: 'none' });
     expect(declared('hermes')).toMatchObject({ endpoint: 'required', model: 'required', protocol: 'openai-responses' });
+    // agy 的网关请求是 genai 形状(`/v1beta/models/<模型>:streamGenerateContent`)。
+    expect(declared('antigravity')).toMatchObject({ endpoint: 'required', model: 'required', protocol: 'gemini-generate-content' });
+    expect(declared('antigravity')).not.toHaveProperty('delivery');
   });
 
   it('the model-injection agents name an address and a model, in exactly the protocol their platform model speaks', () => {
@@ -181,8 +183,25 @@ describe('how each key reaches the process', () => {
     expect(() => launch('hermes', { apiKey: key, endpoint })).toThrow(/model/);
   });
 
+  it('antigravity: the gateway values plus its rollout switch, nothing that selects an auth method on disk', () => {
+    const result = launch('antigravity', { apiKey: key, endpoint, model: 'gemini-3.8-flash' });
+    expect(result.env).toEqual({
+      AGY_ACP_ENABLE_GATEWAY_AUTH: '1',
+      AGY_LLM_GATEWAY_URL: endpoint,
+      AGY_LLM_GATEWAY_API_KEY: key,
+      AGY_LLM_GATEWAY_MODELS: 'gemini-3.8-flash',
+    });
+    // 不碰 Google 账号那一族:GEMINI_HOME / GEMINI_API_KEY 都不是连接写的。
+    expect(Object.keys(result.env).some((name) => name.startsWith('GEMINI'))).toBe(false);
+    // 旧名也会被它读到(`AGY_GATEWAY_*`):一并先删。
+    expect(result.unsetEnv).toEqual(expect.arrayContaining(['AGY_GATEWAY_URL', 'AGY_GATEWAY_API_KEY', 'AGY_GATEWAY_HEADERS', 'AGY_LLM_GATEWAY_HEADERS']));
+    expect(() => launch('antigravity', { apiKey: key, endpoint })).toThrow(/model/);
+    expect(() => launch('antigravity', { apiKey: key, model: 'm' })).toThrow(/address/);
+  });
+
   it('every variable a connection writes is also unset first, so a shell export of it cannot win', () => {
     const samples: Record<string, { apiKey: string; endpoint?: string; model?: string }> = {
+      antigravity: { apiKey: key, endpoint, model: 'm' },
       hermes: { apiKey: key, endpoint, model: 'm' },
       qwen: { apiKey: key, endpoint, model: 'm' },
       dsh: { apiKey: key, endpoint },

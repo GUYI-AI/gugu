@@ -48,10 +48,10 @@ afterEach(async () => {
 });
 
 it('only Claude, Codex and the agents that declare an API key mapping have connections', async () => {
-  for (const id of ['claude', 'codex', 'qwen', 'dsh', 'copilot', 'mimocode', 'kilocode', 'zcode', 'hermes', 'pi', 'opencode', 'codebuddy']) {
+  for (const id of ['claude', 'codex', 'qwen', 'dsh', 'copilot', 'mimocode', 'kilocode', 'zcode', 'hermes', 'pi', 'opencode', 'codebuddy', 'antigravity']) {
     expect(harnessHasConnections(id), id).toBe(true);
   }
-  for (const id of ['kiro', 'antigravity', 'no-such-agent']) expect(harnessHasConnections(id), id).toBe(false);
+  for (const id of ['kiro', 'no-such-agent']) expect(harnessHasConnections(id), id).toBe(false);
   await expect(listHarnessConnections('kiro')).rejects.toThrow('unavailable');
   await expect(createHarnessConnection({ providerId: 'kiro', kind: 'api-key', apiKey: 'k' })).rejects.toThrow('unavailable');
   await expect(createHarnessConnection({ providerId: 'no-such-agent', kind: 'api-key', apiKey: 'k' })).rejects.toThrow('unavailable');
