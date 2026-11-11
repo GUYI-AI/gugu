@@ -896,7 +896,7 @@ streaming, voice, attachments, read state) as the main column; your main page is
   \`top\` px, within \`right\` px of the edge. Make your top row (name, tabs) \`top\` px high and keep \`right\` px clear.
 - You get no chat, message, person or DOM of it. Opening your page marks nothing read; a \`{ binding }\` draft lands in that composer.
 API 42 to 46, when that conversation is the person's private one with their own agent or assistant (its resources,
-schedules, the assistant itself, the work it handed out): \`guide_read apps-bindings-agent\`.
+schedules, the assistant itself, the work it handed out): \`guide_read apps-bindings-agent\`. On a phone (48): \`guide_read apps-bindings-phone\`.
 `;
 
 export const EXTENSION_GUIDE_BINDINGS_AGENT = `# gugu.bindings, gugu.assistant — the agent behind the chosen conversation
@@ -959,19 +959,30 @@ wherever the assistant lives (this computer, another, the cloud).
 - \`gugu.bindings.openWork("main", handle)\` in a click: the host draws that task's conversation in your panel, over your
   page, with its own back control; \`gugu.bindings.closeWork("main")\` takes it away. \`open\` is that row's handle while it is
   drawn, else null — hide your list then. You cannot see it. Another account, a withdrawn grant, a new choice: it closes.
-API 48, a phone: list \`"phone"\` in \`platforms\` with the binding (apiVersion 48). A phone has no picker: it binds only gugu's own
+`;
+
+export const EXTENSION_GUIDE_BINDINGS_PHONE = `# gugu.bindings on a phone (API 48)
+
+List \`"phone"\` in \`platforms\` with the binding, at \`apiVersion\` 48 (earlier: refused). A phone has no picker: it binds only gugu's own
 assistant App (\`gugu-assistant\`, from the market) to the account's private chat with its own assistant; any other App's binding is
-\`unbound\` there. The same calls answer as on a computer, as the person signed in on that phone, checked again after every wait.
-- Layout: \`surface\` is \`{ state: "bound", layout: "side-panel", panel }\` on a computer and \`{ state: "bound", layout: "phone",
-  section }\` on a phone. On a phone gugu draws the layer, its header and its tabs: \`聊天\` is the conversation (gugu's, you never see
-  it), and your main page fills the others, full screen inside the safe areas — \`section\` is \`today\`, \`tasks\`, \`memory\` or
-  \`profile\` (behind the assistant's face). Draw that section's phone layout, with no tab row and no header of your own; \`onSurface\`
-  hears each move. \`setPanel("main", { section })\` moves the layer to one of yours; \`gugu.navigation.onBack\` holds Back for your own steps.
-- \`{ state: "unsupported" }\` (closed, not an error, the same if asked again) answers what means nothing on a phone:
-  \`setPanel("main", { collapsed })\`, \`assistant.open("main", "move")\` (a phone is never its home), \`assistant.advanceSetup\` (those
-  steps are a computer's). \`contributes.unreadSource\` draws nothing there: the phone has no App rail, and the conversation's own row in
-  消息 carries its unread. The other screens open the phone's own: \`setup\` its settings page, \`look\` its customize page, \`model\`,
-  \`devices\`, \`connected-apps\` theirs under 资料, \`close\` the one confirmation.
+\`unbound\` there. Every call answers as on a computer — files, draft, resources, schedules, \`gugu.assistant\`, work — as the person
+signed in on that phone, checked again after every wait.
+
+- Layout: \`gugu.bindings.surface("main")\` is \`{ state: "bound", layout: "side-panel", panel }\` on a computer and
+  \`{ state: "bound", layout: "phone", section }\` on a phone. There gugu draws the layer, its header and its tabs: \`聊天\` is the
+  conversation (gugu's; you never see it), and your main page fills the others, full screen inside the safe areas. \`section\` is
+  \`today\`, \`tasks\`, \`memory\` or \`profile\` (behind the assistant's face): draw that section's phone layout, with no tab row and
+  no header of your own. \`gugu.bindings.onSurface(fn)\` hears each move; \`gugu.bindings.setPanel("main", { section })\` moves the
+  layer to another of yours; \`gugu.navigation.onBack(fn)\` holds Back for your own steps.
+- \`{ state: "unsupported" }\` — closed, not an error, the same if asked again — answers what means nothing on a phone:
+  \`gugu.bindings.setPanel("main", { collapsed })\`, \`gugu.assistant.open("main", "move")\` (a phone is never its home) and
+  \`gugu.assistant.advanceSetup\` (those steps are a computer's). \`contributes.unreadSource\` draws nothing there: no App rail; the
+  conversation's own row in 消息 carries its unread.
+- \`gugu.assistant.open\` opens the phone's own screens: \`setup\` its settings page, \`look\` its customize page, \`model\`,
+  \`devices\`, \`connected-apps\` theirs under 资料, \`close\` the one confirmation. \`gugu.bindings.openWork\` draws the task's
+  conversation over 任务, with its own back. A \`{ binding }\` draft lands in 聊天 and the layer goes there.
+- Schedules: the assistant always lives elsewhere seen from a phone; pause, resume and remove go through its panel (\`pending\` until its
+  home applies them); adding or retiming one is asked of the assistant (\`invalid\`).
 `;
 
 export const EXTENSION_GUIDE_MESSAGES = `# gugu.chats, gugu.messages — the chats you are in, and what was said
@@ -1358,6 +1369,11 @@ export const EXTENSION_GUIDE_TOPICS: readonly { topic: string; about: string; te
     topic: 'apps-bindings-agent',
     about: 'The same binding when its conversation is the person\'s private one with their own agent or assistant: the agent\'s resources (42) and schedules (43), gugu.assistant (44), the work the assistant handed out (46).',
     text: EXTENSION_GUIDE_BINDINGS_AGENT,
+  },
+  {
+    topic: 'apps-bindings-phone',
+    about: 'The binding on a phone (API 48): who is bound there, the phone layout and the section your page fills, what answers unsupported, and the phone\'s own screens.',
+    text: EXTENSION_GUIDE_BINDINGS_PHONE,
   },
   {
     topic: 'apps-messages',

@@ -56,7 +56,7 @@ describe('the bound agent\'s schedules in the manifest (#1928, API 43)', () => {
     expect(() => parseExtensionManifest(manifest(['schedules'], ['chat:schedules']))).toThrow();
     expect(() => parseExtensionManifest(manifest(['unread', 'schedules', 'schedules']))).toThrow();
     expect(() => parseExtensionManifest({ ...manifest(), permissions: { capabilities: ['chat:schedules'] } })).toThrow();
-    expect(() => parseExtensionManifest({ ...manifest(), platforms: ['desktop', 'phone'] })).toThrow(/desktop-only/);
+    expect(() => parseExtensionManifest({ ...manifest(), platforms: ['desktop', 'phone'] })).toThrow(/on a phone requires apiVersion 48/);
   });
 
   it('each action reaches the one selection only while declared and granted; withdrawing one keeps the other and the selection', () => {

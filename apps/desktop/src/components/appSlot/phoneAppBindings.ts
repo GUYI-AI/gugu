@@ -659,7 +659,14 @@ export function createPhoneBindings(ports: PhoneBindingPorts) {
    */
   function attach(page: PhoneBindingPage & { pageId: number }, deliver: (event: ExtensionHostEvent) => void): () => void {
     let disposed = false
-    const app = ports.installed(page.extensionId)
+    // A page of an App without a binding hears none of it; nothing about the App is asked beyond its manifest.
+    let app: PhoneInstalledApp | null = null
+    try {
+      app = ports.installed(page.extensionId)
+    } catch {
+      app = null
+    }
+    if (!app?.manifest.permissions?.bindings?.length) return () => { disposed = true; pageGone(page.pageId) }
     const surfaceName = app?.manifest.contributes.conversationSurface?.binding
     const binding = app?.manifest.permissions?.bindings?.[0]
     let lastSurface = ''

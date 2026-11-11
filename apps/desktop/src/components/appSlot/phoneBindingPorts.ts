@@ -2,7 +2,7 @@ import { readAssistantPanelBody, uploadAssistantPanelBody } from '@gugu/core/clo
 import { withAssistantPanelReadDeadline } from '@gugu/core/cloud/assistantPanelRead'
 import { pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision'
 import { userIdFromSupabaseAccessToken } from '@gugu/core/cloud/runtimeAuthProvider'
-import { assistantPanelCloud } from '../assistant/assistant-panel-cloud'
+import type { AssistantPanelClient } from '@gugu/core/cloud/assistantPanel'
 import { requireAssistantPanelBridge } from '../../lib/assistantPanelBridge'
 import { composeChatDraft } from '../../lib/composeDraft'
 import { getRendererAccessToken } from '../../lib/sessionPublication'
@@ -17,6 +17,19 @@ const failed = (message: string) => Object.assign(new Error(message), { code: 'f
 
 // What `pickAssistant` reads, plus the private conversation and the identity's owner (as the desktop's resources read it).
 const PERSONAL_ASSISTANT_SELECT = 'agent_user_id,device_id,member_key,phase,created_at,dm_chat_id,agent:users!agent_provisions_agent_user_id_fkey(owner_user_id,removed_at)'
+
+/**
+ * The assistant panel's client as the person (assistant-panel-cloud.ts), loaded when first asked: a page whose Apps never
+ * reach the binding never loads the panel's outbox and session watch.
+ */
+const panelCloud = () => import('../assistant/assistant-panel-cloud').then((module) => module.assistantPanelCloud)
+const lazyPanelClient = {
+  snapshot: async (assistant: string) => (await panelCloud()).snapshot(assistant),
+  resource: async (...args: Parameters<AssistantPanelClient['resource']>) => (await panelCloud()).resource(...args),
+  commit: async (...args: Parameters<AssistantPanelClient['commit']>) => (await panelCloud()).commit(...args),
+  notice: async (...args: Parameters<AssistantPanelClient['notice']>) => (await panelCloud()).notice(...args),
+  pending: async (...args: Parameters<AssistantPanelClient['pending']>) => (await panelCloud()).pending(...args),
+} as unknown as AssistantPanelClient
 
 /** The App as installed on this phone: its manifest, switch and the record of where it came from (phoneApps.ts). */
 export function phoneInstalledApp(extensionId: string): PhoneInstalledApp | null {
@@ -85,10 +98,10 @@ export function phoneBindingPorts(files: ReturnType<typeof createAppFiles>): Pho
       composeChatDraft({ chatId, text })
     },
     panel: {
-      client: assistantPanelCloud,
-      snapshot: (_ownerId, agentId) => withAssistantPanelReadDeadline(() => assistantPanelCloud.snapshot(agentId)),
-      resource: (_ownerId, agentId, domain, key) => withAssistantPanelReadDeadline(() => assistantPanelCloud.resource(agentId, domain, key)),
-      commit: (_ownerId, agentId, change) => assistantPanelCloud.commit(agentId, change),
+      client: lazyPanelClient,
+      snapshot: (_ownerId, agentId) => withAssistantPanelReadDeadline(() => lazyPanelClient.snapshot(agentId)),
+      resource: (_ownerId, agentId, domain, key) => withAssistantPanelReadDeadline(() => lazyPanelClient.resource(agentId, domain, key)),
+      commit: (_ownerId, agentId, change) => lazyPanelClient.commit(agentId, change),
       readBody: (item, access) => readAssistantPanelBody(item, { ...access, accountId: () => phoneAccountId() }),
       uploadBody: (access) => uploadAssistantPanelBody({ ...access, accountId: () => phoneAccountId() }),
       async discard(_token, ownerId, itemId) {
