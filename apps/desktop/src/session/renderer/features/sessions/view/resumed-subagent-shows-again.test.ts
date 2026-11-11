@@ -22,7 +22,7 @@ const SESSION = 'session-1';
 function sessionWith(runStartedAt: number, agentStatus: 'running' | 'completed') {
   const launch: TranscriptTurn = {
     id: 'turn-1', seq: 0, initiator: 'user', startedAt: 100, endedAt: 200,
-    outcome: { kind: 'completed', stopReason: 'end_turn' },
+    outcome: { kind: 'done', reason: 'end_turn' },
     items: [{
       kind: 'spawn-subagent-tool-call', id: 'turn-1:tool:agent-1', seq: 0, toolCallId: 'agent-1', title: 'ticker',
       name: 'ticker', status: 'done', background: true, agentStatus, agentStartedAt: runStartedAt,
