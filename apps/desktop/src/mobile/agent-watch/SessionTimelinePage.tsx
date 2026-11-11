@@ -110,8 +110,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   const apps = useSessionApps()
   const native = !phoneHost && session.runtime === 'acp' && (session.nativeInputVersion === 1 || session.nativeInputVersion === 2)
   const { boundedHistory, nativeHistory, nativeRecord } = useSessionHistorySource({
-    deviceId: device.device_id, sessionId: session.conversationId, mobile, phoneHost,
-    sourceFormat: session.harness, native, online, local,
+    deviceId: device.device_id, sessionId: session.conversationId, native, online, local,
   })
   const {
     timeline, phase, error, actionError, dismissActionError, waitingForRecord,
